@@ -1244,6 +1244,14 @@ html[data-color-theme="light"] .review-mention-avatar { color: #075d6d; backgrou
   background: var(--overlay);
 }
 .shared-label-state-detail > strong { color: var(--faint); font-size: 10px; }
+.combined-case-label-card { border-color: color-mix(in srgb, var(--accent) 28%, var(--line)); background: color-mix(in srgb, var(--surface) 92%, var(--accent) 5%); }
+.combined-review-dual-status,
+.combined-case-label-meta { display: flex; flex-wrap: wrap; gap: 6px; }
+.combined-review-dual-status > span,
+.combined-case-label-meta > span { padding: 4px 7px; border: 1px solid var(--line-soft); border-radius: 999px; color: var(--muted); font-size: 10px; }
+.combined-review-dual-status b { color: var(--text); }
+.combined-case-rationale { display: grid; gap: 5px; }
+.combined-case-rationale textarea { min-height: 58px; }
 .shared-label-state-dialog { height: min(82vh, 760px); }
 .shared-label-state-dialog .dialog-card { grid-template-rows: auto auto minmax(0, 1fr); }
 .shared-label-dialog-summary {

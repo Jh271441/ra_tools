@@ -636,6 +636,43 @@ class DatabaseCoreMixin:
                 CREATE INDEX IF NOT EXISTS idx_model_review_attachments_revision
                     ON model_review_attachments(revision_id, created_at);
 
+                CREATE TABLE IF NOT EXISTS combined_review_submissions (
+                    id TEXT PRIMARY KEY,
+                    campaign_id TEXT NOT NULL DEFAULT '',
+                    issue_id TEXT NOT NULL REFERENCES issues(issue_id) ON DELETE RESTRICT,
+                    reviewer TEXT NOT NULL,
+                    model_run_id TEXT NOT NULL REFERENCES model_runs(id) ON DELETE RESTRICT,
+                    model_review_revision_id INTEGER NOT NULL REFERENCES model_review_revisions(id) ON DELETE RESTRICT,
+                    label_case_id TEXT NOT NULL REFERENCES label_cases(id) ON DELETE RESTRICT,
+                    label_revision_id INTEGER REFERENCES label_revisions(id) ON DELETE RESTRICT,
+                    acknowledged_label_revision_id INTEGER REFERENCES label_revisions(id) ON DELETE RESTRICT,
+                    case_action TEXT NOT NULL CHECK(case_action IN ('submitted', 'acknowledged')),
+                    idempotency_key TEXT NOT NULL DEFAULT '',
+                    idempotency_fingerprint TEXT NOT NULL,
+                    created_by_source TEXT NOT NULL DEFAULT 'legacy',
+                    created_at TEXT NOT NULL,
+                    UNIQUE(campaign_id, issue_id, reviewer, idempotency_key)
+                );
+                CREATE INDEX IF NOT EXISTS idx_combined_review_submissions_campaign
+                    ON combined_review_submissions(campaign_id, reviewer, issue_id, created_at DESC);
+
+                CREATE TABLE IF NOT EXISTS combined_review_progress (
+                    campaign_id TEXT NOT NULL REFERENCES issue_work_splits(id) ON DELETE RESTRICT,
+                    issue_id TEXT NOT NULL REFERENCES issues(issue_id) ON DELETE RESTRICT,
+                    reviewer TEXT NOT NULL,
+                    model_review_submitted INTEGER NOT NULL DEFAULT 0,
+                    case_label_acknowledged INTEGER NOT NULL DEFAULT 0,
+                    model_review_revision_id INTEGER REFERENCES model_review_revisions(id) ON DELETE RESTRICT,
+                    case_label_revision_id INTEGER REFERENCES label_revisions(id) ON DELETE RESTRICT,
+                    submission_group_id TEXT REFERENCES combined_review_submissions(id) ON DELETE RESTRICT,
+                    model_review_submitted_at TEXT,
+                    case_label_acknowledged_at TEXT,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY(campaign_id, issue_id, reviewer)
+                );
+                CREATE INDEX IF NOT EXISTS idx_combined_review_progress_campaign
+                    ON combined_review_progress(campaign_id, reviewer, model_review_submitted, case_label_acknowledged);
+
                 CREATE VIEW IF NOT EXISTS review_records AS
                 SELECT
                     annotation.id AS id,
@@ -2234,6 +2271,7 @@ class DatabaseCoreMixin:
             self._ensure_column(conn, "issue_work_splits", "idempotency_key", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(conn, "issue_work_splits", "idempotency_fingerprint", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(conn, "issue_work_splits", "campaign_name", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "issue_work_splits", "workflow_mode", "TEXT NOT NULL DEFAULT 'model_review_only'")
             self._ensure_column(conn, "issue_work_splits", "task_group_id", "TEXT")
             self._ensure_column(conn, "issue_work_splits", "latest_close_snapshot_id", "TEXT")
             self._ensure_column(

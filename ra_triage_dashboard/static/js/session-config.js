@@ -138,6 +138,7 @@ function renderSession() {
   if (state.activePage === "prediction") ensurePredictionBatchName();
   if (typeof applyRunCollectionReadOnlyGating === "function") applyRunCollectionReadOnlyGating();
   if (typeof renderGtSyncStatus === "function") renderGtSyncStatus();
+  if (typeof syncReviewWorkflowMode === "function") syncReviewWorkflowMode(state.selectedCase);
 }
 
 async function loadSession() {

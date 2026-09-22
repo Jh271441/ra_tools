@@ -79,7 +79,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-488`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-489`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -369,6 +369,8 @@
                 <summary><span class="ui-lang-zh">复核任务</span><span class="ui-lang-en">Review tasks</span><small><span class="ui-lang-zh">按任务范围查看，不影响共享标签</span><span class="ui-lang-en">Run-scoped task view; shared labels stay separate</span></small></summary>
                 <div class="review-task-drawer-body">
                   <label><span class="ui-lang-zh">任务范围</span><span class="ui-lang-en">Task range</span><div class="ui-select" id="reviewTaskPicker"><button class="ui-select-trigger" type="button"><span class="ui-select-summary">综合结果</span><span class="ui-select-caret" aria-hidden="true"></span></button><div class="ui-select-panel" role="listbox" hidden></div><select class="ui-select-native" id="reviewTaskFilter" aria-hidden="true" tabindex="-1"><option value="">综合结果</option></select></div></label>
+                  <label id="reviewWorkflowModeField"><span class="ui-lang-zh">页面模式</span><span class="ui-lang-en">Page mode</span><select id="reviewWorkflowMode"><option value="model_review_only">仅判错复核</option><option value="model_review_and_case_label">判错复核 + Case 标注</option></select></label>
+                  <span class="muted" id="reviewWorkflowModeHint"><span class="ui-lang-zh">非任务浏览默认仅判错复核；联合任务由任务配置锁定。</span><span class="ui-lang-en">Direct browsing defaults to model Review only; combined tasks lock this mode.</span></span>
                   <span class="muted"><span class="ui-lang-zh">模型复核任务只影响当前 Run 的诊断和完成度。</span><span class="ui-lang-en">Review tasks affect only the selected Run diagnosis and completion.</span></span>
                 </div>
               </details>
@@ -2028,6 +2030,13 @@
           <button class="icon-button" type="button" data-close="workSplitDialog" aria-label="关闭">×</button>
         </div>
         <div class="work-split-summary" id="workSplitSummary">当前筛选：—</div>
+        <label class="work-split-seed work-split-workflow-mode">
+          <span><span class="ui-lang-zh">任务模式</span><span class="ui-lang-en">Task mode</span></span>
+          <select id="workSplitWorkflowMode">
+            <option value="model_review_only">仅判错复核</option>
+            <option value="model_review_and_case_label">判错复核 + Case 标注</option>
+          </select>
+        </label>
         <div class="work-split-mode-row">
           <label class="work-split-seed">
             <span><span class="ui-lang-zh">每个 Issue 复核人数</span><span class="ui-lang-en">Reviewers per Issue</span></span>
@@ -2317,7 +2326,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-488`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-489`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

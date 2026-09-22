@@ -34,6 +34,7 @@ from .db_parts.core import DatabaseCoreMixin
 from .db_parts.gt_sync import DatabaseGtSyncMixin
 from .db_parts.labeling import DatabaseLabelingMixin
 from .db_parts.model_reviews import DatabaseModelReviewMixin
+from .db_parts.combined_reviews import DatabaseCombinedReviewMixin
 from .db_parts.review import DatabaseReviewMixin
 from .db_parts.notifications import DatabaseNotificationsMixin
 from .db_parts.runs import DatabaseRunsMixin
@@ -53,6 +54,7 @@ class Database(
     DatabaseSnapshotMixin,
     DatabaseLabelingMixin,
     DatabaseModelReviewMixin,
+    DatabaseCombinedReviewMixin,
     DatabaseIntentMixin,
     DatabaseReviewMixin,
     DatabaseNotificationsMixin,

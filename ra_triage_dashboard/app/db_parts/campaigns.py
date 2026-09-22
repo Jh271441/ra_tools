@@ -143,6 +143,7 @@ class DatabaseCampaignMixin:
 
     _CAMPAIGN_USER_RE = re.compile(r"^[A-Za-z0-9._@-]{1,128}$")
     _CAMPAIGN_ASSIGNMENT_KINDS = {"base", "cross", "full"}
+    _CAMPAIGN_WORKFLOW_MODES = {"model_review_only", "model_review_and_case_label"}
 
     def _campaign_create_in_connection(
         self,
@@ -159,6 +160,11 @@ class DatabaseCampaignMixin:
         purpose = str(spec.get("purpose") or "").strip().lower()
         if purpose not in CAMPAIGN_PURPOSES:
             raise ValueError("Campaign purpose 只能是 labeling 或 model_review。")
+        workflow_mode = str(spec.get("workflow_mode") or "model_review_only").strip().lower()
+        if workflow_mode not in self._CAMPAIGN_WORKFLOW_MODES:
+            raise ValueError("workflow_mode 不合法。")
+        if purpose != "model_review" and workflow_mode != "model_review_only":
+            raise ValueError("联合复核模式仅适用于 Model Review Campaign。")
         initial_lifecycle = str(spec.get("lifecycle") or "active").strip().lower()
         if initial_lifecycle not in {"draft", "active"}:
             raise ValueError("新建 Campaign 的 lifecycle 只能是 draft 或 active。")
@@ -236,6 +242,26 @@ class DatabaseCampaignMixin:
             if not member["baseline_scope"]:
                 raise ValueError("Campaign Issue 缺少 baseline scope。")
         scopes = sorted({item["baseline_scope"] for item in normalized_members})
+        if workflow_mode == "model_review_and_case_label":
+            active_rows = conn.execute(
+                f"SELECT baseline_scope FROM labeling_scope_state WHERE status='active' AND baseline_scope IN ({', '.join('?' for _ in scopes)})",
+                scopes,
+            ).fetchall()
+            if {str(row["baseline_scope"] or "") for row in active_rows} != set(scopes):
+                raise ValueError("联合复核只能使用已启用 Case 标注的数据集。")
+            assigned_names = sorted({
+                assignment["assignee"]
+                for member in normalized_members for assignment in member["assignees"]
+            })
+            if assigned_names:
+                role_rows = conn.execute(
+                    f"SELECT username, role FROM access_users WHERE username IN ({', '.join('?' for _ in assigned_names)})",
+                    assigned_names,
+                ).fetchall()
+                roles = {str(row["username"]): str(row["role"] or "") for row in role_rows}
+                unavailable = [name for name in assigned_names if roles.get(name) != "admin"]
+                if unavailable:
+                    raise ValueError("联合复核负责人缺少 Case 标注权限：" + "、".join(unavailable))
         if workset is not None:
             workset_scope_rows = conn.execute(
                 "SELECT baseline_scope FROM review_workset_scopes "
@@ -319,6 +345,7 @@ class DatabaseCampaignMixin:
             idempotency_fingerprint = _fingerprint({
                 "purpose": purpose, "name": campaign_name, "workset_id": workset_id,
                 "evaluation_run_id": evaluation_run_id, "selection_source_run_id": selection_source_run_id,
+                "workflow_mode": workflow_mode,
                 "references": reference_values, "members": normalized_members,
                 "task_group_id": task_group_id,
             })
@@ -355,12 +382,13 @@ class DatabaseCampaignMixin:
                 assignees_json, mode, reviewers_per_issue, model_run_id,
                 overlap_ratio, assignment_count, task_kind, workset_id,
                 selection_source_run_id, purpose, evaluation_run_id,
+                workflow_mode,
                 reference_type, reference_id, reference_sha256, lifecycle,
                 config_revision, created_by_source, created_by_verified,
                 updated_by, updated_by_source, updated_by_verified, updated_at,
                 legacy_read_only, legacy_mapping_status, idempotency_key,
                 idempotency_fingerprint, campaign_name, task_group_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                       ?, 1, ?, ?, ?, ?, ?, ?, false, 'native_s4', ?, ?, ?, ?)
             """,
             (
@@ -369,6 +397,7 @@ class DatabaseCampaignMixin:
                 evaluation_run_id, overlap_ratio, assignment_count,
                 "labeling" if purpose == "labeling" else "s4_model_review",
                 workset_id, selection_source_run_id, purpose, evaluation_run_id or None,
+                workflow_mode,
                 top_reference_type, top_reference_id, top_reference_sha,
                 initial_lifecycle,
                 str(actor_source or "legacy"), bool(actor_verified), actor_name,
@@ -2411,6 +2440,7 @@ class DatabaseCampaignMixin:
 
         model_ids = [cid for cid, row in campaigns.items() if str(row["purpose"] or "") == "model_review"]
         model_heads: dict[tuple[str, str], dict[str, dict[str, Any]]] = defaultdict(dict)
+        combined_progress: dict[tuple[str, str], dict[str, dict[str, Any]]] = defaultdict(dict)
         if model_ids:
             model_placeholders = ", ".join("?" for _ in model_ids)
             head_rows = conn.execute(
@@ -2444,6 +2474,17 @@ class DatabaseCampaignMixin:
                     "status": str(row["status"] or "pending"),
                     "revision_id": int(row["revision_id"]),
                 }
+            combined_rows = conn.execute(
+                f"""
+                SELECT * FROM combined_review_progress
+                WHERE campaign_id IN ({model_placeholders})
+                """,
+                model_ids,
+            ).fetchall()
+            for row in combined_rows:
+                combined_progress[(str(row["campaign_id"]), str(row["issue_id"]))][
+                    str(row["reviewer"] or "").lower()
+                ] = {key: row[key] for key in row.keys()}
 
         progress: dict[str, dict[str, Any]] = {}
         for cid, campaign in campaigns.items():
@@ -2451,6 +2492,7 @@ class DatabaseCampaignMixin:
             summary: dict[str, Any] = {
                 "campaign_id": cid,
                 "purpose": purpose or None,
+                "workflow_mode": str(campaign["workflow_mode"] or "model_review_only"),
                 "lifecycle": str(campaign["lifecycle"] or "active"),
                 "legacy_read_only": bool(campaign["legacy_read_only"]),
                 "member_count": len(member_by_campaign.get(cid, [])),
@@ -2458,6 +2500,9 @@ class DatabaseCampaignMixin:
                 "unassigned_issue_count": 0,
                 "required_submitter_count": 0,
                 "submitted_submitter_count": 0,
+                "model_review_submitted_count": 0,
+                "case_label_acknowledged_count": 0,
+                "overall_completed_count": 0,
                 "completed_issue_count": 0,
                 "pending_issue_count": 0,
                 "in_progress_issue_count": 0,
@@ -2604,24 +2649,51 @@ class DatabaseCampaignMixin:
                         state = "in_progress"
                 else:
                     heads = model_heads.get((cid, issue), {})
-                    assigned_statuses = {
-                        reviewer: value["status"] for reviewer, value in heads.items()
-                        if reviewer in names
-                    }
-                    source_revision_ids = [int(heads[reviewer]["revision_id"]) for reviewer in sorted(assigned_statuses)]
-                    submitted_names = {
-                        reviewer for reviewer, status in assigned_statuses.items()
-                        if status in {"in_progress", "completed", "blocked_by_label"}
-                    }
-                    if any(status == "blocked_by_label" for status in assigned_statuses.values()):
-                        state = "blocked"
-                    elif len([name for name, status in assigned_statuses.items() if status == "completed"]) >= required:
-                        state = "completed"
-                    elif any(status == "in_progress" for status in assigned_statuses.values()):
-                        state = "in_progress"
+                    if str(campaign["workflow_mode"] or "model_review_only") == "model_review_and_case_label":
+                        markers = combined_progress.get((cid, issue), {})
+                        model_names = {
+                            name for name in names
+                            if bool((markers.get(name) or {}).get("model_review_submitted"))
+                        }
+                        case_names = {
+                            name for name in names
+                            if bool((markers.get(name) or {}).get("case_label_acknowledged"))
+                        }
+                        submitted_names = model_names & case_names
+                        source_revision_ids = [
+                            int((markers[name] or {}).get("model_review_revision_id") or 0)
+                            for name in sorted(model_names)
+                            if int((markers[name] or {}).get("model_review_revision_id") or 0) > 0
+                        ]
+                        summary["model_review_submitted_count"] += len(model_names)
+                        summary["case_label_acknowledged_count"] += len(case_names)
+                        summary["overall_completed_count"] += len(submitted_names)
+                        if len(submitted_names) >= required:
+                            state = "completed"
+                        elif model_names or case_names:
+                            state = "in_progress"
+                        else:
+                            state = "pending"
+                        submitted = len(submitted_names)
                     else:
-                        state = "pending"
-                    submitted = len(submitted_names)
+                        assigned_statuses = {
+                            reviewer: value["status"] for reviewer, value in heads.items()
+                            if reviewer in names
+                        }
+                        source_revision_ids = [int(heads[reviewer]["revision_id"]) for reviewer in sorted(assigned_statuses)]
+                        submitted_names = {
+                            reviewer for reviewer, status in assigned_statuses.items()
+                            if status in {"in_progress", "completed", "blocked_by_label"}
+                        }
+                        if any(status == "blocked_by_label" for status in assigned_statuses.values()):
+                            state = "blocked"
+                        elif len([name for name, status in assigned_statuses.items() if status == "completed"]) >= required:
+                            state = "completed"
+                        elif any(status == "in_progress" for status in assigned_statuses.values()):
+                            state = "in_progress"
+                        else:
+                            state = "pending"
+                        submitted = len(submitted_names)
                 summary["submitted_submitter_count"] += submitted
                 summary["state_counts"][state] += 1
                 key = {
@@ -2825,6 +2897,7 @@ class DatabaseCampaignMixin:
             "canonical_url": f"/campaigns/{row['id']}",
             "name": str(row["campaign_name"] or row["workset_name"] or ""),
             "purpose": str(row["purpose"] or "") or None,
+            "workflow_mode": str(row["workflow_mode"] or "model_review_only"),
             "legacy_read_only": bool(row["legacy_read_only"]),
             "legacy_mapping_status": str(row["legacy_mapping_status"] or ""),
             "lifecycle": str(row["lifecycle"] or "active"),

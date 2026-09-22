@@ -752,6 +752,8 @@ const state = {
   clusterKey: "",
   reviewQueueStale: false,
   reviewWorkSplitId: "",
+  reviewWorkflowMode: "model_review_only",
+  combinedReviewContext: null,
   availableReviewWorkSplitId: "",
   reviewAnalysis: {
     page: 1,

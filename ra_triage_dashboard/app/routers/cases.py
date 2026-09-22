@@ -662,6 +662,7 @@ async def review_work_split_options(
                 "created_at": str(item.get("created_at") or ""),
                 "created_by": str(item.get("created_by") or ""),
                 "mode": str(item.get("mode") or "single"),
+                "workflow_mode": str(item.get("workflow_mode") or "model_review_only"),
                 "reviewers_per_issue": int(item.get("reviewers_per_issue") or 1),
                 "total_count": int(item.get("total_count") or 0),
                 "assignment_count": int(item.get("assignment_count") or 0),
@@ -890,6 +891,7 @@ async def split_case_work(request: Request) -> dict[str, Any]:
                 database.create_campaign,
                 spec={
                     "purpose": "model_review",
+                    "workflow_mode": _as_text(body.get("workflow_mode") or "model_review_only"),
                     "evaluation_run_id": filters["model_run_id"],
                     "selection_source_run_id": filters["model_run_id"],
                     "workset_id": workset["id"],
@@ -941,6 +943,10 @@ async def split_case_work(request: Request) -> dict[str, Any]:
         "assignment_count": saved["assignment_count"],
         "reviewers_per_issue": saved["reviewers_per_issue"],
         "overlap_ratio": saved["overlap_ratio"],
+        "workflow_mode": (
+            str(campaign_meta.get("workflow_mode") or "model_review_only")
+            if filters["model_run_id"] else "model_review_only"
+        ),
         "work_assignees": await asyncio.to_thread(
             database.list_work_assignees,
             issue_ids=issue_ids,
@@ -1152,7 +1158,7 @@ async def get_case(
         else None
     )
     identity = SessionIdentity()
-    if request is not None and assignment and assignment.get("mode") == "blind":
+    if request is not None and assignment:
         identity = await asyncio.to_thread(request_identity, request, settings)
         current_username = identity.username.lower() if identity.verified else ""
         own_assignment = next(

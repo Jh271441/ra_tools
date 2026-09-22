@@ -27,7 +27,8 @@ function currentReviewRunId(caseData) {
 // editing the ordinary Review stream for the selected Run.
 function reviewWorkSplitBinding(caseData) {
   const assignment = caseData?.review_assignment;
-  if (assignment?.mode !== "blind" || !assignment?.assigned) return "";
+  if (!assignment?.assigned) return "";
+  if (assignment?.mode !== "blind" && assignment?.purpose !== "model_review") return "";
   return String(assignment.split_id || "").trim();
 }
 

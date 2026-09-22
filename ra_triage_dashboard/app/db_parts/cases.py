@@ -1394,7 +1394,16 @@ class DatabaseCasesMixin:
                 SELECT assignment.split_id,
                        assignment.assignee,
                        COUNT(*) AS assigned_count,
-                       SUM(CASE WHEN EXISTS (
+                       SUM(CASE WHEN (
+                         (split.workflow_mode = 'model_review_and_case_label' AND EXISTS (
+                           SELECT 1 FROM combined_review_progress progress
+                           WHERE progress.campaign_id = split.id
+                             AND progress.issue_id = assignment.issue_id
+                             AND lower(progress.reviewer) = lower(assignment.assignee)
+                             AND progress.model_review_submitted = true
+                             AND progress.case_label_acknowledged = true
+                         )) OR
+                         (split.workflow_mode <> 'model_review_and_case_label' AND EXISTS (
                            SELECT 1 FROM model_review_heads head
                            JOIN model_review_revisions revision ON revision.id = head.revision_id
                            WHERE head.issue_id = assignment.issue_id
@@ -1409,6 +1418,7 @@ class DatabaseCasesMixin:
                                OR (COALESCE(split.purpose, '') <> 'model_review'
                                    AND split.mode <> 'blind' AND revision.work_split_id = '')
                              )
+                         ))
                        ) THEN 1 ELSE 0 END) AS completed_count
                 FROM review_work_assignments assignment
                 JOIN issue_work_splits split ON split.id = assignment.split_id
@@ -1554,6 +1564,7 @@ class DatabaseCasesMixin:
                     "mode": str(row["mode"] or "single"),
                     "reviewers_per_issue": int(row["reviewers_per_issue"] or 1),
                     "model_run_id": str(row["model_run_id"] or ""),
+                    "workflow_mode": str(row["workflow_mode"] or "model_review_only"),
                     "overlap_ratio": float(row["overlap_ratio"] or 0),
                     "filter_snapshot": _json_load(row["filter_json"], {}),
                     "members": members,
@@ -1593,7 +1604,16 @@ class DatabaseCasesMixin:
         normalized_assignee = str(assignee or "").strip().lower()
         normalized_query = str(query or "").strip()[:128]
         submitted_condition = """
-            EXISTS (
+            (
+              (split.workflow_mode = 'model_review_and_case_label' AND EXISTS (
+                SELECT 1 FROM combined_review_progress progress
+                WHERE progress.campaign_id = split.id
+                  AND progress.issue_id = assignment.issue_id
+                  AND lower(progress.reviewer) = lower(assignment.assignee)
+                  AND progress.model_review_submitted = true
+                  AND progress.case_label_acknowledged = true
+              )) OR
+              (split.workflow_mode <> 'model_review_and_case_label' AND EXISTS (
                 SELECT 1 FROM model_review_heads head
                 JOIN model_review_revisions revision ON revision.id = head.revision_id
                 WHERE head.issue_id = assignment.issue_id
@@ -1608,6 +1628,7 @@ class DatabaseCasesMixin:
                     OR (COALESCE(split.purpose, '') <> 'model_review'
                         AND split.mode <> 'blind' AND revision.work_split_id = '')
                   )
+              ))
             )
         """
         conditions = ["assignment.split_id = ?"]
@@ -1647,12 +1668,40 @@ class DatabaseCasesMixin:
                        assignment.assignee,
                        assignment.assignment_kind,
                        assignment.ordinal,
+                       COALESCE((
+                           SELECT progress.model_review_submitted
+                           FROM combined_review_progress progress
+                           WHERE progress.campaign_id=assignment.split_id
+                             AND progress.issue_id=assignment.issue_id
+                             AND lower(progress.reviewer)=lower(assignment.assignee)
+                       ), false) AS model_review_submitted,
+                       COALESCE((
+                           SELECT progress.case_label_acknowledged
+                           FROM combined_review_progress progress
+                           WHERE progress.campaign_id=assignment.split_id
+                             AND progress.issue_id=assignment.issue_id
+                             AND lower(progress.reviewer)=lower(assignment.assignee)
+                       ), false) AS case_label_acknowledged,
                        assignment.assigned_by,
                        assignment.assigned_at,
                        issue.title,
                        issue.scenario,
                        issue.gt_label,
                        issue.baseline_scope,
+                       COALESCE((
+                           SELECT progress.model_review_submitted
+                           FROM combined_review_progress progress
+                           WHERE progress.campaign_id=split.id
+                             AND progress.issue_id=assignment.issue_id
+                             AND lower(progress.reviewer)=lower(assignment.assignee)
+                       ), false) AS model_review_submitted,
+                       COALESCE((
+                           SELECT progress.case_label_acknowledged
+                           FROM combined_review_progress progress
+                           WHERE progress.campaign_id=split.id
+                             AND progress.issue_id=assignment.issue_id
+                             AND lower(progress.reviewer)=lower(assignment.assignee)
+                       ), false) AS case_label_acknowledged,
                        CASE WHEN {submitted_condition} THEN 1 ELSE 0 END AS submitted,
                        (
                            SELECT revision.created_at
@@ -1736,6 +1785,8 @@ class DatabaseCasesMixin:
                 "submitted_at": str(row["submitted_at"] or ""),
                 "review_status": str(row["review_status"] or ""),
                 "model_review_status": str(row["model_review_status"] or ""),
+                "model_review_submitted": bool(row["model_review_submitted"]),
+                "case_label_acknowledged": bool(row["case_label_acknowledged"]),
             }
             for row in item_rows
         ]
@@ -1921,6 +1972,8 @@ class DatabaseCasesMixin:
             "mode": str(split["mode"] or "single"),
             "reviewers_per_issue": int(split["reviewers_per_issue"] or 1),
             "model_run_id": str(split["model_run_id"] or ""),
+            "workflow_mode": str(split["workflow_mode"] or "model_review_only"),
+            "purpose": str(split["purpose"] or ""),
             "overlap_ratio": float(split["overlap_ratio"] or 0),
             "filter_snapshot": _json_load(split["filter_json"], {}),
             "members": summary.get("members", []),
@@ -2184,7 +2237,13 @@ class DatabaseCasesMixin:
                 "username": str(row["assignee"]),
                 "assignment_kind": str(row["assignment_kind"]),
                 "ordinal": int(row["ordinal"]),
-                "submitted": row["annotation_id"] is not None,
+                "model_review_submitted": bool(row["model_review_submitted"]),
+                "case_label_acknowledged": bool(row["case_label_acknowledged"]),
+                "submitted": (
+                    bool(row["model_review_submitted"] and row["case_label_acknowledged"])
+                    if str(split["workflow_mode"] or "model_review_only") == "model_review_and_case_label"
+                    else row["annotation_id"] is not None
+                ),
             }
             for row in rows
         ]
@@ -2197,6 +2256,7 @@ class DatabaseCasesMixin:
             "split_id": str(split["id"]),
             "mode": str(split["mode"] or "single"),
             "model_run_id": str(split["model_run_id"] or ""),
+            "workflow_mode": str(split["workflow_mode"] or "model_review_only"),
             "reviewers_per_issue": reviewer_count,
             "overlap_ratio": (
                 float(split["overlap_ratio"] or 0)

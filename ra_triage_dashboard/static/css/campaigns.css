@@ -37,6 +37,7 @@
 .campaign-lifecycle-badge[data-lifecycle="active"] { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, var(--line)); }
 .campaign-lifecycle-badge[data-lifecycle="closed"] { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
 .campaign-import-warning { color: var(--warn); }
+.work-split-workflow-mode { max-width: 340px; }
 .campaign-lifecycle-badge[data-lifecycle="cancelled"],
 .campaign-state-badge[data-state="conflict"],
 .campaign-state-badge[data-state="stale"] { color: var(--fail); border-color: color-mix(in srgb, var(--fail) 38%, var(--line)); }

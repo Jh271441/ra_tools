@@ -73,6 +73,32 @@ function renderReviewWorkSplitPicker(selected = state.reviewWorkSplitId) {
   );
 }
 
+function effectiveReviewWorkflowMode(caseData = state.selectedCase) {
+  const assignment = caseData?.review_assignment || {};
+  if (state.reviewWorkSplitId && assignment.split_id === state.reviewWorkSplitId) {
+    return assignment.workflow_mode || "model_review_only";
+  }
+  return state.reviewWorkflowMode || "model_review_only";
+}
+
+function syncReviewWorkflowMode(caseData = state.selectedCase) {
+  const select = $("#reviewWorkflowMode");
+  const field = $("#reviewWorkflowModeField");
+  if (!select || !field) return effectiveReviewWorkflowMode(caseData);
+  const identityPending = Boolean(state.session?.identity_pending);
+  const canCombine = Boolean(state.session?.verified && state.session?.is_admin && state.session?.can_write);
+  const locked = Boolean(state.reviewWorkSplitId && caseData?.review_assignment?.split_id === state.reviewWorkSplitId);
+  const mode = locked
+    ? (caseData.review_assignment.workflow_mode || "model_review_only")
+    : (canCombine || identityPending ? state.reviewWorkflowMode : "model_review_only");
+  state.reviewWorkflowMode = mode;
+  select.value = mode;
+  select.disabled = locked || !canCombine;
+  field.hidden = !canCombine && !locked;
+  $("#reviewWorkflowModeHint")?.toggleAttribute("hidden", !locked);
+  return mode;
+}
+
 function renderAnalysisWorkSplitPicker(selected = state.reviewAnalysis.workSplitId) {
   const root = $("#analysisWorkSplitPicker");
   if (!root) return;
@@ -442,6 +468,7 @@ async function openWorkSplitDialog() {
   }
   renderWorkSplitPersonPickers();
   if ($("#workSplitReviewersPerIssue")) $("#workSplitReviewersPerIssue").value = "1";
+  if ($("#workSplitWorkflowMode")) $("#workSplitWorkflowMode").value = "model_review_only";
   renderWorkSplitReviewersPerIssuePicker(1);
   renderWorkSplitOverlapPicker(1);
   updateWorkSplitEstimate();
@@ -517,6 +544,7 @@ async function generateWorkSplit() {
     assignees,
     reviewers_per_issue: reviewersPerIssue,
     overlap_ratio: overlapRatio,
+    workflow_mode: $("#workSplitWorkflowMode")?.value || "model_review_only",
   };
   if (body.reviewers_per_issue > assignees.length) {
     showToast("每个 Issue 的复核人数不能超过已选成员数。", true);
@@ -602,6 +630,14 @@ function copyWorkSplitAssignment(index) {
 }
 
 function bindWorkSplitControls() {
+  $("#reviewWorkflowMode")?.addEventListener("change", (event) => {
+    if (state.reviewWorkSplitId) return;
+    state.reviewWorkflowMode = event.target.value === "model_review_and_case_label"
+      ? "model_review_and_case_label"
+      : "model_review_only";
+    persistCurrentReviewRoute({ workflowMode: state.reviewWorkflowMode });
+    if (state.selectedCase) renderReview(state.selectedCase);
+  });
   $("#splitFilteredButton")?.addEventListener("click", () => {
     if (!state.session?.is_admin) {
       showToast(t("work.split_admin_only"), true);

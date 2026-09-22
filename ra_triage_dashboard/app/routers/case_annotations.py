@@ -7,6 +7,7 @@ from typing import Any, List, Optional
 from fastapi import APIRouter, File, Form, Request, UploadFile
 
 from ..auth import request_identity
+from ..db import AnnotationConflictError, LabelAnnotationConflictError
 from ..runtime import database, logger, review_notification_dispatcher, settings
 from ..support.annotations import _create_annotation_record, _create_model_review_record
 from ..support.attachments import (
@@ -14,8 +15,134 @@ from ..support.attachments import (
     _store_review_attachments,
 )
 from ..support.common import _as_text, _detail
+from ..support.catalogs import _normalise_missing_evidence, _normalise_review_tags, _review_tag_catalog
+from ..support.identity import _action_actor
+from ..review_workflow import resolve_expected_output
 
 router = APIRouter()
+
+
+def _optional_int(value: Any, field: str) -> int | None:
+    if value in (None, "", 0, "0"):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise _detail(400, f"{field} 不合法。") from exc
+
+
+@router.get("/api/cases/{issue_id}/combined-review-context")
+async def combined_review_context(
+    issue_id: str, request: Request, campaign_id: str = "", model_run_id: str = ""
+) -> dict[str, Any]:
+    identity = await asyncio.to_thread(request_identity, request, settings)
+    role = await asyncio.to_thread(database.access_role, identity.username) if identity.verified else ""
+    if not identity.verified or role != "admin":
+        raise _detail(403, "联合复核需要模型复核与 Case 标注双重写权限。")
+    try:
+        context = await asyncio.to_thread(
+            database.combined_review_context,
+            issue_id=issue_id,
+            campaign_id=_as_text(campaign_id),
+            reviewer=identity.username,
+            model_run_id=_as_text(model_run_id),
+        )
+    except ValueError as exc:
+        raise _detail(400, str(exc)) from exc
+    if not context.get("assigned"):
+        raise _detail(403, "当前账号不在联合复核任务中。")
+    return {"context": context}
+
+
+@router.post("/api/cases/{issue_id}/combined-review")
+async def submit_combined_review(issue_id: str, request: Request) -> dict[str, Any]:
+    try:
+        body = await request.json()
+    except (TypeError, ValueError):
+        raise _detail(400, "联合复核请求必须是 JSON 对象。")
+    if not isinstance(body, dict):
+        raise _detail(400, "联合复核请求必须是 JSON 对象。")
+    actor, source, verified = _action_actor(request, body.get("author"))
+    role = await asyncio.to_thread(database.access_role, actor) if verified else ""
+    if role != "admin":
+        raise _detail(403, "联合复核需要模型复核与 Case 标注双重写权限。")
+    tags = body.get("tags") or []
+    evidence = body.get("missing_evidence") or []
+    if not isinstance(tags, list) or not isinstance(evidence, list):
+        raise _detail(400, "tags 和 missing_evidence 必须是数组。")
+    tags = _normalise_review_tags(tags)
+    evidence = _normalise_missing_evidence(evidence)
+    try:
+        output = resolve_expected_output(body.get("expected_output"), tags, _review_tag_catalog())
+    except ValueError as exc:
+        raise _detail(400, str(exc)) from exc
+    key = _as_text(request.headers.get("idempotency-key") or body.get("idempotency_key"))
+    try:
+        result = await asyncio.to_thread(
+            database.submit_combined_review,
+            issue_id=issue_id,
+            campaign_id=_as_text(body.get("campaign_id")),
+            model_run_id=_as_text(body.get("model_run_id")),
+            reviewer=actor,
+            reviewer_source=source,
+            reviewer_verified=verified,
+            model_review_status=_as_text(body.get("model_review_status") or "pending"),
+            reason=_as_text(body.get("reason") or body.get("note")),
+            missing_evidence=evidence,
+            expected_output=output,
+            tags=tags,
+            rationale=_as_text(body.get("rationale")),
+            expected_model_review_storage_id=_optional_int(body.get("expected_model_review_storage_id"), "expected_model_review_storage_id"),
+            expected_case_revision_id=_optional_int(body.get("expected_case_revision_id"), "expected_case_revision_id"),
+            expected_label_state_fingerprint=_as_text(body.get("expected_label_state_fingerprint")),
+            idempotency_key=key,
+        )
+    except (AnnotationConflictError, LabelAnnotationConflictError) as exc:
+        raise _detail(409, str(exc)) from exc
+    except PermissionError as exc:
+        raise _detail(403, str(exc)) from exc
+    except ValueError as exc:
+        raise _detail(400, str(exc)) from exc
+    return {"combined_review": result, "change_revision": await asyncio.to_thread(database.change_revision)}
+
+
+@router.post("/api/cases/{issue_id}/case-label-from-review")
+async def submit_case_label_from_review(issue_id: str, request: Request) -> dict[str, Any]:
+    try:
+        body = await request.json()
+    except (TypeError, ValueError):
+        raise _detail(400, "Case 标注请求必须是 JSON 对象。")
+    if not isinstance(body, dict):
+        raise _detail(400, "Case 标注请求必须是 JSON 对象。")
+    actor, source, verified = _action_actor(request, body.get("author"))
+    role = await asyncio.to_thread(database.access_role, actor) if verified else ""
+    if role != "admin":
+        raise _detail(403, "Review 页内 Case 标注需要管理员权限。")
+    tags = body.get("tags") or []
+    if not isinstance(tags, list):
+        raise _detail(400, "tags 必须是数组。")
+    tags = _normalise_review_tags(tags)
+    try:
+        output = resolve_expected_output(body.get("expected_output"), tags, _review_tag_catalog())
+        result = await asyncio.to_thread(
+            database.submit_review_case_label,
+            issue_id=issue_id,
+            reviewer=actor,
+            reviewer_source=source,
+            reviewer_verified=verified,
+            expected_output=output,
+            tags=tags,
+            rationale=_as_text(body.get("rationale")),
+            expected_case_revision_id=_optional_int(body.get("expected_case_revision_id"), "expected_case_revision_id"),
+            expected_label_state_fingerprint=_as_text(body.get("expected_label_state_fingerprint")),
+        )
+    except LabelAnnotationConflictError as exc:
+        raise _detail(409, str(exc)) from exc
+    except PermissionError as exc:
+        raise _detail(403, str(exc)) from exc
+    except ValueError as exc:
+        raise _detail(400, str(exc)) from exc
+    return {"case_label": result, "change_revision": await asyncio.to_thread(database.change_revision)}
 
 
 async def _require_unmigrated_issue(

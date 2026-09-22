@@ -391,6 +391,7 @@ function syncReviewFormFromCase(caseData) {
 function renderReview(caseData) {
   const reviewRunId = currentReviewRunId(caseData);
   const runBoundModelReview = Boolean(reviewRunId);
+  const combinedMode = syncReviewWorkflowMode(caseData) === "model_review_and_case_label";
   const runAnnotations = reviewAnnotationsForCurrentRun(caseData);
   const allAnnotations = reviewAnnotationsForAllRuns(caseData);
   const sourceSuggestion = currentReviewSourceSuggestion(caseData);
@@ -451,10 +452,13 @@ function renderReview(caseData) {
   const sourceSuggestionMarkup = issueTagSourceSuggestionMarkup(sourceSuggestion);
   $("#reviewPane").innerHTML = `
     <form class="review-form" id="annotationForm" data-issue-id="${escapeHtml(caseData.issue_id)}">
-      <section class="review-section issue-tag-section" hidden>
-        <div class="review-section-heading"><div><h2><span class="ui-lang-zh">Issue 标签</span><span class="ui-lang-en">Issue tags</span></h2>${sourceSuggestionMarkup}</div><span class="evidence-summary-count" id="tagSummaryCount">${escapeHtml(t("detail.selected_n", { n: chosenTags.size }))}</span></div>
+      <section class="review-section issue-tag-section combined-case-label-card" ${combinedMode ? "" : "hidden"}>
+        <div class="review-section-heading"><div><h2><span class="ui-lang-zh">共享 Case 标签</span><span class="ui-lang-en">Shared Case label</span></h2>${sourceSuggestionMarkup}</div><span class="evidence-summary-count" id="tagSummaryCount">${escapeHtml(t("detail.selected_n", { n: chosenTags.size }))}</span></div>
+        <div class="combined-review-dual-status" id="combinedReviewDualStatus"><span><b>Case 标注</b> · 加载中</span><span><b>判错复核</b> · ${escapeHtml(modelReviewStatus === "completed" ? "已完成" : "未提交")}</span></div>
+        <div class="combined-case-label-meta" id="combinedCaseLabelMeta"><span>GT · ${escapeHtml(String(caseData.gt_label || "—"))}</span><span>共享结论 · ${escapeHtml(sharedLabelStateVisual(caseData.label_state || {}).zh)}</span><span>跨 Runs 共享</span></div>
         <div class="review-tag-groups-shell">${issueTagGroups}${customTagOptions ? `<div class="review-tag-legacy"><span class="ui-lang-zh">历史标签</span><span class="ui-lang-en">Legacy tags</span><div class="review-tag-options">${customTagOptions}</div></div>` : ""}</div>
-        <label class="review-exclude-toggle" title="${escapeHtml(uiText("按 K 切换应该排除", "Press K to toggle Exclude"))}"><input id="reviewExcludeInput" type="checkbox" aria-keyshortcuts="K" ${previous.is_excluded ? "checked" : ""} /><span><strong class="ui-lang-zh">应该排除</strong><strong class="ui-lang-en">Exclude</strong><small class="ui-lang-zh">不是模型需要解决的场景 case</small><small class="ui-lang-en">Not a case the model is expected to solve</small></span><kbd class="review-control-shortcut review-exclude-shortcut" aria-hidden="true">K</kbd></label>
+        <label class="combined-case-rationale"><span><span class="ui-lang-zh">标签依据 / 说明</span><span class="ui-lang-en">Label rationale</span></span><textarea id="combinedCaseRationale" rows="2" placeholder="说明 Case 标签依据"></textarea></label>
+        <label class="review-exclude-toggle" hidden><input id="reviewExcludeInput" type="checkbox" aria-keyshortcuts="K" /><span><strong class="ui-lang-zh">应该排除</strong><strong class="ui-lang-en">Exclude</strong></span><kbd class="review-control-shortcut review-exclude-shortcut" aria-hidden="true">K</kbd></label>
       </section>
       <section class="review-section model-error-section">
         <div class="review-section-heading">
@@ -558,6 +562,21 @@ function renderReview(caseData) {
       "#missingEvidenceOptions input, #reviewScreenshotInput, #reviewScreenshotBrowse, #annotationAuthor, [data-open-missing-evidence-creator]"
     ).forEach((control) => { control.disabled = true; });
   }
+  if (combinedMode) {
+    const expectedField = $("#reviewPane .review-expected-output-field");
+    const combinedCard = $("#reviewPane .combined-case-label-card");
+    if (expectedField && combinedCard) {
+      expectedField.hidden = false;
+      combinedCard.querySelector(".review-tag-groups-shell")?.before(expectedField);
+    }
+    $("#reviewPane .review-attachment-field")?.setAttribute("hidden", "");
+    const save = $("#reviewSaveButton");
+    if (save) {
+      save.disabled = false;
+      save.querySelector(".ui-lang-zh").textContent = runBoundModelReview ? "提交联合复核" : "提交 Case 标注";
+      save.querySelector(".ui-lang-en").textContent = runBoundModelReview ? "Submit combined review" : "Submit Case label";
+    }
+  }
   bindSelectedReviewTagControls($("#reviewPane"));
   $("#reviewPane").querySelector("[data-review-comments]")?.addEventListener("click", () => {
     openCurrentReviewDiscussion(caseData);
@@ -604,6 +623,56 @@ function renderReview(caseData) {
   state.reviewFormDirty = Boolean(draft);
   annotationForm.addEventListener("submit", saveAnnotation);
   bindAnnotationHistory($("#reviewPane"), caseData);
+  if (combinedMode) {
+    loadCombinedReviewContext(caseData).catch((error) => showToast(error.message, true));
+  } else {
+    state.combinedReviewContext = null;
+  }
+}
+
+function latestCaseVoteFromLabelingDetail(detail, username) {
+  const author = String(username || "").trim().toLowerCase();
+  return (detail?.label_cases || [])
+    .flatMap((item) => item.revisions || [])
+    .filter((revision) => String(revision.author || "").trim().toLowerCase() === author)
+    .sort((a, b) => Number(b.id || 0) - Number(a.id || 0))[0] || null;
+}
+
+function populateCombinedCaseLabel(context, caseData) {
+  state.combinedReviewContext = context;
+  const revision = context?.case_revision || null;
+  const labelState = context?.label_state || caseData.label_state || {};
+  const expected = String(revision?.expected_output || "");
+  const input = $("#expectedOutputInput");
+  if (input) {
+    input.value = expected;
+    input.dataset.selectionSource = expected ? "stored" : "empty";
+  }
+  const rationale = $("#combinedCaseRationale");
+  if (rationale) rationale.value = String(revision?.rationale || "");
+  const tags = new Set(revision?.tags || []);
+  $("#reviewPane")?.querySelectorAll('input[name="reviewTags"]').forEach((checkbox) => {
+    checkbox.checked = tags.has(checkbox.value);
+  });
+  updateTagSummary();
+  syncExpectedOutputFromTags();
+  const sources = Array.isArray(labelState.sources) ? labelState.sources.length : 0;
+  const gtSnapshot = context?.frozen_gt_snapshot_id || caseData.gt_snapshot?.id || "";
+  const meta = $("#combinedCaseLabelMeta");
+  if (meta) meta.innerHTML = `<span>GT snapshot · ${escapeHtml(gtSnapshot || "—")}</span><span>GT · ${escapeHtml(String(context?.issue?.gt_label || caseData.gt_label || "—"))}</span><span>共享结论 · ${escapeHtml(sharedLabelStateVisual(labelState).zh)}</span><span>我的 vote · ${escapeHtml(expected || "未提交")}</span><span>其他来源 · ${Math.max(0, sources - (revision ? 1 : 0))}</span><span>跨 Runs 共享</span>`;
+  const dual = $("#combinedReviewDualStatus");
+  if (dual) dual.innerHTML = `<span><b>Case 标注</b> · ${escapeHtml(revision ? (labelState.gt_review_pending ? "GT待复核" : "已提交") : "未提交")}</span><span><b>判错复核</b> · ${escapeHtml(context?.model_review?.model_review_status === "completed" ? "已完成" : "未提交")}</span>`;
+}
+
+async function loadCombinedReviewContext(caseData) {
+  const runId = currentReviewRunId(caseData);
+  const campaignId = reviewWorkSplitBinding(caseData);
+  const params = new URLSearchParams();
+  if (runId) params.set("model_run_id", runId);
+  if (campaignId) params.set("campaign_id", campaignId);
+  const result = await api(`/api/cases/${encodeURIComponent(caseData.issue_id)}/combined-review-context?${params.toString()}`);
+  if (state.selectedCase?.issue_id !== caseData.issue_id) return;
+  populateCombinedCaseLabel(result.context || {}, caseData);
 }
 
 function reviewSaveNavigationContext(issueId) {
@@ -1097,6 +1166,10 @@ async function copyReviewIssueId(issueId, button = null) {
 async function saveAnnotation(event) {
   event.preventDefault();
   if (!state.selectedId || state.savingAnnotation) return;
+  if (effectiveReviewWorkflowMode(state.selectedCase) === "model_review_and_case_label") {
+    await saveCombinedReview(event);
+    return;
+  }
   const issueId = String(state.selectedId);
   const runBoundModelReview = Boolean(
     state.reviewEditRunId || currentReviewRunId(state.selectedCase)
@@ -1228,5 +1301,91 @@ async function saveAnnotation(event) {
     showToast(error.message, true);
   } finally {
     releaseReviewSubmitLock(submitButton);
+  }
+}
+
+async function saveCombinedReview(event) {
+  const caseData = state.selectedCase;
+  const issueId = String(caseData?.issue_id || state.selectedId || "");
+  if (!issueId || state.savingAnnotation) return;
+  const context = state.combinedReviewContext;
+  if (!context || String(context.issue?.issue_id || issueId) !== issueId) {
+    showToast("联合复核上下文尚未加载，请稍候。", true);
+    return;
+  }
+  const expectedState = expectedOutputSelectionState();
+  if (!expectedState.selectedValue) {
+    showToast("请明确选择 Case 标签。", true);
+    return;
+  }
+  if (expectedState.conflictKind) {
+    showToast("Case 标签与所选 Tags 冲突，请先修正。", true);
+    return;
+  }
+  const runId = currentReviewRunId(caseData);
+  const campaignId = reviewWorkSplitBinding(caseData);
+  const payload = {
+    author: $("#annotationAuthor")?.value || state.session?.username || "",
+    expected_output: expectedState.selectedValue,
+    tags: [...document.querySelectorAll('input[name="reviewTags"]:checked')].map((input) => input.value),
+    rationale: $("#combinedCaseRationale")?.value || "",
+    expected_case_revision_id: context.case_revision_id || null,
+    expected_label_state_fingerprint: context.label_state_fingerprint || "",
+  };
+  state.savingAnnotation = true;
+  const button = event.submitter || $("#reviewSaveButton");
+  if (button) {
+    button.disabled = true;
+    button.setAttribute("aria-busy", "true");
+  }
+  try {
+    let result;
+    if (!runId) {
+      result = await api(`/api/cases/${encodeURIComponent(issueId)}/case-label-from-review`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      acknowledgeLocalChange(result);
+      showToast(result?.case_label?.case_action === "acknowledged" ? "已确认现有 Case vote。" : "已提交 Case 标签。 ");
+    } else {
+      Object.assign(payload, {
+        model_run_id: runId,
+        campaign_id: campaignId || "",
+        model_review_status: $("#modelReviewStatusInput")?.value || "pending",
+        reason: $("#annotationNote")?.value || "",
+        missing_evidence: [...document.querySelectorAll('input[name="missingEvidence"]:checked')].map((input) => input.value),
+        expected_model_review_storage_id: context.model_review_storage_id || null,
+      });
+      const idempotencyKey = globalThis.crypto?.randomUUID?.() || `combined-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      result = await api(`/api/cases/${encodeURIComponent(issueId)}/combined-review`, {
+        method: "POST",
+        headers: { "Idempotency-Key": idempotencyKey },
+        body: JSON.stringify(payload),
+      });
+      acknowledgeLocalChange(result);
+      const combined = result?.combined_review || {};
+      if (combined.model_review && caseData.issue_id === issueId) {
+        caseData.annotations = [
+          combined.model_review,
+          ...(caseData.annotations || []).filter((item) => String(item.id) !== String(combined.model_review.id)),
+        ];
+        caseData.label_state = combined.label_state || caseData.label_state;
+      }
+      showToast(combined.case_action === "acknowledged" ? "联合复核已提交；现有 Case vote 已确认。" : "联合复核已原子提交。 ");
+    }
+    await loadCombinedReviewContext(caseData);
+    renderReview(caseData);
+  } catch (error) {
+    if (Number(error?.status || 0) === 409 || String(error?.message || "").includes("变化")) {
+      showToast("数据已变化，联合提交未写入任何一边；请刷新后重新确认。", true);
+    } else {
+      showToast(error.message, true);
+    }
+  } finally {
+    state.savingAnnotation = false;
+    if (button) {
+      button.disabled = false;
+      button.removeAttribute("aria-busy");
+    }
   }
 }

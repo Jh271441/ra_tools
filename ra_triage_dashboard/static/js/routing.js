@@ -310,9 +310,12 @@ function normalizedReviewRouteFilters(params) {
     workAssignee: parseFilterList(
       params.get("work_assignee") || params.get("assignee") || ""
     ),
-    workSplitId: /^split-[A-Za-z0-9]+$/.test(params.get("work_split") || "")
+    workSplitId: /^(?:split|campaign)-[A-Za-z0-9]+$/.test(params.get("work_split") || "")
       ? params.get("work_split")
       : "",
+    workflowMode: params.get("workflow") === "combined"
+      ? "model_review_and_case_label"
+      : "model_review_only",
     exclusion,
     clusterKey: params.get("evidence") || "",
     casePage: Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1,
@@ -567,6 +570,7 @@ function currentReviewRouteOptions(overrides = {}) {
         ? workAssigneeFilterSelection()
         : getMultiFilterValues($("#workAssigneeFilter")),
     workSplitId: state.reviewWorkSplitId || "",
+    workflowMode: state.reviewWorkflowMode || "model_review_only",
     exclusion:
       typeof selectedReviewExclusionFilter === "function"
         ? selectedReviewExclusionFilter()
@@ -605,6 +609,7 @@ function applyReviewRouteControls(route) {
   setMultiFilterValues($("#annotationFilter"), route.modelLabel);
   setMultiFilterValues($("#workAssigneeFilter"), route.workAssignee);
   state.reviewWorkSplitId = route.workSplitId || "";
+  state.reviewWorkflowMode = route.workflowMode || "model_review_only";
   if (state.reviewWorkSplitId) {
     state.availableReviewWorkSplitId = state.reviewWorkSplitId;
   }
@@ -805,6 +810,9 @@ function pageUrl(page, options = {}) {
     }
     if (assignee) url.searchParams.set("work_assignee", assignee);
     if (review.workSplitId) url.searchParams.set("work_split", review.workSplitId);
+    if (review.workflowMode === "model_review_and_case_label") {
+      url.searchParams.set("workflow", "combined");
+    }
     if (review.exclusion && review.exclusion !== "all") {
       url.searchParams.set("exclusion", review.exclusion);
     }
