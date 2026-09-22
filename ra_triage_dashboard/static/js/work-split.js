@@ -601,7 +601,10 @@ async function openWorkSplitDialog() {
   renderWorkSplitPersonPickers();
   if ($("#workSplitReviewersPerIssue")) $("#workSplitReviewersPerIssue").value = "1";
   if ($("#workSplitWorkflowMode")) $("#workSplitWorkflowMode").value = "model_review_only";
-  enhanceNativeUiSelect($("#workSplitWorkflowMode"));
+  $("#workSplitWorkflowModeCards")?.querySelectorAll("[data-workflow-mode]").forEach((card) => {
+    card.classList.toggle("is-active", card.dataset.workflowMode === "model_review_only");
+    card.setAttribute("aria-pressed", String(card.dataset.workflowMode === "model_review_only"));
+  });
   renderWorkSplitReviewersPerIssuePicker(1);
   renderWorkSplitOverlapPicker(1);
   updateWorkSplitEstimate();
@@ -823,6 +826,17 @@ function bindWorkSplitControls() {
   });
   $("#workSplitReviewersPerIssue")?.addEventListener("change", updateWorkSplitEstimate);
   $("#workSplitOverlapRatio")?.addEventListener("change", updateWorkSplitEstimate);
+  $("#workSplitWorkflowModeCards")?.addEventListener("click", (event) => {
+    const card = event.target.closest("[data-workflow-mode]");
+    if (!card) return;
+    const input = $("#workSplitWorkflowMode");
+    if (input) input.value = card.dataset.workflowMode || "model_review_only";
+    event.currentTarget.querySelectorAll("[data-workflow-mode]").forEach((item) => {
+      const active = item === card;
+      item.classList.toggle("is-active", active);
+      item.setAttribute("aria-pressed", String(active));
+    });
+  });
   $("#workSplitGenerate")?.addEventListener("click", () => {
     generateWorkSplit().catch((error) => showToast(error.message, true));
   });

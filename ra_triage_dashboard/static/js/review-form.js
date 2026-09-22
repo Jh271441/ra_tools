@@ -392,6 +392,8 @@ function renderReview(caseData) {
   const reviewRunId = currentReviewRunId(caseData);
   const runBoundModelReview = Boolean(reviewRunId);
   const combinedMode = syncReviewWorkflowMode(caseData) === "model_review_and_case_label";
+  $("#reviewDetailView .review-detail-workspace")?.classList.toggle("is-combined-review", combinedMode);
+  $("#reviewPane")?.classList.toggle("is-combined-review", combinedMode);
   const runAnnotations = reviewAnnotationsForCurrentRun(caseData);
   const allAnnotations = reviewAnnotationsForAllRuns(caseData);
   const sourceSuggestion = currentReviewSourceSuggestion(caseData);
@@ -452,9 +454,9 @@ function renderReview(caseData) {
   const sourceSuggestionMarkup = issueTagSourceSuggestionMarkup(sourceSuggestion);
   $("#reviewPane").innerHTML = `
     <form class="review-form" id="annotationForm" data-issue-id="${escapeHtml(caseData.issue_id)}">
+      <div class="combined-review-dual-status review-workflow-status-bar" id="combinedReviewDualStatus" ${combinedMode ? "" : "hidden"}><span><b>Case 标注</b> · 加载中</span><span><b>判错复核</b> · ${escapeHtml(modelReviewStatus === "completed" ? "已完成" : "未提交")}</span></div>
       <section class="review-section issue-tag-section combined-case-label-card" ${combinedMode ? "" : "hidden"}>
-        <div class="review-section-heading"><div><h2><span class="ui-lang-zh">共享 Case 标签</span><span class="ui-lang-en">Shared Case label</span></h2>${sourceSuggestionMarkup}</div><span class="evidence-summary-count" id="tagSummaryCount">${escapeHtml(t("detail.selected_n", { n: chosenTags.size }))}</span></div>
-        <div class="combined-review-dual-status" id="combinedReviewDualStatus"><span><b>Case 标注</b> · 加载中</span><span><b>判错复核</b> · ${escapeHtml(modelReviewStatus === "completed" ? "已完成" : "未提交")}</span></div>
+        <div class="review-section-heading"><div><h2><span class="ui-lang-zh">共享 Case 标签</span><span class="ui-lang-en">Shared Case label</span></h2>${sourceSuggestionMarkup}</div><div class="review-heading-actions"><span class="evidence-summary-count" id="tagSummaryCount">${escapeHtml(t("detail.selected_n", { n: chosenTags.size }))}</span><button class="history-inline-button review-section-toggle" type="button" data-toggle-review-section aria-expanded="true"><span class="ui-lang-zh">收起</span><span class="ui-lang-en">Collapse</span></button></div></div>
         <div class="combined-case-label-meta" id="combinedCaseLabelMeta"><span>GT · ${escapeHtml(String(caseData.gt_label || "—"))}</span><span>共享结论 · ${escapeHtml(sharedLabelStateVisual(caseData.label_state || {}).zh)}</span><span>跨 Runs 共享</span></div>
         <div class="review-tag-groups-shell">${issueTagGroups}${customTagOptions ? `<div class="review-tag-legacy"><span class="ui-lang-zh">历史标签</span><span class="ui-lang-en">Legacy tags</span><div class="review-tag-options">${customTagOptions}</div></div>` : ""}</div>
         <label class="combined-case-rationale"><span><span class="ui-lang-zh">标签依据 / 说明</span><span class="ui-lang-en">Label rationale</span></span><textarea id="combinedCaseRationale" rows="2" placeholder="说明 Case 标签依据"></textarea></label>
@@ -469,6 +471,7 @@ function renderReview(caseData) {
             </h2>
           </div>
           <div class="review-heading-actions">
+            <button class="history-inline-button review-section-toggle" type="button" data-toggle-review-section aria-expanded="true"><span class="ui-lang-zh">收起</span><span class="ui-lang-en">Collapse</span></button>
             <button class="history-inline-button" id="reviewCommentsButton" type="button" data-review-comments aria-keyshortcuts="D" title="展开或收起讨论（D）">
               <span class="ui-lang-zh">讨论</span><span class="ui-lang-en">Discussion</span>
               <kbd class="review-control-shortcut" aria-hidden="true">D</kbd>
@@ -554,8 +557,11 @@ function renderReview(caseData) {
           <div class="pending-screenshot-list" id="pendingScreenshotList"></div>
         </div>
       </section>
-      <label><span><span class="ui-lang-zh">复核人${authorLocked ? "（SSO）" : "（必填）"}</span><span class="ui-lang-en">Reviewer${authorLocked ? " (SSO)" : " (required)"}</span></span><input id="annotationAuthor" value="${escapeHtml(author)}" placeholder="姓名或工号" autocomplete="off" required ${authorLocked ? "readonly" : ""} /></label>
-      <button class="button button-primary full-width review-save-button" id="reviewSaveButton" type="submit" aria-keyshortcuts="Enter" title="输入原因时按 Enter 保存；Shift+Enter 换行" ${runBoundModelReview ? "" : "disabled"}><span class="ui-lang-zh">保存新的模型复核版本</span><span class="ui-lang-en">Save model review version</span><kbd class="review-save-shortcut" aria-hidden="true">Enter</kbd></button>
+      <div class="review-action-footer">
+        <label><span><span class="ui-lang-zh">复核人${authorLocked ? "（SSO）" : "（必填）"}</span><span class="ui-lang-en">Reviewer${authorLocked ? " (SSO)" : " (required)"}</span></span><input id="annotationAuthor" value="${escapeHtml(author)}" placeholder="姓名或工号" autocomplete="off" required ${authorLocked ? "readonly" : ""} /></label>
+        <span class="review-action-state"><span class="ui-lang-zh">填写完成后提交</span><span class="ui-lang-en">Submit when complete</span></span>
+        <button class="button button-primary full-width review-save-button" id="reviewSaveButton" type="submit" aria-keyshortcuts="Enter" title="输入原因时按 Enter 保存；Shift+Enter 换行" ${runBoundModelReview ? "" : "disabled"}><span class="ui-lang-zh">提交判错复核</span><span class="ui-lang-en">Submit model review</span><kbd class="review-save-shortcut" aria-hidden="true">Enter</kbd></button>
+      </div>
     </form>`;
   if (!runBoundModelReview) {
     $("#annotationForm")?.querySelectorAll(
@@ -606,6 +612,15 @@ function renderReview(caseData) {
   bindReviewComposerShortcuts();
   bindReviewDetailActionShortcuts();
   bindReviewDropdownToggles($("#reviewPane"));
+  $("#reviewPane").querySelectorAll("[data-toggle-review-section]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const section = button.closest(".review-section");
+      const collapsed = section?.classList.toggle("is-collapsed") || false;
+      button.setAttribute("aria-expanded", String(!collapsed));
+      button.querySelector(".ui-lang-zh").textContent = collapsed ? "展开" : "收起";
+      button.querySelector(".ui-lang-en").textContent = collapsed ? "Expand" : "Collapse";
+    });
+  });
   $("#reviewPane").querySelector("[data-open-history='review']")?.addEventListener("click", () => {
     toggleHistoryDialog("review", caseData);
   });
@@ -663,7 +678,7 @@ function populateCombinedCaseLabel(context, caseData) {
   const sources = Array.isArray(labelState.sources) ? labelState.sources.length : 0;
   const gtSnapshot = context?.frozen_gt_snapshot_id || caseData.gt_snapshot?.id || "";
   const meta = $("#combinedCaseLabelMeta");
-  if (meta) meta.innerHTML = `<span>GT snapshot · ${escapeHtml(gtSnapshot || "—")}</span><span>GT · ${escapeHtml(String(context?.issue?.gt_label || caseData.gt_label || "—"))}</span><span>共享结论 · ${escapeHtml(sharedLabelStateVisual(labelState).zh)}</span><span>我的 vote · ${escapeHtml(expected || "未提交")}</span><span>其他来源 · ${Math.max(0, sources - (revision ? 1 : 0))}</span><span>跨 Runs 共享</span>`;
+  if (meta) meta.innerHTML = `<span>GT · ${escapeHtml(String(context?.issue?.gt_label || caseData.gt_label || "—"))}</span><span>共享结论 · ${escapeHtml(sharedLabelStateVisual(labelState).zh)}</span><span>我的 vote · ${escapeHtml(expected || "未提交")}</span><span>其他来源 · ${Math.max(0, sources - (revision ? 1 : 0))}</span><span>跨 Runs 共享</span><details class="combined-technical-details"><summary><span class="ui-lang-zh">技术详情</span><span class="ui-lang-en">Technical details</span></summary><code title="${escapeHtml(gtSnapshot)}">GT snapshot · ${escapeHtml(gtSnapshot || "—")}</code></details>`;
   const dual = $("#combinedReviewDualStatus");
   if (dual) dual.innerHTML = `<span><b>Case 标注</b> · ${escapeHtml(revision ? (labelState.gt_review_pending ? "GT待复核" : "已提交") : "未提交")}</span><span><b>判错复核</b> · ${escapeHtml(context?.model_review?.model_review_status === "completed" ? "已完成" : "未提交")}</span>`;
   if (context?.model_review) {

@@ -399,7 +399,7 @@ function bindUiSelect(root, { onChange, maxHeight = 320, maxWidth = 420 } = {}) 
 }
 
 const DASHBOARD_NATIVE_SELECT_IDS = new Set([
-  "workSplitWorkflowMode", "reviewWorkflowMode", "campaignsSource",
+  "reviewWorkflowMode", "campaignsSource",
   "runCollectionSelect", "runCollectionRevisionSelect",
   "runCollectionReferenceType", "runCollectionComparisonReference",
   "runCollectionSelectionSourceRun", "modelReviewStatusInput",

@@ -18,6 +18,9 @@
   .filter-model-run, .filter-search,
   .analysis-run-filter, .analysis-search-actions,
   .intent-summary-comment-field { grid-column: 1 / -1 !important; }
+  .review-filters > .review-advanced-filters,
+  .review-filters > .review-active-filters { grid-column: 1 / -1 !important; }
+  .review-advanced-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 1200px) {
@@ -55,6 +58,8 @@
   .intent-summary-comment-field {
     grid-column: 1 / -1 !important;
   }
+  .review-detail-workspace > .review-pane > .review-form { max-height: none; overflow: visible; padding: 11px; }
+  .review-action-footer { position: sticky; bottom: 0; }
   .analysis-case-row { grid-template-columns: minmax(130px, .7fr) minmax(0, 1.3fr); }
   .analysis-case-reason, .analysis-case-meta { grid-column: 1 / -1; }
   .analysis-case-meta { justify-content: flex-start; }
@@ -356,6 +361,13 @@
   .intent-routing-grid { grid-template-columns: minmax(0, 1fr); }
   .pending-screenshot-list,
   .review-upload-thumbnails { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 639px) {
+  .review-advanced-filters { grid-template-columns: minmax(0, 1fr); }
+  .work-split-person-head { display: none; }
+  .work-split-person-row { grid-template-columns: minmax(0, 1fr) 82px 44px; }
+  .review-workflow-status-bar { top: 0; }
 }
 
 @media (hover: none) and (pointer: coarse) {

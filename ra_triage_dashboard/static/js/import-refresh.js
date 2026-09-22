@@ -340,6 +340,7 @@ async function resetReviewFilters() {
   renderAnalysisRunFilter();
   renderActiveRun();
   renderRunManager();
+  refreshReviewFilterSummary?.();
   await reloadReviewGallery({ includeOverview: true, historyMode: "replace" });
   showToast("筛选已重置。");
 }
