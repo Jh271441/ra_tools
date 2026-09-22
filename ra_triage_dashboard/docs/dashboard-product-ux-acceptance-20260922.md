@@ -6,7 +6,7 @@ Recorded: 2026-09-22 (Asia/Shanghai)
 
 - Branch: `codex/dashboard-product-ux`
 - UX smoke database: `manual_dashboard_product_ux_20260922`, cloned logically from S6 v2.
-- UX smoke source: `21d001e0cd6253e78d9eb6ebe48f44accb05e253` (product code; final branch also contains report/docs commits).
+- UX smoke source: `03b85a9ce728259297f7acf96bfa36bca869a688` (corrected stable sidebar source; final branch also contains report/docs commits).
 - 8786 health: `ok=true`, base path `/manual-s6`; writers, sync, Batch, AutoTriage and D-Chat disabled.
 - Production 8785 was not touched.
 
@@ -22,10 +22,14 @@ Recorded: 2026-09-22 (Asia/Shanghai)
 | Read-only behavior | PASS: existing verified-admin gating remains; evaluation write controls are hidden or disabled for anonymous sessions. |
 | Frontend contracts | PASS: 68 frontend contract tests and 4 base-path tests. |
 | JavaScript syntax | PASS: routing, campaigns, run-collections and work-split modules. |
-| Cloud suite | PASS: 578 passed, 1 skipped in 56.03 seconds on disposable UX suite DB. |
+| Cloud suite | PASS: 578 passed, 1 skipped in 56.50 seconds on disposable UX suite DB. |
 | Browser | HTTP/DOM PASS through localhost tunnel: UX route markers, multi-run page, experiment link and review task drawer present. CUA kernel timed out, so no screenshot was captured. |
 
 The UX worktree does not add a migration. The final cloud pytest and visual/DOM smoke result will be appended after the exact UX source is running on 8786.
+
+## Final information-architecture correction
+
+After review, the first UX pass's extra “模型评测” group and primary project manager were removed. The final sidebar restores the stable product grouping: Case 标注 (Case 标注/实验分配/标注汇总), 判错复核 (判错复核/任务分配/原因聚类/问题排除/模型结果/Run 对比/批次预测), 意图标注 unchanged, and the existing system section.
 
 ## Final HTTP/DOM smoke
 
