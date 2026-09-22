@@ -100,11 +100,12 @@ async function loadReviewTaskContext(splitId, { route = null } = {}) {
       route.runId = task.model_run_id || "none";
       route.workSplitId = normalized;
     }
-    const nextUrl = pageUrl("review", {
+    const nextUrl = new URL(pageUrl("review", {
       ...currentReviewRouteOptions({ workSplitId: normalized, runId: task.model_run_id || "", casePage: 1 }),
       baselines: baselineIds,
-    });
-    window.history.replaceState(window.history.state || {}, "", nextUrl);
+    }), window.location.origin);
+    if (baselineIds.length) nextUrl.searchParams.set("baselines", baselineIds.join(","));
+    window.history.replaceState(window.history.state || {}, "", `${nextUrl.pathname}${nextUrl.search}`);
     if (previous && baselineIds.length && previous !== baselineIds.join(",")) {
       showToast(`已切换至任务数据集 ${baselineIds.join("+")}`);
     }

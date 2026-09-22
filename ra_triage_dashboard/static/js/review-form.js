@@ -672,7 +672,10 @@ function populateCombinedCaseLabel(context, caseData) {
       ...(caseData.annotations || []).filter((item) => String(item.id) !== String(context.model_review.id)),
     ];
     const status = $("#modelReviewStatusInput");
-    if (status) status.value = context.model_review.model_review_status || "pending";
+    if (status) {
+      status.value = context.model_review.model_review_status || "pending";
+      enhanceNativeUiSelect(status);
+    }
     const note = $("#annotationNote");
     if (note) note.value = context.model_review.note || "";
     const detailZh = $("#detailPane .issue-card-run-review-value .ui-lang-zh");

@@ -696,6 +696,7 @@ function renderActiveRun(overview = null) {
         state.config?.trail_sync?.message ||
         "选择团队 Run、创建 Trail 只读快照，或导入 JSON / CSV / XLSX";
     }
+    if (state.reviewTaskContext) renderReviewTaskContext();
     return;
   }
   const coverage = overview?.predictions ?? run.baseline_prediction_count ?? 0;
@@ -709,6 +710,7 @@ function renderActiveRun(overview = null) {
       `${reviewedMismatches === undefined ? "" : ` · ${reviewedMismatches} 条判错已复核`}` +
       ` · ${sourceLabel}`;
   }
+  if (state.reviewTaskContext) renderReviewTaskContext();
 }
 
 function renderRunManager() {
