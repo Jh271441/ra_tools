@@ -84,4 +84,5 @@ Applied on source `00680ea65cced05873e195b54b68854006a0a603`, cache
 - Browser DOM showed independent `Case 标注 · GT待复核` and
   `判错复核 · 已完成` statuses, fixed GT snapshot metadata, current vote,
   other-source count and the `跨 Runs 共享` notice.
-- Full isolated PostgreSQL suite: 584 passed, 1 skipped in 75.39 seconds.
+- Full isolated PostgreSQL suite after 0508 activation and task deep-link work:
+  587 passed, 1 skipped in 74.09 seconds on source `bb59a84`.

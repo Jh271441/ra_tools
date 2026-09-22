@@ -5,7 +5,7 @@ Recorded: 2026-09-22 (Asia/Shanghai)
 ## Runtime
 
 - Branch: `codex/dashboard-product-ux`
-- Deployed UX source: `00680ea65cced05873e195b54b68854006a0a603`
+- Deployed UX source: `bb59a84f9c7994d59f432ec266ae12085ceb08ea`
 - UX smoke root: `/volume/home/workspace/ra_triage_dashboard_deploy/experiments/manual_dashboard_product_ux_20260922`
 - UX smoke database: `manual_dashboard_product_ux_20260922`, cloned logically from S6 v2.
 - UX endpoint: loopback `127.0.0.1:8786`, base path `/manual-s6`.
@@ -39,7 +39,7 @@ set either variable.
 | Atomic combined submission | PASS: one API transaction wrote independent `label_revisions` and `model_review_revisions`, linked by `submission_group_id`; stale Case state returned 409 with no row-count change in either domain. |
 | Cross-Run Case vote | PASS: Run A created one Case vote; Run B acknowledged the same vote without a duplicate revision. Both Run-bound model Reviews remained independently completed. |
 | Combined progress | PASS: each task reported separate model-review and Case-label markers plus one overall completion. Shared-label conflict/GT review did not reduce model Review completion. |
-| Full cloud suite | PASS: 584 passed, 1 skipped in 75.39 seconds on source `00680ea`, using schema `ux_suite_00680ea` inside the dedicated UX suite database. |
+| Full cloud suite | PASS: 587 passed, 1 skipped in 74.09 seconds on source `bb59a84`, using schema `ux_suite_bb59a84` inside the dedicated UX suite database. |
 | Browser | PASS: the Codex in-app browser read the live accessibility tree and rendered DOM through the localhost tunnel. It verified the visible sidebar order and all routes listed above. |
 
 ## Browser evidence
@@ -122,6 +122,40 @@ still showed 108 Issues and the existing shared `GT 待复核` / conflict states
 The activation did not change source Review data. Before/after row counts and
 SHA256 values were identical for `annotations` (211), `review_comments` (13),
 `model_review_revisions` (12) and `model_review_heads` (11).
+
+## Legacy task deep-link acceptance
+
+Exact input:
+
+`/review?work_split=split-0718ea6745e64a589ad5e9b8bf2512a5&baselines=0522`
+
+The task-context API resolved this as a legacy no-Run Split with 108 assignments,
+scope `release0508_1071_20260729`, no Run and `model_review_only`. The browser
+replaced the URL with `baselines=0508`, displayed all 108 assigned Issues and a
+`历史无 Run 任务 · 仅用于查看原分配范围` banner. No 500, blank gallery or
+anonymous “1 item failed” toast remained.
+
+- Legacy/no-Run membership is read-only and does not create or fake a model Review.
+- The Run picker is locked until `退出任务范围`; task creation is disabled without
+  a Run and points Case-only work to Case 标注 > 实验分配.
+- Selecting 0522 from the dataset picker exited the task, removed `work_split`,
+  unlocked the Run picker and loaded 10 Cases.
+- A missing task rendered an inline error card with reason, task ID, Retry and
+  Exit controls; gallery skeletons were removed and all actions stayed disabled.
+- Initial failures now identify the failed request by name.
+
+## Unified select controls
+
+Cache `manual-triage-496` replaces the newly added native dropdown surfaces with
+the shared `ui-select` trigger/panel while retaining hidden native selects. This
+covers task mode, Review page mode, labeling-summary source, Run-collection
+project/revision/reference selectors and the dynamic model Review status.
+
+Browser checks covered click and Arrow/Enter/Escape keyboard use, selected/check
+state, disabled help text and English relabeling (`Model review only`,
+`All sources`, `GT snapshot (frozen on create)`, `Completed`). The task-mode
+control measured 38px high and 340px wide in the Review assignment dialog, with
+no operating-system native popup.
 
 ## Recovery
 
