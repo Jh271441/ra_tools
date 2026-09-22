@@ -517,7 +517,7 @@ function renderReview(caseData) {
           <small class="review-expected-output-hint" id="expectedOutputHint" hidden></small>
           <input id="reviewStatusInput" type="hidden" value="${escapeHtml(reviewStatus)}" />
         </div>
-        ${runBoundModelReview ? `<div class="model-review-domain-notice"><strong><span class="ui-lang-zh">当前 Run 判错复核</span><span class="ui-lang-en">Current Run model review</span></strong><span class="ui-lang-zh">原因、缺失信息、状态和讨论只属于当前 Run；共享标签请在 Case 标注中修改。</span><span class="ui-lang-en">Reason, missing evidence, status, and discussion belong only to this Run. Edit shared labels in Case labeling.</span></div><label class="model-review-status-field"><span><span class="ui-lang-zh">判错复核状态</span><span class="ui-lang-en">Model review status</span></span><select id="modelReviewStatusInput">${MODEL_REVIEW_STATUS_OPTIONS.map((item) => `<option value="${item.value}" ${item.value === modelReviewStatus ? "selected" : ""}>${escapeHtml(i18nLocale() === "en" ? item.labelEn : item.labelZh)}</option>`).join("")}</select></label>` : `<div class="model-review-domain-notice"><strong><span class="ui-lang-zh">只读历史复核</span><span class="ui-lang-en">Read-only review history</span></strong><span class="ui-lang-zh">请先选择 Model Run 才能新建模型复核；共享标签和 GT 请到 Case 标注工作台修改。</span><span class="ui-lang-en">Select a Model Run to create a review. Edit shared labels and GT in Case labeling.</span></div>`}
+        ${runBoundModelReview ? `<div class="model-review-domain-notice"><strong><span class="ui-lang-zh">当前 Run 判错复核</span><span class="ui-lang-en">Current Run model review</span></strong><span class="ui-lang-zh">${combinedMode ? "模型原因和状态属于当前 Run；上方 Case 标签跨 Runs 共享，提交按钮会原子保存两部分。" : "原因、缺失信息、状态和讨论只属于当前 Run；共享标签请在 Case 标注中修改。"}</span><span class="ui-lang-en">${combinedMode ? "Model reason and status belong to this Run; the Case label above is shared across Runs and both parts are saved atomically." : "Reason, missing evidence, status, and discussion belong only to this Run. Edit shared labels in Case labeling."}</span></div><label class="model-review-status-field"><span><span class="ui-lang-zh">判错复核状态</span><span class="ui-lang-en">Model review status</span></span><select id="modelReviewStatusInput">${MODEL_REVIEW_STATUS_OPTIONS.map((item) => `<option value="${item.value}" ${item.value === modelReviewStatus ? "selected" : ""}>${escapeHtml(i18nLocale() === "en" ? item.labelEn : item.labelZh)}</option>`).join("")}</select></label>` : `<div class="model-review-domain-notice"><strong><span class="ui-lang-zh">只读历史复核</span><span class="ui-lang-en">Read-only review history</span></strong><span class="ui-lang-zh">请先选择 Model Run 才能新建模型复核；共享标签和 GT 请到 Case 标注工作台修改。</span><span class="ui-lang-en">Select a Model Run to create a review. Edit shared labels and GT in Case labeling.</span></div>`}
         <label class="review-reason">
           <span class="review-reason-heading">
             <span><span class="ui-lang-zh">模型为什么判错？</span><span class="ui-lang-en">Why was the model wrong?</span></span>
@@ -662,11 +662,25 @@ function populateCombinedCaseLabel(context, caseData) {
   if (meta) meta.innerHTML = `<span>GT snapshot · ${escapeHtml(gtSnapshot || "—")}</span><span>GT · ${escapeHtml(String(context?.issue?.gt_label || caseData.gt_label || "—"))}</span><span>共享结论 · ${escapeHtml(sharedLabelStateVisual(labelState).zh)}</span><span>我的 vote · ${escapeHtml(expected || "未提交")}</span><span>其他来源 · ${Math.max(0, sources - (revision ? 1 : 0))}</span><span>跨 Runs 共享</span>`;
   const dual = $("#combinedReviewDualStatus");
   if (dual) dual.innerHTML = `<span><b>Case 标注</b> · ${escapeHtml(revision ? (labelState.gt_review_pending ? "GT待复核" : "已提交") : "未提交")}</span><span><b>判错复核</b> · ${escapeHtml(context?.model_review?.model_review_status === "completed" ? "已完成" : "未提交")}</span>`;
+  if (context?.model_review) {
+    caseData.annotations = [
+      context.model_review,
+      ...(caseData.annotations || []).filter((item) => String(item.id) !== String(context.model_review.id)),
+    ];
+    const status = $("#modelReviewStatusInput");
+    if (status) status.value = context.model_review.model_review_status || "pending";
+    const note = $("#annotationNote");
+    if (note) note.value = context.model_review.note || "";
+    const detailZh = $("#detailPane .issue-card-run-review-value .ui-lang-zh");
+    const detailEn = $("#detailPane .issue-card-run-review-value .ui-lang-en");
+    if (detailZh) detailZh.textContent = "已提交";
+    if (detailEn) detailEn.textContent = "Submitted";
+  }
 }
 
 async function loadCombinedReviewContext(caseData) {
   const runId = currentReviewRunId(caseData);
-  const campaignId = reviewWorkSplitBinding(caseData);
+  const campaignId = reviewWorkSplitBinding(caseData) || state.reviewWorkSplitId || "";
   const params = new URLSearchParams();
   if (runId) params.set("model_run_id", runId);
   if (campaignId) params.set("campaign_id", campaignId);
@@ -1323,7 +1337,7 @@ async function saveCombinedReview(event) {
     return;
   }
   const runId = currentReviewRunId(caseData);
-  const campaignId = reviewWorkSplitBinding(caseData);
+  const campaignId = reviewWorkSplitBinding(caseData) || state.reviewWorkSplitId || "";
   const payload = {
     author: $("#annotationAuthor")?.value || state.session?.username || "",
     expected_output: expectedState.selectedValue,
