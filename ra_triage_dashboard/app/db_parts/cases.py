@@ -341,6 +341,8 @@ class DatabaseCasesMixin:
                   ELSE {ordinary_annotation}
               END
         """
+        if strict_run and not run_id:
+            return "LEFT JOIN review_records ann ON 1 = 0", []
         params = [
             run_id,
             *author_params,
