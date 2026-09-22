@@ -5,12 +5,12 @@ umask 077
 S5_SHA="${1:-}"
 [[ "$S5_SHA" =~ ^[a-f0-9]{40}$ ]] || { echo "Usage: setup_s5_smoke.sh <full-s5-commit-sha>" >&2; exit 2; }
 
-S5_ROOT=/volume/home/workspace/ra_triage_dashboard_deploy/experiments/manual_s5_run_collections_20260922
+S5_ROOT="${S5_EXPERIMENT_ROOT:-/volume/home/workspace/ra_triage_dashboard_deploy/experiments/manual_s5_run_collections_20260922}"
 S4_ROOT=/volume/home/workspace/ra_triage_dashboard_deploy/experiments/manual_s4_smoke_20260921_campaign
 S3_ROOT=/volume/home/workspace/ra_triage_dashboard_deploy/experiments/manual_s3_smoke_20260921
 S4_DB=manual_s4_smoke_20260921_campaign
-S5_DB=manual_s5_smoke_20260922_runcollections
-S4_RESTORE_DB=manual_s5_s4_restore_20260922
+S5_DB="${S5_DB_NAME:-manual_s5_smoke_20260922_runcollections}"
+S4_RESTORE_DB="${S4_RESTORE_DB_NAME:-manual_s5_s4_restore_20260922}"
 S4_RESTORE_SHA=bf745129e4e7359db3631c18ee60da3e20ab74f2
 S4_RESTORE_ROOT="$S5_ROOT/s4-restore-source-bf74512"
 APP_ROOT="$S5_ROOT/source-$S5_SHA/ra_triage_dashboard"

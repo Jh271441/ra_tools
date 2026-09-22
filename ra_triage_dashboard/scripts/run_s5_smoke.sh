@@ -2,7 +2,7 @@
 set -euo pipefail
 umask 077
 
-S5_ROOT=/volume/home/workspace/ra_triage_dashboard_deploy/experiments/manual_s5_run_collections_20260922
+S5_ROOT="${S5_EXPERIMENT_ROOT:-/volume/home/workspace/ra_triage_dashboard_deploy/experiments/manual_s5_run_collections_20260922}"
 S5_SHA_FILE="$S5_ROOT/config/source_sha"
 DB_URL_FILE="$S5_ROOT/config/postgres_url"
 DATA_DIR="$S5_ROOT/data"
