@@ -1059,6 +1059,13 @@ html[data-color-theme="light"] #comparisonReasonDialog [data-triage-label="æ— éœ
 }
 
 .run-collection-workbench { display:grid; gap:14px; margin:16px 0; }
+.run-collection-workbench[hidden],
+.run-collection-evaluation[hidden],
+.run-collections-page [hidden] { display:none !important; }
+.run-collections-page .run-collection-workbench { margin:0; }
+.run-collection-workbench.is-pairwise-manager { margin-top:8px; }
+.run-collection-pairwise-details { margin:8px 0 0; }
+.run-collection-pairwise-details > summary { color:var(--accent); cursor:pointer; font-size:12px; }
 .run-collection-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; }
 .run-collection-heading h2 { margin:0 0 5px; font-size:18px; }
 .run-collection-heading p { margin:0; max-width:860px; }

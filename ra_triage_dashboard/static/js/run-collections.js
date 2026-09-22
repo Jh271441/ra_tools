@@ -12,6 +12,65 @@ const runCollectionUi = {
   restoring: false,
 };
 
+function runCollectionCanWrite() {
+  return Boolean(state.session?.is_admin && state.session?.verified);
+}
+
+function ensureRunCollectionsDedicatedPage(targetPage = state.activePage) {
+  const workbench = document.getElementById("runCollectionsWorkbench");
+  const host = document.getElementById("runCollectionsDedicatedHost");
+  const pairwiseHost = document.getElementById("runCollectionPairwiseHost");
+  const pairwiseDetails = document.getElementById("runCollectionPairwiseDetails");
+  const comparison = document.getElementById("runComparisonPage");
+  if (!workbench || !comparison) return;
+  if (targetPage === "run-collections" && host) {
+    host.appendChild(workbench);
+    workbench.classList.remove("is-pairwise-manager");
+  } else if (targetPage === "comparison") {
+    if (pairwiseHost) pairwiseHost.appendChild(workbench);
+    else {
+      const anchor = document.getElementById("comparisonEmptyState");
+      comparison.insertBefore(workbench, anchor || null);
+    }
+    if (pairwiseDetails) pairwiseDetails.open = false;
+    workbench.classList.add("is-pairwise-manager");
+  }
+}
+
+function applyRunCollectionReadOnlyGating() {
+  const canWrite = runCollectionCanWrite();
+  const note = document.getElementById("runCollectionReadonlyNote");
+  if (note) note.hidden = canWrite;
+  const writableIds = [
+    "comparisonSaveCollectionButton",
+    "runCollectionRenameButton",
+    "runCollectionAppendRevisionButton",
+    "runCollectionAddRun",
+    "runCollectionAddRunButton",
+    "runCollectionCreateButton",
+    "runCollectionEvaluateButton",
+    "runCollectionCreateLabelingCampaign",
+    "runCollectionCreateModelReviewGroup",
+    "runCollectionName",
+    "runCollectionDescription",
+    "runCollectionCreateName",
+    "runCollectionReferenceType",
+    "runCollectionReferenceId",
+    "runCollectionComparisonReference",
+    "runCollectionWorksetId",
+    "runCollectionSelectionSourceRun",
+    "runCollectionTaskAssignees",
+  ];
+  writableIds.forEach((id) => {
+    const element = document.getElementById(id);
+    if (!element) return;
+    element.disabled = !canWrite;
+    if (id.endsWith("Button") || element.tagName === "BUTTON") element.hidden = !canWrite;
+  });
+  document.getElementById("runCollectionCreateDetails")?.toggleAttribute("hidden", !canWrite);
+  document.getElementById("runCollectionAdminOnly")?.toggleAttribute("hidden", !canWrite);
+}
+
 function runCollectionText(zh, en) {
   return uiText(zh, en);
 }
@@ -47,36 +106,53 @@ function runCollectionUpdateUrl(mode = "replace") {
   const url = new URL(window.location.href);
   if (runCollectionUi.detail?.id) {
     url.searchParams.set("collection_id", runCollectionUi.detail.id);
+    url.searchParams.set("collection", runCollectionUi.detail.id);
     url.searchParams.set("collection_revision", String(runCollectionUi.selectedRevision || runCollectionUi.detail.current_revision));
+    url.searchParams.set("revision", String(runCollectionUi.selectedRevision || runCollectionUi.detail.current_revision));
   } else {
     url.searchParams.delete("collection_id");
+    url.searchParams.delete("collection");
     url.searchParams.delete("collection_revision");
+    url.searchParams.delete("revision");
   }
   if (runCollectionUi.evaluation?.id) {
     url.searchParams.set("evaluation_id", runCollectionUi.evaluation.id);
+    url.searchParams.set("context", runCollectionUi.evaluation.id);
     url.searchParams.set("evaluation_page", String(runCollectionUi.page));
+    url.searchParams.set("page", String(runCollectionUi.page));
     if (runCollectionUi.evaluation.comparison_reference_run_id) {
       url.searchParams.set("evaluation_reference_run_id", runCollectionUi.evaluation.comparison_reference_run_id);
+      url.searchParams.set("reference_run", runCollectionUi.evaluation.comparison_reference_run_id);
     } else {
       url.searchParams.delete("evaluation_reference_run_id");
+      url.searchParams.delete("reference_run");
     }
-    if (runCollectionUi.search) url.searchParams.set("evaluation_q", runCollectionUi.search);
-    else url.searchParams.delete("evaluation_q");
+    if (runCollectionUi.search) {
+      url.searchParams.set("evaluation_q", runCollectionUi.search);
+      url.searchParams.set("q", runCollectionUi.search);
+    } else {
+      url.searchParams.delete("evaluation_q");
+      url.searchParams.delete("q");
+    }
   } else {
     url.searchParams.delete("evaluation_id");
+    url.searchParams.delete("context");
     url.searchParams.delete("evaluation_page");
+    url.searchParams.delete("page");
     url.searchParams.delete("evaluation_q");
+    url.searchParams.delete("q");
   }
   window.history[mode === "push" ? "pushState" : "replaceState"](
-    { ...(window.history.state || {}), page: "comparison" },
+    { ...(window.history.state || {}), page: state.activePage === "run-collections" ? "run-collections" : "comparison" },
     "",
-    `${url.pathname}${url.search}${url.hash}`
+    `${withBase(state.activePage === "run-collections" ? "/run-collections" : "/run-comparison")}${url.search}${url.hash}`
   );
 }
 
 function renderRunCollectionSelectors() {
   const collectionSelect = $("#runCollectionSelect");
   if (!collectionSelect) return;
+  applyRunCollectionReadOnlyGating();
   const selectedCollectionId = String(runCollectionUi.detail?.id || "");
   collectionSelect.innerHTML = [
     `<option value="">${escapeHtml(runCollectionText("选择 Collection", "Select a Collection"))}</option>`,
@@ -135,12 +211,13 @@ function renderRunCollectionSelectors() {
 function renderRunCollectionMembers() {
   const list = $("#runCollectionMembers");
   if (!list) return;
+  const canWrite = runCollectionCanWrite();
   list.innerHTML = runCollectionUi.draftMembers.map((member, index) => `
     <li class="run-collection-member ${member.available_now === false ? "is-unavailable" : ""}" data-member-index="${index}">
       <span class="run-collection-member-order">${index + 1}</span>
       <span class="run-collection-member-info"><strong>${escapeHtml(runCollectionMemberName(member))}</strong><small>${escapeHtml(member.run_id)}${member.role ? ` · ${escapeHtml(member.role)}` : ""}${member.available_now === false ? ` · ${escapeHtml(runCollectionText("当前不可用", "Unavailable now"))}` : ""}</small></span>
       ${member.is_reference ? `<span class="run-collection-reference-badge">${escapeHtml(runCollectionText("参考 Run", "reference"))}</span>` : ""}
-      <span class="run-collection-member-actions"><button class="button button-quiet" type="button" data-member-move="-1" aria-label="Move up" ${index === 0 ? "disabled" : ""}>↑</button><button class="button button-quiet" type="button" data-member-move="1" aria-label="Move down" ${index === runCollectionUi.draftMembers.length - 1 ? "disabled" : ""}>↓</button><button class="button button-quiet" type="button" data-member-reference="true">${escapeHtml(member.is_reference ? runCollectionText("取消参考", "Unset reference") : runCollectionText("设为参考", "Set reference"))}</button><button class="button button-quiet" type="button" data-member-remove="true">×</button></span>
+      ${canWrite ? `<span class="run-collection-member-actions"><button class="button button-quiet" type="button" data-member-move="-1" aria-label="Move up" ${index === 0 ? "disabled" : ""}>↑</button><button class="button button-quiet" type="button" data-member-move="1" aria-label="Move down" ${index === runCollectionUi.draftMembers.length - 1 ? "disabled" : ""}>↓</button><button class="button button-quiet" type="button" data-member-reference="true">${escapeHtml(member.is_reference ? runCollectionText("取消参考", "Unset reference") : runCollectionText("设为参考", "Set reference"))}</button><button class="button button-quiet" type="button" data-member-remove="true">×</button></span>` : ""}
     </li>
   `).join("");
   const revision = runCollectionRevision();
@@ -150,6 +227,7 @@ function renderRunCollectionMembers() {
 }
 
 function renderRunCollectionDetail() {
+  applyRunCollectionReadOnlyGating();
   const detail = runCollectionUi.detail;
   const name = $("#runCollectionName");
   const description = $("#runCollectionDescription");
@@ -197,6 +275,7 @@ function renderRunCollectionEvaluation(payload) {
     if (root) root.hidden = true;
     return;
   }
+  applyRunCollectionReadOnlyGating();
   root.hidden = false;
   const referenceType = $("#runCollectionReferenceType");
   const referenceId = $("#runCollectionReferenceId");
@@ -208,7 +287,7 @@ function renderRunCollectionEvaluation(payload) {
     referenceId.value = payload.reference?.id || "";
     referenceId.disabled = payload.reference?.type === "gt";
     referenceId.placeholder = payload.reference?.type === "label_result"
-      ? "label-result-…" : payload.reference?.type === "run" ? "Run ID" : "Current GT";
+      ? "label-result-…" : "GT snapshot is selected by scope";
   }
   if (comparisonReference && payload.comparison_reference_run_id) {
     comparisonReference.value = payload.comparison_reference_run_id;
@@ -217,11 +296,16 @@ function renderRunCollectionEvaluation(payload) {
   if (selectionSource) selectionSource.value = payload.selection_source_run_id || "";
   const bias = payload.selection_bias_warning
     ? `<strong class="run-collection-bias-warning">${escapeHtml(payload.selection_bias_warning)}</strong>` : "";
+  const scopeSnapshots = payload.reference?.snapshot?.scope_snapshots || [];
+  const scopeProvenance = scopeSnapshots.map((item) =>
+    `${escapeHtml(item.baseline_scope || "")}: ${escapeHtml(item.id || "")} · ${escapeHtml(String(item.content_sha256 || "").slice(0, 16))} · ${Number(item.member_count || 0)}`
+  ).join(" | ");
   provenance.innerHTML = `
     <strong>${escapeHtml(runCollectionText("冻结评估上下文", "Frozen evaluation context"))} · ${escapeHtml(payload.id)}</strong>
     ${bias}
     <span>Collection r${Number(payload.collection_revision)} · ${escapeHtml(String(payload.collection_sha256 || ""))}</span>
-    <span>Workset ${escapeHtml(String(payload.workset_sha256 || ""))} · ${Number(payload.workset?.issue_ids?.length || 0)} Issues</span>
+    <span>Workset ${escapeHtml(String(payload.workset?.workset_id || ""))} · ${escapeHtml(String(payload.workset_sha256 || ""))} · ${Number(payload.summary?.workset_count || 0)} Issues</span>
+    <span>Scopes ${escapeHtml((payload.workset?.baseline_scopes || []).join(", "))} · ${scopeProvenance}</span>
     <span>${escapeHtml(payload.reference?.type || "")} ${escapeHtml(payload.reference?.id || "")} · ${escapeHtml(String(payload.reference?.sha256 || ""))}</span>
     <span>Policy ${escapeHtml(payload.scoring_policy_version || "")} · ${escapeHtml(String(payload.scoring_policy_sha256 || ""))}</span>
     <span>Exclusion ${escapeHtml(String(payload.exclusion?.sha256 || ""))} · context ${escapeHtml(String(payload.context_sha256 || ""))}</span>
@@ -233,8 +317,9 @@ function renderRunCollectionEvaluation(payload) {
       <article class="run-collection-metric-card">
         <strong>${escapeHtml(item.run?.name || item.run_id)}</strong>
         <span>${escapeHtml(runCollectionText("准确率", "Accuracy"))} <b>${percentage(item.accuracy)}</b> · ${Number(item.correct_count || 0)}/${Number(item.reference_denominator || 0)}</span>
-        <span>${escapeHtml(runCollectionText("覆盖率", "Coverage"))} ${percentage(item.coverage)} · ${Number(item.prediction_count || 0)} ${escapeHtml(runCollectionText("有效输出", "supported outputs"))}</span>
-        <span>${escapeHtml(runCollectionText("NONE / UNKNOWN", "NONE / UNKNOWN"))} ${Number(item.absent_prediction_count || 0)} / ${Number(item.unknown_count || 0)}</span>
+        <span>${escapeHtml(runCollectionText("Union 准确率覆盖", "Union accuracy coverage"))} ${percentage(item.coverage)} · denominator ${Number(item.pairwise_union_denominator || item.reference_denominator || 0)}</span>
+        <span>${escapeHtml(runCollectionText("全 valid reference supported 覆盖", "Supported coverage over all valid reference"))} ${percentage(item.supported_coverage)} · ${Number(item.supported_count || 0)} / ${Number(item.valid_reference_count || 0)}</span>
+        <span>${escapeHtml(runCollectionText("缺失 / UNKNOWN", "Absent / UNKNOWN"))} ${Number(item.absent_count || item.absent_prediction_count || 0)} / ${Number(item.unknown_count || 0)}</span>
         ${item.transitions_vs_reference ? `<span>P2P ${Number(item.transitions_vs_reference.P2P || 0)} · P2F ${Number(item.transitions_vs_reference.P2F || 0)} · F2P ${Number(item.transitions_vs_reference.F2P || 0)} · F2F ${Number(item.transitions_vs_reference.F2F || 0)}</span>` : ""}
         ${confusionRows.length ? `<details class="run-collection-confusion"><summary>${escapeHtml(runCollectionText("混淆矩阵", "Confusion matrix"))}</summary><div class="run-collection-mini-matrix-wrap"><table class="run-collection-mini-matrix"><thead><tr><th>Ref</th>${confusionColumns.map((label) => `<th>${escapeHtml(label)}</th>`).join("")}</tr></thead><tbody>${confusionRows.map((row) => `<tr><th>${escapeHtml(row.reference_label)}</th>${confusionColumns.map((label) => `<td>${Number(row.cells?.[label] || 0)}</td>`).join("")}</tr>`).join("")}</tbody></table></div></details>` : ""}
         ${item.available_now === false ? `<em>${escapeHtml(runCollectionText("Run 当前已删除；此评估使用冻结输出。", "Run is unavailable now; this evaluation uses frozen outputs."))}</em>` : ""}
@@ -242,10 +327,11 @@ function renderRunCollectionEvaluation(payload) {
     `;
   }).join("");
   const members = payload.members || [];
-  head.innerHTML = `<tr><th>Issue</th><th>${escapeHtml(runCollectionText("参考标签", "Reference"))}</th>${members.map((item) => `<th>${escapeHtml(item.run?.name || item.run_id)}${item.is_reference ? ` · ${escapeHtml(runCollectionText("基准", "reference"))}` : ""}</th>`).join("")}</tr>`;
+  head.innerHTML = `<tr><th>Issue</th><th>${escapeHtml(runCollectionText("共享标签状态", "Shared label state"))}</th><th>${escapeHtml(runCollectionText("参考标签", "Reference"))}</th>${members.map((item) => `<th>${escapeHtml(item.run?.name || item.run_id)}${item.is_reference ? ` · ${escapeHtml(runCollectionText("基准", "reference"))}` : ""}</th>`).join("")}</tr>`;
   body.innerHTML = (payload.items || []).map((item) => `
     <tr class="${item.excluded ? "is-excluded" : ""}">
       <th>${escapeHtml(item.issue_id)}${item.excluded ? `<small>${escapeHtml(runCollectionText("已排除", "excluded"))}</small>` : ""}</th>
+      <td><span class="run-collection-shared-label">${escapeHtml(item.shared_label?.state || "none")}${item.shared_label?.expected_output ? ` · ${escapeHtml(item.shared_label.expected_output)}` : ""}</span><small>${escapeHtml(item.shared_label?.method || "")}</small></td>
       <td>${escapeHtml(item.reference_label || "—")}${!item.reference_valid ? `<small>${escapeHtml(runCollectionText("无有效参考", "no valid reference"))}</small>` : ""}</td>
       ${members.map((member) => {
         const prediction = item.predictions?.[member.run_id] || {};
@@ -303,8 +389,8 @@ async function loadRunCollectionsWorkbench({ restoreRoute = false } = {}) {
   const select = $("#runCollectionSelect");
   if (!select) return;
   const params = new URLSearchParams(window.location.search);
-  const routeCollectionId = params.get("collection_id") || "";
-  const routeEvaluationId = params.get("evaluation_id") || "";
+  const routeCollectionId = params.get("collection_id") || params.get("collection") || "";
+  const routeEvaluationId = params.get("evaluation_id") || params.get("context") || "";
   runCollectionUi.restoring = Boolean(restoreRoute);
   try {
     const payload = await api("/api/run-collections");
@@ -325,13 +411,13 @@ async function loadRunCollectionsWorkbench({ restoreRoute = false } = {}) {
     }
     const detail = await api(`/api/run-collections/${encodeURIComponent(chosen.id)}`);
     runCollectionUi.detail = detail;
-    const wantedRevision = Number(params.get("collection_revision") || detail.current_revision);
+    const wantedRevision = Number(params.get("collection_revision") || params.get("revision") || detail.current_revision);
     runCollectionUi.selectedRevision = detail.history.some((item) => Number(item.revision) === wantedRevision)
       ? wantedRevision : Number(detail.current_revision);
     renderRunCollectionDetail();
     await loadRunCollectionEvaluationHistory();
     if (routeEvaluationId) {
-      runCollectionUi.page = Math.max(1, Number(params.get("evaluation_page") || 1));
+      runCollectionUi.page = Math.max(1, Number(params.get("evaluation_page") || params.get("page") || 1));
       runCollectionUi.search = String(params.get("evaluation_q") || "");
       try {
         await loadRunCollectionEvaluation(routeEvaluationId, {
@@ -616,12 +702,15 @@ function bindRunCollectionsEvents() {
   });
   $("#runCollectionReferenceType")?.addEventListener("change", (event) => {
     $("#runCollectionReferenceId").disabled = event.target.value === "gt";
-    $("#runCollectionReferenceId").placeholder = event.target.value === "label_result" ? "label-result-…" : event.target.value === "run" ? "Run ID" : "Current GT";
+    $("#runCollectionReferenceId").placeholder = event.target.value === "label_result" ? "label-result-…" : "GT snapshot is selected by scope";
   });
   window.addEventListener("popstate", () => {
-    if (new URLSearchParams(window.location.search).has("collection_id")) {
+    const params = new URLSearchParams(window.location.search);
+    if (params.has("collection_id") || params.has("collection") || params.has("context")) {
       loadRunCollectionsWorkbench({ restoreRoute: true }).catch((error) => runCollectionSetStatus(error.message, true));
     }
   });
-  loadRunCollectionsWorkbench({ restoreRoute: true }).catch((error) => runCollectionSetStatus(error.message, true));
+  if (state.activePage === "run-collections" || window.location.pathname.includes("/run-collections")) {
+    loadRunCollectionsWorkbench({ restoreRoute: true }).catch((error) => runCollectionSetStatus(error.message, true));
+  }
 }

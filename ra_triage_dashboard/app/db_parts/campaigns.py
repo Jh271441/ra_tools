@@ -237,13 +237,35 @@ class DatabaseCampaignMixin:
                 raise ValueError("Campaign Issue 缺少 baseline scope。")
         scopes = sorted({item["baseline_scope"] for item in normalized_members})
         if workset is not None:
-            if len(scopes) != 1 or scopes[0] != str(workset["baseline_scope"] or ""):
-                raise ValueError("Campaign members 与 Workset scope 不匹配。")
-            workset_items = conn.execute(
-                "SELECT issue_id FROM review_workset_items WHERE workset_id = ? ORDER BY ordinal",
+            workset_scope_rows = conn.execute(
+                "SELECT baseline_scope FROM review_workset_scopes "
+                "WHERE workset_id = ? ORDER BY ordinal",
                 (workset_id,),
             ).fetchall()
-            if {str(row["issue_id"]) for row in workset_items} != set(issue_ids):
+            workset_scopes = [
+                str(row["baseline_scope"] or "") for row in workset_scope_rows
+                if str(row["baseline_scope"] or "")
+            ]
+            if not workset_scopes and str(workset["baseline_scope"] or ""):
+                workset_scopes = [str(workset["baseline_scope"] or "")]
+            if set(scopes) != set(workset_scopes):
+                raise ValueError("Campaign members 与多 scope Workset scope 集合不匹配。")
+            workset_items = conn.execute(
+                """
+                SELECT item.issue_id, issue.baseline_scope
+                FROM review_workset_items item
+                JOIN issues issue ON issue.issue_id = item.issue_id
+                WHERE item.workset_id = ? ORDER BY item.ordinal
+                """,
+                (workset_id,),
+            ).fetchall()
+            expected_by_scope: dict[str, set[str]] = defaultdict(set)
+            for row in workset_items:
+                expected_by_scope[str(row["baseline_scope"] or "")].add(str(row["issue_id"]))
+            actual_by_scope: dict[str, set[str]] = defaultdict(set)
+            for member in normalized_members:
+                actual_by_scope[member["baseline_scope"]].add(member["issue_id"])
+            if expected_by_scope != actual_by_scope:
                 raise ValueError("Campaign members 必须完整匹配其冻结 Workset。")
         references_by_scope: dict[str, dict[str, str]] = {}
         requested_references = spec.get("references")
@@ -506,30 +528,54 @@ class DatabaseCampaignMixin:
             workset_ids = {str(spec.get("workset_id") or "").strip() for spec in campaigns}
             workset_id = next(iter(workset_ids)) if len(workset_ids) == 1 else ""
             workset = conn.execute(
-                "SELECT baseline_scope FROM review_worksets WHERE id = ?", (workset_id,)
+                "SELECT * FROM review_worksets WHERE id = ?", (workset_id,)
             ).fetchone() if workset_id else None
             if workset is None:
                 raise ValueError("Task Group 必须绑定已存在的共享 Workset。")
-            workset_scope = str(workset["baseline_scope"] or "")
             first_spec = campaigns[0]
             requested_references = first_spec.get("references")
-            first_reference_spec: dict[str, Any] = first_spec
-            if isinstance(requested_references, list):
-                first_reference_spec = next((
-                    item for item in requested_references
-                    if isinstance(item, dict)
-                    and str(item.get("baseline_scope") or "").strip() == workset_scope
-                ), {})
-            group_reference = self._campaign_reference_for_scope(
-                conn,
-                baseline_scope=workset_scope,
-                reference_type=str(first_reference_spec.get("reference_type") or ""),
-                reference_id=str(first_reference_spec.get("reference_id") or ""),
-            )
+            workset_scope_rows = conn.execute(
+                "SELECT baseline_scope FROM review_workset_scopes WHERE workset_id = ? ORDER BY ordinal",
+                (workset_id,),
+            ).fetchall()
+            workset_scopes = [
+                str(row["baseline_scope"] or "") for row in workset_scope_rows
+                if str(row["baseline_scope"] or "")
+            ]
+            if not workset_scopes and str(workset["baseline_scope"] or ""):
+                workset_scopes = [str(workset["baseline_scope"] or "")]
+            reference_specs = {
+                str(item.get("baseline_scope") or "").strip(): item
+                for item in requested_references or []
+                if isinstance(item, dict)
+            } if isinstance(requested_references, list) else {}
+            group_references = []
+            for scope in workset_scopes:
+                requested = reference_specs.get(scope, first_spec if len(workset_scopes) == 1 else {})
+                group_references.append(self._campaign_reference_for_scope(
+                    conn,
+                    baseline_scope=scope,
+                    reference_type=str(requested.get("reference_type") or ""),
+                    reference_id=str(requested.get("reference_id") or ""),
+                ))
+            if not group_references:
+                raise ValueError("Task Group Workset 没有冻结 scope。")
+            if len(group_references) == 1:
+                group_reference = group_references[0]
+            else:
+                reference_set_sha = _fingerprint(group_references)
+                group_reference = {
+                    "baseline_scope": "",
+                    "reference_type": "reference_set",
+                    "reference_id": f"reference-set:{reference_set_sha}",
+                    "reference_sha256": reference_set_sha,
+                    "references": group_references,
+                }
             reference_summary = [
                 {"evaluation_run_id": str(spec.get("evaluation_run_id") or ""),
                  "reference_type": group_reference["reference_type"],
                  "reference_id": group_reference["reference_id"],
+                 "references": group_references,
                  "workset_id": str(spec.get("workset_id") or "")}
                 for spec in campaigns
             ]

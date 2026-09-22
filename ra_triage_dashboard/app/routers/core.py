@@ -200,8 +200,9 @@ async def intent_experiments_page(request: Request) -> HTMLResponse:
 
 
 @router.get("/run-comparison", include_in_schema=False)
+@router.get("/run-collections", include_in_schema=False)
 async def run_comparison_page() -> HTMLResponse:
-    """Serve the read-only Run comparison workspace to Dashboard visitors."""
+    """Serve the read-only Run comparison workspace and Collection workspace."""
 
     return HTMLResponse(
         content=INDEX_HTML,

@@ -602,6 +602,11 @@ const PAGE_ROUTES = {
     titleZh: "Run 对比",
     titleEn: "Run Comparison",
   },
+  "run-collections": {
+    path: "/run-collections",
+    titleZh: "Runs 合集与统一评测",
+    titleEn: "Run Collections",
+  },
   prediction: {
     path: "/batch-prediction",
     titleZh: "批次预测",

@@ -42,6 +42,12 @@ def _evaluation_task_context(payload: dict[str, Any]) -> tuple[str, list[str], l
     workset = payload.get("workset") or {}
     workset_id = str(workset.get("workset_id") or "").strip()
     issue_ids = [str(item or "").strip() for item in workset.get("issue_ids") or [] if str(item or "").strip()]
+    if not issue_ids:
+        issue_ids = [
+            str(item.get("issue_id") or "").strip()
+            for item in payload.get("items") or []
+            if isinstance(item, dict) and str(item.get("issue_id") or "").strip()
+        ]
     if not workset_id:
         raise HTTPException(status_code=400, detail="Campaign 需要绑定 Evaluation 的单数据集冻结 Workset。")
     if not issue_ids or len(issue_ids) > 5000:
@@ -50,7 +56,7 @@ def _evaluation_task_context(payload: dict[str, Any]) -> tuple[str, list[str], l
     ref_type = str(reference.get("type") or "")
     snapshot = reference.get("snapshot") or {}
     scopes = [str(item or "").strip() for item in workset.get("baseline_scopes") or [] if str(item or "").strip()]
-    if ref_type == "label_result" and reference.get("id"):
+    if ref_type == "label_result" and reference.get("id") and not snapshot.get("scope_snapshots"):
         references = [
             {"baseline_scope": scope, "reference_type": "label_result_snapshot", "reference_id": str(reference["id"])}
             for scope in scopes
@@ -62,6 +68,15 @@ def _evaluation_task_context(payload: dict[str, Any]) -> tuple[str, list[str], l
         }
         references = [
             {"baseline_scope": scope, "reference_type": "gt_snapshot", "reference_id": str(refs_by_scope[scope].get("id") or "")}
+            for scope in scopes if scope in refs_by_scope
+        ]
+    elif ref_type == "label_result":
+        refs_by_scope = {
+            str(item.get("baseline_scope") or ""): item
+            for item in snapshot.get("scope_snapshots") or [] if isinstance(item, dict)
+        }
+        references = [
+            {"baseline_scope": scope, "reference_type": "label_result_snapshot", "reference_id": str(refs_by_scope[scope].get("id") or "")}
             for scope in scopes if scope in refs_by_scope
         ]
     else:
@@ -203,6 +218,7 @@ async def create_run_evaluation(request: Request) -> dict[str, Any]:
             baseline_scopes=scopes or [],
             reference_type=str(body.get("reference_type") or "gt"),
             reference_id=str(body.get("reference_id") or ""),
+            reference_ids=body.get("reference_ids"),
             excluded_issue_ids=body.get("excluded_issue_ids"),
             scoring_policy=body.get("scoring_policy"),
             selection_source_run_id=str(body.get("selection_source_run_id") or ""),
@@ -264,7 +280,7 @@ async def export_run_evaluation(context_id: str) -> JSONResponse:
 async def create_evaluation_labeling_campaign(context_id: str, request: Request) -> dict[str, Any]:
     identity = await asyncio.to_thread(_admin_identity, request)
     body = await _body(request)
-    payload = await asyncio.to_thread(database.get_run_evaluation, context_id, page=1, page_size=1)
+    payload = await asyncio.to_thread(database.get_run_evaluation_task_context, context_id)
     if payload is None:
         raise HTTPException(status_code=404, detail="Evaluation Context 不存在。")
     workset_id, issue_ids, references = _evaluation_task_context(payload)
@@ -301,7 +317,7 @@ async def create_evaluation_labeling_campaign(context_id: str, request: Request)
 async def create_evaluation_model_review_group(context_id: str, request: Request) -> dict[str, Any]:
     identity = await asyncio.to_thread(_admin_identity, request)
     body = await _body(request)
-    payload = await asyncio.to_thread(database.get_run_evaluation, context_id, page=1, page_size=1)
+    payload = await asyncio.to_thread(database.get_run_evaluation_task_context, context_id)
     if payload is None:
         raise HTTPException(status_code=404, detail="Evaluation Context 不存在。")
     workset_id, issue_ids, references = _evaluation_task_context(payload)

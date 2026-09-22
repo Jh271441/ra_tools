@@ -1000,6 +1000,9 @@ function showPage(
   }
   state.activePage = target;
   document.body.dataset.activePage = target;
+  if (typeof ensureRunCollectionsDedicatedPage === "function") {
+    ensureRunCollectionsDedicatedPage(target);
+  }
   document.querySelectorAll("[data-page]").forEach((section) => {
     section.classList.toggle("hidden", section.dataset.page !== target);
   });
@@ -1023,6 +1026,12 @@ function showPage(
     renderRunComparison?.();
     if (loadPageData) {
       loadRunComparison({ historyMode: historyMode || "replace" }).catch((error) => showToast(error.message, true));
+    }
+  }
+  if (target === "run-collections") {
+    renderRunCollectionSelectors?.();
+    if (loadPageData && typeof loadRunCollectionsWorkbench === "function") {
+      loadRunCollectionsWorkbench({ restoreRoute }).catch((error) => showToast(error.message, true));
     }
   }
   if (["intent", "intent-experiments", "intent-summary"].includes(target)) {

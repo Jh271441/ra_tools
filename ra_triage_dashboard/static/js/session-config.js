@@ -136,6 +136,7 @@ function renderSession() {
         : uiText("当前没有可信 SSO；Run 创建人将记为未记录。", "No trusted SSO; the Run creator will be recorded as unknown.");
   }
   if (state.activePage === "prediction") ensurePredictionBatchName();
+  if (typeof applyRunCollectionReadOnlyGating === "function") applyRunCollectionReadOnlyGating();
   if (typeof renderGtSyncStatus === "function") renderGtSyncStatus();
 }
 

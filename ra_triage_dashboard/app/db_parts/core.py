@@ -1904,6 +1904,31 @@ class DatabaseCoreMixin:
                         SELECT item_count FROM run_evaluation_contexts WHERE id = NEW.context_id
                     ), 0)
                     BEGIN SELECT RAISE(ABORT, 'evaluation context item set is complete'); END;
+                    CREATE TABLE IF NOT EXISTS review_workset_scopes (
+                        workset_id TEXT NOT NULL REFERENCES review_worksets(id) ON DELETE RESTRICT,
+                        baseline_scope TEXT NOT NULL,
+                        ordinal INTEGER NOT NULL CHECK(ordinal > 0),
+                        member_count INTEGER NOT NULL DEFAULT 0 CHECK(member_count >= 0),
+                        members_sha256 TEXT NOT NULL,
+                        gt_snapshot_id TEXT NOT NULL DEFAULT '',
+                        gt_snapshot_sha256 TEXT NOT NULL DEFAULT '',
+                        label_result_snapshot_id TEXT NOT NULL DEFAULT '',
+                        label_result_sha256 TEXT NOT NULL DEFAULT '',
+                        PRIMARY KEY(workset_id, baseline_scope),
+                        UNIQUE(workset_id, ordinal)
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_review_workset_scopes_scope
+                        ON review_workset_scopes(baseline_scope, workset_id);
+                    CREATE TRIGGER IF NOT EXISTS trg_review_workset_scopes_no_update
+                    BEFORE UPDATE ON review_workset_scopes
+                    BEGIN SELECT RAISE(ABORT, 'run workset scope snapshots are immutable'); END;
+                    CREATE TRIGGER IF NOT EXISTS trg_review_workset_scopes_no_delete
+                    BEFORE DELETE ON review_workset_scopes
+                    BEGIN SELECT RAISE(ABORT, 'run workset scope snapshots are immutable'); END;
+                    CREATE INDEX IF NOT EXISTS idx_run_evaluation_items_scope
+                        ON run_evaluation_items(context_id, baseline_scope, ordinal);
+                    CREATE INDEX IF NOT EXISTS idx_run_evaluation_context_sha
+                        ON run_evaluation_contexts(context_sha256, created_at, id);
                     """
                 )
             revision_tables = (
@@ -1939,6 +1964,7 @@ class DatabaseCoreMixin:
                 "review_work_assignment_changes",
                 "review_worksets",
                 "review_workset_items",
+                "review_workset_scopes",
                 "review_task_groups",
                 "review_task_group_campaigns",
                 "review_task_group_revisions",
@@ -1997,6 +2023,16 @@ class DatabaseCoreMixin:
             # Existing MVP databases are upgraded in place.  Each addition is
             # nullable/defaulted, so prior annotations and model runs survive.
             self._ensure_column(conn, "issues", "baseline_scope", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "review_worksets", "scope_mode", "TEXT NOT NULL DEFAULT 'single'")
+            self._ensure_column(conn, "review_worksets", "scope_count", "INTEGER NOT NULL DEFAULT 1")
+            self._ensure_column(conn, "review_worksets", "scopes_sha256", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "review_worksets", "selection_metadata_json", "TEXT NOT NULL DEFAULT '{}'")
+            self._ensure_column(conn, "run_evaluation_items", "shared_label_state", "TEXT NOT NULL DEFAULT 'none'")
+            self._ensure_column(conn, "run_evaluation_items", "shared_label_expected_output", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "run_evaluation_items", "shared_label_gt_relation", "TEXT NOT NULL DEFAULT 'unknown'")
+            self._ensure_column(conn, "run_evaluation_items", "shared_label_method", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "run_evaluation_items", "shared_label_source_json", "TEXT NOT NULL DEFAULT '{}'")
+            self._ensure_column(conn, "run_evaluation_items", "shared_label_sha256", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(conn, "annotations", "review_status", "TEXT NOT NULL DEFAULT 'pending'")
             self._ensure_column(conn, "annotations", "model_run_id", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(conn, "annotations", "work_split_id", "TEXT NOT NULL DEFAULT ''")

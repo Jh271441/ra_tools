@@ -79,7 +79,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-482`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-483`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -169,6 +169,12 @@
                   <svg viewBox="0 0 24 24" focusable="false"><path class="icon-wash" d="M4 4h6v16H4zm10 0h6v16h-6z"/><path d="M7 8h9m-2-3 3 3-3 3M17 16H8m2-3-3 3 3 3"/><circle class="icon-emphasis" cx="7" cy="8" r="1.6"/><circle class="icon-emphasis" cx="17" cy="16" r="1.6"/></svg>
                 </span>
                 <span class="sidebar-label"><strong class="ui-lang-zh">Run 对比</strong><strong class="ui-lang-en">Run comparison</strong></span>
+              </a>
+              <a class="sidebar-item" id="runCollectionsNavButton" data-page-target="run-collections" data-app-path="/run-collections" href="/run-collections" title="Runs 合集与统一评测">
+                <span class="sidebar-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" focusable="false"><path class="icon-wash" d="M4 5h16v14H4z"/><path d="M8 8h8M8 12h5M8 16h8"/><circle class="icon-emphasis" cx="17" cy="16" r="2"/></svg>
+                </span>
+                <span class="sidebar-label"><strong class="ui-lang-zh">Runs 合集</strong><strong class="ui-lang-en">Run Collections</strong></span>
               </a>
               <a class="sidebar-item" id="openBatchPredictionButton" data-page-target="prediction" data-app-path="/batch-prediction" href="/batch-prediction" title="Batch 预测">
                 <span class="sidebar-icon" aria-hidden="true">
@@ -1264,6 +1270,10 @@
             </section>
           </section>
 
+          <section class="app-page tool-page run-collections-page hidden" id="runCollectionsPage" data-page="run-collections">
+            <div class="run-collections-dedicated-host" id="runCollectionsDedicatedHost"></div>
+          </section>
+
           <section class="app-page tool-page run-comparison-page hidden" id="runComparisonPage" data-page="comparison">
             <section class="page-card run-comparison-controls">
               <div class="run-comparison-picker-grid">
@@ -1318,19 +1328,20 @@
                 </div>
                 <ol id="runCollectionMembers" class="run-collection-members"></ol>
               </div>
-              <details class="run-collection-create-details"><summary><span class="ui-lang-zh">创建新 Collection</span><span class="ui-lang-en">Create a Collection</span></summary>
+              <details class="run-collection-create-details" id="runCollectionCreateDetails"><summary><span class="ui-lang-zh">创建新 Collection</span><span class="ui-lang-en">Create a Collection</span></summary>
                 <div class="run-collection-create-row"><label><span class="ui-lang-zh">Collection 名称</span><span class="ui-lang-en">Collection name</span><input id="runCollectionCreateName" maxlength="160" autocomplete="off"></label><button class="button button-primary" id="runCollectionCreateButton" type="button"><span class="ui-lang-zh">用当前成员创建</span><span class="ui-lang-en">Create from current members</span></button></div>
               </details>
               <details class="run-collection-history"><summary><span class="ui-lang-zh">Revision 历史</span><span class="ui-lang-en">Revision history</span></summary><ol id="runCollectionHistory"></ol></details>
               <details class="run-collection-audit"><summary><span class="ui-lang-zh">Collection 审计记录</span><span class="ui-lang-en">Collection audit</span></summary><ol id="runCollectionAudit"></ol></details>
               <div class="run-collection-evaluation-controls">
-                <label><span class="ui-lang-zh">评分参考</span><span class="ui-lang-en">Scoring reference</span><select id="runCollectionReferenceType"><option value="gt">当前 GT（创建时冻结）</option><option value="label_result">Label result snapshot</option><option value="run">Run prediction snapshot</option></select></label>
-                <label><span class="ui-lang-zh">参考 ID</span><span class="ui-lang-en">Reference ID</span><input id="runCollectionReferenceId" placeholder="Label result / Run ID"></label>
+                <label><span class="ui-lang-zh">评分参考</span><span class="ui-lang-en">Scoring reference</span><select id="runCollectionReferenceType"><option value="gt">GT snapshot（创建时冻结）</option><option value="label_result">Label result snapshot</option></select></label>
+                <label><span class="ui-lang-zh">参考 ID（Label snapshot 可选）</span><span class="ui-lang-en">Reference ID (optional for Label snapshot set)</span><input id="runCollectionReferenceId" placeholder="Label result snapshot ID"></label>
                 <label><span class="ui-lang-zh">比较基准 Run</span><span class="ui-lang-en">Transition reference Run</span><select id="runCollectionComparisonReference"><option value="">Use Collection reference mark</option></select></label>
                 <label><span class="ui-lang-zh">冻结 Workset ID（可选）</span><span class="ui-lang-en">Frozen Workset ID (optional)</span><input id="runCollectionWorksetId" placeholder="workset-…"></label>
                 <label><span class="ui-lang-zh">按来源 Run 筛选 Workset（可选）</span><span class="ui-lang-en">Filter Workset by source Run (optional)</span><select id="runCollectionSelectionSourceRun"><option value="">Do not filter by a Run</option></select></label>
                 <button class="button button-primary" id="runCollectionEvaluateButton" type="button"><span class="ui-lang-zh">冻结并评估</span><span class="ui-lang-en">Freeze and evaluate</span></button>
               </div>
+              <p class="muted run-collection-readonly-note" id="runCollectionReadonlyNote" hidden><span class="ui-lang-zh">当前为只读会话；可以查看历史和导出，管理与冻结操作需要已验证管理员。</span><span class="ui-lang-en">Read-only session: history and export are available; management and freeze actions require a verified administrator.</span></p>
               <details class="run-collection-evaluation-history"><summary><span class="ui-lang-zh">历史 Evaluation Context</span><span class="ui-lang-en">Evaluation Context history</span></summary><ol id="runCollectionEvaluationHistory"></ol></details>
               <div class="run-collection-integrations">
                 <label><span class="ui-lang-zh">管理员分配对象（逗号分隔）</span><span class="ui-lang-en">Admin assignees (comma separated)</span><input id="runCollectionTaskAssignees" placeholder="user1, user2"></label>
@@ -1345,6 +1356,10 @@
               </div>
               <p class="muted" id="runCollectionStatus" role="status"></p>
             </section>
+            <details class="run-collection-pairwise-details" id="runCollectionPairwiseDetails">
+              <summary><span class="ui-lang-zh">Runs 合集管理</span><span class="ui-lang-en">Run Collection manager</span></summary>
+              <div id="runCollectionPairwiseHost"></div>
+            </details>
 
             <section class="comparison-empty page-card" id="comparisonEmptyState">
               <strong><span class="ui-lang-zh">至少选择一个 Run</span><span class="ui-lang-en">Select at least one Run</span></strong>
@@ -2280,7 +2295,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-482`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-483`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

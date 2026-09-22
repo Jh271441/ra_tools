@@ -111,6 +111,28 @@ class RunCollectionsApiTest(unittest.TestCase):
         self.assertTrue(collection["current"]["members"][0]["is_reference"])
         self.assertEqual(str(request.url), original_url)
 
+    def test_prediction_reference_is_rejected_and_reference_run_stays_comparison_only(self) -> None:
+        identity = SimpleNamespace(username="verified-admin", source="test-sso", verified=True)
+        with patch.object(api, "database", self.database), patch.object(api, "_admin_identity", return_value=identity):
+            collection = asyncio.run(api.create_run_collection(self.request(
+                "POST", "/api/run-collections",
+                {"name": "API reference", "members": [{"run_id": self.run["id"]}]},
+                idempotency_key="api-reference-collection",
+            )))
+            with self.assertRaises(HTTPException) as caught:
+                asyncio.run(api.create_run_evaluation(self.request(
+                    "POST", "/api/run-evaluations",
+                    {
+                        "collection_id": collection["id"],
+                        "baseline_scopes": ["api-scope"],
+                        "reference_type": "run",
+                        "reference_id": self.run["id"],
+                    },
+                    idempotency_key="api-run-reference",
+                )))
+        self.assertEqual(caught.exception.status_code, 400)
+        self.assertIn("comparison_reference_run_id", caught.exception.detail)
+
 
 if __name__ == "__main__":
     unittest.main()

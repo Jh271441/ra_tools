@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import tempfile
 import time
 import unittest
@@ -369,6 +370,102 @@ class RunCollectionsDatabaseTest(unittest.TestCase):
         historical = self.database.get_run_evaluation(evaluation["id"])
         self.assertEqual(historical["summary"]["runs"][1]["correct_count"], 0)
         self.assertTrue(historical["members"][1]["run"]["available_at_revision"])
+
+    def test_multiscope_workset_campaigns_shared_projection_and_context_reuse(self) -> None:
+        scopes = [f"multi-scope-{index}" for index in range(5)]
+        issue_rows = []
+        for scope in scopes:
+            self.database.upsert_issues(
+                [{"issue_id": f"{scope}-a", "gt_label": "正确触发"},
+                 {"issue_id": f"{scope}-b", "gt_label": "误触发"}],
+                source="test", replace_gt=True, baseline_scope=scope,
+            )
+            issue_rows.extend([
+                {"issue_id": f"{scope}-a", "gt_label": "正确触发"},
+                {"issue_id": f"{scope}-b", "gt_label": "误触发"},
+            ])
+        first = self._make_run("multi-first", [
+            {"issue_id": item["issue_id"], "model_label": item["gt_label"]}
+            for item in issue_rows
+        ])
+        second = self._make_run("multi-second", [
+            {"issue_id": item["issue_id"], "model_label": "正确触发"}
+            for item in issue_rows
+        ])
+        collection = self.database.create_run_collection(
+            name="Multi", members=[first["id"], second["id"]]
+        )
+        evaluation = self.database.create_run_evaluation(
+            collection_id=collection["id"], baseline_scopes=scopes,
+            comparison_reference_run_id=first["id"],
+        )
+        self.assertEqual(evaluation["workset"]["scope_count"], 5)
+        self.assertEqual(evaluation["workset"]["baseline_scopes"], scopes)
+        self.assertEqual(evaluation["summary"]["workset_count"], 10)
+        self.assertTrue(evaluation["items"][0]["shared_label"]["source"]["snapshot_id"])
+        self.assertIn("supported_coverage", evaluation["summary"]["runs"][0])
+        self.assertLess(len(json.dumps(evaluation, ensure_ascii=False)), 250000)
+        task_context = self.database.get_run_evaluation_task_context(evaluation["id"])
+        self.assertEqual(len(task_context["workset"]["issue_ids"]), 10)
+        references = [
+            {
+                "baseline_scope": item["baseline_scope"],
+                "reference_type": "gt_snapshot",
+                "reference_id": item["id"],
+            }
+            for item in evaluation["reference"]["snapshot"]["scope_snapshots"]
+        ]
+        labeling = self.database.create_campaign(
+            spec={
+                "purpose": "labeling", "lifecycle": "draft",
+                "campaign_name": "Multi shared labels",
+                "workset_id": evaluation["workset"]["workset_id"],
+                "references": references,
+                "members": [
+                    {"issue_id": item["issue_id"], "assignees": ["reviewer"]}
+                    for item in issue_rows
+                ],
+            },
+            actor="admin", actor_source="test", actor_verified=True,
+            idempotency_key="multi-labeling",
+        )
+        self.assertEqual(set(labeling["campaign"]["baseline_scopes"]), set(scopes))
+        group = self.database.create_campaign_group(
+            name="Multi model reviews", purpose="model_review",
+            campaigns=[
+                {
+                    "purpose": "model_review", "lifecycle": "draft",
+                    "campaign_name": f"Review {run_id[:8]}",
+                    "evaluation_run_id": run_id,
+                    "workset_id": evaluation["workset"]["workset_id"],
+                    "references": references,
+                    "members": [
+                        {"issue_id": item["issue_id"], "assignees": ["reviewer"]}
+                        for item in issue_rows
+                    ],
+                }
+                for run_id in (first["id"], second["id"])
+            ],
+            actor="admin", actor_source="test", actor_verified=True,
+            idempotency_key="multi-model-review",
+        )
+        self.assertEqual(len(group["campaigns"]), 2)
+        reused = self.database.create_run_evaluation(
+            collection_id=collection["id"], baseline_scopes=scopes,
+            comparison_reference_run_id=first["id"],
+        )
+        self.assertEqual(reused["id"], evaluation["id"])
+        with self.assertRaisesRegex(ValueError, "不支持.*reference_type=run"):
+            self.database.create_run_evaluation(
+                collection_id=collection["id"], baseline_scopes=scopes,
+                reference_type="run", reference_id=first["id"],
+            )
+        with self.database.connect() as conn:
+            scope_rows = conn.execute(
+                "SELECT COUNT(*) AS count FROM review_workset_scopes WHERE workset_id = ?",
+                (evaluation["workset"]["workset_id"],),
+            ).fetchone()["count"]
+        self.assertEqual(scope_rows, 5)
 
 
 if __name__ == "__main__":

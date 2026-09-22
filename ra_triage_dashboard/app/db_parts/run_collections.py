@@ -522,12 +522,13 @@ class DatabaseRunCollectionsMixin:
         policy = {
             "version": "run-evaluation-v1",
             "label_normalization_version": "triage-labels-v1",
-            "valid_reference_labels": list(MODEL_LABELS if reference_type == "run" else LABELS),
+            "valid_reference_labels": list(LABELS),
             "valid_prediction_labels": list(MODEL_LABELS),
             "missing_predictions": "NONE; incorrect; included when any selected Run has a supported output",
             "unknown_labels": "UNKNOWN; incorrect; counted separately and not treated as a supported output",
             "exclusions": "remove issue from accuracy, confusion and transition denominators",
-            "accuracy_denominator": "valid non-excluded reference items with a supported output from at least one Collection Run; matches legacy pairwise union semantics",
+            "accuracy_denominator": "v1 pairwise union: valid non-excluded reference items with a supported output from at least one Collection Run",
+            "supported_coverage_denominator": "all valid non-excluded reference items for each Run, including absent and UNKNOWN outputs",
             "transition_status": "P means prediction matches frozen reference; F includes missing and unknown output",
         }
         if supplied:
@@ -559,6 +560,7 @@ class DatabaseRunCollectionsMixin:
         baseline_scopes: Sequence[str] = (),
         reference_type: str = "gt",
         reference_id: str = "",
+        reference_ids: dict[str, str] | Sequence[dict[str, Any]] | None = None,
         excluded_issue_ids: Sequence[str] | None = None,
         scoring_policy: dict[str, Any] | None = None,
         selection_source_run_id: str = "",
@@ -573,9 +575,27 @@ class DatabaseRunCollectionsMixin:
         reference_type = str(reference_type or "gt").strip().lower()
         reference_id = str(reference_id or "").strip()
         if reference_type not in {"gt", "label_result", "run"}:
-            raise ValueError("reference_type 必须为 gt、label_result 或 run。")
-        if reference_type in {"label_result", "run"} and not reference_id:
+            raise ValueError("reference_type 必须为 gt 或 label_result。")
+        if reference_type == "run":
+            raise ValueError("正式 Evaluation 不支持 reference_type=run；Run 只能作为 comparison_reference_run_id 用于 P2F/F2P。")
+        normalized_reference_ids: dict[str, str] = {}
+        if isinstance(reference_ids, dict):
+            normalized_reference_ids = {
+                str(scope or "").strip(): str(value or "").strip()
+                for scope, value in reference_ids.items()
+                if str(scope or "").strip() and str(value or "").strip()
+            }
+        elif isinstance(reference_ids, Sequence) and not isinstance(reference_ids, (str, bytes)):
+            normalized_reference_ids = {
+                str(item.get("baseline_scope") or "").strip(): str(item.get("reference_id") or "").strip()
+                for item in reference_ids if isinstance(item, dict)
+                and str(item.get("baseline_scope") or "").strip()
+                and str(item.get("reference_id") or "").strip()
+            }
+        if reference_type == "label_result" and not reference_id and not normalized_reference_ids:
             raise ValueError("该 reference_type 需要 reference_id。")
+        if reference_type == "gt" and reference_id:
+            raise ValueError("GT reference_id 由创建时冻结的 active snapshot 自动确定。")
         source_run_id = str(selection_source_run_id or "").strip()
         comparison_reference_run_id = str(comparison_reference_run_id or "").strip()
         key = str(idempotency_key or "").strip()[:160]
@@ -629,17 +649,25 @@ class DatabaseRunCollectionsMixin:
             if comparison_reference_run_id and comparison_reference_run_id not in member_run_ids:
                 raise ValueError("comparison_reference_run_id 必须属于该 Collection revision。")
 
-            label_result = None
+            label_results: dict[str, Any] = {}
             if reference_type == "label_result":
-                label_result = conn.execute(
-                    "SELECT * FROM label_result_snapshots WHERE id = ?", (reference_id,)
-                ).fetchone()
-                if label_result is None:
-                    raise ValueError("Label result snapshot 不存在。")
-                snapshot_workset_id = str(label_result["workset_id"] or "")
-                if workset_id and workset_id != snapshot_workset_id:
-                    raise ValueError("Label result snapshot 与 Workset 不匹配。")
-                workset_id = snapshot_workset_id
+                requested_label_ids = dict(normalized_reference_ids)
+                if reference_id and not requested_label_ids:
+                    requested_label_ids[""] = reference_id
+                for requested_scope, snapshot_id in requested_label_ids.items():
+                    label_result = conn.execute(
+                        "SELECT * FROM label_result_snapshots WHERE id = ?", (snapshot_id,)
+                    ).fetchone()
+                    if label_result is None:
+                        raise ValueError("Label result snapshot 不存在。")
+                    snapshot_workset_id = str(label_result["workset_id"] or "")
+                    if workset_id and workset_id != snapshot_workset_id:
+                        raise ValueError("Label result snapshot 与 Workset 不匹配。")
+                    if requested_scope and str(label_result["baseline_scope"] or "") != requested_scope:
+                        raise ValueError("Label result snapshot 与数据集 scope 不匹配。")
+                    label_results[str(label_result["baseline_scope"] or requested_scope)] = label_result
+                if len(label_results) == 1 and not workset_id:
+                    workset_id = str(next(iter(label_results.values()))["workset_id"] or "")
 
             if workset_id:
                 workset = conn.execute(
@@ -653,7 +681,13 @@ class DatabaseRunCollectionsMixin:
                 ).fetchall()
                 issue_ids = [str(row["issue_id"]) for row in issue_rows]
                 original_workset_issue_ids = list(issue_ids)
-                scopes = [str(workset["baseline_scope"] or "")]
+                scope_rows = conn.execute(
+                    "SELECT baseline_scope FROM review_workset_scopes WHERE workset_id = ? ORDER BY ordinal",
+                    (workset_id,),
+                ).fetchall()
+                scopes = [str(row["baseline_scope"] or "") for row in scope_rows if str(row["baseline_scope"] or "")]
+                if not scopes and str(workset["baseline_scope"] or ""):
+                    scopes = [str(workset["baseline_scope"] or "")]
             elif workset_issue_ids:
                 issue_ids = list(dict.fromkeys(str(item or "").strip() for item in workset_issue_ids if str(item or "").strip()))
                 original_workset_issue_ids = None
@@ -716,42 +750,59 @@ class DatabaseRunCollectionsMixin:
                 for issue_id in issue_ids
                 if issue_map.get(issue_id, {}).get("baseline_scope", "")
             })
-            if len(scopes) == 1 and (
-                not workset_id or source_run_id and issue_ids != (original_workset_issue_ids or [])
-            ):
-                workset_scope = scopes[0]
-                workset_digest = hashlib.sha256("\n".join(issue_ids).encode("utf-8")).hexdigest()
+            scope_members = {
+                scope: [issue_id for issue_id in issue_ids
+                        if str((issue_map.get(issue_id) or {}).get("baseline_scope") or "") == scope]
+                for scope in scopes
+            }
+            scope_members = {scope: members for scope, members in scope_members.items() if members}
+            scopes = sorted(scope_members)
+            if not scopes:
+                raise ValueError("Workset 成员没有有效 baseline scope。")
+            all_members_digest = hashlib.sha256("\n".join(issue_ids).encode("utf-8")).hexdigest()
+            scopes_digest = self._content_sha256([
+                {"baseline_scope": scope, "issue_ids": scope_members[scope]}
+                for scope in scopes
+            ])
+            if not workset_id or (source_run_id and issue_ids != (original_workset_issue_ids or [])):
                 existing_workset = conn.execute(
                     """
                     SELECT id FROM review_worksets
-                    WHERE baseline_scope = ? AND selection_source_run_id = ?
+                    WHERE selection_source_run_id = ?
                       AND members_sha256 = ? AND member_count = ?
+                      AND scope_count = ? AND scopes_sha256 = ?
                     ORDER BY created_at DESC LIMIT 1
                     """,
-                    (workset_scope, source_run_id, workset_digest, len(issue_ids)),
+                    (source_run_id, all_members_digest, len(issue_ids),
+                     len(scopes), scopes_digest),
                 ).fetchone()
                 if existing_workset is not None:
                     workset_id = str(existing_workset["id"])
                 else:
                     workset_id = f"run-evaluation-workset-{uuid.uuid4().hex}"
+                    scope_mode = "multi" if len(scopes) > 1 else "single"
                     conn.execute(
                         """
                         INSERT INTO review_worksets (
                             id, baseline_scope, name, selection_source_run_id,
                             source_filter_json, member_count, members_sha256,
+                            scope_mode, scope_count, scopes_sha256, selection_metadata_json,
                             created_by, created_by_source, created_by_verified, created_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
-                            workset_id, workset_scope,
+                            workset_id, scopes[0] if len(scopes) == 1 else "",
                             f"Evaluation {collection_id[:8]} r{revision_no}"[:160],
                             source_run_id,
                             self._canonical_json({
                                 "source": "run_evaluation", "collection_id": collection_id,
                                 "collection_revision": revision_no,
                                 "selection_source_run_id": source_run_id,
+                                "baseline_scopes": scopes,
                             }),
-                            len(issue_ids), workset_digest, actor,
+                            len(issue_ids), all_members_digest, scope_mode, len(scopes), scopes_digest,
+                            self._canonical_json({"source": "run_evaluation", "baseline_scopes": scopes}),
+                            actor,
                             str(actor_source or "run_evaluation"), bool(actor_verified), now,
                         ),
                     )
@@ -761,22 +812,27 @@ class DatabaseRunCollectionsMixin:
                     )
                     self._mark_labeling_change(conn)
 
-            if reference_type == "label_result" and label_result is not None and not workset_id:
+            if reference_type == "label_result" and label_results and not workset_id:
                 raise ValueError("Label result snapshot 必须保留其原始 Workset。")
             label_result_items: dict[str, dict[str, Any]] = {}
             if reference_type == "label_result":
-                rows = conn.execute(
-                    "SELECT issue_id, state, expected_output, ordinal FROM label_result_snapshot_items "
-                    "WHERE snapshot_id = ? ORDER BY ordinal",
-                    (reference_id,),
-                ).fetchall()
-                label_result_items = {
-                    str(row["issue_id"]): {
-                        "label": str(row["expected_output"] or ""),
-                        "valid": str(row["state"] or "") == "resolved" and str(row["expected_output"] or "") in LABELS,
-                    }
-                    for row in rows
-                }
+                for scope, label_result in label_results.items():
+                    rows = conn.execute(
+                        "SELECT issue_id, state, expected_output, method, gt_relation, ordinal "
+                        "FROM label_result_snapshot_items WHERE snapshot_id = ? ORDER BY ordinal",
+                        (str(label_result["id"]),),
+                    ).fetchall()
+                    for row in rows:
+                        label_result_items[str(row["issue_id"])] = {
+                            "label": str(row["expected_output"] or ""),
+                            "valid": str(row["state"] or "") == "resolved" and str(row["expected_output"] or "") in LABELS,
+                            "state": str(row["state"] or "none"),
+                            "method": str(row["method"] or ""),
+                            "gt_relation": str(row["gt_relation"] or "unknown"),
+                            "scope": scope,
+                            "snapshot_id": str(label_result["id"]),
+                            "snapshot_sha256": str(label_result["content_sha256"] or ""),
+                        }
 
             active_gt: dict[str, dict[str, Any]] = {}
             active_gt_items: dict[str, str] = {}
@@ -812,10 +868,103 @@ class DatabaseRunCollectionsMixin:
                     active_gt_items = {
                         str(row["issue_id"]): str(row["gt_label"] or "") for row in rows
                     }
+                # Older fixtures may only have the mutable issue GT cache. Turn
+                # that cache into a content-addressed active snapshot before
+                # freezing the Evaluation, so every official reference is a
+                # real GT snapshot (and later GT syncs cannot rewrite history).
+                for scope in scopes:
+                    if scope in active_gt:
+                        continue
+                    scope_rows = conn.execute(
+                        "SELECT issue_id, gt_label FROM issues WHERE baseline_scope = ? ORDER BY issue_id",
+                        (scope,),
+                    ).fetchall()
+                    snapshot_rows = {
+                        str(row["issue_id"]): {"gt_label": str(row["gt_label"] or "")}
+                        for row in scope_rows
+                    }
+                    if not snapshot_rows:
+                        raise ValueError(f"数据集 {scope} 没有可冻结的 GT snapshot。")
+                    gt_mode = "strict" if all(item["gt_label"] in LABELS for item in snapshot_rows.values()) else "sparse"
+                    self._create_or_reuse_gt_snapshot_with_conn(
+                        conn,
+                        scope=scope,
+                        gt_mode=gt_mode,
+                        source_name="Dashboard issue GT cache",
+                        source_view_id=0,
+                        source_field="issues.gt_label",
+                        rows=snapshot_rows,
+                        source_metadata={"created_for": "run_evaluation"},
+                        created_by=actor,
+                        created_by_source=str(actor_source or "run_evaluation"),
+                        created_by_verified=bool(actor_verified),
+                        activate=True,
+                        activation_reason="run_evaluation_freeze",
+                        mark_change=False,
+                        scope_lock_held=True,
+                    )
+                rows = conn.execute(
+                    """
+                    SELECT snap.id, snap.baseline_scope, snap.gt_mode, snap.content_sha256,
+                           snap.membership_sha256, active.activated_at
+                    FROM gt_snapshot_active active
+                    JOIN gt_snapshots snap ON snap.id = active.snapshot_id
+                    WHERE active.baseline_scope IN (%s)
+                    """ % placeholders,
+                    tuple(scopes),
+                ).fetchall()
+                active_gt = {
+                    str(row["baseline_scope"]): {
+                        "baseline_scope": str(row["baseline_scope"]),
+                        "id": str(row["id"]), "gt_mode": str(row["gt_mode"]),
+                        "content_sha256": str(row["content_sha256"]),
+                        "membership_sha256": str(row["membership_sha256"]),
+                        "activated_at": str(row["activated_at"] or ""),
+                    }
+                    for row in rows
+                }
+                snapshot_ids = [item["id"] for item in active_gt.values()]
+                placeholders = ", ".join("?" for _ in snapshot_ids)
+                rows = conn.execute(
+                    f"SELECT issue_id, gt_label FROM gt_snapshot_items WHERE snapshot_id IN ({placeholders})",
+                    tuple(snapshot_ids),
+                ).fetchall()
+                active_gt_items = {
+                    str(row["issue_id"]): str(row["gt_label"] or "") for row in rows
+                }
+
+            # A Run Evaluation owns a real frozen Workset. Keep one immutable
+            # scope row per dataset so S4 Campaign adapters can validate exact
+            # membership and per-scope snapshot provenance without parsing a
+            # public response body.
+            if workset_id:
+                for ordinal, scope in enumerate(scopes, 1):
+                    members_for_scope = scope_members.get(scope, [])
+                    scope_members_sha = hashlib.sha256(
+                        "\n".join(members_for_scope).encode("utf-8")
+                    ).hexdigest()
+                    gt_snapshot = active_gt.get(scope) or {}
+                    label_snapshot = label_results.get(scope) or {}
+                    conn.execute(
+                        """
+                        INSERT INTO review_workset_scopes (
+                            workset_id, baseline_scope, ordinal, member_count,
+                            members_sha256, gt_snapshot_id, gt_snapshot_sha256,
+                            label_result_snapshot_id, label_result_sha256
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(workset_id, baseline_scope) DO NOTHING
+                        """,
+                        (
+                            workset_id, scope, ordinal, len(members_for_scope),
+                            scope_members_sha, str(gt_snapshot.get("id") or ""),
+                            str(gt_snapshot.get("content_sha256") or ""),
+                            str(label_snapshot.get("id") or ""),
+                            str(label_snapshot.get("content_sha256") or ""),
+                        ),
+                    )
 
             run_query_ids = list(dict.fromkeys(
                 member_run_ids
-                + ([reference_id] if reference_type == "run" else [])
                 + ([comparison_reference_run_id] if comparison_reference_run_id else [])
                 + ([source_run_id] if source_run_id else [])
             ))
@@ -880,16 +1029,12 @@ class DatabaseRunCollectionsMixin:
                 issue = issue_map.get(issue_id) or {}
                 scope = str(issue.get("baseline_scope") or "")
                 if reference_type == "gt":
-                    label = active_gt_items.get(issue_id, "") if scope in active_gt else str(issue.get("gt_label") or "")
+                    label = active_gt_items.get(issue_id, "")
                     valid = label in LABELS
                 elif reference_type == "label_result":
                     label_result_item = label_result_items.get(issue_id) or {}
                     label = str(label_result_item.get("label") or "")
                     valid = bool(label_result_item.get("valid"))
-                else:
-                    prediction = prediction_map.get((reference_id, issue_id)) or {}
-                    label = str(prediction.get("label") or "")
-                    valid = bool(prediction.get("present")) and label in MODEL_LABELS
                 reference_items[issue_id] = {"label": label, "valid": valid}
 
             workset_payload = {
@@ -898,16 +1043,50 @@ class DatabaseRunCollectionsMixin:
                 "baseline_scopes": scopes,
                 "selection_source_run_id": source_run_id,
                 "issue_ids": issue_ids,
+                "member_count": len(issue_ids),
+                "members_sha256": all_members_digest,
+                "scope_items": [
+                    {
+                        "baseline_scope": scope,
+                        "issue_ids": list(scope_members.get(scope, [])),
+                        "member_count": len(scope_members.get(scope, [])),
+                        "members_sha256": hashlib.sha256(
+                            "\n".join(scope_members.get(scope, [])).encode("utf-8")
+                        ).hexdigest(),
+                    }
+                    for scope in scopes
+                ],
             }
             workset_sha = self._content_sha256(workset_payload)
+            if reference_type == "gt":
+                scope_references = [active_gt[scope] for scope in sorted(active_gt)]
+            else:
+                scope_references = [
+                    {
+                        "baseline_scope": scope,
+                        "id": str(label_results[scope]["id"]),
+                        "content_sha256": str(label_results[scope]["content_sha256"] or ""),
+                        "member_count": int(label_results[scope]["member_count"] or 0),
+                        "coverage_status": str(label_results[scope]["coverage_status"] or ""),
+                    }
+                    for scope in sorted(label_results)
+                ]
+                if len(scope_references) != len(scopes):
+                    raise ValueError("Label result reference 必须为每个 Workset scope 提供冻结 snapshot。")
+            reference_set_sha = self._content_sha256(scope_references)
+            if not reference_id:
+                reference_id = (
+                    str(scope_references[0]["id"])
+                    if len(scope_references) == 1
+                    else f"reference-set:{reference_set_sha}"
+                )
             reference_payload = {
                 "version": 1,
                 "type": reference_type,
                 "id": reference_id,
-                "gt_snapshots": [active_gt[scope] for scope in sorted(active_gt)],
-                "label_result_content_sha256": (
-                    str(label_result["content_sha256"] or "") if label_result is not None else ""
-                ),
+                "scope_snapshots": scope_references,
+                "gt_snapshots": [active_gt[scope] for scope in sorted(active_gt)] if reference_type == "gt" else [],
+                "label_result_snapshots": scope_references if reference_type == "label_result" else [],
                 "items": [
                     [issue_id, reference_items[issue_id]["label"], reference_items[issue_id]["valid"]]
                     for issue_id in issue_ids
@@ -977,6 +1156,18 @@ class DatabaseRunCollectionsMixin:
                 "comparison_reference_run_id": comparison_reference_run_id,
             }
             context_sha = self._content_sha256(context_payload)
+            reusable = conn.execute(
+                "SELECT id FROM run_evaluation_contexts WHERE context_sha256 = ? "
+                "ORDER BY created_at ASC, id ASC LIMIT 1",
+                (context_sha,),
+            ).fetchone()
+            if reusable is not None:
+                # Content idempotency is independent of Idempotency-Key:
+                # retries made with a new transport key must still reuse the
+                # same immutable historical context.
+                return self._run_evaluation_payload_conn(
+                    conn, str(reusable["id"]), page=1, page_size=100, search=""
+                )
             cursor = conn.execute(
                 """
                 INSERT INTO run_evaluation_contexts (
@@ -1015,6 +1206,38 @@ class DatabaseRunCollectionsMixin:
             item_rows = []
             for ordinal, issue_id in enumerate(issue_ids, 1):
                 issue = issue_map.get(issue_id) or {}
+                shared_source: dict[str, Any] = {}
+                if reference_type == "gt":
+                    snapshot = active_gt.get(str(issue.get("baseline_scope") or ""), {})
+                    shared_state = "resolved" if reference_items[issue_id]["valid"] else "none"
+                    shared_expected = reference_items[issue_id]["label"]
+                    shared_relation = "matches_gt" if shared_expected in LABELS else "unknown"
+                    shared_method = "gt_snapshot"
+                    shared_source = {
+                        "reference_type": "gt_snapshot",
+                        "baseline_scope": str(issue.get("baseline_scope") or ""),
+                        "snapshot_id": str(snapshot.get("id") or ""),
+                        "snapshot_sha256": str(snapshot.get("content_sha256") or ""),
+                    }
+                else:
+                    label_result_item = label_result_items.get(issue_id) or {}
+                    shared_state = str(label_result_item.get("state") or "none")
+                    shared_expected = str(label_result_item.get("label") or "")
+                    shared_relation = str(label_result_item.get("gt_relation") or "unknown")
+                    shared_method = str(label_result_item.get("method") or "")
+                    shared_source = {
+                        "reference_type": "label_result_snapshot",
+                        "baseline_scope": str(label_result_item.get("scope") or issue.get("baseline_scope") or ""),
+                        "snapshot_id": str(label_result_item.get("snapshot_id") or ""),
+                        "snapshot_sha256": str(label_result_item.get("snapshot_sha256") or ""),
+                    }
+                shared_payload = {
+                    "state": shared_state,
+                    "expected_output": shared_expected,
+                    "gt_relation": shared_relation,
+                    "method": shared_method,
+                    "source": shared_source,
+                }
                 predictions = {
                     run_id: prediction_map[(run_id, issue_id)]
                     for run_id in member_run_ids
@@ -1031,13 +1254,18 @@ class DatabaseRunCollectionsMixin:
                     reference_items[issue_id]["label"], reference_items[issue_id]["valid"],
                     issue_id in excluded_set, self._canonical_json(predictions),
                     self._canonical_json(model_reviews),
+                    shared_state, shared_expected, shared_relation, shared_method,
+                    self._canonical_json(shared_source), self._content_sha256(shared_payload),
                 ))
             conn.executemany(
                 """
                 INSERT INTO run_evaluation_items (
                     context_id, ordinal, issue_id, baseline_scope, reference_label,
-                    reference_valid, excluded, predictions_json, model_review_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    reference_valid, excluded, predictions_json, model_review_json,
+                    shared_label_state, shared_label_expected_output,
+                    shared_label_gt_relation, shared_label_method,
+                    shared_label_source_json, shared_label_sha256
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 item_rows,
             )
@@ -1108,15 +1336,20 @@ class DatabaseRunCollectionsMixin:
                 "run_id": item["run_id"], "run": item["run"],
                 "available_now": item["available_now"],
                 "reference_denominator": 0, "valid_reference_count": 0,
-                "prediction_count": 0, "missing_count": 0,
+                "pairwise_union_denominator": 0,
+                "prediction_count": 0, "supported_count": 0,
+                "missing_count": 0,
                 "absent_prediction_count": 0, "unknown_count": 0, "correct_count": 0,
                 "accuracy": 0.0, "coverage": 0.0, "workset_coverage": 0.0,
+                "supported_coverage": 0.0, "absent_count": 0,
                 "confusion": [], "transitions_vs_reference": None,
             }
             for item in members
         }
         valid_non_excluded_count = 0
         scorable_issue_ids: set[str] = set()
+        workset_missing_count = 0
+        workset_unknown_count = 0
         for row in all_items:
             if not bool(row["reference_valid"]) or bool(row["excluded"]):
                 continue
@@ -1130,6 +1363,22 @@ class DatabaseRunCollectionsMixin:
                 for member in members
             ):
                 scorable_issue_ids.add(str(row["issue_id"]))
+            else:
+                predictions = _json_load(row["predictions_json"], {})
+                if not isinstance(predictions, dict):
+                    predictions = {}
+                present_values = [
+                    bool((predictions.get(member["run_id"]) or {}).get("present"))
+                    for member in members
+                ]
+                supported_values = [
+                    present and str((predictions.get(member["run_id"]) or {}).get("label") or "") in MODEL_LABELS
+                    for present, member in zip(present_values, members)
+                ]
+                if not any(present_values):
+                    workset_missing_count += 1
+                elif not any(supported_values):
+                    workset_unknown_count += 1
         reference_run_id = str(context["comparison_reference_run_id"] or "")
         transition_counts = (
             {
@@ -1158,9 +1407,6 @@ class DatabaseRunCollectionsMixin:
                         run_id = member["run_id"]
                         metric = metrics[run_id]
                         metric["valid_reference_count"] += 1
-                        if issue_id not in scorable_issue_ids:
-                            continue
-                        metric["reference_denominator"] += 1
                         prediction = predictions.get(run_id) or {}
                         present = bool(prediction.get("present"))
                         label = str(prediction.get("label") or "") if present else ""
@@ -1168,6 +1414,7 @@ class DatabaseRunCollectionsMixin:
                             bucket = "NONE"
                             metric["missing_count"] += 1
                             metric["absent_prediction_count"] += 1
+                            metric["absent_count"] += 1
                         elif label not in MODEL_LABELS:
                             bucket = "UNKNOWN"
                             metric["unknown_count"] += 1
@@ -1175,8 +1422,13 @@ class DatabaseRunCollectionsMixin:
                         else:
                             bucket = label
                             metric["prediction_count"] += 1
-                            if model_label_matches_gt(label, reference_label):
-                                metric["correct_count"] += 1
+                            metric["supported_count"] += 1
+                        if issue_id not in scorable_issue_ids:
+                            continue
+                        metric["reference_denominator"] += 1
+                        metric["pairwise_union_denominator"] += 1
+                        if label in MODEL_LABELS and model_label_matches_gt(label, reference_label):
+                            metric["correct_count"] += 1
                         if ref_metric_label in matrix[run_id]:
                             matrix[run_id][ref_metric_label][bucket] += 1
                 if issue_id in scorable_issue_ids and reference_run_id in metrics:
@@ -1212,6 +1464,14 @@ class DatabaseRunCollectionsMixin:
                 "baseline_scope": str(row["baseline_scope"] or ""),
                 "reference_label": reference_label,
                 "reference_valid": valid, "excluded": excluded,
+                "shared_label": {
+                    "state": str(row["shared_label_state"] or "none"),
+                    "expected_output": str(row["shared_label_expected_output"] or ""),
+                    "gt_relation": str(row["shared_label_gt_relation"] or "unknown"),
+                    "method": str(row["shared_label_method"] or ""),
+                    "source": _json_load(row["shared_label_source_json"], {}),
+                    "sha256": str(row["shared_label_sha256"] or ""),
+                },
                 "predictions": enriched_predictions,
             })
         for run_id, metric in metrics.items():
@@ -1222,6 +1482,11 @@ class DatabaseRunCollectionsMixin:
                 metric["prediction_count"] / metric["valid_reference_count"]
                 if metric["valid_reference_count"] else 0.0
             )
+            metric["supported_coverage"] = (
+                metric["supported_count"] / metric["valid_reference_count"]
+                if metric["valid_reference_count"] else 0.0
+            )
+            metric["coverage_semantics"] = "pairwise_union" if denominator else "no_supported_output"
             metric["confusion"] = [
                 {"reference_label": label, "cells": matrix[run_id][label], "total": sum(matrix[run_id][label].values())}
                 for label in reference_labels
@@ -1234,17 +1499,59 @@ class DatabaseRunCollectionsMixin:
         page_count = max(1, math.ceil(total / page_size))
         page = min(page, page_count)
         offset = (page - 1) * page_size
+        stored_workset = _json_load(context["workset_json"], {})
+        stored_reference = _json_load(context["reference_json"], {})
+        if include_all_items:
+            public_workset = stored_workset
+            public_reference_snapshot = stored_reference
+        else:
+            scope_items = stored_workset.get("scope_items") if isinstance(stored_workset, dict) else []
+            public_workset = {
+                "version": int(stored_workset.get("version") or 1) if isinstance(stored_workset, dict) else 1,
+                "workset_id": str(stored_workset.get("workset_id") or context["workset_id"]) if isinstance(stored_workset, dict) else str(context["workset_id"] or ""),
+                "baseline_scopes": list(stored_workset.get("baseline_scopes") or []) if isinstance(stored_workset, dict) else [],
+                "scope_count": len(scope_items or (stored_workset.get("baseline_scopes") if isinstance(stored_workset, dict) else [])),
+                "member_count": len(all_items),
+                "selection_source_run_id": str(context["selection_source_run_id"] or ""),
+                "members_sha256": str(stored_workset.get("members_sha256") or context["workset_sha256"] or ""),
+                "scope_items": [
+                    {
+                        "baseline_scope": str(item.get("baseline_scope") or ""),
+                        "member_count": int(item.get("member_count") or len(item.get("issue_ids") or [])),
+                        "members_sha256": str(item.get("members_sha256") or ""),
+                    }
+                    for item in (scope_items or [])
+                    if isinstance(item, dict)
+                ],
+            }
+            public_reference_snapshot = {
+                "version": int(stored_reference.get("version") or 1) if isinstance(stored_reference, dict) else 1,
+                "type": str(stored_reference.get("type") or context["reference_type"]) if isinstance(stored_reference, dict) else str(context["reference_type"]),
+                "id": str(stored_reference.get("id") or context["reference_id"] or "") if isinstance(stored_reference, dict) else str(context["reference_id"] or ""),
+                "scope_snapshots": [
+                    {
+                        "baseline_scope": str(item.get("baseline_scope") or ""),
+                        "id": str(item.get("id") or ""),
+                        "content_sha256": str(item.get("content_sha256") or ""),
+                        "membership_sha256": str(item.get("membership_sha256") or ""),
+                        "member_count": int(item.get("member_count") or 0),
+                    }
+                    for item in (stored_reference.get("scope_snapshots") or [])
+                    if isinstance(item, dict)
+                ],
+                "item_count": len(all_items),
+            }
         result = {
             "id": str(context["id"]),
             "collection_id": str(context["collection_id"]),
             "collection_revision": int(context["collection_revision"]),
             "collection_sha256": str(context["collection_sha256"] or ""),
-            "workset": _json_load(context["workset_json"], {}),
+            "workset": public_workset,
             "workset_sha256": str(context["workset_sha256"] or ""),
             "reference": {
                 "type": str(context["reference_type"]),
                 "id": str(context["reference_id"] or ""),
-                "snapshot": _json_load(context["reference_json"], {}),
+                "snapshot": public_reference_snapshot,
                 "sha256": str(context["reference_sha256"] or ""),
             },
             "scoring_policy": policy,
@@ -1260,6 +1567,12 @@ class DatabaseRunCollectionsMixin:
                 if context["selection_source_run_id"] else ""
             ),
             "comparison_reference_run_id": reference_run_id,
+            "reference_official": str(context["reference_type"] or "") in {"gt", "label_result"},
+            "metric_semantics": (
+                "official_snapshot_accuracy_with_pairwise_union_coverage"
+                if str(context["reference_type"] or "") in {"gt", "label_result"}
+                else "legacy_prediction_agreement_non_official"
+            ),
             "context_sha256": str(context["context_sha256"] or ""),
             "created_by": str(context["created_by"] or ""),
             "created_by_source": str(context["created_by_source"] or "legacy"),
@@ -1268,9 +1581,15 @@ class DatabaseRunCollectionsMixin:
             "members": members,
             "summary": {
                 "workset_count": len(all_items),
-                "valid_reference_count": sum(1 for row in all_items if bool(row["reference_valid"])),
+                "valid_reference_count": sum(1 for row in all_items if bool(row["reference_valid"]) and not bool(row["excluded"])),
                 "excluded_count": sum(1 for row in all_items if bool(row["excluded"])),
                 "reference_denominator": next(iter(metrics.values()))["reference_denominator"] if metrics else 0,
+                "pairwise_union_denominator": (
+                    next(iter(metrics.values()))["pairwise_union_denominator"] if metrics else 0
+                ),
+                "workset_missing_count": workset_missing_count,
+                "workset_unknown_count": workset_unknown_count,
+                "coverage_note": "准确率/旧版 Pairwise coverage 使用至少一个 Run 有 supported output 的 union denominator；每 Run supported_coverage 使用全部 valid reference。",
                 "runs": list(metrics.values()),
             },
             "items": filtered_items[offset : offset + page_size] if include_items else [],
@@ -1293,6 +1612,21 @@ class DatabaseRunCollectionsMixin:
             return self._run_evaluation_payload_conn(
                 conn, str(context_id or "").strip(), page=page,
                 page_size=page_size, search=search,
+            )
+
+    def get_run_evaluation_task_context(self, context_id: str) -> dict[str, Any] | None:
+        """Return the complete frozen context for internal Campaign adapters.
+
+        The public detail endpoint deliberately returns compact Workset and
+        reference summaries. Campaign creation still needs the frozen member
+        set, so it uses this internal service method inside the same database
+        boundary instead of trusting a client supplied full JSON payload.
+        """
+        with self.connect() as conn:
+            return self._run_evaluation_payload_conn(
+                conn, str(context_id or "").strip(), page=1,
+                page_size=self.MAX_EVALUATION_ITEMS, search="",
+                include_all_items=True,
             )
 
     def list_run_evaluations(
@@ -1353,7 +1687,13 @@ class DatabaseRunCollectionsMixin:
                 "collection_id": payload["collection_id"],
                 "collection_revision": payload["collection_revision"],
                 "collection_sha256": payload["collection_sha256"],
+                "workset_id": str(payload["workset"].get("workset_id") or ""),
+                "workset_member_count": int(payload["workset"].get("member_count") or len(payload.get("items") or [])),
                 "workset_sha256": payload["workset_sha256"],
+                "workset_scope_items": payload["workset"].get("scope_items") or [],
+                "reference_type": payload["reference"]["type"],
+                "reference_id": payload["reference"]["id"],
+                "reference_scope_snapshots": payload["reference"].get("snapshot", {}).get("scope_snapshots") or [],
                 "reference_sha256": payload["reference"]["sha256"],
                 "scoring_policy_version": payload["scoring_policy_version"],
                 "scoring_policy_sha256": payload["scoring_policy_sha256"],

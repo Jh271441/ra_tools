@@ -872,6 +872,10 @@ function bindEvents() {
       }
       return;
     }
+    if (route.page === "run-collections") {
+      showPage("run-collections", { restoreRoute: true, loadPageData: true });
+      return;
+    }
     if (route.page === "analysis") {
       const previousRunId = state.selectedRunId;
       const previousFailureOnly = state.failureOnly;
@@ -1163,7 +1167,7 @@ async function bootstrap() {
     } else {
       state.selectedRunId = "";
     }
-    if (initialRoute.page === "comparison") {
+    if (["comparison", "run-collections"].includes(initialRoute.page)) {
       applyRunComparisonRoute(initialRoute.comparisonFilters);
     }
     const sharedDataPromise = ["labeling", "labeling-new-task"].includes(initialRoute.page)
@@ -1200,6 +1204,8 @@ async function bootstrap() {
       initialPageRequests.push(loadPredictionConfig(), loadPredictionBatches());
     } else if (initialRoute.page === "comparison") {
       initialPageRequests.push(loadRunComparison({ historyMode: "" }));
+    } else if (initialRoute.page === "run-collections") {
+      initialPageRequests.push(loadRunCollectionsWorkbench({ restoreRoute: true }));
     } else if (initialRoute.page === "labeling") {
       initialPageRequests.push(enterCaseLabeling({ route: initialRoute }));
     } else if (initialRoute.page === "labeling-new-task") {
