@@ -72,3 +72,15 @@ Sample audit confirmed the seven scenarios above, including one vote with two
 sources for `cn29141385`, a same-reviewer conflict retaining three sources for
 `cn31974313`, and annotation 252 absent from import sources while remaining in
 the original Review table.
+
+## 0508 guarded activation
+
+The dedicated copy-only activation path verified the imported batch and active
+GT snapshot before creating a shadow scope row. It repeated reconciliation,
+then atomically activated with both epoch and source-fingerprint guards. The
+final 0508 state is `active`, epoch 1, policy `legacy-case-label-copy-v2`, with
+the same source fingerprint as the import batch. Receipt
+`s6-shadow-5d7f2a35f3244c959737da7d098ae53b` recorded zero diffs.
+
+This path does not call `migrate_case_labeling.py`, does not map legacy mixed
+Review fields again, and does not activate 0206.

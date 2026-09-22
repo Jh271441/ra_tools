@@ -100,6 +100,29 @@ selector, showed the fixed GT snapshot, current shared conclusion, current vote,
 other-source count and cross-Run notice, and displayed independent `GT待复核` and
 `已完成` statuses above the atomic `提交联合复核` button.
 
+## 0508 Case-label activation
+
+The isolated 8786 scope `release0508_1071_20260729` was activated through the
+copy-only guard in source `32a6eda51c5ab3e750624ac02c9aac2d03635f58`.
+
+- Active GT snapshot: `gt-cb78d260a89666b68a271fdc0b56e391321892747cbc87222b5f723e865e0438`.
+- Membership: 108 snapshot members / 108 scope Issues, all 108 with valid GT.
+- Import batch: `label-import-7172bf0fcb45d7aeaaf1d7cd`, status `imported`.
+- Inventory fingerprint: `4395bc444b9439c7166087444a98a76402d6da2d26a55cc7f3484df5535602b9`.
+- Reconciled rows: 31 imported votes, 41 source records and 25 imported Case states.
+- Activation state: epoch 1, policy `legacy-case-label-copy-v2`, status `active`.
+- Receipt: `s6-shadow-5d7f2a35f3244c959737da7d098ae53b`, status `pass`, zero diffs.
+- 0206 remains inactive and has no `labeling_scope_state` row.
+
+Browser verification showed `当前已激活数据集 · 108 个 Case`, GT membership
+`108/108`, no inactive-state message, and a 20-card first page with unlabeled
+Cases rendered as `标注 —` alongside imported labels. The 0508 Review gallery
+still showed 108 Issues and the existing shared `GT 待复核` / conflict states.
+
+The activation did not change source Review data. Before/after row counts and
+SHA256 values were identical for `annotations` (211), `review_comments` (13),
+`model_review_revisions` (12) and `model_review_heads` (11).
+
 ## Recovery
 
 `scripts/restore_s6_8786.sh` restores the frozen S6 v2 source on loopback 8786.
