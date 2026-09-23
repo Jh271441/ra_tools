@@ -451,6 +451,7 @@ html[data-color-theme="light"] .detail-queue-index-input {
 .review-status-field { display: grid; gap: 3px; }
 .review-status-field > span { color: var(--muted); font-size: 12px; }
 .review-expected-output-field { display: grid; gap: 4px; }
+.review-expected-output-field[hidden] { display: none !important; }
 .review-expected-output-heading {
   min-width: 0; display: flex; align-items: center; gap: 7px;
 }
