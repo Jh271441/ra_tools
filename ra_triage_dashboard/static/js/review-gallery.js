@@ -700,6 +700,9 @@ async function loadCases({
     return loadCases({ keepSelection, page: totalPages });
   }
   renderCases(data);
+  if (state.reviewTaskContext || state.reviewTaskContextError) {
+    renderReviewTaskContext();
+  }
   state.reviewQueueStale = false;
   if (!keepSelection) {
     clearDetail({ showGallery: state.activePage === "review" });

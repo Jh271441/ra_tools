@@ -106,6 +106,7 @@ async function loadReviewTaskContext(splitId, { route = null } = {}) {
       state.selectedBaselineIds = baselineIds;
       persistBaselineIds(baselineIds);
       renderBaselinePicker();
+      renderConfig();
     }
     state.selectedRunId = task.model_run_id || "";
     if (route) {
