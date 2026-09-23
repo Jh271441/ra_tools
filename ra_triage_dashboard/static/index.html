@@ -329,9 +329,6 @@
                     </button>
                   </div>
                 </label>
-                <button class="button button-quiet review-more-filters" id="reviewMoreFiltersButton" type="button" aria-expanded="false" aria-controls="reviewAdvancedFilters"><span class="ui-lang-zh">更多筛选</span><span class="ui-lang-en">More filters</span><span class="review-more-count" id="reviewMoreFiltersCount" hidden></span></button>
-                <button class="button button-quiet filter-submit" id="resetReviewFiltersButton" type="button"><span class="ui-lang-zh">重置</span><span class="ui-lang-en">Reset</span></button>
-                <div class="review-advanced-filters" id="reviewAdvancedFilters">
                 <label>
                   <span>GT</span>
                   <div class="multi-filter" id="gtFilter" data-placeholder="全部 GT" data-placeholder-en="All GT" data-i18n-placeholder="filter.all_gt"></div>
@@ -364,24 +361,22 @@
                   <span class="ui-lang-zh">任务负责人</span><span class="ui-lang-en">Assignee</span>
                   <div class="multi-filter" id="workAssigneeFilter" data-placeholder="全部负责人" data-placeholder-en="All assignees" data-i18n-placeholder="filter.all_assignees" aria-label="Work assignee filter"></div>
                 </label>
+                <div class="review-task-filter">
+                  <span><span class="ui-lang-zh">复核任务</span><span class="ui-lang-en">Review task</span></span>
+                  <div class="review-task-filter-row">
+                    <details class="review-task-drawer" id="reviewTaskDrawer">
+                      <summary id="reviewTaskSummary"><span class="ui-lang-zh">综合结果</span><span class="ui-lang-en">Combined results</span></summary>
+                      <div class="review-task-drawer-body">
+                        <label><span class="ui-lang-zh">任务范围</span><span class="ui-lang-en">Task range</span><div class="ui-select" id="reviewTaskPicker"><button class="ui-select-trigger" type="button"><span class="ui-select-summary">综合结果</span><span class="ui-select-caret" aria-hidden="true"></span></button><div class="ui-select-panel" role="listbox" hidden></div><select class="ui-select-native" id="reviewTaskFilter" aria-hidden="true" tabindex="-1"><option value="">综合结果</option></select></div></label>
+                        <label id="reviewWorkflowModeField"><span class="ui-lang-zh">页面模式</span><span class="ui-lang-en">Page mode</span><select id="reviewWorkflowMode"><option value="model_review_only">仅判错复核</option><option value="model_review_and_case_label">判错复核 + Case 标注</option></select></label>
+                        <span class="muted" id="reviewWorkflowModeHint"><span class="ui-lang-zh">页面模式由当前任务锁定。</span><span class="ui-lang-en">The current task locks the page mode.</span></span>
+                      </div>
+                    </details>
+                    <button class="review-task-exit" id="reviewTaskContextExit" type="button" hidden aria-label="退出任务范围" title="退出任务范围">×</button>
+                  </div>
                 </div>
-                <div class="review-active-filters" id="reviewActiveFilters" aria-live="polite" hidden></div>
+                <button class="button button-quiet filter-submit" id="resetReviewFiltersButton" type="button"><span class="ui-lang-zh">重置</span><span class="ui-lang-en">Reset</span></button>
               </form>
-              </section>
-
-              <details class="review-task-drawer" id="reviewTaskDrawer">
-                <summary><span class="ui-lang-zh">复核任务</span><span class="ui-lang-en">Review tasks</span><small><span class="ui-lang-zh">按任务范围查看，不影响共享标签</span><span class="ui-lang-en">Run-scoped task view; shared labels stay separate</span></small></summary>
-                <div class="review-task-drawer-body">
-                  <label><span class="ui-lang-zh">任务范围</span><span class="ui-lang-en">Task range</span><div class="ui-select" id="reviewTaskPicker"><button class="ui-select-trigger" type="button"><span class="ui-select-summary">综合结果</span><span class="ui-select-caret" aria-hidden="true"></span></button><div class="ui-select-panel" role="listbox" hidden></div><select class="ui-select-native" id="reviewTaskFilter" aria-hidden="true" tabindex="-1"><option value="">综合结果</option></select></div></label>
-                  <label id="reviewWorkflowModeField"><span class="ui-lang-zh">页面模式</span><span class="ui-lang-en">Page mode</span><select id="reviewWorkflowMode"><option value="model_review_only">仅判错复核</option><option value="model_review_and_case_label">判错复核 + Case 标注</option></select></label>
-                  <span class="muted" id="reviewWorkflowModeHint"><span class="ui-lang-zh">非任务浏览默认仅判错复核；联合任务由任务配置锁定。</span><span class="ui-lang-en">Direct browsing defaults to model Review only; combined tasks lock this mode.</span></span>
-                  <span class="muted"><span class="ui-lang-zh">模型复核任务只影响当前 Run 的诊断和完成度。</span><span class="ui-lang-en">Review tasks affect only the selected Run diagnosis and completion.</span></span>
-                </div>
-              </details>
-
-              <section class="review-task-context-banner" id="reviewTaskContextBanner" hidden>
-                <div><strong id="reviewTaskContextTitle">复核任务</strong><span id="reviewTaskContextMeta"></span></div>
-                <button class="button button-quiet" id="reviewTaskContextExit" type="button">退出任务范围</button>
               </section>
               <section class="review-task-context-error" id="reviewTaskContextError" hidden>
                 <strong>任务范围加载失败</strong>
@@ -397,14 +392,10 @@
                   </div>
                   <div class="gallery-heading-actions">
                     <div class="review-quick-actions">
-                      <div class="review-quick-actions-secondary">
-                        <button class="button button-quiet" id="reviewUploadModelButton" type="button"><span class="ui-lang-zh">上传模型结果</span><span class="ui-lang-en">Upload model results</span></button>
-                        <button class="button button-quiet" id="exportFilteredIssuesButton" type="button" disabled><span class="ui-lang-zh">导出当前筛选</span><span class="ui-lang-en">Export selection</span></button>
-                      </div>
-                      <div class="review-quick-actions-primary">
-                        <button class="button button-quiet" id="splitFilteredButton" type="button" disabled><span class="ui-lang-zh">均分任务</span><span class="ui-lang-en">Split work</span></button>
-                        <button class="button button-primary" id="predictFilteredButton" type="button" disabled><span class="ui-lang-zh">预测当前筛选</span><span class="ui-lang-en">Predict selection</span></button>
-                      </div>
+                      <button class="button button-quiet" id="reviewUploadModelButton" type="button"><span class="ui-lang-zh">上传模型结果</span><span class="ui-lang-en">Upload model results</span></button>
+                      <button class="button button-quiet" id="exportFilteredIssuesButton" type="button" disabled><span class="ui-lang-zh">导出当前筛选</span><span class="ui-lang-en">Export selection</span></button>
+                      <button class="button button-quiet" id="splitFilteredButton" type="button" disabled><span class="ui-lang-zh">均分任务</span><span class="ui-lang-en">Split work</span></button>
+                      <button class="button button-primary" id="predictFilteredButton" type="button" disabled><span class="ui-lang-zh">预测当前筛选</span><span class="ui-lang-en">Predict selection</span></button>
                     </div>
                     <div class="gallery-heading-meta">
                       <span id="galleryResultSummary" data-i18n="gallery.loading">正在加载 Issue…</span>
@@ -2049,17 +2040,13 @@
           <button class="icon-button" type="button" data-close="workSplitDialog" aria-label="关闭">×</button>
         </div>
         <div class="work-split-summary" id="workSplitSummary">当前筛选：—</div>
-        <fieldset class="work-split-workflow-mode">
-          <legend><span class="ui-lang-zh">任务模式</span><span class="ui-lang-en">Task mode</span></legend>
-          <div class="work-split-mode-cards" id="workSplitWorkflowModeCards">
-            <button class="work-split-mode-card is-active" type="button" data-workflow-mode="model_review_only"><strong><span class="ui-lang-zh">判错复核</span><span class="ui-lang-en">Model review</span></strong><small><span class="ui-lang-zh">按当前 Run 记录原因与状态</span><span class="ui-lang-en">Record reason and status for this Run</span></small></button>
-            <button class="work-split-mode-card" type="button" data-workflow-mode="model_review_and_case_label"><strong><span class="ui-lang-zh">联合复核</span><span class="ui-lang-en">Combined review</span></strong><small><span class="ui-lang-zh">同时提交共享 Case 标签</span><span class="ui-lang-en">Also submit the shared Case label</span></small></button>
-          </div>
-          <select id="workSplitWorkflowMode" class="work-split-mode-native" aria-hidden="true" tabindex="-1">
+        <label class="work-split-seed work-split-workflow-mode">
+          <span><span class="ui-lang-zh">任务模式</span><span class="ui-lang-en">Task mode</span></span>
+          <select id="workSplitWorkflowMode">
             <option value="model_review_only">仅判错复核</option>
             <option value="model_review_and_case_label">判错复核 + Case 标注</option>
           </select>
-        </fieldset>
+        </label>
         <div class="work-split-mode-row">
           <label class="work-split-seed">
             <span><span class="ui-lang-zh">每个 Issue 复核人数</span><span class="ui-lang-en">Reviewers per Issue</span></span>
@@ -2094,13 +2081,15 @@
           </label>
           <div class="work-split-estimate" id="workSplitEstimate">单人均分</div>
         </div>
-        <div class="work-split-person-head" aria-hidden="true"><span><span class="ui-lang-zh">复核人</span><span class="ui-lang-en">Reviewer</span></span><span><span class="ui-lang-zh">分配权重</span><span class="ui-lang-en">Weight</span></span><span></span></div>
         <div class="work-split-people" id="workSplitPeople" aria-label="复核人列表"></div>
         <div class="work-split-toolbar">
           <button class="button button-quiet" id="workSplitAddPerson" type="button"><span class="ui-lang-zh">添加人员</span><span class="ui-lang-en">Add person</span></button>
-          <details class="work-split-advanced"><summary><span class="ui-lang-zh">高级设置</span><span class="ui-lang-en">Advanced</span></summary><label class="work-split-seed"><span><span class="ui-lang-zh">随机种子（可选）</span><span class="ui-lang-en">Random seed (optional)</span></span><input id="workSplitSeed" type="number" inputmode="numeric" placeholder="留空则每次不同" /></label></details>
+          <label class="work-split-seed">
+            <span>随机种子（可选）</span>
+            <input id="workSplitSeed" type="number" inputmode="numeric" placeholder="留空则每次不同" />
+          </label>
         </div>
-        <div class="dialog-actions work-split-footer">
+        <div class="dialog-actions">
           <button class="button button-quiet" type="button" data-close="workSplitDialog"><span class="ui-lang-zh">取消</span><span class="ui-lang-en">Cancel</span></button>
           <button class="button button-primary" id="workSplitGenerate" type="button"><span class="ui-lang-zh">生成分配</span><span class="ui-lang-en">Generate assignment</span></button>
         </div>

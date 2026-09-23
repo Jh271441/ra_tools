@@ -9,7 +9,6 @@ function workAssigneeRouteSelection() {
 
 function renderReviewTaskContext() {
   const task = state.reviewTaskContext;
-  const banner = $("#reviewTaskContextBanner");
   const errorCard = $("#reviewTaskContextError");
   if (errorCard) {
     errorCard.hidden = !state.reviewTaskContextError;
@@ -18,13 +17,18 @@ function renderReviewTaskContext() {
       $("#reviewTaskContextErrorId").textContent = state.reviewWorkSplitId || "—";
     }
   }
-  if (!banner) return;
-  banner.hidden = !task || Boolean(state.reviewTaskContextError);
+  const summary = $("#reviewTaskSummary");
+  const exit = $("#reviewTaskContextExit");
+  if (summary) {
+    summary.innerHTML = task
+      ? `<span class="ui-lang-zh">${escapeHtml(task.legacy_no_run ? "历史任务" : (task.name || "当前任务"))} · ${Number(task.issue_count || 0)}</span><span class="ui-lang-en">${escapeHtml(task.legacy_no_run ? "Historical task" : (task.name || "Current task"))} · ${Number(task.issue_count || 0)}</span>`
+      : '<span class="ui-lang-zh">综合结果</span><span class="ui-lang-en">Combined results</span>';
+    summary.title = task?.legacy_no_run
+      ? "历史无 Run 任务，仅查看原分配范围"
+      : task ? `${task.workflow_mode === "model_review_and_case_label" ? "联合复核" : "仅判错复核"} · ${task.id || ""}` : "";
+  }
+  if (exit) exit.hidden = !task || Boolean(state.reviewTaskContextError);
   if (!task) return;
-  $("#reviewTaskContextTitle").textContent = task.name || task.id;
-  $("#reviewTaskContextMeta").textContent = task.legacy_no_run
-    ? `历史无 Run 任务 · ${task.issue_count || 0} 个 Issue · 仅用于查看原分配范围`
-    : `${task.workflow_mode === "model_review_and_case_label" ? "联合复核" : "仅判错复核"} · ${task.issue_count || 0} 个 Issue`;
   const runTrigger = $("#modelRunPickerTrigger");
   if (runTrigger) {
     runTrigger.disabled = true;
@@ -69,6 +73,14 @@ async function exitReviewTaskContext({ reload = true } = {}) {
   await loadRuns({ preserveEmpty: true });
   await loadCases({ keepSelection: false, page: 1 });
   await loadOverview();
+}
+
+async function exitReviewTaskAndOpenRunPicker() {
+  await exitReviewTaskContext({ reload: true });
+  const trigger = $("#modelRunPickerTrigger");
+  if (!trigger) return;
+  trigger.focus({ preventScroll: false });
+  trigger.click();
 }
 
 async function loadReviewTaskContext(splitId, { route = null } = {}) {
@@ -184,10 +196,15 @@ function renderReviewWorkSplitPicker(selected = state.reviewWorkSplitId) {
     selected,
     state.availableReviewWorkSplitId,
     (value) => {
-      state.reviewWorkSplitId = value || "";
+      const splitId = String(value || "");
+      if (!splitId) {
+        exitReviewTaskContext().catch((error) => showToast(error.message, true));
+        return;
+      }
       state.casePage = 1;
-      persistCurrentReviewRoute({ workSplitId: state.reviewWorkSplitId, casePage: 1 });
-      scheduleReviewFilterReload?.(0);
+      loadReviewTaskContext(splitId)
+        .then(() => loadCases({ keepSelection: false, page: 1 }))
+        .catch((error) => showToast(error.message, true));
     }
   );
 }
@@ -601,10 +618,7 @@ async function openWorkSplitDialog() {
   renderWorkSplitPersonPickers();
   if ($("#workSplitReviewersPerIssue")) $("#workSplitReviewersPerIssue").value = "1";
   if ($("#workSplitWorkflowMode")) $("#workSplitWorkflowMode").value = "model_review_only";
-  $("#workSplitWorkflowModeCards")?.querySelectorAll("[data-workflow-mode]").forEach((card) => {
-    card.classList.toggle("is-active", card.dataset.workflowMode === "model_review_only");
-    card.setAttribute("aria-pressed", String(card.dataset.workflowMode === "model_review_only"));
-  });
+  enhanceNativeUiSelect($("#workSplitWorkflowMode"));
   renderWorkSplitReviewersPerIssuePicker(1);
   renderWorkSplitOverlapPicker(1);
   updateWorkSplitEstimate();
@@ -826,17 +840,6 @@ function bindWorkSplitControls() {
   });
   $("#workSplitReviewersPerIssue")?.addEventListener("change", updateWorkSplitEstimate);
   $("#workSplitOverlapRatio")?.addEventListener("change", updateWorkSplitEstimate);
-  $("#workSplitWorkflowModeCards")?.addEventListener("click", (event) => {
-    const card = event.target.closest("[data-workflow-mode]");
-    if (!card) return;
-    const input = $("#workSplitWorkflowMode");
-    if (input) input.value = card.dataset.workflowMode || "model_review_only";
-    event.currentTarget.querySelectorAll("[data-workflow-mode]").forEach((item) => {
-      const active = item === card;
-      item.classList.toggle("is-active", active);
-      item.setAttribute("aria-pressed", String(active));
-    });
-  });
   $("#workSplitGenerate")?.addEventListener("click", () => {
     generateWorkSplit().catch((error) => showToast(error.message, true));
   });

@@ -159,7 +159,6 @@ function scheduleReviewFilterReload(delay = 0) {
   state.reviewIssueIds = [];
   if (typeof updateIssueQueryButton === "function") updateIssueQueryButton();
   state.casePage = 1;
-  refreshReviewFilterSummary();
   persistCurrentReviewRoute({ issue: "", issueIds: [], casePage: 1 });
   reviewSearchTimer = window.setTimeout(() => {
     reviewSearchTimer = null;
@@ -167,31 +166,6 @@ function scheduleReviewFilterReload(delay = 0) {
       (error) => showToast(error.message, true)
     );
   }, Math.max(0, Number(delay) || 0));
-}
-
-function refreshReviewFilterSummary() {
-  const root = $("#reviewActiveFilters");
-  if (!root) return;
-  const advancedIds = new Set(["gtFilter", "annotationFilter", "reviewerFilter", "reviewStatusFilter", "sharedLabelStateFilter", "reviewDiscussionFilter", "reviewExclusionFilter", "workAssigneeFilter"]);
-  const fields = ["comparisonFilter", ...advancedIds];
-  const chips = [];
-  let advancedCount = 0;
-  fields.forEach((id) => {
-    const picker = $(`#${id}`);
-    picker?.querySelectorAll('input[data-multi-value]:checked').forEach((input) => {
-      chips.push({ id, value: input.value, label: input.dataset.label || input.value });
-      if (advancedIds.has(id)) advancedCount += 1;
-    });
-  });
-  const search = String($("#searchInput")?.value || "").trim();
-  if (search) chips.push({ id: "searchInput", value: search, label: search });
-  root.innerHTML = chips.map((chip) => `<span class="review-filter-chip"><span>${escapeHtml(chip.label)}</span><button type="button" data-clear-review-filter="${escapeHtml(chip.id)}" data-filter-value="${escapeHtml(chip.value)}" aria-label="移除此筛选">×</button></span>`).join("");
-  root.hidden = chips.length === 0;
-  const count = $("#reviewMoreFiltersCount");
-  if (count) {
-    count.textContent = String(advancedCount);
-    count.hidden = advancedCount === 0;
-  }
 }
 
 function bindEvents() {
@@ -229,26 +203,7 @@ function bindEvents() {
   $("#resetReviewFiltersButton")?.addEventListener("click", () => {
     resetReviewFilters().catch((error) => showToast(error.message, true));
   });
-  $("#reviewMoreFiltersButton")?.addEventListener("click", (event) => {
-    const form = $("#filterForm");
-    const open = form?.classList.toggle("show-advanced") || false;
-    event.currentTarget.setAttribute("aria-expanded", String(open));
-  });
-  $("#reviewActiveFilters")?.addEventListener("click", (event) => {
-    const button = event.target.closest("[data-clear-review-filter]");
-    if (!button) return;
-    const id = button.dataset.clearReviewFilter;
-    if (id === "searchInput") {
-      $("#searchInput").value = "";
-    } else {
-      const picker = $(`#${id}`);
-      const values = getMultiFilterValues(picker).filter((value) => value !== button.dataset.filterValue);
-      setMultiFilterValues(picker, values);
-    }
-    scheduleReviewFilterReload(0);
-  });
   $("#searchInput")?.addEventListener("input", () => scheduleReviewFilterReload(280));
-  window.setTimeout(refreshReviewFilterSummary, 0);
   $("#reviewAnalysisFilterForm").addEventListener("submit", async (event) => {
     event.preventDefault();
     state.reviewAnalysis.page = 1;

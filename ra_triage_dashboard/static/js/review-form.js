@@ -189,6 +189,7 @@ function renderDetail(caseData) {
     ? `<a class="detail-id detail-id-link" href="${escapeHtml(issueUrl)}" target="_blank" rel="noreferrer" title="打开 Voyager Issue">${issueId}</a>`
     : `<span class="detail-id">${issueId}</span>`;
   const issueIdMarkup = `<span class="detail-issue-id-group">${issueIdLink}<button class="detail-copy-id-button" type="button" data-copy-issue-id aria-label="复制 Issue ID ${issueId}" title="复制 Issue ID"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="7" y="6" width="9" height="10" rx="2"></rect><path d="M13 6V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg></button></span>`;
+  const externalLinksMarkup = detailExternalLinksMarkup(caseData);
   ensureDetailMediaState(caseData);
   const predCount = (caseData.predictions || []).length;
   const modelHistoryButton = `<button class="history-inline-button" id="modelHistoryLaunchButton" type="button" data-open-history="model" aria-keyshortcuts="M" title="展开或收起模型预测历史（M）"><span class="ui-lang-zh">评测 Run 历史 · ${predCount} 条</span><span class="ui-lang-en">Run history · ${predCount}</span><kbd class="review-control-shortcut" aria-hidden="true">M</kbd></button>`;
@@ -207,7 +208,7 @@ function renderDetail(caseData) {
     <div class="detail-header">
       <div class="detail-title-row">
         <div class="detail-title-group">
-          <div class="detail-title"><h2><span class="ui-lang-zh">问题详情</span><span class="ui-lang-en">Issue Details</span></h2>${issueIdMarkup}<span id="detailExternalLinks" class="detail-external-links">${detailExternalLinksMarkup(caseData)}</span></div>
+          <div class="detail-title"><h2><span class="ui-lang-zh">问题详情</span><span class="ui-lang-en">Issue Details</span></h2>${issueIdMarkup}${externalLinksMarkup ? `<span id="detailExternalLinks" class="detail-external-links">${externalLinksMarkup}</span>` : ""}</div>
         </div>
         <div class="detail-navigation">
           <div class="case-detail-pager">
@@ -392,8 +393,6 @@ function renderReview(caseData) {
   const reviewRunId = currentReviewRunId(caseData);
   const runBoundModelReview = Boolean(reviewRunId);
   const combinedMode = syncReviewWorkflowMode(caseData) === "model_review_and_case_label";
-  $("#reviewDetailView .review-detail-workspace")?.classList.toggle("is-combined-review", combinedMode);
-  $("#reviewPane")?.classList.toggle("is-combined-review", combinedMode);
   const runAnnotations = reviewAnnotationsForCurrentRun(caseData);
   const allAnnotations = reviewAnnotationsForAllRuns(caseData);
   const sourceSuggestion = currentReviewSourceSuggestion(caseData);
@@ -436,6 +435,21 @@ function renderReview(caseData) {
   const modelReviewStatus = String(
     previous.model_review_status || (previous.note ? "completed" : "pending")
   );
+  const sharedLabelState = caseData.label_state || {};
+  const sharedExpectedOutput = String(sharedLabelState.state || "") === "resolved"
+    && LABELS.includes(String(sharedLabelState.expected_output || ""))
+      ? String(sharedLabelState.expected_output)
+      : "";
+  const sharedVisual = sharedLabelStateVisual(sharedLabelState);
+  const readonlyExpectedStatus = ["needs-review", "conflict", "stale"].includes(sharedVisual.kind)
+    ? `<span class="readonly-expected-status shared-label-state-${escapeHtml(sharedVisual.kind)}"><span class="ui-lang-zh">${escapeHtml(sharedVisual.zh)}</span><span class="ui-lang-en">${escapeHtml(sharedVisual.en)}</span></span>`
+    : "";
+  const readonlyExpectedMarkup = `<div class="review-expected-output-readonly"><span class="review-readonly-label"><span class="ui-lang-zh">期望输出</span><span class="ui-lang-en">Expected output</span></span>${sharedExpectedOutput ? labelBadge(sharedExpectedOutput) : `<span class="review-readonly-pending"><span class="ui-lang-zh">待确定</span><span class="ui-lang-en">Undetermined</span></span>`}${readonlyExpectedStatus}</div>`;
+  const caseLabelingUrl = pageUrl("labeling", {
+    issue: caseData.issue_id || "",
+    baselines: state.reviewTaskContext?.baseline_ids || state.selectedBaselineIds,
+    forceBaselines: true,
+  });
   const customEvidenceOptions = customEvidenceKeys
     .map((key) => missingEvidenceOptionMarkup({ key, label: evidenceLabel(key), hint: "本条 Review 新建的缺失信息", builtin: false }, true, false))
     .join("");
@@ -454,10 +468,8 @@ function renderReview(caseData) {
   const sourceSuggestionMarkup = issueTagSourceSuggestionMarkup(sourceSuggestion);
   $("#reviewPane").innerHTML = `
     <form class="review-form" id="annotationForm" data-issue-id="${escapeHtml(caseData.issue_id)}">
-      <div class="combined-review-dual-status review-workflow-status-bar" id="combinedReviewDualStatus" ${combinedMode ? "" : "hidden"}><span><b>Case 标注</b> · 加载中</span><span><b>判错复核</b> · ${escapeHtml(modelReviewStatus === "completed" ? "已完成" : "未提交")}</span></div>
       <section class="review-section issue-tag-section combined-case-label-card" ${combinedMode ? "" : "hidden"}>
-        <div class="review-section-heading"><div><h2><span class="ui-lang-zh">共享 Case 标签</span><span class="ui-lang-en">Shared Case label</span></h2>${sourceSuggestionMarkup}</div><div class="review-heading-actions"><span class="evidence-summary-count" id="tagSummaryCount">${escapeHtml(t("detail.selected_n", { n: chosenTags.size }))}</span><button class="history-inline-button review-section-toggle" type="button" data-toggle-review-section aria-expanded="true"><span class="ui-lang-zh">收起</span><span class="ui-lang-en">Collapse</span></button></div></div>
-        <div class="combined-case-label-meta" id="combinedCaseLabelMeta"><span>GT · ${escapeHtml(String(caseData.gt_label || "—"))}</span><span>共享结论 · ${escapeHtml(sharedLabelStateVisual(caseData.label_state || {}).zh)}</span><span>跨 Runs 共享</span></div>
+        <div class="review-section-heading"><div><h2><span class="ui-lang-zh">Issue 标签</span><span class="ui-lang-en">Issue tags</span> <small class="combined-mode-badge"><span class="ui-lang-zh">联合复核</span><span class="ui-lang-en">Combined</span></small></h2>${sourceSuggestionMarkup}</div><span class="evidence-summary-count" id="tagSummaryCount">${escapeHtml(t("detail.selected_n", { n: chosenTags.size }))}</span></div>
         <div class="review-tag-groups-shell">${issueTagGroups}${customTagOptions ? `<div class="review-tag-legacy"><span class="ui-lang-zh">历史标签</span><span class="ui-lang-en">Legacy tags</span><div class="review-tag-options">${customTagOptions}</div></div>` : ""}</div>
         <label class="combined-case-rationale"><span><span class="ui-lang-zh">标签依据 / 说明</span><span class="ui-lang-en">Label rationale</span></span><textarea id="combinedCaseRationale" rows="2" placeholder="说明 Case 标签依据"></textarea></label>
         <label class="review-exclude-toggle" hidden><input id="reviewExcludeInput" type="checkbox" aria-keyshortcuts="K" /><span><strong class="ui-lang-zh">应该排除</strong><strong class="ui-lang-en">Exclude</strong></span><kbd class="review-control-shortcut review-exclude-shortcut" aria-hidden="true">K</kbd></label>
@@ -471,7 +483,6 @@ function renderReview(caseData) {
             </h2>
           </div>
           <div class="review-heading-actions">
-            <button class="history-inline-button review-section-toggle" type="button" data-toggle-review-section aria-expanded="true"><span class="ui-lang-zh">收起</span><span class="ui-lang-en">Collapse</span></button>
             <button class="history-inline-button" id="reviewCommentsButton" type="button" data-review-comments aria-keyshortcuts="D" title="展开或收起讨论（D）">
               <span class="ui-lang-zh">讨论</span><span class="ui-lang-en">Discussion</span>
               <kbd class="review-control-shortcut" aria-hidden="true">D</kbd>
@@ -483,6 +494,7 @@ function renderReview(caseData) {
             </button>
           </div>
         </div>
+        ${combinedMode ? "" : readonlyExpectedMarkup}
         <div class="review-expected-output-field" hidden>
           <div class="review-expected-output-heading">
             <span id="expectedOutputLabel"><span class="ui-lang-zh">期望输出</span><span class="ui-lang-en">Expected output</span></span>
@@ -520,7 +532,7 @@ function renderReview(caseData) {
           <small class="review-expected-output-hint" id="expectedOutputHint" hidden></small>
           <input id="reviewStatusInput" type="hidden" value="${escapeHtml(reviewStatus)}" />
         </div>
-        ${runBoundModelReview ? `<div class="model-review-domain-notice"><strong><span class="ui-lang-zh">当前 Run 判错复核</span><span class="ui-lang-en">Current Run model review</span></strong><span class="ui-lang-zh">${combinedMode ? "模型原因和状态属于当前 Run；上方 Case 标签跨 Runs 共享，提交按钮会原子保存两部分。" : "原因、缺失信息、状态和讨论只属于当前 Run；共享标签请在 Case 标注中修改。"}</span><span class="ui-lang-en">${combinedMode ? "Model reason and status belong to this Run; the Case label above is shared across Runs and both parts are saved atomically." : "Reason, missing evidence, status, and discussion belong only to this Run. Edit shared labels in Case labeling."}</span></div><label class="model-review-status-field"><span><span class="ui-lang-zh">判错复核状态</span><span class="ui-lang-en">Model review status</span></span><select id="modelReviewStatusInput">${MODEL_REVIEW_STATUS_OPTIONS.map((item) => `<option value="${item.value}" ${item.value === modelReviewStatus ? "selected" : ""}>${escapeHtml(i18nLocale() === "en" ? item.labelEn : item.labelZh)}</option>`).join("")}</select></label>` : `<div class="model-review-domain-notice"><strong><span class="ui-lang-zh">只读历史复核</span><span class="ui-lang-en">Read-only review history</span></strong><span class="ui-lang-zh">请先选择 Model Run 才能新建模型复核；共享标签和 GT 请到 Case 标注工作台修改。</span><span class="ui-lang-en">Select a Model Run to create a review. Edit shared labels and GT in Case labeling.</span></div>`}
+        ${runBoundModelReview ? `<label class="model-review-status-field"><span><span class="ui-lang-zh">判错复核状态</span><span class="ui-lang-en">Model review status</span></span><select id="modelReviewStatusInput">${MODEL_REVIEW_STATUS_OPTIONS.map((item) => `<option value="${item.value}" ${item.value === modelReviewStatus ? "selected" : ""}>${escapeHtml(i18nLocale() === "en" ? item.labelEn : item.labelZh)}</option>`).join("")}</select></label>` : `<div class="model-review-readonly-note"><span><span class="ui-lang-zh">历史 Review 只读。</span><span class="ui-lang-en">Historical Review is read-only.</span></span><button type="button" data-select-model-run><span class="ui-lang-zh">选择 Model Run</span><span class="ui-lang-en">Select Model Run</span></button><a href="${escapeHtml(caseLabelingUrl)}"><span class="ui-lang-zh">打开 Case 标注</span><span class="ui-lang-en">Open Case labeling</span></a></div>`}
         <label class="review-reason">
           <span class="review-reason-heading">
             <span><span class="ui-lang-zh">模型为什么判错？</span><span class="ui-lang-en">Why was the model wrong?</span></span>
@@ -557,11 +569,8 @@ function renderReview(caseData) {
           <div class="pending-screenshot-list" id="pendingScreenshotList"></div>
         </div>
       </section>
-      <div class="review-action-footer">
-        <label><span><span class="ui-lang-zh">复核人${authorLocked ? "（SSO）" : "（必填）"}</span><span class="ui-lang-en">Reviewer${authorLocked ? " (SSO)" : " (required)"}</span></span><input id="annotationAuthor" value="${escapeHtml(author)}" placeholder="姓名或工号" autocomplete="off" required ${authorLocked ? "readonly" : ""} /></label>
-        <span class="review-action-state"><span class="ui-lang-zh">填写完成后提交</span><span class="ui-lang-en">Submit when complete</span></span>
-        <button class="button button-primary full-width review-save-button" id="reviewSaveButton" type="submit" aria-keyshortcuts="Enter" title="输入原因时按 Enter 保存；Shift+Enter 换行" ${runBoundModelReview ? "" : "disabled"}><span class="ui-lang-zh">提交判错复核</span><span class="ui-lang-en">Submit model review</span><kbd class="review-save-shortcut" aria-hidden="true">Enter</kbd></button>
-      </div>
+      <label><span><span class="ui-lang-zh">复核人${authorLocked ? "（SSO）" : "（必填）"}</span><span class="ui-lang-en">Reviewer${authorLocked ? " (SSO)" : " (required)"}</span></span><input id="annotationAuthor" value="${escapeHtml(author)}" placeholder="姓名或工号" autocomplete="off" required ${authorLocked ? "readonly" : ""} /></label>
+      <button class="button button-primary full-width review-save-button" id="reviewSaveButton" type="submit" aria-keyshortcuts="Enter" title="输入原因时按 Enter 保存；Shift+Enter 换行" ${runBoundModelReview ? "" : "disabled"}><span class="ui-lang-zh">保存新的模型复核版本</span><span class="ui-lang-en">Save model review version</span><kbd class="review-save-shortcut" aria-hidden="true">Enter</kbd></button>
     </form>`;
   if (!runBoundModelReview) {
     $("#annotationForm")?.querySelectorAll(
@@ -612,17 +621,11 @@ function renderReview(caseData) {
   bindReviewComposerShortcuts();
   bindReviewDetailActionShortcuts();
   bindReviewDropdownToggles($("#reviewPane"));
-  $("#reviewPane").querySelectorAll("[data-toggle-review-section]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const section = button.closest(".review-section");
-      const collapsed = section?.classList.toggle("is-collapsed") || false;
-      button.setAttribute("aria-expanded", String(!collapsed));
-      button.querySelector(".ui-lang-zh").textContent = collapsed ? "展开" : "收起";
-      button.querySelector(".ui-lang-en").textContent = collapsed ? "Expand" : "Collapse";
-    });
-  });
   $("#reviewPane").querySelector("[data-open-history='review']")?.addEventListener("click", () => {
     toggleHistoryDialog("review", caseData);
+  });
+  $("#reviewPane").querySelector("[data-select-model-run]")?.addEventListener("click", () => {
+    exitReviewTaskAndOpenRunPicker().catch((error) => showToast(error.message, true));
   });
   bindReviewAttachmentInputs();
   restoreFailedReviewUploadImages(caseData.issue_id);
@@ -675,12 +678,6 @@ function populateCombinedCaseLabel(context, caseData) {
   });
   updateTagSummary();
   syncExpectedOutputFromTags();
-  const sources = Array.isArray(labelState.sources) ? labelState.sources.length : 0;
-  const gtSnapshot = context?.frozen_gt_snapshot_id || caseData.gt_snapshot?.id || "";
-  const meta = $("#combinedCaseLabelMeta");
-  if (meta) meta.innerHTML = `<span>GT · ${escapeHtml(String(context?.issue?.gt_label || caseData.gt_label || "—"))}</span><span>共享结论 · ${escapeHtml(sharedLabelStateVisual(labelState).zh)}</span><span>我的 vote · ${escapeHtml(expected || "未提交")}</span><span>其他来源 · ${Math.max(0, sources - (revision ? 1 : 0))}</span><span>跨 Runs 共享</span><details class="combined-technical-details"><summary><span class="ui-lang-zh">技术详情</span><span class="ui-lang-en">Technical details</span></summary><code title="${escapeHtml(gtSnapshot)}">GT snapshot · ${escapeHtml(gtSnapshot || "—")}</code></details>`;
-  const dual = $("#combinedReviewDualStatus");
-  if (dual) dual.innerHTML = `<span><b>Case 标注</b> · ${escapeHtml(revision ? (labelState.gt_review_pending ? "GT待复核" : "已提交") : "未提交")}</span><span><b>判错复核</b> · ${escapeHtml(context?.model_review?.model_review_status === "completed" ? "已完成" : "未提交")}</span>`;
   if (context?.model_review) {
     caseData.annotations = [
       context.model_review,
