@@ -208,7 +208,7 @@ function renderDetail(caseData) {
     <div class="detail-header">
       <div class="detail-title-row">
         <div class="detail-title-group">
-          <div class="detail-title"><h2><span class="ui-lang-zh">问题详情</span><span class="ui-lang-en">Issue Details</span></h2>${issueIdMarkup}${externalLinksMarkup ? `<span id="detailExternalLinks" class="detail-external-links">${externalLinksMarkup}</span>` : ""}</div>
+          <div class="detail-title"><h2><span class="ui-lang-zh">问题详情</span><span class="ui-lang-en">Issue Details</span></h2>${issueIdMarkup}<span id="detailExternalLinks" class="detail-external-links" ${externalLinksMarkup ? "" : "hidden"}>${externalLinksMarkup}</span></div>
         </div>
         <div class="detail-navigation">
           <div class="case-detail-pager">
