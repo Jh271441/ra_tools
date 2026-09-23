@@ -5,7 +5,7 @@ Recorded: 2026-09-22 (Asia/Shanghai)
 ## Runtime
 
 - Branch: `codex/dashboard-product-ux`
-- Deployed UX source: `bb59a84f9c7994d59f432ec266ae12085ceb08ea`
+- Deployed UX source: `9d7e3818cf0339381d47b8376a3dd1e69a32c6d6`
 - UX smoke root: `/volume/home/workspace/ra_triage_dashboard_deploy/experiments/manual_dashboard_product_ux_20260922`
 - UX smoke database: `manual_dashboard_product_ux_20260922`, cloned logically from S6 v2.
 - UX endpoint: loopback `127.0.0.1:8786`, base path `/manual-s6`.
@@ -131,9 +131,10 @@ Exact input:
 
 The task-context API resolved this as a legacy no-Run Split with 108 assignments,
 scope `release0508_1071_20260729`, no Run and `model_review_only`. The browser
-replaced the URL with `baselines=0508`, displayed all 108 assigned Issues and a
-`历史无 Run 任务 · 仅用于查看原分配范围` banner. No 500, blank gallery or
-anonymous “1 item failed” toast remained.
+replaced the URL with `baselines=0508`, displayed all 108 assigned Issues, and
+rendered `历史任务 · 108` as a compact field in the existing filter bar. The task
+picker stays closed until explicitly opened, and the adjacent × exits the task.
+No banner, blank gallery, 500 or anonymous “1 item failed” toast remained.
 
 - Legacy/no-Run membership is read-only and does not create or fake a model Review.
 - The Run picker is locked until `退出任务范围`; task creation is disabled without
@@ -146,7 +147,7 @@ anonymous “1 item failed” toast remained.
 
 ## Unified select controls
 
-Cache `manual-triage-496` replaces the newly added native dropdown surfaces with
+Cache `manual-triage-500` replaces the newly added native dropdown surfaces with
 the shared `ui-select` trigger/panel while retaining hidden native selects. This
 covers task mode, Review page mode, labeling-summary source, Run-collection
 project/revision/reference selectors and the dynamic model Review status.
@@ -156,6 +157,30 @@ state, disabled help text and English relabeling (`Model review only`,
 `All sources`, `GT snapshot (frozen on create)`, `Completed`). The task-mode
 control measured 38px high and 340px wide in the Review assignment dialog, with
 no operating-system native popup.
+
+## Minimal Review compatibility acceptance
+
+The final UI follows the production `5fdc41ba` Review density. Model-only Review
+shows exactly one read-only expected output derived from the resolved shared Case
+label; missing, conflicting or pending labels remain `待确定` with a separate status.
+The editable expected-output control appears only in combined mode and is excluded
+from the model-only submission payload. Historical no-Run Review keeps the reason
+and discussion read-only and exposes real `选择 Model Run` and `打开 Case 标注`
+actions. The first action exits the task and opens the existing Run picker; the
+second opened the same Issue in Case labeling on the 0508 dataset.
+
+Actual browser checks covered ordinary Gallery, the exact legacy Split deep link,
+historical no-Run detail, a Run-bound model-only detail and combined detail at
+1280 and 1440 widths with collapsed and expanded sidebars. Combined mode retains
+the existing Issue-tags and expected-output controls with only a small `联合复核`
+badge; no full-width status bar or GT snapshot string is rendered. Empty async
+Trail-link containers occupy no title space; a browser DOM-driven late metadata
+check showed `RA 录屏` and `RA Event` links appearing after hydration. Browser
+console errors were zero.
+
+The UX PostgreSQL row counts remained unchanged after the UI-only deployment:
+`annotations=211`, `review_comments=13`, `model_review_revisions=12`, and
+`model_review_heads=11`.
 
 ## Recovery
 
