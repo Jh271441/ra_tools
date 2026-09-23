@@ -188,10 +188,6 @@ function renderDetail(caseData) {
   const modelHistoryButton = `<button class="history-inline-button" id="modelHistoryLaunchButton" type="button" data-open-history="model" aria-keyshortcuts="M" title="展开或收起模型预测历史（M）"><span class="ui-lang-zh">评测 Run 历史 · ${predCount} 条</span><span class="ui-lang-en">Run history · ${predCount}</span><kbd class="review-control-shortcut" aria-hidden="true">M</kbd></button>`;
   const predictionComparable = MODEL_LABELS.includes(primary?.model_label);
   const predictionMatches = modelLabelMatchesGt(primary?.model_label, caseData.gt_label);
-  const currentReview = typeof currentReviewAnnotation === "function"
-    ? currentReviewAnnotation(caseData)
-    : null;
-  const sharedLabelStateRow = `<div class="shared-label-state-detail"><strong><span class="ui-lang-zh">共享标签</span><span class="ui-lang-en">Shared label</span></strong>${sharedLabelStateButtonMarkup({ issue_id: caseData.issue_id, label_state: caseData.label_state }, { showEmpty: true })}<span class="shared-label-detail-divider" aria-hidden="true"></span>${currentRunReviewStatusMarkup({ issue_id: caseData.issue_id, annotation: currentReview })}</div>`;
   const compareText = !predictionComparable
     ? `<span class="ui-lang-zh">不可比较</span><span class="ui-lang-en">N/A</span>`
     : predictionMatches
@@ -231,7 +227,6 @@ function renderDetail(caseData) {
           </div>
         </div>
       </div>
-      ${sharedLabelStateRow}
       ${caseData.review_note ? `<details class="review-note-details"><summary><span class="ui-lang-zh">查看历史备注</span><span class="ui-lang-en">Show legacy note</span></summary><div class="review-note"><span><span class="ui-lang-zh">历史备注</span><span class="ui-lang-en">Legacy note</span></span>${escapeHtml(caseData.review_note)}</div></details>` : ""}
     </div>
     ${currentRunOutputMarkup(caseData, primary)}
