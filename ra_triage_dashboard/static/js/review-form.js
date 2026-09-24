@@ -441,10 +441,25 @@ function renderReview(caseData) {
       ? String(sharedLabelState.expected_output)
       : "";
   const sharedVisual = sharedLabelStateVisual(sharedLabelState);
-  const readonlyExpectedStatus = ["needs-review", "conflict", "stale"].includes(sharedVisual.kind)
-    ? `<span class="readonly-expected-status shared-label-state-${escapeHtml(sharedVisual.kind)}"><span class="ui-lang-zh">${escapeHtml(sharedVisual.zh)}</span><span class="ui-lang-en">${escapeHtml(sharedVisual.en)}</span></span>`
-    : "";
-  const readonlyExpectedMarkup = `<div class="review-expected-output-readonly"><span class="review-readonly-label"><span class="ui-lang-zh">期望输出</span><span class="ui-lang-en">Expected output</span></span>${sharedExpectedOutput ? labelBadge(sharedExpectedOutput) : `<span class="review-readonly-pending"><span class="ui-lang-zh">待确定</span><span class="ui-lang-en">Undetermined</span></span>`}${readonlyExpectedStatus}</div>`;
+  const readonlyExpectedOption = sharedExpectedOutput
+    ? EXPECTED_OUTPUT_OPTIONS.find((item) => item.value === sharedExpectedOutput)
+    : null;
+  const readonlyExpectedZh = readonlyExpectedOption?.labelZh || "待确定";
+  const readonlyExpectedEn = readonlyExpectedOption?.labelEn || "Undetermined";
+  const readonlyStatusZh = sharedVisual.kind === "matches" ? "与 GT 一致" : sharedVisual.kind === "none" || sharedVisual.kind === "pending" ? "待确定" : sharedVisual.zh;
+  const readonlyStatusEn = sharedVisual.kind === "matches" ? "Matches GT" : sharedVisual.kind === "none" || sharedVisual.kind === "pending" ? "Undetermined" : sharedVisual.en;
+  const readonlyExpectedMarkup = `<div class="review-expected-output-field review-expected-output-readonly">
+    <div class="review-expected-output-heading">
+      <span class="review-readonly-label"><span class="ui-lang-zh">期望输出</span><span class="ui-lang-en">Expected output</span></span>
+      <span class="derived-review-status" data-status="${escapeHtml(sharedVisual.kind === "matches" ? "reviewed" : sharedVisual.kind === "needs-review" ? "needs_gt_review" : "pending")}"><span class="ui-lang-zh">状态：${escapeHtml(readonlyStatusZh)}</span><span class="ui-lang-en">Status: ${escapeHtml(readonlyStatusEn)}</span></span>
+    </div>
+    <div class="ui-select expected-output-picker readonly-expected-output-picker">
+      <button class="ui-select-trigger" type="button" disabled aria-label="${escapeHtml(uiText(`期望输出 ${readonlyExpectedZh}，只读`, `Expected output ${readonlyExpectedEn}, read only`))}" title="${escapeHtml(uiText("只读；请到 Case 标注修改", "Read only; edit in Case labeling"))}">
+        <span class="ui-select-summary"><span class="ui-select-summary-value"><span class="ui-lang-zh">${escapeHtml(readonlyExpectedZh)}</span><span class="ui-lang-en">${escapeHtml(readonlyExpectedEn)}</span></span><span class="ui-select-inference-marker"><span class="ui-lang-zh">只读</span><span class="ui-lang-en">Read only</span></span></span>
+        <span class="ui-select-caret" aria-hidden="true"></span>
+      </button>
+    </div>
+  </div>`;
   const caseLabelingUrl = pageUrl("labeling", {
     issue: caseData.issue_id || "",
     baselines: state.reviewTaskContext?.baseline_ids || state.selectedBaselineIds,
@@ -471,7 +486,13 @@ function renderReview(caseData) {
       <section class="review-section issue-tag-section combined-case-label-card" ${combinedMode ? "" : "hidden"}>
         <div class="review-section-heading"><div><h2><span class="ui-lang-zh">Issue 标签</span><span class="ui-lang-en">Issue tags</span> <small class="combined-mode-badge"><span class="ui-lang-zh">联合复核</span><span class="ui-lang-en">Combined</span></small></h2>${sourceSuggestionMarkup}</div><span class="evidence-summary-count" id="tagSummaryCount">${escapeHtml(t("detail.selected_n", { n: chosenTags.size }))}</span></div>
         <div class="review-tag-groups-shell">${issueTagGroups}${customTagOptions ? `<div class="review-tag-legacy"><span class="ui-lang-zh">历史标签</span><span class="ui-lang-en">Legacy tags</span><div class="review-tag-options">${customTagOptions}</div></div>` : ""}</div>
-        <label class="combined-case-rationale"><span><span class="ui-lang-zh">标签依据 / 说明</span><span class="ui-lang-en">Label rationale</span></span><textarea id="combinedCaseRationale" rows="2" placeholder="说明 Case 标签依据"></textarea></label>
+        <label class="combined-case-rationale">
+          <span class="combined-case-rationale-heading">
+            <span><span class="ui-lang-zh">标签依据 / 说明</span><span class="ui-lang-en">Label rationale</span></span>
+            <small class="review-reason-shortcuts"><span class="ui-lang-zh"><kbd>⇧ E</kbd> 聚焦 · <kbd>⇧ Enter</kbd> 换行</span><span class="ui-lang-en"><kbd>⇧ E</kbd> Focus · <kbd>⇧ Enter</kbd> New line</span></small>
+          </span>
+          <textarea id="combinedCaseRationale" rows="2" aria-keyshortcuts="Shift+E Escape Enter Shift+Enter" placeholder="说明 Case 标签依据"></textarea>
+        </label>
         <label class="review-exclude-toggle" hidden><input id="reviewExcludeInput" type="checkbox" aria-keyshortcuts="K" /><span><strong class="ui-lang-zh">应该排除</strong><strong class="ui-lang-en">Exclude</strong></span><kbd class="review-control-shortcut review-exclude-shortcut" aria-hidden="true">K</kbd></label>
       </section>
       <section class="review-section model-error-section">
@@ -1062,30 +1083,33 @@ function bindReviewComposerShortcuts() {
       return;
     }
     const note = $("#annotationNote");
+    const rationale = $("#combinedCaseRationale");
     const form = $("#annotationForm");
     if (!note || !form) return;
     const target = event.target instanceof Element ? event.target : null;
-    if (target === note) {
+    if (target === note || target === rationale) {
       if (event.key === "Escape") {
         event.preventDefault();
         event.stopPropagation();
-        note.blur();
+        target.blur();
         return;
       }
       if (event.key === "Enter" && !event.shiftKey && !state.savingAnnotation) {
         event.preventDefault();
         event.stopPropagation();
-        form.requestSubmit($("#reviewSaveButton") || undefined);
+        if (form.checkValidity()) form.requestSubmit($("#reviewSaveButton") || undefined);
       }
       return;
     }
-    if (String(event.key || "").toLowerCase() !== "e" || event.shiftKey) return;
+    if (String(event.key || "").toLowerCase() !== "e") return;
     if (target?.closest("input, textarea, select, button, a, [contenteditable='true'], [role='textbox']")) return;
+    const composer = event.shiftKey ? rationale : note;
+    if (!composer || composer.disabled) return;
     event.preventDefault();
     event.stopPropagation();
     closeAllReviewDropdowns();
-    note.focus({ preventScroll: false });
-    note.setSelectionRange(note.value.length, note.value.length);
+    composer.focus({ preventScroll: false });
+    composer.setSelectionRange(composer.value.length, composer.value.length);
   });
 }
 

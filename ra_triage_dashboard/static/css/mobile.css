@@ -11,11 +11,10 @@
   .trail-update-header-panel, .trail-update-results-panel,
   .trail-update-controls-card, .trail-update-table-card,
   .runs-toolbar, .run-manager-actions { min-width: 0; max-width: 100%; }
-  .review-filters, .analysis-filters, .trail-update-filters,
+  .analysis-filters, .trail-update-filters,
   .intent-summary-filters, .batch-history-filters {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
-  .filter-model-run, .filter-search,
   .analysis-run-filter, .analysis-search-actions,
   .intent-summary-comment-field { grid-column: 1 / -1 !important; }
 }
