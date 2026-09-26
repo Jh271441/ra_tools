@@ -1,0 +1,83 @@
+{
+  "contract": {
+    "verified": false,
+    "reference": "",
+    "view_id": 2410,
+    "time_field": "issue_time",
+    "version_operator": "like",
+    "query_attrs": [
+      {
+        "attr_id": "trip_category",
+        "operator": "in",
+        "val": [
+          0
+        ]
+      },
+      {
+        "attr_id": "abnormal_behavior",
+        "operator": "in",
+        "val": [
+          292,
+          297,
+          299,
+          393,
+          391
+        ]
+      },
+      {
+        "attr_id": "ra_type",
+        "operator": "in",
+        "val": [
+          2,
+          3
+        ]
+      },
+      {
+        "attr_id": "trip_odd",
+        "operator": "in",
+        "val": [
+          "ODD2"
+        ]
+      },
+      {
+        "attr_id": "is_deleted",
+        "operator": "in",
+        "val": [
+          0
+        ]
+      },
+      {
+        "attr_id": "platform",
+        "operator": "in",
+        "val": [
+          7,
+          8
+        ]
+      }
+    ]
+  },
+  "periods": [
+    {
+      "release": "gen4-release-20260828",
+      "cycle_end": "2026-09-10",
+      "case_start": "2026-09-03T00:00:00+08:00",
+      "case_end_exclusive": "2026-09-11T00:00:00+08:00",
+      "verified": false,
+      "evidence": "User example; exact date boundaries require Shuyi verification",
+      "job_ids": [
+        46268691
+      ],
+      "manifest": ""
+    },
+    {
+      "release": "gen4-release-20260904",
+      "cycle_end": "2026-09-24",
+      "case_start": "2026-09-10T00:00:00+08:00",
+      "case_end_exclusive": "2026-09-25T00:00:00+08:00",
+      "verified": false,
+      "evidence": "User example; exact date boundaries require Shuyi verification",
+      "job_ids": [],
+      "manifest": ""
+    }
+  ]
+}

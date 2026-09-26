@@ -408,3 +408,13 @@ docker compose -f ra_sim_repro_dashboard/docker-compose.yml run --rm --no-deps \
 - [ARCHITECTURE.md](ARCHITECTURE.md): 完整架构、数据模型、刷新链路、前端模块和扩展计划。
 - [config/versions.example.yaml](config/versions.example.yaml): 新版本配置模板。
 - [docker-compose.yml](docker-compose.yml): 本地完整服务编排。
+
+## 独立部署与域名入口
+
+通用部署、迁移、备份、周报调度及验收见
+[ops/sim_deploy/README.md](../ops/sim_deploy/README.md)。目标机器从 JSON 配置读取，
+不依赖旧主机转发。生产入口 `/sim/` 的 Kylin `strip_uri` 可剥离前缀，原生入口显式
+兼容保留及剥离前缀两种路径，并使用相对重定向适配 HTTPS 终止。
+
+原有 local Compose 是历史部署，不能作为默认恢复入口。代码 Git 同步不等于替换
+正在运行的独立部署；发布前核对 live root、数据、运行配置与服务管理器。

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+import os
 from datetime import datetime, timezone
 from typing import Any
 
@@ -195,6 +196,9 @@ def _check_versions_config() -> dict[str, Any]:
 
 
 def _check_mock_data() -> dict[str, Any]:
+    if os.getenv("DISABLE_MOCK_DATA") == "1":
+        return {"key": "mock_data", "status": "skipped", "latency_ms": None,
+                "detail": "Mock data disabled in production", "extra": {}}
     check: dict[str, Any] = {
         "key": "mock_data",
         "status": "warn",

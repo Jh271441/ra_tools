@@ -1,0 +1,7 @@
+{
+  "ssh": "user@target-host",
+  "root": "/srv/ra-sim",
+  "pg_bin": "/usr/lib/postgresql/14/bin",
+  "port": 8787,
+  "api_port": 8788
+}
