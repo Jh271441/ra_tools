@@ -202,6 +202,9 @@ async function loadCampaigns({
   campaignPageState.lifecycle = String(lifecycle || route.campaignLifecycle || "all").trim() || "all";
   campaignPageState.query = String(query || route.campaignQuery || "").trim().slice(0, 128);
   campaignPageState.groupId = String(groupId || route.campaignGroupId || "").trim();
+  document.getElementById("campaignsPage")?.classList.toggle(
+    "is-detail-view", Boolean(campaignPageState.campaignId || campaignPageState.groupId)
+  );
   document.getElementById("labelingExperimentGuide")?.toggleAttribute("hidden", campaignPageState.purpose !== "labeling");
   const lifecycleSelect = document.getElementById("campaignsLifecycle");
   const sourceSelect = document.getElementById("campaignsSource");
@@ -336,15 +339,20 @@ async function loadCampaignDetail(campaignId) {
 function renderCampaignMetrics(progress = {}) {
   const root = document.getElementById("campaignProgressMetrics");
   if (!root) return;
-  const metrics = [
-    [uiText("Issue 成员", "Issues"), progress.member_count],
-    [uiText("已分配 Issue", "Assigned Issues"), progress.assigned_issue_count],
-    [uiText("所需提交", "Required submissions"), progress.required_submitter_count],
-    [uiText("已提交", "Submitted"), progress.submitted_submitter_count],
-    [uiText("已完成 Issue", "Completed Issues"), progress.completed_issue_count],
-    [uiText("冲突", "Conflicts"), progress.conflict_issue_count],
-  ];
-  root.innerHTML = metrics.map(([label, value]) => `<div class="campaign-progress-metric"><span>${escapeHtml(label)}</span><strong>${campaignNumber(value)}</strong></div>`).join("");
+  const members = Number(progress.member_count || 0);
+  const assigned = Number(progress.assigned_issue_count || 0);
+  const completed = Number(progress.completed_issue_count || 0);
+  const required = Number(progress.required_submitter_count || 0);
+  const submitted = Number(progress.submitted_submitter_count || 0);
+  const pending = Number(progress.pending_issue_count || 0);
+  const conflicts = Number(progress.conflict_issue_count || 0);
+  const percent = assigned ? Math.min(100, Math.round(completed * 100 / assigned)) : 0;
+  const noun = progress.purpose === "labeling" ? "Case" : "Issue";
+  root.innerHTML = `
+    <div class="campaign-progress-hero"><span>完成进度</span><strong>${campaignNumber(completed)} <small>/ ${campaignNumber(assigned)} ${noun}</small></strong><div class="campaign-progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}" aria-label="已完成 ${percent}%"><span style="width:${percent}%"></span></div><small>已分配 ${campaignNumber(assigned)} / ${campaignNumber(members)} · 完成 ${percent}%</small></div>
+    <div class="campaign-progress-metric"><span>待处理 ${noun}</span><strong>${campaignNumber(pending)}</strong></div>
+    <div class="campaign-progress-metric"><span>已提交 / 所需</span><strong>${campaignNumber(submitted)} <small>/ ${campaignNumber(required)}</small></strong></div>
+    <div class="campaign-progress-metric ${conflicts ? "has-conflict" : ""}"><span>冲突待处理</span><strong>${campaignNumber(conflicts)}</strong></div>`;
 }
 
 function renderCampaignAssignees(assignees = []) {
@@ -402,6 +410,10 @@ function renderCampaignLabelAnalysis(campaign, progress) {
     return;
   }
   root.hidden = false;
+  const hasResults = Number(progress.submitted_submitter_count || 0) > 0;
+  root.classList.toggle("is-empty", !hasResults);
+  const empty = document.getElementById("campaignAnalysisEmpty");
+  if (empty) empty.hidden = hasResults;
   const exportLink = document.getElementById("campaignLabelExportCsv");
   if (exportLink) {
     const params = new URLSearchParams();
@@ -410,7 +422,7 @@ function renderCampaignLabelAnalysis(campaign, progress) {
     if (campaignPageState.issueState !== "all") params.set("state", campaignPageState.issueState);
     const query = params.toString();
     exportLink.href = withBase(`/api/campaigns/${encodeURIComponent(campaign.id)}/analysis/export.csv${query ? `?${query}` : ""}`);
-    exportLink.hidden = !state.session?.is_admin;
+    exportLink.hidden = !state.session?.is_admin || !hasResults;
   }
   const renderCounts = (targetId, values, labels) => {
     const target = document.getElementById(targetId);
@@ -420,10 +432,38 @@ function renderCampaignLabelAnalysis(campaign, progress) {
       return `<div class="campaign-analysis-count-row"><span>${escapeHtml(label)}</span><strong>${campaignNumber(values?.[key])}</strong></div>`;
     }).join("")}</div>`;
   };
-  renderCounts("campaignLabelOutputCounts", progress.label_output_counts, [
+  const renderDistribution = (targetId, values, labels) => {
+    const target = document.getElementById(targetId);
+    if (!target) return;
+    const palette = ["#24d3ee", "#34d399", "#fbbf24", "#a78bfa", "#fb7185", "#60a5fa"];
+    const entries = labels.map(([key, fallback], index) => ({
+      label: fallback || campaignLabel(key),
+      count: Math.max(0, Number(values?.[key] || 0)),
+      color: palette[index % palette.length],
+    })).filter((item) => item.count > 0);
+    const total = entries.reduce((sum, item) => sum + item.count, 0);
+    if (!total) {
+      target.innerHTML = `<p class="campaign-reference-text">${escapeHtml(uiText("暂无标注结果", "No label results"))}</p>`;
+      return;
+    }
+    let cursor = 0;
+    const segments = entries.map((item) => {
+      const start = cursor;
+      cursor += item.count / total * 100;
+      return `${item.color} ${start.toFixed(2)}% ${cursor.toFixed(2)}%`;
+    });
+    target.innerHTML = `<div class="campaign-distribution">
+      <div class="campaign-distribution-ring" style="background:conic-gradient(${segments.join(",")})" role="img" aria-label="共 ${total} 条结果"><span><strong>${campaignNumber(total)}</strong><small>条结果</small></span></div>
+      <div class="campaign-distribution-list">${entries.map((item) => {
+        const percent = Math.round(item.count / total * 100);
+        return `<div class="campaign-distribution-row"><span class="campaign-distribution-swatch" style="background:${item.color}"></span><span>${escapeHtml(item.label)}</span><strong>${campaignNumber(item.count)}</strong><small>${percent}%</small><i><b style="width:${percent}%;background:${item.color}"></b></i></div>`;
+      }).join("")}</div>
+    </div>`;
+  };
+  renderDistribution("campaignLabelOutputCounts", progress.label_output_counts, [
     ["误触发", "误触发"], ["正确触发", "正确触发"], ["无需协助", "无需协助"],
   ]);
-  renderCounts("campaignReferenceRelationCounts", progress.reference_relation_counts, [
+  renderDistribution("campaignReferenceRelationCounts", progress.reference_relation_counts, [
     ["matches_gt"], ["differs_from_gt"], ["fills_missing_gt"],
     ["matches_reference"], ["differs_from_reference"], ["unknown"],
   ]);
@@ -436,8 +476,9 @@ function renderCampaignLabelAnalysis(campaign, progress) {
       .filter(([, value]) => value > 0)
       .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
       .slice(0, limit);
+    const maximum = Math.max(1, ...entries.map(([, value]) => value));
     target.innerHTML = entries.length
-      ? `<div class="campaign-analysis-counts">${entries.map(([key, value, item]) => `<div class="campaign-analysis-count-row"><span title="${escapeHtml(key)}">${escapeHtml(item?.label || key)}</span><strong>${campaignNumber(value)}</strong></div>`).join("")}</div>`
+      ? `<div class="campaign-ranked-list">${entries.map(([key, value, item]) => `<div class="campaign-ranked-row"><span title="${escapeHtml(key)}">${escapeHtml(item?.label || key)}</span><strong>${campaignNumber(value)}</strong><i><b style="width:${Math.round(value / maximum * 100)}%"></b></i></div>`).join("")}</div>`
       : `<span class="campaign-reference-text">${escapeHtml(uiText("暂无结果", "No results"))}</span>`;
   };
   const reviewTagCatalog = state.config?.review_tag_catalog || [];
@@ -462,11 +503,12 @@ function renderCampaignLabelAnalysis(campaign, progress) {
     const entries = Object.entries(values)
       .sort((left, right) => Number(right[1]) - Number(left[1]) || left[0].localeCompare(right[0]))
       .slice(0, 16);
+    const maximum = Math.max(1, ...entries.map(([, count]) => Number(count)));
     target.innerHTML = entries.length
-      ? `<div class="campaign-analysis-counts">${entries.map(([key, count]) => {
+      ? `<div class="campaign-ranked-list">${entries.map(([key, count]) => {
           const item = tagCatalogByKey.get(key);
           const label = String(item?.label || uiText("未分类标签", "Unclassified tag"));
-          return `<div class="campaign-analysis-count-row"><span title="${escapeHtml(key)}">${escapeHtml(label)}</span><strong>${campaignNumber(count)}</strong></div>`;
+          return `<div class="campaign-ranked-row"><span title="${escapeHtml(key)}">${escapeHtml(label)}</span><strong>${campaignNumber(count)}</strong><i><b style="width:${Math.round(Number(count) / maximum * 100)}%"></b></i></div>`;
         }).join("")}</div>`
       : `<span class="campaign-reference-text">${escapeHtml(uiText("暂无结果", "No results"))}</span>`;
   };
@@ -507,7 +549,10 @@ function renderCampaignIssues(payload) {
   });
   const issues = Array.isArray(payload.issues) ? payload.issues : [];
   const count = document.getElementById("campaignIssueCount");
-  if (count) count.textContent = `${campaignNumber(payload.total)} ${uiText("个 Issue", "Issues")}`;
+  const isLabeling = campaign.purpose === "labeling";
+  const heading = document.getElementById("campaignIssuesHeading");
+  if (heading) heading.textContent = isLabeling ? "Case 明细" : "Issue 明细";
+  if (count) count.textContent = `${campaignNumber(payload.total)} 个 ${isLabeling ? "Case" : "Issue"}`;
   if (!issues.length) {
     root.innerHTML = `<tr><td colspan="${canManage ? 9 : 8}" class="campaign-empty-state">${escapeHtml(uiText("当前筛选没有 Issue。", "No Issues match these filters."))}</td></tr>`;
   } else {
@@ -552,13 +597,17 @@ function renderCampaignDetail(payload) {
   const progress = payload.progress || {};
   const title = document.getElementById("campaignDetailTitle");
   const meta = document.getElementById("campaignDetailMeta");
+  const technical = document.getElementById("campaignDetailTechnical");
   const lifecycle = document.getElementById("campaignDetailLifecycle");
   const snapshot = document.getElementById("campaignCloseSnapshot");
   if (title) title.textContent = campaign.name || campaign.id || "Campaign";
   if (meta) {
-    const reference = campaign.reference_id ? `${campaign.reference_type || "reference"}: ${campaign.reference_id}` : uiText("无已解析参考", "No resolved reference");
-    meta.textContent = `${campaign.id} · ${campaignLabel(campaign.purpose || "")} · ${(campaign.baseline_scopes || []).join(", ") || campaign.workset_baseline_scope || "—"} · ${reference}`;
+    const scopes = campaign.baseline_scopes || [campaign.workset_baseline_scope].filter(Boolean);
+    const datasets = scopes.map((scope) => String(scope).match(/^release(\d{4})/)?.[1] || String(scope));
+    const noun = campaign.purpose === "labeling" ? "Case" : "Issue";
+    meta.textContent = `${datasets.join(" + ") || "当前数据集"} · ${campaignLabel(campaign.purpose || "")} · ${campaignNumber(progress.member_count)} 个 ${noun}${campaign.reference_id ? " · 已冻结 GT 参考" : ""}`;
   }
+  if (technical) technical.textContent = `任务 ID：${campaign.id || "—"}\n数据范围：${(campaign.baseline_scopes || []).join(", ") || campaign.workset_baseline_scope || "—"}\n参考：${campaign.reference_type || "—"} · ${campaign.reference_id || "—"}`;
   if (lifecycle) {
     lifecycle.textContent = campaignLabel(campaign.lifecycle);
     lifecycle.dataset.lifecycle = campaign.lifecycle || "";

@@ -657,7 +657,7 @@ const PAGE_ROUTES = {
   },
   campaigns: {
     path: "/campaigns",
-    titleZh: "Campaign 任务与标注分析",
+    titleZh: "任务与标注汇总",
     titleEn: "Campaigns and Label Analysis",
   },
   intent: {

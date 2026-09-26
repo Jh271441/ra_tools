@@ -202,6 +202,7 @@ async def intent_experiments_page(request: Request) -> HTMLResponse:
 @router.get("/run-comparison", include_in_schema=False)
 @router.get("/run-collections", include_in_schema=False)
 @router.get("/multi-run-evaluation", include_in_schema=False)
+@router.get("/campaigns", include_in_schema=False)
 @router.get("/labeling-experiments", include_in_schema=False)
 @router.get("/labeling-summary", include_in_schema=False)
 async def run_comparison_page() -> HTMLResponse:

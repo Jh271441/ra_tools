@@ -255,21 +255,54 @@ async function loadCaseLabelingTasks() {
     state.caseLabeling.taskId = "";
   }
   renderCaseLabelingTaskPicker();
+  renderLabelingTaskHistory();
+}
+
+function renderLabelingTaskHistory() {
+  const list = $("#labelingTaskHistoryList");
+  const count = $("#labelingTaskHistoryCount");
+  if (!list) return;
+  const tasks = state.caseLabeling.tasks || [];
+  if (count) count.textContent = String(tasks.length);
+  if (!tasks.length) {
+    list.innerHTML = '<div class="intent-experiment-empty"><span>◎</span><strong>尚未创建实验</strong><p>从图库筛选 Case，再创建标注实验。</p></div>';
+    return;
+  }
+  list.innerHTML = tasks.map((task) => {
+    const progress = task.progress || {};
+    const total = Number(progress.total || task.member_count || 0);
+    const resolved = Number(progress.resolved || 0);
+    const conflict = Number(progress.conflict || 0);
+    const percent = total ? Math.min(100, Math.round(resolved * 100 / total)) : 0;
+    const mode = Number(task.reviewers_per_issue || 1) > 1
+      ? `${Number(task.reviewers_per_issue)} 人 · ${Math.round(Number(task.overlap_ratio || 0) * 100)}% 交叉盲标`
+      : "单人标注";
+    return `<article class="intent-experiment-item case-experiment-item">
+      <div><h4>${escapeHtml(task.name || "未命名实验")}</h4><div class="intent-experiment-meta">${escapeHtml(mode)} · ${total} 个 Case · ${escapeHtml(task.created_by || "")}${task.created_at ? ` · ${escapeHtml(formatTime(task.created_at))}` : ""}</div></div>
+      <button class="button button-quiet" type="button" data-open-labeling-task="${escapeHtml(task.id || "")}">打开实验</button>
+      <div class="intent-experiment-detail-row"><div class="intent-experiment-member-stats"><span>已完成 ${resolved}</span><span>待处理 ${Math.max(0, total - resolved)}</span>${conflict ? `<span>冲突 ${conflict}</span>` : ""}</div><div class="intent-experiment-progress"><span class="intent-experiment-progress-track"><i class="is-complete" style="width:${percent}%"></i></span><small>${percent}%</small></div></div>
+    </article>`;
+  }).join("");
 }
 
 async function loadCaseLabelingSnapshotReferences() {
   const meta = $("#caseLabelingSnapshotMeta");
+  const summary = $("#caseLabelingReferenceSummary");
   const button = $("#caseLabelingCreateLabelSnapshot");
   if (!meta || !button) return;
   try {
     const result = await api(withBaselineQuery("/api/labeling/gt-snapshots"));
     const snapshots = result.items || [];
     state.caseLabeling.gtSnapshots = snapshots;
+    if (summary) summary.textContent = snapshots.length === 1
+      ? `GT 参考 ${snapshots[0].valid_label_count}/${snapshots[0].member_count}`
+      : snapshots.length ? `GT 参考 · ${snapshots.length} 个数据集` : "GT 参考未建立";
     meta.textContent = snapshots.length
       ? `正式 GT snapshot · ${snapshots.map((item) => `${item.baseline_scope} ${String(item.id || "").slice(0, 18)}… · ${item.valid_label_count}/${item.member_count}`).join(" · ")}`
       : "正式 GT snapshot 尚未建立；当前页面使用 legacy current GT reference。";
   } catch (error) {
     state.caseLabeling.gtSnapshots = [];
+    if (summary) summary.textContent = "GT 参考暂不可用";
     meta.textContent = "GT snapshot metadata unavailable。";
   }
   const task = selectedCaseLabelingTask();
@@ -647,7 +680,7 @@ function bindLabelingTaskControls() {
   $("#labelingTaskGenerate")?.addEventListener("click", () => {
     generateLabelingTask().catch((error) => showToast(error.message, true));
   });
-  $("#labelingTaskResults")?.addEventListener("click", (event) => {
+  const openLabelingTask = (event) => {
     const open = event.target.closest("[data-open-labeling-task]");
     if (!open) return;
     const taskId = open.dataset.openLabelingTask || "";
@@ -658,7 +691,9 @@ function bindLabelingTaskControls() {
     // keeps the new-task page reachable via the back button.
     persistCaseLabelingRoute({ issue: "", page: 1 }, "push");
     showPage("labeling", { historyMode: "replace" });
-  });
+  };
+  $("#labelingTaskResults")?.addEventListener("click", openLabelingTask);
+  $("#labelingTaskHistoryList")?.addEventListener("click", openLabelingTask);
 }
 
 function caseLabelingGalleryItem(item) {
@@ -749,9 +784,9 @@ function renderCaseLabelingList(data) {
     const resolved = Number(progress.resolved || 0);
     const conflict = Number(progress.conflict || 0);
     const detail = conflict > 0 ? ` · ${conflict} 冲突` : "";
-    $("#caseLabelingSummary").textContent = `任务范围 · ${resolved}/${total} 已标注${detail}`;
+    $("#caseLabelingSummary").textContent = `当前任务 · ${resolved}/${total} 已标注${detail}`;
   } else {
-    $("#caseLabelingSummary").textContent = `当前已激活数据集 · ${data.total || 0} 个 Case`;
+    $("#caseLabelingSummary").textContent = "全部 Case";
   }
   $("#caseLabelingPageSummary").textContent = `${data.page || 1} / ${data.pages || 1}`;
   $("#caseLabelingPrevious").disabled = Number(data.page || 1) <= 1;
@@ -840,9 +875,12 @@ function renderCaseLabelingDetailMedia(caseData) {
         </div>
         <div class="detail-navigation">
           <div class="case-detail-pager">
-            <button class="button button-quiet" id="caseLabelingPreviousIssue" type="button" ${index <= 0 ? "disabled" : ""}><span class="ui-lang-zh">← 上一 Issue</span><span class="ui-lang-en">← Prev</span><kbd class="review-control-shortcut review-nav-shortcut" aria-hidden="true">[</kbd></button>
-            <span class="detail-queue-position">${index >= 0 ? index + 1 : "—"} / ${items.length || "—"}</span>
-            <button class="button button-quiet" id="caseLabelingNextIssue" type="button" ${index < 0 || index >= items.length - 1 ? "disabled" : ""}><span class="ui-lang-zh">下一 Issue →</span><span class="ui-lang-en">Next →</span><kbd class="review-control-shortcut review-nav-shortcut" aria-hidden="true">]</kbd></button>
+            <button class="button button-quiet" id="caseLabelingPreviousIssue" type="button" aria-keyshortcuts="[" ${index <= 0 ? "disabled" : ""}><span class="ui-lang-zh">← 上一 Issue</span><span class="ui-lang-en">← Prev</span><kbd class="review-control-shortcut review-nav-shortcut" aria-hidden="true">[</kbd></button>
+            <span class="detail-queue-position" title="输入序号后回车跳转">
+              <input class="detail-queue-index-input" id="caseLabelingQueueIndex" type="number" min="1" max="${items.length}" step="1" inputmode="numeric" aria-label="跳转到当前筛选页的第几条 Issue" value="${index >= 0 ? index + 1 : ""}" ${index < 0 ? "disabled" : ""} />
+              <span class="detail-queue-total">/ ${items.length || "—"}</span>
+            </span>
+            <button class="button button-quiet" id="caseLabelingNextIssue" type="button" aria-keyshortcuts="]" ${index < 0 || index >= items.length - 1 ? "disabled" : ""}><span class="ui-lang-zh">下一 Issue →</span><span class="ui-lang-en">Next →</span><kbd class="review-control-shortcut review-nav-shortcut" aria-hidden="true">]</kbd></button>
           </div>
         </div>
       </div>
@@ -865,6 +903,19 @@ function renderCaseLabelingDetailMedia(caseData) {
   });
   $("#caseLabelingNextIssue")?.addEventListener("click", () => {
     navigateCaseLabelingIssue(1).catch((error) => showToast(error.message, true));
+  });
+  $("#caseLabelingQueueIndex")?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    event.stopPropagation();
+    const requested = Number.parseInt(event.currentTarget.value, 10);
+    const target = items[requested - 1];
+    if (!target?.issue_id) {
+      event.currentTarget.value = index >= 0 ? String(index + 1) : "";
+      return;
+    }
+    event.currentTarget.blur();
+    selectCaseLabelingIssue(target.issue_id).catch((error) => showToast(error.message, true));
   });
   if (typeof bindDetailExternalLinks === "function") {
     bindDetailExternalLinks(caseData, $("#caseLabelingExternalLinks"));
@@ -955,6 +1006,69 @@ function caseLabelingCommentsMarkup(caseData) {
   return `${button}<div class="case-labeling-history">${items}</div>`;
 }
 
+function caseLabelingOutputValidation() {
+  const editor = $("#caseLabelingEditor");
+  const inference = inferExpectedOutputFromSelectedTags(editor || document);
+  const selected = String($("#caseLabelingExpectedOutput")?.value || "");
+  return {
+    ...inference,
+    selected,
+    conflict: inference.conflict || Boolean(inference.value && selected && inference.value !== selected),
+  };
+}
+
+function syncCaseLabelingExpectedOutputFromTags() {
+  const select = $("#caseLabelingExpectedOutput");
+  const picker = $("#caseLabelingExpectedOutputPicker");
+  if (!select || !picker) return;
+  const inference = inferExpectedOutputFromSelectedTags($("#caseLabelingEditor") || document);
+  const selectionSource = select.dataset.selectionSource || "empty";
+  if (selectionSource === "auto" || (selectionSource === "empty" && inference.value)) {
+    select.value = inference.value || "";
+    select.dataset.selectionSource = inference.value ? "auto" : "empty";
+  }
+  const options = EXPECTED_OUTPUT_OPTIONS.map((item) => ({
+    value: item.value,
+    label: i18nLocale() === "en" ? item.labelEn : item.labelZh,
+  }));
+  populateUiSelect(picker, options, select.value);
+  if (inference.value) {
+    const marker = uiText("自动推断", "Inferred");
+    picker.querySelector(`[data-ui-select-value="${inference.value}"]`)?.insertAdjacentHTML(
+      "beforeend", `<span class="ui-select-inference-marker">${escapeHtml(marker)}</span>`
+    );
+    if (select.value === inference.value) {
+      picker.querySelector(".ui-select-summary").innerHTML =
+        `<span class="ui-select-summary-value">${escapeHtml(inference.value)}</span><span class="ui-select-inference-marker">${escapeHtml(marker)}</span>`;
+    }
+  }
+  const validation = caseLabelingOutputValidation();
+  const hint = $("#caseLabelingExpectedOutputHint");
+  const status = $("#caseLabelingEditor .derived-review-status");
+  picker.classList.toggle("is-conflict", validation.conflict);
+  picker.querySelector(".ui-select-trigger")?.setAttribute("aria-invalid", validation.conflict ? "true" : "false");
+  if (hint) {
+    hint.hidden = !validation.conflict;
+    hint.textContent = validation.conflict
+      ? inference.conflict
+        ? "标签指向多个期望输出；请只保留一种输出方向。"
+        : `期望输出与标签推断的“${inference.value}”不一致。`
+      : "";
+  }
+  if (status) {
+    status.textContent = validation.conflict
+      ? "标签冲突"
+      : !select.value
+        ? "待补充"
+        : select.value === String(state.caseLabeling.caseData?.gt_label || "")
+          ? "与 GT 一致"
+          : "GT 待复核";
+    status.classList.toggle("is-conflict", validation.conflict);
+  }
+  const save = $("#caseLabelingForm button[type='submit']");
+  if (save) save.disabled = validation.conflict || !state.session?.is_admin;
+}
+
 function renderCaseLabelingEditor(caseData) {
   const revision = currentLabelingRevision(caseData);
   const aggregateResolved = (caseData.label_cases || []).find(
@@ -1021,6 +1135,7 @@ function renderCaseLabelingEditor(caseData) {
               ${EXPECTED_OUTPUT_OPTIONS.map((item) => `<option value="${escapeHtml(item.value)}" ${item.value === expectedOutput ? "selected" : ""}>${escapeHtml(item.labelZh)}</option>`).join("")}
             </select>
           </div>
+          <small class="case-labeling-output-hint" id="caseLabelingExpectedOutputHint" hidden></small>
         </div>
         <label class="review-reason">
           <span class="review-reason-heading">
@@ -1055,7 +1170,17 @@ function renderCaseLabelingEditor(caseData) {
   $("#caseLabelingHistoryToggle")?.addEventListener("click", () => {
     toggleHistoryDialog("labeling", state.caseLabeling.caseData);
   });
-  bindUiSelect($("#caseLabelingExpectedOutputPicker"), { maxHeight: 260, maxWidth: 420 });
+  const outputSelect = $("#caseLabelingExpectedOutput");
+  if (outputSelect) outputSelect.dataset.selectionSource = expectedOutput ? "manual" : "empty";
+  bindUiSelect($("#caseLabelingExpectedOutputPicker"), {
+    maxHeight: 260,
+    maxWidth: 420,
+    onChange: () => {
+      outputSelect.dataset.selectionSource = "manual";
+      state.caseLabeling.dirty = true;
+      syncCaseLabelingExpectedOutputFromTags();
+    },
+  });
   bindSelectedReviewTagControls(editor);
   bindReviewTagCatalogControls(editor);
   bindReviewDropdownToggles(editor);
@@ -1291,6 +1416,10 @@ async function saveCaseLabelingRevision(event) {
   event.preventDefault();
   const caseData = state.caseLabeling.caseData;
   if (!caseData) return;
+  if (caseLabelingOutputValidation().conflict) {
+    showToast("期望输出与所选标签冲突，请先调整。", true);
+    return;
+  }
   const revision = currentLabelingRevision(caseData);
   const payload = {
     ...caseLabelingFormPayload(),

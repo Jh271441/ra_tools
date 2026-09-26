@@ -19,7 +19,8 @@ html[data-can-view-intent="true"] .app-shell.sidebar-collapsed .intent-group-lab
   font: 650 9px/1 "SFMono-Regular", Consolas, monospace;
 }
 body[data-active-page="review"] .shortcut-help-button,
-body[data-active-page="intent"] .shortcut-help-button { display: inline-flex; }
+body[data-active-page="intent"] .shortcut-help-button,
+body[data-active-page="labeling"] .shortcut-help-button { display: inline-flex; }
 
 @media (max-width: 639px) {
   .app-shell, .app-shell.sidebar-collapsed { display: block; }

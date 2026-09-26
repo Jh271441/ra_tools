@@ -20,9 +20,10 @@ function renderReviewTaskContext() {
   const summary = $("#reviewTaskSummary");
   const exit = $("#reviewTaskContextExit");
   if (summary) {
-    summary.innerHTML = task
-      ? `<span class="ui-lang-zh">${escapeHtml(task.legacy_no_run ? "历史任务" : (task.name || "当前任务"))} · ${Number(task.issue_count || 0)}</span><span class="ui-lang-en">${escapeHtml(task.legacy_no_run ? "Historical task" : (task.name || "Current task"))} · ${Number(task.issue_count || 0)}</span>`
-      : '<span class="ui-lang-zh">综合结果</span><span class="ui-lang-en">Combined results</span>';
+    summary.hidden = !task;
+    summary.textContent = task
+      ? `${task.legacy_no_run ? "历史任务" : (task.name || "当前任务")} · ${Number(task.issue_count || 0)} 个 Issue`
+      : "";
     summary.title = task?.legacy_no_run
       ? "历史无 Run 任务，仅查看原分配范围"
       : task ? `${task.workflow_mode === "model_review_and_case_label" ? "联合复核" : "仅判错复核"} · ${task.id || ""}` : "";
@@ -123,6 +124,7 @@ async function loadReviewTaskContext(splitId, { route = null } = {}) {
       showToast(`已切换至任务数据集 ${baselineIds.join("+")}`);
     }
     renderReviewTaskContext();
+    renderReviewWorkSplitPicker(normalized);
     return task;
   } catch (error) {
     state.reviewTaskContextLoading = false;
@@ -169,7 +171,11 @@ function persistWorkAssigneeFilterRoute(values) {
 function workSplitOptionLabel(splitId) {
   const value = String(splitId || "").trim();
   if (!value) return uiText("综合结果", "Combined results");
-  return uiText(`本次任务新增 · ${value.slice(0, 18)}…`, `This task only · ${value.slice(0, 18)}…`);
+  const task = state.reviewTaskContext;
+  if (task && value === String(task.id || "")) {
+    return `${task.name || "当前任务"} · ${Number(task.issue_count || 0)} 个 Issue`;
+  }
+  return uiText("当前复核任务", "Current review task");
 }
 
 function analysisWorkSplitOptionLabel(item) {

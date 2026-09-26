@@ -6,7 +6,7 @@
 let reviewSearchTimer = null;
 
 function shortcutGuidePage() {
-  return ["review", "intent"].includes(state.activePage) ? state.activePage : "";
+  return ["review", "intent", "labeling"].includes(state.activePage) ? state.activePage : "";
 }
 
 function shortcutGuideKeyToken(event) {
@@ -71,7 +71,9 @@ function openShortcutGuide() {
   });
   $("#shortcutGuideSubtitle").textContent = page === "intent"
     ? "意图标注页 · 当前焦点位于输入控件时快捷键暂停"
-    : "判错复核页 · 媒体快捷键在 Issue 详情中可用";
+    : page === "labeling"
+      ? "Case 标注页 · 数字键操作当前展开的标签组"
+      : "判错复核页 · 媒体快捷键在 Issue 详情中可用";
   resetShortcutGuideSearch();
   if (!dialog.open) dialog.showModal();
 }

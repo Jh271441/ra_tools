@@ -1,16 +1,71 @@
 .case-labeling-page { display: grid; gap: 8px; }
+#caseLabelingDetail .detail-title-row { justify-content: space-between; }
+#caseLabelingDetail .detail-title-group { min-width: 0; }
+#caseLabelingDetail .detail-navigation { margin-left: auto; justify-content: flex-end; }
+#caseLabelingDetail .case-detail-pager { margin-left: auto; }
+.case-labeling-output-hint { display: block; margin-top: 4px; color: var(--fail); font-size: 11px; line-height: 1.4; }
+.case-labeling-output-hint[hidden] { display: none; }
+@media (max-width: 1024px) {
+  #caseLabelingDetail .detail-navigation,
+  #caseLabelingDetail .case-detail-pager { width: 100%; margin-left: 0; }
+}
 body[data-active-page^="labeling"] .header-metrics { display: none; }
 .snapshot-reference-meta { min-height: 14px; color: var(--faint); font-size: 10px; line-height: 1.4; }
+.case-labeling-gallery-heading { min-height: 58px; flex-wrap: nowrap; gap: 12px; padding-block: 9px; }
+.case-labeling-gallery-heading > div.case-labeling-heading-copy { min-width: 0; flex: 0 1 auto; display: flex; align-items: center; gap: 7px; white-space: nowrap; }
+.case-labeling-heading-copy h2 { margin: 0; font-size: 16px; }
+.case-labeling-heading-copy .count-pill { min-width: 26px; padding: 3px 8px; }
+.case-labeling-heading-copy .case-labeling-preview-badge { margin-left: 0; }
+.case-labeling-heading-summary { color: var(--muted); font-size: 11px; }
+.case-labeling-reference { min-width: 0; }
+.case-labeling-reference > summary { color: var(--accent); cursor: pointer; list-style: none; }
+.case-labeling-reference > summary::after { content: "⌄"; margin-left: 4px; }
+.case-labeling-reference[open] > summary::after { content: "⌃"; }
+.case-labeling-reference .snapshot-reference-meta { max-width: 560px; margin: 6px 0 0; overflow-wrap: anywhere; }
+.case-labeling-gallery-heading .gallery-heading-actions { flex: 0 0 auto; flex-wrap: nowrap; gap: 6px; }
+.case-labeling-gallery-heading .gallery-heading-actions .button { min-height: 32px; }
+.case-labeling-gallery-heading .case-labeling-cluster-strip { min-width: 0; flex: 1 1 auto; display: flex; align-items: center; gap: 7px; margin: 0; padding: 0; border: 0; }
+.case-labeling-gallery-heading .case-labeling-cluster-strip[hidden] { display: none; }
+.case-labeling-gallery-heading .case-labeling-cluster-strip .cluster-list { min-width: 0; flex: 1 1 auto; flex-wrap: nowrap; overflow-x: auto; }
+.case-labeling-progress-strip { margin: 0; padding: 7px 13px; border-top: 0; border-bottom: 1px solid var(--line-soft); }
+.case-labeling-cluster-strip .subheading, .case-labeling-progress-strip .subheading { color: var(--faint); font-size: 10px; white-space: nowrap; }
+@media (max-width: 1400px) {
+  .case-labeling-gallery-heading { align-items: center; flex-wrap: wrap; }
+  .case-labeling-gallery-heading .case-labeling-cluster-strip { flex-basis: 100%; order: 3; }
+  .case-labeling-gallery-heading .gallery-heading-actions { margin-left: auto; }
+}
+@media (max-width: 900px) {
+  .case-labeling-gallery-heading { align-items: flex-start; flex-direction: column; }
+  .case-labeling-gallery-heading > div.case-labeling-heading-copy { flex-wrap: wrap; }
+  .case-labeling-gallery-heading .gallery-heading-actions { width: 100%; margin-left: 0; justify-content: flex-start; flex-wrap: wrap; }
+  .case-labeling-gallery-heading .case-labeling-cluster-strip { width: 100%; order: 0; }
+}
 /* metrics carried margin-left:auto; keep the right cluster right-aligned. */
 body[data-active-page^="labeling"] .gt-sync-control { margin-left: auto; }
 /* The create-task form is a page, not a <dialog>, so the card must supply the
    surface and width its former .dialog wrapper provided. */
-.case-labeling-newtask-page .dialog-card {
-  width: min(720px, 100%);
-  margin: 0 auto;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--raised);
+.case-labeling-newtask-page { display: grid; align-content: start; }
+.case-labeling-newtask-page.hidden { display: none; }
+.case-experiment-layout { min-width: 0; display: grid; gap: 16px; }
+.case-experiment-create-body { min-width: 0; display: grid; gap: 16px; padding-top: 16px; border-top: 1px solid var(--line-soft); }
+.case-experiment-fields { min-width: 0; display: grid; grid-template-columns: minmax(220px, 1fr) minmax(0, 3fr); gap: 14px; align-items: end; }
+.case-experiment-fields .work-split-seed { min-width: 0; gap: 6px; color: var(--muted); font-size: 13px; }
+.case-experiment-fields .labeling-task-name input { width: 100%; height: 36px; font-size: 13px; }
+.case-experiment-fields .work-split-mode-row { min-width: 0; padding: 0; border: 0; background: none; }
+.case-experiment-fields .work-split-mode-row .ui-select-trigger { height: 36px; font-size: 13px; }
+.case-experiment-people-label { color: var(--muted); font-size: 13px; }
+.case-experiment-people-label small { margin-left: 5px; color: var(--faint); font-size: 11px; }
+.case-experiment-create .work-split-people { max-height: 280px; }
+.case-experiment-create .work-split-person-row { grid-template-columns: minmax(0, 1fr) 130px 36px; }
+.case-experiment-create .work-split-person-picker .ui-select-trigger,
+.case-experiment-create .work-split-person-row input { height: 36px; font-size: 13px; }
+.case-experiment-create .work-split-toolbar { padding-top: 3px; }
+.case-experiment-create .dialog-actions { justify-content: flex-end; }
+.case-experiment-history .intent-experiment-item > .button { align-self: start; }
+.case-experiment-history .intent-experiment-progress-track i { display: block; }
+@media (max-width: 900px) {
+  .case-experiment-fields { grid-template-columns: minmax(0, 1fr); }
+  .case-experiment-fields .work-split-estimate { text-align: left; }
 }
 .case-labeling-filters {
   grid-template-columns: minmax(150px, 1.2fr) repeat(6, minmax(96px, .72fr)) auto;

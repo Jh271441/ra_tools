@@ -7,6 +7,7 @@ expose filesystem paths to the dashboard process.
 from __future__ import annotations
 
 import json
+import os
 import re
 import threading
 from pathlib import Path
@@ -564,7 +565,11 @@ def _materialized_product_provider(
     layout_id = str(entry.media.layout_id or "").strip()
     if data_dir is None or not layout_id:
         return fallback
-    layouts_root = (Path(data_dir) / "media_layouts").resolve()
+    # The development instance can read the published media layouts while its
+    # database and all writable caches remain under its own data directory.
+    layouts_root = Path(
+        os.getenv("DASHBOARD_MEDIA_LAYOUT_ROOT") or (Path(data_dir) / "media_layouts")
+    ).resolve()
     layout_root = (layouts_root / layout_id).resolve()
     try:
         layout_root.relative_to(layouts_root)

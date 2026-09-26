@@ -157,5 +157,39 @@ html[data-color-theme="light"] .import-example-tabs { background: #f8fafc; }
 .review-task-filter .review-task-drawer-body { width: min(470px, calc(100vw - 32px)); display: grid; grid-template-columns: minmax(220px, 1fr) minmax(180px, .8fr); align-items: end; gap: 9px; position: absolute; top: calc(100% + 5px); right: 0; z-index: 180; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--raised); box-shadow: 0 15px 34px rgba(0,0,0,.42); }
 .review-task-filter .review-task-drawer-body label { min-width: 0; }
 .review-task-filter .review-task-drawer-body > .muted { grid-column: 1 / -1; }
+/* Give each filter enough space to show its selected value. The task picker
+   stays in the command bar instead of opening a second floating form. */
+@media (min-width: 1025px) {
+  #filterForm.review-filters { grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 8px; }
+  #filterForm > .filter-model-run { grid-column: span 3; }
+  #filterForm > .filter-comparison { grid-column: span 2; }
+  #filterForm > .filter-search { grid-column: span 4; }
+  #filterForm > :nth-child(4) { grid-column: span 3; }
+  #filterForm > :nth-child(n+5):nth-child(-n+11) { grid-column: span 2; }
+  #filterForm > .review-task-filter { grid-column: span 3; }
+  #filterForm > .review-workflow-mode { grid-column: span 3; }
+  #filterForm > .filter-submit { grid-column: span 2; }
+}
+@media (min-width: 1180px) {
+  #filterForm.review-filters { grid-template-columns: repeat(24, minmax(0, 1fr)); }
+  #filterForm.review-filters > :nth-child(1) { grid-column: span 4; }
+  #filterForm.review-filters > :nth-child(2) { grid-column: span 3; }
+  #filterForm.review-filters > :nth-child(3) { grid-column: span 6; }
+  #filterForm.review-filters > :nth-child(4) { grid-column: span 3; }
+  #filterForm.review-filters > :nth-child(5),
+  #filterForm.review-filters > :nth-child(6) { grid-column: span 4; }
+  #filterForm.review-filters > :nth-child(n+7):nth-child(-n+11) { grid-column: span 3; }
+  #filterForm.review-filters > :nth-child(12) { grid-column: span 4; }
+  #filterForm.review-filters > :nth-child(13) { grid-column: span 3; }
+  #filterForm.review-filters > :nth-child(14) { grid-column: span 2; }
+}
+.review-task-filter { min-width: 0; }
+.review-task-filter-row { height: 32px; }
+.review-task-filter-row .ui-select { min-width: 0; flex: 1 1 auto; }
+.review-task-filter-row .ui-select-trigger { width: 100%; height: 32px; }
+.review-task-summary { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 10px; }
+.review-task-summary[hidden] { display: none; }
+.review-workflow-mode[hidden] { display: none !important; }
+.review-workflow-mode small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
 .review-task-exit { width: 30px; min-width: 30px; height: 30px; padding: 0; border: 1px solid var(--line); border-radius: 7px; color: var(--muted); background: var(--overlay); cursor: pointer; }
 .review-task-exit:hover { border-color: rgba(34,211,238,.48); color: var(--accent); }
