@@ -415,7 +415,7 @@ function normalizedCaseLabelingRouteFilters(params) {
   const assignee = String(params.get("assignee") || "").trim().toLowerCase();
   const cluster = String(params.get("cluster") || "").trim();
   return {
-    taskId: /^split-[A-Za-z0-9]+$/.test(params.get("task") || "")
+    taskId: /^(?:split|campaign)-[A-Za-z0-9]+$/.test(params.get("task") || "")
       ? params.get("task")
       : "",
     search: params.get("q") || "",

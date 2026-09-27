@@ -1567,9 +1567,9 @@ async function enterCaseLabeling({ route = null } = {}) {
   renderCaseLabelingAssigneePicker();
   renderCaseLabelingLabelPicker();
   renderCaseLabelingExclusionPicker();
-  await loadCaseLabelingCases({ page: state.caseLabeling.page });
+  await loadCaseLabelingCases({ page: state.caseLabeling.page, persistRoute: false });
   const issue = route?.issue || filters.issue || "";
-  if (issue) await selectCaseLabelingIssue(issue, { updateRoute: false });
+  if (issue) await selectCaseLabelingIssue(issue, { updateRoute: true });
   else closeCaseLabelingDetail({ updateRoute: false });
 }
 
