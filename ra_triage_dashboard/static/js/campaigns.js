@@ -555,7 +555,9 @@ function renderCampaignIssues(payload) {
         ? `<div class="campaign-assignee-chips">${labelTags.map((value) => `<span class="campaign-assignee-chip" title="${escapeHtml(value.key)}">${escapeHtml(value.label)}</span>`).join("")}</div>`
         : "—";
       const issueUrl = isLabeling
-        ? pageUrl("case-labeling", { issue: item.issue_id, baselines: campaign.baseline_scopes || [] })
+        ? pageUrl("labeling", { issue: item.issue_id, taskId: campaign.id,
+          baselines: (campaign.baseline_scopes || []).map((scope) => String(scope).match(/^release(\d{4})/)?.[1] || scope),
+          search: "", status: "all", author: "", assignee: "", cluster: "", label: "all", exclusion: "all", page: 1 })
         : withBase(`/review?issue=${encodeURIComponent(item.issue_id)}`);
       const referenceLabel = item.reference_label || item.gt_label || "—";
       const relation = item.reference_relation && item.reference_relation !== "unknown"
