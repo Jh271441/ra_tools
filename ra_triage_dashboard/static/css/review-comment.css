@@ -1335,3 +1335,13 @@ html[data-color-theme="light"] .issue-card-flag-model-no-gt { border-color: #fcd
   display: grid;
   gap: 5px;
 }
+
+.review-assignment-create { display: grid; gap: 12px; }
+.review-assignment-create[hidden] { display: none; }
+.review-assignment-create header { display: grid; gap: 5px; }
+.review-assignment-create header p { color: var(--muted); font-size: 12px; }
+.review-assignment-create-fields { display: grid; grid-template-columns: minmax(240px, 2fr) minmax(150px, 1fr) minmax(170px, 1fr) auto; align-items: end; gap: 10px; }
+.review-assignment-create-fields label { min-width: 0; }
+.review-assignment-create-fields .button { min-height: 36px; }
+@media (max-width: 1100px) { .review-assignment-create-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 620px) { .review-assignment-create-fields { grid-template-columns: minmax(0, 1fr); } }

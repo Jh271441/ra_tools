@@ -1,3 +1,13 @@
+let workSplitDraft = null;
+
+function workSplitFilters() {
+  return workSplitDraft ? { ...workSplitDraft.filters } : currentReviewFilterPayload();
+}
+
+function workSplitTotal() {
+  return Number(workSplitDraft?.total ?? state.caseTotal ?? 0);
+}
+
 /* ra_triage_dashboard/static/js/work-split.js
  * Admin Review work-split: persist assignee ownership and gallery filters.
  * Loaded as a classic script (shared global scope).
@@ -453,7 +463,7 @@ function updateWorkSplitEstimate() {
   const reviewers = workSplitReviewersPerIssue();
   const overlapRatio = workSplitOverlapRatio();
   const people = readWorkSplitAssignees();
-  const total = Number(state.caseTotal || 0);
+  const total = workSplitTotal();
   const target = $("#workSplitEstimate");
   updateWorkSplitOverlapVisibility();
   document.querySelectorAll(".work-split-person-count").forEach((input) => {
@@ -580,16 +590,17 @@ function updateWorkSplitAdminVisibility() {
   }
 }
 
-async function openWorkSplitDialog() {
+async function openWorkSplitDialog(draft = null) {
+  workSplitDraft = draft ? { filters: { ...draft.filters }, total: draft.total } : null;
   if (!state.session?.is_admin) {
     showToast(t("work.split_admin_only"), true);
     return;
   }
-  if (!state.selectedRunId) {
+  if (!workSplitFilters().model_run_id) {
     showToast("请先选择 Model Run；若只做 Case 标签，请前往 Case 标注 > 实验分配。", true);
     return;
   }
-  const total = Number(state.caseTotal || 0);
+  const total = workSplitTotal();
   const summary = $("#workSplitSummary");
   const results = $("#workSplitResults");
   if (summary) {
@@ -688,7 +699,7 @@ async function generateWorkSplit() {
     showToast(t("work.split_admin_only"), true);
     return;
   }
-  if (!state.selectedRunId) {
+  if (!workSplitFilters().model_run_id) {
     showToast("请先选择 Model Run；若只做 Case 标签，请前往 Case 标注 > 实验分配。", true);
     return;
   }
@@ -701,7 +712,7 @@ async function generateWorkSplit() {
   const overlapRatio = reviewersPerIssue > 1 ? workSplitOverlapRatio() : 0;
   const seedRaw = $("#workSplitSeed")?.value.trim() || "";
   const body = {
-    filters: currentReviewFilterPayload(),
+    filters: workSplitFilters(),
     assignees,
     reviewers_per_issue: reviewersPerIssue,
     overlap_ratio: overlapRatio,
@@ -738,6 +749,9 @@ async function generateWorkSplit() {
       await loadWorkAssignees();
     }
     renderWorkSplitResults(result);
+    if (state.activePage === "review-assignments") {
+      await loadReviewAssignments({ force: true });
+    }
     showToast(t("work.saved"));
   } catch (error) {
     showToast(error.message, true);
@@ -752,6 +766,15 @@ async function generateWorkSplit() {
 function filterGalleryByWorkAssignee(assignee) {
   const name = String(assignee || "").trim();
   if (!name) return;
+  if (workSplitDraft) {
+    const filters = workSplitDraft.filters;
+    const payload = JSON.parse($("#workSplitResults")?.dataset.payload || "{}");
+    closeDialog("workSplitDialog");
+    navigatePage("review", { runId: filters.model_run_id, baselines: filters.baselines,
+      comparisonStatus: filters.comparison, search: filters.search || "", issue: "",
+      issueIds: [], workSplitId: payload.split_id || "", workAssignee: [name], casePage: 1 });
+    return;
+  }
   state.reviewIssueIds = [];
   setMultiFilterValues($("#workAssigneeFilter"), [name]);
   persistWorkAssigneeFilterRoute([name]);

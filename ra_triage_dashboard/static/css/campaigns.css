@@ -158,3 +158,32 @@
 .labeling-experiment-guide li { display:flex; align-items:center; gap:7px; color:var(--muted); font-size:11px; }
 .labeling-experiment-guide li span { display:grid; place-items:center; width:22px; height:22px; border-radius:50%; background:color-mix(in srgb,var(--accent) 18%,var(--raised)); color:var(--accent); font-weight:700; }
 @media(max-width:760px){ .labeling-experiment-guide ol { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+
+/* Match the reason-analysis hierarchy: compact metrics, chart cards, then detail. */
+.campaign-page.is-detail-view { width: min(1480px, 100%); margin: 0 auto; }
+#campaignDetailView { padding: 0; border: 0; background: transparent; gap: 10px; }
+#campaignDetailView > .campaign-detail-header,
+#campaignDetailView > .campaign-assignee-section,
+#campaignDetailView > .campaign-issue-section,
+.campaign-audit-panel { padding: 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--raised); }
+.campaign-scope-note { margin: 0; color: var(--muted); font-size: 11px; }
+.campaign-manage-menu { position: relative; justify-self: end; }
+.campaign-manage-menu > summary { padding: 7px 10px; color: var(--muted); cursor: pointer; font-size: 12px; }
+.campaign-manage-menu[open] > .campaign-detail-actions { position: absolute; right: 0; top: 36px; z-index: 4; width: 170px; display: grid; padding: 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--overlay); box-shadow: 0 8px 24px #0004; }
+#campaignDetailView .campaign-progress-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+#campaignDetailView .campaign-progress-hero,
+#campaignDetailView .campaign-progress-metric { min-height: 80px; padding: 12px 14px; background: var(--raised); border-color: var(--line); align-content: start; gap: 7px; }
+#campaignDetailView .campaign-progress-metric strong { font-size: 27px; line-height: 1; }
+#campaignDetailView .campaign-progress-hero { grid-column: auto; }
+#campaignDetailView .campaign-analysis-card { padding: 14px; border-color: var(--line); background: var(--raised); min-height: 210px; align-content: start; gap: 14px; }
+#campaignDetailView .campaign-analysis-card[hidden] { display: none; }
+#campaignDetailView .campaign-analysis-card h3 { font-size: 14px; }
+#campaignDetailView .campaign-analysis-card .analysis-pie-group { min-height: 155px; }
+#campaignDetailView .campaign-analysis-empty { padding: 24px; background: var(--raised); }
+#campaignDetailView .campaign-assignee-section .campaigns-table { min-width: 500px; }
+.campaign-audit-panel > summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+.campaign-audit-panel .campaign-config-history { margin-top: 14px; }
+.campaign-audit-panel .campaign-config-history > summary { cursor: pointer; font-size: 12px; color: var(--muted); }
+#campaignDetailView .campaign-analysis-toolbar { min-height: 30px; }
+@media (max-width: 950px) { #campaignDetailView .campaign-progress-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 620px) { #campaignDetailView .campaign-progress-metrics { grid-template-columns: minmax(0, 1fr); } .campaign-manage-menu { justify-self: start; } }

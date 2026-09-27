@@ -435,30 +435,11 @@ function renderCampaignLabelAnalysis(campaign, progress) {
   const renderDistribution = (targetId, values, labels) => {
     const target = document.getElementById(targetId);
     if (!target) return;
-    const palette = ["#24d3ee", "#34d399", "#fbbf24", "#a78bfa", "#fb7185", "#60a5fa"];
-    const entries = labels.map(([key, fallback], index) => ({
-      label: fallback || campaignLabel(key),
-      count: Math.max(0, Number(values?.[key] || 0)),
-      color: palette[index % palette.length],
+    const items = labels.map(([key, fallback]) => ({
+      key, label: fallback || campaignLabel(key), count: Math.max(0, Number(values?.[key] || 0)),
     })).filter((item) => item.count > 0);
-    const total = entries.reduce((sum, item) => sum + item.count, 0);
-    if (!total) {
-      target.innerHTML = `<p class="campaign-reference-text">${escapeHtml(uiText("暂无标注结果", "No label results"))}</p>`;
-      return;
-    }
-    let cursor = 0;
-    const segments = entries.map((item) => {
-      const start = cursor;
-      cursor += item.count / total * 100;
-      return `${item.color} ${start.toFixed(2)}% ${cursor.toFixed(2)}%`;
-    });
-    target.innerHTML = `<div class="campaign-distribution">
-      <div class="campaign-distribution-ring" style="background:conic-gradient(${segments.join(",")})" role="img" aria-label="共 ${total} 条结果"><span><strong>${campaignNumber(total)}</strong><small>条结果</small></span></div>
-      <div class="campaign-distribution-list">${entries.map((item) => {
-        const percent = Math.round(item.count / total * 100);
-        return `<div class="campaign-distribution-row"><span class="campaign-distribution-swatch" style="background:${item.color}"></span><span>${escapeHtml(item.label)}</span><strong>${campaignNumber(item.count)}</strong><small>${percent}%</small><i><b style="width:${percent}%;background:${item.color}"></b></i></div>`;
-      }).join("")}</div>
-    </div>`;
+    target.innerHTML = renderAnalysisClusterGroup({ label: "Case", items,
+      annotated_count: items.reduce((sum, item) => sum + item.count, 0) }, { key: targetId }, { animatePies: false });
   };
   renderDistribution("campaignLabelOutputCounts", progress.label_output_counts, [
     ["误触发", "误触发"], ["正确触发", "正确触发"], ["无需协助", "无需协助"],
@@ -476,6 +457,7 @@ function renderCampaignLabelAnalysis(campaign, progress) {
       .filter(([, value]) => value > 0)
       .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
       .slice(0, limit);
+    target.closest(".campaign-analysis-card").hidden = entries.length === 0;
     const maximum = Math.max(1, ...entries.map(([, value]) => value));
     target.innerHTML = entries.length
       ? `<div class="campaign-ranked-list">${entries.map(([key, value, item]) => `<div class="campaign-ranked-row"><span title="${escapeHtml(key)}">${escapeHtml(item?.label || key)}</span><strong>${campaignNumber(value)}</strong><i><b style="width:${Math.round(value / maximum * 100)}%"></b></i></div>`).join("")}</div>`
@@ -501,16 +483,12 @@ function renderCampaignLabelAnalysis(campaign, progress) {
     const target = document.getElementById(targetId);
     if (!target) return;
     const entries = Object.entries(values)
-      .sort((left, right) => Number(right[1]) - Number(left[1]) || left[0].localeCompare(right[0]))
-      .slice(0, 16);
-    const maximum = Math.max(1, ...entries.map(([, count]) => Number(count)));
-    target.innerHTML = entries.length
-      ? `<div class="campaign-ranked-list">${entries.map(([key, count]) => {
-          const item = tagCatalogByKey.get(key);
-          const label = String(item?.label || uiText("未分类标签", "Unclassified tag"));
-          return `<div class="campaign-ranked-row"><span title="${escapeHtml(key)}">${escapeHtml(label)}</span><strong>${campaignNumber(count)}</strong><i><b style="width:${Math.round(Number(count) / maximum * 100)}%"></b></i></div>`;
-        }).join("")}</div>`
-      : `<span class="campaign-reference-text">${escapeHtml(uiText("暂无结果", "No results"))}</span>`;
+      .sort((left, right) => Number(right[1]) - Number(left[1]) || left[0].localeCompare(right[0]));
+    const items = entries.map(([key, count]) => ({ key,
+      label: tagCatalogByKey.get(key)?.label || uiText("未分类标签", "Unclassified tag"), count: Number(count) }));
+    target.innerHTML = renderAnalysisClusterGroup({ label: "标签次数", items,
+      annotated_count: items.reduce((sum, item) => sum + item.count, 0) }, { key: targetId }, { animatePies: false });
+    target.closest(".campaign-analysis-card").hidden = items.length === 0;
   };
   renderTagSection("campaignSceneTagCounts", tagSections.scene);
   renderTagSection("campaignTriggerTagCounts", tagSections.trigger);
@@ -576,7 +554,9 @@ function renderCampaignIssues(payload) {
       const tagMarkup = labelTags.length
         ? `<div class="campaign-assignee-chips">${labelTags.map((value) => `<span class="campaign-assignee-chip" title="${escapeHtml(value.key)}">${escapeHtml(value.label)}</span>`).join("")}</div>`
         : "—";
-      const issueUrl = withBase(`/review?issue=${encodeURIComponent(item.issue_id)}`);
+      const issueUrl = isLabeling
+        ? pageUrl("case-labeling", { issue: item.issue_id, baselines: campaign.baseline_scopes || [] })
+        : withBase(`/review?issue=${encodeURIComponent(item.issue_id)}`);
       const referenceLabel = item.reference_label || item.gt_label || "—";
       const relation = item.reference_relation && item.reference_relation !== "unknown"
         ? `<span class="campaign-reference-text">${escapeHtml(campaignLabel(item.reference_relation))}</span>`
@@ -614,6 +594,8 @@ function renderCampaignDetail(payload) {
   }
   const isAdmin = Boolean(state.session?.is_admin);
   const canManageLifecycle = isAdmin && campaign.purpose && !campaign.legacy_read_only;
+  const manageMenu = document.querySelector(".campaign-manage-menu");
+  if (manageMenu) manageMenu.hidden = !canManageLifecycle;
   const closeButton = document.getElementById("campaignCloseButton");
   const reopenButton = document.getElementById("campaignReopenButton");
   const activateButton = document.getElementById("campaignActivateButton");

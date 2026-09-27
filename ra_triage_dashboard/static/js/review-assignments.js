@@ -142,7 +142,7 @@ function renderReviewAssignmentList() {
     return;
   }
   if (!store.splits.length) {
-    root.innerHTML = `<div class="review-assignment-empty"><strong>${escapeHtml(uiText("还没有生成过均分任务", "No split assignments yet"))}</strong><span>${escapeHtml(uiText("回到 Review 页面筛选 Issue 后，点击“均分任务”即可创建。", "Filter Issues in Review, then choose Split work to create one."))}</span></div>`;
+    root.innerHTML = `<div class="review-assignment-empty"><strong>${escapeHtml(uiText("还没有生成过均分任务", "No split assignments yet"))}</strong><span>${escapeHtml(uiText("在上方选择 Model Run 与 Issue 范围，配置人员后即可创建。", "Choose a Model Run and Issue scope above, then assign reviewers."))}</span></div>`;
     if (status) status.textContent = "";
     return;
   }
@@ -312,6 +312,7 @@ function renderReviewAssignmentDetail() {
 
 function renderReviewAssignmentPage() {
   if (!$("#reviewAssignmentsPage")) return;
+  renderReviewAssignmentCreate();
   renderReviewAssignmentMetrics(state.reviewAssignments.splits || []);
   renderReviewAssignmentList();
   renderReviewAssignmentDetail();
@@ -430,6 +431,9 @@ function bindReviewAssignmentsPage() {
   $("#reviewAssignmentsRefresh")?.addEventListener("click", () => {
     loadReviewAssignments({ force: true, splitId: state.reviewAssignments.selectedSplitId }).catch((error) => showToast(error.message, true));
   });
+  $("#reviewAssignmentCreateButton")?.addEventListener("click", () => {
+    openReviewAssignmentCreate().catch((error) => showToast(error.message, true));
+  });
   $("#reviewAssignmentsGoReview")?.addEventListener("click", () => navigatePage("review"));
   $("#reviewAssignmentDetailClose")?.addEventListener("click", () => {
     const store = state.reviewAssignments;
@@ -501,4 +505,45 @@ function bindReviewAssignmentsPage() {
     state.reviewAssignments.page = 1;
     loadReviewAssignmentDetail().catch((error) => showToast(error.message, true));
   });
+}
+
+function renderReviewAssignmentCreate() {
+  const root = $("#reviewAssignmentCreate");
+  if (!root) return;
+  root.hidden = !state.session?.is_admin;
+  const select = $("#reviewAssignmentCreateRun");
+  const selected = select.value || state.selectedRunId || "";
+  select.innerHTML = '<option value="">请选择 Model Run</option>' + (state.modelRuns || []).map((run) =>
+    `<option value="${escapeHtml(run.id)}">${escapeHtml(run.name || run.id)}</option>`).join("");
+  select.value = selected;
+  enhanceNativeUiSelect(select);
+  enhanceNativeUiSelect($("#reviewAssignmentCreateComparison"));
+}
+
+async function openReviewAssignmentCreate() {
+  if (!state.session?.is_admin) return;
+  const runId = $("#reviewAssignmentCreateRun")?.value || "";
+  if (!runId) { showToast("请先选择 Model Run。", true); return; }
+  const filters = {
+    model_run_id: runId, baselines: selectedBaselineQueryValue(),
+    comparison: $("#reviewAssignmentCreateComparison")?.value || "all",
+    search: $("#reviewAssignmentCreateSearch")?.value.trim() || "",
+    failure_only: false, exclusion: "all", work_split_id: "", work_assignee: "",
+  };
+  const button = $("#reviewAssignmentCreateButton");
+  const status = $("#reviewAssignmentCreateStatus");
+  button.disabled = true;
+  status.textContent = "正在核对 Issue 范围…";
+  try {
+    const params = new URLSearchParams({ ...filters, page: "1", page_size: "1", include_thumbnail: "false" });
+    const result = await api(`/api/cases?${params}`);
+    const total = Number(result.total || 0);
+    status.textContent = `${total} 个 Issue · ${reviewAssignmentRunLabel(runId)} · 数据集 ${filters.baselines}`;
+    if (!total) { showToast("当前范围没有可分配的 Issue。", true); return; }
+    await openWorkSplitDialog({ filters, total });
+    $("#workSplitSummary").textContent = status.textContent;
+  } catch (error) {
+    status.textContent = "范围核对失败，请重试。";
+    throw error;
+  } finally { button.disabled = false; }
 }
