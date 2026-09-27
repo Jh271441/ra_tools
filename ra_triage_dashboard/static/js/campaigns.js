@@ -828,14 +828,7 @@ function bindCampaignPageEvents() {
     campaignPageState.issuePage = 1;
     loadCampaignDetail(campaignPageState.campaignId).catch((error) => showToast(error.message, true));
   });
-  document.addEventListener("click", (event) => {
-    const link = event.target.closest(".campaign-issues-table a[href]");
-    if (link) {
-      event.preventDefault();
-      const url = new URL(link.href, window.location.origin);
-      navigatePage("review", { issue: url.searchParams.get("issue") || "" });
-    }
-  });
+
 }
 
 bindCampaignPageEvents();
