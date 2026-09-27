@@ -79,7 +79,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-512`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-513`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -536,8 +536,7 @@
             <section class="gallery-panel" id="caseLabelingGallery">
               <div class="gallery-heading case-labeling-gallery-heading">
                 <div class="case-labeling-heading-copy">
-                  <h2>问题图库</h2><span class="count-pill" id="caseLabelingCount">—</span><small class="case-labeling-preview-badge">内测</small>
-                  <span class="case-labeling-heading-summary" id="caseLabelingSummary">正在加载…</span><details class="case-labeling-reference"><summary id="caseLabelingReferenceSummary">GT 参考</summary><p class="snapshot-reference-meta" id="caseLabelingSnapshotMeta"></p></details>
+                  <h2>问题图库</h2><span class="count-pill" id="caseLabelingCount">—</span>
                 </div>
                 <div class="review-cluster-strip case-labeling-cluster-strip" id="caseLabelingClusterStrip" hidden><span class="subheading">标签聚类</span><div class="cluster-list" id="caseLabelingClusterList"></div></div>
                 <div class="gallery-heading-actions"><button class="button button-quiet" id="caseLabelingExportGt" type="button">导出 GT 更新</button><button class="button button-quiet" id="caseLabelingCampaignsButton" type="button">标注汇总</button><button class="button button-quiet" id="caseLabelingCreateLabelSnapshot" type="button" hidden>保存 Label 快照</button><button class="button button-primary" id="caseLabelingCreateTask" type="button">建标注任务</button></div>
@@ -2383,7 +2382,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-512`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-513`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

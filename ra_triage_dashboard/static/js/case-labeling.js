@@ -286,24 +286,13 @@ function renderLabelingTaskHistory() {
 }
 
 async function loadCaseLabelingSnapshotReferences() {
-  const meta = $("#caseLabelingSnapshotMeta");
-  const summary = $("#caseLabelingReferenceSummary");
   const button = $("#caseLabelingCreateLabelSnapshot");
-  if (!meta || !button) return;
+  if (!button) return;
   try {
     const result = await api(withBaselineQuery("/api/labeling/gt-snapshots"));
-    const snapshots = result.items || [];
-    state.caseLabeling.gtSnapshots = snapshots;
-    if (summary) summary.textContent = snapshots.length === 1
-      ? `GT 参考 ${snapshots[0].valid_label_count}/${snapshots[0].member_count}`
-      : snapshots.length ? `GT 参考 · ${snapshots.length} 个数据集` : "GT 参考未建立";
-    meta.textContent = snapshots.length
-      ? `正式 GT snapshot · ${snapshots.map((item) => `${item.baseline_scope} ${String(item.id || "").slice(0, 18)}… · ${item.valid_label_count}/${item.member_count}`).join(" · ")}`
-      : "正式 GT snapshot 尚未建立；当前页面使用 legacy current GT reference。";
-  } catch (error) {
+    state.caseLabeling.gtSnapshots = result.items || [];
+  } catch (_error) {
     state.caseLabeling.gtSnapshots = [];
-    if (summary) summary.textContent = "GT 参考暂不可用";
-    meta.textContent = "GT snapshot metadata unavailable。";
   }
   const task = selectedCaseLabelingTask();
   button.hidden = !state.session?.is_admin || !task?.workset_id;
@@ -766,7 +755,6 @@ function renderCaseLabelingList(data) {
       });
     });
     $("#caseLabelingCount").textContent = "0";
-    $("#caseLabelingSummary").textContent = "内测中 · 当前数据集尚未激活";
     $("#caseLabelingPageSummary").textContent = "— / —";
     $("#caseLabelingPrevious").disabled = true;
     $("#caseLabelingNext").disabled = true;
@@ -778,16 +766,6 @@ function renderCaseLabelingList(data) {
     : `<div class="empty-state issue-grid-empty"><h2>当前范围没有 Case</h2><p>请切换已激活的数据集、任务或状态。</p></div>`;
   bindCaseLabelingGalleryCards(list);
   $("#caseLabelingCount").textContent = String(data.total || 0);
-  if (state.caseLabeling.taskId) {
-    const progress = selectedCaseLabelingTask()?.progress || {};
-    const total = Number(progress.total || data.total || 0);
-    const resolved = Number(progress.resolved || 0);
-    const conflict = Number(progress.conflict || 0);
-    const detail = conflict > 0 ? ` · ${conflict} 冲突` : "";
-    $("#caseLabelingSummary").textContent = `当前任务 · ${resolved}/${total} 已标注${detail}`;
-  } else {
-    $("#caseLabelingSummary").textContent = "全部 Case";
-  }
   $("#caseLabelingPageSummary").textContent = `${data.page || 1} / ${data.pages || 1}`;
   $("#caseLabelingPrevious").disabled = Number(data.page || 1) <= 1;
   $("#caseLabelingNext").disabled = Number(data.page || 1) >= Number(data.pages || 1);
