@@ -24,6 +24,15 @@ import { Button } from './components/ui/button';
 import { cn } from './lib/utils';
 import type { IssueListItem, KpiSummary, RefreshJob, SelectedIssueResult, SummaryResponse, VersionItem } from './types';
 
+function readDashboardCache<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(`ra-dashboard-${key}`);
+    return raw ? JSON.parse(raw) as T : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 type Page = 'overview' | 'issues' | 'status';
 
 // Lightweight history routing: module switches map to /sim/overview,
@@ -130,9 +139,9 @@ export default function App() {
   }, []);
   const [dark, setDark] = useState(() => localStorage.getItem('theme') === 'dark');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('sidebarCollapsed') === '1');
-  const [versions, setVersions] = useState<VersionItem[]>([]);
-  const [summary, setSummary] = useState<SummaryResponse | null>(null);
-  const [comparison, setComparison] = useState<KpiSummary[]>([]);
+  const [versions, setVersions] = useState<VersionItem[]>(() => readDashboardCache('versions', []));
+  const [summary, setSummary] = useState<SummaryResponse | null>(() => readDashboardCache<SummaryResponse | null>('summary', null));
+  const [comparison, setComparison] = useState<KpiSummary[]>(() => readDashboardCache('comparison', []));
   const [issues, setIssues] = useState<IssueListItem[]>([]);
   const [issuesLoading, setIssuesLoading] = useState(false);
   const [issueTotal, setIssueTotal] = useState(0);
@@ -155,19 +164,28 @@ export default function App() {
 
   const loadDashboard = useCallback(async () => {
     setError('');
-    try {
-      const [versionsResult, summaryResult, comparisonResult] = await Promise.all([
-        api.versions(),
-        api.summary(),
-        api.comparison(),
-      ]);
-      setVersions(versionsResult.versions);
-      setSummary(summaryResult);
-      setComparison(comparisonResult);
-    } catch (err) {
-      setSummary(null);
-      setComparison([]);
-      setError(err instanceof Error ? err.message : String(err));
+    const [versionsResult, summaryResult, comparisonResult] = await Promise.allSettled([
+      api.versions(),
+      api.summary(),
+      api.comparison(),
+    ]);
+    if (versionsResult.status === 'fulfilled') {
+      setVersions(versionsResult.value.versions);
+      localStorage.setItem('ra-dashboard-versions', JSON.stringify(versionsResult.value.versions));
+    }
+    if (summaryResult.status === 'fulfilled') {
+      setSummary(summaryResult.value);
+      localStorage.setItem('ra-dashboard-summary', JSON.stringify(summaryResult.value));
+    }
+    if (comparisonResult.status === 'fulfilled') {
+      setComparison(comparisonResult.value);
+      localStorage.setItem('ra-dashboard-comparison', JSON.stringify(comparisonResult.value));
+    }
+    const failed = [versionsResult, summaryResult, comparisonResult].find(
+      (result) => result.status === 'rejected',
+    );
+    if (failed?.status === 'rejected' && !summary && !comparison.length) {
+      setError(failed.reason instanceof Error ? failed.reason.message : String(failed.reason));
     }
   }, []);
 

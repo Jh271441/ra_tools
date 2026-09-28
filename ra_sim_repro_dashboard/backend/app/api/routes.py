@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy import func, select
@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.config import config_hash, load_versions_config, settings
 from app.database import get_db
 from app.metrics import summarize_rows
-from app.models import Issue, RefreshJob, Scenario, ScenarioVersionResult, Version
+from app.models import DashboardSnapshot, Issue, RefreshJob, Scenario, ScenarioVersionResult, Version
 from app.schemas import (
     IssueDetailResponse,
     IssueListItem,
@@ -70,7 +70,7 @@ def versions(db: DbSession) -> VersionsResponse:
 
 @router.get("/dashboard/summary", response_model=SummaryResponse)
 def summary(db: DbSession) -> SummaryResponse:
-    snapshot = build_snapshot(db)
+    snapshot = _read_dashboard_snapshot(db)
     current = snapshot.get("current")
     if not current:
         raise HTTPException(status_code=404, detail="No dashboard data. Run refresh first.")
@@ -84,8 +84,46 @@ def summary(db: DbSession) -> SummaryResponse:
 
 @router.get("/dashboard/version-comparison", response_model=list[VersionComparisonItem])
 def version_comparison(db: DbSession) -> list[VersionComparisonItem]:
-    snapshot = build_snapshot(db)
+    snapshot = _read_dashboard_snapshot(db)
     return [VersionComparisonItem(**item) for item in snapshot.get("comparison", [])]
+
+
+def _read_dashboard_snapshot(db: Session) -> dict[str, Any]:
+    """Keep the last complete snapshot visible while a refresh rebuilds rows."""
+    active_refresh = db.execute(
+        select(RefreshJob)
+        .where(RefreshJob.status.in_(("queued", "running")))
+        .order_by(RefreshJob.created_at.desc())
+        .limit(1)
+    ).scalars().first()
+    stored = db.execute(
+        select(DashboardSnapshot).order_by(DashboardSnapshot.created_at.desc()).limit(1)
+    ).scalars().first()
+    # A snapshot is the last published state. It remains the correct read model
+    # even when versions.yaml has changed and the next refresh has not finished.
+    if stored is not None and stored.snapshot:
+        return _complete_cached_snapshot(dict(stored.snapshot))
+    if active_refresh is not None and stored is not None and stored.snapshot:
+        return _complete_cached_snapshot(dict(stored.snapshot))
+    snapshot = build_snapshot(db)
+    if snapshot.get("current"):
+        return snapshot
+    if stored is not None and stored.snapshot:
+        return _complete_cached_snapshot(dict(stored.snapshot))
+    return snapshot
+
+
+def _complete_cached_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
+    """Recover current/previous pointers for older snapshots with empty config metadata."""
+    if snapshot.get("current"):
+        return snapshot
+    comparison = snapshot.get("comparison") or []
+    current_key = str(load_versions_config().get("current_version") or "")
+    current = next((item for item in comparison if item.get("version_key") == current_key), None)
+    if current is None and comparison:
+        current = comparison[-1]
+    previous = comparison[-2] if len(comparison) >= 2 else None
+    return {**snapshot, "current": current, "previous": previous, "deltas": snapshot.get("deltas") or {}}
 
 
 @router.get("/dashboard/issues", response_model=PaginatedIssuesResponse)
