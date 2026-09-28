@@ -24,11 +24,10 @@ const shortVersion = (key: string) => {
   return key.length > 10 ? key.slice(-10) : key;
 };
 
-export function PrComparison({ rows, comparison, mode, domain }: {
+export function PrComparison({ rows, comparison, mode }: {
   rows: PrPoint[];
   comparison: KpiSummary[];
   mode: 'same-version' | 'rolling';
-  domain: [number, number];
 }) {
   const { t } = useTranslation();
   const [metric, setMetric] = useState<'precision' | 'recall'>('precision');

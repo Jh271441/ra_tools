@@ -211,23 +211,6 @@ function VersionTick(props: { x?: number; y?: number; payload?: { value?: unknow
   );
 }
 
-function pctDomain(rows: Array<Record<string, unknown>>, keys: string[]): [number, number] {
-  const values = rows
-    .flatMap((item) => keys.map((key) => optionalNumber(item[key])))
-    .filter((value): value is number => value != null);
-  if (!values.length) return [0, 100];
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const lower = Math.max(0, Math.floor((min - 6) / 5) * 5);
-  const upper = Math.min(100, Math.ceil((max + 6) / 5) * 5);
-  if (upper - lower >= 12) return [lower, upper];
-  const center = (min + max) / 2;
-  return [
-    Math.max(0, Math.floor((center - 8) / 5) * 5),
-    Math.min(100, Math.ceil((center + 8) / 5) * 5),
-  ];
-}
-
 const percentageTicks = [60, 70, 80, 90, 100];
 
 function interactiveProps(onClick: () => void) {
@@ -357,7 +340,6 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
   });
   const reproDomain: [number, number] = [60, 100];
   const prTrend = prMode === 'same-version' ? sameVersionTrend : backtestTrend;
-  const prDomain = pctDomain(prTrend, ['actualPrecision', 'actualRecall', 'simPrecision', 'simRecall']);
   const reproControls: Array<{ key: ReproMetric; label: string; color: string }> = [
     { key: 'repro', label: t('simReproRate'), color: chartColors.repro },
     { key: 'tp', label: 'TP', color: chartColors.model },
@@ -537,7 +519,7 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
             </div>
           </CardHeader>
           <CardContent className="px-5 pb-5 pt-2">
-            <PrComparison rows={prTrend} comparison={comparison} mode={prMode} domain={prDomain} />
+            <PrComparison rows={prTrend} comparison={comparison} mode={prMode} />
           </CardContent>
         </Card>
       </div>

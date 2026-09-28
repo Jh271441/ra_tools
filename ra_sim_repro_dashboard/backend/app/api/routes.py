@@ -100,23 +100,9 @@ def _read_dashboard_snapshot(db: Session) -> dict[str, Any]:
     if stored_for_config is not None and stored_for_config.snapshot:
         return _complete_cached_snapshot(dict(stored_for_config.snapshot))
 
-    active_refresh = db.execute(
-        select(RefreshJob)
-        .where(RefreshJob.status.in_(("queued", "running")))
-        .order_by(RefreshJob.created_at.desc())
-        .limit(1)
-    ).scalars().first()
-    stored = db.execute(
-        select(DashboardSnapshot).order_by(DashboardSnapshot.created_at.desc()).limit(1)
-    ).scalars().first()
-    # Do not serve a snapshot from a different versions.yaml configuration.
-    if active_refresh is not None and stored is not None and stored.config_hash == current_config_hash and stored.snapshot:
-        return _complete_cached_snapshot(dict(stored.snapshot))
     snapshot = build_snapshot(db)
     if snapshot.get("current"):
         return snapshot
-    if stored is not None and stored.config_hash == current_config_hash and stored.snapshot:
-        return _complete_cached_snapshot(dict(stored.snapshot))
     return snapshot
 
 
