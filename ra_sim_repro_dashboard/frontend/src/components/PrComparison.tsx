@@ -34,9 +34,10 @@ const shortVersion = (key: string) => {
 function percentageScale(rows: PrPoint[], keys: SeriesKey[]): { domain: [number, number]; ticks: number[] } {
   const values = rows.flatMap((row) => keys.map((key) => row[key])).filter((value): value is number => value != null);
   if (!values.length) return { domain: [0, 100], ticks: [0, 25, 50, 75, 100] };
-  const min = Math.max(0, Math.floor((Math.min(...values) - 5) / 5) * 5);
-  const max = Math.min(100, Math.ceil((Math.max(...values) + 5) / 5) * 5);
-  return { domain: [min, max], ticks: Array.from({ length: Math.floor((max - min) / 5) + 1 }, (_, index) => min + index * 5) };
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  if (min === max) return { domain: [Math.max(0, min - 1), Math.min(100, max + 1)], ticks: [min] };
+  return { domain: [min, max], ticks: Array.from({ length: 5 }, (_, index) => min + (max - min) * index / 4) };
 }
 
 export function PrComparison({ rows, comparison, mode }: {
@@ -45,7 +46,7 @@ export function PrComparison({ rows, comparison, mode }: {
   mode: 'same-version' | 'rolling';
 }) {
   const { t } = useTranslation();
-  const [metricMode, setMetricMode] = useState<MetricMode>('precision');
+  const [metricMode, setMetricMode] = useState<MetricMode>('all');
   const bothMetrics = metricMode === 'all';
   const visibleMetrics = {
     precision: metricMode === 'precision' || bothMetrics,
@@ -142,7 +143,14 @@ export function PrComparison({ rows, comparison, mode }: {
                 </div>;
               }} />
               {series.map((item) => <Line key={item.key} type="linear" dataKey={item.key} name={item.label} stroke={item.color} strokeWidth={2.5} strokeDasharray={item.dashed ? '6 4' : undefined} dot={{ r: 3, fill: 'hsl(var(--card))', strokeWidth: 2 }} activeDot={{ r: 5 }} connectNulls={false} isAnimationActive={false}>
-                {!bothMetrics ? <LabelList dataKey={item.key} content={renderLineLabel(item.dashed ? 16 : -16)} /> : null}
+                <LabelList dataKey={item.key} content={renderLineLabel(
+                  bothMetrics
+                    ? item.key === 'actualPrecision' ? -18
+                      : item.key === 'simPrecision' ? 18
+                        : item.key === 'actualRecall' ? -36
+                          : 36
+                    : item.dashed ? 16 : -16,
+                )} />
               </Line>)}
             </LineChart>
           </ResponsiveContainer>
