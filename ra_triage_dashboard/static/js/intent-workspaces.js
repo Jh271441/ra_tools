@@ -47,7 +47,7 @@ function restoreIntentWorkspacePreferences() {
     const experiments = saved.experiments || {};
     intent.experimentDatasetIds = parseFilterList(experiments.datasetIds);
     intent.experimentDatasetId = intent.experimentDatasetIds[0] || "";
-    intent.experimentDraftMembers = parseFilterList(experiments.members);
+    intent.experimentDraftMembers = [];
     const draftValues = {
       intentExperimentScope: experiments.labelScope || "all",
       intentExperimentMode: experiments.mode || "blind",
@@ -88,7 +88,7 @@ function persistIntentWorkspacePreferences() {
       experimentId: intent.selectedExperimentId || "", assignees: intent.selectedAssignees || [],
     },
     experiments: {
-      datasetIds: intent.experimentDatasetIds || [], members: intent.experimentDraftMembers || [],
+      datasetIds: intent.experimentDatasetIds || [],
       labelScope: $("#intentExperimentScope")?.value || "all",
       mode: $("#intentExperimentMode")?.value || "blind",
       annotationStatus: $("#intentExperimentAnnotationStatus")?.value || "all",
@@ -908,6 +908,8 @@ async function createIntentExperiment(event) {
     });
     acknowledgeLocalChange(result);
     $("#intentExperimentName").value = "";
+    intent.experimentDraftMembers = [];
+    setMultiFilterValues($("#intentExperimentMembers"), []);
     intent.experimentsDatasetId = "";
     await loadIntentExperiments({ force: true });
     const created = result.experiments || (result.experiment ? [result.experiment] : []);

@@ -79,7 +79,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-521`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-522`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -556,21 +556,18 @@
 
           <section class="app-page review-assignments-page hidden" id="reviewAssignmentsPage" data-page="review-assignments">
             <section class="review-assignments-header page-card">
-              <div>
-                <span class="review-assignments-eyebrow">REVIEW WORK MANAGEMENT</span>
-                <h2><span class="ui-lang-zh">任务分配</span><span class="ui-lang-en">Review assignments</span></h2>
-                <p><span class="ui-lang-zh">集中查看均分批次、人员进度和待处理 Issue；可对未提交的任务进行转派。</span><span class="ui-lang-en">View split batches, member progress, and pending Issues in one place; unfinished tasks can be reassigned.</span></p>
+              <div class="review-assignments-header-main">
+                <div>
+                  <span class="review-assignments-eyebrow">REVIEW WORK MANAGEMENT</span>
+                  <h2><span class="ui-lang-zh">任务分配</span><span class="ui-lang-en">Review assignments</span></h2>
+                  <p><span class="ui-lang-zh">集中查看均分批次、人员进度和待处理 Issue；可对未提交的任务进行转派。</span><span class="ui-lang-en">View split batches, member progress, and pending Issues in one place; unfinished tasks can be reassigned.</span></p>
+                </div>
+                <div class="review-assignments-header-actions">
+                  <button class="button button-quiet" id="reviewAssignmentsGoReview" type="button"><span class="ui-lang-zh">返回图库筛选</span><span class="ui-lang-en">Filter in gallery</span></button>
+                  <button class="button button-quiet" id="reviewAssignmentsRefresh" type="button"><span class="ui-lang-zh">刷新</span><span class="ui-lang-en">Refresh</span></button>
+                </div>
               </div>
-              <div class="review-assignments-header-actions">
-                <button class="button button-quiet" id="reviewAssignmentsGoReview" type="button"><span class="ui-lang-zh">返回图库筛选</span><span class="ui-lang-en">Filter in gallery</span></button>
-                <button class="button button-quiet" id="reviewAssignmentsRefresh" type="button"><span class="ui-lang-zh">刷新</span><span class="ui-lang-en">Refresh</span></button>
-              </div>
-            </section>
-            <section class="page-card review-assignment-create" id="reviewAssignmentCreate" hidden>
-              <header><h3>分配范围</h3><p>在图库筛选 Issue，此页只配置人员与分配方式。</p></header>
-              <p class="quiet-meta" id="reviewAssignmentCreateStatus" aria-live="polite">请先到图库选择范围。</p>
-            </section>
-            <section class="page-card work-split-inline" id="workSplitPanel" hidden>
+              <section class="work-split-inline" id="workSplitPanel" hidden>
               <div class="work-split-inline-body">
                 <div class="dialog-heading">
                   <div>
@@ -635,6 +632,7 @@
                 </div>
                 <div class="work-split-results hidden" id="workSplitResults" aria-live="polite"></div>
               </div>
+              </section>
             </section>
             <section class="review-assignment-metrics" id="reviewAssignmentMetrics" aria-label="任务分配概览"></section>
             <section class="page-card review-assignment-list-card">
@@ -2381,7 +2379,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-521`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-522`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

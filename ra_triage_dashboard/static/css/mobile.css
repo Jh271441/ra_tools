@@ -182,7 +182,7 @@
   .page-actions { flex-direction: row; flex-wrap: wrap; }
   .page-actions .button { flex: 1 1 140px; width: auto; }
 
-  .review-assignments-header { align-items: flex-start; flex-direction: column; gap: 10px; }
+  .review-assignments-header-main { align-items: flex-start; flex-direction: column; gap: 10px; }
   .review-assignments-header-actions { width: 100%; justify-content: flex-start; flex-wrap: wrap; }
   .review-assignment-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .review-assignment-detail-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }

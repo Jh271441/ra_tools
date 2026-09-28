@@ -869,8 +869,9 @@ html[data-color-theme="light"] .detail-queue-index-input {
 
 /* Review assignment management page. */
 .review-assignments-page { width: min(1480px, 100%); display: grid; gap: 12px; margin: 0 auto; }
-.review-assignments-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
-.review-assignments-header > div:first-child { min-width: 0; display: grid; gap: 5px; }
+.review-assignments-header { display: grid; gap: 18px; }
+.review-assignments-header-main { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+.review-assignments-header-main > div:first-child { min-width: 0; display: grid; gap: 5px; }
 .review-assignments-eyebrow { color: var(--accent); font-size: 9px; font-weight: 800; letter-spacing: .12em; }
 .review-assignments-header h2 { color: var(--text); font-size: 21px; }
 .review-assignments-header p { max-width: 760px; color: var(--muted); font-size: 12px; line-height: 1.55; }
@@ -1336,18 +1337,9 @@ html[data-color-theme="light"] .issue-card-flag-model-no-gt { border-color: #fcd
   gap: 5px;
 }
 
-.review-assignment-create { display: grid; gap: 12px; }
-.review-assignment-create[hidden] { display: none; }
-.review-assignment-create header { display: grid; gap: 5px; }
-.review-assignment-create header p { color: var(--muted); font-size: 12px; }
-.review-assignment-create-fields { display: grid; grid-template-columns: minmax(240px, 2fr) minmax(150px, 1fr) minmax(170px, 1fr) auto; align-items: end; gap: 10px; }
-.review-assignment-create-fields label { min-width: 0; }
-.review-assignment-create-fields .button { min-height: 36px; }
-@media (max-width: 1100px) { .review-assignment-create-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 620px) { .review-assignment-create-fields { grid-template-columns: minmax(0, 1fr); } }
-
-.work-split-inline[hidden], .review-assignment-create-fields[hidden] { display: none; }
+.work-split-inline[hidden] { display: none; }
 .work-split-inline { scroll-margin-top: 80px; }
+.review-assignments-header .work-split-inline { padding-top: 18px; border-top: 1px solid var(--line-soft); }
 .work-split-inline-body { display: grid; gap: 16px; min-width: 0; }
 .work-split-inline .dialog-heading { align-items: start; }
 .work-split-inline .dialog-heading h2 { font-size: 19px; }
@@ -1359,9 +1351,3 @@ html[data-color-theme="light"] .issue-card-flag-model-no-gt { border-color: #fcd
 
 body[data-active-page="review-assignments"] .header-metrics { display: none; }
 body[data-active-page="review-assignments"] .gt-sync-control { margin-left: auto; }
-.review-assignment-create-fields { grid-template-columns: repeat(6,minmax(0,1fr)); gap: 10px; }
-.review-assignment-create-fields .allocation-run, .review-assignment-create-fields .allocation-query, .review-assignment-create-fields .allocation-ids { grid-column: span 2; }
-.allocation-filter-actions { grid-column: span 3; display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
-.review-assignment-create-fields .multi-filter-trigger, .review-assignment-create-fields .ui-select-trigger, .review-assignment-create-fields input { min-height: 36px; }
-@media(max-width:1100px) { .review-assignment-create-fields { grid-template-columns:repeat(3,minmax(0,1fr)); } .allocation-filter-actions { grid-column:1/-1; } }
-@media(max-width:650px) { .review-assignment-create-fields { grid-template-columns:repeat(2,minmax(0,1fr)); } }

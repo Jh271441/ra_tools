@@ -259,7 +259,6 @@ async function setBaselineScopes(
   try {
     await loadConfig();
     if (state.activePage === "review-assignments") {
-      renderReviewAllocationScope();
       return;
     }
     if (state.activePage === "labeling-summary") {

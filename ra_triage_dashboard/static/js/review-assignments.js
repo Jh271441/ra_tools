@@ -116,14 +116,6 @@ async function restoreReviewAllocationDraft() {
   if (!result.total) { showToast("原筛选范围当前没有 Issue，请返回调整。", true); return; }
   await openWorkSplitDialog({ ...draft, dirty: false, total: Number(result.total) });
 }
-function renderReviewAllocationScope() {
-  const active = Boolean(workSplitDraft && !$("#workSplitPanel")?.hidden);
-  const status = $("#reviewAssignmentCreateStatus");
-  if (status) status.textContent = active
-    ? `${workSplitDraft.total} 个 Issue · ${reviewAssignmentRunLabel(workSplitDraft.filters.model_run_id)} · 数据集 ${workSplitDraft.filters.baselines || "来源图库"} · 范围来自图库筛选。`
-    : "请先在判错复核图库筛选，再点击“均分任务”。";
-}
-
 function reviewAssignmentMetricMarkup(label, value, note = "") {
   return `<article class="review-assignment-metric"><small>${escapeHtml(label)}</small><strong>${escapeHtml(value)}</strong>${note ? `<span>${escapeHtml(note)}</span>` : ""}</article>`;
 }
@@ -359,8 +351,6 @@ function renderReviewAssignmentDetail() {
 
 function renderReviewAssignmentPage() {
   if (!$("#reviewAssignmentsPage")) return;
-  renderReviewAssignmentCreate();
-  renderReviewAllocationScope();
   renderReviewAssignmentMetrics(state.reviewAssignments.splits || []);
   renderReviewAssignmentList();
   renderReviewAssignmentDetail();
@@ -556,9 +546,4 @@ function bindReviewAssignmentsPage() {
     state.reviewAssignments.page = 1;
     loadReviewAssignmentDetail().catch((error) => showToast(error.message, true));
   });
-}
-
-function renderReviewAssignmentCreate() {
-  const root = $("#reviewAssignmentCreate");
-  if (root) root.hidden = !state.session?.is_admin;
 }

@@ -623,13 +623,8 @@ async function openWorkSplitDialog(draft = null) {
   const root = $("#workSplitPeople");
   if (root) {
     root.innerHTML = "";
-    const users = state.accessUsers || [];
-    if (users.length) {
-      users.forEach((user) => {
-        root.insertAdjacentHTML("beforeend", workSplitPersonRow(user.username, ""));
-      });
-    } else {
-      ensureWorkSplitPeople(2);
+    ensureWorkSplitPeople(1);
+    if (!state.accessUsers?.length) {
       showToast(t("work.no_writers"), true);
     }
   }
@@ -652,7 +647,6 @@ async function openWorkSplitDialog(draft = null) {
       ? `${source.pathname}${source.search}` : fallback;
   }
   saveReviewAllocationDraft(workSplitDraft);
-  renderReviewAllocationScope();
   panel.scrollIntoView({ block: "start", behavior: "smooth" });
 }
 
@@ -838,7 +832,6 @@ function bindWorkSplitControls() {
     workSplitDraft = null;
     saveReviewAllocationDraft(null);
     $("#workSplitPanel").hidden = true;
-    renderReviewAllocationScope();
   });
   $("#reviewTaskContextRetry")?.addEventListener("click", () => {
     loadReviewTaskContext(state.reviewWorkSplitId).then(() => loadCases({ keepSelection: false, page: 1 })).catch((error) => showToast(error.message, true));

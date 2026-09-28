@@ -496,13 +496,8 @@ async function enterLabelingNewTask({ route = null } = {}) {
   const root = $("#labelingTaskPeople");
   if (root) {
     root.innerHTML = "";
-    const users = state.accessUsers || [];
-    if (users.length) {
-      users.forEach((user) => {
-        root.insertAdjacentHTML("beforeend", workSplitPersonRow(user.username, ""));
-      });
-    } else {
-      ensureLabelingTaskPeople(2);
+    ensureLabelingTaskPeople(1);
+    if (!state.accessUsers?.length) {
       showToast(t("work.no_writers"), true);
     }
   }

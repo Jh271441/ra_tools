@@ -54,11 +54,25 @@ assert.equal(route.commentState,'all');assert.equal(route.casePage,1);
 '''
         subprocess.run(['node','-e',script], check=True, capture_output=True)
 
-    def test_scope_summary_has_no_duplicate_filter_inputs(self):
+    def test_assignment_form_is_merged_into_header_without_scope_card(self):
         html = (ROOT / 'static/index.html').read_text()
-        section = html.split('id="reviewAssignmentCreate"', 1)[1].split('</section>', 1)[0]
-        self.assertIn('分配范围', section)
-        self.assertNotIn('<input', section)
-        self.assertNotIn('<select', section)
+        header = html.index('class="review-assignments-header page-card"')
+        panel = html.index('id="workSplitPanel"')
+        metrics = html.index('id="reviewAssignmentMetrics"')
+        self.assertLess(header, panel)
+        self.assertLess(panel, metrics)
+        self.assertNotIn('id="reviewAssignmentCreate"', html)
+        self.assertNotIn('<h3>分配范围</h3>', html)
         self.assertNotIn('id="allocationComparison"', html)
         self.assertIn('返回图库修改筛选', html)
+
+    def test_all_three_assignment_flows_start_with_explicit_addition(self):
+        work_split = (ROOT / 'static/js/work-split.js').read_text()
+        case_labeling = (ROOT / 'static/js/case-labeling.js').read_text()
+        intent = (ROOT / 'static/js/intent-workspaces.js').read_text()
+        self.assertIn('root.innerHTML = "";\n    ensureWorkSplitPeople(1);', work_split)
+        self.assertNotIn('users.forEach((user)', work_split)
+        self.assertIn('root.innerHTML = "";\n    ensureLabelingTaskPeople(1);', case_labeling)
+        self.assertNotIn('users.forEach((user)', case_labeling)
+        self.assertIn('intent.experimentDraftMembers = [];', intent)
+        self.assertIn('setMultiFilterValues($("#intentExperimentMembers"), []);', intent)
