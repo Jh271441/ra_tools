@@ -8,6 +8,21 @@ void i18n.use(initReactI18next).init({
   resources: {
     zh: {
       translation: {
+        prOnline: "线上业务",
+        prSimulation: "仿真预估",
+        prHoverHint: "悬停查看数值与差值；缺失数据不连线",
+        prRecallDifferent: "滚动模式的仿真 Recall 为全场景触发口径，与线上业务 Recall 定义不同，不能直接比较差值。",
+        prGap: "仿真 − 线上（百分点）",
+        prOnlineMissing: "缺少数易线上人口数据，暂不发布仿真预估",
+        prPopulationMismatch: "仿真/线上人口比 {{coverage}}%，超出 {{min}}%–{{max}}%，预估暂不展示",
+        prSimulationMissing: "仿真预估未就绪，需核对 cohort 结果及完整性",
+        prRollingMissing: "窗口数据或回测矩阵不完整，预估暂不展示",
+        prFailedCases: "{{count}} 条仿真失败",
+        prCompletedCases: "已完成 {{count}} 条仿真",
+        prMissingTitle: "缺失点说明 · 无预估值不等于没有跑实验",
+        prValuesTable: "查看各版本准确数值",
+        prVersion: "版本",
+
         brandTitle: 'RA 仿真复现看板',
         brandSubtitle: 'Issue 分析',
         appTitle: 'RA 仿真复现看板',
@@ -170,6 +185,21 @@ void i18n.use(initReactI18next).init({
     },
     en: {
       translation: {
+        prOnline: "Online",
+        prSimulation: "Simulation estimate",
+        prHoverHint: "Hover for values and gaps; missing values are not connected",
+        prRecallDifferent: "Rolling simulation recall uses all-cohort trigger semantics and differs from online business recall; their gap is not comparable.",
+        prGap: "Simulation − online (percentage points)",
+        prOnlineMissing: "Missing Shuyi online population; projection withheld",
+        prPopulationMismatch: "Simulation/online population ratio {{coverage}}% is outside {{min}}%–{{max}}%; estimate withheld",
+        prSimulationMissing: "Projection unavailable; cohort results and completeness need checking",
+        prRollingMissing: "Window population or backtest matrix incomplete; estimate withheld",
+        prFailedCases: "{{count}} failed simulation cases",
+        prCompletedCases: "{{count}} completed simulation cases",
+        prMissingTitle: "Missing points · an unavailable estimate does not mean no experiment ran",
+        prValuesTable: "View exact values for each release",
+        prVersion: "Release",
+
         brandTitle: 'RA Sim Repro Dashboard',
         brandSubtitle: 'Issue Analytics',
         appTitle: 'RA Sim Repro Dashboard',

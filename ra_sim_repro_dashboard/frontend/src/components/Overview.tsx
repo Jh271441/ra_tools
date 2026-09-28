@@ -4,7 +4,6 @@ import {
   ComposedChart,
   LabelList,
   Line,
-  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -18,6 +17,7 @@ import type { KpiSummary, SummaryResponse } from '../types';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { cn } from '../lib/utils';
+import { PrComparison } from './PrComparison';
 import { poststratifyBacktestWindow } from '../lib/backtest';
 
 interface OverviewProps {
@@ -359,7 +359,6 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
     { key: 'fn', label: 'FN', color: chartColors.fn },
     { key: 'fp', label: 'FP', color: chartColors.fp },
   ];
-  const hasSimProjection = prTrend.some((item) => item.simPrecision != null || item.simRecall != null);
 
   function toggleReproMetric(key: ReproMetric) {
     setVisibleReproMetrics((current) => {
@@ -407,7 +406,7 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
 
       <div className="grid grid-cols-1 gap-4">
         <Card>
-          <CardHeader className="min-h-[86px] flex-row items-start justify-between gap-2 px-5 pb-2 pt-4">
+          <CardHeader className="min-h-[86px] flex-row flex-wrap items-start justify-between gap-3 px-5 pb-2 pt-4">
             <div className="min-w-0">
               <CardTitle>{t('continuousReproTrend')}</CardTitle>
               <p className="mt-0.5 text-[12px] leading-4 text-muted-foreground">{t('continuousReproTrendSubtitle')}</p>
@@ -485,17 +484,13 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
         </Card>
 
         <Card>
-          <CardHeader className="min-h-[86px] flex-row items-start justify-between gap-2 px-5 pb-2 pt-4">
+          <CardHeader className="min-h-[86px] flex-row flex-wrap items-start justify-between gap-3 px-5 pb-2 pt-4">
             <div className="min-w-0">
               <CardTitle>{prMode === 'same-version' ? t('sameVersionPr') : t('binaryBacktestPr')}</CardTitle>
               <p className="mt-0.5 text-[12px] leading-4 text-muted-foreground">
                 {prMode === 'same-version' ? t('sameVersionPrSubtitle') : t('binaryBacktestPrSubtitle')}
               </p>
-              <div className="mt-2 flex flex-wrap gap-3 text-[11px] font-semibold text-muted-foreground">
-                <span className="inline-flex items-center gap-1.5"><LegendDot color={chartColors.precision} />{t('actualPrecision')}</span>
-                <span className="inline-flex items-center gap-1.5"><LegendDot color={chartColors.recall} />{t('actualRecall')}</span>
-                {hasSimProjection ? <span className="inline-flex items-center gap-1.5"><LegendDot color={chartColors.repro} />{t('simPR')}</span> : null}
-              </div>
+
             </div>
             <div className="flex shrink-0 items-center gap-2">
               <label className="text-xs font-medium text-muted-foreground" htmlFor="pr-mode">
@@ -530,32 +525,8 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
               <Badge variant="secondary">{current.version_key}</Badge>
             </div>
           </CardHeader>
-          <CardContent className="relative h-80 px-4 pb-4 pt-0">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={prTrend} margin={{ top: 18, right: 42, left: 0, bottom: 8 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.68)" vertical={false} />
-                <XAxis dataKey="version_key" scale="point" tickLine={false} axisLine={false} interval={0} minTickGap={0} height={40} tickMargin={10} padding={{ left: 44, right: 44 }} tick={<VersionTick />} />
-                <YAxis domain={prDomain} tickLine={false} axisLine={false} width={40} tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} />
-                <Tooltip {...tooltipProps} cursor={<ChartHoverCursor />} />
-                <Line type="linear" dataKey="actualPrecision" name={t('actualPrecision')} stroke={chartColors.precision} strokeWidth={2.2} dot={hollowDot(chartColors.precision)} activeDot={hollowDot(chartColors.precision, 5)} isAnimationActive={false}>
-                  {showTrendLabels ? <LabelList dataKey="actualPrecision" content={renderTrendLabel(chartColors.precision, 8, -12)} /> : null}
-                </Line>
-                <Line type="linear" dataKey="actualRecall" name={t('actualRecall')} stroke={chartColors.recall} strokeWidth={2.2} dot={hollowDot(chartColors.recall)} activeDot={hollowDot(chartColors.recall, 5)} isAnimationActive={false}>
-                  {showTrendLabels ? <LabelList dataKey="actualRecall" content={renderTrendLabel(chartColors.recall, -8, 12)} /> : null}
-                </Line>
-                {hasSimProjection ? (
-                  <>
-                    <Line type="linear" dataKey="simPrecision" name={t('simPrecisionEstimate')} stroke={chartColors.fp} strokeDasharray="5 4" strokeWidth={2.2} dot={hollowDot(chartColors.fp)} activeDot={hollowDot(chartColors.fp, 5)} isAnimationActive={false} />
-                    <Line type="linear" dataKey="simRecall" name={prMode === 'same-version' ? t('simBusinessRecallEstimate') : t('simRecallEstimate')} stroke={chartColors.repro} strokeDasharray="5 4" strokeWidth={2.2} dot={hollowDot(chartColors.repro)} activeDot={hollowDot(chartColors.repro, 5)} isAnimationActive={false} />
-                  </>
-                ) : null}
-              </LineChart>
-            </ResponsiveContainer>
-            {!hasSimProjection ? (
-              <div className="pointer-events-none absolute right-4 top-4 rounded-md border border-border/80 bg-card/90 px-3 py-2 text-xs text-muted-foreground shadow-sm">
-                {prMode === 'same-version' ? t('sameVersionProjectionPending') : t('binaryMatrixPending')}
-              </div>
-            ) : null}
+          <CardContent className="px-5 pb-5 pt-2">
+            <PrComparison rows={prTrend} comparison={comparison} mode={prMode} domain={prDomain} />
           </CardContent>
         </Card>
       </div>
