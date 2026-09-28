@@ -10,6 +10,7 @@ void i18n.use(initReactI18next).init({
       translation: {
         prOnline: "线上业务",
         prSimulation: "仿真预估",
+        prMetricSwitch: "切换准召指标",
         prHoverHint: "悬停查看数值与差值；缺失数据不连线",
         prRecallDifferent: "滚动模式的仿真 Recall 为全场景触发口径，与线上业务 Recall 定义不同，不能直接比较差值。",
         prGap: "仿真 − 线上（百分点）",
@@ -187,6 +188,7 @@ void i18n.use(initReactI18next).init({
       translation: {
         prOnline: "Online",
         prSimulation: "Simulation estimate",
+        prMetricSwitch: "Switch metric",
         prHoverHint: "Hover for values and gaps; missing values are not connected",
         prRecallDifferent: "Rolling simulation recall uses all-cohort trigger semantics and differs from online business recall; their gap is not comparable.",
         prGap: "Simulation − online (percentage points)",
