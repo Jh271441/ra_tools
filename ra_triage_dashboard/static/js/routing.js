@@ -414,16 +414,23 @@ function normalizedCaseLabelingRouteFilters(params) {
   const author = String(params.get("author") || "").trim().toLowerCase();
   const assignee = String(params.get("assignee") || "").trim().toLowerCase();
   const cluster = String(params.get("cluster") || "").trim();
+  const gt = String(params.get("gt") || "all").trim();
+  const commentState = String(params.get("comment_state") || "all").trim().toLowerCase();
   return {
     taskId: /^(?:split|campaign)-[A-Za-z0-9]+$/.test(params.get("task") || "")
       ? params.get("task")
       : "",
     search: params.get("q") || "",
+    issueIds: parseFilterList(params.get("issue_ids")).filter((value) =>
+      ISSUE_QUERY_ID_RE.test(value)
+    ),
     status: ["pending", "resolved", "conflict"].includes(status) ? status : "all",
     author: /^[a-z0-9._@-]{1,128}$/.test(author) ? author : "",
     assignee: /^[a-z0-9._@-]{1,128}$/.test(assignee) ? assignee : "",
     cluster: /^(pair|scenario):.{1,200}$/.test(cluster) ? cluster : "",
     label: ["误触发", "正确触发", "无需协助"].includes(label) ? label : "all",
+    gt: ["误触发", "正确触发", "无需协助"].includes(gt) ? gt : "all",
+    commentState: ["with", "without"].includes(commentState) ? commentState : "all",
     exclusion: ["excluded", "active"].includes(exclusion) ? exclusion : "all",
     page: Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1,
     pageSize: CASE_PAGE_SIZES.includes(rawPageSize)
@@ -756,6 +763,10 @@ function pageUrl(page, options = {}) {
     if (labeling.issue) url.searchParams.set("issue", labeling.issue);
     if (labeling.taskId) url.searchParams.set("task", labeling.taskId);
     if (labeling.search) url.searchParams.set("q", labeling.search);
+    const issueIds = (labeling.issueIds || []).filter((value) =>
+      ISSUE_QUERY_ID_RE.test(String(value))
+    );
+    if (issueIds.length) url.searchParams.set("issue_ids", issueIds.join(","));
     if (labeling.status && labeling.status !== "all") {
       url.searchParams.set("status", labeling.status);
     }
@@ -765,6 +776,12 @@ function pageUrl(page, options = {}) {
     if (labeling.discussionChannel) url.searchParams.set("channel", labeling.discussionChannel);
     if (labeling.label && labeling.label !== "all") {
       url.searchParams.set("label", labeling.label);
+    }
+    if (labeling.gt && labeling.gt !== "all") {
+      url.searchParams.set("gt", labeling.gt);
+    }
+    if (labeling.commentState && labeling.commentState !== "all") {
+      url.searchParams.set("comment_state", labeling.commentState);
     }
     if (labeling.exclusion && labeling.exclusion !== "all") {
       url.searchParams.set("exclusion", labeling.exclusion);

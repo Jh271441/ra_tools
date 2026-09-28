@@ -62,8 +62,9 @@ body[data-active-page^="labeling"] .gt-sync-control { margin-left: auto; }
   .case-experiment-fields .work-split-estimate { text-align: left; }
 }
 .case-labeling-filters {
-  grid-template-columns: minmax(150px, 1.2fr) repeat(6, minmax(96px, .72fr)) auto;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
 }
+.case-labeling-filters .filter-submit { align-self: end; min-height: 34px; }
 .case-labeling-command[hidden],
 #caseLabelingGallery .gallery-pagination[hidden] { display: none !important; }
 .case-labeling-page .gallery-heading h2 { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }

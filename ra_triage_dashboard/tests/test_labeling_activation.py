@@ -229,6 +229,30 @@ class LabelingActivationTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(raised.exception.status_code, 409)
             create.assert_not_called()
 
+    async def test_export_preview_uses_current_labeling_filters(self) -> None:
+        result = await labeling.create_gt_export_preview(
+            self.request({
+                "baselines": "active",
+                "filters": {
+                    "baselines": "active",
+                    "issue_ids": "cn-active",
+                    "status": "resolved",
+                    "gt": "正确触发",
+                    "comment_state": "all",
+                },
+            })
+        )
+        self.assertEqual(result["preview"]["item_count"], 1)
+        self.assertEqual(result["preview"]["items"][0]["issue_id"], "cn-active")
+        with self.assertRaises(HTTPException) as raised:
+            await labeling.create_gt_export_preview(
+                self.request({
+                    "baselines": "active",
+                    "filters": {"baselines": "active", "q": "no-such-case"},
+                })
+            )
+        self.assertEqual(raised.exception.status_code, 400)
+
 
 class LegacyWriteHandoverTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:

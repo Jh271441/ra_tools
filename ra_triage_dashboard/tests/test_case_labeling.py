@@ -687,6 +687,42 @@ class CaseLabelingTest(unittest.TestCase):
             ]
             self.assertEqual(all_ids, ["cn1", "cn2", "cn3"])
 
+    def test_labeling_gallery_filters_gt_discussion_and_exact_issue_ids(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            database = self.make_db(tmp)
+            comment = database.create_review_comment(
+                issue_id="cn1", model_run_id="", body="Case discussion",
+                author="alice", author_source="kylin_ticket", author_verified=True,
+            )
+            database.link_label_comment(
+                comment_id=comment["id"], task_id="", source_run_id="",
+                policy_version="filter-test-v1",
+            )
+            self.assertEqual(
+                [item["issue_id"] for item in database.list_labeling_cases(
+                    baseline_scopes=["scope"], gt_label="正确触发",
+                )["items"]],
+                ["cn1"],
+            )
+            self.assertEqual(
+                [item["issue_id"] for item in database.list_labeling_cases(
+                    baseline_scopes=["scope"], issue_ids=["cn2"],
+                )["items"]],
+                ["cn2"],
+            )
+            self.assertEqual(
+                [item["issue_id"] for item in database.list_labeling_cases(
+                    baseline_scopes=["scope"], comment_state="with",
+                )["items"]],
+                ["cn1"],
+            )
+            self.assertEqual(
+                [item["issue_id"] for item in database.list_labeling_cases(
+                    baseline_scopes=["scope"], comment_state="without",
+                )["items"]],
+                ["cn2"],
+            )
+
     def test_labeling_clusters_and_cluster_filter(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             database = self.make_db(tmp)

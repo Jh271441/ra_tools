@@ -491,11 +491,15 @@ function renderReview(caseData) {
     : "";
   const noRunModelReviewNotice = `<div class="model-review-readonly-note model-review-run-required" role="status">
     <span class="model-review-readonly-copy">
-      <strong><span class="ui-lang-zh">尚未选择 Model Run</span><span class="ui-lang-en">No Model Run selected</span></strong>
-      <small><span class="ui-lang-zh">请先选择 Run，之后才能填写判错原因、缺失信息和截图。${combinedMode ? "当前仍可提交上方 Case 标注。" : ""}</span><span class="ui-lang-en">Select a Run before entering the model reason, missing evidence, or screenshots.${combinedMode ? " You can still submit the Case label above." : ""}</span></small>
+      <strong><span class="ui-lang-zh">未选 Run</span><span class="ui-lang-en">No Run</span></strong>
+      <small><span class="ui-lang-zh">模型复核暂不可用${combinedMode ? " · Case 标签仍可提交" : ""}</span><span class="ui-lang-en">Model review unavailable${combinedMode ? " · Case label still available" : ""}</span></small>
     </span>
     <button type="button" data-select-model-run><span class="ui-lang-zh">选择 Model Run</span><span class="ui-lang-en">Select Model Run</span></button>
     ${combinedMode ? "" : `<a href="${escapeHtml(caseLabelingUrl)}"><span class="ui-lang-zh">打开 Case 标注</span><span class="ui-lang-en">Open Case labeling</span></a>`}
+    <span class="model-review-run-help">
+      <button class="model-review-run-help-button" type="button" aria-label="查看未选择 Run 的说明" aria-describedby="modelReviewRunTooltip">i</button>
+      <span class="model-review-run-tooltip" id="modelReviewRunTooltip" role="tooltip"><span class="ui-lang-zh">选择 Run 后可填写判错原因、缺失信息和截图。${combinedMode ? "当前仍可提交上方 Case 标注。" : ""}</span><span class="ui-lang-en">Select a Run to enter the model reason, missing evidence, and screenshots.${combinedMode ? " You can still submit the Case label above." : ""}</span></span>
+    </span>
   </div>`;
   $("#reviewPane").innerHTML = `
     <form class="review-form" id="annotationForm" data-issue-id="${escapeHtml(caseData.issue_id)}">

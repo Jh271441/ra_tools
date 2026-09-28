@@ -398,7 +398,7 @@ class FrontendContractTest(unittest.TestCase):
             self.assertTrue((JS_DIR / name).is_file(), name)
             self.assertIn(f'"{name}"', APP_ENTRY_JS)
         self.assertIn("CACHE_VERSION", APP_ENTRY_JS)
-        self.assertIn("manual-triage-527", APP_ENTRY_JS)
+        self.assertIn("manual-triage-528", APP_ENTRY_JS)
         self.assertIn("function setBaselineScopes", APP_JS)
         self.assertIn("function applyInferredBaselinesFromRun", APP_JS)
         self.assertIn("clearIncompatible: true", APP_JS)
@@ -416,9 +416,11 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('delete payload.tags', review_form)
         self.assertIn('effectiveReviewWorkflowMode(state.selectedCase)', review_form)
         self.assertIn('/combined-review', review_form)
-        self.assertIn("尚未选择 Model Run", review_form)
-        self.assertIn("请先选择 Run，之后才能填写判错原因、缺失信息和截图", review_form)
+        self.assertIn("未选 Run", review_form)
+        self.assertIn("模型复核暂不可用", review_form)
+        self.assertIn("选择 Run 后可填写判错原因、缺失信息和截图", review_form)
         self.assertIn("当前仍可提交上方 Case 标注", review_form)
+        self.assertIn('role="tooltip"', review_form)
         self.assertIn('class="model-review-readonly-note model-review-run-required" role="status"', review_form)
         self.assertIn(".model-review-run-required", STYLES_CSS)
         self.assertIn("!modelReview", history)
@@ -460,7 +462,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("baselines", APP_JS)
         self.assertIn("/static/js/", APP_ENTRY_JS)
         self.assertIn("script.async = false", APP_ENTRY_JS)
-        self.assertIn("app.js?v=manual-triage-527", INDEX_HTML)
+        self.assertIn("app.js?v=manual-triage-528", INDEX_HTML)
         self.assertIn('"work-split.js"', APP_ENTRY_JS)
         self.assertIn('"review-assignments.js"', APP_ENTRY_JS)
         # Product logic must live in domain modules, not the entry loader.
@@ -703,7 +705,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('html[data-color-theme="light"] .issue-id', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .run-source-tab em', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .button-primary', STYLES_CSS)
-        self.assertIn('`${activeBase}/static/${path}?v=manual-triage-527`', INDEX_HTML)
+        self.assertIn('`${activeBase}/static/${path}?v=manual-triage-528`', INDEX_HTML)
         self.assertIn(".review-exclude-toggle { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center;", STYLES_CSS)
         self.assertIn("display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px;", STYLES_CSS)
         self.assertIn("max-height: min(70dvh, 640px); overflow: auto;", STYLES_CSS)
@@ -1003,7 +1005,8 @@ class FrontendContractTest(unittest.TestCase):
         for filter_id in (
             "labelSummarySearch", "labelSummaryTaskPicker", "labelSummaryStatusPicker",
             "labelSummaryAuthorPicker", "labelSummaryAssigneePicker",
-            "labelSummaryLabelPicker", "labelSummaryExclusionPicker",
+            "labelSummaryGtPicker", "labelSummaryLabelPicker",
+            "labelSummaryDiscussionPicker", "labelSummaryExclusionPicker",
         ):
             self.assertIn(f'id="{filter_id}"', INDEX_HTML)
         self.assertIn('class="analysis-summary-grid"', CAMPAIGNS_JS)
@@ -1029,15 +1032,21 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn(".review-cluster-strip[hidden] { display: none; }", STYLES_CSS)
         task_filter_payload = APP_JS.split("function labelingTaskFilterPayload()", 1)[1].split("\n}", 1)[0]
         self.assertIn('cluster: state.caseLabeling.cluster || ""', task_filter_payload)
-        # M8c #23: single-row filter bar; GT export moved out of the filters.
+        # Case and Summary keep the same two-row model-free filter contract.
         self.assertIn(
-            "grid-template-columns: minmax(150px, 1.2fr) repeat(6, minmax(96px, .72fr)) auto;",
+            "grid-template-columns: repeat(5, minmax(0, 1fr));",
             STYLES_CSS,
         )
+        self.assertIn('id="caseLabelingGtPicker"', INDEX_HTML)
+        self.assertIn('id="caseLabelingDiscussionPicker"', INDEX_HTML)
+        self.assertIn('id="openCaseLabelingIssueQueryButton"', INDEX_HTML)
+        self.assertIn('id="openLabelSummaryIssueQueryButton"', INDEX_HTML)
+        self.assertIn('id="labelSummaryExportGt"', INDEX_HTML)
+        self.assertIn("function exportLabelingGtUpdate", APP_JS)
         self.assertIn('id="caseLabelingExportGt"', INDEX_HTML)
         self.assertIn('id="caseLabelingReset"', INDEX_HTML)
         filters_form = INDEX_HTML.split('id="caseLabelingFilterForm"', 1)[1].split("</form>", 1)[0]
-        self.assertEqual(filters_form.count("<label"), 7)
+        self.assertEqual(filters_form.count("<label"), 9)
         self.assertNotIn('id="caseLabelingExportGt"', filters_form)
         self.assertIn(
             '<div class="gallery-heading-actions"><button class="button button-quiet" id="caseLabelingExportGt" type="button">',
@@ -1833,7 +1842,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("function jumpToQueueIndex", APP_JS)
         self.assertIn("function bindDetailQueueIndexJump", APP_JS)
         self.assertIn(".detail-queue-index-input", STYLES_CSS)
-        self.assertIn("manual-triage-527", APP_ENTRY_JS)
+        self.assertIn("manual-triage-528", APP_ENTRY_JS)
     def test_desktop_layout_panels_are_mouse_and_keyboard_resizable(self) -> None:
         self.assertIn('id="sidebarResizer" role="separator"', INDEX_HTML)
         self.assertIn('id="reviewPaneResizer" role="separator"', INDEX_HTML)

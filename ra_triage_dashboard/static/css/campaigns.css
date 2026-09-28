@@ -192,6 +192,7 @@
 .labeling-summary-toolbar > div:first-child { flex: 1; min-width: 0; }
 .labeling-summary-toolbar h2 { font-size: 19px; margin-bottom: 6px; }
 .labeling-summary-toolbar p { color: var(--muted); font-size: 12px; }
+.labeling-summary-toolbar-actions { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; }
 .labeling-summary-command { min-width: 0; }
 #labelSummaryContent { display: grid; gap: 12px; min-width: 0; }
 #labelSummaryContent .analysis-confusion-table tfoot th,
@@ -200,4 +201,4 @@
 .label-summary-case-row .analysis-case-meta { align-content: start; }
 .label-summary-pagination { margin-top: 12px; }
 @media(max-width:900px) { .labeling-summary-toolbar { align-items: flex-start; flex-wrap: wrap; } }
-@media(max-width:650px) { .labeling-summary-toolbar > div:first-child { flex-basis:100%; } .labeling-summary-toolbar > .button { width: 100%; } }
+@media(max-width:650px) { .labeling-summary-toolbar > div:first-child { flex-basis:100%; } .labeling-summary-toolbar-actions { width: 100%; flex-wrap: wrap; } .labeling-summary-toolbar-actions .button { flex: 1 1 auto; } }

@@ -6,11 +6,14 @@ function caseLabelingRouteOptions(overrides = {}) {
     issue: overrides.issue ?? labeling.issueId ?? "",
     taskId: overrides.taskId ?? labeling.taskId ?? "",
     search: overrides.search ?? labeling.search ?? "",
+    issueIds: overrides.issueIds ?? labeling.issueIds ?? [],
     status: overrides.status ?? labeling.status ?? "all",
     author: overrides.author ?? labeling.author ?? "",
     assignee: overrides.assignee ?? labeling.assignee ?? "",
     cluster: overrides.cluster ?? labeling.cluster ?? "",
     label: overrides.label ?? labeling.label ?? "all",
+    gt: overrides.gt ?? labeling.gt ?? "all",
+    commentState: overrides.commentState ?? labeling.commentState ?? "all",
     exclusion: overrides.exclusion ?? labeling.exclusion ?? "all",
     page: overrides.page ?? labeling.page ?? 1,
     pageSize: overrides.pageSize ?? labeling.pageSize ?? DEFAULT_CASE_PAGE_SIZE,
@@ -24,11 +27,14 @@ function restoreCaseLabelingRouteState(route = null) {
   if (route?.issue) state.caseLabeling.issueId = route.issue;
   state.caseLabeling.taskId = filters.taskId ?? state.caseLabeling.taskId;
   state.caseLabeling.search = filters.search ?? state.caseLabeling.search;
+  state.caseLabeling.issueIds = filters.issueIds ?? state.caseLabeling.issueIds;
   state.caseLabeling.status = filters.status ?? state.caseLabeling.status;
   state.caseLabeling.author = filters.author ?? state.caseLabeling.author;
   state.caseLabeling.assignee = filters.assignee ?? state.caseLabeling.assignee;
   state.caseLabeling.cluster = filters.cluster ?? state.caseLabeling.cluster;
   state.caseLabeling.label = filters.label ?? state.caseLabeling.label;
+  state.caseLabeling.gt = filters.gt ?? state.caseLabeling.gt;
+  state.caseLabeling.commentState = filters.commentState ?? state.caseLabeling.commentState;
   state.caseLabeling.exclusion = filters.exclusion ?? state.caseLabeling.exclusion;
   state.caseLabeling.page = filters.page || 1;
   state.caseLabeling.pageSize = filters.pageSize || DEFAULT_CASE_PAGE_SIZE;
@@ -38,6 +44,7 @@ function restoreCaseLabelingRouteState(route = null) {
   if ($("#caseLabelingPageSize")) {
     $("#caseLabelingPageSize").value = String(state.caseLabeling.pageSize);
   }
+  if (typeof updateIssueQueryButton === "function") updateIssueQueryButton();
   return filters;
 }
 
@@ -168,11 +175,14 @@ async function loadCaseLabelingClusters() {
     baselines: selectedBaselineQueryValue(),
     task_id: state.caseLabeling.taskId || "",
     q: state.caseLabeling.search || "",
+    issue_ids: (state.caseLabeling.issueIds || []).join(","),
     status: state.caseLabeling.status || "all",
     author: state.caseLabeling.author || "",
     assignee: state.caseLabeling.assignee || "",
     exclusion: state.caseLabeling.exclusion || "all",
     label: state.caseLabeling.label && state.caseLabeling.label !== "all" ? state.caseLabeling.label : "",
+    gt: state.caseLabeling.gt && state.caseLabeling.gt !== "all" ? state.caseLabeling.gt : "",
+    comment_state: state.caseLabeling.commentState || "all",
   });
   const result = await api(`/api/labeling/clusters?${params}`);
   state.caseLabeling.clusters = result.items || [];
@@ -232,6 +242,29 @@ function renderCaseLabelingLabelPicker() {
       value: item.value, label: item.labelZh,
     })),
   ], state.caseLabeling.label || "all");
+  bindUiSelect(root);
+}
+
+function renderCaseLabelingGtPicker() {
+  const root = $("#caseLabelingGtPicker");
+  if (!root) return;
+  populateUiSelect(root, [
+    { value: "all", label: "全部 GT" },
+    ...EXPECTED_OUTPUT_OPTIONS.filter((item) => item.value).map((item) => ({
+      value: item.value, label: item.labelZh,
+    })),
+  ], state.caseLabeling.gt || "all");
+  bindUiSelect(root);
+}
+
+function renderCaseLabelingDiscussionPicker() {
+  const root = $("#caseLabelingDiscussionPicker");
+  if (!root) return;
+  populateUiSelect(root, [
+    { value: "all", label: "全部讨论状态" },
+    { value: "with", label: "有讨论" },
+    { value: "without", label: "无讨论" },
+  ], state.caseLabeling.commentState || "all");
   bindUiSelect(root);
 }
 
@@ -356,16 +389,37 @@ function labelingTaskFilterPayload() {
     baselines: selectedBaselineQueryValue(),
     task_id: state.caseLabeling.taskId || "",
     q: state.caseLabeling.search || "",
+    issue_ids: (state.caseLabeling.issueIds || []).join(","),
     status: state.caseLabeling.status || "all",
     author: state.caseLabeling.author || "",
     assignee: state.caseLabeling.assignee || "",
     cluster: state.caseLabeling.cluster || "",
     exclusion: state.caseLabeling.exclusion || "all",
+    gt: state.caseLabeling.gt || "all",
+    comment_state: state.caseLabeling.commentState || "all",
     label:
       state.caseLabeling.label && state.caseLabeling.label !== "all"
         ? state.caseLabeling.label
         : "all",
   };
+}
+
+async function exportLabelingGtUpdate(filters = {}, button = null) {
+  const control = button instanceof HTMLButtonElement ? button : null;
+  if (control) control.disabled = true;
+  try {
+    const result = await api("/api/labeling/gt-export-previews", {
+      method: "POST",
+      body: JSON.stringify({
+        baselines: selectedBaselineQueryValue(),
+        filters: { ...filters, baselines: selectedBaselineQueryValue() },
+      }),
+    });
+    acknowledgeLocalChange(result);
+    window.location.assign(result.download_url);
+  } finally {
+    if (control) control.disabled = !state.session?.is_admin;
+  }
 }
 
 function labelingTaskReviewersPerIssue() {
@@ -479,6 +533,8 @@ async function enterLabelingNewTask({ route = null } = {}) {
   renderCaseLabelingAuthorPicker();
   renderCaseLabelingAssigneePicker();
   renderCaseLabelingLabelPicker();
+  renderCaseLabelingGtPicker();
+  renderCaseLabelingDiscussionPicker();
   renderCaseLabelingExclusionPicker();
   // Deep links and history restoration must resolve the current filtered pool.
   // Do not rewrite the standalone task-page URL while loading the gallery data.
@@ -795,12 +851,15 @@ async function loadCaseLabelingCases({ page = state.caseLabeling.page, persistRo
     baselines: selectedBaselineQueryValue(),
     task_id: state.caseLabeling.taskId || "",
     q: state.caseLabeling.search || "",
+    issue_ids: (state.caseLabeling.issueIds || []).join(","),
     status: state.caseLabeling.status || "all",
     author: state.caseLabeling.author || "",
     assignee: state.caseLabeling.assignee || "",
     cluster: state.caseLabeling.cluster || "",
     exclusion: state.caseLabeling.exclusion || "all",
     label: state.caseLabeling.label && state.caseLabeling.label !== "all" ? state.caseLabeling.label : "",
+    gt: state.caseLabeling.gt && state.caseLabeling.gt !== "all" ? state.caseLabeling.gt : "",
+    comment_state: state.caseLabeling.commentState || "all",
     page: String(Math.max(1, Number(page) || 1)),
     page_size: String(state.caseLabeling.pageSize || DEFAULT_CASE_PAGE_SIZE),
   });
@@ -1671,6 +1730,8 @@ async function enterCaseLabeling({ route = null } = {}) {
   renderCaseLabelingAuthorPicker();
   renderCaseLabelingAssigneePicker();
   renderCaseLabelingLabelPicker();
+  renderCaseLabelingGtPicker();
+  renderCaseLabelingDiscussionPicker();
   renderCaseLabelingExclusionPicker();
   await loadCaseLabelingCases({ page: state.caseLabeling.page, persistRoute: false });
   const issue = route?.issue || filters.issue || "";
@@ -1710,6 +1771,14 @@ function bindCaseLabelingEvents() {
     state.caseLabeling.label = $("#caseLabelingLabel").value || "all";
     loadCaseLabelingCases({ page: 1 }).catch((error) => showToast(error.message, true));
   });
+  $("#caseLabelingGt")?.addEventListener("change", () => {
+    state.caseLabeling.gt = $("#caseLabelingGt").value || "all";
+    loadCaseLabelingCases({ page: 1 }).catch((error) => showToast(error.message, true));
+  });
+  $("#caseLabelingDiscussion")?.addEventListener("change", () => {
+    state.caseLabeling.commentState = $("#caseLabelingDiscussion").value || "all";
+    loadCaseLabelingCases({ page: 1 }).catch((error) => showToast(error.message, true));
+  });
   $("#caseLabelingExclusion")?.addEventListener("change", () => {
     state.caseLabeling.exclusion = $("#caseLabelingExclusion").value || "all";
     loadCaseLabelingCases({ page: 1 }).catch((error) => showToast(error.message, true));
@@ -1717,6 +1786,10 @@ function bindCaseLabelingEvents() {
   let timer = null;
   $("#caseLabelingSearch")?.addEventListener("input", () => {
     if (timer) window.clearTimeout(timer);
+    if (state.caseLabeling.issueIds?.length) {
+      state.caseLabeling.issueIds = [];
+      if (typeof updateIssueQueryButton === "function") updateIssueQueryButton();
+    }
     timer = window.setTimeout(() => {
       state.caseLabeling.search = $("#caseLabelingSearch").value.trim();
       loadCaseLabelingCases({ page: 1 }).catch((error) => showToast(error.message, true));
@@ -1724,11 +1797,14 @@ function bindCaseLabelingEvents() {
   });
   $("#caseLabelingReset")?.addEventListener("click", () => {
     state.caseLabeling.taskId = "";
+    state.caseLabeling.issueIds = [];
     state.caseLabeling.status = "all";
     state.caseLabeling.author = "";
     state.caseLabeling.assignee = "";
     state.caseLabeling.cluster = "";
     state.caseLabeling.label = "all";
+    state.caseLabeling.gt = "all";
+    state.caseLabeling.commentState = "all";
     state.caseLabeling.exclusion = "all";
     state.caseLabeling.search = "";
     $("#caseLabelingSearch").value = "";
@@ -1737,7 +1813,10 @@ function bindCaseLabelingEvents() {
     renderCaseLabelingAuthorPicker();
     renderCaseLabelingAssigneePicker();
     renderCaseLabelingLabelPicker();
+    renderCaseLabelingGtPicker();
+    renderCaseLabelingDiscussionPicker();
     renderCaseLabelingExclusionPicker();
+    if (typeof updateIssueQueryButton === "function") updateIssueQueryButton();
     loadCaseLabelingCases({ page: 1 }).catch((error) => showToast(error.message, true));
   });
   $("#caseLabelingPrevious")?.addEventListener("click", () => loadCaseLabelingCases({ page: state.caseLabeling.page - 1 }).catch((error) => showToast(error.message, true)));
@@ -1748,17 +1827,7 @@ function bindCaseLabelingEvents() {
   });
   $("#caseLabelingBack")?.addEventListener("click", () => closeCaseLabelingDetail());
   $("#caseLabelingExportGt")?.addEventListener("click", () => {
-    (async () => {
-      try {
-        const result = await api("/api/labeling/gt-export-previews", {
-          method: "POST",
-          body: JSON.stringify({ baselines: selectedBaselineQueryValue(), issue_ids: [] }),
-        });
-        acknowledgeLocalChange(result);
-        window.location.href = result.download_url;
-      } catch (error) {
-        showToast(error.message, true);
-      }
-    })();
+    exportLabelingGtUpdate(labelingTaskFilterPayload(), $("#caseLabelingExportGt"))
+      .catch((error) => showToast(error.message, true));
   });
 }

@@ -17,7 +17,7 @@ from fastapi.responses import FileResponse, Response
 
 from ..auth import request_identity
 from ..case_media import empty_case_media
-from ..db import LabelAnnotationConflictError
+from ..db import LABELS, LabelAnnotationConflictError
 from ..review_mentions import extract_review_mentions, notification_recipients
 from ..review_workflow import resolve_expected_output
 from ..runtime import _public_path, database, review_notification_dispatcher, settings
@@ -26,6 +26,7 @@ from ..support.catalogs import (
     _normalise_missing_evidence,
     _normalise_review_excluded,
     _normalise_review_tags,
+    _parse_issue_id_filter,
     _review_tag_catalog,
 )
 from ..support.common import _as_text, _detail
@@ -227,17 +228,34 @@ async def create_labeling_task(request: Request) -> dict[str, Any]:
         if normalized_label == "all":
             normalized_label = ""
         normalized_cluster = _as_text(filter_body.get("cluster")).strip()
+        normalized_gt = _as_text(filter_body.get("gt")).strip()
+        if normalized_gt == "all":
+            normalized_gt = ""
+        if normalized_gt and normalized_gt not in LABELS:
+            raise _detail(400, "GT 类别不合法。")
+        normalized_comment_state = (
+            _as_text(filter_body.get("comment_state")).strip().lower() or "all"
+        )
+        if normalized_comment_state not in {"all", "with", "without"}:
+            raise _detail(400, "讨论筛选不合法。")
+        raw_filter_issue_ids = _as_text(filter_body.get("issue_ids"))
+        normalized_issue_ids = _parse_issue_id_filter(raw_filter_issue_ids)
+        if raw_filter_issue_ids.strip() and not normalized_issue_ids:
+            raise _detail(400, "issue_ids 未包含有效的 Issue ID。")
         try:
             resolved = await asyncio.to_thread(
                 database.labeling_case_issue_ids,
                 baseline_scopes=scopes,
                 task_id=_as_text(filter_body.get("task_id")),
                 search=_as_text(filter_body.get("q")),
+                issue_ids=normalized_issue_ids,
                 status=normalized_status,
                 author=_as_text(filter_body.get("author")).strip().lower(),
                 assignee=_as_text(filter_body.get("assignee")).strip().lower(),
                 exclusion=normalized_exclusion,
                 expected_output=normalized_label,
+                gt_label=normalized_gt,
+                comment_state=normalized_comment_state,
                 cluster=normalized_cluster,
             )
         except ValueError as exc:
@@ -316,11 +334,14 @@ async def list_labeling_cases(
     baselines: str = "",
     task_id: str = "",
     q: str = "",
+    issue_ids: str = "",
     status: str = "all",
     author: str = "",
     assignee: str = "",
     exclusion: str = "all",
     label: str = "",
+    gt: str = "",
+    comment_state: str = "all",
     cluster: str = "",
     page: int = 1,
     page_size: int = 20,
@@ -344,6 +365,15 @@ async def list_labeling_cases(
     if normalized_exclusion not in {"all", "excluded", "active"}:
         raise _detail(400, "排除筛选不合法。")
     normalized_label = _as_text(label).strip()
+    normalized_gt = _as_text(gt).strip()
+    if normalized_gt and normalized_gt not in LABELS:
+        raise _detail(400, "GT 类别不合法。")
+    normalized_comment_state = _as_text(comment_state).strip().lower() or "all"
+    if normalized_comment_state not in {"all", "with", "without"}:
+        raise _detail(400, "讨论筛选不合法。")
+    normalized_issue_ids = _parse_issue_id_filter(issue_ids)
+    if _as_text(issue_ids).strip() and not normalized_issue_ids:
+        raise _detail(400, "issue_ids 未包含有效的 Issue ID。")
     normalized_cluster = _as_text(cluster)
     try:
         result = await asyncio.to_thread(
@@ -351,11 +381,14 @@ async def list_labeling_cases(
             baseline_scopes=scopes,
             task_id=normalized_task_id,
             search=_as_text(q),
+            issue_ids=normalized_issue_ids,
             status=normalized_status,
             author=normalized_author,
             assignee=_as_text(assignee).strip().lower(),
             exclusion=normalized_exclusion,
             expected_output=normalized_label,
+            gt_label=normalized_gt,
+            comment_state=normalized_comment_state,
             cluster=normalized_cluster,
             page=page,
             page_size=page_size,
@@ -371,11 +404,14 @@ async def list_labeling_cases(
         "baseline_scopes": scopes,
         "task_id": _as_text(task_id),
         "q": _as_text(q),
+        "issue_ids": normalized_issue_ids,
         "status": normalized_status,
         "author": normalized_author,
         "assignee": _as_text(assignee).strip().lower(),
         "exclusion": normalized_exclusion,
         "label": normalized_label,
+        "gt": normalized_gt,
+        "comment_state": normalized_comment_state,
         "cluster": normalized_cluster,
     }
     return result
@@ -387,11 +423,14 @@ async def labeling_summary(
     baselines: str = "",
     task_id: str = "",
     q: str = "",
+    issue_ids: str = "",
     status: str = "all",
     author: str = "",
     assignee: str = "",
     exclusion: str = "all",
     label: str = "",
+    gt: str = "",
+    comment_state: str = "all",
     cluster: str = "",
     page: int = 1,
     page_size: int = 20,
@@ -399,6 +438,9 @@ async def labeling_summary(
     from ..labeling_summary import summarize_labeling_cases
     await _require_labeling_writer(request)
     scopes = await _active_labeling_scopes(resolve_request_baseline_scopes(baselines, request=request))
+    normalized_issue_ids = _parse_issue_id_filter(issue_ids)
+    if _as_text(issue_ids).strip() and not normalized_issue_ids:
+        raise _detail(400, "issue_ids 未包含有效的 Issue ID。")
     try:
         normalized_task = _as_text(task_id)
         items, _ = await asyncio.to_thread(
@@ -406,11 +448,14 @@ async def labeling_summary(
             baseline_scopes=scopes,
             task_id=normalized_task,
             search=_as_text(q),
+            issue_ids=normalized_issue_ids,
             status=_as_text(status) or "all",
             author=_as_text(author),
             assignee=_as_text(assignee),
             exclusion=_as_text(exclusion) or "all",
             expected_output=_as_text(label),
+            gt_label=_as_text(gt),
+            comment_state=_as_text(comment_state) or "all",
             cluster=_as_text(cluster),
         )
         result, labelers, assignees = await asyncio.gather(
@@ -440,11 +485,14 @@ async def list_labeling_clusters(
     baselines: str = "",
     task_id: str = "",
     q: str = "",
+    issue_ids: str = "",
     status: str = "all",
     author: str = "",
     assignee: str = "",
     exclusion: str = "all",
     label: str = "",
+    gt: str = "",
+    comment_state: str = "all",
 ) -> dict[str, Any]:
     await _require_labeling_writer(request)
     normalized_status = _as_text(status).lower() or "all"
@@ -456,17 +504,29 @@ async def list_labeling_clusters(
     if normalized_exclusion not in {"all", "excluded", "active"}:
         raise _detail(400, "排除筛选不合法。")
     normalized_label = _as_text(label).strip()
+    normalized_gt = _as_text(gt).strip()
+    if normalized_gt and normalized_gt not in LABELS:
+        raise _detail(400, "GT 类别不合法。")
+    normalized_comment_state = _as_text(comment_state).strip().lower() or "all"
+    if normalized_comment_state not in {"all", "with", "without"}:
+        raise _detail(400, "讨论筛选不合法。")
+    normalized_issue_ids = _parse_issue_id_filter(issue_ids)
+    if _as_text(issue_ids).strip() and not normalized_issue_ids:
+        raise _detail(400, "issue_ids 未包含有效的 Issue ID。")
     try:
         clusters = await asyncio.to_thread(
             database.labeling_clusters,
             baseline_scopes=scopes,
             task_id=_as_text(task_id),
             search=_as_text(q),
+            issue_ids=normalized_issue_ids,
             status=normalized_status,
             author=_as_text(author).strip().lower(),
             assignee=_as_text(assignee).strip().lower(),
             exclusion=normalized_exclusion,
             expected_output=normalized_label,
+            gt_label=normalized_gt,
+            comment_state=normalized_comment_state,
         )
     except ValueError as exc:
         raise _detail(400, str(exc)) from exc
@@ -476,11 +536,14 @@ async def list_labeling_clusters(
             "baseline_scopes": scopes,
             "task_id": _as_text(task_id),
             "q": _as_text(q),
+            "issue_ids": normalized_issue_ids,
             "status": normalized_status,
             "author": _as_text(author).strip().lower(),
             "assignee": _as_text(assignee).strip().lower(),
             "exclusion": normalized_exclusion,
             "label": normalized_label,
+            "gt": normalized_gt,
+            "comment_state": normalized_comment_state,
         },
     }
 
@@ -1170,8 +1233,10 @@ async def create_gt_export_preview(request: Request) -> dict[str, Any]:
         raise _detail(400, "导出预览请求必须是 JSON 对象。")
     if not isinstance(body, dict):
         raise _detail(400, "导出预览请求必须是 JSON 对象。")
+    filter_body = body.get("filters") if isinstance(body.get("filters"), dict) else {}
     scopes = resolve_request_baseline_scopes(
-        _as_text(body.get("baselines")), request=request
+        _as_text(body.get("baselines") or filter_body.get("baselines")),
+        request=request,
     )
     scopes = await _active_labeling_scopes(scopes)
     if not scopes:
@@ -1179,11 +1244,58 @@ async def create_gt_export_preview(request: Request) -> dict[str, Any]:
     issue_ids = body.get("issue_ids") or []
     if not isinstance(issue_ids, list):
         raise _detail(400, "issue_ids 必须是数组。")
+    selected_issue_ids = list(
+        dict.fromkeys(_as_text(value).strip() for value in issue_ids if _as_text(value).strip())
+    )
+    if not selected_issue_ids and filter_body:
+        normalized_status = _as_text(filter_body.get("status")).lower() or "all"
+        if normalized_status not in {"all", "pending", "resolved", "conflict"}:
+            raise _detail(400, "标注状态不合法。")
+        normalized_exclusion = _as_text(filter_body.get("exclusion")).lower() or "all"
+        if normalized_exclusion not in {"all", "excluded", "active"}:
+            raise _detail(400, "排除筛选不合法。")
+        normalized_label = _as_text(filter_body.get("label")).strip()
+        if normalized_label == "all":
+            normalized_label = ""
+        normalized_gt = _as_text(filter_body.get("gt")).strip()
+        if normalized_gt == "all":
+            normalized_gt = ""
+        if normalized_gt and normalized_gt not in LABELS:
+            raise _detail(400, "GT 类别不合法。")
+        normalized_comment_state = (
+            _as_text(filter_body.get("comment_state")).strip().lower() or "all"
+        )
+        if normalized_comment_state not in {"all", "with", "without"}:
+            raise _detail(400, "讨论筛选不合法。")
+        raw_filter_issue_ids = _as_text(filter_body.get("issue_ids"))
+        normalized_filter_issue_ids = _parse_issue_id_filter(raw_filter_issue_ids)
+        if raw_filter_issue_ids.strip() and not normalized_filter_issue_ids:
+            raise _detail(400, "issue_ids 未包含有效的 Issue ID。")
+        try:
+            selected_issue_ids = await asyncio.to_thread(
+                database.labeling_case_issue_ids,
+                baseline_scopes=scopes,
+                task_id=_as_text(filter_body.get("task_id")),
+                search=_as_text(filter_body.get("q")),
+                issue_ids=normalized_filter_issue_ids,
+                status=normalized_status,
+                author=_as_text(filter_body.get("author")).strip().lower(),
+                assignee=_as_text(filter_body.get("assignee")).strip().lower(),
+                exclusion=normalized_exclusion,
+                expected_output=normalized_label,
+                gt_label=normalized_gt,
+                comment_state=normalized_comment_state,
+                cluster=_as_text(filter_body.get("cluster")).strip(),
+            )
+        except ValueError as exc:
+            raise _detail(400, str(exc)) from exc
+        if not selected_issue_ids:
+            raise _detail(400, "当前筛选范围没有可导出的 Case。")
     try:
         preview = await asyncio.to_thread(
             database.create_label_gt_export_preview,
             baseline_scopes=scopes,
-            issue_ids=[_as_text(value) for value in issue_ids],
+            issue_ids=selected_issue_ids,
             created_by=actor,
             created_by_source=actor_source,
             created_by_verified=actor_verified,

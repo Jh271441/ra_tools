@@ -682,10 +682,13 @@ function bindCampaignPageEvents() {
     const filters = labelingTaskFilterPayload();
     if (filters.task_id) params.set("task", filters.task_id);
     if (filters.q) params.set("q", filters.q);
+    if (filters.issue_ids) params.set("issue_ids", filters.issue_ids);
     if (filters.status && filters.status !== "all") params.set("status", filters.status);
     if (filters.author) params.set("author", filters.author);
     if (filters.assignee) params.set("assignee", filters.assignee);
     if (filters.label && filters.label !== "all") params.set("label", filters.label);
+    if (filters.gt && filters.gt !== "all") params.set("gt", filters.gt);
+    if (filters.comment_state && filters.comment_state !== "all") params.set("comment_state", filters.comment_state);
     if (filters.exclusion && filters.exclusion !== "all") params.set("exclusion", filters.exclusion);
     if (filters.cluster) params.set("cluster", filters.cluster);
     window.location.assign(`${withBase("/labeling-summary")}${params.toString() ? `?${params}` : ""}`);
@@ -840,8 +843,8 @@ let labelSummaryPageSize = 20;
 let labelSummaryRouteRestored = false;
 let labelSummarySearchTimer = null;
 const labelSummaryFilters = {
-  search: "", taskId: "", status: "all", author: "", assignee: "",
-  label: "all", exclusion: "all", cluster: "",
+  search: "", issueIds: [], taskId: "", status: "all", author: "", assignee: "",
+  label: "all", gt: "all", commentState: "all", exclusion: "all", cluster: "",
 };
 
 function restoreLabelSummaryRoute() {
@@ -849,11 +852,14 @@ function restoreLabelSummaryRoute() {
   labelSummaryRouteRestored = true;
   const params = new URLSearchParams(window.location.search);
   labelSummaryFilters.search = String(params.get("q") || "").trim();
+  labelSummaryFilters.issueIds = parseFilterList(params.get("issue_ids")).filter((value) => ISSUE_QUERY_ID_RE.test(value));
   labelSummaryFilters.taskId = String(params.get("task") || "").trim();
   labelSummaryFilters.status = ["resolved", "pending", "conflict"].includes(params.get("status")) ? params.get("status") : "all";
   labelSummaryFilters.author = String(params.get("author") || "").trim();
   labelSummaryFilters.assignee = String(params.get("assignee") || "").trim();
   labelSummaryFilters.label = LABELS.includes(params.get("label")) ? params.get("label") : "all";
+  labelSummaryFilters.gt = LABELS.includes(params.get("gt")) ? params.get("gt") : "all";
+  labelSummaryFilters.commentState = ["with", "without"].includes(params.get("comment_state")) ? params.get("comment_state") : "all";
   labelSummaryFilters.exclusion = ["active", "excluded"].includes(params.get("exclusion")) ? params.get("exclusion") : "all";
   labelSummaryFilters.cluster = String(params.get("cluster") || "").trim();
   labelSummaryPage = Math.max(1, Number(params.get("page") || 1));
@@ -863,11 +869,14 @@ function restoreLabelSummaryRoute() {
 function persistLabelSummaryRoute() {
   const params = new URLSearchParams();
   if (labelSummaryFilters.search) params.set("q", labelSummaryFilters.search);
+  if (labelSummaryFilters.issueIds.length) params.set("issue_ids", labelSummaryFilters.issueIds.join(","));
   if (labelSummaryFilters.taskId) params.set("task", labelSummaryFilters.taskId);
   if (labelSummaryFilters.status !== "all") params.set("status", labelSummaryFilters.status);
   if (labelSummaryFilters.author) params.set("author", labelSummaryFilters.author);
   if (labelSummaryFilters.assignee) params.set("assignee", labelSummaryFilters.assignee);
   if (labelSummaryFilters.label !== "all") params.set("label", labelSummaryFilters.label);
+  if (labelSummaryFilters.gt !== "all") params.set("gt", labelSummaryFilters.gt);
+  if (labelSummaryFilters.commentState !== "all") params.set("comment_state", labelSummaryFilters.commentState);
   if (labelSummaryFilters.exclusion !== "all") params.set("exclusion", labelSummaryFilters.exclusion);
   if (labelSummaryFilters.cluster) params.set("cluster", labelSummaryFilters.cluster);
   if (labelSummaryPage > 1) params.set("page", String(labelSummaryPage));
@@ -881,9 +890,11 @@ function persistLabelSummaryRoute() {
 
 function labelSummaryCaseUrl(filters = {}) {
   return pageUrl("labeling", { issue: "", taskId: labelSummaryFilters.taskId,
-    search: labelSummaryFilters.search, status: labelSummaryFilters.status,
+    search: labelSummaryFilters.search, issueIds: labelSummaryFilters.issueIds,
+    status: labelSummaryFilters.status,
     author: labelSummaryFilters.author, assignee: labelSummaryFilters.assignee,
     cluster: labelSummaryFilters.cluster, label: labelSummaryFilters.label,
+    gt: labelSummaryFilters.gt, commentState: labelSummaryFilters.commentState,
     exclusion: labelSummaryFilters.exclusion, page: 1,
     ...filters });
 }
@@ -911,12 +922,39 @@ function renderLabelSummaryFilters(tasks, data) {
   renderLabelSummaryPicker("#labelSummaryLabelPicker", [
     { value: "all", label: "全部类别" }, ...LABELS.map((value) => ({ value, label: value })),
   ], labelSummaryFilters.label);
+  renderLabelSummaryPicker("#labelSummaryGtPicker", [
+    { value: "all", label: "全部 GT" }, ...LABELS.map((value) => ({ value, label: value })),
+  ], labelSummaryFilters.gt);
+  renderLabelSummaryPicker("#labelSummaryDiscussionPicker", [
+    { value: "all", label: "全部讨论状态" },
+    { value: "with", label: "有讨论" }, { value: "without", label: "无讨论" },
+  ], labelSummaryFilters.commentState);
   renderLabelSummaryPicker("#labelSummaryExclusionPicker", [
     { value: "all", label: "全部（含问题排除）" }, { value: "active", label: "未排除" },
     { value: "excluded", label: "已排除" },
   ], labelSummaryFilters.exclusion);
   const search = $("#labelSummarySearch");
   if (search && document.activeElement !== search) search.value = labelSummaryFilters.search;
+  const exportButton = $("#labelSummaryExportGt");
+  if (exportButton) exportButton.disabled = !state.session?.is_admin;
+  if (typeof updateIssueQueryButton === "function") updateIssueQueryButton();
+}
+
+function labelSummaryFilterPayload() {
+  return {
+    baselines: selectedBaselineQueryValue(),
+    task_id: labelSummaryFilters.taskId,
+    q: labelSummaryFilters.search,
+    issue_ids: labelSummaryFilters.issueIds.join(","),
+    status: labelSummaryFilters.status,
+    author: labelSummaryFilters.author,
+    assignee: labelSummaryFilters.assignee,
+    label: labelSummaryFilters.label,
+    gt: labelSummaryFilters.gt,
+    comment_state: labelSummaryFilters.commentState,
+    exclusion: labelSummaryFilters.exclusion,
+    cluster: labelSummaryFilters.cluster,
+  };
 }
 
 function labelSummaryStatusItems(data) {
@@ -1038,11 +1076,14 @@ async function loadLabelingSummary() {
       baselines,
       task_id: labelSummaryFilters.taskId,
       q: labelSummaryFilters.search,
+      issue_ids: labelSummaryFilters.issueIds.join(","),
       status: labelSummaryFilters.status,
       author: labelSummaryFilters.author,
       assignee: labelSummaryFilters.assignee,
       exclusion: labelSummaryFilters.exclusion,
       label: labelSummaryFilters.label === "all" ? "" : labelSummaryFilters.label,
+      gt: labelSummaryFilters.gt === "all" ? "" : labelSummaryFilters.gt,
+      comment_state: labelSummaryFilters.commentState,
       cluster: labelSummaryFilters.cluster,
       page: String(labelSummaryPage),
       page_size: String(labelSummaryPageSize),
@@ -1068,6 +1109,10 @@ document.getElementById("labelSummaryFilterForm")?.addEventListener("submit", (e
 });
 document.getElementById("labelSummarySearch")?.addEventListener("input", (event) => {
   labelSummaryFilters.search = event.target.value.trim();
+  if (labelSummaryFilters.issueIds.length) {
+    labelSummaryFilters.issueIds = [];
+    if (typeof updateIssueQueryButton === "function") updateIssueQueryButton();
+  }
   labelSummaryPage = 1;
   window.clearTimeout(labelSummarySearchTimer);
   labelSummarySearchTimer = window.setTimeout(() => loadLabelingSummary().catch((error) => showToast(error.message, true)), 280);
@@ -1075,7 +1120,9 @@ document.getElementById("labelSummarySearch")?.addEventListener("input", (event)
 [
   ["labelSummaryTask", "taskId"], ["labelSummaryStatus", "status"],
   ["labelSummaryAuthor", "author"], ["labelSummaryAssignee", "assignee"],
-  ["labelSummaryLabel", "label"], ["labelSummaryExclusion", "exclusion"],
+  ["labelSummaryLabel", "label"], ["labelSummaryGt", "gt"],
+  ["labelSummaryDiscussion", "commentState"],
+  ["labelSummaryExclusion", "exclusion"],
 ].forEach(([id, key]) => document.getElementById(id)?.addEventListener("change", (event) => {
   labelSummaryFilters[key] = event.target.value;
   if (key === "taskId") {
@@ -1088,11 +1135,16 @@ document.getElementById("labelSummarySearch")?.addEventListener("input", (event)
 }));
 document.getElementById("labelSummaryReset")?.addEventListener("click", () => {
   Object.assign(labelSummaryFilters, {
-    search: "", taskId: "", status: "all", author: "", assignee: "",
-    label: "all", exclusion: "all", cluster: "",
+    search: "", issueIds: [], taskId: "", status: "all", author: "", assignee: "",
+    label: "all", gt: "all", commentState: "all", exclusion: "all", cluster: "",
   });
+  if (typeof updateIssueQueryButton === "function") updateIssueQueryButton();
   labelSummaryPage = 1;
   labelSummaryPageSize = 20;
   loadLabelingSummary().catch((error) => showToast(error.message, true));
 });
 document.getElementById("labelSummaryRefresh")?.addEventListener("click",()=>loadLabelingSummary().catch(error=>showToast(error.message,true)));
+document.getElementById("labelSummaryExportGt")?.addEventListener("click", () => {
+  exportLabelingGtUpdate(labelSummaryFilterPayload(), document.getElementById("labelSummaryExportGt"))
+    .catch((error) => showToast(error.message, true));
+});

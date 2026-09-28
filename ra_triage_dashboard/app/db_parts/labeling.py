@@ -2098,17 +2098,65 @@ class DatabaseLabelingMixin:
             ).fetchall()
         return [str(row["assignee"] or "") for row in rows]
 
+    def _labeling_discussion_issue_ids(
+        self,
+        *,
+        baseline_scopes: Sequence[str],
+        issue_ids: Sequence[str],
+        task_id: str = "",
+    ) -> set[str]:
+        """Return Issues with a Case-level or applicable task discussion.
+
+        This query runs only when the caller selects a discussion filter.  It is
+        kept separate from the main projection so the default gallery path does
+        not pay for a comments join.
+        """
+
+        scopes = _clean_values(baseline_scopes)
+        cleaned = _clean_values(issue_ids)
+        if not scopes or not cleaned:
+            return set()
+        task = str(task_id or "").strip()
+        matched: set[str] = set()
+        with self.connect() as conn:
+            for offset in range(0, len(cleaned), 400):
+                batch = cleaned[offset : offset + 400]
+                params: list[Any] = [*batch, *scopes]
+                campaign_clause = "link.comment_id IS NOT NULL"
+                if task:
+                    campaign_clause += " AND COALESCE(link.task_id, '') = ?"
+                    params.append(task)
+                rows = conn.execute(
+                    f"""
+                    SELECT DISTINCT comment.issue_id
+                    FROM review_comments comment
+                    LEFT JOIN label_comment_links link ON link.comment_id = comment.id
+                    WHERE comment.issue_id IN ({', '.join('?' for _ in batch)})
+                      AND comment.baseline_scope IN ({', '.join('?' for _ in scopes)})
+                      AND (
+                        comment.discussion_channel = 'case'
+                        OR ({campaign_clause})
+                      )
+                    """,
+                    params,
+                ).fetchall()
+                matched.update(str(row["issue_id"] or "") for row in rows)
+        return matched
+
     def _project_labeling_cases(
         self,
         *,
         baseline_scopes: Sequence[str],
         task_id: str = "",
         search: str = "",
+        issue_ids: Sequence[str] = (),
         status: str = "all",
         author: str = "",
         assignee: str = "",
         exclusion: str = "all",
         expected_output: str = "",
+        gt_label: str = "",
+        comment_state: str = "all",
         cluster: str = "",
     ) -> tuple[list[dict[str, Any]], str]:
         scopes = _clean_values(baseline_scopes)
@@ -2137,6 +2185,7 @@ class DatabaseLabelingMixin:
             where += " AND (issue.issue_id LIKE ? OR issue.title LIKE ? OR issue.scenario LIKE ?)"
             needle = f"%{normalized_search}%"
             parameters.extend((needle, needle, needle))
+        selected_issue_ids = set(_clean_values(issue_ids))
         normalized_assignee = str(assignee or "").strip().lower()
         if normalized_assignee:
             where += (
@@ -2155,6 +2204,12 @@ class DatabaseLabelingMixin:
         normalized_expected_output = str(expected_output or "").strip()
         if normalized_expected_output and normalized_expected_output not in LABELS:
             raise ValueError("标注结果类别不合法。")
+        normalized_gt_label = str(gt_label or "").strip()
+        if normalized_gt_label and normalized_gt_label not in LABELS:
+            raise ValueError("GT 类别不合法。")
+        normalized_comment_state = str(comment_state or "all").strip().lower() or "all"
+        if normalized_comment_state not in {"all", "with", "without"}:
+            raise ValueError("讨论筛选不合法。")
         normalized_exclusion = str(exclusion or "all").strip().lower() or "all"
         if normalized_exclusion not in {"all", "excluded", "active"}:
             raise ValueError("排除筛选不合法。")
@@ -2171,6 +2226,22 @@ class DatabaseLabelingMixin:
                 """,
                 parameters,
             ).fetchall()
+        if selected_issue_ids:
+            rows = [row for row in rows if str(row["issue_id"] or "") in selected_issue_ids]
+        if normalized_gt_label:
+            rows = [row for row in rows if str(row["gt_label"] or "") == normalized_gt_label]
+        if normalized_comment_state != "all":
+            discussion_issue_ids = self._labeling_discussion_issue_ids(
+                baseline_scopes=scopes,
+                issue_ids=[str(row["issue_id"] or "") for row in rows],
+                task_id=task,
+            )
+            rows = [
+                row
+                for row in rows
+                if (str(row["issue_id"] or "") in discussion_issue_ids)
+                == (normalized_comment_state == "with")
+            ]
         task_source_run_id = str(rows[0]["task_source_run_id"] or "") if task and rows else ""
         cases_by_issue = self._batch_label_cases(
             [str(row["issue_id"]) for row in rows], task,
@@ -2274,11 +2345,14 @@ class DatabaseLabelingMixin:
         baseline_scopes: Sequence[str],
         task_id: str = "",
         search: str = "",
+        issue_ids: Sequence[str] = (),
         status: str = "all",
         author: str = "",
         assignee: str = "",
         exclusion: str = "all",
         expected_output: str = "",
+        gt_label: str = "",
+        comment_state: str = "all",
         cluster: str = "",
         page: int = 1,
         page_size: int = 20,
@@ -2290,11 +2364,14 @@ class DatabaseLabelingMixin:
             baseline_scopes=baseline_scopes,
             task_id=task_id,
             search=search,
+            issue_ids=issue_ids,
             status=status,
             author=author,
             assignee=assignee,
             exclusion=exclusion,
             expected_output=expected_output,
+            gt_label=gt_label,
+            comment_state=comment_state,
             cluster=cluster,
         )
         safe_page_size = min(100, max(1, int(page_size)))
@@ -2318,22 +2395,28 @@ class DatabaseLabelingMixin:
         baseline_scopes: Sequence[str],
         task_id: str = "",
         search: str = "",
+        issue_ids: Sequence[str] = (),
         status: str = "all",
         author: str = "",
         assignee: str = "",
         exclusion: str = "all",
         expected_output: str = "",
+        gt_label: str = "",
+        comment_state: str = "all",
         cluster: str = "",
     ) -> list[str]:
         projected, _ = self._project_labeling_cases(
             baseline_scopes=baseline_scopes,
             task_id=task_id,
             search=search,
+            issue_ids=issue_ids,
             status=status,
             author=author,
             assignee=assignee,
             exclusion=exclusion,
             expected_output=expected_output,
+            gt_label=gt_label,
+            comment_state=comment_state,
             cluster=cluster,
         )
         return [item["issue_id"] for item in projected]
@@ -2344,21 +2427,27 @@ class DatabaseLabelingMixin:
         baseline_scopes: Sequence[str],
         task_id: str = "",
         search: str = "",
+        issue_ids: Sequence[str] = (),
         status: str = "all",
         author: str = "",
         assignee: str = "",
         exclusion: str = "all",
         expected_output: str = "",
+        gt_label: str = "",
+        comment_state: str = "all",
     ) -> list[dict[str, Any]]:
         projected, _ = self._project_labeling_cases(
             baseline_scopes=baseline_scopes,
             task_id=task_id,
             search=search,
+            issue_ids=issue_ids,
             status=status,
             author=author,
             assignee=assignee,
             exclusion=exclusion,
             expected_output=expected_output,
+            gt_label=gt_label,
+            comment_state=comment_state,
         )
         pair_counts: dict[tuple[str, str], int] = {}
         scenario_counts: dict[str, int] = {}

@@ -9,6 +9,15 @@
 
 const ISSUE_QUERY_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{2,127}$/;
 const ISSUE_QUERY_SPLIT_RE = /[\s,，、;；]+/;
+let issueQueryTarget = "review";
+
+function issueQueryIds(target = issueQueryTarget) {
+  if (target === "labeling") return state.caseLabeling?.issueIds || [];
+  if (target === "labeling-summary" && typeof labelSummaryFilters !== "undefined") {
+    return labelSummaryFilters.issueIds || [];
+  }
+  return state.reviewIssueIds || [];
+}
 
 function parseIssueIdsInput(raw) {
   const text = String(raw ?? "")
@@ -63,21 +72,28 @@ function renderIssueQueryFeedback() {
 }
 
 function updateIssueQueryButton() {
-  const button = $("#openIssueQueryButton");
-  if (!button) return;
-  const count = Array.isArray(state.reviewIssueIds) ? state.reviewIssueIds.length : 0;
-  button.dataset.issueCount = String(count);
-  button.classList.toggle("has-issues", count > 0);
-  button.title = count
-    ? uiText(`已设置 ${count} 个 Issue`, `${count} Issues selected`)
-    : uiText("按 Issue 列表查询", "Query an Issue list");
+  [
+    ["#openIssueQueryButton", "review"],
+    ["#openCaseLabelingIssueQueryButton", "labeling"],
+    ["#openLabelSummaryIssueQueryButton", "labeling-summary"],
+  ].forEach(([selector, target]) => {
+    const button = $(selector);
+    if (!button) return;
+    const count = issueQueryIds(target).length;
+    button.dataset.issueCount = String(count);
+    button.classList.toggle("has-issues", count > 0);
+    button.title = count
+      ? uiText(`已设置 ${count} 个 Issue`, `${count} Issues selected`)
+      : uiText("按 Issue 列表查询", "Query an Issue list");
+  });
 }
 
-function openIssueQueryDialog() {
+function openIssueQueryDialog(event) {
   const dialog = $("#issueQueryDialog");
   const input = $("#issueQueryInput");
   if (!dialog || !input) return;
-  input.value = (state.reviewIssueIds || []).join("\n");
+  issueQueryTarget = event?.currentTarget?.dataset?.issueQueryTarget || "review";
+  input.value = issueQueryIds().join("\n");
   renderIssueQueryFeedback();
   if (!dialog.open) dialog.showModal();
   window.requestAnimationFrame(() => input.focus());
@@ -89,14 +105,36 @@ async function applyIssueQuery() {
     showToast(uiText("请先修正无法识别的 Issue。", "Fix invalid Issue tokens first."), true);
     return;
   }
-  state.reviewIssueIds = parsed.ids;
-  state.casePage = 1;
-  state.selectedId = "";
-  state.selectedCase = null;
-  if ($("#searchInput")) $("#searchInput").value = "";
+  if (issueQueryTarget === "labeling") {
+    state.caseLabeling.issueIds = parsed.ids;
+    state.caseLabeling.search = "";
+    state.caseLabeling.page = 1;
+    if ($("#caseLabelingSearch")) $("#caseLabelingSearch").value = "";
+  } else if (
+    issueQueryTarget === "labeling-summary"
+    && typeof labelSummaryFilters !== "undefined"
+  ) {
+    labelSummaryFilters.issueIds = parsed.ids;
+    labelSummaryFilters.search = "";
+    labelSummaryPage = 1;
+    if ($("#labelSummarySearch")) $("#labelSummarySearch").value = "";
+  } else {
+    state.reviewIssueIds = parsed.ids;
+    state.casePage = 1;
+    state.selectedId = "";
+    state.selectedCase = null;
+    if ($("#searchInput")) $("#searchInput").value = "";
+  }
   updateIssueQueryButton();
   closeDialog("issueQueryDialog");
-  await reloadReviewGallery({ includeOverview: true, historyMode: "push" });
+  if (issueQueryTarget === "labeling") {
+    closeCaseLabelingDetail({ updateRoute: false });
+    await loadCaseLabelingCases({ page: 1 });
+  } else if (issueQueryTarget === "labeling-summary") {
+    await loadLabelingSummary();
+  } else {
+    await reloadReviewGallery({ includeOverview: true, historyMode: "push" });
+  }
 }
 
 function clearIssueQuery() {
@@ -106,7 +144,11 @@ function clearIssueQuery() {
 }
 
 function bindIssueQueryControls() {
-  $("#openIssueQueryButton")?.addEventListener("click", openIssueQueryDialog);
+  [
+    "#openIssueQueryButton",
+    "#openCaseLabelingIssueQueryButton",
+    "#openLabelSummaryIssueQueryButton",
+  ].forEach((selector) => $(selector)?.addEventListener("click", openIssueQueryDialog));
   $("#issueQueryInput")?.addEventListener("input", renderIssueQueryFeedback);
   $("#clearIssueQueryButton")?.addEventListener("click", clearIssueQuery);
   $("#applyIssueQueryButton")?.addEventListener("click", () => {
