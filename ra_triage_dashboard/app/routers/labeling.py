@@ -386,11 +386,9 @@ async def labeling_summary(request: Request, baselines: str = "", task_id: str =
     from ..labeling_summary import summarize_labeling_cases
     await _require_labeling_admin(request)
     scopes = await _active_labeling_scopes(resolve_request_baseline_scopes(baselines, request=request))
-    def aggregate():
-        items, _ = database._project_labeling_cases(baseline_scopes=scopes, task_id=_as_text(task_id))
-        return summarize_labeling_cases(items)
     try:
-        result = await asyncio.to_thread(aggregate)
+        items, _ = await asyncio.to_thread(database._project_labeling_cases, baseline_scopes=scopes, task_id=_as_text(task_id))
+        result = summarize_labeling_cases(items)
     except ValueError as exc:
         raise _detail(400, str(exc)) from exc
     return {**result, "baseline_scopes": scopes, "task_id": _as_text(task_id)}
