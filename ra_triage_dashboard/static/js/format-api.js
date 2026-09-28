@@ -259,10 +259,7 @@ async function setBaselineScopes(
   try {
     await loadConfig();
     if (state.activePage === "review-assignments") {
-      const filters = readAllocationFilterEditor();
-      filters.work_split_id = "";
-      renderAllocationFilterEditor(filters);
-      markAllocationFilterDirty();
+      renderReviewAllocationScope();
       return;
     }
     if (state.activePage === "labeling-summary") {

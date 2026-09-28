@@ -652,7 +652,6 @@ async function openWorkSplitDialog(draft = null) {
       ? `${source.pathname}${source.search}` : fallback;
   }
   saveReviewAllocationDraft(workSplitDraft);
-  renderAllocationFilterEditor(workSplitFilters());
   renderReviewAllocationScope();
   panel.scrollIntoView({ block: "start", behavior: "smooth" });
 }
@@ -718,7 +717,7 @@ async function generateWorkSplit() {
     return;
   }
   if (workSplitDraft?.submitted) {
-    showToast("此分配已生成；请更新范围后创建新任务。", true);
+    showToast("此分配已生成；请返回图库选择范围后创建新任务。", true);
     return;
   }
   if (workSplitDraft?.dirty) { showToast("筛选已修改，请先更新范围。", true); return; }

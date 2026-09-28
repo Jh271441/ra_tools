@@ -36,35 +36,6 @@ api=async(path, options)=>{sent=JSON.parse(options.body);return {work_assignees:
 '''
         subprocess.run(['node', '-e', script], check=True, capture_output=True)
 
-    def test_creation_previews_explicit_scope_without_writing(self):
-        script = 'document={getElementById:()=>null};\n' + (ROOT / 'static/js/review-assignments.js').read_text() + r'''
-const assert=require('node:assert/strict');
-state={session:{is_admin:true},modelRuns:[{id:'chosen',name:'Chosen Run'}]};
-const nodes={
- '#reviewAssignmentCreateRun':{value:'chosen'}, '#reviewAssignmentCreateComparison':{value:'mismatch'},
- '#reviewAssignmentCreateSearch':{value:'cn123'}, '#reviewAssignmentCreateButton':{},
- '#reviewAssignmentCreateStatus':{}, '#workSplitSummary':{}, '#allocationPreview':{},
-};
-$=(selector)=>nodes[selector];selectedBaselineQueryValue=()=>'0522';
-let draft,requested;workSplitDraft=null;
-readAllocationFilterEditor=()=>({model_run_id:'chosen',baselines:'0522',comparison:'mismatch',search:'cn123'});
-reviewAssignmentSourceHref=()=>'/review?run=chosen';
-api=async(path,options)=>{assert.equal(options,undefined);requested=new URL(path,'https://test');return {total:7};};
-openWorkSplitDialog=async(value)=>{draft=value;};showToast=()=>{};
-(async()=>{
- await openReviewAssignmentCreate();
- assert.equal(requested.searchParams.get('model_run_id'),'chosen');
- assert.equal(requested.searchParams.get('comparison'),'mismatch');
- assert.equal(requested.searchParams.get('baselines'),'0522');
- assert.equal(requested.searchParams.get('include_thumbnail'),'false');
- assert.equal(draft.total,7);
- assert.equal(draft.filters.search,'cn123');
- assert.equal(nodes['#reviewAssignmentCreateButton'].disabled,false);
- draft=null;api=async()=>({total:0});await openReviewAssignmentCreate();assert.equal(draft,null);
-})().catch(error=>{console.error(error);process.exitCode=1;});
-'''
-        subprocess.run(['node', '-e', script], check=True, capture_output=True)
-
     def test_source_link_preserves_full_filter_without_inheriting_ui(self):
         script = 'document={getElementById:()=>null};\n' + (ROOT / 'static/js/review-assignments.js').read_text() + r'''
 const assert=require('node:assert/strict');
@@ -83,23 +54,11 @@ assert.equal(route.commentState,'all');assert.equal(route.casePage,1);
 '''
         subprocess.run(['node','-e',script], check=True, capture_output=True)
 
-    def test_full_editor_keeps_selection_local_and_invalidates_stale_count(self):
-        script = 'document={getElementById:()=>null};\n' + (ROOT / 'static/js/review-assignments.js').read_text() + r'''
-const assert=require('node:assert/strict');
-const nodes={'#reviewAssignmentCreateRun':{value:'run-editor'},'#reviewAssignmentCreateSearch':{value:'keyword'},'#allocationComment':{value:'with'},'#allocationExclusion':{value:'excluded'},'#allocationTask':{value:'source-task'},'#allocationIssueIds':{value:'cn1 cn2,cn1'},'#allocationPreview':{},'#workSplitGenerate':{disabled:false},'#reviewAssignmentCreateStatus':{}};
-$=id=>nodes[id] || {id};
-getMultiFilterValues=root=>root.id==='#allocationReviewer'?['alice']:root.id==='#allocationComparison'?['mismatch']:[];
-joinFilterList=items=>items.join(',');selectedBaselineQueryValue=()=>'0522';
-state={selectedRunId:'gallery-run'};workSplitDraft={filters:{model_run_id:'old-draft'},total:172};
-reviewAssignmentSourceHref=filters=>'/review?run='+filters.model_run_id;
-let saved;saveReviewAllocationDraft=value=>{saved=value;};
-const filters=readAllocationFilterEditor();
-assert.equal(filters.issue_ids,'cn1,cn2');assert.equal(filters.work_split_id,'source-task');
-assert.equal(filters.annotation_author,'alice');assert.equal(filters.comparison,'mismatch');
-assert.equal(filters.comment_state,'with');assert.equal(filters.exclusion,'excluded');
-markAllocationFilterDirty();
-assert.equal(workSplitDraft.dirty,true);assert.equal(nodes['#workSplitGenerate'].disabled,true);
-assert.equal(state.selectedRunId,'gallery-run');assert.equal(workSplitDraft.filters.model_run_id,'old-draft');
-assert.equal(saved.filters.model_run_id,'run-editor');
-'''
-        subprocess.run(['node','-e',script], check=True, capture_output=True)
+    def test_scope_summary_has_no_duplicate_filter_inputs(self):
+        html = (ROOT / 'static/index.html').read_text()
+        section = html.split('id="reviewAssignmentCreate"', 1)[1].split('</section>', 1)[0]
+        self.assertIn('分配范围', section)
+        self.assertNotIn('<input', section)
+        self.assertNotIn('<select', section)
+        self.assertNotIn('id="allocationComparison"', html)
+        self.assertIn('返回图库修改筛选', html)
