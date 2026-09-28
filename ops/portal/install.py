@@ -30,9 +30,10 @@ def install(root, port, manual_port, sim_port):
         raise ValueError("Unsupported service user")
     root.mkdir(parents=True, exist_ok=True)
     (root / "logs").mkdir(exist_ok=True)
-    source_html = Path(__file__).with_name("index.html").resolve()
-    if source_html != root / "index.html":
-        shutil.copyfile(source_html, root / "index.html")
+    for asset in ("index.html", "favicon.svg"):
+        source = Path(__file__).with_name(asset).resolve()
+        if source != root / asset:
+            shutil.copyfile(source, root / asset)
     config = f"""user {owner};
 worker_processes 1;
 pid {root}/nginx.pid;
@@ -62,6 +63,8 @@ http {{
   server_name _;
   absolute_redirect off;
   location = / {{ root {root}; try_files /index.html =404; add_header Cache-Control "no-cache"; }}
+  location = /favicon.svg {{ root {root}; try_files /favicon.svg =404; add_header Cache-Control "no-cache"; }}
+  location = /favicon.ico {{ return 302 /favicon.svg; }}
   location = /healthz {{ default_type application/json; return 200 '{{"status":"ok"}}'; }}
   location = /manual {{ return 302 /manual/; }}
   location /manual/ {{ proxy_pass http://127.0.0.1:{manual_port}; }}

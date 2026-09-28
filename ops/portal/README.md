@@ -9,7 +9,7 @@
 python3 install.py --root /持久化目录/ra-portal --port 80 --manual-port 8785 --sim-port 8787
 ```
 
-`index.html` 与 `install.py` 放在同一目录。首次部署前确认端口空闲。安装前执行
+`index.html`、`favicon.svg` 与 `install.py` 放在同一目录。首次部署前确认端口空闲。安装前执行
 Nginx 配置检查；更新保留 nginx.previous.conf 并平滑 reload。由系统 Supervisor
 的 `ra_portal_<port>` 管理启动恢复。仅代理指定前缀，其余路径返回 404。
 
