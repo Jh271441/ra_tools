@@ -11,7 +11,7 @@ export interface PrPoint {
 }
 
 const onlineColor = 'hsl(var(--chart-blue))';
-const simColor = 'hsl(var(--chart-orange))';
+const simColor = 'hsl(var(--chart-green))';
 const percent = (value?: number) => value == null ? '—' : `${value.toFixed(1)}%`;
 const gap = (actual?: number, sim?: number) => actual == null || sim == null
   ? '—' : `${sim - actual > 0 ? '+' : ''}${(sim - actual).toFixed(1)} pp`;
@@ -46,8 +46,6 @@ export function PrComparison({ rows, comparison, mode, domain }: {
     if (failed > 0) reasons.push(t('prFailedCases', { count: failed }));
     return reasons.join('；');
   };
-  const missing = rows.filter((row) => row.simPrecision == null || row.simRecall == null
-    || row.actualPrecision == null || row.actualRecall == null);
 
   return <div className="space-y-4">
     <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-muted-foreground">
@@ -89,20 +87,6 @@ export function PrComparison({ rows, comparison, mode, domain }: {
         </section>;
       })}
     </div>
-    {missing.length ? <div className="rounded-lg border border-border bg-muted/30 px-3 py-2.5 text-xs">
-      <p className="mb-2 font-semibold">{t('prMissingTitle')}</p>
-      <ul className="space-y-2">
-        {missing.map((row) => {
-          const item = comparison.find((value) => value.version_key === row.version_key);
-          const completed = Number(item?.sim_estimate?.completed || 0);
-          return <li key={row.version_key} className="flex flex-wrap gap-x-3 gap-y-1">
-            <span className="font-semibold">{shortVersion(row.version_key)}</span>
-            {mode === 'same-version' && completed > 0 ? <span>{t('prCompletedCases', { count: completed })}</span> : null}
-            <span className="text-muted-foreground">{reason(row)}</span>
-          </li>;
-        })}
-      </ul>
-    </div> : null}
     <details className="rounded-lg border border-border/70">
       <summary className="cursor-pointer px-3 py-2 text-xs font-medium">{t('prValuesTable')}</summary>
       <div className="overflow-x-auto px-3 pb-3">
