@@ -31,6 +31,14 @@ const shortVersion = (key: string) => {
   return key.length > 10 ? key.slice(-10) : key;
 };
 
+function percentageScale(rows: PrPoint[], keys: SeriesKey[]): { domain: [number, number]; ticks: number[] } {
+  const values = rows.flatMap((row) => keys.map((key) => row[key])).filter((value): value is number => value != null);
+  if (!values.length) return { domain: [0, 100], ticks: [0, 25, 50, 75, 100] };
+  const min = Math.max(0, Math.floor((Math.min(...values) - 5) / 5) * 5);
+  const max = Math.min(100, Math.ceil((Math.max(...values) + 5) / 5) * 5);
+  return { domain: [min, max], ticks: Array.from({ length: Math.floor((max - min) / 5) + 1 }, (_, index) => min + index * 5) };
+}
+
 export function PrComparison({ rows, comparison, mode }: {
   rows: PrPoint[];
   comparison: KpiSummary[];
@@ -47,7 +55,7 @@ export function PrComparison({ rows, comparison, mode }: {
     const x = Number(props.x);
     const y = Number(props.y);
     if (!Number.isFinite(x) || !Number.isFinite(y) || props.value == null) return null;
-    return <text x={x} y={y + dy} textAnchor="middle" fill="hsl(var(--foreground))" stroke="hsl(var(--card))" strokeWidth={3} paintOrder="stroke" fontSize={10} fontWeight={700}>
+    return <text x={x} y={y + dy} textAnchor="middle" fill="hsl(var(--foreground))" stroke="hsl(var(--card))" strokeWidth={3} paintOrder="stroke" fontSize={11} fontWeight={600}>
       {percent(Number(props.value))}
     </text>;
   };
@@ -88,6 +96,7 @@ export function PrComparison({ rows, comparison, mode }: {
       color: seriesColors[key],
       dashed: key.startsWith('sim'),
     }));
+  const scale = percentageScale(rows, series.map((item) => item.key));
 
   return <div className="space-y-4">
     <div className="flex flex-wrap items-center justify-between gap-3">
@@ -121,7 +130,7 @@ export function PrComparison({ rows, comparison, mode }: {
             <LineChart data={rows} margin={{ top: 12, right: 18, bottom: 4, left: 0 }}>
               <CartesianGrid vertical={false} stroke="hsl(var(--border))" strokeDasharray="3 5" />
               <XAxis dataKey="version_key" interval={Math.max(0, Math.ceil(rows.length / 12) - 1)} tickFormatter={shortVersion} tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} padding={{ left: 12, right: 12 }} height={30} />
-              <YAxis domain={[60, 100]} ticks={[60, 70, 80, 90, 100]} tickFormatter={(value: number) => `${value}%`} width={46} tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
+              <YAxis domain={scale.domain} ticks={scale.ticks} tickFormatter={(value: number) => `${value}%`} width={46} tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
               <Tooltip cursor={{ stroke: 'hsl(var(--primary) / 0.35)', strokeDasharray: '4 4', strokeWidth: 1.5 }} content={({ active, payload }) => {
                 const row = payload?.[0]?.payload as PrPoint | undefined;
                 if (!active || !row) return null;
