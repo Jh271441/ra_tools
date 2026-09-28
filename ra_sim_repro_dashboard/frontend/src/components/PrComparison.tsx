@@ -146,14 +146,7 @@ export function PrComparison({ rows, comparison, mode }: {
                 </div>;
               }} />
               {series.map((item) => <Line key={item.key} type="linear" dataKey={item.key} name={item.label} stroke={item.color} strokeWidth={2.5} strokeDasharray={item.dashed ? '6 4' : undefined} dot={{ r: 3, fill: 'hsl(var(--card))', strokeWidth: 2 }} activeDot={{ r: 5 }} connectNulls={false} isAnimationActive={false}>
-                <LabelList dataKey={item.key} content={renderLineLabel(
-                  bothMetrics
-                    ? item.key === 'actualPrecision' ? -18
-                      : item.key === 'simPrecision' ? 18
-                        : item.key === 'actualRecall' ? -36
-                          : 36
-                    : item.dashed ? 16 : -16,
-                )} />
+                <LabelList dataKey={item.key} content={renderLineLabel(-16)} />
               </Line>)}
             </LineChart>
           </ResponsiveContainer>
