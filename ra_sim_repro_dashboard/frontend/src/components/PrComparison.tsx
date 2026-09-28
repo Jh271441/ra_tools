@@ -37,7 +37,10 @@ function percentageScale(rows: PrPoint[], keys: SeriesKey[]): { domain: [number,
   const min = Math.min(...values);
   const max = Math.max(...values);
   if (min === max) return { domain: [Math.max(0, min - 1), Math.min(100, max + 1)], ticks: [min] };
-  return { domain: [min, max], ticks: Array.from({ length: 5 }, (_, index) => min + (max - min) * index / 4) };
+  return {
+    domain: [min, max],
+    ticks: Array.from({ length: 5 }, (_, index) => Math.round((min + (max - min) * index / 4) * 10) / 10),
+  };
 }
 
 export function PrComparison({ rows, comparison, mode }: {
@@ -131,7 +134,7 @@ export function PrComparison({ rows, comparison, mode }: {
             <LineChart data={rows} margin={{ top: 12, right: 18, bottom: 4, left: 0 }}>
               <CartesianGrid vertical={false} stroke="hsl(var(--border))" strokeDasharray="3 5" />
               <XAxis dataKey="version_key" interval={Math.max(0, Math.ceil(rows.length / 12) - 1)} tickFormatter={shortVersion} tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} padding={{ left: 12, right: 12 }} height={30} />
-              <YAxis domain={scale.domain} ticks={scale.ticks} tickFormatter={(value: number) => `${value}%`} width={46} tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
+              <YAxis domain={scale.domain} ticks={scale.ticks} tickFormatter={(value: number) => `${value.toFixed(1)}%`} width={52} tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
               <Tooltip cursor={{ stroke: 'hsl(var(--primary) / 0.35)', strokeDasharray: '4 4', strokeWidth: 1.5 }} content={({ active, payload }) => {
                 const row = payload?.[0]?.payload as PrPoint | undefined;
                 if (!active || !row) return null;
