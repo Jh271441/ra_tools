@@ -122,7 +122,7 @@ export function PrComparison({ rows, comparison, mode }: {
               <CartesianGrid vertical={false} stroke="hsl(var(--border))" strokeDasharray="3 5" />
               <XAxis dataKey="version_key" interval={Math.max(0, Math.ceil(rows.length / 12) - 1)} tickFormatter={shortVersion} tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} padding={{ left: 12, right: 12 }} height={30} />
               <YAxis domain={[60, 100]} ticks={[60, 70, 80, 90, 100]} tickFormatter={(value: number) => `${value}%`} width={46} tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
-              <Tooltip content={({ active, payload }) => {
+              <Tooltip cursor={{ stroke: 'hsl(var(--primary) / 0.35)', strokeDasharray: '4 4', strokeWidth: 1.5 }} content={({ active, payload }) => {
                 const row = payload?.[0]?.payload as PrPoint | undefined;
                 if (!active || !row) return null;
                 return <div className="max-w-xs rounded-lg border border-border bg-card p-3 text-xs text-foreground shadow-lg">
