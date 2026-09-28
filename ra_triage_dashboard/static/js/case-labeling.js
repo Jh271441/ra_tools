@@ -435,6 +435,7 @@ function updateLabelingTaskEstimate() {
   const people = readLabelingTaskAssignees();
   const total = Number(state.caseLabeling.data?.total || 0);
   const target = $("#labelingTaskEstimate");
+  updateAssignmentNameSuggestion("labeling");
   updateLabelingTaskOverlapVisibility();
   document
     .querySelectorAll("#labelingTaskPeople .work-split-person-count")
@@ -503,10 +504,10 @@ async function enterLabelingNewTask({ route = null } = {}) {
   }
   renderLabelingTaskPersonPickers();
   if ($("#labelingTaskReviewersPerIssue")) $("#labelingTaskReviewersPerIssue").value = "1";
-  if ($("#labelingTaskName")) $("#labelingTaskName").value = "";
   if ($("#labelingTaskSeed")) $("#labelingTaskSeed").value = "";
   renderLabelingTaskReviewersPerIssuePicker(1);
   renderLabelingTaskOverlapPicker(1);
+  resetAssignmentNameSuggestion("labeling");
   updateLabelingTaskEstimate();
 }
 
@@ -605,6 +606,7 @@ async function generateLabelingTask() {
 }
 
 function bindLabelingTaskControls() {
+  bindAssignmentNameInput("labeling");
   $("#caseLabelingCreateTask")?.addEventListener("click", () => {
     if (!state.session?.is_admin) {
       showToast(t("work.split_admin_only"), true);

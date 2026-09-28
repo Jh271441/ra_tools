@@ -20,6 +20,49 @@ from ra_triage_dashboard.app.work_split import distribute_issue_ids
 
 
 class WorkSplitTest(unittest.TestCase):
+    def test_assignment_name_endpoint_returns_rule_fallback_without_gateway(self) -> None:
+        body = json.dumps(
+            {
+                "assignment_kind": "case_labeling",
+                "baseline_ids": ["0508"],
+                "case_count": 1071,
+                "reviewers_per_issue": 1,
+                "overlap_ratio": 0,
+                "member_count": 1,
+            }
+        ).encode("utf-8")
+
+        async def receive():
+            return {"type": "http.request", "body": body, "more_body": False}
+
+        request = Request(
+            {
+                "type": "http",
+                "method": "POST",
+                "path": "/api/assignment-name-suggestion",
+                "headers": [(b"content-type", b"application/json")],
+            },
+            receive,
+        )
+        registry = SimpleNamespace(
+            by_id=lambda value: SimpleNamespace(id=value, label="0508 · 1071")
+        )
+        catalog = SimpleNamespace(status=lambda: {"configured": False})
+        with patch.object(
+            cases_router,
+            "_admin_identity",
+            return_value=SimpleNamespace(username="admin", verified=True),
+        ), patch.object(cases_router, "baseline_registry", registry), patch.object(
+            cases_router, "model_catalog", catalog
+        ), patch.object(cases_router, "suggest_assignment_name_with_llm") as llm:
+            response = asyncio.run(cases_router.suggest_assignment_name(request))
+
+        self.assertEqual(response["source"], "rule")
+        self.assertEqual(
+            response["suggestion"], "0508 Case标注 单人均分 1071 Case"
+        )
+        llm.assert_not_called()
+
     def test_postgres_gallery_review_projection_uses_one_lateral_lookup_per_issue(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = Database(Path(tmp) / "gallery-join.sqlite")
@@ -168,6 +211,7 @@ class WorkSplitTest(unittest.TestCase):
             self.assertEqual(snapshot["work_split_id"], "source-task")
             self.assertIn("completed", snapshot["review_status"])
             detail = db.get_campaign(response["split_id"])
+            self.assertEqual(detail["campaign"]["name"], "Run-scoped Campaign")
             workset_id = detail["campaign"]["workset_id"]
             self.assertTrue(workset_id)
             workset = db.get_review_workset(workset_id)

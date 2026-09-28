@@ -14,6 +14,12 @@ from PIL import Image, UnidentifiedImageError
 
 from ..case_media import empty_case_media, resolve_case_media
 from ..contracts import ISSUE_ID_RE
+from ..intent_name_suggestion import (
+    IntentNameSuggestionError,
+    rule_based_assignment_name,
+    suggest_assignment_name_with_llm,
+)
+from ..model_catalog import ModelCatalogError
 from ..runtime import _public_path
 from ..support.attachments import (
     _public_review_attachment,
@@ -47,6 +53,7 @@ from ..runtime import (
     database,
     issue_tag_sources,
     logger,
+    model_catalog,
     settings,
     trail_detail_semaphore,
     video_index,
@@ -59,6 +66,98 @@ router = APIRouter()
 # issue_id -> (source_path, mtime_ns, size, dest_jpeg)
 _thumbnail_dest_cache: dict[str, tuple[str, int, int, Path]] = {}
 _thumbnail_encode_gate = threading.Semaphore(8)
+
+
+@router.post("/api/assignment-name-suggestion")
+async def suggest_assignment_name(request: Request) -> dict[str, Any]:
+    """Return a rule name immediately or a validated server-owned LLM name."""
+
+    await asyncio.to_thread(_admin_identity, request)
+    raw = await request.body()
+    if len(raw) > 8 * 1024:
+        raise _detail(413, "实验名称推荐请求过大。")
+    try:
+        body = json.loads(raw)
+    except (TypeError, ValueError, UnicodeDecodeError) as exc:
+        raise _detail(400, "实验名称推荐请求必须是 JSON。") from exc
+    if not isinstance(body, dict):
+        raise _detail(400, "实验名称推荐请求必须是 JSON 对象。")
+    assignment_kind = _as_text(body.get("assignment_kind")).strip().lower()
+    if assignment_kind not in {"case_labeling", "model_review"}:
+        raise _detail(400, "实验名称推荐类型不合法。")
+    raw_baseline_ids = body.get("baseline_ids")
+    if not isinstance(raw_baseline_ids, list):
+        raise _detail(400, "baseline_ids 必须是数组。")
+    baseline_ids = list(
+        dict.fromkeys(_as_text(value).strip() for value in raw_baseline_ids)
+    )
+    baseline_ids = [value for value in baseline_ids if value]
+    if not baseline_ids or len(baseline_ids) > 8:
+        raise _detail(400, "请为名称推荐选择 1 到 8 个数据集。")
+    entries = [baseline_registry.by_id(value) for value in baseline_ids]
+    if any(entry is None for entry in entries):
+        raise _detail(400, "名称推荐包含未知数据集。")
+    try:
+        case_count = max(1, min(100_000, int(body.get("case_count") or 1)))
+        reviewers_per_issue = max(
+            1, min(100, int(body.get("reviewers_per_issue") or 1))
+        )
+        member_count = max(0, min(100, int(body.get("member_count") or 0)))
+        overlap_ratio = normalize_overlap_ratio(
+            body.get("overlap_ratio"),
+            reviewers_per_issue=reviewers_per_issue,
+        )
+    except (TypeError, ValueError) as exc:
+        raise _detail(400, "实验名称推荐参数不合法。") from exc
+    workflow_mode = _as_text(body.get("workflow_mode")).strip()
+    if workflow_mode not in {"", "model_review_only", "model_review_and_case_label"}:
+        raise _detail(400, "实验名称推荐工作流不合法。")
+    comparison = " ".join(_as_text(body.get("comparison") or "all").split())[:128]
+    draft_name = " ".join(
+        _as_text(body.get("draft_name")).replace("\u0000", "").split()
+    )[:80]
+    run_name = ""
+    if assignment_kind == "model_review":
+        run_id = _as_text(body.get("model_run_id")).strip()
+        run = await asyncio.to_thread(database.get_model_run, run_id)
+        if not run:
+            raise _detail(404, "名称推荐对应的 Model Run 不存在。")
+        run_name = _as_text(run.get("name") or run_id)
+    dataset_labels = [str(entry.label or entry.id) for entry in entries if entry]
+    fallback = rule_based_assignment_name(
+        dataset_labels,
+        assignment_kind=assignment_kind,
+        case_count=case_count,
+        reviewers_per_issue=reviewers_per_issue,
+        overlap_ratio=overlap_ratio,
+        member_count=member_count,
+        workflow_mode=workflow_mode,
+        run_name=run_name,
+        comparison=comparison,
+    )
+    catalog_status = await asyncio.to_thread(model_catalog.status)
+    if not catalog_status.get("configured"):
+        return {"suggestion": fallback, "source": "rule"}
+    try:
+        suggestion = await asyncio.to_thread(
+            suggest_assignment_name_with_llm,
+            settings,
+            model_catalog,
+            fallback=fallback,
+            dataset_labels=dataset_labels,
+            assignment_kind=assignment_kind,
+            case_count=case_count,
+            reviewers_per_issue=reviewers_per_issue,
+            overlap_ratio=overlap_ratio,
+            member_count=member_count,
+            workflow_mode=workflow_mode,
+            run_name=run_name,
+            comparison=comparison,
+            draft_name=draft_name,
+        )
+    except (IntentNameSuggestionError, ModelCatalogError):
+        return {"suggestion": fallback, "source": "rule"}
+    return {"suggestion": suggestion, "source": "llm"}
 
 
 def _visible_case_annotations(
@@ -792,6 +891,9 @@ async def split_case_work(request: Request) -> dict[str, Any]:
         raise _detail(400, "均分任务请求必须是 JSON。")
     if not isinstance(body, dict):
         raise _detail(400, "均分任务请求必须是 JSON 对象。")
+    task_name = " ".join(_as_text(body.get("name")).split())
+    if len(task_name) > 80:
+        raise _detail(400, "实验名称不能超过 80 个字符。")
     filter_body = body.get("filters") if isinstance(body.get("filters"), dict) else {}
     filters = _case_filter_kwargs(
         search=_as_text(filter_body.get("search")),
@@ -920,7 +1022,7 @@ async def split_case_work(request: Request) -> dict[str, Any]:
                 database.create_review_workset,
                 baseline_scope=workset_scopes[0],
                 issue_ids=issue_ids,
-                name=_as_text(body.get("name")) or f"Review Workset · {len(issue_ids)} Issues",
+                name=task_name or f"Review Workset · {len(issue_ids)} Issues",
                 selection_source_run_id=filters["model_run_id"],
                 source_filter=filter_snapshot,
                 created_by=identity.username,
@@ -935,7 +1037,7 @@ async def split_case_work(request: Request) -> dict[str, Any]:
                     "evaluation_run_id": filters["model_run_id"],
                     "selection_source_run_id": filters["model_run_id"],
                     "workset_id": workset["id"],
-                    "name": _as_text(body.get("name")) or f"Review task · {len(issue_ids)} Issues",
+                    "name": task_name or f"Review task · {len(issue_ids)} Issues",
                     "seed": seed,
                     "overlap_ratio": overlap_ratio,
                     "filters": filter_snapshot,

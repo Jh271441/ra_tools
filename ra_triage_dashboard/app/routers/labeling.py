@@ -206,6 +206,9 @@ async def create_labeling_task(request: Request) -> dict[str, Any]:
         raise _detail(400, "任务请求必须是 JSON 对象。")
     if not isinstance(body, dict):
         raise _detail(400, "任务请求必须是 JSON 对象。")
+    task_name = " ".join(_as_text(body.get("name")).split())
+    if len(task_name) > 80:
+        raise _detail(400, "实验名称不能超过 80 个字符。")
     raw_issue_ids = body.get("issue_ids") or []
     if not isinstance(raw_issue_ids, list):
         raise _detail(400, "issue_ids 必须是数组。")
@@ -275,7 +278,7 @@ async def create_labeling_task(request: Request) -> dict[str, Any]:
             database.create_review_workset,
             baseline_scope=next(iter(scope_values)),
             issue_ids=issue_ids,
-            name=_as_text(body.get("name")) or f"标注任务 {len(issue_ids)}",
+            name=task_name or f"标注任务 {len(issue_ids)}",
             selection_source_run_id=_as_text(body.get("selection_source_run_id")),
             source_filter=body.get("source_filter") if isinstance(body.get("source_filter"), dict) else {},
             created_by=identity.username,

@@ -8,6 +8,188 @@ function workSplitTotal() {
   return Number(workSplitDraft?.total ?? state.caseTotal ?? 0);
 }
 
+const assignmentNameSuggestionState = {
+  review: { timer: null, seq: 0, requestFingerprint: "", appliedFingerprint: "" },
+  labeling: { timer: null, seq: 0, requestFingerprint: "", appliedFingerprint: "" },
+};
+
+function assignmentNameElements(kind) {
+  return kind === "review"
+    ? { input: $("#workSplitName"), status: $("#workSplitNameStatus") }
+    : { input: $("#labelingTaskName"), status: $("#labelingTaskNameStatus") };
+}
+
+function assignmentBaselineIds(kind) {
+  if (kind === "review") {
+    return parseFilterList(workSplitFilters().baselines || workSplitFilters().baseline_scopes || []);
+  }
+  return parseFilterList(state.selectedBaselineIds || selectedBaselineQueryValue());
+}
+
+function assignmentBaselineLabels(ids) {
+  const catalog = state.baselineCatalog || state.config?.baselines || [];
+  return ids.map((id) => {
+    const item = catalog.find((entry) => String(entry.id || "") === String(id));
+    return String(item?.label || id);
+  });
+}
+
+function assignmentNameContext(kind) {
+  const baselineIds = assignmentBaselineIds(kind);
+  const reviewersPerIssue = kind === "review"
+    ? workSplitReviewersPerIssue()
+    : labelingTaskReviewersPerIssue();
+  const overlapRatio = reviewersPerIssue > 1
+    ? (kind === "review" ? workSplitOverlapRatio() : labelingTaskOverlapRatio())
+    : 0;
+  const assignees = kind === "review"
+    ? readWorkSplitAssignees()
+    : readLabelingTaskAssignees();
+  const filters = kind === "review" ? workSplitFilters() : {};
+  const runId = kind === "review" ? String(filters.model_run_id || "") : "";
+  const run = (state.modelRuns || []).find((item) => String(item.id || "") === runId);
+  return {
+    assignmentKind: kind === "review" ? "model_review" : "case_labeling",
+    baselineIds,
+    datasetLabels: assignmentBaselineLabels(baselineIds),
+    caseCount: kind === "review" ? workSplitTotal() : Number(state.caseLabeling.data?.total || 0),
+    reviewersPerIssue,
+    overlapRatio,
+    memberCount: assignees.length,
+    workflowMode: kind === "review"
+      ? ($("#workSplitWorkflowMode")?.value || "model_review_and_case_label")
+      : "",
+    modelRunId: runId,
+    runName: String(run?.name || runId),
+    comparison: String(filters.comparison || filters.comparison_status || "all"),
+  };
+}
+
+function ruleBasedAssignmentName(context) {
+  const scope = context.datasetLabels
+    .map((label) => String(label || "").split("·", 1)[0].trim())
+    .filter(Boolean).join("+") || "Dataset";
+  const mode = context.reviewersPerIssue > 1 && context.memberCount > 1 && context.overlapRatio > 0
+    ? `交叉${Math.round(context.overlapRatio * 100)}%复核`
+    : context.reviewersPerIssue === 1 ? "单人均分" : "分工复核";
+  const subject = context.assignmentKind === "case_labeling"
+    ? "Case标注"
+    : context.workflowMode === "model_review_and_case_label" ? "联合复核" : "判错复核";
+  const runPart = context.assignmentKind === "model_review"
+    ? String(context.runName || "").split("·", 1)[0].trim().slice(0, 28)
+    : "";
+  const comparisonPart = context.assignmentKind === "model_review"
+    && !["", "all"].includes(String(context.comparison || "").toLowerCase())
+      ? String(context.comparison).toUpperCase()
+      : "";
+  const suffix = [subject, comparisonPart, mode, String(Math.max(1, context.caseCount)), "Case"]
+    .filter(Boolean).join(" ");
+  const prefix = [scope, runPart].filter(Boolean).join(" ");
+  const available = Math.max(0, 80 - suffix.length - 1);
+  return `${prefix.slice(0, available)} ${suffix}`.trim().slice(0, 80);
+}
+
+function renderAssignmentNameStatus(kind, status = "ready") {
+  const { status: node } = assignmentNameElements(kind);
+  if (!node) return;
+  node.dataset.status = status;
+  node.textContent = status === "loading" ? "AI 推理中" : "";
+  node.title = status === "loading" ? "AI 正在后台优化实验名称" : "";
+}
+
+function updateAssignmentNameSuggestion(kind) {
+  const slot = assignmentNameSuggestionState[kind];
+  const { input } = assignmentNameElements(kind);
+  if (!slot || !input) return;
+  const context = assignmentNameContext(kind);
+  const fallback = ruleBasedAssignmentName(context);
+  const fingerprint = JSON.stringify({
+    assignment_kind: context.assignmentKind,
+    baseline_ids: context.baselineIds,
+    case_count: context.caseCount,
+    reviewers_per_issue: context.reviewersPerIssue,
+    overlap_ratio: context.overlapRatio,
+    member_count: context.memberCount,
+    workflow_mode: context.workflowMode,
+    model_run_id: context.modelRunId,
+    comparison: context.comparison,
+  });
+  const manual = input.dataset.manualEdited === "true" && Boolean(input.value.trim());
+  if (!manual && !(slot.appliedFingerprint === fingerprint && input.dataset.suggestionSource === "llm")) {
+    input.value = fallback;
+    input.dataset.suggestionSource = "rule";
+  }
+  window.clearTimeout(slot.timer);
+  const seq = ++slot.seq;
+  renderAssignmentNameStatus(kind);
+  const gatewayConfigured = Boolean(state.config?.batch_prediction?.model_gateway?.configured);
+  if (
+    manual || !gatewayConfigured || !state.session?.is_admin
+    || !context.baselineIds.length || !context.caseCount
+    || (context.assignmentKind === "model_review" && !context.modelRunId)
+  ) return;
+  if (slot.appliedFingerprint === fingerprint && input.dataset.suggestionSource === "llm") return;
+  slot.requestFingerprint = fingerprint;
+  renderAssignmentNameStatus(kind, "loading");
+  slot.timer = window.setTimeout(async () => {
+    try {
+      const payload = await api("/api/assignment-name-suggestion", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: fingerprint,
+      });
+      if (seq !== slot.seq || input.dataset.manualEdited === "true") return;
+      const suggestion = String(payload.suggestion || "").trim();
+      if (payload.source === "llm" && suggestion) {
+        input.value = suggestion;
+        input.dataset.suggestionSource = "llm";
+        slot.appliedFingerprint = fingerprint;
+      } else {
+        input.value = fallback;
+        input.dataset.suggestionSource = "rule";
+      }
+    } catch (_error) {
+      if (seq === slot.seq && input.dataset.manualEdited !== "true") {
+        input.value = fallback;
+        input.dataset.suggestionSource = "rule";
+      }
+    } finally {
+      if (seq === slot.seq) renderAssignmentNameStatus(kind);
+    }
+  }, 650);
+}
+
+function resetAssignmentNameSuggestion(kind) {
+  const slot = assignmentNameSuggestionState[kind];
+  const { input } = assignmentNameElements(kind);
+  if (!slot || !input) return;
+  window.clearTimeout(slot.timer);
+  slot.seq += 1;
+  slot.requestFingerprint = "";
+  slot.appliedFingerprint = "";
+  input.value = "";
+  input.dataset.manualEdited = "false";
+  input.dataset.suggestionSource = "";
+  updateAssignmentNameSuggestion(kind);
+}
+
+function bindAssignmentNameInput(kind) {
+  const { input } = assignmentNameElements(kind);
+  if (!input || input.dataset.assignmentNameBound === "1") return;
+  input.dataset.assignmentNameBound = "1";
+  input.addEventListener("input", () => {
+    input.dataset.manualEdited = input.value.trim() ? "true" : "false";
+    if (input.dataset.manualEdited === "true") {
+      const slot = assignmentNameSuggestionState[kind];
+      window.clearTimeout(slot?.timer);
+      if (slot) slot.seq += 1;
+      renderAssignmentNameStatus(kind);
+      return;
+    }
+    updateAssignmentNameSuggestion(kind);
+  });
+}
+
 /* ra_triage_dashboard/static/js/work-split.js
  * Admin Review work-split: persist assignee ownership and gallery filters.
  * Loaded as a classic script (shared global scope).
@@ -465,6 +647,7 @@ function updateWorkSplitEstimate() {
   const people = readWorkSplitAssignees();
   const total = workSplitTotal();
   const target = $("#workSplitEstimate");
+  updateAssignmentNameSuggestion("review");
   updateWorkSplitOverlapVisibility();
   document.querySelectorAll(".work-split-person-count").forEach((input) => {
     input.placeholder = reviewers > 1 ? "自动均衡" : t("work.even_split");
@@ -634,6 +817,7 @@ async function openWorkSplitDialog(draft = null) {
   enhanceNativeUiSelect($("#workSplitWorkflowMode"));
   renderWorkSplitReviewersPerIssuePicker(1);
   renderWorkSplitOverlapPicker(1);
+  resetAssignmentNameSuggestion("review");
   updateWorkSplitEstimate();
   const panel = $("#workSplitPanel");
   panel.hidden = false;
@@ -723,6 +907,7 @@ async function generateWorkSplit() {
   const reviewersPerIssue = workSplitReviewersPerIssue();
   const overlapRatio = reviewersPerIssue > 1 ? workSplitOverlapRatio() : 0;
   const seedRaw = $("#workSplitSeed")?.value.trim() || "";
+  const name = $("#workSplitName")?.value.trim() || "";
   const body = {
     filters: workSplitFilters(),
     assignees,
@@ -730,6 +915,7 @@ async function generateWorkSplit() {
     overlap_ratio: overlapRatio,
     workflow_mode: $("#workSplitWorkflowMode")?.value || "model_review_and_case_label",
   };
+  if (name) body.name = name;
   if (body.reviewers_per_issue > assignees.length) {
     showToast("每个 Issue 的复核人数不能超过已选成员数。", true);
     return;
@@ -828,6 +1014,7 @@ function copyWorkSplitAssignment(index) {
 }
 
 function bindWorkSplitControls() {
+  bindAssignmentNameInput("review");
   $("#workSplitResetDraft")?.addEventListener("click", () => {
     workSplitDraft = null;
     saveReviewAllocationDraft(null);
@@ -894,6 +1081,7 @@ function bindWorkSplitControls() {
   });
   $("#workSplitReviewersPerIssue")?.addEventListener("change", updateWorkSplitEstimate);
   $("#workSplitOverlapRatio")?.addEventListener("change", updateWorkSplitEstimate);
+  $("#workSplitWorkflowMode")?.addEventListener("change", updateWorkSplitEstimate);
   $("#workSplitGenerate")?.addEventListener("click", () => {
     generateWorkSplit().catch((error) => showToast(error.message, true));
   });

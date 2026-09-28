@@ -844,8 +844,17 @@ html[data-color-theme="light"] .detail-queue-index-input {
 .work-split-toolbar {
   display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 10px;
 }
+.assignment-footer-row { flex-wrap: nowrap; justify-content: flex-start; }
+.assignment-footer-row > .work-split-seed { margin-left: auto; }
+.assignment-footer-row > .dialog-actions { width: auto; flex: 0 0 auto; }
 .work-split-seed { display: grid; gap: 4px; color: var(--faint); font-size: 11px; }
 .work-split-seed input { width: min(180px, 100%); height: 32px; padding: 5px 8px; font-size: 12px; }
+.work-split-name input { width: 100%; max-width: 720px; }
+@media (max-width: 760px) {
+  .assignment-footer-row { flex-wrap: wrap; }
+  .assignment-footer-row > .work-split-seed { margin-left: 0; }
+  .assignment-footer-row > .dialog-actions { margin-left: auto; }
+}
 .work-split-results { display: grid; gap: 10px; padding-top: 4px; border-top: 1px solid var(--line-soft); }
 .work-split-results-heading {
   display: flex; align-items: baseline; justify-content: space-between; gap: 10px;

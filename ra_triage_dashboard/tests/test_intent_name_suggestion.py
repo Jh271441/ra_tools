@@ -7,9 +7,13 @@ from unittest.mock import patch
 
 from ra_triage_dashboard.app.intent_name_suggestion import (
     IntentNameSuggestionError,
+    rule_based_assignment_name,
     rule_based_intent_name,
+    suggest_assignment_name_with_llm,
     suggest_intent_name_with_llm,
 )
+
+
 class _Response:
     status = 200
 
@@ -39,6 +43,79 @@ class _Catalog:
 
 
 class IntentNameSuggestionTest(unittest.TestCase):
+    def test_case_assignment_rule_name_is_immediate_and_descriptive(self):
+        self.assertEqual(
+            rule_based_assignment_name(
+                ["0508 · 1071"],
+                assignment_kind="case_labeling",
+                case_count=1071,
+                reviewers_per_issue=1,
+                overlap_ratio=0,
+                member_count=1,
+            ),
+            "0508 Case标注 单人均分 1071 Case",
+        )
+
+    def test_model_review_rule_name_keeps_run_scope_and_comparison(self):
+        self.assertEqual(
+            rule_based_assignment_name(
+                ["0508 · 1071"],
+                assignment_kind="model_review",
+                case_count=211,
+                reviewers_per_issue=2,
+                overlap_ratio=0.5,
+                member_count=4,
+                workflow_mode="model_review_and_case_label",
+                run_name="H2 + original330 · 0508",
+                comparison="mismatch",
+            ),
+            "0508 H2 + original330 联合复核 MISMATCH 交叉50%复核 211 Case",
+        )
+
+    def test_assignment_llm_name_is_validated(self):
+        class _AssignmentResponse(_Response):
+            def read(self, _size):
+                return json.dumps(
+                    {
+                        "choices": [
+                            {
+                                "message": {
+                                    "content": "0508 H2 联合复核 MISMATCH 交叉50%复核 211 Case"
+                                }
+                            }
+                        ]
+                    }
+                ).encode()
+
+        class _AssignmentOpener(_Opener):
+            def open(self, request, timeout):
+                super().open(request, timeout)
+                return _AssignmentResponse()
+
+        with (
+            patch("ra_triage_dashboard.app.intent_name_suggestion.read_provider_api_key", return_value="secret"),
+            patch("ra_triage_dashboard.app.intent_name_suggestion.model_gateway_chat_url", return_value="http://ra-model.intra.xiaojukeji.com/v1/chat/completions"),
+            patch("ra_triage_dashboard.app.intent_name_suggestion.build_opener", return_value=_AssignmentOpener()),
+        ):
+            suggestion = suggest_assignment_name_with_llm(
+                SimpleNamespace(ra_model_default_id="auto"),
+                _Catalog(),
+                fallback="0508 H2 + original330 联合复核 MISMATCH 交叉50%复核 211 Case",
+                dataset_labels=["0508 · 1071"],
+                assignment_kind="model_review",
+                case_count=211,
+                reviewers_per_issue=2,
+                overlap_ratio=0.5,
+                member_count=4,
+                workflow_mode="model_review_and_case_label",
+                run_name="H2 + original330 · 0508",
+                comparison="mismatch",
+            )
+        self.assertEqual(
+            suggestion,
+            "0508 H2 联合复核 MISMATCH 交叉50%复核 211 Case",
+        )
+
     def test_rule_name_is_immediate_and_descriptive(self):
         self.assertEqual(
             rule_based_intent_name(
