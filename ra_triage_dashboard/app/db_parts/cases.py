@@ -334,13 +334,32 @@ class DatabaseCasesMixin:
                 )
             """
             ordinary_params = []
-        join = f"""
-            LEFT JOIN review_records ann
-              ON ann.id = CASE
-                  WHEN {assignment_exists} THEN {assignment_annotation}
-                  ELSE {ordinary_annotation}
-              END
+        selected_annotation_id = f"""
+            CASE
+                WHEN {assignment_exists} THEN {assignment_annotation}
+                ELSE {ordinary_annotation}
+            END
         """
+        if self.backend == "postgresql":
+            # Joining the UNION-backed review_records view on a computed id makes
+            # PostgreSQL materialize every Review row and re-evaluate the correlated
+            # selector once per materialized candidate.  A page of 20 Issues then
+            # performs tens of thousands of probes.  LATERAL evaluates the selector
+            # once per Issue and fetches at most the chosen Review row.
+            join = f"""
+                LEFT JOIN LATERAL (
+                    SELECT selected_ann.*
+                    FROM review_records selected_ann
+                    WHERE selected_ann.id = {selected_annotation_id}
+                    LIMIT 1
+                ) ann ON TRUE
+            """
+        else:
+            # SQLite has no LATERAL support; retain the equivalent scalar-id join.
+            join = f"""
+                LEFT JOIN review_records ann
+                  ON ann.id = {selected_annotation_id}
+            """
         if strict_run and not run_id:
             return "LEFT JOIN review_records ann ON 1 = 0", []
         params = [

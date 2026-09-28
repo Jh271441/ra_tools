@@ -20,6 +20,25 @@ from ra_triage_dashboard.app.work_split import distribute_issue_ids
 
 
 class WorkSplitTest(unittest.TestCase):
+    def test_postgres_gallery_review_projection_uses_one_lateral_lookup_per_issue(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "gallery-join.sqlite")
+            db.init()
+            db.backend = "postgresql"
+            postgres_join, _ = db._gallery_annotation_join(
+                "run-a", preferred_annotation_author="alice"
+            )
+            self.assertIn("LEFT JOIN LATERAL", postgres_join)
+            self.assertIn("LIMIT 1", postgres_join)
+            self.assertIn(") ann ON TRUE", postgres_join)
+            db.backend = "sqlite"
+            sqlite_join, _ = db._gallery_annotation_join(
+                "run-a", preferred_annotation_author="alice"
+            )
+            self.assertNotIn("LATERAL", sqlite_join)
+            self.assertIn("LEFT JOIN review_records ann", sqlite_join)
+            db.close()
+
     def test_legacy_no_run_task_context_and_gallery_membership_remain_readable(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = Database(Path(tmp) / "legacy-no-run.sqlite")
