@@ -4,6 +4,35 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>RA Tools</title>
+  <script>
+    (() => {
+      const root = document.documentElement;
+      const system = window.matchMedia('(prefers-color-scheme: dark)');
+      const modes = ['system', 'light', 'dark'];
+      const colors = ['blue', 'green', 'violet', 'orange'];
+      let saved = {};
+      try { saved = JSON.parse(localStorage.getItem('ra-portal-appearance') || '{}') || {}; } catch (_) {}
+      const state = {
+        mode: modes.includes(saved.mode) ? saved.mode : 'system',
+        color: colors.includes(saved.color) ? saved.color : 'blue',
+      };
+      function apply() {
+        root.dataset.theme = state.mode === 'system' ? (system.matches ? 'dark' : 'light') : state.mode;
+        root.dataset.color = state.color;
+      }
+      window.portalAppearance = {
+        state,
+        set(key, value) {
+          if (!(key === 'mode' ? modes : key === 'color' ? colors : []).includes(value)) return;
+          state[key] = value;
+          apply();
+          try { localStorage.setItem('ra-portal-appearance', JSON.stringify(state)); } catch (_) {}
+        },
+      };
+      system.addEventListener('change', apply);
+      apply();
+    })();
+  </script>
   <style>
     :root {
       --bg: #f5f6f8;
@@ -13,16 +42,23 @@
       --border: #e3e3e6;
       --accent: #0a84ff;
     }
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --bg: #101114;
-        --card: #1b1c1f;
-        --text: #f2f2f4;
-        --muted: #98989f;
-        --border: #2c2d31;
-        --accent: #409cff;
-      }
+    :root { color-scheme: light; --accent: #0066cc; }
+    :root[data-theme="dark"] {
+      color-scheme: dark;
+      --bg: #101114; --card: #1b1c1f; --text: #f2f2f4;
+      --muted: #a3a3ac; --border: #35353c; --accent: #69b0ff;
     }
+    :root[data-color="green"] { --accent: #18734a; }
+    :root[data-color="violet"] { --accent: #7740bd; }
+    :root[data-color="orange"] { --accent: #aa4b06; }
+    :root[data-theme="dark"][data-color="green"] { --accent: #69dba4; }
+    :root[data-theme="dark"][data-color="violet"] { --accent: #c19aff; }
+    :root[data-theme="dark"][data-color="orange"] { --accent: #ffb16f; }
+    .appearance { display: flex; flex-wrap: wrap; gap: 18px; margin: 0 0 24px; }
+    .appearance label { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
+    select { font: inherit; color: var(--text); background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; min-height: 36px; cursor: pointer; }
+    select:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+    @media (prefers-reduced-motion: reduce) { a.card { transition: none; } }
     * { box-sizing: border-box; }
     body {
       margin: 0;
@@ -85,6 +121,23 @@
   <div class="wrap">
     <h1>RA Tools</h1>
     <div class="sub">选择工作台，开始查看与分析。</div>
+    <div class="appearance" role="group" aria-label="首页外观">
+      <label for="theme-mode">外观
+        <select id="theme-mode">
+          <option value="system">跟随系统</option>
+          <option value="light">浅色</option>
+          <option value="dark">深色</option>
+        </select>
+      </label>
+      <label for="theme-color">主题色
+        <select id="theme-color">
+          <option value="blue">海蓝</option>
+          <option value="green">松绿</option>
+          <option value="violet">鸢紫</option>
+          <option value="orange">琥珀</option>
+        </select>
+      </label>
+    </div>
     <div class="grid">
       <a class="card" href="/manual/">
         <div class="name">人工评审 <span class="tag">Manual</span></div>
@@ -99,5 +152,12 @@
     </div>
     <footer>RA Tools · 评审与仿真的统一入口</footer>
   </div>
+  <script>
+    for (const [id, key] of [['theme-mode', 'mode'], ['theme-color', 'color']]) {
+      const select = document.getElementById(id);
+      select.value = window.portalAppearance.state[key];
+      select.addEventListener('change', () => window.portalAppearance.set(key, select.value));
+    }
+  </script>
 </body>
 </html>
