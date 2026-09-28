@@ -832,7 +832,7 @@ function labelSummaryCaseUrl(filters = {}) {
 }
 function labelSummaryChart(title, items, note = "") {
   const total = items.reduce((sum, item) => sum + item.count, 0);
-  return `<article class="page-card label-summary-chart"><h3>${escapeHtml(title)}</h3>${renderAnalysisClusterGroup({label: "Case", annotated_count: total, items}, {key:title}, {animatePies:false})}${note ? `<p class="quiet-meta">${escapeHtml(note)}</p>` : ""}</article>`;
+  return `<article class="page-card label-summary-chart"><h3>${escapeHtml(title)}</h3>${renderAnalysisClusterGroup({label: note ? "标签次数" : "Case", annotated_count: total, items}, {key:title}, {animatePies:false})}${note ? `<p class="quiet-meta">${escapeHtml(note)}</p>` : ""}</article>`;
 }
 function renderLabelingSummary(data) {
   const root = $("#labelSummaryContent");
