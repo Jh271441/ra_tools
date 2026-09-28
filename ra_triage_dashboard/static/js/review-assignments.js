@@ -114,14 +114,15 @@ async function restoreReviewAllocationDraft() {
   const result = await api(`/api/cases?${params}`);
   if (state.activePage !== "review-assignments") return;
   if (!result.total) { showToast("原筛选范围当前没有 Issue，请返回调整。", true); return; }
-  await openWorkSplitDialog({ ...draft, total: Number(result.total) });
+  await openWorkSplitDialog({ ...draft, dirty: false, total: Number(result.total) });
 }
 function renderReviewAllocationScope() {
   const active = Boolean(workSplitDraft && !$("#workSplitPanel")?.hidden);
   const fields = document.querySelector(".review-assignment-create-fields");
-  if (fields) fields.hidden = active;
+  if (fields) fields.hidden = false;
   const status = $("#reviewAssignmentCreateStatus");
-  if (status && active) status.textContent = `${workSplitDraft.total} 个 Issue · ${reviewAssignmentRunLabel(workSplitDraft.filters.model_run_id)} · 已保留来源筛选，请在下方配置人员。`;
+  if (status && active && workSplitDraft.dirty) { status.textContent = "筛选已修改，请点击“更新范围”重新计算 Issue 数量。"; return; }
+  if (status && active) status.textContent = `${workSplitDraft.total} 个 Issue · ${reviewAssignmentRunLabel(workSplitDraft.filters.model_run_id)} · 筛选可在上方调整；更新范围后按下方配置分配。`;
   else if (status) status.textContent = "选择范围后，将在本页配置人员与分配。";
 }
 
@@ -569,19 +570,16 @@ function renderReviewAssignmentCreate() {
     `<option value="${escapeHtml(run.id)}">${escapeHtml(run.name || run.id)}</option>`).join("");
   select.value = selected;
   enhanceNativeUiSelect(select);
-  enhanceNativeUiSelect($("#reviewAssignmentCreateComparison"));
+  renderAllocationFilterEditor();
 }
 
 async function openReviewAssignmentCreate() {
   if (!state.session?.is_admin) return;
   const runId = $("#reviewAssignmentCreateRun")?.value || "";
   if (!runId) { showToast("请先选择 Model Run。", true); return; }
-  const filters = {
-    model_run_id: runId, baselines: selectedBaselineQueryValue(),
-    comparison: $("#reviewAssignmentCreateComparison")?.value || "all",
-    search: $("#reviewAssignmentCreateSearch")?.value.trim() || "",
-    failure_only: false, exclusion: "all", work_split_id: "", work_assignee: "",
-  };
+  const filterSeq = allocationFilterSeq;
+  const filters = readAllocationFilterEditor();
+  const originalReturn = workSplitDraft?.returnUrl || "";
   const button = $("#reviewAssignmentCreateButton");
   const status = $("#reviewAssignmentCreateStatus");
   button.disabled = true;
@@ -589,13 +587,92 @@ async function openReviewAssignmentCreate() {
   try {
     const params = new URLSearchParams({ ...filters, page: "1", page_size: "1", include_thumbnail: "false" });
     const result = await api(`/api/cases?${params}`);
+    if (filterSeq !== allocationFilterSeq) return;
     const total = Number(result.total || 0);
     status.textContent = `${total} 个 Issue · ${reviewAssignmentRunLabel(runId)} · 数据集 ${filters.baselines}`;
     if (!total) { showToast("当前范围没有可分配的 Issue。", true); return; }
-    await openWorkSplitDialog({ filters, total });
+    if (workSplitDraft && !$("#workSplitPanel")?.hidden) {
+      workSplitDraft = { filters, total, returnUrl: originalReturn };
+      saveReviewAllocationDraft(workSplitDraft);
+      $("#workSplitGenerate").disabled = false;
+      updateWorkSplitEstimate();
+      renderReviewAllocationScope();
+    } else {
+      await openWorkSplitDialog({ filters, total, returnUrl: originalReturn });
+    }
+    $("#allocationPreview").href = reviewAssignmentSourceHref(filters);
     $("#workSplitSummary").textContent = status.textContent;
   } catch (error) {
     status.textContent = "范围核对失败，请重试。";
     throw error;
   } finally { button.disabled = false; }
 }
+
+let allocationFilterEditorReady = false;
+let allocationFilterSeq = 0;
+const ALLOCATION_MULTI_FIELDS = {
+  comparison: "allocationComparison", gt_label: "allocationGt", model_label: "allocationModelLabel",
+  annotation_author: "allocationReviewer", review_status: "allocationReviewStatus", label_state: "allocationLabelState",
+  work_assignee: "allocationAssignee", missing_evidence: "allocationEvidence",
+};
+function readAllocationFilterEditor() {
+  const filters = { model_run_id: $("#reviewAssignmentCreateRun")?.value || "",
+    baselines: selectedBaselineQueryValue(), search: $("#reviewAssignmentCreateSearch")?.value.trim() || "",
+    comment_state: $("#allocationComment")?.value || "all", exclusion: $("#allocationExclusion")?.value || "all",
+    work_split_id: $("#allocationTask")?.value || "", failure_only: false,
+    issue_ids: [...new Set(($("#allocationIssueIds")?.value || "").split(/[\s,，;；]+/).filter(Boolean))].join(","),
+  };
+  for (const [key,id] of Object.entries(ALLOCATION_MULTI_FIELDS)) filters[key] = joinFilterList(getMultiFilterValues($("#"+id)));
+  filters.comparison ||= "all";
+  return filters;
+}
+function markAllocationFilterDirty() {
+  allocationFilterSeq += 1;
+  const filters = readAllocationFilterEditor();
+  $("#allocationPreview").href = reviewAssignmentSourceHref(filters);
+  if (workSplitDraft) {
+    workSplitDraft.dirty = true;
+    saveReviewAllocationDraft({ ...workSplitDraft, filters });
+    $("#workSplitGenerate").disabled = true;
+  }
+  $("#reviewAssignmentCreateStatus").textContent = "筛选已修改，请点击“更新范围”重新计算 Issue 数量。";
+}
+function renderAllocationFilterEditor(filters = null) {
+  if (allocationFilterEditorReady && !filters) return;
+  allocationFilterEditorReady = true;
+  filters ||= workSplitDraft?.filters || {};
+  const names = [...new Set([...(state.reviewers || []).map(item=>item.name),...(state.accessUsers || []).map(item=>item.username)].filter(Boolean))];
+  const options = {
+    comparison: analysisComparisonMultiOptions(),
+    gt_label: LABELS.map(value=>({value,label:value})), model_label: LABELS.map(value=>({value,label:value})),
+    annotation_author: names.map(value=>({value,label:value})), work_assignee: names.map(value=>({value,label:value})),
+    review_status: [["pending","待开始"],["in_progress","复核中"],["completed","已完成"],["blocked_by_label","标签待处理"]].map(([value,label])=>({value,label})),
+    label_state: [["none","无共享标签"],["pending","标签待完成"],["resolved","已形成结论"],["matches_gt","与 GT 一致"],["needs_gt_review","GT 待复核"],["conflict","标签冲突"],["stale","裁决需重新确认"],["unknown","GT 关系未知"]].map(([value,label])=>({value,label})),
+    missing_evidence: (state.config?.missing_evidence_catalog || []).map(item=>({value:item.key || item.value,label:item.label || item.key || item.value})),
+  };
+  for (const [key,id] of Object.entries(ALLOCATION_MULTI_FIELDS)) {
+    const selected = reviewAssignmentFilterValues(filters[key] === "all" ? "" : filters[key]);
+    const entries = [...(options[key] || [])];
+    for (const value of selected) if (!entries.some(item=>item.value===value)) entries.push({value,label:value});
+    renderMultiFilter($("#"+id), {options:entries,selected,onChange:markAllocationFilterDirty});
+  }
+  if (filters.model_run_id) $("#reviewAssignmentCreateRun").value = filters.model_run_id;
+  $("#reviewAssignmentCreateSearch").value = filters.search || "";
+  $("#allocationIssueIds").value = Array.isArray(filters.issue_ids) ? filters.issue_ids.join(",") : filters.issue_ids || "";
+  $("#allocationComment").value = filters.comment_state || "all";
+  $("#allocationExclusion").value = filters.exclusion || "all";
+  const task = $("#allocationTask");
+  const tasks = state.reviewAssignments.splits || [];
+  task.innerHTML = '<option value="">综合结果</option>' + tasks.filter(item=>!filters.model_run_id || item.model_run_id===filters.model_run_id).map(item=>`<option value="${escapeHtml(item.split_id)}">${escapeHtml(reviewAssignmentRunLabel(item.model_run_id))} · ${escapeHtml(formatTime(item.created_at))}</option>`).join("");
+  if (filters.work_split_id && ![...task.options].some(item=>item.value===filters.work_split_id)) task.insertAdjacentHTML("beforeend",`<option value="${escapeHtml(filters.work_split_id)}">来源任务</option>`);
+  task.value = filters.work_split_id || "";
+  [$("#reviewAssignmentCreateRun"),$("#allocationComment"),$("#allocationExclusion"),task].forEach(el=>enhanceNativeUiSelect(el));
+  $("#allocationPreview").href = reviewAssignmentSourceHref(readAllocationFilterEditor());
+}
+["reviewAssignmentCreateRun","allocationComment","allocationExclusion","allocationTask"].forEach(id=>document.getElementById(id)?.addEventListener("change",()=>{
+  if (id === "reviewAssignmentCreateRun") {
+    const filters=readAllocationFilterEditor();filters.work_split_id="";renderAllocationFilterEditor(filters);
+  }
+  markAllocationFilterDirty();
+}));
+["reviewAssignmentCreateSearch","allocationIssueIds"].forEach(id=>document.getElementById(id)?.addEventListener("input",markAllocationFilterDirty));

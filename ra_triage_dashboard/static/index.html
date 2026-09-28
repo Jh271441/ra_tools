@@ -79,7 +79,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-519`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-520`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -338,8 +338,8 @@
                   <div class="multi-filter" id="annotationFilter" data-placeholder="全部模型标注" data-placeholder-en="All model labels" data-i18n-placeholder="filter.all_model_labels"></div>
                 </label>
                 <label>
-                  <span class="ui-lang-zh">复核人</span><span class="ui-lang-en">Reviewer</span>
-                  <div class="multi-filter" id="reviewerFilter" data-placeholder="全部复核人" data-placeholder-en="All reviewers" data-i18n-placeholder="filter.all_reviewers"></div>
+                  <span class="ui-lang-zh" title="按已有复核记录的提交人筛选；任务负责人用于筛选分配对象">复核提交人</span><span class="ui-lang-en">Reviewer</span>
+                  <div class="multi-filter" id="reviewerFilter" data-placeholder="全部复核人" data-placeholder-en="All reviewers" data-i18n-placeholder="filter.all_reviewers"><button class="multi-filter-trigger" type="button" disabled aria-busy="true"><span>正在加载复核人…</span><span class="multi-filter-caret" aria-hidden="true"></span></button></div>
                 </label>
                 <label class="filter-review-status">
                   <span class="ui-lang-zh" title="模型判错复核状态">模型判错复核</span><span class="ui-lang-en" title="Model error review status">Model review</span>
@@ -567,12 +567,23 @@
               </div>
             </section>
             <section class="page-card review-assignment-create" id="reviewAssignmentCreate" hidden>
-              <header><h3>创建与分配任务</h3><p>选择 Model Run 和 Issue 范围，再配置负责人及交叉复核比例。数据集沿用顶栏选择。</p></header>
+              <header><h3>创建与分配任务</h3><p>选择 Model Run 和 Issue 范围，再配置负责人及交叉复核比例。数据集沿用顶栏选择；修改后点击“更新范围”，原图库筛选保持不变。</p></header>
               <div class="review-assignment-create-fields">
-                <label class="review-assignment-create-run">Model Run<select id="reviewAssignmentCreateRun"><option value="">请选择 Model Run</option></select></label>
-                <label>模型判断结果<select id="reviewAssignmentCreateComparison"><option value="all">全部结果</option><option value="mismatch">与 GT 不一致</option><option value="match">与 GT 一致</option><option value="no_gt">缺少 GT</option><option value="none">未输出</option></select></label>
-                <label>Issue 检索<input id="reviewAssignmentCreateSearch" type="search" placeholder="Issue ID 或关键词" maxlength="128"/></label>
-                <button class="button button-primary" id="reviewAssignmentCreateButton" type="button">配置人员与分配 →</button>
+                <label class="allocation-run">Model Run<select id="reviewAssignmentCreateRun"><option value="">请选择 Model Run</option></select></label>
+                <label>模型判断结果<div class="multi-filter" id="allocationComparison" data-placeholder="全部结果"></div></label>
+                <label class="allocation-query">Issue / 关键词<input id="reviewAssignmentCreateSearch" type="search" placeholder="Issue ID、场景或关键词" maxlength="128"/></label>
+                <label>GT<div class="multi-filter" id="allocationGt" data-placeholder="全部 GT"></div></label>
+                <label>模型标注<div class="multi-filter" id="allocationModelLabel" data-placeholder="全部模型标注"></div></label>
+                <label>复核提交人<div class="multi-filter" id="allocationReviewer" data-placeholder="全部复核人"></div></label>
+                <label>模型判错复核<div class="multi-filter" id="allocationReviewStatus" data-placeholder="全部状态"></div></label>
+                <label>共享标签状态<div class="multi-filter" id="allocationLabelState" data-placeholder="全部标签状态"></div></label>
+                <label>讨论<select id="allocationComment"><option value="all">全部讨论</option><option value="with">有讨论</option><option value="without">无讨论</option></select></label>
+                <label>问题排除<select id="allocationExclusion"><option value="all">全部（含排除）</option><option value="included">未排除</option><option value="excluded">已排除</option></select></label>
+                <label>任务负责人<div class="multi-filter" id="allocationAssignee" data-placeholder="全部负责人"></div></label>
+                <label>复核任务<select id="allocationTask"><option value="">综合结果</option></select></label>
+                <label class="allocation-ids">指定 Issue 列表<input id="allocationIssueIds" placeholder="多个 Issue ID 用逗号或空格分隔"/></label>
+                <label>缺失信息<div class="multi-filter" id="allocationEvidence" data-placeholder="全部缺失信息"></div></label>
+                <div class="allocation-filter-actions"><a class="button button-quiet" id="allocationPreview" href="/review">查看当前筛选</a><button class="button button-primary" id="reviewAssignmentCreateButton" type="button">更新范围并配置人员</button></div>
               </div>
               <p class="quiet-meta" id="reviewAssignmentCreateStatus" aria-live="polite">创建前将核对所选范围的 Issue 数量。</p>
             </section>
@@ -2387,7 +2398,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-519`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-520`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

@@ -68,7 +68,9 @@ function reviewerOptionsWithSelected(options, selected) {
   return [...options, ...retained];
 }
 
+let reviewerFacetRequestSeq = 0;
 async function loadReviewers(selections = reviewerFilterSelections()) {
+  const requestSeq = ++reviewerFacetRequestSeq;
   const reviewSelection = parseFilterList(selections.review);
   const analysisSelection = parseFilterList(selections.analysis);
   const runId = String(state.selectedRunId || "").trim();
@@ -77,9 +79,10 @@ async function loadReviewers(selections = reviewerFilterSelections()) {
   appendBaselineParams(params);
   const query = params.toString() ? `?${params.toString()}` : "";
   const [data, modelReviewFacets] = await Promise.all([
-    api(`/api/reviewers${query}`),
+    api(`/api/reviewers${query}`).catch(() => ({ items: state.reviewers || [] })),
     runId ? api(`/api/model-review-facets${query}`).catch(() => null) : Promise.resolve(null),
   ]);
+  if (requestSeq !== reviewerFacetRequestSeq) return;
   const mergeModelReviewReviewers = (baseItems, modelItems) => {
     const merged = new Map(
       (baseItems || []).map((item) => [String(item.name || "").toLowerCase(), { ...item }])

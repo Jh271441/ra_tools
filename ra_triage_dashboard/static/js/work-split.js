@@ -642,6 +642,7 @@ async function openWorkSplitDialog(draft = null) {
   updateWorkSplitEstimate();
   const panel = $("#workSplitPanel");
   panel.hidden = false;
+  $("#workSplitGenerate").disabled = false;
   const link = $("#workSplitReturnSource");
   if (link) {
     const fallback = reviewAssignmentSourceHref(workSplitFilters());
@@ -651,6 +652,7 @@ async function openWorkSplitDialog(draft = null) {
       ? `${source.pathname}${source.search}` : fallback;
   }
   saveReviewAllocationDraft(workSplitDraft);
+  renderAllocationFilterEditor(workSplitFilters());
   renderReviewAllocationScope();
   panel.scrollIntoView({ block: "start", behavior: "smooth" });
 }
@@ -716,9 +718,10 @@ async function generateWorkSplit() {
     return;
   }
   if (workSplitDraft?.submitted) {
-    showToast("此分配已生成；请重新选择范围后创建新任务。", true);
+    showToast("此分配已生成；请更新范围后创建新任务。", true);
     return;
   }
+  if (workSplitDraft?.dirty) { showToast("筛选已修改，请先更新范围。", true); return; }
   const assignees = readWorkSplitAssignees();
   if (!assignees.length) {
     showToast(t("work.need_reviewer"), true);
