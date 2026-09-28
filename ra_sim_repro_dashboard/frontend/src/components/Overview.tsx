@@ -225,6 +225,8 @@ function pctDomain(rows: Array<Record<string, unknown>>, keys: string[]): [numbe
   ];
 }
 
+const percentageTicks = [60, 70, 80, 90, 100];
+
 function interactiveProps(onClick: () => void) {
   return {
     role: 'button',
@@ -350,7 +352,7 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
       negativeAutoNotTriggered: projected.negativeAutoNotTriggered,
     }];
   });
-  const reproDomain = pctDomain(trend, ['repro']);
+  const reproDomain: [number, number] = [60, 100];
   const prTrend = prMode === 'same-version' ? sameVersionTrend : backtestTrend;
   const prDomain = pctDomain(prTrend, ['actualPrecision', 'actualRecall', 'simPrecision', 'simRecall']);
   const reproControls: Array<{ key: ReproMetric; label: string; color: string }> = [
@@ -461,17 +463,23 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
                   padding={{ left: 44, right: 44 }}
                   tick={<VersionTick />}
                 />
-                <YAxis yAxisId="rate" domain={reproDomain} tickLine={false} axisLine={false} width={38} tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} />
+                <YAxis yAxisId="rate" domain={reproDomain} ticks={percentageTicks} tickFormatter={(value: number) => `${value}`} tickLine={false} axisLine={false} width={38} tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} />
                 <YAxis yAxisId="count" hide width={0} />
                 <Tooltip {...tooltipProps} cursor={<ChartHoverCursor />} />
                 {visibleReproMetrics.tp ? (
-                  <Bar yAxisId="count" dataKey="tp" fill={chartColors.model} fillOpacity={0.78} radius={[4, 4, 0, 0]} maxBarSize={22} isAnimationActive={false} />
+                  <Bar yAxisId="count" dataKey="tp" fill={chartColors.model} fillOpacity={0.78} radius={[4, 4, 0, 0]} maxBarSize={22} isAnimationActive={false}>
+                    <LabelList dataKey="tp" position="top" formatter={(value: number) => formatCount(value)} fill="hsl(var(--muted-foreground))" fontSize={10} />
+                  </Bar>
                 ) : null}
                 {visibleReproMetrics.fn ? (
-                  <Bar yAxisId="count" dataKey="fn" fill={chartColors.fn} fillOpacity={0.78} radius={[4, 4, 0, 0]} maxBarSize={22} isAnimationActive={false} />
+                  <Bar yAxisId="count" dataKey="fn" fill={chartColors.fn} fillOpacity={0.78} radius={[4, 4, 0, 0]} maxBarSize={22} isAnimationActive={false}>
+                    <LabelList dataKey="fn" position="top" formatter={(value: number) => formatCount(value)} fill="hsl(var(--muted-foreground))" fontSize={10} />
+                  </Bar>
                 ) : null}
                 {visibleReproMetrics.fp ? (
-                  <Bar yAxisId="count" dataKey="fp" fill={chartColors.fp} fillOpacity={0.78} radius={[4, 4, 0, 0]} maxBarSize={22} isAnimationActive={false} />
+                  <Bar yAxisId="count" dataKey="fp" fill={chartColors.fp} fillOpacity={0.78} radius={[4, 4, 0, 0]} maxBarSize={22} isAnimationActive={false}>
+                    <LabelList dataKey="fp" position="top" formatter={(value: number) => formatCount(value)} fill="hsl(var(--muted-foreground))" fontSize={10} />
+                  </Bar>
                 ) : null}
                 {visibleReproMetrics.repro ? (
                   <Line yAxisId="rate" type="linear" dataKey="repro" stroke={chartColors.repro} strokeWidth={3} dot={hollowDot(chartColors.repro, 4)} activeDot={hollowDot(chartColors.repro, 5.5)} isAnimationActive={false}>
@@ -545,7 +553,7 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
                 <thead className="bg-muted/45 dark:bg-white/[0.025]">
                   <tr>
                     <th className="h-10 px-4 text-xs font-medium uppercase text-muted-foreground">{t('version')}</th>
-                    <th className="h-10 px-4 text-xs font-medium uppercase text-muted-foreground">{t('dataSource')}</th>
+                    <th className="h-10 px-4 text-center text-xs font-medium uppercase text-muted-foreground align-middle">{t('dataSource')}</th>
                     <th className="h-10 px-4 text-xs font-medium uppercase text-muted-foreground">Pos-auto / Neg-auto / Pos-manual</th>
                     <th className="h-10 px-4 text-xs font-medium uppercase text-muted-foreground">{t('onlinePR')}</th>
                     <th className="h-10 px-4 text-xs font-medium uppercase text-muted-foreground">{t('offlinePR')}</th>
@@ -577,8 +585,8 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
                           <div className="font-semibold leading-5">{item.label || item.version_key}</div>
                           <div className="font-mono text-xs text-muted-foreground">{item.version_key}</div>
                         </td>
-                        <td className="px-4 py-3 align-middle">
-                          <div className="flex flex-col items-start gap-1">
+                        <td className="px-4 py-3 text-center align-middle">
+                          <div className="flex flex-col items-center justify-center gap-1 text-center">
                             <Badge variant={sim.data_source === 'query_report' ? 'success' : 'secondary'}>
                               {String(sim.data_source || 'config_fallback')}
                             </Badge>

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { CartesianGrid, LabelList, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import type { KpiSummary } from '../types';
 
 export interface PrPoint {
@@ -82,7 +82,7 @@ export function PrComparison({ rows, comparison, mode, domain }: {
             <LineChart data={rows} margin={{ top: 12, right: 18, bottom: 4, left: 0 }}>
               <CartesianGrid vertical={false} stroke="hsl(var(--border))" strokeDasharray="3 5" />
               <XAxis dataKey="version_key" interval={0} tickFormatter={shortVersion} tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} padding={{ left: 12, right: 12 }} height={30} />
-              <YAxis domain={domain} tickFormatter={(value: number) => `${value}%`} width={46} tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
+              <YAxis domain={[60, 100]} ticks={[60, 70, 80, 90, 100]} tickFormatter={(value: number) => `${value}%`} width={46} tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
               <Tooltip content={({ active, payload }) => {
                 const row = payload?.[0]?.payload as PrPoint | undefined;
                 if (!active || !row) return null;
@@ -94,8 +94,12 @@ export function PrComparison({ rows, comparison, mode, domain }: {
                   {row[simKey] == null ? <p className="mt-2 text-muted-foreground">{reason(row)}</p> : null}
                 </div>;
               }} />
-              <Line type="linear" dataKey={actualKey} name={t('prOnline')} stroke={onlineColor} strokeWidth={2.5} dot={{ r: 3, fill: 'hsl(var(--card))', strokeWidth: 2 }} activeDot={{ r: 5 }} connectNulls={false} isAnimationActive={false} />
-              <Line type="linear" dataKey={simKey} name={t('prSimulation')} stroke={simColor} strokeWidth={2.5} strokeDasharray="6 4" dot={{ r: 3, fill: 'hsl(var(--card))', strokeWidth: 2 }} activeDot={{ r: 5 }} connectNulls={false} isAnimationActive={false} />
+              <Line type="linear" dataKey={actualKey} name={t('prOnline')} stroke={onlineColor} strokeWidth={2.5} dot={{ r: 3, fill: 'hsl(var(--card))', strokeWidth: 2 }} activeDot={{ r: 5 }} connectNulls={false} isAnimationActive={false}>
+                <LabelList dataKey={actualKey} position="top" formatter={(value: number) => percent(value)} fill={onlineColor} fontSize={10} offset={8} />
+              </Line>
+              <Line type="linear" dataKey={simKey} name={t('prSimulation')} stroke={simColor} strokeWidth={2.5} strokeDasharray="6 4" dot={{ r: 3, fill: 'hsl(var(--card))', strokeWidth: 2 }} activeDot={{ r: 5 }} connectNulls={false} isAnimationActive={false}>
+                <LabelList dataKey={simKey} position="bottom" formatter={(value: number) => percent(value)} fill={simColor} fontSize={10} offset={8} />
+              </Line>
             </LineChart>
           </ResponsiveContainer>
         </div>
