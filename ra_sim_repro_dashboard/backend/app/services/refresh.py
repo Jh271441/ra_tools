@@ -260,15 +260,15 @@ def _refresh_dashboard(job_id: str, db: Session) -> None:
         job.progress = 80
         db.commit()
         issues = issue_client.query_issues(sorted(all_issue_ids))
-        for issue_id, payload in issues.items():
+        for issue_id, issue_payload in issues.items():
             issue = db.get(Issue, issue_id) or Issue(issue_id=issue_id)
-            issue.issue_topic = str(payload.get("issue_topic") or payload.get("title") or "")
-            issue.status = str(payload.get("status") or "")
-            issue.priority = str(payload.get("priority") or "")
-            issue.poi = str(payload.get("poi") or "")
-            issue.issue_time = str(payload.get("issue_time") or "")
-            issue.url = str(payload.get("url") or _issue_url(issue_id))
-            issue.raw_issue = payload
+            issue.issue_topic = str(issue_payload.get("issue_topic") or issue_payload.get("title") or "")
+            issue.status = str(issue_payload.get("status") or "")
+            issue.priority = str(issue_payload.get("priority") or "")
+            issue.poi = str(issue_payload.get("poi") or "")
+            issue.issue_time = str(issue_payload.get("issue_time") or "")
+            issue.url = str(issue_payload.get("url") or _issue_url(issue_id))
+            issue.raw_issue = issue_payload
             db.add(issue)
         db.commit()
 
