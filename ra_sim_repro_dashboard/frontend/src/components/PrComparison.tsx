@@ -43,11 +43,11 @@ export function PrComparison({ rows, comparison, mode }: {
     precision: metricMode === 'precision' || bothMetrics,
     recall: metricMode === 'recall' || bothMetrics,
   };
-  const renderLineLabel = (color: string, dy: number) => (props: LabelProps) => {
+  const renderLineLabel = (dy: number) => (props: LabelProps) => {
     const x = Number(props.x);
     const y = Number(props.y);
     if (!Number.isFinite(x) || !Number.isFinite(y) || props.value == null) return null;
-    return <text x={x} y={y + dy} textAnchor="middle" fill={color} stroke="hsl(var(--card))" strokeWidth={3} paintOrder="stroke" fontSize={10} fontWeight={700}>
+    return <text x={x} y={y + dy} textAnchor="middle" fill="hsl(var(--foreground))" stroke="hsl(var(--card))" strokeWidth={3} paintOrder="stroke" fontSize={10} fontWeight={700}>
       {percent(Number(props.value))}
     </text>;
   };
@@ -133,7 +133,7 @@ export function PrComparison({ rows, comparison, mode }: {
                 </div>;
               }} />
               {series.map((item) => <Line key={item.key} type="linear" dataKey={item.key} name={item.label} stroke={item.color} strokeWidth={2.5} strokeDasharray={item.dashed ? '6 4' : undefined} dot={{ r: 3, fill: 'hsl(var(--card))', strokeWidth: 2 }} activeDot={{ r: 5 }} connectNulls={false} isAnimationActive={false}>
-                {!bothMetrics ? <LabelList dataKey={item.key} content={renderLineLabel(item.color, item.dashed ? 16 : -16)} /> : null}
+                {!bothMetrics ? <LabelList dataKey={item.key} content={renderLineLabel(item.dashed ? 16 : -16)} /> : null}
               </Line>)}
             </LineChart>
           </ResponsiveContainer>

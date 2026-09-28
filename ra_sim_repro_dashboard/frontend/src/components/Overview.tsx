@@ -171,7 +171,7 @@ function TrendValueLabel({
       className="chart-value-label"
       x={x + dx}
       y={y + dy}
-      fill={color}
+      fill="hsl(var(--foreground))"
       stroke="hsl(var(--card))"
       strokeWidth={3}
       fontSize={11}
@@ -453,17 +453,17 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
                 <Tooltip {...tooltipProps} cursor={<ChartHoverCursor />} />
                 {visibleReproMetrics.tp ? (
                   <Bar yAxisId="count" dataKey="tp" fill={chartColors.model} fillOpacity={0.78} radius={[4, 4, 0, 0]} maxBarSize={22} isAnimationActive={false}>
-                    <LabelList dataKey="tp" position="top" formatter={(value: number) => formatCount(value)} fill="hsl(var(--muted-foreground))" fontSize={10} />
+                    <LabelList dataKey="tp" position="top" formatter={(value: number) => formatCount(value)} fill="hsl(var(--foreground))" fontSize={10} />
                   </Bar>
                 ) : null}
                 {visibleReproMetrics.fn ? (
                   <Bar yAxisId="count" dataKey="fn" fill={chartColors.fn} fillOpacity={0.78} radius={[4, 4, 0, 0]} maxBarSize={22} isAnimationActive={false}>
-                    <LabelList dataKey="fn" position="top" formatter={(value: number) => formatCount(value)} fill="hsl(var(--muted-foreground))" fontSize={10} />
+                    <LabelList dataKey="fn" position="top" formatter={(value: number) => formatCount(value)} fill="hsl(var(--foreground))" fontSize={10} />
                   </Bar>
                 ) : null}
                 {visibleReproMetrics.fp ? (
                   <Bar yAxisId="count" dataKey="fp" fill={chartColors.fp} fillOpacity={0.78} radius={[4, 4, 0, 0]} maxBarSize={22} isAnimationActive={false}>
-                    <LabelList dataKey="fp" position="top" formatter={(value: number) => formatCount(value)} fill="hsl(var(--muted-foreground))" fontSize={10} />
+                    <LabelList dataKey="fp" position="top" formatter={(value: number) => formatCount(value)} fill="hsl(var(--foreground))" fontSize={10} />
                   </Bar>
                 ) : null}
                 {visibleReproMetrics.repro ? (
