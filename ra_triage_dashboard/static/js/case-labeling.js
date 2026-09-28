@@ -158,6 +158,7 @@ function renderCaseLabelingClusterStrip() {
 }
 
 async function loadCaseLabelingClusters() {
+  if (!$("#caseLabelingClusterStrip")) return;
   if (!selectedActiveLabelingBaselineIds().length) {
     state.caseLabeling.clusters = [];
     renderCaseLabelingClusterStrip();

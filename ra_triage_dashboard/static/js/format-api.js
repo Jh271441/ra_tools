@@ -258,6 +258,10 @@ async function setBaselineScopes(
   }
   try {
     await loadConfig();
+    if (state.activePage === "labeling-summary") {
+      await loadLabelingSummary();
+      return;
+    }
     if (state.activePage === "labeling") {
       state.selectedRunId = "";
       await enterCaseLabeling({ route: parsePageRoute() });
@@ -697,6 +701,10 @@ async function refreshChangedDataNow() {
       force: true,
       splitId: state.reviewAssignments?.selectedSplitId || "",
     });
+    return;
+  }
+  if (state.activePage === "labeling-summary") {
+    await loadLabelingSummary();
     return;
   }
   if (state.activePage === "campaigns") {

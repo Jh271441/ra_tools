@@ -635,6 +635,7 @@ function stripBasePath(pathname) {
 }
 
 const PAGE_ROUTES = {
+  "labeling-summary": { path: "/labeling-summary", titleZh: "标注汇总", titleEn: "Labeling summary" },
   labeling: {
     path: "/case-labeling",
     titleZh: "Case 标注（内测）",

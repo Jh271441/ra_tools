@@ -1117,7 +1117,7 @@ async function bootstrap() {
       initialRoute.page = "review";
       showToast("当前账号没有任务分配管理权限。", true);
     }
-    if (["labeling", "labeling-new-task"].includes(initialRoute.page) && !state.session.is_admin) {
+    if (["labeling", "labeling-new-task", "labeling-summary"].includes(initialRoute.page) && !state.session.is_admin) {
       initialRoute.page = "review";
       showToast("Case 标注内测仅限管理员。", true);
     }
@@ -1167,7 +1167,7 @@ async function bootstrap() {
     }
     // Case labeling is intentionally model-free. Other pages resolve the Run
     // before loading queue-dependent facets so their counts cannot race.
-    if (!["labeling", "labeling-new-task"].includes(initialRoute.page)) {
+    if (!["labeling", "labeling-new-task", "labeling-summary"].includes(initialRoute.page)) {
       await settleInitialRequests(
         [
           loadRuns({
@@ -1183,7 +1183,7 @@ async function bootstrap() {
     if (["comparison", "run-collections"].includes(initialRoute.page)) {
       applyRunComparisonRoute(initialRoute.comparisonFilters);
     }
-    const sharedDataPromise = ["labeling", "labeling-new-task"].includes(initialRoute.page)
+    const sharedDataPromise = ["labeling", "labeling-new-task", "labeling-summary"].includes(initialRoute.page)
       ? Promise.resolve()
       : settleInitialRequests(
           [loadReviewers(), loadWorkAssignees()],
@@ -1195,7 +1195,7 @@ async function bootstrap() {
     if (initialRoute.page === "review") applyReviewRouteControls(initialRoute);
     if (initialRoute.page === "analysis") applyAnalysisRouteControls(initialRoute);
     // Review home: paint cases first; cluster chips are secondary chrome.
-    const initialPageRequests = ["labeling", "labeling-new-task"].includes(initialRoute.page)
+    const initialPageRequests = ["labeling", "labeling-new-task", "labeling-summary"].includes(initialRoute.page)
       ? []
       : [{ name: "概览", promise: loadOverview() }];
     let initialDetailRequest = null;
@@ -1227,6 +1227,8 @@ async function bootstrap() {
       initialPageRequests.push(loadAccessUsers(), loadReviewAssignments({
         splitId: initialRoute.reviewAssignmentSplitId,
       }));
+    } else if (initialRoute.page === "labeling-summary") {
+      initialPageRequests.push(loadLabelingSummary());
     } else if (initialRoute.page === "campaigns") {
       initialPageRequests.push(loadCampaigns({
         campaignId: initialRoute.campaignId,

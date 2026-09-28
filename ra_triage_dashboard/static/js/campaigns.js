@@ -678,16 +678,7 @@ function bindCampaignPageEvents() {
     mutateCampaignLifecycle("supersede");
   });
   document.getElementById("caseLabelingCampaignsButton")?.addEventListener("click", () => {
-    campaignPageState.purpose = "labeling";
-    campaignPageState.lifecycle = "all";
-    campaignPageState.query = "";
-    campaignPageState.campaignId = "";
-    campaignPageState.groupId = "";
-    navigatePage("campaigns", {
-      ...campaignRouteOptions({ campaignId: "" }),
-      campaignPurpose: "labeling",
-      purpose: "labeling",
-    });
+    navigatePage("labeling-summary");
   });
   document.getElementById("campaignsRefresh")?.addEventListener("click", () => {
     loadCampaigns({ ...campaignRouteOptions() }).catch((error) => showToast(error.message, true));
@@ -832,3 +823,66 @@ function bindCampaignPageEvents() {
 }
 
 bindCampaignPageEvents();
+
+let labelSummaryRequest = 0;
+function labelSummaryCaseUrl(filters = {}) {
+  return pageUrl("labeling", { issue: "", taskId: $("#labelSummaryTask")?.value || "",
+    search: "", status: "all", author: "", assignee: "", cluster: "", label: "all", exclusion: "all", page: 1,
+    ...filters });
+}
+function labelSummaryChart(title, items, note = "") {
+  const total = items.reduce((sum, item) => sum + item.count, 0);
+  return `<article class="page-card label-summary-chart"><h3>${escapeHtml(title)}</h3>${renderAnalysisClusterGroup({label: "Case", annotated_count: total, items}, {key:title}, {animatePies:false})}${note ? `<p class="quiet-meta">${escapeHtml(note)}</p>` : ""}</article>`;
+}
+function renderLabelingSummary(data) {
+  const root = $("#labelSummaryContent");
+  const labels = ["误触发", "正确触发", "无需协助"];
+  const statuses = [["resolved","已形成结论"],["pending","待形成结论"],["conflict","有冲突"]];
+  const states = statuses.map(([key,label]) => ({key,label,count:Number(data.states[key] || 0)}));
+  const outputs = labels.map(label => ({key:label,label,count:Number(data.outputs[label] || 0)}));
+  const pairs = new Map(data.pairs.map(row => [`${row.gt}|${row.label}`,row.count]));
+  const comparable = data.pairs.reduce((sum,row) => sum+row.count,0);
+  const matches = data.pairs.filter(row => row.gt === row.label).reduce((sum,row)=>sum+row.count,0);
+  const metrics = [["Case 总数",data.total,"当前数据集与标注范围"],["已有提交",data.annotated,"至少一位标注人已提交"],["已形成结论",data.states.resolved || 0,"多来源聚合后的结果"],["与 GT 一致",matches,`可比较 ${comparable} 个 Case`]];
+  const catalog = new Map((state.config?.review_tag_catalog || []).map(item=>[item.key,item]));
+  const sections = {scene:[],interaction_decision:[],egress:[]};
+  for (const [key,count] of Object.entries(data.tags || {})) {
+    const item = catalog.get(key);
+    if (sections[item?.section]) sections[item.section].push({key,label:item.label || key,count});
+  }
+  const chartMarkup = Object.entries({scene:"场景",interaction_decision:"触发判定",egress:"如何脱困"}).map(([key,title]) => labelSummaryChart(title,sections[key].sort((a,b)=>b.count-a.count),"每个标签按 Case 去重；同一 Case 可有多个标签，图中比例按标签次数计算。" )).join("");
+  const maximum = Math.max(1,...data.people.map(item=>item.count));
+  root.innerHTML = `<div class="label-summary-metrics">${metrics.map(([title,value,note])=>`<article class="analysis-stat-card"><span>${escapeHtml(title)}</span><strong>${value}</strong><small>${escapeHtml(note)}</small></article>`).join("")}</div>
+    <div class="label-summary-grid">
+      <div class="label-summary-state">${labelSummaryChart("标注状态",states)}<div class="label-summary-links">${statuses.map(([key,label])=>`<a class="cluster-chip" href="${escapeHtml(labelSummaryCaseUrl({status:key}))}">${label} ${data.states[key] || 0} ↗</a>`).join("")}</div></div>
+      <div class="label-summary-output">${labelSummaryChart("标注结果分布",outputs)}<div class="label-summary-links">${labels.map(label=>`<a class="cluster-chip" href="${escapeHtml(labelSummaryCaseUrl({label}))}">${label} ${data.outputs[label] || 0} ↗</a>`).join("")}</div></div>
+      <article class="page-card label-summary-matrix"><header><h3>GT × 标注结果</h3><small>仅统计已形成结论且有 GT 的 ${comparable} 个 Case</small></header><div class="label-summary-matrix-grid"><span>GT ↓ / 标注 →</span>${labels.map(x=>`<strong>${x}</strong>`).join("")}${labels.map(gt=>`<strong>${gt}</strong>${labels.map(label=>{const n=pairs.get(`${gt}|${label}`)||0;return `<a class="label-summary-cell ${gt===label?'is-match':'is-different'} ${n?'':'is-zero'}" href="${escapeHtml(labelSummaryCaseUrl({cluster:`pair:${gt}|${label}`}))}" aria-label="GT ${gt}，标注 ${label}，${n} 个 Case"><b>${n}</b><small>${comparable ? Math.round(n/comparable*1000)/10 : 0}%</small></a>`;}).join("")}`).join("")}</div></article>
+      <article class="page-card label-summary-people"><header><h3>标注人贡献</h3><small>同一人对同一 Case 的多次提交只计一次</small></header>${data.people.length?data.people.map(item=>`<a class="label-summary-person" href="${escapeHtml(labelSummaryCaseUrl({author:item.name}))}"><span>${escapeHtml(item.name)}</span><strong>${item.count} <small>Case</small></strong><i><b style="width:${Math.round(item.count/maximum*100)}%"></b></i></a>`).join(""):'<p class="campaign-analysis-empty">当前范围暂无提交</p>'}</article>
+      ${chartMarkup}
+      <article class="page-card label-summary-scenarios"><h3>Scenario 分布</h3><p class="quiet-meta">按当前范围的全部 Case 统计</p><div class="label-summary-scenario-list">${Object.entries(data.scenarios || {}).sort((a,b)=>b[1]-a[1]).map(([name,count])=>`<a class="label-summary-person" href="${escapeHtml(labelSummaryCaseUrl({cluster:`scenario:${name}`}))}"><span>${escapeHtml(name)}</span><strong>${count}</strong></a>`).join("") || '<p class="quiet-meta">暂无 Scenario 信息</p>'}</div></article>
+    </div>`;
+}
+async function loadLabelingSummary() {
+  const seq = ++labelSummaryRequest;
+  const root = $("#labelSummaryContent");
+  if (!root) return;
+  root.innerHTML = '<div class="page-card campaign-analysis-empty">正在汇总标注…</div>';
+  try {
+    const baselines = selectedBaselineQueryValue();
+    const tasks = await api(`/api/labeling/tasks?baselines=${encodeURIComponent(baselines)}`);
+    if (seq !== labelSummaryRequest || state.activePage !== "labeling-summary") return;
+    const picker = $("#labelSummaryTask");
+    const selected = picker.value;
+    picker.innerHTML = '<option value="">全部标注（含历史迁移）</option>' + (tasks.items || []).map(task=>`<option value="${escapeHtml(task.id)}">${escapeHtml(task.name || "标注任务")}</option>`).join("");
+    picker.value = (tasks.items || []).some(task=>task.id===selected) ? selected : "";
+    enhanceNativeUiSelect(picker);
+    const data = await api(`/api/labeling/summary?baselines=${encodeURIComponent(baselines)}&task_id=${encodeURIComponent(picker.value)}`);
+    if (seq !== labelSummaryRequest || state.activePage !== "labeling-summary") return;
+    renderLabelingSummary(data);
+  } catch(error) {
+    if (seq === labelSummaryRequest) root.innerHTML = `<div class="page-card campaign-analysis-empty">${escapeHtml(error.message)}</div>`;
+    throw error;
+  }
+}
+document.getElementById("labelSummaryTask")?.addEventListener("change",()=>loadLabelingSummary().catch(error=>showToast(error.message,true)));
+document.getElementById("labelSummaryRefresh")?.addEventListener("click",()=>loadLabelingSummary().catch(error=>showToast(error.message,true)));

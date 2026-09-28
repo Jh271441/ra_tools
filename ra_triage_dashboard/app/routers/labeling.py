@@ -381,6 +381,21 @@ async def list_labeling_cases(
     return result
 
 
+@router.get("/api/labeling/summary")
+async def labeling_summary(request: Request, baselines: str = "", task_id: str = "") -> dict[str, Any]:
+    from ..labeling_summary import summarize_labeling_cases
+    await _require_labeling_admin(request)
+    scopes = await _active_labeling_scopes(resolve_request_baseline_scopes(baselines, request=request))
+    def aggregate():
+        items, _ = database._project_labeling_cases(baseline_scopes=scopes, task_id=_as_text(task_id))
+        return summarize_labeling_cases(items)
+    try:
+        result = await asyncio.to_thread(aggregate)
+    except ValueError as exc:
+        raise _detail(400, str(exc)) from exc
+    return {**result, "baseline_scopes": scopes, "task_id": _as_text(task_id)}
+
+
 @router.get("/api/labeling/clusters")
 async def list_labeling_clusters(
     request: Request,

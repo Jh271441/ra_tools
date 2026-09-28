@@ -481,7 +481,7 @@ function parsePageRoute() {
       : pathname === "/labeling-experiments"
         ? "labeling-new-task"
         : pathname === "/labeling-summary"
-          ? "campaigns"
+          ? "labeling-summary"
           : "";
   return {
     page:
@@ -1138,6 +1138,12 @@ function showPage(
       splitId: reviewAssignmentSplitId,
       force: true,
     }).catch((error) => showToast(error.message, true));
+  }
+  if (target === "labeling-summary" && !state.session.identity_pending && !state.session.is_admin) {
+    return showPage("review", { historyMode: "replace" });
+  }
+  if (target === "labeling-summary" && loadPageData) {
+    loadLabelingSummary().catch((error) => showToast(error.message, true));
   }
   if (target === "campaigns" && loadPageData && typeof loadCampaigns === "function") {
     loadCampaigns({
