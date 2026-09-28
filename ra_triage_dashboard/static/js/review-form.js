@@ -481,6 +481,14 @@ function renderReview(caseData) {
     .join("");
   const issueTagGroups = renderReviewTagGroups(tagCatalog, chosenTags, tagOption);
   const sourceSuggestionMarkup = issueTagSourceSuggestionMarkup(sourceSuggestion);
+  const noRunModelReviewNotice = `<div class="model-review-readonly-note model-review-run-required" role="status">
+    <span class="model-review-readonly-copy">
+      <strong><span class="ui-lang-zh">尚未选择 Model Run</span><span class="ui-lang-en">No Model Run selected</span></strong>
+      <small><span class="ui-lang-zh">请先选择 Run，之后才能填写判错原因、缺失信息和截图。${combinedMode ? "当前仍可提交上方 Case 标注。" : ""}</span><span class="ui-lang-en">Select a Run before entering the model reason, missing evidence, or screenshots.${combinedMode ? " You can still submit the Case label above." : ""}</span></small>
+    </span>
+    <button type="button" data-select-model-run><span class="ui-lang-zh">选择 Model Run</span><span class="ui-lang-en">Select Model Run</span></button>
+    ${combinedMode ? "" : `<a href="${escapeHtml(caseLabelingUrl)}"><span class="ui-lang-zh">打开 Case 标注</span><span class="ui-lang-en">Open Case labeling</span></a>`}
+  </div>`;
   $("#reviewPane").innerHTML = `
     <form class="review-form" id="annotationForm" data-issue-id="${escapeHtml(caseData.issue_id)}">
       <section class="review-section issue-tag-section combined-case-label-card" ${combinedMode ? "" : "hidden"}>
@@ -553,7 +561,7 @@ function renderReview(caseData) {
           <small class="review-expected-output-hint" id="expectedOutputHint" hidden></small>
           <input id="reviewStatusInput" type="hidden" value="${escapeHtml(reviewStatus)}" />
         </div>
-        ${runBoundModelReview ? `<label class="model-review-status-field"><span><span class="ui-lang-zh">判错复核状态</span><span class="ui-lang-en">Model review status</span></span><select id="modelReviewStatusInput">${MODEL_REVIEW_STATUS_OPTIONS.map((item) => `<option value="${item.value}" ${item.value === modelReviewStatus ? "selected" : ""}>${escapeHtml(i18nLocale() === "en" ? item.labelEn : item.labelZh)}</option>`).join("")}</select></label>` : `<div class="model-review-readonly-note"><span><span class="ui-lang-zh">历史 Review 只读。</span><span class="ui-lang-en">Historical Review is read-only.</span></span><button type="button" data-select-model-run><span class="ui-lang-zh">选择 Model Run</span><span class="ui-lang-en">Select Model Run</span></button><a href="${escapeHtml(caseLabelingUrl)}"><span class="ui-lang-zh">打开 Case 标注</span><span class="ui-lang-en">Open Case labeling</span></a></div>`}
+        ${runBoundModelReview ? `<label class="model-review-status-field"><span><span class="ui-lang-zh">判错复核状态</span><span class="ui-lang-en">Model review status</span></span><select id="modelReviewStatusInput">${MODEL_REVIEW_STATUS_OPTIONS.map((item) => `<option value="${item.value}" ${item.value === modelReviewStatus ? "selected" : ""}>${escapeHtml(i18nLocale() === "en" ? item.labelEn : item.labelZh)}</option>`).join("")}</select></label>` : noRunModelReviewNotice}
         <label class="review-reason">
           <span class="review-reason-heading">
             <span><span class="ui-lang-zh">模型为什么判错？</span><span class="ui-lang-en">Why was the model wrong?</span></span>

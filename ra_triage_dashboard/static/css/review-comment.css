@@ -1281,6 +1281,10 @@ html[data-color-theme="light"] .review-mention-avatar { color: #075d6d; backgrou
 .model-review-readonly-note { min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; color: var(--faint); font-size: 10px; }
 .model-review-readonly-note button, .model-review-readonly-note a { padding: 0; border: 0; color: var(--accent); background: transparent; font: inherit; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
 .model-review-readonly-note button:hover, .model-review-readonly-note a:hover { color: #b9f5fb; }
+.model-review-run-required { padding: 9px 10px; border: 1px solid rgba(251,191,36,.3); border-radius: 8px; background: rgba(251,191,36,.055); }
+.model-review-readonly-copy { min-width: min(100%, 360px); flex: 1 1 360px; display: grid; gap: 2px; }
+.model-review-readonly-copy strong { color: var(--text); font-size: 11px; }
+.model-review-readonly-copy small { color: var(--muted); font-size: 10px; line-height: 1.45; }
 .review-exclude-toggle[hidden],
 .review-attachment-field[hidden] { display: none !important; }
 .review-task-context-error { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
