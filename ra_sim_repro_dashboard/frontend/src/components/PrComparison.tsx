@@ -16,9 +16,9 @@ type SeriesKey = keyof Pick<PrPoint, 'actualPrecision' | 'actualRecall' | 'simPr
 
 const seriesColors: Record<SeriesKey, string> = {
   actualPrecision: 'hsl(var(--chart-blue))',
-  simPrecision: 'hsl(var(--chart-blue))',
+  simPrecision: 'hsl(var(--chart-green))',
   actualRecall: 'hsl(var(--chart-orange))',
-  simRecall: 'hsl(var(--chart-orange))',
+  simRecall: 'hsl(var(--chart-red))',
 };
 const percent = (value?: number) => value == null ? '—' : `${value.toFixed(1)}%`;
 const gap = (actual?: number, sim?: number) => actual == null || sim == null
@@ -98,7 +98,6 @@ export function PrComparison({ rows, comparison, mode }: {
       key,
       label: `${key.startsWith('actual') ? t('prOnline') : t('prSimulation')} ${t(key.includes('Precision') ? 'precision' : 'recall')}`,
       color: seriesColors[key],
-      dashed: key.startsWith('sim'),
     }));
   const scale = percentageScale(rows, series.map((item) => item.key));
 
@@ -106,7 +105,7 @@ export function PrComparison({ rows, comparison, mode }: {
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
         {series.map((item) => <span key={item.key} className="inline-flex items-center gap-2">
-          <span className="w-7 border-t-[3px]" style={{ borderColor: item.color, borderStyle: item.dashed ? 'dashed' : 'solid' }} />
+          <span className="w-7 border-t-[3px]" style={{ borderColor: item.color }} />
           {item.label}
         </span>)}
         <span>{t('prHoverHint')}</span>
@@ -135,7 +134,7 @@ export function PrComparison({ rows, comparison, mode }: {
               <CartesianGrid vertical={false} stroke="hsl(var(--border))" strokeDasharray="3 5" />
               <XAxis dataKey="version_key" interval={Math.max(0, Math.ceil(rows.length / 12) - 1)} tickFormatter={shortVersion} tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} padding={{ left: 12, right: 12 }} height={30} />
               <YAxis domain={scale.domain} ticks={scale.ticks} tickFormatter={(value: number) => `${value.toFixed(1)}%`} width={52} tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
-              <Tooltip cursor={{ stroke: 'hsl(var(--primary) / 0.35)', strokeDasharray: '4 4', strokeWidth: 1.5 }} content={({ active, payload }) => {
+              <Tooltip cursor={{ stroke: 'hsl(var(--primary) / 0.35)', strokeWidth: 1.5 }} content={({ active, payload }) => {
                 const row = payload?.[0]?.payload as PrPoint | undefined;
                 if (!active || !row) return null;
                 return <div className="max-w-xs rounded-lg border border-border bg-card p-3 text-xs text-foreground shadow-lg">
@@ -145,7 +144,7 @@ export function PrComparison({ rows, comparison, mode }: {
                   {series.some((item) => row[item.key] == null) ? <p className="mt-2 text-muted-foreground">{reason(row)}</p> : null}
                 </div>;
               }} />
-              {series.map((item) => <Line key={item.key} type="linear" dataKey={item.key} name={item.label} stroke={item.color} strokeWidth={2.5} strokeDasharray={item.dashed ? '6 4' : undefined} dot={{ r: 3, fill: 'hsl(var(--card))', strokeWidth: 2 }} activeDot={{ r: 5 }} connectNulls={false} isAnimationActive={false}>
+              {series.map((item) => <Line key={item.key} type="linear" dataKey={item.key} name={item.label} stroke={item.color} strokeWidth={2.5} dot={{ r: 3, fill: 'hsl(var(--card))', strokeWidth: 2 }} activeDot={{ r: 5 }} connectNulls={false} isAnimationActive={false}>
                 <LabelList dataKey={item.key} content={renderLineLabel(-16)} />
               </Line>)}
             </LineChart>
