@@ -61,7 +61,8 @@ body[data-active-page^="labeling"] .gt-sync-control { margin-left: auto; }
   .case-experiment-fields { grid-template-columns: minmax(0, 1fr); }
   .case-experiment-fields .work-split-estimate { text-align: left; }
 }
-.case-labeling-filters {
+#caseLabelingFilterForm.case-labeling-filters,
+#labelSummaryFilterForm.case-labeling-filters {
   grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 .case-labeling-filters .filter-submit { align-self: end; min-height: 34px; }
@@ -99,8 +100,10 @@ body[data-active-page^="labeling"] .gt-sync-control { margin-left: auto; }
 .case-labeling-active-switchers { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
 .case-labeling-history .comment-thread-body { overflow-wrap: anywhere; }
 @media (max-width: 1024px) {
-  .case-labeling-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #caseLabelingFilterForm.case-labeling-filters,
+  #labelSummaryFilterForm.case-labeling-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 639px) {
-  .case-labeling-filters { grid-template-columns: 1fr; }
+  #caseLabelingFilterForm.case-labeling-filters,
+  #labelSummaryFilterForm.case-labeling-filters { grid-template-columns: 1fr; }
 }

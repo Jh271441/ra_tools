@@ -847,6 +847,25 @@ const labelSummaryFilters = {
   label: "all", gt: "all", commentState: "all", exclusion: "all", cluster: "",
 };
 
+function labelSummaryRouteOptions(overrides = {}) {
+  return {
+    search: overrides.search ?? labelSummaryFilters.search,
+    issueIds: overrides.issueIds ?? labelSummaryFilters.issueIds,
+    taskId: overrides.taskId ?? labelSummaryFilters.taskId,
+    status: overrides.status ?? labelSummaryFilters.status,
+    author: overrides.author ?? labelSummaryFilters.author,
+    assignee: overrides.assignee ?? labelSummaryFilters.assignee,
+    label: overrides.label ?? labelSummaryFilters.label,
+    gt: overrides.gt ?? labelSummaryFilters.gt,
+    commentState: overrides.commentState ?? labelSummaryFilters.commentState,
+    exclusion: overrides.exclusion ?? labelSummaryFilters.exclusion,
+    cluster: overrides.cluster ?? labelSummaryFilters.cluster,
+    page: overrides.page ?? labelSummaryPage,
+    pageSize: overrides.pageSize ?? labelSummaryPageSize,
+    baselines: overrides.baselines ?? state.selectedBaselineIds,
+  };
+}
+
 function restoreLabelSummaryRoute() {
   if (labelSummaryRouteRestored) return;
   labelSummaryRouteRestored = true;
@@ -867,24 +886,10 @@ function restoreLabelSummaryRoute() {
 }
 
 function persistLabelSummaryRoute() {
-  const params = new URLSearchParams();
-  if (labelSummaryFilters.search) params.set("q", labelSummaryFilters.search);
-  if (labelSummaryFilters.issueIds.length) params.set("issue_ids", labelSummaryFilters.issueIds.join(","));
-  if (labelSummaryFilters.taskId) params.set("task", labelSummaryFilters.taskId);
-  if (labelSummaryFilters.status !== "all") params.set("status", labelSummaryFilters.status);
-  if (labelSummaryFilters.author) params.set("author", labelSummaryFilters.author);
-  if (labelSummaryFilters.assignee) params.set("assignee", labelSummaryFilters.assignee);
-  if (labelSummaryFilters.label !== "all") params.set("label", labelSummaryFilters.label);
-  if (labelSummaryFilters.gt !== "all") params.set("gt", labelSummaryFilters.gt);
-  if (labelSummaryFilters.commentState !== "all") params.set("comment_state", labelSummaryFilters.commentState);
-  if (labelSummaryFilters.exclusion !== "all") params.set("exclusion", labelSummaryFilters.exclusion);
-  if (labelSummaryFilters.cluster) params.set("cluster", labelSummaryFilters.cluster);
-  if (labelSummaryPage > 1) params.set("page", String(labelSummaryPage));
-  if (labelSummaryPageSize !== 20) params.set("page_size", String(labelSummaryPageSize));
   window.history.replaceState(
     { ...(window.history.state || {}), page: "labeling-summary" },
     "",
-    `${withBase("/labeling-summary")}${params.toString() ? `?${params}` : ""}`,
+    pageUrl("labeling-summary", labelSummaryRouteOptions()),
   );
 }
 

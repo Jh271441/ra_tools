@@ -791,6 +791,33 @@ function pageUrl(page, options = {}) {
       url.searchParams.set("page_size", String(labeling.pageSize));
     }
   }
+  if (page === "labeling-summary") {
+    const summary = typeof labelSummaryRouteOptions === "function"
+      ? labelSummaryRouteOptions(options)
+      : options;
+    if (summary.search) url.searchParams.set("q", summary.search);
+    const issueIds = (summary.issueIds || []).filter((value) =>
+      ISSUE_QUERY_ID_RE.test(String(value))
+    );
+    if (issueIds.length) url.searchParams.set("issue_ids", issueIds.join(","));
+    if (summary.taskId) url.searchParams.set("task", summary.taskId);
+    if (summary.status && summary.status !== "all") url.searchParams.set("status", summary.status);
+    if (summary.author) url.searchParams.set("author", summary.author);
+    if (summary.assignee) url.searchParams.set("assignee", summary.assignee);
+    if (summary.label && summary.label !== "all") url.searchParams.set("label", summary.label);
+    if (summary.gt && summary.gt !== "all") url.searchParams.set("gt", summary.gt);
+    if (summary.commentState && summary.commentState !== "all") {
+      url.searchParams.set("comment_state", summary.commentState);
+    }
+    if (summary.exclusion && summary.exclusion !== "all") {
+      url.searchParams.set("exclusion", summary.exclusion);
+    }
+    if (summary.cluster) url.searchParams.set("cluster", summary.cluster);
+    if (Number(summary.page) > 1) url.searchParams.set("page", String(summary.page));
+    if (Number(summary.pageSize) !== DEFAULT_CASE_PAGE_SIZE) {
+      url.searchParams.set("page_size", String(summary.pageSize));
+    }
+  }
   if (page === "campaigns") {
     if (options.campaignId) url.searchParams.set("campaign", String(options.campaignId));
     if (options.groupId) url.searchParams.set("group", String(options.groupId));
@@ -1242,6 +1269,8 @@ function showPage(
       ? currentReviewRouteOptions({ issue })
       : target === "labeling-new-task" && typeof caseLabelingRouteOptions === "function"
         ? caseLabelingRouteOptions({ issue: state.caseLabeling.issueId || "" })
+      : target === "labeling-summary" && typeof labelSummaryRouteOptions === "function"
+        ? labelSummaryRouteOptions()
       : target === "analysis"
         ? currentAnalysisRouteOptions()
         : target === "trail-update"
