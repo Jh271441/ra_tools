@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { CartesianGrid, LabelList, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { CartesianGrid, LabelList, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis, type LabelProps } from 'recharts';
 import type { KpiSummary } from '../types';
 
 export interface PrPoint {
@@ -11,7 +11,7 @@ export interface PrPoint {
   simRecall?: number;
 }
 
-type Metric = 'precision' | 'recall';
+type MetricMode = 'precision' | 'recall' | 'all';
 type SeriesKey = keyof Pick<PrPoint, 'actualPrecision' | 'actualRecall' | 'simPrecision' | 'simRecall'>;
 
 const seriesColors: Record<SeriesKey, string> = {
@@ -37,8 +37,20 @@ export function PrComparison({ rows, comparison, mode }: {
   mode: 'same-version' | 'rolling';
 }) {
   const { t } = useTranslation();
-  const [visibleMetrics, setVisibleMetrics] = useState<Record<Metric, boolean>>({ precision: true, recall: false });
-  const bothMetrics = visibleMetrics.precision && visibleMetrics.recall;
+  const [metricMode, setMetricMode] = useState<MetricMode>('precision');
+  const bothMetrics = metricMode === 'all';
+  const visibleMetrics = {
+    precision: metricMode === 'precision' || bothMetrics,
+    recall: metricMode === 'recall' || bothMetrics,
+  };
+  const renderLineLabel = (color: string, dy: number) => (props: LabelProps) => {
+    const x = Number(props.x);
+    const y = Number(props.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y) || props.value == null) return null;
+    return <text x={x} y={y + dy} textAnchor="middle" fill={color} stroke="hsl(var(--card))" strokeWidth={3} paintOrder="stroke" fontSize={10} fontWeight={700}>
+      {percent(Number(props.value))}
+    </text>;
+  };
 
   const reason = (row: PrPoint) => {
     if (mode === 'rolling') return t('prRollingMissing');
@@ -87,25 +99,22 @@ export function PrComparison({ rows, comparison, mode }: {
         <span>{t('prHoverHint')}</span>
       </div>
       <div className="inline-flex rounded-md border border-border bg-muted/30 p-0.5" role="group" aria-label={t('prMetricSwitch')}>
-        {(['precision', 'recall'] as const).map((value) => (
+        {(['precision', 'recall', 'all'] as const).map((value) => (
           <button
             key={value}
             type="button"
-            className={`rounded px-3 py-1.5 text-xs font-semibold transition ${visibleMetrics[value] ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-            aria-pressed={visibleMetrics[value]}
-            onClick={() => setVisibleMetrics((current) => {
-              if (current[value] && Object.values(current).filter(Boolean).length === 1) return current;
-              return { ...current, [value]: !current[value] };
-            })}
+            className={`rounded px-3 py-1.5 text-xs font-semibold transition ${metricMode === value ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+            aria-pressed={metricMode === value}
+            onClick={() => setMetricMode(value)}
           >
-            {t(value)}
+            {value === 'all' ? t('all') : t(value)}
           </button>
         ))}
       </div>
     </div>
     {mode === 'rolling' ? <p className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">{t('prRecallDifferent')}</p> : null}
-    <section className="min-w-0 rounded-lg border border-border/70 bg-muted/10 p-3" aria-label={bothMetrics ? `${t('precision')} / ${t('recall')}` : t(visibleMetrics.precision ? 'precision' : 'recall')}>
-      <h3 className="mb-2 text-sm font-semibold">{bothMetrics ? `${t('precision')} / ${t('recall')}` : t(visibleMetrics.precision ? 'precision' : 'recall')}</h3>
+    <section className="min-w-0 rounded-lg border border-border/70 bg-muted/10 p-3" aria-label={bothMetrics ? `${t('precision')} / ${t('recall')}` : t(metricMode)}>
+      <h3 className="mb-2 text-sm font-semibold">{bothMetrics ? `${t('precision')} / ${t('recall')}` : t(metricMode)}</h3>
       <div className="overflow-x-auto">
         <div className="h-72 min-w-[680px]">
           <ResponsiveContainer width="100%" height="100%">
@@ -124,7 +133,7 @@ export function PrComparison({ rows, comparison, mode }: {
                 </div>;
               }} />
               {series.map((item) => <Line key={item.key} type="linear" dataKey={item.key} name={item.label} stroke={item.color} strokeWidth={2.5} strokeDasharray={item.dashed ? '6 4' : undefined} dot={{ r: 3, fill: 'hsl(var(--card))', strokeWidth: 2 }} activeDot={{ r: 5 }} connectNulls={false} isAnimationActive={false}>
-                {!bothMetrics ? <LabelList dataKey={item.key} position={item.dashed ? 'bottom' : 'top'} formatter={(value: number) => percent(value)} fill={item.color} fontSize={10} offset={8} /> : null}
+                {!bothMetrics ? <LabelList dataKey={item.key} content={renderLineLabel(item.color, item.dashed ? 16 : -16)} /> : null}
               </Line>)}
             </LineChart>
           </ResponsiveContainer>
