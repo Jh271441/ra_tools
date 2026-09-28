@@ -549,21 +549,26 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
           </CardHeader>
           <CardContent className="p-0">
             <div className="max-w-full overflow-x-auto">
-              <table className="w-full min-w-[1160px] text-left text-[13px]">
+              <table className="w-full min-w-[1750px] table-fixed text-left text-[13px]">
+                <colgroup>
+                  {[180, 240, 180, 120, 120, 150, 160, 150, 130, 120, 100, 100].map((width, index) => (
+                    <col key={index} style={{ width }} />
+                  ))}
+                </colgroup>
                 <thead className="bg-muted/45 dark:bg-white/[0.025]">
                   <tr>
-                    <th className="h-10 px-4 text-xs font-medium uppercase text-muted-foreground">{t('version')}</th>
-                    <th className="h-10 px-4 text-center text-xs font-medium uppercase text-muted-foreground align-middle">{t('dataSource')}</th>
-                    <th className="h-10 px-4 text-xs font-medium uppercase text-muted-foreground">Pos-auto / Neg-auto / Pos-manual</th>
-                    <th className="h-10 px-4 text-xs font-medium uppercase text-muted-foreground">{t('onlinePR')}</th>
-                    <th className="h-10 px-4 text-xs font-medium uppercase text-muted-foreground">{t('offlinePR')}</th>
-                    <th className="h-10 px-4 text-xs font-medium uppercase text-muted-foreground">{t('simPR')}</th>
-                    <th className="h-10 px-4 text-xs font-medium uppercase text-muted-foreground">{t('simJobs')}</th>
-                    <th className="h-10 px-4 text-xs font-medium uppercase text-muted-foreground">Auto + / FP / Manual</th>
-                    <th className="h-10 px-4 text-xs font-medium uppercase text-muted-foreground">P / R / Spec / Acc</th>
-                    <th className="h-10 px-4 text-xs font-medium uppercase text-muted-foreground">{t('evaluatedCases')}</th>
-                    <th className="h-10 px-4 text-xs font-medium uppercase text-muted-foreground">{t('dpeCoverage')}</th>
-                    <th className="h-10 px-4 text-xs font-medium uppercase text-muted-foreground">{t('qualityGate')}</th>
+                    <th className="h-10 whitespace-nowrap px-4 text-xs font-medium uppercase text-muted-foreground align-middle">{t('version')}</th>
+                    <th className="h-10 whitespace-nowrap px-4 text-center text-xs font-medium uppercase text-muted-foreground align-middle">{t('dataSource')}</th>
+                    <th className="h-10 px-4 text-center text-xs font-medium uppercase leading-5 text-muted-foreground align-middle">Pos-auto /<br />Neg-auto /<br />Pos-manual</th>
+                    <th className="h-10 whitespace-nowrap px-4 text-center text-xs font-medium uppercase text-muted-foreground align-middle">{t('onlinePR')}</th>
+                    <th className="h-10 whitespace-nowrap px-4 text-center text-xs font-medium uppercase text-muted-foreground align-middle">{t('offlinePR')}</th>
+                    <th className="h-10 whitespace-nowrap px-4 text-center text-xs font-medium uppercase text-muted-foreground align-middle">{t('simPR')}</th>
+                    <th className="h-10 whitespace-nowrap px-4 text-center text-xs font-medium uppercase text-muted-foreground align-middle">{t('simJobs')}</th>
+                    <th className="h-10 px-4 text-center text-xs font-medium uppercase leading-5 text-muted-foreground align-middle">Auto + /<br />FP / Manual</th>
+                    <th className="h-10 px-4 text-center text-xs font-medium uppercase leading-5 text-muted-foreground align-middle">P / R /<br />Spec / Acc</th>
+                    <th className="h-10 whitespace-nowrap px-4 text-center text-xs font-medium uppercase text-muted-foreground align-middle">{t('evaluatedCases')}</th>
+                    <th className="h-10 whitespace-nowrap px-4 text-center text-xs font-medium uppercase text-muted-foreground align-middle">{t('dpeCoverage')}</th>
+                    <th className="h-10 whitespace-nowrap px-4 text-center text-xs font-medium uppercase text-muted-foreground align-middle">{t('qualityGate')}</th>
                   </tr>
                 </thead>
                 <tbody>
