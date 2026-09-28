@@ -16,9 +16,9 @@ type SeriesKey = keyof Pick<PrPoint, 'actualPrecision' | 'actualRecall' | 'simPr
 
 const seriesColors: Record<SeriesKey, string> = {
   actualPrecision: 'hsl(var(--chart-blue))',
-  simPrecision: 'hsl(var(--chart-green))',
+  simPrecision: 'hsl(var(--chart-blue))',
   actualRecall: 'hsl(var(--chart-orange))',
-  simRecall: 'hsl(var(--chart-violet))',
+  simRecall: 'hsl(var(--chart-orange))',
 };
 const percent = (value?: number) => value == null ? '—' : `${value.toFixed(1)}%`;
 const gap = (actual?: number, sim?: number) => actual == null || sim == null
