@@ -155,10 +155,13 @@ export default function App() {
 
   const loadDashboard = useCallback(async () => {
     setError('');
-    const versionsResult = await api.versions();
-    setVersions(versionsResult.versions);
     try {
-      const [summaryResult, comparisonResult] = await Promise.all([api.summary(), api.comparison()]);
+      const [versionsResult, summaryResult, comparisonResult] = await Promise.all([
+        api.versions(),
+        api.summary(),
+        api.comparison(),
+      ]);
+      setVersions(versionsResult.versions);
       setSummary(summaryResult);
       setComparison(comparisonResult);
     } catch (err) {
@@ -196,8 +199,9 @@ export default function App() {
   }, [loadDashboard]);
 
   useEffect(() => {
+    if (page !== 'issues') return;
     void loadIssues();
-  }, [loadIssues]);
+  }, [loadIssues, page]);
 
   useEffect(() => {
     if (!issues.length) {
@@ -228,12 +232,12 @@ export default function App() {
         setRefreshJob(job);
         if (job.status === 'completed') {
           void loadDashboard();
-          void loadIssues();
+          if (page === 'issues') void loadIssues();
         }
       });
     }, 1200);
     return () => window.clearInterval(timer);
-  }, [refreshJob, loadDashboard, loadIssues]);
+  }, [refreshJob, loadDashboard, loadIssues, page]);
 
   const current = useMemo(() => versions.find((item) => item.is_current), [versions]);
   const versionCards = comparison.length ? comparison : summary ? [summary.current] : [];

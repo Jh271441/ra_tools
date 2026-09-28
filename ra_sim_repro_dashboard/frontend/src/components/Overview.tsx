@@ -559,16 +559,16 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
                   <tr>
                     <th className="h-10 whitespace-nowrap px-4 text-xs font-medium uppercase text-muted-foreground align-middle">{t('version')}</th>
                     <th className="h-10 whitespace-nowrap px-4 text-center text-xs font-medium uppercase text-muted-foreground align-middle">{t('dataSource')}</th>
-                    <th className="h-10 px-4 text-center text-xs font-medium uppercase leading-5 text-muted-foreground align-middle">Pos-auto /<br />Neg-auto /<br />Pos-manual</th>
-                    <th className="h-10 whitespace-nowrap px-4 text-center text-xs font-medium uppercase text-muted-foreground align-middle">{t('onlinePR')}</th>
-                    <th className="h-10 whitespace-nowrap px-4 text-center text-xs font-medium uppercase text-muted-foreground align-middle">{t('offlinePR')}</th>
-                    <th className="h-10 whitespace-nowrap px-4 text-center text-xs font-medium uppercase text-muted-foreground align-middle">{t('simPR')}</th>
-                    <th className="h-10 whitespace-nowrap px-4 text-center text-xs font-medium uppercase text-muted-foreground align-middle">{t('simJobs')}</th>
-                    <th className="h-10 px-4 text-center text-xs font-medium uppercase leading-5 text-muted-foreground align-middle">Auto + /<br />FP / Manual</th>
-                    <th className="h-10 px-4 text-center text-xs font-medium uppercase leading-5 text-muted-foreground align-middle">P / R /<br />Spec / Acc</th>
-                    <th className="h-10 whitespace-nowrap px-4 text-center text-xs font-medium uppercase text-muted-foreground align-middle">{t('evaluatedCases')}</th>
-                    <th className="h-10 whitespace-nowrap px-4 text-center text-xs font-medium uppercase text-muted-foreground align-middle">{t('dpeCoverage')}</th>
-                    <th className="h-10 whitespace-nowrap px-4 text-center text-xs font-medium uppercase text-muted-foreground align-middle">{t('qualityGate')}</th>
+                    <th className="h-10 whitespace-nowrap px-4 text-center text-xs font-medium uppercase text-muted-foreground align-middle">样本分层</th>
+                    <th className="h-10 whitespace-nowrap px-4 text-center text-xs font-medium uppercase text-muted-foreground align-middle">线上 P/R</th>
+                    <th className="h-10 whitespace-nowrap px-4 text-center text-xs font-medium uppercase text-muted-foreground align-middle">离线 P/R</th>
+                    <th className="h-10 whitespace-nowrap px-4 text-center text-xs font-medium uppercase text-muted-foreground align-middle">仿真 P/R</th>
+                    <th className="h-10 whitespace-nowrap px-4 text-center text-xs font-medium uppercase text-muted-foreground align-middle">Job</th>
+                    <th className="h-10 whitespace-nowrap px-4 text-center text-xs font-medium uppercase text-muted-foreground align-middle">自动 / FP / 人工</th>
+                    <th className="h-10 px-4 text-center text-xs font-medium uppercase leading-5 text-muted-foreground align-middle">评测 P/R /<br />特异度 / 准确率</th>
+                    <th className="h-10 whitespace-nowrap px-4 text-center text-xs font-medium uppercase text-muted-foreground align-middle">评测数</th>
+                    <th className="h-10 whitespace-nowrap px-4 text-center text-xs font-medium uppercase text-muted-foreground align-middle">DPE 覆盖</th>
+                    <th className="h-10 whitespace-nowrap px-4 text-center text-xs font-medium uppercase text-muted-foreground align-middle">质量门禁</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -600,16 +600,16 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
                             </span>
                           </div>
                         </td>
-                        <td className="px-4 py-3 align-middle font-mono text-xs">
+                        <td className="px-4 py-3 text-center align-middle font-mono text-xs">
                           {numberValue(source.auto_trigger_tp)} / {numberValue(source.auto_trigger_fp)} / {numberValue(source.manual_trigger_fn)}
                         </td>
-                        <td className="px-4 py-3 align-middle font-mono text-xs">
+                        <td className="px-4 py-3 text-center align-middle font-mono text-xs">
                           {maybePct(source.online_precision)} / {maybePct(source.online_recall)}
                         </td>
-                        <td className="px-4 py-3 align-middle font-mono text-xs">
+                        <td className="px-4 py-3 text-center align-middle font-mono text-xs">
                           {maybePct(source.calculated_precision)} / {maybePct(source.calculated_recall)}
                         </td>
-                        <td className="px-4 py-3 align-middle font-mono text-xs">
+                        <td className="px-4 py-3 text-center align-middle font-mono text-xs">
                           {projectionAvailable ? (
                             <>
                               <div>{maybePct(projection.sim_precision)} / {maybePct(projection.sim_business_recall)}</div>
@@ -623,22 +623,22 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
                             </span>
                           )}
                         </td>
-                        <td className="px-4 py-3 align-middle font-mono text-xs">
+                        <td className="px-4 py-3 text-center align-middle font-mono text-xs">
                           {sim.job_id ? String(sim.job_id) : `${String(sim.pos_job_id || '-')} / ${String(sim.neg_job_id || '-')}`}
                         </td>
-                        <td className="px-4 py-3 align-middle font-mono text-xs">
+                        <td className="px-4 py-3 text-center align-middle font-mono text-xs">
                           {pct(item.positive_auto_repro_rate)} / {pct(item.negative_auto_repro_rate)} / {pct(item.positive_manual_repro_rate)}
                         </td>
-                        <td className="px-4 py-3 align-middle font-mono text-xs">
+                        <td className="px-4 py-3 text-center align-middle font-mono text-xs">
                           {pct(item.precision)} / {pct(item.recall)} / {pct(item.specificity)} / {pct(item.accuracy)}
                         </td>
-                        <td className="px-4 py-3 align-middle font-mono text-xs">
+                        <td className="px-4 py-3 text-center align-middle font-mono text-xs">
                           {formatCount(item.evaluated_cases)} / {formatCount(numberValue(source.total_scenarios))}
                         </td>
-                        <td className="px-4 py-3 align-middle font-mono text-xs">
+                        <td className="px-4 py-3 text-center align-middle font-mono text-xs">
                           {pct(item.dpe_coverage)}
                         </td>
-                        <td className="px-4 py-3 align-middle">
+                        <td className="px-4 py-3 text-center align-middle">
                           <Badge variant={item.quality_gate_passed ? 'success' : 'destructive'}>
                             {item.quality_gate_passed ? t('qualityPassed') : t('qualityFailed')}
                           </Badge>
