@@ -90,7 +90,7 @@ function reviewAssignmentSourceHref(filter = {}) {
     workAssignee: reviewAssignmentFilterValues(filter.work_assignee), workSplitId: filter.work_split_id || "",
     clusterKey: filter.missing_evidence || "", exclusion: filter.exclusion || "all",
     baselines: filter.baselines || filter.baseline_scopes || [], forceBaselines: true,
-    workflowMode: "model_review_only", casePage: 1, casePageSize: 20,
+    workflowMode: "model_review_and_case_label", casePage: 1, casePageSize: 20,
   });
 }
 const REVIEW_ALLOCATION_DRAFT_KEY = "manual-review-allocation-draft-v1";

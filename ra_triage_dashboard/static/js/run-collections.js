@@ -19,22 +19,9 @@ function runCollectionCanWrite() {
 function ensureRunCollectionsDedicatedPage(targetPage = state.activePage) {
   const workbench = document.getElementById("runCollectionsWorkbench");
   const host = document.getElementById("runCollectionsDedicatedHost");
-  const pairwiseHost = document.getElementById("runCollectionPairwiseHost");
-  const pairwiseDetails = document.getElementById("runCollectionPairwiseDetails");
-  const comparison = document.getElementById("runComparisonPage");
-  if (!workbench || !comparison) return;
-  if (targetPage === "run-collections" && host) {
-    host.appendChild(workbench);
-    workbench.classList.remove("is-pairwise-manager");
-  } else if (targetPage === "comparison") {
-    if (pairwiseHost) pairwiseHost.appendChild(workbench);
-    else {
-      const anchor = document.getElementById("comparisonEmptyState");
-      comparison.insertBefore(workbench, anchor || null);
-    }
-    if (pairwiseDetails) pairwiseDetails.open = false;
-    workbench.classList.add("is-pairwise-manager");
-  }
+  if (!workbench || !host) return;
+  if (workbench.parentElement !== host) host.appendChild(workbench);
+  workbench.classList.remove("is-pairwise-manager");
 }
 
 function applyRunCollectionReadOnlyGating() {

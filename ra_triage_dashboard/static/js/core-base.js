@@ -850,7 +850,7 @@ const state = {
   reviewTaskContextLoading: false,
   reviewTaskContextError: null,
   reviewLegacyNoRunTask: false,
-  reviewWorkflowMode: "model_review_only",
+  reviewWorkflowMode: "model_review_and_case_label",
   combinedReviewContext: null,
   availableReviewWorkSplitId: "",
   reviewAnalysis: {

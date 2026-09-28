@@ -231,7 +231,7 @@ function effectiveReviewWorkflowMode(caseData = state.selectedCase) {
   if (state.reviewWorkSplitId && assignment.split_id === state.reviewWorkSplitId) {
     return assignment.workflow_mode || "model_review_only";
   }
-  return state.reviewWorkflowMode || "model_review_only";
+  return state.reviewWorkflowMode || "model_review_and_case_label";
 }
 
 function syncReviewWorkflowMode(caseData = state.selectedCase) {
@@ -630,7 +630,7 @@ async function openWorkSplitDialog(draft = null) {
   }
   renderWorkSplitPersonPickers();
   if ($("#workSplitReviewersPerIssue")) $("#workSplitReviewersPerIssue").value = "1";
-  if ($("#workSplitWorkflowMode")) $("#workSplitWorkflowMode").value = "model_review_only";
+  if ($("#workSplitWorkflowMode")) $("#workSplitWorkflowMode").value = "model_review_and_case_label";
   enhanceNativeUiSelect($("#workSplitWorkflowMode"));
   renderWorkSplitReviewersPerIssuePicker(1);
   renderWorkSplitOverlapPicker(1);
@@ -728,7 +728,7 @@ async function generateWorkSplit() {
     assignees,
     reviewers_per_issue: reviewersPerIssue,
     overlap_ratio: overlapRatio,
-    workflow_mode: $("#workSplitWorkflowMode")?.value || "model_review_only",
+    workflow_mode: $("#workSplitWorkflowMode")?.value || "model_review_and_case_label",
   };
   if (body.reviewers_per_issue > assignees.length) {
     showToast("每个 Issue 的复核人数不能超过已选成员数。", true);

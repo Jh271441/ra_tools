@@ -4,7 +4,13 @@ from ra_triage_dashboard.app.labeling_summary import summarize_labeling_cases
 
 class LabelingSummaryTest(unittest.TestCase):
     def test_counts_cases_and_deduplicates_authors_and_tags_across_sources(self):
-        head = {"author": "Alice", "tags": ["road", "turn"]}
+        head = {
+            "author": "Alice",
+            "tags": ["road", "turn"],
+            "evidence_gaps": ["camera"],
+            "rationale": "visible reason",
+            "created_at": "2026-09-28T10:00:00+08:00",
+        }
         cases = [{"resolution": {"heads": [head]}}, {"resolution": {"heads": [head]}}]
         result = summarize_labeling_cases([
             {"issue_id": "a", "label_state": "resolved", "gt_label": "误触发", "expected_output": "正确触发", "label_cases": cases},
@@ -15,10 +21,36 @@ class LabelingSummaryTest(unittest.TestCase):
         self.assertEqual(result['total'], 4)
         self.assertEqual(result['annotated'], 2)
         self.assertEqual(result['states'], {'resolved': 2, 'conflict': 1, 'pending': 1})
+        self.assertEqual(result['submitted_states'], {'resolved': 1, 'conflict': 1})
+        self.assertEqual(result['reason_count'], 2)
+        self.assertEqual(result['empty_reason_count'], 0)
+        self.assertEqual(result['structured_evidence_count'], 2)
         self.assertEqual(result['pairs'], [{'gt': '误触发', 'label': '正确触发', 'count': 1}])
         self.assertEqual(result['outputs'], {'正确触发': 1, '无需协助': 1})
         self.assertEqual(result['tags'], {'road': 2, 'turn': 2})
+        self.assertEqual(result['evidence'], {'camera': 2})
         self.assertEqual(result['people'], [{'name': 'alice', 'count': 2}])
+        self.assertEqual([item['issue_id'] for item in result['items']], ['b', 'a'])
+        self.assertEqual(result['page_count'], 1)
+
+    def test_reason_detail_is_paginated_over_submitted_cases_only(self):
+        items = [
+            {
+                "issue_id": f"case-{index}",
+                "label_state": "resolved",
+                "gt_label": "误触发",
+                "expected_output": "误触发",
+                "label_cases": [{"resolution": {"heads": [{"id": index, "author": "alice"}]}}],
+            }
+            for index in range(5)
+        ]
+        items.append({"issue_id": "unsubmitted", "label_state": "pending", "label_cases": []})
+        result = summarize_labeling_cases(items, page=2, page_size=2)
+        self.assertEqual(result['total'], 6)
+        self.assertEqual(result['annotated'], 5)
+        self.assertEqual(result['page'], 2)
+        self.assertEqual(result['page_count'], 3)
+        self.assertEqual(len(result['items']), 2)
 
     def test_empty_scope_does_not_fabricate_distribution(self):
         data = summarize_labeling_cases([])
@@ -26,3 +58,5 @@ class LabelingSummaryTest(unittest.TestCase):
         self.assertEqual(data['pairs'], [])
         self.assertEqual(data['people'], [])
         self.assertEqual(data['outputs'], {})
+        self.assertEqual(data['items'], [])
+        self.assertEqual(data['page_count'], 0)

@@ -678,7 +678,17 @@ function bindCampaignPageEvents() {
     mutateCampaignLifecycle("supersede");
   });
   document.getElementById("caseLabelingCampaignsButton")?.addEventListener("click", () => {
-    navigatePage("labeling-summary");
+    const params = new URLSearchParams();
+    const filters = labelingTaskFilterPayload();
+    if (filters.task_id) params.set("task", filters.task_id);
+    if (filters.q) params.set("q", filters.q);
+    if (filters.status && filters.status !== "all") params.set("status", filters.status);
+    if (filters.author) params.set("author", filters.author);
+    if (filters.assignee) params.set("assignee", filters.assignee);
+    if (filters.label && filters.label !== "all") params.set("label", filters.label);
+    if (filters.exclusion && filters.exclusion !== "all") params.set("exclusion", filters.exclusion);
+    if (filters.cluster) params.set("cluster", filters.cluster);
+    window.location.assign(`${withBase("/labeling-summary")}${params.toString() ? `?${params}` : ""}`);
   });
   document.getElementById("campaignsRefresh")?.addEventListener("click", () => {
     loadCampaigns({ ...campaignRouteOptions() }).catch((error) => showToast(error.message, true));
@@ -825,44 +835,190 @@ function bindCampaignPageEvents() {
 bindCampaignPageEvents();
 
 let labelSummaryRequest = 0;
+let labelSummaryPage = 1;
+let labelSummaryPageSize = 20;
+let labelSummaryRouteRestored = false;
+let labelSummarySearchTimer = null;
+const labelSummaryFilters = {
+  search: "", taskId: "", status: "all", author: "", assignee: "",
+  label: "all", exclusion: "all", cluster: "",
+};
+
+function restoreLabelSummaryRoute() {
+  if (labelSummaryRouteRestored) return;
+  labelSummaryRouteRestored = true;
+  const params = new URLSearchParams(window.location.search);
+  labelSummaryFilters.search = String(params.get("q") || "").trim();
+  labelSummaryFilters.taskId = String(params.get("task") || "").trim();
+  labelSummaryFilters.status = ["resolved", "pending", "conflict"].includes(params.get("status")) ? params.get("status") : "all";
+  labelSummaryFilters.author = String(params.get("author") || "").trim();
+  labelSummaryFilters.assignee = String(params.get("assignee") || "").trim();
+  labelSummaryFilters.label = LABELS.includes(params.get("label")) ? params.get("label") : "all";
+  labelSummaryFilters.exclusion = ["active", "excluded"].includes(params.get("exclusion")) ? params.get("exclusion") : "all";
+  labelSummaryFilters.cluster = String(params.get("cluster") || "").trim();
+  labelSummaryPage = Math.max(1, Number(params.get("page") || 1));
+  labelSummaryPageSize = CASE_PAGE_SIZES.includes(Number(params.get("page_size"))) ? Number(params.get("page_size")) : 20;
+}
+
+function persistLabelSummaryRoute() {
+  const params = new URLSearchParams();
+  if (labelSummaryFilters.search) params.set("q", labelSummaryFilters.search);
+  if (labelSummaryFilters.taskId) params.set("task", labelSummaryFilters.taskId);
+  if (labelSummaryFilters.status !== "all") params.set("status", labelSummaryFilters.status);
+  if (labelSummaryFilters.author) params.set("author", labelSummaryFilters.author);
+  if (labelSummaryFilters.assignee) params.set("assignee", labelSummaryFilters.assignee);
+  if (labelSummaryFilters.label !== "all") params.set("label", labelSummaryFilters.label);
+  if (labelSummaryFilters.exclusion !== "all") params.set("exclusion", labelSummaryFilters.exclusion);
+  if (labelSummaryFilters.cluster) params.set("cluster", labelSummaryFilters.cluster);
+  if (labelSummaryPage > 1) params.set("page", String(labelSummaryPage));
+  if (labelSummaryPageSize !== 20) params.set("page_size", String(labelSummaryPageSize));
+  window.history.replaceState(
+    { ...(window.history.state || {}), page: "labeling-summary" },
+    "",
+    `${withBase("/labeling-summary")}${params.toString() ? `?${params}` : ""}`,
+  );
+}
+
 function labelSummaryCaseUrl(filters = {}) {
-  return pageUrl("labeling", { issue: "", taskId: $("#labelSummaryTask")?.value || "",
-    search: "", status: "all", author: "", assignee: "", cluster: "", label: "all", exclusion: "all", page: 1,
+  return pageUrl("labeling", { issue: "", taskId: labelSummaryFilters.taskId,
+    search: labelSummaryFilters.search, status: labelSummaryFilters.status,
+    author: labelSummaryFilters.author, assignee: labelSummaryFilters.assignee,
+    cluster: labelSummaryFilters.cluster, label: labelSummaryFilters.label,
+    exclusion: labelSummaryFilters.exclusion, page: 1,
     ...filters });
 }
-function labelSummaryChart(title, items, note = "") {
-  const total = items.reduce((sum, item) => sum + item.count, 0);
-  return `<article class="page-card label-summary-chart"><h3>${escapeHtml(title)}</h3>${renderAnalysisClusterGroup({label: note ? "标签次数" : "Case", annotated_count: total, items}, {key:title}, {animatePies:false})}${note ? `<p class="quiet-meta">${escapeHtml(note)}</p>` : ""}</article>`;
+
+function renderLabelSummaryPicker(selector, options, selected) {
+  const picker = $(selector);
+  populateUiSelect(picker, options, selected);
+  bindUiSelect(picker, { maxHeight: 300, maxWidth: 420 });
 }
+
+function renderLabelSummaryFilters(tasks, data) {
+  const taskOptions = [{ value: "", label: "全部标注（含历史迁移）" }, ...(tasks.items || []).map((task) => ({ value: task.id, label: task.name || "标注任务" }))];
+  if (!taskOptions.some((item) => item.value === labelSummaryFilters.taskId)) labelSummaryFilters.taskId = "";
+  const labelerOptions = [{ value: "", label: "全部标注人" }, ...(data.labelers || []).map((value) => ({ value, label: value }))];
+  if (!labelerOptions.some((item) => item.value === labelSummaryFilters.author)) labelSummaryFilters.author = "";
+  const assigneeOptions = [{ value: "", label: "全部任务队列" }, ...(data.assignees || []).map((value) => ({ value, label: value }))];
+  if (!assigneeOptions.some((item) => item.value === labelSummaryFilters.assignee)) labelSummaryFilters.assignee = "";
+  renderLabelSummaryPicker("#labelSummaryTaskPicker", taskOptions, labelSummaryFilters.taskId);
+  renderLabelSummaryPicker("#labelSummaryStatusPicker", [
+    { value: "all", label: "全部状态" }, { value: "resolved", label: "已形成结论" },
+    { value: "pending", label: "待形成结论" }, { value: "conflict", label: "有冲突" },
+  ], labelSummaryFilters.status);
+  renderLabelSummaryPicker("#labelSummaryAuthorPicker", labelerOptions, labelSummaryFilters.author);
+  renderLabelSummaryPicker("#labelSummaryAssigneePicker", assigneeOptions, labelSummaryFilters.assignee);
+  renderLabelSummaryPicker("#labelSummaryLabelPicker", [
+    { value: "all", label: "全部类别" }, ...LABELS.map((value) => ({ value, label: value })),
+  ], labelSummaryFilters.label);
+  renderLabelSummaryPicker("#labelSummaryExclusionPicker", [
+    { value: "all", label: "全部（含问题排除）" }, { value: "active", label: "未排除" },
+    { value: "excluded", label: "已排除" },
+  ], labelSummaryFilters.exclusion);
+  const search = $("#labelSummarySearch");
+  if (search && document.activeElement !== search) search.value = labelSummaryFilters.search;
+}
+
+function labelSummaryStatusItems(data) {
+  const counts = data.submitted_states || {};
+  return [
+    { key: "resolved", cssKey: "completed", label: "已形成结论", count: Number(counts.resolved || 0), description: "多来源聚合后已形成唯一结论" },
+    { key: "pending", cssKey: "pending", label: "待形成结论", count: Number(counts.pending || 0), description: "已有提交，但还没有形成唯一结论" },
+    { key: "conflict", cssKey: "blocked_by_label", label: "有冲突", count: Number(counts.conflict || 0), description: "当前来源之间存在冲突或过期裁决" },
+  ];
+}
+
+function labelSummaryStatusMarkup(data) {
+  const statuses = labelSummaryStatusItems(data);
+  const total = statuses.reduce((sum, item) => sum + item.count, 0);
+  const segments = total
+    ? statuses.filter((item) => item.count).map((item) => {
+      const percent = analysisPiePercent(item, total);
+      return `<span class="analysis-review-status-segment status-${escapeHtml(item.cssKey)}" data-review-status-key="${escapeHtml(item.key)}" style="width:${percent}%" title="${escapeHtml(`${item.label}: ${item.count}, ${percent}%`)}"></span>`;
+    }).join("")
+    : '<span class="analysis-review-status-empty">暂无标注提交</span>';
+  const legend = statuses.map((item) => {
+    const percent = analysisPiePercent(item, total);
+    return `<div class="analysis-review-status-legend-item status-${escapeHtml(item.cssKey)}" data-review-status-key="${escapeHtml(item.key)}" role="listitem" tabindex="0" title="${escapeHtml(item.description)}"><span class="analysis-review-status-swatch"></span><span class="analysis-review-status-legend-copy"><strong>${escapeHtml(item.label)}</strong><small>${item.count} · ${percent}%</small></span></div>`;
+  }).join("");
+  return `<div class="analysis-review-status-visual"><div class="analysis-review-status-bar" role="img" aria-label="${escapeHtml(statuses.map((item) => `${item.label} ${item.count}`).join("；"))}">${segments}</div><div class="analysis-review-status-legend" role="list">${legend}</div></div>`;
+}
+
+function labelSummaryMatrixMarkup(data) {
+  const labels = ["误触发", "正确触发", "无需协助"];
+  const pairs = new Map((data.pairs || []).map((row) => [`${row.gt}|${row.label}`, Number(row.count || 0)]));
+  const columnTotals = new Map(labels.map((label) => [label, 0]));
+  const rows = labels.map((gt, rowIndex) => {
+    const cells = labels.map((label, columnIndex) => {
+      const count = pairs.get(`${gt}|${label}`) || 0;
+      columnTotals.set(label, (columnTotals.get(label) || 0) + count);
+      return `<td class="${gt === label ? "confusion-match" : count ? "confusion-mismatch" : ""}" data-confusion-row="${rowIndex}" data-confusion-col="${columnIndex}" tabindex="0" title="GT ${escapeHtml(gt)} · 标注 ${escapeHtml(label)}: ${count}">${count}</td>`;
+    }).join("");
+    const rowTotal = labels.reduce((sum, label) => sum + (pairs.get(`${gt}|${label}`) || 0), 0);
+    return `<tr><th scope="row" data-confusion-row="${rowIndex}">${escapeHtml(gt)}</th>${cells}<td class="confusion-total" data-confusion-row="${rowIndex}" data-confusion-total tabindex="0">${rowTotal}</td></tr>`;
+  }).join("");
+  const total = [...columnTotals.values()].reduce((sum, count) => sum + count, 0);
+  return `<table class="analysis-confusion-table"><thead><tr><th>GT ↓ / 标注 →</th>${labels.map((label, index) => `<th scope="col" data-confusion-col="${index}">${escapeHtml(label)}</th>`).join("")}<th scope="col" data-confusion-total-col>合计</th></tr></thead><tbody>${rows}</tbody><tfoot><tr><th>合计</th>${labels.map((label, index) => `<td class="confusion-total" data-confusion-col="${index}">${columnTotals.get(label) || 0}</td>`).join("")}<td class="confusion-total">${total}</td></tr></tfoot></table>`;
+}
+
+function labelSummaryClusterPanels(data) {
+  const catalog = new Map((state.config?.review_tag_catalog || []).map((item) => [item.key, item]));
+  const tagCounts = data.tags || {};
+  const groupItems = (section, group) => Object.entries(tagCounts)
+    .map(([key, count]) => ({ key, count: Number(count || 0), item: catalog.get(key) || {} }))
+    .filter(({ item }) => item.section === section && item.group === group)
+    .map(({ key, count, item }) => ({ key, count, label: item.label || key, description: item.hint || "" }))
+    .sort((left, right) => right.count - left.count || left.label.localeCompare(right.label));
+  const makeGroup = (key, label, items) => ({ key, label, annotated_count: items.reduce((sum, item) => sum + item.count, 0), items });
+  const evidenceItems = Object.entries(data.evidence || {}).map(([key, count]) => ({
+    key, count: Number(count || 0), label: evidenceLabel(key), description: "",
+  })).sort((left, right) => right.count - left.count || left.label.localeCompare(right.label));
+  const panels = [
+    { key: "evidence", label: "缺失信息", layout: "single", groups: [makeGroup("all", "缺失信息", evidenceItems)] },
+    { key: "scene", label: "场景", layout: "dual", groups: [makeGroup("environment", "环境", groupItems("scene", "environment")), makeGroup("self_intent", "自车意图", groupItems("scene", "self_intent"))] },
+    { key: "trigger", label: "触发判定", layout: "dual", groups: [makeGroup("false_trigger", "误触发", groupItems("interaction_decision", "false_trigger")), makeGroup("true_trigger", "正确触发", groupItems("interaction_decision", "true_trigger"))] },
+    { key: "egress", label: "如何脱困", layout: "dual", groups: [makeGroup("ra", "RA", groupItems("egress", "ra")), makeGroup("no_assist", "无需协助", groupItems("egress", "no_assist"))] },
+  ];
+  return panels.map((panel) => {
+    const dual = panel.layout === "dual";
+    return `<article class="page-card analysis-cluster-card layout-${panel.layout}" data-panel="${panel.key}"><div class="section-heading"><div><h3>${escapeHtml(panel.label)}</h3></div></div><div class="analysis-pie-groups ${dual ? "dual" : "single"}">${panel.groups.map((group) => renderAnalysisClusterGroup(group, panel, { dual, animatePies: false })).join("")}</div></article>`;
+  }).join("");
+}
+
+function labelSummaryCaseMarkup(item) {
+  const issueId = String(item.issue_id || "");
+  const scene = item.title || item.scenario || "未记录场景";
+  const status = ({ resolved: "已形成结论", pending: "待形成结论", conflict: "有冲突" })[item.label_state] || "待形成结论";
+  const rationales = item.rationales || [];
+  const tags = (item.tags || []).map((key) => `<span class="analysis-chip tag-chip">${escapeHtml(tagLabel(key))}</span>`).join("");
+  const evidence = (item.evidence_gaps || []).map((key) => `<span class="analysis-chip evidence-chip">${escapeHtml(evidenceLabel(key))}</span>`).join("");
+  const detailUrl = labelSummaryCaseUrl({ issue: issueId });
+  return `<article class="analysis-case-row label-summary-case-row"><div class="analysis-case-identity"><a class="analysis-issue-link" href="${escapeHtml(detailUrl)}">${escapeHtml(issueId)}</a><span title="${escapeHtml(scene)}">${escapeHtml(scene)}</span></div><div class="analysis-case-labels"><span>GT ${labelBadge(item.gt_label)}</span><span>标注 ${labelBadge(item.expected_output, "待形成")}</span><span>${escapeHtml(status)}</span>${item.is_excluded ? '<span class="analysis-comparison-badge comparison-none">问题排除</span>' : ""}</div><div class="analysis-case-reason"><strong class="${rationales.length ? "" : "reason-empty"}">${escapeHtml(rationales[0] || "未填写标注依据")}</strong>${rationales.slice(1).map((reason) => `<p>${escapeHtml(reason)}</p>`).join("")}<div class="analysis-chip-list">${tags}${evidence}</div></div><div class="analysis-case-meta"><span>${escapeHtml((item.authors || []).join("、") || "未记录标注人")}</span><span>${Number(item.source_count || 0)} 个来源${item.created_at ? ` · ${escapeHtml(formatTime(item.created_at))}` : ""}</span><span class="analysis-case-actions"><a class="text-link" href="${escapeHtml(detailUrl)}">Case 详情</a></span></div></article>`;
+}
+
 function renderLabelingSummary(data) {
   const root = $("#labelSummaryContent");
-  const labels = ["误触发", "正确触发", "无需协助"];
-  const statuses = [["resolved","已形成结论"],["pending","待形成结论"],["conflict","有冲突"]];
-  const states = statuses.map(([key,label]) => ({key,label,count:Number(data.states[key] || 0)}));
-  const outputs = labels.map(label => ({key:label,label,count:Number(data.outputs[label] || 0)}));
-  const pairs = new Map(data.pairs.map(row => [`${row.gt}|${row.label}`,row.count]));
-  const comparable = data.pairs.reduce((sum,row) => sum+row.count,0);
-  const matches = data.pairs.filter(row => row.gt === row.label).reduce((sum,row)=>sum+row.count,0);
-  const metrics = [["Case 总数",data.total,"当前数据集与标注范围"],["已有提交",data.annotated,"至少一位标注人已提交"],["已形成结论",data.states.resolved || 0,"多来源聚合后的结果"],["与 GT 一致",matches,`可比较 ${comparable} 个 Case`]];
-  const catalog = new Map((state.config?.review_tag_catalog || []).map(item=>[item.key,item]));
-  const sections = {scene:[],interaction_decision:[],egress:[]};
-  for (const [key,count] of Object.entries(data.tags || {})) {
-    const item = catalog.get(key);
-    if (sections[item?.section]) sections[item.section].push({key,label:item.label || key,count});
-  }
-  const chartMarkup = Object.entries({scene:"场景",interaction_decision:"触发判定",egress:"如何脱困"}).map(([key,title]) => labelSummaryChart(title,sections[key].sort((a,b)=>b.count-a.count),"每个标签按 Case 去重；同一 Case 可有多个标签，图中比例按标签次数计算。" )).join("");
-  const maximum = Math.max(1,...data.people.map(item=>item.count));
-  root.innerHTML = `<div class="label-summary-metrics">${metrics.map(([title,value,note])=>`<article class="analysis-stat-card"><span>${escapeHtml(title)}</span><strong>${value}</strong><small>${escapeHtml(note)}</small></article>`).join("")}</div>
-    <div class="label-summary-grid">
-      <div class="label-summary-state">${labelSummaryChart("标注状态",states)}<div class="label-summary-links">${statuses.map(([key,label])=>`<a class="cluster-chip" href="${escapeHtml(labelSummaryCaseUrl({status:key}))}">${label} ${data.states[key] || 0} ↗</a>`).join("")}</div></div>
-      <div class="label-summary-output">${labelSummaryChart("标注结果分布",outputs)}<div class="label-summary-links">${labels.map(label=>`<a class="cluster-chip" href="${escapeHtml(labelSummaryCaseUrl({label}))}">${label} ${data.outputs[label] || 0} ↗</a>`).join("")}</div></div>
-      <article class="page-card label-summary-matrix"><header><h3>GT × 标注结果</h3><small>仅统计已形成结论且有 GT 的 ${comparable} 个 Case</small></header><div class="label-summary-matrix-grid"><span>GT ↓ / 标注 →</span>${labels.map(x=>`<strong>${x}</strong>`).join("")}${labels.map(gt=>`<strong>${gt}</strong>${labels.map(label=>{const n=pairs.get(`${gt}|${label}`)||0;return `<a class="label-summary-cell ${gt===label?'is-match':'is-different'} ${n?'':'is-zero'}" href="${escapeHtml(labelSummaryCaseUrl({cluster:`pair:${gt}|${label}`}))}" aria-label="GT ${gt}，标注 ${label}，${n} 个 Case"><b>${n}</b><small>${comparable ? Math.round(n/comparable*1000)/10 : 0}%</small></a>`;}).join("")}`).join("")}</div></article>
-      <article class="page-card label-summary-people"><header><h3>标注人贡献</h3><small>同一人对同一 Case 的多次提交只计一次</small></header>${data.people.length?data.people.map(item=>`<a class="label-summary-person" href="${escapeHtml(labelSummaryCaseUrl({author:item.name}))}"><span>${escapeHtml(item.name)}</span><strong>${item.count} <small>Case</small></strong><i><b style="width:${Math.round(item.count/maximum*100)}%"></b></i></a>`).join(""):'<p class="campaign-analysis-empty">当前范围暂无提交</p>'}</article>
-      ${chartMarkup}
-      <article class="page-card label-summary-scenarios"><h3>Scenario 分布</h3><p class="quiet-meta">按当前范围的全部 Case 统计</p><div class="label-summary-scenario-list">${Object.entries(data.scenarios || {}).sort((a,b)=>b[1]-a[1]).map(([name,count])=>`<a class="label-summary-person" href="${escapeHtml(labelSummaryCaseUrl({cluster:`scenario:${name}`}))}"><span>${escapeHtml(name)}</span><strong>${count}</strong></a>`).join("") || '<p class="quiet-meta">暂无 Scenario 信息</p>'}</div></article>
-    </div>`;
+  const comparable = (data.pairs || []).reduce((sum, row) => sum + Number(row.count || 0), 0);
+  const matches = (data.pairs || []).filter((row) => row.gt === row.label).reduce((sum, row) => sum + Number(row.count || 0), 0);
+  const page = Number(data.page || 1);
+  const pageCount = Math.max(1, Number(data.page_count || 0));
+  root.innerHTML = `<section class="analysis-summary-grid" aria-label="Labeling overview"><article class="analysis-stat-card"><span>Case 标注</span><strong>${Number(data.annotated || 0)}</strong><small>当前范围 ${Number(data.total || 0)} 个 Case</small></article><article class="analysis-stat-card"><span>已填写依据</span><strong>${Number(data.reason_count || 0)}</strong><small>未填写 ${Number(data.empty_reason_count || 0)}</small></article><article class="analysis-stat-card"><span>结构化缺失信息</span><strong>${Number(data.structured_evidence_count || 0)}</strong><small>至少选择 1 项</small></article></section>
+    <section class="analysis-decision-grid" aria-label="Label state and GT comparison"><section class="page-card analysis-review-status-card"><div class="section-heading analysis-review-status-heading"><div><h3>标注状态</h3></div><small>${Number(data.annotated || 0)} 个已提交 Case</small></div><div class="analysis-review-status-chart" id="labelSummaryStatusChart">${labelSummaryStatusMarkup(data)}</div></section><section class="page-card analysis-confusion-card"><div class="section-heading analysis-confusion-heading"><div><h3>GT × 标注结果混淆矩阵</h3></div><small>可比较 ${comparable} · 一致 ${matches}</small></div><div class="analysis-confusion-wrap" id="labelSummaryConfusionMatrix">${labelSummaryMatrixMarkup(data)}</div></section></section>
+    <section class="analysis-cluster-grid" id="labelSummaryClusterPanels" aria-label="Structured labeling clusters">${labelSummaryClusterPanels(data)}</section>
+    <section class="page-card analysis-case-card"><div class="section-heading"><div><h3>标注依据明细</h3></div><small>共 ${Number(data.annotated || 0)} 个 Case · 当前页 ${(data.items || []).length} 个</small></div><div class="analysis-case-list" id="labelSummaryCaseList">${(data.items || []).length ? data.items.map(labelSummaryCaseMarkup).join("") : '<div class="analysis-empty">当前范围暂无标注提交</div>'}</div><nav class="case-pagination gallery-pagination label-summary-pagination" aria-label="标注依据明细分页"><div class="case-pagination-main"><button class="button button-quiet" id="labelSummaryPrevious" type="button" ${page <= 1 ? "disabled" : ""}>上一页</button><span id="labelSummaryPageState">${page} / ${pageCount}</span><button class="button button-quiet" id="labelSummaryNext" type="button" ${page >= pageCount ? "disabled" : ""}>下一页</button><span class="page-jump-control"><label for="labelSummaryPageJump">跳至</label><input id="labelSummaryPageJump" type="number" min="1" max="${pageCount}" value="${page}" inputmode="numeric" ${pageCount <= 1 ? "disabled" : ""}/><span>页</span><button class="button button-quiet" id="labelSummaryPageJumpButton" type="button" ${pageCount <= 1 ? "disabled" : ""}>跳转</button></span></div><label class="case-page-size" for="labelSummaryPageSize"><span>每页</span><select id="labelSummaryPageSize"><option value="10">10</option><option value="20">20</option><option value="50">50</option><option value="100">100</option></select><span>条</span></label></nav></section>`;
+  $("#labelSummaryPageSize").value = String(Number(data.page_size || labelSummaryPageSize));
+  bindAnalysisReviewStatusHover($("#labelSummaryStatusChart"));
+  bindAnalysisConfusionHover($("#labelSummaryConfusionMatrix")?.querySelector(".analysis-confusion-table"));
+  bindAnalysisPieHover($("#labelSummaryClusterPanels"));
+  clearAnalysisPieEnterAnimations($("#labelSummaryClusterPanels"));
+  $("#labelSummaryPrevious")?.addEventListener("click", () => { labelSummaryPage = Math.max(1, page - 1); loadLabelingSummary().catch((error) => showToast(error.message, true)); });
+  $("#labelSummaryNext")?.addEventListener("click", () => { labelSummaryPage = Math.min(pageCount, page + 1); loadLabelingSummary().catch((error) => showToast(error.message, true)); });
+  $("#labelSummaryPageJumpButton")?.addEventListener("click", () => { labelSummaryPage = Math.max(1, Math.min(pageCount, Number($("#labelSummaryPageJump")?.value || 1))); loadLabelingSummary().catch((error) => showToast(error.message, true)); });
+  $("#labelSummaryPageJump")?.addEventListener("keydown", (event) => { if (event.key === "Enter") $("#labelSummaryPageJumpButton")?.click(); });
+  $("#labelSummaryPageSize")?.addEventListener("change", (event) => { labelSummaryPageSize = Number(event.target.value || 20); labelSummaryPage = 1; loadLabelingSummary().catch((error) => showToast(error.message, true)); });
 }
 async function loadLabelingSummary() {
+  restoreLabelSummaryRoute();
   const seq = ++labelSummaryRequest;
   const root = $("#labelSummaryContent");
   if (!root) return;
@@ -871,18 +1027,68 @@ async function loadLabelingSummary() {
     const baselines = selectedBaselineQueryValue();
     const tasks = await api(`/api/labeling/tasks?baselines=${encodeURIComponent(baselines)}`);
     if (seq !== labelSummaryRequest || state.activePage !== "labeling-summary") return;
-    const picker = $("#labelSummaryTask");
-    const selected = picker.value;
-    picker.innerHTML = '<option value="">全部标注（含历史迁移）</option>' + (tasks.items || []).map(task=>`<option value="${escapeHtml(task.id)}">${escapeHtml(task.name || "标注任务")}</option>`).join("");
-    picker.value = (tasks.items || []).some(task=>task.id===selected) ? selected : "";
-    enhanceNativeUiSelect(picker);
-    const data = await api(`/api/labeling/summary?baselines=${encodeURIComponent(baselines)}&task_id=${encodeURIComponent(picker.value)}`);
+    if (!(tasks.items || []).some((task) => task.id === labelSummaryFilters.taskId)) {
+      labelSummaryFilters.taskId = "";
+    }
+    const params = new URLSearchParams({
+      baselines,
+      task_id: labelSummaryFilters.taskId,
+      q: labelSummaryFilters.search,
+      status: labelSummaryFilters.status,
+      author: labelSummaryFilters.author,
+      assignee: labelSummaryFilters.assignee,
+      exclusion: labelSummaryFilters.exclusion,
+      label: labelSummaryFilters.label === "all" ? "" : labelSummaryFilters.label,
+      cluster: labelSummaryFilters.cluster,
+      page: String(labelSummaryPage),
+      page_size: String(labelSummaryPageSize),
+    });
+    const data = await api(`/api/labeling/summary?${params.toString()}`);
     if (seq !== labelSummaryRequest || state.activePage !== "labeling-summary") return;
+    labelSummaryPage = Number(data.page || 1);
+    labelSummaryPageSize = Number(data.page_size || 20);
+    renderLabelSummaryFilters(tasks, data);
     renderLabelingSummary(data);
+    persistLabelSummaryRoute();
   } catch(error) {
     if (seq === labelSummaryRequest) root.innerHTML = `<div class="page-card campaign-analysis-empty">${escapeHtml(error.message)}</div>`;
     throw error;
   }
 }
-document.getElementById("labelSummaryTask")?.addEventListener("change",()=>loadLabelingSummary().catch(error=>showToast(error.message,true)));
+document.getElementById("labelSummaryFilterForm")?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  window.clearTimeout(labelSummarySearchTimer);
+  labelSummaryFilters.search = $("#labelSummarySearch")?.value.trim() || "";
+  labelSummaryPage = 1;
+  loadLabelingSummary().catch((error) => showToast(error.message, true));
+});
+document.getElementById("labelSummarySearch")?.addEventListener("input", (event) => {
+  labelSummaryFilters.search = event.target.value.trim();
+  labelSummaryPage = 1;
+  window.clearTimeout(labelSummarySearchTimer);
+  labelSummarySearchTimer = window.setTimeout(() => loadLabelingSummary().catch((error) => showToast(error.message, true)), 280);
+});
+[
+  ["labelSummaryTask", "taskId"], ["labelSummaryStatus", "status"],
+  ["labelSummaryAuthor", "author"], ["labelSummaryAssignee", "assignee"],
+  ["labelSummaryLabel", "label"], ["labelSummaryExclusion", "exclusion"],
+].forEach(([id, key]) => document.getElementById(id)?.addEventListener("change", (event) => {
+  labelSummaryFilters[key] = event.target.value;
+  if (key === "taskId") {
+    labelSummaryFilters.author = "";
+    labelSummaryFilters.assignee = "";
+  }
+  labelSummaryFilters.cluster = "";
+  labelSummaryPage = 1;
+  loadLabelingSummary().catch((error) => showToast(error.message, true));
+}));
+document.getElementById("labelSummaryReset")?.addEventListener("click", () => {
+  Object.assign(labelSummaryFilters, {
+    search: "", taskId: "", status: "all", author: "", assignee: "",
+    label: "all", exclusion: "all", cluster: "",
+  });
+  labelSummaryPage = 1;
+  labelSummaryPageSize = 20;
+  loadLabelingSummary().catch((error) => showToast(error.message, true));
+});
 document.getElementById("labelSummaryRefresh")?.addEventListener("click",()=>loadLabelingSummary().catch(error=>showToast(error.message,true)));

@@ -382,16 +382,56 @@ async def list_labeling_cases(
 
 
 @router.get("/api/labeling/summary")
-async def labeling_summary(request: Request, baselines: str = "", task_id: str = "") -> dict[str, Any]:
+async def labeling_summary(
+    request: Request,
+    baselines: str = "",
+    task_id: str = "",
+    q: str = "",
+    status: str = "all",
+    author: str = "",
+    assignee: str = "",
+    exclusion: str = "all",
+    label: str = "",
+    cluster: str = "",
+    page: int = 1,
+    page_size: int = 20,
+) -> dict[str, Any]:
     from ..labeling_summary import summarize_labeling_cases
     await _require_labeling_admin(request)
     scopes = await _active_labeling_scopes(resolve_request_baseline_scopes(baselines, request=request))
     try:
-        items, _ = await asyncio.to_thread(database._project_labeling_cases, baseline_scopes=scopes, task_id=_as_text(task_id))
-        result = summarize_labeling_cases(items)
+        normalized_task = _as_text(task_id)
+        items, _ = await asyncio.to_thread(
+            database._project_labeling_cases,
+            baseline_scopes=scopes,
+            task_id=normalized_task,
+            search=_as_text(q),
+            status=_as_text(status) or "all",
+            author=_as_text(author),
+            assignee=_as_text(assignee),
+            exclusion=_as_text(exclusion) or "all",
+            expected_output=_as_text(label),
+            cluster=_as_text(cluster),
+        )
+        result, labelers, assignees = await asyncio.gather(
+            asyncio.to_thread(
+                summarize_labeling_cases,
+                items,
+                page=page,
+                page_size=page_size,
+            ),
+            asyncio.to_thread(database.labeling_labelers, scopes, normalized_task),
+            asyncio.to_thread(database.labeling_assignees, scopes, normalized_task),
+        )
     except ValueError as exc:
         raise _detail(400, str(exc)) from exc
-    return {**result, "baseline_scopes": scopes, "task_id": _as_text(task_id)}
+    return {
+        **result,
+        "baseline_scopes": scopes,
+        "task_id": normalized_task,
+        "labelers": labelers,
+        "assignees": assignees,
+    }
 
 
 @router.get("/api/labeling/clusters")

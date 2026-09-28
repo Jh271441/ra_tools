@@ -314,9 +314,9 @@ function normalizedReviewRouteFilters(params) {
     workSplitId: /^(?:split|campaign)-[A-Za-z0-9]+$/.test(params.get("work_split") || "")
       ? params.get("work_split")
       : "",
-    workflowMode: params.get("workflow") === "combined"
-      ? "model_review_and_case_label"
-      : "model_review_only",
+    workflowMode: params.get("workflow") === "model_only"
+      ? "model_review_only"
+      : "model_review_and_case_label",
     exclusion,
     clusterKey: params.get("evidence") || "",
     casePage: Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1,
@@ -475,9 +475,9 @@ function parsePageRoute() {
   const uxAlias = legacyModelReviewCampaign
     ? "review"
     : pathname === "/run-collections"
-    ? "comparison"
+    ? "run-collections"
     : pathname === "/multi-run-evaluation"
-      ? "comparison"
+      ? "run-collections"
       : pathname === "/labeling-experiments"
         ? "labeling-new-task"
         : pathname === "/labeling-summary"
@@ -573,7 +573,7 @@ function currentReviewRouteOptions(overrides = {}) {
     workSplitId: state.reviewWorkSplitId || "",
     baselines: state.reviewTaskContext?.baseline_ids || state.selectedBaselineIds,
     forceBaselines: Boolean(state.reviewTaskContext),
-    workflowMode: state.reviewWorkflowMode || "model_review_only",
+    workflowMode: state.reviewWorkflowMode || "model_review_and_case_label",
     exclusion:
       typeof selectedReviewExclusionFilter === "function"
         ? selectedReviewExclusionFilter()
@@ -612,7 +612,11 @@ function applyReviewRouteControls(route) {
   setMultiFilterValues($("#annotationFilter"), route.modelLabel);
   setMultiFilterValues($("#workAssigneeFilter"), route.workAssignee);
   state.reviewWorkSplitId = route.workSplitId || "";
-  state.reviewWorkflowMode = route.workflowMode || "model_review_only";
+  state.reviewWorkflowMode = route.workflowMode || "model_review_and_case_label";
+  if ($("#reviewWorkflowMode")) {
+    $("#reviewWorkflowMode").value = state.reviewWorkflowMode;
+    enhanceNativeUiSelect($("#reviewWorkflowMode"));
+  }
   if (state.reviewWorkSplitId) {
     state.availableReviewWorkSplitId = state.reviewWorkSplitId;
   }
@@ -813,8 +817,8 @@ function pageUrl(page, options = {}) {
     }
     if (assignee) url.searchParams.set("work_assignee", assignee);
     if (review.workSplitId) url.searchParams.set("work_split", review.workSplitId);
-    if (review.workflowMode === "model_review_and_case_label") {
-      url.searchParams.set("workflow", "combined");
+    if (review.workflowMode === "model_review_only") {
+      url.searchParams.set("workflow", "model_only");
     }
     if (review.exclusion && review.exclusion !== "all") {
       url.searchParams.set("exclusion", review.exclusion);

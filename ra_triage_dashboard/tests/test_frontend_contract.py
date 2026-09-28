@@ -343,8 +343,9 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('id="runCollectionsPage"', INDEX_HTML)
         self.assertIn('path: "/multi-run-evaluation"', APP_JS)
         self.assertIn('pathname === "/run-collections"', APP_JS)
-        self.assertIn('? "comparison"', APP_JS)
+        self.assertIn('? "run-collections"', APP_JS)
         self.assertIn("ensureRunCollectionsDedicatedPage", APP_JS)
+        self.assertNotIn('id="runCollectionPairwiseDetails"', INDEX_HTML)
         self.assertIn("applyRunCollectionReadOnlyGating", APP_JS)
         self.assertIn("state.session?.is_admin && state.session?.verified", APP_JS)
         self.assertIn('id="runCollectionReadonlyNote"', INDEX_HTML)
@@ -397,7 +398,7 @@ class FrontendContractTest(unittest.TestCase):
             self.assertTrue((JS_DIR / name).is_file(), name)
             self.assertIn(f'"{name}"', APP_ENTRY_JS)
         self.assertIn("CACHE_VERSION", APP_ENTRY_JS)
-        self.assertIn("manual-triage-522", APP_ENTRY_JS)
+        self.assertIn("manual-triage-523", APP_ENTRY_JS)
         self.assertIn("function setBaselineScopes", APP_JS)
         self.assertIn("function applyInferredBaselinesFromRun", APP_JS)
         self.assertIn("clearIncompatible: true", APP_JS)
@@ -454,7 +455,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("baselines", APP_JS)
         self.assertIn("/static/js/", APP_ENTRY_JS)
         self.assertIn("script.async = false", APP_ENTRY_JS)
-        self.assertIn("app.js?v=manual-triage-522", INDEX_HTML)
+        self.assertIn("app.js?v=manual-triage-523", INDEX_HTML)
         self.assertIn('"work-split.js"', APP_ENTRY_JS)
         self.assertIn('"review-assignments.js"', APP_ENTRY_JS)
         # Product logic must live in domain modules, not the entry loader.
@@ -684,7 +685,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('html[data-color-theme="light"] .issue-id', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .run-source-tab em', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .button-primary', STYLES_CSS)
-        self.assertIn('`${activeBase}/static/${path}?v=manual-triage-522`', INDEX_HTML)
+        self.assertIn('`${activeBase}/static/${path}?v=manual-triage-523`', INDEX_HTML)
         self.assertIn(".review-exclude-toggle { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center;", STYLES_CSS)
         self.assertIn("display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px;", STYLES_CSS)
         self.assertIn("max-height: min(70dvh, 640px); overflow: auto;", STYLES_CSS)
@@ -969,6 +970,21 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('id="labelingSummaryPage"', INDEX_HTML)
         self.assertIn('data-page-target="labeling-summary"', INDEX_HTML)
         self.assertIn('function renderLabelingSummary', CAMPAIGNS_JS)
+        for filter_id in (
+            "labelSummarySearch", "labelSummaryTaskPicker", "labelSummaryStatusPicker",
+            "labelSummaryAuthorPicker", "labelSummaryAssigneePicker",
+            "labelSummaryLabelPicker", "labelSummaryExclusionPicker",
+        ):
+            self.assertIn(f'id="{filter_id}"', INDEX_HTML)
+        self.assertIn('class="analysis-summary-grid"', CAMPAIGNS_JS)
+        self.assertIn('class="analysis-decision-grid"', CAMPAIGNS_JS)
+        self.assertIn('id="labelSummaryClusterPanels"', CAMPAIGNS_JS)
+        self.assertIn('id="labelSummaryCaseList"', CAMPAIGNS_JS)
+        self.assertIn('function restoreLabelSummaryRoute()', CAMPAIGNS_JS)
+        self.assertIn('const filters = labelingTaskFilterPayload();', CAMPAIGNS_JS)
+        self.assertIn('status: str = "all"', APP_PY_LABELING_ROUTER)
+        self.assertIn('database.labeling_labelers', APP_PY_LABELING_ROUTER)
+        self.assertIn('database.labeling_assignees', APP_PY_LABELING_ROUTER)
         self.assertIn("function renderCaseLabelingClusterStrip", APP_JS)
         self.assertIn("function loadCaseLabelingClusters", APP_JS)
         self.assertIn('cluster: state.caseLabeling.cluster || ""', APP_JS)
@@ -1785,7 +1801,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("function jumpToQueueIndex", APP_JS)
         self.assertIn("function bindDetailQueueIndexJump", APP_JS)
         self.assertIn(".detail-queue-index-input", STYLES_CSS)
-        self.assertIn("manual-triage-522", APP_ENTRY_JS)
+        self.assertIn("manual-triage-523", APP_ENTRY_JS)
     def test_desktop_layout_panels_are_mouse_and_keyboard_resizable(self) -> None:
         self.assertIn('id="sidebarResizer" role="separator"', INDEX_HTML)
         self.assertIn('id="reviewPaneResizer" role="separator"', INDEX_HTML)
