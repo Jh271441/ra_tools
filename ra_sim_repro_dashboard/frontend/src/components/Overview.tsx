@@ -145,8 +145,11 @@ function formatChartLabel(value: unknown) {
 }
 
 function shortVersionLabel(value: string) {
-  const match = value.match(/(\d{8})$/);
-  return match ? `${match[1].slice(4, 6)}-${match[1].slice(6, 8)}` : value;
+  const dated = value.match(/(?:^|[-_])(\d{4})[-_](\d{2})[-_](\d{2})/);
+  if (dated) return `${dated[2]}-${dated[3]}`;
+  const compact = value.match(/(\d{8})/);
+  if (compact) return `${compact[1].slice(4, 6)}-${compact[1].slice(6, 8)}`;
+  return value.length > 10 ? value.slice(-10) : value;
 }
 
 function TrendValueLabel({
@@ -456,7 +459,7 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
                   scale="point"
                   tickLine={false}
                   axisLine={false}
-                  interval={0}
+                  interval={Math.max(0, Math.ceil(trend.length / 12) - 1)}
                   minTickGap={0}
                   height={40}
                   tickMargin={10}

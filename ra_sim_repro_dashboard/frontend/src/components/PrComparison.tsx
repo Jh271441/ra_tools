@@ -16,7 +16,13 @@ const simColor = 'hsl(var(--chart-green))';
 const percent = (value?: number) => value == null ? '—' : `${value.toFixed(1)}%`;
 const gap = (actual?: number, sim?: number) => actual == null || sim == null
   ? '—' : `${sim - actual > 0 ? '+' : ''}${(sim - actual).toFixed(1)} pp`;
-const shortVersion = (key: string) => key.replace(/^.*(\d{4})(\d{2})(\d{2})$/, '$2-$3');
+const shortVersion = (key: string) => {
+  const dated = key.match(/(?:^|[-_])(\d{4})[-_](\d{2})[-_](\d{2})/);
+  if (dated) return `${dated[2]}-${dated[3]}`;
+  const compact = key.match(/(\d{8})/);
+  if (compact) return `${compact[1].slice(4, 6)}-${compact[1].slice(6, 8)}`;
+  return key.length > 10 ? key.slice(-10) : key;
+};
 
 export function PrComparison({ rows, comparison, mode, domain }: {
   rows: PrPoint[];
@@ -81,7 +87,7 @@ export function PrComparison({ rows, comparison, mode, domain }: {
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={rows} margin={{ top: 12, right: 18, bottom: 4, left: 0 }}>
               <CartesianGrid vertical={false} stroke="hsl(var(--border))" strokeDasharray="3 5" />
-              <XAxis dataKey="version_key" interval={0} tickFormatter={shortVersion} tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} padding={{ left: 12, right: 12 }} height={30} />
+              <XAxis dataKey="version_key" interval={Math.max(0, Math.ceil(rows.length / 12) - 1)} tickFormatter={shortVersion} tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} padding={{ left: 12, right: 12 }} height={30} />
               <YAxis domain={[60, 100]} ticks={[60, 70, 80, 90, 100]} tickFormatter={(value: number) => `${value}%`} width={46} tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
               <Tooltip content={({ active, payload }) => {
                 const row = payload?.[0]?.payload as PrPoint | undefined;
