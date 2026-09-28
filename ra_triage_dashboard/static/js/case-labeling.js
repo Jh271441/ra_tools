@@ -65,7 +65,7 @@ function labelingBaselineItems(ids) {
 }
 
 function canAccessCaseLabelingPreview() {
-  return Boolean(state.session?.is_admin);
+  return hasDashboardWriteRole();
 }
 
 function caseLabelingStateText(value) {
@@ -289,6 +289,11 @@ function renderLabelingTaskHistory() {
 async function loadCaseLabelingSnapshotReferences() {
   const button = $("#caseLabelingCreateLabelSnapshot");
   if (!button) return;
+  if (!state.session?.is_admin) {
+    button.hidden = true;
+    button.disabled = true;
+    return;
+  }
   try {
     const result = await api(withBaselineQuery("/api/labeling/gt-snapshots"));
     state.caseLabeling.gtSnapshots = result.items || [];
@@ -463,8 +468,8 @@ function updateLabelingTaskEstimate() {
 }
 
 async function enterLabelingNewTask({ route = null } = {}) {
-  if (!canAccessCaseLabelingPreview() && !state.session?.identity_pending) {
-    showToast("Case 标注内测仅限管理员。", true);
+  if (!state.session?.is_admin && !state.session?.identity_pending) {
+    showToast("实验分配仅限管理员。", true);
     if (typeof showPage === "function") showPage("review", { historyMode: "replace" });
     return;
   }
@@ -735,7 +740,7 @@ function renderCaseLabelingInactiveState() {
   const switches = active.length
     ? `<div class="case-labeling-active-switchers">${active.map((item) => `<button class="button button-primary" type="button" data-labeling-baseline="${escapeHtml(item.id)}">查看 ${escapeHtml(item.label || item.id)} · ${escapeHtml(String(item.count ?? "—"))}</button>`).join("")}</div>`
     : `<p>当前还没有已激活的标注数据集。</p>`;
-  return `<div class="empty-state issue-grid-empty case-labeling-inactive-state"><h2>${escapeHtml(selectedText)} 尚未切换到 Case 标注<small class="case-labeling-preview-badge">内测 · 仅管理员</small></h2><p>该范围仍在「判错复核」工作台。Case 标注内测只列出已激活数据集，避免把未迁移范围显示成 0 个 Case。</p>${switches}</div>`;
+  return `<div class="empty-state issue-grid-empty case-labeling-inactive-state"><h2>${escapeHtml(selectedText)} 尚未切换到 Case 标注<small class="case-labeling-preview-badge">writer / 管理员</small></h2><p>该范围仍在「判错复核」工作台。Case 标注只列出已激活数据集，避免把未迁移范围显示成 0 个 Case。</p>${switches}</div>`;
 }
 
 function renderCaseLabelingList(data) {
@@ -901,10 +906,15 @@ function renderCaseLabelingDetailMedia(caseData) {
 
 function currentEditableLabelCase(caseData) {
   const cases = caseData?.label_cases || [];
-  if (state.caseLabeling.taskId) {
+  if (state.caseLabeling.taskId && caseData?.current_user_is_task_member) {
     return cases.find((item) => item.task_id === state.caseLabeling.taskId) || null;
   }
   return cases.find((item) => !item.task_id && !item.source_run_id) || null;
+}
+
+function caseLabelingSubmissionTaskId(caseData = state.caseLabeling.caseData) {
+  if (!state.caseLabeling.taskId) return "";
+  return caseData?.current_user_is_task_member ? state.caseLabeling.taskId : "";
 }
 
 function currentLabelingRevision(caseData) {
@@ -913,7 +923,7 @@ function currentLabelingRevision(caseData) {
   const currentUser = String(state.session?.username || "").trim().toLowerCase();
   return (editable.resolution?.heads || []).find(
     (item) => String(item.author || "").trim().toLowerCase() === currentUser
-  ) || editable.resolution?.result_revision || null;
+  ) || null;
 }
 
 function caseLabelingHistoryAnnotations(caseData) {
@@ -1042,7 +1052,7 @@ function syncCaseLabelingExpectedOutputFromTags() {
     status.classList.toggle("is-conflict", validation.conflict);
   }
   const save = $("#caseLabelingForm button[type='submit']");
-  if (save) save.disabled = validation.conflict || !state.session?.is_admin;
+  if (save) save.disabled = validation.conflict || !hasDashboardWriteRole();
 }
 
 function renderCaseLabelingEditor(caseData) {
@@ -1072,8 +1082,15 @@ function renderCaseLabelingEditor(caseData) {
   const historyCount = (caseData.label_cases || []).reduce(
     (count, labelCase) => count + (labelCase.resolution?.heads || []).length, 0
   );
+  const supplementalOnly = Boolean(
+    state.caseLabeling.taskId && !caseData.current_user_is_task_member
+  );
+  const supplementalNotice = supplementalOnly
+    ? `<div class="case-labeling-supplemental-notice" role="status"><strong>任务外补充标注</strong><span>你未分配到当前任务。本次保存会成为独立共享 Case vote，不计入该任务进度；它仍会参与跨来源标签一致性与冲突判断。</span></div>`
+    : "";
   $("#caseLabelingEditor").innerHTML = `
     <form class="review-form" id="caseLabelingForm">
+      ${supplementalNotice}
       <section class="review-section issue-tag-section">
         <div class="review-section-heading"><div><h2><span class="ui-lang-zh">Issue 标签</span><span class="ui-lang-en">Issue tags</span></h2></div><span class="evidence-summary-count" id="tagSummaryCount">${escapeHtml(t("detail.selected_n", { n: chosenTags.size }))}</span></div>
         <div class="review-tag-groups-shell">${issueTagGroups}</div>
@@ -1132,7 +1149,7 @@ function renderCaseLabelingEditor(caseData) {
           <div class="pending-screenshot-list" id="caseLabelingPendingScreenshots"></div>
         </div>
         ${resolution?.state === "conflict" || resolution?.state === "stale" ? `<section class="case-labeling-adjudication"><strong>标注冲突</strong><p>${(resolution.heads || []).map((item) => `${escapeHtml(item.author)}：${escapeHtml(item.expected_output || "待补充")}`).join(" · ")}</p><button class="button button-quiet" id="caseLabelingAdjudicate" type="button">按当前表单显式裁决</button></section>` : ""}
-        <button class="button button-primary full-width review-save-button" type="submit" ${state.session?.is_admin ? "" : "disabled"}><span class="ui-lang-zh">保存标注</span><span class="ui-lang-en">Save label</span><kbd class="review-save-shortcut" aria-hidden="true">Enter</kbd></button>
+        <button class="button button-primary full-width review-save-button" type="submit" ${hasDashboardWriteRole() ? "" : "disabled"}><span class="ui-lang-zh">${supplementalOnly ? "保存任务外补充" : "保存标注"}</span><span class="ui-lang-en">${supplementalOnly ? "Save supplemental label" : "Save label"}</span><kbd class="review-save-shortcut" aria-hidden="true">Enter</kbd></button>
       </section>
     </form>`;
   const editor = $("#caseLabelingEditor");
@@ -1229,7 +1246,7 @@ function closeCaseLabelingDetail({ updateRoute = true } = {}) {
 function caseLabelingFormPayload() {
   const editor = $("#caseLabelingEditor");
   return {
-    task_id: state.caseLabeling.taskId || "",
+    task_id: caseLabelingSubmissionTaskId(),
     expected_output: $("#caseLabelingExpectedOutput")?.value || "",
     tags: [...(editor?.querySelectorAll('input[name="reviewTags"]:checked') || [])].map((item) => item.value),
     evidence_gaps: [],
@@ -1554,7 +1571,7 @@ function bindCaseLabelingEditorShortcuts() {
 
 async function enterCaseLabeling({ route = null } = {}) {
   if (!canAccessCaseLabelingPreview() && !state.session?.identity_pending) {
-    showToast("Case 标注内测仅限管理员。", true);
+    showToast("Case 标注需要 writer 或管理员权限。", true);
     if (typeof showPage === "function") showPage("review", { historyMode: "replace" });
     return;
   }

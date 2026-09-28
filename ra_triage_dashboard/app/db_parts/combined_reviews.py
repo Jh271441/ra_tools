@@ -330,8 +330,8 @@ class DatabaseCombinedReviewMixin:
             if active_scope is None or str(active_scope["status"] or "") != "active":
                 raise PermissionError("当前数据集尚未启用 Case 标注写入。")
             role = conn.execute("SELECT role FROM access_users WHERE username=?", (actor,)).fetchone()
-            if role is None or str(role["role"] or "") != "admin":
-                raise PermissionError("联合复核需要 Case 标注管理员权限。")
+            if role is None or str(role["role"] or "") not in {"writer", "admin"}:
+                raise PermissionError("联合复核需要 Dashboard writer 或管理员权限。")
             if context["model_review_storage_id"] != expected_model_review_storage_id:
                 raise AnnotationConflictError("模型复核已变化，请刷新后重新确认。")
             if context["case_revision_id"] != expected_case_revision_id:

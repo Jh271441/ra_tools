@@ -75,10 +75,17 @@ function renderSession() {
   if (userManagementNav) userManagementNav.hidden = !state.session.is_admin;
   const reviewAssignmentsNav = $("#reviewAssignmentsNavButton");
   if (reviewAssignmentsNav) reviewAssignmentsNav.hidden = !state.session.is_admin;
+  const canLabelCases = hasDashboardWriteRole();
   const caseLabelingNav = $("#caseLabelingNavButton");
-  if (caseLabelingNav) caseLabelingNav.hidden = !state.session.is_admin;
+  if (caseLabelingNav) caseLabelingNav.hidden = !canLabelCases;
   const caseLabelingNavGroup = $("#caseLabelingNavGroup");
-  if (caseLabelingNavGroup) caseLabelingNavGroup.hidden = !state.session.is_admin;
+  if (caseLabelingNavGroup) caseLabelingNavGroup.hidden = !canLabelCases;
+  const labelingExperimentsNav = $("#labelingExperimentsNavButton");
+  if (labelingExperimentsNav) labelingExperimentsNav.hidden = !state.session.is_admin;
+  const caseLabelingCreateTask = $("#caseLabelingCreateTask");
+  if (caseLabelingCreateTask) caseLabelingCreateTask.hidden = !state.session.is_admin;
+  const caseLabelingExportGt = $("#caseLabelingExportGt");
+  if (caseLabelingExportGt) caseLabelingExportGt.hidden = !state.session.is_admin;
   const campaignLabelExport = $("#campaignLabelExportCsv");
   if (campaignLabelExport) campaignLabelExport.hidden = !state.session.is_admin;
   // The head script replays the last server-confirmed intent access before the
@@ -350,12 +357,20 @@ function renderConfig() {
   renderBatchRuntimeSummary();
   const caseLabelingNav = $("#caseLabelingNavButton");
   if (caseLabelingNav) {
-    caseLabelingNav.hidden = !state.session?.is_admin;
+    caseLabelingNav.hidden = !hasDashboardWriteRole();
   }
   const caseLabelingNavGroup = $("#caseLabelingNavGroup");
   if (caseLabelingNavGroup) {
-    caseLabelingNavGroup.hidden = !state.session?.is_admin;
+    caseLabelingNavGroup.hidden = !hasDashboardWriteRole();
   }
+  const labelingExperimentsNav = $("#labelingExperimentsNavButton");
+  if (labelingExperimentsNav) {
+    labelingExperimentsNav.hidden = !state.session?.is_admin;
+  }
+  const caseLabelingCreateTask = $("#caseLabelingCreateTask");
+  if (caseLabelingCreateTask) caseLabelingCreateTask.hidden = !state.session?.is_admin;
+  const caseLabelingExportGt = $("#caseLabelingExportGt");
+  if (caseLabelingExportGt) caseLabelingExportGt.hidden = !state.session?.is_admin;
   const campaignLabelExport = $("#campaignLabelExportCsv");
   if (campaignLabelExport) {
     campaignLabelExport.hidden = !state.session?.is_admin;

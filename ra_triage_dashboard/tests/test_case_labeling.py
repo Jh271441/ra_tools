@@ -435,6 +435,54 @@ class CaseLabelingTest(unittest.TestCase):
             self.assertEqual(database.labeling_task_progress([], [task_id]), {})
             self.assertEqual(database.labeling_task_progress(["scope"], []), {})
 
+    def test_unassigned_contributor_saves_free_vote_without_task_progress(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            database = self.make_db(tmp)
+            workset = database.create_review_workset(
+                baseline_scope="scope", issue_ids=["cn1"],
+                name="assigned task", created_by="admin",
+            )
+            task = database.create_labeling_task(
+                workset_id=workset["id"],
+                assignments=[{"name": "alice", "issue_ids": ["cn1"]}],
+                created_by="admin", seed=1, reviewers_per_issue=1, overlap_ratio=0,
+            )
+            assignment = database.review_assignment_context(
+                "cn1", model_run_id="", username="bob", work_split_id=task["id"]
+            )
+            self.assertIsNotNone(assignment)
+            self.assertFalse(assignment["assigned"])
+            with self.assertRaisesRegex(PermissionError, "不在该标注任务"):
+                database.create_label_revision(
+                    issue_id="cn1", task_id=task["id"], expected_output="误触发",
+                    tags=[], evidence_gaps=[], rationale="supplement", is_excluded=False,
+                    author="bob", author_source="kylin_ticket", author_verified=True,
+                    expected_previous_revision_id=None,
+                )
+            free = database.create_label_revision(
+                issue_id="cn1", task_id="", expected_output="误触发",
+                tags=[], evidence_gaps=[], rationale="supplement", is_excluded=False,
+                author="bob", author_source="kylin_ticket", author_verified=True,
+                expected_previous_revision_id=None,
+            )
+            self.assertEqual(free["label_case"]["task_id"], "")
+            progress = database.labeling_task_progress(["scope"], [task["id"]])[task["id"]]
+            self.assertEqual(progress["resolved"], 0)
+            self.assertEqual(progress["pending"], 1)
+            self.assertEqual(
+                database.project_issue_label_states("scope", ["cn1"])["cn1"]["state"],
+                "pending",
+            )
+            database.create_label_revision(
+                issue_id="cn1", task_id=task["id"], expected_output="误触发",
+                tags=[], evidence_gaps=[], rationale="assigned", is_excluded=False,
+                author="alice", author_source="kylin_ticket", author_verified=True,
+                expected_previous_revision_id=None,
+            )
+            projected = database.project_issue_label_states("scope", ["cn1"])["cn1"]
+            self.assertEqual(projected["state"], "resolved")
+            self.assertEqual(projected["expected_output"], "误触发")
+
     def test_assignee_filter_scopes_labeling_cases_to_queue(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             database = self.make_db(tmp)

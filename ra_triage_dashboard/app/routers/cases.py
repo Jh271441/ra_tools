@@ -558,14 +558,15 @@ async def list_cases(
 async def review_task_context(split_id: str, request: Request) -> dict[str, Any]:
     identity = await asyncio.to_thread(request_identity, request, settings)
     role = await asyncio.to_thread(database.access_role, identity.username) if identity.verified else ""
-    if not identity.verified or not identity.username:
-        raise _detail(403, "任务上下文需要已验证账号。")
+    if not identity.verified or not identity.username or role not in {"writer", "admin"}:
+        raise _detail(403, "任务上下文需要 Dashboard writer 或管理员权限。")
     try:
         context = await asyncio.to_thread(
             database.review_task_context,
             split_id=_as_text(split_id),
             username=identity.username,
             is_admin=role == "admin",
+            allow_supplemental=role == "writer",
         )
     except PermissionError as exc:
         raise _detail(403, str(exc)) from exc

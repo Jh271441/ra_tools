@@ -30,7 +30,7 @@ from ..support.catalogs import (
 )
 from ..support.common import _as_text, _detail
 from ..support.external_links import _voyager_issue_url
-from ..support.identity import _admin_identity
+from ..support.identity import _admin_identity, _writer_identity
 from ..support.attachments import _store_comment_attachments, _store_review_attachments
 from ..work_split import distribute_issue_ids, normalize_overlap_ratio
 from .case_comments import _public_review_comment
@@ -89,14 +89,7 @@ def _public_label_revision(revision: dict[str, Any]) -> dict[str, Any]:
 
 
 def _labeling_actor(request: Request) -> tuple[str, str, bool]:
-    identity = request_identity(request, settings)
-    role = (
-        database.access_role(identity.username)
-        if identity.verified and identity.username
-        else ""
-    )
-    if not identity.verified or not identity.username or role != "admin":
-        raise _detail(403, "Case 标注内测仅限 Dashboard 管理员。")
+    identity = _writer_identity(request)
     return identity.username, identity.source, True
 
 
@@ -121,6 +114,10 @@ def _snapshot_allow_partial(body: dict[str, Any]) -> bool:
 
 async def _require_labeling_admin(request: Request) -> None:
     await asyncio.to_thread(_admin_identity, request)
+
+
+async def _require_labeling_writer(request: Request):
+    return await asyncio.to_thread(_writer_identity, request)
 
 
 async def _active_labeling_scopes(scopes: list[str]) -> list[str]:
@@ -173,7 +170,7 @@ def _labeling_payload(body: dict[str, Any]) -> dict[str, Any]:
 
 @router.get("/api/labeling/tasks")
 async def list_labeling_tasks(request: Request, baselines: str = "") -> dict[str, Any]:
-    await _require_labeling_admin(request)
+    await _require_labeling_writer(request)
     scopes = resolve_request_baseline_scopes(baselines, request=request)
     scopes = await _active_labeling_scopes(scopes)
     if not scopes:
@@ -328,7 +325,7 @@ async def list_labeling_cases(
     page: int = 1,
     page_size: int = 20,
 ) -> dict[str, Any]:
-    await _require_labeling_admin(request)
+    await _require_labeling_writer(request)
     normalized_status = _as_text(status).lower() or "all"
     if normalized_status not in {"all", "pending", "resolved", "conflict"}:
         raise _detail(400, "标注状态不合法。")
@@ -400,7 +397,7 @@ async def labeling_summary(
     page_size: int = 20,
 ) -> dict[str, Any]:
     from ..labeling_summary import summarize_labeling_cases
-    await _require_labeling_admin(request)
+    await _require_labeling_writer(request)
     scopes = await _active_labeling_scopes(resolve_request_baseline_scopes(baselines, request=request))
     try:
         normalized_task = _as_text(task_id)
@@ -449,7 +446,7 @@ async def list_labeling_clusters(
     exclusion: str = "all",
     label: str = "",
 ) -> dict[str, Any]:
-    await _require_labeling_admin(request)
+    await _require_labeling_writer(request)
     normalized_status = _as_text(status).lower() or "all"
     if normalized_status not in {"all", "pending", "resolved", "conflict"}:
         raise _detail(400, "标注状态不合法。")
@@ -494,12 +491,24 @@ async def get_labeling_case(
     request: Request,
     task_id: str = "",
 ) -> dict[str, Any]:
-    await _require_labeling_admin(request)
+    identity = await _require_labeling_writer(request)
     issue = await _require_active_labeling_issue(issue_id)
     scopes = resolve_request_baseline_scopes("", request=request)
     if scopes and str(issue.get("baseline_scope") or "") not in scopes:
         raise _detail(404, "Issue 不在当前数据集。")
-    cases = await asyncio.to_thread(database.label_cases_for_issue, issue_id, _as_text(task_id))
+    task_key = _as_text(task_id)
+    cases = await asyncio.to_thread(database.label_cases_for_issue, issue_id)
+    assignment = (
+        await asyncio.to_thread(
+            database.review_assignment_context,
+            issue_id,
+            model_run_id="",
+            username=identity.username,
+            work_split_id=task_key,
+        )
+        if task_key
+        else None
+    )
     detailed_cases = []
     for item in cases:
         detail = await asyncio.to_thread(database.get_label_case, item["id"])
@@ -522,7 +531,8 @@ async def get_labeling_case(
         "voyager_issue_url": _voyager_issue_url(issue_id),
         "label_cases": detailed_cases,
         "comments": [_public_label_comment(comment) for comment in comments],
-        "task_id": _as_text(task_id),
+        "task_id": task_key,
+        "current_user_is_task_member": bool(assignment and assignment.get("assigned")),
         "assets": assets,
         "camera": camera,
         "media_status": "pending",
@@ -543,7 +553,7 @@ async def _create_label_comment_record(
     *,
     attachments: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    await _require_labeling_admin(request)
+    await _require_labeling_writer(request)
     issue = await _require_active_labeling_issue(issue_id)
     text = _as_text(body.get("body")).strip()
     if not text:
@@ -702,7 +712,7 @@ async def _create_label_comment_record(
 async def list_labeling_comments(
     issue_id: str, request: Request, task_id: str = "", channel: str = "both"
 ) -> dict[str, Any]:
-    await _require_labeling_admin(request)
+    await _require_labeling_writer(request)
     await _require_active_labeling_issue(issue_id)
     comments = await asyncio.to_thread(
         database.list_label_comments,
@@ -893,7 +903,7 @@ async def create_label_revision_with_attachments(
 
 @router.get("/api/labeling/attachments/{attachment_id}")
 async def get_label_attachment(attachment_id: str, request: Request) -> FileResponse:
-    await _require_labeling_admin(request)
+    await _require_labeling_writer(request)
     attachment = await asyncio.to_thread(database.get_label_attachment, attachment_id)
     if attachment is None:
         raise _detail(404, "标注图片不存在。")

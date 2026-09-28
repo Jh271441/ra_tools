@@ -2311,7 +2311,8 @@ class DatabaseCasesMixin:
         }
 
     def review_task_context(
-        self, *, split_id: str, username: str, is_admin: bool = False
+        self, *, split_id: str, username: str, is_admin: bool = False,
+        allow_supplemental: bool = False,
     ) -> dict[str, Any] | None:
         normalized = str(split_id or "").strip()
         actor = str(username or "").strip().lower()
@@ -2327,7 +2328,7 @@ class DatabaseCasesMixin:
                 "SELECT 1 FROM review_work_assignments WHERE split_id=? AND lower(assignee)=lower(?) LIMIT 1",
                 (normalized, actor),
             ).fetchone() if actor else None
-            if not is_admin and member is None:
+            if not is_admin and not allow_supplemental and member is None:
                 raise PermissionError("当前账号不是该任务成员。")
             scope_rows = conn.execute(
                 """
@@ -2364,6 +2365,7 @@ class DatabaseCasesMixin:
             "model_run_id": run_id,
             "issue_count": issue_count or int(split["total_count"] or 0),
             "current_user_is_member": member is not None,
+            "supplemental_only": member is None,
             "legacy_no_run": not run_id,
             "mode": str(split["mode"] or "single"),
             "created_by": str(split["created_by"] or ""),

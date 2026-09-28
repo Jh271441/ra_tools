@@ -1285,6 +1285,11 @@ html[data-color-theme="light"] .review-mention-avatar { color: #075d6d; backgrou
 .model-review-readonly-copy { min-width: min(100%, 360px); flex: 1 1 360px; display: grid; gap: 2px; }
 .model-review-readonly-copy strong { color: var(--text); font-size: 11px; }
 .model-review-readonly-copy small { color: var(--muted); font-size: 10px; line-height: 1.45; }
+.review-task-supplemental-notice {
+  display: grid; gap: 3px; padding: 9px 10px; border: 1px solid rgba(36,211,239,.28);
+  border-radius: 8px; color: var(--muted); background: var(--accent-soft); font-size: 11px; line-height: 1.45;
+}
+.review-task-supplemental-notice strong { color: var(--text); font-size: 12px; }
 .review-exclude-toggle[hidden],
 .review-attachment-field[hidden] { display: none !important; }
 .review-task-context-error { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }

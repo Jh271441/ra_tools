@@ -46,6 +46,13 @@ const API_GET_TIMEOUT_MS = 6000;
 const API_GET_MAX_ATTEMPTS = 3;
 const API_GET_RETRYABLE_STATUSES = new Set([408, 429, 502, 503, 504]);
 
+function hasDashboardWriteRole() {
+  return Boolean(
+    state.session?.verified
+    && ["writer", "admin"].includes(String(state.session?.access_role || ""))
+  );
+}
+
 function parseFilterList(value) {
   if (Array.isArray(value)) {
     return [

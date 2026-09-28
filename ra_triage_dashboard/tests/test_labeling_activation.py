@@ -78,6 +78,15 @@ class LabelingActivationTest(unittest.IsolatedAsyncioTestCase):
         patches.enter_context(patch.object(
             labeling, "_require_labeling_admin", new=AsyncMock(return_value=None),
         ))
+        patches.enter_context(patch.object(
+            labeling,
+            "_require_labeling_writer",
+            new=AsyncMock(
+                return_value=SimpleNamespace(
+                    username="alice", source="kylin_ticket", verified=True
+                )
+            ),
+        ))
 
     def set_scope(self, scope: str, status: str) -> None:
         self.database.set_labeling_scope_state(
@@ -502,12 +511,14 @@ class LegacyWriteHandoverTest(unittest.IsolatedAsyncioTestCase):
 
 
 class LabelingPreviewAdminTest(unittest.TestCase):
-    def test_case_labeling_page_requires_admin(self) -> None:
+    def test_case_labeling_page_allows_writers_but_task_creation_requires_admin(self) -> None:
         core = (
             Path(__file__).resolve().parents[1] / "app" / "routers" / "core.py"
         ).read_text(encoding="utf-8")
         self.assertIn('@router.get("/case-labeling/new-task", include_in_schema=False)', core)
         self.assertIn("async def case_labeling_page(request: Request)", core)
+        self.assertIn("async def case_labeling_new_task_page(request: Request)", core)
+        self.assertIn("await asyncio.to_thread(_writer_identity, request)", core)
         self.assertIn("await asyncio.to_thread(_admin_identity, request)", core)
 
     def test_labeling_task_creation_applies_selected_cluster(self) -> None:
@@ -516,17 +527,22 @@ class LabelingPreviewAdminTest(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn("cluster=normalized_cluster", router)
 
-    def test_labeling_actor_rejects_writer(self) -> None:
+    def test_labeling_actor_accepts_writer_and_rejects_viewer(self) -> None:
         identity = SimpleNamespace(
             verified=True, username="writer", source="kylin_ticket"
         )
-        with patch.object(labeling, "request_identity", return_value=identity), patch.object(
-            labeling.database, "access_role", return_value="writer"
+        with patch.object(labeling, "_writer_identity", return_value=identity):
+            self.assertEqual(
+                labeling._labeling_actor(SimpleNamespace()),
+                ("writer", "kylin_ticket", True),
+            )
+        with patch.object(
+            labeling, "_writer_identity", side_effect=HTTPException(403, "writer required")
         ):
             with self.assertRaises(HTTPException) as raised:
                 labeling._labeling_actor(SimpleNamespace())
         self.assertEqual(raised.exception.status_code, 403)
-        self.assertIn("管理员", str(raised.exception.detail))
+        self.assertIn("writer", str(raised.exception.detail))
 
 
 class LabelingCommentWriteTest(unittest.IsolatedAsyncioTestCase):
@@ -550,7 +566,7 @@ class LabelingCommentWriteTest(unittest.IsolatedAsyncioTestCase):
             labeling, "_labeling_actor", return_value=("alice", "kylin_ticket", True),
         ))
         patches.enter_context(patch.object(
-            labeling, "_require_labeling_admin", new=AsyncMock(return_value=None),
+            labeling, "_require_labeling_writer", new=AsyncMock(return_value=None),
         ))
         patches.enter_context(patch.object(labeling, "extract_review_mentions", return_value=[]))
         patches.enter_context(patch.object(

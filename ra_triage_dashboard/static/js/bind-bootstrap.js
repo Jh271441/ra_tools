@@ -1117,9 +1117,13 @@ async function bootstrap() {
       initialRoute.page = "review";
       showToast("当前账号没有任务分配管理权限。", true);
     }
-    if (["labeling", "labeling-new-task", "labeling-summary"].includes(initialRoute.page) && !state.session.is_admin) {
+    if (["labeling", "labeling-summary"].includes(initialRoute.page) && !hasDashboardWriteRole()) {
       initialRoute.page = "review";
-      showToast("Case 标注内测仅限管理员。", true);
+      showToast("Case 标注需要 writer 或管理员权限。", true);
+    }
+    if (initialRoute.page === "labeling-new-task" && !state.session.is_admin) {
+      initialRoute.page = "review";
+      showToast("实验分配仅限管理员。", true);
     }
     if (initialRoute.page === "intent-experiments" && !state.session.can_view_intent) {
       initialRoute.page = "review";

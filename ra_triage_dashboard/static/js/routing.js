@@ -1085,8 +1085,8 @@ function showPage(
     }
   }
   if (target === "labeling") {
-    if (!state.session.identity_pending && !state.session.is_admin) {
-      showToast(uiText("Case 标注内测仅限管理员。", "Case labeling preview is admin-only."), true);
+    if (!state.session.identity_pending && !hasDashboardWriteRole()) {
+      showToast(uiText("Case 标注需要 writer 或管理员权限。", "Case labeling requires writer or admin access."), true);
       return showPage("review", { historyMode: historyMode || "replace" });
     }
     if (loadPageData && typeof enterCaseLabeling === "function") {
@@ -1095,7 +1095,7 @@ function showPage(
   }
   if (target === "labeling-new-task") {
     if (!state.session.identity_pending && !state.session.is_admin) {
-      showToast(uiText("Case 标注内测仅限管理员。", "Case labeling preview is admin-only."), true);
+      showToast(uiText("实验分配仅限管理员。", "Experiment assignment requires admin access."), true);
       return showPage("review", { historyMode: historyMode || "replace" });
     }
     if (loadPageData && typeof enterLabelingNewTask === "function") {
@@ -1143,7 +1143,7 @@ function showPage(
       force: true,
     }).catch((error) => showToast(error.message, true));
   }
-  if (target === "labeling-summary" && !state.session.identity_pending && !state.session.is_admin) {
+  if (target === "labeling-summary" && !state.session.identity_pending && !hasDashboardWriteRole()) {
     return showPage("review", { historyMode: "replace" });
   }
   if (target === "labeling-summary" && loadPageData) {

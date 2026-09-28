@@ -16,7 +16,7 @@ from ..support.attachments import (
 )
 from ..support.common import _as_text, _detail
 from ..support.catalogs import _normalise_missing_evidence, _normalise_review_tags, _review_tag_catalog
-from ..support.identity import _action_actor
+from ..support.identity import _action_actor, _writer_identity
 from ..review_workflow import resolve_expected_output
 
 router = APIRouter()
@@ -35,10 +35,7 @@ def _optional_int(value: Any, field: str) -> int | None:
 async def combined_review_context(
     issue_id: str, request: Request, campaign_id: str = "", model_run_id: str = ""
 ) -> dict[str, Any]:
-    identity = await asyncio.to_thread(request_identity, request, settings)
-    role = await asyncio.to_thread(database.access_role, identity.username) if identity.verified else ""
-    if not identity.verified or role != "admin":
-        raise _detail(403, "联合复核需要模型复核与 Case 标注双重写权限。")
+    identity = await asyncio.to_thread(_writer_identity, request)
     try:
         context = await asyncio.to_thread(
             database.combined_review_context,
@@ -66,8 +63,8 @@ async def submit_combined_review(issue_id: str, request: Request) -> dict[str, A
         _action_actor, request, body.get("author")
     )
     role = await asyncio.to_thread(database.access_role, actor) if verified else ""
-    if role != "admin":
-        raise _detail(403, "联合复核需要模型复核与 Case 标注双重写权限。")
+    if role not in {"writer", "admin"}:
+        raise _detail(403, "联合复核需要 Dashboard writer 或管理员权限。")
     tags = body.get("tags") or []
     evidence = body.get("missing_evidence") or []
     if not isinstance(tags, list) or not isinstance(evidence, list):
@@ -121,8 +118,8 @@ async def submit_case_label_from_review(issue_id: str, request: Request) -> dict
         _action_actor, request, body.get("author")
     )
     role = await asyncio.to_thread(database.access_role, actor) if verified else ""
-    if role != "admin":
-        raise _detail(403, "Review 页内 Case 标注需要管理员权限。")
+    if role not in {"writer", "admin"}:
+        raise _detail(403, "Review 页内 Case 标注需要 Dashboard writer 或管理员权限。")
     tags = body.get("tags") or []
     if not isinstance(tags, list):
         raise _detail(400, "tags 必须是数组。")

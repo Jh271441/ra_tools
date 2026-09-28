@@ -398,7 +398,7 @@ class FrontendContractTest(unittest.TestCase):
             self.assertTrue((JS_DIR / name).is_file(), name)
             self.assertIn(f'"{name}"', APP_ENTRY_JS)
         self.assertIn("CACHE_VERSION", APP_ENTRY_JS)
-        self.assertIn("manual-triage-525", APP_ENTRY_JS)
+        self.assertIn("manual-triage-526", APP_ENTRY_JS)
         self.assertIn("function setBaselineScopes", APP_JS)
         self.assertIn("function applyInferredBaselinesFromRun", APP_JS)
         self.assertIn("clearIncompatible: true", APP_JS)
@@ -460,7 +460,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("baselines", APP_JS)
         self.assertIn("/static/js/", APP_ENTRY_JS)
         self.assertIn("script.async = false", APP_ENTRY_JS)
-        self.assertIn("app.js?v=manual-triage-525", INDEX_HTML)
+        self.assertIn("app.js?v=manual-triage-526", INDEX_HTML)
         self.assertIn('"work-split.js"', APP_ENTRY_JS)
         self.assertIn('"review-assignments.js"', APP_ENTRY_JS)
         # Product logic must live in domain modules, not the entry loader.
@@ -630,8 +630,10 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('data-page-target="labeling" data-app-path="/case-labeling"', INDEX_HTML)
         self.assertIn('id="caseLabelingNavButton"', INDEX_HTML)
         self.assertIn('state.config?.case_labeling?.active_baseline_ids', APP_JS)
-        self.assertIn('caseLabelingNav.hidden = !state.session.is_admin', APP_JS)
-        self.assertIn('Case 标注内测仅限管理员', APP_JS)
+        self.assertIn("function hasDashboardWriteRole", APP_JS)
+        self.assertIn('caseLabelingNav.hidden = !canLabelCases', APP_JS)
+        self.assertIn('Case 标注需要 writer 或管理员权限', APP_JS)
+        self.assertIn('labelingExperimentsNav.hidden = !state.session.is_admin', APP_JS)
         self.assertIn('尚未切换到 Case 标注', APP_JS)
         self.assertIn('Case 标注<small class="sidebar-preview-badge">内测</small>', INDEX_HTML)
         self.assertNotIn('#caseLabelingNavButton .sidebar-label strong { display: inline-flex', STYLES_CSS)
@@ -647,6 +649,12 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('"css/case-labeling.css"', INDEX_HTML)
         self.assertIn('/api/labeling/cases', APP_JS)
         self.assertIn('function renderCaseLabelingEditor', APP_JS)
+        self.assertIn("任务外补充标注", APP_JS)
+        self.assertIn("caseLabelingSubmissionTaskId", APP_JS)
+        self.assertIn("current_user_is_task_member", APP_JS)
+        self.assertIn("任务外补充复核", APP_JS)
+        self.assertIn("reviewWorkSplitBinding(caseData);", APP_JS)
+        self.assertNotIn("reviewWorkSplitBinding(caseData) || state.reviewWorkSplitId", APP_JS)
         self.assertIn('此处不填写模型判错原因', APP_JS)
         self.assertIn('class="review-detail-view case-labeling-detail hidden"', INDEX_HTML)
         self.assertIn('renderReviewTagGroups(tagCatalog, chosenTags, tagOption)', APP_JS)
@@ -690,7 +698,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('html[data-color-theme="light"] .issue-id', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .run-source-tab em', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .button-primary', STYLES_CSS)
-        self.assertIn('`${activeBase}/static/${path}?v=manual-triage-525`', INDEX_HTML)
+        self.assertIn('`${activeBase}/static/${path}?v=manual-triage-526`', INDEX_HTML)
         self.assertIn(".review-exclude-toggle { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center;", STYLES_CSS)
         self.assertIn("display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px;", STYLES_CSS)
         self.assertIn("max-height: min(70dvh, 640px); overflow: auto;", STYLES_CSS)
@@ -1034,12 +1042,14 @@ class FrontendContractTest(unittest.TestCase):
             '<button class="button button-primary" id="caseLabelingCreateTask" type="button">',
             INDEX_HTML,
         )
-        # M8c #24: the create-task page supplies the surface its dialog wrapper had.
-        self.assertIn(".case-labeling-newtask-page .dialog-card {", STYLES_CSS)
+        # M8c #24: the standalone page reuses the experiment card surface.
+        self.assertIn(".intent-experiment-create, .intent-experiment-history {", STYLES_CSS)
+        self.assertIn('html[data-color-theme="light"] .intent-experiment-create,', STYLES_CSS)
         self.assertIn('id="labelingTaskCancel"', INDEX_HTML)
-        # M8c #25: the new sidebar group is gated on admin like the nav button.
+        # Writers see labeling/summary; assignment creation remains admin-only.
         self.assertIn("const caseLabelingNavGroup = $(\"#caseLabelingNavGroup\");", APP_JS)
-        self.assertEqual(APP_JS.count("caseLabelingNavGroup.hidden = !state.session"), 2)
+        self.assertIn("caseLabelingNavGroup.hidden = !canLabelCases", APP_JS)
+        self.assertIn("caseLabelingNavGroup.hidden = !hasDashboardWriteRole()", APP_JS)
         # Exactly one paste path per form: Review evidence, Markdown comment
         # composer, and the Case-labeling screenshot zone.
         self.assertIn('// Single form-level paste handler', APP_JS)
@@ -1818,7 +1828,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("function jumpToQueueIndex", APP_JS)
         self.assertIn("function bindDetailQueueIndexJump", APP_JS)
         self.assertIn(".detail-queue-index-input", STYLES_CSS)
-        self.assertIn("manual-triage-525", APP_ENTRY_JS)
+        self.assertIn("manual-triage-526", APP_ENTRY_JS)
     def test_desktop_layout_panels_are_mouse_and_keyboard_resizable(self) -> None:
         self.assertIn('id="sidebarResizer" role="separator"', INDEX_HTML)
         self.assertIn('id="reviewPaneResizer" role="separator"', INDEX_HTML)

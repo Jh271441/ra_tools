@@ -105,6 +105,12 @@ class WorkSplitTest(unittest.TestCase):
                 db.review_task_context(
                     split_id=split["split_id"], username="bob", is_admin=False
                 )
+            supplemental = db.review_task_context(
+                split_id=split["split_id"], username="bob", is_admin=False,
+                allow_supplemental=True,
+            )
+            self.assertFalse(supplemental["current_user_is_member"])
+            self.assertTrue(supplemental["supplemental_only"])
             result = db.list_cases(
                 baseline_scopes=["scope"], work_split_id=split["split_id"],
                 page=1, page_size=10,

@@ -259,7 +259,10 @@ class DatabaseCampaignMixin:
                     assigned_names,
                 ).fetchall()
                 roles = {str(row["username"]): str(row["role"] or "") for row in role_rows}
-                unavailable = [name for name in assigned_names if roles.get(name) != "admin"]
+                unavailable = [
+                    name for name in assigned_names
+                    if roles.get(name) not in {"writer", "admin"}
+                ]
                 if unavailable:
                     raise ValueError("联合复核负责人缺少 Case 标注权限：" + "、".join(unavailable))
         if workset is not None:

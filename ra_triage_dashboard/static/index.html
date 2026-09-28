@@ -79,7 +79,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-525`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-526`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -115,7 +115,7 @@
               <span class="sidebar-group-label sidebar-label labeling-group-label"><span class="ui-lang-zh">Case 标注</span><span class="ui-lang-en">Case labeling</span></span><span class="sidebar-group-chevron" aria-hidden="true"></span>
             </button>
             <div class="sidebar-nav-group-items" id="sidebarNavLabeling" data-sidebar-nav-group-items="labeling">
-              <a class="sidebar-item" id="caseLabelingNavButton" data-page-target="labeling" data-app-path="/case-labeling" href="/case-labeling" title="Case 标注（内测，仅管理员）" hidden>
+              <a class="sidebar-item" id="caseLabelingNavButton" data-page-target="labeling" data-app-path="/case-labeling" href="/case-labeling" title="Case 标注（writer / 管理员）" hidden>
                 <span class="sidebar-icon" aria-hidden="true">
                   <svg viewBox="0 0 24 24" focusable="false"><rect class="icon-wash" x="4" y="3.5" width="16" height="17" rx="3"/><path d="M8 8h8M8 12h8M8 16h5"/><path class="icon-emphasis" d="m14 15 2 2 4-5"/></svg>
                 </span>
@@ -2393,7 +2393,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-525`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-526`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

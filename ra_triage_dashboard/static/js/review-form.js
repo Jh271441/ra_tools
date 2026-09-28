@@ -481,6 +481,14 @@ function renderReview(caseData) {
     .join("");
   const issueTagGroups = renderReviewTagGroups(tagCatalog, chosenTags, tagOption);
   const sourceSuggestionMarkup = issueTagSourceSuggestionMarkup(sourceSuggestion);
+  const taskSupplementalOnly = Boolean(
+    state.reviewWorkSplitId
+    && state.reviewTaskContext
+    && !state.reviewTaskContext.current_user_is_member
+  );
+  const taskSupplementalNotice = taskSupplementalOnly
+    ? `<div class="review-task-supplemental-notice" role="status"><strong>任务外补充复核</strong><span>你未分配到当前任务。本次提交会保存到个人自由复核流，不增加该任务进度；Case 标签仍进入共享一致性判断。</span></div>`
+    : "";
   const noRunModelReviewNotice = `<div class="model-review-readonly-note model-review-run-required" role="status">
     <span class="model-review-readonly-copy">
       <strong><span class="ui-lang-zh">尚未选择 Model Run</span><span class="ui-lang-en">No Model Run selected</span></strong>
@@ -491,6 +499,7 @@ function renderReview(caseData) {
   </div>`;
   $("#reviewPane").innerHTML = `
     <form class="review-form" id="annotationForm" data-issue-id="${escapeHtml(caseData.issue_id)}">
+      ${taskSupplementalNotice}
       <section class="review-section issue-tag-section combined-case-label-card" ${combinedMode ? "" : "hidden"}>
         <div class="review-section-heading"><div><h2><span class="ui-lang-zh">Issue 标签</span><span class="ui-lang-en">Issue tags</span> <small class="combined-mode-badge"><span class="ui-lang-zh">联合复核</span><span class="ui-lang-en">Combined</span></small></h2>${sourceSuggestionMarkup}</div><span class="evidence-summary-count" id="tagSummaryCount">${escapeHtml(t("detail.selected_n", { n: chosenTags.size }))}</span></div>
         <div class="review-tag-groups-shell">${issueTagGroups}${customTagOptions ? `<div class="review-tag-legacy"><span class="ui-lang-zh">历史标签</span><span class="ui-lang-en">Legacy tags</span><div class="review-tag-options">${customTagOptions}</div></div>` : ""}</div>
@@ -728,7 +737,7 @@ function populateCombinedCaseLabel(context, caseData) {
 
 async function loadCombinedReviewContext(caseData) {
   const runId = currentReviewRunId(caseData);
-  const campaignId = reviewWorkSplitBinding(caseData) || state.reviewWorkSplitId || "";
+  const campaignId = reviewWorkSplitBinding(caseData);
   const params = new URLSearchParams();
   if (runId) params.set("model_run_id", runId);
   if (campaignId) params.set("campaign_id", campaignId);
@@ -1388,7 +1397,7 @@ async function saveCombinedReview(event) {
     return;
   }
   const runId = currentReviewRunId(caseData);
-  const campaignId = reviewWorkSplitBinding(caseData) || state.reviewWorkSplitId || "";
+  const campaignId = reviewWorkSplitBinding(caseData);
   const payload = {
     author: $("#annotationAuthor")?.value || state.session?.username || "",
     expected_output: expectedState.selectedValue,

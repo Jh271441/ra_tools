@@ -33,7 +33,7 @@ from ..support.gt_sync import (
     resolve_gt_sync_baseline_ids,
     sync_authoritative_gt,
 )
-from ..support.identity import _action_actor, _admin_identity, _intent_identity
+from ..support.identity import _action_actor, _admin_identity, _intent_identity, _writer_identity
 from ..model_catalog import MODEL_ID_RE
 from ..dchat import dchat_credentials_status
 from ..review_mentions import MAX_REVIEW_MENTIONS, normalize_mention_username
@@ -153,12 +153,22 @@ async def index() -> HTMLResponse:
     )
 
 
-@router.get("/case-labeling", include_in_schema=False)
 @router.get("/case-labeling/new-task", include_in_schema=False)
-async def case_labeling_page(request: Request) -> HTMLResponse:
-    """Serve Case-labeling pages to Dashboard administrators only."""
+async def case_labeling_new_task_page(request: Request) -> HTMLResponse:
+    """Keep assignment creation administrator-only."""
 
     await asyncio.to_thread(_admin_identity, request)
+    return HTMLResponse(
+        content=INDEX_HTML,
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
+
+
+@router.get("/case-labeling", include_in_schema=False)
+async def case_labeling_page(request: Request) -> HTMLResponse:
+    """Serve the free Case-labeling workspace to writers and administrators."""
+
+    await asyncio.to_thread(_writer_identity, request)
     return HTMLResponse(
         content=INDEX_HTML,
         headers={"Cache-Control": "no-store, max-age=0"},

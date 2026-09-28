@@ -70,11 +70,18 @@ class CombinedReviewWorkflowTest(unittest.TestCase):
             idempotency_key=key,
         )
 
-    def test_existing_campaign_defaults_to_model_review_only_and_combined_requires_case_permission(self) -> None:
+    def test_existing_campaign_defaults_to_model_review_only_and_combined_allows_writers(self) -> None:
         ordinary = self.campaign(0, workflow="model_review_only")
         self.assertEqual(ordinary["workflow_mode"], "model_review_only")
-        with self.assertRaisesRegex(ValueError, "缺少 Case 标注权限"):
-            self.campaign(0, assignees=["viewer"])
+        combined = self.campaign(0, assignees=["viewer"])
+        self.assertEqual(combined["workflow_mode"], "model_review_and_case_label")
+        context = self.db.combined_review_context(
+            issue_id="cn1", campaign_id=combined["id"], reviewer="viewer"
+        )
+        result = self.submit(
+            combined, context, reviewer="viewer", key="writer-submit"
+        )
+        self.assertEqual(result["model_review"]["reviewer"], "viewer")
 
     def test_atomic_combined_submission_reuses_vote_across_runs_and_tracks_progress(self) -> None:
         campaign_a = self.campaign(0)

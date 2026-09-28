@@ -214,11 +214,11 @@ function renderReviewTaskContext() {
   if (summary) {
     summary.hidden = !task;
     summary.textContent = task
-      ? `${task.legacy_no_run ? "历史任务" : (task.name || "当前任务")} · ${Number(task.issue_count || 0)} 个 Issue`
+      ? `${task.legacy_no_run ? "历史任务" : (task.name || "当前任务")} · ${Number(task.issue_count || 0)} 个 Issue${task.supplemental_only ? " · 任务外补充" : ""}`
       : "";
     summary.title = task?.legacy_no_run
       ? "历史无 Run 任务，仅查看原分配范围"
-      : task ? `${task.workflow_mode === "model_review_and_case_label" ? "联合复核" : "仅判错复核"} · ${task.id || ""}` : "";
+      : task ? `${task.workflow_mode === "model_review_and_case_label" ? "联合复核" : "仅判错复核"} · ${task.supplemental_only ? "未分配：提交不计任务进度 · " : ""}${task.id || ""}` : "";
   }
   if (exit) exit.hidden = !task || Boolean(state.reviewTaskContextError);
   if (!task) return;
@@ -421,7 +421,7 @@ function syncReviewWorkflowMode(caseData = state.selectedCase) {
   const field = $("#reviewWorkflowModeField");
   if (!select || !field) return effectiveReviewWorkflowMode(caseData);
   const identityPending = Boolean(state.session?.identity_pending);
-  const canCombine = Boolean(state.session?.verified && state.session?.is_admin && state.session?.can_write);
+  const canCombine = hasDashboardWriteRole();
   const locked = Boolean(state.reviewWorkSplitId && caseData?.review_assignment?.split_id === state.reviewWorkSplitId);
   const mode = locked
     ? (caseData.review_assignment.workflow_mode || "model_review_only")
