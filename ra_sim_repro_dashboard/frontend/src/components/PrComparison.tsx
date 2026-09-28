@@ -30,9 +30,7 @@ export function PrComparison({ rows, comparison, mode }: {
   mode: 'same-version' | 'rolling';
 }) {
   const { t } = useTranslation();
-  const [metric, setMetric] = useState<'precision' | 'recall'>('precision');
-  const actualKey = metric === 'precision' ? 'actualPrecision' : 'actualRecall';
-  const simKey = metric === 'precision' ? 'simPrecision' : 'simRecall';
+  const [visibleMetrics, setVisibleMetrics] = useState<Record<'precision' | 'recall', boolean>>({ precision: true, recall: false });
 
   const reason = (row: PrPoint) => {
     if (mode === 'rolling') return t('prRollingMissing');
@@ -57,29 +55,10 @@ export function PrComparison({ rows, comparison, mode }: {
     return reasons.join('；');
   };
 
-  return <div className="space-y-4">
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-muted-foreground">
-        <span className="inline-flex items-center gap-2"><span className="w-7 border-t-[3px]" style={{ borderColor: onlineColor }} />{t('prOnline')}</span>
-        <span className="inline-flex items-center gap-2"><span className="w-7 border-t-[3px] border-dashed" style={{ borderColor: simColor }} />{t('prSimulation')}</span>
-        <span>{t('prHoverHint')}</span>
-      </div>
-      <div className="inline-flex rounded-md border border-border bg-muted/30 p-0.5" role="group" aria-label={t('prMetricSwitch')}>
-        {(['precision', 'recall'] as const).map((value) => (
-          <button
-            key={value}
-            type="button"
-            className={`rounded px-3 py-1.5 text-xs font-semibold transition ${metric === value ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-            aria-pressed={metric === value}
-            onClick={() => setMetric(value)}
-          >
-            {t(value)}
-          </button>
-        ))}
-      </div>
-    </div>
-    {mode === 'rolling' ? <p className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">{t('prRecallDifferent')}</p> : null}
-    <section className="min-w-0 rounded-lg border border-border/70 bg-muted/10 p-3" aria-label={t(metric)}>
+  const renderMetricChart = (metric: 'precision' | 'recall') => {
+    const actualKey = metric === 'precision' ? 'actualPrecision' : 'actualRecall';
+    const simKey = metric === 'precision' ? 'simPrecision' : 'simRecall';
+    return <section key={metric} className="min-w-0 rounded-lg border border-border/70 bg-muted/10 p-3" aria-label={t(metric)}>
       <h3 className="mb-2 text-sm font-semibold">{t(metric)}</h3>
       <div className="overflow-x-auto">
         <div className="h-72 min-w-[680px]">
@@ -109,6 +88,36 @@ export function PrComparison({ rows, comparison, mode }: {
           </ResponsiveContainer>
         </div>
       </div>
-    </section>
+    </section>;
+  };
+
+  return <div className="space-y-4">
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-muted-foreground">
+        <span className="inline-flex items-center gap-2"><span className="w-7 border-t-[3px]" style={{ borderColor: onlineColor }} />{t('prOnline')}</span>
+        <span className="inline-flex items-center gap-2"><span className="w-7 border-t-[3px] border-dashed" style={{ borderColor: simColor }} />{t('prSimulation')}</span>
+        <span>{t('prHoverHint')}</span>
+      </div>
+      <div className="inline-flex rounded-md border border-border bg-muted/30 p-0.5" role="group" aria-label={t('prMetricSwitch')}>
+        {(['precision', 'recall'] as const).map((value) => (
+          <button
+            key={value}
+            type="button"
+            className={`rounded px-3 py-1.5 text-xs font-semibold transition ${visibleMetrics[value] ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+            aria-pressed={visibleMetrics[value]}
+            onClick={() => setVisibleMetrics((current) => {
+              if (current[value] && Object.values(current).filter(Boolean).length === 1) return current;
+              return { ...current, [value]: !current[value] };
+            })}
+          >
+            {t(value)}
+          </button>
+        ))}
+      </div>
+    </div>
+    {mode === 'rolling' ? <p className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">{t('prRecallDifferent')}</p> : null}
+    <div className={visibleMetrics.precision && visibleMetrics.recall ? 'grid gap-4 xl:grid-cols-2' : ''}>
+      {(['precision', 'recall'] as const).filter((value) => visibleMetrics[value]).map(renderMetricChart)}
+    </div>
   </div>;
 }
