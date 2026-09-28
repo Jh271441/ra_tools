@@ -73,6 +73,19 @@ body[data-active-page^="labeling"] .gt-sync-control { margin-left: auto; }
 .case-labeling-history-row { border-top: 1px solid var(--line); padding-top: 8px; }
 .case-labeling-history-row header { display: flex; gap: 8px; justify-content: space-between; flex-wrap: wrap; }
 .case-labeling-adjudication { border-top: 1px solid var(--line); padding-top: 12px; display: grid; gap: 8px; }
+.case-label-decision { display: grid; gap: 10px; padding: 11px; border: 1px solid rgba(36,211,239,.3); border-radius: 9px; background: rgba(36,211,239,.045); }
+.case-label-decision-heading { min-width: 0; display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.case-label-decision-heading > div { min-width: 0; display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px; }
+.case-label-decision-heading strong { color: var(--text); }
+.case-label-decision-heading span, .case-label-decision-heading small { color: var(--muted); font-size: 11px; }
+.case-label-decision-sources { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.case-label-decision-sources li { min-width: 0; display: grid; gap: 3px; padding: 7px 8px; border-left: 2px solid var(--line); background: var(--overlay); }
+.case-label-decision-sources li > div { min-width: 0; display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.case-label-decision-sources li strong { color: var(--text); font-size: 11px; overflow-wrap: anywhere; }
+.case-label-decision-sources li span, .case-label-decision-sources li small { color: var(--muted); font-size: 10px; line-height: 1.45; overflow-wrap: anywhere; }
+.case-label-decision textarea { min-height: 60px; }
+.case-label-decision-blocked { color: var(--warn); font-size: 11px; }
+.case-label-decision > .button { justify-self: start; }
 .case-labeling-supplemental-notice {
   display: grid; gap: 3px; padding: 9px 10px; border: 1px solid rgba(36,211,239,.28);
   border-radius: 8px; color: var(--muted); background: var(--accent-soft); font-size: 11px; line-height: 1.45;

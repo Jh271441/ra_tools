@@ -64,6 +64,12 @@ def summarize_labeling_cases(items, *, page=1, page_size=20):
                 rationales.append(rationale)
             created_at = max(created_at, str(head.get("created_at") or ""))
             is_excluded = is_excluded or bool(head.get("is_excluded"))
+        decision = item.get("decision") or {}
+        decision_rationale = str(decision.get("rationale") or "").strip()
+        if decision_rationale and decision_rationale not in rationales:
+            rationales.insert(0, decision_rationale)
+        if decision:
+            created_at = max(created_at, str(decision.get("created_at") or ""))
         if not heads:
             if item.get("scenario"):
                 scenarios[item["scenario"]] += 1
@@ -95,6 +101,16 @@ def summarize_labeling_cases(items, *, page=1, page_size=20):
                 "is_excluded": is_excluded,
                 "created_at": created_at,
                 "source_count": int(item.get("source_count") or 0),
+                "decision": (
+                    {
+                        "id": int(decision["id"]),
+                        "created_by": str(decision.get("created_by") or ""),
+                        "created_at": str(decision.get("created_at") or ""),
+                        "stale": bool(decision.get("stale")),
+                    }
+                    if decision.get("id") not in (None, "")
+                    else None
+                ),
             }
         )
     compact_items.sort(

@@ -173,6 +173,165 @@ class CaseLabelingTest(unittest.TestCase):
                     actor_verified=True, expected_previous_resolution_id=None,
                 )
 
+    def test_issue_decision_resolves_cross_source_conflict_and_stales_on_change(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            database = self.make_db(tmp)
+            database.set_labeling_scope_state(
+                baseline_scope="scope", status="active", policy_version="test-v1",
+                source_inventory_sha256="a" * 64, updated_by="test",
+            )
+            alice = database.create_label_revision(
+                issue_id="cn1", expected_output="误触发", tags=[], evidence_gaps=[],
+                rationale="alice", is_excluded=False, author="alice",
+                author_source="kylin_ticket", author_verified=True,
+                expected_previous_revision_id=None,
+            )
+            database.create_label_revision(
+                issue_id="cn1", expected_output="正确触发", tags=[], evidence_gaps=[],
+                rationale="bob", is_excluded=False, author="bob",
+                author_source="kylin_ticket", author_verified=True,
+                expected_previous_revision_id=None,
+            )
+            before = database.project_issue_label_states("scope", ["cn1"])["cn1"]
+            self.assertEqual(before["state"], "conflict")
+            decided = database.adjudicate_issue_label(
+                baseline_scope="scope", issue_id="cn1",
+                expected_output="无需协助", rationale="综合证据采用第三个合法标签",
+                actor="carol", actor_source="kylin_ticket", actor_verified=True,
+                expected_source_fingerprint=before["source_fingerprint"],
+                expected_previous_decision_id=None,
+            )
+            state = decided["label_state"]
+            self.assertEqual(state["state"], "resolved")
+            self.assertEqual(state["expected_output"], "无需协助")
+            self.assertEqual(state["method"], "adjudication")
+            self.assertFalse(state["decision"]["stale"])
+            gallery = database.list_labeling_cases(baseline_scopes=["scope"])
+            self.assertEqual(gallery["items"][0]["label_state"], "resolved")
+            self.assertEqual(gallery["items"][0]["expected_output"], "无需协助")
+            candidates = database.label_gt_candidates(["scope"])
+            self.assertEqual(candidates[0]["status"], "ready")
+            self.assertEqual(candidates[0]["decision_id"], decided["decision"]["id"])
+            preview = database.create_label_gt_export_preview(
+                baseline_scopes=["scope"], created_by="carol",
+                created_by_source="kylin_ticket", created_by_verified=True,
+            )
+            self.assertEqual(preview["items"][0]["decision_id"], decided["decision"]["id"])
+            workset = database.create_review_workset(
+                baseline_scope="scope", issue_ids=["cn1"], created_by="carol",
+            )
+            snapshot = database.create_label_result_snapshot(
+                workset_id=workset["id"], created_by="carol",
+                created_by_source="kylin_ticket", created_by_verified=True,
+            )
+            snapshot_detail = database.get_label_result_snapshot(
+                snapshot["id"], include_items=True
+            )
+            self.assertEqual(
+                snapshot_detail["items"][0]["decision_id"],
+                decided["decision"]["id"],
+            )
+            database.create_label_revision(
+                issue_id="cn1", expected_output="无需协助", tags=[], evidence_gaps=[],
+                rationale="alice changed", is_excluded=False, author="alice",
+                author_source="kylin_ticket", author_verified=True,
+                expected_previous_revision_id=alice["id"],
+            )
+            stale = database.project_issue_label_states("scope", ["cn1"])["cn1"]
+            self.assertEqual(stale["state"], "stale")
+            self.assertTrue(stale["decision"]["stale"])
+            self.assertEqual(
+                database.list_labeling_cases(baseline_scopes=["scope"])["items"][0]["label_state"],
+                "conflict",
+            )
+            self.assertEqual(database.validate_label_gt_export_batch(preview["id"])["status"], "stale")
+            refreshed = database.adjudicate_issue_label(
+                baseline_scope="scope", issue_id="cn1", expected_output="无需协助",
+                rationale="来源变化后重新确认", actor="carol",
+                actor_source="kylin_ticket", actor_verified=True,
+                expected_source_fingerprint=stale["source_fingerprint"],
+                expected_previous_decision_id=decided["decision"]["id"],
+            )
+            self.assertEqual(
+                refreshed["decision"]["supersedes_id"], decided["decision"]["id"]
+            )
+            self.assertEqual(refreshed["label_state"]["state"], "resolved")
+
+    def test_issue_decision_rejects_incomplete_task_sources(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            database = self.make_db(tmp)
+            database.set_labeling_scope_state(
+                baseline_scope="scope", status="active", policy_version="test-v1",
+                source_inventory_sha256="a" * 64, updated_by="test",
+            )
+            assignments = distribute_issue_ids(
+                ["cn1"], [{"name": "alice"}, {"name": "bob"}],
+                seed=1, reviewers_per_issue=2,
+            )
+            split = database.apply_work_split(
+                assignments=assignments, created_by="admin", reviewers_per_issue=2,
+            )
+            workset = database.create_review_workset(
+                baseline_scope="scope", issue_ids=["cn1"], created_by="admin",
+            )
+            database.bind_labeling_task(task_id=split["split_id"], workset_id=workset["id"])
+            database.create_label_revision(
+                issue_id="cn1", task_id=split["split_id"], expected_output="误触发",
+                tags=[], evidence_gaps=[], rationale="only alice", is_excluded=False,
+                author="alice", author_source="kylin_ticket", author_verified=True,
+                expected_previous_revision_id=None,
+            )
+            state = database.project_issue_label_states("scope", ["cn1"])["cn1"]
+            with self.assertRaisesRegex(ValueError, "任务来源未完成或未裁决"):
+                database.adjudicate_issue_label(
+                    baseline_scope="scope", issue_id="cn1", expected_output="误触发",
+                    rationale="cannot skip bob", actor="carol",
+                    actor_source="kylin_ticket", actor_verified=True,
+                    expected_source_fingerprint=state["source_fingerprint"],
+                    expected_previous_decision_id=None,
+                )
+
+    def test_issue_decision_resolves_conflicting_completed_tasks(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            database = self.make_db(tmp)
+            database.set_labeling_scope_state(
+                baseline_scope="scope", status="active", policy_version="test-v1",
+                source_inventory_sha256="a" * 64, updated_by="test",
+            )
+            task_ids = []
+            for index, (author, output) in enumerate(
+                (("alice", "误触发"), ("bob", "正确触发")), 1
+            ):
+                workset = database.create_review_workset(
+                    baseline_scope="scope", issue_ids=["cn1"],
+                    name=f"task-{index}", created_by="admin",
+                )
+                task = database.create_labeling_task(
+                    workset_id=workset["id"],
+                    assignments=[{"name": author, "issue_ids": ["cn1"]}],
+                    created_by="admin", seed=index,
+                    reviewers_per_issue=1, overlap_ratio=0,
+                )
+                task_ids.append(task["id"])
+                database.create_label_revision(
+                    issue_id="cn1", task_id=task["id"], expected_output=output,
+                    tags=[], evidence_gaps=[], rationale=author, is_excluded=False,
+                    author=author, author_source="kylin_ticket", author_verified=True,
+                    expected_previous_revision_id=None,
+                )
+            state = database.project_issue_label_states("scope", ["cn1"])["cn1"]
+            self.assertEqual(state["state"], "conflict")
+            self.assertEqual(state["source_task_ids"], sorted(task_ids))
+            decided = database.adjudicate_issue_label(
+                baseline_scope="scope", issue_id="cn1", expected_output="误触发",
+                rationale="跨任务采用 task-1 结论", actor="carol",
+                actor_source="kylin_ticket", actor_verified=True,
+                expected_source_fingerprint=state["source_fingerprint"],
+                expected_previous_decision_id=None,
+            )
+            self.assertEqual(decided["label_state"]["state"], "resolved")
+            self.assertEqual(decided["label_state"]["expected_output"], "误触发")
+
     def test_gt_export_preview_detects_source_or_gt_changes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             database = self.make_db(tmp)

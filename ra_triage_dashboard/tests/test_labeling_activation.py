@@ -129,6 +129,28 @@ class LabelingActivationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([case["issue_id"] for case in cases["items"]], ["cn-active"])
         self.assertEqual([item["issue_id"] for item in candidates["items"]], ["cn-active"])
 
+    async def test_issue_decision_api_persists_versioned_decision(self) -> None:
+        state = self.database.project_issue_label_states(
+            "active", ["cn-active"]
+        )["cn-active"]
+        response = await labeling.adjudicate_issue_label(
+            "cn-active",
+            self.request(
+                {
+                    "expected_output": "误触发",
+                    "rationale": "API 裁决依据",
+                    "expected_source_fingerprint": state["source_fingerprint"],
+                    "expected_previous_decision_id": None,
+                }
+            ),
+        )
+        self.assertEqual(response["label_state"]["state"], "resolved")
+        self.assertEqual(response["decision"]["created_by"], "alice")
+        history = await labeling.list_issue_label_decisions(
+            "cn-active", self.request()
+        )
+        self.assertEqual(history["count"], 1)
+
     async def test_task_id_cannot_bypass_active_dataset_selection(self) -> None:
         for selected_scope in ("active", "shadow"):
             with self.subTest(selected_scope=selected_scope):

@@ -35,7 +35,10 @@
 0522、0626、0821 的历史 Review 可通过幂等迁移工具映射为标注版本，原
 annotation/comment 保留；0821 的 200/150/150 三个批次恢复为标注任务并保留选样
 Run。显式裁决引用精确人员 heads，writer/admin 均可执行；GT 更新导出会先固定
-候选来源并在下载前重新校验。设计与迁移细节见
+候选来源并在下载前重新校验。任务内裁决先形成各任务自己的结果；跨任务或自由
+标注冲突由 append-only Issue Decision 统一裁决，并绑定当时全部来源 revision
+指纹。来源变化只会把当前 Decision 标为 stale，不改写历史 Label snapshot 或
+GT 导出批次。设计与迁移细节见
 [`docs/review-labeling-redesign-plan.md`](docs/review-labeling-redesign-plan.md) 和
 [`docs/dataset-migration-and-labeling-ui-design.md`](docs/dataset-migration-and-labeling-ui-design.md)。
 

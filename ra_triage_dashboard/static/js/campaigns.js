@@ -904,7 +904,7 @@ function renderLabelSummaryFilters(tasks, data) {
   renderLabelSummaryPicker("#labelSummaryTaskPicker", taskOptions, labelSummaryFilters.taskId);
   renderLabelSummaryPicker("#labelSummaryStatusPicker", [
     { value: "all", label: "全部状态" }, { value: "resolved", label: "已形成结论" },
-    { value: "pending", label: "待形成结论" }, { value: "conflict", label: "有冲突" },
+    { value: "pending", label: "待形成结论" }, { value: "conflict", label: "待裁决 / 需确认" },
   ], labelSummaryFilters.status);
   renderLabelSummaryPicker("#labelSummaryAuthorPicker", labelerOptions, labelSummaryFilters.author);
   renderLabelSummaryPicker("#labelSummaryAssigneePicker", assigneeOptions, labelSummaryFilters.assignee);
@@ -924,7 +924,7 @@ function labelSummaryStatusItems(data) {
   return [
     { key: "resolved", cssKey: "completed", label: "已形成结论", count: Number(counts.resolved || 0), description: "多来源聚合后已形成唯一结论" },
     { key: "pending", cssKey: "pending", label: "待形成结论", count: Number(counts.pending || 0), description: "已有提交，但还没有形成唯一结论" },
-    { key: "conflict", cssKey: "blocked_by_label", label: "有冲突", count: Number(counts.conflict || 0), description: "当前来源之间存在冲突或过期裁决" },
+    { key: "conflict", cssKey: "blocked_by_label", label: "待裁决 / 需确认", count: Number(counts.conflict || 0), description: "当前来源之间存在冲突或 Issue 裁决已过期" },
   ];
 }
 
@@ -988,12 +988,16 @@ function labelSummaryClusterPanels(data) {
 function labelSummaryCaseMarkup(item) {
   const issueId = String(item.issue_id || "");
   const scene = item.title || item.scenario || "未记录场景";
-  const status = ({ resolved: "已形成结论", pending: "待形成结论", conflict: "有冲突" })[item.label_state] || "待形成结论";
+  const status = ({ resolved: "已形成结论", pending: "待形成结论", conflict: "待裁决 / 需确认" })[item.label_state] || "待形成结论";
   const rationales = item.rationales || [];
   const tags = (item.tags || []).map((key) => `<span class="analysis-chip tag-chip">${escapeHtml(tagLabel(key))}</span>`).join("");
   const evidence = (item.evidence_gaps || []).map((key) => `<span class="analysis-chip evidence-chip">${escapeHtml(evidenceLabel(key))}</span>`).join("");
   const detailUrl = labelSummaryCaseUrl({ issue: issueId });
-  return `<article class="analysis-case-row label-summary-case-row"><div class="analysis-case-identity"><a class="analysis-issue-link" href="${escapeHtml(detailUrl)}">${escapeHtml(issueId)}</a><span title="${escapeHtml(scene)}">${escapeHtml(scene)}</span></div><div class="analysis-case-labels"><span>GT ${labelBadge(item.gt_label)}</span><span>标注 ${labelBadge(item.expected_output, "待形成")}</span><span>${escapeHtml(status)}</span>${item.is_excluded ? '<span class="analysis-comparison-badge comparison-none">问题排除</span>' : ""}</div><div class="analysis-case-reason"><strong class="${rationales.length ? "" : "reason-empty"}">${escapeHtml(rationales[0] || "未填写标注依据")}</strong>${rationales.slice(1).map((reason) => `<p>${escapeHtml(reason)}</p>`).join("")}<div class="analysis-chip-list">${tags}${evidence}</div></div><div class="analysis-case-meta"><span>${escapeHtml((item.authors || []).join("、") || "未记录标注人")}</span><span>${Number(item.source_count || 0)} 个来源${item.created_at ? ` · ${escapeHtml(formatTime(item.created_at))}` : ""}</span><span class="analysis-case-actions"><a class="text-link" href="${escapeHtml(detailUrl)}">Case 详情</a></span></div></article>`;
+  const decision = item.decision
+    ? `<span class="analysis-comparison-badge ${item.decision.stale ? "comparison-none" : "comparison-match"}">${item.decision.stale ? "裁决需确认" : `Issue 裁决 #${escapeHtml(item.decision.id)}`}</span>`
+    : "";
+  const actionLabel = item.label_state === "conflict" ? "进入裁决" : "Case 详情";
+  return `<article class="analysis-case-row label-summary-case-row"><div class="analysis-case-identity"><a class="analysis-issue-link" href="${escapeHtml(detailUrl)}">${escapeHtml(issueId)}</a><span title="${escapeHtml(scene)}">${escapeHtml(scene)}</span></div><div class="analysis-case-labels"><span>GT ${labelBadge(item.gt_label)}</span><span>标注 ${labelBadge(item.expected_output, "待形成")}</span><span>${escapeHtml(status)}</span>${decision}${item.is_excluded ? '<span class="analysis-comparison-badge comparison-none">问题排除</span>' : ""}</div><div class="analysis-case-reason"><strong class="${rationales.length ? "" : "reason-empty"}">${escapeHtml(rationales[0] || "未填写标注依据")}</strong>${rationales.slice(1).map((reason) => `<p>${escapeHtml(reason)}</p>`).join("")}<div class="analysis-chip-list">${tags}${evidence}</div></div><div class="analysis-case-meta"><span>${escapeHtml((item.authors || []).join("、") || "未记录标注人")}</span><span>${Number(item.source_count || 0)} 个来源${item.created_at ? ` · ${escapeHtml(formatTime(item.created_at))}` : ""}</span><span class="analysis-case-actions"><a class="text-link" href="${escapeHtml(detailUrl)}">${actionLabel}</a></span></div></article>`;
 }
 
 function renderLabelingSummary(data) {

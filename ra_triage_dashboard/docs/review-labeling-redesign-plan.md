@@ -29,6 +29,14 @@ P1/P2 的主体能力已经提交、发布并完成生产迁移：
 
 当前优先级应从“继续补 Case 标注页面”转为：先把 Issue 标签状态接回所有 Run 视图，再拆模型复核，最后补齐任务 Campaign 与 Runs 合集。
 
+### Issue 级裁决补充（2026-09-28）
+
+- 任务内 `label_resolutions` 继续负责单个 Label Case 的人员共识/裁决；任务缺交或任务内冲突必须先在任务范围解决。
+- 新增 append-only `issue_label_decisions`，位于任务结果和自由标注来源之上，解决跨任务/自由来源的共享标签冲突。裁决绑定当时全部来源 Case、revision IDs 和 source fingerprint；任一来源变化后当前裁决自动变为 `stale`。
+- `/labeling-summary` 的 `conflict` 切片作为待裁决/需确认队列；Case 详情展示全部来源和裁决依据，writer/admin 可选择三分类结果并追加新裁决版本。
+- GT 更新候选和 Label result snapshot 只消费当前有效的 Issue Decision 或无冲突的自动聚合，并固定 Decision ID 与底层 revision IDs；已经冻结的历史导出/快照不被后续来源变化改写。
+- 本轮仍保留“所有当前来源自动参加共享聚合”的兼容策略；自由证据池的显式采纳/不采纳是后续独立能力，不能伪装成本轮已经完成。
+
 ## 1. 本次要达成的结果
 
 用户在工作台完成两类工作：

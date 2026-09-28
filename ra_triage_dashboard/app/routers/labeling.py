@@ -518,6 +518,18 @@ async def get_labeling_case(
         issue_id=issue_id,
         task_id=_as_text(task_id),
     )
+    label_state = await asyncio.to_thread(
+        database.project_issue_label_states,
+        str(issue.get("baseline_scope") or ""),
+        [issue_id],
+        include_sources=True,
+        preloaded_cases={issue_id: cases},
+    )
+    decision_history = await asyncio.to_thread(
+        database.list_issue_label_decisions,
+        baseline_scope=str(issue.get("baseline_scope") or ""),
+        issue_id=issue_id,
+    )
     assets, camera = empty_case_media(issue_id)
     return {
         "issue_id": issue_id,
@@ -533,9 +545,69 @@ async def get_labeling_case(
         "comments": [_public_label_comment(comment) for comment in comments],
         "task_id": task_key,
         "current_user_is_task_member": bool(assignment and assignment.get("assigned")),
+        "label_state": label_state.get(issue_id) or {},
+        "decision_history": decision_history,
         "assets": assets,
         "camera": camera,
         "media_status": "pending",
+    }
+
+
+@router.get("/api/labeling/issues/{issue_id}/decisions")
+async def list_issue_label_decisions(issue_id: str, request: Request) -> dict[str, Any]:
+    await _require_labeling_writer(request)
+    issue = await _require_active_labeling_issue(issue_id)
+    items = await asyncio.to_thread(
+        database.list_issue_label_decisions,
+        baseline_scope=str(issue.get("baseline_scope") or ""),
+        issue_id=issue_id,
+    )
+    return {"items": items, "count": len(items)}
+
+
+@router.post("/api/labeling/issues/{issue_id}/decisions")
+async def adjudicate_issue_label(issue_id: str, request: Request) -> dict[str, Any]:
+    actor, actor_source, actor_verified = await asyncio.to_thread(
+        _labeling_actor, request
+    )
+    issue = await _require_active_labeling_issue(issue_id)
+    try:
+        body = await request.json()
+    except (TypeError, ValueError) as exc:
+        raise _detail(400, "Issue 标签裁决请求必须是 JSON 对象。") from exc
+    if not isinstance(body, dict):
+        raise _detail(400, "Issue 标签裁决请求必须是 JSON 对象。")
+    raw_previous = body.get("expected_previous_decision_id")
+    try:
+        expected_previous = (
+            None if raw_previous in (None, "", 0, "0") else int(raw_previous)
+        )
+    except (TypeError, ValueError) as exc:
+        raise _detail(400, "expected_previous_decision_id 不合法。") from exc
+    try:
+        result = await asyncio.to_thread(
+            database.adjudicate_issue_label,
+            baseline_scope=str(issue.get("baseline_scope") or ""),
+            issue_id=issue_id,
+            expected_output=_as_text(body.get("expected_output")),
+            rationale=_as_text(body.get("rationale")),
+            actor=actor,
+            actor_source=actor_source,
+            actor_verified=actor_verified,
+            expected_source_fingerprint=_as_text(
+                body.get("expected_source_fingerprint")
+            ),
+            expected_previous_decision_id=expected_previous,
+        )
+    except LabelAnnotationConflictError as exc:
+        raise _detail(409, str(exc)) from exc
+    except PermissionError as exc:
+        raise _detail(403, str(exc)) from exc
+    except ValueError as exc:
+        raise _detail(400, str(exc)) from exc
+    return {
+        **result,
+        "change_revision": await asyncio.to_thread(database.change_revision),
     }
 
 

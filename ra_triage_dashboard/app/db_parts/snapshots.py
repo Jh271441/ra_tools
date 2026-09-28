@@ -851,6 +851,12 @@ class DatabaseSnapshotMixin:
             ):
                 raise ValueError(f"resolved Label projection has no revision sources: {issue_id}")
             provenance_by_issue[issue_id] = provenance
+            decision = projection.get("decision") or {}
+            decision_id = (
+                int(decision["id"])
+                if decision.get("id") not in (None, "") and not decision.get("stale")
+                else None
+            )
             counts[state] += 1
             content_items.append(
                 [
@@ -860,6 +866,7 @@ class DatabaseSnapshotMixin:
                     method,
                     gt_relation,
                     provenance,
+                    decision_id,
                 ]
             )
         unresolved_states = {"none", "pending", "conflict", "stale"}
@@ -924,8 +931,8 @@ class DatabaseSnapshotMixin:
                 """
                 INSERT INTO label_result_snapshot_items (
                     snapshot_id, baseline_scope, issue_id, ordinal, state,
-                    expected_output, method, gt_relation
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    expected_output, method, gt_relation, decision_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
                     (
@@ -937,6 +944,7 @@ class DatabaseSnapshotMixin:
                         item[2] or None,
                         item[3],
                         item[4],
+                        item[6],
                     )
                     for ordinal, item in enumerate(content_items, 1)
                 ],
@@ -1005,7 +1013,8 @@ class DatabaseSnapshotMixin:
                 total = int(total_row["total"] or 0)
                 items = conn.execute(
                     """
-                    SELECT issue_id, ordinal, state, expected_output, method, gt_relation
+                    SELECT issue_id, ordinal, state, expected_output, method,
+                           gt_relation, decision_id
                     FROM label_result_snapshot_items WHERE snapshot_id = ?
                     ORDER BY ordinal LIMIT ? OFFSET ?
                     """,
@@ -1019,6 +1028,11 @@ class DatabaseSnapshotMixin:
                         "expected_output": str(item["expected_output"] or ""),
                         "method": str(item["method"]),
                         "gt_relation": str(item["gt_relation"] or "unknown"),
+                        "decision_id": (
+                            int(item["decision_id"])
+                            if item["decision_id"] not in (None, "")
+                            else None
+                        ),
                     }
                     for item in items
                 ]

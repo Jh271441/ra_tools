@@ -1354,6 +1354,31 @@ class DatabaseCoreMixin:
                 CREATE INDEX IF NOT EXISTS idx_label_resolutions_case
                     ON label_resolutions(label_case_id, id DESC);
 
+                CREATE TABLE IF NOT EXISTS issue_label_decisions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    baseline_scope TEXT NOT NULL,
+                    issue_id TEXT NOT NULL REFERENCES issues(issue_id) ON DELETE RESTRICT,
+                    expected_output TEXT NOT NULL CHECK(expected_output IN ('误触发', '正确触发', '无需协助')),
+                    source_case_ids_json TEXT NOT NULL DEFAULT '[]',
+                    source_revision_ids_json TEXT NOT NULL DEFAULT '[]',
+                    source_fingerprint TEXT NOT NULL,
+                    rationale TEXT NOT NULL DEFAULT '',
+                    supersedes_id INTEGER REFERENCES issue_label_decisions(id) ON DELETE RESTRICT,
+                    created_by TEXT NOT NULL DEFAULT '',
+                    created_by_source TEXT NOT NULL DEFAULT 'legacy',
+                    created_by_verified INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    UNIQUE(id, baseline_scope, issue_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_issue_label_decisions_scope_issue
+                    ON issue_label_decisions(baseline_scope, issue_id, id DESC);
+                CREATE TRIGGER IF NOT EXISTS trg_issue_label_decisions_no_update
+                    BEFORE UPDATE ON issue_label_decisions
+                    BEGIN SELECT RAISE(ABORT, 'Issue label decisions are append-only'); END;
+                CREATE TRIGGER IF NOT EXISTS trg_issue_label_decisions_no_delete
+                    BEFORE DELETE ON issue_label_decisions
+                    BEGIN SELECT RAISE(ABORT, 'Issue label decisions are append-only'); END;
+
                 CREATE TABLE IF NOT EXISTS label_migration_map (
                     source_table TEXT NOT NULL,
                     source_id TEXT NOT NULL,
@@ -1396,6 +1421,7 @@ class DatabaseCoreMixin:
                     expected_output TEXT NOT NULL,
                     source_revision_ids_json TEXT NOT NULL DEFAULT '[]',
                     source_fingerprint TEXT NOT NULL,
+                    decision_id INTEGER REFERENCES issue_label_decisions(id) ON DELETE RESTRICT,
                     reconcile_status TEXT NOT NULL DEFAULT 'not_checked'
                         CHECK(reconcile_status IN ('not_checked', 'matched', 'not_applied', 'changed_again', 'error')),
                     reconciled_snapshot_id TEXT REFERENCES gt_snapshots(id) ON DELETE RESTRICT,
@@ -1438,6 +1464,7 @@ class DatabaseCoreMixin:
                     method TEXT NOT NULL CHECK(method IN ('single', 'consensus', 'adjudication')),
                     gt_relation TEXT NOT NULL DEFAULT 'unknown'
                         CHECK(gt_relation IN ('matches_gt', 'differs_from_gt', 'fills_missing_gt', 'unknown')),
+                    decision_id INTEGER REFERENCES issue_label_decisions(id) ON DELETE RESTRICT,
                     PRIMARY KEY(snapshot_id, issue_id),
                     UNIQUE(snapshot_id, ordinal),
                     FOREIGN KEY(snapshot_id, baseline_scope)
@@ -2172,6 +2199,7 @@ class DatabaseCoreMixin:
                 "label_revisions",
                 "label_attachments",
                 "label_resolutions",
+                "issue_label_decisions",
                 "label_migration_map",
                 "label_gt_export_batches",
                 "label_gt_export_items",
@@ -2237,6 +2265,8 @@ class DatabaseCoreMixin:
             self._ensure_column(conn, "run_evaluation_items", "shared_label_method", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(conn, "run_evaluation_items", "shared_label_source_json", "TEXT NOT NULL DEFAULT '{}'")
             self._ensure_column(conn, "run_evaluation_items", "shared_label_sha256", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "label_result_snapshot_items", "decision_id", "INTEGER REFERENCES issue_label_decisions(id)")
+            self._ensure_column(conn, "label_gt_export_items", "decision_id", "INTEGER REFERENCES issue_label_decisions(id)")
             self._ensure_column(conn, "annotations", "review_status", "TEXT NOT NULL DEFAULT 'pending'")
             self._ensure_column(conn, "annotations", "model_run_id", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(conn, "annotations", "work_split_id", "TEXT NOT NULL DEFAULT ''")

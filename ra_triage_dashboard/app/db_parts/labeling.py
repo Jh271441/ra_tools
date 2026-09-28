@@ -56,6 +56,31 @@ def _issue_label_gt_relation(expected_output: Any, gt_label: Any) -> str:
     return "unknown"
 
 
+def _issue_decision_source_payload(
+    sources: Sequence[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Return the stable source facts an Issue-level decision is bound to."""
+
+    payload = [
+        {
+            "label_case_id": str(source.get("label_case_id") or ""),
+            "task_id": str(source.get("task_id") or ""),
+            "state": str(source.get("state") or "pending"),
+            "expected_output": str(source.get("expected_output") or ""),
+            "method": str(source.get("method") or "single"),
+            "assigned_count": int(source.get("assigned_count") or 0),
+            "submitted_count": int(source.get("submitted_count") or 0),
+            "resolution_id": source.get("resolution_id"),
+            "source_revision_ids": sorted(
+                int(value) for value in source.get("source_revision_ids") or []
+            ),
+        }
+        for source in sources
+        if str(source.get("label_case_id") or "")
+    ]
+    return sorted(payload, key=lambda item: (item["task_id"], item["label_case_id"]))
+
+
 def _parse_labeling_cluster(value: Any) -> tuple[str, str] | tuple[str, str, str] | None:
     raw = str(value or "").strip()
     if not raw:
@@ -851,6 +876,178 @@ class DatabaseLabelingMixin:
             "adjudication": adjudication,
         }
 
+    @staticmethod
+    def _issue_label_decision_dict(row: Any) -> dict[str, Any]:
+        return {
+            "id": int(row["id"]),
+            "baseline_scope": str(row["baseline_scope"] or ""),
+            "issue_id": str(row["issue_id"] or ""),
+            "expected_output": str(row["expected_output"] or ""),
+            "source_case_ids": [
+                str(value) for value in _json_load(row["source_case_ids_json"], [])
+            ],
+            "source_revision_ids": [
+                int(value) for value in _json_load(row["source_revision_ids_json"], [])
+            ],
+            "source_fingerprint": str(row["source_fingerprint"] or ""),
+            "rationale": str(row["rationale"] or ""),
+            "supersedes_id": (
+                int(row["supersedes_id"])
+                if row["supersedes_id"] not in (None, "")
+                else None
+            ),
+            "created_by": str(row["created_by"] or ""),
+            "created_by_source": str(row["created_by_source"] or "legacy"),
+            "created_by_verified": bool(row["created_by_verified"]),
+            "created_at": str(row["created_at"] or ""),
+        }
+
+    def list_issue_label_decisions(
+        self, *, baseline_scope: str, issue_id: str
+    ) -> list[dict[str, Any]]:
+        scope = str(baseline_scope or "").strip()
+        issue_key = str(issue_id or "").strip()
+        if not scope or not issue_key:
+            return []
+        with self.connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM issue_label_decisions "
+                "WHERE baseline_scope = ? AND issue_id = ? ORDER BY id DESC",
+                (scope, issue_key),
+            ).fetchall()
+        return [self._issue_label_decision_dict(row) for row in rows]
+
+    def adjudicate_issue_label(
+        self,
+        *,
+        baseline_scope: str,
+        issue_id: str,
+        expected_output: str,
+        rationale: str,
+        actor: str,
+        actor_source: str,
+        actor_verified: bool,
+        expected_source_fingerprint: str,
+        expected_previous_decision_id: int | None = None,
+    ) -> dict[str, Any]:
+        scope = str(baseline_scope or "").strip()
+        issue_key = str(issue_id or "").strip()
+        output = str(expected_output or "").strip()
+        explanation = str(rationale or "").strip()
+        reviewer = str(actor or "").strip().lower()
+        if not actor_verified or not reviewer:
+            raise PermissionError("Issue 标签裁决需要已验证 writer 或管理员。")
+        if output not in LABELS:
+            raise ValueError("Issue 标签裁决必须选择合法三分类结果。")
+        if not explanation:
+            raise ValueError("Issue 标签裁决必须填写裁决依据。")
+        if len(explanation) > 8000:
+            raise ValueError("裁决依据不能超过 8000 个字符。")
+        with self._write_lock, self.connect() as conn:
+            issue_sql = (
+                "SELECT issue_id, baseline_scope FROM issues "
+                "WHERE issue_id = ? AND baseline_scope = ?"
+            )
+            if self.backend == "postgresql":
+                issue_sql += " FOR UPDATE"
+            issue = conn.execute(issue_sql, (issue_key, scope)).fetchone()
+            if issue is None:
+                raise ValueError("Issue 不存在或不属于当前数据集。")
+            active = conn.execute(
+                "SELECT status FROM labeling_scope_state WHERE baseline_scope = ?",
+                (scope,),
+            ).fetchone()
+            if active is None or str(active["status"] or "") != "active":
+                raise PermissionError("当前数据集尚未启用 Case 标注写入。")
+            projection = self.project_issue_label_states(
+                scope, [issue_key], include_sources=True, connection=conn
+            )[issue_key]
+            sources = list(projection.get("sources") or [])
+            if not sources:
+                raise ValueError("当前 Issue 还没有可裁决的标注来源。")
+            incomplete = [
+                source for source in sources
+                if source.get("task_id")
+                and str(source.get("state") or "pending") != "resolved"
+            ]
+            if incomplete:
+                raise ValueError(
+                    "仍有任务来源未完成或未裁决，不能跳过任务结果直接做 Issue 裁决。"
+                )
+            source_fingerprint = str(projection.get("source_fingerprint") or "")
+            if not source_fingerprint or source_fingerprint != str(
+                expected_source_fingerprint or ""
+            ):
+                raise LabelAnnotationConflictError(
+                    "标注来源已变化，请刷新后重新裁决。"
+                )
+            previous_row = conn.execute(
+                "SELECT * FROM issue_label_decisions "
+                "WHERE baseline_scope = ? AND issue_id = ? ORDER BY id DESC LIMIT 1",
+                (scope, issue_key),
+            ).fetchone()
+            previous_id = int(previous_row["id"]) if previous_row is not None else None
+            if previous_id != expected_previous_decision_id:
+                raise LabelAnnotationConflictError(
+                    "Issue 标签裁决已变化，请刷新后重新提交。"
+                )
+            source_case_ids = sorted(
+                str(source.get("label_case_id") or "") for source in sources
+                if str(source.get("label_case_id") or "")
+            )
+            source_revision_ids = sorted(
+                {
+                    int(value)
+                    for source in sources
+                    for value in source.get("source_revision_ids") or []
+                }
+            )
+            now = utc_now()
+            sql = """
+                INSERT INTO issue_label_decisions (
+                    baseline_scope, issue_id, expected_output,
+                    source_case_ids_json, source_revision_ids_json,
+                    source_fingerprint, rationale, supersedes_id,
+                    created_by, created_by_source, created_by_verified, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """
+            if self.backend == "postgresql":
+                sql += " RETURNING id"
+            cursor = conn.execute(
+                sql,
+                (
+                    scope,
+                    issue_key,
+                    output,
+                    _json(source_case_ids),
+                    _json(source_revision_ids),
+                    source_fingerprint,
+                    explanation,
+                    previous_id,
+                    reviewer,
+                    str(actor_source or "legacy"),
+                    bool(actor_verified),
+                    now,
+                ),
+            )
+            decision_id = (
+                int(cursor.fetchone()["id"])
+                if self.backend == "postgresql"
+                else int(cursor.lastrowid)
+            )
+            self._mark_labeling_change(conn)
+            row = conn.execute(
+                "SELECT * FROM issue_label_decisions WHERE id = ?",
+                (decision_id,),
+            ).fetchone()
+            refreshed = self.project_issue_label_states(
+                scope, [issue_key], include_sources=True, connection=conn
+            )[issue_key]
+        return {
+            "decision": self._issue_label_decision_dict(row),
+            "label_state": refreshed,
+        }
+
     def get_label_case(self, label_case_id: str) -> dict[str, Any] | None:
         normalized = str(label_case_id or "").strip()
         with self.connect() as conn:
@@ -1111,6 +1308,7 @@ class DatabaseLabelingMixin:
         *,
         include_sources: bool = True,
         connection: Any | None = None,
+        preloaded_cases: dict[str, list[dict[str, Any]]] | None = None,
     ) -> dict[str, dict[str, Any]]:
         """Resolve shared Labeling state for a bounded set of baseline Issues.
 
@@ -1132,7 +1330,9 @@ class DatabaseLabelingMixin:
                 "method": "single",
                 "source_task_ids": [],
                 "source_revision_ids": [],
+                "source_fingerprint": "",
                 "sources": [],
+                "decision": None,
             }
 
         projected = {issue_id: empty_state() for issue_id in cleaned}
@@ -1142,7 +1342,9 @@ class DatabaseLabelingMixin:
         gt_by_issue: dict[str, str] = {}
         imported_by_issue: dict[str, dict[str, Any]] = {}
         imported_sources_by_case: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        decision_by_issue: dict[str, Any] = {}
         with (nullcontext(connection) if connection is not None else self.connect()) as conn:
+            wanted_issue_ids = set(cleaned)
             for offset in range(0, len(cleaned), 400):
                 batch = cleaned[offset : offset + 400]
                 rows = conn.execute(
@@ -1202,9 +1404,35 @@ class DatabaseLabelingMixin:
                     imported_sources_by_case[str(row["label_case_id"])].append(
                         {key: row[key] for key in row.keys()}
                     )
-            cases_by_issue = self._batch_label_cases(
-                cleaned, baseline_scope=scope, connection=conn
+            cases_by_issue = (
+                {
+                    issue_id: list(preloaded_cases.get(issue_id) or [])
+                    for issue_id in cleaned
+                }
+                if preloaded_cases is not None
+                else self._batch_label_cases(
+                    cleaned, baseline_scope=scope, connection=conn
+                )
             )
+            if cases_by_issue:
+                decision_rows = conn.execute(
+                    """
+                    SELECT decision.* FROM issue_label_decisions decision
+                    WHERE decision.baseline_scope = ?
+                      AND decision.id = (
+                          SELECT MAX(candidate.id)
+                          FROM issue_label_decisions candidate
+                          WHERE candidate.baseline_scope = decision.baseline_scope
+                            AND candidate.issue_id = decision.issue_id
+                      )
+                    ORDER BY decision.issue_id
+                    """,
+                    (scope,),
+                ).fetchall()
+                for row in decision_rows:
+                    issue_key = str(row["issue_id"])
+                    if issue_key in wanted_issue_ids:
+                        decision_by_issue[issue_key] = row
         for issue_id in cleaned:
             cases = cases_by_issue.get(issue_id, [])
             if not cases or issue_id not in gt_by_issue:
@@ -1271,6 +1499,9 @@ class DatabaseLabelingMixin:
                     revisions_by_id[revision_id] = {
                         "id": revision_id,
                         "expected_output": str(revision.get("expected_output") or ""),
+                        "author": str(revision.get("author") or ""),
+                        "rationale": str(revision.get("rationale") or ""),
+                        "created_at": str(revision.get("created_at") or ""),
                     }
                 adjudication_source_ids: list[int] = []
                 for value in adjudication.get("source_revision_ids") or []:
@@ -1294,6 +1525,9 @@ class DatabaseLabelingMixin:
                             "expected_output": str(
                                 result_revision.get("expected_output") or ""
                             ),
+                            "author": str(result_revision.get("author") or ""),
+                            "rationale": str(result_revision.get("rationale") or ""),
+                            "created_at": str(result_revision.get("created_at") or ""),
                         },
                     )
                 sources.append(
@@ -1308,6 +1542,9 @@ class DatabaseLabelingMixin:
                             else ""
                         ),
                         "method": str(resolution.get("method") or "single"),
+                        "assigned_count": int(resolution.get("assigned_count") or 0),
+                        "submitted_count": int(resolution.get("submitted_count") or 0),
+                        "result_revision_id": result_revision_id or None,
                         "source_revision_ids": sorted(revisions_by_id),
                         "revision_summaries": [
                             revisions_by_id[key] for key in sorted(revisions_by_id)
@@ -1330,6 +1567,7 @@ class DatabaseLabelingMixin:
                             if imported_sources_by_case.get(str(case.get("id") or ""))
                             else "case_labeling"
                         ),
+                        "source_scope": "task" if task_id else "free",
                         "import_batch_id": (
                             str(imported_state.get("batch_id") or "")
                             if imported_sources_by_case.get(str(case.get("id") or ""))
@@ -1366,6 +1604,26 @@ class DatabaseLabelingMixin:
                     }
                 )
 
+            source_payload = _issue_decision_source_payload(sources)
+            source_fingerprint = _sha256_json(source_payload) if source_payload else ""
+            decision_row = decision_by_issue.get(issue_id)
+            decision = None
+            if decision_row is not None:
+                decision = self._issue_label_decision_dict(decision_row)
+                decision["stale"] = (
+                    not source_fingerprint
+                    or decision["source_fingerprint"] != source_fingerprint
+                    or sorted(decision["source_case_ids"])
+                    != sorted(item["label_case_id"] for item in source_payload)
+                )
+                if decision["stale"]:
+                    aggregate_state = "stale"
+                    expected_output = ""
+                else:
+                    aggregate_state = "resolved"
+                    expected_output = decision["expected_output"]
+                method = "adjudication"
+
             relation = (
                 _issue_label_gt_relation(
                     expected_output,
@@ -1384,7 +1642,9 @@ class DatabaseLabelingMixin:
                     "method": method,
                     "source_task_ids": [],
                     "source_revision_ids": [],
+                    "source_fingerprint": source_fingerprint,
                     "sources": [],
+                    "decision": decision,
                 }
                 continue
             projected[issue_id] = {
@@ -1395,7 +1655,9 @@ class DatabaseLabelingMixin:
                 "method": method,
                 "source_task_ids": sorted(source_task_ids),
                 "source_revision_ids": sorted(source_revision_ids),
+                "source_fingerprint": source_fingerprint,
                 "sources": sources,
+                "decision": decision,
             }
         return projected
 
@@ -1914,6 +2176,22 @@ class DatabaseLabelingMixin:
             [str(row["issue_id"]) for row in rows], task,
             source_run_id=task_source_run_id,
         )
+        shared_by_issue: dict[str, dict[str, Any]] = {}
+        if not task:
+            issue_ids_by_scope: dict[str, list[str]] = defaultdict(list)
+            for row in rows:
+                issue_ids_by_scope[str(row["baseline_scope"] or "")].append(
+                    str(row["issue_id"])
+                )
+            for scope, scope_issue_ids in issue_ids_by_scope.items():
+                shared_by_issue.update(
+                    self.project_issue_label_states(
+                        scope,
+                        scope_issue_ids,
+                        include_sources=False,
+                        preloaded_cases=cases_by_issue,
+                    )
+                )
         projected: list[dict[str, Any]] = []
         for row in rows:
             cases = cases_by_issue.get(str(row["issue_id"]), [])
@@ -1935,6 +2213,14 @@ class DatabaseLabelingMixin:
             else:
                 aggregate_state = "pending"
                 expected_output_value = ""
+            shared_state = shared_by_issue.get(str(row["issue_id"])) if not task else None
+            if shared_state:
+                aggregate_state = str(shared_state.get("state") or "pending")
+                if aggregate_state == "none":
+                    aggregate_state = "pending"
+                elif aggregate_state == "stale":
+                    aggregate_state = "conflict"
+                expected_output_value = str(shared_state.get("expected_output") or "")
             if status != "all" and aggregate_state != status:
                 continue
             if normalized_author and not any(
@@ -1976,6 +2262,7 @@ class DatabaseLabelingMixin:
                     "label_state": aggregate_state,
                     "expected_output": expected_output_value,
                     "source_count": len(cases),
+                    "decision": (shared_state or {}).get("decision") if shared_state else None,
                     "label_cases": cases,
                 }
             )
@@ -2119,6 +2406,19 @@ class DatabaseLabelingMixin:
         cases_by_issue = self._batch_label_cases([str(row["issue_id"]) for row in rows])
         gt_by_issue = {str(row["issue_id"]): str(row["gt_label"] or "") for row in rows}
         scope_by_issue = {str(row["issue_id"]): str(row["baseline_scope"] or "") for row in rows}
+        ids_by_scope: dict[str, list[str]] = defaultdict(list)
+        for issue_id, scope in scope_by_issue.items():
+            ids_by_scope[scope].append(issue_id)
+        projected_by_issue: dict[str, dict[str, Any]] = {}
+        for scope, scope_issue_ids in ids_by_scope.items():
+            projected_by_issue.update(
+                self.project_issue_label_states(
+                    scope,
+                    scope_issue_ids,
+                    include_sources=True,
+                    preloaded_cases=cases_by_issue,
+                )
+            )
         by_issue: dict[str, list[dict[str, Any]]] = {}
         blocked_by_issue: dict[str, list[dict[str, Any]]] = {}
         for issue_id, label_cases in cases_by_issue.items():
@@ -2154,6 +2454,41 @@ class DatabaseLabelingMixin:
             labels = {item["expected_output"] for item in sources}
             gt_label = gt_by_issue.get(issue_id, "")
             blockers = blocked_by_issue.get(issue_id, [])
+            projection = projected_by_issue.get(issue_id) or {}
+            decision = projection.get("decision") or None
+            if decision:
+                if projection.get("state") != "resolved" or decision.get("stale"):
+                    output.append(
+                        {
+                            "issue_id": issue_id,
+                            "baseline_scope": scope_by_issue.get(issue_id, ""),
+                            "status": "unresolved",
+                            "gt_label": gt_label,
+                            "sources": projection.get("sources") or [],
+                            "blocked_sources": blockers,
+                            "decision": decision,
+                        }
+                    )
+                    continue
+                expected = str(projection.get("expected_output") or "")
+                if expected == gt_label:
+                    continue
+                output.append(
+                    {
+                        "issue_id": issue_id,
+                        "baseline_scope": scope_by_issue.get(issue_id, ""),
+                        "status": "ready",
+                        "gt_label": gt_label,
+                        "expected_output": expected,
+                        "sources": projection.get("sources") or [],
+                        "source_revision_ids": list(
+                            projection.get("source_revision_ids") or []
+                        ),
+                        "decision": decision,
+                        "decision_id": int(decision["id"]),
+                    }
+                )
+                continue
             if blockers:
                 output.append(
                     {
@@ -2188,6 +2523,9 @@ class DatabaseLabelingMixin:
                     "gt_label": gt_label,
                     "expected_output": expected,
                     "sources": sources,
+                    "source_revision_ids": sorted(
+                        int(source["result_revision_id"]) for source in sources
+                    ),
                 }
             )
         return output
@@ -2199,10 +2537,9 @@ class DatabaseLabelingMixin:
             "gt_label": str(candidate.get("gt_label") or ""),
             "expected_output": str(candidate.get("expected_output") or ""),
             "source_revision_ids": sorted(
-                int(item.get("result_revision_id") or 0)
-                for item in candidate.get("sources") or []
-                if int(item.get("result_revision_id") or 0) > 0
+                int(value) for value in candidate.get("source_revision_ids") or []
             ),
+            "decision_id": candidate.get("decision_id"),
         }
         return hashlib.sha256(
             json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -2257,11 +2594,12 @@ class DatabaseLabelingMixin:
                     "old_gt_label": str(candidate.get("gt_label") or ""),
                     "expected_output": str(candidate["expected_output"]),
                     "source_revision_ids": sorted(
-                        int(source["result_revision_id"])
-                        for source in candidate.get("sources") or []
+                        int(value)
+                        for value in candidate.get("source_revision_ids") or []
                     ),
                     "source_fingerprint": fingerprint,
                     "source_gt_snapshot_id": snapshot_ids.get(scope, ""),
+                    "decision_id": candidate.get("decision_id"),
                 }
             )
         batch_fingerprint = _sha256_json({
@@ -2301,8 +2639,8 @@ class DatabaseLabelingMixin:
                 """
                 INSERT INTO label_gt_export_items (
                     batch_id, issue_id, old_gt_label, expected_output,
-                    source_revision_ids_json, source_fingerprint
-                ) VALUES (?, ?, ?, ?, ?, ?)
+                    source_revision_ids_json, source_fingerprint, decision_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
                     (
@@ -2312,6 +2650,7 @@ class DatabaseLabelingMixin:
                         item["expected_output"],
                         _json(item["source_revision_ids"]),
                         item["source_fingerprint"],
+                        item.get("decision_id"),
                     )
                     for item in items
                 ],
@@ -2413,6 +2752,11 @@ class DatabaseLabelingMixin:
                     "expected_output": str(item["expected_output"] or ""),
                     "source_revision_ids": _json_load(item["source_revision_ids_json"], []),
                     "source_fingerprint": str(item["source_fingerprint"] or ""),
+                    "decision_id": (
+                        int(item["decision_id"])
+                        if item["decision_id"] not in (None, "")
+                        else None
+                    ),
                     "reconcile_status": str(item["reconcile_status"] or "not_checked"),
                     "reconciled_snapshot_id": str(item["reconciled_snapshot_id"] or ""),
                     "reconciled_at": str(item["reconciled_at"] or ""),
