@@ -108,6 +108,7 @@ class WorkSplitTest(unittest.TestCase):
                 "exclusion": "all",
                 "missing_evidence": "",
             }
+            filters.update(issue_ids=["cn1", "cn2"], work_assignee="alice", work_split_id="source-task", model_review_status="completed")
             body = {
                 "filters": {"model_run_id": run["id"], "baselines": "0508"},
                 "assignees": [{"name": "alice"}, {"name": "bob"}],
@@ -142,6 +143,11 @@ class WorkSplitTest(unittest.TestCase):
 
             self.assertEqual(response["total"], 2)
             self.assertEqual(response["assignment_count"], 2)
+            snapshot = db.get_review_work_split(response["split_id"])["filter_snapshot"]
+            self.assertEqual(snapshot["issue_ids"], ["cn1", "cn2"])
+            self.assertEqual(snapshot["work_assignee"], "alice")
+            self.assertEqual(snapshot["work_split_id"], "source-task")
+            self.assertIn("completed", snapshot["review_status"])
             detail = db.get_campaign(response["split_id"])
             workset_id = detail["campaign"]["workset_id"]
             self.assertTrue(workset_id)

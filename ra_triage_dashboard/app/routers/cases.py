@@ -807,6 +807,7 @@ async def split_case_work(request: Request) -> dict[str, Any]:
         missing_evidence=_as_text(filter_body.get("missing_evidence")),
         issue_ids=_as_text(filter_body.get("issue_ids")),
         work_assignee=_as_text(filter_body.get("work_assignee")),
+        work_split_id=_as_text(filter_body.get("work_split_id")),
         comment_state=_as_text(filter_body.get("comment_state") or "all"),
         exclusion=_as_text(filter_body.get("exclusion")),
         baselines=_as_text(filter_body.get("baselines") or filter_body.get("baseline_scopes")),
@@ -867,10 +868,13 @@ async def split_case_work(request: Request) -> dict[str, Any]:
                 "gt_label": filters["gt_label"],
                 "model_label": filters["model_label"],
                 "annotation_author": filters["annotation_author"],
-                "review_status": list(review_statuses),
+                "review_status": list(review_statuses) + [value for value in str(filters.get("model_review_status") or "").split(",") if value],
                 "label_state": list(label_states),
                 "exclusion": exclusion_filter,
                 "missing_evidence": filters["missing_evidence"],
+                "issue_ids": filters.get("issue_ids") or [],
+                "work_assignee": filters.get("work_assignee") or "",
+                "work_split_id": filters.get("work_split_id") or "",
                 "overlap_ratio": overlap_ratio,
                 "baselines": filters.get("baseline_scopes") and resolve_request_baseline_ids(
                     ",".join(

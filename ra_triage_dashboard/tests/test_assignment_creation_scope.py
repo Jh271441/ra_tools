@@ -18,7 +18,7 @@ assert.equal(workSplitTotal(),12);
 readWorkSplitAssignees=()=>[{name:'alice',count:null}];
 workSplitReviewersPerIssue=()=>1; workSplitOverlapRatio=()=>0;
 $=()=>null; t=(key)=>key; showToast=()=>{};
-acknowledgeLocalChange=()=>{};renderWorkAssigneeFilter=()=>{};
+acknowledgeLocalChange=()=>{};renderWorkAssigneeFilter=()=>{};saveReviewAllocationDraft=()=>{};
 renderWorkSplitResults=()=>{};loadReviewAssignments=async()=>{};
 let sent;
 api=async(path, options)=>{sent=JSON.parse(options.body);return {work_assignees:[]};};
@@ -62,3 +62,21 @@ openWorkSplitDialog=async(value)=>{draft=value;};showToast=()=>{};
 })().catch(error=>{console.error(error);process.exitCode=1;});
 '''
         subprocess.run(['node', '-e', script], check=True, capture_output=True)
+
+    def test_source_link_preserves_full_filter_without_inheriting_ui(self):
+        script = (ROOT / 'static/js/review-assignments.js').read_text() + r'''
+const assert=require('node:assert/strict');
+parseFilterList=v=>String(v).split(',').filter(Boolean);
+let route;
+pageUrl=(page,options)=>{assert.equal(page,'review');route=options;return '/review?source=ok';};
+const filters={model_run_id:'run-a',comparison_status:'mismatch,none',gt_label:'误触发',model_label:'正确触发',annotation_author:'alice',review_status:['completed'],label_state:['conflict'],comment_state:'with',work_assignee:'bob',work_split_id:'old-task',missing_evidence:'camera',exclusion:'excluded',baselines:['0508'],issue_ids:['cn1','cn2'],search:''};
+assert.equal(reviewAssignmentSourceHref(filters),'/review?source=ok');
+assert.equal(route.runId,'run-a');assert.equal(route.workSplitId,'old-task');
+assert.deepEqual(route.issueIds,['cn1','cn2']);assert.deepEqual(route.workAssignee,['bob']);
+assert.deepEqual(route.reviewStatus,['completed']);assert.deepEqual(route.labelStates,['conflict']);
+assert.equal(route.commentState,'with');assert.equal(route.clusterKey,'camera');
+reviewAssignmentSourceHref({model_run_id:'run-b',baselines:['0522']});
+assert.equal(route.workSplitId,'');assert.deepEqual(route.issueIds,[]);assert.deepEqual(route.workAssignee,[]);
+assert.equal(route.commentState,'all');assert.equal(route.casePage,1);
+'''
+        subprocess.run(['node','-e',script], check=True, capture_output=True)

@@ -591,7 +591,7 @@ function updateWorkSplitAdminVisibility() {
 }
 
 async function openWorkSplitDialog(draft = null) {
-  workSplitDraft = draft ? { filters: { ...draft.filters }, total: draft.total } : null;
+  workSplitDraft = draft ? { ...draft, filters: { ...draft.filters }, total: draft.total } : null;
   if (!state.session?.is_admin) {
     showToast(t("work.split_admin_only"), true);
     return;
@@ -640,7 +640,19 @@ async function openWorkSplitDialog(draft = null) {
   renderWorkSplitReviewersPerIssuePicker(1);
   renderWorkSplitOverlapPicker(1);
   updateWorkSplitEstimate();
-  openDialog("workSplitDialog");
+  const panel = $("#workSplitPanel");
+  panel.hidden = false;
+  const link = $("#workSplitReturnSource");
+  if (link) {
+    const fallback = reviewAssignmentSourceHref(workSplitFilters());
+    const source = new URL(workSplitDraft?.returnUrl || fallback, window.location.origin);
+    const expected = new URL(fallback, window.location.origin);
+    link.href = source.origin === expected.origin && source.pathname === expected.pathname
+      ? `${source.pathname}${source.search}` : fallback;
+  }
+  saveReviewAllocationDraft(workSplitDraft);
+  renderReviewAllocationScope();
+  panel.scrollIntoView({ block: "start", behavior: "smooth" });
 }
 
 function renderWorkSplitResults(payload) {
@@ -703,6 +715,10 @@ async function generateWorkSplit() {
     showToast("请先选择 Model Run；若只做 Case 标签，请前往 Case 标注 > 实验分配。", true);
     return;
   }
+  if (workSplitDraft?.submitted) {
+    showToast("此分配已生成；请重新选择范围后创建新任务。", true);
+    return;
+  }
   const assignees = readWorkSplitAssignees();
   if (!assignees.length) {
     showToast(t("work.need_reviewer"), true);
@@ -749,6 +765,8 @@ async function generateWorkSplit() {
       await loadWorkAssignees();
     }
     renderWorkSplitResults(result);
+    saveReviewAllocationDraft(null);
+    if (workSplitDraft) workSplitDraft.submitted = true;
     if (state.activePage === "review-assignments") {
       await loadReviewAssignments({ force: true });
     }
@@ -769,7 +787,7 @@ function filterGalleryByWorkAssignee(assignee) {
   if (workSplitDraft) {
     const filters = workSplitDraft.filters;
     const payload = JSON.parse($("#workSplitResults")?.dataset.payload || "{}");
-    closeDialog("workSplitDialog");
+    if ($("#workSplitPanel")) $("#workSplitPanel").hidden = true;
     navigatePage("review", { runId: filters.model_run_id, baselines: filters.baselines,
       comparisonStatus: filters.comparison, search: filters.search || "", issue: "",
       issueIds: [], workSplitId: payload.split_id || "", workAssignee: [name], casePage: 1 });
@@ -779,7 +797,7 @@ function filterGalleryByWorkAssignee(assignee) {
   setMultiFilterValues($("#workAssigneeFilter"), [name]);
   persistWorkAssigneeFilterRoute([name]);
   state.casePage = 1;
-  closeDialog("workSplitDialog");
+  if ($("#workSplitPanel")) $("#workSplitPanel").hidden = true;
   loadCases({ keepSelection: false, page: 1 })
     .then(() => showToast(`已筛选任务负责人：${name}`))
     .catch((error) => showToast(error.message, true));
@@ -814,6 +832,12 @@ function copyWorkSplitAssignment(index) {
 }
 
 function bindWorkSplitControls() {
+  $("#workSplitResetDraft")?.addEventListener("click", () => {
+    workSplitDraft = null;
+    saveReviewAllocationDraft(null);
+    $("#workSplitPanel").hidden = true;
+    renderReviewAllocationScope();
+  });
   $("#reviewTaskContextRetry")?.addEventListener("click", () => {
     loadReviewTaskContext(state.reviewWorkSplitId).then(() => loadCases({ keepSelection: false, page: 1 })).catch((error) => showToast(error.message, true));
   });
@@ -836,7 +860,12 @@ function bindWorkSplitControls() {
       showToast(t("work.no_issues"), true);
       return;
     }
-    openWorkSplitDialog().catch((error) => showToast(error.message, true));
+    const draft = { filters: { ...currentReviewFilterPayload(),
+      work_assignee: joinFilterList(workAssigneeFilterSelection()) }, total: Number(state.caseTotal), fromReview: true, returnUrl: pageUrl("review", currentReviewRouteOptions({ issue: "" })) };
+    saveReviewAllocationDraft(draft);
+    workSplitDraft = null;
+    $("#workSplitPanel").hidden = true;
+    navigatePage("review-assignments");
   });
   $("#workSplitAddPerson")?.addEventListener("click", () => {
     $("#workSplitPeople")?.insertAdjacentHTML("beforeend", workSplitPersonRow());

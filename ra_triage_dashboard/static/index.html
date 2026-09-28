@@ -79,7 +79,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-518`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-519`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -575,6 +575,72 @@
                 <button class="button button-primary" id="reviewAssignmentCreateButton" type="button">配置人员与分配 →</button>
               </div>
               <p class="quiet-meta" id="reviewAssignmentCreateStatus" aria-live="polite">创建前将核对所选范围的 Issue 数量。</p>
+            </section>
+            <section class="page-card work-split-inline" id="workSplitPanel" hidden>
+              <div class="work-split-inline-body">
+                <div class="dialog-heading">
+                  <div>
+                    <h2><span class="ui-lang-zh">均分 Review 任务</span><span class="ui-lang-en">Split review work</span></h2>
+                    <p class="dialog-copy" id="workSplitDialogHint"><span class="ui-lang-zh">对当前筛选结果随机分配；多人模式可设置交叉盲标比例，未抽中的 Issue 只分配基础负责人。</span><span class="ui-lang-en">Randomly assign the current filter; multi-review mode can sample a cross-review ratio, while unsampled Issues get only a base reviewer.</span></p>
+                  </div>
+                  <a class="button button-quiet" id="workSplitReturnSource" href="/review">← 返回原筛选</a>
+                </div>
+                <div class="work-split-summary" id="workSplitSummary">当前筛选：—</div>
+                <label class="work-split-seed work-split-workflow-mode">
+                  <span><span class="ui-lang-zh">任务模式</span><span class="ui-lang-en">Task mode</span></span>
+                  <select id="workSplitWorkflowMode">
+                    <option value="model_review_only">仅判错复核</option>
+                    <option value="model_review_and_case_label">判错复核 + Case 标注</option>
+                  </select>
+                </label>
+                <div class="work-split-mode-row">
+                  <label class="work-split-seed">
+                    <span><span class="ui-lang-zh">每个 Issue 复核人数</span><span class="ui-lang-en">Reviewers per Issue</span></span>
+                    <div class="ui-select work-split-reviewer-count-picker" id="workSplitReviewersPerIssuePicker">
+                      <button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
+                        <span class="ui-select-summary">1 人</span>
+                        <span class="ui-select-caret" aria-hidden="true"></span>
+                      </button>
+                      <div class="ui-select-panel" role="listbox" hidden></div>
+                      <select class="ui-select-native" id="workSplitReviewersPerIssue" aria-hidden="true" tabindex="-1">
+                        <option value="1">1 人</option>
+                      </select>
+                    </div>
+                  </label>
+                  <label class="work-split-seed" id="workSplitOverlapField">
+                    <span><span class="ui-lang-zh">交叉盲标比例</span><span class="ui-lang-en">Cross-review ratio</span></span>
+                    <div class="ui-select work-split-overlap-picker" id="workSplitOverlapPicker">
+                      <button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
+                        <span class="ui-select-summary">100%</span>
+                        <span class="ui-select-caret" aria-hidden="true"></span>
+                      </button>
+                      <div class="ui-select-panel" role="listbox" hidden></div>
+                      <select class="ui-select-native" id="workSplitOverlapRatio" aria-hidden="true" tabindex="-1">
+                        <option value="0">0%</option>
+                        <option value="0.1">10%</option>
+                        <option value="0.2">20%</option>
+                        <option value="0.3">30%</option>
+                        <option value="0.5">50%</option>
+                        <option value="1" selected>100%</option>
+                      </select>
+                    </div>
+                  </label>
+                  <div class="work-split-estimate" id="workSplitEstimate">单人均分</div>
+                </div>
+                <div class="work-split-people" id="workSplitPeople" aria-label="复核人列表"></div>
+                <div class="work-split-toolbar">
+                  <button class="button button-quiet" id="workSplitAddPerson" type="button"><span class="ui-lang-zh">添加人员</span><span class="ui-lang-en">Add person</span></button>
+                  <label class="work-split-seed">
+                    <span>随机种子（可选）</span>
+                    <input id="workSplitSeed" type="number" inputmode="numeric" placeholder="留空则每次不同" />
+                  </label>
+                </div>
+                <div class="dialog-actions">
+                  <button class="button button-quiet" id="workSplitResetDraft" type="button">重新选择范围</button>
+                  <button class="button button-primary" id="workSplitGenerate" type="button"><span class="ui-lang-zh">生成分配</span><span class="ui-lang-en">Generate assignment</span></button>
+                </div>
+                <div class="work-split-results hidden" id="workSplitResults" aria-live="polite"></div>
+              </div>
             </section>
             <section class="review-assignment-metrics" id="reviewAssignmentMetrics" aria-label="任务分配概览"></section>
             <section class="page-card review-assignment-list-card">
@@ -2080,72 +2146,7 @@
       </div>
     </dialog>
 
-    <dialog class="dialog work-split-dialog" id="workSplitDialog">
-      <div class="dialog-card">
-        <div class="dialog-heading">
-          <div>
-            <h2><span class="ui-lang-zh">均分 Review 任务</span><span class="ui-lang-en">Split review work</span></h2>
-            <p class="dialog-copy" id="workSplitDialogHint"><span class="ui-lang-zh">对当前筛选结果随机分配；多人模式可设置交叉盲标比例，未抽中的 Issue 只分配基础负责人。</span><span class="ui-lang-en">Randomly assign the current filter; multi-review mode can sample a cross-review ratio, while unsampled Issues get only a base reviewer.</span></p>
-          </div>
-          <button class="icon-button" type="button" data-close="workSplitDialog" aria-label="关闭">×</button>
-        </div>
-        <div class="work-split-summary" id="workSplitSummary">当前筛选：—</div>
-        <label class="work-split-seed work-split-workflow-mode">
-          <span><span class="ui-lang-zh">任务模式</span><span class="ui-lang-en">Task mode</span></span>
-          <select id="workSplitWorkflowMode">
-            <option value="model_review_only">仅判错复核</option>
-            <option value="model_review_and_case_label">判错复核 + Case 标注</option>
-          </select>
-        </label>
-        <div class="work-split-mode-row">
-          <label class="work-split-seed">
-            <span><span class="ui-lang-zh">每个 Issue 复核人数</span><span class="ui-lang-en">Reviewers per Issue</span></span>
-            <div class="ui-select work-split-reviewer-count-picker" id="workSplitReviewersPerIssuePicker">
-              <button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
-                <span class="ui-select-summary">1 人</span>
-                <span class="ui-select-caret" aria-hidden="true"></span>
-              </button>
-              <div class="ui-select-panel" role="listbox" hidden></div>
-              <select class="ui-select-native" id="workSplitReviewersPerIssue" aria-hidden="true" tabindex="-1">
-                <option value="1">1 人</option>
-              </select>
-            </div>
-          </label>
-          <label class="work-split-seed" id="workSplitOverlapField">
-            <span><span class="ui-lang-zh">交叉盲标比例</span><span class="ui-lang-en">Cross-review ratio</span></span>
-            <div class="ui-select work-split-overlap-picker" id="workSplitOverlapPicker">
-              <button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
-                <span class="ui-select-summary">100%</span>
-                <span class="ui-select-caret" aria-hidden="true"></span>
-              </button>
-              <div class="ui-select-panel" role="listbox" hidden></div>
-              <select class="ui-select-native" id="workSplitOverlapRatio" aria-hidden="true" tabindex="-1">
-                <option value="0">0%</option>
-                <option value="0.1">10%</option>
-                <option value="0.2">20%</option>
-                <option value="0.3">30%</option>
-                <option value="0.5">50%</option>
-                <option value="1" selected>100%</option>
-              </select>
-            </div>
-          </label>
-          <div class="work-split-estimate" id="workSplitEstimate">单人均分</div>
-        </div>
-        <div class="work-split-people" id="workSplitPeople" aria-label="复核人列表"></div>
-        <div class="work-split-toolbar">
-          <button class="button button-quiet" id="workSplitAddPerson" type="button"><span class="ui-lang-zh">添加人员</span><span class="ui-lang-en">Add person</span></button>
-          <label class="work-split-seed">
-            <span>随机种子（可选）</span>
-            <input id="workSplitSeed" type="number" inputmode="numeric" placeholder="留空则每次不同" />
-          </label>
-        </div>
-        <div class="dialog-actions">
-          <button class="button button-quiet" type="button" data-close="workSplitDialog"><span class="ui-lang-zh">取消</span><span class="ui-lang-en">Cancel</span></button>
-          <button class="button button-primary" id="workSplitGenerate" type="button"><span class="ui-lang-zh">生成分配</span><span class="ui-lang-en">Generate assignment</span></button>
-        </div>
-        <div class="work-split-results hidden" id="workSplitResults" aria-live="polite"></div>
-      </div>
-    </dialog>
+
 
     <dialog class="dialog review-tag-create-dialog" id="reviewTagCreateDialog">
       <div class="dialog-card">
@@ -2386,7 +2387,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-518`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-519`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

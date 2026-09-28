@@ -1345,3 +1345,14 @@ html[data-color-theme="light"] .issue-card-flag-model-no-gt { border-color: #fcd
 .review-assignment-create-fields .button { min-height: 36px; }
 @media (max-width: 1100px) { .review-assignment-create-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 620px) { .review-assignment-create-fields { grid-template-columns: minmax(0, 1fr); } }
+
+.work-split-inline[hidden], .review-assignment-create-fields[hidden] { display: none; }
+.work-split-inline { scroll-margin-top: 80px; }
+.work-split-inline-body { display: grid; gap: 16px; min-width: 0; }
+.work-split-inline .dialog-heading { align-items: start; }
+.work-split-inline .dialog-heading h2 { font-size: 19px; }
+.work-split-inline .dialog-copy { max-width: 900px; font-size: 12px; }
+.work-split-inline .work-split-people { max-height: none; overflow: visible; display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
+.work-split-inline .work-split-person-row { margin: 0; grid-template-columns: minmax(0,1fr) 100px 36px; }
+.work-split-inline .work-split-summary { overflow-wrap: anywhere; }
+@media(max-width:950px) { .work-split-inline .work-split-people { grid-template-columns: minmax(0,1fr); } .work-split-inline .dialog-heading { flex-wrap: wrap; } }
