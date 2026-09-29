@@ -741,6 +741,12 @@ async function refreshChangedDataNow() {
     return;
   }
   if (state.activePage === "intent-experiments") {
+    if (!intentAvailableDatasets().length) {
+      renderIntentExperimentMembers();
+      renderIntentExperiments();
+      setIntentExperimentFormAvailability(false);
+      return;
+    }
     state.intentLabeling.experimentsDatasetId = "";
     await loadIntentExperiments({ force: true });
     return;
