@@ -43,10 +43,9 @@ function issueCardLabelingAttributes(attributes) {
   if (!Array.isArray(attributes) || !attributes.length) return "";
   const content = attributes.map((attribute) => {
     const values = (attribute.values || []).join(uiText("、", ", "));
-    const title = `${attribute.label}: ${values}`;
-    return `<span class="case-labeling-card-attribute" data-tag-section="${escapeHtml(attribute.section || "other")}" data-tag-group="${escapeHtml(attribute.key || "other")}" title="${escapeHtml(title)}"><small>${escapeHtml(attribute.label)}</small><b>${escapeHtml(values)}</b></span>`;
+    return `<span class="case-labeling-card-attribute" data-tag-section="${escapeHtml(attribute.section || "other")}" data-tag-group="${escapeHtml(attribute.key || "other")}" title="${escapeHtml(values)}"><small><span class="ui-lang-zh">${escapeHtml(attribute.label_zh || attribute.key)}</span><span class="ui-lang-en">${escapeHtml(attribute.label_en || attribute.key)}</span></small><b>${escapeHtml(values)}</b></span>`;
   }).join("");
-  return `<div class="case-labeling-card-attributes" aria-label="${escapeHtml(uiText("标注子属性", "Label attributes"))}">${content}</div>`;
+  return `<div class="case-labeling-card-attributes">${content}</div>`;
 }
 
 function issueCard(item, options = {}) {

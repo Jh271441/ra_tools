@@ -95,6 +95,8 @@ assert.deepEqual(attributes.map(item => [item.key, item.values]), [
   ['ra',['SWAG']],
   ['no_assist',['前车驶离']],
 ]);
+assert.equal(attributes[0].label_zh, '自车意图');
+assert.equal(attributes[0].label_en, 'Ego intent');
 assert.deepEqual(caseLabelingTagAttributes({label_state:'conflict',label_cases:[{resolution:{state:'conflict',heads:[{tags:['queue']}]}}]}), []);
 '''
         subprocess.run(['node', '-e', script], check=True, capture_output=True)

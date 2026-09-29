@@ -783,7 +783,8 @@ function caseLabelingTagAttributes(item) {
     .map((group) => ({
       key: group.key,
       section: group.section,
-      label: uiText(group.zh, group.en),
+      label_zh: group.zh,
+      label_en: group.en,
       values: grouped.get(group.key),
     }));
 }
