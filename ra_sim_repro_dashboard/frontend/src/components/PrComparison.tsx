@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CartesianGrid, LabelList, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis, type LabelProps } from 'recharts';
 import type { KpiSummary } from '../types';
+import { releaseChartRows, releaseTooltip, releaseXAxis } from '../lib/releaseChart';
 
 export interface PrPoint {
   version_key: string;
@@ -16,31 +17,47 @@ type SeriesKey = keyof Pick<PrPoint, 'actualPrecision' | 'actualRecall' | 'simPr
 
 const seriesColors: Record<SeriesKey, string> = {
   actualPrecision: 'hsl(var(--chart-blue))',
-  simPrecision: 'hsl(var(--chart-green))',
+  simPrecision: 'hsl(var(--chart-blue-soft))',
   actualRecall: 'hsl(var(--chart-orange))',
-  simRecall: 'hsl(var(--chart-red))',
+  simRecall: 'hsl(var(--chart-orange-soft))',
 };
 const percent = (value?: number) => value == null ? '—' : `${value.toFixed(1)}%`;
 const gap = (actual?: number, sim?: number) => actual == null || sim == null
   ? '—' : `${sim - actual > 0 ? '+' : ''}${(sim - actual).toFixed(1)} pp`;
-const shortVersion = (key: string) => {
-  const dated = key.match(/(?:^|[-_])(\d{4})[-_](\d{2})[-_](\d{2})/);
-  if (dated) return `${dated[2]}-${dated[3]}`;
-  const compact = key.match(/(\d{8})/);
-  if (compact) return `${compact[1].slice(4, 6)}-${compact[1].slice(6, 8)}`;
-  return key.length > 10 ? key.slice(-10) : key;
-};
-
 function percentageScale(rows: PrPoint[], keys: SeriesKey[]): { domain: [number, number]; ticks: number[] } {
   const values = rows.flatMap((row) => keys.map((key) => row[key])).filter((value): value is number => value != null);
   if (!values.length) return { domain: [0, 100], ticks: [0, 25, 50, 75, 100] };
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  if (min === max) return { domain: [Math.max(0, min - 1), Math.min(100, max + 1)], ticks: [min] };
-  return {
-    domain: [min, max],
-    ticks: Array.from({ length: 5 }, (_, index) => Math.round((min + (max - min) * index / 4) * 10) / 10),
-  };
+  const minValue = Math.max(0, Math.floor(Math.min(...values)));
+  const maxValue = Math.min(100, Math.ceil(Math.max(...values)));
+  if (minValue === maxValue) {
+    const lower = Math.max(0, minValue - 3);
+    const upper = Math.min(100, maxValue + 3);
+    return { domain: [lower, upper], ticks: [lower, upper] };
+  }
+
+  // Keep percentage labels readable: integer ticks with an adaptive 3–5 pp
+  // interval. The bounds are expanded to the selected step so every data
+  // point remains inside the plot and the tick spacing stays uniform.
+  const candidates = [3, 4, 5].map((step) => {
+    const lower = Math.floor(minValue / step) * step;
+    const upper = Math.ceil(maxValue / step) * step;
+    const intervals = Math.max(1, Math.round((upper - lower) / step));
+    return { step, lower, upper, intervals };
+  });
+  const selected = candidates
+    .filter((candidate) => candidate.upper <= 100 && candidate.lower >= 0)
+    .sort((a, b) => {
+      const intervalDistance = Math.abs(a.intervals - 5) - Math.abs(b.intervals - 5);
+      if (intervalDistance !== 0) return intervalDistance;
+      const spanDistance = (a.upper - a.lower) - (b.upper - b.lower);
+      if (spanDistance !== 0) return spanDistance;
+      return a.step - b.step;
+    })[0] ?? candidates[0];
+  const ticks = Array.from(
+    { length: selected.intervals + 1 },
+    (_, index) => selected.lower + index * selected.step,
+  );
+  return { domain: [selected.lower, selected.upper], ticks };
 }
 
 export function PrComparison({ rows, comparison, mode }: {
@@ -55,12 +72,27 @@ export function PrComparison({ rows, comparison, mode }: {
     precision: metricMode === 'precision' || bothMetrics,
     recall: metricMode === 'recall' || bothMetrics,
   };
-  const renderLineLabel = (dy: number) => (props: LabelProps) => {
+  const renderLineLabel = (key: SeriesKey) => (props: LabelProps) => {
     const x = Number(props.x);
     const y = Number(props.y);
     if (!Number.isFinite(x) || !Number.isFinite(y) || props.value == null) return null;
+    const index = Number((props as LabelProps & { index?: number }).index);
+    const value = Number(props.value);
+    const ordered = Number.isFinite(index) ? series
+      .map((item) => ({ key: item.key, value: rows[index]?.[item.key] }))
+      .filter((item): item is { key: SeriesKey; value: number } => item.value != null)
+      .sort((a, b) => b.value - a.value || a.key.localeCompare(b.key)) : [];
+    const rank = ordered.findIndex((item) => item.key === key);
+    const collisionThreshold = 1.5;
+    let groupStart = rank;
+    let groupEnd = rank;
+    while (groupStart > 0 && ordered[groupStart - 1].value - ordered[groupStart].value < collisionThreshold) groupStart -= 1;
+    while (groupEnd >= 0 && groupEnd < ordered.length - 1 && ordered[groupEnd].value - ordered[groupEnd + 1].value < collisionThreshold) groupEnd += 1;
+    // Keep the lower label close to its point; move only higher labels farther
+    // upward when their rendered text would collide.
+    const dy = -12 - Math.max(0, groupEnd - rank) * 14;
     return <text x={x} y={y + dy} textAnchor="middle" fill="hsl(var(--foreground))" stroke="hsl(var(--card))" strokeWidth={3} paintOrder="stroke" fontSize={11} fontWeight={600}>
-      {percent(Number(props.value))}
+      {percent(value)}
     </text>;
   };
 
@@ -100,6 +132,8 @@ export function PrComparison({ rows, comparison, mode }: {
       color: seriesColors[key],
     }));
   const scale = percentageScale(rows, series.map((item) => item.key));
+  const chartMargin = { top: 28, right: 18, bottom: 4, left: 0 };
+  const chartRows = releaseChartRows(rows);
 
   return <div className="space-y-4">
     <div className="flex flex-wrap items-center justify-between gap-3">
@@ -108,7 +142,6 @@ export function PrComparison({ rows, comparison, mode }: {
           <span className="w-7 border-t-[3px]" style={{ borderColor: item.color }} />
           {item.label}
         </span>)}
-        <span>{t('prHoverHint')}</span>
       </div>
       <div className="inline-flex rounded-md border border-border bg-muted/30 p-0.5" role="group" aria-label={t('prMetricSwitch')}>
         {(['precision', 'recall', 'all'] as const).map((value) => (
@@ -124,17 +157,15 @@ export function PrComparison({ rows, comparison, mode }: {
         ))}
       </div>
     </div>
-    {mode === 'rolling' ? <p className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">{t('prRecallDifferent')}</p> : null}
-    <section className="min-w-0 rounded-lg border border-border/70 bg-muted/10 p-3" aria-label={bothMetrics ? `${t('precision')} / ${t('recall')}` : t(metricMode)}>
-      <h3 className="mb-2 text-sm font-semibold">{bothMetrics ? `${t('precision')} / ${t('recall')}` : t(metricMode)}</h3>
+    <div className="min-w-0" aria-label={bothMetrics ? `${t('precision')} / ${t('recall')}` : t(metricMode)}>
       <div className="overflow-x-auto">
         <div className="h-72 min-w-[680px]">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={rows} margin={{ top: 12, right: 18, bottom: 4, left: 0 }}>
+            <LineChart data={chartRows} margin={chartMargin}>
               <CartesianGrid vertical={false} stroke="hsl(var(--border))" strokeDasharray="3 5" />
-              <XAxis dataKey="version_key" interval={Math.max(0, Math.ceil(rows.length / 12) - 1)} tickFormatter={shortVersion} tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} padding={{ left: 12, right: 12 }} height={30} />
-              <YAxis domain={scale.domain} ticks={scale.ticks} tickFormatter={(value: number) => `${value.toFixed(1)}%`} width={52} tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
-              <Tooltip cursor={{ stroke: 'hsl(var(--primary) / 0.35)', strokeWidth: 1.5 }} content={({ active, payload }) => {
+              <XAxis {...releaseXAxis(rows)} />
+              <YAxis domain={scale.domain} ticks={scale.ticks} tickFormatter={(value: number) => `${value.toFixed(0)}%`} width={52} tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))', textAnchor: 'end', dx: 0 }} axisLine={false} tickLine={false} />
+              <Tooltip {...releaseTooltip} content={({ active, payload }) => {
                 const row = payload?.[0]?.payload as PrPoint | undefined;
                 if (!active || !row) return null;
                 return <div className="max-w-xs rounded-lg border border-border bg-card p-3 text-xs text-foreground shadow-lg">
@@ -144,13 +175,14 @@ export function PrComparison({ rows, comparison, mode }: {
                   {series.some((item) => row[item.key] == null) ? <p className="mt-2 text-muted-foreground">{reason(row)}</p> : null}
                 </div>;
               }} />
-              {series.map((item) => <Line key={item.key} type="linear" dataKey={item.key} name={item.label} stroke={item.color} strokeWidth={2.5} dot={{ r: 3, fill: 'hsl(var(--card))', strokeWidth: 2 }} activeDot={{ r: 5 }} connectNulls={false} isAnimationActive={false}>
-                <LabelList dataKey={item.key} content={renderLineLabel(-16)} />
+              {series.map((item) => <Line key={item.key} type="linear" dataKey={item.key} name={item.label} stroke={item.color} strokeWidth={2.5} dot={{ r: 3, fill: 'hsl(var(--card))', strokeWidth: 2 }} activeDot={{ r: 5 }} connectNulls={false} isAnimationActive={false} />)}
+              {series.map((item) => <Line key={`${item.key}-labels`} type="linear" dataKey={item.key} stroke="transparent" strokeWidth={0} dot={false} activeDot={false} connectNulls={false} isAnimationActive={false} legendType="none">
+                <LabelList dataKey={item.key} content={renderLineLabel(item.key)} />
               </Line>)}
             </LineChart>
           </ResponsiveContainer>
         </div>
       </div>
-    </section>
+    </div>
   </div>;
 }

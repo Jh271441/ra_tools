@@ -20,9 +20,11 @@
   --input: 214 38% 87%;
   --ring: 214 94% 53%;
   --chart-blue: 216 96% 64%;
+  --chart-blue-soft: 216 92% 76%;
   --chart-green: 171 56% 56%;
   --chart-purple: 232 70% 68%;
   --chart-orange: 25 96% 70%;
+  --chart-orange-soft: 25 90% 80%;
   --chart-red: 204 48% 61%;
   --radius: 0.5rem;
 }
@@ -45,9 +47,11 @@
   --input: 218 18% 27%;
   --ring: 214 94% 58%;
   --chart-blue: 216 96% 68%;
+  --chart-blue-soft: 216 90% 78%;
   --chart-green: 171 52% 61%;
   --chart-purple: 232 66% 72%;
   --chart-orange: 25 88% 72%;
+  --chart-orange-soft: 25 84% 79%;
   --chart-red: 204 46% 66%;
 }
 
