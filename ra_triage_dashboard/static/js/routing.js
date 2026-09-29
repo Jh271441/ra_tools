@@ -182,6 +182,16 @@ function applyUiLanguage(language, { persist = true } = {}) {
     }
   } catch (_) {}
   try {
+    if (state.activePage === "intent-experiments" && typeof initializeIntentExperimentSelects === "function") {
+      initializeIntentExperimentSelects();
+      initializeIntentExperimentEditSelect();
+      renderIntentExperimentMembers();
+      renderIntentExperiments();
+      updateIntentExperimentEstimate();
+      setIntentExperimentFormAvailability(Boolean(intentAvailableDatasets().length));
+    }
+  } catch (_) {}
+  try {
     if (typeof updatePredictionBatchCount === "function") updatePredictionBatchCount();
   } catch (_) {}
   try {
