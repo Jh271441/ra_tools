@@ -56,6 +56,24 @@ class IntentNameSuggestionTest(unittest.TestCase):
             "0508 Case标注 单人均分 1071 Case",
         )
 
+    def test_assignment_rule_name_tracks_member_configuration(self):
+        self.assertEqual(
+            rule_based_assignment_name(
+                ["0508 · 1071"], assignment_kind="case_labeling",
+                case_count=1071, reviewers_per_issue=1,
+                overlap_ratio=0, member_count=0,
+            ),
+            "0508 Case标注 待选人员 1071 Case",
+        )
+        self.assertEqual(
+            rule_based_assignment_name(
+                ["0508 · 1071"], assignment_kind="case_labeling",
+                case_count=1071, reviewers_per_issue=1,
+                overlap_ratio=0, member_count=2,
+            ),
+            "0508 Case标注 2人均分 1071 Case",
+        )
+
     def test_model_review_rule_name_keeps_run_scope_and_comparison(self):
         self.assertEqual(
             rule_based_assignment_name(
@@ -69,7 +87,7 @@ class IntentNameSuggestionTest(unittest.TestCase):
                 run_name="H2 + original330 · 0508",
                 comparison="mismatch",
             ),
-            "0508 H2 + original330 联合复核 MISMATCH 交叉50%复核 211 Case",
+            "0508 H2 + original330 联合复核 MISMATCH 2人交叉50%复核 211 Case",
         )
 
     def test_assignment_llm_name_is_validated(self):
@@ -80,7 +98,7 @@ class IntentNameSuggestionTest(unittest.TestCase):
                         "choices": [
                             {
                                 "message": {
-                                    "content": "0508 H2 联合复核 MISMATCH 交叉50%复核 211 Case"
+                                    "content": "0508 H2 联合复核 MISMATCH 2人交叉50%复核 211 Case"
                                 }
                             }
                         ]
@@ -100,7 +118,7 @@ class IntentNameSuggestionTest(unittest.TestCase):
             suggestion = suggest_assignment_name_with_llm(
                 SimpleNamespace(ra_model_default_id="auto"),
                 _Catalog(),
-                fallback="0508 H2 + original330 联合复核 MISMATCH 交叉50%复核 211 Case",
+                fallback="0508 H2 + original330 联合复核 MISMATCH 2人交叉50%复核 211 Case",
                 dataset_labels=["0508 · 1071"],
                 assignment_kind="model_review",
                 case_count=211,
@@ -113,7 +131,7 @@ class IntentNameSuggestionTest(unittest.TestCase):
             )
         self.assertEqual(
             suggestion,
-            "0508 H2 联合复核 MISMATCH 交叉50%复核 211 Case",
+            "0508 H2 联合复核 MISMATCH 2人交叉50%复核 211 Case",
         )
 
     def test_rule_name_is_immediate_and_descriptive(self):

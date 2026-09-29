@@ -60,10 +60,14 @@ def _allocation_mode_label(
 ) -> str:
     reviewers = max(1, int(reviewers_per_issue))
     members = max(0, int(member_count))
+    if members <= 0:
+        return "待选人员"
     if reviewers > 1 and members > 1 and overlap_ratio > 0:
         ratio = max(0, min(100, round(float(overlap_ratio) * 100)))
-        return f"交叉{ratio}%复核"
-    return "单人均分" if reviewers == 1 else "分工复核"
+        return f"{reviewers}人交叉{ratio}%复核"
+    if reviewers == 1:
+        return "单人均分" if members == 1 else f"{members}人均分"
+    return f"{reviewers}人复核"
 
 
 def rule_based_assignment_name(
@@ -191,13 +195,25 @@ def _validate_assignment_suggestion(
         overlap_ratio=overlap_ratio,
         member_count=member_count,
     )
-    if expected_mode.startswith("交叉"):
+    if expected_mode == "待选人员":
+        has_mode = "待选" in suggestion
+    elif "交叉" in expected_mode:
         ratio = str(max(0, min(100, round(float(overlap_ratio) * 100))))
-        has_mode = ratio in suggestion and ("交叉" in suggestion or "复核" in suggestion)
+        has_mode = (
+            ratio in suggestion
+            and str(max(1, int(reviewers_per_issue))) in suggestion
+            and ("交叉" in suggestion or "复核" in suggestion)
+        )
     elif expected_mode == "单人均分":
         has_mode = "单人" in suggestion and "交叉" not in suggestion
+    elif expected_mode.endswith("人均分"):
+        has_mode = expected_mode in suggestion
     else:
-        has_mode = "分工" in suggestion and "交叉" not in suggestion
+        has_mode = expected_mode in suggestion or (
+            str(max(1, int(reviewers_per_issue))) in suggestion
+            and "复核" in suggestion
+            and "交叉" not in suggestion
+        )
     if assignment_kind == "case_labeling":
         has_subject = "Case" in suggestion and "标注" in suggestion
     elif workflow_mode == "model_review_and_case_label":

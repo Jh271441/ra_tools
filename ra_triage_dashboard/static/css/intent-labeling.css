@@ -613,6 +613,10 @@ html.ra-ui-ready .intent-workspace { transition: grid-template-columns 200ms eas
 .intent-experiment-section-heading > div { min-width: 0; display: grid; gap: 2px; }
 .intent-experiment-section-heading span { color: var(--faint); font-size: 11px; font-weight: 750; letter-spacing: .08em; }
 .intent-experiment-section-heading h3, .intent-experiment-section-heading h4 { margin: 0; color: var(--text); font-size: 16px; }
+.intent-experiment-section-heading h3 > .ui-lang-zh,
+.intent-experiment-section-heading h3 > .ui-lang-en,
+.intent-experiment-section-heading h4 > .ui-lang-zh,
+.intent-experiment-section-heading h4 > .ui-lang-en { color: inherit; font-size: inherit; letter-spacing: normal; }
 .intent-experiment-section-heading p { max-width: 520px; margin: 0; color: var(--faint); font-size: 12px; line-height: 1.5; text-align: right; }
 .intent-experiment-count { min-width: 28px; padding: 4px 8px; border: 1px solid rgba(36, 211, 238, .3); border-radius: 999px; color: var(--accent); background: rgba(36, 211, 238, .08); font-size: 12px; text-align: center; }
 .intent-experiment-create-body {
@@ -636,6 +640,19 @@ html.ra-ui-ready .intent-workspace { transition: grid-template-columns 200ms eas
   content: ""; width: 10px; height: 10px; display: block;
   border: 1px solid rgba(36, 211, 238, .28); border-top-color: var(--accent); border-radius: 50%;
   animation: intent-name-spin .7s linear infinite;
+}
+.intent-experiment-name-control.assignment-name-control { display: grid; gap: 4px; }
+.assignment-name-input-row { min-width: 0; display: flex; align-items: stretch; gap: 8px; }
+.assignment-name-input-row > input { min-width: 0; flex: 1 1 auto; padding-right: 10px; }
+.assignment-name-generate { flex: 0 0 auto; min-height: 36px; white-space: nowrap; }
+.intent-experiment-name-control.assignment-name-control > small,
+.intent-experiment-name-control.assignment-name-control > small:not([data-status="loading"]) {
+  min-height: 15px; display: flex; align-items: center; gap: 5px; position: static;
+  color: var(--faint); font-size: 10px; line-height: 1.4; transform: none;
+}
+.intent-experiment-name-control.assignment-name-control > small:empty { display: none; }
+.intent-experiment-name-control.assignment-name-control > small[data-status="loading"]::before {
+  width: 9px; height: 9px; display: inline-block; flex: 0 0 9px;
 }
 @keyframes intent-name-spin { to { transform: rotate(360deg); } }
 #intentExperimentName::placeholder { color: var(--faint); opacity: 1; }

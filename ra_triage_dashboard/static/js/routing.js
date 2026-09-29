@@ -159,6 +159,28 @@ function applyUiLanguage(language, { persist = true } = {}) {
     if (typeof renderRunManager === "function" && state.modelRuns?.length) renderRunManager();
   } catch (_) {}
   try {
+    if (typeof renderWorkSplitReviewersPerIssuePicker === "function" && $("#workSplitPanel") && !$("#workSplitPanel").hidden) {
+      renderWorkSplitPersonPickers();
+      renderWorkSplitReviewersPerIssuePicker(workSplitReviewersPerIssue());
+      updateWorkSplitEstimate();
+      renderAssignmentNameStatus("review");
+      const summary = $("#workSplitSummary");
+      const total = workSplitTotal();
+      if (summary) summary.textContent = total ? t("work.summary_n", { n: total }) : t("work.no_issues");
+    }
+  } catch (_) {}
+  try {
+    if (typeof renderLabelingTaskReviewersPerIssuePicker === "function" && state.activePage === "labeling-new-task") {
+      renderLabelingTaskPersonPickers();
+      renderLabelingTaskReviewersPerIssuePicker(labelingTaskReviewersPerIssue());
+      updateLabelingTaskEstimate();
+      renderAssignmentNameStatus("labeling");
+      const summary = $("#labelingTaskSummary");
+      const total = Number(state.caseLabeling.data?.total || 0);
+      if (summary) summary.textContent = total ? t("work.summary_n", { n: total }) : t("work.no_issues");
+    }
+  } catch (_) {}
+  try {
     if (typeof updatePredictionBatchCount === "function") updatePredictionBatchCount();
   } catch (_) {}
   try {

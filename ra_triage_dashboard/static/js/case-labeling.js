@@ -473,7 +473,7 @@ function renderLabelingTaskReviewersPerIssuePicker(selected = null) {
     picker,
     Array.from({ length: maximum }, (_, index) => ({
       value: String(index + 1),
-      label: `${index + 1} 人`,
+      label: uiText(`${index + 1} 人`, `${index + 1} ${index ? "people" : "person"}`),
     })),
     String(value),
   );
@@ -661,6 +661,9 @@ async function generateLabelingTask() {
 
 function bindLabelingTaskControls() {
   bindAssignmentNameInput("labeling");
+  $("#labelingTaskRegenerateName")?.addEventListener("click", () => {
+    regenerateAssignmentName("labeling");
+  });
   $("#caseLabelingCreateTask")?.addEventListener("click", () => {
     if (!state.session?.is_admin) {
       showToast(t("work.split_admin_only"), true);

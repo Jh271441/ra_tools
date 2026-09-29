@@ -69,9 +69,13 @@ function ruleBasedAssignmentName(context) {
   const scope = context.datasetLabels
     .map((label) => String(label || "").split("·", 1)[0].trim())
     .filter(Boolean).join("+") || "Dataset";
-  const mode = context.reviewersPerIssue > 1 && context.memberCount > 1 && context.overlapRatio > 0
-    ? `交叉${Math.round(context.overlapRatio * 100)}%复核`
-    : context.reviewersPerIssue === 1 ? "单人均分" : "分工复核";
+  const mode = context.memberCount <= 0
+    ? "待选人员"
+    : context.reviewersPerIssue > 1 && context.memberCount > 1 && context.overlapRatio > 0
+      ? `${context.reviewersPerIssue}人交叉${Math.round(context.overlapRatio * 100)}%复核`
+      : context.reviewersPerIssue === 1
+        ? (context.memberCount === 1 ? "单人均分" : `${context.memberCount}人均分`)
+        : `${context.reviewersPerIssue}人复核`;
   const subject = context.assignmentKind === "case_labeling"
     ? "Case标注"
     : context.workflowMode === "model_review_and_case_label" ? "联合复核" : "判错复核";
@@ -92,12 +96,33 @@ function ruleBasedAssignmentName(context) {
 function renderAssignmentNameStatus(kind, status = "ready") {
   const { status: node } = assignmentNameElements(kind);
   if (!node) return;
-  node.dataset.status = status;
-  node.textContent = status === "loading" ? "AI 推理中" : "";
-  node.title = status === "loading" ? "AI 正在后台优化实验名称" : "";
+  const { input } = assignmentNameElements(kind);
+  const resolvedStatus = status === "ready"
+    ? input?.dataset.manualEdited === "true"
+      ? "manual"
+      : input?.dataset.suggestionSource === "llm"
+        ? "llm"
+        : input?.dataset.suggestionSource === "rule"
+          ? "rule"
+          : "ready"
+    : status;
+  node.dataset.status = resolvedStatus;
+  const labels = {
+    loading: ["AI 命名中…", "Generating with AI…"],
+    llm: ["AI 已生成", "AI generated"],
+    rule: ["规则已生成", "Rule generated"],
+    manual: ["自定义名称", "Custom name"],
+  };
+  const label = labels[resolvedStatus];
+  node.innerHTML = label
+    ? `<span class="ui-lang-zh">${label[0]}</span><span class="ui-lang-en">${label[1]}</span>`
+    : "";
+  node.title = resolvedStatus === "loading"
+    ? uiText("正在根据当前实验配置生成名称", "Generating a name from the current experiment configuration")
+    : "";
 }
 
-function updateAssignmentNameSuggestion(kind) {
+function updateAssignmentNameSuggestion(kind, { force = false } = {}) {
   const slot = assignmentNameSuggestionState[kind];
   const { input } = assignmentNameElements(kind);
   if (!slot || !input) return;
@@ -113,6 +138,7 @@ function updateAssignmentNameSuggestion(kind) {
     workflow_mode: context.workflowMode,
     model_run_id: context.modelRunId,
     comparison: context.comparison,
+    draft_name: fallback,
   });
   const manual = input.dataset.manualEdited === "true" && Boolean(input.value.trim());
   if (!manual && !(slot.appliedFingerprint === fingerprint && input.dataset.suggestionSource === "llm")) {
@@ -122,13 +148,20 @@ function updateAssignmentNameSuggestion(kind) {
   window.clearTimeout(slot.timer);
   const seq = ++slot.seq;
   renderAssignmentNameStatus(kind);
-  const gatewayConfigured = Boolean(state.config?.batch_prediction?.model_gateway?.configured);
   if (
-    manual || !gatewayConfigured || !state.session?.is_admin
+    manual || !state.session?.is_admin
     || !context.baselineIds.length || !context.caseCount
+    || !context.memberCount
     || (context.assignmentKind === "model_review" && !context.modelRunId)
+  ) {
+    renderAssignmentNameStatus(kind);
+    return;
+  }
+  if (
+    !force
+    && slot.appliedFingerprint === fingerprint
+    && ["llm", "rule"].includes(input.dataset.suggestionSource)
   ) return;
-  if (slot.appliedFingerprint === fingerprint && input.dataset.suggestionSource === "llm") return;
   slot.requestFingerprint = fingerprint;
   renderAssignmentNameStatus(kind, "loading");
   slot.timer = window.setTimeout(async () => {
@@ -147,16 +180,28 @@ function updateAssignmentNameSuggestion(kind) {
       } else {
         input.value = fallback;
         input.dataset.suggestionSource = "rule";
+        slot.appliedFingerprint = fingerprint;
       }
     } catch (_error) {
       if (seq === slot.seq && input.dataset.manualEdited !== "true") {
         input.value = fallback;
         input.dataset.suggestionSource = "rule";
+        slot.appliedFingerprint = fingerprint;
       }
     } finally {
       if (seq === slot.seq) renderAssignmentNameStatus(kind);
     }
   }, 650);
+}
+
+function regenerateAssignmentName(kind) {
+  const slot = assignmentNameSuggestionState[kind];
+  const { input } = assignmentNameElements(kind);
+  if (!slot || !input) return;
+  input.dataset.manualEdited = "false";
+  input.dataset.suggestionSource = "";
+  slot.appliedFingerprint = "";
+  updateAssignmentNameSuggestion(kind, { force: true });
 }
 
 function resetAssignmentNameSuggestion(kind) {
@@ -183,7 +228,7 @@ function bindAssignmentNameInput(kind) {
       const slot = assignmentNameSuggestionState[kind];
       window.clearTimeout(slot?.timer);
       if (slot) slot.seq += 1;
-      renderAssignmentNameStatus(kind);
+      renderAssignmentNameStatus(kind, "manual");
       return;
     }
     updateAssignmentNameSuggestion(kind);
@@ -633,7 +678,7 @@ function renderWorkSplitReviewersPerIssuePicker(selected = null) {
     picker,
     Array.from({ length: maximum }, (_, index) => ({
       value: String(index + 1),
-      label: `${index + 1} 人`,
+      label: uiText(`${index + 1} 人`, `${index + 1} ${index ? "people" : "person"}`),
     })),
     String(value),
   );
@@ -1015,6 +1060,9 @@ function copyWorkSplitAssignment(index) {
 
 function bindWorkSplitControls() {
   bindAssignmentNameInput("review");
+  $("#workSplitRegenerateName")?.addEventListener("click", () => {
+    regenerateAssignmentName("review");
+  });
   $("#workSplitResetDraft")?.addEventListener("click", () => {
     workSplitDraft = null;
     saveReviewAllocationDraft(null);
