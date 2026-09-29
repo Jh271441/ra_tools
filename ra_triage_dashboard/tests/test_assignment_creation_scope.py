@@ -57,7 +57,7 @@ assert.equal(route.workflowMode,'model_review_and_case_label');
 
     def test_assignment_metrics_precede_creation_form_without_scope_card(self):
         html = (ROOT / 'static/index.html').read_text()
-        header = html.index('class="review-assignments-header page-card"')
+        header = html.index('class="review-assignments-header page-card assignment-composer"')
         panel = html.index('id="workSplitPanel"')
         metrics = html.index('id="reviewAssignmentMetrics"')
         self.assertLess(metrics, header)
