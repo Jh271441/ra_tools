@@ -55,13 +55,13 @@ assert.equal(route.workflowMode,'model_review_and_case_label');
 '''
         subprocess.run(['node','-e',script], check=True, capture_output=True)
 
-    def test_assignment_form_is_merged_into_header_without_scope_card(self):
+    def test_assignment_metrics_precede_creation_form_without_scope_card(self):
         html = (ROOT / 'static/index.html').read_text()
         header = html.index('class="review-assignments-header page-card"')
         panel = html.index('id="workSplitPanel"')
         metrics = html.index('id="reviewAssignmentMetrics"')
+        self.assertLess(metrics, header)
         self.assertLess(header, panel)
-        self.assertLess(panel, metrics)
         self.assertNotIn('id="reviewAssignmentCreate"', html)
         self.assertNotIn('<h3>分配范围</h3>', html)
         self.assertNotIn('id="allocationComparison"', html)
@@ -69,6 +69,35 @@ assert.equal(route.workflowMode,'model_review_and_case_label');
         self.assertIn('id="reviewAssignmentsGoReview"', html)
         self.assertNotIn('id="workSplitDialogHint"', html)
         self.assertNotIn('id="workSplitSummary"', html)
+
+    def test_case_gallery_groups_existing_label_attributes_without_extra_requests(self):
+        script = (ROOT / 'static/js/case-labeling.js').read_text() + r'''
+const assert = require('node:assert/strict');
+uiText = (zh, en) => zh;
+const catalog = {
+  intent_straight: {group:'self_intent', label:'直行'},
+  close_distance: {group:'true_trigger', label:'距离近'},
+  true_unnecessary_lane_change: {group:'true_trigger', label:'多余变道'},
+  egress_swag: {group:'ra', label:'SWAG'},
+  queue: {group:'false_trigger', label:'排队'},
+  lead_vehicle_departed: {group:'no_assist', label:'前车驶离'},
+};
+reviewTagCatalogItem = key => catalog[key] || null;
+tagLabel = key => catalog[key]?.label || key;
+const attributes = caseLabelingTagAttributes({label_state:'resolved',label_cases:[
+  {resolution:{state:'resolved',method:'consensus',result_revision:{tags:['intent_straight']},heads:[{tags:['intent_straight','close_distance','egress_swag']},{tags:['true_unnecessary_lane_change']}]}},
+  {resolution:{state:'resolved',method:'adjudication',result_revision:{tags:['lead_vehicle_departed']},heads:[{tags:['queue']}]}},
+  {resolution:{state:'pending',result_revision:{tags:['queue']},heads:[{tags:['queue']}]}}
+]});
+assert.deepEqual(attributes.map(item => [item.key, item.values]), [
+  ['self_intent',['直行']],
+  ['true_trigger',['距离近','多余变道']],
+  ['ra',['SWAG']],
+  ['no_assist',['前车驶离']],
+]);
+assert.deepEqual(caseLabelingTagAttributes({label_state:'conflict',label_cases:[{resolution:{state:'conflict',heads:[{tags:['queue']}]}}]}), []);
+'''
+        subprocess.run(['node', '-e', script], check=True, capture_output=True)
 
     def test_all_three_assignment_flows_start_with_explicit_addition(self):
         work_split = (ROOT / 'static/js/work-split.js').read_text()

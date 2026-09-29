@@ -39,6 +39,16 @@ function issueCardLabelingFlag(item) {
   return "";
 }
 
+function issueCardLabelingAttributes(attributes) {
+  if (!Array.isArray(attributes) || !attributes.length) return "";
+  const content = attributes.map((attribute) => {
+    const values = (attribute.values || []).join(uiText("、", ", "));
+    const title = `${attribute.label}: ${values}`;
+    return `<span class="case-labeling-card-attribute" data-tag-section="${escapeHtml(attribute.section || "other")}" data-tag-group="${escapeHtml(attribute.key || "other")}" title="${escapeHtml(title)}"><small>${escapeHtml(attribute.label)}</small><b>${escapeHtml(values)}</b></span>`;
+  }).join("");
+  return `<div class="case-labeling-card-attributes" aria-label="${escapeHtml(uiText("标注子属性", "Label attributes"))}">${content}</div>`;
+}
+
 function issueCard(item, options = {}) {
   const workspace = options.workspace || item.gallery_workspace || "review";
   const isLabeling = workspace === "labeling";
@@ -91,6 +101,9 @@ function issueCard(item, options = {}) {
     : `<span class="issue-label-pair"><small class="ui-lang-zh">模型</small><small class="ui-lang-en">Model</small>${displayPrediction ? labelBadge(displayPrediction, "—") : labelBadge("", "—")}</span>`;
   const actorKindZh = isLabeling ? "标注" : "复核";
   const actorKindEn = isLabeling ? "Label" : "Review";
+  const labelingAttributes = isLabeling
+    ? issueCardLabelingAttributes(item.label_attributes)
+    : "";
   return `
     <article class="issue-card ${isSelected ? "selected" : ""}" data-issue-id="${escapeHtml(item.issue_id)}">
       <button class="issue-card-open" type="button" data-open-issue="${escapeHtml(item.issue_id)}" aria-label="${escapeHtml(openLabel)}"></button>
@@ -116,6 +129,7 @@ function issueCard(item, options = {}) {
           ${historicalReview ? `<span class="issue-reviewer historical-review" title="${escapeHtml(historicalReviewTitle)}"><span class="ui-lang-zh">历史 Review</span><span class="ui-lang-en">Historical review</span></span>` : ""}
           ${item.annotation?.author ? `<span class="issue-reviewer" title="${escapeHtml(uiText(`${actorKindZh}人：${item.annotation.author}${item.annotation.author_verified ? " · SSO 已验证" : " · 未验证身份"}`, `${actorKindEn}: ${item.annotation.author}${item.annotation.author_verified ? " · SSO verified" : " · unverified"}`))}">${escapeHtml(item.annotation.author)}${item.annotation.author_verified ? " · SSO" : ""}</span>` : ""}
         </div>
+        ${labelingAttributes}
       </div>
     </article>`;
 }

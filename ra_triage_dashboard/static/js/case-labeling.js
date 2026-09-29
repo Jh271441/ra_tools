@@ -740,6 +740,54 @@ function bindLabelingTaskControls() {
   $("#labelingTaskHistoryList")?.addEventListener("click", openLabelingTask);
 }
 
+const CASE_LABELING_CARD_TAG_GROUPS = Object.freeze([
+  { key: "environment", section: "scene", zh: "环境", en: "Environment" },
+  { key: "self_intent", section: "scene", zh: "自车意图", en: "Ego intent" },
+  { key: "false_trigger", section: "interaction_decision", zh: "误触发", en: "False trigger" },
+  { key: "true_trigger", section: "interaction_decision", zh: "应该触发", en: "Should trigger" },
+  { key: "ra", section: "egress", zh: "正确触发", en: "Correct trigger" },
+  { key: "no_assist", section: "egress", zh: "无需协助", en: "No assistance" },
+  { key: "other", section: "other", zh: "其他", en: "Other" },
+]);
+
+function caseLabelingTagAttributes(item) {
+  // Pending/conflicting heads remain blind. Cards expose structured attributes
+  // only after the Issue has a resolved shared result.
+  if (item?.label_state !== "resolved") return [];
+  const tagKeys = [];
+  for (const labelCase of item?.label_cases || []) {
+    const resolution = labelCase?.resolution || {};
+    if (resolution.state !== "resolved") continue;
+    const heads = resolution.heads || [];
+    const revisions = resolution.method === "adjudication" && resolution.result_revision
+      ? [resolution.result_revision]
+      : (heads.length ? heads : (resolution.result_revision ? [resolution.result_revision] : []));
+    for (const revision of revisions) {
+      for (const key of revision?.tags || []) {
+        const normalized = String(key || "").trim();
+        if (normalized && !tagKeys.includes(normalized)) tagKeys.push(normalized);
+      }
+    }
+  }
+  const grouped = new Map(CASE_LABELING_CARD_TAG_GROUPS.map((group) => [group.key, []]));
+  for (const key of tagKeys) {
+    const catalogItem = reviewTagCatalogItem(key) || {};
+    const catalogGroup = String(catalogItem.group || "");
+    const groupKey = grouped.has(catalogGroup) ? catalogGroup : "other";
+    const label = String(catalogItem.label || tagLabel(key));
+    const values = grouped.get(groupKey);
+    if (label && !values.includes(label)) values.push(label);
+  }
+  return CASE_LABELING_CARD_TAG_GROUPS
+    .filter((group) => grouped.get(group.key).length)
+    .map((group) => ({
+      key: group.key,
+      section: group.section,
+      label: uiText(group.zh, group.en),
+      values: grouped.get(group.key),
+    }));
+}
+
 function caseLabelingGalleryItem(item) {
   return {
     ...item,
@@ -755,6 +803,7 @@ function caseLabelingGalleryItem(item) {
       is_excluded: Boolean(item.is_excluded),
       missing_evidence: item.evidence_gaps || [],
     },
+    label_attributes: caseLabelingTagAttributes(item),
   };
 }
 

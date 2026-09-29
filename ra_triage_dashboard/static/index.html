@@ -79,7 +79,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-536`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-537`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -556,6 +556,7 @@
           </section>
 
           <section class="app-page review-assignments-page hidden" id="reviewAssignmentsPage" data-page="review-assignments">
+            <section class="review-assignment-metrics" id="reviewAssignmentMetrics" aria-label="任务分配概览"></section>
             <section class="review-assignments-header page-card">
               <div class="review-assignments-header-main">
                 <div>
@@ -629,7 +630,6 @@
               </div>
               </section>
             </section>
-            <section class="review-assignment-metrics" id="reviewAssignmentMetrics" aria-label="任务分配概览"></section>
             <section class="page-card review-assignment-list-card">
               <header class="review-assignment-section-heading">
                 <div><h2><span class="ui-lang-zh">分配批次</span><span class="ui-lang-en">Allocation batches</span></h2></div>
@@ -2386,7 +2386,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-536`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-537`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>
