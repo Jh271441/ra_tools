@@ -19,6 +19,7 @@ import { Badge } from './ui/badge';
 import { cn } from '../lib/utils';
 import { PrComparison } from './PrComparison';
 import { poststratifyBacktestWindow } from '../lib/backtest';
+import { releaseChartRows, releaseTooltip, releaseXAxis } from '../lib/releaseChart';
 
 interface OverviewProps {
   summary: SummaryResponse | null;
@@ -80,36 +81,6 @@ function hollowDot(color: string, radius = 3.5) {
   };
 }
 
-function ChartHoverCursor(props: {
-  points?: Array<{ x?: number; y?: number }>;
-  x?: number;
-  y?: number;
-  width?: number;
-  height?: number;
-}) {
-  const pointX = optionalNumber(props.points?.[0]?.x);
-  const rectX = optionalNumber(props.x);
-  const rectWidth = optionalNumber(props.width);
-  const x = pointX ?? (rectX != null && rectWidth != null ? rectX + rectWidth / 2 : undefined);
-  const y = optionalNumber(props.y) ?? optionalNumber(props.points?.[0]?.y) ?? 0;
-  const height = optionalNumber(props.height);
-  if (x == null || height == null) return null;
-  return (
-    <line
-      className="chart-hover-cursor"
-      x1={x}
-      x2={x}
-      y1={y}
-      y2={y + height}
-      stroke="hsl(var(--primary) / 0.3)"
-      strokeWidth={1.5}
-      strokeDasharray="4 6"
-      strokeLinecap="round"
-      pointerEvents="none"
-    />
-  );
-}
-
 function numberValue(value: unknown) {
   if (typeof value === 'number') return value;
   if (typeof value === 'string' && value.trim()) return Number(value);
@@ -137,6 +108,21 @@ function firstNumber(...values: unknown[]) {
 
 function formatCount(value: number | undefined) {
   return new Intl.NumberFormat().format(Math.max(0, Math.round(value ?? 0)));
+}
+
+function countScale(values: number[]) {
+  const maxValue = Math.max(...values.filter(Number.isFinite), 0);
+  if (maxValue <= 0) return { domain: [0, 1] as [number, number], ticks: [0, 1] };
+  const roughStep = maxValue / 5;
+  const magnitude = 10 ** Math.floor(Math.log10(roughStep));
+  const normalized = roughStep / magnitude;
+  const niceStep = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 2.5 ? 2.5 : normalized <= 5 ? 5 : 10;
+  const step = niceStep * magnitude;
+  const upper = Math.ceil(maxValue / step) * step;
+  return {
+    domain: [0, upper] as [number, number],
+    ticks: Array.from({ length: Math.round(upper / step) + 1 }, (_, index) => index * step),
+  };
 }
 
 function formatChartLabel(value: unknown) {
@@ -188,26 +174,6 @@ function TrendValueLabel({
 function renderTrendLabel(color: string, dx: number, dy: number) {
   return (props: LabelProps) => (
     <TrendValueLabel color={color} dx={dx} dy={dy} props={props} />
-  );
-}
-
-function VersionTick(props: { x?: number; y?: number; payload?: { value?: unknown; index?: number } }) {
-  const x = numberValue(props.x);
-  const y = numberValue(props.y);
-  const fullValue = String(props.payload?.value ?? '');
-  const value = shortVersionLabel(fullValue);
-  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-  return (
-    <text
-      x={x}
-      y={y + 14}
-      fill="hsl(var(--muted-foreground))"
-      fontSize={11}
-      fontWeight={600}
-      textAnchor="middle"
-    >
-      {value}
-    </text>
   );
 }
 
@@ -340,6 +306,8 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
   });
   const reproDomain: [number, number] = [60, 100];
   const prTrend = prMode === 'same-version' ? sameVersionTrend : backtestTrend;
+  const countAxis = countScale(trend.flatMap((item) => [item.tp, item.fn, item.fp]));
+  const trendChartRows = releaseChartRows(trend);
   const reproControls: Array<{ key: ReproMetric; label: string; color: string }> = [
     { key: 'repro', label: t('simReproRate'), color: chartColors.repro },
     { key: 'tp', label: 'TP', color: chartColors.model },
@@ -393,10 +361,9 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
 
       <div className="grid grid-cols-1 gap-4">
         <Card>
-          <CardHeader className="min-h-[86px] flex-row flex-wrap items-start justify-between gap-3 px-5 pb-2 pt-4">
+          <CardHeader className="flex-row flex-wrap items-start justify-between gap-3 px-5 pb-1 pt-3">
             <div className="min-w-0">
               <CardTitle>{t('continuousReproTrend')}</CardTitle>
-              <p className="mt-0.5 text-[12px] leading-4 text-muted-foreground">{t('continuousReproTrendSubtitle')}</p>
             </div>
             <div className="flex max-w-[390px] shrink-0 flex-wrap items-center justify-end gap-1">
               {reproControls.map((item) => (
@@ -406,7 +373,7 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
                   aria-pressed={visibleReproMetrics[item.key]}
                   style={{ '--toggle-color': item.color } as CSSProperties}
                   className={cn(
-                    'chart-toggle inline-flex h-7 items-center gap-1 rounded-md border border-border/80 px-2 text-[11px] font-semibold focus:outline-none focus:ring-1 focus:ring-ring',
+                    'chart-toggle inline-flex h-8 items-center gap-1 rounded-md border border-border/80 px-2 text-[11px] font-semibold focus:outline-none focus:ring-1 focus:ring-ring',
                   )}
                   onClick={() => toggleReproMetric(item.key)}
                 >
@@ -419,7 +386,7 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
                 aria-pressed={showTrendLabels}
                 style={{ '--toggle-color': 'hsl(var(--primary))' } as CSSProperties}
                 className={cn(
-                  'chart-toggle inline-flex h-7 items-center rounded-md border border-border/80 px-2 text-[11px] font-semibold focus:outline-none focus:ring-1 focus:ring-ring',
+                  'chart-toggle inline-flex h-8 items-center rounded-md border border-border/80 px-2 text-[11px] font-semibold focus:outline-none focus:ring-1 focus:ring-ring',
                 )}
                 onClick={() => setShowTrendLabels((value) => !value)}
               >
@@ -427,30 +394,29 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
               </button>
             </div>
           </CardHeader>
-          <CardContent className="h-80 px-4 pb-4 pt-0">
+          <CardContent className="h-72 px-5 pb-5 pt-0">
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart
-                data={trend}
-                margin={{ top: 18, right: 20, left: 0, bottom: 8 }}
+                data={trendChartRows}
+                margin={{ top: 28, right: 18, left: 0, bottom: 4 }}
                 barCategoryGap="18%"
                 barGap={2}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.68)" vertical={false} />
-                <XAxis
-                  dataKey="version_key"
-                  scale="point"
-                  tickLine={false}
+                <XAxis {...releaseXAxis(trend)} />
+                <YAxis yAxisId="rate" domain={reproDomain} ticks={percentageTicks} tickFormatter={(value: number) => `${value}%`} tickLine={false} axisLine={false} width={52} tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11, textAnchor: 'end', dx: 8 }} />
+                <YAxis
+                  yAxisId="count"
+                  orientation="right"
+                  domain={countAxis.domain}
+                  ticks={countAxis.ticks}
+                  tickFormatter={(value: number) => formatCount(value)}
+                  width={58}
+                  tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11, textAnchor: 'start', dx: 16 }}
                   axisLine={false}
-                  interval={Math.max(0, Math.ceil(trend.length / 12) - 1)}
-                  minTickGap={0}
-                  height={40}
-                  tickMargin={10}
-                  padding={{ left: 44, right: 44 }}
-                  tick={<VersionTick />}
+                  tickLine={false}
                 />
-                <YAxis yAxisId="rate" domain={reproDomain} ticks={percentageTicks} tickFormatter={(value: number) => `${value}`} tickLine={false} axisLine={false} width={38} tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} />
-                <YAxis yAxisId="count" hide width={0} />
-                <Tooltip {...tooltipProps} cursor={<ChartHoverCursor />} />
+                <Tooltip {...tooltipProps} {...releaseTooltip} labelFormatter={(index: number) => trend[index]?.version_key ?? ''} />
                 {visibleReproMetrics.tp ? (
                   <Bar yAxisId="count" dataKey="tp" fill={chartColors.model} fillOpacity={0.78} radius={[4, 4, 0, 0]} maxBarSize={22} isAnimationActive={false}>
                     <LabelList dataKey="tp" position="top" formatter={(value: number) => formatCount(value)} fill="hsl(var(--foreground))" stroke="hsl(var(--card))" strokeWidth={3} paintOrder="stroke" fontSize={11} fontWeight={600} />
@@ -467,7 +433,7 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
                   </Bar>
                 ) : null}
                 {visibleReproMetrics.repro ? (
-                  <Line yAxisId="rate" type="linear" dataKey="repro" stroke={chartColors.repro} strokeWidth={3} dot={hollowDot(chartColors.repro, 4)} activeDot={hollowDot(chartColors.repro, 5.5)} isAnimationActive={false}>
+                  <Line yAxisId="rate" type="linear" dataKey="repro" stroke={chartColors.repro} strokeWidth={2.5} dot={hollowDot(chartColors.repro, 3.5)} activeDot={hollowDot(chartColors.repro, 5)} isAnimationActive={false}>
                     {showTrendLabels ? <LabelList dataKey="repro" content={renderTrendLabel(chartColors.repro, -8, -14)} /> : null}
                   </Line>
                 ) : null}
@@ -477,13 +443,9 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
         </Card>
 
         <Card>
-          <CardHeader className="min-h-[86px] flex-row flex-wrap items-start justify-between gap-3 px-5 pb-2 pt-4">
+          <CardHeader className="flex-row flex-wrap items-start justify-between gap-3 px-5 pb-1 pt-3">
             <div className="min-w-0">
               <CardTitle>{prMode === 'same-version' ? t('sameVersionPr') : t('binaryBacktestPr')}</CardTitle>
-              <p className="mt-0.5 text-[12px] leading-4 text-muted-foreground">
-                {prMode === 'same-version' ? t('sameVersionPrSubtitle') : t('binaryBacktestPrSubtitle')}
-              </p>
-
             </div>
             <div className="flex shrink-0 items-center gap-2">
               <label className="text-xs font-medium text-muted-foreground" htmlFor="pr-mode">
@@ -518,13 +480,13 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
               <Badge variant="secondary">{current.version_key}</Badge>
             </div>
           </CardHeader>
-          <CardContent className="px-5 pb-5 pt-2">
+          <CardContent className="px-5 pb-5 pt-0">
             <PrComparison rows={prTrend} comparison={comparison} mode={prMode} />
           </CardContent>
         </Card>
       </div>
 
-      {aggregateRows.length ? (
+      {summary ? (
         <Card className="overflow-hidden">
           <CardHeader className="border-b border-border/70">
             <div>
@@ -542,7 +504,7 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
                 </colgroup>
                 <thead className="bg-muted/45 dark:bg-white/[0.025]">
                   <tr>
-                    <th className="h-10 whitespace-nowrap px-4 text-xs font-medium uppercase text-muted-foreground align-middle">{t('version')}</th>
+                    <th className="h-10 whitespace-nowrap px-4 text-center text-xs font-medium uppercase text-muted-foreground align-middle">{t('version')}</th>
                     <th className="h-10 whitespace-nowrap px-4 text-center text-xs font-medium uppercase text-muted-foreground align-middle">{t('dataSource')}</th>
                     <th className="h-10 whitespace-nowrap px-4 text-center text-xs font-medium uppercase text-muted-foreground align-middle">样本分层</th>
                     <th className="h-10 whitespace-nowrap px-4 text-center text-xs font-medium uppercase text-muted-foreground align-middle">线上 P/R</th>
@@ -557,7 +519,7 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
                   </tr>
                 </thead>
                 <tbody>
-                  {aggregateRows.map((item) => {
+                  {aggregateRows.length ? aggregateRows.map((item) => {
                     const source = item.source_gt || {};
                     const sim = item.sim_estimate || {};
                     const projectionValue = sim.same_version_projection;
@@ -571,7 +533,7 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
                         className="cursor-pointer border-t border-border/60 transition hover:bg-accent/35"
                         {...interactiveProps(() => onOpenIssues({ version: item.version_key }))}
                       >
-                        <td className="px-4 py-3 align-middle">
+                        <td className="px-4 py-3 text-center align-middle">
                           <div className="font-semibold leading-5">{item.label || item.version_key}</div>
                           <div className="font-mono text-xs text-muted-foreground">{item.version_key}</div>
                         </td>
@@ -630,7 +592,13 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
                         </td>
                       </tr>
                     );
-                  })}
+                  }) : (
+                    <tr>
+                      <td colSpan={12} className="px-4 py-10 text-center text-sm text-muted-foreground">
+                        {t('noVersionsInRange')}
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
