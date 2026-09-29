@@ -295,7 +295,7 @@ function renderLabelingTaskHistory() {
   const tasks = state.caseLabeling.tasks || [];
   if (count) count.textContent = String(tasks.length);
   if (!tasks.length) {
-    list.innerHTML = '<div class="intent-experiment-empty"><span>◎</span><strong>尚未创建实验</strong><p>从图库筛选 Case，再创建标注实验。</p></div>';
+    list.innerHTML = `<div class="intent-experiment-empty"><span>◎</span><strong>${escapeHtml(uiText("尚未创建实验", "No experiments yet"))}</strong><p>${escapeHtml(uiText("从图库筛选 Case，再创建标注实验。", "Filter Cases in the gallery, then create a labeling experiment."))}</p></div>`;
     return;
   }
   list.innerHTML = tasks.map((task) => {
@@ -305,12 +305,15 @@ function renderLabelingTaskHistory() {
     const conflict = Number(progress.conflict || 0);
     const percent = total ? Math.min(100, Math.round(resolved * 100 / total)) : 0;
     const mode = Number(task.reviewers_per_issue || 1) > 1
-      ? `${Number(task.reviewers_per_issue)} 人 · ${Math.round(Number(task.overlap_ratio || 0) * 100)}% 交叉盲标`
-      : "单人标注";
+      ? uiText(
+          `${Number(task.reviewers_per_issue)} 人 · ${Math.round(Number(task.overlap_ratio || 0) * 100)}% 交叉盲标`,
+          `${Number(task.reviewers_per_issue)} people · ${Math.round(Number(task.overlap_ratio || 0) * 100)}% cross-label`,
+        )
+      : uiText("单人标注", "Single labeler");
     return `<article class="intent-experiment-item case-experiment-item">
-      <div><h4>${escapeHtml(task.name || "未命名实验")}</h4><div class="intent-experiment-meta">${escapeHtml(mode)} · ${total} 个 Case · ${escapeHtml(task.created_by || "")}${task.created_at ? ` · ${escapeHtml(formatTime(task.created_at))}` : ""}</div></div>
-      <button class="button button-quiet" type="button" data-open-labeling-task="${escapeHtml(task.id || "")}">打开实验</button>
-      <div class="intent-experiment-detail-row"><div class="intent-experiment-member-stats"><span>已完成 ${resolved}</span><span>待处理 ${Math.max(0, total - resolved)}</span>${conflict ? `<span>冲突 ${conflict}</span>` : ""}</div><div class="intent-experiment-progress"><span class="intent-experiment-progress-track"><i class="is-complete" style="width:${percent}%"></i></span><small>${percent}%</small></div></div>
+      <div><h4>${escapeHtml(task.name || uiText("未命名实验", "Unnamed experiment"))}</h4><div class="intent-experiment-meta">${escapeHtml(mode)} · ${escapeHtml(uiText(`${total} 个 Case`, `${total} Cases`))} · ${escapeHtml(task.created_by || "")}${task.created_at ? ` · ${escapeHtml(formatTime(task.created_at))}` : ""}</div></div>
+      <button class="button button-quiet" type="button" data-open-labeling-task="${escapeHtml(task.id || "")}">${escapeHtml(uiText("打开实验", "Open experiment"))}</button>
+      <div class="intent-experiment-detail-row"><div class="intent-experiment-member-stats"><span>${escapeHtml(uiText(`已完成 ${resolved}`, `Completed ${resolved}`))}</span><span>${escapeHtml(uiText(`待处理 ${Math.max(0, total - resolved)}`, `Pending ${Math.max(0, total - resolved)}`))}</span>${conflict ? `<span>${escapeHtml(uiText(`冲突 ${conflict}`, `Conflicts ${conflict}`))}</span>` : ""}</div><div class="intent-experiment-progress"><span class="intent-experiment-progress-track"><i class="is-complete" style="width:${percent}%"></i></span><small>${percent}%</small></div></div>
     </article>`;
   }).join("");
 }

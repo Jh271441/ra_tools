@@ -175,6 +175,7 @@ function applyUiLanguage(language, { persist = true } = {}) {
       renderLabelingTaskReviewersPerIssuePicker(labelingTaskReviewersPerIssue());
       updateLabelingTaskEstimate();
       renderAssignmentNameStatus("labeling");
+      renderLabelingTaskHistory();
       const summary = $("#labelingTaskSummary");
       const total = Number(state.caseLabeling.data?.total || 0);
       if (summary) summary.textContent = total ? t("work.summary_n", { n: total }) : t("work.no_issues");
