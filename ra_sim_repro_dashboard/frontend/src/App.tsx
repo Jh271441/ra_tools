@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Activity,
   BarChart3,
+  CalendarDays,
   Database,
   Filter,
   GitCompareArrows,
@@ -84,6 +85,30 @@ function matchesMeta(value: unknown, expected: string) {
   return stringValue(value) === expected;
 }
 
+function dateInputValue(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function twoMonthRange() {
+  const end = new Date();
+  const start = new Date(end);
+  start.setMonth(start.getMonth() - 2);
+  return { start: dateInputValue(start), end: dateInputValue(end) };
+}
+
+function versionDate(value: string) {
+  const compact = value.match(/(\d{8})/);
+  if (compact) {
+    const digits = compact[1];
+    return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`;
+  }
+  const separated = value.match(/(?:^|[-_])(\d{4})[-_](\d{2})[-_](\d{2})/);
+  return separated ? `${separated[1]}-${separated[2]}-${separated[3]}` : null;
+}
+
 function SelectFilter({
   label,
   value,
@@ -147,6 +172,7 @@ export default function App() {
   const [issueTotal, setIssueTotal] = useState(0);
   const [filters, setFilters] = useState(defaultFilters);
   const [sourceFilters, setSourceFilters] = useState(defaultSourceFilters);
+  const [releaseRange, setReleaseRange] = useState(twoMonthRange);
   const [selectedResult, setSelectedResult] = useState<SelectedIssueResult | null>(null);
   const [refreshJob, setRefreshJob] = useState<RefreshJob | null>(null);
   const [error, setError] = useState<string>('');
@@ -257,8 +283,16 @@ export default function App() {
     return () => window.clearInterval(timer);
   }, [refreshJob, loadDashboard, loadIssues, page]);
 
+  const validReleaseRange = !releaseRange.start || !releaseRange.end || releaseRange.start <= releaseRange.end;
+  const releaseRangeActive = Boolean(releaseRange.start || releaseRange.end);
+  const visibleComparison = useMemo(() => comparison.filter((item) => {
+    if (!validReleaseRange) return false;
+    const date = versionDate(item.version_key);
+    if (!date) return true;
+    return (!releaseRange.start || date >= releaseRange.start) && (!releaseRange.end || date <= releaseRange.end);
+  }), [comparison, releaseRange, validReleaseRange]);
   const current = useMemo(() => versions.find((item) => item.is_current), [versions]);
-  const versionCards = comparison.length ? comparison : summary ? [summary.current] : [];
+  const versionCards = visibleComparison.length ? visibleComparison : !releaseRangeActive && summary ? [summary.current] : [];
   const metadataByVersion = useMemo(
     () => new Map(versions.map((version) => [version.version_key, version.metadata_json || {}])),
     [versions],
@@ -324,6 +358,7 @@ export default function App() {
 
   function resetSourceFilters() {
     setSourceFilters(defaultSourceFilters);
+    setReleaseRange(twoMonthRange());
     setFilters((value) => ({ ...value, version: '' }));
   }
 
@@ -520,7 +555,7 @@ export default function App() {
 
           <main className="grid min-w-0 gap-5 p-4 md:p-6">
             {page !== 'status' ? (
-            <section className="apple-panel fine-grid grid gap-4 rounded-lg border p-4">
+            <section className="apple-panel fine-grid grid gap-3 rounded-lg border p-3 md:p-4">
               <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
                 <div className="flex min-w-0 flex-wrap items-center gap-2">
                   <Badge variant="secondary">
@@ -535,7 +570,43 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="grid gap-3 border-t border-border/60 pt-3 md:grid-cols-2 xl:grid-cols-[repeat(4,minmax(0,1fr))_auto_auto]">
+              <div className="grid gap-2 border-t border-border/60 pt-2 md:grid-cols-2 xl:grid-cols-[minmax(340px,1.35fr)_repeat(4,minmax(0,1fr))_auto_auto]">
+                <div className="grid gap-1.5 text-xs font-medium text-muted-foreground">
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center gap-1">
+                      <CalendarDays className="h-3.5 w-3.5" />
+                      {t('releaseDateRange')}
+                    </span>
+                    <div className="ml-auto flex items-center gap-1.5">
+                      <button type="button" className="whitespace-nowrap text-[11px] font-semibold text-primary hover:underline focus:outline-none focus:ring-1 focus:ring-ring" onClick={() => setReleaseRange(twoMonthRange())}>
+                        {t('lastTwoMonths')}
+                      </button>
+                      <span className="text-[11px] text-muted-foreground">·</span>
+                      <button type="button" className={cn('whitespace-nowrap text-[11px] font-semibold hover:underline focus:outline-none focus:ring-1 focus:ring-ring', !releaseRange.start && !releaseRange.end ? 'text-foreground' : 'text-primary')} onClick={() => setReleaseRange({ start: '', end: '' })}>
+                        {t('all')}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                    <input
+                      id="global-release-date-start"
+                      type="date"
+                      aria-label={`${t('releaseDateRange')} start`}
+                      className="h-9 min-w-0 flex-1 rounded-md border border-input bg-card/80 px-2 text-xs font-normal text-foreground shadow-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring dark:bg-background/40"
+                      value={releaseRange.start}
+                      onChange={(event) => setReleaseRange((current) => ({ ...current, start: event.target.value }))}
+                    />
+                    <span className="text-xs text-muted-foreground">—</span>
+                    <input
+                      id="global-release-date-end"
+                      type="date"
+                      aria-label={`${t('releaseDateRange')} end`}
+                      className="h-9 min-w-0 flex-1 rounded-md border border-input bg-card/80 px-2 text-xs font-normal text-foreground shadow-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring dark:bg-background/40"
+                      value={releaseRange.end}
+                      onChange={(event) => setReleaseRange((current) => ({ ...current, end: event.target.value }))}
+                    />
+                  </div>
+                </div>
                 <SelectFilter
                   label={t('platformGen')}
                   value={sourceFilters.platformGen}
@@ -635,7 +706,7 @@ export default function App() {
             {page === 'status' ? (
               <SystemStatus />
             ) : page === 'overview' ? (
-              <Overview summary={summary} comparison={comparison} onOpenIssues={openIssues} />
+              <Overview summary={summary} comparison={visibleComparison} onOpenIssues={openIssues} />
             ) : (
               <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(380px,0.75fr)]">
                 <IssuesTable
