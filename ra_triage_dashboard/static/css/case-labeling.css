@@ -42,8 +42,9 @@ body[data-active-page^="labeling"] .gt-sync-control { margin-left: auto; }
 .case-labeling-newtask-page.hidden { display: none; }
 .case-experiment-layout { min-width: 0; display: grid; gap: 16px; }
 .case-experiment-create-body { min-width: 0; display: grid; gap: 16px; padding-top: 16px; border-top: 1px solid var(--line-soft); }
-.case-experiment-fields { min-width: 0; display: grid; grid-template-columns: minmax(220px, 1fr) minmax(0, 3fr); gap: 14px; align-items: end; }
+.case-experiment-fields { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-items: end; }
 .case-experiment-fields .work-split-seed { min-width: 0; gap: 6px; color: var(--muted); font-size: 13px; }
+.case-experiment-fields .labeling-task-name { width: min(720px, 100%); }
 .case-experiment-fields .labeling-task-name input { width: 100%; height: 36px; font-size: 13px; }
 .case-experiment-fields .work-split-mode-row { min-width: 0; padding: 0; border: 0; background: none; }
 .case-experiment-fields .work-split-mode-row .ui-select-trigger { height: 36px; font-size: 13px; }
@@ -58,7 +59,6 @@ body[data-active-page^="labeling"] .gt-sync-control { margin-left: auto; }
 .case-experiment-history .intent-experiment-item > .button { align-self: start; }
 .case-experiment-history .intent-experiment-progress-track i { display: block; }
 @media (max-width: 900px) {
-  .case-experiment-fields { grid-template-columns: minmax(0, 1fr); }
   .case-experiment-fields .work-split-estimate { text-align: left; }
 }
 #caseLabelingFilterForm.case-labeling-filters,

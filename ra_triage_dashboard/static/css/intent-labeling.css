@@ -641,19 +641,6 @@ html.ra-ui-ready .intent-workspace { transition: grid-template-columns 200ms eas
   border: 1px solid rgba(36, 211, 238, .28); border-top-color: var(--accent); border-radius: 50%;
   animation: intent-name-spin .7s linear infinite;
 }
-.intent-experiment-name-control.assignment-name-control { display: grid; gap: 4px; }
-.assignment-name-input-row { min-width: 0; display: flex; align-items: stretch; gap: 8px; }
-.assignment-name-input-row > input { min-width: 0; flex: 1 1 auto; padding-right: 10px; }
-.assignment-name-generate { flex: 0 0 auto; min-height: 36px; white-space: nowrap; }
-.intent-experiment-name-control.assignment-name-control > small,
-.intent-experiment-name-control.assignment-name-control > small:not([data-status="loading"]) {
-  min-height: 15px; display: flex; align-items: center; gap: 5px; position: static;
-  color: var(--faint); font-size: 10px; line-height: 1.4; transform: none;
-}
-.intent-experiment-name-control.assignment-name-control > small:empty { display: none; }
-.intent-experiment-name-control.assignment-name-control > small[data-status="loading"]::before {
-  width: 9px; height: 9px; display: inline-block; flex: 0 0 9px;
-}
 @keyframes intent-name-spin { to { transform: rotate(360deg); } }
 #intentExperimentName::placeholder { color: var(--faint); opacity: 1; }
 .intent-experiment-form-row { min-width: 0; display: contents; }

@@ -96,33 +96,14 @@ function ruleBasedAssignmentName(context) {
 function renderAssignmentNameStatus(kind, status = "ready") {
   const { status: node } = assignmentNameElements(kind);
   if (!node) return;
-  const { input } = assignmentNameElements(kind);
-  const resolvedStatus = status === "ready"
-    ? input?.dataset.manualEdited === "true"
-      ? "manual"
-      : input?.dataset.suggestionSource === "llm"
-        ? "llm"
-        : input?.dataset.suggestionSource === "rule"
-          ? "rule"
-          : "ready"
-    : status;
-  node.dataset.status = resolvedStatus;
-  const labels = {
-    loading: ["AI 命名中…", "Generating with AI…"],
-    llm: ["AI 已生成", "AI generated"],
-    rule: ["规则已生成", "Rule generated"],
-    manual: ["自定义名称", "Custom name"],
-  };
-  const label = labels[resolvedStatus];
-  node.innerHTML = label
-    ? `<span class="ui-lang-zh">${label[0]}</span><span class="ui-lang-en">${label[1]}</span>`
-    : "";
-  node.title = resolvedStatus === "loading"
+  node.dataset.status = status;
+  node.textContent = "";
+  node.title = status === "loading"
     ? uiText("正在根据当前实验配置生成名称", "Generating a name from the current experiment configuration")
     : "";
 }
 
-function updateAssignmentNameSuggestion(kind, { force = false } = {}) {
+function updateAssignmentNameSuggestion(kind) {
   const slot = assignmentNameSuggestionState[kind];
   const { input } = assignmentNameElements(kind);
   if (!slot || !input) return;
@@ -158,8 +139,7 @@ function updateAssignmentNameSuggestion(kind, { force = false } = {}) {
     return;
   }
   if (
-    !force
-    && slot.appliedFingerprint === fingerprint
+    slot.appliedFingerprint === fingerprint
     && ["llm", "rule"].includes(input.dataset.suggestionSource)
   ) return;
   slot.requestFingerprint = fingerprint;
@@ -194,16 +174,6 @@ function updateAssignmentNameSuggestion(kind, { force = false } = {}) {
   }, 650);
 }
 
-function regenerateAssignmentName(kind) {
-  const slot = assignmentNameSuggestionState[kind];
-  const { input } = assignmentNameElements(kind);
-  if (!slot || !input) return;
-  input.dataset.manualEdited = "false";
-  input.dataset.suggestionSource = "";
-  slot.appliedFingerprint = "";
-  updateAssignmentNameSuggestion(kind, { force: true });
-}
-
 function resetAssignmentNameSuggestion(kind) {
   const slot = assignmentNameSuggestionState[kind];
   const { input } = assignmentNameElements(kind);
@@ -228,7 +198,7 @@ function bindAssignmentNameInput(kind) {
       const slot = assignmentNameSuggestionState[kind];
       window.clearTimeout(slot?.timer);
       if (slot) slot.seq += 1;
-      renderAssignmentNameStatus(kind, "manual");
+      renderAssignmentNameStatus(kind);
       return;
     }
     updateAssignmentNameSuggestion(kind);
@@ -1060,9 +1030,6 @@ function copyWorkSplitAssignment(index) {
 
 function bindWorkSplitControls() {
   bindAssignmentNameInput("review");
-  $("#workSplitRegenerateName")?.addEventListener("click", () => {
-    regenerateAssignmentName("review");
-  });
   $("#workSplitResetDraft")?.addEventListener("click", () => {
     workSplitDraft = null;
     saveReviewAllocationDraft(null);

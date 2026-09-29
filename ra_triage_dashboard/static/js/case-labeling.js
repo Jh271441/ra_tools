@@ -664,9 +664,6 @@ async function generateLabelingTask() {
 
 function bindLabelingTaskControls() {
   bindAssignmentNameInput("labeling");
-  $("#labelingTaskRegenerateName")?.addEventListener("click", () => {
-    regenerateAssignmentName("labeling");
-  });
   $("#caseLabelingCreateTask")?.addEventListener("click", () => {
     if (!state.session?.is_admin) {
       showToast(t("work.split_admin_only"), true);
