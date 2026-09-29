@@ -41,11 +41,19 @@ function issueCardLabelingFlag(item) {
 
 function issueCardLabelingAttributes(attributes) {
   if (!Array.isArray(attributes) || !attributes.length) return "";
-  const content = attributes.map((attribute) => {
-    const values = (attribute.values || []).join(uiText("、", ", "));
-    return `<span class="case-labeling-card-attribute" data-tag-section="${escapeHtml(attribute.section || "other")}" data-tag-group="${escapeHtml(attribute.key || "other")}" title="${escapeHtml(values)}"><small><span class="ui-lang-zh">${escapeHtml(attribute.label_zh || attribute.key)}</span><span class="ui-lang-en">${escapeHtml(attribute.label_en || attribute.key)}</span></small><b>${escapeHtml(values)}</b></span>`;
+  const tags = attributes.flatMap((attribute) => (attribute.values || []).map((value) => ({
+    ...attribute,
+    value,
+  })));
+  const visible = tags.slice(0, 3).map((tag) => {
+    const group = `${tag.label_zh || tag.key} / ${tag.label_en || tag.key}`;
+    const title = `${group}: ${tag.value}`;
+    return `<span class="case-labeling-card-tag" data-tag-section="${escapeHtml(tag.section || "other")}" data-tag-group="${escapeHtml(tag.key || "other")}" title="${escapeHtml(title)}">${escapeHtml(tag.value)}</span>`;
   }).join("");
-  return `<div class="case-labeling-card-attributes">${content}</div>`;
+  const overflow = tags.length > 3
+    ? `<span class="case-labeling-card-tag-more" title="${escapeHtml(tags.slice(3).map((tag) => tag.value).join(uiText("、", ", ")))}">+${tags.length - 3}</span>`
+    : "";
+  return `<span class="case-labeling-card-tags">${visible}${overflow}</span>`;
 }
 
 function issueCard(item, options = {}) {
@@ -117,6 +125,7 @@ function issueCard(item, options = {}) {
         <div class="issue-card-heading">
           <div class="issue-card-heading-main">
             ${issueUrl ? `<a class="issue-id" href="${escapeHtml(issueUrl)}" target="_blank" rel="noreferrer" data-card-link title="打开 Voyager Issue">${escapeHtml(item.issue_id)}</a>` : `<span class="issue-id">${escapeHtml(item.issue_id)}</span>`}
+            ${labelingAttributes}
             ${evidenceRow}
           </div>
           <div class="issue-card-flags">${reviewFlag}${sharedLabelFlag}</div>
@@ -128,7 +137,6 @@ function issueCard(item, options = {}) {
           ${historicalReview ? `<span class="issue-reviewer historical-review" title="${escapeHtml(historicalReviewTitle)}"><span class="ui-lang-zh">历史 Review</span><span class="ui-lang-en">Historical review</span></span>` : ""}
           ${item.annotation?.author ? `<span class="issue-reviewer" title="${escapeHtml(uiText(`${actorKindZh}人：${item.annotation.author}${item.annotation.author_verified ? " · SSO 已验证" : " · 未验证身份"}`, `${actorKindEn}: ${item.annotation.author}${item.annotation.author_verified ? " · SSO verified" : " · unverified"}`))}">${escapeHtml(item.annotation.author)}${item.annotation.author_verified ? " · SSO" : ""}</span>` : ""}
         </div>
-        ${labelingAttributes}
       </div>
     </article>`;
 }
