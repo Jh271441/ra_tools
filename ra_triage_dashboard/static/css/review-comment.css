@@ -907,12 +907,12 @@ html[data-color-theme="light"] .detail-queue-index-input {
 .review-assignment-status { flex: 0 0 auto; padding: 4px 8px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); background: var(--raised); font-size: 10px; white-space: nowrap; }
 .review-assignment-status.is-current { border-color: rgba(52,211,153,.35); color: var(--ok); background: rgba(52,211,153,.08); }
 .review-assignment-status.is-superseded { border-color: rgba(148,163,184,.28); color: var(--faint); }
-.review-assignment-progress { display: grid; grid-template-columns: 62px minmax(0, 1fr) auto; align-items: center; gap: 8px; }
-.review-assignment-progress-heading { display: contents; color: var(--muted); font-size: 10px; }
+.review-assignment-progress { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+.review-assignment-progress-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 10px; }
 .review-assignment-progress-heading span { grid-column: 1; }
-.review-assignment-progress-heading strong { grid-column: 3; color: var(--text); font-size: 11px; font-variant-numeric: tabular-nums; }
+.review-assignment-progress-heading strong { color: var(--text); font-size: 11px; font-variant-numeric: tabular-nums; }
 .review-assignment-progress-track { height: 6px; overflow: hidden; border-radius: 999px; background: var(--overlay-2); }
-.review-assignment-progress > .review-assignment-progress-track { grid-column: 2; }
+.review-assignment-progress > .review-assignment-progress-track { grid-column: 1; }
 .review-assignment-progress-track > span { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width 180ms ease-out; }
 .review-assignment-member-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0; padding-top: 9px; border-top: 1px solid var(--line-soft); }
 .review-assignment-member { min-width: 0; display: grid; gap: 5px; padding: 2px 14px 2px 0; border: 0; border-radius: 0; background: transparent; }
@@ -1372,3 +1372,5 @@ html[data-color-theme="light"] .issue-card-flag-model-no-gt { border-color: #fcd
 
 body[data-active-page="review-assignments"] .header-metrics { display: none; }
 body[data-active-page="review-assignments"] .gt-sync-control { margin-left: auto; }
+
+.review-assignment-detail-card { scroll-margin-top: 76px; }

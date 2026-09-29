@@ -398,7 +398,7 @@ function normalizedAnalysisRouteFilters(params) {
     workAgreement: ["pending", "agreed", "conflict"].includes(params.get("work_agreement"))
       ? params.get("work_agreement")
       : "all",
-    workSplitId: /^split-[A-Za-z0-9]+$/.test(params.get("work_split") || "")
+    workSplitId: /^(?:split|campaign)-[A-Za-z0-9]+$/.test(params.get("work_split") || "")
       ? params.get("work_split")
       : "",
     page: Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1,

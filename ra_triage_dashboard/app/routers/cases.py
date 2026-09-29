@@ -137,7 +137,7 @@ async def suggest_assignment_name(request: Request) -> dict[str, Any]:
     )
     catalog_status = await asyncio.to_thread(model_catalog.status)
     if not catalog_status.get("configured"):
-        return {"suggestion": fallback, "source": "rule"}
+        return {"suggestion": fallback, "source": "rule", "reason": "not_configured"}
     try:
         suggestion = await asyncio.to_thread(
             suggest_assignment_name_with_llm,
@@ -155,8 +155,10 @@ async def suggest_assignment_name(request: Request) -> dict[str, Any]:
             comparison=comparison,
             draft_name=draft_name,
         )
-    except (IntentNameSuggestionError, ModelCatalogError):
-        return {"suggestion": fallback, "source": "rule"}
+    except IntentNameSuggestionError as exc:
+        return {"suggestion": fallback, "source": "rule", "reason": exc.reason}
+    except ModelCatalogError:
+        return {"suggestion": fallback, "source": "rule", "reason": "unavailable"}
     return {"suggestion": suggestion, "source": "llm"}
 
 
@@ -740,6 +742,11 @@ async def list_case_work_splits(
         limit=max(1, min(int(limit or 50), 100)),
         model_run_id=_as_text(model_run_id),
     )
+    for item in items:
+        item["baseline_ids"] = [
+            baseline_registry.scope_to_id(scope) or scope
+            for scope in item.get("baseline_scopes") or []
+        ]
     return {"items": items, "change_revision": await asyncio.to_thread(database.change_revision)}
 
 
@@ -760,7 +767,7 @@ async def review_work_split_options(
 
     def snapshot_baselines(item: dict[str, Any]) -> set[str]:
         snapshot = item.get("filter_snapshot") or {}
-        raw = snapshot.get("baselines") or snapshot.get("baseline_scopes") or []
+        raw = item.get("baseline_scopes") or snapshot.get("baselines") or snapshot.get("baseline_scopes") or []
         if isinstance(raw, str):
             values = raw.split(",")
         elif isinstance(raw, (list, tuple, set)):
@@ -827,6 +834,10 @@ async def get_case_work_split(
         raise _detail(400, str(exc)) from exc
     if result is None:
         raise _detail(404, "分配批次不存在。")
+    result["baseline_ids"] = [
+        baseline_registry.scope_to_id(scope) or scope
+        for scope in result.get("baseline_scopes") or []
+    ]
     return result
 
 

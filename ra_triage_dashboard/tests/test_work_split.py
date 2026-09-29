@@ -730,6 +730,7 @@ class WorkSplitTest(unittest.TestCase):
             batches = db.list_review_work_splits()
             self.assertEqual(len(batches), 1)
             batch = batches[0]
+            self.assertEqual(batch["baseline_scopes"], ["scope"])
             self.assertEqual(batch["total_count"], 4)
             self.assertEqual(batch["assignment_count"], 4)
             self.assertEqual(batch["completed_count"], 1)
@@ -739,6 +740,7 @@ class WorkSplitTest(unittest.TestCase):
             detail = db.get_review_work_split(saved["split_id"], page_size=20)
             self.assertIsNotNone(detail)
             assert detail is not None
+            self.assertEqual(detail["baseline_scopes"], ["scope"])
             self.assertEqual(detail["total"], 4)
             self.assertEqual(sum(bool(item["submitted"]) for item in detail["items"]), 1)
             pending = next(item for item in detail["items"] if not item["submitted"])

@@ -20,7 +20,9 @@ INTENT_NAME_MODEL_ID = "Qwen3.8-27B/Qwen3.8-27B"
 
 
 class IntentNameSuggestionError(RuntimeError):
-    pass
+    def __init__(self, message: str, *, reason: str = "invalid_output") -> None:
+        super().__init__(message)
+        self.reason = reason
 
 
 class _NoRedirect(HTTPRedirectHandler):
@@ -237,8 +239,6 @@ def _validate_assignment_suggestion(
         and has_comparison
     ):
         raise IntentNameSuggestionError("模型名称缺少实验关键信息。")
-    if suggestion == fallback:
-        raise IntentNameSuggestionError("模型没有优化规则名称。")
     return suggestion
 
 
@@ -247,6 +247,8 @@ def _request_name_completion(
     *,
     prompt: str,
     system_prompt: str,
+    timeout: int = 8,
+    max_tokens: int = 64,
 ) -> str:
     provider_id = "kylin"
     api_key = read_provider_api_key(settings, provider_id)
@@ -259,7 +261,7 @@ def _request_name_completion(
                 {"role": "user", "content": prompt},
             ],
             "temperature": 0.3,
-            "max_tokens": 64,
+            "max_tokens": max_tokens,
             "stream": False,
         },
         ensure_ascii=False,
@@ -279,12 +281,15 @@ def _request_name_completion(
         },
     )
     try:
-        with build_opener(ProxyHandler({}), _NoRedirect()).open(request, timeout=8) as response:
+        with build_opener(ProxyHandler({}), _NoRedirect()).open(request, timeout=timeout) as response:
             if response.status != 200:
-                raise IntentNameSuggestionError("模型名称推荐暂不可用。")
+                raise IntentNameSuggestionError("模型名称推荐暂不可用。", reason="unavailable")
             raw = response.read(MAX_RESPONSE_BYTES + 1)
     except (HTTPError, URLError, TimeoutError, OSError, ValueError) as exc:
-        raise IntentNameSuggestionError("模型名称推荐暂不可用。") from exc
+        timed_out = isinstance(exc, TimeoutError) or isinstance(getattr(exc, "reason", None), TimeoutError)
+        raise IntentNameSuggestionError(
+            "模型名称推荐暂不可用。", reason="timeout" if timed_out else "unavailable"
+        ) from exc
     if len(raw) > MAX_RESPONSE_BYTES:
         raise IntentNameSuggestionError("模型名称推荐响应过大。")
     try:
@@ -361,9 +366,22 @@ def suggest_assignment_name_with_llm(
     comparison: str = "all",
     draft_name: str = "",
 ) -> str:
-    subject = "Case 标注" if assignment_kind == "case_labeling" else "模型判错复核"
+    subject = "Case标注" if assignment_kind == "case_labeling" else (
+        "联合复核" if workflow_mode == "model_review_and_case_label" else "判错复核"
+    )
+    allocation = _allocation_mode_label(
+        reviewers_per_issue=reviewers_per_issue, overlap_ratio=overlap_ratio, member_count=member_count
+    )
+    required = [str(label).split("·", 1)[0].strip() for label in dataset_labels]
+    required.extend([subject, allocation, str(case_count), "Case"])
+    if assignment_kind == "model_review":
+        run_hint = " ".join(str(run_name).split("·", 1)[0].split()).split(" ", 1)[0][:16]
+        if run_hint:
+            required.append(run_hint)
+        if str(comparison).strip().lower() not in {"", "all"}:
+            required.append(str(comparison).strip().upper())
     prompt = (
-        "请为内部任务分配实验生成一个简洁、可检索的中文名称。只返回名称，不要解释，不超过50个字符。\n"
+        "请为内部任务分配实验生成一个简洁、可检索的中文名称。只返回名称，不要解释，不超过80个字符。\n"
         f"任务类型：{subject}\n"
         f"数据集：{', '.join(dataset_labels)}\n"
         f"Case数量：{case_count}\n"
@@ -375,12 +393,16 @@ def suggest_assignment_name_with_llm(
         f"模型判断范围：{comparison or 'all'}\n"
         f"用户当前草稿：{draft_name or '无'}\n"
         f"规则名称参考：{fallback}\n"
-        "必须保留数据集、任务类型、Case数量和单人/交叉方式；模型复核还必须保留模型Run与判断范围。"
+        f"以下片段必须逐字保留：{json.dumps(required, ensure_ascii=False)}。\n"
+        "分配方式使用给定片段，不要根据每Case人数改成单人。"
+        "可以调整片段顺序或连接词，不得改变任务含义；规则名称已合适时允许原样返回。"
     )
     suggestion = _request_name_completion(
         settings,
         prompt=prompt,
         system_prompt="你负责为内部 Case 标注和模型复核任务命名。",
+        timeout=15,
+        max_tokens=128,
     )
     return _validate_assignment_suggestion(
         suggestion,

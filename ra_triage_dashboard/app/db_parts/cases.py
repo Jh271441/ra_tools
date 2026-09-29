@@ -1415,6 +1415,18 @@ class DatabaseCasesMixin:
 
             split_ids = [str(row["id"]) for row in split_rows]
             placeholders = ", ".join("?" for _ in split_ids)
+            scope_rows = conn.execute(
+                f"""SELECT DISTINCT assignment.split_id, issue.baseline_scope
+                    FROM review_work_assignments assignment
+                    JOIN issues issue ON issue.issue_id = assignment.issue_id
+                    WHERE assignment.split_id IN ({placeholders})
+                    ORDER BY assignment.split_id, issue.baseline_scope""",
+                split_ids,
+            ).fetchall()
+            scopes_by_split: dict[str, list[str]] = {}
+            for scope_row in scope_rows:
+                if scope_row["baseline_scope"]:
+                    scopes_by_split.setdefault(str(scope_row["split_id"]), []).append(str(scope_row["baseline_scope"]))
             progress_rows = conn.execute(
                 f"""
                 SELECT assignment.split_id,
@@ -1593,6 +1605,7 @@ class DatabaseCasesMixin:
                     "workflow_mode": str(row["workflow_mode"] or "model_review_only"),
                     "overlap_ratio": float(row["overlap_ratio"] or 0),
                     "filter_snapshot": _json_load(row["filter_json"], {}),
+                    "baseline_scopes": scopes_by_split.get(split_id, []),
                     "members": members,
                     "completed_count": completed_count,
                     "pending_count": max(0, assignment_count - completed_count),
@@ -2002,6 +2015,7 @@ class DatabaseCasesMixin:
             "purpose": str(split["purpose"] or ""),
             "overlap_ratio": float(split["overlap_ratio"] or 0),
             "filter_snapshot": _json_load(split["filter_json"], {}),
+            "baseline_scopes": summary.get("baseline_scopes", []),
             "members": summary.get("members", []),
             "completed_count": int(summary.get("completed_count") or 0),
             "pending_count": int(summary.get("pending_count") or 0),

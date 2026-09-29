@@ -29,7 +29,10 @@ class _Response:
 
 class _Opener:
     def open(self, request, timeout):
-        assert timeout == 8
+        body = json.loads(request.data)
+        assignment = "Case 标注和模型复核" in body["messages"][0]["content"]
+        assert timeout == (15 if assignment else 8)
+        assert body["max_tokens"] == (128 if assignment else 64)
         assert request.get_header("Apikey") == "secret"
         assert json.loads(request.data)["model"] == "Qwen3.8-27B/Qwen3.8-27B"
         return _Response()
@@ -133,6 +136,33 @@ class IntentNameSuggestionTest(unittest.TestCase):
             suggestion,
             "0508 H2 联合复核 MISMATCH 2人交叉50%复核 211 Case",
         )
+
+    def test_assignment_accepts_valid_unchanged_output_but_rejects_wrong_allocation(self):
+        kwargs = dict(
+            fallback="0508 Case标注 2人均分 1071 Case", dataset_labels=["0508"],
+            assignment_kind="case_labeling", case_count=1071, reviewers_per_issue=1,
+            overlap_ratio=0, member_count=2,
+        )
+        with patch("ra_triage_dashboard.app.intent_name_suggestion._request_name_completion", return_value=kwargs["fallback"]) as call:
+            self.assertEqual(suggest_assignment_name_with_llm(SimpleNamespace(), _Catalog(), **kwargs), kwargs["fallback"])
+            self.assertIn('"2人均分"', call.call_args.kwargs["prompt"])
+        with patch("ra_triage_dashboard.app.intent_name_suggestion._request_name_completion", return_value="0508 Case标注 1071Case 单人"):
+            with self.assertRaises(IntentNameSuggestionError) as error:
+                suggest_assignment_name_with_llm(SimpleNamespace(), _Catalog(), **kwargs)
+            self.assertEqual(error.exception.reason, "invalid_output")
+
+    def test_assignment_timeout_has_a_safe_reason(self):
+        from ra_triage_dashboard.app.intent_name_suggestion import _request_name_completion
+        with (
+            patch("ra_triage_dashboard.app.intent_name_suggestion.read_provider_api_key", return_value="secret"),
+            patch("ra_triage_dashboard.app.intent_name_suggestion.model_gateway_chat_url", return_value="http://ra-model.intra.xiaojukeji.com/v1/chat/completions"),
+            patch("ra_triage_dashboard.app.intent_name_suggestion.build_opener") as opener,
+        ):
+            opener.return_value.open.side_effect = TimeoutError("private transport detail")
+            with self.assertRaises(IntentNameSuggestionError) as error:
+                _request_name_completion(SimpleNamespace(), prompt="test", system_prompt="test")
+            self.assertEqual(error.exception.reason, "timeout")
+            self.assertNotIn("private transport detail", str(error.exception))
 
     def test_rule_name_is_immediate_and_descriptive(self):
         self.assertEqual(

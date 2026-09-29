@@ -41,35 +41,27 @@ function reviewAssignmentFilterLabel(item) {
 }
 
 function reviewAssignmentRouteOptions(item, page) {
-  const filter = item?.filter_snapshot && typeof item.filter_snapshot === "object"
-    ? item.filter_snapshot
-    : {};
+  // Batch membership is frozen. Creation-time filters belong to View source
+  // filter; do not apply them again or inherit filters from another workspace.
+  const filter = item?.filter_snapshot || {};
   const common = {
     runId: item?.model_run_id || "",
-    comparisonStatus: filter.comparison_status || "all",
-    search: filter.search || "",
-    gtLabel: parseFilterList(filter.gt_label),
-    modelLabel: parseFilterList(filter.model_label),
-    annotationAuthor: parseFilterList(filter.annotation_author),
-    reviewStatus: parseFilterList(filter.review_status),
-    exclusion: filter.exclusion || "all",
-    workSplitId: item?.split_id || "",
-    baselines: filter.baselines || filter.baseline_scopes || [],
+    comparisonStatus: "all",
+    search: "", issueIds: [], gtLabel: [], modelLabel: [],
+    annotationAuthor: [], reviewStatus: [], commentState: "all", commentSearch: "",
+    exclusion: "all", workSplitId: item?.split_id || "",
+    baselines: item?.baseline_ids || item?.baseline_scopes || filter.baselines || filter.baseline_scopes || [],
+    forceBaselines: true,
   };
   if (page === "analysis") {
     return {
-      ...common,
-      issueIds: [],
-      missingEvidence: parseFilterList(filter.missing_evidence),
-      page: 1,
+      ...common, missingEvidence: [], sceneTag: [], triggerTag: [], egressTag: [],
+      workAgreement: "all", legacyTag: "", page: 1, pageSize: 20,
     };
   }
   return {
-    ...common,
-    issue: "",
-    issueIds: [],
-    clusterKey: filter.missing_evidence || "",
-    casePage: 1,
+    ...common, issue: "", labelStates: [], workAssignee: [], clusterKey: "",
+    workflowMode: item?.workflow_mode || "model_review_only", casePage: 1, casePageSize: 20,
   };
 }
 
@@ -206,14 +198,12 @@ function reviewAssignmentTaskStatusMarkup(item) {
 }
 
 function reviewAssignmentIssueHref(item) {
+  const detail = state.reviewAssignments.detail || {};
   return pageUrl("review", {
+    ...reviewAssignmentRouteOptions(detail, "review"),
     issue: item.issue_id,
-    runId: item.split_model_run_id || state.reviewAssignments.detail?.model_run_id || "",
-    comparisonStatus: "all",
+    runId: item.split_model_run_id || detail.model_run_id || "",
     workAssignee: [item.assignee],
-    workSplitId: state.reviewAssignments.detail?.split_id || "",
-    issueIds: [],
-    casePage: 1,
   });
 }
 
@@ -369,6 +359,7 @@ async function loadReviewAssignmentDetail(
   const store = state.reviewAssignments;
   const normalized = String(splitId || "").trim();
   if (!normalized) return;
+  if (store.selectedSplitId !== normalized) store.detail = null;
   store.selectedSplitId = normalized;
   const requestSeq = ++store.detailRequestSeq;
   store.detailLoading = true;
@@ -392,6 +383,7 @@ async function loadReviewAssignmentDetail(
         "",
         reviewAssignmentDetailUrl(normalized)
       );
+      $("#reviewAssignmentDetail")?.scrollIntoView({ behavior: "smooth", block: "start" });
     }
   } catch (error) {
     if (requestSeq !== store.detailRequestSeq) return;
@@ -478,6 +470,7 @@ function bindReviewAssignmentsPage() {
   });
   $("#reviewAssignmentDetailClose")?.addEventListener("click", () => {
     const store = state.reviewAssignments;
+    store.detailRequestSeq += 1;
     store.selectedSplitId = "";
     store.detail = null;
     store.detailLoading = false;

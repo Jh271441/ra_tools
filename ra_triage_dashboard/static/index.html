@@ -79,7 +79,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-540`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-541`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -458,7 +458,7 @@
               <div class="case-experiment-fields">
               <label class="work-split-seed labeling-task-name">
                 <span><span class="ui-lang-zh">实验名称</span><span class="ui-lang-en">Experiment name</span></span>
-                <span class="intent-experiment-name-control"><input id="labelingTaskName" type="text" maxlength="80" placeholder="自动生成实验名称" data-placeholder-zh="自动生成实验名称" data-placeholder-en="Generated from the experiment configuration" autocomplete="off" /><small class="assignment-name-source" id="labelingTaskNameStatus" aria-live="polite"></small></span>
+                <span class="intent-experiment-name-control"><input id="labelingTaskName" type="text" maxlength="80" placeholder="自动生成实验名称" data-placeholder-zh="自动生成实验名称" data-placeholder-en="Generated from the experiment configuration" autocomplete="off" /><small class="assignment-name-source" id="labelingTaskNameStatus" aria-live="polite"></small><button class="assignment-name-refresh" id="labelingTaskRefreshName" type="button" aria-label="重新生成实验名称" title="重新生成实验名称" disabled><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 7v5h-5M4 17v-5h5M6.1 7a7 7 0 0 1 11.6-1L20 9M4 15l2.3 3A7 7 0 0 0 17.9 17"/></svg></button></span>
               </label>
               <div class="work-split-mode-row">
                 <label class="work-split-seed">
@@ -571,7 +571,7 @@
               <div class="work-split-inline-body">
                 <label class="work-split-seed work-split-name">
                   <span><span class="ui-lang-zh">实验名称</span><span class="ui-lang-en">Experiment name</span></span>
-                  <span class="intent-experiment-name-control"><input id="workSplitName" type="text" maxlength="80" placeholder="自动生成实验名称" data-placeholder-zh="自动生成实验名称" data-placeholder-en="Generated from the experiment configuration" autocomplete="off" /><small class="assignment-name-source" id="workSplitNameStatus" aria-live="polite"></small></span>
+                  <span class="intent-experiment-name-control"><input id="workSplitName" type="text" maxlength="80" placeholder="自动生成实验名称" data-placeholder-zh="自动生成实验名称" data-placeholder-en="Generated from the experiment configuration" autocomplete="off" /><small class="assignment-name-source" id="workSplitNameStatus" aria-live="polite"></small><button class="assignment-name-refresh" id="workSplitRefreshName" type="button" aria-label="重新生成实验名称" title="重新生成实验名称" disabled><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 7v5h-5M4 17v-5h5M6.1 7a7 7 0 0 1 11.6-1L20 9M4 15l2.3 3A7 7 0 0 0 17.9 17"/></svg></button></span>
                 </label>
                 <label class="work-split-seed work-split-workflow-mode">
                   <span><span class="ui-lang-zh">任务模式</span><span class="ui-lang-en">Task mode</span></span>
@@ -2387,7 +2387,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-540`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-541`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

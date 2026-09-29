@@ -132,9 +132,9 @@ body[data-active-page^="labeling"] .gt-sync-control { margin-left: auto; }
 .assignment-composer .work-split-people { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; max-height: none; overflow: visible; }
 .assignment-composer .work-split-person-row { grid-template-columns: minmax(0, 1fr) 130px 36px; }
 .assignment-composer .work-split-remove-person { width: 36px; height: 36px; }
-.assignment-composer .intent-experiment-name-control input { padding-right: 144px; }
+.assignment-composer .intent-experiment-name-control input { padding-right: 176px; }
 .assignment-composer .intent-experiment-name-control > .assignment-name-source {
-  display: inline-flex; align-items: center; gap: 6px; color: var(--faint); font-size: 11px; line-height: 1.3;
+  display: inline-flex; align-items: center; gap: 6px; right: 44px; pointer-events: auto; color: var(--faint); font-size: 11px; line-height: 1.3;
 }
 .assignment-composer .assignment-name-source[data-source="llm"] { color: var(--accent); }
 .assignment-composer .assignment-name-source[data-status="loading"]::before { flex: 0 0 10px; }
@@ -142,8 +142,9 @@ body[data-active-page^="labeling"] .gt-sync-control { margin-left: auto; }
 .assignment-history > .intent-experiment-section-heading,
 .assignment-history > .review-assignment-section-heading { min-height: 42px; margin: 0; padding: 0 0 10px; border-bottom: 1px solid var(--line-soft); align-items: center; }
 .assignment-history h2, .assignment-history h3 { margin: 0; font-size: 17px; line-height: 1.4; }
-.assignment-history .review-assignment-list, .assignment-history .intent-experiment-list { gap: 0; }
-.assignment-history .review-assignment-batch, .assignment-history .intent-experiment-item {
+.assignment-history .intent-experiment-list { gap: 0; }
+.assignment-history .review-assignment-list { gap: 12px; padding-top: 12px; }
+.assignment-history .intent-experiment-item {
   padding: 16px 0; border: 0; border-bottom: 1px solid var(--line-soft); border-radius: 0; background: transparent;
 }
 html[data-color-theme="light"] .assignment-history.assignment-history { background: transparent; }
@@ -152,6 +153,19 @@ html[data-color-theme="light"] .assignment-history.assignment-history { backgrou
   .assignment-history.assignment-history { padding-right: 14px; padding-left: 14px; }
   .assignment-composer .work-split-person-row { grid-template-columns: minmax(0, 1fr) 76px 36px; }
   .assignment-composer .review-assignments-header-main { flex-wrap: wrap; gap: 10px; }
-  .assignment-composer .intent-experiment-name-control input { padding-right: 120px; }
+  .assignment-composer .intent-experiment-name-control input { padding-right: 152px; }
   .assignment-composer .intent-experiment-name-control > .assignment-name-source { font-size: 10px; }
 }
+
+.assignment-name-refresh {
+  position: absolute; right: 5px; top: 50%; transform: translateY(-50%);
+  display: grid; place-items: center; width: 28px; height: 28px; padding: 5px;
+  border: 0; border-radius: 5px; background: transparent; color: var(--muted); cursor: pointer;
+}
+.assignment-name-refresh:hover:not(:disabled) { color: var(--accent); background: var(--accent-soft); }
+.assignment-name-refresh:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.assignment-name-refresh:disabled { opacity: .4; cursor: default; }
+.assignment-name-refresh svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.assignment-name-refresh[data-loading="true"] svg { animation: intent-name-spin .8s linear infinite; }
+.assignment-composer .assignment-name-source[data-status="loading"]::before { display: none; }
+@media (prefers-reduced-motion: reduce) { .assignment-name-refresh[data-loading="true"] svg { animation: none; } }

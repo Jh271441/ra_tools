@@ -122,3 +122,52 @@ assert.deepEqual(caseLabelingTagAttributes({label_state:'conflict',label_cases:[
         self.assertIn('params.get("workflow") === "model_only"', routing)
         self.assertIn('url.searchParams.set("workflow", "model_only")', routing)
         self.assertIn('$("#workSplitWorkflowMode").value = "model_review_and_case_label"', work_split)
+
+
+class AssignmentNavigationRegressionTest(unittest.TestCase):
+    def test_batch_links_roundtrip_campaign_id_without_stale_filters(self):
+        script = (ROOT / 'static/js/routing.js').read_text() + (ROOT / 'static/js/review-assignments.js').read_text() + r'''
+const assert=require('node:assert/strict');
+window={location:{origin:'http://localhost'}};
+withBase=p=>p;
+PAGE_ROUTES={review:{path:'/review'},analysis:{path:'/review-analysis'}};
+LABELS=[]; MODEL_LABELS=[]; CASE_PAGE_SIZES=[10,20,50,100]; DEFAULT_CASE_PAGE_SIZE=20;
+ISSUE_QUERY_ID_RE=/^[A-Za-z0-9_-]{3,128}$/;
+parseFilterList=v=>Array.isArray(v)?v:String(v||'').split(',').filter(Boolean);
+joinFilterList=v=>parseFilterList(v).join(',');normalizeBaselineIds=parseFilterList;
+selectedBaselineQueryValue=()=> 'wrong-dataset';defaultBaselineIdsFromConfig=()=>['0508'];
+comparisonStatusParam=v=>String(v);parseComparisonStatuses=v=>[v];
+const stale={labelStates:['conflict'],workAssignee:['old-user'],sceneTag:['old-scene'],triggerTag:['old-trigger'],egressTag:['old-egress'],workAgreement:'conflict',commentState:'with',commentSearch:'stale',casePage:9,page:9,casePageSize:100,pageSize:100};
+currentReviewRouteOptions=o=>({...stale,...o}); currentAnalysisRouteOptions=o=>({...stale,...o});
+const batch={split_id:'campaign-abc123',model_run_id:'run-a',workflow_mode:'model_review_only',baseline_ids:['0821'],filter_snapshot:{comparison_status:'mismatch',search:'original-search',review_status:'pending'}};
+for (const page of ['review','analysis']) {
+ const url=new URL(reviewAssignmentBatchHref(batch,page),'http://localhost');
+ assert.equal(url.searchParams.get('run'),'run-a');assert.equal(url.searchParams.get('baselines'),'0821');
+ assert.equal(url.searchParams.get('work_split'),'campaign-abc123');assert.equal(url.searchParams.get('comparison'),'all');
+ for(const key of ['q','status','label_state','work_assignee','scene_tag','trigger_tag','egress_tag','comment_state','comment_search','work_agreement','page']) assert.equal(url.searchParams.has(key),false,key);
+ const parsed=page==='review'?normalizedReviewRouteFilters(url.searchParams):normalizedAnalysisRouteFilters(url.searchParams);
+ assert.equal(parsed.workSplitId,'campaign-abc123');
+ if(page==='review') assert.equal(parsed.workflowMode,'model_review_only');
+}
+assert.equal(normalizedAnalysisRouteFilters(new URLSearchParams('work_split=split-123')).workSplitId,'split-123');
+assert.equal(normalizedAnalysisRouteFilters(new URLSearchParams('work_split=bad/123')).workSplitId,'');
+'''
+        subprocess.run(['node','-e',script], check=True, capture_output=True)
+
+    def test_detail_button_uses_requested_batch_and_scrolls_to_result(self):
+        script = (ROOT / 'static/js/review-assignments.js').read_text() + r'''
+const assert=require('node:assert/strict');
+state={reviewAssignments:{selectedSplitId:'campaign-old',detail:{split_id:'campaign-old'},detailRequestSeq:0,page:1,pageSize:50,status:'all',assignee:'',query:''}};
+let requested,scrolled=false,route='';
+api=async path=>{requested=path;return {split_id:'campaign-new'};};
+renderReviewAssignmentPage=()=>{};showToast=()=>{};
+$=()=>({scrollIntoView:()=>{scrolled=true;}});
+withBase=p=>p;window={location:{origin:'http://localhost'},history:{state:{},replaceState:(_s,_t,url)=>{route=url;}}};
+(async()=>{
+ await loadReviewAssignmentDetail('campaign-new',{updateRoute:true});
+ assert.ok(requested.startsWith('/api/cases/work-splits/campaign-new?'));
+ assert.equal(state.reviewAssignments.detail.split_id,'campaign-new');
+ assert.equal(route,'/review-assignments?split=campaign-new');assert.equal(scrolled,true);
+})().catch(e=>{console.error(e);process.exitCode=1;});
+'''
+        subprocess.run(['node','-e',script], check=True, capture_output=True)
