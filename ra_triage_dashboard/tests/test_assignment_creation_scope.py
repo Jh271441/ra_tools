@@ -65,7 +65,10 @@ assert.equal(route.workflowMode,'model_review_and_case_label');
         self.assertNotIn('id="reviewAssignmentCreate"', html)
         self.assertNotIn('<h3>分配范围</h3>', html)
         self.assertNotIn('id="allocationComparison"', html)
-        self.assertIn('返回图库修改筛选', html)
+        self.assertNotIn('返回图库修改筛选', html)
+        self.assertIn('id="reviewAssignmentsGoReview"', html)
+        self.assertNotIn('id="workSplitDialogHint"', html)
+        self.assertNotIn('id="workSplitSummary"', html)
 
     def test_all_three_assignment_flows_start_with_explicit_addition(self):
         work_split = (ROOT / 'static/js/work-split.js').read_text()
