@@ -23,6 +23,7 @@ from ..review_workflow import resolve_expected_output
 from ..runtime import _public_path, database, review_notification_dispatcher, settings
 from ..support.baselines import resolve_request_baseline_scopes
 from ..support.catalogs import (
+    _csv_filter_values,
     _normalise_missing_evidence,
     _normalise_review_excluded,
     _normalise_review_tags,
@@ -38,6 +39,26 @@ from .case_comments import _public_review_comment
 
 router = APIRouter()
 _COMMENT_ATTACHMENT_TOKEN_RE = re.compile(r"^[A-Za-z0-9-]{1,80}$")
+
+
+def _labeling_filter_values(
+    value: Any,
+    *,
+    allowed: set[str] | None = None,
+    error: str = "筛选值不合法。",
+    lower: bool = False,
+) -> list[str]:
+    raw_values = (
+        [_as_text(item).strip() for item in value]
+        if isinstance(value, (list, tuple, set))
+        else _csv_filter_values(_as_text(value))
+    )
+    values = list(dict.fromkeys(item for item in raw_values if item and item != "all"))
+    if lower:
+        values = list(dict.fromkeys(item.lower() for item in values))
+    if allowed is not None and any(item not in allowed for item in values):
+        raise _detail(400, error)
+    return values
 
 
 def _public_label_attachment(attachment: dict[str, Any]) -> dict[str, Any]:
@@ -218,26 +239,35 @@ async def create_labeling_task(request: Request) -> dict[str, Any]:
             _as_text(filter_body.get("baselines")), request=request
         )
         scopes = await _active_labeling_scopes(scopes)
-        normalized_status = _as_text(filter_body.get("status")).lower() or "all"
-        if normalized_status not in {"all", "pending", "resolved", "conflict"}:
-            raise _detail(400, "标注状态不合法。")
-        normalized_exclusion = _as_text(filter_body.get("exclusion")).lower() or "all"
-        if normalized_exclusion not in {"all", "excluded", "active"}:
-            raise _detail(400, "排除筛选不合法。")
-        normalized_label = _as_text(filter_body.get("label")).strip()
-        if normalized_label == "all":
-            normalized_label = ""
-        normalized_cluster = _as_text(filter_body.get("cluster")).strip()
-        normalized_gt = _as_text(filter_body.get("gt")).strip()
-        if normalized_gt == "all":
-            normalized_gt = ""
-        if normalized_gt and normalized_gt not in LABELS:
-            raise _detail(400, "GT 类别不合法。")
-        normalized_comment_state = (
-            _as_text(filter_body.get("comment_state")).strip().lower() or "all"
+        normalized_status = _labeling_filter_values(
+            filter_body.get("status"),
+            allowed={"pending", "resolved", "conflict"},
+            error="标注状态不合法。",
+            lower=True,
         )
-        if normalized_comment_state not in {"all", "with", "without"}:
-            raise _detail(400, "讨论筛选不合法。")
+        normalized_exclusion = _labeling_filter_values(
+            filter_body.get("exclusion"),
+            allowed={"excluded", "active"},
+            error="排除筛选不合法。",
+            lower=True,
+        )
+        normalized_label = _labeling_filter_values(
+            filter_body.get("label"),
+            allowed=set(LABELS),
+            error="标注结果类别不合法。",
+        )
+        normalized_cluster = _as_text(filter_body.get("cluster")).strip()
+        normalized_gt = _labeling_filter_values(
+            filter_body.get("gt"),
+            allowed=set(LABELS),
+            error="GT 类别不合法。",
+        )
+        normalized_comment_state = _labeling_filter_values(
+            filter_body.get("comment_state"),
+            allowed={"with", "without"},
+            error="讨论筛选不合法。",
+            lower=True,
+        )
         raw_filter_issue_ids = _as_text(filter_body.get("issue_ids"))
         normalized_issue_ids = _parse_issue_id_filter(raw_filter_issue_ids)
         if raw_filter_issue_ids.strip() and not normalized_issue_ids:
@@ -250,8 +280,8 @@ async def create_labeling_task(request: Request) -> dict[str, Any]:
                 search=_as_text(filter_body.get("q")),
                 issue_ids=normalized_issue_ids,
                 status=normalized_status,
-                author=_as_text(filter_body.get("author")).strip().lower(),
-                assignee=_as_text(filter_body.get("assignee")).strip().lower(),
+                author=_labeling_filter_values(filter_body.get("author"), lower=True),
+                assignee=_labeling_filter_values(filter_body.get("assignee"), lower=True),
                 exclusion=normalized_exclusion,
                 expected_output=normalized_label,
                 gt_label=normalized_gt,
@@ -347,9 +377,12 @@ async def list_labeling_cases(
     page_size: int = 20,
 ) -> dict[str, Any]:
     await _require_labeling_writer(request)
-    normalized_status = _as_text(status).lower() or "all"
-    if normalized_status not in {"all", "pending", "resolved", "conflict"}:
-        raise _detail(400, "标注状态不合法。")
+    normalized_status = _labeling_filter_values(
+        status,
+        allowed={"pending", "resolved", "conflict"},
+        error="标注状态不合法。",
+        lower=True,
+    )
     scopes = resolve_request_baseline_scopes(baselines, request=request)
     scopes = await _active_labeling_scopes(scopes)
     normalized_task_id = _as_text(task_id)
@@ -360,17 +393,26 @@ async def list_labeling_cases(
         )
         if not any(task["id"] == normalized_task_id for task in tasks):
             raise _detail(404, "标注任务不在当前已激活的数据集中。")
-    normalized_author = _as_text(author).strip().lower()
-    normalized_exclusion = (_as_text(exclusion).lower() or "all")
-    if normalized_exclusion not in {"all", "excluded", "active"}:
-        raise _detail(400, "排除筛选不合法。")
-    normalized_label = _as_text(label).strip()
-    normalized_gt = _as_text(gt).strip()
-    if normalized_gt and normalized_gt not in LABELS:
-        raise _detail(400, "GT 类别不合法。")
-    normalized_comment_state = _as_text(comment_state).strip().lower() or "all"
-    if normalized_comment_state not in {"all", "with", "without"}:
-        raise _detail(400, "讨论筛选不合法。")
+    normalized_author = _labeling_filter_values(author, lower=True)
+    normalized_assignee = _labeling_filter_values(assignee, lower=True)
+    normalized_exclusion = _labeling_filter_values(
+        exclusion,
+        allowed={"excluded", "active"},
+        error="排除筛选不合法。",
+        lower=True,
+    )
+    normalized_label = _labeling_filter_values(
+        label, allowed=set(LABELS), error="标注结果类别不合法。"
+    )
+    normalized_gt = _labeling_filter_values(
+        gt, allowed=set(LABELS), error="GT 类别不合法。"
+    )
+    normalized_comment_state = _labeling_filter_values(
+        comment_state,
+        allowed={"with", "without"},
+        error="讨论筛选不合法。",
+        lower=True,
+    )
     normalized_issue_ids = _parse_issue_id_filter(issue_ids)
     if _as_text(issue_ids).strip() and not normalized_issue_ids:
         raise _detail(400, "issue_ids 未包含有效的 Issue ID。")
@@ -384,7 +426,7 @@ async def list_labeling_cases(
             issue_ids=normalized_issue_ids,
             status=normalized_status,
             author=normalized_author,
-            assignee=_as_text(assignee).strip().lower(),
+            assignee=normalized_assignee,
             exclusion=normalized_exclusion,
             expected_output=normalized_label,
             gt_label=normalized_gt,
@@ -407,7 +449,7 @@ async def list_labeling_cases(
         "issue_ids": normalized_issue_ids,
         "status": normalized_status,
         "author": normalized_author,
-        "assignee": _as_text(assignee).strip().lower(),
+        "assignee": normalized_assignee,
         "exclusion": normalized_exclusion,
         "label": normalized_label,
         "gt": normalized_gt,
@@ -441,6 +483,30 @@ async def labeling_summary(
     normalized_issue_ids = _parse_issue_id_filter(issue_ids)
     if _as_text(issue_ids).strip() and not normalized_issue_ids:
         raise _detail(400, "issue_ids 未包含有效的 Issue ID。")
+    normalized_status = _labeling_filter_values(
+        status,
+        allowed={"pending", "resolved", "conflict"},
+        error="标注状态不合法。",
+        lower=True,
+    )
+    normalized_exclusion = _labeling_filter_values(
+        exclusion,
+        allowed={"excluded", "active"},
+        error="排除筛选不合法。",
+        lower=True,
+    )
+    normalized_label = _labeling_filter_values(
+        label, allowed=set(LABELS), error="标注结果类别不合法。"
+    )
+    normalized_gt = _labeling_filter_values(
+        gt, allowed=set(LABELS), error="GT 类别不合法。"
+    )
+    normalized_comment_state = _labeling_filter_values(
+        comment_state,
+        allowed={"with", "without"},
+        error="讨论筛选不合法。",
+        lower=True,
+    )
     try:
         normalized_task = _as_text(task_id)
         items, _ = await asyncio.to_thread(
@@ -449,13 +515,13 @@ async def labeling_summary(
             task_id=normalized_task,
             search=_as_text(q),
             issue_ids=normalized_issue_ids,
-            status=_as_text(status) or "all",
-            author=_as_text(author),
-            assignee=_as_text(assignee),
-            exclusion=_as_text(exclusion) or "all",
-            expected_output=_as_text(label),
-            gt_label=_as_text(gt),
-            comment_state=_as_text(comment_state) or "all",
+            status=normalized_status,
+            author=_labeling_filter_values(author, lower=True),
+            assignee=_labeling_filter_values(assignee, lower=True),
+            exclusion=normalized_exclusion,
+            expected_output=normalized_label,
+            gt_label=normalized_gt,
+            comment_state=normalized_comment_state,
             cluster=_as_text(cluster),
         )
         result, labelers, assignees = await asyncio.gather(
@@ -495,21 +561,34 @@ async def list_labeling_clusters(
     comment_state: str = "all",
 ) -> dict[str, Any]:
     await _require_labeling_writer(request)
-    normalized_status = _as_text(status).lower() or "all"
-    if normalized_status not in {"all", "pending", "resolved", "conflict"}:
-        raise _detail(400, "标注状态不合法。")
+    normalized_status = _labeling_filter_values(
+        status,
+        allowed={"pending", "resolved", "conflict"},
+        error="标注状态不合法。",
+        lower=True,
+    )
     scopes = resolve_request_baseline_scopes(baselines, request=request)
     scopes = await _active_labeling_scopes(scopes)
-    normalized_exclusion = (_as_text(exclusion).lower() or "all")
-    if normalized_exclusion not in {"all", "excluded", "active"}:
-        raise _detail(400, "排除筛选不合法。")
-    normalized_label = _as_text(label).strip()
-    normalized_gt = _as_text(gt).strip()
-    if normalized_gt and normalized_gt not in LABELS:
-        raise _detail(400, "GT 类别不合法。")
-    normalized_comment_state = _as_text(comment_state).strip().lower() or "all"
-    if normalized_comment_state not in {"all", "with", "without"}:
-        raise _detail(400, "讨论筛选不合法。")
+    normalized_exclusion = _labeling_filter_values(
+        exclusion,
+        allowed={"excluded", "active"},
+        error="排除筛选不合法。",
+        lower=True,
+    )
+    normalized_label = _labeling_filter_values(
+        label, allowed=set(LABELS), error="标注结果类别不合法。"
+    )
+    normalized_gt = _labeling_filter_values(
+        gt, allowed=set(LABELS), error="GT 类别不合法。"
+    )
+    normalized_comment_state = _labeling_filter_values(
+        comment_state,
+        allowed={"with", "without"},
+        error="讨论筛选不合法。",
+        lower=True,
+    )
+    normalized_author = _labeling_filter_values(author, lower=True)
+    normalized_assignee = _labeling_filter_values(assignee, lower=True)
     normalized_issue_ids = _parse_issue_id_filter(issue_ids)
     if _as_text(issue_ids).strip() and not normalized_issue_ids:
         raise _detail(400, "issue_ids 未包含有效的 Issue ID。")
@@ -521,8 +600,8 @@ async def list_labeling_clusters(
             search=_as_text(q),
             issue_ids=normalized_issue_ids,
             status=normalized_status,
-            author=_as_text(author).strip().lower(),
-            assignee=_as_text(assignee).strip().lower(),
+            author=normalized_author,
+            assignee=normalized_assignee,
             exclusion=normalized_exclusion,
             expected_output=normalized_label,
             gt_label=normalized_gt,
@@ -538,8 +617,8 @@ async def list_labeling_clusters(
             "q": _as_text(q),
             "issue_ids": normalized_issue_ids,
             "status": normalized_status,
-            "author": _as_text(author).strip().lower(),
-            "assignee": _as_text(assignee).strip().lower(),
+            "author": normalized_author,
+            "assignee": normalized_assignee,
             "exclusion": normalized_exclusion,
             "label": normalized_label,
             "gt": normalized_gt,
@@ -1248,25 +1327,34 @@ async def create_gt_export_preview(request: Request) -> dict[str, Any]:
         dict.fromkeys(_as_text(value).strip() for value in issue_ids if _as_text(value).strip())
     )
     if not selected_issue_ids and filter_body:
-        normalized_status = _as_text(filter_body.get("status")).lower() or "all"
-        if normalized_status not in {"all", "pending", "resolved", "conflict"}:
-            raise _detail(400, "标注状态不合法。")
-        normalized_exclusion = _as_text(filter_body.get("exclusion")).lower() or "all"
-        if normalized_exclusion not in {"all", "excluded", "active"}:
-            raise _detail(400, "排除筛选不合法。")
-        normalized_label = _as_text(filter_body.get("label")).strip()
-        if normalized_label == "all":
-            normalized_label = ""
-        normalized_gt = _as_text(filter_body.get("gt")).strip()
-        if normalized_gt == "all":
-            normalized_gt = ""
-        if normalized_gt and normalized_gt not in LABELS:
-            raise _detail(400, "GT 类别不合法。")
-        normalized_comment_state = (
-            _as_text(filter_body.get("comment_state")).strip().lower() or "all"
+        normalized_status = _labeling_filter_values(
+            filter_body.get("status"),
+            allowed={"pending", "resolved", "conflict"},
+            error="标注状态不合法。",
+            lower=True,
         )
-        if normalized_comment_state not in {"all", "with", "without"}:
-            raise _detail(400, "讨论筛选不合法。")
+        normalized_exclusion = _labeling_filter_values(
+            filter_body.get("exclusion"),
+            allowed={"excluded", "active"},
+            error="排除筛选不合法。",
+            lower=True,
+        )
+        normalized_label = _labeling_filter_values(
+            filter_body.get("label"),
+            allowed=set(LABELS),
+            error="标注结果类别不合法。",
+        )
+        normalized_gt = _labeling_filter_values(
+            filter_body.get("gt"),
+            allowed=set(LABELS),
+            error="GT 类别不合法。",
+        )
+        normalized_comment_state = _labeling_filter_values(
+            filter_body.get("comment_state"),
+            allowed={"with", "without"},
+            error="讨论筛选不合法。",
+            lower=True,
+        )
         raw_filter_issue_ids = _as_text(filter_body.get("issue_ids"))
         normalized_filter_issue_ids = _parse_issue_id_filter(raw_filter_issue_ids)
         if raw_filter_issue_ids.strip() and not normalized_filter_issue_ids:
@@ -1279,8 +1367,8 @@ async def create_gt_export_preview(request: Request) -> dict[str, Any]:
                 search=_as_text(filter_body.get("q")),
                 issue_ids=normalized_filter_issue_ids,
                 status=normalized_status,
-                author=_as_text(filter_body.get("author")).strip().lower(),
-                assignee=_as_text(filter_body.get("assignee")).strip().lower(),
+                author=_labeling_filter_values(filter_body.get("author"), lower=True),
+                assignee=_labeling_filter_values(filter_body.get("assignee"), lower=True),
                 exclusion=normalized_exclusion,
                 expected_output=normalized_label,
                 gt_label=normalized_gt,

@@ -843,8 +843,8 @@ let labelSummaryPageSize = 20;
 let labelSummaryRouteRestored = false;
 let labelSummarySearchTimer = null;
 const labelSummaryFilters = {
-  search: "", issueIds: [], taskId: "", status: "all", author: "", assignee: "",
-  label: "all", gt: "all", commentState: "all", exclusion: "all", cluster: "",
+  search: "", issueIds: [], taskId: "", status: [], author: [], assignee: [],
+  label: [], gt: [], commentState: [], exclusion: [], cluster: "",
 };
 
 function labelSummaryRouteOptions(overrides = {}) {
@@ -873,13 +873,13 @@ function restoreLabelSummaryRoute() {
   labelSummaryFilters.search = String(params.get("q") || "").trim();
   labelSummaryFilters.issueIds = parseFilterList(params.get("issue_ids")).filter((value) => ISSUE_QUERY_ID_RE.test(value));
   labelSummaryFilters.taskId = String(params.get("task") || "").trim();
-  labelSummaryFilters.status = ["resolved", "pending", "conflict"].includes(params.get("status")) ? params.get("status") : "all";
-  labelSummaryFilters.author = String(params.get("author") || "").trim();
-  labelSummaryFilters.assignee = String(params.get("assignee") || "").trim();
-  labelSummaryFilters.label = LABELS.includes(params.get("label")) ? params.get("label") : "all";
-  labelSummaryFilters.gt = LABELS.includes(params.get("gt")) ? params.get("gt") : "all";
-  labelSummaryFilters.commentState = ["with", "without"].includes(params.get("comment_state")) ? params.get("comment_state") : "all";
-  labelSummaryFilters.exclusion = ["active", "excluded"].includes(params.get("exclusion")) ? params.get("exclusion") : "all";
+  labelSummaryFilters.status = parseFilterList(params.get("status")).filter((value) => ["resolved", "pending", "conflict"].includes(value));
+  labelSummaryFilters.author = parseFilterList(params.get("author"));
+  labelSummaryFilters.assignee = parseFilterList(params.get("assignee"));
+  labelSummaryFilters.label = parseFilterList(params.get("label")).filter((value) => LABELS.includes(value));
+  labelSummaryFilters.gt = parseFilterList(params.get("gt")).filter((value) => LABELS.includes(value));
+  labelSummaryFilters.commentState = parseFilterList(params.get("comment_state")).filter((value) => ["with", "without"].includes(value));
+  labelSummaryFilters.exclusion = parseFilterList(params.get("exclusion")).filter((value) => ["active", "excluded"].includes(value));
   labelSummaryFilters.cluster = String(params.get("cluster") || "").trim();
   labelSummaryPage = Math.max(1, Number(params.get("page") || 1));
   labelSummaryPageSize = CASE_PAGE_SIZES.includes(Number(params.get("page_size"))) ? Number(params.get("page_size")) : 20;
@@ -910,34 +910,55 @@ function renderLabelSummaryPicker(selector, options, selected) {
   bindUiSelect(picker, { maxHeight: 300, maxWidth: 420 });
 }
 
+function updateLabelSummaryMultiFilter(key, values) {
+  labelSummaryFilters[key] = parseFilterList(values);
+  labelSummaryFilters.cluster = "";
+  labelSummaryPage = 1;
+  loadLabelingSummary().catch((error) => showToast(error.message, true));
+}
+
+function renderLabelSummaryMultiPicker(selector, options, selected, key) {
+  const root = $(selector);
+  if (!root) return;
+  const fingerprint = JSON.stringify(options.map((item) => [item.value, item.label]));
+  if (root.dataset.optionsFingerprint === fingerprint && root.querySelector(".multi-filter-trigger")) {
+    setMultiFilterValues(root, selected);
+    return;
+  }
+  if (root.classList.contains("is-open")) return;
+  renderMultiFilter(root, {
+    options,
+    selected,
+    onChange: (values) => updateLabelSummaryMultiFilter(key, values),
+  });
+  root.dataset.optionsFingerprint = fingerprint;
+}
+
 function renderLabelSummaryFilters(tasks, data) {
   const taskOptions = [{ value: "", label: "全部标注（含历史迁移）" }, ...(tasks.items || []).map((task) => ({ value: task.id, label: task.name || "标注任务" }))];
   if (!taskOptions.some((item) => item.value === labelSummaryFilters.taskId)) labelSummaryFilters.taskId = "";
-  const labelerOptions = [{ value: "", label: "全部标注人" }, ...(data.labelers || []).map((value) => ({ value, label: value }))];
-  if (!labelerOptions.some((item) => item.value === labelSummaryFilters.author)) labelSummaryFilters.author = "";
-  const assigneeOptions = [{ value: "", label: "全部任务队列" }, ...(data.assignees || []).map((value) => ({ value, label: value }))];
-  if (!assigneeOptions.some((item) => item.value === labelSummaryFilters.assignee)) labelSummaryFilters.assignee = "";
+  const labelerOptions = (data.labelers || []).map((value) => ({ value, label: value }));
+  const labelerValues = new Set(labelerOptions.map((item) => item.value));
+  labelSummaryFilters.author = parseFilterList(labelSummaryFilters.author).filter((value) => labelerValues.has(value));
+  const assigneeOptions = (data.assignees || []).map((value) => ({ value, label: value }));
+  const assigneeValues = new Set(assigneeOptions.map((item) => item.value));
+  labelSummaryFilters.assignee = parseFilterList(labelSummaryFilters.assignee).filter((value) => assigneeValues.has(value));
   renderLabelSummaryPicker("#labelSummaryTaskPicker", taskOptions, labelSummaryFilters.taskId);
-  renderLabelSummaryPicker("#labelSummaryStatusPicker", [
-    { value: "all", label: "全部状态" }, { value: "resolved", label: "已形成结论" },
+  renderLabelSummaryMultiPicker("#labelSummaryStatusPicker", [
+    { value: "resolved", label: "已形成结论" },
     { value: "pending", label: "待形成结论" }, { value: "conflict", label: "待裁决 / 需确认" },
-  ], labelSummaryFilters.status);
-  renderLabelSummaryPicker("#labelSummaryAuthorPicker", labelerOptions, labelSummaryFilters.author);
-  renderLabelSummaryPicker("#labelSummaryAssigneePicker", assigneeOptions, labelSummaryFilters.assignee);
-  renderLabelSummaryPicker("#labelSummaryLabelPicker", [
-    { value: "all", label: "全部类别" }, ...LABELS.map((value) => ({ value, label: value })),
-  ], labelSummaryFilters.label);
-  renderLabelSummaryPicker("#labelSummaryGtPicker", [
-    { value: "all", label: "全部 GT" }, ...LABELS.map((value) => ({ value, label: value })),
-  ], labelSummaryFilters.gt);
-  renderLabelSummaryPicker("#labelSummaryDiscussionPicker", [
-    { value: "all", label: "全部讨论状态" },
+  ], labelSummaryFilters.status, "status");
+  renderLabelSummaryMultiPicker("#labelSummaryAuthorPicker", labelerOptions, labelSummaryFilters.author, "author");
+  renderLabelSummaryMultiPicker("#labelSummaryAssigneePicker", assigneeOptions, labelSummaryFilters.assignee, "assignee");
+  renderLabelSummaryMultiPicker("#labelSummaryLabelPicker", LABELS.map((value) => ({ value, label: value })), labelSummaryFilters.label, "label");
+  renderLabelSummaryMultiPicker("#labelSummaryGtPicker", LABELS.map((value) => ({ value, label: value })), labelSummaryFilters.gt, "gt");
+  renderLabelSummaryMultiPicker("#labelSummaryDiscussionPicker", [
     { value: "with", label: "有讨论" }, { value: "without", label: "无讨论" },
-  ], labelSummaryFilters.commentState);
-  renderLabelSummaryPicker("#labelSummaryExclusionPicker", [
-    { value: "all", label: "全部（含问题排除）" }, { value: "active", label: "未排除" },
+  ], labelSummaryFilters.commentState, "commentState");
+  renderLabelSummaryMultiPicker("#labelSummaryExclusionPicker", [
+    { value: "active", label: "未排除" },
     { value: "excluded", label: "已排除" },
-  ], labelSummaryFilters.exclusion);
+  ], labelSummaryFilters.exclusion, "exclusion");
   const search = $("#labelSummarySearch");
   if (search && document.activeElement !== search) search.value = labelSummaryFilters.search;
   const exportButton = $("#labelSummaryExportGt");
@@ -951,13 +972,13 @@ function labelSummaryFilterPayload() {
     task_id: labelSummaryFilters.taskId,
     q: labelSummaryFilters.search,
     issue_ids: labelSummaryFilters.issueIds.join(","),
-    status: labelSummaryFilters.status,
-    author: labelSummaryFilters.author,
-    assignee: labelSummaryFilters.assignee,
-    label: labelSummaryFilters.label,
-    gt: labelSummaryFilters.gt,
-    comment_state: labelSummaryFilters.commentState,
-    exclusion: labelSummaryFilters.exclusion,
+    status: joinFilterList(labelSummaryFilters.status),
+    author: joinFilterList(labelSummaryFilters.author),
+    assignee: joinFilterList(labelSummaryFilters.assignee),
+    label: joinFilterList(labelSummaryFilters.label),
+    gt: joinFilterList(labelSummaryFilters.gt),
+    comment_state: joinFilterList(labelSummaryFilters.commentState),
+    exclusion: joinFilterList(labelSummaryFilters.exclusion),
     cluster: labelSummaryFilters.cluster,
   };
 }
@@ -1082,13 +1103,13 @@ async function loadLabelingSummary() {
       task_id: labelSummaryFilters.taskId,
       q: labelSummaryFilters.search,
       issue_ids: labelSummaryFilters.issueIds.join(","),
-      status: labelSummaryFilters.status,
-      author: labelSummaryFilters.author,
-      assignee: labelSummaryFilters.assignee,
-      exclusion: labelSummaryFilters.exclusion,
-      label: labelSummaryFilters.label === "all" ? "" : labelSummaryFilters.label,
-      gt: labelSummaryFilters.gt === "all" ? "" : labelSummaryFilters.gt,
-      comment_state: labelSummaryFilters.commentState,
+      status: joinFilterList(labelSummaryFilters.status),
+      author: joinFilterList(labelSummaryFilters.author),
+      assignee: joinFilterList(labelSummaryFilters.assignee),
+      exclusion: joinFilterList(labelSummaryFilters.exclusion),
+      label: joinFilterList(labelSummaryFilters.label),
+      gt: joinFilterList(labelSummaryFilters.gt),
+      comment_state: joinFilterList(labelSummaryFilters.commentState),
       cluster: labelSummaryFilters.cluster,
       page: String(labelSummaryPage),
       page_size: String(labelSummaryPageSize),
@@ -1122,26 +1143,18 @@ document.getElementById("labelSummarySearch")?.addEventListener("input", (event)
   window.clearTimeout(labelSummarySearchTimer);
   labelSummarySearchTimer = window.setTimeout(() => loadLabelingSummary().catch((error) => showToast(error.message, true)), 280);
 });
-[
-  ["labelSummaryTask", "taskId"], ["labelSummaryStatus", "status"],
-  ["labelSummaryAuthor", "author"], ["labelSummaryAssignee", "assignee"],
-  ["labelSummaryLabel", "label"], ["labelSummaryGt", "gt"],
-  ["labelSummaryDiscussion", "commentState"],
-  ["labelSummaryExclusion", "exclusion"],
-].forEach(([id, key]) => document.getElementById(id)?.addEventListener("change", (event) => {
-  labelSummaryFilters[key] = event.target.value;
-  if (key === "taskId") {
-    labelSummaryFilters.author = "";
-    labelSummaryFilters.assignee = "";
-  }
+document.getElementById("labelSummaryTask")?.addEventListener("change", (event) => {
+  labelSummaryFilters.taskId = event.target.value;
+  labelSummaryFilters.author = [];
+  labelSummaryFilters.assignee = [];
   labelSummaryFilters.cluster = "";
   labelSummaryPage = 1;
   loadLabelingSummary().catch((error) => showToast(error.message, true));
-}));
+});
 document.getElementById("labelSummaryReset")?.addEventListener("click", () => {
   Object.assign(labelSummaryFilters, {
-    search: "", issueIds: [], taskId: "", status: "all", author: "", assignee: "",
-    label: "all", gt: "all", commentState: "all", exclusion: "all", cluster: "",
+    search: "", issueIds: [], taskId: "", status: [], author: [], assignee: [],
+    label: [], gt: [], commentState: [], exclusion: [], cluster: "",
   });
   if (typeof updateIssueQueryButton === "function") updateIssueQueryButton();
   labelSummaryPage = 1;

@@ -408,14 +408,26 @@ function normalizedCaseLabelingRouteFilters(params) {
   const rawPageSize = Number.parseInt(
     params.get("page_size") || String(DEFAULT_CASE_PAGE_SIZE), 10
   );
-  const status = String(params.get("status") || "all").trim().toLowerCase();
-  const label = String(params.get("label") || "all").trim();
-  const exclusion = String(params.get("exclusion") || "all").trim().toLowerCase();
-  const author = String(params.get("author") || "").trim().toLowerCase();
-  const assignee = String(params.get("assignee") || "").trim().toLowerCase();
+  const status = parseFilterList(params.get("status")).filter((value) =>
+    ["pending", "resolved", "conflict"].includes(value)
+  );
+  const label = parseFilterList(params.get("label")).filter((value) =>
+    LABELS.includes(value)
+  );
+  const exclusion = parseFilterList(params.get("exclusion")).filter((value) =>
+    ["excluded", "active"].includes(value)
+  );
+  const author = parseFilterList(params.get("author")).map((value) => value.toLowerCase()).filter((value) =>
+    /^[a-z0-9._@-]{1,128}$/.test(value)
+  );
+  const assignee = parseFilterList(params.get("assignee")).map((value) => value.toLowerCase()).filter((value) =>
+    /^[a-z0-9._@-]{1,128}$/.test(value)
+  );
   const cluster = String(params.get("cluster") || "").trim();
-  const gt = String(params.get("gt") || "all").trim();
-  const commentState = String(params.get("comment_state") || "all").trim().toLowerCase();
+  const gt = parseFilterList(params.get("gt")).filter((value) => LABELS.includes(value));
+  const commentState = parseFilterList(params.get("comment_state")).filter((value) =>
+    ["with", "without"].includes(value)
+  );
   return {
     taskId: /^(?:split|campaign)-[A-Za-z0-9]+$/.test(params.get("task") || "")
       ? params.get("task")
@@ -424,14 +436,14 @@ function normalizedCaseLabelingRouteFilters(params) {
     issueIds: parseFilterList(params.get("issue_ids")).filter((value) =>
       ISSUE_QUERY_ID_RE.test(value)
     ),
-    status: ["pending", "resolved", "conflict"].includes(status) ? status : "all",
-    author: /^[a-z0-9._@-]{1,128}$/.test(author) ? author : "",
-    assignee: /^[a-z0-9._@-]{1,128}$/.test(assignee) ? assignee : "",
+    status,
+    author,
+    assignee,
     cluster: /^(pair|scenario):.{1,200}$/.test(cluster) ? cluster : "",
-    label: ["误触发", "正确触发", "无需协助"].includes(label) ? label : "all",
-    gt: ["误触发", "正确触发", "无需协助"].includes(gt) ? gt : "all",
-    commentState: ["with", "without"].includes(commentState) ? commentState : "all",
-    exclusion: ["excluded", "active"].includes(exclusion) ? exclusion : "all",
+    label,
+    gt,
+    commentState,
+    exclusion,
     page: Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1,
     pageSize: CASE_PAGE_SIZES.includes(rawPageSize)
       ? rawPageSize
@@ -767,25 +779,22 @@ function pageUrl(page, options = {}) {
       ISSUE_QUERY_ID_RE.test(String(value))
     );
     if (issueIds.length) url.searchParams.set("issue_ids", issueIds.join(","));
-    if (labeling.status && labeling.status !== "all") {
-      url.searchParams.set("status", labeling.status);
-    }
-    if (labeling.author) url.searchParams.set("author", labeling.author);
-    if (labeling.assignee) url.searchParams.set("assignee", labeling.assignee);
+    const statuses = joinFilterList(labeling.status);
+    const authors = joinFilterList(labeling.author);
+    const assignees = joinFilterList(labeling.assignee);
+    if (statuses) url.searchParams.set("status", statuses);
+    if (authors) url.searchParams.set("author", authors);
+    if (assignees) url.searchParams.set("assignee", assignees);
     if (labeling.cluster) url.searchParams.set("cluster", labeling.cluster);
     if (labeling.discussionChannel) url.searchParams.set("channel", labeling.discussionChannel);
-    if (labeling.label && labeling.label !== "all") {
-      url.searchParams.set("label", labeling.label);
-    }
-    if (labeling.gt && labeling.gt !== "all") {
-      url.searchParams.set("gt", labeling.gt);
-    }
-    if (labeling.commentState && labeling.commentState !== "all") {
-      url.searchParams.set("comment_state", labeling.commentState);
-    }
-    if (labeling.exclusion && labeling.exclusion !== "all") {
-      url.searchParams.set("exclusion", labeling.exclusion);
-    }
+    const labels = joinFilterList(labeling.label);
+    const gtLabels = joinFilterList(labeling.gt);
+    const commentStates = joinFilterList(labeling.commentState);
+    const exclusions = joinFilterList(labeling.exclusion);
+    if (labels) url.searchParams.set("label", labels);
+    if (gtLabels) url.searchParams.set("gt", gtLabels);
+    if (commentStates) url.searchParams.set("comment_state", commentStates);
+    if (exclusions) url.searchParams.set("exclusion", exclusions);
     if (Number(labeling.page) > 1) url.searchParams.set("page", String(labeling.page));
     if (Number(labeling.pageSize) !== DEFAULT_CASE_PAGE_SIZE) {
       url.searchParams.set("page_size", String(labeling.pageSize));
@@ -801,17 +810,20 @@ function pageUrl(page, options = {}) {
     );
     if (issueIds.length) url.searchParams.set("issue_ids", issueIds.join(","));
     if (summary.taskId) url.searchParams.set("task", summary.taskId);
-    if (summary.status && summary.status !== "all") url.searchParams.set("status", summary.status);
-    if (summary.author) url.searchParams.set("author", summary.author);
-    if (summary.assignee) url.searchParams.set("assignee", summary.assignee);
-    if (summary.label && summary.label !== "all") url.searchParams.set("label", summary.label);
-    if (summary.gt && summary.gt !== "all") url.searchParams.set("gt", summary.gt);
-    if (summary.commentState && summary.commentState !== "all") {
-      url.searchParams.set("comment_state", summary.commentState);
-    }
-    if (summary.exclusion && summary.exclusion !== "all") {
-      url.searchParams.set("exclusion", summary.exclusion);
-    }
+    const statuses = joinFilterList(summary.status);
+    const authors = joinFilterList(summary.author);
+    const assignees = joinFilterList(summary.assignee);
+    const labels = joinFilterList(summary.label);
+    const gtLabels = joinFilterList(summary.gt);
+    const commentStates = joinFilterList(summary.commentState);
+    const exclusions = joinFilterList(summary.exclusion);
+    if (statuses) url.searchParams.set("status", statuses);
+    if (authors) url.searchParams.set("author", authors);
+    if (assignees) url.searchParams.set("assignee", assignees);
+    if (labels) url.searchParams.set("label", labels);
+    if (gtLabels) url.searchParams.set("gt", gtLabels);
+    if (commentStates) url.searchParams.set("comment_state", commentStates);
+    if (exclusions) url.searchParams.set("exclusion", exclusions);
     if (summary.cluster) url.searchParams.set("cluster", summary.cluster);
     if (Number(summary.page) > 1) url.searchParams.set("page", String(summary.page));
     if (Number(summary.pageSize) !== DEFAULT_CASE_PAGE_SIZE) {

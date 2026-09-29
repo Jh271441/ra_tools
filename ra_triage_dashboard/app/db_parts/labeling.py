@@ -39,6 +39,18 @@ def _clean_values(values: Iterable[Any]) -> list[str]:
     return sorted({str(value or "").strip() for value in values if str(value or "").strip()})
 
 
+def _filter_values(value: Any) -> list[str]:
+    """Normalize legacy scalar and current multi-select filter values."""
+
+    if isinstance(value, str):
+        values: Iterable[Any] = value.split(",")
+    elif isinstance(value, Iterable):
+        values = value
+    else:
+        values = ()
+    return _clean_values(values)
+
+
 def _source_fingerprint(values: Iterable[int]) -> str:
     payload = ",".join(str(value) for value in sorted({int(value) for value in values}))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
@@ -2186,32 +2198,42 @@ class DatabaseLabelingMixin:
             needle = f"%{normalized_search}%"
             parameters.extend((needle, needle, needle))
         selected_issue_ids = set(_clean_values(issue_ids))
-        normalized_assignee = str(assignee or "").strip().lower()
-        if normalized_assignee:
+        normalized_assignees = {
+            value.lower() for value in _filter_values(assignee)
+        }
+        if normalized_assignees:
+            assignee_placeholders = ", ".join("?" for _ in normalized_assignees)
             where += (
                 " AND EXISTS (SELECT 1 FROM review_work_assignments wa"
                 " JOIN issue_work_splits wa_split ON wa_split.id = wa.split_id"
                 " WHERE wa.issue_id = issue.issue_id"
                 " AND wa_split.task_kind = 'labeling'"
-                " AND lower(wa.assignee) = ?"
+                f" AND lower(wa.assignee) IN ({assignee_placeholders})"
                 + (" AND wa_split.id = ?" if task else "")
                 + ")"
             )
-            parameters.append(normalized_assignee)
+            parameters.extend(sorted(normalized_assignees))
             if task:
                 parameters.append(task)
-        normalized_author = str(author or "").strip().lower()
-        normalized_expected_output = str(expected_output or "").strip()
-        if normalized_expected_output and normalized_expected_output not in LABELS:
+        normalized_authors = {value.lower() for value in _filter_values(author)}
+        normalized_statuses = set(_filter_values(status)) - {"all"}
+        if normalized_statuses - {"pending", "resolved", "conflict"}:
+            raise ValueError("标注状态不合法。")
+        normalized_expected_outputs = set(_filter_values(expected_output)) - {"all"}
+        if normalized_expected_outputs - set(LABELS):
             raise ValueError("标注结果类别不合法。")
-        normalized_gt_label = str(gt_label or "").strip()
-        if normalized_gt_label and normalized_gt_label not in LABELS:
+        normalized_gt_labels = set(_filter_values(gt_label)) - {"all"}
+        if normalized_gt_labels - set(LABELS):
             raise ValueError("GT 类别不合法。")
-        normalized_comment_state = str(comment_state or "all").strip().lower() or "all"
-        if normalized_comment_state not in {"all", "with", "without"}:
+        normalized_comment_states = {
+            value.lower() for value in _filter_values(comment_state)
+        } - {"all"}
+        if normalized_comment_states - {"with", "without"}:
             raise ValueError("讨论筛选不合法。")
-        normalized_exclusion = str(exclusion or "all").strip().lower() or "all"
-        if normalized_exclusion not in {"all", "excluded", "active"}:
+        normalized_exclusions = {
+            value.lower() for value in _filter_values(exclusion)
+        } - {"all"}
+        if normalized_exclusions - {"excluded", "active"}:
             raise ValueError("排除筛选不合法。")
         normalized_cluster = _parse_labeling_cluster(cluster)
         selected_source_sql = ", workset.selection_source_run_id AS task_source_run_id" if task else ""
@@ -2228,9 +2250,12 @@ class DatabaseLabelingMixin:
             ).fetchall()
         if selected_issue_ids:
             rows = [row for row in rows if str(row["issue_id"] or "") in selected_issue_ids]
-        if normalized_gt_label:
-            rows = [row for row in rows if str(row["gt_label"] or "") == normalized_gt_label]
-        if normalized_comment_state != "all":
+        if normalized_gt_labels:
+            rows = [
+                row for row in rows
+                if str(row["gt_label"] or "") in normalized_gt_labels
+            ]
+        if len(normalized_comment_states) == 1:
             discussion_issue_ids = self._labeling_discussion_issue_ids(
                 baseline_scopes=scopes,
                 issue_ids=[str(row["issue_id"] or "") for row in rows],
@@ -2240,7 +2265,7 @@ class DatabaseLabelingMixin:
                 row
                 for row in rows
                 if (str(row["issue_id"] or "") in discussion_issue_ids)
-                == (normalized_comment_state == "with")
+                == ("with" in normalized_comment_states)
             ]
         task_source_run_id = str(rows[0]["task_source_run_id"] or "") if task and rows else ""
         cases_by_issue = self._batch_label_cases(
@@ -2292,15 +2317,18 @@ class DatabaseLabelingMixin:
                 elif aggregate_state == "stale":
                     aggregate_state = "conflict"
                 expected_output_value = str(shared_state.get("expected_output") or "")
-            if status != "all" and aggregate_state != status:
+            if normalized_statuses and aggregate_state not in normalized_statuses:
                 continue
-            if normalized_author and not any(
-                head["author"].strip().lower() == normalized_author
+            if normalized_authors and not any(
+                head["author"].strip().lower() in normalized_authors
                 for item in cases
                 for head in item["resolution"].get("heads") or []
             ):
                 continue
-            if normalized_expected_output and expected_output_value != normalized_expected_output:
+            if (
+                normalized_expected_outputs
+                and expected_output_value not in normalized_expected_outputs
+            ):
                 continue
             if normalized_cluster is not None:
                 if normalized_cluster[0] == "pair":
@@ -2312,15 +2340,15 @@ class DatabaseLabelingMixin:
                         continue
                 elif str(row["scenario"] or "") != normalized_cluster[1]:
                     continue
-            if normalized_exclusion != "all":
+            if len(normalized_exclusions) == 1:
                 resolved_excluded = any(
                     (item["resolution"].get("result_revision") or {}).get("is_excluded")
                     for item in cases
                     if item["resolution"]["state"] == "resolved"
                 )
-                if normalized_exclusion == "excluded" and not resolved_excluded:
+                if "excluded" in normalized_exclusions and not resolved_excluded:
                     continue
-                if normalized_exclusion == "active" and resolved_excluded:
+                if "active" in normalized_exclusions and resolved_excluded:
                     continue
             projected.append(
                 {

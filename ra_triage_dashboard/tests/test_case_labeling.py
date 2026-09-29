@@ -679,6 +679,14 @@ class CaseLabelingTest(unittest.TestCase):
                 )["items"]
             ]
             self.assertEqual(bob_ids, ["cn3"])
+            multi_ids = [
+                item["issue_id"]
+                for item in database.list_labeling_cases(
+                    baseline_scopes=["scope"], task_id=task_id,
+                    assignee=["alice", "bob"],
+                )["items"]
+            ]
+            self.assertEqual(multi_ids, ["cn1", "cn2", "cn3"])
             all_ids = [
                 item["issue_id"]
                 for item in database.list_labeling_cases(
@@ -690,6 +698,22 @@ class CaseLabelingTest(unittest.TestCase):
     def test_labeling_gallery_filters_gt_discussion_and_exact_issue_ids(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             database = self.make_db(tmp)
+            database.upsert_issues(
+                [{"issue_id": "cn3", "gt_label": "误触发"}],
+                source="test", replace_gt=True, baseline_scope="scope",
+            )
+            database.create_label_revision(
+                issue_id="cn1", expected_output="误触发", tags=[], evidence_gaps=[],
+                rationale="alice", is_excluded=True, author="alice",
+                author_source="kylin_ticket", author_verified=True,
+                expected_previous_revision_id=None,
+            )
+            database.create_label_revision(
+                issue_id="cn2", expected_output="无需协助", tags=[], evidence_gaps=[],
+                rationale="bob", is_excluded=False, author="bob",
+                author_source="kylin_ticket", author_verified=True,
+                expected_previous_revision_id=None,
+            )
             comment = database.create_review_comment(
                 issue_id="cn1", model_run_id="", body="Case discussion",
                 author="alice", author_source="kylin_ticket", author_verified=True,
@@ -720,7 +744,25 @@ class CaseLabelingTest(unittest.TestCase):
                 [item["issue_id"] for item in database.list_labeling_cases(
                     baseline_scopes=["scope"], comment_state="without",
                 )["items"]],
-                ["cn2"],
+                ["cn2", "cn3"],
+            )
+            self.assertEqual(
+                [item["issue_id"] for item in database.list_labeling_cases(
+                    baseline_scopes=["scope"],
+                    status=["resolved", "pending"],
+                    author=["alice", "bob"],
+                    expected_output=["误触发", "无需协助"],
+                    gt_label=["正确触发"],
+                )["items"]],
+                ["cn1"],
+            )
+            self.assertEqual(
+                [item["issue_id"] for item in database.list_labeling_cases(
+                    baseline_scopes=["scope"],
+                    comment_state=["with", "without"],
+                    exclusion=["active", "excluded"],
+                )["items"]],
+                ["cn1", "cn2", "cn3"],
             )
 
     def test_labeling_clusters_and_cluster_filter(self) -> None:

@@ -398,7 +398,7 @@ class FrontendContractTest(unittest.TestCase):
             self.assertTrue((JS_DIR / name).is_file(), name)
             self.assertIn(f'"{name}"', APP_ENTRY_JS)
         self.assertIn("CACHE_VERSION", APP_ENTRY_JS)
-        self.assertIn("manual-triage-529", APP_ENTRY_JS)
+        self.assertIn("manual-triage-530", APP_ENTRY_JS)
         self.assertIn("function setBaselineScopes", APP_JS)
         self.assertIn("function applyInferredBaselinesFromRun", APP_JS)
         self.assertIn("clearIncompatible: true", APP_JS)
@@ -462,7 +462,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("baselines", APP_JS)
         self.assertIn("/static/js/", APP_ENTRY_JS)
         self.assertIn("script.async = false", APP_ENTRY_JS)
-        self.assertIn("app.js?v=manual-triage-529", INDEX_HTML)
+        self.assertIn("app.js?v=manual-triage-530", INDEX_HTML)
         self.assertIn('"work-split.js"', APP_ENTRY_JS)
         self.assertIn('"review-assignments.js"', APP_ENTRY_JS)
         # Product logic must live in domain modules, not the entry loader.
@@ -705,7 +705,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('html[data-color-theme="light"] .issue-id', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .run-source-tab em', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .button-primary', STYLES_CSS)
-        self.assertIn('`${activeBase}/static/${path}?v=manual-triage-529`', INDEX_HTML)
+        self.assertIn('`${activeBase}/static/${path}?v=manual-triage-530`', INDEX_HTML)
         self.assertIn(".review-exclude-toggle { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center;", STYLES_CSS)
         self.assertIn("display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px;", STYLES_CSS)
         self.assertIn("max-height: min(70dvh, 640px); overflow: auto;", STYLES_CSS)
@@ -933,7 +933,9 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("function renderCaseLabelingAuthorPicker", APP_JS)
         self.assertIn("function renderCaseLabelingLabelPicker", APP_JS)
         self.assertIn("function renderCaseLabelingExclusionPicker", APP_JS)
-        self.assertIn('exclusion: state.caseLabeling.exclusion || "all"', APP_JS)
+        self.assertIn('exclusion: joinFilterList(state.caseLabeling.exclusion)', APP_JS)
+        self.assertIn("function renderCaseLabelingMultiPicker", APP_JS)
+        self.assertIn("renderMultiFilter(root", APP_JS)
         self.assertIn("def labeling_labelers", APP_PY_LABELING_DB)
         self.assertIn('author: str = ""', APP_PY_LABELING_ROUTER)
         # M8a-1 / M8c #24: create-task is a standalone page reusing work-split helpers.
@@ -979,11 +981,12 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('"assignments": assignments', APP_PY_LABELING_ROUTER)
         # M8a-2: per-assignee task-queue filter on the Case-labeling gallery.
         self.assertIn('id="caseLabelingAssigneePicker"', INDEX_HTML)
-        self.assertIn('id="caseLabelingAssignee"', INDEX_HTML)
+        self.assertNotIn('id="caseLabelingAssignee"', INDEX_HTML)
+        self.assertIn('<span>任务负责人</span><div class="multi-filter" id="caseLabelingAssigneePicker"', INDEX_HTML)
         self.assertIn("function renderCaseLabelingAssigneePicker", APP_JS)
-        self.assertIn('assignee: state.caseLabeling.assignee || ""', APP_JS)
+        self.assertIn('assignee: joinFilterList(state.caseLabeling.assignee)', APP_JS)
         self.assertIn(
-            'assignee: /^[a-z0-9._@-]{1,128}$/.test(assignee) ? assignee : ""',
+            'assignee: overrides.assignee ?? labeling.assignee ?? []',
             APP_JS,
         )
         self.assertIn("def labeling_assignees", APP_PY_LABELING_DB)
@@ -1046,6 +1049,12 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('id="openLabelSummaryIssueQueryButton"', INDEX_HTML)
         self.assertIn('id="labelSummaryExportGt"', INDEX_HTML)
         self.assertIn("function exportLabelingGtUpdate", APP_JS)
+        self.assertIn('class="multi-filter" id="caseLabelingStatusPicker"', INDEX_HTML)
+        self.assertIn('class="multi-filter" id="caseLabelingGtPicker"', INDEX_HTML)
+        self.assertIn('class="multi-filter" id="labelSummaryStatusPicker"', INDEX_HTML)
+        self.assertIn("function renderLabelSummaryMultiPicker", CAMPAIGNS_JS)
+        self.assertIn('currentRunReviewStatusMarkup(item, { compact: true })', APP_JS)
+        self.assertIn('const prefixMarkup = compact', APP_JS)
         self.assertIn('id="caseLabelingExportGt"', INDEX_HTML)
         self.assertIn('id="caseLabelingReset"', INDEX_HTML)
         filters_form = INDEX_HTML.split('id="caseLabelingFilterForm"', 1)[1].split("</form>", 1)[0]
@@ -1845,7 +1854,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("function jumpToQueueIndex", APP_JS)
         self.assertIn("function bindDetailQueueIndexJump", APP_JS)
         self.assertIn(".detail-queue-index-input", STYLES_CSS)
-        self.assertIn("manual-triage-529", APP_ENTRY_JS)
+        self.assertIn("manual-triage-530", APP_ENTRY_JS)
     def test_desktop_layout_panels_are_mouse_and_keyboard_resizable(self) -> None:
         self.assertIn('id="sidebarResizer" role="separator"', INDEX_HTML)
         self.assertIn('id="reviewPaneResizer" role="separator"', INDEX_HTML)

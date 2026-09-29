@@ -65,8 +65,9 @@ function sharedLabelStateButtonMarkup(item, { showEmpty = false, compact = false
   const sourceCountMarkup = sourceCount && !compact
     ? `<small class="shared-label-state-source-count"><span class="ui-lang-zh">来源 ${sourceCount}</span><span class="ui-lang-en">${sourceCount} source${sourceCount === 1 ? "" : "s"}</span></small>`
     : "";
-  const prefixZh = compact ? "共享" : "共享标签";
-  const prefixEn = compact ? "Shared" : "Shared label";
+  const prefixMarkup = compact
+    ? ""
+    : `<span class="shared-label-state-prefix"><span class="ui-lang-zh">共享标签</span><span class="ui-lang-en">Shared label</span></span>`;
   const title = escapeHtml(
     uiText(
       `${visual.zh} · 查看 ${item?.issue_id || ""} 的共享标签来源`,
@@ -74,7 +75,7 @@ function sharedLabelStateButtonMarkup(item, { showEmpty = false, compact = false
     )
   );
   return `<button class="shared-label-state-trigger shared-label-state-${visual.kind}${compact ? " shared-label-state-compact" : ""}" type="button" data-open-shared-label-state data-issue-id="${issueId}" aria-label="${title}" title="${title}">
-    <span class="shared-label-state-prefix"><span class="ui-lang-zh">${prefixZh}</span><span class="ui-lang-en">${prefixEn}</span></span>
+    ${prefixMarkup}
     <span class="shared-label-state-value"><span class="ui-lang-zh">${escapeHtml(visual.zh)}</span><span class="ui-lang-en">${escapeHtml(visual.en)}</span></span>
     ${sourceCountMarkup}
   </button>`;
@@ -183,7 +184,7 @@ function bindSharedLabelStateTriggers(root, getItem) {
   });
 }
 
-function currentRunReviewStatusMarkup(item) {
+function currentRunReviewStatusMarkup(item, { compact = false } = {}) {
   const annotation = item?.annotation || null;
   const annotationRunId = String(annotation?.model_run_id || "").trim();
   const belongsToSelectedRun = state.selectedRunId
@@ -202,5 +203,8 @@ function currentRunReviewStatusMarkup(item) {
   const title = state.selectedRunId
     ? uiText("当前 Run 的判错复核进度", "Model error review progress for the selected Run")
     : uiText("当前 Review 范围的判错复核进度", "Model error review progress in the current scope");
-  return `<span class="issue-card-run-review-state" title="${escapeHtml(title)}"><span class="issue-card-run-review-prefix"><span class="ui-lang-zh">判错复核</span><span class="ui-lang-en">Model review</span></span><span class="issue-card-run-review-value"><span class="ui-lang-zh">${label.zh}</span><span class="ui-lang-en">${label.en}</span></span></span>`;
+  const prefixMarkup = compact
+    ? ""
+    : `<span class="issue-card-run-review-prefix"><span class="ui-lang-zh">判错复核</span><span class="ui-lang-en">Model review</span></span>`;
+  return `<span class="issue-card-run-review-state" title="${escapeHtml(title)}">${prefixMarkup}<span class="issue-card-run-review-value"><span class="ui-lang-zh">${label.zh}</span><span class="ui-lang-en">${label.en}</span></span></span>`;
 }

@@ -129,6 +129,22 @@ class LabelingActivationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([case["issue_id"] for case in cases["items"]], ["cn-active"])
         self.assertEqual([item["issue_id"] for item in candidates["items"]], ["cn-active"])
 
+    async def test_case_filters_accept_review_style_multi_values(self) -> None:
+        result = await labeling.list_labeling_cases(
+            self.request(),
+            baselines="active",
+            status="resolved,pending",
+            author="alice,bob",
+            assignee="alice,bob",
+            exclusion="active,excluded",
+            label="误触发,正确触发",
+            gt="正确触发,误触发",
+            comment_state="with,without",
+        )
+        self.assertEqual([item["issue_id"] for item in result["items"]], ["cn-active"])
+        self.assertEqual(result["filters"]["author"], ["alice", "bob"])
+        self.assertEqual(result["filters"]["status"], ["resolved", "pending"])
+
     async def test_issue_decision_api_persists_versioned_decision(self) -> None:
         state = self.database.project_issue_label_states(
             "active", ["cn-active"]
