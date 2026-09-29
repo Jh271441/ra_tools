@@ -79,7 +79,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-533`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-534`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -512,7 +512,7 @@
               </div>
             </section>
             <section class="intent-experiment-history case-experiment-history" aria-labelledby="labelingTaskHistoryTitle">
-              <div class="intent-experiment-section-heading"><div><span><span class="ui-lang-zh">实验历史</span><span class="ui-lang-en">EXPERIMENT HISTORY</span></span><h3 id="labelingTaskHistoryTitle"><span class="ui-lang-zh">实验记录</span><span class="ui-lang-en">Experiment history</span></h3></div><span class="intent-experiment-count" id="labelingTaskHistoryCount">0</span></div>
+              <div class="intent-experiment-section-heading"><div><h3 id="labelingTaskHistoryTitle"><span class="ui-lang-zh">实验记录</span><span class="ui-lang-en">Experiment records</span></h3></div><span class="intent-experiment-count" id="labelingTaskHistoryCount">0</span></div>
               <div class="intent-experiment-list" id="labelingTaskHistoryList"></div>
             </section>
             </div>
@@ -559,7 +559,7 @@
             <section class="review-assignments-header page-card">
               <div class="review-assignments-header-main">
                 <div>
-                  <h2><span class="ui-lang-zh">任务分配</span><span class="ui-lang-en">Review assignments</span></h2>
+                  <h2><span class="ui-lang-zh">分配配置</span><span class="ui-lang-en">Assignment setup</span></h2>
                 </div>
                 <div class="review-assignments-header-actions">
                   <button class="button button-quiet" id="reviewAssignmentsGoReview" type="button"><span class="ui-lang-zh">返回图库筛选</span><span class="ui-lang-en">Filter in gallery</span></button>
@@ -632,14 +632,14 @@
             <section class="review-assignment-metrics" id="reviewAssignmentMetrics" aria-label="任务分配概览"></section>
             <section class="page-card review-assignment-list-card">
               <header class="review-assignment-section-heading">
-                <div><span class="review-assignments-eyebrow"><span class="ui-lang-zh">分配历史</span><span class="ui-lang-en">ALLOCATION HISTORY</span></span><h2><span class="ui-lang-zh">分配批次</span><span class="ui-lang-en">Allocation batches</span></h2></div>
+                <div><h2><span class="ui-lang-zh">分配批次</span><span class="ui-lang-en">Allocation batches</span></h2></div>
                 <small id="reviewAssignmentListStatus" aria-live="polite"></small>
               </header>
               <div class="review-assignment-list" id="reviewAssignmentList"><div class="review-assignment-empty"><span class="ui-lang-zh">正在加载任务分配。</span><span class="ui-lang-en">Loading assignments.</span></div></div>
             </section>
             <section class="page-card review-assignment-detail-card" id="reviewAssignmentDetail" hidden>
               <header class="review-assignment-section-heading">
-                <div><span class="review-assignments-eyebrow"><span class="ui-lang-zh">任务详情</span><span class="ui-lang-en">TASK DETAIL</span></span><h2 id="reviewAssignmentDetailTitle"><span class="ui-lang-zh">任务明细</span><span class="ui-lang-en">Task detail</span></h2><p id="reviewAssignmentDetailMeta"></p></div>
+                <div><h2 id="reviewAssignmentDetailTitle"><span class="ui-lang-zh">任务明细</span><span class="ui-lang-en">Task detail</span></h2><p id="reviewAssignmentDetailMeta"></p></div>
                 <button class="button button-quiet" id="reviewAssignmentDetailClose" type="button"><span class="ui-lang-zh">收起明细</span><span class="ui-lang-en">Close detail</span></button>
               </header>
               <div class="review-assignment-detail-filters">
@@ -825,7 +825,7 @@
             <section class="intent-experiment-panel" aria-label="多盲实验与任务分配">
               <div class="intent-experiment-layout">
                 <section class="intent-experiment-create" aria-labelledby="intentExperimentTitle">
-                  <div class="intent-experiment-section-heading"><div><span>NEW EXPERIMENT</span><h3 id="intentExperimentTitle">创建与分配实验</h3></div><p>顶栏可多选数据集 · 每个数据集独立生成不可变分配快照</p></div>
+                  <div class="intent-experiment-section-heading"><div><h3 id="intentExperimentTitle"><span class="ui-lang-zh">创建与分配实验</span><span class="ui-lang-en">Create and assign experiment</span></h3></div></div>
                   <div class="intent-experiment-create-body">
                     <form class="intent-experiment-form" id="intentExperimentForm">
                       <label class="intent-experiment-name-field"><span>实验名称</span><span class="intent-experiment-name-control"><input id="intentExperimentName" maxlength="160" autocomplete="off" placeholder="例如 0206 Routing 双盲复核" required/><small id="intentExperimentNameStatus" aria-live="polite"></small></span></label>
@@ -843,7 +843,7 @@
                   </div>
                 </section>
                 <section class="intent-experiment-history" aria-labelledby="intentExperimentHistoryTitle">
-                  <div class="intent-experiment-section-heading"><div><span>EXPERIMENT HISTORY</span><h4 id="intentExperimentHistoryTitle">实验记录</h4></div><strong class="intent-experiment-count" id="intentExperimentCount">0</strong></div>
+                  <div class="intent-experiment-section-heading"><div><h3 id="intentExperimentHistoryTitle"><span class="ui-lang-zh">实验记录</span><span class="ui-lang-en">Experiment records</span></h3></div><strong class="intent-experiment-count" id="intentExperimentCount">0</strong></div>
                   <div class="intent-experiment-list" id="intentExperimentList"><div class="intent-experiment-empty"><span aria-hidden="true">◎</span><strong>尚未创建实验</strong><p>上方完成配置后，实验与每位成员的任务量会显示在这里。</p></div></div>
                 </section>
               </div>
@@ -2386,7 +2386,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-533`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-534`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

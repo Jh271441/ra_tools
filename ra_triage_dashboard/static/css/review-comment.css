@@ -878,12 +878,10 @@ html[data-color-theme="light"] .detail-queue-index-input {
 
 /* Review assignment management page. */
 .review-assignments-page { width: min(1480px, 100%); display: grid; gap: 12px; margin: 0 auto; }
-.review-assignments-header { display: grid; gap: 18px; }
-.review-assignments-header-main { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
-.review-assignments-header-main > div:first-child { min-width: 0; display: grid; gap: 5px; }
-.review-assignments-eyebrow { color: var(--accent); font-size: 9px; font-weight: 800; letter-spacing: .12em; }
-.review-assignments-header h2 { color: var(--text); font-size: 21px; }
-.review-assignments-header p { max-width: 760px; color: var(--muted); font-size: 12px; line-height: 1.55; }
+.review-assignments-header { display: grid; gap: 16px; }
+.review-assignments-header-main { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.review-assignments-header-main > div:first-child { min-width: 0; }
+.review-assignments-header h2 { color: var(--text); font-size: 17px; }
 .review-assignments-header-actions { display: flex; flex: 0 0 auto; align-items: center; justify-content: flex-end; gap: 7px; }
 .review-assignment-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
 .review-assignment-metric { min-width: 0; display: grid; gap: 5px; padding: 13px 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--raised); }
