@@ -2144,6 +2144,7 @@ class DatabaseCasesMixin:
             SELECT i.issue_id, i.title, i.scenario, i.summary, i.gt_label,
                    i.baseline_scope, assignment.split_id, assignment.assignee,
                    split.mode AS split_mode,
+                   split.filter_json AS split_filter_json,
                    split.model_run_id AS split_model_run_id,
                    annotation.id AS annotation_id,
                    annotation.label AS annotation_label,
@@ -2203,6 +2204,9 @@ class DatabaseCasesMixin:
                 ).fetchall()
         results: list[dict[str, Any]] = []
         for row in rows:
+            snapshot = _json_load(row["split_filter_json"], {})
+            confirmations = snapshot.get("manual_review_adjudications_v1", {}) if isinstance(snapshot, dict) else {}
+            confirmation = confirmations.get(str(row["issue_id"])) if isinstance(confirmations, dict) else None
             annotation = None
             if row["annotation_id"] is not None:
                 annotation = {
@@ -2237,6 +2241,7 @@ class DatabaseCasesMixin:
                     "split_id": str(row["split_id"]),
                     "split_model_run_id": str(row["split_model_run_id"] or ""),
                     "assignee": str(row["assignee"]),
+                    "confirmed_adjudication": confirmation if isinstance(confirmation, dict) else None,
                     "annotation": annotation,
                     "prediction": {
                         "model_run_id": str(row["model_run_id"] or ""),

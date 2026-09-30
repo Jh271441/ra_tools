@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -145,3 +146,42 @@ class LegacyAdjudicationTest(unittest.TestCase):
         self.assertEqual(item["multi_review"]["agreement"], "agreed")
         self.assertIsNone(item["multi_review"]["adjudication"])
         self.assertEqual(item["annotation"]["author"], "bob")
+
+    def confirm_batch(self, annotations, selected, *, overrides=None):
+        entry = {"annotation_id":selected["id"], "source_revision_ids":[a["id"] for a in annotations],
+                 "expected_output":selected["label"], "confirmation_ref":"test-explicit-confirmation"}
+        entry.update(overrides or {})
+        with self.db._write_lock, self.db.connect() as conn:
+            conn.execute("UPDATE issue_work_splits SET filter_json=? WHERE id=?", (json.dumps({"manual_review_adjudications_v1":{"cn1":entry}}),self.split))
+
+    def test_explicit_batch_confirmation_uses_member_result_and_preserves_conflict(self):
+        alice, bob = self.conflict()
+        self.assertIsNone(self.result()["items"][0]["multi_review"]["adjudication"])
+        self.confirm_batch([alice,bob],bob)
+        item=self.result()["items"][0]
+        self.assertEqual(item["multi_review"]["resolution_source"],"manual_batch_confirmation")
+        self.assertEqual(item["multi_review"]["agreement"],"conflict")
+        self.assertEqual(item["annotation"]["id"],bob["id"])
+        self.assertEqual(item["annotation"]["note"],bob["note"])
+        self.assertEqual(len(item["multi_review"]["reviews"]),2)
+        self.assertEqual(analysis_router._trail_expected_output_rows(self.result()),[{"issue_id":"cn1","期望输出":"误触发"}])
+
+    def test_batch_confirmation_stales_after_source_changes(self):
+        alice,bob=self.conflict();self.confirm_batch([alice,bob],bob)
+        self.vote("alice","正确触发",split=self.split,previous=alice["id"])
+        item=self.result()["items"][0]
+        self.assertIsNone(item["multi_review"]["adjudication"])
+        self.assertEqual(analysis_router._trail_expected_output_rows(self.result()),[])
+
+    def test_batch_confirmation_rejects_other_record_or_wrong_output(self):
+        alice,bob=self.conflict()
+        for change in [{"annotation_id":99999},{"expected_output":"无需协助"},{"source_revision_ids":[str(alice["id"]),str(bob["id"])]}]:
+            with self.subTest(change=change):
+                self.confirm_batch([alice,bob],bob,overrides=change)
+                self.assertIsNone(self.result()["items"][0]["multi_review"]["adjudication"])
+
+    def test_conflict_prefix_alone_still_does_not_create_confirmation(self):
+        alice,bob=self.conflict()
+        with self.db._write_lock,self.db.connect() as conn:
+            conn.execute("UPDATE annotations SET note=? WHERE id=?",("冲突: 尚未显式确认",bob["id"]))
+        self.assertIsNone(self.result()["items"][0]["multi_review"]["adjudication"])

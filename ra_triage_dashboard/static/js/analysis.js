@@ -703,7 +703,7 @@ function renderAnalysisCases(data) {
         const multi = item.multi_review || null;
         const adjudication = multi?.adjudication || null;
         const adjudicationBadge = multi?.agreement === "conflict"
-          ? `<span class="analysis-comparison-badge comparison-${adjudication ? "match" : "none"}" title="${escapeHtml(adjudication ? uiText("汇总及 GT 更新采用同 Run 最新非分配人员裁决；原盲标冲突保留", "Summary and GT export use the latest same-Run non-assignee decision; original conflict is retained") : uiText("尚无有效的同 Run 裁决，该冲突不导出到 GT 更新表", "No valid same-Run decision; this conflict is excluded from GT updates"))}">${escapeHtml(adjudication ? uiText("已裁决", "Adjudicated") : uiText("待裁决", "Needs adjudication"))}</span>`
+          ? `<span class="analysis-comparison-badge comparison-${adjudication ? "match" : "none"}" title="${escapeHtml(adjudication ? uiText("汇总及 GT 更新采用本条已确认的裁决结果；原盲标冲突保留", "Summary and GT export use this confirmed decision; original conflict is retained") : uiText("尚无有效的同 Run 裁决，该冲突不导出到 GT 更新表", "No valid same-Run decision; this conflict is excluded from GT updates"))}">${escapeHtml(adjudication ? uiText("已裁决", "Adjudicated") : uiText("待裁决", "Needs adjudication"))}</span>`
           : "";
         const multiLabel = multi
           ? ({ pending: "未完成", agreed: "一致", conflict: "冲突" }[multi.agreement] || "多人复核")

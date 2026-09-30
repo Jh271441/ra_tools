@@ -317,6 +317,30 @@ def _review_reason_analysis_payload(
                     "expected_output_source": output_source,
                     "review_status": derive_review_status(output, first.get("gt_label")),
                 }
+        resolution_source = "non_assignee_review" if adjudication else "assigned_review"
+        confirmation = first.get("confirmed_adjudication")
+        # Explicit, version-pinned batch confirmations only. Note text never
+        # creates a decision. A later source revision makes this confirmation stale.
+        if agreement == "conflict" and isinstance(confirmation, dict):
+            source_ids = sorted(int(item["id"]) for item in annotations)
+            pinned_ids = confirmation.get("source_revision_ids")
+            confirmed_id = confirmation.get("annotation_id")
+            if (
+                isinstance(pinned_ids, list)
+                and all(type(value) is int for value in pinned_ids)
+                and sorted(pinned_ids) == source_ids
+                and type(confirmed_id) is int
+                and confirmation.get("confirmation_ref")
+            ):
+                confirmed = next((item for item in annotations if item["id"] == confirmed_id), None)
+                if (
+                    confirmed
+                    and confirmed.get("expected_output") in LABELS
+                    and confirmed["expected_output"] == confirmation.get("expected_output")
+                    and (not adjudication or confirmed_id >= int(adjudication["id"]))
+                ):
+                    adjudication = dict(confirmed)
+                    resolution_source = "manual_batch_confirmation"
         # Conflict/vote counts stay about the assigned pair. Result fields and
         # their filters must describe the one authoritative decision revision.
         result_reviews = [{"username": adjudication["author"], "expected_output": adjudication["expected_output"], "annotation": adjudication}] if adjudication else reviews
@@ -441,7 +465,8 @@ def _review_reason_analysis_payload(
             },
             "reviews": reviews,
             "adjudication": adjudication,
-            "resolution_source": "non_assignee_review" if adjudication else "assigned_review",
+            "resolution_source": resolution_source,
+            "confirmation_ref": confirmation.get("confirmation_ref", "") if resolution_source == "manual_batch_confirmation" else "",
         }
     if normalized_work_split_id:
         # Exact task scope never falls back to an ordinary/older Review.  The
