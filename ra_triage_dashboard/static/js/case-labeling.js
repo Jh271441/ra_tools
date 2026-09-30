@@ -400,7 +400,7 @@ function labelingTaskFilterPayload() {
   };
 }
 
-function showLabelingGtExportPreview(result) {
+function showLabelingGtExportPreview(result, scope = {}) {
   const preview = result.preview || {};
   const counts = preview.scope_summary || { total: preview.item_count || 0, ready: preview.item_count || 0 };
   const reasons = {
@@ -418,7 +418,7 @@ function showLabelingGtExportPreview(result) {
   const issueHref = (issue) => pageUrl("labeling", {
     issue, taskId: "", search: "", issueIds: [], status: [], author: [], assignee: [],
     gt: [], label: [], exclusion: [], commentState: [], cluster: "", page: 1,
-    baselines: selectedBaselineQueryValue(), forceBaselines: true,
+    baselines: scope.baselines || selectedBaselineQueryValue(), forceBaselines: true,
   });
   dialog.innerHTML = `<div class="dialog-card"><div class="dialog-heading"><div><h2>${escapeHtml(uiText("GT 更新导出预览", "GT update export preview"))}</h2><p class="dialog-copy">${escapeHtml(uiText(`当前筛选 ${counts.total || 0} 个 Case，可导出 ${preview.item_count || 0} 条。`, `${counts.total || 0} Cases in scope; ${preview.item_count || 0} rows ready to export.`))}</p></div><button class="icon-button" type="button" data-close-labeling-gt-export aria-label="${escapeHtml(uiText("关闭", "Close"))}">×</button></div>
     <div class="labeling-gt-export-counts"><span><strong>${Number(preview.item_count || 0)}</strong> ${escapeHtml(uiText("可更新 GT", "GT updates"))}</span>${Object.entries(reasons).map(([key,label]) => `<span><strong>${Number(counts[key] || 0)}</strong> ${escapeHtml(label)}</span>`).join("")}</div>
@@ -436,17 +436,18 @@ function showLabelingGtExportPreview(result) {
 
 async function exportLabelingGtUpdate(filters = {}, button = null) {
   const control = button instanceof HTMLButtonElement ? button : null;
+  const exportScope = { ...filters, baselines: filters.baselines || selectedBaselineQueryValue() };
   if (control) control.disabled = true;
   try {
     const result = await api("/api/labeling/gt-export-previews", {
       method: "POST",
       body: JSON.stringify({
-        baselines: selectedBaselineQueryValue(),
-        filters: { ...filters, baselines: selectedBaselineQueryValue() },
+        baselines: exportScope.baselines,
+        filters: exportScope,
       }),
     });
     acknowledgeLocalChange(result);
-    showLabelingGtExportPreview(result);
+    showLabelingGtExportPreview(result, exportScope);
   } finally {
     if (control) control.disabled = !state.session?.is_admin;
   }
