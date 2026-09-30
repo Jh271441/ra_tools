@@ -1668,13 +1668,22 @@ async function adjudicateCaseLabeling() {
   );
   if (!labelCase) return;
   const resolution = labelCase.resolution || {};
-  const validation = updateCaseLabelingExpectedOutputFromTags();
-  if (validation?.conflict) return;
+  if (caseLabelingOutputValidation().conflict) {
+    showToast(uiText("期望输出与所选标签冲突，请先调整。", "Resolve the output/tag conflict first."), true);
+    return;
+  }
   const payload = {
     ...caseLabelingFormPayload(),
     source_revision_ids: (resolution.heads || []).map((item) => item.id),
     expected_previous_resolution_id: resolution.adjudication?.id || null,
   };
+  if (!payload.expected_output) {
+    showToast(uiText("请选择裁决后的期望输出。", "Select the adjudicated output."), true);
+    return;
+  }
+  const button = $("#caseLabelingAdjudicate");
+  if (button?.disabled) return;
+  if (button) button.disabled = true;
   try {
     const result = await api(`/api/labeling/label-cases/${encodeURIComponent(labelCase.id)}/adjudications`, {
       method: "POST", body: JSON.stringify(payload),
@@ -1686,6 +1695,8 @@ async function adjudicateCaseLabeling() {
     await loadCaseLabelingCases({ page: state.caseLabeling.page });
   } catch (error) {
     showToast(error.message, true);
+  } finally {
+    if (button?.isConnected) button.disabled = false;
   }
 }
 
