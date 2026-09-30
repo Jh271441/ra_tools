@@ -1165,7 +1165,6 @@ document.getElementById("labelSummaryReset")?.addEventListener("click", () => {
   labelSummaryPageSize = 20;
   loadLabelingSummary().catch((error) => showToast(error.message, true));
 });
-document.getElementById("labelSummaryRefresh")?.addEventListener("click",()=>loadLabelingSummary().catch(error=>showToast(error.message,true)));
 document.getElementById("labelSummaryExportGt")?.addEventListener("click", () => {
   exportLabelingGtUpdate(labelSummaryFilterPayload(), document.getElementById("labelSummaryExportGt"))
     .catch((error) => showToast(error.message, true));

@@ -188,11 +188,6 @@
 @media (max-width: 950px) { #campaignDetailView .campaign-progress-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 620px) { #campaignDetailView .campaign-progress-metrics { grid-template-columns: minmax(0, 1fr); } .campaign-manage-menu { justify-self: start; } }
 .labeling-summary-page { display: grid; width: min(1480px, 100%); min-width: 0; margin-inline: auto; gap: 12px; }
-.labeling-summary-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.labeling-summary-toolbar > div:first-child { flex: 1; min-width: 0; }
-.labeling-summary-toolbar h2 { font-size: 19px; margin-bottom: 6px; }
-.labeling-summary-toolbar p { color: var(--muted); font-size: 12px; }
-.labeling-summary-toolbar-actions { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; }
 .labeling-summary-command { min-width: 0; }
 #labelSummaryContent { display: grid; gap: 12px; min-width: 0; }
 #labelSummaryContent .analysis-confusion-table tfoot th,
@@ -200,5 +195,6 @@
 .label-summary-case-row .analysis-case-labels { align-content: start; }
 .label-summary-case-row .analysis-case-meta { align-content: start; }
 .label-summary-pagination { margin-top: 12px; }
-@media(max-width:900px) { .labeling-summary-toolbar { align-items: flex-start; flex-wrap: wrap; } }
-@media(max-width:650px) { .labeling-summary-toolbar > div:first-child { flex-basis:100%; } .labeling-summary-toolbar-actions { width: 100%; flex-wrap: wrap; } .labeling-summary-toolbar-actions .button { flex: 1 1 auto; } }
+
+.labeling-summary-actions { grid-column: span 2; display: flex; align-items: end; justify-content: flex-end; gap: 8px; }
+@media (max-width: 650px) { .labeling-summary-actions { grid-column: 1 / -1; flex-wrap: wrap; } }

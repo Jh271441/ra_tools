@@ -79,7 +79,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-543`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-544`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -656,10 +656,6 @@
           </section>
 
           <section class="app-page labeling-summary-page hidden" id="labelingSummaryPage" data-page="labeling-summary">
-            <header class="page-card labeling-summary-toolbar">
-              <div><h2>标注汇总</h2><p>沿用判错复核原因聚类的信息结构，按 Case 去重展示标注依据、缺失信息与结构化标签。</p></div>
-              <div class="labeling-summary-toolbar-actions"><button class="button button-quiet" id="labelSummaryExportGt" type="button" disabled>导出 GT 更新表</button><button class="button button-quiet" id="labelSummaryRefresh" type="button">刷新</button></div>
-            </header>
             <section class="review-commandbar labeling-summary-command" aria-label="标注汇总筛选">
               <form class="review-filters case-labeling-filters labeling-summary-filters" id="labelSummaryFilterForm">
                 <label class="case-labeling-search"><span>Issue</span><div class="issue-query-control"><input id="labelSummarySearch" type="search" placeholder="Issue ID、场景" autocomplete="off" /><button class="button button-quiet issue-query-button" id="openLabelSummaryIssueQueryButton" data-issue-query-target="labeling-summary" type="button">多 Issue</button></div></label>
@@ -671,7 +667,7 @@
                 <label><span>结果类别</span><div class="multi-filter" id="labelSummaryLabelPicker" data-placeholder="全部类别" data-placeholder-en="All labels"></div></label>
                 <label><span>讨论</span><div class="multi-filter" id="labelSummaryDiscussionPicker" data-placeholder="全部讨论状态" data-placeholder-en="All discussions"></div></label>
                 <label><span>排除</span><div class="multi-filter" id="labelSummaryExclusionPicker" data-placeholder="全部（含问题排除）" data-placeholder-en="All cases"></div></label>
-                <button class="button button-quiet filter-submit" id="labelSummaryReset" type="button">重置</button>
+                <div class="labeling-summary-actions"><button class="button button-quiet" id="labelSummaryExportGt" type="button" disabled>导出 GT 更新表</button><button class="button button-quiet" id="labelSummaryReset" type="button">重置</button></div>
               </form>
             </section>
             <div id="labelSummaryContent" aria-live="polite"></div>
@@ -2387,7 +2383,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-543`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-544`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>
