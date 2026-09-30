@@ -78,7 +78,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-475`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-476`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -331,12 +331,8 @@
                   <div class="multi-filter" id="reviewerFilter" data-placeholder="全部复核人" data-placeholder-en="All reviewers" data-i18n-placeholder="filter.all_reviewers"></div>
                 </label>
                 <label class="filter-review-status">
-                  <span class="ui-lang-zh" title="模型判错复核状态">模型判错复核</span><span class="ui-lang-en" title="Model error review status">Model review</span>
-                  <div class="multi-filter" id="reviewStatusFilter" data-placeholder="全部判错状态" data-placeholder-en="All model review statuses"></div>
-                </label>
-                <label class="filter-shared-label-state">
-                  <span class="ui-lang-zh" title="跨 Run 共享的 Issue 标签状态">共享标签状态</span><span class="ui-lang-en" title="Issue label state shared across Runs">Shared label state</span>
-                  <div class="multi-filter" id="sharedLabelStateFilter" data-placeholder="全部标签状态" data-placeholder-en="All label states" aria-label="Shared label state filter"></div>
+                  <span class="ui-lang-zh" title="当前 Run 人工期望输出与 GT 的复核状态">GT 复核状态</span><span class="ui-lang-en" title="Current Run human expected output compared with GT">GT Review status</span>
+                  <div class="multi-filter" id="reviewStatusFilter" data-placeholder="全部状态" data-placeholder-en="All statuses" data-i18n-placeholder="analysis.all_statuses"></div>
                 </label>
                 <label class="filter-discussion-state">
                   <span class="ui-lang-zh">讨论</span><span class="ui-lang-en">Discussion</span>
@@ -2168,7 +2164,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-475`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-476`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>
