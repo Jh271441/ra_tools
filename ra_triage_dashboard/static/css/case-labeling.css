@@ -186,3 +186,6 @@ html[data-color-theme="light"] .assignment-history.assignment-history { backgrou
 .labeling-gt-export-exclusions ul { max-height: 260px; overflow: auto; list-style: none; padding: 0; }
 .labeling-gt-export-exclusions li { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--line-soft); }
 .labeling-gt-export-exclusions a { color: var(--accent); }
+
+.case-label-final-result > .text-link { justify-self: start; background: transparent; border: 0; padding: 2px 0; color: var(--accent); font-size: 12px; }
+#caseTaskAdjudicationPanel, #caseLabelDecisionTitle { scroll-margin-top: 78px; }

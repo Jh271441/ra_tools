@@ -1069,7 +1069,7 @@ function caseLabelingHistoryAnnotations(caseData) {
   const gtLabel = String(caseData?.gt_label || "");
   return (caseData?.label_cases || [])
     .flatMap((labelCase) =>
-      (labelCase.resolution?.heads || []).map((revision) => ({ labelCase, revision }))
+      [...(labelCase.resolution?.heads || []), ...(labelCase.resolution?.method === "adjudication" && labelCase.resolution?.result_revision && !(labelCase.resolution.heads || []).some((head) => head.id === labelCase.resolution.result_revision.id) ? [labelCase.resolution.result_revision] : [])].map((revision) => ({ labelCase, revision }))
     )
     .sort((a, b) => Number(b.revision.id) - Number(a.revision.id))
     .map(({ labelCase, revision }) => {
@@ -1100,7 +1100,7 @@ function caseTaskAdjudicationMarkup(resolution) {
   const decision = resolution.adjudication;
   const valid = Boolean(decision && !decision.stale && resolution.state === "resolved");
   const label = valid ? uiText("已裁决", "Adjudicated") : decision?.stale ? uiText("裁决需重新确认", "Decision is stale") : uiText("待裁决", "Needs adjudication");
-  return `<section class="case-labeling-adjudication"><div class="case-labeling-adjudication-heading"><strong>${escapeHtml(uiText("任务内裁决", "Task adjudication"))}</strong><span>${escapeHtml(label)}</span>${resolution.original_conflict || resolution.state === "conflict" ? `<small>${escapeHtml(uiText("原始冲突保留", "Original conflict retained"))}</small>` : ""}</div>
+  return `<section class="case-labeling-adjudication" id="caseTaskAdjudicationPanel"><div class="case-labeling-adjudication-heading"><strong>${escapeHtml(uiText("任务内裁决", "Task adjudication"))}</strong><span>${escapeHtml(label)}</span>${resolution.original_conflict || resolution.state === "conflict" ? `<small>${escapeHtml(uiText("原始冲突保留", "Original conflict retained"))}</small>` : ""}</div>
     ${valid ? `<p><strong>${escapeHtml(resolution.expected_output)}</strong> · ${escapeHtml(decision.created_by || "")} · ${escapeHtml(formatTime(decision.created_at))}</p>` : ""}
     <details ${valid ? "" : "open"}><summary>${escapeHtml(uiText("原始标注意见", "Original votes"))}</summary>${(resolution.heads || []).map((item) => `<p><strong>${escapeHtml(item.author || "")}</strong>：${escapeHtml(item.expected_output || uiText("待补充", "Pending"))}${item.rationale ? ` · ${escapeHtml(item.rationale)}` : ""}</p>`).join("")}</details>
     ${!valid ? `<p class="quiet-meta">${escapeHtml(uiText("在上方选择最终期望输出并填写依据，再明确提交裁决。普通保存不会自动成为裁决。", "Select the final output and enter a rationale above, then submit an explicit decision. An ordinary save is not an adjudication."))}</p><button class="button button-quiet" id="caseLabelingAdjudicate" type="button">${escapeHtml(uiText("按当前表单显式裁决", "Adjudicate using this form"))}</button>` : ""}</section>`;
@@ -1113,7 +1113,9 @@ function caseLabelFinalResultMarkup(caseData) {
   const taskDecision = (caseData.label_cases || []).map((item) => item.resolution)
     .find((item) => item?.state === "resolved" && item?.adjudication && !item.adjudication.stale && item.expected_output === result.expected_output)?.adjudication;
   const author = decision && !decision.stale ? decision.created_by : taskDecision?.created_by;
-  return `<section class="case-label-final-result" aria-label="${escapeHtml(uiText("当前汇总结论", "Current summary result"))}"><div><strong>${escapeHtml(uiText("当前汇总结论", "Current summary result"))}</strong>${valid ? labelBadge(result.expected_output) : `<span>${escapeHtml(result.state === "conflict" ? uiText("待裁决", "Needs adjudication") : result.state === "stale" ? uiText("裁决需重新确认", "Decision is stale") : uiText("待完成", "Pending"))}</span>`}</div>${author ? `<small>${escapeHtml(uiText("裁决人：", "Adjudicator: "))}${escapeHtml(author)}</small>` : ""}<small>${escapeHtml(uiText("下方为你的标注表单；汇总和 GT 导出采用已确认的最终结论。", "The form below is your annotation. Summary and GT export use the confirmed final result."))}</small></section>`;
+  const selectedTask = (caseData.label_cases || []).find((item) => item.task_id && item.task_id === state.caseLabeling.taskId)?.resolution;
+  const hasEntry = Boolean(decision || (result.sources || []).length > 1 || ["conflict", "stale"].includes(result.state) || selectedTask?.adjudication || ["conflict", "stale"].includes(selectedTask?.state));
+  return `<section class="case-label-final-result" aria-label="${escapeHtml(uiText("当前汇总结论", "Current summary result"))}"><div><strong>${escapeHtml(uiText("当前汇总结论", "Current summary result"))}</strong>${valid ? labelBadge(result.expected_output) : `<span>${escapeHtml(result.state === "conflict" ? uiText("待裁决", "Needs adjudication") : result.state === "stale" ? uiText("裁决需重新确认", "Decision is stale") : uiText("待完成", "Pending"))}</span>`}</div>${author ? `<small>${escapeHtml(uiText("裁决人：", "Adjudicator: "))}${escapeHtml(author)}</small>` : ""}<small>${escapeHtml(uiText("下方为你的标注表单；汇总和 GT 导出采用已确认的最终结论。", "The form below is your annotation. Summary and GT export use the confirmed final result."))}</small>${hasEntry ? `<button class="text-link" type="button" id="caseLabelGoAdjudication">${escapeHtml(valid ? uiText("查看裁决与原始意见", "View decision and original votes") : uiText("前往裁决", "Go to adjudication"))}</button>` : ""}</section>`;
 }
 
 function caseLabelDecisionMarkup(caseData) {
@@ -1138,7 +1140,8 @@ function caseLabelDecisionMarkup(caseData) {
       ? `任务 · ${task?.name || source.task_id}`
       : "自由标注";
     const status = ({ resolved: "已形成结论", conflict: "来源冲突", stale: "需重新确认", pending: "待完成" })[source.state] || "待完成";
-    return `<li><div><strong>${escapeHtml(scope)}</strong><span>${escapeHtml(status)}${source.expected_output ? ` · ${escapeHtml(source.expected_output)}` : ""}</span></div><small>${escapeHtml(revisions)}</small></li>`;
+    const taskHref = source.task_id && ["conflict", "stale"].includes(source.state) ? pageUrl("labeling", { issue: caseData.issue_id, taskId: source.task_id, search: "", issueIds: [], status: [], author: [], assignee: [], gt: [], label: [], exclusion: [], commentState: [], cluster: "", baselines: selectedBaselineQueryValue(), forceBaselines: true }) : "";
+    return `<li><div><strong>${escapeHtml(scope)}</strong><span>${escapeHtml(status)}${source.expected_output ? ` · ${escapeHtml(source.expected_output)}` : ""}</span></div><small>${escapeHtml(revisions)}</small>${taskHref ? `<a class="text-link" href="${escapeHtml(taskHref)}">${escapeHtml(uiText("进入该任务裁决", "Open this task for adjudication"))}</a>` : ""}</li>`;
   }).join("");
   const decisionStatus = decision
     ? decision.stale ? "已有裁决已过期" : `当前裁决 · ${decision.expected_output}`
@@ -1355,6 +1358,9 @@ function renderCaseLabelingEditor(caseData) {
       </section>
     </form>`;
   const editor = $("#caseLabelingEditor");
+  $("#caseLabelGoAdjudication")?.addEventListener("click", () => {
+    ($("#caseTaskAdjudicationPanel") || $("#caseLabelDecisionTitle"))?.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
   $("#caseLabelingForm").addEventListener("submit", saveCaseLabelingRevision);
   $("#caseLabelingForm").addEventListener("input", () => { state.caseLabeling.dirty = true; });
   $("#caseLabelingForm").addEventListener("change", () => { state.caseLabeling.dirty = true; });
