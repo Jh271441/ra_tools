@@ -822,6 +822,7 @@ class DatabaseLabelingMixin:
         heads = list(heads)
         assigned_authors = list(assigned_authors)
         source_ids = sorted(int(item["id"]) for item in heads)
+        original_conflict = len({item.get("expected_output") for item in heads if item.get("expected_output") in LABELS}) > 1
         adjudication = None
         if latest_resolution is not None:
             expected_sources = sorted(
@@ -848,6 +849,7 @@ class DatabaseLabelingMixin:
                     "assigned_count": len(assigned_authors) if assigned_authors else len(heads),
                     "submitted_count": len(heads),
                     "adjudication": adjudication,
+                    "original_conflict": original_conflict,
                 }
         assigned_count = len(assigned_authors) if assigned_authors else (1 if heads else 0)
         submitted_count = len(heads)
@@ -885,6 +887,7 @@ class DatabaseLabelingMixin:
             "heads": heads,
             "assigned_count": assigned_count,
             "submitted_count": submitted_count,
+            "original_conflict": original_conflict,
             "adjudication": adjudication,
         }
 
@@ -2072,14 +2075,18 @@ class DatabaseLabelingMixin:
                 FROM label_revisions revision
                 JOIN label_cases label_case ON label_case.id = revision.label_case_id
                 WHERE label_case.baseline_scope IN ({', '.join('?' for _ in scopes)})
-                  AND revision.revision_kind IN ('submission', 'legacy')
+                  AND revision.revision_kind IN ('submission', 'legacy', 'adjudication')
                   AND trim(revision.author) != ''
                   {task_clause}
                 ORDER BY labeler
                 """,
                 params,
             ).fetchall()
-        return [str(row["labeler"] or "") for row in rows]
+            decision_rows = conn.execute(
+                f"SELECT DISTINCT lower(trim(created_by)) AS labeler FROM issue_label_decisions WHERE baseline_scope IN ({', '.join('?' for _ in scopes)}) AND trim(created_by) != ''",
+                scopes,
+            ).fetchall() if not task else []
+        return sorted({str(row["labeler"] or "") for row in [*rows, *decision_rows]})
 
     def labeling_assignees(
         self, baseline_scopes: Sequence[str], task_id: str = ""
@@ -2319,12 +2326,20 @@ class DatabaseLabelingMixin:
                 expected_output_value = str(shared_state.get("expected_output") or "")
             if normalized_statuses and aggregate_state not in normalized_statuses:
                 continue
-            if normalized_authors and not any(
-                head["author"].strip().lower() in normalized_authors
-                for item in cases
-                for head in item["resolution"].get("heads") or []
-            ):
-                continue
+            if normalized_authors:
+                result_authors = {
+                    str(head.get("author") or "").strip().lower()
+                    for item in cases for head in item["resolution"].get("heads") or []
+                }
+                for item in cases:
+                    decision = item["resolution"].get("adjudication") or {}
+                    if decision and not decision.get("stale"):
+                        result_authors.add(str(decision.get("created_by") or "").strip().lower())
+                decision = (shared_state or {}).get("decision") or {}
+                if decision and not decision.get("stale"):
+                    result_authors.add(str(decision.get("created_by") or "").strip().lower())
+                if not result_authors.intersection(normalized_authors):
+                    continue
             if (
                 normalized_expected_outputs
                 and expected_output_value not in normalized_expected_outputs
@@ -2513,7 +2528,7 @@ class DatabaseLabelingMixin:
         )
         return clusters
 
-    def label_gt_candidates(self, baseline_scopes: Sequence[str]) -> list[dict[str, Any]]:
+    def label_gt_candidates(self, baseline_scopes: Sequence[str], *, include_non_updates: bool = False) -> list[dict[str, Any]]:
         scopes = _clean_values(baseline_scopes)
         with self.connect() as conn:
             rows = conn.execute(
@@ -2566,13 +2581,17 @@ class DatabaseLabelingMixin:
                         }
                     )
         output: list[dict[str, Any]] = []
-        for issue_id in sorted(set(by_issue) | set(blocked_by_issue)):
+        for issue_id in sorted(set(by_issue) | set(blocked_by_issue) | (set(gt_by_issue) if include_non_updates else set())):
             sources = by_issue.get(issue_id, [])
             labels = {item["expected_output"] for item in sources}
             gt_label = gt_by_issue.get(issue_id, "")
             blockers = blocked_by_issue.get(issue_id, [])
             projection = projected_by_issue.get(issue_id) or {}
             decision = projection.get("decision") or None
+            if not sources and not blockers and not decision:
+                if include_non_updates:
+                    output.append({"issue_id": issue_id, "status": "unlabeled", "gt_label": gt_label})
+                continue
             if decision:
                 if projection.get("state") != "resolved" or decision.get("stale"):
                     output.append(
@@ -2589,6 +2608,8 @@ class DatabaseLabelingMixin:
                     continue
                 expected = str(projection.get("expected_output") or "")
                 if expected == gt_label:
+                    if include_non_updates:
+                        output.append({"issue_id": issue_id, "status": "unchanged", "gt_label": gt_label, "expected_output": expected})
                     continue
                 output.append(
                     {
@@ -2631,6 +2652,8 @@ class DatabaseLabelingMixin:
                 continue
             expected = next(iter(labels))
             if expected == gt_label:
+                if include_non_updates:
+                    output.append({"issue_id": issue_id, "status": "unchanged", "gt_label": gt_label, "expected_output": expected})
                 continue
             output.append(
                 {
@@ -2675,11 +2698,31 @@ class DatabaseLabelingMixin:
         if not scopes:
             raise ValueError("至少选择一个 GT 数据集。")
         selected = set(_clean_values(issue_ids))
-        candidates = [
-            item for item in self.label_gt_candidates(scopes)
-            if item.get("status") == "ready"
-            and (not selected or str(item.get("issue_id") or "") in selected)
+        scoped_candidates = [
+            item for item in self.label_gt_candidates(scopes, include_non_updates=True)
+            if not selected or str(item.get("issue_id") or "") in selected
         ]
+        candidates = [item for item in scoped_candidates if item.get("status") == "ready"]
+        counts = {key: 0 for key in ("ready", "unchanged", "pending", "conflict", "stale")}
+        exclusions = []
+        for candidate in scoped_candidates:
+            status = candidate["status"]
+            blocked_states = {item.get("state") for item in candidate.get("blocked_sources") or []}
+            if status in {"ready", "unchanged"}:
+                reason = status
+            elif (candidate.get("decision") or {}).get("stale") or "stale" in blocked_states:
+                reason = "stale"
+            elif status == "source_conflict" or "conflict" in blocked_states:
+                reason = "conflict"
+            else:
+                reason = "pending"
+            counts[reason] += 1
+            if reason != "ready":
+                exclusions.append({"issue_id": candidate["issue_id"], "reason": reason})
+        scope_summary = {"total": len(scoped_candidates), **counts, "excluded_count": len(exclusions), "exclusions": exclusions}
+        if not candidates:
+            return {"id": "", "status": "empty", "item_count": 0, "items": [], "scope_summary": scope_summary}
+
         active_snapshots = {
             scope: self.get_active_gt_snapshot(scope)
             for scope in scopes
@@ -2803,6 +2846,7 @@ class DatabaseLabelingMixin:
             "reconcile_status": "not_checked",
             "item_count": len(items),
             "items": items,
+            "scope_summary": scope_summary,
             "created_by": str(created_by or ""),
             "created_at": now,
         }

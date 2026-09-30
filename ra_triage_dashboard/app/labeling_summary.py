@@ -32,6 +32,26 @@ def _current_heads(item):
     return heads
 
 
+def _adjudicated_result(item):
+    if item.get("label_state") != "resolved":
+        return None
+    decision = item.get("decision") or {}
+    if decision and not decision.get("stale"):
+        return {
+            "kind": "issue", "id": decision.get("id"),
+            "author": decision.get("created_by", ""), "created_at": decision.get("created_at", ""),
+            "rationale": decision.get("rationale", ""), "expected_output": item.get("expected_output", ""),
+            "tags": [], "evidence_gaps": [],
+        }
+    decisions = []
+    for case in item.get("label_cases", []):
+        resolution = case.get("resolution") or {}
+        result = resolution.get("result_revision") or {}
+        if resolution.get("state") == "resolved" and resolution.get("method") == "adjudication" and result.get("expected_output") == item.get("expected_output"):
+            decisions.append({**result, "kind": "task", "task_id": case.get("task_id", "")})
+    return max(decisions, key=lambda value: int(value.get("id") or 0)) if decisions else None
+
+
 def summarize_labeling_cases(items, *, page=1, page_size=20):
     states, submitted_states, outputs, pairs, tags, evidence, scenarios = (
         Counter() for _ in range(7)
@@ -48,10 +68,18 @@ def summarize_labeling_cases(items, *, page=1, page_size=20):
             if gt in LABELS:
                 pairs[(gt, output)] += 1
         heads = _current_heads(item)
+        primary_result = _adjudicated_result(item)
+        original_conflict = any(
+            case.get("resolution", {}).get("original_conflict")
+            or len({head.get("expected_output") for head in case.get("resolution", {}).get("heads", []) if head.get("expected_output") in LABELS}) > 1
+            for case in item.get("label_cases", [])
+        ) or len({head.get("expected_output") for head in heads if head.get("expected_output") in LABELS}) > 1
+        original_votes = [{"author": h.get("author", ""), "expected_output": h.get("expected_output", ""), "rationale": h.get("rationale", "")} for h in heads]
+        display_heads = [primary_result] if primary_result else heads
         case_tags, case_evidence, authors, rationales = set(), set(), set(), []
         created_at = ""
-        is_excluded = False
-        for head in heads:
+        is_excluded = any(bool(head.get("is_excluded")) for head in heads) if primary_result and primary_result.get("kind") == "issue" else False
+        for head in display_heads:
             case_tags.update(str(value) for value in head.get("tags") or [] if value)
             case_evidence.update(
                 str(value) for value in head.get("evidence_gaps") or [] if value
@@ -66,9 +94,9 @@ def summarize_labeling_cases(items, *, page=1, page_size=20):
             is_excluded = is_excluded or bool(head.get("is_excluded"))
         decision = item.get("decision") or {}
         decision_rationale = str(decision.get("rationale") or "").strip()
-        if decision_rationale and decision_rationale not in rationales:
+        if not decision.get("stale") and decision_rationale and decision_rationale not in rationales:
             rationales.insert(0, decision_rationale)
-        if decision:
+        if decision and not decision.get("stale"):
             created_at = max(created_at, str(decision.get("created_at") or ""))
         if not heads:
             if item.get("scenario"):
@@ -79,7 +107,7 @@ def summarize_labeling_cases(items, *, page=1, page_size=20):
             reason_count += 1
         if case_evidence:
             structured_evidence_count += 1
-        for author in authors:
+        for author in authors | {str(head.get("author") or "").strip().lower() for head in heads if head.get("author")}:
             people[author].add(item["issue_id"])
         tags.update(case_tags)
         evidence.update(case_evidence)
@@ -96,6 +124,9 @@ def summarize_labeling_cases(items, *, page=1, page_size=20):
                 "expected_output": str(output or ""),
                 "authors": sorted(authors),
                 "rationales": rationales,
+                "adjudication": primary_result,
+                "original_conflict": original_conflict,
+                "original_votes": original_votes,
                 "tags": sorted(case_tags),
                 "evidence_gaps": sorted(case_evidence),
                 "is_excluded": is_excluded,

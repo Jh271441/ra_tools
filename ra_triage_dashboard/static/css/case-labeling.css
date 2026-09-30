@@ -169,3 +169,20 @@ html[data-color-theme="light"] .assignment-history.assignment-history { backgrou
 .assignment-name-refresh[data-loading="true"] svg { animation: intent-name-spin .8s linear infinite; }
 .assignment-composer .assignment-name-source[data-status="loading"]::before { display: none; }
 @media (prefers-reduced-motion: reduce) { .assignment-name-refresh[data-loading="true"] svg { animation: none; } }
+
+.case-label-final-result { display: grid; gap: 6px; margin-bottom: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.case-label-final-result > div, .case-labeling-adjudication-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.case-label-final-result small, .case-labeling-adjudication-heading span { color: var(--muted); font-size: 11px; }
+.case-labeling-adjudication-heading small { color: var(--warn); }
+.case-labeling-adjudication details, .label-summary-original-votes { color: var(--muted); font-size: 11px; }
+.case-labeling-adjudication summary, .label-summary-original-votes summary { cursor: pointer; }
+.case-labeling-adjudication details p, .label-summary-original-votes p { margin-top: 6px; }
+.labeling-gt-export-dialog { width: min(720px, calc(100vw - 24px)); }
+.labeling-gt-export-counts { display: flex; flex-wrap: wrap; gap: 12px 18px; padding: 12px 0; border-block: 1px solid var(--line); }
+.labeling-gt-export-counts span { color: var(--muted); font-size: 12px; }
+.labeling-gt-export-counts strong { color: var(--text); font-size: 18px; }
+.labeling-gt-export-exclusions { margin: 12px 0; color: var(--muted); }
+.labeling-gt-export-exclusions summary { cursor: pointer; }
+.labeling-gt-export-exclusions ul { max-height: 260px; overflow: auto; list-style: none; padding: 0; }
+.labeling-gt-export-exclusions li { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--line-soft); }
+.labeling-gt-export-exclusions a { color: var(--accent); }

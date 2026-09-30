@@ -77,6 +77,20 @@ class CaseLabelingTest(unittest.TestCase):
             self.assertEqual(candidates[0]["issue_id"], "cn1")
             self.assertEqual(candidates[0]["expected_output"], "误触发")
 
+    def test_gt_export_scope_counts_reconcile_and_zero_ready_creates_no_batch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database=self.make_db(tmp)
+            empty=database.create_label_gt_export_preview(baseline_scopes=["scope"], created_by="admin",created_by_source="test",created_by_verified=True)
+            self.assertEqual(empty["scope_summary"]["total"],2)
+            self.assertEqual(empty["scope_summary"]["pending"],2)
+            with database.connect() as conn:
+                self.assertEqual(conn.execute("SELECT count(*) n FROM label_gt_export_batches").fetchone()["n"],0)
+            database.create_label_revision(issue_id="cn1",expected_output="正确触发",tags=[],evidence_gaps=[],rationale="agrees",is_excluded=False,author="alice",author_source="test",author_verified=True,expected_previous_revision_id=None)
+            preview=database.create_label_gt_export_preview(baseline_scopes=["scope"],issue_ids=["cn1"],created_by="admin",created_by_source="test",created_by_verified=True)
+            self.assertEqual(preview["scope_summary"]["total"],1)
+            self.assertEqual(preview["scope_summary"]["unchanged"],1)
+            self.assertEqual(preview["item_count"],0)
+
     def test_public_label_attachment_exposes_only_opaque_url(self) -> None:
         public = _public_label_attachment({
             "id": "asset-1", "original_name": "private.png",
@@ -137,6 +151,15 @@ class CaseLabelingTest(unittest.TestCase):
             )
             self.assertEqual(adjudicated["resolution"]["method"], "adjudication")
             self.assertEqual(adjudicated["resolution"]["expected_output"], "误触发")
+            self.assertTrue(adjudicated["resolution"]["original_conflict"])
+            self.assertEqual(len(adjudicated["resolution"]["heads"]), 2)
+            self.assertIn("carol", database.labeling_labelers(["scope"], split["split_id"]))
+            self.assertEqual(database.list_labeling_cases(baseline_scopes=["scope"], task_id=split["split_id"], author="carol")["total"], 1)
+            preview = database.create_label_gt_export_preview(baseline_scopes=["scope"], created_by="admin", created_by_source="test", created_by_verified=True)
+            self.assertEqual(preview["scope_summary"]["total"], 2)
+            self.assertEqual(preview["scope_summary"]["ready"], 1)
+            self.assertEqual(preview["scope_summary"]["pending"], 1)
+
             alice_next = database.create_label_revision(
                 issue_id="cn1", task_id=split["split_id"],
                 expected_output="正确触发", tags=[], evidence_gaps=[], rationale="a2",
@@ -148,6 +171,12 @@ class CaseLabelingTest(unittest.TestCase):
             blocked = database.label_gt_candidates(["scope"])
             self.assertEqual(blocked[0]["status"], "unresolved")
             self.assertEqual(blocked[0]["blocked_sources"][0]["state"], "stale")
+            empty = database.create_label_gt_export_preview(baseline_scopes=["scope"], created_by="admin", created_by_source="test", created_by_verified=True)
+            self.assertEqual(empty["item_count"], 0)
+            self.assertEqual(empty["id"], "")
+            self.assertEqual(empty["scope_summary"]["stale"], 1)
+            self.assertEqual(empty["scope_summary"]["pending"], 1)
+
 
     def test_free_label_cannot_be_adjudicated_as_task_conflict(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

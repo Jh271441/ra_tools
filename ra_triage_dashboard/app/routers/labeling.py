@@ -1390,11 +1390,9 @@ async def create_gt_export_preview(request: Request) -> dict[str, Any]:
         )
     except ValueError as exc:
         raise _detail(409, str(exc))
-    if not preview["item_count"]:
-        raise _detail(400, "当前没有已解决且需要更新的 GT 候选。")
     return {
         "preview": preview,
-        "download_url": _public_path(f"/api/labeling/gt-exports/{preview['id']}"),
+        "download_url": _public_path(f"/api/labeling/gt-exports/{preview['id']}") if preview["item_count"] else "",
         "change_revision": await asyncio.to_thread(database.change_revision),
     }
 
