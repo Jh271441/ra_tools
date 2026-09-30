@@ -254,6 +254,10 @@ def _review_reason_analysis_payload(
             issue_ids=selected_issue_ids,
         ):
             grouped.setdefault(str(row["issue_id"]), []).append(row)
+    external_reviews = database.latest_non_assignee_reviews([
+        (str(members[0]["split_id"]), issue_id)
+        for issue_id, members in grouped.items() if len(members) > 1
+    ]) if grouped else {}
     multi_rows: list[dict[str, Any]] = []
     for issue_id, members in grouped.items():
         reviews: list[dict[str, Any]] = []
@@ -301,6 +305,22 @@ def _review_reason_analysis_payload(
         elif agreement != normalized_work_agreement:
             continue
         first = members[0]
+        adjudication = None
+        candidate = external_reviews.get((str(first["split_id"]), issue_id))
+        if agreement == "conflict" and candidate and int(candidate["id"]) > max(
+            int(item.get("id") or -1) for item in annotations
+        ):
+            output, output_source = effective_expected_output(candidate, tag_catalog)
+            if output in LABELS:
+                adjudication = {
+                    **candidate, "expected_output": output, "label": output,
+                    "expected_output_source": output_source,
+                    "review_status": derive_review_status(output, first.get("gt_label")),
+                }
+        # Conflict/vote counts stay about the assigned pair. Result fields and
+        # their filters must describe the one authoritative decision revision.
+        result_reviews = [{"username": adjudication["author"], "expected_output": adjudication["expected_output"], "annotation": adjudication}] if adjudication else reviews
+        annotations = [item["annotation"] for item in result_reviews if item["annotation"]]
         prediction = first.get("prediction") or {}
         if gt_labels and str(first.get("gt_label") or "") not in gt_labels:
             continue
@@ -322,7 +342,7 @@ def _review_reason_analysis_payload(
                 continue
         if authors:
             matching_reviews = [
-                item for item in reviews if item["username"] in authors
+                item for item in (reviews + result_reviews) if item["username"] in authors
             ]
             if normalized_work_agreement == "all":
                 if not any(item["annotation"] for item in matching_reviews):
@@ -356,7 +376,7 @@ def _review_reason_analysis_payload(
         if normalized_search:
             haystack = " ".join(
                 str(value or "")
-                for item in reviews
+                for item in result_reviews
                 for value in (
                     item["username"],
                     item["expected_output"],
@@ -367,7 +387,9 @@ def _review_reason_analysis_payload(
             ).casefold()
             if folded_search not in haystack:
                 continue
-        if submitted_reviews:
+        if adjudication:
+            representative_review = {"annotation": adjudication}
+        elif submitted_reviews:
             # Each member row already contains that reviewer's latest version.
             # Every multi-review state needs one coherent primary row for the
             # shared display and export schema, so choose the last appended
@@ -418,6 +440,8 @@ def _review_reason_analysis_payload(
                 label: valid_outputs.count(label) for label in sorted(set(valid_outputs))
             },
             "reviews": reviews,
+            "adjudication": adjudication,
+            "resolution_source": "non_assignee_review" if adjudication else "assigned_review",
         }
     if normalized_work_split_id:
         # Exact task scope never falls back to an ordinary/older Review.  The

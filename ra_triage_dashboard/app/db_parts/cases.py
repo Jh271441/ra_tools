@@ -2248,6 +2248,49 @@ class DatabaseCasesMixin:
             )
         return results
 
+    def latest_non_assignee_reviews(
+        self, pairs: Sequence[tuple[str, str]]
+    ) -> dict[tuple[str, str], dict[str, Any]]:
+        """Read possible legacy decisions within each blind task's exact Run.
+
+        Only current Issue assignees define membership. An ordinary review or a
+        review explicitly bound to this split may qualify; other tasks, Runs,
+        unbound Runs and anonymous authors cannot silently resolve this task.
+        The caller checks conflict, chronology and effective output validity.
+        """
+        selected = list(dict.fromkeys(pairs))
+        result: dict[tuple[str, str], dict[str, Any]] = {}
+        with self.connect() as conn:
+            for offset in range(0, len(selected), 200):
+                batch = selected[offset:offset + 200]
+                clause = " OR ".join("(assignment.split_id=? AND assignment.issue_id=?)" for _ in batch)
+                params = [value for pair in batch for value in pair]
+                rows = conn.execute(
+                    f"""SELECT DISTINCT assignment.split_id AS decision_split_id,
+                               assignment.issue_id AS decision_issue_id, candidate.*
+                        FROM review_work_assignments assignment
+                        JOIN issue_work_splits split ON split.id=assignment.split_id
+                        JOIN annotations candidate ON candidate.id=(
+                            SELECT extra.id FROM annotations extra
+                            WHERE extra.issue_id=assignment.issue_id
+                              AND extra.model_run_id=split.model_run_id
+                              AND split.model_run_id <> '' AND split.mode='blind'
+                              AND (extra.work_split_id='' OR extra.work_split_id=split.id)
+                              AND trim(extra.author) <> ''
+                              AND NOT EXISTS (
+                                  SELECT 1 FROM review_work_assignments member
+                                  WHERE member.split_id=split.id AND member.issue_id=assignment.issue_id
+                                    AND lower(trim(member.assignee))=lower(trim(extra.author))
+                              )
+                            ORDER BY extra.id DESC LIMIT 1
+                        )
+                        WHERE {clause}""",
+                    params,
+                ).fetchall()
+                for row in rows:
+                    result[(str(row["decision_split_id"]), str(row["decision_issue_id"]))] = self._annotation_dict(row)
+        return result
+
     def apply_work_split(
         self,
         *,

@@ -124,6 +124,10 @@ REVIEW_ANALYSIS_EXPORT_COLUMNS: tuple[tuple[str, str], ...] = (
     ("tag_keys", "Tags 原始 key"),
     ("missing_evidence", "缺失信息"),
     ("missing_evidence_keys", "缺失信息原始 key"),
+    ("blind_agreement", "原盲标状态"),
+    ("adjudicator", "裁决人"),
+    ("adjudicated_at", "裁决时间"),
+    ("adjudication_id", "裁决 Review ID"),
     ("reviewer", "复核人"),
     ("reviewed_at", "Review 时间"),
     ("review_model_run_id", "Review Model Run"),
@@ -240,6 +244,10 @@ def _review_analysis_export_rows(result: dict[str, Any]) -> list[dict[str, Any]]
                     evidence_labels.get(key, key) for key in evidence_keys
                 ),
                 "missing_evidence_keys": "、".join(evidence_keys),
+                "blind_agreement": _as_text((item.get("multi_review") or {}).get("agreement")),
+                "adjudicator": _as_text(((item.get("multi_review") or {}).get("adjudication") or {}).get("author")),
+                "adjudicated_at": _as_text(((item.get("multi_review") or {}).get("adjudication") or {}).get("created_at")),
+                "adjudication_id": ((item.get("multi_review") or {}).get("adjudication") or {}).get("id", ""),
                 "reviewer": _as_text(annotation.get("author")),
                 "reviewed_at": _as_text(annotation.get("created_at")),
                 "review_model_run_id": _as_text(annotation.get("model_run_id")),
@@ -282,6 +290,10 @@ def _trail_expected_output_rows(result: dict[str, Any]) -> list[dict[str, str]]:
     rows: list[dict[str, str]] = []
     seen: set[str] = set()
     for item in result.get("items", []):
+        multi = item.get("multi_review") or {}
+        if multi.get("agreement") == "conflict" and not multi.get("adjudication"):
+            # A latest member vote alone must never update GT for a conflict.
+            continue
         annotation = item.get("annotation") or {}
         issue_id = _as_text(item.get("issue_id"))
         expected_output = _as_text(

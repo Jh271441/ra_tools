@@ -701,6 +701,10 @@ function renderAnalysisCases(data) {
             }</span>`
           : "";
         const multi = item.multi_review || null;
+        const adjudication = multi?.adjudication || null;
+        const adjudicationBadge = multi?.agreement === "conflict"
+          ? `<span class="analysis-comparison-badge comparison-${adjudication ? "match" : "none"}" title="${escapeHtml(adjudication ? uiText("汇总及 GT 更新采用同 Run 最新非分配人员裁决；原盲标冲突保留", "Summary and GT export use the latest same-Run non-assignee decision; original conflict is retained") : uiText("尚无有效的同 Run 裁决，该冲突不导出到 GT 更新表", "No valid same-Run decision; this conflict is excluded from GT updates"))}">${escapeHtml(adjudication ? uiText("已裁决", "Adjudicated") : uiText("待裁决", "Needs adjudication"))}</span>`
+          : "";
         const multiLabel = multi
           ? ({ pending: "未完成", agreed: "一致", conflict: "冲突" }[multi.agreement] || "多人复核")
           : "";
@@ -744,6 +748,7 @@ function renderAnalysisCases(data) {
           <div class="analysis-case-labels">
             ${comparisonBadge}
             ${multiBadge}
+            ${adjudicationBadge}
             <span title="${escapeHtml(`${baselineLabelForScope(item.baseline_scope)} GT`)}">GT ${labelBadge(item.gt_label)}</span>
             <span title="人工 Review 期望输出"><span class="ui-lang-zh">期望</span><span class="ui-lang-en">Expected</span> ${labelBadge(expectedOutput, uiText("待补充", "Pending"))}</span>
             <button class="analysis-model-history-button" type="button"
@@ -761,7 +766,7 @@ function renderAnalysisCases(data) {
             <div class="analysis-chip-list">${tagChips}${evidenceChips}</div>
           </div>
           <div class="analysis-case-meta">
-            <span>${escapeHtml(annotation.author || "未记录复核人")}${annotation.author_verified ? " · SSO" : ""}</span>
+            <span>${adjudication ? escapeHtml(uiText("裁决人：", "Adjudicator: ")) : ""}${escapeHtml(annotation.author || "未记录复核人")}${annotation.author_verified ? " · SSO" : ""}</span>
             <span>${escapeHtml(reviewStatusLabel(annotation.review_status))} · ${formatTime(annotation.created_at)}</span>
             <span class="analysis-case-actions">
               <button class="analysis-discussion-link" type="button" data-analysis-discussion="${issueId}" data-model-run-id="${escapeHtml(discussionRunId)}">评论</button>
