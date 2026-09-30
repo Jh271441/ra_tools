@@ -58,7 +58,7 @@ def summarize_labeling_cases(items, *, page=1, page_size=20):
     )
     people = defaultdict(set)
     compact_items = []
-    reason_count = structured_evidence_count = 0
+    reason_count = structured_evidence_count = adjudicated_count = 0
     for item in items:
         status = item.get("label_state", "pending")
         states[status] += 1
@@ -103,6 +103,8 @@ def summarize_labeling_cases(items, *, page=1, page_size=20):
                 scenarios[item["scenario"]] += 1
             continue
         submitted_states[status] += 1
+        if primary_result:
+            adjudicated_count += 1
         if rationales:
             reason_count += 1
         if case_evidence:
@@ -156,6 +158,7 @@ def summarize_labeling_cases(items, *, page=1, page_size=20):
         "total": len(items), "annotated": total_submitted,
         "states": dict(states), "submitted_states": dict(submitted_states),
         "reason_count": reason_count,
+        "adjudicated_count": adjudicated_count,
         "empty_reason_count": total_submitted - reason_count,
         "structured_evidence_count": structured_evidence_count,
         "outputs": dict(outputs),

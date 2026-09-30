@@ -198,3 +198,7 @@
 
 .labeling-summary-actions { grid-column: 1 / -1; display: flex; align-items: end; justify-content: flex-end; gap: 8px; }
 @media (max-width: 650px) { .labeling-summary-actions { grid-column: 1 / -1; flex-wrap: wrap; } }
+
+.label-summary-adjudicated { width: 100%; text-align: left; color: inherit; font: inherit; cursor: pointer; }
+.label-summary-adjudicated:hover, .label-summary-adjudicated[aria-pressed="true"] { border-color: var(--accent); }
+.label-summary-adjudicated:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

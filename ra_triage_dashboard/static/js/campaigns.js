@@ -1034,12 +1034,9 @@ function labelSummaryClusterPanels(data) {
     .map(({ key, count, item }) => ({ key, count, label: item.label || key, description: item.hint || "" }))
     .sort((left, right) => right.count - left.count || left.label.localeCompare(right.label));
   const makeGroup = (key, label, items) => ({ key, label, annotated_count: items.reduce((sum, item) => sum + item.count, 0), items });
-  const evidenceItems = Object.entries(data.evidence || {}).map(([key, count]) => ({
-    key, count: Number(count || 0), label: evidenceLabel(key), description: "",
-  })).sort((left, right) => right.count - left.count || left.label.localeCompare(right.label));
   const panels = [
-    { key: "evidence", label: "缺失信息", layout: "single", groups: [makeGroup("all", "缺失信息", evidenceItems)] },
-    { key: "scene", label: "场景", layout: "dual", groups: [makeGroup("environment", "环境", groupItems("scene", "environment")), makeGroup("self_intent", "自车意图", groupItems("scene", "self_intent"))] },
+    { key: "environment", label: "场景环境", layout: "single", groups: [makeGroup("environment", "场景环境", groupItems("scene", "environment"))] },
+    { key: "self_intent", label: "自车意图", layout: "single", groups: [makeGroup("self_intent", "自车意图", groupItems("scene", "self_intent"))] },
     { key: "trigger", label: "触发判定", layout: "dual", groups: [makeGroup("false_trigger", "误触发", groupItems("interaction_decision", "false_trigger")), makeGroup("true_trigger", "正确触发", groupItems("interaction_decision", "true_trigger"))] },
     { key: "egress", label: "如何脱困", layout: "dual", groups: [makeGroup("ra", "RA", groupItems("egress", "ra")), makeGroup("no_assist", "无需协助", groupItems("egress", "no_assist"))] },
   ];
@@ -1074,10 +1071,15 @@ function renderLabelingSummary(data) {
   const matches = (data.pairs || []).filter((row) => row.gt === row.label).reduce((sum, row) => sum + Number(row.count || 0), 0);
   const page = Number(data.page || 1);
   const pageCount = Math.max(1, Number(data.page_count || 0));
-  root.innerHTML = `<section class="analysis-summary-grid" aria-label="Labeling overview"><article class="analysis-stat-card"><span>Case 标注</span><strong>${Number(data.annotated || 0)}</strong><small>当前范围 ${Number(data.total || 0)} 个 Case</small></article><article class="analysis-stat-card"><span>已填写依据</span><strong>${Number(data.reason_count || 0)}</strong><small>未填写 ${Number(data.empty_reason_count || 0)}</small></article><article class="analysis-stat-card"><span>结构化缺失信息</span><strong>${Number(data.structured_evidence_count || 0)}</strong><small>至少选择 1 项</small></article></section>
+  root.innerHTML = `<section class="analysis-summary-grid" aria-label="Labeling overview"><article class="analysis-stat-card"><span>Case 标注</span><strong>${Number(data.annotated || 0)}</strong><small>当前范围 ${Number(data.total || 0)} 个 Case</small></article><article class="analysis-stat-card"><span>已填写依据</span><strong>${Number(data.reason_count || 0)}</strong><small>未填写 ${Number(data.empty_reason_count || 0)}</small></article><button class="analysis-stat-card label-summary-adjudicated" id="labelSummaryAdjudicated" type="button" aria-pressed="${labelSummaryFilters.cluster === "adjudicated"}"><span>已裁决 Case</span><strong>${Number(data.adjudicated_count || 0)}</strong><small>${labelSummaryFilters.cluster === "adjudicated" ? "正在筛选 · 点击取消" : "查看裁决记录"}</small></button></section>
     <section class="analysis-decision-grid" aria-label="Label state and GT comparison"><section class="page-card analysis-review-status-card"><div class="section-heading analysis-review-status-heading"><div><h3>标注状态</h3></div><small>${Number(data.annotated || 0)} 个已提交 Case</small></div><div class="analysis-review-status-chart" id="labelSummaryStatusChart">${labelSummaryStatusMarkup(data)}</div></section><section class="page-card analysis-confusion-card"><div class="section-heading analysis-confusion-heading"><div><h3>GT × 标注结果混淆矩阵</h3></div><small>可比较 ${comparable} · 一致 ${matches}</small></div><div class="analysis-confusion-wrap" id="labelSummaryConfusionMatrix">${labelSummaryMatrixMarkup(data)}</div></section></section>
     <section class="analysis-cluster-grid" id="labelSummaryClusterPanels" aria-label="Structured labeling clusters">${labelSummaryClusterPanels(data)}</section>
     <section class="page-card analysis-case-card"><div class="section-heading"><div><h3>标注依据明细</h3></div><small>共 ${Number(data.annotated || 0)} 个 Case · 当前页 ${(data.items || []).length} 个</small></div><div class="analysis-case-list" id="labelSummaryCaseList">${(data.items || []).length ? data.items.map(labelSummaryCaseMarkup).join("") : '<div class="analysis-empty">当前范围暂无标注提交</div>'}</div><nav class="case-pagination gallery-pagination label-summary-pagination" aria-label="标注依据明细分页"><div class="case-pagination-main"><button class="button button-quiet" id="labelSummaryPrevious" type="button" ${page <= 1 ? "disabled" : ""}>上一页</button><span id="labelSummaryPageState">${page} / ${pageCount}</span><button class="button button-quiet" id="labelSummaryNext" type="button" ${page >= pageCount ? "disabled" : ""}>下一页</button><span class="page-jump-control"><label for="labelSummaryPageJump">跳至</label><input id="labelSummaryPageJump" type="number" min="1" max="${pageCount}" value="${page}" inputmode="numeric" ${pageCount <= 1 ? "disabled" : ""}/><span>页</span><button class="button button-quiet" id="labelSummaryPageJumpButton" type="button" ${pageCount <= 1 ? "disabled" : ""}>跳转</button></span></div><label class="case-page-size" for="labelSummaryPageSize"><span>每页</span><select id="labelSummaryPageSize"><option value="10">10</option><option value="20">20</option><option value="50">50</option><option value="100">100</option></select><span>条</span></label></nav></section>`;
+  $("#labelSummaryAdjudicated")?.addEventListener("click", () => {
+    labelSummaryFilters.cluster = labelSummaryFilters.cluster === "adjudicated" ? "" : "adjudicated";
+    labelSummaryPage = 1;
+    loadLabelingSummary().catch((error) => showToast(error.message, true));
+  });
   $("#labelSummaryPageSize").value = String(Number(data.page_size || labelSummaryPageSize));
   bindAnalysisReviewStatusHover($("#labelSummaryStatusChart"));
   bindAnalysisConfusionHover($("#labelSummaryConfusionMatrix")?.querySelector(".analysis-confusion-table"));

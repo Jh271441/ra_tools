@@ -164,6 +164,7 @@ class CaseLabelingTest(unittest.TestCase):
             self.assertEqual(adjudicated["resolution"]["method"], "adjudication")
             self.assertEqual(adjudicated["resolution"]["expected_output"], "误触发")
             self.assertTrue(adjudicated["resolution"]["original_conflict"])
+            self.assertEqual(database.labeling_case_issue_ids(baseline_scopes=["scope"], cluster="adjudicated"), ["cn1"])
             self.assertEqual(len(adjudicated["resolution"]["heads"]), 2)
             self.assertIn("carol", database.labeling_labelers(["scope"], split["split_id"]))
             self.assertEqual(database.list_labeling_cases(baseline_scopes=["scope"], task_id=split["split_id"], author="carol")["total"], 1)
@@ -180,6 +181,7 @@ class CaseLabelingTest(unittest.TestCase):
                 expected_previous_revision_id=alice["id"],
             )
             self.assertEqual(alice_next["label_case"]["resolution"]["state"], "stale")
+            self.assertEqual(database.labeling_case_issue_ids(baseline_scopes=["scope"], cluster="adjudicated"), [])
             blocked = database.label_gt_candidates(["scope"])
             self.assertEqual(blocked[0]["status"], "unresolved")
             self.assertEqual(blocked[0]["blocked_sources"][0]["state"], "stale")
@@ -250,6 +252,7 @@ class CaseLabelingTest(unittest.TestCase):
             gallery = database.list_labeling_cases(baseline_scopes=["scope"])
             self.assertEqual(gallery["items"][0]["label_state"], "resolved")
             self.assertEqual(gallery["items"][0]["expected_output"], "无需协助")
+            self.assertEqual(database.labeling_case_issue_ids(baseline_scopes=["scope"], cluster="adjudicated"), ["cn1"])
             candidates = database.label_gt_candidates(["scope"])
             self.assertEqual(candidates[0]["status"], "ready")
             self.assertEqual(candidates[0]["decision_id"], decided["decision"]["id"])
@@ -281,6 +284,7 @@ class CaseLabelingTest(unittest.TestCase):
             stale = database.project_issue_label_states("scope", ["cn1"])["cn1"]
             self.assertEqual(stale["state"], "stale")
             self.assertTrue(stale["decision"]["stale"])
+            self.assertEqual(database.labeling_case_issue_ids(baseline_scopes=["scope"], cluster="adjudicated"), [])
             self.assertEqual(
                 database.list_labeling_cases(baseline_scopes=["scope"])["items"][0]["label_state"],
                 "conflict",

@@ -472,7 +472,7 @@ function normalizedCaseLabelingRouteFilters(params) {
     status,
     author,
     assignee,
-    cluster: /^(pair|scenario):.{1,200}$/.test(cluster) ? cluster : "",
+    cluster: cluster === "adjudicated" || /^(pair|scenario):.{1,200}$/.test(cluster) ? cluster : "",
     label,
     gt,
     commentState,

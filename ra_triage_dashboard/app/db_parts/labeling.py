@@ -97,6 +97,8 @@ def _parse_labeling_cluster(value: Any) -> tuple[str, str] | tuple[str, str, str
     raw = str(value or "").strip()
     if not raw:
         return None
+    if raw == "adjudicated":
+        return ("adjudicated", "")
     if raw.startswith("pair:"):
         gt, sep, output = raw[5:].partition("|")
         if sep and gt in LABELS and output in LABELS:
@@ -2346,7 +2348,16 @@ class DatabaseLabelingMixin:
             ):
                 continue
             if normalized_cluster is not None:
-                if normalized_cluster[0] == "pair":
+                if normalized_cluster[0] == "adjudicated":
+                    from ..labeling_summary import _adjudicated_result
+                    if not _adjudicated_result({
+                        "label_state": aggregate_state,
+                        "expected_output": expected_output_value,
+                        "decision": (shared_state or {}).get("decision"),
+                        "label_cases": cases,
+                    }):
+                        continue
+                elif normalized_cluster[0] == "pair":
                     if (
                         aggregate_state != "resolved"
                         or str(row["gt_label"] or "") != normalized_cluster[1]

@@ -73,15 +73,19 @@ class LabelingSummaryTest(unittest.TestCase):
         self.assertEqual(len(row["original_votes"]),2)
         self.assertEqual(row["adjudication"]["kind"],"task")
         self.assertEqual(result["states"],{"resolved":1})
+        self.assertEqual(result["adjudicated_count"], 1)
+        self.assertEqual(result["tags"], {"final": 1})
 
     def test_issue_decision_owns_rationale_and_author_without_inventing_tags(self):
         row={"issue_id":"cn1","label_state":"resolved","expected_output":"无需协助","gt_label":"正确触发","decision":{"id":5,"created_by":"judge","created_at":"2026-09-30T10:00:00+08:00","rationale":"final issue decision","stale":False},"label_cases":[{"resolution":{"heads":[{"id":1,"author":"alice","expected_output":"正确触发","tags":["old"],"rationale":"old reason"},{"id":2,"author":"bob","expected_output":"误触发"}]}}]}
         data=summarize_labeling_cases([row]);item=data["items"][0]
         self.assertEqual(item["authors"],["judge"])
+        self.assertEqual(data["adjudicated_count"], 1)
         self.assertEqual(item["rationales"],["final issue decision"])
         self.assertEqual(item["tags"],[])
         self.assertTrue(item["original_conflict"])
         row["decision"]["stale"]=True;row["label_state"]="conflict"
         stale=summarize_labeling_cases([row])["items"][0]
         self.assertIsNone(stale["adjudication"])
+        self.assertEqual(summarize_labeling_cases([row])["adjudicated_count"], 0)
         self.assertNotIn("final issue decision",stale["rationales"])
