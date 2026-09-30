@@ -6,7 +6,7 @@ import uuid
 from typing import Any, Iterable, Iterator, Sequence
 
 from ..work_split import normalize_overlap_ratio
-from .model_reviews import MODEL_REVIEW_STATUSES
+from .model_reviews import MODEL_REVIEW_STATUSES, MODEL_REVIEW_PUBLIC_ID_OFFSET
 from .shared import (
     COMPARISON_STATUSES,
     LABELS,
@@ -1413,6 +1413,17 @@ class DatabaseCasesMixin:
             if not split_rows:
                 return []
 
+            # Migrated campaigns retain their creation audit; display the original
+            # batch's timestamp, creator and frozen selection through provenance.
+            source_ids = {
+                str(_json_load(row["filter_json"], {}).get("source_legacy_split_id") or "")
+                for row in split_rows
+            } - {""}
+            source_rows = conn.execute(
+                f"SELECT * FROM issue_work_splits WHERE id IN ({', '.join('?' for _ in source_ids)})",
+                sorted(source_ids),
+            ).fetchall() if source_ids else []
+            sources_by_id = {str(source["id"]): dict(source) for source in source_rows}
             split_ids = [str(row["id"]) for row in split_rows]
             placeholders = ", ".join("?" for _ in split_ids)
             scope_rows = conn.execute(
@@ -1447,7 +1458,13 @@ class DatabaseCasesMixin:
                            WHERE head.issue_id = assignment.issue_id
                              AND head.model_run_id = split.model_run_id
                              AND lower(head.reviewer) = lower(assignment.assignee)
-                             AND revision.status = 'completed'
+                             AND (revision.status = 'completed' OR EXISTS (
+                    SELECT 1 FROM annotations legacy_submission
+                    WHERE legacy_submission.id = revision.legacy_annotation_id
+                      AND legacy_submission.issue_id = revision.issue_id
+                      AND legacy_submission.model_run_id = revision.model_run_id
+                      AND lower(legacy_submission.author) = lower(revision.reviewer)
+                  ))
                              AND (
                                (split.purpose = 'model_review' AND head.campaign_id = split.id
                                 AND head.reference_id = split.reference_id)
@@ -1516,7 +1533,13 @@ class DatabaseCasesMixin:
                             JOIN model_review_revisions revision ON revision.id = head.revision_id
                             WHERE head.model_run_id = ?
                               AND lower(head.reviewer) = lower(?)
-                              AND revision.status = 'completed'
+                              AND (revision.status = 'completed' OR EXISTS (
+                    SELECT 1 FROM annotations legacy_submission
+                    WHERE legacy_submission.id = revision.legacy_annotation_id
+                      AND legacy_submission.issue_id = revision.issue_id
+                      AND legacy_submission.model_run_id = revision.model_run_id
+                      AND lower(legacy_submission.author) = lower(revision.reviewer)
+                  ))
                               AND {work_split_clause.replace('annotation.work_split_id', 'revision.work_split_id')}
                               AND head.issue_id IN ({batch_placeholders})
                             """,
@@ -1548,7 +1571,13 @@ class DatabaseCasesMixin:
         result: list[dict[str, Any]] = []
         for row in split_rows:
             split_id = str(row["id"])
-            snapshot_members = self._work_split_snapshot_members(row["assignees_json"])
+            source_id = str(_json_load(row["filter_json"], {}).get("source_legacy_split_id") or "")
+            source = sources_by_id.get(source_id, {})
+            if str(source.get("model_run_id") or "") != str(row["model_run_id"] or ""):
+                source = {}
+            snapshot_members = self._work_split_snapshot_members(
+                source.get("assignees_json") or row["assignees_json"]
+            )
             snapshot_by_name = {
                 str(item["name"]): item for item in snapshot_members
             }
@@ -1596,6 +1625,10 @@ class DatabaseCasesMixin:
                     "split_id": split_id,
                     "created_by": str(row["created_by"] or ""),
                     "created_at": str(row["created_at"] or ""),
+                    "source_split_id": str(source.get("id") or ""),
+                    "source_created_at": str(source.get("created_at") or ""),
+                    "source_created_by": str(source.get("created_by") or ""),
+                    "source_filter_snapshot": _json_load(source.get("filter_json"), {}) if source else None,
                     "seed": row["seed"],
                     "total_count": total_count,
                     "assignment_count": assignment_count,
@@ -1658,7 +1691,13 @@ class DatabaseCasesMixin:
                 WHERE head.issue_id = assignment.issue_id
                   AND head.model_run_id = split.model_run_id
                   AND lower(head.reviewer) = lower(assignment.assignee)
-                  AND revision.status = 'completed'
+                  AND (revision.status = 'completed' OR EXISTS (
+                    SELECT 1 FROM annotations legacy_submission
+                    WHERE legacy_submission.id = revision.legacy_annotation_id
+                      AND legacy_submission.issue_id = revision.issue_id
+                      AND legacy_submission.model_run_id = revision.model_run_id
+                      AND lower(legacy_submission.author) = lower(revision.reviewer)
+                  ))
                   AND (
                     (split.purpose = 'model_review' AND head.campaign_id = split.id
                      AND head.reference_id = split.reference_id)
@@ -1749,7 +1788,13 @@ class DatabaseCasesMixin:
                            WHERE head.issue_id = assignment.issue_id
                              AND head.model_run_id = split.model_run_id
                              AND lower(head.reviewer) = lower(assignment.assignee)
-                             AND revision.status = 'completed'
+                             AND (revision.status = 'completed' OR EXISTS (
+                    SELECT 1 FROM annotations legacy_submission
+                    WHERE legacy_submission.id = revision.legacy_annotation_id
+                      AND legacy_submission.issue_id = revision.issue_id
+                      AND legacy_submission.model_run_id = revision.model_run_id
+                      AND lower(legacy_submission.author) = lower(revision.reviewer)
+                  ))
                              AND (
                                (split.purpose = 'model_review' AND head.campaign_id = split.id
                                 AND head.reference_id = split.reference_id)
@@ -1902,7 +1947,10 @@ class DatabaseCasesMixin:
                         f"""
                         SELECT annotation.issue_id, annotation.author, annotation.id,
                                annotation.created_at, annotation.review_status,
-                               annotation.review_domain, annotation.model_review_status
+                               annotation.review_domain, annotation.model_review_status,
+                               EXISTS (SELECT 1 FROM model_review_revisions migrated
+                                       WHERE migrated.id + {MODEL_REVIEW_PUBLIC_ID_OFFSET} = annotation.id
+                                         AND migrated.legacy_annotation_id IS NOT NULL) AS legacy_submitted
                         FROM review_records annotation
                         WHERE annotation.model_run_id = ?
                           AND {annotation_work_split}
@@ -1920,6 +1968,7 @@ class DatabaseCasesMixin:
                                 "review_status": str(row["review_status"] or ""),
                                 "review_domain": str(row["review_domain"] or "legacy"),
                                 "model_review_status": str(row["model_review_status"] or ""),
+                                "legacy_submitted": bool(row["legacy_submitted"]),
                             },
                         )
             snapshot_rows: list[dict[str, Any]] = []
@@ -1932,7 +1981,7 @@ class DatabaseCasesMixin:
                     completed = bool(
                         annotation
                         and annotation.get("review_domain") == "model_review"
-                        and annotation.get("model_review_status") == "completed"
+                        and (annotation.get("model_review_status") == "completed" or annotation.get("legacy_submitted"))
                     )
                     row = {
                         "issue_id": assignment_issue_id,
@@ -2276,7 +2325,13 @@ class DatabaseCasesMixin:
                              AND head.model_run_id = ?
                              AND revision.work_split_id = assignment.split_id
                              AND lower(head.reviewer) = lower(assignment.assignee)
-                             AND revision.status = 'completed'
+                             AND (revision.status = 'completed' OR EXISTS (
+                    SELECT 1 FROM annotations legacy_submission
+                    WHERE legacy_submission.id = revision.legacy_annotation_id
+                      AND legacy_submission.issue_id = revision.issue_id
+                      AND legacy_submission.model_run_id = revision.model_run_id
+                      AND lower(legacy_submission.author) = lower(revision.reviewer)
+                  ))
                            ORDER BY revision.id DESC LIMIT 1
                        ) AS annotation_id
                 FROM review_work_assignments assignment

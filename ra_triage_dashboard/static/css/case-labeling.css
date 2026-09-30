@@ -215,3 +215,10 @@ html[data-color-theme="light"] .assignment-history.assignment-history { backgrou
 }
 .assignment-people-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
 .assignment-people-heading .work-split-estimate { flex: 1 1 auto; margin-left: auto; }
+
+/* Seed belongs to the same control baseline as the footer actions. */
+.assignment-composer .assignment-footer-row { align-items: center; }
+.assignment-composer .assignment-footer-row > .work-split-seed { display: flex; align-items: center; gap: 8px; }
+.assignment-composer .assignment-footer-row > .work-split-seed > span { white-space: nowrap; }
+.assignment-composer .assignment-footer-row > .work-split-seed input { width: 148px; height: 36px; }
+.assignment-composer .assignment-footer-row .button { height: 36px; min-height: 36px; }

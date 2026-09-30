@@ -42,6 +42,42 @@ class ModelReviewStorageTest(unittest.TestCase):
             **kwargs,
         )
 
+    def test_migrated_submissions_preserve_batch_progress_without_completing_native_drafts(self):
+        original = self.db.apply_work_split(
+            assignments=[{"name": "alice", "issue_ids": ["cn1"]}],
+            created_by="original-admin", model_run_id=self.run_a["id"],
+            filter_snapshot={"comparison_status": "mismatch", "baselines": "0508"},
+        )
+        with self.db.connect() as conn:
+            conn.execute("UPDATE issue_work_splits SET created_at=? WHERE id=?",
+                         ("2026-09-17T10:41:22+08:00", original["split_id"]))
+        migrated = self.db.apply_work_split(
+            assignments=[{"name": "alice", "issue_ids": ["cn1"]}],
+            created_by="migration", model_run_id=self.run_a["id"],
+            filter_snapshot={"source_legacy_split_id": original["split_id"]},
+        )
+        legacy = self.db.create_annotation(
+            issue_id="cn1", model_run_id=self.run_a["id"], label="误触发",
+            review_status="needs_gt_review", tags=[], missing_evidence=[],
+            note="", author="alice",
+        )
+        imported = self.create(self.run_a["id"], "pending", "", legacy_annotation_id=legacy["id"])
+        batch = next(x for x in self.db.list_review_work_splits() if x["split_id"] == migrated["split_id"])
+        self.assertEqual(batch["completed_count"], 1)
+        self.assertEqual(batch["source_created_at"], "2026-09-17T10:41:22+08:00")
+        self.assertEqual(batch["source_created_by"], "original-admin")
+        self.assertEqual(batch["source_filter_snapshot"]["comparison_status"], "mismatch")
+        detail = self.db.get_review_work_split(migrated["split_id"], status="completed")
+        self.assertEqual(detail["total"], 1)
+        self.assertTrue(detail["items"][0]["submitted_at"])
+        self.assertEqual(detail["items"][0]["model_review_status"], "pending")
+        with self.db.connect() as conn:
+            conn.execute("UPDATE model_review_revisions SET status='blocked_by_label' WHERE id=?", (imported["storage_id"],))
+        self.assertEqual(self.db.get_review_work_split(migrated["split_id"], status="completed")["total"], 1)
+        self.create(self.run_a["id"], "pending", "new draft", expected_previous_annotation_id=imported["id"])
+        self.assertEqual(self.db.get_review_work_split(migrated["split_id"], status="completed")["total"], 0)
+        self.assertEqual(next(x for x in self.db.list_review_work_splits() if x["split_id"] == migrated["split_id"])["completed_count"], 0)
+
     def test_status_transitions_are_append_only_and_headed(self) -> None:
         pending = self.create(self.run_a["id"], "pending", "")
         progress = self.create(

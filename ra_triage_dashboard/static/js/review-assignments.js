@@ -139,6 +139,11 @@ function reviewAssignmentMemberMarkup(member) {
 }
 
 function renderReviewAssignmentBatch(item) {
+  item = { ...item,
+    created_at: item.source_created_at || item.created_at,
+    created_by: item.source_created_by || item.created_by,
+    filter_snapshot: item.source_filter_snapshot || item.filter_snapshot,
+  };
   const percent = reviewAssignmentPercent(item.completion_ratio);
   const status = item.is_current
     ? uiText("当前分配", "Current")
