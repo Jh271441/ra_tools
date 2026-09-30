@@ -44,6 +44,17 @@ class LegacyAdjudicationTest(unittest.TestCase):
             p.start(); self.addCleanup(p.stop)
 
     def vote(self, author, label, *, run=None, split="", issue="cn1", previous=None, tags=None):
+        # Simulate reading the current version before submitting. Ordinary
+        # legacy Review uses one shared head across authors; blind votes have
+        # an independent head for each assignee.
+        if previous is None:
+            with self.db.connect() as conn:
+                row = conn.execute(
+                    "SELECT id FROM annotations WHERE issue_id=? AND model_run_id=? AND work_split_id=?"
+                    + (" AND author=?" if split else "") + " ORDER BY id DESC LIMIT 1",
+                    [issue, self.run["id"] if run is None else run, split] + ([author.strip()] if split else []),
+                ).fetchone()
+            previous = row["id"] if row else None
         return self.db.create_annotation(
             issue_id=issue, model_run_id=self.run["id"] if run is None else run,
             work_split_id=split, label=label, review_status="pending", tags=tags or [],
