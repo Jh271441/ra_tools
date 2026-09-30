@@ -414,7 +414,9 @@ function showLabelingGtExportPreview(result, scope = {}) {
     dialog.className = "dialog labeling-gt-export-dialog";
     document.body.appendChild(dialog);
   }
-  const blocked = (counts.exclusions || []).filter((item) => item.reason !== "unchanged");
+  const priority = { stale: 0, conflict: 1, pending: 2 };
+  const blocked = (counts.exclusions || []).filter((item) => item.reason !== "unchanged")
+    .sort((a, b) => (priority[a.reason] ?? 3) - (priority[b.reason] ?? 3) || String(a.issue_id).localeCompare(String(b.issue_id)));
   const issueHref = (issue) => pageUrl("labeling", {
     issue, taskId: "", search: "", issueIds: [], status: [], author: [], assignee: [],
     gt: [], label: [], exclusion: [], commentState: [], cluster: "", page: 1,

@@ -91,6 +91,18 @@ class CaseLabelingTest(unittest.TestCase):
             self.assertEqual(preview["scope_summary"]["unchanged"],1)
             self.assertEqual(preview["item_count"],0)
 
+    def test_export_counts_conflicting_sources_even_when_another_task_is_pending(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database=self.make_db(tmp)
+            for author,output in [("alice","误触发"),("bob","正确触发")]:
+                database.create_label_revision(issue_id="cn1",expected_output=output,tags=[],evidence_gaps=[],rationale="source",is_excluded=False,author=author,author_source="test",author_verified=True,expected_previous_revision_id=None)
+            workset=database.create_review_workset(baseline_scope="scope",issue_ids=["cn1"],name="pending",created_by="admin")
+            database.create_labeling_task(workset_id=workset["id"],assignments=[{"name":"charlie","issue_ids":["cn1"]}],created_by="admin",seed=1,reviewers_per_issue=1,overlap_ratio=0)
+            preview=database.create_label_gt_export_preview(baseline_scopes=["scope"],issue_ids=["cn1"],created_by="admin",created_by_source="test",created_by_verified=True)
+            self.assertEqual(preview["scope_summary"]["conflict"],1)
+            self.assertEqual(preview["scope_summary"]["pending"],0)
+            self.assertEqual(preview["scope_summary"]["total"],1)
+
     def test_public_label_attachment_exposes_only_opaque_url(self) -> None:
         public = _public_label_attachment({
             "id": "asset-1", "original_name": "private.png",

@@ -2712,7 +2712,10 @@ class DatabaseLabelingMixin:
                 reason = status
             elif (candidate.get("decision") or {}).get("stale") or "stale" in blocked_states:
                 reason = "stale"
-            elif status == "source_conflict" or "conflict" in blocked_states:
+            elif status == "source_conflict" or "conflict" in blocked_states or len({
+                source.get("expected_output") for source in candidate.get("sources") or []
+                if source.get("expected_output") in LABELS
+            }) > 1:
                 reason = "conflict"
             else:
                 reason = "pending"
