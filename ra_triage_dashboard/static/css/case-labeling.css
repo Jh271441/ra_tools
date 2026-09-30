@@ -190,11 +190,28 @@ html[data-color-theme="light"] .assignment-history.assignment-history { backgrou
 .case-label-final-result > .text-link { justify-self: start; background: transparent; border: 0; padding: 2px 0; color: var(--accent); font-size: 12px; }
 #caseTaskAdjudicationPanel, #caseLabelDecisionTitle { scroll-margin-top: 78px; }
 
-/* Preserve the 720px name field; wrap other controls instead of squeezing it. */
-.assignment-composer .assignment-config-fields { display: flex; flex-wrap: wrap; align-items: end; gap: 14px 16px; min-width: 0; }
-.assignment-config-fields > .work-split-name,
-.assignment-config-fields > .labeling-task-name { flex: 0 0 auto; max-width: 100%; }
-.assignment-config-fields > .work-split-workflow-mode { flex: 0 0 260px; max-width: 100%; }
-.assignment-composer .assignment-config-fields > .work-split-mode-row { display: flex; flex: 0 0 auto; max-width: 100%; }
+/* Fill the composer row; compact fixed controls leave the rest for the name. */
+.assignment-composer { container-type: inline-size; }
+.assignment-composer .assignment-config-fields { display: grid; grid-template-columns: minmax(720px, 1fr) 180px 118px 90px; align-items: end; gap: 14px 12px; min-width: 0; }
+.assignment-composer .case-experiment-fields { grid-template-columns: minmax(720px, 1fr) 140px 110px; }
+.assignment-composer .assignment-config-fields > .work-split-name,
+.assignment-composer .assignment-config-fields > .labeling-task-name,
+.assignment-composer .assignment-config-fields > .work-split-workflow-mode { width: 100%; max-width: none; min-width: 0; }
+.assignment-composer .assignment-config-fields input,
+.assignment-composer .assignment-config-fields .ui-select { width: 100%; max-width: none; }
+.assignment-composer .assignment-config-fields > .work-split-mode-row { display: contents; }
+.assignment-config-fields .work-split-seed > span:first-child { white-space: nowrap; }
+@container (max-width: 1143px) {
+  .assignment-composer .assignment-config-fields { grid-template-columns: minmax(0, 1fr) 118px 90px; }
+  .assignment-config-fields > .work-split-name { grid-column: 1 / -1; }
+}
+@container (max-width: 993px) {
+  .assignment-composer .case-experiment-fields { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .assignment-config-fields > .labeling-task-name { grid-column: 1 / -1; }
+}
+@container (max-width: 470px) {
+  .assignment-composer .assignment-config-fields { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .assignment-config-fields > .work-split-workflow-mode { grid-column: 1 / -1; }
+}
 .assignment-people-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
 .assignment-people-heading .work-split-estimate { flex: 1 1 auto; margin-left: auto; }
