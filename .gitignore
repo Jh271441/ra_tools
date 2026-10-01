@@ -62,3 +62,6 @@ local_experiment_artifacts/
 # Safe deployment examples (runtime credentials/config remain ignored).
 !/ops/sim_deploy/target.example.json
 !/ops/sim_deploy/weekly.example.json
+
+# Local simulation monitoring state and submission receipts.
+/reports/release_workflow_20260930/

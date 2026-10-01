@@ -14,7 +14,7 @@ import type {
 const API_BASE = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/api`;
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, init);
+  const res = await fetch(url, { ...init, headers: { 'X-RA-Sim-Client': 'release-cycle-v1', ...init?.headers } });
   if (!res.ok) {
     throw new Error(`${res.status} ${await res.text()}`);
   }

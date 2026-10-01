@@ -42,7 +42,13 @@ def verify_http(base_url):
     assets = re.findall(r'(?:src|href)="(/sim/assets/[^\"]+)"', body.decode())
     if not assets:
         raise RuntimeError("No built frontend assets in overview")
-    for path in ("/sim/overview", "/sim/issues", "/sim/status", *assets):
+    for path in (
+        "/sim/overview",
+        "/sim/issues",
+        "/sim/simulation",
+        "/sim/status",
+        *assets,
+    ):
         canonical = get(path)
         stripped = get(path[4:])
         if canonical[0] != 200 or stripped[0] != 200 or canonical[2] != stripped[2]:

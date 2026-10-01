@@ -18,12 +18,12 @@ import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { cn } from '../lib/utils';
 import { PrComparison } from './PrComparison';
-import { poststratifyBacktestWindow } from '../lib/backtest';
-import { releaseChartRows, releaseTooltip, releaseXAxis } from '../lib/releaseChart';
+import { releaseChartRows, releaseTooltip, releaseXAxis, releaseGrid, releaseChartMargin, releaseLeftAxisWidth, releaseRightAxisWidth, releaseTooltipStyle } from '../lib/releaseChart';
 
 interface OverviewProps {
   summary: SummaryResponse | null;
   comparison: KpiSummary[];
+  onOpenCurrent: () => void;
   onOpenIssues: (filters: {
     version?: string;
     rootCause?: string;
@@ -33,11 +33,12 @@ interface OverviewProps {
   }) => void;
 }
 
-function pct(value: number | undefined) {
+function pct(value: number | null | undefined) {
+  if (value == null) return '—';
   return `${Math.round((value ?? 0) * 1000) / 10}%`;
 }
 
-function delta(value: number | undefined) {
+function delta(value: number | null | undefined) {
   if (value == null) return '';
   const sign = value > 0 ? '+' : '';
   return `${sign}${pct(value)}`;
@@ -57,13 +58,7 @@ type ReproMetric = 'repro' | 'tp' | 'fn' | 'fp';
 const reproMetricKeys: ReproMetric[] = ['repro', 'tp', 'fn', 'fp'];
 
 const tooltipProps = {
-  contentStyle: {
-    background: 'hsl(var(--card))',
-    border: '1px solid hsl(var(--border))',
-    borderRadius: 8,
-    color: 'hsl(var(--foreground))',
-    boxShadow: '0 18px 40px hsl(0 0% 0% / 0.16)',
-  },
+  contentStyle: releaseTooltipStyle,
   labelStyle: { color: 'hsl(var(--foreground))' },
   itemStyle: { color: 'hsl(var(--foreground))' },
 };
@@ -193,7 +188,7 @@ function interactiveProps(onClick: () => void) {
   };
 }
 
-export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
+export function Overview({ summary, comparison, onOpenIssues, onOpenCurrent }: OverviewProps) {
   const { t } = useTranslation();
   const [visibleReproMetrics, setVisibleReproMetrics] = useState<Record<ReproMetric, boolean>>({
     repro: true,
@@ -202,8 +197,6 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
     fp: true,
   });
   const [showTrendLabels, setShowTrendLabels] = useState(true);
-  const [backtestWindowSize, setBacktestWindowSize] = useState(4);
-  const [prMode, setPrMode] = useState<'same-version' | 'rolling'>('same-version');
 
   if (!summary) {
     return (
@@ -218,7 +211,9 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
     );
   }
 
-  const current = summary.current;
+  const current = summary.business_metrics || summary.current || summary.legacy_current;
+  if (!current) return <Card><CardContent className="p-5 text-sm">{summary.business_current_version || '当前版本'} · 待完整仿真。<button className="ml-3 text-primary" onClick={onOpenCurrent}>查看周期 Issue</button></CardContent></Card>;
+  const businessPending = Boolean(summary.business_current_version && !summary.business_metrics);
   const kpis = [
     { label: t('simReproRate'), value: pct(current.sim_repro_rate), delta: summary.deltas.sim_repro_rate, icon: Activity, filters: { version: current.version_key, precisionLabel: 'FN' } },
     { label: t('precision'), value: pct(current.precision), delta: summary.deltas.precision, icon: Target, filters: { version: current.version_key, precisionLabel: 'FP' } },
@@ -229,9 +224,9 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
   const trend = comparison.map((item) => ({
     version_key: item.version_key,
     version: shortVersionLabel(item.version_key),
-    precision: Math.round(item.precision * 1000) / 10,
-    recall: Math.round(item.recall * 1000) / 10,
-    f1: Math.round(item.f1 * 1000) / 10,
+    precision: item.precision == null ? undefined : Math.round(item.precision * 1000) / 10,
+    recall: item.recall == null ? undefined : Math.round(item.recall * 1000) / 10,
+    f1: item.f1 == null ? undefined : Math.round(item.f1 * 1000) / 10,
     repro: Math.round(item.sim_repro_rate * 1000) / 10,
     tp: firstNumber(item.sim_estimate?.estimated_tp, item.sim_estimate?.tp, item.reproduced_cases),
     fn: firstNumber(item.sim_estimate?.estimated_fn, item.sim_estimate?.fn, item.road_positive_cases - item.reproduced_cases),
@@ -261,51 +256,7 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
       projectionReason: String(metrics.reason || ''),
     };
   });
-  const backtestTrend = comparison.flatMap((item, index) => {
-    if (index + 1 < backtestWindowSize) return [];
-    const window = comparison.slice(index + 1 - backtestWindowSize, index + 1);
-    const sourcePrecisionTp = window.reduce((sum, row) => sum + firstNumber(
-      row.source_gt?.precision_auto_tp, row.source_gt?.auto_trigger_tp,
-    ), 0);
-    const sourcePrecisionFp = window.reduce((sum, row) => sum + firstNumber(
-      row.source_gt?.precision_auto_fp, row.source_gt?.auto_trigger_fp,
-    ), 0);
-    const sourceRecallTp = window.reduce((sum, row) => sum + firstNumber(
-      row.source_gt?.recall_auto_tp, row.source_gt?.auto_trigger_tp,
-    ), 0);
-    const sourceRecallFn = window.reduce((sum, row) => sum + firstNumber(
-      row.source_gt?.recall_manual_fn, row.source_gt?.manual_trigger_fn,
-    ), 0);
-    const sourcePrecision = sourcePrecisionTp + sourcePrecisionFp
-      ? sourcePrecisionTp / (sourcePrecisionTp + sourcePrecisionFp) : 0;
-    const sourceRecall = sourceRecallTp + sourceRecallFn
-      ? sourceRecallTp / (sourceRecallTp + sourceRecallFn) : 0;
-
-    const matrix = item.sim_estimate?.binary_backtest_sources;
-    const matrixRows = matrix && typeof matrix === 'object'
-      ? window.map((row) => (matrix as Record<string, Record<string, unknown>>)[row.version_key])
-      : [];
-    const projected = poststratifyBacktestWindow(
-      window.map((row) => row.source_gt || {}), matrixRows,
-    );
-    const matrixComplete = projected.complete;
-    return [{
-      version_key: item.version_key,
-      actualPrecision: Math.round(sourcePrecision * 1000) / 10,
-      actualRecall: Math.round(sourceRecall * 1000) / 10,
-      simPrecision: matrixComplete && projected.precisionTp + projected.precisionFp
-        ? Math.round(projected.precisionTp / (projected.precisionTp + projected.precisionFp) * 1000) / 10 : undefined,
-      simRecall: matrixComplete && projected.recallTp + projected.triggerReproFn
-        ? Math.round(projected.recallTp / (projected.recallTp + projected.triggerReproFn) * 1000) / 10 : undefined,
-      simBusinessRecall: matrixComplete && projected.recallTp + projected.businessRecallFn
-        ? Math.round(projected.recallTp / (projected.recallTp + projected.businessRecallFn) * 1000) / 10 : undefined,
-      positiveAutoNotTriggered: projected.positiveAutoNotTriggered,
-      positiveManualNotTriggered: projected.positiveManualNotTriggered,
-      negativeAutoNotTriggered: projected.negativeAutoNotTriggered,
-    }];
-  });
   const reproDomain: [number, number] = [60, 100];
-  const prTrend = prMode === 'same-version' ? sameVersionTrend : backtestTrend;
   const countAxis = countScale(trend.flatMap((item) => [item.tp, item.fn, item.fp]));
   const trendChartRows = releaseChartRows(trend);
   const reproControls: Array<{ key: ReproMetric; label: string; color: string }> = [
@@ -336,7 +287,7 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
             <Card
               key={item.label}
               className="metric-surface group relative cursor-pointer overflow-hidden transition hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-lg hover:shadow-primary/10 focus:outline-none focus:ring-2 focus:ring-ring"
-              {...interactiveProps(() => onOpenIssues(item.filters))}
+              {...interactiveProps(() => summary.business_current_version ? onOpenCurrent() : onOpenIssues(item.filters))}
             >
               <div className="absolute inset-x-0 top-0 h-0.5 bg-primary/60" />
               <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
@@ -346,12 +297,13 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="font-mono text-[22px] font-semibold leading-7">{item.value}</div>
+                <div className="font-mono text-[22px] font-semibold leading-7">{businessPending ? "—" : item.value}</div>
                 <div className="mt-2 flex items-center gap-1 text-[12px] leading-4 text-muted-foreground">
+                  {businessPending ? <span>{summary.business_current_version} · 待完整仿真</span> : <>
                   <TrendIcon className={cn('h-3.5 w-3.5', healthy ? 'text-emerald-500 dark:text-primary' : 'text-red-500')} />
                   <span>{delta(item.delta) || '0%'}</span>
                   <span>{t('vsPrevious')}</span>
-                  <span className="ml-auto opacity-0 transition group-hover:opacity-100">{t('drillDown')}</span>
+                  <span className="ml-auto opacity-0 transition group-hover:opacity-100">{t('drillDown')}</span></>}
                 </div>
               </CardContent>
             </Card>
@@ -394,24 +346,26 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
               </button>
             </div>
           </CardHeader>
-          <CardContent className="h-72 px-5 pb-5 pt-0">
+          <CardContent className="px-5 pb-5 pt-0">
+            <div className="overflow-x-auto">
+              <div className="h-72 min-w-[680px]">
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart
                 data={trendChartRows}
-                margin={{ top: 28, right: 18, left: 0, bottom: 4 }}
+                margin={releaseChartMargin}
                 barCategoryGap="18%"
                 barGap={2}
               >
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.68)" vertical={false} />
+                <CartesianGrid {...releaseGrid} />
                 <XAxis {...releaseXAxis(trend)} />
-                <YAxis yAxisId="rate" domain={reproDomain} ticks={percentageTicks} tickFormatter={(value: number) => `${value}%`} tickLine={false} axisLine={false} width={52} tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11, textAnchor: 'end', dx: 8 }} />
+                <YAxis yAxisId="rate" domain={reproDomain} ticks={percentageTicks} tickFormatter={(value: number) => `${value}%`} tickLine={false} axisLine={false} width={releaseLeftAxisWidth} tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11, textAnchor: 'end', dx: 0 }} />
                 <YAxis
                   yAxisId="count"
                   orientation="right"
                   domain={countAxis.domain}
                   ticks={countAxis.ticks}
                   tickFormatter={(value: number) => formatCount(value)}
-                  width={58}
+                  width={releaseRightAxisWidth}
                   tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11, textAnchor: 'start', dx: 16 }}
                   axisLine={false}
                   tickLine={false}
@@ -439,49 +393,14 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
                 ) : null}
               </ComposedChart>
             </ResponsiveContainer>
+              </div>
+            </div>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader className="flex-row flex-wrap items-start justify-between gap-3 px-5 pb-1 pt-3">
-            <div className="min-w-0">
-              <CardTitle>{prMode === 'same-version' ? t('sameVersionPr') : t('binaryBacktestPr')}</CardTitle>
-            </div>
-            <div className="flex shrink-0 items-center gap-2">
-              <label className="text-xs font-medium text-muted-foreground" htmlFor="pr-mode">
-                {t('prMode')}
-              </label>
-              <select
-                id="pr-mode"
-                className="h-8 rounded-md border border-border bg-background px-2 text-xs font-semibold text-foreground"
-                value={prMode}
-                onChange={(event) => setPrMode(event.target.value as 'same-version' | 'rolling')}
-              >
-                <option value="same-version">{t('sameVersionFull')}</option>
-                <option value="rolling">{t('rollingCanary')}</option>
-              </select>
-              {prMode === 'rolling' ? (
-                <>
-                  <label className="text-xs font-medium text-muted-foreground" htmlFor="backtest-window-size">
-                    {t('backtestWindow')}
-                  </label>
-                  <select
-                    id="backtest-window-size"
-                    className="h-8 rounded-md border border-border bg-background px-2 text-xs font-semibold text-foreground"
-                    value={backtestWindowSize}
-                    onChange={(event) => setBacktestWindowSize(Number(event.target.value))}
-                  >
-                    {[2, 3, 4].map((value) => (
-                      <option key={value} value={value}>{value} {t('versionsUnit')}</option>
-                    ))}
-                  </select>
-                </>
-              ) : null}
-              <Badge variant="secondary">{current.version_key}</Badge>
-            </div>
-          </CardHeader>
-          <CardContent className="px-5 pb-5 pt-0">
-            <PrComparison rows={prTrend} comparison={comparison} mode={prMode} />
+          <CardContent className="px-5 pb-5 pt-3">
+            <PrComparison rows={sameVersionTrend} comparison={comparison} />
           </CardContent>
         </Card>
       </div>
@@ -610,7 +529,7 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
         <CardHeader className="flex-row items-center justify-between">
           <div>
             <CardTitle>{t('rootCause')}</CardTitle>
-            <p className="mt-1 text-[13px] leading-5 text-muted-foreground">{t('rootCauseSubtitle')}</p>
+            <p className="mt-1 text-[13px] leading-5 text-muted-foreground">{businessPending ? '历史已完成版本的诊断分布' : t('rootCauseSubtitle')}</p>
           </div>
           <Badge variant="outline">{current.version_key}</Badge>
         </CardHeader>

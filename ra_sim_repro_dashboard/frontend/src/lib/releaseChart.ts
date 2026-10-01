@@ -34,7 +34,7 @@ export function releaseXAxis(rows: Array<{ version_key: string }>) {
 
 /** Both charts anchor their cursor and tooltip to the same release coordinate. */
 export const releaseTooltip = {
-  offset: 12,
+  offset: 40,
   isAnimationActive: false,
   reverseDirection: { x: false, y: false },
   allowEscapeViewBox: { x: false, y: false },
@@ -44,4 +44,23 @@ export const releaseTooltip = {
     strokeDasharray: '4 6',
     pointerEvents: 'none' as const,
   },
+};
+
+/** Shared plot bounds and grid keep release centres aligned across both cards. */
+export const releaseChartMargin = { top: 28, right: 18, bottom: 4, left: 0 };
+export const releaseLeftAxisWidth = 52;
+export const releaseRightAxisWidth = 58;
+export const releaseGrid = {
+  vertical: false,
+  stroke: 'hsl(var(--border) / 0.68)',
+  strokeDasharray: '3 3',
+};
+
+export const releaseTooltipStyle = {
+  background: 'hsl(var(--card) / 0.88)',
+  backdropFilter: 'blur(2px)',
+  border: '1px solid hsl(var(--border) / 0.8)',
+  borderRadius: 8,
+  color: 'hsl(var(--foreground))',
+  boxShadow: '0 8px 24px hsl(0 0% 0% / 0.10)',
 };

@@ -126,7 +126,7 @@ http {{
   absolute_redirect off;
   # Gateways may strip the external /sim prefix before forwarding.
   # Keep explicit aliases only; do not turn arbitrary missing paths into the SPA.
-  rewrite ^/(overview|issues|status|assets|weekly|favicon[.]svg)(/.*)?$ /sim/$1$2 last;
+  rewrite ^/(overview|issues|simulation|status|assets|weekly|favicon[.]svg)(/.*)?$ /sim/$1$2 last;
   location /api/ {{ proxy_pass http://127.0.0.1:{c["api_port"]}/api/; proxy_read_timeout 120s; }}
   location = / {{ return 302 /sim/overview; }}
   location = /sim {{ return 302 /sim/overview; }}

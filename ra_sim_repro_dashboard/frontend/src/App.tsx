@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
   BarChart3,
   CalendarDays,
   Database,
   Filter,
+  FlaskConical,
   GitCompareArrows,
   HeartPulse,
   LayoutDashboard,
@@ -15,6 +16,8 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { api } from './api/client';
+import { CurrentBusinessRelease, ReleaseWorkflow } from './components/ReleaseWorkflow';
+import { ReleaseIssues } from './components/ReleaseIssues';
 import { IssueDetail } from './components/IssueDetail';
 import { IssuesTable } from './components/IssuesTable';
 import { Overview } from './components/Overview';
@@ -34,13 +37,13 @@ function readDashboardCache<T>(key: string, fallback: T): T {
   }
 }
 
-type Page = 'overview' | 'issues' | 'status';
+type Page = 'overview' | 'issues' | 'simulation' | 'status';
 
 // Lightweight history routing: module switches map to /sim/overview,
 // /sim/issues, /sim/status so browser/mouse back-forward navigates between
 // modules instead of leaving the app. BASE_URL is '/sim/' in this build.
 const BASE_PATH = import.meta.env.BASE_URL.replace(/\/$/, '');
-const PAGES: Page[] = ['overview', 'issues', 'status'];
+const PAGES: Page[] = ['overview', 'issues', 'simulation', 'status'];
 
 function pageFromLocation(): Page {
   const path = window.location.pathname;
@@ -69,10 +72,6 @@ const defaultSourceFilters = {
 
 function stringValue(value: unknown) {
   return value == null ? '' : String(value);
-}
-
-function pct(value: number | undefined) {
-  return `${Math.round((value ?? 0) * 1000) / 10}%`;
 }
 
 function addOption(target: Set<string>, value: unknown) {
@@ -147,18 +146,23 @@ export default function App() {
   const { t } = useTranslation();
   const [page, setPageState] = useState<Page>(pageFromLocation);
 
-  const setPage = useCallback((next: Page) => {
+  const setPage = useCallback((next: Page, version?: string) => {
     setPageState(next);
-    const target = `${BASE_PATH}/${next}`;
-    if (window.location.pathname !== target) {
+    const search = next === 'issues' && version ? `?version=${encodeURIComponent(version)}` : '';
+    const target = `${BASE_PATH}/${next}${search}`;
+    if (window.location.pathname + window.location.search !== target) {
       window.history.pushState({ page: next }, '', target);
     }
+    window.scrollTo(0, 0);
   }, []);
 
   useEffect(() => {
     // Normalize bare /sim/ to a canonical module URL without adding a history entry.
-    window.history.replaceState({ page: pageFromLocation() }, '', `${BASE_PATH}/${pageFromLocation()}`);
-    const onPopState = () => setPageState(pageFromLocation());
+    window.history.replaceState({ page: pageFromLocation() }, '', `${BASE_PATH}/${pageFromLocation()}${['issues','simulation'].includes(pageFromLocation()) ? window.location.search : ''}`);
+    const onPopState = () => {
+      setPageState(pageFromLocation());
+      setFilters({ ...defaultFilters, version: pageFromLocation() === 'issues' ? new URLSearchParams(window.location.search).get('version') || '' : '' });
+    };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
@@ -169,8 +173,11 @@ export default function App() {
   const [comparison, setComparison] = useState<KpiSummary[]>(() => readDashboardCache('comparison', []));
   const [issues, setIssues] = useState<IssueListItem[]>([]);
   const [issuesLoading, setIssuesLoading] = useState(false);
+  const [showLegacyIssues, setShowLegacyIssues] = useState(false);
   const [issueTotal, setIssueTotal] = useState(0);
-  const [filters, setFilters] = useState(defaultFilters);
+  const [issuePage, setIssuePage] = useState(1);
+  const issueGeneration = useRef(0);
+  const [filters, setFilters] = useState(() => ({ ...defaultFilters, version: pageFromLocation() === 'issues' ? new URLSearchParams(window.location.search).get('version') || '' : '' }));
   const [sourceFilters, setSourceFilters] = useState(defaultSourceFilters);
   const [releaseRange, setReleaseRange] = useState(twoMonthRange);
   const [selectedResult, setSelectedResult] = useState<SelectedIssueResult | null>(null);
@@ -216,9 +223,10 @@ export default function App() {
   }, []);
 
   const loadIssues = useCallback(async () => {
+    const generation = ++issueGeneration.current;
     setIssuesLoading(true);
     try {
-      const params = new URLSearchParams({ page: '1', page_size: '100' });
+      const params = new URLSearchParams({ page: String(issuePage), page_size: '100' });
       if (filters.version) params.set('version', filters.version);
       if (filters.rootCause) params.set('root_cause', filters.rootCause);
       if (filters.triggerType) params.set('trigger_type', filters.triggerType);
@@ -229,23 +237,28 @@ export default function App() {
         else params.set('scenario_id', query);
       }
       const result = await api.issues(params);
+      if (generation !== issueGeneration.current) return;
       setIssues(result.items);
       setIssueTotal(result.total);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      if (generation === issueGeneration.current) setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setIssuesLoading(false);
+      if (generation === issueGeneration.current) setIssuesLoading(false);
     }
-  }, [filters]);
+  }, [filters, issuePage]);
+
+  useEffect(() => { setIssuePage(1); }, [filters]);
 
   useEffect(() => {
     void loadDashboard();
+    const timer=window.setInterval(() => void loadDashboard(),30000);
+    return () => window.clearInterval(timer);
   }, [loadDashboard]);
 
   useEffect(() => {
-    if (page !== 'issues') return;
+    if (page !== 'issues' || !showLegacyIssues) return;
     void loadIssues();
-  }, [loadIssues, page]);
+  }, [loadIssues, page, showLegacyIssues]);
 
   useEffect(() => {
     if (!issues.length) {
@@ -276,12 +289,12 @@ export default function App() {
         setRefreshJob(job);
         if (job.status === 'completed') {
           void loadDashboard();
-          if (page === 'issues') void loadIssues();
+          if (page === 'issues' && showLegacyIssues) void loadIssues();
         }
       });
     }, 1200);
     return () => window.clearInterval(timer);
-  }, [refreshJob, loadDashboard, loadIssues, page]);
+  }, [refreshJob, loadDashboard, loadIssues, page, showLegacyIssues]);
 
   const validReleaseRange = !releaseRange.start || !releaseRange.end || releaseRange.start <= releaseRange.end;
   const releaseRangeActive = Boolean(releaseRange.start || releaseRange.end);
@@ -292,11 +305,6 @@ export default function App() {
     return (!releaseRange.start || date >= releaseRange.start) && (!releaseRange.end || date <= releaseRange.end);
   }), [comparison, releaseRange, validReleaseRange]);
   const current = useMemo(() => versions.find((item) => item.is_current), [versions]);
-  const versionCards = visibleComparison.length ? visibleComparison : !releaseRangeActive && summary ? [summary.current] : [];
-  const metadataByVersion = useMemo(
-    () => new Map(versions.map((version) => [version.version_key, version.metadata_json || {}])),
-    [versions],
-  );
   const sourceOptions = useMemo(() => {
     const values = {
       platformGen: new Set<string>(),
@@ -318,7 +326,6 @@ export default function App() {
       testVersion: [...values.testVersion],
     };
   }, [versions]);
-  const sourceFilterActive = Object.values(sourceFilters).some(Boolean);
   const matchedVersionKeys = useMemo(() => {
     const matched = versions
       .filter((version) => {
@@ -333,9 +340,6 @@ export default function App() {
       .map((version) => version.version_key);
     return new Set(matched);
   }, [sourceFilters, versions]);
-  const visibleVersionCards = sourceFilterActive
-    ? versionCards.filter((item) => matchedVersionKeys.has(item.version_key))
-    : versionCards;
 
   async function handleRefresh() {
     setError('');
@@ -345,6 +349,13 @@ export default function App() {
 
   function openIssues(nextFilters: Partial<typeof defaultFilters>) {
     setFilters({ ...defaultFilters, ...nextFilters });
+    setShowLegacyIssues(true);
+    setPage('issues', nextFilters.version);
+  }
+
+  function openCurrentIssues() {
+    setFilters(defaultFilters);
+    setShowLegacyIssues(false);
     setPage('issues');
   }
 
@@ -420,12 +431,22 @@ export default function App() {
             <Button
               variant={page === 'issues' ? 'secondary' : 'ghost'}
               className={cn(sidebarCollapsed ? 'sidebar-icon-button' : 'justify-start')}
-              onClick={() => setPage('issues')}
+              onClick={openCurrentIssues}
               title={t('issues')}
               aria-label={t('issues')}
             >
               <ListChecks className="h-4 w-4" />
               {!sidebarCollapsed ? t('issues') : null}
+            </Button>
+            <Button
+              variant={page === 'simulation' ? 'secondary' : 'ghost'}
+              className={cn(sidebarCollapsed ? 'sidebar-icon-button' : 'justify-start')}
+              onClick={() => setPage('simulation')}
+              title={t('simulation')}
+              aria-label={t('simulation')}
+            >
+              <FlaskConical className="h-4 w-4" />
+              {!sidebarCollapsed ? t('simulation') : null}
             </Button>
             <Button
               variant={page === 'status' ? 'secondary' : 'ghost'}
@@ -479,7 +500,7 @@ export default function App() {
                 <>
                   <div className="mb-2 flex items-center gap-2 text-xs font-medium text-muted-foreground">
                     <GitCompareArrows className="h-3.5 w-3.5" />
-                    {t('currentVersion')}
+                    {'当前业务版本'}
                   </div>
                   <div className="truncate text-[13px] font-semibold">{current?.label || current?.version_key || '-'}</div>
                   <div className="mt-1 font-mono text-[11px] text-muted-foreground">
@@ -512,11 +533,11 @@ export default function App() {
                   ) : null}
                 </div>
                 <h1 className="truncate text-lg font-semibold tracking-normal">
-                  {page === 'overview' ? t('appTitle') : page === 'issues' ? t('issues') : t('systemStatus')}
+                  {page === 'overview' ? t('appTitle') : page === 'issues' ? t('issues') : page === 'simulation' ? t('simulation') : t('systemStatus')}
                 </h1>
               </div>
               <div className="grid gap-2">
-                <nav className="grid grid-cols-3 gap-1 rounded-lg bg-muted p-1">
+                <nav className="grid grid-cols-4 gap-1 rounded-lg bg-muted p-1">
                   <Button
                     variant={page === 'overview' ? 'default' : 'ghost'}
                     size="sm"
@@ -528,10 +549,14 @@ export default function App() {
                   <Button
                     variant={page === 'issues' ? 'default' : 'ghost'}
                     size="sm"
-                    onClick={() => setPage('issues')}
+                    onClick={openCurrentIssues}
                   >
                     <ListChecks className="h-4 w-4" />
                     {t('issues')}
+                  </Button>
+                  <Button variant={page === 'simulation' ? 'default' : 'ghost'} size="sm" onClick={() => setPage('simulation')}>
+                    <FlaskConical className="h-4 w-4" />
+                    {t('simulation')}
                   </Button>
                   <Button
                     variant={page === 'status' ? 'default' : 'ghost'}
@@ -554,13 +579,13 @@ export default function App() {
           </header>
 
           <main className="grid min-w-0 gap-5 p-4 md:p-6">
-            {page !== 'status' ? (
+            {page === 'overview' ? (
             <section className="apple-panel fine-grid grid gap-3 rounded-lg border p-3 md:p-4">
               <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
                 <div className="flex min-w-0 flex-wrap items-center gap-2">
                   <Badge variant="secondary">
                     <Database className="h-3.5 w-3.5" />
-                    {t('currentVersion')}: {current?.label || current?.version_key || '-'}
+                    {'当前业务版本'}: {current?.label || current?.version_key || '-'}
                   </Badge>
                   {current?.sim_job_id ? <Badge variant="outline">{t('job')} {current.sim_job_id}</Badge> : null}
                   <Badge variant="outline">{versions.length} {t('versions')}</Badge>
@@ -641,59 +666,6 @@ export default function App() {
                 </Button>
               </div>
 
-              {page === 'issues' && versionCards.length ? (
-                <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-5">
-                  {visibleVersionCards.slice(0, 5).map((item) => {
-                    const active = item.version_key === current?.version_key;
-                    const meta = metadataByVersion.get(item.version_key) || {};
-                    return (
-                      <div
-                        key={item.version_key}
-                        role="button"
-                        tabIndex={0}
-                        className={cn(
-                          'metric-surface min-w-0 cursor-pointer rounded-lg border p-3 transition hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md hover:shadow-primary/10 focus:outline-none focus:ring-2 focus:ring-ring',
-                          active && 'border-primary/40 bg-primary/5 dark:bg-primary/10',
-                        )}
-                        onClick={() => openIssues({ version: item.version_key })}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter' || event.key === ' ') {
-                            event.preventDefault();
-                            openIssues({ version: item.version_key });
-                          }
-                        }}
-                      >
-                        <div className="mb-3 flex items-center justify-between gap-2">
-                          <div className="min-w-0 truncate text-sm font-semibold">{item.label || item.version_key}</div>
-                          <span
-                            className={cn(
-                              'h-2 w-2 shrink-0 rounded-full bg-muted-foreground/40',
-                              active && 'bg-primary shadow-[0_0_0_4px_hsl(var(--primary)/0.12)]',
-                            )}
-                          />
-                        </div>
-                        <div className="mb-3 truncate font-mono text-[11px] text-muted-foreground">
-                          {stringValue(meta.sim_plan) || stringValue(meta.binary) || item.version_key}
-                        </div>
-                        <div className="grid grid-cols-3 gap-2 text-xs">
-                          <div>
-                            <div className="text-muted-foreground">{t('shortRepro')}</div>
-                            <div className="mt-1 font-mono text-sm font-semibold">{pct(item.sim_repro_rate)}</div>
-                          </div>
-                          <div>
-                            <div className="text-muted-foreground">{t('shortPrecision')}</div>
-                            <div className="mt-1 font-mono text-sm font-semibold">{pct(item.precision)}</div>
-                          </div>
-                          <div>
-                            <div className="text-muted-foreground">{t('shortRecall')}</div>
-                            <div className="mt-1 font-mono text-sm font-semibold">{pct(item.recall)}</div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : null}
             </section>
             ) : null}
 
@@ -703,24 +675,34 @@ export default function App() {
               </div>
             ) : null}
 
+            {page !== 'status' && <CurrentBusinessRelease />}
             {page === 'status' ? (
               <SystemStatus />
             ) : page === 'overview' ? (
-              <Overview summary={summary} comparison={visibleComparison} onOpenIssues={openIssues} />
+              <Overview summary={summary} comparison={visibleComparison} onOpenIssues={openIssues} onOpenCurrent={openCurrentIssues} />
+            ) : page === 'simulation' ? (
+              <ReleaseWorkflow onOpenIssues={version => version ? openIssues({ version }) : openCurrentIssues()} />
             ) : (
-              <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(380px,0.75fr)]">
+              <ReleaseIssues versions={versions} version={filters.version || '@current'} onVersionChange={version => {
+                const value = version === '@current' ? '' : version;
+                setFilters({ ...defaultFilters, version: value });
+                setPage('issues', value);
+              }} onHistoryChange={setShowLegacyIssues} history={<div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(380px,0.75fr)]">
                 <IssuesTable
                   items={issues}
                   versions={versions}
                   total={issueTotal}
                   loading={issuesLoading}
+                  showVersionFilter={false}
+                  page={issuePage}
+                  onPageChange={setIssuePage}
                   filters={filters}
                   onFiltersChange={setFilters}
                   selectedResult={selectedResult}
                   onSelectResult={setSelectedResult}
                 />
                 <IssueDetail selected={selectedResult} />
-              </div>
+              </div>} />
             )}
           </main>
         </div>

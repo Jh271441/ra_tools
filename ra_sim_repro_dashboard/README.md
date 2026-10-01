@@ -45,7 +45,7 @@ same_version_sim_business_recall = projected_tp
 首页第二张图默认展示各 release 使用自身 binary 跑自身全量场景后，按数易
 `precision_auto_tp` / `precision_auto_fp` / `recall_auto_tp` /
 `recall_manual_fn` 人口分层得到的 P/R；其中 Recall 使用业务口径，不把
-`negative_auto` 未触发计为 FN。`rolling canary` 仅作为可切换的跨版本模式。
+`negative_auto` 未触发计为 FN。页面仅展示同版本结果，保留精确率／召回率／全部切换。
 全量 artifact 人口与数易人口的覆盖率必须位于 95%～105%，否则该版本不画预估点，
 避免旧的局部任务或数据更新后的过期样本冒充全量结果。
 
@@ -64,7 +64,19 @@ same_version_sim_business_recall = projected_tp
 - 复用或改造 `model_release_pipeline`。
 - 前端直接访问内网 API 或保存 token。
 - bag frame timeline 级解析。
-- 自动创建仿真 job。当前版本只消费人工提供的 positive / negative job id。
+- 绕过已验证的周期、场景覆盖、binary 和结果质量门禁发布指标。
+
+## Release 周期与仿真管理
+
+业务当前版本使用最近已完成的周四周期，在周一切换；两周周期按真实运行记录识别。最新发布版本不等于当前已结束的业务周期。配置位于 `config/release-cycles.default`，空白接入示例为 `config/release-cycles.example`。
+
+- `/sim/issues` 保留当前与历史版本 Issue 明细、分页和平台实际 scenario labels。
+- `/sim/simulation` 按版本展示批次、真实 Job 进度、排队／运行／成功／失败数和质量结论。
+- Issue 同步独立运行；仿真默认为手动，只有明确开启自动模式后才补齐场景并提交任务。
+- 开启 `RELEASE_WORKFLOW_ENABLED=1` 后，每 15 分钟同步周期与结果。通过 `RELEASE_CYCLES_CONFIG` 和 `RELEASE_DRIVER_COMMAND_JSON` 配置目标环境，凭据由运行环境注入。
+- 提交前验证不可变计划，使用持久回执防止重复提交；不确定的提交结果必须先核对。任务终态和完整性／质量验收分别展示。
+
+当前生产使用 `ops/sim_deploy` 独立部署；下文 Docker Compose 保留为本地开发方式。实现验收和历史发布记录见 [release-workflow-acceptance.md](docs/release-workflow-acceptance.md)。运行时凭据、原始快照和持续变化的 Job 跟踪日志保留在本地，不提交 Git。
 
 ## 3. 技术栈
 

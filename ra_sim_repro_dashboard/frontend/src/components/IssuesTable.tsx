@@ -18,6 +18,9 @@ interface IssuesTableProps {
   versions: VersionItem[];
   total: number;
   loading: boolean;
+  showVersionFilter?: boolean;
+  page?: number;
+  onPageChange?: (page: number) => void;
   filters: {
     version: string;
     rootCause: string;
@@ -52,6 +55,9 @@ export function IssuesTable({
   versions,
   total,
   loading,
+  showVersionFilter = true,
+  page = 1,
+  onPageChange,
   filters,
   onFiltersChange,
   selectedResult,
@@ -138,7 +144,7 @@ export function IssuesTable({
             <CardTitle>{t('issues')} ({total})</CardTitle>
             <p className="mt-1 text-[13px] leading-5 text-muted-foreground">{t('issuesSubtitle')}</p>
           </div>
-          <Button variant="outline" size="sm" onClick={() => onFiltersChange({ version: '', rootCause: '', triggerType: '', precisionLabel: '', query: '' })}>
+          <Button variant="outline" size="sm" onClick={() => onFiltersChange({ version: showVersionFilter ? '' : filters.version, rootCause: '', triggerType: '', precisionLabel: '', query: '' })}>
             <Filter className="h-4 w-4" />
             {t('reset')}
           </Button>
@@ -151,11 +157,13 @@ export function IssuesTable({
             <input
               className="h-9 w-full rounded-md border border-input bg-card/80 pl-9 pr-3 text-sm shadow-sm outline-none transition focus:border-ring focus:ring-1 focus:ring-ring dark:bg-background/40"
               placeholder={t('search')}
+              aria-label={t('search')}
               value={filters.query}
               onChange={(event) => onFiltersChange({ ...filters, query: event.target.value })}
             />
           </div>
-          <select
+          {showVersionFilter && <select
+            aria-label="历史 Issue 版本"
             className="h-9 rounded-md border border-input bg-card/80 px-3 text-sm shadow-sm outline-none transition focus:border-ring focus:ring-1 focus:ring-ring dark:bg-background/40"
             value={filters.version}
             onChange={(event) => onFiltersChange({ ...filters, version: event.target.value })}
@@ -166,10 +174,11 @@ export function IssuesTable({
                 {version.label || version.version_key}
               </option>
             ))}
-          </select>
+          </select>}
           <select
             className="h-9 rounded-md border border-input bg-card/80 px-3 text-sm shadow-sm outline-none transition focus:border-ring focus:ring-1 focus:ring-ring dark:bg-background/40"
             value={filters.rootCause}
+            aria-label={t('rootCause')}
             onChange={(event) => onFiltersChange({ ...filters, rootCause: event.target.value })}
           >
             <option value="">{t('rootCause')}</option>
@@ -183,6 +192,7 @@ export function IssuesTable({
           <select
             className="h-9 rounded-md border border-input bg-card/80 px-3 text-sm shadow-sm outline-none transition focus:border-ring focus:ring-1 focus:ring-ring dark:bg-background/40"
             value={filters.triggerType}
+            aria-label={t('triggerType')}
             onChange={(event) => onFiltersChange({ ...filters, triggerType: event.target.value })}
           >
             <option value="">{t('triggerType')}</option>
@@ -194,6 +204,7 @@ export function IssuesTable({
           <select
             className="h-9 rounded-md border border-input bg-card/80 px-3 text-sm shadow-sm outline-none transition focus:border-ring focus:ring-1 focus:ring-ring dark:bg-background/40"
             value={filters.precisionLabel}
+            aria-label="TP / FP / FN / TN"
             onChange={(event) => onFiltersChange({ ...filters, precisionLabel: event.target.value })}
           >
             <option value="">TP / FP / FN / TN</option>
@@ -251,6 +262,7 @@ export function IssuesTable({
             </tbody>
           </table>
         </div>
+        {onPageChange && <div className="flex items-center justify-end gap-3 border-t p-3 text-sm"><Button variant="outline" disabled={page === 1 || loading} onClick={() => onPageChange(page - 1)}>上一页</Button><span>第 {page} / {Math.max(1, Math.ceil(total / 100))} 页</span><Button variant="outline" disabled={page * 100 >= total || loading} onClick={() => onPageChange(page + 1)}>下一页</Button></div>}
       </CardContent>
     </Card>
   );

@@ -1,0 +1,61 @@
+{
+  "contract": {
+    "verified": true,
+    "reference": "用户提供的数易过滤条件；历史 release manifest 的 issue_time 字段",
+    "view_id": 2410,
+    "time_field": "issue_time"
+  },
+  "periods": [
+    {
+      "release": "gen4-release-20260904",
+      "status": "completed",
+      "basis": "observed",
+      "verified": true,
+      "cycle_end": "2026-09-24",
+      "case_start": "2026-09-10T00:00:00+08:00",
+      "case_end_exclusive": "2026-09-25T00:00:00+08:00",
+      "evidence": "2026-09-30 Trail view 2410 全分页 3214 条：0904 覆盖9/10–9/24；0918 从9/24接续，用户确认周一切换规则",
+      "scenario_query_labels": [
+        "ra_repro_full_20260916_20260904"
+      ],
+      "binary_id": 1804023,
+      "template_job_id": 45142569,
+      "target_road_version": "1.gen4-release-20260904.568",
+      "binary_commit": "8d383c9334ce1357f2f15fd2810fe93a9f70335a",
+      "binary_evidence": "2026-09-30 Orion BinaryAccessor：upload_binary_dcheck_off-568，gen4/all，is_valid=true；对应0904最新路测构建",
+      "road_build_counts": {
+        ".555": 1429,
+        ".567": 370,
+        ".568": 1415
+      },
+      "scenario_query_label_sets": [
+        [
+          "ra_repro_full_20260916_20260904"
+        ],
+        [
+          "ra_repro_cycle_20260924_0904"
+        ]
+      ]
+    },
+    {
+      "release": "gen4-release-20260918",
+      "status": "running",
+      "basis": "inferred",
+      "verified": false,
+      "case_start": "2026-09-24T00:00:00+08:00",
+      "evidence": "用户确认 0918 为最新 release；尚无结束周期证据",
+      "binary_id": 1810741,
+      "target_road_version": "1.gen4-release-20260918.578",
+      "binary_commit": "8d5f1f62e84856e45a31f7e9db75fc414b6c13fa"
+    }
+  ],
+  "simulation": {
+    "driver_command": [],
+    "driver_revision": "orion-release-v1",
+    "recovery_mode": "baseline",
+    "max_concurrency": 1000,
+    "priorities_by_release": {"gen4-release-20260904": "HIGH"},
+    "template_job_id": 45142569
+  },
+  "discover_cycles": true
+}

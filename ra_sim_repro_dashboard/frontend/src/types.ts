@@ -28,9 +28,9 @@ export interface KpiSummary {
   model_repro_rate: number;
   fn_fallback_rate: number;
   fp_suppress_rate: number;
-  precision: number;
-  recall: number;
-  f1: number;
+  precision: number | null;
+  recall: number | null;
+  f1: number | null;
   specificity: number;
   accuracy: number;
   positive_auto_repro_rate: number;
@@ -46,7 +46,12 @@ export interface KpiSummary {
 }
 
 export interface SummaryResponse {
-  current: KpiSummary;
+  business_current_version?: string | null;
+  business_metrics?: KpiSummary | null;
+  business_status?: string;
+  business_reason?: string;
+  current: KpiSummary | null;
+  legacy_current?: KpiSummary | null;
   previous: KpiSummary | null;
   deltas: Record<string, number>;
   generated_at: string;

@@ -1,0 +1,13 @@
+{
+  "contract": {
+    "verified": false,
+    "reference": "",
+    "view_id": 2410,
+    "time_field": "issue_time"
+  },
+  "periods": [],
+  "simulation": {
+    "driver_command": [],
+    "driver_revision": ""
+  }
+}

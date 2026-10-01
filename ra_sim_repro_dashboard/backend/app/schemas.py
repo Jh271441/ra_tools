@@ -38,9 +38,9 @@ class KpiSummary(BaseModel):
     model_repro_rate: float
     fn_fallback_rate: float
     fp_suppress_rate: float
-    precision: float
-    recall: float
-    f1: float
+    precision: float | None
+    recall: float | None
+    f1: float | None
     specificity: float = 0.0
     accuracy: float = 0.0
     positive_auto_repro_rate: float = 0.0
@@ -55,7 +55,12 @@ class KpiSummary(BaseModel):
 
 
 class SummaryResponse(BaseModel):
-    current: KpiSummary
+    business_current_version: str | None = None
+    business_metrics: KpiSummary | None = None
+    business_status: str = "legacy"
+    business_reason: str = ""
+    current: KpiSummary | None = None
+    legacy_current: KpiSummary | None = None
     previous: KpiSummary | None = None
     deltas: dict[str, float]
     generated_at: datetime

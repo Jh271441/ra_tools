@@ -58,6 +58,10 @@ class HttpContractTests(unittest.TestCase):
                 ("/assets/app.js", lambda: Response(b"not found", status=404))
             )
 
+    def test_rejects_stripped_simulation_page_404(self):
+        with self.assertRaisesRegex(RuntimeError, "gateway mismatch"):
+            self.run_check(("/simulation", lambda: Response(b"not found", status=404)))
+
     def test_rejects_html_returned_as_api(self):
         with self.assertRaisesRegex(RuntimeError, "API is not healthy"):
             self.run_check(("/api/health", lambda: Response(b"<html>fallback</html>")))
