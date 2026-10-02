@@ -20,3 +20,13 @@ Nginx 配置检查；更新保留 nginx.previous.conf 并平滑 reload。由系�
 `http://172.16.145.60/`。检查 `/healthz`、`/manual/`、`/sim/overview`、静态资源、
 `/manual/api/session` 和 `/sim/api/health`。UI 参考旧 gateway portal，支持浅色/深色
 和窄屏布局。
+
+## 首页更新记录
+
+2026-09-29：外观改为三段切换按钮，主题色改为四色圆点，统一置于页面右上角。
+已在现有部署目录原子替换 `index.html`，未修改 Nginx 配置或重启上游服务。
+服务器 HTTP 首页内容哈希与本地文件一致，`/healthz` 正常。
+
+- SHA-256：`23129e8eef3d107cb1f9e4ff5ed769f069eac278e26ac3dc7a0e331dac3bf4e1`
+- 发布记录：`/volume/home/services/ra-portal/releases/20260929T035735Z-appearance-buttons/result.json`
+- 同目录 `index.previous.html` 保存旧首页，`index.html` 保存发布文件。

@@ -55,10 +55,26 @@
     :root[data-theme="dark"][data-color="green"] { --accent: #69dba4; }
     :root[data-theme="dark"][data-color="violet"] { --accent: #c19aff; }
     :root[data-theme="dark"][data-color="orange"] { --accent: #ffb16f; }
-    .appearance { display: flex; flex-wrap: wrap; gap: 18px; margin: 0 0 24px; }
-    .appearance label { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
-    select { font: inherit; color: var(--text); background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; min-height: 36px; cursor: pointer; }
-    select:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+    .appearance {
+      position: absolute; top: 24px; right: 28px;
+      display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 20px;
+    }
+    .appearance-group { display: flex; align-items: center; gap: 10px; }
+    .appearance-label { color: var(--muted); font-size: 12px; }
+    .mode-options { display: flex; gap: 2px; padding: 3px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; }
+    .appearance button { font: inherit; cursor: pointer; }
+    .mode-options button { border: 0; border-radius: 7px; padding: 7px 10px; background: transparent; color: var(--muted); font-size: 12px; min-height: 32px; }
+    .mode-options button[aria-pressed="true"] { background: var(--bg); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+    .mode-options button:hover { color: var(--text); }
+    .color-options { display: flex; gap: 4px; }
+    .color-options button { display: grid; place-items: center; width: 32px; height: 32px; border: 2px solid transparent; border-radius: 50%; padding: 4px; background: transparent; }
+    .color-options button::before { content: ""; width: 18px; height: 18px; border-radius: 50%; background: var(--swatch); }
+    .color-options button[aria-pressed="true"] { border-color: var(--text); }
+    .color-options button:hover { background: var(--border); }
+    .appearance button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+    @media (max-width: 540px) {
+      .appearance { top: 16px; right: 16px; left: 16px; gap: 10px 16px; }
+    }
     @media (prefers-reduced-motion: reduce) { a.card { transition: none; } }
     * { box-sizing: border-box; }
     body {
@@ -70,8 +86,9 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      padding: 32px 16px;
+      padding: 100px 16px 32px;
     }
+    @media (max-width: 540px) { body { padding-top: 140px; } }
     .wrap { width: 100%; max-width: 880px; }
     h1 { font-size: 24px; margin: 0 0 4px; }
     .sub { color: var(--muted); font-size: 14px; margin-bottom: 28px; }
@@ -119,26 +136,28 @@
   </style>
 </head>
 <body>
+  <div class="appearance" role="group" aria-label="首页外观">
+    <div class="appearance-group" role="group" aria-label="外观">
+      <span class="appearance-label">外观</span>
+      <div class="mode-options">
+        <button type="button" data-mode="system" aria-pressed="false">跟随系统</button>
+        <button type="button" data-mode="light" aria-pressed="false">浅色</button>
+        <button type="button" data-mode="dark" aria-pressed="false">深色</button>
+      </div>
+    </div>
+    <div class="appearance-group" role="group" aria-label="主题色">
+      <span class="appearance-label">主题色</span>
+      <div class="color-options">
+        <button type="button" data-color="blue" aria-label="海蓝" title="海蓝" aria-pressed="false" style="--swatch: #409cff"></button>
+        <button type="button" data-color="green" aria-label="松绿" title="松绿" aria-pressed="false" style="--swatch: #38b87c"></button>
+        <button type="button" data-color="violet" aria-label="鸢紫" title="鸢紫" aria-pressed="false" style="--swatch: #a779ec"></button>
+        <button type="button" data-color="orange" aria-label="琥珀" title="琥珀" aria-pressed="false" style="--swatch: #ee964a"></button>
+      </div>
+    </div>
+  </div>
   <div class="wrap">
     <h1>RA Tools</h1>
     <div class="sub">选择工作台，开始查看与分析。</div>
-    <div class="appearance" role="group" aria-label="首页外观">
-      <label for="theme-mode">外观
-        <select id="theme-mode">
-          <option value="system">跟随系统</option>
-          <option value="light">浅色</option>
-          <option value="dark">深色</option>
-        </select>
-      </label>
-      <label for="theme-color">主题色
-        <select id="theme-color">
-          <option value="blue">海蓝</option>
-          <option value="green">松绿</option>
-          <option value="violet">鸢紫</option>
-          <option value="orange">琥珀</option>
-        </select>
-      </label>
-    </div>
     <div class="grid">
       <a class="card" href="/manual/">
         <div class="name">人工评审 <span class="tag">Manual</span></div>
@@ -154,10 +173,16 @@
     <footer>RA Tools · 评审与仿真的统一入口</footer>
   </div>
   <script>
-    for (const [id, key] of [['theme-mode', 'mode'], ['theme-color', 'color']]) {
-      const select = document.getElementById(id);
-      select.value = window.portalAppearance.state[key];
-      select.addEventListener('change', () => window.portalAppearance.set(key, select.value));
+    for (const key of ['mode', 'color']) {
+      const buttons = document.querySelectorAll(`button[data-${key}]`);
+      const sync = () => buttons.forEach(button => {
+        button.setAttribute('aria-pressed', String(button.dataset[key] === window.portalAppearance.state[key]));
+      });
+      buttons.forEach(button => button.addEventListener('click', () => {
+        window.portalAppearance.set(key, button.dataset[key]);
+        sync();
+      }));
+      sync();
     }
   </script>
 </body>
