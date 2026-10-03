@@ -206,6 +206,10 @@ def board(db, release="@current", force=False):
             "created_at": b.created_at.replace(tzinfo=timezone.utc).isoformat(),
             "error": b.payload.get("error") or b.payload.get("last_poll_error"),
             "archived": False,
+            "evaluation_task_key": b.payload.get("result_import", {}).get("task_key"),
+            "primary_execution": b.payload.get("result_import", {}).get(
+                "primary", False
+            ),
         }
         for b in native
         if b.release == selected
@@ -240,6 +244,29 @@ def board(db, release="@current", force=False):
         if job["job_id"] and _due(cache, force) and current["driver_ready"]:
             refresh_ids.append(int(job["job_id"]))
     data["jobs"] = jobs
+    imported = (
+        next(
+            (
+                b.payload["result_import"]
+                for b in native
+                if b.release == selected
+                and b.payload.get("result_import", {}).get("primary")
+                and b.payload.get("population_hash")
+                == workflow.population_identity(current_snapshot.payload)
+            ),
+            None,
+        )
+        if (
+            current_snapshot := db.scalars(
+                select(ReleaseIssueSnapshot)
+                .where(ReleaseIssueSnapshot.release == selected)
+                .order_by(ReleaseIssueSnapshot.id.desc())
+                .limit(1)
+            ).first()
+        )
+        else None
+    )
+    data["evaluation"] = imported
     return {
         "versions": [
             {

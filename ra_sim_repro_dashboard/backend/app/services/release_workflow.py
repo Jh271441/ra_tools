@@ -372,6 +372,7 @@ def list_issues(db, release=None, page=1, page_size=25, query="", label=""):
     ).all()
     population_hash = population_identity(snapshot.payload)
     batch_by_scene = {}
+    batches.sort(key=lambda b: bool(b.payload.get("result_import", {}).get("primary")))
     for batch in batches:
         if batch.payload.get("population_hash") == population_hash:
             for scene in batch.payload.get("scenarios", []):
@@ -407,7 +408,30 @@ def list_issues(db, release=None, page=1, page_size=25, query="", label=""):
             if batch:
                 row["simulation_status"] = batch.status
                 result = batch.payload.get("results", {}).get(row["scenario_id"])
-                if batch.status == "complete" and result:
+                imported = batch.payload.get("result_import", {}).get("primary", False)
+                detail = (
+                    batch.payload.get("scenario_results", {}).get(
+                        row["scenario_id"], {}
+                    )
+                    if imported
+                    else {}
+                )
+                if detail:
+                    row.update(
+                        simulation_status=detail["status"],
+                        job_id=detail["job_id"],
+                        result_note=(
+                            str(detail.get("outcome") or "")
+                            + "\n"
+                            + str(detail.get("outcome_detail") or "")
+                        )
+                        if detail.get("errors")
+                        else "两次执行触发结果不一致"
+                        if detail.get("conflict")
+                        else "",
+                        execution_conflict=detail.get("conflict", False),
+                    )
+                if (batch.status == "complete" or imported) and result:
                     row.update(
                         {
                             k: result.get(k)
@@ -769,6 +793,10 @@ def metrics_for_snapshot(db, snapshot):
         .order_by(ReleaseSimulationBatch.updated_at.desc())
     ).all()
     for batch in batches:
+        if batch.payload.get("result_import") and not batch.payload[
+            "result_import"
+        ].get("primary"):
+            continue
         if batch.payload.get("population_hash") == population_hash:
             return {
                 **batch.payload.get("summary", {}),

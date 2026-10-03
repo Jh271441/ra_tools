@@ -136,3 +136,14 @@ Priority is explicit in the plan and verified against actual job metadata. Only 
 用户授权保留 HIGH Job `47045687`，新建 NORMAL Job `47052469`，两者并发上限均为 1000。预检后使用标准提交路径创建；逐条读取实际任务确认全部 3089 个场景及任务参数完全一致，runtime 均为 `prod-76541`。正式看板已登记两个独立批次，未更改默认优先级或模式。
 
 16:15（Asia/Shanghai）共同对照基线：HIGH 成功 4、运行 1、排队 3084；NORMAL 成功 0、运行 0、排队 3089。按相同观测时段的新增完成数比较吞吐量，不将并发上限视作实际运行量。运行进度、提交回执和基线保存在本地 `reports/release_workflow_20260930/`，不纳入 Git；此时两个任务均未完成结果验收。
+
+
+## 2026-10-03: one evaluation, two execution imports
+
+HIGH 47045687 and NORMAL 47052469 replay the same 3089 scenarios with identical binary and task arguments. HIGH is the fixed primary result, NORMAL the consistency comparison; scenarios are counted once and results are not cherry-picked across jobs.
+
+Both executions have 3085 successful and 4 failed scenarios. Primary coverage is 99.87%. Of 3085 comparable triggers, 3073 agree and 12 differ. The four common failures are 39031540, 39031742, 39596026 and 39597811: two PulloutReasoner timestamp assertions and two traffic-signal map assertions. Valid-sample reference precision is 87.48%, recall 79.49%, behavior reproduction 87.84%; failed samples are excluded, and official full-population metrics remain gated.
+
+The new scripts/ra_release_import_results.py defaults to preflight; --apply verifies the current population hash and registered Jobs before importing into existing batch records. No schema migration. The board presents one evaluation with two executions, actual terminal progress, coverage, failures and rerun differences. Issue details display the primary labels, Job provenance and failure details.
+
+Validation: 88 backend/driver tests and frontend production build passed. Browser preflight used isolated real source data; post-deployment browser checked the actual production backend via temporary loopback SSH forwarding, including 0904 grouping and historical version switch. Native direct/prefix-stripped health checks passed. Code backup: result-import-20261003T004243Z; database backup: database-20261003T004246276433Z.sql. Detailed artifacts remain local and ignored by Git.

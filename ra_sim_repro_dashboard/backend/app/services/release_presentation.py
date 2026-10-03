@@ -118,6 +118,10 @@ def history_kpis(db):
             batch.release in seen
             or batch.release not in allowed
             or batch.payload.get("acceptance_only")
+            or (
+                batch.payload.get("result_import")
+                and not batch.payload["result_import"].get("primary")
+            )
         ):
             continue
         seen.add(batch.release)
