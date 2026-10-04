@@ -56,6 +56,7 @@
           "css/trail-update.css",
           "css/review-comment.css",
           "css/case-labeling.css",
+          "css/assignment-composer.css",
           "css/analysis.css",
           "css/intent-labeling.css",
           "css/media-dialog.css",
@@ -63,6 +64,7 @@
           "css/batch-gateway.css",
           "css/runs.css",
           "css/campaigns.css",
+          "css/labeling-summary.css",
           "css/mobile.css",
         ];
         let stylesSettled = false;
@@ -79,7 +81,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-549`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-550`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -2389,7 +2391,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-549`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-550`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

@@ -20,9 +20,12 @@ intent-collaboration.js
 intent-labeling.js
 review-gallery.js
 review-label-state.js
+assignment-naming.js
+assignment-people.js
 work-split.js
 review-assignments.js
 campaigns.js
+labeling-summary.js
 analysis.js
 detail-media.js
 review-draft.js

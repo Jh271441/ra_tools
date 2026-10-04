@@ -21,6 +21,7 @@ CSS_PATHS = (
     "css/trail-update.css",
     "css/review-comment.css",
     "css/case-labeling.css",
+    "css/assignment-composer.css",
     "css/analysis.css",
     "css/intent-labeling.css",
     "css/media-dialog.css",
@@ -28,6 +29,7 @@ CSS_PATHS = (
     "css/batch-gateway.css",
     "css/runs.css",
     "css/campaigns.css",
+    "css/labeling-summary.css",
     "css/mobile.css",
 )
 STYLES_CSS = "\n".join(
@@ -37,6 +39,7 @@ INDEX_HTML = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
 RUN_COMPARISON_JS = (JS_DIR / "run-comparison.js").read_text(encoding="utf-8")
 RUN_COLLECTION_JS = (JS_DIR / "run-collections.js").read_text(encoding="utf-8")
 CAMPAIGNS_JS = (JS_DIR / "campaigns.js").read_text(encoding="utf-8")
+LABELING_SUMMARY_JS = (JS_DIR / "labeling-summary.js").read_text(encoding="utf-8")
 CAMPAIGNS_CSS = (STATIC_DIR / "css/campaigns.css").read_text(encoding="utf-8")
 FORMAT_API_JS = (JS_DIR / "format-api.js").read_text(encoding="utf-8")
 APP_PY_LABELING_DB = (
@@ -398,7 +401,7 @@ class FrontendContractTest(unittest.TestCase):
             self.assertTrue((JS_DIR / name).is_file(), name)
             self.assertIn(f'"{name}"', APP_ENTRY_JS)
         self.assertIn("CACHE_VERSION", APP_ENTRY_JS)
-        self.assertIn("manual-triage-549", APP_ENTRY_JS)
+        self.assertIn("manual-triage-550", APP_ENTRY_JS)
         self.assertIn("function setBaselineScopes", APP_JS)
         self.assertIn("function applyInferredBaselinesFromRun", APP_JS)
         self.assertIn("clearIncompatible: true", APP_JS)
@@ -462,7 +465,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("baselines", APP_JS)
         self.assertIn("/static/js/", APP_ENTRY_JS)
         self.assertIn("script.async = false", APP_ENTRY_JS)
-        self.assertIn("app.js?v=manual-triage-549", INDEX_HTML)
+        self.assertIn("app.js?v=manual-triage-550", INDEX_HTML)
         self.assertIn('"work-split.js"', APP_ENTRY_JS)
         self.assertIn('"review-assignments.js"', APP_ENTRY_JS)
         # Product logic must live in domain modules, not the entry loader.
@@ -717,7 +720,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('html[data-color-theme="light"] .issue-id', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .run-source-tab em', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .button-primary', STYLES_CSS)
-        self.assertIn('`${activeBase}/static/${path}?v=manual-triage-549`', INDEX_HTML)
+        self.assertIn('`${activeBase}/static/${path}?v=manual-triage-550`', INDEX_HTML)
         self.assertIn(".review-exclude-toggle { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center;", STYLES_CSS)
         self.assertIn("display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px;", STYLES_CSS)
         self.assertIn("max-height: min(70dvh, 640px); overflow: auto;", STYLES_CSS)
@@ -1038,7 +1041,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertNotIn('id="caseLabelingClusterStrip"', INDEX_HTML)
         self.assertIn('id="labelingSummaryPage"', INDEX_HTML)
         self.assertIn('data-page-target="labeling-summary"', INDEX_HTML)
-        self.assertIn('function renderLabelingSummary', CAMPAIGNS_JS)
+        self.assertIn('function renderLabelingSummary', LABELING_SUMMARY_JS)
         for filter_id in (
             "labelSummarySearch", "labelSummaryTaskPicker", "labelSummaryStatusPicker",
             "labelSummaryAuthorPicker", "labelSummaryAssigneePicker",
@@ -1046,12 +1049,12 @@ class FrontendContractTest(unittest.TestCase):
             "labelSummaryDiscussionPicker", "labelSummaryExclusionPicker",
         ):
             self.assertIn(f'id="{filter_id}"', INDEX_HTML)
-        self.assertIn('class="analysis-summary-grid"', CAMPAIGNS_JS)
-        self.assertIn('class="analysis-decision-grid"', CAMPAIGNS_JS)
-        self.assertIn('id="labelSummaryClusterPanels"', CAMPAIGNS_JS)
-        self.assertIn('id="labelSummaryCaseList"', CAMPAIGNS_JS)
-        self.assertIn('function restoreLabelSummaryRoute()', CAMPAIGNS_JS)
-        self.assertIn('function labelSummaryRouteOptions(overrides = {})', CAMPAIGNS_JS)
+        self.assertIn('class="analysis-summary-grid"', LABELING_SUMMARY_JS)
+        self.assertIn('class="analysis-decision-grid"', LABELING_SUMMARY_JS)
+        self.assertIn('id="labelSummaryClusterPanels"', LABELING_SUMMARY_JS)
+        self.assertIn('id="labelSummaryCaseList"', LABELING_SUMMARY_JS)
+        self.assertIn('function restoreLabelSummaryRoute()', LABELING_SUMMARY_JS)
+        self.assertIn('function labelSummaryRouteOptions(overrides = {})', LABELING_SUMMARY_JS)
         self.assertIn('if (page === "labeling-summary")', APP_JS)
         self.assertIn('target === "labeling-summary" && typeof labelSummaryRouteOptions === "function"', APP_JS)
         self.assertIn('const filters = labelingTaskFilterPayload();', CAMPAIGNS_JS)
@@ -1086,7 +1089,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('class="multi-filter" id="caseLabelingStatusPicker"', INDEX_HTML)
         self.assertIn('class="multi-filter" id="caseLabelingGtPicker"', INDEX_HTML)
         self.assertIn('class="multi-filter" id="labelSummaryStatusPicker"', INDEX_HTML)
-        self.assertIn("function renderLabelSummaryMultiPicker", CAMPAIGNS_JS)
+        self.assertIn("function renderLabelSummaryMultiPicker", LABELING_SUMMARY_JS)
         self.assertIn('currentRunReviewStatusMarkup(item, { compact: true })', APP_JS)
         self.assertIn('const prefixMarkup = compact', APP_JS)
         self.assertIn('id="caseLabelingExportGt"', INDEX_HTML)
@@ -1888,7 +1891,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("function jumpToQueueIndex", APP_JS)
         self.assertIn("function bindDetailQueueIndexJump", APP_JS)
         self.assertIn(".detail-queue-index-input", STYLES_CSS)
-        self.assertIn("manual-triage-549", APP_ENTRY_JS)
+        self.assertIn("manual-triage-550", APP_ENTRY_JS)
     def test_desktop_layout_panels_are_mouse_and_keyboard_resizable(self) -> None:
         self.assertIn('id="sidebarResizer" role="separator"', INDEX_HTML)
         self.assertIn('id="reviewPaneResizer" role="separator"', INDEX_HTML)
