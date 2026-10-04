@@ -6,6 +6,13 @@ import uuid
 from typing import Any, Iterable, Iterator, Sequence
 
 from ..work_split import normalize_overlap_ratio
+from .assignment_rules import (
+    ASSIGNMENT_SUBMITTED_SQL,
+    MODEL_ASSIGNMENT_SCOPE_SQL,
+    MODEL_SUBMISSION_SQL,
+    legacy_batch_source,
+    assignment_snapshot_members,
+)
 from .model_reviews import MODEL_REVIEW_STATUSES, MODEL_REVIEW_PUBLIC_ID_OFFSET
 from .shared import (
     COMPARISON_STATUSES,
@@ -1325,58 +1332,7 @@ class DatabaseCasesMixin:
             for username in sorted(counts)
         ]
 
-    @staticmethod
-    def _work_split_snapshot_members(value: Any) -> list[dict[str, Any]]:
-        """Normalize the original split payload for history/fallback views."""
-
-        raw_members = _json_load(value, [])
-        if not isinstance(raw_members, list):
-            return []
-        members: list[dict[str, Any]] = []
-        for raw_member in raw_members:
-            if not isinstance(raw_member, dict):
-                continue
-            name = str(raw_member.get("name") or "").strip()
-            if not name:
-                continue
-            raw_items = raw_member.get("items")
-            items: list[dict[str, Any]] = []
-            if isinstance(raw_items, list):
-                for raw_item in raw_items:
-                    if not isinstance(raw_item, dict):
-                        continue
-                    issue_id = str(raw_item.get("issue_id") or "").strip()
-                    if not issue_id:
-                        continue
-                    items.append(
-                        {
-                            "issue_id": issue_id,
-                            "assignment_kind": str(
-                                raw_item.get("assignment_kind") or "base"
-                            ),
-                            "ordinal": int(raw_item.get("ordinal") or len(items) + 1),
-                        }
-                    )
-            if not items:
-                items = [
-                    {
-                        "issue_id": str(issue_id).strip(),
-                        "assignment_kind": "base",
-                        "ordinal": index,
-                    }
-                    for index, issue_id in enumerate(raw_member.get("issue_ids") or [], 1)
-                    if str(issue_id or "").strip()
-                ]
-            members.append(
-                {
-                    "name": name,
-                    "count": len(items),
-                    "requested_count": raw_member.get("requested_count"),
-                    "mode": str(raw_member.get("mode") or "share"),
-                    "items": items,
-                }
-            )
-        return members
+    _work_split_snapshot_members = staticmethod(assignment_snapshot_members)
 
     def list_review_work_splits(
         self, *, limit: int = 50, model_run_id: str = ""
@@ -1443,38 +1399,7 @@ class DatabaseCasesMixin:
                 SELECT assignment.split_id,
                        assignment.assignee,
                        COUNT(*) AS assigned_count,
-                       SUM(CASE WHEN (
-                         (split.workflow_mode = 'model_review_and_case_label' AND EXISTS (
-                           SELECT 1 FROM combined_review_progress progress
-                           WHERE progress.campaign_id = split.id
-                             AND progress.issue_id = assignment.issue_id
-                             AND lower(progress.reviewer) = lower(assignment.assignee)
-                             AND progress.model_review_submitted = true
-                             AND progress.case_label_acknowledged = true
-                         )) OR
-                         (split.workflow_mode <> 'model_review_and_case_label' AND EXISTS (
-                           SELECT 1 FROM model_review_heads head
-                           JOIN model_review_revisions revision ON revision.id = head.revision_id
-                           WHERE head.issue_id = assignment.issue_id
-                             AND head.model_run_id = split.model_run_id
-                             AND lower(head.reviewer) = lower(assignment.assignee)
-                             AND (revision.status = 'completed' OR EXISTS (
-                    SELECT 1 FROM annotations legacy_submission
-                    WHERE legacy_submission.id = revision.legacy_annotation_id
-                      AND legacy_submission.issue_id = revision.issue_id
-                      AND legacy_submission.model_run_id = revision.model_run_id
-                      AND lower(legacy_submission.author) = lower(revision.reviewer)
-                  ))
-                             AND (
-                               (split.purpose = 'model_review' AND head.campaign_id = split.id
-                                AND head.reference_id = split.reference_id)
-                               OR (COALESCE(split.purpose, '') <> 'model_review'
-                                   AND split.mode = 'blind' AND revision.work_split_id = assignment.split_id)
-                               OR (COALESCE(split.purpose, '') <> 'model_review'
-                                   AND split.mode <> 'blind' AND revision.work_split_id = '')
-                             )
-                         ))
-                       ) THEN 1 ELSE 0 END) AS completed_count
+                       SUM(CASE WHEN {ASSIGNMENT_SUBMITTED_SQL} THEN 1 ELSE 0 END) AS completed_count
                 FROM review_work_assignments assignment
                 JOIN issue_work_splits split ON split.id = assignment.split_id
                 WHERE assignment.split_id IN ({placeholders})
@@ -1533,13 +1458,7 @@ class DatabaseCasesMixin:
                             JOIN model_review_revisions revision ON revision.id = head.revision_id
                             WHERE head.model_run_id = ?
                               AND lower(head.reviewer) = lower(?)
-                              AND (revision.status = 'completed' OR EXISTS (
-                    SELECT 1 FROM annotations legacy_submission
-                    WHERE legacy_submission.id = revision.legacy_annotation_id
-                      AND legacy_submission.issue_id = revision.issue_id
-                      AND legacy_submission.model_run_id = revision.model_run_id
-                      AND lower(legacy_submission.author) = lower(revision.reviewer)
-                  ))
+                              AND {MODEL_SUBMISSION_SQL}
                               AND {work_split_clause.replace('annotation.work_split_id', 'revision.work_split_id')}
                               AND head.issue_id IN ({batch_placeholders})
                             """,
@@ -1571,10 +1490,7 @@ class DatabaseCasesMixin:
         result: list[dict[str, Any]] = []
         for row in split_rows:
             split_id = str(row["id"])
-            source_id = str(_json_load(row["filter_json"], {}).get("source_legacy_split_id") or "")
-            source = sources_by_id.get(source_id, {})
-            if str(source.get("model_run_id") or "") != str(row["model_run_id"] or ""):
-                source = {}
+            source = legacy_batch_source(row, sources_by_id)
             snapshot_members = self._work_split_snapshot_members(
                 source.get("assignees_json") or row["assignees_json"]
             )
@@ -1675,40 +1591,7 @@ class DatabaseCasesMixin:
         safe_page_size = max(10, min(int(page_size or 50), 100))
         normalized_assignee = str(assignee or "").strip().lower()
         normalized_query = str(query or "").strip()[:128]
-        submitted_condition = """
-            (
-              (split.workflow_mode = 'model_review_and_case_label' AND EXISTS (
-                SELECT 1 FROM combined_review_progress progress
-                WHERE progress.campaign_id = split.id
-                  AND progress.issue_id = assignment.issue_id
-                  AND lower(progress.reviewer) = lower(assignment.assignee)
-                  AND progress.model_review_submitted = true
-                  AND progress.case_label_acknowledged = true
-              )) OR
-              (split.workflow_mode <> 'model_review_and_case_label' AND EXISTS (
-                SELECT 1 FROM model_review_heads head
-                JOIN model_review_revisions revision ON revision.id = head.revision_id
-                WHERE head.issue_id = assignment.issue_id
-                  AND head.model_run_id = split.model_run_id
-                  AND lower(head.reviewer) = lower(assignment.assignee)
-                  AND (revision.status = 'completed' OR EXISTS (
-                    SELECT 1 FROM annotations legacy_submission
-                    WHERE legacy_submission.id = revision.legacy_annotation_id
-                      AND legacy_submission.issue_id = revision.issue_id
-                      AND legacy_submission.model_run_id = revision.model_run_id
-                      AND lower(legacy_submission.author) = lower(revision.reviewer)
-                  ))
-                  AND (
-                    (split.purpose = 'model_review' AND head.campaign_id = split.id
-                     AND head.reference_id = split.reference_id)
-                    OR (COALESCE(split.purpose, '') <> 'model_review'
-                        AND split.mode = 'blind' AND revision.work_split_id = assignment.split_id)
-                    OR (COALESCE(split.purpose, '') <> 'model_review'
-                        AND split.mode <> 'blind' AND revision.work_split_id = '')
-                  )
-              ))
-            )
-        """
+        submitted_condition = ASSIGNMENT_SUBMITTED_SQL
         conditions = ["assignment.split_id = ?"]
         parameters: list[Any] = [normalized_split_id]
         if normalized_assignee:
@@ -1788,21 +1671,8 @@ class DatabaseCasesMixin:
                            WHERE head.issue_id = assignment.issue_id
                              AND head.model_run_id = split.model_run_id
                              AND lower(head.reviewer) = lower(assignment.assignee)
-                             AND (revision.status = 'completed' OR EXISTS (
-                    SELECT 1 FROM annotations legacy_submission
-                    WHERE legacy_submission.id = revision.legacy_annotation_id
-                      AND legacy_submission.issue_id = revision.issue_id
-                      AND legacy_submission.model_run_id = revision.model_run_id
-                      AND lower(legacy_submission.author) = lower(revision.reviewer)
-                  ))
-                             AND (
-                               (split.purpose = 'model_review' AND head.campaign_id = split.id
-                                AND head.reference_id = split.reference_id)
-                               OR (COALESCE(split.purpose, '') <> 'model_review'
-                                   AND split.mode = 'blind' AND revision.work_split_id = assignment.split_id)
-                               OR (COALESCE(split.purpose, '') <> 'model_review'
-                                   AND split.mode <> 'blind' AND revision.work_split_id = '')
-                             )
+                             AND {MODEL_SUBMISSION_SQL}
+                             AND {MODEL_ASSIGNMENT_SCOPE_SQL}
                            ORDER BY revision.id DESC LIMIT 1
                        ) AS submitted_at,
                        (
@@ -1825,14 +1695,7 @@ class DatabaseCasesMixin:
                            WHERE head.issue_id = assignment.issue_id
                              AND head.model_run_id = split.model_run_id
                              AND lower(head.reviewer) = lower(assignment.assignee)
-                             AND (
-                               (split.purpose = 'model_review' AND head.campaign_id = split.id
-                                AND head.reference_id = split.reference_id)
-                               OR (COALESCE(split.purpose, '') <> 'model_review'
-                                   AND split.mode = 'blind' AND revision.work_split_id = assignment.split_id)
-                               OR (COALESCE(split.purpose, '') <> 'model_review'
-                                   AND split.mode <> 'blind' AND revision.work_split_id = '')
-                             )
+                             AND {MODEL_ASSIGNMENT_SCOPE_SQL}
                            ORDER BY revision.id DESC LIMIT 1
                        ) AS model_review_status
                 {from_sql}
@@ -2301,7 +2164,7 @@ class DatabaseCasesMixin:
             if split is None:
                 return None
             rows = conn.execute(
-                """
+                f"""
                 SELECT assignment.assignee, assignment.assignment_kind,
                        assignment.ordinal,
                        COALESCE((
@@ -2325,13 +2188,7 @@ class DatabaseCasesMixin:
                              AND head.model_run_id = ?
                              AND revision.work_split_id = assignment.split_id
                              AND lower(head.reviewer) = lower(assignment.assignee)
-                             AND (revision.status = 'completed' OR EXISTS (
-                    SELECT 1 FROM annotations legacy_submission
-                    WHERE legacy_submission.id = revision.legacy_annotation_id
-                      AND legacy_submission.issue_id = revision.issue_id
-                      AND legacy_submission.model_run_id = revision.model_run_id
-                      AND lower(legacy_submission.author) = lower(revision.reviewer)
-                  ))
+                             AND {MODEL_SUBMISSION_SQL}
                            ORDER BY revision.id DESC LIMIT 1
                        ) AS annotation_id
                 FROM review_work_assignments assignment

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from ..labeling_rules import current_adjudication
+
 import hashlib
 import json
 from collections import defaultdict
@@ -2349,8 +2351,7 @@ class DatabaseLabelingMixin:
                 continue
             if normalized_cluster is not None:
                 if normalized_cluster[0] == "adjudicated":
-                    from ..labeling_summary import _adjudicated_result
-                    if not _adjudicated_result({
+                    if not current_adjudication({
                         "label_state": aggregate_state,
                         "expected_output": expected_output_value,
                         "decision": (shared_state or {}).get("decision"),

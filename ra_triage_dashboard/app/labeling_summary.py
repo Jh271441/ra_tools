@@ -2,6 +2,8 @@
 from collections import Counter, defaultdict
 from math import ceil
 
+from .labeling_rules import current_adjudication
+
 LABELS = ("误触发", "正确触发", "无需协助")
 
 
@@ -32,25 +34,6 @@ def _current_heads(item):
     return heads
 
 
-def _adjudicated_result(item):
-    if item.get("label_state") != "resolved":
-        return None
-    decision = item.get("decision") or {}
-    if decision and not decision.get("stale"):
-        return {
-            "kind": "issue", "id": decision.get("id"),
-            "author": decision.get("created_by", ""), "created_at": decision.get("created_at", ""),
-            "rationale": decision.get("rationale", ""), "expected_output": item.get("expected_output", ""),
-            "tags": [], "evidence_gaps": [],
-        }
-    decisions = []
-    for case in item.get("label_cases", []):
-        resolution = case.get("resolution") or {}
-        result = resolution.get("result_revision") or {}
-        if resolution.get("state") == "resolved" and resolution.get("method") == "adjudication" and result.get("expected_output") == item.get("expected_output"):
-            decisions.append({**result, "kind": "task", "task_id": case.get("task_id", "")})
-    return max(decisions, key=lambda value: int(value.get("id") or 0)) if decisions else None
-
 
 def summarize_labeling_cases(items, *, page=1, page_size=20):
     states, submitted_states, outputs, pairs, tags, evidence, scenarios = (
@@ -68,7 +51,7 @@ def summarize_labeling_cases(items, *, page=1, page_size=20):
             if gt in LABELS:
                 pairs[(gt, output)] += 1
         heads = _current_heads(item)
-        primary_result = _adjudicated_result(item)
+        primary_result = current_adjudication(item)
         original_conflict = any(
             case.get("resolution", {}).get("original_conflict")
             or len({head.get("expected_output") for head in case.get("resolution", {}).get("heads", []) if head.get("expected_output") in LABELS}) > 1
