@@ -113,4 +113,3 @@ def assignment_snapshot_members(value: Any) -> list[dict[str, Any]]:
             }
         )
     return members
-

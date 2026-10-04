@@ -237,4 +237,3 @@ function bindAssignmentNameInput(kind) {
     updateAssignmentNameSuggestion(kind);
   });
 }
-

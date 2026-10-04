@@ -74,4 +74,3 @@ function readWorkSplitAssignees(rootSelector = "#workSplitPeople") {
     })
     .filter((item) => item.name);
 }
-

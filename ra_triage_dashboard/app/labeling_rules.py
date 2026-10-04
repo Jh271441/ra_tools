@@ -22,4 +22,3 @@ def current_adjudication(item):
         if resolution.get("state") == "resolved" and resolution.get("method") == "adjudication" and result.get("expected_output") == item.get("expected_output"):
             decisions.append({**result, "kind": "task", "task_id": case.get("task_id", "")})
     return max(decisions, key=lambda value: int(value.get("id") or 0)) if decisions else None
-
