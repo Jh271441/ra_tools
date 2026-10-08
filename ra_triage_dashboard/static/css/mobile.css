@@ -387,7 +387,7 @@
 .mobile-topbar-more, .mobile-workspace-jumps, .mobile-summary-tools { display: none; }
 @media (max-width: 639px) {
   .topbar {
-    position: relative; padding: 6px 8px 8px;
+    position: sticky; top: 0; padding: 6px 8px 8px;
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-areas: "brand actions" "baselines baselines" "metrics metrics";
   }
@@ -525,4 +525,16 @@
   dialog .dialog-card { min-width: 0; overflow-y: auto; overscroll-behavior: contain; }
   .dialog-copy { font-size: 13px; line-height: 1.6; }
   .toast { left: 12px; right: 12px; bottom: max(12px, env(safe-area-inset-bottom)); max-width: none; font-size: 13px; }
+}
+
+@media (max-width: 639px) {
+  .mobile-filter-bar .mobile-filter-toggle { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .review-tag-dropdown > summary { min-height: 48px; padding-block: 4px; }
+  .review-tag-dropdown .tag-group-label { font-size: 14px; }
+  .review-tag-dropdown > summary .tag-catalog-add-button { width: 40px; height: 40px; }
+  .review-tag-dropdown .review-tag-options .tag-option { min-height: 44px; }
+  .review-tag-dropdown .review-tag-options .tag-option-check { min-height: 36px; font-size: 14px; }
+  .tag-option-menu-toggle { min-width: 36px; min-height: 36px; }
+  .multi-filter-tools button, .multi-filter-actions button { min-height: 40px; font-size: 13px; }
+  .case-labeling-current-result .text-link { display: inline-flex; align-items: center; min-height: 44px; }
 }

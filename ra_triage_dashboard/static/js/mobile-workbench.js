@@ -27,6 +27,10 @@ function bindMobileWorkbench() {
     if (jump) {
       const target = document.getElementById(jump.dataset.mobileScrollTarget);
       target?.scrollIntoView({block: "start", behavior: "auto"});
+      if (target && media.matches) {
+        const headerHeight = document.querySelector(".topbar")?.getBoundingClientRect().height || 0;
+        window.scrollBy({top: -headerHeight, behavior: "auto"});
+      }
       if (target) { target.setAttribute("tabindex", "-1"); target.focus({preventScroll: true}); }
     }
     const disclosure = event.target.closest("[data-mobile-disclosure]");
