@@ -32,14 +32,28 @@
 .label-summary-source-line { min-width: 0; color: var(--muted); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
 .label-summary-case-row .analysis-case-meta > span { white-space: normal; overflow-wrap: anywhere; }
 .label-summary-rules-button { display: inline-flex; align-items: center; gap: 5px; margin: 0; border: 0; background: none; cursor: pointer; font-size: 11px; padding: 0; }
-.label-summary-rules-dialog { width: min(480px, calc(100vw - 32px)); max-height: calc(100vh - 40px); overflow: auto; }
-.label-summary-rules-list { margin: 0; }
-.label-summary-rules-list > div { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 12px; padding: 13px 0; border-top: 1px solid var(--line); }
-.label-summary-rules-list dt { color: var(--muted); font-size: 12px; }
-.label-summary-rules-list dd { margin: 0; font-size: 13px; }
-.label-summary-rules-list p { margin: 5px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
-.label-summary-rules-pending { color: var(--warn); font-size: 12px; line-height: 1.5; }
-.label-summary-rules-pending span { margin: 0 6px; }
+.label-summary-rules-dialog { width: min(760px, calc(100vw - 32px)); max-height: calc(100vh - 40px); overflow: auto; }
+.label-summary-flow { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+.label-summary-flow-lane { min-width: 0; }
+.label-summary-flow-lane h3 { display: flex; align-items: center; gap: 7px; margin: 0 0 10px; font-size: 13px; }
+.label-summary-flow-lane h3 > span { color: var(--accent); font-size: 11px; }
+.label-summary-flow-input { padding: 8px; border: 1px solid var(--line); border-radius: 5px; text-align: center; font-size: 12px; background: var(--overlay); }
+.label-summary-flow-branches { position: relative; margin: 0 0 8px 10px; padding: 12px 0 0 12px; }
+.label-summary-flow-branches::before { content: ""; position: absolute; left: 0; top: 0; bottom: 18px; border-left: 1px solid var(--line); }
+.label-summary-flow-branch { position: relative; display: grid; grid-template-columns: minmax(0, 1.5fr) 12px minmax(0, 1fr); align-items: center; gap: 5px; min-height: 36px; font-size: 11px; line-height: 1.5; }
+.label-summary-flow-branch::before { content: ""; position: absolute; left: -12px; width: 8px; border-top: 1px solid var(--line); }
+.label-summary-flow-branch > span { color: var(--muted); }
+.label-summary-flow-branch > strong { font-weight: 600; }
+.label-summary-flow-branch .is-final { color: var(--accent); }
+.label-summary-flow-branch .is-pending { color: var(--warn); }
+.label-summary-flow-lane > small { display: block; color: var(--faint); font-size: 10px; line-height: 1.5; }
+.label-summary-rule-examples h3 { margin: 0 0 6px; font-size: 13px; }
+.label-summary-rule-examples h3 small { margin-left: 8px; color: var(--faint); font-size: 10px; font-weight: 400; }
+.label-summary-rule-examples details { padding: 9px 0; border-top: 1px solid var(--line); font-size: 12px; }
+.label-summary-rule-examples summary { cursor: pointer; color: var(--muted); }
+.label-summary-rule-examples summary strong { float: right; color: var(--text); font-size: 11px; font-weight: 500; }
+.label-summary-rule-examples p { margin: 6px 0 0 15px; color: var(--muted); font-size: 11px; line-height: 1.6; }
+@media (max-width: 600px) { .label-summary-flow { grid-template-columns: minmax(0, 1fr); gap: 16px; } }
 .label-summary-rules-note { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
 .label-summary-detail-heading { align-items: center; gap: 12px; }
 .label-summary-detail-heading > h3 { margin: 0; white-space: nowrap; }

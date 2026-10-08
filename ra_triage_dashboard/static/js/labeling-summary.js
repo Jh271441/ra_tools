@@ -233,13 +233,35 @@ function showLabelSummaryRules() {
     dialog.addEventListener("click", (event) => { if (event.target === dialog) dialog.close(); });
   }
   dialog.innerHTML = `<div class="dialog-card"><div class="dialog-heading"><h2 id="labelSummaryRulesTitle">期望输出规则</h2><button class="icon-button" type="button" data-close-summary-rules aria-label="关闭">×</button></div>
-    <p class="dialog-copy">先完成任务内结果，再处理跨来源冲突。</p>
-    <dl class="label-summary-rules-list">
-      <div><dt>全部标注</dt><dd><strong>Issue 裁决优先</strong><p>没有裁决时，所有来源须完成且结果一致。</p></dd></div>
-      <div><dt>单个任务</dt><dd><strong>任务内裁决优先</strong><p>没有裁决时，按分配人员有效提交；多人须一致。</p></dd></div>
-    </dl>
-    <div class="label-summary-rules-pending">未完成 · 冲突 · 裁决过期 <span aria-hidden="true">→</span> 待处理</div>
-    <p class="label-summary-rules-note">来源变化后需重新确认裁决。GT 仅作对照。</p>
+    <p class="dialog-copy">先形成任务结果，再汇总为 Case 的最终结果。</p>
+    <div class="label-summary-flow" role="group" aria-label="期望输出裁决流程">
+      <section class="label-summary-flow-lane" aria-labelledby="labelRuleTaskTitle">
+        <h3 id="labelRuleTaskTitle"><span>1</span> 任务内</h3>
+        <div class="label-summary-flow-input">分配人员各自的最新提交</div>
+        <div class="label-summary-flow-branches">
+          <div class="label-summary-flow-branch"><span>有有效任务裁决</span><span aria-hidden="true">→</span><strong class="is-final">采用任务裁决</strong></div>
+          <div class="label-summary-flow-branch"><span>无裁决 · 提交齐全且一致</span><span aria-hidden="true">→</span><strong>采用标注结果</strong></div>
+          <div class="label-summary-flow-branch"><span>缺提交 / 冲突 / 裁决过期</span><span aria-hidden="true">→</span><strong class="is-pending">待处理</strong></div>
+        </div>
+        <small>选定单个任务时，只看这一层。</small>
+      </section>
+      <section class="label-summary-flow-lane" aria-labelledby="labelRuleIssueTitle">
+        <h3 id="labelRuleIssueTitle"><span>2</span> 全部标注</h3>
+        <div class="label-summary-flow-input">各任务结果 + 任务外标注</div>
+        <div class="label-summary-flow-branches">
+          <div class="label-summary-flow-branch"><span>有有效 Issue 裁决</span><span aria-hidden="true">→</span><strong class="is-final">采用 Issue 裁决</strong></div>
+          <div class="label-summary-flow-branch"><span>无裁决 · 所有来源有效且一致</span><span aria-hidden="true">→</span><strong>采用一致结果</strong></div>
+          <div class="label-summary-flow-branch"><span>未完成 / 冲突 / 裁决过期</span><span aria-hidden="true">→</span><strong class="is-pending">待处理</strong></div>
+        </div>
+        <small>先完成任务内结果，才能做 Issue 裁决。</small>
+      </section>
+    </div>
+    <section class="label-summary-rule-examples" aria-labelledby="labelRuleExamplesTitle"><h3 id="labelRuleExamplesTitle">看几个例子 <small>点击展开</small></h3>
+      <details><summary><span>双人一致</span><strong>误触发</strong></summary><p>甲、乙都标为“误触发”，且提交齐全。</p><p>期望输出：误触发 · 来源：多人一致。</p></details>
+      <details><summary><span>任务内意见不同</span><strong>正确触发</strong></summary><p>甲标“误触发”，乙标“正确触发”；丙在该任务内裁决为“正确触发”。</p><p>该任务期望输出：正确触发 · 来源：任务内裁决（丙）。原始冲突保留。</p></details>
+      <details><summary><span>两个任务结果不同</span><strong>无需协助</strong></summary><p>任务 A 为“误触发”，任务 B 为“正确触发”：先保持待裁决。丁做 Issue 裁决，定为“无需协助”。</p><p>全部标注期望输出：无需协助 · 来源：Issue 裁决（丁）。任务 A、B 各自的结果不被改写。</p></details>
+    </section>
+    <p class="label-summary-rules-note">来源变化 → 裁决需重新确认；GT 仅作对照。</p>
     <div class="dialog-actions"><button class="button button-quiet" type="button" data-close-summary-rules>知道了</button></div></div>`;
   dialog.querySelectorAll("[data-close-summary-rules]").forEach((button) => button.addEventListener("click", () => dialog.close()));
   if (!dialog.open) dialog.showModal();
