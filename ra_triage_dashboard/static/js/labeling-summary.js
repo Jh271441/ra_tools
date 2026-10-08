@@ -256,10 +256,22 @@ function showLabelSummaryRules() {
         <small>先完成任务内结果，才能做 Issue 裁决。</small>
       </section>
     </div>
-    <section class="label-summary-rule-examples" aria-labelledby="labelRuleExamplesTitle"><h3 id="labelRuleExamplesTitle">看几个例子 <small>点击展开</small></h3>
-      <details><summary><span>双人一致</span><strong>误触发</strong></summary><p>甲、乙都标为“误触发”，且提交齐全。</p><p>期望输出：误触发 · 来源：多人一致。</p></details>
-      <details><summary><span>任务内意见不同</span><strong>正确触发</strong></summary><p>甲标“误触发”，乙标“正确触发”；丙在该任务内裁决为“正确触发”。</p><p>该任务期望输出：正确触发 · 来源：任务内裁决（丙）。原始冲突保留。</p></details>
-      <details><summary><span>两个任务结果不同</span><strong>无需协助</strong></summary><p>任务 A 为“误触发”，任务 B 为“正确触发”：先保持待裁决。丁做 Issue 裁决，定为“无需协助”。</p><p>全部标注期望输出：无需协助 · 来源：Issue 裁决（丁）。任务 A、B 各自的结果不被改写。</p></details>
+    <section class="label-summary-rule-examples" aria-labelledby="labelRuleExamplesTitle"><h3 id="labelRuleExamplesTitle">三个案例，一眼看懂</h3>
+      <div class="label-summary-example"><h4>① 双人一致</h4><div class="label-summary-example-flow">
+        <div class="label-summary-example-node example-votes"><div><span>甲</span>${labelBadge("误触发")}</div><div><span>乙</span>${labelBadge("误触发")}</div></div>
+        <span class="label-summary-example-arrow" aria-hidden="true">→</span><div class="label-summary-example-node example-action"><strong>多人一致</strong><small>提交齐全</small></div>
+        <span class="label-summary-example-arrow" aria-hidden="true">→</span><div class="label-summary-example-node example-output"><small>期望输出</small>${labelBadge("误触发")}</div>
+      </div></div>
+      <div class="label-summary-example"><h4>② 任务内冲突</h4><div class="label-summary-example-flow">
+        <div class="label-summary-example-node example-votes"><div><span>甲</span>${labelBadge("误触发")}</div><div><span>乙</span>${labelBadge("正确触发")}</div></div>
+        <span class="label-summary-example-arrow" aria-hidden="true">→</span><div class="label-summary-example-node example-action"><strong>任务内裁决</strong><small>丙 · 原始冲突保留</small></div>
+        <span class="label-summary-example-arrow" aria-hidden="true">→</span><div class="label-summary-example-node example-output"><small>该任务期望输出</small>${labelBadge("正确触发")}</div>
+      </div></div>
+      <div class="label-summary-example"><h4>③ 跨任务冲突</h4><div class="label-summary-example-flow">
+        <div class="label-summary-example-node example-votes"><div><span>任务 A</span>${labelBadge("误触发")}</div><div><span>任务 B</span>${labelBadge("正确触发")}</div></div>
+        <span class="label-summary-example-arrow" aria-hidden="true">→</span><div class="label-summary-example-node example-action"><strong>Issue 裁决</strong><small>丁 · 任务原结果保留</small></div>
+        <span class="label-summary-example-arrow" aria-hidden="true">→</span><div class="label-summary-example-node example-output"><small>全部标注期望输出</small>${labelBadge("无需协助")}</div>
+      </div></div>
     </section>
     <p class="label-summary-rules-note">来源变化 → 裁决需重新确认；GT 仅作对照。</p>
     <div class="dialog-actions"><button class="button button-quiet" type="button" data-close-summary-rules>知道了</button></div></div>`;

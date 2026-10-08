@@ -47,12 +47,22 @@
 .label-summary-flow-branch .is-final { color: var(--accent); }
 .label-summary-flow-branch .is-pending { color: var(--warn); }
 .label-summary-flow-lane > small { display: block; color: var(--faint); font-size: 10px; line-height: 1.5; }
-.label-summary-rule-examples h3 { margin: 0 0 6px; font-size: 13px; }
-.label-summary-rule-examples h3 small { margin-left: 8px; color: var(--faint); font-size: 10px; font-weight: 400; }
-.label-summary-rule-examples details { padding: 9px 0; border-top: 1px solid var(--line); font-size: 12px; }
-.label-summary-rule-examples summary { cursor: pointer; color: var(--muted); }
-.label-summary-rule-examples summary strong { float: right; color: var(--text); font-size: 11px; font-weight: 500; }
-.label-summary-rule-examples p { margin: 6px 0 0 15px; color: var(--muted); font-size: 11px; line-height: 1.6; }
+.label-summary-rule-examples h3 { margin: 0 0 10px; font-size: 13px; }
+.label-summary-example { padding: 10px 0; border-top: 1px solid var(--line); }
+.label-summary-example h4 { margin: 0 0 8px; color: var(--muted); font-size: 11px; font-weight: 500; }
+.label-summary-example-flow { display: grid; grid-template-columns: minmax(0, 1.2fr) 24px minmax(0, 1fr) 24px minmax(0, 1fr); align-items: stretch; gap: 8px; }
+.label-summary-example-node { min-width: 0; display: grid; align-content: center; justify-items: center; gap: 4px; padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--overlay); }
+.label-summary-example-node small { color: var(--muted); font-size: 10px; text-align: center; line-height: 1.4; }
+.label-summary-example-node strong { font-size: 12px; }
+.label-summary-example-node .label-badge { width: fit-content; }
+.label-summary-example-node.example-votes > div { display: flex; align-items: center; gap: 8px; }
+.example-votes > div > span:first-child { min-width: 36px; font-size: 11px; color: var(--muted); }
+.label-summary-example-node.example-action { border-color: var(--accent); background: var(--accent-soft); }
+.label-summary-example-arrow { align-self: center; color: var(--accent); font-size: 20px; text-align: center; }
+@media (max-width: 600px) {
+  .label-summary-example-flow { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .label-summary-example-arrow { transform: rotate(90deg); line-height: 22px; }
+}
 @media (max-width: 600px) { .label-summary-flow { grid-template-columns: minmax(0, 1fr); gap: 16px; } }
 .label-summary-rules-note { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
 .label-summary-detail-heading { align-items: center; gap: 12px; }
