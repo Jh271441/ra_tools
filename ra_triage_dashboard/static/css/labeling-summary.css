@@ -31,11 +31,20 @@
 .label-summary-result-line { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 8px; font-size: 10px; }
 .label-summary-source-line { min-width: 0; color: var(--muted); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
 .label-summary-case-row .analysis-case-meta > span { white-space: normal; overflow-wrap: anywhere; }
-.label-summary-rules-button { display: inline-flex; align-items: center; gap: 5px; margin-top: 5px; border: 0; background: none; cursor: pointer; font-size: 11px; padding: 0; }
-.label-summary-rules-dialog { width: min(620px, calc(100vw - 32px)); max-height: calc(100vh - 40px); overflow: auto; }
-.label-summary-rules-list { padding-left: 22px; line-height: 1.65; }
-.label-summary-rules-list li + li { margin-top: 12px; }
-.label-summary-rules-list p { margin: 4px 0 0; color: var(--muted); }
+.label-summary-rules-button { display: inline-flex; align-items: center; gap: 5px; margin: 0; border: 0; background: none; cursor: pointer; font-size: 11px; padding: 0; }
+.label-summary-rules-dialog { width: min(480px, calc(100vw - 32px)); max-height: calc(100vh - 40px); overflow: auto; }
+.label-summary-rules-list { margin: 0; }
+.label-summary-rules-list > div { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 12px; padding: 13px 0; border-top: 1px solid var(--line); }
+.label-summary-rules-list dt { color: var(--muted); font-size: 12px; }
+.label-summary-rules-list dd { margin: 0; font-size: 13px; }
+.label-summary-rules-list p { margin: 5px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.label-summary-rules-pending { color: var(--warn); font-size: 12px; line-height: 1.5; }
+.label-summary-rules-pending span { margin: 0 6px; }
+.label-summary-rules-note { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.label-summary-detail-heading { align-items: center; gap: 12px; }
+.label-summary-detail-heading > h3 { margin: 0; white-space: nowrap; }
+.label-summary-detail-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px 16px; }
+.label-summary-detail-actions .label-summary-rules-button { white-space: nowrap; }
 
 .label-summary-source > summary { cursor: pointer; width: fit-content; }
 .label-summary-source-trace { padding-left: 12px; border-left: 2px solid var(--line); }
