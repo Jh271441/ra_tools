@@ -2,7 +2,7 @@
 from collections import Counter, defaultdict
 from math import ceil
 
-from .labeling_rules import current_adjudication
+from .labeling_rules import current_adjudication, expected_output_source
 
 LABELS = ("误触发", "正确触发", "无需协助")
 
@@ -107,6 +107,7 @@ def summarize_labeling_cases(items, *, page=1, page_size=20):
                 "gt_label": str(gt or ""),
                 "label_state": str(status or "pending"),
                 "expected_output": str(output or ""),
+                "expected_output_source": expected_output_source(item),
                 "authors": sorted(authors),
                 "rationales": rationales,
                 "adjudication": primary_result,

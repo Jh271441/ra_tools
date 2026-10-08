@@ -89,3 +89,53 @@ class LabelingSummaryTest(unittest.TestCase):
         self.assertIsNone(stale["adjudication"])
         self.assertEqual(summarize_labeling_cases([row])["adjudicated_count"], 0)
         self.assertNotIn("final issue decision",stale["rationales"])
+
+
+class ExpectedOutputSourceTest(unittest.TestCase):
+    @staticmethod
+    def case(task, method, author, revision):
+        value = {"id": revision, "author": author, "expected_output": "误触发"}
+        return {"id": "case-" + task, "task_id": task, "source_run_id": "run-330",
+                "resolution": {"state": "resolved", "method": method,
+                               "heads": [value], "result_revision": value}}
+
+    def test_task_decision_is_not_mislabeled_as_cross_source_authority(self):
+        from ra_triage_dashboard.app.labeling_rules import expected_output_source
+        item = {"label_state": "resolved", "expected_output": "误触发",
+                "label_cases": [self.case("task-a", "adjudication", "judge", 4),
+                                self.case("task-b", "single", "alice", 8)]}
+        source = expected_output_source(item)
+        self.assertEqual(source["kind"], "source_consensus")
+        self.assertEqual(source["authors"], ["alice", "judge"])
+        self.assertEqual(source["sources"][0]["kind"], "task_adjudication")
+        self.assertEqual(source["sources"][0]["task_id"], "task-a")
+        self.assertEqual(source["sources"][0]["revision_ids"], [4])
+        self.assertEqual(source["sources"][0]["source_run_id"], "run-330")
+
+    def test_issue_decision_and_unresolved_sources_do_not_leak_old_winner(self):
+        from ra_triage_dashboard.app.labeling_rules import expected_output_source
+        item = {"label_state": "resolved", "decision": {"id": 9, "created_by": "curator"},
+                "label_cases": [self.case("task-a", "adjudication", "judge", 4)]}
+        source = expected_output_source(item)
+        self.assertEqual(source["kind"], "issue_adjudication")
+        self.assertEqual(source["decision_id"], 9)
+        self.assertEqual(source["authors"], ["curator"])
+        for status in ("pending", "conflict", "stale"):
+            item["label_state"] = status
+            self.assertEqual(expected_output_source(item), {"kind": "unresolved", "sources": []})
+
+    def test_single_consensus_and_task_adjudication_retain_distinct_provenance(self):
+        from ra_triage_dashboard.app.labeling_rules import expected_output_source
+        for method, kind in (("single", "single"), ("consensus", "consensus"), ("adjudication", "task_adjudication")):
+            case = self.case("task-a", method, "judge", 4)
+            case["resolution"]["heads"].append({"id": 2, "author": "other", "expected_output": "误触发"})
+            source = expected_output_source({"label_state": "resolved", "label_cases": [case]})
+            self.assertEqual(source["kind"], kind)
+            self.assertEqual(source["authors"], ["judge"] if method == "adjudication" else ["judge", "other"])
+
+    def test_summary_exposes_source_without_changing_result(self):
+        item = {"issue_id": "case-a", "label_state": "resolved", "expected_output": "误触发",
+                "gt_label": "误触发", "label_cases": [self.case("task-a", "adjudication", "judge", 4)]}
+        result = summarize_labeling_cases([item])["items"][0]
+        self.assertEqual(result["expected_output"], "误触发")
+        self.assertEqual(result["expected_output_source"]["kind"], "task_adjudication")

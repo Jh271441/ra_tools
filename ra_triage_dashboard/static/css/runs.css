@@ -179,8 +179,8 @@ html[data-color-theme="light"] .import-example-tabs { background: #f8fafc; }
   #filterForm.review-filters > :nth-child(5),
   #filterForm.review-filters > :nth-child(6) { grid-column: span 4; }
   #filterForm.review-filters > :nth-child(n+7):nth-child(-n+11) { grid-column: span 3; }
-  #filterForm.review-filters > :nth-child(12) { grid-column: span 4; }
-  #filterForm.review-filters > :nth-child(13) { grid-column: span 3; }
+  #filterForm.review-filters > :nth-child(12) { grid-column: span 3; }
+  #filterForm.review-filters > :nth-child(13) { grid-column: span 4; }
   #filterForm.review-filters > :nth-child(14) { grid-column: span 2; }
 }
 .review-task-filter { min-width: 0; }
@@ -193,3 +193,10 @@ html[data-color-theme="light"] .import-example-tabs { background: #f8fafc; }
 .review-workflow-mode small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
 .review-task-exit { width: 30px; min-width: 30px; height: 30px; padding: 0; border: 1px solid var(--line); border-radius: 7px; color: var(--muted); background: var(--overlay); cursor: pointer; }
 .review-task-exit:hover { border-color: rgba(34,211,238,.48); color: var(--accent); }
+
+/* Enhanced native selects must share the filter row's 32px control baseline. */
+#filterForm .ui-select-trigger { height: 32px; min-height: 32px; padding-block: 5px; }
+#filterForm > label, #filterForm > .review-task-filter { position: relative; }
+#filterForm .review-workflow-mode small, #filterForm .review-task-summary {
+  position: absolute; top: 100%; right: 0; max-width: 100%; font-size: 9px;
+}
