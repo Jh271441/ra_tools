@@ -1062,6 +1062,7 @@ async function bootstrap() {
   applySidebarState();
   markUiReady();
   bindMobileFilterDrawers();
+  bindMobileWorkbench();
   if (initialRoute.page === "review") applyReviewRouteControls(initialRoute);
   bindEvents();
   updateImportFields();

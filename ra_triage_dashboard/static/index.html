@@ -81,7 +81,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-556`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-557`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -286,6 +286,7 @@
             <div class="gt-sync-tooltip" id="gtSyncTooltip" role="tooltip"></div>
           </div>
           <div class="top-actions">
+            <details class="mobile-topbar-more" id="mobileTopbarMore"><summary class="button button-quiet"><span class="ui-lang-zh">更多</span><span class="ui-lang-en">More</span></summary><div class="mobile-topbar-panel" id="mobileTopbarPanel"></div></details>
             <button class="button button-quiet shortcut-help-button" id="shortcutHelpButton" type="button" aria-haspopup="dialog" aria-controls="shortcutGuideDialog" title="快捷键指南（H）"><span class="ui-lang-zh">快捷键</span><span class="ui-lang-en">Shortcuts</span><kbd aria-hidden="true">H</kbd></button>
             <button class="button button-quiet theme-toggle" id="themeToggleButton" type="button" aria-label="切换到浅色模式" title="切换到浅色模式">☀</button>
             <button class="button button-quiet language-toggle" id="languageToggleButton" type="button" aria-label="切换到 English">EN</button>
@@ -428,6 +429,7 @@
             </section>
 
             <section class="review-detail-view hidden" id="reviewDetailView">
+              <nav class="mobile-workspace-jumps" aria-label="详情区域"><button type="button" class="button button-quiet" data-mobile-scroll-target="detailPane"><span class="ui-lang-zh">查看媒体</span><span class="ui-lang-en">Media</span></button><button type="button" class="button button-quiet" data-mobile-scroll-target="reviewPane"><span class="ui-lang-zh">填写标注</span><span class="ui-lang-en">Annotate</span></button></nav>
               <section class="review-detail-workspace">
                 <section class="detail-pane" id="detailPane">
                   <div class="empty-state">
@@ -525,7 +527,8 @@
           <section class="app-page case-labeling-page hidden" id="caseLabelingPage" data-page="labeling">
             <section class="review-gallery-view" id="caseLabelingGalleryView">
             <section class="review-commandbar case-labeling-command" aria-label="标注筛选">
-              <form class="review-filters case-labeling-filters" id="caseLabelingFilterForm">
+              <div class="mobile-filter-bar"><button class="button button-quiet mobile-filter-toggle" type="button" data-mobile-filter-toggle="caseLabelingFilters" aria-expanded="false" aria-controls="caseLabelingFilterForm"><span class="ui-lang-zh">标注筛选</span><span class="ui-lang-en">Filters</span><span class="mobile-filter-hint" data-mobile-filter-hint="caseLabelingFilters"><span class="ui-lang-zh">展开条件</span><span class="ui-lang-en">Show filters</span></span></button></div>
+              <form class="review-filters case-labeling-filters" id="caseLabelingFilterForm" data-mobile-filter-panel="caseLabelingFilters">
               <label class="case-labeling-search"><span>Issue</span><div class="issue-query-control"><input id="caseLabelingSearch" type="search" placeholder="Issue ID、场景" autocomplete="off" /><button class="button button-quiet issue-query-button" id="openCaseLabelingIssueQueryButton" data-issue-query-target="labeling" type="button">多 Issue</button></div></label>
               <label><span>标注任务</span><div class="ui-select" id="caseLabelingTaskPicker"><button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="ui-select-summary" id="caseLabelingTaskSummary">全部标注</span><span class="ui-select-caret" aria-hidden="true"></span></button><div class="ui-select-panel" role="listbox" hidden></div><select class="ui-select-native" id="caseLabelingTask" aria-hidden="true" tabindex="-1"><option value="">全部标注</option></select></div></label>
               <label><span>结果状态</span><div class="multi-filter" id="caseLabelingStatusPicker" data-placeholder="全部状态" data-placeholder-en="All states"></div></label>
@@ -551,6 +554,7 @@
             </section>
             </section>
             <section class="review-detail-view case-labeling-detail hidden" id="caseLabelingDetail">
+              <nav class="mobile-workspace-jumps" aria-label="详情区域"><button type="button" class="button button-quiet" data-mobile-scroll-target="caseLabelingMedia"><span class="ui-lang-zh">查看媒体</span><span class="ui-lang-en">Media</span></button><button type="button" class="button button-quiet" data-mobile-scroll-target="caseLabelingEditor"><span class="ui-lang-zh">填写标注</span><span class="ui-lang-en">Annotate</span></button></nav>
               <section class="review-detail-workspace">
                 <section class="detail-pane" id="caseLabelingMedia"><div class="empty-state"><h2>正在加载 BEV / Camera…</h2></div></section>
                 <div class="layout-resizer review-pane-resizer" id="caseLabelingPaneResizer" role="separator" aria-label="调节标注面板宽度" aria-orientation="vertical" aria-valuemin="304" aria-valuemax="600" aria-valuenow="350" tabindex="0"></div>
@@ -665,7 +669,8 @@
 
           <section class="app-page labeling-summary-page hidden" id="labelingSummaryPage" data-page="labeling-summary">
             <section class="review-commandbar labeling-summary-command" aria-label="标注汇总筛选">
-              <form class="review-filters case-labeling-filters labeling-summary-filters" id="labelSummaryFilterForm">
+              <div class="mobile-filter-bar"><button class="button button-quiet mobile-filter-toggle" type="button" data-mobile-filter-toggle="labelSummaryFilters" aria-expanded="false" aria-controls="labelSummaryFilterForm"><span class="ui-lang-zh">汇总筛选</span><span class="ui-lang-en">Filters</span><span class="mobile-filter-hint" data-mobile-filter-hint="labelSummaryFilters"><span class="ui-lang-zh">展开条件</span><span class="ui-lang-en">Show filters</span></span></button></div>
+              <form class="review-filters case-labeling-filters labeling-summary-filters" id="labelSummaryFilterForm" data-mobile-filter-panel="labelSummaryFilters">
                 <label class="case-labeling-search"><span>Issue</span><div class="issue-query-control"><input id="labelSummarySearch" type="search" placeholder="Issue ID、场景" autocomplete="off" /><button class="button button-quiet issue-query-button" id="openLabelSummaryIssueQueryButton" data-issue-query-target="labeling-summary" type="button">多 Issue</button></div></label>
                 <label><span>标注任务</span><div class="ui-select" id="labelSummaryTaskPicker"><button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="ui-select-summary">全部标注</span><span class="ui-select-caret" aria-hidden="true"></span></button><div class="ui-select-panel" role="listbox" hidden></div><select class="ui-select-native" id="labelSummaryTask" aria-hidden="true" tabindex="-1"><option value="">全部标注</option></select></div></label>
                 <label><span>结果状态</span><div class="multi-filter" id="labelSummaryStatusPicker" data-placeholder="全部状态" data-placeholder-en="All states"></div></label>
@@ -2391,7 +2396,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-556`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-557`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>
