@@ -690,7 +690,7 @@ async function generateLabelingTask() {
     await loadCaseLabelingTasks();
     showToast("标注任务已创建。");
   } catch (error) {
-    showToast(error.message || "创建标注任务失败。", true);
+    showToast(error.message || "创标注任务失败。", true);
   } finally {
     if (button) {
       button.disabled = false;
@@ -879,7 +879,7 @@ function renderCaseLabelingInactiveState() {
   const switches = active.length
     ? `<div class="case-labeling-active-switchers">${active.map((item) => `<button class="button button-primary" type="button" data-labeling-baseline="${escapeHtml(item.id)}">查看 ${escapeHtml(item.label || item.id)} · ${escapeHtml(String(item.count ?? "—"))}</button>`).join("")}</div>`
     : `<p>当前还没有已激活的标注数据集。</p>`;
-  return `<div class="empty-state issue-grid-empty case-labeling-inactive-state"><h2>${escapeHtml(selectedText)} 尚未切换到 Case 标注<small class="case-labeling-preview-badge">writer / 管理员</small></h2><p>该范围仍在「判错复核」工作台。Case 标注只列出已激活数据集，避免把未迁移范围显示成 0 个 Case。</p>${switches}</div>`;
+  return `<div class="empty-state issue-grid-empty case-labeling-inactive-state"><h2>${escapeHtml(selectedText)} 尚未切换到 问题标注<small class="case-labeling-preview-badge">writer / 管理员</small></h2><p>该范围仍在「判错复核」工作台。问题标注只列出已激活数据集，避免把未迁移范围显示成 0 个 Case。</p>${switches}</div>`;
 }
 
 function renderCaseLabelingList(data) {
@@ -1306,7 +1306,7 @@ function renderCaseLabelingEditor(caseData) {
       <section class="review-section model-error-section">
         <div class="review-section-heading">
           <div>
-            <h2><span class="ui-lang-zh">Case 标注</span><span class="ui-lang-en">Case labeling</span></h2>
+            <h2><span class="ui-lang-zh">问题标注</span><span class="ui-lang-en">Case labeling</span></h2>
           </div>
           <div class="review-heading-actions">
             <button class="history-inline-button" id="caseLabelingOpenDiscussion" type="button" aria-keyshortcuts="D" title="展开或收起讨论（D）">
@@ -1844,7 +1844,7 @@ function bindCaseLabelingEditorShortcuts() {
 
 async function enterCaseLabeling({ route = null } = {}) {
   if (!canAccessCaseLabelingPreview() && !state.session?.identity_pending) {
-    showToast("Case 标注需要 writer 或管理员权限。", true);
+    showToast("问题标注需要 writer 或管理员权限。", true);
     if (typeof showPage === "function") showPage("review", { historyMode: "replace" });
     return;
   }

@@ -72,7 +72,7 @@ function openShortcutGuide() {
   $("#shortcutGuideSubtitle").textContent = page === "intent"
     ? "意图标注页 · 当前焦点位于输入控件时快捷键暂停"
     : page === "labeling"
-      ? "Case 标注页 · 数字键操作当前展开的标签组"
+      ? "问题标注页 · 数字键操作当前展开的标签组"
       : "判错复核页 · 媒体快捷键在 Issue 详情中可用";
   resetShortcutGuideSearch();
   if (!dialog.open) dialog.showModal();
@@ -1120,7 +1120,7 @@ async function bootstrap() {
     }
     if (["labeling", "labeling-summary"].includes(initialRoute.page) && !hasDashboardWriteRole()) {
       initialRoute.page = "review";
-      showToast("Case 标注需要 writer 或管理员权限。", true);
+      showToast("问题标注需要 writer 或管理员权限。", true);
     }
     if (initialRoute.page === "labeling-new-task" && !state.session.is_admin) {
       initialRoute.page = "review";

@@ -5,21 +5,23 @@ function bindMobileWorkbench() {
   menu.dataset.bound = "1";
   const panel = document.getElementById("mobileTopbarPanel");
   const media = window.matchMedia("(max-width: 639px)");
-  const slots = ["themeToggleButton", "languageToggleButton", "shortcutHelpButton", "gtSyncControl"].map((id) => {
+  const narrow = window.matchMedia("(max-width: 439px)");
+  const slots = ["themeToggleButton", "languageToggleButton", "shortcutHelpButton", "gtSyncControl", "refreshButton"].map((id) => {
     const node = document.getElementById(id);
     if (!node) return null;
     const marker = document.createComment(`mobile-slot:${id}`);
     node.before(marker);
-    return { node, marker };
+    return { node, marker, narrowOnly: id === "refreshButton" };
   }).filter(Boolean);
   const sync = () => {
     menu.open = false;
-    slots.forEach(({node, marker}) => {
-      if (media.matches) panel.appendChild(node);
+    slots.forEach(({node, marker, narrowOnly}) => {
+      if (narrowOnly ? narrow.matches : media.matches) panel.appendChild(node);
       else marker.after(node);
     });
   };
   media.addEventListener("change", sync);
+  narrow.addEventListener("change", sync);
   sync();
   document.addEventListener("click", (event) => {
     if (!menu.contains(event.target)) menu.open = false;

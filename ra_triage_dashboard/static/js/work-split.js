@@ -249,7 +249,7 @@ function syncReviewWorkflowMode(caseData = state.selectedCase) {
   select.disabled = locked || !canCombine;
   select.title = locked
     ? "页面模式由当前任务锁定"
-    : !canCombine ? "需要模型复核与 Case 标注双重写权限" : "";
+    : !canCombine ? "需要模型复核与 问题标注双重写权限" : "";
   field.hidden = !canCombine && !locked;
   $("#reviewWorkflowModeHint")?.toggleAttribute("hidden", !locked);
   enhanceNativeUiSelect(select);
@@ -511,7 +511,7 @@ function updateWorkSplitAdminVisibility() {
   if (!isAdmin || !state.selectedRunId) {
     button.disabled = true;
     button.title = !state.selectedRunId
-      ? "请先选择 Model Run；若只做 Case 标签，请前往 Case 标注 > 实验分配"
+      ? "请先选择 Model Run；若只做 Case 标签，请前往 问题标注 > 实验分配"
       : "仅管理员可创建复核任务";
   }
 }
@@ -523,7 +523,7 @@ async function openWorkSplitDialog(draft = null) {
     return;
   }
   if (!workSplitFilters().model_run_id) {
-    showToast("请先选择 Model Run；若只做 Case 标签，请前往 Case 标注 > 实验分配。", true);
+    showToast("请先选择 Model Run；若只做 Case 标签，请前往 问题标注 > 实验分配。", true);
     return;
   }
   const total = workSplitTotal();
@@ -634,7 +634,7 @@ async function generateWorkSplit() {
     return;
   }
   if (!workSplitFilters().model_run_id) {
-    showToast("请先选择 Model Run；若只做 Case 标签，请前往 Case 标注 > 实验分配。", true);
+    showToast("请先选择 Model Run；若只做 Case 标签，请前往 问题标注 > 实验分配。", true);
     return;
   }
   if (workSplitDraft?.submitted) {

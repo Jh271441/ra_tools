@@ -538,7 +538,7 @@ function updateFilteredPredictionButton() {
       : `<span class="ui-lang-zh">均分任务</span><span class="ui-lang-en">Split work</span>`;
     split.title = !state.selectedRunId
       ? uiText(
-          "请先选择 Model Run；若只做 Case 标签，请前往 Case 标注 > 实验分配。",
+          "请先选择 Model Run；若只做 Case 标签，请前往 问题标注 > 实验分配。",
           "Select a Model Run first. For Case labels only, use Case labeling > Experiment assignment."
         )
       : total

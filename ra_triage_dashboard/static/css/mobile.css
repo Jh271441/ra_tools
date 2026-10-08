@@ -550,3 +550,26 @@
   .run-row-meta { min-width: 0; font-size: 12px; }
   .run-row-meta > span, .run-meta-value, .run-source-ref { min-width: 0; max-width: 100%; overflow-wrap: anywhere; white-space: normal; }
 }
+
+/* Compact phone density: title/dataset together, categorical filters in pairs. */
+@media (max-width: 639px) {
+  .topbar { grid-template-columns: minmax(0, 1fr) minmax(108px, 1.1fr) auto; grid-template-areas: "brand baselines actions" "metrics metrics metrics"; gap: 6px; align-items: center; }
+  .topbar .brand { padding-left: 48px; }
+  .topbar .topbar-baselines { min-width: 0; width: 100%; }
+  .topbar .topbar-baselines .multi-filter-trigger { padding: 6px 20px 6px 8px; font-size: 13px; }
+  .topbar .topbar-baselines-label { display: none; }
+  #caseLabelingFilterForm.case-labeling-filters.is-open,
+  #labelSummaryFilterForm.case-labeling-filters.is-open { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 10px 8px; }
+  #caseLabelingFilterForm > *, #labelSummaryFilterForm > * { grid-column: auto !important; min-width: 0; }
+  #caseLabelingFilterForm > .case-labeling-search,
+  #labelSummaryFilterForm > .case-labeling-search,
+  #labelSummaryFilterForm > .labeling-summary-actions { grid-column: 1 / -1 !important; }
+  .case-labeling-command .mobile-filter-toggle, .labeling-summary-command .mobile-filter-toggle { width: auto; min-width: 154px; gap: 16px; }
+  .case-labeling-page .gallery-heading-actions { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .case-labeling-page .gallery-heading-actions .button { padding-inline: 5px; font-size: 12px; }
+}
+@media (max-width: 359px) {
+  .topbar #pageTitle { font-size: 14px; }
+  .topbar .topbar-baselines .multi-filter-trigger { font-size: 12px; }
+  .mobile-topbar-more > summary { min-width: 44px; padding-inline: 6px; }
+}

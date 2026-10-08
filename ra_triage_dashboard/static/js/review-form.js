@@ -454,7 +454,7 @@ function renderReview(caseData) {
       <span class="derived-review-status" data-status="${escapeHtml(sharedVisual.kind === "matches" ? "reviewed" : sharedVisual.kind === "needs-review" ? "needs_gt_review" : "pending")}"><span class="ui-lang-zh">状态：${escapeHtml(readonlyStatusZh)}</span><span class="ui-lang-en">Status: ${escapeHtml(readonlyStatusEn)}</span></span>
     </div>
     <div class="ui-select expected-output-picker readonly-expected-output-picker">
-      <button class="ui-select-trigger" type="button" disabled aria-label="${escapeHtml(uiText(`期望输出 ${readonlyExpectedZh}，只读`, `Expected output ${readonlyExpectedEn}, read only`))}" title="${escapeHtml(uiText("只读；请到 Case 标注修改", "Read only; edit in Case labeling"))}">
+      <button class="ui-select-trigger" type="button" disabled aria-label="${escapeHtml(uiText(`期望输出 ${readonlyExpectedZh}，只读`, `Expected output ${readonlyExpectedEn}, read only`))}" title="${escapeHtml(uiText("只读；请到 问题标注修改", "Read only; edit in Case labeling"))}">
         <span class="ui-select-summary"><span class="ui-select-summary-value"><span class="ui-lang-zh">${escapeHtml(readonlyExpectedZh)}</span><span class="ui-lang-en">${escapeHtml(readonlyExpectedEn)}</span></span><span class="ui-select-inference-marker"><span class="ui-lang-zh">只读</span><span class="ui-lang-en">Read only</span></span></span>
         <span class="ui-select-caret" aria-hidden="true"></span>
       </button>
@@ -495,10 +495,10 @@ function renderReview(caseData) {
       <small><span class="ui-lang-zh">模型复核暂不可用${combinedMode ? " · Case 标签仍可提交" : ""}</span><span class="ui-lang-en">Model review unavailable${combinedMode ? " · Case label still available" : ""}</span></small>
     </span>
     <button type="button" data-select-model-run><span class="ui-lang-zh">选择 Model Run</span><span class="ui-lang-en">Select Model Run</span></button>
-    ${combinedMode ? "" : `<a href="${escapeHtml(caseLabelingUrl)}"><span class="ui-lang-zh">打开 Case 标注</span><span class="ui-lang-en">Open Case labeling</span></a>`}
+    ${combinedMode ? "" : `<a href="${escapeHtml(caseLabelingUrl)}"><span class="ui-lang-zh">打开 问题标注</span><span class="ui-lang-en">Open Case labeling</span></a>`}
     <span class="model-review-run-help">
       <button class="model-review-run-help-button" type="button" aria-label="查看未选择 Run 的说明" aria-describedby="modelReviewRunTooltip">i</button>
-      <span class="model-review-run-tooltip" id="modelReviewRunTooltip" role="tooltip"><span class="ui-lang-zh">选择 Run 后可填写判错原因、缺失信息和截图。${combinedMode ? "当前仍可提交上方 Case 标注。" : ""}</span><span class="ui-lang-en">Select a Run to enter the model reason, missing evidence, and screenshots.${combinedMode ? " You can still submit the Case label above." : ""}</span></span>
+      <span class="model-review-run-tooltip" id="modelReviewRunTooltip" role="tooltip"><span class="ui-lang-zh">选择 Run 后可填写判错原因、缺失信息和截图。${combinedMode ? "当前仍可提交上方 问题标注。" : ""}</span><span class="ui-lang-en">Select a Run to enter the model reason, missing evidence, and screenshots.${combinedMode ? " You can still submit the Case label above." : ""}</span></span>
     </span>
   </div>`;
   $("#reviewPane").innerHTML = `
@@ -630,7 +630,7 @@ function renderReview(caseData) {
     const save = $("#reviewSaveButton");
     if (save) {
       save.disabled = false;
-      save.querySelector(".ui-lang-zh").textContent = runBoundModelReview ? "提交联合复核" : "提交 Case 标注";
+      save.querySelector(".ui-lang-zh").textContent = runBoundModelReview ? "提交联合复核" : "提交 问题标注";
       save.querySelector(".ui-lang-en").textContent = runBoundModelReview ? "Submit combined review" : "Submit Case label";
     }
   }
@@ -1253,7 +1253,7 @@ async function saveAnnotation(event) {
     state.reviewEditRunId || currentReviewRunId(state.selectedCase)
   );
   if (!runBoundModelReview) {
-    showToast("请先选择 Model Run；共享标签和 GT 请到 Case 标注工作台修改。", true);
+    showToast("请先选择 Model Run；共享标签和 GT 请到 问题标注工作台修改。", true);
     return;
   }
   const expectedOutputState = expectedOutputSelectionState();

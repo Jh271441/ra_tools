@@ -428,11 +428,11 @@ function enhanceNativeUiSelect(select, { maxWidth = 520 } = {}) {
   const translated = {
     workSplitWorkflowMode: {
       model_review_only: ["仅判错复核", "Model review only"],
-      model_review_and_case_label: ["判错复核 + Case 标注", "Model review + Case label"],
+      model_review_and_case_label: ["判错复核 + 问题标注", "Model review + Case label"],
     },
     reviewWorkflowMode: {
       model_review_only: ["仅判错复核", "Model review only"],
-      model_review_and_case_label: ["判错复核 + Case 标注", "Model review + Case label"],
+      model_review_and_case_label: ["判错复核 + 问题标注", "Model review + Case label"],
     },
     campaignsSource: {
       all: ["全部来源", "All sources"], campaign: ["标注实验", "Labeling campaigns"],
@@ -645,13 +645,13 @@ const PAGE_ROUTES = {
   "labeling-summary": { path: "/labeling-summary", titleZh: "标注汇总", titleEn: "Labeling summary" },
   labeling: {
     path: "/case-labeling",
-    titleZh: "Case 标注（内测）",
-    titleEn: "Case Labeling (preview)",
+    titleZh: "问题标注",
+    titleEn: "Issue labeling",
   },
   "labeling-new-task": {
     path: "/case-labeling/new-task",
-    titleZh: "建标注任务",
-    titleEn: "New labeling task",
+    titleZh: "标注任务",
+    titleEn: "Labeling tasks",
   },
   review: {
     path: "/review",

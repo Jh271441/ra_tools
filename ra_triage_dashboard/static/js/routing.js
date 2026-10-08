@@ -1175,7 +1175,7 @@ function showPage(
   }
   if (target === "labeling") {
     if (!state.session.identity_pending && !hasDashboardWriteRole()) {
-      showToast(uiText("Case 标注需要 writer 或管理员权限。", "Case labeling requires writer or admin access."), true);
+      showToast(uiText("问题标注需要 writer 或管理员权限。", "Case labeling requires writer or admin access."), true);
       return showPage("review", { historyMode: historyMode || "replace" });
     }
     if (loadPageData && typeof enterCaseLabeling === "function") {
