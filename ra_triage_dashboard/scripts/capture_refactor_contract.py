@@ -19,8 +19,12 @@ def main():
     parser.add_argument('--source-root', required=True, type=Path)
     parser.add_argument('--url-file', required=True, type=Path)
     parser.add_argument('--output', required=True, type=Path)
+    parser.add_argument('--env-file', type=Path, help='Optional private service environment for OpenAPI comparison')
     args = parser.parse_args()
     os.umask(0o077)
+    if args.env_file:
+        os.environ.update(json.loads(args.env_file.read_text()))
+        os.environ['DASHBOARD_DATABASE_URL_FILE'] = str(args.url_file)
     os.environ['PGOPTIONS'] = '-c default_transaction_read_only=on'
     sys.path.insert(0, str(args.source_root.resolve()))
     from app.db import Database
@@ -64,6 +68,9 @@ def main():
                     page += 1
                 pages[status] = rows
             result['details'][batch['split_id']] = pages
+        if args.env_file:
+            from app.main import app
+            result['openapi'] = app.openapi()
         encoded = json.dumps(result, ensure_ascii=False, sort_keys=True, default=str).encode()
         args.output.parent.mkdir(parents=True, exist_ok=True)
         with gzip.open(args.output, 'wb') as stream:
