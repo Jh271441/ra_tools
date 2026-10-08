@@ -43,6 +43,12 @@ def main():
                 'candidates': db.label_gt_candidates([scope], include_non_updates=True),
                 'adjudicated': db.labeling_case_issue_ids(baseline_scopes=[scope], cluster='adjudicated'),
             }
+        result['run_collections'] = db.list_run_collections()
+        result['run_evaluations'] = db.list_run_evaluations(limit=500)
+        result['evaluation_details'] = {
+            item['id']: db.get_run_evaluation_task_context(item['id'])
+            for item in result['run_evaluations']
+        }
         result['batches'] = db.list_review_work_splits(limit=100)
         result['details'] = {}
         for batch in result['batches']:

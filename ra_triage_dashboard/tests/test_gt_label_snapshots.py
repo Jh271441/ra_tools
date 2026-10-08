@@ -13,7 +13,7 @@ from fastapi import HTTPException
 
 from ra_triage_dashboard.app.auth import SessionIdentity
 from ra_triage_dashboard.app.db import Database
-from ra_triage_dashboard.app.routers import labeling as labeling_router
+from ra_triage_dashboard.app.routers.labeling_api import common as labeling_router
 
 
 class GtLabelSnapshotsTest(unittest.TestCase):
