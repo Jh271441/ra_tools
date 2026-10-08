@@ -43,7 +43,7 @@
 .label-summary-rules-note { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
 .label-summary-detail-heading { align-items: center; gap: 12px; }
 .label-summary-detail-heading > h3 { margin: 0; white-space: nowrap; }
-.label-summary-detail-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px 16px; }
+.label-summary-detail-heading > .label-summary-detail-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px 16px; }
 .label-summary-detail-actions .label-summary-rules-button { white-space: nowrap; }
 
 .label-summary-source > summary { cursor: pointer; width: fit-content; }
