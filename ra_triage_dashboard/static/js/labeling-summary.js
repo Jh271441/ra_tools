@@ -227,7 +227,7 @@ function showLabelSummaryRules() {
   if (!dialog) {
     dialog = document.createElement("dialog");
     dialog.id = "labelSummaryRulesDialog";
-    dialog.className = "label-summary-rules-dialog";
+    dialog.className = "dialog label-summary-rules-dialog";
     dialog.setAttribute("aria-labelledby", "labelSummaryRulesTitle");
     document.body.appendChild(dialog);
     dialog.addEventListener("click", (event) => { if (event.target === dialog) dialog.close(); });
