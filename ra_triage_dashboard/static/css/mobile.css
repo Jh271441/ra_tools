@@ -538,3 +538,15 @@
   .multi-filter-tools button, .multi-filter-actions button { min-height: 40px; font-size: 13px; }
   .case-labeling-current-result .text-link { display: inline-flex; align-items: center; min-height: 44px; }
 }
+
+@media (max-width: 639px) {
+  .run-source-tab, .run-source-tab.active { display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 6px; padding: 8px 4px; min-height: 100px; }
+  .run-source-tab > span:nth-child(2) { display: grid; width: 100%; }
+  .run-source-tab strong { white-space: normal; font-size: 12px; text-align: center; overflow-wrap: anywhere; }
+  .run-source-tab small { display: none; }
+  .run-source-tab em { display: block; min-width: 0; font-size: 11px; }
+  .run-row-title { flex-wrap: wrap; }
+  .run-row-title strong { flex-basis: 100%; white-space: normal; overflow-wrap: anywhere; font-size: 14px; }
+  .run-row-meta { min-width: 0; font-size: 12px; }
+  .run-row-meta > span, .run-meta-value, .run-source-ref { min-width: 0; max-width: 100%; overflow-wrap: anywhere; white-space: normal; }
+}
