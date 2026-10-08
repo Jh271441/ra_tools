@@ -40,6 +40,7 @@ python scripts/capture_initialization_contract.py \
 ```
 
 对旧/新源码使用不同的新文件，比较schema、初次/重复初始化和队列恢复结果。
+加 `--legacy-sqlite` 可核对缺列的旧目录/账号表升级及原有行保留。
 仅规范化SQLite revision触发器的墙钟`updated_at`，保留revision值；Python初始化时钟固定。
 PostgreSQL初始化必须另外恢复两份副本，名称以`manual_refactor`开头，且以
 `_init_old`/`_init_new`结尾，再以`--url-file`代替`--sqlite`；脚本拒绝其它库名。

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -14,6 +14,24 @@ from ra_triage_dashboard.app.db import Database
 from ra_triage_dashboard.app.routers import case_annotations, case_comments, labeling
 from ra_triage_dashboard.app.support import annotations as annotation_support
 from ra_triage_dashboard.app.support import catalogs as catalog_support
+from ra_triage_dashboard.app.routers.labeling_api import (
+    common, tasks, queries, decisions, comments, revisions, snapshots, exports,
+)
+
+
+@contextmanager
+def patch_labeling_dependency(name, *args, **kwargs):
+    """Inject the same test dependency into its explicit workflow consumers."""
+    owners = [module for module in
+              (common, tasks, queries, decisions, comments, revisions, snapshots, exports)
+              if hasattr(module, name)]
+    if not owners:
+        raise AssertionError(f"No labeling dependency owner: {name}")
+    with ExitStack() as stack:
+        replacement = stack.enter_context(patch.object(owners[0], name, *args, **kwargs))
+        for owner in owners[1:]:
+            stack.enter_context(patch.object(owner, name, replacement))
+        yield replacement
 
 
 class LabelingActivationTest(unittest.IsolatedAsyncioTestCase):
@@ -67,20 +85,15 @@ class LabelingActivationTest(unittest.IsolatedAsyncioTestCase):
             )
         patches = ExitStack()
         self.addCleanup(patches.close)
-        patches.enter_context(patch.object(labeling, "database", self.database))
-        patches.enter_context(patch.object(
-            labeling, "resolve_request_baseline_scopes",
+        patches.enter_context(patch_labeling_dependency("database", self.database))
+        patches.enter_context(patch_labeling_dependency("resolve_request_baseline_scopes",
             side_effect=lambda raw, **kwargs: (raw or "active").split(","),
         ))
-        patches.enter_context(patch.object(
-            labeling, "_labeling_actor", return_value=("alice", "kylin_ticket", True),
+        patches.enter_context(patch_labeling_dependency("_labeling_actor", return_value=("alice", "kylin_ticket", True),
         ))
-        patches.enter_context(patch.object(
-            labeling, "_require_labeling_admin", new=AsyncMock(return_value=None),
+        patches.enter_context(patch_labeling_dependency("_require_labeling_admin", new=AsyncMock(return_value=None),
         ))
-        patches.enter_context(patch.object(
-            labeling,
-            "_require_labeling_writer",
+        patches.enter_context(patch_labeling_dependency("_require_labeling_writer",
             new=AsyncMock(
                 return_value=SimpleNamespace(
                     username="alice", source="kylin_ticket", verified=True
@@ -195,7 +208,7 @@ class LabelingActivationTest(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(raised.exception.status_code, 409)
 
     async def test_attachment_requires_its_own_dataset_to_be_active(self) -> None:
-        with patch.object(labeling, "settings", SimpleNamespace(review_attachments_dir=self.root)), patch.object(Path, "is_file", return_value=True):
+        with patch_labeling_dependency("settings", SimpleNamespace(review_attachments_dir=self.root)), patch.object(Path, "is_file", return_value=True):
             for scope in ("shadow", "paused"):
                 with self.subTest(scope=scope):
                     with self.assertRaises(HTTPException) as raised:
@@ -585,7 +598,7 @@ class LabelingPreviewAdminTest(unittest.TestCase):
 
     def test_labeling_task_creation_applies_selected_cluster(self) -> None:
         router = (
-            Path(__file__).resolve().parents[1] / "app" / "routers" / "labeling.py"
+            Path(__file__).resolve().parents[1] / "app" / "routers" / "labeling_api" / "tasks.py"
         ).read_text(encoding="utf-8")
         self.assertIn("cluster=normalized_cluster", router)
 
@@ -593,13 +606,12 @@ class LabelingPreviewAdminTest(unittest.TestCase):
         identity = SimpleNamespace(
             verified=True, username="writer", source="kylin_ticket"
         )
-        with patch.object(labeling, "_writer_identity", return_value=identity):
+        with patch_labeling_dependency("_writer_identity", return_value=identity):
             self.assertEqual(
                 labeling._labeling_actor(SimpleNamespace()),
                 ("writer", "kylin_ticket", True),
             )
-        with patch.object(
-            labeling, "_writer_identity", side_effect=HTTPException(403, "writer required")
+        with patch_labeling_dependency("_writer_identity", side_effect=HTTPException(403, "writer required")
         ):
             with self.assertRaises(HTTPException) as raised:
                 labeling._labeling_actor(SimpleNamespace())
@@ -623,16 +635,13 @@ class LabelingCommentWriteTest(unittest.IsolatedAsyncioTestCase):
         )
         patches = ExitStack()
         self.addCleanup(patches.close)
-        patches.enter_context(patch.object(labeling, "database", self.database))
-        patches.enter_context(patch.object(
-            labeling, "_labeling_actor", return_value=("alice", "kylin_ticket", True),
+        patches.enter_context(patch_labeling_dependency("database", self.database))
+        patches.enter_context(patch_labeling_dependency("_labeling_actor", return_value=("alice", "kylin_ticket", True),
         ))
-        patches.enter_context(patch.object(
-            labeling, "_require_labeling_writer", new=AsyncMock(return_value=None),
+        patches.enter_context(patch_labeling_dependency("_require_labeling_writer", new=AsyncMock(return_value=None),
         ))
-        patches.enter_context(patch.object(labeling, "extract_review_mentions", return_value=[]))
-        patches.enter_context(patch.object(
-            labeling, "settings",
+        patches.enter_context(patch_labeling_dependency("extract_review_mentions", return_value=[]))
+        patches.enter_context(patch_labeling_dependency("settings",
             SimpleNamespace(dchat_notifications_enabled=False),
         ))
 

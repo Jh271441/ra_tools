@@ -16,6 +16,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source-root', required=True, type=Path)
     parser.add_argument('--output', required=True, type=Path)
+    parser.add_argument('--legacy-sqlite', action='store_true', help='Seed pre-upgrade catalog/access tables')
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument('--sqlite', type=Path)
     group.add_argument('--url-file', type=Path)
@@ -36,6 +37,23 @@ def main():
         dbname = conninfo_to_dict(target)['dbname']
         if not dbname.startswith('manual_refactor') or not dbname.endswith(('_init_old', '_init_new')):
             raise ValueError('Only named disposable initialization copies are allowed')
+    if args.legacy_sqlite:
+        if not args.sqlite:
+            raise ValueError('--legacy-sqlite requires a new SQLite fixture')
+        import sqlite3
+        with sqlite3.connect(args.sqlite) as legacy:
+            legacy.executescript("""
+                CREATE TABLE access_users (
+                    username TEXT PRIMARY KEY, role TEXT NOT NULL,
+                    created_by TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+                );
+                INSERT INTO access_users VALUES ('legacy-user','writer','admin','fixed','fixed');
+                CREATE TABLE missing_evidence_catalog (
+                    key TEXT PRIMARY KEY, label TEXT NOT NULL UNIQUE,
+                    hint TEXT NOT NULL DEFAULT '', created_by TEXT NOT NULL, created_at TEXT NOT NULL
+                );
+                INSERT INTO missing_evidence_catalog VALUES ('old-key','旧目录项','','admin','fixed');
+            """)
     db = Database(target, postgres_migrations_dir=args.source_root / 'migrations/postgres', pool_size=2)
 
     def snapshot():
