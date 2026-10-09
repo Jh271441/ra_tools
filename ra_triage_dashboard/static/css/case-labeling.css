@@ -116,3 +116,20 @@ body[data-active-page^="labeling"] .gt-sync-control { margin-left: auto; }
 
 .case-label-final-result > .text-link { justify-self: start; background: transparent; border: 0; padding: 2px 0; color: var(--accent); font-size: 12px; }
 #caseTaskAdjudicationPanel, #caseLabelDecisionTitle { scroll-margin-top: 78px; }
+
+.case-label-final-result .case-label-why { margin-left: auto; min-height: 32px; padding: 4px; font-size: 12px; cursor: pointer; }
+.case-label-explanation-dialog { width: min(800px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow: auto; }
+.case-explanation-flow { display: grid; grid-template-columns: minmax(0, 1.3fr) 20px minmax(0, 1fr) 20px minmax(0, 1fr); gap: 10px; align-items: center; }
+.case-explanation-flow section { min-width: 0; display: grid; gap: 8px; }
+.case-explanation-flow h3 { margin: 0; color: var(--muted); font-size: 12px; }
+.case-explanation-source { display: grid; gap: 5px; padding: 10px; border: 1px solid var(--line); border-radius: 6px; }
+.case-explanation-flow strong { font-size: 13px; overflow-wrap: anywhere; }
+.case-explanation-flow span, .case-explanation-flow small, .case-explanation-flow details { font-size: 11px; line-height: 1.6; color: var(--muted); overflow-wrap: anywhere; }
+.case-explanation-flow details p { margin: 6px 0; }
+.case-explanation-flow .case-explanation-arrow { color: var(--accent); font-size: 20px; text-align: center; }
+.case-explanation-check, .case-explanation-output { padding: 12px; border: 1px solid var(--accent); border-radius: 6px; background: var(--accent-soft); }
+@media (max-width: 639px) {
+  .case-explanation-flow { grid-template-columns: minmax(0, 1fr); }
+  .case-explanation-flow .case-explanation-arrow { transform: rotate(90deg); line-height: 20px; }
+  .case-label-final-result .case-label-why { min-height: 44px; }
+}

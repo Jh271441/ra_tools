@@ -1118,7 +1118,7 @@ function caseLabelFinalResultMarkup(caseData) {
   const author = decision && !decision.stale ? decision.created_by : taskDecision?.created_by;
   const selectedTask = (caseData.label_cases || []).find((item) => item.task_id && item.task_id === state.caseLabeling.taskId)?.resolution;
   const hasEntry = Boolean(decision || (result.sources || []).length > 1 || ["conflict", "stale"].includes(result.state) || selectedTask?.adjudication || ["conflict", "stale"].includes(selectedTask?.state));
-  return `<section class="case-label-final-result" aria-label="${escapeHtml(uiText("当前汇总结论", "Current summary result"))}"><div><strong>${escapeHtml(uiText("当前汇总结论", "Current summary result"))}</strong>${valid ? labelBadge(result.expected_output) : `<span>${escapeHtml(result.state === "conflict" ? uiText("待裁决", "Needs adjudication") : result.state === "stale" ? uiText("裁决需重新确认", "Decision is stale") : uiText("待完成", "Pending"))}</span>`}</div>${author ? `<small>${escapeHtml(uiText("裁决人：", "Adjudicator: "))}${escapeHtml(author)}</small>` : ""}${hasEntry ? `<button class="text-link" type="button" id="caseLabelGoAdjudication">${escapeHtml(valid ? uiText("查看裁决与原始意见", "View decision and original votes") : uiText("前往裁决", "Go to adjudication"))}</button>` : ""}</section>`;
+  return `<section class="case-label-final-result" aria-label="${escapeHtml(uiText("当前汇总结论", "Current summary result"))}"><div><strong>${escapeHtml(uiText("当前汇总结论", "Current summary result"))}</strong>${valid ? labelBadge(result.expected_output) : `<span>${escapeHtml(result.state === "conflict" ? uiText("待裁决", "Needs adjudication") : result.state === "stale" ? uiText("裁决需重新确认", "Decision is stale") : uiText("待完成", "Pending"))}</span>`}<button class="text-link case-label-why" type="button" id="caseLabelWhy" aria-haspopup="dialog">ⓘ ${escapeHtml(uiText("为什么", "Why"))}</button></div>${author ? `<small>${escapeHtml(uiText("裁决人：", "Adjudicator: "))}${escapeHtml(author)}</small>` : ""}${hasEntry ? `<button class="text-link" type="button" id="caseLabelGoAdjudication">${escapeHtml(valid ? uiText("查看裁决与原始意见", "View decision and original votes") : uiText("前往裁决", "Go to adjudication"))}</button>` : ""}</section>`;
 }
 
 function caseLabelDecisionMarkup(caseData) {
@@ -1361,6 +1361,7 @@ function renderCaseLabelingEditor(caseData) {
       </section>
     </form>`;
   const editor = $("#caseLabelingEditor");
+  $("#caseLabelWhy")?.addEventListener("click", () => showCaseLabelExplanation(caseData));
   $("#caseLabelGoAdjudication")?.addEventListener("click", () => {
     ($("#caseTaskAdjudicationPanel") || $("#caseLabelDecisionTitle"))?.scrollIntoView({ behavior: "smooth", block: "start" });
   });
