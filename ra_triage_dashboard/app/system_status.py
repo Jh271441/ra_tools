@@ -5,6 +5,7 @@ import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote, urlparse
 
 
 BACKUP_NAME_RE = re.compile(
@@ -12,7 +13,12 @@ BACKUP_NAME_RE = re.compile(
 )
 
 
-def backup_status(data_dir: Path, *, now: datetime | None = None) -> dict[str, Any]:
+def backup_status(data_dir: Path, *, now: datetime | None = None, database_url: str | None = None) -> dict[str, Any]:
+    database_name = "ra_triage_dashboard"
+    if database_url is not None:
+        parsed = urlparse(database_url)
+        database_name = unquote(parsed.path.lstrip("/")) if parsed.scheme in {"postgres", "postgresql"} else ""
+    name_pattern = re.compile(r"^" + re.escape(database_name) + r"-(?P<stamp>[0-9]{8}T[0-9]{6}Z)\.dump$")
     current_time = now or datetime.now(timezone.utc)
     backup_dir = data_dir / "postgres_backups"
     schedule_file = backup_dir / ".backup-schedule"
@@ -38,7 +44,7 @@ def backup_status(data_dir: Path, *, now: datetime | None = None) -> dict[str, A
     except OSError:
         candidates = ()
     for candidate in candidates:
-        match = BACKUP_NAME_RE.fullmatch(candidate.name)
+        match = name_pattern.fullmatch(candidate.name) if database_name else None
         if not match or not candidate.is_file():
             continue
         try:

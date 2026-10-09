@@ -631,7 +631,7 @@ async def status(response: Response) -> dict[str, Any]:
             "latency_ms": None,
         }
     backup_state, volume_state, indexed_issues, filesystem, media_ready = await asyncio.gather(
-        asyncio.to_thread(backup_status, settings.data_dir),
+        asyncio.to_thread(backup_status, settings.data_dir, database_url=settings.database_url),
         asyncio.to_thread(volume_status, settings.data_dir),
         asyncio.to_thread(asset_index.refresh),
         asyncio.to_thread(_filesystem_availability),

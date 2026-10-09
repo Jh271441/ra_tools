@@ -45,6 +45,18 @@ class SystemStatusTest(unittest.TestCase):
             self.assertTrue(result["schedule_registered"])
             self.assertEqual(result["schedule"], "15 2 * * *")
 
+    def test_backup_status_matches_only_configured_database(self):
+        with tempfile.TemporaryDirectory() as directory:
+            data_dir = Path(directory)
+            backups = data_dir / "postgres_backups"
+            backups.mkdir()
+            (backups / "ra_triage_dashboard-20261009T010000Z.dump").write_bytes(b"other")
+            url = "postgresql:///manual_s6_annotation_sync_20260930"
+            self.assertFalse(backup_status(data_dir, database_url=url)["available"])
+            (backups / "manual_s6_annotation_sync_20260930-20261009T020000Z.dump").write_bytes(b"correct")
+            self.assertEqual(backup_status(data_dir, database_url=url)["count"], 1)
+            self.assertFalse(backup_status(data_dir, database_url="sqlite:///test.db")["available"])
+
     def test_overall_status_marks_missing_protection_as_degraded(self) -> None:
         healthy = overall_status(
             database={"ok": True, "backend": "postgresql", "persistent_data": True},
