@@ -45,3 +45,13 @@ Issue ID 为主标题视觉焦点；“问题详情”降为辅助标识；外�
 冻结业务/API6214465字节完全一致；回执case-status-20261009-564/release.json。
 498px弹窗440px宽约307px高，320pxclient/scroll均279px；页面显示“标注状态·待完成·查看原因”，
 无控制台错误。截图reports/case_reason_20261009/pending-polished564.jpg。
+
+## 待完成高亮 · cache565
+
+详情状态与原因弹窗共用轻量状态标签：待完成使用琥珀色底、描边、圆点和加粗文字；
+冲突/失效为红色，已完成为绿色。包含浅色主题配色，不改变服务端状态语义。
+发布91295afdedffb5e97e04d231607c18ddb63d2537/cache565；635 passed、5 skipped。
+冻结业务/API6214465字节逐字节一致，回执case-status-20261009-565/release.json。
+浏览器已确认详情与弹窗的待完成高亮、正常开关及无控制台错误；未提交任何标注。
+截图reports/case_reason_20261009/pending-highlight565.jpg和pending-dialog-highlight565.jpg。
+8785、数据库与配置保持不变；前版d9c4979保留回滚。
