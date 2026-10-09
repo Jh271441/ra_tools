@@ -62,9 +62,17 @@ function showCaseLabelExplanation(caseData) {
     dialog.addEventListener("click", (event) => { if (event.target === dialog) dialog.close(); });
   }
   const decision = caseData.label_state?.decision;
-  dialog.innerHTML = `<div class="dialog-card"><div class="dialog-heading"><div><h2 id="caseLabelExplanationTitle">${escapeHtml(uiText("为什么是这个结论", "Why this result"))}</h2><p class="dialog-copy">${escapeHtml(caseData.issue_id)} · ${escapeHtml(uiText("当前 Case 的全部来源", "All current sources for this Case"))}</p></div><button class="icon-button" type="button" data-close-explanation aria-label="${escapeHtml(uiText("关闭", "Close"))}">×</button></div>
-    <div class="case-explanation-flow"><section><h3>${escapeHtml(uiText("标注来源", "Sources"))}</h3>${sourceMarkup}</section><span class="case-explanation-arrow" aria-hidden="true">→</span><section class="case-explanation-check"><h3>${escapeHtml(uiText("当前原因", "Reason"))}</h3><strong>${escapeHtml(explanation.reason)}</strong>${decision ? `<small>${escapeHtml(uiText("Issue 裁决", "Issue decision"))} #${escapeHtml(decision.id)} · ${escapeHtml(decision.created_by || "")}${decision.stale ? ` · ${escapeHtml(uiText("已过期", "Stale"))}` : ""}</small>` : ""}</section><span class="case-explanation-arrow" aria-hidden="true">→</span><section class="case-explanation-output"><h3>${escapeHtml(uiText("当前结论", "Result"))}</h3>${explanation.output ? labelBadge(explanation.output) : `<strong>${escapeHtml(statuses[explanation.status] || statuses.pending)}</strong>`}<small>${escapeHtml(explanation.next)}</small></section></div>
-    <div class="dialog-actions"><button class="button button-quiet" type="button" data-close-explanation>${escapeHtml(uiText("知道了", "Got it"))}</button></div></div>`;
+  const resolved = explanation.status === "resolved";
+  const blocked = ["conflict", "stale"].includes(explanation.status);
+  const currentStep = resolved ? 2 : blocked ? 1 : 0;
+  const steps = [uiText("提交标注", "Submit"), uiText("汇总校验", "Validate"), uiText("形成结论", "Resolve")];
+  const title = statuses[explanation.status] || statuses.pending;
+  dialog.innerHTML = `<div class="dialog-card"><div class="dialog-heading"><div><p class="case-explanation-issue">${escapeHtml(caseData.issue_id)}</p><h2 id="caseLabelExplanationTitle">${escapeHtml(title)}</h2></div><button class="icon-button" type="button" data-close-explanation aria-label="${escapeHtml(uiText("关闭", "Close"))}">×</button></div>
+    <ol class="case-explanation-steps" aria-label="${escapeHtml(uiText("当前标注进度", "Current labeling progress"))}">${steps.map((step, index) => `<li class="${index < currentStep || resolved ? "is-done" : index === currentStep ? "is-current" : ""}" ${index === currentStep ? 'aria-current="step"' : ""}><span class="case-explanation-step-dot" aria-hidden="true">${index < currentStep || resolved ? "✓" : index + 1}</span><span>${escapeHtml(step)}</span></li>`).join("")}</ol>
+    <div class="case-explanation-reason"><strong>${escapeHtml(explanation.reason)}</strong>${explanation.output ? labelBadge(explanation.output) : ""}${!resolved ? `<p>${escapeHtml(explanation.next)}</p>` : ""}</div>
+    ${decision ? `<p class="case-explanation-decision">${escapeHtml(uiText("Issue 裁决", "Issue decision"))} #${escapeHtml(decision.id)} · ${escapeHtml(decision.created_by || "")}${decision.stale ? ` · ${escapeHtml(uiText("已过期", "Stale"))}` : ""}</p>` : ""}
+    ${explanation.sources.length ? `<details class="case-explanation-evidence"><summary>${escapeHtml(uiText(`查看 ${explanation.sources.length} 个标注来源`, `View ${explanation.sources.length} sources`))}</summary><div>${sourceMarkup}</div></details>` : ""}
+    <div class="dialog-actions"><button class="button button-quiet" type="button" data-close-explanation>${escapeHtml(uiText("返回标注", "Back to labeling"))}</button></div></div>`;
   dialog.querySelectorAll("[data-close-explanation]").forEach((button) => button.addEventListener("click", () => dialog.close()));
   if (!dialog.open) dialog.showModal();
 }
