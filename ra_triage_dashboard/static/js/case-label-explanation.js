@@ -11,7 +11,7 @@ function caseLabelExplanation(caseData) {
       : sources.length > 1 ? uiText("所有来源已完成且结果一致", "All sources resolved and agree")
       : sources[0]?.method === "adjudication" ? uiText("有效任务内裁决生效", "Current task decision applies")
       : uiText("有效标注已形成一致结果", "Valid submissions agree");
-    next = uiText("采用右侧期望输出", "Use the expected output");
+    next = uiText("当前有效结果", "Current valid result");
   } else if (status === "stale" || decision?.stale) {
     reason = uiText("引用的标注来源已变化", "Referenced labeling sources changed");
     next = uiText("重新确认裁决", "Reconfirm the decision");
