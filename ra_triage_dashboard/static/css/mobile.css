@@ -477,7 +477,9 @@
   .analysis-case-actions a { display: inline-flex; align-items: center; min-height: 44px; font-size: 13px; }
 
   /* Detail navigation and form: full labels, usable queue input, less toolbar stacking. */
-  .mobile-workspace-jumps { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+  .mobile-workspace-jumps { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; border-bottom: 1px solid var(--line); }
+  .mobile-workspace-jumps > .button { width: auto; padding: 4px 12px; border-color: transparent; background: transparent; box-shadow: none; font-size: 12px; font-weight: 500; }
+  .mobile-workspace-jumps > .button:only-child { flex: 1; }
   #caseLabelingEditor, #caseLabelingMedia, #reviewPane, #detailPane, #labelSummaryCaseList { scroll-margin-top: 12px; }
   .case-detail-pager { grid-template-columns: minmax(0, 1fr) 82px minmax(0, 1fr); }
   .case-detail-pager .detail-queue-position { display: flex; align-items: center; gap: 3px; min-width: 0; }
@@ -605,11 +607,19 @@
   .detail-title .detail-external-links { display: flex; flex-wrap: wrap; gap: 5px 12px; align-items: center; margin: 0; }
   .detail-external-links .detail-id { font: 500 12px/1.4 var(--font-sans, system-ui); min-height: 36px; display: inline-flex; align-items: center; }
   .detail-context-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
-  .detail-context-row > .comparison-summary { width: auto; min-width: 0; min-height: 44px; padding: 6px 8px; }
-  .detail-context-row > .detail-back-button { width: auto; font-size: 12px; }
+  .detail-context-row > .comparison-summary { width: auto; min-width: 0; min-height: 44px; padding: 4px 0; border: 0; background: transparent; }
+  .detail-context-row > .detail-back-button { width: auto; justify-self: end; padding-inline: 6px; font-size: 12px; }
   .detail-context-row > .detail-summary, .detail-context-row > .detail-context-actions { grid-column: 1 / -1; }
-  .detail-header { gap: 10px; }
+  .detail-header { gap: 4px; }
   .detail-title-row { gap: 6px; }
   .review-section-heading h2 { font-size: 15px; }
-  .detail-media-command .detail-media-picker-trigger { font-size: 14px; }
+  .detail-media-command .detail-media-picker-trigger { font-size: 13px; font-weight: 500; }
+  .case-detail-pager .button,
+  .detail-context-row > .detail-back-button,
+  .detail-media-command .detail-media-expand { border-color: transparent; background: transparent; box-shadow: none; color: var(--muted); font-size: 12px; font-weight: 500; }
+  .case-detail-pager .button:first-child { justify-content: flex-start; }
+  .case-detail-pager .button:last-child { justify-content: flex-end; }
+  .case-detail-pager .button:disabled { opacity: .4; }
+  .case-detail-pager .detail-queue-index-input { background: transparent; border-color: var(--line); }
+  .detail-pane .bev-video-control-row .button { min-width: 40px; border-color: transparent; background: transparent; box-shadow: none; font-size: 12px; }
 }
