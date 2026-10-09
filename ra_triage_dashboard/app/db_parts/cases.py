@@ -6,6 +6,14 @@ import uuid
 from typing import Any, Iterable, Iterator, Sequence
 
 from ..work_split import normalize_overlap_ratio
+from .assignment_rules import (
+    ASSIGNMENT_SUBMITTED_SQL,
+    MODEL_ASSIGNMENT_SCOPE_SQL,
+    MODEL_SUBMISSION_SQL,
+    legacy_batch_source,
+    assignment_snapshot_members,
+)
+from .model_reviews import MODEL_REVIEW_STATUSES, MODEL_REVIEW_PUBLIC_ID_OFFSET
 from .shared import (
     COMPARISON_STATUSES,
     LABELS,
@@ -207,6 +215,7 @@ class DatabaseCasesMixin:
         projection_authors: Sequence[str] = (),
         preferred_annotation_author: str = "",
         work_split_id: str = "",
+        strict_run: bool = False,
     ) -> tuple[str, list[Any]]:
         """Project the primary assignment Review without hiding old behavior.
 
@@ -261,7 +270,7 @@ class DatabaseCasesMixin:
                 SELECT a.id
                 FROM review_work_assignments wa
                 JOIN issue_work_splits ws ON ws.id = wa.split_id
-                LEFT JOIN annotations a
+                LEFT JOIN review_records a
                   ON a.issue_id = wa.issue_id
                  AND a.model_run_id = ws.model_run_id
                  AND a.author = wa.assignee
@@ -281,25 +290,39 @@ class DatabaseCasesMixin:
                 LIMIT 1
             )
         """
-        if run_id:
+        if strict_run and not run_id:
+            ordinary_annotation = "(SELECT NULL WHERE FALSE)"
+            ordinary_params = []
+        elif run_id and strict_run:
+            ordinary_annotation = """
+                (
+                    SELECT a.id FROM review_records a
+                    WHERE a.issue_id = i.issue_id
+                      AND a.model_run_id = ?
+                      AND a.work_split_id = ''
+                    ORDER BY a.id DESC LIMIT 1
+                )
+            """
+            ordinary_params = [run_id]
+        elif run_id:
             ordinary_annotation = """
                 COALESCE(
                     (
-                        SELECT a.id FROM annotations a
+                        SELECT a.id FROM review_records a
                         WHERE a.issue_id = i.issue_id
                           AND a.model_run_id = ?
                           AND a.work_split_id = ''
                         ORDER BY a.id DESC LIMIT 1
                     ),
                     (
-                        SELECT a.id FROM annotations a
+                        SELECT a.id FROM review_records a
                         WHERE a.issue_id = i.issue_id
                           AND a.model_run_id = ''
                           AND a.work_split_id = ''
                         ORDER BY a.id DESC LIMIT 1
                     ),
                     (
-                        SELECT a.id FROM annotations a
+                        SELECT a.id FROM review_records a
                         WHERE a.issue_id = i.issue_id
                           AND a.model_run_id NOT IN (?, '')
                           AND a.work_split_id = ''
@@ -311,20 +334,41 @@ class DatabaseCasesMixin:
         else:
             ordinary_annotation = """
                 (
-                    SELECT a.id FROM annotations a
+                    SELECT a.id FROM review_records a
                     WHERE a.issue_id = i.issue_id
                       AND a.work_split_id = ''
                     ORDER BY a.id DESC LIMIT 1
                 )
             """
             ordinary_params = []
-        join = f"""
-            LEFT JOIN annotations ann
-              ON ann.id = CASE
-                  WHEN {assignment_exists} THEN {assignment_annotation}
-                  ELSE {ordinary_annotation}
-              END
+        selected_annotation_id = f"""
+            CASE
+                WHEN {assignment_exists} THEN {assignment_annotation}
+                ELSE {ordinary_annotation}
+            END
         """
+        if self.backend == "postgresql":
+            # Joining the UNION-backed review_records view on a computed id makes
+            # PostgreSQL materialize every Review row and re-evaluate the correlated
+            # selector once per materialized candidate.  A page of 20 Issues then
+            # performs tens of thousands of probes.  LATERAL evaluates the selector
+            # once per Issue and fetches at most the chosen Review row.
+            join = f"""
+                LEFT JOIN LATERAL (
+                    SELECT selected_ann.*
+                    FROM review_records selected_ann
+                    WHERE selected_ann.id = {selected_annotation_id}
+                    LIMIT 1
+                ) ann ON TRUE
+            """
+        else:
+            # SQLite has no LATERAL support; retain the equivalent scalar-id join.
+            join = f"""
+                LEFT JOIN review_records ann
+                  ON ann.id = {selected_annotation_id}
+            """
+        if strict_run and not run_id:
+            return "LEFT JOIN review_records ann ON 1 = 0", []
         params = [
             run_id,
             *author_params,
@@ -347,6 +391,7 @@ class DatabaseCasesMixin:
         model_label: str = "",
         annotation_label: str = "",
         annotation_author: str = "",
+        model_review_status: str = "",
         model_run_id: str = "",
         comparison_status: str = "all",
         failure_only: bool = False,
@@ -433,6 +478,15 @@ class DatabaseCasesMixin:
         if authors:
             where.append(f"ann.author IN ({', '.join('?' for _ in authors)})")
             params.extend(authors)
+        model_review_statuses = _multi_values(model_review_status)
+        if any(value not in MODEL_REVIEW_STATUSES for value in model_review_statuses):
+            raise ValueError("unsupported model_review_status")
+        if model_review_statuses:
+            where.append(
+                "(ann.review_domain = 'model_review' AND ann.model_review_status IN "
+                f"({', '.join('?' for _ in model_review_statuses)}))"
+            )
+            params.extend(model_review_statuses)
         if is_excluded is not None:
             # No local Review is an included case.  COALESCE keeps that
             # intuitive all/included/excluded split while supporting SQLite
@@ -497,15 +551,22 @@ class DatabaseCasesMixin:
             where.append(f"({' OR '.join(assignee_clauses)})")
         normalized_work_split_id = str(work_split_id or "").strip()
         if normalized_work_split_id:
-            if not model_run_id:
-                raise ValueError("work_split_id requires model_run_id")
-            where.append(
-                "EXISTS (SELECT 1 FROM review_work_assignments wa_split "
-                "JOIN issue_work_splits ws_split ON ws_split.id = wa_split.split_id "
-                "WHERE wa_split.issue_id = i.issue_id AND ws_split.id = ? "
-                "AND ws_split.model_run_id = ?)"
-            )
-            params.extend((normalized_work_split_id, model_run_id))
+            if model_run_id:
+                where.append(
+                    "EXISTS (SELECT 1 FROM review_work_assignments wa_split "
+                    "JOIN issue_work_splits ws_split ON ws_split.id = wa_split.split_id "
+                    "WHERE wa_split.issue_id = i.issue_id AND ws_split.id = ? "
+                    "AND COALESCE(NULLIF(ws_split.evaluation_run_id, ''), ws_split.model_run_id, '') = ?)"
+                )
+                params.extend((normalized_work_split_id, model_run_id))
+            else:
+                where.append(
+                    "EXISTS (SELECT 1 FROM review_work_assignments wa_split "
+                    "JOIN issue_work_splits ws_split ON ws_split.id = wa_split.split_id "
+                    "WHERE wa_split.issue_id = i.issue_id AND ws_split.id = ? "
+                    "AND COALESCE(NULLIF(ws_split.evaluation_run_id, ''), ws_split.model_run_id, '') = '')"
+                )
+                params.append(normalized_work_split_id)
         if comparison_statuses and set(comparison_statuses) != {
             "match",
             "mismatch",
@@ -542,6 +603,7 @@ class DatabaseCasesMixin:
             projection_authors=authors or tuple(named),
             preferred_annotation_author=preferred_annotation_author,
             work_split_id=normalized_work_split_id,
+            strict_run=bool(scopes and self.legacy_business_read_mode(scopes) == "canonical"),
         )
         common = f"""
             FROM issues i
@@ -565,6 +627,7 @@ class DatabaseCasesMixin:
         model_label: str = "",
         annotation_label: str = "",
         annotation_author: str = "",
+        model_review_status: str = "",
         model_run_id: str = "",
         comparison_status: str = "all",
         failure_only: bool = False,
@@ -591,6 +654,7 @@ class DatabaseCasesMixin:
             model_label=model_label,
             annotation_label=annotation_label,
             annotation_author=annotation_author,
+            model_review_status=model_review_status,
             model_run_id=model_run_id,
             comparison_status=comparison_status,
             failure_only=failure_only,
@@ -628,6 +692,10 @@ class DatabaseCasesMixin:
                        ann.author_verified AS annotation_author_verified,
                        ann.created_at AS annotation_created_at,
                        ann.model_run_id AS annotation_model_run_id,
+                       ann.review_domain AS annotation_review_domain,
+                       ann.model_review_status AS annotation_model_review_status,
+                       ann.campaign_id AS annotation_campaign_id,
+                       ann.reference_id AS annotation_reference_id,
                        mp.model_label, mp.model_reason, mp.model_confidence, mp.model_run_id,
                        COALESCE(work_summary.work_assignee, '') AS work_assignee,
                        COALESCE(work_summary.work_split_id, '') AS work_split_id
@@ -811,7 +879,7 @@ class DatabaseCasesMixin:
             if issue is None:
                 return None
             annotations = conn.execute(
-                "SELECT * FROM annotations WHERE issue_id = ? ORDER BY id DESC", (issue_id,)
+                "SELECT * FROM review_records WHERE issue_id = ? ORDER BY id DESC", (issue_id,)
             ).fetchall()
             predictions = conn.execute(
                 """
@@ -852,8 +920,8 @@ class DatabaseCasesMixin:
             attachments = conn.execute(
                 """
                 SELECT ra.*
-                FROM review_attachments ra
-                JOIN annotations ann ON ann.id = ra.annotation_id
+                FROM review_record_attachments ra
+                JOIN review_records ann ON ann.id = ra.annotation_id
                 WHERE ann.issue_id = ?
                 ORDER BY ra.created_at ASC
                 """,
@@ -866,8 +934,21 @@ class DatabaseCasesMixin:
                 self._attachment_dict(row)
             )
         annotation_items = [self._annotation_dict(row) for row in annotations]
+        legacy_classes = {
+            int(item["source_annotation_id"]): item
+            for item in self.legacy_classifications(
+                [str(issue["baseline_scope"] or "")]
+            )
+            if str(item.get("source_annotation_id") or "").isdigit()
+            and int(item["source_annotation_id"]) in {int(item["id"]) for item in annotation_items}
+        }
         for annotation in annotation_items:
             annotation["attachments"] = attachments_by_annotation.get(int(annotation["id"]), [])
+            classification = legacy_classes.get(int(annotation["id"]))
+            if classification:
+                annotation["legacy_classification"] = str(classification.get("classification") or "")
+                annotation["legacy_read_only"] = True
+                annotation["legacy_history_label"] = "历史 Review（只读）"
         data["annotations"] = annotation_items
         data["predictions"] = [self._prediction_dict(row) for row in predictions]
         data["jobs"] = [self._job_dict(row) for row in jobs]
@@ -891,6 +972,8 @@ class DatabaseCasesMixin:
         data["gt_snapshot"] = self.get_active_gt_snapshot(
             str(data.get("baseline_scope") or "")
         )
+        policies = self.legacy_read_policies([str(data.get("baseline_scope") or "")])
+        data["legacy_read_policy"] = policies[0] if policies else {"policy": "legacy", "epoch": 0}
         return data
 
     def get_issue(self, issue_id: str) -> dict[str, Any] | None:
@@ -925,6 +1008,7 @@ class DatabaseCasesMixin:
         scopes = self._normalize_baseline_scopes(baseline_scopes, baseline_scope=baseline_scope)
         if not scopes:
             raise ValueError("baseline_scopes must not be empty")
+        canonical_mode = self.legacy_business_read_mode(scopes) == "canonical"
         scope_clause, scope_params = self._scope_in_sql(scopes)
         where = [scope_clause, "ann.id IS NOT NULL"]
         normalized_work_split_id = str(work_split_id or "").strip()
@@ -938,16 +1022,20 @@ class DatabaseCasesMixin:
                 "WHERE wa_split.issue_id = i.issue_id AND wa_split.split_id = ?)"
             )
         else:
-            annotation_join = self._latest_annotation_join(
-                model_run_id,
-                include_unbound_fallback=True,
-                include_bound_history_fallback=True,
-            )
-            annotation_params = self._latest_annotation_join_params(
-                model_run_id,
-                include_unbound_fallback=True,
-                include_bound_history_fallback=True,
-            )
+            if canonical_mode and not model_run_id:
+                annotation_join = "LEFT JOIN review_records ann ON 1 = 0"
+                annotation_params = ()
+            else:
+                annotation_join = self._latest_annotation_join(
+                    model_run_id,
+                    include_unbound_fallback=not canonical_mode,
+                    include_bound_history_fallback=not canonical_mode,
+                )
+                annotation_params = self._latest_annotation_join_params(
+                    model_run_id,
+                    include_unbound_fallback=not canonical_mode,
+                    include_bound_history_fallback=not canonical_mode,
+                )
         params: list[Any] = [*annotation_params, model_run_id, *scope_params]
         if normalized_work_split_id:
             params.append(normalized_work_split_id)
@@ -1020,6 +1108,26 @@ class DatabaseCasesMixin:
                 """,
                 (*annotation_params, *scope_params),
             ).fetchone()[0]
+            model_review_status_counts = {
+                "pending": 0,
+                "in_progress": 0,
+                "completed": 0,
+                "blocked_by_label": 0,
+            }
+            status_rows = conn.execute(
+                f"""
+                SELECT ann.model_review_status AS status, COUNT(DISTINCT i.issue_id) AS count
+                FROM issues i
+                {annotation_join}
+                {base_where}
+                  AND ann.review_domain = 'model_review'
+                  AND ann.model_review_status IN ('pending', 'in_progress', 'completed', 'blocked_by_label')
+                GROUP BY ann.model_review_status
+                """,
+                (*annotation_params, *scope_params),
+            ).fetchall()
+            for row in status_rows:
+                model_review_status_counts[str(row["status"])] = int(row["count"] or 0)
             predictions = failures = reviewed_failures = 0
             if model_run_id:
                 common = f"""
@@ -1046,7 +1154,7 @@ class DatabaseCasesMixin:
                     ),
                 ).fetchone()[0]
                 reviewed_failures = conn.execute(
-                    f"SELECT COUNT(*) {common}{failure_condition} AND ann.id IS NOT NULL",
+                    f"SELECT COUNT(*) {common}{failure_condition} AND ann.review_domain = 'model_review' AND ann.model_review_status = 'completed'",
                     (
                         *annotation_params,
                         model_run_id,
@@ -1069,6 +1177,7 @@ class DatabaseCasesMixin:
             "predictions": int(predictions),
             "model_failures": int(failures),
             "reviewed_failures": int(reviewed_failures),
+            "model_review_status_counts": model_review_status_counts,
             "running_jobs": int(running),
             "label_state_counts": label_state_counts,
             "gt_snapshots": self.active_gt_snapshots(scopes),
@@ -1114,6 +1223,26 @@ class DatabaseCasesMixin:
                 "work_split_id": work_split_id,
                 "annotation": {
                     "id": row["annotation_id"] if "annotation_id" in keys else None,
+                    "review_domain": (
+                        str(row["annotation_review_domain"] or "legacy")
+                        if "annotation_review_domain" in keys
+                        else "legacy"
+                    ),
+                    "model_review_status": (
+                        str(row["annotation_model_review_status"] or "")
+                        if "annotation_model_review_status" in keys
+                        else ""
+                    ),
+                    "campaign_id": (
+                        str(row["annotation_campaign_id"] or "")
+                        if "annotation_campaign_id" in keys
+                        else ""
+                    ),
+                    "reference_id": (
+                        str(row["annotation_reference_id"] or "")
+                        if "annotation_reference_id" in keys
+                        else ""
+                    ),
                     "model_run_id": (
                         str(row["annotation_model_run_id"] or "")
                         if "annotation_model_run_id" in keys
@@ -1203,58 +1332,7 @@ class DatabaseCasesMixin:
             for username in sorted(counts)
         ]
 
-    @staticmethod
-    def _work_split_snapshot_members(value: Any) -> list[dict[str, Any]]:
-        """Normalize the original split payload for history/fallback views."""
-
-        raw_members = _json_load(value, [])
-        if not isinstance(raw_members, list):
-            return []
-        members: list[dict[str, Any]] = []
-        for raw_member in raw_members:
-            if not isinstance(raw_member, dict):
-                continue
-            name = str(raw_member.get("name") or "").strip()
-            if not name:
-                continue
-            raw_items = raw_member.get("items")
-            items: list[dict[str, Any]] = []
-            if isinstance(raw_items, list):
-                for raw_item in raw_items:
-                    if not isinstance(raw_item, dict):
-                        continue
-                    issue_id = str(raw_item.get("issue_id") or "").strip()
-                    if not issue_id:
-                        continue
-                    items.append(
-                        {
-                            "issue_id": issue_id,
-                            "assignment_kind": str(
-                                raw_item.get("assignment_kind") or "base"
-                            ),
-                            "ordinal": int(raw_item.get("ordinal") or len(items) + 1),
-                        }
-                    )
-            if not items:
-                items = [
-                    {
-                        "issue_id": str(issue_id).strip(),
-                        "assignment_kind": "base",
-                        "ordinal": index,
-                    }
-                    for index, issue_id in enumerate(raw_member.get("issue_ids") or [], 1)
-                    if str(issue_id or "").strip()
-                ]
-            members.append(
-                {
-                    "name": name,
-                    "count": len(items),
-                    "requested_count": raw_member.get("requested_count"),
-                    "mode": str(raw_member.get("mode") or "share"),
-                    "items": items,
-                }
-            )
-        return members
+    _work_split_snapshot_members = staticmethod(assignment_snapshot_members)
 
     def list_review_work_splits(
         self, *, limit: int = 50, model_run_id: str = ""
@@ -1291,24 +1369,37 @@ class DatabaseCasesMixin:
             if not split_rows:
                 return []
 
+            # Migrated campaigns retain their creation audit; display the original
+            # batch's timestamp, creator and frozen selection through provenance.
+            source_ids = {
+                str(_json_load(row["filter_json"], {}).get("source_legacy_split_id") or "")
+                for row in split_rows
+            } - {""}
+            source_rows = conn.execute(
+                f"SELECT * FROM issue_work_splits WHERE id IN ({', '.join('?' for _ in source_ids)})",
+                sorted(source_ids),
+            ).fetchall() if source_ids else []
+            sources_by_id = {str(source["id"]): dict(source) for source in source_rows}
             split_ids = [str(row["id"]) for row in split_rows]
             placeholders = ", ".join("?" for _ in split_ids)
+            scope_rows = conn.execute(
+                f"""SELECT DISTINCT assignment.split_id, issue.baseline_scope
+                    FROM review_work_assignments assignment
+                    JOIN issues issue ON issue.issue_id = assignment.issue_id
+                    WHERE assignment.split_id IN ({placeholders})
+                    ORDER BY assignment.split_id, issue.baseline_scope""",
+                split_ids,
+            ).fetchall()
+            scopes_by_split: dict[str, list[str]] = {}
+            for scope_row in scope_rows:
+                if scope_row["baseline_scope"]:
+                    scopes_by_split.setdefault(str(scope_row["split_id"]), []).append(str(scope_row["baseline_scope"]))
             progress_rows = conn.execute(
                 f"""
                 SELECT assignment.split_id,
                        assignment.assignee,
                        COUNT(*) AS assigned_count,
-                       SUM(CASE WHEN EXISTS (
-                           SELECT 1
-                           FROM annotations annotation
-                           WHERE annotation.issue_id = assignment.issue_id
-                             AND annotation.model_run_id = split.model_run_id
-                             AND annotation.author = assignment.assignee
-                             AND (
-                               (split.mode = 'blind' AND annotation.work_split_id = assignment.split_id)
-                               OR (split.mode <> 'blind' AND annotation.work_split_id = '')
-                             )
-                       ) THEN 1 ELSE 0 END) AS completed_count
+                       SUM(CASE WHEN {ASSIGNMENT_SUBMITTED_SQL} THEN 1 ELSE 0 END) AS completed_count
                 FROM review_work_assignments assignment
                 JOIN issue_work_splits split ON split.id = assignment.split_id
                 WHERE assignment.split_id IN ({placeholders})
@@ -1362,12 +1453,14 @@ class DatabaseCasesMixin:
                         query_parameters.extend(batch)
                         rows = conn.execute(
                             f"""
-                            SELECT DISTINCT annotation.issue_id
-                            FROM annotations annotation
-                            WHERE annotation.model_run_id = ?
-                              AND annotation.author = ?
-                              AND {work_split_clause}
-                              AND annotation.issue_id IN ({batch_placeholders})
+                            SELECT DISTINCT head.issue_id
+                            FROM model_review_heads head
+                            JOIN model_review_revisions revision ON revision.id = head.revision_id
+                            WHERE head.model_run_id = ?
+                              AND lower(head.reviewer) = lower(?)
+                              AND {MODEL_SUBMISSION_SQL}
+                              AND {work_split_clause.replace('annotation.work_split_id', 'revision.work_split_id')}
+                              AND head.issue_id IN ({batch_placeholders})
                             """,
                             query_parameters,
                         ).fetchall()
@@ -1397,7 +1490,10 @@ class DatabaseCasesMixin:
         result: list[dict[str, Any]] = []
         for row in split_rows:
             split_id = str(row["id"])
-            snapshot_members = self._work_split_snapshot_members(row["assignees_json"])
+            source = legacy_batch_source(row, sources_by_id)
+            snapshot_members = self._work_split_snapshot_members(
+                source.get("assignees_json") or row["assignees_json"]
+            )
             snapshot_by_name = {
                 str(item["name"]): item for item in snapshot_members
             }
@@ -1445,14 +1541,20 @@ class DatabaseCasesMixin:
                     "split_id": split_id,
                     "created_by": str(row["created_by"] or ""),
                     "created_at": str(row["created_at"] or ""),
+                    "source_split_id": str(source.get("id") or ""),
+                    "source_created_at": str(source.get("created_at") or ""),
+                    "source_created_by": str(source.get("created_by") or ""),
+                    "source_filter_snapshot": _json_load(source.get("filter_json"), {}) if source else None,
                     "seed": row["seed"],
                     "total_count": total_count,
                     "assignment_count": assignment_count,
                     "mode": str(row["mode"] or "single"),
                     "reviewers_per_issue": int(row["reviewers_per_issue"] or 1),
                     "model_run_id": str(row["model_run_id"] or ""),
+                    "workflow_mode": str(row["workflow_mode"] or "model_review_only"),
                     "overlap_ratio": float(row["overlap_ratio"] or 0),
                     "filter_snapshot": _json_load(row["filter_json"], {}),
+                    "baseline_scopes": scopes_by_split.get(split_id, []),
                     "members": members,
                     "completed_count": completed_count,
                     "pending_count": max(0, assignment_count - completed_count),
@@ -1489,19 +1591,7 @@ class DatabaseCasesMixin:
         safe_page_size = max(10, min(int(page_size or 50), 100))
         normalized_assignee = str(assignee or "").strip().lower()
         normalized_query = str(query or "").strip()[:128]
-        submitted_condition = """
-            EXISTS (
-                SELECT 1
-                FROM annotations annotation
-                WHERE annotation.issue_id = assignment.issue_id
-                  AND annotation.model_run_id = split.model_run_id
-                  AND annotation.author = assignment.assignee
-                  AND (
-                    (split.mode = 'blind' AND annotation.work_split_id = assignment.split_id)
-                    OR (split.mode <> 'blind' AND annotation.work_split_id = '')
-                  )
-            )
-        """
+        submitted_condition = ASSIGNMENT_SUBMITTED_SQL
         conditions = ["assignment.split_id = ?"]
         parameters: list[Any] = [normalized_split_id]
         if normalized_assignee:
@@ -1539,29 +1629,55 @@ class DatabaseCasesMixin:
                        assignment.assignee,
                        assignment.assignment_kind,
                        assignment.ordinal,
+                       COALESCE((
+                           SELECT progress.model_review_submitted
+                           FROM combined_review_progress progress
+                           WHERE progress.campaign_id=assignment.split_id
+                             AND progress.issue_id=assignment.issue_id
+                             AND lower(progress.reviewer)=lower(assignment.assignee)
+                       ), false) AS model_review_submitted,
+                       COALESCE((
+                           SELECT progress.case_label_acknowledged
+                           FROM combined_review_progress progress
+                           WHERE progress.campaign_id=assignment.split_id
+                             AND progress.issue_id=assignment.issue_id
+                             AND lower(progress.reviewer)=lower(assignment.assignee)
+                       ), false) AS case_label_acknowledged,
                        assignment.assigned_by,
                        assignment.assigned_at,
                        issue.title,
                        issue.scenario,
                        issue.gt_label,
                        issue.baseline_scope,
+                       COALESCE((
+                           SELECT progress.model_review_submitted
+                           FROM combined_review_progress progress
+                           WHERE progress.campaign_id=split.id
+                             AND progress.issue_id=assignment.issue_id
+                             AND lower(progress.reviewer)=lower(assignment.assignee)
+                       ), false) AS model_review_submitted,
+                       COALESCE((
+                           SELECT progress.case_label_acknowledged
+                           FROM combined_review_progress progress
+                           WHERE progress.campaign_id=split.id
+                             AND progress.issue_id=assignment.issue_id
+                             AND lower(progress.reviewer)=lower(assignment.assignee)
+                       ), false) AS case_label_acknowledged,
                        CASE WHEN {submitted_condition} THEN 1 ELSE 0 END AS submitted,
                        (
-                           SELECT annotation.created_at
-                           FROM annotations annotation
-                           WHERE annotation.issue_id = assignment.issue_id
-                             AND annotation.model_run_id = split.model_run_id
-                             AND annotation.author = assignment.assignee
-                             AND (
-                               (split.mode = 'blind' AND annotation.work_split_id = assignment.split_id)
-                               OR (split.mode <> 'blind' AND annotation.work_split_id = '')
-                             )
-                           ORDER BY annotation.id DESC
-                           LIMIT 1
+                           SELECT revision.created_at
+                           FROM model_review_heads head
+                           JOIN model_review_revisions revision ON revision.id = head.revision_id
+                           WHERE head.issue_id = assignment.issue_id
+                             AND head.model_run_id = split.model_run_id
+                             AND lower(head.reviewer) = lower(assignment.assignee)
+                             AND {MODEL_SUBMISSION_SQL}
+                             AND {MODEL_ASSIGNMENT_SCOPE_SQL}
+                           ORDER BY revision.id DESC LIMIT 1
                        ) AS submitted_at,
                        (
-                           SELECT annotation.review_status
-                           FROM annotations annotation
+                       SELECT annotation.review_status
+                           FROM review_records annotation
                            WHERE annotation.issue_id = assignment.issue_id
                              AND annotation.model_run_id = split.model_run_id
                              AND annotation.author = assignment.assignee
@@ -1571,7 +1687,17 @@ class DatabaseCasesMixin:
                              )
                            ORDER BY annotation.id DESC
                            LIMIT 1
-                       ) AS review_status
+                       ) AS review_status,
+                       (
+                           SELECT revision.status
+                           FROM model_review_heads head
+                           JOIN model_review_revisions revision ON revision.id = head.revision_id
+                           WHERE head.issue_id = assignment.issue_id
+                             AND head.model_run_id = split.model_run_id
+                             AND lower(head.reviewer) = lower(assignment.assignee)
+                             AND {MODEL_ASSIGNMENT_SCOPE_SQL}
+                           ORDER BY revision.id DESC LIMIT 1
+                       ) AS model_review_status
                 {from_sql}
                 WHERE {where}
                 ORDER BY assignment.assignee ASC, assignment.ordinal ASC, assignment.issue_id ASC
@@ -1605,6 +1731,9 @@ class DatabaseCasesMixin:
                 "submitted": bool(row["submitted"]),
                 "submitted_at": str(row["submitted_at"] or ""),
                 "review_status": str(row["review_status"] or ""),
+                "model_review_status": str(row["model_review_status"] or ""),
+                "model_review_submitted": bool(row["model_review_submitted"]),
+                "case_label_acknowledged": bool(row["case_label_acknowledged"]),
             }
             for row in item_rows
         ]
@@ -1680,8 +1809,12 @@ class DatabaseCasesMixin:
                     annotation_rows = conn.execute(
                         f"""
                         SELECT annotation.issue_id, annotation.author, annotation.id,
-                               annotation.created_at, annotation.review_status
-                        FROM annotations annotation
+                               annotation.created_at, annotation.review_status,
+                               annotation.review_domain, annotation.model_review_status,
+                               EXISTS (SELECT 1 FROM model_review_revisions migrated
+                                       WHERE migrated.id + {MODEL_REVIEW_PUBLIC_ID_OFFSET} = annotation.id
+                                         AND migrated.legacy_annotation_id IS NOT NULL) AS legacy_submitted
+                        FROM review_records annotation
                         WHERE annotation.model_run_id = ?
                           AND {annotation_work_split}
                           AND annotation.issue_id IN ({batch_placeholders})
@@ -1696,6 +1829,9 @@ class DatabaseCasesMixin:
                             {
                                 "created_at": str(row["created_at"] or ""),
                                 "review_status": str(row["review_status"] or ""),
+                                "review_domain": str(row["review_domain"] or "legacy"),
+                                "model_review_status": str(row["model_review_status"] or ""),
+                                "legacy_submitted": bool(row["legacy_submitted"]),
                             },
                         )
             snapshot_rows: list[dict[str, Any]] = []
@@ -1704,8 +1840,11 @@ class DatabaseCasesMixin:
                 for assignment in member.get("items") or []:
                     assignment_issue_id = str(assignment["issue_id"])
                     issue = issue_by_id.get(assignment_issue_id, {})
-                    annotation = annotation_by_key.get(
-                        (assignment_issue_id, member_name)
+                    annotation = annotation_by_key.get((assignment_issue_id, member_name))
+                    completed = bool(
+                        annotation
+                        and annotation.get("review_domain") == "model_review"
+                        and (annotation.get("model_review_status") == "completed" or annotation.get("legacy_submitted"))
                     )
                     row = {
                         "issue_id": assignment_issue_id,
@@ -1720,9 +1859,10 @@ class DatabaseCasesMixin:
                         "scenario": str(issue.get("scenario") or ""),
                         "gt_label": str(issue.get("gt_label") or ""),
                         "baseline_scope": str(issue.get("baseline_scope") or ""),
-                        "submitted": bool(annotation),
-                        "submitted_at": str((annotation or {}).get("created_at") or ""),
+                        "submitted": completed,
+                        "submitted_at": str((annotation or {}).get("created_at") or "") if completed else "",
                         "review_status": str((annotation or {}).get("review_status") or ""),
+                        "model_review_status": str((annotation or {}).get("model_review_status") or ""),
                     }
                     if normalized_assignee and member_name.lower() != normalized_assignee:
                         continue
@@ -1783,8 +1923,11 @@ class DatabaseCasesMixin:
             "mode": str(split["mode"] or "single"),
             "reviewers_per_issue": int(split["reviewers_per_issue"] or 1),
             "model_run_id": str(split["model_run_id"] or ""),
+            "workflow_mode": str(split["workflow_mode"] or "model_review_only"),
+            "purpose": str(split["purpose"] or ""),
             "overlap_ratio": float(split["overlap_ratio"] or 0),
             "filter_snapshot": _json_load(split["filter_json"], {}),
+            "baseline_scopes": summary.get("baseline_scopes", []),
             "members": summary.get("members", []),
             "completed_count": int(summary.get("completed_count") or 0),
             "pending_count": int(summary.get("pending_count") or 0),
@@ -1863,7 +2006,7 @@ class DatabaseCasesMixin:
             submitted = conn.execute(
                 """
                 SELECT annotation.id
-                FROM annotations annotation
+                FROM review_records annotation
                 WHERE annotation.issue_id = ?
                   AND annotation.model_run_id = ?
                   AND annotation.author = ?
@@ -2021,16 +2164,32 @@ class DatabaseCasesMixin:
             if split is None:
                 return None
             rows = conn.execute(
-                """
+                f"""
                 SELECT assignment.assignee, assignment.assignment_kind,
                        assignment.ordinal,
+                       COALESCE((
+                           SELECT progress.model_review_submitted
+                           FROM combined_review_progress progress
+                           WHERE progress.campaign_id=assignment.split_id
+                             AND progress.issue_id=assignment.issue_id
+                             AND lower(progress.reviewer)=lower(assignment.assignee)
+                       ), false) AS model_review_submitted,
+                       COALESCE((
+                           SELECT progress.case_label_acknowledged
+                           FROM combined_review_progress progress
+                           WHERE progress.campaign_id=assignment.split_id
+                             AND progress.issue_id=assignment.issue_id
+                             AND lower(progress.reviewer)=lower(assignment.assignee)
+                       ), false) AS case_label_acknowledged,
                        (
-                           SELECT annotation.id FROM annotations annotation
-                           WHERE annotation.issue_id = assignment.issue_id
-                             AND annotation.model_run_id = ?
-                             AND annotation.work_split_id = assignment.split_id
-                             AND annotation.author = assignment.assignee
-                           ORDER BY annotation.id DESC LIMIT 1
+                           SELECT revision.id FROM model_review_heads head
+                           JOIN model_review_revisions revision ON revision.id = head.revision_id
+                           WHERE head.issue_id = assignment.issue_id
+                             AND head.model_run_id = ?
+                             AND revision.work_split_id = assignment.split_id
+                             AND lower(head.reviewer) = lower(assignment.assignee)
+                             AND {MODEL_SUBMISSION_SQL}
+                           ORDER BY revision.id DESC LIMIT 1
                        ) AS annotation_id
                 FROM review_work_assignments assignment
                 WHERE assignment.issue_id = ? AND assignment.split_id = ?
@@ -2044,7 +2203,13 @@ class DatabaseCasesMixin:
                 "username": str(row["assignee"]),
                 "assignment_kind": str(row["assignment_kind"]),
                 "ordinal": int(row["ordinal"]),
-                "submitted": row["annotation_id"] is not None,
+                "model_review_submitted": bool(row["model_review_submitted"]),
+                "case_label_acknowledged": bool(row["case_label_acknowledged"]),
+                "submitted": (
+                    bool(row["model_review_submitted"] and row["case_label_acknowledged"])
+                    if str(split["workflow_mode"] or "model_review_only") == "model_review_and_case_label"
+                    else row["annotation_id"] is not None
+                ),
             }
             for row in rows
         ]
@@ -2057,6 +2222,7 @@ class DatabaseCasesMixin:
             "split_id": str(split["id"]),
             "mode": str(split["mode"] or "single"),
             "model_run_id": str(split["model_run_id"] or ""),
+            "workflow_mode": str(split["workflow_mode"] or "model_review_only"),
             "reviewers_per_issue": reviewer_count,
             "overlap_ratio": (
                 float(split["overlap_ratio"] or 0)
@@ -2068,6 +2234,68 @@ class DatabaseCasesMixin:
             "assigned": own is not None,
             "own_assignment": own,
             "members": members,
+        }
+
+    def review_task_context(
+        self, *, split_id: str, username: str, is_admin: bool = False,
+        allow_supplemental: bool = False,
+    ) -> dict[str, Any] | None:
+        normalized = str(split_id or "").strip()
+        actor = str(username or "").strip().lower()
+        if not normalized:
+            return None
+        with self.connect() as conn:
+            split = conn.execute(
+                "SELECT * FROM issue_work_splits WHERE id=?", (normalized,)
+            ).fetchone()
+            if split is None:
+                return None
+            member = conn.execute(
+                "SELECT 1 FROM review_work_assignments WHERE split_id=? AND lower(assignee)=lower(?) LIMIT 1",
+                (normalized, actor),
+            ).fetchone() if actor else None
+            if not is_admin and not allow_supplemental and member is None:
+                raise PermissionError("当前账号不是该任务成员。")
+            scope_rows = conn.execute(
+                """
+                SELECT DISTINCT issue.baseline_scope
+                FROM review_work_assignments assignment
+                JOIN issues issue ON issue.issue_id=assignment.issue_id
+                WHERE assignment.split_id=?
+                ORDER BY issue.baseline_scope
+                """,
+                (normalized,),
+            ).fetchall()
+            issue_count = int(conn.execute(
+                "SELECT COUNT(DISTINCT issue_id) n FROM review_work_assignments WHERE split_id=?",
+                (normalized,),
+            ).fetchone()["n"] or 0)
+        snapshot = _json_load(split["filter_json"], {})
+        scopes = [str(row["baseline_scope"] or "") for row in scope_rows if str(row["baseline_scope"] or "")]
+        if not scopes:
+            raw = snapshot.get("baseline_scopes") or snapshot.get("baselines") or []
+            scopes = [str(value or "").strip() for value in (raw if isinstance(raw, list) else str(raw).split(",")) if str(value or "").strip()]
+        run_id = str(split["evaluation_run_id"] or split["model_run_id"] or "")
+        created_at = str(split["created_at"] or "")
+        name = str(split["campaign_name"] or "").strip()
+        if not name:
+            name = f"历史任务 · {created_at[:10]}" if created_at else f"历史任务 · {normalized[:12]}"
+        return {
+            "id": normalized,
+            "name": name,
+            "purpose": str(split["purpose"] or "") or None,
+            "workflow_mode": str(split["workflow_mode"] or "model_review_only"),
+            "lifecycle": str(split["lifecycle"] or "active"),
+            "legacy_read_only": bool(split["legacy_read_only"]),
+            "baseline_scopes": list(dict.fromkeys(scopes)),
+            "model_run_id": run_id,
+            "issue_count": issue_count or int(split["total_count"] or 0),
+            "current_user_is_member": member is not None,
+            "supplemental_only": member is None,
+            "legacy_no_run": not run_id,
+            "mode": str(split["mode"] or "single"),
+            "created_by": str(split["created_by"] or ""),
+            "created_at": created_at,
         }
 
     def review_multi_rows(
@@ -2144,7 +2372,6 @@ class DatabaseCasesMixin:
             SELECT i.issue_id, i.title, i.scenario, i.summary, i.gt_label,
                    i.baseline_scope, assignment.split_id, assignment.assignee,
                    split.mode AS split_mode,
-                   split.filter_json AS split_filter_json,
                    split.model_run_id AS split_model_run_id,
                    annotation.id AS annotation_id,
                    annotation.label AS annotation_label,
@@ -2157,13 +2384,17 @@ class DatabaseCasesMixin:
                    annotation.author_source AS annotation_author_source,
                    annotation.author_verified AS annotation_author_verified,
                    annotation.created_at AS annotation_created_at,
+                   annotation.review_domain AS annotation_review_domain,
+                   annotation.model_review_status AS annotation_model_review_status,
+                   annotation.campaign_id AS annotation_campaign_id,
+                   annotation.reference_id AS annotation_reference_id,
                    prediction.model_run_id, prediction.model_label,
                    prediction.model_reason, prediction.model_confidence
             FROM review_work_assignments assignment
             JOIN issue_work_splits split ON split.id = assignment.split_id
             JOIN issues i ON i.issue_id = assignment.issue_id
-            LEFT JOIN annotations annotation ON annotation.id = (
-                SELECT candidate.id FROM annotations candidate
+            LEFT JOIN review_records annotation ON annotation.id = (
+                SELECT candidate.id FROM review_records candidate
                 WHERE candidate.issue_id = assignment.issue_id
                   AND candidate.model_run_id = split.model_run_id
                   AND (
@@ -2204,13 +2435,14 @@ class DatabaseCasesMixin:
                 ).fetchall()
         results: list[dict[str, Any]] = []
         for row in rows:
-            snapshot = _json_load(row["split_filter_json"], {})
-            confirmations = snapshot.get("manual_review_adjudications_v1", {}) if isinstance(snapshot, dict) else {}
-            confirmation = confirmations.get(str(row["issue_id"])) if isinstance(confirmations, dict) else None
             annotation = None
             if row["annotation_id"] is not None:
                 annotation = {
                     "id": int(row["annotation_id"]),
+                    "review_domain": str(row["annotation_review_domain"] or "legacy"),
+                    "model_review_status": str(row["annotation_model_review_status"] or ""),
+                    "campaign_id": str(row["annotation_campaign_id"] or ""),
+                    "reference_id": str(row["annotation_reference_id"] or ""),
                     "model_run_id": str(row["split_model_run_id"] or ""),
                     "work_split_id": (
                         str(row["split_id"])
@@ -2241,7 +2473,6 @@ class DatabaseCasesMixin:
                     "split_id": str(row["split_id"]),
                     "split_model_run_id": str(row["split_model_run_id"] or ""),
                     "assignee": str(row["assignee"]),
-                    "confirmed_adjudication": confirmation if isinstance(confirmation, dict) else None,
                     "annotation": annotation,
                     "prediction": {
                         "model_run_id": str(row["model_run_id"] or ""),
@@ -2252,49 +2483,6 @@ class DatabaseCasesMixin:
                 }
             )
         return results
-
-    def latest_non_assignee_reviews(
-        self, pairs: Sequence[tuple[str, str]]
-    ) -> dict[tuple[str, str], dict[str, Any]]:
-        """Read possible legacy decisions within each blind task's exact Run.
-
-        Only current Issue assignees define membership. An ordinary review or a
-        review explicitly bound to this split may qualify; other tasks, Runs,
-        unbound Runs and anonymous authors cannot silently resolve this task.
-        The caller checks conflict, chronology and effective output validity.
-        """
-        selected = list(dict.fromkeys(pairs))
-        result: dict[tuple[str, str], dict[str, Any]] = {}
-        with self.connect() as conn:
-            for offset in range(0, len(selected), 200):
-                batch = selected[offset:offset + 200]
-                clause = " OR ".join("(assignment.split_id=? AND assignment.issue_id=?)" for _ in batch)
-                params = [value for pair in batch for value in pair]
-                rows = conn.execute(
-                    f"""SELECT DISTINCT assignment.split_id AS decision_split_id,
-                               assignment.issue_id AS decision_issue_id, candidate.*
-                        FROM review_work_assignments assignment
-                        JOIN issue_work_splits split ON split.id=assignment.split_id
-                        JOIN annotations candidate ON candidate.id=(
-                            SELECT extra.id FROM annotations extra
-                            WHERE extra.issue_id=assignment.issue_id
-                              AND extra.model_run_id=split.model_run_id
-                              AND split.model_run_id <> '' AND split.mode='blind'
-                              AND (extra.work_split_id='' OR extra.work_split_id=split.id)
-                              AND trim(extra.author) <> ''
-                              AND NOT EXISTS (
-                                  SELECT 1 FROM review_work_assignments member
-                                  WHERE member.split_id=split.id AND member.issue_id=assignment.issue_id
-                                    AND lower(trim(member.assignee))=lower(trim(extra.author))
-                              )
-                            ORDER BY extra.id DESC LIMIT 1
-                        )
-                        WHERE {clause}""",
-                    params,
-                ).fetchall()
-                for row in rows:
-                    result[(str(row["decision_split_id"]), str(row["decision_issue_id"]))] = self._annotation_dict(row)
-        return result
 
     def apply_work_split(
         self,

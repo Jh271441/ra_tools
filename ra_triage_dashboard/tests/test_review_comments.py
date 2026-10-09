@@ -48,6 +48,14 @@ class ReviewCommentsTest(unittest.TestCase):
             source="test",
             replace_gt=True,
         )
+        run, _ = database.import_model_run(
+            name="comment test run",
+            source_name="comment-test.json",
+            source_sha256="d" * 64,
+            metadata={},
+            rows=[{"issue_id": "cn1", "model_label": "误触发"}],
+        )
+        self.model_run_id = str(run["id"])
         return database
 
     def test_comment_thread_is_append_only_and_does_not_version_review(self) -> None:
@@ -183,7 +191,8 @@ class ReviewCommentsTest(unittest.TestCase):
             database = self.make_database(directory)
             database.set_mention_user(username="alice", enabled=True, actor="admin")
             parent = database.create_review_comment(
-                issue_id="cn1", body="请确认这个问题", author="alice"
+                issue_id="cn1", model_run_id=self.model_run_id,
+                body="请确认这个问题", author="alice"
             )
             dispatcher = Mock()
             with patch(
@@ -203,6 +212,7 @@ class ReviewCommentsTest(unittest.TestCase):
                         "cn1",
                         json_request(
                             {
+                                "model_run_id": self.model_run_id,
                                 "body": "我已经处理好了",
                                 "reply_to_id": parent["id"],
                             }
@@ -286,7 +296,7 @@ class ReviewCommentsTest(unittest.TestCase):
                 "height": 8,
                 "sha256": "a" * 64,
             }
-            request = json_request({})
+            request = json_request({"model_run_id": self.model_run_id})
             with patch(
                 "ra_triage_dashboard.app.routers.case_comments.database", database
             ), patch(
@@ -308,6 +318,7 @@ class ReviewCommentsTest(unittest.TestCase):
                         request,
                         payload=json.dumps(
                             {
+                                "model_run_id": self.model_run_id,
                                 "body": "![现场图](attachment:pending-1)",
                                 "attachment_tokens": ["pending-1"],
                             }

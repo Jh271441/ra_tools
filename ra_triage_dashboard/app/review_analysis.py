@@ -378,19 +378,25 @@ def build_review_reason_analysis(
             annotation.get("missing_evidence")
         )
         annotation["note"] = str(annotation.get("note") or "").strip()
-        expected_output, expected_output_source = effective_expected_output(
-            annotation,
-            tag_catalog_items,
-        )
-        annotation["expected_output"] = expected_output
-        # ``label`` remains the response-level compatibility alias for callers
-        # created before the expected-output field was introduced.
-        annotation["label"] = expected_output
-        annotation["expected_output_source"] = expected_output_source
-        annotation["review_status"] = derive_review_status(
-            expected_output,
-            item.get("gt_label"),
-        )
+        if annotation.get("review_domain") == "model_review":
+            # Model diagnosis never adjudicates or rewrites the shared Label domain.
+            annotation["expected_output"] = ""
+            annotation["label"] = ""
+            annotation["expected_output_source"] = "model_review_separate_domain"
+        else:
+            expected_output, expected_output_source = effective_expected_output(
+                annotation,
+                tag_catalog_items,
+            )
+            annotation["expected_output"] = expected_output
+            # ``label`` remains the response-level compatibility alias for callers
+            # created before the expected-output field was introduced.
+            annotation["label"] = expected_output
+            annotation["expected_output_source"] = expected_output_source
+            annotation["review_status"] = derive_review_status(
+                expected_output,
+                item.get("gt_label"),
+            )
         item["annotation"] = annotation
         item["prediction"] = prediction
         gt_label = str(item.get("gt_label") or "")
@@ -465,6 +471,12 @@ def build_review_reason_analysis(
         "reviewed": 0,
         "needs_gt_review": 0,
     }
+    model_review_status_counts = {
+        "pending": 0,
+        "in_progress": 0,
+        "completed": 0,
+        "blocked_by_label": 0,
+    }
     confusion_counts: dict[str, dict[str, int]] = {
         gt_label: {model_label: 0 for model_label in MODEL_LABELS}
         for gt_label in TRIAGE_LABELS
@@ -477,9 +489,14 @@ def build_review_reason_analysis(
         evidences = annotation["missing_evidence"]
         tags = annotation["tags"]
         review_status = str(annotation.get("review_status") or "pending")
-        review_status_counts[review_status] = review_status_counts.get(
-            review_status, 0
-        ) + 1
+        if annotation.get("review_domain") == "model_review":
+            model_status = str(annotation.get("model_review_status") or "pending")
+            if model_status in model_review_status_counts:
+                model_review_status_counts[model_status] += 1
+        else:
+            review_status_counts[review_status] = review_status_counts.get(
+                review_status, 0
+            ) + 1
         themes = item["reason_themes"]
         if note:
             with_reason += 1
@@ -602,6 +619,7 @@ def build_review_reason_analysis(
             "missing_gt_predictions": missing_gt_predictions,
             "manual_gt_disagreements": manual_gt_disagreements,
             "review_status_counts": review_status_counts,
+            "model_review_status_counts": model_review_status_counts,
         },
         "evidence_clusters": evidence_clusters,
         "cluster_panels": cluster_panels,

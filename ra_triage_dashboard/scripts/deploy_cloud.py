@@ -82,7 +82,9 @@ def validate_additive_migration_sql(path, content):
             normalized.startswith("ALTER TABLE ")
             and " ADD COLUMN IF NOT EXISTS " in f" {normalized} "
         ) or normalized.startswith("CREATE TABLE IF NOT EXISTS ") \
-            or normalized.startswith("CREATE INDEX IF NOT EXISTS ")
+            or normalized.startswith("CREATE INDEX IF NOT EXISTS ") \
+            or normalized.startswith("CREATE VIEW REVIEW_RECORDS AS ") \
+            or normalized.startswith("CREATE VIEW REVIEW_RECORD_ATTACHMENTS AS ")
         require(allowed, f"Migration is not strictly additive: {path}")
 
 

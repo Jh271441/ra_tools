@@ -1,3 +1,13 @@
+let workSplitDraft = null;
+
+function workSplitFilters() {
+  return workSplitDraft ? { ...workSplitDraft.filters } : currentReviewFilterPayload();
+}
+
+function workSplitTotal() {
+  return Number(workSplitDraft?.total ?? state.caseTotal ?? 0);
+}
+
 /* ra_triage_dashboard/static/js/work-split.js
  * Admin Review work-split: persist assignee ownership and gallery filters.
  * Loaded as a classic script (shared global scope).
@@ -5,6 +15,140 @@
 function workAssigneeRouteSelection() {
   const params = new URLSearchParams(window.location.search);
   return parseFilterList(params.get("work_assignee") || params.get("assignee") || "");
+}
+
+function renderReviewTaskContext() {
+  const task = state.reviewTaskContext;
+  const errorCard = $("#reviewTaskContextError");
+  if (errorCard) {
+    errorCard.hidden = !state.reviewTaskContextError;
+    if (state.reviewTaskContextError) {
+      $("#reviewTaskContextErrorMessage").textContent = state.reviewTaskContextError.message || "任务上下文暂时不可用。";
+      $("#reviewTaskContextErrorId").textContent = state.reviewWorkSplitId || "—";
+    }
+  }
+  const summary = $("#reviewTaskSummary");
+  const exit = $("#reviewTaskContextExit");
+  if (summary) {
+    summary.hidden = !task;
+    summary.textContent = task
+      ? `${task.legacy_no_run ? "历史任务" : (task.name || "当前任务")} · ${Number(task.issue_count || 0)} 个 Issue${task.supplemental_only ? " · 任务外补充" : ""}`
+      : "";
+    summary.title = task?.legacy_no_run
+      ? "历史无 Run 任务，仅查看原分配范围"
+      : task ? `${task.workflow_mode === "model_review_and_case_label" ? "联合复核" : "仅判错复核"} · ${task.supplemental_only ? "未分配：提交不计任务进度 · " : ""}${task.id || ""}` : "";
+  }
+  if (exit) exit.hidden = !task || Boolean(state.reviewTaskContextError);
+  if (!task) return;
+  const runTrigger = $("#modelRunPickerTrigger");
+  if (runTrigger) {
+    runTrigger.disabled = true;
+    runTrigger.title = task.legacy_no_run
+      ? "历史无 Run 任务仅用于查看原分配范围；退出任务后可选择 Model Run"
+      : "当前 Model Run 由任务锁定";
+  }
+}
+
+function renderReviewTaskLoading(splitId = state.reviewWorkSplitId) {
+  const list = $("#issueList");
+  if (!list) return;
+  list.innerHTML = Array.from({ length: 8 }, (_, index) => `<article class="issue-card issue-card-skeleton" aria-label="正在加载任务范围"><div class="issue-thumbnail"></div><div class="issue-card-body"><span></span><span></span><small>正在加载任务范围 · ${escapeHtml(String(splitId || "").slice(0, 18))}${index ? "" : "…"}</small></div></article>`).join("");
+  $("#galleryResultSummary").textContent = "正在加载任务范围";
+  $("#caseCount").textContent = "—";
+  ["#exportFilteredIssuesButton", "#splitFilteredButton", "#predictFilteredButton"].forEach((selector) => {
+    const button = $(selector);
+    if (button) { button.disabled = true; button.title = "等待任务范围加载完成"; }
+  });
+}
+
+function clearReviewTaskContext({ clearRun = true } = {}) {
+  state.reviewWorkSplitId = "";
+  state.availableReviewWorkSplitId = "";
+  state.reviewTaskContext = null;
+  state.reviewTaskContextError = null;
+  state.reviewTaskContextLoading = false;
+  state.reviewLegacyNoRunTask = false;
+  if (clearRun) state.selectedRunId = "";
+  renderReviewTaskContext();
+  const runTrigger = $("#modelRunPickerTrigger");
+  if (runTrigger) { runTrigger.disabled = false; runTrigger.title = ""; }
+  renderReviewWorkSplitPicker?.("");
+}
+
+async function exitReviewTaskContext({ reload = true } = {}) {
+  clearReviewTaskContext({ clearRun: true });
+  const nextUrl = pageUrl("review", currentReviewRouteOptions({ workSplitId: "", runId: "", issue: "", casePage: 1 }));
+  window.history.replaceState(window.history.state || {}, "", nextUrl);
+  if ($("#modelRunFilter")) $("#modelRunFilter").value = "";
+  if (!reload) return;
+  await loadRuns({ preserveEmpty: true });
+  await loadCases({ keepSelection: false, page: 1 });
+  await loadOverview();
+}
+
+async function exitReviewTaskAndOpenRunPicker() {
+  await exitReviewTaskContext({ reload: true });
+  const trigger = $("#modelRunPickerTrigger");
+  if (!trigger) return;
+  trigger.focus({ preventScroll: false });
+  trigger.click();
+}
+
+async function loadReviewTaskContext(splitId, { route = null } = {}) {
+  const normalized = String(splitId || "").trim();
+  if (!normalized) {
+    clearReviewTaskContext({ clearRun: false });
+    return null;
+  }
+  state.reviewWorkSplitId = normalized;
+  state.reviewTaskContextLoading = true;
+  state.reviewTaskContextError = null;
+  renderReviewTaskLoading(normalized);
+  renderReviewTaskContext();
+  try {
+    const result = await api(`/api/review-task-context/${encodeURIComponent(normalized)}`);
+    const task = result.task || {};
+    state.reviewTaskContext = task;
+    state.reviewTaskContextLoading = false;
+    state.reviewLegacyNoRunTask = Boolean(task.legacy_no_run);
+    const baselineIds = (task.baseline_ids || []).map(String).filter(Boolean);
+    const previous = normalizeBaselineIds(state.selectedBaselineIds).join(",");
+    if (baselineIds.length) {
+      state.selectedBaselineIds = baselineIds;
+      persistBaselineIds(baselineIds);
+      renderBaselinePicker();
+      renderConfig();
+    }
+    state.selectedRunId = task.model_run_id || "";
+    if (route) {
+      route.runId = task.model_run_id || "none";
+      route.workSplitId = normalized;
+    }
+    const nextUrl = new URL(pageUrl("review", {
+      ...currentReviewRouteOptions({ workSplitId: normalized, runId: task.model_run_id || "", casePage: 1 }),
+      baselines: baselineIds,
+    }), window.location.origin);
+    if (baselineIds.length) nextUrl.searchParams.set("baselines", baselineIds.join(","));
+    window.history.replaceState(window.history.state || {}, "", `${nextUrl.pathname}${nextUrl.search}`);
+    if (previous && baselineIds.length && previous !== baselineIds.join(",")) {
+      showToast(`已切换至任务数据集 ${baselineIds.join("+")}`);
+    }
+    renderReviewTaskContext();
+    renderReviewWorkSplitPicker(normalized);
+    return task;
+  } catch (error) {
+    state.reviewTaskContextLoading = false;
+    state.reviewTaskContextError = error;
+    if ($("#issueList")) $("#issueList").innerHTML = "";
+    if ($("#galleryResultSummary")) $("#galleryResultSummary").textContent = "任务范围加载失败";
+    if ($("#caseCount")) $("#caseCount").textContent = "—";
+    ["#exportFilteredIssuesButton", "#splitFilteredButton", "#predictFilteredButton"].forEach((selector) => {
+      const button = $(selector);
+      if (button) { button.disabled = true; button.title = `任务范围加载失败：${error.message || "未知错误"}`; }
+    });
+    renderReviewTaskContext();
+    throw error;
+  }
 }
 
 function workAssigneeFilterSelection() {
@@ -37,7 +181,11 @@ function persistWorkAssigneeFilterRoute(values) {
 function workSplitOptionLabel(splitId) {
   const value = String(splitId || "").trim();
   if (!value) return uiText("综合结果", "Combined results");
-  return uiText(`本次任务新增 · ${value.slice(0, 18)}…`, `This task only · ${value.slice(0, 18)}…`);
+  const task = state.reviewTaskContext;
+  if (task && value === String(task.id || "")) {
+    return `${task.name || "当前任务"} · ${Number(task.issue_count || 0)} 个 Issue`;
+  }
+  return uiText("当前复核任务", "Current review task");
 }
 
 function analysisWorkSplitOptionLabel(item) {
@@ -59,17 +207,53 @@ function renderWorkSplitScopePicker(rootSelector, selected, available, onChange)
 }
 
 function renderReviewWorkSplitPicker(selected = state.reviewWorkSplitId) {
+  const rootSelector = document.getElementById("reviewTaskPicker") ? "#reviewTaskPicker" : "#reviewWorkSplitPicker";
   renderWorkSplitScopePicker(
-    "#reviewWorkSplitPicker",
+    rootSelector,
     selected,
     state.availableReviewWorkSplitId,
     (value) => {
-      state.reviewWorkSplitId = value || "";
+      const splitId = String(value || "");
+      if (!splitId) {
+        exitReviewTaskContext().catch((error) => showToast(error.message, true));
+        return;
+      }
       state.casePage = 1;
-      persistCurrentReviewRoute({ workSplitId: state.reviewWorkSplitId, casePage: 1 });
-      scheduleReviewFilterReload?.(0);
+      loadReviewTaskContext(splitId)
+        .then(() => loadCases({ keepSelection: false, page: 1 }))
+        .catch((error) => showToast(error.message, true));
     }
   );
+}
+
+function effectiveReviewWorkflowMode(caseData = state.selectedCase) {
+  const assignment = caseData?.review_assignment || {};
+  if (state.reviewWorkSplitId && assignment.split_id === state.reviewWorkSplitId) {
+    return assignment.workflow_mode || "model_review_only";
+  }
+  return state.reviewWorkflowMode || "model_review_and_case_label";
+}
+
+function syncReviewWorkflowMode(caseData = state.selectedCase) {
+  const select = $("#reviewWorkflowMode");
+  const field = $("#reviewWorkflowModeField");
+  if (!select || !field) return effectiveReviewWorkflowMode(caseData);
+  const identityPending = Boolean(state.session?.identity_pending);
+  const canCombine = hasDashboardWriteRole();
+  const locked = Boolean(state.reviewWorkSplitId && caseData?.review_assignment?.split_id === state.reviewWorkSplitId);
+  const mode = locked
+    ? (caseData.review_assignment.workflow_mode || "model_review_only")
+    : (canCombine || identityPending ? state.reviewWorkflowMode : "model_review_only");
+  state.reviewWorkflowMode = mode;
+  select.value = mode;
+  select.disabled = locked || !canCombine;
+  select.title = locked
+    ? "页面模式由当前任务锁定"
+    : !canCombine ? "需要模型复核与 问题标注双重写权限" : "";
+  field.hidden = !canCombine && !locked;
+  $("#reviewWorkflowModeHint")?.toggleAttribute("hidden", !locked);
+  enhanceNativeUiSelect(select);
+  return mode;
 }
 
 function renderAnalysisWorkSplitPicker(selected = state.reviewAnalysis.workSplitId) {
@@ -123,6 +307,7 @@ function currentReviewFilterPayload() {
     model_label: joinFilterList(getMultiFilterValues($("#annotationFilter"))),
     annotation_author: joinFilterList(getMultiFilterValues($("#reviewerFilter"))),
     review_status: joinFilterList(getMultiFilterValues($("#reviewStatusFilter"))),
+    label_state: joinFilterList(getMultiFilterValues($("#sharedLabelStateFilter"))),
     comment_state:
       typeof selectedReviewDiscussionFilter === "function"
         ? selectedReviewDiscussionFilter()
@@ -145,81 +330,6 @@ function currentReviewFilterPayload() {
     work_assignee: "",
     work_split_id: state.reviewWorkSplitId || "",
   };
-}
-
-function workSplitPersonRow(name = "", count = "") {
-  const users = Array.isArray(state.accessUsers) ? state.accessUsers : [];
-  const selectedUser = users.find((item) => item.username === name);
-  const selectedLabel = selectedUser
-    ? `${selectedUser.username}${selectedUser.role === "admin" ? t("work.admin_suffix") : ""}`
-    : t("work.pick_person");
-  return `<div class="work-split-person-row">
-    <div class="ui-select work-split-person-picker" data-work-split-selected="${escapeHtml(name)}">
-      <button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false" aria-label="复核人">
-        <span class="ui-select-summary">${escapeHtml(selectedLabel)}</span>
-        <span class="ui-select-caret" aria-hidden="true"></span>
-      </button>
-      <div class="ui-select-panel" role="listbox" hidden></div>
-      <select class="ui-select-native work-split-person-name" aria-hidden="true" tabindex="-1"></select>
-    </div>
-    <input class="work-split-person-count" type="number" min="0" step="1" placeholder="${escapeHtml(t("work.even_split"))}" value="${escapeHtml(
-      count
-    )}" title="留空=参与剩余均分；填数字=固定领取数量" />
-    <button class="button button-quiet work-split-remove-person" type="button" aria-label="移除">×</button>
-  </div>`;
-}
-
-function renderWorkSplitPersonPickers(rootSelector = "#workSplitPeople") {
-  const pickers = [...document.querySelectorAll(`${rootSelector} .work-split-person-picker`)];
-  const selectedByPicker = new Map(
-    pickers.map((picker) => {
-      const select = picker.querySelector(".work-split-person-name");
-      return [picker, select?.value || picker.dataset.workSplitSelected || ""];
-    })
-  );
-  pickers.forEach((picker) => {
-    const selected = selectedByPicker.get(picker) || "";
-    const selectedElsewhere = new Set(
-      [...selectedByPicker.entries()]
-        .filter(([other]) => other !== picker)
-        .map(([, value]) => value)
-        .filter(Boolean)
-    );
-    const options = [
-      { value: "", label: t("work.pick_person") },
-      ...(state.accessUsers || []).map((item) => ({
-        value: item.username,
-        label: `${item.username}${item.role === "admin" ? t("work.admin_suffix") : ""}`,
-        disabled: selectedElsewhere.has(item.username),
-      })),
-    ];
-    populateUiSelect(picker, options, selected);
-    bindUiSelect(picker, { maxHeight: 320, maxWidth: 520 });
-    picker.dataset.workSplitSelected =
-      picker.querySelector(".work-split-person-name")?.value || "";
-  });
-}
-
-function ensureWorkSplitPeople(minRows = 2, rootSelector = "#workSplitPeople") {
-  const root = $(rootSelector);
-  if (!root) return;
-  while (root.querySelectorAll(".work-split-person-row").length < minRows) {
-    root.insertAdjacentHTML("beforeend", workSplitPersonRow());
-  }
-}
-
-function readWorkSplitAssignees(rootSelector = "#workSplitPeople") {
-  const rows = [...document.querySelectorAll(`${rootSelector} .work-split-person-row`)];
-  return rows
-    .map((row) => {
-      const name = row.querySelector(".work-split-person-name")?.value.trim() || "";
-      const countRaw = row.querySelector(".work-split-person-count")?.value.trim() || "";
-      return {
-        name,
-        count: countRaw === "" ? null : Number(countRaw),
-      };
-    })
-    .filter((item) => item.name);
 }
 
 function workSplitReviewersPerIssue() {
@@ -266,7 +376,7 @@ function renderWorkSplitReviewersPerIssuePicker(selected = null) {
     picker,
     Array.from({ length: maximum }, (_, index) => ({
       value: String(index + 1),
-      label: `${index + 1} 人`,
+      label: uiText(`${index + 1} 人`, `${index + 1} ${index ? "people" : "person"}`),
     })),
     String(value),
   );
@@ -278,8 +388,9 @@ function updateWorkSplitEstimate() {
   const reviewers = workSplitReviewersPerIssue();
   const overlapRatio = workSplitOverlapRatio();
   const people = readWorkSplitAssignees();
-  const total = Number(state.caseTotal || 0);
+  const total = workSplitTotal();
   const target = $("#workSplitEstimate");
+  updateAssignmentNameSuggestion("review");
   updateWorkSplitOverlapVisibility();
   document.querySelectorAll(".work-split-person-count").forEach((input) => {
     input.placeholder = reviewers > 1 ? "自动均衡" : t("work.even_split");
@@ -397,15 +508,25 @@ function updateWorkSplitAdminVisibility() {
   if (analysisField) analysisField.hidden = false;
   if (!button) return;
   button.hidden = !isAdmin;
-  if (!isAdmin) button.disabled = true;
+  if (!isAdmin || !state.selectedRunId) {
+    button.disabled = true;
+    button.title = !state.selectedRunId
+      ? "请先选择 Model Run；若只做 Case 标签，请前往 问题标注 > 实验分配"
+      : "仅管理员可创建复核任务";
+  }
 }
 
-async function openWorkSplitDialog() {
+async function openWorkSplitDialog(draft = null) {
+  workSplitDraft = draft ? { ...draft, filters: { ...draft.filters }, total: draft.total } : null;
   if (!state.session?.is_admin) {
     showToast(t("work.split_admin_only"), true);
     return;
   }
-  const total = Number(state.caseTotal || 0);
+  if (!workSplitFilters().model_run_id) {
+    showToast("请先选择 Model Run；若只做 Case 标签，请前往 问题标注 > 实验分配。", true);
+    return;
+  }
+  const total = workSplitTotal();
   const summary = $("#workSplitSummary");
   const results = $("#workSplitResults");
   if (summary) {
@@ -428,22 +549,32 @@ async function openWorkSplitDialog() {
   const root = $("#workSplitPeople");
   if (root) {
     root.innerHTML = "";
-    const users = state.accessUsers || [];
-    if (users.length) {
-      users.forEach((user) => {
-        root.insertAdjacentHTML("beforeend", workSplitPersonRow(user.username, ""));
-      });
-    } else {
-      ensureWorkSplitPeople(2);
+    ensureWorkSplitPeople(1);
+    if (!state.accessUsers?.length) {
       showToast(t("work.no_writers"), true);
     }
   }
   renderWorkSplitPersonPickers();
   if ($("#workSplitReviewersPerIssue")) $("#workSplitReviewersPerIssue").value = "1";
+  if ($("#workSplitWorkflowMode")) $("#workSplitWorkflowMode").value = "model_review_and_case_label";
+  enhanceNativeUiSelect($("#workSplitWorkflowMode"));
   renderWorkSplitReviewersPerIssuePicker(1);
   renderWorkSplitOverlapPicker(1);
+  resetAssignmentNameSuggestion("review");
   updateWorkSplitEstimate();
-  openDialog("workSplitDialog");
+  const panel = $("#workSplitPanel");
+  panel.hidden = false;
+  $("#workSplitGenerate").disabled = false;
+  const link = $("#workSplitReturnSource");
+  if (link) {
+    const fallback = reviewAssignmentSourceHref(workSplitFilters());
+    const source = new URL(workSplitDraft?.returnUrl || fallback, window.location.origin);
+    const expected = new URL(fallback, window.location.origin);
+    link.href = source.origin === expected.origin && source.pathname === expected.pathname
+      ? `${source.pathname}${source.search}` : fallback;
+  }
+  saveReviewAllocationDraft(workSplitDraft);
+  panel.scrollIntoView({ block: "start", behavior: "smooth" });
 }
 
 function renderWorkSplitResults(payload) {
@@ -502,6 +633,15 @@ async function generateWorkSplit() {
     showToast(t("work.split_admin_only"), true);
     return;
   }
+  if (!workSplitFilters().model_run_id) {
+    showToast("请先选择 Model Run；若只做 Case 标签，请前往 问题标注 > 实验分配。", true);
+    return;
+  }
+  if (workSplitDraft?.submitted) {
+    showToast("此分配已生成；请返回图库选择范围后创建新任务。", true);
+    return;
+  }
+  if (workSplitDraft?.dirty) { showToast("筛选已修改，请先更新范围。", true); return; }
   const assignees = readWorkSplitAssignees();
   if (!assignees.length) {
     showToast(t("work.need_reviewer"), true);
@@ -510,12 +650,15 @@ async function generateWorkSplit() {
   const reviewersPerIssue = workSplitReviewersPerIssue();
   const overlapRatio = reviewersPerIssue > 1 ? workSplitOverlapRatio() : 0;
   const seedRaw = $("#workSplitSeed")?.value.trim() || "";
+  const name = $("#workSplitName")?.value.trim() || "";
   const body = {
-    filters: currentReviewFilterPayload(),
+    filters: workSplitFilters(),
     assignees,
     reviewers_per_issue: reviewersPerIssue,
     overlap_ratio: overlapRatio,
+    workflow_mode: $("#workSplitWorkflowMode")?.value || "model_review_and_case_label",
   };
+  if (name) body.name = name;
   if (body.reviewers_per_issue > assignees.length) {
     showToast("每个 Issue 的复核人数不能超过已选成员数。", true);
     return;
@@ -547,6 +690,11 @@ async function generateWorkSplit() {
       await loadWorkAssignees();
     }
     renderWorkSplitResults(result);
+    saveReviewAllocationDraft(null);
+    if (workSplitDraft) workSplitDraft.submitted = true;
+    if (state.activePage === "review-assignments") {
+      await loadReviewAssignments({ force: true });
+    }
     showToast(t("work.saved"));
   } catch (error) {
     showToast(error.message, true);
@@ -561,11 +709,20 @@ async function generateWorkSplit() {
 function filterGalleryByWorkAssignee(assignee) {
   const name = String(assignee || "").trim();
   if (!name) return;
+  if (workSplitDraft) {
+    const filters = workSplitDraft.filters;
+    const payload = JSON.parse($("#workSplitResults")?.dataset.payload || "{}");
+    if ($("#workSplitPanel")) $("#workSplitPanel").hidden = true;
+    navigatePage("review", { runId: filters.model_run_id, baselines: filters.baselines,
+      comparisonStatus: filters.comparison, search: filters.search || "", issue: "",
+      issueIds: [], workSplitId: payload.split_id || "", workAssignee: [name], casePage: 1 });
+    return;
+  }
   state.reviewIssueIds = [];
   setMultiFilterValues($("#workAssigneeFilter"), [name]);
   persistWorkAssigneeFilterRoute([name]);
   state.casePage = 1;
-  closeDialog("workSplitDialog");
+  if ($("#workSplitPanel")) $("#workSplitPanel").hidden = true;
   loadCases({ keepSelection: false, page: 1 })
     .then(() => showToast(`已筛选任务负责人：${name}`))
     .catch((error) => showToast(error.message, true));
@@ -600,6 +757,25 @@ function copyWorkSplitAssignment(index) {
 }
 
 function bindWorkSplitControls() {
+  bindAssignmentNameInput("review");
+  $("#workSplitResetDraft")?.addEventListener("click", () => {
+    workSplitDraft = null;
+    saveReviewAllocationDraft(null);
+    $("#workSplitPanel").hidden = true;
+  });
+  $("#reviewTaskContextRetry")?.addEventListener("click", () => {
+    loadReviewTaskContext(state.reviewWorkSplitId).then(() => loadCases({ keepSelection: false, page: 1 })).catch((error) => showToast(error.message, true));
+  });
+  $("#reviewTaskContextExit")?.addEventListener("click", () => exitReviewTaskContext().catch((error) => showToast(error.message, true)));
+  $("#reviewTaskContextErrorExit")?.addEventListener("click", () => exitReviewTaskContext().catch((error) => showToast(error.message, true)));
+  $("#reviewWorkflowMode")?.addEventListener("change", (event) => {
+    if (state.reviewWorkSplitId) return;
+    state.reviewWorkflowMode = event.target.value === "model_review_and_case_label"
+      ? "model_review_and_case_label"
+      : "model_review_only";
+    persistCurrentReviewRoute({ workflowMode: state.reviewWorkflowMode });
+    if (state.selectedCase) renderReview(state.selectedCase);
+  });
   $("#splitFilteredButton")?.addEventListener("click", () => {
     if (!state.session?.is_admin) {
       showToast(t("work.split_admin_only"), true);
@@ -609,7 +785,12 @@ function bindWorkSplitControls() {
       showToast(t("work.no_issues"), true);
       return;
     }
-    openWorkSplitDialog().catch((error) => showToast(error.message, true));
+    const draft = { filters: { ...currentReviewFilterPayload(),
+      work_assignee: joinFilterList(workAssigneeFilterSelection()) }, total: Number(state.caseTotal), fromReview: true, returnUrl: pageUrl("review", currentReviewRouteOptions({ issue: "" })) };
+    saveReviewAllocationDraft(draft);
+    workSplitDraft = null;
+    $("#workSplitPanel").hidden = true;
+    navigatePage("review-assignments");
   });
   $("#workSplitAddPerson")?.addEventListener("click", () => {
     $("#workSplitPeople")?.insertAdjacentHTML("beforeend", workSplitPersonRow());
@@ -643,6 +824,7 @@ function bindWorkSplitControls() {
   });
   $("#workSplitReviewersPerIssue")?.addEventListener("change", updateWorkSplitEstimate);
   $("#workSplitOverlapRatio")?.addEventListener("change", updateWorkSplitEstimate);
+  $("#workSplitWorkflowMode")?.addEventListener("change", updateWorkSplitEstimate);
   $("#workSplitGenerate")?.addEventListener("click", () => {
     generateWorkSplit().catch((error) => showToast(error.message, true));
   });

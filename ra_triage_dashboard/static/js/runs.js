@@ -68,7 +68,9 @@ function reviewerOptionsWithSelected(options, selected) {
   return [...options, ...retained];
 }
 
+let reviewerFacetRequestSeq = 0;
 async function loadReviewers(selections = reviewerFilterSelections()) {
+  const requestSeq = ++reviewerFacetRequestSeq;
   const reviewSelection = parseFilterList(selections.review);
   const analysisSelection = parseFilterList(selections.analysis);
   const runId = String(state.selectedRunId || "").trim();
@@ -76,8 +78,46 @@ async function loadReviewers(selections = reviewerFilterSelections()) {
   if (runId) params.set("model_run_id", runId);
   appendBaselineParams(params);
   const query = params.toString() ? `?${params.toString()}` : "";
-  const data = await api(`/api/reviewers${query}`);
-  state.reviewers = data.items || [];
+  const [data, modelReviewFacets] = await Promise.all([
+    api(`/api/reviewers${query}`).catch(() => ({ items: state.reviewers || [] })),
+    runId ? api(`/api/model-review-facets${query}`).catch(() => null) : Promise.resolve(null),
+  ]);
+  if (requestSeq !== reviewerFacetRequestSeq) return;
+  const mergeModelReviewReviewers = (baseItems, modelItems) => {
+    const merged = new Map(
+      (baseItems || []).map((item) => [String(item.name || "").toLowerCase(), { ...item }])
+    );
+    for (const item of modelItems || []) {
+      const name = String(item.value || "").trim();
+      const key = name.toLowerCase();
+      if (!key) continue;
+      const current = merged.get(key);
+      const modelReviewCount = Number(item.count || 0);
+      const modelVerifiedCount = Number(item.verified_count || 0);
+      const modelUnverifiedCount = Number(item.unverified_count || 0);
+      if (current) {
+        current.model_review_count = modelReviewCount;
+        current.review_count = Math.max(Number(current.review_count || 0), modelReviewCount);
+        current.verified_count = Math.max(Number(current.verified_count || 0), modelVerifiedCount);
+        current.unverified_count = Math.max(Number(current.unverified_count || 0), modelUnverifiedCount);
+        current.verified = current.verified_count > 0 && current.unverified_count === 0;
+      } else {
+        merged.set(key, {
+          name,
+          verified: modelVerifiedCount > 0 && modelUnverifiedCount === 0,
+          verified_count: modelVerifiedCount,
+          unverified_count: modelUnverifiedCount,
+          review_count: modelReviewCount,
+          model_review_count: modelReviewCount,
+        });
+      }
+    }
+    return [...merged.values()];
+  };
+  state.reviewers = mergeModelReviewReviewers(
+    data.items || [],
+    modelReviewFacets?.reviewers || []
+  );
   const reviewerOptionsFor = (items) => (items || []).map((item) => {
     const trust =
       item.verified_count > 0 && item.unverified_count > 0
@@ -92,7 +132,10 @@ async function loadReviewers(selections = reviewerFilterSelections()) {
   });
   const reviewerOptions = reviewerOptionsFor(state.reviewers);
   const analysisReviewerOptions = reviewerOptionsFor(
-    Array.isArray(data.analysis_items) ? data.analysis_items : state.reviewers
+    mergeModelReviewReviewers(
+      Array.isArray(data.analysis_items) ? data.analysis_items : state.reviewers,
+      modelReviewFacets?.reviewers || []
+    )
   );
   const reviewSelect = $("#reviewerFilter");
   if (reviewSelect) {
@@ -154,11 +197,25 @@ function renderReviewCatalogFilters() {
   });
   renderMultiFilter($("#reviewStatusFilter"), {
     options: [
-      { value: "pending", label: t("status.pending") },
-      { value: "reviewed", label: t("status.matches_gt") },
-      { value: "needs_gt_review", label: t("status.needs_gt") },
+      { value: "pending", label: uiText("待开始", "Pending") },
+      { value: "in_progress", label: uiText("复核中", "In progress") },
+      { value: "completed", label: uiText("已完成", "Completed") },
     ],
     selected: getMultiFilterValues($("#reviewStatusFilter")),
+    onChange,
+  });
+  renderMultiFilter($("#sharedLabelStateFilter"), {
+    options: [
+      { value: "none", label: uiText("无共享标签", "No shared label") },
+      { value: "pending", label: uiText("标签待完成", "Label pending") },
+      { value: "resolved", label: uiText("已形成标签结论", "Label resolved") },
+      { value: "matches_gt", label: uiText("与 GT 一致", "Matches GT") },
+      { value: "needs_gt_review", label: uiText("GT 待复核", "Needs GT review") },
+      { value: "conflict", label: uiText("标签冲突", "Label conflict") },
+      { value: "stale", label: uiText("裁决需重新确认", "Stale adjudication") },
+      { value: "unknown", label: uiText("GT 关系未知", "GT relation unknown") },
+    ],
+    selected: getMultiFilterValues($("#sharedLabelStateFilter")),
     onChange,
   });
   renderMultiFilter($("#reviewDiscussionFilter"), {
@@ -642,6 +699,7 @@ function renderActiveRun(overview = null) {
         state.config?.trail_sync?.message ||
         "选择团队 Run、创建 Trail 只读快照，或导入 JSON / CSV / XLSX";
     }
+    if (state.reviewTaskContext) renderReviewTaskContext();
     return;
   }
   const coverage = overview?.predictions ?? run.baseline_prediction_count ?? 0;
@@ -655,6 +713,7 @@ function renderActiveRun(overview = null) {
       `${reviewedMismatches === undefined ? "" : ` · ${reviewedMismatches} 条判错已复核`}` +
       ` · ${sourceLabel}`;
   }
+  if (state.reviewTaskContext) renderReviewTaskContext();
 }
 
 function renderRunManager() {

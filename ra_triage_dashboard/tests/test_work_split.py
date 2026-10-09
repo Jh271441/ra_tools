@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
+from fastapi import HTTPException
 from starlette.requests import Request
 
 from ra_triage_dashboard.app.db import AnnotationConflictError, Database
@@ -16,6 +20,284 @@ from ra_triage_dashboard.app.work_split import distribute_issue_ids
 
 
 class WorkSplitTest(unittest.TestCase):
+    def test_assignment_name_endpoint_returns_rule_fallback_without_gateway(self) -> None:
+        body = json.dumps(
+            {
+                "assignment_kind": "case_labeling",
+                "baseline_ids": ["0508"],
+                "case_count": 1071,
+                "reviewers_per_issue": 1,
+                "overlap_ratio": 0,
+                "member_count": 1,
+            }
+        ).encode("utf-8")
+
+        async def receive():
+            return {"type": "http.request", "body": body, "more_body": False}
+
+        request = Request(
+            {
+                "type": "http",
+                "method": "POST",
+                "path": "/api/assignment-name-suggestion",
+                "headers": [(b"content-type", b"application/json")],
+            },
+            receive,
+        )
+        registry = SimpleNamespace(
+            by_id=lambda value: SimpleNamespace(id=value, label="0508 · 1071")
+        )
+        catalog = SimpleNamespace(status=lambda: {"configured": False})
+        with patch.object(
+            cases_router,
+            "_admin_identity",
+            return_value=SimpleNamespace(username="admin", verified=True),
+        ), patch.object(cases_router, "baseline_registry", registry), patch.object(
+            cases_router, "model_catalog", catalog
+        ), patch.object(cases_router, "suggest_assignment_name_with_llm") as llm:
+            response = asyncio.run(cases_router.suggest_assignment_name(request))
+
+        self.assertEqual(response["source"], "rule")
+        self.assertEqual(
+            response["suggestion"], "0508 Case标注 单人均分 1071 Case"
+        )
+        llm.assert_not_called()
+
+    def test_assignment_name_endpoint_uses_llm_when_gateway_is_available(self) -> None:
+        body = json.dumps(
+            {
+                "assignment_kind": "case_labeling",
+                "baseline_ids": ["0508"],
+                "case_count": 1071,
+                "reviewers_per_issue": 1,
+                "overlap_ratio": 0,
+                "member_count": 2,
+            }
+        ).encode("utf-8")
+
+        async def receive():
+            return {"type": "http.request", "body": body, "more_body": False}
+
+        request = Request(
+            {
+                "type": "http", "method": "POST",
+                "path": "/api/assignment-name-suggestion",
+                "headers": [(b"content-type", b"application/json")],
+            },
+            receive,
+        )
+        registry = SimpleNamespace(
+            by_id=lambda value: SimpleNamespace(id=value, label="0508 · 1071")
+        )
+        catalog = SimpleNamespace(status=lambda: {"configured": True})
+        with patch.object(
+            cases_router, "_admin_identity",
+            return_value=SimpleNamespace(username="admin", verified=True),
+        ), patch.object(
+            cases_router, "baseline_registry", registry,
+        ), patch.object(
+            cases_router, "model_catalog", catalog,
+        ), patch.object(
+            cases_router, "suggest_assignment_name_with_llm",
+            return_value="0508 Case标注 双人均分 1071 Case",
+        ) as llm:
+            response = asyncio.run(cases_router.suggest_assignment_name(request))
+
+        self.assertEqual(response["source"], "llm")
+        self.assertEqual(response["suggestion"], "0508 Case标注 双人均分 1071 Case")
+        llm.assert_called_once()
+
+    def test_postgres_gallery_review_projection_uses_one_lateral_lookup_per_issue(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "gallery-join.sqlite")
+            db.init()
+            db.backend = "postgresql"
+            postgres_join, _ = db._gallery_annotation_join(
+                "run-a", preferred_annotation_author="alice"
+            )
+            self.assertIn("LEFT JOIN LATERAL", postgres_join)
+            self.assertIn("LIMIT 1", postgres_join)
+            self.assertIn(") ann ON TRUE", postgres_join)
+            db.backend = "sqlite"
+            sqlite_join, _ = db._gallery_annotation_join(
+                "run-a", preferred_annotation_author="alice"
+            )
+            self.assertNotIn("LATERAL", sqlite_join)
+            self.assertIn("LEFT JOIN review_records ann", sqlite_join)
+            db.close()
+
+    def test_legacy_no_run_task_context_and_gallery_membership_remain_readable(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "legacy-no-run.sqlite")
+            db.init()
+            db.upsert_issues(
+                [{"issue_id": "cn1", "gt_label": "误触发"}, {"issue_id": "cn2", "gt_label": "正确触发"}],
+                source="test", replace_gt=True, baseline_scope="scope",
+            )
+            split = db.apply_work_split(
+                assignments=[{"name": "alice", "issue_ids": ["cn1", "cn2"]}],
+                created_by="admin", seed=1, reviewers_per_issue=1,
+                filter_snapshot={"baselines": ["0508"], "baseline_scopes": ["scope"]},
+            )
+            context = db.review_task_context(
+                split_id=split["split_id"], username="alice", is_admin=False
+            )
+            self.assertTrue(context["legacy_no_run"])
+            self.assertEqual(context["baseline_scopes"], ["scope"])
+            self.assertEqual(context["issue_count"], 2)
+            with self.assertRaises(PermissionError):
+                db.review_task_context(
+                    split_id=split["split_id"], username="bob", is_admin=False
+                )
+            supplemental = db.review_task_context(
+                split_id=split["split_id"], username="bob", is_admin=False,
+                allow_supplemental=True,
+            )
+            self.assertFalse(supplemental["current_user_is_member"])
+            self.assertTrue(supplemental["supplemental_only"])
+            result = db.list_cases(
+                baseline_scopes=["scope"], work_split_id=split["split_id"],
+                page=1, page_size=10,
+            )
+            self.assertEqual(result["total"], 2)
+            self.assertEqual({item["issue_id"] for item in result["items"]}, {"cn1", "cn2"})
+            db.close()
+
+    def test_run_based_work_split_creates_a_single_scope_frozen_workset(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "campaign-workset.sqlite")
+            db.init()
+            db.upsert_issues(
+                [
+                    {"issue_id": "cn1", "gt_label": "正确触发"},
+                    {"issue_id": "cn2", "gt_label": "误触发"},
+                ],
+                source="test",
+                replace_gt=True,
+                baseline_scope="scope",
+            )
+            run, _ = db.import_model_run(
+                name="model-workset-run",
+                source_name="model-workset-run.json",
+                source_sha256="d" * 64,
+                metadata={},
+                rows=[
+                    {"issue_id": "cn1", "model_label": "正确触发"},
+                    {"issue_id": "cn2", "model_label": "误触发"},
+                ],
+            )
+            now = "2026-09-22T00:00:00Z"
+            content_sha = hashlib.sha256(b"work-split-gt").hexdigest()
+            with db.connect() as conn:
+                conn.execute(
+                    "INSERT INTO gt_snapshots (id, baseline_scope, gt_mode, content_sha256, membership_sha256, member_count, valid_label_count, created_at) "
+                    "VALUES (?, ?, 'strict', ?, ?, 2, 2, ?)",
+                    ("gt-work-split", "scope", content_sha, "e" * 64, now),
+                )
+                conn.executemany(
+                    "INSERT INTO gt_snapshot_items (snapshot_id, baseline_scope, issue_id, ordinal, gt_label) VALUES (?, ?, ?, ?, ?)",
+                    [("gt-work-split", "scope", "cn1", 1, "正确触发"),
+                     ("gt-work-split", "scope", "cn2", 2, "误触发")],
+                )
+                conn.execute(
+                    "INSERT INTO gt_snapshot_active (baseline_scope, snapshot_id, activated_at) VALUES (?, ?, ?)",
+                    ("scope", "gt-work-split", now),
+                )
+
+            filters = {
+                "baseline_scope": "scope",
+                "baseline_scopes": ["scope"],
+                "model_run_id": run["id"],
+                "comparison_status": "all",
+                "comment_state": "all",
+                "search": "",
+                "work_assignee": "",
+                "gt_label": "",
+                "model_label": "",
+                "annotation_author": "",
+                "review_statuses": (),
+                "label_states": (),
+                "exclusion": "all",
+                "missing_evidence": "",
+            }
+            filters.update(issue_ids=["cn1", "cn2"], work_assignee="alice", work_split_id="source-task", model_review_status="completed")
+            body = {
+                "filters": {"model_run_id": run["id"], "baselines": "0508"},
+                "assignees": [{"name": "alice"}, {"name": "bob"}],
+                "seed": 7,
+                "reviewers_per_issue": 1,
+                "overlap_ratio": 0,
+                "name": "Run-scoped Campaign",
+                "idempotency_key": "run-workset-campaign",
+            }
+            body_bytes = json.dumps(body).encode("utf-8")
+
+            async def receive():
+                return {"type": "http.request", "body": body_bytes, "more_body": False}
+
+            request = Request(
+                {
+                    "type": "http",
+                    "method": "POST",
+                    "path": "/api/cases/work-split",
+                    "headers": [(b"content-type", b"application/json"),
+                                (b"idempotency-key", b"run-workset-campaign")],
+                },
+                receive,
+            )
+            with patch.object(
+                cases_router, "_admin_identity",
+                return_value=SimpleNamespace(username="admin", source="test", verified=True),
+            ), patch.object(cases_router, "_case_filter_kwargs", return_value=dict(filters)), patch.object(
+                cases_router, "_case_issue_ids_with_status_filter", return_value=["cn1", "cn2"]
+            ), patch.object(cases_router, "database", db):
+                response = asyncio.run(cases_router.split_case_work(request))
+
+            self.assertEqual(response["total"], 2)
+            self.assertEqual(response["assignment_count"], 2)
+            snapshot = db.get_review_work_split(response["split_id"])["filter_snapshot"]
+            self.assertEqual(snapshot["issue_ids"], ["cn1", "cn2"])
+            self.assertEqual(snapshot["work_assignee"], "alice")
+            self.assertEqual(snapshot["work_split_id"], "source-task")
+            self.assertIn("completed", snapshot["review_status"])
+            detail = db.get_campaign(response["split_id"])
+            self.assertEqual(detail["campaign"]["name"], "Run-scoped Campaign")
+            workset_id = detail["campaign"]["workset_id"]
+            self.assertTrue(workset_id)
+            workset = db.get_review_workset(workset_id)
+            self.assertEqual(workset["baseline_scope"], "scope")
+            self.assertEqual({item["issue_id"] for item in workset["items"]}, {"cn1", "cn2"})
+            self.assertEqual(detail["campaign"]["evaluation_run_id"], run["id"])
+            self.assertEqual(detail["campaign"]["selection_source_run_id"], run["id"])
+            with db.connect() as conn:
+                workset_count_before_multi = int(conn.execute(
+                    "SELECT COUNT(*) AS n FROM review_worksets"
+                ).fetchone()["n"])
+
+            multi_scope_request = Request(
+                {
+                    "type": "http",
+                    "method": "POST",
+                    "path": "/api/cases/work-split",
+                    "headers": [(b"content-type", b"application/json")],
+                },
+                receive,
+            )
+            multi_scope_filters = {**filters, "baseline_scopes": ["scope", "scope-2"]}
+            with patch.object(
+                cases_router, "_admin_identity",
+                return_value=SimpleNamespace(username="admin", source="test", verified=True),
+            ), patch.object(cases_router, "_case_filter_kwargs", return_value=multi_scope_filters), patch.object(
+                cases_router, "_case_issue_ids_with_status_filter", return_value=["cn1", "cn2"]
+            ), patch.object(cases_router, "database", db):
+                with self.assertRaises(HTTPException):
+                    asyncio.run(cases_router.split_case_work(multi_scope_request))
+            with db.connect() as conn:
+                workset_count_after_multi = int(conn.execute(
+                    "SELECT COUNT(*) AS n FROM review_worksets"
+                ).fetchone()["n"])
+            self.assertEqual(workset_count_after_multi, workset_count_before_multi)
+
     def test_analysis_work_split_options_only_returns_current_matching_batches(self) -> None:
         request = Request(
             {"type": "http", "method": "GET", "path": "/api/review-work-splits", "headers": []}
@@ -417,30 +699,38 @@ class WorkSplitTest(unittest.TestCase):
                 [{"name": "alice"}, {"name": "bob"}],
                 seed=9,
             )
+            run, _ = db.import_model_run(
+                name="work split run",
+                source_name="work-split.json",
+                source_sha256="e" * 64,
+                metadata={},
+                rows=[
+                    {"issue_id": f"cn{i}", "model_label": "误触发"}
+                    for i in range(4)
+                ],
+            )
             saved = db.apply_work_split(
                 assignments=assignments,
                 created_by="admin",
                 seed=9,
-                model_run_id="",
+                model_run_id=run["id"],
                 filter_snapshot={"baselines": "0821", "comparison_status": "mismatch"},
             )
             completed_issue = assignments[0]["issue_ids"][0]
-            db.create_annotation(
+            db.create_model_review(
                 issue_id=completed_issue,
-                model_run_id="",
+                model_run_id=run["id"],
                 work_split_id="",
-                label="误触发",
-                review_status="reviewed",
-                tags=[],
+                status="completed",
+                reason="done",
                 missing_evidence=[],
-                note="done",
-                author=assignments[0]["name"],
-                expected_previous_annotation_id=None,
+                reviewer=assignments[0]["name"],
             )
 
             batches = db.list_review_work_splits()
             self.assertEqual(len(batches), 1)
             batch = batches[0]
+            self.assertEqual(batch["baseline_scopes"], ["scope"])
             self.assertEqual(batch["total_count"], 4)
             self.assertEqual(batch["assignment_count"], 4)
             self.assertEqual(batch["completed_count"], 1)
@@ -450,6 +740,7 @@ class WorkSplitTest(unittest.TestCase):
             detail = db.get_review_work_split(saved["split_id"], page_size=20)
             self.assertIsNotNone(detail)
             assert detail is not None
+            self.assertEqual(detail["baseline_scopes"], ["scope"])
             self.assertEqual(detail["total"], 4)
             self.assertEqual(sum(bool(item["submitted"]) for item in detail["items"]), 1)
             pending = next(item for item in detail["items"] if not item["submitted"])
@@ -477,7 +768,7 @@ class WorkSplitTest(unittest.TestCase):
             db.apply_work_split(
                 assignments=[{"name": "bob", "issue_ids": [f"cn{i}" for i in range(4)]}],
                 created_by="admin",
-                model_run_id="",
+                model_run_id=run["id"],
             )
             history = next(
                 item

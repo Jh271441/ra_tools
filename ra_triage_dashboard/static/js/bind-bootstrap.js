@@ -6,7 +6,7 @@
 let reviewSearchTimer = null;
 
 function shortcutGuidePage() {
-  return ["review", "intent"].includes(state.activePage) ? state.activePage : "";
+  return ["review", "intent", "labeling"].includes(state.activePage) ? state.activePage : "";
 }
 
 function shortcutGuideKeyToken(event) {
@@ -71,7 +71,9 @@ function openShortcutGuide() {
   });
   $("#shortcutGuideSubtitle").textContent = page === "intent"
     ? "意图标注页 · 当前焦点位于输入控件时快捷键暂停"
-    : "判错复核页 · 媒体快捷键在 Issue 详情中可用";
+    : page === "labeling"
+      ? "问题标注页 · 数字键操作当前展开的标签组"
+      : "判错复核页 · 媒体快捷键在 Issue 详情中可用";
   resetShortcutGuideSearch();
   if (!dialog.open) dialog.showModal();
 }
@@ -169,6 +171,7 @@ function scheduleReviewFilterReload(delay = 0) {
 }
 
 function bindEvents() {
+  enhanceDashboardSelects();
   bindLayoutResizers();
   bindShortcutGuide();
   bindGlobalRefreshShortcut();
@@ -179,6 +182,7 @@ function bindEvents() {
   if (typeof bindLabelingTaskControls === "function") bindLabelingTaskControls();
   if (typeof bindReviewAssignmentsPage === "function") bindReviewAssignmentsPage();
   if (typeof bindRunComparisonEvents === "function") bindRunComparisonEvents();
+  if (typeof bindRunCollectionsEvents === "function") bindRunCollectionsEvents();
   if (typeof bindIssueQueryControls === "function") bindIssueQueryControls();
   document.querySelectorAll("[data-page-target]").forEach((element) => {
     element.addEventListener("click", (event) => {
@@ -871,6 +875,10 @@ function bindEvents() {
       }
       return;
     }
+    if (route.page === "run-collections") {
+      showPage("run-collections", { restoreRoute: true, loadPageData: true });
+      return;
+    }
     if (route.page === "analysis") {
       const previousRunId = state.selectedRunId;
       const previousFailureOnly = state.failureOnly;
@@ -959,6 +967,11 @@ function bindEvents() {
         intentCaseId: route.intentCaseId,
         intentOffsetMs: route.intentOffsetMs,
         reviewAssignmentSplitId: route.reviewAssignmentSplitId,
+        discussionChannel: route.discussionChannel,
+        campaignId: route.campaignId,
+        campaignPurpose: route.campaignPurpose,
+        campaignLifecycle: route.campaignLifecycle,
+        campaignQuery: route.campaignQuery,
       });
       if (
         route.page === "intent"
@@ -1049,6 +1062,7 @@ async function bootstrap() {
   applySidebarState();
   markUiReady();
   bindMobileFilterDrawers();
+  bindMobileWorkbench();
   if (initialRoute.page === "review") applyReviewRouteControls(initialRoute);
   bindEvents();
   updateImportFields();
@@ -1068,10 +1082,25 @@ async function bootstrap() {
     intentAssignees: initialRoute.intentAssignees,
     intentExperimentId: initialRoute.intentExperimentId,
     reviewAssignmentSplitId: initialRoute.reviewAssignmentSplitId,
+    discussionChannel: initialRoute.discussionChannel,
+    campaignId: initialRoute.campaignId,
+    campaignPurpose: initialRoute.campaignPurpose,
+    campaignLifecycle: initialRoute.campaignLifecycle,
+    campaignQuery: initialRoute.campaignQuery,
   });
   const sessionRequest = resolveSessionInBackground();
   try {
     await settleInitialRequests([loadConfig()], "基础配置");
+    let reviewTaskContextFailed = false;
+    if (initialRoute.page === "review" && initialRoute.workSplitId) {
+      await sessionRequest;
+      try {
+        await loadReviewTaskContext(initialRoute.workSplitId, { route: initialRoute });
+      } catch (error) {
+        reviewTaskContextFailed = true;
+        showToast(`任务范围加载失败：${error.message}`, true);
+      }
+    }
     const intentAccessPages = ["users", "intent", "intent-experiments", "intent-summary"];
     if (
       intentAccessPages.includes(initialRoute.page)
@@ -1089,9 +1118,13 @@ async function bootstrap() {
       initialRoute.page = "review";
       showToast("当前账号没有任务分配管理权限。", true);
     }
-    if (["labeling", "labeling-new-task"].includes(initialRoute.page) && !state.session.is_admin) {
+    if (["labeling", "labeling-summary"].includes(initialRoute.page) && !hasDashboardWriteRole()) {
       initialRoute.page = "review";
-      showToast("Case 标注内测仅限管理员。", true);
+      showToast("问题标注需要 writer 或管理员权限。", true);
+    }
+    if (initialRoute.page === "labeling-new-task" && !state.session.is_admin) {
+      initialRoute.page = "review";
+      showToast("实验分配仅限管理员。", true);
     }
     if (initialRoute.page === "intent-experiments" && !state.session.can_view_intent) {
       initialRoute.page = "review";
@@ -1139,7 +1172,7 @@ async function bootstrap() {
     }
     // Case labeling is intentionally model-free. Other pages resolve the Run
     // before loading queue-dependent facets so their counts cannot race.
-    if (!["labeling", "labeling-new-task"].includes(initialRoute.page)) {
+    if (!["labeling", "labeling-new-task", "labeling-summary"].includes(initialRoute.page)) {
       await settleInitialRequests(
         [
           loadRuns({
@@ -1152,10 +1185,10 @@ async function bootstrap() {
     } else {
       state.selectedRunId = "";
     }
-    if (initialRoute.page === "comparison") {
+    if (["comparison", "run-collections"].includes(initialRoute.page)) {
       applyRunComparisonRoute(initialRoute.comparisonFilters);
     }
-    const sharedDataPromise = ["labeling", "labeling-new-task"].includes(initialRoute.page)
+    const sharedDataPromise = ["labeling", "labeling-new-task", "labeling-summary"].includes(initialRoute.page)
       ? Promise.resolve()
       : settleInitialRequests(
           [loadReviewers(), loadWorkAssignees()],
@@ -1167,16 +1200,16 @@ async function bootstrap() {
     if (initialRoute.page === "review") applyReviewRouteControls(initialRoute);
     if (initialRoute.page === "analysis") applyAnalysisRouteControls(initialRoute);
     // Review home: paint cases first; cluster chips are secondary chrome.
-    const initialPageRequests = ["labeling", "labeling-new-task"].includes(initialRoute.page)
+    const initialPageRequests = ["labeling", "labeling-new-task", "labeling-summary"].includes(initialRoute.page)
       ? []
-      : [loadOverview()];
+      : [{ name: "概览", promise: loadOverview() }];
     let initialDetailRequest = null;
-    if (initialRoute.page === "review") {
+    if (initialRoute.page === "review" && !reviewTaskContextFailed) {
       initialPageRequests.push(
-        loadCases({
+        { name: "Issue 图库", promise: loadCases({
           keepSelection: Boolean(initialRoute.issue),
           page: initialRoute.casePage,
-        })
+        }) }
       );
       if (initialRoute.issue) {
         initialDetailRequest = selectCase(initialRoute.issue, { updateRoute: false });
@@ -1189,6 +1222,8 @@ async function bootstrap() {
       initialPageRequests.push(loadPredictionConfig(), loadPredictionBatches());
     } else if (initialRoute.page === "comparison") {
       initialPageRequests.push(loadRunComparison({ historyMode: "" }));
+    } else if (initialRoute.page === "run-collections") {
+      initialPageRequests.push(loadRunCollectionsWorkbench({ restoreRoute: true }));
     } else if (initialRoute.page === "labeling") {
       initialPageRequests.push(enterCaseLabeling({ route: initialRoute }));
     } else if (initialRoute.page === "labeling-new-task") {
@@ -1196,6 +1231,15 @@ async function bootstrap() {
     } else if (initialRoute.page === "review-assignments") {
       initialPageRequests.push(loadAccessUsers(), loadReviewAssignments({
         splitId: initialRoute.reviewAssignmentSplitId,
+      }));
+    } else if (initialRoute.page === "labeling-summary") {
+      initialPageRequests.push(loadLabelingSummary());
+    } else if (initialRoute.page === "campaigns") {
+      initialPageRequests.push(loadCampaigns({
+        campaignId: initialRoute.campaignId,
+        purpose: initialRoute.campaignPurpose,
+        lifecycle: initialRoute.campaignLifecycle,
+        query: initialRoute.campaignQuery,
       }));
     } else if (initialRoute.page === "intent") {
       initialPageRequests.push(loadIntentLabeling({
@@ -1234,7 +1278,7 @@ async function bootstrap() {
     );
     // Wait only for the first review-critical payloads; shared Run metadata can
     // finish in the background without holding the case gallery blank.
-    if (initialRoute.page === "review") {
+    if (initialRoute.page === "review" && !reviewTaskContextFailed) {
       await Promise.all([sharedDataPromise, initialPageResults]);
     } else {
       await sharedDataPromise;
@@ -1249,7 +1293,10 @@ async function bootstrap() {
     if (initialRoute.openComments && initialRoute.issue) {
       await sessionRequest;
       if (initialRoute.page === "labeling") {
-        await openCaseLabelingDiscussion(initialRoute.commentId || 0);
+        await openCaseLabelingDiscussion(
+          initialRoute.commentId || 0,
+          initialRoute.discussionChannel || "",
+        );
       } else {
         await openAnalysisDiscussion(initialRoute.issue, {
           runId: initialRoute.runId || "",
@@ -1274,6 +1321,11 @@ async function bootstrap() {
       intentAssignees: initialRoute.intentAssignees,
       intentExperimentId: initialRoute.intentExperimentId,
       reviewAssignmentSplitId: initialRoute.reviewAssignmentSplitId,
+      discussionChannel: initialRoute.discussionChannel,
+      campaignId: initialRoute.campaignId,
+      campaignPurpose: initialRoute.campaignPurpose,
+      campaignLifecycle: initialRoute.campaignLifecycle,
+      campaignQuery: initialRoute.campaignQuery,
     });
     if (
       initialRoute.page === "intent"

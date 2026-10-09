@@ -1,0 +1,110 @@
+/* Shared assignment composer and its Case page adapter.
+ * Loaded after legacy control bases and before later page/mobile overrides. */
+/* The create-task form is a page, not a <dialog>, so the card must supply the
+   surface and width its former .dialog wrapper provided. */
+.case-labeling-newtask-page { display: grid; align-content: start; }
+.case-labeling-newtask-page.hidden { display: none; }
+.case-experiment-layout { min-width: 0; display: grid; gap: 16px; }
+.case-experiment-create-body { min-width: 0; display: grid; gap: 16px; padding-top: 16px; border-top: 1px solid var(--line-soft); }
+.case-experiment-fields { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-items: end; }
+.case-experiment-fields .work-split-seed { min-width: 0; gap: 6px; color: var(--muted); font-size: 13px; }
+.case-experiment-fields .labeling-task-name { width: min(720px, 100%); }
+.case-experiment-fields .labeling-task-name input { width: 100%; height: 36px; font-size: 13px; }
+.case-experiment-fields .work-split-mode-row { min-width: 0; padding: 0; border: 0; background: none; }
+.case-experiment-fields .work-split-mode-row .ui-select-trigger { height: 36px; font-size: 13px; }
+.case-experiment-people-label { color: var(--muted); font-size: 13px; }
+.case-experiment-people-label small { margin-left: 5px; color: var(--faint); font-size: 11px; }
+.case-experiment-create .work-split-people { max-height: 280px; }
+.case-experiment-create .work-split-person-row { grid-template-columns: minmax(0, 1fr) 130px 36px; }
+.case-experiment-create .work-split-person-picker .ui-select-trigger,
+.case-experiment-create .work-split-person-row input { height: 36px; font-size: 13px; }
+.case-experiment-create .work-split-toolbar { padding-top: 3px; }
+.case-experiment-create .dialog-actions { justify-content: flex-end; }
+.case-experiment-history .intent-experiment-item > .button { align-self: start; }
+.case-experiment-history .intent-experiment-progress-track i { display: block; }
+@media (max-width: 900px) {
+  .case-experiment-fields .work-split-estimate { text-align: left; }
+}
+
+/* One shared composer and a flat, page-level history for both assignment flows. */
+.assignment-composer.assignment-composer { padding: 20px; gap: 16px; border-radius: 12px; }
+.assignment-composer h2, .assignment-composer h3 { margin: 0; font-size: 17px; line-height: 1.4; }
+.assignment-composer .work-split-inline { padding-top: 16px; }
+.assignment-composer .work-split-seed { min-width: 0; gap: 6px; color: var(--muted); font-size: 13px; }
+.assignment-composer .work-split-name, .assignment-composer .labeling-task-name { width: min(720px, 100%); }
+.assignment-composer .work-split-name input, .assignment-composer .labeling-task-name input { width: 100%; height: 36px; font-size: 13px; }
+.assignment-composer .work-split-mode-row { padding: 0; border: 0; border-radius: 0; background: transparent; }
+.assignment-composer .ui-select-trigger, .assignment-composer .work-split-person-row input { height: 36px; font-size: 13px; }
+.assignment-composer .work-split-people { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; max-height: none; overflow: visible; }
+.assignment-composer .work-split-person-row { grid-template-columns: minmax(0, 1fr) 130px 36px; }
+.assignment-composer .work-split-remove-person { width: 36px; height: 36px; }
+.assignment-composer .intent-experiment-name-control input { padding-right: 176px; }
+.assignment-composer .intent-experiment-name-control > .assignment-name-source {
+  display: inline-flex; align-items: center; gap: 6px; right: 44px; pointer-events: auto; color: var(--faint); font-size: 11px; line-height: 1.3;
+}
+.assignment-composer .assignment-name-source[data-source="llm"] { color: var(--accent); }
+.assignment-history.assignment-history { padding: 4px 20px 0; border: 0; border-radius: 0; background: transparent; gap: 0; }
+.assignment-history > .intent-experiment-section-heading,
+.assignment-history > .review-assignment-section-heading { min-height: 42px; margin: 0; padding: 0 0 10px; border-bottom: 1px solid var(--line-soft); align-items: center; }
+.assignment-history h2, .assignment-history h3 { margin: 0; font-size: 17px; line-height: 1.4; }
+.assignment-history .intent-experiment-list { gap: 0; }
+.assignment-history .review-assignment-list { gap: 12px; padding-top: 12px; }
+.assignment-history .intent-experiment-item {
+  padding: 16px 0; border: 0; border-bottom: 1px solid var(--line-soft); border-radius: 0; background: transparent;
+}
+html[data-color-theme="light"] .assignment-history.assignment-history { background: transparent; }
+@media (max-width: 760px) {
+  .assignment-composer.assignment-composer { padding: 14px; }
+  .assignment-history.assignment-history { padding-right: 14px; padding-left: 14px; }
+  .assignment-composer .work-split-person-row { grid-template-columns: minmax(0, 1fr) 76px 36px; }
+  .assignment-composer .review-assignments-header-main { flex-wrap: wrap; gap: 10px; }
+  .assignment-composer .intent-experiment-name-control input { padding-right: 152px; }
+  .assignment-composer .intent-experiment-name-control > .assignment-name-source { font-size: 10px; }
+}
+
+.assignment-name-refresh {
+  position: absolute; right: 5px; top: 50%; transform: translateY(-50%);
+  display: grid; place-items: center; width: 28px; height: 28px; padding: 5px;
+  border: 0; border-radius: 5px; background: transparent; color: var(--muted); cursor: pointer;
+}
+.assignment-name-refresh:hover:not(:disabled) { color: var(--accent); background: var(--accent-soft); }
+.assignment-name-refresh:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.assignment-name-refresh:disabled { opacity: .4; cursor: default; }
+.assignment-name-refresh svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.assignment-name-refresh[data-loading="true"] svg { animation: intent-name-spin .8s linear infinite; }
+.assignment-composer .assignment-name-source[data-status="loading"]::before { display: none; }
+@media (prefers-reduced-motion: reduce) { .assignment-name-refresh[data-loading="true"] svg { animation: none; } }
+
+
+/* Fill the composer row; compact fixed controls leave the rest for the name. */
+.assignment-composer { container-type: inline-size; }
+.assignment-composer .assignment-config-fields { display: grid; grid-template-columns: minmax(720px, 1fr) 180px 118px 90px; align-items: end; gap: 14px 12px; min-width: 0; }
+.assignment-composer .case-experiment-fields { grid-template-columns: minmax(720px, 1fr) 140px 110px; }
+.assignment-composer .assignment-config-fields > .work-split-name,
+.assignment-composer .assignment-config-fields > .labeling-task-name,
+.assignment-composer .assignment-config-fields > .work-split-workflow-mode { width: 100%; max-width: none; min-width: 0; }
+.assignment-composer .assignment-config-fields input,
+.assignment-composer .assignment-config-fields .ui-select { width: 100%; max-width: none; }
+.assignment-composer .assignment-config-fields > .work-split-mode-row { display: contents; }
+.assignment-config-fields .work-split-seed > span:first-child { white-space: nowrap; }
+@container (max-width: 1143px) {
+  .assignment-composer .assignment-config-fields { grid-template-columns: minmax(0, 1fr) 118px 90px; }
+  .assignment-config-fields > .work-split-name { grid-column: 1 / -1; }
+}
+@container (max-width: 993px) {
+  .assignment-composer .case-experiment-fields { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .assignment-config-fields > .labeling-task-name { grid-column: 1 / -1; }
+}
+@container (max-width: 470px) {
+  .assignment-composer .assignment-config-fields { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .assignment-config-fields > .work-split-workflow-mode { grid-column: 1 / -1; }
+}
+.assignment-people-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.assignment-people-heading .work-split-estimate { flex: 1 1 auto; margin-left: auto; }
+
+/* Seed belongs to the same control baseline as the footer actions. */
+.assignment-composer .assignment-footer-row { align-items: center; }
+.assignment-composer .assignment-footer-row > .work-split-seed { display: flex; align-items: center; gap: 8px; }
+.assignment-composer .assignment-footer-row > .work-split-seed > span { white-space: nowrap; }
+.assignment-composer .assignment-footer-row > .work-split-seed input { width: 148px; height: 36px; }
+.assignment-composer .assignment-footer-row .button { height: 36px; min-height: 36px; }

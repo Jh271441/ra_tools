@@ -925,7 +925,9 @@ function bindDetailExternalLinks(caseData, root = $("#detailExternalLinks") || $
 function renderDetailExternalLinks(caseData) {
   const root = $("#detailExternalLinks");
   if (!root) return;
-  root.innerHTML = detailExternalLinksMarkup(caseData);
+  const markup = detailExternalLinksMarkup(caseData);
+  root.innerHTML = markup;
+  root.hidden = !markup;
   bindDetailExternalLinks(caseData);
 }
 

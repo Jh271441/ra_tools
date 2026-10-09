@@ -19,7 +19,8 @@ html[data-can-view-intent="true"] .app-shell.sidebar-collapsed .intent-group-lab
   font: 650 9px/1 "SFMono-Regular", Consolas, monospace;
 }
 body[data-active-page="review"] .shortcut-help-button,
-body[data-active-page="intent"] .shortcut-help-button { display: inline-flex; }
+body[data-active-page="intent"] .shortcut-help-button,
+body[data-active-page="labeling"] .shortcut-help-button { display: inline-flex; }
 
 @media (max-width: 639px) {
   .app-shell, .app-shell.sidebar-collapsed { display: block; }
@@ -612,6 +613,10 @@ html.ra-ui-ready .intent-workspace { transition: grid-template-columns 200ms eas
 .intent-experiment-section-heading > div { min-width: 0; display: grid; gap: 2px; }
 .intent-experiment-section-heading span { color: var(--faint); font-size: 11px; font-weight: 750; letter-spacing: .08em; }
 .intent-experiment-section-heading h3, .intent-experiment-section-heading h4 { margin: 0; color: var(--text); font-size: 16px; }
+.intent-experiment-section-heading h3 > .ui-lang-zh,
+.intent-experiment-section-heading h3 > .ui-lang-en,
+.intent-experiment-section-heading h4 > .ui-lang-zh,
+.intent-experiment-section-heading h4 > .ui-lang-en { color: inherit; font-size: inherit; letter-spacing: normal; }
 .intent-experiment-section-heading p { max-width: 520px; margin: 0; color: var(--faint); font-size: 12px; line-height: 1.5; text-align: right; }
 .intent-experiment-count { min-width: 28px; padding: 4px 8px; border: 1px solid rgba(36, 211, 238, .3); border-radius: 999px; color: var(--accent); background: rgba(36, 211, 238, .08); font-size: 12px; text-align: center; }
 .intent-experiment-create-body {

@@ -220,6 +220,14 @@ async function setBaselineScopes(
     renderBaselinePicker();
     return;
   }
+  if (
+    state.reviewWorkSplitId
+    && state.reviewTaskContext
+    && nextValue !== normalizeBaselineIds(state.reviewTaskContext.baseline_ids || []).join(",")
+  ) {
+    clearReviewTaskContext({ clearRun: true });
+    showToast(uiText("已退出任务范围并切换数据集。", "Exited the task scope and switched dataset."));
+  }
   state.selectedBaselineIds = next;
   persistBaselineIds(next);
   // Workset-level hard reset (stronger than filter change).
@@ -237,7 +245,12 @@ async function setBaselineScopes(
   }
   renderBaselinePicker();
   if (!skipHistory && typeof pageUrl === "function") {
+    const routeOptions = state.activePage === "campaigns"
+      && typeof campaignRouteOptions === "function"
+      ? campaignRouteOptions()
+      : {};
     const nextUrl = pageUrl(state.activePage || "review", {
+      ...routeOptions,
       issue: "",
       baselines: next,
     });
@@ -245,6 +258,13 @@ async function setBaselineScopes(
   }
   try {
     await loadConfig();
+    if (state.activePage === "review-assignments") {
+      return;
+    }
+    if (state.activePage === "labeling-summary") {
+      await loadLabelingSummary();
+      return;
+    }
     if (state.activePage === "labeling") {
       state.selectedRunId = "";
       await enterCaseLabeling({ route: parsePageRoute() });
@@ -686,6 +706,14 @@ async function refreshChangedDataNow() {
     });
     return;
   }
+  if (state.activePage === "labeling-summary") {
+    await loadLabelingSummary();
+    return;
+  }
+  if (state.activePage === "campaigns") {
+    await loadCampaigns({ ...campaignRouteOptions() });
+    return;
+  }
   if (state.activePage === "trail-update") {
     // Shared change-revision polling must not refresh Trail status behind the
     // operator's back. The top-bar Refresh button is the explicit refresh
@@ -713,6 +741,12 @@ async function refreshChangedDataNow() {
     return;
   }
   if (state.activePage === "intent-experiments") {
+    if (!intentAvailableDatasets().length) {
+      renderIntentExperimentMembers();
+      renderIntentExperiments();
+      setIntentExperimentFormAvailability(false);
+      return;
+    }
     state.intentLabeling.experimentsDatasetId = "";
     await loadIntentExperiments({ force: true });
     return;

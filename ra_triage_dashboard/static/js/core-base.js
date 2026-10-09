@@ -46,6 +46,13 @@ const API_GET_TIMEOUT_MS = 6000;
 const API_GET_MAX_ATTEMPTS = 3;
 const API_GET_RETRYABLE_STATUSES = new Set([408, 429, 502, 503, 504]);
 
+function hasDashboardWriteRole() {
+  return Boolean(
+    state.session?.verified
+    && ["writer", "admin"].includes(String(state.session?.access_role || ""))
+  );
+}
+
 function parseFilterList(value) {
   if (Array.isArray(value)) {
     return [
@@ -319,6 +326,35 @@ function bindUiSelect(root, { onChange, maxHeight = 320, maxWidth = 420 } = {}) 
     onChange?.(value, label);
   });
 
+  trigger.addEventListener("keydown", (event) => {
+    if (!["Enter", " ", "ArrowDown", "ArrowUp", "Escape"].includes(event.key)) return;
+    if (event.key === "Escape") {
+      closeAllUiSelects();
+      return;
+    }
+    event.preventDefault();
+    if (panel.hidden) trigger.click();
+    const options = [...panel.querySelectorAll("[data-ui-select-value]:not([disabled])")];
+    if (!options.length) return;
+    const active = panel.querySelector("[data-ui-select-value].is-active");
+    const index = Math.max(0, options.indexOf(active));
+    const target = event.key === "ArrowUp"
+      ? options[(index - 1 + options.length) % options.length]
+      : options[event.key === "ArrowDown" ? (index + 1) % options.length : index];
+    target?.focus();
+  });
+  panel.addEventListener("keydown", (event) => {
+    const options = [...panel.querySelectorAll("[data-ui-select-value]:not([disabled])")];
+    const current = event.target.closest?.("[data-ui-select-value]");
+    if (event.key === "Escape") {
+      event.preventDefault(); closeAllUiSelects(); trigger.focus(); return;
+    }
+    if (!["ArrowDown", "ArrowUp"].includes(event.key) || !current || !options.length) return;
+    event.preventDefault();
+    const index = Math.max(0, options.indexOf(current));
+    options[(index + (event.key === "ArrowDown" ? 1 : -1) + options.length) % options.length]?.focus();
+  });
+
   if (document.documentElement.dataset.uiSelectDismissBound === "1") return;
   document.documentElement.dataset.uiSelectDismissBound = "1";
   document.addEventListener(
@@ -367,6 +403,70 @@ function bindUiSelect(root, { onChange, maxHeight = 320, maxWidth = 420 } = {}) 
     true
   );
   window.addEventListener("resize", () => closeAllUiSelects());
+}
+
+const DASHBOARD_NATIVE_SELECT_IDS = new Set([
+  "workSplitWorkflowMode", "reviewWorkflowMode", "campaignsSource",
+  "runCollectionSelect", "runCollectionRevisionSelect",
+  "runCollectionReferenceType", "runCollectionComparisonReference",
+  "runCollectionSelectionSourceRun", "modelReviewStatusInput",
+]);
+
+function enhanceNativeUiSelect(select, { maxWidth = 520 } = {}) {
+  if (!select) return null;
+  let root = select.closest(".ui-select");
+  if (!root || !root.classList.contains("dashboard-native-ui-select")) {
+    root = document.createElement("div");
+    root.className = "ui-select dashboard-native-ui-select";
+    select.before(root);
+    root.innerHTML = `<button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="ui-select-summary"></span><span class="ui-select-caret" aria-hidden="true"></span></button><div class="ui-select-panel" role="listbox" hidden></div>`;
+    root.append(select);
+    select.classList.add("ui-select-native");
+    select.setAttribute("aria-hidden", "true");
+    select.tabIndex = -1;
+  }
+  const translated = {
+    workSplitWorkflowMode: {
+      model_review_only: ["仅判错复核", "Model review only"],
+      model_review_and_case_label: ["判错复核 + 问题标注", "Model review + Case label"],
+    },
+    reviewWorkflowMode: {
+      model_review_only: ["仅判错复核", "Model review only"],
+      model_review_and_case_label: ["判错复核 + 问题标注", "Model review + Case label"],
+    },
+    campaignsSource: {
+      all: ["全部来源", "All sources"], campaign: ["标注实验", "Labeling campaigns"],
+      legacy_model_review: ["历史判错复核", "Historical reviews"],
+    },
+    modelReviewStatusInput: {
+      pending: ["待开始", "Pending"], in_progress: ["复核中", "In progress"], completed: ["已完成", "Completed"],
+    },
+    runCollectionReferenceType: {
+      gt: ["GT 版本（创建时冻结）", "GT snapshot (frozen on create)"],
+      label_result: ["标注版本", "Label snapshot"],
+    },
+  };
+  const options = [...select.options].map((option) => ({
+    value: option.value,
+    label: translated[select.id]?.[option.value]?.[state.uiLanguage === "en" ? 1 : 0]
+      || option.textContent?.trim() || option.value,
+    disabled: option.disabled,
+  }));
+  populateUiSelect(root, options, select.value);
+  const trigger = root.querySelector(".ui-select-trigger");
+  if (trigger) trigger.title = select.title || "";
+  bindUiSelect(root, { maxHeight: 320, maxWidth });
+  if (select.dataset.dashboardSelectBound !== "1") {
+    select.dataset.dashboardSelectBound = "1";
+    select.addEventListener("change", () => enhanceNativeUiSelect(select, { maxWidth }));
+  }
+  return root;
+}
+
+function enhanceDashboardSelects(root = document) {
+  root.querySelectorAll("select[id]").forEach((select) => {
+    if (DASHBOARD_NATIVE_SELECT_IDS.has(select.id)) enhanceNativeUiSelect(select);
+  });
 }
 
 /** Park a dropdown panel off-screen before first paint (no absolute-down flash). */
@@ -542,15 +642,16 @@ function stripBasePath(pathname) {
 }
 
 const PAGE_ROUTES = {
+  "labeling-summary": { path: "/labeling-summary", titleZh: "标注汇总", titleEn: "Labeling summary" },
   labeling: {
     path: "/case-labeling",
-    titleZh: "Case 标注（内测）",
-    titleEn: "Case Labeling (preview)",
+    titleZh: "问题标注",
+    titleEn: "Issue labeling",
   },
   "labeling-new-task": {
     path: "/case-labeling/new-task",
-    titleZh: "建标注任务",
-    titleEn: "New labeling task",
+    titleZh: "标注任务",
+    titleEn: "Labeling tasks",
   },
   review: {
     path: "/review",
@@ -561,6 +662,11 @@ const PAGE_ROUTES = {
     path: "/review-assignments",
     titleZh: "任务分配",
     titleEn: "Review Assignments",
+  },
+  campaigns: {
+    path: "/campaigns",
+    titleZh: "任务与标注汇总",
+    titleEn: "Campaigns and Label Analysis",
   },
   intent: {
     path: "/intent-labeling",
@@ -596,6 +702,11 @@ const PAGE_ROUTES = {
     path: "/run-comparison",
     titleZh: "Run 对比",
     titleEn: "Run Comparison",
+  },
+  "run-collections": {
+    path: "/multi-run-evaluation",
+    titleZh: "多 Run 评测",
+    titleEn: "Multi-run evaluation",
   },
   prediction: {
     path: "/batch-prediction",
@@ -742,6 +853,12 @@ const state = {
   clusterKey: "",
   reviewQueueStale: false,
   reviewWorkSplitId: "",
+  reviewTaskContext: null,
+  reviewTaskContextLoading: false,
+  reviewTaskContextError: null,
+  reviewLegacyNoRunTask: false,
+  reviewWorkflowMode: "model_review_and_case_label",
+  combinedReviewContext: null,
   availableReviewWorkSplitId: "",
   reviewAnalysis: {
     page: 1,
@@ -774,11 +891,14 @@ const state = {
     tasks: [],
     taskId: "",
     search: "",
-    status: "all",
-    author: "",
-    assignee: "",
-    exclusion: "all",
-    label: "",
+    issueIds: [],
+    status: [],
+    author: [],
+    assignee: [],
+    exclusion: [],
+    label: [],
+    gt: [],
+    commentState: [],
     labelers: [],
     assignees: [],
     cluster: "",

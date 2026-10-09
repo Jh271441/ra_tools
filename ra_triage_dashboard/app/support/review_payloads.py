@@ -8,6 +8,7 @@ from typing import Any
 from urllib.parse import quote
 
 from ..db import LABELS, MODEL_LABELS, REVIEW_STATUSES
+from ..db_parts.model_reviews import MODEL_REVIEW_STATUSES
 from ..model_labels import canonical_model_label, model_label_matches_gt
 from ..review_workflow import derive_review_status, effective_expected_output
 from ..review_analysis import COMPARISON_STATUSES, build_review_reason_analysis
@@ -93,8 +94,15 @@ def _review_reason_analysis_payload(
     ]
     evidence_keys = _csv_filter_values(missing_evidence)
     for status in statuses:
-        if status not in REVIEW_STATUSES:
+        if status not in REVIEW_STATUSES and status not in MODEL_REVIEW_STATUSES:
             raise _detail(400, "review_status 不在支持范围内。")
+    legacy_statuses = [
+        status for status in statuses
+        if status in REVIEW_STATUSES and status not in MODEL_REVIEW_STATUSES
+    ]
+    model_review_statuses = [
+        status for status in statuses if status in MODEL_REVIEW_STATUSES
+    ]
     for label in gt_labels:
         if label not in LABELS:
             raise _detail(400, "gt_label 不在三分类范围内。")
@@ -190,7 +198,7 @@ def _review_reason_analysis_payload(
             or label.casefold() in folded_search
         )
     )
-    effective_statuses = tuple(statuses)
+    effective_statuses = tuple(legacy_statuses)
     status_filter_impossible = False
     if search_statuses:
         search_status_set = set(search_statuses)
@@ -226,6 +234,7 @@ def _review_reason_analysis_payload(
             # Historical persisted status/label fields predate expected output.
             # Apply both filters after read-time Tag inference below.
             review_status="",
+            model_review_status=",".join(model_review_statuses),
             gt_label=",".join(gt_labels),
             annotation_label="",
             model_label=",".join(model_labels),
@@ -254,24 +263,25 @@ def _review_reason_analysis_payload(
             issue_ids=selected_issue_ids,
         ):
             grouped.setdefault(str(row["issue_id"]), []).append(row)
-    external_reviews = database.latest_non_assignee_reviews([
-        (str(members[0]["split_id"]), issue_id)
-        for issue_id, members in grouped.items() if len(members) > 1
-    ]) if grouped else {}
     multi_rows: list[dict[str, Any]] = []
     for issue_id, members in grouped.items():
         reviews: list[dict[str, Any]] = []
         for member in members:
             annotation = dict(member.get("annotation") or {})
             if annotation:
-                output, source = effective_expected_output(annotation, tag_catalog)
-                annotation["expected_output"] = output
-                annotation["label"] = output
-                annotation["expected_output_source"] = source
-                annotation["review_status"] = derive_review_status(
-                    output,
-                    member.get("gt_label"),
-                )
+                if annotation.get("review_domain") == "model_review":
+                    annotation["expected_output"] = ""
+                    annotation["label"] = ""
+                    annotation["expected_output_source"] = "model_review_separate_domain"
+                else:
+                    output, source = effective_expected_output(annotation, tag_catalog)
+                    annotation["expected_output"] = output
+                    annotation["label"] = output
+                    annotation["expected_output_source"] = source
+                    annotation["review_status"] = derive_review_status(
+                        output,
+                        member.get("gt_label"),
+                    )
             reviews.append(
                 {
                     "username": member["assignee"],
@@ -305,46 +315,6 @@ def _review_reason_analysis_payload(
         elif agreement != normalized_work_agreement:
             continue
         first = members[0]
-        adjudication = None
-        candidate = external_reviews.get((str(first["split_id"]), issue_id))
-        if agreement == "conflict" and candidate and int(candidate["id"]) > max(
-            int(item.get("id") or -1) for item in annotations
-        ):
-            output, output_source = effective_expected_output(candidate, tag_catalog)
-            if output in LABELS:
-                adjudication = {
-                    **candidate, "expected_output": output, "label": output,
-                    "expected_output_source": output_source,
-                    "review_status": derive_review_status(output, first.get("gt_label")),
-                }
-        resolution_source = "non_assignee_review" if adjudication else "assigned_review"
-        confirmation = first.get("confirmed_adjudication")
-        # Explicit, version-pinned batch confirmations only. Note text never
-        # creates a decision. A later source revision makes this confirmation stale.
-        if agreement == "conflict" and isinstance(confirmation, dict):
-            source_ids = sorted(int(item["id"]) for item in annotations)
-            pinned_ids = confirmation.get("source_revision_ids")
-            confirmed_id = confirmation.get("annotation_id")
-            if (
-                isinstance(pinned_ids, list)
-                and all(type(value) is int for value in pinned_ids)
-                and sorted(pinned_ids) == source_ids
-                and type(confirmed_id) is int
-                and confirmation.get("confirmation_ref")
-            ):
-                confirmed = next((item for item in annotations if item["id"] == confirmed_id), None)
-                if (
-                    confirmed
-                    and confirmed.get("expected_output") in LABELS
-                    and confirmed["expected_output"] == confirmation.get("expected_output")
-                    and (not adjudication or confirmed_id >= int(adjudication["id"]))
-                ):
-                    adjudication = dict(confirmed)
-                    resolution_source = "manual_batch_confirmation"
-        # Conflict/vote counts stay about the assigned pair. Result fields and
-        # their filters must describe the one authoritative decision revision.
-        result_reviews = [{"username": adjudication["author"], "expected_output": adjudication["expected_output"], "annotation": adjudication}] if adjudication else reviews
-        annotations = [item["annotation"] for item in result_reviews if item["annotation"]]
         prediction = first.get("prediction") or {}
         if gt_labels and str(first.get("gt_label") or "") not in gt_labels:
             continue
@@ -366,15 +336,16 @@ def _review_reason_analysis_payload(
                 continue
         if authors:
             matching_reviews = [
-                item for item in (reviews + result_reviews) if item["username"] in authors
+                item for item in reviews if item["username"] in authors
             ]
             if normalized_work_agreement == "all":
                 if not any(item["annotation"] for item in matching_reviews):
                     continue
             elif not matching_reviews:
                 continue
-        if effective_statuses and not any(
+        if (effective_statuses or model_review_statuses) and not any(
             annotation.get("review_status") in effective_statuses
+            or annotation.get("model_review_status") in model_review_statuses
             for annotation in annotations
         ):
             continue
@@ -400,7 +371,7 @@ def _review_reason_analysis_payload(
         if normalized_search:
             haystack = " ".join(
                 str(value or "")
-                for item in result_reviews
+                for item in reviews
                 for value in (
                     item["username"],
                     item["expected_output"],
@@ -411,9 +382,7 @@ def _review_reason_analysis_payload(
             ).casefold()
             if folded_search not in haystack:
                 continue
-        if adjudication:
-            representative_review = {"annotation": adjudication}
-        elif submitted_reviews:
+        if submitted_reviews:
             # Each member row already contains that reviewer's latest version.
             # Every multi-review state needs one coherent primary row for the
             # shared display and export schema, so choose the last appended
@@ -464,9 +433,6 @@ def _review_reason_analysis_payload(
                 label: valid_outputs.count(label) for label in sorted(set(valid_outputs))
             },
             "reviews": reviews,
-            "adjudication": adjudication,
-            "resolution_source": resolution_source,
-            "confirmation_ref": confirmation.get("confirmation_ref", "") if resolution_source == "manual_batch_confirmation" else "",
         }
     if normalized_work_split_id:
         # Exact task scope never falls back to an ordinary/older Review.  The

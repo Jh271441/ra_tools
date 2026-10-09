@@ -39,6 +39,23 @@ function issueCardLabelingFlag(item) {
   return "";
 }
 
+function issueCardLabelingAttributes(attributes) {
+  if (!Array.isArray(attributes) || !attributes.length) return "";
+  const tags = attributes.flatMap((attribute) => (attribute.values || []).map((value) => ({
+    ...attribute,
+    value,
+  })));
+  const visible = tags.slice(0, 3).map((tag) => {
+    const group = `${tag.label_zh || tag.key} / ${tag.label_en || tag.key}`;
+    const title = `${group}: ${tag.value}`;
+    return `<span class="case-labeling-card-tag" data-tag-section="${escapeHtml(tag.section || "other")}" data-tag-group="${escapeHtml(tag.key || "other")}" title="${escapeHtml(title)}">${escapeHtml(tag.value)}</span>`;
+  }).join("");
+  const overflow = tags.length > 3
+    ? `<span class="case-labeling-card-tag-more" title="${escapeHtml(tags.slice(3).map((tag) => tag.value).join(uiText("、", ", ")))}">+${tags.length - 3}</span>`
+    : "";
+  return `<span class="case-labeling-card-tags">${visible}${overflow}</span>`;
+}
+
 function issueCard(item, options = {}) {
   const workspace = options.workspace || item.gallery_workspace || "review";
   const isLabeling = workspace === "labeling";
@@ -91,6 +108,9 @@ function issueCard(item, options = {}) {
     : `<span class="issue-label-pair"><small class="ui-lang-zh">模型</small><small class="ui-lang-en">Model</small>${displayPrediction ? labelBadge(displayPrediction, "—") : labelBadge("", "—")}</span>`;
   const actorKindZh = isLabeling ? "标注" : "复核";
   const actorKindEn = isLabeling ? "Label" : "Review";
+  const labelingAttributes = isLabeling
+    ? issueCardLabelingAttributes(item.label_attributes)
+    : "";
   return `
     <article class="issue-card ${isSelected ? "selected" : ""}" data-issue-id="${escapeHtml(item.issue_id)}">
       <button class="issue-card-open" type="button" data-open-issue="${escapeHtml(item.issue_id)}" aria-label="${escapeHtml(openLabel)}"></button>
@@ -105,6 +125,7 @@ function issueCard(item, options = {}) {
         <div class="issue-card-heading">
           <div class="issue-card-heading-main">
             ${issueUrl ? `<a class="issue-id" href="${escapeHtml(issueUrl)}" target="_blank" rel="noreferrer" data-card-link title="打开 Voyager Issue">${escapeHtml(item.issue_id)}</a>` : `<span class="issue-id">${escapeHtml(item.issue_id)}</span>`}
+            ${labelingAttributes}
             ${evidenceRow}
           </div>
           <div class="issue-card-flags">${reviewFlag}${sharedLabelFlag}</div>
@@ -112,8 +133,9 @@ function issueCard(item, options = {}) {
         <div class="issue-card-labels">
           <span class="issue-label-pair"><small>GT</small>${labelBadge(item.gt_label, "—")}</span>
           ${outputPair}
+          ${!isLabeling ? currentRunReviewStatusMarkup(item, { compact: true }) : ""}
           ${historicalReview ? `<span class="issue-reviewer historical-review" title="${escapeHtml(historicalReviewTitle)}"><span class="ui-lang-zh">历史 Review</span><span class="ui-lang-en">Historical review</span></span>` : ""}
-          ${item.annotation?.author ? `<span class="issue-reviewer" title="${escapeHtml(uiText(`${actorKindZh}人：${item.annotation.author}${item.annotation.author_verified ? " · SSO 已验证" : " · 未验证身份"}`, `${actorKindEn}: ${item.annotation.author}${item.annotation.author_verified ? " · SSO verified" : " · unverified"}`))}"><span class="ui-lang-zh">${actorKindZh}</span><span class="ui-lang-en">${actorKindEn}</span> · ${escapeHtml(item.annotation.author)}${item.annotation.author_verified ? " · SSO" : ""}</span>` : ""}
+          ${item.annotation?.author ? `<span class="issue-reviewer" title="${escapeHtml(uiText(`${actorKindZh}人：${item.annotation.author}${item.annotation.author_verified ? " · SSO 已验证" : " · 未验证身份"}`, `${actorKindEn}: ${item.annotation.author}${item.annotation.author_verified ? " · SSO verified" : " · unverified"}`))}">${escapeHtml(item.annotation.author)}${item.annotation.author_verified ? " · SSO" : ""}</span>` : ""}
         </div>
       </div>
     </article>`;
@@ -510,11 +532,16 @@ function updateFilteredPredictionButton() {
   updateWorkSplitAdminVisibility();
   const split = $("#splitFilteredButton");
   if (split && !split.hidden) {
-    split.disabled = total === 0;
+    split.disabled = total === 0 || !state.selectedRunId;
     split.innerHTML = total
       ? `<span class="ui-lang-zh">均分任务 · ${total}</span><span class="ui-lang-en">Split work · ${total}</span>`
       : `<span class="ui-lang-zh">均分任务</span><span class="ui-lang-en">Split work</span>`;
-    split.title = total
+    split.title = !state.selectedRunId
+      ? uiText(
+          "请先选择 Model Run；若只做 Case 标签，请前往 问题标注 > 实验分配。",
+          "Select a Model Run first. For Case labels only, use Case labeling > Experiment assignment."
+        )
+      : total
       ? uiText(
           `管理员：把当前 ${total} 个筛选 Issue 写入任务负责人；可指定数量，剩余均分。`,
           `Admin: assign ${total} filtered issues to owners.`
@@ -634,6 +661,9 @@ async function loadCases({
   const reviewStatus = joinFilterList(
     getMultiFilterValues($("#reviewStatusFilter"))
   );
+  const labelState = joinFilterList(
+    getMultiFilterValues($("#sharedLabelStateFilter"))
+  );
   const workAssignee = joinFilterList(
     typeof workAssigneeFilterSelection === "function"
       ? workAssigneeFilterSelection()
@@ -663,6 +693,7 @@ async function loadCases({
   if (modelLabel) params.set("model_label", modelLabel);
   if (annotationAuthor) params.set("annotation_author", annotationAuthor);
   if (reviewStatus) params.set("review_status", reviewStatus);
+  if (labelState) params.set("label_state", labelState);
   if (workAssignee) params.set("work_assignee", workAssignee);
   if (state.reviewWorkSplitId) params.set("work_split_id", state.reviewWorkSplitId);
   if (exclusion !== "all") params.set("exclusion", exclusion);
@@ -690,6 +721,9 @@ async function loadCases({
     return loadCases({ keepSelection, page: totalPages });
   }
   renderCases(data);
+  if (state.reviewTaskContext || state.reviewTaskContextError) {
+    renderReviewTaskContext();
+  }
   state.reviewQueueStale = false;
   if (!keepSelection) {
     clearDetail({ showGallery: state.activePage === "review" });

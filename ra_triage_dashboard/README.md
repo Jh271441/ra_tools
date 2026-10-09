@@ -35,7 +35,10 @@
 0522、0626、0821 的历史 Review 可通过幂等迁移工具映射为标注版本，原
 annotation/comment 保留；0821 的 200/150/150 三个批次恢复为标注任务并保留选样
 Run。显式裁决引用精确人员 heads，writer/admin 均可执行；GT 更新导出会先固定
-候选来源并在下载前重新校验。设计与迁移细节见
+候选来源并在下载前重新校验。任务内裁决先形成各任务自己的结果；跨任务或自由
+标注冲突由 append-only Issue Decision 统一裁决，并绑定当时全部来源 revision
+指纹。来源变化只会把当前 Decision 标为 stale，不改写历史 Label snapshot 或
+GT 导出批次。设计与迁移细节见
 [`docs/review-labeling-redesign-plan.md`](docs/review-labeling-redesign-plan.md) 和
 [`docs/dataset-migration-and-labeling-ui-design.md`](docs/dataset-migration-and-labeling-ui-design.md)。
 
@@ -564,3 +567,17 @@ cloud_server 的一次性切换流程：
 6. 重启 Dashboard；`run_cloud_server.sh` 会拒绝使用 overlay 上的 PostgreSQL 数据。确认 `/health`、实际 `SHOW data_directory`、1071 baseline、Runs、Review、附件、Batch 历史及最新备份可恢复后再结束维护窗口。
 
 数据库引擎切换回滚只需移走/改名 URL 文件并重启服务，原 SQLite 与附件目录未被迁移工具修改。物理目录迁移失败会自动回滚；成功后旧目录只作为切换时刻的短期回滚副本，之后新增写入应从 PostgreSQL 逻辑备份恢复。正式启用可信 SSO 后，仍需为团队默认变更、推理与未来 Trail 写入补充 RBAC。
+
+
+## Internal ownership and refactor operations
+
+The stable `Database`/router interfaces delegate to domain modules. Labeling
+storage lives in `app/db_parts/labeling_*.py`, HTTP workflows in
+`app/routers/labeling_api/`, and initialization in `initialize_*.py` plus
+`sqlite_schema/`. Shared runtime instances are built by `runtime_services.py`;
+static catalogs import independently via `runtime_catalogs.py`.
+
+See [stages 4–6 ownership and acceptance](docs/refactor-8786-stages456-20261008.md)
+and [repeatable 8786 verification/deployment](docs/refactor-8786-operations.md).
+The isolated 8786 deployer does not replace the production `deploy_cloud.py`
+workflow or authorize schema/configuration changes.

@@ -25,12 +25,13 @@ class FrontendBootstrapTest(unittest.TestCase):
         self.assertIn("loadPageData = true", APP_JS)
         self.assertEqual(APP_JS.count("loadPageData: false"), 5)
         self.assertIn(
-            'const initialPageRequests = ["labeling", "labeling-new-task"].includes(initialRoute.page)',
+            'const initialPageRequests = ["labeling", "labeling-new-task", "labeling-summary"].includes(initialRoute.page)',
             APP_JS,
         )
-        self.assertIn(': [loadOverview()]', APP_JS)
+        self.assertIn(': [{ name: "概览", promise: loadOverview() }]', APP_JS)
+        self.assertIn('{ name: "Issue 图库", promise: loadCases({', APP_JS)
         self.assertIn(
-            'if (!["labeling", "labeling-new-task"].includes(initialRoute.page))',
+            'if (!["labeling", "labeling-new-task", "labeling-summary"].includes(initialRoute.page))',
             APP_JS,
         )
         self.assertIn('initialPageRequests.push(enterLabelingNewTask({ route: initialRoute }))', APP_JS)

@@ -47,7 +47,7 @@ function restoreIntentWorkspacePreferences() {
     const experiments = saved.experiments || {};
     intent.experimentDatasetIds = parseFilterList(experiments.datasetIds);
     intent.experimentDatasetId = intent.experimentDatasetIds[0] || "";
-    intent.experimentDraftMembers = parseFilterList(experiments.members);
+    intent.experimentDraftMembers = [];
     const draftValues = {
       intentExperimentScope: experiments.labelScope || "all",
       intentExperimentMode: experiments.mode || "blind",
@@ -88,7 +88,7 @@ function persistIntentWorkspacePreferences() {
       experimentId: intent.selectedExperimentId || "", assignees: intent.selectedAssignees || [],
     },
     experiments: {
-      datasetIds: intent.experimentDatasetIds || [], members: intent.experimentDraftMembers || [],
+      datasetIds: intent.experimentDatasetIds || [],
       labelScope: $("#intentExperimentScope")?.value || "all",
       mode: $("#intentExperimentMode")?.value || "blind",
       annotationStatus: $("#intentExperimentAnnotationStatus")?.value || "all",
@@ -466,44 +466,46 @@ async function loadIntentAssignees(datasetIds, requested = null, requestedExperi
 }
 
 function intentExperimentModeLabel(mode) {
-  return mode === "full" ? "全量盲标" : "交叉盲标";
+  return mode === "full"
+    ? uiText("全量盲标", "Full blind labeling")
+    : uiText("交叉盲标", "Cross blind labeling");
 }
 
 function intentExperimentScopeLabel(scope) {
   return ({
-    routing: "仅 Routing 意图",
-    lane_change: "仅变道意图",
-    all: "Routing + 变道意图",
-  })[scope] || "Routing + 变道意图";
+    routing: uiText("仅 Routing 意图", "Routing only"),
+    lane_change: uiText("仅变道意图", "Lane-change only"),
+    all: uiText("Routing + 变道意图", "Routing + lane-change"),
+  })[scope] || uiText("Routing + 变道意图", "Routing + lane-change");
 }
 
 function intentExperimentAnnotationStatusLabel(status) {
   return ({
-    labeled: "已有人标注",
-    unlabeled: "尚无人标注",
-    all: "全部 Case",
-  })[status] || "全部 Case";
+    labeled: uiText("已有人标注", "Already labeled"),
+    unlabeled: uiText("尚无人标注", "Not yet labeled"),
+    all: uiText("全部 Case", "All Cases"),
+  })[status] || uiText("全部 Case", "All Cases");
 }
 
 function initializeIntentExperimentSelects() {
   const scope = $("#intentExperimentScopePicker");
   populateUiSelect(scope, [
-    { value: "all", label: "Routing + 变道意图" },
-    { value: "routing", label: "仅 Routing 意图" },
-    { value: "lane_change", label: "仅变道意图" },
+    { value: "all", label: intentExperimentScopeLabel("all") },
+    { value: "routing", label: intentExperimentScopeLabel("routing") },
+    { value: "lane_change", label: intentExperimentScopeLabel("lane_change") },
   ], $("#intentExperimentScope")?.value || "all");
   bindUiSelect(scope, { maxHeight: 220, maxWidth: 300 });
   const mode = $("#intentExperimentModePicker");
   populateUiSelect(mode, [
-    { value: "blind", label: "交叉盲标" },
-    { value: "full", label: "全量盲标" },
+    { value: "blind", label: intentExperimentModeLabel("blind") },
+    { value: "full", label: intentExperimentModeLabel("full") },
   ], $("#intentExperimentMode")?.value || "blind");
   bindUiSelect(mode, { maxHeight: 220, maxWidth: 280 });
   const annotationStatus = $("#intentExperimentAnnotationStatusPicker");
   populateUiSelect(annotationStatus, [
-    { value: "all", label: "全部 Case" },
-    { value: "labeled", label: "已有人标注" },
-    { value: "unlabeled", label: "尚无人标注" },
+    { value: "all", label: intentExperimentAnnotationStatusLabel("all") },
+    { value: "labeled", label: intentExperimentAnnotationStatusLabel("labeled") },
+    { value: "unlabeled", label: intentExperimentAnnotationStatusLabel("unlabeled") },
   ], $("#intentExperimentAnnotationStatus")?.value || "all");
   bindUiSelect(annotationStatus, { maxHeight: 220, maxWidth: 260 });
   const overlap = $("#intentExperimentOverlapPicker");
@@ -516,11 +518,20 @@ function initializeIntentExperimentSelects() {
 function initializeIntentExperimentEditSelect() {
   const scope = $("#intentExperimentEditScopePicker");
   populateUiSelect(scope, [
-    { value: "all", label: "Routing + 变道意图" },
-    { value: "routing", label: "仅 Routing 意图" },
-    { value: "lane_change", label: "仅变道意图" },
+    { value: "all", label: intentExperimentScopeLabel("all") },
+    { value: "routing", label: intentExperimentScopeLabel("routing") },
+    { value: "lane_change", label: intentExperimentScopeLabel("lane_change") },
   ], $("#intentExperimentEditScope")?.value || "all");
   bindUiSelect(scope, { maxHeight: 220, maxWidth: 300 });
+}
+
+function setIntentExperimentFormAvailability(available) {
+  const form = $("#intentExperimentForm");
+  form?.querySelectorAll("input, select, button").forEach((control) => {
+    control.disabled = !available;
+  });
+  if (available) form?.removeAttribute("aria-disabled");
+  else form?.setAttribute("aria-disabled", "true");
 }
 
 function renderIntentExperimentMembers() {
@@ -534,7 +545,7 @@ function renderIntentExperimentMembers() {
   renderMultiFilter(container, {
     options: members.map((item) => ({
       value: item.username,
-      label: `${item.username} · ${item.role === "admin" ? "管理员" : "标注人"}`,
+      label: `${item.username} · ${item.role === "admin" ? uiText("管理员", "Admin") : uiText("标注人", "Labeler")}`,
     })),
     selected,
     onChange: (values) => {
@@ -581,11 +592,13 @@ function renderIntentExperimentNameSuggestion(value, source = "rule", status = "
   const suggestion = String(value || "").trim();
   input.dataset.suggestion = suggestion;
   input.dataset.suggestionSource = source;
-  input.placeholder = "例如 0206 Routing 双盲复核";
+  input.placeholder = uiText("例如 0206 Routing 双盲复核", "For example: 0206 Routing blind review");
   if (statusNode) {
     statusNode.dataset.status = status;
-    statusNode.textContent = status === "loading" ? "AI 推理中" : "";
-    statusNode.title = status === "loading" ? "AI 正在后台优化实验名称" : "";
+    statusNode.textContent = status === "loading" ? uiText("AI 推理中", "AI naming") : "";
+    statusNode.title = status === "loading"
+      ? uiText("AI 正在后台优化实验名称", "AI is refining the experiment name")
+      : "";
   }
 }
 
@@ -689,8 +702,17 @@ function updateIntentExperimentEstimate() {
   }
   const reviewers = Math.max(1, Math.min(members.length, Number(reviewerInput?.value) || 1));
   if (!datasets.length) {
-    output.textContent = "请在顶栏至少选择 1 个数据集。";
-    updateIntentExperimentNameSuggestion();
+    const hasAvailableDataset = intentAvailableDatasets().length > 0;
+    output.textContent = hasAvailableDataset
+      ? uiText(
+        "请在顶栏至少选择 1 个数据集。",
+        "Select at least one dataset in the top bar."
+      )
+      : uiText(
+        "暂无可用于意图实验分配的数据集。",
+        "No dataset is available for intent experiment assignment."
+      );
+    if (hasAvailableDataset) updateIntentExperimentNameSuggestion();
     return;
   }
   const emptyDataset = datasets.find((item) => {
@@ -698,12 +720,15 @@ function updateIntentExperimentEstimate() {
     return Number(counts[annotationStatus] ?? item.case_count) <= 0;
   });
   if (emptyDataset) {
-    output.textContent = `${emptyDataset.display_name} 没有符合“${intentExperimentAnnotationStatusLabel(annotationStatus)}”的 Case。`;
+    output.textContent = uiText(
+      `${emptyDataset.display_name} 没有符合“${intentExperimentAnnotationStatusLabel(annotationStatus)}”的 Case。`,
+      `${emptyDataset.display_name} has no Cases matching “${intentExperimentAnnotationStatusLabel(annotationStatus)}”.`
+    );
     updateIntentExperimentNameSuggestion();
     return;
   }
   if (members.length < 1) {
-    output.textContent = "至少选择 1 名成员。";
+    output.textContent = uiText("至少选择 1 名成员。", "Select at least one labeler.");
     updateIntentExperimentNameSuggestion();
     return;
   }
@@ -719,11 +744,19 @@ function updateIntentExperimentEstimate() {
       ? count * members.length
       : count + overlapCases * (reviewers - 1);
   });
-  const datasetText = datasets.length > 1 ? `${datasets.length} 个数据集` : datasets[0].display_name;
+  const datasetText = datasets.length > 1
+    ? uiText(`${datasets.length} 个数据集`, `${datasets.length} datasets`)
+    : datasets[0].display_name;
   const annotationText = intentExperimentAnnotationStatusLabel(annotationStatus);
   output.textContent = mode === "full"
-    ? `${datasetText} · ${annotationText} · ${intentExperimentScopeLabel(labelScope)} · ${totalCases} 个 Case · ${members.length} 人全量复核 · 共 ${totalAssignments} 份独立任务`
-    : `${datasetText} · ${annotationText} · ${intentExperimentScopeLabel(labelScope)} · ${totalCases} 个 Case · 交叉 ${Math.round(overlap * 100)}% · 共 ${totalAssignments} 份独立任务`;
+    ? uiText(
+      `${datasetText} · ${annotationText} · ${intentExperimentScopeLabel(labelScope)} · ${totalCases} 个 Case · ${members.length} 人全量复核 · 共 ${totalAssignments} 份独立任务`,
+      `${datasetText} · ${annotationText} · ${intentExperimentScopeLabel(labelScope)} · ${totalCases} Cases · ${members.length} labelers on full scope · ${totalAssignments} assignments`
+    )
+    : uiText(
+      `${datasetText} · ${annotationText} · ${intentExperimentScopeLabel(labelScope)} · ${totalCases} 个 Case · 交叉 ${Math.round(overlap * 100)}% · 共 ${totalAssignments} 份独立任务`,
+      `${datasetText} · ${annotationText} · ${intentExperimentScopeLabel(labelScope)} · ${totalCases} Cases · ${Math.round(overlap * 100)}% overlap · ${totalAssignments} assignments`
+    );
   updateIntentExperimentNameSuggestion();
 }
 
@@ -755,14 +788,21 @@ function renderIntentExperiments() {
   container.innerHTML = experiments.length ? experiments.map((item) => {
     const members = (item.members || []).map((member) => {
       const detail = item.annotation_mode === "full"
-        ? `${member.total} 个 Case`
-        : `基础 ${member.base} · 交叉 ${member.cross}`;
+        ? uiText(`${member.total} 个 Case`, `${member.total} Cases`)
+        : uiText(`基础 ${member.base} · 交叉 ${member.cross}`, `Base ${member.base} · overlap ${member.cross}`);
       return `<span title="${escapeHtml(member.username)}">${escapeHtml(member.username)} · ${detail}</span>`;
     }).join("");
-    const overlap = item.annotation_mode === "blind" ? ` · 交叉 ${Math.round(item.overlap_ratio * 100)}% · 每 Case ${item.overlap_reviewers || 2} 人` : "";
+    const overlap = item.annotation_mode === "blind"
+      ? uiText(
+        ` · 交叉 ${Math.round(item.overlap_ratio * 100)}% · 每 Case ${item.overlap_reviewers || 2} 人`,
+        ` · ${Math.round(item.overlap_ratio * 100)}% overlap · ${item.overlap_reviewers || 2} per Case`
+      )
+      : "";
     const annotationFilter = item.annotation_status_filter && item.annotation_status_filter !== "all"
       ? ` · ${intentExperimentAnnotationStatusLabel(item.annotation_status_filter)}` : "";
-    const updateMeta = item.update_count ? ` · 已修改 ${item.update_count} 次` : "";
+    const updateMeta = item.update_count
+      ? uiText(` · 已修改 ${item.update_count} 次`, ` · edited ${item.update_count} times`)
+      : "";
     const datasetName = (state.intentLabeling.datasets.find((dataset) => dataset.id === item.dataset_id) || {}).display_name || item.dataset_id || "";
     const progress = item.progress || {};
     const total = Math.max(0, Number(progress.total) || 0);
@@ -770,12 +810,23 @@ function renderIntentExperiments() {
     const partial = Math.max(0, Number(progress.partial) || 0);
     const pending = Math.max(0, Number(progress.pending) || 0);
     const width = (value) => total ? Math.max(0, Math.min(100, value * 100 / total)) : 0;
+    const caseCount = uiText(`${item.case_count} 个 Case`, `${item.case_count} Cases`);
+    const assignmentCount = uiText(`${item.assignment_count} 份任务`, `${item.assignment_count} assignments`);
+    const status = item.status === "closed" ? uiText("已关闭", "Closed") : uiText("进行中", "Active");
+    const progressTitle = uiText(
+      `完成 ${completed}，进行中 ${partial}，待标 ${pending}`,
+      `Completed ${completed}, in progress ${partial}, pending ${pending}`
+    );
+    const progressText = uiText(
+      `完成 ${completed} / ${total}${partial ? ` · 进行中 ${partial}` : ""}`,
+      `Completed ${completed} / ${total}${partial ? ` · in progress ${partial}` : ""}`
+    );
     return `<article class="intent-experiment-item${item.status === "closed" ? " is-closed" : ""}" data-intent-experiment="${escapeHtml(item.id)}">
-      <div><h4>${escapeHtml(item.name)}</h4><div class="intent-experiment-meta">${escapeHtml(datasetName)} · ${intentExperimentScopeLabel(item.label_scope)} · ${intentExperimentModeLabel(item.annotation_mode)}${annotationFilter}${overlap} · ${item.case_count} 个 Case · ${item.assignment_count} 份任务 · ${escapeHtml(item.created_by)}${updateMeta}</div></div>
-      <div class="intent-experiment-controls"><span class="intent-experiment-status">${item.status === "closed" ? "已关闭" : "进行中"}</span>${item.status === "active" ? '<button class="button button-quiet" type="button" data-open-intent-experiment>继续标注</button>' : ""}${item.status === "active" && state.session.can_manage_intent ? '<button class="button button-quiet" type="button" data-edit-intent-experiment>编辑实验</button><button class="button button-quiet" type="button" data-close-intent-experiment>关闭实验</button>' : ""}</div>
-      <div class="intent-experiment-detail-row"><div class="intent-experiment-member-stats">${members}</div><div class="intent-experiment-progress" title="完成 ${completed}，进行中 ${partial}，待标 ${pending}"><div class="intent-experiment-progress-track" role="img" aria-label="标注进度：完成 ${completed}，进行中 ${partial}，待标 ${pending}"><i class="is-complete" style="width:${width(completed)}%"></i><i class="is-partial" style="width:${width(partial)}%"></i><i class="is-pending" style="width:${width(pending)}%"></i></div><small>完成 ${completed} / ${total}${partial ? ` · 进行中 ${partial}` : ""}</small></div></div>
+      <div><h4>${escapeHtml(item.name)}</h4><div class="intent-experiment-meta">${escapeHtml(datasetName)} · ${intentExperimentScopeLabel(item.label_scope)} · ${intentExperimentModeLabel(item.annotation_mode)}${annotationFilter}${overlap} · ${caseCount} · ${assignmentCount} · ${escapeHtml(item.created_by)}${updateMeta}</div></div>
+      <div class="intent-experiment-controls"><span class="intent-experiment-status">${status}</span>${item.status === "active" ? `<button class="button button-quiet" type="button" data-open-intent-experiment>${uiText("继续标注", "Resume labeling")}</button>` : ""}${item.status === "active" && state.session.can_manage_intent ? `<button class="button button-quiet" type="button" data-edit-intent-experiment>${uiText("编辑实验", "Edit")}</button><button class="button button-quiet" type="button" data-close-intent-experiment>${uiText("关闭实验", "Close")}</button>` : ""}</div>
+      <div class="intent-experiment-detail-row"><div class="intent-experiment-member-stats">${members}</div><div class="intent-experiment-progress" title="${escapeHtml(progressTitle)}"><div class="intent-experiment-progress-track" role="img" aria-label="${escapeHtml(uiText(`标注进度：${progressTitle}`, `Labeling progress: ${progressTitle}`))}"><i class="is-complete" style="width:${width(completed)}%"></i><i class="is-partial" style="width:${width(partial)}%"></i><i class="is-pending" style="width:${width(pending)}%"></i></div><small>${progressText}</small></div></div>
     </article>`;
-  }).join("") : '<div class="intent-experiment-empty"><span aria-hidden="true">◎</span><strong>所选数据集尚未创建实验</strong><p>在上方完成配置后，实验与每位成员的任务量会显示在这里。</p></div>';
+  }).join("") : `<div class="intent-experiment-empty"><span aria-hidden="true">◎</span><strong>${intentAvailableDatasets().length ? uiText("所选数据集尚未创建实验", "No experiments for the selected datasets") : uiText("暂无可分配数据集", "No datasets available")}</strong><p>${intentAvailableDatasets().length ? uiText("完成上方配置后，实验和任务量会显示在这里。", "Experiments and workloads will appear here after setup.") : uiText("当前没有可用于意图实验分配的数据集。", "No dataset is currently available for intent experiment assignment.")}</p></div>`;
   container.querySelectorAll("[data-open-intent-experiment]").forEach((button) => {
     button.addEventListener("click", () => {
       const experimentId = button.closest("[data-intent-experiment]")?.dataset.intentExperiment;
@@ -849,7 +900,27 @@ async function loadIntentExperimentAdmin({ datasetId = "", datasetIds = null, fo
     intent.datasets = payload.items || [];
   }
   const available = intentAvailableDatasets();
-  if (!available.length) throw new Error("没有可用于实验分配的数据集。");
+  if (!available.length) {
+    intent.experimentDatasetIds = [];
+    intent.experimentDatasetId = "";
+    intent.experiments = [];
+    intent.experimentMembers = [];
+    intent.experimentAnnotationStatusCounts = {};
+    intent.experimentsDatasetId = "";
+    renderIntentTopbarDatasetPicker([]);
+    renderIntentExperimentMembers();
+    renderIntentExperiments();
+    setIntentExperimentFormAvailability(false);
+    const estimate = $("#intentExperimentEstimate");
+    if (estimate) {
+      estimate.textContent = uiText(
+        "暂无可用于意图实验分配的数据集。",
+        "No dataset is available for intent experiment assignment."
+      );
+    }
+    return;
+  }
+  setIntentExperimentFormAvailability(true);
   let selected;
   if (datasetIds != null) {
     selected = parseFilterList(datasetIds);
@@ -884,7 +955,10 @@ async function createIntentExperiment(event) {
     .map((input) => input.value);
   const datasetIds = [...(intent.experimentDatasetIds || [])];
   if (!datasetIds.length) {
-    showToast("请在顶栏至少选择 1 个数据集。", true);
+    showToast(uiText(
+      "请在顶栏至少选择 1 个数据集。",
+      "Select at least one dataset in the top bar."
+    ), true);
     return;
   }
   const button = $("#intentCreateExperiment");
@@ -908,24 +982,38 @@ async function createIntentExperiment(event) {
     });
     acknowledgeLocalChange(result);
     $("#intentExperimentName").value = "";
+    intent.experimentDraftMembers = [];
+    setMultiFilterValues($("#intentExperimentMembers"), []);
     intent.experimentsDatasetId = "";
     await loadIntentExperiments({ force: true });
     const created = result.experiments || (result.experiment ? [result.experiment] : []);
     showToast(created.length > 1
-      ? `已在 ${created.length} 个数据集创建实验，任务分配快照已保存。`
-      : "实验已创建，任务分配快照已保存。", false);
+      ? uiText(
+        `已在 ${created.length} 个数据集创建实验，任务分配快照已保存。`,
+        `Experiments were created in ${created.length} datasets; assignment snapshots were saved.`
+      )
+      : uiText(
+        "实验已创建，任务分配快照已保存。",
+        "The experiment and its assignment snapshot were created."
+      ), false);
   } finally {
     if (button) button.disabled = false;
   }
 }
 
 async function closeIntentExperiment(experimentId) {
-  if (!window.confirm("关闭后仍会保留实验与分配记录。确认关闭这个实验？")) return;
+  if (!window.confirm(uiText(
+    "关闭后仍会保留实验与分配记录。确认关闭这个实验？",
+    "Closing preserves the experiment and assignment records. Close this experiment?"
+  ))) return;
   const result = await api(`/api/intent-experiments/${encodeURIComponent(experimentId)}/close`, { method: "POST" });
   acknowledgeLocalChange(result);
   state.intentLabeling.experimentsDatasetId = "";
   await loadIntentExperiments({ force: true });
-  showToast("实验已关闭，历史分配仍然保留。", false);
+  showToast(uiText(
+    "实验已关闭，历史分配仍然保留。",
+    "The experiment is closed; its assignment history is preserved."
+  ), false);
 }
 
 function openIntentExperimentEditor(experimentId) {
@@ -939,7 +1027,10 @@ function openIntentExperimentEditor(experimentId) {
   if (scope) scope.value = experiment.label_scope || "all";
   const datasetName = (state.intentLabeling.datasets.find((item) => item.id === experiment.dataset_id) || {}).display_name || experiment.dataset_id;
   const context = $("#intentExperimentEditContext");
-  if (context) context.textContent = `${datasetName} · ${experiment.case_count} 个 Case · ${experiment.member_count} 名成员`;
+  if (context) context.textContent = uiText(
+    `${datasetName} · ${experiment.case_count} 个 Case · ${experiment.member_count} 名成员`,
+    `${datasetName} · ${experiment.case_count} Cases · ${experiment.member_count} members`
+  );
   initializeIntentExperimentEditSelect();
   dialog.showModal();
   window.setTimeout(() => {
@@ -968,7 +1059,10 @@ async function updateIntentExperiment(event) {
     dialog.close();
     state.intentLabeling.experimentsDatasetId = "";
     await loadIntentExperiments({ force: true });
-    showToast("实验信息已更新，原任务分配保持不变。", false);
+    showToast(uiText(
+      "实验信息已更新，原任务分配保持不变。",
+      "Experiment details were updated; the original assignments are unchanged."
+    ), false);
   } finally {
     if (button) button.disabled = false;
   }

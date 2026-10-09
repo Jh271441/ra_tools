@@ -33,7 +33,7 @@ from ..support.gt_sync import (
     resolve_gt_sync_baseline_ids,
     sync_authoritative_gt,
 )
-from ..support.identity import _action_actor, _admin_identity, _intent_identity
+from ..support.identity import _action_actor, _admin_identity, _intent_identity, _writer_identity
 from ..model_catalog import MODEL_ID_RE
 from ..dchat import dchat_credentials_status
 from ..review_mentions import MAX_REVIEW_MENTIONS, normalize_mention_username
@@ -153,12 +153,22 @@ async def index() -> HTMLResponse:
     )
 
 
-@router.get("/case-labeling", include_in_schema=False)
 @router.get("/case-labeling/new-task", include_in_schema=False)
-async def case_labeling_page(request: Request) -> HTMLResponse:
-    """Serve Case-labeling pages to Dashboard administrators only."""
+async def case_labeling_new_task_page(request: Request) -> HTMLResponse:
+    """Keep assignment creation administrator-only."""
 
     await asyncio.to_thread(_admin_identity, request)
+    return HTMLResponse(
+        content=INDEX_HTML,
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
+
+
+@router.get("/case-labeling", include_in_schema=False)
+async def case_labeling_page(request: Request) -> HTMLResponse:
+    """Serve the free Case-labeling workspace to writers and administrators."""
+
+    await asyncio.to_thread(_writer_identity, request)
     return HTMLResponse(
         content=INDEX_HTML,
         headers={"Cache-Control": "no-store, max-age=0"},
@@ -200,8 +210,13 @@ async def intent_experiments_page(request: Request) -> HTMLResponse:
 
 
 @router.get("/run-comparison", include_in_schema=False)
+@router.get("/run-collections", include_in_schema=False)
+@router.get("/multi-run-evaluation", include_in_schema=False)
+@router.get("/campaigns", include_in_schema=False)
+@router.get("/labeling-experiments", include_in_schema=False)
+@router.get("/labeling-summary", include_in_schema=False)
 async def run_comparison_page() -> HTMLResponse:
-    """Serve the read-only Run comparison workspace to Dashboard visitors."""
+    """Serve the read-only Run comparison workspace and Collection workspace."""
 
     return HTMLResponse(
         content=INDEX_HTML,
@@ -616,7 +631,7 @@ async def status(response: Response) -> dict[str, Any]:
             "latency_ms": None,
         }
     backup_state, volume_state, indexed_issues, filesystem, media_ready = await asyncio.gather(
-        asyncio.to_thread(backup_status, settings.data_dir),
+        asyncio.to_thread(backup_status, settings.data_dir, database_url=settings.database_url),
         asyncio.to_thread(volume_status, settings.data_dir),
         asyncio.to_thread(asset_index.refresh),
         asyncio.to_thread(_filesystem_availability),
@@ -629,6 +644,10 @@ async def status(response: Response) -> dict[str, Any]:
         )
         for item in (runtime_state.get("baselines") or [])
     ]
+    legacy_cutover_policies = await asyncio.to_thread(
+        database.legacy_read_policies,
+        [str(item.get("scope") or "") for item in baseline_states if str(item.get("scope") or "")],
+    )
     overall = overall_status(
         database=database_state,
         baseline=baseline_state,
@@ -662,6 +681,10 @@ async def status(response: Response) -> dict[str, Any]:
         "baseline": baseline_state,
         "baselines": baseline_states,
         "baseline_conflicts": runtime_state.get("baseline_conflicts") or [],
+        "legacy_cutover": {
+            "policy_version": "legacy-cutover-v1",
+            "policies": legacy_cutover_policies,
+        },
         "trail_sync": runtime_state["trail_sync"],
         "gt_sync": await asyncio.to_thread(gt_sync_status),
         "batch_prediction_enabled": settings.batch_prediction_enabled,

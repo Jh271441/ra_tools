@@ -43,6 +43,20 @@ def _admin_identity(request: Request):
         raise _detail(403, "该操作仅限 Dashboard 管理员。")
     return identity
 
+
+def _writer_identity(request: Request):
+    """Require a verified Dashboard writer while preserving the actor identity."""
+
+    identity = request_identity(request, settings)
+    role = (
+        database.access_role(identity.username)
+        if identity.verified and identity.username
+        else ""
+    )
+    if role not in {"writer", "admin"}:
+        raise _detail(403, "该操作需要 Dashboard writer 或管理员权限。")
+    return identity
+
 def _intent_identity(request: Request, permission: str = "view"):
     """Independent intent capability; neither SSO nor navigation grants writes."""
 

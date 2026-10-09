@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -14,6 +14,24 @@ from ra_triage_dashboard.app.db import Database
 from ra_triage_dashboard.app.routers import case_annotations, case_comments, labeling
 from ra_triage_dashboard.app.support import annotations as annotation_support
 from ra_triage_dashboard.app.support import catalogs as catalog_support
+from ra_triage_dashboard.app.routers.labeling_api import (
+    common, tasks, queries, decisions, comments, revisions, snapshots, exports,
+)
+
+
+@contextmanager
+def patch_labeling_dependency(name, *args, **kwargs):
+    """Inject the same test dependency into its explicit workflow consumers."""
+    owners = [module for module in
+              (common, tasks, queries, decisions, comments, revisions, snapshots, exports)
+              if hasattr(module, name)]
+    if not owners:
+        raise AssertionError(f"No labeling dependency owner: {name}")
+    with ExitStack() as stack:
+        replacement = stack.enter_context(patch.object(owners[0], name, *args, **kwargs))
+        for owner in owners[1:]:
+            stack.enter_context(patch.object(owner, name, replacement))
+        yield replacement
 
 
 class LabelingActivationTest(unittest.IsolatedAsyncioTestCase):
@@ -67,16 +85,20 @@ class LabelingActivationTest(unittest.IsolatedAsyncioTestCase):
             )
         patches = ExitStack()
         self.addCleanup(patches.close)
-        patches.enter_context(patch.object(labeling, "database", self.database))
-        patches.enter_context(patch.object(
-            labeling, "resolve_request_baseline_scopes",
+        patches.enter_context(patch_labeling_dependency("database", self.database))
+        patches.enter_context(patch_labeling_dependency("resolve_request_baseline_scopes",
             side_effect=lambda raw, **kwargs: (raw or "active").split(","),
         ))
-        patches.enter_context(patch.object(
-            labeling, "_labeling_actor", return_value=("alice", "kylin_ticket", True),
+        patches.enter_context(patch_labeling_dependency("_labeling_actor", return_value=("alice", "kylin_ticket", True),
         ))
-        patches.enter_context(patch.object(
-            labeling, "_require_labeling_admin", new=AsyncMock(return_value=None),
+        patches.enter_context(patch_labeling_dependency("_require_labeling_admin", new=AsyncMock(return_value=None),
+        ))
+        patches.enter_context(patch_labeling_dependency("_require_labeling_writer",
+            new=AsyncMock(
+                return_value=SimpleNamespace(
+                    username="alice", source="kylin_ticket", verified=True
+                )
+            ),
         ))
 
     def set_scope(self, scope: str, status: str) -> None:
@@ -120,6 +142,44 @@ class LabelingActivationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([case["issue_id"] for case in cases["items"]], ["cn-active"])
         self.assertEqual([item["issue_id"] for item in candidates["items"]], ["cn-active"])
 
+    async def test_case_filters_accept_review_style_multi_values(self) -> None:
+        result = await labeling.list_labeling_cases(
+            self.request(),
+            baselines="active",
+            status="resolved,pending",
+            author="alice,bob",
+            assignee="alice,bob",
+            exclusion="active,excluded",
+            label="误触发,正确触发",
+            gt="正确触发,误触发",
+            comment_state="with,without",
+        )
+        self.assertEqual([item["issue_id"] for item in result["items"]], ["cn-active"])
+        self.assertEqual(result["filters"]["author"], ["alice", "bob"])
+        self.assertEqual(result["filters"]["status"], ["resolved", "pending"])
+
+    async def test_issue_decision_api_persists_versioned_decision(self) -> None:
+        state = self.database.project_issue_label_states(
+            "active", ["cn-active"]
+        )["cn-active"]
+        response = await labeling.adjudicate_issue_label(
+            "cn-active",
+            self.request(
+                {
+                    "expected_output": "误触发",
+                    "rationale": "API 裁决依据",
+                    "expected_source_fingerprint": state["source_fingerprint"],
+                    "expected_previous_decision_id": None,
+                }
+            ),
+        )
+        self.assertEqual(response["label_state"]["state"], "resolved")
+        self.assertEqual(response["decision"]["created_by"], "alice")
+        history = await labeling.list_issue_label_decisions(
+            "cn-active", self.request()
+        )
+        self.assertEqual(history["count"], 1)
+
     async def test_task_id_cannot_bypass_active_dataset_selection(self) -> None:
         for selected_scope in ("active", "shadow"):
             with self.subTest(selected_scope=selected_scope):
@@ -148,7 +208,7 @@ class LabelingActivationTest(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(raised.exception.status_code, 409)
 
     async def test_attachment_requires_its_own_dataset_to_be_active(self) -> None:
-        with patch.object(labeling, "settings", SimpleNamespace(review_attachments_dir=self.root)), patch.object(Path, "is_file", return_value=True):
+        with patch_labeling_dependency("settings", SimpleNamespace(review_attachments_dir=self.root)), patch.object(Path, "is_file", return_value=True):
             for scope in ("shadow", "paused"):
                 with self.subTest(scope=scope):
                     with self.assertRaises(HTTPException) as raised:
@@ -197,6 +257,30 @@ class LabelingActivationTest(unittest.IsolatedAsyncioTestCase):
                 await labeling.create_gt_export_preview(self.request({"baselines": "shadow"}))
             self.assertEqual(raised.exception.status_code, 409)
             create.assert_not_called()
+
+    async def test_export_preview_uses_current_labeling_filters(self) -> None:
+        result = await labeling.create_gt_export_preview(
+            self.request({
+                "baselines": "active",
+                "filters": {
+                    "baselines": "active",
+                    "issue_ids": "cn-active",
+                    "status": "resolved",
+                    "gt": "正确触发",
+                    "comment_state": "all",
+                },
+            })
+        )
+        self.assertEqual(result["preview"]["item_count"], 1)
+        self.assertEqual(result["preview"]["items"][0]["issue_id"], "cn-active")
+        with self.assertRaises(HTTPException) as raised:
+            await labeling.create_gt_export_preview(
+                self.request({
+                    "baselines": "active",
+                    "filters": {"baselines": "active", "q": "no-such-case"},
+                })
+            )
+        self.assertEqual(raised.exception.status_code, 400)
 
 
 class LegacyWriteHandoverTest(unittest.IsolatedAsyncioTestCase):
@@ -269,8 +353,10 @@ class LegacyWriteHandoverTest(unittest.IsolatedAsyncioTestCase):
                     expected = 409 if issue_id == "cn-migrated" else 404
                     self.assertEqual(raised.exception.status_code, expected)
             create.assert_not_called()
-            await case_annotations.create_annotation("cn-legacy", self.request())
-            create.assert_called_once()
+            with self.assertRaises(HTTPException) as raised:
+                await case_annotations.create_annotation("cn-legacy", self.request())
+            self.assertEqual(raised.exception.status_code, 400)
+            create.assert_not_called()
 
     async def test_active_scope_run_annotations_allow_json_and_multipart(self) -> None:
         json_result = await case_annotations.create_annotation(
@@ -348,10 +434,11 @@ class LegacyWriteHandoverTest(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(HTTPException) as raised:
                 await case_comments.create_review_comment("cn-migrated", self.request({"body": "讨论"}))
             self.assertEqual(raised.exception.status_code, 409)
-            result = await case_comments.create_review_comment(
-                "cn-legacy", self.request({"body": "讨论"})
-            )
-            self.assertEqual(result["comment"]["body"], "讨论")
+            with self.assertRaises(HTTPException) as inactive_raised:
+                await case_comments.create_review_comment(
+                    "cn-legacy", self.request({"body": "讨论"})
+                )
+            self.assertEqual(inactive_raised.exception.status_code, 400)
 
     async def test_active_scope_run_comments_allow_json_and_multipart(self) -> None:
         with patch.object(case_comments, "_action_actor", return_value=("alice", "kylin_ticket", True)), patch.object(
@@ -417,7 +504,7 @@ class LegacyWriteHandoverTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(raised.exception.status_code, 409)
         store.assert_not_called()
 
-    async def test_inactive_scope_keeps_multipart_annotation_and_comment_compatible(self) -> None:
+    async def test_inactive_scope_rejects_new_unbound_annotation_and_comment_writes(self) -> None:
         review_attachment = {
             "id": "legacy-review-attachment",
             "original_name": "legacy-review.png",
@@ -432,17 +519,20 @@ class LegacyWriteHandoverTest(unittest.IsolatedAsyncioTestCase):
             case_annotations,
             "_store_review_attachments",
             return_value=([review_attachment], [self.root / "legacy-review.png"]),
-        ):
-            annotation = await case_annotations.create_annotation_with_attachments(
-                "cn-legacy",
-                self.request(),
-                payload=json.dumps({
-                    "expected_output": "误触发",
-                    "note": "legacy no-Run review",
-                    "author": "alice",
-                }),
-                attachments=[],
-            )
+        ) as store:
+            with self.assertRaises(HTTPException) as raised:
+                await case_annotations.create_annotation_with_attachments(
+                    "cn-legacy",
+                    self.request(),
+                    payload=json.dumps({
+                        "expected_output": "误触发",
+                        "note": "legacy no-Run review",
+                        "author": "alice",
+                    }),
+                    attachments=[],
+                )
+            self.assertEqual(raised.exception.status_code, 400)
+            store.assert_not_called()
 
         comment_attachment = {
             "id": "legacy-comment-attachment",
@@ -460,19 +550,19 @@ class LegacyWriteHandoverTest(unittest.IsolatedAsyncioTestCase):
             case_comments,
             "_store_comment_attachments",
             return_value=([comment_attachment], [self.root / "legacy-comment.png"]),
-        ):
-            comment = await case_comments.create_review_comment_with_attachments(
-                "cn-legacy",
-                self.request(),
-                payload=json.dumps({
-                    "body": "![evidence](attachment:token)",
-                    "attachment_tokens": ["token"],
-                }),
-                attachments=[SimpleNamespace()],
-            )
-
-        self.assertEqual(annotation["annotation"]["model_run_id"], "")
-        self.assertEqual(comment["comment"]["model_run_id"], "")
+        ) as store:
+            with self.assertRaises(HTTPException) as raised:
+                await case_comments.create_review_comment_with_attachments(
+                    "cn-legacy",
+                    self.request(),
+                    payload=json.dumps({
+                        "body": "![evidence](attachment:token)",
+                        "attachment_tokens": ["token"],
+                    }),
+                    attachments=[SimpleNamespace()],
+                )
+            self.assertEqual(raised.exception.status_code, 400)
+            store.assert_not_called()
 
     async def test_handover_follows_activation_state(self) -> None:
         self.database.set_labeling_scope_state(
@@ -480,8 +570,10 @@ class LegacyWriteHandoverTest(unittest.IsolatedAsyncioTestCase):
             source_inventory_sha256="a" * 64, updated_by="test", expected_epoch=1,
         )
         with patch.object(case_annotations, "_create_annotation_record") as create:
-            await case_annotations.create_annotation("cn-migrated", self.request())
-            create.assert_called_once()
+            with self.assertRaises(HTTPException) as raised:
+                await case_annotations.create_annotation("cn-migrated", self.request())
+            self.assertEqual(raised.exception.status_code, 400)
+            create.assert_not_called()
         self.database.set_labeling_scope_state(
             baseline_scope="migrated", status="active", policy_version="test-v1",
             source_inventory_sha256="a" * 64, updated_by="test", expected_epoch=2,
@@ -494,31 +586,37 @@ class LegacyWriteHandoverTest(unittest.IsolatedAsyncioTestCase):
 
 
 class LabelingPreviewAdminTest(unittest.TestCase):
-    def test_case_labeling_page_requires_admin(self) -> None:
+    def test_case_labeling_page_allows_writers_but_task_creation_requires_admin(self) -> None:
         core = (
             Path(__file__).resolve().parents[1] / "app" / "routers" / "core.py"
         ).read_text(encoding="utf-8")
         self.assertIn('@router.get("/case-labeling/new-task", include_in_schema=False)', core)
         self.assertIn("async def case_labeling_page(request: Request)", core)
+        self.assertIn("async def case_labeling_new_task_page(request: Request)", core)
+        self.assertIn("await asyncio.to_thread(_writer_identity, request)", core)
         self.assertIn("await asyncio.to_thread(_admin_identity, request)", core)
 
     def test_labeling_task_creation_applies_selected_cluster(self) -> None:
         router = (
-            Path(__file__).resolve().parents[1] / "app" / "routers" / "labeling.py"
+            Path(__file__).resolve().parents[1] / "app" / "routers" / "labeling_api" / "tasks.py"
         ).read_text(encoding="utf-8")
         self.assertIn("cluster=normalized_cluster", router)
 
-    def test_labeling_actor_rejects_writer(self) -> None:
+    def test_labeling_actor_accepts_writer_and_rejects_viewer(self) -> None:
         identity = SimpleNamespace(
             verified=True, username="writer", source="kylin_ticket"
         )
-        with patch.object(labeling, "request_identity", return_value=identity), patch.object(
-            labeling.database, "access_role", return_value="writer"
+        with patch_labeling_dependency("_writer_identity", return_value=identity):
+            self.assertEqual(
+                labeling._labeling_actor(SimpleNamespace()),
+                ("writer", "kylin_ticket", True),
+            )
+        with patch_labeling_dependency("_writer_identity", side_effect=HTTPException(403, "writer required")
         ):
             with self.assertRaises(HTTPException) as raised:
                 labeling._labeling_actor(SimpleNamespace())
         self.assertEqual(raised.exception.status_code, 403)
-        self.assertIn("管理员", str(raised.exception.detail))
+        self.assertIn("writer", str(raised.exception.detail))
 
 
 class LabelingCommentWriteTest(unittest.IsolatedAsyncioTestCase):
@@ -537,16 +635,13 @@ class LabelingCommentWriteTest(unittest.IsolatedAsyncioTestCase):
         )
         patches = ExitStack()
         self.addCleanup(patches.close)
-        patches.enter_context(patch.object(labeling, "database", self.database))
-        patches.enter_context(patch.object(
-            labeling, "_labeling_actor", return_value=("alice", "kylin_ticket", True),
+        patches.enter_context(patch_labeling_dependency("database", self.database))
+        patches.enter_context(patch_labeling_dependency("_labeling_actor", return_value=("alice", "kylin_ticket", True),
         ))
-        patches.enter_context(patch.object(
-            labeling, "_require_labeling_admin", new=AsyncMock(return_value=None),
+        patches.enter_context(patch_labeling_dependency("_require_labeling_writer", new=AsyncMock(return_value=None),
         ))
-        patches.enter_context(patch.object(labeling, "extract_review_mentions", return_value=[]))
-        patches.enter_context(patch.object(
-            labeling, "settings",
+        patches.enter_context(patch_labeling_dependency("extract_review_mentions", return_value=[]))
+        patches.enter_context(patch_labeling_dependency("settings",
             SimpleNamespace(dchat_notifications_enabled=False),
         ))
 

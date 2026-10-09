@@ -40,6 +40,7 @@ from .routers import (
     batch,
     case_annotations,
     case_comments,
+    campaigns,
     cases,
     core,
     imports,
@@ -47,8 +48,10 @@ from .routers import (
     labeling,
     reviews,
     runs,
+    run_collections,
     trail_update,
     intent_labeling,
+    legacy_cutover,
 )
 
 logger = logging.getLogger("ra_triage_dashboard")
@@ -149,7 +152,8 @@ async def lifespan(_: FastAPI):
         administrators=settings.team_default_managers,
     )
     database.bootstrap_mention_users()
-    database.seed_examples(EXAMPLE_CASES)
+    if settings.seed_examples_enabled:
+        database.seed_examples(EXAMPLE_CASES)
     # Local-only seed from baseline workbooks / registry. No Trail I/O.
     bootstrap_baseline()
     # Historical spot-check tags are read-only form suggestions.  They do not
@@ -399,9 +403,11 @@ app.mount(
 app.include_router(core.router)
 app.include_router(cases.router)
 app.include_router(case_comments.router)
+app.include_router(campaigns.router)
 app.include_router(case_annotations.router)
 app.include_router(reviews.router)
 app.include_router(runs.router)
+app.include_router(run_collections.router)
 app.include_router(analysis.router)
 app.include_router(imports.router)
 app.include_router(batch.router)
@@ -409,3 +415,4 @@ app.include_router(inference.router)
 app.include_router(labeling.router)
 app.include_router(trail_update.router)
 app.include_router(intent_labeling.router)
+app.include_router(legacy_cutover.router)

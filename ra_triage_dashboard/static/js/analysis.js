@@ -102,7 +102,10 @@ function safeSameOriginReviewUrl(url) {
 function reviewStatusLabel(status) {
   return (
     {
-      pending: t("status.pending"),
+      pending: uiText("待开始", "Pending"),
+      in_progress: uiText("复核中", "In progress"),
+      completed: uiText("已完成", "Completed"),
+      blocked_by_label: uiText("待开始", "Pending"),
       reviewed: t("status.matches_gt"),
       needs_gt_review: t("status.needs_gt"),
     }[status] || status || t("status.recorded")
@@ -454,34 +457,25 @@ function renderAnalysisReviewStatus(data) {
   const target = $("#analysisReviewStatusChart");
   const summaryTarget = $("#analysisReviewStatusSummary");
   if (!target) return;
-  const counts = data.summary?.review_status_counts || {};
+  const counts = data.summary?.model_review_status_counts || {};
   const statuses = [
     {
       key: "pending",
       label: reviewStatusLabel("pending"),
-      count: Number(counts.pending || 0),
-      description: uiText(
-        "未填写期望输出，或 Tags 没有唯一推断",
-        "Expected output is missing or Tags have no unique inference"
-      ),
+      count: Number(counts.pending || 0) + Number(counts.blocked_by_label || 0),
+      description: uiText("尚未开始模型判错复核", "Model review has not started"),
     },
     {
-      key: "reviewed",
-      label: reviewStatusLabel("reviewed"),
-      count: Number(counts.reviewed || 0),
-      description: uiText(
-        "期望输出与当前 GT 一致",
-        "Expected output matches the current GT"
-      ),
+      key: "in_progress",
+      label: reviewStatusLabel("in_progress"),
+      count: Number(counts.in_progress || 0),
+      description: uiText("模型判错复核正在进行", "Model review is in progress"),
     },
     {
-      key: "needs_gt_review",
-      label: reviewStatusLabel("needs_gt_review"),
-      count: Number(counts.needs_gt_review || 0),
-      description: uiText(
-        "期望输出与当前 GT 不一致",
-        "Expected output differs from the current GT"
-      ),
+      key: "completed",
+      label: reviewStatusLabel("completed"),
+      count: Number(counts.completed || 0),
+      description: uiText("模型判错复核已完成", "Model review is complete"),
     },
   ];
   const total = statuses.reduce((sum, item) => sum + item.count, 0);
@@ -701,10 +695,6 @@ function renderAnalysisCases(data) {
             }</span>`
           : "";
         const multi = item.multi_review || null;
-        const adjudication = multi?.adjudication || null;
-        const adjudicationBadge = multi?.agreement === "conflict"
-          ? `<span class="analysis-comparison-badge comparison-${adjudication ? "match" : "none"}" title="${escapeHtml(adjudication ? uiText("汇总及 GT 更新采用本条已确认的裁决结果；原盲标冲突保留", "Summary and GT export use this confirmed decision; original conflict is retained") : uiText("尚无有效的同 Run 裁决，该冲突不导出到 GT 更新表", "No valid same-Run decision; this conflict is excluded from GT updates"))}">${escapeHtml(adjudication ? uiText("已裁决", "Adjudicated") : uiText("待裁决", "Needs adjudication"))}</span>`
-          : "";
         const multiLabel = multi
           ? ({ pending: "未完成", agreed: "一致", conflict: "冲突" }[multi.agreement] || "多人复核")
           : "";
@@ -748,9 +738,8 @@ function renderAnalysisCases(data) {
           <div class="analysis-case-labels">
             ${comparisonBadge}
             ${multiBadge}
-            ${adjudicationBadge}
             <span title="${escapeHtml(`${baselineLabelForScope(item.baseline_scope)} GT`)}">GT ${labelBadge(item.gt_label)}</span>
-            <span title="人工 Review 期望输出"><span class="ui-lang-zh">期望</span><span class="ui-lang-en">Expected</span> ${labelBadge(expectedOutput, uiText("待补充", "Pending"))}</span>
+            ${annotation.review_domain === "model_review" ? `<span title="模型判错复核状态"><span class="ui-lang-zh">模型复核</span><span class="ui-lang-en">Model review</span> ${escapeHtml(reviewStatusLabel(annotation.model_review_status))}</span>` : `<span title="历史 Review 期望输出"><span class="ui-lang-zh">历史期望</span><span class="ui-lang-en">Legacy expected</span> ${labelBadge(expectedOutput, uiText("待补充", "Pending"))}</span>`}
             <button class="analysis-model-history-button" type="button"
               data-analysis-model-history="${issueId}"
               title="查看此 Issue 的全部评测 Run 输出历史"
@@ -766,8 +755,8 @@ function renderAnalysisCases(data) {
             <div class="analysis-chip-list">${tagChips}${evidenceChips}</div>
           </div>
           <div class="analysis-case-meta">
-            <span>${adjudication ? escapeHtml(uiText("裁决人：", "Adjudicator: ")) : ""}${escapeHtml(annotation.author || "未记录复核人")}${annotation.author_verified ? " · SSO" : ""}</span>
-            <span>${escapeHtml(reviewStatusLabel(annotation.review_status))} · ${formatTime(annotation.created_at)}</span>
+            <span>${escapeHtml(annotation.author || "未记录复核人")}${annotation.author_verified ? " · SSO" : ""}</span>
+            <span>${escapeHtml(reviewStatusLabel(annotation.model_review_status || annotation.review_status))} · ${formatTime(annotation.created_at)}</span>
             <span class="analysis-case-actions">
               <button class="analysis-discussion-link" type="button" data-analysis-discussion="${issueId}" data-model-run-id="${escapeHtml(discussionRunId)}">评论</button>
               ${reviewUrl ? `<a class="text-link" href="${escapeHtml(reviewUrl)}" title="打开问题详情与 Review">问题详情</a>` : ""}
@@ -836,20 +825,36 @@ async function openAnalysisDiscussion(
     intentCaseId = "",
     kind = "",
     taskId = "",
+    campaignId = "",
+    baselineScope = "",
+    discussionChannel = "",
   } = {}
 ) {
   const isIntentDiscussion = Boolean(intentDatasetId && intentCaseId);
   const isLabelingDiscussion = kind === "labeling" || source === "labeling";
+  const isCampaignDiscussion = kind === "campaign" && Boolean(campaignId);
+  const hasChannelPicker = isLabelingDiscussion || isCampaignDiscussion;
+  const initialDiscussionChannel = hasChannelPicker
+    ? (["case", "campaign", "both"].includes(discussionChannel)
+        ? discussionChannel
+        : (taskId ? "both" : "case"))
+    : "";
   clearAnalysisDiscussionImages();
   const normalizedRunId = String(runId || "");
+  const unboundReviewReadOnly = !normalizedRunId && !isIntentDiscussion && !isLabelingDiscussion;
   state.analysisDiscussion = {
-    kind: isIntentDiscussion ? "intent" : isLabelingDiscussion ? "labeling" : "review",
+    kind: isIntentDiscussion ? "intent" : isCampaignDiscussion ? "campaign" : isLabelingDiscussion ? "labeling" : "review",
     issueId,
     runId: normalizedRunId,
     source,
     intentDatasetId: String(intentDatasetId || ""),
     intentCaseId: String(intentCaseId || ""),
     taskId: String(taskId || ""),
+    campaignId: String(campaignId || ""),
+    baselineScope: String(baselineScope || ""),
+    channel: initialDiscussionChannel,
+    otherCampaigns: [],
+    runComments: [],
     replyTo: null,
     comments: [],
     pendingImages: [],
@@ -861,34 +866,54 @@ async function openAnalysisDiscussion(
   if (discussionTitleZh) {
     discussionTitleZh.textContent = isIntentDiscussion
       ? "意图标注讨论"
-      : isLabelingDiscussion ? "标注讨论" : "评论";
+      : isCampaignDiscussion ? "Campaign 讨论" : isLabelingDiscussion ? "标注讨论" : "评论";
   }
   if (discussionTitleEn) {
     discussionTitleEn.textContent = isIntentDiscussion
       ? "Intent discussion"
-      : isLabelingDiscussion ? "Labeling discussion" : "Comments";
+      : isCampaignDiscussion ? "Campaign discussion" : isLabelingDiscussion ? "Labeling discussion" : "Comments";
   }
   $("#analysisDiscussionContext").textContent = isIntentDiscussion
     ? `${intentDatasetId} · ${issueId}`
-    : isLabelingDiscussion
+    : isCampaignDiscussion
+      ? `${issueId} · Campaign ${campaignId} · Case public + current Campaign; other Campaigns are read-only`
+      : isLabelingDiscussion
       ? `${issueId}${taskId ? ` · 任务 ${taskId}` : " · Case 讨论"}`
-      : `${issueId} · ${runId || "未绑定 Run"}`;
+      : `${issueId} · ${runId || "未绑定 Run"}${unboundReviewReadOnly ? " · 历史只读" : ""}`;
   const textarea = $("#analysisDiscussionNote");
+  const channelField = $("#analysisDiscussionChannelField");
+  const channelSelect = $("#analysisDiscussionChannel");
+  if (channelField) channelField.hidden = !hasChannelPicker;
+  if (channelSelect) {
+    const bothOption = channelSelect.querySelector('option[value="both"]');
+    const campaignOption = channelSelect.querySelector('option[value="campaign"]');
+    if (bothOption) bothOption.disabled = !(taskId || campaignId);
+    if (campaignOption) campaignOption.disabled = !(taskId || campaignId);
+    channelSelect.value = initialDiscussionChannel || "case";
+    channelSelect.onchange = () => {
+      if (state.analysisDiscussion) {
+        state.analysisDiscussion.channel = channelSelect.value;
+        updateAnalysisDiscussionComposerAccess();
+      }
+    };
+  }
   textarea.value = "";
   textarea.hidden = false;
   $("#analysisDiscussionPreview").hidden = true;
   $("[data-comment-preview-toggle]").textContent = "预览";
   renderAnalysisDiscussionImages();
   const canWriteIntentDiscussion = !isIntentDiscussion || Boolean(state.session?.can_annotate_intent);
-  const canWriteLabelingDiscussion = !isLabelingDiscussion || Boolean(state.session?.is_admin);
-  $("#analysisDiscussionComposer").hidden = Boolean(state.session?.read_only) || !canWriteIntentDiscussion || !canWriteLabelingDiscussion;
-  $("#analysisDiscussionSubmit").hidden = Boolean(state.session?.read_only) || !canWriteIntentDiscussion || !canWriteLabelingDiscussion;
+  updateAnalysisDiscussionComposerAccess({
+    canWriteIntentDiscussion,
+    isLabelingDiscussion,
+    unboundReviewReadOnly,
+  });
   document.querySelectorAll("[data-comment-image]").forEach((button) => {
-    button.hidden = isIntentDiscussion;
+    button.hidden = isIntentDiscussion || isCampaignDiscussion || unboundReviewReadOnly;
   });
   const imageInput = $("#analysisDiscussionImageInput");
-  if (imageInput) imageInput.disabled = isIntentDiscussion;
-  $("#analysisDiscussionImages").hidden = isIntentDiscussion;
+  if (imageInput) imageInput.disabled = isIntentDiscussion || isCampaignDiscussion || unboundReviewReadOnly;
+  $("#analysisDiscussionImages").hidden = isIntentDiscussion || isCampaignDiscussion || unboundReviewReadOnly;
   renderAnalysisDiscussionReplyContext();
   $("#analysisDiscussionThread").innerHTML =
     `<div class="comment-thread-empty">正在加载评论…</div>`;
@@ -897,15 +922,24 @@ async function openAnalysisDiscussion(
   $("#analysisDiscussionDialog").showModal();
   const result = isIntentDiscussion
     ? await api(`/api/intent-datasets/${encodeURIComponent(intentDatasetId)}/cases/${encodeURIComponent(intentCaseId)}/comments`)
-    : isLabelingDiscussion
-      ? await api(`/api/labeling/cases/${encodeURIComponent(issueId)}/comments?task_id=${encodeURIComponent(String(taskId || ""))}`)
+    : isCampaignDiscussion
+      ? await api(`/api/campaigns/${encodeURIComponent(campaignId)}/issues/${encodeURIComponent(issueId)}/discussion`)
+      : isLabelingDiscussion
+      ? await api(`/api/labeling/cases/${encodeURIComponent(issueId)}/comments?task_id=${encodeURIComponent(String(taskId || ""))}&channel=${encodeURIComponent(initialDiscussionChannel || "both")}`)
       : await api(`/api/cases/${encodeURIComponent(issueId)}/comments?model_run_id=${encodeURIComponent(normalizedRunId)}`);
   if (
     !state.analysisDiscussion
     || state.analysisDiscussion.issueId !== issueId
     || state.analysisDiscussion.intentCaseId !== String(intentCaseId || "")
   ) return;
-  state.analysisDiscussion.comments = result.comments || [];
+  state.analysisDiscussion.comments = isCampaignDiscussion
+    ? [...(result.case_comments || []), ...(result.campaign_comments || [])]
+    : (result.comments || []);
+  if (isCampaignDiscussion) {
+    state.analysisDiscussion.otherCampaigns = result.other_campaigns || [];
+    state.analysisDiscussion.runComments = result.run_comments || [];
+    state.analysisDiscussion.baselineScope = String(result.baseline_scope || baselineScope || "");
+  }
   if (isIntentDiscussion && state.intentLabeling?.caseId === String(intentCaseId)) {
     state.intentLabeling.caseData ||= {};
     state.intentLabeling.caseData.collaboration ||= {};
@@ -921,12 +955,46 @@ async function openAnalysisDiscussion(
     const focused = $("#analysisDiscussionThread")?.querySelector(
       `[data-comment-id="${Number(focusCommentId)}"]`
     );
+    const parentDetails = focused?.closest("details");
+    if (parentDetails) parentDetails.open = true;
     focused?.classList.add("is-deep-linked");
     focused?.scrollIntoView({ block: "center" });
   }
   // Keep the shared shortcut/focus behavior consistent for read-only intent
   // viewers: only focus the composer when it is actually available.
   if (!$("#analysisDiscussionComposer")?.hidden) textarea.focus();
+}
+
+function updateAnalysisDiscussionComposerAccess({
+  canWriteIntentDiscussion = null,
+  isLabelingDiscussion = null,
+  unboundReviewReadOnly = false,
+} = {}) {
+  const context = state.analysisDiscussion;
+  if (!context) return;
+  const isIntent = context.kind === "intent";
+  const isLabeling = isLabelingDiscussion ?? context.kind === "labeling";
+  const isCampaign = context.kind === "campaign";
+  let allowed = true;
+  if (isIntent) {
+    allowed = canWriteIntentDiscussion ?? Boolean(state.session?.can_annotate_intent);
+  } else if (isLabeling) {
+    allowed = Boolean(state.session?.is_admin);
+  } else if (isCampaign) {
+    allowed = context.channel === "case"
+      ? Boolean(state.session?.can_write || state.session?.is_admin)
+      : context.channel === "campaign" && Boolean(state.session?.is_admin);
+  } else if (context.kind === "review" && !context.runId) {
+    allowed = false;
+  }
+  const hidden = Boolean(state.session?.read_only) || !allowed || unboundReviewReadOnly;
+  const composer = $("#analysisDiscussionComposer");
+  const submit = $("#analysisDiscussionSubmit");
+  if (composer) composer.hidden = hidden;
+  if (submit) {
+    submit.hidden = hidden;
+    submit.disabled = isCampaign && !["case", "campaign"].includes(context.channel);
+  }
 }
 
 function clearAnalysisDiscussionImages() {
@@ -1092,10 +1160,34 @@ function analysisDiscussionShareUrl(commentId) {
     intentUrl.searchParams.set("comment", String(Number(commentId)));
     return intentUrl.href;
   }
+  if (context?.kind === "campaign") {
+    const comment = [
+      ...(context.comments || []),
+      ...(context.otherCampaigns || []).flatMap((group) => group.comments || []),
+      ...(context.runComments || []),
+    ].find((item) => Number(item.id) === Number(commentId));
+    const commentCampaignId = String(comment?.campaign_id || context.campaignId || "");
+    const campaignUrl = new URL(withBase(PAGE_ROUTES.campaigns.path), window.location.origin);
+    campaignUrl.searchParams.set("campaign", commentCampaignId);
+    campaignUrl.searchParams.set("issue", String(context.issueId || ""));
+    campaignUrl.searchParams.set("comments", "1");
+    campaignUrl.searchParams.set("comment", String(Number(commentId)));
+    const channel = String(comment?.discussion_channel || "");
+    if (["case", "campaign", "both"].includes(channel)) campaignUrl.searchParams.set("channel", channel);
+    const baselines = selectedBaselineQueryValue();
+    if (baselines) campaignUrl.searchParams.set("baselines", baselines);
+    return campaignUrl.href;
+  }
   if (context?.kind === "labeling") {
+    const comment = (context.comments || []).find((item) => Number(item.id) === Number(commentId));
+    const channel = String(comment?.discussion_channel || (context.channel === "campaign" ? "campaign" : "case"));
     const labelingUrl = new URL(withBase(PAGE_ROUTES.labeling.path), window.location.origin);
     labelingUrl.searchParams.set("issue", String(context.issueId || ""));
-    if (context.taskId) labelingUrl.searchParams.set("task", String(context.taskId));
+    if (channel === "campaign") {
+      const taskId = String(comment?.campaign_id || comment?.label_task_id || context.taskId || "");
+      if (taskId) labelingUrl.searchParams.set("task", taskId);
+    }
+    labelingUrl.searchParams.set("channel", channel === "campaign" ? "campaign" : "case");
     labelingUrl.searchParams.set("comments", "1");
     labelingUrl.searchParams.set("comment", String(Number(commentId)));
     return labelingUrl.href;
@@ -1158,12 +1250,7 @@ function renderAnalysisDiscussionThread() {
   const context = state.analysisDiscussion;
   const target = $("#analysisDiscussionThread");
   if (!target || !context) return;
-  const comments = context.comments || [];
-  if (!comments.length) {
-    target.innerHTML = `<div class="comment-thread-empty">还没有评论，可以发起第一条讨论。</div>`;
-    return;
-  }
-  target.innerHTML = comments.map((comment) => {
+  const renderComment = (comment, { readOnly = false } = {}) => {
     const replyExcerpt = String(comment.reply_to_body || "")
       .replace(/!\[[^\]\n]*\]\([^\n)]+\)/g, "[图片]")
       .replace(/\[([^\]\n]+)\]\(https?:\/\/[^\s)]+\)/g, "$1")
@@ -1175,19 +1262,69 @@ function renderAnalysisDiscussionThread() {
     const replyContext = comment.reply_to_id
       ? `<div class="comment-reply-quote">回复 ${escapeHtml(reviewMentionDisplayName(comment.reply_to_author || "评论人"))}：${escapeHtml(replyExcerpt)}</div>`
       : "";
+    const commentCampaignId = String(comment.campaign_id || comment.label_task_id || "");
+    const channelLabel = ["labeling", "campaign"].includes(context.kind)
+      ? comment.discussion_channel === "campaign"
+        ? (context.kind === "campaign" && commentCampaignId === context.campaignId
+            ? uiText("当前 Campaign", "Current Campaign")
+            : `Campaign · ${commentCampaignId || context.taskId || ""}`)
+        : comment.discussion_channel === "model_review"
+          ? `Model Run · ${comment.evaluation_run_id || comment.model_run_id || context.runId || ""}`
+          : uiText("Case 公共讨论", "Case public discussion")
+      : context.kind === "review"
+        ? `Model Run · ${context.runId || ""}`
+        : "";
+    const readOnlyOtherCampaign = readOnly || (
+      ["labeling", "campaign"].includes(context.kind)
+      && comment.discussion_channel === "campaign"
+      && commentCampaignId !== String(context.kind === "campaign" ? context.campaignId : context.taskId || "")
+    );
+    const campaignReplyAllowed = context.kind !== "campaign"
+      || (comment.discussion_channel === "campaign"
+        ? Boolean(state.session?.is_admin)
+        : Boolean(state.session?.can_write || state.session?.is_admin));
+    const canReply = !state.session?.read_only
+      && !(context.kind === "intent" && !state.session?.can_annotate_intent)
+      && !(context.kind === "review" && !context.runId)
+      && campaignReplyAllowed
+      && !readOnlyOtherCampaign;
     return `<article class="comment-thread-item" data-comment-id="${Number(comment.id)}">
       <div class="comment-thread-meta">
         <strong>${escapeHtml(reviewMentionDisplayName(comment.author || "unknown"))}</strong>
-        <span>${comment.author_verified ? "SSO · " : ""}${escapeHtml(formatTime(comment.created_at))}</span>
+        <span>${channelLabel ? `${escapeHtml(channelLabel)} · ` : ""}${comment.author_verified ? "SSO · " : ""}${escapeHtml(formatTime(comment.created_at))}</span>
       </div>
       ${replyContext}
       <div class="comment-thread-body">${reviewCommentBodyMarkup(comment.body || "", comment.attachments || [])}</div>
       <div class="comment-thread-actions">
         <button class="analysis-discussion-link" type="button" data-comment-share="${Number(comment.id)}">分享</button>
-        ${state.session?.read_only || (context.kind === "intent" && !state.session?.can_annotate_intent) ? "" : `<button class="analysis-discussion-link" type="button" data-comment-reply="${Number(comment.id)}">回复</button>`}
+        ${canReply ? `<button class="analysis-discussion-link" type="button" data-comment-reply="${Number(comment.id)}">回复</button>` : ""}
       </div>
     </article>`;
-  }).join("");
+  };
+  if (context.kind === "campaign") {
+    const caseComments = (context.comments || []).filter((item) => item.discussion_channel === "case");
+    const campaignComments = (context.comments || []).filter((item) => (
+      item.discussion_channel === "campaign"
+      && String(item.campaign_id || "") === String(context.campaignId || "")
+    ));
+    const section = (title, items, emptyText) => `<section class="campaign-discussion-channel"><h3>${escapeHtml(title)}</h3>${items.length ? items.map((item) => renderComment(item)).join("") : `<div class="comment-thread-empty">${escapeHtml(emptyText)}</div>`}</section>`;
+    const otherCampaigns = (context.otherCampaigns || []).map((group) => `
+      <details class="campaign-discussion-related">
+        <summary>${escapeHtml(group.name || group.campaign_id)} · ${escapeHtml(campaignLabel(group.lifecycle))} · ${escapeHtml(uiText("只读参考", "Read-only reference"))}</summary>
+        ${(group.comments || []).map((comment) => renderComment(comment, { readOnly: true })).join("") || `<div class="comment-thread-empty">${escapeHtml(uiText("没有讨论。", "No discussion."))}</div>`}
+      </details>`).join("");
+    const runComments = (context.runComments || []).length
+      ? `<details class="campaign-discussion-related"><summary>Model Run · ${escapeHtml(context.runId || "")} · ${escapeHtml(uiText("只读参考", "Read-only reference"))}</summary>${context.runComments.map((comment) => renderComment(comment, { readOnly: true })).join("")}</details>`
+      : "";
+    target.innerHTML = `${section(uiText("Case 公共讨论", "Case public discussion"), caseComments, uiText("尚无 Case 公共讨论。", "No Case public discussion yet."))}${section(uiText("当前 Campaign 讨论", "Current Campaign discussion"), campaignComments, uiText("尚无当前 Campaign 讨论。", "No discussion in this Campaign yet."))}${otherCampaigns}${runComments}`;
+  } else {
+    const comments = context.comments || [];
+    if (!comments.length) {
+      target.innerHTML = `<div class="comment-thread-empty">还没有评论，可以发起第一条讨论。</div>`;
+      return;
+    }
+    target.innerHTML = comments.map((comment) => renderComment(comment)).join("");
+  }
   target.querySelectorAll("[data-comment-reply]").forEach((button) => {
     button.addEventListener("click", () =>
       beginAnalysisDiscussionReply(Number(button.dataset.commentReply))
@@ -1207,6 +1344,16 @@ function beginAnalysisDiscussionReply(commentId) {
     (item) => Number(item.id) === Number(commentId)
   );
   if (!context || !comment) return;
+  if (["labeling", "campaign"].includes(context.kind)) {
+    context.preReplyChannel = context.channel;
+    context.channel = String(comment.discussion_channel || "") === "campaign" ? "campaign" : "case";
+    const channelSelect = $("#analysisDiscussionChannel");
+    if (channelSelect) {
+      channelSelect.value = context.channel;
+      channelSelect.disabled = true;
+    }
+    updateAnalysisDiscussionComposerAccess();
+  }
   context.replyTo = comment;
   const textarea = $("#analysisDiscussionNote");
   const prefix = `@${comment.author} `;
@@ -1226,7 +1373,19 @@ function renderAnalysisDiscussionReplyContext() {
     ? `<span>正在回复 <strong>${escapeHtml(reviewMentionDisplayName(reply.author || "unknown"))}</strong></span><button type="button" data-cancel-comment-reply>取消回复</button>`
     : "";
   target.querySelector("[data-cancel-comment-reply]")?.addEventListener("click", () => {
-    if (state.analysisDiscussion) state.analysisDiscussion.replyTo = null;
+    if (state.analysisDiscussion) {
+      state.analysisDiscussion.replyTo = null;
+      if (["labeling", "campaign"].includes(state.analysisDiscussion.kind)) {
+        state.analysisDiscussion.channel = state.analysisDiscussion.preReplyChannel || (state.analysisDiscussion.taskId ? "both" : "case");
+        delete state.analysisDiscussion.preReplyChannel;
+        const channelSelect = $("#analysisDiscussionChannel");
+        if (channelSelect) {
+          channelSelect.disabled = false;
+          channelSelect.value = state.analysisDiscussion.channel;
+        }
+        updateAnalysisDiscussionComposerAccess();
+      }
+    }
     renderAnalysisDiscussionReplyContext();
   });
 }
@@ -1235,6 +1394,10 @@ async function saveAnalysisDiscussion(event) {
   event.preventDefault();
   const context = state.analysisDiscussion;
   const discussion = String($("#analysisDiscussionNote")?.value || "").trim();
+  if (context?.kind === "review" && !context.runId) {
+    showToast("未绑定 Run 的历史讨论为只读；请选择 Model Run 发起新讨论。", true);
+    return;
+  }
   if (!context?.issueId || !discussion) {
     showToast("请输入讨论内容。", true);
     return;
@@ -1262,8 +1425,12 @@ async function saveAnalysisDiscussion(event) {
         }
       );
     } else if (context.kind === "labeling" && context.pendingImages?.length) {
+      if (!["case", "campaign"].includes(context.channel) || (context.channel === "campaign" && !context.taskId)) {
+        showToast("请选择 Case 公共讨论或当前 Campaign 频道。", true);
+        return;
+      }
       const form = new FormData();
-      payload.task_id = String(context.taskId || "");
+      payload.task_id = context.channel === "campaign" ? String(context.taskId || "") : "";
       payload.attachment_tokens = context.pendingImages.map((item) => item.token);
       form.append("payload", JSON.stringify(payload));
       context.pendingImages.forEach((item, index) => {
@@ -1275,12 +1442,36 @@ async function saveAnalysisDiscussion(event) {
         headers: { "X-RA-Triage-Request": "comment-v1" },
       });
     } else if (context.kind === "labeling") {
+      if (!["case", "campaign"].includes(context.channel) || (context.channel === "campaign" && !context.taskId)) {
+        showToast("请选择 Case 公共讨论或当前 Campaign 频道。", true);
+        return;
+      }
       result = await api(`/api/labeling/cases/${encodeURIComponent(context.issueId)}/comments`, {
         method: "POST",
         body: JSON.stringify({
           body: discussion,
           reply_to_id: context.replyTo?.id || null,
-          task_id: String(context.taskId || ""),
+          task_id: context.channel === "campaign" ? String(context.taskId || "") : "",
+        }),
+      });
+    } else if (context.kind === "campaign") {
+      if (!["case", "campaign"].includes(context.channel)) {
+        showToast("请选择 Case 公共讨论或当前 Campaign 频道。", true);
+        return;
+      }
+      if (context.replyTo && String(context.replyTo.discussion_channel || "") !== context.channel) {
+        showToast("回复必须留在原讨论频道。", true);
+        return;
+      }
+      const discussionUrl = context.channel === "campaign"
+        ? `/api/campaigns/${encodeURIComponent(context.campaignId)}/issues/${encodeURIComponent(context.issueId)}/comments`
+        : `/api/cases/${encodeURIComponent(context.issueId)}/case-comments`;
+      result = await api(discussionUrl, {
+        method: "POST",
+        headers: { "X-RA-Triage-Request": "comment-v1" },
+        body: JSON.stringify({
+          body: discussion,
+          reply_to_id: context.replyTo?.id || null,
         }),
       });
     } else if (context.pendingImages?.length) {

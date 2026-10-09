@@ -77,6 +77,32 @@ class CaseLabelingTest(unittest.TestCase):
             self.assertEqual(candidates[0]["issue_id"], "cn1")
             self.assertEqual(candidates[0]["expected_output"], "误触发")
 
+    def test_gt_export_scope_counts_reconcile_and_zero_ready_creates_no_batch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database=self.make_db(tmp)
+            empty=database.create_label_gt_export_preview(baseline_scopes=["scope"], created_by="admin",created_by_source="test",created_by_verified=True)
+            self.assertEqual(empty["scope_summary"]["total"],2)
+            self.assertEqual(empty["scope_summary"]["pending"],2)
+            with database.connect() as conn:
+                self.assertEqual(conn.execute("SELECT count(*) n FROM label_gt_export_batches").fetchone()["n"],0)
+            database.create_label_revision(issue_id="cn1",expected_output="正确触发",tags=[],evidence_gaps=[],rationale="agrees",is_excluded=False,author="alice",author_source="test",author_verified=True,expected_previous_revision_id=None)
+            preview=database.create_label_gt_export_preview(baseline_scopes=["scope"],issue_ids=["cn1"],created_by="admin",created_by_source="test",created_by_verified=True)
+            self.assertEqual(preview["scope_summary"]["total"],1)
+            self.assertEqual(preview["scope_summary"]["unchanged"],1)
+            self.assertEqual(preview["item_count"],0)
+
+    def test_export_counts_conflicting_sources_even_when_another_task_is_pending(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database=self.make_db(tmp)
+            for author,output in [("alice","误触发"),("bob","正确触发")]:
+                database.create_label_revision(issue_id="cn1",expected_output=output,tags=[],evidence_gaps=[],rationale="source",is_excluded=False,author=author,author_source="test",author_verified=True,expected_previous_revision_id=None)
+            workset=database.create_review_workset(baseline_scope="scope",issue_ids=["cn1"],name="pending",created_by="admin")
+            database.create_labeling_task(workset_id=workset["id"],assignments=[{"name":"charlie","issue_ids":["cn1"]}],created_by="admin",seed=1,reviewers_per_issue=1,overlap_ratio=0)
+            preview=database.create_label_gt_export_preview(baseline_scopes=["scope"],issue_ids=["cn1"],created_by="admin",created_by_source="test",created_by_verified=True)
+            self.assertEqual(preview["scope_summary"]["conflict"],1)
+            self.assertEqual(preview["scope_summary"]["pending"],0)
+            self.assertEqual(preview["scope_summary"]["total"],1)
+
     def test_public_label_attachment_exposes_only_opaque_url(self) -> None:
         public = _public_label_attachment({
             "id": "asset-1", "original_name": "private.png",
@@ -137,6 +163,16 @@ class CaseLabelingTest(unittest.TestCase):
             )
             self.assertEqual(adjudicated["resolution"]["method"], "adjudication")
             self.assertEqual(adjudicated["resolution"]["expected_output"], "误触发")
+            self.assertTrue(adjudicated["resolution"]["original_conflict"])
+            self.assertEqual(database.labeling_case_issue_ids(baseline_scopes=["scope"], cluster="adjudicated"), ["cn1"])
+            self.assertEqual(len(adjudicated["resolution"]["heads"]), 2)
+            self.assertIn("carol", database.labeling_labelers(["scope"], split["split_id"]))
+            self.assertEqual(database.list_labeling_cases(baseline_scopes=["scope"], task_id=split["split_id"], author="carol")["total"], 1)
+            preview = database.create_label_gt_export_preview(baseline_scopes=["scope"], created_by="admin", created_by_source="test", created_by_verified=True)
+            self.assertEqual(preview["scope_summary"]["total"], 2)
+            self.assertEqual(preview["scope_summary"]["ready"], 1)
+            self.assertEqual(preview["scope_summary"]["pending"], 1)
+
             alice_next = database.create_label_revision(
                 issue_id="cn1", task_id=split["split_id"],
                 expected_output="正确触发", tags=[], evidence_gaps=[], rationale="a2",
@@ -145,9 +181,16 @@ class CaseLabelingTest(unittest.TestCase):
                 expected_previous_revision_id=alice["id"],
             )
             self.assertEqual(alice_next["label_case"]["resolution"]["state"], "stale")
+            self.assertEqual(database.labeling_case_issue_ids(baseline_scopes=["scope"], cluster="adjudicated"), [])
             blocked = database.label_gt_candidates(["scope"])
             self.assertEqual(blocked[0]["status"], "unresolved")
             self.assertEqual(blocked[0]["blocked_sources"][0]["state"], "stale")
+            empty = database.create_label_gt_export_preview(baseline_scopes=["scope"], created_by="admin", created_by_source="test", created_by_verified=True)
+            self.assertEqual(empty["item_count"], 0)
+            self.assertEqual(empty["id"], "")
+            self.assertEqual(empty["scope_summary"]["stale"], 1)
+            self.assertEqual(empty["scope_summary"]["pending"], 1)
+
 
     def test_free_label_cannot_be_adjudicated_as_task_conflict(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -172,6 +215,167 @@ class CaseLabelingTest(unittest.TestCase):
                     is_excluded=False, actor="writer", actor_source="kylin_ticket",
                     actor_verified=True, expected_previous_resolution_id=None,
                 )
+
+    def test_issue_decision_resolves_cross_source_conflict_and_stales_on_change(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            database = self.make_db(tmp)
+            database.set_labeling_scope_state(
+                baseline_scope="scope", status="active", policy_version="test-v1",
+                source_inventory_sha256="a" * 64, updated_by="test",
+            )
+            alice = database.create_label_revision(
+                issue_id="cn1", expected_output="误触发", tags=[], evidence_gaps=[],
+                rationale="alice", is_excluded=False, author="alice",
+                author_source="kylin_ticket", author_verified=True,
+                expected_previous_revision_id=None,
+            )
+            database.create_label_revision(
+                issue_id="cn1", expected_output="正确触发", tags=[], evidence_gaps=[],
+                rationale="bob", is_excluded=False, author="bob",
+                author_source="kylin_ticket", author_verified=True,
+                expected_previous_revision_id=None,
+            )
+            before = database.project_issue_label_states("scope", ["cn1"])["cn1"]
+            self.assertEqual(before["state"], "conflict")
+            decided = database.adjudicate_issue_label(
+                baseline_scope="scope", issue_id="cn1",
+                expected_output="无需协助", rationale="综合证据采用第三个合法标签",
+                actor="carol", actor_source="kylin_ticket", actor_verified=True,
+                expected_source_fingerprint=before["source_fingerprint"],
+                expected_previous_decision_id=None,
+            )
+            state = decided["label_state"]
+            self.assertEqual(state["state"], "resolved")
+            self.assertEqual(state["expected_output"], "无需协助")
+            self.assertEqual(state["method"], "adjudication")
+            self.assertFalse(state["decision"]["stale"])
+            gallery = database.list_labeling_cases(baseline_scopes=["scope"])
+            self.assertEqual(gallery["items"][0]["label_state"], "resolved")
+            self.assertEqual(gallery["items"][0]["expected_output"], "无需协助")
+            self.assertEqual(database.labeling_case_issue_ids(baseline_scopes=["scope"], cluster="adjudicated"), ["cn1"])
+            candidates = database.label_gt_candidates(["scope"])
+            self.assertEqual(candidates[0]["status"], "ready")
+            self.assertEqual(candidates[0]["decision_id"], decided["decision"]["id"])
+            preview = database.create_label_gt_export_preview(
+                baseline_scopes=["scope"], created_by="carol",
+                created_by_source="kylin_ticket", created_by_verified=True,
+            )
+            self.assertEqual(preview["items"][0]["decision_id"], decided["decision"]["id"])
+            workset = database.create_review_workset(
+                baseline_scope="scope", issue_ids=["cn1"], created_by="carol",
+            )
+            snapshot = database.create_label_result_snapshot(
+                workset_id=workset["id"], created_by="carol",
+                created_by_source="kylin_ticket", created_by_verified=True,
+            )
+            snapshot_detail = database.get_label_result_snapshot(
+                snapshot["id"], include_items=True
+            )
+            self.assertEqual(
+                snapshot_detail["items"][0]["decision_id"],
+                decided["decision"]["id"],
+            )
+            database.create_label_revision(
+                issue_id="cn1", expected_output="无需协助", tags=[], evidence_gaps=[],
+                rationale="alice changed", is_excluded=False, author="alice",
+                author_source="kylin_ticket", author_verified=True,
+                expected_previous_revision_id=alice["id"],
+            )
+            stale = database.project_issue_label_states("scope", ["cn1"])["cn1"]
+            self.assertEqual(stale["state"], "stale")
+            self.assertTrue(stale["decision"]["stale"])
+            self.assertEqual(database.labeling_case_issue_ids(baseline_scopes=["scope"], cluster="adjudicated"), [])
+            self.assertEqual(
+                database.list_labeling_cases(baseline_scopes=["scope"])["items"][0]["label_state"],
+                "conflict",
+            )
+            self.assertEqual(database.validate_label_gt_export_batch(preview["id"])["status"], "stale")
+            refreshed = database.adjudicate_issue_label(
+                baseline_scope="scope", issue_id="cn1", expected_output="无需协助",
+                rationale="来源变化后重新确认", actor="carol",
+                actor_source="kylin_ticket", actor_verified=True,
+                expected_source_fingerprint=stale["source_fingerprint"],
+                expected_previous_decision_id=decided["decision"]["id"],
+            )
+            self.assertEqual(
+                refreshed["decision"]["supersedes_id"], decided["decision"]["id"]
+            )
+            self.assertEqual(refreshed["label_state"]["state"], "resolved")
+
+    def test_issue_decision_rejects_incomplete_task_sources(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            database = self.make_db(tmp)
+            database.set_labeling_scope_state(
+                baseline_scope="scope", status="active", policy_version="test-v1",
+                source_inventory_sha256="a" * 64, updated_by="test",
+            )
+            assignments = distribute_issue_ids(
+                ["cn1"], [{"name": "alice"}, {"name": "bob"}],
+                seed=1, reviewers_per_issue=2,
+            )
+            split = database.apply_work_split(
+                assignments=assignments, created_by="admin", reviewers_per_issue=2,
+            )
+            workset = database.create_review_workset(
+                baseline_scope="scope", issue_ids=["cn1"], created_by="admin",
+            )
+            database.bind_labeling_task(task_id=split["split_id"], workset_id=workset["id"])
+            database.create_label_revision(
+                issue_id="cn1", task_id=split["split_id"], expected_output="误触发",
+                tags=[], evidence_gaps=[], rationale="only alice", is_excluded=False,
+                author="alice", author_source="kylin_ticket", author_verified=True,
+                expected_previous_revision_id=None,
+            )
+            state = database.project_issue_label_states("scope", ["cn1"])["cn1"]
+            with self.assertRaisesRegex(ValueError, "任务来源未完成或未裁决"):
+                database.adjudicate_issue_label(
+                    baseline_scope="scope", issue_id="cn1", expected_output="误触发",
+                    rationale="cannot skip bob", actor="carol",
+                    actor_source="kylin_ticket", actor_verified=True,
+                    expected_source_fingerprint=state["source_fingerprint"],
+                    expected_previous_decision_id=None,
+                )
+
+    def test_issue_decision_resolves_conflicting_completed_tasks(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            database = self.make_db(tmp)
+            database.set_labeling_scope_state(
+                baseline_scope="scope", status="active", policy_version="test-v1",
+                source_inventory_sha256="a" * 64, updated_by="test",
+            )
+            task_ids = []
+            for index, (author, output) in enumerate(
+                (("alice", "误触发"), ("bob", "正确触发")), 1
+            ):
+                workset = database.create_review_workset(
+                    baseline_scope="scope", issue_ids=["cn1"],
+                    name=f"task-{index}", created_by="admin",
+                )
+                task = database.create_labeling_task(
+                    workset_id=workset["id"],
+                    assignments=[{"name": author, "issue_ids": ["cn1"]}],
+                    created_by="admin", seed=index,
+                    reviewers_per_issue=1, overlap_ratio=0,
+                )
+                task_ids.append(task["id"])
+                database.create_label_revision(
+                    issue_id="cn1", task_id=task["id"], expected_output=output,
+                    tags=[], evidence_gaps=[], rationale=author, is_excluded=False,
+                    author=author, author_source="kylin_ticket", author_verified=True,
+                    expected_previous_revision_id=None,
+                )
+            state = database.project_issue_label_states("scope", ["cn1"])["cn1"]
+            self.assertEqual(state["state"], "conflict")
+            self.assertEqual(state["source_task_ids"], sorted(task_ids))
+            decided = database.adjudicate_issue_label(
+                baseline_scope="scope", issue_id="cn1", expected_output="误触发",
+                rationale="跨任务采用 task-1 结论", actor="carol",
+                actor_source="kylin_ticket", actor_verified=True,
+                expected_source_fingerprint=state["source_fingerprint"],
+                expected_previous_decision_id=None,
+            )
+            self.assertEqual(decided["label_state"]["state"], "resolved")
+            self.assertEqual(decided["label_state"]["expected_output"], "误触发")
 
     def test_gt_export_preview_detects_source_or_gt_changes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -435,6 +639,54 @@ class CaseLabelingTest(unittest.TestCase):
             self.assertEqual(database.labeling_task_progress([], [task_id]), {})
             self.assertEqual(database.labeling_task_progress(["scope"], []), {})
 
+    def test_unassigned_contributor_saves_free_vote_without_task_progress(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            database = self.make_db(tmp)
+            workset = database.create_review_workset(
+                baseline_scope="scope", issue_ids=["cn1"],
+                name="assigned task", created_by="admin",
+            )
+            task = database.create_labeling_task(
+                workset_id=workset["id"],
+                assignments=[{"name": "alice", "issue_ids": ["cn1"]}],
+                created_by="admin", seed=1, reviewers_per_issue=1, overlap_ratio=0,
+            )
+            assignment = database.review_assignment_context(
+                "cn1", model_run_id="", username="bob", work_split_id=task["id"]
+            )
+            self.assertIsNotNone(assignment)
+            self.assertFalse(assignment["assigned"])
+            with self.assertRaisesRegex(PermissionError, "不在该标注任务"):
+                database.create_label_revision(
+                    issue_id="cn1", task_id=task["id"], expected_output="误触发",
+                    tags=[], evidence_gaps=[], rationale="supplement", is_excluded=False,
+                    author="bob", author_source="kylin_ticket", author_verified=True,
+                    expected_previous_revision_id=None,
+                )
+            free = database.create_label_revision(
+                issue_id="cn1", task_id="", expected_output="误触发",
+                tags=[], evidence_gaps=[], rationale="supplement", is_excluded=False,
+                author="bob", author_source="kylin_ticket", author_verified=True,
+                expected_previous_revision_id=None,
+            )
+            self.assertEqual(free["label_case"]["task_id"], "")
+            progress = database.labeling_task_progress(["scope"], [task["id"]])[task["id"]]
+            self.assertEqual(progress["resolved"], 0)
+            self.assertEqual(progress["pending"], 1)
+            self.assertEqual(
+                database.project_issue_label_states("scope", ["cn1"])["cn1"]["state"],
+                "pending",
+            )
+            database.create_label_revision(
+                issue_id="cn1", task_id=task["id"], expected_output="误触发",
+                tags=[], evidence_gaps=[], rationale="assigned", is_excluded=False,
+                author="alice", author_source="kylin_ticket", author_verified=True,
+                expected_previous_revision_id=None,
+            )
+            projected = database.project_issue_label_states("scope", ["cn1"])["cn1"]
+            self.assertEqual(projected["state"], "resolved")
+            self.assertEqual(projected["expected_output"], "误触发")
+
     def test_assignee_filter_scopes_labeling_cases_to_queue(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             database = self.make_db(tmp)
@@ -472,6 +724,14 @@ class CaseLabelingTest(unittest.TestCase):
                 )["items"]
             ]
             self.assertEqual(bob_ids, ["cn3"])
+            multi_ids = [
+                item["issue_id"]
+                for item in database.list_labeling_cases(
+                    baseline_scopes=["scope"], task_id=task_id,
+                    assignee=["alice", "bob"],
+                )["items"]
+            ]
+            self.assertEqual(multi_ids, ["cn1", "cn2", "cn3"])
             all_ids = [
                 item["issue_id"]
                 for item in database.list_labeling_cases(
@@ -479,6 +739,76 @@ class CaseLabelingTest(unittest.TestCase):
                 )["items"]
             ]
             self.assertEqual(all_ids, ["cn1", "cn2", "cn3"])
+
+    def test_labeling_gallery_filters_gt_discussion_and_exact_issue_ids(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            database = self.make_db(tmp)
+            database.upsert_issues(
+                [{"issue_id": "cn3", "gt_label": "误触发"}],
+                source="test", replace_gt=True, baseline_scope="scope",
+            )
+            database.create_label_revision(
+                issue_id="cn1", expected_output="误触发", tags=[], evidence_gaps=[],
+                rationale="alice", is_excluded=True, author="alice",
+                author_source="kylin_ticket", author_verified=True,
+                expected_previous_revision_id=None,
+            )
+            database.create_label_revision(
+                issue_id="cn2", expected_output="无需协助", tags=[], evidence_gaps=[],
+                rationale="bob", is_excluded=False, author="bob",
+                author_source="kylin_ticket", author_verified=True,
+                expected_previous_revision_id=None,
+            )
+            comment = database.create_review_comment(
+                issue_id="cn1", model_run_id="", body="Case discussion",
+                author="alice", author_source="kylin_ticket", author_verified=True,
+            )
+            database.link_label_comment(
+                comment_id=comment["id"], task_id="", source_run_id="",
+                policy_version="filter-test-v1",
+            )
+            self.assertEqual(
+                [item["issue_id"] for item in database.list_labeling_cases(
+                    baseline_scopes=["scope"], gt_label="正确触发",
+                )["items"]],
+                ["cn1"],
+            )
+            self.assertEqual(
+                [item["issue_id"] for item in database.list_labeling_cases(
+                    baseline_scopes=["scope"], issue_ids=["cn2"],
+                )["items"]],
+                ["cn2"],
+            )
+            self.assertEqual(
+                [item["issue_id"] for item in database.list_labeling_cases(
+                    baseline_scopes=["scope"], comment_state="with",
+                )["items"]],
+                ["cn1"],
+            )
+            self.assertEqual(
+                [item["issue_id"] for item in database.list_labeling_cases(
+                    baseline_scopes=["scope"], comment_state="without",
+                )["items"]],
+                ["cn2", "cn3"],
+            )
+            self.assertEqual(
+                [item["issue_id"] for item in database.list_labeling_cases(
+                    baseline_scopes=["scope"],
+                    status=["resolved", "pending"],
+                    author=["alice", "bob"],
+                    expected_output=["误触发", "无需协助"],
+                    gt_label=["正确触发"],
+                )["items"]],
+                ["cn1"],
+            )
+            self.assertEqual(
+                [item["issue_id"] for item in database.list_labeling_cases(
+                    baseline_scopes=["scope"],
+                    comment_state=["with", "without"],
+                    exclusion=["active", "excluded"],
+                )["items"]],
+                ["cn1", "cn2", "cn3"],
+            )
 
     def test_labeling_clusters_and_cluster_filter(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

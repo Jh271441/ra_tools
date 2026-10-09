@@ -28,13 +28,18 @@ from .db_parts.shared import (
 from .db_parts.access import DatabaseAccessMixin
 from .db_parts.batch import DatabaseBatchMixin
 from .db_parts.cases import DatabaseCasesMixin
+from .db_parts.campaigns import DatabaseCampaignMixin
 from .db_parts.comments import DatabaseCommentsMixin
 from .db_parts.core import DatabaseCoreMixin
 from .db_parts.gt_sync import DatabaseGtSyncMixin
 from .db_parts.labeling import DatabaseLabelingMixin
+from .db_parts.model_reviews import DatabaseModelReviewMixin
+from .db_parts.combined_reviews import DatabaseCombinedReviewMixin
 from .db_parts.review import DatabaseReviewMixin
 from .db_parts.notifications import DatabaseNotificationsMixin
 from .db_parts.runs import DatabaseRunsMixin
+from .db_parts.run_collections import DatabaseRunCollectionsMixin
+from .db_parts.legacy_cutover import DatabaseLegacyCutoverMixin
 from .db_parts.intent import DatabaseIntentMixin
 from .db_parts.snapshots import DatabaseSnapshotMixin
 
@@ -42,15 +47,20 @@ class Database(
     DatabaseAccessMixin,
     DatabaseBatchMixin,
     DatabaseCasesMixin,
+    DatabaseCampaignMixin,
     DatabaseCommentsMixin,
     DatabaseCoreMixin,
     DatabaseGtSyncMixin,
     DatabaseSnapshotMixin,
     DatabaseLabelingMixin,
+    DatabaseModelReviewMixin,
+    DatabaseCombinedReviewMixin,
     DatabaseIntentMixin,
     DatabaseReviewMixin,
     DatabaseNotificationsMixin,
     DatabaseRunsMixin,
+    DatabaseRunCollectionsMixin,
+    DatabaseLegacyCutoverMixin,
 ):
     """SQLite/PostgreSQL storage with versioned review history.
 

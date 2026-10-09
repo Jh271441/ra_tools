@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import threading
 from pathlib import Path
@@ -13,6 +14,12 @@ from PIL import Image, UnidentifiedImageError
 
 from ..case_media import empty_case_media, resolve_case_media
 from ..contracts import ISSUE_ID_RE
+from ..intent_name_suggestion import (
+    IntentNameSuggestionError,
+    rule_based_assignment_name,
+    suggest_assignment_name_with_llm,
+)
+from ..model_catalog import ModelCatalogError
 from ..runtime import _public_path
 from ..support.attachments import (
     _public_review_attachment,
@@ -46,6 +53,7 @@ from ..runtime import (
     database,
     issue_tag_sources,
     logger,
+    model_catalog,
     settings,
     trail_detail_semaphore,
     video_index,
@@ -58,6 +66,100 @@ router = APIRouter()
 # issue_id -> (source_path, mtime_ns, size, dest_jpeg)
 _thumbnail_dest_cache: dict[str, tuple[str, int, int, Path]] = {}
 _thumbnail_encode_gate = threading.Semaphore(8)
+
+
+@router.post("/api/assignment-name-suggestion")
+async def suggest_assignment_name(request: Request) -> dict[str, Any]:
+    """Return a rule name immediately or a validated server-owned LLM name."""
+
+    await asyncio.to_thread(_admin_identity, request)
+    raw = await request.body()
+    if len(raw) > 8 * 1024:
+        raise _detail(413, "实验名称推荐请求过大。")
+    try:
+        body = json.loads(raw)
+    except (TypeError, ValueError, UnicodeDecodeError) as exc:
+        raise _detail(400, "实验名称推荐请求必须是 JSON。") from exc
+    if not isinstance(body, dict):
+        raise _detail(400, "实验名称推荐请求必须是 JSON 对象。")
+    assignment_kind = _as_text(body.get("assignment_kind")).strip().lower()
+    if assignment_kind not in {"case_labeling", "model_review"}:
+        raise _detail(400, "实验名称推荐类型不合法。")
+    raw_baseline_ids = body.get("baseline_ids")
+    if not isinstance(raw_baseline_ids, list):
+        raise _detail(400, "baseline_ids 必须是数组。")
+    baseline_ids = list(
+        dict.fromkeys(_as_text(value).strip() for value in raw_baseline_ids)
+    )
+    baseline_ids = [value for value in baseline_ids if value]
+    if not baseline_ids or len(baseline_ids) > 8:
+        raise _detail(400, "请为名称推荐选择 1 到 8 个数据集。")
+    entries = [baseline_registry.by_id(value) for value in baseline_ids]
+    if any(entry is None for entry in entries):
+        raise _detail(400, "名称推荐包含未知数据集。")
+    try:
+        case_count = max(1, min(100_000, int(body.get("case_count") or 1)))
+        reviewers_per_issue = max(
+            1, min(100, int(body.get("reviewers_per_issue") or 1))
+        )
+        member_count = max(0, min(100, int(body.get("member_count") or 0)))
+        overlap_ratio = normalize_overlap_ratio(
+            body.get("overlap_ratio"),
+            reviewers_per_issue=reviewers_per_issue,
+        )
+    except (TypeError, ValueError) as exc:
+        raise _detail(400, "实验名称推荐参数不合法。") from exc
+    workflow_mode = _as_text(body.get("workflow_mode")).strip()
+    if workflow_mode not in {"", "model_review_only", "model_review_and_case_label"}:
+        raise _detail(400, "实验名称推荐工作流不合法。")
+    comparison = " ".join(_as_text(body.get("comparison") or "all").split())[:128]
+    draft_name = " ".join(
+        _as_text(body.get("draft_name")).replace("\u0000", "").split()
+    )[:80]
+    run_name = ""
+    if assignment_kind == "model_review":
+        run_id = _as_text(body.get("model_run_id")).strip()
+        run = await asyncio.to_thread(database.get_model_run, run_id)
+        if not run:
+            raise _detail(404, "名称推荐对应的 Model Run 不存在。")
+        run_name = _as_text(run.get("name") or run_id)
+    dataset_labels = [str(entry.label or entry.id) for entry in entries if entry]
+    fallback = rule_based_assignment_name(
+        dataset_labels,
+        assignment_kind=assignment_kind,
+        case_count=case_count,
+        reviewers_per_issue=reviewers_per_issue,
+        overlap_ratio=overlap_ratio,
+        member_count=member_count,
+        workflow_mode=workflow_mode,
+        run_name=run_name,
+        comparison=comparison,
+    )
+    catalog_status = await asyncio.to_thread(model_catalog.status)
+    if not catalog_status.get("configured"):
+        return {"suggestion": fallback, "source": "rule", "reason": "not_configured"}
+    try:
+        suggestion = await asyncio.to_thread(
+            suggest_assignment_name_with_llm,
+            settings,
+            model_catalog,
+            fallback=fallback,
+            dataset_labels=dataset_labels,
+            assignment_kind=assignment_kind,
+            case_count=case_count,
+            reviewers_per_issue=reviewers_per_issue,
+            overlap_ratio=overlap_ratio,
+            member_count=member_count,
+            workflow_mode=workflow_mode,
+            run_name=run_name,
+            comparison=comparison,
+            draft_name=draft_name,
+        )
+    except IntentNameSuggestionError as exc:
+        return {"suggestion": fallback, "source": "rule", "reason": exc.reason}
+    except ModelCatalogError:
+        return {"suggestion": fallback, "source": "rule", "reason": "unavailable"}
+    return {"suggestion": suggestion, "source": "llm"}
 
 
 def _visible_case_annotations(
@@ -148,6 +250,7 @@ def _empty_issue_label_state() -> dict[str, Any]:
         "state": "none",
         "expected_output": "",
         "gt_relation": "unknown",
+        "gt_review_pending": False,
         "method": "single",
         "source_task_ids": [],
         "source_revision_ids": [],
@@ -219,8 +322,13 @@ def _case_derived_issue_ids(
                         selected == state
                         or (
                             selected == "needs_gt_review"
-                            and state == "resolved"
-                            and relation in {"differs_from_gt", "fills_missing_gt"}
+                            and (
+                                bool(projection.get("gt_review_pending"))
+                                or (
+                                    state == "resolved"
+                                    and relation in {"differs_from_gt", "fills_missing_gt"}
+                                )
+                            )
                         )
                         or (
                             selected == "matches_gt"
@@ -410,14 +518,17 @@ async def list_cases(
     comparison_status = filters["comparison_status"]
     safe_page = max(1, int(page))
     safe_page_size = min(max(1, int(page_size)), 100)
-    result = await asyncio.to_thread(
-        _case_result_with_status_filter,
-        filters=filters,
-        review_statuses=review_statuses,
-        label_states=label_states,
-        page=safe_page,
-        page_size=safe_page_size,
-    )
+    try:
+        result = await asyncio.to_thread(
+            _case_result_with_status_filter,
+            filters=filters,
+            review_statuses=review_statuses,
+            label_states=label_states,
+            page=safe_page,
+            page_size=safe_page_size,
+        )
+    except ValueError as exc:
+        raise _detail(400, str(exc)) from exc
     result["items"] = await asyncio.to_thread(
         _public_case_items,
         result.get("items", []),
@@ -443,6 +554,31 @@ async def list_cases(
         "baseline_scopes": filters.get("baseline_scopes") or [],
     }
     return result
+
+
+@router.get("/api/review-task-context/{split_id}")
+async def review_task_context(split_id: str, request: Request) -> dict[str, Any]:
+    identity = await asyncio.to_thread(request_identity, request, settings)
+    role = await asyncio.to_thread(database.access_role, identity.username) if identity.verified else ""
+    if not identity.verified or not identity.username or role not in {"writer", "admin"}:
+        raise _detail(403, "任务上下文需要 Dashboard writer 或管理员权限。")
+    try:
+        context = await asyncio.to_thread(
+            database.review_task_context,
+            split_id=_as_text(split_id),
+            username=identity.username,
+            is_admin=role == "admin",
+            allow_supplemental=role == "writer",
+        )
+    except PermissionError as exc:
+        raise _detail(403, str(exc)) from exc
+    if context is None:
+        raise _detail(404, "复核任务不存在。")
+    context["baseline_ids"] = [
+        baseline_registry.scope_to_id(scope) or scope
+        for scope in context.get("baseline_scopes") or []
+    ]
+    return {"task": context}
 
 
 
@@ -606,6 +742,11 @@ async def list_case_work_splits(
         limit=max(1, min(int(limit or 50), 100)),
         model_run_id=_as_text(model_run_id),
     )
+    for item in items:
+        item["baseline_ids"] = [
+            baseline_registry.scope_to_id(scope) or scope
+            for scope in item.get("baseline_scopes") or []
+        ]
     return {"items": items, "change_revision": await asyncio.to_thread(database.change_revision)}
 
 
@@ -626,7 +767,7 @@ async def review_work_split_options(
 
     def snapshot_baselines(item: dict[str, Any]) -> set[str]:
         snapshot = item.get("filter_snapshot") or {}
-        raw = snapshot.get("baselines") or snapshot.get("baseline_scopes") or []
+        raw = item.get("baseline_scopes") or snapshot.get("baselines") or snapshot.get("baseline_scopes") or []
         if isinstance(raw, str):
             values = raw.split(",")
         elif isinstance(raw, (list, tuple, set)):
@@ -655,6 +796,7 @@ async def review_work_split_options(
                 "created_at": str(item.get("created_at") or ""),
                 "created_by": str(item.get("created_by") or ""),
                 "mode": str(item.get("mode") or "single"),
+                "workflow_mode": str(item.get("workflow_mode") or "model_review_only"),
                 "reviewers_per_issue": int(item.get("reviewers_per_issue") or 1),
                 "total_count": int(item.get("total_count") or 0),
                 "assignment_count": int(item.get("assignment_count") or 0),
@@ -692,6 +834,10 @@ async def get_case_work_split(
         raise _detail(400, str(exc)) from exc
     if result is None:
         raise _detail(404, "分配批次不存在。")
+    result["baseline_ids"] = [
+        baseline_registry.scope_to_id(scope) or scope
+        for scope in result.get("baseline_scopes") or []
+    ]
     return result
 
 
@@ -757,6 +903,9 @@ async def split_case_work(request: Request) -> dict[str, Any]:
         raise _detail(400, "均分任务请求必须是 JSON。")
     if not isinstance(body, dict):
         raise _detail(400, "均分任务请求必须是 JSON 对象。")
+    task_name = " ".join(_as_text(body.get("name")).split())
+    if len(task_name) > 80:
+        raise _detail(400, "实验名称不能超过 80 个字符。")
     filter_body = body.get("filters") if isinstance(body.get("filters"), dict) else {}
     filters = _case_filter_kwargs(
         search=_as_text(filter_body.get("search")),
@@ -772,6 +921,7 @@ async def split_case_work(request: Request) -> dict[str, Any]:
         missing_evidence=_as_text(filter_body.get("missing_evidence")),
         issue_ids=_as_text(filter_body.get("issue_ids")),
         work_assignee=_as_text(filter_body.get("work_assignee")),
+        work_split_id=_as_text(filter_body.get("work_split_id")),
         comment_state=_as_text(filter_body.get("comment_state") or "all"),
         exclusion=_as_text(filter_body.get("exclusion")),
         baselines=_as_text(filter_body.get("baselines") or filter_body.get("baseline_scopes")),
@@ -780,6 +930,11 @@ async def split_case_work(request: Request) -> dict[str, Any]:
     review_statuses = tuple(filters.pop("review_statuses", ()))
     label_states = tuple(filters.pop("label_states", ()))
     exclusion_filter = str(filters.pop("exclusion", "all"))
+    if not str(filters.get("model_run_id") or "").strip():
+        raise _detail(
+            400,
+            "新建判错复核任务必须先选择 Model Run；若只做 Case 标签，请前往 Case 标注 > 实验分配。",
+        )
     issue_ids = await asyncio.to_thread(
         _case_issue_ids_with_status_filter,
         filters=filters,
@@ -819,15 +974,7 @@ async def split_case_work(request: Request) -> dict[str, Any]:
             reviewers_per_issue=reviewers_per_issue,
             overlap_ratio=overlap_ratio,
         )
-        saved = await asyncio.to_thread(
-            database.apply_work_split,
-            assignments=assignments,
-            created_by=identity.username,
-            seed=seed,
-            reviewers_per_issue=reviewers_per_issue,
-            overlap_ratio=overlap_ratio,
-            model_run_id=filters["model_run_id"],
-            filter_snapshot={
+        filter_snapshot = {
                 "model_run_id": filters["model_run_id"],
                 "comparison_status": filters["comparison_status"],
                 "comment_state": filters["comment_state"],
@@ -835,10 +982,13 @@ async def split_case_work(request: Request) -> dict[str, Any]:
                 "gt_label": filters["gt_label"],
                 "model_label": filters["model_label"],
                 "annotation_author": filters["annotation_author"],
-                "review_status": list(review_statuses),
+                "review_status": list(review_statuses) + [value for value in str(filters.get("model_review_status") or "").split(",") if value],
                 "label_state": list(label_states),
                 "exclusion": exclusion_filter,
                 "missing_evidence": filters["missing_evidence"],
+                "issue_ids": filters.get("issue_ids") or [],
+                "work_assignee": filters.get("work_assignee") or "",
+                "work_split_id": filters.get("work_split_id") or "",
                 "overlap_ratio": overlap_ratio,
                 "baselines": filters.get("baseline_scopes") and resolve_request_baseline_ids(
                     ",".join(
@@ -847,8 +997,93 @@ async def split_case_work(request: Request) -> dict[str, Any]:
                     )
                 ) or baseline_registry.default_ids(),
                 "baseline_scopes": filters.get("baseline_scopes") or [],
-            },
-        )
+            }
+        idempotency_key = _as_text(
+            request.headers.get("idempotency-key")
+            or body.get("idempotency_key")
+            or body.get("request_id")
+        ).strip()[:160]
+        if idempotency_key and seed is None:
+            seed = int.from_bytes(hashlib.sha256(idempotency_key.encode("utf-8")).digest()[:8], "big") % (2**31)
+            assignments = distribute_issue_ids(
+                issue_ids,
+                assignees,
+                seed=seed,
+                reviewers_per_issue=reviewers_per_issue,
+                overlap_ratio=overlap_ratio,
+            )
+        if filters["model_run_id"]:
+            workset_scopes = list(filters.get("baseline_scopes") or [])
+            if len(workset_scopes) != 1:
+                raise ValueError(
+                    "Model Review Campaign 固定绑定一个 Workset；请一次选择一个数据集。"
+                )
+            by_issue: dict[str, list[dict[str, str]]] = {}
+            for member in assignments:
+                member_items = member.get("items") or [
+                    {"issue_id": issue_id, "assignment_kind": "base"}
+                    for issue_id in (member.get("issue_ids") or [])
+                ]
+                for item in member_items:
+                    issue_id = _as_text(item.get("issue_id"))
+                    by_issue.setdefault(issue_id, []).append({
+                        "assignee": _as_text(member.get("name")).strip().lower(),
+                        "assignment_kind": _as_text(item.get("assignment_kind") or "base"),
+                    })
+            workset = await asyncio.to_thread(
+                database.create_review_workset,
+                baseline_scope=workset_scopes[0],
+                issue_ids=issue_ids,
+                name=task_name or f"Review Workset · {len(issue_ids)} Issues",
+                selection_source_run_id=filters["model_run_id"],
+                source_filter=filter_snapshot,
+                created_by=identity.username,
+                created_by_source=identity.source,
+                created_by_verified=True,
+            )
+            campaign = await asyncio.to_thread(
+                database.create_campaign,
+                spec={
+                    "purpose": "model_review",
+                    "workflow_mode": _as_text(body.get("workflow_mode") or "model_review_only"),
+                    "evaluation_run_id": filters["model_run_id"],
+                    "selection_source_run_id": filters["model_run_id"],
+                    "workset_id": workset["id"],
+                    "name": task_name or f"Review task · {len(issue_ids)} Issues",
+                    "seed": seed,
+                    "overlap_ratio": overlap_ratio,
+                    "filters": filter_snapshot,
+                    "members": [
+                        {"issue_id": issue_id, "ordinal": ordinal,
+                         "assignees": by_issue.get(issue_id, [])}
+                        for ordinal, issue_id in enumerate(issue_ids, 1)
+                    ],
+                },
+                actor=identity.username,
+                actor_source=identity.source,
+                actor_verified=True,
+                idempotency_key=idempotency_key,
+            )
+            campaign_meta = campaign["campaign"]
+            saved = {
+                "split_id": campaign_meta["id"],
+                "created_by": campaign_meta["created_by"],
+                "created_at": campaign_meta["created_at"],
+                "assignment_count": sum(len(items) for items in by_issue.values()),
+                "reviewers_per_issue": reviewers_per_issue,
+                "overlap_ratio": overlap_ratio,
+            }
+        else:
+            saved = await asyncio.to_thread(
+                database.apply_work_split,
+                assignments=assignments,
+                created_by=identity.username,
+                seed=seed,
+                reviewers_per_issue=reviewers_per_issue,
+                overlap_ratio=overlap_ratio,
+                model_run_id=filters["model_run_id"],
+                filter_snapshot=filter_snapshot,
+            )
     except ValueError as exc:
         raise _detail(400, str(exc))
     return {
@@ -862,6 +1097,10 @@ async def split_case_work(request: Request) -> dict[str, Any]:
         "assignment_count": saved["assignment_count"],
         "reviewers_per_issue": saved["reviewers_per_issue"],
         "overlap_ratio": saved["overlap_ratio"],
+        "workflow_mode": (
+            str(campaign_meta.get("workflow_mode") or "model_review_only")
+            if filters["model_run_id"] else "model_review_only"
+        ),
         "work_assignees": await asyncio.to_thread(
             database.list_work_assignees,
             issue_ids=issue_ids,
@@ -1073,7 +1312,7 @@ async def get_case(
         else None
     )
     identity = SessionIdentity()
-    if request is not None and assignment and assignment.get("mode") == "blind":
+    if request is not None and assignment:
         identity = await asyncio.to_thread(request_identity, request, settings)
         current_username = identity.username.lower() if identity.verified else ""
         own_assignment = next(

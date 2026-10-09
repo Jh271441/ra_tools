@@ -9,7 +9,7 @@
  * filenames are domain names without numeric prefixes.
  */
 (() => {
-  const CACHE_VERSION = "manual-triage-478";
+  const CACHE_VERSION = "manual-triage-566";
   const MODULES = [
     "core-base.js",
     "i18n-messages.js",
@@ -23,6 +23,7 @@
     "system-status.js",
     "runs.js",
     "run-comparison.js",
+    "run-collections.js",
     "intent-workspaces.js",
     "intent-summary.js",
     "intent-media.js",
@@ -30,8 +31,12 @@
     "intent-labeling.js",
     "review-gallery.js",
     "review-label-state.js",
+    "assignment-naming.js",
+    "assignment-people.js",
     "work-split.js",
     "review-assignments.js",
+    "campaigns.js",
+    "labeling-summary.js",
     "analysis.js",
     "detail-media.js",
     "review-draft.js",
@@ -40,6 +45,7 @@
     "review-tags.js",
     "review-attachments.js",
     "review-form.js",
+    "case-label-explanation.js",
     "case-labeling.js",
     "media-dialog.js",
     "batch-gateway.js",
@@ -51,6 +57,7 @@
     "trail-update-import.js",
     "trail-update-commit.js",
     "trail-update.js",
+    "mobile-workbench.js",
     "bind-bootstrap.js"
   ];
 

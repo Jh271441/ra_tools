@@ -9,6 +9,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
+from fastapi import HTTPException
 from starlette.requests import Request
 
 from ra_triage_dashboard.app.auth import (
@@ -20,6 +21,7 @@ from ra_triage_dashboard.app.auth import (
     validate_identity_settings,
 )
 from ra_triage_dashboard.app.settings import Settings
+from ra_triage_dashboard.app.support import identity as identity_support
 
 
 def make_request(headers: dict[str, str]) -> Request:
@@ -51,6 +53,44 @@ class FakeSSOResponse:
 
 
 class IdentityAccessTest(unittest.TestCase):
+    def test_writer_identity_accepts_writer_and_admin_only(self) -> None:
+        request = make_request({})
+        verified = SimpleNamespace(
+            verified=True, username="alice", source="kylin_ticket"
+        )
+        for role in ("writer", "admin"):
+            with self.subTest(role=role), patch.object(
+                identity_support, "request_identity", return_value=verified
+            ), patch.object(identity_support.database, "access_role", return_value=role):
+                self.assertIs(identity_support._writer_identity(request), verified)
+        with patch.object(
+            identity_support, "request_identity", return_value=verified
+        ), patch.object(identity_support.database, "access_role", return_value="viewer"):
+            with self.assertRaises(HTTPException) as raised:
+                identity_support._writer_identity(request)
+        self.assertEqual(raised.exception.status_code, 403)
+
+    def test_smoke_loopback_admin_is_verified_only_for_loopback_client(self) -> None:
+        settings = SimpleNamespace(
+            smoke_loopback_admin_enabled=True,
+            smoke_loopback_admin_username="ux-smoke-admin",
+            trust_proxy_identity_headers=False,
+            kylin_sso_enabled=False,
+        )
+        loopback = Request({
+            "type": "http", "method": "GET", "path": "/api/session",
+            "headers": [], "client": ("127.0.0.1", 12345),
+        })
+        identity = request_identity(loopback, settings)
+        self.assertTrue(identity.authenticated)
+        self.assertTrue(identity.verified)
+        self.assertEqual(identity.username, "ux-smoke-admin")
+        remote = Request({
+            "type": "http", "method": "GET", "path": "/api/session",
+            "headers": [], "client": ("10.1.2.3", 12345),
+        })
+        self.assertFalse(request_identity(remote, settings).verified)
+
     def test_identity_diagnostics_only_returns_safe_username_candidates(self) -> None:
         request = make_request(
             {

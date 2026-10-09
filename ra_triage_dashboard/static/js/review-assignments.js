@@ -41,35 +41,27 @@ function reviewAssignmentFilterLabel(item) {
 }
 
 function reviewAssignmentRouteOptions(item, page) {
-  const filter = item?.filter_snapshot && typeof item.filter_snapshot === "object"
-    ? item.filter_snapshot
-    : {};
+  // Batch membership is frozen. Creation-time filters belong to View source
+  // filter; do not apply them again or inherit filters from another workspace.
+  const filter = item?.filter_snapshot || {};
   const common = {
     runId: item?.model_run_id || "",
-    comparisonStatus: filter.comparison_status || "all",
-    search: filter.search || "",
-    gtLabel: parseFilterList(filter.gt_label),
-    modelLabel: parseFilterList(filter.model_label),
-    annotationAuthor: parseFilterList(filter.annotation_author),
-    reviewStatus: parseFilterList(filter.review_status),
-    exclusion: filter.exclusion || "all",
-    workSplitId: item?.split_id || "",
-    baselines: filter.baselines || filter.baseline_scopes || [],
+    comparisonStatus: "all",
+    search: "", issueIds: [], gtLabel: [], modelLabel: [],
+    annotationAuthor: [], reviewStatus: [], commentState: "all", commentSearch: "",
+    exclusion: "all", workSplitId: item?.split_id || "",
+    baselines: item?.baseline_ids || item?.baseline_scopes || filter.baselines || filter.baseline_scopes || [],
+    forceBaselines: true,
   };
   if (page === "analysis") {
     return {
-      ...common,
-      issueIds: [],
-      missingEvidence: parseFilterList(filter.missing_evidence),
-      page: 1,
+      ...common, missingEvidence: [], sceneTag: [], triggerTag: [], egressTag: [],
+      workAgreement: "all", legacyTag: "", page: 1, pageSize: 20,
     };
   }
   return {
-    ...common,
-    issue: "",
-    issueIds: [],
-    clusterKey: filter.missing_evidence || "",
-    casePage: 1,
+    ...common, issue: "", labelStates: [], workAssignee: [], clusterKey: "",
+    workflowMode: item?.workflow_mode || "model_review_only", casePage: 1, casePageSize: 20,
   };
 }
 
@@ -77,6 +69,45 @@ function reviewAssignmentBatchHref(item, page) {
   return pageUrl(page, reviewAssignmentRouteOptions(item, page));
 }
 
+function reviewAssignmentFilterValues(value) {
+  return Array.isArray(value) ? value : parseFilterList(value || "");
+}
+function reviewAssignmentSourceHref(filter = {}) {
+  return pageUrl("review", {
+    issue: "", runId: filter.model_run_id || "", comparisonStatus: filter.comparison_status || filter.comparison || "all",
+    search: filter.search || "", issueIds: reviewAssignmentFilterValues(filter.issue_ids),
+    gtLabel: reviewAssignmentFilterValues(filter.gt_label), modelLabel: reviewAssignmentFilterValues(filter.model_label),
+    annotationAuthor: reviewAssignmentFilterValues(filter.annotation_author), reviewStatus: reviewAssignmentFilterValues(filter.review_status),
+    labelStates: reviewAssignmentFilterValues(filter.label_state), commentState: filter.comment_state || "all",
+    workAssignee: reviewAssignmentFilterValues(filter.work_assignee), workSplitId: filter.work_split_id || "",
+    clusterKey: filter.missing_evidence || "", exclusion: filter.exclusion || "all",
+    baselines: filter.baselines || filter.baseline_scopes || [], forceBaselines: true,
+    workflowMode: "model_review_and_case_label", casePage: 1, casePageSize: 20,
+  });
+}
+const REVIEW_ALLOCATION_DRAFT_KEY = "manual-review-allocation-draft-v1";
+function saveReviewAllocationDraft(draft) {
+  try {
+    if (draft) sessionStorage.setItem(REVIEW_ALLOCATION_DRAFT_KEY, JSON.stringify(draft));
+    else sessionStorage.removeItem(REVIEW_ALLOCATION_DRAFT_KEY);
+  } catch (_) { /* The current page still retains its in-memory draft. */ }
+  pendingReviewAllocationDraft = draft;
+}
+let pendingReviewAllocationDraft = null;
+async function restoreReviewAllocationDraft() {
+  if (!state.session?.is_admin || state.activePage !== "review-assignments" || !$("#workSplitPanel")?.hidden) return;
+  let draft = pendingReviewAllocationDraft;
+  if (!draft) {
+    try { draft = JSON.parse(sessionStorage.getItem(REVIEW_ALLOCATION_DRAFT_KEY) || "null"); } catch (_) { return; }
+  }
+  if (!draft?.filters?.model_run_id) return;
+  pendingReviewAllocationDraft = null;
+  const params = new URLSearchParams({ ...draft.filters, page: "1", page_size: "1", include_thumbnail: "false" });
+  const result = await api(`/api/cases?${params}`);
+  if (state.activePage !== "review-assignments") return;
+  if (!result.total) { showToast("原筛选范围当前没有 Issue，请返回调整。", true); return; }
+  await openWorkSplitDialog({ ...draft, dirty: false, total: Number(result.total) });
+}
 function reviewAssignmentMetricMarkup(label, value, note = "") {
   return `<article class="review-assignment-metric"><small>${escapeHtml(label)}</small><strong>${escapeHtml(value)}</strong>${note ? `<span>${escapeHtml(note)}</span>` : ""}</article>`;
 }
@@ -108,6 +139,11 @@ function reviewAssignmentMemberMarkup(member) {
 }
 
 function renderReviewAssignmentBatch(item) {
+  item = { ...item,
+    created_at: item.source_created_at || item.created_at,
+    created_by: item.source_created_by || item.created_by,
+    filter_snapshot: item.source_filter_snapshot || item.filter_snapshot,
+  };
   const percent = reviewAssignmentPercent(item.completion_ratio);
   const status = item.is_current
     ? uiText("当前分配", "Current")
@@ -127,7 +163,7 @@ function renderReviewAssignmentBatch(item) {
     </header>
     <div class="review-assignment-progress"><div class="review-assignment-progress-heading"><span>${escapeHtml(uiText("整体进度", "Overall progress"))}</span><strong>${escapeHtml(`${item.completed_count || 0} / ${item.assignment_count || 0} · ${percent}%`)}</strong></div><div class="review-assignment-progress-track"><span style="width:${percent}%"></span></div></div>
     <div class="review-assignment-member-grid">${(item.members || []).map(reviewAssignmentMemberMarkup).join("") || `<span class="quiet-meta">${escapeHtml(uiText("没有成员记录", "No member data"))}</span>`}</div>
-    <footer class="review-assignment-batch-footer"><span>${escapeHtml(`${item.total_count || 0} ${uiText("个 Issue", "Issues")} · ${changeNote}`)}</span><div class="review-assignment-batch-actions">${taskLinks}<button class="button button-quiet" type="button" data-open-review-assignment="${escapeHtml(item.split_id)}">${escapeHtml(uiText("查看任务明细", "View task detail"))}</button></div></footer>
+    <footer class="review-assignment-batch-footer"><span>${escapeHtml(`${item.total_count || 0} ${uiText("个 Issue", "Issues")} · ${changeNote}`)}</span><div class="review-assignment-batch-actions">${Object.keys(item.filter_snapshot || {}).some((key) => ["baselines", "baseline_scopes", "comparison_status", "search", "issue_ids"].includes(key)) ? `<a class="button button-quiet" href="${escapeHtml(reviewAssignmentSourceHref({ ...item.filter_snapshot, model_run_id: item.model_run_id || item.filter_snapshot.model_run_id }))}">${escapeHtml(uiText("查看原筛选", "View source filter"))}</a>` : ""}${taskLinks}<button class="button button-quiet" type="button" data-open-review-assignment="${escapeHtml(item.split_id)}">${escapeHtml(uiText("查看任务明细", "View task detail"))}</button></div></footer>
   </article>`;
 }
 
@@ -142,7 +178,7 @@ function renderReviewAssignmentList() {
     return;
   }
   if (!store.splits.length) {
-    root.innerHTML = `<div class="review-assignment-empty"><strong>${escapeHtml(uiText("还没有生成过均分任务", "No split assignments yet"))}</strong><span>${escapeHtml(uiText("回到 Review 页面筛选 Issue 后，点击“均分任务”即可创建。", "Filter Issues in Review, then choose Split work to create one."))}</span></div>`;
+    root.innerHTML = `<div class="review-assignment-empty"><strong>${escapeHtml(uiText("还没有生成过均分任务", "No split assignments yet"))}</strong><span>${escapeHtml(uiText("先在判错复核图库筛选，再点击“均分任务”配置人员。", "Choose a Model Run and Issue scope above, then assign reviewers."))}</span></div>`;
     if (status) status.textContent = "";
     return;
   }
@@ -167,14 +203,12 @@ function reviewAssignmentTaskStatusMarkup(item) {
 }
 
 function reviewAssignmentIssueHref(item) {
+  const detail = state.reviewAssignments.detail || {};
   return pageUrl("review", {
+    ...reviewAssignmentRouteOptions(detail, "review"),
     issue: item.issue_id,
-    runId: item.split_model_run_id || state.reviewAssignments.detail?.model_run_id || "",
-    comparisonStatus: "all",
+    runId: item.split_model_run_id || detail.model_run_id || "",
     workAssignee: [item.assignee],
-    workSplitId: state.reviewAssignments.detail?.split_id || "",
-    issueIds: [],
-    casePage: 1,
   });
 }
 
@@ -330,6 +364,7 @@ async function loadReviewAssignmentDetail(
   const store = state.reviewAssignments;
   const normalized = String(splitId || "").trim();
   if (!normalized) return;
+  if (store.selectedSplitId !== normalized) store.detail = null;
   store.selectedSplitId = normalized;
   const requestSeq = ++store.detailRequestSeq;
   store.detailLoading = true;
@@ -353,6 +388,7 @@ async function loadReviewAssignmentDetail(
         "",
         reviewAssignmentDetailUrl(normalized)
       );
+      $("#reviewAssignmentDetail")?.scrollIntoView({ behavior: "smooth", block: "start" });
     }
   } catch (error) {
     if (requestSeq !== store.detailRequestSeq) return;
@@ -365,12 +401,14 @@ async function loadReviewAssignmentDetail(
 
 async function loadReviewAssignments({ force = false, splitId = "", reloadDetail = true } = {}) {
   const store = state.reviewAssignments;
+  if (!state.modelRuns?.length) await loadRuns({ preserveEmpty: true });
   if (!state.accessUsers?.length && state.session?.is_admin && typeof loadAccessUsers === "function") {
     await loadAccessUsers();
   }
   if (!force && store.splits.length) {
     renderReviewAssignmentPage();
     if (splitId && reloadDetail) await loadReviewAssignmentDetail(splitId, { updateRoute: false });
+    await restoreReviewAllocationDraft();
     return;
   }
   const requestSeq = ++store.requestSeq;
@@ -382,6 +420,7 @@ async function loadReviewAssignments({ force = false, splitId = "", reloadDetail
     store.splits = result.items || [];
     store.loading = false;
     renderReviewAssignmentPage();
+    await restoreReviewAllocationDraft();
     const selected = splitId || store.selectedSplitId;
     if (selected && reloadDetail) {
       store.page = 1;
@@ -430,9 +469,13 @@ function bindReviewAssignmentsPage() {
   $("#reviewAssignmentsRefresh")?.addEventListener("click", () => {
     loadReviewAssignments({ force: true, splitId: state.reviewAssignments.selectedSplitId }).catch((error) => showToast(error.message, true));
   });
-  $("#reviewAssignmentsGoReview")?.addEventListener("click", () => navigatePage("review"));
+  $("#reviewAssignmentsGoReview")?.addEventListener("click", () => {
+    if (workSplitDraft?.filters) window.location.assign($("#workSplitReturnSource")?.href || reviewAssignmentSourceHref(workSplitDraft.filters));
+    else navigatePage("review");
+  });
   $("#reviewAssignmentDetailClose")?.addEventListener("click", () => {
     const store = state.reviewAssignments;
+    store.detailRequestSeq += 1;
     store.selectedSplitId = "";
     store.detail = null;
     store.detailLoading = false;

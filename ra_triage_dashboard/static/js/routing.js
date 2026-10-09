@@ -71,6 +71,7 @@ function applyUiLanguage(language, { persist = true } = {}) {
   renderSystemStatus();
   applySidebarState();
   renderSession();
+  enhanceDashboardSelects();
   // Dynamic filters / pickers rebuild option labels from the active catalog.
   const refreshers = [
     "renderReviewCatalogFilters",
@@ -156,6 +157,39 @@ function applyUiLanguage(language, { persist = true } = {}) {
   } catch (_) {}
   try {
     if (typeof renderRunManager === "function" && state.modelRuns?.length) renderRunManager();
+  } catch (_) {}
+  try {
+    if (typeof renderWorkSplitReviewersPerIssuePicker === "function" && $("#workSplitPanel") && !$("#workSplitPanel").hidden) {
+      renderWorkSplitPersonPickers();
+      renderWorkSplitReviewersPerIssuePicker(workSplitReviewersPerIssue());
+      updateWorkSplitEstimate();
+      renderAssignmentNameStatus("review");
+      const summary = $("#workSplitSummary");
+      const total = workSplitTotal();
+      if (summary) summary.textContent = total ? t("work.summary_n", { n: total }) : t("work.no_issues");
+    }
+  } catch (_) {}
+  try {
+    if (typeof renderLabelingTaskReviewersPerIssuePicker === "function" && state.activePage === "labeling-new-task") {
+      renderLabelingTaskPersonPickers();
+      renderLabelingTaskReviewersPerIssuePicker(labelingTaskReviewersPerIssue());
+      updateLabelingTaskEstimate();
+      renderAssignmentNameStatus("labeling");
+      renderLabelingTaskHistory();
+      const summary = $("#labelingTaskSummary");
+      const total = Number(state.caseLabeling.data?.total || 0);
+      if (summary) summary.textContent = total ? t("work.summary_n", { n: total }) : t("work.no_issues");
+    }
+  } catch (_) {}
+  try {
+    if (state.activePage === "intent-experiments" && typeof initializeIntentExperimentSelects === "function") {
+      initializeIntentExperimentSelects();
+      initializeIntentExperimentEditSelect();
+      renderIntentExperimentMembers();
+      renderIntentExperiments();
+      updateIntentExperimentEstimate();
+      setIntentExperimentFormAvailability(Boolean(intentAvailableDatasets().length));
+    }
   } catch (_) {}
   try {
     if (typeof updatePredictionBatchCount === "function") updatePredictionBatchCount();
@@ -282,6 +316,9 @@ function normalizedReviewRouteFilters(params) {
   const reviewStatus = parseFilterList(params.get("status")).filter((value) =>
     ["pending", "reviewed", "needs_gt_review"].includes(value)
   );
+  const labelStates = parseFilterList(params.get("label_state")).filter((value) =>
+    ["none", "pending", "resolved", "conflict", "stale", "matches_gt", "needs_gt_review", "unknown"].includes(value)
+  );
   const rawPage = Number.parseInt(params.get("page") || "1", 10);
   const rawPageSize = Number.parseInt(
     params.get("page_size") || String(DEFAULT_CASE_PAGE_SIZE),
@@ -303,12 +340,16 @@ function normalizedReviewRouteFilters(params) {
     ),
     annotationAuthor: parseFilterList(params.get("reviewer")),
     reviewStatus,
+    labelStates,
     workAssignee: parseFilterList(
       params.get("work_assignee") || params.get("assignee") || ""
     ),
-    workSplitId: /^split-[A-Za-z0-9]+$/.test(params.get("work_split") || "")
+    workSplitId: /^(?:split|campaign)-[A-Za-z0-9]+$/.test(params.get("work_split") || "")
       ? params.get("work_split")
       : "",
+    workflowMode: params.get("workflow") === "model_only"
+      ? "model_review_only"
+      : "model_review_and_case_label",
     exclusion,
     clusterKey: params.get("evidence") || "",
     casePage: Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1,
@@ -357,7 +398,7 @@ function normalizedAnalysisRouteFilters(params) {
     workAgreement: ["pending", "agreed", "conflict"].includes(params.get("work_agreement"))
       ? params.get("work_agreement")
       : "all",
-    workSplitId: /^split-[A-Za-z0-9]+$/.test(params.get("work_split") || "")
+    workSplitId: /^(?:split|campaign)-[A-Za-z0-9]+$/.test(params.get("work_split") || "")
       ? params.get("work_split")
       : "",
     page: Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1,
@@ -400,23 +441,42 @@ function normalizedCaseLabelingRouteFilters(params) {
   const rawPageSize = Number.parseInt(
     params.get("page_size") || String(DEFAULT_CASE_PAGE_SIZE), 10
   );
-  const status = String(params.get("status") || "all").trim().toLowerCase();
-  const label = String(params.get("label") || "all").trim();
-  const exclusion = String(params.get("exclusion") || "all").trim().toLowerCase();
-  const author = String(params.get("author") || "").trim().toLowerCase();
-  const assignee = String(params.get("assignee") || "").trim().toLowerCase();
+  const status = parseFilterList(params.get("status")).filter((value) =>
+    ["pending", "resolved", "conflict"].includes(value)
+  );
+  const label = parseFilterList(params.get("label")).filter((value) =>
+    LABELS.includes(value)
+  );
+  const exclusion = parseFilterList(params.get("exclusion")).filter((value) =>
+    ["excluded", "active"].includes(value)
+  );
+  const author = parseFilterList(params.get("author")).map((value) => value.toLowerCase()).filter((value) =>
+    /^[a-z0-9._@-]{1,128}$/.test(value)
+  );
+  const assignee = parseFilterList(params.get("assignee")).map((value) => value.toLowerCase()).filter((value) =>
+    /^[a-z0-9._@-]{1,128}$/.test(value)
+  );
   const cluster = String(params.get("cluster") || "").trim();
+  const gt = parseFilterList(params.get("gt")).filter((value) => LABELS.includes(value));
+  const commentState = parseFilterList(params.get("comment_state")).filter((value) =>
+    ["with", "without"].includes(value)
+  );
   return {
-    taskId: /^split-[A-Za-z0-9]+$/.test(params.get("task") || "")
+    taskId: /^(?:split|campaign)-[A-Za-z0-9]+$/.test(params.get("task") || "")
       ? params.get("task")
       : "",
     search: params.get("q") || "",
-    status: ["pending", "resolved", "conflict"].includes(status) ? status : "all",
-    author: /^[a-z0-9._@-]{1,128}$/.test(author) ? author : "",
-    assignee: /^[a-z0-9._@-]{1,128}$/.test(assignee) ? assignee : "",
-    cluster: /^(pair|scenario):.{1,200}$/.test(cluster) ? cluster : "",
-    label: ["误触发", "正确触发", "无需协助"].includes(label) ? label : "all",
-    exclusion: ["excluded", "active"].includes(exclusion) ? exclusion : "all",
+    issueIds: parseFilterList(params.get("issue_ids")).filter((value) =>
+      ISSUE_QUERY_ID_RE.test(value)
+    ),
+    status,
+    author,
+    assignee,
+    cluster: cluster === "adjudicated" || /^(pair|scenario):.{1,200}$/.test(cluster) ? cluster : "",
+    label,
+    gt,
+    commentState,
+    exclusion,
     page: Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1,
     pageSize: CASE_PAGE_SIZES.includes(rawPageSize)
       ? rawPageSize
@@ -463,9 +523,21 @@ function parsePageRoute() {
         .filter((value, index, values) => /^[A-Za-z0-9_-]{3,128}$/.test(value) && values.indexOf(value) === index);
   const legacyImport = pathname === "/import";
   const reviewFilters = normalizedReviewRouteFilters(params);
+  const legacyModelReviewCampaign = pathname === "/campaigns" && params.get("purpose") === "model_review";
+  const uxAlias = legacyModelReviewCampaign
+    ? "review"
+    : pathname === "/run-collections"
+    ? "run-collections"
+    : pathname === "/multi-run-evaluation"
+      ? "run-collections"
+      : pathname === "/labeling-experiments"
+        ? "labeling-new-task"
+        : pathname === "/labeling-summary"
+          ? "labeling-summary"
+          : "";
   return {
     page:
-      match?.[0] ||
+      uxAlias || match?.[0] ||
       (pathname === "/inference"
         ? "prediction"
         : legacyImport
@@ -480,6 +552,8 @@ function parsePageRoute() {
     runId: params.get("run") || "",
     openComments: params.get("comments") === "1",
     commentId: Number.parseInt(params.get("comment") || "0", 10) || 0,
+    discussionChannel: ["case", "campaign", "both"].includes(params.get("channel"))
+      ? params.get("channel") : "",
     comparisonStatus: routeReviewComparisonStatus(params),
     failureOnly: params.has("failure") ? params.get("failure") === "1" : params.has("run") ? false : null,
     ...reviewFilters,
@@ -501,6 +575,16 @@ function parsePageRoute() {
     intentSummaryAxis: ["routing", "lane_change"].includes(params.get("axis")) ? params.get("axis") : "all",
     intentSummaryCommentQuery: (params.get("q") || "").trim().slice(0, 80),
     reviewAssignmentSplitId: String(params.get("split") || "").trim(),
+    campaignId: String(params.get("campaign") || "").trim(),
+    campaignPurpose: ["labeling", "model_review"].includes(params.get("purpose"))
+      ? params.get("purpose")
+      : ["/labeling-experiments", "/labeling-summary"].includes(pathname)
+        ? "labeling"
+        : "",
+    legacyModelReviewCampaign,
+    campaignLifecycle: params.get("lifecycle") || "all",
+    campaignQuery: String(params.get("q") || "").slice(0, 128),
+    campaignGroupId: String(params.get("group") || "").trim(),
     // Issue / GT 上传已从页面移除；旧链接统一落到安全的模型结果导入区。
     importKind:
       params.get("import") === "model" ||
@@ -529,6 +613,7 @@ function currentReviewRouteOptions(overrides = {}) {
         ? reviewerFilterSelection("review")
         : getMultiFilterValues($("#reviewerFilter")),
     reviewStatus: getMultiFilterValues($("#reviewStatusFilter")),
+    labelStates: getMultiFilterValues($("#sharedLabelStateFilter")),
     commentState:
       typeof selectedReviewDiscussionFilter === "function"
         ? selectedReviewDiscussionFilter()
@@ -538,6 +623,9 @@ function currentReviewRouteOptions(overrides = {}) {
         ? workAssigneeFilterSelection()
         : getMultiFilterValues($("#workAssigneeFilter")),
     workSplitId: state.reviewWorkSplitId || "",
+    baselines: state.reviewTaskContext?.baseline_ids || state.selectedBaselineIds,
+    forceBaselines: Boolean(state.reviewTaskContext),
+    workflowMode: state.reviewWorkflowMode || "model_review_and_case_label",
     exclusion:
       typeof selectedReviewExclusionFilter === "function"
         ? selectedReviewExclusionFilter()
@@ -576,12 +664,18 @@ function applyReviewRouteControls(route) {
   setMultiFilterValues($("#annotationFilter"), route.modelLabel);
   setMultiFilterValues($("#workAssigneeFilter"), route.workAssignee);
   state.reviewWorkSplitId = route.workSplitId || "";
+  state.reviewWorkflowMode = route.workflowMode || "model_review_and_case_label";
+  if ($("#reviewWorkflowMode")) {
+    $("#reviewWorkflowMode").value = state.reviewWorkflowMode;
+    enhanceNativeUiSelect($("#reviewWorkflowMode"));
+  }
   if (state.reviewWorkSplitId) {
     state.availableReviewWorkSplitId = state.reviewWorkSplitId;
   }
   renderReviewWorkSplitPicker?.(state.reviewWorkSplitId);
   setMultiFilterValues($("#reviewerFilter"), route.annotationAuthor);
   setMultiFilterValues($("#reviewStatusFilter"), route.reviewStatus);
+  setMultiFilterValues($("#sharedLabelStateFilter"), route.labelStates);
   setMultiFilterValues(
     $("#reviewDiscussionFilter"),
     route.commentState && route.commentState !== "all" ? [route.commentState] : []
@@ -714,22 +808,69 @@ function pageUrl(page, options = {}) {
     if (labeling.issue) url.searchParams.set("issue", labeling.issue);
     if (labeling.taskId) url.searchParams.set("task", labeling.taskId);
     if (labeling.search) url.searchParams.set("q", labeling.search);
-    if (labeling.status && labeling.status !== "all") {
-      url.searchParams.set("status", labeling.status);
-    }
-    if (labeling.author) url.searchParams.set("author", labeling.author);
-    if (labeling.assignee) url.searchParams.set("assignee", labeling.assignee);
+    const issueIds = (labeling.issueIds || []).filter((value) =>
+      ISSUE_QUERY_ID_RE.test(String(value))
+    );
+    if (issueIds.length) url.searchParams.set("issue_ids", issueIds.join(","));
+    const statuses = joinFilterList(labeling.status);
+    const authors = joinFilterList(labeling.author);
+    const assignees = joinFilterList(labeling.assignee);
+    if (statuses) url.searchParams.set("status", statuses);
+    if (authors) url.searchParams.set("author", authors);
+    if (assignees) url.searchParams.set("assignee", assignees);
     if (labeling.cluster) url.searchParams.set("cluster", labeling.cluster);
-    if (labeling.label && labeling.label !== "all") {
-      url.searchParams.set("label", labeling.label);
-    }
-    if (labeling.exclusion && labeling.exclusion !== "all") {
-      url.searchParams.set("exclusion", labeling.exclusion);
-    }
+    if (labeling.discussionChannel) url.searchParams.set("channel", labeling.discussionChannel);
+    const labels = joinFilterList(labeling.label);
+    const gtLabels = joinFilterList(labeling.gt);
+    const commentStates = joinFilterList(labeling.commentState);
+    const exclusions = joinFilterList(labeling.exclusion);
+    if (labels) url.searchParams.set("label", labels);
+    if (gtLabels) url.searchParams.set("gt", gtLabels);
+    if (commentStates) url.searchParams.set("comment_state", commentStates);
+    if (exclusions) url.searchParams.set("exclusion", exclusions);
     if (Number(labeling.page) > 1) url.searchParams.set("page", String(labeling.page));
     if (Number(labeling.pageSize) !== DEFAULT_CASE_PAGE_SIZE) {
       url.searchParams.set("page_size", String(labeling.pageSize));
     }
+  }
+  if (page === "labeling-summary") {
+    const summary = typeof labelSummaryRouteOptions === "function"
+      ? labelSummaryRouteOptions(options)
+      : options;
+    if (summary.search) url.searchParams.set("q", summary.search);
+    const issueIds = (summary.issueIds || []).filter((value) =>
+      ISSUE_QUERY_ID_RE.test(String(value))
+    );
+    if (issueIds.length) url.searchParams.set("issue_ids", issueIds.join(","));
+    if (summary.taskId) url.searchParams.set("task", summary.taskId);
+    const statuses = joinFilterList(summary.status);
+    const authors = joinFilterList(summary.author);
+    const assignees = joinFilterList(summary.assignee);
+    const labels = joinFilterList(summary.label);
+    const gtLabels = joinFilterList(summary.gt);
+    const commentStates = joinFilterList(summary.commentState);
+    const exclusions = joinFilterList(summary.exclusion);
+    if (statuses) url.searchParams.set("status", statuses);
+    if (authors) url.searchParams.set("author", authors);
+    if (assignees) url.searchParams.set("assignee", assignees);
+    if (labels) url.searchParams.set("label", labels);
+    if (gtLabels) url.searchParams.set("gt", gtLabels);
+    if (commentStates) url.searchParams.set("comment_state", commentStates);
+    if (exclusions) url.searchParams.set("exclusion", exclusions);
+    if (summary.cluster) url.searchParams.set("cluster", summary.cluster);
+    if (Number(summary.page) > 1) url.searchParams.set("page", String(summary.page));
+    if (Number(summary.pageSize) !== DEFAULT_CASE_PAGE_SIZE) {
+      url.searchParams.set("page_size", String(summary.pageSize));
+    }
+  }
+  if (page === "campaigns") {
+    if (options.campaignId) url.searchParams.set("campaign", String(options.campaignId));
+    if (options.groupId) url.searchParams.set("group", String(options.groupId));
+    if (options.purpose) url.searchParams.set("purpose", String(options.purpose));
+    if (options.lifecycle && options.lifecycle !== "all") {
+      url.searchParams.set("lifecycle", String(options.lifecycle));
+    }
+    if (options.query) url.searchParams.set("q", String(options.query).slice(0, 128));
   }
   if (page === "review") {
     const review = currentReviewRouteOptions(options);
@@ -753,16 +894,21 @@ function pageUrl(page, options = {}) {
     const modelLabel = joinFilterList(review.modelLabel);
     const reviewer = joinFilterList(review.annotationAuthor);
     const status = joinFilterList(review.reviewStatus);
+    const labelState = joinFilterList(review.labelStates);
     const assignee = joinFilterList(review.workAssignee);
     if (gt) url.searchParams.set("gt", gt);
     if (modelLabel) url.searchParams.set("model_label", modelLabel);
     if (reviewer) url.searchParams.set("reviewer", reviewer);
     if (status) url.searchParams.set("status", status);
+    if (labelState) url.searchParams.set("label_state", labelState);
     if (review.commentState && review.commentState !== "all") {
       url.searchParams.set("comment_state", review.commentState);
     }
     if (assignee) url.searchParams.set("work_assignee", assignee);
     if (review.workSplitId) url.searchParams.set("work_split", review.workSplitId);
+    if (review.workflowMode === "model_review_only") {
+      url.searchParams.set("workflow", "model_only");
+    }
     if (review.exclusion && review.exclusion !== "all") {
       url.searchParams.set("exclusion", review.exclusion);
     }
@@ -884,6 +1030,12 @@ function pageUrl(page, options = {}) {
     if (Number(comparison.pageSize) !== 10) {
       url.searchParams.set("page_size", String(comparison.pageSize));
     }
+    const currentParams = new URLSearchParams(window.location.search);
+    ["collection_id", "collection_revision", "evaluation_id", "evaluation_page", "evaluation_q", "evaluation_reference_run_id"]
+      .forEach((key) => {
+        const value = currentParams.get(key);
+        if (value) url.searchParams.set(key, value);
+      });
   }
   if (page === "intent") {
     const intent = typeof intentRouteOptions === "function"
@@ -905,7 +1057,9 @@ function pageUrl(page, options = {}) {
       ? normalizeBaselineIds(options.baselines).join(",")
       : selectedBaselineQueryValue();
   const defaults = defaultBaselineIdsFromConfig().join(",");
-  if (baselineValue && baselineValue !== defaults) {
+  if (baselineValue && options.forceBaselines) {
+    url.searchParams.set("baselines", baselineValue);
+  } else if (baselineValue && baselineValue !== defaults) {
     url.searchParams.set("baselines", baselineValue);
   } else if (baselineValue && baselineValue.split(",").length > 1) {
     url.searchParams.set("baselines", baselineValue);
@@ -940,6 +1094,9 @@ function showPage(
     issues = [],
     source = "",
     runId = "",
+    openComments = false,
+    commentId = 0,
+    discussionChannel = "",
     importKind = "",
     runSourceTab = "",
     restoreRoute = false,
@@ -952,6 +1109,11 @@ function showPage(
     intentAssignees = null,
     intentExperimentId = "",
     reviewAssignmentSplitId = "",
+    campaignId = "",
+    campaignPurpose = "",
+    campaignLifecycle = "all",
+    campaignQuery = "",
+    campaignGroupId = "",
   } = {}
 ) {
   const target = PAGE_ROUTES[page] ? page : "review";
@@ -961,6 +1123,9 @@ function showPage(
   }
   state.activePage = target;
   document.body.dataset.activePage = target;
+  if (typeof ensureRunCollectionsDedicatedPage === "function") {
+    ensureRunCollectionsDedicatedPage(target);
+  }
   document.querySelectorAll("[data-page]").forEach((section) => {
     section.classList.toggle("hidden", section.dataset.page !== target);
   });
@@ -986,6 +1151,12 @@ function showPage(
       loadRunComparison({ historyMode: historyMode || "replace" }).catch((error) => showToast(error.message, true));
     }
   }
+  if (target === "run-collections") {
+    renderRunCollectionSelectors?.();
+    if (loadPageData && typeof loadRunCollectionsWorkbench === "function") {
+      loadRunCollectionsWorkbench({ restoreRoute }).catch((error) => showToast(error.message, true));
+    }
+  }
   if (["intent", "intent-experiments", "intent-summary"].includes(target)) {
     const allowed = state.session.can_view_intent;
     if (!state.session.identity_pending && !allowed) {
@@ -1003,8 +1174,8 @@ function showPage(
     }
   }
   if (target === "labeling") {
-    if (!state.session.identity_pending && !state.session.is_admin) {
-      showToast(uiText("Case 标注内测仅限管理员。", "Case labeling preview is admin-only."), true);
+    if (!state.session.identity_pending && !hasDashboardWriteRole()) {
+      showToast(uiText("问题标注需要 writer 或管理员权限。", "Case labeling requires writer or admin access."), true);
       return showPage("review", { historyMode: historyMode || "replace" });
     }
     if (loadPageData && typeof enterCaseLabeling === "function") {
@@ -1013,7 +1184,7 @@ function showPage(
   }
   if (target === "labeling-new-task") {
     if (!state.session.identity_pending && !state.session.is_admin) {
-      showToast(uiText("Case 标注内测仅限管理员。", "Case labeling preview is admin-only."), true);
+      showToast(uiText("实验分配仅限管理员。", "Experiment assignment requires admin access."), true);
       return showPage("review", { historyMode: historyMode || "replace" });
     }
     if (loadPageData && typeof enterLabelingNewTask === "function") {
@@ -1059,6 +1230,25 @@ function showPage(
     loadReviewAssignments({
       splitId: reviewAssignmentSplitId,
       force: true,
+    }).catch((error) => showToast(error.message, true));
+  }
+  if (target === "labeling-summary" && !state.session.identity_pending && !hasDashboardWriteRole()) {
+    return showPage("review", { historyMode: "replace" });
+  }
+  if (target === "labeling-summary" && loadPageData) {
+    loadLabelingSummary().catch((error) => showToast(error.message, true));
+  }
+  if (target === "campaigns" && loadPageData && typeof loadCampaigns === "function") {
+    loadCampaigns({
+      campaignId,
+      purpose: campaignPurpose,
+      lifecycle: campaignLifecycle,
+      query: campaignQuery,
+      groupId: campaignGroupId,
+      discussionIssue: openComments ? issue : "",
+      openComments,
+      commentId,
+      discussionChannel,
     }).catch((error) => showToast(error.message, true));
   }
   if (target === "intent-experiments" && loadPageData && typeof loadIntentExperimentAdmin === "function") {
@@ -1124,14 +1314,23 @@ function showPage(
       ? currentReviewRouteOptions({ issue })
       : target === "labeling-new-task" && typeof caseLabelingRouteOptions === "function"
         ? caseLabelingRouteOptions({ issue: state.caseLabeling.issueId || "" })
+      : target === "labeling-summary" && typeof labelSummaryRouteOptions === "function"
+        ? labelSummaryRouteOptions()
       : target === "analysis"
         ? currentAnalysisRouteOptions()
         : target === "trail-update"
           ? (typeof currentTrailUpdateRouteOptions === "function"
               ? currentTrailUpdateRouteOptions()
               : { runId: state.trailUpdate?.runId || "" })
-        : target === "comparison" && typeof runComparisonRouteOptions === "function"
+      : target === "comparison" && typeof runComparisonRouteOptions === "function"
           ? runComparisonRouteOptions()
+        : target === "campaigns"
+          ? {
+              campaignId,
+              purpose: campaignPurpose,
+              lifecycle: campaignLifecycle,
+              query: campaignQuery,
+            }
         : target === "intent" && typeof intentRouteOptions === "function"
           ? intentRouteOptions({
               datasetId: intentDatasetId,

@@ -17,6 +17,12 @@ const EXPECTED_OUTPUT_BY_TAG_GROUP = {
   no_assist: "无需协助",
 };
 
+const MODEL_REVIEW_STATUS_OPTIONS = [
+  { value: "pending", labelZh: "待开始", labelEn: "Pending" },
+  { value: "in_progress", labelZh: "复核中", labelEn: "In progress" },
+  { value: "completed", labelZh: "已完成", labelEn: "Completed" },
+];
+
 function annotationExpectedOutput(annotation) {
   if (annotation && Object.prototype.hasOwnProperty.call(annotation, "expected_output")) {
     return String(annotation.expected_output || "").trim();
@@ -183,11 +189,16 @@ function renderDetail(caseData) {
     ? `<a class="detail-id detail-id-link" href="${escapeHtml(issueUrl)}" target="_blank" rel="noreferrer" title="打开 Voyager Issue">${issueId}</a>`
     : `<span class="detail-id">${issueId}</span>`;
   const issueIdMarkup = `<span class="detail-issue-id-group">${issueIdLink}<button class="detail-copy-id-button" type="button" data-copy-issue-id aria-label="复制 Issue ID ${issueId}" title="复制 Issue ID"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="7" y="6" width="9" height="10" rx="2"></rect><path d="M13 6V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg></button></span>`;
+  const externalLinksMarkup = detailExternalLinksMarkup(caseData);
   ensureDetailMediaState(caseData);
   const predCount = (caseData.predictions || []).length;
   const modelHistoryButton = `<button class="history-inline-button" id="modelHistoryLaunchButton" type="button" data-open-history="model" aria-keyshortcuts="M" title="展开或收起模型预测历史（M）"><span class="ui-lang-zh">评测 Run 历史 · ${predCount} 条</span><span class="ui-lang-en">Run history · ${predCount}</span><kbd class="review-control-shortcut" aria-hidden="true">M</kbd></button>`;
   const predictionComparable = MODEL_LABELS.includes(primary?.model_label);
   const predictionMatches = modelLabelMatchesGt(primary?.model_label, caseData.gt_label);
+  const currentReview = typeof currentReviewAnnotation === "function"
+    ? currentReviewAnnotation(caseData)
+    : null;
+  const sharedLabelStateRow = `<div class="shared-label-state-detail"><strong><span class="ui-lang-zh">共享标签</span><span class="ui-lang-en">Shared label</span></strong>${sharedLabelStateButtonMarkup({ issue_id: caseData.issue_id, label_state: caseData.label_state }, { showEmpty: true })}<span class="shared-label-detail-divider" aria-hidden="true"></span>${currentRunReviewStatusMarkup({ issue_id: caseData.issue_id, annotation: currentReview })}</div>`;
   const compareText = !predictionComparable
     ? `<span class="ui-lang-zh">不可比较</span><span class="ui-lang-en">N/A</span>`
     : predictionMatches
@@ -197,7 +208,7 @@ function renderDetail(caseData) {
     <div class="detail-header">
       <div class="detail-title-row">
         <div class="detail-title-group">
-          <div class="detail-title"><h2><span class="ui-lang-zh">问题详情</span><span class="ui-lang-en">Issue Details</span></h2>${issueIdMarkup}<span id="detailExternalLinks" class="detail-external-links">${detailExternalLinksMarkup(caseData)}</span></div>
+          <div class="detail-title"><h2><span class="ui-lang-zh">问题详情</span><span class="ui-lang-en">Issue Details</span></h2>${issueIdMarkup}<span id="detailExternalLinks" class="detail-external-links" ${externalLinksMarkup ? "" : "hidden"}>${externalLinksMarkup}</span></div>
         </div>
         <div class="detail-navigation">
           <div class="case-detail-pager">
@@ -227,6 +238,7 @@ function renderDetail(caseData) {
           </div>
         </div>
       </div>
+      ${sharedLabelStateRow}
       ${caseData.review_note ? `<details class="review-note-details"><summary><span class="ui-lang-zh">查看历史备注</span><span class="ui-lang-en">Show legacy note</span></summary><div class="review-note"><span><span class="ui-lang-zh">历史备注</span><span class="ui-lang-en">Legacy note</span></span>${escapeHtml(caseData.review_note)}</div></details>` : ""}
     </div>
     ${currentRunOutputMarkup(caseData, primary)}
@@ -347,6 +359,12 @@ function syncReviewFormFromCase(caseData) {
     note.value = previous.note || "";
     updateReviewMentionComposer(note);
   }
+  const modelReviewStatusInput = $("#modelReviewStatusInput");
+  if (modelReviewStatusInput) {
+    modelReviewStatusInput.value = String(
+      previous.model_review_status || (previous.note ? "completed" : "pending")
+    );
+  }
   const author = $("#annotationAuthor");
   if (author && !(state.session.verified && state.session.username)) {
     author.value = state.session.username || previous.author || "";
@@ -373,6 +391,8 @@ function syncReviewFormFromCase(caseData) {
 
 function renderReview(caseData) {
   const reviewRunId = currentReviewRunId(caseData);
+  const runBoundModelReview = Boolean(reviewRunId);
+  const combinedMode = syncReviewWorkflowMode(caseData) === "model_review_and_case_label";
   const runAnnotations = reviewAnnotationsForCurrentRun(caseData);
   const allAnnotations = reviewAnnotationsForAllRuns(caseData);
   const sourceSuggestion = currentReviewSourceSuggestion(caseData);
@@ -412,6 +432,39 @@ function renderReview(caseData) {
     : expectedOutput === String(caseData.gt_label || "")
       ? "reviewed"
       : "needs_gt_review";
+  const modelReviewStatus = String(
+    previous.model_review_status || (previous.note ? "completed" : "pending")
+  );
+  const sharedLabelState = caseData.label_state || {};
+  const sharedExpectedOutput = String(sharedLabelState.state || "") === "resolved"
+    && LABELS.includes(String(sharedLabelState.expected_output || ""))
+      ? String(sharedLabelState.expected_output)
+      : "";
+  const sharedVisual = sharedLabelStateVisual(sharedLabelState);
+  const readonlyExpectedOption = sharedExpectedOutput
+    ? EXPECTED_OUTPUT_OPTIONS.find((item) => item.value === sharedExpectedOutput)
+    : null;
+  const readonlyExpectedZh = readonlyExpectedOption?.labelZh || "待确定";
+  const readonlyExpectedEn = readonlyExpectedOption?.labelEn || "Undetermined";
+  const readonlyStatusZh = sharedVisual.kind === "matches" ? "与 GT 一致" : sharedVisual.kind === "none" || sharedVisual.kind === "pending" ? "待确定" : sharedVisual.zh;
+  const readonlyStatusEn = sharedVisual.kind === "matches" ? "Matches GT" : sharedVisual.kind === "none" || sharedVisual.kind === "pending" ? "Undetermined" : sharedVisual.en;
+  const readonlyExpectedMarkup = `<div class="review-expected-output-field review-expected-output-readonly">
+    <div class="review-expected-output-heading">
+      <span class="review-readonly-label"><span class="ui-lang-zh">期望输出</span><span class="ui-lang-en">Expected output</span></span>
+      <span class="derived-review-status" data-status="${escapeHtml(sharedVisual.kind === "matches" ? "reviewed" : sharedVisual.kind === "needs-review" ? "needs_gt_review" : "pending")}"><span class="ui-lang-zh">状态：${escapeHtml(readonlyStatusZh)}</span><span class="ui-lang-en">Status: ${escapeHtml(readonlyStatusEn)}</span></span>
+    </div>
+    <div class="ui-select expected-output-picker readonly-expected-output-picker">
+      <button class="ui-select-trigger" type="button" disabled aria-label="${escapeHtml(uiText(`期望输出 ${readonlyExpectedZh}，只读`, `Expected output ${readonlyExpectedEn}, read only`))}" title="${escapeHtml(uiText("只读；请到 问题标注修改", "Read only; edit in Case labeling"))}">
+        <span class="ui-select-summary"><span class="ui-select-summary-value"><span class="ui-lang-zh">${escapeHtml(readonlyExpectedZh)}</span><span class="ui-lang-en">${escapeHtml(readonlyExpectedEn)}</span></span><span class="ui-select-inference-marker"><span class="ui-lang-zh">只读</span><span class="ui-lang-en">Read only</span></span></span>
+        <span class="ui-select-caret" aria-hidden="true"></span>
+      </button>
+    </div>
+  </div>`;
+  const caseLabelingUrl = pageUrl("labeling", {
+    issue: caseData.issue_id || "",
+    baselines: state.reviewTaskContext?.baseline_ids || state.selectedBaselineIds,
+    forceBaselines: true,
+  });
   const customEvidenceOptions = customEvidenceKeys
     .map((key) => missingEvidenceOptionMarkup({ key, label: evidenceLabel(key), hint: "本条 Review 新建的缺失信息", builtin: false }, true, false))
     .join("");
@@ -428,12 +481,40 @@ function renderReview(caseData) {
     .join("");
   const issueTagGroups = renderReviewTagGroups(tagCatalog, chosenTags, tagOption);
   const sourceSuggestionMarkup = issueTagSourceSuggestionMarkup(sourceSuggestion);
+  const taskSupplementalOnly = Boolean(
+    state.reviewWorkSplitId
+    && state.reviewTaskContext
+    && !state.reviewTaskContext.current_user_is_member
+  );
+  const taskSupplementalNotice = taskSupplementalOnly
+    ? `<div class="review-task-supplemental-notice" role="status"><strong>任务外补充复核</strong><span>你未分配到当前任务。本次提交会保存到个人自由复核流，不增加该任务进度；Case 标签仍进入共享一致性判断。</span></div>`
+    : "";
+  const noRunModelReviewNotice = `<div class="model-review-readonly-note model-review-run-required" role="status">
+    <span class="model-review-readonly-copy">
+      <strong><span class="ui-lang-zh">未选 Run</span><span class="ui-lang-en">No Run</span></strong>
+      <small><span class="ui-lang-zh">模型复核暂不可用${combinedMode ? " · Case 标签仍可提交" : ""}</span><span class="ui-lang-en">Model review unavailable${combinedMode ? " · Case label still available" : ""}</span></small>
+    </span>
+    <button type="button" data-select-model-run><span class="ui-lang-zh">选择 Model Run</span><span class="ui-lang-en">Select Model Run</span></button>
+    ${combinedMode ? "" : `<a href="${escapeHtml(caseLabelingUrl)}"><span class="ui-lang-zh">打开 问题标注</span><span class="ui-lang-en">Open Case labeling</span></a>`}
+    <span class="model-review-run-help">
+      <button class="model-review-run-help-button" type="button" aria-label="查看未选择 Run 的说明" aria-describedby="modelReviewRunTooltip">i</button>
+      <span class="model-review-run-tooltip" id="modelReviewRunTooltip" role="tooltip"><span class="ui-lang-zh">选择 Run 后可填写判错原因、缺失信息和截图。${combinedMode ? "当前仍可提交上方 问题标注。" : ""}</span><span class="ui-lang-en">Select a Run to enter the model reason, missing evidence, and screenshots.${combinedMode ? " You can still submit the Case label above." : ""}</span></span>
+    </span>
+  </div>`;
   $("#reviewPane").innerHTML = `
-    <form class="review-form" id="annotationForm">
-      <section class="review-section issue-tag-section">
-        <div class="review-section-heading"><div><h2><span class="ui-lang-zh">Issue 标签</span><span class="ui-lang-en">Issue tags</span></h2>${sourceSuggestionMarkup}</div><span class="evidence-summary-count" id="tagSummaryCount">${escapeHtml(t("detail.selected_n", { n: chosenTags.size }))}</span></div>
+    <form class="review-form" id="annotationForm" data-issue-id="${escapeHtml(caseData.issue_id)}">
+      ${taskSupplementalNotice}
+      <section class="review-section issue-tag-section combined-case-label-card" ${combinedMode ? "" : "hidden"}>
+        <div class="review-section-heading"><div><h2><span class="ui-lang-zh">Issue 标签</span><span class="ui-lang-en">Issue tags</span> <small class="combined-mode-badge"><span class="ui-lang-zh">联合复核</span><span class="ui-lang-en">Combined</span></small></h2>${sourceSuggestionMarkup}</div><span class="evidence-summary-count" id="tagSummaryCount">${escapeHtml(t("detail.selected_n", { n: chosenTags.size }))}</span></div>
         <div class="review-tag-groups-shell">${issueTagGroups}${customTagOptions ? `<div class="review-tag-legacy"><span class="ui-lang-zh">历史标签</span><span class="ui-lang-en">Legacy tags</span><div class="review-tag-options">${customTagOptions}</div></div>` : ""}</div>
-        <label class="review-exclude-toggle" title="${escapeHtml(uiText("按 K 切换应该排除", "Press K to toggle Exclude"))}"><input id="reviewExcludeInput" type="checkbox" aria-keyshortcuts="K" ${previous.is_excluded ? "checked" : ""} /><span><strong class="ui-lang-zh">应该排除</strong><strong class="ui-lang-en">Exclude</strong><small class="ui-lang-zh">不是模型需要解决的场景 case</small><small class="ui-lang-en">Not a case the model is expected to solve</small></span><kbd class="review-control-shortcut review-exclude-shortcut" aria-hidden="true">K</kbd></label>
+        <label class="combined-case-rationale">
+          <span class="combined-case-rationale-heading">
+            <span><span class="ui-lang-zh">标签依据 / 说明</span><span class="ui-lang-en">Label rationale</span></span>
+            <small class="review-reason-shortcuts"><span class="ui-lang-zh"><kbd>⇧ E</kbd> 聚焦 · <kbd>⇧ Enter</kbd> 换行</span><span class="ui-lang-en"><kbd>⇧ E</kbd> Focus · <kbd>⇧ Enter</kbd> New line</span></small>
+          </span>
+          <textarea id="combinedCaseRationale" rows="2" aria-keyshortcuts="Shift+E Escape Enter Shift+Enter" placeholder="说明 Case 标签依据"></textarea>
+        </label>
+        <label class="review-exclude-toggle" hidden><input id="reviewExcludeInput" type="checkbox" aria-keyshortcuts="K" /><span><strong class="ui-lang-zh">应该排除</strong><strong class="ui-lang-en">Exclude</strong></span><kbd class="review-control-shortcut review-exclude-shortcut" aria-hidden="true">K</kbd></label>
       </section>
       <section class="review-section model-error-section">
         <div class="review-section-heading">
@@ -455,7 +536,8 @@ function renderReview(caseData) {
             </button>
           </div>
         </div>
-        <div class="review-expected-output-field">
+        ${combinedMode ? "" : readonlyExpectedMarkup}
+        <div class="review-expected-output-field" hidden>
           <div class="review-expected-output-heading">
             <span id="expectedOutputLabel"><span class="ui-lang-zh">期望输出</span><span class="ui-lang-en">Expected output</span></span>
             <span class="derived-review-status" id="derivedReviewStatus" data-status="${escapeHtml(reviewStatus)}"></span>
@@ -492,6 +574,7 @@ function renderReview(caseData) {
           <small class="review-expected-output-hint" id="expectedOutputHint" hidden></small>
           <input id="reviewStatusInput" type="hidden" value="${escapeHtml(reviewStatus)}" />
         </div>
+        ${runBoundModelReview ? `<label class="model-review-status-field"><span><span class="ui-lang-zh">判错复核状态</span><span class="ui-lang-en">Model review status</span></span><select id="modelReviewStatusInput">${MODEL_REVIEW_STATUS_OPTIONS.map((item) => `<option value="${item.value}" ${item.value === modelReviewStatus ? "selected" : ""}>${escapeHtml(i18nLocale() === "en" ? item.labelEn : item.labelZh)}</option>`).join("")}</select></label>` : noRunModelReviewNotice}
         <label class="review-reason">
           <span class="review-reason-heading">
             <span><span class="ui-lang-zh">模型为什么判错？</span><span class="ui-lang-en">Why was the model wrong?</span></span>
@@ -500,7 +583,7 @@ function renderReview(caseData) {
               <span class="ui-lang-en"><kbd>E</kbd> Focus · <kbd>⇧ Enter</kbd> New line</span>
             </small>
           </span>
-          <textarea id="annotationNote" rows="2" aria-keyshortcuts="E Escape Enter Shift+Enter" placeholder="说明关键证据；输入 @ 可通知同事。">${escapeHtml(previous.note || "")}</textarea>
+          <textarea id="annotationNote" rows="2" aria-keyshortcuts="E Escape Enter Shift+Enter" placeholder="说明关键证据；输入 @ 可通知同事。" ${runBoundModelReview ? "" : "disabled"}>${escapeHtml(previous.note || "")}</textarea>
         </label>
         <div class="review-mention-composer" id="reviewMentionComposer" aria-live="polite"></div>
         <details class="evidence-dropdown review-dropdown review-tag-dropdown" data-missing-evidence-dropdown>
@@ -529,8 +612,29 @@ function renderReview(caseData) {
         </div>
       </section>
       <label><span><span class="ui-lang-zh">复核人${authorLocked ? "（SSO）" : "（必填）"}</span><span class="ui-lang-en">Reviewer${authorLocked ? " (SSO)" : " (required)"}</span></span><input id="annotationAuthor" value="${escapeHtml(author)}" placeholder="姓名或工号" autocomplete="off" required ${authorLocked ? "readonly" : ""} /></label>
-      <button class="button button-primary full-width review-save-button" id="reviewSaveButton" type="submit" aria-keyshortcuts="Enter" title="输入原因时按 Enter 保存；Shift+Enter 换行"><span class="ui-lang-zh">保存新的 review 版本</span><span class="ui-lang-en">Save new review version</span><kbd class="review-save-shortcut" aria-hidden="true">Enter</kbd></button>
+      <button class="button button-primary full-width review-save-button" id="reviewSaveButton" type="submit" aria-keyshortcuts="Enter" title="输入原因时按 Enter 保存；Shift+Enter 换行" ${runBoundModelReview ? "" : "disabled"}><span class="ui-lang-zh">保存新的模型复核版本</span><span class="ui-lang-en">Save model review version</span><kbd class="review-save-shortcut" aria-hidden="true">Enter</kbd></button>
     </form>`;
+  if (!runBoundModelReview) {
+    $("#annotationForm")?.querySelectorAll(
+      "#missingEvidenceOptions input, #reviewScreenshotInput, #reviewScreenshotBrowse, #annotationAuthor, [data-open-missing-evidence-creator]"
+    ).forEach((control) => { control.disabled = true; });
+  }
+  if (combinedMode) {
+    const expectedField = $("#reviewPane .review-expected-output-field");
+    const combinedCard = $("#reviewPane .combined-case-label-card");
+    if (expectedField && combinedCard) {
+      expectedField.hidden = false;
+      combinedCard.querySelector(".review-tag-groups-shell")?.before(expectedField);
+    }
+    $("#reviewPane .review-attachment-field")?.setAttribute("hidden", "");
+    const save = $("#reviewSaveButton");
+    if (save) {
+      save.disabled = false;
+      save.querySelector(".ui-lang-zh").textContent = runBoundModelReview ? "提交联合复核" : "提交 问题标注";
+      save.querySelector(".ui-lang-en").textContent = runBoundModelReview ? "Submit combined review" : "Submit Case label";
+    }
+  }
+  enhanceDashboardSelects($("#reviewPane"));
   bindSelectedReviewTagControls($("#reviewPane"));
   $("#reviewPane").querySelector("[data-review-comments]")?.addEventListener("click", () => {
     openCurrentReviewDiscussion(caseData);
@@ -562,6 +666,9 @@ function renderReview(caseData) {
   $("#reviewPane").querySelector("[data-open-history='review']")?.addEventListener("click", () => {
     toggleHistoryDialog("review", caseData);
   });
+  $("#reviewPane").querySelector("[data-select-model-run]")?.addEventListener("click", () => {
+    exitReviewTaskAndOpenRunPicker().catch((error) => showToast(error.message, true));
+  });
   bindReviewAttachmentInputs();
   restoreFailedReviewUploadImages(caseData.issue_id);
   renderPendingReviewImages();
@@ -577,6 +684,70 @@ function renderReview(caseData) {
   state.reviewFormDirty = Boolean(draft);
   annotationForm.addEventListener("submit", saveAnnotation);
   bindAnnotationHistory($("#reviewPane"), caseData);
+  if (combinedMode) {
+    loadCombinedReviewContext(caseData).catch((error) => showToast(error.message, true));
+  } else {
+    state.combinedReviewContext = null;
+    if (!runBoundModelReview && $("#reviewSaveButton")) {
+      $("#reviewSaveButton").disabled = true;
+    }
+  }
+}
+
+function latestCaseVoteFromLabelingDetail(detail, username) {
+  const author = String(username || "").trim().toLowerCase();
+  return (detail?.label_cases || [])
+    .flatMap((item) => item.revisions || [])
+    .filter((revision) => String(revision.author || "").trim().toLowerCase() === author)
+    .sort((a, b) => Number(b.id || 0) - Number(a.id || 0))[0] || null;
+}
+
+function populateCombinedCaseLabel(context, caseData) {
+  state.combinedReviewContext = context;
+  const revision = context?.case_revision || null;
+  const labelState = context?.label_state || caseData.label_state || {};
+  const expected = String(revision?.expected_output || "");
+  const input = $("#expectedOutputInput");
+  if (input) {
+    input.value = expected;
+    input.dataset.selectionSource = expected ? "stored" : "empty";
+  }
+  const rationale = $("#combinedCaseRationale");
+  if (rationale) rationale.value = String(revision?.rationale || "");
+  const tags = new Set(revision?.tags || []);
+  $("#reviewPane")?.querySelectorAll('input[name="reviewTags"]').forEach((checkbox) => {
+    checkbox.checked = tags.has(checkbox.value);
+  });
+  updateTagSummary();
+  syncExpectedOutputFromTags();
+  if (context?.model_review) {
+    caseData.annotations = [
+      context.model_review,
+      ...(caseData.annotations || []).filter((item) => String(item.id) !== String(context.model_review.id)),
+    ];
+    const status = $("#modelReviewStatusInput");
+    if (status) {
+      status.value = context.model_review.model_review_status || "pending";
+      enhanceNativeUiSelect(status);
+    }
+    const note = $("#annotationNote");
+    if (note) note.value = context.model_review.note || "";
+    const detailZh = $("#detailPane .issue-card-run-review-value .ui-lang-zh");
+    const detailEn = $("#detailPane .issue-card-run-review-value .ui-lang-en");
+    if (detailZh) detailZh.textContent = "已提交";
+    if (detailEn) detailEn.textContent = "Submitted";
+  }
+}
+
+async function loadCombinedReviewContext(caseData) {
+  const runId = currentReviewRunId(caseData);
+  const campaignId = reviewWorkSplitBinding(caseData);
+  const params = new URLSearchParams();
+  if (runId) params.set("model_run_id", runId);
+  if (campaignId) params.set("campaign_id", campaignId);
+  const result = await api(`/api/cases/${encodeURIComponent(caseData.issue_id)}/combined-review-context?${params.toString()}`);
+  if (state.selectedCase?.issue_id !== caseData.issue_id) return;
+  populateCombinedCaseLabel(result.context || {}, caseData);
 }
 
 function reviewSaveNavigationContext(issueId) {
@@ -933,30 +1104,33 @@ function bindReviewComposerShortcuts() {
       return;
     }
     const note = $("#annotationNote");
+    const rationale = $("#combinedCaseRationale");
     const form = $("#annotationForm");
     if (!note || !form) return;
     const target = event.target instanceof Element ? event.target : null;
-    if (target === note) {
+    if (target === note || target === rationale) {
       if (event.key === "Escape") {
         event.preventDefault();
         event.stopPropagation();
-        note.blur();
+        target.blur();
         return;
       }
       if (event.key === "Enter" && !event.shiftKey && !state.savingAnnotation) {
         event.preventDefault();
         event.stopPropagation();
-        form.requestSubmit($("#reviewSaveButton") || undefined);
+        if (form.checkValidity()) form.requestSubmit($("#reviewSaveButton") || undefined);
       }
       return;
     }
-    if (String(event.key || "").toLowerCase() !== "e" || event.shiftKey) return;
+    if (String(event.key || "").toLowerCase() !== "e") return;
     if (target?.closest("input, textarea, select, button, a, [contenteditable='true'], [role='textbox']")) return;
+    const composer = event.shiftKey ? rationale : note;
+    if (!composer || composer.disabled) return;
     event.preventDefault();
     event.stopPropagation();
     closeAllReviewDropdowns();
-    note.focus({ preventScroll: false });
-    note.setSelectionRange(note.value.length, note.value.length);
+    composer.focus({ preventScroll: false });
+    composer.setSelectionRange(composer.value.length, composer.value.length);
   });
 }
 
@@ -1070,13 +1244,24 @@ async function copyReviewIssueId(issueId, button = null) {
 async function saveAnnotation(event) {
   event.preventDefault();
   if (!state.selectedId || state.savingAnnotation) return;
+  if (effectiveReviewWorkflowMode(state.selectedCase) === "model_review_and_case_label") {
+    await saveCombinedReview(event);
+    return;
+  }
   const issueId = String(state.selectedId);
+  const runBoundModelReview = Boolean(
+    state.reviewEditRunId || currentReviewRunId(state.selectedCase)
+  );
+  if (!runBoundModelReview) {
+    showToast("请先选择 Model Run；共享标签和 GT 请到 问题标注工作台修改。", true);
+    return;
+  }
   const expectedOutputState = expectedOutputSelectionState();
-  if (expectedOutputState.conflictKind === "tags") {
+  if (!runBoundModelReview && expectedOutputState.conflictKind === "tags") {
     showToast("Tags 指向多个期望输出，请先消除冲突。", true);
     return;
   }
-  if (expectedOutputState.conflictKind === "selection") {
+  if (!runBoundModelReview && expectedOutputState.conflictKind === "selection") {
     showToast(
       `当前期望输出与 Tags 自动推断的“${expectedOutputState.value}”冲突，请改回自动推断项或调整 Tags。`,
       true
@@ -1092,7 +1277,11 @@ async function saveAnnotation(event) {
   const payload = {
     model_run_id: state.reviewEditRunId || currentReviewRunId(state.selectedCase),
     work_split_id: reviewWorkSplitBinding(state.selectedCase),
-    expected_previous_annotation_id: state.reviewEditBaseAnnotationId || null,
+    expected_previous_annotation_id: currentReviewBaseAnnotationId(
+      currentReviewAnnotation(state.selectedCase),
+      state.reviewEditRunId || currentReviewRunId(state.selectedCase),
+      $("#annotationAuthor")?.value || ""
+    ),
     expected_output: $("#expectedOutputInput")?.value || "",
     is_excluded: Boolean($("#reviewExcludeInput")?.checked),
     tags: [...document.querySelectorAll('input[name="reviewTags"]:checked')].map(
@@ -1102,6 +1291,10 @@ async function saveAnnotation(event) {
     note: $("#annotationNote").value,
     author: $("#annotationAuthor").value,
   };
+  payload.model_review_status = $("#modelReviewStatusInput")?.value || "pending";
+  delete payload.expected_output;
+  delete payload.is_excluded;
+  delete payload.tags;
   const screenshotItems = [...state.pendingReviewImages];
   const screenshotFiles = screenshotItems.map((item) => item.file);
   const navigationContext = reviewSaveNavigationContext(issueId);
@@ -1148,7 +1341,7 @@ async function saveAnnotation(event) {
       state.reviewEditRunId = result.annotation.model_run_id || state.reviewEditRunId;
       state.reviewEditBaseAnnotationId = result.annotation.id || null;
     }
-    clearReviewDraft(issueId, payload.model_run_id, payload.work_split_id);
+    clearReviewDraft(issueId, payload.model_run_id, payload.work_split_id, payload.author);
     const screenshotCount = 0;
     state.reviewFormDirty = false;
     state.deferredDetailRefresh = false;
@@ -1186,5 +1379,91 @@ async function saveAnnotation(event) {
     showToast(error.message, true);
   } finally {
     releaseReviewSubmitLock(submitButton);
+  }
+}
+
+async function saveCombinedReview(event) {
+  const caseData = state.selectedCase;
+  const issueId = String(caseData?.issue_id || state.selectedId || "");
+  if (!issueId || state.savingAnnotation) return;
+  const context = state.combinedReviewContext;
+  if (!context || String(context.issue?.issue_id || issueId) !== issueId) {
+    showToast("联合复核上下文尚未加载，请稍候。", true);
+    return;
+  }
+  const expectedState = expectedOutputSelectionState();
+  if (!expectedState.selectedValue) {
+    showToast("请明确选择 Case 标签。", true);
+    return;
+  }
+  if (expectedState.conflictKind) {
+    showToast("Case 标签与所选 Tags 冲突，请先修正。", true);
+    return;
+  }
+  const runId = currentReviewRunId(caseData);
+  const campaignId = reviewWorkSplitBinding(caseData);
+  const payload = {
+    author: $("#annotationAuthor")?.value || state.session?.username || "",
+    expected_output: expectedState.selectedValue,
+    tags: [...document.querySelectorAll('input[name="reviewTags"]:checked')].map((input) => input.value),
+    rationale: $("#combinedCaseRationale")?.value || "",
+    expected_case_revision_id: context.case_revision_id || null,
+    expected_label_state_fingerprint: context.label_state_fingerprint || "",
+  };
+  state.savingAnnotation = true;
+  const button = event.submitter || $("#reviewSaveButton");
+  if (button) {
+    button.disabled = true;
+    button.setAttribute("aria-busy", "true");
+  }
+  try {
+    let result;
+    if (!runId) {
+      result = await api(`/api/cases/${encodeURIComponent(issueId)}/case-label-from-review`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      acknowledgeLocalChange(result);
+      showToast(result?.case_label?.case_action === "acknowledged" ? "已确认现有 Case vote。" : "已提交 Case 标签。 ");
+    } else {
+      Object.assign(payload, {
+        model_run_id: runId,
+        campaign_id: campaignId || "",
+        model_review_status: $("#modelReviewStatusInput")?.value || "pending",
+        reason: $("#annotationNote")?.value || "",
+        missing_evidence: [...document.querySelectorAll('input[name="missingEvidence"]:checked')].map((input) => input.value),
+        expected_model_review_storage_id: context.model_review_storage_id || null,
+      });
+      const idempotencyKey = globalThis.crypto?.randomUUID?.() || `combined-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      result = await api(`/api/cases/${encodeURIComponent(issueId)}/combined-review`, {
+        method: "POST",
+        headers: { "Idempotency-Key": idempotencyKey },
+        body: JSON.stringify(payload),
+      });
+      acknowledgeLocalChange(result);
+      const combined = result?.combined_review || {};
+      if (combined.model_review && caseData.issue_id === issueId) {
+        caseData.annotations = [
+          combined.model_review,
+          ...(caseData.annotations || []).filter((item) => String(item.id) !== String(combined.model_review.id)),
+        ];
+        caseData.label_state = combined.label_state || caseData.label_state;
+      }
+      showToast(combined.case_action === "acknowledged" ? "联合复核已提交；现有 Case vote 已确认。" : "联合复核已原子提交。 ");
+    }
+    await loadCombinedReviewContext(caseData);
+    renderReview(caseData);
+  } catch (error) {
+    if (Number(error?.status || 0) === 409 || String(error?.message || "").includes("变化")) {
+      showToast("数据已变化，联合提交未写入任何一边；请刷新后重新确认。", true);
+    } else {
+      showToast(error.message, true);
+    }
+  } finally {
+    state.savingAnnotation = false;
+    if (button) {
+      button.disabled = false;
+      button.removeAttribute("aria-busy");
+    }
   }
 }

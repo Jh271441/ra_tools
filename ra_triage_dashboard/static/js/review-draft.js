@@ -4,6 +4,7 @@
  * ES modules without auditing cross-file function/state dependencies.
  */
 const REVIEW_DRAFT_FIELDS = [
+  "model_review_status",
   "label",
   "expected_output",
   "is_excluded",
@@ -26,7 +27,8 @@ function currentReviewRunId(caseData) {
 // editing the ordinary Review stream for the selected Run.
 function reviewWorkSplitBinding(caseData) {
   const assignment = caseData?.review_assignment;
-  if (assignment?.mode !== "blind" || !assignment?.assigned) return "";
+  if (!assignment?.assigned) return "";
+  if (assignment?.mode !== "blind" && assignment?.purpose !== "model_review") return "";
   return String(assignment.split_id || "").trim();
 }
 
@@ -37,8 +39,16 @@ function reviewAnnotationsForCurrentRun(caseData) {
     (annotation) => String(annotation.model_run_id || "").trim() === runId
   );
   const workSplitId = reviewWorkSplitBinding(caseData);
+  const verifiedReviewer = state.session?.verified
+    ? String(state.session?.username || "").trim().toLowerCase()
+    : "";
+  if (verifiedReviewer) {
+    bound = bound.filter(
+      (annotation) => String(annotation.author || "").trim().toLowerCase() === verifiedReviewer
+    );
+  }
   if (workSplitId) {
-    const currentUser = String(state.session?.username || "").trim().toLowerCase();
+    const currentUser = verifiedReviewer || String(state.session?.username || "").trim().toLowerCase();
     bound = bound.filter(
       (annotation) =>
         String(annotation.work_split_id || "").trim() === workSplitId &&
@@ -95,6 +105,7 @@ function currentReviewAnnotation(caseData) {
 // We only use this for the initial checkbox values.  It never changes the
 // legacy record and a user can still deliberately clear a Tag before saving.
 function inheritedHistoricalTagsForCurrentRun(caseData) {
+  if (String(caseData?.legacy_read_policy?.policy || "legacy") === "canonical") return [];
   const runId = currentReviewRunId(caseData);
   if (!runId || reviewAnnotationsForCurrentRun(caseData).length) return [];
   const history = reviewAnnotationsForAllRuns(caseData);
@@ -119,24 +130,60 @@ function initialReviewTagsForCurrentRun(caseData, annotation, draft) {
   return Array.isArray(annotation?.tags) ? annotation.tags : [];
 }
 
-const REVIEW_DRAFT_STORAGE_PREFIX = "ra-triage-review-draft:v1:";
+const REVIEW_DRAFT_STORAGE_PREFIX = "ra-triage-review-draft:v2:";
+const REVIEW_DRAFT_LEGACY_STORAGE_PREFIX = "ra-triage-review-draft:v1:";
 const REVIEW_DRAFT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
-function reviewDraftStorageKey(issueId, runId = "", workSplitId = "") {
-  const base = `${REVIEW_DRAFT_STORAGE_PREFIX}${encodeURIComponent(String(issueId || ""))}:${encodeURIComponent(String(runId || "legacy"))}`;
+function reviewDraftReviewer(caseData, reviewerOverride = "") {
+  const verifiedReviewer = state.session?.verified ? state.session?.username : "";
+  const form = typeof $ === "function" ? $("#annotationForm") : null;
+  const formReviewer = caseData?.issue_id && form?.dataset?.issueId === String(caseData.issue_id)
+    ? $("#annotationAuthor")?.value
+    : "";
+  const reviewer = String(
+    reviewerOverride || verifiedReviewer || formReviewer || state.session?.username || currentReviewAnnotation(caseData)?.author || ""
+  ).trim().toLowerCase();
+  return reviewer || "anonymous";
+}
+
+function reviewDraftStorageKey(issueId, runId = "", workSplitId = "", reviewer = "") {
+  const base = `${REVIEW_DRAFT_STORAGE_PREFIX}${encodeURIComponent(String(issueId || ""))}:${encodeURIComponent(String(runId || "legacy"))}:${encodeURIComponent(String(workSplitId || "ordinary"))}`;
+  return `${base}:${encodeURIComponent(reviewDraftReviewer(null, reviewer))}`;
+}
+
+function legacyReviewDraftStorageKey(issueId, runId = "", workSplitId = "") {
+  const base = `${REVIEW_DRAFT_LEGACY_STORAGE_PREFIX}${encodeURIComponent(String(issueId || ""))}:${encodeURIComponent(String(runId || "legacy"))}`;
   return workSplitId ? `${base}:${encodeURIComponent(String(workSplitId))}` : base;
 }
 
-function readReviewDraft(issueId, runId = "", workSplitId = "") {
+function reviewDraftMatchesReviewer(draft, reviewer) {
+  const expected = String(reviewer || "").trim().toLowerCase();
+  const actual = String(draft?.author || "").trim().toLowerCase();
+  return expected === "anonymous" ? !actual : actual === expected;
+}
+
+function readReviewDraft(issueId, runId = "", workSplitId = "", reviewer = "") {
   if (!issueId || typeof window === "undefined" || !window.localStorage) return null;
-  const key = reviewDraftStorageKey(issueId, runId, workSplitId);
+  const actor = reviewDraftReviewer(null, reviewer);
+  const key = reviewDraftStorageKey(issueId, runId, workSplitId, actor);
+  const legacyKey = legacyReviewDraftStorageKey(issueId, runId, workSplitId);
   try {
-    const raw = window.localStorage.getItem(key);
+    let sourceKey = key;
+    let raw = window.localStorage.getItem(key);
+    if (!raw) {
+      sourceKey = legacyKey;
+      raw = window.localStorage.getItem(legacyKey);
+    }
     if (!raw) return null;
     const draft = JSON.parse(raw);
+    if (sourceKey === legacyKey && !reviewDraftMatchesReviewer(draft, actor)) return null;
     const savedAt = Number(draft?.saved_at || 0);
     if (draft?.version !== 1 || !savedAt || Date.now() - savedAt > REVIEW_DRAFT_MAX_AGE_MS) {
-      window.localStorage.removeItem(key);
+      window.localStorage.removeItem(sourceKey);
       return null;
+    }
+    if (sourceKey === legacyKey) {
+      window.localStorage.setItem(key, raw);
+      window.localStorage.removeItem(legacyKey);
     }
     return draft;
   } catch {
@@ -144,10 +191,15 @@ function readReviewDraft(issueId, runId = "", workSplitId = "") {
   }
 }
 
-function clearReviewDraft(issueId, runId = "", workSplitId = "") {
+function clearReviewDraft(issueId, runId = "", workSplitId = "", reviewer = "") {
   if (!issueId || typeof window === "undefined" || !window.localStorage) return;
   try {
-    window.localStorage.removeItem(reviewDraftStorageKey(issueId, runId, workSplitId));
+    window.localStorage.removeItem(reviewDraftStorageKey(issueId, runId, workSplitId, reviewer));
+    const legacyKey = legacyReviewDraftStorageKey(issueId, runId, workSplitId);
+    const legacyRaw = window.localStorage.getItem(legacyKey);
+    if (legacyRaw && reviewDraftMatchesReviewer(JSON.parse(legacyRaw), reviewDraftReviewer(null, reviewer))) {
+      window.localStorage.removeItem(legacyKey);
+    }
   } catch {
     // Storage can be unavailable in private browsing; the Review itself still works.
   }
@@ -162,11 +214,12 @@ function annotationTimestamp(annotation) {
 function reviewDraftForCase(caseData) {
   const runId = currentReviewRunId(caseData);
   const workSplitId = reviewWorkSplitBinding(caseData);
-  const draft = readReviewDraft(caseData?.issue_id, runId, workSplitId);
+  const reviewer = reviewDraftReviewer(caseData);
+  const draft = readReviewDraft(caseData?.issue_id, runId, workSplitId, reviewer);
   if (!draft) return null;
   const serverAnnotation = reviewAnnotationsForCurrentRun(caseData)[0];
   if (serverAnnotation && Number(draft.saved_at) <= annotationTimestamp(serverAnnotation)) {
-    clearReviewDraft(caseData.issue_id, runId, workSplitId);
+    clearReviewDraft(caseData.issue_id, runId, workSplitId, reviewer);
     return null;
   }
   return draft;
@@ -189,6 +242,7 @@ function persistReviewDraft(caseData) {
     version: 1,
     issue_id: caseData.issue_id,
     model_run_id: runId,
+    model_review_status: $("#modelReviewStatusInput")?.value || "",
     saved_at: Date.now(),
     expected_output: $("#expectedOutputInput")?.value || "",
     is_excluded: Boolean($("#reviewExcludeInput")?.checked),
@@ -199,7 +253,11 @@ function persistReviewDraft(caseData) {
   };
   try {
     const workSplitId = reviewWorkSplitBinding(caseData);
-    window.localStorage.setItem(reviewDraftStorageKey(caseData.issue_id, runId, workSplitId), JSON.stringify(draft));
+    const reviewer = reviewDraftReviewer(
+      caseData,
+      state.session?.verified ? state.session?.username : draft.author
+    );
+    window.localStorage.setItem(reviewDraftStorageKey(caseData.issue_id, runId, workSplitId, reviewer), JSON.stringify(draft));
   } catch {
     // Draft persistence is best effort and must never block Review input.
   }
@@ -213,12 +271,15 @@ function bindReviewDraftLifecycle() {
   });
 }
 
-function currentReviewBaseAnnotationId(annotation, runId) {
+function currentReviewBaseAnnotationId(annotation, runId, reviewerOverride = "") {
   if (!annotation?.id) return null;
   const annotationRunId = String(annotation.model_run_id || "").trim();
-  return annotationRunId === String(runId || "").trim()
-    ? annotation.id
-    : null;
+  if (annotationRunId !== String(runId || "").trim()) return null;
+  const reviewer = String(
+    state.session?.verified ? state.session?.username : reviewerOverride || annotation.author || ""
+  ).trim().toLowerCase();
+  if (reviewer && String(annotation.author || "").trim().toLowerCase() !== reviewer) return null;
+  return annotation.id;
 }
 
 function reviewRunLabel(runId) {

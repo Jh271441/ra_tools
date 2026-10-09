@@ -770,6 +770,7 @@ class DatabaseSnapshotMixin:
         self,
         *,
         workset_id: str,
+        baseline_scope: str = "",
         created_by: str,
         created_by_source: str = "legacy",
         created_by_verified: bool = False,
@@ -778,9 +779,50 @@ class DatabaseSnapshotMixin:
         workset = self.get_review_workset(workset_id)
         if workset is None:
             raise ValueError("Workset does not exist")
+        requested_scope = str(baseline_scope or "").strip()
         scope = str(workset.get("baseline_scope") or "").strip()
-        members = [str(item.get("issue_id") or "").strip() for item in workset.get("items") or []]
-        members = [item for item in members if item]
+        members_sha256 = str(workset.get("members_sha256") or "")
+        with self.connect() as conn:
+            scope_rows = conn.execute(
+                "SELECT baseline_scope, ordinal, member_count, members_sha256 "
+                "FROM review_workset_scopes WHERE workset_id = ? ORDER BY ordinal",
+                (str(workset["id"]),),
+            ).fetchall()
+            available_scopes = [
+                str(row["baseline_scope"] or "") for row in scope_rows
+                if str(row["baseline_scope"] or "")
+            ]
+            if available_scopes:
+                if not requested_scope and len(available_scopes) > 1:
+                    raise ValueError(
+                        "Multi-scope Workset requires baseline_scope for each Label snapshot"
+                    )
+                scope = requested_scope or available_scopes[0]
+                if scope not in available_scopes:
+                    raise ValueError("Label snapshot scope is not part of the frozen Workset")
+                scope_row = next(
+                    row for row in scope_rows
+                    if str(row["baseline_scope"] or "") == scope
+                )
+                members_sha256 = str(scope_row["members_sha256"] or "")
+                member_rows = conn.execute(
+                    "SELECT item.issue_id FROM review_workset_items item "
+                    "JOIN issues issue ON issue.issue_id = item.issue_id "
+                    "WHERE item.workset_id = ? AND issue.baseline_scope = ? "
+                    "ORDER BY item.ordinal",
+                    (str(workset["id"]), scope),
+                ).fetchall()
+                members = [str(row["issue_id"] or "") for row in member_rows]
+                if len(members) != int(scope_row["member_count"] or 0):
+                    raise ValueError("Frozen Workset scope membership is inconsistent")
+            else:
+                if requested_scope and requested_scope != scope:
+                    raise ValueError("Label snapshot scope does not match the Workset")
+                members = [
+                    str(item.get("issue_id") or "").strip()
+                    for item in workset.get("items") or []
+                ]
+                members = [item for item in members if item]
         if not scope or not members:
             raise ValueError("Label snapshot requires a non-empty Workset")
         projections = self.project_issue_label_states(scope, members, include_sources=True)
@@ -809,6 +851,12 @@ class DatabaseSnapshotMixin:
             ):
                 raise ValueError(f"resolved Label projection has no revision sources: {issue_id}")
             provenance_by_issue[issue_id] = provenance
+            decision = projection.get("decision") or {}
+            decision_id = (
+                int(decision["id"])
+                if decision.get("id") not in (None, "") and not decision.get("stale")
+                else None
+            )
             counts[state] += 1
             content_items.append(
                 [
@@ -818,6 +866,7 @@ class DatabaseSnapshotMixin:
                     method,
                     gt_relation,
                     provenance,
+                    decision_id,
                 ]
             )
         unresolved_states = {"none", "pending", "conflict", "stale"}
@@ -836,7 +885,7 @@ class DatabaseSnapshotMixin:
             {
                 "baseline_scope": scope,
                 "workset_id": str(workset["id"]),
-                "members_sha256": str(workset.get("members_sha256") or ""),
+                "members_sha256": members_sha256,
                 "items": content_items,
             }
         )
@@ -863,7 +912,7 @@ class DatabaseSnapshotMixin:
                     snapshot_id,
                     scope,
                     str(workset["id"]),
-                    str(workset.get("members_sha256") or ""),
+                    members_sha256,
                     content_sha,
                     len(members),
                     counts["resolved"],
@@ -882,8 +931,8 @@ class DatabaseSnapshotMixin:
                 """
                 INSERT INTO label_result_snapshot_items (
                     snapshot_id, baseline_scope, issue_id, ordinal, state,
-                    expected_output, method, gt_relation
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    expected_output, method, gt_relation, decision_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
                     (
@@ -895,6 +944,7 @@ class DatabaseSnapshotMixin:
                         item[2] or None,
                         item[3],
                         item[4],
+                        item[6],
                     )
                     for ordinal, item in enumerate(content_items, 1)
                 ],
@@ -963,7 +1013,8 @@ class DatabaseSnapshotMixin:
                 total = int(total_row["total"] or 0)
                 items = conn.execute(
                     """
-                    SELECT issue_id, ordinal, state, expected_output, method, gt_relation
+                    SELECT issue_id, ordinal, state, expected_output, method,
+                           gt_relation, decision_id
                     FROM label_result_snapshot_items WHERE snapshot_id = ?
                     ORDER BY ordinal LIMIT ? OFFSET ?
                     """,
@@ -977,6 +1028,11 @@ class DatabaseSnapshotMixin:
                         "expected_output": str(item["expected_output"] or ""),
                         "method": str(item["method"]),
                         "gt_relation": str(item["gt_relation"] or "unknown"),
+                        "decision_id": (
+                            int(item["decision_id"])
+                            if item["decision_id"] not in (None, "")
+                            else None
+                        ),
                     }
                     for item in items
                 ]

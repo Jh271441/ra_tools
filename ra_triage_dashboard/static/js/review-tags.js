@@ -378,7 +378,11 @@ function updateTagSummary() {
       .join("");
     container.hidden = selected.length === 0;
   });
-  if (typeof syncExpectedOutputFromTags === "function") {
+  if (state.activePage === "labeling") {
+    if (typeof syncCaseLabelingExpectedOutputFromTags === "function") {
+      syncCaseLabelingExpectedOutputFromTags();
+    }
+  } else if (typeof syncExpectedOutputFromTags === "function") {
     syncExpectedOutputFromTags();
   }
 }
@@ -417,9 +421,7 @@ function syncReviewDropdownShortcutHints(root = document) {
 
 function toggleOpenReviewDropdownOption(shortcut) {
   if (!REVIEW_TAG_OPTION_SHORTCUTS.includes(shortcut)) return false;
-  const openDropdown = document.querySelector(
-    "#reviewPane .review-dropdown[open]"
-  );
+  const openDropdown = activeReviewChromeRoot()?.querySelector(".review-dropdown[open]");
   const input = openDropdown?.querySelector(
     `input[data-review-dropdown-option-shortcut="${CSS.escape(shortcut)}"]`
   );
@@ -604,6 +606,15 @@ function bindReviewKeyboardShortcuts() {
       event.preventDefault();
       return;
     }
+    if (
+      REVIEW_TAG_OPTION_SHORTCUTS.includes(key) &&
+      reviewDropdownShortcutAllowed(target) &&
+      toggleOpenReviewDropdownOption(key)
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
     if (reviewShortcutHasEditableTarget(target)) return;
 
     if (key === "[" || key === "]") {
@@ -622,7 +633,6 @@ function bindReviewKeyboardShortcuts() {
       return;
     }
 
-    if (toggleOpenReviewDropdownOption(key)) event.preventDefault();
   });
 }
 

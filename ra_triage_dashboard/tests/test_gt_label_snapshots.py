@@ -13,7 +13,7 @@ from fastapi import HTTPException
 
 from ra_triage_dashboard.app.auth import SessionIdentity
 from ra_triage_dashboard.app.db import Database
-from ra_triage_dashboard.app.routers import labeling as labeling_router
+from ra_triage_dashboard.app.routers.labeling_api import common as labeling_router
 
 
 class GtLabelSnapshotsTest(unittest.TestCase):
@@ -359,6 +359,7 @@ class GtLabelSnapshotsTest(unittest.TestCase):
     def test_label_snapshot_hash_tracks_resolution_and_new_pending_source_provenance(self) -> None:
         db = self.make_db()
         self.add_scope(db, "scope", [("a", "正确触发")])
+        self.sync(db, "scope", [{"issue_id": "a", "gt_label": "正确触发"}])
         workset = db.create_review_workset(
             baseline_scope="scope", issue_ids=["a"], created_by="admin"
         )

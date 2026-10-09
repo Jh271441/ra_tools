@@ -103,6 +103,34 @@ async def review_reason_analysis(
     return payload
 
 
+@router.get("/api/model-review-facets")
+async def model_review_facets(
+    request: Request, model_run_id: str, baselines: str = ""
+) -> dict[str, Any]:
+    scopes = resolve_request_baseline_scopes(baselines, request=request)
+    result = await asyncio.to_thread(
+        database.model_review_facets,
+        model_run_id=_as_text(model_run_id),
+        baseline_scopes=scopes,
+    )
+    result["baseline_scopes"] = scopes
+    return result
+
+
+@router.get("/api/model-review-shadow-comparison")
+async def model_review_shadow_comparison(
+    request: Request, model_run_id: str, baselines: str = ""
+) -> dict[str, Any]:
+    scopes = resolve_request_baseline_scopes(baselines, request=request)
+    result = await asyncio.to_thread(
+        database.model_review_shadow_comparison,
+        model_run_id=_as_text(model_run_id),
+        baseline_scopes=scopes,
+    )
+    result["baseline_scopes"] = scopes
+    return result
+
+
 REVIEW_ANALYSIS_EXPORT_COLUMNS: tuple[tuple[str, str], ...] = (
     ("issue_id", "Issue ID"),
     ("scene", "场景"),
@@ -113,6 +141,8 @@ REVIEW_ANALYSIS_EXPORT_COLUMNS: tuple[tuple[str, str], ...] = (
     ("model_confidence", "模型置信度"),
     ("expected_output", "期望输出"),
     ("review_status", "Issue GT Review状态"),
+    ("model_review_status", "模型判错复核状态"),
+    ("review_domain", "Review 数据域"),
     ("is_excluded", "应该排除"),
     ("review_reason", "人工 Review 原因"),
     ("tags", "场景 Tags"),
@@ -124,10 +154,6 @@ REVIEW_ANALYSIS_EXPORT_COLUMNS: tuple[tuple[str, str], ...] = (
     ("tag_keys", "Tags 原始 key"),
     ("missing_evidence", "缺失信息"),
     ("missing_evidence_keys", "缺失信息原始 key"),
-    ("blind_agreement", "原盲标状态"),
-    ("adjudicator", "裁决人"),
-    ("adjudicated_at", "裁决时间"),
-    ("adjudication_id", "裁决 Review ID"),
     ("reviewer", "复核人"),
     ("reviewed_at", "Review 时间"),
     ("review_model_run_id", "Review Model Run"),
@@ -231,6 +257,10 @@ def _review_analysis_export_rows(result: dict[str, Any]) -> list[dict[str, Any]]
                 "model_confidence": prediction.get("confidence"),
                 "expected_output": expected_output,
                 "review_status": _as_text(annotation.get("review_status")),
+                "model_review_status": _as_text(
+                    annotation.get("model_review_status")
+                ),
+                "review_domain": _as_text(annotation.get("review_domain")) or "legacy",
                 "is_excluded": "是" if bool(annotation.get("is_excluded")) else "否",
                 "review_reason": _as_text(annotation.get("note")),
                 "tags": "、".join(tag_label(key) for key in tag_keys),
@@ -244,10 +274,6 @@ def _review_analysis_export_rows(result: dict[str, Any]) -> list[dict[str, Any]]
                     evidence_labels.get(key, key) for key in evidence_keys
                 ),
                 "missing_evidence_keys": "、".join(evidence_keys),
-                "blind_agreement": _as_text((item.get("multi_review") or {}).get("agreement")),
-                "adjudicator": _as_text(((item.get("multi_review") or {}).get("adjudication") or {}).get("author")),
-                "adjudicated_at": _as_text(((item.get("multi_review") or {}).get("adjudication") or {}).get("created_at")),
-                "adjudication_id": ((item.get("multi_review") or {}).get("adjudication") or {}).get("id", ""),
                 "reviewer": _as_text(annotation.get("author")),
                 "reviewed_at": _as_text(annotation.get("created_at")),
                 "review_model_run_id": _as_text(annotation.get("model_run_id")),
@@ -290,10 +316,6 @@ def _trail_expected_output_rows(result: dict[str, Any]) -> list[dict[str, str]]:
     rows: list[dict[str, str]] = []
     seen: set[str] = set()
     for item in result.get("items", []):
-        multi = item.get("multi_review") or {}
-        if multi.get("agreement") == "conflict" and not multi.get("adjudication"):
-            # A latest member vote alone must never update GT for a conflict.
-            continue
         annotation = item.get("annotation") or {}
         issue_id = _as_text(item.get("issue_id"))
         expected_output = _as_text(

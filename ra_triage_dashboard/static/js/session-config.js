@@ -75,10 +75,19 @@ function renderSession() {
   if (userManagementNav) userManagementNav.hidden = !state.session.is_admin;
   const reviewAssignmentsNav = $("#reviewAssignmentsNavButton");
   if (reviewAssignmentsNav) reviewAssignmentsNav.hidden = !state.session.is_admin;
+  const canLabelCases = hasDashboardWriteRole();
   const caseLabelingNav = $("#caseLabelingNavButton");
-  if (caseLabelingNav) caseLabelingNav.hidden = !state.session.is_admin;
+  if (caseLabelingNav) caseLabelingNav.hidden = !canLabelCases;
   const caseLabelingNavGroup = $("#caseLabelingNavGroup");
-  if (caseLabelingNavGroup) caseLabelingNavGroup.hidden = !state.session.is_admin;
+  if (caseLabelingNavGroup) caseLabelingNavGroup.hidden = !canLabelCases;
+  const labelingExperimentsNav = $("#labelingExperimentsNavButton");
+  if (labelingExperimentsNav) labelingExperimentsNav.hidden = !state.session.is_admin;
+  const caseLabelingCreateTask = $("#caseLabelingCreateTask");
+  if (caseLabelingCreateTask) caseLabelingCreateTask.hidden = !state.session.is_admin;
+  const caseLabelingExportGt = $("#caseLabelingExportGt");
+  if (caseLabelingExportGt) caseLabelingExportGt.hidden = !state.session.is_admin;
+  const campaignLabelExport = $("#campaignLabelExportCsv");
+  if (campaignLabelExport) campaignLabelExport.hidden = !state.session.is_admin;
   // The head script replays the last server-confirmed intent access before the
   // first paint. Language/theme rendering runs before /api/session resolves,
   // so an absent capability must not be coerced to false and briefly collapse
@@ -134,7 +143,9 @@ function renderSession() {
         : uiText("当前没有可信 SSO；Run 创建人将记为未记录。", "No trusted SSO; the Run creator will be recorded as unknown.");
   }
   if (state.activePage === "prediction") ensurePredictionBatchName();
+  if (typeof applyRunCollectionReadOnlyGating === "function") applyRunCollectionReadOnlyGating();
   if (typeof renderGtSyncStatus === "function") renderGtSyncStatus();
+  if (typeof syncReviewWorkflowMode === "function") syncReviewWorkflowMode(state.selectedCase);
 }
 
 async function loadSession() {
@@ -346,11 +357,23 @@ function renderConfig() {
   renderBatchRuntimeSummary();
   const caseLabelingNav = $("#caseLabelingNavButton");
   if (caseLabelingNav) {
-    caseLabelingNav.hidden = !state.session?.is_admin;
+    caseLabelingNav.hidden = !hasDashboardWriteRole();
   }
   const caseLabelingNavGroup = $("#caseLabelingNavGroup");
   if (caseLabelingNavGroup) {
-    caseLabelingNavGroup.hidden = !state.session?.is_admin;
+    caseLabelingNavGroup.hidden = !hasDashboardWriteRole();
+  }
+  const labelingExperimentsNav = $("#labelingExperimentsNavButton");
+  if (labelingExperimentsNav) {
+    labelingExperimentsNav.hidden = !state.session?.is_admin;
+  }
+  const caseLabelingCreateTask = $("#caseLabelingCreateTask");
+  if (caseLabelingCreateTask) caseLabelingCreateTask.hidden = !state.session?.is_admin;
+  const caseLabelingExportGt = $("#caseLabelingExportGt");
+  if (caseLabelingExportGt) caseLabelingExportGt.hidden = !state.session?.is_admin;
+  const campaignLabelExport = $("#campaignLabelExportCsv");
+  if (campaignLabelExport) {
+    campaignLabelExport.hidden = !state.session?.is_admin;
   }
   updateFilteredPredictionButton();
   if (typeof renderReviewCatalogFilters === "function") {
@@ -366,8 +389,8 @@ function renderAnalysisCatalogFilters() {
   renderMultiFilter($("#analysisStatusFilter"), {
     options: [
       { value: "pending", label: t("status.pending") },
-      { value: "reviewed", label: t("status.matches_gt") },
-      { value: "needs_gt_review", label: t("status.needs_gt") },
+      { value: "in_progress", label: uiText("复核中", "In progress") },
+      { value: "completed", label: uiText("已完成", "Completed") },
     ],
     selected: getMultiFilterValues($("#analysisStatusFilter")),
     onChange,
@@ -618,11 +641,19 @@ function resolveSessionInBackground() {
 }
 
 async function settleInitialRequests(requests, scope) {
-  const results = await Promise.allSettled(requests);
-  const failures = results.filter((result) => result.status === "rejected");
+  const entries = requests.map((item, index) => (
+    item && typeof item === "object" && "promise" in item
+      ? { name: item.name || `${scope}请求${index + 1}`, promise: item.promise }
+      : { name: `${scope}请求${index + 1}`, promise: item }
+  ));
+  const results = await Promise.allSettled(entries.map((item) => item.promise));
+  const failures = results
+    .map((result, index) => ({ result, name: entries[index].name }))
+    .filter((item) => item.result.status === "rejected");
   if (failures.length) {
+    const names = failures.map((item) => item.name).join("、");
     showToast(
-      `${scope}有 ${failures.length} 项暂时未加载；可点击刷新重试。`,
+      `${scope}加载失败：${names}；可点击刷新重试。`,
       true
     );
   }

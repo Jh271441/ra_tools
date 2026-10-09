@@ -11,11 +11,10 @@
   .trail-update-header-panel, .trail-update-results-panel,
   .trail-update-controls-card, .trail-update-table-card,
   .runs-toolbar, .run-manager-actions { min-width: 0; max-width: 100%; }
-  .review-filters, .analysis-filters, .trail-update-filters,
+  .analysis-filters, .trail-update-filters,
   .intent-summary-filters, .batch-history-filters {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
-  .filter-model-run, .filter-search,
   .analysis-run-filter, .analysis-search-actions,
   .intent-summary-comment-field { grid-column: 1 / -1 !important; }
 }
@@ -183,7 +182,7 @@
   .page-actions { flex-direction: row; flex-wrap: wrap; }
   .page-actions .button { flex: 1 1 140px; width: auto; }
 
-  .review-assignments-header { align-items: flex-start; flex-direction: column; gap: 10px; }
+  .review-assignments-header-main { align-items: flex-start; flex-direction: column; gap: 10px; }
   .review-assignments-header-actions { width: 100%; justify-content: flex-start; flex-wrap: wrap; }
   .review-assignment-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .review-assignment-detail-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -250,7 +249,7 @@
   .review-assignment-page-jump-control input { width: 72px; }
   .review-assignment-change-row { align-items: flex-start; flex-direction: column; gap: 4px; }
   .review-section-heading .review-heading-actions .history-inline-button { width: 100%; min-height: 44px; }
-  .review-tag-groups, .label-buttons { grid-template-columns: minmax(0, 1fr) !important; }
+  .label-buttons { grid-template-columns: minmax(0, 1fr) !important; }
   .review-reason textarea, textarea { min-height: 112px; }
   .analysis-issue-input { height: 44px; min-height: 44px !important; resize: none; }
   .pending-screenshot-list,
@@ -381,4 +380,246 @@
   .app-shell.sidebar-mobile-open .sidebar-nav-group-items { display: grid; gap: 3px; }
   .app-shell.sidebar-mobile-open .sidebar-nav-group-items[hidden] { display: none !important; }
   .app-shell.sidebar-mobile-open .sidebar-group-chevron { display: block; }
+}
+
+
+/* 2026-10 phone workbench: accessible controls, compact reading order, no desktop changes. */
+.mobile-topbar-more, .mobile-workspace-jumps, .mobile-summary-tools { display: none; }
+@media (max-width: 639px) {
+  .topbar {
+    position: sticky; top: 0; padding: 6px 8px 8px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "brand actions" "baselines baselines" "metrics metrics";
+  }
+  .topbar .brand { padding-left: 52px; min-width: 0; }
+  .topbar .brand > div { min-width: 0; max-width: 100%; }
+  .topbar #pageTitle { font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .topbar .top-actions { gap: 6px; }
+  .topbar .top-actions kbd { display: none; }
+  .topbar .topbar-baselines { width: 100%; margin: 0; }
+  .topbar .topbar-baselines .multi-filter-trigger { font-size: 14px; }
+  .mobile-topbar-more { display: block; position: relative; }
+  .mobile-topbar-more > summary { min-height: 44px; min-width: 48px; display: flex; align-items: center; justify-content: center; cursor: pointer; list-style: none; font-size: 13px; }
+  .mobile-topbar-more > summary::-webkit-details-marker { display: none; }
+  .mobile-topbar-more[open] > summary { border-color: var(--accent); }
+  .mobile-topbar-panel { position: absolute; right: 0; top: calc(100% + 8px); z-index: 100; display: grid; gap: 8px; width: min(286px, calc(100vw - 32px)); padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--raised); box-shadow: 0 12px 30px rgba(0,0,0,.28); }
+  .mobile-topbar-panel > .button { width: 100%; max-width: none; text-align: left; justify-content: flex-start; font-size: 14px; }
+  .mobile-topbar-panel #themeToggleButton, .mobile-topbar-panel #languageToggleButton { font-size: 0; }
+  .mobile-topbar-panel #themeToggleButton::after, .mobile-topbar-panel #languageToggleButton::after { content: attr(aria-label); font-size: 14px; }
+  .mobile-topbar-panel #shortcutHelpButton > span { display: initial; }
+  html[data-ui-lang="zh"] .mobile-topbar-panel #shortcutHelpButton .ui-lang-en,
+  html[data-ui-lang="en"] .mobile-topbar-panel #shortcutHelpButton .ui-lang-zh { display: none; }
+  .mobile-topbar-panel .gt-sync-control { grid-area: auto; width: 100%; max-width: 100%; margin: 0; }
+  .mobile-topbar-panel .gt-sync-meta { flex: 1; font-size: 11px; }
+  .topbar .header-metrics { margin: 0; }
+  .header-metrics > div { min-width: 0; }
+  .header-metrics span { white-space: normal; }
+  .mobile-sidebar-open, .mobile-sidebar-open body { overflow: hidden; }
+  .app-shell.sidebar-mobile-open .sidebar-nav-group .sidebar-item { min-height: 48px; }
+  .sidebar-group-toggle { min-height: 44px; }
+
+  /* Every collapsible form now has a reachable mobile toggle. */
+  .review-filters:not([data-mobile-filter-panel]):not(.is-open) { display: grid !important; }
+  .mobile-filter-bar .mobile-filter-toggle { min-height: 44px; font-size: 14px; }
+  .review-filters.is-open, .analysis-filters.is-open { padding-top: 8px; gap: 12px; }
+  #filterForm .ui-select-trigger, .review-filters .ui-select-trigger,
+  .review-filters .multi-filter-trigger, .analysis-filters .multi-filter-trigger,
+  .assignment-composer .ui-select-trigger { height: 44px; min-height: 44px; font-size: 16px; }
+  .review-filters input:not([type="checkbox"]), .review-filters select,
+  .analysis-filters input:not([type="checkbox"]), .assignment-composer input { font-size: 16px; }
+  .review-filters label, .analysis-filters label { font-size: 12px; }
+  #filterForm .review-task-filter-row { height: 44px; }
+  #filterForm .review-workflow-mode small, #filterForm .review-task-summary { position: static; font-size: 11px; }
+  .review-filters .issue-query-control { grid-template-columns: minmax(0, 1fr) 88px; }
+  .labeling-summary-actions { justify-content: stretch; }
+  .labeling-summary-actions .button { flex: 1; }
+  .multi-filter-option-row, .ui-select-option, .review-status-option { min-height: 44px; font-size: 14px; }
+  .ui-select-search, .multi-filter-search { font-size: 16px; min-height: 44px; }
+  .ui-select-panel, .multi-filter-panel { max-width: calc(100vw - 24px); }
+  .gallery-heading { gap: 10px; }
+  .case-labeling-page .gallery-heading-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .gallery-heading-actions .button { white-space: normal; font-size: 12px; }
+  .issue-card .case-title, .issue-card .issue-title, .issue-card .case-issue-link { font-size: 14px; }
+  .card-media-preview { min-height: 36px; }
+
+  /* Read results first; large tag charts can be opened explicitly. */
+  .mobile-summary-tools { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .mobile-summary-tools .button { font-size: 12px; white-space: normal; }
+  .mobile-summary-tools [aria-expanded="true"] { border-color: var(--accent); background: var(--accent-soft); }
+  #labelSummaryClusterPanels:not(.mobile-expanded) { display: none !important; }
+  #labelSummaryContent .analysis-summary-grid { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; gap: 6px; }
+  #labelSummaryContent .analysis-stat-card { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; padding: 10px 8px; min-height: 98px; }
+  #labelSummaryContent .analysis-stat-card > span { font-size: 11px; }
+  #labelSummaryContent .analysis-stat-card > strong { font-size: 24px; align-self: flex-start; }
+  #labelSummaryContent .analysis-stat-card > small { font-size: 10px; white-space: normal; }
+  .analysis-confusion-wrap { overflow: auto; }
+  .analysis-confusion-table { width: 100%; min-width: 0; table-layout: fixed; font-size: 11px; border-spacing: 3px; }
+  .analysis-confusion-table th, .analysis-confusion-table td { min-width: 0; padding: 8px 2px; font-size: 11px; white-space: normal; overflow-wrap: anywhere; }
+  .analysis-pie-group, .analysis-pie-group.is-dual { display: grid; grid-template-columns: 104px minmax(0, 1fr); gap: 10px; }
+  .analysis-pie-svg { width: 104px; height: 104px; }
+  .analysis-pie-figure { width: 104px; }
+  .analysis-pie-center b { font-size: 15px; }
+  .analysis-pie-legend-line { flex-wrap: wrap; gap: 2px 5px; }
+  .analysis-pie-legend-line strong, .analysis-pie-legend-line small { font-size: 11px; white-space: normal; }
+  .analysis-cluster-card { min-height: 0; }
+  .label-summary-detail-heading { flex-direction: row; align-items: center; flex-wrap: wrap; }
+  .label-summary-detail-heading > .label-summary-detail-actions { gap: 6px 10px; }
+  .label-summary-rules-button { min-height: 44px; font-size: 12px; }
+  .label-summary-case-row .analysis-case-identity { font-size: 14px; }
+  .analysis-case-identity strong, .analysis-issue-link { font-size: 14px; }
+  .analysis-case-reason > strong { font-size: 14px; line-height: 1.6; }
+  .analysis-chip { font-size: 11px; padding: 4px 6px; }
+  .label-summary-result-line, .label-summary-final-label > span:first-child, .label-summary-gt-line { font-size: 12px; }
+  .label-summary-case-row .analysis-case-meta { justify-items: start; text-align: left; padding-top: 8px; border-top: 1px solid var(--line); }
+  .label-summary-case-row .label-summary-source-line { font-size: 12px; }
+  .label-summary-case-row .label-summary-source > summary { margin-left: 0; min-height: 36px; line-height: 1.6; }
+  .label-summary-original-votes > summary { padding-block: 10px; font-size: 12px; }
+  .analysis-case-actions a { display: inline-flex; align-items: center; min-height: 44px; font-size: 13px; }
+
+  /* Detail navigation and form: full labels, usable queue input, less toolbar stacking. */
+  .mobile-workspace-jumps { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; border-bottom: 1px solid var(--line); }
+  .mobile-workspace-jumps > .button { width: auto; padding: 4px 12px; border-color: transparent; background: transparent; box-shadow: none; font-size: 12px; font-weight: 500; }
+  .mobile-workspace-jumps > .button:only-child { flex: 1; }
+  #caseLabelingEditor, #caseLabelingMedia, #reviewPane, #detailPane, #labelSummaryCaseList { scroll-margin-top: 12px; }
+  .case-detail-pager { grid-template-columns: minmax(0, 1fr) 82px minmax(0, 1fr); }
+  .case-detail-pager .detail-queue-position { display: flex; align-items: center; gap: 3px; min-width: 0; }
+  .case-detail-pager .detail-queue-index-input { width: 45px; min-width: 0; padding: 4px; text-align: center; font-size: 16px; }
+  .detail-queue-total { white-space: nowrap; font-size: 11px; }
+  .review-control-shortcut, .review-save-shortcut, .review-form kbd { display: none; }
+  .detail-title .detail-id { font-size: 14px; }
+  .detail-external-links { font-size: 12px; line-height: 1.5; }
+  .detail-media-command { grid-template-columns: minmax(0, 1fr) 92px; }
+  .detail-media-command .detail-media-expand { width: auto; }
+  .review-form label > span, .review-section-heading h2 { font-size: 14px; }
+  .review-form textarea { font-size: 16px; min-height: 128px; line-height: 1.6; }
+  .review-save-button { position: sticky; bottom: max(8px, env(safe-area-inset-bottom)); z-index: 4; min-height: 48px !important; box-shadow: 0 2px 14px rgba(0,0,0,.25); }
+  .review-tag-group-trigger, .review-tag-add, .screenshot-browse-button, .history-inline-button { min-height: 44px; }
+  .tag-choice, .tag-choice-button { min-height: 40px; font-size: 13px; }
+  .screenshot-paste-copy small { font-size: 11px; line-height: 1.5; }
+
+  /* Assignment draft controls use full rows; long names no longer lose half their input. */
+  .assignment-composer.assignment-composer { padding: 12px; }
+  .assignment-composer .intent-experiment-name-control input { padding-right: 48px; font-size: 16px; }
+  .assignment-composer .intent-experiment-name-control { display: grid; gap: 5px; }
+  .assignment-composer .intent-experiment-name-control > .assignment-name-source { position: static; justify-self: start; font-size: 11px; }
+  .assignment-composer .assignment-name-refresh { top: 0; right: 0; transform: none; width: 44px; height: 44px; }
+  .assignment-composer .work-split-person-row { grid-template-columns: minmax(0, 1fr) 44px; gap: 7px; }
+  .assignment-composer .work-split-person-picker { grid-column: 1 / -1; }
+  .assignment-composer .work-split-person-row input { width: 100%; font-size: 16px; }
+  .assignment-composer .work-split-remove-person { width: 44px; height: 44px; }
+  .assignment-composer .assignment-footer-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .assignment-footer-row > .work-split-seed, .assignment-footer-row > .dialog-actions { grid-column: 1 / -1; width: 100%; margin: 0; }
+  .assignment-composer .assignment-footer-row > .work-split-seed { display: grid; grid-template-columns: 1fr; }
+  .assignment-composer .assignment-footer-row > .work-split-seed input { width: 100%; }
+  .assignment-composer .assignment-footer-row > .dialog-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .assignment-composer .assignment-footer-row .button { min-height: 44px; height: auto; }
+  .assignment-people-heading .work-split-estimate { width: 100%; margin-left: 0; text-align: left; font-size: 12px; }
+  .review-assignment-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .review-assignment-batch-header h3, .review-assignment-batch-meta { overflow-wrap: anywhere; }
+  .review-assignment-batch-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; gap: 8px; }
+  .review-assignment-batch-actions .button { min-width: 0; white-space: normal; }
+  .review-assignment-table-scroll { overflow-x: auto; }
+  .review-assignment-table { min-width: 650px; }
+
+  /* Dialogs scroll internally; table overflow stays local, never clips the page. */
+  dialog .dialog-heading .icon-button { min-width: 44px; width: 44px; height: 44px; }
+  dialog .dialog-heading h2 { font-size: 17px; }
+  dialog .dialog-card { min-width: 0; overflow-y: auto; overscroll-behavior: contain; }
+  .dialog-copy { font-size: 13px; line-height: 1.6; }
+  .toast { left: 12px; right: 12px; bottom: max(12px, env(safe-area-inset-bottom)); max-width: none; font-size: 13px; }
+}
+
+@media (max-width: 639px) {
+  .mobile-filter-bar .mobile-filter-toggle { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .review-tag-dropdown > summary { min-height: 48px; padding-block: 4px; }
+  .review-tag-dropdown .tag-group-label { font-size: 14px; }
+  .review-tag-dropdown > summary .tag-catalog-add-button { width: 40px; height: 40px; }
+  .review-tag-dropdown .review-tag-options .tag-option { min-height: 44px; }
+  .review-tag-dropdown .review-tag-options .tag-option-check { min-height: 36px; font-size: 14px; }
+  .tag-option-menu-toggle { min-width: 36px; min-height: 36px; }
+  .multi-filter-tools button, .multi-filter-actions button { min-height: 40px; font-size: 13px; }
+  .case-labeling-current-result .text-link { display: inline-flex; align-items: center; min-height: 44px; }
+}
+
+@media (max-width: 639px) {
+  .run-source-tab, .run-source-tab.active { display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 6px; padding: 8px 4px; min-height: 100px; }
+  .run-source-tab > span:nth-child(2) { display: grid; width: 100%; }
+  .run-source-tab strong { white-space: normal; font-size: 12px; text-align: center; overflow-wrap: anywhere; }
+  .run-source-tab small { display: none; }
+  .run-source-tab em { display: block; min-width: 0; font-size: 11px; }
+  .run-row-title { flex-wrap: wrap; }
+  .run-row-title strong { flex-basis: 100%; white-space: normal; overflow-wrap: anywhere; font-size: 14px; }
+  .run-row-meta { min-width: 0; font-size: 12px; }
+  .run-row-meta > span, .run-meta-value, .run-source-ref { min-width: 0; max-width: 100%; overflow-wrap: anywhere; white-space: normal; }
+}
+
+/* Compact phone density: title/dataset together, categorical filters in pairs. */
+@media (max-width: 639px) {
+  .topbar { grid-template-columns: minmax(0, 1fr) minmax(108px, 1.1fr) auto; grid-template-areas: "brand baselines actions" "metrics metrics metrics"; gap: 6px; align-items: center; }
+  .topbar .brand { padding-left: 48px; }
+  .topbar .topbar-baselines { min-width: 0; width: 100%; }
+  .topbar .topbar-baselines .multi-filter-trigger { padding: 6px 20px 6px 8px; font-size: 13px; }
+  .topbar .topbar-baselines-label { display: none; }
+  #caseLabelingFilterForm.case-labeling-filters.is-open,
+  #labelSummaryFilterForm.case-labeling-filters.is-open { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 10px 8px; }
+  #caseLabelingFilterForm > *, #labelSummaryFilterForm > * { grid-column: auto !important; min-width: 0; }
+  #caseLabelingFilterForm > .case-labeling-search,
+  #labelSummaryFilterForm > .case-labeling-search,
+  #labelSummaryFilterForm > .labeling-summary-actions { grid-column: 1 / -1 !important; }
+  .mobile-filter-bar > .mobile-filter-toggle:only-child { width: 100%; min-width: 0; gap: 16px; }
+  .case-labeling-page .gallery-heading-actions { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .case-labeling-page .gallery-heading-actions .button { padding-inline: 5px; font-size: 12px; }
+}
+@media (max-width: 359px) {
+  .topbar #pageTitle { font-size: 14px; }
+  .topbar .topbar-baselines .multi-filter-trigger { font-size: 12px; }
+  .mobile-topbar-more > summary { min-width: 44px; padding-inline: 6px; }
+}
+
+/* A lone action fills its row; paired annotation categories stay together. */
+@media (max-width: 639px) {
+  .review-tag-groups { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 8px; }
+  .review-tag-groups > :only-child { grid-column: 1 / -1; }
+  .review-tag-dropdown > summary { grid-template-columns: minmax(0, 1fr) auto; gap: 3px; padding-inline: 6px; }
+  .review-tag-dropdown .tag-group-trailing { min-width: 0; gap: 2px; }
+  .review-tag-dropdown .tag-group-label { font-size: 13px; white-space: normal; overflow: visible; }
+  .review-tag-axis-title { font-size: 12px; }
+  .review-reason-shortcuts, .detail-media-help { display: none; }
+  .case-label-final-result { padding: 6px 0 10px; margin-bottom: 10px; }
+  .mobile-summary-tools > :only-child,
+  .mobile-workspace-jumps > :only-child,
+  .review-assignments-header-actions > :only-child,
+  .case-labeling-page .gallery-heading-actions > :only-child { grid-column: 1 / -1; }
+}
+@media (max-width: 399px) {
+  .review-tag-dropdown > summary { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .review-tag-dropdown .tag-group-trailing { justify-self: end; }
+}
+
+/* Detail hierarchy: Issue identity first, links secondary, GT and return paired. */
+@media (max-width: 639px) {
+  .detail-title-group { width: 100%; }
+  .detail-title { display: flex; align-items: center; gap: 6px 10px; }
+  .detail-title > h2 { font-size: 12px; color: var(--muted); font-weight: 500; }
+  .detail-title .detail-issue-id-group { display: inline-flex; align-items: center; min-width: 0; }
+  .detail-title .detail-id { font: 600 17px/1.4 var(--font-sans, system-ui); }
+  .detail-title .detail-copy-id-button { width: 36px; height: 40px; }
+  .detail-title .detail-external-links { display: flex; flex-wrap: wrap; gap: 5px 12px; align-items: center; margin: 0; }
+  .detail-external-links .detail-id { font: 500 12px/1.4 var(--font-sans, system-ui); min-height: 36px; display: inline-flex; align-items: center; }
+  .detail-context-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+  .detail-context-row > .comparison-summary { width: auto; min-width: 0; min-height: 44px; padding: 4px 0; border: 0; background: transparent; }
+  .detail-context-row > .detail-back-button { width: auto; justify-self: end; padding-inline: 6px; font-size: 12px; }
+  .detail-context-row > .detail-summary, .detail-context-row > .detail-context-actions { grid-column: 1 / -1; }
+  .detail-header { gap: 4px; }
+  .detail-title-row { gap: 6px; }
+  .review-section-heading h2 { font-size: 15px; }
+  .detail-media-command .detail-media-picker-trigger { font-size: 13px; font-weight: 500; }
+  .case-detail-pager .button,
+  .detail-context-row > .detail-back-button,
+  .detail-media-command .detail-media-expand { border-color: transparent; background: transparent; box-shadow: none; color: var(--muted); font-size: 12px; font-weight: 500; }
+  .case-detail-pager .button:first-child { justify-content: flex-start; }
+  .case-detail-pager .button:last-child { justify-content: flex-end; }
+  .case-detail-pager .button:disabled { opacity: .4; }
+  .case-detail-pager .detail-queue-index-input { background: transparent; border-color: var(--line); }
+  .detail-pane .bev-video-control-row .button { min-width: 40px; border-color: transparent; background: transparent; box-shadow: none; font-size: 12px; }
 }
