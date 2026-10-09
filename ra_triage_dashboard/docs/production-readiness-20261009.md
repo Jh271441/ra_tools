@@ -64,3 +64,18 @@ experiment root下 `production-readiness-20261009/`：
 
 真实正式域名的SSO写权限不能由匿名演练或mock单元测试替代；本轮不切路由、不提交
 真实标注，也不开双份GT/通知任务。上线结论应区分“准备验收通过”和“已完成正式上线”。
+
+## Final rehearsal evidence
+
+Candidate startup passed in production mode on an automatically selected free
+loopback port. Anonymous, forged X-SSO-User, and username-only cookie sessions
+were read-only; POSTs with the valid browser-v1 marker were denied by identity
+checks with403. The temporary process exited; no real annotation was submitted.
+
+All five scopes and six batches match current8786 business projections exactly:
+6076527bytes, SHA256 a67706f604222d85a17c7299981eaaea580474abeaed8bf8d8b9669abb7b3b08.
+The candidate also has its own90-table restore verification and separate daily
+backup schedule45 3 * * *. Production bind address is preserved from8785.
+
+Preparation passed. Final frozen-source delta checks, merge to master and live
+production-ingress SSO acceptance remain cutover gates. No traffic was switched.
