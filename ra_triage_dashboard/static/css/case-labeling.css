@@ -140,3 +140,13 @@ body[data-active-page^="labeling"] .gt-sync-control { margin-left: auto; }
 @media (max-width: 639px) {
   .case-label-final-result .case-label-why { min-height: 44px; }
 }
+
+/* Workflow status, distinct from the three-class result label. */
+.case-label-status { display: inline-flex; align-items: center; gap: 6px; width: fit-content; padding: 4px 9px; border: 1px solid rgba(245,158,11,.38); border-radius: 6px; color: #f6c86c; background: rgba(245,158,11,.10); font-size: 12px; font-weight: 650; line-height: 1.4; }
+.case-label-status::before { content: ""; width: 5px; height: 5px; flex: 0 0 5px; border-radius: 50%; background: currentColor; }
+.case-label-status[data-state="conflict"], .case-label-status[data-state="stale"] { color: #ff9a9a; border-color: rgba(248,113,113,.38); background: rgba(248,113,113,.10); }
+.case-label-status[data-state="resolved"] { color: #6ee7b7; border-color: rgba(52,211,153,.35); background: rgba(52,211,153,.10); }
+html[data-color-theme="light"] .case-label-status { color: #855300; border-color: #dfbe7a; background: #fff4d8; }
+html[data-color-theme="light"] .case-label-status[data-state="conflict"], html[data-color-theme="light"] .case-label-status[data-state="stale"] { color: #a72727; border-color: #e5aaaa; background: #ffeded; }
+html[data-color-theme="light"] .case-label-status[data-state="resolved"] { color: #096c4d; border-color: #8acfb8; background: #e6f8ef; }
+.case-label-explanation-dialog .case-label-status { font-size: 15px; }
