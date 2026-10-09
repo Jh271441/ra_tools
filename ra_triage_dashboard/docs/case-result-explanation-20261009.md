@@ -55,3 +55,15 @@ Issue ID 为主标题视觉焦点；“问题详情”降为辅助标识；外�
 浏览器已确认详情与弹窗的待完成高亮、正常开关及无控制台错误；未提交任何标注。
 截图reports/case_reason_20261009/pending-highlight565.jpg和pending-dialog-highlight565.jpg。
 8785、数据库与配置保持不变；前版d9c4979保留回滚。
+
+## 手机详情辅助按钮精简 · cache566
+
+用户指出手机按钮过于宽大。详情顶部定位入口改为并排文字按钮；翻页、返回、
+展开和视频辅助控制去掉整块强调底色/边框。GT取消外层卡片，媒体选择保留细边框。
+调整只在639px及以下生效，Case与Review共用；保留44px主要点击高度及保存按钮。
+571px定位按钮由266px宽变为74px，375px内容宽360px且无水平溢出。
+填写标注跳转、下一Issue/上一Issue返回原Case已验证；无控制台错误，未提交表单。
+发布a34d2bf5af3b5d78764cbb85ae99dbade834dc28/cache566；69前端检查通过；
+完整635 passed、5 skipped；冻结业务/API6214465字节完全一致。
+回执mobile-actions-20261009-566/release.json；8785/数据库/配置不变。
+截图reports/case_reason_20261009/mobile-actions571-566.jpg和mobile-actions375-566.jpg。
