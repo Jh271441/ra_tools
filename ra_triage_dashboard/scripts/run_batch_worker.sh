@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -eo pipefail
 umask 077
+if [[ -n "${DASHBOARD_BATCH_ADDRESS_SPACE_KIB:-}" ]]; then
+  ulimit -v "$DASHBOARD_BATCH_ADDRESS_SPACE_KIB"
+fi
 
 APP_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PYTHON_BIN="${DASHBOARD_PYTHON_BIN:-/volume/home/workspace/ra_triage_dashboard_venv/bin/python3}"

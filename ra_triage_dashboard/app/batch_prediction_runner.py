@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from .batch_prediction_worker import EVENT_PREFIX, LABELS, RESULT_PREFIX
+from .batch_resources import BatchResourceGuard
 from .db import Database
 from .model_catalog import model_gateway_chat_url, read_provider_api_key
 from .settings import Settings
@@ -499,6 +500,19 @@ class BatchPredictionRunner:
         action: str,
         payload: dict[str, Any],
     ) -> tuple[dict[str, Any], list[dict[str, Any]], Path]:
+        with BatchResourceGuard(self.settings.batch_bag_cache_dir) as guard:
+            return self._run_worker_guarded(
+                job_id=job_id, action=action, payload=payload, guard=guard
+            )
+
+    def _run_worker_guarded(
+        self,
+        *,
+        job_id: str,
+        action: str,
+        payload: dict[str, Any],
+        guard: BatchResourceGuard,
+    ) -> tuple[dict[str, Any], list[dict[str, Any]], Path]:
         job_dir = self.settings.jobs_dir / "batches" / job_id
         job_dir.mkdir(parents=True, exist_ok=True)
         log_path = job_dir / f"{action}.log"
@@ -508,7 +522,9 @@ class BatchPredictionRunner:
             "HOME": os.environ.get("HOME", ""),
             "LANG": os.environ.get("LANG", "C.UTF-8"),
             "RA_AUTO_TRIAGE_ROOT": str(self.settings.ra_auto_triage_root),
-            "DASHBOARD_PYTHON_BIN": sys.executable,
+            "DASHBOARD_PYTHON_BIN": (
+                os.getenv("DASHBOARD_BATCH_PYTHON_BIN", "").strip() or sys.executable
+            ),
             "BAG_PATH": str(self.settings.batch_bag_cache_dir),
             "BAG_CACHE_READ_ONLY": "false",
             "RA_TOOLS_ENABLED": "false",
@@ -520,6 +536,8 @@ class BatchPredictionRunner:
             "NO_PROXY": "*",
         }
         for name in (
+            "VOYAGER_SETUP_SCRIPT",
+            "RA_CODE_MANIFEST_SHA256",
             "RA_TOOLS_USERNAME",
             "RA_TOOLS_BASE_URL",
             "MODEL_TRIAGE_API_BASE_URL",
@@ -528,6 +546,7 @@ class BatchPredictionRunner:
             if value:
                 env[name] = value
         redactions: list[str] = []
+        env.update(guard.environment())
         worker_payload = dict(payload)
         if action == "predict" and str(payload.get("model_id") or "").strip():
             provider_id = str(payload.get("provider_id") or "kylin").strip().lower()
@@ -554,6 +573,7 @@ class BatchPredictionRunner:
                 start_new_session=True,
             )
             self._active_process = process
+            guard.start(process)
         if process.stdin is None or process.stdout is None:
             self._kill_process_group(process)
             raise RuntimeError("Batch worker 管道创建失败。")

@@ -469,6 +469,9 @@ def apply_prediction_configuration(
     ):
         raise ValueError("Batch worker Input Profile 快照校验失败。")
 
+    if input_config["use_ra_options"] and not hasattr(experiment, "use_ra_options"):
+        raise ValueError("当前 RA 运行版本不支持 RA/SWAG Options 输入。")
+
     experiment.prompt_version = prompt_version
     experiment.prompt_template = prompt_template
     experiment.prompt_template_sha256 = prompt_sha
@@ -533,7 +536,7 @@ def safe_experiment_config(
         "camera_topics": string_list(experiment.camera_topics),
         "use_ra_event": bool(experiment.use_ra_event),
         "strip_ra_cmd": bool(getattr(experiment, "strip_ra_cmd", False)),
-        "use_ra_options": bool(experiment.use_ra_options),
+        "use_ra_options": bool(getattr(experiment, "use_ra_options", False)),
         "use_trajectory_summary": bool(
             getattr(experiment, "use_trajectory_summary", False)
         ),
@@ -563,6 +566,40 @@ def safe_experiment_config(
 
 
 def repo_commit(ra_root: Path) -> str:
+    manifest_pin = os.environ.get("RA_CODE_MANIFEST_SHA256", "").strip()
+    if manifest_pin:
+        root = ra_root.resolve()
+        manifest = root / "migration-code-receipt.json"
+        if not re.fullmatch(r"[0-9a-f]{64}", manifest_pin):
+            raise ValueError("RA 代码清单 SHA-256 配置非法。")
+        if manifest.is_symlink() or not manifest.is_file() or manifest.stat().st_size > 2 * 1024 * 1024:
+            raise ValueError("RA 代码清单缺失或格式非法。")
+        raw = manifest.read_bytes()
+        if hashlib.sha256(raw).hexdigest() != manifest_pin:
+            raise ValueError("RA 代码清单与部署固定 SHA-256 不一致。")
+        receipt = json.loads(raw)
+        source_sha = receipt.get("source_sha", "")
+        files = receipt.get("files_sha256")
+        if not isinstance(source_sha, str) or not re.fullmatch(r"[0-9a-f]{40}", source_sha):
+            raise ValueError("RA 代码来源版本非法。")
+        if not isinstance(files, dict) or not {"vlm/__init__.py", "utils/config.py", "core/batch_engine.py"}.issubset(files):
+            raise ValueError("RA 代码清单缺少必要模块。")
+        for name, expected in files.items():
+            path = root / name
+            if (Path(name).is_absolute() or ".." in Path(name).parts or path.is_symlink()
+                    or not path.resolve().is_relative_to(root) or not path.is_file()
+                    or not isinstance(expected, str) or not re.fullmatch(r"[0-9a-f]{64}", expected)):
+                raise ValueError("RA 代码清单包含非法文件。")
+            digest = hashlib.sha256()
+            with path.open("rb") as handle:
+                for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                    digest.update(chunk)
+            if digest.hexdigest() != expected:
+                raise ValueError(f"RA 代码文件与部署清单不一致: {name}")
+        actual_python = {str(path.relative_to(root)) for path in root.rglob("*.py") if path.is_file()}
+        if actual_python != {name for name in files if name.endswith(".py")}:
+            raise ValueError("RA 代码目录存在清单外或缺失的 Python 模块。")
+        return source_sha
     result = subprocess.run(
         ["git", "rev-parse", "HEAD"],
         cwd=ra_root,
@@ -764,6 +801,7 @@ def predict(request: dict[str, Any], ra_root: Path) -> int:
         experiment_dict=worker_experiment,
         rate_limiter=rate_limiter,
         max_workers=min(
+            max(1, int(os.getenv("DASHBOARD_BATCH_MAX_WORKERS", "4"))),
             4, max(1, int(config.get("vlm_triage.max_workers", 4) or 4))
         ),
         task_timeout_sec=int(
@@ -1136,6 +1174,9 @@ def main() -> int:
         sys.path.insert(0, str(ra_root))
 
     try:
+        # Validate exported code before imports or model/Trail activity.
+        if os.environ.get("RA_CODE_MANIFEST_SHA256", "").strip():
+            repo_commit(ra_root)
         if action == "inspect":
             return inspect_default(ra_root)
         if action == "predict":
