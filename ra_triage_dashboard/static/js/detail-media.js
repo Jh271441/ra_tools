@@ -43,6 +43,10 @@ function videoPlayerMarkup(video, { zoomable = true, compact = false } = {}) {
     .sort((left, right) => left - right)
     .map((step) => `<option value="${escapeHtml(step)}" ${step === 1 ? "selected" : ""}>${escapeHtml(step)}s${step === frameStepSec ? escapeHtml(t("media.frame_step")) : ""}</option>`)
     .join("");
+  const tracks = (video?.tracks || []).filter((track) => safeSameOriginAssetUrl(track.url));
+  const trackControl = tracks.length > 1
+    ? `<label>视频源 <select data-video-track>${tracks.map((track) => `<option value="${escapeHtml(track.url)}">${escapeHtml(track.label)}</option>`).join("")}</select></label>`
+    : "";
   const posterUrl = String(video?.poster_url || "").trim();
   const posterAttribute = posterUrl ? ` poster="${escapeHtml(posterUrl)}"` : "";
   const videoMarkup = `<video src="${escapeHtml(video.url)}"${posterAttribute} preload="metadata" playsinline draggable="false" aria-label="Ares Studio BEV 视频"></video>`;
@@ -57,6 +61,7 @@ function videoPlayerMarkup(video, { zoomable = true, compact = false } = {}) {
     ${mediaMarkup}
     <div class="bev-video-controls" aria-label="BEV 视频控制">
       <div class="bev-video-control-row">
+        ${trackControl}
         <button class="button button-quiet" type="button" data-video-play>${escapeHtml(t("media.play"))}</button>
         <button class="button button-quiet" type="button" data-video-jump="-1"><span data-video-jump-label>−1s</span></button>
         <button class="button button-quiet" type="button" data-video-t0>${escapeHtml(t("media.back_t0"))}</button>
@@ -220,6 +225,27 @@ function bindBevVideoPlayers(root) {
         const sign = Number(button.dataset.videoJump) < 0 ? "−" : "+";
         button.querySelector("[data-video-jump-label]").textContent = `${sign}${step}s`;
       });
+    });
+    let trackChangeSequence = 0;
+    player.querySelector("[data-video-track]")?.addEventListener("change", (event) => {
+      const url = safeSameOriginAssetUrl(event.target.value);
+      if (!url) return;
+      const sequence = ++trackChangeSequence;
+      const position = Number.isFinite(video.currentTime) ? video.currentTime : configuredT0PlayerSec;
+      const wasPlaying = !video.paused;
+      video.pause();
+      cancelPendingSeek?.();
+      if (queuedSeekTimer !== null) window.clearTimeout(queuedSeekTimer);
+      queuedSeekTimer = null;
+      video.removeAttribute("poster");
+      video.src = url;
+      video.addEventListener("loadedmetadata", () => {
+        if (sequence !== trackChangeSequence) return;
+        seekTo(Math.min(position, Math.max(0, video.duration)));
+        video.playbackRate = Number(rateSelect.value || 1);
+        if (wasPlaying) video.play().catch(() => {});
+      }, { once: true });
+      video.load();
     });
     rateSelect.addEventListener("change", () => {
       video.playbackRate = Number(rateSelect.value || 1);

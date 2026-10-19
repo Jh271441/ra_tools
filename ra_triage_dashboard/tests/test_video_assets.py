@@ -60,6 +60,27 @@ class VideoIndexTest(unittest.TestCase):
         meta_path.write_text(json.dumps(metadata), encoding="utf-8")
         return meta_path, video
 
+    def test_camera_track_requires_same_axis_and_root_confined_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            meta_path, _ = self._write_capture(root)
+            camera = meta_path.parent / "camera.mp4"
+            camera.write_bytes(b"camera")
+            meta = json.loads(meta_path.read_text())
+            meta["request_timestamp_ms"] = 1234567890000
+            meta["camera_video"] = dict(status="verified", relative_path="camera.mp4",
+                request_timestamp_ms=1234567890000, duration_ms=40000, start_offset_ms=-20000)
+            meta_path.write_text(json.dumps(meta))
+            index = VideoIndex(root)
+            video = index.get_video("cn31842459")
+            self.assertEqual(len(video["tracks"]), 2)
+            self.assertEqual(index.get_asset_path("cn31842459", "camera-video"), camera.resolve())
+            for patch_value in [dict(request_timestamp_ms=0), dict(duration_ms=39900),
+                                dict(relative_path="../../../../outside.mp4")]:
+                invalid = dict(meta, camera_video=dict(meta["camera_video"], **patch_value))
+                meta_path.write_text(json.dumps(invalid))
+                self.assertNotIn("tracks", VideoIndex(root).get_video("cn31842459"))
+
     def test_resolves_root_confined_video_and_timeline_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

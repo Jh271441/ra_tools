@@ -592,7 +592,7 @@ class VideoIndex:
             )
             frame_count = _number_or_none(render_meta.get("frame_count"))
             size = variant.get("video_size") or {}
-            return {
+            descriptor = {
                 "id": asset_id,
                 "url": with_base_path(
                     self.base_path,
@@ -617,6 +617,25 @@ class VideoIndex:
                 "width": _number_or_none(size.get("width")),
                 "height": _number_or_none(size.get("height")),
             }
+            camera = meta.get("camera_video") or {}
+            if isinstance(camera, dict) and camera.get("status") == "verified":
+                camera_path = self._resolve_asset(meta_path.parent, str(camera.get("relative_path") or ""))
+                same_axis = (
+                    camera.get("request_timestamp_ms") == meta.get("request_timestamp_ms")
+                    and camera.get("request_timestamp_ms") is not None
+                    and camera.get("duration_ms") == duration_ms == 40000
+                    and camera.get("start_offset_ms") == -20000
+                    and start_offset_sec == -20
+                )
+                if same_axis and camera_path and camera_path.is_file() and camera_path.suffix.lower() == ".mp4":
+                    camera_id = "camera-video"
+                    with self._lock:
+                        self._assets[issue_id][camera_id] = camera_path
+                    descriptor["tracks"] = [
+                        {"label": "BEV 视频", "url": descriptor["url"]},
+                        {"label": "Camera102 视频", "url": with_base_path(self.base_path, f"/api/assets/{quote(issue_id)}/{camera_id}")},
+                    ]
+            return descriptor
         return None
 
     def _resolve_asset(self, base: Path, relative_path: str) -> Path | None:
