@@ -72,7 +72,9 @@ class PromptInputContractTest(unittest.TestCase):
                 "use_bev_animation": False,
             }
         )
-        experiment = SimpleNamespace()
+        # This case exercises a runtime that supports the requested Options.
+        # Runtimes without this field are rejected by the compatibility tests.
+        experiment = SimpleNamespace(use_ra_options=False)
         metadata = apply_prediction_configuration(
             experiment,
             {
