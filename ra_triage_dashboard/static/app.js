@@ -22,6 +22,7 @@
     "session-config.js",
     "system-status.js",
     "daily-cron.js",
+    "daily-cron-graph.js",
     "runs.js",
     "run-comparison.js",
     "run-collections.js",

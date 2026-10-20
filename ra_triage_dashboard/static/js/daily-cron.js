@@ -1,5 +1,5 @@
 /* Daily automation view. Uses only the same-origin, read-only monitor adapter. */
-const dailyCronState = { data: null, error: false, active: false, timer: null, controller: null };
+const dailyCronState = { data: null, error: false, active: false, timer: null, controller: null, selectedDay: "", selectedNode: "" };
 
 function cronTime(value) {
   if (value == null || value === "") return "—";
@@ -53,7 +53,7 @@ function renderDailyCron() {
   if (!$("#dailyCronPage")) return;
   const data = dailyCronState.data;
   if (!data) return;
-  const overview = data.overview, daily = overview?.daily, run = cronLatestRun(data), sidecar = data.sidecar;
+  const overview = data.overview, daily = overview?.daily, run = typeof cronSelectedRuns === "function" ? cronSelectedRuns(data).main : cronLatestRun(data), sidecar = data.sidecar;
   const observationAge = Date.now() / 1000 - (overview?.collected_at || 0);
   const stale = Boolean(overview && (overview.stale || overview.collector_error || observationAge > 90));
   const unavailable = Object.values(data.sources || {}).some((value) => value !== "ready");
@@ -66,12 +66,16 @@ function renderDailyCron() {
     : uiText("监控已连接 · 每 30 秒刷新", "Monitor connected · Refreshes every 30s"))
     + ` · ${uiText("采集于", "Collected")} ${cronTime(overview?.collected_at || data.observed_at)} CST`;
   const outcome = run?.health || daily?.health || "unavailable";
-  $("#dailyCronMetrics").innerHTML = [
-    cronMetric(uiText("最新目标数据日", "Latest target day"), run?.target_date_cst || "—", run?.target_is_weekend ? uiText("CST 周末 · 按实际查询结果处理", "CST weekend · Actual query determines data") : "Asia/Shanghai · T−2"),
-    cronMetric(uiText("主流程最终回执", "Final pipeline receipt"), cronLabel(outcome), stale ? uiText("数据过期，请等待刷新", "Stale observation") : uiText("回刷与验证以最终回执为准", "Final publication and verification receipt"), stale ? "warn" : cronTone(outcome)),
-    cronMetric(uiText("已验证回刷 / 已选中", "Verified / Selected"), cronFraction(run?.verified, run?.selected), `${uiText("跳过", "Skipped")} ${cronCount(run?.skipped)} · ${uiText("覆盖率", "Coverage")} ${run?.coverage == null ? "—" : `${(run.coverage * 100).toFixed(2)}%`}`),
-    cronMetric(uiText("每日媒体旁路", "Daily media sidecar"), sidecar ? uiText(sidecar.daily_enabled ? "已启用" : "未启用", sidecar.daily_enabled ? "Enabled" : "Disabled") : cronLabel("unavailable"), uiText("旁路结果独立，不影响主流程", "Independent of the main pipeline"), sidecar?.controller_error || sidecar?.stale ? "warn" : "neutral"),
-  ].join("");
+  if ($("#dailyCronMainStatus")) {
+    const picked = cronSelectedRuns(data), runtime = data.media_daily, media = picked.media;
+    $("#dailyCronMainStatus").innerHTML = cronChip(outcome);
+    $("#dailyCronMainValue").textContent = `${picked.day || "—"} · ${cronFraction(run?.verified, run?.selected)}`;
+    $("#dailyCronMainNote").textContent = `${uiText("已验证 / 选中", "Verified / Selected")} · ${uiText("跳过", "Skipped")} ${cronCount(run?.skipped)}`;
+    const mediaHealth = !runtime ? "unavailable" : runtime.controller_error ? "failed" : runtime.stale ? "stalled" : (media?.state === "complete" && (media.imported !== media.selected || media.assigned !== media.selected) ? "unknown" : media?.state) || "waiting";
+    $("#dailyCronMediaStatus").innerHTML = cronChip(mediaHealth);
+    $("#dailyCronMediaValue").textContent = `${picked.day || "—"} · ${cronFraction(media?.verified, media?.selected)}`;
+    $("#dailyCronMediaNote").textContent = `${uiText("双媒体验证 / 目标", "Both videos / Target")} · ${uiText("终态失败", "Terminal failures")} ${cronCount(media?.failure_count)}`;
+  }
   $("#dailyCronSchedule").textContent = daily
     ? `${uiText("下次计划", "Next schedule")} ${cronTime(daily.next_run_at)} CST · ${uiText("对应目标日", "Target")} ${daily.target_date || "—"} · ${uiText("调度心跳", "Scheduler heartbeat")} ${cronTime(daily.heartbeat_at)} CST`
     : uiText("主流程监控暂不可用", "Pipeline monitor unavailable");
@@ -105,6 +109,8 @@ function renderDailyCron() {
   renderDailyCronRuns(data);
   renderDailyCronSidecar(sidecar);
   renderDailyCronJobs();
+  if (typeof renderCronRunSelector === "function") renderCronRunSelector();
+  if (typeof renderDailyCronGraph === "function") void renderDailyCronGraph();
 }
 
 function renderDailyCronRuns(data) {

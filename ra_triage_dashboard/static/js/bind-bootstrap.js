@@ -486,6 +486,7 @@ function bindEvents() {
       showToast(error.message, true);
     }
   });
+  if (typeof bindCronGraphEvents === "function") bindCronGraphEvents();
   $("#dailyCronRefresh")?.addEventListener("click", () => loadDailyCron());
   $("#dailyCronSearch")?.addEventListener("input", () => renderDailyCronJobs());
   $("#gtSyncButton")?.addEventListener("click", () => {
@@ -758,7 +759,7 @@ function bindEvents() {
   bindMediaPanViewport($("#mediaViewport"));
   document.addEventListener("fullscreenchange", () => {
     updateMediaViewControls();
-    window.requestAnimationFrame(updateMediaPanState);
+    window.requestAnimationFrame(() => updateMediaPanState());
   });
   document.addEventListener("keydown", (event) => {
     if (!$("#mediaDialog").open) {

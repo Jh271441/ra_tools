@@ -26,6 +26,7 @@ function applyColorTheme(theme, { persist = true } = {}) {
     toggle.setAttribute("aria-label", themeLabel);
     toggle.title = themeLabel;
   }
+  if (typeof renderDailyCronGraph === "function") void renderDailyCronGraph();
   // Re-render theme/language-sensitive analysis visuals without a data reload.
   if (state.reviewAnalysis?.data && typeof renderAnalysisReviewStatus === "function") {
     renderAnalysisReviewStatus(state.reviewAnalysis.data);

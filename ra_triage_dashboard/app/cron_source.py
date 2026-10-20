@@ -10,10 +10,12 @@ import json
 import math
 import re
 import time
+from pathlib import Path
 from typing import Any
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
 from .timed_cache import TimedSingleFlightCache
+from .cron_media_source import media_snapshot
 
 MAX_RESPONSE_BYTES = 2_000_000
 SOURCE_PATHS = {
@@ -128,7 +130,7 @@ def _fetch(source: str) -> Any:
     return json.loads(raw)
 
 
-def _snapshot() -> dict:
+def _snapshot(ra_root: Path | None = None) -> dict:
     result: dict = {"observed_at": time.time(), "refresh_seconds": 30, "sources": {}}
     projectors = {"overview": _overview, "history": _history, "sidecar": _sidecar}
     # A missing sidecar/history must not hide the main pipeline, or vice versa.
@@ -141,8 +143,15 @@ def _snapshot() -> dict:
             except (OSError, ValueError, TypeError):
                 result[key] = None
                 result["sources"][key] = "unavailable"
+    if ra_root is not None:
+        try:
+            result["media_daily"] = media_snapshot(ra_root)
+            result["sources"]["media_daily"] = "ready"
+        except (OSError, ValueError, TypeError, AttributeError):
+            result["media_daily"] = None
+            result["sources"]["media_daily"] = "unavailable"
     return result
 
 
-def cron_snapshot() -> dict:
-    return _cache.get_or_load("current", _snapshot)
+def cron_snapshot(ra_root: Path | None = None) -> dict:
+    return _cache.get_or_load(str(ra_root), lambda: _snapshot(ra_root))

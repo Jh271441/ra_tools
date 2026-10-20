@@ -73,7 +73,7 @@ class DailyCronFrontendTest(unittest.TestCase):
         script = r'''
 const fs = require("fs"), vm = require("vm"), assert = require("assert");
 const nodes = new Map();
-const window = { setTimeout, clearTimeout, setInterval: () => 1, clearInterval: () => {} };
+const window = { setTimeout, clearTimeout, setInterval: () => 1, clearInterval: () => {}, RACronGraph: { render: () => {} } };
 let request;
 const context = vm.createContext({
   window, document: { hidden: false, addEventListener: () => {} }, AbortController, Date,
@@ -83,6 +83,7 @@ const context = vm.createContext({
   api: () => new Promise((resolve, reject) => { request = { resolve, reject }; }),
 });
 vm.runInContext(fs.readFileSync(process.argv[1], "utf8"), context);
+vm.runInContext(fs.readFileSync(process.argv[2], "utf8"), context);
 assert.equal(vm.runInContext("cronFraction(null, 10)", context), "— / 10");
 assert.equal(vm.runInContext("cronTime(null)", context), "—");
 assert.equal(vm.runInContext('cronLatestRun({overview:{daily:{runs:[{id:"smoke"},{id:"daily-2026-10-18"}]}}}).id', context), "daily-2026-10-18");
@@ -105,5 +106,5 @@ setImmediate(() => {
   });
 });
 '''
-        result = subprocess.run(["node", "-e", script, str(js)], capture_output=True, text=True, timeout=15)
+        result = subprocess.run(["node", "-e", script, str(js), str(js.with_name("daily-cron-graph.js"))], capture_output=True, text=True, timeout=15)
         self.assertEqual(result.returncode, 0, result.stderr)

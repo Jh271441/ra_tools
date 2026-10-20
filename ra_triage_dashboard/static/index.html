@@ -65,6 +65,7 @@
           "css/runs.css",
           "css/campaigns.css",
           "css/labeling-summary.css",
+          "vendor/cron-graph/graph.css",
           "css/daily-cron.css",
           "css/mobile.css",
         ];
@@ -1796,32 +1797,32 @@
 
           <section class="app-page tool-page daily-cron-page hidden" id="dailyCronPage" data-page="daily-cron">
             <div class="cron-page-heading">
-              <div><h2><span class="ui-lang-zh">每日自动化</span><span class="ui-lang-en">Daily automation</span></h2><p class="muted"><span class="ui-lang-zh">每日 09:00 CST · 处理 T−2 数据 · 主流程与媒体旁路独立判定</span><span class="ui-lang-en">09:00 CST daily · T−2 data · Independent pipeline and media outcomes</span></p></div>
-              <button class="button button-quiet" id="dailyCronRefresh" type="button"><span class="ui-lang-zh">刷新状态</span><span class="ui-lang-en">Refresh status</span></button>
+              <div class="cron-connection muted" id="dailyCronConnection" role="status" aria-live="polite"><span class="ui-lang-zh">正在连接…</span><span class="ui-lang-en">Connecting…</span></div>
+              <button class="button button-quiet" id="dailyCronRefresh" type="button"><span class="ui-lang-zh">刷新</span><span class="ui-lang-en">Refresh</span></button>
             </div>
-            <div class="cron-connection muted" id="dailyCronConnection" role="status" aria-live="polite"><span class="ui-lang-zh">正在连接监控服务…</span><span class="ui-lang-en">Connecting to monitor…</span></div>
-            <div class="cron-metrics" id="dailyCronMetrics"></div>
-            <section class="cron-panel" aria-labelledby="dailyCronSignalsTitle">
-              <div class="cron-section-heading"><h3 id="dailyCronSignalsTitle"><span class="ui-lang-zh">调度与提醒</span><span class="ui-lang-en">Schedule and alerts</span></h3><span class="muted">Asia/Shanghai · 30s</span></div>
-              <div id="dailyCronSchedule" class="cron-schedule"></div><div id="dailyCronAlerts"></div>
-              <div class="cron-history-caption muted"><span class="ui-lang-zh">过去 24 小时 · 每格一小时，取最严重观测</span><span class="ui-lang-en">Last 24 hours · Worst observation per hour</span><span class="ui-lang-zh">绿：正常 · 黄 / 红：提醒 · 灰：无观测</span><span class="ui-lang-en">Green: normal · Amber / red: alert · Grey: no observations</span></div>
-              <div class="cron-history" id="dailyCronHistory"></div>
+            <div class="cron-monitors" id="dailyCronMetrics">
+              <article class="cron-monitor" data-monitor="main">
+                <div class="cron-section-heading"><h3><span class="ui-lang-zh">Cron 1 · 每日推理回刷</span><span class="ui-lang-en">Cron 1 · Inference / publication</span></h3><span id="dailyCronMainStatus"></span><button class="cron-info-button" type="button" data-cron-help="main" aria-label="每日推理回刷流程说明" title="流程说明">!</button></div>
+                <strong id="dailyCronMainValue">—</strong><span class="muted" id="dailyCronMainNote">09:00 CST · T−2</span>
+              </article>
+              <article class="cron-monitor" data-monitor="media">
+                <div class="cron-section-heading"><h3><span class="ui-lang-zh">Cron 2 · 平台与媒体旁路</span><span class="ui-lang-en">Cron 2 · Platform / media</span></h3><span id="dailyCronMediaStatus"></span><button class="cron-info-button" type="button" data-cron-help="media" aria-label="平台与媒体旁路流程说明" title="流程说明">!</button></div>
+                <strong id="dailyCronMediaValue">—</strong><span class="muted" id="dailyCronMediaNote"><span class="ui-lang-zh">完成回执触发 · 独立判定</span><span class="ui-lang-en">Completion receipt · Independent outcome</span></span>
+              </article>
+            </div>
+            <section class="cron-panel cron-graph-panel" aria-labelledby="dailyCronGraphTitle">
+              <div class="cron-section-heading cron-graph-toolbar"><h3 id="dailyCronGraphTitle"><span class="ui-lang-zh">调度流水线</span><span class="ui-lang-en">Run graph</span></h3><select id="dailyCronRunDate" aria-label="选择运行日期"><option value="">最新运行</option></select><button class="button button-quiet" id="dailyCronFullscreen" type="button"><span class="ui-lang-zh">全屏</span><span class="ui-lang-en">Fullscreen</span></button></div>
+              <div class="cron-graph-workspace" id="dailyCronGraphWorkspace"><div class="cron-run-graph" id="dailyCronGraph" aria-label="两条独立任务链的动态运行图"></div><aside class="cron-node-details" id="dailyCronNodeDetails" hidden></aside><button class="button button-quiet cron-exit-fullscreen" type="button" id="dailyCronExitFullscreen"><span class="ui-lang-zh">退出全屏</span><span class="ui-lang-en">Exit fullscreen</span></button></div>
+              <div class="cron-graph-legend muted"><span data-state="success"><span class="ui-lang-zh">完成</span><span class="ui-lang-en">Complete</span></span><span data-state="running"><span class="ui-lang-zh">运行</span><span class="ui-lang-en">Running</span></span><span data-state="warn"><span class="ui-lang-zh">有缺失 / 恢复</span><span class="ui-lang-en">Gaps / Recovered</span></span><span data-state="failed"><span class="ui-lang-zh">失败</span><span class="ui-lang-en">Failed</span></span><span data-state="unknown"><span class="ui-lang-zh">等待 / 无回执</span><span class="ui-lang-en">Waiting / No evidence</span></span><span class="cron-graph-hint"><span class="ui-lang-zh">点击节点查看详情 · 拖动画布 / 双指缩放</span><span class="ui-lang-en">Select a task for details · Drag / pinch to zoom</span></span></div>
             </section>
-            <section class="cron-panel" aria-labelledby="dailyCronRunsTitle">
-              <div class="cron-section-heading"><h3 id="dailyCronRunsTitle"><span class="ui-lang-zh">每日流水线</span><span class="ui-lang-en">Daily pipeline</span></h3><span class="muted"><span class="ui-lang-zh">采集 → 推理 → 回刷 → 抽样 → 验证</span><span class="ui-lang-en">Collect → Infer → Publish → Sample → Verify</span></span></div>
-              <div id="dailyCronRuns" class="cron-runs"></div>
-            </section>
-            <section class="cron-panel" aria-labelledby="dailyCronSidecarTitle">
-              <div class="cron-section-heading"><h3 id="dailyCronSidecarTitle"><span class="ui-lang-zh">标注平台与媒体旁路</span><span class="ui-lang-en">Review platform and media sidecar</span></h3><span class="cron-chip" data-tone="neutral"><span class="ui-lang-zh">独立判定</span><span class="ui-lang-en">Independent outcome</span></span></div>
-              <div id="dailyCronSidecar"></div>
-              <p class="cron-note muted"><span class="ui-lang-zh">低置信度 + 抽样 → 按天导入 Run → 均分联合复核 → Camera / BEV（±20 秒）。Orion 失败重试一次，再转本地最多两次；少量失败如实记录，旁路失败不改变主任务结果。</span><span class="ui-lang-en">Low confidence + sampling → Daily Run → Balanced joint review → Camera / BEV (±20s). One Orion retry, then at most two local attempts. Sidecar failures are recorded independently.</span></p>
-            </section>
-            <section class="cron-panel" aria-labelledby="dailyCronJobsTitle">
-              <div class="cron-section-heading"><h3 id="dailyCronJobsTitle"><span class="ui-lang-zh">Cron 任务清单</span><span class="ui-lang-en">Cron inventory</span></h3><input id="dailyCronSearch" type="search" aria-label="搜索 Cron" placeholder="搜索任务或调度表达式" data-placeholder-zh="搜索任务或调度表达式" data-placeholder-en="Search task or schedule" /></div>
-              <p class="cron-note muted"><span class="ui-lang-zh">日志更新时间只表示活动，未接入退出回执的任务不据此判断成功；调度表达式沿用原 crontab 时区。</span><span class="ui-lang-en">Log timestamps indicate activity, not success. Schedules use the original crontab timezone.</span></p>
-              <div class="cron-table-wrap"><table class="cron-table"><thead><tr><th><span class="ui-lang-zh">任务</span><span class="ui-lang-en">Task</span></th><th><span class="ui-lang-zh">调度表达式</span><span class="ui-lang-en">Schedule</span></th><th><span class="ui-lang-zh">最近日志更新 · CST</span><span class="ui-lang-en">Log updated · CST</span></th><th><span class="ui-lang-zh">活动证据</span><span class="ui-lang-en">Activity</span></th></tr></thead><tbody id="dailyCronJobs"></tbody></table></div>
-            </section>
+            <details class="cron-panel cron-fold" id="dailyCronScheduleFold"><summary><span class="ui-lang-zh">调度与历史</span><span class="ui-lang-en">Schedule / History</span></summary>
+              <div id="dailyCronSchedule" class="cron-schedule"></div><div id="dailyCronAlerts"></div><div class="cron-history-caption muted"><span class="ui-lang-zh">近24小时 · 最严重观测</span><span class="ui-lang-en">24h · Worst observed state</span></div><div class="cron-history" id="dailyCronHistory"></div>
+            </details>
+            <details class="cron-panel cron-fold" id="dailyCronRunsFold"><summary><span class="ui-lang-zh">运行记录</span><span class="ui-lang-en">Run history</span></summary><div id="dailyCronRuns" class="cron-runs"></div></details>
+            <details class="cron-panel cron-fold"><summary><span class="ui-lang-zh">历史媒体回溯</span><span class="ui-lang-en">Historical media backfill</span></summary><div id="dailyCronSidecar"></div></details>
+            <details class="cron-panel cron-fold" id="dailyCronJobsFold"><summary><span class="ui-lang-zh">其他 Cron</span><span class="ui-lang-en">Other cron jobs</span></summary><div class="cron-section-heading"><input id="dailyCronSearch" type="search" aria-label="搜索 Cron" placeholder="搜索任务或调度表达式" data-placeholder-zh="搜索任务或调度表达式" data-placeholder-en="Search task or schedule" /></div><div class="cron-table-wrap"><table class="cron-table"><thead><tr><th><span class="ui-lang-zh">任务</span><span class="ui-lang-en">Task</span></th><th><span class="ui-lang-zh">调度</span><span class="ui-lang-en">Schedule</span></th><th><span class="ui-lang-zh">日志更新 · CST</span><span class="ui-lang-en">Log updated · CST</span></th><th><span class="ui-lang-zh">活动证据</span><span class="ui-lang-en">Activity</span></th></tr></thead><tbody id="dailyCronJobs"></tbody></table></div></details>
           </section>
+          <dialog class="dialog cron-help-dialog" id="dailyCronHelpDialog" aria-labelledby="dailyCronHelpTitle"><div class="cron-section-heading"><h3 id="dailyCronHelpTitle"></h3><button class="button button-quiet" id="dailyCronHelpClose" type="button" aria-label="关闭流程说明">×</button></div><div class="cron-help-graph" id="dailyCronHelpGraph"></div><p class="cron-note muted" id="dailyCronHelpNote"></p></dialog>
 
           <section class="app-page tool-page system-status-page hidden" id="systemStatusPage" data-page="status">
             <div class="compact-page-lead system-status-lead">

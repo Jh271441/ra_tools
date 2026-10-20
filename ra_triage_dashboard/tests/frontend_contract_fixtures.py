@@ -35,6 +35,7 @@ CSS_PATHS = (
     "css/runs.css",
     "css/campaigns.css",
     "css/labeling-summary.css",
+    "vendor/cron-graph/graph.css",
     "css/daily-cron.css",
     "css/mobile.css",
 )

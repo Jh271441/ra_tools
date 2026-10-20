@@ -1,6 +1,6 @@
 /* Daily Cron inherits the Workbench typography and light/dark design tokens. */
 body[data-active-page="daily-cron"] .topbar > :is(.topbar-baselines, .header-metrics, .gt-sync-control) { display: none; }
-.daily-cron-page { display: grid; gap: 16px; min-width: 0; max-width: 1440px; margin-inline: auto; width: 100%; }
+.daily-cron-page { display: grid; gap: 10px; min-width: 0; max-width: 1600px; margin-inline: auto; width: 100%; font-size: 12px; }
 .cron-page-heading, .cron-section-heading, .cron-run-heading, .cron-run-heading > div, .cron-sidecar-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .cron-page-heading h2 { margin-bottom: 6px; }
 .cron-page-heading p, .cron-note { font-size: 12px; line-height: 1.65; }
@@ -10,7 +10,7 @@ body[data-active-page="daily-cron"] .topbar > :is(.topbar-baselines, .header-met
 .cron-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .cron-metric { border: 1px solid var(--line); border-radius: var(--radius); background: var(--raised); padding: 16px; min-width: 0; display: grid; align-content: start; gap: 9px; }
 .cron-metric > span { font-size: 12px; }
-.cron-metric strong { font-size: 21px; line-height: 1.35; font-weight: 650; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.cron-metric strong { font-size: 16px; line-height: 1.35; font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .cron-metric small { font-size: 11px; line-height: 1.55; }
 .cron-metric[data-tone="ok"] strong { color: var(--ok); }
 .cron-metric[data-tone="warn"] strong { color: var(--warn); }
@@ -65,6 +65,70 @@ body[data-active-page="daily-cron"] .topbar > :is(.topbar-baselines, .header-met
 .cron-table td, .cron-table th { padding: 10px; border-bottom: 1px solid var(--line-soft); }
 .cron-table td:first-child { overflow-wrap: anywhere; min-width: 150px; max-width: 420px; }
 .cron-table td:not(:first-child) { white-space: nowrap; }
+.daily-cron-page h3 { font-size: 12px; font-weight: 600; }
+body[data-active-page="daily-cron"] #pageTitle { font-size: 16px; }
+.daily-cron-page .button { font-size: 11px; min-height: 28px; padding: 5px 9px; }
+.cron-page-heading { gap: 8px; }
+.cron-connection { font-size: 11px; }
+.cron-monitors { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.cron-monitor { display: grid; gap: 7px; border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; background: var(--raised); min-width: 0; }
+.cron-monitor .cron-section-heading { margin: 0; gap: 8px; flex-wrap: nowrap; }
+.cron-monitor .cron-section-heading h3 { margin-right: auto; min-width: 0; }
+.cron-monitor > strong { font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.cron-monitor > .muted { font-size: 11px; }
+.cron-info-button { width: 19px; height: 19px; padding: 0; border-radius: 50%; border: 1px solid var(--line); color: var(--muted); background: transparent; font-size: 12px; font-weight: 600; flex: 0 0 auto; }
+.cron-info-button:hover, .cron-info-button:focus-visible { color: var(--accent); border-color: var(--accent); }
+.cron-graph-panel { padding: 12px; }
+.cron-graph-toolbar { margin-bottom: 10px; flex-wrap: nowrap; gap: 8px; }
+.cron-graph-toolbar h3 { margin-right: auto; }
+.cron-graph-toolbar select { width: auto; max-width: 270px; min-width: 0; font-size: 11px; padding-block: 5px; min-height: 28px; }
+.cron-graph-workspace { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; background: var(--bg); border: 1px solid var(--line-soft); border-radius: 7px; overflow: hidden; }
+.cron-graph-workspace.has-selection { grid-template-columns: minmax(0, 1fr) 250px; }
+.cron-run-graph { height: clamp(480px, 60vh, 640px); min-width: 0; }
+.cron-graph-workspace:fullscreen { border-radius: 0; padding: 12px; box-sizing: border-box; height: 100%; }
+.cron-graph-workspace:fullscreen .cron-run-graph { height: calc(100vh - 26px); }
+.cron-exit-fullscreen { display: none; position: absolute; top: 16px; right: 16px; z-index: 10; background: var(--raised); }
+.cron-graph-workspace:fullscreen .cron-exit-fullscreen { display: block; }
+.cron-run-graph .react-flow, .cron-help-graph .react-flow { --xy-background-color: var(--bg); --xy-edge-stroke: var(--muted); --xy-node-background-color: var(--raised); --xy-node-color: var(--text); --xy-node-border: 1px solid var(--line); --xy-controls-button-background-color: var(--raised); --xy-controls-button-background-color-hover: var(--overlay-2); --xy-controls-button-color: var(--muted); --xy-controls-button-border-color: var(--line); --xy-minimap-background-color: var(--raised); --xy-minimap-mask-background-color: var(--accent-soft); background: var(--bg); font-family: inherit; }
+.cron-run-graph .react-flow__node-lane, .cron-help-graph .react-flow__node-lane { border: 1px solid var(--line); border-radius: 8px; background: color-mix(in srgb, var(--raised) 60%, transparent); pointer-events: none; }
+.cron-dag-lane-label { position: absolute; top: 14px; left: 18px; color: var(--muted); font-size: 12px; font-weight: 600; }
+.cron-dag-task { box-sizing: border-box; height: 82px; border: 1px solid var(--line); border-left: 3px solid var(--faint); border-radius: 7px; padding: 10px 10px 8px; background: var(--raised); color: var(--text); display: grid; gap: 5px; }
+.cron-dag-task-label { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.cron-dag-task-label strong { font-size: 12px; font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cron-dag-task-meta { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.cron-dag-task-state { font-size: 10px; color: var(--faint); }
+.cron-dag-state-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--faint); flex: 0 0 auto; }
+.cron-dag-task[data-state="success"] { border-left-color: var(--ok); }
+.cron-dag-task[data-state="warn"] { border-left-color: var(--warn); }
+.cron-dag-task[data-state="failed"] { border-left-color: var(--fail); }
+.cron-dag-task[data-state="running"] { border-left-color: var(--accent); }
+.cron-dag-task[data-state="success"] .cron-dag-state-dot { background: var(--ok); }
+.cron-dag-task[data-state="warn"] .cron-dag-state-dot { background: var(--warn); }
+.cron-dag-task[data-state="failed"] .cron-dag-state-dot { background: var(--fail); }
+.cron-dag-task[data-state="running"] .cron-dag-state-dot { background: var(--accent); }
+.react-flow__node-task.selected .cron-dag-task, .react-flow__node-task:focus-visible .cron-dag-task { outline: 1px solid var(--accent); outline-offset: 2px; }
+.cron-dag-task .react-flow__handle { width: 4px; height: 4px; background: var(--line); border-color: var(--muted); }
+.cron-run-graph .react-flow__minimap { border: 1px solid var(--line); border-radius: 5px; }
+.cron-run-graph .react-flow__attribution, .cron-help-graph .react-flow__attribution { font-size: 8px; background: var(--raised); color: var(--faint); }
+.cron-node-details { padding: 14px; border-left: 1px solid var(--line); background: var(--raised); overflow: auto; max-height: 640px; font-size: 11px; }
+.cron-node-details .cron-section-heading strong { font-size: 12px; }
+.cron-node-details dl { display: grid; gap: 12px; margin: 14px 0; }
+.cron-node-details dt { color: var(--muted); margin-bottom: 4px; }
+.cron-node-details dd { margin: 0; overflow-wrap: anywhere; line-height: 1.6; }
+.cron-graph-legend { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 9px; font-size: 10px; line-height: 1.7; }
+.cron-graph-legend > span[data-state]::before { content: ""; display: inline-block; width: 5px; height: 5px; margin-right: 5px; border-radius: 50%; background: var(--faint); vertical-align: middle; }
+.cron-graph-legend > span[data-state="success"]::before { background: var(--ok); }
+.cron-graph-legend > span[data-state="warn"]::before { background: var(--warn); }
+.cron-graph-legend > span[data-state="running"]::before { background: var(--accent); }
+.cron-graph-legend > span[data-state="failed"]::before { background: var(--fail); }
+.cron-graph-hint { margin-left: auto; }
+.cron-fold { padding: 10px 12px; }
+.cron-fold > summary { font-size: 11px; color: var(--muted); cursor: pointer; }
+.cron-fold[open] > summary { margin-bottom: 12px; }
+.cron-help-dialog { width: min(1100px, calc(100vw - 32px)); max-width: none; box-sizing: border-box; padding: 16px; background: var(--raised); color: var(--text); border: 1px solid var(--line); border-radius: 10px; }
+.cron-help-graph { height: min(460px, 60vh); border: 1px solid var(--line); border-radius: 6px; margin-bottom: 12px; }
+.cron-help-graph .react-flow__minimap { display: none; }
+.cron-help-dialog::backdrop { background: rgba(0, 0, 0, .5); }
 @media (max-width: 1100px) {
   .cron-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
@@ -79,4 +143,14 @@ body[data-active-page="daily-cron"] .topbar > :is(.topbar-baselines, .header-met
   .cron-sidecar-metrics { grid-template-columns: minmax(0, 1fr); }
   .cron-run-detail dl > div { grid-template-columns: minmax(0, 1fr); gap: 2px; }
   .cron-section-heading input { max-width: none; }
+  .cron-monitors { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .cron-monitor { padding: 10px 12px; }
+  .cron-monitor > strong { font-size: 14px; }
+  .cron-graph-toolbar { flex-wrap: wrap; }
+  .cron-graph-toolbar select { max-width: 220px; }
+  .cron-run-graph { height: 440px; }
+  .cron-run-graph .react-flow__minimap { display: none; }
+  .cron-graph-workspace.has-selection { grid-template-columns: minmax(0, 1fr); }
+  .cron-node-details { border-left: 0; border-top: 1px solid var(--line); max-height: 300px; }
+  .cron-graph-hint { margin-left: 0; }
 }

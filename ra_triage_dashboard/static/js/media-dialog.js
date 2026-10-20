@@ -320,7 +320,7 @@ async function toggleMediaFullscreen() {
     showToast(`无法切换全屏：${error.message}`, true);
   }
   updateMediaViewControls();
-  window.requestAnimationFrame(updateMediaPanState);
+  window.requestAnimationFrame(() => updateMediaPanState());
 }
 
 function switchMediaKind(kind) {
