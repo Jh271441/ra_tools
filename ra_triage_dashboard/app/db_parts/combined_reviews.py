@@ -26,6 +26,7 @@ class DatabaseCombinedReviewMixin:
         reviewer_verified: bool, expected_output: str, tags: Sequence[str],
         rationale: str, expected_case_revision_id: int | None,
         expected_label_state_fingerprint: str,
+        is_excluded: bool | None = None,
     ) -> dict[str, Any]:
         issue_key = str(issue_id or "").strip()
         actor = str(reviewer or "").strip().lower()
@@ -68,7 +69,9 @@ class DatabaseCombinedReviewMixin:
                 raise LabelAnnotationConflictError("Case 标签 vote 已变化，请刷新后重新确认。")
             if model_review_label_fingerprint(label_state) != str(expected_label_state_fingerprint or ""):
                 raise LabelAnnotationConflictError("共享 Case 标签结论已变化，请刷新后重新确认。")
-            if head is not None and str(head["expected_output"] or "") == output:
+            excluded = bool(head["is_excluded"]) if is_excluded is None and head is not None else bool(is_excluded)
+            if (head is not None and str(head["expected_output"] or "") == output
+                    and bool(head["is_excluded"]) == excluded):
                 return {
                     "case_action": "acknowledged", "case_revision": self._label_revision_dict(head),
                     "label_state": label_state,
@@ -96,13 +99,13 @@ class DatabaseCombinedReviewMixin:
                     label_case_id, expected_output, tags_json, evidence_gaps_json,
                     rationale, is_excluded, author, author_source, author_verified,
                     revision_kind, supersedes_id, source_annotation_id, created_at
-                ) VALUES (?, ?, ?, '[]', ?, false, ?, ?, true, 'submission', ?, NULL, ?)
+                ) VALUES (?, ?, ?, '[]', ?, ?, ?, ?, true, 'submission', ?, NULL, ?)
             """
             if self.backend == "postgresql":
                 sql += " RETURNING id"
             cursor = conn.execute(
                 sql,
-                (label_case_id, output, _json(clean_tags), str(rationale or ""), actor,
+                (label_case_id, output, _json(clean_tags), str(rationale or ""), excluded, actor,
                  str(reviewer_source or "legacy"), current_id, now),
             )
             revision_id = int(cursor.fetchone()["id"]) if self.backend == "postgresql" else int(cursor.lastrowid)
@@ -256,6 +259,7 @@ class DatabaseCombinedReviewMixin:
         expected_case_revision_id: int | None,
         expected_label_state_fingerprint: str,
         idempotency_key: str,
+        is_excluded: bool | None = None,
     ) -> dict[str, Any]:
         issue_key = str(issue_id or "").strip()
         campaign_key = str(campaign_id or "").strip()
@@ -275,6 +279,8 @@ class DatabaseCombinedReviewMixin:
         evidence = sorted({str(value or "").strip() for value in missing_evidence if str(value or "").strip()})
         clean_tags = sorted({str(value or "").strip() for value in tags if str(value or "").strip()})
         payload_fingerprint = _fingerprint({
+            # Omitted flags retain the historical fingerprint for old-client replays.
+            **({"is_excluded": bool(is_excluded)} if is_excluded is not None else {}),
             "issue_id": issue_key, "campaign_id": campaign_key,
             "model_run_id": run_key, "reviewer": actor,
             "model_review_status": status, "reason": str(reason or ""),
@@ -340,7 +346,10 @@ class DatabaseCombinedReviewMixin:
                 raise LabelAnnotationConflictError("共享 Case 标签结论已变化，请刷新后重新确认。")
             now = utc_now()
             current_case = context.get("case_revision") or {}
-            if int(context.get("case_revision_id") or 0) and str(current_case.get("expected_output") or "") == output:
+            excluded = bool(current_case.get("is_excluded")) if is_excluded is None else bool(is_excluded)
+            if (int(context.get("case_revision_id") or 0)
+                    and str(current_case.get("expected_output") or "") == output
+                    and bool(current_case.get("is_excluded")) == excluded):
                 case_action = "acknowledged"
                 label_revision_id = int(context["case_revision_id"])
                 label_case_id = str(context["label_case_id"])
@@ -382,7 +391,7 @@ class DatabaseCombinedReviewMixin:
                     sql,
                     (
                         label_case_id, output, _json(clean_tags), str(rationale or ""),
-                        False, actor, str(reviewer_source or "legacy"), True,
+                        excluded, actor, str(reviewer_source or "legacy"), True,
                         context.get("case_revision_id"), now,
                     ),
                 )

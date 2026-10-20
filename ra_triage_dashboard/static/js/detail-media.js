@@ -981,7 +981,7 @@ function applyTrailDetailMetadata(result, issueId, requestSeq) {
   const excludeInput = $("#reviewExcludeInput");
   const hasCurrentRunReview = reviewAnnotationsForCurrentRun(state.selectedCase).length > 0;
   const hasLocalDraft = Boolean(reviewDraftForCase(state.selectedCase));
-  if (excludeInput && trailShouldExclude && !hasCurrentRunReview && !hasLocalDraft && !state.reviewFormDirty) {
+  if (excludeInput && excludeInput.dataset?.caseExclusion !== "true" && trailShouldExclude && !hasCurrentRunReview && !hasLocalDraft && !state.reviewFormDirty) {
     // Trail's namespaced info marker is read-only here.  Checking the local
     // box is only a first-Review suggestion. An explicit Review value,
     // including false, is authoritative for its selected Run.

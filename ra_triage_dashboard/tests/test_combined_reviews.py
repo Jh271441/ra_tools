@@ -56,7 +56,7 @@ class CombinedReviewWorkflowTest(unittest.TestCase):
             idempotency_key=f"campaign-{run_index}-{workflow}-{','.join(assignees or ['alice'])}",
         )["campaign"]
 
-    def submit(self, campaign, context, *, label="误触发", reviewer="alice", key="submit-1", status="completed"):
+    def submit(self, campaign, context, *, label="误触发", reviewer="alice", key="submit-1", status="completed", excluded=None):
         return self.db.submit_combined_review(
             issue_id="cn1", campaign_id=campaign["id"],
             model_run_id=campaign["evaluation_run_id"], reviewer=reviewer,
@@ -67,7 +67,7 @@ class CombinedReviewWorkflowTest(unittest.TestCase):
             expected_model_review_storage_id=context["model_review_storage_id"],
             expected_case_revision_id=context["case_revision_id"],
             expected_label_state_fingerprint=context["label_state_fingerprint"],
-            idempotency_key=key,
+            idempotency_key=key, is_excluded=excluded,
         )
 
     def test_existing_campaign_defaults_to_model_review_only_and_combined_allows_writers(self) -> None:
@@ -157,3 +157,51 @@ class CombinedReviewWorkflowTest(unittest.TestCase):
         with self.db.connect() as conn:
             self.assertEqual(int(conn.execute("SELECT COUNT(*) n FROM model_review_revisions").fetchone()["n"]), before_models)
             self.assertEqual(int(conn.execute("SELECT COUNT(*) n FROM label_revisions").fetchone()["n"]), before_labels)
+
+
+    def test_exclusion_changes_case_vote_only_and_replays_without_extra_progress(self) -> None:
+        campaign = self.campaign(0)
+        context = lambda: self.db.combined_review_context(issue_id="cn1", campaign_id=campaign["id"], reviewer="alice")
+        first = self.submit(campaign, context(), excluded=False)
+        before = context()
+        excluded = self.submit(campaign, before, key="exclude", excluded=True)
+        self.assertEqual(excluded["case_action"], "submitted")
+        self.assertTrue(context()["case_revision"]["is_excluded"])
+        self.assertFalse(excluded["model_review"]["is_excluded"])
+        replay = self.submit(campaign, before, key="exclude", excluded=True)
+        self.assertTrue(replay["duplicate"])
+        with self.assertRaises(AnnotationConflictError):
+            self.submit(campaign, before, key="exclude", excluded=False)
+        same = self.submit(campaign, context(), key="ack-exclusion", excluded=True)
+        self.assertEqual(same["case_action"], "acknowledged")
+        # Older clients omit this field: they must not silently undo an exclusion.
+        old_client = self.submit(campaign, context(), key="old-client")
+        self.assertEqual(old_client["case_action"], "acknowledged")
+        self.assertTrue(context()["case_revision"]["is_excluded"])
+        with self.db.connect() as conn:
+            original = conn.execute("SELECT is_excluded FROM label_revisions WHERE id=?", (first["case_revision_id"],)).fetchone()
+            self.assertFalse(original["is_excluded"])
+            self.assertEqual(conn.execute("SELECT count(*) n FROM label_revisions").fetchone()["n"], 2)
+            self.assertEqual(conn.execute("SELECT count(*) n FROM combined_review_progress").fetchone()["n"], 1)
+        restored = self.submit(campaign, context(), key="include-again", excluded=False)
+        self.assertEqual(restored["case_action"], "submitted")
+        self.assertFalse(context()["case_revision"]["is_excluded"])
+        self.assertEqual(self.db.labeling_task_progress(["scope"], [campaign["id"]])[campaign["id"]]["resolved"], 1)
+
+    def test_case_only_submission_can_change_exclusion_without_changing_label(self) -> None:
+        def save(excluded=None):
+            ctx = self.db.combined_review_context(issue_id="cn1", campaign_id="", reviewer="alice")
+            return self.db.submit_review_case_label(
+                issue_id="cn1", reviewer="alice", reviewer_source="test", reviewer_verified=True,
+                expected_output="误触发", tags=[], rationale="case exclusion",
+                expected_case_revision_id=ctx["case_revision_id"],
+                expected_label_state_fingerprint=ctx["label_state_fingerprint"], is_excluded=excluded,
+            )
+        initial = save(False)
+        changed = save(True)
+        self.assertNotEqual(initial["case_revision"]["id"], changed["case_revision"]["id"])
+        self.assertTrue(changed["case_revision"]["is_excluded"])
+        self.assertEqual(save()["case_action"], "acknowledged")
+        self.assertFalse(save(False)["case_revision"]["is_excluded"])
+        with self.db.connect() as conn:
+            self.assertEqual(conn.execute("SELECT count(*) n FROM model_review_revisions").fetchone()["n"], 0)

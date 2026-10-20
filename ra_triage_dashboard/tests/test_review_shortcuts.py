@@ -600,3 +600,45 @@ applyTrailUpdateRouteControls({tab:'review',exclusionIssue:'cn999'});assert.equa
 // No api/commit function is supplied: route preparation is entirely local.
 '''
     subprocess.run(["node", "-e", script], check=True, capture_output=True)
+
+
+
+def test_combined_exclusion_hydrates_from_case_vote_and_separate_draft() -> None:
+    script = (ROOT / "static" / "js" / "review-form.js").read_text() + r'''
+const assert=require('node:assert/strict');
+state={session:{}};
+const input={checked:false,disabled:true};
+$=selector=>selector==='#reviewExcludeInput'?input:null;
+updateTagSummary=()=>{};syncExpectedOutputFromTags=()=>{};
+let draft=null,writer=true;
+reviewDraftForCase=()=>draft;hasDashboardWriteRole=()=>writer;
+const context={case_revision:{is_excluded:true}};
+populateCombinedCaseLabel(context,{});
+assert.equal(input.checked,true);assert.equal(input.disabled,false);
+draft={case_is_excluded:false};populateCombinedCaseLabel(context,{});
+assert.equal(input.checked,false);
+draft={is_excluded:false};populateCombinedCaseLabel(context,{});
+assert.equal(input.checked,true); // A legacy Run draft cannot override the Case flag.
+writer=false;populateCombinedCaseLabel(context,{});assert.equal(input.disabled,true);
+'''
+    subprocess.run(["node", "-e", script], check=True, capture_output=True)
+
+
+
+def test_delayed_trail_metadata_cannot_replace_case_exclusion() -> None:
+    script = (ROOT / "static" / "js" / "detail-media.js").read_text() + r'''
+const assert=require('node:assert/strict');
+state={caseRequestSeq:1,selectedId:'cn1',selectedCase:{issue_id:'cn1'},reviewFormDirty:false};
+const input={checked:false,dataset:{caseExclusion:'true'}};
+$=()=>input;
+reviewAnnotationsForCurrentRun=()=>[];
+reviewDraftForCase=()=>null;
+renderDetailExternalLinks=()=>{};
+applyTrailDetailMetadata({dashboard_should_exclude:true},'cn1',1);
+assert.equal(state.selectedCase.trail_should_exclude,true);
+assert.equal(input.checked,false);
+input.checked=true;
+applyTrailDetailMetadata({dashboard_should_exclude:false},'cn1',1);
+assert.equal(input.checked,true);
+'''
+    subprocess.run(["node", "-e", script], check=True, capture_output=True)

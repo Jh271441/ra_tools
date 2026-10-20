@@ -24,9 +24,26 @@ selected status nor native option labels include shortcut prefixes.
 Shift+R opens the Run-review status picker; 1/2/3 choose Pending/In progress/Completed
 only while it is open. Typing, composition, modifiers, read-only and disabled states
 are excluded. Selecting a status never submits. R continues to refresh; existing
-arrow/Escape handling applies. K cannot toggle the hidden legacy Review exclusion
-control; visible Case-labeling exclusion controls retain their existing shortcut.
+arrow/Escape handling applies. K toggles the visible Issue exclusion control in combined mode; the Case vote
+loads and saves the value, independently of the Run review. In model-only mode
+the Case section stays hidden and K cannot change its control.
 
 Validation: Node behavior tests cover permission resolution, keyboard scope and
 hidden controls, additive/idempotent exclusion preparation, and no automatic writer
 calls. Frontend contracts cover sidebar ownership and synchronized cache versions.
+
+
+The combined Case section restores an inline “排除此 Issue” checkbox beneath the
+label rationale. Submission saves this flag on the Case revision, alongside the
+required Case label; the Run review remains unexcluded. Changing exclusion alone
+appends a new Case revision instead of acknowledging the previous vote. Repeating
+an unchanged flag acknowledges it, and combined idempotency includes explicitly
+provided exclusion. Old clients omitting the flag preserve the existing Case value
+and their historical request fingerprint. Task progress still counts each Issue
+once. The same behavior applies to Case-only submissions without a Run.
+
+The checkbox is disabled until its Case context loads, restores Case exclusion
+from a separate draft field, and uses K like the existing Case-labeling control.
+The separate link is explicitly named “同步排除到 Trail”; ordinary review submission
+never invokes that writer. This restores the existing Case annotation semantics,
+not an automatic global dataset removal or Trail synchronization.

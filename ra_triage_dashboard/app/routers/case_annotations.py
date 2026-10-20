@@ -15,7 +15,7 @@ from ..support.attachments import (
     _store_review_attachments,
 )
 from ..support.common import _as_text, _detail
-from ..support.catalogs import _normalise_missing_evidence, _normalise_review_tags, _review_tag_catalog
+from ..support.catalogs import _normalise_review_excluded, _normalise_missing_evidence, _normalise_review_tags, _review_tag_catalog
 from ..support.identity import _action_actor, _writer_identity
 from ..review_workflow import resolve_expected_output
 
@@ -94,6 +94,7 @@ async def submit_combined_review(issue_id: str, request: Request) -> dict[str, A
             expected_output=output,
             tags=tags,
             rationale=_as_text(body.get("rationale")),
+            is_excluded=_normalise_review_excluded(body["is_excluded"]) if "is_excluded" in body else None,
             expected_model_review_storage_id=_optional_int(body.get("expected_model_review_storage_id"), "expected_model_review_storage_id"),
             expected_case_revision_id=_optional_int(body.get("expected_case_revision_id"), "expected_case_revision_id"),
             expected_label_state_fingerprint=_as_text(body.get("expected_label_state_fingerprint")),
@@ -138,6 +139,7 @@ async def submit_case_label_from_review(issue_id: str, request: Request) -> dict
             expected_output=output,
             tags=tags,
             rationale=_as_text(body.get("rationale")),
+            is_excluded=_normalise_review_excluded(body["is_excluded"]) if "is_excluded" in body else None,
             expected_case_revision_id=_optional_int(body.get("expected_case_revision_id"), "expected_case_revision_id"),
             expected_label_state_fingerprint=_as_text(body.get("expected_label_state_fingerprint")),
         )

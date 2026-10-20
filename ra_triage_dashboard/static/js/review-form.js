@@ -347,7 +347,7 @@ function syncReviewFormFromCase(caseData) {
     input.checked = chosenTags.has(input.value);
   });
   const excluded = $("#reviewExcludeInput");
-  if (excluded) excluded.checked = Boolean(previous.is_excluded);
+  if (excluded && excluded.dataset?.caseExclusion !== "true") excluded.checked = Boolean(previous.is_excluded);
   const expectedOutput = annotationExpectedOutput(previous);
   const expectedOutputInput = $("#expectedOutputInput");
   if (expectedOutputInput) {
@@ -505,8 +505,8 @@ function renderReview(caseData) {
     <form class="review-form" id="annotationForm" data-issue-id="${escapeHtml(caseData.issue_id)}">
       ${taskSupplementalNotice}
       <div class="review-issue-exclusion-entry">
-        <a class="history-inline-button" href="${escapeHtml(pageUrl("trail-update", { tab: "issue", exclusionIssue: caseData.issue_id, runId: "" }))}" target="_blank" rel="noopener"><span class="ui-lang-zh">排除此 Issue ↗</span><span class="ui-lang-en">Exclude this Issue ↗</span></a>
-        <small><span class="ui-lang-zh">Issue 级操作 · 新页预览并确认后生效</span><span class="ui-lang-en">Issue-level · Preview and confirm in a new tab</span></small>
+        <a class="history-inline-button" href="${escapeHtml(pageUrl("trail-update", { tab: "issue", exclusionIssue: caseData.issue_id, runId: "" }))}" target="_blank" rel="noopener"><span class="ui-lang-zh">同步排除到 Trail ↗</span><span class="ui-lang-en">Sync exclusion to Trail ↗</span></a>
+        <small><span class="ui-lang-zh">同步前需在新页预览并确认</span><span class="ui-lang-en">Preview and confirm the sync in a new tab</span></small>
       </div>
       <section class="review-section issue-tag-section combined-case-label-card" ${combinedMode ? "" : "hidden"}>
         <div class="review-section-heading"><div><h2><span class="ui-lang-zh">Issue 标签</span><span class="ui-lang-en">Issue tags</span> <small class="combined-mode-badge"><span class="ui-lang-zh">联合复核</span><span class="ui-lang-en">Combined</span></small></h2>${sourceSuggestionMarkup}</div><span class="evidence-summary-count" id="tagSummaryCount">${escapeHtml(t("detail.selected_n", { n: chosenTags.size }))}</span></div>
@@ -518,7 +518,7 @@ function renderReview(caseData) {
           </span>
           <textarea id="combinedCaseRationale" rows="2" aria-keyshortcuts="Shift+E Escape Enter Shift+Enter" placeholder="说明 Case 标签依据"></textarea>
         </label>
-        <label class="review-exclude-toggle" hidden><input id="reviewExcludeInput" type="checkbox" aria-keyshortcuts="K" /><span><strong class="ui-lang-zh">应该排除</strong><strong class="ui-lang-en">Exclude</strong></span><kbd class="review-control-shortcut review-exclude-shortcut" aria-hidden="true">K</kbd></label>
+        <label class="review-exclude-toggle" title="按 K 切换；随 Case 标签保存"><input id="reviewExcludeInput" type="checkbox" aria-keyshortcuts="K" data-case-exclusion="true" disabled /><span><strong class="ui-lang-zh">排除此 Issue</strong><strong class="ui-lang-en">Exclude this Issue</strong><small class="ui-lang-zh">随 Case 标签保存；同步到 Trail 需单独确认</small><small class="ui-lang-en">Saved with the Case label; Trail sync needs separate confirmation</small></span><kbd class="review-control-shortcut review-exclude-shortcut" aria-hidden="true">K</kbd></label>
       </section>
       <section class="review-section model-error-section">
         <div class="review-section-heading">
@@ -718,6 +718,13 @@ function populateCombinedCaseLabel(context, caseData) {
   }
   const rationale = $("#combinedCaseRationale");
   if (rationale) rationale.value = String(revision?.rationale || "");
+  const excluded = $("#reviewExcludeInput");
+  if (excluded) {
+    const draft = reviewDraftForCase(caseData);
+    excluded.checked = typeof draft?.case_is_excluded === "boolean"
+      ? draft.case_is_excluded : Boolean(revision?.is_excluded);
+    excluded.disabled = !hasDashboardWriteRole() || Boolean(state.session?.read_only);
+  }
   const tags = new Set(revision?.tags || []);
   $("#reviewPane")?.querySelectorAll('input[name="reviewTags"]').forEach((checkbox) => {
     checkbox.checked = tags.has(checkbox.value);
@@ -1427,6 +1434,7 @@ async function saveCombinedReview(event) {
   const payload = {
     author: $("#annotationAuthor")?.value || state.session?.username || "",
     expected_output: expectedState.selectedValue,
+    is_excluded: Boolean($("#reviewExcludeInput")?.checked),
     tags: [...document.querySelectorAll('input[name="reviewTags"]:checked')].map((input) => input.value),
     rationale: $("#combinedCaseRationale")?.value || "",
     expected_case_revision_id: context.case_revision_id || null,
