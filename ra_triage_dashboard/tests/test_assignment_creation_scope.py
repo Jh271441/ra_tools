@@ -129,6 +129,7 @@ class AssignmentNavigationRegressionTest(unittest.TestCase):
         script = (ROOT / 'static/js/routing.js').read_text() + (ROOT / 'static/js/review-assignments.js').read_text() + r'''
 const assert=require('node:assert/strict');
 window={location:{origin:'http://localhost'}};
+state={session:{verified:true,username:'jasperchen'}};
 withBase=p=>p;
 PAGE_ROUTES={review:{path:'/review'},analysis:{path:'/review-analysis'}};
 LABELS=[]; MODEL_LABELS=[]; CASE_PAGE_SIZES=[10,20,50,100]; DEFAULT_CASE_PAGE_SIZE=20;
@@ -148,6 +149,15 @@ for (const page of ['review','analysis']) {
  const parsed=page==='review'?normalizedReviewRouteFilters(url.searchParams):normalizedAnalysisRouteFilters(url.searchParams);
  assert.equal(parsed.workSplitId,'campaign-abc123');
  if(page==='review') assert.equal(parsed.workflowMode,'model_review_only');
+}
+for(const username of ['jasperchen','liangxianghui']) {
+ state.session.username=username;
+ const own={...batch,members:[{username:'jasperchen'},{username:'liangxianghui'}]};
+ const url=new URL(reviewAssignmentBatchHref(own,'review'),'http://localhost');
+ assert.equal(url.searchParams.get('work_assignee'),username);
+ assert.equal(url.searchParams.get('work_split'),batch.split_id);
+ const analysis=new URL(reviewAssignmentBatchHref(own,'analysis'),'http://localhost');
+ assert.equal(analysis.searchParams.has('work_assignee'),false);
 }
 assert.equal(normalizedAnalysisRouteFilters(new URLSearchParams('work_split=split-123')).workSplitId,'split-123');
 assert.equal(normalizedAnalysisRouteFilters(new URLSearchParams('work_split=bad/123')).workSplitId,'');
