@@ -209,9 +209,11 @@ def test_successful_review_save_advances_when_current_leaves_filter() -> None:
     source = (ROOT / "static" / "js" / "review-form.js").read_text()
     start = source.index("function reviewSaveNavigationContext")
     end = source.index("const CASE_DETAIL_PREFETCH_TTL_MS", start)
-    script = source[start:end] + r'''
+    routing = (ROOT / "static" / "js" / "routing.js").read_text()
+    guards = routing[routing.index("function capturePageContext"):routing.index("function showPage(")]
+    script = guards + source[start:end] + r'''
 const assert=require('node:assert/strict');
-window={scrollY:321};
+window={scrollY:321,location:{pathname:'/manual/review',search:''}};
 let selected=[];let loads=0;let notices=[];
 state={activePage:'review',selectedId:'b',cases:[{issue_id:'a'},{issue_id:'b'},{issue_id:'c'}],casePage:1,casePageSize:20,caseTotal:3};
 loadCases=async()=>{loads++;state.cases=[{issue_id:'a'},{issue_id:'c'}];state.caseTotal=2;};
@@ -229,6 +231,12 @@ const context=reviewSaveNavigationContext('b');
   state.selectedId='user-chosen';loads=0;
   assert.equal(await reconcileReviewQueueAfterSave(context),false);
   assert.equal(loads,0);
+  state.selectedId='b';state.activePage='review';
+  loadCases=async()=>{state.activePage='labeling';state.pageNavigationEpoch=1;window.location.pathname='/manual/case-labeling';};
+  const selectedBeforeDeparture=selected.length;
+  assert.equal(await reconcileReviewQueueAfterSave(context),false);
+  assert.equal(selected.length,selectedBeforeDeparture);
+  state.activePage='review';state.pageNavigationEpoch=2;window.location.pathname='/manual/review';
   state.selectedId='b';state.reviewQueueStale=false;notices=[];
   loadCases=async()=>{throw new Error('queue failed');};
   refreshReviewDerivedData=()=>{};
