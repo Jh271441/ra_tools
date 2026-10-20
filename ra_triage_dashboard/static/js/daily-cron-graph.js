@@ -68,7 +68,7 @@ function ensureCronGraphLibrary() {
   if (cronGraphLibrary) return cronGraphLibrary;
   cronGraphLibrary = new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = withBase("/static/vendor/cron-graph/graph.js?v=manual-triage-578");
+    script.src = withBase("/static/vendor/cron-graph/graph.js?v=manual-triage-579");
     script.onload = () => resolve(window.RACronGraph);
     script.onerror = () => { cronGraphLibrary = null; script.remove(); reject(Error("graph load failed")); };
     document.body.appendChild(script);

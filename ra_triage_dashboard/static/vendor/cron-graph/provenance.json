@@ -1,0 +1,34 @@
+{
+  "dependencies": [
+    {
+      "name": "@xyflow/react",
+      "version": "12.12.0",
+      "license": "MIT"
+    },
+    {
+      "name": "elkjs",
+      "version": "0.12.0",
+      "license": "EPL-2.0 OR GPL-3.0-or-later"
+    },
+    {
+      "name": "react",
+      "version": "19.3.1",
+      "license": "MIT"
+    },
+    {
+      "name": "react-dom",
+      "version": "19.3.1",
+      "license": "MIT"
+    },
+    {
+      "name": "esbuild",
+      "version": "0.28.2",
+      "license": "MIT"
+    }
+  ],
+  "build": "npm ci && npm run build",
+  "artifacts": {
+    "graph.js": "d9de62209b0330a90343c000b06b66b02d3fa5652319e0e5cc26d5456214aff7",
+    "graph.css": "1243b61a71923367ce620fb944427c80c9b03e863e18374fcf4f74d6d06f63fc"
+  }
+}
