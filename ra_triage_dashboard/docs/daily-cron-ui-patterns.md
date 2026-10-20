@@ -23,3 +23,7 @@
 浏览器使用已提交的 `static/vendor/cron-graph/`，无需生产环境安装 Node 或访问 CDN。
 版本、构建产物哈希和许可证保存在该目录；React Flow采用MIT，ELK选择EPL-2.0许可。
 未修改ELK源码，原版源码可从 [elkjs 0.12.0](https://github.com/kieler/elkjs/tree/v0.12.0) 获取。
+
+MiniMap与主画布共用显式节点width/height，不能仅在style声明尺寸：
+受控节点未回写measured时，缩略图会因缺少节点尺寸而变为空框。
+缩略图为160×100，沿用状态颜色和主题，支持拖动/缩放；浏览器检查需确认实际SVG节点可见。

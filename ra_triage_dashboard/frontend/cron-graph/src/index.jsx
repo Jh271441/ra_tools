@@ -61,8 +61,8 @@ function Graph({ model, onSelect }) {
   const all = model.lanes.flatMap(lane => lane.nodes);
   const byId = new Map(all.map(node => [node.id, node.data]));
   const nodes = useMemo(() => geometry && !geometry.error ? [
-    ...geometry.sizes.map(size => ({ id: size.id, type: 'lane', data: { label: model.lanes.find(l => l.id === size.id).label }, position: { x: size.x, y: size.y }, style: { width: size.width, height: size.height }, selectable: false, draggable: false, focusable: false })),
-    ...geometry.positions.map(pos => ({ id: pos.id, type: 'task', data: byId.get(pos.id), parentId: pos.parentId, extent: 'parent', position: { x: pos.x, y: pos.y }, selected: pos.id === model.selectedNode, ariaLabel: [byId.get(pos.id).label, byId.get(pos.id).stateLabel, byId.get(pos.id).detail].join(' · '), style: { width: 152, height: 82 } })),
+    ...geometry.sizes.map(size => ({ id: size.id, type: 'lane', data: { label: model.lanes.find(l => l.id === size.id).label }, position: { x: size.x, y: size.y }, width: size.width, height: size.height, style: { width: size.width, height: size.height }, selectable: false, draggable: false, focusable: false })),
+    ...geometry.positions.map(pos => ({ id: pos.id, type: 'task', data: byId.get(pos.id), parentId: pos.parentId, extent: 'parent', position: { x: pos.x, y: pos.y }, selected: pos.id === model.selectedNode, width: 152, height: 82, ariaLabel: [byId.get(pos.id).label, byId.get(pos.id).stateLabel, byId.get(pos.id).detail].join(' · '), style: { width: 152, height: 82 } })),
   ] : [], [geometry, model]);
   const edges = model.edges.map(edge => {
     const state = byId.get(edge.target)?.status;
@@ -76,7 +76,7 @@ function Graph({ model, onSelect }) {
   return <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} nodesDraggable={false} nodesConnectable={false} edgesFocusable={false} onNodeClick={(_, node) => node.type === 'task' && onSelect?.(node.id)} onPaneClick={() => onSelect?.('')} minZoom={0.25} maxZoom={2} fitView fitViewOptions={{ padding: 0.12, maxZoom: 1 }} zoomOnScroll={false} preventScrolling={false} colorMode={model.theme} proOptions={{ hideAttribution: false }}>
     <Background color="var(--line)" gap={20} size={1} />
     <Controls showInteractive={false} />
-    <MiniMap nodeColor={node => node.type === 'lane' ? 'transparent' : colors[node.data?.status] || colors.unknown} nodeStrokeColor="var(--line)" maskColor="var(--cron-minimap-mask, rgba(0,0,0,.12))" pannable zoomable />
+    <MiniMap ariaLabel={model.ui.minimap} style={{ width: 160, height: 100 }} nodeColor={node => node.type === 'lane' ? 'transparent' : colors[node.data?.status] || colors.unknown} nodeStrokeColor="var(--line)" maskColor="var(--cron-minimap-mask, rgba(0,0,0,.12))" pannable zoomable />
   </ReactFlow>;
 }
 

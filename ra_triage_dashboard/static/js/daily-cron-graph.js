@@ -60,7 +60,7 @@ function buildDailyCronGraph(data, definitionLane = "") {
     edges = edges.filter(e => ids.has(e.source) && ids.has(e.target));
     lanes.forEach(lane => lane.nodes.forEach(n => { n.data = { ...n.data, status: "definition", stateLabel: cronGraphStateLabel("definition"), detail: n.id === "main-infer" ? uiText("缺失 ≤5 且 ≤2% 可继续", "Continue if gaps ≤5 AND ≤2%") : n.id === "media-ready" ? uiText("少量缺失单独记录", "Small gaps recorded separately") : "" }; }));
   }
-  return { lanes, edges, selectedNode: dailyCronState.selectedNode || "", definition: Boolean(definitionLane), active: dailyCronState.active && !dailyCronState.error, theme: state.colorTheme || "dark", ui: { loading: uiText("正在加载运行图…", "Loading run graph…"), error: uiText("运行图加载失败，可刷新重试。", "Graph unavailable; refresh to retry.") } };
+  return { lanes, edges, selectedNode: dailyCronState.selectedNode || "", definition: Boolean(definitionLane), active: dailyCronState.active && !dailyCronState.error, theme: state.colorTheme || "dark", ui: { minimap: uiText("流程缩略图", "Flow overview"), loading: uiText("正在加载运行图…", "Loading run graph…"), error: uiText("运行图加载失败，可刷新重试。", "Graph unavailable; refresh to retry.") } };
 }
 
 function ensureCronGraphLibrary() {
@@ -68,7 +68,7 @@ function ensureCronGraphLibrary() {
   if (cronGraphLibrary) return cronGraphLibrary;
   cronGraphLibrary = new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = withBase("/static/vendor/cron-graph/graph.js?v=manual-triage-580");
+    script.src = withBase("/static/vendor/cron-graph/graph.js?v=manual-triage-581");
     script.onload = () => resolve(window.RACronGraph);
     script.onerror = () => { cronGraphLibrary = null; script.remove(); reject(Error("graph load failed")); };
     document.body.appendChild(script);
