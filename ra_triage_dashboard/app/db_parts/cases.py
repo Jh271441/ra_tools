@@ -1335,7 +1335,7 @@ class DatabaseCasesMixin:
     _work_split_snapshot_members = staticmethod(assignment_snapshot_members)
 
     def list_review_work_splits(
-        self, *, limit: int = 50, model_run_id: str = ""
+        self, *, limit: int = 50, model_run_id: str = "", assignee: str = ""
     ) -> list[dict[str, Any]]:
         """Return assignment batches with current completion statistics."""
 
@@ -1343,6 +1343,9 @@ class DatabaseCasesMixin:
         run_id = str(model_run_id or "").strip()
         where = "WHERE split.task_kind != 'labeling'"
         parameters: list[Any] = []
+        if assignee:
+            where += " AND EXISTS (SELECT 1 FROM review_work_assignments mine WHERE mine.split_id=split.id AND lower(mine.assignee)=lower(?))"
+            parameters.append(str(assignee).strip())
         if run_id:
             where += " AND split.model_run_id = ?"
             parameters.append(run_id)
@@ -1542,6 +1545,7 @@ class DatabaseCasesMixin:
                     "created_by": str(row["created_by"] or ""),
                     "created_at": str(row["created_at"] or ""),
                     "campaign_name": str(row["campaign_name"] or ""),
+                    "lifecycle": str(row["lifecycle"] or ""),
                     "source_split_id": str(source.get("id") or ""),
                     "source_created_at": str(source.get("created_at") or ""),
                     "source_created_by": str(source.get("created_by") or ""),

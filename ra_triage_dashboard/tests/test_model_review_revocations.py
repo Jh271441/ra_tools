@@ -99,7 +99,7 @@ class ModelReviewRevocationTest(unittest.TestCase):
         other = self.campaign(0, workflow="model_review_only")
         self.assertEqual(self.analysis()["items"][0]["annotation"]["id"], result["model_review"]["id"])
         self.assertEqual(self.analysis(work_split_id=other["id"])["total"], 0)
-        self.assertEqual(self.db.list_review_work_splits()[0]["campaign_name"], other["name"] if "name" in other else other["campaign_name"])
+        self.assertEqual({item["split_id"]: item for item in self.db.list_review_work_splits()}[other["id"]]["campaign_name"], other["name"] if "name" in other else other["campaign_name"])
 
     def test_sqlite_existing_view_is_upgraded(self):
         campaign = self.campaign(0)
@@ -139,3 +139,15 @@ class ModelReviewRevocationTest(unittest.TestCase):
         from pathlib import Path
         script = Path(__file__).with_name("model_review_revocation_ui.cjs")
         subprocess.run(["node", str(script)], cwd=Path(__file__).resolve().parents[2], check=True)
+
+    def test_review_entry_lists_own_tasks_across_baseline_and_run_filters(self):
+        campaign = self.campaign(0)
+        other = self.campaign(1, assignees=["bob"])
+        self.assertEqual([item["split_id"] for item in self.db.list_review_work_splits(assignee="alice")], [campaign["id"]])
+        self.assertEqual([item["split_id"] for item in self.db.list_review_work_splits(assignee="bob")], [other["id"]])
+        request = Request({"type": "http", "method": "GET", "path": "/", "headers": []})
+        with patch.object(cases, "database", self.db), patch("ra_triage_dashboard.app.auth.request_identity", return_value=SimpleNamespace(username="alice", verified=True)):
+            result = asyncio.run(cases.review_work_split_options(request, all_baselines=True, assigned_to_me=True))
+        self.assertEqual([item["split_id"] for item in result["items"]], [campaign["id"]])
+        self.assertEqual(result["items"][0]["model_run_id"], campaign["evaluation_run_id"])
+        self.assertTrue(result["items"][0]["name"])

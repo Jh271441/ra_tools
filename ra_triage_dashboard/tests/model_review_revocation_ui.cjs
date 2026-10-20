@@ -36,3 +36,24 @@ assert(!sandbox.annotationHistory([{...a,legacy_read_only:true}]).includes('data
  assert.equal(sandbox.state.savingAnnotation,false);
  console.log('owner/admin UI and navigation race passed');
 })().catch(e=>{console.error(e);process.exitCode=1});
+(async()=>{
+ const root={dataset:{},addEventListener:()=>{}};
+ let shown, change, destination;
+ const task={split_id:'my-task',name:'0821-review-task',model_run_id:'task-run',baselines:['0821','extra'],completed_count:2,assignment_count:312};
+ const ui={
+  state:{reviewWorkSplitId:'',availableReviewWorkSplitId:''},
+  $:(selector)=>selector==='#reviewTaskPicker'?root:null,
+  api:async(path)=>{assert.equal(path,'/api/review-work-splits?all_baselines=true&assigned_to_me=true');return {items:[task]};},
+  uiText:(x)=>x,populateUiSelect:(_root,options)=>{shown=options;},
+  bindUiSelect:(_root,options)=>{change=options.onChange;},
+  reviewAssignmentRouteOptions:(item,page)=>{assert.equal(page,'review');assert.deepEqual(Array.from(item.baseline_ids),task.baselines);return item;},
+  pageUrl:(_page,options)=>`/review?work_split=${options.split_id}&run=${options.model_run_id}`,
+  window:{location:{assign:(url)=>{destination=url;}}},
+ };
+ vm.createContext(ui);
+ vm.runInContext(fs.readFileSync('ra_triage_dashboard/static/js/work-split.js','utf8'),ui);
+ await ui.loadReviewTaskOptions();
+ assert.equal(shown.length,2);assert(shown[1].label.includes('0821-review-task'));
+ change('my-task');assert.equal(destination,'/review?work_split=my-task&run=task-run');
+ console.log('task discovery and task-card navigation passed');
+})().catch(e=>{console.error(e);process.exitCode=1});

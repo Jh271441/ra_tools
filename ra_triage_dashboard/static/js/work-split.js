@@ -206,24 +206,73 @@ function renderWorkSplitScopePicker(rootSelector, selected, available, onChange)
   bindUiSelect(root, { onChange, maxHeight: 180, maxWidth: 360 });
 }
 
-function renderReviewWorkSplitPicker(selected = state.reviewWorkSplitId) {
-  const rootSelector = document.getElementById("reviewTaskPicker") ? "#reviewTaskPicker" : "#reviewWorkSplitPicker";
-  renderWorkSplitScopePicker(
-    rootSelector,
-    selected,
-    state.availableReviewWorkSplitId,
-    (value) => {
-      const splitId = String(value || "");
-      if (!splitId) {
+let reviewTaskOptions = [];
+let reviewTaskOptionsLoadedAt = 0;
+let reviewTaskOptionsRequest = null;
+
+async function loadReviewTaskOptions({ force = false } = {}) {
+  if (reviewTaskOptionsRequest) return reviewTaskOptionsRequest;
+  if (!force && Date.now() - reviewTaskOptionsLoadedAt < 30000) return;
+  reviewTaskOptionsRequest = (async () => {
+    try {
+      const result = await api("/api/review-work-splits?all_baselines=true&assigned_to_me=true");
+      reviewTaskOptions = result.items || [];
+      reviewTaskOptionsLoadedAt = Date.now();
+      renderReviewWorkSplitPicker(state.reviewWorkSplitId, { load: false });
+    } catch (error) {
+      const hint = $("#reviewTaskPickerHint");
+      if (hint) { hint.hidden = false; hint.textContent = `任务列表加载失败：${error.message}`; }
+    } finally {
+      reviewTaskOptionsRequest = null;
+    }
+  })();
+  return reviewTaskOptionsRequest;
+}
+
+function renderReviewWorkSplitPicker(selected = state.reviewWorkSplitId, { load = true } = {}) {
+  const root = $("#reviewTaskPicker") || $("#reviewWorkSplitPicker");
+  if (!root) return;
+  const known = String(selected || state.availableReviewWorkSplitId || "");
+  const options = [{ value: "", label: workSplitOptionLabel("") },
+    ...reviewTaskOptions.map((item) => ({
+      value: item.split_id,
+      label: `${item.name || "复核任务"} · ${Number(item.completed_count || 0)}/${Number(item.assignment_count || 0)}`,
+    })),
+  ];
+  if (known && !options.some((item) => item.value === known)) {
+    options.push({ value: known, label: workSplitOptionLabel(known) });
+  }
+  populateUiSelect(root, options, String(selected || ""));
+  bindUiSelect(root, {
+    onChange: (value) => {
+      if (!value) {
         exitReviewTaskContext().catch((error) => showToast(error.message, true));
         return;
       }
-      state.casePage = 1;
-      loadReviewTaskContext(splitId)
-        .then(() => loadCases({ keepSelection: false, page: 1 }))
+      const item = reviewTaskOptions.find((task) => task.split_id === value);
+      if (item) {
+        // Reuse task-card navigation: reset stale filters and hydrate the task's
+        // frozen datasets/Run before loading Issue detail or enabling submit.
+        window.location.assign(pageUrl("review", reviewAssignmentRouteOptions({
+          ...item, baseline_ids: item.baselines,
+        }, "review")));
+        return;
+      }
+      loadReviewTaskContext(value).then(() => loadCases({ keepSelection: false, page: 1 }))
         .catch((error) => showToast(error.message, true));
-    }
-  );
+    },
+    maxHeight: 320, maxWidth: 520,
+  });
+  const hint = $("#reviewTaskPickerHint");
+  if (hint) {
+    hint.hidden = reviewTaskOptions.length > 0 || !reviewTaskOptionsLoadedAt;
+    hint.textContent = "暂无分配给当前账号的进行中任务；综合结果不绑定任务。";
+  }
+  if (!root.dataset.taskOptionsBound) {
+    root.dataset.taskOptionsBound = "true";
+    root.addEventListener("focusin", () => loadReviewTaskOptions());
+  }
+  if (load) void loadReviewTaskOptions();
 }
 
 function effectiveReviewWorkflowMode(caseData = state.selectedCase) {

@@ -755,14 +755,24 @@ async def review_work_split_options(
     request: Request,
     model_run_id: str = "",
     baselines: str = "",
+    all_baselines: bool = False,
+    assigned_to_me: bool = False,
 ) -> dict[str, Any]:
-    """Return minimal current task batches for the read-only Review filters."""
+    """Return task options; the entry picker may discover own tasks across datasets."""
 
-    selected_baselines = set(resolve_request_baseline_ids(baselines, request=request))
+    selected_baselines = set() if all_baselines else set(resolve_request_baseline_ids(baselines, request=request))
+    assignee = ""
+    if assigned_to_me:
+        from ..auth import request_identity
+        identity = await asyncio.to_thread(request_identity, request, settings)
+        if not identity.verified or not identity.username:
+            return {"items": []}
+        assignee = identity.username
     raw_items = await asyncio.to_thread(
         database.list_review_work_splits,
         limit=100,
         model_run_id=_as_text(model_run_id),
+        assignee=assignee,
     )
 
     def snapshot_baselines(item: dict[str, Any]) -> set[str]:
@@ -784,6 +794,8 @@ async def review_work_split_options(
 
     items = []
     for item in raw_items:
+        if assigned_to_me and item.get("lifecycle") not in {"", "active"}:
+            continue
         if not item.get("is_current"):
             continue
         item_baselines = snapshot_baselines(item)
