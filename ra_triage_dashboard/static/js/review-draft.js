@@ -41,14 +41,16 @@ function combinedReviewCampaignBinding(caseData) {
   const campaignId = String(state.reviewWorkSplitId || "").trim();
   if (!campaignId) return "";
   const assignment = caseData?.review_assignment;
-  if (!assignment?.assigned ||
+  if (typeof assignment?.assigned !== "boolean" ||
       String(assignment.split_id || "") !== campaignId ||
       assignment.purpose !== "model_review" ||
       assignment.workflow_mode !== "model_review_and_case_label" ||
       String(assignment.model_run_id || "") !== currentReviewRunId(caseData)) {
     throw new Error("联合复核任务上下文异常或 Issue 未分配给当前账号，请从任务入口重新打开。");
   }
-  return campaignId;
+  // A known non-assignee may add a clearly identified supplemental vote in
+  // their ordinary stream. Missing/mismatched task data still fails above.
+  return assignment.assigned ? campaignId : "";
 }
 
 function reviewAnnotationsForCurrentRun(caseData) {

@@ -121,33 +121,73 @@ function readStoredBaselineIds() {
   }
 }
 
+// Presentation unions retain the original GT scopes and task/run namespaces.
+const BASELINE_PICKER_UNIONS = [
+  ["1009 2026-10-15", ["1009-2026-10-15", "review-2026-10-15-extra"]],
+  ["1009 2026-10-16", ["1009-2026-10-16", "review-2026-10-16-extra"]],
+  ["1009 2026-10-18", ["review-2026-10-18", "review-2026-10-18-extra"]],
+];
+
+function baselinePickerOptions(catalog, selectedIds) {
+  const byId = new Map(catalog.map((item) => [String(item.id), item]));
+  const selected = new Set(selectedIds.map(String));
+  const consumed = new Set();
+  return catalog.flatMap((item) => {
+    const id = String(item.id);
+    if (consumed.has(id)) return [];
+    const union = BASELINE_PICKER_UNIONS.find(([, ids]) => ids.includes(id) && ids.every((member) => byId.has(member)));
+    const ids = union ? union[1] : [id];
+    ids.forEach((member) => consumed.add(member));
+    const chosen = ids.filter((member) => selected.has(member));
+    const count = ids.reduce((total, member) => total + Number(byId.get(member).count || 0), 0);
+    const partial = chosen.length > 0 && chosen.length < ids.length;
+    const selectedCount = chosen.reduce((total, member) => total + Number(byId.get(member).count || 0), 0);
+    const name = union ? union[0] : (item.label || id);
+    const fullLabel = `${name}${union || item.count != null && item.count !== "" ? ` · ${count}` : ""}`;
+    return [{
+      value: (partial ? chosen : ids).join(","), fullValue: ids.join(","),
+      label: partial ? `${name} · ${selectedCount}/${count}${uiText("（部分）", " (partial)")}` : fullLabel,
+      fullLabel, selected: chosen.length > 0, partial,
+    }];
+  });
+}
+
 function renderBaselinePicker() {
   const root = $("#baselineFilter");
   if (!root || typeof renderMultiFilter !== "function") return;
   const catalog = state.baselineCatalog.length
     ? state.baselineCatalog
     : state.config?.baselines || [];
-  const options = catalog.map((item) => {
-    const count =
-      item.count != null && item.count !== ""
-        ? ` · ${item.count}`
-        : item.status === "ready"
-          ? ""
-          : "";
-    return {
-      value: String(item.id),
-      label: `${item.label || item.id}${count}`,
-    };
-  });
+  const options = baselinePickerOptions(catalog, state.selectedBaselineIds);
   renderMultiFilter(root, {
     options,
-    selected: state.selectedBaselineIds,
+    selected: options.filter((item) => item.selected).map((item) => item.value),
     onlyThis: true,
     onChange: () => {
-      const next = getMultiFilterValues(root);
-      void setBaselineScopes(next);
+      // normalizeBaselineIds expands comma-valued union options for existing APIs.
+      void setBaselineScopes(getMultiFilterValues(root));
     },
   });
+  const inputs = [...root.querySelectorAll('input[data-multi-value]')];
+  const buttons = [...root.querySelectorAll('[data-multi-only]')];
+  const expandPartial = (option) => {
+    const input = inputs.find((node) => node.value === option.value);
+    if (!input || !option.partial) return;
+    input.value = option.fullValue;
+    input.dataset.multiValue = option.fullValue;
+    input.dataset.label = option.fullLabel;
+    const button = buttons.find((node) => node.getAttribute("data-multi-only") === option.value);
+    button?.setAttribute("data-multi-only", option.fullValue);
+  };
+  // Restoring an old partial-scope URL never silently broadens its selection.
+  // Explicit All / Only this selects the complete daily union.
+  options.filter((item) => item.partial).forEach((option) => {
+    const button = buttons.find((node) => node.getAttribute("data-multi-only") === option.value);
+    button?.addEventListener("click", () => expandPartial(option), { capture: true });
+  });
+  root.querySelector("[data-multi-select-all]")?.addEventListener("click", () => {
+    options.forEach(expandPartial);
+  }, { capture: true });
 }
 
 function inferredBaselineIdsFromRun(run) {

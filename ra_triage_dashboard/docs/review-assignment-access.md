@@ -19,10 +19,12 @@ responses belonging to another namespace or page visit. Ordinary task-free
 submission retains its explicit empty Campaign namespace. No reassignment or
 production submission is needed to validate this behavior.
 
-The former missing-context toast did not explain the failed read and offered no
-recovery. The exact failed user URL is still needed to distinguish an assignment
-mismatch from a failed network request; do not infer a role problem from that
-message. Test fixtures cover both cases and successful writer context loading.
+Known non-assignees can submit a supplemental combined review from a peer's Issue
+link. The Issue assignment must still match the task/Run/workflow before this is
+allowed; absent/mismatched context fails explicitly. The UI says “任务外补充”,
+keeps the task URL for browsing, and submits empty campaign_id/work_split_id into
+the actor's ordinary review stream. Case votes remain shared. The original
+assignee's head and the Campaign's assignment/progress remain unchanged.
 
 The existing narrow-header policy now follows the app-frame container width
 (including resized sidebars), keeps five metrics on the second row, and prevents
@@ -30,3 +32,9 @@ GT metadata from shrinking through its own border. Video controls wrap according
 to their actual card width; progress labels size to content and the slider can
 shrink within its row. This preserves the older wrap-to-fit behavior without
 relying only on viewport breakpoints.
+
+The baseline picker groups the 10/15, 10/16 and 10/18 main/supplement scopes into
+one daily choice with combined counts (33/112/90 at release). API/URL selections
+still use their original IDs. Old partial-scope URLs retain their exact subset
+and show a partial count; explicit All / Only this expands the daily union.
+No stored GT scope, immutable Run, Campaign or annotation is migrated.

@@ -484,11 +484,11 @@ function renderReview(caseData) {
   const sourceSuggestionMarkup = issueTagSourceSuggestionMarkup(sourceSuggestion);
   const taskSupplementalOnly = Boolean(
     state.reviewWorkSplitId
-    && state.reviewTaskContext
-    && !state.reviewTaskContext.current_user_is_member
+    && caseData.review_assignment?.split_id === state.reviewWorkSplitId
+    && caseData.review_assignment?.assigned === false
   );
   const taskSupplementalNotice = taskSupplementalOnly
-    ? `<div class="review-task-supplemental-notice" role="status"><strong>任务外补充复核</strong><span>你未分配到当前任务。本次提交会保存到个人自由复核流，不增加该任务进度；Case 标签仍进入共享一致性判断。</span></div>`
+    ? `<div class="review-task-supplemental-notice" role="status"><strong>任务外补充复核</strong><span>此 Issue 未分配给你。本次提交会保存到个人自由复核流，不增加该任务进度；Case 标签仍进入共享一致性判断。</span></div>`
     : "";
   const noRunModelReviewNotice = `<div class="model-review-readonly-note model-review-run-required" role="status">
     <span class="model-review-readonly-copy">
@@ -632,8 +632,8 @@ function renderReview(caseData) {
     const save = $("#reviewSaveButton");
     if (save) {
       save.disabled = false;
-      save.querySelector(".ui-lang-zh").textContent = runBoundModelReview ? "提交联合复核" : "提交 问题标注";
-      save.querySelector(".ui-lang-en").textContent = runBoundModelReview ? "Submit combined review" : "Submit Case label";
+      save.querySelector(".ui-lang-zh").textContent = taskSupplementalOnly ? "提交任务外补充" : runBoundModelReview ? "提交联合复核" : "提交 问题标注";
+      save.querySelector(".ui-lang-en").textContent = taskSupplementalOnly ? "Submit supplemental review" : runBoundModelReview ? "Submit combined review" : "Submit Case label";
     }
   }
   enhanceDashboardSelects($("#reviewPane"));
@@ -1498,6 +1498,7 @@ async function saveCombinedReview(event) {
     expected_label_state_fingerprint: context.label_state_fingerprint || "",
   };
   const navigationContext = reviewSaveNavigationContext(issueId);
+  const contextKey = combinedReviewContextKey(caseData);
   state.savingAnnotation = true;
   const button = event.submitter || $("#reviewSaveButton");
   if (button) {
@@ -1517,7 +1518,7 @@ async function saveCombinedReview(event) {
       Object.assign(payload, {
         model_run_id: runId,
         campaign_id: campaignId || "",
-        work_split_id: String(state.reviewWorkSplitId || ""),
+        work_split_id: campaignId || "",
         model_review_status: $("#modelReviewStatusInput")?.value || "pending",
         reason: $("#annotationNote")?.value || "",
         missing_evidence: [...document.querySelectorAll('input[name="missingEvidence"]:checked')].map((input) => input.value),
@@ -1540,8 +1541,7 @@ async function saveCombinedReview(event) {
       }
       showToast(combined.case_action === "acknowledged" ? "联合复核已提交；现有 Case vote 已确认。" : "联合复核已原子提交。 ");
     }
-    if (state.selectedCase === caseData && currentReviewRunId(caseData) === runId &&
-        String(state.reviewWorkSplitId || "") === campaignId) {
+    if (state.selectedCase === caseData && combinedReviewContextKey(caseData) === contextKey) {
       await loadCombinedReviewContext(caseData);
       if (state.selectedCase === caseData) renderReview(caseData);
     }

@@ -134,6 +134,24 @@ class CombinedReviewLinkageTest(unittest.TestCase):
             {"name": "liangxianghui", "total": 1, "labeled": 0},
         ])
 
+    def test_non_assignee_supplement_preserves_owner_and_task_progress(self):
+        campaign = self.campaign(0)
+        self.assertFalse(self.context(campaign, "bob")["assigned"])
+        free = {"id": "", "evaluation_run_id": campaign["evaluation_run_id"]}
+        context = self.context(free, "bob")
+        extra = self.submit(free, context, reviewer="bob", key="supplement")
+        self.assertEqual(self.db.get_review_work_split(campaign["id"])["completed_count"], 0)
+        original = self.submit(campaign, self.context(campaign), reviewer="alice", key="owner")
+        replay = self.submit(free, context, reviewer="bob", key="supplement")
+        self.submit(free, self.context(free, "bob"), reviewer="bob", key="supplement-new-version")
+        self.assertEqual(extra["submission_group_id"], replay["submission_group_id"])
+        self.assertEqual(extra["model_review"]["reviewer"], "bob")
+        self.assertEqual(extra["model_review"]["campaign_id"], "")
+        self.assertEqual(self.context(campaign)["model_review_storage_id"], original["model_review_storage_id"])
+        detail = self.db.get_review_work_split(campaign["id"])
+        self.assertEqual((detail["assignment_count"], detail["completed_count"]), (1, 1))
+        self.assertEqual(detail["members"][0]["username"], "alice")
+
     def test_multiscope_campaign_summary_respects_selected_datasets(self):
         self.db.upsert_issues([{"issue_id": "cn2", "gt_label": "正确触发"}],
                               source="test", replace_gt=True, baseline_scope="extra")
@@ -192,7 +210,8 @@ assert.equal(link.options.workSplitId,'campaign1');
 assert.equal(link.options.runId,'run1');
 assert.equal(link.options.issue,'cn1');
 assert.throws(()=>combinedReviewCampaignBinding({issue_id:'cn1'}), /上下文/);
-assert.throws(()=>combinedReviewCampaignBinding({...assigned, review_assignment:{...assigned.review_assignment, assigned:false}}), /上下文/);
+assert.equal(combinedReviewCampaignBinding({...assigned, review_assignment:{...assigned.review_assignment, assigned:false}}), '');
+assert.throws(()=>combinedReviewCampaignBinding({...assigned, review_assignment:{...assigned.review_assignment, assigned:false, model_run_id:'wrong'}}), /上下文/);
 state.reviewWorkSplitId='';
 assert.equal(combinedReviewCampaignBinding(assigned), '');
 assert.equal(reviewWorkSplitBinding(assigned), '');

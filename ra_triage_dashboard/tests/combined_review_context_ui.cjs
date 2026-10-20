@@ -28,9 +28,22 @@ let paints=0;s.populateCombinedCaseLabel=()=>{paints++;};
    assert.equal(state.combinedReviewContext,null);assert.equal(paints,1);
  }
  state.activePage='review';state.reviewWorkSplitId='campaign';state.session.username='liangxianghui';
- // A mismatched assignment must report the problem rather than perform an unbound request.
+ // Known non-assignees may supplement in the free stream; broken scope cannot.
  state.selectedCase={...data,review_assignment:{...data.review_assignment,assigned:false}};
- let calls=0;s.api=async()=>{calls++;};await assert.rejects(s.loadCombinedReviewContext(state.selectedCase),/未分配/);assert.equal(calls,0);assert.equal(state.combinedReviewLoad.status,'error');
+ s.api=async path=>{assert(!path.includes('campaign_id='));return {context:{...context,campaign:{...context.campaign,id:''}}};};
+ await s.loadCombinedReviewContext(state.selectedCase);assert.equal(state.combinedReviewContext.campaign.id,'');
+ // Submission retains the page task while writing the separate free namespace.
+ let submitted;
+ s.reviewSaveNavigationContext=()=>({});s.acknowledgeLocalChange=()=>{};s.refreshReviewAfterSave=async()=>{};s.renderReview=()=>{};
+ s.expectedOutputSelectionState=()=>({selectedValue:'误触发',conflictKind:''});s.document={querySelectorAll:()=>[]};
+ s.api=async (path,options)=>{
+  if(options?.method==='POST'){submitted=JSON.parse(options.body);return {combined_review:{}};}
+  return {context:{...context,campaign:{...context.campaign,id:''}}};
+ };
+ elements.reviewSaveButton.setAttribute=()=>{};elements.reviewSaveButton.removeAttribute=()=>{};
+ await s.saveCombinedReview({});assert.equal(submitted.campaign_id,'');assert.equal(submitted.work_split_id,'');assert.equal(submitted.author,'liangxianghui');assert.equal(state.reviewWorkSplitId,'campaign');
+ state.selectedCase={...data,review_assignment:{...data.review_assignment,assigned:false,model_run_id:'wrong'}};
+ let calls=0;s.api=async()=>{calls++;};await assert.rejects(s.loadCombinedReviewContext(state.selectedCase),/上下文/);assert.equal(calls,0);assert.equal(state.combinedReviewLoad.status,'error');
  // Valid out-of-task submissions keep their separate namespace.
  state.reviewWorkSplitId='';state.selectedCase=data;state.reviewFormDirty=false;
  s.api=async path=>{assert(!path.includes('campaign_id='));return {context:{...context,campaign:{...context.campaign,id:''}}};};
