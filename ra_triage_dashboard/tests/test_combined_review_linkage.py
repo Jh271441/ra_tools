@@ -83,6 +83,10 @@ class CombinedReviewLinkageTest(unittest.TestCase):
 
     def test_repair_rejects_wrong_assignment_run_revision_and_existing_target(self):
         campaign = self.campaign(0, assignees=["bob"])
+        # Repair requires assignment before the source submission. Create the
+        # valid target up front so this case reaches the existing-head guard
+        # regardless of whether fixture operations cross a clock second.
+        own = self.campaign(0)
         free = {"id": "", "evaluation_run_id": campaign["evaluation_run_id"]}
         result = self.submit(free, self.context(free))
         args = dict(submission_id=result["submission_group_id"], campaign_id=campaign["id"],
@@ -93,7 +97,6 @@ class CombinedReviewLinkageTest(unittest.TestCase):
         args["campaign_id"] = self.campaign(1)["id"]
         with self.assertRaises(ValueError):
             repair_association(self.db, **args)
-        own = self.campaign(0)
         args["campaign_id"] = own["id"]
         with self.assertRaises(ValueError):
             repair_association(self.db, **{**args, "label_revision_id": 999})
