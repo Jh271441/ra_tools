@@ -6,7 +6,7 @@ const campaignPageState = {
   campaignId: "",
   purpose: "",
   source: "all",
-  lifecycle: "all",
+  lifecycle: "current",
   query: "",
   groupId: "",
   groupReturnCampaignId: "",
@@ -172,7 +172,7 @@ function openCampaignGroup(groupId, { returnCampaignId = "" } = {}) {
 function campaignListEndpoint() {
   const params = new URLSearchParams({
     baselines: selectedBaselineQueryValue(),
-    lifecycle: campaignPageState.lifecycle || "all",
+    lifecycle: campaignPageState.lifecycle || "current",
     page: "1",
     page_size: String(CAMPAIGN_PAGE_SIZE),
   });
@@ -184,7 +184,7 @@ function campaignListEndpoint() {
 async function loadCampaigns({
   campaignId = "",
   purpose = "",
-  lifecycle = "all",
+  lifecycle = "",
   query = "",
   groupId = "",
   discussionIssue = "",
@@ -199,7 +199,7 @@ async function loadCampaigns({
   const route = typeof parsePageRoute === "function" ? parsePageRoute() : {};
   campaignPageState.campaignId = String(campaignId || route.campaignId || "").trim();
   campaignPageState.purpose = String(purpose || route.campaignPurpose || "").trim();
-  campaignPageState.lifecycle = String(lifecycle || route.campaignLifecycle || "all").trim() || "all";
+  campaignPageState.lifecycle = String(lifecycle || route.campaignLifecycle || "current").trim() || "current";
   campaignPageState.query = String(query || route.campaignQuery || "").trim().slice(0, 128);
   campaignPageState.groupId = String(groupId || route.campaignGroupId || "").trim();
   document.getElementById("campaignsPage")?.classList.toggle(
@@ -563,7 +563,7 @@ function renderCampaignIssues(payload) {
       const relation = item.reference_relation && item.reference_relation !== "unknown"
         ? `<span class="campaign-reference-text">${escapeHtml(campaignLabel(item.reference_relation))}</span>`
         : "";
-      return `<tr><td><a href="${escapeHtml(issueUrl)}" class="campaign-row-name">${escapeHtml(item.issue_id)}</a><span class="campaign-reference-text">${escapeHtml(item.title || item.scenario || "")}</span><button class="analysis-discussion-link" type="button" data-campaign-discussion="${escapeHtml(item.issue_id)}" data-baseline-scope="${escapeHtml(item.baseline_scope || "")}">${escapeHtml(uiText("讨论", "Discussion"))}</button></td><td>${escapeHtml(referenceLabel)}${relation}</td><td>${escapeHtml(item.expected_output || "—")}</td><td>${tagMarkup}</td><td>${item.is_excluded ? escapeHtml(uiText("提出排除", "Proposed exclusion")) : "—"}</td><td><div class="campaign-assignee-chips">${assignees}</div></td><td>${campaignNumber(item.submitted)} / ${campaignNumber(item.required_submitter_count)}</td><td><span class="campaign-state-badge" data-state="${escapeHtml(item.state)}">${escapeHtml(campaignLabel(item.state))}</span></td>${canManage ? `<td>${assignmentControls}</td>` : ""}</tr>`;
+      return `<tr><td>${campaign.lifecycle === "active" && !campaign.legacy_read_only ? `<a href="${escapeHtml(issueUrl)}" class="campaign-row-name">${escapeHtml(item.issue_id)}</a>` : `<span class="campaign-row-name">${escapeHtml(item.issue_id)}</span>`}<span class="campaign-reference-text">${escapeHtml(item.title || item.scenario || "")}</span><button class="analysis-discussion-link" type="button" data-campaign-discussion="${escapeHtml(item.issue_id)}" data-baseline-scope="${escapeHtml(item.baseline_scope || "")}">${escapeHtml(uiText("讨论", "Discussion"))}</button></td><td>${escapeHtml(referenceLabel)}${relation}</td><td>${escapeHtml(item.expected_output || "—")}</td><td>${tagMarkup}</td><td>${item.is_excluded ? escapeHtml(uiText("提出排除", "Proposed exclusion")) : "—"}</td><td><div class="campaign-assignee-chips">${assignees}</div></td><td>${campaignNumber(item.submitted)} / ${campaignNumber(item.required_submitter_count)}</td><td><span class="campaign-state-badge" data-state="${escapeHtml(item.state)}">${escapeHtml(campaignLabel(item.state))}</span></td>${canManage ? `<td>${assignmentControls}</td>` : ""}</tr>`;
     }).join("");
   }
   const pageState = document.getElementById("campaignIssuePageState");

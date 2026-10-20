@@ -6,6 +6,7 @@ from typing import Any, Sequence
 from uuid import uuid4
 from .shared import LabelAnnotationConflictError, _json, _json_load, utc_now
 from .labeling_shared import _clean_values
+from .task_lifecycle import task_lifecycle_where
 
 
 class LabelingScopeMixin:
@@ -387,10 +388,11 @@ class LabelingScopeMixin:
             "progress": campaign.get("progress") or {},
         }
 
-    def list_labeling_tasks(self, baseline_scopes: Sequence[str] = ()) -> list[dict[str, Any]]:
+    def list_labeling_tasks(self, baseline_scopes: Sequence[str] = (), *, lifecycle: str = "current") -> list[dict[str, Any]]:
         scopes = _clean_values(baseline_scopes)
-        where = "WHERE split.task_kind = 'labeling'"
-        params: list[Any] = []
+        lifecycle_clause, lifecycle_params = task_lifecycle_where(lifecycle)
+        where = "WHERE split.task_kind = 'labeling' AND " + lifecycle_clause
+        params: list[Any] = list(lifecycle_params)
         if scopes:
             where += f" AND workset.baseline_scope IN ({', '.join('?' for _ in scopes)})"
             params.extend(scopes)
@@ -444,11 +446,12 @@ class LabelingScopeMixin:
                 JOIN campaign_issue_members member ON member.campaign_id=split.id
                 WHERE split.purpose='model_review'
                   AND split.workflow_mode='model_review_and_case_label'
+                  AND {lifecycle_clause}
                   {f"AND member.baseline_scope IN ({', '.join('?' for _ in scopes)})" if scopes else ""}
                 GROUP BY split.id, split.campaign_name, split.created_by, split.created_at,
                          split.mode, split.reviewers_per_issue, split.overlap_ratio,
                          split.workset_id, split.evaluation_run_id, split.workflow_mode
-                """, scopes,
+                """, [*lifecycle_params, *scopes],
             ).fetchall()
         tasks.extend({
             "id": str(row["id"]), "name": str(row["campaign_name"] or ""),

@@ -889,6 +889,10 @@ const state = {
     workSplitOptionsKey: "",
   },
   reviewAssignments: {
+    lifecycle: "current",
+    assignedToMe: false,
+    metrics: null,
+    loadedKey: "",
     splits: [],
     selectedSplitId: "",
     detail: null,

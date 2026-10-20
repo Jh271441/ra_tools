@@ -11,6 +11,7 @@ from uuid import uuid4
 
 from ..review_analysis import REASON_THEME_CATALOG, classify_review_reason
 from .shared import _json, _json_load, utc_now
+from .task_lifecycle import normalize_task_lifecycle, task_lifecycle_where
 
 CAMPAIGN_PURPOSES = {"labeling", "model_review"}
 CAMPAIGN_LIFECYCLES = {"draft", "active", "closed", "cancelled", "superseded"}
@@ -2789,7 +2790,7 @@ class DatabaseCampaignMixin:
         *,
         baseline_scopes: Sequence[str] | None = None,
         purpose: str = "",
-        lifecycle: str = "all",
+        lifecycle: str = "current",
         task_group_id: str = "",
         include_legacy: bool = True,
         query: str = "",
@@ -2798,11 +2799,9 @@ class DatabaseCampaignMixin:
     ) -> dict[str, Any]:
         scopes = self._normalize_baseline_scopes(baseline_scopes)
         normalized_purpose = str(purpose or "").strip().lower()
-        normalized_lifecycle = str(lifecycle or "all").strip().lower()
+        normalized_lifecycle = normalize_task_lifecycle(lifecycle)
         if normalized_purpose and normalized_purpose not in CAMPAIGN_PURPOSES:
             raise ValueError("Campaign purpose 不合法。")
-        if normalized_lifecycle not in {"all", *CAMPAIGN_LIFECYCLES}:
-            raise ValueError("Campaign lifecycle 不合法。")
         safe_page = max(1, int(page or 1))
         safe_page_size = max(1, min(int(page_size or 50), 100))
         where = ["1 = 1"]
@@ -2810,9 +2809,9 @@ class DatabaseCampaignMixin:
         if normalized_purpose:
             where.append("split.purpose = ?")
             params.append(normalized_purpose)
-        if normalized_lifecycle != "all":
-            where.append("split.lifecycle = ?")
-            params.append(normalized_lifecycle)
+        lifecycle_clause, lifecycle_params = task_lifecycle_where(normalized_lifecycle)
+        where.append(lifecycle_clause)
+        params.extend(lifecycle_params)
         if task_group_id:
             where.append("split.task_group_id = ?")
             params.append(str(task_group_id).strip())

@@ -6,6 +6,7 @@ import uuid
 from typing import Any, Iterable, Iterator, Sequence
 
 from ..work_split import normalize_overlap_ratio
+from .task_lifecycle import task_lifecycle_where, task_reviewable
 from .assignment_rules import (
     ASSIGNMENT_SUBMITTED_SQL,
     MODEL_ASSIGNMENT_SCOPE_SQL,
@@ -1335,14 +1336,18 @@ class DatabaseCasesMixin:
     _work_split_snapshot_members = staticmethod(assignment_snapshot_members)
 
     def list_review_work_splits(
-        self, *, limit: int = 50, model_run_id: str = "", assignee: str = ""
+        self, *, limit: int = 50, model_run_id: str = "", assignee: str = "",
+        lifecycle: str = "current", split_id: str = "",
     ) -> list[dict[str, Any]]:
         """Return assignment batches with current completion statistics."""
 
         safe_limit = max(1, min(int(limit or 50), 100))
         run_id = str(model_run_id or "").strip()
-        where = "WHERE split.task_kind != 'labeling'"
-        parameters: list[Any] = []
+        lifecycle_clause, parameters = task_lifecycle_where(lifecycle)
+        where = "WHERE split.task_kind != 'labeling' AND " + lifecycle_clause
+        if split_id:
+            where += " AND split.id = ?"
+            parameters.append(str(split_id).strip())
         if assignee:
             where += " AND EXISTS (SELECT 1 FROM review_work_assignments mine WHERE mine.split_id=split.id AND lower(mine.assignee)=lower(?))"
             parameters.append(str(assignee).strip())
@@ -1545,6 +1550,8 @@ class DatabaseCasesMixin:
                     "created_by": str(row["created_by"] or ""),
                     "created_at": str(row["created_at"] or ""),
                     "campaign_name": str(row["campaign_name"] or ""),
+                    "legacy_read_only": bool(row["legacy_read_only"]),
+                    "purpose": str(row["purpose"] or ""),
                     "lifecycle": str(row["lifecycle"] or ""),
                     "source_split_id": str(source.get("id") or ""),
                     "source_created_at": str(source.get("created_at") or ""),
@@ -1569,7 +1576,7 @@ class DatabaseCasesMixin:
                         else 0.0
                     ),
                     "change_count": changes_by_split.get(split_id, 0),
-                    "is_current": current_assignment_count > 0,
+                    "is_current": current_assignment_count > 0 and task_reviewable(row),
                 }
             )
         return result
@@ -1894,7 +1901,7 @@ class DatabaseCasesMixin:
         summary = next(
             (
                 item
-                for item in self.list_review_work_splits(limit=100)
+                for item in self.list_review_work_splits(limit=1, lifecycle="all", split_id=normalized_split_id)
                 if item["split_id"] == normalized_split_id
             ),
             None,
@@ -1916,10 +1923,13 @@ class DatabaseCasesMixin:
                 "pending_count": int(split["assignment_count"] or 0),
                 "completion_ratio": 0.0,
                 "change_count": len(changes),
-                "is_current": current_assignment_count > 0,
+                "is_current": current_assignment_count > 0 and task_reviewable(split),
             }
         return {
             "split_id": normalized_split_id,
+            "lifecycle": str(split["lifecycle"] or "active"),
+            "campaign_name": str(split["campaign_name"] or ""),
+            "legacy_read_only": bool(split["legacy_read_only"]),
             "created_by": str(split["created_by"] or ""),
             "created_at": str(split["created_at"] or ""),
             "seed": split["seed"],
@@ -2256,6 +2266,8 @@ class DatabaseCasesMixin:
             ).fetchone()
             if split is None:
                 return None
+            if not task_reviewable(split):
+                raise PermissionError("该任务已替代、取消、关闭或只读，不能继续复核；请从历史任务查看记录。")
             member = conn.execute(
                 "SELECT 1 FROM review_work_assignments WHERE split_id=? AND lower(assignee)=lower(?) LIMIT 1",
                 (normalized, actor),

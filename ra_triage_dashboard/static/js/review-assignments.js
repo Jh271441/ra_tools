@@ -1,5 +1,48 @@
 /* Review assignment history, progress, and administrator task transfers. */
 
+function reviewAssignmentCanReview(item) {
+  return Boolean(item?.is_current && !item.legacy_read_only && (!item.lifecycle || item.lifecycle === "active"));
+}
+
+function reviewAssignmentLifecycleLabel(item) {
+  const labels = {
+    superseded: ["已替代", "Superseded"], cancelled: ["已取消", "Cancelled"],
+    closed: ["已关闭", "Closed"], draft: ["草稿", "Draft"],
+  };
+  const text = labels[item?.lifecycle];
+  return text ? uiText(...text) : item?.is_current
+    ? uiText("当前分配", "Current") : uiText("已被后续分配覆盖", "Superseded");
+}
+
+function renderReviewAssignmentListFilters() {
+  const store = state.reviewAssignments;
+  const filter = $("#reviewAssignmentLifecycleFilter");
+  if (filter) {
+    filter.innerHTML = [["current", "当前任务", "Current tasks"], ["history", "历史任务", "Historical tasks"], ["all", "全部任务", "All tasks"]]
+      .map(([value, zh, en]) => `<option value="${value}">${escapeHtml(uiText(zh, en))}</option>`).join("");
+    filter.value = store.lifecycle || "current";
+    enhanceNativeUiSelect(filter);
+  }
+  const mine = $("#reviewAssignmentMyTasks");
+  if (mine) {
+    mine.setAttribute("aria-pressed", String(Boolean(store.assignedToMe)));
+    mine.classList.toggle("button-primary", Boolean(store.assignedToMe));
+    mine.classList.toggle("button-quiet", !store.assignedToMe);
+  }
+}
+
+function changeReviewAssignmentListFilters() {
+  const store = state.reviewAssignments;
+  store.selectedSplitId = "";
+  store.detail = null;
+  store.detailLoading = false;
+  store.detailRequestSeq += 1;
+  store.splits = [];
+  store.metrics = null;
+  history.replaceState({ page: "review-assignments" }, "", reviewAssignmentDetailUrl());
+  loadReviewAssignments({ force: true }).catch((error) => showToast(error.message, true));
+}
+
 function reviewAssignmentRunLabel(runId) {
   const value = String(runId || "").trim();
   if (!value) return uiText("未绑定 Model Run", "No Model Run");
@@ -115,15 +158,16 @@ function reviewAssignmentMetricMarkup(label, value, note = "") {
 function renderReviewAssignmentMetrics(items) {
   const root = $("#reviewAssignmentMetrics");
   if (!root) return;
+  const metrics = state.reviewAssignments.metrics || {};
   const active = items.filter((item) => item.is_current);
-  const assignments = items.reduce((sum, item) => sum + Number(item.assignment_count || 0), 0);
-  const completed = items.reduce((sum, item) => sum + Number(item.completed_count || 0), 0);
-  const pending = items.reduce((sum, item) => sum + Number(item.pending_count || 0), 0);
+  const assignments = metrics.assignment_count ?? items.reduce((sum, item) => sum + Number(item.assignment_count || 0), 0);
+  const completed = metrics.completed_count ?? items.reduce((sum, item) => sum + Number(item.completed_count || 0), 0);
+  const pending = metrics.pending_count ?? items.reduce((sum, item) => sum + Number(item.pending_count || 0), 0);
   root.innerHTML = [
     reviewAssignmentMetricMarkup(uiText("分配批次", "Batches"), items.length, uiText(`${active.length} 个当前批次`, `${active.length} current`)),
-    reviewAssignmentMetricMarkup(uiText("任务总量", "Assigned tasks"), assignments, uiText("按 Review 人次计数", "Reviewer-task count")),
+    reviewAssignmentMetricMarkup(uiText("任务总量", "Assigned tasks"), assignments, state.reviewAssignments.assignedToMe ? uiText("仅统计当前账号", "Current user only") : uiText("按 Review 人次计数", "Reviewer-task count")),
     reviewAssignmentMetricMarkup(uiText("已完成", "Completed"), completed, uiText("已有 Review 提交", "Review submitted")),
-    reviewAssignmentMetricMarkup(uiText("待处理", "Pending"), pending, uiText("可在明细中转派", "Reassign from task detail")),
+    reviewAssignmentMetricMarkup(uiText("待处理", "Pending"), pending, state.reviewAssignments.lifecycle === "history" ? uiText("历史未完成，只读", "Historical unfinished; read-only") : uiText("当前范围内未完成", "Unfinished in this scope")),
   ].join("");
 }
 
@@ -144,10 +188,9 @@ function renderReviewAssignmentBatch(item) {
     created_by: item.source_created_by || item.created_by,
     filter_snapshot: item.source_filter_snapshot || item.filter_snapshot,
   };
+  item.is_current = reviewAssignmentCanReview(item);
   const percent = reviewAssignmentPercent(item.completion_ratio);
-  const status = item.is_current
-    ? uiText("当前分配", "Current")
-    : uiText("已被后续分配覆盖", "Superseded");
+  const status = reviewAssignmentLifecycleLabel(item);
   const statusClass = item.is_current ? "is-current" : "is-superseded";
   const filterLabel = reviewAssignmentFilterLabel(item);
   const changeNote = Number(item.change_count || 0)
@@ -155,15 +198,15 @@ function renderReviewAssignmentBatch(item) {
     : uiText("尚未转派", "No transfers");
   const taskLinks = item.is_current
     ? `<a class="button button-quiet" href="${escapeHtml(reviewAssignmentBatchHref(item, "review"))}">${escapeHtml(uiText("去判错复核", "Open Review"))}</a><a class="button button-quiet" href="${escapeHtml(reviewAssignmentBatchHref(item, "analysis"))}">${escapeHtml(uiText("去原因聚类", "Open analysis"))}</a>`
-    : "";
+    : `<a class="button button-quiet" href="${escapeHtml(pageUrl("campaigns", { campaignId: item.split_id, lifecycle: "history" }))}">${escapeHtml(uiText("查看审计与复核", "View audit and reviews"))}</a>`;
   return `<article class="review-assignment-batch" data-review-assignment-batch="${escapeHtml(item.split_id)}">
     <header class="review-assignment-batch-header">
-      <div><strong class="review-assignment-batch-title">${escapeHtml(reviewAssignmentRunLabel(item.model_run_id))} · ${escapeHtml(formatTime(item.created_at))}</strong><span class="review-assignment-batch-meta">${escapeHtml(item.split_id)} · ${escapeHtml(item.created_by || uiText("未记录", "Unknown"))} · ${escapeHtml(reviewAssignmentModeLabel(item))}</span><span class="review-assignment-batch-meta">${escapeHtml(filterLabel)}</span></div>
+      <div><strong class="review-assignment-batch-title">${escapeHtml(item.campaign_name || reviewAssignmentRunLabel(item.model_run_id))} · ${escapeHtml(formatTime(item.created_at))}</strong><span class="review-assignment-batch-meta">${escapeHtml(item.split_id)} · ${escapeHtml(item.created_by || uiText("未记录", "Unknown"))} · ${escapeHtml(reviewAssignmentModeLabel(item))}</span><span class="review-assignment-batch-meta">${escapeHtml(filterLabel)}</span></div>
       <span class="review-assignment-status ${statusClass}">${escapeHtml(status)}</span>
     </header>
     <div class="review-assignment-progress"><div class="review-assignment-progress-heading"><span>${escapeHtml(uiText("整体进度", "Overall progress"))}</span><strong>${escapeHtml(`${item.completed_count || 0} / ${item.assignment_count || 0} · ${percent}%`)}</strong></div><div class="review-assignment-progress-track"><span style="width:${percent}%"></span></div></div>
     <div class="review-assignment-member-grid">${(item.members || []).map(reviewAssignmentMemberMarkup).join("") || `<span class="quiet-meta">${escapeHtml(uiText("没有成员记录", "No member data"))}</span>`}</div>
-    <footer class="review-assignment-batch-footer"><span>${escapeHtml(`${item.total_count || 0} ${uiText("个 Issue", "Issues")} · ${changeNote}`)}</span><div class="review-assignment-batch-actions">${Object.keys(item.filter_snapshot || {}).some((key) => ["baselines", "baseline_scopes", "comparison_status", "search", "issue_ids"].includes(key)) ? `<a class="button button-quiet" href="${escapeHtml(reviewAssignmentSourceHref({ ...item.filter_snapshot, model_run_id: item.model_run_id || item.filter_snapshot.model_run_id }))}">${escapeHtml(uiText("查看原筛选", "View source filter"))}</a>` : ""}${taskLinks}<button class="button button-quiet" type="button" data-open-review-assignment="${escapeHtml(item.split_id)}">${escapeHtml(uiText("查看任务明细", "View task detail"))}</button></div></footer>
+    <footer class="review-assignment-batch-footer"><span>${escapeHtml(`${item.total_count || 0} ${uiText("个 Issue", "Issues")} · ${changeNote}`)}</span><div class="review-assignment-batch-actions">${item.is_current && Object.keys(item.filter_snapshot || {}).some((key) => ["baselines", "baseline_scopes", "comparison_status", "search", "issue_ids"].includes(key)) ? `<a class="button button-quiet" href="${escapeHtml(reviewAssignmentSourceHref({ ...item.filter_snapshot, model_run_id: item.model_run_id || item.filter_snapshot.model_run_id }))}">${escapeHtml(uiText("查看原筛选", "View source filter"))}</a>` : ""}${taskLinks}<button class="button button-quiet" type="button" data-open-review-assignment="${escapeHtml(item.split_id)}">${escapeHtml(uiText("查看任务明细", "View task detail"))}</button></div></footer>
   </article>`;
 }
 
@@ -174,6 +217,11 @@ function renderReviewAssignmentList() {
   if (!root) return;
   if (store.loading && !store.splits.length) {
     root.innerHTML = `<div class="review-assignment-empty">${escapeHtml(uiText("正在加载任务分配。", "Loading assignments."))}</div>`;
+    if (status) status.textContent = "";
+    return;
+  }
+  if (!store.splits.length && store.lifecycle === "history") {
+    root.innerHTML = `<div class="review-assignment-empty">${escapeHtml(uiText("暂无已替代或已取消的历史任务。", "No superseded or cancelled tasks."))}</div>`;
     if (status) status.textContent = "";
     return;
   }
@@ -288,11 +336,12 @@ function renderReviewAssignmentDetail() {
     }
     return;
   }
+  detail.is_current = reviewAssignmentCanReview(detail);
   const title = $("#reviewAssignmentDetailTitle");
-  if (title) title.textContent = `${reviewAssignmentRunLabel(detail.model_run_id)} · ${uiText("任务明细", "Task detail")}`;
+  if (title) title.textContent = `${detail.campaign_name || reviewAssignmentRunLabel(detail.model_run_id)} · ${uiText("任务明细", "Task detail")}`;
   const meta = $("#reviewAssignmentDetailMeta");
   if (meta) {
-    meta.textContent = `${detail.split_id} · ${detail.total_count || 0} ${uiText("个 Issue", "Issues")} · ${detail.assignment_count || 0} ${uiText("条任务", "tasks")} · ${reviewAssignmentModeLabel(detail)}${detail.is_current ? "" : ` · ${uiText("该批次已被后续分配覆盖，当前不可编辑", "Superseded by a later allocation; read-only")}`}`;
+    meta.textContent = `${detail.split_id} · ${detail.total_count || 0} ${uiText("个 Issue", "Issues")} · ${detail.assignment_count || 0} ${uiText("条任务", "tasks")} · ${reviewAssignmentModeLabel(detail)}${detail.is_current ? "" : ` · ${`${reviewAssignmentLifecycleLabel(detail)} · ${uiText("历史任务，只读", "Historical task; read-only")}`}`}`;
   }
   renderReviewAssignmentDetailFilters(detail);
   const summary = $("#reviewAssignmentDetailSummary");
@@ -315,7 +364,7 @@ function renderReviewAssignmentDetail() {
       const save = locked
         ? `<span class="review-assignment-locked">${escapeHtml(item.submitted ? uiText("已完成，锁定", "Completed; locked") : uiText("历史批次，只读", "Read-only history"))}</span>`
         : `<button class="button button-quiet review-assignment-save" type="button" data-review-assignment-save disabled>${escapeHtml(uiText("保存转派", "Save transfer"))}</button>`;
-      return `<tr data-review-assignment-row data-issue-id="${escapeHtml(item.issue_id)}" data-original-assignee="${escapeHtml(item.assignee)}"><td><a class="review-assignment-issue-link" href="${escapeHtml(reviewAssignmentIssueHref(item))}">${escapeHtml(item.issue_id)}</a>${item.title || item.scenario ? `<small class="review-assignment-issue-meta" title="${escapeHtml(item.title || item.scenario)}">${escapeHtml(item.title || item.scenario)}</small>` : ""}</td><td>${picker}</td><td>${escapeHtml(reviewAssignmentTaskTypeLabel(item.assignment_kind))}</td><td>${reviewAssignmentTaskStatusMarkup(item)}</td><td>${escapeHtml(item.submitted_at ? formatTime(item.submitted_at) : "—")}</td><td>${save}</td></tr>`;
+      return `<tr data-review-assignment-row data-issue-id="${escapeHtml(item.issue_id)}" data-original-assignee="${escapeHtml(item.assignee)}"><td>${detail.is_current ? `<a class="review-assignment-issue-link" href="${escapeHtml(reviewAssignmentIssueHref(item))}">${escapeHtml(item.issue_id)}</a>` : `<span class="review-assignment-locked">${escapeHtml(item.issue_id)}</span>`}${item.title || item.scenario ? `<small class="review-assignment-issue-meta" title="${escapeHtml(item.title || item.scenario)}">${escapeHtml(item.title || item.scenario)}</small>` : ""}</td><td>${picker}</td><td>${escapeHtml(reviewAssignmentTaskTypeLabel(item.assignment_kind))}</td><td>${reviewAssignmentTaskStatusMarkup(item)}</td><td>${escapeHtml(item.submitted_at ? formatTime(item.submitted_at) : "—")}</td><td>${save}</td></tr>`;
     }).join("");
     renderReviewAssignmentRowPersonPickers();
   }
@@ -346,6 +395,7 @@ function renderReviewAssignmentDetail() {
 
 function renderReviewAssignmentPage() {
   if (!$("#reviewAssignmentsPage")) return;
+  renderReviewAssignmentListFilters();
   renderReviewAssignmentMetrics(state.reviewAssignments.splits || []);
   renderReviewAssignmentList();
   renderReviewAssignmentDetail();
@@ -353,6 +403,9 @@ function renderReviewAssignmentPage() {
 
 function reviewAssignmentDetailUrl(splitId = "") {
   const url = new URL(withBase("/review-assignments"), window.location.origin);
+  const store = state.reviewAssignments;
+  if (store.lifecycle && store.lifecycle !== "current") url.searchParams.set("lifecycle", store.lifecycle);
+  if (store.assignedToMe) url.searchParams.set("assigned_to_me", "true");
   if (splitId) url.searchParams.set("split", splitId);
   return `${url.pathname}${url.search}`;
 }
@@ -401,11 +454,15 @@ async function loadReviewAssignmentDetail(
 
 async function loadReviewAssignments({ force = false, splitId = "", reloadDetail = true } = {}) {
   const store = state.reviewAssignments;
+  const route = new URLSearchParams(window.location.search);
+  store.lifecycle = ["current", "history", "all"].includes(route.get("lifecycle")) ? route.get("lifecycle") : "current";
+  store.assignedToMe = route.get("assigned_to_me") === "true";
+  const listKey = `${store.lifecycle}:${store.assignedToMe}`;
   if (!state.modelRuns?.length) await loadRuns({ preserveEmpty: true });
   if (!state.accessUsers?.length && state.session?.is_admin && typeof loadAccessUsers === "function") {
     await loadAccessUsers();
   }
-  if (!force && store.splits.length) {
+  if (!force && store.splits.length && store.loadedKey === listKey) {
     renderReviewAssignmentPage();
     if (splitId && reloadDetail) await loadReviewAssignmentDetail(splitId, { updateRoute: false });
     await restoreReviewAllocationDraft();
@@ -415,9 +472,13 @@ async function loadReviewAssignments({ force = false, splitId = "", reloadDetail
   store.loading = true;
   renderReviewAssignmentPage();
   try {
-    const result = await api("/api/cases/work-splits?limit=100");
+    const params = new URLSearchParams({ limit: "100", lifecycle: store.lifecycle });
+    if (store.assignedToMe) params.set("assigned_to_me", "true");
+    const result = await api(`/api/cases/work-splits?${params}`);
     if (requestSeq !== store.requestSeq) return;
     store.splits = result.items || [];
+    store.metrics = result.metrics || null;
+    store.loadedKey = listKey;
     store.loading = false;
     renderReviewAssignmentPage();
     await restoreReviewAllocationDraft();
@@ -439,7 +500,7 @@ async function reassignReviewAssignment(row, button) {
   const detail = store.detail;
   const issueId = row?.dataset.issueId || "";
   const assignee = row?.querySelector(".review-assignment-person-picker .ui-select-native")?.value || "";
-  if (!detail?.split_id || !issueId || !assignee || assignee === row.dataset.originalAssignee) return;
+  if (!reviewAssignmentCanReview(detail) || !detail?.split_id || !issueId || !assignee || assignee === row.dataset.originalAssignee) return;
   if (button) {
     button.disabled = true;
     button.setAttribute("aria-busy", "true");
@@ -466,6 +527,14 @@ async function reassignReviewAssignment(row, button) {
 }
 
 function bindReviewAssignmentsPage() {
+  $("#reviewAssignmentLifecycleFilter")?.addEventListener("change", (event) => {
+    state.reviewAssignments.lifecycle = event.target.value || "current";
+    changeReviewAssignmentListFilters();
+  });
+  $("#reviewAssignmentMyTasks")?.addEventListener("click", () => {
+    state.reviewAssignments.assignedToMe = !state.reviewAssignments.assignedToMe;
+    changeReviewAssignmentListFilters();
+  });
   $("#reviewAssignmentsRefresh")?.addEventListener("click", () => {
     loadReviewAssignments({ force: true, splitId: state.reviewAssignments.selectedSplitId }).catch((error) => showToast(error.message, true));
   });

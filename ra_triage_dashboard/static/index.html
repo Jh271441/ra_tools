@@ -81,7 +81,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-573`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-574`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -649,7 +649,11 @@
             <section class="page-card review-assignment-list-card assignment-history">
               <header class="review-assignment-section-heading">
                 <div><h2><span class="ui-lang-zh">分配批次</span><span class="ui-lang-en">Allocation batches</span></h2></div>
-                <small id="reviewAssignmentListStatus" aria-live="polite"></small>
+                <div class="review-assignment-list-filters">
+                  <label><span class="ui-lang-zh">任务范围</span><span class="ui-lang-en">Task scope</span><select id="reviewAssignmentLifecycleFilter"><option value="current">当前任务</option><option value="history">历史任务</option><option value="all">全部任务</option></select></label>
+                  <button class="button button-quiet" id="reviewAssignmentMyTasks" type="button" aria-pressed="false"><span class="ui-lang-zh">我的任务</span><span class="ui-lang-en">My tasks</span></button>
+                  <small id="reviewAssignmentListStatus" aria-live="polite"></small>
+                </div>
               </header>
               <div class="review-assignment-list" id="reviewAssignmentList"><div class="review-assignment-empty"><span class="ui-lang-zh">正在加载任务分配。</span><span class="ui-lang-en">Loading assignments.</span></div></div>
             </section>
@@ -711,7 +715,7 @@
                 </div>
                 <form class="campaigns-filters" id="campaignsFilterForm">
                   <label><span class="ui-lang-zh">来源</span><span class="ui-lang-en">Source</span><select id="campaignsSource"><option value="all">全部来源</option><option value="campaign">标注实验</option><option value="legacy_model_review">历史判错复核</option></select></label>
-                  <label><span class="ui-lang-zh">生命周期</span><span class="ui-lang-en">Lifecycle</span><select id="campaignsLifecycle"><option value="all">全部</option><option value="active">进行中</option><option value="draft">草稿</option><option value="closed">已关闭</option><option value="cancelled">已取消</option><option value="superseded">已替代</option></select></label>
+                  <label><span class="ui-lang-zh">生命周期</span><span class="ui-lang-en">Lifecycle</span><select id="campaignsLifecycle"><option value="current">当前任务</option><option value="history">历史任务</option><option value="all">全部</option><option value="active">进行中</option><option value="draft">草稿</option><option value="closed">已关闭</option><option value="cancelled">已取消</option><option value="superseded">已替代</option></select></label>
                   <label class="campaigns-search"><span>Search</span><input id="campaignsQuery" type="search" maxlength="128" autocomplete="off" placeholder="名称或 Issue"/></label>
                   <button class="button button-primary" type="submit"><span class="ui-lang-zh">筛选</span><span class="ui-lang-en">Filter</span></button>
                 </form>
@@ -2401,7 +2405,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-573`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-574`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

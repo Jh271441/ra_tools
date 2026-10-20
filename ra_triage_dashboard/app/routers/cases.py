@@ -60,6 +60,7 @@ from ..runtime import (
 )
 from ..trail_sync import read_trail_issue_metadata
 from ..work_split import distribute_issue_ids, normalize_overlap_ratio
+from ..db_parts.task_lifecycle import normalize_task_lifecycle, task_list_metrics
 
 router = APIRouter()
 
@@ -733,21 +734,29 @@ async def list_case_work_splits(
     request: Request,
     limit: int = 50,
     model_run_id: str = "",
+    lifecycle: str = "current",
+    assigned_to_me: bool = False,
 ) -> dict[str, Any]:
     """Admin-only history and progress for Review task allocations."""
 
-    await asyncio.to_thread(_admin_identity, request)
+    identity = await asyncio.to_thread(_admin_identity, request)
+    try:
+        lifecycle = normalize_task_lifecycle(lifecycle)
+    except ValueError as exc:
+        raise _detail(400, str(exc)) from exc
+    assignee = identity.username if assigned_to_me else ""
     items = await asyncio.to_thread(
         database.list_review_work_splits,
         limit=max(1, min(int(limit or 50), 100)),
         model_run_id=_as_text(model_run_id),
+        lifecycle=lifecycle, assignee=assignee,
     )
     for item in items:
         item["baseline_ids"] = [
             baseline_registry.scope_to_id(scope) or scope
             for scope in item.get("baseline_scopes") or []
         ]
-    return {"items": items, "change_revision": await asyncio.to_thread(database.change_revision)}
+    return {"items": items, "metrics": task_list_metrics(items, assignee), "lifecycle": lifecycle, "assigned_to_me": assigned_to_me, "change_revision": await asyncio.to_thread(database.change_revision)}
 
 
 @router.get("/api/review-work-splits")
@@ -757,9 +766,14 @@ async def review_work_split_options(
     baselines: str = "",
     all_baselines: bool = False,
     assigned_to_me: bool = False,
+    lifecycle: str = "current",
 ) -> dict[str, Any]:
     """Return task options; the entry picker may discover own tasks across datasets."""
 
+    try:
+        lifecycle = normalize_task_lifecycle(lifecycle)
+    except ValueError as exc:
+        raise _detail(400, str(exc)) from exc
     selected_baselines = set() if all_baselines else set(resolve_request_baseline_ids(baselines, request=request))
     assignee = ""
     if assigned_to_me:
@@ -772,7 +786,7 @@ async def review_work_split_options(
         database.list_review_work_splits,
         limit=100,
         model_run_id=_as_text(model_run_id),
-        assignee=assignee,
+        assignee=assignee, lifecycle=lifecycle,
     )
 
     def snapshot_baselines(item: dict[str, Any]) -> set[str]:
@@ -794,9 +808,8 @@ async def review_work_split_options(
 
     items = []
     for item in raw_items:
-        if assigned_to_me and item.get("lifecycle") not in {"", "active"}:
-            continue
-        if not item.get("is_current"):
+        can_review = bool(item.get("is_current")) and item.get("lifecycle", "active") in {"", "active"}
+        if lifecycle in {"current", "active"} and not can_review:
             continue
         item_baselines = snapshot_baselines(item)
         if selected_baselines and item_baselines and selected_baselines.isdisjoint(item_baselines):
@@ -804,6 +817,8 @@ async def review_work_split_options(
         items.append(
             {
                 "split_id": str(item.get("split_id") or ""),
+                "lifecycle": str(item.get("lifecycle") or "active"),
+                "can_review": can_review,
                 "name": str(item.get("campaign_name") or ""),
                 "model_run_id": str(item.get("model_run_id") or ""),
                 "created_at": str(item.get("created_at") or ""),

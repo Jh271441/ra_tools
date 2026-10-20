@@ -584,7 +584,7 @@ function parsePageRoute() {
         ? "labeling"
         : "",
     legacyModelReviewCampaign,
-    campaignLifecycle: params.get("lifecycle") || "all",
+    campaignLifecycle: params.get("lifecycle") || "current",
     campaignQuery: String(params.get("q") || "").slice(0, 128),
     campaignGroupId: String(params.get("group") || "").trim(),
     // Issue / GT 上传已从页面移除；旧链接统一落到安全的模型结果导入区。
@@ -865,11 +865,18 @@ function pageUrl(page, options = {}) {
       url.searchParams.set("page_size", String(summary.pageSize));
     }
   }
+  if (page === "review-assignments") {
+    const assignments = state.reviewAssignments;
+    if (assignments.lifecycle && assignments.lifecycle !== "current") url.searchParams.set("lifecycle", assignments.lifecycle);
+    if (assignments.assignedToMe) url.searchParams.set("assigned_to_me", "true");
+    const splitId = options.reviewAssignmentSplitId || assignments.selectedSplitId;
+    if (splitId) url.searchParams.set("split", splitId);
+  }
   if (page === "campaigns") {
     if (options.campaignId) url.searchParams.set("campaign", String(options.campaignId));
     if (options.groupId) url.searchParams.set("group", String(options.groupId));
     if (options.purpose) url.searchParams.set("purpose", String(options.purpose));
-    if (options.lifecycle && options.lifecycle !== "all") {
+    if (options.lifecycle && options.lifecycle !== "current") {
       url.searchParams.set("lifecycle", String(options.lifecycle));
     }
     if (options.query) url.searchParams.set("q", String(options.query).slice(0, 128));
@@ -1115,7 +1122,7 @@ function showPage(
     reviewAssignmentSplitId = "",
     campaignId = "",
     campaignPurpose = "",
-    campaignLifecycle = "all",
+    campaignLifecycle = "current",
     campaignQuery = "",
     campaignGroupId = "",
   } = {}

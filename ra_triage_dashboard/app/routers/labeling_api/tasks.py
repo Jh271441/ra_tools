@@ -13,19 +13,24 @@ from ...runtime import database
 from ...work_split import distribute_issue_ids
 from ...work_split import normalize_overlap_ratio
 from ...support.baselines import resolve_request_baseline_scopes
+from ...db_parts.task_lifecycle import normalize_task_lifecycle
 from .common import _active_labeling_scopes, _labeling_filter_values, _require_labeling_writer
 
 router = APIRouter()
 
 
 @router.get("/api/labeling/tasks")
-async def list_labeling_tasks(request: Request, baselines: str = "", include_combined: bool = False) -> dict[str, Any]:
+async def list_labeling_tasks(request: Request, baselines: str = "", include_combined: bool = False, lifecycle: str = "current") -> dict[str, Any]:
     await _require_labeling_writer(request)
     scopes = resolve_request_baseline_scopes(baselines, request=request)
     scopes = await _active_labeling_scopes(scopes)
     if not scopes:
         return {"items": [], "baseline_scopes": scopes}
-    tasks = await asyncio.to_thread(database.list_labeling_tasks, scopes)
+    try:
+        lifecycle = normalize_task_lifecycle(lifecycle)
+    except ValueError as exc:
+        raise _detail(400, str(exc)) from exc
+    tasks = await asyncio.to_thread(database.list_labeling_tasks, scopes, lifecycle=lifecycle)
     if not include_combined:
         tasks = [task for task in tasks if task.get("purpose") != "model_review"]
     task_ids = [str(item["id"]) for item in tasks]

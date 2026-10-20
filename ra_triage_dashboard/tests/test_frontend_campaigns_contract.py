@@ -25,7 +25,7 @@ class FrontendCampaignsContractTest(unittest.TestCase):
         )[0]
         self.assertIn('campaignId: String(params.get("campaign") || "").trim()', parser)
         self.assertIn('campaignPurpose: ["labeling", "model_review"]', parser)
-        self.assertIn('campaignLifecycle: params.get("lifecycle") || "all"', parser)
+        self.assertIn('campaignLifecycle: params.get("lifecycle") || "current"', parser)
         self.assertIn('campaignQuery: String(params.get("q") || "").slice(0, 128)', parser)
         self.assertIn('campaignGroupId: String(params.get("group") || "").trim()', parser)
         page_url = APP_JS.split("function pageUrl(page, options = {})", 1)[1].split(

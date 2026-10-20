@@ -216,7 +216,7 @@ async function loadReviewTaskOptions({ force = false } = {}) {
   reviewTaskOptionsRequest = (async () => {
     try {
       const result = await api("/api/review-work-splits?all_baselines=true&assigned_to_me=true");
-      reviewTaskOptions = result.items || [];
+      reviewTaskOptions = (result.items || []).filter((item) => !["superseded", "cancelled"].includes(item.lifecycle) && item.can_review !== false);
       reviewTaskOptionsLoadedAt = Date.now();
       renderReviewWorkSplitPicker(state.reviewWorkSplitId, { load: false });
     } catch (error) {
