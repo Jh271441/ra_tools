@@ -3,6 +3,23 @@
  * Loaded as a classic script (shared global scope). Do not convert to
  * ES modules without auditing cross-file function/state dependencies.
  */
+function renderSessionNavigation() {
+  const pending = Boolean(state.session.identity_pending);
+  document.documentElement.dataset.sessionPending = String(pending);
+  const status = $("#sidebarSessionPending");
+  if (status) status.hidden = !pending;
+  document.querySelectorAll("[data-session-nav]").forEach((item) => {
+    const allowed = item.dataset.sessionNav === "admin"
+      ? Boolean(state.session.is_admin) : hasDashboardWriteRole();
+    item.hidden = !pending && !allowed;
+    item.inert = pending || !allowed;
+    item.setAttribute("aria-disabled", String(pending || !allowed));
+  });
+  // Exclusion keeps its existing read-only access, now under Case labeling.
+  const group = $("#caseLabelingNavGroup");
+  if (group) group.hidden = false;
+}
+
 function validDisplayName(value) {
   const username = String(value || "").trim();
   return /^[A-Za-z0-9._@-]{1,128}$/.test(username) ? username : "";
@@ -73,15 +90,7 @@ function renderSession() {
     : "write";
   const userManagementNav = $("#userManagementNavButton");
   if (userManagementNav) userManagementNav.hidden = !state.session.is_admin;
-  const reviewAssignmentsNav = $("#reviewAssignmentsNavButton");
-  if (reviewAssignmentsNav) reviewAssignmentsNav.hidden = !state.session.is_admin;
-  const canLabelCases = hasDashboardWriteRole();
-  const caseLabelingNav = $("#caseLabelingNavButton");
-  if (caseLabelingNav) caseLabelingNav.hidden = !canLabelCases;
-  const caseLabelingNavGroup = $("#caseLabelingNavGroup");
-  if (caseLabelingNavGroup) caseLabelingNavGroup.hidden = !canLabelCases;
-  const labelingExperimentsNav = $("#labelingExperimentsNavButton");
-  if (labelingExperimentsNav) labelingExperimentsNav.hidden = !state.session.is_admin;
+  renderSessionNavigation();
   const caseLabelingCreateTask = $("#caseLabelingCreateTask");
   if (caseLabelingCreateTask) caseLabelingCreateTask.hidden = !state.session.is_admin;
   const caseLabelingExportGt = $("#caseLabelingExportGt");
@@ -355,18 +364,7 @@ function renderConfig() {
   renderTrailSyncState();
   renderGtSyncStatus(state.config?.gt_sync || state.gtSync);
   renderBatchRuntimeSummary();
-  const caseLabelingNav = $("#caseLabelingNavButton");
-  if (caseLabelingNav) {
-    caseLabelingNav.hidden = !hasDashboardWriteRole();
-  }
-  const caseLabelingNavGroup = $("#caseLabelingNavGroup");
-  if (caseLabelingNavGroup) {
-    caseLabelingNavGroup.hidden = !hasDashboardWriteRole();
-  }
-  const labelingExperimentsNav = $("#labelingExperimentsNavButton");
-  if (labelingExperimentsNav) {
-    labelingExperimentsNav.hidden = !state.session?.is_admin;
-  }
+  renderSessionNavigation();
   const caseLabelingCreateTask = $("#caseLabelingCreateTask");
   if (caseLabelingCreateTask) caseLabelingCreateTask.hidden = !state.session?.is_admin;
   const caseLabelingExportGt = $("#caseLabelingExportGt");

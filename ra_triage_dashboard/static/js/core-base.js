@@ -439,7 +439,7 @@ function enhanceNativeUiSelect(select, { maxWidth = 520 } = {}) {
       legacy_model_review: ["历史判错复核", "Historical reviews"],
     },
     modelReviewStatusInput: {
-      pending: ["待开始", "Pending"], in_progress: ["复核中", "In progress"], completed: ["已完成", "Completed"],
+      pending: ["1 · 待开始", "1 · Pending"], in_progress: ["2 · 复核中", "2 · In progress"], completed: ["3 · 已完成", "3 · Completed"],
     },
     runCollectionReferenceType: {
       gt: ["GT 版本（创建时冻结）", "GT snapshot (frozen on create)"],
@@ -454,7 +454,10 @@ function enhanceNativeUiSelect(select, { maxWidth = 520 } = {}) {
   }));
   populateUiSelect(root, options, select.value);
   const trigger = root.querySelector(".ui-select-trigger");
-  if (trigger) trigger.title = select.title || "";
+  if (trigger) {
+    trigger.title = select.title || "";
+    if (select.id === "modelReviewStatusInput") trigger.setAttribute("aria-keyshortcuts", "Shift+R");
+  }
   bindUiSelect(root, { maxHeight: 320, maxWidth });
   if (select.dataset.dashboardSelectBound !== "1") {
     select.dataset.dashboardSelectBound = "1";

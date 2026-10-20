@@ -522,9 +522,8 @@ function reviewDropdownShortcutAllowed(target) {
 }
 
 function toggleReviewExcludeShortcut() {
-  const input = (typeof $ === "function" && ($("#reviewExcludeInput") || $("#caseLabelingExcluded")))
-    || activeReviewChromeRoot()?.querySelector?.("#reviewExcludeInput, #caseLabelingExcluded");
-  if (!input || input.disabled) return false;
+  const input = activeReviewChromeRoot()?.querySelector?.("#reviewExcludeInput, #caseLabelingExcluded");
+  if (!input || input.disabled || input.closest("[hidden]")) return false;
   input.checked = !input.checked;
   input.dispatchEvent(new Event("change", { bubbles: true }));
   return true;
@@ -557,12 +556,41 @@ function openReviewMissingEvidenceShortcut() {
   ));
 }
 
+function handleModelReviewStatusShortcut(event, target) {
+  if (state.activePage !== "review" || event.isComposing || event.repeat
+      || event.ctrlKey || event.metaKey || event.altKey || state.session?.read_only
+      || state.session?.identity_pending || !hasDashboardWriteRole()) return false;
+  const select = $("#modelReviewStatusInput");
+  if (!select || select.disabled || select.closest("[hidden]")) return false;
+  const root = select.closest(".ui-select");
+  const trigger = root?.querySelector(".ui-select-trigger");
+  const panel = root?.querySelector(".ui-select-panel");
+  if (!trigger || trigger.disabled || !panel || reviewShortcutHasEditableTarget(target)) return false;
+  if (event.shiftKey && String(event.key).toLowerCase() === "r") {
+    closeAllReviewDropdowns();
+    if (panel.hidden) trigger.click();
+    trigger.focus({ preventScroll: true });
+  } else if (!event.shiftKey && !panel.hidden && ["1", "2", "3"].includes(event.key)) {
+    const value = ["pending", "in_progress", "completed"][Number(event.key) - 1];
+    const option = panel.querySelector(`[data-ui-select-value="${value}"]`);
+    if (!option || option.disabled || option.getAttribute("aria-disabled") === "true") return false;
+    option.click();
+    trigger.focus({ preventScroll: true });
+  } else {
+    return false;
+  }
+  event.preventDefault();
+  event.stopPropagation();
+  return true;
+}
+
 function bindReviewKeyboardShortcuts() {
   if (document.documentElement.dataset.reviewKeyboardShortcutsBound === "1") return;
   document.documentElement.dataset.reviewKeyboardShortcutsBound = "1";
   document.addEventListener("keydown", (event) => {
     if (
       event.defaultPrevented ||
+      event.isComposing ||
       event.repeat ||
       event.ctrlKey ||
       event.metaKey ||
@@ -576,6 +604,7 @@ function bindReviewKeyboardShortcuts() {
       return;
     }
     const target = event.target instanceof Element ? event.target : null;
+    if (handleModelReviewStatusShortcut(event, target)) return;
     if (submitReviewFromDropdown(event, target)) return;
     if (submitReviewFromKeyboard(event, target)) return;
     if (handleReviewDropdownKeyboard(event)) return;

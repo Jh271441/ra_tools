@@ -34,6 +34,9 @@ function bindTrailAttributeUpdateEvents() {
       const nextTab = button.dataset.trailUpdateTab || "review";
       setTrailUpdateTab(nextTab);
       if (nextTab === "issue") void loadTrailIssueHistory();
+      else if (trailAttributePreviewNeedsLoad(state.trailUpdate?.runId || "")) {
+        void loadTrailAttributePreview().catch((error) => showToast(error.message, true));
+      }
       if (typeof pageUrl === "function") {
         history.replaceState(
           { page: "trail-update" },

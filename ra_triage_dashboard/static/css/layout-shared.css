@@ -907,3 +907,12 @@ html[data-color-theme="light"] .multi-filter-empty { color: #566579; }
   .shortcut-help-button .ui-lang-en { display: none; }
   .shortcut-guide-row { grid-template-columns: 1fr; gap: 6px; }
 }
+
+/* Keep a disabled menu placeholder until the server resolves identity. */
+html[data-session-pending="true"] [data-session-nav] { display: flex !important; opacity: .42; pointer-events: none; }
+.sidebar-session-pending { padding: 6px 12px; color: var(--muted); font-size: 12px; }
+.sidebar-session-pending[hidden] { display: none; }
+#labelingExperimentsNavButton { order: 2; }
+#labelingSummaryNavButton { order: 3; }
+.review-issue-exclusion-entry { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 0; }
+.review-issue-exclusion-entry small { color: var(--muted); }

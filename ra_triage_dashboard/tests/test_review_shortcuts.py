@@ -134,17 +134,23 @@ assert.equal(toggleOpenReviewDropdownOption('q'),false);
     subprocess.run(["node", "-e", script], check=True, capture_output=True)
 
 
-def test_exclude_shortcut_toggles_checkbox() -> None:
+def test_exclude_shortcut_ignores_hidden_review_control() -> None:
     script = (ROOT / "static" / "js" / "review-tags.js").read_text() + r'''
 const assert=require('node:assert/strict');
 Event=class {constructor(type,options){this.type=type;this.bubbles=options?.bubbles;}};
-const input={disabled:false,checked:false,dispatchEvent(event){this.lastEvent=event;}};
-$=(selector)=>selector==='#reviewExcludeInput' ? input : null;
+const input={disabled:false,checked:false,hiddenParent:true,
+ closest(){return this.hiddenParent ? {} : null;},dispatchEvent(event){this.lastEvent=event;}};
+activeReviewChromeRoot=()=>({querySelector:()=>input});
+assert.equal(toggleReviewExcludeShortcut(),false);
+assert.equal(input.checked,false);
+input.hiddenParent=false;
 assert.equal(toggleReviewExcludeShortcut(),true);
 assert.equal(input.checked,true);
 assert.equal(input.lastEvent.type,'change');
 assert.equal(toggleReviewExcludeShortcut(),true);
 assert.equal(input.checked,false);
+input.disabled=true;
+assert.equal(toggleReviewExcludeShortcut(),false);
 '''
     subprocess.run(["node", "-e", script], check=True, capture_output=True)
 
@@ -500,4 +506,97 @@ assert.equal(readReviewDraft('cn1','run-A','','').note,'Alice private draft');
 assert.equal(readReviewDraft('cn2','run-A','','').note,'Alice legacy draft');
 assert.equal(values.has(legacyAliceKey),false);
 ''';
+    subprocess.run(["node", "-e", script], check=True, capture_output=True)
+
+
+def test_model_status_keyboard_is_scoped_and_does_not_submit() -> None:
+    script = (ROOT / "static" / "js" / "review-tags.js").read_text() + r'''
+const assert=require('node:assert/strict');
+state={activePage:'review',session:{}};
+let writer=true, clicks=0, changes=0;
+hasDashboardWriteRole=()=>writer;
+closeAllReviewDropdowns=()=>{};
+const trigger={disabled:false,click(){clicks++;panel.hidden=false;},focus(){}};
+const panel={hidden:true,querySelector(selector){return {disabled:false,getAttribute:()=>null,
+ click(){changes++;select.value=selector.match(/="(.+)"/)[1];panel.hidden=true;}};}};
+const root={querySelector:(s)=>s==='.ui-select-trigger'?trigger:panel};
+const select={disabled:false,value:'pending',closest:(s)=>s==='[hidden]'?null:root};
+$=()=>select;
+const target={closest:()=>null};
+function key(value,options={}) {
+ const event={key:value,preventDefault(){this.prevented=true;},stopPropagation(){},...options};
+ return {event,handled:handleModelReviewStatusShortcut(event,target)};
+}
+assert.equal(key('1').handled,false);
+assert.equal(key('r').handled,false);
+assert.equal(key('R',{shiftKey:true}).handled,true);
+assert.equal(clicks,1);
+assert.equal(key('R',{shiftKey:true}).handled,true);
+assert.equal(clicks,1); // Reopen shortcut keeps an open selector open.
+for (const [number,status] of [['1','pending'],['2','in_progress'],['3','completed']]) {
+ key('R',{shiftKey:true});
+ assert.equal(key(number).handled,true);assert.equal(select.value,status);assert.equal(panel.hidden,true);
+}
+assert.equal(changes,3);
+for (const flag of ['isComposing','repeat','ctrlKey','metaKey','altKey']) {
+ assert.equal(key('R',{shiftKey:true,[flag]:true}).handled,false);
+}
+writer=false;assert.equal(key('R',{shiftKey:true}).handled,false);writer=true;
+state.session.read_only=true;assert.equal(key('R',{shiftKey:true}).handled,false);state.session={};
+state.activePage='labeling';assert.equal(key('R',{shiftKey:true}).handled,false);state.activePage='review';
+select.disabled=true;assert.equal(key('R',{shiftKey:true}).handled,false);select.disabled=false;
+target.closest=()=>({});assert.equal(key('R',{shiftKey:true}).handled,false);
+assert.equal(changes,3);
+'''
+    subprocess.run(["node", "-e", script], check=True, capture_output=True)
+
+
+def test_navigation_waits_for_server_permissions() -> None:
+    script = (ROOT / "static" / "js" / "session-config.js").read_text() + r'''
+const assert=require('node:assert/strict');
+const items=['writer','admin'].map(role=>({dataset:{sessionNav:role},setAttribute(k,v){this[k]=v;}}));
+const status={},group={};
+state={session:{identity_pending:true}};
+document={documentElement:{dataset:{}},querySelectorAll:()=>items};
+$=id=>id==='#sidebarSessionPending'?status:group;
+hasDashboardWriteRole=()=>Boolean(state.session.verified && ['writer','admin'].includes(state.session.access_role));
+renderSessionNavigation();
+assert(items.every(x=>!x.hidden&&x.inert));assert.equal(status.hidden,false);
+state.session={identity_pending:false,verified:true,access_role:'writer'};renderSessionNavigation();
+assert.equal(items[0].hidden,false);assert.equal(items[0].inert,false);assert.equal(items[1].hidden,true);
+state.session={identity_pending:false,verified:true,access_role:'admin',is_admin:true};renderSessionNavigation();
+assert(items.every(x=>!x.hidden&&!x.inert));
+state.session={identity_pending:false,verified:false,access_role:'viewer'};renderSessionNavigation();
+assert(items.every(x=>x.hidden&&x.inert));assert.equal(status.hidden,true);
+assert.equal(group.hidden,false); // Existing public exclusion route remains reachable.
+'''
+    subprocess.run(["node", "-e", script], check=True, capture_output=True)
+
+
+def test_issue_exclusion_route_preserves_drafts_and_never_submits() -> None:
+    script = (ROOT / "static" / "js" / "trail-update-preview.js").read_text() + r'''
+const assert=require('node:assert/strict');
+state={trailUpdate:{}};CASE_PAGE_SIZES=[10,20];DEFAULT_CASE_PAGE_SIZE=10;LABELS=[];
+let rows=[],invalidations=0;
+const row=(id='',comment='')=>({id:{value:id},comment:{value:comment},querySelector(s){return s.includes('entry-id')?this.id:this.comment;}});
+trailIssueEntryRows=()=>rows;
+collectTrailIssueEntries=()=>({ids:rows.map(r=>r.id.value)});
+addTrailIssueEntryRow=entry=>rows.push(row(entry.issue_id));
+setTrailUpdateTab=tab=>state.trailUpdate.tab=tab;
+clearTrailIssuePreview=()=>invalidations++;
+parseTrailIssueIds=()=>{};setTrailIssueStatus=()=>{};uiText=x=>x;
+parseFilterList=()=>[];$=()=>null;
+applyTrailUpdateRouteControls({tab:'issue',exclusionIssue:'cn123'});
+assert.equal(state.trailUpdate.tab,'issue');assert.equal(rows.length,1);assert.equal(rows[0].id.value,'cn123');
+rows[0].comment.value='retain reason';
+applyTrailUpdateRouteControls({tab:'issue',exclusionIssue:'cn123'});
+assert.equal(rows.length,1);assert.equal(invalidations,1);
+applyTrailUpdateRouteControls({tab:'issue',exclusionIssue:'cn456'});
+assert.equal(rows.length,2);assert.equal(rows[0].comment.value,'retain reason');
+rows.push(row());applyTrailUpdateRouteControls({tab:'issue',exclusionIssue:'cn789'});
+assert.equal(rows.length,3);assert.equal(rows[2].id.value,'cn789');
+applyTrailUpdateRouteControls({tab:'issue',exclusionIssue:'<invalid>'});assert.equal(rows.length,3);
+applyTrailUpdateRouteControls({tab:'review',exclusionIssue:'cn999'});assert.equal(rows.length,3);
+// No api/commit function is supplied: route preparation is entirely local.
+'''
     subprocess.run(["node", "-e", script], check=True, capture_output=True)

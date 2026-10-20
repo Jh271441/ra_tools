@@ -16,8 +16,10 @@ function setTrailUpdateTab(tab = "review") {
   // A tab may be revisited after a route render while its preview is already
   // cached.  Re-apply the action state here instead of leaving the initial
   // disabled HTML attribute in place until another network request happens.
-  if (nextTab === "issue") syncTrailIssueActions();
-  else syncTrailAttributeActions();
+  if (nextTab === "issue") {
+    $("#trailAttributeUpdatePage")?.classList.remove("is-loading");
+    syncTrailIssueActions();
+  } else syncTrailAttributeActions();
 }
 
 function setTrailIssueStatus(message = "") {
@@ -494,6 +496,8 @@ function trailUpdateFilterValues(key) {
 function currentTrailUpdateRouteOptions(overrides = {}) {
   const filters = state.trailUpdate?.filters || {};
   return {
+    tab: state.trailUpdate?.tab || "review",
+    exclusionIssue: state.trailUpdate?.exclusionIssue || "",
     runId: state.trailUpdate?.runId || "",
     search: String(filters.search || "").trim(),
     gtLabel: trailUpdateFilterValues("gtLabel"),
@@ -511,6 +515,23 @@ function currentTrailUpdateRouteOptions(overrides = {}) {
 
 function applyTrailUpdateRouteControls(filters = {}) {
   const source = filters || {};
+  if (source.tab) setTrailUpdateTab(source.tab);
+  const issueId = String(source.exclusionIssue || "");
+  state.trailUpdate.exclusionIssue = source.tab === "issue" && /^[A-Za-z0-9_-]{3,128}$/.test(issueId) ? issueId : "";
+  if (source.tab === "issue" && /^[A-Za-z0-9_-]{3,128}$/.test(issueId)) {
+    // Add only once and preserve any editor draft; navigation never commits.
+    const existing = collectTrailIssueEntries();
+    if (!existing.ids.includes(issueId)) {
+      const blank = trailIssueEntryRows().find((row) =>
+        !row.querySelector("[data-trail-issue-entry-id]")?.value.trim()
+        && !row.querySelector("[data-trail-issue-entry-comment]")?.value.trim());
+      if (blank) blank.querySelector("[data-trail-issue-entry-id]").value = issueId;
+      else addTrailIssueEntryRow({ issue_id: issueId }, { focus: false });
+      parseTrailIssueIds();
+      clearTrailIssuePreview();
+    }
+    setTrailIssueStatus(uiText("已带入当前 Issue；请预览并确认排除。尚未写入 Trail。", "Issue added. Preview and confirm exclusion; Trail has not been written."));
+  }
   state.trailUpdate.filters = {
     search: String(source.search || ""),
     gtLabel: parseFilterList(source.gtLabel).filter((value) => LABELS.includes(value)),

@@ -1335,7 +1335,7 @@ async function bootstrap() {
     ) {
       await openIntentComments({ focusCommentId: initialRoute.commentId || 0 });
     }
-    if (initialRoute.page === "trail-update") {
+    if (initialRoute.page === "trail-update" && state.trailUpdate.tab !== "issue") {
       // Do not hold the initial shell on the remote Trail read. The local
       // exclusion aggregate paints after navigation; loadTrailAttributePreview
       // then performs its single batched status check asynchronously.

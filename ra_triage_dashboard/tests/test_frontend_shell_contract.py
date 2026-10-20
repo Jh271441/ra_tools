@@ -43,7 +43,7 @@ class FrontendShellContractTest(unittest.TestCase):
             self.assertTrue((JS_DIR / name).is_file(), name)
             self.assertIn(f'"{name}"', APP_ENTRY_JS)
         self.assertIn("CACHE_VERSION", APP_ENTRY_JS)
-        self.assertIn("manual-triage-569", APP_ENTRY_JS)
+        self.assertIn("manual-triage-570", APP_ENTRY_JS)
         self.assertIn("function setBaselineScopes", APP_JS)
         self.assertIn("function applyInferredBaselinesFromRun", APP_JS)
         self.assertIn("clearIncompatible: true", APP_JS)
@@ -97,18 +97,19 @@ class FrontendShellContractTest(unittest.TestCase):
         labeling_group = INDEX_HTML[INDEX_HTML.rindex('<section', 0, labeling_attr):].split('</section>', 1)[0]
         self.assertIn('id="caseLabelingNavGroup"', labeling_group)
         self.assertIn('id="caseLabelingNavButton"', labeling_group)
+        self.assertIn('id="trailAttributeUpdateNavButton"', labeling_group)
         review_group = INDEX_HTML.split('data-sidebar-nav-group="review"', 1)[1].split('</section>', 1)[0]
         for nav_id in (
             "reviewNavButton",
             "reviewAssignmentsNavButton",
             "reviewAnalysisNavButton",
-            "trailAttributeUpdateNavButton",
             "openRunManagerButton",
             "runComparisonNavButton",
             "openBatchPredictionButton",
         ):
             self.assertIn(f'id="{nav_id}"', review_group)
         self.assertNotIn('id="caseLabelingNavButton"', review_group)
+        self.assertNotIn('id="trailAttributeUpdateNavButton"', review_group)
         self.assertIn('id="intentNavGroup"', INDEX_HTML)
         self.assertIn("overflow-y: auto", STYLES_CSS)
         self.assertIn("SIDEBAR_NAV_GROUP_PREFS_KEY", APP_JS)

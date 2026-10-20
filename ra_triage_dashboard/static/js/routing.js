@@ -410,6 +410,8 @@ function normalizedTrailUpdateRouteFilters(params) {
   const rawPage = Number.parseInt(params.get("page") || "1", 10);
   const rawPageSize = Number.parseInt(params.get("page_size") || "", 10);
   return {
+    tab: params.get("tab") === "issue" ? "issue" : "review",
+    exclusionIssue: params.get("exclude_issue") || "",
     search: params.get("q") || "",
     gtLabel: parseFilterList(params.get("gt")).filter((value) => LABELS.includes(value)),
     modelLabel: parseFilterList(params.get("model_label") || params.get("annotation") || ""),
@@ -968,6 +970,8 @@ function pageUrl(page, options = {}) {
       : options;
     const runId = trail.runId ?? state.trailUpdate?.runId ?? state.selectedRunId;
     if (runId) url.searchParams.set("run", runId);
+    if (trail.tab === "issue") url.searchParams.set("tab", "issue");
+    if (trail.exclusionIssue && /^[A-Za-z0-9_-]{3,128}$/.test(trail.exclusionIssue)) url.searchParams.set("exclude_issue", trail.exclusionIssue);
     if (trail.search) url.searchParams.set("q", trail.search);
     const gt = joinFilterList(trail.gtLabel);
     const modelLabel = joinFilterList(trail.modelLabel);
@@ -1270,7 +1274,7 @@ function showPage(
     // presses Escape, clicks outside, or toggles the trigger.
     renderAnalysisRunFilter();
   }
-  if (target === "trail-update") {
+  if (target === "trail-update" && state.trailUpdate.tab !== "issue") {
     const trailPage = $("#trailAttributeUpdatePage");
     if (runId) state.trailUpdate.runId = runId;
     if (typeof renderTrailAttributeRunPicker === "function") renderTrailAttributeRunPicker();
