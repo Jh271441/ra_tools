@@ -179,7 +179,7 @@ html[data-sidebar-pref="collapsed"] .sidebar-collapse > span:first-child {
   backdrop-filter: blur(12px);
 }
 .topbar h1 { font-size: 17px; font-weight: 700; letter-spacing: -.015em; }
-.brand { min-width: 165px; display: flex; align-items: center; gap: 9px; }
+.brand { min-width: 0; flex: 0 0 auto; display: flex; align-items: center; gap: 9px; }
 .brand-mark {
   width: 37px; height: 37px; display: grid; place-items: center; border: 1px solid rgba(34,211,238,.6); border-radius: 9px;
   appearance: none; padding: 0; color: var(--accent); background: linear-gradient(145deg, rgba(34,211,238,.17), rgba(34,211,238,.06));
@@ -191,14 +191,14 @@ html[data-sidebar-pref="collapsed"] .sidebar-collapse > span:first-child {
 .dataset-state { display: inline-flex; align-items: center; gap: 8px; color: #b8d9db; font-size: 12px; white-space: nowrap; }
 .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
 .topbar-baselines {
-  display: flex; align-items: center; gap: 6px; min-width: 0; flex: 0 1 auto;
-  max-width: min(320px, 34vw);
+  display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1 1 160px;
+  max-width: min(240px, 28vw);
 }
 .topbar-baselines-label {
   flex: 0 0 auto; color: var(--faint); font-size: 10px; font-weight: 700; white-space: nowrap;
 }
 .topbar-baselines .baseline-filter {
-  min-width: 140px; flex: 1 1 auto;
+  min-width: 0; flex: 1 1 auto;
 }
 .topbar-baselines .multi-filter-trigger {
   min-height: 30px; height: 30px; padding: 4px 10px; font-size: 11px;
@@ -215,7 +215,7 @@ html[data-sidebar-pref="collapsed"] .sidebar-collapse > span:first-child {
 .topbar-baselines .multi-filter-panel {
   min-width: 220px; width: max(100%, 220px);
 }
-.header-metrics { display: flex; align-items: stretch; margin-left: auto; border: 1px solid var(--line); border-radius: 7px; background: #0e131c; }
+.header-metrics { flex: 0 0 auto; display: flex; align-items: stretch; margin-left: auto; border: 1px solid var(--line); border-radius: 7px; background: #0e131c; }
 .header-metrics > div { min-width: 60px; display: flex; align-items: baseline; justify-content: space-between; gap: 5px; padding: 4px 6px; border-right: 1px solid var(--line); }
 .header-metrics > div:last-child { border-right: 0; }
 .header-metrics span { color: var(--faint); font-size: 8px; white-space: nowrap; }
@@ -731,8 +731,8 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   to { transform: rotate(0deg); opacity: 1; }
 }
 
-/* Use the available workbench width, including a resized sidebar. */
-@container (max-width: 1400px) {
+/* Preserve the established narrow-window fallback; desktop stays compact. */
+@media (max-width: 1200px) {
   .topbar { flex-wrap: wrap; align-items: center; }
   .brand {
     min-width: 0; flex: 1 1 auto; max-width: 100%;

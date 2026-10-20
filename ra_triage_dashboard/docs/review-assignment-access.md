@@ -26,9 +26,10 @@ keeps the task URL for browsing, and submits empty campaign_id/work_split_id int
 the actor's ordinary review stream. Case votes remain shared. The original
 assignee's head and the Campaign's assignment/progress remain unchanged.
 
-The existing narrow-header policy now follows the app-frame container width
-(including resized sidebars), keeps five metrics on the second row, and prevents
-GT metadata from shrinking through its own border. Video controls wrap according
+The header preserves its compact desktop row with a bounded, shrinkable dataset
+picker and five inline metrics. The established narrow-window fallback moves
+metrics to a second row only below 1200px. GT metadata cannot shrink through its
+own border. Video controls wrap according
 to their actual card width; progress labels size to content and the slider can
 shrink within its row. This preserves the older wrap-to-fit behavior without
 relying only on viewport breakpoints.

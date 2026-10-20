@@ -259,7 +259,7 @@ class FrontendIntegrationsContractTest(unittest.TestCase):
         self.assertIn('class="intent-label-grid intent-lane-grid"', INDEX_HTML)
         self.assertIn('.intent-lane-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }', STYLES_CSS)
         self.assertIn('.topbar-baselines {', STYLES_CSS)
-        self.assertIn('max-width: min(320px, 34vw);', STYLES_CSS)
+        self.assertIn('max-width: min(240px, 28vw);', STYLES_CSS)
         self.assertIn('class="intent-experiment-members-field"', INDEX_HTML)
         self.assertIn('id="intentExperimentMembers" data-placeholder="选择标注人员"', INDEX_HTML)
         self.assertIn('renderMultiFilter(container, {', APP_JS)
