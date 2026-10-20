@@ -188,11 +188,6 @@ function renderReviewSummary(caseData) {
     shared.innerHTML = sharedLabelStateButtonMarkup(caseData, { showEmpty: true });
     bindSharedLabelStateTriggers(shared, () => caseData);
   }
-  const run = $("#reviewRunSubmissionState");
-  if (run) run.innerHTML = currentRunReviewStatusMarkup({
-    issue_id: caseData.issue_id,
-    annotation: currentReviewAnnotation(caseData),
-  });
 }
 
 function renderDetail(caseData) {
@@ -532,7 +527,6 @@ function renderReview(caseData) {
               <span class="ui-lang-zh">模型结果 Review</span>
               <span class="ui-lang-en">Model Result Review</span>
             </h2>
-            <span id="reviewRunSubmissionState"></span>
           </div>
           <div class="review-heading-actions">
             <button class="history-inline-button" id="reviewCommentsButton" type="button" data-review-comments aria-keyshortcuts="D" title="展开或收起讨论（D）">

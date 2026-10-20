@@ -1264,7 +1264,6 @@ html[data-color-theme="light"] .review-mention-avatar { color: #075d6d; backgrou
 .review-section-heading > .review-case-heading-meta { min-width: 0; display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 4px 7px; }
 .review-shared-label-summary { min-width: 0; display: inline-flex; align-items: center; }
 .review-shared-label-summary .shared-label-state-trigger { font-size: 9px; }
-#reviewRunSubmissionState { min-width: 0; display: inline-flex; align-items: center; }
 .combined-case-label-card[hidden] { display: none !important; }
 .combined-mode-badge { display: inline-flex; margin-left: 5px; padding: 2px 5px; border: 1px solid rgba(34,211,238,.28); border-radius: 999px; color: var(--accent); background: var(--accent-soft); font-size: 8px; font-weight: 700; vertical-align: middle; }
 .combined-case-rationale { display: grid; gap: 5px; }

@@ -34,9 +34,10 @@ GT metadata stays inside its border. Video controls and a flexible timeline use
 the earlier side-by-side layout when the card has room, with safe wrapping when
 narrow. Detail context actions also wrap based on available card width.
 
-Shared Case label state/source access lives in the right Issue-label heading;
-Run submission state lives below the Model Review heading. Refreshing this
-read-only metadata must preserve form fields/drafts and source-dialog bindings.
+Shared Case label state/source access lives in the right Issue-label heading.
+Refreshing this read-only metadata must preserve form fields/drafts and
+source-dialog bindings. Model Review keeps its editable review-status selector;
+no duplicate submission-state line appears below the heading.
 The supplemental notice is one compact line; a keyboard-accessible details
 control explains ownership, shared Case votes and unchanged owner progress.
 
