@@ -52,7 +52,7 @@ function buildDailyCronGraph(data, definitionLane = "") {
   const edge = (source, target, label = "", optional = false) => ({ id: `${source}:${target}`, source, target, label, optional });
   const mainEdges = mainNodes.slice(1).map((n, i) => edge(mainNodes[i].id, n.id));
   const mediaEdges = [edge("media-source", "media-import"), edge("media-import", "media-camera"), edge("media-import", "media-orion"), edge("media-camera", "media-verify"), edge("media-orion", "media-verify"), edge("media-orion", "media-retry", uiText("失败", "Failed"), true), edge("media-retry", "media-verify", uiText("成功", "Success"), true), edge("media-retry", "media-local", uiText("仍失败", "Still failed"), true), edge("media-local", "media-verify", "", true), edge("media-verify", "media-ready")];
-  let lanes = [{ id: "main-lane", label: uiText("Cron 1 · 每日推理回刷", "Cron 1 · Daily inference / publication"), nodes: mainNodes }, { id: "media-lane", label: uiText("Cron 2 · 平台与媒体旁路", "Cron 2 · Platform / media sidecar"), nodes: mediaNodes }];
+  let lanes = [{ id: "main-lane", label: uiText("推理回刷", "Inference / publication"), nodes: mainNodes }, { id: "media-lane", label: uiText("平台与媒体", "Platform / media"), nodes: mediaNodes }];
   let edges = [...mainEdges, ...mediaEdges, edge("main-verify", "media-source", uiText("完成回执 · 旁路不反向阻塞", "Completion receipt · No reverse blocking"), true)];
   if (definitionLane) {
     lanes = lanes.filter(lane => lane.id === `${definitionLane}-lane`);
@@ -68,7 +68,7 @@ function ensureCronGraphLibrary() {
   if (cronGraphLibrary) return cronGraphLibrary;
   cronGraphLibrary = new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = withBase("/static/vendor/cron-graph/graph.js?v=manual-triage-579");
+    script.src = withBase("/static/vendor/cron-graph/graph.js?v=manual-triage-580");
     script.onload = () => resolve(window.RACronGraph);
     script.onerror = () => { cronGraphLibrary = null; script.remove(); reject(Error("graph load failed")); };
     document.body.appendChild(script);
@@ -101,7 +101,7 @@ function renderCronGraphDetails(model, id) {
 
 async function openCronGraphHelp(lane) {
   const dialog = $("#dailyCronHelpDialog");
-  $("#dailyCronHelpTitle").textContent = lane === "main" ? uiText("每日推理回刷 · 流程说明", "Daily inference · Definition") : uiText("平台与媒体旁路 · 流程说明", "Media sidecar · Definition");
+  $("#dailyCronHelpTitle").textContent = lane === "main" ? uiText("推理回刷 · 流程说明", "Daily inference · Definition") : uiText("平台与媒体 · 流程说明", "Media sidecar · Definition");
   $("#dailyCronHelpNote").textContent = lane === "main" ? uiText("09:00 CST，处理 T−2；周末照常查询。少量采集缺失 ≤5 且 ≤2% 可继续并记录，超限阻塞。空数据正常结束。", "09:00 CST, T−2 data; weekends queried normally. Acquisition gaps ≤5 AND ≤2% may continue with records; larger gaps block. Empty data completes normally.") : uiText("每天低置信度＋抽样，均分给 jasperchen / liangxianghui 联合复核。Orion 重试1次，本地最多2次；少量缺失单独记录，不影响主任务。发布1小时后清理 Camera 原始 bag。", "Daily low confidence + sampling, balanced joint-review assignments. One Orion retry, at most two local attempts. Gaps recorded independently of the main task; Camera source bags cleaned 1h after publication.");
   dialog.showModal();
   const graph = await ensureCronGraphLibrary();

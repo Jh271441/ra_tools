@@ -92,7 +92,7 @@ function renderDailyCron() {
     stalled: ["流水线进度超过阈值未更新", "Pipeline progress has not updated within its threshold"],
     unknown: ["启动记录与完成证据不完整", "Launch or completion evidence is incomplete"],
     source: ["部分状态文件读取异常", "Some state files could not be read"],
-    cron: ["未发现每日调度 Cron 或无法读取", "Daily cron missing or unreadable"],
+    cron: ["未发现每日定时任务或无法读取", "Daily scheduled task missing or unreadable"],
   };
   for (const alert of daily?.alerts || []) {
     if (recovered && alert.kind === "failed") continue;

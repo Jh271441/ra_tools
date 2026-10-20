@@ -83,7 +83,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-579`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-580`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -197,9 +197,9 @@
               <span class="sidebar-group-label sidebar-label"><span class="ui-lang-zh">每日数据</span><span class="ui-lang-en">Daily data</span></span><span class="sidebar-group-chevron" aria-hidden="true"></span>
             </button>
             <div class="sidebar-nav-group-items" id="sidebarNavDaily" data-sidebar-nav-group-items="daily">
-              <a class="sidebar-item" id="dailyCronNavButton" data-page-target="daily-cron" data-app-path="/daily-cron" href="/daily-cron" title="Cron 监控">
+              <a class="sidebar-item" id="dailyCronNavButton" data-page-target="daily-cron" data-app-path="/daily-cron" href="/daily-cron" title="每日任务">
                 <span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><circle class="icon-wash" cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="9"/><path class="icon-emphasis" d="M12 7v5l3 2"/></svg></span>
-                <span class="sidebar-label"><strong class="ui-lang-zh">Cron 监控</strong><strong class="ui-lang-en">Cron monitor</strong></span>
+                <span class="sidebar-label"><strong class="ui-lang-zh">每日任务</strong><strong class="ui-lang-en">Daily tasks</strong></span>
               </a>
             </div>
           </section>
@@ -1802,11 +1802,11 @@
             </div>
             <div class="cron-monitors" id="dailyCronMetrics">
               <article class="cron-monitor" data-monitor="main">
-                <div class="cron-section-heading"><h3><span class="ui-lang-zh">Cron 1 · 每日推理回刷</span><span class="ui-lang-en">Cron 1 · Inference / publication</span></h3><span id="dailyCronMainStatus"></span><button class="cron-info-button" type="button" data-cron-help="main" aria-label="每日推理回刷流程说明" title="流程说明">!</button></div>
+                <div class="cron-section-heading"><h3><span class="ui-lang-zh">推理回刷</span><span class="ui-lang-en">Inference / publication</span></h3><span id="dailyCronMainStatus"></span><button class="cron-info-button" type="button" data-cron-help="main" aria-label="推理回刷流程说明" title="流程说明">!</button></div>
                 <strong id="dailyCronMainValue">—</strong><span class="muted" id="dailyCronMainNote">09:00 CST · T−2</span>
               </article>
               <article class="cron-monitor" data-monitor="media">
-                <div class="cron-section-heading"><h3><span class="ui-lang-zh">Cron 2 · 平台与媒体旁路</span><span class="ui-lang-en">Cron 2 · Platform / media</span></h3><span id="dailyCronMediaStatus"></span><button class="cron-info-button" type="button" data-cron-help="media" aria-label="平台与媒体旁路流程说明" title="流程说明">!</button></div>
+                <div class="cron-section-heading"><h3><span class="ui-lang-zh">平台与媒体</span><span class="ui-lang-en">Platform / media</span></h3><span id="dailyCronMediaStatus"></span><button class="cron-info-button" type="button" data-cron-help="media" aria-label="平台与媒体流程说明" title="流程说明">!</button></div>
                 <strong id="dailyCronMediaValue">—</strong><span class="muted" id="dailyCronMediaNote"><span class="ui-lang-zh">完成回执触发 · 独立判定</span><span class="ui-lang-en">Completion receipt · Independent outcome</span></span>
               </article>
             </div>
@@ -1820,7 +1820,7 @@
             </details>
             <details class="cron-panel cron-fold" id="dailyCronRunsFold"><summary><span class="ui-lang-zh">运行记录</span><span class="ui-lang-en">Run history</span></summary><div id="dailyCronRuns" class="cron-runs"></div></details>
             <details class="cron-panel cron-fold"><summary><span class="ui-lang-zh">历史媒体回溯</span><span class="ui-lang-en">Historical media backfill</span></summary><div id="dailyCronSidecar"></div></details>
-            <details class="cron-panel cron-fold" id="dailyCronJobsFold"><summary><span class="ui-lang-zh">其他 Cron</span><span class="ui-lang-en">Other cron jobs</span></summary><div class="cron-section-heading"><input id="dailyCronSearch" type="search" aria-label="搜索 Cron" placeholder="搜索任务或调度表达式" data-placeholder-zh="搜索任务或调度表达式" data-placeholder-en="Search task or schedule" /></div><div class="cron-table-wrap"><table class="cron-table"><thead><tr><th><span class="ui-lang-zh">任务</span><span class="ui-lang-en">Task</span></th><th><span class="ui-lang-zh">调度</span><span class="ui-lang-en">Schedule</span></th><th><span class="ui-lang-zh">日志更新 · CST</span><span class="ui-lang-en">Log updated · CST</span></th><th><span class="ui-lang-zh">活动证据</span><span class="ui-lang-en">Activity</span></th></tr></thead><tbody id="dailyCronJobs"></tbody></table></div></details>
+            <details class="cron-panel cron-fold" id="dailyCronJobsFold"><summary><span class="ui-lang-zh">其他定时任务</span><span class="ui-lang-en">Other scheduled tasks</span></summary><div class="cron-section-heading"><input id="dailyCronSearch" type="search" aria-label="搜索定时任务" placeholder="搜索任务或调度表达式" data-placeholder-zh="搜索任务或调度表达式" data-placeholder-en="Search task or schedule" /></div><div class="cron-table-wrap"><table class="cron-table"><thead><tr><th><span class="ui-lang-zh">任务</span><span class="ui-lang-en">Task</span></th><th><span class="ui-lang-zh">调度</span><span class="ui-lang-en">Schedule</span></th><th><span class="ui-lang-zh">日志更新 · CST</span><span class="ui-lang-en">Log updated · CST</span></th><th><span class="ui-lang-zh">活动证据</span><span class="ui-lang-en">Activity</span></th></tr></thead><tbody id="dailyCronJobs"></tbody></table></div></details>
           </section>
           <dialog class="dialog cron-help-dialog" id="dailyCronHelpDialog" aria-labelledby="dailyCronHelpTitle"><div class="cron-section-heading"><h3 id="dailyCronHelpTitle"></h3><button class="button button-quiet" id="dailyCronHelpClose" type="button" aria-label="关闭流程说明">×</button></div><div class="cron-help-graph" id="dailyCronHelpGraph"></div><p class="cron-note muted" id="dailyCronHelpNote"></p></dialog>
 
@@ -2449,7 +2449,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-579`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-580`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

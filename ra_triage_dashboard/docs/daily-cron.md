@@ -1,7 +1,8 @@
-# 每日数据 / Cron 监控
+# 每日数据 / 每日任务
 
 入口 `/daily-cron`；配置 `DASHBOARD_BASE_PATH=/manual` 时公开入口为
-`/manual/daily-cron`。“每日数据”是可折叠导航组，沿用工作台的主题、字体和响应式布局。
+`/manual/daily-cron`。中文入口统一命名为“每日任务”，放在“每日数据”可折叠导航组内；
+两条独立任务显示为“推理回刷”和“平台与媒体”，沿用工作台的主题、字体和响应式布局。
 
 `GET /api/daily-cron` 在工作线程中并行读取同机独立监控服务的三个固定只读接口：
 `127.0.0.1:8791/api/overview`、`/api/history`、`/api/manual-sidecar`。

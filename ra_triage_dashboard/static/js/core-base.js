@@ -728,7 +728,7 @@ const PAGE_ROUTES = {
     titleZh: "批次预测",
     titleEn: "Batch Model Inference",
   },
-  "daily-cron": { path: "/daily-cron", titleZh: "Cron 监控", titleEn: "Cron monitor" },
+  "daily-cron": { path: "/daily-cron", titleZh: "每日任务", titleEn: "Daily tasks" },
   status: {
     path: "/system-status",
     titleZh: "系统状态",
