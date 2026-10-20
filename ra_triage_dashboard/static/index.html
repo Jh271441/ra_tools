@@ -81,7 +81,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-568`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-569`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -937,6 +937,7 @@
                     <div class="ui-select-panel" role="listbox" hidden></div>
                     <select class="ui-select-native" id="analysisWorkSplitFilter" aria-hidden="true" tabindex="-1"><option value="">综合结果</option></select>
                   </div>
+                  <small class="muted" id="analysisWorkSplitHint" hidden>当前数据集与 Run 下没有复核任务；请切换到任务对应的数据集和 Run。</small>
                 </label>
                 <label class="analysis-gt-filter">
                   <span>GT</span>
@@ -2396,7 +2397,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-568`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-569`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

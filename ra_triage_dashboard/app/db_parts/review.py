@@ -581,6 +581,7 @@ class DatabaseReviewMixin:
         blind_rows = self.review_multi_rows(
             baseline_scopes=scopes,
             model_run_id=model_run_id,
+            include_single_campaigns=True,
         )
         submitted_blind_rows = [
             row for row in blind_rows if row.get("annotation")

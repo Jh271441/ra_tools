@@ -68,6 +68,9 @@ def repair_association(database, *, submission_id, campaign_id, label_revision_i
         ).fetchone():
             raise ValueError("提交后存在转派记录，需人工核实，拒绝自动关联。")
         model = conn.execute("SELECT * FROM model_review_revisions WHERE id=?", (model_review_revision_id,)).fetchone()
+        if conn.execute("SELECT 1 FROM model_review_revocations WHERE revision_id=?",
+                        (model_review_revision_id,)).fetchone():
+            raise ValueError("模型复核已撤销，不能补记关联。")
         label = conn.execute(
             """SELECT revision.*, label_case.issue_id FROM label_revisions revision
                JOIN label_cases label_case ON label_case.id=revision.label_case_id WHERE revision.id=?""",

@@ -1541,6 +1541,7 @@ class DatabaseCasesMixin:
                     "split_id": split_id,
                     "created_by": str(row["created_by"] or ""),
                     "created_at": str(row["created_at"] or ""),
+                    "campaign_name": str(row["campaign_name"] or ""),
                     "source_split_id": str(source.get("id") or ""),
                     "source_created_at": str(source.get("created_at") or ""),
                     "source_created_by": str(source.get("created_by") or ""),
@@ -2306,6 +2307,7 @@ class DatabaseCasesMixin:
         model_run_id: str = "",
         work_split_id: str = "",
         issue_ids: Sequence[str] | None = None,
+        include_single_campaigns: bool = False,
     ) -> list[dict[str, Any]]:
         """Return one row per current blind assignment member for aggregation."""
 
@@ -2323,6 +2325,16 @@ class DatabaseCasesMixin:
         issue_clause = ""
         selected_run_id = str(model_run_id or "").strip()
         selected_work_split_id = str(work_split_id or "").strip()
+        def eligible(alias):
+            legacy = f"{alias}.mode = 'blind'"
+            if not include_single_campaigns:
+                return legacy
+            return (f"({legacy} OR ({alias}.purpose = 'model_review' "
+                    f"AND {alias}.lifecycle = 'active' AND {alias}.legacy_read_only = false "
+                    f"AND EXISTS (SELECT 1 FROM model_review_heads submitted_head "
+                    f"WHERE submitted_head.campaign_id={alias}.id "
+                    f"AND submitted_head.issue_id=assignment.issue_id)))")
+
         if selected_work_split_id:
             split_filter = "split.id = ?"
             split_params = [selected_work_split_id]
@@ -2331,7 +2343,7 @@ class DatabaseCasesMixin:
                 split_params.append(selected_run_id)
             prediction_run_id = selected_run_id
         elif selected_run_id:
-            split_filter = """
+            split_filter = f"""
                 split.model_run_id = ?
                 AND split.id = (
                     SELECT latest_split.id
@@ -2340,7 +2352,7 @@ class DatabaseCasesMixin:
                       ON latest_assignment.split_id = latest_split.id
                     WHERE latest_assignment.issue_id = assignment.issue_id
                       AND latest_split.model_run_id = ?
-                      AND latest_split.mode = 'blind'
+                      AND {eligible("latest_split")}
                     ORDER BY latest_split.created_at DESC, latest_split.id DESC
                     LIMIT 1
                 )
@@ -2352,14 +2364,14 @@ class DatabaseCasesMixin:
             # empty-Run namespace. Pick the newest blind split for each Issue
             # across Runs so current cross-validation evidence remains visible
             # without duplicating an Issue from historical assignments.
-            split_filter = """
+            split_filter = f"""
                 split.id = (
                     SELECT latest_split.id
                     FROM issue_work_splits latest_split
                     JOIN review_work_assignments latest_assignment
                       ON latest_assignment.split_id = latest_split.id
                     WHERE latest_assignment.issue_id = assignment.issue_id
-                      AND latest_split.mode = 'blind'
+                      AND {eligible("latest_split")}
                     ORDER BY latest_split.created_at DESC, latest_split.id DESC
                     LIMIT 1
                 )
@@ -2368,7 +2380,7 @@ class DatabaseCasesMixin:
             # A no-overlay response must not silently attach the split's model
             # prediction. The Review retains its own immutable Run binding.
             prediction_run_id = ""
-        mode_filter = "TRUE" if selected_work_split_id else "split.mode = 'blind'"
+        mode_filter = "TRUE" if selected_work_split_id else eligible("split")
         query = f"""
             SELECT i.issue_id, i.title, i.scenario, i.summary, i.gt_label,
                    i.baseline_scope, assignment.split_id, assignment.assignee,
@@ -2389,6 +2401,7 @@ class DatabaseCasesMixin:
                    annotation.model_review_status AS annotation_model_review_status,
                    annotation.campaign_id AS annotation_campaign_id,
                    annotation.reference_id AS annotation_reference_id,
+                   annotation.work_split_id AS annotation_work_split_id,
                    prediction.model_run_id, prediction.model_label,
                    prediction.model_reason, prediction.model_confidence
             FROM review_work_assignments assignment
@@ -2399,10 +2412,22 @@ class DatabaseCasesMixin:
                 WHERE candidate.issue_id = assignment.issue_id
                   AND candidate.model_run_id = split.model_run_id
                   AND (
-                    (split.mode = 'blind' AND candidate.work_split_id = assignment.split_id)
-                    OR (split.mode <> 'blind' AND candidate.work_split_id = '')
+                    (split.purpose = 'model_review'
+                     AND candidate.campaign_id = split.id
+                     AND candidate.reference_id = split.reference_id
+                     AND candidate.review_domain = 'model_review'
+                     AND EXISTS (
+                         SELECT 1 FROM model_review_heads current_head
+                         WHERE current_head.revision_id = candidate.storage_id
+                           AND current_head.campaign_id = split.id
+                           AND current_head.reference_id = split.reference_id
+                     ))
+                    OR (COALESCE(split.purpose, '') <> 'model_review' AND (
+                        (split.mode = 'blind' AND candidate.work_split_id = assignment.split_id)
+                        OR (split.mode <> 'blind' AND candidate.work_split_id = '')
+                    ))
                   )
-                  AND candidate.author = assignment.assignee
+                  AND lower(candidate.author) = lower(assignment.assignee)
                 ORDER BY candidate.id DESC LIMIT 1
             )
             LEFT JOIN model_predictions prediction
@@ -2445,11 +2470,7 @@ class DatabaseCasesMixin:
                     "campaign_id": str(row["annotation_campaign_id"] or ""),
                     "reference_id": str(row["annotation_reference_id"] or ""),
                     "model_run_id": str(row["split_model_run_id"] or ""),
-                    "work_split_id": (
-                        str(row["split_id"])
-                        if str(row["split_mode"] or "") == "blind"
-                        else ""
-                    ),
+                    "work_split_id": str(row["annotation_work_split_id"] or ""),
                     "label": str(row["annotation_label"] or ""),
                     "review_status": str(row["annotation_review_status"] or "pending"),
                     "is_excluded": bool(row["annotation_is_excluded"]),

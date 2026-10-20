@@ -260,6 +260,7 @@ def _review_reason_analysis_payload(
             baseline_scopes=scopes,
             model_run_id=model_run_id,
             work_split_id=normalized_work_split_id,
+            include_single_campaigns=True,
             issue_ids=selected_issue_ids,
         ):
             grouped.setdefault(str(row["issue_id"]), []).append(row)
@@ -423,6 +424,8 @@ def _review_reason_analysis_payload(
         source.pop("split_id", None)
         source.pop("split_model_run_id", None)
         multi_rows.append(source)
+        if len(reviews) == 1 and representative.get("review_domain") == "model_review":
+            continue
         multi_by_issue[issue_id] = {
             "split_id": str(first["split_id"]),
             "model_run_id": multi_model_run_id,

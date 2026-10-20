@@ -16,7 +16,7 @@ function annotationHistory(annotations, options = {}) {
         const expectedOutput = annotationExpectedOutput(annotation);
         const modelReview = annotation.review_domain === "model_review";
         const currentUser = String(state.session?.username || "").trim().toLowerCase();
-        const canDelete = deletable && !annotation.legacy_read_only && !modelReview && (!annotation.work_split_id || state.session?.is_admin || (
+        const canDelete = deletable && !annotation.legacy_read_only && (!modelReview || hasDashboardWriteRole()) && (!(annotation.work_split_id || modelReview) || state.session?.is_admin || (
           currentUser && String(annotation.author || "").trim().toLowerCase() === currentUser
         ));
         const run = runMeta
@@ -30,7 +30,7 @@ function annotationHistory(annotations, options = {}) {
           ${annotation.is_excluded ? '<span class="tag exclusion-tag">已排除</span>' : ""}
           <span class="history-reviewer" title="${escapeHtml(annotation.author ? `复核人：${annotation.author}${annotation.author_verified ? " · SSO 已验证" : " · 未验证身份"}` : "复核人：历史记录未填写")}">${escapeHtml(annotation.author ? `复核人：${annotation.author}${annotation.author_verified ? " · SSO" : " · 未验证"}` : "复核人：未记录")}</span>
           ${run ? `<span class="history-run" title="${escapeHtml(run.title)}">${escapeHtml(run.text)}</span>` : ""}
-          <span class="history-actions"><span class="history-time">${formatTime(annotation.created_at)}</span>${canDelete ? `<button class="history-delete-button" type="button" data-delete-annotation="${escapeHtml(annotation.id)}" title="删除这条 Review 版本" aria-label="删除 ${escapeHtml(formatTime(annotation.created_at))} 的 Review 版本"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 6h12M8 3h4l1 2H7zM6 6l.7 11h6.6L14 6M8.5 9v5m3-5v5"/></svg></button>` : ""}</span>
+          <span class="history-actions"><span class="history-time">${formatTime(annotation.created_at)}</span>${canDelete ? `<button class="history-delete-button" type="button" data-delete-annotation="${escapeHtml(annotation.id)}" title="${modelReview ? "撤销这条 Run 复核（保留 Case 标签）" : "删除这条 Review 版本"}" aria-label="删除 ${escapeHtml(formatTime(annotation.created_at))} 的 Review 版本"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 6h12M8 3h4l1 2H7zM6 6l.7 11h6.6L14 6M8.5 9v5m3-5v5"/></svg></button>` : ""}</span>
         </div>
         ${annotation.missing_evidence?.length ? `<div class="tags">${annotation.missing_evidence.map((key) => `<span class="tag evidence-tag">${escapeHtml(evidenceLabel(key))}</span>`).join("")}</div>` : ""}
         ${annotation.tags?.length ? `<div class="tags">${annotation.tags.map((tag) => `<span class="tag">${escapeHtml(tagLabel(tag))}</span>`).join("")}</div>` : ""}
@@ -95,6 +95,10 @@ async function deleteAnnotationVersion(caseData, annotationId, button) {
     (item) => String(item.id) === String(annotationId)
   );
   if (!annotation) return;
+  if (annotation.review_domain === "model_review") {
+    await revokeModelReviewVersion(caseData, annotation, button);
+    return;
+  }
   const annotationRunId = String(annotation.model_run_id || "").trim();
   const sameRunAnnotations = allAnnotations.filter(
     (item) => String(item.model_run_id || "").trim() === annotationRunId
@@ -142,5 +146,48 @@ async function deleteAnnotationVersion(caseData, annotationId, button) {
     }
   } finally {
     state.savingAnnotation = false;
+  }
+}
+
+async function revokeModelReviewVersion(caseData, annotation, button) {
+  const head = reviewAnnotationsForAllRuns(caseData).find((item) =>
+    item.review_domain === "model_review" &&
+    item.model_run_id === annotation.model_run_id &&
+    (item.campaign_id || "") === (annotation.campaign_id || "") &&
+    (item.reference_id || "") === (annotation.reference_id || "") &&
+    String(item.author || "").toLowerCase() === String(annotation.author || "").toLowerCase()
+  );
+  const isHead = String(head?.id) === String(annotation.id);
+  const affectsForm = isHead && String(currentReviewAnnotation(caseData)?.id) === String(annotation.id);
+  if (!window.confirm(`确认撤销 ${formatTime(annotation.created_at)} 的 Run 复核？\nCase 标签和原始审计记录会保留；任务进度按剩余有效复核重算。${affectsForm && state.reviewFormDirty ? "\n当前表单有未保存编辑，撤销后将重新加载。" : ""}`)) return;
+  state.savingAnnotation = true;
+  button.disabled = true;
+  try {
+    const detailKey = caseCorePath(caseData.issue_id);
+    const requestSeq = state.caseRequestSeq;
+    const result = await api(`/api/cases/${encodeURIComponent(caseData.issue_id)}/model-reviews/${encodeURIComponent(annotation.id)}/revoke`, {
+      method: "POST", body: JSON.stringify({ expected_head_id: head?.id || null }),
+    });
+    acknowledgeLocalChange(result);
+    state.caseDetailPrefetch.clear();
+    if (state.selectedId === caseData.issue_id && state.caseRequestSeq === requestSeq && caseCorePath(caseData.issue_id) === detailKey) {
+      const data = await api(caseCorePath(caseData.issue_id));
+      if (state.selectedId === caseData.issue_id && state.caseRequestSeq === requestSeq && caseCorePath(caseData.issue_id) === detailKey) {
+        state.selectedCase = data;
+        if (affectsForm) {
+          clearReviewDraft(data.issue_id, currentReviewRunId(data), reviewWorkSplitBinding(data));
+          syncReviewFormFromCase(data);
+          if (effectiveReviewWorkflowMode(data) === "model_review_and_case_label") await loadCombinedReviewContext(data);
+        }
+        updateReviewHistory(data);
+      }
+    }
+    showToast("已撤销 Run 复核，Case 标签已保留。");
+    refreshReviewDerivedData();
+  } catch (error) {
+    showToast(error.message, true);
+  } finally {
+    state.savingAnnotation = false;
+    if (button.isConnected) button.disabled = false;
   }
 }

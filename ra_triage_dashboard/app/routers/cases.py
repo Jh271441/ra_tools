@@ -792,6 +792,7 @@ async def review_work_split_options(
         items.append(
             {
                 "split_id": str(item.get("split_id") or ""),
+                "name": str(item.get("campaign_name") or ""),
                 "model_run_id": str(item.get("model_run_id") or ""),
                 "created_at": str(item.get("created_at") or ""),
                 "created_by": str(item.get("created_by") or ""),

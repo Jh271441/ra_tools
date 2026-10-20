@@ -124,7 +124,17 @@
                 CREATE INDEX IF NOT EXISTS idx_combined_review_progress_campaign
                     ON combined_review_progress(campaign_id, reviewer, model_review_submitted, case_label_acknowledged);
 
-                CREATE VIEW IF NOT EXISTS review_records AS
+CREATE TABLE IF NOT EXISTS model_review_revocations (
+    revision_id INTEGER PRIMARY KEY REFERENCES model_review_revisions(id) ON DELETE RESTRICT,
+    actor TEXT NOT NULL,
+    actor_source TEXT NOT NULL,
+    actor_verified INTEGER NOT NULL,
+    replacement_revision_id INTEGER REFERENCES model_review_revisions(id) ON DELETE RESTRICT,
+    created_at TEXT NOT NULL
+);
+
+DROP VIEW IF EXISTS review_records;
+CREATE VIEW review_records AS
                 SELECT
                     annotation.id AS id,
                     annotation.issue_id,
@@ -179,7 +189,8 @@
                     revision.campaign_id,
                     revision.reference_id,
                     revision.id AS storage_id
-                FROM model_review_revisions revision;
+                FROM model_review_revisions revision
+WHERE NOT EXISTS (SELECT 1 FROM model_review_revocations revoked WHERE revoked.revision_id=revision.id);
 
                 CREATE VIEW IF NOT EXISTS review_record_attachments AS
                 SELECT

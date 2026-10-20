@@ -296,10 +296,113 @@ class DatabaseModelReviewMixin:
         ]
         return result
 
+    def revoke_model_review(
+        self, *, issue_id: str, annotation_id: int, actor: str,
+        actor_source: str, actor_verified: bool,
+        expected_head_id: int | None,
+    ) -> dict[str, Any]:
+        """Tombstone one Run version; labels and original audit rows are immutable."""
+        revision_id = self._model_review_storage_id(annotation_id)
+        actor = str(actor or "").strip().lower()
+        if not actor_verified or not actor:
+            raise PermissionError("撤销复核需要已验证的身份。")
+        if revision_id is None:
+            raise ValueError("模型复核版本 ID 不合法。")
+        now = utc_now()
+        with self._write_lock, self.connect() as conn:
+            conn.execute(
+                "SELECT issue_id FROM issues WHERE issue_id = ?"
+                + (" FOR UPDATE" if self.backend == "postgresql" else ""),
+                (issue_id,),
+            ).fetchone()
+            role_row = conn.execute("SELECT role FROM access_users WHERE username=?", (actor,)).fetchone()
+            role = str(role_row["role"]) if role_row else ""
+            target = conn.execute(
+                "SELECT * FROM model_review_revisions WHERE id = ? AND issue_id = ?",
+                (revision_id, issue_id),
+            ).fetchone()
+            if role not in {"writer", "admin"}:
+                raise PermissionError("撤销复核需要 writer 或管理员权限。")
+            if target is None:
+                raise ValueError("模型复核版本不存在。")
+            if role != "admin" and actor != str(target["reviewer"]).lower():
+                raise PermissionError("只能撤销自己的 Run 复核版本。")
+            if target["legacy_annotation_id"] is not None:
+                raise ValueError("迁移的历史复核证据只读保留。")
+            previous = conn.execute(
+                "SELECT * FROM model_review_revocations WHERE revision_id = ?", (revision_id,),
+            ).fetchone()
+            if previous:
+                return {"annotation_id": annotation_id, "duplicate": True}
+            namespace = (target["model_run_id"], issue_id, target["campaign_id"],
+                         target["reference_id"], target["reviewer"])
+            where = "model_run_id=? AND issue_id=? AND campaign_id=? AND reference_id=? AND reviewer=?"
+            head = conn.execute(
+                f"SELECT revision_id FROM model_review_heads WHERE {where}", namespace,
+            ).fetchone()
+            head_id = int(head["revision_id"]) if head else None
+            current_public = self._model_review_public_id(head_id) if head_id else None
+            if expected_head_id != current_public:
+                raise AnnotationConflictError("该复核已更新，请刷新历史后再撤销。")
+            replacement = None
+            if head_id == revision_id:
+                replacement = conn.execute(
+                    f"""SELECT * FROM model_review_revisions WHERE {where} AND id <> ?
+                        AND NOT EXISTS (SELECT 1 FROM model_review_revocations revoked
+                                        WHERE revoked.revision_id=model_review_revisions.id)
+                        ORDER BY id DESC LIMIT 1""", (*namespace, revision_id),
+                ).fetchone()
+            replacement_id = int(replacement["id"]) if replacement else None
+            conn.execute(
+                """INSERT INTO model_review_revocations
+                   (revision_id, actor, actor_source, actor_verified, replacement_revision_id, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (revision_id, actor, actor_source, True, replacement_id, now),
+            )
+            if head_id == revision_id:
+                if replacement_id:
+                    conn.execute(
+                        f"UPDATE model_review_heads SET revision_id=?, updated_at=? WHERE {where}",
+                        (replacement_id, now, *namespace),
+                    )
+                else:
+                    conn.execute(f"DELETE FROM model_review_heads WHERE {where}", namespace)
+            progress = conn.execute(
+                "SELECT model_review_revision_id FROM combined_review_progress "
+                "WHERE campaign_id=? AND issue_id=? AND reviewer=?",
+                (target["campaign_id"], issue_id, target["reviewer"]),
+            ).fetchone()
+            if head_id == revision_id or (progress and progress["model_review_revision_id"] == revision_id):
+                if head_id != revision_id:
+                    replacement = conn.execute(
+                        "SELECT * FROM model_review_revisions WHERE id=?", (head_id,),
+                    ).fetchone() if head_id else None
+                    replacement_id = int(replacement["id"]) if replacement else None
+                # A combined submission explicitly acknowledges the model half,
+                # including pending status. A standalone head must be completed.
+                submitted = bool(replacement and replacement["status"] == "completed")
+                if replacement_id:
+                    submitted = submitted or bool(conn.execute(
+                        "SELECT 1 FROM combined_review_submissions WHERE model_review_revision_id=?",
+                        (replacement_id,),
+                    ).fetchone())
+                conn.execute(
+                    """UPDATE combined_review_progress
+                       SET model_review_revision_id=?, model_review_submitted=?,
+                           model_review_submitted_at=?, updated_at=?
+                       WHERE campaign_id=? AND issue_id=? AND reviewer=?""",
+                    (replacement_id, submitted,
+                     replacement["created_at"] if submitted else None, now,
+                     target["campaign_id"], issue_id, target["reviewer"]),
+                )
+            self._mark_change_topic(conn, "review")
+        return {"annotation_id": annotation_id, "duplicate": False,
+                "replacement_annotation_id": self._model_review_public_id(replacement_id) if replacement_id else None}
+
     def model_review_revisions(
         self, *, issue_id: str, model_run_id: str = ""
     ) -> list[dict[str, Any]]:
-        where = "WHERE issue_id = ?"
+        where = "WHERE issue_id = ? AND NOT EXISTS (SELECT 1 FROM model_review_revocations revoked WHERE revoked.revision_id=model_review_revisions.id)"
         params: list[Any] = [str(issue_id or "").strip()]
         if str(model_run_id or "").strip():
             where += " AND model_run_id = ?"

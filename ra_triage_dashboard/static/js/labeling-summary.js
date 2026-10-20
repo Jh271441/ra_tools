@@ -292,7 +292,7 @@ function showLabelSummaryRules() {
 
 function labelSummaryCaseMarkup(item) {
   const issueId = String(item.issue_id || "");
-  const scene = item.title || item.scenario || "未记录场景";
+  const scene = item.title || item.scenario || "未提供场景描述";
   const status = ({ resolved: "已形成结论", pending: "待形成结论", conflict: "待裁决 / 需确认" })[item.label_state] || "待形成结论";
   const rationales = item.rationales || [];
   const tags = (item.tags || []).map((key) => `<span class="analysis-chip tag-chip">${escapeHtml(tagLabel(key))}</span>`).join("");
@@ -304,7 +304,7 @@ function labelSummaryCaseMarkup(item) {
   const statusTitle = primary?.kind === "task" ? "任务内裁决" : primary?.kind === "issue" ? "Issue 裁决" : currentStatus;
   const resolved = item.label_state === "resolved" && LABELS.includes(item.expected_output);
   const comparison = resolved && LABELS.includes(item.gt_label)
-    ? `<span class="label-summary-gt-relation ${item.gt_label === item.expected_output ? "is-match" : "is-different"}">${item.gt_label === item.expected_output ? "一致" : "待更新"}</span>` : "";
+    ? `<span class="label-summary-gt-relation ${item.gt_label === item.expected_output ? "is-match" : "is-different"}">${item.gt_label === item.expected_output ? "一致" : "与 GT 不一致"}</span>` : "";
   const resultLabels = `<div class="label-summary-result-line"><span class="label-summary-final-label"><span>期望输出</span>${resolved ? labelBadge(item.expected_output) : '<span class="muted">待确定</span>'}</span></div><div class="label-summary-result-line"><span class="label-summary-gt-line">GT：${escapeHtml(item.gt_label || "未设置")}${comparison}</span><span class="label-summary-status" data-state="${escapeHtml(statusKind || "pending")}" title="${escapeHtml(statusTitle)}">${escapeHtml(currentStatus)}</span>${item.is_excluded ? '<span class="label-summary-excluded">已排除</span>' : ""}</div>`;
   const originalVotes = primary && (item.original_votes || []).length ? `<details class="label-summary-original-votes"><summary>${item.original_conflict ? "原始冲突 · 查看标注意见" : "原始标注意见"}</summary>${item.original_votes.map((vote) => `<p>${escapeHtml(vote.author)}：${escapeHtml(vote.expected_output || "待补充")}${vote.rationale ? ` · ${escapeHtml(vote.rationale)}` : ""}</p>`).join("")}</details>` : "";
   const sceneMarkup = LABELS.includes(scene.trim()) ? "" : `<span title="${escapeHtml(scene)}">${escapeHtml(scene)}</span>`;

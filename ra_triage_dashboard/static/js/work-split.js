@@ -193,7 +193,7 @@ function analysisWorkSplitOptionLabel(item) {
   const date = item?.created_at ? formatTime(item.created_at) : "";
   const progress = `${Number(item?.completed_count || 0)}/${Number(item?.assignment_count || 0)}`;
   const owner = String(item?.created_by || "").trim();
-  return [date, owner, progress, splitId.slice(0, 14)].filter(Boolean).join(" · ");
+  return [item?.name || splitId.slice(0, 14), progress, date, owner].filter(Boolean).join(" · ");
 }
 
 function renderWorkSplitScopePicker(rootSelector, selected, available, onChange) {
@@ -259,6 +259,7 @@ function syncReviewWorkflowMode(caseData = state.selectedCase) {
 function renderAnalysisWorkSplitPicker(selected = state.reviewAnalysis.workSplitId) {
   const root = $("#analysisWorkSplitPicker");
   if (!root) return;
+  root.title = "仅显示当前数据集和 Model Run 的复核任务；找不到任务时，请先切换到任务对应的数据集和 Run。综合结果汇总当前范围内的复核。";
   const known = String(selected || state.reviewAnalysis.availableWorkSplitId || "").trim();
   const options = [
     { value: "", label: workSplitOptionLabel("") },
@@ -296,6 +297,8 @@ async function loadAnalysisWorkSplits({ force = false } = {}) {
   const result = await api(`/api/review-work-splits?${params.toString()}`);
   state.reviewAnalysis.workSplitOptionsKey = key;
   state.reviewAnalysis.workSplitOptions = result.items || [];
+  const hint = $("#analysisWorkSplitHint");
+  if (hint) hint.hidden = state.reviewAnalysis.workSplitOptions.length > 0;
   renderAnalysisWorkSplitPicker(state.reviewAnalysis.workSplitId);
   return state.reviewAnalysis.workSplitOptions;
 }

@@ -39,7 +39,7 @@ def combined_label_cases(database, conn, issue_ids, task_id):
                 JOIN label_revisions revision ON revision.id=progress.case_label_revision_id
                 JOIN label_cases label_case ON label_case.id=revision.label_case_id
                 WHERE progress.campaign_id=? AND progress.issue_id IN ({placeholders})
-                  AND progress.model_review_submitted AND progress.case_label_acknowledged
+                  AND progress.case_label_acknowledged
                   AND lower(revision.author)=lower(progress.reviewer)
                   AND label_case.issue_id=progress.issue_id
                   AND NOT EXISTS (SELECT 1 FROM label_import_suppressed_revisions s

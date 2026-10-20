@@ -258,6 +258,31 @@ async def list_model_reviews(issue_id: str, model_run_id: str = "") -> dict[str,
     return {"items": items, "count": len(items)}
 
 
+@router.post("/api/cases/{issue_id}/model-reviews/{annotation_id}/revoke")
+async def revoke_model_review(issue_id: str, annotation_id: int, request: Request) -> dict[str, Any]:
+    identity = await asyncio.to_thread(_writer_identity, request)
+    try:
+        body = await request.json()
+    except (TypeError, ValueError):
+        raise _detail(400, "撤销请求必须是 JSON 对象。")
+    if not isinstance(body, dict) or "expected_head_id" not in body:
+        raise _detail(400, "请提供当前复核版本后再撤销。")
+    expected = _optional_int(body.get("expected_head_id"), "expected_head_id")
+    try:
+        revoked = await asyncio.to_thread(
+            database.revoke_model_review, issue_id=issue_id, annotation_id=annotation_id,
+            actor=identity.username, actor_source=identity.source,
+            actor_verified=identity.verified, expected_head_id=expected,
+        )
+    except PermissionError as exc:
+        raise _detail(403, str(exc)) from exc
+    except AnnotationConflictError as exc:
+        raise _detail(409, str(exc)) from exc
+    except ValueError as exc:
+        raise _detail(400, str(exc)) from exc
+    return {"revoked": revoked, "change_revision": await asyncio.to_thread(database.change_revision)}
+
+
 @router.delete("/api/cases/{issue_id}/annotations/{annotation_id}")
 async def delete_annotation(
     issue_id: str, annotation_id: int, request: Request
