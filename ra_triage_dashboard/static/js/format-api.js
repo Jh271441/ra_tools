@@ -761,6 +761,7 @@ async function refreshChangedDataNow() {
     await loadIntentSummary({ datasetIds: state.intentLabeling.summaryDatasetIds, force: true });
     return;
   }
+  if (state.activePage === "daily-cron") return; // independent 30s observation, not a DB revision
   if (state.activePage === "status") {
     await loadStatus();
   }

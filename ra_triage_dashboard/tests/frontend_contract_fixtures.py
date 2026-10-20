@@ -35,6 +35,7 @@ CSS_PATHS = (
     "css/runs.css",
     "css/campaigns.css",
     "css/labeling-summary.css",
+    "css/daily-cron.css",
     "css/mobile.css",
 )
 STYLES_CSS = "\n".join(

@@ -65,6 +65,7 @@
           "css/runs.css",
           "css/campaigns.css",
           "css/labeling-summary.css",
+          "css/daily-cron.css",
           "css/mobile.css",
         ];
         let stylesSettled = false;
@@ -81,7 +82,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-576`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-577`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -188,6 +189,19 @@
                         </div>
           </section>
 
+
+          <section class="sidebar-nav-group" data-sidebar-nav-group="daily" data-sidebar-default-open="true">
+            <button class="sidebar-group-toggle" type="button" data-sidebar-nav-group-toggle="daily" aria-expanded="true" aria-controls="sidebarNavDaily">
+              <span class="sidebar-group-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path class="icon-wash" d="M3 6h7l2 2h9v12H3z"/><path d="M3 6h7l2 2h9v12H3zM3 11h18"/></svg></span>
+              <span class="sidebar-group-label sidebar-label"><span class="ui-lang-zh">每日数据</span><span class="ui-lang-en">Daily data</span></span><span class="sidebar-group-chevron" aria-hidden="true"></span>
+            </button>
+            <div class="sidebar-nav-group-items" id="sidebarNavDaily" data-sidebar-nav-group-items="daily">
+              <a class="sidebar-item" id="dailyCronNavButton" data-page-target="daily-cron" data-app-path="/daily-cron" href="/daily-cron" title="Cron 监控">
+                <span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><circle class="icon-wash" cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="9"/><path class="icon-emphasis" d="M12 7v5l3 2"/></svg></span>
+                <span class="sidebar-label"><strong class="ui-lang-zh">Cron 监控</strong><strong class="ui-lang-en">Cron monitor</strong></span>
+              </a>
+            </div>
+          </section>
 
           <section class="sidebar-nav-group intent-nav-group is-collapsed" id="intentNavGroup" data-sidebar-nav-group="intent" data-sidebar-default-open="false" hidden>
             <button class="sidebar-group-toggle" type="button" data-sidebar-nav-group-toggle="intent" aria-expanded="false" aria-controls="sidebarNavIntent">
@@ -1780,6 +1794,35 @@
             </section>
           </section>
 
+          <section class="app-page tool-page daily-cron-page hidden" id="dailyCronPage" data-page="daily-cron">
+            <div class="cron-page-heading">
+              <div><h2><span class="ui-lang-zh">每日自动化</span><span class="ui-lang-en">Daily automation</span></h2><p class="muted"><span class="ui-lang-zh">每日 09:00 CST · 处理 T−2 数据 · 主流程与媒体旁路独立判定</span><span class="ui-lang-en">09:00 CST daily · T−2 data · Independent pipeline and media outcomes</span></p></div>
+              <button class="button button-quiet" id="dailyCronRefresh" type="button"><span class="ui-lang-zh">刷新状态</span><span class="ui-lang-en">Refresh status</span></button>
+            </div>
+            <div class="cron-connection muted" id="dailyCronConnection" role="status" aria-live="polite"><span class="ui-lang-zh">正在连接监控服务…</span><span class="ui-lang-en">Connecting to monitor…</span></div>
+            <div class="cron-metrics" id="dailyCronMetrics"></div>
+            <section class="cron-panel" aria-labelledby="dailyCronSignalsTitle">
+              <div class="cron-section-heading"><h3 id="dailyCronSignalsTitle"><span class="ui-lang-zh">调度与提醒</span><span class="ui-lang-en">Schedule and alerts</span></h3><span class="muted">Asia/Shanghai · 30s</span></div>
+              <div id="dailyCronSchedule" class="cron-schedule"></div><div id="dailyCronAlerts"></div>
+              <div class="cron-history-caption muted"><span class="ui-lang-zh">过去 24 小时 · 每格一小时，取最严重观测</span><span class="ui-lang-en">Last 24 hours · Worst observation per hour</span><span class="ui-lang-zh">绿：正常 · 黄 / 红：提醒 · 灰：无观测</span><span class="ui-lang-en">Green: normal · Amber / red: alert · Grey: no observations</span></div>
+              <div class="cron-history" id="dailyCronHistory"></div>
+            </section>
+            <section class="cron-panel" aria-labelledby="dailyCronRunsTitle">
+              <div class="cron-section-heading"><h3 id="dailyCronRunsTitle"><span class="ui-lang-zh">每日流水线</span><span class="ui-lang-en">Daily pipeline</span></h3><span class="muted"><span class="ui-lang-zh">采集 → 推理 → 回刷 → 抽样 → 验证</span><span class="ui-lang-en">Collect → Infer → Publish → Sample → Verify</span></span></div>
+              <div id="dailyCronRuns" class="cron-runs"></div>
+            </section>
+            <section class="cron-panel" aria-labelledby="dailyCronSidecarTitle">
+              <div class="cron-section-heading"><h3 id="dailyCronSidecarTitle"><span class="ui-lang-zh">标注平台与媒体旁路</span><span class="ui-lang-en">Review platform and media sidecar</span></h3><span class="cron-chip" data-tone="neutral"><span class="ui-lang-zh">独立判定</span><span class="ui-lang-en">Independent outcome</span></span></div>
+              <div id="dailyCronSidecar"></div>
+              <p class="cron-note muted"><span class="ui-lang-zh">低置信度 + 抽样 → 按天导入 Run → 均分联合复核 → Camera / BEV（±20 秒）。Orion 失败重试一次，再转本地最多两次；少量失败如实记录，旁路失败不改变主任务结果。</span><span class="ui-lang-en">Low confidence + sampling → Daily Run → Balanced joint review → Camera / BEV (±20s). One Orion retry, then at most two local attempts. Sidecar failures are recorded independently.</span></p>
+            </section>
+            <section class="cron-panel" aria-labelledby="dailyCronJobsTitle">
+              <div class="cron-section-heading"><h3 id="dailyCronJobsTitle"><span class="ui-lang-zh">Cron 任务清单</span><span class="ui-lang-en">Cron inventory</span></h3><input id="dailyCronSearch" type="search" aria-label="搜索 Cron" placeholder="搜索任务或调度表达式" data-placeholder-zh="搜索任务或调度表达式" data-placeholder-en="Search task or schedule" /></div>
+              <p class="cron-note muted"><span class="ui-lang-zh">日志更新时间只表示活动，未接入退出回执的任务不据此判断成功；调度表达式沿用原 crontab 时区。</span><span class="ui-lang-en">Log timestamps indicate activity, not success. Schedules use the original crontab timezone.</span></p>
+              <div class="cron-table-wrap"><table class="cron-table"><thead><tr><th><span class="ui-lang-zh">任务</span><span class="ui-lang-en">Task</span></th><th><span class="ui-lang-zh">调度表达式</span><span class="ui-lang-en">Schedule</span></th><th><span class="ui-lang-zh">最近日志更新 · CST</span><span class="ui-lang-en">Log updated · CST</span></th><th><span class="ui-lang-zh">活动证据</span><span class="ui-lang-en">Activity</span></th></tr></thead><tbody id="dailyCronJobs"></tbody></table></div>
+            </section>
+          </section>
+
           <section class="app-page tool-page system-status-page hidden" id="systemStatusPage" data-page="status">
             <div class="compact-page-lead system-status-lead">
               <div class="system-status-actions">
@@ -2405,7 +2448,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-576`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-577`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

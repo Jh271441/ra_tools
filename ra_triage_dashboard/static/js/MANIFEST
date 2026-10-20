@@ -10,6 +10,7 @@ layout-resize.js
 gt-sync.js
 session-config.js
 system-status.js
+daily-cron.js
 runs.js
 run-comparison.js
 run-collections.js

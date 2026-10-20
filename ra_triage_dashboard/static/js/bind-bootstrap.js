@@ -470,6 +470,10 @@ function bindEvents() {
         showToast(t("toast.page_refreshed"));
         return;
       }
+      if (state.activePage === "daily-cron") {
+        await loadDailyCron();
+        return;
+      }
       await refreshAll();
       if (!isPageContextCurrent(pageContext)) return;
       if (state.activePage === "analysis") {
@@ -482,6 +486,8 @@ function bindEvents() {
       showToast(error.message, true);
     }
   });
+  $("#dailyCronRefresh")?.addEventListener("click", () => loadDailyCron());
+  $("#dailyCronSearch")?.addEventListener("input", () => renderDailyCronJobs());
   $("#gtSyncButton")?.addEventListener("click", () => {
     refreshAuthoritativeGt().catch((error) => showToast(error.message, true));
   });
@@ -1241,6 +1247,8 @@ async function bootstrap() {
       if (initialRoute.issue) {
         initialDetailRequest = selectCase(initialRoute.issue, { updateRoute: false });
       }
+    } else if (initialRoute.page === "daily-cron") {
+      initialPageRequests.push(loadDailyCron());
     } else if (initialRoute.page === "status") {
       initialPageRequests.push(loadStatus());
     } else if (initialRoute.page === "users") {

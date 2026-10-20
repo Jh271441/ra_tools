@@ -69,6 +69,7 @@ function applyUiLanguage(language, { persist = true } = {}) {
   if (typeof applyI18nPlaceholders === "function") applyI18nPlaceholders(document);
   renderPageChrome();
   renderSystemStatus();
+  if (typeof renderDailyCron === "function") renderDailyCron();
   applySidebarState();
   renderSession();
   enhanceDashboardSelects();
@@ -1152,6 +1153,7 @@ function showPage(
   }
   state.activePage = target;
   document.body.dataset.activePage = target;
+  if (typeof setDailyCronActive === "function") setDailyCronActive(target === "daily-cron");
   if (typeof ensureRunCollectionsDedicatedPage === "function") {
     ensureRunCollectionsDedicatedPage(target);
   }
@@ -1329,6 +1331,9 @@ function showPage(
       // query; retain the loading presentation for that short initial gap.
       trailPage?.classList.add("is-loading");
     }
+  }
+  if (target === "daily-cron" && loadPageData) {
+    pageLoads.push(() => loadDailyCron());
   }
   if (target === "status" && loadPageData) {
     pageLoads.push(() => loadStatus().catch((error) => showToast(error.message, true)));
