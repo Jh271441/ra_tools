@@ -19,13 +19,15 @@ router = APIRouter()
 
 
 @router.get("/api/labeling/tasks")
-async def list_labeling_tasks(request: Request, baselines: str = "") -> dict[str, Any]:
+async def list_labeling_tasks(request: Request, baselines: str = "", include_combined: bool = False) -> dict[str, Any]:
     await _require_labeling_writer(request)
     scopes = resolve_request_baseline_scopes(baselines, request=request)
     scopes = await _active_labeling_scopes(scopes)
     if not scopes:
         return {"items": [], "baseline_scopes": scopes}
     tasks = await asyncio.to_thread(database.list_labeling_tasks, scopes)
+    if not include_combined:
+        tasks = [task for task in tasks if task.get("purpose") != "model_review"]
     task_ids = [str(item["id"]) for item in tasks]
     progress = (
         await asyncio.to_thread(database.labeling_task_progress, scopes, task_ids)

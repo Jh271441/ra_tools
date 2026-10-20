@@ -5,6 +5,7 @@ from contextlib import nullcontext
 from typing import Any, Sequence
 from .shared import LABELS, _json_load
 from .snapshots import _sha256_json
+from .combined_labeling import combined_label_cases, is_combined_task
 from .labeling_shared import ISSUE_LABEL_GT_RELATIONS, ISSUE_LABEL_STATES, _clean_values, _issue_decision_source_payload, _issue_label_gt_relation
 
 
@@ -37,6 +38,8 @@ class LabelingProjectionMixin:
         resolution_rows: list[Any] = []
         assignment_rows: list[Any] = []
         with (nullcontext(connection) if connection is not None else self.connect()) as conn:
+            if is_combined_task(conn, task):
+                return combined_label_cases(self, conn, cleaned, task)
             for offset in range(0, len(cleaned), 400):
                 batch = cleaned[offset : offset + 400]
                 clause = f"issue_id IN ({', '.join('?' for _ in batch)})"

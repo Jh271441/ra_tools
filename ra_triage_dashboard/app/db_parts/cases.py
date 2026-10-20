@@ -2220,6 +2220,7 @@ class DatabaseCasesMixin:
         reviewer_count = int(split["reviewers_per_issue"] or 1)
         return {
             "split_id": str(split["id"]),
+            "purpose": str(split["purpose"] or ""),
             "mode": str(split["mode"] or "single"),
             "model_run_id": str(split["model_run_id"] or ""),
             "workflow_mode": str(split["workflow_mode"] or "model_review_only"),

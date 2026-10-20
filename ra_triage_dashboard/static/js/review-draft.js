@@ -23,13 +23,31 @@ function currentReviewRunId(caseData) {
   return "";
 }
 
-// A blind-task binding applies only to assigned reviewers; anyone else keeps
-// editing the ordinary Review stream for the selected Run.
+// Modern Campaigns require an explicit task route; legacy blind splits retain
+// their existing binding. Unassigned reviewers use the ordinary Review stream.
 function reviewWorkSplitBinding(caseData) {
   const assignment = caseData?.review_assignment;
   if (!assignment?.assigned) return "";
+  if (assignment.purpose === "model_review" &&
+      String(state.reviewWorkSplitId || "").trim() !== String(assignment.split_id || "").trim()) return "";
   if (assignment?.mode !== "blind" && assignment?.purpose !== "model_review") return "";
   return String(assignment.split_id || "").trim();
+}
+
+// Combined submissions must use the explicit navigation scope. Never infer a
+// campaign from the latest assignment when browsing outside a task.
+function combinedReviewCampaignBinding(caseData) {
+  const campaignId = String(state.reviewWorkSplitId || "").trim();
+  if (!campaignId) return "";
+  const assignment = caseData?.review_assignment;
+  if (!assignment?.assigned ||
+      String(assignment.split_id || "") !== campaignId ||
+      assignment.purpose !== "model_review" ||
+      assignment.workflow_mode !== "model_review_and_case_label" ||
+      String(assignment.model_run_id || "") !== currentReviewRunId(caseData)) {
+    throw new Error("联合复核任务上下文异常或 Issue 未分配给当前账号，请从任务入口重新打开。");
+  }
+  return campaignId;
 }
 
 function reviewAnnotationsForCurrentRun(caseData) {

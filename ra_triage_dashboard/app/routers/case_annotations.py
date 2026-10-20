@@ -59,6 +59,8 @@ async def submit_combined_review(issue_id: str, request: Request) -> dict[str, A
         raise _detail(400, "联合复核请求必须是 JSON 对象。")
     if not isinstance(body, dict):
         raise _detail(400, "联合复核请求必须是 JSON 对象。")
+    if _as_text(body.get("work_split_id")).strip() != _as_text(body.get("campaign_id")).strip() and "work_split_id" in body:
+        raise _detail(400, "联合复核任务上下文不一致，请从任务入口重新打开。")
     actor, source, verified = await asyncio.to_thread(
         _action_actor, request, body.get("author")
     )

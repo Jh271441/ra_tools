@@ -5,6 +5,7 @@ let labelSummaryPage = 1;
 let labelSummaryPageSize = 20;
 let labelSummaryRouteRestored = false;
 let labelSummarySearchTimer = null;
+let labelSummaryTasks = [];
 const labelSummaryFilters = {
   search: "", issueIds: [], taskId: "", status: [], author: [], assignee: [],
   label: [], gt: [], commentState: [], exclusion: [], cluster: "",
@@ -57,6 +58,16 @@ function persistLabelSummaryRoute() {
 }
 
 function labelSummaryCaseUrl(filters = {}) {
+  const task = labelSummaryTasks.find((item) => item.id === labelSummaryFilters.taskId);
+  if (task?.workflow_mode === "model_review_and_case_label") {
+    return pageUrl("review", {
+      ...reviewAssignmentRouteOptions({
+        ...task, split_id: task.id, model_run_id: task.selection_source_run_id,
+        baseline_ids: state.selectedBaselineIds,
+      }, "review"),
+      issue: filters.issue || "",
+    });
+  }
   return pageUrl("labeling", { issue: "", taskId: labelSummaryFilters.taskId,
     search: labelSummaryFilters.search, issueIds: labelSummaryFilters.issueIds,
     status: labelSummaryFilters.status,
@@ -336,8 +347,9 @@ async function loadLabelingSummary() {
   root.innerHTML = '<div class="page-card campaign-analysis-empty">正在汇总标注…</div>';
   try {
     const baselines = selectedBaselineQueryValue();
-    const tasks = await api(`/api/labeling/tasks?baselines=${encodeURIComponent(baselines)}`);
+    const tasks = await api(`/api/labeling/tasks?include_combined=true&baselines=${encodeURIComponent(baselines)}`);
     if (seq !== labelSummaryRequest || state.activePage !== "labeling-summary") return;
+    labelSummaryTasks = tasks.items || [];
     if (!(tasks.items || []).some((task) => task.id === labelSummaryFilters.taskId)) {
       labelSummaryFilters.taskId = "";
     }

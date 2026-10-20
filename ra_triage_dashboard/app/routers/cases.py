@@ -1312,6 +1312,8 @@ async def get_case(
         else None
     )
     identity = SessionIdentity()
+    if work_split_id and not assignment:
+        raise _detail(400, "任务上下文与当前 Issue 或 Model Run 不一致，请从任务入口重新打开。")
     if request is not None and assignment:
         identity = await asyncio.to_thread(request_identity, request, settings)
         current_username = identity.username.lower() if identity.verified else ""

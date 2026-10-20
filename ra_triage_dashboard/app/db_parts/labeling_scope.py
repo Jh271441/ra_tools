@@ -411,7 +411,7 @@ class LabelingScopeMixin:
                 """,
                 params,
             ).fetchall()
-        return [
+        tasks = [
             {
                 "id": str(row["id"]),
                 "name": str(row["name"] or ""),
@@ -432,6 +432,36 @@ class LabelingScopeMixin:
             }
             for row in rows
         ]
+        with self.connect() as conn:
+            combined = conn.execute(
+                f"""
+                SELECT split.id, split.campaign_name, split.created_by, split.created_at,
+                       split.mode, split.reviewers_per_issue, split.overlap_ratio,
+                       split.workset_id, split.evaluation_run_id, split.workflow_mode,
+                       COUNT(DISTINCT member.issue_id) AS member_count,
+                       MIN(member.baseline_scope) AS baseline_scope
+                FROM issue_work_splits split
+                JOIN campaign_issue_members member ON member.campaign_id=split.id
+                WHERE split.purpose='model_review'
+                  AND split.workflow_mode='model_review_and_case_label'
+                  {f"AND member.baseline_scope IN ({', '.join('?' for _ in scopes)})" if scopes else ""}
+                GROUP BY split.id, split.campaign_name, split.created_by, split.created_at,
+                         split.mode, split.reviewers_per_issue, split.overlap_ratio,
+                         split.workset_id, split.evaluation_run_id, split.workflow_mode
+                """, scopes,
+            ).fetchall()
+        tasks.extend({
+            "id": str(row["id"]), "name": str(row["campaign_name"] or ""),
+            "baseline_scope": str(row["baseline_scope"]), "workset_id": str(row["workset_id"] or ""),
+            "member_count": int(row["member_count"]), "members_sha256": "",
+            "selection_source_run_id": str(row["evaluation_run_id"] or ""),
+            "mode": str(row["mode"]), "reviewers_per_issue": int(row["reviewers_per_issue"] or 1),
+            "overlap_ratio": float(row["overlap_ratio"] or 0),
+            "workflow_mode": str(row["workflow_mode"]), "purpose": "model_review",
+            "created_by": str(row["created_by"]), "created_at": str(row["created_at"]),
+        } for row in combined)
+        return sorted(tasks, key=lambda item: (item["created_at"], item["id"]), reverse=True)
+
 
     def labeling_task_progress(
         self, baseline_scopes: Sequence[str], task_ids: Sequence[str]
@@ -445,13 +475,15 @@ class LabelingScopeMixin:
         with self.connect() as conn:
             assignment_rows = conn.execute(
                 f"""
-                SELECT split_id, lower(trim(assignee)) AS assignee,
-                       COUNT(DISTINCT issue_id) AS assigned_count
-                FROM review_work_assignments
+                SELECT assignment.split_id, lower(trim(assignee)) AS assignee,
+                       COUNT(DISTINCT assignment.issue_id) AS assigned_count
+                FROM review_work_assignments assignment
+                JOIN issues issue ON issue.issue_id=assignment.issue_id
                 WHERE split_id IN ({placeholders}) AND trim(assignee) != ''
-                GROUP BY split_id, lower(trim(assignee))
+                  AND issue.baseline_scope IN ({', '.join('?' for _ in scopes)})
+                GROUP BY assignment.split_id, lower(trim(assignee))
                 """,
-                tasks,
+                [*tasks, *scopes],
             ).fetchall()
         for row in assignment_rows:
             split_id = str(row["split_id"])

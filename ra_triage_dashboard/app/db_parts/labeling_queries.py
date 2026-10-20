@@ -5,6 +5,7 @@ from collections import defaultdict
 from typing import Any, Sequence
 from .shared import LABELS
 from .labeling_shared import _clean_values, _filter_values, _parse_labeling_cluster
+from .combined_labeling import is_combined_task
 
 
 class LabelingQueriesMixin:
@@ -17,6 +18,13 @@ class LabelingQueriesMixin:
         params: list[Any] = [*scopes]
         task_clause = ""
         task = str(task_id or "").strip()
+        with self.connect() as conn:
+            if is_combined_task(conn, task):
+                projected, _ = self._project_labeling_cases(baseline_scopes=scopes, task_id=task)
+                return sorted({
+                    head["author"].strip().lower() for item in projected
+                    for case in item["label_cases"] for head in case["resolution"]["heads"]
+                })
         if task:
             task_clause = "AND label_case.task_id = ?"
             params.append(task)
@@ -58,9 +66,10 @@ class LabelingQueriesMixin:
                 SELECT DISTINCT lower(trim(assignment.assignee)) AS assignee
                 FROM review_work_assignments assignment
                 JOIN issue_work_splits split ON split.id = assignment.split_id
-                JOIN review_worksets workset ON workset.id = split.workset_id
-                WHERE workset.baseline_scope IN ({', '.join('?' for _ in scopes)})
-                  AND split.task_kind = 'labeling'
+                JOIN issues issue ON issue.issue_id = assignment.issue_id
+                WHERE issue.baseline_scope IN ({', '.join('?' for _ in scopes)})
+                  AND (split.task_kind = 'labeling' OR
+                       (split.purpose='model_review' AND split.workflow_mode='model_review_and_case_label'))
                   AND trim(assignment.assignee) != ''
                   {task_clause}
                 ORDER BY assignee
@@ -135,7 +144,16 @@ class LabelingQueriesMixin:
             return [], ""
         task = str(task_id or "").strip()
         parameters: list[Any] = []
-        if task:
+        with self.connect() as conn:
+            combined = is_combined_task(conn, task)
+        if combined:
+            from_sql = """
+                FROM campaign_issue_members member
+                JOIN issues issue ON issue.issue_id=member.issue_id
+            """
+            where = f"member.campaign_id=? AND issue.baseline_scope IN ({', '.join('?' for _ in scopes)})"
+            parameters.extend([task, *scopes])
+        elif task:
             from_sql = """
                 FROM review_workset_items member
                 JOIN issue_work_splits task ON task.workset_id = member.workset_id
@@ -166,7 +184,8 @@ class LabelingQueriesMixin:
                 " AND EXISTS (SELECT 1 FROM review_work_assignments wa"
                 " JOIN issue_work_splits wa_split ON wa_split.id = wa.split_id"
                 " WHERE wa.issue_id = issue.issue_id"
-                " AND wa_split.task_kind = 'labeling'"
+                " AND (wa_split.task_kind = 'labeling' OR"
+                " (wa_split.purpose='model_review' AND wa_split.workflow_mode='model_review_and_case_label'))"
                 f" AND lower(wa.assignee) IN ({assignee_placeholders})"
                 + (" AND wa_split.id = ?" if task else "")
                 + ")"
@@ -195,7 +214,8 @@ class LabelingQueriesMixin:
         if normalized_exclusions - {"excluded", "active"}:
             raise ValueError("排除筛选不合法。")
         normalized_cluster = _parse_labeling_cluster(cluster)
-        selected_source_sql = ", workset.selection_source_run_id AS task_source_run_id" if task else ""
+        selected_source_sql = (", '' AS task_source_run_id" if combined else
+                               ", workset.selection_source_run_id AS task_source_run_id" if task else "")
         with self.connect() as conn:
             rows = conn.execute(
                 f"""

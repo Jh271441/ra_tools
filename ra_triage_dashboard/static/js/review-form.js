@@ -740,13 +740,19 @@ function populateCombinedCaseLabel(context, caseData) {
 }
 
 async function loadCombinedReviewContext(caseData) {
+  if (state.selectedCase !== caseData) return;
+  const requestSeq = (state.combinedReviewContextRequestSeq || 0) + 1;
+  state.combinedReviewContextRequestSeq = requestSeq;
   const runId = currentReviewRunId(caseData);
-  const campaignId = reviewWorkSplitBinding(caseData);
+  state.combinedReviewContext = null;
+  const campaignId = combinedReviewCampaignBinding(caseData);
   const params = new URLSearchParams();
   if (runId) params.set("model_run_id", runId);
   if (campaignId) params.set("campaign_id", campaignId);
   const result = await api(`/api/cases/${encodeURIComponent(caseData.issue_id)}/combined-review-context?${params.toString()}`);
-  if (state.selectedCase?.issue_id !== caseData.issue_id) return;
+  if (state.combinedReviewContextRequestSeq !== requestSeq ||
+      state.selectedCase !== caseData || currentReviewRunId(caseData) !== runId ||
+      String(state.reviewWorkSplitId || "") !== campaignId) return;
   populateCombinedCaseLabel(result.context || {}, caseData);
 }
 
@@ -849,26 +855,28 @@ function caseCorePath(issueId) {
 
 function prefetchCaseCore(issueId) {
   const id = String(issueId || "");
-  if (!id || id === state.selectedId || state.caseDetailPrefetch.has(id)) return;
+  const key = caseCorePath(id);
+  if (!id || id === state.selectedId || state.caseDetailPrefetch.has(key)) return;
   const entry = { createdAt: Date.now(), promise: null };
-  entry.promise = api(caseCorePath(id), { cache: "no-store" }).catch(() => {
-    if (state.caseDetailPrefetch.get(id) === entry) state.caseDetailPrefetch.delete(id);
+  entry.promise = api(key, { cache: "no-store" }).catch(() => {
+    if (state.caseDetailPrefetch.get(key) === entry) state.caseDetailPrefetch.delete(key);
     return null;
   });
-  state.caseDetailPrefetch.set(id, entry);
+  state.caseDetailPrefetch.set(key, entry);
   while (state.caseDetailPrefetch.size > CASE_DETAIL_PREFETCH_LIMIT) {
     state.caseDetailPrefetch.delete(state.caseDetailPrefetch.keys().next().value);
   }
 }
 
 async function loadCaseCore(issueId) {
-  const entry = state.caseDetailPrefetch.get(issueId);
-  state.caseDetailPrefetch.delete(issueId);
+  const key = caseCorePath(issueId);
+  const entry = state.caseDetailPrefetch.get(key);
+  state.caseDetailPrefetch.delete(key);
   if (entry && Date.now() - entry.createdAt <= CASE_DETAIL_PREFETCH_TTL_MS) {
     const prefetched = await entry.promise;
     if (prefetched) return prefetched;
   }
-  return api(caseCorePath(issueId), { cache: "no-store" });
+  return api(key, { cache: "no-store" });
 }
 
 function prefetchAdjacentCaseCores(issueId) {
@@ -1387,7 +1395,7 @@ async function saveCombinedReview(event) {
   const issueId = String(caseData?.issue_id || state.selectedId || "");
   if (!issueId || state.savingAnnotation) return;
   const context = state.combinedReviewContext;
-  if (!context || String(context.issue?.issue_id || issueId) !== issueId) {
+  if (!context || String(context.issue?.issue_id || "") !== issueId) {
     showToast("联合复核上下文尚未加载，请稍候。", true);
     return;
   }
@@ -1401,7 +1409,17 @@ async function saveCombinedReview(event) {
     return;
   }
   const runId = currentReviewRunId(caseData);
-  const campaignId = reviewWorkSplitBinding(caseData);
+  let campaignId;
+  try {
+    campaignId = combinedReviewCampaignBinding(caseData);
+    if (String(context.campaign?.id || "") !== campaignId ||
+        String(context.campaign?.evaluation_run_id || "") !== runId) {
+      throw new Error("联合复核任务或 Run 已切换，请等待上下文重新加载后提交。");
+    }
+  } catch (error) {
+    showToast(error.message, true);
+    return;
+  }
   const payload = {
     author: $("#annotationAuthor")?.value || state.session?.username || "",
     expected_output: expectedState.selectedValue,
@@ -1410,6 +1428,7 @@ async function saveCombinedReview(event) {
     expected_case_revision_id: context.case_revision_id || null,
     expected_label_state_fingerprint: context.label_state_fingerprint || "",
   };
+  const navigationContext = reviewSaveNavigationContext(issueId);
   state.savingAnnotation = true;
   const button = event.submitter || $("#reviewSaveButton");
   if (button) {
@@ -1429,6 +1448,7 @@ async function saveCombinedReview(event) {
       Object.assign(payload, {
         model_run_id: runId,
         campaign_id: campaignId || "",
+        work_split_id: String(state.reviewWorkSplitId || ""),
         model_review_status: $("#modelReviewStatusInput")?.value || "pending",
         reason: $("#annotationNote")?.value || "",
         missing_evidence: [...document.querySelectorAll('input[name="missingEvidence"]:checked')].map((input) => input.value),
@@ -1451,8 +1471,12 @@ async function saveCombinedReview(event) {
       }
       showToast(combined.case_action === "acknowledged" ? "联合复核已提交；现有 Case vote 已确认。" : "联合复核已原子提交。 ");
     }
-    await loadCombinedReviewContext(caseData);
-    renderReview(caseData);
+    if (state.selectedCase === caseData && currentReviewRunId(caseData) === runId &&
+        String(state.reviewWorkSplitId || "") === campaignId) {
+      await loadCombinedReviewContext(caseData);
+      if (state.selectedCase === caseData) renderReview(caseData);
+    }
+    await refreshReviewAfterSave(navigationContext);
   } catch (error) {
     if (Number(error?.status || 0) === 409 || String(error?.message || "").includes("变化")) {
       showToast("数据已变化，联合提交未写入任何一边；请刷新后重新确认。", true);
