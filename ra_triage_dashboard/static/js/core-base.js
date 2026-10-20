@@ -1010,6 +1010,7 @@ const state = {
   colorTheme: "dark",
   uiLanguage: "zh",
   activePage: "review",
+  pageNavigationEpoch: 0,
   systemStatus: null,
   accessUsers: [],
   mentionUsers: [],

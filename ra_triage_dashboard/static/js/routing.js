@@ -1097,6 +1097,22 @@ function setReviewView(issueId = "") {
   }
 }
 
+// Async work may refresh its original view, but may never reclaim a newer route.
+// Epoch also rejects a response after leaving and returning to the same URL.
+function capturePageContext() {
+  return {
+    page: state.activePage,
+    epoch: Number(state.pageNavigationEpoch || 0),
+    url: `${window.location.pathname}${window.location.search}`,
+  };
+}
+
+function isPageContextCurrent(context, { matchUrl = true } = {}) {
+  return Boolean(context && context.page === state.activePage
+    && context.epoch === Number(state.pageNavigationEpoch || 0)
+    && (!matchUrl || context.url === `${window.location.pathname}${window.location.search}`));
+}
+
 function showPage(
   page,
   {
@@ -1129,6 +1145,8 @@ function showPage(
 ) {
   const target = PAGE_ROUTES[page] ? page : "review";
   const previousPage = state.activePage;
+  const pageLoads = [];
+  state.pageNavigationEpoch = Number(state.pageNavigationEpoch || 0) + 1;
   if (target !== "review") {
     (typeof detailHeroMediaEl === "function" ? detailHeroMediaEl() : $("#detailHeroMedia"))?.querySelector("video")?.pause();
   }
@@ -1159,13 +1177,13 @@ function showPage(
     renderRunComparisonSelectors?.();
     renderRunComparison?.();
     if (loadPageData) {
-      loadRunComparison({ historyMode: historyMode || "replace" }).catch((error) => showToast(error.message, true));
+      pageLoads.push(() => loadRunComparison({ historyMode: historyMode || "replace" }).catch((error) => showToast(error.message, true)));
     }
   }
   if (target === "run-collections") {
     renderRunCollectionSelectors?.();
     if (loadPageData && typeof loadRunCollectionsWorkbench === "function") {
-      loadRunCollectionsWorkbench({ restoreRoute }).catch((error) => showToast(error.message, true));
+      pageLoads.push(() => loadRunCollectionsWorkbench({ restoreRoute }).catch((error) => showToast(error.message, true)));
     }
   }
   if (["intent", "intent-experiments", "intent-summary"].includes(target)) {
@@ -1190,7 +1208,7 @@ function showPage(
       return showPage("review", { historyMode: historyMode || "replace" });
     }
     if (loadPageData && typeof enterCaseLabeling === "function") {
-      enterCaseLabeling({ route: parsePageRoute() }).catch((error) => showToast(error.message, true));
+      pageLoads.push(() => enterCaseLabeling({ route: parsePageRoute() }).catch((error) => showToast(error.message, true)));
     }
   }
   if (target === "labeling-new-task") {
@@ -1199,7 +1217,7 @@ function showPage(
       return showPage("review", { historyMode: historyMode || "replace" });
     }
     if (loadPageData && typeof enterLabelingNewTask === "function") {
-      enterLabelingNewTask().catch((error) => showToast(error.message, true));
+      pageLoads.push(() => enterLabelingNewTask().catch((error) => showToast(error.message, true)));
     }
   }
   if (target === "prediction") {
@@ -1218,19 +1236,19 @@ function showPage(
     updatePredictionBatchCount();
     renderBatchRuntimeSummary();
     if (loadPageData) {
-      loadPredictionConfig().catch((error) => showToast(error.message, true));
-      loadPredictionBatches().catch((error) => showToast(error.message, true));
+      pageLoads.push(() => loadPredictionConfig().catch((error) => showToast(error.message, true)));
+      pageLoads.push(() => loadPredictionBatches().catch((error) => showToast(error.message, true)));
     }
   }
   if (target === "intent" && loadPageData && typeof loadIntentLabeling === "function") {
-    loadIntentLabeling({
+    pageLoads.push(() => loadIntentLabeling({
       datasetId: intentDatasetId,
       datasetIds: intentDatasetIds.length ? intentDatasetIds : null,
       caseId: intentCaseId,
       offsetMs: intentOffsetMs,
       assignees: intentAssignees,
       experimentId: intentExperimentId,
-    }).catch((error) => showToast(error.message, true));
+    }).catch((error) => showToast(error.message, true)));
   }
   if (target === "review-assignments" && loadPageData && typeof loadReviewAssignments === "function") {
     if (!reviewAssignmentSplitId) {
@@ -1238,19 +1256,19 @@ function showPage(
       state.reviewAssignments.detail = null;
       state.reviewAssignments.detailLoading = false;
     }
-    loadReviewAssignments({
+    pageLoads.push(() => loadReviewAssignments({
       splitId: reviewAssignmentSplitId,
       force: true,
-    }).catch((error) => showToast(error.message, true));
+    }).catch((error) => showToast(error.message, true)));
   }
   if (target === "labeling-summary" && !state.session.identity_pending && !hasDashboardWriteRole()) {
     return showPage("review", { historyMode: "replace" });
   }
   if (target === "labeling-summary" && loadPageData) {
-    loadLabelingSummary().catch((error) => showToast(error.message, true));
+    pageLoads.push(() => loadLabelingSummary().catch((error) => showToast(error.message, true)));
   }
   if (target === "campaigns" && loadPageData && typeof loadCampaigns === "function") {
-    loadCampaigns({
+    pageLoads.push(() => loadCampaigns({
       campaignId,
       purpose: campaignPurpose,
       lifecycle: campaignLifecycle,
@@ -1260,19 +1278,19 @@ function showPage(
       openComments,
       commentId,
       discussionChannel,
-    }).catch((error) => showToast(error.message, true));
+    }).catch((error) => showToast(error.message, true)));
   }
   if (target === "intent-experiments" && loadPageData && typeof loadIntentExperimentAdmin === "function") {
-    loadIntentExperimentAdmin({
+    pageLoads.push(() => loadIntentExperimentAdmin({
       datasetId: intentDatasetId,
       datasetIds: intentDatasetIds.length ? intentDatasetIds : null,
-    }).catch((error) => showToast(error.message, true));
+    }).catch((error) => showToast(error.message, true)));
   }
   if (target === "intent-summary" && loadPageData && typeof loadIntentSummary === "function") {
-    loadIntentSummary({
+    pageLoads.push(() => loadIntentSummary({
       datasetId: intentDatasetId,
       datasetIds: intentDatasetIds.length ? intentDatasetIds : null,
-    }).catch((error) => showToast(error.message, true));
+    }).catch((error) => showToast(error.message, true)));
   }
   if (target === "analysis" && (previousPage !== "analysis" || restoreRoute)) {
     // A same-page filter reload must not rebuild the Run picker and its
@@ -1293,7 +1311,7 @@ function showPage(
       // made.  Previously every route re-entry set this flag even when the
       // fresh preview was cached, permanently preserving disabled controls.
       trailPage?.classList.add("is-loading");
-      loadTrailAttributePreview().catch((error) => showToast(error.message, true));
+      pageLoads.push(() => loadTrailAttributePreview().catch((error) => showToast(error.message, true)));
     } else if (loadPageData) {
       // Rehydrate cached state synchronously: navigation must not require a
       // second remote Trail check merely to make an already-ready commit
@@ -1313,11 +1331,11 @@ function showPage(
     }
   }
   if (target === "status" && loadPageData) {
-    loadStatus().catch((error) => showToast(error.message, true));
+    pageLoads.push(() => loadStatus().catch((error) => showToast(error.message, true)));
   }
   if (target === "users" && loadPageData) {
-    loadAccessUsers().catch((error) => showToast(error.message, true));
-    loadMentionUsers().catch((error) => showToast(error.message, true));
+    pageLoads.push(() => loadAccessUsers().catch((error) => showToast(error.message, true)));
+    pageLoads.push(() => loadMentionUsers().catch((error) => showToast(error.message, true)));
   }
   if (target === "review") setReviewView(issue);
   const routeOptions =
@@ -1365,6 +1383,13 @@ function showPage(
   }
   if (historyMode === "replace") {
     history.replaceState(historyState, "", pageUrl(target, routeOptions));
+  }
+  // Loaders capture page/URL ownership only after the route is committed.
+  // Starting them above pushState would make a valid new-page read look stale.
+  const pageContext = capturePageContext();
+  for (const load of pageLoads) {
+    if (!isPageContextCurrent(pageContext, { matchUrl: false })) break;
+    load();
   }
   // Instant scroll keeps tab switches snappy; avoid smooth-scroll lag between pages.
   if (!preserveScroll && (target !== "review" || issue)) {

@@ -256,8 +256,10 @@ async function setBaselineScopes(
     });
     window.history.replaceState(window.history.state || {}, "", nextUrl);
   }
+  const pageContext = capturePageContext();
   try {
     await loadConfig();
+    if (!isPageContextCurrent(pageContext)) return;
     if (state.activePage === "review-assignments") {
       return;
     }
@@ -273,6 +275,7 @@ async function setBaselineScopes(
     // Resolve the compatible Run first: the remaining facets and overview all
     // depend on the final overlay selection.
     await loadRuns({ preserveEmpty: true, clearIncompatible: true });
+    if (!isPageContextCurrent(pageContext)) return;
     await settleInitialRequests(
       [
         loadReviewers(),
@@ -283,7 +286,7 @@ async function setBaselineScopes(
       ],
       uiText("切换数据集后", "After dataset switch")
     );
-    if (!reloadActivePage) return;
+    if (!reloadActivePage || !isPageContextCurrent(pageContext)) return;
     if (state.activePage === "analysis") {
       await enterAnalysisPage({ includeOverview: false });
     } else if (state.activePage === "review") {
@@ -628,6 +631,7 @@ function acknowledgeLocalChange(payload) {
 }
 
 async function refreshChangedDataNow() {
+  const pageContext = capturePageContext();
   const reviewerSelections = typeof reviewerFilterSelections === "function"
     ? reviewerFilterSelections()
     : undefined;
@@ -643,6 +647,7 @@ async function refreshChangedDataNow() {
         ? loadWorkAssignees()
         : Promise.resolve(),
     ]);
+    if (!isPageContextCurrent(pageContext)) return;
     if (state.selectedId) {
       if (
         state.reviewFormDirty ||
@@ -665,6 +670,7 @@ async function refreshChangedDataNow() {
       loadCaseLabelingTasks(),
       loadCaseLabelingCases({ page: state.caseLabeling.page }),
     ]);
+    if (!isPageContextCurrent(pageContext)) return;
     if (state.caseLabeling.issueId) {
       if (state.caseLabeling.dirty) {
         showToast("检测到新的标注更新；当前未保存内容已保留，请保存或刷新后查看。");

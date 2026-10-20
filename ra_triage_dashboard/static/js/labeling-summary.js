@@ -50,6 +50,7 @@ function restoreLabelSummaryRoute() {
 }
 
 function persistLabelSummaryRoute() {
+  if (state.activePage !== "labeling-summary") return;
   window.history.replaceState(
     { ...(window.history.state || {}), page: "labeling-summary" },
     "",
@@ -340,6 +341,8 @@ function renderLabelingSummary(data) {
   $("#labelSummaryPageSize")?.addEventListener("change", (event) => { labelSummaryPageSize = Number(event.target.value || 20); labelSummaryPage = 1; loadLabelingSummary().catch((error) => showToast(error.message, true)); });
 }
 async function loadLabelingSummary() {
+  if (state.activePage !== "labeling-summary") return;
+  const pageContext = capturePageContext();
   restoreLabelSummaryRoute();
   const seq = ++labelSummaryRequest;
   const root = $("#labelSummaryContent");
@@ -348,7 +351,7 @@ async function loadLabelingSummary() {
   try {
     const baselines = selectedBaselineQueryValue();
     const tasks = await api(`/api/labeling/tasks?include_combined=true&baselines=${encodeURIComponent(baselines)}`);
-    if (seq !== labelSummaryRequest || state.activePage !== "labeling-summary") return;
+    if (seq !== labelSummaryRequest || !isPageContextCurrent(pageContext)) return;
     labelSummaryTasks = tasks.items || [];
     if (!(tasks.items || []).some((task) => task.id === labelSummaryFilters.taskId)) {
       labelSummaryFilters.taskId = "";
@@ -370,14 +373,14 @@ async function loadLabelingSummary() {
       page_size: String(labelSummaryPageSize),
     });
     const data = await api(`/api/labeling/summary?${params.toString()}`);
-    if (seq !== labelSummaryRequest || state.activePage !== "labeling-summary") return;
+    if (seq !== labelSummaryRequest || !isPageContextCurrent(pageContext)) return;
     labelSummaryPage = Number(data.page || 1);
     labelSummaryPageSize = Number(data.page_size || 20);
     renderLabelSummaryFilters(tasks, data);
     renderLabelingSummary(data);
     persistLabelSummaryRoute();
   } catch(error) {
-    if (seq === labelSummaryRequest) root.innerHTML = `<div class="page-card campaign-analysis-empty">${escapeHtml(error.message)}</div>`;
+    if (seq === labelSummaryRequest && isPageContextCurrent(pageContext)) root.innerHTML = `<div class="page-card campaign-analysis-empty">${escapeHtml(error.message)}</div>`;
     throw error;
   }
 }
@@ -396,7 +399,11 @@ document.getElementById("labelSummarySearch")?.addEventListener("input", (event)
   }
   labelSummaryPage = 1;
   window.clearTimeout(labelSummarySearchTimer);
-  labelSummarySearchTimer = window.setTimeout(() => loadLabelingSummary().catch((error) => showToast(error.message, true)), 280);
+  const pageContext = capturePageContext();
+  labelSummarySearchTimer = window.setTimeout(() => {
+    if (!isPageContextCurrent(pageContext)) return;
+    loadLabelingSummary().catch((error) => showToast(error.message, true));
+  }, 280);
 });
 document.getElementById("labelSummaryTask")?.addEventListener("change", (event) => {
   labelSummaryFilters.taskId = event.target.value;

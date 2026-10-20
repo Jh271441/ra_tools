@@ -784,7 +784,9 @@ async function reconcileReviewQueueAfterSave(context) {
   if (state.activePage !== "review" || String(state.selectedId || "") !== context.issueId) {
     return false;
   }
+  const pageContext = capturePageContext();
   await loadCases({ keepSelection: true, page: context.page });
+  if (!isPageContextCurrent(pageContext)) return false;
   if (String(state.selectedId || "") !== context.issueId) return false;
   if (state.cases.some((item) => String(item.issue_id) === context.issueId)) {
     renderCaseNavigation();
@@ -923,7 +925,7 @@ async function selectCase(
   issueId,
   { updateRoute = true, historyMode = "push", preserveScrollY = null } = {}
 ) {
-  if (!issueId) return;
+  if (!issueId || state.activePage !== "review") return;
   const preservedScrollY = Number.isFinite(Number(preserveScrollY))
     ? Math.max(0, Number(preserveScrollY))
     : null;
@@ -941,7 +943,7 @@ async function selectCase(
   let loadingTimer = null;
   if (!hadDetail) {
     loadingTimer = window.setTimeout(() => {
-      if (requestSeq !== state.caseRequestSeq || state.selectedId !== issueId) return;
+      if (requestSeq !== state.caseRequestSeq || state.selectedId !== issueId || !isPageContextCurrent(pageContext)) return;
       $("#detailPane").innerHTML = `
           <div class="empty-state detail-loading-state">
           <div class="empty-glyph" aria-hidden="true">…</div>
@@ -967,11 +969,12 @@ async function selectCase(
     setReviewView(issueId);
     window.scrollTo({ top: 0, behavior: "auto" });
   }
+  const pageContext = capturePageContext();
   try {
     // Review text and form state do not depend on filesystem media.  Ask for
     // the lightweight core record first; BEV/video/camera hydrate below.
     const data = await loadCaseCore(issueId);
-    if (requestSeq !== state.caseRequestSeq || state.selectedId !== issueId) return;
+    if (requestSeq !== state.caseRequestSeq || state.selectedId !== issueId || !isPageContextCurrent(pageContext)) return;
     if (loadingTimer !== null) {
       window.clearTimeout(loadingTimer);
       loadingTimer = null;
@@ -986,14 +989,14 @@ async function selectCase(
     restoreFailedReviewUploadImages(issueId);
     if (preservedScrollY !== null) {
       window.requestAnimationFrame(() => {
-        window.scrollTo({ top: preservedScrollY, behavior: "auto" });
+        if (isPageContextCurrent(pageContext)) window.scrollTo({ top: preservedScrollY, behavior: "auto" });
       });
     }
     void loadDeferredCaseMedia(issueId, requestSeq);
     scheduleTrailDetailMetadata(issueId, requestSeq);
     prefetchAdjacentCaseCores(issueId);
   } catch (error) {
-    if (requestSeq !== state.caseRequestSeq || state.selectedId !== issueId) return;
+    if (requestSeq !== state.caseRequestSeq || state.selectedId !== issueId || !isPageContextCurrent(pageContext)) return;
     if (loadingTimer !== null) {
       window.clearTimeout(loadingTimer);
       loadingTimer = null;
@@ -1077,7 +1080,8 @@ async function loadDeferredCaseMedia(issueId, requestSeq) {
 }
 
 async function navigateAdjacentCase(delta) {
-  if (!state.selectedId || ![-1, 1].includes(delta)) return;
+  const pageContext = capturePageContext();
+  if (state.activePage !== "review" || !state.selectedId || ![-1, 1].includes(delta)) return;
   const preserveScrollY = window.scrollY;
   let index = state.cases.findIndex((item) => item.issue_id === state.selectedId);
   if (index < 0) return;
@@ -1092,6 +1096,7 @@ async function navigateAdjacentCase(delta) {
     await loadCases({ keepSelection: true, page: state.casePage + 1 });
     targetIndex = 0;
   }
+  if (!isPageContextCurrent(pageContext)) return;
   const target = state.cases[targetIndex];
   if (target) {
     await selectCase(target.issue_id, {

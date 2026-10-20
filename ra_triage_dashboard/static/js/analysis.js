@@ -1610,6 +1610,7 @@ async function enterAnalysisPage({ includeOverview = false } = {}) {
 }
 
 async function loadReviewReasonAnalysis({ keepPainted = false } = {}) {
+  const pageContext = capturePageContext();
   const requestSeq = ++state.reviewAnalysis.requestSeq;
   try {
     await loadAnalysisWorkSplits();
@@ -1618,13 +1619,14 @@ async function loadReviewReasonAnalysis({ keepPainted = false } = {}) {
     // must not block the analysis payload or an already URL-selected Split.
     renderAnalysisWorkSplitPicker(state.reviewAnalysis.workSplitId);
   }
+  if (!isPageContextCurrent(pageContext) || requestSeq !== state.reviewAnalysis.requestSeq) return;
   const params = buildAnalysisQueryParams({ includePagination: true });
   // Keep existing paint when revisiting the tab; avoid blanking for a snappier switch.
   if (!keepPainted) {
     $("#analysisCaseSummary").textContent = "正在加载最新 Review…";
   }
   const data = await api(`/api/review-reason-analysis?${params.toString()}`);
-  if (requestSeq !== state.reviewAnalysis.requestSeq) return;
+  if (requestSeq !== state.reviewAnalysis.requestSeq || !isPageContextCurrent(pageContext)) return;
   state.reviewAnalysis.data = data;
   // Spin on first paint / filter reloads; skip when quietly revalidating a painted tab.
   renderReviewReasonAnalysis(data, { animatePies: !keepPainted });
@@ -1672,12 +1674,14 @@ function applyAnalysisComparisonSelection() {
 }
 
 async function reloadReviewAnalysis({ historyMode = "push" } = {}) {
+  if (state.activePage !== "analysis") return;
   applyAnalysisComparisonSelection();
   showPage("analysis", { historyMode });
   await Promise.all([loadReviewReasonAnalysis(), loadOverview()]);
 }
 
 function scheduleAnalysisFilterReload(delay = 0) {
+  if (state.activePage !== "analysis") return;
   if (state.reviewAnalysis.filterTimer) {
     window.clearTimeout(state.reviewAnalysis.filterTimer);
   }
@@ -1688,8 +1692,10 @@ function scheduleAnalysisFilterReload(delay = 0) {
     ...analysisRequestOptions(),
     page: 1,
   });
+  const pageContext = capturePageContext();
   state.reviewAnalysis.filterTimer = window.setTimeout(() => {
     state.reviewAnalysis.filterTimer = null;
+    if (!isPageContextCurrent(pageContext)) return;
     reloadReviewAnalysis({ historyMode: "replace" }).catch((error) => {
       showToast(error.message, true);
     });

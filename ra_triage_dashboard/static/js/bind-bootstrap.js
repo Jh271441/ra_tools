@@ -154,6 +154,7 @@ function bindGlobalSidebarShortcut() {
 }
 
 function scheduleReviewFilterReload(delay = 0) {
+  if (state.activePage !== "review") return;
   if (reviewSearchTimer) window.clearTimeout(reviewSearchTimer);
   // Serialize the current controls before waiting for the debounced API
   // request. A browser refresh during that gap must reopen the exact same
@@ -162,8 +163,10 @@ function scheduleReviewFilterReload(delay = 0) {
   if (typeof updateIssueQueryButton === "function") updateIssueQueryButton();
   state.casePage = 1;
   persistCurrentReviewRoute({ issue: "", issueIds: [], casePage: 1 });
+  const pageContext = capturePageContext();
   reviewSearchTimer = window.setTimeout(() => {
     reviewSearchTimer = null;
+    if (!isPageContextCurrent(pageContext)) return;
     reloadReviewGallery({ includeOverview: false, historyMode: "replace" }).catch(
       (error) => showToast(error.message, true)
     );
@@ -428,6 +431,7 @@ function bindEvents() {
     changeCasePageSize(event.target.value).catch((error) => showToast(error.message, true));
   });
   $("#refreshButton").addEventListener("click", async (event) => {
+    const pageContext = capturePageContext();
     try {
       if (event.shiftKey && ["intent", "intent-experiments", "intent-summary"].includes(state.activePage)) {
         resetIntentWorkspacePreferences(state.activePage);
@@ -467,6 +471,7 @@ function bindEvents() {
         return;
       }
       await refreshAll();
+      if (!isPageContextCurrent(pageContext)) return;
       if (state.activePage === "analysis") {
         await loadReviewReasonAnalysis();
       } else if (state.selectedId) {
@@ -1022,6 +1027,7 @@ function bindEvents() {
       issue: route.issue,
       restoreRoute: true,
     });
+    const pageContext = capturePageContext();
     try {
       await Promise.all([
         loadCases({ keepSelection: true, page: route.casePage }),
@@ -1029,6 +1035,7 @@ function bindEvents() {
         loadOverview(),
         loadWorkAssignees(),
       ]);
+      if (!isPageContextCurrent(pageContext)) return;
       if (route.issue) {
         if (route.issue !== state.selectedId || !state.selectedCase) {
           await selectCase(route.issue, { updateRoute: false });
@@ -1088,14 +1095,23 @@ async function bootstrap() {
     campaignLifecycle: initialRoute.campaignLifecycle,
     campaignQuery: initialRoute.campaignQuery,
   });
+  let bootstrapContext = capturePageContext();
   const sessionRequest = resolveSessionInBackground();
   try {
     await settleInitialRequests([loadConfig()], "基础配置");
+    if (!isPageContextCurrent(bootstrapContext, { matchUrl: false })) return;
+    if (!isPageContextCurrent(bootstrapContext)) {
+      Object.assign(initialRoute, parsePageRoute());
+      bootstrapContext = capturePageContext();
+    }
     let reviewTaskContextFailed = false;
     if (initialRoute.page === "review" && initialRoute.workSplitId) {
       await sessionRequest;
+      if (!isPageContextCurrent(bootstrapContext)) return;
       try {
-        await loadReviewTaskContext(initialRoute.workSplitId, { route: initialRoute });
+        const task = await loadReviewTaskContext(initialRoute.workSplitId, { route: initialRoute });
+        if (!task) return;
+        bootstrapContext = capturePageContext();
       } catch (error) {
         reviewTaskContextFailed = true;
         showToast(`任务范围加载失败：${error.message}`, true);
@@ -1106,10 +1122,12 @@ async function bootstrap() {
       intentAccessPages.includes(initialRoute.page)
       || initialRoute.page === "review-assignments"
       || initialRoute.page === "labeling"
+      || initialRoute.page === "labeling-summary"
       || initialRoute.page === "labeling-new-task"
     ) {
       await sessionRequest;
     }
+    if (!isPageContextCurrent(bootstrapContext, { matchUrl: false })) return;
     if (initialRoute.page === "users" && !state.session.is_admin) {
       initialRoute.page = "review";
       showToast(t("toast.admin_only"), true);
@@ -1133,6 +1151,10 @@ async function bootstrap() {
     if (["intent", "intent-summary"].includes(initialRoute.page) && !state.session.can_view_intent) {
       initialRoute.page = "review";
       showToast("意图标注仅对已授权标注人开放。", true);
+    }
+    if (initialRoute.page !== state.activePage) {
+      showPage(initialRoute.page, { historyMode: "replace" });
+      bootstrapContext = capturePageContext();
     }
     const defaultFailureOnly = Boolean(state.config?.default_failure_only);
     if (initialRoute.page === "runs" && initialRoute.runsFilters) {
@@ -1184,6 +1206,11 @@ async function bootstrap() {
       );
     } else {
       state.selectedRunId = "";
+    }
+    if (!isPageContextCurrent(bootstrapContext, { matchUrl: false })) return;
+    if (!isPageContextCurrent(bootstrapContext)) {
+      Object.assign(initialRoute, parsePageRoute());
+      bootstrapContext = capturePageContext();
     }
     if (["comparison", "run-collections"].includes(initialRoute.page)) {
       applyRunComparisonRoute(initialRoute.comparisonFilters);
@@ -1284,14 +1311,17 @@ async function bootstrap() {
       await sharedDataPromise;
       await initialPageResults;
     }
+    if (!isPageContextCurrent(bootstrapContext)) return;
     setReviewComparisonStatus(state.reviewComparisonStatus, {
       hasRun: Boolean(state.selectedRunId),
     });
     if (initialDetailRequest) {
       await settleInitialRequests([initialDetailRequest], "问题详情");
+      if (!isPageContextCurrent(bootstrapContext)) return;
     }
     if (initialRoute.openComments && initialRoute.issue) {
       await sessionRequest;
+      if (!isPageContextCurrent(bootstrapContext)) return;
       if (initialRoute.page === "labeling") {
         await openCaseLabelingDiscussion(
           initialRoute.commentId || 0,
@@ -1305,6 +1335,7 @@ async function bootstrap() {
         });
       }
     }
+    if (!isPageContextCurrent(bootstrapContext)) return;
     showPage(initialRoute.page, {
       historyMode: "replace",
       issue: initialRoute.issue,
@@ -1343,14 +1374,17 @@ async function bootstrap() {
     }
     if (initialRoute.page === "review") {
       // Defer cluster strip so it does not compete with gallery thumbs.
+      const clusterContext = capturePageContext();
       window.setTimeout(() => {
+        if (!isPageContextCurrent(clusterContext)) return;
         void loadClusters().catch(() => {});
       }, 250);
     }
   } catch (error) {
     showToast(`启动失败：${error.message}`, true);
+  } finally {
+    startChangePolling();
   }
-  startChangePolling();
 }
 
 if (document.readyState === "loading") {

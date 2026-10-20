@@ -49,6 +49,7 @@ function restoreCaseLabelingRouteState(route = null) {
 }
 
 function persistCaseLabelingRoute(overrides = {}, mode = "replace") {
+  if (state.activePage !== "labeling") return;
   const url = pageUrl("labeling", caseLabelingRouteOptions(overrides));
   window.history[mode === "push" ? "pushState" : "replaceState"](
     { page: "labeling" }, "", url
@@ -918,6 +919,7 @@ function renderCaseLabelingList(data) {
 }
 
 async function loadCaseLabelingCases({ page = state.caseLabeling.page, persistRoute = true } = {}) {
+  const pageContext = capturePageContext();
   const seq = ++state.caseLabeling.requestSeq;
   if (!selectedActiveLabelingBaselineIds().length) {
     if (seq !== state.caseLabeling.requestSeq) return;
@@ -947,7 +949,7 @@ async function loadCaseLabelingCases({ page = state.caseLabeling.page, persistRo
     page_size: String(state.caseLabeling.pageSize || DEFAULT_CASE_PAGE_SIZE),
   });
   const result = await api(`/api/labeling/cases?${params}`);
-  if (seq !== state.caseLabeling.requestSeq) return;
+  if (seq !== state.caseLabeling.requestSeq || !isPageContextCurrent(pageContext)) return;
   state.caseLabeling.page = result.page || 1;
   state.caseLabeling.data = result;
   state.caseLabeling.labelers = result.labelers || [];
@@ -1406,11 +1408,12 @@ function renderCaseLabelingEditor(caseData) {
 
 async function selectCaseLabelingIssue(issueId, { updateRoute = true } = {}) {
   const normalized = String(issueId || "").trim();
-  if (!normalized) return;
+  if (!normalized || state.activePage !== "labeling") return;
+  let pageContext = capturePageContext();
   const seq = ++state.caseLabeling.detailSeq;
   const task = state.caseLabeling.taskId ? `&task_id=${encodeURIComponent(state.caseLabeling.taskId)}` : "";
   const caseData = await api(withBaselineQuery(`/api/labeling/cases/${encodeURIComponent(normalized)}?${task ? task.slice(1) : ""}`));
-  if (seq !== state.caseLabeling.detailSeq) return;
+  if (seq !== state.caseLabeling.detailSeq || !isPageContextCurrent(pageContext)) return;
   state.caseLabeling.issueId = normalized;
   state.caseLabeling.caseData = caseData;
   state.caseLabeling.dirty = false;
@@ -1423,8 +1426,9 @@ async function selectCaseLabelingIssue(issueId, { updateRoute = true } = {}) {
   renderCaseLabelingDetailMedia(caseData);
   renderCaseLabelingEditor(caseData);
   if (updateRoute) persistCaseLabelingRoute({ issue: normalized }, "push");
+  pageContext = capturePageContext();
   void startTrailDetailMetadata(normalized, seq).then((result) => {
-    if (seq !== state.caseLabeling.detailSeq || state.caseLabeling.issueId !== normalized) return;
+    if (seq !== state.caseLabeling.detailSeq || state.caseLabeling.issueId !== normalized || !isPageContextCurrent(pageContext)) return;
     caseData.external_links = result?.external_links || {};
     caseData.trail_metadata_status = result?.status || "unavailable";
     const links = $("#caseLabelingExternalLinks");
@@ -1435,12 +1439,12 @@ async function selectCaseLabelingIssue(issueId, { updateRoute = true } = {}) {
   });
   try {
     const media = await api(`/api/cases/${encodeURIComponent(normalized)}/media`);
-    if (seq !== state.caseLabeling.detailSeq || state.caseLabeling.issueId !== normalized) return;
+    if (seq !== state.caseLabeling.detailSeq || state.caseLabeling.issueId !== normalized || !isPageContextCurrent(pageContext)) return;
     Object.assign(caseData, media);
     caseData.media_status = "";
     renderCaseLabelingDetailMedia(caseData);
   } catch (error) {
-    if (seq === state.caseLabeling.detailSeq) {
+    if (seq === state.caseLabeling.detailSeq && isPageContextCurrent(pageContext)) {
       $("#caseLabelingMedia").innerHTML = `<div class="empty-state"><h2>媒体加载失败</h2><p>${escapeHtml(error.message)}</p></div>`;
     }
   }
@@ -1850,8 +1854,10 @@ async function enterCaseLabeling({ route = null } = {}) {
     if (typeof showPage === "function") showPage("review", { historyMode: "replace" });
     return;
   }
+  const pageContext = capturePageContext();
   const filters = restoreCaseLabelingRouteState(route);
   await loadCaseLabelingTasks();
+  if (!isPageContextCurrent(pageContext)) return;
   renderCaseLabelingStatusPicker();
   renderCaseLabelingAuthorPicker();
   renderCaseLabelingAssigneePicker();
@@ -1860,6 +1866,7 @@ async function enterCaseLabeling({ route = null } = {}) {
   renderCaseLabelingDiscussionPicker();
   renderCaseLabelingExclusionPicker();
   await loadCaseLabelingCases({ page: state.caseLabeling.page, persistRoute: false });
+  if (!isPageContextCurrent(pageContext)) return;
   const issue = route?.issue || filters.issue || "";
   if (issue) await selectCaseLabelingIssue(issue, { updateRoute: true });
   else closeCaseLabelingDetail({ updateRoute: false });
@@ -1888,7 +1895,9 @@ function bindCaseLabelingEvents() {
       state.caseLabeling.issueIds = [];
       if (typeof updateIssueQueryButton === "function") updateIssueQueryButton();
     }
+    const pageContext = capturePageContext();
     timer = window.setTimeout(() => {
+      if (!isPageContextCurrent(pageContext) || state.activePage !== "labeling") return;
       state.caseLabeling.search = $("#caseLabelingSearch").value.trim();
       loadCaseLabelingCases({ page: 1 }).catch((error) => showToast(error.message, true));
     }, 250);

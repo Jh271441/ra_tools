@@ -350,15 +350,20 @@ async function jumpToQueueIndex(raw) {
 }
 
 async function changeCasePage(delta) {
+  if (state.activePage !== "review") return;
+  const pageContext = capturePageContext();
   const targetPage = state.casePage + delta;
   if (targetPage < 1 || targetPage > totalCasePages()) return;
   state.galleryScrollY = 0;
   clearPendingReviewImages();
   await loadCases({ keepSelection: false, page: targetPage });
+  if (!isPageContextCurrent(pageContext)) return;
   showPage("review", { historyMode: "push", issue: "" });
 }
 
 async function jumpToCasePage(raw) {
+  if (state.activePage !== "review") return;
+  const pageContext = capturePageContext();
   const totalPages = totalCasePages();
   const input = $("#casePageJump");
   const text = String(raw ?? "").trim();
@@ -379,10 +384,13 @@ async function jumpToCasePage(raw) {
   state.galleryScrollY = 0;
   clearPendingReviewImages();
   await loadCases({ keepSelection: false, page: target });
+  if (!isPageContextCurrent(pageContext)) return;
   showPage("review", { historyMode: "push", issue: "" });
 }
 
 async function changeCasePageSize(value) {
+  if (state.activePage !== "review") return;
+  const pageContext = capturePageContext();
   const nextPageSize = CASE_PAGE_SIZES.includes(Number(value))
     ? Number(value)
     : DEFAULT_CASE_PAGE_SIZE;
@@ -392,6 +400,7 @@ async function changeCasePageSize(value) {
   state.galleryScrollY = 0;
   clearPendingReviewImages();
   await loadCases({ keepSelection: false, page: 1 });
+  if (!isPageContextCurrent(pageContext)) return;
   showPage("review", { historyMode: "push", issue: "" });
 }
 
@@ -647,6 +656,7 @@ async function loadCases({
   keepSelection = true,
   page = state.casePage,
 } = {}) {
+  const pageContext = capturePageContext();
   const requestSeq = ++state.caseListRequestSeq;
   state.casePage = Math.max(1, Number(page) || 1);
   const params = new URLSearchParams();
@@ -711,7 +721,7 @@ async function loadCases({
   params.set("include_thumbnail", "true");
   appendBaselineParams(params);
   const data = await api(`/api/cases?${params.toString()}`);
-  if (requestSeq !== state.caseListRequestSeq) return;
+  if (requestSeq !== state.caseListRequestSeq || !isPageContextCurrent(pageContext)) return;
   const totalPages = Math.max(
     1,
     Math.ceil(Number(data.total || 0) / state.casePageSize)

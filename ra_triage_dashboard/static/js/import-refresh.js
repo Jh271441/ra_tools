@@ -265,16 +265,19 @@ async function syncTrail(mode = "preview") {
 }
 
 async function refreshAll({ resetSelection = false } = {}) {
+  const pageContext = capturePageContext();
   // Capture reviewer selections before any refresh work rebuilds a facet.
   // Their URL-backed values must survive both the Review and Analysis pages.
   const reviewerSelections = typeof reviewerFilterSelections === "function"
     ? reviewerFilterSelections()
     : undefined;
   await loadConfig();
+  if (!isPageContextCurrent(pageContext)) return;
   // “No overlay Run” is an intentional filter state.  Re-selecting the team
   // default here changes reviewer facets and used to make an active reviewer
   // filter appear to disappear after a top-bar refresh.
   await loadRuns({ preserveEmpty: !state.selectedRunId });
+  if (!isPageContextCurrent(pageContext)) return;
   await Promise.all([
     loadStatus(),
     loadOverview(),
@@ -283,6 +286,7 @@ async function refreshAll({ resetSelection = false } = {}) {
     loadReviewers(reviewerSelections),
     loadWorkAssignees(),
   ]);
+  if (!isPageContextCurrent(pageContext)) return;
   if (state.activePage === "trail-update" && typeof loadTrailAttributePreview === "function") {
     await loadTrailAttributePreview(true);
   }
@@ -292,6 +296,8 @@ async function reloadReviewGallery({
   includeOverview = true,
   historyMode = "push",
 } = {}) {
+  if (state.activePage !== "review") return;
+  const pageContext = capturePageContext();
   const reloadSeq = ++state.reviewReloadSeq;
   state.casePage = 1;
   state.galleryScrollY = 0;
@@ -303,7 +309,7 @@ async function reloadReviewGallery({
   ];
   if (includeOverview) requests.push(loadOverview());
   await Promise.all(requests);
-  if (reloadSeq !== state.reviewReloadSeq) return;
+  if (reloadSeq !== state.reviewReloadSeq || !isPageContextCurrent(pageContext)) return;
   showPage("review", { historyMode, issue: "" });
 }
 

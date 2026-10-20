@@ -62,6 +62,7 @@ function renderReviewTaskLoading(splitId = state.reviewWorkSplitId) {
 }
 
 function clearReviewTaskContext({ clearRun = true } = {}) {
+  state.reviewTaskContextRequestSeq = Number(state.reviewTaskContextRequestSeq || 0) + 1;
   state.reviewWorkSplitId = "";
   state.availableReviewWorkSplitId = "";
   state.reviewTaskContext = null;
@@ -100,6 +101,11 @@ async function loadReviewTaskContext(splitId, { route = null } = {}) {
     clearReviewTaskContext({ clearRun: false });
     return null;
   }
+  if (state.activePage !== "review") return null;
+  const pageContext = capturePageContext();
+  const requestSeq = Number(state.reviewTaskContextRequestSeq || 0) + 1;
+  state.reviewTaskContextRequestSeq = requestSeq;
+  const isCurrent = () => requestSeq === state.reviewTaskContextRequestSeq && isPageContextCurrent(pageContext);
   state.reviewWorkSplitId = normalized;
   state.reviewTaskContextLoading = true;
   state.reviewTaskContextError = null;
@@ -107,6 +113,7 @@ async function loadReviewTaskContext(splitId, { route = null } = {}) {
   renderReviewTaskContext();
   try {
     const result = await api(`/api/review-task-context/${encodeURIComponent(normalized)}`);
+    if (!isCurrent()) return null;
     const task = result.task || {};
     state.reviewTaskContext = task;
     state.reviewTaskContextLoading = false;
@@ -137,6 +144,7 @@ async function loadReviewTaskContext(splitId, { route = null } = {}) {
     renderReviewWorkSplitPicker(normalized);
     return task;
   } catch (error) {
+    if (!isCurrent()) return null;
     state.reviewTaskContextLoading = false;
     state.reviewTaskContextError = error;
     if ($("#issueList")) $("#issueList").innerHTML = "";

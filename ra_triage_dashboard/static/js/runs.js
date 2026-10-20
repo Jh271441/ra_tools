@@ -370,7 +370,13 @@ async function loadRuns({
   preserveEmpty = false,
   clearIncompatible = false,
 } = {}) {
+  const pageContext = capturePageContext();
+  const requestedRunId = state.selectedRunId;
+  const requestedBaselines = selectedBaselineQueryValue();
   const data = await api(withBaselineQuery("/api/model-runs"));
+  if (!isPageContextCurrent(pageContext, { matchUrl: false })
+      || requestedRunId !== state.selectedRunId
+      || requestedBaselines !== selectedBaselineQueryValue()) return;
   state.modelRuns = data.items || [];
   const select = $("#modelRunFilter");
   const picker = $("#modelRunPicker");
