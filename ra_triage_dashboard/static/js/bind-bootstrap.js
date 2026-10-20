@@ -1138,9 +1138,9 @@ async function bootstrap() {
       initialRoute.page = "review";
       showToast(t("toast.admin_only"), true);
     }
-    if (initialRoute.page === "review-assignments" && !state.session.is_admin) {
+    if (initialRoute.page === "review-assignments" && !hasDashboardWriteRole()) {
       initialRoute.page = "review";
-      showToast("当前账号没有任务分配管理权限。", true);
+      showToast("查看任务分配需要 writer 或管理员权限。", true);
     }
     if (["labeling", "labeling-summary"].includes(initialRoute.page) && !hasDashboardWriteRole()) {
       initialRoute.page = "review";
@@ -1264,7 +1264,7 @@ async function bootstrap() {
     } else if (initialRoute.page === "labeling-new-task") {
       initialPageRequests.push(enterLabelingNewTask({ route: initialRoute }));
     } else if (initialRoute.page === "review-assignments") {
-      initialPageRequests.push(loadAccessUsers(), loadReviewAssignments({
+      initialPageRequests.push(loadReviewAssignments({
         splitId: initialRoute.reviewAssignmentSplitId,
       }));
     } else if (initialRoute.page === "labeling-summary") {

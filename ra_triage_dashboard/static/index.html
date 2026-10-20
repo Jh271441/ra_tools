@@ -82,7 +82,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-577`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-578`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -154,7 +154,7 @@
                 </span>
                 <span class="sidebar-label"><strong class="ui-lang-zh">判错复核</strong><strong class="ui-lang-en">Failure review</strong></span>
               </a>
-              <a class="sidebar-item" id="reviewAssignmentsNavButton" data-session-nav="admin" inert aria-disabled="true" data-page-target="review-assignments" data-app-path="/review-assignments" href="/review-assignments" title="任务分配" hidden>
+              <a class="sidebar-item" id="reviewAssignmentsNavButton" data-session-nav="writer" inert aria-disabled="true" data-page-target="review-assignments" data-app-path="/review-assignments" href="/review-assignments" title="任务分配" hidden>
                 <span class="sidebar-icon" aria-hidden="true">
                   <svg viewBox="0 0 24 24" focusable="false"><rect class="icon-wash" x="4" y="4" width="16" height="16" rx="3"/><path d="M8 8h8M8 12h5M8 16h8"/><path class="icon-emphasis" d="m14 12 2 2 4-5"/></svg>
                 </span>
@@ -585,7 +585,7 @@
             <section class="review-assignments-header page-card assignment-composer">
               <div class="review-assignments-header-main">
                 <div>
-                  <h2><span class="ui-lang-zh">分配配置</span><span class="ui-lang-en">Assignment setup</span></h2>
+                  <h2 id="reviewAssignmentsHeading"><span class="ui-lang-zh">分配配置</span><span class="ui-lang-en">Assignment setup</span></h2>
                 </div>
                 <div class="review-assignments-header-actions">
                   <button class="button button-quiet" id="reviewAssignmentsGoReview" type="button"><span class="ui-lang-zh">返回图库筛选</span><span class="ui-lang-en">Filter in gallery</span></button>
@@ -2448,7 +2448,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-577`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-578`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

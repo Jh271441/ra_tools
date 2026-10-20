@@ -562,6 +562,7 @@ async function loadWorkAssignees() {
 function updateWorkSplitAdminVisibility() {
   const button = $("#splitFilteredButton");
   const isAdmin = Boolean(state.session?.is_admin);
+  if (typeof renderReviewAssignmentPermissions === "function") renderReviewAssignmentPermissions();
   const analysisField = $("#analysisWorkAgreementField");
   // Agreement is a read-only analysis filter and is available to every
   // viewer.  Only assignment/redistribution remains administrator-only.

@@ -42,7 +42,7 @@ from ..support.external_links import (
     resolve_disable_ra_simulation_version,
 )
 from ..support.filter_parsing import _case_filter_kwargs
-from ..support.identity import _admin_identity
+from ..support.identity import _admin_identity, _writer_identity
 from ..support.thumbnails import _render_case_thumbnail, _thumbnail_cache_path
 from ..review_workflow import derive_review_status, effective_expected_output
 from ..auth import SessionIdentity, normalise_username, request_identity
@@ -737,9 +737,9 @@ async def list_case_work_splits(
     lifecycle: str = "current",
     assigned_to_me: bool = False,
 ) -> dict[str, Any]:
-    """Admin-only history and progress for Review task allocations."""
+    """Writer/admin history and progress for Review task allocations."""
 
-    identity = await asyncio.to_thread(_admin_identity, request)
+    identity = await asyncio.to_thread(_writer_identity, request)
     try:
         lifecycle = normalize_task_lifecycle(lifecycle)
     except ValueError as exc:
@@ -845,9 +845,9 @@ async def get_case_work_split(
     status: str = "all",
     q: str = "",
 ) -> dict[str, Any]:
-    """Admin-only paginated task detail for one allocation batch."""
+    """Writer/admin paginated task detail for one allocation batch."""
 
-    await asyncio.to_thread(_admin_identity, request)
+    await asyncio.to_thread(_writer_identity, request)
     try:
         result = await asyncio.to_thread(
             database.get_review_work_split,

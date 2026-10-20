@@ -81,7 +81,7 @@ class TaskLifecycleTest(unittest.TestCase):
     def test_api_default_and_my_history_use_same_scope_and_metrics(self):
         from ra_triage_dashboard.app.routers import cases
         active, old, cancelled, _ = self.fixture()
-        with patch.object(cases, "database", self.db), patch.object(cases, "_admin_identity", return_value=SimpleNamespace(username="alice")):
+        with patch.object(cases, "database", self.db), patch.object(cases, "_writer_identity", return_value=SimpleNamespace(username="alice")):
             current = asyncio.run(cases.list_case_work_splits(None))
             history = asyncio.run(cases.list_case_work_splits(None,lifecycle="history",assigned_to_me=True))
         self.assertEqual([x["split_id"] for x in current["items"]], [active["id"]])
@@ -89,6 +89,40 @@ class TaskLifecycleTest(unittest.TestCase):
         self.assertEqual([x["split_id"] for x in history["items"]], [old["id"]])
         self.assertEqual(history["metrics"]["assignment_count"], 1)
         self.assertEqual(history["metrics"]["completed_count"], 1)
+
+    def test_writer_and_admin_can_read_current_history_my_tasks_and_detail(self):
+        from ra_triage_dashboard.app.routers import cases
+        from ra_triage_dashboard.app.support import identity as identity_support
+        active, old, _, _ = self.fixture()
+        for role in ("writer", "admin"):
+            self.db.set_access_user(username="alice", role=role, actor="tester")
+            identity = SimpleNamespace(username="alice", verified=True, source="test")
+            with self.subTest(role=role), patch.object(cases, "database", self.db), patch.object(identity_support, "database", self.db), patch.object(identity_support, "request_identity", return_value=identity):
+                current = asyncio.run(cases.list_case_work_splits(None, assigned_to_me=True))
+                history = asyncio.run(cases.list_case_work_splits(None, lifecycle="history", assigned_to_me=True))
+                detail = asyncio.run(cases.get_case_work_split(active["id"], None))
+                audit = asyncio.run(cases.get_case_work_split(old["id"], None))
+            self.assertEqual([x["split_id"] for x in current["items"]], [active["id"]])
+            self.assertEqual(current["metrics"]["assignment_count"], 1)
+            self.assertEqual(history["metrics"]["completed_count"], 1)
+            self.assertEqual(detail["assignment_count"], 2)
+            self.assertFalse(audit["is_current"])
+
+    def test_viewer_or_unverified_cannot_read_and_writer_cannot_manage(self):
+        from fastapi import HTTPException
+        from ra_triage_dashboard.app.routers import cases
+        from ra_triage_dashboard.app.support import identity as identity_support
+        for role, verified in (("viewer", True), ("writer", False), ("admin", False), ("writer", True)):
+            self.db.set_access_user(username="alice", role=role, actor="tester")
+            identity = SimpleNamespace(username="alice", verified=verified, source="test")
+            calls = [lambda: cases.split_case_work(None), lambda: cases.reassign_case_work_item("any-task", "cn1", None)]
+            if role != "writer" or not verified:
+                calls += [lambda: cases.list_case_work_splits(None), lambda: cases.get_case_work_split("any-task", None)]
+            with self.subTest(role=role, verified=verified), patch.object(identity_support, "database", self.db), patch.object(identity_support, "request_identity", return_value=identity):
+                for call in calls:
+                    with self.assertRaises(HTTPException) as denied:
+                        asyncio.run(call())
+                    self.assertEqual(denied.exception.status_code, 403)
 
     def test_history_cards_metrics_and_filter_cache_in_browser_logic(self):
         result = subprocess.run(["node", str(Path(__file__).with_name("task_lifecycle_ui.cjs"))], cwd=Path(__file__).resolve().parents[2], capture_output=True, text=True)

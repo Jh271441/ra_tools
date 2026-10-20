@@ -275,6 +275,7 @@ function reviewAssignmentPersonOptions(selected = "") {
 }
 
 function renderReviewAssignmentRowPersonPickers() {
+  if (!state.session?.is_admin) return;
   document.querySelectorAll("#reviewAssignmentDetailRows .review-assignment-person-picker").forEach((root) => {
     const native = root.querySelector(".ui-select-native");
     const selected = native?.value || root.dataset.selectedAssignee || "";
@@ -360,12 +361,12 @@ function renderReviewAssignmentDetail() {
     rows.innerHTML = `<tr><td colspan="6" class="review-assignment-empty">${escapeHtml(detail.is_current ? uiText("没有符合当前筛选的任务。", "No tasks match these filters.") : uiText("该批次的任务已被后续分配覆盖。", "This batch has been superseded."))}</td></tr>`;
   } else {
     rows.innerHTML = detail.items.map((item) => {
-      const locked = item.submitted || !detail.is_current;
+      const locked = !state.session?.is_admin || item.submitted || !detail.is_current;
       const picker = locked
         ? `<span class="review-assignment-locked">${escapeHtml(item.assignee)}${item.submitted ? ` · ${escapeHtml(uiText("已提交", "submitted"))}` : ""}</span>`
         : `<div class="ui-select review-assignment-person-picker" data-selected-assignee="${escapeHtml(item.assignee)}"><button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="ui-select-summary">${escapeHtml(item.assignee)}</span><span class="ui-select-caret" aria-hidden="true"></span></button><div class="ui-select-panel" role="listbox" hidden></div><select class="ui-select-native" aria-hidden="true" tabindex="-1"></select></div>`;
       const save = locked
-        ? `<span class="review-assignment-locked">${escapeHtml(item.submitted ? uiText("已完成，锁定", "Completed; locked") : uiText("历史批次，只读", "Read-only history"))}</span>`
+        ? `<span class="review-assignment-locked">${escapeHtml(item.submitted ? uiText("已完成，锁定", "Completed; locked") : !detail.is_current ? uiText("历史批次，只读", "Read-only history") : uiText("仅管理员可转派", "Only admins can transfer"))}</span>`
         : `<button class="button button-quiet review-assignment-save" type="button" data-review-assignment-save disabled>${escapeHtml(uiText("保存转派", "Save transfer"))}</button>`;
       return `<tr data-review-assignment-row data-issue-id="${escapeHtml(item.issue_id)}" data-original-assignee="${escapeHtml(item.assignee)}"><td>${detail.is_current ? `<a class="review-assignment-issue-link" href="${escapeHtml(reviewAssignmentIssueHref(item))}">${escapeHtml(item.issue_id)}</a>` : `<span class="review-assignment-locked">${escapeHtml(item.issue_id)}</span>`}${item.title || item.scenario ? `<small class="review-assignment-issue-meta" title="${escapeHtml(item.title || item.scenario)}">${escapeHtml(item.title || item.scenario)}</small>` : ""}</td><td>${picker}</td><td>${escapeHtml(reviewAssignmentTaskTypeLabel(item.assignment_kind))}</td><td>${reviewAssignmentTaskStatusMarkup(item)}</td><td>${escapeHtml(item.submitted_at ? formatTime(item.submitted_at) : "—")}</td><td>${save}</td></tr>`;
     }).join("");
@@ -396,8 +397,20 @@ function renderReviewAssignmentDetail() {
   }
 }
 
+function renderReviewAssignmentPermissions() {
+  const isAdmin = Boolean(state.session?.is_admin);
+  const heading = $("#reviewAssignmentsHeading");
+  if (heading) heading.textContent = isAdmin
+    ? uiText("分配配置", "Assignment setup") : uiText("任务分配", "Review assignments");
+  if (!isAdmin) {
+    const panel = $("#workSplitPanel");
+    if (panel) panel.hidden = true;
+  }
+}
+
 function renderReviewAssignmentPage() {
   if (!$("#reviewAssignmentsPage")) return;
+  renderReviewAssignmentPermissions();
   renderReviewAssignmentListFilters();
   renderReviewAssignmentMetrics(state.reviewAssignments.splits || []);
   renderReviewAssignmentList();
@@ -499,6 +512,10 @@ async function loadReviewAssignments({ force = false, splitId = "", reloadDetail
 }
 
 async function reassignReviewAssignment(row, button) {
+  if (!state.session?.is_admin) {
+    showToast(uiText("仅管理员可转派任务。", "Only admins can transfer tasks."), true);
+    return;
+  }
   const store = state.reviewAssignments;
   const detail = store.detail;
   const issueId = row?.dataset.issueId || "";

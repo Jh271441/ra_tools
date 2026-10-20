@@ -87,6 +87,7 @@ function updateDerivedReviewStatusPreview(expectedOutput, conflictKind = "") {
   if (form) form.dataset.expectedOutputConflict = conflict ? "1" : "0";
   const submit = form?.querySelector('button[type="submit"]');
   if (submit && !state.savingAnnotation) submit.disabled = conflict;
+  renderCombinedReviewContextStatus();
   if (!preview) return;
   preview.dataset.status = status;
   preview.dataset.conflict = conflictKind;
@@ -613,6 +614,7 @@ function renderReview(caseData) {
       </section>
       <label><span><span class="ui-lang-zh">复核人${authorLocked ? "（SSO）" : "（必填）"}</span><span class="ui-lang-en">Reviewer${authorLocked ? " (SSO)" : " (required)"}</span></span><input id="annotationAuthor" value="${escapeHtml(author)}" placeholder="姓名或工号" autocomplete="off" required ${authorLocked ? "readonly" : ""} /></label>
       <button class="button button-primary full-width review-save-button" id="reviewSaveButton" type="submit" aria-keyshortcuts="Enter" title="输入原因时按 Enter 保存；Shift+Enter 换行" ${runBoundModelReview ? "" : "disabled"}><span class="ui-lang-zh">保存新的模型复核版本</span><span class="ui-lang-en">Save model review version</span><kbd class="review-save-shortcut" aria-hidden="true">Enter</kbd></button>
+      ${combinedMode ? '<div class="combined-review-context-status" id="combinedReviewContextStatus" role="status" aria-live="polite" hidden></div>' : ""}
     </form>`;
   if (!runBoundModelReview) {
     $("#annotationForm")?.querySelectorAll(
@@ -746,21 +748,72 @@ function populateCombinedCaseLabel(context, caseData) {
   }
 }
 
+function combinedReviewContextKey(caseData) {
+  return JSON.stringify([
+    String(caseData?.issue_id || ""), currentReviewRunId(caseData),
+    String(state.reviewWorkSplitId || ""), String(state.session?.username || "").toLowerCase(),
+  ]);
+}
+
+function renderCombinedReviewContextStatus() {
+  const root = $("#combinedReviewContextStatus");
+  if (!root) return;
+  const load = state.combinedReviewLoad;
+  const current = load?.key === combinedReviewContextKey(state.selectedCase);
+  const ready = current && load.status === "ready";
+  const loading = current && load.status === "loading";
+  root.hidden = ready;
+  root.dataset.status = loading ? "loading" : "error";
+  root.innerHTML = loading
+    ? escapeHtml(uiText("正在加载联合复核上下文…", "Loading combined review context…"))
+    : `<span>${escapeHtml(current && load.error || uiText("联合复核上下文未就绪。", "Combined review context is not ready."))}</span><button class="button button-quiet" type="button" data-retry-combined-context>${escapeHtml(uiText("重试加载", "Retry loading"))}</button>`;
+  root.querySelector("[data-retry-combined-context]")?.addEventListener("click", () => {
+    loadCombinedReviewContext(state.selectedCase).catch((error) => showToast(error.message, true));
+  });
+  const save = $("#reviewSaveButton");
+  if (save) save.disabled = !ready || Boolean(state.savingAnnotation) || !hasDashboardWriteRole()
+    || Boolean(state.session?.read_only) || $("#annotationForm")?.dataset.expectedOutputConflict === "1";
+}
+
 async function loadCombinedReviewContext(caseData) {
-  if (state.selectedCase !== caseData) return;
+  if (state.selectedCase !== caseData || state.activePage !== "review") return;
   const requestSeq = (state.combinedReviewContextRequestSeq || 0) + 1;
   state.combinedReviewContextRequestSeq = requestSeq;
   const runId = currentReviewRunId(caseData);
+  const key = combinedReviewContextKey(caseData);
+  const pageContext = capturePageContext();
+  const current = () => state.combinedReviewContextRequestSeq === requestSeq
+    && state.selectedCase === caseData && combinedReviewContextKey(caseData) === key
+    && isPageContextCurrent(pageContext, { matchUrl: false });
   state.combinedReviewContext = null;
-  const campaignId = combinedReviewCampaignBinding(caseData);
-  const params = new URLSearchParams();
-  if (runId) params.set("model_run_id", runId);
-  if (campaignId) params.set("campaign_id", campaignId);
-  const result = await api(`/api/cases/${encodeURIComponent(caseData.issue_id)}/combined-review-context?${params.toString()}`);
-  if (state.combinedReviewContextRequestSeq !== requestSeq ||
-      state.selectedCase !== caseData || currentReviewRunId(caseData) !== runId ||
-      String(state.reviewWorkSplitId || "") !== campaignId) return;
-  populateCombinedCaseLabel(result.context || {}, caseData);
+  state.combinedReviewLoad = { key, status: "loading" };
+  renderCombinedReviewContextStatus();
+  try {
+    const campaignId = combinedReviewCampaignBinding(caseData);
+    const params = new URLSearchParams();
+    if (runId) params.set("model_run_id", runId);
+    if (campaignId) params.set("campaign_id", campaignId);
+    const result = await api(`/api/cases/${encodeURIComponent(caseData.issue_id)}/combined-review-context?${params.toString()}`);
+    if (!current()) return;
+    const context = result.context;
+    if (!context?.assigned || String(context.issue?.issue_id || "") !== String(caseData.issue_id)
+        || String(context.campaign?.id || "") !== campaignId
+        || String(context.campaign?.evaluation_run_id || "") !== runId) {
+      throw new Error("联合复核返回的任务上下文不一致，请从任务入口重新打开。");
+    }
+    state.combinedReviewContext = context;
+    state.combinedReviewLoad = { key, status: "ready" };
+    // A delayed initial load or retry must not overwrite edits or a restored draft.
+    if (!state.reviewFormDirty) populateCombinedCaseLabel(context, caseData);
+    renderCombinedReviewContextStatus();
+    return context;
+  } catch (error) {
+    if (!current()) return;
+    const message = uiText("联合复核上下文加载失败：", "Combined review context failed: ") + error.message;
+    state.combinedReviewLoad = { key, status: "error", error: message };
+    renderCombinedReviewContextStatus();
+    throw error;
+  }
 }
 
 function reviewSaveNavigationContext(issueId) {
@@ -1407,8 +1460,11 @@ async function saveCombinedReview(event) {
   const issueId = String(caseData?.issue_id || state.selectedId || "");
   if (!issueId || state.savingAnnotation) return;
   const context = state.combinedReviewContext;
-  if (!context || String(context.issue?.issue_id || "") !== issueId) {
-    showToast("联合复核上下文尚未加载，请稍候。", true);
+  if (!context || String(context.issue?.issue_id || "") !== issueId
+      || state.combinedReviewLoad?.key !== combinedReviewContextKey(caseData)
+      || state.combinedReviewLoad?.status !== "ready") {
+    renderCombinedReviewContextStatus();
+    showToast(state.combinedReviewLoad?.error || "联合复核上下文未就绪，请在提交按钮下重试加载。", true);
     return;
   }
   const expectedState = expectedOutputSelectionState();
@@ -1502,5 +1558,6 @@ async function saveCombinedReview(event) {
       button.disabled = false;
       button.removeAttribute("aria-busy");
     }
+    renderCombinedReviewContextStatus();
   }
 }

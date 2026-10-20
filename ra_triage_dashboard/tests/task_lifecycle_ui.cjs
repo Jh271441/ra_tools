@@ -18,6 +18,29 @@ assert(!elements.reviewAssignmentMetrics.innerHTML.includes('<strong>4</strong>'
 store.lifecycle='history';store.assignedToMe=true;
 assert(sandbox.reviewAssignmentDetailUrl('old').includes('lifecycle=history'));
 assert(sandbox.reviewAssignmentDetailUrl('old').includes('assigned_to_me=true'));
+// A writer can inspect live rows and enter Review, but cannot transfer ownership.
+for (const id of ['reviewAssignmentDetail', 'reviewAssignmentDetailTitle', 'reviewAssignmentDetailMeta', 'reviewAssignmentDetailRows', 'reviewAssignmentsHeading', 'workSplitPanel']) elements[id] = {};
+store.detail = {split_id:'active',model_run_id:'run',is_current:true,lifecycle:'active',members:[],items:[{issue_id:'cn1',assignee:'writer',submitted:false}]};
+store.detailRequestSeq=0;store.detailLoading=false;
+sandbox.renderReviewAssignmentDetailFilters=()=>{};
+sandbox.renderReviewAssignmentPermissions(); assert.equal(elements.workSplitPanel.hidden,true);
+assert.equal(elements.reviewAssignmentsHeading.textContent,'任务分配');
+sandbox.renderReviewAssignmentDetail();
+assert(elements.reviewAssignmentDetailRows.innerHTML.includes('review-assignment-issue-link'));
+assert(elements.reviewAssignmentDetailRows.innerHTML.includes('仅管理员可转派'));
+assert(!elements.reviewAssignmentDetailRows.innerHTML.includes('data-review-assignment-save'));
+assert(!elements.reviewAssignmentDetailRows.innerHTML.includes('review-assignment-person-picker'));
+assert(!elements.reviewAssignmentDetailRows.innerHTML.includes('历史批次'));
+const active={...old,split_id:'active',is_current:true,lifecycle:'active'};
+assert(sandbox.renderReviewAssignmentBatch(active).includes('去判错复核'));
+let adminUserReads=0; sandbox.loadAccessUsers=async()=>{adminUserReads++;};
+sandbox.reassignReviewAssignment({dataset:{issueId:'cn1',originalAssignee:'bob'},querySelector:()=>({value:'writer'})});
+assert.equal(requests.length,0,'writer transfer must not call PATCH');
+// Administrator controls remain available on unfinished, current tasks.
+sandbox.state.session.is_admin=true;sandbox.document={querySelectorAll:()=>[]};
+sandbox.renderReviewAssignmentDetail();
+assert(elements.reviewAssignmentDetailRows.innerHTML.includes('data-review-assignment-save'));
+sandbox.state.session.is_admin=false;
 sandbox.renderReviewAssignmentPage=()=>{};sandbox.restoreReviewAllocationDraft=async()=>{};
 store.splits=[old]; // A nonempty cached current list must not block historical fetch.
-(async()=>{await sandbox.loadReviewAssignments();assert.equal(requests.length,1);assert(requests[0].includes('lifecycle=history'));assert(requests[0].includes('assigned_to_me=true'));assert.equal(store.loadedKey,'history:true');console.log('history guards, scoped metrics, route and cache passed');})().catch(e=>{console.error(e);process.exitCode=1;});
+(async()=>{await sandbox.loadReviewAssignments();assert.equal(adminUserReads,0);assert.equal(requests.length,1);assert(requests[0].includes('lifecycle=history'));assert(requests[0].includes('assigned_to_me=true'));assert.equal(store.loadedKey,'history:true');console.log('history guards, scoped metrics, route and cache passed');})().catch(e=>{console.error(e);process.exitCode=1;});

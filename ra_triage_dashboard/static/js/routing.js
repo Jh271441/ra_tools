@@ -1199,8 +1199,8 @@ function showPage(
     }
   }
   if (target === "review-assignments") {
-    if (!state.session.identity_pending && !state.session.is_admin) {
-      showToast(uiText("当前账号没有任务分配管理权限。", "Review assignment management requires admin access."), true);
+    if (!state.session.identity_pending && !hasDashboardWriteRole()) {
+      showToast(uiText("查看任务分配需要 writer 或管理员权限。", "Viewing review assignments requires writer or admin access."), true);
       return showPage("review", { historyMode: historyMode || "replace" });
     }
   }

@@ -176,7 +176,8 @@ def test_browser_binding_cache_and_stale_context():
     root = Path(__file__).resolve().parents[1] / "static/js"
     script = "global.document={getElementById(){return null}};\n" + (root / "review-draft.js").read_text() + (root / "review-form.js").read_text() + (root / "labeling-summary.js").read_text() + (root / "review-assignments.js").read_text() + r"""
 const assert = require('node:assert/strict');
-state = {selectedRunId:'run1', reviewWorkSplitId:'campaign1', caseDetailPrefetch:new Map(), selectedId:'current'};
+capturePageContext=()=>({});isPageContextCurrent=()=>true;$=()=>null;
+state = {activePage:"review", selectedRunId:'run1', reviewWorkSplitId:'campaign1', caseDetailPrefetch:new Map(), selectedId:'current'};
 const assigned = {issue_id:'cn1', review_assignment:{assigned:true, purpose:'model_review', split_id:'campaign1',
   workflow_mode:'model_review_and_case_label', model_run_id:'run1', mode:'single'}};
 assert.equal(combinedReviewCampaignBinding(assigned), 'campaign1');
@@ -217,3 +218,11 @@ api=async path => {calls.push(path);return {path}};
 """
     result = subprocess.run(["node"], input=script, capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
+
+
+def test_combined_context_loading_error_retry_and_draft_preservation():
+    result = subprocess.run(
+        ["node", str(Path(__file__).with_name("combined_review_context_ui.cjs"))],
+        cwd=Path(__file__).resolve().parents[2], capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr

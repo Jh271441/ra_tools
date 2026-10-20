@@ -160,6 +160,28 @@ async function summaryWaitsForIdentityInsteadOfFallingBackToReview() {
   assert.equal(denied.state.activePage, 'review', 'confirmed lack of permission must still be enforced');
   assert.equal(protectedReads, 0);
 }
+async function assignmentAccessWaitsForWriterAndAvoidsAdminRequests() {
+  for (const role of ['writer', 'admin', 'viewer']) {
+    const f = bootstrapFixture('review-assignments'), identity = defer(); let loaded = 0;
+    f.state.session = {identity_pending: true, can_write: false};
+    f.s.resolveSessionInBackground = () => identity.promise;
+    f.s.loadReviewAssignments = async () => {loaded++;};
+    f.s.loadAccessUsers = () => {throw new Error('bootstrap must let assignment loader own admin-only users');};
+    const boot = f.s.bootstrap(); await tick();
+    assert.equal(loaded, 0);
+    f.state.session = {identity_pending: false, is_admin: role === 'admin', can_write: role !== 'viewer'};
+    identity.resolve(); await boot;
+    assert.equal(f.state.activePage, role === 'viewer' ? 'review' : 'review-assignments');
+    assert.equal(loaded, role === 'viewer' ? 0 : 1);
+  }
+  const f = fixture('review'); f.s.PAGE_ROUTES['review-assignments'] = {};
+  f.state.session = {identity_pending: false, is_admin: false, can_write: true};
+  f.s.actualShowPage('review-assignments', {loadPageData: false, preserveScroll: true});
+  assert.equal(f.state.activePage, 'review-assignments', 'writer navigation must not bounce');
+  f.state.session.can_write = false;
+  f.s.actualShowPage('review-assignments', {loadPageData: false, preserveScroll: true});
+  assert.equal(f.state.activePage, 'review', 'viewer denial must remain');
+}
 async function labelingEntryAndSummaryResponsesStayScoped() {
   const f = fixture('labeling'); f.load('case-labeling.js'); const tasks = defer(); let listed = 0;
   f.s.loadCaseLabelingTasks = () => tasks.promise; f.s.restoreCaseLabelingRouteState = () => ({});
@@ -172,7 +194,7 @@ async function labelingEntryAndSummaryResponsesStayScoped() {
   assert.equal(requests, 1, 'stale task-list response must not start a summary query for a later visit');
 }
 (async () => {
-  for (const test of [delayedReviewReloadCannotReclaimLabeling, navigationEpochTracksRealPageCommits, loadersStartAfterCanonicalRouteCommit, debounceCannotFireAfterDepartureOrRoundTrip, listPaginationAndPollingIgnoreObsoleteViews, lateTaskContextCannotRewriteLabelingUrl, bootstrapNeverReplaysInitialRouteOverNewNavigation, summaryWaitsForIdentityInsteadOfFallingBackToReview, labelingEntryAndSummaryResponsesStayScoped]) {
+  for (const test of [assignmentAccessWaitsForWriterAndAvoidsAdminRequests,delayedReviewReloadCannotReclaimLabeling, navigationEpochTracksRealPageCommits, loadersStartAfterCanonicalRouteCommit, debounceCannotFireAfterDepartureOrRoundTrip, listPaginationAndPollingIgnoreObsoleteViews, lateTaskContextCannotRewriteLabelingUrl, bootstrapNeverReplaysInitialRouteOverNewNavigation, summaryWaitsForIdentityInsteadOfFallingBackToReview, labelingEntryAndSummaryResponsesStayScoped]) {
     await test(); console.log('PASS ' + test.name);
   }
 })().catch(error => {console.error(error); process.exitCode = 1;});
