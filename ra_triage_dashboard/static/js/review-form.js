@@ -578,7 +578,7 @@ function renderReview(caseData) {
           <small class="review-expected-output-hint" id="expectedOutputHint" hidden></small>
           <input id="reviewStatusInput" type="hidden" value="${escapeHtml(reviewStatus)}" />
         </div>
-        ${runBoundModelReview ? `<label class="model-review-status-field"><span><span class="ui-lang-zh">判错复核状态</span><span class="ui-lang-en">Model review status</span></span><kbd class="review-control-shortcut">⇧ R</kbd><select id="modelReviewStatusInput" title="Shift+R 打开；1 待开始 / 2 复核中 / 3 已完成">${MODEL_REVIEW_STATUS_OPTIONS.map((item) => `<option value="${item.value}" ${item.value === modelReviewStatus ? "selected" : ""}>${escapeHtml(i18nLocale() === "en" ? item.labelEn : item.labelZh)}</option>`).join("")}</select></label>` : noRunModelReviewNotice}
+        ${runBoundModelReview ? `<label class="model-review-status-field"><span><span class="ui-lang-zh">判错复核状态</span><span class="ui-lang-en">Model review status</span></span><select id="modelReviewStatusInput" title="Shift+R 打开；1 待开始 / 2 复核中 / 3 已完成">${MODEL_REVIEW_STATUS_OPTIONS.map((item) => `<option value="${item.value}" ${item.value === modelReviewStatus ? "selected" : ""}>${escapeHtml(i18nLocale() === "en" ? item.labelEn : item.labelZh)}</option>`).join("")}</select></label>` : noRunModelReviewNotice}
         <label class="review-reason">
           <span class="review-reason-heading">
             <span><span class="ui-lang-zh">模型为什么判错？</span><span class="ui-lang-en">Why was the model wrong?</span></span>

@@ -17,6 +17,10 @@ Review page retains its draft and task context. Existing Trail preview, explicit
 confirmation, idempotency, audit and readback are unchanged. This is entry-point
 integration, not a new canonical Issue-validity schema or a change to dataset scope.
 
+The status trigger places a compact keycap before its chevron, matching the
+existing tag controls. Options show numbered keycaps on the right; neither the
+selected status nor native option labels include shortcut prefixes.
+
 Shift+R opens the Run-review status picker; 1/2/3 choose Pending/In progress/Completed
 only while it is open. Typing, composition, modifiers, read-only and disabled states
 are excluded. Selecting a status never submits. R continues to refresh; existing

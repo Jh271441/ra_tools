@@ -439,7 +439,7 @@ function enhanceNativeUiSelect(select, { maxWidth = 520 } = {}) {
       legacy_model_review: ["历史判错复核", "Historical reviews"],
     },
     modelReviewStatusInput: {
-      pending: ["1 · 待开始", "1 · Pending"], in_progress: ["2 · 复核中", "2 · In progress"], completed: ["3 · 已完成", "3 · Completed"],
+      pending: ["待开始", "Pending"], in_progress: ["复核中", "In progress"], completed: ["已完成", "Completed"],
     },
     runCollectionReferenceType: {
       gt: ["GT 版本（创建时冻结）", "GT snapshot (frozen on create)"],
@@ -456,7 +456,19 @@ function enhanceNativeUiSelect(select, { maxWidth = 520 } = {}) {
   const trigger = root.querySelector(".ui-select-trigger");
   if (trigger) {
     trigger.title = select.title || "";
-    if (select.id === "modelReviewStatusInput") trigger.setAttribute("aria-keyshortcuts", "Shift+R");
+    if (select.id === "modelReviewStatusInput") {
+      root.classList.add("model-review-status-picker");
+      trigger.setAttribute("aria-keyshortcuts", "Shift+R");
+      if (!trigger.querySelector(".model-review-status-shortcut")) {
+        trigger.querySelector(".ui-select-caret")?.insertAdjacentHTML("beforebegin",
+          '<kbd class="review-control-shortcut model-review-status-shortcut" aria-hidden="true">⇧ R</kbd>');
+      }
+      root.querySelectorAll("[data-ui-select-value]").forEach((option) => {
+        const shortcut = { pending: "1", in_progress: "2", completed: "3" }[option.dataset.uiSelectValue];
+        if (shortcut) option.insertAdjacentHTML("beforeend",
+          `<kbd class="review-control-shortcut model-review-status-option-shortcut" aria-hidden="true">${shortcut}</kbd>`);
+      });
+    }
   }
   bindUiSelect(root, { maxHeight: 320, maxWidth });
   if (select.dataset.dashboardSelectBound !== "1") {

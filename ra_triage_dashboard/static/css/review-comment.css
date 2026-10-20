@@ -1357,6 +1357,12 @@ html[data-color-theme="light"] .issue-card-flag-model-no-gt { border-color: #fcd
   display: grid;
   gap: 5px;
 }
+.model-review-status-picker .ui-select-trigger { display: flex; gap: 8px; }
+.model-review-status-picker .ui-select-summary { flex: 1 1 auto; min-width: 0; }
+.model-review-status-picker .ui-select-option { grid-template-columns: 16px minmax(0, 1fr) auto; align-items: center; }
+.model-review-status-option-shortcut { justify-self: end; }
+.model-review-status-picker.is-open .model-review-status-shortcut { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+
 
 .work-split-inline[hidden] { display: none; }
 .work-split-inline { scroll-margin-top: 80px; }
