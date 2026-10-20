@@ -90,6 +90,9 @@ function reviewAssignmentRouteOptions(item, page) {
   // Batch membership is frozen. Creation-time filters belong to View source
   // filter; do not apply them again or inherit filters from another workspace.
   const filter = item?.filter_snapshot || {};
+  const reviewer = state.session?.verified ? String(state.session.username || "").trim().toLowerCase() : "";
+  const ownTasks = reviewer && (item?.assigned_to_me === true || (item?.members || [])
+    .some((member) => String(member.username || "").trim().toLowerCase() === reviewer));
   const common = {
     runId: item?.model_run_id || "",
     comparisonStatus: "all",
@@ -106,7 +109,7 @@ function reviewAssignmentRouteOptions(item, page) {
     };
   }
   return {
-    ...common, issue: "", labelStates: [], workAssignee: [], clusterKey: "",
+    ...common, issue: "", labelStates: [], workAssignee: ownTasks ? [reviewer] : [], clusterKey: "",
     workflowMode: item?.workflow_mode || "model_review_only", casePage: 1, casePageSize: 20,
   };
 }

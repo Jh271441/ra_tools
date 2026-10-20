@@ -2,7 +2,10 @@
 
 Verified Dashboard writers and administrators may open task allocations, list
 current/historical/My tasks, inspect progress and details, and use Review entry
-links. Both list/detail APIs require the existing writer identity helper. Viewers
+links. For a verified task member, card entry carries that member’s assignee
+filter; the own-task picker does the same. Analysis remains at the batch scope.
+A copied link to a peer’s Issue does not transfer assignment ownership.
+Both list/detail APIs require the existing writer identity helper. Viewers
 and unverified identities remain denied. Bootstrap waits for session resolution;
 it delegates admin user loading to the allocation loader so writers never request
 that admin API. Creation, draft restoration and transfers remain admin-only on

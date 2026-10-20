@@ -113,7 +113,10 @@ class TaskLifecycleTest(unittest.TestCase):
         from ra_triage_dashboard.app.routers import cases
         from ra_triage_dashboard.app.support import identity as identity_support
         for role, verified in (("viewer", True), ("writer", False), ("admin", False), ("writer", True)):
-            self.db.set_access_user(username="alice", role=role, actor="tester")
+            if role == "viewer":
+                self.db.delete_access_user("alice")
+            else:
+                self.db.set_access_user(username="alice", role=role, actor="tester")
             identity = SimpleNamespace(username="alice", verified=verified, source="test")
             calls = [lambda: cases.split_case_work(None), lambda: cases.reassign_case_work_item("any-task", "cn1", None)]
             if role != "writer" or not verified:

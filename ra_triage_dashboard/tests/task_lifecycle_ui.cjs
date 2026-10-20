@@ -32,6 +32,16 @@ assert(!elements.reviewAssignmentDetailRows.innerHTML.includes('data-review-assi
 assert(!elements.reviewAssignmentDetailRows.innerHTML.includes('review-assignment-person-picker'));
 assert(!elements.reviewAssignmentDetailRows.innerHTML.includes('历史批次'));
 const active={...old,split_id:'active',is_current:true,lifecycle:'active'};
+for (const username of ['jasperchen','liangxianghui']) {
+ sandbox.state.session={verified:true,username};
+ const task={...active,members:[{username:'jasperchen'},{username:'liangxianghui'}]};
+ assert.deepEqual(Array.from(sandbox.reviewAssignmentRouteOptions(task,'review').workAssignee),[username]);
+ assert.equal(sandbox.reviewAssignmentRouteOptions(task,'analysis').workAssignee,undefined);
+ assert.deepEqual(Array.from(sandbox.reviewAssignmentRouteOptions({...active,assigned_to_me:true},'review').workAssignee),[username]);
+ assert.deepEqual(Array.from(sandbox.reviewAssignmentRouteOptions({...active,members:[{username:'someone_else'}]},'review').workAssignee),[]);
+}
+sandbox.state.session={is_admin:false};
+
 assert(sandbox.renderReviewAssignmentBatch(active).includes('去判错复核'));
 let adminUserReads=0; sandbox.loadAccessUsers=async()=>{adminUserReads++;};
 sandbox.reassignReviewAssignment({dataset:{issueId:'cn1',originalAssignee:'bob'},querySelector:()=>({value:'writer'})});

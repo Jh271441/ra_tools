@@ -262,7 +262,7 @@ function renderReviewWorkSplitPicker(selected = state.reviewWorkSplitId, { load 
         // Reuse task-card navigation: reset stale filters and hydrate the task's
         // frozen datasets/Run before loading Issue detail or enabling submit.
         window.location.assign(pageUrl("review", reviewAssignmentRouteOptions({
-          ...item, baseline_ids: item.baselines,
+          ...item, baseline_ids: item.baselines, assigned_to_me: true,
         }, "review")));
         return;
       }
