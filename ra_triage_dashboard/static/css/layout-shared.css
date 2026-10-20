@@ -174,12 +174,12 @@ html[data-sidebar-pref="collapsed"] .sidebar-collapse > span:first-child {
   transform: rotate(180deg);
 }
 .topbar {
-  min-height: 44px; display: flex; flex-wrap: wrap; align-items: center; gap: 9px; padding: 4px clamp(8px, 1vw, 14px);
+  min-height: 44px; display: flex; flex-wrap: nowrap; align-items: center; gap: 9px; padding: 4px clamp(8px, 1vw, 14px);
   border-bottom: 1px solid var(--line); background: rgba(11, 14, 20, .92); position: sticky; top: 0; z-index: 10;
   backdrop-filter: blur(12px);
 }
 .topbar h1 { font-size: 17px; font-weight: 700; letter-spacing: -.015em; }
-.brand { min-width: 0; flex: 0 0 auto; display: flex; align-items: center; gap: 9px; }
+.brand { min-width: 0; flex: 0 1 165px; display: flex; align-items: center; gap: 9px; }
 .brand-mark {
   width: 37px; height: 37px; display: grid; place-items: center; border: 1px solid rgba(34,211,238,.6); border-radius: 9px;
   appearance: none; padding: 0; color: var(--accent); background: linear-gradient(145deg, rgba(34,211,238,.17), rgba(34,211,238,.06));
@@ -191,7 +191,7 @@ html[data-sidebar-pref="collapsed"] .sidebar-collapse > span:first-child {
 .dataset-state { display: inline-flex; align-items: center; gap: 8px; color: #b8d9db; font-size: 12px; white-space: nowrap; }
 .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
 .topbar-baselines {
-  display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1 1 160px;
+  display: flex; align-items: center; gap: 6px; min-width: 0; flex: 0 1 auto;
   max-width: min(240px, 28vw);
 }
 .topbar-baselines-label {

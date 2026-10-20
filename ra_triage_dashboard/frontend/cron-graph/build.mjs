@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 const out = '../../static/vendor/cron-graph';
 mkdirSync(out, { recursive: true });
-await build({ entryPoints: ['src/index.jsx'], bundle: true, minify: true, format: 'iife', globalName: 'RACronGraph', outfile: `${out}/graph.js`, legalComments: 'linked', target: ['es2022'], define: { 'process.env.NODE_ENV': '"production"' } });
+await build({ entryPoints: ['src/index.jsx'], bundle: true, minify: true, format: 'iife', globalName: 'RACronGraph', outfile: `${out}/graph.js`, legalComments: 'linked', supported: { 'template-literal': false }, target: ['es2022'], define: { 'process.env.NODE_ENV': '"production"' } });
 const packages = ['@xyflow/react', 'elkjs', 'react', 'react-dom', 'esbuild'];
 mkdirSync(`${out}/licenses`, { recursive: true });
 for (const name of packages) {

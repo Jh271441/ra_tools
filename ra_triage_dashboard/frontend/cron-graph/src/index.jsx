@@ -28,13 +28,13 @@ async function layout(model) {
     const ids = new Set(lane.nodes.map(node => node.id));
     const graph = await elk.layout({
       id: lane.id,
-      layoutOptions: { 'elk.algorithm': 'layered', 'elk.direction': 'RIGHT', 'elk.spacing.nodeNode': '28', 'elk.layered.spacing.nodeNodeBetweenLayers': '42', 'elk.padding': '[top=52,left=20,bottom=20,right=20]' },
+      layoutOptions: { 'elk.algorithm': 'layered', 'elk.direction': 'RIGHT', 'elk.spacing.nodeNode': '28', 'elk.layered.spacing.nodeNodeBetweenLayers': '30', 'elk.padding': '[top=44,left=16,bottom=16,right=16]' },
       children: lane.nodes.map(node => ({ id: node.id, width: 152, height: 82 })),
       edges: model.edges.filter(edge => ids.has(edge.source) && ids.has(edge.target)).map(edge => ({ id: edge.id, sources: [edge.source], targets: [edge.target] })),
     });
     sizes.push({ id: lane.id, x: 0, y: offsetY, width: graph.width, height: graph.height });
     for (const child of graph.children) positions.push({ id: child.id, parentId: lane.id, x: child.x, y: child.y });
-    offsetY += graph.height + 50;
+    offsetY += graph.height + 36;
   }
   return { positions, sizes };
 }
@@ -50,11 +50,11 @@ function Graph({ model, onSelect }) {
   }, [topology]);
   useEffect(() => {
     if (!geometry || geometry.error) return;
-    const timer = setTimeout(() => fitView({ padding: 0.12, duration: 0, maxZoom: 1 }), 40);
+    const timer = setTimeout(() => fitView({ padding: 0.06, duration: 0, maxZoom: 1 }), 40);
     return () => clearTimeout(timer);
   }, [geometry, fitView]);
   useEffect(() => {
-    const resize = () => setTimeout(() => fitView({ padding: 0.12, duration: 0, maxZoom: 1 }), 80);
+    const resize = () => setTimeout(() => fitView({ padding: 0.06, duration: 0, maxZoom: 1 }), 80);
     document.addEventListener('fullscreenchange', resize);
     return () => document.removeEventListener('fullscreenchange', resize);
   }, [fitView]);
@@ -68,12 +68,12 @@ function Graph({ model, onSelect }) {
     const state = byId.get(edge.target)?.status;
     const sourceState = byId.get(edge.source)?.status;
     const unknownPath = [state, sourceState].some(status => ['skipped', 'unknown', 'pending'].includes(status));
-    const color = unknownPath ? 'var(--line)' : sourceState === 'warn' ? colors.warn : colors[state] || colors.unknown;
-    return { ...edge, type: 'smoothstep', animated: !unknownPath && !model.definition && model.active && state === 'running', markerEnd: { type: MarkerType.ArrowClosed, color }, style: { stroke: color, strokeWidth: 1.35, ...(edge.optional ? { strokeDasharray: '5 4' } : {}) }, labelStyle: { fill: 'var(--muted)', fontSize: 10 }, labelBgStyle: { fill: 'var(--raised)' }, interactionWidth: 12 };
+    const color = unknownPath ? 'var(--muted)' : sourceState === 'warn' ? colors.warn : colors[state] || colors.unknown;
+    return { ...edge, type: 'smoothstep', animated: !unknownPath && !model.definition && model.active && state === 'running', markerEnd: { type: MarkerType.ArrowClosed, color, width: 18, height: 18 }, style: { stroke: color, strokeWidth: 2, ...(edge.optional ? { strokeDasharray: '5 4' } : {}) }, labelStyle: { fill: 'var(--muted)', fontSize: 11 }, labelBgStyle: { fill: 'var(--raised)' }, interactionWidth: 12 };
   });
   if (geometry?.error) return <p className="cron-note muted">{model.ui.error}</p>;
   if (!geometry) return <p className="cron-note muted">{model.ui.loading}</p>;
-  return <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} nodesDraggable={false} nodesConnectable={false} edgesFocusable={false} onNodeClick={(_, node) => node.type === 'task' && onSelect?.(node.id)} onPaneClick={() => onSelect?.('')} minZoom={0.25} maxZoom={2} fitView fitViewOptions={{ padding: 0.12, maxZoom: 1 }} zoomOnScroll={false} preventScrolling={false} colorMode={model.theme} proOptions={{ hideAttribution: false }}>
+  return <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} nodesDraggable={false} nodesConnectable={false} edgesFocusable={false} onNodeClick={(_, node) => node.type === 'task' && onSelect?.(node.id)} onPaneClick={() => onSelect?.('')} minZoom={0.25} maxZoom={2} fitView fitViewOptions={{ padding: 0.06, maxZoom: 1 }} zoomOnScroll={false} preventScrolling={false} colorMode={model.theme} proOptions={{ hideAttribution: false }}>
     <Background color="var(--line)" gap={20} size={1} />
     <Controls showInteractive={false} />
     <MiniMap ariaLabel={model.ui.minimap} style={{ width: 160, height: 100 }} nodeColor={node => node.type === 'lane' ? 'transparent' : colors[node.data?.status] || colors.unknown} nodeStrokeColor="var(--line)" maskColor="var(--cron-minimap-mask, rgba(0,0,0,.12))" pannable zoomable />

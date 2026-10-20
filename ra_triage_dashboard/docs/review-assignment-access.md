@@ -26,13 +26,19 @@ keeps the task URL for browsing, and submits empty campaign_id/work_split_id int
 the actor's ordinary review stream. Case votes remain shared. The original
 assignee's head and the Campaign's assignment/progress remain unchanged.
 
-The header preserves its compact desktop row with a bounded, shrinkable dataset
-picker and five inline metrics. The established narrow-window fallback moves
-metrics to a second row only below 1200px. GT metadata cannot shrink through its
-own border. Video controls wrap according
-to their actual card width; progress labels size to content and the slider can
-shrink within its row. This preserves the older wrap-to-fit behavior without
-relying only on viewport breakpoints.
+The desktop header restores the stable September title-to-dataset spacing with
+an optional 165px title basis, without a hard minimum that squeezes the picker.
+The picker keeps its natural width with a cap and does not stretch. The desktop
+row stays compact; the established 1200px narrow-window fallback remains.
+GT metadata stays inside its border. Video controls and a flexible timeline use
+the earlier side-by-side layout when the card has room, with safe wrapping when
+narrow. Detail context actions also wrap based on available card width.
+
+Shared Case label state/source access lives in the right Issue-label heading;
+Run submission state lives below the Model Review heading. Refreshing this
+read-only metadata must preserve form fields/drafts and source-dialog bindings.
+The supplemental notice is one compact line; a keyboard-accessible details
+control explains ownership, shared Case votes and unchanged owner progress.
 
 The baseline picker groups the 10/15, 10/16 and 10/18 main/supplement scopes into
 one daily choice with combined counts (33/112/90 at release). API/URL selections

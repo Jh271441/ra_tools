@@ -1,5 +1,6 @@
 /* Daily Cron inherits the Workbench typography and light/dark design tokens. */
 body[data-active-page="daily-cron"] .topbar > :is(.topbar-baselines, .header-metrics, .gt-sync-control) { display: none; }
+body[data-active-page="daily-cron"] .top-actions { margin-left: auto; }
 .daily-cron-page { display: grid; gap: 10px; min-width: 0; max-width: 1600px; margin-inline: auto; width: 100%; font-size: 12px; }
 .cron-page-heading, .cron-section-heading, .cron-run-heading, .cron-run-heading > div, .cron-sidecar-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .cron-page-heading h2 { margin-bottom: 6px; }
@@ -91,17 +92,17 @@ body[data-active-page="daily-cron"] #pageTitle { font-size: 16px; }
 .cron-graph-workspace:fullscreen .cron-exit-fullscreen { display: block; }
 .cron-run-graph .react-flow, .cron-help-graph .react-flow { --xy-background-color: var(--bg); --xy-edge-stroke: var(--muted); --xy-node-background-color: var(--raised); --xy-node-color: var(--text); --xy-node-border: 1px solid var(--line); --xy-controls-button-background-color: var(--raised); --xy-controls-button-background-color-hover: var(--overlay-2); --xy-controls-button-color: var(--muted); --xy-controls-button-border-color: var(--line); --xy-minimap-background-color: var(--raised); --xy-minimap-mask-background-color: var(--accent-soft); background: var(--bg); font-family: inherit; }
 .cron-run-graph .react-flow__node-lane, .cron-help-graph .react-flow__node-lane { border: 1px solid var(--line); border-radius: 8px; background: color-mix(in srgb, var(--raised) 60%, transparent); pointer-events: none; }
-.cron-dag-lane-label { position: absolute; top: 14px; left: 18px; color: var(--muted); font-size: 12px; font-weight: 600; }
-.cron-dag-task { box-sizing: border-box; height: 82px; border: 1px solid var(--line); border-left: 3px solid var(--faint); border-radius: 7px; padding: 10px 10px 8px; background: var(--raised); color: var(--text); display: grid; gap: 5px; }
+.cron-dag-lane-label { position: absolute; top: 12px; left: 18px; color: var(--text); font-size: 14px; font-weight: 650; }
+.cron-dag-task { box-sizing: border-box; height: 82px; border: 1px solid var(--line); border-left: 3px solid var(--faint); border-radius: 7px; padding: 10px 10px 8px; background: var(--overlay); color: var(--text); display: grid; gap: 5px; }
 .cron-dag-task-label { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.cron-dag-task-label strong { font-size: 12px; font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cron-dag-task-meta { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.cron-dag-task-state { font-size: 10px; color: var(--faint); }
+.cron-dag-task-label strong { font-size: 13px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cron-dag-task-meta { font-size: 12px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.cron-dag-task-state { font-size: 11px; color: var(--muted); }
 .cron-dag-state-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--faint); flex: 0 0 auto; }
-.cron-dag-task[data-state="success"] { border-left-color: var(--ok); }
-.cron-dag-task[data-state="warn"] { border-left-color: var(--warn); }
-.cron-dag-task[data-state="failed"] { border-left-color: var(--fail); }
-.cron-dag-task[data-state="running"] { border-left-color: var(--accent); }
+.cron-dag-task[data-state="success"] { border-color: color-mix(in srgb, var(--ok) 45%, var(--line)); border-left-color: var(--ok); }
+.cron-dag-task[data-state="warn"] { border-color: color-mix(in srgb, var(--warn) 45%, var(--line)); border-left-color: var(--warn); }
+.cron-dag-task[data-state="failed"] { border-color: color-mix(in srgb, var(--fail) 45%, var(--line)); border-left-color: var(--fail); }
+.cron-dag-task[data-state="running"] { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); border-left-color: var(--accent); }
 .cron-dag-task[data-state="success"] .cron-dag-state-dot { background: var(--ok); }
 .cron-dag-task[data-state="warn"] .cron-dag-state-dot { background: var(--warn); }
 .cron-dag-task[data-state="failed"] .cron-dag-state-dot { background: var(--fail); }

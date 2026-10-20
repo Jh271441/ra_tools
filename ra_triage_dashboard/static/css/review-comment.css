@@ -315,12 +315,12 @@ html[data-color-theme="light"] .detail-queue-index-input {
   color: #c4cfdf; border-color: var(--line); background: var(--overlay);
   line-height: normal; letter-spacing: normal;
 }
-.detail-context-row { min-width: 0; display: flex; align-items: center; flex-wrap: nowrap; gap: 6px; margin-top: 6px; }
+.detail-context-row { min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .detail-context-row > .comparison-summary,
 .detail-context-row > .detail-back-button { flex: 0 0 auto; }
 .detail-context-actions {
   min-width: 0; margin-left: 0; display: flex; align-items: center; justify-content: flex-end;
-  flex: 1 1 auto; flex-wrap: nowrap; gap: 5px;
+  flex: 1 1 auto; flex-wrap: wrap; gap: 5px;
 }
 .detail-context-row .detail-actions { flex: 0 0 auto; flex-wrap: nowrap; gap: 5px; }
 .detail-context-actions .history-inline-button { padding-inline: 6px; }
@@ -1261,12 +1261,10 @@ html[data-color-theme="light"] .review-mention-avatar { color: #075d6d; backgrou
 .shared-label-state-stale { border-color: rgba(251,191,36,.48); color: #f3ce77; background: rgba(251,191,36,.1); }
 .shared-label-state-pending { border-color: rgba(148,163,184,.38); color: #b3c0d1; background: rgba(148,163,184,.08); }
 .shared-label-state-unknown { border-color: rgba(148,163,184,.38); color: #b3c0d1; background: rgba(148,163,184,.08); }
-.shared-label-state-detail {
-  min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px;
-  margin-top: 6px; padding: 6px 8px; border: 1px solid var(--line-soft); border-radius: 7px;
-  background: var(--overlay);
-}
-.shared-label-state-detail > strong { color: var(--faint); font-size: 10px; }
+.review-section-heading > .review-case-heading-meta { min-width: 0; display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 4px 7px; }
+.review-shared-label-summary { min-width: 0; display: inline-flex; align-items: center; }
+.review-shared-label-summary .shared-label-state-trigger { font-size: 9px; }
+#reviewRunSubmissionState { min-width: 0; display: inline-flex; align-items: center; }
 .combined-case-label-card[hidden] { display: none !important; }
 .combined-mode-badge { display: inline-flex; margin-left: 5px; padding: 2px 5px; border: 1px solid rgba(34,211,238,.28); border-radius: 999px; color: var(--accent); background: var(--accent-soft); font-size: 8px; font-weight: 700; vertical-align: middle; }
 .combined-case-rationale { display: grid; gap: 5px; }
@@ -1289,10 +1287,17 @@ html[data-color-theme="light"] .review-mention-avatar { color: #075d6d; backgrou
 .model-review-run-help:hover .model-review-run-tooltip,
 .model-review-run-help:focus-within .model-review-run-tooltip { opacity: 1; visibility: visible; transform: translateY(0); }
 .review-task-supplemental-notice {
-  display: grid; gap: 3px; padding: 9px 10px; border: 1px solid rgba(36,211,239,.28);
-  border-radius: 8px; color: var(--muted); background: var(--accent-soft); font-size: 11px; line-height: 1.45;
+  min-width: 0; position: relative; display: flex; align-items: center; gap: 6px; padding: 3px 0;
+  color: var(--muted); font-size: 10px; line-height: 1.4;
 }
-.review-task-supplemental-notice strong { color: var(--text); font-size: 12px; }
+.review-task-supplemental-notice details { position: static; }
+.review-task-supplemental-notice summary { list-style: none; cursor: pointer; color: var(--accent); font-size: 12px; }
+.review-task-supplemental-notice summary::-webkit-details-marker { display: none; }
+.review-task-supplemental-notice details > span {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 8; width: min(270px, 70vw);
+  padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--raised);
+  color: var(--text); font-size: 11px; box-shadow: 0 6px 18px rgba(0,0,0,.25);
+}
 .review-exclude-toggle[hidden],
 .review-attachment-field[hidden] { display: none !important; }
 .review-task-context-error { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
