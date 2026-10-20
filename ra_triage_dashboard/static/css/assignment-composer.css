@@ -108,3 +108,19 @@ html[data-color-theme="light"] .assignment-history.assignment-history { backgrou
 .assignment-composer .assignment-footer-row > .work-split-seed > span { white-space: nowrap; }
 .assignment-composer .assignment-footer-row > .work-split-seed input { width: 148px; height: 36px; }
 .assignment-composer .assignment-footer-row .button { height: 36px; min-height: 36px; }
+
+
+/* Keep task scope controls on the history heading's shared baseline. */
+.review-assignment-list-card > .review-assignment-section-heading { flex-wrap: wrap; }
+.review-assignment-section-heading > .review-assignment-list-filters {
+  display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px 12px;
+}
+.review-assignment-list-filters label { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.review-assignment-list-filters label > span { color: var(--muted); font-size: 11px; white-space: nowrap; }
+.review-assignment-list-filters .dashboard-native-ui-select { width: 140px; }
+.review-assignment-list-filters .ui-select-trigger,
+.review-assignment-list-filters > .button { min-height: 34px; height: 34px; }
+.review-assignment-list-filters > .button { flex: 0 0 auto; }
+.review-assignment-list-filters > .button[aria-pressed="false"] { color: var(--muted); border-color: var(--line); background: transparent; }
+.review-assignment-list-filters > .button[aria-pressed="false"]:hover { color: var(--text); border-color: var(--accent); }
+.review-assignment-list-filters > small { color: var(--faint); font-size: 11px; white-space: nowrap; }

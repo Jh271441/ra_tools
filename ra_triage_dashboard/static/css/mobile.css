@@ -623,3 +623,11 @@
   .case-detail-pager .detail-queue-index-input { background: transparent; border-color: var(--line); }
   .detail-pane .bev-video-control-row .button { min-width: 40px; border-color: transparent; background: transparent; box-shadow: none; font-size: 12px; }
 }
+
+
+@media (max-width: 639px) {
+  .review-assignment-list-card > .review-assignment-section-heading { align-items: flex-start; flex-direction: column; gap: 10px; }
+  .review-assignment-section-heading > .review-assignment-list-filters { width: 100%; justify-content: flex-start; }
+  .review-assignment-list-filters .ui-select-trigger,
+  .review-assignment-list-filters > .button { min-height: 44px; height: 44px; }
+}

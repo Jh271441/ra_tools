@@ -26,6 +26,9 @@ function renderReviewAssignmentListFilters() {
   const mine = $("#reviewAssignmentMyTasks");
   if (mine) {
     mine.setAttribute("aria-pressed", String(Boolean(store.assignedToMe)));
+    mine.title = store.assignedToMe
+      ? uiText("当前仅显示我的任务，点击查看全部成员", "Showing my tasks; click for all members")
+      : uiText("仅查看分配给当前账号的任务", "Show tasks assigned to the current account");
     mine.classList.toggle("button-primary", Boolean(store.assignedToMe));
     mine.classList.toggle("button-quiet", !store.assignedToMe);
   }

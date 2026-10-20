@@ -36,3 +36,10 @@ Regression coverage checks current/history/all and personal filters, filtering
 before limits, exact historical detail, preserved label/model revisions and audit,
 summary task options, metrics, route persistence, cache changes and stale historical
 UI payloads. No schema migration, physical deletion or constraint bypass is used.
+
+
+The allocation heading keeps scope, My tasks and batch count on one compact
+baseline on desktop, with wrapping and touch-sized controls on phones. The
+unselected My tasks toggle is neutral; only its pressed state uses the accent
+fill. Keep these rules in assignment-composer.css and final phone overrides in
+mobile.css so the legacy heading-child grid rule cannot stack the toolbar.

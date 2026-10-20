@@ -1380,7 +1380,3 @@ body[data-active-page="review-assignments"] .header-metrics { display: none; }
 body[data-active-page="review-assignments"] .gt-sync-control { margin-left: auto; }
 
 .review-assignment-detail-card { scroll-margin-top: 76px; }
-
-.review-assignment-list-filters { display: flex; align-items: end; gap: 8px; flex-wrap: wrap; }
-.review-assignment-list-filters label { display: grid; gap: 4px; min-width: 160px; }
-.review-assignment-list-filters label > span { color: var(--muted); font-size: 11px; }
