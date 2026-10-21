@@ -484,6 +484,18 @@ function enhanceDashboardSelects(root = document) {
   });
 }
 
+/* Track only open panels; visualViewport reflects the on-screen keyboard. */
+const anchoredPanelContexts = new Map();
+let anchoredViewportBound = false;
+function anchoredViewportBounds() {
+  const viewport = window.visualViewport;
+  const left = viewport?.offsetLeft || 0;
+  const top = viewport?.offsetTop || 0;
+  const width = viewport?.width || window.innerWidth;
+  const height = viewport?.height || window.innerHeight;
+  return { left, top, width, height, right: left + width, bottom: top + height };
+}
+
 /** Park a dropdown panel off-screen before first paint (no absolute-down flash). */
 function prepareAnchoredPanel(panel) {
   if (!panel) return;
@@ -503,6 +515,7 @@ function prepareAnchoredPanel(panel) {
 
 function resetAnchoredPanel(panel) {
   if (!panel) return;
+  anchoredPanelContexts.delete(panel);
   panel.classList.remove(
     "is-fixed-dropdown",
     "is-positioned",
@@ -541,8 +554,9 @@ function positionAnchoredPanel(panel, anchor, options = {}) {
 
   prepareAnchoredPanel(panel);
   const rect = anchor.getBoundingClientRect();
-  const vh = window.innerHeight;
-  const vw = window.innerWidth;
+  const viewport = anchoredViewportBounds();
+  const vh = viewport.height;
+  const vw = viewport.width;
   // Pixel width only — CSS min-width:100% on fixed panels resolves to viewport.
   let width = Math.max(
     matchAnchorWidth ? rect.width : 0,
@@ -561,8 +575,8 @@ function positionAnchoredPanel(panel, anchor, options = {}) {
   panel.style.top = "0px";
 
   const naturalH = panel.scrollHeight || panel.getBoundingClientRect().height || 200;
-  const spaceBelow = vh - rect.bottom - gap - margin;
-  const spaceAbove = rect.top - gap - margin;
+  const spaceBelow = viewport.bottom - rect.bottom - gap - margin;
+  const spaceAbove = rect.top - viewport.top - gap - margin;
   // Prefer down; flip only when below is too short and above is better.
   const openUp =
     spaceBelow < Math.min(naturalH, 160) && spaceAbove > spaceBelow;
@@ -572,9 +586,9 @@ function positionAnchoredPanel(panel, anchor, options = {}) {
 
   const height = Math.min(panel.scrollHeight || naturalH, maxH);
   let top = openUp ? rect.top - height - gap : rect.bottom + gap;
-  top = Math.max(margin, Math.min(top, vh - height - margin));
+  top = Math.max(viewport.top + margin, Math.min(top, viewport.bottom - height - margin));
   let left = rect.left;
-  left = Math.max(margin, Math.min(left, vw - width - margin));
+  left = Math.max(viewport.left + margin, Math.min(left, viewport.right - width - margin));
 
   // backdrop-filter makes the sticky topbar a containing block for fixed
   // descendants. Convert viewport coordinates back into that local space so
@@ -598,6 +612,21 @@ function openAnchoredPanel(panel, anchor, options = {}) {
   panel.hidden = false;
   prepareAnchoredPanel(panel);
   positionAnchoredPanel(panel, anchor, options);
+  anchoredPanelContexts.set(panel, { anchor, options });
+  if (!anchoredViewportBound && window.visualViewport) {
+    anchoredViewportBound = true;
+    const reposition = () => {
+      anchoredPanelContexts.forEach((context, openPanel) => {
+        if (!openPanel.isConnected || openPanel.hidden || !context.anchor.isConnected) {
+          anchoredPanelContexts.delete(openPanel);
+          return;
+        }
+        positionAnchoredPanel(openPanel, context.anchor, context.options);
+      });
+    };
+    window.visualViewport.addEventListener("resize", reposition);
+    window.visualViewport.addEventListener("scroll", reposition);
+  }
 }
 
 function normalizeClientBasePath(value) {

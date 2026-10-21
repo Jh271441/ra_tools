@@ -1189,7 +1189,7 @@ function bindReviewComposerShortcuts() {
         target.blur();
         return;
       }
-      if (event.key === "Enter" && !event.shiftKey && !state.savingAnnotation) {
+      if (event.key === "Enter" && !event.shiftKey && !state.savingAnnotation && !reviewTouchTextEntry(target)) {
         event.preventDefault();
         event.stopPropagation();
         if (form.checkValidity()) form.requestSubmit($("#reviewSaveButton") || undefined);

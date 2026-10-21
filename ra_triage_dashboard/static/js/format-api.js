@@ -1077,6 +1077,24 @@ function bindMobileFilterDrawers() {
       });
   };
 
+  panels.forEach((panel) => {
+    if (panel.querySelector(".mobile-filter-results")) return;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "button button-primary mobile-filter-results";
+    button.innerHTML = '<span class="ui-lang-zh">收起筛选，查看结果</span><span class="ui-lang-en">Close filters, view results</span>';
+    button.addEventListener("click", () => {
+      closeAllMultiFilters();
+      closeAllUiSelects();
+      setOpen(panel, false);
+      const toggle = document.querySelector(`[data-mobile-filter-toggle="${CSS.escape(panel.dataset.mobileFilterPanel)}"]`);
+      toggle?.scrollIntoView({block: "start"});
+      const header = document.querySelector(".topbar")?.getBoundingClientRect().height || 0;
+      window.scrollBy({top: -header - 8});
+      toggle?.focus({preventScroll: true});
+    });
+    panel.appendChild(button);
+  });
   const syncToViewport = () => {
     panels.forEach((panel) => setOpen(panel, !mq.matches));
   };

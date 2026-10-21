@@ -631,3 +631,38 @@
   .review-assignment-list-filters .ui-select-trigger,
   .review-assignment-list-filters > .button { min-height: 44px; height: 44px; }
 }
+
+/* Keep the media/editor switches reachable throughout a phone review. */
+.mobile-filter-results { display: none; }
+@media (max-width: 639px) {
+  .mobile-workspace-jumps {
+    position: sticky; top: var(--mobile-topbar-height, 62px); z-index: 20;
+    background: var(--bg); padding-block: 2px; isolation: isolate;
+  }
+  .mobile-workspace-jumps > .button { min-height: 44px; }
+  .mobile-workspace-jumps > [aria-current="location"] { color: var(--accent); border-bottom-color: var(--accent); }
+  [data-mobile-filter-panel] > .mobile-filter-results {
+    display: flex; grid-column: 1 / -1 !important; justify-content: center; width: 100%;
+  }
+  .multi-filter-panel, .ui-select-panel, .review-status-picker-panel,
+  .detail-media-picker-panel, .review-tag-options, .evidence-options {
+    overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+  }
+  .ui-select-option-label { white-space: normal; overflow-wrap: anywhere; }
+  .review-tag-dropdown .tag-option-check, .tag-option-menu-toggle,
+  .multi-filter-tools button, .multi-filter-actions button { min-height: 44px; }
+  .screenshot-paste-copy small { display: none; }
+  .review-form textarea { scroll-margin-top: calc(var(--mobile-topbar-height, 62px) + 64px); }
+}
+
+@media (max-width: 639px) {
+  #filterForm.is-open { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  #filterForm > * { grid-column: auto !important; min-width: 0; }
+  #filterForm > .filter-model-run, #filterForm > .filter-search,
+  #filterForm > .review-task-filter, #filterForm > .review-workflow-mode,
+  #filterForm > .mobile-filter-results { grid-column: 1 / -1 !important; }
+  .mobile-topbar-panel {
+    max-height: calc(100dvh - var(--mobile-topbar-height, 62px) - 16px);
+    overflow-y: auto; overscroll-behavior: contain;
+  }
+}

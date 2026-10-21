@@ -37,6 +37,7 @@ review-mentions.js
 review-tags.js
 review-attachments.js
 review-form.js
+case-label-explanation.js
 case-labeling.js
 media-dialog.js
 batch-gateway.js
@@ -48,4 +49,5 @@ trail-update-preview.js
 trail-update-import.js
 trail-update-commit.js
 trail-update.js
+mobile-workbench.js
 bind-bootstrap.js

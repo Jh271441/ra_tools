@@ -496,11 +496,21 @@ function submitReviewFromDropdown(event, target) {
   return true;
 }
 
+function reviewTouchTextEntry(target) {
+  return Boolean(
+    target?.matches?.("textarea")
+    && typeof window !== "undefined"
+    && typeof window.matchMedia === "function"
+    && window.matchMedia("(max-width: 639px), (pointer: coarse)").matches
+  );
+}
+
 function submitReviewFromKeyboard(event, target) {
   if (
     event.key !== "Enter" ||
     event.shiftKey ||
     event.isComposing ||
+    reviewTouchTextEntry(target) ||
     target?.closest?.(
       "button, a, select, [role='option'], [role='listbox'], [contenteditable='true']"
     )
@@ -986,7 +996,8 @@ function positionReviewDropdownPanel(dropdown) {
   prepareReviewDropdownPanelForMeasure(panel);
 
   const summaryRect = summary.getBoundingClientRect();
-  const width = Math.max(summaryRect.width, 180);
+  const viewport = anchoredViewportBounds();
+  const width = Math.min(Math.max(summaryRect.width, 180), viewport.width - 16);
   panel.style.width = `${Math.round(width)}px`;
   // Temporarily place at origin with full width for accurate scrollHeight.
   panel.style.left = "0px";
@@ -999,10 +1010,9 @@ function positionReviewDropdownPanel(dropdown) {
   const naturalH = panel.scrollHeight || panel.getBoundingClientRect().height || 200;
   const gap = 4;
   const margin = 8;
-  const vh = window.innerHeight;
-  const vw = window.innerWidth;
-  const spaceBelow = vh - summaryRect.bottom - gap - margin;
-  const spaceAbove = summaryRect.top - gap - margin;
+  const vh = viewport.height;
+  const spaceBelow = viewport.bottom - summaryRect.bottom - gap - margin;
+  const spaceAbove = summaryRect.top - viewport.top - gap - margin;
   const desiredHeight = Math.min(naturalH, Math.floor(vh * 0.55), 420);
   const openUp =
     spaceBelow < desiredHeight && spaceAbove > spaceBelow;
@@ -1015,9 +1025,9 @@ function positionReviewDropdownPanel(dropdown) {
   let top = openUp
     ? summaryRect.top - height - gap
     : summaryRect.bottom + gap;
-  top = Math.max(margin, Math.min(top, vh - height - margin));
+  top = Math.max(viewport.top + margin, Math.min(top, viewport.bottom - height - margin));
   let left = summaryRect.left;
-  left = Math.max(margin, Math.min(left, vw - width - margin));
+  left = Math.max(viewport.left + margin, Math.min(left, viewport.right - width - margin));
 
   panel.style.top = `${Math.round(top)}px`;
   panel.style.left = `${Math.round(left)}px`;

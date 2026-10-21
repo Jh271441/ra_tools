@@ -1,5 +1,6 @@
 """Frontend shell source contracts; original assertions preserved."""
 import unittest
+import re
 from frontend_contract_fixtures import APP_ENTRY_JS, APP_JS, CSS_PATHS, INDEX_HTML, JS_DIR, MANIFEST_PATH, STATIC_DIR, STYLES_CSS
 
 
@@ -36,6 +37,7 @@ class FrontendShellContractTest(unittest.TestCase):
             for line in MANIFEST_PATH.read_text(encoding="utf-8").splitlines()
             if line.strip() and not line.lstrip().startswith("#")
         ]
+        self.assertEqual(names, re.findall(r'"([a-z][a-z0-9-]+\.js)"', APP_ENTRY_JS))
         self.assertGreaterEqual(len(names), 8)
         self.assertEqual(names[0], "core-base.js")
         self.assertEqual(names[-1], "bind-bootstrap.js")
@@ -43,7 +45,7 @@ class FrontendShellContractTest(unittest.TestCase):
             self.assertTrue((JS_DIR / name).is_file(), name)
             self.assertIn(f'"{name}"', APP_ENTRY_JS)
         self.assertIn("CACHE_VERSION", APP_ENTRY_JS)
-        self.assertIn("manual-triage-592", APP_ENTRY_JS)
+        self.assertIn("manual-triage-593", APP_ENTRY_JS)
         self.assertIn("function setBaselineScopes", APP_JS)
         self.assertIn("function applyInferredBaselinesFromRun", APP_JS)
         self.assertIn("clearIncompatible: true", APP_JS)
