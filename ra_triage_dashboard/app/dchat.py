@@ -221,7 +221,7 @@ def build_review_url(
 
 def build_discussion_url(
     return_url: str, *, issue_id: str, discussion_channel: str = "model_review",
-    campaign_id: str = "", baseline_scope: str = "", model_run_id: str = "",
+    campaign_id: str = "", baseline_id: str = "", model_run_id: str = "",
     comment_id: int | None = None,
 ) -> str:
     """Return to the stored discussion destination, independent of the sender's page."""
@@ -237,8 +237,8 @@ def build_discussion_url(
     query = {"issue": issue_id, "comments": "1", "channel": discussion_channel}
     if comment_id is not None:
         query["comment"] = str(int(comment_id))
-    if baseline_scope:
-        query["baselines"] = baseline_scope
+    if baseline_id:
+        query["baselines"] = baseline_id
     if discussion_channel == "campaign":
         if not campaign_id:
             raise ValueError("任务讨论缺少任务信息，无法生成讨论链接。")

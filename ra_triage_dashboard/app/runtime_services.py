@@ -94,7 +94,7 @@ def build_runtime_services(settings: Settings) -> RuntimeServices:
     prompt_catalog = PromptCatalog(settings.ra_auto_triage_root)
     autotriage_source = AutoTriageSource(settings.autotriage_api_base_url)
     batch_prediction_runner = BatchPredictionRunner(settings, database)
-    review_notification_dispatcher = ReviewNotificationDispatcher(settings, database)
+    review_notification_dispatcher = ReviewNotificationDispatcher(settings, database, baseline_ids_by_scope={entry.scope: entry.id for entry in baseline_registry.entries})
     issue_tag_sources = IssueTagSourceIndex()
     return RuntimeServices(
         database=database,

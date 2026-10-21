@@ -35,6 +35,8 @@ remain authoritative, including replies and attachments.
 Notification links are derived from the stored comment destination: issue to
 case-labeling, task to task detail, review batch to review. They retain the exact
 comment and dataset/Run/task context and never guess a different destination.
+The runtime injects dataset IDs from the registry; URLs must use UI dataset IDs
+(such as0508), never database scope names that the picker would discard.
 Already-sent notifications are not replayed. Explicit directory-approved self
 mentions retain their reminder behavior. QA must not send actual messages or
 submit business comments. Original comments, attachments, review versions and

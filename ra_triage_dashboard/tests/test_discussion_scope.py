@@ -90,7 +90,7 @@ class DiscussionScopeTest(unittest.TestCase):
             item=self.db.claim_comment_notification(now='2099-01-01T00:00:00+00:00')
             self.assertEqual(item['discussion_channel'],channel)
             self.assertEqual(item['campaign_id'],kwargs.get('campaign_id',''))
-            url=build_discussion_url('https://example.test/manual/review?old=1#old',issue_id=item['issue_id'],discussion_channel=item['discussion_channel'],campaign_id=item['campaign_id'],baseline_scope=item['baseline_scope'],model_run_id=item['model_run_id'],comment_id=comment['id'])
+            url=build_discussion_url('https://example.test/manual/review?old=1#old',issue_id=item['issue_id'],discussion_channel=item['discussion_channel'],campaign_id=item['campaign_id'],baseline_id='0508',model_run_id=item['model_run_id'],comment_id=comment['id'])
             parsed=urlparse(url); query=parse_qs(parsed.query)
             self.assertEqual(parsed.path,path)
             self.assertEqual(query['comment'],[str(comment['id'])])
@@ -99,6 +99,7 @@ class DiscussionScopeTest(unittest.TestCase):
             if channel=='campaign': self.assertEqual(query['campaign'],[task['id']])
             if channel=='model_review': self.assertEqual(query['run'],[self.runs[0]['id']])
             if channel=='case': self.assertNotIn('campaign',query)
+            if channel!='model_review': self.assertEqual(query['baselines'],['0508'])
         with self.assertRaisesRegex(ValueError,'任务信息'):
             build_discussion_url('https://example.test/manual/review',issue_id='cn1',discussion_channel='campaign')
 
@@ -111,7 +112,7 @@ class DiscussionScopeTest(unittest.TestCase):
         def fake_send(recipient,text):
             sent.append((recipient,text));return DChatSendResult('trace','message')
         async def dispatch():
-            dispatcher=ReviewNotificationDispatcher(settings,self.db)
+            dispatcher=ReviewNotificationDispatcher(settings,self.db,baseline_ids_by_scope={"scope":"0508"})
             return dispatcher._dispatch_one(),dispatcher._dispatch_one()
         with patch('ra_triage_dashboard.app.review_notification_dispatcher.DChatLoopbackClient.send_to_username',side_effect=fake_send):
             self.assertEqual(asyncio.run(dispatch()),(True,False))
@@ -119,6 +120,8 @@ class DiscussionScopeTest(unittest.TestCase):
         self.assertEqual(sent[0][0],'alice')
         self.assertIn('/manual/case-labeling?',sent[0][1])
         self.assertIn('comment='+str(comment['id']),sent[0][1])
+        self.assertIn('baselines=0508',sent[0][1])
+        self.assertNotIn('baselines=scope',sent[0][1])
         self.assertEqual(self.db.comment_notification_status()['sent'],1)
 
     def test_actual_frontend_discussion_behavior(self):

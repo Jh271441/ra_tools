@@ -24,9 +24,10 @@ logger = logging.getLogger("ra_triage_dashboard")
 
 
 class ReviewNotificationDispatcher:
-    def __init__(self, settings: Any, database: Any) -> None:
+    def __init__(self, settings: Any, database: Any, *, baseline_ids_by_scope: dict[str, str] | None = None) -> None:
         self.settings = settings
         self.database = database
+        self.baseline_ids_by_scope = dict(baseline_ids_by_scope or {})
         self._wake = asyncio.Event()
 
     def wake(self) -> None:
@@ -87,7 +88,7 @@ class ReviewNotificationDispatcher:
                     issue_id=str(item["issue_id"]),
                     discussion_channel=str(item.get("discussion_channel") or "model_review"),
                     campaign_id=str(item.get("campaign_id") or ""),
-                    baseline_scope=str(item.get("baseline_scope") or ""),
+                    baseline_id=self.baseline_ids_by_scope.get(str(item.get("baseline_scope") or ""), ""),
                     model_run_id=str(item.get("model_run_id") or ""),
                     comment_id=int(item["comment_id"]) if item.get("comment_id") else None,
                 )
