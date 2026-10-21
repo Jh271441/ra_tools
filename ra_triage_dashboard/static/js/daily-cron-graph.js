@@ -49,6 +49,16 @@ function buildDailyCronGraph(data, definitionLane = "") {
   if (allMedia && media.original_orion_failed > 0) mediaNodes[3].data.stateLabel = uiText("最终已补齐", "Finally recovered");
   if (mainStale) mainNodes.forEach(n => { if (n.data.status === "running") n.data.status = "unknown"; n.data.stateLabel = cronGraphStateLabel(n.data.status); });
   if (mediaStale) mediaNodes.forEach(n => { if (n.data.status === "running") n.data.status = "unknown"; n.data.stateLabel = cronGraphStateLabel(n.data.status); });
+  for (const n of mainNodes) {
+    n.data.timing = run?.stage_timings?.[n.id];
+    n.data.timingText = n.id === "main-schedule" ? uiText("定时触发", "Scheduled event") : cronTimingText(n.data.timing, { compact: true, stale: mainStale });
+    n.data.rows.push(...cronTimingRows(n.data.timing, { stale: mainStale }));
+  }
+  for (const n of mediaNodes) {
+    n.data.timing = n.id === "media-ready" ? media?.timing : media?.stage_timings?.[n.id];
+    n.data.timingText = cronTimingText(n.data.timing, { compact: true, stale: mediaStale });
+    n.data.rows.push(...cronTimingRows(n.data.timing, { stale: mediaStale }));
+  }
   const edge = (source, target, label = "", optional = false) => ({ id: `${source}:${target}`, source, target, label, optional });
   const mainEdges = mainNodes.slice(1).map((n, i) => edge(mainNodes[i].id, n.id));
   const mediaEdges = [edge("media-source", "media-import"), edge("media-import", "media-camera"), edge("media-import", "media-orion"), edge("media-camera", "media-verify"), edge("media-orion", "media-verify"), edge("media-orion", "media-retry", uiText("失败", "Failed"), true), edge("media-retry", "media-verify", uiText("成功", "Success"), true), edge("media-retry", "media-local", uiText("仍失败", "Still failed"), true), edge("media-local", "media-verify", "", true), edge("media-verify", "media-ready")];
@@ -58,7 +68,7 @@ function buildDailyCronGraph(data, definitionLane = "") {
     lanes = lanes.filter(lane => lane.id === `${definitionLane}-lane`);
     const ids = new Set(lanes.flatMap(lane => lane.nodes.map(n => n.id)));
     edges = edges.filter(e => ids.has(e.source) && ids.has(e.target));
-    lanes.forEach(lane => lane.nodes.forEach(n => { n.data = { ...n.data, status: "definition", stateLabel: cronGraphStateLabel("definition"), detail: n.id === "main-infer" ? uiText("缺失 ≤5 且 ≤2% 可继续", "Continue if gaps ≤5 AND ≤2%") : n.id === "media-ready" ? uiText("少量缺失单独记录", "Small gaps recorded separately") : "" }; }));
+    lanes.forEach(lane => lane.nodes.forEach(n => { n.data = { ...n.data, status: "definition", stateLabel: cronGraphStateLabel("definition"), timingText: "", detail: n.id === "main-infer" ? uiText("缺失 ≤5 且 ≤2% 可继续", "Continue if gaps ≤5 AND ≤2%") : n.id === "media-ready" ? uiText("少量缺失单独记录", "Small gaps recorded separately") : "" }; }));
   }
   return { lanes, edges, selectedNode: dailyCronState.selectedNode || "", definition: Boolean(definitionLane), active: dailyCronState.active && !dailyCronState.error, theme: state.colorTheme || "dark", ui: { minimap: uiText("流程缩略图", "Flow overview"), loading: uiText("正在加载运行图…", "Loading run graph…"), error: uiText("运行图加载失败，可刷新重试。", "Graph unavailable; refresh to retry.") } };
 }
@@ -68,7 +78,7 @@ function ensureCronGraphLibrary() {
   if (cronGraphLibrary) return cronGraphLibrary;
   cronGraphLibrary = new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = withBase("/static/vendor/cron-graph/graph.js?v=manual-triage-585");
+    script.src = withBase("/static/vendor/cron-graph/graph.js?v=manual-triage-586");
     script.onload = () => resolve(window.RACronGraph);
     script.onerror = () => { cronGraphLibrary = null; script.remove(); reject(Error("graph load failed")); };
     document.body.appendChild(script);

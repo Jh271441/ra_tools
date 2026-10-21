@@ -73,3 +73,31 @@ class CronDailyMediaTest(unittest.TestCase):
         self.assertNotIn("private-path", json.dumps(result))
         self.write(self.report / "heartbeat.json", {"checked_at": time.time() - 301})
         self.assertTrue(media_snapshot(self.root)["stale"])
+
+    def test_media_elapsed_uses_receipts_and_replacement_does_not_borrow_start(self):
+        (self.work / "superseded-by-full-run.json").unlink()
+        now = time.time()
+        self.write(self.work / "registered.json", {"at": now - 100})
+        self.write(self.work / "imports/daily-review-2026-10-18-receipt.json", {"run_id": "original", "count": 1})
+        self.publish(self.work, "cn123")
+        self.write(self.work / "status.json", {"state": "complete", "bev": {"observed_task_p50_sec": 12.5}})
+        row = media_snapshot(self.root)["runs"][0]
+        self.assertAlmostEqual(row["timing"]["elapsed_seconds"], 100, delta=1)
+        self.assertEqual(row["stage_timings"]["media-orion"]["kind"], "p50")
+        self.assertEqual(row["stage_timings"]["media-orion"]["elapsed_seconds"], 12.5)
+        self.canonical()
+        self.publish(self.work, "cn456")
+        row = media_snapshot(self.root)["runs"][0]
+        self.assertEqual(row["timing"]["mode"], "unavailable")
+        self.assertEqual(row["state"], "complete")
+
+    def test_missing_timestamps_and_corrupt_timing_do_not_remove_media_state(self):
+        (self.work / "superseded-by-full-run.json").unlink()
+        self.write(self.work / "media-publication/cn123.json", {"issue_id": "cn123", "state": "verified", "bev_probe": {"width": 1}, "camera_probe": {"width": 1}})
+        row = media_snapshot(self.root)["runs"][0]
+        self.assertEqual(row["state"], "complete")
+        self.assertEqual(row["timing"]["mode"], "unavailable")
+        (self.work / "registered.json").write_text("broken")
+        row = media_snapshot(self.root)["runs"][0]
+        self.assertEqual(row["state"], "complete")
+        self.assertTrue(row["timing_error"])

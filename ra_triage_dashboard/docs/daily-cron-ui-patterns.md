@@ -1,6 +1,6 @@
 # 每日任务运行图采用的公开模式
 
-核对日期：2026-10-20。使用官方文档及维护方源码，不按第三方介绍推断产品行为。
+核对日期：2026-10-21。使用官方文档及维护方源码，不按第三方介绍推断产品行为。
 
 | 参考 | 已核对的交互 | 当前实现 |
 |---|---|---|
@@ -40,3 +40,38 @@ MiniMap与主画布共用显式节点width/height，不能仅在style声明尺�
 使用两组之间的独立通道，标签远离泳道边框。状态颜色、虚线和任务执行语义不变。
 布局回归：`cd frontend/cron-graph && node --test tests/layout.test.mjs`，覆盖中英文、
 双链实际运行与单链说明，检查节点互不覆盖、连线避让节点、标签避让节点/其他标签。
+
+## Duration and receipt spans
+
+Run cards show the main pipeline's exported elapsed_seconds (registration to
+execution receipt) and media time since cohort registration to the final dual
+video publication receipt. The two independent pipelines are never summed.
+Nodes have a separate timing row; both CSS and ELK use 104px task height so
+counts, state and duration stay visible. Details and run history show CST start,
+end, receipt coverage and the timing scope.
+
+- Query/freeze span: scheduler launch to frozen cohort registration, including startup.
+- Acquisition/inference span: registration to the first publication attempt,
+  including acquisition, model work and preparation waits.
+- Publication/sample span: first corresponding attempt to final verification
+  receipt, including retry waits. Concurrent task durations are not summed.
+- Dual-media publication span: first to final publication receipt; this is not
+  video processing runtime.
+- Orion task P50: observed median task runtime, explicitly distinct from batch
+  wall-clock duration. Missing queue timing stays unavailable.
+- Camera attempt: latest process start to final results for that exact cohort.
+  Old batches without runtime start receipts remain unavailable.
+- Local recovery span: first claim to final result for current cohort members,
+  with concurrent work and retries represented by a wall-clock span.
+
+Running elapsed time uses the observation timestamp and the existing 30-second
+refresh. Stale/error views say last observed elapsed and keep a frozen snapshot.
+Missing, invalid, reversed or future timing is unavailable; zero is distinct
+from missing. Partial receipt coverage is labelled observed span with counts.
+
+Stage reads are bounded to the latest eight main batches, validated Run/date
+and selection-hash-bound publication cohorts. Do not read large/private Trail
+selection snapshots or infer execution times from filesystem mtimes. Historical
+runs retain exported totals. Replacement media cohorts must not reuse a partial
+batch's registration start. Broken optional timing must preserve run outcomes
+and progress. No scheduler, prediction, capture, Trail write or schema change.

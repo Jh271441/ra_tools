@@ -13,6 +13,7 @@ function TaskNode({ data }) {
     <div className="cron-dag-task-label"><span className="cron-dag-state-dot" /><strong>{data.label}</strong></div>
     <span className="cron-dag-task-meta">{data.detail}</span>
     <span className="cron-dag-task-state">{data.stateLabel}</span>
+    <span className="cron-dag-task-timing" title={data.timingText}>{data.timingText}</span>
     {data.ports.filter(port => port.type === 'source').map(port => <Handle key={port.id} id={port.id} type="source" position={Position.Right} style={{ top: port.y }} isConnectable={false} />)}
   </div>;
 }
@@ -52,7 +53,7 @@ function Graph({ model, onSelect }) {
   const byId = new Map(all.map(node => [node.id, node.data]));
   const nodes = useMemo(() => geometry && !geometry.error ? [
     ...geometry.sizes.map(size => ({ id: size.id, type: 'lane', data: { label: model.lanes.find(l => l.id === size.id).label }, position: { x: size.x, y: size.y }, width: size.width, height: size.height, style: { width: size.width, height: size.height }, selectable: false, draggable: false, focusable: false })),
-    ...geometry.positions.map(pos => ({ id: pos.id, type: 'task', data: { ...byId.get(pos.id), ports: pos.ports }, parentId: pos.parentId, extent: 'parent', position: { x: pos.x, y: pos.y }, selected: pos.id === model.selectedNode, width: TASK_WIDTH, height: TASK_HEIGHT, ariaLabel: [byId.get(pos.id).label, byId.get(pos.id).stateLabel, byId.get(pos.id).detail].join(' · '), style: { width: TASK_WIDTH, height: TASK_HEIGHT } })),
+    ...geometry.positions.map(pos => ({ id: pos.id, type: 'task', data: { ...byId.get(pos.id), ports: pos.ports }, parentId: pos.parentId, extent: 'parent', position: { x: pos.x, y: pos.y }, selected: pos.id === model.selectedNode, width: TASK_WIDTH, height: TASK_HEIGHT, ariaLabel: [byId.get(pos.id).label, byId.get(pos.id).stateLabel, byId.get(pos.id).detail, byId.get(pos.id).timingText].join(' · '), style: { width: TASK_WIDTH, height: TASK_HEIGHT } })),
   ] : [], [geometry, model]);
   const routes = new Map((geometry?.edges || []).map(edge => [edge.id, edge]));
   const edges = model.edges.filter(edge => routes.has(edge.id)).map(edge => {

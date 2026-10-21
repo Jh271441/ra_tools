@@ -16,6 +16,7 @@ from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_ope
 
 from .timed_cache import TimedSingleFlightCache
 from .cron_media_source import media_snapshot
+from .cron_timing import add_main_timings
 
 MAX_RESPONSE_BYTES = 2_000_000
 SOURCE_PATHS = {
@@ -143,6 +144,8 @@ def _snapshot(ra_root: Path | None = None) -> dict:
             except (OSError, ValueError, TypeError):
                 result[key] = None
                 result["sources"][key] = "unavailable"
+    if result.get("overview") is not None:
+        add_main_timings(result["overview"], ra_root)
     if ra_root is not None:
         try:
             result["media_daily"] = media_snapshot(ra_root)

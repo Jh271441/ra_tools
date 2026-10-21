@@ -83,7 +83,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-585`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-586`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -1803,11 +1803,11 @@
             <div class="cron-monitors" id="dailyCronMetrics">
               <article class="cron-monitor" data-monitor="main">
                 <div class="cron-section-heading"><h3><span class="ui-lang-zh">推理回刷</span><span class="ui-lang-en">Inference / publication</span></h3><span id="dailyCronMainStatus"></span><button class="cron-info-button" type="button" data-cron-help="main" aria-label="推理回刷流程说明" title="流程说明">!</button></div>
-                <strong id="dailyCronMainValue">—</strong><span class="muted" id="dailyCronMainNote">09:00 CST · T−2</span>
+                <strong id="dailyCronMainValue">—</strong><span class="muted" id="dailyCronMainNote">09:00 CST · T−2</span><span class="cron-monitor-timing" id="dailyCronMainTiming">—</span>
               </article>
               <article class="cron-monitor" data-monitor="media">
                 <div class="cron-section-heading"><h3><span class="ui-lang-zh">平台与媒体</span><span class="ui-lang-en">Platform / media</span></h3><span id="dailyCronMediaStatus"></span><button class="cron-info-button" type="button" data-cron-help="media" aria-label="平台与媒体流程说明" title="流程说明">!</button></div>
-                <strong id="dailyCronMediaValue">—</strong><span class="muted" id="dailyCronMediaNote"><span class="ui-lang-zh">完成回执触发 · 独立判定</span><span class="ui-lang-en">Completion receipt · Independent outcome</span></span>
+                <strong id="dailyCronMediaValue">—</strong><span class="muted" id="dailyCronMediaNote"><span class="ui-lang-zh">完成回执触发 · 独立判定</span><span class="ui-lang-en">Completion receipt · Independent outcome</span></span><span class="cron-monitor-timing" id="dailyCronMediaTiming">—</span>
               </article>
             </div>
             <section class="cron-panel cron-graph-panel" aria-labelledby="dailyCronGraphTitle">
@@ -2449,7 +2449,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-585`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-586`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

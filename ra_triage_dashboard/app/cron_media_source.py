@@ -6,6 +6,8 @@ from pathlib import Path
 import re
 import time
 
+from .cron_timing import number, timestamp, timing
+
 MAX_BYTES = 2_000_000
 ISSUE_RE = re.compile(r"[A-Za-z0-9_-]{3,128}")
 DAY_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
@@ -40,7 +42,7 @@ def _ids(rows):
     return set(values)
 
 
-def _day(root, report, bags, day, replacement):
+def _day(root, report, bags, day, replacement, observed_at=None):
     work = report / "daily" / day
     status = _read(root, work / "status.json", {})
     groups = sorted((report / "daily").glob(day + "*"))[:8]
@@ -67,12 +69,16 @@ def _day(root, report, bags, day, replacement):
         raise ValueError("replacement cohort mismatch")
     verified = 0
     verified_at = 0
+    verified_times = []
     for issue_id in members:
         for folder in publications:
             item = _read(root, folder / (issue_id + ".json"), {})
             if item.get("issue_id") == issue_id and item.get("state") == "verified" and item.get("bev_probe") and item.get("camera_probe"):
                 verified += 1
-                verified_at = max(verified_at, item.get("verified_at", 0))
+                at = timestamp(item.get("verified_at"))
+                if at:
+                    verified_at = max(verified_at, at)
+                    verified_times.append(at)
                 break
     imported = receipt.get("count") if receipt.get("run_id") else None
     assigned = None
@@ -102,7 +108,57 @@ def _day(root, report, bags, day, replacement):
     state = "empty" if total == 0 and status.get("state") == "empty" else "complete" if total and verified == total else status.get("state", "waiting")
     if replacement and verified != total:
         state = "collecting"  # The original partial-run terminal state has another scope.
+    timing_error = False
+    try:
+        observed_at = timestamp(observed_at) or time.time()
+        registered = _read(root, work / "registered.json", {}) if not replacement else {}
+        registered_at = timestamp(registered.get("at"))
+        complete_times = len(verified_times) == total and total > 0
+        total_timing = timing(registered_at, max(verified_times) if complete_times else None,
+            running=not replacement and state == "collecting", observed_at=observed_at,
+            basis="media_registration_to_verified")
+        spans = {
+            "media-verify": timing(min(verified_times) if verified_times else None, max(verified_times) if verified_times else None,
+                kind="span", basis="media_publication_receipts", observed=len(verified_times), total=total, observed_at=observed_at),
+        }
+        if not complete_times and spans["media-verify"]["mode"] == "finished":
+            spans["media-verify"]["mode"] = "observed"
+        for key, records in (("media-orion", orion), ("media-retry", [retry])):
+            # A queue's P50 is useful, but is never a full-cohort wall-clock duration.
+            value = number(records[0].get("observed_task_p50_sec")) if len(records) == 1 else None
+            spans[key] = timing(seconds=value, kind="p50", basis="orion_task_runtime_p50")
+        if not replacement:
+            runtime = _read(root, bags / "daily" / day / "camera" / "runtime.json", {})
+            camera_done = (_count(camera.get("completed")) or 0) + (_count(camera.get("failed")) or 0)
+            results = camera.get("results")
+            camera_ids = set(results) if isinstance(results, dict) else set()
+            if camera.get("total") == total and camera_ids.issubset(members):
+                spans["media-camera"] = timing(runtime.get("started_at"), camera.get("updated_at") if camera_done == total and len(camera_ids) == total else None,
+                    running=state == "collecting" and camera_done < total, observed_at=observed_at, basis="camera_latest_attempt")
+        starts, ends = [], []
+        claims = 0
+        for claim_path in sorted((bags / "daily" / day / "recovery/local").glob("*/*/claim.json"))[:2000]:
+            iid = claim_path.parent.parent.name
+            if iid not in members:
+                continue
+            claim = _read(root, claim_path, {})
+            if claim.get("row", {}).get("issue_id") != iid:
+                continue
+            start = timestamp(claim.get("created_at"))
+            result = _read(root, claim_path.with_name("result.json"), {})
+            end = timestamp(result.get("finished_at"))
+            if start:
+                starts.append(start)
+                claims += 1
+            if end and start and end >= start:
+                ends.append(end)
+        spans["media-local"] = timing(min(starts) if starts else None, max(ends) if ends and len(ends) == claims else None,
+            running=claims > len(ends) and state == "collecting", observed_at=observed_at,
+            kind="span", basis="local_recovery_receipts", observed=len(ends), total=claims)
+    except (OSError, ValueError, TypeError, AttributeError):
+        total_timing, spans, timing_error = timing(), {}, True
     return dict(
+        timing=total_timing, stage_timings=spans, timing_error=timing_error,
         day=day, state=state, selected=total, imported=imported, assigned=assigned,
         verified=verified, failure_count=len(failure_ids), failure_ids=failure_ids,
         run_id=receipt.get("run_id", ""), updated_at=max(status.get("updated_at", 0), verified_at),
@@ -133,12 +189,12 @@ def media_snapshot(ra_root: Path) -> dict:
     for folder in (report / "daily").glob("*"):
         if folder.is_dir() and DAY_RE.fullmatch(folder.name):
             days.add(folder.name)
+    checked = heartbeat.get("checked_at")
     rows = []
     for day in sorted(days, reverse=True)[:30]:
-        row = _day(ra_root, report, bags, day, replacements.get(day))
+        row = _day(ra_root, report, bags, day, replacements.get(day), checked)
         if row is not None:
             rows.append(row)
-    checked = heartbeat.get("checked_at")
     fresh = type(checked) in (int, float) and 0 <= time.time() - checked < 300
     policy = heartbeat.get("recovery_policy") or {}
     return {

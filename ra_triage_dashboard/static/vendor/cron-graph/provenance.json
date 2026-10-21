@@ -28,7 +28,7 @@
   ],
   "build": "npm ci && npm run build",
   "artifacts": {
-    "graph.js": "828b8c33a0f568566768fbc65868896b9bbbadf5d0152a90f6038ecd3ef76f71",
+    "graph.js": "765f833b94e0b85afe61542d395f780f53824257e24993ce1ff3d6662f2f8480",
     "graph.css": "1243b61a71923367ce620fb944427c80c9b03e863e18374fcf4f74d6d06f63fc"
   }
 }

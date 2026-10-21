@@ -9,6 +9,51 @@ function cronTime(value) {
   });
 }
 
+function cronDuration(value, { compact = false } = {}) {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return "—";
+  if (value > 0 && value < 1) return uiText("<1秒", "<1s");
+  const seconds = Math.floor(value), days = Math.floor(seconds / 86400), hours = Math.floor(seconds / 3600) % 24, minutes = Math.floor(seconds / 60) % 60, rest = seconds % 60;
+  const parts = [];
+  if (days) parts.push(uiText(`${days}天`, `${days}d`));
+  if (hours) parts.push(uiText(`${hours}${compact ? "时" : "小时"}`, `${hours}h`));
+  if (minutes && !(compact && days)) parts.push(uiText(`${minutes}分`, `${minutes}m`));
+  if (!(compact && (days || hours)) && (rest || !parts.length)) parts.push(uiText(`${rest}秒`, `${rest}s`));
+  return parts.join(uiText("", " "));
+}
+
+function cronTimingText(timing, { compact = false, stale = false } = {}) {
+  if (!timing || timing.mode === "unavailable" || typeof timing.elapsed_seconds !== "number" || !Number.isFinite(timing.elapsed_seconds) || timing.elapsed_seconds < 0) return uiText("耗时 —", "Duration —");
+  const prefix = timing.mode === "running"
+    ? stale ? uiText("上次已运行", "Last elapsed") : uiText("已运行", "Elapsed")
+    : timing.kind === "p50" ? uiText("任务 P50", "Task P50")
+    : timing.kind === "span" ? timing.mode === "observed" ? uiText("已观测跨度", "Observed span") : uiText("回执跨度", "Receipt span")
+    : timing.basis === "media_registration_to_verified" ? uiText("注册后耗时", "Since registration")
+    : timing.basis === "camera_latest_attempt" ? uiText("本轮耗时", "Attempt duration") : uiText("耗时", "Duration");
+  return `${prefix} ${cronDuration(timing.elapsed_seconds, { compact })}`;
+}
+
+function cronTimingRows(timing, { stale = false } = {}) {
+  const scopes = {
+    pipeline_registration: ["注册至本次执行回执；包含恢复等待的墙钟时间", "Registration to execution receipt, including recovery waits"],
+    launch_to_registration: ["调度启动至冻结选集注册，包含进程准备", "Scheduler launch to cohort registration, including startup"],
+    registration_to_publication: ["注册至首条回刷尝试，包含采集、推理和准备等待", "Registration to first publication attempt, including acquisition, inference and preparation"],
+    publication_receipts: ["首条回刷尝试至最后验证回执，包含重试等待", "First publication attempt to final verification receipt, including retry waits"],
+    sample_hook_receipts: ["首条抽样更新尝试至最后抽样验证回执", "First sample-update attempt to final sample verification receipt"],
+    media_registration_to_verified: ["本批注册至最后双媒体发布验证；不含注册前耗时", "Cohort registration to final dual-media publication; excludes pre-registration work"],
+    media_publication_receipts: ["首条至最后双媒体发布验证；并非视频处理耗时", "First to final dual-media publication receipt; not video processing duration"],
+    orion_task_runtime_p50: ["单任务运行耗时中位数；不等于整批墙钟耗时", "Median task runtime; not the batch wall-clock duration"],
+    camera_latest_attempt: ["最近采集进程启动至本轮结果回执", "Latest capture process start to its final result receipt"],
+    local_recovery_receipts: ["本批首次本地尝试至最后结果；并发不累加", "First local attempt to final result; parallel runtimes are not summed"],
+  };
+  const rows = [[uiText("计时", "Timing"), cronTimingText(timing, { stale })]];
+  if (timing?.started_at) rows.push([uiText("开始 · CST", "Start · CST"), cronTime(timing.started_at)]);
+  if (timing?.finished_at) rows.push([uiText("结束 · CST", "End · CST"), cronTime(timing.finished_at)]);
+  if (timing?.mode === "running" && timing.observed_at) rows.push([uiText("观测于 · CST", "Observed · CST"), cronTime(timing.observed_at)]);
+  if (timing?.observed != null) rows.push([uiText("时间回执覆盖", "Timed receipts"), cronFraction(timing.observed, timing.total)]);
+  rows.push([uiText("计时口径", "Timing scope"), scopes[timing?.basis] ? uiText(...scopes[timing.basis]) : uiText("缺少有效起止回执", "No valid timing receipts")]);
+  return rows;
+}
+
 function cronCount(value) { return typeof value === "number" && Number.isFinite(value) ? value.toLocaleString() : "—"; }
 function cronFraction(done, total) { return `${cronCount(done)} / ${cronCount(total)}`; }
 function cronLabel(value) {
@@ -70,6 +115,8 @@ function renderDailyCron() {
     const picked = cronSelectedRuns(data), runtime = data.media_daily, media = picked.media;
     $("#dailyCronMainStatus").innerHTML = cronChip(outcome);
     $("#dailyCronMainValue").textContent = `${picked.day || "—"} · ${cronFraction(run?.verified, run?.selected)}`;
+    if ($("#dailyCronMainTiming")) $("#dailyCronMainTiming").textContent = cronTimingText(run?.timing, { stale: stale || dailyCronState.error });
+    if ($("#dailyCronMediaTiming")) $("#dailyCronMediaTiming").textContent = cronTimingText(media?.timing, { stale: runtime?.stale || runtime?.controller_error || dailyCronState.error });
     $("#dailyCronMainNote").textContent = `${uiText("已验证 / 选中", "Verified / Selected")} · ${uiText("跳过", "Skipped")} ${cronCount(run?.skipped)}`;
     const mediaHealth = !runtime ? "unavailable" : runtime.controller_error ? "failed" : runtime.stale ? "stalled" : (media?.state === "complete" && (media.imported !== media.selected || media.assigned !== media.selected) ? "unknown" : media?.state) || "waiting";
     $("#dailyCronMediaStatus").innerHTML = cronChip(mediaHealth);
@@ -128,8 +175,9 @@ function renderDailyCronRuns(data) {
       <div class="cron-run-heading"><div><strong>${escapeHtml(run.target_date_cst || run.id)}</strong>${run.target_is_weekend ? `<span class="cron-chip" data-tone="neutral">${escapeHtml(uiText("CST 周末", "CST weekend"))}</span>` : ""}</div>${cronChip(run.health)}</div>
       <div class="cron-run-counts">${escapeHtml(`${uiText("选中", "Selected")} ${cronCount(run.selected)} · ${uiText("已推理", "Inferred")} ${cronCount(run.inferred)} · ${uiText("已回刷", "Published")} ${cronCount(run.published)} · ${uiText("已验证", "Verified")} ${cronCount(run.verified)} · ${uiText("跳过", "Skipped")} ${cronCount(run.skipped)}`)}</div>
       ${progress}
+      <div class="cron-run-timing">${escapeHtml(cronTimingText(run.timing, { stale: dailyCronState.error || data.overview?.stale || Date.now() / 1000 - (data.overview?.collected_at || 0) > 90 }))}</div>
       <details class="cron-run-detail" data-run="${escapeHtml(run.id)}"${open.has(run.id) ? " open" : ""}><summary>${escapeHtml(uiText("运行证据与缺失案例", "Run evidence and missing cases"))}${cases.length ? ` · ${cases.length}` : ""}</summary>
-        <dl><div><dt>Run</dt><dd>${escapeHtml(run.id)}</dd></div><div><dt>${escapeHtml(uiText("最终状态", "Final state"))}</dt><dd>${escapeHtml(run.state)}</dd></div><div><dt>${escapeHtml(uiText("开始 / 更新 · CST", "Started / Updated · CST"))}</dt><dd>${escapeHtml(`${cronTime(run.started_at)} / ${cronTime(run.updated_at)}`)}</dd></div><div><dt>${escapeHtml(uiText("最近调度退出", "Latest scheduler exit"))}</dt><dd>${escapeHtml(launch ? `${cronLabel(launch.state)} · exit ${cronCount(launch.returncode)} · ${cronTime(launch.finished_at || launch.started_at)}` : "—")}</dd></div></dl>
+        <dl><div><dt>Run</dt><dd>${escapeHtml(run.id)}</dd></div><div><dt>${escapeHtml(uiText("最终状态", "Final state"))}</dt><dd>${escapeHtml(run.state)}</dd></div><div><dt>${escapeHtml(uiText("开始 / 更新 · CST", "Started / Updated · CST"))}</dt><dd>${escapeHtml(`${cronTime(run.started_at)} / ${cronTime(run.updated_at)}`)}</dd></div><div><dt>${escapeHtml(uiText("最近调度退出", "Latest scheduler exit"))}</dt><dd>${escapeHtml(launch ? `${cronLabel(launch.state)} · exit ${cronCount(launch.returncode)} · ${cronTime(launch.finished_at || launch.started_at)}` : "—")}</dd></div>${cronTimingRows(run.timing, { stale: dailyCronState.error || data.overview?.stale || Date.now() / 1000 - (data.overview?.collected_at || 0) > 90 }).map(([key, value]) => `<div><dt>${escapeHtml(key)}</dt><dd>${escapeHtml(value)}</dd></div>`).join("")}</dl>
         ${run.percent != null ? `<p class="cron-note muted">${escapeHtml(uiText("进度条只代表当前阶段，包含失败项；全链路结果由最终回执判定。", "Progress applies to the current stage and includes failed items; the final receipt determines completion."))}</p>` : ""}
         ${run.evidence_error ? `<p class="cron-alert" data-tone="warn">${escapeHtml(uiText("状态证据读取异常", "Run evidence could not be read"))}</p>` : ""}
         ${cases.length ? `<ul class="cron-case-list">${cases.map((item) => `<li><a href="https://voyager.intra.xiaojukeji.com/static/management/#/issue/${encodeURIComponent(item.issue_id)}?view_id=2410" target="_blank" rel="noopener noreferrer">${escapeHtml(item.issue_id)} ↗</a><span class="muted">${escapeHtml(item.code || uiText("采集失败", "Acquisition failed"))}</span></li>`).join("")}</ul>` : `<p class="cron-note muted">${escapeHtml(uiText("未记录跳过或失败案例。", "No skipped or failed cases recorded."))}</p>`}
