@@ -44,7 +44,7 @@ async function loadDailyReview() {
   const controller=new AbortController();dailyReviewState.controller=controller;
   if (dailyReviewState.key!==key) {
     dailyReviewState.data=null;stopDailyReviewImages();$('#dailyReviewGrid').replaceChildren();
-    $('#dailyReviewProgress').textContent='TE — / —';$('#dailyReviewRate').textContent='—';
+    $('#dailyReviewScope').textContent='';$('#dailyReviewProgress').textContent='TE — / —';$('#dailyReviewRate').textContent='—';
     $('#dailyReviewCounts').textContent='';$('#dailyReviewBar').value=0;$('#dailyReviewExport').hidden=true;
   }
   dailyReviewState.key=key;
@@ -67,8 +67,10 @@ function renderDailyReview({keepImages=false}={}) {
   for (const [id,key] of [['dailyReviewReason','reason'],['dailyReviewStatus','te_status'],['dailyReviewMedia','media']]) $('#'+id).value=s[key];
   document.querySelectorAll('[data-te-dataset]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.teDataset===s.dataset)));
   const date=$('#dailyReviewDate');date.hidden=s.dataset==='0821';
+  $('#dailyReviewDateLabel').hidden=date.hidden;
   if(!data)return;
   date.innerHTML=data.date_options.map(d=>`<option value="${escapeHtml(d)}">${escapeHtml(d)}</option>`).join('');date.value=data.scope.date || '';
+  $('#dailyReviewScope').textContent=data.scope.dataset==='0821' ? uiText('0821 · 历史固定集','0821 · Frozen set') : `1009 · ${data.scope.date || '—'} · CST`;
   const n=data.summary;
   $('#dailyReviewProgress').textContent=n ? `TE ${n.filled} / ${n.total}` : 'TE — / —';
   $('#dailyReviewRate').textContent=n ? (n.total ? `${(n.rate*100).toFixed(1)}%` : uiText('无目标','No targets')) : '—';
