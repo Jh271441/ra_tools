@@ -84,7 +84,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-590`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-591`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -1806,18 +1806,37 @@
               <button class="button button-quiet" type="button" data-te-dataset="0821" aria-pressed="false">0821</button>
               <span class="muted" id="dailyReviewDateLabel"><span class="ui-lang-zh">数据日 · CST</span><span class="ui-lang-en">Data date · CST</span></span>
               <select id="dailyReviewDate" aria-labelledby="dailyReviewDateLabel" data-native-select="true"></select>
-              <select class="te-media" id="dailyReviewMedia" aria-label="Media" data-native-select="true"><option value="bev">BEV</option><option value="camera">Camera</option></select>
+              <select id="dailyReviewReason" aria-label="目标类型" data-native-select="true"><option value="all" data-zh="全部目标" data-en="All targets">全部目标</option><option value="low" data-zh="低置信" data-en="Low confidence">低置信</option><option value="sample" data-zh="抽样" data-en="Sample">抽样</option></select>
+              <span class="te-source" id="dailyReviewSource" role="status" aria-live="polite"></span>
               <button class="button button-quiet" id="dailyReviewRefresh" type="button" title="读取最近一次同步快照"><span class="ui-lang-zh">刷新</span><span class="ui-lang-en">Refresh</span></button>
             </div>
-            <div class="te-filters">
-              <select id="dailyReviewReason" aria-label="目标类型" data-native-select="true"><option value="all" data-zh="全部" data-en="All">全部</option><option value="low" data-zh="低置信" data-en="Low confidence">低置信</option><option value="sample" data-zh="抽样" data-en="Sample">抽样</option></select>
-              <select id="dailyReviewStatus" aria-label="TE 状态" data-native-select="true"><option value="all" data-zh="全部状态" data-en="All states">全部状态</option><option value="unfilled" data-zh="待标" data-en="Pending">待标</option><option value="filled" data-zh="已标" data-en="Filled">已标</option><option value="unknown" data-zh="未知" data-en="Unknown">未知</option></select>
-              <span class="muted" id="dailyReviewCounts"></span>
+            <div class="te-dashboard">
+              <section class="te-chart-panel te-daily-panel" id="dailyReviewDailyPanel" aria-labelledby="dailyReviewDailyTitle">
+                <header><h2 id="dailyReviewDailyTitle" data-zh="每日完成情况" data-en="Daily completion">每日完成情况</h2><span class="muted" data-zh="最近 14 个数据日 · 点击切换日期" data-en="Latest 14 data dates · Select a date">最近 14 个数据日 · 点击切换日期</span></header>
+                <div class="te-daily-chart" id="dailyReviewDailyChart"></div>
+                <p class="te-chart-note" data-zh="各数据日的当前完成率，不代表当天新增标注量。" data-en="Current completion by data date, not labels added that day.">各数据日的当前完成率，不代表当天新增标注量。</p>
+              </section>
+              <section class="te-chart-panel" aria-labelledby="dailyReviewScope">
+                <header><h2 id="dailyReviewScope"></h2><span class="muted" data-zh="所选范围" data-en="Selected scope">所选范围</span></header>
+                <div class="te-scope-chart"><div class="te-donut" id="dailyReviewDonut" role="img"><strong id="dailyReviewRate">—</strong><small data-zh="完成率" data-en="Completion">完成率</small></div><div class="te-status-legend" id="dailyReviewStatusChart"></div></div>
+                <div class="te-progress"><strong id="dailyReviewProgress">TE — / —</strong><progress id="dailyReviewBar" max="1" value="0" aria-label="TE progress"></progress></div>
+                <p class="te-chart-note" id="dailyReviewCounts"></p>
+              </section>
+              <section class="te-chart-panel" aria-labelledby="dailyReviewResultsTitle">
+                <header><h2 id="dailyReviewResultsTitle" data-zh="已标结果分布" data-en="TE result distribution">已标结果分布</h2><span class="muted" data-zh="仅统计已标案例" data-en="Filled cases only">仅统计已标案例</span></header>
+                <div class="te-result-chart" id="dailyReviewDistribution"></div>
+              </section>
             </div>
-            <div class="te-progress"><strong id="dailyReviewScope"></strong><strong id="dailyReviewProgress">TE — / —</strong><progress id="dailyReviewBar" max="1" value="0" aria-label="TE progress"></progress><span id="dailyReviewRate">—</span><span class="te-source" id="dailyReviewSource" role="status" aria-live="polite"></span></div>
-            <div class="te-grid" id="dailyReviewGrid"></div>
-            <div class="te-pagination"><button class="button button-quiet" type="button" id="dailyReviewPrev" aria-label="Previous">‹</button><span id="dailyReviewPageLabel"></span><button class="button button-quiet" type="button" id="dailyReviewNext" aria-label="Next">›</button></div>
-            <details class="te-results"><summary><span class="ui-lang-zh">结果与口径</span><span class="ui-lang-en">Results / scope</span></summary><div id="dailyReviewDistribution"></div><div id="dailyReviewCoverage"></div><p><span class="ui-lang-zh">TE 来源：Trail · RA Review Result New。1009 按北京时间数据日；0821 为既有 312 条。每 5 分钟同步，较早历史每小时复查。</span><span class="ui-lang-en">TE source: Trail · RA Review Result New. 1009 uses CST data dates; 0821 is the frozen 312-case set. Sync every 5 minutes; older history hourly.</span></p><a id="dailyReviewExport" hidden><span class="ui-lang-zh">导出当前范围 CSV</span><span class="ui-lang-en">Export this scope as CSV</span></a></details>
+            <section class="gallery-panel te-gallery" aria-labelledby="dailyReviewGalleryTitle">
+              <header class="gallery-heading"><div><h2 id="dailyReviewGalleryTitle">Gallery</h2><span class="muted" id="dailyReviewGalleryCount"></span></div><div class="gallery-heading-actions te-filters">
+                <select id="dailyReviewStatus" aria-label="TE 状态" data-native-select="true"><option value="all" data-zh="全部状态" data-en="All states">全部状态</option><option value="unfilled" data-zh="待标" data-en="Pending">待标</option><option value="filled" data-zh="已标" data-en="Filled">已标</option><option value="unknown" data-zh="未知" data-en="Unknown">未知</option></select>
+                <select id="dailyReviewMedia" aria-label="Media" data-native-select="true"><option value="bev">BEV</option><option value="camera">Camera</option></select>
+                <a class="button button-quiet" id="dailyReviewExport" hidden><span class="ui-lang-zh">导出 CSV</span><span class="ui-lang-en">Export CSV</span></a>
+              </div></header>
+              <div class="issue-grid te-grid" id="dailyReviewGrid"></div>
+              <nav class="case-pagination" aria-label="Gallery pagination"><button class="button button-quiet" type="button" id="dailyReviewPrev" data-zh="上一页" data-en="Previous">上一页</button><span id="dailyReviewPageLabel"></span><button class="button button-quiet" type="button" id="dailyReviewNext" data-zh="下一页" data-en="Next">下一页</button></nav>
+            </section>
+            <details class="te-results"><summary><span class="ui-lang-zh">数据口径</span><span class="ui-lang-en">Data scope</span></summary><div id="dailyReviewCoverage"></div><p><span class="ui-lang-zh">TE 来源：Trail · RA Review Result New。1009 按北京时间数据日；0821 为既有 312 条。每 5 分钟同步，较早历史每小时复查。</span><span class="ui-lang-en">TE source: Trail · RA Review Result New. 1009 uses CST data dates; 0821 is the frozen 312-case set. Sync every 5 minutes; older history hourly.</span></p></details>
           </section>
           <section class="app-page tool-page daily-cron-page hidden" id="dailyCronPage" data-page="daily-cron">
             <div class="cron-page-heading">
@@ -2476,7 +2495,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-590`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-591`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

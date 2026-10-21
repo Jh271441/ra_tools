@@ -1,8 +1,8 @@
 # TE 标注进度
 
-入口：每日数据 → 标注进度（位于每日任务紧下方），`/manual/daily-review`。默认 BEV 图片网格，可切换
+入口：每日数据 → 标注进度（位于每日任务紧下方），`/manual/daily-review`。上方展示每日完成情况、当前日期状态占比、已标结果分布；下方为统一 Gallery。默认 BEV 图片，可切换
 Camera、打开现有媒体查看器；不提交任何标签或触发媒体采集。页面使用现有主题、
-语言切换和访问权限。静态资源版本 `manual-triage-590`。
+语言切换和访问权限。静态资源版本 `manual-triage-591`。
 
 1009 每次只展示所选数据日，默认最新可用数据日，进度旁明确显示日期；不跨日合计。
 2026-10-21 逐 Issue ID 核验：10/15—10/19 的每日快照与对应完整每日 Run 成员一致
@@ -23,6 +23,18 @@ Camera、打开现有媒体查看器；不提交任何标签或触发媒体采�
   每轮通过完整/empty/not_empty 集合交叉验证，失败保留旧快照与原观测时间。
   快照记录成员增减、TE 修改/撤销和原因变化，不推测完成时间。
 
+## 图表与 Gallery
+
+每日柱图显示最近14个数据日各自的当前完成率，点击切换日期，不累计跨日分母，
+也不表示历史当天新增标注数。所选日期显示已标/待标/未知占比；点击图例筛选
+Gallery，再点一次恢复全部。状态筛选不改变图表分母。已标结果按数量降序显示
+占已标数量的比例；缺失/损坏快照展示无观测或异常，空范围不画假0%。
+0821仅显示历史固定集状态和结果分布。
+
+Gallery复用共享gallery-panel、issue-grid、issue-card、issue-thumbnail、
+issue-card-body与case-pagination样式。图片保持16:9，Issue/原因/TE结果位于
+卡片下方；保留可见加载、并发上限、图片重试和只读媒体详情。
+
 ## 只读接口与边界
 
 `settings.ra_auto_triage_root/reports/te_review_monitor` 下固定路径的原子 JSON
@@ -33,6 +45,8 @@ Camera、打开现有媒体查看器；不提交任何标签或触发媒体采�
 * `GET /api/daily-review` 与 `/api/daily-review/cases`
 * `dataset=1009|0821`、`date=YYYY-MM-DD`、`reason=all|low|sample`
 * `te_status=all|filled|unfilled|unknown`、`page=1..10000`、`size=1..100`
+* `include_overview=true` 可选返回最近14个数据日的摘要，不返回额外案例明细；
+  在线程内读取有界快照，单日失败独立降级，当前日复用同次读取以保持图表与卡片一致。
 * 返回 scope、summary、date_options、result_distribution、source_status、
   last_success_at、snapshot_revision、items 和筛选后的 total。
 * `GET /api/daily-review/export` 必须携带当前 revision；快照改变返回 409。

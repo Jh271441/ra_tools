@@ -5,7 +5,7 @@ import tempfile
 import unittest
 import subprocess
 from datetime import datetime,timezone,timedelta
-from ra_triage_dashboard.app.daily_review_source import project,export_csv,SnapshotChanged
+from ra_triage_dashboard.app.daily_review_source import project,export_csv,SnapshotChanged,daily_overview
 
 class DailyReviewTest(unittest.TestCase):
  def setUp(self):
@@ -48,6 +48,27 @@ class DailyReviewTest(unittest.TestCase):
  def test_actual_javascript_scope_ownership(self):
   app=Path(__file__).resolve().parents[1]
   subprocess.run(['node',str(app/'tests/daily_review_ui.cjs'),str(app/'static/js/daily-review.js')],check=True,capture_output=True,text=True)
+ def test_daily_chart_keeps_daily_denominators_and_bounds_reads(self):
+  for day in range(1,17):
+   date=f'2026-10-{day:02d}'
+   d=self.save([self.row(day,date=date),self.row(day+100,'unfilled',None,date=date)],date=date)
+   (self.folder/f'snapshots/1009-{date}.json').write_text(json.dumps(d))
+  (self.folder/'snapshots/1009-2026-10-19.json').unlink()
+  current,_=project(self.root,day='2026-10-16',te_status='filled')
+  chart=daily_overview(self.root,current)
+  self.assertEqual(len(chart),14);self.assertEqual(chart[0]['date'],'2026-10-03')
+  self.assertEqual(chart[-1]['date'],'2026-10-16')
+  self.assertTrue(all(x['summary']['total']==2 and x['summary']['filled']==1 for x in chart))
+  self.assertEqual(current['total'],1)
+  self.assertTrue(all('items' not in x and 'rows' not in x for x in chart))
+ def test_daily_chart_bad_day_is_unknown_and_frozen_set_has_no_daily_chart(self):
+  self.save([self.row(1)])
+  (self.folder/'snapshots/1009-2026-10-18.json').write_text('{bad json')
+  current,_=project(self.root,day='2026-10-19')
+  chart=daily_overview(self.root,current)
+  self.assertIsNone(chart[0]['summary']);self.assertEqual(chart[0]['source_status'],'error')
+  self.assertEqual(chart[1]['summary']['total'],1)
+  frozen,_=project(self.root,dataset='0821');self.assertEqual(daily_overview(self.root,frozen),[])
  def test_csv_formula(self):
   self.assertIn("'=1+1",export_csv([self.row(1,value='=1+1')]))
 

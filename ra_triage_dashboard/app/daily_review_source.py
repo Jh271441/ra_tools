@@ -86,3 +86,17 @@ def export_csv(rows):
         safe={k:("'"+v if isinstance(v,str) and v.startswith(('=','+','-','@','\t','\r')) else v) for k,v in row.items()}
         writer.writerow(safe)
     return '\ufeff'+out.getvalue()
+
+
+def daily_overview(root, current, reason='all'):
+    """Latest 14 data dates, independently validated; never sum daily denominators."""
+    if current['scope']['dataset'] != '1009':
+        return []
+    result = []
+    for day in reversed(current['date_options'][:14]):
+        try:
+            data = current if day == current['scope']['date'] else project(root, '1009', day, reason, size=1)[0]
+            result.append({k: data[k] for k in ('summary', 'source_status', 'last_success_at')} | {'date': day})
+        except (ValueError, OSError, TypeError, KeyError):
+            result.append({'date': day, 'summary': None, 'source_status': 'error', 'last_success_at': None})
+    return result
