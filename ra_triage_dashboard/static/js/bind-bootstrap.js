@@ -470,6 +470,7 @@ function bindEvents() {
         showToast(t("toast.page_refreshed"));
         return;
       }
+      if (state.activePage === "daily-review") { await loadDailyReview(); return; }
       if (state.activePage === "daily-cron") {
         await loadDailyCron();
         return;
@@ -1248,6 +1249,8 @@ async function bootstrap() {
       if (initialRoute.issue) {
         initialDetailRequest = selectCase(initialRoute.issue, { updateRoute: false });
       }
+    } else if (initialRoute.page === "daily-review") {
+      initialPageRequests.push(loadDailyReview());
     } else if (initialRoute.page === "daily-cron") {
       initialPageRequests.push(loadDailyCron());
     } else if (initialRoute.page === "status") {

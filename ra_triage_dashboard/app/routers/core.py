@@ -144,6 +144,7 @@ def _dashboard_config_payload() -> dict[str, Any]:
 @router.get("/inference", include_in_schema=False)
 @router.get("/batch-prediction", include_in_schema=False)
 @router.get("/daily-cron", include_in_schema=False)
+@router.get("/daily-review", include_in_schema=False)
 @router.get("/system-status", include_in_schema=False)
 @router.get("/users", include_in_schema=False)
 @router.get("/trail-attribute-update", include_in_schema=False)

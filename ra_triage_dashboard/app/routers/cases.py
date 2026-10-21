@@ -1164,13 +1164,40 @@ async def reviewers(
 
 
 
+from ..timed_cache import TimedSingleFlightCache
+_camera_thumbnail_cache = TimedSingleFlightCache(ttl_seconds=30,max_entries=2000)
+
+def _resolve_camera_thumbnail(issue_id: str) -> Path | None:
+    return _camera_thumbnail_cache.get_or_load(issue_id, lambda: _build_camera_thumbnail(issue_id))
+
+def _build_camera_thumbnail(issue_id: str) -> Path | None:
+    case=database.get_issue(issue_id)
+    if not case:return None
+    provider=media_for_issue(issue_id,str(case.get("baseline_scope") or ""))
+    if provider is None:return None
+    frames=provider.get_camera_assets(issue_id).get("frames",[])
+    if not frames:return None
+    def distance(frame):
+        offset=frame.get("offset_sec")
+        return abs(offset) if isinstance(offset,(int,float)) else float("inf")
+    frame=min(frames,key=distance)
+    source=provider.get_asset_path(issue_id,frame["id"])
+    if source is None or not source.is_file():return None
+    destination=_thumbnail_cache_path(issue_id+"-camera",source)
+    with _thumbnail_encode_gate:
+        if not destination.is_file():_ensure_case_thumbnail(source,destination)
+    return destination
+
+
 @router.get("/api/case-thumbnails/{issue_id}")
-async def get_case_thumbnail(issue_id: str) -> FileResponse:
+async def get_case_thumbnail(issue_id: str, kind: str = "bev") -> FileResponse:
+    if kind not in {"bev", "camera"}:
+        raise _detail(400, "Unsupported thumbnail kind.")
     if not ISSUE_ID_RE.fullmatch(issue_id):
         raise _detail(404, "Issue 不存在。")
 
     try:
-        destination = await asyncio.to_thread(_resolve_thumbnail_file, issue_id)
+        destination = await asyncio.to_thread(_resolve_camera_thumbnail if kind == "camera" else _resolve_thumbnail_file, issue_id)
     except (
         Image.DecompressionBombError,
         UnidentifiedImageError,

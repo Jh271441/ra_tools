@@ -44,6 +44,7 @@ from .routers import (
     cases,
     core,
     daily_cron,
+    daily_review,
     imports,
     inference,
     labeling,
@@ -403,6 +404,7 @@ app.mount(
 
 app.include_router(core.router)
 app.include_router(daily_cron.router)
+app.include_router(daily_review.router)
 app.include_router(cases.router)
 app.include_router(case_comments.router)
 app.include_router(campaigns.router)

@@ -71,6 +71,7 @@ function applyUiLanguage(language, { persist = true } = {}) {
   renderPageChrome();
   renderSystemStatus();
   if (typeof renderDailyCron === "function") renderDailyCron();
+  if (typeof renderDailyReview === "function") renderDailyReview();
   applySidebarState();
   renderSession();
   enhanceDashboardSelects();
@@ -805,6 +806,11 @@ function applyAnalysisRouteControls(route) {
 function pageUrl(page, options = {}) {
   const config = PAGE_ROUTES[page] || PAGE_ROUTES.review;
   const url = new URL(withBase(config.path), window.location.origin);
+  if (page === "daily-review" && typeof dailyReviewRouteOptions === "function") {
+    for (const [key,value] of Object.entries(dailyReviewRouteOptions(options))) {
+      if (value !== "") url.searchParams.set(key,String(value));
+    }
+  }
   if (page === "labeling" || page === "labeling-new-task") {
     const labeling = typeof caseLabelingRouteOptions === "function"
       ? caseLabelingRouteOptions(options)
@@ -1155,6 +1161,7 @@ function showPage(
   state.activePage = target;
   document.body.dataset.activePage = target;
   if (typeof setDailyCronActive === "function") setDailyCronActive(target === "daily-cron");
+  if (typeof setDailyReviewActive === "function") setDailyReviewActive(target === "daily-review");
   if (typeof ensureRunCollectionsDedicatedPage === "function") {
     ensureRunCollectionsDedicatedPage(target);
   }
@@ -1333,6 +1340,7 @@ function showPage(
       trailPage?.classList.add("is-loading");
     }
   }
+  if (target === "daily-review" && loadPageData) pageLoads.push(() => loadDailyReview());
   if (target === "daily-cron" && loadPageData) {
     pageLoads.push(() => loadDailyCron());
   }

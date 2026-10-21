@@ -457,6 +457,10 @@ function renderMediaDialog() {
     <span class="comparison-side-label comparison-side-model">模型</span>${labelBadge(modelLabel, "未输出")}
     <strong class="${comparisonClass}">${comparisonText}</strong>`;
   if (snapshot?.referenceMedia) $('#mediaDecisionSummary').innerHTML = `<span class="comparison-side-label comparison-side-gt">GT</span>${labelBadge(gtLabel, "未保存")}`;
+  if (snapshot?.teObservation) {
+    const observation=snapshot.teObservation;
+    $('#mediaDecisionSummary').innerHTML = `<span>${escapeHtml(dailyReviewBadge(observation))}</span><a href="https://voyager.intra.xiaojukeji.com/static/management/#/issue/${encodeURIComponent(snapshot.issueId)}" target="_blank" rel="noopener noreferrer">Voyager ↗</a>`;
+  }
   const extraInputTarget = $("#mediaComparisonExtraInputs");
   const renderFrameExtraInputs = (frame = null) => {
     const offsetMs = frame ? mediaFrameOffsetMs(frame) : NaN;
@@ -555,6 +559,7 @@ function openMedia(kind, index, { caseData = state.selectedCase } = {}) {
     modelLabel: String(selectedPrediction?.model_label || ""),
     intentPreview: Boolean(caseData?.intent_preview),
     referenceMedia: Boolean(caseData?.reference_media),
+    teObservation: caseData?.te_observation || null,
     comparisonExtraInputs: caseData?.comparison_extra_inputs || null,
     bev: [...(caseData?.assets?.frames || [])],
     camera: [...(caseData?.camera?.frames || [])],
@@ -590,6 +595,14 @@ async function navigateComparisonMediaCase(delta) {
     const kind = state.media.kind;
     await navigateAdjacentCase(delta);
     if (state.selectedCase) openMedia(kind,heroFrameIndex(kind === 'camera' ? state.selectedCase.camera?.frames || [] : state.selectedCase.assets?.frames || []),{caseData:state.selectedCase});
+    return;
+  }
+  if (state.media.snapshot?.teObservation && state.activePage === 'daily-review') {
+    const rows=dailyReviewState.data?.items || [];
+    const index=rows.findIndex(row=>row.issue_id===state.media.snapshot.issueId);
+    const next=rows[index+delta];
+    if(next) await openDailyReviewMedia(next.issue_id,state.media.kind);
+    else showToast(uiText('已到本页边界，请在图库翻页。','End of this page; change pages in the gallery.'));
     return;
   }
   if (!state.media.snapshot?.referenceMedia || state.activePage !== 'comparison') {

@@ -801,6 +801,7 @@ async function refreshChangedDataNow() {
     await loadIntentSummary({ datasetIds: state.intentLabeling.summaryDatasetIds, force: true });
     return;
   }
+  if (state.activePage === "daily-review") return;
   if (state.activePage === "daily-cron") return; // independent 30s observation, not a DB revision
   if (state.activePage === "status") {
     await loadStatus();
@@ -871,6 +872,7 @@ function scheduleChangePoll(delay = 5000) {
 }
 
 async function pollChangeRevision() {
+  if (state.activePage === "daily-review") return scheduleChangePoll(30000);
   if (state.changePollInFlight) return scheduleChangePoll();
   // Tab in background: poll much less often to free the main thread / network.
   if (document.hidden) return scheduleChangePoll(15000);

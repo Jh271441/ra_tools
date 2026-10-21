@@ -67,6 +67,7 @@
           "css/labeling-summary.css",
           "vendor/cron-graph/graph.css",
           "css/daily-cron.css",
+          "css/daily-review.css",
           "css/mobile.css",
         ];
         let stylesSettled = false;
@@ -83,7 +84,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-587`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-588`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -197,6 +198,10 @@
               <span class="sidebar-group-label sidebar-label"><span class="ui-lang-zh">每日数据</span><span class="ui-lang-en">Daily data</span></span><span class="sidebar-group-chevron" aria-hidden="true"></span>
             </button>
             <div class="sidebar-nav-group-items" id="sidebarNavDaily" data-sidebar-nav-group-items="daily">
+              <a class="sidebar-item" data-page-target="daily-review" data-app-path="/daily-review" href="/daily-review" title="标注进度">
+                <span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m5 17 5-5 4 3 3-4 3 6"/><circle cx="8" cy="8" r="1"/></svg></span>
+                <span class="sidebar-label"><strong class="ui-lang-zh">标注进度</strong><strong class="ui-lang-en">TE progress</strong></span>
+              </a>
               <a class="sidebar-item" id="dailyCronNavButton" data-page-target="daily-cron" data-app-path="/daily-cron" href="/daily-cron" title="每日任务">
                 <span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><circle class="icon-wash" cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="9"/><path class="icon-emphasis" d="M12 7v5l3 2"/></svg></span>
                 <span class="sidebar-label"><strong class="ui-lang-zh">每日任务</strong><strong class="ui-lang-en">Daily tasks</strong></span>
@@ -1795,6 +1800,24 @@
             </section>
           </section>
 
+          <section class="app-page tool-page daily-review-page hidden" id="dailyReviewPage" data-page="daily-review">
+            <div class="te-toolbar">
+              <button class="button button-quiet" type="button" data-te-dataset="1009" aria-pressed="true">1009</button>
+              <button class="button button-quiet" type="button" data-te-dataset="0821" aria-pressed="false">0821</button>
+              <select id="dailyReviewDate" aria-label="数据日 · CST" data-native-select="true"></select>
+              <select class="te-media" id="dailyReviewMedia" aria-label="Media" data-native-select="true"><option value="bev">BEV</option><option value="camera">Camera</option></select>
+              <button class="button button-quiet" id="dailyReviewRefresh" type="button" title="读取最近一次同步快照"><span class="ui-lang-zh">刷新</span><span class="ui-lang-en">Refresh</span></button>
+            </div>
+            <div class="te-filters">
+              <select id="dailyReviewReason" aria-label="目标类型" data-native-select="true"><option value="all" data-zh="全部" data-en="All">全部</option><option value="low" data-zh="低置信" data-en="Low confidence">低置信</option><option value="sample" data-zh="抽样" data-en="Sample">抽样</option></select>
+              <select id="dailyReviewStatus" aria-label="TE 状态" data-native-select="true"><option value="all" data-zh="全部状态" data-en="All states">全部状态</option><option value="unfilled" data-zh="待标" data-en="Pending">待标</option><option value="filled" data-zh="已标" data-en="Filled">已标</option><option value="unknown" data-zh="未知" data-en="Unknown">未知</option></select>
+              <span class="muted" id="dailyReviewCounts"></span>
+            </div>
+            <div class="te-progress"><strong id="dailyReviewProgress">TE — / —</strong><progress id="dailyReviewBar" max="1" value="0" aria-label="TE progress"></progress><span id="dailyReviewRate">—</span><span class="te-source" id="dailyReviewSource" role="status" aria-live="polite"></span></div>
+            <div class="te-grid" id="dailyReviewGrid"></div>
+            <div class="te-pagination"><button class="button button-quiet" type="button" id="dailyReviewPrev" aria-label="Previous">‹</button><span id="dailyReviewPageLabel"></span><button class="button button-quiet" type="button" id="dailyReviewNext" aria-label="Next">›</button></div>
+            <details class="te-results"><summary><span class="ui-lang-zh">结果与口径</span><span class="ui-lang-en">Results / scope</span></summary><div id="dailyReviewDistribution"></div><div id="dailyReviewCoverage"></div><p><span class="ui-lang-zh">TE 来源：Trail · RA Review Result New。1009 按北京时间数据日；0821 为既有 312 条。每 5 分钟同步，较早历史每小时复查。</span><span class="ui-lang-en">TE source: Trail · RA Review Result New. 1009 uses CST data dates; 0821 is the frozen 312-case set. Sync every 5 minutes; older history hourly.</span></p><a id="dailyReviewExport" hidden><span class="ui-lang-zh">导出当前范围 CSV</span><span class="ui-lang-en">Export this scope as CSV</span></a></details>
+          </section>
           <section class="app-page tool-page daily-cron-page hidden" id="dailyCronPage" data-page="daily-cron">
             <div class="cron-page-heading">
               <div class="cron-connection muted" id="dailyCronConnection" role="status" aria-live="polite"><span class="ui-lang-zh">正在连接…</span><span class="ui-lang-en">Connecting…</span></div>
@@ -2452,7 +2475,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-587`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-588`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>
