@@ -594,6 +594,8 @@ setTrailUpdateTab=tab=>state.trailUpdate.tab=tab;
 clearTrailIssuePreview=()=>invalidations++;
 parseTrailIssueIds=()=>{};setTrailIssueStatus=()=>{};uiText=x=>x;
 parseFilterList=()=>[];$=()=>null;
+// Shared DOM adapter is covered by dropdown_components.cjs.
+enhanceNativeUiSelect=()=>{};
 applyTrailUpdateRouteControls({tab:'issue',exclusionIssue:'cn123'});
 assert.equal(state.trailUpdate.tab,'issue');assert.equal(rows.length,1);assert.equal(rows[0].id.value,'cn123');
 rows[0].comment.value='retain reason';
