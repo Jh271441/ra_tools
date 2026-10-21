@@ -50,6 +50,7 @@ function renderBatchPrompts() {
     loadSelectedPromptTemplate();
   }
   renderBatchCatalogFilters();
+  enhanceNativeUiSelect(select);
 }
 
 function batchInputPresets() {
@@ -118,6 +119,7 @@ function syncCameraFramePreset() {
     preset.frame_offsets_ms.every((value, index) => value === offsets[index])
   );
   select.value = matched?.id || "custom";
+  enhanceNativeUiSelect(select);
 }
 
 function applyCameraFramePreset() {

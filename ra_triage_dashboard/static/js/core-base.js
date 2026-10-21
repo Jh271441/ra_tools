@@ -188,7 +188,7 @@ function closeAllUiSelects(except = null) {
  * options: [{ value, label, disabled? }]
  * nativeSelect: optional <select> kept for existing .value / change listeners.
  */
-function populateUiSelect(root, options, selectedValue = "") {
+function populateUiSelect(root, options, selectedValue = "", { preserveNative = false } = {}) {
   if (!root) return;
   const panel =
     root.querySelector(".ui-select-panel") ||
@@ -206,11 +206,11 @@ function populateUiSelect(root, options, selectedValue = "") {
   const values = new Set(list.map((item) => String(item.value)));
   let selected = String(selectedValue ?? "");
   if (selected && !values.has(selected)) selected = "";
-  if (!selected && list.length) {
+  if (!preserveNative && !selected && list.length) {
     const firstEnabled = list.find((item) => !item.disabled);
     selected = firstEnabled ? String(firstEnabled.value) : String(list[0].value);
   }
-  if (native) {
+  if (native && !preserveNative) {
     native.innerHTML = list
       .map((item) => {
         const value = String(item.value);
@@ -240,7 +240,7 @@ function populateUiSelect(root, options, selectedValue = "") {
     const active = list.find((item) => String(item.value) === selected);
     summary.textContent =
       active?.label ||
-      list[0]?.label ||
+      (!preserveNative && list[0]?.label) ||
       (typeof t === "function" ? t("multi.pick") : "请选择");
   }
   root.classList.toggle("is-disabled", Boolean(native?.disabled));
@@ -297,6 +297,7 @@ function bindUiSelect(root, { onChange, maxHeight = 320, maxWidth = 420 } = {}) 
       root.querySelector("select.ui-select-native") ||
       root.querySelector("select.gateway-model-native-select") ||
       root.querySelector("select");
+    if (native?.disabled || native?.hidden) return;
     const label =
       option.querySelector(".ui-select-option-label")?.textContent?.trim() ||
       option.textContent.trim();
@@ -328,6 +329,7 @@ function bindUiSelect(root, { onChange, maxHeight = 320, maxWidth = 420 } = {}) 
 
   trigger.addEventListener("keydown", (event) => {
     if (!["Enter", " ", "ArrowDown", "ArrowUp", "Escape"].includes(event.key)) return;
+    event.stopPropagation();
     if (event.key === "Escape") {
       closeAllUiSelects();
       return;
@@ -344,6 +346,7 @@ function bindUiSelect(root, { onChange, maxHeight = 320, maxWidth = 420 } = {}) 
     target?.focus();
   });
   panel.addEventListener("keydown", (event) => {
+    if (["Enter", " ", "ArrowDown", "ArrowUp", "Escape"].includes(event.key)) event.stopPropagation();
     const options = [...panel.querySelectorAll("[data-ui-select-value]:not([disabled])")];
     const current = event.target.closest?.("[data-ui-select-value]");
     if (event.key === "Escape") {
@@ -405,16 +408,18 @@ function bindUiSelect(root, { onChange, maxHeight = 320, maxWidth = 420 } = {}) 
   window.addEventListener("resize", () => closeAllUiSelects());
 }
 
-const DASHBOARD_NATIVE_SELECT_IDS = new Set([
-  "workSplitWorkflowMode", "reviewWorkflowMode", "campaignsSource",
-  "runCollectionSelect", "runCollectionRevisionSelect",
-  "runCollectionReferenceType", "runCollectionComparisonReference",
-  "runCollectionSelectionSourceRun", "modelReviewStatusInput", "dailyCronRunDate",
-]);
+// Generic enhancement covers static controls and dynamically inserted dialog rows.
+// Explicit custom pickers retain their own renderer/binding.
+const dashboardSelectSnapshots = new WeakMap();
+let dashboardSelectObserver = null;
+let dashboardSelectLabelId = 0;
 
 function enhanceNativeUiSelect(select, { maxWidth = 520 } = {}) {
-  if (!select) return null;
+  if (!select || select.multiple) return null;
   let root = select.closest(".ui-select");
+  if (!root?.classList.contains("dashboard-native-ui-select")
+      && select.matches(".ui-select-native, .gateway-model-native-select")) return root;
+
   if (!root || !root.classList.contains("dashboard-native-ui-select")) {
     root = document.createElement("div");
     root.className = "ui-select dashboard-native-ui-select";
@@ -452,10 +457,28 @@ function enhanceNativeUiSelect(select, { maxWidth = 520 } = {}) {
       || option.textContent?.trim() || option.value,
     disabled: option.disabled,
   }));
-  populateUiSelect(root, options, select.value);
+  const labels = [...(select.labels || [])].map((label) => {
+    if (!label.id) label.id = `dashboard-select-label-${++dashboardSelectLabelId}`;
+    return label.id;
+  });
+  const labelledBy = select.getAttribute("aria-labelledby") || labels.join(" ");
+  const ariaLabel = select.getAttribute("aria-label") || "";
+  const snapshot = JSON.stringify([options, select.value, select.disabled, select.hidden,
+    labelledBy, ariaLabel, select.title]);
+  if (dashboardSelectSnapshots.get(select) === snapshot) return root;
+  dashboardSelectSnapshots.set(select, snapshot);
+  // Do not rewrite native options: preserve empty values, option metadata, and
+  // programmatic selection; also avoid observer feedback and losing open focus.
+  populateUiSelect(root, options, select.value, { preserveNative: true });
+  root.hidden = select.hidden;
+  if ((select.disabled || select.hidden) && root.classList.contains("is-open")) closeAllUiSelects();
   const trigger = root.querySelector(".ui-select-trigger");
   if (trigger) {
     trigger.title = select.title || "";
+    for (const [name, value] of [["aria-label", ariaLabel], ["aria-labelledby", labelledBy]]) {
+      if (value) trigger.setAttribute(name, value);
+      else trigger.removeAttribute(name);
+    }
     if (select.id === "modelReviewStatusInput") {
       root.classList.add("model-review-status-picker");
       trigger.setAttribute("aria-keyshortcuts", "Shift+R");
@@ -479,8 +502,37 @@ function enhanceNativeUiSelect(select, { maxWidth = 520 } = {}) {
 }
 
 function enhanceDashboardSelects(root = document) {
-  root.querySelectorAll("select[id]").forEach((select) => {
-    if (DASHBOARD_NATIVE_SELECT_IDS.has(select.id)) enhanceNativeUiSelect(select);
+  if (!root) return;
+  if (root.matches?.("select")) enhanceNativeUiSelect(root);
+  root.querySelectorAll("select").forEach((select) => enhanceNativeUiSelect(select));
+}
+
+function observeDashboardSelects() {
+  if (dashboardSelectObserver) return;
+  dashboardSelectObserver = new MutationObserver((records) => {
+    const selects = new Set();
+    for (const record of records) {
+      const element = record.target.nodeType === 1 ? record.target : record.target.parentElement;
+      const select = element?.closest("select");
+      if (select) selects.add(select);
+      for (const node of record.addedNodes || []) {
+        if (node.nodeType !== 1) continue;
+        if (node.matches("select")) selects.add(node);
+        node.querySelectorAll("select").forEach((item) => selects.add(item));
+      }
+    }
+    // Ignore unrelated DOM updates (including video time ticks and Gallery media).
+    selects.forEach((select) => {
+      if (select.isConnected) enhanceNativeUiSelect(select);
+    });
+  });
+  dashboardSelectObserver.observe(document.body, {
+    subtree: true, childList: true, characterData: true, attributes: true,
+    attributeFilter: ["disabled", "hidden", "selected", "label", "aria-label", "aria-labelledby"],
+  });
+  document.addEventListener("reset", (event) => {
+    // Form reset updates values after the reset event has been dispatched.
+    queueMicrotask(() => enhanceDashboardSelects(event.target));
   });
 }
 

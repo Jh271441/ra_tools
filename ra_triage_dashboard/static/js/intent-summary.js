@@ -148,6 +148,7 @@ function renderIntentSummary(payload) {
   }
   const pageSize = $("#intentSummaryPageSize");
   if (pageSize) pageSize.value = String(payload.page_size || 20);
+  enhanceNativeUiSelect(pageSize);
 }
 
 function jumpIntentSummaryPage() {

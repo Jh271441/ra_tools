@@ -43,6 +43,7 @@ function restoreCaseLabelingRouteState(route = null) {
   }
   if ($("#caseLabelingPageSize")) {
     $("#caseLabelingPageSize").value = String(state.caseLabeling.pageSize);
+    enhanceNativeUiSelect($("#caseLabelingPageSize"));
   }
   if (typeof updateIssueQueryButton === "function") updateIssueQueryButton();
   return filters;
@@ -913,6 +914,7 @@ function renderCaseLabelingList(data) {
   $("#caseLabelingPrevious").disabled = Number(data.page || 1) <= 1;
   $("#caseLabelingNext").disabled = Number(data.page || 1) >= Number(data.pages || 1);
   $("#caseLabelingPageSize").value = String(data.page_size || DEFAULT_CASE_PAGE_SIZE);
+  enhanceNativeUiSelect($("#caseLabelingPageSize"));
   if ($("#caseLabelingExportGt")) {
     $("#caseLabelingExportGt").disabled = !state.session?.is_admin;
   }

@@ -208,6 +208,7 @@ function applyRunComparisonRoute(filters = {}) {
   populateComparisonInputFilter();
   renderRunComparisonSelectors({ repairCoverage: true });
   renderRunComparisonTransitionFilter();
+  enhanceDashboardSelects($("#runComparisonPage"));
 }
 
 function runComparisonReviewUrl(issueId, runId) {
@@ -330,6 +331,7 @@ function populateComparisonInputFilter(filter = state.runComparison.inputFilter)
     field.querySelectorAll('input[type="checkbox"]').forEach((input) => { input.checked = Boolean(condition?.values?.includes(input.value)); });
   });
   renderComparisonInputFilterSummary();
+  enhanceDashboardSelects($("#comparisonInputFilter"));
 }
 
 function readComparisonInputFilterDraft() {
@@ -804,6 +806,7 @@ function bindRunComparisonEvents() {
     if ($("#comparisonBaselineLabelFilter")) $("#comparisonBaselineLabelFilter").value = "ALL";
     if ($("#comparisonCandidateLabelFilter")) $("#comparisonCandidateLabelFilter").value = "ALL";
     if ($("#comparisonLabelChangeFilter")) $("#comparisonLabelChangeFilter").value = "ALL";
+    enhanceDashboardSelects($("#runComparisonPage"));
     renderRunComparisonTransitionFilter();
     populateComparisonInputFilter();
     loadRunComparison({ historyMode: "push" }).catch((error) => showToast(error.message, true));

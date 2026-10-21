@@ -96,6 +96,7 @@ function formatSignedSeconds(value) {
 }
 
 function bindBevVideoPlayers(root) {
+  enhanceDashboardSelects(root);
   root.querySelectorAll("[data-bev-video-player]").forEach((player) => {
     if (player.dataset.videoBound === "1") return;
     player.dataset.videoBound = "1";
@@ -272,7 +273,7 @@ function bindBevVideoPlayers(root) {
         focusPlayer();
         return;
       }
-      if (event.target.matches("select, input")) {
+      if (event.target.matches("select, input") || event.target.closest(".ui-select")) {
         event.stopPropagation();
         return;
       }

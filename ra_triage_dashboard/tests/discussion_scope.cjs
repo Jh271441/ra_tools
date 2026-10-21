@@ -18,6 +18,7 @@ function element(key) {
 const state = { selectedRunId: '', epoch: 1, session: { username: 'alice', can_write: true, is_admin: false }, caseLabeling: { caseData: { issue_id: 'cn1' } } };
 const s = {
   state, $: element, URL, FormData, encodeURIComponent,
+  enhanceDashboardSelects() {}, // Real DOM adapter covered by dropdown_components.cjs.
   document: { querySelectorAll: () => [] },
   window: { location: { origin: 'https://example.test' } },
   PAGE_ROUTES: { review: { path: '/review' }, labeling: { path: '/case-labeling' }, campaigns: { path: '/campaigns' } },

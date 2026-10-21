@@ -3,6 +3,7 @@ const elements = {reviewAssignmentMetrics:{innerHTML:''}};
 let requests=[];
 const store={splits:[],lifecycle:'current',assignedToMe:false,loadedKey:'current:false',requestSeq:0};
 const sandbox={URL,URLSearchParams,state:{reviewAssignments:store,modelRuns:[{id:'run',name:'Run'}],session:{is_admin:false}},
+ enhanceNativeUiSelect(){}, // Real DOM adapter covered by dropdown_components.cjs.
  withBase:x=>x,$:selector=>elements[selector.slice(1)]||null,uiText:x=>x,escapeHtml:String,formatTime:String,
  window:{location:{origin:'https://example.com',search:'?lifecycle=history&assigned_to_me=true'}},
  pageUrl:(page,options)=>`/${page}?campaign=${options.campaignId||''}`,showToast:()=>{},

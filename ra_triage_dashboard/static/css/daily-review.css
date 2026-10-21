@@ -2,7 +2,7 @@ body[data-active-page="daily-review"] .topbar > :is(.topbar-baselines,.header-me
 body[data-active-page="daily-review"] .top-actions {margin-left:auto}
 .daily-review-page {--te-done:var(--accent);--te-pending:var(--line);--te-unknown:#d99b45;display:grid;gap:16px;min-width:0;width:100%;margin-inline:auto;font-size:12px}
 .te-toolbar,.te-filters,.te-progress {display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
-.te-toolbar select,.te-filters select {max-width:100%;width:auto;font:inherit;padding:6px 10px;border:1px solid var(--line);border-radius:6px;background:var(--raised);color:var(--text)}
+.te-toolbar .ui-select,.te-filters .ui-select {max-width:100%;width:auto;min-width:130px}
 .te-toolbar button[aria-pressed="true"] {color:var(--accent);border-color:var(--accent);background:var(--accent-soft)}
 .te-toolbar button[aria-pressed="false"] {background:transparent;color:var(--muted);border-color:var(--line);box-shadow:none}
 .te-source {margin-left:auto;font-size:11px;color:var(--muted)}
@@ -48,7 +48,7 @@ body[data-active-page="daily-review"] .top-actions {margin-left:auto}
 .te-retry {margin-left:auto;border:0;background:none;color:var(--accent);font:inherit;font-size:10px;padding:0;cursor:pointer}
 .te-results {color:var(--muted);font-size:11px;line-height:1.7}.te-results summary {cursor:pointer}
 @media(max-width:1250px){.te-dashboard{grid-template-columns:repeat(2,minmax(0,1fr))}.te-daily-panel{grid-column:1/-1}}
-@media(max-width:650px){.te-dashboard,.te-dashboard:has(.te-daily-panel[hidden]){grid-template-columns:minmax(0,1fr)}.te-daily-panel{grid-column:auto}.te-source{width:100%;margin-left:0;order:2}.te-toolbar select,.te-filters select{min-height:36px}.te-chart-panel{padding:12px}.te-scope-chart{justify-content:center}.te-status-legend{max-width:220px}.te-gallery .gallery-heading-actions{justify-content:flex-start;width:100%}}
+@media(max-width:650px){.te-dashboard,.te-dashboard:has(.te-daily-panel[hidden]){grid-template-columns:minmax(0,1fr)}.te-daily-panel{grid-column:auto}.te-source{width:100%;margin-left:0;order:2}.te-chart-panel{padding:12px}.te-scope-chart{justify-content:center}.te-status-legend{max-width:220px}.te-gallery .gallery-heading-actions{justify-content:flex-start;width:100%}}
 .te-gallery .issue-grid {grid-template-columns:repeat(auto-fill,minmax(min(100%,220px),1fr))}
 .te-progress progress {-webkit-appearance:none;appearance:none;border:0;border-radius:4px;overflow:hidden;background:var(--line)}
 .te-progress progress::-webkit-progress-bar {background:var(--line)}

@@ -330,6 +330,7 @@ function renderLabelingSummary(data) {
     loadLabelingSummary().catch((error) => showToast(error.message, true));
   });
   $("#labelSummaryPageSize").value = String(Number(data.page_size || labelSummaryPageSize));
+  enhanceNativeUiSelect($("#labelSummaryPageSize"));
   bindAnalysisReviewStatusHover($("#labelSummaryStatusChart"));
   bindAnalysisConfusionHover($("#labelSummaryConfusionMatrix")?.querySelector(".analysis-confusion-table"));
   bindAnalysisPieHover($("#labelSummaryClusterPanels"));

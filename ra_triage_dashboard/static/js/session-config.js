@@ -476,6 +476,7 @@ function renderAccessUsers() {
       <div class="access-row-actions"><button class="button button-quiet" type="button" data-save-access-user>${escapeHtml(t("access.save"))}</button><button class="button button-danger" type="button" data-remove-access-user>${escapeHtml(t("access.remove"))}</button></div>
     </div>
   `).join("");
+  enhanceDashboardSelects(target);
 }
 
 async function loadAccessUsers() {

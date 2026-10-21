@@ -553,6 +553,7 @@ function applyTrailUpdateRouteControls(filters = {}) {
   const pageSize = $("#trailUpdatePageSize");
   if (pageSize) pageSize.value = String(state.trailUpdate.pageSize);
   if (state.trailUpdate?.data) renderTrailAttributePreview(state.trailUpdate.data);
+  enhanceNativeUiSelect(pageSize);
 }
 
 function trailUpdatePersistRoute() {
@@ -675,6 +676,7 @@ function renderTrailUpdateFilters(data = state.trailUpdate?.data) {
     state.trailUpdate.filters.trailStatus = values;
     applyTrailUpdateFilters();
   });
+  enhanceNativeUiSelect(pageSize);
 }
 
 function renderTrailUpdatePagination(filteredItems = []) {
@@ -714,6 +716,7 @@ function renderTrailUpdatePagination(filteredItems = []) {
   if (jumpButton) jumpButton.disabled = totalPages <= 1;
   if (pageSizeSelect) pageSizeSelect.value = String(pageSize);
   return { start: total ? (page - 1) * pageSize : 0, end: page * pageSize, total, page, totalPages };
+  enhanceNativeUiSelect(pageSizeSelect);
 }
 
 function goToTrailUpdatePage(nextPage) {

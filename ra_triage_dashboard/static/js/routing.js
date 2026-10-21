@@ -701,6 +701,7 @@ function applyReviewRouteControls(route) {
   setReviewComparisonStatus(state.reviewComparisonStatus, {
     hasRun: Boolean(state.selectedRunId || $("#modelRunFilter")?.value),
   });
+  enhanceDashboardSelects($("#reviewPage"));
 }
 
 function currentAnalysisRouteOptions(overrides = {}) {
@@ -801,6 +802,7 @@ function applyAnalysisRouteControls(route) {
     ? Number(filters.pageSize)
     : DEFAULT_CASE_PAGE_SIZE;
   if ($("#analysisPageSize")) $("#analysisPageSize").value = String(state.reviewAnalysis.pageSize);
+  enhanceDashboardSelects($("#reviewAnalysisPage"));
 }
 
 function pageUrl(page, options = {}) {

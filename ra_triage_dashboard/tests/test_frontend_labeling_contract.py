@@ -17,7 +17,10 @@ class FrontendLabelingContractTest(unittest.TestCase):
             "runCollectionReferenceType", "runCollectionComparisonReference",
             "runCollectionSelectionSourceRun", "modelReviewStatusInput",
         ):
-            self.assertIn(f'"{select_id}"', APP_JS)
+            self.assertIn(select_id, APP_JS)
+        self.assertIn('root.querySelectorAll("select")', APP_JS)
+        self.assertNotIn('DASHBOARD_NATIVE_SELECT_IDS', APP_JS)
+        self.assertIn('observeDashboardSelects();', APP_JS)
         self.assertIn("dashboard-native-ui-select", STYLES_CSS)
         self.assertIn('event.key === "ArrowDown"', APP_JS)
         self.assertIn('event.key === "Escape"', APP_JS)

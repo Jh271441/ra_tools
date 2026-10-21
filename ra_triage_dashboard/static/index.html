@@ -84,7 +84,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-593`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-594`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -1805,8 +1805,8 @@
               <button class="button button-quiet" type="button" data-te-dataset="1009" aria-pressed="true">1009</button>
               <button class="button button-quiet" type="button" data-te-dataset="0821" aria-pressed="false">0821</button>
               <span class="muted" id="dailyReviewDateLabel"><span class="ui-lang-zh">数据日 · CST</span><span class="ui-lang-en">Data date · CST</span></span>
-              <select id="dailyReviewDate" aria-labelledby="dailyReviewDateLabel" data-native-select="true"></select>
-              <select id="dailyReviewReason" aria-label="目标类型" data-native-select="true"><option value="all" data-zh="全部目标" data-en="All targets">全部目标</option><option value="low" data-zh="低置信" data-en="Low confidence">低置信</option><option value="sample" data-zh="抽样" data-en="Sample">抽样</option></select>
+              <select id="dailyReviewDate" aria-labelledby="dailyReviewDateLabel"></select>
+              <select id="dailyReviewReason" aria-label="目标类型"><option value="all" data-zh="全部目标" data-en="All targets">全部目标</option><option value="low" data-zh="低置信" data-en="Low confidence">低置信</option><option value="sample" data-zh="抽样" data-en="Sample">抽样</option></select>
               <span class="te-source" id="dailyReviewSource" role="status" aria-live="polite"></span>
               <button class="button button-quiet" id="dailyReviewRefresh" type="button" title="读取最近一次同步快照"><span class="ui-lang-zh">刷新</span><span class="ui-lang-en">Refresh</span></button>
             </div>
@@ -1829,8 +1829,8 @@
             </div>
             <section class="gallery-panel te-gallery" aria-labelledby="dailyReviewGalleryTitle">
               <header class="gallery-heading"><div><h2 id="dailyReviewGalleryTitle">Gallery</h2><span class="muted" id="dailyReviewGalleryCount"></span></div><div class="gallery-heading-actions te-filters">
-                <select id="dailyReviewStatus" aria-label="TE 状态" data-native-select="true"><option value="all" data-zh="全部状态" data-en="All states">全部状态</option><option value="unfilled" data-zh="待标" data-en="Pending">待标</option><option value="filled" data-zh="已标" data-en="Filled">已标</option><option value="unknown" data-zh="未知" data-en="Unknown">未知</option></select>
-                <select id="dailyReviewMedia" aria-label="Media" data-native-select="true"><option value="bev">BEV</option><option value="camera">Camera</option></select>
+                <select id="dailyReviewStatus" aria-label="TE 状态"><option value="all" data-zh="全部状态" data-en="All states">全部状态</option><option value="unfilled" data-zh="待标" data-en="Pending">待标</option><option value="filled" data-zh="已标" data-en="Filled">已标</option><option value="unknown" data-zh="未知" data-en="Unknown">未知</option></select>
+                <select id="dailyReviewMedia" aria-label="Media"><option value="bev">BEV</option><option value="camera">Camera</option></select>
                 <a class="button button-quiet" id="dailyReviewExport" hidden><span class="ui-lang-zh">导出 CSV</span><span class="ui-lang-en">Export CSV</span></a>
               </div></header>
               <div class="issue-grid te-grid" id="dailyReviewGrid"></div>
@@ -2495,7 +2495,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-593`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-594`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

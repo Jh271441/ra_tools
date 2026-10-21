@@ -398,6 +398,7 @@ function renderReviewAssignmentDetail() {
       ? detail.changes.map((item) => `<div class="review-assignment-change-row"><span><strong>${escapeHtml(item.issue_id)}</strong> · ${escapeHtml(item.from_assignee)} → ${escapeHtml(item.to_assignee)}</span><small>${escapeHtml(item.changed_by)} · ${escapeHtml(formatTime(item.changed_at))}</small></div>`).join("")
       : `<span class="quiet-meta">${escapeHtml(uiText("暂无转派记录。", "No reassignment history."))}</span>`;
   }
+  enhanceNativeUiSelect(pageSize);
 }
 
 function renderReviewAssignmentPermissions() {

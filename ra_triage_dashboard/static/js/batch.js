@@ -120,6 +120,7 @@ function renderBatchRequesterFilter() {
   ].join("");
   const names = state.predictionRequesters.map((item) => item.name || item.requested_by);
   select.value = previous === "__me__" || names.includes(previous) ? previous : "";
+  enhanceNativeUiSelect(select);
 }
 
 function batchInputSummary(batch) {

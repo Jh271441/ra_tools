@@ -175,6 +175,7 @@ function scheduleReviewFilterReload(delay = 0) {
 
 function bindEvents() {
   enhanceDashboardSelects();
+  observeDashboardSelects();
   bindLayoutResizers();
   bindShortcutGuide();
   bindGlobalRefreshShortcut();

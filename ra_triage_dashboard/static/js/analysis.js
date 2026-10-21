@@ -800,6 +800,7 @@ function renderAnalysisCases(data) {
   state.reviewAnalysis.pageSize = pageSize;
   $("#analysisPageSummary").textContent = `${page} / ${pageCount}`;
   $("#analysisPageSize").value = String(pageSize);
+  enhanceNativeUiSelect($("#analysisPageSize"));
   $("#analysisPagePrevious").disabled = page <= 1;
   $("#analysisPageNext").disabled = page >= pageCount;
   const jumpInput = $("#analysisPageJump");
@@ -1076,6 +1077,7 @@ function updateAnalysisDiscussionComposerAccess({
         ? uiText("当前任务讨论为只读；仍可在本问题讨论中交流。", "This task discussion is read-only. You can still post in issue discussion.")
         : uiText("本问题讨论在不同任务中共享；当前任务讨论仅在该任务内显示。回复会留在原讨论中。", "Issue discussion is shared across tasks. Task discussion stays in that task. Replies stay with the original comment.");
   }
+  enhanceDashboardSelects($("#analysisDiscussionDialog"));
 }
 
 function clearAnalysisDiscussionImages() {

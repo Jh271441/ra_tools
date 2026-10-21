@@ -930,3 +930,8 @@ html[data-session-pending="true"] [data-session-nav] { display: flex !important;
 .sidebar-session-pending[hidden] { display: none; }
 #labelingExperimentsNavButton { order: 2; }
 #labelingSummaryNavButton { order: 3; }
+
+/* Enhanced native controls retain the shared component in compact layouts. */
+.dashboard-native-ui-select[hidden] { display: none !important; }
+.case-page-size .dashboard-native-ui-select { width: 80px; }
+.bev-video-control-row .dashboard-native-ui-select { width: auto; min-width: 76px; }

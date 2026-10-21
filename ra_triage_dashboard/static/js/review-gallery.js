@@ -232,6 +232,7 @@ function renderCasePagination() {
       ? t("gallery.summary_range", { from: start, to: end, n: state.caseTotal })
       : t("gallery.no_match");
   }
+  enhanceNativeUiSelect(pageSize);
 }
 
 function renderCaseNavigation() {

@@ -627,6 +627,7 @@ function renderRunManagerPagination(total, pageCount) {
     size.value = String(state.runPageSize || DEFAULT_CASE_PAGE_SIZE);
     size.disabled = !hasRows;
   }
+  enhanceNativeUiSelect(size);
 }
 
 function resetRunManagerPageAndRender() {
@@ -682,6 +683,7 @@ function renderRunFilters() {
     previous === "__me__" || people.includes(previous)
       ? previous
       : "";
+  enhanceNativeUiSelect(select);
 }
 
 function activeRun() {

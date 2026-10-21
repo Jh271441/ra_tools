@@ -93,8 +93,9 @@ function renderDailyReview({keepImages=false}={}) {
   document.querySelectorAll('[data-te-dataset]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.teDataset===s.dataset)));
   const date=$('#dailyReviewDate');date.hidden=s.dataset==='0821';
   $('#dailyReviewDateLabel').hidden=date.hidden;
+  enhanceDashboardSelects($('#dailyReviewPage'));
   if(!data)return;
-  date.innerHTML=data.date_options.map(d=>`<option value="${escapeHtml(d)}">${escapeHtml(d)}</option>`).join('');date.value=data.scope.date || '';
+  date.innerHTML=data.date_options.map(d=>`<option value="${escapeHtml(d)}">${escapeHtml(d)}</option>`).join('');date.value=data.scope.date || '';enhanceNativeUiSelect(date);
   $('#dailyReviewScope').textContent=data.scope.dataset==='0821' ? uiText('0821 · 历史固定集','0821 · Frozen set') : `1009 · ${data.scope.date || '—'} · CST`;
   const n=data.summary;
   $('#dailyReviewProgress').textContent=n ? `TE ${n.filled} / ${n.total}` : 'TE — / —';
