@@ -72,3 +72,27 @@ for(const target of [note,rationale]) { const e=event(target);keydown(e);assert.
 assert.equal(submitted,0);
 phone=false;const e=event(note);keydown(e);assert.equal(e.prevented,true);assert.equal(submitted,1);
 ''')
+
+    def test_phone_tag_creator_moves_original_button_and_restores_desktop(self):
+        self.run_js(["review-tags.js"], r'''
+const assert=require('node:assert/strict');
+let change;
+const mq={matches:true,addEventListener:(key,fn)=>change=fn};
+window={matchMedia:()=>mq};
+class Node {
+ constructor(){this.children=[];this.parentElement=null;this.className=''}
+ appendChild(node){node.remove();node.parentElement=this;this.children.push(node)}
+ prepend(node){node.remove();node.parentElement=this;this.children.unshift(node)}
+ remove(){if(this.parentElement){this.parentElement.children=this.parentElement.children.filter(n=>n!==this);this.parentElement=null}}
+ querySelector(selector){return this.children.find(n=>'.'+n.className===selector)||null}
+}
+const panel=new Node(),trailing=new Node(),button=new Node(),count=new Node();
+button.boundHandler={sentinel:1};trailing.appendChild(button);trailing.appendChild(count);
+const dropdown={querySelector(s){if(s==='[data-open-review-tag-creator]')return button;if(s==='.tag-group-trailing')return trailing;if(s==='.review-tag-options')return panel;}};
+document={createElement:()=>new Node(),querySelectorAll:()=>[dropdown]};
+syncReviewTagCreatorPlacement();
+const slot=panel.children[0];assert.equal(slot.className,'review-tag-creator-slot');assert.equal(button.parentElement,slot);assert.equal(trailing.children.length,1);
+syncReviewTagCreatorPlacement();assert.equal(panel.children.length,1);assert.equal(slot.children.length,1);
+mq.matches=false;change();assert.equal(button.parentElement,trailing);assert.equal(trailing.children[0],button);assert.equal(panel.children.length,0);assert.equal(button.boundHandler.sentinel,1);
+mq.matches=true;change();assert.equal(panel.children.length,1);assert.equal(panel.children[0].children[0],button);
+''')

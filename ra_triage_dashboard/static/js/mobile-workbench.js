@@ -1,4 +1,10 @@
 /* Phone-only presentation. Move original controls so IDs, permissions and handlers survive. */
+function updateMobileViewportMetrics() {
+  const viewport = anchoredViewportBounds();
+  document.documentElement.style.setProperty("--mobile-viewport-top", `${viewport.top}px`);
+  document.documentElement.style.setProperty("--mobile-viewport-height", `${viewport.height}px`);
+}
+
 function bindMobileWorkbench() {
   const menu = document.getElementById("mobileTopbarMore");
   if (!menu || menu.dataset.bound === "1") return;
@@ -24,6 +30,7 @@ function bindMobileWorkbench() {
   }
   window.addEventListener("resize", updateHeaderHeight);
   const repositionReviewPanels = () => {
+    updateMobileViewportMetrics();
     document.querySelectorAll(".review-dropdown[open]").forEach(positionReviewDropdownPanel);
   };
   window.visualViewport?.addEventListener("resize", repositionReviewPanels);
@@ -40,6 +47,8 @@ function bindMobileWorkbench() {
     else query.addListener(sync);
   });
   updateHeaderHeight();
+  updateMobileViewportMetrics();
+  window.addEventListener("resize", updateMobileViewportMetrics);
   sync();
   document.addEventListener("click", (event) => {
     if (!menu.contains(event.target)) menu.open = false;

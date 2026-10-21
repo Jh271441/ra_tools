@@ -42,6 +42,9 @@
     overflow: visible; position: static; top: auto;
   }
   .gateway-card { contain: none; }
+  /* Older Android Chromium makes query containers fixed-position containing blocks.
+     Tablet/phone layout is owned by the responsive rules below. */
+  .app-frame, .assignment-composer, .review-tag-dropdown, .evidence-dropdown { container-type: normal; }
   .review-filters,
   .analysis-filters,
   .trail-update-filters,
@@ -233,10 +236,10 @@
   .hero-media-heading-actions { flex-wrap: wrap; justify-content: flex-start; }
   .bev-video-controls, .bev-video-progress-row { grid-template-columns: minmax(0, 1fr); }
   .review-section-heading,
-  .model-error-section > .review-section-heading { align-items: flex-start; flex-wrap: wrap; }
+  .model-error-section > .review-section-heading { align-items: center; flex-wrap: wrap; }
   .expected-output-rule-popover { width: min(360px, calc(100vw - 48px)); }
   .review-section-heading .review-heading-actions,
-  .model-error-section > .review-section-heading .review-heading-actions { width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-left: 0; }
+  .model-error-section > .review-section-heading .review-heading-actions { width: auto; display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
 
   .review-assignment-metrics { grid-template-columns: minmax(0, 1fr); }
   .review-assignments-header-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -248,7 +251,7 @@
   .review-assignment-page-jump-control { width: 100%; margin-left: 0; justify-content: center; flex-wrap: wrap; }
   .review-assignment-page-jump-control input { width: 72px; }
   .review-assignment-change-row { align-items: flex-start; flex-direction: column; gap: 4px; }
-  .review-section-heading .review-heading-actions .history-inline-button { width: 100%; min-height: 44px; }
+  .review-section-heading .review-heading-actions .history-inline-button { width: auto; min-width: 44px; min-height: 44px; padding-inline: 10px; font-size: 13px; }
   .label-buttons { grid-template-columns: minmax(0, 1fr) !important; }
   .review-reason textarea, textarea { min-height: 112px; }
   .analysis-issue-input { height: 44px; min-height: 44px !important; resize: none; }
@@ -492,7 +495,7 @@
   .detail-media-command .detail-media-expand { width: auto; }
   .review-form label > span, .review-section-heading h2 { font-size: 14px; }
   .review-form textarea { font-size: 16px; min-height: 128px; line-height: 1.6; }
-  .review-save-button { position: sticky; bottom: max(8px, env(safe-area-inset-bottom)); z-index: 4; min-height: 48px !important; box-shadow: 0 2px 14px rgba(0,0,0,.25); }
+  .review-save-button { position: static; min-height: 48px !important; margin-top: 4px; }
   .review-tag-group-trigger, .review-tag-add, .screenshot-browse-button, .history-inline-button { min-height: 44px; }
   .tag-choice, .tag-choice-button { min-height: 40px; font-size: 13px; }
   .screenshot-paste-copy small { font-size: 11px; line-height: 1.5; }
@@ -580,9 +583,9 @@
 @media (max-width: 639px) {
   .review-tag-groups { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 8px; }
   .review-tag-groups > :only-child { grid-column: 1 / -1; }
-  .review-tag-dropdown > summary { grid-template-columns: minmax(0, 1fr) auto; gap: 3px; padding-inline: 6px; }
-  .review-tag-dropdown .tag-group-trailing { min-width: 0; gap: 2px; }
-  .review-tag-dropdown .tag-group-label { font-size: 13px; white-space: normal; overflow: visible; }
+  .review-tag-dropdown > summary { grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding: 10px; min-height: 48px; box-sizing: border-box; }
+  .review-tag-dropdown .tag-group-trailing { min-width: 0; gap: 4px; }
+  .review-tag-dropdown .tag-group-label { font-size: 14px; line-height: 1.4; white-space: normal; overflow: visible; }
   .review-tag-axis-title { font-size: 12px; }
   .review-reason-shortcuts, .detail-media-help { display: none; }
   .case-label-final-result { padding: 6px 0 10px; margin-bottom: 10px; }
@@ -590,10 +593,6 @@
   .mobile-workspace-jumps > :only-child,
   .review-assignments-header-actions > :only-child,
   .case-labeling-page .gallery-heading-actions > :only-child { grid-column: 1 / -1; }
-}
-@media (max-width: 399px) {
-  .review-tag-dropdown > summary { grid-template-columns: minmax(0, 1fr); gap: 0; }
-  .review-tag-dropdown .tag-group-trailing { justify-self: end; }
 }
 
 /* Detail hierarchy: Issue identity first, links secondary, GT and return paired. */
@@ -664,5 +663,45 @@
   .mobile-topbar-panel {
     max-height: calc(100dvh - var(--mobile-topbar-height, 62px) - 16px);
     overflow-y: auto; overscroll-behavior: contain;
+  }
+}
+
+/* A tag group is one touch target; catalog creation lives in its open panel. */
+.mobile-tag-create-copy, .review-tag-creator-slot:empty { display: none; }
+@media (max-width: 639px) {
+  .review-tag-dropdown .tag-group-summary {
+    min-width: 24px; min-height: 24px; padding: 0; font-size: 12px;
+    color: var(--muted); background: transparent; line-height: 1.4;
+  }
+  .review-tag-creator-slot { flex: 0 0 100%; padding-top: 8px; border-top: 1px solid var(--line); }
+  .review-tag-creator-slot .tag-catalog-add-button {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    width: 100%; min-height: 44px; padding: 8px 12px; font-size: 14px;
+  }
+  .review-tag-creator-slot .mobile-tag-create-copy { display: inline; }
+  .review-tag-dropdown .review-tag-options .tag-option-check span {
+    white-space: normal; overflow: visible; overflow-wrap: anywhere; line-height: 1.5;
+  }
+  .review-exclude-toggle { min-height: 56px; padding: 10px; gap: 10px; }
+  .review-exclude-toggle input { width: 20px; height: 20px; }
+  .review-exclude-toggle span { display: grid; gap: 4px; overflow: visible; }
+  .review-exclude-toggle strong { font-size: 14px; }
+  .review-exclude-toggle small { font-size: 12px; white-space: normal; overflow: visible; line-height: 1.5; }
+  .mobile-workspace-jumps > .button:hover, .mobile-workspace-jumps > .button:focus {
+    background: transparent; box-shadow: none; border-color: transparent;
+  }
+  .mobile-workspace-jumps > [aria-current="location"] { border-bottom-color: var(--accent); }
+  .mobile-workspace-jumps > .button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+}
+
+@media (max-width: 639px) {
+  .review-tag-create-dialog {
+    top: var(--mobile-viewport-top, 0px); bottom: auto; margin: 6px auto;
+    max-height: calc(var(--mobile-viewport-height, 100dvh) - 12px);
+    box-sizing: border-box;
+  }
+  .review-tag-create-dialog .dialog-card {
+    max-height: calc(var(--mobile-viewport-height, 100dvh) - 16px);
+    box-sizing: border-box;
   }
 }

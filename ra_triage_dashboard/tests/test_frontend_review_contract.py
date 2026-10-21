@@ -61,7 +61,7 @@ class FrontendReviewContractTest(unittest.TestCase):
         self.assertIn("baselines", APP_JS)
         self.assertIn("/static/js/", APP_ENTRY_JS)
         self.assertIn("script.async = false", APP_ENTRY_JS)
-        self.assertIn("app.js?v=manual-triage-594", INDEX_HTML)
+        self.assertIn("app.js?v=manual-triage-595", INDEX_HTML)
         self.assertIn('"work-split.js"', APP_ENTRY_JS)
         self.assertIn('"review-assignments.js"', APP_ENTRY_JS)
         # Product logic must live in domain modules, not the entry loader.
@@ -396,7 +396,7 @@ class FrontendReviewContractTest(unittest.TestCase):
         self.assertIn(".model-error-section > .review-section-heading h2 { white-space: nowrap; }", STYLES_CSS)
         self.assertIn(".model-error-section > .review-section-heading {\n  flex-wrap: nowrap;", STYLES_CSS)
         self.assertIn("flex: 1 1 auto;\n  flex-wrap: nowrap;\n  margin-left: auto;", STYLES_CSS)
-        self.assertIn(".model-error-section > .review-section-heading { align-items: flex-start; flex-wrap: wrap; }", STYLES_CSS)
+        self.assertIn(".model-error-section > .review-section-heading { align-items: center; flex-wrap: wrap; }", STYLES_CSS)
         self.assertIn(".model-error-section .review-heading-actions .history-inline-button", STYLES_CSS)
         self.assertIn("min-height: 30px; padding: 5px 8px; gap: 4px; font-size: 11px", STYLES_CSS)
         self.assertIn(".detail-context-row { min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 6px", STYLES_CSS)

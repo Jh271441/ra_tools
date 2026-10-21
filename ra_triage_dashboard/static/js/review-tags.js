@@ -68,7 +68,7 @@ function renderReviewTagGroups(tagCatalog, chosenTags, tagOption) {
             (item) => item.section === section.section && item.group === group.key
           );
           const selectedCount = items.filter((item) => chosenTags.has(item.key)).length;
-          const creatorAction = `<button class="tag-catalog-add-button" type="button" data-open-review-tag-creator="${escapeHtml(group.key)}" data-tag-create-group-label="${escapeHtml(group.label)}" aria-label="${escapeHtml(uiText(`新增${group.label}标签`, `Add ${group.label} tag`))}" title="${escapeHtml(uiText(`新增${group.label}标签`, `Add ${group.label} tag`))}">＋</button>`;
+          const creatorAction = `<button class="tag-catalog-add-button" type="button" data-open-review-tag-creator="${escapeHtml(group.key)}" data-tag-create-group-label="${escapeHtml(group.label)}" aria-label="${escapeHtml(uiText(`新增${group.label}标签`, `Add ${group.label} tag`))}" title="${escapeHtml(uiText(`新增${group.label}标签`, `Add ${group.label} tag`))}">＋<span class="mobile-tag-create-copy"><span class="ui-lang-zh">新增标签</span><span class="ui-lang-en">Add tag</span></span></button>`;
           return `<details class="review-tag-dropdown review-dropdown" data-tag-dropdown-group="${escapeHtml(group.key)}" data-tag-dropdown-shortcut="${escapeHtml(group.shortcut)}">
             <summary>
               <span class="tag-group-label">${escapeHtml(group.label)}</span>
@@ -816,7 +816,7 @@ function appendReviewTagOptionToGroup(item, group) {
   const template = document.createElement("template");
   template.innerHTML = reviewTagOptionMarkup(item, true, group, true);
   const option = template.content.firstElementChild;
-  list.appendChild(option);
+  list.insertBefore(option, list.querySelector(".review-tag-creator-slot"));
   option?.querySelector('input[name="reviewTags"]')?.addEventListener("change", updateTagSummary);
   bindReviewTagCatalogControls(option || list);
   syncReviewDropdownShortcutHints($("#reviewPane") || document);
@@ -1143,7 +1143,37 @@ function bindReviewDropdownDismiss() {
   window.addEventListener("resize", () => closeAllReviewDropdowns());
 }
 
+let reviewTagCreatorViewport = null;
+function syncReviewTagCreatorPlacement(root = document) {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+  if (!reviewTagCreatorViewport) {
+    reviewTagCreatorViewport = window.matchMedia("(max-width: 639px)");
+    const sync = () => syncReviewTagCreatorPlacement();
+    if (reviewTagCreatorViewport.addEventListener) reviewTagCreatorViewport.addEventListener("change", sync);
+    else reviewTagCreatorViewport.addListener?.(sync);
+  }
+  root.querySelectorAll(".review-tag-dropdown[data-tag-dropdown-group]").forEach((dropdown) => {
+    const button = dropdown.querySelector("[data-open-review-tag-creator]");
+    const trailing = dropdown.querySelector(".tag-group-trailing");
+    const panel = dropdown.querySelector(".review-tag-options");
+    if (!button || !trailing || !panel) return;
+    let slot = panel.querySelector(".review-tag-creator-slot");
+    if (reviewTagCreatorViewport.matches) {
+      if (!slot) {
+        slot = document.createElement("div");
+        slot.className = "review-tag-creator-slot";
+        panel.appendChild(slot);
+      }
+      if (button.parentElement !== slot) slot.appendChild(button);
+    } else {
+      if (button.parentElement !== trailing) trailing.prepend(button);
+      slot?.remove();
+    }
+  });
+}
+
 function bindReviewTagCatalogControls(root = document) {
+  syncReviewTagCreatorPlacement(root);
   root.querySelectorAll("[data-open-review-tag-creator]").forEach((button) => {
     if (button.dataset.reviewTagBound === "1") return;
     button.dataset.reviewTagBound = "1";
