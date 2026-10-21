@@ -24,13 +24,13 @@ router = APIRouter()
 
 def _json_body(raw: bytes, *, maximum: int = 2 * 1024 * 1024) -> dict[str, Any]:
     if len(raw) > maximum:
-        raise _detail(413, "Campaign 请求过大。")
+        raise _detail(413, "任务请求过大。")
     try:
         value = json.loads(raw)
     except (TypeError, ValueError, UnicodeDecodeError) as exc:
-        raise _detail(400, "Campaign 请求必须是合法 JSON。") from exc
+        raise _detail(400, "任务请求格式不正确。") from exc
     if not isinstance(value, dict):
-        raise _detail(400, "Campaign 请求必须是 JSON 对象。")
+        raise _detail(400, "任务请求格式不正确。")
     return value
 
 
@@ -468,7 +468,7 @@ async def supersede_campaign(campaign_id: str, request: Request) -> dict[str, An
 @router.get("/api/campaigns/{campaign_id}/issues/{issue_id}/comments")
 async def list_campaign_comments(campaign_id: str, issue_id: str) -> dict[str, Any]:
     if not await _campaign_issue_exists(campaign_id, issue_id):
-        raise _detail(404, "Campaign Issue 不存在。")
+        raise _detail(404, "该问题不属于所选任务。")
     comments = await asyncio.to_thread(
         database.list_review_comments,
         issue_id=issue_id,
@@ -487,7 +487,7 @@ async def list_campaign_comments(campaign_id: str, issue_id: str) -> dict[str, A
 @router.get("/api/campaigns/{campaign_id}/issues/{issue_id}/discussion")
 async def get_campaign_discussion(campaign_id: str, issue_id: str) -> dict[str, Any]:
     if not await _campaign_issue_exists(campaign_id, issue_id):
-        raise _detail(404, "Campaign Issue 不存在。")
+        raise _detail(404, "该问题不属于所选任务。")
     detail = await asyncio.to_thread(database.get_campaign, campaign_id, page=1, page_size=1)
     campaign = (detail or {}).get("campaign") or {}
     issue = await asyncio.to_thread(database.get_issue, issue_id)
@@ -523,6 +523,8 @@ async def get_campaign_discussion(campaign_id: str, issue_id: str) -> dict[str, 
         "campaign_id": campaign_id,
         "issue_id": issue_id,
         "baseline_scope": baseline_scope,
+        "task": {"id": campaign_id, "name": campaign.get("name") or "", "lifecycle": campaign.get("lifecycle"),
+                 "read_only": bool(campaign.get("legacy_read_only") or campaign.get("lifecycle") != "active")},
         "case_comments": public(case_comments),
         "campaign_comments": public(campaign_comments),
         "other_campaigns": [
@@ -544,7 +546,7 @@ async def create_campaign_comment(
     if not text or len(text) > 3500:
         raise _detail(400, "评论内容必须为 1 到 3500 个字符。")
     if not await _campaign_issue_exists(campaign_id, issue_id):
-        raise _detail(404, "Campaign Issue 不存在。")
+        raise _detail(404, "该问题不属于所选任务。")
     campaign_detail = await asyncio.to_thread(database.get_campaign, campaign_id, page=1, page_size=1)
     campaign = (campaign_detail or {}).get("campaign") or {}
     parent_id = None
@@ -557,7 +559,7 @@ async def create_campaign_comment(
             raise _detail(400, "reply_to_id 不合法。") from exc
         parent = await asyncio.to_thread(database.get_review_comment, parent_id)
         if parent is None or parent.get("issue_id") != issue_id or parent.get("discussion_channel") != "campaign" or parent.get("campaign_id") != campaign_id:
-            raise _detail(400, "只能回复当前 Campaign Issue 下的评论。")
+            raise _detail(400, "只能回复当前任务中本问题的讨论。")
     try:
         mentions = extract_review_mentions(text)
     except ValueError as exc:

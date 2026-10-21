@@ -1018,7 +1018,9 @@ html[data-color-theme="light"] .detail-queue-index-input {
 .history-attachments a:hover { border-color: rgba(34,211,238,.6); }
 .history-attachments img { width: 100%; height: 100%; display: block; object-fit: cover; }
 .comment-thread-dialog { width: min(760px, calc(100vw - 30px)); max-height: min(820px, calc(100dvh - 30px)); overflow: hidden; }
-.comment-thread-dialog .dialog-card { min-height: 0; max-height: calc(100dvh - 30px); gap: 9px; padding: 14px; }
+.comment-thread-dialog .dialog-card { display: flex; flex-direction: column; min-height: 0; max-height: min(818px, calc(100dvh - 32px)); gap: 9px; padding: 14px; overflow-y: auto; }
+.comment-thread-dialog .dialog-card > * { flex: 0 0 auto; }
+.comment-thread-dialog .comment-thread-list { flex: 1 1 auto; }
 .comment-thread-list { min-height: 54px; max-height: min(43dvh, 390px); overflow: auto; display: grid; align-content: start; gap: 5px; padding: 6px; border: 1px solid var(--line); border-radius: 8px; background: #0b1018; }
 .comment-thread-empty { padding: 18px 10px; color: var(--faint); font-size: 11px; text-align: center; }
 .comment-thread-item { position: relative; display: grid; gap: 4px; padding: 8px 9px; border: 1px solid var(--line-soft); border-radius: 7px; background: var(--overlay); }
@@ -1389,3 +1391,12 @@ body[data-active-page="review-assignments"] .gt-sync-control { margin-left: auto
 .combined-review-context-status[data-status="error"] { color: var(--fail); }
 .combined-review-context-status .button { min-height: 30px; padding: 4px 8px; font-size: 11px; }
 .combined-review-context-status[hidden] { display: none; }
+
+
+.discussion-channel-field { min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; font-size: 11px; color: var(--muted); }
+.discussion-channel-field[hidden], .discussion-notice[hidden] { display: none; }
+.discussion-channel-field select { min-width: 0; width: auto; max-width: 100%; min-height: 30px; padding: 4px 26px 4px 8px; font-size: 11px; }
+.discussion-notice { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.45; }
+.discussion-keyboard-hint { color: var(--faint); font-size: 10px; }
+.comment-thread-meta { flex-wrap: wrap; }
+.comment-thread-meta > span { overflow-wrap: anywhere; }

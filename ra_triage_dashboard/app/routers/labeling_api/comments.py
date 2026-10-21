@@ -51,20 +51,6 @@ async def _create_label_comment_record(
     )
     task_id = _as_text(body.get("task_id"))
     discussion_channel = "campaign" if task_id else "case"
-    if task_id:
-        tasks = await asyncio.to_thread(
-            database.list_labeling_tasks, [str(issue.get("baseline_scope") or "")]
-        )
-        if not any(task["id"] == task_id for task in tasks):
-            raise _detail(404, "标注任务不在当前已激活的数据集中。")
-        campaign_detail = await asyncio.to_thread(database.get_campaign, task_id, page=1, page_size=1)
-        campaign = (campaign_detail or {}).get("campaign") or {}
-        if campaign and (
-            campaign.get("purpose") not in {None, "labeling"}
-            or campaign.get("lifecycle") != "active"
-            or campaign.get("legacy_read_only")
-        ):
-            raise _detail(409, "该 Campaign 当前只读，不能新增标注讨论。")
     raw_reply_to_id = body.get("reply_to_id")
     reply_to_id: int | None = None
     parent: dict[str, Any] | None = None
@@ -85,28 +71,44 @@ async def _create_label_comment_record(
         if parent is None:
             raise _detail(404, "回复的评论不存在。")
         if str(parent.get("issue_id") or "") != issue_id:
-            raise _detail(400, "只能回复当前 Case 的标注讨论。")
+            raise _detail(400, "只能回复当前问题的讨论。")
         parent_channel = str(parent.get("discussion_channel") or "legacy")
         if parent_channel == "case":
+            if task_id:
+                raise _detail(400, "回复必须留在本问题讨论中，不能改为任务讨论。")
             if str(parent.get("baseline_scope") or "") != str(issue.get("baseline_scope") or ""):
-                raise _detail(400, "只能回复当前 baseline scope 下的 Case 公共讨论。")
+                raise _detail(400, "只能回复当前数据集下的本问题讨论。")
             discussion_channel = "case"
             task_id = ""
             model_run_id = ""
             source_run_id = ""
         elif parent_channel == "campaign":
             parent_campaign_id = str(parent.get("campaign_id") or "")
-            if not parent_campaign_id or (task_id and task_id != parent_campaign_id):
-                raise _detail(400, "只能回复当前 Campaign 下的标注讨论。")
+            if not parent_campaign_id or task_id != parent_campaign_id:
+                raise _detail(400, "只能回复当前任务中的讨论。")
             discussion_channel = "campaign"
             task_id = parent_campaign_id
             model_run_id = ""
             source_run_id = str((parent_link or {}).get("source_run_id") or "")
         else:
-            raise _detail(400, "只能回复 Case 公共频道或 Labeling Campaign 频道。")
+            raise _detail(400, "只能回复本问题讨论或当前任务讨论。")
+    if task_id:
+        tasks = await asyncio.to_thread(
+            database.list_labeling_tasks, [str(issue.get("baseline_scope") or "")]
+        )
+        if not any(task["id"] == task_id for task in tasks):
+            raise _detail(404, "标注任务不在当前已激活的数据集中。")
+        campaign_detail = await asyncio.to_thread(database.get_campaign, task_id, page=1, page_size=1)
+        campaign = (campaign_detail or {}).get("campaign") or {}
+        if campaign and (
+            campaign.get("purpose") not in {None, "labeling", "model_review"}
+            or campaign.get("lifecycle") != "active"
+            or campaign.get("legacy_read_only")
+        ):
+            raise _detail(409, "该任务当前只读，不能新增任务讨论。")
     if task_id and not source_run_id:
         campaign_detail = await asyncio.to_thread(database.get_campaign, task_id, page=1, page_size=1)
-        source_run_id = str(((campaign_detail or {}).get("campaign") or {}).get("selection_source_run_id") or "")
+        source_run_id = str(((campaign_detail or {}).get("campaign") or {}).get("evaluation_run_id") or ((campaign_detail or {}).get("campaign") or {}).get("selection_source_run_id") or "")
     try:
         mentions = extract_review_mentions(text)
     except ValueError as exc:
@@ -199,6 +201,16 @@ async def list_labeling_comments(
 ) -> dict[str, Any]:
     await _require_labeling_writer(request)
     await _require_active_labeling_issue(issue_id)
+    if channel not in {"both", "case", "campaign"}:
+        raise _detail(400, "讨论筛选不合法。")
+    task = None
+    if task_id:
+        detail = await asyncio.to_thread(database.get_campaign, task_id, page=1, page_size=100, query=issue_id)
+        if not detail or not any(str(item.get("issue_id") or "") == issue_id for item in detail.get("issues", [])):
+            raise _detail(404, "该问题不属于所选任务。")
+        campaign = detail["campaign"]
+        task = {"id": task_id, "name": campaign.get("name") or "", "lifecycle": campaign.get("lifecycle"),
+                "read_only": bool(campaign.get("legacy_read_only") or campaign.get("lifecycle") != "active")}
     comments = await asyncio.to_thread(
         database.list_label_comments,
         issue_id=issue_id,
@@ -209,6 +221,7 @@ async def list_labeling_comments(
         "comments": [_public_label_comment(comment) for comment in comments],
         "count": len(comments),
         "task_id": _as_text(task_id),
+        "task": task,
     }
 
 @router.post("/api/labeling/cases/{issue_id}/comments")

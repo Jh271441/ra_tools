@@ -37,6 +37,7 @@ class DatabaseNotificationsMixin:
             claimed = conn.execute(
                 """
                 SELECT cn.*, comment.model_run_id, comment.body,
+                       comment.discussion_channel, comment.campaign_id, comment.baseline_scope,
                        comment.mentions_json,
                        comment.author, comment.reply_to_id,
                        parent.author AS reply_to_author

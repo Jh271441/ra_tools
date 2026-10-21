@@ -582,7 +582,7 @@ function bindEvents() {
   });
   bindAnalysisDiscussionEditor();
   bindAnalysisDiscussionEnterSubmit();
-  $("#analysisDiscussionDialog")?.addEventListener("close", clearAnalysisDiscussionImages);
+  $("#analysisDiscussionDialog")?.addEventListener("close", closeAnalysisDiscussion);
   $("#analysisDiscussionForm")?.addEventListener("submit", saveAnalysisDiscussion);
   $("#exportFilteredIssuesButton")?.addEventListener("click", downloadFilteredReviewIssues);
   $("#predictFilteredButton").addEventListener("click", () => {

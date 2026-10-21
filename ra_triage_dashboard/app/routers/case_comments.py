@@ -27,7 +27,7 @@ _COMMENT_ATTACHMENT_TOKEN_RE = re.compile(r"^[A-Za-z0-9-]{1,80}$")
 def _require_model_run_comment(model_run_id: str) -> str:
     value = _as_text(model_run_id).strip()
     if not value:
-        raise _detail(400, "新建模型复核讨论必须先选择 Model Run；Case 标注讨论请使用 Case 标注工作台。")
+        raise _detail(400, "新建复核讨论请先选择复核批次；问题本身的讨论请从问题标注页面进入。")
     return value
 
 
@@ -117,7 +117,7 @@ async def create_case_discussion(issue_id: str, request: Request) -> dict[str, A
             raise _detail(400, "reply_to_id 不合法。") from exc
         parent = await asyncio.to_thread(database.get_review_comment, parent_id)
         if parent is None or parent.get("issue_id") != issue_id or parent.get("discussion_channel") != "case" or str(parent.get("baseline_scope") or "") != scope:
-            raise _detail(400, "只能回复当前 baseline scope 与 Issue 下的 Case 评论。")
+            raise _detail(400, "只能回复当前数据集下的本问题讨论。")
     try:
         mentions = extract_review_mentions(text)
     except ValueError as exc:

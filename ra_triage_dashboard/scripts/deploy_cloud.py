@@ -202,7 +202,11 @@ def capture_env(env):
 
 def rebase_env(env, old, new):
     old, new = str(old), str(new)
-    return {k: new + v[len(old):] if v.startswith(old + "/") else v for k, v in env.items()}
+    # Secrets are untracked runtime state, never files in the candidate code tree.
+    persistent_files = {"DASHBOARD_DCHAT_CREDENTIALS_FILE", "DASHBOARD_DATABASE_URL_FILE",
+                        "DASHBOARD_TRUSTED_INGRESS_TOKEN_FILE"}
+    return {k: new + v[len(old):] if k not in persistent_files and v.startswith(old + "/") else v
+            for k, v in env.items()}
 
 def gray_env(env, candidate, data, sha):
     result = rebase_env(env, REPO, candidate)
@@ -286,7 +290,7 @@ def policy(health):
             "trail_attribute_review_write_enabled", "batch_prediction_enabled", "autotriage_push_enabled")
     return {k: health.get(k) for k in keys}
 
-def smoke(port, sha, storage):
+def smoke(port, sha, storage, *, require_notifications=True):
     health = wait_health(port, sha, storage)
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     for route in ("", "api/import-contract", "api/change-revision"):
@@ -297,6 +301,10 @@ def smoke(port, sha, storage):
         require(status.get("database", {}).get("ok") is True, "Database health failed")
         require(status["database"].get("persistent_data") is True, "Database is not persistent")
         require(status.get("overall", {}).get("status") == "healthy", "Production status is degraded")
+        notifications = status.get("review_notifications", {})
+        if require_notifications and notifications.get("enabled") and notifications.get("delivery_mode") == "openapi":
+            require(notifications.get("credentials", {}).get("ready") is True,
+                    "DChat notification credentials are unavailable; preserve their persistent file reference")
     return health
 
 def stop_child(child):

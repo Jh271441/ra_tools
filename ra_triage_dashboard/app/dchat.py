@@ -219,6 +219,34 @@ def build_review_url(
     return urlunparse(parsed._replace(query=urlencode(query), fragment=""))
 
 
+def build_discussion_url(
+    return_url: str, *, issue_id: str, discussion_channel: str = "model_review",
+    campaign_id: str = "", baseline_scope: str = "", model_run_id: str = "",
+    comment_id: int | None = None,
+) -> str:
+    """Return to the stored discussion destination, independent of the sender's page."""
+    if discussion_channel not in {"case", "campaign"}:
+        return build_review_url(return_url, issue_id=issue_id, model_run_id=model_run_id,
+                                open_comments=True, comment_id=comment_id)
+    parsed = urlparse(return_url)
+    base_path = parsed.path.rstrip("/")
+    for suffix in ("/review", "/case-labeling", "/campaigns", "/intent-labeling"):
+        if base_path.endswith(suffix):
+            base_path = base_path[:-len(suffix)]
+            break
+    query = {"issue": issue_id, "comments": "1", "channel": discussion_channel}
+    if comment_id is not None:
+        query["comment"] = str(int(comment_id))
+    if baseline_scope:
+        query["baselines"] = baseline_scope
+    if discussion_channel == "campaign":
+        if not campaign_id:
+            raise ValueError("任务讨论缺少任务信息，无法生成讨论链接。")
+        query["campaign"] = campaign_id
+    path = base_path + ("/campaigns" if discussion_channel == "campaign" else "/case-labeling")
+    return urlunparse(parsed._replace(path=path, query=urlencode(query), fragment=""))
+
+
 def build_intent_comment_url(
     return_url: str,
     *,

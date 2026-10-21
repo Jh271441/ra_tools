@@ -321,6 +321,30 @@ COMMIT;
         self.assertIn("prepared_at", record)
         self.assertIn("promoted_at", record)
 
+    def test_persistent_credential_files_are_not_rebased_to_untracked_release_files(self):
+        env = {key: "/repo/private/value.json" for key in (
+            "DASHBOARD_DCHAT_CREDENTIALS_FILE", "DASHBOARD_DATABASE_URL_FILE",
+            "DASHBOARD_TRUSTED_INGRESS_TOKEN_FILE")}
+        env["DASHBOARD_BASELINES_FILE"] = "/repo/config/baselines.json"
+        rebased = d.rebase_env(env, "/repo", "/release")
+        for key in env:
+            self.assertEqual(rebased[key], "/release/config/baselines.json" if key == "DASHBOARD_BASELINES_FILE" else env[key])
+
+    def test_smoke_rejects_enabled_notifications_with_missing_credentials(self):
+        health = {"ok": True}
+        status = {"database": {"ok": True, "persistent_data": True}, "overall": {"status": "healthy"},
+                  "review_notifications": {"enabled": True, "delivery_mode": "openapi", "credentials": {"ready": False}}}
+        response = MagicMock(); response.__enter__.return_value.status = 200
+        opener = MagicMock(); opener.open.return_value = response
+        with patch.object(d, "wait_health", return_value=health), patch.object(d, "get_json", return_value=status), patch.object(d.urllib.request, "build_opener", return_value=opener):
+            with self.assertRaisesRegex(d.DeployError, "credentials"):
+                d.smoke(8785, "a" * 40, "postgresql")
+            # Explicit repair preflight may inspect the known-broken old service;
+            # promotion always uses the default strict notification gate.
+            self.assertEqual(d.smoke(8785, "a" * 40, "postgresql", require_notifications=False), health)
+            status["review_notifications"]["credentials"]["ready"] = True
+            self.assertEqual(d.smoke(8785, "a" * 40, "postgresql"), health)
+
     def test_rebase_only_changes_checkout_paths(self):
         env={"a":"/repo/app/file","b":"/repo-other/file","c":"/data/media"}
         self.assertEqual(d.rebase_env(env,"/repo","/gray"),{"a":"/gray/app/file","b":"/repo-other/file","c":"/data/media"})

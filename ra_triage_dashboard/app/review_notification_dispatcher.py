@@ -14,6 +14,7 @@ from .dchat import (
     build_review_notification_text,
     build_comment_notification_text,
     build_review_url,
+    build_discussion_url,
 )
 from .review_mentions import mentions_for_display
 from .db_parts.shared import _json_load
@@ -79,6 +80,16 @@ class ReviewNotificationDispatcher:
                     dataset_id=str(item["dataset_id"]),
                     case_id=str(item["case_id"]),
                     comment_id=int(item["comment_id"]),
+                )
+            elif notification_kind == "comment":
+                review_url = build_discussion_url(
+                    self.settings.kylin_sso_return_url,
+                    issue_id=str(item["issue_id"]),
+                    discussion_channel=str(item.get("discussion_channel") or "model_review"),
+                    campaign_id=str(item.get("campaign_id") or ""),
+                    baseline_scope=str(item.get("baseline_scope") or ""),
+                    model_run_id=str(item.get("model_run_id") or ""),
+                    comment_id=int(item["comment_id"]) if item.get("comment_id") else None,
                 )
             else:
                 review_url = build_review_url(

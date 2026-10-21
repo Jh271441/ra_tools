@@ -128,16 +128,18 @@ class LabelingMigrationMixin:
         query = """
                 SELECT comment.*, parent.author AS reply_to_author,
                        parent.body AS reply_to_body,
-                       COALESCE(link.task_id, '') AS task_id,
+                       COALESCE(NULLIF(comment.campaign_id, ''), link.task_id, '') AS task_id,
+                       COALESCE(task.campaign_name, '') AS task_name,
                        COALESCE(link.source_run_id, '') AS source_run_id,
                        COALESCE(link.policy_version, '') AS policy_version
                 FROM review_comments comment
                 JOIN issues issue ON issue.issue_id = comment.issue_id
                 LEFT JOIN label_comment_links link ON link.comment_id = comment.id
                 LEFT JOIN review_comments parent ON parent.id = comment.reply_to_id
+                LEFT JOIN issue_work_splits task ON task.id = comment.campaign_id
                 WHERE comment.issue_id = ?
                   AND comment.baseline_scope = issue.baseline_scope
-                  AND (link.comment_id IS NOT NULL OR comment.discussion_channel = 'case')
+                  AND comment.discussion_channel IN ('case', 'campaign')
                 """
         params: tuple[Any, ...] = (issue,)
         if channel == "case":
@@ -145,10 +147,10 @@ class LabelingMigrationMixin:
         elif channel == "campaign":
             if not task:
                 return []
-            query += " AND comment.discussion_channel = 'campaign' AND COALESCE(link.task_id, '') = ?"
+            query += " AND comment.discussion_channel = 'campaign' AND COALESCE(NULLIF(comment.campaign_id, ''), link.task_id, '') = ?"
             params = (issue, task)
         elif task:
-            query += " AND (comment.discussion_channel = 'case' OR (comment.discussion_channel = 'campaign' AND COALESCE(link.task_id, '') = ?))"
+            query += " AND (comment.discussion_channel = 'case' OR (comment.discussion_channel = 'campaign' AND COALESCE(NULLIF(comment.campaign_id, ''), link.task_id, '') = ?))"
             params = (issue, task)
         query += " ORDER BY comment.id"
         with self.connect() as conn:
@@ -160,6 +162,7 @@ class LabelingMigrationMixin:
                 row, attachments=attachments.get(int(row["id"]), [])
             )
             item["label_task_id"] = str(row["task_id"] or "")
+            item["task_name"] = str(row["task_name"] or "")
             item["source_run_id"] = str(row["source_run_id"] or "")
             item["migration_policy_version"] = str(row["policy_version"] or "")
             comments.append(item)

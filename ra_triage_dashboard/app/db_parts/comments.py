@@ -23,15 +23,15 @@ class DatabaseCommentsMixin:
             if not run_id:
                 run_id = str(model_run_id or "").strip()
             if not run_id:
-                raise ValueError("Model Review 讨论必须绑定 Model Run。")
+                raise ValueError("复核讨论必须选择复核批次。")
             if campaign_key:
-                raise ValueError("Model Review 讨论不能绑定 Campaign ID。")
+                raise ValueError("复核批次讨论不能同时绑定任务。")
         elif channel == "campaign":
             if not campaign_key or run_id:
-                raise ValueError("Campaign 讨论必须绑定 Campaign 且不能绑定 Model Run。")
+                raise ValueError("任务讨论必须选择任务，不能同时绑定复核批次。")
         elif channel == "case":
             if run_id or campaign_key:
-                raise ValueError("Case 讨论只按 baseline scope 与 Issue 隔离。")
+                raise ValueError("本问题讨论只按数据集和问题区分。")
         return channel, campaign_key, scope, run_id
 
     def list_review_comments(
@@ -245,7 +245,7 @@ class DatabaseCommentsMixin:
             issue_scope = str(issue["baseline_scope"] or "")
             if channel == "case":
                 if scope and scope != issue_scope:
-                    raise ValueError("Case 讨论 baseline scope 与 Issue 不匹配。")
+                    raise ValueError("本问题讨论的数据集与当前问题不匹配。")
                 scope = issue_scope
             elif channel == "campaign":
                 campaign = conn.execute(
@@ -257,11 +257,11 @@ class DatabaseCommentsMixin:
                     (campaign_key, issue_id),
                 ).fetchone()
                 if campaign is None or member is None or str(member["baseline_scope"] or "") != issue_scope:
-                    raise ValueError("Issue 不属于指定 Campaign。")
+                    raise ValueError("该问题不属于所选任务。")
                 if bool(campaign["legacy_read_only"]) or str(campaign["lifecycle"] or "") != "active":
-                    raise ValueError("该 Campaign 当前只读，不能新增讨论。")
+                    raise ValueError("该任务当前只读，不能新增任务讨论。")
                 if scope and scope != issue_scope:
-                    raise ValueError("Campaign 讨论 baseline scope 与 Issue 不匹配。")
+                    raise ValueError("任务讨论的数据集与当前问题不匹配。")
                 scope = issue_scope
             if channel == "model_review" and normalized_run_id and require_existing_model_run:
                 run = conn.execute(
@@ -283,7 +283,7 @@ class DatabaseCommentsMixin:
                     or str(parent["evaluation_run_id"] or "") != normalized_run_id
                     or (scope and str(parent["baseline_scope"] or "") != scope)
                 ):
-                    raise ValueError("只能回复当前 Issue 与讨论频道下的评论。")
+                    raise ValueError("回复必须留在原问题和原讨论中。")
             insert_sql = """
                 INSERT INTO review_comments (
                     issue_id, model_run_id, body, author, author_source,
