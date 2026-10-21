@@ -23,6 +23,8 @@ def test_complete_requires_declared_verification_and_all_media() -> None:
             "declared_status": "complete",
             "published_issues": 100,
             "verified_issues": 100,
+            "bev_indexed_issues": 100,
+            "video_indexed_issues": 100,
             "camera_indexed_issues": 100,
             "failure_count": 0,
         },
@@ -56,6 +58,8 @@ def test_full_coverage_waits_in_verifying_without_complete_audit() -> None:
             "declared_status": "capturing",
             "published_issues": 10,
             "verified_issues": 0,
+            "bev_indexed_issues": 10,
+            "video_indexed_issues": 10,
             "camera_indexed_issues": 10,
         },
     )
@@ -67,3 +71,15 @@ def test_membership_failure_blocks_media_lifecycle() -> None:
     summary["registration_status"] = "blocked"
     result = enrich_baseline_lifecycle(summary, {"lifecycle_enabled": True})
     assert result["status"] == "blocked"
+
+
+def test_verified_audit_finishes_but_missing_video_and_errors_stay_partial() -> None:
+    media = {"lifecycle_enabled": True, "declared_status": "verified", "published_issues": 10,
+             "verified_issues": 10, "bev_indexed_issues": 10, "video_indexed_issues": 10,
+             "camera_indexed_issues": 10, "failure_count": 0}
+    assert enrich_baseline_lifecycle(_registered(10), media)["media_status"] == "complete"
+    missing = enrich_baseline_lifecycle(_registered(10), dict(media, video_indexed_issues=9))
+    assert missing["media_status"] == "partial"
+    assert missing["missing_media"] == {"bev": 0, "video": 1, "camera": 0}
+    assert enrich_baseline_lifecycle(_registered(10), dict(media, failure_count=1))["media_status"] == "partial"
+    assert enrich_baseline_lifecycle(_registered(10), dict(media, lifecycle_enabled=False, camera_indexed_issues=9))["media_status"] == "partial"

@@ -51,8 +51,10 @@ def bootstrap_baseline() -> dict[str, Any]:
 def bootstrap_all_baselines() -> dict[str, Any]:
     summaries: list[dict[str, Any]] = []
     memberships: list[tuple[str, str]] = []
+    media_memberships: dict[str, frozenset[str]] = {}
     overlap_mode = str(getattr(settings, "baseline_overlap_mode", "fail_skip") or "fail_skip")
     for entry in baseline_registry.entries:
+        media_memberships[entry.id] = frozenset()
         loaded = load_baseline_entry(
             loader=entry.loader,
             path=entry.xlsx,
@@ -124,6 +126,7 @@ def bootstrap_all_baselines() -> dict[str, Any]:
             else:
                 loaded_rows = list(loaded.rows)
                 item["conflict_count"] = len(conflicts)
+            media_memberships[entry.id] = frozenset(str(row.get("issue_id") or "").strip() for row in loaded_rows if row.get("issue_id"))
             item["upsert"] = database.replace_baseline_scope(
                 scope=entry.scope,
                 rows=loaded_rows,
@@ -139,6 +142,7 @@ def bootstrap_all_baselines() -> dict[str, Any]:
     runtime_state["baseline_conflicts"] = [
         {"issue_id": issue, "scopes": scopes} for issue, scopes in sorted(overlaps.items())
     ]
+    media_registry.set_memberships(media_memberships)
     runtime_state["baselines"] = summaries
     # Legacy primary baseline slot = default selected entry (usually 0508).
     default_ids = baseline_registry.default_ids()
@@ -170,14 +174,19 @@ def enrich_baseline_lifecycle(
         item["media_status"] = "blocked"
         return item
 
+    if media_ready.get("coverage_status") in {"pending", "error"}:
+        item["status"] = "registered"
+        item["media_status"] = "checking" if media_ready["coverage_status"] == "pending" else "unavailable"
+        return item
+
+    bev = int(media_ready.get("bev_indexed_issues") or 0)
+    video = int(media_ready.get("video_indexed_issues") or 0)
+    camera = int(media_ready.get("camera_indexed_issues") or 0)
+    item["missing_media"] = {key: max(0, expected - count) for key, count in (("bev", bev), ("video", video), ("camera", camera))}
+    full_coverage = expected > 0 and not any(item["missing_media"].values())
     if not bool(media_ready.get("lifecycle_enabled")):
-        # Compatibility for established datasets while callers migrate from
-        # the historical member-only ``ready`` status.
         item["status"] = "ready"
-        item["media_status"] = "complete" if (
-            expected > 0
-            and int(media_ready.get("bev_indexed_issues") or 0) >= expected
-        ) else "partial"
+        item["media_status"] = "complete" if full_coverage else "partial"
         return item
 
     published = int(media_ready.get("published_issues") or 0)
@@ -188,7 +197,8 @@ def enrich_baseline_lifecycle(
     if declared == "blocked":
         state = "blocked"
     elif (
-        declared == "complete"
+        declared in {"complete", "verified"}
+        and full_coverage
         and expected > 0
         and published >= expected
         and verified >= expected
@@ -196,6 +206,8 @@ def enrich_baseline_lifecycle(
         and errors == 0
     ):
         state = "complete"
+    elif errors > 0 or (expected > 0 and published >= expected and not full_coverage):
+        state = "partial"
     elif expected > 0 and published >= expected:
         state = "verifying"
     elif declared in {"capturing", "collecting"}:

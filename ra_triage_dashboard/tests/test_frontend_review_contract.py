@@ -27,7 +27,7 @@ class FrontendReviewContractTest(unittest.TestCase):
         self.assertIn('model_review_status_counts', (JS_DIR / "analysis.js").read_text(encoding="utf-8"))
 
         self.assertIn("baselineLabelForScope(item.baseline_scope)", APP_JS)
-        self.assertIn("...baselineRows", APP_JS)
+        self.assertIn("systemStatusMediaTable(baselines)", APP_JS)
         self.assertIn("baselineMediaReady", APP_JS)
         self.assertIn("function currentWorksetIssueCount", APP_JS)
         self.assertIn("currentWorksetIssueCount()", APP_JS)
@@ -61,7 +61,7 @@ class FrontendReviewContractTest(unittest.TestCase):
         self.assertIn("baselines", APP_JS)
         self.assertIn("/static/js/", APP_ENTRY_JS)
         self.assertIn("script.async = false", APP_ENTRY_JS)
-        self.assertIn("app.js?v=manual-triage-591", INDEX_HTML)
+        self.assertIn("app.js?v=manual-triage-592", INDEX_HTML)
         self.assertIn('"work-split.js"', APP_ENTRY_JS)
         self.assertIn('"review-assignments.js"', APP_ENTRY_JS)
         # Product logic must live in domain modules, not the entry loader.

@@ -7,6 +7,8 @@ expose filesystem paths to the dashboard process.
 from __future__ import annotations
 
 import json
+import copy
+import time
 import os
 import re
 import threading
@@ -35,7 +37,7 @@ class MediaProvider(Protocol):
 
     def get_video(self, issue_id: str) -> dict[str, Any] | None: ...
 
-    def media_ready_summary(self) -> dict[str, Any]: ...
+    def media_ready_summary(self, issue_ids: frozenset[str] | None = None) -> dict[str, Any]: ...
 
 
 class ProductLayoutProvider:
@@ -84,14 +86,16 @@ class ProductLayoutProvider:
     def get_video(self, issue_id: str) -> dict[str, Any] | None:
         return self.video_index.get_video(issue_id)
 
-    def media_ready_summary(self) -> dict[str, Any]:
-        indexed = self.asset_index.refresh()
+    def media_ready_summary(self, issue_ids: frozenset[str] | None = None) -> dict[str, Any]:
+        indexed_ids = self.asset_index.indexed_issue_ids()
+        members = indexed_ids if issue_ids is None else issue_ids
+        indexed = len(indexed_ids & members)
         result: dict[str, Any] = {
             "provider": "product_layout",
             "label": self.label,
             "bev_indexed_issues": indexed,
-            "video_indexed_issues": indexed,
-            "camera_indexed_issues": self.camera_index.indexed_issue_count(),
+            "video_indexed_issues": len(self.video_index.indexed_issue_ids() & members),
+            "camera_indexed_issues": len(self.camera_index.indexed_issue_ids() & members),
             "camera_root_available": self.camera_index.camera_root.is_dir(),
             "video_root_available": self.video_index.video_root.is_dir(),
             "lifecycle_enabled": self.lifecycle_enabled,
@@ -374,15 +378,22 @@ class BagsAresAnimationProvider:
             "size_bytes": candidate.stat().st_size,
         }
 
-    def media_ready_summary(self) -> dict[str, Any]:
+    def media_ready_summary(self, issue_ids: frozenset[str] | None = None) -> dict[str, Any]:
         bev_dirs = 0
         if self.bev_frames_root.is_dir():
             bev_dirs = sum(1 for path in self.bev_frames_root.iterdir() if path.is_dir())
         video_index = self._ensure_video_index()
+        members = frozenset(video_index) if issue_ids is None else issue_ids
+        bev_count = sum(bool(self._find_bev_dir(issue)) for issue in members)
+        videos = sum(self.get_video(issue) is not None for issue in members)
         return {
             "provider": "bags_ares_animation",
             "bev_dirs": bev_dirs,
             "video_issues": len(video_index),
+            "bev_indexed_issues": bev_count,
+            "video_indexed_issues": videos,
+            "camera_indexed_issues": len(self._camera.indexed_issue_ids() & members) if self._camera else 0,
+            "video_root_available": self.animation_root.is_dir(),
             "camera_root_available": bool(
                 self.camera_root and self.camera_root.is_dir()
             ),
@@ -472,6 +483,27 @@ class MediaRegistry:
         self._by_id = dict(by_id)
         self._by_scope = dict(by_scope)
         self._default = default_provider
+        self._memberships: dict[str, frozenset[str]] = {}
+        self._summary_cache = TimedSingleFlightCache[str, dict[str, dict[str, Any]]](ttl_seconds=15, max_entries=1)
+        self._status_lock = threading.Lock()
+        self._status_snapshot: dict[str, dict[str, Any]] = {}
+        self._status_deadline = 0.0
+        self._status_observed_at: float | None = None
+        self._status_error = False
+        self._status_generation = 0
+        self._status_loading: int | None = None
+        self._status_thread: threading.Thread | None = None
+
+    def set_memberships(self, memberships: dict[str, frozenset[str]]) -> None:
+        """Bind loaded dataset members for status coverage; no DB/media writes."""
+        with self._status_lock:
+            self._memberships = dict(memberships)
+            self._status_generation += 1
+            self._status_snapshot = {}
+            self._status_deadline = 0.0
+            self._status_observed_at = None
+            self._status_error = False
+        self._summary_cache.clear()
 
     def for_baseline_id(self, baseline_id: str) -> MediaProvider | None:
         return self._by_id.get(str(baseline_id or "").strip())
@@ -488,11 +520,43 @@ class MediaRegistry:
             return self.for_scope(baseline_scope)
         return self._default
 
+    def media_status_by_id(self) -> dict[str, dict[str, Any]]:
+        """Cheap snapshot read. One background scan refreshes all status callers."""
+        with self._status_lock:
+            generation = self._status_generation
+            if time.monotonic() >= self._status_deadline and self._status_loading != generation:
+                self._status_loading = generation
+                self._status_thread = threading.Thread(target=self._refresh_status, args=(generation,), daemon=True, name="media-status")
+                self._status_thread.start()
+            loading = self._status_loading == generation
+            phase = "refreshing" if loading and self._status_snapshot else "pending" if loading else "error" if self._status_error else "ready"
+            return {key: {**copy.deepcopy(self._status_snapshot.get(key, {})), "coverage_status": phase,
+                          "coverage_observed_at": self._status_observed_at} for key in self._by_id}
+
+    def _refresh_status(self, generation: int) -> None:
+        try:
+            snapshot = self.media_ready_by_id()
+        except Exception:
+            snapshot = None
+        with self._status_lock:
+            if generation != self._status_generation:
+                return
+            if snapshot is not None:
+                self._status_snapshot = snapshot
+                self._status_observed_at = time.time()
+            self._status_error = snapshot is None
+            self._status_deadline = time.monotonic() + (15 if snapshot is None else 30)
+            self._status_loading = None
+
     def media_ready_by_id(self) -> dict[str, dict[str, Any]]:
-        return {
-            key: provider.media_ready_summary()
-            for key, provider in self._by_id.items()
-        }
+        return self._summary_cache.get_or_load("all", self._load_media_ready)
+
+    def _load_media_ready(self) -> dict[str, dict[str, Any]]:
+        if not self._by_id:
+            return {}
+        memberships = self._memberships
+        return {key: provider.media_ready_summary(memberships.get(key)) for key, provider in self._by_id.items()}
+
 
 
 def build_media_registry(

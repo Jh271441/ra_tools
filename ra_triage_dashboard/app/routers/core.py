@@ -409,7 +409,7 @@ async def refresh_authoritative_gt(
 
 @router.get("/api/baselines")
 async def list_baselines() -> dict[str, Any]:
-    media = await asyncio.to_thread(media_registry.media_ready_by_id)
+    media = await asyncio.to_thread(media_registry.media_status_by_id)
     items = []
     for summary in runtime_state.get("baselines") or []:
         baseline_id = str(summary.get("id") or "")
@@ -637,7 +637,7 @@ async def status(response: Response) -> dict[str, Any]:
         asyncio.to_thread(volume_status, settings.data_dir),
         asyncio.to_thread(asset_index.refresh),
         asyncio.to_thread(_filesystem_availability),
-        asyncio.to_thread(media_registry.media_ready_by_id),
+        asyncio.to_thread(media_registry.media_status_by_id),
     )
     baseline_state = runtime_state["baseline"]
     baseline_states = [

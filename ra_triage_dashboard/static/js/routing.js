@@ -1405,6 +1405,7 @@ function showPage(
     if (!isPageContextCurrent(pageContext, { matchUrl: false })) break;
     load();
   }
+  if (typeof syncSystemStatusRefresh === "function") syncSystemStatusRefresh();
   // Instant scroll keeps tab switches snappy; avoid smooth-scroll lag between pages.
   if (!preserveScroll && (target !== "review" || issue)) {
     window.scrollTo({ top: 0, behavior: "auto" });

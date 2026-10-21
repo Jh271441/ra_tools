@@ -314,12 +314,28 @@ html[data-sidebar-pref="collapsed"] .sidebar-collapse > span:first-child {
 .system-status-row { min-width: 0; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding-bottom: 7px; border-bottom: 1px solid var(--line-soft); }
 .system-status-row:last-child { padding-bottom: 0; border-bottom: 0; }
 .system-status-row span { color: var(--faint); font-size: 10px; }
-.system-status-row strong { overflow: hidden; color: #dce5f1; font-size: 11px; font-weight: 650; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
+.system-status-row strong { min-width: 0; color: #dce5f1; font-size: 11px; font-weight: 650; text-align: right; white-space: normal; overflow-wrap: anywhere; }
 .system-capacity { display: grid; gap: 8px; }
 .system-capacity-track { height: 7px; overflow: hidden; border-radius: 999px; background: var(--overlay-2); }
 .system-capacity-track > span { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
 .system-capacity-track > span.warn { background: var(--warn); }
 .system-status-note { color: var(--faint); font-size: 10px; line-height: 1.5; }
+.system-status-card--wide { grid-column: 1 / -1; }
+.system-status-build { min-width: 0; max-width: 100%; }
+.system-status-build code { overflow-wrap: anywhere; }
+.system-status-card--wide .system-status-rows { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px; }
+.system-media-table-wrap { min-width: 0; max-width: 100%; overflow-x: auto; border: 1px solid var(--line-soft); border-radius: 7px; }
+.system-media-table { width: 100%; min-width: 640px; border-collapse: collapse; font-size: 12px; text-align: left; }
+.system-media-table th, .system-media-table td { padding: 10px 12px; border-bottom: 1px solid var(--line-soft); vertical-align: top; line-height: 1.5; }
+.system-media-table thead th { color: var(--muted); font-size: 11px; font-weight: 550; white-space: nowrap; }
+.system-media-table tbody th { max-width: 240px; font-weight: 550; overflow-wrap: anywhere; }
+.system-media-table td { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.system-media-table td:last-child { white-space: normal; min-width: 110px; }
+.system-media-table tr:last-child > * { border-bottom: 0; }
+.system-media-missing { display: block; margin-top: 5px; color: var(--warn); line-height: 1.6; overflow-wrap: anywhere; }
+.system-status-diagnostics { font-size: 11px; color: var(--muted); }
+.system-status-diagnostics summary { cursor: pointer; }
+
 .tool-page-grid { display: grid; grid-template-columns: 260px minmax(0, 1fr); align-items: start; gap: 12px; }
 .page-aside { display: grid; gap: 12px; position: sticky; top: 64px; }
 .page-aside h3 { color: var(--text); font-size: 16px; }

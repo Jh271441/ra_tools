@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tempfile
+import subprocess
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
@@ -97,6 +98,13 @@ class SystemStatusTest(unittest.TestCase):
 
         self.assertEqual(result["status"], "degraded")
         self.assertIn("baseline_unavailable", result["problems"])
+
+    def test_frontend_media_and_history_states(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        result = subprocess.run(["node", str(root / "tests/system_status_ui.cjs"),
+            str(root / "static/js/i18n-messages.js"), str(root / "static/js/i18n.js"),
+            str(root / "static/js/system-status.js")], capture_output=True, text=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_volume_status_reports_existing_filesystem(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

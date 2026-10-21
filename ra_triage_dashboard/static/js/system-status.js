@@ -38,15 +38,47 @@ function systemStatusRows(items) {
     .join("")}</div>`;
 }
 
-function systemStatusCard({ title, chip, tone = "ok", rows, extra = "" }) {
-  return `<article class="system-status-card">
+function systemStatusCard({ title, chip, tone = "ok", rows = [], extra = "", wide = false }) {
+  return `<article class="system-status-card${wide ? " system-status-card--wide" : ""}">
     <div class="system-status-card-head"><h3>${escapeHtml(title)}</h3>${systemStatusChip(chip, tone)}</div>
     ${systemStatusRows(rows)}${extra}
   </article>`;
 }
 
+function systemStatusMediaTable(baselines) {
+  const count = value => typeof value === "number" && Number.isFinite(value) && value >= 0 ? value.toLocaleString() : "—";
+  const headers = [t("system.baseline"), uiText("成员", "Members"), "BEV", uiText("BEV 视频", "BEV video"), "Camera", uiText("媒体状态", "Media status")];
+  const rows = baselines.map(item => {
+    const membership = item.membership || {}, media = item.media_ready || {};
+    const expected = membership.expected_count ?? item.count;
+    const fraction = value => `${count(value)} / ${count(expected)}`;
+    const status = item.media_status || item.status;
+    const registered = ["registered", "ready"].includes(item.registration_status || item.status);
+    const ready = registered && ["complete", "ready"].includes(status);
+    const missing = Object.entries(item.missing_media || {}).filter(([, value]) => value > 0)
+      .map(([key, value]) => `${({bev:"BEV",video:uiText("视频", "Video"),camera:"Camera"})[key] || key} ${uiText("缺少", "missing")} ${count(value)}`);
+    if (media.failure_count > 0) missing.push(uiText(`采集错误 ${count(media.failure_count)} 项`, `${count(media.failure_count)} capture errors`));
+    const values = [fraction(membership.registered_count ?? item.count), fraction(media.bev_indexed_issues), fraction(media.video_indexed_issues), fraction(media.camera_indexed_issues)];
+    return `<tr><th scope="row">${escapeHtml(item.label || item.id || "—")}</th>${values.map(value => `<td>${escapeHtml(value)}</td>`).join("")}<td>${systemStatusChip(registered ? baselineLifecycleLabel(status) : uiText("成员异常", "Membership issue"), ready ? "ok" : status === "blocked" ? "fail" : "warn")}${missing.length ? `<small class="system-media-missing">${escapeHtml(missing.join(" · "))}</small>` : ""}</td></tr>`;
+  }).join("");
+  return `<div class="system-media-table-wrap" tabindex="0" role="region" aria-label="${escapeHtml(t("system.dataset_media"))}"><table class="system-media-table"><thead><tr>${headers.map(label => `<th scope="col">${escapeHtml(label)}</th>`).join("")}</tr></thead><tbody>${rows || `<tr><td colspan="6">${escapeHtml(uiText("暂无数据集状态", "No dataset status available"))}</td></tr>`}</tbody></table></div>`;
+}
+
+function systemStatusLegacyCard(legacy, baselines) {
+  const policies = Array.isArray(legacy.policies) ? legacy.policies : [];
+  const labels = new Map(baselines.map(item => [item.scope, item.label || item.id]));
+  const modes = { legacy: uiText("沿用现有记录", "Existing records"), shadow: uiText("迁移核对中", "Migration checks"), canonical: uiText("新版记录", "New records") };
+  return systemStatusCard({
+    title: uiText("历史复核数据", "Historical reviews"), chip: policies.length ? uiText("读取方式", "Read mode") : uiText("沿用现有记录", "Existing records"), tone: "neutral",
+    rows: policies.length ? policies.map(item => [labels.get(item.baseline_scope) || t("system.baseline"), modes[item.policy] || uiText("待确认", "Unknown")]) : [],
+    extra: `<p class="system-status-note">${escapeHtml(uiText("这里说明历史复核记录的读取方式。当前问题标注与判错复核仍按用户权限提交。", "This describes how historical reviews are read. Current labeling and reviews follow user permissions."))}</p>`,
+  });
+}
+
 function baselineLifecycleLabel(status) {
   const labels = {
+    checking: uiText("统计中", "Counting"),
+    unavailable: uiText("统计异常", "Count unavailable"),
     registered: uiText("已注册", "Registered"),
     collecting: uiText("采集中", "Collecting"),
     partial: uiText("部分可用", "Partial"),
@@ -115,33 +147,13 @@ function renderSystemStatus() {
   const baselineMediaReady = baselines.length > 0 && baselines.every(
     (item) => ["complete", "ready"].includes(item.media_status || item.status)
   );
+  const mediaBusy = baselines.some(item => ["pending", "refreshing"].includes(item.media_ready?.coverage_status));
+  const mediaError = baselines.some(item => item.media_ready?.coverage_status === "error");
   const assetsReady = Boolean(
     data.ra_auto_triage_root_available && data.ares_manifest_available && data.camera_cache_root_available
   );
   const gatewayReady = Boolean(gateway.configured);
   const usedPercent = Math.max(0, Math.min(100, Number(volume.used_percent) || 0));
-  const baselineRows = baselines.map((item) => {
-    const membership = item.membership || {};
-    const count = Number(membership.registered_count ?? item.count ?? 0);
-    const expected = Number(membership.expected_count ?? count ?? 0);
-    const media = item.media_ready || {};
-    const bev = Number(media.bev_indexed_issues || 0);
-    const video = Number(media.video_indexed_issues || 0);
-    const camera = Number(media.camera_indexed_issues || 0);
-    const remaining = Number(item.remaining_media || 0);
-    const remainingLabel = remaining > 0
-      ? ` · ${uiText("剩余", "Remaining")} ${remaining}`
-      : "";
-    return [
-      item.label || item.id || t("system.baseline"),
-      `${uiText("成员", "Members")} ${count}/${expected || "—"}`
-        + ` · BEV ${bev}/${expected || "—"}`
-        + ` · ${uiText("视频", "Video")} ${video}/${expected || "—"}`
-        + ` · Camera ${camera}/${expected || "—"}`
-        + ` · ${uiText("状态", "Status")}：${baselineLifecycleLabel(item.media_status || item.status)}`
-        + remainingLabel,
-    ];
-  });
   const conflictCount = Array.isArray(data.baseline_conflicts)
     ? data.baseline_conflicts.length
     : 0;
@@ -181,10 +193,11 @@ function renderSystemStatus() {
     }),
     systemStatusCard({
       title: t("system.dataset_media"),
-      chip: baselineReady && baselineMediaReady && assetsReady ? t("status.ready") : t("status.partial"),
-      tone: baselineReady && baselineMediaReady && assetsReady ? "ok" : "warn",
+      chip: mediaError ? uiText("统计异常", "Count unavailable") : mediaBusy ? uiText("统计更新中", "Updating counts") : baselineReady && baselineMediaReady && assetsReady ? t("status.ready") : t("status.partial"),
+      tone: mediaError ? "warn" : mediaBusy ? "neutral" : baselineReady && baselineMediaReady && assetsReady ? "ok" : "warn",
+      wide: true,
+      extra: systemStatusMediaTable(baselines) + `<p class="system-status-note">${escapeHtml(mediaError ? uiText("媒体统计暂不可用，请稍后刷新；已有计数保留上次结果。", "Media counts are unavailable; refresh later. Existing counts retain the last result.") : mediaBusy ? uiText("媒体统计正在后台更新，完成后本页自动刷新；已有计数为上次结果。", "Media counts are updating in the background. This page refreshes when ready; existing counts show the last result.") : uiText("按各数据集成员统计，BEV、视频与 Camera 分别计数。", "Counts are scoped to each dataset's members; BEV, video and Camera are counted independently."))}</p>`,
       rows: [
-        ...baselineRows,
         [t("system.baseline_conflicts"), String(conflictCount)],
         [t("system.camera_cache"), data.camera_cache_root_available ? t("status.available") : t("status.unavailable")],
         [t("system.bev_video"), data.ares_video_root_available ? t("status.available") : t("status.unavailable")],
@@ -192,27 +205,18 @@ function renderSystemStatus() {
     }),
     systemStatusCard({
       title: t("system.models"),
-      chip: gatewayReady ? t("system.gateway_ready") : t("system.gateway_missing"),
+      chip: gatewayReady ? uiText("网关已配置", "Gateway configured") : t("system.gateway_missing"),
       tone: gatewayReady ? "ok" : "warn",
       rows: [
         [t("system.deploy_mode"), data.application?.deployment_mode === "production" ? t("status.production") : t("status.development")],
         [t("system.model_gateway"), gateway.configured ? t("system.gateway_cred") : t("status.not_configured")],
         [t("system.batch_pred"), data.batch_prediction_enabled ? t("status.enabled") : t("status.disabled")],
-        [t("system.autotriage_push"), data.autotriage_push_enabled ? t("status.enabled") : t("system.autotriage_off")],
+        [uiText("看板手动推送", "Dashboard publication"), data.autotriage_push_enabled ? t("status.enabled") : t("status.disabled")],
         [t("system.trail_fields"), ["ready", "preview_ready"].includes(trail.status) ? t("status.available") : t("system.trail_unavailable")],
       ],
-      extra: trail.message ? `<p class="system-status-note">${escapeHtml(trail.message)}</p>` : "",
+      extra: `<p class="system-status-note">${escapeHtml(uiText("手动推送开关仅作用于本看板；每日推理与回刷进度请查看“每日任务”。", "The publication switch applies to this dashboard. Check Daily tasks for scheduled inference and publication."))}</p>` + (trail.message ? `<details class="system-status-diagnostics"><summary>${escapeHtml(uiText("连接详情", "Connection details"))}</summary><p class="system-status-note">${escapeHtml(trail.message)}</p></details>` : ""),
     }),
-    systemStatusCard({
-      title: uiText("Legacy Cutover", "Legacy Cutover"),
-      chip: uiText("只读策略", "Read policy"),
-      tone: "warn",
-      rows: (legacyCutover.policies || []).map((item) => [
-        item.baseline_scope || "—",
-        `${item.policy || "legacy"} · epoch ${Number(item.epoch || 0)} · ${String(item.inventory_sha256 || "").slice(0, 12)}`,
-      ]),
-      extra: `<p class="system-status-note">${escapeHtml(uiText("S6 legacy evidence 保持只读；切换需通过 inventory、shadow receipt 和 CAS epoch。", "S6 legacy evidence stays read-only; cutover requires inventory, shadow receipt and CAS epoch."))}</p>`,
-    }),
+    systemStatusLegacyCard(legacyCutover, baselines),
     systemStatusCard({
       title: t("system.volume"),
       chip: volume.available && Number(volume.free_bytes || 0) >= 1024 ** 3 ? t("status.capacity_ok") : t("status.low_space"),
@@ -231,8 +235,36 @@ function renderSystemStatus() {
   }
 }
 
+let systemStatusRefreshTimer = null;
+let systemStatusRequestSeq = 0;
+let systemStatusInFlight = 0;
+
+function syncSystemStatusRefresh() {
+  if (systemStatusRefreshTimer !== null) window.clearTimeout(systemStatusRefreshTimer);
+  systemStatusRefreshTimer = null;
+  if (systemStatusInFlight || state.activePage !== "status"
+      || !(state.systemStatus?.baselines || []).some(item => ["pending", "refreshing"].includes(item.media_ready?.coverage_status))) return;
+  const context = capturePageContext(), requestSeq = systemStatusRequestSeq;
+  systemStatusRefreshTimer = window.setTimeout(() => {
+    systemStatusRefreshTimer = null;
+    if (state.activePage === "status" && isPageContextCurrent(context) && requestSeq === systemStatusRequestSeq) {
+      void loadStatus().catch(() => {});
+    }
+  }, 2000);
+}
+
 async function loadStatus() {
-  const data = await api("/api/status");
+  if (systemStatusRefreshTimer !== null) window.clearTimeout(systemStatusRefreshTimer);
+  systemStatusRefreshTimer = null;
+  const requestSeq = ++systemStatusRequestSeq;
+  systemStatusInFlight = requestSeq;
+  let data;
+  try {
+    data = await api("/api/status");
+  } finally {
+    if (requestSeq === systemStatusRequestSeq) systemStatusInFlight = 0;
+  }
+  if (requestSeq !== systemStatusRequestSeq) return;
   state.systemStatus = data;
   if (data.baseline || data.trail_sync) {
     state.config = {
@@ -243,4 +275,5 @@ async function loadStatus() {
     renderConfig();
   }
   renderSystemStatus();
+  syncSystemStatusRefresh();
 }

@@ -98,6 +98,12 @@ class AssetIndex:
         with self._lock:
             return len(self._meta_paths)
 
+    def indexed_issue_ids(self) -> frozenset[str]:
+        """Snapshot indexed IDs for membership-scoped status, outside health."""
+        self.refresh()
+        with self._lock:
+            return frozenset(self._meta_paths)
+
     def has_issue(self, issue_id: str) -> bool:
         """Return whether an indexed Ares manifest entry exists for an issue.
 
@@ -314,45 +320,37 @@ class CameraIndex:
             ttl_seconds=30,
             max_entries=4_000,
         )
-        self._count_cache: tuple[float, int] = (0.0, 0)
+        self._coverage = TimedSingleFlightCache[str, frozenset[str]](ttl_seconds=30, max_entries=1)
 
     def indexed_issue_count(self) -> int:
-        """Count issues with a complete nine-frame Camera capture.
+        return len(self.indexed_issue_ids())
 
-        This is used by the asynchronous status endpoints, never by health or
-        Gallery hot paths. Cache briefly because incremental capture creates
-        new directories while the service remains online.
-        """
+    def indexed_issue_ids(self) -> frozenset[str]:
+        """Cached, deduplicated nine-frame Camera coverage for status reads."""
+        return self._coverage.get_or_load("issues", self._scan_issue_ids)
 
-        now = time.monotonic()
-        with self._lock:
-            expires_at, cached = self._count_cache
-            if now < expires_at:
-                return cached
+    def _scan_issue_ids(self) -> frozenset[str]:
         issues: set[str] = set()
         if self.camera_root.is_dir():
             for folder in self.camera_root.iterdir():
-                if not folder.is_dir():
+                if not folder.is_dir() or not self._within_root(folder):
                     continue
                 source = folder / "after_compress"
                 if not source.is_dir():
                     source = folder / "before_compress"
-                if not source.is_dir():
+                if not source.is_dir() or not self._within_root(source):
                     continue
                 frame_count = sum(
                     1
                     for child in source.iterdir()
-                    if child.is_file() and self._numbered_image.match(child.name)
+                    if child.is_file() and self._numbered_image.match(child.name) and self._within_root(child)
                 )
                 if frame_count != 9:
                     continue
                 match = re.match(r"^(?P<issue>(?:cn|us)\d+)(?:_|$)", folder.name)
                 if match:
                     issues.add(match.group("issue"))
-        count = len(issues)
-        with self._lock:
-            self._count_cache = (now + 30.0, count)
-        return count
+        return frozenset(issues)
 
     def get_assets(self, issue_id: str, timestamp_ms: Any = None) -> dict[str, Any]:
         cache_key = f"{issue_id}:{str(timestamp_ms or '').strip()}"
@@ -492,6 +490,7 @@ class VideoIndex:
         self.base_path = base_path
         self._lock = threading.RLock()
         self._assets: dict[str, dict[str, Path]] = {}
+        self._coverage = TimedSingleFlightCache[str, frozenset[str]](ttl_seconds=30, max_entries=1)
         # Captures may appear shortly after a job completes, so keep negative
         # entries short-lived while still avoiding a glob of every shard for
         # each click on a no-video Issue.
@@ -499,6 +498,32 @@ class VideoIndex:
             ttl_seconds=15,
             max_entries=4_000,
         )
+
+    def indexed_issue_ids(self) -> frozenset[str]:
+        """Scan each supported layout once per TTL, never one glob per member."""
+        return self._coverage.get_or_load("issues", self._scan_issue_ids)
+
+    def _scan_issue_ids(self) -> frozenset[str]:
+        paths = {
+            path.resolve()
+            for pattern in ("shard-*-of-*/*/meta.json", "*/meta.json", "issues/*/meta.json")
+            for path in self.video_root.glob(pattern)
+            if self._within_root(path) and path.is_file()
+        }
+        issues: set[str] = set()
+        for path in paths:
+            try:
+                meta = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if not isinstance(meta, dict):
+                continue
+            issue = str(meta.get("issue_id") or "")
+            if (self._issue_id.fullmatch(issue)
+                    and (path.parent.name == issue or path.parent.name.startswith(issue + "_"))
+                    and self._video_from_meta(issue, path, meta) is not None):
+                issues.add(issue)
+        return frozenset(issues)
 
     def get_video(self, issue_id: str) -> dict[str, Any] | None:
         if not self._issue_id.fullmatch(issue_id) or not self.video_root.is_dir():
@@ -550,20 +575,30 @@ class VideoIndex:
         return None
 
     def _video_from_meta(
-        self, issue_id: str, meta_path: Path
+        self, issue_id: str, meta_path: Path, meta: dict[str, Any] | None = None
     ) -> dict[str, Any] | None:
-        try:
-            meta = json.loads(meta_path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
+        if meta is None:
+            try:
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                return None
+        if not isinstance(meta, dict):
             return None
         if (
             str(meta.get("issue_id") or "") != issue_id
             or str(meta.get("status") or "") != "captured"
         ):
             return None
-        variants = ((meta.get("capture_plan") or {}).get("variants") or [])
-        rendered_videos = (meta.get("render_metadata") or {}).get("videos") or []
+        plan = meta.get("capture_plan")
+        render = meta.get("render_metadata")
+        variants = plan.get("variants") if isinstance(plan, dict) else []
+        rendered_videos = render.get("videos") if isinstance(render, dict) else []
+        if not isinstance(variants, list):
+            return None
+        rendered_videos = [row for row in rendered_videos if isinstance(row, dict)] if isinstance(rendered_videos, list) else []
         for variant_index, variant in enumerate(variants):
+            if not isinstance(variant, dict):
+                continue
             relative_path = str(variant.get("video_relative_path") or "")
             path = self._resolve_asset(meta_path.parent, relative_path)
             if not path or not path.is_file() or path.suffix.lower() != ".mp4":
