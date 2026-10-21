@@ -109,6 +109,10 @@ class MediaCoverageTest(unittest.TestCase):
         result = registry.media_status_by_id()["scope"]
         self.assertEqual(result["coverage_status"], "ready")
         self.assertEqual(result["camera_indexed_issues"], 2)
+        registry.set_memberships({"scope": frozenset({"cn1", "cn2", "cn3"})})
+        registry.media_status_by_id()
+        registry._status_thread.join(3)
+        self.assertEqual(registry.media_status_by_id()["scope"]["camera_indexed_issues"], 3)
 
     def test_background_failure_is_unknown_and_retries_are_backed_off(self):
         calls = []

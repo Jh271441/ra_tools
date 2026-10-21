@@ -503,7 +503,7 @@ class MediaRegistry:
             self._status_deadline = 0.0
             self._status_observed_at = None
             self._status_error = False
-        self._summary_cache.clear()
+            self._summary_cache.clear()
 
     def for_baseline_id(self, baseline_id: str) -> MediaProvider | None:
         return self._by_id.get(str(baseline_id or "").strip())
