@@ -109,7 +109,7 @@ class ReviewCommentsTest(unittest.TestCase):
                 source="test",
                 replace_gt=True,
             )
-            with self.assertRaisesRegex(ValueError, "当前 Issue"):
+            with self.assertRaisesRegex(ValueError, "原问题"):
                 database.create_review_comment(
                     issue_id="cn2",
                     body="跨线程回复",
