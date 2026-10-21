@@ -17,6 +17,9 @@ function task(model,id) { return model.lanes.flatMap(l=>l.nodes).find(n=>n.id===
 `,ctx);
 assert.equal(vm.runInContext('buildDailyCronGraph(data).lanes.length',ctx),2);
 assert.equal(vm.runInContext('task(buildDailyCronGraph(data),"main-infer").status',ctx),'warn');
+vm.runInContext('data.overview.daily.runs[0].stage_timings={"main-infer":{mode:"finished",kind:"span",elapsed_seconds:6040.3,basis:"registration_to_publication"}}',ctx);
+assert.equal(vm.runInContext('task(buildDailyCronGraph(data),"main-infer").timingText',ctx),'阶段用时 1小时40分钟');
+assert.equal(vm.runInContext('task(buildDailyCronGraph(data),"main-infer").rows.some(row=>row[0]==="计时口径"&&row[1].includes("未单独记录纯推理耗时"))',ctx),true);
 assert.equal(vm.runInContext('task(buildDailyCronGraph(data),"media-ready").status',ctx),'success');
 assert.equal(vm.runInContext('task(buildDailyCronGraph(data),"media-retry").status',ctx),'unknown');
 assert.equal(vm.runInContext('buildDailyCronGraph(data).edges.some(e=>e.source.startsWith("media-")&&e.target.startsWith("main-"))',ctx),false);

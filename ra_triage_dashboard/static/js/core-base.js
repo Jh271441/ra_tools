@@ -409,7 +409,7 @@ const DASHBOARD_NATIVE_SELECT_IDS = new Set([
   "workSplitWorkflowMode", "reviewWorkflowMode", "campaignsSource",
   "runCollectionSelect", "runCollectionRevisionSelect",
   "runCollectionReferenceType", "runCollectionComparisonReference",
-  "runCollectionSelectionSourceRun", "modelReviewStatusInput",
+  "runCollectionSelectionSourceRun", "modelReviewStatusInput", "dailyCronRunDate",
 ]);
 
 function enhanceNativeUiSelect(select, { maxWidth = 520 } = {}) {

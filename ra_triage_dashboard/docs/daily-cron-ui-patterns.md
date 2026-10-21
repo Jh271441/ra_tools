@@ -41,11 +41,20 @@ MiniMap与主画布共用显式节点width/height，不能仅在style声明尺�
 布局回归：`cd frontend/cron-graph && node --test tests/layout.test.mjs`，覆盖中英文、
 双链实际运行与单链说明，检查节点互不覆盖、连线避让节点、标签避让节点/其他标签。
 
+Run-date selection uses the shared themed single-select, including keyboard
+selection, checked state, outside/Escape dismissal and viewport-aware anchoring.
+The latest option includes its target date; completed-with-gaps is one status
+phrase. Each refresh updates options and preserves automatic/manual selection.
+
 ## Duration and receipt spans
 
 Run cards show the main pipeline's exported elapsed_seconds (registration to
 execution receipt) and media time since cohort registration to the final dual
 video publication receipt. The two independent pipelines are never summed.
+Chinese timing always spells out 小时 and 分钟, including compact graph nodes;
+compact hour values omit seconds, while details retain them. Finished stage
+spans say 阶段用时. Acquisition/inference details explicitly include acquisition
+and waits and state that inference-only runtime was not recorded separately.
 Nodes have a separate timing row; both CSS and ELK use 104px task height so
 counts, state and duration stay visible. Details and run history show CST start,
 end, receipt coverage and the timing scope.

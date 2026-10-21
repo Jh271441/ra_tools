@@ -123,8 +123,14 @@ function renderCronRunSelector() {
   if (!select) return;
   const runs = (dailyCronState.data?.overview?.daily?.runs || []).filter(run => /^daily-\d{4}-\d{2}-\d{2}$/.test(run.id));
   const value = dailyCronState.selectedDay || "";
-  select.innerHTML = `<option value="">${escapeHtml(uiText("最新运行", "Latest run"))}</option>` + runs.map(run => `<option value="${escapeHtml(run.target_date_cst)}">${escapeHtml(run.target_date_cst)} · ${escapeHtml(cronLabel(run.health))}</option>`).join("");
+  const latest = [uiText("最新运行", "Latest run"), runs[0]?.target_date_cst].filter(Boolean).join(" · ");
+  select.innerHTML = `<option value="">${escapeHtml(latest)}</option>` + runs.map(run => {
+    const status = ["partial", "complete_with_gaps"].includes(run.health) ? uiText("已完成（有缺失）", "Complete with gaps") : cronLabel(run.health);
+    return `<option value="${escapeHtml(run.target_date_cst)}">${escapeHtml(run.target_date_cst)} · ${escapeHtml(status)}</option>`;
+  }).join("");
   select.value = value;
+  const picker = enhanceNativeUiSelect(select);
+  picker?.querySelector(".ui-select-trigger")?.setAttribute("aria-label", uiText("选择运行日期", "Select run date"));
 }
 
 function bindCronGraphEvents() {

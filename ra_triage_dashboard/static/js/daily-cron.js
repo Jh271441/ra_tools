@@ -15,8 +15,8 @@ function cronDuration(value, { compact = false } = {}) {
   const seconds = Math.floor(value), days = Math.floor(seconds / 86400), hours = Math.floor(seconds / 3600) % 24, minutes = Math.floor(seconds / 60) % 60, rest = seconds % 60;
   const parts = [];
   if (days) parts.push(uiText(`${days}天`, `${days}d`));
-  if (hours) parts.push(uiText(`${hours}${compact ? "时" : "小时"}`, `${hours}h`));
-  if (minutes && !(compact && days)) parts.push(uiText(`${minutes}分`, `${minutes}m`));
+  if (hours) parts.push(uiText(`${hours}小时`, `${hours}h`));
+  if (minutes && !(compact && days)) parts.push(uiText(`${minutes}分钟`, `${minutes}m`));
   if (!(compact && (days || hours)) && (rest || !parts.length)) parts.push(uiText(`${rest}秒`, `${rest}s`));
   return parts.join(uiText("", " "));
 }
@@ -26,7 +26,7 @@ function cronTimingText(timing, { compact = false, stale = false } = {}) {
   const prefix = timing.mode === "running"
     ? stale ? uiText("上次已运行", "Last elapsed") : uiText("已运行", "Elapsed")
     : timing.kind === "p50" ? uiText("任务 P50", "Task P50")
-    : timing.kind === "span" ? timing.mode === "observed" ? uiText("已观测跨度", "Observed span") : uiText("回执跨度", "Receipt span")
+    : timing.kind === "span" ? timing.mode === "observed" ? uiText("已观测跨度", "Observed span") : uiText("阶段用时", "Stage duration")
     : timing.basis === "media_registration_to_verified" ? uiText("注册后耗时", "Since registration")
     : timing.basis === "camera_latest_attempt" ? uiText("本轮耗时", "Attempt duration") : uiText("耗时", "Duration");
   return `${prefix} ${cronDuration(timing.elapsed_seconds, { compact })}`;
@@ -36,7 +36,7 @@ function cronTimingRows(timing, { stale = false } = {}) {
   const scopes = {
     pipeline_registration: ["注册至本次执行回执；包含恢复等待的墙钟时间", "Registration to execution receipt, including recovery waits"],
     launch_to_registration: ["调度启动至冻结选集注册，包含进程准备", "Scheduler launch to cohort registration, including startup"],
-    registration_to_publication: ["注册至首条回刷尝试，包含采集、推理和准备等待", "Registration to first publication attempt, including acquisition, inference and preparation"],
+    registration_to_publication: ["从选集注册到开始回刷，包含采集、模型推理和等待；未单独记录纯推理耗时", "Cohort registration to first publication attempt, including acquisition, model inference and waits; inference-only runtime is not recorded separately"],
     publication_receipts: ["首条回刷尝试至最后验证回执，包含重试等待", "First publication attempt to final verification receipt, including retry waits"],
     sample_hook_receipts: ["首条抽样更新尝试至最后抽样验证回执", "First sample-update attempt to final sample verification receipt"],
     media_registration_to_verified: ["本批注册至最后双媒体发布验证；不含注册前耗时", "Cohort registration to final dual-media publication; excludes pre-registration work"],

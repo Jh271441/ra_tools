@@ -83,6 +83,9 @@ body[data-active-page="daily-cron"] #pageTitle { font-size: 16px; }
 .cron-graph-toolbar { margin-bottom: 10px; flex-wrap: nowrap; gap: 8px; }
 .cron-graph-toolbar h3 { margin-right: auto; }
 .cron-graph-toolbar select { width: auto; max-width: 270px; min-width: 0; font-size: 11px; padding-block: 5px; min-height: 28px; }
+.cron-graph-toolbar .dashboard-native-ui-select { flex: 0 1 270px; width: 270px; max-width: 100%; }
+.cron-graph-toolbar .ui-select-trigger { height: 28px; min-height: 28px; font-size: 11px; }
+.cron-graph-toolbar .ui-select-option { font-size: 12px; }
 .cron-graph-workspace { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; background: var(--bg); border: 1px solid var(--line-soft); border-radius: 7px; overflow: hidden; }
 .cron-graph-workspace.has-selection { grid-template-columns: minmax(0, 1fr) 250px; }
 .cron-run-graph { height: clamp(480px, 60vh, 640px); min-width: 0; }
@@ -148,7 +151,7 @@ body[data-active-page="daily-cron"] #pageTitle { font-size: 16px; }
   .cron-monitor { padding: 10px 12px; }
   .cron-monitor > strong { font-size: 14px; }
   .cron-graph-toolbar { flex-wrap: wrap; }
-  .cron-graph-toolbar select { max-width: 220px; }
+  .cron-graph-toolbar select, .cron-graph-toolbar .dashboard-native-ui-select { max-width: 220px; }
   .cron-run-graph { height: 440px; }
   .cron-run-graph .react-flow__minimap { display: none; }
   .cron-graph-workspace.has-selection { grid-template-columns: minmax(0, 1fr); }
