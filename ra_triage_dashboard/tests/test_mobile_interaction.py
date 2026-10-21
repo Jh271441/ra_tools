@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1] / "static/js"
 class MobileInteractionTest(unittest.TestCase):
     def run_js(self, names, assertions):
         script = "\n".join((ROOT / name).read_text() for name in names) + assertions
-        result = subprocess.run(["node", "-e", script], capture_output=True, text=True)
+        result = subprocess.run(["node"], input=script, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_phone_textarea_enter_never_submits_while_desktop_shortcut_remains(self):
@@ -52,7 +52,7 @@ window.visualViewport.height=240;window.visualViewport.offsetTop=150;listeners.r
 resetAnchoredPanel(panel);assert.equal(anchoredPanelContexts.size,0);assert.equal(panel.style.top,'');
 openAnchoredPanel(panel,anchor);panel.isConnected=false;listeners.scroll();assert.equal(anchoredPanelContexts.size,0);
 '''
-        result=subprocess.run(["node","-e",script],capture_output=True,text=True)
+        result=subprocess.run(["node"],input=script,capture_output=True,text=True)
         self.assertEqual(result.returncode,0,result.stderr)
 
     def test_combined_review_composer_leaves_phone_newline_untouched(self):
