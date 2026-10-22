@@ -560,7 +560,6 @@ function renderReview(caseData) {
           </div>
           <input class="hidden" id="caseRationaleImageInput" type="file" accept="image/png,image/jpeg,image/webp" multiple />
           <div class="pending-screenshot-list" id="caseRationaleImageList" aria-live="polite"></div>
-          <small class="case-label-image-help"><span class="ui-lang-zh">已保存图片可在标签汇总中查看；待上传图片仅保留在本次页面中。</span><span class="ui-lang-en">Saved images appear in Labels; pending images stay in this page session.</span></small>
         </div>
       </section>
       <section class="review-section model-error-section">

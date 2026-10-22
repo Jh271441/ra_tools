@@ -1438,5 +1438,3 @@ body[data-active-page="review-assignments"] .gt-sync-control { margin-left: auto
 .shared-label-source-audit { color: var(--muted); font-size: 10px; min-width: 0; }
 .shared-label-source-audit > summary { cursor: pointer; width: fit-content; padding: 5px 0; }
 .shared-label-source-audit > dl { margin-top: 6px; }
-
-.case-label-image-help { color: var(--muted); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
