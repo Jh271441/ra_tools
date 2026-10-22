@@ -62,7 +62,7 @@ function sharedLabelStateButtonMarkup(item, { showEmpty = false, compact = false
   if (visual.kind === "none" && !showEmpty) return "";
   const issueId = escapeHtml(item?.issue_id || "");
   if (summaryOnly) {
-    return `<button class="history-inline-button label-summary-inline-button" type="button" data-open-shared-label-state data-issue-id="${issueId}" aria-keyshortcuts="L" aria-haspopup="dialog" aria-label="${escapeHtml(uiText("标签汇总", "Label summary"))}" title="${escapeHtml(uiText("查看大家的 Issue 标签及说明（L）", "View everyone’s Issue tags and rationale (L)"))}"><span class="ui-lang-zh">标签汇总</span><span class="ui-lang-en">Labels</span><kbd class="review-control-shortcut" aria-hidden="true">L</kbd></button>`;
+    return `<button class="history-inline-button label-summary-inline-button" type="button" data-open-shared-label-state data-issue-id="${issueId}" aria-keyshortcuts="L" aria-haspopup="dialog" aria-label="${escapeHtml(uiText("标签汇总", "Label summary"))}" title="${escapeHtml(uiText("查看大家的 Issue 标签及说明（L）", "View everyone’s Issue tags and rationale (L)"))}"><span class="ui-lang-zh">汇总</span><span class="ui-lang-en">Labels</span><kbd class="review-control-shortcut" aria-hidden="true">L</kbd></button>`;
   }
   const sourceCount = Array.isArray(labelState.sources) ? labelState.sources.length : 0;
   const sourceCountMarkup = sourceCount && !compact
