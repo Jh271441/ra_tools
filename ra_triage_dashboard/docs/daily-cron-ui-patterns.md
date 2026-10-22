@@ -55,7 +55,7 @@ Chinese timing always spells out 小时 and 分钟, including compact graph node
 compact hour values omit seconds, while details retain them. Finished stage
 spans say 阶段用时. Acquisition/inference details explicitly include acquisition
 and waits and state that inference-only runtime was not recorded separately.
-Nodes have a separate timing row; both CSS and ELK use 104px task height so
+Nodes have a separate timing row; both CSS and ELK use 116px task height so
 counts, state and duration stay visible. Details and run history show CST start,
 end, receipt coverage and the timing scope.
 
@@ -84,3 +84,34 @@ selection snapshots or infer execution times from filesystem mtimes. Historical
 runs retain exported totals. Replacement media cohorts must not reuse a partial
 batch's registration start. Broken optional timing must preserve run outcomes
 and progress. No scheduler, prediction, capture, Trail write or schema change.
+
+
+## Per-stage progress · 2026-10-22
+
+Task nodes show one compact count/percentage line and a4px track, retaining the
+status and duration rows. Task height116px is shared by CSS and ELK. Failure
+segments are amber; processed work includes failed/skipped items and does not
+establish success. Counts cannot be inferred from elapsed time. Unknown, invalid
+or inconsistent totals show “进度待回执”; upstream-dependent stages show “等待上游”.
+Zero-work completed cohorts have no percentage. Stale/error snapshots freeze
+counts, mute the track and explain the last observation in details.
+
+Active main stages use finished/total before terminal selected/inferred aggregates
+exist. Completed inference includes explicit skips; publication uses its own
+inferred cohort; sample verification uses the sample-hook counters/receipt cohort,
+never whole-run verified counts. Import/assignment shows assigned/target with
+import counts in details. Camera uses confirmed completion; Orion uses its original
+queue scope, with queue coverage and final dual-video verification kept separate.
+Retry total comes only from the retry receipt, never the full daily cohort. Local
+recovery counts launched attempts/finished receipts and explains that later claims
+increase the denominator. Final coverage remains separate from assignment/readiness.
+
+Desktop preserves the routed interactive graph. Phones<=639px display the same
+TaskNode/progress component as paired128px stage cards with two-line titles,
+grouped by the two pipelines;
+buttons open and scroll to the existing detail panel, closing restores card focus.
+Polling never initiates that scroll. Shared date picker occupies its own row
+below title/fullscreen. Definition help has no live progress. Desktop/mobile
+views share one selected node and update on the existing30-second polling cycle.
+Only read-only projections/UI change; scheduler, inference, captures, notifications,
+writer policy, database schema and task allocations remain unchanged.

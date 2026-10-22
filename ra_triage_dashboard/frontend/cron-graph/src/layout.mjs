@@ -1,7 +1,7 @@
 import ELK from 'elkjs/lib/elk.bundled.js';
 
 export const TASK_WIDTH = 152;
-export const TASK_HEIGHT = 104;
+export const TASK_HEIGHT = 116;
 const LANE_GAP = 88;
 const OUTER_CHANNEL = 24;
 const elk = new ELK();

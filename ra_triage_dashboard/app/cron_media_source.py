@@ -167,6 +167,7 @@ def _day(root, report, bags, day, replacement, observed_at=None):
         original_orion_failed=original_failed if orion else None,
         original_orion_total=original_total if orion else None,
         retry_completed=_count(retry.get("completed")), retry_failed=_count(retry.get("failed")),
+        retry_total=_count(retry.get("total")),
         retry_state=str(retry.get("status") or "not_observed"),
         local_attempts=len(local_results), local_verified=local_verified,
     )

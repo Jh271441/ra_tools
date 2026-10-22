@@ -12,6 +12,40 @@ function cronSelectedRuns(data) {
   return { day, main: runs.find(run => run.target_date_cst === day), media: data?.media_daily?.runs?.find(run => run.day === day) };
 }
 
+// Counts describe one explicit cohort/stage; absent or inconsistent receipts stay unknown.
+function cronTaskProgress(done, total, { label, failed = null, skipped = null, stale = false, empty = false, waiting = false } = {}) {
+  const count = value => Number.isSafeInteger(value) && value >= 0;
+  if (empty && total === 0) return { mode: "empty", text: uiText("无待处理项", "No work items"), label, stale };
+  if (waiting) return { mode: "waiting", text: uiText("等待上游", "Waiting upstream"), label, stale };
+  if (!count(done) || !count(total) || !total || done > total || (failed != null && (!count(failed) || failed > done)) || (skipped != null && (!count(skipped) || skipped > done))) {
+    return { mode: "unknown", text: uiText("进度待回执", "Awaiting counts"), label, stale };
+  }
+  const percent = Math.round(done / total * 1000) / 10;
+  return { mode: "count", done, total, remaining: total - done, failed, skipped, percent,
+    text: cronFraction(done, total), percentText: `${percent}%`, label, stale,
+    failurePercent: failed == null ? 0 : failed / total * 100,
+    completePercent: (done - (failed || 0)) / total * 100 };
+}
+
+function cronTaskProgressRows(progress) {
+  if (!progress) return [];
+  const rows = [[uiText("进度口径", "Progress scope"), progress.label],
+    [uiText("已处理 / 总数", "Processed / Total"), progress.mode === "count" ? `${progress.text} · ${progress.percentText}` : progress.text]];
+  if (progress.mode === "count") {
+    rows.push([uiText("待处理", "Remaining"), cronCount(progress.remaining)]);
+    if (progress.failed != null) rows.push([uiText("失败", "Failed"), cronCount(progress.failed)]);
+    if (progress.skipped != null) rows.push([uiText("跳过", "Skipped"), cronCount(progress.skipped)]);
+  }
+  if (progress.stale) rows.push([uiText("进度快照", "Progress snapshot"), uiText("数据已过期，显示最后一次观测", "Stale: showing the last observation")]);
+  return rows;
+}
+
+function cronTaskProgressMarkup(progress) {
+  if (!progress) return "";
+  if (progress.mode !== "count") return `<span class="cron-task-progress-empty">${escapeHtml(progress.text)}</span>`;
+  return `<div class="cron-task-progress" data-stale="${progress.stale}"><div class="cron-task-progress-values"><span>${escapeHtml(progress.text)}</span><strong>${escapeHtml(progress.percentText)}</strong></div><div class="cron-task-progress-track" role="progressbar" aria-label="${escapeHtml(progress.label)}" aria-valuemin="0" aria-valuemax="${progress.total}" aria-valuenow="${progress.done}" aria-valuetext="${escapeHtml(`${progress.text} · ${progress.percentText}`)}"><span style="width:${progress.completePercent}%"></span><i style="width:${progress.failurePercent}%"></i></div></div>`;
+}
+
 function buildDailyCronGraph(data, definitionLane = "") {
   const { day, main: run, media } = cronSelectedRuns(data);
   const daily = data?.overview?.daily, runtime = data?.media_daily;
@@ -36,7 +70,7 @@ function buildDailyCronGraph(data, definitionLane = "") {
   const retryObserved = media?.retry_state && media.retry_state !== "not_observed";
   const recoveryUnneeded = noMedia || (allMedia && media.original_orion_total === media.selected && media.original_orion_failed === 0);
   const mediaNodes = [
-    node("media-source", uiText("低置信度 / 抽样", "Low confidence / Sample"), `${day || "—"} · ${cronCount(media?.selected)}`, media ? "success" : runtime ? "pending" : "unknown", [[uiText("所选日期", "Selected day"), day || "—"], [uiText("目标案例", "Target cases"), cronCount(media?.selected)]]),
+    node("media-source", uiText("低置信度 / 抽样", "Low confidence / Sample"), `${day || "—"} · ${cronCount(media?.selected)}`, media?.selected > 0 || noMedia ? "success" : runtime ? "pending" : "unknown", [[uiText("所选日期", "Selected day"), day || "—"], [uiText("目标案例", "Target cases"), cronCount(media?.selected)]]),
     node("media-import", uiText("Run 导入 / 分配", "Import / Assign"), `${cronCount(media?.imported)} / ${cronCount(media?.assigned)}`, noMedia ? "skipped" : media?.imported === media?.selected && media?.assigned === media?.selected && media?.selected > 0 ? "success" : media ? "pending" : "unknown", [[uiText("导入", "Imported"), cronCount(media?.imported)], [uiText("已分配", "Assigned"), cronCount(media?.assigned)], ["Run", media?.run_id || "—"]]),
     node("media-camera", "Camera · ±20s", cronFraction(media?.camera_verified, media?.selected), noMedia ? "skipped" : allMedia ? "success" : mediaActive ? "running" : "unknown", [[uiText("已验证", "Verified"), cronFraction(media?.camera_verified, media?.selected)]]),
     node("media-orion", "BEV · Orion", `${uiText("验证", "Verified")} ${cronCount(media?.bev_verified)}`, noMedia ? "skipped" : allMedia ? media.original_orion_failed > 0 ? "warn" : "success" : mediaActive ? "running" : "unknown", [[uiText("最终已验证", "Final verified"), cronCount(media?.bev_verified)], [uiText("可见原始队列范围", "Observed original queue scope"), cronFraction(media?.original_orion_total, media?.selected)], [uiText("队列完成 / 失败", "Queue completed / failed"), cronFraction(media?.original_orion_completed, media?.original_orion_failed)]]),
@@ -45,6 +79,55 @@ function buildDailyCronGraph(data, definitionLane = "") {
     node("media-verify", uiText("双媒体验证", "Verify both videos"), cronFraction(media?.verified, media?.selected), noMedia ? "skipped" : allMedia ? "success" : media?.state === "media_failed" ? "failed" : mediaActive ? "running" : "unknown", [[uiText("已验证", "Verified"), cronFraction(media?.verified, media?.selected)], [uiText("终态失败", "Terminal failures"), cronCount(media?.failure_count)]], media?.failure_ids || []),
     node("media-ready", uiText("平台就绪", "Platform ready"), media ? cronLabel(media.state) : uiText("等待当日回执", "Awaiting daily receipt"), noMedia ? "skipped" : allMedia && media.assigned === media.selected ? "success" : media?.state === "complete_with_gaps" ? "warn" : media?.state === "media_failed" ? "failed" : "pending", [[uiText("目标日期", "Target day"), day || "—"], [uiText("更新 · CST", "Updated · CST"), cronTime(media?.updated_at)], [uiText("主任务影响", "Main pipeline impact"), uiText("独立判定", "Independent outcome")]]),
   ];
+  const attach = (item, done, total, options = {}) => {
+    item.data.progress = cronTaskProgress(done, total, options);
+    item.data.rows.push(...cronTaskProgressRows(item.data.progress));
+    if (data?.observed_at) item.data.rows.push([uiText("进度观测 · CST", "Progress observed · CST"), cronTime(data.observed_at)]);
+  };
+  const currentStage = (stage, fallbackDone, fallbackTotal) => run?.stage === stage && run?.finished != null && run?.total != null
+    ? [run.finished, run.total] : [fallbackDone, fallbackTotal];
+  const mainOptions = { stale: Boolean(mainStale), empty, waiting: false };
+  const inferredDone = Number.isSafeInteger(run?.inferred) && Number.isSafeInteger(run?.skipped) ? run.inferred + run.skipped : null;
+  attach(mainNodes[2], ...currentStage("inference", inferredDone, run?.selected), { ...mainOptions, label: uiText("采集 / 推理已处理（含失败和跳过）", "Acquisition / inference processed, including failures and skips"),
+    failed: run?.stage === "inference" && Number.isSafeInteger(run?.succeeded) && Number.isSafeInteger(run?.finished) ? run.finished - run.succeeded : null,
+    skipped: run?.skipped });
+  attach(mainNodes[3], ...currentStage("publication", run?.published, run?.inferred), { ...mainOptions,
+    waiting: !empty && run?.stage === "inference", label: uiText("本批回刷目标", "Publication cohort") });
+  const sample = run?.stage_timings?.["main-verify"];
+  attach(mainNodes[4], ...currentStage("sample_hook", sample?.observed, sample?.total), { ...mainOptions,
+    waiting: !empty && ["inference", "publication"].includes(run?.stage), label: uiText("本批抽样验证目标", "Sample verification cohort"), empty: empty || sample?.total === 0 });
+  const waitingMedia = !noMedia && Boolean(media) && media.selected === 0;
+  const mediaOptions = { stale: Boolean(mediaStale), empty: noMedia, waiting: waitingMedia };
+  attach(mediaNodes[1], media?.assigned, media?.selected, { ...mediaOptions, label: uiText("本批任务分配；导入数量单列", "Assignment cohort; imports shown separately") });
+  attach(mediaNodes[2], media?.camera_verified, media?.selected, { ...mediaOptions, label: uiText("本批已确认完成的 Camera", "Confirmed Camera completion in this cohort") });
+  const orionDone = Number.isSafeInteger(media?.original_orion_completed) && Number.isSafeInteger(media?.original_orion_failed)
+    ? media.original_orion_completed + media.original_orion_failed : null;
+  attach(mediaNodes[3], orionDone, media?.original_orion_total, { ...mediaOptions,
+    label: uiText("原始 Orion 队列（含失败）；最终验证单列", "Original Orion queue, including failures; final validation shown separately"), failed: media?.original_orion_failed });
+  const retryDone = Number.isSafeInteger(media?.retry_completed) && Number.isSafeInteger(media?.retry_failed) ? media.retry_completed + media.retry_failed : null;
+  attach(mediaNodes[4], retryDone, media?.retry_total, { ...mediaOptions, waiting: waitingMedia,
+    label: uiText("本轮 Orion 重试子集（含失败）", "This Orion retry subset, including failures"), failed: media?.retry_failed });
+  const local = media?.stage_timings?.["media-local"];
+  if (mediaActive && local?.total > local?.observed) {
+    mediaNodes[5].data.status = "running";
+    mediaNodes[5].data.stateLabel = cronGraphStateLabel("running");
+  }
+  if (run?.selected == null && run?.started_at && ["inference", "publication", "sample_hook"].includes(run.stage)) {
+    mainNodes[1].data.detail = uiText("选集已冻结", "Cohort frozen");
+    mainNodes[1].data.status = "success";
+    mainNodes[1].data.stateLabel = cronGraphStateLabel("success");
+  }
+  attach(mediaNodes[5], local?.observed, local?.total, { ...mediaOptions,
+    label: uiText("已发起的本地尝试；后续尝试会增加总数", "Launched local attempts; later attempts increase the total") });
+  attach(mediaNodes[6], media?.verified, media?.selected, { ...mediaOptions, label: uiText("本批双媒体最终验证", "Final dual-media validation for this cohort") });
+  attach(mediaNodes[7], media?.verified, media?.selected, { ...mediaOptions, label: uiText("双媒体验证覆盖；平台就绪还需完成分配", "Dual-media coverage; readiness also requires completed assignment") });
+  for (const item of [...mainNodes, ...mediaNodes]) {
+    if (item.data.progress?.mode === "waiting" && item.data.status === "unknown") {
+      item.data.status = "pending";
+      item.data.stateLabel = cronGraphStateLabel("pending");
+    }
+    if (item.data.status === "skipped" && item.data.progress?.mode !== "count") item.data.progress = { ...item.data.progress, text: noMedia || empty ? uiText("无待处理项", "No work items") : uiText("无需执行", "Not required") };
+  }
   if (terminal && run.skipped > 0) mainNodes[2].data.stateLabel = uiText(`跳过 ${run.skipped}`, `${run.skipped} skipped`);
   if (allMedia && media.original_orion_failed > 0) mediaNodes[3].data.stateLabel = uiText("最终已补齐", "Finally recovered");
   if (mainStale) mainNodes.forEach(n => { if (n.data.status === "running") n.data.status = "unknown"; n.data.stateLabel = cronGraphStateLabel(n.data.status); });
@@ -68,7 +151,7 @@ function buildDailyCronGraph(data, definitionLane = "") {
     lanes = lanes.filter(lane => lane.id === `${definitionLane}-lane`);
     const ids = new Set(lanes.flatMap(lane => lane.nodes.map(n => n.id)));
     edges = edges.filter(e => ids.has(e.source) && ids.has(e.target));
-    lanes.forEach(lane => lane.nodes.forEach(n => { n.data = { ...n.data, status: "definition", stateLabel: cronGraphStateLabel("definition"), timingText: "", detail: n.id === "main-infer" ? uiText("缺失 ≤5 且 ≤2% 可继续", "Continue if gaps ≤5 AND ≤2%") : n.id === "media-ready" ? uiText("少量缺失单独记录", "Small gaps recorded separately") : "" }; }));
+    lanes.forEach(lane => lane.nodes.forEach(n => { n.data = { ...n.data, status: "definition", stateLabel: cronGraphStateLabel("definition"), timingText: "", progress: null, detail: n.id === "main-infer" ? uiText("缺失 ≤5 且 ≤2% 可继续", "Continue if gaps ≤5 AND ≤2%") : n.id === "media-ready" ? uiText("少量缺失单独记录", "Small gaps recorded separately") : "" }; }));
   }
   return { lanes, edges, selectedNode: dailyCronState.selectedNode || "", definition: Boolean(definitionLane), active: dailyCronState.active && !dailyCronState.error, theme: state.colorTheme || "dark", ui: { minimap: uiText("流程缩略图", "Flow overview"), loading: uiText("正在加载运行图…", "Loading run graph…"), error: uiText("运行图加载失败，可刷新重试。", "Graph unavailable; refresh to retry.") } };
 }
@@ -78,7 +161,7 @@ function ensureCronGraphLibrary() {
   if (cronGraphLibrary) return cronGraphLibrary;
   cronGraphLibrary = new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = withBase("/static/vendor/cron-graph/graph.js?v=manual-triage-586");
+    script.src = withBase("/static/vendor/cron-graph/graph.js?v=manual-triage-596");
     script.onload = () => resolve(window.RACronGraph);
     script.onerror = () => { cronGraphLibrary = null; script.remove(); reject(Error("graph load failed")); };
     document.body.appendChild(script);
@@ -94,7 +177,12 @@ async function renderDailyCronGraph() {
     const graph = await ensureCronGraphLibrary();
     if (!dailyCronState.active) return;
     const model = buildDailyCronGraph(dailyCronState.data);
-    graph.render(root, model, id => { dailyCronState.selectedNode = id; renderCronGraphDetails(model, id); void renderDailyCronGraph(); });
+    graph.render(root, model, id => {
+      dailyCronState.selectedNode = id;
+      renderCronGraphDetails(model, id);
+      if (id && window.matchMedia?.("(max-width: 639px)").matches) $("#dailyCronNodeDetails")?.scrollIntoView({ block: "start", behavior: "auto" });
+      void renderDailyCronGraph();
+    });
     if (dailyCronState.selectedNode) renderCronGraphDetails(model, dailyCronState.selectedNode);
   } catch (_error) { root.textContent = uiText("运行图加载失败，刷新重试。", "Graph unavailable; refresh to retry."); }
 }
@@ -105,8 +193,10 @@ function renderCronGraphDetails(model, id) {
   panel.hidden = !node;
   workspace.classList.toggle("has-selection", Boolean(node));
   if (!node) return;
-  panel.innerHTML = `<div class="cron-section-heading"><strong>${escapeHtml(node.data.label)}</strong><button type="button" class="button button-quiet" data-close-cron-node aria-label="${escapeHtml(uiText("关闭详情", "Close details"))}">×</button></div><span class="cron-chip" data-tone="${node.data.status === "success" ? "ok" : node.data.status === "failed" ? "fail" : node.data.status === "warn" ? "warn" : "neutral"}">${escapeHtml(node.data.stateLabel)}</span><dl>${(node.data.rows || []).map(([k, v]) => `<div><dt>${escapeHtml(k)}</dt><dd>${escapeHtml(v)}</dd></div>`).join("")}</dl>${node.data.issues.length ? `<ul class="cron-case-list">${[...new Set(node.data.issues)].map(issue => `<li><a href="https://voyager.intra.xiaojukeji.com/static/management/#/issue/${encodeURIComponent(issue)}?view_id=2410" target="_blank" rel="noopener noreferrer">${escapeHtml(issue)} ↗</a></li>`).join("")}</ul>` : ""}`;
-  panel.querySelector("[data-close-cron-node]").onclick = () => { dailyCronState.selectedNode = ""; renderCronGraphDetails(model, ""); void renderDailyCronGraph(); };
+  panel.innerHTML = `<div class="cron-section-heading"><strong>${escapeHtml(node.data.label)}</strong><button type="button" class="button button-quiet" data-close-cron-node aria-label="${escapeHtml(uiText("关闭详情", "Close details"))}">×</button></div><span class="cron-chip" data-tone="${node.data.status === "success" ? "ok" : node.data.status === "failed" ? "fail" : node.data.status === "warn" ? "warn" : "neutral"}">${escapeHtml(node.data.stateLabel)}</span>${cronTaskProgressMarkup(node.data.progress)}<dl>${(node.data.rows || []).map(([k, v]) => `<div><dt>${escapeHtml(k)}</dt><dd>${escapeHtml(v)}</dd></div>`).join("")}</dl>${node.data.issues.length ? `<ul class="cron-case-list">${[...new Set(node.data.issues)].map(issue => `<li><a href="https://voyager.intra.xiaojukeji.com/static/management/#/issue/${encodeURIComponent(issue)}?view_id=2410" target="_blank" rel="noopener noreferrer">${escapeHtml(issue)} ↗</a></li>`).join("")}</ul>` : ""}`;
+  panel.querySelector("[data-close-cron-node]").onclick = () => { dailyCronState.selectedNode = ""; renderCronGraphDetails(model, ""); void renderDailyCronGraph();
+    if (window.matchMedia?.("(max-width: 639px)").matches) document.querySelector(`.cron-mobile-stage-button[data-cron-node="${id}"]`)?.focus();
+  };
 }
 
 async function openCronGraphHelp(lane) {

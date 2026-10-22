@@ -114,14 +114,18 @@ function renderDailyCron() {
   if ($("#dailyCronMainStatus")) {
     const picked = cronSelectedRuns(data), runtime = data.media_daily, media = picked.media;
     $("#dailyCronMainStatus").innerHTML = cronChip(outcome);
-    $("#dailyCronMainValue").textContent = `${picked.day || "—"} · ${cronFraction(run?.verified, run?.selected)}`;
+    const processing = !["complete", "complete_with_gaps", "empty"].includes(run?.state)
+      && Number.isSafeInteger(run?.finished) && Number.isSafeInteger(run?.total) && run.total > 0 && run.finished >= 0 && run.finished <= run.total;
+    const stages = { inference: ["采集 / 推理", "Acquisition / inference"], publication: ["回刷", "Publication"], sample_hook: ["抽样验证", "Sample verification"] };
+    $("#dailyCronMainValue").textContent = `${picked.day || "—"} · ${processing ? cronFraction(run.finished, run.total) : cronFraction(run?.verified, run?.selected)}`;
     if ($("#dailyCronMainTiming")) $("#dailyCronMainTiming").textContent = cronTimingText(run?.timing, { stale: stale || dailyCronState.error });
     if ($("#dailyCronMediaTiming")) $("#dailyCronMediaTiming").textContent = cronTimingText(media?.timing, { stale: runtime?.stale || runtime?.controller_error || dailyCronState.error });
-    $("#dailyCronMainNote").textContent = `${uiText("已验证 / 选中", "Verified / Selected")} · ${uiText("跳过", "Skipped")} ${cronCount(run?.skipped)}`;
+    $("#dailyCronMainNote").textContent = `${processing ? `${stages[run.stage] ? uiText(...stages[run.stage]) : uiText("当前阶段", "Current stage")} · ${uiText("已处理", "Processed")} ${Math.round(run.finished / run.total * 1000) / 10}%` : uiText("已验证 / 选中", "Verified / Selected")} · ${uiText("跳过", "Skipped")} ${cronCount(run?.skipped)}`;
     const mediaHealth = !runtime ? "unavailable" : runtime.controller_error ? "failed" : runtime.stale ? "stalled" : (media?.state === "complete" && (media.imported !== media.selected || media.assigned !== media.selected) ? "unknown" : media?.state) || "waiting";
     $("#dailyCronMediaStatus").innerHTML = cronChip(mediaHealth);
-    $("#dailyCronMediaValue").textContent = `${picked.day || "—"} · ${cronFraction(media?.verified, media?.selected)}`;
-    $("#dailyCronMediaNote").textContent = `${uiText("双媒体验证 / 目标", "Both videos / Target")} · ${uiText("终态失败", "Terminal failures")} ${cronCount(media?.failure_count)}`;
+    const waitingForMedia = media?.state === "waiting" && media?.selected === 0;
+    $("#dailyCronMediaValue").textContent = `${picked.day || "—"} · ${waitingForMedia ? uiText("等待上游", "Waiting upstream") : cronFraction(media?.verified, media?.selected)}`;
+    $("#dailyCronMediaNote").textContent = waitingForMedia ? uiText("主流程完成后生成媒体任务", "Media tasks follow the main pipeline") : `${uiText("双媒体验证 / 目标", "Both videos / Target")} · ${uiText("终态失败", "Terminal failures")} ${cronCount(media?.failure_count)}`;
   }
   $("#dailyCronSchedule").textContent = daily
     ? `${uiText("下次计划", "Next schedule")} ${cronTime(daily.next_run_at)} CST · ${uiText("对应目标日", "Target")} ${daily.target_date || "—"} · ${uiText("调度心跳", "Scheduler heartbeat")} ${cronTime(daily.heartbeat_at)} CST`

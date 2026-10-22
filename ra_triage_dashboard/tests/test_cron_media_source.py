@@ -101,3 +101,11 @@ class CronDailyMediaTest(unittest.TestCase):
         row = media_snapshot(self.root)["runs"][0]
         self.assertEqual(row["state"], "complete")
         self.assertTrue(row["timing_error"])
+
+    def test_retry_denominator_is_its_own_receipt_not_the_full_run(self):
+        self.canonical()
+        self.write(self.work / "recovery-status.json", {"retry": {"total": 1, "completed": 0, "failed": 1, "status": "partial_failed"}})
+        row = media_snapshot(self.root)["runs"][0]
+        self.assertEqual((row["selected"], row["retry_total"], row["retry_completed"], row["retry_failed"]), (2, 1, 0, 1))
+        self.write(self.work / "recovery-status.json", {"retry": {"total": True, "completed": 1, "failed": 0}})
+        self.assertIsNone(media_snapshot(self.root)["runs"][0]["retry_total"])

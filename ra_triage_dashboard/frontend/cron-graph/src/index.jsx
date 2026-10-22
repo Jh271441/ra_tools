@@ -7,11 +7,21 @@ import '@xyflow/react/dist/style.css';
 const roots = new Map();
 const colors = { success: 'var(--ok)', warn: 'var(--warn)', failed: 'var(--fail)', running: 'var(--accent)', pending: 'var(--faint)', skipped: 'var(--faint)', unknown: 'var(--faint)', definition: 'var(--muted)' };
 
+function TaskProgress({ progress }) {
+  if (progress.mode !== 'count') return <span className="cron-task-progress-empty">{progress.text}</span>;
+  return <div className="cron-task-progress" data-stale={progress.stale} title={progress.label}>
+    <div className="cron-task-progress-values"><span>{progress.text}</span><strong>{progress.percentText}</strong></div>
+    <div className="cron-task-progress-track" role="progressbar" aria-label={progress.label} aria-valuemin={0} aria-valuemax={progress.total} aria-valuenow={progress.done} aria-valuetext={`${progress.text} · ${progress.percentText}`}>
+      <span style={{width: `${progress.completePercent}%`}} /><i style={{width: `${progress.failurePercent}%`}} />
+    </div>
+  </div>;
+}
+
 function TaskNode({ data }) {
   return <div className="cron-dag-task" data-state={data.status}>
     {data.ports.filter(port => port.type === 'target').map(port => <Handle key={port.id} id={port.id} type="target" position={Position.Left} style={{ top: port.y }} isConnectable={false} />)}
     <div className="cron-dag-task-label"><span className="cron-dag-state-dot" /><strong>{data.label}</strong></div>
-    <span className="cron-dag-task-meta">{data.detail}</span>
+    {data.progress ? <TaskProgress progress={data.progress} /> : <span className="cron-dag-task-meta" title={data.detail}>{data.detail}</span>}
     <span className="cron-dag-task-state">{data.stateLabel}</span>
     <span className="cron-dag-task-timing" title={data.timingText}>{data.timingText}</span>
     {data.ports.filter(port => port.type === 'source').map(port => <Handle key={port.id} id={port.id} type="source" position={Position.Right} style={{ top: port.y }} isConnectable={false} />)}
@@ -53,7 +63,7 @@ function Graph({ model, onSelect }) {
   const byId = new Map(all.map(node => [node.id, node.data]));
   const nodes = useMemo(() => geometry && !geometry.error ? [
     ...geometry.sizes.map(size => ({ id: size.id, type: 'lane', data: { label: model.lanes.find(l => l.id === size.id).label }, position: { x: size.x, y: size.y }, width: size.width, height: size.height, style: { width: size.width, height: size.height }, selectable: false, draggable: false, focusable: false })),
-    ...geometry.positions.map(pos => ({ id: pos.id, type: 'task', data: { ...byId.get(pos.id), ports: pos.ports }, parentId: pos.parentId, extent: 'parent', position: { x: pos.x, y: pos.y }, selected: pos.id === model.selectedNode, width: TASK_WIDTH, height: TASK_HEIGHT, ariaLabel: [byId.get(pos.id).label, byId.get(pos.id).stateLabel, byId.get(pos.id).detail, byId.get(pos.id).timingText].join(' · '), style: { width: TASK_WIDTH, height: TASK_HEIGHT } })),
+    ...geometry.positions.map(pos => ({ id: pos.id, type: 'task', data: { ...byId.get(pos.id), ports: pos.ports }, parentId: pos.parentId, extent: 'parent', position: { x: pos.x, y: pos.y }, selected: pos.id === model.selectedNode, width: TASK_WIDTH, height: TASK_HEIGHT, ariaLabel: [byId.get(pos.id).label, byId.get(pos.id).stateLabel, byId.get(pos.id).progress?.text || byId.get(pos.id).detail, byId.get(pos.id).progress?.percentText, byId.get(pos.id).timingText].join(' · '), style: { width: TASK_WIDTH, height: TASK_HEIGHT } })),
   ] : [], [geometry, model]);
   const routes = new Map((geometry?.edges || []).map(edge => [edge.id, edge]));
   const edges = model.edges.filter(edge => routes.has(edge.id)).map(edge => {
@@ -65,11 +75,15 @@ function Graph({ model, onSelect }) {
   });
   if (geometry?.error) return <p className="cron-note muted">{model.ui.error}</p>;
   if (!geometry) return <p className="cron-note muted">{model.ui.loading}</p>;
-  return <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} nodesDraggable={false} nodesConnectable={false} edgesFocusable={false} onNodeClick={(_, node) => node.type === 'task' && onSelect?.(node.id)} onPaneClick={() => onSelect?.('')} minZoom={0.25} maxZoom={2} fitView fitViewOptions={{ padding: 0.06, maxZoom: 1 }} zoomOnScroll={false} preventScrolling={false} colorMode={model.theme} proOptions={{ hideAttribution: false }}>
+  return <><div className="cron-desktop-graph"><ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} nodesDraggable={false} nodesConnectable={false} edgesFocusable={false} onNodeClick={(_, node) => node.type === 'task' && onSelect?.(node.id)} onPaneClick={() => onSelect?.('')} minZoom={0.25} maxZoom={2} fitView fitViewOptions={{ padding: 0.06, maxZoom: 1 }} zoomOnScroll={false} preventScrolling={false} colorMode={model.theme} proOptions={{ hideAttribution: false }}>
     <Background color="var(--line)" gap={20} size={1} />
     <Controls showInteractive={false} />
     <MiniMap ariaLabel={model.ui.minimap} style={{ width: 160, height: 100 }} nodeColor={node => node.type === 'lane' ? 'transparent' : colors[node.data?.status] || colors.unknown} nodeStrokeColor="var(--line)" maskColor="var(--cron-minimap-mask, rgba(0,0,0,.12))" pannable zoomable />
-  </ReactFlow>;
+  </ReactFlow></div><div className="cron-mobile-stages">{model.lanes.map(lane => <section key={lane.id}>
+    <h4>{lane.label}</h4><div className="cron-mobile-stage-grid">{lane.nodes.map(node => <button type="button" key={node.id} className="cron-mobile-stage-button" data-cron-node={node.id} aria-pressed={model.selectedNode === node.id} onClick={() => onSelect?.(node.id)}>
+      <TaskNode data={{...node.data, ports: []}} />
+    </button>)}</div>
+  </section>)}</div></>;
 }
 
 class Boundary extends React.Component {
