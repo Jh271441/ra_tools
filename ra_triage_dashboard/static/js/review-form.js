@@ -1325,7 +1325,23 @@ function bindReviewDetailActionShortcuts() {
       closeDialog("raEventDialog");
       return;
     }
+    const labelSummaryDialog = $("#sharedLabelStateDialog");
+    if (key === "l" && labelSummaryDialog?.open) {
+      event.preventDefault();
+      event.stopPropagation();
+      closeDialog("sharedLabelStateDialog");
+      return;
+    }
     if (document.querySelector("dialog[open]")) return;
+    if (key === "l") {
+      const summaryButton = $("#reviewSharedLabelState")?.querySelector("[data-open-shared-label-state]");
+      if (!summaryButton || summaryButton.disabled || summaryButton.closest("[hidden]")) return;
+      event.preventDefault();
+      event.stopPropagation();
+      closeAllReviewDropdowns();
+      summaryButton.click();
+      return;
+    }
     if (key === "t") {
       const raEventButton = $("#detailExternalLinks")?.querySelector(
         "[data-open-ra-event]"

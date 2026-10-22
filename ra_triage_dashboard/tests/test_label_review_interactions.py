@@ -51,3 +51,28 @@ assert.equal(draft.case_rationale,'Saved Case reason @bob');assert.equal(draft.n
 assert.equal(applyReviewDraft({},draft).case_rationale,'Saved Case reason @bob');
 '''
         subprocess.run(["node"], input=script, text=True, check=True, capture_output=True)
+
+    def test_label_summary_shortcut_respects_dialog_and_editing_scope(self):
+        script = (ROOT / "static/js/review-tags.js").read_text() + "\n" + (ROOT / "static/js/review-form.js").read_text() + r'''
+const assert=require('node:assert/strict');
+state={activePage:'review',selectedCase:{issue_id:'cn1'}};
+Element=class {constructor(editable=false){this.editable=editable}closest(){return this.editable?{}:null}};
+const body=new Element(),handlers=[];
+let opens=0,closes=0,hidden=false,otherDialog=false;
+const dialog={open:false};const button={disabled:false,closest(){return hidden?{}:null},click(){opens++;dialog.open=true}};
+$=(selector)=>selector==='#sharedLabelStateDialog'?dialog:selector==='#reviewSharedLabelState'?{querySelector(){return button}}:null;
+document={documentElement:{dataset:{}},addEventListener(type,fn){handlers.push(fn)},querySelector(){return otherDialog?{}:null}};
+closeAllReviewDropdowns=()=>{};closeDialog=(id)=>{assert.equal(id,'sharedLabelStateDialog');closes++;dialog.open=false};
+bindReviewDetailActionShortcuts();const handler=handlers[0];
+function key(options={}){const e={key:'l',target:body,preventDefault(){this.prevented=true},stopPropagation(){},...options};handler(e);return e}
+assert.equal(key().prevented,true);assert.equal(opens,1);assert.equal(dialog.open,true);
+assert.equal(key().prevented,true);assert.equal(closes,1);assert.equal(dialog.open,false);
+for(const flag of ['ctrlKey','metaKey','altKey','shiftKey','isComposing','repeat','defaultPrevented']) assert.notEqual(key({[flag]:true}).prevented,true);
+assert.notEqual(key({target:new Element(true)}).prevented,true);
+otherDialog=true;assert.notEqual(key().prevented,true);otherDialog=false;
+hidden=true;assert.notEqual(key().prevented,true);hidden=false;
+button.disabled=true;assert.notEqual(key().prevented,true);button.disabled=false;
+state.activePage='labeling';assert.notEqual(key().prevented,true);state.activePage='review';
+assert.equal(opens,1);assert.equal(closes,1);
+'''
+        subprocess.run(["node"], input=script, text=True, check=True, capture_output=True)

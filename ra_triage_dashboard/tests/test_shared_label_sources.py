@@ -39,6 +39,7 @@ assert.match(sharedLabelRevisionTagsMarkup({}),/未提供/);
 const summary=sharedLabelStateButtonMarkup({issue_id:'cn1',label_state:{state:'resolved',sources:Array(100).fill({})}}, {showEmpty:true,summaryOnly:true});
 assert.match(summary,/标签汇总/); assert.doesNotMatch(summary,/来源 100|GT 待复核|历史/);
 assert.match(summary,/aria-haspopup="dialog"/);
+assert.match(summary,/aria-keyshortcuts="L"/);assert.match(summary,/>L<\/kbd>/);
 const linked=sharedLabelStateSourceMarkup({...source,label_case_id:'label-hash-123'},'cn1',{
  combined_reviews:[{task_id:'campaign-rawhash',task_name:'10/16 联合复核',run_id:'run-rawhash',run_name:'10/16 完整版',revision_id:4,submission_id:'submission-rawhash'}]
 });

@@ -53,3 +53,8 @@ and DChat outbox entries in the same transaction. Acknowledgements, rejected
 stale writes and idempotency replays do not send duplicates. Outbox write failures
 roll back both combined halves; ordinary model-review notification behavior stays
 unchanged. No actual message is sent by the validation workflow.
+
+In Review detail, L toggles Label summary; the button shows the existing compact
+keycap and the shortcut guide includes it. Escape still dismisses the dialog.
+Typing, composition, held keys and modified shortcuts do not trigger it; other
+open dialogs remain in control. This read-only action preserves the form draft.
