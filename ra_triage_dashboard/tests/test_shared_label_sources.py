@@ -18,7 +18,11 @@ reviewTagCatalogItem=(key)=>({queue:{section:'interaction_decision',group:'false
 tagLabel=(key)=>({queue:'排队误触发场景',road:'道路施工'}[key]||key.replace(/^custom:/,''));
 labelBadge=(value,fallback)=>`<span>${escapeHtml(value||fallback)}</span>`;
 formatTime=(value)=>escapeHtml(value);
-state={session:{}};
+state={session:{},selectedRunId:'run-a'};
+assert.match(currentRunReviewStatusMarkup({annotation:{id:1,model_run_id:'run-a',model_review_status:'completed'}}),/已完成/);
+assert.match(currentRunReviewStatusMarkup({annotation:{id:1,model_run_id:'run-a',model_review_status:'pending'}}),/待复核/);
+assert.match(currentRunReviewStatusMarkup({annotation:{id:1,model_run_id:'run-b',model_review_status:'completed'}}),/待开始/);
+assert.match(currentRunReviewStatusMarkup({}),/待开始/);
 const source={state:'resolved',result_revision_id:4,revision_summaries:[
  {id:3,expected_output:'正确触发',author:'alice',tags:['road'],rationale:'one'},
  {id:4,expected_output:'误触发',author:'bob',tags:['queue','queue','custom:<unsafe>'],rationale:'<script>bad</script>\nTwo',is_excluded:true,created_at:'2026-10-22T01:00:00Z'}

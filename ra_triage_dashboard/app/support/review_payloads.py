@@ -10,7 +10,7 @@ from urllib.parse import quote
 from ..db import LABELS, MODEL_LABELS, REVIEW_STATUSES
 from ..db_parts.model_reviews import MODEL_REVIEW_STATUSES
 from ..model_labels import canonical_model_label, model_label_matches_gt
-from ..review_workflow import derive_review_status, effective_expected_output
+from ..review_workflow import derive_review_status, effective_expected_output, model_review_progress
 from ..review_analysis import COMPARISON_STATUSES, build_review_reason_analysis
 from ..runtime import _public_path, database, settings
 from .baselines import resolve_request_baseline_scopes
@@ -226,28 +226,26 @@ def _review_reason_analysis_payload(
             # strict default and never receives this compatibility view.
             include_unbound_fallback=True,
             include_bound_history_fallback=True,
-            # Keep the exclusion slice at the DB boundary so cards, charts,
-            # detail rows, and all analysis exports agree.  ``None`` means
-            # the default all-inclusive view.
-            is_excluded=is_excluded,
+            # Apply Issue exclusion and tags after merging current task reviews.
+            is_excluded=None,
             annotation_author=",".join(authors),
             # Historical persisted status/label fields predate expected output.
             # Apply both filters after read-time Tag inference below.
             review_status="",
-            model_review_status=",".join(model_review_statuses),
+            model_review_status="",
             gt_label=",".join(gt_labels),
             annotation_label="",
             model_label=",".join(model_labels),
             missing_evidence=list(evidence_keys),
-            tag_filters=legacy_tags,
-            scene_tags=scene_tags,
-            trigger_tags=trigger_tags,
-            egress_tags=egress_tags,
+            tag_filters=(),
+            scene_tags=(),
+            trigger_tags=(),
+            egress_tags=(),
             issue_ids=selected_issue_ids,
             # Exact automatic-status searches are evaluated from the same
             # derived value as the dedicated filter instead of stale storage.
-            search="" if search_statuses else normalized_search,
-            search_aliases=() if search_statuses else search_aliases,
+            search="",
+            search_aliases=(),
         )
     normalized_work_agreement = _as_text(work_agreement).lower() or "all"
     if normalized_work_agreement not in {"all", "pending", "agreed", "conflict"}:
@@ -346,7 +344,7 @@ def _review_reason_analysis_payload(
                 continue
         if (effective_statuses or model_review_statuses) and not any(
             annotation.get("review_status") in effective_statuses
-            or annotation.get("model_review_status") in model_review_statuses
+            or model_review_progress(annotation, model_run_id) in {"in_progress" if value == "blocked_by_label" else value for value in model_review_statuses}
             for annotation in annotations
         ):
             continue
@@ -360,29 +358,6 @@ def _review_reason_analysis_payload(
             for annotation in annotations
         ):
             continue
-        tag_groups = (legacy_tags, scene_tags, trigger_tags, egress_tags)
-        if any(
-            selected and not any(
-                set(annotation.get("tags") or []).intersection(selected)
-                for annotation in annotations
-            )
-            for selected in tag_groups
-        ):
-            continue
-        if normalized_search:
-            haystack = " ".join(
-                str(value or "")
-                for item in reviews
-                for value in (
-                    item["username"],
-                    item["expected_output"],
-                    item["annotation"].get("note"),
-                    " ".join(item["annotation"].get("tags") or []),
-                    " ".join(item["annotation"].get("missing_evidence") or []),
-                )
-            ).casefold()
-            if folded_search not in haystack:
-                continue
         if submitted_reviews:
             # Each member row already contains that reviewer's latest version.
             # Every multi-review state needs one coherent primary row for the
@@ -453,6 +428,43 @@ def _review_reason_analysis_payload(
         rows.sort(key=lambda row: str(row.get("issue_id") or ""))
     else:
         rows = multi_rows
+    # Case exclusions are shared Issue properties; the old Run field is only
+    # a fallback when no current Case vote exists. Apply after merging task rows.
+    exclusions = database.project_issue_exclusions([row["issue_id"] for row in rows])
+    rows = [{**row, "is_excluded": exclusions.get(row["issue_id"], {}).get("is_excluded", bool((row.get("annotation") or {}).get("is_excluded")))} for row in rows]
+    issue_tags = database.project_issue_tag_contexts([row["issue_id"] for row in rows])
+    for row in rows:
+        row["model_review_progress"] = model_review_progress(row.get("annotation"), model_run_id)
+        if row["issue_id"] in issue_tags:
+            row["case_label_context"] = issue_tags[row["issue_id"]]
+    tag_groups = (scene_tags, trigger_tags, egress_tags)
+    def matches_tags(row):
+        tags = set((row.get("case_label_context") or row.get("annotation") or {}).get("tags") or [])
+        return set(legacy_tags).issubset(tags) and all(not selected or tags.intersection(selected) for selected in tag_groups)
+    rows = [row for row in rows if matches_tags(row)]
+    if normalized_search and not search_statuses:
+        terms = [value.strip().casefold() for value in (normalized_search, *search_aliases) if value.strip()]
+        def matches_search(row):
+            annotations = [row.get("annotation") or {}, *[
+                member.get("annotation") or {} for member in grouped.get(row["issue_id"], [])
+            ]]
+            values = [row.get("issue_id"), row.get("title"), row.get("scenario"),
+                      " ".join((row.get("case_label_context") or {}).get("tags") or [])]
+            for annotation in annotations:
+                values.extend(annotation.get(key) for key in ("note", "author", "label", "review_status"))
+                values.extend(annotation.get("tags") or [])
+                values.extend(annotation.get("missing_evidence") or [])
+            haystack = " ".join(str(value or "") for value in values).casefold()
+            return any(term in haystack for term in terms)
+        rows = [row for row in rows if matches_search(row)]
+    if model_review_statuses or effective_statuses:
+        progress_values = {"in_progress" if value == "blocked_by_label" else value for value in model_review_statuses}
+        def matches_status(row):
+            annotation = row.get("annotation") or {}
+            legacy_status = derive_review_status(effective_expected_output(annotation, tag_catalog)[0], row.get("gt_label"))
+            return (model_review_progress(annotation, model_run_id) in progress_values
+                    or (annotation.get("review_domain") != "model_review" and legacy_status in effective_statuses))
+        rows = [row for row in rows if matches_status(row)]
     if rows and (normalized_comment_state != "all" or normalized_comment_search):
         def comment_scope(row: dict[str, Any]) -> tuple[str, str]:
             issue_id = str(row.get("issue_id") or "")
@@ -473,6 +485,7 @@ def _review_reason_analysis_payload(
                 for issue_id in database.review_comment_issue_ids(
                     issue_ids=scoped_issue_ids,
                     model_run_id=comment_run_id,
+                    include_case_discussion=True,
                 )
             )
             if normalized_comment_search:
@@ -482,6 +495,7 @@ def _review_reason_analysis_payload(
                         issue_ids=scoped_issue_ids,
                         model_run_id=comment_run_id,
                         search=normalized_comment_search,
+                        include_case_discussion=True,
                     )
                 )
         if not normalized_comment_search:
@@ -514,7 +528,7 @@ def _review_reason_analysis_payload(
         has_model_run=bool(model_run_id),
         include_reason_themes=False,
         is_excluded=is_excluded,
-        review_statuses=() if normalized_work_agreement != "all" else effective_statuses,
+        review_statuses=(),
         annotation_labels=() if normalized_work_agreement != "all" else annotation_labels,
         page=page,
         page_size=max(len(rows), 1) if unbounded else page_size,

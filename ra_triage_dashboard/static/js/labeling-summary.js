@@ -112,12 +112,8 @@ function renderLabelSummaryMultiPicker(selector, options, selected, key) {
 function renderLabelSummaryFilters(tasks, data) {
   const taskOptions = [{ value: "", label: "全部标注（含历史迁移）" }, ...(tasks.items || []).map((task) => ({ value: task.id, label: task.name || "标注任务" }))];
   if (!taskOptions.some((item) => item.value === labelSummaryFilters.taskId)) labelSummaryFilters.taskId = "";
-  const labelerOptions = (data.labelers || []).map((value) => ({ value, label: value }));
-  const labelerValues = new Set(labelerOptions.map((item) => item.value));
-  labelSummaryFilters.author = parseFilterList(labelSummaryFilters.author).filter((value) => labelerValues.has(value));
-  const assigneeOptions = (data.assignees || []).map((value) => ({ value, label: value }));
-  const assigneeValues = new Set(assigneeOptions.map((item) => item.value));
-  labelSummaryFilters.assignee = parseFilterList(labelSummaryFilters.assignee).filter((value) => assigneeValues.has(value));
+  const labelerOptions = [...new Set([...(data.labelers || []), ...parseFilterList(labelSummaryFilters.author)])].map((value) => ({ value, label: value }));
+  const assigneeOptions = [...new Set([...(data.assignees || []), ...parseFilterList(labelSummaryFilters.assignee)])].map((value) => ({ value, label: value }));
   renderLabelSummaryPicker("#labelSummaryTaskPicker", taskOptions, labelSummaryFilters.taskId);
   renderLabelSummaryMultiPicker("#labelSummaryStatusPicker", [
     { value: "resolved", label: "已形成结论" },

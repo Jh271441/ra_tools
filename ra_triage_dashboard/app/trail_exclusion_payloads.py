@@ -55,7 +55,7 @@ def build_review_exclusion_payload(
     items: list[dict[str, Any]] = []
     invalid_labels: list[str] = []
     for row in rows:
-        annotation = row.get("annotation") or {}
+        annotation = row.get("case_exclusion") or row.get("annotation") or {}
         prediction = row.get("prediction") or {}
         issue_id = as_text(row.get("issue_id"))
         if not issue_id or not bool(annotation.get("is_excluded")):
@@ -79,6 +79,7 @@ def build_review_exclusion_payload(
         }
         items.append(
             {
+                **({"case_label_source": {"revision_ids": annotation["label_revision_ids"]}} if "label_revision_ids" in annotation else {}),
                 "issue_id": issue_id,
                 "baseline_id": baseline_by_scope.get(as_text(row.get("baseline_scope")), ""),
                 "baseline_scope": as_text(row.get("baseline_scope")),

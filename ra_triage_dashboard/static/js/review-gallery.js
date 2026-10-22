@@ -30,8 +30,8 @@ function issueCardReviewFlag(annotation, comparisonStatus = "") {
 }
 
 function issueCardLabelingFlag(item) {
-  if (item.annotation?.is_excluded) {
-    return issueCardReviewFlag(item.annotation);
+  if (item.is_excluded ?? item.annotation?.is_excluded) {
+    return issueCardReviewFlag({ ...item.annotation, is_excluded: true });
   }
   if (item.label_state === "conflict" || item.label_state === "stale") {
     return `<span class="issue-card-flag issue-card-flag-needs-gt" data-card-review-flag="conflict"><span class="ui-lang-zh">冲突待处理</span><span class="ui-lang-en">Conflict</span></span>`;
@@ -96,7 +96,7 @@ function issueCard(item, options = {}) {
       );
   const reviewFlag = isLabeling
     ? issueCardLabelingFlag(item)
-    : issueCardReviewFlag(item.annotation, comparisonStatus);
+    : issueCardReviewFlag({ ...item.annotation, is_excluded: item.is_excluded ?? item.annotation?.is_excluded }, comparisonStatus);
   const sharedLabelFlag = isLabeling
     ? ""
     : sharedLabelStateButtonMarkup(item, { compact: true });
@@ -147,6 +147,7 @@ function caseGallerySignature(items) {
     items: (items || []).map((item) => ({
       issue_id: item.issue_id,
       gt_label: item.gt_label || "",
+      is_excluded: Boolean(item.is_excluded ?? item.annotation?.is_excluded),
       prediction: item.prediction
         ? {
             label: item.prediction.label || "",
@@ -155,6 +156,8 @@ function caseGallerySignature(items) {
         : null,
       annotation: item.annotation
         ? {
+            id: item.annotation.id || null,
+            model_review_status: item.annotation.model_review_status || "",
             label: item.annotation.label || "",
             review_status: item.annotation.review_status || "",
             is_excluded: Boolean(item.annotation.is_excluded),

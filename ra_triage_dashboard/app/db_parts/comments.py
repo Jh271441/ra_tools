@@ -135,6 +135,7 @@ class DatabaseCommentsMixin:
         model_run_id: str = "",
         search: str = "",
         discussion_channel: str = "model_review",
+        include_case_discussion: bool = False,
     ) -> set[str]:
         """Return bounded Issue ids with a matching comment in one Run."""
 
@@ -151,8 +152,8 @@ class DatabaseCommentsMixin:
                 batch = cleaned[offset : offset + 500]
                 where = [
                     f"issue_id IN ({', '.join('?' for _ in batch)})",
-                    "discussion_channel = ?",
-                    "evaluation_run_id = ?",
+                    "((discussion_channel = ? AND evaluation_run_id = ?) OR discussion_channel = 'case')"
+                    if include_case_discussion else "(discussion_channel = ? AND evaluation_run_id = ?)",
                 ]
                 params: list[Any] = [*batch, discussion_channel, str(model_run_id or "").strip()]
                 if query:

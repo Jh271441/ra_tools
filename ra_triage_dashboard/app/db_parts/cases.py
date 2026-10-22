@@ -276,8 +276,12 @@ class DatabaseCasesMixin:
                  AND a.model_run_id = ws.model_run_id
                  AND a.author = wa.assignee
                  AND (
-                      (ws.mode = 'blind' AND a.work_split_id = ws.id)
-                      OR (ws.mode != 'blind' AND a.work_split_id = '')
+                      (ws.purpose = 'model_review' AND a.review_domain = 'model_review'
+                       AND a.campaign_id = ws.id AND a.reference_id = ws.reference_id)
+                      OR (COALESCE(ws.purpose, '') <> 'model_review'
+                          AND ws.mode = 'blind' AND a.work_split_id = ws.id)
+                      OR (COALESCE(ws.purpose, '') <> 'model_review'
+                          AND ws.mode != 'blind' AND a.work_split_id = '')
                  )
                 WHERE wa.issue_id = i.issue_id
                   AND ws.model_run_id = ?
@@ -483,11 +487,13 @@ class DatabaseCasesMixin:
         if any(value not in MODEL_REVIEW_STATUSES for value in model_review_statuses):
             raise ValueError("unsupported model_review_status")
         if model_review_statuses:
-            where.append(
-                "(ann.review_domain = 'model_review' AND ann.model_review_status IN "
-                f"({', '.join('?' for _ in model_review_statuses)}))"
-            )
-            params.extend(model_review_statuses)
+            # Match the displayed progress: no current-Run record is Not started;
+            # persisted drafts/blocked records are Needs review, not unsubmitted.
+            from ..review_workflow import model_review_progress_sql
+            progress, progress_params = model_review_progress_sql(model_run_id)
+            where.append(f"({progress}) IN ({', '.join('?' for _ in model_review_statuses)})")
+            params.extend(progress_params)
+            params.extend("in_progress" if value == "blocked_by_label" else value for value in model_review_statuses)
         if is_excluded is not None:
             # No local Review is an included case.  COALESCE keeps that
             # intuitive all/included/excluded split while supporting SQLite
@@ -509,7 +515,7 @@ class DatabaseCasesMixin:
             where.append(f"i.issue_id IN ({placeholders})")
             params.extend(cleaned_ids)
         if normalized_comment_state != "all":
-            comment_run_clause = " AND rc.model_run_id = ?" if model_run_id else ""
+            comment_run_clause = " AND (rc.model_run_id = ? OR rc.discussion_channel = 'case')" if model_run_id else ""
             comment_exists = (
                 "EXISTS (SELECT 1 FROM review_comments rc "
                 "WHERE rc.issue_id = i.issue_id"
@@ -546,9 +552,12 @@ class DatabaseCasesMixin:
                     "JOIN issue_work_splits ws_named ON ws_named.id = wa_named.split_id "
                     f"WHERE wa_named.issue_id = i.issue_id AND ws_named.model_run_id = ? "
                     f"AND wa_named.assignee IN "
-                    f"({', '.join('?' for _ in named)}))"
+                    f"({', '.join('?' for _ in named)})"
+                    + (" AND ws_named.id = ?" if work_split_id else "") + ")"
                 )
                 params.extend((model_run_id, *named))
+                if work_split_id:
+                    params.append(str(work_split_id).strip())
             where.append(f"({' OR '.join(assignee_clauses)})")
         normalized_work_split_id = str(work_split_id or "").strip()
         if normalized_work_split_id:
@@ -731,6 +740,7 @@ class DatabaseCasesMixin:
         annotation_label: str = "",
         annotation_author: str = "",
         model_run_id: str = "",
+        model_review_status: str = "",
         comparison_status: str = "all",
         failure_only: bool = False,
         missing_evidence: str = "",
@@ -753,6 +763,7 @@ class DatabaseCasesMixin:
             annotation_label=annotation_label,
             annotation_author=annotation_author,
             model_run_id=model_run_id,
+            model_review_status=model_review_status,
             comparison_status=comparison_status,
             failure_only=failure_only,
             missing_evidence=missing_evidence,
@@ -847,7 +858,8 @@ class DatabaseCasesMixin:
                     SELECT DISTINCT i.issue_id, i.baseline_scope, i.gt_label,
                            ann.id AS annotation_id,
                            ann.label AS annotation_label,
-                           ann.tags_json AS annotation_tags_json
+                           ann.tags_json AS annotation_tags_json,
+                           ann.is_excluded AS annotation_is_excluded
                     {common}
                     {batch_condition}
                     ORDER BY i.issue_id ASC
@@ -866,6 +878,7 @@ class DatabaseCasesMixin:
                             "id": row["annotation_id"],
                             "label": str(row["annotation_label"] or ""),
                             "tags": _json_load(row["annotation_tags_json"], []),
+                            "is_excluded": bool(row["annotation_is_excluded"]),
                         },
                     }
                     for row in rows
@@ -1116,17 +1129,17 @@ class DatabaseCasesMixin:
                 "completed": 0,
                 "blocked_by_label": 0,
             }
+            from ..review_workflow import model_review_progress_sql
+            progress_sql, progress_params = model_review_progress_sql(model_run_id)
             status_rows = conn.execute(
                 f"""
-                SELECT ann.model_review_status AS status, COUNT(DISTINCT i.issue_id) AS count
-                FROM issues i
-                {annotation_join}
-                {base_where}
-                  AND ann.review_domain = 'model_review'
-                  AND ann.model_review_status IN ('pending', 'in_progress', 'completed', 'blocked_by_label')
-                GROUP BY ann.model_review_status
+                SELECT status, COUNT(*) AS count FROM (
+                    SELECT {progress_sql} AS status FROM issues i
+                    {annotation_join}
+                    {base_where}
+                ) progress GROUP BY status
                 """,
-                (*annotation_params, *scope_params),
+                (*progress_params, *annotation_params, *scope_params),
             ).fetchall()
             for row in status_rows:
                 model_review_status_counts[str(row["status"])] = int(row["count"] or 0)

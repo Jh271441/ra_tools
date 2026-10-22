@@ -113,3 +113,27 @@ Display-refresh failure after a successful save is not an upload failure. The
 active scope blocks duplicate submissions; other Issues remain editable. Pending
 or failed uploads warn before closing/reloading the page because image bytes are
 in memory. Status and retry controls refresh when the UI language changes.
+
+
+## Cross-page filters (2026-10-22)
+
+Review gallery task projections bind modern reviews to their task and reference,
+not the legacy single/blind scope. Progress is a presentation projection: no
+selected-Run record is Not started, an existing incomplete/blocked record Needs
+review, and a completed record Completed. Cards, URL restoration, queries and
+counts use the same three values; no historical record is rewritten.
+
+Issue exclusion uses current Case author heads or a valid Case adjudication.
+An explicit current false overrides old Run exclusion; legacy Run flags apply
+only without Case evidence. Gallery, labeling summary, analysis and the Trail
+preview share this rule. The preview includes Case revision IDs in its digest;
+commit still revalidates fresh data and requires explicit confirmation. This
+change restores visibility without clearing exclusion markers or writing Trail.
+
+Analysis reads current Issue tags in separate `case_label_context` metadata for
+filtering, charts and export, leaving model-review annotations unchanged. Current
+Run comments and shared Issue discussions both participate in discussion filters.
+Shared-label menus default to four states; old bookmarked GT/stale filters remain
+explicitly selectable while active. The two October 17/18 fill datasets are
+archived from the default picker, with explicit old links and independent cases
+preserved. Known dataset IDs tolerate a pasted trailing Chinese semicolon.

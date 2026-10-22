@@ -206,14 +206,18 @@ function renderReviewCatalogFilters() {
   });
   renderMultiFilter($("#sharedLabelStateFilter"), {
     options: [
-      { value: "none", label: uiText("无共享标签", "No shared label") },
-      { value: "pending", label: uiText("标签待完成", "Label pending") },
-      { value: "resolved", label: uiText("已形成标签结论", "Label resolved") },
-      { value: "matches_gt", label: uiText("与 GT 一致", "Matches GT") },
-      { value: "needs_gt_review", label: uiText("GT 待复核", "Needs GT review") },
-      { value: "conflict", label: uiText("标签冲突", "Label conflict") },
-      { value: "stale", label: uiText("裁决需重新确认", "Stale adjudication") },
-      { value: "unknown", label: uiText("GT 关系未知", "GT relation unknown") },
+      { value: "none", label: uiText("未标注", "Not labeled") },
+      { value: "pending", label: uiText("待形成结论", "Pending") },
+      { value: "resolved", label: uiText("已形成结论", "Resolved") },
+      { value: "conflict", label: uiText("需处理分歧", "Needs resolution") },
+      // Preserve old linked filters explicitly without cluttering the default menu.
+      ...[
+        ["stale", "裁决需确认", "Decision needs review"],
+        ["matches_gt", "与 GT 一致", "Matches GT"],
+        ["needs_gt_review", "GT 待复核", "GT needs review"],
+        ["unknown", "GT 关系未知", "GT relation unknown"],
+      ].filter(([value]) => getMultiFilterValues($("#sharedLabelStateFilter")).includes(value))
+       .map(([value, zh, en]) => ({value, label: uiText(zh, en)})),
     ],
     selected: getMultiFilterValues($("#sharedLabelStateFilter")),
     onChange,

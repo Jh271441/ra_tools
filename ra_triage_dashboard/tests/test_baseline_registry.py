@@ -127,6 +127,10 @@ class BaselineRegistryTests(unittest.TestCase):
         self.assertEqual(entry_0522.gt_mode, "strict")
         self.assertEqual(entry_0821.gt_mode, "sparse")
 
+    def test_pasted_chinese_semicolon_preserves_known_scope(self):
+        self.assertEqual(normalize_baseline_ids("a,b；", allowed={"a", "b"}, default=["a"]), ["a", "b"])
+        self.assertEqual(normalize_baseline_ids("a,unknown；", allowed={"a", "b"}, default=["a"]), ["a"])
+
     def test_normalize_baseline_ids_defaults_and_filters(self) -> None:
         allowed = {"0508", "0626"}
         self.assertEqual(

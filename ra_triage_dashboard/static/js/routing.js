@@ -318,7 +318,7 @@ function normalizedReviewRouteFilters(params) {
   const gtLabel = params.get("gt") || "";
   const modelLabel = params.get("model_label") || params.get("annotation") || "";
   const reviewStatus = parseFilterList(params.get("status")).filter((value) =>
-    ["pending", "reviewed", "needs_gt_review"].includes(value)
+    ["pending", "in_progress", "completed", "blocked_by_label", "reviewed", "needs_gt_review"].includes(value)
   );
   const labelStates = parseFilterList(params.get("label_state")).filter((value) =>
     ["none", "pending", "resolved", "conflict", "stale", "matches_gt", "needs_gt_review", "unknown"].includes(value)
@@ -367,7 +367,7 @@ function normalizedAnalysisRouteFilters(params) {
   const rawPage = Number.parseInt(params.get("page") || "1", 10);
   const rawPageSize = Number.parseInt(params.get("page_size") || "", 10);
   const statuses = parseFilterList(params.get("status")).filter((value) =>
-    ["pending", "reviewed", "needs_gt_review"].includes(value)
+    ["pending", "in_progress", "completed", "blocked_by_label", "reviewed", "needs_gt_review"].includes(value)
   );
   const gtLabels = parseFilterList(params.get("gt")).filter((value) =>
     LABELS.includes(value)

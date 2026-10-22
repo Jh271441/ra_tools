@@ -109,3 +109,27 @@ def effective_expected_output(
     if inferred:
         return inferred, "tags"
     return "", "missing"
+
+
+def model_review_progress(annotation, model_run_id=""):
+    """Presentation progress for one effective record; never a stored mutation."""
+    annotation = annotation or {}
+    if not annotation.get("id") or (model_run_id and annotation.get("model_run_id") != model_run_id):
+        return "pending"
+    if annotation.get("model_review_status") == "completed" or (
+        not annotation.get("model_review_status") and annotation.get("note")
+    ):
+        return "completed"
+    return "in_progress"
+
+
+def model_review_progress_sql(model_run_id=""):
+    """Equivalent progress expression for the fixed internal ann alias."""
+    run_clause = " OR COALESCE(ann.model_run_id, '') <> ?" if model_run_id else ""
+    return (
+        "CASE WHEN ann.id IS NULL" + run_clause + " THEN 'pending' "
+        "WHEN ann.model_review_status = 'completed' OR "
+        "(COALESCE(ann.model_review_status, '') = '' AND COALESCE(ann.note, '') <> '') "
+        "THEN 'completed' ELSE 'in_progress' END",
+        [model_run_id] if model_run_id else [],
+    )

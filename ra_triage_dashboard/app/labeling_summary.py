@@ -2,7 +2,7 @@
 from collections import Counter, defaultdict
 from math import ceil
 
-from .labeling_rules import current_adjudication, expected_output_source
+from .labeling_rules import current_adjudication, expected_output_source, case_exclusion_projection
 
 LABELS = ("误触发", "正确触发", "无需协助")
 
@@ -61,7 +61,6 @@ def summarize_labeling_cases(items, *, page=1, page_size=20):
         display_heads = [primary_result] if primary_result else heads
         case_tags, case_evidence, authors, rationales = set(), set(), set(), []
         created_at = ""
-        is_excluded = any(bool(head.get("is_excluded")) for head in heads) if primary_result and primary_result.get("kind") == "issue" else False
         for head in display_heads:
             case_tags.update(str(value) for value in head.get("tags") or [] if value)
             case_evidence.update(
@@ -74,7 +73,6 @@ def summarize_labeling_cases(items, *, page=1, page_size=20):
             if rationale and rationale not in rationales:
                 rationales.append(rationale)
             created_at = max(created_at, str(head.get("created_at") or ""))
-            is_excluded = is_excluded or bool(head.get("is_excluded"))
         decision = item.get("decision") or {}
         decision_rationale = str(decision.get("rationale") or "").strip()
         if not decision.get("stale") and decision_rationale and decision_rationale not in rationales:
@@ -115,7 +113,7 @@ def summarize_labeling_cases(items, *, page=1, page_size=20):
                 "original_votes": original_votes,
                 "tags": sorted(case_tags),
                 "evidence_gaps": sorted(case_evidence),
-                "is_excluded": is_excluded,
+                "is_excluded": bool((case_exclusion_projection(item.get("label_cases") or []) or {}).get("is_excluded")),
                 "created_at": created_at,
                 "source_count": int(item.get("source_count") or 0),
                 "decision": (

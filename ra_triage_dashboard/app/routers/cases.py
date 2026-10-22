@@ -296,6 +296,8 @@ def _case_derived_issue_ids(
     catalog = tag_catalog if tag_catalog is not None else (
         _review_tag_catalog() if allowed_review_statuses else ()
     )
+    filters = dict(filters)
+    exclusion = filters.pop("is_excluded", None)
     matching_ids: list[str] = []
     for candidates in database.iter_case_review_candidate_batches(
         batch_size=400,
@@ -306,8 +308,12 @@ def _case_derived_issue_ids(
             if allowed_label_states
             else {}
         )
+        exclusions = database.project_issue_exclusions([item["issue_id"] for item in candidates]) if exclusion is not None else {}
         for item in candidates:
             issue_id = _as_text(item.get("issue_id"))
+            effective_excluded = exclusions.get(issue_id, {}).get("is_excluded", bool((item.get("annotation") or {}).get("is_excluded")))
+            if exclusion is not None and effective_excluded != exclusion:
+                continue
             if allowed_review_statuses:
                 status = _with_effective_case_review_status(item, catalog)["annotation"][
                     "review_status"
@@ -321,6 +327,7 @@ def _case_derived_issue_ids(
                 state_matches = any(
                     (
                         selected == state
+                        or (selected == "conflict" and state == "stale")
                         or (
                             selected == "needs_gt_review"
                             and (
@@ -362,7 +369,7 @@ def _case_result_with_status_filter(
     """Filter derived Review and shared-label states before pagination."""
 
     tag_catalog = _review_tag_catalog()
-    if review_statuses or label_states:
+    if review_statuses or label_states or filters.get("is_excluded") is not None:
         matching_ids = _case_derived_issue_ids(
             filters=filters,
             review_statuses=review_statuses,
@@ -372,7 +379,7 @@ def _case_result_with_status_filter(
         start = (page - 1) * page_size
         page_ids = matching_ids[start : start + page_size]
         if page_ids:
-            page_filters = {**filters, "issue_ids": page_ids}
+            page_filters = {**filters, "issue_ids": page_ids, "is_excluded": None}
             raw = database.list_cases(
                 **page_filters,
                 page=1,
@@ -530,6 +537,9 @@ async def list_cases(
         )
     except ValueError as exc:
         raise _detail(400, str(exc)) from exc
+    exclusions = await asyncio.to_thread(database.project_issue_exclusions, [item["issue_id"] for item in result.get("items", [])])
+    for item in result.get("items", []):
+        item["is_excluded"] = exclusions.get(item["issue_id"], {}).get("is_excluded", bool((item.get("annotation") or {}).get("is_excluded")))
     result["items"] = await asyncio.to_thread(
         _public_case_items,
         result.get("items", []),
@@ -548,7 +558,7 @@ async def list_cases(
         "work_assignee": filters["work_assignee"],
         "work_split_id": filters["work_split_id"],
         "comment_state": filters["comment_state"],
-        "review_status": list(review_statuses),
+        "review_status": list(review_statuses) + [value for value in str(filters.get("model_review_status") or "").split(",") if value],
         "label_state": list(label_states),
         "exclusion": exclusion_filter,
         "baselines": resolve_request_baseline_ids(baselines, request=request),
@@ -651,7 +661,7 @@ async def list_case_issue_ids(
             "work_assignee": filters["work_assignee"],
             "work_split_id": filters["work_split_id"],
             "comment_state": filters["comment_state"],
-            "review_status": list(review_statuses),
+            "review_status": list(review_statuses) + [value for value in str(filters.get("model_review_status") or "").split(",") if value],
             "label_state": list(label_states),
             "exclusion": exclusion_filter,
         },
@@ -718,7 +728,7 @@ async def work_assignees(
         "filters": {
             "model_run_id": filters["model_run_id"],
             "comparison_status": filters["comparison_status"],
-            "review_status": list(review_statuses),
+            "review_status": list(review_statuses) + [value for value in str(filters.get("model_review_status") or "").split(",") if value],
             "label_state": list(label_states),
             "comment_state": filters["comment_state"],
             "exclusion": exclusion_filter,
@@ -1140,7 +1150,7 @@ async def split_case_work(request: Request) -> dict[str, Any]:
             "comparison_status": filters["comparison_status"],
             "failure_only": filters["comparison_status"] == "mismatch",
             "work_assignee": filters["work_assignee"],
-            "review_status": list(review_statuses),
+            "review_status": list(review_statuses) + [value for value in str(filters.get("model_review_status") or "").split(",") if value],
             "label_state": list(label_states),
             "exclusion": exclusion_filter,
         },

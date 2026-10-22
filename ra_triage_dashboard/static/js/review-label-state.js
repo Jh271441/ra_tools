@@ -278,16 +278,15 @@ function currentRunReviewStatusMarkup(item, { compact = false } = {}) {
   const belongsToSelectedRun = state.selectedRunId
     ? Boolean(annotation?.id && annotationRunId === state.selectedRunId)
     : Boolean(annotation?.id);
-  const status = !belongsToSelectedRun
-    ? "unsubmitted"
-    : String(annotation?.review_status || "pending");
+  const status = !belongsToSelectedRun ? "pending"
+    : annotation.model_review_status === "completed" || (!annotation.model_review_status && annotation.note)
+      ? "completed" : "in_progress";
   const labels = {
-    unsubmitted: { zh: "未提交", en: "Not submitted" },
-    pending: { zh: "待复核", en: "Needs review" },
-    reviewed: { zh: "已提交", en: "Submitted" },
-    needs_gt_review: { zh: "已提交", en: "Submitted" },
+    pending: { zh: "待开始", en: "Not started" },
+    in_progress: { zh: "待复核", en: "Needs review" },
+    completed: { zh: "已完成", en: "Completed" },
   };
-  const label = labels[status] || labels.unsubmitted;
+  const label = labels[status];
   const title = state.selectedRunId
     ? uiText("当前 Run 的判错复核进度", "Model error review progress for the selected Run")
     : uiText("当前 Review 范围的判错复核进度", "Model error review progress in the current scope");

@@ -159,6 +159,13 @@ for(const username of ['jasperchen','liangxianghui']) {
  const analysis=new URL(reviewAssignmentBatchHref(own,'analysis'),'http://localhost');
  assert.equal(analysis.searchParams.has('work_assignee'),false);
 }
+for(const status of ['pending','in_progress','completed','pending,in_progress','in_progress,completed']) {
+ const url=new URL(pageUrl('review',{...reviewAssignmentRouteOptions(batch,'review'),reviewStatus:status.split(','),labelStates:['resolved'],exclusion:'excluded',commentState:'with'}),'http://localhost');
+ const parsed=normalizedReviewRouteFilters(url.searchParams);
+ assert.deepEqual(parsed.reviewStatus,status.split(','));assert.deepEqual(parsed.labelStates,['resolved']);
+ assert.equal(parsed.exclusion,'excluded');assert.equal(parsed.commentState,'with');assert.equal(parsed.workSplitId,batch.split_id);
+ assert.deepEqual(normalizedAnalysisRouteFilters(new URLSearchParams('status='+status)).reviewStatus,status.split(','));
+}
 assert.equal(normalizedAnalysisRouteFilters(new URLSearchParams('work_split=split-123')).workSplitId,'split-123');
 assert.equal(normalizedAnalysisRouteFilters(new URLSearchParams('work_split=bad/123')).workSplitId,'');
 '''

@@ -1,6 +1,6 @@
 """Labeling queries storage; composed by DatabaseLabelingMixin."""
 from __future__ import annotations
-from ..labeling_rules import current_adjudication
+from ..labeling_rules import current_adjudication, case_exclusion_projection
 from collections import defaultdict
 from typing import Any, Sequence
 from .shared import LABELS
@@ -336,11 +336,7 @@ class LabelingQueriesMixin:
                 elif str(row["scenario"] or "") != normalized_cluster[1]:
                     continue
             if len(normalized_exclusions) == 1:
-                resolved_excluded = any(
-                    (item["resolution"].get("result_revision") or {}).get("is_excluded")
-                    for item in cases
-                    if item["resolution"]["state"] == "resolved"
-                )
+                resolved_excluded = bool((case_exclusion_projection(cases) or {}).get("is_excluded"))
                 if "excluded" in normalized_exclusions and not resolved_excluded:
                     continue
                 if "active" in normalized_exclusions and resolved_excluded:

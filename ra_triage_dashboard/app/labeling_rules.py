@@ -63,3 +63,26 @@ def expected_output_source(item):
         kind = "unknown"
     return {"kind": kind, "sources": sources,
             "authors": sorted({author for source in sources for author in source["authors"]})}
+
+
+def case_exclusion_projection(cases):
+    """Exclusion is an Issue property, independent of label/GT resolution.
+
+    Use effective task adjudications or current per-author votes, never an old
+    superseded vote. A current Case vote also owns an explicit false value over
+    legacy Run exclusions. None means no Case evidence, allowing legacy fallback.
+    """
+    revisions = []
+    for case in cases:
+        resolution = case.get("resolution") or {}
+        if resolution.get("state") == "resolved" and resolution.get("method") == "adjudication":
+            revisions.extend([resolution.get("result_revision") or {}])
+        else:
+            revisions.extend(resolution.get("heads") or [])
+    revisions = [item for item in revisions if item.get("id")]
+    if not revisions:
+        return None
+    excluded = [item for item in revisions if item.get("is_excluded")]
+    source = max(excluded or revisions, key=lambda item: int(item["id"]))
+    return {"is_excluded": bool(excluded), "revision": source,
+            "revision_ids": sorted({int(item["id"]) for item in revisions})}

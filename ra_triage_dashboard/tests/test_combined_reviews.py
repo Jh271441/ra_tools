@@ -56,19 +56,113 @@ class CombinedReviewWorkflowTest(unittest.TestCase):
             idempotency_key=f"campaign-{run_index}-{workflow}-{','.join(assignees or ['alice'])}",
         )["campaign"]
 
-    def submit(self, campaign, context, *, label="误触发", reviewer="alice", key="submit-1", status="completed", excluded=None, attachments=()):
+    def submit(self, campaign, context, *, label="误触发", reviewer="alice", key="submit-1", status="completed", excluded=None, attachments=(), tags=()):
         return self.db.submit_combined_review(
             issue_id="cn1", campaign_id=campaign["id"],
             model_run_id=campaign["evaluation_run_id"], reviewer=reviewer,
             reviewer_source="test", reviewer_verified=True,
             model_review_status=status, reason="model reason",
             missing_evidence=["camera"], expected_output=label,
-            tags=[], rationale="case rationale",
+            tags=list(tags), rationale="case rationale",
             expected_model_review_storage_id=context["model_review_storage_id"],
             expected_case_revision_id=context["case_revision_id"],
             expected_label_state_fingerprint=context["label_state_fingerprint"],
             idempotency_key=key, is_excluded=excluded, attachments=attachments,
         )
+
+    def test_cross_page_combined_filters_and_fresh_exclusion_preview(self):
+        from unittest.mock import patch
+        from ra_triage_dashboard.app.routers import cases as gallery, analysis as exports
+        from ra_triage_dashboard.app.routers.trail_update import preview
+        from ra_triage_dashboard.app.support import review_payloads as analysis
+        from ra_triage_dashboard.app.trail_exclusion_payloads import build_review_exclusion_payload
+        task = self.campaign(0)
+        def context():
+            return self.db.combined_review_context(issue_id="cn1", campaign_id=task["id"], model_run_id=self.runs[0]["id"], reviewer="alice")
+        self.submit(task, context(), excluded=True, tags=["queue"])
+        self.db.create_review_comment(issue_id="cn1", body="Case discussion", author="alice", baseline_scope="scope", discussion_channel="case")
+        catalog = [{"key": "queue", "label": "排队", "section": "scene", "group": "environment"}]
+        query = dict(baseline_scopes=["scope"], model_run_id=self.runs[0]["id"], work_split_id=task["id"], include_multi_reviews=True)
+        with patch.object(analysis, "database", self.db), patch.object(analysis, "_review_tag_catalog", return_value=catalog), patch.object(analysis, "_missing_evidence_catalog", return_value=[]):
+            result = analysis._review_reason_analysis_payload(**query, annotation_author="alice", review_status="completed", scene_tag="queue", exclusion="excluded", comment_state="with", search="cn1")
+            self.assertEqual(result["total"], 1)
+            self.assertEqual(result["items"][0]["annotation"]["tags"], [])
+            self.assertEqual(result["items"][0]["case_label_context"]["tags"], ["queue"])
+            with patch.object(exports, "_review_tag_catalog", return_value=catalog), patch.object(exports, "_missing_evidence_catalog", return_value=[]):
+                exported = exports._review_analysis_export_rows(result)[0]
+                self.assertEqual(exported["tag_keys"], "queue")
+                self.assertEqual(exported["is_excluded"], "是")
+            self.assertEqual(result["summary"]["model_review_status_counts"]["completed"], 1)
+            self.assertEqual(analysis._review_reason_analysis_payload(**query, search="排队")["total"], 1)
+            for extra in ({"review_status": "pending"}, {"exclusion": "included"}, {"comment_state": "without"}, {"annotation_author": "bob"}):
+                self.assertEqual(analysis._review_reason_analysis_payload(**query, **extra)["total"], 0, extra)
+        filters = dict(baseline_scopes=["scope"], model_run_id=self.runs[0]["id"], work_split_id=task["id"], work_assignee="alice", model_review_status="completed", is_excluded=True, comment_state="with")
+        with patch.object(gallery, "database", self.db), patch.object(gallery, "_review_tag_catalog", return_value=catalog):
+            result = gallery._case_result_with_status_filter(filters=filters, review_statuses=(), label_states=("resolved",), page=1, page_size=1)
+            self.assertEqual(result["total"], 1)
+            self.assertEqual(result["items"][0]["issue_id"], "cn1")
+            self.assertEqual(gallery._case_issue_ids_with_status_filter(filters=filters, review_statuses=(), label_states=("resolved",)), ["cn1"])
+            self.assertEqual(gallery._case_result_with_status_filter(filters=filters, review_statuses=(), label_states=("none",), page=1, page_size=20)["total"], 0)
+        summary_filters = dict(baseline_scopes=["scope"], task_id=task["id"], author="alice", assignee="alice", status="resolved", expected_output="误触发", gt_label="正确触发", comment_state="with", exclusion="excluded")
+        self.assertEqual(len(self.db._project_labeling_cases(**summary_filters)[0]), 1)
+        self.assertEqual(len(self.db._project_labeling_cases(**{**summary_filters, "author": "bob"})[0]), 0)
+        with patch.object(preview, "database", self.db):
+            def payload():
+                rows = preview._load_review_exclusion_candidate_rows(selected_run_id=self.runs[0]["id"], baseline_scopes=["scope"])
+                return build_review_exclusion_payload(rows, run=self.runs[0], baseline_ids=["test"], baseline_scopes=["scope"], write_mode="info_only")
+            before = payload()
+            self.assertEqual(len(before["items"]), 1)
+            self.submit(task, context(), excluded=False, key="include-again")
+            after = payload()
+            self.assertEqual(after["items"], [])
+            self.assertNotEqual(before["payload_sha256"], after["payload_sha256"])
+
+    def test_gallery_status_projection_keeps_task_run_and_reviewer_boundaries(self):
+        task = self.campaign(0)
+        other = self.campaign(0, assignees=["bob"])
+        query = dict(baseline_scopes=["scope"], model_run_id=self.runs[0]["id"], work_split_id=task["id"], work_assignee="alice")
+        def selected(status):
+            return self.db.list_cases(**query, model_review_status=status)
+        self.assertEqual(selected("pending")["total"], 1)
+        self.assertEqual(self.db.list_cases(**{**query, "work_assignee": "bob"})["total"], 0)
+        self.assertEqual(selected("completed")["total"], 0)
+        other_context = self.db.combined_review_context(issue_id="cn1", campaign_id=other["id"], reviewer="bob")
+        self.submit(other, other_context, reviewer="bob", key="bob-done")
+        self.assertEqual(selected("pending")["total"], 1)  # another task/reviewer cannot complete ours
+        ctx = self.db.combined_review_context(issue_id="cn1", campaign_id=task["id"], reviewer="alice")
+        first = self.submit(task, ctx, status="pending")
+        self.assertEqual(selected("pending")["total"], 0)
+        self.assertEqual(selected("in_progress")["total"], 1)
+        ctx = self.db.combined_review_context(issue_id="cn1", campaign_id=task["id"], reviewer="alice")
+        completed = self.submit(task, ctx, key="done")
+        result = selected("completed")
+        self.assertEqual(result["total"], 1)
+        self.assertEqual(result["items"][0]["annotation"]["id"], completed["model_review"]["id"])
+        self.assertEqual(selected("pending,in_progress")["total"], 0)
+        self.assertEqual(selected("pending,in_progress,completed")["total"], 1)
+        self.assertEqual(self.db.list_case_issue_ids(**query, model_review_status="completed"), ["cn1"])
+        self.assertEqual(self.db.list_cases(**{**query, "model_run_id": self.runs[1]["id"]})["total"], 0)
+
+    def test_case_exclusion_filters_summary_and_preview_use_current_vote(self):
+        from ra_triage_dashboard.app.labeling_summary import summarize_labeling_cases
+        from ra_triage_dashboard.app.trail_exclusion_payloads import build_review_exclusion_payload
+        task = self.campaign(0)
+        context = lambda: self.db.combined_review_context(issue_id="cn1", campaign_id=task["id"], reviewer="alice")
+        excluded = self.submit(task, context(), excluded=True)
+        scopes = ["scope"]
+        selected, _ = self.db._project_labeling_cases(baseline_scopes=scopes, exclusion="excluded")
+        self.assertEqual([item["issue_id"] for item in selected], ["cn1"])
+        self.assertTrue(summarize_labeling_cases(selected)["items"][0]["is_excluded"])
+        self.assertEqual(self.db._project_labeling_cases(baseline_scopes=scopes, exclusion="active")[0], [])
+        rows = self.db.case_exclusion_candidate_rows(baseline_scopes=scopes, model_run_id=self.runs[0]["id"])
+        payload = build_review_exclusion_payload(rows, run=self.runs[0], baseline_ids=["test"], baseline_scopes=scopes, write_mode="info_only")
+        self.assertEqual(payload["items"][0]["case_label_source"]["revision_ids"], [excluded["case_revision_id"]])
+        self.assertEqual(payload["items"][0]["comment"], "case rationale")
+        self.submit(task, context(), excluded=False, key="restore")
+        self.assertFalse(self.db.project_issue_exclusions(["cn1"])["cn1"]["is_excluded"])
+        self.assertEqual(self.db._project_labeling_cases(baseline_scopes=scopes, exclusion="excluded")[0], [])
+        rows = self.db.case_exclusion_candidate_rows(baseline_scopes=scopes)
+        self.assertEqual(build_review_exclusion_payload(rows, run={}, baseline_ids=["test"], baseline_scopes=scopes, write_mode="info_only")["items"], [])
 
     def test_case_images_are_atomic_versioned_and_content_idempotent(self):
         from unittest.mock import patch

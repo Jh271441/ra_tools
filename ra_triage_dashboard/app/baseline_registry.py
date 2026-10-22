@@ -167,6 +167,8 @@ def normalize_baseline_ids(
     ordered: list[str] = []
     seen: set[str] = set()
     for item in values:
+        if item not in allowed_set and item.rstrip("；") in allowed_set:
+            item = item.rstrip("；")
         if item not in allowed_set or item in seen:
             continue
         seen.add(item)

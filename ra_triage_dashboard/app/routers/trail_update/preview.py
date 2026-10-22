@@ -123,7 +123,10 @@ def _load_review_exclusion_candidate_rows(
         for row in blind_by_issue.values()
         if bool((row.get("annotation") or {}).get("is_excluded"))
     ]
-    merged = [*ordinary_rows, *blind_rows]
+    canonical_rows = database.case_exclusion_candidate_rows(baseline_scopes=baseline_scopes, model_run_id=selected_run_id)
+    canonical_ids = {row["issue_id"] for row in canonical_rows}
+    merged = [row for row in [*ordinary_rows, *blind_rows] if row["issue_id"] not in canonical_ids]
+    merged.extend(row for row in canonical_rows if row["case_exclusion"]["is_excluded"])
     merged.sort(key=lambda row: _as_text(row.get("issue_id")))
     return merged
 
@@ -431,11 +434,9 @@ async def _build_preview(
     # short-lived presentation result.
     if probe_trail:
         rows = await asyncio.to_thread(
-            database.review_reason_rows,
+            _load_review_exclusion_candidate_rows,
             baseline_scopes=baseline_scopes,
-            model_run_id=selected_run_id,
-            comparison_status="all",
-            is_excluded=True,
+            selected_run_id=selected_run_id,
         )
     else:
         rows = await asyncio.to_thread(

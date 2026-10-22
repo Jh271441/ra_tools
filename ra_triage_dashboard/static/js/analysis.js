@@ -462,13 +462,13 @@ function renderAnalysisReviewStatus(data) {
     {
       key: "pending",
       label: reviewStatusLabel("pending"),
-      count: Number(counts.pending || 0) + Number(counts.blocked_by_label || 0),
+      count: Number(counts.pending || 0),
       description: uiText("尚未开始模型判错复核", "Model review has not started"),
     },
     {
       key: "in_progress",
       label: reviewStatusLabel("in_progress"),
-      count: Number(counts.in_progress || 0),
+      count: Number(counts.in_progress || 0) + Number(counts.blocked_by_label || 0),
       description: uiText("模型判错复核正在进行", "Model review is in progress"),
     },
     {
@@ -721,7 +721,7 @@ function renderAnalysisCases(data) {
               `<span class="analysis-chip evidence-chip">${escapeHtml(evidenceLabel(key))}</span>`
           )
           .join("");
-        const tagChips = (annotation.tags || [])
+        const tagChips = (item.case_label_context?.tags || annotation.tags || [])
           .map((key) => {
             const catalogItem = reviewTagCatalogItem(key) || {};
             const section = String(catalogItem.section || "");
@@ -739,7 +739,7 @@ function renderAnalysisCases(data) {
             ${comparisonBadge}
             ${multiBadge}
             <span title="${escapeHtml(`${baselineLabelForScope(item.baseline_scope)} GT`)}">GT ${labelBadge(item.gt_label)}</span>
-            ${annotation.review_domain === "model_review" ? `<span title="模型判错复核状态"><span class="ui-lang-zh">模型复核</span><span class="ui-lang-en">Model review</span> ${escapeHtml(reviewStatusLabel(annotation.model_review_status))}</span>` : `<span title="历史 Review 期望输出"><span class="ui-lang-zh">历史期望</span><span class="ui-lang-en">Legacy expected</span> ${labelBadge(expectedOutput, uiText("待补充", "Pending"))}</span>`}
+            ${annotation.review_domain === "model_review" ? `<span title="模型判错复核状态"><span class="ui-lang-zh">模型复核</span><span class="ui-lang-en">Model review</span> ${escapeHtml(reviewStatusLabel(item.model_review_progress || annotation.model_review_status))}</span>` : `<span title="历史 Review 期望输出"><span class="ui-lang-zh">历史期望</span><span class="ui-lang-en">Legacy expected</span> ${labelBadge(expectedOutput, uiText("待补充", "Pending"))}</span>`}
             <button class="analysis-model-history-button" type="button"
               data-analysis-model-history="${issueId}"
               title="查看此 Issue 的全部评测 Run 输出历史"
@@ -756,7 +756,7 @@ function renderAnalysisCases(data) {
           </div>
           <div class="analysis-case-meta">
             <span>${escapeHtml(annotation.author || "未记录复核人")}${annotation.author_verified ? " · SSO" : ""}</span>
-            <span>${escapeHtml(reviewStatusLabel(annotation.model_review_status || annotation.review_status))} · ${formatTime(annotation.created_at)}</span>
+            <span>${escapeHtml(reviewStatusLabel(item.model_review_progress || annotation.model_review_status || annotation.review_status))} · ${formatTime(annotation.created_at)}</span>
             <span class="analysis-case-actions">
               <button class="analysis-discussion-link" type="button" data-analysis-discussion="${issueId}" data-model-run-id="${escapeHtml(discussionRunId)}">评论</button>
               ${reviewUrl ? `<a class="text-link" href="${escapeHtml(reviewUrl)}" title="打开问题详情与 Review">问题详情</a>` : ""}

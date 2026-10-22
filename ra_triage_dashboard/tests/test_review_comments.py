@@ -157,11 +157,11 @@ class ReviewCommentsTest(unittest.TestCase):
                 [item["issue_id"] for item in any_run["items"]], ["cn1", "cn2"]
             )
             self.assertEqual(
-                [item["issue_id"] for item in run_a["items"]], ["cn1"]
+                [item["issue_id"] for item in run_a["items"]], ["cn1", "cn2"]
             )
             self.assertEqual(
                 [item["issue_id"] for item in without_run_a["items"]],
-                ["cn2", "cn3"],
+                ["cn3"],
             )
             with self.assertRaisesRegex(ValueError, "unsupported comment_state"):
                 database.list_cases(comment_state="broken")

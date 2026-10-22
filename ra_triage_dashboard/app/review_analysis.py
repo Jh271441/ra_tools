@@ -10,7 +10,7 @@ from .model_labels import (
     TRIAGE_LABELS,
     model_label_matches_gt,
 )
-from .review_workflow import derive_review_status, effective_expected_output
+from .review_workflow import derive_review_status, effective_expected_output, model_review_progress
 
 
 COMPARISON_STATUSES = ("all", "mismatch", "match", "no_gt", "none")
@@ -370,7 +370,7 @@ def build_review_reason_analysis(
         # The HTTP/database layer supplies the selected exclusion slice.  Keep
         # the pure aggregator reusable for all/included/excluded views rather
         # than baking a product-specific hard filter into it.
-        if is_excluded is not None and bool(annotation.get("is_excluded")) != is_excluded:
+        if is_excluded is not None and bool(item.get("is_excluded", annotation.get("is_excluded"))) != is_excluded:
             continue
         prediction = dict(item.get("prediction") or {})
         annotation["tags"] = _safe_list(annotation.get("tags"))
@@ -487,10 +487,10 @@ def build_review_reason_analysis(
         prediction = item["prediction"]
         note = annotation["note"]
         evidences = annotation["missing_evidence"]
-        tags = annotation["tags"]
+        tags = _safe_list((item.get("case_label_context") or annotation).get("tags"))
         review_status = str(annotation.get("review_status") or "pending")
         if annotation.get("review_domain") == "model_review":
-            model_status = str(annotation.get("model_review_status") or "pending")
+            model_status = item.get("model_review_progress") or model_review_progress(annotation)
             if model_status in model_review_status_counts:
                 model_review_status_counts[model_status] += 1
         else:

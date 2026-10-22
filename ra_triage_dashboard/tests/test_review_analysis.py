@@ -473,6 +473,7 @@ class ReviewReasonAnalysisTest(unittest.TestCase):
                     "issue_id": "cn-model-complete",
                     "gt_label": "误触发",
                     "annotation": {
+                        "id": 1,
                         "review_domain": "model_review",
                         "model_review_status": "completed",
                         "review_status": "reviewed",
@@ -484,6 +485,7 @@ class ReviewReasonAnalysisTest(unittest.TestCase):
                     "issue_id": "cn-model-blocked",
                     "gt_label": "正确触发",
                     "annotation": {
+                        "id": 2,
                         "review_domain": "model_review",
                         "model_review_status": "blocked_by_label",
                         "review_status": "needs_gt_review",
@@ -505,7 +507,7 @@ class ReviewReasonAnalysisTest(unittest.TestCase):
         )
         self.assertEqual(
             result["summary"]["model_review_status_counts"],
-            {"pending": 0, "in_progress": 0, "completed": 1, "blocked_by_label": 1},
+            {"pending": 0, "in_progress": 1, "completed": 1, "blocked_by_label": 0},
         )
         self.assertEqual(
             result["summary"]["review_status_counts"],

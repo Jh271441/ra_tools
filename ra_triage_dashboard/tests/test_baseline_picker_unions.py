@@ -21,6 +21,7 @@ const catalog=[
  {id:'review-2026-10-18-extra',label:'补齐18',count:16},
 ];
 const original=JSON.stringify(catalog),allowed=new Set(catalog.map(x=>x.id));
+assert.deepEqual(normalizeBaselineIds("1009-2026-10-15,review-2026-10-15-extra；",{allowed}),["1009-2026-10-15","review-2026-10-15-extra"]);
 const options=baselinePickerOptions(catalog,['1009-2026-10-15','review-2026-10-15-extra']);
 assert.equal(options.length,5);
 assert.deepEqual(options.map(x=>x.label),['0508 · 1071','1009 2026-10-15 · 33','1009 2026-10-16 · 112','1009 2026-10-17 · 75','1009 2026-10-18 · 90']);
@@ -30,6 +31,11 @@ assert(partial.partial);assert(partial.label.includes('3/33'));assert.equal(part
 assert.deepEqual(normalizeBaselineIds([partial.value],{allowed}),['review-2026-10-15-extra']);
 assert.deepEqual(normalizeBaselineIds([partial.fullValue],{allowed}),['1009-2026-10-15','review-2026-10-15-extra']);
 assert.equal(JSON.stringify(catalog),original);
+const retired={id:'fill-2026-10-17-3e2cc9cfbd',label:'信息补齐',count:2};
+assert.equal(baselinePickerOptions([...catalog,retired],[]).some(x=>x.value===retired.id),false);
+const historical=baselinePickerOptions([...catalog,retired],[retired.id]).find(x=>x.value===retired.id);
+assert(historical.selected);assert(historical.label.includes('历史'));
+
 const missing=baselinePickerOptions(catalog.filter(x=>x.id!=='review-2026-10-15-extra'),['1009-2026-10-15']);
 assert.equal(missing[1].value,'1009-2026-10-15');assert.equal(missing[1].label,'1009 2026-10-15 · 30');
 '''

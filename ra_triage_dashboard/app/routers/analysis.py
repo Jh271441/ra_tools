@@ -237,7 +237,7 @@ def _review_analysis_export_rows(result: dict[str, Any]) -> list[dict[str, Any]]
     for item in result.get("items", []):
         annotation = item.get("annotation") or {}
         prediction = item.get("prediction") or {}
-        tag_keys = tag_values(annotation)
+        tag_keys = tag_values(item.get("case_label_context") or annotation)
         evidence_keys = [
             _as_text(key)
             for key in (annotation.get("missing_evidence") or [])
@@ -258,10 +258,10 @@ def _review_analysis_export_rows(result: dict[str, Any]) -> list[dict[str, Any]]
                 "expected_output": expected_output,
                 "review_status": _as_text(annotation.get("review_status")),
                 "model_review_status": _as_text(
-                    annotation.get("model_review_status")
+                    item.get("model_review_progress") or annotation.get("model_review_status")
                 ),
                 "review_domain": _as_text(annotation.get("review_domain")) or "legacy",
-                "is_excluded": "是" if bool(annotation.get("is_excluded")) else "否",
+                "is_excluded": "是" if bool(item.get("is_excluded", annotation.get("is_excluded"))) else "否",
                 "review_reason": _as_text(annotation.get("note")),
                 "tags": "、".join(tag_label(key) for key in tag_keys),
                 "scene_tags": joined_tag_labels(tag_keys, "scene"),

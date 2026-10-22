@@ -29,6 +29,14 @@ from ra_triage_dashboard.app.routers.trail_update import (
 
 
 class TrailAttributeUpdateTest(unittest.TestCase):
+    def setUp(self):
+        # Existing legacy-only fixtures do not contain canonical Case votes.
+        # The real Case projection/preview contract is covered by combined tests.
+        patcher = patch.object(trail_preview.database, "case_exclusion_candidate_rows", return_value=[])
+        patcher.start(); self.addCleanup(patcher.stop)
+        patcher = patch.object(trail_preview.database, "review_multi_rows", return_value=[])
+        patcher.start(); self.addCleanup(patcher.stop)
+
     def test_excel_import_endpoint_is_read_only_preview(self) -> None:
         workbook = openpyxl.Workbook()
         sheet = workbook.active

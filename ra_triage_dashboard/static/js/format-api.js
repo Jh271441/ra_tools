@@ -32,7 +32,8 @@ function normalizeBaselineIds(raw, { allowed = null, fallback = null } = {}) {
     : null;
   const values = [];
   const push = (text) => {
-    const id = String(text || "").trim();
+    let id = String(text || "").trim();
+    if (allowedSet && !allowedSet.has(id) && allowedSet.has(id.replace(/；+$/, ""))) id = id.replace(/；+$/, "");
     if (!id) return;
     if (allowedSet && !allowedSet.has(id)) return;
     if (!values.includes(id)) values.push(id);
@@ -128,13 +129,18 @@ const BASELINE_PICKER_UNIONS = [
   ["1009 2026-10-18", ["review-2026-10-18", "review-2026-10-18-extra"]],
 ];
 
+// Retired supplemental datasets remain addressable by explicit historical URLs.
+const RETIRED_BASELINE_PICKER_IDS = new Set([
+  "fill-2026-10-17-3e2cc9cfbd", "fill-2026-10-18-3e2cc9cfbd",
+]);
+
 function baselinePickerOptions(catalog, selectedIds) {
   const byId = new Map(catalog.map((item) => [String(item.id), item]));
   const selected = new Set(selectedIds.map(String));
   const consumed = new Set();
   return catalog.flatMap((item) => {
     const id = String(item.id);
-    if (consumed.has(id)) return [];
+    if (consumed.has(id) || (RETIRED_BASELINE_PICKER_IDS.has(id) && !selected.has(id))) return [];
     const union = BASELINE_PICKER_UNIONS.find(([, ids]) => ids.includes(id) && ids.every((member) => byId.has(member)));
     const ids = union ? union[1] : [id];
     ids.forEach((member) => consumed.add(member));
@@ -142,7 +148,7 @@ function baselinePickerOptions(catalog, selectedIds) {
     const count = ids.reduce((total, member) => total + Number(byId.get(member).count || 0), 0);
     const partial = chosen.length > 0 && chosen.length < ids.length;
     const selectedCount = chosen.reduce((total, member) => total + Number(byId.get(member).count || 0), 0);
-    const name = union ? union[0] : (item.label || id);
+    const name = (union ? union[0] : (item.label || id)) + (RETIRED_BASELINE_PICKER_IDS.has(id) ? uiText("（历史）", " (archived)") : "");
     const fullLabel = `${name}${union || item.count != null && item.count !== "" ? ` · ${count}` : ""}`;
     return [{
       value: (partial ? chosen : ids).join(","), fullValue: ids.join(","),

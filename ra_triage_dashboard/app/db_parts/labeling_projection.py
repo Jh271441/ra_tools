@@ -10,6 +10,54 @@ from .labeling_shared import ISSUE_LABEL_GT_RELATIONS, ISSUE_LABEL_STATES, _clea
 
 
 class LabelingProjectionMixin:
+    def project_issue_exclusions(self, issue_ids):
+        from ..labeling_rules import case_exclusion_projection
+        return {issue_id: projection for issue_id, cases in self._batch_label_cases(issue_ids).items()
+                if (projection := case_exclusion_projection(cases)) is not None}
+
+    def project_issue_tag_contexts(self, issue_ids):
+        """Current Issue tags for analysis, separate from Run review fields."""
+        contexts = {}
+        for issue_id, cases in self._batch_label_cases(issue_ids).items():
+            revisions = []
+            for case in cases:
+                resolution = case.get("resolution") or {}
+                if resolution.get("state") == "resolved" and resolution.get("method") == "adjudication":
+                    revisions.extend([resolution.get("result_revision") or {}])
+                else:
+                    revisions.extend(resolution.get("heads") or [])
+            if revisions:
+                contexts[issue_id] = {
+                    "tags": sorted({str(tag) for revision in revisions for tag in revision.get("tags") or []}),
+                    "revision_ids": sorted({int(revision["id"]) for revision in revisions if revision.get("id")}),
+                }
+        return contexts
+
+    def case_exclusion_candidate_rows(self, *, baseline_scopes, model_run_id=""):
+        """Current Case votes for the read-only exclusion preview, paged by Issue."""
+        rows = []
+        page = 1
+        while True:
+            result = self.list_cases(baseline_scopes=baseline_scopes, model_run_id=model_run_id, page=page, page_size=400)
+            items = result["items"]
+            projections = self.project_issue_exclusions([item["issue_id"] for item in items])
+            for item in items:
+                projection = projections.get(item["issue_id"])
+                if projection is None or (model_run_id and not item["prediction"].get("model_run_id")):
+                    continue
+                revision = projection["revision"]
+                rows.append({**item, "case_exclusion": {
+                    "id": None, "review_domain": "case_label",
+                    "is_excluded": projection["is_excluded"],
+                    "label_revision_ids": projection["revision_ids"],
+                    "review_status": "reviewed", "author": revision.get("author", ""),
+                    "created_at": revision.get("created_at", ""), "note": revision.get("rationale", ""),
+                    "tags": revision.get("tags", []), "missing_evidence": revision.get("evidence_gaps", []),
+                }})
+            if page * 400 >= result["total"]:
+                return rows
+            page += 1
+
     def label_source_contexts(self, issue_id: str, label_state: dict[str, Any]) -> dict[str, Any]:
         """Read display provenance separately from label/decision fingerprints.
 
