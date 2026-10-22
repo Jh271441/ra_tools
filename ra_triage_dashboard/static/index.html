@@ -84,7 +84,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-601`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-603`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -2186,7 +2186,7 @@
           <div class="shortcut-guide-row" data-shortcut-search="d shift+d"><span><kbd>D</kbd><kbd>⇧ D</kbd></span><strong><span class="ui-lang-zh">问题讨论 / 模型复核讨论</span><span class="ui-lang-en">Issue discussion / Model review discussion</span></strong></div>
           <div class="shortcut-guide-row" data-shortcut-search="l"><span><kbd>L</kbd></span><strong><span class="ui-lang-zh">展开 / 收起标签汇总</span><span class="ui-lang-en">Toggle label summary</span></strong></div>
           <div class="shortcut-guide-row" data-shortcut-search="t"><span><kbd>T</kbd></span><strong>展开 / 收起 RA Event</strong></div>
-          <div class="shortcut-guide-row" data-shortcut-search="j shift+m"><span><kbd>J</kbd><kbd>⇧ M</kbd></span><strong><span class="ui-lang-zh">复核历史 / 评测 Run 历史</span><span class="ui-lang-en">Review history / Run history</span></strong></div>
+          <div class="shortcut-guide-row" data-shortcut-search="j p"><span><kbd>J</kbd><kbd>P</kbd></span><strong><span class="ui-lang-zh">复核历史 / 评测 Run 历史</span><span class="ui-lang-en">Review history / Run history</span></strong></div>
           <div class="shortcut-guide-row" data-shortcut-search="q w a s z x"><span><kbd>Q</kbd><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>Z</kbd><kbd>X</kbd></span><strong>展开 / 收起对应标签组</strong></div>
           <div class="shortcut-guide-row" data-shortcut-search="i"><span><kbd>I</kbd></span><strong>展开 / 收起缺失信息</strong></div>
           <div class="shortcut-guide-row" data-shortcut-search="k"><span><kbd>K</kbd></span><strong>联合复核：切换“排除此 Issue”（随 Case 标签保存）</strong></div>
@@ -2496,7 +2496,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-601`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-603`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

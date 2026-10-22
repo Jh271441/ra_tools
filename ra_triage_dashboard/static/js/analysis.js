@@ -1043,7 +1043,7 @@ function updateAnalysisDiscussionComposerAccess({
     submit.hidden = hidden;
     submit.disabled = context.status !== "ready" || context.saving || hidden;
   }
-  const viewLabels = { both: uiText("全部讨论", "All discussions"), case: uiText("本问题讨论", "Issue discussion"), campaign: uiText("当前任务讨论", "Current task discussion") };
+  const viewLabels = { both: uiText("全部讨论", "All discussions"), case: uiText("本问题讨论", "Issue discussion"), campaign: taskId ? uiText("当前任务讨论", "Current task discussion") : uiText("当前任务讨论（未指定任务）", "Task discussion (no task selected)") };
   ["#analysisDiscussionView", "#analysisDiscussionChannel"].forEach((id) => {
     Object.entries(viewLabels).forEach(([key, label]) => {
       const option = $(id)?.querySelector(`option[value="${key}"]`);
@@ -1073,6 +1073,8 @@ function updateAnalysisDiscussionComposerAccess({
     hint.hidden = !hasChannels;
     hint.textContent = context.status === "error"
       ? uiText("讨论未加载成功，请重试后发表。草稿已保留。", "Load the discussion before posting. Your draft is preserved.")
+      : !taskId
+        ? uiText("当前入口未指定任务，因此不能选择任务讨论；本问题讨论仍可正常使用。全部讨论可查看本问题及其他任务的已有讨论。", "This entry has no selected task, so task discussion is unavailable. Issue discussion remains available. All discussions includes existing issue and task threads.")
       : context.task?.read_only
         ? uiText("当前任务讨论为只读；仍可在本问题讨论中交流。", "This task discussion is read-only. You can still post in issue discussion.")
         : uiText("本问题讨论在不同任务中共享；当前任务讨论仅在该任务内显示。回复会留在原讨论中。", "Issue discussion is shared across tasks. Task discussion stays in that task. Replies stay with the original comment.");

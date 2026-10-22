@@ -226,7 +226,7 @@ function renderDetail(caseData) {
   const externalLinksMarkup = detailExternalLinksMarkup(caseData);
   ensureDetailMediaState(caseData);
   const predCount = (caseData.predictions || []).length;
-  const modelHistoryButton = `<button class="history-inline-button" id="modelHistoryLaunchButton" type="button" data-open-history="model" aria-keyshortcuts="Shift+M" title="${escapeHtml(uiText("展开或收起评测 Run 历史（Shift+M）", "Toggle Run history (Shift+M)"))}"><span class="ui-lang-zh">评测 Run 历史 · ${predCount} 条</span><span class="ui-lang-en">Run history · ${predCount}</span><kbd class="review-control-shortcut" aria-hidden="true">⇧ M</kbd></button>`;
+  const modelHistoryButton = `<button class="history-inline-button" id="modelHistoryLaunchButton" type="button" data-open-history="model" aria-keyshortcuts="P" title="${escapeHtml(uiText("展开或收起评测 Run 历史（P）", "Toggle Run history (P)"))}"><span class="ui-lang-zh">评测 Run 历史 · ${predCount} 条</span><span class="ui-lang-en">Run history · ${predCount}</span><kbd class="review-control-shortcut" aria-hidden="true">P</kbd></button>`;
   const predictionComparable = MODEL_LABELS.includes(primary?.model_label);
   const predictionMatches = modelLabelMatchesGt(primary?.model_label, caseData.gt_label);
   const compareText = !predictionComparable
@@ -404,7 +404,7 @@ function syncReviewFormFromCase(caseData) {
     previous,
     state.reviewEditRunId
   );
-  state.reviewFormDirty = Boolean(draft);
+  state.reviewFormDirty = Boolean(draft) || caseRationalePendingImages(caseData).length > 0;
   state.deferredDetailRefresh = false;
   clearPendingReviewImages();
   updateEvidenceSummary();
@@ -553,6 +553,15 @@ function renderReview(caseData) {
           <textarea id="combinedCaseRationale" data-mention-composer rows="2" aria-keyshortcuts="E Escape Enter Shift+Enter" data-has-case-draft="${draft && Object.prototype.hasOwnProperty.call(draft, "case_rationale") ? "1" : "0"}" placeholder="${escapeHtml(uiText("说明 Case 标签依据；输入 @ 可通知同事", "Explain the Case label; type @ to notify a colleague"))}">${escapeHtml(draft && Object.prototype.hasOwnProperty.call(draft, "case_rationale") ? String(draft.case_rationale || "") : savedOwnCaseRationale(caseData))}</textarea>
           <div class="review-mention-composer" id="combinedCaseMentionComposer" data-mention-composer-root aria-live="polite"></div>
         </label>
+        <div class="review-attachment-field" id="caseRationaleImages">
+          <div class="screenshot-paste-zone is-compact" id="caseRationalePasteZone" tabindex="0" role="group" aria-label="${escapeHtml(uiText("标签图片：选择、粘贴或拖入", "Label images: browse, paste or drop"))}">
+            <span class="screenshot-paste-copy"><strong><span class="ui-lang-zh">标签图片</span><span class="ui-lang-en">Label images</span></strong><small><span class="ui-lang-zh">可粘贴 / 拖入 · 最多 4 张 · 随标签保存</span><span class="ui-lang-en">Paste / drop · max 4 · saved with label</span></small></span>
+            <button class="screenshot-browse-button" id="caseRationaleImageBrowse" type="button" ${hasDashboardWriteRole() && !state.session?.read_only ? "" : "disabled"}><span class="ui-lang-zh">选择图片</span><span class="ui-lang-en">Browse</span></button>
+          </div>
+          <input class="hidden" id="caseRationaleImageInput" type="file" accept="image/png,image/jpeg,image/webp" multiple />
+          <div class="pending-screenshot-list" id="caseRationaleImageList" aria-live="polite"></div>
+          <small class="case-label-image-help"><span class="ui-lang-zh">已保存图片可在标签汇总中查看；待上传图片仅保留在本次页面中。</span><span class="ui-lang-en">Saved images appear in Labels; pending images stay in this page session.</span></small>
+        </div>
       </section>
       <section class="review-section model-error-section">
         <div class="review-section-heading">
@@ -665,7 +674,7 @@ function renderReview(caseData) {
       expectedField.hidden = false;
       combinedCard.querySelector(".review-tag-groups-shell")?.before(expectedField);
     }
-    $("#reviewPane .review-attachment-field")?.setAttribute("hidden", "");
+    $("#reviewPane .model-error-section .review-attachment-field")?.setAttribute("hidden", "");
     const save = $("#reviewSaveButton");
     if (save) {
       save.disabled = false;
@@ -709,6 +718,7 @@ function renderReview(caseData) {
   $("#reviewPane").querySelector("[data-select-model-run]")?.addEventListener("click", () => {
     exitReviewTaskAndOpenRunPicker().catch((error) => showToast(error.message, true));
   });
+  bindCaseRationaleImages(caseData);
   bindReviewAttachmentInputs();
   restoreFailedReviewUploadImages(caseData.issue_id);
   renderPendingReviewImages();
@@ -860,6 +870,7 @@ async function loadCombinedReviewContext(caseData) {
         updateReviewMentionComposer(rationale, $("#combinedCaseMentionComposer"));
       }
     }
+    renderCaseRationaleImages(caseData);
     renderCombinedReviewContextStatus();
     return context;
   } catch (error) {
@@ -1266,7 +1277,13 @@ function bindReviewComposerShortcuts() {
 function openCurrentIssueDiscussion(caseData = state.selectedCase) {
   const issueId = String(caseData?.issue_id || "");
   if (!issueId) return;
-  openAnalysisDiscussion(issueId, { runId: "", source: "labeling", kind: "labeling", taskId: "", discussionChannel: "case" })
+  const requestedTaskId = String(state.reviewWorkSplitId || "");
+  const assignment = caseData?.review_assignment;
+  // Carry only the explicit, server-validated browsing task. Posting still
+  // defaults to the shared Issue channel; task selection is independent.
+  const taskId = requestedTaskId && String(assignment?.split_id || "") === requestedTaskId
+    && String(assignment?.model_run_id || "") === currentReviewRunId(caseData) ? requestedTaskId : "";
+  openAnalysisDiscussion(issueId, { runId: "", source: "labeling", kind: "labeling", taskId, discussionChannel: "case" })
     .catch((error) => showToast(error.message, true));
 }
 
@@ -1296,10 +1313,10 @@ function bindReviewDetailActionShortcuts() {
     const target = event.target instanceof Element ? event.target : null;
     if (reviewShortcutHasEditableTarget(target)) return;
     const key = String(event.key || "").toLowerCase();
-    if (event.shiftKey && !["d", "m"].includes(key)) return;
+    if (event.shiftKey && key !== "d") return;
     const caseDiscussion = !event.shiftKey && Boolean($("#issueLabelCommentsButton")) && !$("#issueLabelCommentsButton").closest("[hidden]");
     const discussionKind = caseDiscussion ? "labeling" : "review";
-    const historyKind = key === "j" ? "review" : key === "m" && event.shiftKey ? "model" : "";
+    const historyKind = key === "j" ? "review" : key === "p" ? "model" : "";
     const historyDialog = $("#historyDialog");
     if (historyKind && historyDialog?.open) {
       event.preventDefault();
@@ -1361,7 +1378,7 @@ function bindReviewDetailActionShortcuts() {
       else openCurrentReviewDiscussion(state.selectedCase);
       return;
     }
-    const kind = key === "j" ? "review" : key === "m" && event.shiftKey ? "model" : "";
+    const kind = key === "j" ? "review" : key === "p" ? "model" : "";
     if (!kind) return;
     event.preventDefault();
     event.stopPropagation();
@@ -1580,6 +1597,8 @@ async function saveCombinedReview(event) {
     expected_case_revision_id: context.case_revision_id || null,
     expected_label_state_fingerprint: context.label_state_fingerprint || "",
   };
+  const imageKey = caseRationaleImageKey(caseData);
+  const imageItems = [...caseRationalePendingImages(caseData)];
   const navigationContext = reviewSaveNavigationContext(issueId);
   const contextKey = combinedReviewContextKey(caseData);
   state.savingAnnotation = true;
@@ -1591,10 +1610,7 @@ async function saveCombinedReview(event) {
   try {
     let result;
     if (!runId) {
-      result = await api(`/api/cases/${encodeURIComponent(issueId)}/case-label-from-review`, {
-        method: "POST",
-        body: JSON.stringify(payload),
-      });
+      result = await submitCaseRationalePayload(issueId, "case-label-from-review", payload, imageItems);
       acknowledgeLocalChange(result);
       showToast(result?.case_label?.case_action === "acknowledged" ? "已确认现有 Case vote。" : "已提交 Case 标签。 ");
     } else {
@@ -1608,11 +1624,7 @@ async function saveCombinedReview(event) {
         expected_model_review_storage_id: context.model_review_storage_id || null,
       });
       const idempotencyKey = globalThis.crypto?.randomUUID?.() || `combined-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-      result = await api(`/api/cases/${encodeURIComponent(issueId)}/combined-review`, {
-        method: "POST",
-        headers: { "Idempotency-Key": idempotencyKey },
-        body: JSON.stringify(payload),
-      });
+      result = await submitCaseRationalePayload(issueId, "combined-review", payload, imageItems, { "Idempotency-Key": idempotencyKey });
       acknowledgeLocalChange(result);
       const combined = result?.combined_review || {};
       if (combined.model_review && caseData.issue_id === issueId) {
@@ -1625,6 +1637,7 @@ async function saveCombinedReview(event) {
       }
       showToast(combined.case_action === "acknowledged" ? "联合复核已提交；现有 Case vote 已确认。" : "联合复核已原子提交。 ");
     }
+    clearSavedCaseRationaleImages(imageKey, imageItems);
     if (state.selectedCase === caseData && combinedReviewContextKey(caseData) === contextKey) {
       await loadCombinedReviewContext(caseData);
       if (state.selectedCase === caseData) renderReview(caseData);

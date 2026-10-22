@@ -978,7 +978,7 @@ html[data-color-theme="light"] .detail-queue-index-input {
 }
 .review-section-heading .review-heading-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
 .model-error-section > .review-section-heading {
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
 }
 .model-error-section > .review-section-heading > div:first-child {
   flex: 0 0 auto;
@@ -988,7 +988,7 @@ html[data-color-theme="light"] .detail-queue-index-input {
   flex-wrap: nowrap;
   margin-left: auto;
 }
-.model-error-section > .review-section-heading h2 { white-space: nowrap; }
+.model-error-section > .review-section-heading h2 { white-space: normal; overflow-wrap: anywhere; }
 .model-error-section .review-heading-actions .history-inline-button {
   min-height: 30px; padding: 5px 8px; gap: 4px; font-size: 11px;
 }
@@ -1438,3 +1438,5 @@ body[data-active-page="review-assignments"] .gt-sync-control { margin-left: auto
 .shared-label-source-audit { color: var(--muted); font-size: 10px; min-width: 0; }
 .shared-label-source-audit > summary { cursor: pointer; width: fit-content; padding: 5px 0; }
 .shared-label-source-audit > dl { margin-top: 6px; }
+
+.case-label-image-help { color: var(--muted); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }

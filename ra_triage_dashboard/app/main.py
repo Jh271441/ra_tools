@@ -281,7 +281,8 @@ async def request_size_guard(request: Request, call_next):
             (
                 request.url.path.startswith("/api/cases/")
                 and request.url.path.endswith(
-                    ("/annotations-with-attachments", "/comments-with-attachments")
+                    ("/annotations-with-attachments", "/comments-with-attachments",
+                     "/combined-review-with-attachments", "/case-label-from-review-with-attachments")
                 )
             )
             or (
@@ -291,7 +292,7 @@ async def request_size_guard(request: Request, call_next):
         )
     ):
         is_comment_upload = request.url.path.endswith("/comments-with-attachments")
-        is_label_upload = request.url.path.endswith("/revisions-with-attachments")
+        is_label_upload = request.url.path.endswith(("/revisions-with-attachments", "/combined-review-with-attachments", "/case-label-from-review-with-attachments"))
         required_marker = (
             "comment-v1" if is_comment_upload
             else "labeling-v1" if is_label_upload

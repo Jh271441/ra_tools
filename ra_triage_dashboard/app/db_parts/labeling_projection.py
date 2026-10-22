@@ -45,6 +45,7 @@ class LabelingProjectionMixin:
                         "task_id", "task_name", "task_lifecycle", "source_run_id", "source_run_name"
                     )}
                     contexts[case_id]["combined_reviews"] = []
+                    contexts[case_id]["revision_attachments"] = {}
             rows = conn.execute(
                 """
                 SELECT s.id, s.label_case_id,
@@ -62,6 +63,18 @@ class LabelingProjectionMixin:
                 WHERE s.issue_id = ? ORDER BY s.created_at DESC, s.id
                 """, (str(issue_id),),
             ).fetchall()
+            for row in conn.execute("""
+                SELECT a.id, a.revision_id, a.original_name, a.media_type, a.size_bytes,
+                       a.width, a.height, r.label_case_id
+                FROM label_attachments a JOIN label_revisions r ON r.id=a.revision_id
+                JOIN label_cases c ON c.id=r.label_case_id WHERE c.issue_id=?
+                ORDER BY a.created_at, a.id
+            """, (str(issue_id),)).fetchall():
+                case_id, revision_id = str(row["label_case_id"]), int(row["revision_id"])
+                if case_id in contexts and revision_id in revision_ids:
+                    contexts[case_id]["revision_attachments"].setdefault(str(revision_id), []).append({
+                        key: row[key] for key in ("id", "original_name", "media_type", "size_bytes", "width", "height")
+                    })
             seen: set[tuple[Any, ...]] = set()
             for row in rows:
                 case_id, revision_id = str(row["label_case_id"]), int(row["revision_id"])

@@ -22,6 +22,25 @@ def _fingerprint(value: Any) -> str:
 
 
 class DatabaseCombinedReviewMixin:
+    @staticmethod
+    def _append_combined_case_images(conn: Any, revision_id: int, attachments: Sequence[dict[str, Any]], now: str) -> None:
+        for item in attachments:
+            conn.execute("""
+                INSERT INTO label_attachments
+                (id, revision_id, source_review_attachment_id, original_name, stored_name,
+                 media_type, size_bytes, width, height, sha256, created_at)
+                VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (str(item["id"]), revision_id, str(item.get("original_name") or ""),
+                  str(item["stored_name"]), str(item["media_type"]), int(item["size_bytes"]),
+                  int(item["width"]), int(item["height"]), str(item["sha256"]), now))
+
+    @staticmethod
+    def _combined_case_images(conn: Any, revision_id: int | None) -> list[dict[str, Any]]:
+        return [dict(row) for row in conn.execute("""
+            SELECT id, original_name, media_type, size_bytes, width, height
+            FROM label_attachments WHERE revision_id=? ORDER BY created_at, id
+        """, (revision_id,)).fetchall()]
+
     def submit_review_case_label(
         self, *, issue_id: str, reviewer: str, reviewer_source: str,
         reviewer_verified: bool, expected_output: str, tags: Sequence[str],
@@ -30,6 +49,7 @@ class DatabaseCombinedReviewMixin:
         is_excluded: bool | None = None,
         mention_recipients: Sequence[str] = (),
         update_case_details: bool = False,
+        attachments: Sequence[dict[str, Any]] = (),
     ) -> dict[str, Any]:
         issue_key = str(issue_id or "").strip()
         actor = str(reviewer or "").strip().lower()
@@ -73,7 +93,7 @@ class DatabaseCombinedReviewMixin:
             if model_review_label_fingerprint(label_state) != str(expected_label_state_fingerprint or ""):
                 raise LabelAnnotationConflictError("共享 Case 标签结论已变化，请刷新后重新确认。")
             excluded = bool(head["is_excluded"]) if is_excluded is None and head is not None else bool(is_excluded)
-            if (head is not None and str(head["expected_output"] or "") == output
+            if (not attachments and head is not None and str(head["expected_output"] or "") == output
                     and bool(head["is_excluded"]) == excluded
                     and (not update_case_details or (sorted(_json_load(head["tags_json"], [])) == clean_tags
                          and str(head["rationale"] or "").strip() == str(rationale or "").strip()))):
@@ -114,6 +134,7 @@ class DatabaseCombinedReviewMixin:
                  str(reviewer_source or "legacy"), current_id, now),
             )
             revision_id = int(cursor.fetchone()["id"]) if self.backend == "postgresql" else int(cursor.lastrowid)
+            self._append_combined_case_images(conn, revision_id, attachments, now)
             row = conn.execute("SELECT * FROM label_revisions WHERE id=?", (revision_id,)).fetchone()
             notification = append_label_mention_event(self, conn, revision=self._label_revision_dict(row),
                 issue_id=issue_key, baseline_scope=scope, recipients=mention_recipients)
@@ -227,6 +248,7 @@ class DatabaseCombinedReviewMixin:
             "model_review_storage_id": int(head["id"]) if head is not None else None,
             "case_revision": self._label_revision_dict(label_head) if label_head is not None else None,
             "case_revision_id": int(label_head["id"]) if label_head is not None else None,
+            "case_attachments": self._combined_case_images(conn, int(label_head["id"]) if label_head is not None else None),
             "label_case_id": str(label_head["label_case_id"] or "") if label_head is not None else "",
             "label_state": label_state,
             "label_state_fingerprint": model_review_label_fingerprint(label_state),
@@ -270,6 +292,7 @@ class DatabaseCombinedReviewMixin:
         is_excluded: bool | None = None,
         mention_recipients: Sequence[str] = (),
         update_case_details: bool = False,
+        attachments: Sequence[dict[str, Any]] = (),
     ) -> dict[str, Any]:
         issue_key = str(issue_id or "").strip()
         campaign_key = str(campaign_id or "").strip()
@@ -291,6 +314,7 @@ class DatabaseCombinedReviewMixin:
         payload_fingerprint = _fingerprint({
             # Omitted flags retain the historical fingerprint for old-client replays.
             **({"is_excluded": bool(is_excluded)} if is_excluded is not None else {}),
+            **({"case_images": [{k: item.get(k) for k in ("sha256", "original_name", "media_type", "size_bytes")} for item in attachments]} if attachments else {}),
             "issue_id": issue_key, "campaign_id": campaign_key,
             "model_run_id": run_key, "reviewer": actor,
             "model_review_status": status, "reason": str(reason or ""),
@@ -358,7 +382,7 @@ class DatabaseCombinedReviewMixin:
             now = utc_now()
             current_case = context.get("case_revision") or {}
             excluded = bool(current_case.get("is_excluded")) if is_excluded is None else bool(is_excluded)
-            if (int(context.get("case_revision_id") or 0)
+            if (not attachments and int(context.get("case_revision_id") or 0)
                     and str(current_case.get("expected_output") or "") == output
                     and bool(current_case.get("is_excluded")) == excluded
                     and (not update_case_details or (sorted(current_case.get("tags") or []) == clean_tags
@@ -409,6 +433,7 @@ class DatabaseCombinedReviewMixin:
                     ),
                 )
                 label_revision_id = int(cursor.fetchone()["id"]) if self.backend == "postgresql" else int(cursor.lastrowid)
+                self._append_combined_case_images(conn, label_revision_id, attachments, now)
                 appended_label_revision_id = label_revision_id
                 case_action = "submitted"
             post_label_state = self.project_issue_label_states(

@@ -56,7 +56,7 @@ class CombinedReviewWorkflowTest(unittest.TestCase):
             idempotency_key=f"campaign-{run_index}-{workflow}-{','.join(assignees or ['alice'])}",
         )["campaign"]
 
-    def submit(self, campaign, context, *, label="误触发", reviewer="alice", key="submit-1", status="completed", excluded=None):
+    def submit(self, campaign, context, *, label="误触发", reviewer="alice", key="submit-1", status="completed", excluded=None, attachments=()):
         return self.db.submit_combined_review(
             issue_id="cn1", campaign_id=campaign["id"],
             model_run_id=campaign["evaluation_run_id"], reviewer=reviewer,
@@ -67,8 +67,59 @@ class CombinedReviewWorkflowTest(unittest.TestCase):
             expected_model_review_storage_id=context["model_review_storage_id"],
             expected_case_revision_id=context["case_revision_id"],
             expected_label_state_fingerprint=context["label_state_fingerprint"],
-            idempotency_key=key, is_excluded=excluded,
+            idempotency_key=key, is_excluded=excluded, attachments=attachments,
         )
+
+    def test_case_images_are_atomic_versioned_and_content_idempotent(self):
+        from unittest.mock import patch
+        campaign = self.campaign(0)
+        context = lambda: self.db.combined_review_context(issue_id="cn1", campaign_id=campaign["id"], reviewer="alice")
+        initial = context()
+        item = {"id": "image-1", "original_name": "evidence.png", "stored_name": "image-1.png",
+                "media_type": "image/png", "size_bytes": 68, "width": 1, "height": 1, "sha256": "f" * 64}
+        first = self.submit(campaign, initial, attachments=[item])
+        self.assertEqual([a["id"] for a in first["case_attachments"]], ["image-1"])
+        # A retry stores a new temporary object but reuses the original label/review.
+        replay = self.submit(campaign, initial, attachments=[{**item, "id": "retry", "stored_name": "retry.png"}])
+        self.assertTrue(replay["duplicate"])
+        self.assertIsNone(self.db.get_label_attachment("retry"))
+        self.assertEqual(replay["case_revision_id"], first["case_revision_id"])
+        with self.assertRaises(AnnotationConflictError):
+            self.submit(campaign, initial, attachments=[{**item, "sha256": "a" * 64}])
+        before = context()
+        # An image-only edit must append a Case revision rather than acknowledge.
+        second = self.submit(campaign, before, key="new-image", attachments=[{**item, "id": "image-2", "stored_name": "image-2.png"}])
+        self.assertEqual(second["case_action"], "submitted")
+        self.assertNotEqual(second["case_revision_id"], first["case_revision_id"])
+        self.assertIsNotNone(self.db.get_label_attachment("image-1"))
+        # Display-only metadata must not alter the label fingerprint.
+        detail = self.db.get_case("cn1")
+        self.assertEqual(detail["label_state"], second["label_state"])
+        source = detail["label_state"]["sources"][0]
+        images = detail["label_source_contexts"][source["label_case_id"]]["revision_attachments"]
+        self.assertEqual(images[str(second["case_revision_id"])][0]["id"], "image-2")
+        self.assertNotIn("stored_name", str(images))
+        # A failure after image insertion rolls back images and both review halves.
+        current = context()
+        with patch("ra_triage_dashboard.app.db_parts.combined_reviews.append_label_mention_event", side_effect=RuntimeError("outbox failure")):
+            with self.assertRaises(RuntimeError):
+                self.submit(campaign, current, key="rollback", attachments=[{**item, "id": "failed"}])
+        self.assertIsNone(self.db.get_label_attachment("failed"))
+        self.assertEqual(context()["case_revision_id"], current["case_revision_id"])
+        self.assertEqual(context()["model_review_storage_id"], current["model_review_storage_id"])
+        with self.db.connect() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) n FROM combined_review_progress").fetchone()["n"], 1)
+
+    def test_no_run_case_images_append_without_model_review(self):
+        context = self.db.combined_review_context(issue_id="cn1", campaign_id="", reviewer="alice")
+        item = {"id": "no-run-image", "original_name": "evidence.png", "stored_name": "image.png",
+                "media_type": "image/png", "size_bytes": 68, "width": 1, "height": 1, "sha256": "f" * 64}
+        result = self.db.submit_review_case_label(issue_id="cn1", reviewer="alice", reviewer_source="test", reviewer_verified=True,
+            expected_output="误触发", tags=[], rationale="evidence", expected_case_revision_id=None,
+            expected_label_state_fingerprint=context["label_state_fingerprint"], attachments=[item])
+        self.assertEqual(self.db.get_label_attachment(item["id"])["revision_id"], result["case_revision"]["id"])
+        with self.db.connect() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) n FROM model_review_revisions").fetchone()["n"], 0)
 
     def test_source_contexts_follow_exact_submissions_without_changing_label_state(self) -> None:
         campaign_a = self.campaign(0)

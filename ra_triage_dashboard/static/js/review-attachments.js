@@ -57,6 +57,7 @@ function bindReviewAttachmentInputs() {
   // Single form-level paste handler: the paste zone is inside the form.
   $("#annotationForm")?.addEventListener("paste", (event) => {
     const target = event.target;
+    if (target?.closest?.(".combined-case-label-card")) return;
     if (
       target instanceof HTMLTextAreaElement ||
       (target instanceof HTMLInputElement &&
@@ -302,5 +303,103 @@ function renderPendingReviewImages() {
       renderPendingReviewImages();
       releasePreviewUrlLater(previewUrl);
     });
+  });
+}
+
+
+// Case evidence is separate from Run-review screenshots and follows the same
+// Issue / Run / explicit task / verified actor namespace as the text draft.
+function caseRationaleImageKey(caseData = state.selectedCase) {
+  return reviewDraftStorageKey(caseData?.issue_id, currentReviewRunId(caseData),
+    String(state.reviewWorkSplitId || ""), reviewDraftReviewer(caseData));
+}
+
+function caseRationalePendingImages(caseData = state.selectedCase) {
+  state.caseRationaleImages ||= new Map();
+  return state.caseRationaleImages.get(caseRationaleImageKey(caseData)) || [];
+}
+
+function labelImageMarkup(items) {
+  return (items || []).map((item) => {
+    const url = withBase(`/api/labeling/attachments/${encodeURIComponent(item.id)}`);
+    return `<a class="pending-screenshot" href="${escapeHtml(url)}" target="_blank" rel="noopener" title="${escapeHtml(item.original_name || uiText("查看标签图片", "View label image"))}"><img loading="lazy" src="${escapeHtml(url)}" alt="${escapeHtml(item.original_name || uiText("标签图片", "Label image"))}" /></a>`;
+  }).join("");
+}
+
+function renderCaseRationaleImages(caseData = state.selectedCase) {
+  const list = $("#caseRationaleImageList");
+  if (!list || state.selectedCase !== caseData) return;
+  const context = state.combinedReviewContext;
+  const saved = String(context?.issue?.issue_id || "") === String(caseData.issue_id)
+    && state.combinedReviewLoad?.key === combinedReviewContextKey(caseData) ? context.case_attachments || [] : [];
+  const items = caseRationalePendingImages(caseData);
+  list.innerHTML = labelImageMarkup(saved) + items.map((item) => `<div class="pending-screenshot"><img src="${escapeHtml(item.previewUrl)}" alt="${escapeHtml(item.file.name || uiText("待上传标签图片", "Pending label image"))}" /><button type="button" data-remove-case-image="${escapeHtml(item.id)}" aria-label="${escapeHtml(uiText("移除待上传图片", "Remove pending image"))}">×</button></div>`).join("");
+  list.querySelectorAll("[data-remove-case-image]").forEach((button) => button.addEventListener("click", () => {
+    const item = items.find((item) => item.id === button.dataset.removeCaseImage);
+    if (!item) return;
+    clearSavedCaseRationaleImages(caseRationaleImageKey(caseData), [item]);
+    renderCaseRationaleImages(caseData);
+  }));
+}
+
+function addCaseRationaleImages(files, caseData = state.selectedCase) {
+  if (!hasDashboardWriteRole() || state.session?.read_only || state.selectedCase !== caseData) return;
+  const limits = state.config?.review_attachment_limits || {};
+  const items = caseRationalePendingImages(caseData);
+  const allowed = new Set(limits.media_types || ["image/png", "image/jpeg", "image/webp"]);
+  let rejected = false;
+  for (const file of files) {
+    if (!allowed.has(file.type) || file.size > Number(limits.max_bytes_each || 8388608)
+        || items.length >= Number(limits.max_count || 4)
+        || items.reduce((sum, item) => sum + item.file.size, 0) + file.size > Number(limits.max_bytes_total || 25165824)) {
+      rejected = true;
+      continue;
+    }
+    items.push({id: crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`, file, previewUrl: URL.createObjectURL(file)});
+  }
+  state.caseRationaleImages.set(caseRationaleImageKey(caseData), items);
+  if (items.length) state.reviewFormDirty = true;
+  renderCaseRationaleImages(caseData);
+  if (rejected) showToast(uiText("仅支持 PNG/JPEG/WebP，最多 4 张，单张 8 MB、合计 24 MB。", "PNG/JPEG/WebP only; max 4 images, 8 MB each and 24 MB total."), true);
+}
+
+function clearSavedCaseRationaleImages(key, snapshot) {
+  const ids = new Set(snapshot.map((item) => item.id));
+  const existing = state.caseRationaleImages?.get(key) || [];
+  const remaining = existing.filter((item) => !ids.has(item.id));
+  if (remaining.length) state.caseRationaleImages.set(key, remaining);
+  else state.caseRationaleImages?.delete(key);
+  existing.filter((item) => ids.has(item.id)).forEach((item) => releasePreviewUrlLater(item.previewUrl));
+}
+
+function bindCaseRationaleImages(caseData) {
+  const input = $("#caseRationaleImageInput"), zone = $("#caseRationalePasteZone");
+  if (!input || !zone) return;
+  $("#caseRationaleImageBrowse")?.addEventListener("click", () => input.click());
+  input.addEventListener("change", () => { addCaseRationaleImages([...input.files], caseData); input.value = ""; });
+  zone.addEventListener("keydown", (event) => {
+    if (event.target === zone && ["Enter", " "].includes(event.key)) { event.preventDefault(); event.stopPropagation(); input.click(); }
+  });
+  const accept = (event, transfer) => {
+    const files = imageFilesFromDataTransfer(transfer);
+    if (!files.length) return;
+    event.preventDefault(); event.stopPropagation(); addCaseRationaleImages(files, caseData);
+  };
+  $("#combinedCaseRationale")?.addEventListener("paste", (event) => accept(event, event.clipboardData));
+  zone.addEventListener("paste", (event) => accept(event, event.clipboardData));
+  zone.addEventListener("dragover", (event) => { event.preventDefault(); });
+  zone.addEventListener("drop", (event) => { event.preventDefault(); event.stopPropagation(); accept(event, event.dataTransfer); });
+  renderCaseRationaleImages(caseData);
+}
+
+async function submitCaseRationalePayload(issueId, action, payload, items, headers = {}) {
+  if (!items.length) return api(`/api/cases/${encodeURIComponent(issueId)}/${action}`, {
+    method: "POST", headers, body: JSON.stringify(payload),
+  });
+  const form = new FormData();
+  form.append("payload", JSON.stringify(payload));
+  items.forEach((item, index) => form.append("attachments", item.file, item.file.name || `label-${index + 1}.png`));
+  return api(`/api/cases/${encodeURIComponent(issueId)}/${action}-with-attachments`, {
+    method: "POST", headers: {...headers, "X-RA-Triage-Request": "labeling-v1"}, body: form,
   });
 }

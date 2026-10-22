@@ -997,8 +997,8 @@ function positionReviewDropdownPanel(dropdown) {
 
   const summaryRect = summary.getBoundingClientRect();
   const viewport = anchoredViewportBounds();
-  const width = Math.min(Math.max(summaryRect.width, 340), viewport.width - 16);
-  panel.style.width = `${Math.round(width)}px`;
+  const width = Math.max(1, Math.min(summaryRect.width, viewport.width - 16));
+  panel.style.width = `${width}px`;
   // Temporarily place at origin with full width for accurate scrollHeight.
   panel.style.left = "0px";
   panel.style.top = "0px";

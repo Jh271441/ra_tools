@@ -60,6 +60,10 @@ async def submit_combined_review(issue_id: str, request: Request) -> dict[str, A
         raise _detail(400, "联合复核请求必须是 JSON 对象。")
     if not isinstance(body, dict):
         raise _detail(400, "联合复核请求必须是 JSON 对象。")
+    return await _submit_combined_review(issue_id, request, body)
+
+
+async def _submit_combined_review(issue_id: str, request: Request, body: dict[str, Any], attachments=()) -> dict[str, Any]:
     if _as_text(body.get("work_split_id")).strip() != _as_text(body.get("campaign_id")).strip() and "work_split_id" in body:
         raise _detail(400, "联合复核任务上下文不一致，请从任务入口重新打开。")
     actor, source, verified = await asyncio.to_thread(
@@ -103,6 +107,7 @@ async def submit_combined_review(issue_id: str, request: Request) -> dict[str, A
             expected_case_revision_id=_optional_int(body.get("expected_case_revision_id"), "expected_case_revision_id"),
             expected_label_state_fingerprint=_as_text(body.get("expected_label_state_fingerprint")),
             idempotency_key=key,
+            attachments=attachments,
         )
     except (AnnotationConflictError, LabelAnnotationConflictError) as exc:
         raise _detail(409, str(exc)) from exc
@@ -123,6 +128,10 @@ async def submit_case_label_from_review(issue_id: str, request: Request) -> dict
         raise _detail(400, "Case 标注请求必须是 JSON 对象。")
     if not isinstance(body, dict):
         raise _detail(400, "Case 标注请求必须是 JSON 对象。")
+    return await _submit_case_label_from_review(issue_id, request, body)
+
+
+async def _submit_case_label_from_review(issue_id: str, request: Request, body: dict[str, Any], attachments=()) -> dict[str, Any]:
     actor, source, verified = await asyncio.to_thread(
         _action_actor, request, body.get("author")
     )
@@ -139,6 +148,7 @@ async def submit_case_label_from_review(issue_id: str, request: Request) -> dict
         recipients = await prepare_label_mentions(database, settings, _as_text(body.get("rationale")), actor, verified)
         result = await asyncio.to_thread(
             database.submit_review_case_label,
+            attachments=attachments,
             issue_id=issue_id,
             reviewer=actor,
             reviewer_source=source,
@@ -161,6 +171,44 @@ async def submit_case_label_from_review(issue_id: str, request: Request) -> dict
     if result.get("notification", {}).get("status") == "queued":
         review_notification_dispatcher.wake()
     return {"case_label": result, "change_revision": await asyncio.to_thread(database.change_revision)}
+
+
+async def _submit_case_images(issue_id: str, request: Request, payload: str, uploads: list[UploadFile], submit) -> dict[str, Any]:
+    # Validate identity before decoding or writing any files.
+    await asyncio.to_thread(_writer_identity, request)
+    try:
+        body = json.loads(payload)
+    except (TypeError, ValueError) as exc:
+        raise _detail(400, "payload 必须是 JSON 对象。") from exc
+    if not isinstance(body, dict):
+        raise _detail(400, "payload 必须是 JSON 对象。")
+    records, paths = await _store_review_attachments(uploads)
+    async def remove_unreferenced():
+        # A response failure after commit must not remove committed images.
+        for record, path in zip(records, paths):
+            if await asyncio.to_thread(database.get_label_attachment, record["id"]) is None:
+                await asyncio.to_thread(path.unlink, missing_ok=True)
+    try:
+        result = await submit(issue_id, request, body, attachments=records)
+    except Exception:
+        await remove_unreferenced()
+        raise
+    # Do not run cleanup on cancellation: a database worker may still commit.
+    # Replays leave their newly normalized temporary objects unreferenced.
+    await remove_unreferenced()
+    return result
+
+
+@router.post("/api/cases/{issue_id}/combined-review-with-attachments")
+async def submit_combined_review_with_attachments(issue_id: str, request: Request,
+        payload: str = Form(...), attachments: Optional[List[UploadFile]] = File(None)) -> dict[str, Any]:
+    return await _submit_case_images(issue_id, request, payload, attachments or [], _submit_combined_review)
+
+
+@router.post("/api/cases/{issue_id}/case-label-from-review-with-attachments")
+async def submit_case_label_with_attachments(issue_id: str, request: Request,
+        payload: str = Form(...), attachments: Optional[List[UploadFile]] = File(None)) -> dict[str, Any]:
+    return await _submit_case_images(issue_id, request, payload, attachments or [], _submit_case_label_from_review)
 
 
 async def _require_unmigrated_issue(

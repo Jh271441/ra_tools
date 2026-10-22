@@ -110,7 +110,7 @@ function sharedLabelRevisionTagsMarkup(revision) {
   }).join("")}</dl>`;
 }
 
-function sharedLabelRevisionMarkup(revision, source) {
+function sharedLabelRevisionMarkup(revision, source, images = []) {
   const isResult = source?.state === "resolved"
     && Number(source.result_revision_id) === Number(revision.id);
   return `<li class="shared-label-revision">
@@ -121,6 +121,7 @@ function sharedLabelRevisionMarkup(revision, source) {
     <div class="shared-label-revision-meta"><span>${uiText("标注人", "Author")} · ${escapeHtml(String(revision.author || uiText("未记录", "Not recorded")))}</span>${revision.created_at ? `<time datetime="${escapeHtml(String(revision.created_at))}">${formatTime(revision.created_at)}</time>` : ""}</div>
     ${sharedLabelRevisionTagsMarkup(revision)}
     <div class="shared-label-revision-note"><strong>${uiText("标注说明", "Label rationale")}</strong><p class="${revision.rationale ? "shared-label-revision-rationale" : "shared-label-revision-empty"}">${escapeHtml(String(revision.rationale || uiText("此版本未填写标注说明", "No rationale recorded in this revision")))}</p></div>
+    ${images.length ? `<div class="pending-screenshot-list">${labelImageMarkup(images)}</div>` : ""}
   </li>`;
 }
 
@@ -150,7 +151,7 @@ function sharedLabelStateSourceMarkup(source, issueId, context = {}) {
     ? source.revision_summaries
     : [];
   const revisionsMarkup = revisionSummaries.length
-    ? `<ul class="shared-label-revision-list shared-label-revision-details">${revisionSummaries.map((revision) => sharedLabelRevisionMarkup(revision, source)).join("")}</ul>`
+    ? `<ul class="shared-label-revision-list shared-label-revision-details">${revisionSummaries.map((revision) => sharedLabelRevisionMarkup(revision, source, context.revision_attachments?.[String(revision.id)] || [])).join("")}</ul>`
     : `<p class="shared-label-source-empty">${uiText("暂无提交版本", "No submitted revisions")}</p>`;
   const adjudication = source?.adjudication;
   const legacySources = Array.isArray(source?.legacy_sources) ? source.legacy_sources : [];
