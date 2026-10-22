@@ -404,6 +404,8 @@ class LabelingProjectionMixin:
                     revisions_by_id[revision_id] = {
                         "id": revision_id,
                         "expected_output": str(revision.get("expected_output") or ""),
+                        "tags": list(revision.get("tags") or []),
+                        "is_excluded": bool(revision.get("is_excluded")),
                         "author": str(revision.get("author") or ""),
                         "rationale": str(revision.get("rationale") or ""),
                         "created_at": str(revision.get("created_at") or ""),
@@ -430,6 +432,8 @@ class LabelingProjectionMixin:
                             "expected_output": str(
                                 result_revision.get("expected_output") or ""
                             ),
+                            "tags": list(result_revision.get("tags") or []),
+                            "is_excluded": bool(result_revision.get("is_excluded")),
                             "author": str(result_revision.get("author") or ""),
                             "rationale": str(result_revision.get("rationale") or ""),
                             "created_at": str(result_revision.get("created_at") or ""),

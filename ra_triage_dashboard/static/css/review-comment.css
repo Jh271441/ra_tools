@@ -1333,6 +1333,23 @@ html[data-color-theme="light"] .review-mention-avatar { color: #075d6d; backgrou
 .shared-label-source-revisions { display: grid; gap: 4px; }
 .shared-label-revision-list { display: grid; gap: 3px; margin: 0; padding-left: 18px; color: var(--muted); font-size: 10px; }
 .shared-label-revision-list li { display: flex; flex-wrap: wrap; gap: 7px; }
+.shared-label-revision-details { padding: 0; list-style: none; gap: 8px; }
+.shared-label-revision-details > .shared-label-revision {
+  display: grid; min-width: 0; gap: 7px; padding: 10px;
+  border: 1px solid var(--line-soft); border-radius: 6px;
+}
+.shared-label-revision-head, .shared-label-revision-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 10px; }
+.shared-label-revision-head { color: var(--text); }
+.shared-label-revision-result, .shared-label-revision-meta { color: var(--faint); font-size: 10px; overflow-wrap: anywhere; }
+.shared-label-revision-tags { display: grid; gap: 6px; margin: 0; }
+.shared-label-revision-tags > div { display: grid; grid-template-columns: 85px minmax(0, 1fr); gap: 5px 10px; align-items: baseline; }
+.shared-label-revision-tags dt, .shared-label-revision-note > strong { color: var(--muted); font-size: 10px; font-weight: 500; }
+.shared-label-revision-tags dd { min-width: 0; margin: 0; }
+.shared-label-revision-tags .analysis-chip { max-width: 100%; font-size: 11px; overflow-wrap: anywhere; white-space: normal; }
+.shared-label-revision-rationale, .shared-label-revision-empty { margin: 0; font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
+.shared-label-revision-rationale { color: var(--text); white-space: pre-wrap; }
+.shared-label-revision-empty { color: var(--faint); }
+.shared-label-revision-note { display: grid; gap: 3px; min-width: 0; }
 .shared-label-source-empty,
 .shared-label-empty { margin: 0; padding: 8px; color: var(--faint); font-size: 11px; }
 .shared-label-source-adjudication { display: grid; gap: 3px; padding: 7px 9px; border: 1px solid rgba(251,191,36,.25); border-radius: 6px; color: var(--muted); font-size: 10px; }

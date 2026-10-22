@@ -285,6 +285,47 @@ class IssueLabelStateProjectionTest(unittest.TestCase):
         self.assertEqual(states["gt-differs"]["gt_relation"], "differs_from_gt")
         self.assertEqual(states["gt-missing"]["gt_relation"], "fills_missing_gt")
 
+    def test_source_revisions_preserve_their_own_tags_and_adjudicated_tags(self) -> None:
+        self.add_issues([{"issue_id": "tagged", "gt_label": "误触发"}], "scope-a")
+        workset = self.database.create_review_workset(
+            baseline_scope="scope-a", issue_ids=["tagged"], name="tag sources", created_by="admin",
+        )
+        task = self.create_task(workset_id=workset["id"], issue_id="tagged", assignees=("alice", "bob"))
+        votes = []
+        for author, label, tags in [("alice", "误触发", ["queue"]), ("bob", "正确触发", ["turn"])]:
+            votes.append(self.database.create_label_revision(
+                issue_id="tagged", task_id=task["id"], expected_output=label,
+                tags=tags, evidence_gaps=[], rationale=author + " rationale", is_excluded=False,
+                author=author, author_source="test", author_verified=False,
+                expected_previous_revision_id=None,
+            ))
+        label_case = self.database.get_label_case(votes[0]["label_case"]["id"])
+        head_ids = [item["id"] for item in label_case["resolution"]["heads"]]
+        self.database.adjudicate_label_case(
+            label_case_id=label_case["id"], source_revision_ids=head_ids,
+            expected_output="误触发", tags=["adjudicated"], evidence_gaps=[],
+            rationale="judge rationale", is_excluded=True, actor="judge",
+            actor_source="test", actor_verified=False, expected_previous_resolution_id=None,
+        )
+        projected = self.database.project_issue_label_states("scope-a", ["tagged"])["tagged"]
+        self.assertEqual(projected["state"], "resolved")
+        source = projected["sources"][0]
+        by_author = {item["author"]: item for item in source["revision_summaries"]}
+        self.assertEqual(by_author["alice"]["tags"], ["queue"])
+        self.assertEqual(by_author["bob"]["tags"], ["turn"])
+        self.assertEqual(by_author["judge"]["tags"], ["adjudicated"])
+        self.assertTrue(by_author["judge"]["is_excluded"])
+        self.assertFalse(by_author["alice"]["is_excluded"])
+        self.assertEqual(by_author["alice"]["rationale"], "alice rationale")
+        self.assertEqual(source["result_revision_id"], by_author["judge"]["id"])
+        # Display-only fields must not change the decision source fingerprint.
+        from ra_triage_dashboard.app.db_parts.labeling_shared import _issue_decision_source_payload
+        before = _issue_decision_source_payload(projected["sources"])
+        for revision in source["revision_summaries"]:
+            revision.pop("tags")
+            revision.pop("is_excluded")
+        self.assertEqual(before, _issue_decision_source_payload(projected["sources"]))
+
     def test_run_projection_shares_labels_without_sharing_review_completion(self) -> None:
         issue_id = "0821-overlap"
         self.add_issues([{"issue_id": issue_id, "gt_label": "正确触发"}], "scope-0821")

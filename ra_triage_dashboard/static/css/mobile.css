@@ -705,3 +705,10 @@
     box-sizing: border-box;
   }
 }
+
+@media (max-width: 639px) {
+  .shared-label-revision-tags > div { grid-template-columns: minmax(0, 1fr); gap: 3px; }
+  .shared-label-revision-head, .shared-label-revision-meta { gap: 5px 8px; }
+  .shared-label-source-actions .shared-label-edit-link { min-height: 44px; max-width: 100%; white-space: normal; }
+  .shared-label-source-facts { grid-template-columns: minmax(0, 1fr); }
+}

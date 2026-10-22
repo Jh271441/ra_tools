@@ -81,6 +81,46 @@ function sharedLabelStateButtonMarkup(item, { showEmpty = false, compact = false
   </button>`;
 }
 
+function sharedLabelRevisionTagsMarkup(revision) {
+  if (!Array.isArray(revision.tags)) {
+    return `<p class="shared-label-revision-empty">${uiText("此版本未提供 Issue 标签明细", "Issue tag details are unavailable for this revision")}</p>`;
+  }
+  const tags = [...new Set(revision.tags.map((key) => String(key || "")).filter(Boolean))];
+  if (!tags.length) {
+    return `<p class="shared-label-revision-empty">${uiText("此版本未填写 Issue 标签", "No Issue tags recorded in this revision")}</p>`;
+  }
+  const groups = [
+    ["environment", t("tag.env")], ["self_intent", t("tag.ego_intent")],
+    ["false_trigger", t("tag.false_trigger")], ["true_trigger", t("tag.should_trigger")],
+    ["ra", t("tag.correct_trigger")], ["no_assist", t("tag.no_assist")],
+    ["other", uiText("其他标签", "Other tags")],
+  ];
+  const knownGroups = new Set(groups.map(([key]) => key));
+  const items = tags.map((key) => {
+    const item = reviewTagCatalogItem(key) || {};
+    return { key, section: item.section || "", group: knownGroups.has(item.group) ? item.group : "other" };
+  });
+  return `<dl class="shared-label-revision-tags">${groups.map(([group, label]) => {
+    const selected = items.filter((item) => item.group === group);
+    if (!selected.length) return "";
+    return `<div><dt>${escapeHtml(label)}</dt><dd class="analysis-chip-list">${selected.map((item) => `<span class="analysis-chip tag-chip" data-tag-section="${escapeHtml(item.section)}" data-tag-group="${escapeHtml(item.group)}">${escapeHtml(tagLabel(item.key))}</span>`).join("")}</dd></div>`;
+  }).join("")}</dl>`;
+}
+
+function sharedLabelRevisionMarkup(revision, source) {
+  const isResult = source?.state === "resolved"
+    && Number(source.result_revision_id) === Number(revision.id);
+  return `<li class="shared-label-revision">
+    <div class="shared-label-revision-head"><code>#${escapeHtml(String(revision.id || ""))}</code>${labelBadge(String(revision.expected_output || ""), uiText("待补充", "Pending"))}
+      ${isResult ? `<span class="shared-label-revision-result">${uiText("结果依据", "Result source")}</span>` : ""}
+      ${revision.is_excluded ? `<span class="tag exclusion-tag">${uiText("已排除此 Issue", "Issue excluded")}</span>` : ""}
+    </div>
+    <div class="shared-label-revision-meta"><span>${uiText("标注人", "Author")} · ${escapeHtml(String(revision.author || uiText("未记录", "Not recorded")))}</span>${revision.created_at ? `<time datetime="${escapeHtml(String(revision.created_at))}">${formatTime(revision.created_at)}</time>` : ""}</div>
+    ${sharedLabelRevisionTagsMarkup(revision)}
+    <div class="shared-label-revision-note"><strong>${uiText("标注说明", "Label rationale")}</strong><p class="${revision.rationale ? "shared-label-revision-rationale" : "shared-label-revision-empty"}">${escapeHtml(String(revision.rationale || uiText("此版本未填写标注说明", "No rationale recorded in this revision")))}</p></div>
+  </li>`;
+}
+
 function sharedLabelStateSourceMarkup(source, issueId) {
   const taskId = String(source?.task_id || "");
   const sourceRunId = String(source?.source_run_id || "");
@@ -88,7 +128,7 @@ function sharedLabelStateSourceMarkup(source, issueId) {
     ? source.revision_summaries
     : [];
   const revisionsMarkup = revisionSummaries.length
-    ? `<ul class="shared-label-revision-list">${revisionSummaries.map((revision) => `<li><code>#${escapeHtml(String(revision.id || ""))}</code><span>${escapeHtml(String(revision.expected_output || uiText("待补充", "Pending")))}</span></li>`).join("")}</ul>`
+    ? `<ul class="shared-label-revision-list shared-label-revision-details">${revisionSummaries.map((revision) => sharedLabelRevisionMarkup(revision, source)).join("")}</ul>`
     : `<p class="shared-label-source-empty">${uiText("暂无提交版本", "No submitted revisions")}</p>`;
   const adjudication = source?.adjudication;
   const legacySources = Array.isArray(source?.legacy_sources) ? source.legacy_sources : [];
