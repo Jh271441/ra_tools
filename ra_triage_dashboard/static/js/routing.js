@@ -74,6 +74,7 @@ function applyUiLanguage(language, { persist = true } = {}) {
   if (typeof renderDailyReview === "function") renderDailyReview();
   applySidebarState();
   renderSession();
+  if (typeof refreshBevVideoLanguage === "function") refreshBevVideoLanguage();
   enhanceDashboardSelects();
   // Dynamic filters / pickers rebuild option labels from the active catalog.
   const refreshers = [
@@ -1158,6 +1159,7 @@ function showPage(
   const previousPage = state.activePage;
   const pageLoads = [];
   state.pageNavigationEpoch = Number(state.pageNavigationEpoch || 0) + 1;
+  if (previousPage === "review" && target !== "review" && typeof cancelCaseHydration === "function") cancelCaseHydration();
   if (target !== "review") {
     (typeof detailHeroMediaEl === "function" ? detailHeroMediaEl() : $("#detailHeroMedia"))?.querySelector("video")?.pause();
   }

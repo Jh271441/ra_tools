@@ -108,15 +108,28 @@ class DeferredCaseMediaTest(unittest.IsolatedAsyncioTestCase):
         provider.get_video.return_value = {
             "url": "/api/assets/cn1/bev-video-0",
             "duration_ms": 40000,
+            "tracks": [{"url": "/api/assets/cn1/bev-video-0"}, {"url": "/api/assets/cn1/camera-video"}],
         }
         with patch.object(cases_router.database, "get_issue", return_value={"baseline_scope": "scope", "gt_label": "误触发"}), patch.object(cases_router.database, "get_case") as full_case, patch.object(cases_router, "media_for_issue", return_value=provider):
             media = await cases_router.get_case_media("cn1", kind="video")
 
         self.assertEqual(media["assets"]["video"]["duration_ms"], 40000)
+        self.assertTrue(media["assets"]["video"]["poster_url"].endswith("/api/case-thumbnails/cn1"))
+        self.assertNotIn("poster_url", provider.get_video.return_value)
+        tracks = media["assets"]["video"]["tracks"]
+        self.assertTrue(tracks[1]["poster_url"].endswith("/api/case-thumbnails/cn1?kind=camera"))
+        self.assertNotIn("poster_url", provider.get_video.return_value["tracks"][1])
         provider.get_video.assert_called_once_with("cn1")
         provider.get_assets.assert_not_called()
         provider.get_camera_assets.assert_not_called()
         full_case.assert_not_called()
+        # Full media and quick-preview routes share the same small posters.
+        provider.get_assets.return_value = {"frames": [], "capture": {}}
+        provider.get_camera_assets.return_value = {"frames": []}
+        with patch.object(cases_router.database, "get_issue", return_value={"baseline_scope": "scope"}), patch.object(cases_router, "media_for_issue", return_value=provider):
+            full = await cases_router.get_case_media("cn1")
+        self.assertEqual(full["assets"]["video"]["tracks"], tracks)
+        self.assertEqual(provider.get_video.call_count, 2)
 
     async def test_resolver_starts_bev_and_video_before_camera(self) -> None:
         """The independent BEV/video scans must overlap on a cold volume."""

@@ -17,7 +17,7 @@ class FrontendMediaContractTest(unittest.TestCase):
         self.assertIn('html[data-color-theme="light"] .issue-id', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .run-source-tab em', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .button-primary', STYLES_CSS)
-        self.assertIn('`${activeBase}/static/${path}?v=manual-triage-610`', INDEX_HTML)
+        self.assertIn('`${activeBase}/static/${path}?v=manual-triage-611`', INDEX_HTML)
         self.assertIn(".review-exclude-toggle { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center;", STYLES_CSS)
         self.assertIn("display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px;", STYLES_CSS)
         self.assertIn("max-height: min(70dvh, 640px); overflow: auto;", STYLES_CSS)
@@ -610,7 +610,7 @@ class FrontendMediaContractTest(unittest.TestCase):
         self.assertIn('querySelector("[data-video-t0]")', APP_JS)
         self.assertIn('$("#mediaVideoStage")?.querySelector("[data-video-t0]")?.click();', APP_JS)
         self.assertIn('player.querySelector("[data-video-t0]").addEventListener("click", seekToT0)', APP_JS)
-        self.assertIn('video.addEventListener("loadedmetadata", seekToT0, { once: true })', APP_JS)
+        self.assertIn('listen(video, "loadedmetadata", metadataReady)', APP_JS)
         self.assertIn("function videoT0PlayerPosition(configuredDuration, decodedDuration = 0)", APP_JS)
         self.assertIn("0 视频回 t0 / 图片复位", INDEX_HTML)
         self.assertIn("const t0Index = heroFrameIndex(frames);", APP_JS)
@@ -744,7 +744,7 @@ class FrontendMediaContractTest(unittest.TestCase):
         self.assertIn("function jumpToQueueIndex", APP_JS)
         self.assertIn("function bindDetailQueueIndexJump", APP_JS)
         self.assertIn(".detail-queue-index-input", STYLES_CSS)
-        self.assertIn("manual-triage-610", APP_ENTRY_JS)
+        self.assertIn("manual-triage-611", APP_ENTRY_JS)
 
     def test_desktop_layout_panels_are_mouse_and_keyboard_resizable(self) -> None:
         self.assertIn('id="sidebarResizer" role="separator"', INDEX_HTML)

@@ -735,3 +735,7 @@
 @media (max-width: 639px) {
   .case-upload-progress .button { min-height: 44px; }
 }
+
+@media (max-width: 700px) {
+  .bev-video-load-state .button { min-height: 44px; min-width: 44px; }
+}

@@ -706,7 +706,7 @@ async function refreshChangedDataNow() {
           showToast("检测到新的协作更新；当前未保存内容已保留，保存后会合并最新数据。");
         }
       } else {
-        await selectCase(state.selectedId, { updateRoute: false });
+        await refreshReviewCorePreservingMedia();
       }
     }
     return;

@@ -89,7 +89,7 @@ function cleanupMediaDialog() {
   document.querySelectorAll("#mediaDialog .media-viewport").forEach((viewport) => {
     viewport.classList.remove("is-dragging");
   });
-  $("#mediaVideoStage")?.querySelector("video")?.pause();
+  releaseBevVideoPlayer($("#mediaVideoStage"));
   if ($("#mediaVideoStage")) {
     $("#mediaVideoStage").innerHTML = "";
     delete $("#mediaVideoStage").dataset.videoUrl;
@@ -550,6 +550,8 @@ function renderMediaDialog() {
 }
 
 function openMedia(kind, index, { caseData = state.selectedCase } = {}) {
+  // The dialog owns playback; never leave the inline clip playing underneath.
+  detailHeroMediaEl()?.querySelector("video")?.pause();
   const selectedPrediction = (caseData?.predictions || []).find(
     (item) => item.model_run_id === state.selectedRunId
   ) || caseData?.predictions?.[0];

@@ -214,7 +214,9 @@ function renderReviewSummary(caseData) {
   }
 }
 
-function renderDetail(caseData) {
+function renderDetail(caseData, { preserveMedia = false } = {}) {
+  const retainedMedia = preserveMedia && state.detailMedia.issueId === String(caseData.issue_id)
+    ? $("#detailPane")?.querySelector(".detail-hero-media") : null;
   const primary = (caseData.predictions || []).find((item) => item.model_run_id === state.selectedRunId) || caseData.predictions?.[0];
   const issueUrl = safeUrl(caseData.voyager_issue_url || caseData.trail_url);
   const issueId = escapeHtml(caseData.issue_id);
@@ -271,7 +273,8 @@ function renderDetail(caseData) {
       ${caseData.review_note ? `<details class="review-note-details"><summary><span class="ui-lang-zh">查看历史备注</span><span class="ui-lang-en">Show legacy note</span></summary><div class="review-note"><span><span class="ui-lang-zh">历史备注</span><span class="ui-lang-en">Legacy note</span></span>${escapeHtml(caseData.review_note)}</div></details>` : ""}
     </div>
     ${currentRunOutputMarkup(caseData, primary)}
-    ${heroMediaSection(caseData)}`;
+    ${retainedMedia ? '<div data-retained-detail-media></div>' : heroMediaSection(caseData)}`;
+  if (retainedMedia) $("#detailPane").querySelector("[data-retained-detail-media]")?.replaceWith(retainedMedia);
   $("#detailPane").querySelector("[data-predict-current-case]")?.addEventListener("click", () => {
     openBatchDraft([caseData.issue_id], "single");
   });
@@ -992,14 +995,16 @@ function prefetchCaseCore(issueId) {
   const id = String(issueId || "");
   const key = caseCorePath(id);
   if (!id || id === state.selectedId || state.caseDetailPrefetch.has(key)) return;
-  const entry = { createdAt: Date.now(), promise: null };
-  entry.promise = api(key, { cache: "no-store" }).catch(() => {
+  const entry = { createdAt: Date.now(), promise: null, controller: new AbortController() };
+  entry.promise = api(key, { cache: "no-store", signal: entry.controller.signal }).catch(() => {
     if (state.caseDetailPrefetch.get(key) === entry) state.caseDetailPrefetch.delete(key);
     return null;
   });
   state.caseDetailPrefetch.set(key, entry);
   while (state.caseDetailPrefetch.size > CASE_DETAIL_PREFETCH_LIMIT) {
-    state.caseDetailPrefetch.delete(state.caseDetailPrefetch.keys().next().value);
+    const oldest = state.caseDetailPrefetch.keys().next().value;
+    state.caseDetailPrefetch.get(oldest)?.controller?.abort();
+    state.caseDetailPrefetch.delete(oldest);
   }
 }
 
@@ -1008,10 +1013,15 @@ async function loadCaseCore(issueId) {
   const entry = state.caseDetailPrefetch.get(key);
   state.caseDetailPrefetch.delete(key);
   if (entry && Date.now() - entry.createdAt <= CASE_DETAIL_PREFETCH_TTL_MS) {
+    state.caseCoreController = entry.controller;
     const prefetched = await entry.promise;
+    if (entry.controller?.signal.aborted) throw new DOMException("Aborted", "AbortError");
     if (prefetched) return prefetched;
   }
-  return api(key, { cache: "no-store" });
+  entry?.controller?.abort();
+  const controller = new AbortController();
+  state.caseCoreController = controller;
+  return api(key, { cache: "no-store", signal: controller.signal });
 }
 
 function prefetchAdjacentCaseCores(issueId) {
@@ -1024,6 +1034,8 @@ function prefetchAdjacentCaseCores(issueId) {
 
 function cancelCaseHydration() {
   releaseBevVideoPlayer($("#detailHeroMedia"));
+  state.caseCoreController?.abort();
+  state.caseCoreController = null;
   state.caseMediaController?.abort();
   state.caseMediaController = null;
   state.trailMetadataController?.abort();
@@ -1045,6 +1057,25 @@ function scheduleTrailDetailMetadata(issueId, requestSeq) {
       applyTrailDetailMetadata(result, issueId, requestSeq);
     });
   }, TRAIL_DETAIL_DELAY_MS);
+}
+
+async function refreshReviewCorePreservingMedia() {
+  const previous = state.selectedCase;
+  if (!previous || previous.media_status !== "ready") {
+    return selectCase(state.selectedId, { updateRoute: false });
+  }
+  const context = capturePageContext();
+  const data = await api(caseCorePath(previous.issue_id), { cache: "no-store" });
+  if (!isPageContextCurrent(context) || state.selectedCase !== previous) return;
+  // Edits can begin while the read is in flight; never replace those fields.
+  if (state.reviewFormDirty || state.savingAnnotation || state.pendingReviewImages.length
+      || caseRationaleUploadTask(previous)) { state.deferredDetailRefresh = true; return; }
+  for (const field of ["assets", "camera", "media_status", "preview_thumbnail_url", "external_links", "trail_metadata_status"]) {
+    data[field] = previous[field];
+  }
+  state.selectedCase = data;
+  renderDetail(data, { preserveMedia: true });
+  renderReview(data);
 }
 
 async function selectCase(
@@ -1147,15 +1178,16 @@ async function loadDeferredCaseMedia(issueId, requestSeq) {
     (value) => ({ value, error: null }),
     (error) => ({ value: null, error })
   );
-  // Start both reads together, but apply video first. Camera discovery can be
-  // slow on a cold network volume and must not hold up the default video view.
+  // Start both reads together and paint each independently. A cold media
+  // volume must not block already available images or the default video view.
   const videoRequest = request("video");
   const imagesRequest = request("images");
   let hydrated = false;
   const isCurrent = () => (
     requestSeq === state.caseRequestSeq &&
     state.selectedId === issueId &&
-    Boolean(state.selectedCase)
+    !controller.signal.aborted && state.activePage === "review" &&
+    String(state.selectedCase?.issue_id || "") === issueId
   );
   const mergeMedia = (media) => {
     const currentAssets = state.selectedCase.assets || {};
@@ -1179,23 +1211,24 @@ async function loadDeferredCaseMedia(issueId, requestSeq) {
     }
   };
   try {
-    const videoResult = await videoRequest;
+    await Promise.all([
+      videoRequest.then(videoResult => {
+        if (!isCurrent() || !videoResult.value?.assets?.video?.url) return;
+        mergeMedia(videoResult.value);
+        state.selectedCase.media_status = "ready";
+        if (!state.detailMedia.userSelected) state.detailMedia.kind = "video";
+        hydrated = hydrateDetailMedia(state.selectedCase) || hydrated;
+      }),
+      imagesRequest.then(imagesResult => {
+        if (!isCurrent() || !imagesResult.value) return;
+        mergeMedia(imagesResult.value);
+        state.selectedCase.media_status = "ready";
+        hydrated = hydrated && state.detailMedia.kind === "video"
+          ? hydrateDetailMediaControls(state.selectedCase)
+          : hydrateDetailMedia(state.selectedCase) || hydrated;
+      }),
+    ]);
     if (!isCurrent()) return;
-    if (videoResult.value?.assets?.video?.url) {
-      mergeMedia(videoResult.value);
-      state.selectedCase.media_status = "ready";
-      hydrated = hydrateDetailMedia(state.selectedCase);
-    }
-
-    const imagesResult = await imagesRequest;
-    if (!isCurrent()) return;
-    if (imagesResult.value) {
-      mergeMedia(imagesResult.value);
-      state.selectedCase.media_status = "ready";
-      hydrated = hydrated && state.detailMedia.kind === "video"
-        ? hydrateDetailMediaControls(state.selectedCase)
-        : hydrateDetailMedia(state.selectedCase) || hydrated;
-    }
     if (!hydrated) {
       state.selectedCase.media_status = "unavailable";
       renderDetail(state.selectedCase);
