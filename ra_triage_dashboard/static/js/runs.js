@@ -198,7 +198,7 @@ function renderReviewCatalogFilters() {
   renderMultiFilter($("#reviewStatusFilter"), {
     options: [
       { value: "pending", label: uiText("待开始", "Pending") },
-      { value: "in_progress", label: uiText("复核中", "In progress") },
+      { value: "in_progress", label: uiText("待复核", "Needs review") },
       { value: "completed", label: uiText("已完成", "Completed") },
     ],
     selected: getMultiFilterValues($("#reviewStatusFilter")),

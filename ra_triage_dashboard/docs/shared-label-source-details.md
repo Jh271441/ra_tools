@@ -22,3 +22,34 @@ Use the existing dialog/chip components. Long tags wrap; source details stack
 on phones and the content scrolls while Close remains reachable. Validate Chinese
 and English, light/dark themes, desktop1440px and phone320/390px. Opening, closing
 and changing language must preserve the unsaved Review draft.
+
+The Review Issue-tag heading has a single fixed-label “标签汇总 / Label summary”
+button using the same compact action style as Review history. Status and source
+counts stay inside the dialog. Per-group draft counts remain visible; the global
+draft count node stays hidden for existing update bindings, so it cannot widen
+the heading as submissions accumulate. The heading reserves the right action
+column even with longer English text.
+
+Display provenance is returned separately as `label_source_contexts` on Issue
+detail responses. Exact combined submission/acknowledgement revision links show
+the task name and evaluation Run, including multiple tasks reusing one Issue
+vote. Never infer task attribution from assignment membership or the current URL.
+Raw IDs are available in collapsed Record details. Label/decision fingerprints,
+stored records and task progress are unchanged by reading this metadata.
+
+Model review retains its status selector. Current progress is Not started before
+submission; the submission choice defaults to Completed. Persisted Needs review
+and Completed choices are retained, including comment-free completion. Pending
+legacy records are shown as Needs review without rewriting them. M opens the
+shared status selector (1 Needs review / 2 Completed), Escape releases focus,
+and Shift+M opens evaluation Run history. Comments remain optional.
+
+Issue discussion uses D and label rationale uses E. Run review discussion uses
+Shift+D and model reason uses Shift+E; discussion channels remain independent.
+The Issue discussion reuses the existing image-comment endpoint. Label rationale
+uses the shared mention composer and validates the notification directory before
+writing. A newly appended label revision queues an Issue-discussion audit comment
+and DChat outbox entries in the same transaction. Acknowledgements, rejected
+stale writes and idempotency replays do not send duplicates. Notification failures
+roll back both combined halves; ordinary model-review notification behavior stays
+unchanged. No actual message is sent by the validation workflow.

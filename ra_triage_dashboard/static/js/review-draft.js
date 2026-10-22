@@ -9,6 +9,7 @@ const REVIEW_DRAFT_FIELDS = [
   "expected_output",
   "is_excluded",
   "case_is_excluded",
+  "case_rationale",
   "tags",
   "missing_evidence",
   "note",
@@ -274,6 +275,7 @@ function persistReviewDraft(caseData) {
     tags: [...form.querySelectorAll('input[name="reviewTags"]:checked')].map((input) => input.value),
     missing_evidence: [...form.querySelectorAll('input[name="missingEvidence"]:checked')].map((input) => input.value),
     note: $("#annotationNote")?.value || "",
+    case_rationale: $("#combinedCaseRationale")?.value || "",
     author: $("#annotationAuthor")?.value || "",
   };
   try {

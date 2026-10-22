@@ -36,6 +36,16 @@ assert.match(second,/结果依据/); assert.match(second,/已排除此 Issue/);
 assert.doesNotMatch(rendered,/<input|<button/);
 assert.match(sharedLabelRevisionTagsMarkup({tags:[]}),/此版本未填写/);
 assert.match(sharedLabelRevisionTagsMarkup({}),/未提供/);
+const summary=sharedLabelStateButtonMarkup({issue_id:'cn1',label_state:{state:'resolved',sources:Array(100).fill({})}}, {showEmpty:true,summaryOnly:true});
+assert.match(summary,/标签汇总/); assert.doesNotMatch(summary,/来源 100|GT 待复核|历史/);
+assert.match(summary,/aria-haspopup="dialog"/);
+const linked=sharedLabelStateSourceMarkup({...source,label_case_id:'label-hash-123'},'cn1',{
+ combined_reviews:[{task_id:'campaign-rawhash',task_name:'10/16 联合复核',run_id:'run-rawhash',run_name:'10/16 完整版',revision_id:4,submission_id:'submission-rawhash'}]
+});
+const visible=linked.split('<details')[0];
+assert.match(visible,/联合复核标签/);assert.match(visible,/10\/16 联合复核/);assert.match(visible,/10\/16 完整版/);
+assert.doesNotMatch(visible,/label-hash|campaign-rawhash|run-rawhash|自由修正|Standalone correction/);
+assert.match(linked,/<details/);assert.match(linked,/submission-rawhash/);
 language='en';
 const english=sharedLabelRevisionMarkup({id:9,tags:[],author:'bob'},{});
 assert.match(english,/No Issue tags recorded/); assert.match(english,/No rationale recorded/);

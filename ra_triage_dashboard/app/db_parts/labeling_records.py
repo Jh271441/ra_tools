@@ -11,6 +11,7 @@ from .shared import (
     utc_now,
 )
 from .labeling_shared import _clean_values
+from .labeling_mentions import append_label_mention_event
 
 
 class LabelingRecordsMixin:
@@ -300,6 +301,7 @@ class LabelingRecordsMixin:
         source_run_id: str = "",
         expected_previous_revision_id: int | None = None,
         attachments: Sequence[dict[str, Any]] = (),
+        mention_recipients: Sequence[str] = (),
     ) -> dict[str, Any]:
         label = str(expected_output or "").strip()
         if label and label not in LABELS:
@@ -407,7 +409,10 @@ class LabelingRecordsMixin:
                 )
             self._mark_labeling_change(conn)
             row = conn.execute("SELECT * FROM label_revisions WHERE id = ?", (revision_id,)).fetchone()
+            notification = append_label_mention_event(self, conn, revision=self._label_revision_dict(row),
+                issue_id=issue_id, baseline_scope=label_case["baseline_scope"], recipients=mention_recipients)
         result = self._label_revision_dict(row)
+        result["notification"] = notification
         result["label_case"] = self.get_label_case(label_case["id"])
         return result
 

@@ -70,6 +70,32 @@ class CombinedReviewWorkflowTest(unittest.TestCase):
             idempotency_key=key, is_excluded=excluded,
         )
 
+    def test_source_contexts_follow_exact_submissions_without_changing_label_state(self) -> None:
+        campaign_a = self.campaign(0)
+        campaign_b = self.campaign(1)
+        context = self.db.combined_review_context(issue_id="cn1", campaign_id=campaign_a["id"], reviewer="alice")
+        first = self.submit(campaign_a, context)
+        context = self.db.combined_review_context(issue_id="cn1", campaign_id=campaign_b["id"], reviewer="alice")
+        self.submit(campaign_b, context, key="other-task")
+        context = self.db.combined_review_context(issue_id="cn1", campaign_id=campaign_a["id"], reviewer="alice")
+        self.submit(campaign_a, context, key="repeat-task")
+        before = self.db.project_issue_label_states("scope", ["cn1"])["cn1"]
+        detail = self.db.get_case("cn1")
+        self.assertEqual(detail["label_state"], before)
+        source = detail["label_state"]["sources"][0]
+        self.assertEqual(source["task_id"], "")  # Shared Issue vote remains independent.
+        provenance = detail["label_source_contexts"][source["label_case_id"]]["combined_reviews"]
+        self.assertEqual({item["task_id"] for item in provenance}, {campaign_a["id"], campaign_b["id"]})
+        self.assertEqual(len(provenance), 2)  # Repeated submissions do not duplicate a task.
+        self.assertTrue(all(item["task_name"] and item["run_name"] for item in provenance))
+        self.assertEqual({item["revision_id"] for item in provenance}, {first["case_revision"]["id"]})
+        # A later independent label edit must not inherit earlier tasks by membership.
+        self.db.create_label_revision(issue_id="cn1", is_excluded=False, expected_output="误触发",
+            tags=[], evidence_gaps=[], rationale="independent edit", author="alice", author_source="test",
+            author_verified=True, expected_previous_revision_id=first["case_revision"]["id"])
+        detail = self.db.get_case("cn1")
+        self.assertEqual(detail["label_source_contexts"][source["label_case_id"]]["combined_reviews"], [])
+
     def test_existing_campaign_defaults_to_model_review_only_and_combined_allows_writers(self) -> None:
         ordinary = self.campaign(0, workflow="model_review_only")
         self.assertEqual(ordinary["workflow_mode"], "model_review_only")
@@ -205,3 +231,76 @@ class CombinedReviewWorkflowTest(unittest.TestCase):
         self.assertFalse(save(False)["case_revision"]["is_excluded"])
         with self.db.connect() as conn:
             self.assertEqual(conn.execute("SELECT count(*) n FROM model_review_revisions").fetchone()["n"], 0)
+
+
+    def test_explicit_rationale_edits_append_and_queue_mentions_once(self) -> None:
+        campaign = self.campaign(0)
+        initial = self.db.combined_review_context(issue_id="cn1", campaign_id=campaign["id"], reviewer="alice")
+        def submit(context, key, reason):
+            return self.db.submit_combined_review(
+                issue_id="cn1", campaign_id=campaign["id"], model_run_id=self.runs[0]["id"],
+                reviewer="alice", reviewer_source="test", reviewer_verified=True,
+                model_review_status="completed", reason="model reason", missing_evidence=[],
+                expected_output="误触发", tags=[], rationale=reason,
+                expected_model_review_storage_id=context["model_review_storage_id"],
+                expected_case_revision_id=context["case_revision_id"],
+                expected_label_state_fingerprint=context["label_state_fingerprint"],
+                idempotency_key=key, update_case_details=True, mention_recipients=["bob"],
+            )
+        first = submit(initial, "mention-1", "Issue reason @bob")
+        self.assertEqual(first["notification"]["queued"], ["bob"])
+        self.assertTrue(submit(initial, "mention-1", "Issue reason @bob")["duplicate"])
+        context = self.db.combined_review_context(issue_id="cn1", campaign_id=campaign["id"], reviewer="alice")
+        same = submit(context, "mention-2", "Issue reason @bob")
+        self.assertEqual(same["case_action"], "acknowledged")
+        context = self.db.combined_review_context(issue_id="cn1", campaign_id=campaign["id"], reviewer="alice")
+        changed = submit(context, "mention-3", "Edited Issue reason @bob")
+        self.assertEqual(changed["case_action"], "submitted")
+        self.assertEqual(changed["case_revision"]["rationale"], "Edited Issue reason @bob")
+        with self.db.connect() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) n FROM comment_notifications").fetchone()["n"], 2)
+            self.assertEqual(conn.execute("SELECT COUNT(*) n FROM combined_review_progress").fetchone()["n"], 1)
+            comments = conn.execute("SELECT discussion_channel, evaluation_run_id FROM review_comments").fetchall()
+            self.assertTrue(all(row["discussion_channel"] == "case" and not row["evaluation_run_id"] for row in comments))
+
+    def test_label_mention_failure_rolls_back_both_combined_halves(self) -> None:
+        from unittest.mock import patch
+        campaign = self.campaign(0)
+        context = self.db.combined_review_context(issue_id="cn1", campaign_id=campaign["id"], reviewer="alice")
+        with patch("ra_triage_dashboard.app.db_parts.combined_reviews.append_label_mention_event", side_effect=RuntimeError("outbox failure")):
+            with self.assertRaises(RuntimeError):
+                self.submit(campaign, context)
+        with self.db.connect() as conn:
+            for table in ("label_revisions", "model_review_revisions", "combined_review_progress", "comment_notifications"):
+                self.assertEqual(conn.execute("SELECT COUNT(*) n FROM " + table).fetchone()["n"], 0)
+
+    def test_case_only_mentions_keep_original_revision_and_do_not_resend_ack(self) -> None:
+        def save(text, recipients=()):
+            context = self.db.combined_review_context(issue_id="cn1", campaign_id="", reviewer="alice")
+            return self.db.submit_review_case_label(
+                issue_id="cn1", reviewer="alice", reviewer_source="test", reviewer_verified=True,
+                expected_output="误触发", tags=[], rationale=text,
+                expected_case_revision_id=context["case_revision_id"],
+                expected_label_state_fingerprint=context["label_state_fingerprint"],
+                update_case_details=True, mention_recipients=recipients,
+            )
+        first = save("Original saved reason")
+        changed = save("Updated reason @bob", ["bob"])
+        self.assertNotEqual(first["case_revision"]["id"], changed["case_revision"]["id"])
+        self.assertEqual(save("Updated reason @bob", ["bob"])["case_action"], "acknowledged")
+        with self.db.connect() as conn:
+            self.assertEqual(conn.execute("SELECT rationale FROM label_revisions WHERE id=?", (first["case_revision"]["id"],)).fetchone()["rationale"], "Original saved reason")
+            self.assertEqual(conn.execute("SELECT COUNT(*) n FROM comment_notifications").fetchone()["n"], 1)
+
+
+    def test_labeling_revision_mentions_and_stale_retry_share_one_outbox_record(self) -> None:
+        kwargs = dict(issue_id="cn1", expected_output="误触发", tags=[], evidence_gaps=[],
+                      rationale="Label rationale @bob", is_excluded=False, author="alice",
+                      author_source="test", author_verified=True, expected_previous_revision_id=None,
+                      mention_recipients=["bob"])
+        revision = self.db.create_label_revision(**kwargs)
+        self.assertEqual(revision["notification"]["queued"], ["bob"])
+        with self.assertRaises(LabelAnnotationConflictError):
+            self.db.create_label_revision(**kwargs)
+        with self.db.connect() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) n FROM comment_notifications").fetchone()["n"], 1)

@@ -441,6 +441,9 @@ function enhanceNativeUiSelect(select, { maxWidth = 520 } = {}) {
     select.setAttribute("aria-hidden", "true");
     select.tabIndex = -1;
   }
+  if (select.id === "modelReviewStatusInput") {
+    select.title = uiText("M 打开；1 待复核 / 2 已完成；Enter 保存", "M opens; 1 Needs review / 2 Completed; Enter saves");
+  }
   const translated = {
     workSplitWorkflowMode: {
       model_review_only: ["仅判错复核", "Model review only"],
@@ -455,7 +458,7 @@ function enhanceNativeUiSelect(select, { maxWidth = 520 } = {}) {
       legacy_model_review: ["历史判错复核", "Historical reviews"],
     },
     modelReviewStatusInput: {
-      pending: ["待开始", "Pending"], in_progress: ["复核中", "In progress"], completed: ["已完成", "Completed"],
+      pending: ["待开始", "Not started"], in_progress: ["待复核", "Needs review"], completed: ["已完成", "Completed"],
     },
     runCollectionReferenceType: {
       gt: ["GT 版本（创建时冻结）", "GT snapshot (frozen on create)"],
@@ -492,13 +495,13 @@ function enhanceNativeUiSelect(select, { maxWidth = 520 } = {}) {
     }
     if (select.id === "modelReviewStatusInput") {
       root.classList.add("model-review-status-picker");
-      trigger.setAttribute("aria-keyshortcuts", "Shift+R");
+      trigger.setAttribute("aria-keyshortcuts", "M");
       if (!trigger.querySelector(".model-review-status-shortcut")) {
         trigger.querySelector(".ui-select-caret")?.insertAdjacentHTML("beforebegin",
-          '<kbd class="review-control-shortcut model-review-status-shortcut" aria-hidden="true">⇧ R</kbd>');
+          '<kbd class="review-control-shortcut model-review-status-shortcut" aria-hidden="true">M</kbd>');
       }
       root.querySelectorAll("[data-ui-select-value]").forEach((option) => {
-        const shortcut = { pending: "1", in_progress: "2", completed: "3" }[option.dataset.uiSelectValue];
+        const shortcut = { in_progress: "1", completed: "2" }[option.dataset.uiSelectValue];
         if (shortcut) option.insertAdjacentHTML("beforeend",
           `<kbd class="review-control-shortcut model-review-status-option-shortcut" aria-hidden="true">${shortcut}</kbd>`);
       });

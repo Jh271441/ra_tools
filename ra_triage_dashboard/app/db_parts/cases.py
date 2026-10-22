@@ -970,6 +970,7 @@ class DatabaseCasesMixin:
                 "sources": [],
             },
         )
+        data["label_source_contexts"] = self.label_source_contexts(issue_id, data["label_state"])
         data["gt_snapshot"] = self.get_active_gt_snapshot(
             str(data.get("baseline_scope") or "")
         )

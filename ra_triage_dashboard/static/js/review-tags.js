@@ -576,12 +576,12 @@ function handleModelReviewStatusShortcut(event, target) {
   const trigger = root?.querySelector(".ui-select-trigger");
   const panel = root?.querySelector(".ui-select-panel");
   if (!trigger || trigger.disabled || !panel || reviewShortcutHasEditableTarget(target)) return false;
-  if (event.shiftKey && String(event.key).toLowerCase() === "r") {
+  if (!event.shiftKey && String(event.key).toLowerCase() === "m") {
     closeAllReviewDropdowns();
     if (panel.hidden) trigger.click();
     trigger.focus({ preventScroll: true });
-  } else if (!event.shiftKey && !panel.hidden && ["1", "2", "3"].includes(event.key)) {
-    const value = ["pending", "in_progress", "completed"][Number(event.key) - 1];
+  } else if (!event.shiftKey && !panel.hidden && ["1", "2"].includes(event.key)) {
+    const value = ["in_progress", "completed"][Number(event.key) - 1];
     const option = panel.querySelector(`[data-ui-select-value="${value}"]`);
     if (!option || option.disabled || option.getAttribute("aria-disabled") === "true") return false;
     option.click();
@@ -997,7 +997,7 @@ function positionReviewDropdownPanel(dropdown) {
 
   const summaryRect = summary.getBoundingClientRect();
   const viewport = anchoredViewportBounds();
-  const width = Math.min(Math.max(summaryRect.width, 180), viewport.width - 16);
+  const width = Math.min(Math.max(summaryRect.width, 340), viewport.width - 16);
   panel.style.width = `${Math.round(width)}px`;
   // Temporarily place at origin with full width for accurate scrollHeight.
   panel.style.left = "0px";
@@ -1010,15 +1010,14 @@ function positionReviewDropdownPanel(dropdown) {
   const naturalH = panel.scrollHeight || panel.getBoundingClientRect().height || 200;
   const gap = 4;
   const margin = 8;
-  const vh = viewport.height;
   const spaceBelow = viewport.bottom - summaryRect.bottom - gap - margin;
   const spaceAbove = summaryRect.top - viewport.top - gap - margin;
-  const desiredHeight = Math.min(naturalH, Math.floor(vh * 0.55), 420);
+  const desiredHeight = naturalH;
   const openUp =
     spaceBelow < desiredHeight && spaceAbove > spaceBelow;
 
-  const available = Math.max(120, Math.floor(openUp ? spaceAbove : spaceBelow));
-  const maxH = Math.min(available, Math.floor(vh * 0.55), 420);
+  const available = Math.max(1, Math.floor(openUp ? spaceAbove : spaceBelow));
+  const maxH = Math.min(available, Math.max(1, viewport.height - margin * 2));
   panel.style.maxHeight = `${maxH}px`;
 
   const height = Math.min(panel.scrollHeight || naturalH, maxH);
@@ -1038,6 +1037,7 @@ function positionReviewDropdownPanel(dropdown) {
   panel.style.visibility = "";
   panel.style.opacity = "";
   panel.style.pointerEvents = "";
+  panel.querySelector?.("input:checked")?.closest?.(".review-tag-option-row, .tag-option")?.scrollIntoView?.({ block: "nearest" });
 }
 
 function closeAllReviewDropdowns(except = null) {
@@ -1057,6 +1057,9 @@ function bindReviewDropdownToggles(root) {
     if (dropdown.dataset.reviewDropdownToggleBound === "1") return;
     dropdown.dataset.reviewDropdownToggleBound = "1";
     const summary = dropdown.querySelector(":scope > summary");
+    dropdown.addEventListener("change", (event) => {
+      if (event.target?.checked) event.target.closest?.(".review-tag-option-row, .tag-option")?.scrollIntoView?.({ block: "nearest" });
+    });
     // ＋ keeps its own click target; stop the surrounding summary from toggling.
     summary?.addEventListener(
       "click",

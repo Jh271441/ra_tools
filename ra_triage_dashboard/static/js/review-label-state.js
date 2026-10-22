@@ -56,11 +56,14 @@ function sharedLabelStateRelationText(value) {
   })[String(value || "unknown")] || uiText("GT 关系未知", "GT relation unknown");
 }
 
-function sharedLabelStateButtonMarkup(item, { showEmpty = false, compact = false } = {}) {
+function sharedLabelStateButtonMarkup(item, { showEmpty = false, compact = false, summaryOnly = false } = {}) {
   const labelState = item?.label_state || {};
   const visual = sharedLabelStateVisual(labelState);
   if (visual.kind === "none" && !showEmpty) return "";
   const issueId = escapeHtml(item?.issue_id || "");
+  if (summaryOnly) {
+    return `<button class="history-inline-button label-summary-inline-button" type="button" data-open-shared-label-state data-issue-id="${issueId}" aria-haspopup="dialog" aria-label="${escapeHtml(uiText("标签汇总", "Label summary"))}" title="${escapeHtml(uiText("查看大家的 Issue 标签及说明", "View everyone’s Issue tags and rationale"))}"><span class="ui-lang-zh">标签汇总</span><span class="ui-lang-en">Labels</span></button>`;
+  }
   const sourceCount = Array.isArray(labelState.sources) ? labelState.sources.length : 0;
   const sourceCountMarkup = sourceCount && !compact
     ? `<small class="shared-label-state-source-count"><span class="ui-lang-zh">来源 ${sourceCount}</span><span class="ui-lang-en">${sourceCount} source${sourceCount === 1 ? "" : "s"}</span></small>`
@@ -121,9 +124,28 @@ function sharedLabelRevisionMarkup(revision, source) {
   </li>`;
 }
 
-function sharedLabelStateSourceMarkup(source, issueId) {
+function sharedLabelSourceContextMarkup(context, issueId) {
+  const taskName = String(context.task_name || (context.task_id ? uiText("关联任务（名称未记录）", "Linked task (name unavailable)") : uiText("任务外提交", "Outside a task")));
+  const runName = String(context.run_name || context.source_run_name || uiText("名称未记录", "Name unavailable"));
+  const historical = context.task_lifecycle && context.task_lifecycle !== "active";
+  const title = context.task_lifecycle === "superseded" ? uiText("已替代", "Superseded") : uiText("历史任务", "Historical task");
+  return `<div class="shared-label-context"><dl class="shared-label-source-facts">
+    <div><dt>${uiText("任务", "Task")}</dt><dd>${escapeHtml(taskName)}${historical ? ` · ${escapeHtml(title)}` : ""}</dd></div>
+    <div><dt>${uiText("评测 Run", "Evaluation Run")}</dt><dd>${escapeHtml(runName)}</dd></div>
+  </dl></div>`;
+}
+
+function sharedLabelStateSourceMarkup(source, issueId, context = {}) {
   const taskId = String(source?.task_id || "");
   const sourceRunId = String(source?.source_run_id || "");
+  const combined = Array.isArray(context.combined_reviews) ? context.combined_reviews : [];
+  const sourceTitle = combined.length ? uiText("联合复核标签", "Combined review label")
+    : taskId ? uiText("任务标注", "Task label")
+    : source?.source_type === "legacy_model_review" ? uiText("历史复核标签", "Historical review label")
+    : uiText("Issue 标注", "Issue label");
+  const contextsMarkup = combined.length
+    ? combined.map((item) => sharedLabelSourceContextMarkup(item, issueId)).join("")
+    : taskId || sourceRunId ? sharedLabelSourceContextMarkup({ task_id: taskId, source_run_id: sourceRunId, ...context }, issueId) : "";
   const revisionSummaries = Array.isArray(source?.revision_summaries)
     ? source.revision_summaries
     : [];
@@ -152,20 +174,25 @@ function sharedLabelStateSourceMarkup(source, issueId) {
       exclusion: "all",
       page: 1,
     });
-    editLink = `<a class="button button-quiet shared-label-edit-link" data-labeling-edit-link href="${escapeHtml(href)}"><span class="ui-lang-zh">打开对应 Task / Issue</span><span class="ui-lang-en">Open this Task / Issue</span></a>`;
+    editLink = `<a class="button button-quiet shared-label-edit-link" data-labeling-edit-link href="${escapeHtml(href)}"><span class="ui-lang-zh">打开 Issue 标注</span><span class="ui-lang-en">Open Issue labeling</span></a>`;
   }
   return `<article class="shared-label-source">
     <div class="shared-label-source-heading">
-      <strong><span class="ui-lang-zh">${taskId ? "任务" : "自由修正"}</span><span class="ui-lang-en">${taskId ? "Task" : "Standalone correction"}</span></strong>
+      <strong>${escapeHtml(sourceTitle)}</strong>
       <span class="shared-label-source-state">${escapeHtml(sharedLabelStateStateText(source?.state))} · ${escapeHtml(sharedLabelStateMethodText(source?.method))}</span>
     </div>
     <dl class="shared-label-source-facts">
-      <div><dt>Label Case</dt><dd><code>${escapeHtml(String(source?.label_case_id || "—"))}</code></dd></div>
-      <div><dt><span class="ui-lang-zh">Task</span><span class="ui-lang-en">Task</span></dt><dd><code>${escapeHtml(taskId || "—")}</code></dd></div>
-      <div><dt><span class="ui-lang-zh">来源 Run</span><span class="ui-lang-en">Source Run</span></dt><dd><code>${escapeHtml(sourceRunId || "—")}</code></dd></div>
+      <div><dt>${uiText("提交来源", "Submission source")}</dt><dd>${escapeHtml(combined.length ? uiText("问题标签与模型复核一起提交", "Issue label submitted with model review") : taskId ? uiText("问题标注任务", "Issue labeling task") : uiText("Issue 级标注，独立保存", "Issue-level label, saved independently"))}</dd></div>
       <div><dt><span class="ui-lang-zh">结果</span><span class="ui-lang-en">Result</span></dt><dd>${escapeHtml(String(source?.expected_output || "—"))}</dd></div>
       ${source?.source_type === "legacy_model_review" ? `<div><dt><span class="ui-lang-zh">来源</span><span class="ui-lang-en">Source</span></dt><dd>${escapeHtml(String(source?.import_batch_name || "历史判错复核"))}</dd></div><div><dt><span class="ui-lang-zh">冻结 GT</span><span class="ui-lang-en">Frozen GT</span></dt><dd>${escapeHtml(String(source?.frozen_gt_label || "—"))}</dd></div>` : ""}
     </dl>
+    ${contextsMarkup}
+    <details class="shared-label-source-audit"><summary>${uiText("记录详情", "Record details")}</summary><dl class="shared-label-source-facts">
+      <div><dt>${uiText("标签记录 ID", "Label record ID")}</dt><dd><code>${escapeHtml(String(source?.label_case_id || "—"))}</code></dd></div>
+      <div><dt>${uiText("标注任务 ID", "Labeling task ID")}</dt><dd><code>${escapeHtml(taskId || "—")}</code></dd></div>
+      <div><dt>${uiText("选样 Run ID", "Selection Run ID")}</dt><dd><code>${escapeHtml(sourceRunId || "—")}</code></dd></div>
+      ${combined.map((item) => `<div><dt>${uiText("联合提交", "Combined submission")} · #${escapeHtml(String(item.revision_id))}</dt><dd><code>${escapeHtml(item.submission_id)}</code><br>${escapeHtml(item.task_id || uiText("任务外", "Outside task"))}<br>${escapeHtml(item.run_id)}</dd></div>`).join("")}
+    </dl></details>
     <div class="shared-label-source-revisions"><strong><span class="ui-lang-zh">来源版本</span><span class="ui-lang-en">Source revisions</span></strong>${revisionsMarkup}</div>
     ${legacySourceMarkup}
     ${adjudicationMarkup}
@@ -184,7 +211,11 @@ function openSharedLabelStateDialog(item) {
   const gtLabel = String(item.gt_label || "");
   const expectedOutput = String(labelState.expected_output || "");
   const sourceItems = Array.isArray(labelState.sources) ? labelState.sources : [];
-  const taskIds = Array.isArray(labelState.source_task_ids) ? labelState.source_task_ids : [];
+  const sourceContexts = item.label_source_contexts || {};
+  const taskIds = [...new Set([
+    ...(Array.isArray(labelState.source_task_ids) ? labelState.source_task_ids : []),
+    ...Object.values(sourceContexts).flatMap((context) => (context.combined_reviews || []).map((review) => review.task_id)).filter(Boolean),
+  ])];
   const revisionIds = Array.isArray(labelState.source_revision_ids) ? labelState.source_revision_ids : [];
   meta.innerHTML = `<div class="shared-label-dialog-summary shared-label-state-${visual.kind}">
     <span class="shared-label-dialog-status"><span class="ui-lang-zh">${escapeHtml(visual.zh)}</span><span class="ui-lang-en">${escapeHtml(visual.en)}</span></span>
@@ -197,7 +228,7 @@ function openSharedLabelStateDialog(item) {
     <small><span class="ui-lang-zh">任务 ${taskIds.length} · 版本 ${revisionIds.length}</span><span class="ui-lang-en">${taskIds.length} task(s) · ${revisionIds.length} revision(s)</span></small>
   </div>`;
   body.innerHTML = sourceItems.length
-    ? sourceItems.map((source) => sharedLabelStateSourceMarkup(source, issueId)).join("")
+    ? sourceItems.map((source) => sharedLabelStateSourceMarkup(source, issueId, sourceContexts[source.label_case_id] || {})).join("")
     : `<div class="shared-label-empty"><span class="ui-lang-zh">当前范围没有共享标签来源记录。</span><span class="ui-lang-en">No shared label sources exist for this Issue in the current baseline.</span></div>`;
   if (!dialog.dataset.sharedLabelBound) {
     dialog.dataset.sharedLabelBound = "true";
@@ -211,6 +242,22 @@ function openSharedLabelStateDialog(item) {
     });
   }
   if (!dialog.open) dialog.showModal();
+  const sourceSequence = String(Number(dialog.dataset.sourceSequence || 0) + 1);
+  dialog.dataset.sourceSequence = sourceSequence;
+  if (!Object.prototype.hasOwnProperty.call(item, "label_source_contexts") && typeof api === "function") {
+    const pageContext = capturePageContext();
+    const loading = document.createElement("p");
+    loading.className = "shared-label-source-empty";
+    loading.textContent = uiText("正在加载任务来源…", "Loading task sources…");
+    body.prepend(loading);
+    api(`/api/cases/${encodeURIComponent(issueId)}?include_media=false`).then((detail) => {
+      if (!dialog.open || dialog.dataset.sourceSequence !== sourceSequence || !isPageContextCurrent(pageContext)) return;
+      openSharedLabelStateDialog({ ...item, label_source_contexts: detail.label_source_contexts || {} });
+    }).catch(() => {
+      if (!dialog.open || dialog.dataset.sourceSequence !== sourceSequence || !isPageContextCurrent(pageContext)) return;
+      loading.textContent = uiText("任务来源暂时无法加载，请关闭后重试。", "Task sources are unavailable. Close and reopen to retry.");
+    });
+  }
 }
 
 function bindSharedLabelStateTriggers(root, getItem) {
@@ -235,7 +282,7 @@ function currentRunReviewStatusMarkup(item, { compact = false } = {}) {
     : String(annotation?.review_status || "pending");
   const labels = {
     unsubmitted: { zh: "未提交", en: "Not submitted" },
-    pending: { zh: "待补充", en: "Needs more detail" },
+    pending: { zh: "待复核", en: "Needs review" },
     reviewed: { zh: "已提交", en: "Submitted" },
     needs_gt_review: { zh: "已提交", en: "Submitted" },
   };

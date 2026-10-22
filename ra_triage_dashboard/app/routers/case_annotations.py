@@ -9,6 +9,7 @@ from fastapi import APIRouter, File, Form, Request, UploadFile
 from ..auth import request_identity
 from ..db import AnnotationConflictError, LabelAnnotationConflictError
 from ..runtime import database, logger, review_notification_dispatcher, settings
+from ..support.label_mentions import prepare_label_mentions
 from ..support.annotations import _create_annotation_record, _create_model_review_record
 from ..support.attachments import (
     _public_review_attachment,
@@ -78,6 +79,7 @@ async def submit_combined_review(issue_id: str, request: Request) -> dict[str, A
         output = resolve_expected_output(body.get("expected_output"), tags, tag_catalog)
     except ValueError as exc:
         raise _detail(400, str(exc)) from exc
+    recipients = await prepare_label_mentions(database, settings, _as_text(body.get("rationale")), actor, verified)
     key = _as_text(request.headers.get("idempotency-key") or body.get("idempotency_key"))
     try:
         result = await asyncio.to_thread(
@@ -94,6 +96,8 @@ async def submit_combined_review(issue_id: str, request: Request) -> dict[str, A
             expected_output=output,
             tags=tags,
             rationale=_as_text(body.get("rationale")),
+            mention_recipients=recipients,
+            update_case_details=body.get("update_case_details") is True,
             is_excluded=_normalise_review_excluded(body["is_excluded"]) if "is_excluded" in body else None,
             expected_model_review_storage_id=_optional_int(body.get("expected_model_review_storage_id"), "expected_model_review_storage_id"),
             expected_case_revision_id=_optional_int(body.get("expected_case_revision_id"), "expected_case_revision_id"),
@@ -106,6 +110,8 @@ async def submit_combined_review(issue_id: str, request: Request) -> dict[str, A
         raise _detail(403, str(exc)) from exc
     except ValueError as exc:
         raise _detail(400, str(exc)) from exc
+    if result.get("notification", {}).get("status") == "queued":
+        review_notification_dispatcher.wake()
     return {"combined_review": result, "change_revision": await asyncio.to_thread(database.change_revision)}
 
 
@@ -130,6 +136,7 @@ async def submit_case_label_from_review(issue_id: str, request: Request) -> dict
     try:
         tag_catalog = await asyncio.to_thread(_review_tag_catalog)
         output = resolve_expected_output(body.get("expected_output"), tags, tag_catalog)
+        recipients = await prepare_label_mentions(database, settings, _as_text(body.get("rationale")), actor, verified)
         result = await asyncio.to_thread(
             database.submit_review_case_label,
             issue_id=issue_id,
@@ -139,6 +146,8 @@ async def submit_case_label_from_review(issue_id: str, request: Request) -> dict
             expected_output=output,
             tags=tags,
             rationale=_as_text(body.get("rationale")),
+            mention_recipients=recipients,
+            update_case_details=body.get("update_case_details") is True,
             is_excluded=_normalise_review_excluded(body["is_excluded"]) if "is_excluded" in body else None,
             expected_case_revision_id=_optional_int(body.get("expected_case_revision_id"), "expected_case_revision_id"),
             expected_label_state_fingerprint=_as_text(body.get("expected_label_state_fingerprint")),
@@ -149,6 +158,8 @@ async def submit_case_label_from_review(issue_id: str, request: Request) -> dict
         raise _detail(403, str(exc)) from exc
     except ValueError as exc:
         raise _detail(400, str(exc)) from exc
+    if result.get("notification", {}).get("status") == "queued":
+        review_notification_dispatcher.wake()
     return {"case_label": result, "change_revision": await asyncio.to_thread(database.change_revision)}
 
 

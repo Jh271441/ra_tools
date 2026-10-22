@@ -7,6 +7,7 @@ import json
 from typing import Any, Sequence
 from uuid import uuid4
 
+from .labeling_mentions import append_label_mention_event
 from .model_reviews import MODEL_REVIEW_PUBLIC_ID_OFFSET, MODEL_REVIEW_WRITE_STATUSES, model_review_label_fingerprint
 from .shared import LABELS, AnnotationConflictError, LabelAnnotationConflictError, _json, _json_load, utc_now
 
@@ -27,6 +28,8 @@ class DatabaseCombinedReviewMixin:
         rationale: str, expected_case_revision_id: int | None,
         expected_label_state_fingerprint: str,
         is_excluded: bool | None = None,
+        mention_recipients: Sequence[str] = (),
+        update_case_details: bool = False,
     ) -> dict[str, Any]:
         issue_key = str(issue_id or "").strip()
         actor = str(reviewer or "").strip().lower()
@@ -71,7 +74,9 @@ class DatabaseCombinedReviewMixin:
                 raise LabelAnnotationConflictError("共享 Case 标签结论已变化，请刷新后重新确认。")
             excluded = bool(head["is_excluded"]) if is_excluded is None and head is not None else bool(is_excluded)
             if (head is not None and str(head["expected_output"] or "") == output
-                    and bool(head["is_excluded"]) == excluded):
+                    and bool(head["is_excluded"]) == excluded
+                    and (not update_case_details or (sorted(_json_load(head["tags_json"], [])) == clean_tags
+                         and str(head["rationale"] or "").strip() == str(rationale or "").strip()))):
                 return {
                     "case_action": "acknowledged", "case_revision": self._label_revision_dict(head),
                     "label_state": label_state,
@@ -110,10 +115,13 @@ class DatabaseCombinedReviewMixin:
             )
             revision_id = int(cursor.fetchone()["id"]) if self.backend == "postgresql" else int(cursor.lastrowid)
             row = conn.execute("SELECT * FROM label_revisions WHERE id=?", (revision_id,)).fetchone()
+            notification = append_label_mention_event(self, conn, revision=self._label_revision_dict(row),
+                issue_id=issue_key, baseline_scope=scope, recipients=mention_recipients)
             state = self.project_issue_label_states(scope, [issue_key], include_sources=True, connection=conn).get(issue_key, {})
             self._mark_labeling_change(conn)
             return {
                 "case_action": "submitted", "case_revision": self._label_revision_dict(row),
+                "notification": notification,
                 "label_state": state,
                 "label_state_fingerprint": model_review_label_fingerprint(state),
             }
@@ -260,6 +268,8 @@ class DatabaseCombinedReviewMixin:
         expected_label_state_fingerprint: str,
         idempotency_key: str,
         is_excluded: bool | None = None,
+        mention_recipients: Sequence[str] = (),
+        update_case_details: bool = False,
     ) -> dict[str, Any]:
         issue_key = str(issue_id or "").strip()
         campaign_key = str(campaign_id or "").strip()
@@ -287,6 +297,7 @@ class DatabaseCombinedReviewMixin:
             "missing_evidence": evidence, "expected_output": output,
             "tags": clean_tags, "rationale": str(rationale or ""),
             "expected_model_review_storage_id": expected_model_review_storage_id,
+            **({"update_case_details": True} if update_case_details else {}),
             "expected_case_revision_id": expected_case_revision_id,
             "expected_label_state_fingerprint": str(expected_label_state_fingerprint or ""),
         })
@@ -349,7 +360,9 @@ class DatabaseCombinedReviewMixin:
             excluded = bool(current_case.get("is_excluded")) if is_excluded is None else bool(is_excluded)
             if (int(context.get("case_revision_id") or 0)
                     and str(current_case.get("expected_output") or "") == output
-                    and bool(current_case.get("is_excluded")) == excluded):
+                    and bool(current_case.get("is_excluded")) == excluded
+                    and (not update_case_details or (sorted(current_case.get("tags") or []) == clean_tags
+                         and str(current_case.get("rationale") or "").strip() == str(rationale or "").strip()))):
                 case_action = "acknowledged"
                 label_revision_id = int(context["case_revision_id"])
                 label_case_id = str(context["label_case_id"])
@@ -479,6 +492,11 @@ class DatabaseCombinedReviewMixin:
                         label_revision_id, group_id, now, now, now,
                     ),
                 )
+            notification = {"mentions": [], "queued": [], "status": "none"}
+            if appended_label_revision_id:
+                row = conn.execute("SELECT * FROM label_revisions WHERE id=?", (appended_label_revision_id,)).fetchone()
+                notification = append_label_mention_event(self, conn, revision=self._label_revision_dict(row),
+                    issue_id=issue_key, baseline_scope=str(context["issue"]["baseline_scope"]), recipients=mention_recipients)
             self._mark_labeling_change(conn)
             context = self._combined_context_on_connection(
                 conn, issue_id=issue_key, campaign_id=campaign_key, reviewer=actor
@@ -488,5 +506,6 @@ class DatabaseCombinedReviewMixin:
                 "submission_group_id": group_id,
                 "case_action": case_action,
                 "duplicate": False,
+                "notification": notification,
                 **context,
             }

@@ -10,6 +10,74 @@ from .labeling_shared import ISSUE_LABEL_GT_RELATIONS, ISSUE_LABEL_STATES, _clea
 
 
 class LabelingProjectionMixin:
+    def label_source_contexts(self, issue_id: str, label_state: dict[str, Any]) -> dict[str, Any]:
+        """Read display provenance separately from label/decision fingerprints.
+
+        A combined review references shared Issue votes whose label_case.task_id
+        is intentionally empty. Only exact submitted/acknowledged revision links
+        establish task provenance; assignment membership alone never does.
+        """
+        sources = list(label_state.get("sources") or [])
+        case_ids = {str(source.get("label_case_id") or "") for source in sources}
+        revision_ids = {
+            int(revision["id"]) for source in sources
+            for revision in source.get("revision_summaries") or []
+        }
+        if not case_ids:
+            return {}
+        contexts: dict[str, Any] = {}
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT c.id, c.task_id, c.source_run_id,
+                       task.campaign_name AS task_name, task.lifecycle AS task_lifecycle,
+                       run.name AS source_run_name
+                FROM label_cases c
+                LEFT JOIN issue_work_splits task ON task.id = c.task_id
+                LEFT JOIN model_runs run ON run.id = c.source_run_id
+                WHERE c.issue_id = ?
+                """, (str(issue_id),),
+            ).fetchall()
+            for row in rows:
+                case_id = str(row["id"])
+                if case_id in case_ids:
+                    contexts[case_id] = {key: str(row[key] or "") for key in (
+                        "task_id", "task_name", "task_lifecycle", "source_run_id", "source_run_name"
+                    )}
+                    contexts[case_id]["combined_reviews"] = []
+            rows = conn.execute(
+                """
+                SELECT s.id, s.label_case_id,
+                       COALESCE(s.label_revision_id, s.acknowledged_label_revision_id) AS revision_id,
+                       s.campaign_id AS task_id, task.campaign_name AS task_name,
+                       task.lifecycle AS task_lifecycle, s.model_run_id AS run_id,
+                       run.name AS run_name, s.reviewer, s.created_at, s.case_action
+                FROM combined_review_submissions s
+                JOIN label_revisions revision
+                  ON revision.id = COALESCE(s.label_revision_id, s.acknowledged_label_revision_id)
+                 AND revision.label_case_id = s.label_case_id
+                JOIN label_cases c ON c.id = s.label_case_id AND c.issue_id = s.issue_id
+                LEFT JOIN issue_work_splits task ON task.id = s.campaign_id
+                LEFT JOIN model_runs run ON run.id = s.model_run_id
+                WHERE s.issue_id = ? ORDER BY s.created_at DESC, s.id
+                """, (str(issue_id),),
+            ).fetchall()
+            seen: set[tuple[Any, ...]] = set()
+            for row in rows:
+                case_id, revision_id = str(row["label_case_id"]), int(row["revision_id"])
+                key = (case_id, revision_id, str(row["task_id"] or ""), str(row["run_id"]))
+                if case_id not in contexts or revision_id not in revision_ids or key in seen:
+                    continue
+                seen.add(key)
+                contexts[case_id]["combined_reviews"].append({
+                    **{key: str(row[key] or "") for key in (
+                        "task_id", "task_name", "task_lifecycle", "run_id", "run_name",
+                        "reviewer", "created_at", "case_action"
+                    )},
+                    "submission_id": str(row["id"]), "revision_id": revision_id,
+                })
+        return contexts
+
     def _batch_label_cases(
         self,
         issue_ids: Sequence[str],

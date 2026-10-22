@@ -325,6 +325,9 @@ async def get_labeling_case(
         include_sources=True,
         preloaded_cases={issue_id: cases},
     )
+    source_contexts = await asyncio.to_thread(
+        database.label_source_contexts, issue_id, label_state.get(issue_id) or {},
+    )
     decision_history = await asyncio.to_thread(
         database.list_issue_label_decisions,
         baseline_scope=str(issue.get("baseline_scope") or ""),
@@ -346,6 +349,7 @@ async def get_labeling_case(
         "task_id": task_key,
         "current_user_is_task_member": bool(assignment and assignment.get("assigned")),
         "label_state": label_state.get(issue_id) or {},
+        "label_source_contexts": source_contexts,
         "decision_history": decision_history,
         "assets": assets,
         "camera": camera,

@@ -712,3 +712,12 @@
   .shared-label-source-actions .shared-label-edit-link { min-height: 44px; max-width: 100%; white-space: normal; }
   .shared-label-source-facts { grid-template-columns: minmax(0, 1fr); }
 }
+
+@media (max-width: 639px) {
+  .combined-case-label-card .review-section-heading .combined-mode-badge { display: none; }
+  .combined-case-label-card .review-section-heading h2 { white-space: nowrap; }
+}
+
+@media (max-width: 639px) {
+  .shared-label-source-audit > summary { min-height: 44px; display: flex; align-items: center; }
+}

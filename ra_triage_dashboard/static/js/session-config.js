@@ -387,7 +387,7 @@ function renderAnalysisCatalogFilters() {
   renderMultiFilter($("#analysisStatusFilter"), {
     options: [
       { value: "pending", label: t("status.pending") },
-      { value: "in_progress", label: uiText("复核中", "In progress") },
+      { value: "in_progress", label: uiText("待复核", "Needs review") },
       { value: "completed", label: uiText("已完成", "Completed") },
     ],
     selected: getMultiFilterValues($("#analysisStatusFilter")),

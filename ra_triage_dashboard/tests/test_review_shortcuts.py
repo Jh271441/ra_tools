@@ -537,24 +537,24 @@ function key(value,options={}) {
 }
 assert.equal(key('1').handled,false);
 assert.equal(key('r').handled,false);
-assert.equal(key('R',{shiftKey:true}).handled,true);
+assert.equal(key('m',{}).handled,true);
 assert.equal(clicks,1);
-assert.equal(key('R',{shiftKey:true}).handled,true);
+assert.equal(key('m',{}).handled,true);
 assert.equal(clicks,1); // Reopen shortcut keeps an open selector open.
-for (const [number,status] of [['1','pending'],['2','in_progress'],['3','completed']]) {
- key('R',{shiftKey:true});
+for (const [number,status] of [['1','in_progress'],['2','completed']]) {
+ key('m',{});
  assert.equal(key(number).handled,true);assert.equal(select.value,status);assert.equal(panel.hidden,true);
 }
-assert.equal(changes,3);
+assert.equal(changes,2);
 for (const flag of ['isComposing','repeat','ctrlKey','metaKey','altKey']) {
- assert.equal(key('R',{shiftKey:true,[flag]:true}).handled,false);
+ assert.equal(key('m',{[flag]:true}).handled,false);
 }
-writer=false;assert.equal(key('R',{shiftKey:true}).handled,false);writer=true;
-state.session.read_only=true;assert.equal(key('R',{shiftKey:true}).handled,false);state.session={};
-state.activePage='labeling';assert.equal(key('R',{shiftKey:true}).handled,false);state.activePage='review';
-select.disabled=true;assert.equal(key('R',{shiftKey:true}).handled,false);select.disabled=false;
-target.closest=()=>({});assert.equal(key('R',{shiftKey:true}).handled,false);
-assert.equal(changes,3);
+writer=false;assert.equal(key('m',{}).handled,false);writer=true;
+state.session.read_only=true;assert.equal(key('m',{}).handled,false);state.session={};
+state.activePage='labeling';assert.equal(key('m',{}).handled,false);state.activePage='review';
+select.disabled=true;assert.equal(key('m',{}).handled,false);select.disabled=false;
+target.closest=()=>({});assert.equal(key('m',{}).handled,false);
+assert.equal(changes,2);
 '''
     subprocess.run(["node", "-e", script], check=True, capture_output=True)
 

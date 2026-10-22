@@ -1347,7 +1347,8 @@ function renderCaseLabelingEditor(caseData) {
             <span><span class="ui-lang-zh">标注依据</span><span class="ui-lang-en">Label rationale</span></span>
             <small class="review-reason-shortcuts"><span class="ui-lang-zh"><kbd>E</kbd> 聚焦 · <kbd>⇧ Enter</kbd> 换行</span></small>
           </span>
-          <textarea id="caseLabelingRationale" rows="2" placeholder="说明判断依据；此处不填写模型判错原因。">${escapeHtml(source.rationale || "")}</textarea>
+          <textarea id="caseLabelingRationale" data-mention-composer rows="2" placeholder="${escapeHtml(uiText("说明判断依据；此处不填写模型判错原因。输入 @ 可通知同事", "Explain your label, not model errors; type @ to notify a colleague"))}">${escapeHtml(source.rationale || "")}</textarea>
+          <div class="review-mention-composer" id="caseLabelingMentionComposer" data-mention-composer-root aria-live="polite"></div>
         </label>
         <div class="review-attachment-field">
           <div class="screenshot-paste-zone is-compact" id="caseLabelingPasteZone" tabindex="0" role="group" aria-label="拖拽、粘贴或选择标注截图">
@@ -1366,6 +1367,7 @@ function renderCaseLabelingEditor(caseData) {
       </section>
     </form>`;
   const editor = $("#caseLabelingEditor");
+  bindReviewMentionComposer($("#caseLabelingRationale"), $("#caseLabelingMentionComposer"));
   $("#caseLabelWhy")?.addEventListener("click", () => showCaseLabelExplanation(caseData));
   $("#caseLabelGoAdjudication")?.addEventListener("click", () => {
     ($("#caseTaskAdjudicationPanel") || $("#caseLabelDecisionTitle"))?.scrollIntoView({ behavior: "smooth", block: "start" });

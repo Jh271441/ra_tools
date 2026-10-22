@@ -17,7 +17,8 @@ from ...support.attachments import _store_review_attachments
 import asyncio
 from ...runtime import database
 import json
-from ...runtime import settings
+from ...runtime import settings, review_notification_dispatcher
+from ...support.label_mentions import prepare_label_mentions
 from .common import _labeling_actor, _labeling_payload, _public_label_revision, _require_active_labeling_issue, _require_labeling_writer
 
 router = APIRouter()
@@ -36,6 +37,7 @@ async def create_label_revision(issue_id: str, request: Request) -> dict[str, An
         _labeling_actor, request
     )
     payload = _labeling_payload(body)
+    recipients = await prepare_label_mentions(database, settings, payload["rationale"], actor, actor_verified)
     raw_previous = body.get("expected_previous_revision_id")
     try:
         expected_previous = (
@@ -50,6 +52,7 @@ async def create_label_revision(issue_id: str, request: Request) -> dict[str, An
             author=actor,
             author_source=actor_source,
             author_verified=actor_verified,
+            mention_recipients=recipients,
             task_id=_as_text(body.get("task_id")),
             source_run_id="",
             expected_previous_revision_id=expected_previous,
@@ -61,6 +64,8 @@ async def create_label_revision(issue_id: str, request: Request) -> dict[str, An
         raise _detail(403, str(exc))
     except ValueError as exc:
         raise _detail(400, str(exc))
+    if revision.get("notification", {}).get("status") == "queued":
+        review_notification_dispatcher.wake()
     return {
         "revision": _public_label_revision(revision),
         "change_revision": await asyncio.to_thread(database.change_revision),
@@ -92,6 +97,7 @@ async def create_label_revision_with_attachments(
     except (TypeError, ValueError) as exc:
         raise _detail(400, "expected_previous_revision_id 不合法。") from exc
     records: list[dict[str, Any]] = []
+    recipients = await prepare_label_mentions(database, settings, normalized["rationale"], actor, actor_verified)
     paths: list[Path] = []
     try:
         records, paths = await _store_review_attachments(attachments or [])
@@ -101,6 +107,7 @@ async def create_label_revision_with_attachments(
             author=actor,
             author_source=actor_source,
             author_verified=actor_verified,
+            mention_recipients=recipients,
             task_id=_as_text(body.get("task_id")),
             source_run_id="",
             expected_previous_revision_id=expected_previous,
@@ -121,6 +128,8 @@ async def create_label_revision_with_attachments(
         if isinstance(exc, ValueError):
             raise _detail(400, str(exc))
         raise
+    if revision.get("notification", {}).get("status") == "queued":
+        review_notification_dispatcher.wake()
     return {
         "revision": _public_label_revision(revision),
         "change_revision": await asyncio.to_thread(database.change_revision),
