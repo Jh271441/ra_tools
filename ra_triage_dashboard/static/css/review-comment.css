@@ -1420,8 +1420,10 @@ body[data-active-page="review-assignments"] .gt-sync-control { margin-left: auto
 .comment-thread-meta { flex-wrap: wrap; }
 .comment-thread-meta > span { overflow-wrap: anywhere; }
 
-.combined-case-label-card > .review-section-heading { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; }
-.combined-case-label-card .review-case-heading-meta { flex-wrap: nowrap; }
+.combined-case-label-card > .review-section-heading { display: flex; flex-wrap: wrap; align-items: center; }
+.combined-case-label-card > .review-section-heading > div:first-child { flex: 0 0 auto; }
+.combined-case-label-card > .review-section-heading h2 { white-space: nowrap; }
+.combined-case-label-card .review-case-heading-meta { flex-wrap: nowrap; margin-left: auto; }
 .combined-case-label-card .label-summary-inline-button { white-space: nowrap; }
 
 .review-tag-options, .evidence-options { scroll-padding-block: 6px; }
