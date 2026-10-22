@@ -98,3 +98,18 @@ Keep the stable 180px minimum (or the wider trigger), then cap to the visible
 viewport with 8px margins. Do not force trigger equality or a fixed 340px minimum.
 Long options wrap only after the available width is exhausted; vertical flipping,
 scrolling, keyboard selection and dismissal remain shared.
+
+
+Case images submitted from Review use the existing serial background upload queue.
+Capture the Issue/Run/task/actor, payload, images and combined idempotency key when
+Save is pressed; do not hold the page-wide submission lock. Navigation remains
+available. Completion only clears that snapshot and never reconciles or navigates
+the active queue. Preserve edits and extra images made during upload, rebasing
+the newer draft timestamp past the server commit before context refresh.
+
+Unconfirmed uploads retain images and the frozen payload for explicit retry with
+the same idempotency key. A 409 requires context refresh before a new submission.
+Display-refresh failure after a successful save is not an upload failure. The
+active scope blocks duplicate submissions; other Issues remain editable. Pending
+or failed uploads warn before closing/reloading the page because image bytes are
+in memory. Status and retry controls refresh when the UI language changes.

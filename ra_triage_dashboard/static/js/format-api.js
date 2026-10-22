@@ -692,7 +692,8 @@ async function refreshChangedDataNow() {
       if (
         state.reviewFormDirty ||
         state.savingAnnotation ||
-        state.pendingReviewImages.length
+        state.pendingReviewImages.length ||
+        (typeof caseRationaleUploadTask === "function" && caseRationaleUploadTask(state.selectedCase))
       ) {
         if (!state.deferredDetailRefresh) {
           state.deferredDetailRefresh = true;

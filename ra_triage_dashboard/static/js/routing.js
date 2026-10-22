@@ -78,6 +78,7 @@ function applyUiLanguage(language, { persist = true } = {}) {
   // Dynamic filters / pickers rebuild option labels from the active catalog.
   const refreshers = [
     "renderReviewCatalogFilters",
+    "renderCaseRationaleImages",
     "renderAnalysisComparisonFilter",
     "renderAnalysisRunFilter",
     "renderAnalysisCatalogFilters",

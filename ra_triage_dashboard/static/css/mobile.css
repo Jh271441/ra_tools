@@ -731,3 +731,7 @@
     font-size: 18px; line-height: 1;
   }
 }
+
+@media (max-width: 639px) {
+  .case-upload-progress .button { min-height: 44px; }
+}

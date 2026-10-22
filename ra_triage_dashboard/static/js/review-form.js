@@ -821,7 +821,7 @@ function renderCombinedReviewContextStatus() {
     loadCombinedReviewContext(state.selectedCase).catch((error) => showToast(error.message, true));
   });
   const save = $("#reviewSaveButton");
-  if (save) save.disabled = !ready || Boolean(state.savingAnnotation) || !hasDashboardWriteRole()
+  if (save) save.disabled = !ready || Boolean(caseRationaleUploadTask(state.selectedCase)) || Boolean(state.savingAnnotation) || !hasDashboardWriteRole()
     || Boolean(state.session?.read_only) || $("#annotationForm")?.dataset.expectedOutputConflict === "1";
 }
 
@@ -1565,6 +1565,10 @@ async function saveCombinedReview(event) {
     showToast(state.combinedReviewLoad?.error || "联合复核上下文未就绪，请在提交按钮下重试加载。", true);
     return;
   }
+  if (caseRationaleUploadTask(caseData)) {
+    showToast(uiText("此条图片提交正在保存或等待重试，请先处理上传状态。", "This image submission is saving or awaiting retry. Check its upload status first."), true);
+    return;
+  }
   const expectedState = expectedOutputSelectionState();
   if (!expectedState.selectedValue) {
     showToast("请明确选择 Case 标签。", true);
@@ -1596,10 +1600,31 @@ async function saveCombinedReview(event) {
     expected_case_revision_id: context.case_revision_id || null,
     expected_label_state_fingerprint: context.label_state_fingerprint || "",
   };
+  if (runId) Object.assign(payload, {
+    model_run_id: runId, campaign_id: campaignId || "", work_split_id: campaignId || "",
+    model_review_status: modelReviewSubmissionStatus({ model_review_status: $("#modelReviewStatusInput")?.value }),
+    reason: $("#annotationNote")?.value || "",
+    missing_evidence: [...document.querySelectorAll('input[name="missingEvidence"]:checked')].map((input) => input.value),
+    expected_model_review_storage_id: context.model_review_storage_id || null,
+  });
   const imageKey = caseRationaleImageKey(caseData);
   const imageItems = [...caseRationalePendingImages(caseData)];
   const navigationContext = reviewSaveNavigationContext(issueId);
   const contextKey = combinedReviewContextKey(caseData);
+  if (imageItems.length) {
+    const queuedDraft = persistReviewDraft(caseData);
+    const draftScope = [issueId, runId, reviewWorkSplitBinding(caseData), reviewDraftReviewer(caseData)];
+    const task = { key: imageKey, issueId, payload, imageItems, draftScope,
+      draft: queuedDraft || readReviewDraft(...draftScope), contextKey,
+      action: runId ? "combined-review" : "case-label-from-review",
+      headers: runId ? { "Idempotency-Key": globalThis.crypto?.randomUUID?.() || `combined-${Date.now()}-${Math.random().toString(16).slice(2)}` } : {},
+    };
+    state.backgroundCaseUploads ||= new Map();
+    state.backgroundCaseUploads.set(imageKey, task);
+    enqueueCaseRationaleUpload(task);
+    showToast(uiText("图片和复核已进入后台保存，可继续切换 Issue。", "Images and review are saving in the background; you can switch Issues."));
+    return;
+  }
   state.savingAnnotation = true;
   const button = event.submitter || $("#reviewSaveButton");
   if (button) {
@@ -1613,15 +1638,6 @@ async function saveCombinedReview(event) {
       acknowledgeLocalChange(result);
       showToast(result?.case_label?.case_action === "acknowledged" ? "已确认现有 Case vote。" : "已提交 Case 标签。 ");
     } else {
-      Object.assign(payload, {
-        model_run_id: runId,
-        campaign_id: campaignId || "",
-        work_split_id: campaignId || "",
-        model_review_status: modelReviewSubmissionStatus({ model_review_status: $("#modelReviewStatusInput")?.value }),
-        reason: $("#annotationNote")?.value || "",
-        missing_evidence: [...document.querySelectorAll('input[name="missingEvidence"]:checked')].map((input) => input.value),
-        expected_model_review_storage_id: context.model_review_storage_id || null,
-      });
       const idempotencyKey = globalThis.crypto?.randomUUID?.() || `combined-${Date.now()}-${Math.random().toString(16).slice(2)}`;
       result = await submitCaseRationalePayload(issueId, "combined-review", payload, imageItems, { "Idempotency-Key": idempotencyKey });
       acknowledgeLocalChange(result);

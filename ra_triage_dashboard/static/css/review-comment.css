@@ -1440,3 +1440,6 @@ body[data-active-page="review-assignments"] .gt-sync-control { margin-left: auto
 .shared-label-source-audit { color: var(--muted); font-size: 10px; min-width: 0; }
 .shared-label-source-audit > summary { cursor: pointer; width: fit-content; padding: 5px 0; }
 .shared-label-source-audit > dl { margin-top: 6px; }
+
+.case-upload-progress { grid-column: 1 / -1; min-width: 0; font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+.case-upload-progress .button { justify-self: start; }

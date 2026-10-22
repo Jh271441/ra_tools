@@ -328,12 +328,22 @@ function labelImageMarkup(items) {
 
 function renderCaseRationaleImages(caseData = state.selectedCase) {
   const list = $("#caseRationaleImageList");
-  if (!list || state.selectedCase !== caseData) return;
+  if (!list || !caseData || state.selectedCase !== caseData) return;
   const context = state.combinedReviewContext;
   const saved = String(context?.issue?.issue_id || "") === String(caseData.issue_id)
     && state.combinedReviewLoad?.key === combinedReviewContextKey(caseData) ? context.case_attachments || [] : [];
   const items = caseRationalePendingImages(caseData);
-  list.innerHTML = labelImageMarkup(saved) + items.map((item) => `<div class="pending-screenshot"><img src="${escapeHtml(item.previewUrl)}" alt="${escapeHtml(item.file.name || uiText("待上传标签图片", "Pending label image"))}" /><button type="button" data-remove-case-image="${escapeHtml(item.id)}" aria-label="${escapeHtml(uiText("移除待上传图片", "Remove pending image"))}">×</button></div>`).join("");
+  const upload = caseRationaleUploadTask(caseData);
+  list.innerHTML = caseRationaleUploadMarkup(upload) + labelImageMarkup(saved) + items.map((item) => `<div class="pending-screenshot"><img src="${escapeHtml(item.previewUrl)}" alt="${escapeHtml(item.file.name || uiText("待上传标签图片", "Pending label image"))}" /><button type="button" ${upload?.imageItems.some((image) => image.id === item.id) ? "disabled" : ""} data-remove-case-image="${escapeHtml(item.id)}" aria-label="${escapeHtml(uiText("移除待上传图片", "Remove pending image"))}">×</button></div>`).join("");
+  list.querySelector("[data-retry-case-upload]")?.addEventListener("click", () => enqueueCaseRationaleUpload(upload));
+  list.querySelector("[data-refresh-case-upload]")?.addEventListener("click", async () => {
+    try {
+      await loadCombinedReviewContext(caseData);
+      state.backgroundCaseUploads.delete(upload.key);
+      renderCaseRationaleImages(caseData);
+      renderCombinedReviewContextStatus();
+    } catch (_) { /* Existing context status exposes its retry action. */ }
+  });
   list.querySelectorAll("[data-remove-case-image]").forEach((button) => button.addEventListener("click", () => {
     const item = items.find((item) => item.id === button.dataset.removeCaseImage);
     if (!item) return;
@@ -402,4 +412,81 @@ async function submitCaseRationalePayload(issueId, action, payload, items, heade
   return api(`/api/cases/${encodeURIComponent(issueId)}/${action}-with-attachments`, {
     method: "POST", headers: {...headers, "X-RA-Triage-Request": "labeling-v1"}, body: form,
   });
+}
+
+
+function caseRationaleUploadTask(caseData = state.selectedCase) {
+  return caseData ? state.backgroundCaseUploads?.get(caseRationaleImageKey(caseData)) || null : null;
+}
+
+function caseUploadDraftSignature(draft) {
+  return JSON.stringify(REVIEW_DRAFT_FIELDS.map((key) => draft?.[key]));
+}
+
+function caseRationaleUploadMarkup(task) {
+  if (!task) return "";
+  const failed = task.status === "failed", conflict = task.conflict;
+  const copy = failed
+    ? (conflict ? uiText("数据已变化，图片和草稿已保留，请刷新上下文后重新提交。", "Data changed. Images and draft are retained; refresh context before submitting again.")
+      : uiText("后台保存未确认，图片和草稿已保留。", "Background save was not confirmed. Images and draft are retained."))
+    : uiText("图片和复核正在后台保存，可切换 Issue。", "Images and review are saving in the background; you can switch Issues.");
+  return `<div class="review-upload-progress case-upload-progress" role="status"><span>${escapeHtml(copy)}</span>${failed ? `<button type="button" class="button button-quiet" ${conflict ? "data-refresh-case-upload" : "data-retry-case-upload"}>${escapeHtml(conflict ? uiText("刷新上下文", "Refresh context") : uiText("重试提交", "Retry submission"))}</button>` : ""}</div>`;
+}
+
+function enqueueCaseRationaleUpload(task) {
+  if (!task || ["queued", "uploading"].includes(task.status)) return;
+  task.status = "queued";
+  const current = () => state.activePage === "review" && state.selectedCase
+    && caseRationaleImageKey(state.selectedCase) === task.key;
+  const repaint = () => {
+    if (!current()) return;
+    renderCaseRationaleImages(state.selectedCase);
+    renderCombinedReviewContextStatus();
+  };
+  repaint();
+  const run = async () => {
+    task.status = "uploading";
+    repaint();
+    let result;
+    try {
+      result = await submitCaseRationalePayload(task.issueId, task.action, task.payload, task.imageItems, task.headers);
+    } catch (error) {
+      task.status = "failed";
+      task.conflict = Number(error?.status || 0) === 409;
+      repaint();
+      showToast(uiText(`Issue ${task.issueId} 后台保存未确认，图片已保留；返回此条重试。`, `Issue ${task.issueId}: background save was not confirmed. Images retained; return to retry.`), true);
+      return;
+    }
+    // From here the write succeeded. A later display refresh failure must never
+    // turn this task into an upload retry or resubmit the saved transaction.
+    acknowledgeLocalChange(result);
+    const currentDraft = current() ? persistReviewDraft(state.selectedCase) : null;
+    const draft = currentDraft || readReviewDraft(...task.draftScope);
+    const newerDraft = caseUploadDraftSignature(draft) !== caseUploadDraftSignature(task.draft);
+    clearSavedCaseRationaleImages(task.key, task.imageItems);
+    const moreImages = Boolean(state.caseRationaleImages?.get(task.key)?.length);
+    if (newerDraft && draft) {
+      // Edits made during upload predate the server commit, but are not part of it.
+      const annotation = result.combined_review?.model_review;
+      draft.saved_at = Math.max(Date.now(), annotationTimestamp(annotation) + 1);
+      try { window.localStorage.setItem(reviewDraftStorageKey(...task.draftScope), JSON.stringify(draft)); } catch (_) {}
+    } else clearReviewDraft(...task.draftScope);
+    state.backgroundCaseUploads.delete(task.key);
+    task.status = "saved";
+    state.reviewQueueStale = true;
+    showToast(uiText(`Issue ${task.issueId} 的图片和复核已保存。`, `Issue ${task.issueId}: images and review saved.`));
+    if (!current()) return;
+    const caseData = state.selectedCase;
+    caseData.label_state = (result.combined_review || result.case_label)?.label_state || caseData.label_state;
+    delete caseData.label_source_contexts;
+    state.reviewFormDirty = newerDraft || moreImages;
+    // Context refresh already guards Issue/Run/task/page ownership and preserves
+    // newer drafts. Do not reconcile/navigate the queue after a background save.
+    try {
+      await loadCombinedReviewContext(caseData);
+    } catch (_) { /* Saved is final; the context panel provides refresh retry. */ }
+    repaint();
+  };
+  state.reviewUploadTail = (state.reviewUploadTail || Promise.resolve()).catch(() => {}).then(run);
+  return state.reviewUploadTail;
 }

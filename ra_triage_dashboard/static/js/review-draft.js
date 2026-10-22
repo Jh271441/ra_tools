@@ -240,7 +240,10 @@ function reviewDraftForCase(caseData) {
   const draft = readReviewDraft(caseData?.issue_id, runId, workSplitId, reviewer);
   if (!draft) return null;
   const serverAnnotation = reviewAnnotationsForCurrentRun(caseData)[0];
-  if (serverAnnotation && Number(draft.saved_at) <= annotationTimestamp(serverAnnotation)) {
+  const pendingUpload = [...(state.backgroundCaseUploads?.values() || [])].some((task) =>
+    task.draftScope[0] === caseData.issue_id && task.draftScope[1] === runId
+    && task.draftScope[2] === workSplitId && task.draftScope[3] === reviewer);
+  if (!pendingUpload && serverAnnotation && Number(draft.saved_at) <= annotationTimestamp(serverAnnotation)) {
     clearReviewDraft(caseData.issue_id, runId, workSplitId, reviewer);
     return null;
   }
@@ -258,7 +261,7 @@ function applyReviewDraft(annotation, draft) {
 
 function persistReviewDraft(caseData) {
   const form = $("#annotationForm");
-  if (!caseData?.issue_id || !form || typeof window === "undefined" || !window.localStorage) return;
+  if (!caseData?.issue_id || !form || typeof window === "undefined") return;
   const runId = state.reviewEditRunId || currentReviewRunId(caseData);
   const draft = {
     version: 1,
@@ -288,13 +291,18 @@ function persistReviewDraft(caseData) {
   } catch {
     // Draft persistence is best effort and must never block Review input.
   }
+  return draft;
 }
 
 function bindReviewDraftLifecycle() {
   if (typeof window === "undefined" || window.__raTriageReviewDraftBound) return;
   window.__raTriageReviewDraftBound = true;
-  window.addEventListener("beforeunload", () => {
+  window.addEventListener("beforeunload", (event) => {
     if (state.reviewFormDirty && state.selectedCase) persistReviewDraft(state.selectedCase);
+    if (state.backgroundCaseUploads?.size) {
+      event.preventDefault();
+      event.returnValue = "";
+    }
   });
 }
 
