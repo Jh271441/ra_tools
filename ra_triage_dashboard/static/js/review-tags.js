@@ -962,6 +962,8 @@ function resetReviewDropdownPanel(panel) {
   panel.style.right = "";
   panel.style.bottom = "";
   panel.style.width = "";
+  panel.style.minWidth = "";
+  panel.style.maxWidth = "";
   panel.style.maxHeight = "";
   panel.style.visibility = "";
   panel.style.opacity = "";
@@ -997,7 +999,13 @@ function positionReviewDropdownPanel(dropdown) {
 
   const summaryRect = summary.getBoundingClientRect();
   const viewport = anchoredViewportBounds();
-  const width = Math.max(1, Math.min(summaryRect.width, viewport.width - 16));
+  // Measure the existing options at their natural width, then constrain only to
+  // the visible viewport. A narrow group button must not squeeze its labels.
+  const availableWidth = Math.max(1, viewport.width - 16);
+  panel.style.minWidth = `${Math.min(Math.max(summaryRect.width, 180), availableWidth)}px`;
+  panel.style.maxWidth = `${availableWidth}px`;
+  panel.style.width = "max-content";
+  const width = Math.min(availableWidth, Math.max(summaryRect.width, 180, panel.getBoundingClientRect().width));
   panel.style.width = `${width}px`;
   // Temporarily place at origin with full width for accurate scrollHeight.
   panel.style.left = "0px";

@@ -91,3 +91,10 @@ Images belong to the submitted version. The current version's images are shown
 in the editor and Label summary; older versions and their images remain in Issue
 labeling history. Display metadata is separate from the label-state fingerprint,
 and attachment links use the existing protected opaque labeling URL.
+
+
+Review tag and evidence menus measure their natural content width before placement.
+Keep the stable 180px minimum (or the wider trigger), then cap to the visible
+viewport with 8px margins. Do not force trigger equality or a fixed 340px minimum.
+Long options wrap only after the available width is exhausted; vertical flipping,
+scrolling, keyboard selection and dismissal remain shared.

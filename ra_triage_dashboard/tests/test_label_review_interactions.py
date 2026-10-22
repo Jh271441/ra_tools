@@ -82,21 +82,23 @@ assert.equal(opens,1);assert.equal(closes,1);
 '''
         subprocess.run(["node"], input=script, text=True, check=True, capture_output=True)
 
-    def test_dropdown_width_follows_summary_and_preserves_viewport_scroll(self):
+    def test_dropdown_natural_width_respects_trigger_floor_and_viewport(self):
         script = (ROOT / "static/js/review-tags.js").read_text() + r'''
 const assert=require('node:assert/strict');
-let summaryWidth=152.5,viewportWidth=1000;
-const panel={style:{},scrollHeight:1200,classList:{add(){},remove(){}},querySelector(){return null}};
+let summaryWidth=152.5,viewportWidth=1000,naturalWidth=260;
+const panel={getBoundingClientRect(){return {width:naturalWidth}},style:{},scrollHeight:1200,classList:{add(){},remove(){}},querySelector(){return null}};
 const summary={getBoundingClientRect(){return {width:summaryWidth,left:20,right:20+summaryWidth,top:100,bottom:140}}};
 const dropdown={open:true,querySelector(){return summary}};
 reviewDropdownPanel=()=>panel;
 anchoredViewportBounds=()=>({left:0,right:viewportWidth,width:viewportWidth,top:0,bottom:800,height:800});
 for(const width of [152.5,280,420]){
  summaryWidth=width;positionReviewDropdownPanel(dropdown);
- assert.equal(parseFloat(panel.style.width),width);
+ assert.equal(parseFloat(panel.style.width),Math.max(width,naturalWidth,180));
  assert.ok(parseFloat(panel.style.maxHeight)<=784);
  assert.ok(parseFloat(panel.style.maxHeight)>0);
 }
+naturalWidth=1400;positionReviewDropdownPanel(dropdown);
+assert.equal(parseFloat(panel.style.width),984);
 viewportWidth=200;summaryWidth=300;positionReviewDropdownPanel(dropdown);
 assert.equal(parseFloat(panel.style.width),184);
 '''
