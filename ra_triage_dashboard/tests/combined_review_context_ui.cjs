@@ -5,7 +5,7 @@ const state={activePage:'review',pageNavigationEpoch:1,selectedRunId:'run',revie
 const data={issue_id:'cn1',review_assignment:{assigned:true,split_id:'campaign',purpose:'model_review',workflow_mode:'model_review_and_case_label',model_run_id:'run'}};state.selectedCase=data;
 const context={issue:{issue_id:'cn1'},campaign:{id:'campaign',evaluation_run_id:'run'},assigned:true};
 const s={state,URLSearchParams,URL,window:{location:{pathname:'/manual/review',search:'?issue=cn1'}},$:key=>elements[key.slice(1)]||null,uiText:x=>x,escapeHtml:String,hasDashboardWriteRole:()=>true,showToast:()=>{}};
-vm.createContext(s);for(const name of ['routing.js','review-draft.js','review-form.js'])vm.runInContext(fs.readFileSync(root+name,'utf8'),s);
+vm.createContext(s);for(const name of ['routing.js','review-draft.js','review-attachments.js','review-form.js'])vm.runInContext(fs.readFileSync(root+name,'utf8'),s);
 let paints=0;s.populateCombinedCaseLabel=()=>{paints++;};
 (async()=>{
  let resolve;s.api=()=>new Promise(r=>{resolve=r;});
