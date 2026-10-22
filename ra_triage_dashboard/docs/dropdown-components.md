@@ -32,3 +32,15 @@ node ra_triage_dashboard/tests/dropdown_components.cjs
 验证静态覆盖、已有组件保持、键盘选择、选项刷新、空值与原节点保留、禁用/隐藏、
 动态权限/视频行、弹窗、手机边界及多选连续操作；不访问 API 或提交业务表单。
 可设置 `DROPDOWN_REPORT_DIR` 保存隔离组件预览截图；截图不代表线上登录态验收。
+
+
+## Review status Escape behavior
+
+The enhanced modelReviewStatusInput continues using bindUiSelect and the shared
+native-select adapter. It opts into escapeFocus="blur": Escape closes the popup
+and exits the focused control, including after 1/2/3 has chosen a status and the
+popup is already closed. Arrow-focused options also exit without restoring focus
+to the trigger. The chosen value and unsaved form draft remain intact; Escape
+never submits or resets the Review. Other shared selects retain their established
+Escape-to-trigger behavior. This applies in either language and at phone/desktop
+widths; it does not introduce a separate status widget or hide focus outlines.

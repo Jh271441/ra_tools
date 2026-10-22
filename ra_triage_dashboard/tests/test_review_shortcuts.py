@@ -652,3 +652,40 @@ applyTrailDetailMetadata({dashboard_should_exclude:false},'cn1',1);
 assert.equal(input.checked,true);
 '''
     subprocess.run(["node", "-e", script], check=True, capture_output=True)
+
+
+def test_status_escape_exits_open_closed_and_option_focus_without_resetting_value() -> None:
+    core = (ROOT / "static/js/core-base.js").read_text().split("function normalizeClientBasePath")[0]
+    script = core + r'''
+const assert=require('node:assert/strict');
+const body={},roots=[],capture=[];
+document={activeElement:body,documentElement:{dataset:{}},querySelectorAll:()=>roots.filter(r=>r.classList.contains('is-open')),querySelector:()=>null,addEventListener(type,fn,phase){if(type==='keydown'&&phase)capture.push(fn)}};
+window={addEventListener(){}};
+resetAnchoredPanel=()=>{};
+function fixture(escapeFocus){
+ const keys={},classes=new Set();
+ const trigger={dataset:{},disabled:false,setAttribute(){},addEventListener(type,fn){keys['trigger:'+type]=fn},focus(){document.activeElement=this},blur(){if(document.activeElement===this)document.activeElement=body}};
+ const option={dataset:{uiSelectValue:'completed'},focus(){document.activeElement=this},blur(){if(document.activeElement===this)document.activeElement=body},closest(){return this}};
+ let hidden=false;
+ const panel={get hidden(){return hidden},set hidden(value){hidden=value;if(value&&document.activeElement===option)document.activeElement=body},addEventListener(type,fn){keys['panel:'+type]=fn},querySelectorAll:()=>[option]};
+ const native={value:'completed'};
+ const root={classList:{contains:v=>classes.has(v),add:v=>classes.add(v),remove:v=>classes.delete(v)},contains:n=>[trigger,panel,option,native].includes(n),querySelector(selector){return selector.includes('panel')?panel:selector.includes('trigger')?trigger:selector.startsWith('select')?native:null}};
+ roots.push(root);bindUiSelect(root,{escapeFocus});
+ function escape(target,open){
+  panel.hidden=!open;if(open)classes.add('is-open');target.focus();
+  const event={key:'Escape',target,preventDefault(){this.prevented=true},stopPropagation(){this.stopped=true}};
+  capture.forEach(fn=>fn(event)); // Capture dismisses/hides the panel before its key listener.
+  keys[target===trigger?'trigger:keydown':'panel:keydown'](event);
+  assert.equal(panel.hidden,true);assert.equal(native.value,'completed');
+ }
+ return {trigger,option,escape};
+}
+const status=fixture('blur');
+status.escape(status.trigger,true);assert.equal(document.activeElement,body);
+status.escape(status.trigger,false);assert.equal(document.activeElement,body);
+status.escape(status.option,true);assert.equal(document.activeElement,body);
+const ordinary=fixture('trigger');
+ordinary.escape(ordinary.option,true);assert.equal(document.activeElement,ordinary.trigger);
+ordinary.escape(ordinary.trigger,false);assert.equal(document.activeElement,ordinary.trigger);
+'''
+    subprocess.run(["node"], input=script, text=True, check=True, capture_output=True)

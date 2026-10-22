@@ -251,7 +251,7 @@ function populateUiSelect(root, options, selectedValue = "", { preserveNative = 
   if (trigger) trigger.disabled = Boolean(native?.disabled);
 }
 
-function bindUiSelect(root, { onChange, maxHeight = 320, maxWidth = 420 } = {}) {
+function bindUiSelect(root, { onChange, maxHeight = 320, maxWidth = 420, escapeFocus = "trigger" } = {}) {
   if (!root) return;
   const trigger =
     root.querySelector(".ui-select-trigger") ||
@@ -332,6 +332,10 @@ function bindUiSelect(root, { onChange, maxHeight = 320, maxWidth = 420 } = {}) 
     event.stopPropagation();
     if (event.key === "Escape") {
       closeAllUiSelects();
+      if (escapeFocus === "blur") {
+        event.preventDefault();
+        trigger.blur();
+      }
       return;
     }
     event.preventDefault();
@@ -350,7 +354,14 @@ function bindUiSelect(root, { onChange, maxHeight = 320, maxWidth = 420 } = {}) 
     const options = [...panel.querySelectorAll("[data-ui-select-value]:not([disabled])")];
     const current = event.target.closest?.("[data-ui-select-value]");
     if (event.key === "Escape") {
-      event.preventDefault(); closeAllUiSelects(); trigger.focus(); return;
+      event.preventDefault();
+      closeAllUiSelects();
+      // Review shortcuts must leave the control; ordinary pickers restore the trigger.
+      if (escapeFocus === "blur") {
+        const active = document.activeElement;
+        if (root.contains(active)) active?.blur();
+      } else trigger.focus();
+      return;
     }
     if (!["ArrowDown", "ArrowUp"].includes(event.key) || !current || !options.length) return;
     event.preventDefault();
@@ -493,7 +504,10 @@ function enhanceNativeUiSelect(select, { maxWidth = 520 } = {}) {
       });
     }
   }
-  bindUiSelect(root, { maxHeight: 320, maxWidth });
+  bindUiSelect(root, {
+    maxHeight: 320, maxWidth,
+    escapeFocus: select.id === "modelReviewStatusInput" ? "blur" : "trigger",
+  });
   if (select.dataset.dashboardSelectBound !== "1") {
     select.dataset.dashboardSelectBound = "1";
     select.addEventListener("change", () => enhanceNativeUiSelect(select, { maxWidth }));
