@@ -223,6 +223,26 @@ def load_capture_workset(path: Path) -> BaselineLoad:
     return BaselineLoad(rows, len(source), 0, f"已读取采集数据集 {len(rows)} 条（保留未标注成员）")
 
 
+def daily_baseline_display_label(baseline_id: str, label: str, rows: list[dict[str, Any]]) -> str:
+    """Name daily datasets from every frozen member's release, without changing scope."""
+    import re
+
+    daily = re.fullmatch(r"review-(\d{4}-\d{2}-\d{2})", baseline_id)
+    if not daily or not rows:
+        return label
+    releases = set()
+    for row in rows:
+        source = (row.get("extra") or {}).get("baseline")
+        version = source.get("version") if isinstance(source, dict) else None
+        release = re.fullmatch(r"1\.gen4-release-(\d{4})(\d{4})(?:\.[A-Za-z0-9_-]+)*", str(version or ""))
+        if not release:
+            return label  # Incomplete provenance cannot justify a version name.
+        releases.add(release.group(1) + release.group(2))
+    # A daily cohort may span releases; list all rather than implying one version.
+    versions = " / ".join(release[4:] for release in sorted(releases))
+    return f"{versions} {daily.group(1)}"
+
+
 def load_baseline_entry(
     *,
     loader: str,

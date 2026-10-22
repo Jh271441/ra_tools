@@ -7,7 +7,7 @@ from typing import Any
 
 from fastapi import Request
 
-from ..baseline import load_baseline_entry
+from ..baseline import daily_baseline_display_label, load_baseline_entry
 from ..baseline_registry import (
     detect_issue_scope_overlaps,
     ids_to_scopes,
@@ -62,7 +62,7 @@ def bootstrap_all_baselines() -> dict[str, Any]:
         )
         item: dict[str, Any] = {
             "id": entry.id,
-            "label": entry.label,
+            "label": daily_baseline_display_label(entry.id, entry.label, loaded.rows),
             "scope": entry.scope,
             "loader": entry.loader,
             "dataset": entry.dataset,
