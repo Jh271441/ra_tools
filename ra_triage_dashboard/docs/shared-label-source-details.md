@@ -50,6 +50,6 @@ The Issue discussion reuses the existing image-comment endpoint. Label rationale
 uses the shared mention composer and validates the notification directory before
 writing. A newly appended label revision queues an Issue-discussion audit comment
 and DChat outbox entries in the same transaction. Acknowledgements, rejected
-stale writes and idempotency replays do not send duplicates. Notification failures
+stale writes and idempotency replays do not send duplicates. Outbox write failures
 roll back both combined halves; ordinary model-review notification behavior stays
 unchanged. No actual message is sent by the validation workflow.
