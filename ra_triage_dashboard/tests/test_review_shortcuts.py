@@ -623,13 +623,13 @@ updateTagSummary=()=>{};syncExpectedOutputFromTags=()=>{};
 let draft=null,writer=true;
 reviewDraftForCase=()=>draft;hasDashboardWriteRole=()=>writer;
 const context={case_revision:{is_excluded:true}};
-populateCombinedCaseLabel(context,{});
-assert.equal(input.checked,true);assert.equal(input.disabled,false);
-draft={case_is_excluded:false};populateCombinedCaseLabel(context,{});
+populateCombinedCaseExclusion(context,{});
+assert.equal(input.checked,true);
+draft={case_is_excluded:false};populateCombinedCaseExclusion(context,{});
 assert.equal(input.checked,false);
-draft={is_excluded:false};populateCombinedCaseLabel(context,{});
+draft={is_excluded:false};populateCombinedCaseExclusion(context,{});
 assert.equal(input.checked,true); // A legacy Run draft cannot override the Case flag.
-writer=false;populateCombinedCaseLabel(context,{});assert.equal(input.disabled,true);
+
 '''
     subprocess.run(["node", "-e", script], check=True, capture_output=True)
 

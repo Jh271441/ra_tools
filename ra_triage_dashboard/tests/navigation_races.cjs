@@ -140,6 +140,23 @@ async function bootstrapNeverReplaysInitialRouteOverNewNavigation() {
   const earlyBoot = early.s.bootstrap(); early.navigate('labeling', '?q=current'); config.resolve(); await earlyBoot;
   assert.equal(early.state.activePage, 'labeling'); assert.equal(early.calls.polls, 1);
 }
+async function bootstrapResumesPendingCombinedContext() {
+  for (const status of ['loading', 'ready', 'error']) {
+    const f = bootstrapFixture('review'); let resumed = 0;
+    f.s.loadCases = async () => {
+      f.state.selectedCase = {issue_id:'cn1'};
+      f.state.combinedReviewLoad = {key:'cn1/run/actor',status};
+    };
+    f.s.combinedReviewContextKey = () => 'cn1/run/actor';
+    f.s.loadCombinedReviewContext = async data => {
+      assert.equal(data.issue_id,'cn1');
+      assert.equal(f.calls.pages.length,2, 'resume after final route commit');
+      resumed++;
+    };
+    await f.s.bootstrap();
+    assert.equal(resumed,status === 'loading' ? 1 : 0);
+  }
+}
 async function summaryWaitsForIdentityInsteadOfFallingBackToReview() {
   const f = bootstrapFixture('labeling-summary'); const identity = defer(); let loaded = 0;
   f.state.session = {identity_pending: true, can_write: false};
@@ -194,7 +211,7 @@ async function labelingEntryAndSummaryResponsesStayScoped() {
   assert.equal(requests, 1, 'stale task-list response must not start a summary query for a later visit');
 }
 (async () => {
-  for (const test of [assignmentAccessWaitsForWriterAndAvoidsAdminRequests,delayedReviewReloadCannotReclaimLabeling, navigationEpochTracksRealPageCommits, loadersStartAfterCanonicalRouteCommit, debounceCannotFireAfterDepartureOrRoundTrip, listPaginationAndPollingIgnoreObsoleteViews, lateTaskContextCannotRewriteLabelingUrl, bootstrapNeverReplaysInitialRouteOverNewNavigation, summaryWaitsForIdentityInsteadOfFallingBackToReview, labelingEntryAndSummaryResponsesStayScoped]) {
+  for (const test of [bootstrapResumesPendingCombinedContext,assignmentAccessWaitsForWriterAndAvoidsAdminRequests,delayedReviewReloadCannotReclaimLabeling, navigationEpochTracksRealPageCommits, loadersStartAfterCanonicalRouteCommit, debounceCannotFireAfterDepartureOrRoundTrip, listPaginationAndPollingIgnoreObsoleteViews, lateTaskContextCannotRewriteLabelingUrl, bootstrapNeverReplaysInitialRouteOverNewNavigation, summaryWaitsForIdentityInsteadOfFallingBackToReview, labelingEntryAndSummaryResponsesStayScoped]) {
     await test(); console.log('PASS ' + test.name);
   }
 })().catch(error => {console.error(error); process.exitCode = 1;});

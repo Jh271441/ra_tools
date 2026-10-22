@@ -754,6 +754,16 @@ function latestCaseVoteFromLabelingDetail(detail, username) {
     .sort((a, b) => Number(b.id || 0) - Number(a.id || 0))[0] || null;
 }
 
+function populateCombinedCaseExclusion(context, caseData) {
+  const revision = context?.case_revision || null;
+  const excluded = $("#reviewExcludeInput");
+  if (excluded) {
+    const draft = reviewDraftForCase(caseData);
+    excluded.checked = typeof draft?.case_is_excluded === "boolean"
+      ? draft.case_is_excluded : Boolean(revision?.is_excluded);
+  }
+}
+
 function populateCombinedCaseLabel(context, caseData) {
   state.combinedReviewContext = context;
   const revision = context?.case_revision || null;
@@ -766,13 +776,6 @@ function populateCombinedCaseLabel(context, caseData) {
   }
   const rationale = $("#combinedCaseRationale");
   if (rationale) rationale.value = String(revision?.rationale || "");
-  const excluded = $("#reviewExcludeInput");
-  if (excluded) {
-    const draft = reviewDraftForCase(caseData);
-    excluded.checked = typeof draft?.case_is_excluded === "boolean"
-      ? draft.case_is_excluded : Boolean(revision?.is_excluded);
-    excluded.disabled = !hasDashboardWriteRole() || Boolean(state.session?.read_only);
-  }
   const tags = new Set(revision?.tags || []);
   $("#reviewPane")?.querySelectorAll('input[name="reviewTags"]').forEach((checkbox) => {
     checkbox.checked = tags.has(checkbox.value);
@@ -807,11 +810,13 @@ function combinedReviewContextKey(caseData) {
 
 function renderCombinedReviewContextStatus() {
   const root = $("#combinedReviewContextStatus");
-  if (!root) return;
   const load = state.combinedReviewLoad;
   const current = load?.key === combinedReviewContextKey(state.selectedCase);
   const ready = current && load.status === "ready";
   const loading = current && load.status === "loading";
+  const excluded = $("#reviewExcludeInput");
+  if (excluded) excluded.disabled = !ready || !hasDashboardWriteRole() || Boolean(state.session?.read_only);
+  if (!root) return;
   root.hidden = ready;
   root.dataset.status = loading ? "loading" : "error";
   root.innerHTML = loading
@@ -860,6 +865,9 @@ async function loadCombinedReviewContext(caseData) {
       )];
       updateReviewHistory(caseData);
     }
+    // Exclusion must hydrate even when other fields have a restored/early draft.
+    // Only the Case-specific draft flag can override the current Case revision.
+    populateCombinedCaseExclusion(context, caseData);
     // A delayed initial load or retry must not overwrite edits or a restored draft.
     if (!state.reviewFormDirty && !reviewDraftForCase(caseData)) populateCombinedCaseLabel(context, caseData);
     else {

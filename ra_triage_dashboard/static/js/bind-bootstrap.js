@@ -1386,6 +1386,12 @@ async function bootstrap() {
       void loadTrailAttributePreview().catch((error) => showToast(error.message, true));
     }
     if (initialRoute.page === "review") {
+      // The final route commit invalidates the initial detail request's epoch.
+      // Resume only its still-pending context; keep drafts and real navigation guards.
+      if (state.selectedCase && state.combinedReviewLoad?.status === "loading"
+          && state.combinedReviewLoad.key === combinedReviewContextKey(state.selectedCase)) {
+        void loadCombinedReviewContext(state.selectedCase).catch((error) => showToast(error.message, true));
+      }
       // Defer cluster strip so it does not compete with gallery thumbs.
       const clusterContext = capturePageContext();
       window.setTimeout(() => {
