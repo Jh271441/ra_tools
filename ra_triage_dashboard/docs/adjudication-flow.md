@@ -1,6 +1,6 @@
 # Issue 标注与完整裁决（2026-10-24）
 
-本文描述本次实现，尚未部署。前端缓存版本为 `manual-triage-636`，生产发布前需要先完成 PostgreSQL migration 056。
+本文描述本次实现，尚未部署。前端缓存版本为 `manual-triage-637`，生产发布前需要先完成 PostgreSQL migration 056。
 
 ## 状态与范围
 
@@ -64,6 +64,6 @@ GT 候选可以引用有效裁决，但更新 GT 仍需独立预览和确认。T
 - `POST /api/labeling/issues/{issue_id}/decisions-with-attachments`：multipart 的 `payload` 为相同 JSON，`attachments` 为新增图片。使用现有图片校验、规范化与私有存储；失败清理新文件，取消请求时等待数据库提交结果确定后再决定清理。
 - 图片通过既有受保护的 `/api/labeling/attachments/{id}` 提供，公开结果中不返回文件路径。图片总数上限四张、合计上限 24MB；引用原图不重复计入磁盘用量。
 - migration 056 为 `issue_label_decisions` 增加 nullable JSONB `full_result_json`，新增 `issue_decision_attachments` 表，不回填旧裁决。SQLite 初始化也兼容原表升级。
-- 发布时先按存储流程备份、应用 migration 056，再发布应用和缓存 636。旧程序可忽略新增列和表，但无法解释完整裁决的排除/Tags 覆盖；若已有新裁决，回滚旧程序会改变展示结果，应先评估并限制写入。不得删列或删裁决记录来回滚。
+- 发布时先按存储流程备份、应用 migration 056，再发布应用和缓存 637。旧程序可忽略新增列和表，但无法解释完整裁决的排除/Tags 覆盖；若已有新裁决，回滚旧程序会改变展示结果，应先评估并限制写入。不得删列或删裁决记录来回滚。
 
 本次只在本地 SQLite 和一次性 PostgreSQL 14 容器验证迁移与语义，未连接或迁移生产库。验收记录位于 `reports/full_issue_decision_20261024/`。
