@@ -85,7 +85,9 @@ def project(root:Path,dataset='1009',day='',reason='all',te_status='all',page=1,
     if sort == 'added':selected.sort(key=lambda r: (r.get('first_seen') or '', int(r['issue_id'][2:])), reverse=True)
     elif sort == 'occurred':selected.sort(key=lambda r: (r.get('date') or '', int(r['issue_id'][2:])), reverse=True)
     else:selected.sort(key=lambda r: int(r['issue_id'][2:]))
-    result=dict(sort=sort,version_membership=bool(version_membership),scope=dict(dataset=dataset,date=day or None,reason=reason),summary=summary,date_options=options,source_status=source_status,last_success_at=at,snapshot_revision=rev,
+    changes=(snap or {}).get('changes')
+    observed_changes={k:len(changes.get(k,[])) for k in ('te','added','removed')} if isinstance(changes,dict) and all(isinstance(changes.get(k,[]),list) for k in ('te','added','removed')) else None
+    result=dict(observed_changes=observed_changes,sort=sort,version_membership=bool(version_membership),scope=dict(dataset=dataset,date=day or None,reason=reason),summary=summary,date_options=options,source_status=source_status,last_success_at=at,snapshot_revision=rev,
                 result_distribution=[dict(value=json.loads(k),count=v) for k,v in sorted(dist.items())],
                 total=len(selected),page=page,size=size,items=selected[(page-1)*size:page*size],source_field='ra_review_result_new')
     return result,selected

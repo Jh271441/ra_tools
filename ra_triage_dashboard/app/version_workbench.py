@@ -46,6 +46,18 @@ def summarize(rows):
                 rate=counts['filled']/total if total else None)
 
 
+def composition(rows, *, historical=False, date=''):
+    """Mutually exclusive final reason groups; pending/excluded are not 'other'."""
+    scoped=[r for r in rows if not date or r['date']==date]
+    completed=[r for r in scoped if historical or r['state'] in {'inferred','published'}]
+    counts=Counter('sample' if r.get('is_sample') else 'low' if r.get('is_low') else 'other' for r in completed)
+    total=len(completed)
+    return dict(basis='frozen_targets' if historical else 'inferred_admitted',date=date,total=total,
+                groups=[dict(key=k,count=counts[k],ratio=counts[k]/total if total else 0) for k in ('low','sample','other')],
+                excluded=sum(r['state']=='excluded' for r in scoped),
+                pending=sum(r['state'] not in {'inferred','published','excluded','historical'} for r in scoped))
+
+
 def workbench(db, root, dataset_id, *, page=1, page_size=24, mode='targets', q='', sort='added',
               date='', te_status='all', revision='',assignee='',review_status='all'):
     if mode not in {'targets', 'samples', 'low', 'waiting', 'all'} or sort not in {'added', 'updated', 'occurred', 'issue'} or te_status not in {'all', 'filled', 'unfilled', 'unknown'}:
@@ -104,7 +116,9 @@ def workbench(db, root, dataset_id, *, page=1, page_size=24, mode='targets', q='
     for row in rows:
         if row.get('is_target') and row['date'] and in_scope(row, False):
             grouped.setdefault(row['date'], []).append(row)
-    daily = [dict(date=day, summary=summarize(grouped[day])) for day in sorted(grouped)[-14:]]
+    days=sorted(grouped)[-14:]
+    if date in grouped and date not in days:days=sorted([date,*days[-13:]])
+    daily = [dict(date=day, summary=summarize(grouped[day])) for day in days]
     selected = [r for r in scoped if te_status=='all' or r['te_status']==te_status]
     if sort == 'issue':selected.sort(key=lambda r:int(r['issue_id'][2:]))
     else:
@@ -118,8 +132,8 @@ def workbench(db, root, dataset_id, *, page=1, page_size=24, mode='targets', q='
     distribution = Counter(json.dumps(r['te_value'], ensure_ascii=False) for r in targets if r['te_status']=='filled')
     result = dict(dataset_id=dataset_id, dataset=dataset, page=page, page_size=page_size, total=len(selected),
                   items=selected[(page-1)*page_size:page*page_size], date_options=date_options,assignees=sorted({(r.get('binding') or {}).get('assignee') for r in rows if (r.get('binding') or {}).get('assignee')}),
-                  snapshot_revision=snapshot_revision, te=dict(source_field='ra_review_result_new',
-                      source_status=te['source_status'], last_success_at=te.get('last_success_at'), summary=summarize(targets),
+                  snapshot_revision=snapshot_revision,composition=composition(rows,historical=historical,date=date), te=dict(source_field='ra_review_result_new',
+                      source_status=te['source_status'], last_success_at=te.get('last_success_at'),observed_changes=te.get('observed_changes'), summary=summarize(targets),
                       distribution=[dict(value=json.loads(k),count=v) for k,v in distribution.items()], daily=daily))
     return result, selected
 

@@ -22,7 +22,7 @@ function clearVersionDatasetMembers(){
   $('#versionDatasetPrev').disabled=true;$('#versionDatasetNext').disabled=true;
   $('#versionDatasetBatches').textContent='';$('#versionDatasetExport').hidden=true;
   $('#versionTERate').textContent='—';$('#versionTESource').textContent=uiText('读取中…','Loading…');
-  for(const id of ['versionTEStatusChart','versionTEDistribution','versionTEDailyChart'])$('#'+id).replaceChildren();
+  for(const id of ['versionTEStatusChart','versionTEDistribution','versionTEDailyChart','versionCompositionBar','versionCompositionLegend'])$('#'+id).replaceChildren();
   $('#versionTEDonut').classList.add('is-empty');$('#versionTEDonut').style.setProperty('--te-filled','0%');$('#versionTEDonut').style.setProperty('--te-known','0%');
   $('#versionDatasetDate').disabled=true;
 }
@@ -64,10 +64,10 @@ function renderVersionDatasets({force=false}={}) {
     [uiText('复核目标','Review targets'),current.targets??'—'],
     [uiText('待齐备','Awaiting source'),current.historical?'—':states.waiting_metadata||0],
   ].map(([label,n])=>`<div><span>${label}</span><strong>${n}</strong></div>`).join('');
-  $('#versionDatasetCounts').textContent=current.historical?uiText(`抽样 ${current.sampled_targets??0} · 低置信 ${current.low_only??0} · 历史固定集`,`Sample ${current.sampled_targets??0} · Low confidence ${current.low_only??0} · Frozen historical set`):uiText(`抽样 ${current.sampled_targets??0} · 低置信 ${current.low_only??0} · 已分配 ${Object.values(current.assigned||{}).reduce((a,b)=>a+b,0)} · 已过滤 ${states.excluded||0}`,`Sample ${current.sampled_targets??0} · Low confidence ${current.low_only??0} · Assigned ${Object.values(current.assigned||{}).reduce((a,b)=>a+b,0)} · Excluded ${states.excluded||0}`);
+
   $('#versionDatasetHistory').hidden=Boolean(current.historical);
   const m=s.members;if(!m||m.dataset_id!==s.dataset)return;
-  renderVersionTE(m);
+  renderVersionComposition(m);renderVersionTE(m);
   const owner=$('#versionDatasetOwner');const ownerOptions=`<option value="">${uiText('全部负责人','All assignees')}</option>`+(m.assignees||[]).map(x=>`<option value="${escapeHtml(x)}">${escapeHtml(x)}</option>`).join('');
   if(owner.innerHTML!==ownerOptions)owner.innerHTML=ownerOptions;owner.value=s.assignee;enhanceNativeUiSelect(owner);
   const date=$('#versionDatasetDate');date.hidden=Boolean(current.historical);date.disabled=false;
@@ -145,6 +145,16 @@ function bindVersionDatasets(){
 function versionTEBadge(row){
   return row.te_status==='filled'?`TE ${row.te_value}`:row.te_status==='unfilled'?uiText('TE 待标','TE pending'):row.te_status==='not_target'?uiText('未纳入复核','Outside review set'):uiText('TE 未知','TE unknown');
 }
+function renderVersionComposition(m){
+  const c=m.composition;if(!c)return;
+  const labels={low:uiText('低置信','Low confidence'),sample:uiText('抽样','Sample'),other:uiText('其他','Other')};
+  $('#versionDatasetCounts').textContent=m.dataset.historical?uiText(`固定目标集 ${c.total}`,`Frozen targets ${c.total}`):uiText(`已推理准入 ${c.total} · 待处理 ${c.pending} · 已过滤 ${c.excluded}`,`Inferred and admitted ${c.total} · Pending ${c.pending} · Excluded ${c.excluded}`);
+  const bar=$('#versionCompositionBar');bar.classList.toggle('is-empty',!c.total);
+  bar.setAttribute('aria-label',c.groups.map(g=>`${labels[g.key]} ${g.count} (${(100*g.ratio).toFixed(1)}%)`).join(', '));
+  bar.innerHTML=c.groups.map(g=>`<i class="version-reason-${g.key}" style="width:${100*g.ratio}%"></i>`).join('');
+  $('#versionCompositionLegend').innerHTML=c.groups.map(g=>`<div><i class="te-swatch version-reason-${g.key}"></i><span>${labels[g.key]}</span><strong>${g.count}</strong><small>${c.total?(100*g.ratio).toFixed(1)+'%':'—'}</small></div>`).join('');
+}
+
 function renderVersionTE(m){
   const s=versionDatasetState,te=m.te,n=te.summary;
   const filled=n.total?100*n.filled/n.total:0,known=n.total?100*(n.filled+n.unfilled)/n.total:0;
@@ -152,11 +162,12 @@ function renderVersionTE(m){
   donut.setAttribute('aria-label',uiText(`TE 已标 ${n.filled}，共 ${n.total}`,`TE filled ${n.filled} of ${n.total}`));
   $('#versionTERate').textContent=n.total?`${filled.toFixed(1)}%`:'—';
   $('#versionTEStatusChart').innerHTML=dailyReviewStatusRows(n).map(([key,label,count])=>`<button type="button" class="te-legend-item" data-version-te-status="${key}" aria-pressed="${s.teStatus===key}"><i class="te-swatch te-${key}"></i><span>${label}</span><strong>${count} / ${n.total}</strong></button>`).join('');
-  $('#versionTESource').textContent=`${te.source_status==='ready'?uiText('观测于','Observed'):te.source_status==='stale'?uiText('观测过期','Stale observation'):uiText('同步异常 · 未知单列','Sync unavailable · Unknown shown separately')} ${versionDatasetTime(te.last_success_at)} CST`;
+  $('#versionTESource').textContent=`${te.source_status==='ready'?uiText('最近核对','Last checked'):te.source_status==='stale'?uiText('观测过期','Stale observation'):uiText('同步异常 · 未知单列','Sync unavailable · Unknown shown separately')} ${versionDatasetTime(te.last_success_at)} CST${te.observed_changes?uiText(` · 本轮标注变化 ${te.observed_changes.te}`,` · Label changes this check ${te.observed_changes.te}`):''}`;
   $('#versionTESource').classList.toggle('te-warning',te.source_status!=='ready');
   $('#versionTEDistribution').innerHTML=[...te.distribution].sort((a,b)=>b.count-a.count).map(r=>`<div class="te-result-row"><div><span>${escapeHtml(String(r.value))}</span><strong>${r.count}</strong></div><div class="te-result-track"><i style="width:${n.filled?100*r.count/n.filled:0}%"></i></div></div>`).join('')||`<p class="te-chart-empty">${uiText('该范围暂无已标结果','No filled TE results in this scope')}</p>`;
   $('#versionTEDays').hidden=m.dataset.historical;
-  $('#versionTEDailyChart').innerHTML=te.daily.map(day=>{const d=day.summary;return `<button type="button" class="te-day" data-version-date="${escapeHtml(day.date)}" aria-pressed="${day.date===s.date}" aria-label="${escapeHtml(day.date)} · ${d.filled}/${d.total}"><strong>${(100*d.rate).toFixed(0)}%</strong><span class="te-day-stack">${dailyReviewStatusRows(d).map(([k,,count])=>`<i class="te-${k}" style="height:${100*count/d.total}%"></i>`).join('')}</span><span>${escapeHtml(day.date.slice(5).replace('-','/'))}</span><small>${d.filled}/${d.total}</small></button>`;}).join('');
+  const dailyMarkup=te.daily.map(day=>{const d=day.summary;return `<button type="button" class="te-day" data-version-date="${escapeHtml(day.date)}" aria-pressed="${day.date===s.date}" aria-label="${escapeHtml(day.date)} · ${d.filled}/${d.total}"><strong>${d.total?(100*d.rate).toFixed(1)+'%':'—'}</strong><span class="te-day-stack">${dailyReviewStatusRows(d).map(([k,,count])=>`<i class="te-${k}" style="height:${100*count/d.total}%"></i>`).join('')}</span><span>${escapeHtml(day.date.slice(5).replace('-','/'))}</span><small>${d.filled}/${d.total}</small></button>`;}).join('');
+  const dailyChart=$('#versionTEDailyChart');if(dailyChart.innerHTML!==dailyMarkup)dailyChart.innerHTML=dailyMarkup||`<p class="te-chart-empty">${uiText('暂无可用发生日','No occurrence dates available')}</p>`;
   const params=new URLSearchParams({mode:s.mode,q:s.query,sort:s.sort,date:s.date,te_status:s.teStatus,revision:m.snapshot_revision,assignee:s.assignee,review_status:s.reviewStatus});
   const exp=$('#versionDatasetExport');exp.hidden=false;exp.href=withBase(`/api/version-datasets/${encodeURIComponent(s.dataset)}/workbench.csv?${params}`);
 }

@@ -871,3 +871,11 @@
   .case-decision-info-dialog .dialog-card { padding:12px; }
   .case-decision-info-dialog .case-label-decision-body { overflow-x:hidden; }
 }
+
+@media(max-width:650px){
+ .version-composition-legend {gap:8px 14px}
+ .version-composition-legend > div {font-size:10px;gap:5px}
+ .version-days .te-daily-chart {gap:3px}
+ .version-days .te-day {flex-basis:46px;min-width:46px}
+ .version-composition header .version-counts {font-size:10px;line-height:1.6}
+}

@@ -40,3 +40,18 @@ body[data-active-page="version-datasets"] .top-actions {margin-left:auto}
 
 .version-joint-result {font-size:10px}
 .version-gallery-filters > .ui-select {width:145px}
+
+.version-composition {display:grid;gap:9px;min-width:0}
+.version-composition header {display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
+.version-composition h2,.version-days h3 {font-size:12px;margin:0;color:var(--text)}
+.version-composition-bar {display:flex;height:8px;overflow:hidden;border-radius:4px;background:var(--line)}
+.version-composition-bar i {display:block;height:100%}
+.version-reason-low {background:var(--accent)}
+.version-reason-sample {background:#b390ee}.version-reason-other {background:var(--muted)}
+.version-composition-legend {display:flex;flex-wrap:wrap;gap:12px 24px;min-width:0}
+.version-composition-legend > div {display:flex;align-items:center;gap:7px;min-width:0;color:var(--muted);font-size:11px}
+.version-composition-legend strong {color:var(--text);font-variant-numeric:tabular-nums}
+.version-composition-legend small {font-size:10px}
+.version-days {border-top:1px solid var(--line);padding-top:14px;margin-top:14px}
+.version-days .te-daily-chart {min-height:180px}
+#versionTESource {white-space:normal;overflow-wrap:anywhere}

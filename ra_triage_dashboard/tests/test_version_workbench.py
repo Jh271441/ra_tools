@@ -66,3 +66,36 @@ class VersionWorkbenchTest(unittest.TestCase):
             response=asyncio.run(core.legacy_daily_review(request))
         url=response.headers['location']
         self.assertIn('/manual/version-datasets?',url);self.assertIn('dataset=historical-0821',url);self.assertIn('mode=samples',url);self.assertIn('te_status=filled',url);self.assertIn('media=camera',url);self.assertIn('page=2',url)
+
+    def test_composition_is_mutually_exclusive_and_ignores_gallery_filters(self):
+        for iid,state,sample,low in [('cn4','published',False,False),('cn5','excluded',True,True),('cn6','waiting_metadata',True,False)]:
+            self.rows.append(dict(self.rows[2],issue_id=iid,state=state,is_sample=sample,is_low=low))
+        value,_=self.read(mode='low',te_status='filled',q='cn1')
+        c=value['composition'];self.assertEqual(c['total'],3)
+        self.assertEqual({g['key']:g['count'] for g in c['groups']},{'low':1,'sample':1,'other':1})
+        self.assertAlmostEqual(sum(g['ratio'] for g in c['groups']),1)
+        self.assertEqual(c['pending'],2);self.assertEqual(c['excluded'],1)
+        self.assertEqual(value['te']['summary']['total'],1)
+        # The date filter scopes composition, while low/sample page filters never do.
+        self.rows[-3]['issue_time']=1792566000000
+        day=self.read()[0]['items'][0]['date']
+        chosen,_=self.read(date=day)
+        self.assertEqual(chosen['composition']['total'],2)
+        self.assertEqual(chosen['composition']['groups'][2]['count'],0)
+
+    def test_te_observation_delta_does_not_expose_raw_audit_ids(self):
+        saved=json.loads((self.folder/'1009.json').read_text())
+        saved['changes']=dict(te=[dict(issue_id='cn-secret')],added=['private'],removed=[])
+        (self.folder/'1009.json').write_text(json.dumps(saved))
+        value,_=self.read()
+        self.assertEqual(value['te']['observed_changes'],dict(te=1,added=1,removed=0))
+        self.assertNotIn('cn-secret',json.dumps(value));self.assertNotIn('private',json.dumps(value))
+
+    def test_selected_old_occurrence_day_stays_in_bounded_chart(self):
+        for day in range(1,17):
+            at=datetime(2026,10,day,12,tzinfo=timezone.utc).timestamp()*1000
+            self.rows.append(dict(self.rows[0],issue_id='cn'+str(100+day),issue_time=at))
+        value,_=self.read(date='2026-10-01')
+        self.assertEqual(len(value['te']['daily']),14)
+        self.assertIn('2026-10-01',{d['date'] for d in value['te']['daily']})
+        self.assertEqual(value['te']['daily'][0]['summary']['total'],1)
