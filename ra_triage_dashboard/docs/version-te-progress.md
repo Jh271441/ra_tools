@@ -1,58 +1,48 @@
 # Version composition and TE progress
 
-The version page follows the established full-width Workbench layout: four
-aggregate metrics in one row, followed by the full-width TE panel and then a
-secondary full-width composition bar. This restores the original visual hierarchy after the user rejected the
-side-by-side narrow summary and tiny date-tile redesign. Spacing is modestly
-reduced; text and charts retain the original readable scale.
+The version page follows the existing Labeling summary design language: a bounded
+1480px reading area, shared Workbench cards and command bar, 12px spacing, and a
+small type hierarchy. The user-provided image is a grouping illustration rather
+than a visual template. No fonts, UI libraries, endpoints or aggregation logic
+are added for this redesign.
 
-Inside the TE panel, overall counts and their filled-result distribution sit
-adjacent on desktop, with a light divider connecting the two. The occurrence-date
-section fills the remaining width with one horizontal progress row per day;
-two dates no longer leave an elastic empty column between counts and results.
-The same row keeps its date, gauge, filled/target count and percentage in stable
-columns. Long lists scroll within the bounded chart. Tablet/mobile layouts wrap
-existing components without document overflow; mobile puts daily progress before
-the secondary result distribution and retains 44px touch targets. The chart keeps
-up to 14 dates and includes a selected older date.0821 retains its fixed312
-members with no date chart.
+A labeled filter panel holds dataset, case scope and occurrence date (CST). Case
+scope remains a view filter, not a configurable sampling strategy. All selectors
+retain the shared native-select enhancement, including keyboard, Escape, outside
+close, viewport positioning, disabled states and locale preservation. The topbar's
+existing refresh action is the single manual refresh entry for this page.
+
+Four shared stat cards separate the aggregate labels from their larger values;
+review targets receive a restrained accent. TE progress, filled-result distribution
+and occurrence-date progress each have their own card. Desktop widths follow
+content needs rather than equal thirds. The donut includes both percentage and
+filled/target count; categorical bars retain known-value localization and stable
+colors. Daily rows keep dates, gauges, counts and percentages in stable columns;
+long lists scroll locally. Source freshness and denominator scope stay visible.
+
+Tablet uses two cards followed by a full-width date card. Phone layouts retain
+the original controls, put progress then daily progress then results in one column,
+use two-column metrics and filters where they fit, stack the primary filters at
+430px and below to keep long scope names readable, and keep 44px touch targets.
+0821 preserves its fixed312 targets and hides occurrence-date controls and charts.
+Dark and light themes use the same shared tokens and card primitives.
 
 A fixed “All dates” button clears only the occurrence-date filter; clicking the
-selected day again also clears it. Current selected date appears beside the TE
-scope count, so changing the denominator is explicit. Same-version filtering keeps
-charts mounted during loading, updates pressed states immediately, and leaves
-cancellation controls reachable. Dataset switches clear the old scope; polling,
-request sequence guards and all other filters remain unchanged. Count refreshes
-retain the focused date and the chart scroll position.
+selected day again also clears it. The selected date remains explicit beside the
+TE scope. Same-version filtering keeps charts during loading and updates pressed
+states immediately. Dataset switches clear the old scope. Existing request
+cancellation, sequence guards, polling, chart focus and scroll retention remain.
 
-The user-prioritized TE summary shows filled and pending counts prominently;
-the shared denominator appears once beside its heading. The occurrence chart is
-labeled “Filled / targets”, and the filled-result distribution has its own heading,
-stable categorical colors, localized known values, and wrapping long labels.
-Raw source values and filled/pending semantics remain unchanged. Source freshness
-stays visible; per-check changes are secondary tooltip content.
+Gallery filters have visible labels beneath a Cases heading and Issue search.
+Cards keep four compact rows: Issue/cohort, model/confidence, TE/platform review
+states, and owner/occurrence time. Trigger and added-time details remain in
+accessible metadata and the media dialog. TE and platform review completion
+remain independent.
 
-Gallery cards use four compact rows: Issue/cohort, model/confidence, TE and platform
-review states, and owner/occurrence time. Trigger and added-time details remain in
-the card's accessible metadata and media dialog, reachable on touch devices too.
-The two independent completion systems are never merged into one status.
-
-The heading info icon explains source, denominator and update cadence on hover,
-focus or tap. Escape and outside interaction dismiss it. Tooltip position stays
-within the viewport. Shared scroll containers use native wheel/keyboard behavior
-with theme-aware thin rounded chrome; forced-color mode keeps system defaults.
-The collapsed sidebar's deliberate hidden scrollbar remains unchanged.
-
-Design references, checked2026-10-23:
-
-- [Grafana Stat](https://grafana.com/docs/grafana/latest/visualizations/panels-visualizations/visualizations/stat/): compact values for aggregate metrics.
-- [Grafana Bar gauge](https://grafana.com/docs/grafana/latest/visualizations/panels-visualizations/visualizations/bar-gauge/) and [Table](https://grafana.com/docs/grafana/latest/visualizations/panels-visualizations/visualizations/table/): label/value gauges and compact rows.
-- [Metabase dashboard width](https://www.metabase.com/docs/latest/dashboards/introduction#dashboard-width): bounded dashboard layouts across different display sizes.
-- [Radix Scroll Area](https://www.radix-ui.com/primitives/docs/components/scroll-area): prefer native scrolling and CSS customization when sufficient.
-
-These references inform existing metric, gauge and scrolling components. The
-user-requested established Workbench layout takes precedence over the previously
-tried bounded side-by-side overview; no new framework is introduced.
+The progress-heading info icon explains source, denominator and update cadence
+on hover, focus or tap. Escape and outside interaction dismiss it; the tooltip
+stays within the viewport. Shared scroll containers preserve native wheel and
+keyboard behavior with theme-aware chrome and forced-color system defaults.
 
 Version composition partitions **inferred, admitted** cases into final enum groups:
 sample first, then low confidence, then other. Pending/excluded cases are separate,

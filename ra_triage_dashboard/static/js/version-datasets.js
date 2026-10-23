@@ -22,7 +22,7 @@ function clearVersionDatasetMembers({keepCharts=false}={}){
   $('#versionDatasetPrev').disabled=true;$('#versionDatasetNext').disabled=true;
   $('#versionDatasetBatches').textContent='';$('#versionDatasetExport').hidden=true;
   if(!keepCharts){
-    $('#versionTEScope').textContent='';$('#versionTEResultCount').textContent='';$('#versionTERate').textContent='—';$('#versionTESource').textContent=uiText('读取中…','Loading…');
+    $('#versionTEScope').textContent='';$('#versionTEResultCount').textContent='';$('#versionTERate').textContent='—';$('#versionTERatio').textContent='—';$('#versionTESource').textContent=uiText('读取中…','Loading…');
     for(const id of ['versionTEStatusChart','versionTEDistribution','versionTEDailyChart','versionCompositionBar','versionCompositionLegend'])$('#'+id).replaceChildren();
     $('#versionTEDonut').classList.add('is-empty');$('#versionTEDonut').style.setProperty('--te-filled','0%');$('#versionTEDonut').style.setProperty('--te-known','0%');
     $('#versionDatasetDate').disabled=true;
@@ -66,15 +66,15 @@ function renderVersionDatasets({force=false}={}) {
     [uiText('已回刷','Published'),current.historical?'—':states.published||0],
     [uiText('复核目标','Review targets'),current.targets??'—'],
     [uiText('待齐备','Awaiting source'),current.historical?'—':states.waiting_metadata||0],
-  ].map(([label,n])=>`<div><span>${label}</span><strong>${n}</strong></div>`).join('');
+  ].map(([label,n],index)=>`<article class="analysis-stat-card${index===2?' version-metric-primary':''}"><span>${label}</span><strong>${n}</strong></article>`).join('');
 
   $('#versionDatasetHistory').hidden=Boolean(current.historical);
   const m=s.members;if(!m||m.dataset_id!==s.dataset)return;
   renderVersionComposition(m);renderVersionTE(m);
   const owner=$('#versionDatasetOwner');const ownerOptions=`<option value="">${uiText('全部负责人','All assignees')}</option>`+(m.assignees||[]).map(x=>`<option value="${escapeHtml(x)}">${escapeHtml(x)}</option>`).join('');
   if(owner.innerHTML!==ownerOptions)owner.innerHTML=ownerOptions;owner.value=s.assignee;enhanceNativeUiSelect(owner);
-  const date=$('#versionDatasetDate');date.hidden=Boolean(current.historical);date.disabled=false;
-  const dateOptions=`<option value="">${uiText('全部发生日 · CST','All occurrence dates · CST')}</option>`+(m.date_options||[]).map(d=>`<option value="${escapeHtml(d)}">${escapeHtml(d)}</option>`).join('');
+  const date=$('#versionDatasetDate');date.hidden=Boolean(current.historical);$('#versionDatasetDateField').hidden=Boolean(current.historical);date.disabled=false;
+  const dateOptions=`<option value="">${uiText('全部日期','All dates')}</option>`+(m.date_options||[]).map(d=>`<option value="${escapeHtml(d)}">${escapeHtml(d)}</option>`).join('');
   if(date.innerHTML!==dateOptions)date.innerHTML=dateOptions;date.value=s.date;enhanceNativeUiSelect(date);
   const gridKey=JSON.stringify([s.dataset,s.mode,s.sort,s.query,s.media,s.date,s.teStatus,s.assignee,s.reviewStatus,m.items,state.uiLanguage]);
   if(force||gridKey!==s.gridKey){
@@ -145,7 +145,6 @@ function bindVersionDatasets(){
   for(const [id,key] of [['versionDatasetPicker','dataset'],['versionDatasetMode','mode'],['versionDatasetSort','sort'],['versionDatasetDate','date'],['versionDatasetTEStatus','teStatus'],['versionDatasetMedia','media'],['versionDatasetOwner','assignee'],['versionDatasetReviewStatus','reviewStatus']])$('#'+id).addEventListener('change',e=>versionDatasetChange({[key]:e.target.value}));
   $('#versionDatasetsPage').addEventListener('click',e=>{const status=e.target.closest('[data-version-te-status]');if(status){versionDatasetChange({teStatus:s.teStatus===status.dataset.versionTeStatus?'all':status.dataset.versionTeStatus});return;}const day=e.target.closest('[data-version-date]');if(day){versionDatasetChange({date:s.date===day.dataset.versionDate?'':day.dataset.versionDate});return;}if(e.target.closest('[data-version-all-dates]')){if(s.date)versionDatasetChange({date:''});return;}const open=e.target.closest('[data-version-open]');if(open)void openVersionDatasetMedia(open.dataset.versionOpen);});
   $('#versionDatasetSearchForm').addEventListener('submit',e=>{e.preventDefault();versionDatasetChange({query:$('#versionDatasetSearch').value.trim()});});
-  $('#versionDatasetRefresh').addEventListener('click',()=>loadVersionDatasets());
   $('#versionDatasetPrev').addEventListener('click',()=>versionDatasetChange({page:s.page-1}));$('#versionDatasetNext').addEventListener('click',()=>versionDatasetChange({page:s.page+1}));
   $('#versionDatasetHistory').addEventListener('toggle',()=>{void loadVersionDatasetBatches();});
   document.addEventListener('visibilitychange',()=>{if(!s.active)return;clearTimeout(s.timer);if(document.hidden){s.seq++;s.controller?.abort();s.observer?.disconnect();s.observer=null;s.imageEpoch++;}else void loadVersionDatasets();});
@@ -192,12 +191,13 @@ function renderVersionTE(m){
   const donut=$('#versionTEDonut');donut.style.setProperty('--te-filled',`${filled}%`);donut.style.setProperty('--te-known',`${known}%`);donut.classList.toggle('is-empty',!n.total);
   donut.setAttribute('aria-label',uiText(`TE 已标 ${n.filled}，共 ${n.total}`,`TE filled ${n.filled} of ${n.total}`));
   $('#versionTERate').textContent=n.total?`${filled.toFixed(1)}%`:'—';
+  $('#versionTERatio').textContent=`${n.filled} / ${n.total}`;
   $('#versionTEScope').textContent=m.dataset.historical?uiText(`${n.total} 个固定目标`,`${n.total} frozen targets`):uiText(`${s.date?s.date+' · ':''}${n.total} 个目标 · 低置信＋抽样`,`${s.date?s.date+' · ':''}${n.total} targets · Low confidence + sample`);
   $('#versionTEStatusChart').innerHTML=dailyReviewStatusRows(n).map(([key,label,count])=>`<button type="button" class="te-legend-item${count===0?' is-zero':''}" data-version-te-status="${key}" aria-pressed="${s.teStatus===key}"><i class="te-swatch te-${key}"></i><span>${label}</span><strong>${count}</strong></button>`).join('');
   $('#versionTESource').textContent=`${te.source_status==='ready'?uiText('更新','Updated'):te.source_status==='stale'?uiText('观测过期','Stale observation'):uiText('同步异常 · 未知单列','Sync unavailable · Unknown shown separately')} ${versionDatasetTime(te.last_success_at)} CST`;
   $('#versionTESource').title=te.observed_changes?uiText(`本轮标注变化 ${te.observed_changes.te}；非当天标注量`,`Result changes this check: ${te.observed_changes.te}; not daily annotation volume`):'';
   $('#versionTESource').classList.toggle('te-warning',te.source_status!=='ready');
-  $('#versionTEResultCount').textContent=String(n.filled);
+  $('#versionTEResultCount').textContent=uiText(`${n.filled} 条`,`${n.filled} ${n.filled===1?'result':'results'}`);
   $('#versionTEDistribution').innerHTML=[...te.distribution].sort((a,b)=>b.count-a.count).map(r=>`<div class="version-result-row"><span title="${escapeHtml(versionTEResult(r.value))}">${escapeHtml(versionTEResult(r.value))}</span><span class="version-result-track"><i style="background:${versionTEResultColor(r.value)};width:${n.filled?100*r.count/n.filled:0}%"></i></span><strong>${r.count}</strong></div>`).join('')||`<p class="te-chart-empty">${uiText('暂无已标结果','No filled results')}</p>`;
   $('#versionTEDays').hidden=m.dataset.historical;
   const dailyMarkup=te.daily.map(day=>{const d=day.summary;return `<button type="button" class="te-day" data-version-date="${escapeHtml(day.date)}" aria-pressed="${day.date===s.date}" aria-label="${escapeHtml(day.date)} · ${uiText(`已标 ${d.filled}，目标 ${d.total}，待标 ${d.unfilled}，未知 ${d.unknown}`,`Filled ${d.filled}, targets ${d.total}, pending ${d.unfilled}, unknown ${d.unknown}`)}"><span class="version-day-date">${escapeHtml(day.date.slice(5).replace('-','/'))}</span><span class="version-day-track" aria-hidden="true">${dailyReviewStatusRows(d).map(([k,,count])=>`<i class="te-${k}" style="width:${d.total?100*count/d.total:0}%"></i>`).join('')}</span><strong>${d.filled}/${d.total}</strong><small>${d.total?(100*d.rate).toFixed(1)+'%':'—'}</small></button>`;}).join('');
