@@ -54,6 +54,21 @@ class ReasonComparisonTest(unittest.TestCase):
         snapshot.complete=False
         self.assertTrue(all(d["state"]=="query_failed" for d in trail_update_details(snapshot,ids,info_field=INFO).values()))
 
+    def test_dataframe_empty_info_is_unset_but_malformed_values_fail_closed(self):
+        issue = "cn00000001"
+        for value in (None, "", float("nan")):
+            snapshot = SimpleNamespace(complete=True, rows=[{"issue_id":issue, INFO:value}])
+            detail = trail_update_details(snapshot, [issue], info_field=INFO, expected_comments={issue:"new"})[issue]
+            self.assertEqual(detail["state"], "needs_exclusion")
+            self.assertIsNone(detail["trail_should_exclude"])
+            self.assertEqual(selected._owned_fields(snapshot.rows[0], INFO), {})
+        for value in (float("inf"), 0, 7.5, "NaN", [], "broken JSON"):
+            snapshot = SimpleNamespace(complete=True, rows=[{"issue_id":issue, INFO:value}])
+            detail = trail_update_details(snapshot, [issue], info_field=INFO)[issue]
+            self.assertEqual(detail["state"], "query_failed")
+            self.assertFalse(detail["needs_exclusion_update"])
+            with self.assertRaises(HTTPException):selected._owned_fields(snapshot.rows[0], INFO)
+
     def test_canonical_exclusion_skips_synthetic_review_and_notifications(self):
         with patch.object(commit.database,"get_case",return_value={"annotations":[{"id":4000000000000614}]}), patch.object(commit.database,"project_issue_exclusions",return_value={"cn00000001":{"is_excluded":True}}), patch.object(commit.database,"create_annotation") as create:
             result=commit._mark_local_review_exclusions(["cn00000001"],actor=SimpleNamespace(username="alice",source="sso",verified=True),notification_recipients_by_issue={"cn00000001":["bob"]})
@@ -109,6 +124,18 @@ class SelectedUpdateTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.writes),1)
         self.assertEqual(self.audit.await_count,2)
         self.assertEqual(self.audit.call_args.args[3],"synced")
+
+    async def test_dataframe_empty_info_selected_exclusion_is_idempotent(self):
+        self.rows[0][INFO] = float("nan")
+        preview = await self.preview(intent="exclude")
+        self.assertEqual(preview["items"][0]["before"], {})
+        result = await self.submit(preview)
+        self.assertTrue(result["ok"])
+        self.assertTrue(self.rows[0][INFO]["ra_triage_dashboard"]["should_exclude"])
+        self.assertNotIn("ra_stuck_auto_result", self.writes[0])
+        repeated = await self.submit(preview)
+        self.assertTrue(repeated["ok"])
+        self.assertEqual(len(self.writes), 1)
 
     async def test_local_revision_change_rejected_even_same_text(self):
         preview=await self.preview();self.items[0]["reason_source"]["revision_id"]=2

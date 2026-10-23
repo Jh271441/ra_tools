@@ -45,6 +45,15 @@ def canonical_json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
+def normalise_trail_info_value(value: Any) -> Any:
+    """Trail dataframe empty cells arrive as float NaN, not malformed JSON.
+
+    Only normalize that transport sentinel; strings such as "NaN", infinity,
+    numbers, and non-object JSON still fail validation.
+    """
+    return None if isinstance(value, float) and value != value else value
+
+
 def dashboard_exclusion_values(value: Any) -> tuple[bool | None, str]:
     """Read only this Dashboard's marker and normalized exclusion note."""
 
@@ -139,7 +148,7 @@ def trail_update_details(sync_result: Any, issue_ids: list[str], *, info_field: 
     for issue in issue_ids:
         failure = "query_failed" if not getattr(sync_result, "complete", False) else "not_found" if issue not in rows else ""
         if not failure:
-            raw = rows[issue].get(info_field)
+            raw = normalise_trail_info_value(rows[issue].get(info_field))
             try:
                 decoded = json.loads(raw) if isinstance(raw, str) and raw.strip() else raw
                 invalid = decoded is not None and decoded != "" and not isinstance(decoded, dict)

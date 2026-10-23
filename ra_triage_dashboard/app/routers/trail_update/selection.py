@@ -12,7 +12,7 @@ from fastapi import APIRouter, Request
 from ...auth import has_same_origin_mutation_marker, identity_can_write, request_identity
 from ...runtime import database, settings
 from ...support.common import _detail
-from ...trail_exclusion_contracts import canonical_json, normalise_issue_ids, trail_update_details
+from ...trail_exclusion_contracts import canonical_json, normalise_issue_ids, normalise_trail_info_value, trail_update_details
 from ...trail_sync import read_trail_model_fields
 from ...trail_writer import attach_trail_operation_id, build_trail_changes, write_trail_model_results
 from .commit import commit_guard, _readback_changes
@@ -28,7 +28,7 @@ def _hash(value):
 
 
 def _owned_fields(row, info_field):
-    raw = row.get(info_field)
+    raw = normalise_trail_info_value(row.get(info_field))
     info = {} if raw is None or raw == "" else raw
     if isinstance(info, str):
         try:
