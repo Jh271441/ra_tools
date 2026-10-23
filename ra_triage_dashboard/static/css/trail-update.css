@@ -727,3 +727,5 @@ html[data-color-theme="light"] .trail-update-state-badge.is-excluded { color:#1d
 .trail-update-initial-loading[hidden] { display:none; }
 .trail-update-initial-loading > div { display:grid; gap:10px; margin-top:14px; }
 .trail-update-initial-loading i { display:block; height:30px; border-radius:5px; background:var(--overlay); }
+
+.trail-update-results[hidden] { display:none; }
