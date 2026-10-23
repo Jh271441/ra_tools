@@ -109,7 +109,7 @@ async def model_runs(request: Request, baselines: str = "") -> dict[str, Any]:
         # so run the whole enrichment pass in one worker thread rather than
         # blocking the event loop once per upload Run.
         for item in rows:
-            if item.get("kind") != "upload":
+            if item.get("kind") not in {"upload", "version_live"}:
                 continue
             source_file = _model_source_file(item)
             filename = _model_source_filename(item)
@@ -138,6 +138,7 @@ async def model_runs(request: Request, baselines: str = "") -> dict[str, Any]:
     await asyncio.to_thread(_attach_source_files, items)
     return {
         "items": items,
+        "aliases": await asyncio.to_thread(database.version_run_aliases),
         "default_model_run_id": await asyncio.to_thread(
             database.default_model_run_id
         ),

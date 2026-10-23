@@ -237,6 +237,8 @@ def resolve_request_baseline_ids(
         candidate = request.query_params.get("baselines") or request.query_params.get(
             "baseline_scopes"
         )
+    if "version-" in str(candidate or ""):
+        allowed |= {"version-"+row["release_family"] for row in database.list_version_datasets()}
     return normalize_baseline_ids(candidate, allowed=allowed, default=default)
 
 def resolve_request_baseline_scopes(
@@ -245,7 +247,11 @@ def resolve_request_baseline_scopes(
     request: Request | None = None,
 ) -> list[str]:
     ids = resolve_request_baseline_ids(raw, request=request)
-    scopes = ids_to_scopes(ids, baseline_registry)
+    scopes = ids_to_scopes([i for i in ids if not i.startswith("version-")], baseline_registry)
+    for version_id in ids:
+        if version_id.startswith("version-"):
+            scopes.extend(database.version_dataset_scopes("release-"+version_id[8:]+"-odd2"))
+    scopes = list(dict.fromkeys(scopes))
     if not scopes:
         # Fail closed to default primary scope.
         entry = baseline_registry.by_id(baseline_registry.default_ids()[0]) if baseline_registry.entries else None
@@ -335,5 +341,23 @@ def enrich_model_run_baseline_hint(
     payload = dict(run)
     payload["baseline_coverage"] = by_id
     payload["unmatched_prediction_count"] = unmatched
+    if run.get("kind") == "version_live":
+        family = (run.get("metadata") or {}).get("release_family")
+        if family:
+            inferred = ["version-"+family]
     payload["inferred_baseline_ids"] = inferred
     return payload
+
+
+def operational_baseline_summaries(existing, db=None):
+    db = db or database
+    versions = db.list_version_datasets()
+    if not versions:
+        return existing
+    families = {x['release_family'] for x in versions}
+    # Historical baseline scopes remain valid provenance; only the visible
+    # operational selectors collapse their daily entries after consolidation.
+    result = [x for x in existing if not (('20261009' in families) and (str(x.get('id','')).startswith('1009-') or str(x.get('id','')).startswith('review-2026-')))]
+    for item in versions:
+        result.append(dict(id='version-'+item['release_family'],label=item['name'],scope='manual_sidecar_version_'+item['release_family'],loader='version_projection',count=item['targets'],source_rows=item['targets'],status='registered',registration_status='registered',default_selected=False,operational=True,gt_mode='sparse',membership=dict(frozen=False,registered_count=item['targets'])))
+    return result

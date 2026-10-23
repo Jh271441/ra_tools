@@ -1175,6 +1175,7 @@ function showPage(
   }
   state.activePage = target;
   document.body.dataset.activePage = target;
+  if (typeof setVersionDatasetsActive === "function") setVersionDatasetsActive(target === "version-datasets");
   if (typeof setDailyCronActive === "function") setDailyCronActive(target === "daily-cron");
   if (typeof setDailyReviewActive === "function") setDailyReviewActive(target === "daily-review");
   if (typeof ensureRunCollectionsDedicatedPage === "function") {

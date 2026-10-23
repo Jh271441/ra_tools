@@ -98,6 +98,7 @@ function renderDailyCron() {
   if (!$("#dailyCronPage")) return;
   const data = dailyCronState.data;
   if (!data) return;
+  if (data.incremental?.enabled && !dailyCronState.selectedDay) { renderIncrementalCron(data); return; }
   const overview = data.overview, daily = overview?.daily, run = typeof cronSelectedRuns === "function" ? cronSelectedRuns(data).main : cronLatestRun(data), sidecar = data.sidecar;
   const observationAge = Date.now() / 1000 - (overview?.collected_at || 0);
   const stale = Boolean(overview && (overview.stale || overview.collector_error || observationAge > 90));
@@ -261,3 +262,22 @@ function setDailyCronActive(active) {
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden && dailyCronState.active) void loadDailyCron();
 });
+
+
+function renderIncrementalCron(data) {
+  const v=data.incremental,c=v.states||{},m=v.media||{};
+  const eligible=Object.entries(c).filter(([k])=>!['excluded','waiting_metadata'].includes(k)).reduce((n,[,x])=>n+x,0);
+  const inferred=(c.inferred||0)+(c.published||0);
+  $('#dailyCronConnection').textContent=`${uiText('版本增量','Version incremental')} · ${cronTime(v.updated_at)} CST`;
+  $('#dailyCronConnection').dataset.tone=v.stale?'warn':'ok';
+  $('#dailyCronMainStatus').innerHTML=cronChip(v.stale?'stalled':c.needs_attention?'partial':'running');
+  $('#dailyCronMainValue').textContent=`${(v.families||[]).map(x=>x.slice(4)).join(' / ')} · ${inferred} / ${eligible}`;
+  $('#dailyCronMainNote').textContent=uiText(`已推理 ${inferred} · 已回刷 ${c.published||0} · 待源 ${c.waiting_metadata||0} · 待核实 ${c.needs_attention||0}`,`Inferred ${inferred} · Published ${c.published||0} · Pending source ${c.waiting_metadata||0} · Attention ${c.needs_attention||0}`);
+  $('#dailyCronMediaStatus').innerHTML=cronChip(m.failure_count?'partial':m.verified===m.selected&&m.selected?'complete':'running');
+  $('#dailyCronMediaValue').textContent=cronFraction(m.verified,m.selected);
+  $('#dailyCronMediaNote').textContent=uiText(`复用 ${m.reused||0} · 待媒体 ${m.queued||0} · 最终失败 ${m.failure_count||0}`,`Reused ${m.reused||0} · Media pending ${m.queued||0} · Terminal failures ${m.failure_count||0}`);
+  $('#dailyCronSchedule').textContent=uiText('每5分钟发现新增及后补；按版本处理，不限 T−2。','Discover new and enriched cases every 5 minutes; version scoped, including T−0.');
+  $('#dailyCronAlerts').innerHTML=`<p class="cron-note">${escapeHtml(v.stale?uiText('增量心跳过期，请核实任务。','Incremental heartbeat is stale.'):uiText('缺源进入等待；模型调用不确定或身份冲突单独隔离。','Missing sources wait; ambiguous model calls and identity conflicts are isolated.'))}</p>`;
+  for(const id of ['dailyCronMainTiming','dailyCronMediaTiming'])if($('#'+id))$('#'+id).textContent='';
+  renderDailyCronRuns(data);renderDailyCronSidecar(data.sidecar);renderDailyCronJobs();renderCronRunSelector();void renderDailyCronGraph();
+}

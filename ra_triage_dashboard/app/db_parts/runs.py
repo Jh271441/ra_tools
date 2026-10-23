@@ -24,6 +24,9 @@ from .shared import (
 )
 
 
+from .version_dataset_rules import current_version_prediction_sql
+
+
 class DatabaseRunsMixin:
     def import_model_run(
         self,
@@ -127,16 +130,17 @@ class DatabaseRunsMixin:
             ).fetchone()
         return self._run_dict(row) if row else None
 
-    def model_run_source_rows(self, run_id: str) -> list[dict[str, Any]]:
+    def model_run_source_rows(self, run_id: str, *, include_history: bool = False) -> list[dict[str, Any]]:
         """Return redacted normalized/raw rows for legacy source reconstruction."""
 
         with self.connect() as conn:
             rows = conn.execute(
-                """
+                f"""
                 SELECT issue_id, trip_id, model_label, model_reason,
                        model_confidence, model_extra_json, raw_json
-                FROM model_predictions
+                FROM model_predictions mp
                 WHERE model_run_id = ?
+                  AND {"1=1" if include_history else current_version_prediction_sql("mp")}
                 ORDER BY id ASC
                 """,
                 (run_id,),
@@ -224,7 +228,7 @@ class DatabaseRunsMixin:
                               AND {mismatch_sql}
                              THEN 1 ELSE 0 END) AS failure_count
                 FROM model_runs mr
-                LEFT JOIN model_predictions mp ON mp.model_run_id = mr.id
+                LEFT JOIN model_predictions mp ON mp.model_run_id = mr.id AND {current_version_prediction_sql("mp", "mr")}
                 LEFT JOIN issues i ON i.issue_id = mp.issue_id
                 GROUP BY mr.id
                 ORDER BY mr.is_default DESC, mr.created_at DESC
@@ -409,9 +413,11 @@ class DatabaseRunsMixin:
                 LEFT JOIN model_predictions base
                   ON base.issue_id = i.issue_id
                  AND base.model_run_id = ?
+                 AND {current_version_prediction_sql("base")}
                 LEFT JOIN model_predictions candidate
                   ON candidate.issue_id = i.issue_id
                  AND candidate.model_run_id = ?
+                 AND {current_version_prediction_sql("candidate")}
                 WHERE {scope_clause}
                   AND i.gt_label IN (?, ?, ?)
                 ORDER BY i.issue_id ASC
@@ -883,6 +889,7 @@ class DatabaseRunsMixin:
                 FROM model_predictions mp
                 LEFT JOIN issues i ON i.issue_id = mp.issue_id
                 WHERE mp.model_run_id IN ({placeholders})
+                  AND {current_version_prediction_sql("mp")}
                 GROUP BY mp.model_run_id, COALESCE(i.baseline_scope, '')
                 ORDER BY mp.model_run_id ASC, prediction_count DESC, baseline_scope ASC
                 """,

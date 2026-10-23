@@ -112,6 +112,10 @@ def _reconstructed_model_source(
     rows = database.model_run_source_rows(run_id)
     if not rows:
         return None
+    if run.get('kind') == 'version_live':
+        payload = {'schema_version':'version-stream-snapshot-v1','experiment':{'model_name':run.get('name'),'stream_id':run_id,'kind':'version_live','source_hash_contract':'Run hash identifies stream; this file is a current membership snapshot'},'results':rows}
+        content = json.dumps(payload,ensure_ascii=False,sort_keys=True,indent=2).encode('utf-8')
+        return content,filename,'application/json'
     if suffix == ".csv":
         columns: list[str] = []
         seen: set[str] = set()

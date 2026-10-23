@@ -25,11 +25,14 @@ def _read(root, relative):
     return value
 
 def _valid_row(row,dataset,day):
-    stamp={'1009':'20261009','0821':'20260821'}[dataset]
+    stamp={'1009':'20261009','0821':'20260821'}.get(dataset,dataset)
     if not isinstance(row,dict) or not re.fullmatch(r'cn\d+',str(row.get('issue_id',''))):return False
     if not re.match(r'^1\.gen4-release-'+stamp+r'(?:[.\-]|$)',str(row.get('version',''))):return False
     if row.get('dataset')!=dataset or row.get('reason') not in {'low','sample'}:return False
-    if dataset=='1009' and row.get('date')!=day:return False
+    if dataset!='0821' and day and row.get('date')!=day:return False
+    if dataset!='0821' and not day:
+        try:date.fromisoformat(row.get('date',''))
+        except (ValueError,TypeError):return False
     status=row.get('te_status');v=row.get('te_value')
     if status not in {'filled','unfilled','unknown'}:return False
     if status=='filled' and not (type(v) is int or isinstance(v,str) and 0<len(v)<=256):return False
@@ -37,7 +40,7 @@ def _valid_row(row,dataset,day):
     return True
 
 def project(root:Path,dataset='1009',day='',reason='all',te_status='all',page=1,size=24,revision=''):
-    if dataset not in {'1009','0821'} or reason not in {'all','low','sample'} or te_status not in {'all','filled','unfilled','unknown'}:raise ValueError('invalid_scope')
+    if (dataset not in {'1009','0821'} and not re.fullmatch(r'20\d{6}',dataset)) or reason not in {'all','low','sample'} or te_status not in {'all','filled','unfilled','unknown'}:raise ValueError('invalid_scope')
     if not 1<=page<=10000 or not 1<=size<=100:raise ValueError('invalid_page')
     allowed=Path(root).resolve()
     root=allowed/'reports/te_review_monitor'
@@ -45,17 +48,18 @@ def project(root:Path,dataset='1009',day='',reason='all',te_status='all',page=1,
     options=[]
     folder=root/'snapshots'
     if folder.exists():
-        for p in folder.glob('1009-????-??-??.json'):
-            d=p.stem[5:]
+        for p in folder.glob(dataset+'-????-??-??.json'):
+            d=p.stem[len(dataset)+1:]
             try:date.fromisoformat(d)
             except ValueError:continue
             options.append(d)
             if len(options)>4000:raise ValueError('too_many_dates')
     options.sort(reverse=True)
-    day=(day or (options[0] if options else '')) if dataset=='1009' else ''
+    version_membership=_read(root,'version-membership-'+dataset+'.json') if dataset!='0821' else None
+    day=(day or ('' if version_membership else options[0] if options else '')) if dataset!='0821' else ''
     if day:date.fromisoformat(day)
     key=dataset+('-'+day if day else '')
-    snap=_read(root,'snapshots/'+key+'.json') if day or dataset=='0821' else None
+    snap=_read(root,'snapshots/'+key+'.json') if day or dataset=='0821' or version_membership else None
     status=_read(root,'status/'+key+'.json') or {}
     if snap:
         if snap.get('schema_version')!=1 or snap.get('source_field')!='ra_review_result_new' or snap.get('dataset')!=dataset or (snap.get('date') or '')!=day:raise ValueError('snapshot_scope')
@@ -74,7 +78,7 @@ def project(root:Path,dataset='1009',day='',reason='all',te_status='all',page=1,
     dist=Counter(json.dumps(r['te_value'],ensure_ascii=False) for r in rows if r['te_status']=='filled')
     summary=dict(total=total,filled=counts['filled'],unfilled=counts['unfilled'],unknown=counts['unknown'],rate=counts['filled']/total if total else None,coverage=(counts['filled']+counts['unfilled'])/total if total else None,reasons=dict(Counter(r['reason'] for r in rows))) if snap else None
     selected=[r for r in rows if te_status=='all' or r['te_status']==te_status]
-    result=dict(scope=dict(dataset=dataset,date=day or None,reason=reason),summary=summary,date_options=options,source_status=source_status,last_success_at=at,snapshot_revision=rev,
+    result=dict(version_membership=bool(version_membership),scope=dict(dataset=dataset,date=day or None,reason=reason),summary=summary,date_options=options,source_status=source_status,last_success_at=at,snapshot_revision=rev,
                 result_distribution=[dict(value=json.loads(k),count=v) for k,v in sorted(dist.items())],
                 total=len(selected),page=page,size=size,items=selected[(page-1)*size:page*size],source_field='ra_review_result_new')
     return result,selected
@@ -90,12 +94,12 @@ def export_csv(rows):
 
 def daily_overview(root, current, reason='all'):
     """Latest 14 data dates, independently validated; never sum daily denominators."""
-    if current['scope']['dataset'] != '1009':
+    if current['scope']['dataset'] == '0821':
         return []
     result = []
     for day in reversed(current['date_options'][:14]):
         try:
-            data = current if day == current['scope']['date'] else project(root, '1009', day, reason, size=1)[0]
+            data = current if day == current['scope']['date'] else project(root, current['scope']['dataset'], day, reason, size=1)[0]
             result.append({k: data[k] for k in ('summary', 'source_status', 'last_success_at')} | {'date': day})
         except (ValueError, OSError, TypeError, KeyError):
             result.append({'date': day, 'summary': None, 'source_status': 'error', 'last_success_at': None})

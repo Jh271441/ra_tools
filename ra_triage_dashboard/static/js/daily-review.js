@@ -22,7 +22,7 @@ function renderDailyReviewCharts(data) {
   donut.classList.toggle('is-empty',!n?.total);
   donut.setAttribute('aria-label',n ? uiText(`已标 ${n.filled}，待标 ${n.unfilled}，未知 ${n.unknown}，共 ${n.total}`,`Filled ${n.filled}, pending ${n.unfilled}, unknown ${n.unknown}, total ${n.total}`) : uiText('等待数据','Awaiting data'));
   $('#dailyReviewStatusChart').innerHTML=dailyReviewStatusRows(n).map(([key,label,value])=>`<button type="button" class="te-legend-item" data-te-status="${key}" aria-pressed="${scope.te_status===key}"><i class="te-swatch te-${key}"></i><span>${label}</span><strong>${value??'—'}</strong></button>`).join('');
-  const daily=$('#dailyReviewDailyPanel');daily.hidden=data.scope.dataset!=='1009';
+  const daily=$('#dailyReviewDailyPanel');daily.hidden=data.scope.dataset==='0821';
   const days=data.daily_overview || [];
   $('#dailyReviewDailyChart').innerHTML=days.map(day=>{
     const n=day.summary,selected=day.date===data.scope.date;
@@ -95,8 +95,8 @@ function renderDailyReview({keepImages=false}={}) {
   $('#dailyReviewDateLabel').hidden=date.hidden;
   enhanceDashboardSelects($('#dailyReviewPage'));
   if(!data)return;
-  date.innerHTML=data.date_options.map(d=>`<option value="${escapeHtml(d)}">${escapeHtml(d)}</option>`).join('');date.value=data.scope.date || '';enhanceNativeUiSelect(date);
-  $('#dailyReviewScope').textContent=data.scope.dataset==='0821' ? uiText('0821 · 历史固定集','0821 · Frozen set') : `1009 · ${data.scope.date || '—'} · CST`;
+  date.innerHTML=(data.version_membership?`<option value="">${uiText('整个版本','Whole version')}</option>`:'')+data.date_options.map(d=>`<option value="${escapeHtml(d)}">${escapeHtml(d)}</option>`).join('');date.value=data.scope.date || '';enhanceNativeUiSelect(date);
+  $('#dailyReviewScope').textContent=data.scope.dataset==='0821' ? uiText('0821 · 历史固定集','0821 · Frozen set') : `${data.scope.dataset} · ${data.scope.date || (data.version_membership?uiText('整个版本','Whole version'):'—')} · CST`;
   const n=data.summary;
   $('#dailyReviewProgress').textContent=n ? `TE ${n.filled} / ${n.total}` : 'TE — / —';
   $('#dailyReviewRate').textContent=n ? (n.total ? `${(n.rate*100).toFixed(1)}%` : uiText('无目标','No targets')) : '—';

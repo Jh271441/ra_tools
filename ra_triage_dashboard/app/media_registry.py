@@ -479,10 +479,12 @@ class MediaRegistry:
         by_id: dict[str, MediaProvider],
         by_scope: dict[str, MediaProvider],
         default_provider: MediaProvider | None = None,
+        version_provider_factory: Any = None,
     ):
         self._by_id = dict(by_id)
         self._by_scope = dict(by_scope)
         self._default = default_provider
+        self._version_provider_factory = version_provider_factory
         self._memberships: dict[str, frozenset[str]] = {}
         self._summary_cache = TimedSingleFlightCache[str, dict[str, dict[str, Any]]](ttl_seconds=15, max_entries=1)
         self._status_lock = threading.Lock()
@@ -509,7 +511,15 @@ class MediaRegistry:
         return self._by_id.get(str(baseline_id or "").strip())
 
     def for_scope(self, scope: str) -> MediaProvider | None:
-        return self._by_scope.get(str(scope or "").strip())
+        key = str(scope or "").strip()
+        provider = self._by_scope.get(key)
+        if provider is None and self._version_provider_factory and re.fullmatch(r"manual_sidecar_version_20\d{6}", key):
+            with self._status_lock:
+                provider = self._by_scope.get(key)
+                if provider is None:
+                    provider = self._version_provider_factory(key)
+                    self._by_scope[key] = provider
+        return provider
 
     def resolve_for_issue(
         self, issue_id: str, *, baseline_scope: str = ""
@@ -610,7 +620,11 @@ def build_media_registry(
         by_id[entry.id] = provider
         by_scope[entry.scope] = provider
     default = by_id.get(registry.default_ids()[0]) if registry.entries else product
-    return MediaRegistry(by_id=by_id, by_scope=by_scope, default_provider=default or product)
+    def version_provider(scope):
+        from .baseline_registry import BaselineMediaConfig
+        entry = BaselineEntry(id=scope, label=scope, scope=scope, loader="version_projection", xlsx=Path("/__virtual_version_membership__"), media=BaselineMediaConfig(provider="product_layout",layout_id=scope,extra={"strict_isolation":True}))
+        return _materialized_product_provider(entry,base_path=base_path,data_dir=data_dir,fallback=product)
+    return MediaRegistry(by_id=by_id, by_scope=by_scope, default_provider=default or product,version_provider_factory=version_provider)
 
 
 def _materialized_product_provider(

@@ -827,6 +827,7 @@ const PAGE_ROUTES = {
     titleEn: "Batch Model Inference",
   },
   "daily-review": { path: "/daily-review", titleZh: "标注进度", titleEn: "TE progress" },
+  "version-datasets": { path: "/version-datasets", titleZh: "版本数据", titleEn: "Version datasets" },
   "daily-cron": { path: "/daily-cron", titleZh: "每日任务", titleEn: "Daily tasks" },
   status: {
     path: "/system-status",

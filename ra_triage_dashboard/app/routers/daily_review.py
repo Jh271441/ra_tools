@@ -15,7 +15,7 @@ async def _projection(dataset,date,reason,te_status,page,size,revision):
 
 @router.get('/api/daily-review')
 @router.get('/api/daily-review/cases')
-async def daily_review(dataset:str=Query('1009',pattern='^(1009|0821)$'),date:str=Query('',pattern=r'^(\d{4}-\d{2}-\d{2})?$'),reason:str=Query('all',pattern='^(all|low|sample)$'),te_status:str=Query('all',pattern='^(all|filled|unfilled|unknown)$'),page:int=Query(1,ge=1,le=10000),size:int=Query(24,ge=1,le=100),revision:str=Query('',max_length=64),include_overview:bool=False):
+async def daily_review(dataset:str=Query('1009',pattern=r'^(1009|0821|20\d{6})$'),date:str=Query('',pattern=r'^(\d{4}-\d{2}-\d{2})?$'),reason:str=Query('all',pattern='^(all|low|sample)$'),te_status:str=Query('all',pattern='^(all|filled|unfilled|unknown)$'),page:int=Query(1,ge=1,le=10000),size:int=Query(24,ge=1,le=100),revision:str=Query('',max_length=64),include_overview:bool=False):
     result,_=await _projection(dataset,date,reason,te_status,page,size,revision)
     if include_overview:
         result['daily_overview']=await asyncio.to_thread(daily_overview,settings.ra_auto_triage_root,result,reason)
@@ -26,6 +26,6 @@ async def daily_review(dataset:str=Query('1009',pattern='^(1009|0821)$'),date:st
     return JSONResponse(result,headers={'Cache-Control':'no-store'})
 
 @router.get('/api/daily-review/export')
-async def daily_review_export(dataset:str=Query('1009',pattern='^(1009|0821)$'),date:str=Query('',pattern=r'^(\d{4}-\d{2}-\d{2})?$'),reason:str=Query('all',pattern='^(all|low|sample)$'),te_status:str=Query('all',pattern='^(all|filled|unfilled|unknown)$'),revision:str=Query(...,min_length=64,max_length=64)):
+async def daily_review_export(dataset:str=Query('1009',pattern=r'^(1009|0821|20\d{6})$'),date:str=Query('',pattern=r'^(\d{4}-\d{2}-\d{2})?$'),reason:str=Query('all',pattern='^(all|low|sample)$'),te_status:str=Query('all',pattern='^(all|filled|unfilled|unknown)$'),revision:str=Query(...,min_length=64,max_length=64)):
     _,rows=await _projection(dataset,date,reason,te_status,1,100,revision)
     return Response(export_csv(rows),media_type='text/csv',headers={'Content-Disposition':'attachment; filename="te-progress.csv"','Cache-Control':'no-store'})

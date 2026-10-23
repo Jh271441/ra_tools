@@ -84,7 +84,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-615`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-616`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -198,6 +198,7 @@
               <span class="sidebar-group-label sidebar-label"><span class="ui-lang-zh">每日数据</span><span class="ui-lang-en">Daily data</span></span><span class="sidebar-group-chevron" aria-hidden="true"></span>
             </button>
             <div class="sidebar-nav-group-items" id="sidebarNavDaily" data-sidebar-nav-group-items="daily">
+<a class="sidebar-item" data-page-target="version-datasets" data-app-path="/version-datasets" href="/version-datasets" title="版本数据"><span class="sidebar-icon" aria-hidden="true">◫</span><span class="sidebar-label"><strong class="ui-lang-zh">版本数据</strong><strong class="ui-lang-en">Version datasets</strong></span></a>
               <a class="sidebar-item" id="dailyCronNavButton" data-page-target="daily-cron" data-app-path="/daily-cron" href="/daily-cron" title="每日任务">
                 <span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><circle class="icon-wash" cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="9"/><path class="icon-emphasis" d="M12 7v5l3 2"/></svg></span>
                 <span class="sidebar-label"><strong class="ui-lang-zh">每日任务</strong><strong class="ui-lang-en">Daily tasks</strong></span>
@@ -1852,7 +1853,8 @@
             </section>
             <details class="te-results"><summary><span class="ui-lang-zh">数据口径</span><span class="ui-lang-en">Data scope</span></summary><div id="dailyReviewCoverage"></div><p><span class="ui-lang-zh">TE 来源：Trail · RA Review Result New。1009 按北京时间数据日；0821 为既有 312 条。每 5 分钟同步，较早历史每小时复查。</span><span class="ui-lang-en">TE source: Trail · RA Review Result New. 1009 uses CST data dates; 0821 is the frozen 312-case set. Sync every 5 minutes; older history hourly.</span></p></details>
           </section>
-          <section class="app-page tool-page daily-cron-page hidden" id="dailyCronPage" data-page="daily-cron">
+          <section class="app-page tool-page hidden" id="versionDatasetsPage" data-page="version-datasets"><div class="page-header"><h1><span class="ui-lang-zh">版本数据</span><span class="ui-lang-en">Version datasets</span></h1><select id="versionDatasetPicker" aria-label="版本"></select><select id="versionDatasetMode" aria-label="范围"><option value="targets">低置信＋抽样</option><option value="samples">版本随机样本</option><option value="waiting">等待数据</option><option value="all">全部与历史</option></select></div><p id="versionDatasetSummary"></p><p id="versionDatasetError" role="status"></p><div class="issue-grid" id="versionDatasetGrid"></div><div class="pagination"><button type="button" id="versionDatasetPrev">←</button><span id="versionDatasetPageLabel"></span><button type="button" id="versionDatasetNext">→</button></div><details><summary>导入记录</summary><div id="versionDatasetBatches"></div></details></section>
+<section class="app-page tool-page daily-cron-page hidden" id="dailyCronPage" data-page="daily-cron">
             <div class="cron-page-heading">
               <div class="cron-connection muted" id="dailyCronConnection" role="status" aria-live="polite"><span class="ui-lang-zh">正在连接…</span><span class="ui-lang-en">Connecting…</span></div>
               <button class="button button-quiet" id="dailyCronRefresh" type="button"><span class="ui-lang-zh">刷新</span><span class="ui-lang-en">Refresh</span></button>
@@ -2510,7 +2512,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-615`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-616`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

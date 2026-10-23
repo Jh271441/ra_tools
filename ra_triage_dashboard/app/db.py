@@ -42,8 +42,10 @@ from .db_parts.run_collections import DatabaseRunCollectionsMixin
 from .db_parts.legacy_cutover import DatabaseLegacyCutoverMixin
 from .db_parts.intent import DatabaseIntentMixin
 from .db_parts.snapshots import DatabaseSnapshotMixin
+from .db_parts.version_datasets import DatabaseVersionDatasetsMixin
 
 class Database(
+    DatabaseVersionDatasetsMixin,
     DatabaseAccessMixin,
     DatabaseBatchMixin,
     DatabaseCasesMixin,

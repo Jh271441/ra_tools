@@ -73,12 +73,13 @@ def _filesystem_availability() -> dict[str, bool]:
 def _dashboard_config_payload() -> dict[str, Any]:
     """Build DB/catalog-backed config in one worker-thread hop."""
 
+    from ..support.baselines import operational_baseline_summaries
     default_model_run_id = database.default_model_run_id()
     labeling_states = database.labeling_scope_states()
     return {
         "baseline": runtime_state["baseline"],
-        "baselines": runtime_state.get("baselines")
-        or baseline_registry.public_summaries(),
+        "baselines": operational_baseline_summaries(runtime_state.get("baselines")
+        or baseline_registry.public_summaries(), db=database),
         "default_baseline_ids": baseline_registry.default_ids(),
         "baseline_conflicts": runtime_state.get("baseline_conflicts") or [],
         "build_commit": settings.build_commit,
@@ -143,6 +144,7 @@ def _dashboard_config_payload() -> dict[str, Any]:
 @router.get("/runs", include_in_schema=False)
 @router.get("/inference", include_in_schema=False)
 @router.get("/batch-prediction", include_in_schema=False)
+@router.get("/version-datasets", include_in_schema=False)
 @router.get("/daily-cron", include_in_schema=False)
 @router.get("/daily-review", include_in_schema=False)
 @router.get("/system-status", include_in_schema=False)
@@ -418,6 +420,8 @@ async def list_baselines() -> dict[str, Any]:
         )
     if not items:
         items = baseline_registry.public_summaries()
+    from ..support.baselines import operational_baseline_summaries
+    items = await asyncio.to_thread(operational_baseline_summaries, items, database)
     return {
         "items": items,
         "default_ids": baseline_registry.default_ids(),

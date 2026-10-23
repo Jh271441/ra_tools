@@ -381,6 +381,11 @@ async function loadRuns({
   if (!isPageContextCurrent(pageContext, { matchUrl: false })
       || requestedRunId !== state.selectedRunId
       || requestedBaselines !== selectedBaselineQueryValue()) return;
+  if (data.aliases?.[state.selectedRunId]) {
+    state.selectedRunId = data.aliases[state.selectedRunId];
+    const aliasUrl = new URL(window.location.href);
+    if (aliasUrl.searchParams.has("run")) { aliasUrl.searchParams.set("run", state.selectedRunId); history.replaceState(history.state, "", aliasUrl.pathname + aliasUrl.search); }
+  }
   state.modelRuns = data.items || [];
   const select = $("#modelRunFilter");
   const picker = $("#modelRunPicker");

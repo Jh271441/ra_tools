@@ -99,6 +99,20 @@ def _case_filter_kwargs(
     if normalized_comment_state not in {"all", "with", "without"}:
         raise _detail(400, "comment_state 仅支持 all、with 或 without。")
     scopes = resolve_request_baseline_scopes(baselines, request=request)
+    selected_ids = _parse_issue_id_filter(issue_ids)
+    requested = baselines or (request.query_params.get('baselines','') if request else '')
+    if 'version-' in str(requested):
+        from .baselines import database, resolve_request_baseline_ids, baseline_registry
+        ids = resolve_request_baseline_ids(requested,request=request)
+        members = set()
+        native = [baseline_registry.by_id(i).scope for i in ids if not i.startswith('version-') and baseline_registry.by_id(i)]
+        with database.connect() as conn:
+            for version_id in ids:
+                if version_id.startswith('version-'):
+                    members.update(r['issue_id'] for r in conn.execute('SELECT issue_id FROM version_dataset_items WHERE dataset_id=? AND is_target=1',('release-'+version_id[8:]+'-odd2',)).fetchall())
+            if native:
+                members.update(r['issue_id'] for r in conn.execute('SELECT issue_id FROM issues WHERE baseline_scope IN ('+','.join('?' for _ in native)+')',native).fetchall())
+        selected_ids = tuple(sorted(members.intersection(selected_ids) if selected_ids else members)) or ('__empty_version_membership__',)
     return {
         "baseline_scope": scopes[0] if len(scopes) == 1 else "",
         "baseline_scopes": scopes,
@@ -116,7 +130,7 @@ def _case_filter_kwargs(
         "comparison_status": comparison_status,
         "failure_only": failure_only,
         "missing_evidence": missing_evidence,
-        "issue_ids": _parse_issue_id_filter(issue_ids),
+        "issue_ids": selected_ids,
         "work_assignee": _as_text(work_assignee).strip(),
         "work_split_id": _as_text(work_split_id).strip(),
         "comment_state": normalized_comment_state,

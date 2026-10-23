@@ -52,6 +52,7 @@ from .routers import (
     trail_update,
     intent_labeling,
     legacy_cutover,
+    version_datasets,
 )
 
 logger = logging.getLogger("ra_triage_dashboard")
@@ -382,6 +383,7 @@ app.mount(
     name="static",
 )
 
+app.include_router(version_datasets.router)
 app.include_router(core.router)
 app.include_router(daily_cron.router)
 app.include_router(daily_review.router)

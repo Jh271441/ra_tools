@@ -47,6 +47,7 @@ function cronTaskProgressMarkup(progress) {
 }
 
 function buildDailyCronGraph(data, definitionLane = "") {
+  if (data?.incremental?.enabled && !dailyCronState.selectedDay) return buildIncrementalCronGraph(data.incremental, definitionLane);
   const { day, main: run, media } = cronSelectedRuns(data);
   const daily = data?.overview?.daily, runtime = data?.media_daily;
   const launch = cronLatestLaunch(daily, run);
@@ -203,6 +204,7 @@ async function openCronGraphHelp(lane) {
   const dialog = $("#dailyCronHelpDialog");
   $("#dailyCronHelpTitle").textContent = lane === "main" ? uiText("推理回刷 · 流程说明", "Daily inference · Definition") : uiText("平台与媒体 · 流程说明", "Media sidecar · Definition");
   $("#dailyCronHelpNote").textContent = lane === "main" ? uiText("09:00 CST，处理 T−2；周末照常查询。少量采集缺失 ≤5 且 ≤2% 可继续并记录，超限阻塞。空数据正常结束。", "09:00 CST, T−2 data; weekends queried normally. Acquisition gaps ≤5 AND ≤2% may continue with records; larger gaps block. Empty data completes normally.") : uiText("每天低置信度＋抽样，均分给 jasperchen / liangxianghui 联合复核。Orion 重试1次，本地最多2次；少量缺失单独记录，不影响主任务。发布1小时后清理 Camera 原始 bag。", "Daily low confidence + sampling, balanced joint-review assignments. One Orion retry, at most two local attempts. Gaps recorded independently of the main task; Camera source bags cleaned 1h after publication.");
+  if (dailyCronState.data?.incremental?.enabled && lane === "main") $("#dailyCronHelpNote").textContent = uiText("每5分钟按版本发现新增和后补；固定版本级10%概率抽样，缺源等待，其他案例继续。", "Version-scoped discovery every five minutes; stable probability sampling; missing sources wait independently.");
   dialog.showModal();
   const graph = await ensureCronGraphLibrary();
   if (dialog.open) graph.render($("#dailyCronHelpGraph"), buildDailyCronGraph(dailyCronState.data, lane));
@@ -213,7 +215,7 @@ function renderCronRunSelector() {
   if (!select) return;
   const runs = (dailyCronState.data?.overview?.daily?.runs || []).filter(run => /^daily-\d{4}-\d{2}-\d{2}$/.test(run.id));
   const value = dailyCronState.selectedDay || "";
-  const latest = [uiText("最新运行", "Latest run"), runs[0]?.target_date_cst].filter(Boolean).join(" · ");
+  const latest = dailyCronState.data?.incremental?.enabled ? uiText("当前版本增量", "Current version incremental") : [uiText("最新运行", "Latest run"), runs[0]?.target_date_cst].filter(Boolean).join(" · ");
   select.innerHTML = `<option value="">${escapeHtml(latest)}</option>` + runs.map(run => {
     const status = ["partial", "complete_with_gaps"].includes(run.health) ? uiText("已完成（有缺失）", "Complete with gaps") : cronLabel(run.health);
     return `<option value="${escapeHtml(run.target_date_cst)}">${escapeHtml(run.target_date_cst)} · ${escapeHtml(status)}</option>`;
@@ -230,4 +232,17 @@ function bindCronGraphEvents() {
   $("#dailyCronHelpDialog")?.addEventListener("close", () => window.RACronGraph?.unmount($("#dailyCronHelpGraph")));
   $("#dailyCronFullscreen")?.addEventListener("click", () => { if (document.fullscreenElement) void document.exitFullscreen(); else void $("#dailyCronGraphWorkspace").requestFullscreen(); });
   $("#dailyCronExitFullscreen")?.addEventListener("click", () => { if (document.fullscreenElement) void document.exitFullscreen(); });
+}
+
+
+function buildIncrementalCronGraph(v,definitionLane='') {
+  const c=v.states||{},m=v.media||{},active=!v.stale;
+  const node=(id,label,detail,status)=>({id,data:{label,detail,status,stateLabel:cronGraphStateLabel(status),rows:[],issues:[]}});
+  const nodes=[node('main-schedule','增量发现','每5分钟 · T−0及迟到数据',active?'success':'unknown'),node('main-query','版本分流',(v.families||[]).map(x=>x.slice(4)).join(' / '),'success'),node('main-wait','等待源信息',String(c.waiting_metadata||0),'pending'),node('main-verify','版本统一抽样','固定种子 · 每 case 约10%','success'),node('main-infer','采集与推理',String((c.inferred||0)+(c.published||0)),(c.running||c.ready||c.retry_wait)?'running':'success'),node('main-publish','Trail 回刷',String(c.published||0),c.inferred?'running':'success')];
+  const media=[node('media-source','低置信＋抽样',String(m.selected||0),'success'),node('media-import','统一 Run 与数据集','仅追加新成员与分配','success'),node('media-camera','Camera','全局4并发',m.queued?'running':'success'),node('media-orion','Orion BEV','全局≤1000并发',m.queued?'running':'success'),node('media-retry','Orion 重试','仅失败子集 · 1次',m.queued?'pending':'skipped'),node('media-local','本地兜底','全局2并发 · 最多2次',m.failure_count?'warn':'pending'),node('media-verify','双媒体验证',`${m.verified||0} / ${m.selected||0}`,m.failure_count?'warn':m.verified===m.selected?'success':'running'),node('media-ready','发布与清理','Camera源bag发布1小时后清理',m.verified?'success':'pending')];
+  const edge=(a,b,optional=false)=>({id:a+':'+b,source:a,target:b,optional});
+  let lanes=[{id:'main-lane',label:'按版本增量处理',nodes},{id:'media-lane',label:'平台与独立媒体',nodes:media}];
+  let edges=[edge('main-schedule','main-query'),edge('main-query','main-wait',true),edge('main-wait','main-verify',true),edge('main-query','main-verify'),edge('main-verify','main-infer'),edge('main-infer','main-publish'),edge('main-infer','media-source',true),edge('media-source','media-import'),edge('media-import','media-camera'),edge('media-import','media-orion'),edge('media-camera','media-verify'),edge('media-orion','media-verify'),edge('media-orion','media-retry',true),edge('media-retry','media-local',true),edge('media-local','media-verify',true),edge('media-verify','media-ready')];
+  if(definitionLane){lanes=lanes.filter(x=>x.id===definitionLane+'-lane');const ids=new Set(lanes.flatMap(x=>x.nodes.map(n=>n.id)));edges=edges.filter(x=>ids.has(x.source)&&ids.has(x.target));}
+  return {lanes,edges,selectedNode:dailyCronState.selectedNode||'',definition:Boolean(definitionLane),active,theme:state.colorTheme||'dark',ui:{minimap:'流程缩略图',loading:'加载运行图…',error:'运行图暂不可用'}};
 }

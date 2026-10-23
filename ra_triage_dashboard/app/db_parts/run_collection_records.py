@@ -324,10 +324,17 @@ class RunRecordsMixin:
             ids = conn.execute(
                 "SELECT id FROM run_collections ORDER BY updated_at DESC, id DESC"
             ).fetchall()
-            return [
-                payload for item in ids
-                if (payload := self._collection_payload(conn, str(item["id"]))) is not None
-            ]
+            archived = {r['run_id'] for r in conn.execute('SELECT run_id FROM version_run_archives').fetchall()}
+            result = []
+            for item in ids:
+                payload = self._collection_payload(conn, str(item['id']))
+                if payload is None:
+                    continue
+                members = conn.execute('SELECT run_id FROM run_collection_members WHERE collection_id=? AND revision_no=(SELECT current_revision FROM run_collections WHERE id=?)',(item['id'],item['id'])).fetchall()
+                if members and all(r['run_id'] in archived for r in members):
+                    continue
+                result.append(payload)
+            return result
 
     def get_run_collection(self, collection_id: str) -> dict[str, Any] | None:
         normalized = str(collection_id or "").strip()
