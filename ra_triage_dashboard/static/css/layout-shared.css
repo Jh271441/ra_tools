@@ -401,6 +401,8 @@ html[data-color-theme="light"] .page-jump-control input {
 }
 .button-limit-warning { color: #a5f3fc; border-color: rgba(36,211,239,.52); background: rgba(36,211,239,.12); box-shadow: none; }
 .button-limit-warning:hover:not(:disabled) { color: #cffafe; border-color: #67e8f9; background: rgba(36,211,239,.2); box-shadow: none; }
+.button-secondary { color: var(--muted); border-color: var(--line); background: transparent; }
+.button-secondary:hover:not(:disabled) { color: var(--text); border-color: var(--muted); background: var(--overlay-2); }
 .button-quiet { color: #a5f3fc; border-color: rgba(36,211,239,.52); background: rgba(36,211,239,.12); box-shadow: none; }
 .button-quiet:hover:not(:disabled) { color: #cffafe; border-color: #67e8f9; background: rgba(36,211,239,.2); box-shadow: none; }
 .button-danger { color: #a5f3fc; border-color: rgba(36,211,239,.52); background: rgba(36,211,239,.12); box-shadow: none; }

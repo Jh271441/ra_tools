@@ -13,11 +13,15 @@ close, viewport positioning, disabled states and locale preservation. The topbar
 existing refresh action is the single manual refresh entry for this page.
 
 Four shared stat cards separate the aggregate labels from their larger values;
-review targets receive a restrained accent. TE progress, filled-result distribution
+values use the normal text color. TE progress, filled-result distribution
 and occurrence-date progress each have their own card. Desktop widths follow
 content needs rather than equal thirds. The donut includes both percentage and
-filled/target count; categorical bars retain known-value localization and stable
-colors. Daily rows keep dates, gauges, counts and percentages in stable columns;
+filled/target count. Filled progress uses the shared success color, pending is
+neutral and unknown uses the shared warning color. Result counts use one neutral
+bar color: their labels carry the outcome, without making an observed failure
+look successful. Composition uses a restrained accent/slate palette. All colors
+follow existing theme tokens. Secondary export/paging/date actions use the shared
+neutral button variant; the existing search action retains its emphasis. Daily rows keep dates, gauges, counts and percentages in stable columns;
 long lists scroll locally. Source freshness and denominator scope stay visible.
 
 Tablet uses two cards followed by a full-width date card. Phone layouts retain

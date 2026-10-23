@@ -59,7 +59,7 @@
 }
 .analysis-stat-card > span { color: var(--muted); font-size: 12px; }
 .analysis-stat-card > strong {
-  grid-row: 1 / span 2; grid-column: 2; align-self: center; color: #dff6f7; font-size: 23px; letter-spacing: -.04em;
+  grid-row: 1 / span 2; grid-column: 2; align-self: center; color: var(--analysis-stat-value-color, #dff6f7); font-size: 23px; letter-spacing: -.04em;
   font-variant-numeric: tabular-nums;
 }
 .analysis-stat-card > small {
@@ -540,4 +540,4 @@ html[data-color-theme="light"] .analysis-pie-tooltip {
 html[data-color-theme="light"] .analysis-pie-tooltip strong { color: #f8fafc; }
 html[data-color-theme="light"] .analysis-pie-tooltip span { color: #5eead4; }
 html[data-color-theme="light"] .analysis-pie-tooltip small { color: #94a3b8; }
-html[data-color-theme="light"] .analysis-stat-card > strong { color: #08758d; }
+html[data-color-theme="light"] .analysis-stat-card > strong { color: var(--analysis-stat-value-color, #08758d); }

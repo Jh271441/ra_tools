@@ -66,7 +66,7 @@ function renderVersionDatasets({force=false}={}) {
     [uiText('已回刷','Published'),current.historical?'—':states.published||0],
     [uiText('复核目标','Review targets'),current.targets??'—'],
     [uiText('待齐备','Awaiting source'),current.historical?'—':states.waiting_metadata||0],
-  ].map(([label,n],index)=>`<article class="analysis-stat-card${index===2?' version-metric-primary':''}"><span>${label}</span><strong>${n}</strong></article>`).join('');
+  ].map(([label,n])=>`<article class="analysis-stat-card"><span>${label}</span><strong>${n}</strong></article>`).join('');
 
   $('#versionDatasetHistory').hidden=Boolean(current.historical);
   const m=s.members;if(!m||m.dataset_id!==s.dataset)return;
@@ -161,10 +161,6 @@ function versionTEResult(value){
   const labels={'失败':uiText('失败','Failed'),'out_of_scope':uiText('超出范围','Out of scope'),'误触发':uiText('误触发','False trigger'),'未接起':uiText('未接起','Unanswered'),'无需协助':uiText('无需协助','No assistance needed'),'正确触发':uiText('正确触发','Correct trigger')};
   return Object.prototype.hasOwnProperty.call(labels,raw)?labels[raw]:raw;
 }
-function versionTEResultColor(value){
-  const colors={'失败':'#d99b45','out_of_scope':'#8999ad','误触发':'#b390ee','未接起':'#699bd8','无需协助':'var(--accent)','正确触发':'#69b5a0'};
-  return Object.prototype.hasOwnProperty.call(colors,String(value))?colors[String(value)]:'var(--muted)';
-}
 function versionTEBadge(row){
   return row.te_status==='filled'?`TE · ${versionTEResult(row.te_value)}`:row.te_status==='unfilled'?uiText('TE 待标','TE pending'):row.te_status==='not_target'?uiText('未纳入复核','Outside review set'):uiText('TE 未知','TE unknown');
 }
@@ -198,7 +194,7 @@ function renderVersionTE(m){
   $('#versionTESource').title=te.observed_changes?uiText(`本轮标注变化 ${te.observed_changes.te}；非当天标注量`,`Result changes this check: ${te.observed_changes.te}; not daily annotation volume`):'';
   $('#versionTESource').classList.toggle('te-warning',te.source_status!=='ready');
   $('#versionTEResultCount').textContent=uiText(`${n.filled} 条`,`${n.filled} ${n.filled===1?'result':'results'}`);
-  $('#versionTEDistribution').innerHTML=[...te.distribution].sort((a,b)=>b.count-a.count).map(r=>`<div class="version-result-row"><span title="${escapeHtml(versionTEResult(r.value))}">${escapeHtml(versionTEResult(r.value))}</span><span class="version-result-track"><i style="background:${versionTEResultColor(r.value)};width:${n.filled?100*r.count/n.filled:0}%"></i></span><strong>${r.count}</strong></div>`).join('')||`<p class="te-chart-empty">${uiText('暂无已标结果','No filled results')}</p>`;
+  $('#versionTEDistribution').innerHTML=[...te.distribution].sort((a,b)=>b.count-a.count).map(r=>`<div class="version-result-row"><span title="${escapeHtml(versionTEResult(r.value))}">${escapeHtml(versionTEResult(r.value))}</span><span class="version-result-track"><i style="width:${n.filled?100*r.count/n.filled:0}%"></i></span><strong>${r.count}</strong></div>`).join('')||`<p class="te-chart-empty">${uiText('暂无已标结果','No filled results')}</p>`;
   $('#versionTEDays').hidden=m.dataset.historical;
   const dailyMarkup=te.daily.map(day=>{const d=day.summary;return `<button type="button" class="te-day" data-version-date="${escapeHtml(day.date)}" aria-pressed="${day.date===s.date}" aria-label="${escapeHtml(day.date)} · ${uiText(`已标 ${d.filled}，目标 ${d.total}，待标 ${d.unfilled}，未知 ${d.unknown}`,`Filled ${d.filled}, targets ${d.total}, pending ${d.unfilled}, unknown ${d.unknown}`)}"><span class="version-day-date">${escapeHtml(day.date.slice(5).replace('-','/'))}</span><span class="version-day-track" aria-hidden="true">${dailyReviewStatusRows(d).map(([k,,count])=>`<i class="te-${k}" style="width:${d.total?100*count/d.total:0}%"></i>`).join('')}</span><strong>${d.filled}/${d.total}</strong><small>${d.total?(100*d.rate).toFixed(1)+'%':'—'}</small></button>`;}).join('');
   const dailyChart=$('#versionTEDailyChart'),dailyView=dailyMarkup||`<p class="te-chart-empty">${uiText('暂无可用发生日','No occurrence dates available')}</p>`;
