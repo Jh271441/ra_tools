@@ -599,11 +599,14 @@ async function navigateComparisonMediaCase(delta) {
     if (state.selectedCase) openMedia(kind,heroFrameIndex(kind === 'camera' ? state.selectedCase.camera?.frames || [] : state.selectedCase.assets?.frames || []),{caseData:state.selectedCase});
     return;
   }
-  if (state.media.snapshot?.teObservation && state.activePage === 'daily-review') {
-    const rows=dailyReviewState.data?.items || [];
+  if (state.media.snapshot?.teObservation && ['daily-review','version-datasets'].includes(state.activePage)) {
+    const rows=state.activePage==='version-datasets' ? versionDatasetState.members?.items || [] : dailyReviewState.data?.items || [];
     const index=rows.findIndex(row=>row.issue_id===state.media.snapshot.issueId);
     const next=rows[index+delta];
-    if(next) await openDailyReviewMedia(next.issue_id,state.media.kind);
+    if(next) {
+      if(state.activePage==='version-datasets')await openVersionDatasetMedia(next.issue_id,state.media.kind);
+      else await openDailyReviewMedia(next.issue_id,state.media.kind);
+    }
     else showToast(uiText('已到本页边界，请在图库翻页。','End of this page; change pages in the gallery.'));
     return;
   }

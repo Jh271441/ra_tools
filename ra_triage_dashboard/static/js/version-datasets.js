@@ -157,8 +157,8 @@ function renderVersionTE(m){
   const params=new URLSearchParams({mode:s.mode,q:s.query,sort:s.sort,date:s.date,te_status:s.teStatus,revision:m.snapshot_revision});
   const exp=$('#versionDatasetExport');exp.hidden=false;exp.href=withBase(`/api/version-datasets/${encodeURIComponent(s.dataset)}/workbench.csv?${params}`);
 }
-async function openVersionDatasetMedia(iid){
-  const s=versionDatasetState,seq=++s.mediaSeq,dataset=s.dataset,kind=s.media,context=capturePageContext();
+async function openVersionDatasetMedia(iid,preferredKind=''){
+  const s=versionDatasetState,seq=++s.mediaSeq,dataset=s.dataset,kind=preferredKind||s.media,context=capturePageContext();
   const request=++state.media.requestSeq;
   try{
     const data=await api(`/api/cases/${encodeURIComponent(iid)}/media`,{signal:s.controller?.signal});
