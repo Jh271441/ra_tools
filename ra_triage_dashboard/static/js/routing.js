@@ -89,6 +89,7 @@ function applyUiLanguage(language, { persist = true } = {}) {
     "renderTrailAttributeRunPicker",
     "renderTrailUpdateFilters",
     "refreshTrailReasonLanguage",
+    "refreshCaseLabelDecisionLanguage",
   ];
   for (const name of refreshers) {
     try {

@@ -150,3 +150,16 @@ html[data-color-theme="light"] .case-label-status { color: #855300; border-color
 html[data-color-theme="light"] .case-label-status[data-state="conflict"], html[data-color-theme="light"] .case-label-status[data-state="stale"] { color: #a72727; border-color: #e5aaaa; background: #ffeded; }
 html[data-color-theme="light"] .case-label-status[data-state="resolved"] { color: #096c4d; border-color: #8acfb8; background: #e6f8ef; }
 .case-label-explanation-dialog .case-label-status { font-size: 15px; }
+
+.case-label-decision-dialog { width:min(680px,calc(100vw - 24px)); max-height:calc(100dvh - 24px); overflow:hidden; }
+.case-label-decision-dialog .dialog-card { display:flex; flex-direction:column; max-height:calc(100dvh - 26px); min-height:0; }
+.case-label-decision-dialog .dialog-heading, .case-label-decision-dialog .dialog-actions { flex-shrink:0; }
+.case-label-decision-body { display:grid; gap:16px; min-height:0; overflow:auto; padding:2px; }
+.case-label-decision-body > label { display:grid; gap:6px; min-width:0; }
+.case-label-decision-dialog .case-label-decision { border:0; background:var(--overlay); }
+.case-label-decision-evidence summary { cursor:pointer; min-height:44px; display:list-item; margin-left:16px; padding:12px 0; }
+.case-label-decision-sources p { margin:4px 0; white-space:pre-wrap; overflow-wrap:anywhere; }
+.case-label-decision-error { color:var(--fail); white-space:pre-wrap; overflow-wrap:anywhere; }
+.case-label-decision-error[hidden] { display:none; }
+.case-label-decision-dialog .icon-button { min-width:44px; min-height:44px; }
+#caseLabelGoAdjudication { min-height:44px; }

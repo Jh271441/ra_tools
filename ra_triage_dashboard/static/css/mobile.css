@@ -784,3 +784,12 @@
   .trail-reason-selection-bar .ui-select { max-width:100%; min-width:0; }
   #trailAttributeUpdatePage .trail-update-filters .ui-select-trigger { min-height:44px; }
 }
+
+@media (max-width:700px) {
+  .case-label-decision-dialog { width:calc(100vw - 12px); max-width:calc(100vw - 12px); max-height:calc(100dvh - 12px); }
+  .case-label-decision-dialog .dialog-card { padding:14px; max-height:calc(100dvh - 14px); gap:12px; }
+  .case-label-decision-dialog .dialog-actions { display:flex; flex-wrap:wrap; gap:8px; }
+  .case-label-decision-dialog .dialog-actions .button { flex:1 1 auto; min-height:48px; white-space:normal; }
+  .case-label-decision-dialog .ui-select-trigger { min-height:44px; }
+  .case-label-decision-dialog textarea { min-height:96px; font-size:16px; }
+}
