@@ -140,6 +140,35 @@ async function bootstrapNeverReplaysInitialRouteOverNewNavigation() {
   const earlyBoot = early.s.bootstrap(); early.navigate('labeling', '?q=current'); config.resolve(); await earlyBoot;
   assert.equal(early.state.activePage, 'labeling'); assert.equal(early.calls.polls, 1);
 }
+async function cronPaintDoesNotWaitForSharedBootstrap() {
+  const f = bootstrapFixture('daily-cron');
+  const config = defer(), runs = defer(), overview = defer();
+  let cronReads = 0, runReads = 0;
+  f.s.loadDailyCron = async () => { cronReads++; f.calls.paints.push('cron'); };
+  f.s.loadConfig = () => config.promise;
+  f.s.loadRuns = () => { runReads++; return runs.promise; };
+  f.s.loadOverview = () => overview.promise;
+  const boot = f.s.bootstrap(); await tick();
+  assert.equal(cronReads, 1, 'Cron starts while configuration is unresolved');
+  assert.deepEqual(f.calls.paints, ['cron']);
+  assert.equal(runReads, 0);
+  config.resolve(); await tick();
+  assert.equal(runReads, 1, 'shared Run metadata remains available for subsequent navigation');
+  assert.equal(cronReads, 1);
+  runs.resolve(); await tick(); overview.resolve(); await boot;
+  assert.equal(cronReads, 1, 'completed first snapshot is reused at final bootstrap');
+
+  const leave = bootstrapFixture('daily-cron'), delayedConfig = defer();
+  let laterRuns = 0;
+  leave.s.loadDailyCron = async () => {};
+  leave.s.loadConfig = () => delayedConfig.promise;
+  leave.s.loadRuns = async () => { laterRuns++; };
+  const pending = leave.s.bootstrap(); await tick();
+  leave.navigate('labeling-summary', '?q=keep'); delayedConfig.resolve(); await pending;
+  assert.equal(laterRuns, 0);
+  assert.equal(leave.state.activePage, 'labeling-summary');
+  assert.equal(leave.s.window.location.search, '?q=keep');
+}
 async function bootstrapResumesPendingCombinedContext() {
   for (const status of ['loading', 'ready', 'error']) {
     const f = bootstrapFixture('review'); let resumed = 0;
@@ -211,7 +240,7 @@ async function labelingEntryAndSummaryResponsesStayScoped() {
   assert.equal(requests, 1, 'stale task-list response must not start a summary query for a later visit');
 }
 (async () => {
-  for (const test of [bootstrapResumesPendingCombinedContext,assignmentAccessWaitsForWriterAndAvoidsAdminRequests,delayedReviewReloadCannotReclaimLabeling, navigationEpochTracksRealPageCommits, loadersStartAfterCanonicalRouteCommit, debounceCannotFireAfterDepartureOrRoundTrip, listPaginationAndPollingIgnoreObsoleteViews, lateTaskContextCannotRewriteLabelingUrl, bootstrapNeverReplaysInitialRouteOverNewNavigation, summaryWaitsForIdentityInsteadOfFallingBackToReview, labelingEntryAndSummaryResponsesStayScoped]) {
+  for (const test of [cronPaintDoesNotWaitForSharedBootstrap,bootstrapResumesPendingCombinedContext,assignmentAccessWaitsForWriterAndAvoidsAdminRequests,delayedReviewReloadCannotReclaimLabeling, navigationEpochTracksRealPageCommits, loadersStartAfterCanonicalRouteCommit, debounceCannotFireAfterDepartureOrRoundTrip, listPaginationAndPollingIgnoreObsoleteViews, lateTaskContextCannotRewriteLabelingUrl, bootstrapNeverReplaysInitialRouteOverNewNavigation, summaryWaitsForIdentityInsteadOfFallingBackToReview, labelingEntryAndSummaryResponsesStayScoped]) {
     await test(); console.log('PASS ' + test.name);
   }
 })().catch(error => {console.error(error); process.exitCode = 1;});

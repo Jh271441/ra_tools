@@ -8,9 +8,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
-from starlette.responses import Response
-from starlette.types import Scope
+from .static_assets import dashboard_static_app
 
 from .auth import has_same_origin_mutation_marker, identity_header_candidates, request_identity
 from .contracts import MAX_BATCH_JSON_REQUEST_BYTES, MAX_REVIEW_MULTIPART_REQUEST_BYTES
@@ -378,28 +376,9 @@ async def strip_public_base_path(request: Request, call_next):
     return await call_next(request)
 
 
-class _CachedStaticFiles(StaticFiles):
-    """Versioned static assets (``?v=manual-triage-N``) can be cached aggressively."""
-
-    def file_response(
-        self,
-        full_path,  # type: ignore[no-untyped-def]
-        stat_result,
-        scope: Scope,
-        status_code: int = 200,
-    ) -> Response:
-        response = super().file_response(
-            full_path, stat_result, scope, status_code=status_code
-        )
-        path = str(scope.get("path") or "")
-        if path.endswith((".js", ".css", ".woff2", ".woff", ".png", ".svg")):
-            response.headers["Cache-Control"] = "public, max-age=604800, immutable"
-        return response
-
-
 app.mount(
     "/static",
-    _CachedStaticFiles(directory=settings.static_dir),
+    dashboard_static_app(settings.static_dir),
     name="static",
 )
 

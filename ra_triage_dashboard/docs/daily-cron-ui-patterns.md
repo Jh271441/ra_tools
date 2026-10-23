@@ -115,3 +115,20 @@ below title/fullscreen. Definition help has no live progress. Desktop/mobile
 views share one selected node and update on the existing30-second polling cycle.
 Only read-only projections/UI change; scheduler, inference, captures, notifications,
 writer policy, database schema and task allocations remain unchanged.
+
+## 首次加载性能（2026-10-23）
+
+Cron 快照独立于数据集、模型 Run 与 Review 概览。bootstrap 在等待配置前立即发起
+首次只读 Cron 请求，后续初始化复用该 Promise；共享初始化继续服务后续页面导航，
+不再阻塞 Cron 首屏。页面激活时提前下载图组件，与快照并行；离开页面仍取消请求，
+沿用 active/controller 所有权保护、8秒超时及30秒可见页轮询。
+
+仅 `/static` 挂载 Starlette gzip（最小1024字节、等级5），保留原有缓存、
+Content-Type 与条件请求。API 和媒体路由不进入压缩器。图资源 URL 随本次缓存版本
+更新，避免浏览器继续复用旧未压缩副本。图脚本原始1,890,039字节，gzip约583,836字节。
+
+回归：`navigation_races.cjs` 用未决配置、Run及概览验证首次 Cron 提前显示、
+只读一次和离开页面后不回跳；`test_static_assets.py` 检查原始ASGI字节、解压一致性、
+identity、Vary、304及API隔离。`cron_bootstrap_browser.cjs` 使用实际应用模块与
+合成只读API，卡住配置时验证图已显示、中英/深浅主题、1440/390/320px和零写请求。
+本地模拟耗时不代表生产端到端耗时；线上SSO视觉验收单独记录。

@@ -971,7 +971,13 @@ async function loadCaseLabelingCases({ page = state.caseLabeling.page, persistRo
 }
 
 function caseLabelingQueueItems() {
-  return state.caseLabeling.data?.items || [];
+  const data = state.caseLabeling.data;
+  // The gallery remains paginated. Details navigate the complete, ordered
+  // filter snapshot without changing the gallery page or fetching all cards.
+  if (Array.isArray(data?.queue_issue_ids)) {
+    return data.queue_issue_ids.map(issue_id => ({ issue_id }));
+  }
+  return data?.items || [];
 }
 
 function navigateCaseLabelingIssue(direction) {
@@ -979,7 +985,7 @@ function navigateCaseLabelingIssue(direction) {
   const current = String(state.caseLabeling.issueId || "");
   const index = items.findIndex((item) => item.issue_id === current);
   const next = items[index + direction];
-  if (!next?.issue_id) return Promise.resolve();
+  if (index < 0 || !next?.issue_id) return Promise.resolve();
   return selectCaseLabelingIssue(next.issue_id);
 }
 
@@ -1003,8 +1009,8 @@ function renderCaseLabelingDetailMedia(caseData) {
         <div class="detail-navigation">
           <div class="case-detail-pager">
             <button class="button button-quiet" id="caseLabelingPreviousIssue" type="button" aria-keyshortcuts="[" ${index <= 0 ? "disabled" : ""}><span class="ui-lang-zh">← 上一 Issue</span><span class="ui-lang-en">← Prev</span><kbd class="review-control-shortcut review-nav-shortcut" aria-hidden="true">[</kbd></button>
-            <span class="detail-queue-position" title="输入序号后回车跳转">
-              <input class="detail-queue-index-input" id="caseLabelingQueueIndex" type="number" min="1" max="${items.length}" step="1" inputmode="numeric" aria-label="跳转到当前筛选页的第几条 Issue" value="${index >= 0 ? index + 1 : ""}" ${index < 0 ? "disabled" : ""} />
+            <span class="detail-queue-position" title="${escapeHtml(uiText("输入全部筛选结果中的序号，按回车跳转", "Enter a position in all filtered issues and press Enter"))}">
+              <input class="detail-queue-index-input" id="caseLabelingQueueIndex" type="number" min="1" max="${items.length}" step="1" inputmode="numeric" aria-label="${escapeHtml(uiText("跳转到全部筛选结果中的第几条 Issue", "Jump to an issue in all filtered results"))}" value="${index >= 0 ? index + 1 : ""}" ${index < 0 ? "disabled" : ""} />
               <span class="detail-queue-total">/ ${items.length || "—"}</span>
             </span>
             <button class="button button-quiet" id="caseLabelingNextIssue" type="button" aria-keyshortcuts="]" ${index < 0 || index >= items.length - 1 ? "disabled" : ""}><span class="ui-lang-zh">下一 Issue →</span><span class="ui-lang-en">Next →</span><kbd class="review-control-shortcut review-nav-shortcut" aria-hidden="true">]</kbd></button>
@@ -1035,8 +1041,8 @@ function renderCaseLabelingDetailMedia(caseData) {
     if (event.key !== "Enter") return;
     event.preventDefault();
     event.stopPropagation();
-    const requested = Number.parseInt(event.currentTarget.value, 10);
-    const target = items[requested - 1];
+    const requested = Number(event.currentTarget.value);
+    const target = Number.isInteger(requested) ? items[requested - 1] : null;
     if (!target?.issue_id) {
       event.currentTarget.value = index >= 0 ? String(index + 1) : "";
       return;

@@ -378,7 +378,7 @@ class LabelingQueriesMixin:
     ) -> dict[str, Any]:
         scopes = _clean_values(baseline_scopes)
         if not scopes:
-            return {"items": [], "total": 0, "page": 1, "page_size": page_size, "pages": 0}
+            return {"items": [], "queue_issue_ids": [], "total": 0, "page": 1, "page_size": page_size, "pages": 0}
         projected, task = self._project_labeling_cases(
             baseline_scopes=baseline_scopes,
             task_id=task_id,
@@ -400,6 +400,9 @@ class LabelingQueriesMixin:
         start = (safe_page - 1) * safe_page_size
         return {
             "items": projected[start : start + safe_page_size],
+            # Detail navigation shares this exact filtered/order snapshot, not
+            # just the gallery page. Keep rich Case payloads paginated.
+            "queue_issue_ids": [item["issue_id"] for item in projected],
             "total": total,
             "page": safe_page,
             "page_size": safe_page_size,

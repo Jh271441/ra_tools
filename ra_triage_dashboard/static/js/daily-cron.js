@@ -248,6 +248,9 @@ function setDailyCronActive(active) {
   dailyCronState.controller?.abort();
   dailyCronState.controller = null;
   if (active) {
+    // Download the graph while the snapshot is in flight, not after it arrives.
+    // Rendering owns the visible error/retry state if loading fails.
+    void ensureCronGraphLibrary().catch(() => {});
     renderDailyCron();
     dailyCronState.timer = window.setInterval(() => {
       if (!document.hidden) void loadDailyCron();
