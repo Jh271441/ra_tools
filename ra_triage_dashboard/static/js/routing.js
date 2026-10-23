@@ -92,6 +92,7 @@ function applyUiLanguage(language, { persist = true } = {}) {
     "refreshTrailReasonLanguage",
     "refreshCaseLabelDecisionLanguage",
     "refreshCaseExclusionLanguage",
+    "syncCaseLabelingIssueExport",
   ];
   for (const name of refreshers) {
     try {

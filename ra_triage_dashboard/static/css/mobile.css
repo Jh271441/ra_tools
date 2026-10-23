@@ -846,3 +846,13 @@
   .version-gallery .gallery-heading > .ui-select {width:100%;margin-left:0}
   .version-gallery form {width:100%}.version-gallery input {flex:1;width:0}
 }
+
+@media (max-width:700px) {
+  .trail-update-review-summary-grid { grid-template-columns:minmax(0,1fr); }
+  .trail-reconcile-table td:nth-child(n), .trail-reconcile-table .trail-update-issue { text-align:left; }
+  .trail-issue-identity { justify-content:flex-start; }
+  .trail-row-actions { justify-content:flex-end; }
+  #trailReasonBatchToggle { min-height:44px; }
+  .case-labeling-page .case-labeling-gallery-heading .gallery-heading-actions { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  #caseLabelingExportIssues { min-height:44px; }
+}

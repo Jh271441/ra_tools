@@ -922,6 +922,7 @@ async function loadTrailAttributePreview(force = false, options = {}) {
   state.trailUpdate.runId = runId;
   const previewKey = trailUpdatePreviewKey(runId);
   if (state.trailUpdate.selectionScope !== previewKey) {
+    state.trailUpdate.selectionMode = false;
     state.trailUpdate.selectedIssues = new Set();
     state.trailUpdate.selectionScope = previewKey;
   }

@@ -885,6 +885,7 @@ function renderCaseLabelingInactiveState() {
 }
 
 function renderCaseLabelingList(data) {
+  syncCaseLabelingIssueExport();
   const list = $("#caseLabelingList");
   const items = data.items || [];
   const pagination = $("#caseLabelingGallery")?.querySelector(".case-pagination");
@@ -920,6 +921,25 @@ function renderCaseLabelingList(data) {
   }
 }
 
+function caseLabelingListParams({page = 1, pageSize = state.caseLabeling.pageSize} = {}) {
+  return new URLSearchParams({
+    baselines: selectedBaselineQueryValue(),
+    task_id: state.caseLabeling.taskId || "",
+    q: state.caseLabeling.search || "",
+    issue_ids: (state.caseLabeling.issueIds || []).join(","),
+    status: joinFilterList(state.caseLabeling.status),
+    author: joinFilterList(state.caseLabeling.author),
+    assignee: joinFilterList(state.caseLabeling.assignee),
+    cluster: state.caseLabeling.cluster || "",
+    exclusion: joinFilterList(state.caseLabeling.exclusion),
+    label: joinFilterList(state.caseLabeling.label),
+    gt: joinFilterList(state.caseLabeling.gt),
+    comment_state: joinFilterList(state.caseLabeling.commentState),
+    page: String(Math.max(1, Number(page) || 1)),
+    page_size: String(pageSize || DEFAULT_CASE_PAGE_SIZE),
+  });
+}
+
 async function loadCaseLabelingCases({ page = state.caseLabeling.page, persistRoute = true } = {}) {
   const pageContext = capturePageContext();
   const seq = ++state.caseLabeling.requestSeq;
@@ -934,22 +954,7 @@ async function loadCaseLabelingCases({ page = state.caseLabeling.page, persistRo
     await loadCaseLabelingSnapshotReferences();
     return;
   }
-  const params = new URLSearchParams({
-    baselines: selectedBaselineQueryValue(),
-    task_id: state.caseLabeling.taskId || "",
-    q: state.caseLabeling.search || "",
-    issue_ids: (state.caseLabeling.issueIds || []).join(","),
-    status: joinFilterList(state.caseLabeling.status),
-    author: joinFilterList(state.caseLabeling.author),
-    assignee: joinFilterList(state.caseLabeling.assignee),
-    cluster: state.caseLabeling.cluster || "",
-    exclusion: joinFilterList(state.caseLabeling.exclusion),
-    label: joinFilterList(state.caseLabeling.label),
-    gt: joinFilterList(state.caseLabeling.gt),
-    comment_state: joinFilterList(state.caseLabeling.commentState),
-    page: String(Math.max(1, Number(page) || 1)),
-    page_size: String(state.caseLabeling.pageSize || DEFAULT_CASE_PAGE_SIZE),
-  });
+  const params = caseLabelingListParams({page});
   const result = await api(`/api/labeling/cases?${params}`);
   if (seq !== state.caseLabeling.requestSeq || !isPageContextCurrent(pageContext)) return;
   state.caseLabeling.page = result.page || 1;
@@ -968,6 +973,38 @@ async function loadCaseLabelingCases({ page = state.caseLabeling.page, persistRo
   if (persistRoute) persistCaseLabelingRoute({ issue: "", page: state.caseLabeling.page });
   loadCaseLabelingClusters().catch((error) => showToast(error.message, true));
   await loadCaseLabelingSnapshotReferences();
+}
+
+function syncCaseLabelingIssueExport() {
+  const button = $("#caseLabelingExportIssues");
+  if (!button) return;
+  button.disabled = Boolean(state.caseLabeling.exportingIssues) || !Number(state.caseLabeling.data?.total || 0) || Boolean(state.caseLabeling.data?.inactive);
+  button.textContent = state.caseLabeling.exportingIssues ? uiText("导出中…", "Exporting…") : uiText("导出 Issue", "Export Issues");
+  button.title = uiText("导出当前筛选下的全部 Issue ID（CSV）", "Export all Issue IDs matching the current filters (CSV)");
+}
+async function exportCaseLabelingIssues() {
+  if (state.caseLabeling.exportingIssues || !selectedActiveLabelingBaselineIds().length) return;
+  // Snapshot the same complete filter contract as the gallery, independently of its page.
+  const params = caseLabelingListParams({page:1, pageSize:10});
+  state.caseLabeling.exportingIssues = true;
+  syncCaseLabelingIssueExport();
+  try {
+    const result = await api(`/api/labeling/cases?${params}`);
+    const ids = [...new Set((Array.isArray(result.queue_issue_ids) ? result.queue_issue_ids : (result.items || []).map(item => item.issue_id)).filter(Boolean))];
+    if (ids.length !== Number(result.total || 0)) throw new Error(uiText("未获取完整 Issue 列表，请刷新后重试。", "The complete Issue list was not returned. Refresh and retry."));
+    if (!ids.length) { showToast(uiText("当前筛选没有可导出的 Issue。", "No Issues match the current filters.")); return; }
+    const csv = "\ufeffissue_id\r\n" + ids.map(id => `"${String(id).replaceAll('"', '""')}"`).join("\r\n") + "\r\n";
+    const url = URL.createObjectURL(new Blob([csv], {type:"text/csv;charset=utf-8"}));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `labeling-issues-${ids.length}.csv`;
+    document.body.appendChild(link); link.click(); link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    showToast(uiText(`已导出 ${ids.length} 个 Issue。`, `Exported ${ids.length} Issues.`));
+  } finally {
+    state.caseLabeling.exportingIssues = false;
+    syncCaseLabelingIssueExport();
+  }
 }
 
 function caseLabelingQueueItems() {
@@ -1857,6 +1894,7 @@ function bindCaseLabelingEvents() {
     loadCaseLabelingCases({ page: 1 }).catch((error) => showToast(error.message, true));
   });
   $("#caseLabelingBack")?.addEventListener("click", () => closeCaseLabelingDetail());
+  $("#caseLabelingExportIssues")?.addEventListener("click", () => { void exportCaseLabelingIssues().catch(error => showToast(error.message, true)); });
   $("#caseLabelingExportGt")?.addEventListener("click", () => {
     exportLabelingGtUpdate(labelingTaskFilterPayload(), $("#caseLabelingExportGt"))
       .catch((error) => showToast(error.message, true));

@@ -85,7 +85,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-621`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-622`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -571,7 +571,7 @@
                 <div class="case-labeling-heading-copy">
                   <h2>问题图库</h2><span class="count-pill" id="caseLabelingCount">—</span>
                 </div>
-                <div class="gallery-heading-actions"><button class="button button-quiet" id="caseLabelingExportGt" type="button">导出 GT 更新</button><button class="button button-quiet" id="caseLabelingCampaignsButton" type="button">标注汇总</button><button class="button button-quiet" id="caseLabelingCreateLabelSnapshot" type="button" hidden>保存 Label 快照</button><button class="button button-primary" id="caseLabelingCreateTask" type="button">标注任务</button></div>
+                <div class="gallery-heading-actions"><button class="button button-quiet" id="caseLabelingExportIssues" type="button" disabled><span class="ui-lang-zh">导出 Issue</span><span class="ui-lang-en">Export Issues</span></button><button class="button button-quiet" id="caseLabelingExportGt" type="button">导出 GT 更新</button><button class="button button-quiet" id="caseLabelingCampaignsButton" type="button">标注汇总</button><button class="button button-quiet" id="caseLabelingCreateLabelSnapshot" type="button" hidden>保存 Label 快照</button><button class="button button-primary" id="caseLabelingCreateTask" type="button">标注任务</button></div>
               </div>
               <div class="review-cluster-strip case-labeling-progress-strip" id="caseLabelingTaskProgress" hidden><span class="subheading">任务进度</span><div class="cluster-list" id="caseLabelingTaskProgressList"></div></div>
               <div class="issue-grid" id="caseLabelingList" aria-live="polite"></div>
@@ -1231,7 +1231,14 @@
                       <button class="button button-quiet" id="trailUpdateResetFiltersButton" type="button"><span class="ui-lang-zh">重置</span><span class="ui-lang-en">Reset</span></button>
                     </div>
                   </form>
-                  <div class="section-heading trail-update-results-heading"><div><h3><span class="ui-lang-zh">排除候选明细</span><span class="ui-lang-en">Excluded case details</span></h3><small id="trailUpdateResultSummary" class="trail-update-result-summary" aria-live="polite">—</small></div><div class="trail-update-result-actions"><button class="button button-quiet" data-trail-json-preview="review" type="button" disabled><span class="ui-lang-zh">预览 JSON</span><span class="ui-lang-en">Preview JSON</span></button></div></div>
+                  <div class="section-heading trail-update-results-heading"><div><h3><span class="ui-lang-zh">排除候选明细</span><span class="ui-lang-en">Excluded case details</span></h3><small id="trailUpdateResultSummary" class="trail-update-result-summary" aria-live="polite">—</small></div><div class="trail-update-result-actions"><button class="button button-quiet" id="trailReasonBatchToggle" type="button" aria-expanded="false"><span class="ui-lang-zh">批量更新</span><span class="ui-lang-en">Batch update</span></button><button class="button button-quiet" data-trail-json-preview="review" type="button" disabled><span class="ui-lang-zh">预览 JSON</span><span class="ui-lang-en">Preview JSON</span></button></div></div>
+                  <div class="trail-reason-selection-bar" hidden>
+                    <label><span class="ui-lang-zh">更新类型</span><span class="ui-lang-en">Update type</span><select id="trailReasonIntent"><option value="reason_only" data-label-zh="仅更新理由" data-label-en="Reasons only">仅更新理由</option><option value="exclude" data-label-zh="排除所选案例" data-label-en="Exclude selected cases">排除所选案例</option></select></label>
+                    <button class="button button-quiet" id="trailReasonSelectVisible" type="button"><span class="ui-lang-zh">选择本页可更新项</span><span class="ui-lang-en">Select eligible on this page</span></button>
+                    <button class="button button-quiet" id="trailReasonClear" type="button"><span class="ui-lang-zh">清空选择</span><span class="ui-lang-en">Clear selection</span></button>
+                      <button class="button button-primary" id="trailUpdateCommitButton" type="button" title="当前环境仅允许预览；提交需要开启 Trail 属性写入。" disabled><span class="ui-lang-zh">预览所选更新</span><span class="ui-lang-en">Preview selected updates</span></button>
+                    <small id="trailReasonSelectionCount" role="status"></small>
+                  </div>
                   <div class="trail-update-table-wrap">
                     <table class="trail-update-table trail-reconcile-table"><thead><tr><th><span class="ui-lang-zh">Issue</span><span class="ui-lang-en">Issue</span></th><th><span class="ui-lang-zh">来源</span><span class="ui-lang-en">Source</span></th><th><span class="ui-lang-zh">本地状态</span><span class="ui-lang-en">Local state</span></th><th><span class="ui-lang-zh">Trail 状态</span><span class="ui-lang-en">Trail state</span></th><th><span class="ui-lang-zh">理由摘要</span><span class="ui-lang-en">Reasons</span></th><th><span class="ui-lang-zh">操作</span><span class="ui-lang-en">Actions</span></th></tr></thead><tbody id="trailUpdateTableBody"><tr><td colspan="6" class="trail-update-empty"><span class="ui-lang-zh">正在加载排除案例。</span><span class="ui-lang-en">Loading excluded cases.</span></tr></tbody></table>
                   </div>
@@ -1258,13 +1265,7 @@
                       <span class="ui-lang-zh">条</span>
                     </label>
                   </nav>
-                  <div class="trail-reason-selection-bar">
-                    <label><span class="ui-lang-zh">更新类型</span><span class="ui-lang-en">Update type</span><select id="trailReasonIntent"><option value="reason_only" data-label-zh="仅更新理由" data-label-en="Reasons only">仅更新理由</option><option value="exclude" data-label-zh="排除所选案例" data-label-en="Exclude selected cases">排除所选案例</option></select></label>
-                    <button class="button button-quiet" id="trailReasonSelectVisible" type="button"><span class="ui-lang-zh">选择本页可更新项</span><span class="ui-lang-en">Select eligible on this page</span></button>
-                    <button class="button button-quiet" id="trailReasonClear" type="button"><span class="ui-lang-zh">清空选择</span><span class="ui-lang-en">Clear selection</span></button>
-                      <button class="button button-primary" id="trailUpdateCommitButton" type="button" title="当前环境仅允许预览；提交需要开启 Trail 属性写入。" disabled><span class="ui-lang-zh">预览所选更新</span><span class="ui-lang-en">Preview selected updates</span></button>
-                    <small id="trailReasonSelectionCount" role="status"></small>
-                  </div>
+
 
                 </section>
               </section>
@@ -2528,7 +2529,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-621`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-622`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

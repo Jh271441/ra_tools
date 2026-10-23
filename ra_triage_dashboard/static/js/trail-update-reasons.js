@@ -25,7 +25,7 @@ function trailSelectionReady(data) {
 function trailSelectionCheckbox(item) {
   if (item.readonly || state.trailUpdate.view === "reconciliation") return "";
   const id = String(item.issue_id || "");
-  return `<label class="trail-reason-check"><input type="checkbox" data-trail-reason-select="${escapeHtml(id)}" ${trailSelectedIssues().has(id) ? "checked" : ""} ${trailReasonEligible(item) ? "" : "disabled"} aria-label="${escapeHtml(uiText(`选择 ${id}`, `Select ${id}`))}"></label>`;
+  return `<label class="trail-reason-check" ${state.trailUpdate.selectionMode ? "" : "hidden"}><input type="checkbox" data-trail-reason-select="${escapeHtml(id)}" ${trailSelectedIssues().has(id) ? "checked" : ""} ${trailReasonEligible(item) ? "" : "disabled"} aria-label="${escapeHtml(uiText(`选择 ${id}`, `Select ${id}`))}"></label>`;
 }
 function trailReasonScopeSummary(items) {
   const excluded = items.filter(item => item.trail_detail?.trail_should_exclude === true).length;
@@ -64,7 +64,16 @@ function syncTrailSelectionControls(data = state.trailUpdate?.data) {
   const hidden = [...chosen].filter(id => !visible.has(id)).length;
   if (count) count.textContent = uiText(`已选 ${chosen.size} 条，其中 ${hidden} 条不在本页；筛选不改变选择`, `${chosen.size} selected, ${hidden} outside this page; filters preserve selection`);
   const bar = document.querySelector(".trail-reason-selection-bar");
-  if (bar) bar.hidden = state.trailUpdate.view === "reconciliation";
+  const selecting = Boolean(state.trailUpdate.selectionMode) && state.trailUpdate.view !== "reconciliation";
+  if (bar) bar.hidden = !selecting;
+  document.querySelectorAll("#trailUpdateTableBody .trail-reason-check").forEach(label => { label.hidden = !selecting; });
+  const toggle = $("#trailReasonBatchToggle");
+  if (toggle) {
+    toggle.hidden = state.trailUpdate.view === "reconciliation";
+    toggle.disabled = Boolean(state.trailUpdate.selectionBusy);
+    toggle.textContent = selecting ? uiText("完成选择", "Done selecting") : uiText("批量更新", "Batch update");
+    toggle.setAttribute("aria-expanded", String(selecting));
+  }
   const select = $("#trailReasonIntent");
   if (select) {
     select.value = state.trailUpdate.selectionIntent || "reason_only";
@@ -111,6 +120,13 @@ function reconcileTrailReasonRows(body, markup, preserveRows) {
   desired.forEach((row, index) => { if (body.children[index] !== row) body.insertBefore(row, body.children[index] || null); });
 }
 function bindTrailReasonEvents() {
+  $("#trailReasonBatchToggle")?.addEventListener("click", () => {
+    if (state.trailUpdate.selectionBusy) return;
+    state.trailUpdate.selectionMode = !state.trailUpdate.selectionMode;
+    if (!state.trailUpdate.selectionMode) trailSelectedIssues().clear();
+    patchTrailReasonCells(state.trailUpdate.data);
+    syncTrailSelectionControls(); syncTrailAttributeActions();
+  });
   $("#trailReasonIntent")?.addEventListener("change", event => {
     state.trailUpdate.selectionIntent = event.target.value;
     trailSelectedIssues().clear();

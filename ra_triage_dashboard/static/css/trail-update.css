@@ -707,3 +707,18 @@ html[data-color-theme="light"] .trail-update-state-badge.is-excluded { color:#1d
 #trailReasonDetailsDialog .trail-update-state-badge { justify-self:start; }
 #trailReasonDetailsDialog .trail-reason-comparison { grid-template-columns:repeat(2,minmax(0,1fr)); }
 #trailReasonDetailsDialog .dialog-actions button { min-height:44px; }
+
+/* Browsing stays quiet until the user explicitly enters batch selection. */
+.trail-update-review-summary-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.trail-update-review-summary-grid > .analysis-stat-card:not([hidden]) { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; text-align:center; }
+.trail-update-review-summary-grid > .analysis-stat-card > strong { font-size:28px; line-height:1.1; }
+.trail-update-review-summary-grid > .analysis-stat-card > small { max-width:100%; }
+.trail-reason-check[hidden] { display:none; }
+.trail-reconcile-table th, .trail-reconcile-table td:nth-child(n) { text-align:center; }
+.trail-reconcile-table td:nth-child(5) { text-align:left; }
+.trail-issue-identity, .trail-row-actions { justify-content:center; }
+.trail-reconcile-table .trail-update-issue { text-align:center; }
+.trail-reason-selection-bar { padding:10px 0; border-top:1px solid var(--line-soft); border-bottom:1px solid var(--line-soft); }
+.trail-update-result-actions > [hidden] { display:none; }
+
+.trail-update-results-heading > .trail-update-result-actions { display:flex; flex-wrap:wrap; align-items:center; }
