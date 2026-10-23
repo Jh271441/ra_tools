@@ -315,7 +315,7 @@ class DatabaseVersionDatasetsMixin(VersionRunConsolidationMixin):
             return [
                 r["baseline_scope"]
                 for r in conn.execute(
-                    "SELECT DISTINCT i.baseline_scope FROM issues i JOIN version_dataset_items v ON v.issue_id=i.issue_id WHERE v.dataset_id=? AND v.is_target=1 ORDER BY i.baseline_scope",
+                    "SELECT DISTINCT i.baseline_scope FROM issues i JOIN version_dataset_items v ON v.issue_id=i.issue_id WHERE v.dataset_id=? ORDER BY i.baseline_scope",
                     (dataset_id,),
                 ).fetchall()
             ]

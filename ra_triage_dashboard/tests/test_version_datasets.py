@@ -49,6 +49,17 @@ class VersionDatasetsTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.ingest([self.packet("cn3", "20261023")], "b")
 
+    def test_current_membership_filter_preserves_frozen_campaign_scope(self):
+        from unittest.mock import patch
+        from ra_triage_dashboard.app.support import baselines,filter_parsing
+        self.ingest([dict(self.packet(),state="published",is_target=True,is_low=True),self.packet("cn2")])
+        with patch.object(baselines,"database",self.db),patch.object(filter_parsing,"resolve_request_baseline_scopes",return_value=["scope"]),patch.object(baselines,"resolve_request_baseline_ids",return_value=["version-20261009"]):
+            current=filter_parsing._case_filter_kwargs(baselines="version-20261009")
+            frozen=filter_parsing._case_filter_kwargs(baselines="version-20261009",work_split_id="original-campaign")
+        self.assertEqual(current["issue_ids"],("cn1",))
+        self.assertFalse(frozen["issue_ids"])
+        self.assertEqual(frozen["work_split_id"],"original-campaign")
+
     def test_failed_ingest_rolls_back_whole_batch(self):
         with self.assertRaises(ValueError):
             self.ingest(
