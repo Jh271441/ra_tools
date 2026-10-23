@@ -6,13 +6,24 @@ secondary full-width composition bar. This restores the original visual hierarch
 side-by-side narrow summary and tiny date-tile redesign. Spacing is modestly
 reduced; text and charts retain the original readable scale.
 
-Inside the TE panel, overall progress, occurrence-date vertical bars and result
-distribution share a row on desktop. Dates use natural-width bars rather than
-stretching a single day across its column. The five usual result values fit in
-compact label / gauge / count rows without nested scrolling. Longer date/result
-lists can scroll with native controls. Tablet/mobile layouts wrap existing
-components without document overflow. The chart keeps up to 14 dates and includes
-a selected older date.0821 retains its fixed 312 members with no date chart.
+Inside the TE panel, overall counts and their filled-result distribution sit
+adjacent on desktop, with a light divider connecting the two. The occurrence-date
+section fills the remaining width with one horizontal progress row per day;
+two dates no longer leave an elastic empty column between counts and results.
+The same row keeps its date, gauge, filled/target count and percentage in stable
+columns. Long lists scroll within the bounded chart. Tablet/mobile layouts wrap
+existing components without document overflow; mobile puts daily progress before
+the secondary result distribution and retains 44px touch targets. The chart keeps
+up to 14 dates and includes a selected older date.0821 retains its fixed312
+members with no date chart.
+
+A fixed “All dates” button clears only the occurrence-date filter; clicking the
+selected day again also clears it. Current selected date appears beside the TE
+scope count, so changing the denominator is explicit. Same-version filtering keeps
+charts mounted during loading, updates pressed states immediately, and leaves
+cancellation controls reachable. Dataset switches clear the old scope; polling,
+request sequence guards and all other filters remain unchanged. Count refreshes
+retain the focused date and the chart scroll position.
 
 The user-prioritized TE summary shows filled and pending counts prominently;
 the shared denominator appears once beside its heading. The occurrence chart is
