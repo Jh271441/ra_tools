@@ -61,9 +61,9 @@ function renderVersionDatasets({force=false}={}) {
     [uiText('候选案例','Candidates'),current.total],
     [uiText('已回刷','Published'),current.historical?'—':states.published||0],
     [uiText('复核目标','Review targets'),current.targets??'—'],
-    [uiText('待齐备','Awaiting source'),states.waiting_metadata||0],
+    [uiText('待齐备','Awaiting source'),current.historical?'—':states.waiting_metadata||0],
   ].map(([label,n])=>`<div><span>${label}</span><strong>${n}</strong></div>`).join('');
-  $('#versionDatasetCounts').textContent=uiText(`抽样 ${current.sampled_targets??0} · 低置信 ${current.low_only??0} · 已分配 ${Object.values(current.assigned||{}).reduce((a,b)=>a+b,0)} · 已过滤 ${states.excluded||0}`,`Sample ${current.sampled_targets??0} · Low confidence ${current.low_only??0} · Assigned ${Object.values(current.assigned||{}).reduce((a,b)=>a+b,0)} · Excluded ${states.excluded||0}`);
+  $('#versionDatasetCounts').textContent=current.historical?uiText(`抽样 ${current.sampled_targets??0} · 低置信 ${current.low_only??0} · 历史固定集`,`Sample ${current.sampled_targets??0} · Low confidence ${current.low_only??0} · Frozen historical set`):uiText(`抽样 ${current.sampled_targets??0} · 低置信 ${current.low_only??0} · 已分配 ${Object.values(current.assigned||{}).reduce((a,b)=>a+b,0)} · 已过滤 ${states.excluded||0}`,`Sample ${current.sampled_targets??0} · Low confidence ${current.low_only??0} · Assigned ${Object.values(current.assigned||{}).reduce((a,b)=>a+b,0)} · Excluded ${states.excluded||0}`);
   $('#versionDatasetHistory').hidden=Boolean(current.historical);
   const m=s.members;if(!m||m.dataset_id!==s.dataset)return;
   renderVersionTE(m);
