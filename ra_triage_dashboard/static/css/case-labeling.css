@@ -168,6 +168,9 @@ html[data-color-theme="light"] .case-label-status[data-state="resolved"] { color
 /* One status entry in the Issue-tags heading; shared Review exclusion control. */
 #caseLabelingEditor .issue-tag-section > .review-section-heading { flex-wrap:nowrap; gap:8px; }
 #caseLabelingEditor .issue-tag-section > .review-section-heading > div { min-width:0; }
+#caseLabelingEditor .issue-tag-section > .review-section-heading > .case-label-result-actions { display:flex; align-items:center; flex:0 0 auto; gap:6px; }
+#caseLabelingEditor .case-label-info-button { display:inline-flex; align-items:center; justify-content:center; width:28px; min-height:32px; padding:0; font-size:17px; color:var(--muted); }
+#caseLabelingEditor .case-label-result-button .ui-select-caret { align-self:center; }
 #caseLabelingEditor .case-label-result-button { flex:0 0 auto; gap:4px; min-height:32px; padding:3px 6px; }
 .case-label-result-button .case-label-status { padding:2px 5px; font-size:11px; border:0; background:transparent; }
 #caseLabelingEditor .issue-tag-section > .review-exclude-toggle { margin-top:10px; }

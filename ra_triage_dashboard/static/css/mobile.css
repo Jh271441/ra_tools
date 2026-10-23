@@ -879,3 +879,9 @@
  .version-days .te-day {flex-basis:46px;min-width:46px}
  .version-composition header .version-counts {font-size:10px;line-height:1.6}
 }
+
+@media (max-width:700px) {
+  #caseLabelingEditor .case-label-info-button { width:44px; min-width:44px; min-height:44px; }
+  #caseLabelingEditor .issue-tag-section > .review-section-heading > .case-label-result-actions { gap:3px; }
+  #caseLabelingEditor .case-label-result-button .case-label-status { max-width:120px; }
+}
