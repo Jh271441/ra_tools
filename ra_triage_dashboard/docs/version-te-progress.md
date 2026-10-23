@@ -1,6 +1,11 @@
 # Version composition and TE progress
 
-The version page shows the occurrence-date TE chart directly. Each date uses its
+The version page shows total TE progress, occurrence-date progress and result
+distribution in a single compact row on desktop. On phones these panels stack.
+The source and denominator notes live behind the heading info icon (hover, focus
+or tap); Escape and outside interaction dismiss it. Tooltip position stays within
+the viewport. A single date uses a fixed-width bar instead of stretching over
+an otherwise empty row. Each date uses its
 own target denominator; clicking a date also scopes the gallery and version
 composition. The chart keeps up to 14 dates and includes a selected older date.
 0821 retains its fixed 312 members and has no occurrence-date chart.

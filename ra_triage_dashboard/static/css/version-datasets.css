@@ -1,12 +1,12 @@
 body[data-active-page="version-datasets"] .topbar > :is(.topbar-baselines,.header-metrics,.gt-sync-control) {display:none}
 body[data-active-page="version-datasets"] .top-actions {margin-left:auto}
-.version-datasets-page {display:grid;gap:14px;min-width:0;width:100%;font-size:12px}
+.version-datasets-page {display:grid;gap:10px;min-width:0;width:100%;font-size:12px}
 .version-toolbar {display:flex;flex-wrap:wrap;align-items:center;gap:8px;min-width:0}
 .version-toolbar > .ui-select {width:240px;max-width:100%}
 .version-toolbar > button {margin-left:auto}
-.version-metrics {display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
-.version-metrics > div {display:flex;align-items:center;justify-content:space-between;gap:10px;padding:16px;border:1px solid var(--line);background:var(--raised);border-radius:8px}
-.version-metrics span {color:var(--muted)}.version-metrics strong {font-size:22px;font-variant-numeric:tabular-nums}
+.version-metrics {display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.version-metrics > div {display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid var(--line);background:var(--raised);border-radius:8px}
+.version-metrics span {color:var(--muted)}.version-metrics strong {font-size:18px;font-variant-numeric:tabular-nums}
 .version-counts {margin:0}.version-gallery {min-width:0}
 .version-gallery .gallery-heading {flex-wrap:wrap;gap:10px}
 .version-gallery form {display:flex;gap:8px;max-width:100%}.version-gallery input {width:190px;min-width:0}
@@ -28,12 +28,30 @@ body[data-active-page="version-datasets"] .top-actions {margin-left:auto}
 .version-card .issue-id {position:relative;z-index:3}
 
 .version-datasets-page {--te-done:var(--accent);--te-pending:var(--line);--te-unknown:#d99b45}
-.version-te-overview {display:grid;grid-template-columns:minmax(260px,1fr) minmax(200px,1fr);gap:30px;align-items:center}
-.version-te-overview .te-result-chart {max-height:135px}.version-te-overview .te-chart-empty {min-height:100px}
-.version-te-overview .te-scope-chart {min-height:125px}.version-te-overview .te-donut {width:106px;height:106px;flex-basis:106px}
-.version-te-panel header {gap:12px;flex-wrap:wrap}.version-te-panel header h2 {font-size:12px}
-.version-days {margin-top:8px;color:var(--muted);font-size:11px}.version-days summary {cursor:pointer}
-.version-days .te-daily-chart {margin-top:12px;max-width:100%}
+.version-te-panel {padding:12px}
+.version-te-panel header {gap:8px;flex-wrap:wrap;margin-bottom:6px}
+.version-te-panel header h2 {display:inline-flex;align-items:center;gap:4px;font-size:12px}
+.version-te-overview {display:grid;grid-template-columns:minmax(240px,320px) minmax(0,1fr) minmax(200px,360px);gap:18px;align-items:center}
+.version-te-overview:has(.version-days[hidden]) {grid-template-columns:minmax(240px,320px) minmax(0,1fr)}
+.version-te-overview .te-result-chart {max-height:132px;gap:10px;align-self:center}
+.version-te-overview .te-chart-empty {min-height:90px}
+.version-te-overview .te-scope-chart {min-height:104px;gap:12px}
+.version-te-overview .te-donut {width:88px;height:88px;flex-basis:88px}
+.version-te-overview .te-donut strong {font-size:22px}
+.version-te-overview .te-status-legend {max-width:210px}
+.version-days {min-width:0;margin:0;padding:0;color:var(--muted);font-size:11px}
+.version-days h3 {color:var(--muted);font-size:10px;font-weight:500;margin:0 0 2px}
+.version-days .te-daily-chart {margin:0;min-height:120px;padding:0 0 2px;gap:4px;max-width:100%}
+.version-days .te-day {flex:0 0 48px;min-width:48px;padding:3px 2px;gap:3px}
+.version-days .te-day-stack {height:68px;width:18px}
+.version-te-info {line-height:1}
+.version-te-info-button {display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;padding:0;border:0;background:none;color:var(--muted);font:inherit;font-size:15px;cursor:help;border-radius:4px}
+.version-te-info-button:hover,.version-te-info-button:focus-visible {color:var(--accent);outline:1px solid var(--accent)}
+.version-te-info-tooltip {position:fixed;right:auto;bottom:auto;width:min(320px,calc(100vw - 24px));max-height:calc(100dvh - 24px);box-sizing:border-box;padding:10px 12px;font-size:11px;font-weight:400;line-height:1.55;overflow-wrap:anywhere}
+.version-te-info-tooltip > strong {display:block;font-size:11px;margin-bottom:5px}
+.version-te-info-tooltip > span {display:block;margin-top:5px}
+.version-te-info.is-open .version-te-info-tooltip {opacity:1;visibility:visible;transform:none}
+.version-te-info.is-dismissed .version-te-info-tooltip {opacity:0;visibility:hidden}
 .version-gallery-filters {display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-left:auto;min-width:0}
 .version-gallery-filters > .ui-select {width:155px;max-width:100%}
 .version-te-result {font-size:11px;color:var(--muted)}.version-te-result[data-status="filled"] {color:var(--accent)}
@@ -41,9 +59,9 @@ body[data-active-page="version-datasets"] .top-actions {margin-left:auto}
 .version-joint-result {font-size:10px}
 .version-gallery-filters > .ui-select {width:145px}
 
-.version-composition {display:grid;gap:9px;min-width:0}
+.version-composition {display:grid;gap:6px;min-width:0}
 .version-composition header {display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
-.version-composition h2,.version-days h3 {font-size:12px;margin:0;color:var(--text)}
+.version-composition h2 {font-size:12px;margin:0;color:var(--text)}
 .version-composition-bar {display:flex;height:8px;overflow:hidden;border-radius:4px;background:var(--line)}
 .version-composition-bar i {display:block;height:100%}
 .version-reason-low {background:var(--accent)}
@@ -52,6 +70,4 @@ body[data-active-page="version-datasets"] .top-actions {margin-left:auto}
 .version-composition-legend > div {display:flex;align-items:center;gap:7px;min-width:0;color:var(--muted);font-size:11px}
 .version-composition-legend strong {color:var(--text);font-variant-numeric:tabular-nums}
 .version-composition-legend small {font-size:10px}
-.version-days {border-top:1px solid var(--line);padding-top:14px;margin-top:14px}
-.version-days .te-daily-chart {min-height:180px}
 #versionTESource {white-space:normal;overflow-wrap:anywhere}

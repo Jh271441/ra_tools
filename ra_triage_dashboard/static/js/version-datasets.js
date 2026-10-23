@@ -33,6 +33,7 @@ function setVersionDatasetsActive(active) {
     if(before===JSON.stringify([s.dataset,s.mode,s.sort,s.query,s.page,s.date,s.teStatus,s.media,s.assignee,s.reviewStatus]))return;
     clearVersionDatasetMembers();
   }
+  if(!active)closeVersionTEInfo();
   s.active=active;s.seq++;s.controller?.abort();clearTimeout(s.timer);
   s.observer?.disconnect();s.observer=null;s.imageEpoch++;
   if(active){bindVersionDatasets();versionDatasetRoute();void loadVersionDatasets();}
@@ -132,7 +133,7 @@ async function loadVersionDatasets(){
   finally{if(valid()){$('#versionDatasetGrid').setAttribute('aria-busy','false');if(!document.hidden)s.timer=setTimeout(loadVersionDatasets,30000);}}
 }
 function bindVersionDatasets(){
-  const s=versionDatasetState;if(s.bound)return;s.bound=true;
+  const s=versionDatasetState;if(s.bound)return;s.bound=true;bindVersionTEInfo();
   for(const [id,key] of [['versionDatasetPicker','dataset'],['versionDatasetMode','mode'],['versionDatasetSort','sort'],['versionDatasetDate','date'],['versionDatasetTEStatus','teStatus'],['versionDatasetMedia','media'],['versionDatasetOwner','assignee'],['versionDatasetReviewStatus','reviewStatus']])$('#'+id).addEventListener('change',e=>versionDatasetChange({[key]:e.target.value}));
   $('#versionDatasetsPage').addEventListener('click',e=>{const status=e.target.closest('[data-version-te-status]');if(status){versionDatasetChange({teStatus:s.teStatus===status.dataset.versionTeStatus?'all':status.dataset.versionTeStatus});return;}const day=e.target.closest('[data-version-date]');if(day){versionDatasetChange({date:day.dataset.versionDate});return;}const open=e.target.closest('[data-version-open]');if(open)void openVersionDatasetMedia(open.dataset.versionOpen);});
   $('#versionDatasetSearchForm').addEventListener('submit',e=>{e.preventDefault();versionDatasetChange({query:$('#versionDatasetSearch').value.trim()});});
@@ -181,4 +182,27 @@ async function openVersionDatasetMedia(iid,preferredKind=''){
     if(!frames?.length&&!preferredMediaKind(data)){showToast(uiText('媒体待就绪','Media pending'));return;}
     openMedia(kind,heroFrameIndex(frames||[]),{caseData:{...data,gt_label:'',reference_media:true,te_observation:s.members?.items.find(r=>r.issue_id===iid)}});
   }catch(e){if(s.active&&seq===s.mediaSeq)showToast(uiText('媒体暂不可用，请稍后重试','Media unavailable; try again'),true);}
+}
+
+function closeVersionTEInfo(){
+  const help=$('#versionTEInfo');if(!help)return;
+  help.classList.remove('is-open');help.classList.add('is-dismissed');$('#versionTEInfoButton').setAttribute('aria-expanded','false');
+}
+function bindVersionTEInfo(){
+  const help=$('#versionTEInfo'),button=$('#versionTEInfoButton'),tip=$('#versionTEInfoTooltip');
+  const show=()=>{
+    help.classList.remove('is-dismissed');help.classList.add('is-open');button.setAttribute('aria-expanded','true');
+    const r=button.getBoundingClientRect(),w=tip.offsetWidth,h=tip.offsetHeight;
+    tip.style.left=`${Math.max(12,Math.min(r.left,innerWidth-w-12))}px`;
+    tip.style.top=`${Math.max(12,r.bottom+h+8<=innerHeight?r.bottom+6:r.top-h-6)}px`;
+  };
+  help.addEventListener('mouseenter',show);
+  help.addEventListener('mouseleave',()=>{if(!help.contains(document.activeElement))closeVersionTEInfo();});
+  help.addEventListener('focusin',show);
+  help.addEventListener('focusout',e=>{if(!help.contains(e.relatedTarget))closeVersionTEInfo();});
+  button.addEventListener('click',show);
+  document.addEventListener('pointerdown',e=>{if(!help.contains(e.target))closeVersionTEInfo();});
+  document.addEventListener('keydown',e=>{if(e.key==='Escape'&&help.classList.contains('is-open')){e.preventDefault();closeVersionTEInfo();}});
+  window.addEventListener('resize',closeVersionTEInfo);
+  window.addEventListener('scroll',closeVersionTEInfo,{capture:true,passive:true});
 }
