@@ -1,5 +1,6 @@
 """Labeling queries HTTP contracts."""
 from __future__ import annotations
+from ...labeling_rules import case_exclusion_projection
 from fastapi import APIRouter
 from typing import Any
 from ...db import LABELS
@@ -345,6 +346,7 @@ async def get_labeling_case(
         "trail_url": str(issue.get("trail_url") or ""),
         "voyager_issue_url": _voyager_issue_url(issue_id),
         "label_cases": detailed_cases,
+        "exclusion_summary": case_exclusion_projection(detailed_cases),
         "comments": [_public_label_comment(comment) for comment in comments],
         "task_id": task_key,
         "current_user_is_task_member": bool(assignment and assignment.get("assigned")),

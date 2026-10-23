@@ -793,3 +793,11 @@
   .case-label-decision-dialog .ui-select-trigger { min-height:44px; }
   .case-label-decision-dialog textarea { min-height:96px; font-size:16px; }
 }
+
+@media (max-width:700px) {
+  .case-exclusion-summary dl { grid-template-columns:minmax(0,1fr); gap:8px; }
+  .case-exclusion-summary dl > div { display:flex; justify-content:space-between; gap:12px; align-items:baseline; }
+  .case-exclusion-summary dd { text-align:right; overflow-wrap:anywhere; }
+  #caseExclusionDialog .dialog-actions .button { min-width:0; }
+  #caseExclusionDialog .case-label-decision-body { overflow-x:hidden; }
+}

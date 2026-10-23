@@ -163,3 +163,23 @@ html[data-color-theme="light"] .case-label-status[data-state="resolved"] { color
 .case-label-decision-error[hidden] { display:none; }
 .case-label-decision-dialog .icon-button { min-width:44px; min-height:44px; }
 #caseLabelGoAdjudication { min-height:44px; }
+
+/* Local exclusion opinions and explicit task adjudication. */
+.case-exclusion-summary { display:grid; gap:8px; margin-top:10px; padding:12px; border:1px solid var(--line); border-radius:10px; min-width:0; background:var(--overlay); font-size:12px; }
+.case-exclusion-summary dl { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin:0; }
+.case-exclusion-summary dt { color:var(--muted); font-size:11px; }
+.case-exclusion-summary dd { margin:4px 0 0; font-weight:650; }
+.case-exclusion-summary p, .case-exclusion-preview p { margin:4px 0; line-height:1.6; white-space:pre-wrap; overflow-wrap:anywhere; }
+.case-exclusion-summary > p { color:var(--muted); }
+.case-exclusion-summary summary { cursor:pointer; min-height:44px; padding:10px 0; }
+.case-exclusion-summary .button { justify-self:start; min-height:44px; white-space:normal; }
+.case-exclusion-warning { padding:10px 12px; border-left:3px solid var(--accent); background:var(--accent-soft); font-size:12px; line-height:1.6; margin:0; overflow-wrap:anywhere; }
+.case-exclusion-preview { padding:12px; border:1px solid var(--line); border-radius:8px; font-size:12px; min-width:0; }
+#caseExclusionDialog .case-exclusion-confirm { display:flex; flex-direction:row; align-items:center; gap:10px; min-height:44px; font-size:12px; line-height:1.6; }
+#caseExclusionDialog .case-exclusion-confirm input { flex:0 0 20px; width:20px; height:20px; margin:0; }
+#caseExclusionDialog .ui-select { min-width:0; max-width:100%; }
+#caseExclusionDialog .ui-select-trigger { white-space:normal; min-height:44px; }
+#caseExclusionDialog .case-label-decision-body > p { font-size:12px; line-height:1.6; }
+
+#caseExclusionDialog .case-label-decision-body { gap:12px; }
+#caseExclusionRefresh { justify-self:start; min-height:44px; white-space:normal; }

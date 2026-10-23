@@ -41,6 +41,7 @@ review-form.js
 case-label-explanation.js
 case-labeling.js
 case-label-decision.js
+case-exclusion-decision.js
 media-dialog.js
 batch-gateway.js
 batch-config.js

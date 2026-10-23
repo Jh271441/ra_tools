@@ -278,7 +278,14 @@ class LabelingDecisionsMixin:
         actor_source: str,
         actor_verified: bool,
         expected_previous_resolution_id: int | None = None,
+        adjudication_scope: str = "label",
+        confirm_full_label: bool = False,
     ) -> dict[str, Any]:
+        if adjudication_scope not in {"label", "exclusion"}:
+            raise ValueError("裁决范围不合法。")
+        exclusion_intent = adjudication_scope == "exclusion"
+        if exclusion_intent and (confirm_full_label is not True or not str(rationale or "").strip()):
+            raise ValueError("请确认完整标签结论并填写裁决依据。")
         label = str(expected_output or "").strip()
         if label not in LABELS:
             raise ValueError("裁决必须选择有效的期望输出。")
@@ -308,8 +315,12 @@ class LabelingDecisionsMixin:
                 or str(campaign["lifecycle"] or "active") != "active"
                 or str(campaign["purpose"] or "labeling") != "labeling"
             ):
-                raise ValueError("该 Campaign 当前只读，不能提交标注裁决。")
-            if current["state"] not in {"conflict", "stale"}:
+                raise ValueError("该任务当前只读，不能提交标注裁决。")
+            exclusion_reviewable = bool(current["heads"]) and (
+                any(head.get("is_excluded") for head in current["heads"])
+                or bool(((current.get("adjudication") or {}).get("result") or {}).get("is_excluded"))
+            )
+            if current["state"] not in {"conflict", "stale"} and not (exclusion_intent and exclusion_reviewable):
                 raise ValueError("当前任务标注没有需要裁决的冲突。")
             current_sources = sorted(int(item["id"]) for item in current["heads"])
             if normalized_sources != current_sources or not normalized_sources:

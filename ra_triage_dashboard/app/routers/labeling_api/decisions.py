@@ -105,6 +105,8 @@ async def adjudicate_label_case(label_case_id: str, request: Request) -> dict[st
             actor_source=actor_source,
             actor_verified=actor_verified,
             expected_previous_resolution_id=expected_previous,
+            adjudication_scope=_as_text(body.get("adjudication_scope") or "label"),
+            confirm_full_label=body.get("confirm_full_label") is True,
             **payload,
         )
     except LabelAnnotationConflictError as exc:

@@ -246,7 +246,20 @@ class LabelingRecordsMixin:
                 (normalized,),
             ).fetchall()
             resolution = self._resolve_label_case_with_conn(conn, row)
+            task = conn.execute(
+                "SELECT campaign_name, purpose, lifecycle, legacy_read_only FROM issue_work_splits WHERE id = ?",
+                (str(row["task_id"] or ""),),
+            ).fetchone()
         result = self._label_case_dict(row)
+        result["task_name"] = str(task["campaign_name"] or "") if task else ""
+        result["can_adjudicate_exclusion"] = bool(
+            task and not task["legacy_read_only"]
+            and str(task["lifecycle"] or "active") == "active"
+            and str(task["purpose"] or "labeling") == "labeling"
+            and resolution.get("heads")
+            and (any(head.get("is_excluded") for head in resolution["heads"])
+                 or bool(((resolution.get("adjudication") or {}).get("result") or {}).get("is_excluded")))
+        )
         attachments: dict[int, list[dict[str, Any]]] = defaultdict(list)
         for attachment in attachment_rows:
             attachments[int(attachment["revision_id"])].append(
