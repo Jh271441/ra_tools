@@ -103,6 +103,9 @@ class VersionDatasetsTests(unittest.TestCase):
         page = self.db.version_dataset_items("release-20261009-odd2")
         self.assertEqual(page["items"][0]["prediction"]["model_label"], "误触发")
         self.assertEqual(page["items"][0]["prediction"]["model_confidence"], 0.5)
+        bulk=self.db.version_dataset_gallery_rows("release-20261009-odd2")
+        self.assertEqual(bulk[0]["prediction"]["model_confidence"],0.5)
+        self.assertNotIn("raw_json",bulk[0])
         self.assertEqual(len(self.db.model_run_source_rows(result["run_id"],include_history=True)), 2)
         with self.db.connect() as conn:
             row = conn.execute(

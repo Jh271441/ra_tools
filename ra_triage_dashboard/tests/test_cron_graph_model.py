@@ -4,6 +4,27 @@ import unittest
 
 
 class CronGraphModelTest(unittest.TestCase):
+    def test_incremental_completion_is_per_case_and_not_a_global_gate(self):
+        static=Path(__file__).resolve().parents[1]/"static/js"
+        script=r"""
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+const ctx=vm.createContext({window:{},document:{addEventListener(){}},state:{colorTheme:'dark'},uiText:zh=>zh,$:()=>null,Date});
+for(const f of process.argv.slice(1))vm.runInContext(fs.readFileSync(f,'utf8'),ctx);
+vm.runInContext(`
+const v={stale:false,states:{published:1585,ready:50,running:4},media:{selected:672,verified:619,queued:53},datasets:[]};
+const tasks=()=>buildIncrementalCronGraph(v).lanes.flatMap(l=>l.nodes).map(n=>[n.id,n.data]);
+const find=id=>tasks().find(([key])=>key===id)[1];
+if(find('main-infer').progress.total!==1639||find('main-infer').progress.done!==1585)throw Error('inference denominator missing');
+for(const id of ['main-publish','media-import','media-ready'])if(find(id).status==='success')throw Error('partial stream must not look globally complete: '+id);
+if(find('media-ready').stateLabel!=='分批持续处理')throw Error('publish/cleanup completion is per case');
+if(find('media-retry').status!=='unknown')throw Error('retry attempts require receipts');
+if(buildIncrementalCronGraph(v,'main').lanes[0].nodes.some(n=>n.data.status!=='definition'||n.data.progress))throw Error('definition is not live evidence');
+v.states={published:10};v.media={selected:3,verified:3};if(find('media-ready').status==='success')throw Error('video verification does not prove cleanup');
+`,ctx);
+"""
+        result=subprocess.run(["node","-e",script,str(static/"daily-cron.js"),str(static/"daily-cron-graph.js")],capture_output=True,text=True,timeout=15)
+        self.assertEqual(result.returncode,0,result.stderr)
+
     def test_run_scope_missing_evidence_and_state_transitions(self):
         static = Path(__file__).resolve().parents[1] / "static/js"
         script = r'''

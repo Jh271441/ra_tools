@@ -277,7 +277,7 @@ function renderIncrementalCron(data) {
   $('#dailyCronMediaValue').textContent=cronFraction(m.verified,m.selected);
   $('#dailyCronMediaNote').textContent=uiText(`复用 ${m.reused||0} · 待媒体 ${m.queued||0} · 最终失败 ${m.failure_count||0}`,`Reused ${m.reused||0} · Media pending ${m.queued||0} · Terminal failures ${m.failure_count||0}`);
   $('#dailyCronSchedule').textContent=uiText('每5分钟发现新增及后补；按版本处理，不限 T−2。','Discover new and enriched cases every 5 minutes; version scoped, including T−0.');
-  $('#dailyCronAlerts').innerHTML=`<p class="cron-note">${escapeHtml(v.stale?uiText('增量心跳过期，请核实任务。','Incremental heartbeat is stale.'):uiText('缺源进入等待；模型调用不确定或身份冲突单独隔离。','Missing sources wait; ambiguous model calls and identity conflicts are isolated.'))}</p>`;
+  $('#dailyCronAlerts').innerHTML=`<p class="cron-note">${escapeHtml(v.stale?uiText('增量心跳过期，请核实任务。','Incremental heartbeat is stale.'):uiText('逐 case 完成后进入回刷和媒体；不等待整批。各节点为当前累计进度，缺源与异常单独等待。','Completed cases stream to publication and media independently. Nodes show cumulative progress; missing sources and ambiguous cases wait separately.'))}</p>`;
   for(const id of ['dailyCronMainTiming','dailyCronMediaTiming'])if($('#'+id))$('#'+id).textContent='';
   renderDailyCronRuns(data);renderDailyCronSidecar(data.sidecar);renderDailyCronJobs();renderCronRunSelector();void renderDailyCronGraph();
 }

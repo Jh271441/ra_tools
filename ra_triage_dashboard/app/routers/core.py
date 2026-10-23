@@ -146,7 +146,6 @@ def _dashboard_config_payload() -> dict[str, Any]:
 @router.get("/batch-prediction", include_in_schema=False)
 @router.get("/version-datasets", include_in_schema=False)
 @router.get("/daily-cron", include_in_schema=False)
-@router.get("/daily-review", include_in_schema=False)
 @router.get("/system-status", include_in_schema=False)
 @router.get("/users", include_in_schema=False)
 @router.get("/trail-attribute-update", include_in_schema=False)
@@ -155,6 +154,19 @@ async def index() -> HTMLResponse:
         content=INDEX_HTML,
         headers={"Cache-Control": "no-store, max-age=0"},
     )
+
+
+@router.get("/daily-review", include_in_schema=False)
+async def legacy_daily_review(request: Request):
+    from urllib.parse import urlencode
+    from ..web_paths import with_base_path
+    old=request.query_params
+    dataset=old.get('dataset','1009')
+    family='20261009' if dataset=='1009' else dataset
+    did='historical-0821' if dataset=='0821' else 'release-'+family+'-odd2'
+    query={k:old[k] for k in ['date','te_status','media','sort','page','q'] if k in old}
+    query.update(dataset=did,mode={'low':'low','sample':'samples'}.get(old.get('reason'),'targets'))
+    return RedirectResponse(with_base_path(settings.base_path,'/version-datasets')+'?'+urlencode(query),status_code=307,headers={'Cache-Control':'no-store'})
 
 
 @router.get("/case-labeling/new-task", include_in_schema=False)

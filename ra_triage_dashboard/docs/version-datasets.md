@@ -1,11 +1,19 @@
-# Version datasets
+# Version data workbench
 
-## Arrival ordering and first paint (2026-10-23)
+One page at `/manual/version-datasets` combines processing coverage, TE progress and one image gallery. The sidebar has only Version datasets and Daily tasks. Historical `/manual/daily-review` links redirect with version, reason, occurrence date, TE status, media, order and page preserved. 0821 remains a frozen312-case TE dataset; it does not enter the incremental collector or create a new Run.
 
-Version gallery and TE gallery default to latest platform arrival (`version_dataset_items.first_seen` descending, deterministic Issue tie-break), independent of the case occurrence date. Version gallery also supports source update order and Issue order; TE supports occurrence date and Issue order. Sort precedes pagination and is URL-restorable. Historical bootstrap records may share one arrival timestamp; that timestamp is the registry import time, not a reconstructed historical upload time.
+## Membership and TE authority
 
-The TE daily chart remains grouped by CST occurrence date. Late cases backfill older dates; bars are current completion ratios, not daily arrivals or labels. Sorting does not change the TE denominator, filters or `ra_review_result_new` authority. Export uses the same scope and sort.
+The version registry is the current target denominator. `ra_review_result_new` snapshots supply TE status/results only. A new target absent from an older snapshot is unknown; no model/RD fallback. Sampling overrides low confidence for the displayed disjoint groups. Non-target candidates display an explicit outside-review state and do not inflate TE unknowns. TE status narrows the gallery without shrinking progress denominators; occurrence date, reason and Issue search scope both. Dates use CST occurrence time and late arrivals backfill older cohorts.
 
-Version first paint is independent of global Review/GT baseline initialization and never switches the global baseline. Four compact counters show candidates, published cases, review targets and missing source metadata; sampling overrides low confidence for the displayed disjoint counts. Cards expose prediction/confidence, owner, trigger, arrival and occurrence time. The original Run/Campaign combined-review links are preserved.
+The bounded read-only projection selects metadata and prediction label/confidence in one query (20,000-case cap); it never reads video/bag files or calls Trail. CSV has the same filters and order as the gallery and requires a revision matching the current registry/snapshot. A changed revision returns409. Existing APIs and Campaign/Run-bound joint-review links remain available. No schema, membership, assignment, sampling, GT or scheduling mutation is part of this change.
 
-Items are paged at24. Thumbnails start near the viewport with at most4 active loads; missing media retains a placeholder. Unchanged polls retain card/image DOM; hidden tabs pause, stale requests are discarded, failed refreshes retain the prior result, and import history loads only when expanded. All modified selects use the shared enhanced component. No database migration or collector schedule change is part of this UI release.
+## Interaction and performance
+
+One enhanced version selector covers each live release plus0821. Cards show model output/confidence, TE status, owner, trigger and arrival/occurrence times. Image opens the existing media preview; Issue identity retains its combined-review link. BEV/Camera, TE status, reason, date, Issue search, order and pagination are URL-restorable. The default order is latest registry arrival; bootstrap records may share a timestamp. Source-update, occurrence and Issue order remain available.
+
+Overview and gallery paint independently of global Review/GT bootstrap.24-case pages and at most4 near-viewport thumbnail loads keep images bounded. Unchanged polling retains card/image DOM; hidden tabs pause. Failed same-scope refreshes preserve the result; a scope change clears stale cards/TE/export before loading. Import history loads only while expanded. The occurrence-day chart is supplementary and collapsed by default. Shared selects, Chinese/English, theme variables and responsive styles are retained.
+
+## Incremental graph
+
+The scheduler polls every5minutes. Each completed prediction can advance to Trail publication, target import and independent media while other cases continue inference. A current inference fraction includes its pending queue. Downstream nodes show cumulative finished-result coverage and a streaming label while upstream remains incomplete. A verified-video count does not prove bag cleanup; cleanup and retry status require their own receipts. No synthetic whole-batch success is inferred from a nonzero published count.

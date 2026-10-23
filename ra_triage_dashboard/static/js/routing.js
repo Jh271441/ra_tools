@@ -1171,6 +1171,7 @@ function showPage(
     campaignGroupId = "",
   } = {}
 ) {
+  if(page==="daily-review"){window.location.replace(withBase("/daily-review")+window.location.search);return;}
   const target = PAGE_ROUTES[page] ? page : "review";
   const previousPage = state.activePage;
   const pageLoads = [];

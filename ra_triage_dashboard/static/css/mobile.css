@@ -856,3 +856,12 @@
   .case-labeling-page .case-labeling-gallery-heading .gallery-heading-actions { grid-template-columns:repeat(2,minmax(0,1fr)); }
   #caseLabelingExportIssues { min-height:44px; }
 }
+
+@media(max-width:650px){
+ .version-te-overview {grid-template-columns:minmax(0,1fr);gap:14px}
+ .version-te-overview .te-scope-chart {gap:12px;min-width:0}.version-te-overview .te-donut {width:92px;height:92px;flex-basis:92px}
+ .version-te-overview .te-legend-item {font-size:10px;gap:5px}.version-te-overview .te-status-legend {min-width:0}
+ .version-te-panel .te-legend-item,.version-te-panel .te-day {min-height:44px}
+ .version-gallery-filters {width:100%;margin-left:0}
+ .version-gallery-filters > .ui-select {flex:1 1 130px;width:auto;min-width:0}
+}

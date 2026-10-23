@@ -237,12 +237,40 @@ function bindCronGraphEvents() {
 
 function buildIncrementalCronGraph(v,definitionLane='') {
   const c=v.states||{},m=v.media||{},active=!v.stale;
-  const node=(id,label,detail,status)=>({id,data:{label,detail,status,stateLabel:cronGraphStateLabel(status),rows:[],issues:[]}});
-  const nodes=[node('main-schedule','增量发现','每5分钟 · T−0及迟到数据',active?'success':'unknown'),node('main-query','版本分流',(v.families||[]).map(x=>x.slice(4)).join(' / '),'success'),node('main-wait','等待源信息',String(c.waiting_metadata||0),'pending'),node('main-verify','版本统一抽样','固定种子 · 每 case 约10%','success'),node('main-infer','采集与推理',String((c.inferred||0)+(c.published||0)),(c.running||c.ready||c.retry_wait)?'running':'success'),node('main-publish','Trail 回刷',String(c.published||0),c.inferred?'running':'success')];
-  const media=[node('media-source','低置信＋抽样',String(m.selected||0),'success'),node('media-import','统一 Run 与数据集','仅追加新成员与分配','success'),node('media-camera','Camera','全局4并发',m.queued?'running':'success'),node('media-orion','Orion BEV','全局≤1000并发',m.queued?'running':'success'),node('media-retry','Orion 重试','仅失败子集 · 1次',m.queued?'pending':'skipped'),node('media-local','本地兜底','全局2并发 · 最多2次',m.failure_count?'warn':'pending'),node('media-verify','双媒体验证',`${m.verified||0} / ${m.selected||0}`,m.failure_count?'warn':m.verified===m.selected?'success':'running'),node('media-ready','发布与清理','Camera源bag发布1小时后清理',m.verified?'success':'pending')];
+  const done=(c.inferred||0)+(c.published||0);
+  const pending=(c.ready||0)+(c.running||0)+(c.retry_wait||0);
+  const attention=(c.needs_attention||0)+(c.identity_conflict||0);
+  const total=done+pending+attention;
+  const continuing=pending>0||attention>0||(c.inferred||0)>0;
+  const admitted=(v.datasets||[]).reduce((n,d)=>n+(d.targets||0),0);
+  const assigned=(v.datasets||[]).reduce((n,d)=>n+Object.values(d.assigned||{}).reduce((a,b)=>a+b,0),0);
+  const node=(id,label,detail,status,stateLabel,rows=[])=>({id,data:{label,detail,status:active?status:'unknown',stateLabel:active?stateLabel:uiText('观测过期','Stale observation'),rows,issues:[]}});
+  const rolling=uiText('分批持续处理','Streaming per case');
+  const nodes=[
+    node('main-schedule',uiText('增量发现','Discover'),uiText('每5分钟 · T−0及迟到数据','Every 5 min · T−0 and late arrivals'),'success',uiText('周期调度','Scheduled polling')),
+    node('main-query',uiText('版本分流','Route by version'),(v.families||[]).map(x=>x.slice(4)).join(' / '),'success',uiText('独立归集','Separate worksets')),
+    node('main-wait',uiText('等待源信息','Await source'),String(c.waiting_metadata||0),'pending',uiText('不阻塞其他 case','Other cases continue')),
+    node('main-verify',uiText('版本统一抽样','Version sampling'),uiText('固定种子 · 每 case 约10%','Frozen seed · 10% probability per case'),'success',uiText('固定策略','Frozen policy')),
+    node('main-infer',uiText('采集与推理','Collect / Infer'),`${done} / ${total}`,attention?'warn':pending?'running':'success',pending?uiText('仍有待处理','Cases still pending'):uiText('当前已处理','Current cases processed'),[[uiText('已推理','Inferred'),done],[uiText('待推理 / 重试','Queued / Retry'),pending],[uiText('待核实','Needs attention'),attention]]),
+    node('main-publish',uiText('Trail 回刷','Trail publication'),`${c.published||0} / ${done}`,continuing?'running':'success',continuing?uiText('已完成结果持续回刷','Streaming finished results'):uiText('已有结果已回刷','Existing results published'),[[uiText('已完成推理','Finished inference'),done],[uiText('已回刷','Published'),c.published||0],[uiText('依赖范围','Dependency scope'),uiText('每个 case 完成后推进，不等待整批','Each completed case advances independently')]])
+  ];
+  nodes[4].data.progress=cronTaskProgress(done,total,{stale:!active,label:uiText('当前准入队列','Current admitted queue')});
+  nodes[5].data.progress=cronTaskProgress(c.published||0,done,{stale:!active,label:uiText('已完成推理的结果','Finished inference results')});
+  const mediaPending=(m.verified||0)<(m.selected||0);
+  const media=[
+    node('media-source',uiText('低置信＋抽样','Low confidence + sample'),String(m.selected||0),continuing?'running':'success',continuing?uiText('持续纳入','Continuing admissions'):uiText('当前目标','Current targets')),
+    node('media-import',uiText('统一 Run 与数据集','Unified Run / Dataset'),`${assigned} / ${admitted}`,assigned<admitted||continuing?'running':'success',continuing?uiText('分批导入与分配','Incremental import / assignment'):uiText('当前成员已分配','Current members assigned')),
+    node('media-camera','Camera',uiText('全局4并发','Global concurrency4'),mediaPending?'running':'success',mediaPending?rolling:uiText('当前媒体已验证','Current media verified')),
+    node('media-orion','Orion BEV',uiText('全局≤1000并发','Global concurrency ≤1000'),mediaPending?'running':'success',mediaPending?rolling:uiText('当前媒体已验证','Current media verified')),
+    node('media-retry',uiText('Orion 重试','Orion retry'),uiText('仅失败子集 · 1次','Failed subset only · Once'),'unknown',uiText('按单项回执判定','Requires attempt receipts')),
+    node('media-local',uiText('本地兜底','Local fallback'),uiText('全局2并发 · 最多2次','Global concurrency2 · Up to2 attempts'),'unknown',uiText('按单项回执判定','Requires attempt receipts')),
+    node('media-verify',uiText('双媒体验证','Dual media verification'),`${m.verified||0} / ${m.selected||0}`,m.failure_count?'warn':mediaPending?'running':'success',mediaPending?uiText('逐条验证中','Verifying per case'):uiText('当前目标已验证','Current targets verified')),
+    node('media-ready',uiText('逐条发布 / 清理','Publish / Clean per case'),uiText(`累计验证 ${m.verified||0} · 满1小时后清理`,`Verified so far ${m.verified||0} · Cleanup after1h`),mediaPending||continuing?'running':'unknown',mediaPending||continuing?rolling:uiText('清理回执未观测','Cleanup receipt not observed'),[[uiText('判定范围','Scope'),uiText('已验证 case 可先发布；清理独立记录','Verified cases publish first; cleanup has separate receipts')]])
+  ];
+  media[6].data.progress=cronTaskProgress(m.verified||0,m.selected||0,{stale:!active,label:uiText('当前媒体目标','Current media targets')});
   const edge=(a,b,optional=false)=>({id:a+':'+b,source:a,target:b,optional});
-  let lanes=[{id:'main-lane',label:'按版本增量处理',nodes},{id:'media-lane',label:'平台与独立媒体',nodes:media}];
+  let lanes=[{id:'main-lane',label:uiText('按版本增量处理','Version incremental processing'),nodes},{id:'media-lane',label:uiText('平台与独立媒体','Platform and independent media'),nodes:media}];
   let edges=[edge('main-schedule','main-query'),edge('main-query','main-wait',true),edge('main-wait','main-verify',true),edge('main-query','main-verify'),edge('main-verify','main-infer'),edge('main-infer','main-publish'),edge('main-infer','media-source',true),edge('media-source','media-import'),edge('media-import','media-camera'),edge('media-import','media-orion'),edge('media-camera','media-verify'),edge('media-orion','media-verify'),edge('media-orion','media-retry',true),edge('media-retry','media-local',true),edge('media-local','media-verify',true),edge('media-verify','media-ready')];
-  if(definitionLane){lanes=lanes.filter(x=>x.id===definitionLane+'-lane');const ids=new Set(lanes.flatMap(x=>x.nodes.map(n=>n.id)));edges=edges.filter(x=>ids.has(x.source)&&ids.has(x.target));}
-  return {lanes,edges,selectedNode:dailyCronState.selectedNode||'',definition:Boolean(definitionLane),active,theme:state.colorTheme||'dark',ui:{minimap:'流程缩略图',loading:'加载运行图…',error:'运行图暂不可用'}};
+  if(definitionLane){lanes=lanes.filter(x=>x.id===definitionLane+'-lane');const ids=new Set(lanes.flatMap(x=>x.nodes.map(n=>n.id)));edges=edges.filter(x=>ids.has(x.source)&&ids.has(x.target));lanes.forEach(l=>l.nodes.forEach(n=>{n.data.status='definition';n.data.stateLabel=cronGraphStateLabel('definition');n.data.progress=null;}));}
+  return {lanes,edges,selectedNode:dailyCronState.selectedNode||'',definition:Boolean(definitionLane),active,theme:state.colorTheme||'dark',ui:{minimap:uiText('流程缩略图','Workflow minimap'),loading:uiText('加载运行图…','Loading graph…'),error:uiText('运行图暂不可用','Graph unavailable')}};
 }

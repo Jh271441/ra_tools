@@ -306,6 +306,25 @@ class DatabaseVersionDatasetsMixin(VersionRunConsolidationMixin):
                 "page_size": size,
             }
 
+    def version_dataset_gallery_rows(self, dataset_id):
+        """Bounded metadata projection; no media/Trail I/O or raw prediction JSON."""
+        with self.connect() as conn:
+            rows = conn.execute(
+                "SELECT i.source_json,i.binding_json,i.first_seen,i.updated_at,p.model_label,p.model_confidence "
+                "FROM version_dataset_items i JOIN version_datasets d ON d.id=i.dataset_id "
+                "LEFT JOIN model_predictions p ON p.model_run_id=d.run_id AND p.issue_id=i.issue_id "
+                "WHERE i.dataset_id=? ORDER BY i.issue_id LIMIT 20001", (dataset_id,)
+            ).fetchall()
+            if len(rows)>20000:
+                raise ValueError("Version gallery exceeds the bounded projection")
+            result=[]
+            for row in rows:
+                item=json.loads(row["source_json"])
+                item.update(binding=json.loads(row["binding_json"]),first_seen=row["first_seen"],updated_at=row["updated_at"],
+                            prediction={"model_label":row["model_label"],"model_confidence":row["model_confidence"]} if row["model_label"] else None)
+                result.append(item)
+            return result
+
     def version_dataset_arrivals(self, family):
         """Small read-only time index for TE sorting; no label authority changes."""
         with self.connect() as conn:

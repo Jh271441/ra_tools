@@ -85,7 +85,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-622`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-623`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -204,10 +204,7 @@
                 <span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><circle class="icon-wash" cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="9"/><path class="icon-emphasis" d="M12 7v5l3 2"/></svg></span>
                 <span class="sidebar-label"><strong class="ui-lang-zh">每日任务</strong><strong class="ui-lang-en">Daily tasks</strong></span>
               </a>
-              <a class="sidebar-item" data-page-target="daily-review" data-app-path="/daily-review" href="/daily-review" title="标注进度">
-                <span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m5 17 5-5 4 3 3-4 3 6"/><circle cx="8" cy="8" r="1"/></svg></span>
-                <span class="sidebar-label"><strong class="ui-lang-zh">标注进度</strong><strong class="ui-lang-en">TE progress</strong></span>
-              </a>
+
             </div>
           </section>
 
@@ -1816,55 +1813,22 @@
             </section>
           </section>
 
-          <section class="app-page tool-page daily-review-page hidden" id="dailyReviewPage" data-page="daily-review">
-            <div class="te-toolbar">
-              <button class="button button-quiet" type="button" data-te-dataset="1009" aria-pressed="true">1009</button>
-              <button class="button button-quiet" type="button" data-te-dataset="0821" aria-pressed="false">0821</button>
-              <span class="muted" id="dailyReviewDateLabel"><span class="ui-lang-zh">发生日 · CST</span><span class="ui-lang-en">Occurrence date · CST</span></span>
-              <select id="dailyReviewDate" aria-labelledby="dailyReviewDateLabel"></select>
-              <select id="dailyReviewReason" data-label-zh="目标类型" data-label-en="Target type" aria-label="目标类型"><option value="all" data-zh="全部目标" data-en="All targets">全部目标</option><option value="low" data-zh="低置信" data-en="Low confidence">低置信</option><option value="sample" data-zh="抽样" data-en="Sample">抽样</option></select>
-              <span class="te-source" id="dailyReviewSource" role="status" aria-live="polite"></span>
-              <button class="button button-quiet" id="dailyReviewRefresh" type="button" title="读取最近一次同步快照"><span class="ui-lang-zh">刷新</span><span class="ui-lang-en">Refresh</span></button>
-            </div>
-            <div class="te-dashboard">
-              <section class="te-chart-panel te-daily-panel" id="dailyReviewDailyPanel" aria-labelledby="dailyReviewDailyTitle">
-                <header><h2 id="dailyReviewDailyTitle" data-zh="按发生日的标注进度" data-en="Completion by occurrence date">按发生日的标注进度</h2><span class="muted" data-zh="最近 14 个发生日 · 点击筛选" data-en="Latest 14 occurrence dates · Filter">最近 14 个发生日 · 点击筛选</span></header>
-                <div class="te-daily-chart" id="dailyReviewDailyChart"></div>
-                <p class="te-chart-note" data-zh="按 case 发生日分组；晚到数据会回填，不代表当天新增或标注量。" data-en="Grouped by case occurrence date; late arrivals backfill older days. Not daily arrivals or labels.">按 case 发生日分组；晚到数据会回填，不代表当天新增或标注量。</p>
-              </section>
-              <section class="te-chart-panel" aria-labelledby="dailyReviewScope">
-                <header><h2 id="dailyReviewScope"></h2><span class="muted" data-zh="所选范围" data-en="Selected scope">所选范围</span></header>
-                <div class="te-scope-chart"><div class="te-donut" id="dailyReviewDonut" role="img"><strong id="dailyReviewRate">—</strong><small data-zh="完成率" data-en="Completion">完成率</small></div><div class="te-status-legend" id="dailyReviewStatusChart"></div></div>
-                <div class="te-progress"><strong id="dailyReviewProgress">TE — / —</strong><progress id="dailyReviewBar" max="1" value="0" aria-label="TE progress"></progress></div>
-                <p class="te-chart-note" id="dailyReviewCounts"></p>
-              </section>
-              <section class="te-chart-panel" aria-labelledby="dailyReviewResultsTitle">
-                <header><h2 id="dailyReviewResultsTitle" data-zh="已标结果分布" data-en="TE result distribution">已标结果分布</h2><span class="muted" data-zh="仅统计已标案例" data-en="Filled cases only">仅统计已标案例</span></header>
-                <div class="te-result-chart" id="dailyReviewDistribution"></div>
-              </section>
-            </div>
-            <section class="gallery-panel te-gallery" aria-labelledby="dailyReviewGalleryTitle">
-              <header class="gallery-heading"><div><h2 id="dailyReviewGalleryTitle">Gallery</h2><span class="muted" id="dailyReviewGalleryCount"></span></div><div class="gallery-heading-actions te-filters">
-                <select id="dailyReviewSort" data-label-zh="案例排序" data-label-en="Case order" aria-label="案例排序"><option value="added" data-zh="最新入库" data-en="Recently added">最新入库</option><option value="occurred" data-zh="最近发生" data-en="Recently occurred">最近发生</option><option value="issue" data-zh="Issue 编号" data-en="Issue ID">Issue 编号</option></select>
-                <select id="dailyReviewStatus" data-label-zh="TE 状态" data-label-en="TE status" aria-label="TE 状态"><option value="all" data-zh="全部状态" data-en="All states">全部状态</option><option value="unfilled" data-zh="待标" data-en="Pending">待标</option><option value="filled" data-zh="已标" data-en="Filled">已标</option><option value="unknown" data-zh="未知" data-en="Unknown">未知</option></select>
-                <select id="dailyReviewMedia" aria-label="Media"><option value="bev">BEV</option><option value="camera">Camera</option></select>
-                <a class="button button-quiet" id="dailyReviewExport" hidden><span class="ui-lang-zh">导出 CSV</span><span class="ui-lang-en">Export CSV</span></a>
-              </div></header>
-              <div class="issue-grid te-grid" id="dailyReviewGrid"></div>
-              <nav class="case-pagination" aria-label="Gallery pagination"><button class="button button-quiet" type="button" id="dailyReviewPrev" data-zh="上一页" data-en="Previous">上一页</button><span id="dailyReviewPageLabel"></span><button class="button button-quiet" type="button" id="dailyReviewNext" data-zh="下一页" data-en="Next">下一页</button></nav>
-            </section>
-            <details class="te-results"><summary><span class="ui-lang-zh">数据口径</span><span class="ui-lang-en">Data scope</span></summary><div id="dailyReviewCoverage"></div><p><span class="ui-lang-zh">TE 来源：Trail · RA Review Result New。1009 按北京时间发生日；0821 为既有 312 条。每 5 分钟同步，较早历史每小时复查。</span><span class="ui-lang-en">TE source: Trail · RA Review Result New. 1009 uses CST occurrence dates; 0821 is the frozen 312-case set. Sync every 5 minutes; older history hourly.</span></p></details>
-          </section>
           <section class="app-page tool-page version-datasets-page hidden" id="versionDatasetsPage" data-page="version-datasets">
             <div class="version-toolbar">
               <select id="versionDatasetPicker" data-label-zh="版本" data-label-en="Version" aria-label="版本"></select>
-              <select id="versionDatasetMode" data-label-zh="范围" data-label-en="Scope" aria-label="范围"><option value="targets" data-zh="低置信＋抽样" data-en="Low confidence + sample">低置信＋抽样</option><option value="samples" data-zh="版本随机样本" data-en="Version probability samples">版本随机样本</option><option value="waiting" data-zh="等待数据" data-en="Awaiting data">等待数据</option><option value="all" data-zh="全部与历史" data-en="All and history">全部与历史</option></select>
+              <select id="versionDatasetMode" data-label-zh="范围" data-label-en="Scope" aria-label="范围"><option value="targets" data-zh="低置信＋抽样" data-en="Low confidence + sample">低置信＋抽样</option><option value="low" data-zh="低置信" data-en="Low confidence">低置信</option><option value="samples" data-zh="版本随机样本" data-en="Version probability samples">版本随机样本</option><option value="waiting" data-zh="等待数据" data-en="Awaiting data">等待数据</option><option value="all" data-zh="全部与历史" data-en="All and history">全部与历史</option></select>
+              <select id="versionDatasetDate" data-label-zh="发生日 · CST" data-label-en="Occurrence date · CST" aria-label="发生日 · CST"><option value="" data-zh="全部日期" data-en="All dates">全部日期</option></select>
               <button class="button button-quiet" id="versionDatasetRefresh" type="button"><span class="ui-lang-zh">刷新</span><span class="ui-lang-en">Refresh</span></button>
             </div>
             <div class="version-metrics" id="versionDatasetSummary" aria-live="polite"></div>
             <p class="muted version-counts" id="versionDatasetCounts"></p>
+            <section class="version-te-panel te-chart-panel" aria-label="TE progress">
+              <header><h2><span class="ui-lang-zh">TE 标注进度</span><span class="ui-lang-en">TE labeling progress</span></h2><span class="muted" id="versionTESource" role="status"></span></header>
+              <div class="version-te-overview"><div class="te-scope-chart"><div class="te-donut" id="versionTEDonut" role="img"><strong id="versionTERate">—</strong><small><span class="ui-lang-zh">当前范围</span><span class="ui-lang-en">Current scope</span></small></div><div class="te-status-legend" id="versionTEStatusChart"></div></div><div class="te-result-chart" id="versionTEDistribution"></div></div>
+              <details class="version-days" id="versionTEDays"><summary><span class="ui-lang-zh">按发生日查看进度</span><span class="ui-lang-en">Completion by occurrence date</span></summary><div class="te-daily-chart" id="versionTEDailyChart"></div><p class="te-chart-note"><span class="ui-lang-zh">晚到数据回填发生日；不代表当天新增或标注量。TE 结果仅取 RA Review Result New。</span><span class="ui-lang-en">Late arrivals backfill their occurrence date. These are completion ratios, not daily arrivals or labels. TE results use RA Review Result New only.</span></p></details>
+            </section>
             <section class="gallery-panel version-gallery">
-              <header class="gallery-heading"><form id="versionDatasetSearchForm"><input id="versionDatasetSearch" type="search" placeholder="Issue ID" aria-label="Issue ID" maxlength="128" /><button class="button button-quiet" type="submit"><span class="ui-lang-zh">搜索</span><span class="ui-lang-en">Search</span></button></form><select id="versionDatasetSort" data-label-zh="案例排序" data-label-en="Case order" aria-label="案例排序"><option value="added" data-zh="最新入库" data-en="Recently added">最新入库</option><option value="updated" data-zh="最近更新" data-en="Recently updated">最近更新</option><option value="issue" data-zh="Issue 编号" data-en="Issue ID">Issue 编号</option></select></header>
+              <header class="gallery-heading"><form id="versionDatasetSearchForm"><input id="versionDatasetSearch" type="search" placeholder="Issue ID" aria-label="Issue ID" maxlength="128" /><button class="button button-quiet" type="submit"><span class="ui-lang-zh">搜索</span><span class="ui-lang-en">Search</span></button></form><div class="version-gallery-filters"><select id="versionDatasetTEStatus" data-label-zh="TE 状态" data-label-en="TE status" aria-label="TE 状态"><option value="all" data-zh="全部 TE 状态" data-en="All TE states">全部 TE 状态</option><option value="unfilled" data-zh="TE 待标" data-en="TE pending">TE 待标</option><option value="filled" data-zh="TE 已标" data-en="TE filled">TE 已标</option><option value="unknown" data-zh="TE 未知" data-en="TE unknown">TE 未知</option></select><select id="versionDatasetMedia" aria-label="Media"><option value="bev">BEV</option><option value="camera">Camera</option></select><select id="versionDatasetSort" data-label-zh="案例排序" data-label-en="Case order" aria-label="案例排序"><option value="added" data-zh="最新入库" data-en="Recently added">最新入库</option><option value="updated" data-zh="最近更新" data-en="Recently updated">最近更新</option><option value="occurred" data-zh="最近发生" data-en="Recently occurred">最近发生</option><option value="issue" data-zh="Issue 编号" data-en="Issue ID">Issue 编号</option></select><a class="button button-quiet" id="versionDatasetExport" hidden><span class="ui-lang-zh">导出 CSV</span><span class="ui-lang-en">Export CSV</span></a></div></header>
               <p id="versionDatasetError" class="muted" role="status"></p>
               <div class="issue-grid" id="versionDatasetGrid" aria-busy="true"></div>
               <nav class="case-pagination"><button class="button button-quiet" type="button" id="versionDatasetPrev" disabled><span class="ui-lang-zh">上一页</span><span class="ui-lang-en">Previous</span></button><span id="versionDatasetPageLabel"></span><button class="button button-quiet" type="button" id="versionDatasetNext" disabled><span class="ui-lang-zh">下一页</span><span class="ui-lang-en">Next</span></button></nav>
@@ -2529,7 +2493,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-622`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-623`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>
