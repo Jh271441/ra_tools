@@ -44,10 +44,10 @@ async def items(
 @router.get("/api/version-datasets/{dataset_id}/workbench.csv")
 async def gallery(request: Request, dataset_id: str, page: int = Query(1,ge=1,le=10000), page_size: int = Query(24,ge=1,le=100),
                   mode: str = "targets", q: str = Query('',max_length=128), sort: str = "added", date: str = '',
-                  te_status: str = 'all', revision: str = Query('',max_length=64)):
+                  te_status: str = 'all', revision: str = Query('',max_length=64),assignee:str='',review_status:str='all'):
     try:
         result,rows=await asyncio.to_thread(workbench,database,settings.ra_auto_triage_root,dataset_id,
-            page=page,page_size=page_size,mode=mode,q=q,sort=sort,date=date,te_status=te_status,revision=revision)
+            page=page,page_size=page_size,mode=mode,q=q,sort=sort,date=date,te_status=te_status,revision=revision,assignee=assignee,review_status=review_status)
     except SnapshotChanged as exc:raise HTTPException(409,str(exc)) from None
     except ValueError as exc:raise HTTPException(400,str(exc)) from None
     if request.url.path.endswith('.csv'):

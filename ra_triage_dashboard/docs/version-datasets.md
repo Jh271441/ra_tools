@@ -17,3 +17,11 @@ Overview and gallery paint independently of global Review/GT bootstrap.24-case p
 ## Incremental graph
 
 The scheduler polls every5minutes. Each completed prediction can advance to Trail publication, target import and independent media while other cases continue inference. A current inference fraction includes its pending queue. Downstream nodes show cumulative finished-result coverage and a streaming label while upstream remains incomplete. A verified-video count does not prove bag cleanup; cleanup and retry status require their own receipts. No synthetic whole-batch success is inferred from a nonzero published count.
+
+## Appendable version review tasks
+
+`/manual/review-assignments` defaults to Version tasks: one stable `version:<dataset_id>` parent of type `version_live` per live release. This uses the persisted version dataset and task bindings; current targets and assignments grow automatically. Polling/import adds members to that same entry. Separate old/current fixed tasks, including0821, remain under All current tasks; source batches and every immutable ingestion receipt remain audit records.
+
+The parent reads current target membership, actual assignees, and the existing `ASSIGNMENT_SUBMITTED_SQL`: combined tasks count complete only after both model review and Case acknowledgment. It never conflates TE completion with joint review. Detail filters/pagination compose over that parent and expose recent addition receipts. Case links retain the original Run/Campaign identity; parent detail does not issue edits against a virtual ID. Existing source-task management is linked separately. No Campaign/Label Case/Review records, members, owners or timestamps are rewritten by this consolidation.
+
+Start combined review opens the unified version gallery scoped to the current assignee and pending joint review, with visible owner/state controls. Original frozen Campaigns keep their own scopes, including historical members no longer in the public target set. This UI grouping does not delete historical work or change the four-worker incremental launcher.

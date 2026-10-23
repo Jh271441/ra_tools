@@ -47,15 +47,17 @@ def summarize(rows):
 
 
 def workbench(db, root, dataset_id, *, page=1, page_size=24, mode='targets', q='', sort='added',
-              date='', te_status='all', revision=''):
+              date='', te_status='all', revision='',assignee='',review_status='all'):
     if mode not in {'targets', 'samples', 'low', 'waiting', 'all'} or sort not in {'added', 'updated', 'occurred', 'issue'} or te_status not in {'all', 'filled', 'unfilled', 'unknown'}:
         raise ValueError('Invalid gallery filter')
+    if review_status not in {'all','pending','completed'}:raise ValueError('Invalid joint-review status')
     if not 1 <= page <= 10000 or not 1 <= page_size <= 100:
         raise ValueError('Invalid gallery page')
     if date:
         datetime.strptime(date, '%Y-%m-%d')
     historical = dataset_id == 'historical-0821'
     if historical:
+        if assignee or review_status!='all':raise ValueError('Historical review state is not part of the version registry')
         dataset = historical_dataset(root)
         family = '20260821'
     else:
@@ -84,6 +86,9 @@ def workbench(db, root, dataset_id, *, page=1, page_size=24, mode='targets', q='
         row['te_value'] = obs.get('te_value') if row['te_status']=='filled' else None
     date_options = sorted({r['date'] for r in rows if r['date']}, reverse=True)
     def in_scope(row, with_date=True):
+        if assignee and (row.get('binding') or {}).get('assignee','').lower()!=assignee.lower():return False
+        if review_status=='completed' and not row.get('review_submitted'):return False
+        if review_status=='pending' and row.get('review_submitted'):return False
         if q and q.lower() not in row['issue_id'].lower():
             return False
         if with_date and date and row['date'] != date:
@@ -106,13 +111,13 @@ def workbench(db, root, dataset_id, *, page=1, page_size=24, mode='targets', q='
         field = {'added':'first_seen', 'updated':'updated_at', 'occurred':'_occurred'}[sort]
         selected.sort(key=lambda r:(r.get(field) or (0 if field=='_occurred' else ''), int(r['issue_id'][2:])), reverse=True)
     for row in rows:row.pop('_occurred', None)
-    identity = json.dumps([dataset_id, dataset.get('revision'), te.get('snapshot_revision'), mode, q, date, te_status, sort], separators=(',', ':'))
+    identity = json.dumps([dataset_id, dataset.get('revision'), te.get('snapshot_revision'), mode, q, date, te_status, sort,assignee,review_status], separators=(',', ':'))
     snapshot_revision = hashlib.sha256(identity.encode()).hexdigest()
     if revision and revision != snapshot_revision:
         raise SnapshotChanged('Gallery changed; refresh before exporting.')
     distribution = Counter(json.dumps(r['te_value'], ensure_ascii=False) for r in targets if r['te_status']=='filled')
     result = dict(dataset_id=dataset_id, dataset=dataset, page=page, page_size=page_size, total=len(selected),
-                  items=selected[(page-1)*page_size:page*page_size], date_options=date_options,
+                  items=selected[(page-1)*page_size:page*page_size], date_options=date_options,assignees=sorted({(r.get('binding') or {}).get('assignee') for r in rows if (r.get('binding') or {}).get('assignee')}),
                   snapshot_revision=snapshot_revision, te=dict(source_field='ra_review_result_new',
                       source_status=te['source_status'], last_success_at=te.get('last_success_at'), summary=summarize(targets),
                       distribution=[dict(value=json.loads(k),count=v) for k,v in distribution.items()], daily=daily))
@@ -121,7 +126,7 @@ def workbench(db, root, dataset_id, *, page=1, page_size=24, mode='targets', q='
 
 def gallery_csv(rows):
     out = io.StringIO()
-    fields = ['issue_id','software_version','date','is_sample','is_low','state','model_label','model_confidence','assignee','te_status','te_value','first_seen','updated_at']
+    fields = ['issue_id','software_version','date','is_sample','is_low','state','model_label','model_confidence','assignee','review_submitted','te_status','te_value','first_seen','updated_at']
     writer = csv.DictWriter(out, fieldnames=fields, extrasaction='ignore');writer.writeheader()
     for row in rows:
         flat = dict(row, **(row.get('prediction') or {}), assignee=(row.get('binding') or {}).get('assignee',''))

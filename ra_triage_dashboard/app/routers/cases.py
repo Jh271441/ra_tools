@@ -746,6 +746,8 @@ async def list_case_work_splits(
     model_run_id: str = "",
     lifecycle: str = "current",
     assigned_to_me: bool = False,
+    group_by_version: bool = False,
+    version_only: bool = False,
 ) -> dict[str, Any]:
     """Writer/admin history and progress for Review task allocations."""
 
@@ -761,8 +763,13 @@ async def list_case_work_splits(
         model_run_id=_as_text(model_run_id),
         lifecycle=lifecycle, assignee=assignee,
     )
+    if group_by_version and lifecycle!='history':
+        from ..version_review_tasks import version_tasks
+        parents=await asyncio.to_thread(version_tasks,database,assignee=assignee,model_run_id=model_run_id)
+        parent_runs={p['model_run_id'] for p in parents}
+        items=parents+([] if version_only else [r for r in items if r['model_run_id'] not in parent_runs])
     for item in items:
-        item["baseline_ids"] = [
+        item["baseline_ids"] = item.get("baseline_ids") or [
             baseline_registry.scope_to_id(scope) or scope
             for scope in item.get("baseline_scopes") or []
         ]
@@ -859,6 +866,11 @@ async def get_case_work_split(
 
     await asyncio.to_thread(_writer_identity, request)
     try:
+        if split_id.startswith('version:'):
+            from ..version_review_tasks import version_task_detail
+            result=await asyncio.to_thread(version_task_detail,database,split_id,page=max(1,int(page)),page_size=max(10,min(int(page_size),100)),assignee=assignee,status=status,query=q[:128])
+            if result is None:raise _detail(404,'Version task not found')
+            return result
         result = await asyncio.to_thread(
             database.get_review_work_split,
             split_id,

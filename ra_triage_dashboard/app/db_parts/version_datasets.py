@@ -8,6 +8,7 @@ from datetime import datetime
 from .shared import utc_now
 from .version_run_consolidation import VersionRunConsolidationMixin
 from .version_dataset_rules import encoded
+from .assignment_rules import ASSIGNMENT_SUBMITTED_SQL
 
 
 class DatabaseVersionDatasetsMixin(VersionRunConsolidationMixin):
@@ -246,7 +247,7 @@ class DatabaseVersionDatasetsMixin(VersionRunConsolidationMixin):
                 item["assigned"] = {
                     x["assignee"]: x["n"]
                     for x in conn.execute(
-                        "SELECT a.assignee,COUNT(*) AS n FROM dataset_task_bindings a JOIN version_dataset_items i ON i.dataset_id=a.dataset_id AND i.issue_id=a.issue_id WHERE a.dataset_id=? AND i.is_target=1 GROUP BY a.assignee",
+                        "SELECT COALESCE(w.assignee,a.assignee) AS assignee,COUNT(*) AS n FROM dataset_task_bindings a JOIN version_dataset_items i ON i.dataset_id=a.dataset_id AND i.issue_id=a.issue_id LEFT JOIN review_work_assignments w ON w.split_id=a.campaign_id AND w.issue_id=a.issue_id WHERE a.dataset_id=? AND i.is_target=1 GROUP BY COALESCE(w.assignee,a.assignee)",
                         (row["id"],),
                     ).fetchall()
                 }
@@ -310,9 +311,14 @@ class DatabaseVersionDatasetsMixin(VersionRunConsolidationMixin):
         """Bounded metadata projection; no media/Trail I/O or raw prediction JSON."""
         with self.connect() as conn:
             rows = conn.execute(
-                "SELECT i.source_json,i.binding_json,i.first_seen,i.updated_at,p.model_label,p.model_confidence "
+                "SELECT i.source_json,i.binding_json,i.first_seen,i.updated_at,p.model_label,p.model_confidence,assignment.assignee AS actual_assignee,bind.campaign_id, "
+                f"CASE WHEN {ASSIGNMENT_SUBMITTED_SQL} THEN 1 ELSE 0 END AS review_submitted, "
+                "(SELECT progress.updated_at FROM combined_review_progress progress WHERE progress.campaign_id=bind.campaign_id AND progress.issue_id=i.issue_id AND lower(progress.reviewer)=lower(assignment.assignee) AND progress.model_review_submitted=true AND progress.case_label_acknowledged=true) AS review_submitted_at "
                 "FROM version_dataset_items i JOIN version_datasets d ON d.id=i.dataset_id "
                 "LEFT JOIN model_predictions p ON p.model_run_id=d.run_id AND p.issue_id=i.issue_id "
+                "LEFT JOIN dataset_task_bindings bind ON bind.dataset_id=i.dataset_id AND bind.issue_id=i.issue_id AND bind.workflow='model_review_and_case_label' "
+                "LEFT JOIN review_work_assignments assignment ON assignment.split_id=bind.campaign_id AND assignment.issue_id=i.issue_id "
+                "LEFT JOIN issue_work_splits split ON split.id=assignment.split_id "
                 "WHERE i.dataset_id=? ORDER BY i.issue_id LIMIT 20001", (dataset_id,)
             ).fetchall()
             if len(rows)>20000:
@@ -322,6 +328,11 @@ class DatabaseVersionDatasetsMixin(VersionRunConsolidationMixin):
                 item=json.loads(row["source_json"])
                 item.update(binding=json.loads(row["binding_json"]),first_seen=row["first_seen"],updated_at=row["updated_at"],
                             prediction={"model_label":row["model_label"],"model_confidence":row["model_confidence"]} if row["model_label"] else None)
+                item['review_submitted']=bool(row['review_submitted']);item['review_submitted_at']=row['review_submitted_at'] or ''
+                if row['actual_assignee']:
+                    item['binding']['assignee']=row['actual_assignee']
+                if row['campaign_id']:
+                    item['binding']['campaign_id']=row['campaign_id']
                 result.append(item)
             return result
 

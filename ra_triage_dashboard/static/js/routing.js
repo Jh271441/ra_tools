@@ -891,7 +891,7 @@ function pageUrl(page, options = {}) {
   }
   if (page === "review-assignments") {
     const assignments = state.reviewAssignments;
-    if (assignments.lifecycle && assignments.lifecycle !== "current") url.searchParams.set("lifecycle", assignments.lifecycle);
+    if (assignments.lifecycle) url.searchParams.set("lifecycle", assignments.lifecycle);
     if (assignments.assignedToMe) url.searchParams.set("assigned_to_me", "true");
     const splitId = options.reviewAssignmentSplitId || assignments.selectedSplitId;
     if (splitId) url.searchParams.set("split", splitId);

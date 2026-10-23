@@ -1,5 +1,5 @@
 /* Version worksets own their requests; global Review/GT bootstrap is independent. */
-const versionDatasetState = {active:false,seq:0,controller:null,timer:null,page:1,dataset:'',mode:'targets',sort:'added',query:'',date:'',teStatus:'all',media:'bev',mediaSeq:0,data:null,members:null,gridKey:'',bound:false,observer:null,imageEpoch:0};
+const versionDatasetState = {active:false,seq:0,controller:null,timer:null,page:1,dataset:'',mode:'targets',sort:'added',query:'',date:'',assignee:'',reviewStatus:'all',teStatus:'all',media:'bev',mediaSeq:0,data:null,members:null,gridKey:'',bound:false,observer:null,imageEpoch:0};
 function versionDatasetTime(value) {
   if (!value) return '—';
   const n=Number(value),d=new Date(Number.isFinite(n)&&n>0 ? (n<1e11?n*1000:n) : value);
@@ -10,11 +10,11 @@ function versionDatasetStatus(state) {
 }
 function versionDatasetRoute() {
   const p=new URLSearchParams(location.search),s=versionDatasetState;
-  s.dataset=p.get('dataset')||s.dataset;s.mode=p.get('mode')||'targets';s.sort=p.get('sort')||'added';s.query=p.get('q')||'';s.page=Math.max(1,Number(p.get('page'))||1);s.date=p.get('date')||'';s.teStatus=p.get('te_status')||'all';s.media=p.get('media')||'bev';
+  s.dataset=p.get('dataset')||s.dataset;s.mode=p.get('mode')||'targets';s.sort=p.get('sort')||'added';s.query=p.get('q')||'';s.page=Math.max(1,Number(p.get('page'))||1);s.date=p.get('date')||'';s.teStatus=p.get('te_status')||'all';s.media=p.get('media')||'bev';s.assignee=p.get('assignee')||'';s.reviewStatus=p.get('review_status')||'all';
 }
 function versionDatasetRouteOptions(options={}) {
   const p=location.pathname.replace(/\/$/,'').endsWith('/version-datasets')?new URLSearchParams(location.search):new URLSearchParams();
-  return Object.fromEntries(['dataset','mode','sort','q','page','date','te_status','media'].map(k=>[k,options[k]??p.get(k)??'']));
+  return Object.fromEntries(['dataset','mode','sort','q','page','date','te_status','media','assignee','review_status'].map(k=>[k,options[k]??p.get(k)??'']));
 }
 function clearVersionDatasetMembers(){
   const s=versionDatasetState;s.members=null;s.gridKey='';s.observer?.disconnect();s.observer=null;s.imageEpoch++;
@@ -29,8 +29,8 @@ function clearVersionDatasetMembers(){
 function setVersionDatasetsActive(active) {
   const s=versionDatasetState;
   if(active&&s.active){
-    const before=JSON.stringify([s.dataset,s.mode,s.sort,s.query,s.page,s.date,s.teStatus,s.media]);versionDatasetRoute();
-    if(before===JSON.stringify([s.dataset,s.mode,s.sort,s.query,s.page,s.date,s.teStatus,s.media]))return;
+    const before=JSON.stringify([s.dataset,s.mode,s.sort,s.query,s.page,s.date,s.teStatus,s.media,s.assignee,s.reviewStatus]);versionDatasetRoute();
+    if(before===JSON.stringify([s.dataset,s.mode,s.sort,s.query,s.page,s.date,s.teStatus,s.media,s.assignee,s.reviewStatus]))return;
     clearVersionDatasetMembers();
   }
   s.active=active;s.seq++;s.controller?.abort();clearTimeout(s.timer);
@@ -38,9 +38,9 @@ function setVersionDatasetsActive(active) {
   if(active){bindVersionDatasets();versionDatasetRoute();void loadVersionDatasets();}
 }
 function versionDatasetChange(patch) {
-  const s=versionDatasetState;if(patch.dataset&&patch.dataset!==s.dataset)patch.date='';Object.assign(s,{page:1},patch);s.page=Math.max(1,Number(s.page)||1);clearVersionDatasetMembers();
+  const s=versionDatasetState;if(patch.dataset&&patch.dataset!==s.dataset)patch.date='';if(patch.dataset==='historical-0821'){patch.assignee='';patch.reviewStatus='all';}Object.assign(s,{page:1},patch);s.page=Math.max(1,Number(s.page)||1);clearVersionDatasetMembers();
   const u=new URL(location.href);
-  for(const [key,value] of Object.entries({dataset:s.dataset,mode:s.mode,sort:s.sort,q:s.query,page:s.page,date:s.date,te_status:s.teStatus,media:s.media}))value?u.searchParams.set(key,String(value)):u.searchParams.delete(key);
+  for(const [key,value] of Object.entries({dataset:s.dataset,mode:s.mode,sort:s.sort,q:s.query,page:s.page,date:s.date,te_status:s.teStatus,media:s.media,assignee:s.assignee,review_status:s.reviewStatus}))value?u.searchParams.set(key,String(value)):u.searchParams.delete(key);
   history.pushState({},'',u);void loadVersionDatasets();
 }
 function renderVersionDatasets({force=false}={}) {
@@ -52,10 +52,11 @@ function renderVersionDatasets({force=false}={}) {
   const picker=$('#versionDatasetPicker');
   const options=s.data.items.map(x=>`<option value="${escapeHtml(x.id)}">${escapeHtml(x.release_family.slice(4))} · ${x.targets??'—'} ${uiText('复核案例','review cases')}</option>`).join('');
   if(picker.innerHTML!==options)picker.innerHTML=options;picker.value=s.dataset;
-  $('#versionDatasetMode').value=s.mode;$('#versionDatasetSort').value=s.sort;$('#versionDatasetSearch').value=s.query;$('#versionDatasetTEStatus').value=s.teStatus;$('#versionDatasetMedia').value=s.media;
+  $('#versionDatasetMode').value=s.mode;$('#versionDatasetSort').value=s.sort;$('#versionDatasetSearch').value=s.query;$('#versionDatasetTEStatus').value=s.teStatus;$('#versionDatasetMedia').value=s.media;$('#versionDatasetReviewStatus').value=s.reviewStatus;
   enhanceDashboardSelects(el);
   const current=s.data.items.find(x=>x.id===s.dataset);
   if(!current){$('#versionDatasetSummary').textContent=uiText('等待首次导入','Awaiting first import');$('#versionDatasetGrid').replaceChildren();return;}
+  $('#versionDatasetOwner').disabled=Boolean(current.historical);$('#versionDatasetReviewStatus').disabled=Boolean(current.historical);enhanceNativeUiSelect($('#versionDatasetOwner'));enhanceNativeUiSelect($('#versionDatasetReviewStatus'));
   const states=current.states||{};
   $('#versionDatasetSummary').innerHTML=[
     [uiText('候选案例','Candidates'),current.total],
@@ -67,17 +68,19 @@ function renderVersionDatasets({force=false}={}) {
   $('#versionDatasetHistory').hidden=Boolean(current.historical);
   const m=s.members;if(!m||m.dataset_id!==s.dataset)return;
   renderVersionTE(m);
+  const owner=$('#versionDatasetOwner');const ownerOptions=`<option value="">${uiText('全部负责人','All assignees')}</option>`+(m.assignees||[]).map(x=>`<option value="${escapeHtml(x)}">${escapeHtml(x)}</option>`).join('');
+  if(owner.innerHTML!==ownerOptions)owner.innerHTML=ownerOptions;owner.value=s.assignee;enhanceNativeUiSelect(owner);
   const date=$('#versionDatasetDate');date.hidden=Boolean(current.historical);date.disabled=false;
   const dateOptions=`<option value="">${uiText('全部发生日 · CST','All occurrence dates · CST')}</option>`+(m.date_options||[]).map(d=>`<option value="${escapeHtml(d)}">${escapeHtml(d)}</option>`).join('');
   if(date.innerHTML!==dateOptions)date.innerHTML=dateOptions;date.value=s.date;enhanceNativeUiSelect(date);
-  const gridKey=JSON.stringify([s.dataset,s.mode,s.sort,s.query,s.media,s.date,s.teStatus,m.items,state.uiLanguage]);
+  const gridKey=JSON.stringify([s.dataset,s.mode,s.sort,s.query,s.media,s.date,s.teStatus,s.assignee,s.reviewStatus,m.items,state.uiLanguage]);
   if(force||gridKey!==s.gridKey){
     s.gridKey=gridKey;s.observer?.disconnect();s.observer=null;s.imageEpoch++;
     $('#versionDatasetGrid').innerHTML=m.items.map(row=>{
       const binding=row.binding||{},pred=row.prediction;
       const url=binding.run_id?pageUrl('review',{issue:row.issue_id,runId:binding.run_id,workSplitId:binding.campaign_id||'',workflowMode:'model_review_and_case_label',comparisonStatus:'all',baselines:['version-'+current.release_family]}):'';
       const confidence=pred?.model_confidence;
-      return `<article class="issue-card version-card"><button type="button" class="issue-card-open" data-version-open="${escapeHtml(row.issue_id)}" aria-label="${escapeHtml(row.issue_id)} ${uiText('查看媒体','View media')}"></button><div class="issue-thumbnail"><div class="issue-thumbnail-placeholder"><span>${s.media.toUpperCase()}</span><small>${uiText('媒体待就绪','Media pending')}</small></div>${row.is_target?`<img data-src="${escapeHtml(withBase('/api/case-thumbnails/'+encodeURIComponent(row.issue_id)+'?kind='+s.media))}" loading="lazy" decoding="async" alt="${escapeHtml(row.issue_id)} ${s.media.toUpperCase()}" class="is-loading" />`:''}</div><div class="issue-card-body"><div class="issue-card-heading">${url?`<a class="issue-id" href="${escapeHtml(url)}">${escapeHtml(row.issue_id)} ↗</a>`:`<a class="issue-id" href="https://voyager.intra.xiaojukeji.com/static/management/#/issue/${encodeURIComponent(row.issue_id)}" target="_blank" rel="noopener noreferrer">${escapeHtml(row.issue_id)} ↗</a>`}<span class="muted">${row.is_sample?uiText('抽样','Sample'):row.is_low?uiText('低置信','Low'):''}</span></div><div class="version-card-line"><span>${escapeHtml(pred?.model_label||(current.historical?uiText('历史固定集','Frozen set'):versionDatasetStatus(row.state)))}</span><span class="muted">${confidence==null?'':(confidence*100).toFixed(1)+'%'}</span></div><div class="version-card-line muted"><span>${escapeHtml(binding.assignee||(current.historical?'—':uiText('未分配','Unassigned')))}</span><span>${escapeHtml(row.trigger||'—')}</span></div><div class="version-te-result" data-status="${escapeHtml(row.te_status)}">${escapeHtml(versionTEBadge(row))}</div><div class="version-card-time muted">${uiText('入库','Added')} ${versionDatasetTime(row.first_seen)} · ${uiText('发生','Occurred')} ${(row.issue_time||row.ra_start_timestamp?versionDatasetTime(row.issue_time||row.ra_start_timestamp):escapeHtml(row.date||'—'))} CST</div></div></article>`;
+      return `<article class="issue-card version-card"><button type="button" class="issue-card-open" data-version-open="${escapeHtml(row.issue_id)}" aria-label="${escapeHtml(row.issue_id)} ${uiText('查看媒体','View media')}"></button><div class="issue-thumbnail"><div class="issue-thumbnail-placeholder"><span>${s.media.toUpperCase()}</span><small>${uiText('媒体待就绪','Media pending')}</small></div>${row.is_target?`<img data-src="${escapeHtml(withBase('/api/case-thumbnails/'+encodeURIComponent(row.issue_id)+'?kind='+s.media))}" loading="lazy" decoding="async" alt="${escapeHtml(row.issue_id)} ${s.media.toUpperCase()}" class="is-loading" />`:''}</div><div class="issue-card-body"><div class="issue-card-heading">${url?`<a class="issue-id" href="${escapeHtml(url)}">${escapeHtml(row.issue_id)} ↗</a>`:`<a class="issue-id" href="https://voyager.intra.xiaojukeji.com/static/management/#/issue/${encodeURIComponent(row.issue_id)}" target="_blank" rel="noopener noreferrer">${escapeHtml(row.issue_id)} ↗</a>`}<span class="muted">${row.is_sample?uiText('抽样','Sample'):row.is_low?uiText('低置信','Low'):''}</span></div><div class="version-card-line"><span>${escapeHtml(pred?.model_label||(current.historical?uiText('历史固定集','Frozen set'):versionDatasetStatus(row.state)))}</span><span class="muted">${confidence==null?'':(confidence*100).toFixed(1)+'%'}</span></div><div class="version-card-line muted"><span>${escapeHtml(binding.assignee||(current.historical?'—':uiText('未分配','Unassigned')))}</span><span>${escapeHtml(row.trigger||'—')}</span></div><div class="version-joint-result muted">${row.is_target&&!current.historical?row.review_submitted?uiText('联合复核已完成','Combined review completed'):uiText('联合复核待处理','Combined review pending'):''}</div><div class="version-te-result" data-status="${escapeHtml(row.te_status)}">${escapeHtml(versionTEBadge(row))}</div><div class="version-card-time muted">${uiText('入库','Added')} ${versionDatasetTime(row.first_seen)} · ${uiText('发生','Occurred')} ${(row.issue_time||row.ra_start_timestamp?versionDatasetTime(row.issue_time||row.ra_start_timestamp):escapeHtml(row.date||'—'))} CST</div></div></article>`;
     }).join('')||`<div class="no-asset issue-grid-empty">${uiText('该筛选暂无案例','No cases in this view')}</div>`;
 
   }
@@ -120,7 +123,7 @@ async function loadVersionDatasets(){
     if(!data.items.some(x=>x.id===s.dataset))s.dataset=data.items.find(x=>x.targets>0)?.id||data.items[0]?.id||'';
     renderVersionDatasets();
     if(s.dataset){
-      const p=new URLSearchParams({page:s.page,page_size:24,mode:s.mode,sort:s.sort,q:s.query,date:s.date,te_status:s.teStatus});
+      const p=new URLSearchParams({page:s.page,page_size:24,mode:s.mode,sort:s.sort,q:s.query,date:s.date,te_status:s.teStatus,assignee:s.assignee,review_status:s.reviewStatus});
       const members=await api(`/api/version-datasets/${encodeURIComponent(s.dataset)}/workbench?${p}`,{signal:controller.signal});
       if(!valid())return;s.members=members;renderVersionDatasets();void loadVersionDatasetBatches();
     }
@@ -130,7 +133,7 @@ async function loadVersionDatasets(){
 }
 function bindVersionDatasets(){
   const s=versionDatasetState;if(s.bound)return;s.bound=true;
-  for(const [id,key] of [['versionDatasetPicker','dataset'],['versionDatasetMode','mode'],['versionDatasetSort','sort'],['versionDatasetDate','date'],['versionDatasetTEStatus','teStatus'],['versionDatasetMedia','media']])$('#'+id).addEventListener('change',e=>versionDatasetChange({[key]:e.target.value}));
+  for(const [id,key] of [['versionDatasetPicker','dataset'],['versionDatasetMode','mode'],['versionDatasetSort','sort'],['versionDatasetDate','date'],['versionDatasetTEStatus','teStatus'],['versionDatasetMedia','media'],['versionDatasetOwner','assignee'],['versionDatasetReviewStatus','reviewStatus']])$('#'+id).addEventListener('change',e=>versionDatasetChange({[key]:e.target.value}));
   $('#versionDatasetsPage').addEventListener('click',e=>{const status=e.target.closest('[data-version-te-status]');if(status){versionDatasetChange({teStatus:s.teStatus===status.dataset.versionTeStatus?'all':status.dataset.versionTeStatus});return;}const day=e.target.closest('[data-version-date]');if(day){versionDatasetChange({date:day.dataset.versionDate});return;}const open=e.target.closest('[data-version-open]');if(open)void openVersionDatasetMedia(open.dataset.versionOpen);});
   $('#versionDatasetSearchForm').addEventListener('submit',e=>{e.preventDefault();versionDatasetChange({query:$('#versionDatasetSearch').value.trim()});});
   $('#versionDatasetRefresh').addEventListener('click',()=>loadVersionDatasets());
@@ -154,7 +157,7 @@ function renderVersionTE(m){
   $('#versionTEDistribution').innerHTML=[...te.distribution].sort((a,b)=>b.count-a.count).map(r=>`<div class="te-result-row"><div><span>${escapeHtml(String(r.value))}</span><strong>${r.count}</strong></div><div class="te-result-track"><i style="width:${n.filled?100*r.count/n.filled:0}%"></i></div></div>`).join('')||`<p class="te-chart-empty">${uiText('该范围暂无已标结果','No filled TE results in this scope')}</p>`;
   $('#versionTEDays').hidden=m.dataset.historical;
   $('#versionTEDailyChart').innerHTML=te.daily.map(day=>{const d=day.summary;return `<button type="button" class="te-day" data-version-date="${escapeHtml(day.date)}" aria-pressed="${day.date===s.date}" aria-label="${escapeHtml(day.date)} · ${d.filled}/${d.total}"><strong>${(100*d.rate).toFixed(0)}%</strong><span class="te-day-stack">${dailyReviewStatusRows(d).map(([k,,count])=>`<i class="te-${k}" style="height:${100*count/d.total}%"></i>`).join('')}</span><span>${escapeHtml(day.date.slice(5).replace('-','/'))}</span><small>${d.filled}/${d.total}</small></button>`;}).join('');
-  const params=new URLSearchParams({mode:s.mode,q:s.query,sort:s.sort,date:s.date,te_status:s.teStatus,revision:m.snapshot_revision});
+  const params=new URLSearchParams({mode:s.mode,q:s.query,sort:s.sort,date:s.date,te_status:s.teStatus,revision:m.snapshot_revision,assignee:s.assignee,review_status:s.reviewStatus});
   const exp=$('#versionDatasetExport');exp.hidden=false;exp.href=withBase(`/api/version-datasets/${encodeURIComponent(s.dataset)}/workbench.csv?${params}`);
 }
 async function openVersionDatasetMedia(iid,preferredKind=''){

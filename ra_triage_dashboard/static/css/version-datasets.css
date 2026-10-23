@@ -37,3 +37,6 @@ body[data-active-page="version-datasets"] .top-actions {margin-left:auto}
 .version-gallery-filters {display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-left:auto;min-width:0}
 .version-gallery-filters > .ui-select {width:155px;max-width:100%}
 .version-te-result {font-size:11px;color:var(--muted)}.version-te-result[data-status="filled"] {color:var(--accent)}
+
+.version-joint-result {font-size:10px}
+.version-gallery-filters > .ui-select {width:145px}
