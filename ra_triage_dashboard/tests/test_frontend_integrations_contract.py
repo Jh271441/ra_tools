@@ -412,7 +412,7 @@ class FrontendIntegrationsContractTest(unittest.TestCase):
         self.assertIn("async function refreshTrailAttributeStatus", APP_JS)
         self.assertIn("function patchTrailAttributeStatus", APP_JS)
         self.assertIn("data-trail-update-status-issue", APP_JS)
-        self.assertIn("void refreshTrailAttributeStatus({ runId, previewKey, requestSeq, force }).catch(() => {});", APP_JS)
+        self.assertIn("void refreshTrailAttributeStatus({ runId, previewKey, requestSeq, force, pageContext }).catch(() => {});", APP_JS)
         self.assertIn("syncTrailAttributeActions", APP_JS)
         self.assertIn("syncTrailIssueActions", APP_JS)
         self.assertIn("trailUpdateWriteReady", APP_JS)
@@ -512,7 +512,7 @@ class FrontendIntegrationsContractTest(unittest.TestCase):
         self.assertIn("trailAttributePreviewNeedsLoad", APP_JS)
         bootstrap_body = APP_JS[APP_JS.index("async function bootstrap"):]
         self.assertNotIn("initialPageRequests.push(loadTrailAttributePreview())", bootstrap_body)
-        self.assertIn("void loadTrailAttributePreview().catch", bootstrap_body)
+        self.assertIn("startTrailAttributePage();", bootstrap_body)
         self.assertIn("renderTrailAttributeRunPicker();", APP_JS)
         self.assertIn('id="trailUpdateIssueTab"', INDEX_HTML)
         self.assertIn('id="trailUpdateIssueEntries"', INDEX_HTML)

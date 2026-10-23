@@ -85,7 +85,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-624`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-625`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -1174,9 +1174,11 @@
               </section>
             </section>
 
+            <div class="trail-update-status" id="trailUpdateStatus" role="status" aria-live="polite" hidden></div>
+            <div class="trail-update-initial-loading" id="trailUpdateLoading" role="status" hidden><span class="ui-lang-zh">正在加载本地候选…</span><span class="ui-lang-en">Loading local candidates…</span><div aria-hidden="true"><i></i><i></i><i></i></div></div>
             <section class="trail-update-tab-panel trail-update-results-panel" id="trailUpdateReviewPanel" role="tabpanel" aria-labelledby="trailUpdateReviewTab" data-trail-update-panel="review" aria-hidden="false">
               <section class="trail-update-results" id="trailUpdateResults" aria-label="Trail update results" hidden>
-                <p class="trail-reconcile-coverage" id="trailReconcileCoverage" role="status"></p>
+                <p class="trail-reconcile-coverage" id="trailReconcileCoverage" role="status" hidden></p>
                 <section class="trail-update-summary-grid trail-update-review-summary-grid" aria-label="Trail update summary">
                   <article class="analysis-stat-card"><span class="ui-lang-zh">本地候选</span><span class="ui-lang-en">Local candidates</span><strong id="trailUpdateCount">—</strong><small id="trailUpdateRunSummary">—</small></article>
                   <article hidden class="analysis-stat-card trail-update-field-stat-card"><span class="ui-lang-zh">更新目标字段</span><span class="ui-lang-en">Update target</span><strong id="trailUpdateInfoField" class="trail-update-target-value" title="ra_stuck_auto_result_info.ra_triage_dashboard.should_exclude">ra_stuck_auto_result_info.ra_triage_dashboard.should_exclude</strong></article>
@@ -2493,7 +2495,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-624`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-625`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

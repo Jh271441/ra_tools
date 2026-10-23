@@ -18,6 +18,8 @@ function setTrailUpdateTab(tab = "review") {
   // disabled HTML attribute in place until another network request happens.
   if (nextTab === "issue") {
     $("#trailAttributeUpdatePage")?.classList.remove("is-loading");
+    const placeholder = $("#trailUpdateLoading");
+    if (placeholder) placeholder.hidden = true;
     syncTrailIssueActions();
   } else syncTrailAttributeActions();
 }
@@ -294,6 +296,23 @@ function trailUpdateRunLabel(run) {
   const source = run.source_name ? ` · ${run.source_name}` : "";
   return `${run.name || run.id}${source} · ${count} 条 · 错 ${failures}`;
 }
+function startTrailAttributePage() {
+  const pageContext = capturePageContext();
+  state.trailUpdate.runCatalogLoading = true;
+  renderTrailAttributeRunPicker();
+  state.trailUpdate.runCatalogFailed = false;
+  void settleInitialRequests([loadRuns({ preserveEmpty: true })], uiText("模型 Run", "Model Runs"))
+    .then(results => { state.trailUpdate.runCatalogFailed = results.some(result => result.status === "rejected"); })
+    .finally(() => {
+      state.trailUpdate.runCatalogLoading = false;
+      if (isPageContextCurrent(pageContext, { matchUrl: false })) renderTrailAttributeRunPicker();
+    });
+  void settleInitialRequests([loadOverview(), loadReviewers(), loadWorkAssignees()], uiText("共享数据", "Shared data"));
+  if (state.trailUpdate.tab !== "issue") {
+    void loadTrailAttributePreview().catch(error => showToast(error.message, true));
+  }
+}
+
 function renderTrailAttributeRunPicker() {
   const select = $("#trailUpdateRunSelect");
   const picker = $("#trailUpdateRunPicker");
@@ -302,6 +321,9 @@ function renderTrailAttributeRunPicker() {
   // global/default Run when the user merely opens this page.
   const selected = state.trailUpdate?.runId || "";
   const hasRuns = Array.isArray(state.modelRuns) && state.modelRuns.length > 0;
+  const catalogLoading = Boolean(state.trailUpdate.runCatalogLoading);
+  const catalogFailed = Boolean(state.trailUpdate.runCatalogFailed);
+  const selectedMissing = Boolean(selected) && !(state.modelRuns || []).some(run => run.id === selected);
   const options = [
     {
       value: "",
@@ -309,10 +331,13 @@ function renderTrailAttributeRunPicker() {
         ? uiText("未选择模型 Run（合并全部）", "No model Run selected (all Runs)")
         : uiText("当前环境没有模型 Run", "No model Run in this environment"),
     },
+    ...(selectedMissing ? [{ value: selected, label: catalogLoading ? uiText("正在加载所选模型 Run…", "Loading the selected model Run…") : uiText("所选模型 Run 不在当前列表", "Selected model Run is not in this list") }] : []),
     ...(state.modelRuns || []).map((run) => ({ value: run.id, label: trailUpdateRunLabel(run) })),
   ];
+  if (catalogLoading && !selected) options[0].label = uiText("全部模型 Run", "All model Runs");
+  if (catalogFailed && !hasRuns && !selected) options[0].label = uiText("模型 Run 列表暂不可用", "Model Run list unavailable");
   select.disabled = !hasRuns;
-  const selectedValue = (state.modelRuns || []).some((run) => run.id === selected) ? selected : "";
+  const selectedValue = selected;
   if (picker && typeof populateUiSelect === "function") {
     populateUiSelect(picker, options, selectedValue);
     bindUiSelect(picker, { maxHeight: 360, maxWidth: 720 });
@@ -324,8 +349,8 @@ function renderTrailAttributeRunPicker() {
   }
   const hint = $("#trailUpdateRunHint");
   if (hint) {
-    hint.hidden = hasRuns;
-    if (!hasRuns) {
+    hint.hidden = hasRuns || catalogLoading || catalogFailed;
+    if (!hasRuns && !catalogLoading) {
       const isGray = window.location.port === "8786";
       hint.innerHTML = uiText(
         isGray
@@ -354,6 +379,9 @@ function setTrailAttributeLoading(loading = false) {
   state.trailUpdate.loading = active;
   const page = $("#trailAttributeUpdatePage");
   page?.classList.toggle("is-loading", active);
+  const placeholder = $("#trailUpdateLoading");
+  if (placeholder) placeholder.hidden = !active || state.trailUpdate.tab === "issue" || Boolean(state.trailUpdate.data);
+  $("#trailUpdateTableBody")?.setAttribute("aria-busy", String(active));
   [
     ...document.querySelectorAll("[data-trail-json-preview]"),
     $("#trailUpdateCommitButton"),
@@ -880,7 +908,10 @@ function patchTrailAttributeStatus(statusData) {
   return data;
 }
 
-async function refreshTrailAttributeStatus({ runId, previewKey, requestSeq, force = false } = {}) {
+async function refreshTrailAttributeStatus({ runId, previewKey, requestSeq, force = false, pageContext = capturePageContext() } = {}) {
+  const isCurrent = () => requestSeq === state.trailUpdate.requestSeq
+    && previewKey === trailUpdatePreviewKey()
+    && isPageContextCurrent(pageContext, { matchUrl: false });
   try {
     // This is deliberately a second-stage request.  The Review aggregate has
     // already rendered from local data, so a slow Trail view must never hold
@@ -889,20 +920,14 @@ async function refreshTrailAttributeStatus({ runId, previewKey, requestSeq, forc
     const items = Array.isArray(current?.items) ? current.items : [];
     if (!items.length) return current;
     const data = await api(trailUpdateStatusEndpoint(items, force), { cache: "no-store" });
-    if (
-      requestSeq !== state.trailUpdate.requestSeq ||
-      previewKey !== trailUpdatePreviewKey(runId)
-    ) return data;
+    if (!isCurrent()) return data;
     patchTrailAttributeStatus(data);
     state.trailUpdate.previewKey = previewKey;
     state.trailUpdate.statusLoadedAt = Date.now();
     setTrailAttributeStatus("");
     return data;
   } catch (error) {
-    if (
-      requestSeq === state.trailUpdate.requestSeq &&
-      previewKey === trailUpdatePreviewKey(runId)
-    ) {
+    if (isCurrent()) {
       patchTrailAttributeStatus({ trail_update_statuses: Object.fromEntries((state.trailUpdate?.data?.items || []).map(item => [item.issue_id, "query_failed"])), write_status: "status_check_incomplete", write_ready: false });
       // Keep the already-rendered local candidate list usable for inspection;
       // only the remote status projection and commit readiness remain pending.
@@ -917,8 +942,9 @@ async function refreshTrailAttributeStatus({ runId, previewKey, requestSeq, forc
 
 async function loadTrailAttributePreview(force = false, options = {}) {
   const background = Boolean(options?.background);
-  const select = $("#trailUpdateRunSelect");
-  const runId = String(select?.value || state.trailUpdate?.runId || "").trim();
+  const pageContext = capturePageContext();
+  // The state owns explicit/all-Run scope, even while the Run picker is loading.
+  const runId = String(state.trailUpdate?.runId || "").trim();
   state.trailUpdate.runId = runId;
   const previewKey = trailUpdatePreviewKey(runId);
   if (state.trailUpdate.selectionScope !== previewKey) {
@@ -948,21 +974,22 @@ async function loadTrailAttributePreview(force = false, options = {}) {
     return cachedData;
   }
   const requestSeq = ++state.trailUpdate.requestSeq;
+  const isCurrent = () => requestSeq === state.trailUpdate.requestSeq
+    && previewKey === trailUpdatePreviewKey()
+    && isPageContextCurrent(pageContext, { matchUrl: false });
   if (background) {
     return refreshTrailAttributeStatus({ runId, previewKey, requestSeq, force });
   }
-  if (!background) setTrailAttributeLoading(true);
+  if (!background) { setTrailAttributeStatus(""); setTrailAttributeLoading(true); }
   const applyPreview = (data, { loaded = false } = {}) => {
-    if (requestSeq !== state.trailUpdate.requestSeq) return false;
+    if (!isCurrent()) return false;
     if (!background) setTrailAttributeLoading(false);
     state.trailUpdate.data = data;
     state.trailUpdate.previewKey = previewKey;
     state.trailUpdate.previewLoadedAt = loaded ? Date.now() : 0;
     renderTrailAttributePreview(data);
     syncTrailAttributeActions(data);
-    if (typeof pageUrl === "function") {
-      history.replaceState({ page: "trail-update" }, "", pageUrl("trail-update", { runId }));
-    }
+    trailUpdatePersistRoute();
     return true;
   };
   try {
@@ -970,17 +997,19 @@ async function loadTrailAttributePreview(force = false, options = {}) {
     // presents every candidate as “查询中”, then a single batched Trail read
     // fills in per-Issue state asynchronously below.
     const data = await api(trailUpdateEndpoint(runId, false, force), { cache: "no-store" });
-    if (requestSeq !== state.trailUpdate.requestSeq) return data;
+    if (!isCurrent()) return data;
     applyPreview(data, { loaded: true });
-    void refreshTrailAttributeStatus({ runId, previewKey, requestSeq, force }).catch(() => {});
+    void refreshTrailAttributeStatus({ runId, previewKey, requestSeq, force, pageContext }).catch(() => {});
     return data;
   } catch (error) {
-    if (requestSeq === state.trailUpdate.requestSeq) {
+    if (isCurrent()) {
       if (!background) setTrailAttributeLoading(false);
       syncTrailAttributeActions(null);
       if (!background) setTrailAttributeStatus(uiText("排除案例加载失败，请稍后重试。", "Could not load excluded cases. Try again later."));
     }
     throw error;
+  } finally {
+    if (requestSeq === state.trailUpdate.requestSeq) setTrailAttributeLoading(false);
   }
 }
 

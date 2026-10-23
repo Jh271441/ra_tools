@@ -210,6 +210,8 @@ function trailEvidenceMarkup(item) {
 function renderTrailReconcileCoverage(data) {
   const target = $("#trailReconcileCoverage");
   if (!target) return;
+  target.hidden = !data.reconciliation;
+  if (target.hidden) { target.textContent = ""; return; }
   const items = data.items || [];
   const known = items.filter(item => trailRemoteState(item) !== "unknown").length;
   const queried = items.filter(item => item.trail_detail && item.trail_detail.state !== "querying").length;

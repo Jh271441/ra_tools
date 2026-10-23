@@ -1081,6 +1081,7 @@ async function bootstrap() {
   bindMobileFilterDrawers();
   bindMobileWorkbench();
   if (initialRoute.page === "review") applyReviewRouteControls(initialRoute);
+  if (initialRoute.page === "trail-update") state.trailUpdate.runCatalogLoading = true;
   bindEvents();
   updateImportFields();
   showPage(initialRoute.page, {
@@ -1105,6 +1106,7 @@ async function bootstrap() {
     campaignLifecycle: initialRoute.campaignLifecycle,
     campaignQuery: initialRoute.campaignQuery,
   });
+  if (initialRoute.page === "trail-update" && state.trailUpdate.tab !== "issue") setTrailAttributeLoading(true);
   let bootstrapContext = capturePageContext();
   // Cron is a read-only, dataset-independent monitor. Start its first snapshot
   // before configuration/Run metadata, which may be slow for a large union.
@@ -1187,6 +1189,13 @@ async function bootstrap() {
         : "";
     if (initialRoute.page === "trail-update" && typeof applyTrailUpdateRouteControls === "function") {
       applyTrailUpdateRouteControls(initialRoute.trailUpdateFilters);
+    }
+    if (initialRoute.page === "trail-update") {
+      // Local candidates and remote status have their own first-paint path.
+      // Run registry, overview and reviewer facets must not hold them back or
+      // replay the original route after the user has started filtering.
+      startTrailAttributePage();
+      return;
     }
     if (initialRoute.page === "analysis") {
       state.reviewAnalysis.comparisonStatus = state.selectedRunId
@@ -1383,12 +1392,6 @@ async function bootstrap() {
       && state.intentLabeling.caseId === initialRoute.intentCaseId
     ) {
       await openIntentComments({ focusCommentId: initialRoute.commentId || 0 });
-    }
-    if (initialRoute.page === "trail-update" && state.trailUpdate.tab !== "issue") {
-      // Do not hold the initial shell on the remote Trail read. The local
-      // exclusion aggregate paints after navigation; loadTrailAttributePreview
-      // then performs its single batched status check asynchronously.
-      void loadTrailAttributePreview().catch((error) => showToast(error.message, true));
     }
     if (initialRoute.page === "review") {
       // The final route commit invalidates the initial detail request's epoch.

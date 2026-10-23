@@ -722,3 +722,8 @@ html[data-color-theme="light"] .trail-update-state-badge.is-excluded { color:#1d
 .trail-update-result-actions > [hidden] { display:none; }
 
 .trail-update-results-heading > .trail-update-result-actions { display:flex; flex-wrap:wrap; align-items:center; }
+
+.trail-update-initial-loading { padding:14px; border:1px solid var(--line); border-radius:8px; color:var(--muted); font-size:12px; }
+.trail-update-initial-loading[hidden] { display:none; }
+.trail-update-initial-loading > div { display:grid; gap:10px; margin-top:14px; }
+.trail-update-initial-loading i { display:block; height:30px; border-radius:5px; background:var(--overlay); }
