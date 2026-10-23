@@ -16,6 +16,8 @@
   --fail: #f87171;
   --warn: #fbbf24;
   --radius: 10px;
+  --scrollbar-thumb: #526176;
+  --scrollbar-thumb-hover: #7a8ba2;
   /* Round stroke chevron-down; used via mask so color follows currentColor */
   --ui-chevron-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none'%3E%3Cpath d='M5.5 7.75 10 12.25l4.5-4.5' stroke='%23000' stroke-width='1.85' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   font-family: Inter, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
@@ -40,4 +42,6 @@ html[data-color-theme="light"] {
   --ok: #087a58;
   --fail: #c23f4d;
   --warn: #9a6500;
+  --scrollbar-thumb: #a0aec0;
+  --scrollbar-thumb-hover: #6b7b92;
 }
