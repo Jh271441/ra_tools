@@ -801,3 +801,38 @@
   #caseExclusionDialog .dialog-actions .button { min-width:0; }
   #caseExclusionDialog .case-label-decision-body { overflow-x:hidden; }
 }
+
+@media (max-width:700px) {
+  .case-exclusion-controls .review-exclude-toggle { min-height:44px; padding:8px; gap:8px; }
+  .case-exclusion-controls .review-exclude-toggle strong { font-size:12px; }
+  #caseExclusionOpen { min-height:44px; padding:8px; font-size:12px; }
+  #caseExclusionDetailsDialog .dialog-actions .button { min-width:0; }
+}
+
+@media (max-width:700px) {
+  #caseLabelDecisionDialog .case-label-decision-sources { grid-template-columns:minmax(0,1fr); }
+  .case-label-decision-dialog .dialog-heading { padding-bottom:10px; }
+  .case-label-decision-dialog .dialog-actions { padding-top:10px; }
+  #caseLabelDecisionDialog .dialog-actions .button { min-width:0; }
+}
+
+@media (max-width:1000px) {
+  #trailAttributeUpdatePage .trail-update-filters { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .trail-update-filter-actions { grid-column:auto; grid-row:auto; }
+  .trail-reconcile-advanced { grid-row:auto; }
+  .trail-advanced-fields { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+@media (max-width:700px) {
+  .trail-update-review-summary-grid { grid-template-columns:minmax(0,1fr); }
+  #trailAttributeUpdatePage .trail-update-filters { grid-template-columns:minmax(0,1fr); }
+  .trail-advanced-fields { grid-template-columns:minmax(0,1fr); }
+  .trail-reconcile-table thead { display:none; }
+  .trail-reconcile-table td:nth-child(n) { width:auto; padding:0; border:0; }
+  .trail-reconcile-table tbody tr:not(.trail-reason-expanded) { border:1px solid var(--line); border-radius:8px; padding:12px; }
+  .trail-reconcile-table td:nth-child(1)::before, .trail-reconcile-table td:nth-child(6)::before { display:none; }
+  .trail-issue-identity { gap:4px; }
+  .trail-reason-check { flex-basis:44px; min-width:44px; }
+  .trail-reason-summary p { white-space:normal; display:-webkit-box; -webkit-line-clamp:2; }
+  .trail-row-actions { justify-content:flex-end; }
+  #trailReasonDetailsDialog .trail-reason-comparison { grid-template-columns:minmax(0,1fr); }
+}

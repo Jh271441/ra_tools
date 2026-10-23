@@ -1,5 +1,5 @@
 /* Exclusion uses an explicit full task adjudication, never a Trail write. */
-const caseExclusionUi = { context: null, drafts: new Map(), saving: false };
+const caseExclusionUi = { context: null, details: null, drafts: new Map(), saving: false };
 
 function caseExclusionVotes(data) {
   return (data.label_cases || []).flatMap(item => {
@@ -16,7 +16,17 @@ function caseExclusionTrailText(data) {
   if (data.trail_metadata_status !== "ready") return uiText("无法确认", "Unconfirmed");
   return typeof data.dashboard_should_exclude === "boolean" ? caseExclusionText(data.dashboard_should_exclude) : uiText("未设置", "Unset");
 }
+function caseExclusionMismatchText(data) {
+  const local = data.exclusion_summary?.is_excluded;
+  const trail = data.dashboard_should_exclude;
+  if (data.trail_metadata_status !== "ready" || typeof local !== "boolean" || typeof trail !== "boolean" || local === trail) return "";
+  return local ? uiText("本地排除，Trail 未排除", "Excluded locally; not excluded in Trail") : uiText("本地不排除，Trail 仍排除", "Not excluded locally; still excluded in Trail");
+}
 function caseExclusionSummaryMarkup(data) {
+  const mismatch = caseExclusionMismatchText(data);
+  return `<div id="caseExclusionSummary" class="case-exclusion-entry"><button type="button" class="history-inline-button" id="caseExclusionOpen" aria-haspopup="dialog" aria-label="${uiText("查看排除详情", "View exclusion details")}">${uiText("排除详情", "Exclusion details")}</button>${mismatch ? `<small class="case-exclusion-inline-note">${escapeHtml(mismatch)}</small>` : ""}</div>`;
+}
+function caseExclusionDetailsMarkup(data) {
   const votes = caseExclusionVotes(data);
   const excluded = data.exclusion_summary?.is_excluded ?? (votes.length ? votes.some(v => v.is_excluded) : null);
   const username = String(state.session?.username || "").toLowerCase();
@@ -26,16 +36,56 @@ function caseExclusionSummaryMarkup(data) {
   const decisions = votes.filter(v => v.adjudicated);
   const maintainers = votes.filter(v => v.is_excluded);
   const allowed = hasDashboardWriteRole() && (data.label_cases || []).some(c => c.can_adjudicate_exclusion);
-  return `<section id="caseExclusionSummary" class="case-exclusion-summary" aria-label="${uiText("排除状态", "Exclusion status")}"><dl><div><dt>${uiText("我的排除意见（已保存）", "My saved opinion")}</dt><dd>${escapeHtml(mineText)}</dd></div><div><dt>${uiText("当前本地汇总", "Current local result")}</dt><dd>${escapeHtml(caseExclusionText(excluded))}</dd></div><div><dt>${uiText("Trail 状态", "Trail state")}</dt><dd>${escapeHtml(caseExclusionTrailText(data))}</dd></div></dl><p>${uiText("上方复选框仅保存你的意见；其他有效排除意见仍会维持本地排除。", "The checkbox saves your opinion. Other effective exclusion votes can keep the Issue excluded locally.")}</p>${excluded === false && data.trail_metadata_status === "ready" && data.dashboard_should_exclude === true ? `<p class="case-exclusion-warning">${uiText("本地不排除，Trail 仍排除；本地裁决不会撤销 Trail 排除。", "Not excluded locally; still excluded in Trail. A local decision does not undo Trail exclusion.")}</p>` : ""}${maintainers.length ? `<details><summary>${uiText(`维持排除的有效意见 · ${maintainers.length}`, `Effective exclusion votes · ${maintainers.length}`)}</summary>${maintainers.map(v => `<p><strong>${escapeHtml(v.author || "")}</strong> · #${v.id} · ${escapeHtml(formatTime(v.created_at))}<br>${escapeHtml(v.adjudicated ? uiText("任务裁决", "Task decision") : v.taskName)}${v.rationale ? `<br>${escapeHtml(v.rationale)}` : ""}</p>`).join("")}</details>` : ""}${decisions.length ? `<details><summary>${uiText("当前任务裁决与依据", "Current task decisions and rationales")}</summary>${decisions.map(v => `<p><strong>${escapeHtml(v.author || "")} · ${escapeHtml(caseExclusionText(Boolean(v.is_excluded)))}</strong><br>${escapeHtml(formatTime(v.created_at))} · #${v.id}<br>${escapeHtml(v.rationale || uiText("未填写", "Empty"))}</p>`).join("")}</details>` : ""}${allowed ? `<button type="button" class="button button-quiet" id="caseExclusionOpen" aria-haspopup="dialog">${uiText("排除裁决", "Exclusion decision")}</button>` : maintainers.length ? `<small>${uiText("当前来源没有可用的任务裁决入口；保留原意见，不能用普通保存覆盖他人。", "No writable task decision is available for these sources. An ordinary save cannot override other authors.")}</small>` : ""}</section>`;
+  return `<section class="case-exclusion-summary" aria-label="${uiText("排除状态", "Exclusion status")}"><dl><div><dt>${uiText("我的排除意见（已保存）", "My saved opinion")}</dt><dd>${escapeHtml(mineText)}</dd></div><div><dt>${uiText("当前本地汇总", "Current local result")}</dt><dd>${escapeHtml(caseExclusionText(excluded))}</dd></div><div><dt>${uiText("Trail 状态", "Trail state")}</dt><dd>${escapeHtml(caseExclusionTrailText(data))}</dd></div></dl><p>${uiText("“应该排除”仅保存你的意见；其他有效排除意见仍会维持本地排除。", "The checkbox saves your opinion. Other effective exclusion votes can keep the Issue excluded locally.")}</p>${excluded === false && data.trail_metadata_status === "ready" && data.dashboard_should_exclude === true ? `<p class="case-exclusion-warning">${uiText("本地不排除，Trail 仍排除；本地裁决不会撤销 Trail 排除。", "Not excluded locally; still excluded in Trail. A local decision does not undo Trail exclusion.")}</p>` : ""}${maintainers.length ? `<details data-exclusion-evidence open><summary>${uiText(`维持排除的有效意见 · ${maintainers.length}`, `Effective exclusion votes · ${maintainers.length}`)}</summary>${maintainers.map(v => `<p><strong>${escapeHtml(v.author || "")}</strong> · #${v.id} · ${escapeHtml(formatTime(v.created_at))}<br>${escapeHtml(v.adjudicated ? uiText("任务裁决", "Task decision") : v.taskName)}${v.rationale ? `<br>${escapeHtml(v.rationale)}` : ""}</p>`).join("")}</details>` : ""}${decisions.length ? `<details data-exclusion-decisions open><summary>${uiText("当前任务裁决与依据", "Current task decisions and rationales")}</summary>${decisions.map(v => `<p><strong>${escapeHtml(v.author || "")} · ${escapeHtml(caseExclusionText(Boolean(v.is_excluded)))}</strong><br>${escapeHtml(formatTime(v.created_at))} · #${v.id}<br>${escapeHtml(v.rationale || uiText("未填写", "Empty"))}</p>`).join("")}</details>` : ""}${allowed ? `<button type="button" class="button button-quiet" id="caseExclusionDecide" aria-haspopup="dialog">${uiText("排除裁决", "Exclusion decision")}</button>` : maintainers.length ? `<small>${uiText("当前来源没有可用的任务裁决入口；保留原意见，不能用普通保存覆盖他人。", "No writable task decision is available for these sources. An ordinary save cannot override other authors.")}</small>` : ""}</section>`;
+}
+function renderCaseExclusionDetails(data) {
+  const dialog = $("#caseExclusionDetailsDialog");
+  const expanded = [...dialog.querySelectorAll("details")].map(node => node.open);
+  const scroll = dialog.querySelector(".case-label-decision-body")?.scrollTop || 0;
+  const focus = dialog.contains(document.activeElement) ? document.activeElement.id : "";
+  dialog.innerHTML = `<div class="dialog-card"><div class="dialog-heading"><div><small>${escapeHtml(data.issue_id)}</small><h2 id="caseExclusionDetailsTitle">${uiText("排除详情", "Exclusion details")}</h2></div><button id="caseExclusionDetailsClose" type="button" class="icon-button" data-close-exclusion-details aria-label="${uiText("关闭", "Close")}">×</button></div><div class="case-label-decision-body">${caseExclusionDetailsMarkup(data)}</div><div class="dialog-actions"><button id="caseExclusionDetailsDone" type="button" class="button button-quiet" data-close-exclusion-details>${uiText("关闭", "Close")}</button></div></div>`;
+  dialog.querySelectorAll("details").forEach((node, i) => { if (i < expanded.length) node.open = expanded[i]; });
+  dialog.querySelector(".case-label-decision-body").scrollTop = scroll;
+  dialog.querySelectorAll("[data-close-exclusion-details]").forEach(button => button.addEventListener("click", () => dialog.close()));
+  $("#caseExclusionDecide")?.addEventListener("click", () => {
+    const c = caseExclusionUi.details;
+    if (!c || !isPageContextCurrent(c.pageContext) || state.caseLabeling.issueId !== c.data.issue_id || selectedBaselineQueryValue() !== c.baselines) { dialog.close(); return; }
+    dialog.close();
+    openCaseExclusionDecision(c.data);
+  });
+  if (focus) document.getElementById(focus)?.focus({preventScroll:true});
+}
+function openCaseExclusionDetails(data) {
+  let dialog = $("#caseExclusionDetailsDialog");
+  if (!dialog) {
+    dialog = document.createElement("dialog");
+    dialog.id = "caseExclusionDetailsDialog";
+    dialog.className = "dialog case-label-decision-dialog";
+    dialog.setAttribute("aria-labelledby", "caseExclusionDetailsTitle");
+    document.body.appendChild(dialog);
+    dialog.addEventListener("click", e => { if (e.target === dialog) dialog.close(); });
+    dialog.addEventListener("close", () => {
+      if (!$("#caseExclusionDialog")?.open && state.caseLabeling.issueId === caseExclusionUi.details?.data.issue_id) $("#caseExclusionOpen")?.focus({preventScroll:true});
+    });
+  }
+  caseExclusionUi.details = {data, pageContext:capturePageContext(), baselines:selectedBaselineQueryValue()};
+  dialog.innerHTML = "";
+  renderCaseExclusionDetails(data);
+  dialog.showModal();
 }
 function refreshCaseExclusionSummary() {
   const data = state.caseLabeling.caseData;
   const node = $("#caseExclusionSummary");
   if (!data || !node) return;
-  const expanded = node.querySelector("details")?.open;
+  const focused = document.activeElement?.id === "caseExclusionOpen";
   node.outerHTML = caseExclusionSummaryMarkup(data);
-  if (expanded && $("#caseExclusionSummary details")) $("#caseExclusionSummary details").open = true;
-  $("#caseExclusionOpen")?.addEventListener("click", () => openCaseExclusionDecision(data));
+  $("#caseExclusionOpen")?.addEventListener("click", () => openCaseExclusionDetails(data));
+  if (focused) $("#caseExclusionOpen")?.focus({preventScroll:true});
+  const dialog = $("#caseExclusionDetailsDialog"), c = caseExclusionUi.details;
+  if (!dialog?.open || !c) return;
+  if (c.data.issue_id !== data.issue_id || c.baselines !== selectedBaselineQueryValue() || !isPageContextCurrent(c.pageContext)) { dialog.close(); return; }
+  c.data = data;
+  renderCaseExclusionDetails(data);
 }
 function rememberCaseExclusionDraft() {
   const c = caseExclusionUi.context;

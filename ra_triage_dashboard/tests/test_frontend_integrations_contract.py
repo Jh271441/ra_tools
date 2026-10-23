@@ -631,7 +631,7 @@ class FrontendIntegrationsContractTest(unittest.TestCase):
         self.assertIn(".analysis-discussion-link, .text-link", STYLES_CSS)
         self.assertIn("data-trail-update-discussion", APP_JS)
         self.assertNotIn('<th>操作</th>', INDEX_HTML)
-        self.assertIn('class="trail-update-issue-meta"', APP_JS)
+        self.assertIn('class="trail-row-actions"', APP_JS)
         self.assertIn(".trail-update-issue-meta > small", STYLES_CSS)
         self.assertNotIn('data-label="操作"', APP_JS)
         self.assertIn('colspan="6" class="trail-update-empty"', INDEX_HTML)

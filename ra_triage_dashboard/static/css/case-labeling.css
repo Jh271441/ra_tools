@@ -165,7 +165,14 @@ html[data-color-theme="light"] .case-label-status[data-state="resolved"] { color
 #caseLabelGoAdjudication { min-height:44px; }
 
 /* Local exclusion opinions and explicit task adjudication. */
-.case-exclusion-summary { display:grid; gap:8px; margin-top:10px; padding:12px; border:1px solid var(--line); border-radius:10px; min-width:0; background:var(--overlay); font-size:12px; }
+.case-exclusion-controls { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:4px 8px; align-items:center; }
+.case-exclusion-controls .review-exclude-toggle { margin:0; min-width:0; min-height:44px; }
+.case-exclusion-entry { display:contents; }
+#caseExclusionOpen { min-height:44px; white-space:nowrap; }
+.case-exclusion-inline-note { grid-column:1 / -1; color:var(--muted); font-size:11px; line-height:1.5; overflow-wrap:anywhere; }
+.case-exclusion-summary { display:grid; gap:12px; min-width:0; font-size:12px; }
+#caseExclusionDetailsDialog .dialog-actions .button { min-height:44px; }
+#caseExclusionDetailsDialog .case-label-decision-body { overflow-x:hidden; }
 .case-exclusion-summary dl { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin:0; }
 .case-exclusion-summary dt { color:var(--muted); font-size:11px; }
 .case-exclusion-summary dd { margin:4px 0 0; font-weight:650; }
@@ -183,3 +190,40 @@ html[data-color-theme="light"] .case-label-status[data-state="resolved"] { color
 
 #caseExclusionDialog .case-label-decision-body { gap:12px; }
 #caseExclusionRefresh { justify-self:start; min-height:44px; white-space:normal; }
+
+/* Decision dialogs: visible evidence, quiet status, separate editing area. */
+#caseLabelDecisionDialog { width:min(640px,calc(100vw - 24px)); }
+.case-label-decision-dialog .dialog-heading { padding-bottom:14px; border-bottom:1px solid var(--line); }
+.case-label-decision-dialog .dialog-heading small { color:var(--muted); font-size:11px; }
+.case-label-decision-dialog .dialog-heading h2 { margin-top:4px; font-size:20px; }
+.case-label-decision-dialog .dialog-actions { padding-top:14px; border-top:1px solid var(--line); }
+.case-label-decision-dialog .dialog-actions .button-primary { min-height:48px; }
+#caseLabelDecisionDialog .case-label-decision-body { gap:12px; overflow-x:hidden; }
+#caseLabelDecisionDialog .case-label-decision { padding:0; border:0; background:transparent; gap:12px; }
+#caseLabelDecisionDialog .case-label-decision-heading { padding:10px 12px; border-radius:8px; background:var(--overlay); font-size:12px; }
+.case-decision-section-title, .case-decision-history h3 { margin:0; font-size:12px; color:var(--muted); font-weight:600; }
+#caseLabelDecisionDialog .case-label-decision-sources { grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; align-items:start; }
+#caseLabelDecisionDialog .case-label-decision-sources li { align-content:start; gap:8px; padding:12px; border:1px solid var(--line); border-radius:9px; background:transparent; }
+#caseLabelDecisionDialog .case-decision-source-heading { align-items:center; }
+#caseLabelDecisionDialog .case-decision-source-heading > strong { font-size:12px; }
+.case-decision-source-state { display:inline-flex; padding:3px 7px; border-radius:5px; background:var(--overlay); color:var(--muted); font-size:10px; line-height:1.5; }
+.case-decision-source-state[data-state="pending"], .case-decision-source-state[data-state="stale"], .case-decision-source-state[data-state="conflict"] { color:var(--warn); }
+.case-decision-vote { min-width:0; padding-top:8px; border-top:1px solid var(--line); }
+.case-decision-vote > div { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px; }
+#caseLabelDecisionDialog .case-decision-output { color:var(--text); font-size:12px; }
+.case-decision-vote time { font-size:10px; color:var(--muted); }
+#caseLabelDecisionDialog .case-decision-vote p { color:var(--muted); font-size:12px; line-height:1.6; }
+#caseLabelDecisionDialog [data-decision-task-link] { display:inline-flex; align-items:center; min-height:44px; justify-self:start; font-size:12px; }
+.case-decision-history { display:grid; gap:10px; }
+.case-decision-history h3 { display:flex; justify-content:space-between; }
+.case-decision-history ol { margin:0; padding:0; list-style:none; display:grid; gap:8px; }
+.case-decision-history li { border-left:2px solid var(--line); padding:4px 12px; font-size:12px; }
+.case-decision-history li > div { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+.case-decision-history small { display:block; margin-top:5px; color:var(--muted); font-size:11px; }
+.case-decision-history p { white-space:pre-wrap; overflow-wrap:anywhere; margin:6px 0 0; line-height:1.6; }
+#caseLabelDecisionDialog .case-label-decision-blocked { margin:0; border-left:2px solid var(--warn); padding:8px 10px; background:var(--overlay); line-height:1.6; font-size:12px; }
+.case-decision-edit-title { padding-top:14px; border-top:1px solid var(--line); }
+#caseLabelDecisionDialog .case-label-decision-body > label { font-size:12px; gap:8px; }
+#caseLabelDecisionRationale { min-height:88px; }
+
+#caseLabelDecisionDialog .case-label-decision-sources .case-decision-vote { display:block; }

@@ -389,7 +389,11 @@ function bindUiSelect(root, { onChange, maxHeight = 320, maxWidth = 420, escapeF
   document.addEventListener(
     "keydown",
     (event) => {
-      if (event.key === "Escape") closeAllUiSelects();
+      if (event.key === "Escape") {
+        // A picker consumes the first Escape; a second Escape can close its dialog.
+        if (event.target.closest?.("dialog")?.querySelector(".ui-select.is-open")) event.preventDefault();
+        closeAllUiSelects();
+      }
     },
     true
   );

@@ -661,3 +661,49 @@ html[data-color-theme="light"] .trail-reconcile-table .trail-update-state-badge.
 html[data-color-theme="light"] .trail-reconcile-table .trail-update-state-badge.is-querying { color:#075f75; }
 html[data-color-theme="light"] .trail-reconcile-table .trail-update-state-badge.is-failed,
 html[data-color-theme="light"] .trail-reconcile-table .trail-update-state-badge.is-not-found { color:#b42318; }
+
+/* Compact exclusion overview; shared selectors and table styles remain authoritative. */
+.trail-update-review-summary-grid { grid-template-columns:minmax(150px,.6fr) minmax(0,2.4fr); }
+.trail-update-review-summary-grid > [hidden] { display:none; }
+.trail-update-review-summary-grid > .analysis-stat-card { padding:12px; }
+.trail-update-review-summary-grid .trail-update-status-card { padding:12px; gap:10px; }
+.trail-update-status-card .trail-update-status-summary { display:grid; grid-template-columns:minmax(0,1fr); gap:10px; }
+.trail-update-status-card .analysis-review-status-bar { grid-row:auto !important; height:6px; }
+.trail-update-status-card .analysis-review-status-legend { grid-row:auto !important; gap:8px 16px; }
+.trail-reconcile-coverage { font-size:11px; line-height:1.5; margin-bottom:0; }
+.trail-update-filters { grid-template-columns:minmax(140px,.8fr) minmax(180px,1.4fr) minmax(170px,1fr) auto; gap:10px; margin-bottom:6px; }
+.trail-reconcile-controls { padding:0; }
+.trail-reconcile-controls > label { max-width:none; font-size:10px; color:var(--faint); gap:3px; }
+.trail-reconcile-advanced { grid-column:1 / -1; grid-row:2; min-width:0; }
+.trail-reconcile-advanced > summary { cursor:pointer; min-height:44px; display:flex; align-items:center; font-size:11px; color:var(--muted); }
+.trail-advanced-fields { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; }
+.trail-advanced-fields > label { min-width:0; display:grid; gap:4px; font-size:10px; color:var(--muted); }
+.trail-update-filter-actions { grid-column:4; grid-row:1; }
+.trail-reconcile-table { border-collapse:collapse; border-spacing:0; }
+.trail-reconcile-table th { background:transparent; color:var(--muted); font-weight:600; }
+.trail-reconcile-table td:nth-child(n) { padding:8px; background:transparent; border-top:0; border-bottom:1px solid var(--line-soft); vertical-align:middle; }
+.trail-reconcile-table tbody tr:hover > td { background:var(--overlay); }
+.trail-reconcile-table th:nth-child(1) { width:19%; }
+.trail-reconcile-table th:nth-child(2), .trail-reconcile-table th:nth-child(3) { width:11%; }
+.trail-reconcile-table th:nth-child(4) { width:15%; }
+.trail-reconcile-table th:nth-child(5) { width:30%; }
+.trail-reconcile-table th:nth-child(6) { width:14%; }
+.trail-issue-identity { display:flex; gap:4px; align-items:center; min-width:0; }
+.trail-issue-identity > div { min-width:0; }
+.trail-issue-identity .trail-update-issue { font-size:11px; overflow-wrap:normal; }
+.trail-reason-check { flex:0 0 36px; min-width:36px; }
+.trail-row-actions { display:flex; flex-wrap:wrap; align-items:center; gap:4px; }
+.trail-row-actions .trail-reason-toggle, .trail-row-actions .trail-update-discussion-link { display:inline-flex; align-items:center; justify-content:center; min-width:44px; min-height:44px; padding:4px; font-size:11px; white-space:nowrap; border:0; background:transparent; }
+.trail-reason-summary p { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin:3px 0; font-size:11px; }
+.trail-reason-summary p > span { display:inline-block; min-width:34px; margin-right:6px; color:var(--faint); font-size:10px; }
+.trail-update-state-badge.is-reason { color:#c4b5fd; border-color:rgba(167,139,250,.4); background:rgba(167,139,250,.1); }
+.trail-update-state-badge.is-excluded { color:#93c5fd; border-color:rgba(96,165,250,.4); background:rgba(96,165,250,.1); }
+.trail-status-reason_update { --status-color:#a78bfa; }
+.trail-status-excluded { --status-color:#60a5fa; }
+.trail-status-not_excluded { --status-color:#94a3b8; }
+.trail-status-unconfirmed { --status-color:#f87171; }
+html[data-color-theme="light"] .trail-update-state-badge.is-reason { color:#6d28d9; }
+html[data-color-theme="light"] .trail-update-state-badge.is-excluded { color:#1d4ed8; }
+#trailReasonDetailsDialog .trail-update-state-badge { justify-self:start; }
+#trailReasonDetailsDialog .trail-reason-comparison { grid-template-columns:repeat(2,minmax(0,1fr)); }
+#trailReasonDetailsDialog .dialog-actions button { min-height:44px; }

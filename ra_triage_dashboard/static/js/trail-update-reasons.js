@@ -1,6 +1,6 @@
 /* Reason comparisons and explicit selection share the existing Trail workflow. */
 function trailReasonState(item = {}) {
-  if (item.readonly && item.trail_detail && !["querying", "query_failed", "not_checked", "not_found"].includes(item.trail_detail.state)) {
+  if (item.readonly && item.trail_detail && !["querying", "query_failed", "not_checked", "not_found", "pending"].includes(item.trail_detail.state)) {
     return item.trail_detail.trail_should_exclude === true ? "reconcile_excluded" : "reconcile_not_excluded";
   }
   return String(item.trail_detail?.state || item.trail_update_status || "not_checked");
@@ -55,14 +55,14 @@ function trailReasonComparisonMarkup(item, expanded = false) {
   const panel = `<div class="trail-reason-comparison"><section><strong>${uiText("Trail 当前理由", "Current Trail reason")}</strong><p data-trail-reason-text="remote">${escapeHtml(remote || remoteHint)}</p><small>${escapeHtml(markerLabel)} · ${uiText("远端修改时间未知", "Remote modification time unknown")}</small>${remote ? `<button type="button" class="button button-quiet" data-trail-copy-reason="remote">${uiText("复制", "Copy")}</button>` : ""}</section><section><strong>${uiText("本地最新理由", "Latest local reason")}</strong><p data-trail-reason-text="local">${escapeHtml(local || localHint)}</p><small>${escapeHtml(meta)}</small>${local ? `<button type="button" class="button button-quiet" data-trail-copy-reason="local">${uiText("复制", "Copy")}</button>` : ""}</section></div>`;
   if (expanded) return panel + trailEvidenceMarkup(item);
   const open = Boolean(state.trailUpdate.expandedReasons?.has(trailRowKey(item)));
-  return `<button class="button button-quiet trail-reason-toggle" type="button" data-trail-reason-toggle="${escapeHtml(trailRowKey(item))}" aria-expanded="${open}">${uiText("查看理由与来源", "Reasons and source")}</button>`;
+  return `<button class="text-link trail-reason-toggle" type="button" data-trail-reason-toggle="${escapeHtml(trailRowKey(item))}" aria-haspopup="dialog">${uiText("详情", "Details")}</button>`;
 }
 function syncTrailSelectionControls(data = state.trailUpdate?.data) {
   const count = $("#trailReasonSelectionCount");
   const chosen = trailSelectedIssues();
   const visible = new Set([...document.querySelectorAll("#trailUpdateTableBody [data-trail-reason-select]")].map(node => node.dataset.trailReasonSelect));
   const hidden = [...chosen].filter(id => !visible.has(id)).length;
-  if (count) count.textContent = uiText(`已选可提交 ${chosen.size} 条，其中 ${hidden} 条不在本页；筛选不改变选择`, `${chosen.size} selected for submission, ${hidden} outside this page; filters preserve selection`);
+  if (count) count.textContent = uiText(`已选 ${chosen.size} 条，其中 ${hidden} 条不在本页；筛选不改变选择`, `${chosen.size} selected, ${hidden} outside this page; filters preserve selection`);
   const bar = document.querySelector(".trail-reason-selection-bar");
   if (bar) bar.hidden = state.trailUpdate.view === "reconciliation";
   const select = $("#trailReasonIntent");
@@ -76,6 +76,7 @@ function syncTrailSelectionControls(data = state.trailUpdate?.data) {
   $("#trailReasonSelectVisible")?.toggleAttribute("disabled", Boolean(state.trailUpdate.selectionBusy) || !(data?.items || []).some(trailReasonEligible));
 }
 function patchTrailReasonCells(data) {
+  refreshTrailReasonDetails();
   const byId = new Map((data?.items || []).map(item => [trailRowKey(item), item]));
   document.querySelectorAll("[data-trail-reason-row]").forEach(row => {
     const item = byId.get(row.dataset.trailReasonRow);
@@ -87,7 +88,7 @@ function patchTrailReasonCells(data) {
     const summary = row.querySelector("[data-trail-reason-summary]");
     if (summary) summary.innerHTML = trailReasonSummaryMarkup(item);
     const toggle = row.querySelector("[data-trail-reason-toggle]");
-    if (toggle) toggle.textContent = uiText("查看理由与来源", "Reasons and source");
+    if (toggle) toggle.textContent = uiText("详情", "Details");
     const expanded = document.querySelector(`[data-trail-reason-expansion="${CSS.escape(trailRowKey(item))}"] td`);
     if (expanded) {
       const markup = trailReasonComparisonMarkup(item, true);
@@ -127,13 +128,9 @@ function bindTrailReasonEvents() {
   $("#trailUpdateTableBody")?.addEventListener("click", event => {
     const toggle = event.target.closest("[data-trail-reason-toggle]");
     if (!toggle) return;
-    const id = toggle.dataset.trailReasonToggle;
-    if (!(state.trailUpdate.expandedReasons instanceof Set)) state.trailUpdate.expandedReasons = new Set();
-    const open = !state.trailUpdate.expandedReasons.has(id);
-    if (open) state.trailUpdate.expandedReasons.add(id); else state.trailUpdate.expandedReasons.delete(id);
-    toggle.setAttribute("aria-expanded", String(open));
-    const row = document.querySelector(`[data-trail-reason-expansion="${CSS.escape(id)}"]`);
-    if (row) row.hidden = !open;
+    const item = (state.trailUpdate.data?.items || []).find(item => trailRowKey(item) === toggle.dataset.trailReasonToggle);
+    if (item) openTrailReasonDetails(item);
+
   });
   $("#trailUpdateTableBody")?.addEventListener("change", event => {
     const check = event.target.closest("[data-trail-reason-select]");
@@ -155,6 +152,7 @@ function refreshTrailReasonLanguage() {
   if (!state.trailUpdate?.data) return;
   renderTrailAttributePreview(state.trailUpdate.data);
   syncTrailSelectionControls();
+  refreshTrailReasonDetails();
 }
 
 function trailRowKey(item) { return item.row_key || `${item.baseline_id || ""}|${item.issue_id}`; }
@@ -164,7 +162,7 @@ function trailLocalLabel(item) {
 }
 function trailRemoteState(item) {
   const detail = item.trail_detail;
-  if (!detail || ["querying", "query_failed", "not_checked", "not_found"].includes(detail.state)) return "unknown";
+  if (!detail || ["querying", "query_failed", "not_checked", "not_found", "pending"].includes(detail.state)) return "unknown";
   return detail.trail_should_exclude === true ? "true" : detail.trail_should_exclude === false ? "false" : "unset";
 }
 function trailSourceLabel(source) {
@@ -173,8 +171,8 @@ function trailSourceLabel(source) {
 function trailReasonSummaryMarkup(item) {
   const detail = item.trail_detail || {};
   const remote = trailRemoteState(item) === "unknown" ? uiText("尚未确认", "Unconfirmed") : detail.trail_comment || uiText("理由未填写", "No reason provided");
-  const local = detail.local_comment || item.comment || uiText("无新理由，保留远端原文", "No new reason; keep remote text");
-  return `<div class="trail-reason-summary"><p><strong>${uiText("Trail 当前", "Current Trail")}</strong> ${escapeHtml(remote)}</p><p><strong>${uiText(item.readonly ? "本地理由" : "本地拟更新", item.readonly ? "Local reason" : "Proposed locally")}</strong> ${escapeHtml(local)}</p></div>`;
+  const local = detail.local_comment || item.comment || uiText("保留远端原文", "Keep remote text");
+  return `<div class="trail-reason-summary"><p title="${escapeHtml(remote)}"><span>${uiText("Trail", "Trail")}</span>${escapeHtml(remote)}</p><p title="${escapeHtml(local)}"><span>${uiText("本地", "Local")}</span>${escapeHtml(local)}</p></div>`;
 }
 function trailEvidenceMarkup(item) {
   const source = item.historical_source;
@@ -236,4 +234,39 @@ function bindTrailReconcileEvents() {
     $(`#${id}`)?.addEventListener("change", event => { state.trailUpdate.filters[key] = event.target.value; applyTrailUpdateFilters(); });
   }
   syncTrailReconcileFilters();
+}
+
+function openTrailReasonDetails(item) {
+  let dialog = $("#trailReasonDetailsDialog");
+  if (!dialog) {
+    dialog = document.createElement("dialog");
+    dialog.id = "trailReasonDetailsDialog";
+    dialog.className = "dialog case-label-decision-dialog";
+    dialog.setAttribute("aria-labelledby", "trailReasonDetailsTitle");
+    document.body.appendChild(dialog);
+    dialog.addEventListener("click", event => {
+      if (event.target === dialog || event.target.closest("[data-close-trail-reasons]")) dialog.close();
+      const copy = event.target.closest("[data-trail-copy-reason]");
+      if (copy) navigator.clipboard.writeText(copy.closest("section").querySelector("[data-trail-reason-text]").textContent).then(() => showToast(uiText("已复制理由", "Reason copied"))).catch(() => showToast(uiText("无法复制，请选择文本复制", "Could not copy; select text to copy"), true));
+    });
+    dialog.addEventListener("close", () => document.querySelector(`[data-trail-reason-toggle="${CSS.escape(dialog.dataset.rowKey || "")}"]`)?.focus({preventScroll:true}));
+  }
+  dialog.dataset.rowKey = trailRowKey(item);
+  dialog.innerHTML = "";
+  renderTrailReasonDetails(dialog, item);
+  dialog.showModal();
+}
+function renderTrailReasonDetails(dialog, item) {
+  const scroll = dialog.querySelector(".case-label-decision-body")?.scrollTop || 0;
+  const focus = dialog.contains(document.activeElement) ? document.activeElement?.dataset.trailCopyReason : null;
+  dialog.innerHTML = `<div class="dialog-card"><div class="dialog-heading"><div><small>${escapeHtml(item.issue_id)}</small><h2 id="trailReasonDetailsTitle">${uiText("排除理由与来源", "Exclusion reasons and source")}</h2></div><button type="button" class="icon-button" data-close-trail-reasons aria-label="${uiText("关闭", "Close")}">×</button></div><div class="case-label-decision-body">${trailUpdateStatusCellMarkup(trailReasonState(item))}${trailReasonComparisonMarkup(item, true)}</div><div class="dialog-actions"><button type="button" class="button button-quiet" data-close-trail-reasons>${uiText("关闭", "Close")}</button></div></div>`;
+  dialog.querySelector(".case-label-decision-body").scrollTop = scroll;
+  if (focus) dialog.querySelector(`[data-trail-copy-reason="${CSS.escape(focus)}"]`)?.focus({preventScroll:true});
+}
+function refreshTrailReasonDetails() {
+  const dialog = $("#trailReasonDetailsDialog");
+  if (!dialog?.open) return;
+  const item = (state.trailUpdate.data?.items || []).find(item => trailRowKey(item) === dialog.dataset.rowKey);
+  if (!item) { dialog.close(); return; }
+  renderTrailReasonDetails(dialog, item);
 }

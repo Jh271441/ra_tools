@@ -42,40 +42,50 @@ function trailUpdateStatusEndpoint(items = [], refresh = false) {
   return `/api/trail-attribute-update/status?${params.toString()}`;
 }
 
+// Presentation groups are shared by badges, totals and filters. Raw API states stay intact.
+function trailStatusGroup(status) {
+  return ({reason_changed:"reason_update",reason_missing:"reason_update",excluded_keep_reason:"excluded",excluded_no_reason:"excluded",reconcile_excluded:"excluded",reconcile_not_excluded:"not_excluded",query_failed:"unconfirmed",not_found:"unconfirmed",pending:"unconfirmed",not_checked:"unconfirmed"})[status] || (["needs_exclusion","reason_update","synced","excluded","not_excluded","querying","unconfirmed"].includes(status) ? status : "unconfirmed");
+}
 function trailUpdateStatusMeta(status = "not_checked") {
   const key = String(status || "not_checked");
   const labels = {
-    reconcile_excluded: ["Trail 已排除 · 待核对", "Trail excluded · reconcile", "is-pending", "仅供核对，不进入提交集合", "Read-only; excluded from submissions"],
-    reconcile_not_excluded: ["Trail 未排除 · 待核对", "Trail not excluded · reconcile", "is-pending", "历史记录不代表当前状态", "Historical membership is not the current state"],
+    reason_update: ["理由待更新", "Update reason", "is-reason", "已排除；本地有新理由可更新或补充", "Already excluded; a local reason can be updated or added"],
+    excluded: ["已排除", "Excluded", "is-excluded", "排除已生效；没有本地新理由，保留远端原文", "Exclusion is active; no new local reason, so keep the remote text"],
+    not_excluded: ["未排除", "Not excluded", "is-not-checked", "远端未排除或未设置标记；核对视图只读", "Remote marker is false or unset; reconciliation is read-only"],
+    unconfirmed: ["无法确认", "Unconfirmed", "is-failed", "查询未完成或失败，请刷新重试", "Not checked or the query failed; refresh to retry"],
+    reconcile_excluded: ["已排除", "Excluded", "is-excluded", "仅供核对，不进入提交集合", "Read-only; excluded from submissions"],
+    reconcile_not_excluded: ["未排除", "Not excluded", "is-not-checked", "历史记录不代表当前状态", "Historical membership is not the current state"],
     querying: ["查询中", "Checking", "is-querying", "等待 Trail 查询", "Waiting for Trail"],
     synced: ["已同步", "Synced", "is-synced", "排除标记与理由一致", "Exclusion and reason match"],
     pending: ["待同步", "Pending", "is-pending", "请刷新以查看具体差异", "Refresh to inspect differences"],
     needs_exclusion: ["待排除", "Awaiting exclusion", "is-pending", "Trail 尚无有效排除标记", "Trail has no active exclusion"],
-    reason_changed: ["理由待更新", "Reason changed", "is-pending", "排除已生效，仅理由不同", "Already excluded; only the reason differs"],
-    reason_missing: ["理由待补充", "Reason missing", "is-pending", "排除已生效，可补充理由", "Already excluded; a reason can be added"],
-    excluded_keep_reason: ["已排除", "Excluded", "is-synced", "本地理由为空，沿用 Trail 理由", "Local reason empty; keep the Trail reason"],
-    excluded_no_reason: ["已排除", "Excluded", "is-synced", "双方理由未填写", "Neither side has a reason"],
+    reason_changed: ["理由待更新", "Update reason", "is-reason", "排除已生效，仅理由不同", "Already excluded; only the reason differs"],
+    reason_missing: ["理由待更新", "Update reason", "is-reason", "排除已生效，可补充理由", "Already excluded; a reason can be added"],
+    excluded_keep_reason: ["已排除", "Excluded", "is-excluded", "本地理由为空，沿用 Trail 理由", "Local reason empty; keep the Trail reason"],
+    excluded_no_reason: ["已排除", "Excluded", "is-excluded", "双方理由未填写", "Neither side has a reason"],
     not_found: ["无法确认", "Unconfirmed", "is-not-found", "Trail 未返回此 Issue，请刷新重试", "Issue missing from Trail; refresh to retry"],
     query_failed: ["无法确认", "Unconfirmed", "is-failed", "查询失败或预览过期，请刷新重试", "Query failed or preview expired; refresh to retry"],
     not_checked: ["未检查", "Not checked", "is-not-checked", "请刷新查询 Trail", "Refresh to check Trail"],
   };
-  const [zh, en, className, detailZh, detailEn] = labels[key] || labels.not_checked;
-  return { key, label: uiText(zh, en), className, detail: uiText(detailZh, detailEn) };
+  const [, , , detailZh, detailEn] = labels[key] || labels.not_checked;
+  const groupKey = trailStatusGroup(key);
+  const group = labels[groupKey] || labels.not_checked;
+  return { key:groupKey, label:uiText(group[0], group[1]), className:group[2], detail:uiText(detailZh, detailEn) };
 }
 
 function trailUpdateStatusCellMarkup(status = "not_checked") {
   const meta = trailUpdateStatusMeta(status);
-  return `<span class="trail-update-state-badge ${meta.className}" title="${escapeHtml(meta.detail)}">${escapeHtml(meta.label)}</span><small>${escapeHtml(meta.detail)}</small>`;
+  return `<span class="trail-update-state-badge ${meta.className}" title="${escapeHtml(meta.detail)}">${escapeHtml(meta.label)}</span>`;
 }
 
 function trailUpdateStatusSummary(data, items) {
-  items = (items || data?.items || []).filter(item => !item.readonly);
+  items = (items || data?.items || []);
   const counts = {};
   // A locally filtered/paged table must project its own status distribution;
   // the server aggregate remains useful only when callers have no item list.
   if (Array.isArray(items)) {
     items.forEach((item) => {
-      const key = trailReasonState(item);
+      const key = trailStatusGroup(trailReasonState(item));
       counts[key] = Number(counts[key] || 0) + 1;
     });
   } else {
@@ -83,12 +93,12 @@ function trailUpdateStatusSummary(data, items) {
     if (provided && typeof provided === "object") {
       Object.entries(provided).forEach(([key, value]) => {
         const count = Number(value || 0);
-        if (count > 0) counts[key] = count;
+        if (count > 0) counts[trailStatusGroup(key)] = (counts[trailStatusGroup(key)] || 0) + count;
       });
     }
   }
   const entries = Object.entries(counts).filter(([, count]) => count > 0);
-  const priority = ["querying", "query_failed", "not_found", "not_checked", "needs_exclusion", "reason_changed", "reason_missing", "pending", "synced", "excluded_keep_reason", "excluded_no_reason"];
+  const priority = ["needs_exclusion", "reason_update", "synced", "excluded", "not_excluded", "querying", "unconfirmed"];
   const primaryKey = priority.find((key) => counts[key]) || "not_checked";
   const primary = trailUpdateStatusMeta(primaryKey);
   const total = Object.values(counts).reduce((sum, count) => sum + Number(count || 0), 0);
@@ -109,7 +119,7 @@ function trailUpdateStatusSummary(data, items) {
       const percent = total ? Math.round((Number(count) / total) * 1000) / 10 : 0;
       return `<div class="analysis-review-status-legend-item trail-status-${escapeHtml(meta.key)}" data-trail-update-status-key="${escapeHtml(meta.key)}" role="listitem" tabindex="0" aria-label="${escapeHtml(`${meta.label}: ${count}, ${percent}%. ${meta.detail}`)}" title="${escapeHtml(meta.detail)}"><span class="analysis-review-status-swatch"></span><span class="analysis-review-status-legend-copy"><strong>${escapeHtml(meta.label)}</strong><small>${count} · ${percent}%</small></span></div>`;
     }).join("");
-    statusElement.innerHTML = `${trailReasonScopeSummary(items || data?.items || [])}<div class="analysis-review-status-bar" role="img" aria-label="${escapeHtml(detail || primary.label)}">${segments}</div><div class="analysis-review-status-legend" role="list">${legend}</div>`;
+    statusElement.innerHTML = `<div class="analysis-review-status-bar" role="img" aria-label="${escapeHtml(detail || primary.label)}">${segments}</div><div class="analysis-review-status-legend" role="list">${legend}</div>`;
     statusElement.className = "analysis-review-status-chart analysis-review-status-visual trail-update-status-chart trail-update-status-visual trail-update-status-summary";
     statusElement.title = detail;
     statusElement.setAttribute("aria-label", detail || primary.label);
