@@ -865,3 +865,14 @@
  .version-gallery-filters {width:100%;margin-left:0}
  .version-gallery-filters > .ui-select {flex:1 1 130px;width:auto;min-width:0}
 }
+
+@media (max-width:700px) {
+ .case-label-final-result > div { flex-wrap:nowrap; gap:4px; }
+ .case-label-final-result :is(.text-link,#caseLabelGoAdjudication) { min-height:44px; min-width:44px; padding:2px; }
+ .case-label-final-result .case-label-status { padding:3px 5px; gap:4px; font-size:11px; }
+ .case-exclusion-section .case-exclusion-controls { gap:4px; }
+ .case-exclusion-section h2 { font-size:11px; }
+ .case-exclusion-section .review-exclude-toggle { min-height:44px; gap:4px; padding:2px 3px; }
+ .case-exclusion-section .review-exclude-toggle strong { font-size:11px; }
+ .case-exclusion-section :is(#caseExclusionOpen,.case-exclusion-pending) { min-height:44px; min-width:44px; padding:2px 3px; font-size:10px; }
+}

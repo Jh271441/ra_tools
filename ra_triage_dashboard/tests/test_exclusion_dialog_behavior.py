@@ -14,6 +14,9 @@ const task={id:'task-case',can_adjudicate_exclusion:true,resolution:{heads:[{id:
 const data={issue_id:'cn1',label_cases:[task],label_state:{state:'pending'}};
 Object.assign(global,{$:key=>nodes[key]||null,state:{caseLabeling:{issueId:'cn1',dirty:true,pendingImages:['keep'],caseData:data}},hasDashboardWriteRole:()=>write,isPageContextCurrent:()=>current,selectedBaselineQueryValue:()=> '0508',uiText:(z,e)=>e,showToast(){},acknowledgeLocalChange(){},withBaselineQuery:p=>p,enhanceNativeUiSelect(){},refreshCaseLabelDecisionLanguage(){},api:async(p,o)=>{if(o){posts.push(JSON.parse(o.body));if(block)await new Promise(r=>release=r);if(fail)throw Error('409 source changed');return {change_revision:2}}return {label_cases:[task],label_state:{state:'resolved'},exclusion_summary:{is_excluded:false}}}});
 vm.runInThisContext(fs.readFileSync(process.argv[1],'utf8'));
+assert.equal(caseExclusionNeedsDecision(data),true);
+assert.equal(caseExclusionNeedsDecision({label_cases:[{resolution:{state:'resolved',method:'adjudication',result_revision:{id:3,is_excluded:false},heads:task.resolution.heads}}]}),false);
+assert.equal(caseExclusionNeedsDecision({label_cases:[{resolution:{heads:[{id:1,is_excluded:true},{id:2,is_excluded:true}]}}]}),false);
 function reset(){caseExclusionUi.context={caseData:data,key:'k',baselines:'0508',pageContext:{},draft:{}};}
 (async()=>{
  reset();await saveCaseExclusionDecision();assert.equal(posts.length,0); // explicit confirmation required

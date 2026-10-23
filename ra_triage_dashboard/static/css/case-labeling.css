@@ -227,3 +227,18 @@ html[data-color-theme="light"] .case-label-status[data-state="resolved"] { color
 #caseLabelDecisionRationale { min-height:88px; }
 
 #caseLabelDecisionDialog .case-label-decision-sources .case-decision-vote { display:block; }
+
+/* Label result and adjudication share one compact row. Exclusion is a peer section. */
+.case-label-final-result { padding:4px 0 8px; margin-bottom:8px; }
+.case-label-final-result > div { flex-wrap:nowrap; gap:6px; min-width:0; }
+.case-label-final-result :is(strong,.case-label-status,.text-link) { white-space:nowrap; }
+.case-label-final-result strong { font-size:11px; }
+.case-label-final-result .text-link { flex-shrink:0; min-height:32px; padding:2px 4px; font-size:11px; }
+.case-label-final-result #caseLabelGoAdjudication { min-height:32px; }
+.case-exclusion-section .case-exclusion-controls { display:flex; flex-wrap:nowrap; gap:6px; min-width:0; }
+.case-exclusion-section h2 { flex:0 0 auto; margin:0; font-size:12px; }
+.case-exclusion-section .review-exclude-toggle { display:flex; flex:1 1 auto; justify-content:flex-start; min-height:32px; padding:2px 6px; border:0; background:transparent; }
+.case-exclusion-section .review-exclude-toggle span { flex:1 1 auto; }
+.case-exclusion-section #caseExclusionOpen { min-height:32px; padding:2px 4px; font-size:11px; }
+.case-exclusion-pending { flex-shrink:0; min-height:32px; padding:2px 5px; border:1px solid var(--line); border-radius:5px; color:var(--warn); background:var(--overlay); font-size:11px; white-space:nowrap; }
+.case-exclusion-section .case-exclusion-inline-note { display:none; }

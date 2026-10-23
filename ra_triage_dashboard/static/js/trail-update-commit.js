@@ -249,8 +249,8 @@ function openTrailUpdateConfirm({ mode = "review", data = {} } = {}) {
   const listCount = $("#trailUpdateConfirmListCount");
   const shownItems = data?.mode === "selected_exclusions" ? items : items.slice(0, 12);
   if (listCount) listCount.textContent = uiText(
-    `${count > shownItems.length ? `共 ${count} 条，展示前 ${shownItems.length} 条` : `共 ${count} 条`}${skippedSyncedCount ? `；已同步跳过 ${skippedSyncedCount} 条` : ""}`,
-    `${count > shownItems.length ? `${count} total · first ${shownItems.length} shown` : `${count} item(s)`}${skippedSyncedCount ? `; ${skippedSyncedCount} synced item(s) skipped` : ""}`
+    `${count > shownItems.length ? `共 ${count} 条，展示前 ${shownItems.length} 条` : `共 ${count} 条`}${skippedSyncedCount ? `；无需变更，跳过 ${skippedSyncedCount} 条` : ""}`,
+    `${count > shownItems.length ? `${count} total · first ${shownItems.length} shown` : `${count} item(s)`}${skippedSyncedCount ? `; ${skippedSyncedCount} unchanged item(s) skipped` : ""}`
   );
   if (list) {
     list.innerHTML = shownItems.length

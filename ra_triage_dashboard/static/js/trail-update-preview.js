@@ -227,12 +227,12 @@ function trailIssueHistoryStatusMeta(status = "pending") {
   const key = String(status || "pending");
   const values = {
     pending: ["待提交", "Pending", "is-pending"],
-    completed: ["已同步", "Synced", "is-success"],
-    synced: ["已同步", "Synced", "is-success"],
+    completed: ["已排除", "Excluded", "is-success"],
+    synced: ["已排除", "Excluded", "is-success"],
     unknown: ["结果待确认", "Unconfirmed outcome", "is-warning"],
     partial: ["部分成功", "Partial", "is-warning"],
     failed: ["失败", "Failed", "is-error"],
-    trail_synced_not_in_dashboard: ["Trail 已同步（看板外）", "Trail synced (outside dashboard)", "is-warning"],
+    trail_synced_not_in_dashboard: ["已排除（看板外）", "Excluded (outside dashboard)", "is-warning"],
   };
   const value = values[key] || values.pending;
   return { label: uiText(value[0], value[1]), className: value[2] };

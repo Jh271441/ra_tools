@@ -44,25 +44,25 @@ function trailUpdateStatusEndpoint(items = [], refresh = false) {
 
 // Presentation groups are shared by badges, totals and filters. Raw API states stay intact.
 function trailStatusGroup(status) {
-  return ({reason_changed:"reason_update",reason_missing:"reason_update",excluded_keep_reason:"excluded",excluded_no_reason:"excluded",reconcile_excluded:"excluded",reconcile_not_excluded:"not_excluded",query_failed:"unconfirmed",not_found:"unconfirmed",pending:"unconfirmed",not_checked:"unconfirmed"})[status] || (["needs_exclusion","reason_update","synced","excluded","not_excluded","querying","unconfirmed"].includes(status) ? status : "unconfirmed");
+  return ({reason_changed:"reason_update",reason_missing:"reason_update",excluded_keep_reason:"reason_update",excluded_no_reason:"reason_update",synced:"excluded",reconcile_excluded:"excluded",reconcile_not_excluded:"not_excluded",query_failed:"unconfirmed",not_found:"unconfirmed",pending:"unconfirmed",not_checked:"unconfirmed"})[status] || (["needs_exclusion","reason_update","synced","excluded","not_excluded","querying","unconfirmed"].includes(status) ? status : "unconfirmed");
 }
 function trailUpdateStatusMeta(status = "not_checked") {
   const key = String(status || "not_checked");
   const labels = {
-    reason_update: ["理由待更新", "Update reason", "is-reason", "已排除；本地有新理由可更新或补充", "Already excluded; a local reason can be updated or added"],
-    excluded: ["已排除", "Excluded", "is-excluded", "排除已生效；没有本地新理由，保留远端原文", "Exclusion is active; no new local reason, so keep the remote text"],
+    reason_update: ["理由待更新", "Reason needs update", "is-reason", "排除已生效；理由缺失或两端不一致", "Exclusion is active; the reason is missing or differs"],
+    excluded: ["已排除", "Excluded", "is-synced", "排除已生效，理由已核对", "Exclusion is active and the reason has been checked"],
     not_excluded: ["未排除", "Not excluded", "is-not-checked", "远端未排除或未设置标记；核对视图只读", "Remote marker is false or unset; reconciliation is read-only"],
     unconfirmed: ["无法确认", "Unconfirmed", "is-failed", "查询未完成或失败，请刷新重试", "Not checked or the query failed; refresh to retry"],
     reconcile_excluded: ["已排除", "Excluded", "is-excluded", "仅供核对，不进入提交集合", "Read-only; excluded from submissions"],
     reconcile_not_excluded: ["未排除", "Not excluded", "is-not-checked", "历史记录不代表当前状态", "Historical membership is not the current state"],
     querying: ["查询中", "Checking", "is-querying", "等待 Trail 查询", "Waiting for Trail"],
-    synced: ["已同步", "Synced", "is-synced", "排除标记与理由一致", "Exclusion and reason match"],
+    synced: ["已排除", "Excluded", "is-synced", "排除标记与理由一致", "Exclusion and reason match"],
     pending: ["待同步", "Pending", "is-pending", "请刷新以查看具体差异", "Refresh to inspect differences"],
     needs_exclusion: ["待排除", "Awaiting exclusion", "is-pending", "Trail 尚无有效排除标记", "Trail has no active exclusion"],
     reason_changed: ["理由待更新", "Update reason", "is-reason", "排除已生效，仅理由不同", "Already excluded; only the reason differs"],
     reason_missing: ["理由待更新", "Update reason", "is-reason", "排除已生效，可补充理由", "Already excluded; a reason can be added"],
-    excluded_keep_reason: ["已排除", "Excluded", "is-excluded", "本地理由为空，沿用 Trail 理由", "Local reason empty; keep the Trail reason"],
-    excluded_no_reason: ["已排除", "Excluded", "is-excluded", "双方理由未填写", "Neither side has a reason"],
+    excluded_keep_reason: ["理由待更新", "Reason needs update", "is-reason", "本地理由缺失，待核对原始来源；Trail 原文保留", "Local reason missing; verify its original source. The Trail text is preserved"],
+    excluded_no_reason: ["理由待更新", "Reason needs update", "is-reason", "本地和 Trail 均缺少排除理由，待补充", "Both local and Trail exclusion reasons are missing"],
     not_found: ["无法确认", "Unconfirmed", "is-not-found", "Trail 未返回此 Issue，请刷新重试", "Issue missing from Trail; refresh to retry"],
     query_failed: ["无法确认", "Unconfirmed", "is-failed", "查询失败或预览过期，请刷新重试", "Query failed or preview expired; refresh to retry"],
     not_checked: ["未检查", "Not checked", "is-not-checked", "请刷新查询 Trail", "Refresh to check Trail"],

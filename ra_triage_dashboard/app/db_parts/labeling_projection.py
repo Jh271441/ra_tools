@@ -63,6 +63,41 @@ class LabelingProjectionMixin:
                 }
         return contexts
 
+    def legacy_exclusion_reason_sources(self, revision_ids):
+        """Read exact migrated exclusion notes; never rewrite a vote or infer older text."""
+        result = {}
+        ids = sorted({int(value) for value in revision_ids if value})
+        with self.connect() as conn:
+            for offset in range(0, len(ids), 400):
+                batch = ids[offset:offset + 400]
+                if not batch:
+                    continue
+                rows = conn.execute(
+                    f"""SELECT r.id AS revision_id, a.id AS source_annotation_id,
+                               a.note, a.author, a.created_at
+                        FROM label_revisions r
+                        JOIN label_cases c ON c.id = r.label_case_id
+                        JOIN annotations a ON a.id = r.source_annotation_id
+                        WHERE r.id IN ({', '.join('?' for _ in batch)})
+                          AND r.revision_kind = 'legacy' AND r.is_excluded = TRUE
+                          AND a.is_excluded = TRUE AND a.issue_id = c.issue_id
+                          AND lower(a.author) = lower(r.author)
+                          AND trim(COALESCE(r.rationale, '')) = ''
+                          AND trim(COALESCE(a.note, '')) <> ''
+                          AND EXISTS (SELECT 1 FROM model_review_revisions m
+                                      WHERE m.legacy_annotation_id = a.id AND m.reason = a.note)
+                    """, batch,
+                ).fetchall()
+                for row in rows:
+                    result[int(row["revision_id"])] = {
+                        "kind": "legacy_exclusion_note", "revision_id": int(row["revision_id"]),
+                        "source_annotation_id": int(row["source_annotation_id"]),
+                        "author": str(row["author"] or ""),
+                        "original_created_at": str(row["created_at"] or ""),
+                        "note": str(row["note"] or "").strip(),
+                    }
+        return result
+
     def case_exclusion_candidate_rows(self, *, baseline_scopes, model_run_id=""):
         """Current Case votes for the read-only exclusion preview, paged by Issue."""
         rows = []
@@ -71,11 +106,17 @@ class LabelingProjectionMixin:
             result = self.list_cases(baseline_scopes=baseline_scopes, model_run_id=model_run_id, page=page, page_size=400)
             items = result["items"]
             projections = self.project_issue_exclusions([item["issue_id"] for item in items])
+            restored = self.legacy_exclusion_reason_sources(
+                projection["revision"].get("id") for projection in projections.values()
+                if projection["is_excluded"] and not str(projection["revision"].get("rationale") or "").strip()
+            )
             for item in items:
                 projection = projections.get(item["issue_id"])
                 if projection is None or (model_run_id and not item["prediction"].get("model_run_id")):
                     continue
                 revision = projection["revision"]
+                original = restored.get(revision.get("id"), {})
+                reason = str(revision.get("rationale") or "") or original.get("note", "")
                 rows.append({**item, "case_exclusion": {
                     "id": None, "review_domain": "case_label",
                     "is_excluded": projection["is_excluded"],
@@ -88,9 +129,10 @@ class LabelingProjectionMixin:
                         "original_created_at": None if revision.get("author_source") == "migration_reason_restore" else revision.get("created_at"),
                         "supersedes_id": revision.get("supersedes_id"),
                         "source_annotation_id": revision.get("source_annotation_id"),
+                        **{key:value for key,value in original.items() if key != "note"},
                     },
                     "review_status": "reviewed", "author": revision.get("author", ""),
-                    "created_at": revision.get("created_at", ""), "note": revision.get("rationale", ""),
+                    "created_at": revision.get("created_at", ""), "note": reason,
                     "tags": revision.get("tags", []), "missing_evidence": revision.get("evidence_gaps", []),
                 }})
             if page * 400 >= result["total"]:

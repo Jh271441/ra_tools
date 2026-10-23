@@ -38,6 +38,8 @@ readonly.trail_detail.state='excluded_no_reason';readonly.trail_detail.trail_sho
 lang='en';assert.equal(trailUpdateStatusMeta(trailReasonState(readonly)).label,"Excluded");
 assert.match(trailUpdateStatusMeta(trailReasonState(readonly)).detail,/Read-only/);
 assert.match(trailReasonSummaryMarkup(readonly),/No reason provided/);
+const restoredMarkup=trailReasonComparisonMarkup({...pending,reason_source:{kind:'legacy_exclusion_note',author:'alice',source_annotation_id:81,revision_id:99,original_created_at:'2026-09-18',created_at:'2026-10-23'}},true);
+assert.match(restoredMarkup,/Original exclusion note/);assert.match(restoredMarkup,/Original Review #81/);assert.match(restoredMarkup,/2026-09-18/);assert.doesNotMatch(restoredMarkup,/Restored 2026-10-23/);
 lang='zh';assert.equal(trailUpdateStatusMeta(trailReasonState(readonly)).label,"已排除");
 assert.match(trailUpdateStatusMeta(trailReasonState(readonly)).detail,/仅供核对/);
 assert.notEqual(trailRowKey(pending),trailRowKey({...pending,baseline_id:'0821'}));

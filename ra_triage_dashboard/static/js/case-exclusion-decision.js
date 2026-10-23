@@ -8,6 +8,14 @@ function caseExclusionVotes(data) {
     return votes.filter(vote => vote.id).map(vote => ({...vote, caseId:item.id, taskName:item.task_name || (item.task_id ? uiText("任务标注", "Task labels") : uiText("任务外标注", "Independent label")), adjudicated:r.state === "resolved" && r.method === "adjudication"}));
   });
 }
+function caseExclusionNeedsDecision(data) {
+  const votes = caseExclusionVotes(data);
+  return new Set(votes.map(vote => Boolean(vote.is_excluded))).size > 1;
+}
+function caseExclusionDecisionBadge(data) {
+  if (!caseExclusionNeedsDecision(data)) return "";
+  return `<button type="button" class="case-exclusion-pending" id="caseExclusionPending" title="${uiText("排除意见存在分歧，查看来源并裁决", "Exclusion votes disagree; inspect the sources and decide")}" aria-haspopup="dialog">${uiText("待裁决", "Pending")}</button>`;
+}
 function caseExclusionText(value) {
   return value === true ? uiText("排除", "Exclude") : value === false ? uiText("不排除", "Do not exclude") : uiText("未提交意见", "No opinion submitted");
 }
@@ -24,7 +32,7 @@ function caseExclusionMismatchText(data) {
 }
 function caseExclusionSummaryMarkup(data) {
   const mismatch = caseExclusionMismatchText(data);
-  return `<div id="caseExclusionSummary" class="case-exclusion-entry"><button type="button" class="history-inline-button" id="caseExclusionOpen" aria-haspopup="dialog" aria-label="${uiText("查看排除详情", "View exclusion details")}">${uiText("排除详情", "Exclusion details")}</button>${mismatch ? `<small class="case-exclusion-inline-note">${escapeHtml(mismatch)}</small>` : ""}</div>`;
+  return `<div id="caseExclusionSummary" class="case-exclusion-entry">${caseExclusionDecisionBadge(data)}<button type="button" class="history-inline-button" id="caseExclusionOpen" aria-haspopup="dialog" aria-label="${uiText("查看排除详情", "View exclusion details")}">${uiText("排除详情", "Exclusion details")}</button>${mismatch ? `<small class="case-exclusion-inline-note">${escapeHtml(mismatch)}</small>` : ""}</div>`;
 }
 function caseExclusionDetailsMarkup(data) {
   const votes = caseExclusionVotes(data);
@@ -80,6 +88,7 @@ function refreshCaseExclusionSummary() {
   const focused = document.activeElement?.id === "caseExclusionOpen";
   node.outerHTML = caseExclusionSummaryMarkup(data);
   $("#caseExclusionOpen")?.addEventListener("click", () => openCaseExclusionDetails(data));
+  $("#caseExclusionPending")?.addEventListener("click", () => openCaseExclusionDetails(data));
   if (focused) $("#caseExclusionOpen")?.focus({preventScroll:true});
   const dialog = $("#caseExclusionDetailsDialog"), c = caseExclusionUi.details;
   if (!dialog?.open || !c) return;
