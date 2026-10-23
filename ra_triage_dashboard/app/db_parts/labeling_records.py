@@ -260,6 +260,13 @@ class LabelingRecordsMixin:
             and (any(head.get("is_excluded") for head in resolution["heads"])
                  or bool(((resolution.get("adjudication") or {}).get("result") or {}).get("is_excluded")))
         )
+        result["can_adjudicate"] = bool(
+            task and not task["legacy_read_only"]
+            and str(task["lifecycle"] or "active") == "active"
+            and str(task["purpose"] or "labeling") == "labeling"
+            and resolution.get("state") in {"conflict", "stale"}
+            and resolution.get("heads")
+        )
         attachments: dict[int, list[dict[str, Any]]] = defaultdict(list)
         for attachment in attachment_rows:
             attachments[int(attachment["revision_id"])].append(

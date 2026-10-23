@@ -25,6 +25,7 @@ Object.assign(global,{document:{activeElement:null},$:key=>nodes[key]||null,uiTe
  api:async(path,opts)=>{if(opts){posts.push(JSON.parse(opts.body));if(pendingResolve)await new Promise(resolve=>pendingResolve(resolve));if(fail)throw Error('409 source changed');return {ok:true};}return {label_state:{state:'resolved'}};}
 });
 vm.runInThisContext(fs.readFileSync(process.argv[1],'utf8'));
+vm.runInThisContext(fs.readFileSync(require('path').join(require('path').dirname(process.argv[1]),'case-exclusion-decision.js'),'utf8'));
 function context(){caseLabelDecisionUi.context={key:'key',baselines:'0508',pageContext:{},caseData:{issue_id:'cn1',label_state:{source_fingerprint:'fp',sources:[],decision:{id:7}}}};}
 (async()=>{
  context();fail=true;await adjudicateIssueLabel();

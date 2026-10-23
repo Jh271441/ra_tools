@@ -412,10 +412,10 @@ function safeSameOriginAssetUrl(url) {
   }
 }
 
-function labelBadge(label, fallback = "—") {
+function labelBadge(label, fallback = "—", displayLabel = null) {
   const actual = label || "";
   const className = MODEL_LABELS.includes(actual) ? `label-${actual}` : "label-empty";
-  return `<span class="label-badge ${className}">${escapeHtml(actual || fallback)}</span>`;
+  return `<span class="label-badge ${className}">${escapeHtml(displayLabel ?? (actual || fallback))}</span>`;
 }
 
 function formatModelConfidence(value) {

@@ -164,81 +164,60 @@ html[data-color-theme="light"] .case-label-status[data-state="resolved"] { color
 .case-label-decision-dialog .icon-button { min-width:44px; min-height:44px; }
 #caseLabelGoAdjudication { min-height:44px; }
 
-/* Local exclusion opinions and explicit task adjudication. */
-.case-exclusion-controls { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:4px 8px; align-items:center; }
-.case-exclusion-controls .review-exclude-toggle { margin:0; min-width:0; min-height:44px; }
-.case-exclusion-entry { display:contents; }
-#caseExclusionOpen { min-height:44px; white-space:nowrap; }
-.case-exclusion-inline-note { grid-column:1 / -1; color:var(--muted); font-size:11px; line-height:1.5; overflow-wrap:anywhere; }
-.case-exclusion-summary { display:grid; gap:12px; min-width:0; font-size:12px; }
-#caseExclusionDetailsDialog .dialog-actions .button { min-height:44px; }
-#caseExclusionDetailsDialog .case-label-decision-body { overflow-x:hidden; }
-.case-exclusion-summary dl { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin:0; }
-.case-exclusion-summary dt { color:var(--muted); font-size:11px; }
-.case-exclusion-summary dd { margin:4px 0 0; font-weight:650; }
-.case-exclusion-summary p, .case-exclusion-preview p { margin:4px 0; line-height:1.6; white-space:pre-wrap; overflow-wrap:anywhere; }
-.case-exclusion-summary > p { color:var(--muted); }
-.case-exclusion-summary summary { cursor:pointer; min-height:44px; padding:10px 0; }
-.case-exclusion-summary .button { justify-self:start; min-height:44px; white-space:normal; }
-.case-exclusion-warning { padding:10px 12px; border-left:3px solid var(--accent); background:var(--accent-soft); font-size:12px; line-height:1.6; margin:0; overflow-wrap:anywhere; }
-.case-exclusion-preview { padding:12px; border:1px solid var(--line); border-radius:8px; font-size:12px; min-width:0; }
-#caseExclusionDialog .case-exclusion-confirm { display:flex; flex-direction:row; align-items:center; gap:10px; min-height:44px; font-size:12px; line-height:1.6; }
-#caseExclusionDialog .case-exclusion-confirm input { flex:0 0 20px; width:20px; height:20px; margin:0; }
-#caseExclusionDialog .ui-select { min-width:0; max-width:100%; }
-#caseExclusionDialog .ui-select-trigger { white-space:normal; min-height:44px; }
-#caseExclusionDialog .case-label-decision-body > p { font-size:12px; line-height:1.6; }
 
-#caseExclusionDialog .case-label-decision-body { gap:12px; }
-#caseExclusionRefresh { justify-self:start; min-height:44px; white-space:normal; }
+/* One status entry in the Issue-tags heading; shared Review exclusion control. */
+#caseLabelingEditor .issue-tag-section > .review-section-heading { flex-wrap:nowrap; gap:8px; }
+#caseLabelingEditor .issue-tag-section > .review-section-heading > div { min-width:0; }
+#caseLabelingEditor .case-label-result-button { flex:0 0 auto; gap:4px; min-height:32px; padding:3px 6px; }
+.case-label-result-button .case-label-status { padding:2px 5px; font-size:11px; border:0; background:transparent; }
+#caseLabelingEditor .issue-tag-section > .review-exclude-toggle { margin-top:10px; }
 
-/* Decision dialogs: visible evidence, quiet status, separate editing area. */
-#caseLabelDecisionDialog { width:min(640px,calc(100vw - 24px)); }
-.case-label-decision-dialog .dialog-heading { padding-bottom:14px; border-bottom:1px solid var(--line); }
-.case-label-decision-dialog .dialog-heading small { color:var(--muted); font-size:11px; }
-.case-label-decision-dialog .dialog-heading h2 { margin-top:4px; font-size:20px; }
-.case-label-decision-dialog .dialog-actions { padding-top:14px; border-top:1px solid var(--line); }
-.case-label-decision-dialog .dialog-actions .button-primary { min-height:48px; }
-#caseLabelDecisionDialog .case-label-decision-body { gap:12px; overflow-x:hidden; }
-#caseLabelDecisionDialog .case-label-decision { padding:0; border:0; background:transparent; gap:12px; }
-#caseLabelDecisionDialog .case-label-decision-heading { padding:10px 12px; border-radius:8px; background:var(--overlay); font-size:12px; }
-.case-decision-section-title, .case-decision-history h3 { margin:0; font-size:12px; color:var(--muted); font-weight:600; }
-#caseLabelDecisionDialog .case-label-decision-sources { grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; align-items:start; }
-#caseLabelDecisionDialog .case-label-decision-sources li { align-content:start; gap:8px; padding:12px; border:1px solid var(--line); border-radius:9px; background:transparent; }
-#caseLabelDecisionDialog .case-decision-source-heading { align-items:center; }
-#caseLabelDecisionDialog .case-decision-source-heading > strong { font-size:12px; }
-.case-decision-source-state { display:inline-flex; padding:3px 7px; border-radius:5px; background:var(--overlay); color:var(--muted); font-size:10px; line-height:1.5; }
-.case-decision-source-state[data-state="pending"], .case-decision-source-state[data-state="stale"], .case-decision-source-state[data-state="conflict"] { color:var(--warn); }
-.case-decision-vote { min-width:0; padding-top:8px; border-top:1px solid var(--line); }
-.case-decision-vote > div { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px; }
-#caseLabelDecisionDialog .case-decision-output { color:var(--text); font-size:12px; }
-.case-decision-vote time { font-size:10px; color:var(--muted); }
-#caseLabelDecisionDialog .case-decision-vote p { color:var(--muted); font-size:12px; line-height:1.6; }
-#caseLabelDecisionDialog [data-decision-task-link] { display:inline-flex; align-items:center; min-height:44px; justify-self:start; font-size:12px; }
+/* Use the same single-column cards and width as annotation history. */
+#caseLabelDecisionDialog { width:min(900px,calc(100vw - 30px)); height:min(86dvh,820px); }
+#caseLabelDecisionDialog .dialog-card { display:flex; flex-direction:column; height:100%; gap:14px; padding:20px; }
+#caseLabelDecisionDialog .dialog-heading { border:0; padding:0; }
+#caseLabelDecisionDialog .dialog-heading h2 { margin:0 0 4px; font-size:20px; }
+.case-decision-heading-actions { display:flex; gap:6px; align-items:center; }
+#caseLabelDecisionDialog .case-label-decision-body { flex:1 1 auto; min-height:0; display:block; overflow:auto; }
+#caseDecisionEvidence { display:grid; gap:14px; }
+.case-decision-records.history-dialog-content { display:grid; gap:10px; overflow:visible; padding:0; }
+.case-decision-source { display:grid; gap:8px; min-width:0; }
+.case-decision-source-heading { display:flex; justify-content:space-between; align-items:center; gap:8px; min-width:0; }
+.case-decision-source-heading strong, .case-decision-source-name { font-size:12px; color:var(--muted); overflow-wrap:anywhere; }
+.case-decision-records .history-head { display:flex; flex-wrap:wrap; align-items:center; }
+.case-decision-records .history-head .history-time { margin-left:auto; }
+.case-decision-records .history-reviewer { overflow-wrap:anywhere; }
+.case-decision-records .history-head > .tag { color:var(--muted); }
+.case-decision-result { border:1px solid var(--line); border-radius:8px; padding:12px; background:var(--overlay); }
+.case-decision-flow { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:22px; list-style:none; margin:0; padding:0; }
+.case-decision-flow li { display:grid; align-content:center; gap:5px; position:relative; min-width:0; padding:10px; border:1px solid var(--line); border-radius:7px; font-size:12px; line-height:1.6; overflow-wrap:anywhere; background:var(--panel); }
+.case-decision-flow li:not(:last-child)::after { content:"→"; position:absolute; left:calc(100% + 5px); top:50%; transform:translateY(-50%); color:var(--accent); }
+.case-decision-flow li strong { color:var(--text); font-size:12px; }
+.case-decision-flow li span { color:var(--muted); font-size:11px; }
+.case-decision-reasons { margin-top:12px; display:grid; gap:6px; }
+.case-decision-reasons p { margin:0; font-size:12px; line-height:1.7; overflow-wrap:anywhere; }
+.case-decision-reasons strong { color:var(--accent); margin-right:10px; }
 .case-decision-history { display:grid; gap:10px; }
-.case-decision-history h3 { display:flex; justify-content:space-between; }
-.case-decision-history ol { margin:0; padding:0; list-style:none; display:grid; gap:8px; }
-.case-decision-history li { border-left:2px solid var(--line); padding:4px 12px; font-size:12px; }
-.case-decision-history li > div { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
-.case-decision-history small { display:block; margin-top:5px; color:var(--muted); font-size:11px; }
-.case-decision-history p { white-space:pre-wrap; overflow-wrap:anywhere; margin:6px 0 0; line-height:1.6; }
-#caseLabelDecisionDialog .case-label-decision-blocked { margin:0; border-left:2px solid var(--warn); padding:8px 10px; background:var(--overlay); line-height:1.6; font-size:12px; }
-.case-decision-edit-title { padding-top:14px; border-top:1px solid var(--line); }
-#caseLabelDecisionDialog .case-label-decision-body > label { font-size:12px; gap:8px; }
-#caseLabelDecisionRationale { min-height:88px; }
-
-#caseLabelDecisionDialog .case-label-decision-sources .case-decision-vote { display:block; }
-
-/* Label result and adjudication share one compact row. Exclusion is a peer section. */
-.case-label-final-result { padding:4px 0 8px; margin-bottom:8px; }
-.case-label-final-result > div { flex-wrap:nowrap; gap:6px; min-width:0; }
-.case-label-final-result :is(strong,.case-label-status,.text-link) { white-space:nowrap; }
-.case-label-final-result strong { font-size:11px; }
-.case-label-final-result .text-link { flex-shrink:0; min-height:32px; padding:2px 4px; font-size:11px; }
-.case-label-final-result #caseLabelGoAdjudication { min-height:32px; }
-.case-exclusion-section .case-exclusion-controls { display:flex; flex-wrap:nowrap; gap:6px; min-width:0; }
-.case-exclusion-section h2 { flex:0 0 auto; margin:0; font-size:12px; }
-.case-exclusion-section .review-exclude-toggle { display:flex; flex:1 1 auto; justify-content:flex-start; min-height:32px; padding:2px 6px; border:0; background:transparent; }
-.case-exclusion-section .review-exclude-toggle span { flex:1 1 auto; }
-.case-exclusion-section #caseExclusionOpen { min-height:32px; padding:2px 4px; font-size:11px; }
-.case-exclusion-pending { flex-shrink:0; min-height:32px; padding:2px 5px; border:1px solid var(--line); border-radius:5px; color:var(--warn); background:var(--overlay); font-size:11px; white-space:nowrap; }
-.case-exclusion-section .case-exclusion-inline-note { display:none; }
+.case-decision-history h3, .case-decision-section-title { margin:0; color:var(--muted); font-size:12px; }
+.case-decision-editor { border-top:1px solid var(--line); margin-top:16px; padding-top:4px; }
+.case-decision-editor > summary { cursor:pointer; min-height:44px; display:flex; align-items:center; color:var(--accent); font-size:13px; }
+.case-decision-editor > summary::before { content:"▸"; margin-right:7px; }
+.case-decision-editor[open] > summary::before { content:"▾"; }
+.case-decision-editor > label { display:grid; gap:8px; margin-block:12px; font-size:12px; min-width:0; }
+.case-decision-editor .quiet-meta { font-size:12px; line-height:1.7; }
+.case-decision-editor .case-exclusion-confirm { display:flex; align-items:center; gap:10px; min-height:44px; }
+.case-exclusion-confirm input { width:18px; height:18px; margin:0; flex:0 0 auto; }
+.case-task-preview { padding:12px; border:1px solid var(--line); border-left:2px solid var(--accent); border-radius:8px; }
+.case-task-preview p { font-size:12px; line-height:1.6; white-space:pre-wrap; overflow-wrap:anywhere; }
+#caseLabelDecisionDialog .ui-select { min-width:0; max-width:100%; }
+#caseLabelDecisionDialog .ui-select-trigger { white-space:normal; min-height:40px; }
+#caseLabelDecisionDialog .dialog-actions { gap:8px; }
+#caseLabelDecisionSubmit[hidden] { display:none; }
+.case-decision-info-dialog { width:min(760px,calc(100vw - 24px)); }
+.case-decision-info-dialog h2 { font-size:20px; }
+.case-decision-rule { display:grid; gap:10px; }
+.case-decision-rule h3 { margin:0; font-size:14px; }
+.case-decision-rule ul { margin:0; padding-left:18px; color:var(--muted); font-size:12px; line-height:1.8; }
+.case-decision-rule li + li { margin-top:5px; }
+html[data-color-theme="light"] .case-decision-records .history-head > span,
+html[data-color-theme="light"] .case-decision-records .history-time { color:var(--muted); }

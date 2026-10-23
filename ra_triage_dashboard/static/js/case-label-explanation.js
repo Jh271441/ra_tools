@@ -37,42 +37,17 @@ function caseLabelExplanation(caseData) {
     output: status === "resolved" ? result.expected_output || "" : ""};
 }
 
-function showCaseLabelExplanation(caseData) {
-  const explanation = caseLabelExplanation(caseData);
-  const statuses = {
-    none: uiText("待完成", "Pending"), pending: uiText("待完成", "Pending"),
-    conflict: uiText("待裁决", "Needs adjudication"), stale: uiText("需重新确认", "Needs confirmation"),
-    resolved: uiText("已形成结论", "Resolved"),
-  };
-  const methods = {single: uiText("单人标注", "Single label"), consensus: uiText("多人一致", "Consensus"), adjudication: uiText("任务内裁决", "Task decision")};
-  const sourceMarkup = explanation.sources.map((source, index) => {
-    const task = (state.caseLabeling.tasks || []).find((item) => item.id === source.task_id);
-    const name = source.task_id ? task?.name || uiText(`任务来源 ${index + 1}`, `Task source ${index + 1}`) : uiText("任务外标注", "Independent label");
-    const counts = source.task_id ? uiText(`已提交 ${Number(source.submitted_count || 0)} / ${Number(source.assigned_count || 0)}`, `Submitted ${Number(source.submitted_count || 0)} / ${Number(source.assigned_count || 0)}`) : "";
-    const revisions = (source.revision_summaries || []).map((revision) => `${revision.author || "—"} · ${revision.expected_output || uiText("待补充", "Incomplete")}`).join(" / ");
-    return `<div class="case-explanation-source"><strong title="${escapeHtml(source.task_id || "")}">${escapeHtml(name)}</strong><span>${escapeHtml(counts)}${counts ? " · " : ""}${escapeHtml(statuses[source.state] || statuses.pending)}</span>${source.state === "resolved" ? `<span>${escapeHtml(methods[source.method] || "")} · ${escapeHtml(source.expected_output || "")}</span>` : ""}${revisions ? `<details><summary>${escapeHtml(uiText("标注记录", "Label records"))}</summary><p>${escapeHtml(revisions)}</p></details>` : ""}</div>`;
-  }).join("") || `<div class="case-explanation-source"><strong>${escapeHtml(uiText("0 个有效来源", "0 valid sources"))}</strong><span>${escapeHtml(uiText("尚无可汇总的标注", "No labels to aggregate yet"))}</span></div>`;
-  let dialog = document.getElementById("caseLabelExplanationDialog");
+function showCaseDecisionInfo() {
+  let dialog = $("#caseDecisionInfoDialog");
   if (!dialog) {
-    dialog = document.createElement("dialog");
-    dialog.id = "caseLabelExplanationDialog";
-    dialog.className = "dialog case-label-explanation-dialog";
-    dialog.setAttribute("aria-labelledby", "caseLabelExplanationTitle");
-    document.body.appendChild(dialog);
-    dialog.addEventListener("click", (event) => { if (event.target === dialog) dialog.close(); });
+    dialog = document.createElement("dialog"); dialog.id = "caseDecisionInfoDialog";
+    dialog.className = "dialog case-label-decision-dialog case-decision-info-dialog";
+    dialog.setAttribute("aria-labelledby","caseDecisionInfoTitle"); document.body.appendChild(dialog);
+    dialog.addEventListener("click", e => {if (e.target === dialog) dialog.close();});
+    dialog.addEventListener("close", () => $("#caseDecisionInfo")?.focus());
   }
-  const decision = caseData.label_state?.decision;
-  const resolved = explanation.status === "resolved";
-  const blocked = ["conflict", "stale"].includes(explanation.status);
-  const currentStep = resolved ? 2 : blocked ? 1 : 0;
-  const steps = [uiText("提交标注", "Submit"), uiText("汇总校验", "Validate"), uiText("形成结论", "Resolve")];
-  const title = statuses[explanation.status] || statuses.pending;
-  dialog.innerHTML = `<div class="dialog-card"><div class="dialog-heading"><div><p class="case-explanation-issue">${escapeHtml(caseData.issue_id)}</p><h2 id="caseLabelExplanationTitle"><span class="case-label-status" data-state="${escapeHtml(explanation.status)}">${escapeHtml(title)}</span></h2></div><button class="icon-button" type="button" data-close-explanation aria-label="${escapeHtml(uiText("关闭", "Close"))}">×</button></div>
-    <ol class="case-explanation-steps" aria-label="${escapeHtml(uiText("当前标注进度", "Current labeling progress"))}">${steps.map((step, index) => `<li class="${index < currentStep || resolved ? "is-done" : index === currentStep ? "is-current" : ""}" ${index === currentStep ? 'aria-current="step"' : ""}><span class="case-explanation-step-dot" aria-hidden="true">${index < currentStep || resolved ? "✓" : index + 1}</span><span>${escapeHtml(step)}</span></li>`).join("")}</ol>
-    <div class="case-explanation-reason"><strong>${escapeHtml(explanation.reason)}</strong>${explanation.output ? labelBadge(explanation.output) : ""}${!resolved ? `<p>${escapeHtml(explanation.next)}</p>` : ""}</div>
-    ${decision ? `<p class="case-explanation-decision">${escapeHtml(uiText("Issue 裁决", "Issue decision"))} #${escapeHtml(decision.id)} · ${escapeHtml(decision.created_by || "")}${decision.stale ? ` · ${escapeHtml(uiText("已过期", "Stale"))}` : ""}</p>` : ""}
-    ${explanation.sources.length ? `<details class="case-explanation-evidence"><summary>${escapeHtml(uiText(`查看 ${explanation.sources.length} 个标注来源`, `View ${explanation.sources.length} sources`))}</summary><div>${sourceMarkup}</div></details>` : ""}
-    <div class="dialog-actions"><button class="button button-quiet" type="button" data-close-explanation>${escapeHtml(uiText("返回标注", "Back to labeling"))}</button></div></div>`;
-  dialog.querySelectorAll("[data-close-explanation]").forEach((button) => button.addEventListener("click", () => dialog.close()));
+  const flow = (label, steps) => `<ol class="case-decision-flow" aria-label="${escapeHtml(label)}">${steps.map(s => `<li>${escapeHtml(s)}</li>`).join("")}</ol>`;
+  dialog.innerHTML = `<div class="dialog-card"><div class="dialog-heading"><h2 id="caseDecisionInfoTitle">${uiText("裁决怎样生效", "How decisions work")}</h2><button type="button" class="icon-button" data-close-decision-info aria-label="${uiText("关闭", "Close")}">×</button></div><div class="case-label-decision-body"><section class="case-decision-rule"><h3>${uiText("分类结论", "Classification")}</h3>${flow(uiText("分类流程", "Classification flow"),[uiText("每人最新意见", "Latest opinion per person"),uiText("同一来源形成结论", "Resolve each source"),uiText("所有来源一致，或 Issue 裁决", "Sources agree, or an Issue decision")])}<ul><li>${uiText("同一来源：有有效任务裁决就采用裁决；否则需相关人员提交完整、分类一致。不使用多数票。", "Within a source, a valid task decision applies. Otherwise, required submissions must be complete and agree. There is no majority vote.")}</li><li>${uiText("不同来源：不会因谁最后提交、谁是管理员就自动覆盖。任务未完成时，先处理任务，再作 Issue 最终分类裁决。", "Across sources, the latest author or an admin does not automatically win. Resolve unfinished tasks before deciding the final Issue classification.")}</li></ul></section><section class="case-decision-rule"><h3>${uiText("排除意见", "Exclusion")}</h3>${flow(uiText("排除流程", "Exclusion flow"),[uiText("各来源有效意见", "Effective source opinions"),uiText("有任一意见要求排除？", "Does any opinion exclude?"),uiText("有：排除；全部否：不排除", "Yes: excluded; all no: included")])}<ul><li>${uiText("排除与不排除并存时显示待裁决，目前仍按排除生效。", "When exclusion opinions disagree, a decision is needed; exclusion currently remains effective.")}</li><li>${uiText("任务裁决只替代该任务。Issue 最终分类裁决不改变排除，也不会撤销其他来源的排除意见。", "A task decision replaces only that task. A final Issue classification decision does not override exclusion in any source.")}</li></ul></section><section class="case-decision-rule"><h3>${uiText("记录与更新", "History and updates")}</h3><ul><li>${uiText("普通保存只更新自己的意见；所有原记录和裁决依据保留。来源版本改变后，相关裁决需重新确认。", "An ordinary save updates your opinion. Original records and decision rationales are kept. Source changes can require a new decision.")}</li><li>${uiText("Tags 与每人的说明分别保留，不用标签数量决定分类。模型复核与 Issue 标注分开记录。", "Tags and individual rationales are retained. Tag counts do not decide classification. Model reviews are separate from Issue labels.")}</li><li>${uiText("本地标注和裁决不修改 GT 或 Trail。Trail 更新需要另行选中、预览和确认；空理由保留远端原文。", "Local labels and decisions do not change GT or Trail. Trail updates require selection, preview and confirmation; an empty reason preserves remote text.")}</li></ul></section></div><div class="dialog-actions"><button type="button" class="button button-quiet" data-close-decision-info>${uiText("知道了", "Got it")}</button></div></div>`;
+  dialog.querySelectorAll("[data-close-decision-info]").forEach(b => b.addEventListener("click", () => dialog.close()));
   if (!dialog.open) dialog.showModal();
 }

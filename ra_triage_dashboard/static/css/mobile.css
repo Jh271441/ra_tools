@@ -795,21 +795,6 @@
 }
 
 @media (max-width:700px) {
-  .case-exclusion-summary dl { grid-template-columns:minmax(0,1fr); gap:8px; }
-  .case-exclusion-summary dl > div { display:flex; justify-content:space-between; gap:12px; align-items:baseline; }
-  .case-exclusion-summary dd { text-align:right; overflow-wrap:anywhere; }
-  #caseExclusionDialog .dialog-actions .button { min-width:0; }
-  #caseExclusionDialog .case-label-decision-body { overflow-x:hidden; }
-}
-
-@media (max-width:700px) {
-  .case-exclusion-controls .review-exclude-toggle { min-height:44px; padding:8px; gap:8px; }
-  .case-exclusion-controls .review-exclude-toggle strong { font-size:12px; }
-  #caseExclusionOpen { min-height:44px; padding:8px; font-size:12px; }
-  #caseExclusionDetailsDialog .dialog-actions .button { min-width:0; }
-}
-
-@media (max-width:700px) {
   #caseLabelDecisionDialog .case-label-decision-sources { grid-template-columns:minmax(0,1fr); }
   .case-label-decision-dialog .dialog-heading { padding-bottom:10px; }
   .case-label-decision-dialog .dialog-actions { padding-top:10px; }
@@ -866,13 +851,23 @@
  .version-gallery-filters > .ui-select {flex:1 1 130px;width:auto;min-width:0}
 }
 
+
+
 @media (max-width:700px) {
- .case-label-final-result > div { flex-wrap:nowrap; gap:4px; }
- .case-label-final-result :is(.text-link,#caseLabelGoAdjudication) { min-height:44px; min-width:44px; padding:2px; }
- .case-label-final-result .case-label-status { padding:3px 5px; gap:4px; font-size:11px; }
- .case-exclusion-section .case-exclusion-controls { gap:4px; }
- .case-exclusion-section h2 { font-size:11px; }
- .case-exclusion-section .review-exclude-toggle { min-height:44px; gap:4px; padding:2px 3px; }
- .case-exclusion-section .review-exclude-toggle strong { font-size:11px; }
- .case-exclusion-section :is(#caseExclusionOpen,.case-exclusion-pending) { min-height:44px; min-width:44px; padding:2px 3px; font-size:10px; }
+  #caseLabelingEditor .case-label-result-button { min-height:44px; min-width:44px; padding:4px 6px; }
+  #caseLabelingEditor .case-label-result-button .case-label-status { white-space:normal; max-width:145px; }
+  #caseLabelDecisionDialog { width:calc(100vw - 12px); max-width:calc(100vw - 12px); height:calc(100dvh - 12px); }
+  #caseLabelDecisionDialog .dialog-card { padding:12px; gap:10px; max-height:calc(100dvh - 14px); }
+  #caseLabelDecisionDialog .dialog-heading { align-items:center; gap:6px; }
+  #caseLabelDecisionDialog .dialog-heading h2 { font-size:18px; }
+  .case-decision-heading-actions { gap:0; }
+  #caseLabelDecisionDialog .ui-select-trigger { min-height:44px; }
+  .case-decision-flow { grid-template-columns:minmax(0,1fr); gap:20px; }
+  .case-decision-flow li { padding:8px 10px; }
+  .case-decision-flow li:not(:last-child)::after { content:"↓"; left:50%; top:100%; transform:translate(-50%,0); line-height:18px; }
+  .case-decision-source-heading { flex-wrap:wrap; }
+  .case-decision-records.history-dialog-content .history-row { padding:10px; }
+  .case-decision-records .history-head .history-time { margin-left:0; }
+  .case-decision-info-dialog .dialog-card { padding:12px; }
+  .case-decision-info-dialog .case-label-decision-body { overflow-x:hidden; }
 }
