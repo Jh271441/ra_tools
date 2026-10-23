@@ -85,7 +85,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-633`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-634`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -1823,19 +1823,16 @@
               <select id="versionDatasetDate" data-label-zh="发生日 · CST" data-label-en="Occurrence date · CST" aria-label="发生日 · CST"><option value="" data-zh="全部日期" data-en="All dates">全部日期</option></select>
               <button class="button button-quiet" id="versionDatasetRefresh" type="button"><span class="ui-lang-zh">刷新</span><span class="ui-lang-en">Refresh</span></button>
             </div>
-            <div class="version-overview-strip"><div class="version-pipeline-summary">
             <div class="version-metrics" id="versionDatasetSummary" aria-live="polite"></div>
             <section class="version-composition" data-label-zh="版本构成" data-label-en="Version composition" aria-label="版本构成"><header><h2><span class="ui-lang-zh">版本构成</span><span class="ui-lang-en">Version composition</span></h2><span class="muted version-counts" id="versionDatasetCounts"></span></header><div class="version-composition-bar" id="versionCompositionBar" role="img"></div><div class="version-composition-legend" id="versionCompositionLegend"></div></section>
-            </div>
             <section class="version-te-panel te-chart-panel" data-label-zh="TE 标注进度" data-label-en="TE labeling progress" aria-label="TE 标注进度">
               <header><h2><span class="ui-lang-zh">TE 标注进度</span><span class="ui-lang-en">TE labeling progress</span><span class="model-review-run-help version-te-info" id="versionTEInfo"><button class="version-te-info-button" id="versionTEInfoButton" type="button" data-label-zh="查看 TE 标注来源" data-label-en="About the TE annotation source" aria-label="查看 TE 标注来源" aria-describedby="versionTEInfoTooltip" aria-expanded="false"><svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="10" r="7.5" stroke="currentColor" stroke-width="1.4"/><path d="M10 9.1v4.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="10" cy="6.3" r=".9" fill="currentColor"/></svg></button><span class="model-review-run-tooltip version-te-info-tooltip" id="versionTEInfoTooltip" role="tooltip"><strong><span class="ui-lang-zh">TE 标注来源</span><span class="ui-lang-en">TE annotation source</span></strong><span class="version-te-info-line"><span class="ui-lang-zh">Trail 的 RA Review Result New（ra_review_result_new），与平台联合复核分开统计。</span><span class="ui-lang-en">Trail RA Review Result New (ra_review_result_new), tracked separately from platform combined review.</span></span><span class="version-te-info-line"><span class="ui-lang-zh">分母：当前范围的低置信＋抽样目标。非空结果（含失败、未接起等）计已标；无观测记未知。</span><span class="ui-lang-en">Denominator: low-confidence and sampled targets in the current scope. Nonempty results, including failure or unanswered, count as filled; missing observations remain unknown.</span></span><span class="version-te-info-line"><span class="ui-lang-zh">按 CST 发生日聚合，晚到数据回填发生日，不代表当天标注量。约 5 分钟采集，页面每 30 秒刷新。</span><span class="ui-lang-en">Dates use occurrence time in CST, including late arrivals, rather than annotation time. Collection runs about every 5 minutes; the page refreshes every 30 seconds.</span></span></span></span></h2><span class="muted" id="versionTESource" role="status"></span></header>
               <div class="version-te-overview">
-                <div class="te-scope-chart"><div class="te-donut" id="versionTEDonut" role="img"><strong id="versionTERate">—</strong><small id="versionTECount"></small></div><div class="te-status-legend" id="versionTEStatusChart"></div></div>
+                <div class="te-scope-chart"><div class="te-donut" id="versionTEDonut" role="img"><strong id="versionTERate">—</strong><small><span class="ui-lang-zh">当前范围</span><span class="ui-lang-en">Current scope</span></small></div><div class="te-status-legend" id="versionTEStatusChart"></div></div>
                 <section class="version-days" id="versionTEDays"><h3><span class="ui-lang-zh">发生日 · CST</span><span class="ui-lang-en">Occurrence date · CST</span></h3><div class="te-daily-chart" id="versionTEDailyChart"></div></section>
                 <div class="version-result-chart" id="versionTEDistribution"></div>
               </div>
             </section>
-            </div>
             <section class="gallery-panel version-gallery">
               <header class="gallery-heading"><form id="versionDatasetSearchForm"><input id="versionDatasetSearch" type="search" placeholder="Issue ID" aria-label="Issue ID" maxlength="128" /><button class="button button-quiet" type="submit"><span class="ui-lang-zh">搜索</span><span class="ui-lang-en">Search</span></button></form><div class="version-gallery-filters"><select id="versionDatasetOwner" data-label-zh="负责人" data-label-en="Assignee" aria-label="负责人"><option value="" data-zh="全部负责人" data-en="All assignees">全部负责人</option></select><select id="versionDatasetReviewStatus" data-label-zh="联合复核状态" data-label-en="Combined review status" aria-label="联合复核状态"><option value="all" data-zh="全部复核状态" data-en="All review states">全部复核状态</option><option value="pending" data-zh="联合待办" data-en="Review pending">联合待办</option><option value="completed" data-zh="联合已完成" data-en="Review completed">联合已完成</option></select><select id="versionDatasetTEStatus" data-label-zh="TE 状态" data-label-en="TE status" aria-label="TE 状态"><option value="all" data-zh="全部 TE 状态" data-en="All TE states">全部 TE 状态</option><option value="unfilled" data-zh="TE 待标" data-en="TE pending">TE 待标</option><option value="filled" data-zh="TE 已标" data-en="TE filled">TE 已标</option><option value="unknown" data-zh="TE 未知" data-en="TE unknown">TE 未知</option></select><select id="versionDatasetMedia" aria-label="Media"><option value="bev">BEV</option><option value="camera">Camera</option></select><select id="versionDatasetSort" data-label-zh="案例排序" data-label-en="Case order" aria-label="案例排序"><option value="added" data-zh="最新入库" data-en="Recently added">最新入库</option><option value="updated" data-zh="最近更新" data-en="Recently updated">最近更新</option><option value="occurred" data-zh="最近发生" data-en="Recently occurred">最近发生</option><option value="issue" data-zh="Issue 编号" data-en="Issue ID">Issue 编号</option></select><a class="button button-quiet" id="versionDatasetExport" hidden><span class="ui-lang-zh">导出 CSV</span><span class="ui-lang-en">Export CSV</span></a></div></header>
               <p id="versionDatasetError" class="muted" role="status"></p>
@@ -2502,7 +2499,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-633`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-634`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

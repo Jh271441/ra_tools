@@ -21,7 +21,7 @@ function clearVersionDatasetMembers(){
   $('#versionDatasetGrid').replaceChildren();$('#versionDatasetPageLabel').textContent='';
   $('#versionDatasetPrev').disabled=true;$('#versionDatasetNext').disabled=true;
   $('#versionDatasetBatches').textContent='';$('#versionDatasetExport').hidden=true;
-  $('#versionTERate').textContent='—';$('#versionTECount').textContent='';$('#versionTESource').textContent=uiText('读取中…','Loading…');
+  $('#versionTERate').textContent='—';$('#versionTESource').textContent=uiText('读取中…','Loading…');
   for(const id of ['versionTEStatusChart','versionTEDistribution','versionTEDailyChart','versionCompositionBar','versionCompositionLegend'])$('#'+id).replaceChildren();
   $('#versionTEDonut').classList.add('is-empty');$('#versionTEDonut').style.setProperty('--te-filled','0%');$('#versionTEDonut').style.setProperty('--te-known','0%');
   $('#versionDatasetDate').disabled=true;
@@ -149,8 +149,7 @@ function versionTEBadge(row){
 function renderVersionComposition(m){
   const c=m.composition;if(!c)return;
   const labels={low:uiText('低置信','Low confidence'),sample:uiText('抽样','Sample'),other:uiText('其他','Other')};
-  $('#versionDatasetCounts').textContent=m.dataset.historical?uiText(`固定 ${c.total}`,`Fixed ${c.total}`):uiText(`已推理 ${c.total}`,`Inferred ${c.total}`);
-  $('#versionDatasetCounts').title=uiText(`待处理 ${c.pending} · 已过滤 ${c.excluded}`,`Pending ${c.pending} · Excluded ${c.excluded}`);
+  $('#versionDatasetCounts').textContent=m.dataset.historical?uiText(`固定目标集 ${c.total}`,`Frozen targets ${c.total}`):uiText(`已推理准入 ${c.total} · 待处理 ${c.pending} · 已过滤 ${c.excluded}`,`Inferred and admitted ${c.total} · Pending ${c.pending} · Excluded ${c.excluded}`);
   const bar=$('#versionCompositionBar');bar.classList.toggle('is-empty',!c.total);
   bar.setAttribute('aria-label',c.groups.map(g=>`${labels[g.key]} ${g.count} (${(100*g.ratio).toFixed(1)}%)`).join(', '));
   bar.innerHTML=c.groups.map(g=>`<i class="version-reason-${g.key}" style="width:${100*g.ratio}%"></i>`).join('');
@@ -162,15 +161,14 @@ function renderVersionTE(m){
   const filled=n.total?100*n.filled/n.total:0,known=n.total?100*(n.filled+n.unfilled)/n.total:0;
   const donut=$('#versionTEDonut');donut.style.setProperty('--te-filled',`${filled}%`);donut.style.setProperty('--te-known',`${known}%`);donut.classList.toggle('is-empty',!n.total);
   donut.setAttribute('aria-label',uiText(`TE 已标 ${n.filled}，共 ${n.total}`,`TE filled ${n.filled} of ${n.total}`));
-  $('#versionTERate').textContent=n.total?`${filled.toFixed(1)}%`:'—';$('#versionTECount').textContent=`${n.filled} / ${n.total}`;
-  $('#versionTEStatusChart').innerHTML=dailyReviewStatusRows(n).map(([key,label,count])=>`<button type="button" class="te-legend-item" data-version-te-status="${key}" aria-pressed="${s.teStatus===key}"><i class="te-swatch te-${key}"></i><span>${label}</span><strong>${count}</strong></button>`).join('');
+  $('#versionTERate').textContent=n.total?`${filled.toFixed(1)}%`:'—';
+  $('#versionTEStatusChart').innerHTML=dailyReviewStatusRows(n).map(([key,label,count])=>`<button type="button" class="te-legend-item" data-version-te-status="${key}" aria-pressed="${s.teStatus===key}"><i class="te-swatch te-${key}"></i><span>${label}</span><strong>${count} / ${n.total}</strong></button>`).join('');
   $('#versionTESource').textContent=`${te.source_status==='ready'?uiText('最近核对','Last checked'):te.source_status==='stale'?uiText('观测过期','Stale observation'):uiText('同步异常 · 未知单列','Sync unavailable · Unknown shown separately')} ${versionDatasetTime(te.last_success_at)} CST${te.observed_changes?uiText(` · 本轮标注变化 ${te.observed_changes.te}`,` · Label changes this check ${te.observed_changes.te}`):''}`;
   $('#versionTESource').classList.toggle('te-warning',te.source_status!=='ready');
   $('#versionTEDistribution').innerHTML=[...te.distribution].sort((a,b)=>b.count-a.count).map(r=>`<div class="version-result-row"><span title="${escapeHtml(String(r.value))}">${escapeHtml(String(r.value))}</span><span class="version-result-track"><i style="width:${n.filled?100*r.count/n.filled:0}%"></i></span><strong>${r.count}</strong></div>`).join('')||`<p class="te-chart-empty">${uiText('暂无已标结果','No filled results')}</p>`;
   $('#versionTEDays').hidden=m.dataset.historical;
-  const dailyMarkup=te.daily.map(day=>{const d=day.summary;return `<button type="button" class="te-day" data-version-date="${escapeHtml(day.date)}" aria-pressed="${day.date===s.date}" aria-label="${escapeHtml(day.date)} · ${d.filled}/${d.total}"><span class="version-day-heading"><span>${escapeHtml(day.date.slice(5).replace('-','/'))}</span><strong>${d.total?(100*d.rate).toFixed(1)+'%':'—'}</strong></span><span class="te-day-stack">${dailyReviewStatusRows(d).map(([k,,count])=>`<i class="te-${k}" style="width:${d.total?100*count/d.total:0}%"></i>`).join('')}</span><small>${d.filled}/${d.total}</small></button>`;}).join('');
-  const dailyChart=$('#versionTEDailyChart');dailyChart.style.setProperty('--version-day-cols',Math.max(1,Math.min(te.daily.length,4)));dailyChart.style.setProperty('--version-mobile-day-cols',Math.max(1,Math.min(te.daily.length,3)));
-  if(dailyChart.innerHTML!==dailyMarkup)dailyChart.innerHTML=dailyMarkup||`<p class="te-chart-empty">${uiText('暂无可用发生日','No occurrence dates available')}</p>`;
+  const dailyMarkup=te.daily.map(day=>{const d=day.summary;return `<button type="button" class="te-day" data-version-date="${escapeHtml(day.date)}" aria-pressed="${day.date===s.date}" aria-label="${escapeHtml(day.date)} · ${d.filled}/${d.total}"><strong>${d.total?(100*d.rate).toFixed(1)+'%':'—'}</strong><span class="te-day-stack">${dailyReviewStatusRows(d).map(([k,,count])=>`<i class="te-${k}" style="height:${100*count/d.total}%"></i>`).join('')}</span><span>${escapeHtml(day.date.slice(5).replace('-','/'))}</span><small>${d.filled}/${d.total}</small></button>`;}).join('');
+  const dailyChart=$('#versionTEDailyChart');if(dailyChart.innerHTML!==dailyMarkup)dailyChart.innerHTML=dailyMarkup||`<p class="te-chart-empty">${uiText('暂无可用发生日','No occurrence dates available')}</p>`;
   const params=new URLSearchParams({mode:s.mode,q:s.query,sort:s.sort,date:s.date,te_status:s.teStatus,revision:m.snapshot_revision,assignee:s.assignee,review_status:s.reviewStatus});
   const exp=$('#versionDatasetExport');exp.hidden=false;exp.href=withBase(`/api/version-datasets/${encodeURIComponent(s.dataset)}/workbench.csv?${params}`);
 }

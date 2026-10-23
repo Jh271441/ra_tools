@@ -1,15 +1,18 @@
 # Version composition and TE progress
 
-The overview uses bounded, content-sized modules instead of stretching charts
-across an ultrawide screen. Pipeline counts and reason composition sit beside the
-TE module on wide screens. Gallery images keep the full available page width.
+The version page follows the established full-width Workbench layout: four
+aggregate metrics in one row, followed by a full-width composition bar and TE
+panel. This restores the original visual hierarchy after the user rejected the
+side-by-side narrow summary and tiny date-tile redesign. Spacing is modestly
+reduced; text and charts retain the original readable scale.
 
-Date buttons use compact horizontal gauges, wrapping into a small grid. Every date
-still shows its own filled/total count and completion ratio and supports filtering.
-Result distribution uses label / short gauge / count rows, displaying normal
-five-result cohorts without nested scrolling. More result values remain scrollable.
-The chart keeps up to 14 dates and includes a selected older date.0821 retains its
-fixed 312 members and has no occurrence-date chart.
+Inside the TE panel, overall progress, occurrence-date vertical bars and result
+distribution share a row on desktop. Dates use natural-width bars rather than
+stretching a single day across its column. The five usual result values fit in
+compact label / gauge / count rows without nested scrolling. Longer date/result
+lists can scroll with native controls. Tablet/mobile layouts wrap existing
+components without document overflow. The chart keeps up to 14 dates and includes
+a selected older date.0821 retains its fixed 312 members with no date chart.
 
 The heading info icon explains source, denominator and update cadence on hover,
 focus or tap. Escape and outside interaction dismiss it. Tooltip position stays
@@ -24,8 +27,9 @@ Design references, checked2026-10-23:
 - [Metabase dashboard width](https://www.metabase.com/docs/latest/dashboards/introduction#dashboard-width): bounded dashboard layouts across different display sizes.
 - [Radix Scroll Area](https://www.radix-ui.com/primitives/docs/components/scroll-area): prefer native scrolling and CSS customization when sufficient.
 
-These references inform layout choices; the page uses the existing Workbench
-components and data contracts.
+These references inform existing metric, gauge and scrolling components. The
+user-requested established Workbench layout takes precedence over the previously
+tried bounded side-by-side overview; no new framework is introduced.
 
 Version composition partitions **inferred, admitted** cases into final enum groups:
 sample first, then low confidence, then other. Pending/excluded cases are separate,
