@@ -3,51 +3,43 @@ import shutil
 import subprocess
 import unittest
 
+
 class IssueDecisionDialogBehaviorTest(unittest.TestCase):
     @unittest.skipUnless(shutil.which('node'), 'Node is required')
-    def test_independent_payload_failures_concurrency_and_navigation(self):
+    def test_complete_payload_conflict_duplicate_guard_and_draft_isolation(self):
         source=Path(__file__).resolve().parents[1]/'static/js/case-label-decision.js'
         script=r'''
 const fs=require('fs'),vm=require('vm'),assert=require('assert/strict');
-let current=true,canWrite=true,fail=false,pendingResolve=null,posts=[];
-const node=(value='')=>({value,disabled:false,hidden:true,setAttribute(){},removeAttribute(){},focus(){}});
-const nodes={
- '#caseLabelDecisionExpectedOutput':node('误触发'), '#caseLabelDecisionRationale':node('decision rationale'),
- '#caseLabelingExpectedOutput':node('正确触发'), '#caseLabelingRationale':node('unsaved label draft'),
- '#caseLabelDecisionSubmit':node(), '#caseLabelDecisionDialog .case-label-decision-error':node(),
- '#caseLabelDecisionDialog':{open:true,close(){this.open=false;rememberCaseLabelDecisionDraft();}}
-};
-Object.assign(global,{document:{activeElement:null},$:key=>nodes[key]||null,uiText:(zh,en)=>en,showToast:()=>{},
- state:{activePage:'labeling',caseLabeling:{issueId:'cn1',dirty:true,caseData:{label_state:{state:'conflict'}},pendingImages:['keep']}},
- enhanceNativeUiSelect:()=>{},hasDashboardWriteRole:()=>canWrite,isPageContextCurrent:()=>current,selectedBaselineQueryValue:()=> '0508',
- EXPECTED_OUTPUT_OPTIONS:[{value:'误触发'},{value:'正确触发'}],acknowledgeLocalChange:()=>{},
- withBaselineQuery:p=>p,caseLabelFinalResultMarkup:()=>'',
- api:async(path,opts)=>{if(opts){posts.push(JSON.parse(opts.body));if(pendingResolve)await new Promise(resolve=>pendingResolve(resolve));if(fail)throw Error('409 source changed');return {ok:true};}return {label_state:{state:'resolved'}};}
+let current=true,write=true,fail=true,posts=[],release,hold=false;
+const input={value:'judge explanation',checked:true};const error={textContent:''};
+const form={querySelectorAll(){return []}};
+Object.assign(global,{document:{},$:key=>key==='#caseLabelingForm'?form:key==='#caseDecisionEditorError'?error:input,
+ state:{caseLabeling:{issueId:'cn1',pendingImages:[],dirty:true,caseData:{label_state:{state:'conflict'}}}},
+ uiText:(z,e)=>e,caseExclusionErrorMessage:e=>e.message,hasDashboardWriteRole:()=>write,isPageContextCurrent:()=>current,
+ selectedBaselineQueryValue:()=> '0508',enhanceDashboardSelects(){},showToast(){},acknowledgeLocalChange(){},
+ caseLabelingFormPayload:()=>({expected_output:'误触发',tags:['tag'],evidence_gaps:[],rationale:'label evidence',is_excluded:false}),
+ caseLabelingOutputValidation:()=>({conflict:false}),
+ api:async(path,opts)=>{posts.push(JSON.parse(opts.body));if(hold)await new Promise(r=>release=r);if(fail)throw Error('409 sources changed');return {decision:{id:8}}}
 });
 vm.runInThisContext(fs.readFileSync(process.argv[1],'utf8'));
-vm.runInThisContext(fs.readFileSync(require('path').join(require('path').dirname(process.argv[1]),'case-exclusion-decision.js'),'utf8'));
-function context(){caseLabelDecisionUi.context={key:'key',baselines:'0508',pageContext:{},caseData:{issue_id:'cn1',label_state:{source_fingerprint:'fp',sources:[],decision:{id:7}}}};}
+function reset(){caseLabelDecisionUi.editor={key:'draft',baselines:'0508',pageContext:{},data:{issue_id:'cn1',label_state:{source_fingerprint:'fp',decision:{id:7}}},adoptedId:2,retained:[],images:[],rationale:'judge explanation',ordinary:{images:['ordinary image'],dirty:true}};}
+let exits=0,refreshes=0;
+exitCaseDecisionEditor=()=>{exits++;caseLabelDecisionUi.editor=null};
+refreshCaseDecisionResult=async()=>{refreshes++};
 (async()=>{
- context();fail=true;await adjudicateIssueLabel();
- assert.equal(posts[0].expected_output,'误触发');assert.equal(posts[0].rationale,'decision rationale');
- assert.equal(posts[0].expected_source_fingerprint,'fp');assert.equal(posts[0].expected_previous_decision_id,7);
- assert.equal(nodes['#caseLabelDecisionDialog'].open,true);assert.match(caseLabelDecisionUi.context.error,/409/);
- assert.equal(caseLabelDecisionUi.drafts.get('key').rationale,'decision rationale');
- assert.equal(state.caseLabeling.dirty,true);assert.deepEqual(state.caseLabeling.pendingImages,['keep']);
- fail=false;let release;pendingResolve=resolve=>release=resolve;posts=[];
- const first=adjudicateIssueLabel();await adjudicateIssueLabel();assert.equal(posts.length,1);
- current=false;state.caseLabeling.issueId='cn2';release();await first;
- assert.equal(state.caseLabeling.caseData.label_state.state,'conflict');
- assert.equal(caseLabelDecisionUi.drafts.has('key'),false);
- assert.equal(nodes['#caseLabelingRationale'].value,'unsaved label draft');
- current=true;pendingResolve=null;state.caseLabeling.issueId='cn1';context();posts=[];
- caseLabelDecisionUi.context.caseData.label_state.sources=[{task_id:'t',state:'conflict'}];
- await adjudicateIssueLabel();assert.equal(posts.length,0);
- context();canWrite=false;await adjudicateIssueLabel();assert.equal(posts.length,0);
- canWrite=true;await adjudicateIssueLabel();assert.equal(posts.length,1);
- assert.equal(state.caseLabeling.caseData.label_state.state,'resolved');assert.equal(state.caseLabeling.dirty,true);
- console.log('Independent decision payload, failure retention, duplicate guard, navigation ownership and main draft preservation passed');
-})().catch(error=>{console.error(error);process.exitCode=1});
+ reset();await adjudicateIssueLabel();
+ assert.equal(posts[0].full_result,true);assert.equal(posts[0].is_excluded,false);
+ assert.equal(posts[0].label_rationale,'label evidence');assert.equal(posts[0].rationale,'judge explanation');
+ assert.equal(posts[0].adopted_revision_id,2);assert.equal(posts[0].expected_source_fingerprint,'fp');assert.equal(posts[0].expected_previous_decision_id,7);
+ assert.match(error.textContent,/409/);assert.equal(exits,0);assert.equal(caseLabelDecisionUi.drafts.get('draft').rationale,'judge explanation');
+ assert.deepEqual(caseLabelDecisionUi.editor.ordinary.images,['ordinary image']);
+ fail=false;hold=true;posts=[];const first=adjudicateIssueLabel();await adjudicateIssueLabel();assert.equal(posts.length,1);release();await first;
+ assert.equal(exits,1);assert.equal(refreshes,1);assert.equal(caseLabelDecisionUi.drafts.has('draft'),false);
+ hold=false;reset();write=false;posts=[];await adjudicateIssueLabel();assert.equal(posts.length,0);
+ write=true;current=false;await adjudicateIssueLabel();assert.equal(posts.length,0);
+ current=true;input.checked=false;await adjudicateIssueLabel();assert.equal(posts.length,0);
+ input.checked=true;input.value='';await adjudicateIssueLabel();assert.equal(posts.length,0);
+})().catch(e=>{console.error(e);process.exitCode=1});
 '''
         result=subprocess.run(['node','-e',script,str(source)],capture_output=True,text=True)
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)

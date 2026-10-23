@@ -299,7 +299,7 @@ function bindReviewDraftLifecycle() {
   window.__raTriageReviewDraftBound = true;
   window.addEventListener("beforeunload", (event) => {
     if (state.reviewFormDirty && state.selectedCase) persistReviewDraft(state.selectedCase);
-    if (state.backgroundCaseUploads?.size) {
+    if (state.backgroundCaseUploads?.size || (typeof caseLabelDecisionUi !== "undefined" && (caseLabelDecisionUi.saving || caseLabelDecisionUi.editor || caseLabelDecisionUi.drafts.size))) {
       event.preventDefault();
       event.returnValue = "";
     }

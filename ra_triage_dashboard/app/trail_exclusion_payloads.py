@@ -79,7 +79,7 @@ def build_review_exclusion_payload(
         }
         items.append(
             {
-                **({"case_label_source": {"revision_ids": annotation["label_revision_ids"]}} if "label_revision_ids" in annotation else {}),
+                **({"case_label_source": {"revision_ids": annotation["label_revision_ids"], **({"decision_id": annotation["decision_id"]} if annotation.get("decision_id") else {})}} if "label_revision_ids" in annotation else {}),
                 "issue_id": issue_id,
                 "baseline_id": baseline_by_scope.get(as_text(row.get("baseline_scope")), ""),
                 "baseline_scope": as_text(row.get("baseline_scope")),

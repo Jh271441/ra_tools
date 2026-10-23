@@ -378,7 +378,10 @@ class DatabaseCommentsMixin:
                     (SELECT COALESCE(SUM(size_bytes), 0) FROM review_attachments) +
                     (SELECT COALESCE(SUM(size_bytes), 0) FROM comment_attachments) +
                     (SELECT COALESCE(SUM(size_bytes), 0) FROM label_attachments
-                     WHERE source_review_attachment_id IS NULL)
+                     WHERE source_review_attachment_id IS NULL) +
+                    (SELECT COALESCE(SUM(a.size_bytes), 0) FROM issue_decision_attachments a
+                     WHERE NOT EXISTS (SELECT 1 FROM label_attachments l WHERE l.stored_name=a.stored_name)
+                       AND NOT EXISTS (SELECT 1 FROM review_attachments r WHERE r.stored_name=a.stored_name))
                     AS total
                 """
             ).fetchone()

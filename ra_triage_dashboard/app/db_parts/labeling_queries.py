@@ -267,6 +267,7 @@ class LabelingQueriesMixin:
                         preloaded_cases=cases_by_issue,
                     )
                 )
+        task_exclusions = self.project_issue_exclusions([str(row["issue_id"]) for row in rows]) if task else {}
         projected: list[dict[str, Any]] = []
         for row in rows:
             cases = cases_by_issue.get(str(row["issue_id"]), [])
@@ -335,8 +336,9 @@ class LabelingQueriesMixin:
                         continue
                 elif str(row["scenario"] or "") != normalized_cluster[1]:
                     continue
+            exclusion_projection = task_exclusions.get(str(row["issue_id"])) if task else case_exclusion_projection(cases, (shared_state or {}).get("decision"))
             if len(normalized_exclusions) == 1:
-                resolved_excluded = bool((case_exclusion_projection(cases) or {}).get("is_excluded"))
+                resolved_excluded = bool((exclusion_projection or {}).get("is_excluded"))
                 if "excluded" in normalized_exclusions and not resolved_excluded:
                     continue
                 if "active" in normalized_exclusions and resolved_excluded:
@@ -352,6 +354,8 @@ class LabelingQueriesMixin:
                     "label_state": aggregate_state,
                     "expected_output": expected_output_value,
                     "source_count": len(cases),
+                    "exclusion_summary": exclusion_projection,
+                    "is_excluded": bool((exclusion_projection or {}).get("is_excluded")),
                     "decision": (shared_state or {}).get("decision") if shared_state else None,
                     "label_cases": cases,
                 }

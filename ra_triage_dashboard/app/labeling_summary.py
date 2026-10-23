@@ -113,7 +113,7 @@ def summarize_labeling_cases(items, *, page=1, page_size=20):
                 "original_votes": original_votes,
                 "tags": sorted(case_tags),
                 "evidence_gaps": sorted(case_evidence),
-                "is_excluded": bool((case_exclusion_projection(item.get("label_cases") or []) or {}).get("is_excluded")),
+                "is_excluded": bool((item.get("exclusion_summary") or case_exclusion_projection(item.get("label_cases") or [], item.get("decision")) or {}).get("is_excluded")),
                 "created_at": created_at,
                 "source_count": int(item.get("source_count") or 0),
                 "decision": (

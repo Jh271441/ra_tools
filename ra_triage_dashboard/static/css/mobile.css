@@ -906,3 +906,20 @@
  .version-te-overview > .version-days {order:2}
  .version-te-overview > .version-results {order:3;border:0;padding:0}
 }
+
+@media (max-width: 700px) {
+  .case-label-decision-dialog .dialog-card { max-width: 100%; max-height: calc(100dvh - 16px); }
+  .case-label-decision-dialog .dialog-actions { flex-wrap: wrap; padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+  .case-label-decision-dialog .dialog-actions .button { white-space: normal; min-height: 44px; }
+  .case-decision-mode, .case-decision-preview, .case-decision-records .history-row { min-width: 0; }
+  .case-decision-mode button, #caseDecisionEditorRefresh { max-width: 100%; white-space: normal; }
+  .case-labeling-detail:has(.case-decision-mode) .review-save-button { min-height: 48px; }
+  .case-decision-images { gap: 8px; }
+}
+@media (max-width: 430px) {
+  #caseLabelingEditor .issue-tag-section > .review-section-heading > .case-label-result-actions { width: 100%; justify-content: flex-end; }
+  #caseLabelingEditor .case-label-result-button { flex: 1 1 auto; justify-content: center; white-space: normal; min-height: 44px; }
+  #caseLabelingEditor .review-tag-dropdown > summary { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  #caseLabelingEditor .review-tag-dropdown .tag-group-label { overflow-wrap: anywhere; }
+  #caseLabelingEditor .review-tag-dropdown .tag-group-trailing { justify-self: end; }
+}

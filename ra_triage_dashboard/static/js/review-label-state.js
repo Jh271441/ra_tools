@@ -18,13 +18,13 @@ function sharedLabelStateVisual(labelState = {}) {
     return { kind: "unknown", zh: "GT 未知", en: "GT unknown" };
   }
   if (state === "conflict") {
-    return { kind: "conflict", zh: "标签冲突", en: "Label conflict" };
+    return { kind: "conflict", zh: "标签有分歧", en: "Label disagreement" };
   }
   if (state === "stale") {
-    return { kind: "stale", zh: "需重新确认", en: "Needs reconfirmation" };
+    return { kind: "stale", zh: "待复核", en: "Needs recheck" };
   }
   if (state === "pending") {
-    return { kind: "pending", zh: "标签待完成", en: "Label pending" };
+    return { kind: "pending", zh: "标签待补齐", en: "Label incomplete" };
   }
   return { kind: "none", zh: "无共享标签", en: "No shared label" };
 }
@@ -32,11 +32,11 @@ function sharedLabelStateVisual(labelState = {}) {
 function sharedLabelStateStateText(value) {
   return ({
     none: uiText("无共享标签", "No shared label"),
-    pending: uiText("待完成", "Pending"),
-    resolved: uiText("已形成结论", "Resolved"),
-    conflict: uiText("冲突", "Conflict"),
-    stale: uiText("需重新确认", "Needs reconfirmation"),
-  })[String(value || "none")] || uiText("待完成", "Pending");
+    pending: uiText("待补齐", "Incomplete"),
+    resolved: uiText("已确认", "Confirmed"),
+    conflict: uiText("有分歧", "Disagreement"),
+    stale: uiText("待复核", "Needs recheck"),
+  })[String(value || "none")] || uiText("待补齐", "Incomplete");
 }
 
 function sharedLabelStateMethodText(value) {

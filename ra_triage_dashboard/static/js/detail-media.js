@@ -916,6 +916,7 @@ function currentRunOutputMarkup(_caseData, prediction) {
 
 function openHistoryDialog(kind, caseData) {
   if (!caseData) return;
+  if (kind === "labeling" && state.activePage === "labeling") { openCaseLabelDecision(caseData); return; }
   const isModel = kind === "model";
   const isLabeling = kind === "labeling";
   const dialog = $("#historyDialog");

@@ -103,7 +103,7 @@ function updateEvidenceSummary() {
   }));
   const count = selected.length;
   const target = $("#evidenceSummaryCount");
-  if (target) target.textContent = `已选 ${count} 项`;
+  if (target) target.textContent = t("detail.selected_n", { n: count });
   const selectedContainer = root.querySelector("[data-selected-missing-evidence]");
   if (!selectedContainer) return;
   selectedContainer.innerHTML = selected
@@ -354,13 +354,13 @@ function updateTagSummary() {
   const inputs = [...root.querySelectorAll('input[name="reviewTags"]')];
   const count = inputs.filter((input) => input.checked).length;
   const target = root.querySelector("#tagSummaryCount") || $("#tagSummaryCount");
-  if (target) target.textContent = `已选 ${count} 项`;
+  if (target) target.textContent = t("detail.selected_n", { n: count });
   root.querySelectorAll("[data-tag-summary]").forEach((summary) => {
     const group = summary.dataset.tagSummary || "";
     const groupCount = inputs.filter(
       (input) => input.checked && input.dataset.tagGroup === group
     ).length;
-    summary.textContent = `${groupCount} 项`;
+    summary.textContent = t("detail.count_n", { n: groupCount });
   });
   root.querySelectorAll("[data-selected-tags-section]").forEach((container) => {
     const root = container.closest(".review-tag-axis");

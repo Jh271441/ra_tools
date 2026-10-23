@@ -224,3 +224,24 @@ html[data-color-theme="light"] .case-label-status[data-state="resolved"] { color
 .case-decision-rule li + li { margin-top:5px; }
 html[data-color-theme="light"] .case-decision-records .history-head > span,
 html[data-color-theme="light"] .case-decision-records .history-time { color:var(--muted); }
+
+/* The decision editor uses the same form, controls and media as personal labeling. */
+.case-decision-mode { padding: 12px; border: 1px solid var(--accent); border-radius: 10px; background: var(--overlay); }
+.case-decision-mode p, .case-decision-result p, .case-decision-preview { overflow-wrap: anywhere; }
+.case-decision-mode strong { color: var(--accent); }
+.case-decision-confirm { display: flex; align-items: center; gap: 10px; min-height: 44px; }
+.case-decision-confirm input { flex: 0 0 auto; width: 20px; height: 20px; }
+.case-decision-images { display: flex; flex-wrap: wrap; gap: 10px; }
+.case-decision-images > div { display: grid; gap: 4px; max-width: 100%; }
+.case-decision-image { display: block; width: 112px; max-width: 100%; min-height: 44px; }
+.case-decision-image img { display: block; width: 100%; height: 76px; object-fit: contain; border-radius: 6px; border: 1px solid var(--line); }
+.case-decision-preview { padding: 10px; background: var(--overlay); border-radius: 8px; }
+.case-decision-history summary { cursor: pointer; min-height: 44px; padding: 10px 0; }
+.case-decision-records .button, .case-decision-mode .button, .case-decision-images .button { min-height: 44px; }
+.case-exclusion-status { color: var(--warning); font-size: 11px; white-space: normal; }
+.case-label-result-button:has(.case-exclusion-status) { flex-wrap: wrap; }
+.case-decision-records .history-row > .button, .case-decision-history .history-row > .button { justify-self: start; width: auto; }
+#caseLabelingEditor .issue-tag-section > .review-section-heading { flex-wrap: wrap; }
+#caseLabelingEditor .issue-tag-section > .review-section-heading h2 { white-space: nowrap; }
+#caseLabelingEditor .issue-tag-section > .review-section-heading > .case-label-result-actions { max-width: 100%; margin-left: auto; }
+.case-label-result-button { min-width: 0; max-width: 100%; }

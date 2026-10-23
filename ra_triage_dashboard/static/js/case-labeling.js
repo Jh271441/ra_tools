@@ -78,7 +78,7 @@ function canAccessCaseLabelingPreview() {
 }
 
 function caseLabelingStateText(value) {
-  return ({ pending: "待标注", resolved: "已形成结果", conflict: "冲突待处理", stale: "裁决需确认" })[value] || value || "待标注";
+  return caseDecisionStateText(value);
 }
 
 function renderCaseLabelingTaskPicker() {
@@ -223,9 +223,9 @@ function renderCaseLabelingMultiPicker(selector, options, selected, key) {
 
 function renderCaseLabelingStatusPicker() {
   renderCaseLabelingMultiPicker("#caseLabelingStatusPicker", [
-    { value: "pending", label: "待标注" },
-    { value: "resolved", label: "已形成结果" },
-    { value: "conflict", label: "冲突 / 需重新确认" },
+    { value: "pending", label: uiText("待补齐", "Incomplete") },
+    { value: "resolved", label: uiText("已确认", "Confirmed") },
+    { value: "conflict", label: uiText("有分歧 / 待复核", "Disagreement / Needs recheck") },
   ], state.caseLabeling.status, "status");
 }
 
@@ -793,8 +793,9 @@ function caseLabelingTagAttributes(item) {
   // Pending/conflicting heads remain blind. Cards expose structured attributes
   // only after the Issue has a resolved shared result.
   if (item?.label_state !== "resolved") return [];
-  const tagKeys = [];
-  for (const labelCase of item?.label_cases || []) {
+  const decided = item.decision?.full_result && !item.decision.stale;
+  const tagKeys = decided ? [...(item.decision.tags || [])] : [];
+  for (const labelCase of decided ? [] : item?.label_cases || []) {
     const resolution = labelCase?.resolution || {};
     if (resolution.state !== "resolved") continue;
     const heads = resolution.heads || [];
@@ -1147,11 +1148,10 @@ function caseLabelingHistoryAnnotations(caseData) {
 
 function caseLabelFinalResultMarkup(caseData) {
   const result = caseData.label_state || {};
-  const pendingExclusion = caseExclusionNeedsDecision(caseData);
-  const status = result.state === "stale" ? "stale" : result.state === "conflict" || pendingExclusion ? "conflict" : result.state || "pending";
-  const label = status === "resolved" && result.expected_output ? expectedOutputDisplayText(result.expected_output)
-    : status === "conflict" ? uiText("待裁决", "Needs decision") : status === "stale" ? uiText("待重新裁决", "Recheck") : uiText("待完成", "Pending");
-  return `<div class="case-label-result-actions" id="caseLabelResultActions"><button class="history-inline-button case-label-result-button" id="caseLabelGoAdjudication" type="button" aria-haspopup="dialog" title="${escapeHtml(uiText("查看标注结果、原因与裁决", "View results, reasons and decisions"))}"><span class="case-label-status" data-state="${escapeHtml(status)}">${escapeHtml(label)}</span><span class="ui-select-caret" aria-hidden="true"></span></button><button type="button" class="icon-button case-label-info-button" id="caseDecisionInfo" aria-haspopup="dialog" aria-label="${escapeHtml(uiText("查看裁决规则与流程图", "Decision rules and flowchart"))}" title="${escapeHtml(uiText("裁决规则", "Decision rules"))}">ⓘ</button></div>`;
+  const status = result.state || "pending";
+  const label = status === "resolved" && result.expected_output ? expectedOutputDisplayText(result.expected_output) : caseDecisionStateText(status);
+  const exclusion = caseExclusionNeedsDecision(caseData) ? uiText("排除有分歧", "Exclusion disagreement") : caseData.label_state?.decision?.stale && caseData.label_state.decision.full_result ? uiText("排除待复核", "Recheck exclusion") : "";
+  return `<div class="case-label-result-actions" id="caseLabelResultActions"><button class="history-inline-button case-label-result-button" id="caseLabelGoAdjudication" type="button" aria-haspopup="dialog" title="${escapeHtml(uiText("查看标注结果、原因与裁决", "View results, reasons and decisions"))}"><span class="case-label-status" data-state="${escapeHtml(status)}">${escapeHtml(label)}</span>${exclusion ? `<span class="case-exclusion-status">${escapeHtml(exclusion)}</span>` : ""}<span class="ui-select-caret" aria-hidden="true"></span></button><button type="button" class="icon-button case-label-info-button" id="caseDecisionInfo" aria-haspopup="dialog" aria-label="${escapeHtml(uiText("查看裁决规则与流程图", "Decision rules and flowchart"))}" title="${escapeHtml(uiText("裁决规则", "Decision rules"))}">ⓘ</button></div>`;
 }
 
 function caseLabelingHistoryMarkup(caseData) {
@@ -1223,7 +1223,7 @@ function syncCaseLabelingExpectedOutputFromTags() {
     );
     if (select.value === inference.value) {
       picker.querySelector(".ui-select-summary").innerHTML =
-        `<span class="ui-select-summary-value">${escapeHtml(inference.value)}</span><span class="ui-select-inference-marker">${escapeHtml(marker)}</span>`;
+        `<span class="ui-select-summary-value">${escapeHtml(expectedOutputDisplayText(inference.value))}</span><span class="ui-select-inference-marker">${escapeHtml(marker)}</span>`;
     }
   }
   const validation = caseLabelingOutputValidation();
@@ -1235,34 +1235,35 @@ function syncCaseLabelingExpectedOutputFromTags() {
     hint.hidden = !validation.conflict;
     hint.textContent = validation.conflict
       ? inference.conflict
-        ? "标签指向多个期望输出；请只保留一种输出方向。"
-        : `期望输出与标签推断的“${inference.value}”不一致。`
+        ? uiText("标签指向多个期望输出；请只保留一种输出方向。", "Tags imply multiple outputs; keep one output direction.")
+        : uiText(`期望输出与标签推断的“${inference.value}”不一致。`, `Output disagrees with the inferred ${expectedOutputDisplayText(inference.value)}.`)
       : "";
   }
   if (status) {
     status.textContent = validation.conflict
-      ? "标签冲突"
+      ? uiText("标签冲突", "Conflicting tags")
       : !select.value
-        ? "待补充"
+        ? uiText("待补充", "Incomplete")
         : select.value === String(state.caseLabeling.caseData?.gt_label || "")
-          ? "与 GT 一致"
-          : "GT 待复核";
+          ? uiText("与 GT 一致", "Matches GT")
+          : uiText("GT 待复核", "GT needs review");
     status.classList.toggle("is-conflict", validation.conflict);
   }
   const save = $("#caseLabelingForm button[type='submit']");
-  if (save) save.disabled = validation.conflict || !hasDashboardWriteRole();
+  if (save) save.disabled = validation.conflict || !hasDashboardWriteRole() || caseLabelDecisionUi.saving;
+  if (caseLabelDecisionUi.editor) updateCaseDecisionPreview();
 }
 
-function renderCaseLabelingEditor(caseData) {
+function renderCaseLabelingEditor(caseData, {decision = null} = {}) {
   const revision = currentLabelingRevision(caseData);
   const issueDecision = caseData.label_state?.decision;
   const decisionResult = issueDecision && !issueDecision.stale
-    ? { expected_output: issueDecision.expected_output }
+    ? { ...issueDecision, rationale: issueDecision.label_rationale || issueDecision.rationale }
     : null;
   const aggregateResolved = (caseData.label_cases || []).find(
     (item) => item.resolution?.state === "resolved"
   )?.resolution?.result_revision;
-  const source = revision || decisionResult || aggregateResolved || {};
+  const source = decision?.source || revision || decisionResult || aggregateResolved || {};
   const exactTaskCase = state.caseLabeling.taskId
     ? (caseData.label_cases || []).find((item) => item.task_id === state.caseLabeling.taskId)
     : null;
@@ -1292,11 +1293,11 @@ function renderCaseLabelingEditor(caseData) {
     : "";
   $("#caseLabelingEditor").innerHTML = `
     <form class="review-form" id="caseLabelingForm">
-      ${supplementalNotice}
+      ${decision ? caseDecisionEditorHeader(decision) : supplementalNotice}
       <section class="review-section issue-tag-section">
         <div class="review-section-heading"><div><h2><span class="ui-lang-zh">Issue 标签</span><span class="ui-lang-en">Issue tags</span></h2></div>${caseLabelFinalResultMarkup(caseData)}<span class="evidence-summary-count" id="tagSummaryCount" hidden aria-hidden="true">${escapeHtml(t("detail.selected_n", { n: chosenTags.size }))}</span></div>
         <div class="review-tag-groups-shell">${issueTagGroups}</div>
-        ${caseExclusionToggleMarkup("caseLabelingExcluded", Boolean(source.is_excluded))}
+        ${caseExclusionToggleMarkup("caseLabelingExcluded", Boolean(source.is_excluded), false, Boolean(decision))}
       </section>
       <section class="review-section model-error-section">
         <div class="review-section-heading">
@@ -1304,11 +1305,11 @@ function renderCaseLabelingEditor(caseData) {
             <h2><span class="ui-lang-zh">问题标注</span><span class="ui-lang-en">Case labeling</span></h2>
           </div>
           <div class="review-heading-actions">
-            <button class="history-inline-button" id="caseLabelingOpenDiscussion" type="button" aria-keyshortcuts="D" title="展开或收起讨论（D）">
+            <button class="history-inline-button" id="caseLabelingOpenDiscussion" type="button" aria-keyshortcuts="D" title="${escapeHtml(uiText("展开或收起讨论（D）", "Toggle discussion (D)"))}">
               <span class="ui-lang-zh">讨论</span><span class="ui-lang-en">Discussion</span>
               <kbd class="review-control-shortcut" aria-hidden="true">D</kbd>
             </button>
-            <button class="history-inline-button" id="caseLabelingHistoryToggle" type="button" aria-keyshortcuts="J" title="展开或收起标注历史（J）">
+            <button class="history-inline-button" id="caseLabelingHistoryToggle" type="button" aria-keyshortcuts="J" title="${escapeHtml(uiText("查看标注与裁决（J）", "View labels and decisions (J)"))}">
               <span class="ui-lang-zh">历史 · ${historyCount}</span>
               <span class="ui-lang-en">History · ${historyCount}</span>
               <kbd class="review-control-shortcut" aria-hidden="true">J</kbd>
@@ -1337,11 +1338,11 @@ function renderCaseLabelingEditor(caseData) {
             <span><span class="ui-lang-zh">标注依据</span><span class="ui-lang-en">Label rationale</span></span>
             <small class="review-reason-shortcuts"><span class="ui-lang-zh"><kbd>E</kbd> 聚焦 · <kbd>⇧ Enter</kbd> 换行</span></small>
           </span>
-          <textarea id="caseLabelingRationale" data-mention-composer rows="2" placeholder="${escapeHtml(uiText("说明判断依据；此处不填写模型判错原因。输入 @ 可通知同事", "Explain your label, not model errors; type @ to notify a colleague"))}">${escapeHtml(source.rationale || "")}</textarea>
+          <textarea id="caseLabelingRationale" ${decision ? "" : "data-mention-composer"} rows="2" placeholder="${escapeHtml(decision ? uiText("说明最终标注依据，原作者依据独立保留。", "Explain the final label; the original rationale is preserved separately.") : uiText("说明判断依据；此处不填写模型判错原因。输入 @ 可通知同事", "Explain your label, not model errors; type @ to notify a colleague"))}">${escapeHtml(source.rationale || "")}</textarea>
           <div class="review-mention-composer" id="caseLabelingMentionComposer" data-mention-composer-root aria-live="polite"></div>
         </label>
         <div class="review-attachment-field">
-          <div class="screenshot-paste-zone is-compact" id="caseLabelingPasteZone" tabindex="0" role="group" aria-label="拖拽、粘贴或选择标注截图">
+          <div class="screenshot-paste-zone is-compact" id="caseLabelingPasteZone" tabindex="0" role="group" aria-label="${escapeHtml(uiText("拖拽、粘贴或选择标注截图", "Drop, paste or choose label images"))}">
             <span class="screenshot-paste-copy">
               <strong><span class="ui-lang-zh">标注截图</span><span class="ui-lang-en">Screenshots</span></strong>
               <small><span class="ui-lang-zh">拖拽到此处 / 粘贴 Ctrl/⌘+V · 最多 4 张</span><span class="ui-lang-en">Drop here / Paste Ctrl/⌘+V · max 4</span></small>
@@ -1351,21 +1352,22 @@ function renderCaseLabelingEditor(caseData) {
           <input class="hidden" id="caseLabelingScreenshotInput" type="file" accept="image/png,image/jpeg,image/webp" multiple />
           <div class="pending-screenshot-list" id="caseLabelingPendingScreenshots"></div>
         </div>
-        <button class="button button-primary full-width review-save-button" type="submit" ${hasDashboardWriteRole() ? "" : "disabled"}><span class="ui-lang-zh">${supplementalOnly ? "保存任务外补充" : "保存标注"}</span><span class="ui-lang-en">${supplementalOnly ? "Save supplemental label" : "Save label"}</span><kbd class="review-save-shortcut" aria-hidden="true">Enter</kbd></button>
+        ${decision ? caseDecisionEditorFields(decision) : ""}
+        <button class="button button-primary full-width review-save-button" type="submit" ${hasDashboardWriteRole() ? "" : "disabled"}><span class="ui-lang-zh">${decision ? "确认裁决" : supplementalOnly ? "保存任务外补充" : "保存标注"}</span><span class="ui-lang-en">${decision ? "Confirm decision" : supplementalOnly ? "Save supplemental label" : "Save label"}</span><kbd class="review-save-shortcut" aria-hidden="true">Enter</kbd></button>
       </section>
     </form>`;
   const editor = $("#caseLabelingEditor");
-  bindReviewMentionComposer($("#caseLabelingRationale"), $("#caseLabelingMentionComposer"));
+  if (!decision) bindReviewMentionComposer($("#caseLabelingRationale"), $("#caseLabelingMentionComposer"));
   bindCaseLabelResultActions(caseData);
   refreshCaseExclusionSummary();
-  $("#caseLabelingForm").addEventListener("submit", saveCaseLabelingRevision);
+  $("#caseLabelingForm").addEventListener("submit", decision ? adjudicateIssueLabel : saveCaseLabelingRevision);
   $("#caseLabelingForm").addEventListener("input", () => { state.caseLabeling.dirty = true; });
   $("#caseLabelingForm").addEventListener("change", () => { state.caseLabeling.dirty = true; });
   $("#caseLabelingOpenDiscussion")?.addEventListener("click", () => {
     openCaseLabelingDiscussion().catch((error) => showToast(error.message, true));
   });
   $("#caseLabelingHistoryToggle")?.addEventListener("click", () => {
-    toggleHistoryDialog("labeling", state.caseLabeling.caseData);
+    openCaseLabelDecision(state.caseLabeling.caseData);
   });
   const outputSelect = $("#caseLabelingExpectedOutput");
   if (outputSelect) outputSelect.dataset.selectionSource = expectedOutput ? "manual" : "empty";
@@ -1390,11 +1392,13 @@ function renderCaseLabelingEditor(caseData) {
   updateTagSummary();
   syncReviewDropdownShortcutHints(editor);
   bindReviewKeyboardShortcuts();
+  if (decision) bindCaseDecisionEditor(decision);
 }
 
 async function selectCaseLabelingIssue(issueId, { updateRoute = true } = {}) {
   const normalized = String(issueId || "").trim();
-  if (!normalized || state.activePage !== "labeling") return;
+  if (!normalized || state.activePage !== "labeling" || caseLabelDecisionUi.saving) return;
+  if (caseLabelDecisionUi.editor) exitCaseDecisionEditor();
   let pageContext = capturePageContext();
   const seq = ++state.caseLabeling.detailSeq;
   const task = state.caseLabeling.taskId ? `&task_id=${encodeURIComponent(state.caseLabeling.taskId)}` : "";
@@ -1439,6 +1443,8 @@ async function selectCaseLabelingIssue(issueId, { updateRoute = true } = {}) {
 }
 
 function closeCaseLabelingDetail({ updateRoute = true } = {}) {
+  if (caseLabelDecisionUi.saving) return;
+  if (caseLabelDecisionUi.editor) exitCaseDecisionEditor();
   $("#caseLabelingMedia")?.querySelector("video")?.pause();
   state.caseLabeling.issueId = "";
   state.caseLabeling.caseData = null;
@@ -1457,7 +1463,7 @@ function caseLabelingFormPayload() {
     task_id: caseLabelingSubmissionTaskId(),
     expected_output: $("#caseLabelingExpectedOutput")?.value || "",
     tags: [...(editor?.querySelectorAll('input[name="reviewTags"]:checked') || [])].map((item) => item.value),
-    evidence_gaps: [],
+    evidence_gaps: caseLabelDecisionUi.editor?.source.evidence_gaps || [],
     rationale: $("#caseLabelingRationale")?.value || "",
     is_excluded: Boolean($("#caseLabelingExcluded")?.checked),
   };
@@ -1507,8 +1513,8 @@ function renderPendingCaseLabelingImages() {
   target.innerHTML = state.caseLabeling.pendingImages
     .map(
       (item) => `<div class="pending-screenshot">
-        <img src="${escapeHtml(item.previewUrl)}" alt="${escapeHtml(item.file.name || "待上传截图")}" />
-        <button type="button" data-remove-case-screenshot="${escapeHtml(item.id)}" aria-label="移除截图">×</button>
+        <img src="${escapeHtml(item.previewUrl)}" alt="${escapeHtml(item.file.name || uiText("待上传截图", "Pending image"))}" />
+        <button type="button" data-remove-case-screenshot="${escapeHtml(item.id)}" aria-label="${escapeHtml(uiText("移除截图", "Remove image"))}">×</button>
       </div>`
     )
     .join("");
@@ -1734,13 +1740,13 @@ function bindCaseLabelingEditorShortcuts() {
     const historyDialog = $("#historyDialog");
     if (key === "j" && historyDialog?.open) {
       event.preventDefault();
-      toggleHistoryDialog("labeling", state.caseLabeling.caseData);
+      openCaseLabelDecision(state.caseLabeling.caseData);
       return;
     }
     if (document.querySelector("dialog[open]")) return;
     if (key === "j") {
       event.preventDefault();
-      toggleHistoryDialog("labeling", state.caseLabeling.caseData);
+      openCaseLabelDecision(state.caseLabeling.caseData);
       return;
     }
     if (key === "e" && !event.shiftKey) {

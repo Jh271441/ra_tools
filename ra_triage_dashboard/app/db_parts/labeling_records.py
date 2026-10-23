@@ -449,7 +449,10 @@ class LabelingRecordsMixin:
                 (str(attachment_id or "").strip(),),
             ).fetchone()
         if row is None:
-            return None
+            with self.connect() as conn:
+                row = conn.execute("""SELECT a.*, d.issue_id, d.baseline_scope FROM issue_decision_attachments a
+                    JOIN issue_label_decisions d ON d.id=a.decision_id WHERE a.id=?""", (str(attachment_id),)).fetchone()
+            return dict(row) if row else None
         return {
             **self._label_attachment_dict(row),
             "issue_id": str(row["issue_id"]),

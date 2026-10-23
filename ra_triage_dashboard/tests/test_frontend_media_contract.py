@@ -241,7 +241,7 @@ class FrontendMediaContractTest(unittest.TestCase):
         # Labeling history opens the shared dialog, like Review's J button,
         # and the topbar keeps its right cluster right-aligned without metrics.
         self.assertIn("function bindCaseLabelingEditorShortcuts", APP_JS)
-        self.assertIn('toggleHistoryDialog("labeling", state.caseLabeling.caseData)', APP_JS)
+        self.assertIn('openCaseLabelDecision(state.caseLabeling.caseData)', APP_JS)
         self.assertIn('uiText("标注历史", "Label history")', APP_JS)
         self.assertIn("caseLabelingHistoryMarkup(caseData)", APP_JS)
         self.assertNotIn("caseLabelingHistoryPanel", APP_JS)

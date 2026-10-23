@@ -1,6 +1,7 @@
 """Labeling decisions storage; composed by DatabaseLabelingMixin."""
 from __future__ import annotations
 from typing import Any, Sequence
+from uuid import uuid4
 from .shared import (
     LABELS,
     LabelAnnotationConflictError,
@@ -94,7 +95,14 @@ class LabelingDecisionsMixin:
 
     @staticmethod
     def _issue_label_decision_dict(row: Any) -> dict[str, Any]:
+        full = _json_load(row["full_result_json"], None) if "full_result_json" in row.keys() else None
         return {
+            "full_result": full,
+            "is_excluded": full["is_excluded"] if full else None,
+            "tags": full.get("tags", []) if full else [],
+            "evidence_gaps": full.get("evidence_gaps", []) if full else [],
+            "label_rationale": full.get("label_rationale", "") if full else "",
+            "attachments": full.get("attachments", []) if full else [],
             "id": int(row["id"]),
             "baseline_scope": str(row["baseline_scope"] or ""),
             "issue_id": str(row["issue_id"] or ""),
@@ -145,6 +153,8 @@ class LabelingDecisionsMixin:
         actor_verified: bool,
         expected_source_fingerprint: str,
         expected_previous_decision_id: int | None = None,
+        full_result: dict[str, Any] | None = None,
+        attachments: Sequence[dict[str, Any]] = (),
     ) -> dict[str, Any]:
         scope = str(baseline_scope or "").strip()
         issue_key = str(issue_id or "").strip()
@@ -186,7 +196,7 @@ class LabelingDecisionsMixin:
                 if source.get("task_id")
                 and str(source.get("state") or "pending") != "resolved"
             ]
-            if incomplete:
+            if incomplete and full_result is None:
                 raise ValueError(
                     "仍有任务来源未完成或未裁决，不能跳过任务结果直接做 Issue 裁决。"
                 )
@@ -218,14 +228,22 @@ class LabelingDecisionsMixin:
                     for value in source.get("source_revision_ids") or []
                 }
             )
+            full = None
+            attachment_records = list(attachments)
+            if full_result is not None:
+                if type(full_result.get("is_excluded")) is not bool:
+                    raise ValueError("请明确确认是否排除。 / Confirm exclusion explicitly.")
+                full = self._prepare_full_issue_decision(conn, scope, issue_key, output, full_result, attachment_records)
+            elif attachment_records:
+                raise ValueError("截图需要完整裁决。 / Attachments require a full decision.")
             now = utc_now()
             sql = """
                 INSERT INTO issue_label_decisions (
                     baseline_scope, issue_id, expected_output,
                     source_case_ids_json, source_revision_ids_json,
                     source_fingerprint, rationale, supersedes_id,
-                    created_by, created_by_source, created_by_verified, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    created_by, created_by_source, created_by_verified, created_at, full_result_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
             if self.backend == "postgresql":
                 sql += " RETURNING id"
@@ -244,6 +262,7 @@ class LabelingDecisionsMixin:
                     str(actor_source or "legacy"),
                     bool(actor_verified),
                     now,
+                    _json(full) if full is not None else None,
                 ),
             )
             decision_id = (
@@ -251,6 +270,12 @@ class LabelingDecisionsMixin:
                 if self.backend == "postgresql"
                 else int(cursor.lastrowid)
             )
+            for attachment in attachment_records:
+                conn.execute("""INSERT INTO issue_decision_attachments
+                    (id, decision_id, original_name, stored_name, media_type, size_bytes, width, height, sha256, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (attachment["id"], decision_id, attachment.get("original_name", ""), attachment["stored_name"],
+                     attachment["media_type"], attachment["size_bytes"], attachment["width"], attachment["height"], attachment["sha256"], now))
             self._mark_labeling_change(conn)
             row = conn.execute(
                 "SELECT * FROM issue_label_decisions WHERE id = ?",
@@ -263,6 +288,58 @@ class LabelingDecisionsMixin:
             "decision": self._issue_label_decision_dict(row),
             "label_state": refreshed,
         }
+
+    def _prepare_full_issue_decision(self, conn, scope, issue_id, output, payload, attachments):
+        """Build an immutable result; adoption provenance never comes from the client."""
+        tags = _clean_values(payload.get("tags") or [])
+        gaps = _clean_values(payload.get("evidence_gaps") or [])
+        rationale = str(payload.get("label_rationale") or "").strip()
+        if len(rationale) > 8000:
+            raise ValueError("标注依据不能超过 8000 字符。 / Label rationale exceeds 8000 characters.")
+        adopted_id = payload.get("adopted_revision_id")
+        adopted = None
+        if adopted_id is not None:
+            if type(adopted_id) is not int or adopted_id <= 0:
+                raise ValueError("采纳版本不合法。 / Invalid adopted revision.")
+            row = conn.execute("""SELECT r.* FROM label_revisions r JOIN label_cases c ON c.id=r.label_case_id
+                WHERE r.id=? AND c.issue_id=? AND c.baseline_scope=?
+                  AND NOT EXISTS (SELECT 1 FROM label_import_suppressed_revisions s WHERE s.revision_id=r.id)""",
+                (adopted_id, issue_id, scope)).fetchone()
+            if row is None:
+                raise ValueError("采纳版本不属于当前 Issue 或已失效。 / Adopted revision is unavailable for this Issue.")
+            adopted = self._label_revision_dict(row)
+        keep = payload.get("retained_attachment_ids") or []
+        if not isinstance(keep, list) or any(not isinstance(value, str) for value in keep) or len(keep) != len(set(keep)):
+            raise ValueError("截图引用不合法。 / Invalid attachment references.")
+        for attachment_id in keep:
+            # Only the chosen exact revision's images can be carried forward.
+            row = conn.execute("SELECT * FROM label_attachments WHERE id=? AND revision_id=?",
+                               (str(attachment_id), adopted_id or -1)).fetchone()
+            if row is None:
+                raise ValueError("截图不属于采纳版本。 / Image does not belong to the adopted revision.")
+            attachments.append({**dict(row), "id": str(uuid4())})
+        if len(attachments) > 4 or sum(int(a["size_bytes"]) for a in attachments) > 24 * 1024 * 1024:
+            raise ValueError("裁决截图最多 4 张、共 24MB。 / Maximum 4 decision images and 24MB total.")
+        public_images = []
+        for attachment in attachments:
+            attachment["id"] = str(uuid4())
+            public_images.append({key: attachment[key] for key in ("id", "media_type", "size_bytes", "width", "height")})
+        original_images = []
+        if adopted:
+            original_images = [dict(r) for r in conn.execute(
+                "SELECT id, media_type, size_bytes, width, height FROM label_attachments WHERE revision_id=? ORDER BY created_at,id",
+                (adopted_id,)).fetchall()]
+            adopted["attachments"] = original_images
+        full = {"version": 1, "is_excluded": payload["is_excluded"], "tags": tags,
+                "evidence_gaps": gaps, "label_rationale": rationale,
+                "adopted_revision_id": adopted_id, "adopted_revision": adopted,
+                "attachments": public_images, "retained_attachment_ids": keep}
+        compared = {"expected_output": output, "tags": tags, "evidence_gaps": gaps,
+                    "rationale": rationale, "is_excluded": payload["is_excluded"]}
+        full["changed_fields"] = [key for key, value in compared.items() if adopted and value != adopted.get(key)]
+        if adopted and (set(keep) != {a["id"] for a in original_images} or len(attachments) > len(keep)):
+            full["changed_fields"].append("attachments")
+        return full
 
     def adjudicate_label_case(
         self,

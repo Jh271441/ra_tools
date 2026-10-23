@@ -4,6 +4,7 @@ from .shared import utc_now
 
 
 def initialize_columns(self, conn) -> None:
+    self._ensure_column(conn, "issue_label_decisions", "full_result_json", "TEXT")
     self._ensure_column(
         conn, "intent_experiments", "overlap_reviewers",
         "INTEGER NOT NULL DEFAULT 2",

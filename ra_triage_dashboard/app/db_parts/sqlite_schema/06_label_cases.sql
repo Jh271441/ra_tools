@@ -92,3 +92,13 @@
                 CREATE TRIGGER IF NOT EXISTS trg_issue_label_decisions_no_delete
                     BEFORE DELETE ON issue_label_decisions
                     BEGIN SELECT RAISE(ABORT, 'Issue label decisions are append-only'); END;
+
+CREATE TABLE IF NOT EXISTS issue_decision_attachments (
+    id TEXT PRIMARY KEY,
+    decision_id INTEGER NOT NULL REFERENCES issue_label_decisions(id) ON DELETE RESTRICT,
+    original_name TEXT NOT NULL DEFAULT '', stored_name TEXT NOT NULL,
+    media_type TEXT NOT NULL, size_bytes INTEGER NOT NULL,
+    width INTEGER NOT NULL, height INTEGER NOT NULL, sha256 TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_issue_decision_attachments_decision ON issue_decision_attachments(decision_id);

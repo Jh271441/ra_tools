@@ -1174,6 +1174,10 @@ function showPage(
   if(page==="daily-review"){window.location.replace(withBase("/daily-review")+window.location.search);return;}
   const target = PAGE_ROUTES[page] ? page : "review";
   const previousPage = state.activePage;
+  if (previousPage === "labeling" && typeof caseLabelDecisionUi !== "undefined" && caseLabelDecisionUi.editor) {
+    if (caseLabelDecisionUi.saving) return;
+    exitCaseDecisionEditor();
+  }
   const pageLoads = [];
   state.pageNavigationEpoch = Number(state.pageNavigationEpoch || 0) + 1;
   if (previousPage === "review" && target !== "review" && typeof cancelCaseHydration === "function") cancelCaseHydration();

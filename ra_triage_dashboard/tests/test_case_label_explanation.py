@@ -20,7 +20,7 @@ assert.equal(explain({state:'pending',sources:[{task_id:'a',state:'pending',assi
 const sources=[{task_id:'a',state:'resolved',expected_output:'误触发'},{task_id:'b',state:'resolved',expected_output:'正确触发'}];
 assert.equal(explain({state:'conflict',sources}).reason,'不同来源的结果不一致');
 assert.equal(explain({state:'conflict',sources}).next,'完成 Issue 裁决');
-assert.equal(explain({state:'conflict',sources:[{task_id:'a',state:'conflict'}]}).next,'先完成任务内裁决');
+assert.equal(explain({state:'conflict',sources:[{task_id:'a',state:'conflict'}]}).next,'确认完整 Issue 结果；任务提交进度独立保留');
 assert.equal(explain({state:'stale',expected_output:'误触发',decision:{stale:true},sources}).output,'');
 let resolved={state:'resolved',expected_output:'无需协助',decision:{id:9,stale:false},sources};
 assert.equal(explain(resolved).output,'无需协助');

@@ -12,8 +12,31 @@ from .labeling_shared import ISSUE_LABEL_GT_RELATIONS, ISSUE_LABEL_STATES, _clea
 class LabelingProjectionMixin:
     def project_issue_exclusions(self, issue_ids):
         from ..labeling_rules import case_exclusion_projection
-        return {issue_id: projection for issue_id, cases in self._batch_label_cases(issue_ids).items()
-                if (projection := case_exclusion_projection(cases)) is not None}
+        cases_by_issue = self._batch_label_cases(issue_ids)
+        decisions = self._current_full_issue_decisions(cases_by_issue)
+        return {issue_id: projection for issue_id, cases in cases_by_issue.items()
+                if (projection := case_exclusion_projection(cases, decisions.get(issue_id))) is not None}
+
+    def _current_full_issue_decisions(self, cases_by_issue):
+        """Reuse the authoritative fingerprint projection, in scope batches."""
+        by_scope = defaultdict(list)
+        selected = set()
+        ids = list(cases_by_issue)
+        with self.connect() as conn:
+            for offset in range(0, len(ids), 400):
+                batch = ids[offset:offset + 400]
+                selected.update(str(row["issue_id"]) for row in conn.execute(
+                    "SELECT d.issue_id FROM issue_label_decisions d WHERE d.issue_id IN (" + ",".join("?" for _ in batch) + ") "
+                    "AND d.full_result_json IS NOT NULL AND d.id=(SELECT MAX(n.id) FROM issue_label_decisions n "
+                    "WHERE n.issue_id=d.issue_id AND n.baseline_scope=d.baseline_scope)", batch).fetchall())
+        for issue_id, cases in cases_by_issue.items():
+            if cases and issue_id in selected:
+                by_scope[cases[0]["baseline_scope"]].append(issue_id)
+        decisions = {}
+        for scope, ids in by_scope.items():
+            states = self.project_issue_label_states(scope, ids, include_sources=False, preloaded_cases=cases_by_issue)
+            decisions.update({issue_id: state.get("decision") for issue_id, state in states.items()})
+        return decisions
 
     def trail_exclusion_evidence(self, issue_ids, *, model_run_id=""):
         """Read stored legacy/migrated flags; never infer decisions from notes."""
@@ -48,7 +71,13 @@ class LabelingProjectionMixin:
     def project_issue_tag_contexts(self, issue_ids):
         """Current Issue tags for analysis, separate from Run review fields."""
         contexts = {}
-        for issue_id, cases in self._batch_label_cases(issue_ids).items():
+        cases_by_issue = self._batch_label_cases(issue_ids)
+        decisions = self._current_full_issue_decisions(cases_by_issue)
+        for issue_id, cases in cases_by_issue.items():
+            decision = decisions.get(issue_id)
+            if decision and not decision.get("stale") and decision.get("full_result"):
+                contexts[issue_id] = {"tags": decision["tags"], "revision_ids": decision["source_revision_ids"], "decision_id": decision["id"]}
+                continue
             revisions = []
             for case in cases:
                 resolution = case.get("resolution") or {}
@@ -121,9 +150,10 @@ class LabelingProjectionMixin:
                     "id": None, "review_domain": "case_label",
                     "is_excluded": projection["is_excluded"],
                     "label_revision_ids": projection["revision_ids"],
+                    "decision_id": projection.get("decision_id"),
                     "reason_source": {
-                        "kind": "historical_restore" if revision.get("author_source") == "migration_reason_restore" else "case_label",
-                        "revision_id": revision.get("id"), "author": revision.get("author", ""),
+                        "kind": "issue_decision" if projection.get("decision_id") else "historical_restore" if revision.get("author_source") == "migration_reason_restore" else "case_label",
+                        "revision_id": revision.get("id"), "decision_id": projection.get("decision_id"), "author": revision.get("author", ""),
                         "author_source": revision.get("author_source", ""),
                         "created_at": revision.get("created_at", ""),
                         "original_created_at": None if revision.get("author_source") == "migration_reason_restore" else revision.get("created_at"),

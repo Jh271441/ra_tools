@@ -1,9 +1,11 @@
 """Labeling decisions HTTP contracts."""
 from __future__ import annotations
 from fastapi import APIRouter
-from typing import Any
+from typing import Any, Optional, List
 from ...db import LabelAnnotationConflictError
-from fastapi import Request
+from fastapi import Request, File, Form, UploadFile
+import json
+from ...support.attachments import _store_review_attachments
 from ...support.common import _as_text
 from ...support.common import _detail
 import asyncio
@@ -26,16 +28,41 @@ async def list_issue_label_decisions(issue_id: str, request: Request) -> dict[st
 
 @router.post("/api/labeling/issues/{issue_id}/decisions")
 async def adjudicate_issue_label(issue_id: str, request: Request) -> dict[str, Any]:
-    actor, actor_source, actor_verified = await asyncio.to_thread(
-        _labeling_actor, request
-    )
-    issue = await _require_active_labeling_issue(issue_id)
     try:
         body = await request.json()
     except (TypeError, ValueError) as exc:
-        raise _detail(400, "Issue 标签裁决请求必须是 JSON 对象。") from exc
+        raise _detail(400, "裁决请求必须是 JSON 对象。 / Decision must be a JSON object.") from exc
+    return await _save_issue_decision(issue_id, request, body)
+
+
+@router.post("/api/labeling/issues/{issue_id}/decisions-with-attachments")
+async def adjudicate_issue_with_attachments(
+    issue_id: str, request: Request, payload: str = Form(...),
+    attachments: Optional[List[UploadFile]] = File(None),
+) -> dict[str, Any]:
+    try:
+        body = json.loads(payload)
+    except (TypeError, ValueError) as exc:
+        raise _detail(400, "裁决请求必须是 JSON 对象。 / Decision must be a JSON object.") from exc
+    return await _save_issue_decision(issue_id, request, body, attachments or [])
+
+
+async def _save_issue_decision(issue_id, request, body, uploads=()):
+    actor, actor_source, actor_verified = await asyncio.to_thread(_labeling_actor, request)
+    issue = await _require_active_labeling_issue(issue_id)
     if not isinstance(body, dict):
-        raise _detail(400, "Issue 标签裁决请求必须是 JSON 对象。")
+        raise _detail(400, "裁决请求必须是 JSON 对象。 / Decision must be a JSON object.")
+    full = None
+    if "full_result" in body:
+        if body["full_result"] is not True or type(body.get("is_excluded")) is not bool:
+            raise _detail(400, "请确认完整结果及是否排除。 / Confirm the complete result and exclusion.")
+        normalized = _labeling_payload(body)
+        full = {**normalized, "label_rationale": _as_text(body.get("label_rationale")),
+                "adopted_revision_id": body.get("adopted_revision_id"),
+                "retained_attachment_ids": body.get("retained_attachment_ids") or []}
+        body = {**body, "expected_output": normalized["expected_output"]}
+    if uploads and full is None:
+        raise _detail(400, "截图需要完整裁决。 / Attachments require a full decision.")
     raw_previous = body.get("expected_previous_decision_id")
     try:
         expected_previous = (
@@ -43,8 +70,9 @@ async def adjudicate_issue_label(issue_id: str, request: Request) -> dict[str, A
         )
     except (TypeError, ValueError) as exc:
         raise _detail(400, "expected_previous_decision_id 不合法。") from exc
-    try:
-        result = await asyncio.to_thread(
+    records, paths = await _store_review_attachments(list(uploads)) if uploads else ([], [])
+    async def commit():
+        return await asyncio.to_thread(
             database.adjudicate_issue_label,
             baseline_scope=str(issue.get("baseline_scope") or ""),
             issue_id=issue_id,
@@ -57,13 +85,35 @@ async def adjudicate_issue_label(issue_id: str, request: Request) -> dict[str, A
                 body.get("expected_source_fingerprint")
             ),
             expected_previous_decision_id=expected_previous,
+            full_result=full, attachments=records,
         )
+    # Cancellation must not remove images while the database worker may commit.
+    worker = asyncio.create_task(commit())
+    try:
+        result = await asyncio.shield(worker)
+    except asyncio.CancelledError:
+        def completed(task):
+            if task.cancelled() or task.exception() is not None:
+                for path in paths:
+                    path.unlink(missing_ok=True)
+        worker.add_done_callback(completed)
+        raise
     except LabelAnnotationConflictError as exc:
+        for path in paths:
+            await asyncio.to_thread(path.unlink, missing_ok=True)
         raise _detail(409, str(exc)) from exc
     except PermissionError as exc:
+        for path in paths:
+            await asyncio.to_thread(path.unlink, missing_ok=True)
         raise _detail(403, str(exc)) from exc
     except ValueError as exc:
+        for path in paths:
+            await asyncio.to_thread(path.unlink, missing_ok=True)
         raise _detail(400, str(exc)) from exc
+    except Exception:
+        for path in paths:
+            await asyncio.to_thread(path.unlink, missing_ok=True)
+        raise
     return {
         **result,
         "change_revision": await asyncio.to_thread(database.change_revision),

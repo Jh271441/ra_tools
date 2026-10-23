@@ -13,7 +13,9 @@ def current_adjudication(item):
             "kind": "issue", "id": decision.get("id"),
             "author": decision.get("created_by", ""), "created_at": decision.get("created_at", ""),
             "rationale": decision.get("rationale", ""), "expected_output": item.get("expected_output", ""),
-            "tags": [], "evidence_gaps": [],
+            "tags": decision.get("tags", []), "evidence_gaps": decision.get("evidence_gaps", []),
+            "is_excluded": decision.get("is_excluded"), "attachments": decision.get("attachments", []),
+            "label_rationale": decision.get("label_rationale", ""),
         }
     decisions = []
     for case in item.get("label_cases", []):
@@ -65,13 +67,20 @@ def expected_output_source(item):
             "authors": sorted({author for source in sources for author in source["authors"]})}
 
 
-def case_exclusion_projection(cases):
+def case_exclusion_projection(cases, decision=None):
     """Exclusion is an Issue property, independent of label/GT resolution.
 
     Use effective task adjudications or current per-author votes, never an old
     superseded vote. A current Case vote also owns an explicit false value over
     legacy Run exclusions. None means no Case evidence, allowing legacy fallback.
     """
+    if decision and not decision.get("stale") and decision.get("full_result"):
+        return {"is_excluded": decision["is_excluded"], "decision_id": decision["id"],
+                "revision_ids": decision.get("source_revision_ids", []),
+                "revision": {"id": None, "decision_id": decision["id"],
+                    "author": decision.get("created_by", ""), "created_at": decision.get("created_at", ""),
+                    "rationale": decision.get("label_rationale") or decision.get("rationale", ""),
+                    "review_rationale": decision.get("rationale", ""), "tags": decision.get("tags", [])}}
     revisions = []
     for case in cases:
         resolution = case.get("resolution") or {}

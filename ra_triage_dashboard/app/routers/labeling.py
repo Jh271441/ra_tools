@@ -9,7 +9,7 @@ from .labeling_api.tasks import list_labeling_tasks, create_labeling_task
 from .labeling_api.tasks import router as tasks_router
 from .labeling_api.queries import list_labeling_cases, labeling_summary, list_labeling_clusters, get_labeling_case
 from .labeling_api.queries import router as queries_router
-from .labeling_api.decisions import list_issue_label_decisions, adjudicate_issue_label, adjudicate_label_case
+from .labeling_api.decisions import list_issue_label_decisions, adjudicate_issue_label, adjudicate_issue_with_attachments, adjudicate_label_case
 from .labeling_api.decisions import router as decisions_router
 from .labeling_api.comments import _public_label_comment, _create_label_comment_record, list_labeling_comments, create_labeling_comment, create_labeling_comment_with_attachments
 from .labeling_api.comments import router as comments_router
@@ -29,6 +29,7 @@ router.routes.append(next(route for route in queries_router.routes if route.endp
 router.routes.append(next(route for route in queries_router.routes if route.endpoint is get_labeling_case))
 router.routes.append(next(route for route in decisions_router.routes if route.endpoint is list_issue_label_decisions))
 router.routes.append(next(route for route in decisions_router.routes if route.endpoint is adjudicate_issue_label))
+router.routes.append(next(route for route in decisions_router.routes if route.endpoint is adjudicate_issue_with_attachments))
 router.routes.append(next(route for route in comments_router.routes if route.endpoint is list_labeling_comments))
 router.routes.append(next(route for route in comments_router.routes if route.endpoint is create_labeling_comment))
 router.routes.append(next(route for route in comments_router.routes if route.endpoint is create_labeling_comment_with_attachments))
