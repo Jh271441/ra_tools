@@ -1,6 +1,6 @@
 # Issue 标注与完整裁决（2026-10-24）
 
-本文描述本次实现，尚未部署。前端缓存版本为 `manual-triage-637`，生产发布前需要先完成 PostgreSQL migration 056。
+本文描述已于 2026-10-24 部署的完整裁决实现，应用版本 `18ace74`、前端缓存 `manual-triage-637`、PostgreSQL schema56。云端823项测试通过、5项跳过；备份恢复校验、隔离灰度和生产健康检查通过。
 
 ## 状态与范围
 
@@ -66,4 +66,4 @@ GT 候选可以引用有效裁决，但更新 GT 仍需独立预览和确认。T
 - migration 056 为 `issue_label_decisions` 增加 nullable JSONB `full_result_json`，新增 `issue_decision_attachments` 表，不回填旧裁决。SQLite 初始化也兼容原表升级。
 - 发布时先按存储流程备份、应用 migration 056，再发布应用和缓存 637。旧程序可忽略新增列和表，但无法解释完整裁决的排除/Tags 覆盖；若已有新裁决，回滚旧程序会改变展示结果，应先评估并限制写入。不得删列或删裁决记录来回滚。
 
-本次只在本地 SQLite 和一次性 PostgreSQL 14 容器验证迁移与语义，未连接或迁移生产库。验收记录位于 `reports/full_issue_decision_20261024/`。
+本次先在本地 SQLite 和一次性 PostgreSQL 14 容器验证迁移与语义，再停止生产写入、备份并恢复校验实际生产库、应用056迁移；原有表记录数核验一致。生产只读验收通过，未写入测试裁决。浏览器控制超时，线上登录后的视觉验收未完成。发布与验收记录位于 `reports/full_issue_decision_20261024/`。
