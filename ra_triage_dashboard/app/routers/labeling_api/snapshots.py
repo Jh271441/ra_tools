@@ -7,7 +7,7 @@ from ...support.common import _as_text
 from ...support.common import _detail
 import asyncio
 from ...runtime import database
-from ...support.baselines import resolve_request_baseline_scopes
+from ...support.baselines import resolve_request_baseline_scopes, restrict_version_issue_ids
 from .common import _active_labeling_scopes, _labeling_snapshot_actor, _require_labeling_admin, _snapshot_allow_partial
 
 router = APIRouter()
@@ -19,6 +19,10 @@ async def get_gt_candidates(request: Request, baselines: str = "") -> dict[str, 
     scopes = resolve_request_baseline_scopes(baselines, request=request)
     scopes = await _active_labeling_scopes(scopes)
     items = await asyncio.to_thread(database.label_gt_candidates, scopes)
+    selected = await asyncio.to_thread(restrict_version_issue_ids, baselines, request=request)
+    if selected:
+        members = set(selected)
+        items = [item for item in items if item["issue_id"] in members]
     return {
         "items": items,
         "ready_count": sum(item["status"] == "ready" for item in items),

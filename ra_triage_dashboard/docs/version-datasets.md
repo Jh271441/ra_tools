@@ -8,6 +8,12 @@ The version registry is the current target denominator. `ra_review_result_new` s
 
 The bounded read-only projection selects metadata and prediction label/confidence in one query (20,000-case cap); it never reads video/bag files or calls Trail. CSV has the same filters and order as the gallery and requires a revision matching the current registry/snapshot. A changed revision returns409. Existing APIs and Campaign/Run-bound joint-review links remain available. No schema, membership, assignment, sampling, GT or scheduling mutation is part of this change.
 
+## Case labeling entry and membership
+
+`version-*` selector entries come from the database-backed operational catalog, not the static baseline registry. Dashboard configuration maps active labeling scopes through both catalogs; old hidden daily IDs remain valid for existing task links. A registered version is not automatically active: its scope must still have active status.
+
+The model-free labeling gallery, full detail queue, summary, clusters, GT candidates and GT export previews use the same current-target membership restriction as Review. Source scopes alone include historical/non-target Issues and must not define a version gallery. Explicit Issue filters intersect the current targets; an empty intersection stays empty. Mixed selections union version targets and ordinary baseline members. An explicit historical task keeps its frozen membership. These are read-time projections; historical records and permissions are unchanged.
+
 ## Interaction and performance
 
 One enhanced version selector covers each live release plus0821. Cards show model output/confidence, TE status, owner, trigger and arrival/occurrence times. Image opens the existing media preview; Issue identity retains its combined-review link. BEV/Camera, TE status, reason, date, Issue search, order and pagination are URL-restorable. The default order is latest registry arrival; bootstrap records may share a timestamp. Source-update, occurrence and Issue order remain available.

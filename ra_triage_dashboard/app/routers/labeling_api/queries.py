@@ -13,7 +13,7 @@ from ...support.external_links import _voyager_issue_url
 import asyncio
 from ...runtime import database
 from ...case_media import empty_case_media
-from ...support.baselines import resolve_request_baseline_scopes
+from ...support.baselines import resolve_request_baseline_scopes, restrict_version_issue_ids
 from .common import _active_labeling_scopes, _labeling_filter_values, _public_label_case, _require_active_labeling_issue, _require_labeling_writer
 from .comments import _public_label_comment
 
@@ -78,6 +78,10 @@ async def list_labeling_cases(
     normalized_issue_ids = _parse_issue_id_filter(issue_ids)
     if _as_text(issue_ids).strip() and not normalized_issue_ids:
         raise _detail(400, "issue_ids 未包含有效的 Issue ID。")
+    selected_issue_ids = await asyncio.to_thread(
+        restrict_version_issue_ids, baselines, request=request,
+        issue_ids=normalized_issue_ids, task_id=task_id,
+    )
     normalized_cluster = _as_text(cluster)
     try:
         result = await asyncio.to_thread(
@@ -85,7 +89,7 @@ async def list_labeling_cases(
             baseline_scopes=scopes,
             task_id=normalized_task_id,
             search=_as_text(q),
-            issue_ids=normalized_issue_ids,
+            issue_ids=selected_issue_ids,
             status=normalized_status,
             author=normalized_author,
             assignee=normalized_assignee,
@@ -144,6 +148,10 @@ async def labeling_summary(
     normalized_issue_ids = _parse_issue_id_filter(issue_ids)
     if _as_text(issue_ids).strip() and not normalized_issue_ids:
         raise _detail(400, "issue_ids 未包含有效的 Issue ID。")
+    selected_issue_ids = await asyncio.to_thread(
+        restrict_version_issue_ids, baselines, request=request,
+        issue_ids=normalized_issue_ids, task_id=task_id,
+    )
     normalized_status = _labeling_filter_values(
         status,
         allowed={"pending", "resolved", "conflict"},
@@ -175,7 +183,7 @@ async def labeling_summary(
             baseline_scopes=scopes,
             task_id=normalized_task,
             search=_as_text(q),
-            issue_ids=normalized_issue_ids,
+            issue_ids=selected_issue_ids,
             status=normalized_status,
             author=_labeling_filter_values(author, lower=True),
             assignee=_labeling_filter_values(assignee, lower=True),
@@ -252,13 +260,17 @@ async def list_labeling_clusters(
     normalized_issue_ids = _parse_issue_id_filter(issue_ids)
     if _as_text(issue_ids).strip() and not normalized_issue_ids:
         raise _detail(400, "issue_ids 未包含有效的 Issue ID。")
+    selected_issue_ids = await asyncio.to_thread(
+        restrict_version_issue_ids, baselines, request=request,
+        issue_ids=normalized_issue_ids, task_id=task_id,
+    )
     try:
         clusters = await asyncio.to_thread(
             database.labeling_clusters,
             baseline_scopes=scopes,
             task_id=_as_text(task_id),
             search=_as_text(q),
-            issue_ids=normalized_issue_ids,
+            issue_ids=selected_issue_ids,
             status=normalized_status,
             author=normalized_author,
             assignee=normalized_assignee,

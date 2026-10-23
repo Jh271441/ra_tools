@@ -15,7 +15,7 @@ from datetime import datetime
 import hashlib
 import io
 import openpyxl
-from ...support.baselines import resolve_request_baseline_scopes
+from ...support.baselines import resolve_request_baseline_scopes, restrict_version_issue_ids
 from .common import _active_labeling_scopes, _labeling_actor, _labeling_filter_values, _require_active_gt_export_batch, _require_labeling_admin
 
 router = APIRouter()
@@ -33,8 +33,9 @@ async def create_gt_export_preview(request: Request) -> dict[str, Any]:
     if not isinstance(body, dict):
         raise _detail(400, "导出预览请求必须是 JSON 对象。")
     filter_body = body.get("filters") if isinstance(body.get("filters"), dict) else {}
+    baselines = _as_text(body.get("baselines") or filter_body.get("baselines"))
     scopes = resolve_request_baseline_scopes(
-        _as_text(body.get("baselines") or filter_body.get("baselines")),
+        baselines,
         request=request,
     )
     scopes = await _active_labeling_scopes(scopes)
@@ -79,6 +80,10 @@ async def create_gt_export_preview(request: Request) -> dict[str, Any]:
         normalized_filter_issue_ids = _parse_issue_id_filter(raw_filter_issue_ids)
         if raw_filter_issue_ids.strip() and not normalized_filter_issue_ids:
             raise _detail(400, "issue_ids 未包含有效的 Issue ID。")
+        normalized_filter_issue_ids = await asyncio.to_thread(
+            restrict_version_issue_ids, baselines, request=request,
+            issue_ids=normalized_filter_issue_ids, task_id=_as_text(filter_body.get("task_id")),
+        )
         try:
             selected_issue_ids = await asyncio.to_thread(
                 database.labeling_case_issue_ids,
@@ -99,6 +104,11 @@ async def create_gt_export_preview(request: Request) -> dict[str, Any]:
             raise _detail(400, str(exc)) from exc
         if not selected_issue_ids:
             raise _detail(400, "当前筛选范围没有可导出的 Case。")
+    else:
+        selected_issue_ids = list(await asyncio.to_thread(
+            restrict_version_issue_ids, baselines, request=request,
+            issue_ids=selected_issue_ids, task_id=_as_text(filter_body.get("task_id")),
+        ))
     try:
         preview = await asyncio.to_thread(
             database.create_label_gt_export_preview,

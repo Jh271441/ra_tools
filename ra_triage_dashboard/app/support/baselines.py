@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-from typing import Any
+from typing import Any, Sequence
 
 from fastapi import Request
 
@@ -257,6 +257,36 @@ def resolve_request_baseline_scopes(
         entry = baseline_registry.by_id(baseline_registry.default_ids()[0]) if baseline_registry.entries else None
         return [entry.scope if entry else settings.baseline_scope]
     return scopes
+
+def restrict_version_issue_ids(
+    raw: Any = None, *, request: Request | None = None,
+    issue_ids: Sequence[str] = (), task_id: str = "",
+) -> tuple[str, ...]:
+    """Intersect current version targets; explicit historical tasks stay frozen."""
+    selected = tuple(issue_ids)
+    requested = raw
+    if not requested and request is not None:
+        requested = request.query_params.get("baselines") or request.query_params.get("baseline_scopes")
+    if "version-" not in str(requested) or str(task_id or "").strip():
+        return selected
+    ids = resolve_request_baseline_ids(requested, request=request)
+    native = [entry.scope for i in ids if not i.startswith("version-")
+              and (entry := baseline_registry.by_id(i))]
+    members = set()
+    with database.connect() as conn:
+        for version_id in ids:
+            if version_id.startswith("version-"):
+                members.update(row["issue_id"] for row in conn.execute(
+                    "SELECT issue_id FROM version_dataset_items WHERE dataset_id=? AND is_target=1",
+                    ("release-" + version_id[8:] + "-odd2",),
+                ).fetchall())
+        if native:
+            members.update(row["issue_id"] for row in conn.execute(
+                "SELECT issue_id FROM issues WHERE baseline_scope IN (" + ",".join("?" for _ in native) + ")",
+                native,
+            ).fetchall())
+    # An empty intersection must never be interpreted as an unrestricted query.
+    return tuple(sorted(members.intersection(selected) if selected else members)) or ("__empty_version_membership__",)
 
 def media_for_issue(issue_id: str, baseline_scope: str = "") -> Any:
     provider = media_registry.resolve_for_issue(issue_id, baseline_scope=baseline_scope)

@@ -76,10 +76,18 @@ def _dashboard_config_payload() -> dict[str, Any]:
     from ..support.baselines import operational_baseline_summaries
     default_model_run_id = database.default_model_run_id()
     labeling_states = database.labeling_scope_states()
+    baselines = operational_baseline_summaries(
+        runtime_state.get("baselines") or baseline_registry.public_summaries(),
+        db=database,
+    )
+    # Version review sets are DB-backed projections, not static registry
+    # entries. Use the same catalog as the selector for their activation IDs,
+    # while retaining hidden legacy IDs for existing daily/task deep links.
+    ids_by_scope = {entry.scope: entry.id for entry in baseline_registry.entries}
+    ids_by_scope.update({item["scope"]: item["id"] for item in baselines})
     return {
         "baseline": runtime_state["baseline"],
-        "baselines": operational_baseline_summaries(runtime_state.get("baselines")
-        or baseline_registry.public_summaries(), db=database),
+        "baselines": baselines,
         "default_baseline_ids": baseline_registry.default_ids(),
         "baseline_conflicts": runtime_state.get("baseline_conflicts") or [],
         "build_commit": settings.build_commit,
@@ -122,7 +130,7 @@ def _dashboard_config_payload() -> dict[str, Any]:
                 baseline_id
                 for item in labeling_states
                 if item["status"] == "active"
-                and (baseline_id := baseline_registry.scope_to_id(item["baseline_scope"]))
+                and (baseline_id := ids_by_scope.get(item["baseline_scope"]))
             ],
         },
         "default_failure_only": bool(default_model_run_id),
