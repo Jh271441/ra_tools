@@ -1307,18 +1307,6 @@ async def get_case_trail_metadata(issue_id: str) -> dict[str, Any]:
 
 
 
-def _case_video_preview(issue_id: str, video: dict[str, Any]) -> dict[str, Any]:
-    """Small posters shared by inline and expanded players, without image scans."""
-    thumbnail = _public_path(f"/api/case-thumbnails/{quote(issue_id)}")
-    # Provider descriptors are cached; never mutate them or their tracks.
-    return dict(video, poster_url=thumbnail, tracks=[
-        dict(track, poster_url=thumbnail + (
-            "?kind=camera" if str(track.get("url", "")).endswith("/camera-video") else ""
-        ))
-        for track in video.get("tracks", [])
-    ])
-
-
 @router.get("/api/cases/{issue_id}/media")
 async def get_case_media(issue_id: str, kind: str = "all") -> dict[str, Any]:
     """Resolve deferred filesystem media for an already-loaded Issue detail.
@@ -1341,7 +1329,9 @@ async def get_case_media(issue_id: str, kind: str = "all") -> dict[str, Any]:
         assets, camera = empty_case_media(issue_id)
         video = await asyncio.to_thread(provider.get_video, issue_id)
         if video is not None:
-            assets["video"] = _case_video_preview(issue_id, video)
+            # Do not stretch Gallery thumbnails into video posters or wait for
+            # image discovery. The client can use full frames as they arrive.
+            assets["video"] = dict(video)
             assets["available"] = True
         status = "ready"
     elif kind != "all":
@@ -1353,8 +1343,6 @@ async def get_case_media(issue_id: str, kind: str = "all") -> dict[str, Any]:
         status = "ready"
     else:
         assets, camera = await resolve_case_media(provider, issue_id)
-        if assets.get("video"):
-            assets["video"] = _case_video_preview(issue_id, assets["video"])
         status = "ready"
     return {
         "issue_id": issue_id,
@@ -1448,8 +1436,6 @@ async def get_case(
     provider = media_for_issue(issue_id, scope)
     if include_media and provider is not None:
         case["assets"], case["camera"] = await resolve_case_media(provider, issue_id)
-        if case["assets"].get("video"):
-            case["assets"]["video"] = _case_video_preview(issue_id, case["assets"]["video"])
         case["media_status"] = "ready"
     else:
         case["assets"], case["camera"] = empty_case_media(issue_id)

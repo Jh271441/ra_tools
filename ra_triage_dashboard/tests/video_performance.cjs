@@ -24,7 +24,28 @@ function playerFixture(){
 }
 (async()=>{
  const p=playerFixture(),v=p.video,e=p.elements;
+ const media={assets:{video:{url:'/bev.mp4',tracks:[{url:'/bev.mp4'},{url:'/api/assets/cn1/camera-video'}]},frames:[{url:'/before.jpg',offset_ms:-1000},{url:'/full-bev.jpg',offset_ms:0}]},camera:{frames:[{url:'/full-camera.jpg',offset_ms:0}]}};
+ const descriptor=p.ctx.videoWithFramePosters(media);
+ p.ctx.escapeHtml=String;
+ const markup=p.ctx.videoPlayerMarkup(descriptor);
+ assert(markup.indexOf('class="bev-video-progress-row"')<markup.indexOf('data-video-status role='),'warnings follow the timeline, never split it from playback controls');
+ assert(markup.includes('data-video-status role="status" aria-live="polite" hidden'),'first paint has no loading status row');
+ assert.equal(descriptor.poster_url,'/full-bev.jpg');assert.equal(descriptor.tracks[1].poster_url,'/full-camera.jpg');
+ assert.equal(media.assets.video.poster_url,undefined,'cached descriptors stay unchanged');
+ assert.equal(media.assets.video.tracks[1].poster_url,undefined);
+ assert.equal(p.ctx.videoWithFramePosters({assets:{video:{url:'/bev.mp4'}}}).poster_url,'','missing images use native video, never Gallery thumbnails');
+ // A late full image updates the existing active source without reloading it.
+ const options=[{value:'/bev.mp4',dataset:{}},{value:'/api/assets/cn1/camera-video',dataset:{}}];
+ p.player.querySelectorAll=()=>options;
+ v.attrs.src='/api/assets/cn1/camera-video';
+ p.ctx.refreshVideoFramePosters(p.root,media);
+ assert.equal(v.attrs.poster,'/full-camera.jpg');assert.equal(options[0].dataset.poster,'/full-bev.jpg');
+ assert.equal(v.loads,0);assert.deepEqual(v.seeks,[20]);v.attrs.src='/clip.mp4';
  assert.deepEqual(v.seeks,[20],'cached metadata initializes t0 once');
+ for(const event of ['loadstart','waiting','seeking']){
+  v.fire(event);assert(e.status.hidden,'normal loading/seeking must not insert a status row');
+  assert.equal(e['status-text'].textContent,'');assert(e.retry.hidden);
+ }
  for(let i=0;i<100;i++){e.seek.value=String(i/10);e.seek.fire('input');}
  assert.equal(v.seeks.length,1,'drag coalesces network seeks');p.flush(75);assert.equal(v.seeks.at(-1),9.9);assert.equal(v.seeks.length,2);
  e.seek.value='32';e.seek.fire('input');e.track.value='/camera.mp4';e.track.selectedOptions=[{dataset:{poster:'/camera.jpg'}}];e.track.fire('change');
@@ -32,7 +53,7 @@ function playerFixture(){
  v.readyState=1;v.fire('loadedmetadata');assert.equal(v.seeks.length,3);assert.equal(v.seeks.at(-1),9.9);
  v.readyState=4;v.fire('loadeddata');assert.equal(p.player.dataset.loadState,'ready');
  v.error={code:2};v.fire('error');assert.equal(p.player.dataset.loadState,'error');assert(!e.retry.hidden);
- v.error=null;e.retry.fire('click');assert.equal(v.loads,2);assert.equal(p.player.dataset.loadState,'loading');p.flush(12000);assert.equal(p.player.dataset.loadState,'slow');
+ v.error=null;e.retry.fire('click');assert.equal(v.loads,2);assert.equal(p.player.dataset.loadState,'loading');assert(e.status.hidden);p.flush(12000);assert.equal(p.player.dataset.loadState,'slow');assert(!e.status.hidden);
  e.seek.value='12';e.seek.fire('input');const count=v.seeks.length;p.ctx.releaseBevVideoPlayer(p.root);
  assert.equal(p.timers.size,0);v.readyState=4;v.fire('loadedmetadata');assert.equal(v.seeks.length,count);assert.equal(v.getAttribute('src'),null);
  assert(v.paused);

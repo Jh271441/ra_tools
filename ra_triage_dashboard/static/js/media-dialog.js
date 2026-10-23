@@ -565,7 +565,7 @@ function openMedia(kind, index, { caseData = state.selectedCase } = {}) {
     comparisonExtraInputs: caseData?.comparison_extra_inputs || null,
     bev: [...(caseData?.assets?.frames || [])],
     camera: [...(caseData?.camera?.frames || [])],
-    video: caseData?.assets?.video?.url ? { ...caseData.assets.video } : null,
+    video: videoWithFramePosters(caseData),
   };
   const requestedAvailable = kind === "video" ? Boolean(mediaVideo()) : Boolean(mediaFrames(kind).length);
   if (!requestedAvailable) kind = preferredMediaKind(caseData);
