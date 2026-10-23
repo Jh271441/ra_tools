@@ -19,6 +19,7 @@ async def items(
     page_size: int = 40,
     mode: str = "targets",
     q: str = "",
+    sort: str = "added",
 ):
     try:
         return await asyncio.to_thread(
@@ -28,6 +29,7 @@ async def items(
             page_size=page_size,
             mode=mode,
             query=q[:128],
+            sort=sort,
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc

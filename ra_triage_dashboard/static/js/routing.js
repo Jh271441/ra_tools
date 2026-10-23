@@ -71,7 +71,8 @@ function applyUiLanguage(language, { persist = true } = {}) {
   renderPageChrome();
   renderSystemStatus();
   if (typeof renderDailyCron === "function") renderDailyCron();
-  if (typeof renderDailyReview === "function") renderDailyReview();
+  if (typeof renderDailyReview === "function") renderDailyReview({keepImages:true});
+  if (typeof renderVersionDatasets === "function") renderVersionDatasets();
   applySidebarState();
   renderSession();
   if (typeof refreshBevVideoLanguage === "function") refreshBevVideoLanguage();
@@ -817,6 +818,9 @@ function applyAnalysisRouteControls(route) {
 function pageUrl(page, options = {}) {
   const config = PAGE_ROUTES[page] || PAGE_ROUTES.review;
   const url = new URL(withBase(config.path), window.location.origin);
+  if (page === "version-datasets" && typeof versionDatasetRouteOptions === "function") {
+    for (const [key,value] of Object.entries(versionDatasetRouteOptions(options))) if(value!=='')url.searchParams.set(key,String(value));
+  }
   if (page === "daily-review" && typeof dailyReviewRouteOptions === "function") {
     for (const [key,value] of Object.entries(dailyReviewRouteOptions(options))) {
       if (value !== "") url.searchParams.set(key,String(value));

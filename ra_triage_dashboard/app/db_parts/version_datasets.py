@@ -233,6 +233,9 @@ class DatabaseVersionDatasetsMixin(VersionRunConsolidationMixin):
                         for k in ("total", "targets", "samples", "sampled_targets", "low")
                     }
                 )
+                item["low_only"] = item["low"] - int(conn.execute(
+                    "SELECT COUNT(*) AS n FROM version_dataset_items WHERE dataset_id=? AND is_target=1 AND is_sample=1 AND is_low=1", (row["id"],)
+                ).fetchone()["n"])
                 item["states"] = {
                     x["state"]: x["n"]
                     for x in conn.execute(
@@ -251,10 +254,13 @@ class DatabaseVersionDatasetsMixin(VersionRunConsolidationMixin):
             return result
 
     def version_dataset_items(
-        self, dataset_id, *, page=1, page_size=50, mode="targets", query=""
+        self, dataset_id, *, page=1, page_size=50, mode="targets", query="", sort="added"
     ):
         page = max(1, int(page))
         size = max(1, min(200, int(page_size)))
+        orders = {"added": "first_seen DESC,issue_id DESC", "updated": "updated_at DESC,issue_id DESC", "issue": "issue_id ASC"}
+        if sort not in orders:
+            raise ValueError("Invalid version sort")
         where = "dataset_id=?"
         args = [dataset_id]
         if mode == "targets":
@@ -275,13 +281,22 @@ class DatabaseVersionDatasetsMixin(VersionRunConsolidationMixin):
             rows = conn.execute(
                 "SELECT * FROM version_dataset_items WHERE "
                 + where
-                + " ORDER BY issue_id LIMIT ? OFFSET ?",
+                + " ORDER BY " + orders[sort] + " LIMIT ? OFFSET ?",
                 args + [size, (page - 1) * size],
             ).fetchall()
+            dataset = conn.execute("SELECT run_id FROM version_datasets WHERE id=?", (dataset_id,)).fetchone()
+            predictions = {}
+            if rows and dataset and dataset["run_id"]:
+                ids = [r["issue_id"] for r in rows]
+                predictions = {r["issue_id"]: dict(r) for r in conn.execute(
+                    "SELECT issue_id,model_label,model_confidence FROM model_predictions WHERE model_run_id=? AND issue_id IN (" + ",".join("?" for _ in ids) + ")",
+                    [dataset["run_id"], *ids],
+                ).fetchall()}
             items = []
             for row in rows:
                 item = json.loads(row["source_json"])
                 item["binding"] = json.loads(row["binding_json"])
+                item.update(first_seen=row["first_seen"], updated_at=row["updated_at"], prediction=predictions.get(row["issue_id"]))
                 items.append(item)
             return {
                 "dataset_id": dataset_id,
@@ -290,6 +305,12 @@ class DatabaseVersionDatasetsMixin(VersionRunConsolidationMixin):
                 "page": page,
                 "page_size": size,
             }
+
+    def version_dataset_arrivals(self, family):
+        """Small read-only time index for TE sorting; no label authority changes."""
+        with self.connect() as conn:
+            return {r["issue_id"]: {"first_seen": r["first_seen"], "updated_at": r["updated_at"]}
+                    for r in conn.execute("SELECT issue_id,first_seen,updated_at FROM version_dataset_items WHERE dataset_id=?", ("release-" + family + "-odd2",)).fetchall()}
 
     def version_dataset_batches(self, dataset_id):
         with self.connect() as conn:

@@ -471,6 +471,7 @@ function bindEvents() {
         showToast(t("toast.page_refreshed"));
         return;
       }
+      if (state.activePage === "version-datasets") { await loadVersionDatasets(); return; }
       if (state.activePage === "daily-review") { await loadDailyReview(); return; }
       if (state.activePage === "daily-cron") {
         await loadDailyCron();

@@ -836,3 +836,13 @@
   .trail-row-actions { justify-content:flex-end; }
   #trailReasonDetailsDialog .trail-reason-comparison { grid-template-columns:minmax(0,1fr); }
 }
+
+@media(max-width:650px){
+  .version-metrics {grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .version-metrics > div {padding:12px;flex-wrap:wrap}.version-metrics strong {font-size:20px}
+  .version-toolbar > .ui-select {flex:1 1 140px;width:auto;min-width:0}
+  .version-datasets-page :is(button,.ui-select-trigger,summary) {min-height:44px}
+  .version-datasets-page summary {display:flex;align-items:center}
+  .version-gallery .gallery-heading > .ui-select {width:100%;margin-left:0}
+  .version-gallery form {width:100%}.version-gallery input {flex:1;width:0}
+}

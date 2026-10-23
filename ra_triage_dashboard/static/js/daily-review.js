@@ -4,7 +4,7 @@ function dailyReviewRouteOptions(options = {}) {
   const p = new URLSearchParams(location.search);
   const here = location.pathname.replace(/\/$/,'').endsWith('/daily-review');
   const get = (k,d) => options[k] ?? (here ? p.get(k) : null) ?? d;
-  return {dataset:get('dataset','1009'),date:get('date',''),reason:get('reason','all'),te_status:get('te_status','all'),media:get('media','bev'),page:Math.max(1,Number(get('page',1))||1)};
+  return {dataset:get('dataset','1009'),date:get('date',''),reason:get('reason','all'),te_status:get('te_status','all'),media:get('media','bev'),sort:get('sort','added'),page:Math.max(1,Number(get('page',1))||1)};
 }
 function dailyReviewParams(scope) {
   return new URLSearchParams(Object.entries(scope).filter(([k,v]) => k !== 'media' && v !== ''));
@@ -89,7 +89,8 @@ function renderDailyReview({keepImages=false}={}) {
   if (!dailyReviewState.active) return;
   const s=dailyReviewRouteOptions(),data=dailyReviewState.data;
   $('#dailyReviewPage').querySelectorAll('[data-zh]').forEach(el=>{el.textContent=uiText(el.dataset.zh,el.dataset.en);});
-  for (const [id,key] of [['dailyReviewReason','reason'],['dailyReviewStatus','te_status'],['dailyReviewMedia','media']]) $('#'+id).value=s[key];
+  $('#dailyReviewPage').querySelectorAll('[data-label-zh]').forEach(el=>el.setAttribute('aria-label',uiText(el.dataset.labelZh,el.dataset.labelEn)));
+  for (const [id,key] of [['dailyReviewReason','reason'],['dailyReviewStatus','te_status'],['dailyReviewMedia','media'],['dailyReviewSort','sort']]) $('#'+id).value=s[key];
   document.querySelectorAll('[data-te-dataset]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.teDataset===s.dataset)));
   const date=$('#dailyReviewDate');date.hidden=s.dataset==='0821';
   $('#dailyReviewDateLabel').hidden=date.hidden;
@@ -113,7 +114,18 @@ function renderDailyReview({keepImages=false}={}) {
   const count=Math.max(1,Math.ceil(data.total/data.size));
   $('#dailyReviewPageLabel').textContent=`${data.page} / ${count} · ${data.total}`;
   $('#dailyReviewPrev').disabled=data.page<=1;$('#dailyReviewNext').disabled=data.page>=count;
-  if(keepImages) return;
+  if(keepImages) {
+    $('#dailyReviewGrid').querySelectorAll('.te-card').forEach(card=>{
+      const row=data.items.find(r=>r.issue_id===card.dataset.teId);if(!row)return;
+      card.querySelector('.te-reason').textContent=row.reason==='low'?uiText('低置信','Low'):uiText('抽样','Sample');
+      const result=card.querySelector('.te-result');result.textContent=dailyReviewBadge(row);result.title=dailyReviewBadge(row);
+      card.querySelector('.te-case-date').textContent=`${uiText('发生','Occurred')} ${row.date||'—'} · ${uiText('入库','Added')} ${row.first_seen?versionDatasetTime(row.first_seen):'—'} CST`;
+      card.querySelector('.te-retry').textContent=uiText('重试图片','Retry image');
+      card.querySelector('.te-placeholder small').textContent=uiText('图片待就绪','Image pending');
+      card.querySelector('.issue-card-open').setAttribute('aria-label',`${row.issue_id} ${uiText('查看媒体','View media')}`);
+    });
+    return;
+  }
   stopDailyReviewImages();
   const grid=$('#dailyReviewGrid');
   grid.innerHTML=data.items.map(row=>`<article class="issue-card te-card" data-te-id="${escapeHtml(row.issue_id)}">
@@ -121,7 +133,7 @@ function renderDailyReview({keepImages=false}={}) {
     <div class="issue-thumbnail"><img alt="${escapeHtml(row.issue_id)} ${escapeHtml(s.media)}" hidden /><div class="issue-thumbnail-placeholder te-placeholder"><span>${escapeHtml(s.media.toUpperCase())}</span><small>${uiText('图片待就绪','Image pending')}</small></div></div>
     <div class="issue-card-body"><div class="issue-card-heading"><a class="issue-id" href="https://voyager.intra.xiaojukeji.com/static/management/#/issue/${encodeURIComponent(row.issue_id)}" target="_blank" rel="noopener noreferrer">${escapeHtml(row.issue_id)} ↗</a><span class="te-reason">${row.reason==='low'?uiText('低置信','Low'):uiText('抽样','Sample')}</span></div>
     <div class="issue-card-labels"><span class="te-result" data-status="${escapeHtml(row.te_status)}" title="${escapeHtml(dailyReviewBadge(row))}">${escapeHtml(dailyReviewBadge(row))}</span><button type="button" class="te-retry" data-te-retry="${escapeHtml(row.issue_id)}" hidden>${uiText('重试图片','Retry image')}</button></div></div>
-    </article>`).join('') || `<div class="no-asset issue-grid-empty">${uiText(n ? '此筛选下暂无案例' : '等待 TE 数据同步',n ? 'No cases in this filter' : 'Awaiting TE observations')}</div>`;
+    <div class="te-case-date muted">${uiText('发生','Occurred')} ${escapeHtml(row.date||'—')} · ${uiText('入库','Added')} ${row.first_seen?escapeHtml(versionDatasetTime(row.first_seen)):'—'} CST</div></article>`).join('') || `<div class="no-asset issue-grid-empty">${uiText(n ? '此筛选下暂无案例' : '等待 TE 数据同步',n ? 'No cases in this filter' : 'Awaiting TE observations')}</div>`;
   let queue=[],running=0;const seq=dailyReviewState.imageEpoch;
   const drain=()=>{while(queue.length && running<4){const card=queue.shift();running++;loadDailyReviewImage(card,s.media,seq).finally(()=>{running--;if(seq===dailyReviewState.imageEpoch)drain();});}};
   dailyReviewState.observer=new IntersectionObserver(entries=>{for(const e of entries){if(e.isIntersecting){dailyReviewState.observer?.unobserve(e.target);queue.push(e.target);}}drain();},{rootMargin:'0px'});
@@ -162,7 +174,7 @@ function bindDailyReview() {
     const retry=event.target.closest('[data-te-retry]');if(retry){void loadDailyReviewImage(retry.closest('.te-card'),dailyReviewRouteOptions().media,dailyReviewState.imageEpoch);return;}
     const open=event.target.closest('[data-te-open]');if(open)void openDailyReviewMedia(open.dataset.teOpen);
   });
-  for(const [id,key] of [['dailyReviewDate','date'],['dailyReviewReason','reason'],['dailyReviewStatus','te_status'],['dailyReviewMedia','media']])$('#'+id).addEventListener('change',e=>dailyReviewChange({[key]:e.target.value}));
+  for(const [id,key] of [['dailyReviewDate','date'],['dailyReviewReason','reason'],['dailyReviewStatus','te_status'],['dailyReviewMedia','media'],['dailyReviewSort','sort']])$('#'+id).addEventListener('change',e=>dailyReviewChange({[key]:e.target.value}));
   $('#dailyReviewRefresh').addEventListener('click',()=>loadDailyReview());
   $('#dailyReviewPrev').addEventListener('click',()=>dailyReviewChange({page:dailyReviewRouteOptions().page-1}));
   $('#dailyReviewNext').addEventListener('click',()=>dailyReviewChange({page:dailyReviewRouteOptions().page+1}));

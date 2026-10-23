@@ -98,6 +98,11 @@ class VersionDatasetsTests(unittest.TestCase):
             family="20261009", run_ids=ids, backup_sha256="a" * 64, actor="migration"
         )
         self.assertEqual(len(self.db.list_model_runs()), 1)
+        self.ingest([dict(self.packet(), state="published", is_target=True, is_low=True,
+                         binding={"run_id": result["run_id"]})], key="projection")
+        page = self.db.version_dataset_items("release-20261009-odd2")
+        self.assertEqual(page["items"][0]["prediction"]["model_label"], "误触发")
+        self.assertEqual(page["items"][0]["prediction"]["model_confidence"], 0.5)
         self.assertEqual(len(self.db.model_run_source_rows(result["run_id"],include_history=True)), 2)
         with self.db.connect() as conn:
             row = conn.execute(
@@ -120,6 +125,24 @@ class VersionDatasetsTests(unittest.TestCase):
                 actor="migration",
             )["replayed"]
         )
+
+    def test_late_old_case_is_newest_arrival_and_can_be_searched(self):
+        self.ingest([dict(self.packet('cn200'), is_target=True, is_low=True, issue_time=2000)])
+        self.ingest([dict(self.packet('cn100'), is_target=True, is_low=True, is_sample=True, issue_time=1000)], key='late')
+        with self.db.connect() as conn:
+            conn.execute("UPDATE version_dataset_items SET first_seen='2026-10-20',updated_at='2026-10-23' WHERE issue_id='cn200'")
+            conn.execute("UPDATE version_dataset_items SET first_seen='2026-10-22',updated_at='2026-10-22' WHERE issue_id='cn100'")
+        did='release-20261009-odd2'
+        newest=self.db.version_dataset_items(did, page_size=1)
+        self.assertEqual(newest['items'][0]['issue_id'],'cn100')
+        self.assertEqual(newest['total'],2)
+        self.assertEqual(newest['items'][0]['first_seen'],'2026-10-22')
+        updated=self.db.version_dataset_items(did, sort='updated')
+        self.assertEqual(updated['items'][0]['issue_id'],'cn200')
+        self.assertEqual(self.db.version_dataset_items(did,query='cn100')['total'],1)
+        counts=self.db.list_version_datasets()[0]
+        self.assertEqual((counts['targets'],counts['sampled_targets'],counts['low_only']),(2,1,1))
+        with self.assertRaises(ValueError):self.db.version_dataset_items(did,sort='first_seen; DROP TABLE issues')
 
 
 if __name__ == "__main__":

@@ -68,6 +68,7 @@
           "vendor/cron-graph/graph.css",
           "css/daily-cron.css",
           "css/daily-review.css",
+          "css/version-datasets.css",
           "css/mobile.css",
         ];
         let stylesSettled = false;
@@ -84,7 +85,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-620`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-621`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -1818,17 +1819,17 @@
             <div class="te-toolbar">
               <button class="button button-quiet" type="button" data-te-dataset="1009" aria-pressed="true">1009</button>
               <button class="button button-quiet" type="button" data-te-dataset="0821" aria-pressed="false">0821</button>
-              <span class="muted" id="dailyReviewDateLabel"><span class="ui-lang-zh">数据日 · CST</span><span class="ui-lang-en">Data date · CST</span></span>
+              <span class="muted" id="dailyReviewDateLabel"><span class="ui-lang-zh">发生日 · CST</span><span class="ui-lang-en">Occurrence date · CST</span></span>
               <select id="dailyReviewDate" aria-labelledby="dailyReviewDateLabel"></select>
-              <select id="dailyReviewReason" aria-label="目标类型"><option value="all" data-zh="全部目标" data-en="All targets">全部目标</option><option value="low" data-zh="低置信" data-en="Low confidence">低置信</option><option value="sample" data-zh="抽样" data-en="Sample">抽样</option></select>
+              <select id="dailyReviewReason" data-label-zh="目标类型" data-label-en="Target type" aria-label="目标类型"><option value="all" data-zh="全部目标" data-en="All targets">全部目标</option><option value="low" data-zh="低置信" data-en="Low confidence">低置信</option><option value="sample" data-zh="抽样" data-en="Sample">抽样</option></select>
               <span class="te-source" id="dailyReviewSource" role="status" aria-live="polite"></span>
               <button class="button button-quiet" id="dailyReviewRefresh" type="button" title="读取最近一次同步快照"><span class="ui-lang-zh">刷新</span><span class="ui-lang-en">Refresh</span></button>
             </div>
             <div class="te-dashboard">
               <section class="te-chart-panel te-daily-panel" id="dailyReviewDailyPanel" aria-labelledby="dailyReviewDailyTitle">
-                <header><h2 id="dailyReviewDailyTitle" data-zh="每日完成情况" data-en="Daily completion">每日完成情况</h2><span class="muted" data-zh="最近 14 个数据日 · 点击切换日期" data-en="Latest 14 data dates · Select a date">最近 14 个数据日 · 点击切换日期</span></header>
+                <header><h2 id="dailyReviewDailyTitle" data-zh="按发生日的标注进度" data-en="Completion by occurrence date">按发生日的标注进度</h2><span class="muted" data-zh="最近 14 个发生日 · 点击筛选" data-en="Latest 14 occurrence dates · Filter">最近 14 个发生日 · 点击筛选</span></header>
                 <div class="te-daily-chart" id="dailyReviewDailyChart"></div>
-                <p class="te-chart-note" data-zh="各数据日的当前完成率，不代表当天新增标注量。" data-en="Current completion by data date, not labels added that day.">各数据日的当前完成率，不代表当天新增标注量。</p>
+                <p class="te-chart-note" data-zh="按 case 发生日分组；晚到数据会回填，不代表当天新增或标注量。" data-en="Grouped by case occurrence date; late arrivals backfill older days. Not daily arrivals or labels.">按 case 发生日分组；晚到数据会回填，不代表当天新增或标注量。</p>
               </section>
               <section class="te-chart-panel" aria-labelledby="dailyReviewScope">
                 <header><h2 id="dailyReviewScope"></h2><span class="muted" data-zh="所选范围" data-en="Selected scope">所选范围</span></header>
@@ -1843,16 +1844,32 @@
             </div>
             <section class="gallery-panel te-gallery" aria-labelledby="dailyReviewGalleryTitle">
               <header class="gallery-heading"><div><h2 id="dailyReviewGalleryTitle">Gallery</h2><span class="muted" id="dailyReviewGalleryCount"></span></div><div class="gallery-heading-actions te-filters">
-                <select id="dailyReviewStatus" aria-label="TE 状态"><option value="all" data-zh="全部状态" data-en="All states">全部状态</option><option value="unfilled" data-zh="待标" data-en="Pending">待标</option><option value="filled" data-zh="已标" data-en="Filled">已标</option><option value="unknown" data-zh="未知" data-en="Unknown">未知</option></select>
+                <select id="dailyReviewSort" data-label-zh="案例排序" data-label-en="Case order" aria-label="案例排序"><option value="added" data-zh="最新入库" data-en="Recently added">最新入库</option><option value="occurred" data-zh="最近发生" data-en="Recently occurred">最近发生</option><option value="issue" data-zh="Issue 编号" data-en="Issue ID">Issue 编号</option></select>
+                <select id="dailyReviewStatus" data-label-zh="TE 状态" data-label-en="TE status" aria-label="TE 状态"><option value="all" data-zh="全部状态" data-en="All states">全部状态</option><option value="unfilled" data-zh="待标" data-en="Pending">待标</option><option value="filled" data-zh="已标" data-en="Filled">已标</option><option value="unknown" data-zh="未知" data-en="Unknown">未知</option></select>
                 <select id="dailyReviewMedia" aria-label="Media"><option value="bev">BEV</option><option value="camera">Camera</option></select>
                 <a class="button button-quiet" id="dailyReviewExport" hidden><span class="ui-lang-zh">导出 CSV</span><span class="ui-lang-en">Export CSV</span></a>
               </div></header>
               <div class="issue-grid te-grid" id="dailyReviewGrid"></div>
               <nav class="case-pagination" aria-label="Gallery pagination"><button class="button button-quiet" type="button" id="dailyReviewPrev" data-zh="上一页" data-en="Previous">上一页</button><span id="dailyReviewPageLabel"></span><button class="button button-quiet" type="button" id="dailyReviewNext" data-zh="下一页" data-en="Next">下一页</button></nav>
             </section>
-            <details class="te-results"><summary><span class="ui-lang-zh">数据口径</span><span class="ui-lang-en">Data scope</span></summary><div id="dailyReviewCoverage"></div><p><span class="ui-lang-zh">TE 来源：Trail · RA Review Result New。1009 按北京时间数据日；0821 为既有 312 条。每 5 分钟同步，较早历史每小时复查。</span><span class="ui-lang-en">TE source: Trail · RA Review Result New. 1009 uses CST data dates; 0821 is the frozen 312-case set. Sync every 5 minutes; older history hourly.</span></p></details>
+            <details class="te-results"><summary><span class="ui-lang-zh">数据口径</span><span class="ui-lang-en">Data scope</span></summary><div id="dailyReviewCoverage"></div><p><span class="ui-lang-zh">TE 来源：Trail · RA Review Result New。1009 按北京时间发生日；0821 为既有 312 条。每 5 分钟同步，较早历史每小时复查。</span><span class="ui-lang-en">TE source: Trail · RA Review Result New. 1009 uses CST occurrence dates; 0821 is the frozen 312-case set. Sync every 5 minutes; older history hourly.</span></p></details>
           </section>
-          <section class="app-page tool-page hidden" id="versionDatasetsPage" data-page="version-datasets"><div class="page-header"><h1><span class="ui-lang-zh">版本数据</span><span class="ui-lang-en">Version datasets</span></h1><select id="versionDatasetPicker" aria-label="版本"></select><select id="versionDatasetMode" aria-label="范围"><option value="targets">低置信＋抽样</option><option value="samples">版本随机样本</option><option value="waiting">等待数据</option><option value="all">全部与历史</option></select></div><p id="versionDatasetSummary"></p><p id="versionDatasetError" role="status"></p><div class="issue-grid" id="versionDatasetGrid"></div><div class="pagination"><button type="button" id="versionDatasetPrev">←</button><span id="versionDatasetPageLabel"></span><button type="button" id="versionDatasetNext">→</button></div><details><summary>导入记录</summary><div id="versionDatasetBatches"></div></details></section>
+          <section class="app-page tool-page version-datasets-page hidden" id="versionDatasetsPage" data-page="version-datasets">
+            <div class="version-toolbar">
+              <select id="versionDatasetPicker" data-label-zh="版本" data-label-en="Version" aria-label="版本"></select>
+              <select id="versionDatasetMode" data-label-zh="范围" data-label-en="Scope" aria-label="范围"><option value="targets" data-zh="低置信＋抽样" data-en="Low confidence + sample">低置信＋抽样</option><option value="samples" data-zh="版本随机样本" data-en="Version probability samples">版本随机样本</option><option value="waiting" data-zh="等待数据" data-en="Awaiting data">等待数据</option><option value="all" data-zh="全部与历史" data-en="All and history">全部与历史</option></select>
+              <button class="button button-quiet" id="versionDatasetRefresh" type="button"><span class="ui-lang-zh">刷新</span><span class="ui-lang-en">Refresh</span></button>
+            </div>
+            <div class="version-metrics" id="versionDatasetSummary" aria-live="polite"></div>
+            <p class="muted version-counts" id="versionDatasetCounts"></p>
+            <section class="gallery-panel version-gallery">
+              <header class="gallery-heading"><form id="versionDatasetSearchForm"><input id="versionDatasetSearch" type="search" placeholder="Issue ID" aria-label="Issue ID" maxlength="128" /><button class="button button-quiet" type="submit"><span class="ui-lang-zh">搜索</span><span class="ui-lang-en">Search</span></button></form><select id="versionDatasetSort" data-label-zh="案例排序" data-label-en="Case order" aria-label="案例排序"><option value="added" data-zh="最新入库" data-en="Recently added">最新入库</option><option value="updated" data-zh="最近更新" data-en="Recently updated">最近更新</option><option value="issue" data-zh="Issue 编号" data-en="Issue ID">Issue 编号</option></select></header>
+              <p id="versionDatasetError" class="muted" role="status"></p>
+              <div class="issue-grid" id="versionDatasetGrid" aria-busy="true"></div>
+              <nav class="case-pagination"><button class="button button-quiet" type="button" id="versionDatasetPrev" disabled><span class="ui-lang-zh">上一页</span><span class="ui-lang-en">Previous</span></button><span id="versionDatasetPageLabel"></span><button class="button button-quiet" type="button" id="versionDatasetNext" disabled><span class="ui-lang-zh">下一页</span><span class="ui-lang-en">Next</span></button></nav>
+            </section>
+            <details class="version-history" id="versionDatasetHistory"><summary><span class="ui-lang-zh">导入记录 · CST</span><span class="ui-lang-en">Import history · CST</span></summary><div id="versionDatasetBatches"></div></details>
+          </section>
 <section class="app-page tool-page daily-cron-page hidden" id="dailyCronPage" data-page="daily-cron">
             <div class="cron-page-heading">
               <div class="cron-connection muted" id="dailyCronConnection" role="status" aria-live="polite"><span class="ui-lang-zh">正在连接…</span><span class="ui-lang-en">Connecting…</span></div>
@@ -2511,7 +2528,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-620`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-621`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

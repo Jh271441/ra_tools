@@ -39,9 +39,10 @@ def _valid_row(row,dataset,day):
     if status in {'unfilled','unknown'} and v not in (None,''):return False
     return True
 
-def project(root:Path,dataset='1009',day='',reason='all',te_status='all',page=1,size=24,revision=''):
+def project(root:Path,dataset='1009',day='',reason='all',te_status='all',page=1,size=24,revision='',sort='added',arrivals=None):
     if (dataset not in {'1009','0821'} and not re.fullmatch(r'20\d{6}',dataset)) or reason not in {'all','low','sample'} or te_status not in {'all','filled','unfilled','unknown'}:raise ValueError('invalid_scope')
     if not 1<=page<=10000 or not 1<=size<=100:raise ValueError('invalid_page')
+    if sort not in {'added','occurred','issue'}:raise ValueError('invalid_sort')
     allowed=Path(root).resolve()
     root=allowed/'reports/te_review_monitor'
     if not root.resolve().is_relative_to(allowed):raise ValueError('snapshot_root')
@@ -78,7 +79,13 @@ def project(root:Path,dataset='1009',day='',reason='all',te_status='all',page=1,
     dist=Counter(json.dumps(r['te_value'],ensure_ascii=False) for r in rows if r['te_status']=='filled')
     summary=dict(total=total,filled=counts['filled'],unfilled=counts['unfilled'],unknown=counts['unknown'],rate=counts['filled']/total if total else None,coverage=(counts['filled']+counts['unfilled'])/total if total else None,reasons=dict(Counter(r['reason'] for r in rows))) if snap else None
     selected=[r for r in rows if te_status=='all' or r['te_status']==te_status]
-    result=dict(version_membership=bool(version_membership),scope=dict(dataset=dataset,date=day or None,reason=reason),summary=summary,date_options=options,source_status=source_status,last_success_at=at,snapshot_revision=rev,
+    arrivals = arrivals or {}
+    for row in selected:
+        row['first_seen'] = arrivals.get(row['issue_id'], {}).get('first_seen')
+    if sort == 'added':selected.sort(key=lambda r: (r.get('first_seen') or '', int(r['issue_id'][2:])), reverse=True)
+    elif sort == 'occurred':selected.sort(key=lambda r: (r.get('date') or '', int(r['issue_id'][2:])), reverse=True)
+    else:selected.sort(key=lambda r: int(r['issue_id'][2:]))
+    result=dict(sort=sort,version_membership=bool(version_membership),scope=dict(dataset=dataset,date=day or None,reason=reason),summary=summary,date_options=options,source_status=source_status,last_success_at=at,snapshot_revision=rev,
                 result_distribution=[dict(value=json.loads(k),count=v) for k,v in sorted(dist.items())],
                 total=len(selected),page=page,size=size,items=selected[(page-1)*size:page*size],source_field='ra_review_result_new')
     return result,selected

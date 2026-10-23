@@ -54,3 +54,5 @@ body[data-active-page="daily-review"] .top-actions {margin-left:auto}
 .te-progress progress::-webkit-progress-bar {background:var(--line)}
 .te-progress progress::-webkit-progress-value {background:var(--accent);border-radius:4px}
 .te-progress progress::-moz-progress-bar {background:var(--accent)}
+
+.te-case-date {padding:0 10px 10px;font-size:10px;line-height:1.5;overflow-wrap:anywhere}

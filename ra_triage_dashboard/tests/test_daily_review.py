@@ -72,4 +72,19 @@ class DailyReviewTest(unittest.TestCase):
  def test_csv_formula(self):
   self.assertIn("'=1+1",export_csv([self.row(1,value='=1+1')]))
 
+ def test_arrival_sort_before_pagination_does_not_change_te_scope(self):
+     from ra_triage_dashboard.app.daily_review_source import project,export_csv
+     self.save([self.row(200),self.row(100,'unfilled',None)])
+     arrivals={'cn100':{'first_seen':'2026-10-23'},'cn200':{'first_seen':'2026-10-20'}}
+     newest,rows=project(self.root,size=1,arrivals=arrivals)
+     self.assertEqual(newest['items'][0]['issue_id'],'cn100')
+     self.assertEqual(newest['summary']['total'],2)
+     self.assertEqual(newest['summary']['filled'],1)
+     self.assertEqual(len(rows),2)
+     self.assertEqual(rows[0]['te_status'],'unfilled')
+     occurred,_=project(self.root,size=1,sort='occurred',arrivals=arrivals)
+     self.assertEqual(occurred['items'][0]['issue_id'],'cn200')
+     self.assertEqual(occurred['summary'],newest['summary'])
+     self.assertIn('cn100',export_csv(rows))
+     self.assertNotIn('first_seen',export_csv(rows))
 if __name__=='__main__':unittest.main()
