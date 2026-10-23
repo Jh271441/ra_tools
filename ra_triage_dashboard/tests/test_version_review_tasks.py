@@ -28,3 +28,14 @@ class VersionReviewTasksTest(unittest.TestCase):
         detail=version_task_detail(self.db,'version:release-20261009-odd2',assignee='jasperchen')
         self.assertEqual(detail['filtered_count'],1);self.assertTrue(detail['items'][0]['submitted'])
         self.assertIsNone(version_task_detail(self.db,'version:missing'))
+
+    def test_physical_task_uses_real_campaign_id_and_old_alias(self):
+        self.db.version_campaign_id=lambda _: 'canonical-campaign'
+        self.db.version_campaign_dataset=lambda _: self.dataset['id']
+        for row in self.rows:
+            if row.get('binding'): row['binding']['campaign_id']='canonical-campaign'
+        result=task(self.db,self.dataset)
+        self.assertEqual(result['split_id'],'canonical-campaign')
+        self.assertTrue(result['physically_merged'])
+        self.assertEqual(version_task_detail(self.db,'old-campaign')['split_id'],'canonical-campaign')
+        self.assertEqual(version_task_detail(self.db,'version:'+self.dataset['id'])['split_id'],'canonical-campaign')

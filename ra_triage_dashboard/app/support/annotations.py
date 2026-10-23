@@ -41,8 +41,8 @@ def _create_model_review_record(
     if case is None:
         raise _detail(404, "Issue 不存在。")
     author, author_source, author_verified = _action_actor(request, body.get("author"))
-    work_split_id = _as_text(body.get("work_split_id"))
-    campaign_id = _as_text(body.get("campaign_id"))
+    work_split_id = database.resolve_version_campaign(_as_text(body.get("work_split_id")))
+    campaign_id = database.resolve_version_campaign(_as_text(body.get("campaign_id")))
     reference_id = _as_text(body.get("reference_id"))
     if work_split_id:
         assignment = database.review_assignment_context(
@@ -150,7 +150,7 @@ def _create_annotation_record(
         case.get("gt_label"),
     )
     model_run_id = _as_text(body.get("model_run_id"))
-    work_split_id = _as_text(body.get("work_split_id"))
+    work_split_id = database.resolve_version_campaign(_as_text(body.get("work_split_id")))
     has_expected_previous = "expected_previous_annotation_id" in body
     expected_previous_annotation_id: int | None = None
     if has_expected_previous:

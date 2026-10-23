@@ -9,9 +9,10 @@ from .shared import utc_now
 from .version_run_consolidation import VersionRunConsolidationMixin
 from .version_dataset_rules import encoded
 from .assignment_rules import ASSIGNMENT_SUBMITTED_SQL
+from .version_campaigns import VersionCampaignsMixin
 
 
-class DatabaseVersionDatasetsMixin(VersionRunConsolidationMixin):
+class DatabaseVersionDatasetsMixin(VersionCampaignsMixin, VersionRunConsolidationMixin):
     def ingest_version_dataset(self, *, family, policy, items, batch_key, actor):
         if (
             not re.fullmatch(r"20\d{6}", family)
@@ -79,7 +80,14 @@ class DatabaseVersionDatasetsMixin(VersionRunConsolidationMixin):
             ).fetchone()
             if old:
                 if old["fingerprint"] != fingerprint:
-                    raise ValueError("Version batch idempotency conflict")
+                    def canonical_binding(value):
+                        value=json.loads(encoded(value))
+                        for item in value.get('items',[]):
+                            binding=item.get('binding') or {}
+                            if binding.get('campaign_id'):binding['campaign_id']=self._resolve_version_campaign(conn,binding['campaign_id'])
+                        return value
+                    if canonical_binding(json.loads(old['manifest_json']))!=canonical_binding(payload):
+                        raise ValueError("Version batch idempotency conflict")
                 return {**json.loads(old["receipt_json"]), "replayed": True}
             dataset = conn.execute(
                 "SELECT * FROM version_datasets WHERE id=?", (did,)
@@ -108,7 +116,8 @@ class DatabaseVersionDatasetsMixin(VersionRunConsolidationMixin):
                 binding = dict(item.get("binding") or {})
                 if binding:
                     run_id = str(binding.get("run_id") or "")
-                    campaign_id = str(binding.get("campaign_id") or "")
+                    campaign_id = self._resolve_version_campaign(conn,str(binding.get("campaign_id") or ""))
+                    if campaign_id:binding['campaign_id']=campaign_id
                     prediction = conn.execute(
                         "SELECT 1 FROM model_predictions WHERE model_run_id=? AND issue_id=?",
                         (run_id, iid),

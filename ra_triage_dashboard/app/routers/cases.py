@@ -866,7 +866,7 @@ async def get_case_work_split(
 
     await asyncio.to_thread(_writer_identity, request)
     try:
-        if split_id.startswith('version:'):
+        if split_id.startswith('version:') or await asyncio.to_thread(database.version_campaign_dataset,split_id):
             from ..version_review_tasks import version_task_detail
             result=await asyncio.to_thread(version_task_detail,database,split_id,page=max(1,int(page)),page_size=max(10,min(int(page_size),100)),assignee=assignee,status=status,query=q[:128])
             if result is None:raise _detail(404,'Version task not found')

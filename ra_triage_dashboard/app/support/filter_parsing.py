@@ -20,6 +20,13 @@ from .catalogs import (
 from .common import _as_text, _detail
 
 
+def _version_task_scope(value):
+    value=_as_text(value).strip()
+    if not value:return ''
+    from .baselines import database
+    return database.resolve_version_campaign(value)
+
+
 def _case_filter_kwargs(
     *,
     search: str = "",
@@ -133,7 +140,7 @@ def _case_filter_kwargs(
         "missing_evidence": missing_evidence,
         "issue_ids": selected_ids,
         "work_assignee": _as_text(work_assignee).strip(),
-        "work_split_id": _as_text(work_split_id).strip(),
+        "work_split_id": _version_task_scope(work_split_id),
         "comment_state": normalized_comment_state,
         "is_excluded": is_excluded,
         "exclusion": exclusion_filter,

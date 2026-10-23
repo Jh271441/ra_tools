@@ -151,6 +151,7 @@ class DatabaseCombinedReviewMixin:
         self, conn: Any, *, issue_id: str, campaign_id: str, reviewer: str,
         model_run_id: str = "",
     ) -> dict[str, Any]:
+        campaign_id = self._resolve_version_campaign(conn,campaign_id)
         campaign = conn.execute(
             """
             SELECT id, purpose, workflow_mode, lifecycle, legacy_read_only,
@@ -328,6 +329,9 @@ class DatabaseCombinedReviewMixin:
         with self._write_lock, self.connect() as conn:
             if self.backend == "postgresql":
                 conn.execute("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE")
+            # Fingerprint the original request first so an old task URL can replay
+            # its immutable submission without changing the historical fingerprint.
+            campaign_key = self._resolve_version_campaign(conn,campaign_key)
             replay = conn.execute(
                 """
                 SELECT * FROM combined_review_submissions

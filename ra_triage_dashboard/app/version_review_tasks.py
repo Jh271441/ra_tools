@@ -1,4 +1,4 @@
-"""Stable appendable version tasks; original Campaign/Review records stay authoritative."""
+"""Version task projections over physically consolidated, appendable Campaigns."""
 from collections import defaultdict
 
 PREFIX='version:'
@@ -15,7 +15,8 @@ def task(db, dataset, *, assignee='', status='all', query='', page=1, page_size=
     members=[dict(username=k,assigned_count=v[0],completed_count=v[1],pending_count=v[0]-v[1],completion_ratio=v[1]/v[0]) for k,v in sorted(counts.items())]
     assigned=sum(v[0] for v in counts.values());completed=sum(v[1] for v in counts.values())
     sources=sorted({r.get('binding',{}).get('campaign_id') for r in rows if r.get('binding',{}).get('campaign_id')})
-    result=dict(split_id=PREFIX+dataset['id'],dataset_id=dataset['id'],release_family=dataset['release_family'],kind='version_live',appendable=True,
+    canonical=getattr(db,'version_campaign_id',lambda _: '')(dataset['id'])
+    result=dict(split_id=canonical or PREFIX+dataset['id'],physically_merged=bool(canonical),dataset_id=dataset['id'],release_family=dataset['release_family'],kind='version_live',appendable=True,
                 campaign_name=dataset['release_family'][4:],created_at=dataset['created_at'],updated_at=dataset['updated_at'],created_by='version-incremental-service',
                 model_run_id=dataset['run_id'],workflow_mode='model_review_and_case_label',mode='single',reviewers_per_issue=1,overlap_ratio=0,
                 lifecycle='active',is_current=True,legacy_read_only=False,total_count=len(rows),assignment_count=assigned,
@@ -49,5 +50,6 @@ def version_tasks(db, *, assignee='', model_run_id=''):
 
 
 def version_task_detail(db, split_id, **options):
-    dataset=next((d for d in db.list_version_datasets() if PREFIX+d['id']==split_id),None)
+    did=split_id[len(PREFIX):] if split_id.startswith(PREFIX) else getattr(db,'version_campaign_dataset',lambda _: '')(split_id)
+    dataset=next((d for d in db.list_version_datasets() if d['id']==did),None)
     return task(db,dataset,detail=True,**options) if dataset else None

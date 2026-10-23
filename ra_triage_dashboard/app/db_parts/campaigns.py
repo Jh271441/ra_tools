@@ -177,6 +177,9 @@ class DatabaseCampaignMixin:
                 raise ValueError("Model Run 不存在。")
         else:
             evaluation_run_id = ""
+        if purpose == "model_review" and conn.execute("SELECT 1 FROM version_datasets WHERE run_id=?",(evaluation_run_id,)).fetchone():
+            dataset=conn.execute('SELECT id FROM version_datasets WHERE run_id=?',(evaluation_run_id,)).fetchone()
+            if self._version_registration(conn,dataset['id']):raise ValueError('Use direct append to the existing version task')
         workset_id = str(spec.get("workset_id") or "").strip()
         workset = conn.execute(
             "SELECT * FROM review_worksets WHERE id = ?", (workset_id,)
@@ -777,6 +780,7 @@ class DatabaseCampaignMixin:
         if selected_state not in {"all", "pending", "in_progress", "completed", "conflict", "adjudicated", "stale", "blocked", "unassigned", "legacy_read_only"}:
             raise ValueError("Campaign Issue 状态筛选不合法。")
         search = str(query or "").strip().lower()[:128]
+        campaign_key = self.resolve_version_campaign(campaign_key)
         with self.connect() as conn:
             row = conn.execute(
                 """

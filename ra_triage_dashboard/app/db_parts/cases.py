@@ -1607,7 +1607,7 @@ class DatabaseCasesMixin:
     ) -> dict[str, Any] | None:
         """Return one split and a paginated task/progress detail."""
 
-        normalized_split_id = str(split_id or "").strip()
+        normalized_split_id = self.resolve_version_campaign(str(split_id or "").strip())
         if not normalized_split_id:
             return None
         normalized_status = str(status or "all").strip().lower()
@@ -2170,6 +2170,7 @@ class DatabaseCasesMixin:
     ) -> dict[str, Any] | None:
         """Return the current assignment snapshot for one Issue/Run."""
 
+        work_split_id=self.resolve_version_campaign(work_split_id)
         with self.connect() as conn:
             normalized_split_id = str(work_split_id or "").strip()
             split_condition = "AND split.id = ?" if normalized_split_id else ""
@@ -2274,6 +2275,7 @@ class DatabaseCasesMixin:
         actor = str(username or "").strip().lower()
         if not normalized:
             return None
+        normalized=self.resolve_version_campaign(normalized)
         with self.connect() as conn:
             split = conn.execute(
                 "SELECT * FROM issue_work_splits WHERE id=?", (normalized,)

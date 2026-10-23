@@ -169,6 +169,10 @@ class DatabaseModelReviewMixin:
             if run is None:
                 raise ValueError("模型 Run 不存在。")
             if campaign_id:
+                original_campaign_id=campaign_id
+                campaign_id=self._resolve_version_campaign(conn,campaign_id)
+                reference_id=self._version_reference_id(conn,campaign_id,issue_id,reference_id)
+                if work_split_id==original_campaign_id:work_split_id=campaign_id
                 campaign_sql = (
                     "SELECT purpose, evaluation_run_id, reference_id, lifecycle, legacy_read_only "
                     "FROM issue_work_splits WHERE id = ?"
@@ -432,6 +436,10 @@ class DatabaseModelReviewMixin:
             where.append("lower(head.reviewer) = lower(?)")
             params.append(str(reviewer).strip())
         with self.connect() as conn:
+            if campaign_id:
+                campaign_id=self._resolve_version_campaign(conn,campaign_id)
+                reference_id=self._version_reference_id(conn,campaign_id,issue_id,reference_id)
+                params[2:4]=[campaign_id,reference_id]
             row = conn.execute(
                 f"""
                 SELECT revision.* FROM model_review_heads head
