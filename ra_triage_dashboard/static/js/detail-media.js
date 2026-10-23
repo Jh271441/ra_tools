@@ -37,6 +37,35 @@ function videoTrackLabel(label) {
   return label;
 }
 
+function videoWithFramePosters(caseData) {
+  const video = caseData?.assets?.video;
+  if (!video?.url) return null;
+  const withPoster = (track) => {
+    const frames = String(track.url || "").endsWith("/camera-video")
+      ? caseData?.camera?.frames || [] : caseData?.assets?.frames || [];
+    const poster = safeSameOriginAssetUrl(frames[heroFrameIndex(frames)]?.url || track.poster_url || "");
+    return { ...track, poster_url: poster };
+  };
+  // Keep the September native-video behavior: full-resolution posters only,
+  // no positioning overlay or visibility gate, and no extra image lookup.
+  return { ...withPoster(video), tracks: (video.tracks || []).map(withPoster) };
+}
+
+function refreshVideoFramePosters(root, caseData) {
+  const descriptor = videoWithFramePosters(caseData);
+  if (!descriptor) return;
+  const tracks = [descriptor, ...descriptor.tracks];
+  root?.querySelectorAll("[data-bev-video-player]").forEach(player => {
+    const video = player.querySelector("video");
+    const track = tracks.find(item => item.url === video?.getAttribute("src"));
+    // Updating a native poster never reloads the source or seeks the player.
+    if (track?.poster_url) video.setAttribute("poster", track.poster_url);
+    player.querySelectorAll("[data-video-track] option").forEach(option => {
+      option.dataset.poster = tracks.find(item => item.url === option.value)?.poster_url || "";
+    });
+  });
+}
+
 function refreshBevVideoLanguage(root = document) {
   root.querySelectorAll("[data-bev-video-player] video").forEach(video => video._refreshBevPlayerLanguage?.());
   enhanceDashboardSelects(root);
@@ -91,13 +120,13 @@ function videoPlayerMarkup(video, { zoomable = true, compact = false } = {}) {
           </select>
         </label>
       </div>
-      <div class="bev-video-load-state" data-video-status role="status" aria-live="polite">
-        <span data-video-status-text></span><button class="button button-quiet" type="button" data-video-retry hidden>${escapeHtml(uiText("重试视频", "Retry video"))}</button>
-      </div>
       <div class="bev-video-progress-row">
         <span data-video-relative-start>${escapeHtml(formatSignedSeconds(startOffsetSec))}</span>
         <input data-video-seek type="range" min="0" max="${escapeHtml(durationSec || 40)}" value="0" step="0.01" aria-label="${escapeHtml(uiText("视频进度", "Video progress"))}" />
         <span data-video-time>${escapeHtml(formatSignedSeconds(startOffsetSec))} / ${escapeHtml(formatSignedSeconds(startOffsetSec + durationSec))}</span>
+      </div>
+      <div class="bev-video-load-state" data-video-status role="status" aria-live="polite" hidden>
+        <span data-video-status-text></span><button class="button button-quiet" type="button" data-video-retry hidden>${escapeHtml(uiText("重试视频", "Retry video"))}</button>
       </div>
     </div>
   </div>`;
@@ -140,12 +169,15 @@ function bindBevVideoPlayers(root) {
     const setStatus = (kind) => {
       if (disposed) return;
       player.dataset.loadState = kind;
-      if (status) status.hidden = kind === "ready";
+      // Native loading/seeking is transient. Showing a full-width status for
+      // every seek made the timeline jump between rows (e249d10 regression).
+      // Only actionable slow/error states occupy a row, after the timeline.
+      if (status) status.hidden = !["slow", "error"].includes(kind);
       if (retry) retry.hidden = !["slow", "error"].includes(kind);
       if (statusText) statusText.textContent = kind === "error"
         ? uiText("视频加载失败", "Video failed to load")
         : kind === "slow" ? uiText("视频加载较慢，可重试或切换图片", "Video is loading slowly; retry or switch to images")
-        : uiText("视频加载中…", "Loading video…");
+        : "";
     };
     const loading = () => {
       if (disposed || video.error) return;
@@ -440,7 +472,7 @@ function ensureDetailMediaState(caseData) {
 
 function heroMediaSection(caseData) {
   const frames = caseData?.assets?.frames || [];
-  const video = caseData?.assets?.video;
+  const video = videoWithFramePosters(caseData);
   const camera = caseData?.camera?.frames || [];
   const previewThumbnailUrl = safeSameOriginAssetUrl(caseData?.preview_thumbnail_url);
   if (!frames.length && !camera.length && !video?.url) {
@@ -516,6 +548,7 @@ function hydrateDetailMediaControls(caseData) {
     ? state.caseLabeling?.issueId
     : state.selectedId;
   if (!issueId || issueId !== expectedId) return false;
+  refreshVideoFramePosters(detailHeroMediaEl(), caseData);
   const command = detailMediaPane()?.querySelector(".detail-media-command");
   if (command) command.outerHTML = detailMediaCommandMarkup(caseData);
   // Rebind the newly replaced picker without replacing the decoded video.
