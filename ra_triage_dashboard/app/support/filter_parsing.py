@@ -101,7 +101,8 @@ def _case_filter_kwargs(
     scopes = resolve_request_baseline_scopes(baselines, request=request)
     selected_ids = _parse_issue_id_filter(issue_ids)
     requested = baselines or (request.query_params.get('baselines','') if request else '')
-    if 'version-' in str(requested):
+    # A frozen Campaign keeps its original membership, including archived targets.
+    if 'version-' in str(requested) and not _as_text(work_split_id).strip():
         from .baselines import database, resolve_request_baseline_ids, baseline_registry
         ids = resolve_request_baseline_ids(requested,request=request)
         members = set()

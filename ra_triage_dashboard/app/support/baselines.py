@@ -357,7 +357,7 @@ def operational_baseline_summaries(existing, db=None):
     families = {x['release_family'] for x in versions}
     # Historical baseline scopes remain valid provenance; only the visible
     # operational selectors collapse their daily entries after consolidation.
-    result = [x for x in existing if not (('20261009' in families) and (str(x.get('id','')).startswith('1009-') or str(x.get('id','')).startswith('review-2026-')))]
+    result = [x for x in existing if not (('20261009' in families) and (str(x.get('id','')).startswith('1009-') or str(x.get('id','')).startswith('review-2026-') or str(x.get('label','')).startswith('1009 ')))]
     for item in versions:
         result.append(dict(id='version-'+item['release_family'],label=item['name'],scope='manual_sidecar_version_'+item['release_family'],loader='version_projection',count=item['targets'],source_rows=item['targets'],status='registered',registration_status='registered',default_selected=False,operational=True,gt_mode='sparse',membership=dict(frozen=False,registered_count=item['targets'])))
     return result
