@@ -1105,6 +1105,10 @@ async function bootstrap() {
     campaignQuery: initialRoute.campaignQuery,
   });
   let bootstrapContext = capturePageContext();
+  // Cron is a read-only, dataset-independent monitor. Start its first snapshot
+  // before configuration/Run metadata, which may be slow for a large union.
+  // Keep shared initialization for later navigation, but off Cron's paint path.
+  const initialCronRequest = initialRoute.page === "daily-cron" ? loadDailyCron() : null;
   const sessionRequest = resolveSessionInBackground();
   try {
     await settleInitialRequests([loadConfig()], "基础配置");
@@ -1253,7 +1257,7 @@ async function bootstrap() {
     } else if (initialRoute.page === "daily-review") {
       initialPageRequests.push(loadDailyReview());
     } else if (initialRoute.page === "daily-cron") {
-      initialPageRequests.push(loadDailyCron());
+      initialPageRequests.push(initialCronRequest || loadDailyCron());
     } else if (initialRoute.page === "status") {
       initialPageRequests.push(loadStatus());
     } else if (initialRoute.page === "users") {

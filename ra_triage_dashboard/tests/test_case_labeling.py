@@ -15,6 +15,39 @@ from ra_triage_dashboard.app.work_split import distribute_issue_ids
 
 
 class CaseLabelingTest(unittest.TestCase):
+    def test_detail_queue_contains_all_filtered_ids_without_expanding_gallery(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = self.make_db(tmp)
+            ids = [f"cn{index:03d}" for index in range(100, 145)]
+            database.upsert_issues(
+                [{"issue_id": issue, "gt_label": "正确触发"} for issue in ids],
+                source="test", replace_gt=True, baseline_scope="scope",
+            )
+            for issue in ids:
+                database.create_label_revision(
+                    issue_id=issue, expected_output="正确触发", tags=[], evidence_gaps=[],
+                    rationale="excluded fixture", is_excluded=True, author="alice",
+                    author_source="test", author_verified=True, expected_previous_revision_id=None,
+                )
+            for page, page_size in [(1, 20), (2, 20), (3, 20), (2, 10)]:
+                result = database.list_labeling_cases(
+                    baseline_scopes=["scope"], exclusion="excluded", author="alice",
+                    page=page, page_size=page_size,
+                )
+                self.assertEqual(result["total"], 45)
+                self.assertEqual(result["queue_issue_ids"], ids)
+                self.assertEqual([item["issue_id"] for item in result["items"]],
+                                 ids[(page - 1) * page_size:page * page_size])
+            subset = database.list_labeling_cases(
+                baseline_scopes=["scope"], exclusion="excluded", issue_ids=ids[5:30],
+                page_size=10, page=2,
+            )
+            self.assertEqual(subset["queue_issue_ids"], ids[5:30])
+            self.assertEqual(subset["total"], 25)
+            empty = database.list_labeling_cases(baseline_scopes=["scope"], author="absent")
+            self.assertEqual(empty["queue_issue_ids"], [])
+            self.assertEqual(database.list_labeling_cases(baseline_scopes=[])["queue_issue_ids"], [])
+
     def make_db(self, root: str) -> Database:
         database = Database(Path(root) / "labeling.sqlite")
         database.init()
