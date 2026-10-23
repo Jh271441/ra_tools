@@ -651,3 +651,13 @@ html[data-color-theme="light"] .trail-update-confirm-item code { color: #34465b;
 .trail-reason-selection-bar[hidden] { display:none; }
 .trail-reason-selection-bar .button { min-height:44px; white-space:normal; }
 .trail-reason-selection-bar #trailUpdateCommitButton { min-height:48px; }
+
+/* Keep the reconciliation identifiers and states readable in both themes. */
+.trail-reconcile-table .trail-update-issue { color:var(--accent); text-align:left; }
+.trail-reconcile-table .trail-update-discussion-link { color:var(--accent); min-height:44px; padding:8px; }
+html[data-color-theme="light"] .trail-reconcile-table .trail-update-state-badge.is-pending { color:#805700; }
+html[data-color-theme="light"] .trail-reconcile-table .trail-update-state-badge.is-on,
+html[data-color-theme="light"] .trail-reconcile-table .trail-update-state-badge.is-synced { color:#26734e; }
+html[data-color-theme="light"] .trail-reconcile-table .trail-update-state-badge.is-querying { color:#075f75; }
+html[data-color-theme="light"] .trail-reconcile-table .trail-update-state-badge.is-failed,
+html[data-color-theme="light"] .trail-reconcile-table .trail-update-state-badge.is-not-found { color:#b42318; }
