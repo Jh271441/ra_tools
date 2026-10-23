@@ -662,7 +662,7 @@ const body={},roots=[],capture=[];
 document={activeElement:body,documentElement:{dataset:{}},querySelectorAll:()=>roots.filter(r=>r.classList.contains('is-open')),querySelector:()=>null,addEventListener(type,fn,phase){if(type==='keydown'&&phase)capture.push(fn)}};
 window={addEventListener(){}};
 resetAnchoredPanel=()=>{};
-function fixture(escapeFocus){
+function fixture(escapeFocus,inDialog=false){
  const keys={},classes=new Set();
  const trigger={dataset:{},disabled:false,setAttribute(){},addEventListener(type,fn){keys['trigger:'+type]=fn},focus(){document.activeElement=this},blur(){if(document.activeElement===this)document.activeElement=body}};
  const option={dataset:{uiSelectValue:'completed'},focus(){document.activeElement=this},blur(){if(document.activeElement===this)document.activeElement=body},closest(){return this}};
@@ -670,6 +670,8 @@ function fixture(escapeFocus){
  const panel={get hidden(){return hidden},set hidden(value){hidden=value;if(value&&document.activeElement===option)document.activeElement=body},addEventListener(type,fn){keys['panel:'+type]=fn},querySelectorAll:()=>[option]};
  const native={value:'completed'};
  const root={classList:{contains:v=>classes.has(v),add:v=>classes.add(v),remove:v=>classes.delete(v)},contains:n=>[trigger,panel,option,native].includes(n),querySelector(selector){return selector.includes('panel')?panel:selector.includes('trigger')?trigger:selector.startsWith('select')?native:null}};
+ const dialog={querySelector:()=>classes.has('is-open')?root:null};
+ trigger.closest=()=>inDialog?dialog:null;
  roots.push(root);bindUiSelect(root,{escapeFocus});
  function escape(target,open){
   panel.hidden=!open;if(open)classes.add('is-open');target.focus();
@@ -677,6 +679,7 @@ function fixture(escapeFocus){
   capture.forEach(fn=>fn(event)); // Capture dismisses/hides the panel before its key listener.
   keys[target===trigger?'trigger:keydown':'panel:keydown'](event);
   assert.equal(panel.hidden,true);assert.equal(native.value,'completed');
+  return event;
  }
  return {trigger,option,escape};
 }
@@ -687,5 +690,8 @@ status.escape(status.option,true);assert.equal(document.activeElement,body);
 const ordinary=fixture('trigger');
 ordinary.escape(ordinary.option,true);assert.equal(document.activeElement,ordinary.trigger);
 ordinary.escape(ordinary.trigger,false);assert.equal(document.activeElement,ordinary.trigger);
+const modal=fixture('trigger',true);
+assert.equal(modal.escape(modal.trigger,true).prevented,true);
+assert.notEqual(modal.escape(modal.trigger,false).prevented,true);
 '''
     subprocess.run(["node"], input=script, text=True, check=True, capture_output=True)

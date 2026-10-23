@@ -391,7 +391,7 @@ function bindUiSelect(root, { onChange, maxHeight = 320, maxWidth = 420, escapeF
     (event) => {
       if (event.key === "Escape") {
         // A picker consumes the first Escape; a second Escape can close its dialog.
-        if (event.target.closest?.("dialog")?.querySelector(".ui-select.is-open")) event.preventDefault();
+        if (event.target?.closest?.("dialog")?.querySelector?.(".ui-select.is-open")) event.preventDefault();
         closeAllUiSelects();
       }
     },

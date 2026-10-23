@@ -35,9 +35,11 @@ trailUpdateFilteredItems({items:[pending,readonly]});assert.deepEqual([...trailS
 for(const marker of [false,null]) { readonly.trail_detail.trail_should_exclude=marker; assert.equal(trailReasonState(readonly),'reconcile_not_excluded'); }
 readonly.trail_detail.state='query_failed';assert.equal(trailReasonState(readonly),'query_failed');assert.equal(trailRemoteState(readonly),'unknown');
 readonly.trail_detail.state='excluded_no_reason';readonly.trail_detail.trail_should_exclude=true;
-lang='en';assert.match(trailUpdateStatusMeta(trailReasonState(readonly)).label,/reconcile/);
+lang='en';assert.equal(trailUpdateStatusMeta(trailReasonState(readonly)).label,"Excluded");
+assert.match(trailUpdateStatusMeta(trailReasonState(readonly)).detail,/Read-only/);
 assert.match(trailReasonSummaryMarkup(readonly),/No reason provided/);
-lang='zh';assert.match(trailUpdateStatusMeta(trailReasonState(readonly)).label,/待核对/);
+lang='zh';assert.equal(trailUpdateStatusMeta(trailReasonState(readonly)).label,"已排除");
+assert.match(trailUpdateStatusMeta(trailReasonState(readonly)).detail,/仅供核对/);
 assert.notEqual(trailRowKey(pending),trailRowKey({...pending,baseline_id:'0821'}));
 console.log('Trail frontend behavioral checks passed');
 '''
