@@ -739,3 +739,48 @@
 @media (max-width: 700px) {
   .bev-video-load-state .button { min-height: 44px; min-width: 44px; }
 }
+
+@media (max-width: 700px) {
+  .trail-reason-selection-bar { padding:12px; gap:8px; }
+  .trail-reason-selection-bar > label { flex-wrap:wrap; max-width:100%; }
+  .trail-reason-selection-bar .ui-select { max-width:100%; min-width:0; }
+  .trail-reason-selection-bar > button { min-height:44px; white-space:normal; }
+  .trail-selected-confirm .trail-reason-comparison { grid-template-columns:minmax(0,1fr); }
+  #trailUpdateCommitButton { min-height:48px; white-space:normal; }
+  .trail-reason-details, .trail-reason-comparison { width:100%; min-width:0; }
+}
+
+@media (max-width: 700px) {
+  .trail-update-table tbody tr.trail-reason-expanded { display:block; }
+  .trail-update-table tbody tr.trail-reason-expanded > td { display:block; width:100%; }
+  .trail-reason-expanded .trail-reason-comparison { grid-template-columns:minmax(0,1fr); }
+}
+
+@media (max-width:700px) {
+  .analysis-review-status-card.trail-update-status-card > .trail-update-status-summary > .analysis-review-status-legend { grid-column:1; grid-row:4; }
+  .analysis-review-status-card.trail-update-status-card > .trail-update-status-summary > .analysis-review-status-bar { grid-column:1; grid-row:3; }
+}
+
+@media (max-width:700px) {
+  .trail-update-confirm-dialog .dialog-card { max-height:calc(100dvh - 14px); overflow:auto; }
+  .trail-update-confirm-dialog .dialog-actions .button { min-height:48px; }
+}
+
+@media (max-width:760px) {
+  #trailAttributeUpdatePage .trail-update-filters { grid-template-columns:minmax(0,1fr); }
+  .trail-reconcile-controls > label { max-width:none; }
+  .trail-reconcile-table, .trail-reconcile-table tbody { display:block; width:100%; min-width:0; }
+  .trail-reconcile-table tbody tr:not(.trail-reason-expanded) { display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:12px; margin:10px 0; }
+  .trail-reconcile-table td:nth-child(n) { width:auto; display:block; min-width:0; border:0; padding:0; background:transparent; }
+  .trail-reconcile-table td::before { display:block; margin-bottom:5px; position:static; color:var(--muted); }
+  .trail-reconcile-table td:nth-child(1) { grid-column:1; grid-row:1; }
+  .trail-reconcile-table td:nth-child(4) { grid-column:2; grid-row:1; }
+  .trail-reconcile-table td:nth-child(5), .trail-reconcile-table td:nth-child(6) { grid-column:1 / -1; }
+  .trail-reconcile-table tbody tr.trail-reason-expanded { display:block; padding:0; }
+  .trail-reconcile-table .trail-reason-expanded td { display:block; padding:12px; }
+  .trail-reconcile-table .trail-reason-comparison { grid-template-columns:minmax(0,1fr); }
+  .trail-reason-selection-bar { padding:12px 0; gap:8px; }
+  .trail-reason-selection-bar > label { flex-wrap:wrap; width:100%; }
+  .trail-reason-selection-bar .ui-select { max-width:100%; min-width:0; }
+  #trailAttributeUpdatePage .trail-update-filters .ui-select-trigger { min-height:44px; }
+}

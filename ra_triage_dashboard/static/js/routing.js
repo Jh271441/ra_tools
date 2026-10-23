@@ -88,6 +88,7 @@ function applyUiLanguage(language, { persist = true } = {}) {
     "renderReviewAssignmentPage",
     "renderTrailAttributeRunPicker",
     "renderTrailUpdateFilters",
+    "refreshTrailReasonLanguage",
   ];
   for (const name of refreshers) {
     try {
@@ -417,6 +418,10 @@ function normalizedTrailUpdateRouteFilters(params) {
   return {
     tab: params.get("tab") === "issue" ? "issue" : "review",
     exclusionIssue: params.get("exclude_issue") || "",
+    view: params.get("view") === "reconciliation" ? "reconciliation" : "local",
+    sourceKind: params.get("source_kind") || "",
+    localState: params.get("local_state") || "",
+    remoteState: params.get("remote_state") || "",
     search: params.get("q") || "",
     gtLabel: parseFilterList(params.get("gt")).filter((value) => LABELS.includes(value)),
     modelLabel: parseFilterList(params.get("model_label") || params.get("annotation") || ""),
@@ -425,7 +430,7 @@ function normalizedTrailUpdateRouteFilters(params) {
       ["pending", "reviewed", "needs_gt_review"].includes(value)
     ),
     trailStatus: parseFilterList(params.get("trail_status")).filter((value) =>
-      ["querying", "synced", "pending", "not_found", "query_failed", "not_checked"].includes(value)
+      ["querying", "synced", "pending", "not_found", "query_failed", "not_checked", "needs_exclusion", "reason_changed", "reason_missing", "excluded_keep_reason", "excluded_no_reason", "reconcile_excluded", "reconcile_not_excluded"].includes(value)
     ),
     page: Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1,
     pageSize: CASE_PAGE_SIZES.includes(rawPageSize) ? rawPageSize : DEFAULT_CASE_PAGE_SIZE,
@@ -992,6 +997,10 @@ function pageUrl(page, options = {}) {
     if (trail.tab === "issue") url.searchParams.set("tab", "issue");
     if (trail.exclusionIssue && /^[A-Za-z0-9_-]{3,128}$/.test(trail.exclusionIssue)) url.searchParams.set("exclude_issue", trail.exclusionIssue);
     if (trail.search) url.searchParams.set("q", trail.search);
+    if (trail.view === "reconciliation") url.searchParams.set("view", "reconciliation");
+    for (const [key, param] of [["sourceKind", "source_kind"], ["localState", "local_state"], ["remoteState", "remote_state"]]) {
+      if (trail[key]) url.searchParams.set(param, trail[key]);
+    }
     const gt = joinFilterList(trail.gtLabel);
     const modelLabel = joinFilterList(trail.modelLabel);
     const reviewer = joinFilterList(trail.annotationAuthor);

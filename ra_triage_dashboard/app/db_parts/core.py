@@ -253,6 +253,14 @@ class DatabaseCoreMixin:
                     normalized_source["row_number"] = row_number
                 if normalized_source:
                     normalized_entry["source"] = normalized_source
+            change = entry.get("change")
+            if isinstance(change, dict):
+                # Server-derived, bounded audit of the exact selected diff.
+                normalized_entry["change"] = {
+                    key: change[key] for key in (
+                        "intent", "before", "after", "reason_source", "label_revision_ids", "local_fingerprint"
+                    ) if key in change
+                }
             normalized_entries.append(normalized_entry)
         now = utc_now()
         values = (

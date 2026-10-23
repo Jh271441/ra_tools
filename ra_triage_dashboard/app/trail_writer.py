@@ -163,8 +163,13 @@ def verify_trail_readback(
         if not isinstance(expected_dashboard, dict):
             mismatched.append(issue_id)
             continue
+        from .trail_exclusion_contracts import normalise_exclusion_comment
         for key in ("operation_id", "should_exclude", "should_exclude_comment"):
-            if key in expected_dashboard and dashboard.get(key) != expected_dashboard.get(key):
+            actual_value, expected_value = dashboard.get(key), expected_dashboard.get(key)
+            if key == "should_exclude_comment":
+                actual_value = normalise_exclusion_comment(actual_value)
+                expected_value = normalise_exclusion_comment(expected_value)
+            if key in expected_dashboard and actual_value != expected_value:
                 mismatched.append(issue_id)
                 break
     return {

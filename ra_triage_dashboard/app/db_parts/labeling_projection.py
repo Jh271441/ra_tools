@@ -15,6 +15,36 @@ class LabelingProjectionMixin:
         return {issue_id: projection for issue_id, cases in self._batch_label_cases(issue_ids).items()
                 if (projection := case_exclusion_projection(cases)) is not None}
 
+    def trail_exclusion_evidence(self, issue_ids, *, model_run_id=""):
+        """Read stored legacy/migrated flags; never infer decisions from notes."""
+        ids = sorted(set(str(value) for value in issue_ids))
+        if not ids:
+            return {}
+        projected = self.project_issue_exclusions(ids)
+        evidence = {}
+        with self.connect() as conn:
+            for issue in ids:
+                base = conn.execute("SELECT title, baseline_scope FROM issues WHERE issue_id = ?", (issue,)).fetchone()
+                if model_run_id and not conn.execute(
+                    "SELECT 1 FROM model_predictions WHERE issue_id = ? AND model_run_id = ?", (issue,model_run_id)
+                ).fetchone():
+                    continue
+                legacy = conn.execute(
+                    "SELECT id, is_excluded, note, author, created_at, model_run_id FROM annotations WHERE issue_id = ? ORDER BY id DESC LIMIT 50", (issue,)
+                ).fetchall()
+                migrated = conn.execute(
+                    """SELECT r.id, r.source_annotation_id, r.is_excluded, r.created_at
+                       FROM label_revisions r JOIN label_cases c ON c.id = r.label_case_id
+                       WHERE c.issue_id = ? AND r.source_annotation_id IS NOT NULL ORDER BY r.id""", (issue,)
+                ).fetchall()
+                projection = projected.get(issue)
+                evidence[issue] = {"title":str(base["title"] or "") if base else "",
+                    "baseline_scope":str(base["baseline_scope"] or "") if base else "",
+                    "local_excluded":bool(projection["is_excluded"]) if projection is not None else None,
+                    "legacy_reviews":[{**dict(row), "is_excluded":bool(row["is_excluded"])} for row in legacy],
+                    "migrated_revisions":[{**dict(row), "is_excluded":bool(row["is_excluded"])} for row in migrated]}
+        return evidence
+
     def project_issue_tag_contexts(self, issue_ids):
         """Current Issue tags for analysis, separate from Run review fields."""
         contexts = {}
@@ -50,6 +80,15 @@ class LabelingProjectionMixin:
                     "id": None, "review_domain": "case_label",
                     "is_excluded": projection["is_excluded"],
                     "label_revision_ids": projection["revision_ids"],
+                    "reason_source": {
+                        "kind": "historical_restore" if revision.get("author_source") == "migration_reason_restore" else "case_label",
+                        "revision_id": revision.get("id"), "author": revision.get("author", ""),
+                        "author_source": revision.get("author_source", ""),
+                        "created_at": revision.get("created_at", ""),
+                        "original_created_at": None if revision.get("author_source") == "migration_reason_restore" else revision.get("created_at"),
+                        "supersedes_id": revision.get("supersedes_id"),
+                        "source_annotation_id": revision.get("source_annotation_id"),
+                    },
                     "review_status": "reviewed", "author": revision.get("author", ""),
                     "created_at": revision.get("created_at", ""), "note": revision.get("rationale", ""),
                     "tags": revision.get("tags", []), "missing_evidence": revision.get("evidence_gaps", []),

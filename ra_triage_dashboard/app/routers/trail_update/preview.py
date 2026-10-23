@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timezone
 import hashlib
 from typing import Any, Mapping
 
 from fastapi import Request
 
-from ...runtime import baseline_registry, database, settings
+from ...runtime import baseline_registry, database, settings, issue_tag_sources
+from ...trail_exclusion_sources import merge_reconciliation_items
 from ...support.baselines import (
     resolve_request_baseline_ids,
     resolve_request_baseline_scopes,
@@ -16,6 +18,7 @@ from ...support.baselines import (
 from ...support.common import _as_text, _detail
 from ...trail_exclusion_contracts import (
     TRAIL_INFO_FIELD,
+    trail_update_details,
     TRAIL_RESULT_FIELD,
     canonical_json as _canonical_json,
     expected_exclusion_comments as _expected_exclusion_comments,
@@ -325,8 +328,10 @@ def _read_preview_trail_status_sync(
             expected_comments=normalised_comments,
         )
         return {
+            "checked_at": datetime.now(timezone.utc).isoformat(),
             "trail_capability": _capability_for_info_write(sync_result, info_field),
             "trail_update_statuses": statuses,
+            "trail_update_details": trail_update_details(sync_result, normalized_ids, info_field=info_field, expected_comments=normalised_comments),
             "trail_update_status_summary": _trail_update_status_summary(statuses),
         }
 
@@ -419,6 +424,8 @@ async def _build_preview(
     baselines: str = "",
     probe_trail: bool = True,
     refresh_trail: bool = False,
+    fresh_local: bool = False,
+    reconciliation: bool = False,
 ) -> dict[str, Any]:
     baseline_ids = resolve_request_baseline_ids(baselines, request=request)
     baseline_scopes = resolve_request_baseline_scopes(baselines, request=request)
@@ -432,7 +439,7 @@ async def _build_preview(
     # cache only that local fast path. A checked/refresh request always takes
     # a fresh database snapshot so its signed write validation cannot reuse a
     # short-lived presentation result.
-    if probe_trail:
+    if probe_trail or fresh_local:
         rows = await asyncio.to_thread(
             _load_review_exclusion_candidate_rows,
             baseline_scopes=baseline_scopes,
@@ -469,6 +476,27 @@ async def _build_preview(
         trail_write_enabled=review_write_enabled,
         write_mode="info_only",
     )
+    if reconciliation:
+        inventory = await asyncio.to_thread(issue_tag_sources.trail_exclusion_inventory,
+            root=settings.ra_auto_triage_root, baseline_ids=baseline_ids)
+        historical = inventory["items"]
+        evidence = await asyncio.to_thread(database.trail_exclusion_evidence,
+            [item["issue_id"] for item in historical], model_run_id=selected_run_id)
+        if selected_run_id:
+            historical = [item for item in historical if item["issue_id"] in evidence]
+        local_count = len(local_payload["items"])
+        local_payload["items"] = merge_reconciliation_items(local_payload["items"], historical, evidence)
+        local_payload.update(count=len(local_payload["items"]), local_candidate_count=local_count,
+            reconciliation=True, historical_sources=inventory["sources"],
+            historical_available=inventory["available"], historical_scope_count=len(historical))
+        issue_ids = sorted({item["issue_id"] for item in local_payload["items"]})
+        local_payload["payload_sha256"] = hashlib.sha256(_canonical_json({
+            "local_digest":local_payload["payload_sha256"], "sources":inventory["sources"],
+            "ids":issue_ids, "run_id":selected_run_id}).encode()).hexdigest()
+    else:
+        for item in local_payload["items"]:
+            item.update(local_selected=True, readonly=False, source_kind="local",
+                        row_key=f'{item.get("baseline_id", "")}|{item["issue_id"]}')
     expected_comments = _expected_exclusion_comments(local_payload.get("items") or [])
     # Trail status is a read-only projection and is useful even when the
     # controlled writer is disabled. Keep the first local paint cheap, then
@@ -507,6 +535,14 @@ async def _build_preview(
     # read so the local Review aggregate can paint immediately.  The browser
     # follows it with the checked request in the background and replaces the
     # payload before enabling a possible commit.
+    if issue_ids and probe_trail:
+        payload["trail_update_details"] = projection.get("trail_update_details", {})
+        for item in payload["items"]:
+            item["trail_detail"] = payload["trail_update_details"].get(item["issue_id"], {})
+    if not reconciliation:
+        for item in payload["items"]:
+            item.update(local_selected=True, readonly=False, source_kind="local",
+                        row_key=f'{item.get("baseline_id", "")}|{item["issue_id"]}')
     payload["capability_pending"] = bool(issue_ids and not probe_trail)
     _remember_preview_status_expectations(payload)
     return payload

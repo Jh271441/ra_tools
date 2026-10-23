@@ -46,6 +46,7 @@ batch.js
 import-refresh.js
 trail-update-state.js
 trail-update-preview.js
+trail-update-reasons.js
 trail-update-import.js
 trail-update-commit.js
 trail-update.js

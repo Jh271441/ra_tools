@@ -97,6 +97,8 @@ function bindTrailAttributeUpdateEvents() {
       : DEFAULT_CASE_PAGE_SIZE;
     applyTrailUpdateFilters();
   });
+  bindTrailReasonEvents();
+  bindTrailReconcileEvents();
   $("#trailUpdateCommitButton")?.addEventListener("click", () => {
     commitTrailAttributeUpdate().catch((error) => showToast(error.message, true));
   });

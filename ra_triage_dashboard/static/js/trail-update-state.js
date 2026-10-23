@@ -5,7 +5,7 @@
  */
 
 function trailUpdatePreviewKey(runId = state.trailUpdate?.runId || "") {
-  return `${String(runId || "").trim()}|${selectedBaselineQueryValue()}`;
+  return `${String(runId || "").trim()}|${selectedBaselineQueryValue()}|${state.trailUpdate.view || "local"}`;
 }
 
 function trailAttributePreviewNeedsLoad(runId = state.trailUpdate?.runId || "") {
@@ -24,6 +24,7 @@ function trailUpdateEndpoint(runId, probeTrail = true, refresh = false) {
   if (runId) params.set("model_run_id", runId);
   const baselines = selectedBaselineQueryValue();
   if (baselines) params.set("baselines", baselines);
+  if (state.trailUpdate.view === "reconciliation") params.set("reconciliation", "true");
   if (!probeTrail) params.set("probe_trail", "false");
   if (refresh) params.set("refresh", "true");
   return `/api/trail-attribute-update/preview?${params.toString()}`;
@@ -44,15 +45,22 @@ function trailUpdateStatusEndpoint(items = [], refresh = false) {
 function trailUpdateStatusMeta(status = "not_checked") {
   const key = String(status || "not_checked");
   const labels = {
-    querying: ["查询中", "Checking", "is-querying", "Trail 查询尚未完成"],
-    synced: ["已同步", "Synced", "is-synced", "排除标记与排除说明均与当前 Review 一致"],
-    pending: ["待同步", "Pending", "is-pending", "排除标记或排除说明与当前 Review 不一致"],
-    not_found: ["未找到", "Not found", "is-not-found", "Trail 未返回该 Issue"],
-    query_failed: ["查询失败", "Query failed", "is-failed", "请刷新后重试"],
-    not_checked: ["未检查", "Not checked", "is-not-checked", "当前环境未执行 Trail 查询"],
+    reconcile_excluded: ["Trail 已排除 · 待核对", "Trail excluded · reconcile", "is-pending", "仅供核对，不进入提交集合", "Read-only; excluded from submissions"],
+    reconcile_not_excluded: ["Trail 未排除 · 待核对", "Trail not excluded · reconcile", "is-pending", "历史记录不代表当前状态", "Historical membership is not the current state"],
+    querying: ["查询中", "Checking", "is-querying", "等待 Trail 查询", "Waiting for Trail"],
+    synced: ["已同步", "Synced", "is-synced", "排除标记与理由一致", "Exclusion and reason match"],
+    pending: ["待同步", "Pending", "is-pending", "请刷新以查看具体差异", "Refresh to inspect differences"],
+    needs_exclusion: ["待排除", "Awaiting exclusion", "is-pending", "Trail 尚无有效排除标记", "Trail has no active exclusion"],
+    reason_changed: ["理由待更新", "Reason changed", "is-pending", "排除已生效，仅理由不同", "Already excluded; only the reason differs"],
+    reason_missing: ["理由待补充", "Reason missing", "is-pending", "排除已生效，可补充理由", "Already excluded; a reason can be added"],
+    excluded_keep_reason: ["已排除", "Excluded", "is-synced", "本地理由为空，沿用 Trail 理由", "Local reason empty; keep the Trail reason"],
+    excluded_no_reason: ["已排除", "Excluded", "is-synced", "双方理由未填写", "Neither side has a reason"],
+    not_found: ["无法确认", "Unconfirmed", "is-not-found", "Trail 未返回此 Issue，请刷新重试", "Issue missing from Trail; refresh to retry"],
+    query_failed: ["无法确认", "Unconfirmed", "is-failed", "查询失败或预览过期，请刷新重试", "Query failed or preview expired; refresh to retry"],
+    not_checked: ["未检查", "Not checked", "is-not-checked", "请刷新查询 Trail", "Refresh to check Trail"],
   };
-  const [zh, en, className, detail] = labels[key] || labels.not_checked;
-  return { key, label: uiText(zh, en), className, detail: uiText(detail, detail) };
+  const [zh, en, className, detailZh, detailEn] = labels[key] || labels.not_checked;
+  return { key, label: uiText(zh, en), className, detail: uiText(detailZh, detailEn) };
 }
 
 function trailUpdateStatusCellMarkup(status = "not_checked") {
@@ -61,12 +69,13 @@ function trailUpdateStatusCellMarkup(status = "not_checked") {
 }
 
 function trailUpdateStatusSummary(data, items) {
+  items = (items || data?.items || []).filter(item => !item.readonly);
   const counts = {};
   // A locally filtered/paged table must project its own status distribution;
   // the server aggregate remains useful only when callers have no item list.
   if (Array.isArray(items)) {
     items.forEach((item) => {
-      const key = String(item?.trail_update_status || "not_checked");
+      const key = trailReasonState(item);
       counts[key] = Number(counts[key] || 0) + 1;
     });
   } else {
@@ -79,7 +88,7 @@ function trailUpdateStatusSummary(data, items) {
     }
   }
   const entries = Object.entries(counts).filter(([, count]) => count > 0);
-  const priority = ["querying", "query_failed", "pending", "not_found", "not_checked", "synced"];
+  const priority = ["querying", "query_failed", "not_found", "not_checked", "needs_exclusion", "reason_changed", "reason_missing", "pending", "synced", "excluded_keep_reason", "excluded_no_reason"];
   const primaryKey = priority.find((key) => counts[key]) || "not_checked";
   const primary = trailUpdateStatusMeta(primaryKey);
   const total = Object.values(counts).reduce((sum, count) => sum + Number(count || 0), 0);
@@ -100,7 +109,7 @@ function trailUpdateStatusSummary(data, items) {
       const percent = total ? Math.round((Number(count) / total) * 1000) / 10 : 0;
       return `<div class="analysis-review-status-legend-item trail-status-${escapeHtml(meta.key)}" data-trail-update-status-key="${escapeHtml(meta.key)}" role="listitem" tabindex="0" aria-label="${escapeHtml(`${meta.label}: ${count}, ${percent}%. ${meta.detail}`)}" title="${escapeHtml(meta.detail)}"><span class="analysis-review-status-swatch"></span><span class="analysis-review-status-legend-copy"><strong>${escapeHtml(meta.label)}</strong><small>${count} · ${percent}%</small></span></div>`;
     }).join("");
-    statusElement.innerHTML = `<div class="analysis-review-status-bar" role="img" aria-label="${escapeHtml(detail || primary.label)}">${segments}</div><div class="analysis-review-status-legend" role="list">${legend}</div>`;
+    statusElement.innerHTML = `${trailReasonScopeSummary(items || data?.items || [])}<div class="analysis-review-status-bar" role="img" aria-label="${escapeHtml(detail || primary.label)}">${segments}</div><div class="analysis-review-status-legend" role="list">${legend}</div>`;
     statusElement.className = "analysis-review-status-chart analysis-review-status-visual trail-update-status-chart trail-update-status-visual trail-update-status-summary";
     statusElement.title = detail;
     statusElement.setAttribute("aria-label", detail || primary.label);

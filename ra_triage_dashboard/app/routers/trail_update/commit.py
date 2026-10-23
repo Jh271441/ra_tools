@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
+from contextlib import asynccontextmanager
 from typing import Any, Mapping
 
 from ...db import REVIEW_STATUSES
@@ -21,6 +22,17 @@ logger = logging.getLogger("ra_triage_dashboard.trail_update")
 
 # Serializes the final fresh-preview/write/readback critical section only.
 _commit_lock = threading.Lock()
+
+@asynccontextmanager
+async def commit_guard():
+    # Non-blocking acquisition avoids freezing the event loop during Trail I/O.
+    while not _commit_lock.acquire(blocking=False):
+        await asyncio.sleep(0.05)
+    try:
+        yield
+    finally:
+        _commit_lock.release()
+
 
 def _append_exclusion_note(note: str, exclusion_note: str) -> str:
     """Add the submitted Issue-exclusion comment to the new Review version."""
@@ -98,11 +110,21 @@ def _mark_local_review_exclusions(
                 result["not_in_dashboard_count"] += 1
                 result["not_in_dashboard_issue_ids"].append(issue_id)
                 continue
+            projection = database.project_issue_exclusions([issue_id]).get(issue_id)
+            if projection is not None:
+                if projection.get("is_excluded"):
+                    result["already_excluded_count"] += 1
+                    continue
+                # A canonical non-excluded Case must not be overridden by a
+                # legacy side effect. Trail's successful result is independent.
+                raise ValueError("Case 当前未排除，未补写旧 Review / Case is not excluded; legacy Review unchanged")
             annotations = [
                 item for item in (case.get("annotations") or [])
                 if isinstance(item, dict)
             ]
             current = annotations[0] if annotations else {}
+            if current.get("review_domain", "legacy") != "legacy" or int(current.get("id") or 0) >= 1000000000000000:
+                raise ValueError("本地 Review 是展示投影，未补写 / Projected Review cannot be used as a stored version")
             if bool(current.get("is_excluded")):
                 result["already_excluded_count"] += 1
                 continue
@@ -205,7 +227,7 @@ async def _readback_changes(
         {
             "complete": bool(result.complete),
             "ok": bool(result.complete and verification.get("ok")),
-            "message": _as_text(result.message),
+            "message": ("info-only 回读完成 / Info-only readback complete" if result.complete and verification.get("ok") and not result_field else _as_text(result.message)),
             "fields_visible": list(result.fields_visible),
         }
     )

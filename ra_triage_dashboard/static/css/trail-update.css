@@ -588,3 +588,66 @@ html[data-color-theme="light"] .trail-update-confirm-list { background: #f8fafc;
 html[data-color-theme="light"] .trail-update-confirm-summary strong { color: #24364d; }
 html[data-color-theme="light"] .trail-update-confirm-item strong { color: #075f75; }
 html[data-color-theme="light"] .trail-update-confirm-item code { color: #34465b; }
+
+/* Full reason text stays readable inside the existing responsive table. */
+.trail-reason-selection-bar { display:flex; flex-wrap:wrap; align-items:center; gap:12px; padding:12px 16px; }
+.trail-reason-selection-bar > label { display:flex; align-items:center; gap:8px; min-width:0; }
+.trail-reason-selection-bar > small { flex-basis:100%; color:var(--muted); overflow-wrap:anywhere; }
+.trail-reason-check { display:inline-flex; align-items:center; justify-content:center; min-width:44px; min-height:44px; vertical-align:middle; }
+.trail-reason-check input { width:18px; height:18px; }
+.trail-reason-details summary { cursor:pointer; min-height:44px; display:flex; align-items:center; color:var(--accent); white-space:normal; }
+.trail-reason-comparison { display:grid; grid-template-columns:1fr; gap:12px; min-width:0; }
+.trail-reason-comparison section { min-width:0; padding:12px; border:1px solid var(--line); border-radius:8px; }
+.trail-reason-comparison p { white-space:pre-wrap; overflow-wrap:anywhere; margin:8px 0; line-height:1.6; max-height:none; }
+.trail-reason-comparison small { display:block; white-space:normal; overflow-wrap:anywhere; }
+.trail-reason-comparison button { min-height:44px; margin-top:8px; }
+.trail-selected-confirm { padding:12px 0; border-bottom:1px solid var(--line); }
+.trail-selected-confirm > strong { display:block; margin-bottom:8px; }
+.trail-selected-confirm .trail-reason-comparison { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.trail-reason-scope { margin:0 0 12px; white-space:normal; }
+.trail-reason-scope small { display:block; margin-top:6px; }
+
+.trail-reason-scope { grid-column:1 / -1; min-width:0; }
+.trail-reason-selection-bar > label > span { white-space:nowrap; }
+.trail-update-table tbody tr.trail-reason-expanded { display:table-row; }
+.trail-update-table tbody tr.trail-reason-expanded[hidden] { display:none !important; }
+.trail-update-table tbody tr.trail-reason-expanded > td { padding:16px; text-align:left; }
+.trail-reason-expanded .trail-reason-comparison { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.trail-reason-expanded td::before { display:none; }
+.trail-reason-toggle { white-space:normal; min-height:44px; }
+
+.analysis-review-status-card.trail-update-status-card { grid-template-columns:minmax(0,1fr); }
+.analysis-review-status-card.trail-update-status-card > .trail-update-status-heading { grid-column:1; grid-row:1; }
+.analysis-review-status-card.trail-update-status-card .trail-reason-scope { grid-column:1; grid-row:2; margin:0; }
+.analysis-review-status-card.trail-update-status-card > .trail-update-status-summary > .analysis-review-status-bar { grid-column:1; grid-row:3; }
+.analysis-review-status-card.trail-update-status-card > .trail-update-status-summary > .analysis-review-status-legend { grid-column:1; grid-row:4; justify-content:flex-start; }
+.trail-status-needs_exclusion { --status-color:#fbbf24; }
+.trail-status-reason_changed { --status-color:#a78bfa; }
+.trail-status-reason_missing { --status-color:#60a5fa; }
+.trail-status-excluded_keep_reason, .trail-status-excluded_no_reason { --status-color:#34d399; }
+
+.trail-update-confirm-dialog { overflow:auto; }
+.trail-update-confirm-dialog .dialog-card { display:flex; flex-direction:column; max-height:calc(82dvh - 2px); overflow:auto; }
+.trail-update-confirm-dialog .dialog-card > :not(.trail-update-confirm-list-wrap) { flex-shrink:0; }
+.trail-update-confirm-list-wrap { display:flex; flex-direction:column; flex:1 1 auto; min-height:100px; }
+.trail-update-confirm-list { flex:1 1 auto; min-height:0; max-height:none; }
+
+/* Reconciliation uses the shared controls and a compact six-column list. */
+.trail-reconcile-coverage { margin:0 0 12px; white-space:pre-line; overflow-wrap:anywhere; color:var(--muted); line-height:1.65; }
+.trail-reconcile-controls { padding:12px 0; }
+.trail-reconcile-controls > label { display:grid; gap:6px; max-width:360px; }
+.trail-update-filters { grid-template-columns:repeat(3,minmax(0,1fr)); margin-bottom:16px; }
+.trail-reconcile-table { min-width:0; }
+.trail-reconcile-table td:nth-child(n), .trail-reconcile-table th { width:auto; text-align:left; overflow-wrap:anywhere; }
+.trail-reconcile-table th:nth-child(1) { width:16%; }
+.trail-reconcile-table th:nth-child(2), .trail-reconcile-table th:nth-child(3) { width:12%; }
+.trail-reconcile-table th:nth-child(4) { width:18%; }
+.trail-reconcile-table th:nth-child(5) { width:28%; }
+.trail-reason-summary p { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:3; overflow:hidden; white-space:pre-wrap; margin:5px 0; line-height:1.5; }
+.trail-reconcile-evidence { display:grid; gap:12px; margin-top:16px; }
+.trail-reconcile-evidence section { padding:12px; border:1px solid var(--line); border-radius:8px; overflow-wrap:anywhere; }
+.trail-reconcile-evidence p { white-space:pre-wrap; line-height:1.6; }
+.trail-reconcile-note { color:var(--muted); }
+.trail-reason-selection-bar[hidden] { display:none; }
+.trail-reason-selection-bar .button { min-height:44px; white-space:normal; }
+.trail-reason-selection-bar #trailUpdateCommitButton { min-height:48px; }

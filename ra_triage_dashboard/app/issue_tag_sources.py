@@ -443,6 +443,11 @@ class IssueTagSourceIndex:
             )
         return suggestion.public() if suggestion is not None else None
 
+    def trail_exclusion_inventory(self, *, root: Path, baseline_ids):
+        """Snapshot membership for read-only reconciliation; never a write source."""
+        from .trail_exclusion_sources import load_historical_trail_exclusions
+        return load_historical_trail_exclusions(root, baseline_ids)
+
     def exclusion_candidates(
         self, *, baseline_ids: Iterable[str] | None = None
     ) -> list[dict[str, Any]]:

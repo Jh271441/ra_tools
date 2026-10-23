@@ -74,7 +74,7 @@ def build_review_exclusion_payload(
         patch = {
             "ra_triage_dashboard": {
                 "should_exclude": True,
-                "should_exclude_comment": comment_text,
+                **({"should_exclude_comment": comment_text} if comment_text else {}),
             }
         }
         items.append(
@@ -104,6 +104,12 @@ def build_review_exclusion_payload(
                     "is_excluded": True,
                 },
                 "comment": comment_text,
+                "reason_source": annotation.get("reason_source") or {
+                    "kind": "model_review", "revision_id": review_id,
+                    "author": as_text(annotation.get("author")),
+                    "created_at": as_text(annotation.get("created_at")),
+                    "original_created_at": as_text(annotation.get("created_at")),
+                },
                 "write_ready": bool(label) or info_only,
                 "trail_update_status": as_text((trail_statuses or {}).get(issue_id))
                 or ("querying" if trail_statuses is None else "not_checked"),

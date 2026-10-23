@@ -98,32 +98,69 @@ def trail_update_statuses(
 ) -> dict[str, str]:
     """Project one complete Trail snapshot into per-Issue write states.
 
-    A record is synchronized only when both the namespaced marker and its
-    normalized note match.  This prevents an old reason from being silently
-    treated as the same exclusion decision.
+    A nonempty local note must match the remote note. An empty local note
+    requests no reason change and preserves any existing remote text.
     """
 
-    normalized_ids = [as_text(issue_id) for issue_id in issue_ids if as_text(issue_id)]
-    rows_by_issue = {
-        as_text(row.get("issue_id")): row
-        for row in (getattr(sync_result, "rows", None) or [])
-        if as_text(row.get("issue_id"))
+    return {issue: detail["legacy_status"] for issue, detail in trail_update_details(
+        sync_result, issue_ids, info_field=info_field, expected_comments=expected_comments
+    ).items()}
+
+
+def exclusion_comparison(marker: bool | None, current_comment: str, local_comment: str) -> dict[str, Any]:
+    """An empty local reason means preserve the remote text, never erase it."""
+    remote = normalise_exclusion_comment(current_comment)
+    local = normalise_exclusion_comment(local_comment)
+    reason_changed = bool(local) and local != remote
+    if marker is not True:
+        state = "needs_exclusion"
+    elif reason_changed:
+        state = "reason_changed" if remote else "reason_missing"
+    elif local:
+        state = "synced"
+    else:
+        state = "excluded_keep_reason" if remote else "excluded_no_reason"
+    return {
+        "state": state, "trail_should_exclude": marker,
+        "trail_comment": remote, "local_comment": local,
+        "trail_modified_at": None,
+        "needs_exclusion_update": marker is not True,
+        "needs_reason_update": reason_changed,
+        "legacy_status": "pending" if marker is not True or reason_changed else "synced",
     }
-    if not bool(getattr(sync_result, "complete", False)):
-        return {issue_id: "query_failed" for issue_id in normalized_ids}
-    statuses: dict[str, str] = {}
-    for issue_id in normalized_ids:
-        row = rows_by_issue.get(issue_id)
-        if row is None:
-            statuses[issue_id] = "not_found"
+
+
+def trail_update_details(sync_result: Any, issue_ids: list[str], *, info_field: str,
+                         expected_comments: Mapping[str, str] | None = None) -> dict[str, dict[str, Any]]:
+    raw_rows = getattr(sync_result, "rows", []) or []
+    rows = {as_text(row.get("issue_id")): row for row in raw_rows}
+    duplicates = {issue for issue in rows if sum(as_text(row.get("issue_id")) == issue for row in raw_rows) > 1}
+    details = {}
+    for issue in issue_ids:
+        failure = "query_failed" if not getattr(sync_result, "complete", False) else "not_found" if issue not in rows else ""
+        if not failure:
+            raw = rows[issue].get(info_field)
+            try:
+                decoded = json.loads(raw) if isinstance(raw, str) and raw.strip() else raw
+                invalid = decoded is not None and decoded != "" and not isinstance(decoded, dict)
+                if isinstance(decoded, dict) and "ra_triage_dashboard" in decoded:
+                    invalid = not isinstance(decoded["ra_triage_dashboard"], dict)
+                if invalid or issue in duplicates:
+                    failure = "query_failed"
+            except (TypeError, ValueError):
+                failure = "query_failed"
+        if failure:
+            details[issue] = {"state": failure, "legacy_status": failure,
+                "trail_should_exclude": None, "trail_comment": None,
+                "local_comment": normalise_exclusion_comment((expected_comments or {}).get(issue)),
+                "needs_exclusion_update": False, "needs_reason_update": False,
+                "trail_modified_at": None}
             continue
-        marker, current_comment = dashboard_exclusion_values(row.get(info_field))
-        expected_comment = normalise_exclusion_comment(
-            (expected_comments or {}).get(issue_id, "")
-        )
-        note_matches = expected_comments is None or current_comment == expected_comment
-        statuses[issue_id] = "synced" if marker is True and note_matches else "pending"
-    return statuses
+        marker, remote = dashboard_exclusion_values(rows[issue].get(info_field))
+        # Legacy callers without an expected note only compare the marker.
+        local = remote if expected_comments is None else (expected_comments or {}).get(issue, "")
+        details[issue] = exclusion_comparison(marker, remote, local)
+    return details
 
 
 def trail_update_status_summary(statuses: Mapping[str, str]) -> dict[str, int]:

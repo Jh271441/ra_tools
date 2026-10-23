@@ -30,6 +30,8 @@ from ra_triage_dashboard.app.routers.trail_update import (
 
 class TrailAttributeUpdateTest(unittest.TestCase):
     def setUp(self):
+        patcher = patch.object(trail_preview.database, "project_issue_exclusions", return_value={})
+        patcher.start(); self.addCleanup(patcher.stop)
         # Existing legacy-only fixtures do not contain canonical Case votes.
         # The real Case projection/preview contract is covered by combined tests.
         patcher = patch.object(trail_preview.database, "case_exclusion_candidate_rows", return_value=[])

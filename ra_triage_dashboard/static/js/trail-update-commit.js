@@ -180,6 +180,9 @@ function openTrailUpdateConfirm({ mode = "review", data = {} } = {}) {
   }
   if (trailUpdateConfirmResolver) trailUpdateConfirmClose(false);
   const directMode = mode === "direct_issue_ids" || data?.mode === "direct_issue_ids";
+  const selectedMode = data?.mode === "selected_exclusions";
+  const reasonOnly = selectedMode && data.intent === "reason_only";
+  const selectedLabel = reasonOnly ? uiText("仅更新理由", "Reasons only") : uiText("排除所选案例", "Exclude selected cases");
   const allItems = Array.isArray(data?.items) ? data.items : [];
   // The server rechecks this state immediately before the write, but make the
   // confirmation surface match the operation: only rows whose dashboard
@@ -198,7 +201,7 @@ function openTrailUpdateConfirm({ mode = "review", data = {} } = {}) {
   const run = data?.selected_run || {};
   const runLabel = directMode
     ? uiText("Issue ID 屏蔽", "Shield by Issue ID")
-    : String(run.name || run.id || uiText("全部 Model Runs", "All model Runs"));
+    : String(run.name || (state.modelRuns || []).find(item => item.id === run.id)?.name || run.id || uiText("全部 Model Runs", "All model Runs"));
   const baselineLabel = Array.isArray(data?.baselines) && data.baselines.length
     ? data.baselines.join(" + ")
     : uiText("当前数据集", "Selected dataset");
@@ -225,10 +228,17 @@ function openTrailUpdateConfirm({ mode = "review", data = {} } = {}) {
     )
     : uiText("模型 label 和 info 将按预览写入。", "Model label and info will be written as previewed.");
 
+  if (selectedMode) {
+    if (subtitle) subtitle.textContent = uiText("请核对所选 Issue 及 Trail 当前理由、本地拟更新理由。", "Review selected Issues, current Trail reasons and proposed local reasons.");
+    if (bannerTitle) bannerTitle.textContent = selectedLabel;
+    if (bannerText) bannerText.textContent = reasonOnly
+      ? uiText("排除标记保持 true，仅更新所选理由。", "Exclusion remains true; only selected reasons change.")
+      : uiText("将所选案例标记为排除；未提供新理由时保留 Trail 原文。", "Exclude the selected cases; empty reasons keep existing Trail text.");
+  }
   const summary = $("#trailUpdateConfirmSummary");
   if (summary) {
     const cards = [
-      [uiText("提交模式", "Mode"), directMode ? uiText("Issue ID 屏蔽", "Issue shielding") : uiText("Review 排除汇总", "Review summary")],
+      [uiText("提交模式", "Mode"), selectedMode ? selectedLabel : directMode ? uiText("Issue ID 屏蔽", "Issue shielding") : uiText("Review 排除汇总", "Review summary")],
       [uiText("Issue 数量", "Issues"), String(count)],
       [directMode ? uiText("目标字段", "Target field") : uiText("Run / 数据集", "Run / dataset"), directMode ? targetSpec.fullPath : `${runLabel} · ${baselineLabel}`],
     ];
@@ -237,7 +247,7 @@ function openTrailUpdateConfirm({ mode = "review", data = {} } = {}) {
 
   const list = $("#trailUpdateConfirmList");
   const listCount = $("#trailUpdateConfirmListCount");
-  const shownItems = items.slice(0, 12);
+  const shownItems = data?.mode === "selected_exclusions" ? items : items.slice(0, 12);
   if (listCount) listCount.textContent = uiText(
     `${count > shownItems.length ? `共 ${count} 条，展示前 ${shownItems.length} 条` : `共 ${count} 条`}${skippedSyncedCount ? `；已同步跳过 ${skippedSyncedCount} 条` : ""}`,
     `${count > shownItems.length ? `${count} total · first ${shownItems.length} shown` : `${count} item(s)`}${skippedSyncedCount ? `; ${skippedSyncedCount} synced item(s) skipped` : ""}`
@@ -246,6 +256,7 @@ function openTrailUpdateConfirm({ mode = "review", data = {} } = {}) {
     list.innerHTML = shownItems.length
       ? shownItems.map((item) => {
         const issueId = String(item?.issue_id || "—");
+        if (data?.mode === "selected_exclusions") return `<article class="trail-selected-confirm"><strong>${escapeHtml(issueId)}</strong>${trailReasonComparisonMarkup(item, true)}</article>`;
         const currentLabel = directMode
           ? (item?.current_should_exclude ? uiText("已屏蔽", "Already shielded") : uiText("未屏蔽", "Not shielded"))
           : String(item?.model?.label || item?.review?.status || uiText("排除候选", "Excluded candidate"));
@@ -258,10 +269,18 @@ function openTrailUpdateConfirm({ mode = "review", data = {} } = {}) {
     trailUpdateConfirmSetExpanded(false);
   }
 
+  if (data?.mode === "selected_exclusions") {
+    if (bannerTitle) bannerTitle.textContent = data.intent === "reason_only" ? uiText("仅更新所选理由", "Update selected reasons only") : uiText("仅排除所选案例", "Exclude selected cases only");
+    if (bannerText) bannerText.textContent = data.intent === "reason_only" ? uiText("排除标记保持 true；不新增本地标注。", "Exclusion stays true; no local annotations are created.") : uiText("只提交以下案例；空理由保留 Trail 原文。", "Only these cases are submitted; empty reasons preserve Trail text.");
+  }
   const note = $("#trailUpdateConfirmNote");
   if (note) note.textContent = uiText(
     `${infoOnly ? `仅更新 ${targetSpec.fullPath}，不改模型 label。${directMode ? ` Trail 回读成功后同步判错复核“应该排除”。` : ""}` : `将更新 ${resultField} 和 ${targetSpec.fullPath}。`}提交前会再次校验预览指纹${digest ? `（${digest.slice(0, 12)}…）` : ""}。`,
     `${infoOnly ? `Only ${targetSpec.fullPath} will be updated; model labels stay unchanged.${directMode ? " Review ‘Exclude’ will be synchronized after Trail readback. " : " "}` : `Both ${resultField} and ${targetSpec.fullPath} will be updated. `}The preview fingerprint will be checked again before commit${digest ? ` (${digest.slice(0, 12)}…)` : ""}.`
+  );
+  if (note && data?.mode === "selected_exclusions") note.textContent = uiText(
+    "提交前会重新核对所选案例的本地版本与 Trail 内容；发生变化时需要重新预览。空理由保留远端原文。",
+    "Local versions and Trail content are checked again before commit; changes require a new preview. Empty reasons preserve remote text."
   );
   dialog.dataset.confirmMode = directMode ? "direct_issue_ids" : "review";
   return new Promise((resolve) => {
@@ -432,7 +451,7 @@ async function commitTrailIssueExclusion() {
         : localSyncWarning
           ? outsideDashboard.length
             ? uiText(`Trail 已完成；${outsideDashboard.length} 条不在当前看板，未创建本地 Review 排除标记。`, `Trail completed; ${outsideDashboard.length} Issues are outside this dashboard and have no local Review mark.`)
-            : uiText(`Trail 已完成；本地 Review 排除标记失败 ${localFailures.length} 条。`, `Trail completed; ${localFailures.length} local Review exclusion marks failed.`)
+            : uiText(`Trail 已完成；本地附带记录失败 ${localFailures.length} 条，无需重复提交 Trail。`, `Trail completed; ${localFailures.length} local Review exclusion marks failed.`)
           : uiText(
               `Issue 屏蔽已提交，Trail 与判错复核排除标记均已更新${notificationQueued ? `；DChat 通知已排队 ${notificationQueued} 人` : ""}。`,
               `Issue shielding and Review exclusion marks were updated${notificationQueued ? `; ${notificationQueued} DChat notifications queued` : ""}.`
@@ -454,59 +473,45 @@ async function commitTrailIssueExclusion() {
 
 async function commitTrailAttributeUpdate() {
   const data = state.trailUpdate?.data;
-  if (!trailUpdateWriteReady(data)) return;
-  if (!await openTrailUpdateConfirm({ mode: "review", data })) return;
-  const button = $("#trailUpdateCommitButton");
-  button?.toggleAttribute("disabled", true);
-  setTrailAttributeStatus(uiText("正在提交 Trail 属性…", "Committing Trail info…"));
-  openTrailUpdateProgress({ mode: "review", total: Number(data?.pending_count ?? data?.count ?? data?.items?.length ?? 0) });
-  trailUpdateProgressSetStage("request");
+  if (!trailSelectionReady(data) || state.trailUpdate.selectionBusy) return;
+  const scope = trailUpdatePreviewKey();
+  const issueIds = [...trailSelectedIssues()];
+  const intent = state.trailUpdate.selectionIntent || "reason_only";
+  state.trailUpdate.selectionBusy = true;
+  syncTrailAttributeActions(data);
   try {
-    const result = await api("/api/trail-attribute-update/commit", {
-      method: "POST",
-      body: JSON.stringify({
-        confirm: true,
-        model_run_id: data.selected_run?.id || state.trailUpdate.runId,
-        baselines: data.baselines || [],
-        payload_sha256: data.payload_sha256,
-      }),
+    setTrailAttributeStatus(uiText("正在核对所选案例的最新理由…", "Checking the latest reasons for selected cases…"));
+    const preview = await api("/api/trail-attribute-update/selection-preview", {
+      method: "POST", body: JSON.stringify({ issue_ids: issueIds, intent,
+        model_run_id: data.selected_run?.id || state.trailUpdate.runId || "",
+        baselines: data.baselines || [] }),
     });
-    const stats = result?.stats || {};
+    if (scope !== trailUpdatePreviewKey()) throw new Error(uiText("范围已变化，请重新选择并预览", "Scope changed; select and preview again"));
+    if (!await openTrailUpdateConfirm({ mode: "review", data: preview })) return;
+    if (scope !== trailUpdatePreviewKey()) throw new Error(uiText("范围已变化，请重新选择并预览", "Scope changed; select and preview again"));
+    openTrailUpdateProgress({ mode: "review", total: issueIds.length });
+    trailUpdateProgressSetStage("request");
+    const result = await api("/api/trail-attribute-update/selection-commit", {
+      method: "POST", body: JSON.stringify({ confirm: true, payload_sha256: preview.payload_sha256 }),
+    });
     const readback = result?.readback || {};
-    const readbackText = uiText(
-      `回读 ${readback.verified_count || 0}/${readback.checked_count || 0}`,
-      `read back ${readback.verified_count || 0}/${readback.checked_count || 0}`
+    const message = uiText(
+      `Trail 已验证 ${readback.verified_count || 0} 条，跳过已成功 ${result.skipped_synced_issue_ids?.length || 0} 条；本地标注无需补写。${result.failed_issue_ids?.length ? ` 未确认：${result.failed_issue_ids.join("、")}` : ""}`,
+      `Trail verified ${readback.verified_count || 0}; ${result.skipped_synced_issue_ids?.length || 0} already applied. No local annotation needed.${result.failed_issue_ids?.length ? ` Unconfirmed: ${result.failed_issue_ids.join(", ")}` : ""}`
     );
-    const progressMessage = uiText(
-      `字段与 info 排除说明 ${stats.success_count || 0}/${stats.total || data?.items?.length || 0}；${readbackText}。`,
-      `Trail fields and info notes ${stats.success_count || 0}/${stats.total || data?.items?.length || 0}; ${readbackText}.`
-    );
-    finishTrailUpdateProgress({ ok: Boolean(result?.ok), message: progressMessage });
-    setTrailAttributeStatus(uiText(
-      `Trail 更新完成：字段与 info 排除说明成功 ${stats.success_count || 0}，失败 ${stats.failed_count || 0}；${readbackText}。`,
-      `Trail update finished: fields and info notes ${stats.success_count || 0} succeeded / ${stats.failed_count || 0} failed; ${readbackText}.`
-    ));
-    showToast(
-      result?.ok
-        ? uiText("Trail 属性更新已完成并回读确认。", "Trail attributes updated and read back.")
-        : uiText("Trail 属性更新部分失败，请查看回读和失败明细。", "Trail attribute update is incomplete; inspect readback and failures."),
-      !result?.ok
-    );
-    if (result?.ok) {
-      const runId = String(data?.selected_run?.id || state.trailUpdate?.runId || "").trim();
-      void refreshTrailAttributeStatus({
-        runId,
-        previewKey: trailUpdatePreviewKey(runId),
-        requestSeq: state.trailUpdate.requestSeq,
-        force: true,
-      }).catch(() => {});
-    }
+    finishTrailUpdateProgress({ ok: Boolean(result.ok), message });
+    setTrailAttributeStatus(message);
+    if (result.ok) issueIds.forEach(id => trailSelectedIssues().delete(id));
+    else showToast(uiText("部分更新未确认，请查看结果并刷新。", "Some updates remain unconfirmed; inspect results and refresh."), true);
+    const runId = String(data.selected_run?.id || state.trailUpdate.runId || "");
+    void refreshTrailAttributeStatus({ runId, previewKey: trailUpdatePreviewKey(runId), requestSeq: state.trailUpdate.requestSeq, force: true }).catch(() => {});
   } catch (error) {
-    finishTrailUpdateProgress({ ok: false, message: error?.message || uiText("提交失败，请稍后重试。", "Commit failed; try again later.") });
-    setTrailAttributeStatus(error?.message || uiText("Trail 更新失败。", "Trail update failed."));
-    showToast(error?.message || uiText("Trail 更新失败。", "Trail update failed."), true);
+    finishTrailUpdateProgress({ ok: false, message: error.message });
+    setTrailAttributeStatus(error.message);
+    showToast(error.message, true);
   } finally {
+    state.trailUpdate.selectionBusy = false;
+    syncTrailSelectionControls(data);
     syncTrailAttributeActions(data);
   }
 }
-

@@ -38,6 +38,7 @@ from ...trail_writer import (
 from ...upload_limits import UploadLimitExceeded, read_upload_limited
 from .commit import (
     _commit_lock,
+    commit_guard,
     _mark_local_review_exclusions,
     _readback_changes,
     _save_issue_exclusion_history,
@@ -69,6 +70,7 @@ async def trail_attribute_update_preview(
     baselines: str = "",
     probe_trail: bool = True,
     refresh: bool = False,
+    reconciliation: bool = False,
 ) -> dict[str, Any]:
     """Return should-exclude rows for one Run or the all-Run aggregate."""
 
@@ -76,8 +78,9 @@ async def trail_attribute_update_preview(
         request,
         selected_run_id=_as_text(model_run_id),
         baselines=baselines,
-        probe_trail=probe_trail,
+        probe_trail=probe_trail and not reconciliation,
         refresh_trail=refresh,
+        reconciliation=reconciliation,
     )
 
 @router.get("/api/trail-attribute-update/status")
@@ -167,6 +170,8 @@ async def trail_attribute_update_status(
         "trail_update_status_summary": dict(
             projection["trail_update_status_summary"]
         ),
+        "trail_update_details": projection.get("trail_update_details", {}),
+        "checked_at": projection.get("checked_at"),
         "pending_count": pending_count,
         "write_status": write_status,
         "write_ready": write_status == "ready",
@@ -299,160 +304,9 @@ async def trail_issue_exclusion_preview(request: Request) -> dict[str, Any]:
 
 @router.post("/api/trail-attribute-update/commit")
 async def trail_attribute_update_commit(request: Request) -> dict[str, Any]:
-    """Commit an unchanged, field-validated preview to Trail in small chunks."""
-
-    if not settings.trail_attribute_write_enabled:
-        raise _detail(409, "Trail 属性写入开关尚未开启；当前仅允许预览和下载草稿。")
-    if not getattr(settings, "trail_attribute_review_write_enabled", False):
-        raise _detail(409, "Review 汇总写入已关闭；当前仅允许 Issue ID info-only 写入。")
-    if not has_same_origin_mutation_marker(request):
-        raise _detail(403, "缺少同源写请求标记。")
-    identity = await asyncio.to_thread(request_identity, request, settings)
-    if not identity_can_write(identity, settings):
-        raise _detail(403, "Trail 属性更新需要已验证的 SSO 写入权限。")
-    try:
-        body = await request.json()
-    except Exception as exc:
-        raise _detail(400, "提交内容不是合法 JSON。") from exc
-    if not isinstance(body, dict) or body.get("confirm") is not True:
-        raise _detail(400, "提交 Trail 更新前必须明确 confirm=true。")
-    run_id = _as_text(body.get("model_run_id"))
-    submitted_digest = _as_text(body.get("payload_sha256"))
-    if not submitted_digest:
-        raise _detail(400, "提交内容缺少 payload_sha256。")
-    raw_baselines = body.get("baselines", "")
-    if isinstance(raw_baselines, list):
-        baseline_query = ",".join(_as_text(item) for item in raw_baselines if _as_text(item))
-    else:
-        baseline_query = _as_text(raw_baselines)
-    # Serialize commits in this process.  The digest check below still makes
-    # a stale browser preview fail closed across workers/processes.
-    with _commit_lock:
-        preview = await _build_preview(
-            request,
-            selected_run_id=run_id,
-            baselines=baseline_query,
-        )
-        if submitted_digest != _as_text(preview.get("payload_sha256")):
-            raise _detail(409, "预览已过期或内容发生变化，请重新生成后再提交。")
-        if not preview.get("write_ready"):
-            capability = preview.get("trail_capability") or {}
-            message = _as_text(capability.get("message")) or "目标字段不可写。"
-            raise _detail(409, f"Trail 属性更新未就绪：{message}")
-        result_field, info_field = _field_names()
-        sync_result = await asyncio.to_thread(
-            read_trail_model_fields,
-            ra_root=settings.ra_auto_triage_root,
-            issue_ids=[_as_text(item.get("issue_id")) for item in preview.get("items", [])],
-            view_id=settings.trail_view_id,
-            chunk_size=settings.trail_sync_chunk_size,
-        )
-        if (
-            not sync_result.complete
-            or int(sync_result.returned_issues) != int(sync_result.queried_issues)
-        ):
-            raise _detail(409, _as_text(sync_result.message) or "Trail Issue 回读不完整。")
-        expected_comments = _expected_exclusion_comments(
-            [item for item in (preview.get("items") or []) if isinstance(item, dict)]
-        )
-        statuses = _trail_update_statuses(
-            sync_result,
-            [_as_text(item.get("issue_id")) for item in preview.get("items", [])],
-            info_field=info_field,
-            expected_comments=expected_comments,
-        )
-        incomplete_ids = [
-            issue_id for issue_id, status in statuses.items()
-            if status not in {"synced", "pending"}
-        ]
-        if incomplete_ids:
-            raise _detail(
-                409,
-                f"Trail 状态检查不完整，未写入任何 Issue：{', '.join(incomplete_ids[:8])}",
-            )
-        pending_items = [
-            item for item in (preview.get("items") or [])
-            if _as_text(statuses.get(_as_text(item.get("issue_id")))) == "pending"
-        ]
-        skipped_synced_issue_ids = sorted(
-            issue_id for issue_id, status in statuses.items() if status == "synced"
-        )
-        if not pending_items:
-            _preview_capability_cache.clear()
-            return {
-                "ok": True,
-                "mode": "commit",
-                "payload_sha256": submitted_digest,
-                "model_run_id": run_id,
-                "actor": {
-                    "username": identity.username,
-                    "source": identity.source,
-                    "verified": identity.verified,
-                },
-                "write_mode": "info_only",
-                "model_result_field": result_field,
-                "target_fields": [info_field],
-                "submitted_count": 0,
-                "skipped_synced_issue_ids": skipped_synced_issue_ids,
-                "trail_update_status_summary": _trail_update_status_summary(statuses),
-                "stats": write_trail_model_results([], ra_root=settings.ra_auto_triage_root),
-                "readback": {
-                    "complete": True,
-                    "ok": True,
-                    "checked_count": 0,
-                    "verified_count": 0,
-                    "missing_issue_ids": [],
-                    "mismatched_issue_ids": [],
-                    "message": "所有候选项的排除标记和排除说明均已同步；未发送 Trail 写入。",
-                },
-            }
-        changes = await asyncio.to_thread(
-            build_trail_changes,
-            pending_items,
-            current_rows=sync_result.rows,
-            result_field=result_field,
-            info_field=info_field,
-            write_result_field=False,
-        )
-        # Keep retries idempotent inside the same JSON info namespace.  No
-        # separate Trail Comment request is made.
-        changes = attach_trail_operation_id(changes, operation_id=submitted_digest)
-        stats = await asyncio.to_thread(
-            write_trail_model_results,
-            changes,
-            ra_root=settings.ra_auto_triage_root,
-            chunk_size=settings.trail_attribute_write_chunk_size,
-        )
-        readback = await _readback_changes(
-            changes,
-            stats,
-            result_field="",
-            info_field=info_field,
-        )
-        _preview_capability_cache.clear()
-    return {
-        "ok": (
-            not stats.get("failed_count")
-            and not stats.get("comment_failed_count")
-            and bool(readback.get("ok"))
-        ),
-        "mode": "commit",
-        "payload_sha256": submitted_digest,
-        "model_run_id": run_id,
-        "actor": {
-            "username": identity.username,
-            "source": identity.source,
-            "verified": identity.verified,
-        },
-        "write_mode": "info_only",
-        "model_result_field": result_field,
-        "target_fields": [info_field],
-        "submitted_count": len(changes),
-        "skipped_synced_issue_ids": skipped_synced_issue_ids,
-        "trail_update_status_summary": _trail_update_status_summary(statuses),
-        "stats": stats,
-        "readback": readback,
-    }
+    """Compatibility URL; a selection-preview digest is now required."""
+    from .selection import selection_commit
+    return await selection_commit(request)
 
 @router.post("/api/trail-attribute-update/issue-commit")
 async def trail_issue_exclusion_commit(request: Request) -> dict[str, Any]:
@@ -492,7 +346,7 @@ async def trail_issue_exclusion_commit(request: Request) -> dict[str, Any]:
     submitted_digest = _as_text(body.get("payload_sha256"))
     if not submitted_digest:
         raise _detail(400, "提交内容缺少 payload_sha256。")
-    with _commit_lock:
+    async with commit_guard():
         preview, sync_result = await _build_direct_preview(
             issue_ids=issue_ids,
             comment=fallback_comment,
@@ -761,9 +615,9 @@ async def trail_issue_exclusion_commit(request: Request) -> dict[str, Any]:
                     for issue_id in readback_failed
                 },
                 **{
-                    issue_id: _as_text(
+                    issue_id: "Trail 已回读成功；本地附带记录失败，无需重复提交 Trail / Trail verified; local side effect failed: " + (_as_text(
                         (local_review.get("failure_messages") or {}).get(issue_id)
-                    ) or "本地 Review 排除标记失败。"
+                    ) or "本地 Review 排除标记失败。")
                     for issue_id in local_failed_issue_ids
                 },
             },
@@ -797,3 +651,6 @@ async def trail_issue_exclusion_commit(request: Request) -> dict[str, Any]:
         "readback": readback,
         "local_review": local_review,
     }
+
+from .selection import router as selection_router
+router.include_router(selection_router)

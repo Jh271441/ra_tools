@@ -226,6 +226,8 @@ function trailIssueHistoryStatusMeta(status = "pending") {
   const values = {
     pending: ["待提交", "Pending", "is-pending"],
     completed: ["已同步", "Synced", "is-success"],
+    synced: ["已同步", "Synced", "is-success"],
+    unknown: ["结果待确认", "Unconfirmed outcome", "is-warning"],
     partial: ["部分成功", "Partial", "is-warning"],
     failed: ["失败", "Failed", "is-error"],
     trail_synced_not_in_dashboard: ["Trail 已同步（看板外）", "Trail synced (outside dashboard)", "is-warning"],
@@ -374,7 +376,7 @@ function syncTrailAttributeActions(data = state.trailUpdate?.data) {
   document.querySelectorAll('[data-trail-json-preview="review"]').forEach((button) => {
     button.toggleAttribute("disabled", loading || !data?.draft);
   });
-  $("#trailUpdateCommitButton")?.toggleAttribute("disabled", loading || !trailUpdateWriteReady(data));
+  $("#trailUpdateCommitButton")?.toggleAttribute("disabled", loading || Boolean(state.trailUpdate?.selectionBusy) || !trailSelectionReady(data));
 }
 
 function syncTrailIssueActions(data = state.trailUpdate?.directData) {
@@ -498,6 +500,10 @@ function currentTrailUpdateRouteOptions(overrides = {}) {
   return {
     tab: state.trailUpdate?.tab || "review",
     exclusionIssue: state.trailUpdate?.exclusionIssue || "",
+    view: state.trailUpdate?.view || "local",
+    sourceKind: filters.sourceKind || "",
+    localState: filters.localState || "",
+    remoteState: filters.remoteState || "",
     runId: state.trailUpdate?.runId || "",
     search: String(filters.search || "").trim(),
     gtLabel: trailUpdateFilterValues("gtLabel"),
@@ -516,6 +522,7 @@ function currentTrailUpdateRouteOptions(overrides = {}) {
 function applyTrailUpdateRouteControls(filters = {}) {
   const source = filters || {};
   if (source.tab) setTrailUpdateTab(source.tab);
+  state.trailUpdate.view = source.view === "reconciliation" ? "reconciliation" : "local";
   const issueId = String(source.exclusionIssue || "");
   state.trailUpdate.exclusionIssue = source.tab === "issue" && /^[A-Za-z0-9_-]{3,128}$/.test(issueId) ? issueId : "";
   if (source.tab === "issue" && /^[A-Za-z0-9_-]{3,128}$/.test(issueId)) {
@@ -533,6 +540,9 @@ function applyTrailUpdateRouteControls(filters = {}) {
     setTrailIssueStatus(uiText("已带入当前 Issue；请预览并确认排除。尚未写入 Trail。", "Issue added. Preview and confirm exclusion; Trail has not been written."));
   }
   state.trailUpdate.filters = {
+    sourceKind: source.sourceKind || "",
+    localState: source.localState || "",
+    remoteState: source.remoteState || "",
     search: String(source.search || ""),
     gtLabel: parseFilterList(source.gtLabel).filter((value) => LABELS.includes(value)),
     modelLabel: parseFilterList(source.modelLabel),
@@ -541,7 +551,7 @@ function applyTrailUpdateRouteControls(filters = {}) {
       ["pending", "reviewed", "needs_gt_review"].includes(value)
     ),
     trailStatus: parseFilterList(source.trailStatus).filter((value) =>
-      ["querying", "synced", "pending", "not_found", "query_failed", "not_checked"].includes(value)
+      ["querying", "synced", "pending", "not_found", "query_failed", "not_checked", "needs_exclusion", "reason_changed", "reason_missing", "excluded_keep_reason", "excluded_no_reason", "reconcile_excluded", "reconcile_not_excluded"].includes(value)
     ),
   };
   state.trailUpdate.page = Math.max(1, Number(source.page) || 1);
@@ -583,6 +593,7 @@ function trailUpdateSearchText(item = {}) {
     review.status,
     review.note,
     item.comment,
+    item.trail_detail?.trail_comment,
     item.baseline_id,
     item.baseline_scope,
   ].filter(Boolean).join(" ").toLocaleLowerCase();
@@ -599,12 +610,15 @@ function trailUpdateFilteredItems(data = state.trailUpdate?.data) {
   const trailStatus = new Set(trailUpdateFilterValues("trailStatus"));
   return items.filter((item) => {
     const review = item.review || {};
+    if (filters.sourceKind && filters.sourceKind !== item.source_kind) return false;
+    if (filters.localState && filters.localState !== trailLocalState(item)) return false;
+    if (filters.remoteState && filters.remoteState !== trailRemoteState(item)) return false;
     if (search && !trailUpdateSearchText(item).includes(search)) return false;
     if (gt.size && !gt.has(String(item?.gt_label || ""))) return false;
     if (modelLabel.size && !modelLabel.has(trailUpdateModelValue(item))) return false;
     if (reviewer.size && !reviewer.has(String(review.reviewer || ""))) return false;
     if (reviewStatus.size && !reviewStatus.has(String(review.status || "pending"))) return false;
-    if (trailStatus.size && !trailStatus.has(String(item?.trail_update_status || "not_checked"))) return false;
+    if (trailStatus.size && !trailStatus.has(trailReasonState(item)) && !(trailStatus.has("pending") && item.trail_update_status === "pending")) return false;
     return true;
   });
 }
@@ -614,7 +628,7 @@ function trailUpdateFilterOptions(items = []) {
   const modelValues = distinct(items.map(trailUpdateModelValue));
   const reviewerValues = distinct(items.map((item) => item?.review?.reviewer));
   const reviewValues = distinct(items.map((item) => item?.review?.status || "pending"));
-  const statusValues = distinct(items.map((item) => item?.trail_update_status || "not_checked"));
+  const statusValues = distinct(items.map(trailReasonState));
   return {
     gt: LABELS.filter((label) => items.some((item) => item?.gt_label === label)).map((value) => ({ value, label: value })),
     model: modelValues.map((value) => ({ value, label: value === "__none__" ? uiText("未输出", "No output") : value })),
@@ -677,6 +691,7 @@ function renderTrailUpdateFilters(data = state.trailUpdate?.data) {
     applyTrailUpdateFilters();
   });
   enhanceNativeUiSelect(pageSize);
+  syncTrailReconcileFilters();
 }
 
 function renderTrailUpdatePagination(filteredItems = []) {
@@ -715,8 +730,8 @@ function renderTrailUpdatePagination(filteredItems = []) {
   }
   if (jumpButton) jumpButton.disabled = totalPages <= 1;
   if (pageSizeSelect) pageSizeSelect.value = String(pageSize);
-  return { start: total ? (page - 1) * pageSize : 0, end: page * pageSize, total, page, totalPages };
   enhanceNativeUiSelect(pageSizeSelect);
+  return { start: total ? (page - 1) * pageSize : 0, end: page * pageSize, total, page, totalPages };
 }
 
 function goToTrailUpdatePage(nextPage) {
@@ -751,7 +766,7 @@ function clearTrailAttributePreview(message = "") {
   setTrailAttributeStatus(message);
   const body = $("#trailUpdateTableBody");
   if (body) {
-    body.innerHTML = `<tr><td colspan="8" class="trail-update-empty">${uiText("正在加载排除案例。", "Loading excluded cases.")}</td></tr>`;
+    body.innerHTML = `<tr><td colspan="6" class="trail-update-empty">${uiText("正在加载排除案例。", "Loading excluded cases.")}</td></tr>`;
   }
 }
 
@@ -774,7 +789,7 @@ function clearTrailIssuePreview(message = "") {
   }
 }
 
-function renderTrailAttributePreview(data) {
+function renderTrailAttributePreview(data, { preserveRows = false } = {}) {
   const allItems = Array.isArray(data?.items) ? data.items : [];
   renderTrailUpdateFilters(data);
   const filteredItems = trailUpdateFilteredItems(data);
@@ -785,13 +800,15 @@ function renderTrailAttributePreview(data) {
   const capability = data?.trail_capability || {};
   setTrailAttributeUpdatePreviewVisible(true);
   setTrailAttributeCapability(data);
-  $("#trailUpdateCount").textContent = String(filteredItems.length);
+  $("#trailUpdateCount").textContent = String(data.local_candidate_count ?? allItems.filter(item => !item.readonly).length);
+  renderTrailReconcileCoverage(data);
   const sourceLabel = run.name || run.id || uiText("全部 Model Runs", "All model Runs");
   $("#trailUpdateRunSummary").textContent = filteredItems.length === allItems.length
     ? sourceLabel
     : `${sourceLabel} · ${uiText(`筛选 ${filteredItems.length}/${allItems.length} 条`, `${filteredItems.length}/${allItems.length} filtered`)}`;
   renderTrailUpdateTargetField(data);
-  trailUpdateStatusSummary(data, filteredItems);
+  trailUpdateStatusSummary(data, allItems);
+  syncTrailSelectionControls(data);
   const digestElement = $("#trailUpdateDigest");
   if (digestElement) {
     digestElement.textContent = digest ? `${digest.slice(0, 12)}…` : "—";
@@ -800,32 +817,29 @@ function renderTrailAttributePreview(data) {
   const body = $("#trailUpdateTableBody");
   if (!body) return;
   if (!allItems.length) {
-    body.innerHTML = `<tr><td colspan="8" class="trail-update-empty">${uiText("当前数据集与 Run 范围没有已标记“应该排除”的 Review。", "No reviewed “should exclude” cases in the current dataset and Run.")}</td></tr>`;
+    body.innerHTML = `<tr><td colspan="6" class="trail-update-empty">${uiText("当前数据集与 Run 范围没有已标记“应该排除”的 Review。", "No reviewed “should exclude” cases in the current dataset and Run.")}</td></tr>`;
     return;
   }
   if (!items.length) {
-    body.innerHTML = `<tr><td colspan="8" class="trail-update-empty">${uiText("当前筛选没有匹配的排除案例。", "No excluded cases match the current filters.")}</td></tr>`;
+    body.innerHTML = `<tr><td colspan="6" class="trail-update-empty">${uiText("当前筛选没有匹配的排除案例。", "No excluded cases match the current filters.")}</td></tr>`;
     return;
   }
-  body.innerHTML = items.map((item) => {
-    const review = item.review || {};
-    const model = item.model || {};
-    const comment = String(item.comment || review.note || "").trim();
-    const ready = item.write_ready !== false;
-    const sourceRun = trailUpdateSourceRun(model, data, item);
-    const status = trailUpdateStatusMeta(item.trail_update_status || "not_checked");
-    return `<tr class="${ready ? "" : "is-invalid"}">
-      <td data-label="Issue"><strong class="trail-update-issue">${escapeHtml(item.issue_id || "—")}</strong><div class="trail-update-issue-meta"><small>${escapeHtml(item.title || item.scenario || "")}</small><button class="analysis-discussion-link trail-update-discussion-link" type="button" data-trail-update-discussion="${escapeHtml(item.issue_id || "")}" data-model-run-id="${escapeHtml(review.model_run_id || model.run_id || "")}">评论</button></div></td>
-      <td data-label="GT">${labelBadge(item.gt_label, "—")}</td>
-      <td data-label="模型 label">${labelBadge(model.label, "未输出")}<small>${ready ? "" : uiText("label 不在三分类契约内", "label is outside the contract")}</small></td>
-      <td data-label="模型 reason"><div class="trail-update-reason" title="${escapeHtml(model.reason || "模型未返回 reason")}">${escapeHtml(model.reason || "模型未返回 reason")}</div><small>${escapeHtml(formatModelConfidence(model.confidence))} confidence</small></td>
-      <td data-label="Review"><div>${escapeHtml(review.reviewer || "未记录")}</div><small>${escapeHtml(review.status || "pending")} · ${escapeHtml(formatTime(review.reviewed_at))}</small></td>
-      <td data-label="Comment"><div class="trail-update-comment" title="${escapeHtml(comment || uiText("未填写 Comment", "No Comment"))}">${escapeHtml(comment || "未填写")}</div><small class="trail-update-comment-target" title="${escapeHtml(comment ? uiText("提交时写入 info.ra_triage_dashboard.should_exclude_comment", "Saved in info.ra_triage_dashboard.should_exclude_comment on commit") : uiText("不会写入排除说明", "No exclusion note will be written"))}">${comment ? uiText("提交时写入 info.ra_triage_dashboard.should_exclude_comment", "Saved in info.ra_triage_dashboard.should_exclude_comment on commit") : uiText("不会写入排除说明", "No exclusion note will be written")}</small></td>
-      <td data-label="数据集版本" class="trail-update-source-cell" title="${escapeHtml(sourceRun.title)}"><strong>${escapeHtml(sourceRun.label)}</strong></td>
-      <td data-label="Trail 更新状态" data-trail-update-status-issue="${escapeHtml(item.issue_id || "")}">${trailUpdateStatusCellMarkup(status.key)}</td>
-    </tr>`;
+  const rowMarkup = items.map((item) => {
+    const key = trailRowKey(item);
+    return `<tr data-trail-reason-row="${escapeHtml(key)}">
+      <td data-label="Issue">${trailSelectionCheckbox(item)}<strong class="trail-update-issue">${escapeHtml(item.issue_id)}</strong><small>${escapeHtml(item.baseline_id || "")}</small></td>
+      <td data-label="${uiText("来源", "Source")}">${escapeHtml(trailSourceLabel(item.source_kind || "local"))}</td>
+      <td data-label="${uiText("本地状态", "Local state")}">${escapeHtml(trailLocalLabel(item))}</td>
+      <td data-label="${uiText("Trail 状态", "Trail state")}" data-trail-update-status-issue="${escapeHtml(item.issue_id)}">${trailUpdateStatusCellMarkup(trailReasonState(item))}</td>
+      <td data-label="${uiText("理由摘要", "Reasons")}" data-trail-reason-summary>${trailReasonSummaryMarkup(item)}</td>
+      <td data-label="${uiText("操作", "Actions")}">${trailReasonComparisonMarkup(item)}<div class="trail-update-issue-meta"><button class="analysis-discussion-link trail-update-discussion-link" type="button" data-trail-update-discussion="${escapeHtml(item.issue_id)}" data-model-run-id="${escapeHtml(item.review?.model_run_id || item.model?.run_id || "")}">${uiText("评论", "Discuss")}</button></div></td>
+    </tr><tr data-trail-reason-row="${escapeHtml(key)}:reason" data-trail-reason-expansion="${escapeHtml(key)}" class="trail-reason-expanded" ${state.trailUpdate.expandedReasons?.has(key) ? "" : "hidden"}><td colspan="6">${trailReasonComparisonMarkup(item, true)}</td></tr>`;
   }).join("");
+  reconcileTrailReasonRows(body, rowMarkup, preserveRows);
+  syncTrailSelectionControls(data);
   body.querySelectorAll("[data-trail-update-discussion]").forEach((button) => {
+    if (button.dataset.bound) return;
+    button.dataset.bound = "true";
     button.addEventListener("click", () => {
       openAnalysisDiscussion(button.dataset.trailUpdateDiscussion, {
         runId: button.dataset.modelRunId || "",
@@ -843,22 +857,23 @@ function patchTrailAttributeStatus(statusData) {
   data.trail_update_status_summary = statusData.trail_update_status_summary || {};
   data.pending_count = Number(statusData.pending_count || 0);
   data.pending_issue_ids = (data.items || [])
-    .filter((item) => String(statuses[String(item?.issue_id || "")] || item?.trail_update_status || "") === "pending")
+    .filter((item) => !item.readonly && String(statuses[String(item?.issue_id || "")] || item?.trail_update_status || "") === "pending")
     .map((item) => String(item?.issue_id || "").trim())
     .filter(Boolean);
   data.write_status = statusData.write_status || data.write_status;
   data.write_ready = statusData.write_ready === true;
   data.capability_pending = false;
+  data.checked_at = statusData.checked_at || "";
   (data.items || []).forEach((item) => {
     const itemIssueId = String(item?.issue_id || "");
     if (Object.prototype.hasOwnProperty.call(statuses, itemIssueId)) {
       item.trail_update_status = statuses[itemIssueId];
+      item.trail_detail = statusData.trail_update_details?.[itemIssueId] || { state: statuses[itemIssueId] };
     }
   });
-  // This remains the second-stage Trail response.  Re-rendering only this
-  // local projection updates filters/pagination and visible rows without a
-  // second Review aggregation or a new Trail request.
-  renderTrailAttributePreview(data);
+  // Keep keyed row nodes, expanded reasons and selection during async updates.
+  patchTrailReasonCells(data);
+  renderTrailAttributePreview(data, { preserveRows: true });
   syncTrailAttributeActions(data);
   return data;
 }
@@ -886,6 +901,7 @@ async function refreshTrailAttributeStatus({ runId, previewKey, requestSeq, forc
       requestSeq === state.trailUpdate.requestSeq &&
       previewKey === trailUpdatePreviewKey(runId)
     ) {
+      patchTrailAttributeStatus({ trail_update_statuses: Object.fromEntries((state.trailUpdate?.data?.items || []).map(item => [item.issue_id, "query_failed"])), write_status: "status_check_incomplete", write_ready: false });
       // Keep the already-rendered local candidate list usable for inspection;
       // only the remote status projection and commit readiness remain pending.
       setTrailAttributeStatus(uiText(
@@ -903,6 +919,10 @@ async function loadTrailAttributePreview(force = false, options = {}) {
   const runId = String(select?.value || state.trailUpdate?.runId || "").trim();
   state.trailUpdate.runId = runId;
   const previewKey = trailUpdatePreviewKey(runId);
+  if (state.trailUpdate.selectionScope !== previewKey) {
+    state.trailUpdate.selectedIssues = new Set();
+    state.trailUpdate.selectionScope = previewKey;
+  }
   const cachedData = state.trailUpdate?.data;
   if (!background && !force && state.trailUpdate?.loading && state.trailUpdate.previewKey === previewKey) {
     if (cachedData) {
