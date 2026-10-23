@@ -459,7 +459,7 @@ function renderMediaDialog() {
   if (snapshot?.referenceMedia) $('#mediaDecisionSummary').innerHTML = `<span class="comparison-side-label comparison-side-gt">GT</span>${labelBadge(gtLabel, "未保存")}`;
   if (snapshot?.teObservation) {
     const observation=snapshot.teObservation;
-    $('#mediaDecisionSummary').innerHTML = `<span>${escapeHtml(dailyReviewBadge(observation))}</span><a href="https://voyager.intra.xiaojukeji.com/static/management/#/issue/${encodeURIComponent(snapshot.issueId)}" target="_blank" rel="noopener noreferrer">Voyager ↗</a>`;
+    $('#mediaDecisionSummary').innerHTML = `<span>${escapeHtml(observation.version_dataset?versionTEBadge(observation):dailyReviewBadge(observation))}</span>${observation.version_dataset?`<span class="muted media-version-metadata">${escapeHtml(versionDatasetDetails(observation))}</span>`:''}<a href="https://voyager.intra.xiaojukeji.com/static/management/#/issue/${encodeURIComponent(snapshot.issueId)}" target="_blank" rel="noopener noreferrer">Voyager ↗</a>`;
   }
   const extraInputTarget = $("#mediaComparisonExtraInputs");
   const renderFrameExtraInputs = (frame = null) => {

@@ -1,8 +1,8 @@
 # Version composition and TE progress
 
 The version page follows the established full-width Workbench layout: four
-aggregate metrics in one row, followed by a full-width composition bar and TE
-panel. This restores the original visual hierarchy after the user rejected the
+aggregate metrics in one row, followed by the full-width TE panel and then a
+secondary full-width composition bar. This restores the original visual hierarchy after the user rejected the
 side-by-side narrow summary and tiny date-tile redesign. Spacing is modestly
 reduced; text and charts retain the original readable scale.
 
@@ -13,6 +13,18 @@ compact label / gauge / count rows without nested scrolling. Longer date/result
 lists can scroll with native controls. Tablet/mobile layouts wrap existing
 components without document overflow. The chart keeps up to 14 dates and includes
 a selected older date.0821 retains its fixed 312 members with no date chart.
+
+The user-prioritized TE summary shows filled and pending counts prominently;
+the shared denominator appears once beside its heading. The occurrence chart is
+labeled “Filled / targets”, and the filled-result distribution has its own heading,
+stable categorical colors, localized known values, and wrapping long labels.
+Raw source values and filled/pending semantics remain unchanged. Source freshness
+stays visible; per-check changes are secondary tooltip content.
+
+Gallery cards use four compact rows: Issue/cohort, model/confidence, TE and platform
+review states, and owner/occurrence time. Trigger and added-time details remain in
+the card's accessible metadata and media dialog, reachable on touch devices too.
+The two independent completion systems are never merged into one status.
 
 The heading info icon explains source, denominator and update cadence on hover,
 focus or tap. Escape and outside interaction dismiss it. Tooltip position stays
@@ -43,7 +55,7 @@ missing observations remain unknown. Platform combined review is independent and
 does not backfill Trail TE results. Nonempty raw values, including failure,
 unanswered and out_of_scope, remain filled observations.
 
-The source line shows the last successful check and the number of result changes
+The source line shows the last successful check; its tooltip shows result changes
 in that observation. The latter counts updates to existing members, not new
 members or an inferred annotation timestamp. A later successful check with zero
 changes means the observed values are unchanged; stale/error states remain visible.

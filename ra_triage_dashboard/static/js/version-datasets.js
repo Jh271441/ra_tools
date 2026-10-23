@@ -21,7 +21,7 @@ function clearVersionDatasetMembers(){
   $('#versionDatasetGrid').replaceChildren();$('#versionDatasetPageLabel').textContent='';
   $('#versionDatasetPrev').disabled=true;$('#versionDatasetNext').disabled=true;
   $('#versionDatasetBatches').textContent='';$('#versionDatasetExport').hidden=true;
-  $('#versionTERate').textContent='—';$('#versionTESource').textContent=uiText('读取中…','Loading…');
+  $('#versionTEScope').textContent='';$('#versionTEResultCount').textContent='';$('#versionTERate').textContent='—';$('#versionTESource').textContent=uiText('读取中…','Loading…');
   for(const id of ['versionTEStatusChart','versionTEDistribution','versionTEDailyChart','versionCompositionBar','versionCompositionLegend'])$('#'+id).replaceChildren();
   $('#versionTEDonut').classList.add('is-empty');$('#versionTEDonut').style.setProperty('--te-filled','0%');$('#versionTEDonut').style.setProperty('--te-known','0%');
   $('#versionDatasetDate').disabled=true;
@@ -81,7 +81,13 @@ function renderVersionDatasets({force=false}={}) {
       const binding=row.binding||{},pred=row.prediction;
       const url=binding.run_id?pageUrl('review',{issue:row.issue_id,runId:binding.run_id,workSplitId:binding.campaign_id||'',workflowMode:'model_review_and_case_label',comparisonStatus:'all',baselines:['version-'+current.release_family]}):'';
       const confidence=pred?.model_confidence;
-      return `<article class="issue-card version-card"><button type="button" class="issue-card-open" data-version-open="${escapeHtml(row.issue_id)}" aria-label="${escapeHtml(row.issue_id)} ${uiText('查看媒体','View media')}"></button><div class="issue-thumbnail"><div class="issue-thumbnail-placeholder"><span>${s.media.toUpperCase()}</span><small>${uiText('媒体待就绪','Media pending')}</small></div>${row.is_target?`<img data-src="${escapeHtml(withBase('/api/case-thumbnails/'+encodeURIComponent(row.issue_id)+'?kind='+s.media))}" loading="lazy" decoding="async" alt="${escapeHtml(row.issue_id)} ${s.media.toUpperCase()}" class="is-loading" />`:''}</div><div class="issue-card-body"><div class="issue-card-heading">${url?`<a class="issue-id" href="${escapeHtml(url)}">${escapeHtml(row.issue_id)} ↗</a>`:`<a class="issue-id" href="https://voyager.intra.xiaojukeji.com/static/management/#/issue/${encodeURIComponent(row.issue_id)}" target="_blank" rel="noopener noreferrer">${escapeHtml(row.issue_id)} ↗</a>`}<span class="muted">${row.is_sample?uiText('抽样','Sample'):row.is_low?uiText('低置信','Low'):''}</span></div><div class="version-card-line"><span>${escapeHtml(pred?.model_label||(current.historical?uiText('历史固定集','Frozen set'):versionDatasetStatus(row.state)))}</span><span class="muted">${confidence==null?'':(confidence*100).toFixed(1)+'%'}</span></div><div class="version-card-line muted"><span>${escapeHtml(binding.assignee||(current.historical?'—':uiText('未分配','Unassigned')))}</span><span>${escapeHtml(row.trigger||'—')}</span></div><div class="version-joint-result muted">${row.is_target&&!current.historical?row.review_submitted?uiText('联合复核已完成','Combined review completed'):uiText('联合复核待处理','Combined review pending'):''}</div><div class="version-te-result" data-status="${escapeHtml(row.te_status)}">${escapeHtml(versionTEBadge(row))}</div><div class="version-card-time muted">${uiText('入库','Added')} ${versionDatasetTime(row.first_seen)} · ${uiText('发生','Occurred')} ${(row.issue_time||row.ra_start_timestamp?versionDatasetTime(row.issue_time||row.ra_start_timestamp):escapeHtml(row.date||'—'))} CST</div></div></article>`;
+      const occurred=row.issue_time||row.ra_start_timestamp;
+      const time=occurred?versionDatasetTime(occurred):row.date||'—';
+      const owner=binding.assignee||(current.historical?'—':uiText('未分配','Unassigned'));
+      const joint=row.is_target&&!current.historical?(row.review_submitted?uiText('复核完成','Review done'):uiText('待复核','Review pending')):'';
+      const details=versionDatasetDetails(row);
+      const model=pred?.model_label?versionTEResult(pred.model_label):(current.historical?uiText('历史固定集','Frozen set'):versionDatasetStatus(row.state));
+      return `<article class="issue-card version-card"><button type="button" class="issue-card-open" data-version-open="${escapeHtml(row.issue_id)}" title="${escapeHtml(details)}" aria-label="${escapeHtml(row.issue_id)} ${uiText('查看媒体','View media')}"></button><div class="issue-thumbnail"><div class="issue-thumbnail-placeholder"><span>${s.media.toUpperCase()}</span><small>${uiText('媒体待就绪','Media pending')}</small></div>${row.is_target?`<img data-src="${escapeHtml(withBase('/api/case-thumbnails/'+encodeURIComponent(row.issue_id)+'?kind='+s.media))}" loading="lazy" decoding="async" alt="${escapeHtml(row.issue_id)} ${s.media.toUpperCase()}" class="is-loading" />`:''}</div><div class="issue-card-body"><div class="issue-card-heading"><a class="issue-id" href="${escapeHtml(url||'https://voyager.intra.xiaojukeji.com/static/management/#/issue/'+encodeURIComponent(row.issue_id))}"${url?'':' target="_blank" rel="noopener noreferrer"'}>${escapeHtml(row.issue_id)} ↗</a><span class="muted">${row.is_sample?uiText('抽样','Sample'):row.is_low?uiText('低置信','Low'):''}</span></div><div class="version-card-line"><span title="${escapeHtml(model)}">${escapeHtml(model)}</span><span class="muted">${confidence==null?'':(confidence*100).toFixed(1)+'%'}</span></div><div class="version-card-statuses"><span class="version-te-result" data-status="${escapeHtml(row.te_status)}">${escapeHtml(versionTEBadge(row))}</span>${joint?`<span class="version-joint-result muted" title="${uiText('平台联合复核，与 TE 分开统计','Platform combined review, tracked separately from TE')}">${joint}</span>`:''}</div><div class="version-card-meta muted" title="${escapeHtml(details)}" aria-label="${escapeHtml(details)}"><span>${escapeHtml(owner)}</span><time>${escapeHtml(time)} CST</time></div></div></article>`;
     }).join('')||`<div class="no-asset issue-grid-empty">${uiText('该筛选暂无案例','No cases in this view')}</div>`;
 
   }
@@ -143,8 +149,23 @@ function bindVersionDatasets(){
   document.addEventListener('visibilitychange',()=>{if(!s.active)return;clearTimeout(s.timer);if(document.hidden){s.seq++;s.controller?.abort();s.observer?.disconnect();s.observer=null;s.imageEpoch++;}else void loadVersionDatasets();});
 }
 
+function versionDatasetDetails(row){
+  const owner=row.binding?.assignee||uiText('未分配','Unassigned'),trigger=row.trigger||'—';
+  const occurred=row.issue_time||row.ra_start_timestamp;
+  const time=occurred?versionDatasetTime(occurred):row.date||'—',added=versionDatasetTime(row.first_seen);
+  return uiText(`负责人 ${owner} · 触发 ${trigger} · 入库 ${added} · 发生 ${time} CST`,`Assignee ${owner} · Trigger ${trigger} · Added ${added} · Occurred ${time} CST`);
+}
+function versionTEResult(value){
+  const raw=String(value??'');
+  const labels={'失败':uiText('失败','Failed'),'out_of_scope':uiText('超出范围','Out of scope'),'误触发':uiText('误触发','False trigger'),'未接起':uiText('未接起','Unanswered'),'无需协助':uiText('无需协助','No assistance needed'),'正确触发':uiText('正确触发','Correct trigger')};
+  return Object.prototype.hasOwnProperty.call(labels,raw)?labels[raw]:raw;
+}
+function versionTEResultColor(value){
+  const colors={'失败':'#d99b45','out_of_scope':'#8999ad','误触发':'#b390ee','未接起':'#699bd8','无需协助':'var(--accent)','正确触发':'#69b5a0'};
+  return Object.prototype.hasOwnProperty.call(colors,String(value))?colors[String(value)]:'var(--muted)';
+}
 function versionTEBadge(row){
-  return row.te_status==='filled'?`TE ${row.te_value}`:row.te_status==='unfilled'?uiText('TE 待标','TE pending'):row.te_status==='not_target'?uiText('未纳入复核','Outside review set'):uiText('TE 未知','TE unknown');
+  return row.te_status==='filled'?`TE · ${versionTEResult(row.te_value)}`:row.te_status==='unfilled'?uiText('TE 待标','TE pending'):row.te_status==='not_target'?uiText('未纳入复核','Outside review set'):uiText('TE 未知','TE unknown');
 }
 function renderVersionComposition(m){
   const c=m.composition;if(!c)return;
@@ -162,12 +183,15 @@ function renderVersionTE(m){
   const donut=$('#versionTEDonut');donut.style.setProperty('--te-filled',`${filled}%`);donut.style.setProperty('--te-known',`${known}%`);donut.classList.toggle('is-empty',!n.total);
   donut.setAttribute('aria-label',uiText(`TE 已标 ${n.filled}，共 ${n.total}`,`TE filled ${n.filled} of ${n.total}`));
   $('#versionTERate').textContent=n.total?`${filled.toFixed(1)}%`:'—';
-  $('#versionTEStatusChart').innerHTML=dailyReviewStatusRows(n).map(([key,label,count])=>`<button type="button" class="te-legend-item" data-version-te-status="${key}" aria-pressed="${s.teStatus===key}"><i class="te-swatch te-${key}"></i><span>${label}</span><strong>${count} / ${n.total}</strong></button>`).join('');
-  $('#versionTESource').textContent=`${te.source_status==='ready'?uiText('最近核对','Last checked'):te.source_status==='stale'?uiText('观测过期','Stale observation'):uiText('同步异常 · 未知单列','Sync unavailable · Unknown shown separately')} ${versionDatasetTime(te.last_success_at)} CST${te.observed_changes?uiText(` · 本轮标注变化 ${te.observed_changes.te}`,` · Label changes this check ${te.observed_changes.te}`):''}`;
+  $('#versionTEScope').textContent=m.dataset.historical?uiText(`${n.total} 个固定目标`,`${n.total} frozen targets`):uiText(`${n.total} 个目标 · 低置信＋抽样`,`${n.total} targets · Low confidence + sample`);
+  $('#versionTEStatusChart').innerHTML=dailyReviewStatusRows(n).map(([key,label,count])=>`<button type="button" class="te-legend-item${count===0?' is-zero':''}" data-version-te-status="${key}" aria-pressed="${s.teStatus===key}"><i class="te-swatch te-${key}"></i><span>${label}</span><strong>${count}</strong></button>`).join('');
+  $('#versionTESource').textContent=`${te.source_status==='ready'?uiText('更新','Updated'):te.source_status==='stale'?uiText('观测过期','Stale observation'):uiText('同步异常 · 未知单列','Sync unavailable · Unknown shown separately')} ${versionDatasetTime(te.last_success_at)} CST`;
+  $('#versionTESource').title=te.observed_changes?uiText(`本轮标注变化 ${te.observed_changes.te}；非当天标注量`,`Result changes this check: ${te.observed_changes.te}; not daily annotation volume`):'';
   $('#versionTESource').classList.toggle('te-warning',te.source_status!=='ready');
-  $('#versionTEDistribution').innerHTML=[...te.distribution].sort((a,b)=>b.count-a.count).map(r=>`<div class="version-result-row"><span title="${escapeHtml(String(r.value))}">${escapeHtml(String(r.value))}</span><span class="version-result-track"><i style="width:${n.filled?100*r.count/n.filled:0}%"></i></span><strong>${r.count}</strong></div>`).join('')||`<p class="te-chart-empty">${uiText('暂无已标结果','No filled results')}</p>`;
+  $('#versionTEResultCount').textContent=String(n.filled);
+  $('#versionTEDistribution').innerHTML=[...te.distribution].sort((a,b)=>b.count-a.count).map(r=>`<div class="version-result-row"><span title="${escapeHtml(versionTEResult(r.value))}">${escapeHtml(versionTEResult(r.value))}</span><span class="version-result-track"><i style="background:${versionTEResultColor(r.value)};width:${n.filled?100*r.count/n.filled:0}%"></i></span><strong>${r.count}</strong></div>`).join('')||`<p class="te-chart-empty">${uiText('暂无已标结果','No filled results')}</p>`;
   $('#versionTEDays').hidden=m.dataset.historical;
-  const dailyMarkup=te.daily.map(day=>{const d=day.summary;return `<button type="button" class="te-day" data-version-date="${escapeHtml(day.date)}" aria-pressed="${day.date===s.date}" aria-label="${escapeHtml(day.date)} · ${d.filled}/${d.total}"><strong>${d.total?(100*d.rate).toFixed(1)+'%':'—'}</strong><span class="te-day-stack">${dailyReviewStatusRows(d).map(([k,,count])=>`<i class="te-${k}" style="height:${100*count/d.total}%"></i>`).join('')}</span><span>${escapeHtml(day.date.slice(5).replace('-','/'))}</span><small>${d.filled}/${d.total}</small></button>`;}).join('');
+  const dailyMarkup=te.daily.map(day=>{const d=day.summary;return `<button type="button" class="te-day" data-version-date="${escapeHtml(day.date)}" aria-pressed="${day.date===s.date}" aria-label="${escapeHtml(day.date)} · ${uiText(`已标 ${d.filled}，目标 ${d.total}，待标 ${d.unfilled}，未知 ${d.unknown}`,`Filled ${d.filled}, targets ${d.total}, pending ${d.unfilled}, unknown ${d.unknown}`)}"><strong>${d.total?(100*d.rate).toFixed(1)+'%':'—'}</strong><span class="te-day-stack">${dailyReviewStatusRows(d).map(([k,,count])=>`<i class="te-${k}" style="height:${d.total?100*count/d.total:0}%"></i>`).join('')}</span><span>${escapeHtml(day.date.slice(5).replace('-','/'))}</span><small>${d.filled}/${d.total}</small></button>`;}).join('');
   const dailyChart=$('#versionTEDailyChart');if(dailyChart.innerHTML!==dailyMarkup)dailyChart.innerHTML=dailyMarkup||`<p class="te-chart-empty">${uiText('暂无可用发生日','No occurrence dates available')}</p>`;
   const params=new URLSearchParams({mode:s.mode,q:s.query,sort:s.sort,date:s.date,te_status:s.teStatus,revision:m.snapshot_revision,assignee:s.assignee,review_status:s.reviewStatus});
   const exp=$('#versionDatasetExport');exp.hidden=false;exp.href=withBase(`/api/version-datasets/${encodeURIComponent(s.dataset)}/workbench.csv?${params}`);
@@ -180,7 +204,7 @@ async function openVersionDatasetMedia(iid,preferredKind=''){
     if(!s.active||seq!==s.mediaSeq||dataset!==s.dataset||request!==state.media.requestSeq||!isPageContextCurrent(context))return;
     const frames=kind==='camera'?data.camera?.frames:data.assets?.frames;
     if(!frames?.length&&!preferredMediaKind(data)){showToast(uiText('媒体待就绪','Media pending'));return;}
-    openMedia(kind,heroFrameIndex(frames||[]),{caseData:{...data,gt_label:'',reference_media:true,te_observation:s.members?.items.find(r=>r.issue_id===iid)}});
+    openMedia(kind,heroFrameIndex(frames||[]),{caseData:{...data,gt_label:'',reference_media:true,te_observation:{...s.members?.items.find(r=>r.issue_id===iid),version_dataset:true}}});
   }catch(e){if(s.active&&seq===s.mediaSeq)showToast(uiText('媒体暂不可用，请稍后重试','Media unavailable; try again'),true);}
 }
 
