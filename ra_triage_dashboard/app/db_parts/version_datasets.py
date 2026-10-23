@@ -224,13 +224,13 @@ class DatabaseVersionDatasetsMixin(VersionRunConsolidationMixin):
                 item = dict(row)
                 item.pop("policy_json", None)
                 counts = conn.execute(
-                    "SELECT COUNT(*) AS total,SUM(is_target) AS targets,SUM(is_sample) AS samples,SUM(CASE WHEN is_target=1 THEN is_low ELSE 0 END) AS low FROM version_dataset_items WHERE dataset_id=?",
+                    "SELECT COUNT(*) AS total,SUM(is_target) AS targets,SUM(is_sample) AS samples,SUM(CASE WHEN is_target=1 THEN is_sample ELSE 0 END) AS sampled_targets,SUM(CASE WHEN is_target=1 THEN is_low ELSE 0 END) AS low FROM version_dataset_items WHERE dataset_id=?",
                     (row["id"],),
                 ).fetchone()
                 item.update(
                     {
                         k: int(counts[k] or 0)
-                        for k in ("total", "targets", "samples", "low")
+                        for k in ("total", "targets", "samples", "sampled_targets", "low")
                     }
                 )
                 item["states"] = {
