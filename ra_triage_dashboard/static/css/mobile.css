@@ -946,6 +946,13 @@
 
 @media (max-width:650px){
  .cron-increment-explanation summary { min-height:44px;display:flex;align-items:center; }
- .cron-increment-version { gap:5px 12px; }
- .cron-increment-metrics { gap:7px 14px; }
+ .cron-increment-round > summary { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:7px 8px; padding:12px 0; }
+ .cron-round-time { grid-column:1; gap:4px 8px; }
+ .cron-increment-round > summary .cron-chip { grid-column:1; justify-self:start; white-space:normal; }
+ .cron-round-brief { grid-column:1; margin:0; }
+ .cron-round-chevron { grid-column:2; grid-row:1 / 4; }
+ .cron-increment-version { grid-template-columns:minmax(0,1fr); padding:12px; gap:12px; }
+ .cron-increment-version header > strong { width:auto; }
+ .cron-increment-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px 12px; }
+ .cron-increment-idle { padding:4px 0; }
 }

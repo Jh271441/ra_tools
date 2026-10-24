@@ -98,8 +98,8 @@ function renderDailyCron() {
   if (!$("#dailyCronPage")) return;
   const data = dailyCronState.data;
   if (!data) return;
-  if ($('#dailyCronIncrements')) $('#dailyCronIncrements').hidden = true;
   if (data.incremental?.enabled && !dailyCronState.selectedDay) { renderIncrementalCron(data); return; }
+  if ($('#dailyCronIncrements')) $('#dailyCronIncrements').hidden = true;
   const overview = data.overview, daily = overview?.daily, run = typeof cronSelectedRuns === "function" ? cronSelectedRuns(data).main : cronLatestRun(data), sidecar = data.sidecar;
   const observationAge = Date.now() / 1000 - (overview?.collected_at || 0);
   const stale = Boolean(overview && (overview.stale || overview.collector_error || observationAge > 90));
@@ -284,33 +284,98 @@ function renderIncrementalCron(data) {
   renderDailyCronRuns(data);renderDailyCronSidecar(data.sidecar);renderDailyCronJobs();renderCronRunSelector();void renderDailyCronGraph();
 }
 
-function renderCronIncrements(history) {
-  const panel=$('#dailyCronIncrements'), host=$('#dailyCronIncrementRows');
-  if(!panel||!host)return;
-  panel.hidden=false;
-  if(history?.status!=='ready') {
-    delete host.dataset.historyKey;
-    host.innerHTML=`<p class="cron-note muted" role="status">${escapeHtml(history?.status==='empty'?uiText('尚无定时扫描记录。','No scheduled scans yet.'):uiText('增量记录暂不可用，累计进度仍可查看。','Increment history is unavailable; cumulative progress remains available.'))}</p>`;
-    return;
+// These are independent completion-window counts, never a conversion funnel.
+const cronIncrementKeys = ['new', 'filled', 'published', 'target_added', 'target_removed'];
+function cronIncrementKnown(value) { return typeof value === 'number' && Number.isFinite(value) && value >= 0; }
+function cronIncrementIdle(row) { return row.scan_state === 'success' && cronIncrementKeys.every(k => row[k] === 0); }
+function cronIncrementFamily(row) {
+  const family = String(row.family || '');
+  return /^\d{8}$/.test(family) ? family.slice(4) : family || uiText('未知版本', 'Unknown version');
+}
+function cronIncrementStatus(rows) {
+  if (rows.some(r => r.scan_state === 'failed')) return ['fail', uiText('扫描失败', 'Scan failed')];
+  if (rows.some(r => r.scan_state === 'running')) return ['neutral', uiText('扫描中', 'Scanning')];
+  if (rows.some(r => r.scan_state !== 'success')) return ['warn', uiText('扫描未知', 'Scan unknown')];
+  return ['ok', uiText('扫描成功', 'Scan succeeded')];
+}
+function cronIncrementRounds(items) {
+  const rounds = new Map();
+  for (const row of items || []) {
+    const key = String(row.start_at);
+    if (!rounds.has(key)) rounds.set(key, []);
+    rounds.get(key).push(row);
   }
-  const key=JSON.stringify([state.uiLanguage,history.items]);
-  if(host.dataset.historyKey===key)return;
-  const explanationOpen=Boolean(host.querySelector('details')?.open);
-  const rounds=new Map();
-  for(const row of history.items||[]) {
-    if(!rounds.has(row.start_at))rounds.set(row.start_at,[]);
-    rounds.get(row.start_at).push(row);
-  }
-  const metrics=[['new',uiText('新增发现','New IDs')],['filled',uiText('补齐入队','Source filled')],['published',uiText('回刷完成','Published')],['target_added',uiText('目标入库','Targets added')]];
-  const entries=[...rounds].map(([at,rows])=>{
-    const unchanged=row=>row.scan_state==='success'&&['new','filled','published','target_added','target_removed'].every(k=>row[k]===0);
-    const changed=rows.filter(row=>!unchanged(row)),idle=rows.filter(unchanged);
-    const state=rows.find(row=>row.scan_state!=='success')?.scan_state;
-    const lines=changed.map(row=>`<div class="cron-increment-version"><strong>${escapeHtml(String(row.family||'').slice(4))}</strong><div class="cron-increment-metrics">${metrics.map(([k,label])=>`<span><span class="muted">${escapeHtml(label)}</span><b>${k==='target_added'&&row[k]!=null?'+':''}${escapeHtml(cronCount(row[k]))}</b></span>`).join('')}${row.target_removed?`<span><span class="muted">${escapeHtml(uiText('移出目标','Targets removed'))}</span><b>−${escapeHtml(cronCount(row.target_removed))}</b></span>`:''}</div></div>`).join('');
-    const idleText=idle.length?`<p class="cron-increment-idle muted">${escapeHtml(idle.map(row=>String(row.family||'').slice(4)).join(' / '))} · ${escapeHtml(uiText('无增量','No changes'))}</p>`:'';
-    return `<li class="cron-increment-round"><div class="cron-run-heading"><strong>${escapeHtml(cronTime(at).replace(/:\d{2}$/, ''))}</strong>${state?cronChip(state):''}</div>${lines}${idleText}</li>`;
+  const epoch = value => typeof value === 'number' ? value * 1000 : Date.parse(value);
+  return [...rounds].sort((a, b) => epoch(b[1][0].start_at) - epoch(a[1][0].start_at)).slice(0, 14);
+}
+function cronIncrementBody(rows) {
+  const metrics = [['new', uiText('新发现', 'New cases')], ['filled', uiText('旧案例补齐', 'Source filled')],
+    ['published', uiText('回刷完成', 'Published')], ['target_added', uiText('目标入库', 'Targets added')]];
+  const active = rows.filter(r => !cronIncrementIdle(r));
+  const idle = rows.filter(cronIncrementIdle);
+  const cards = active.map(row => {
+    const [tone, status] = cronIncrementStatus([row]);
+    const unknown = cronIncrementKeys.some(k => !cronIncrementKnown(row[k]));
+    const cells = metrics.map(([key, label]) => `<div><dt>${escapeHtml(label)}</dt><dd${cronIncrementKnown(row[key]) ? '' : ' class="muted"'}>${escapeHtml(cronIncrementKnown(row[key]) ? cronCount(row[key]) : uiText('未知', 'Unknown'))}</dd></div>`).join('');
+    const removed = row.target_removed === 0 ? '' : `<span>${escapeHtml(uiText('目标移出', 'Targets removed'))} <b>${escapeHtml(cronIncrementKnown(row.target_removed) ? cronCount(row.target_removed) : uiText('未知', 'Unknown'))}</b></span>`;
+    return `<article class="cron-increment-version"><header><strong>${escapeHtml(cronIncrementFamily(row))}</strong>${row.scan_state !== 'success' ? `<span class="cron-chip" data-tone="${tone}">${escapeHtml(status)}</span>` : ''}${unknown ? `<span class="muted">${escapeHtml(uiText('数据不完整', 'Incomplete data'))}</span>` : ''}${removed}</header><dl class="cron-increment-metrics">${cells}</dl></article>`;
   }).join('');
-  const note=uiText('新增为首次发现的案例；补齐为旧案例触发源齐备后入队。回刷和入库按实际完成时段统计，可含前轮待办，几项不能相加。展示最近14轮，底层历史保留。','New IDs are first discoveries; source-filled cases were previously waiting. Publication and imports follow completion time and may include earlier work. Metrics are not additive. The latest14 rounds are shown; underlying history is retained.');
-  host.innerHTML=`<ol class="cron-increment-log">${entries}</ol><details class="cron-increment-explanation"${explanationOpen?' open':''}><summary>${escapeHtml(uiText('统计口径','Counting rules'))}</summary><p class="cron-note muted">${escapeHtml(note)}</p></details>`;
-  host.dataset.historyKey=key;
+  return `${cards}${idle.length ? `<p class="cron-increment-idle"><span class="muted">${escapeHtml(uiText('无增量', 'No changes'))}</span><strong>${escapeHtml(idle.map(cronIncrementFamily).join(' / '))}</strong></p>` : ''}`;
+}
+function renderCronIncrements(history) {
+  const panel = $('#dailyCronIncrements'), host = $('#dailyCronIncrementRows');
+  if (!panel || !host) return;
+  panel.hidden = false;
+  const key = JSON.stringify([state.uiLanguage, history]);
+  if (host.dataset.historyKey === key) return;
+  // Reuse disclosure and summary nodes even when counts or language change.
+  // This preserves open state and keyboard focus across background polls.
+  if (!host.querySelector('.cron-increment-rounds')) {
+    host.innerHTML = '<p class="cron-increment-message muted" role="status" hidden></p><div class="cron-increment-rounds"></div><details class="cron-increment-explanation"><summary></summary><p class="cron-note muted"></p></details>';
+  }
+  const list = host.querySelector('.cron-increment-rounds');
+  const message = host.querySelector('.cron-increment-message');
+  const explanation = host.querySelector('.cron-increment-explanation');
+  const anchor = [...host.querySelectorAll('summary')].find(el => {
+    const rect = el.getBoundingClientRect();
+    return rect.top >= 0 && rect.top < window.innerHeight;
+  });
+  const anchorTop = anchor?.getBoundingClientRect().top;
+  const rounds = history?.status === 'ready' ? cronIncrementRounds(history.items) : [];
+  message.hidden = rounds.length > 0;
+  message.textContent = history?.status === 'empty' || (history?.status === 'ready' && !rounds.length)
+    ? uiText('尚无定时扫描记录。', 'No scheduled scans yet.')
+    : uiText('增量记录暂不可用。', 'Increment history is unavailable.');
+  // Keep existing disclosures through temporary source errors; don't present them as current.
+  list.hidden = !rounds.length;
+  if (rounds.length) {
+    const old = new Map([...list.children].map(el => [el.dataset.round, el]));
+    rounds.forEach(([at, rows], index) => {
+      let node = old.get(at);
+      if (!node) {
+        node = document.createElement('details');
+        node.className = 'cron-increment-round'; node.dataset.round = at;
+        node.innerHTML = '<summary></summary><div class="cron-increment-body"></div>';
+        node.open = index === 0;
+      }
+      old.delete(at);
+      node.dataset.latest = String(index === 0);
+      const [tone, status] = cronIncrementStatus(rows);
+      const changed = rows.filter(r => cronIncrementKeys.some(k => cronIncrementKnown(r[k]) && r[k] > 0));
+      const incomplete = rows.some(r => r.scan_state !== 'success' || cronIncrementKeys.some(k => !cronIncrementKnown(r[k])));
+      const brief = changed.length ? uiText(`有变化 ${changed.map(cronIncrementFamily).join(' / ')}`, `Changed: ${changed.map(cronIncrementFamily).join(' / ')}`)
+        : incomplete ? uiText('数据待确认', 'Data unconfirmed') : uiText('各版本无增量', 'No changes in any version');
+      node.querySelector('summary').innerHTML = `<span class="cron-round-time">${index === 0 ? `<span class="muted">${escapeHtml(uiText('最近一轮', 'Latest round'))}</span>` : ''}<strong>${escapeHtml(cronTime(rows[0].start_at).replace(/:\d{2}$/, ''))}</strong></span><span class="cron-chip" data-tone="${tone}">${escapeHtml(status)}</span><span class="cron-round-brief muted">${escapeHtml(brief)}${incomplete && changed.length ? ` · ${escapeHtml(uiText('含未知', 'Includes unknowns'))}` : ''}</span><span class="cron-round-chevron" aria-hidden="true">⌄</span>`;
+      node.querySelector('.cron-increment-body').innerHTML = cronIncrementBody(rows);
+      if (list.children[index] !== node) list.insertBefore(node, list.children[index] || null);
+    });
+    old.forEach(node => node.remove());
+  }
+  explanation.querySelector('summary').textContent = uiText('统计口径 · 最近14轮', 'Counting rules · Latest 14 rounds');
+  explanation.querySelector('p').textContent = uiText('新发现：首次发现。补齐：旧案例触发源齐备并入队。回刷与目标入库按实际完成时段统计，可含前轮待办；目标移出取导入回执。各项独立，不能相加或计算转化率。未知不等于零。底层历史保留。', 'New: first discoveries. Source filled: previously waiting cases now ready and queued. Published and targets added follow actual completion windows and may include earlier work; removals come from import receipts. Metrics are independent, not additive or conversion rates. Unknown is not zero. Underlying history is retained.');
+  host.dataset.historyKey = key;
+  if (anchor?.isConnected && anchorTop != null && !list.hidden) {
+    const shift = anchor.getBoundingClientRect().top - anchorTop;
+    if (Math.abs(shift) > 1) window.scrollBy(0, shift);
+  }
 }

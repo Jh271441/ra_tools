@@ -67,22 +67,33 @@ body[data-active-page="daily-cron"] .top-actions { margin-left: auto; }
 .cron-table td:first-child { overflow-wrap: anywhere; min-width: 150px; max-width: 420px; }
 .cron-table td:not(:first-child) { white-space: nowrap; }
 .cron-increments { min-width:0; }
-.cron-increments .cron-section-heading { justify-content:space-between;flex-wrap:wrap; }
-.cron-increment-log { list-style:none;margin:12px 0 0;padding:0 8px 0 3px;max-height:360px;overflow:auto; }
-.cron-increment-round { position:relative;margin:0;padding:0 0 16px 16px;border-left:1px solid var(--line-soft); }
-.cron-increment-round::before { content:"";position:absolute;left:-3px;top:6px;width:5px;height:5px;border-radius:50%;background:var(--muted); }
-.cron-increment-round:last-child { padding-bottom:0;border-left-color:transparent; }
-.cron-increment-round .cron-run-heading { justify-content:flex-start;gap:8px; }
-.cron-increment-round .cron-run-heading strong { font-size:12px; }
-.cron-increment-version { display:flex;flex-wrap:wrap;align-items:baseline;gap:5px 16px;margin-top:7px;font-size:11px; }
-.cron-increment-version > strong { font-size:11px; }
-.cron-increment-metrics { display:flex;flex-wrap:wrap;gap:6px 18px;min-width:0; }
-.cron-increment-metrics > span { display:inline-flex;align-items:baseline;gap:5px;white-space:nowrap; }
-.cron-increment-metrics b { font-size:12px;font-weight:600;font-variant-numeric:tabular-nums; }
-.cron-increment-idle { margin:6px 0 0;font-size:11px; }
-.cron-increment-explanation { margin-top:9px;font-size:11px;color:var(--muted); }
-.cron-increment-explanation summary { cursor:pointer;line-height:24px;width:max-content;max-width:100%; }
-.cron-increment-explanation .cron-note { margin:4px 0 0;max-width:90ch; }
+.cron-increments .cron-section-heading { justify-content:space-between; flex-wrap:wrap; }
+.cron-increment-rounds { margin-top:12px; }
+.cron-increment-round { border-top:1px solid var(--line-soft); }
+.cron-increment-round:first-child { border-top:0; }
+.cron-increment-round > summary { display:flex; align-items:center; gap:12px; min-height:48px; padding:10px 0; cursor:pointer; list-style:none; font-size:12px; }
+.cron-increment-round > summary::-webkit-details-marker { display:none; }
+.cron-increment-round > summary:focus-visible, .cron-increment-explanation > summary:focus-visible { outline:2px solid var(--accent); outline-offset:3px; border-radius:4px; }
+.cron-round-time { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; }
+.cron-round-time strong { font-size:14px; font-variant-numeric:tabular-nums; }
+.cron-round-brief { margin-left:auto; overflow-wrap:anywhere; }
+.cron-round-chevron { flex:0 0 auto; color:var(--muted); transition:transform 120ms; }
+.cron-increment-round[open] > summary .cron-round-chevron { transform:rotate(180deg); }
+.cron-increment-body { display:grid; gap:8px; padding-bottom:14px; }
+.cron-increment-version { min-width:0; display:grid; grid-template-columns:minmax(90px, .65fr) minmax(0, 4fr); align-items:center; gap:16px; padding:14px 16px; border:1px solid var(--line-soft); border-radius:8px; background:var(--bg); }
+.cron-increment-version header { display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px; font-size:12px; overflow-wrap:anywhere; }
+.cron-increment-version header > strong { font-size:14px; width:100%; }
+.cron-increment-version header .cron-chip { white-space:normal; }
+.cron-increment-metrics { margin:0; display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; }
+.cron-increment-metrics > div { min-width:0; }
+.cron-increment-metrics dt { color:var(--muted); font-size:12px; line-height:1.5; }
+.cron-increment-metrics dd { margin:5px 0 0; font-size:20px; font-weight:600; line-height:1.25; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+.cron-increment-metrics dd.muted { font-size:14px; font-weight:400; }
+.cron-increment-idle { display:flex; gap:12px; flex-wrap:wrap; margin:0; padding:4px 16px; font-size:12px; }
+.cron-increment-idle strong { font-weight:500; overflow-wrap:anywhere; }
+.cron-increment-explanation { margin-top:8px; font-size:12px; color:var(--muted); }
+.cron-increment-explanation summary { cursor:pointer; line-height:28px; width:max-content; max-width:100%; }
+.cron-increment-explanation .cron-note { margin:4px 0 0; max-width:100ch; }
 .daily-cron-page h3 { font-size: 12px; font-weight: 600; }
 body[data-active-page="daily-cron"] #pageTitle { font-size: 16px; }
 .daily-cron-page .button { font-size: 11px; min-height: 28px; padding: 5px 9px; }
