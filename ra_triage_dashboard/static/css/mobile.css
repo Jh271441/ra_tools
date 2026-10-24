@@ -1,6 +1,14 @@
 /* Final responsive layer. Loaded after every component stylesheet so mobile
  * behavior does not depend on cross-domain cascade order. */
 
+/* Case gallery columns follow the actual content width, including sidebar changes.
+ * Cross-page container rules may not have a query container on this route. */
+.case-labeling-page .issue-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr));
+}
+.case-labeling-page .issue-card-heading .issue-id { flex-shrink: 0; max-width:100%; }
+.case-labeling-page .issue-card-labels { flex-wrap: wrap; }
+
 @media (max-width: 1280px) {
   .app-page, .tool-page, .review-gallery-view,
   .runs-source-card, .runs-page-card,
