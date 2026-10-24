@@ -983,3 +983,33 @@
   .label-summary-gt-card .label-summary-rules-button { min-width: 44px; min-height: 44px; }
   .label-summary-gt-chart .analysis-pie-figure { width: 104px; }
 }
+/* Trail audit page: final responsive owner, shared controls retain touch sizing. */
+@media (max-width: 1024px) {
+  .trail-history-filters { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .trail-history-diff { grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
+  .trail-history-diff > strong { grid-column:1 / -1; }
+}
+@media (max-width: 639px) {
+  .trail-history-toolbar { align-items:flex-start; }
+  .trail-history-toolbar .button { min-height:44px; flex-shrink:0; }
+  .trail-history-filters { padding:12px; }
+  .trail-history-filters input,.trail-history-filters .ui-select-trigger { min-height:44px; min-width:0; }
+  .trail-history-filter-actions { grid-column:1 / -1; }
+  .trail-history-filters label:has(input[type="datetime-local"]) { grid-column:1 / -1; }
+  .trail-history-page .button,.trail-history-dialog .button { min-height:44px; white-space:normal; overflow-wrap:anywhere; }
+  .trail-history-dialog [data-action="commit"] { min-height:48px; }
+  .trail-history-table thead { display:none; }
+  .trail-history-table tbody,.trail-history-table tr { display:block; }
+  .trail-history-table tr { padding:10px 12px; border-bottom:1px solid var(--line); }
+  .trail-history-table td { display:grid; grid-template-columns:90px minmax(0,1fr); gap:6px; padding:6px 0; border:0; }
+  .trail-history-table td::before { content:attr(data-label); color:var(--muted); }
+  .trail-history-table td small { grid-column:2; margin:0; }
+  .trail-history-dialog { width:calc(100vw - 16px); max-width:calc(100vw - 16px); max-height:calc(100dvh - 16px); }
+  .trail-history-dialog .dialog-card { padding:12px; max-height:calc(100dvh - 18px); }
+  .trail-history-diff { grid-template-columns:minmax(0,1fr); }
+  .trail-history-issue { padding:10px; }
+}
+@media (max-width: 760px) {
+  .trail-update-history-link,
+  .trail-update-progress-actions .trail-update-history-link { min-height: 44px; }
+}

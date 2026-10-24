@@ -79,6 +79,7 @@ function applyUiLanguage(language, { persist = true } = {}) {
   enhanceDashboardSelects();
   // Dynamic filters / pickers rebuild option labels from the active catalog.
   const refreshers = [
+    "refreshTrailHistoryLanguage",
     "renderReviewCatalogFilters",
     "renderCaseRationaleImages",
     "renderAnalysisComparisonFilter",
@@ -820,6 +821,9 @@ function applyAnalysisRouteControls(route) {
 function pageUrl(page, options = {}) {
   const config = PAGE_ROUTES[page] || PAGE_ROUTES.review;
   const url = new URL(withBase(config.path), window.location.origin);
+  if (page === "trail-history") {
+    for (const [key, value] of Object.entries(trailHistoryRouteOptions())) if (value !== "") url.searchParams.set(key, String(value));
+  }
   if (page === "version-datasets" && typeof versionDatasetRouteOptions === "function") {
     for (const [key,value] of Object.entries(versionDatasetRouteOptions(options))) if(value!=='')url.searchParams.set(key,String(value));
   }
@@ -1171,6 +1175,9 @@ function showPage(
   if(page==="daily-review"){window.location.replace(withBase("/daily-review")+window.location.search);return;}
   const target = PAGE_ROUTES[page] ? page : "review";
   const previousPage = state.activePage;
+  if (previousPage === "trail-history" && trailHistory.busy) return;
+  if (previousPage === "trail-history" && target !== "trail-history") $("#trailHistoryDialog")?.close();
+  if (target === "trail-history" && restoreRoute) restoreTrailHistoryRoute();
   if (previousPage === "labeling" && typeof caseLabelDecisionUi !== "undefined" && caseLabelDecisionUi.editor) {
     if (caseLabelDecisionUi.saving) return;
     exitCaseDecisionEditor();
@@ -1370,6 +1377,7 @@ function showPage(
   if (target === "status" && loadPageData) {
     pageLoads.push(() => loadStatus().catch((error) => showToast(error.message, true)));
   }
+  if (target === "trail-history" && loadPageData) pageLoads.push(() => loadTrailHistory());
   if (target === "users" && loadPageData) {
     pageLoads.push(() => loadAccessUsers().catch((error) => showToast(error.message, true)));
     pageLoads.push(() => loadMentionUsers().catch((error) => showToast(error.message, true)));

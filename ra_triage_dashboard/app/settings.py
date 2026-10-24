@@ -124,6 +124,7 @@ class Settings:
     # prepare and validate a write payload while production keeps the writer
     # disabled until the configured Trail view exposes both model fields.
     trail_attribute_write_enabled: bool
+    trail_rollback_enabled: bool
     # The Review aggregate historically writes both model label and info. Keep
     # that route independently disabled when the deployment only authorizes
     # direct Issue-ID info updates.
@@ -474,6 +475,7 @@ class Settings:
             trail_attribute_write_enabled=_bool(
                 "DASHBOARD_TRAIL_ATTRIBUTE_WRITE_ENABLED", False
             ),
+            trail_rollback_enabled=_bool("DASHBOARD_TRAIL_ROLLBACK_ENABLED", False),
             trail_attribute_review_write_enabled=_bool(
                 "DASHBOARD_TRAIL_ATTRIBUTE_REVIEW_WRITE_ENABLED", False
             ),

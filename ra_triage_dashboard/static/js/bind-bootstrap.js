@@ -434,6 +434,10 @@ function bindEvents() {
   $("#refreshButton").addEventListener("click", async (event) => {
     const pageContext = capturePageContext();
     try {
+      if (state.activePage === "trail-history") {
+        if (!trailHistory.busy) await loadTrailHistory();
+        return;
+      }
       if (event.shiftKey && ["intent", "intent-experiments", "intent-summary"].includes(state.activePage)) {
         resetIntentWorkspacePreferences(state.activePage);
       }
@@ -1264,6 +1268,8 @@ async function bootstrap() {
       initialPageRequests.push(initialCronRequest || loadDailyCron());
     } else if (initialRoute.page === "status") {
       initialPageRequests.push(loadStatus());
+    } else if (initialRoute.page === "trail-history") {
+      initialPageRequests.push(loadTrailHistory());
     } else if (initialRoute.page === "users") {
       initialPageRequests.push(loadAccessUsers(), loadMentionUsers());
     } else if (initialRoute.page === "prediction") {

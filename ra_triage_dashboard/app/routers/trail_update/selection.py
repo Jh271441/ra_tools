@@ -14,6 +14,7 @@ from ...runtime import database, settings
 from ...support.common import _detail
 from ...trail_exclusion_contracts import canonical_json, normalise_issue_ids, normalise_trail_info_value, trail_update_details
 from ...trail_sync import read_trail_model_fields
+from ...trail_audit import audited_write, reconcile_existing
 from ...trail_writer import attach_trail_operation_id, build_trail_changes, write_trail_model_results
 from .commit import commit_guard, _readback_changes
 from .preview import _build_preview, _field_names, _capability_for_info_write, _preview_capability_cache
@@ -194,12 +195,14 @@ async def selection_commit(request: Request) -> dict[str, Any]:
             return {**receipt["result"], "submitted_count": 0, "skipped_synced_issue_ids": ids}
         await _audit(receipt, digest, identity, "pending", skipped)
         _, info_field = _field_names()
+        await reconcile_existing(database, digest, snapshot.rows, info_field)
         changes = attach_trail_operation_id(build_trail_changes(pending, current_rows=snapshot.rows,
             info_field=info_field, write_result_field=False), operation_id=digest, info_field=info_field)
         try:
-            stats = await asyncio.to_thread(write_trail_model_results, changes,
-                ra_root=settings.ra_auto_triage_root, chunk_size=settings.trail_attribute_write_chunk_size)
-            readback = await _readback_changes(changes, stats, result_field="", info_field=info_field)
+            stats, readback = await audited_write(database=database, settings=settings,
+                identity=identity, operation_id=digest, source="exclusion_summary",
+                changes=changes, current_rows=snapshot.rows, info_field=info_field,
+                writer=write_trail_model_results, readback=_readback_changes)
         except Exception:
             await _audit(receipt, digest, identity, "unknown", skipped)
             raise

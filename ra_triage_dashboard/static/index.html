@@ -54,6 +54,7 @@
           "css/base.css",
           "css/layout-shared.css",
           "css/trail-update.css",
+          "css/trail-history.css",
           "css/review-comment.css",
           "css/case-labeling.css",
           "css/assignment-composer.css",
@@ -85,7 +86,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-653`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-654`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -239,6 +240,10 @@
               <span class="sidebar-group-label sidebar-label system-group-label"><span class="ui-lang-zh">系统管理</span><span class="ui-lang-en">System</span></span><span class="sidebar-group-chevron" aria-hidden="true"></span>
             </button>
             <div class="sidebar-nav-group-items" id="sidebarNavSystem" data-sidebar-nav-group-items="system" hidden>
+              <a class="sidebar-item" id="trailHistoryNavButton" data-page-target="trail-history" data-app-path="/trail-update-history" href="/trail-update-history">
+                <span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M4 5v5h5M4 10a8 8 0 1 1 0 5M12 7v5l3 2"/></svg></span>
+                <span class="sidebar-label"><strong class="ui-lang-zh">Trail 更新记录</strong><strong class="ui-lang-en">Trail history</strong></span>
+              </a>
               <a class="sidebar-item" id="systemStatusNavButton" data-page-target="status" data-app-path="/system-status" href="/system-status" title="系统状态">
                 <span class="sidebar-icon" aria-hidden="true">
                   <svg viewBox="0 0 24 24" focusable="false"><rect class="icon-wash" x="4.5" y="4" width="15" height="13" rx="3"/><path d="M4 18h16M6 15V6.8A1.8 1.8 0 0 1 7.8 5h8.4A1.8 1.8 0 0 1 18 6.8V15"/><path class="icon-emphasis" d="M8 11h2l1.2-3 2 6 1.2-3H16"/></svg>
@@ -1103,6 +1108,14 @@
             </section>
           </section>
 
+          <section class="app-page tool-page trail-history-page hidden" id="trailHistoryPage" data-page="trail-history">
+            <div class="trail-history-toolbar"><p id="trailHistoryCoverage"></p><button class="button button-secondary" id="trailHistoryRefresh" type="button"><span class="ui-lang-zh">刷新</span><span class="ui-lang-en">Refresh</span></button></div>
+            <form id="trailHistoryFilters" class="trail-history-filters"></form>
+            <div id="trailHistoryResults" aria-live="polite"></div>
+          </section>
+          <dialog id="trailHistoryDialog" class="trail-history-dialog" aria-labelledby="trailHistoryDialogTitle">
+            <div class="dialog-card"><h2 id="trailHistoryDialogTitle"></h2><div class="trail-history-dialog-body"></div><div class="dialog-actions"><button class="button button-secondary" data-action="close" type="button"></button><button class="button button-danger" data-action="commit" type="button" disabled hidden></button></div></div>
+          </dialog>
           <section class="app-page tool-page trail-update-page hidden is-loading" id="trailAttributeUpdatePage" data-page="trail-update">
             <section class="page-card trail-update-header-card">
               <div class="trail-update-tabs" role="tablist" aria-label="Trail update modes">
@@ -1156,6 +1169,7 @@
             </section>
 
             <div class="trail-update-status" id="trailUpdateStatus" role="status" aria-live="polite" hidden></div>
+            <a class="button button-secondary trail-update-history-link" data-trail-update-history hidden><span class="ui-lang-zh">查看本次更新记录</span><span class="ui-lang-en">View this update record</span></a>
             <div class="trail-update-initial-loading" id="trailUpdateLoading" role="status" hidden><span class="ui-lang-zh">正在加载本地候选…</span><span class="ui-lang-en">Loading local candidates…</span><div aria-hidden="true"><i></i><i></i><i></i></div></div>
             <section class="trail-update-tab-panel trail-update-results-panel" id="trailUpdateReviewPanel" role="tabpanel" aria-labelledby="trailUpdateReviewTab" data-trail-update-panel="review" aria-hidden="false">
               <section class="trail-update-results" id="trailUpdateResults" aria-label="Trail update results" hidden>
@@ -2377,7 +2391,7 @@
           <li data-trail-progress-stage="readback" class="is-pending"><span class="trail-update-progress-step-dot">4</span><div><strong><span class="ui-lang-zh">批量回读并校验</span><span class="ui-lang-en">Read back and verify</span></strong><small><span class="ui-lang-zh">确认每个成功项已写入</span><span class="ui-lang-en">Verify every successful item</span></small></div></li>
           <li data-trail-progress-stage="done" class="is-pending"><span class="trail-update-progress-step-dot">5</span><div><strong><span class="ui-lang-zh">完成</span><span class="ui-lang-en">Complete</span></strong><small><span class="ui-lang-zh">展示字段、排除说明和回读结果</span><span class="ui-lang-en">Show fields, exclusion notes, and readback results</span></small></div></li>
         </ol>
-        <div class="dialog-actions trail-update-progress-actions"><button class="button button-quiet" id="trailUpdateProgressClose" type="button" hidden><span class="ui-lang-zh">关闭</span><span class="ui-lang-en">Close</span></button></div>
+        <div class="dialog-actions trail-update-progress-actions"><a class="button button-secondary trail-update-history-link" data-trail-update-history hidden><span class="ui-lang-zh">查看本次更新记录</span><span class="ui-lang-en">View this update record</span></a><button class="button button-quiet" id="trailUpdateProgressClose" type="button" hidden><span class="ui-lang-zh">关闭</span><span class="ui-lang-en">Close</span></button></div>
       </div>
     </dialog>
 
@@ -2476,7 +2490,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-653`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-654`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

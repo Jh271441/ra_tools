@@ -77,6 +77,8 @@ body[data-active-page="trail-update"] .gt-sync-control { margin-left:auto; }
 .trail-update-progress-steps li.is-active .trail-update-progress-step-dot { border-color: var(--accent); color: var(--accent); }
 .trail-update-progress-steps li.is-complete .trail-update-progress-step-dot { border-color: rgba(52,211,153,.7); color: #9ae6c4; background: rgba(52,211,153,.12); }
 .trail-update-progress-actions { justify-content: flex-end; padding-top: 0; }
+.trail-update-history-link { justify-self: start; width: fit-content; max-width: 100%; white-space: normal; text-align: center; }
+.trail-update-history-link[hidden] { display: none !important; }
 @keyframes trail-update-progress-spin { to { transform: rotate(360deg); } }
 @keyframes trail-update-progress-sweep { to { left: 100%; } }
 .trail-import-body { display: grid; gap: 10px; padding: 13px 15px 15px; }

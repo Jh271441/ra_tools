@@ -4,6 +4,7 @@ from .shared import _json, _json_load, utc_now
 
 
 def initialize_recovery(self, conn) -> None:
+    self.import_legacy_trail_history(connection=conn)
     interrupted_at = utc_now()
     # A hard restart can happen after an immutable manual-batch Run
     # commits but before the parent job/item linkage is finalized.

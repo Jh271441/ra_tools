@@ -50,6 +50,7 @@ from .routers import (
     runs,
     run_collections,
     trail_update,
+    trail_history,
     intent_labeling,
     legacy_cutover,
     version_datasets,
@@ -400,5 +401,6 @@ app.include_router(batch.router)
 app.include_router(inference.router)
 app.include_router(labeling.router)
 app.include_router(trail_update.router)
+app.include_router(trail_history.router)
 app.include_router(intent_labeling.router)
 app.include_router(legacy_cutover.router)

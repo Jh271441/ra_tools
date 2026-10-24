@@ -29,6 +29,7 @@ from ...trail_exclusion_contracts import (
     trail_update_statuses as _trail_update_statuses,
 )
 from ...trail_sync import read_trail_model_fields
+from ...trail_audit import audited_write, reconcile_existing
 from ...trail_writer import (
     attach_trail_operation_id,
     build_manual_exclusion_changes,
@@ -465,6 +466,7 @@ async def trail_issue_exclusion_commit(request: Request) -> dict[str, Any]:
             ),
         )
         _, info_field = _field_names()
+        await reconcile_existing(database, submitted_digest, sync_result.rows, info_field)
         try:
             if pending_issue_ids:
                 changes = await asyncio.to_thread(
@@ -475,18 +477,10 @@ async def trail_issue_exclusion_commit(request: Request) -> dict[str, Any]:
                     comment_by_issue=effective_comments,
                 )
                 changes = attach_trail_operation_id(changes, operation_id=submitted_digest)
-                stats = await asyncio.to_thread(
-                    write_trail_model_results,
-                    changes,
-                    ra_root=settings.ra_auto_triage_root,
-                    chunk_size=settings.trail_attribute_write_chunk_size,
-                )
-                readback = await _readback_changes(
-                    changes,
-                    stats,
-                    result_field="",
-                    info_field=info_field,
-                )
+                stats, readback = await audited_write(database=database, settings=settings,
+                    identity=identity, operation_id=submitted_digest, source="exclusion_direct",
+                    changes=changes, current_rows=sync_result.rows, info_field=info_field,
+                    writer=write_trail_model_results, readback=_readback_changes)
             else:
                 # Keep the response contract identical for an idempotent
                 # retry, without instantiating a Trail client or sending any

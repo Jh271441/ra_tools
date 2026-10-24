@@ -48,7 +48,18 @@ function trailUpdateProgressElapsed() {
   elapsed.textContent = uiText(`已用时 ${seconds}s`, `${seconds}s elapsed`);
 }
 
+function setTrailUpdateHistoryLinks(operationId = "") {
+  const url = new URL(withBase("/trail-update-history"), window.location.origin);
+  if (operationId) url.searchParams.set("operation", operationId);
+  document.querySelectorAll("[data-trail-update-history]").forEach(link => {
+    link.hidden = !operationId;
+    if (operationId) link.href = `${url.pathname}${url.search}`;
+    else link.removeAttribute("href");
+  });
+}
+
 function openTrailUpdateProgress({ mode = "review", total = 0 } = {}) {
+  setTrailUpdateHistoryLinks();
   const dialog = $("#trailUpdateProgressDialog");
   if (!dialog || typeof dialog.showModal !== "function") return;
   window.clearInterval(trailUpdateProgressTimer);
@@ -77,7 +88,8 @@ function openTrailUpdateProgress({ mode = "review", total = 0 } = {}) {
   if (!dialog.open) dialog.showModal();
 }
 
-function finishTrailUpdateProgress({ ok = false, warning = false, message = "" } = {}) {
+function finishTrailUpdateProgress({ ok = false, warning = false, message = "", operationId = "" } = {}) {
+  setTrailUpdateHistoryLinks(ok ? operationId : "");
   const dialog = $("#trailUpdateProgressDialog");
   const progress = state.trailUpdate?.progress;
   if (progress) {
@@ -109,7 +121,7 @@ function finishTrailUpdateProgress({ ok = false, warning = false, message = "" }
     }
     const close = $("#trailUpdateProgressClose");
     if (close) close.hidden = false;
-    if (ok && !warning) {
+    if (ok && !warning && !operationId) {
       trailUpdateProgressCloseTimer = window.setTimeout(() => {
         if (dialog.open) dialog.close();
       }, 900);
@@ -439,7 +451,7 @@ async function commitTrailIssueExclusion() {
       `Trail fields and info notes ${stats.success_count || 0}/${stats.total || pendingCount}; ${readbackText}; ${localReviewWithFailures}.`
     );
     const localSyncWarning = outsideDashboard.length > 0 || localFailures.length > 0;
-    finishTrailUpdateProgress({ ok: trailOk, warning: trailOk && localSyncWarning, message: progressMessage });
+    finishTrailUpdateProgress({ ok: trailOk, warning: trailOk && localSyncWarning, message: progressMessage, operationId: result.payload_sha256 });
     setTrailIssueStatus(uiText(
       `屏蔽完成：字段与 info 排除说明成功 ${stats.success_count || 0}，失败 ${stats.failed_count || 0}；${readbackText}；${localReviewWithFailures}。`,
       `Shield finished: fields and info notes ${stats.success_count || 0} succeeded / ${stats.failed_count || 0} failed; ${readbackText}; ${localReviewWithFailures}.`
@@ -497,7 +509,7 @@ async function commitTrailAttributeUpdate() {
       `Trail 已验证 ${readback.verified_count || 0} 条，跳过已成功 ${result.skipped_synced_issue_ids?.length || 0} 条；本地标注无需补写。${result.failed_issue_ids?.length ? ` 未确认：${result.failed_issue_ids.join("、")}` : ""}`,
       `Trail verified ${readback.verified_count || 0}; ${result.skipped_synced_issue_ids?.length || 0} already applied. No local annotation needed.${result.failed_issue_ids?.length ? ` Unconfirmed: ${result.failed_issue_ids.join(", ")}` : ""}`
     );
-    finishTrailUpdateProgress({ ok: Boolean(result.ok), message });
+    finishTrailUpdateProgress({ ok: Boolean(result.ok), message, operationId: result.payload_sha256 });
     setTrailAttributeStatus(message);
     if (result.ok) issueIds.forEach(id => trailSelectedIssues().delete(id));
     else showToast(uiText("部分更新未确认，请查看结果并刷新。", "Some updates remain unconfirmed; inspect results and refresh."), true);

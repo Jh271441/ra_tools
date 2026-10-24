@@ -30,6 +30,15 @@ from ra_triage_dashboard.app.routers.trail_update import (
 
 class TrailAttributeUpdateTest(unittest.TestCase):
     def setUp(self):
+        import tempfile
+        from pathlib import Path
+        from ra_triage_dashboard.app.db import Database
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        audit_database = Database(Path(temporary.name) / "audit.sqlite3")
+        audit_database.init()
+        audit_patch = patch.object(trail_routes, "database", audit_database)
+        audit_patch.start(); self.addCleanup(audit_patch.stop)
         patcher = patch.object(trail_preview.database, "project_issue_exclusions", return_value={})
         patcher.start(); self.addCleanup(patcher.stop)
         # Existing legacy-only fixtures do not contain canonical Case votes.

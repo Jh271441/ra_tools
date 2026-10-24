@@ -79,6 +79,15 @@ class ReasonComparisonTest(unittest.TestCase):
 
 class SelectedUpdateTest(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
+        import tempfile
+        from pathlib import Path
+        from ra_triage_dashboard.app.db import Database
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        audit_database = Database(Path(temporary.name) / "audit.sqlite3")
+        audit_database.init()
+        audit_patch = patch.object(selected, "database", audit_database)
+        audit_patch.start(); self.addCleanup(audit_patch.stop)
         selected._selection_previews.clear()
         self.items=[item(),item("cn00000002")]
         self.rows=[{"issue_id":it["issue_id"],INFO:{"other":17,"model_result":{"label":"keep"},"ra_triage_dashboard":{"should_exclude":True,"should_exclude_comment":"old"}}} for it in self.items]

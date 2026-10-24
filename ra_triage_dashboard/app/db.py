@@ -43,8 +43,10 @@ from .db_parts.legacy_cutover import DatabaseLegacyCutoverMixin
 from .db_parts.intent import DatabaseIntentMixin
 from .db_parts.snapshots import DatabaseSnapshotMixin
 from .db_parts.version_datasets import DatabaseVersionDatasetsMixin
+from .db_parts.trail_history import DatabaseTrailHistoryMixin
 
 class Database(
+    DatabaseTrailHistoryMixin,
     DatabaseVersionDatasetsMixin,
     DatabaseAccessMixin,
     DatabaseBatchMixin,
