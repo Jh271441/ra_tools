@@ -76,10 +76,10 @@ GT 候选可以引用有效裁决，但更新 GT 仍需独立预览和确认。T
 
 发布回执：`/volume/home/workspace/ra_triage_dashboard_deploy/releases/20261024T124350Z-69b40cab66a7/result.json`。此前版本 `bc5b4e4cfd8ae98404ddc41475f769fbc4e0031c` 的rollback目录及恢复配置保留。证据：`reports/adjudication_ui_refinement_20261024/`。
 
-## 2026-10-24 横向排布与确认提示修正（待部署）
+## 2026-10-24 横向排布与确认提示修正
 
 参考 `b1e4796` 的历史记录头部横排结构，将作者、分类、排除状态放在同一组，时间及采用操作靠右；来源、版本、标签及空依据说明在下一行自然换行。实际长依据仍单独展示。保留当前版本的精确采纳、权限与草稿语义，不整版回退。
 
 撤销误加到桌面的44/48px按钮高度，恢复共享按钮尺寸：对照来源27px、确认裁决38px；手机分别保持44px、48px。排除确认移除浏览器原生 `required` 校验气泡，改用项目错误色的行内提示及 `aria-required` / `aria-invalid` / `aria-describedby`；未勾选仍阻止提交，勾选即清除提示，切换语言保留草稿并翻译提示。
 
-缓存643。本地隔离SQLite预览验证1440px中文深色、390/320px英文浅色及Review历史长作者/Run换行，均为浏览器响应式视口；无生产测试写入。空依据卡片同宽854px下由177px减到83.5px。相关48项测试通过，截图与验收记录在 `reports/adjudication_compact_20261024/`。本修正尚未部署。
+缓存643。本地隔离SQLite预览验证1440px中文深色、390/320px英文浅色及Review历史长作者/Run换行，均为浏览器响应式视口；无生产测试写入。空依据卡片同宽854px下由177px减到83.5px。相关48项测试通过，截图与验收记录在 `reports/adjudication_compact_20261024/`。本修正已于21:08:31（Asia/Shanghai）部署，运行版本 `de7da935398c1c38b5e72ca4f11e9c9654557fad`。完整云端测试833通过、5跳过，隔离灰度及生产PostgreSQL健康/策略检查通过，schema56不变。保留同期Cron紧凑记录改动。线上登录态浏览器控制再次超时，未完成线上视觉验收。发布回执：`/volume/home/workspace/ra_triage_dashboard_deploy/releases/20261024T130625Z-de7da935398c/result.json`，此前版本 `4bf8bf71b54d6010699a2ee1c7e78a9d0a2a93ff` 的回滚目录保留。
