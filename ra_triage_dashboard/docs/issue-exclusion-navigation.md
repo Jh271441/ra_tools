@@ -40,7 +40,7 @@ local drafts, delayed Trail protection, append-only Case exclusion changes, old
 client compatibility, idempotency and single-count task progress. Frontend contracts
 cover sidebar ownership and synchronized cache versions.
 
-## Issue-scoped exclusions (2026-10-25; not yet deployed)
+## Issue-scoped exclusions (2026-10-25; deployed as 252a86b)
 
 The exclusion page scopes candidates by selected datasets and Issue IDs.
 It no longer loads or offers a Model Run selector, model-prediction filter or
@@ -57,7 +57,7 @@ summary uses two compact facts on desktop and one column below 640px; field and
 status text are secondary, only the outcome uses semibold. Personal label cards
 are unchanged.
 
-## Optional Issue description (2026-10-25; not yet deployed)
+## Optional Issue description (2026-10-25; deployed as 252a86b)
 
 Case-labeling detail presents the original Issue summary behind a default-collapsed
 Scene description control. Expansion reveals the full escaped multiline source
