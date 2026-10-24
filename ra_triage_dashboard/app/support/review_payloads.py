@@ -533,7 +533,17 @@ def _review_reason_analysis_payload(
         page=page,
         page_size=max(len(rows), 1) if unbounded else page_size,
         page_size_limit=None if unbounded else 200,
+        include_scope_issue_ids=not unbounded,
     )
+    if not unbounded:
+        # The chart shares the final review filters, but GT eligibility comes
+        # from all Case-label sources for those Issues, before pagination.
+        scope_issue_ids = result.pop("_scope_issue_ids")
+        label_cases, _ = database._project_labeling_cases(
+            baseline_scopes=scopes, issue_ids=scope_issue_ids,
+        ) if scope_issue_ids else ([], "")
+        _, counts = database.labeling_gt_update_cases(baseline_scopes=scopes, items=label_cases)
+        result["gt_update_counts"] = counts
     for item in result["items"]:
         issue_id = _as_text(item.get("issue_id"))
         review_params = [f"issue={quote(issue_id, safe='')}"]

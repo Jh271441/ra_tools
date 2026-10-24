@@ -353,6 +353,7 @@ def build_review_reason_analysis(
     page: int = 1,
     page_size: int = 50,
     page_size_limit: int | None = 200,
+    include_scope_issue_ids: bool = False,
 ) -> dict[str, Any]:
     """Aggregate latest-review rows and return one deterministic analysis page."""
 
@@ -589,7 +590,7 @@ def build_review_reason_analysis(
     offset = (page - 1) * page_size
     page_items = materialized[offset : offset + page_size]
 
-    return {
+    result = {
         "method": {
             "id": "structured-review-fields-v1" if not include_reason_themes else "deterministic-keywords-v1",
             "label": "结构化 Review 字段 v1" if not include_reason_themes else "可解释关键词聚类 v1",
@@ -668,3 +669,9 @@ def build_review_reason_analysis(
         "page_size": page_size,
         "page_count": page_count,
     }
+
+    if include_scope_issue_ids:
+        result["_scope_issue_ids"] = list(
+            dict.fromkeys(str(item["issue_id"]) for item in materialized)
+        )
+    return result

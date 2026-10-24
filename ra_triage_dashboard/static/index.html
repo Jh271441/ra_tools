@@ -86,7 +86,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-655`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-656`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -1044,7 +1044,7 @@
               </article>
             </section>
 
-            <section class="analysis-decision-grid" aria-label="GT review and model comparison">
+            <section class="analysis-decision-grid analysis-has-gt" aria-label="GT review and model comparison">
               <section class="page-card analysis-review-status-card" aria-labelledby="analysisReviewStatusTitle">
                 <div class="section-heading analysis-review-status-heading">
                   <div>
@@ -1056,6 +1056,8 @@
                   <div class="analysis-empty"><span class="ui-lang-zh">正在统计状态比例…</span><span class="ui-lang-en">Building status proportions…</span></div>
                 </div>
               </section>
+
+              <div class="analysis-gt-card-mount" id="analysisGtCardMount" aria-live="polite"></div>
 
               <section class="page-card analysis-confusion-card" aria-labelledby="analysisConfusionTitle">
                 <div class="section-heading analysis-confusion-heading">
@@ -2490,7 +2492,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-655`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-656`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

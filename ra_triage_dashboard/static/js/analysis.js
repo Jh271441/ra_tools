@@ -453,6 +453,36 @@ function renderAnalysisClusterPanels(data, { animatePies = true } = {}) {
   clearAnalysisPieEnterAnimations(target);
 }
 
+function analysisGtChartItems(data) {
+  const counts = data.gt_update_counts || {};
+  const total = Number(counts.all || 0);
+  const ready = Number(counts.ready || 0);
+  const blocked = Number(counts.blocked || 0);
+  return [
+    { key: "gt_ready", label: uiText("GT 待更新", "GT to update"), count: ready, color: "var(--accent)" },
+    { key: "gt_blocked", label: uiText("需确认", "Needs attention"), count: blocked, description: uiText("标注尚未齐备、来源冲突，或裁决需重新确认；暂不作为 GT 更新候选。", "Incomplete labels, conflicting sources or a stale decision; not yet eligible for a GT update."), color: "var(--warn)" },
+    { key: "gt_aligned", label: uiText("与 GT 一致", "Matches GT"), count: Math.max(0, total - ready - blocked), color: "var(--ok)" },
+  ];
+}
+
+function analysisGtChartMarkup(data, { prefix = "labelSummary" } = {}) {
+  const items = analysisGtChartItems(data);
+  const total = Number(data.gt_update_counts?.all || 0);
+  const percent = (item) => total ? `${analysisPiePercent(item, total)}%` : "—";
+  const label = uiText("当前筛选内已提交的 Issue", "Submitted Issues in the current filters");
+  const accessible = `${label}: ${total}; ${items.map((item) => `${item.label} ${item.count} (${percent(item)})`).join("; ")}`;
+  const legend = items.map((item) => `<div class="analysis-pie-legend-row" title="${escapeHtml(item.description || item.label)}" data-pie-desc="${escapeHtml(item.description || "")}" data-pie-key="${item.key}" data-pie-label="${escapeHtml(item.label)}" data-pie-count="${item.count}" data-pie-percent="${total ? analysisPiePercent(item, total) : 0}" tabindex="0"><span class="analysis-pie-swatch" style="background:${item.color}"></span><span class="analysis-pie-legend-line"><strong>${escapeHtml(item.label)}</strong><small>${item.count} · ${percent(item)}</small></span></div>`).join("");
+  return `<section class="page-card analysis-gt-card" aria-labelledby="${prefix}GtTitle"><div class="section-heading analysis-review-status-heading"><div class="analysis-gt-title"><h3 id="${prefix}GtTitle">${uiText("GT 更新", "GT updates")}</h3><button class="text-link label-summary-rules-button" id="${prefix}GtRules" type="button" aria-haspopup="dialog" aria-label="${escapeHtml(uiText("GT 更新统计口径", "GT update counting rules"))}">ⓘ</button></div><small>${escapeHtml(uiText(`当前筛选 · Issue 标注 ${total} 个`, `Current filters · ${total} Issue ${total === 1 ? "annotation" : "annotations"}`))}</small></div><div class="analysis-pie-group analysis-gt-chart" id="${prefix}GtChart" role="group" aria-label="${escapeHtml(accessible)}"><div class="analysis-pie-figure">${renderAnalysisPieSvg(items, { size: 120, palette: items.map((item) => item.color), animatePies: false })}<div class="analysis-pie-center"><b>${percent(items[0])}</b><small>${uiText("待更新", "To update")}</small></div></div><div class="analysis-pie-legend">${legend}</div></div></section>`;
+}
+
+function renderAnalysisGtStatus(data) {
+  const target = $("#analysisGtCardMount");
+  if (!target) return;
+  target.innerHTML = analysisGtChartMarkup(data, { prefix: "analysis" });
+  $("#analysisGtRules")?.addEventListener("click", () => showLabelSummaryRules({ gt: true }));
+  bindAnalysisPieHover($("#analysisGtChart"));
+}
+
 function renderAnalysisReviewStatus(data) {
   const target = $("#analysisReviewStatusChart");
   const summaryTarget = $("#analysisReviewStatusSummary");
@@ -1683,6 +1713,7 @@ function renderReviewReasonAnalysis(data, { animatePies = true } = {}) {
   $("#analysisReviewScope").textContent = `${reviewScope}${workSplitSuffix}`;
   $("#analysisReviewScope").title = `${reviewScope}${workSplitSuffix}`;
   renderAnalysisReviewStatus(data);
+  renderAnalysisGtStatus(data);
   renderAnalysisClusterPanels(data, { animatePies });
   renderAnalysisConfusion(data);
   renderAnalysisCases(data);

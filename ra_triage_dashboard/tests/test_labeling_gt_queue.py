@@ -11,6 +11,7 @@ from starlette.requests import Request
 from ra_triage_dashboard.app.db import Database
 from ra_triage_dashboard.app.labeling_summary import summarize_labeling_cases
 from ra_triage_dashboard.app.routers.labeling_api import queries, exports
+from ra_triage_dashboard.app.support import review_payloads
 
 
 class LabelingGtQueueTest(IsolatedAsyncioTestCase):
@@ -137,3 +138,41 @@ class LabelingGtQueueTest(IsolatedAsyncioTestCase):
     def test_candidate_batch_selection_does_not_escape_scopes(self):
         selected = ["cn101"] + [f"cn{n}" for n in range(1000, 1450)]
         self.assertEqual([item["issue_id"] for item in self.db.label_gt_candidates(["scope"], issue_ids=selected)], ["cn101"])
+
+    def test_reason_analysis_gt_counts_follow_complete_filtered_scope_and_stay_read_only(self):
+        run, _ = self.db.import_model_run(name="analysis", source_name="analysis.json", source_sha256="e" * 64,
+            metadata={}, rows=[{"issue_id": f"cn10{n}", "model_label": "误触发"} for n in range(1, 9)])
+        for n in range(1, 9):
+            self.db.create_model_review(issue_id=f"cn10{n}", model_run_id=run["id"], status="completed",
+                reason="model-only reason", missing_evidence=[], reviewer="alice" if n < 4 else "bob")
+        before = self.db.change_revision()
+        with patch.object(review_payloads, "database", self.db), \
+             patch.object(review_payloads, "_missing_evidence_catalog", return_value=[]), \
+             patch.object(review_payloads, "_review_tag_catalog", return_value=[]):
+            def query(**kwargs):
+                return review_payloads._review_reason_analysis_payload(
+                    model_run_id=run["id"], baseline_scopes=["scope"], exclusion="all", **kwargs)
+            first, last = query(page_size=1), query(page_size=1, page=8)
+            self.assertEqual(first["gt_update_counts"], {"all": 7, "ready": 3, "blocked": 3})
+            self.assertEqual(first["gt_update_counts"], last["gt_update_counts"])
+            self.assertNotIn("_scope_issue_ids", first)
+            self.assertEqual(first["total"], 8)  # Empty Case assignment stays outside the GT denominator.
+            alice = query(annotation_author="alice")
+            self.assertEqual(alice["gt_update_counts"], {"all": 3, "ready": 2, "blocked": 0})
+            blocked = query(issue_ids=["cn104", "cn107"])
+            self.assertEqual(blocked["gt_update_counts"], {"all": 2, "ready": 0, "blocked": 2})
+            unchanged = query(search="cn103")
+            self.assertEqual(unchanged["gt_update_counts"], {"all": 1, "ready": 0, "blocked": 0})
+            for kwargs in ({"search": "no-such-issue"}, {"review_status": "pending"}, {"work_split_id": "missing-task"}):
+                result = query(**kwargs)
+                self.assertEqual(result["gt_update_counts"], {"all": 0, "ready": 0, "blocked": 0}, kwargs)
+            with patch.object(self.db, "labeling_gt_update_cases", wraps=self.db.labeling_gt_update_cases) as counts:
+                exported = query(unbounded=True)
+                counts.assert_not_called()
+                self.assertNotIn("gt_update_counts", exported)
+                self.assertNotIn("_scope_issue_ids", exported)
+                self.assertEqual(exported["total"], 8)
+            self.assertEqual(first["items"][0]["annotation"]["note"], "model-only reason")
+            label_cases, _ = self.db._project_labeling_cases(baseline_scopes=["scope"], issue_ids=["cn101"])
+            self.assertEqual(summarize_labeling_cases(label_cases)["items"][0]["rationales"], ["visible label evidence"])
+        self.assertEqual(self.db.change_revision(), before)

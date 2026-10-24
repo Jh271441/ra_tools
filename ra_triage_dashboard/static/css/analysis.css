@@ -541,3 +541,20 @@ html[data-color-theme="light"] .analysis-pie-tooltip strong { color: #f8fafc; }
 html[data-color-theme="light"] .analysis-pie-tooltip span { color: #5eead4; }
 html[data-color-theme="light"] .analysis-pie-tooltip small { color: #94a3b8; }
 html[data-color-theme="light"] .analysis-stat-card > strong { color: var(--analysis-stat-value-color, #08758d); }
+
+/* Shared GT card: same heading baseline and scope line as review status. */
+.analysis-decision-grid.analysis-has-gt { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1.1fr); grid-template-areas: "confusion status gt"; }
+.analysis-has-gt .analysis-confusion-table { min-width: 0; }
+.analysis-gt-card-mount { grid-area: gt; min-width: 0; display: grid; grid-template-areas: "gt"; }
+.analysis-gt-card { grid-area: gt; min-width: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 8px; padding: 10px 12px; }
+.analysis-gt-card .analysis-review-status-heading { margin: 0; }
+.analysis-gt-title { position: relative; min-width: 0; padding-right: 32px; }
+.analysis-gt-title h3 { margin: 0; }
+.analysis-gt-title .label-summary-rules-button { position: absolute; right: 0; top: 50%; transform: translateY(-50%); min-width: 24px; min-height: 24px; justify-content: center; }
+.analysis-gt-chart.analysis-pie-group { grid-template-columns: 120px minmax(0, 1fr); gap: 12px; align-items: center; align-self: center; }
+.analysis-gt-chart .analysis-pie-figure { width: 120px; }
+.analysis-gt-chart .analysis-pie-center b { color: var(--text); font-size: 16px; letter-spacing: normal; }
+.analysis-gt-chart .analysis-pie-center small { max-width: 52px; overflow: visible; font-size: 9px; white-space: normal; }
+.analysis-gt-chart .analysis-pie-legend-line { flex-wrap: wrap; gap: 2px 8px; }
+.analysis-gt-chart .analysis-pie-legend-line strong { color: var(--text); font-size: 12px; white-space: normal; }
+.analysis-gt-chart .analysis-pie-legend-line small { color: var(--muted); font-size: 12px; }

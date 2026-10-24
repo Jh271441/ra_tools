@@ -20,6 +20,18 @@ from ra_triage_dashboard.app.routers.cases import (
 
 
 class ReviewReasonAnalysisTest(unittest.TestCase):
+    def test_optional_scope_ids_apply_final_filters_before_pagination(self):
+        rows = [{"issue_id": f"cn{n}", "gt_label": "正确触发",
+                 "annotation": {"label": "误触发", "is_excluded": n == 3}} for n in range(1, 4)]
+        normal = build_review_reason_analysis(rows, page_size=1)
+        self.assertNotIn("_scope_issue_ids", normal)
+        result = build_review_reason_analysis(rows, is_excluded=False, annotation_labels=["误触发"],
+            include_scope_issue_ids=True, page_size=1, page=2)
+        self.assertEqual(result["_scope_issue_ids"], ["cn1", "cn2"])
+        self.assertEqual([item["issue_id"] for item in result["items"]], ["cn2"])
+        empty = build_review_reason_analysis(rows, annotation_labels=["无需协助"], include_scope_issue_ids=True)
+        self.assertEqual(empty["_scope_issue_ids"], [])
+
     def test_no_gt_is_distinct_from_no_prediction_and_completes_output_scope(self) -> None:
         rows = [
             {

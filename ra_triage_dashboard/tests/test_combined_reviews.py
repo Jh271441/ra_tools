@@ -86,6 +86,7 @@ class CombinedReviewWorkflowTest(unittest.TestCase):
         with patch.object(analysis, "database", self.db), patch.object(analysis, "_review_tag_catalog", return_value=catalog), patch.object(analysis, "_missing_evidence_catalog", return_value=[]):
             result = analysis._review_reason_analysis_payload(**query, annotation_author="alice", review_status="completed", scene_tag="queue", exclusion="excluded", comment_state="with", search="cn1")
             self.assertEqual(result["total"], 1)
+            self.assertEqual(result["gt_update_counts"], {"all": 1, "ready": 1, "blocked": 0})
             self.assertEqual(result["items"][0]["annotation"]["tags"], [])
             self.assertEqual(result["items"][0]["case_label_context"]["tags"], ["queue"])
             with patch.object(exports, "_review_tag_catalog", return_value=catalog), patch.object(exports, "_missing_evidence_catalog", return_value=[]):
@@ -95,7 +96,9 @@ class CombinedReviewWorkflowTest(unittest.TestCase):
             self.assertEqual(result["summary"]["model_review_status_counts"]["completed"], 1)
             self.assertEqual(analysis._review_reason_analysis_payload(**query, search="排队")["total"], 1)
             for extra in ({"review_status": "pending"}, {"exclusion": "included"}, {"comment_state": "without"}, {"annotation_author": "bob"}):
-                self.assertEqual(analysis._review_reason_analysis_payload(**query, **extra)["total"], 0, extra)
+                empty = analysis._review_reason_analysis_payload(**query, **extra)
+                self.assertEqual(empty["total"], 0, extra)
+                self.assertEqual(empty["gt_update_counts"], {"all": 0, "ready": 0, "blocked": 0}, extra)
         filters = dict(baseline_scopes=["scope"], model_run_id=self.runs[0]["id"], work_split_id=task["id"], work_assignee="alice", model_review_status="completed", is_excluded=True, comment_state="with")
         with patch.object(gallery, "database", self.db), patch.object(gallery, "_review_tag_catalog", return_value=catalog):
             result = gallery._case_result_with_status_filter(filters=filters, review_statuses=(), label_states=("resolved",), page=1, page_size=1)

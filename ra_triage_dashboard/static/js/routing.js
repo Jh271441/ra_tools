@@ -30,6 +30,7 @@ function applyColorTheme(theme, { persist = true } = {}) {
   // Re-render theme/language-sensitive analysis visuals without a data reload.
   if (state.reviewAnalysis?.data && typeof renderAnalysisReviewStatus === "function") {
     renderAnalysisReviewStatus(state.reviewAnalysis.data);
+    if (typeof renderAnalysisGtStatus === "function") renderAnalysisGtStatus(state.reviewAnalysis.data);
   }
   if (state.reviewAnalysis?.data && typeof renderAnalysisClusterPanels === "function") {
     renderAnalysisClusterPanels(state.reviewAnalysis.data, { animatePies: false });

@@ -975,13 +975,14 @@
 }
 
 @media (max-width: 1024px) {
-  #labelSummaryContent .analysis-decision-grid { grid-template-areas: "status" "gt" "confusion"; }
+  .analysis-decision-grid.analysis-has-gt { grid-template-columns: minmax(0, 1fr); grid-template-areas: "status" "gt" "confusion"; }
 }
 @media (max-width: 639px) {
-  .label-summary-gt-chart.analysis-pie-group { grid-template-columns: 104px minmax(0, 1fr); gap: 10px; }
-  .label-summary-gt-card .section-heading { display: flex; flex-direction: row; justify-content: space-between; align-items: center; }
-  .label-summary-gt-card .label-summary-rules-button { min-width: 44px; min-height: 44px; }
-  .label-summary-gt-chart .analysis-pie-figure { width: 104px; }
+  .analysis-gt-chart.analysis-pie-group { grid-template-columns: 104px minmax(0, 1fr); gap: 10px; }
+  .analysis-gt-chart .analysis-pie-figure { width: 104px; }
+  .analysis-has-gt .analysis-review-status-heading > div { min-height: 44px; display: flex; align-items: center; }
+  .analysis-gt-title { padding-right: 44px; }
+  .analysis-gt-title .label-summary-rules-button { min-width: 44px; min-height: 44px; }
 }
 /* Trail audit page: final responsive owner, shared controls retain touch sizing. */
 @media (max-width: 1024px) {

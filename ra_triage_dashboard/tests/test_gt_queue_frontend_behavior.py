@@ -43,6 +43,14 @@ const data={gt_update_counts:{all:7,ready:3,blocked:3},annotated:7,page:1,page_s
 assert.deepEqual(labelSummaryGtChartItems(data).map(item=>item.count),[3,3,1]);
 const markup=labelSummaryGtChartMarkup(data);
 assert.match(markup,/42.9%/);assert.match(markup,/14.3%/);assert.match(markup,/GT 待更新/);
+assert.match(markup,/section-heading analysis-review-status-heading/);
+assert.match(markup,/标注尚未齐备、来源冲突/);
+const analysisMarkup=analysisGtChartMarkup(data,{prefix:'analysis'});
+assert.equal(analysisMarkup.replaceAll('analysisGt','labelSummaryGt'),markup);
+renderAnalysisGtStatus(data);
+assert.equal($('#analysisGtCardMount').innerHTML,analysisMarkup);
+assert.equal(typeof $('#analysisGtRules').handlers.click,'function');
+
 const empty=labelSummaryGtChartMarkup({gt_update_counts:{all:0,ready:0,blocked:0}});
 assert.match(empty,/—/);assert.doesNotMatch(empty,/NaN|Infinity/);
 renderLabelingSummary(data);
@@ -54,6 +62,12 @@ assert.doesNotMatch($('#labelSummaryContent').innerHTML,/data-gt-update-view/);
 assert.equal($('#labelSummaryPageSize').enhanced,true);
 state.uiLanguage='en';labelSummaryTasks=[{id:'task-a',name:'Task A'}];labelSummaryData=data;refreshLabelSummaryLanguage();
 assert.match($('#labelSummaryContent').innerHTML,/Matches GT/);assert.equal(labelSummaryFilters.taskId,'task-a');
+renderAnalysisGtStatus(data);
+assert.match($('#analysisGtCardMount').innerHTML,/Matches GT/);
+assert.match($('#analysisGtCardMount').innerHTML,/Current filters · 7 Issue annotations/);
+assert.doesNotMatch($('#analysisGtCardMount').innerHTML,/需确认/);
+assert.equal(state.activePage,'labeling-summary');
+
 assert.equal('gt_update' in labelSummaryFilterPayload(),false);
 const originalLoader=loadLabelingSummary;loadLabelingSummary=async()=>{};
 $('#labelSummaryReset').handlers.click();loadLabelingSummary=originalLoader;
