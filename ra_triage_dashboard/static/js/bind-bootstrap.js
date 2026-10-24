@@ -197,7 +197,6 @@ function bindEvents() {
         return;
       }
       event.preventDefault();
-      if (element.dataset.labelSummaryView !== undefined) setLabelSummaryView(element.dataset.labelSummaryView, { reset: true });
       navigatePage(element.dataset.pageTarget);
       closeMobileSidebar();
     });

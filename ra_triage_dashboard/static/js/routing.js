@@ -42,8 +42,7 @@ function normalizedUiLanguage(value) {
 
 function renderPageChrome() {
   const route = PAGE_ROUTES[state.activePage] || PAGE_ROUTES.review;
-  const title = state.activePage === "labeling-summary" && typeof labelSummaryViewTitle === "function"
-    ? labelSummaryViewTitle() : state.uiLanguage === "en" ? route.titleEn : route.titleZh;
+  const title = state.uiLanguage === "en" ? route.titleEn : route.titleZh;
   $("#pageTitle").textContent = title;
   document.title = `${title} · Manual Triage`;
 }
@@ -886,7 +885,6 @@ function pageUrl(page, options = {}) {
     if (commentStates) url.searchParams.set("comment_state", commentStates);
     if (exclusions) url.searchParams.set("exclusion", exclusions);
     if (summary.cluster) url.searchParams.set("cluster", summary.cluster);
-    if (summary.gtUpdate) url.searchParams.set("gt_update", summary.gtUpdate);
     if (Number(summary.page) > 1) url.searchParams.set("page", String(summary.page));
     if (Number(summary.pageSize) !== DEFAULT_CASE_PAGE_SIZE) {
       url.searchParams.set("page_size", String(summary.pageSize));
@@ -1195,8 +1193,7 @@ function showPage(
     section.classList.toggle("hidden", section.dataset.page !== target);
   });
   document.querySelectorAll(".sidebar-item[data-page-target]").forEach((item) => {
-    const active = item.dataset.pageTarget === target
-      && (target !== "labeling-summary" || typeof labelSummaryNavActive !== "function" || labelSummaryNavActive(item));
+    const active = item.dataset.pageTarget === target;
     item.classList.toggle("active", active);
     if (active) item.setAttribute("aria-current", "page");
     else item.removeAttribute("aria-current");

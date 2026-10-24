@@ -85,7 +85,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-650`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-653`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -132,13 +132,9 @@
                 <span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path class="icon-wash" d="M4 5h16v14H4z"/><path d="M8 8h8M8 12h5M8 16h8"/><circle class="icon-emphasis" cx="17" cy="16" r="2"/></svg></span>
                 <span class="sidebar-label"><strong class="ui-lang-zh">实验分配</strong><strong class="ui-lang-en">Labeling experiments</strong></span>
               </a>
-              <a class="sidebar-item" id="labelingSummaryNavButton" data-session-nav="writer" data-label-summary-view="" inert aria-disabled="true" data-page-target="labeling-summary" data-app-path="/labeling-summary" href="/labeling-summary" title="标注汇总">
+              <a class="sidebar-item" id="labelingSummaryNavButton" data-session-nav="writer" inert aria-disabled="true" data-page-target="labeling-summary" data-app-path="/labeling-summary" href="/labeling-summary" title="标注汇总">
                 <span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path class="icon-wash" d="M4 5h16v14H4z"/><path d="M7 16v-4m5 4V8m5 8v-6M6 19h13"/></svg></span>
                 <span class="sidebar-label"><strong class="ui-lang-zh">标注汇总</strong><strong class="ui-lang-en">Labeling summary</strong></span>
-              </a>
-              <a class="sidebar-item" id="gtUpdatesNavButton" data-session-nav="writer" inert aria-disabled="true" data-label-summary-view="ready" data-page-target="labeling-summary" data-app-path="/labeling-summary?gt_update=ready" href="/labeling-summary?gt_update=ready" title="GT 待更新">
-                <span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path class="icon-wash" d="M4 5h16v14H4z"/><path d="M7 9h7M7 13h4m4-1 4 4m0-4-4 4"/></svg></span>
-                <span class="sidebar-label"><strong class="ui-lang-zh">GT 待更新</strong><strong class="ui-lang-en">GT updates</strong></span>
               </a>
               <a class="sidebar-item" id="trailAttributeUpdateNavButton" data-page-target="trail-update" data-app-path="/trail-attribute-update" href="/trail-attribute-update" title="问题排除">
                 <span class="sidebar-icon" aria-hidden="true">
@@ -2480,7 +2476,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-650`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-653`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

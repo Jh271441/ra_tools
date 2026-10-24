@@ -79,19 +79,21 @@
 .label-summary-case-row .label-summary-source > summary { margin-left: auto; }
 .label-summary-source-trace { text-align: left; }
 
-/* Read-only GT queue: same summary rows and shared button variants. */
-.label-summary-viewbar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 20px; padding: 12px 14px; }
-.label-summary-view-tabs { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
-.label-summary-view-tabs .button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
-.label-summary-view-tabs strong { font-variant-numeric: tabular-nums; min-width: 2ch; font-weight: 600; }
-.label-summary-view-copy { color: var(--muted); font-size: 12px; line-height: 1.5; }
-.label-summary-gt-update { font-size: 12px; color: var(--accent); line-height: 1.5; }
-.label-summary-gt-update[data-state="blocked"] { color: var(--warn); }
-#labelSummaryContent.is-gt-queue .label-summary-final-label > span:first-child,
-#labelSummaryContent.is-gt-queue .label-summary-gt-line,
-#labelSummaryContent.is-gt-queue .label-summary-status,
-#labelSummaryContent.is-gt-queue .label-summary-source-line,
-#labelSummaryContent.is-gt-queue .analysis-case-meta { font-size: 12px; }
+/* GT percentages stay beside the existing summary charts. */
+#labelSummaryContent .analysis-decision-grid { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1.1fr); grid-template-areas: "confusion status gt"; }
+#labelSummaryConfusionMatrix .analysis-confusion-table { min-width: 0; }
+.label-summary-gt-card { grid-area: gt; min-width: 0; display: grid; gap: 6px; padding: 10px 12px; }
+.label-summary-gt-card .section-heading { align-items: center; margin: 0; }
+.label-summary-gt-card h3 { margin: 0; }
+.label-summary-gt-card .label-summary-rules-button { min-width: 24px; min-height: 24px; justify-content: center; }
+.label-summary-gt-chart.analysis-pie-group { grid-template-columns: 120px minmax(0, 1fr); gap: 12px; align-items: center; }
+.label-summary-gt-chart .analysis-pie-figure { width: 120px; }
+.label-summary-gt-chart .analysis-pie-center b { color: var(--text); font-size: 16px; letter-spacing: normal; }
+.label-summary-gt-chart .analysis-pie-center small { max-width: 52px; overflow: visible; font-size: 9px; white-space: normal; }
+.label-summary-gt-chart .analysis-pie-legend-line { flex-wrap: wrap; gap: 2px 8px; }
+.label-summary-gt-chart .analysis-pie-legend-line strong { color: var(--text); font-size: 12px; white-space: normal; }
+.label-summary-gt-chart .analysis-pie-legend-line small { color: var(--muted); font-size: 12px; }
+.label-summary-gt-scope { color: var(--muted); font-size: 11px; line-height: 1.5; }
 
 .label-summary-gt-rules { margin: 0; padding-left: 24px; color: var(--text); font-size: 14px; line-height: 1.7; }
 .label-summary-gt-rules li + li { margin-top: 8px; }
