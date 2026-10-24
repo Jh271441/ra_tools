@@ -78,3 +78,20 @@
 .label-summary-case-row .label-summary-source-line { width: 100%; font-size: 10px; }
 .label-summary-case-row .label-summary-source > summary { margin-left: auto; }
 .label-summary-source-trace { text-align: left; }
+
+/* Read-only GT queue: same summary rows and shared button variants. */
+.label-summary-viewbar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 20px; padding: 12px 14px; }
+.label-summary-view-tabs { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.label-summary-view-tabs .button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.label-summary-view-tabs strong { font-variant-numeric: tabular-nums; min-width: 2ch; font-weight: 600; }
+.label-summary-view-copy { color: var(--muted); font-size: 12px; line-height: 1.5; }
+.label-summary-gt-update { font-size: 12px; color: var(--accent); line-height: 1.5; }
+.label-summary-gt-update[data-state="blocked"] { color: var(--warn); }
+#labelSummaryContent.is-gt-queue .label-summary-final-label > span:first-child,
+#labelSummaryContent.is-gt-queue .label-summary-gt-line,
+#labelSummaryContent.is-gt-queue .label-summary-status,
+#labelSummaryContent.is-gt-queue .label-summary-source-line,
+#labelSummaryContent.is-gt-queue .analysis-case-meta { font-size: 12px; }
+
+.label-summary-gt-rules { margin: 0; padding-left: 24px; color: var(--text); font-size: 14px; line-height: 1.7; }
+.label-summary-gt-rules li + li { margin-top: 8px; }

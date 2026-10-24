@@ -973,3 +973,12 @@
   .case-scene-toggle { min-height:44px; justify-self:start; font-size:12px; }
   .case-scene-description { font-size:13px; }
 }
+
+@media (max-width: 760px) {
+  .label-summary-viewbar { padding: 12px; gap: 10px; }
+  .label-summary-view-tabs { width: 100%; }
+  .label-summary-view-tabs .button { min-height: 44px; flex: 1 1 130px; white-space: normal; }
+  #labelSummaryContent.is-gt-queue .label-summary-detail-heading { align-items: flex-start; }
+  #labelSummaryContent.is-gt-queue .label-summary-detail-heading > h3 { white-space: normal; }
+  #labelSummaryContent.is-gt-queue .label-summary-rules-button { min-height: 44px; white-space: normal; text-align: left; }
+}

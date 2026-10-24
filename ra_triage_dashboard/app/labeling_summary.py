@@ -3,6 +3,7 @@ from collections import Counter, defaultdict
 from math import ceil
 
 from .labeling_rules import current_adjudication, expected_output_source, case_exclusion_projection
+from .labeling_gt import has_label_submission
 
 LABELS = ("误触发", "正确触发", "无需协助")
 
@@ -79,7 +80,7 @@ def summarize_labeling_cases(items, *, page=1, page_size=20):
             rationales.insert(0, decision_rationale)
         if decision and not decision.get("stale"):
             created_at = max(created_at, str(decision.get("created_at") or ""))
-        if not heads:
+        if not has_label_submission(item):
             if item.get("scenario"):
                 scenarios[item["scenario"]] += 1
             continue
@@ -103,6 +104,7 @@ def summarize_labeling_cases(items, *, page=1, page_size=20):
                 "title": str(item.get("title") or ""),
                 "scenario": str(item.get("scenario") or ""),
                 "gt_label": str(gt or ""),
+                "gt_update": item.get("gt_update"),
                 "label_state": str(status or "pending"),
                 "expected_output": str(output or ""),
                 "expected_output_source": expected_output_source(item),

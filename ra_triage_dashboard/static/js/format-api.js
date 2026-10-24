@@ -1077,9 +1077,9 @@ function bindMobileFilterDrawers() {
         button.classList.toggle("is-active", open);
         const hint = button.querySelector(`[data-mobile-filter-hint="${CSS.escape(key)}"]`);
         if (hint) {
-          hint.textContent = open
-            ? uiText("收起", "Hide")
-            : uiText("展开条件", "Show filters");
+          hint.innerHTML = open
+            ? '<span class="ui-lang-zh">收起</span><span class="ui-lang-en">Hide</span>'
+            : '<span class="ui-lang-zh">展开条件</span><span class="ui-lang-en">Show filters</span>';
         }
       });
   };

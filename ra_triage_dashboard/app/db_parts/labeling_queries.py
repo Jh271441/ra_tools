@@ -415,6 +415,21 @@ class LabelingQueriesMixin:
             "assignees": self.labeling_assignees(scopes, task),
         }
 
+    def labeling_gt_update_cases(self, *, baseline_scopes, items, task_id="", gt_update=""):
+        from ..labeling_gt import has_label_submission, normalize_gt_update, select_gt_update_cases
+        view = normalize_gt_update(gt_update)
+        if view and task_id:
+            items = [item for item in items if has_label_submission(item)]
+        if view and task_id and items:
+            items, _ = self._project_labeling_cases(
+                baseline_scopes=baseline_scopes,
+                issue_ids=[item["issue_id"] for item in items],
+            )
+        candidates = self.label_gt_candidates(
+            baseline_scopes, issue_ids=[item["issue_id"] for item in items if has_label_submission(item)],
+        )
+        return select_gt_update_cases(items, candidates, view)
+
     def labeling_case_issue_ids(
         self,
         *,
@@ -430,6 +445,7 @@ class LabelingQueriesMixin:
         gt_label: str = "",
         comment_state: str = "all",
         cluster: str = "",
+        gt_update: str = "",
     ) -> list[str]:
         projected, _ = self._project_labeling_cases(
             baseline_scopes=baseline_scopes,
@@ -445,6 +461,11 @@ class LabelingQueriesMixin:
             comment_state=comment_state,
             cluster=cluster,
         )
+        if gt_update:
+            projected, _ = self.labeling_gt_update_cases(
+                baseline_scopes=baseline_scopes, items=projected,
+                task_id=task_id, gt_update=gt_update,
+            )
         return [item["issue_id"] for item in projected]
 
     def labeling_clusters(

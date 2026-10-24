@@ -85,7 +85,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-648`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-649`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -132,9 +132,13 @@
                 <span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path class="icon-wash" d="M4 5h16v14H4z"/><path d="M8 8h8M8 12h5M8 16h8"/><circle class="icon-emphasis" cx="17" cy="16" r="2"/></svg></span>
                 <span class="sidebar-label"><strong class="ui-lang-zh">实验分配</strong><strong class="ui-lang-en">Labeling experiments</strong></span>
               </a>
-              <a class="sidebar-item" id="labelingSummaryNavButton" data-session-nav="writer" inert aria-disabled="true" data-page-target="labeling-summary" data-app-path="/labeling-summary" href="/labeling-summary" title="标注汇总">
+              <a class="sidebar-item" id="labelingSummaryNavButton" data-session-nav="writer" data-label-summary-view="" inert aria-disabled="true" data-page-target="labeling-summary" data-app-path="/labeling-summary" href="/labeling-summary" title="标注汇总">
                 <span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path class="icon-wash" d="M4 5h16v14H4z"/><path d="M7 16v-4m5 4V8m5 8v-6M6 19h13"/></svg></span>
                 <span class="sidebar-label"><strong class="ui-lang-zh">标注汇总</strong><strong class="ui-lang-en">Labeling summary</strong></span>
+              </a>
+              <a class="sidebar-item" id="gtUpdatesNavButton" data-session-nav="writer" inert aria-disabled="true" data-label-summary-view="ready" data-page-target="labeling-summary" data-app-path="/labeling-summary?gt_update=ready" href="/labeling-summary?gt_update=ready" title="GT 待更新">
+                <span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path class="icon-wash" d="M4 5h16v14H4z"/><path d="M7 9h7M7 13h4m4-1 4 4m0-4-4 4"/></svg></span>
+                <span class="sidebar-label"><strong class="ui-lang-zh">GT 待更新</strong><strong class="ui-lang-en">GT updates</strong></span>
               </a>
               <a class="sidebar-item" id="trailAttributeUpdateNavButton" data-page-target="trail-update" data-app-path="/trail-attribute-update" href="/trail-attribute-update" title="问题排除">
                 <span class="sidebar-icon" aria-hidden="true">
@@ -698,16 +702,16 @@
             <section class="review-commandbar labeling-summary-command" aria-label="标注汇总筛选">
               <div class="mobile-filter-bar"><button class="button button-quiet mobile-filter-toggle" type="button" data-mobile-filter-toggle="labelSummaryFilters" aria-expanded="false" aria-controls="labelSummaryFilterForm"><span class="ui-lang-zh">汇总筛选</span><span class="ui-lang-en">Filters</span><span class="mobile-filter-hint" data-mobile-filter-hint="labelSummaryFilters"><span class="ui-lang-zh">展开条件</span><span class="ui-lang-en">Show filters</span></span></button></div>
               <form class="review-filters case-labeling-filters labeling-summary-filters" id="labelSummaryFilterForm" data-mobile-filter-panel="labelSummaryFilters">
-                <label class="case-labeling-search"><span>Issue</span><div class="issue-query-control"><input id="labelSummarySearch" type="search" placeholder="Issue ID、场景" autocomplete="off" /><button class="button button-quiet issue-query-button" id="openLabelSummaryIssueQueryButton" data-issue-query-target="labeling-summary" type="button">多 Issue</button></div></label>
-                <label><span>标注任务</span><div class="ui-select" id="labelSummaryTaskPicker"><button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="ui-select-summary">全部标注</span><span class="ui-select-caret" aria-hidden="true"></span></button><div class="ui-select-panel" role="listbox" hidden></div><select class="ui-select-native" id="labelSummaryTask" aria-hidden="true" tabindex="-1"><option value="">全部标注</option></select></div></label>
-                <label><span>结果状态</span><div class="multi-filter" id="labelSummaryStatusPicker" data-placeholder="全部状态" data-placeholder-en="All states"></div></label>
-                <label><span>标注人</span><div class="multi-filter" id="labelSummaryAuthorPicker" data-placeholder="全部标注人" data-placeholder-en="All labelers"></div></label>
-                <label><span>任务负责人</span><div class="multi-filter" id="labelSummaryAssigneePicker" data-placeholder="全部负责人" data-placeholder-en="All assignees"></div></label>
+                <label class="case-labeling-search"><span>Issue</span><div class="issue-query-control"><input id="labelSummarySearch" type="search" placeholder="Issue ID、场景" data-placeholder-zh="Issue ID、场景" data-placeholder-en="Issue ID, scene" autocomplete="off" /><button class="button button-quiet issue-query-button" id="openLabelSummaryIssueQueryButton" data-issue-query-target="labeling-summary" type="button"><span class="ui-lang-zh">多 Issue</span><span class="ui-lang-en">Issue list</span></button></div></label>
+                <label><span class="ui-lang-zh">标注任务</span><span class="ui-lang-en">Labeling task</span><div class="ui-select" id="labelSummaryTaskPicker"><button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="ui-select-summary">全部标注</span><span class="ui-select-caret" aria-hidden="true"></span></button><div class="ui-select-panel" role="listbox" hidden></div><select class="ui-select-native" id="labelSummaryTask" aria-hidden="true" tabindex="-1"><option value="">全部标注</option></select></div></label>
+                <label><span class="ui-lang-zh">结果状态</span><span class="ui-lang-en">Result state</span><div class="multi-filter" id="labelSummaryStatusPicker" data-placeholder="全部状态" data-placeholder-en="All states"></div></label>
+                <label><span class="ui-lang-zh">标注人</span><span class="ui-lang-en">Labeler</span><div class="multi-filter" id="labelSummaryAuthorPicker" data-placeholder="全部标注人" data-placeholder-en="All labelers"></div></label>
+                <label><span class="ui-lang-zh">任务负责人</span><span class="ui-lang-en">Assignee</span><div class="multi-filter" id="labelSummaryAssigneePicker" data-placeholder="全部负责人" data-placeholder-en="All assignees"></div></label>
                 <label><span>GT</span><div class="multi-filter" id="labelSummaryGtPicker" data-placeholder="全部 GT" data-placeholder-en="All GT"></div></label>
-                <label><span>结果类别</span><div class="multi-filter" id="labelSummaryLabelPicker" data-placeholder="全部类别" data-placeholder-en="All labels"></div></label>
-                <label><span>讨论</span><div class="multi-filter" id="labelSummaryDiscussionPicker" data-placeholder="全部讨论状态" data-placeholder-en="All discussions"></div></label>
-                <label><span>排除</span><div class="multi-filter" id="labelSummaryExclusionPicker" data-placeholder="全部（含问题排除）" data-placeholder-en="All cases"></div></label>
-                <div class="labeling-summary-actions"><button class="button button-quiet" id="labelSummaryExportGt" type="button" disabled>导出 GT 更新表</button><button class="button button-quiet" id="labelSummaryReset" type="button">重置</button></div>
+                <label><span class="ui-lang-zh">结果类别</span><span class="ui-lang-en">Result label</span><div class="multi-filter" id="labelSummaryLabelPicker" data-placeholder="全部类别" data-placeholder-en="All labels"></div></label>
+                <label><span class="ui-lang-zh">讨论</span><span class="ui-lang-en">Discussion</span><div class="multi-filter" id="labelSummaryDiscussionPicker" data-placeholder="全部讨论状态" data-placeholder-en="All discussions"></div></label>
+                <label><span class="ui-lang-zh">排除</span><span class="ui-lang-en">Exclusion</span><div class="multi-filter" id="labelSummaryExclusionPicker" data-placeholder="全部（含问题排除）" data-placeholder-en="All cases"></div></label>
+                <div class="labeling-summary-actions"><button class="button button-quiet" id="labelSummaryExportGt" type="button" disabled><span class="ui-lang-zh">导出 GT 更新表</span><span class="ui-lang-en">Export GT updates</span></button><button class="button button-quiet" id="labelSummaryReset" type="button"><span class="ui-lang-zh">重置</span><span class="ui-lang-en">Reset</span></button></div>
               </form>
             </section>
             <div id="labelSummaryContent" aria-live="polite"></div>
@@ -2476,7 +2480,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-648`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-649`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

@@ -11,13 +11,19 @@ from .labeling_shared import _clean_values
 
 
 class LabelingExportsMixin:
-    def label_gt_candidates(self, baseline_scopes: Sequence[str], *, include_non_updates: bool = False) -> list[dict[str, Any]]:
+    def label_gt_candidates(self, baseline_scopes: Sequence[str], *, include_non_updates: bool = False, issue_ids: Sequence[str] | None = None) -> list[dict[str, Any]]:
         scopes = _clean_values(baseline_scopes)
+        selected = _clean_values(issue_ids) if issue_ids is not None else None
+        rows = []
+        # An explicitly empty selection must never widen to the entire baseline.
+        batches = [None] if selected is None else [selected[i:i + 400] for i in range(0, len(selected), 400)]
         with self.connect() as conn:
-            rows = conn.execute(
-                f"SELECT issue_id, baseline_scope, gt_label FROM issues WHERE baseline_scope IN ({', '.join('?' for _ in scopes)}) ORDER BY baseline_scope, issue_id",
-                scopes,
-            ).fetchall() if scopes else []
+            for batch in batches if scopes else []:
+                clause = f" AND issue_id IN ({', '.join('?' for _ in batch)})" if batch is not None else ""
+                rows.extend(conn.execute(
+                    f"SELECT issue_id, baseline_scope, gt_label FROM issues WHERE baseline_scope IN ({', '.join('?' for _ in scopes)}){clause} ORDER BY baseline_scope, issue_id",
+                    [*scopes, *(batch or [])],
+                ).fetchall())
         cases_by_issue = self._batch_label_cases([str(row["issue_id"]) for row in rows])
         gt_by_issue = {str(row["issue_id"]): str(row["gt_label"] or "") for row in rows}
         scope_by_issue = {str(row["issue_id"]): str(row["baseline_scope"] or "") for row in rows}

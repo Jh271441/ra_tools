@@ -84,3 +84,16 @@ class LabelingVersionMembershipTests(IsolatedAsyncioTestCase):
             result = await snapshots.get_gt_candidates(self.request, baselines='version-20261009')
         self.assertEqual(result['items'], [dict(issue_id='cn1', status='ready')])
         self.assertEqual((result['ready_count'], result['conflict_count']), (1, 0))
+
+    async def test_gt_queue_counts_and_export_share_version_target_membership(self):
+        for n in range(1, 5):
+            self.db.create_label_revision(issue_id=f"cn{n}", expected_output="误触发", tags=[], evidence_gaps=[],
+                rationale="version target evidence", is_excluded=False, author="alice", author_source="test",
+                author_verified=True, expected_previous_revision_id=None)
+        result = await queries.labeling_summary(self.request, baselines='version-20261009', gt_update='ready')
+        self.assertEqual([item['issue_id'] for item in result['items']], ['cn1'])
+        self.assertEqual(result['gt_update_counts'], dict(all=1, ready=1, blocked=0))
+        request=Mock(query_params={},json=AsyncMock(return_value=dict(baselines='version-20261009',filters=dict(gt_update='ready'))))
+        with patch.object(self.db,'create_label_gt_export_preview',return_value=dict(id='',item_count=0)) as create:
+            await exports.create_gt_export_preview(request)
+        self.assertEqual(create.call_args.kwargs['issue_ids'], ['cn1'])

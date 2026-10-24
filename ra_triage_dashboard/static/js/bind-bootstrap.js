@@ -197,6 +197,7 @@ function bindEvents() {
         return;
       }
       event.preventDefault();
+      if (element.dataset.labelSummaryView !== undefined) setLabelSummaryView(element.dataset.labelSummaryView, { reset: true });
       navigatePage(element.dataset.pageTarget);
       closeMobileSidebar();
     });
@@ -880,6 +881,7 @@ function bindEvents() {
   });
   window.addEventListener("popstate", async () => {
     const route = parsePageRoute();
+    if (route.page === "labeling-summary") restoreLabelSummaryRoute({ force: true });
     if (route.page === "comparison") {
       applyRunComparisonRoute(route.comparisonFilters);
       showPage("comparison", { restoreRoute: true, loadPageData: false });

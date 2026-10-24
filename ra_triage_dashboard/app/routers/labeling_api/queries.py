@@ -139,6 +139,7 @@ async def labeling_summary(
     gt: str = "",
     comment_state: str = "all",
     cluster: str = "",
+    gt_update: str = "",
     page: int = 1,
     page_size: int = 20,
 ) -> dict[str, Any]:
@@ -193,6 +194,11 @@ async def labeling_summary(
             comment_state=normalized_comment_state,
             cluster=_as_text(cluster),
         )
+        items, gt_update_counts = await asyncio.to_thread(
+            database.labeling_gt_update_cases,
+            baseline_scopes=scopes, items=items,
+            task_id=normalized_task, gt_update=gt_update,
+        )
         result, labelers, assignees = await asyncio.gather(
             asyncio.to_thread(
                 summarize_labeling_cases,
@@ -207,6 +213,7 @@ async def labeling_summary(
         raise _detail(400, str(exc)) from exc
     return {
         **result,
+        "gt_update_counts": gt_update_counts,
         "baseline_scopes": scopes,
         "task_id": normalized_task,
         "labelers": labelers,
