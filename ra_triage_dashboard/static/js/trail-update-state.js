@@ -5,7 +5,7 @@
  */
 
 function trailUpdatePreviewKey(runId = state.trailUpdate?.runId || "") {
-  return `${String(runId || "").trim()}|${selectedBaselineQueryValue()}|${state.trailUpdate.view || "local"}`;
+  return `issues|${selectedBaselineQueryValue()}|${state.trailUpdate.view || "local"}`;
 }
 
 function trailAttributePreviewNeedsLoad(runId = state.trailUpdate?.runId || "") {
@@ -21,7 +21,6 @@ function trailAttributePreviewNeedsLoad(runId = state.trailUpdate?.runId || "") 
 
 function trailUpdateEndpoint(runId, probeTrail = true, refresh = false) {
   const params = new URLSearchParams();
-  if (runId) params.set("model_run_id", runId);
   const baselines = selectedBaselineQueryValue();
   if (baselines) params.set("baselines", baselines);
   if (state.trailUpdate.view === "reconciliation") params.set("reconciliation", "true");

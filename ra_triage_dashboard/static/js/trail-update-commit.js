@@ -198,10 +198,9 @@ function openTrailUpdateConfirm({ mode = "review", data = {} } = {}) {
   const resultField = String(data?.model_result_field || "ra_stuck_auto_result");
   const infoOnly = data?.write_mode === "info_only" || directMode;
   const count = Number(data?.pending_count ?? items.length);
-  const run = data?.selected_run || {};
   const runLabel = directMode
     ? uiText("Issue ID 屏蔽", "Shield by Issue ID")
-    : String(run.name || (state.modelRuns || []).find(item => item.id === run.id)?.name || run.id || uiText("全部 Model Runs", "All model Runs"));
+    : uiText("Issue 排除", "Issue exclusions");
   const baselineLabel = Array.isArray(data?.baselines) && data.baselines.length
     ? data.baselines.join(" + ")
     : uiText("当前数据集", "Selected dataset");
@@ -483,7 +482,6 @@ async function commitTrailAttributeUpdate() {
     setTrailAttributeStatus(uiText("正在核对所选案例的最新理由…", "Checking the latest reasons for selected cases…"));
     const preview = await api("/api/trail-attribute-update/selection-preview", {
       method: "POST", body: JSON.stringify({ issue_ids: issueIds, intent,
-        model_run_id: data.selected_run?.id || state.trailUpdate.runId || "",
         baselines: data.baselines || [] }),
     });
     if (scope !== trailUpdatePreviewKey()) throw new Error(uiText("范围已变化，请重新选择并预览", "Scope changed; select and preview again"));
@@ -503,7 +501,7 @@ async function commitTrailAttributeUpdate() {
     setTrailAttributeStatus(message);
     if (result.ok) issueIds.forEach(id => trailSelectedIssues().delete(id));
     else showToast(uiText("部分更新未确认，请查看结果并刷新。", "Some updates remain unconfirmed; inspect results and refresh."), true);
-    const runId = String(data.selected_run?.id || state.trailUpdate.runId || "");
+    const runId = "";
     void refreshTrailAttributeStatus({ runId, previewKey: trailUpdatePreviewKey(runId), requestSeq: state.trailUpdate.requestSeq, force: true }).catch(() => {});
   } catch (error) {
     finishTrailUpdateProgress({ ok: false, message: error.message });

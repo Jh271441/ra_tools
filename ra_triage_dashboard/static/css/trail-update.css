@@ -1,3 +1,5 @@
+body[data-active-page="trail-update"] .header-metrics { display:none; }
+body[data-active-page="trail-update"] .gt-sync-control { margin-left:auto; }
 /* Trail Attribute Update and issue-exclusion workflows. */
 .run-source-panel .trail-import-body { min-height: 0; box-sizing: border-box; align-content: start; }
 .trail-sync-state { display: grid; gap: 4px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 7px; background: #0b1119; font-size: 10px; line-height: 1.45; }
@@ -709,10 +711,10 @@ html[data-color-theme="light"] .trail-update-state-badge.is-excluded { color:#1d
 #trailReasonDetailsDialog .dialog-actions button { min-height:44px; }
 
 /* Browsing stays quiet until the user explicitly enters batch selection. */
-.trail-update-review-summary-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
-.trail-update-review-summary-grid > .analysis-stat-card:not([hidden]) { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; text-align:center; }
-.trail-update-review-summary-grid > .analysis-stat-card > strong { font-size:28px; line-height:1.1; }
-.trail-update-review-summary-grid > .analysis-stat-card > small { max-width:100%; }
+.trail-update-review-summary-grid { grid-template-columns:minmax(160px, .65fr) minmax(0, 2.35fr); }
+.trail-update-review-summary-grid > .analysis-stat-card:not([hidden]) { display:grid; grid-template-columns:1fr auto; align-content:center; align-items:center; gap:4px 16px; text-align:left; }
+.trail-update-review-summary-grid > .analysis-stat-card > strong { grid-column:2; grid-row:1 / 3; font-size:24px; line-height:1.2; }
+.trail-update-review-summary-grid > .analysis-stat-card > small { grid-column:1; max-width:100%; overflow-wrap:anywhere; }
 .trail-reason-check[hidden] { display:none; }
 .trail-reconcile-table th, .trail-reconcile-table td:nth-child(n) { text-align:center; }
 .trail-reconcile-table td:nth-child(5) { text-align:left; }

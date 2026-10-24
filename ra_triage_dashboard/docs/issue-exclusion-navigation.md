@@ -39,3 +39,28 @@ Validation covers permission resolution, keyboard scope, exclusion hydration and
 local drafts, delayed Trail protection, append-only Case exclusion changes, old
 client compatibility, idempotency and single-count task progress. Frontend contracts
 cover sidebar ownership and synchronized cache versions.
+
+## Issue-scoped exclusions (2026-10-25; not yet deployed)
+
+The exclusion page scopes candidates by selected datasets and Issue IDs.
+It no longer loads or offers a Model Run selector, model-prediction filter or
+model-review-state filter. Legacy `run`, `model_label` and `review_status` URL
+parameters do not restrict this page. Preview cache keys are dataset/view scoped;
+selected write previews carry only explicit Issue IDs, intent and datasets.
+Backend compatibility with Run-scoped API clients and historical source evidence
+is retained. Current Case votes/decisions still override stale legacy Run flags.
+No migration, automatic Trail write or writer-policy change is introduced.
+
+The overview uses a narrow candidate-count card and wider Trail status summary.
+At mobile widths it stacks using existing mobile.css rules. The decision dialog
+summary uses two compact facts on desktop and one column below 640px; field and
+status text are secondary, only the outcome uses semibold. Personal label cards
+are unchanged.
+
+## Optional Issue description (2026-10-25; not yet deployed)
+
+Case-labeling detail presents the original Issue summary behind a default-collapsed
+Scene description control. Expansion reveals the full escaped multiline source
+text below the context controls. No summary yields no control. Same-Issue media
+rerenders preserve expansion; another Issue starts closed. The control uses the
+existing compact button, keyboard behavior, bilingual spans and mobile overrides.

@@ -87,7 +87,6 @@ function applyUiLanguage(language, { persist = true } = {}) {
     "renderReviewerFilter",
     "renderWorkAssigneeFilter",
     "renderReviewAssignmentPage",
-    "renderTrailAttributeRunPicker",
     "renderTrailUpdateFilters",
     "refreshTrailReasonLanguage",
     "refreshCaseLabelDecisionLanguage",
@@ -1000,8 +999,8 @@ function pageUrl(page, options = {}) {
     const trail = typeof currentTrailUpdateRouteOptions === "function"
       ? currentTrailUpdateRouteOptions(options)
       : options;
-    const runId = trail.runId ?? state.trailUpdate?.runId ?? state.selectedRunId;
-    if (runId) url.searchParams.set("run", runId);
+    // Issue exclusion does not inherit a Run from another page or old URL.
+    url.searchParams.delete("run");
     if (trail.tab === "issue") url.searchParams.set("tab", "issue");
     if (trail.exclusionIssue && /^[A-Za-z0-9_-]{3,128}$/.test(trail.exclusionIssue)) url.searchParams.set("exclude_issue", trail.exclusionIssue);
     if (trail.search) url.searchParams.set("q", trail.search);
@@ -1010,14 +1009,10 @@ function pageUrl(page, options = {}) {
       if (trail[key]) url.searchParams.set(param, trail[key]);
     }
     const gt = joinFilterList(trail.gtLabel);
-    const modelLabel = joinFilterList(trail.modelLabel);
     const reviewer = joinFilterList(trail.annotationAuthor);
-    const reviewStatus = joinFilterList(trail.reviewStatus);
     const trailStatus = joinFilterList(trail.trailStatus);
     if (gt) url.searchParams.set("gt", gt);
-    if (modelLabel) url.searchParams.set("model_label", modelLabel);
     if (reviewer) url.searchParams.set("reviewer", reviewer);
-    if (reviewStatus) url.searchParams.set("review_status", reviewStatus);
     if (trailStatus) url.searchParams.set("trail_status", trailStatus);
     if (Number(trail.page) > 1) url.searchParams.set("page", String(trail.page));
     if (Number(trail.pageSize) !== DEFAULT_CASE_PAGE_SIZE) {
@@ -1339,8 +1334,7 @@ function showPage(
   }
   if (target === "trail-update" && state.trailUpdate.tab !== "issue") {
     const trailPage = $("#trailAttributeUpdatePage");
-    if (runId) state.trailUpdate.runId = runId;
-    if (typeof renderTrailAttributeRunPicker === "function") renderTrailAttributeRunPicker();
+    state.trailUpdate.runId = "";
     const needsPreview =
       typeof trailAttributePreviewNeedsLoad !== "function" ||
       trailAttributePreviewNeedsLoad(state.trailUpdate?.runId || "");

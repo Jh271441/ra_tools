@@ -46,16 +46,6 @@ function bindTrailAttributeUpdateEvents() {
       }
     });
   });
-  const select = $("#trailUpdateRunSelect");
-  select?.addEventListener("change", () => {
-    state.trailUpdate.runId = String(select.value || "");
-    state.trailUpdate.page = 1;
-    clearTrailAttributePreview();
-    if (typeof pageUrl === "function") {
-      history.replaceState({ page: "trail-update" }, "", pageUrl("trail-update", { runId: state.trailUpdate.runId }));
-    }
-    loadTrailAttributePreview().catch((error) => showToast(error.message, true));
-  });
   $("#trailUpdateFilterForm")?.addEventListener("submit", (event) => {
     event.preventDefault();
     state.trailUpdate.filters.search = String($("#trailUpdateSearchInput")?.value || "");
@@ -163,5 +153,4 @@ function bindTrailAttributeUpdateEvents() {
   });
   parseTrailIssueIds();
   setTrailAttributeCapability(null);
-  renderTrailAttributeRunPicker();
 }

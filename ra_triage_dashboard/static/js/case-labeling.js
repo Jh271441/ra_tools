@@ -1031,6 +1031,9 @@ function renderCaseLabelingDetailMedia(caseData) {
   const issueUrl = safeUrl(caseData.voyager_issue_url || caseData.trail_url);
   const issueId = escapeHtml(caseData.issue_id);
   const issueIdValue = String(caseData.issue_id || "");
+  const description = String(caseData.summary || "").trim();
+  const previousDescription = $("#caseLabelingSceneDescription");
+  const descriptionOpen = previousDescription?.dataset.issueId === issueIdValue && !previousDescription.hidden;
   const issueIdLink = issueUrl
     ? `<a class="detail-id detail-id-link" href="${escapeHtml(issueUrl)}" target="_blank" rel="noreferrer" title="打开 Voyager Issue">${issueId}</a>`
     : `<span class="detail-id">${issueId}</span>`;
@@ -1060,11 +1063,18 @@ function renderCaseLabelingDetailMedia(caseData) {
           <span class="comparison-side-label comparison-side-gt">GT</span>${labelBadge(caseData.gt_label, uiText("缺失", "Missing"))}
         </div>
         <button class="button button-quiet detail-back-button" id="caseLabelingBack" type="button"><span class="ui-lang-zh">← 返回筛选结果</span><span class="ui-lang-en">← Back to gallery</span></button>
-        ${caseData.summary ? `<p class="detail-summary">${escapeHtml(caseData.summary)}</p>` : ""}
+        ${description ? `<button class="history-inline-button case-scene-toggle" id="caseLabelingSceneToggle" type="button" aria-expanded="${descriptionOpen}" aria-controls="caseLabelingSceneDescription"><span class="case-scene-caret" aria-hidden="true">▸</span><span class="ui-lang-zh">场景描述</span><span class="ui-lang-en">Scene description</span></button>` : ""}
         <div class="detail-context-actions">${detailMediaCommandMarkup(caseData)}</div>
       </div>
+      ${description ? `<p class="case-scene-description" id="caseLabelingSceneDescription" data-issue-id="${issueId}" ${descriptionOpen ? "" : "hidden"}>${escapeHtml(description)}</p>` : ""}
     </div>
     ${heroMediaSection(caseData)}`;
+  $("#caseLabelingSceneToggle")?.addEventListener("click", (event) => {
+    const panel = $("#caseLabelingSceneDescription");
+    if (!panel) return;
+    panel.hidden = !panel.hidden;
+    event.currentTarget.setAttribute("aria-expanded", String(!panel.hidden));
+  });
   $("#caseLabelingMedia").querySelector("[data-copy-issue-id]")?.addEventListener("click", (event) => {
     if (typeof copyReviewIssueId === "function") copyReviewIssueId(issueIdValue, event.currentTarget);
   });

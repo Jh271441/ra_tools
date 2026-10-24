@@ -289,82 +289,13 @@ async function loadTrailIssueHistory() {
   }
 }
 
-function trailUpdateRunLabel(run) {
-  if (!run) return "";
-  const count = Number(run.baseline_prediction_count || 0);
-  const failures = Number(run.failure_count || 0);
-  const source = run.source_name ? ` · ${run.source_name}` : "";
-  return `${run.name || run.id}${source} · ${count} 条 · 错 ${failures}`;
-}
 function startTrailAttributePage() {
-  const pageContext = capturePageContext();
-  state.trailUpdate.runCatalogLoading = true;
-  renderTrailAttributeRunPicker();
-  state.trailUpdate.runCatalogFailed = false;
-  void settleInitialRequests([loadRuns({ preserveEmpty: true })], uiText("模型 Run", "Model Runs"))
-    .then(results => { state.trailUpdate.runCatalogFailed = results.some(result => result.status === "rejected"); })
-    .finally(() => {
-      state.trailUpdate.runCatalogLoading = false;
-      if (isPageContextCurrent(pageContext, { matchUrl: false })) renderTrailAttributeRunPicker();
-    });
-  void settleInitialRequests([loadOverview(), loadReviewers(), loadWorkAssignees()], uiText("共享数据", "Shared data"));
+  // Exclusion belongs to Issues in the selected datasets, independent of Runs.
+  state.trailUpdate.runId = "";
+  void settleInitialRequests([loadReviewers(), loadWorkAssignees()], uiText("共享数据", "Shared data"));
   if (state.trailUpdate.tab !== "issue") {
     void loadTrailAttributePreview().catch(error => showToast(error.message, true));
   }
-}
-
-function renderTrailAttributeRunPicker() {
-  const select = $("#trailUpdateRunSelect");
-  const picker = $("#trailUpdateRunPicker");
-  if (!select) return;
-  // Trail drafts must be explicit.  Do not inherit the Review gallery's
-  // global/default Run when the user merely opens this page.
-  const selected = state.trailUpdate?.runId || "";
-  const hasRuns = Array.isArray(state.modelRuns) && state.modelRuns.length > 0;
-  const catalogLoading = Boolean(state.trailUpdate.runCatalogLoading);
-  const catalogFailed = Boolean(state.trailUpdate.runCatalogFailed);
-  const selectedMissing = Boolean(selected) && !(state.modelRuns || []).some(run => run.id === selected);
-  const options = [
-    {
-      value: "",
-      label: hasRuns
-        ? uiText("未选择模型 Run（合并全部）", "No model Run selected (all Runs)")
-        : uiText("当前环境没有模型 Run", "No model Run in this environment"),
-    },
-    ...(selectedMissing ? [{ value: selected, label: catalogLoading ? uiText("正在加载所选模型 Run…", "Loading the selected model Run…") : uiText("所选模型 Run 不在当前列表", "Selected model Run is not in this list") }] : []),
-    ...(state.modelRuns || []).map((run) => ({ value: run.id, label: trailUpdateRunLabel(run) })),
-  ];
-  if (catalogLoading && !selected) options[0].label = uiText("全部模型 Run", "All model Runs");
-  if (catalogFailed && !hasRuns && !selected) options[0].label = uiText("模型 Run 列表暂不可用", "Model Run list unavailable");
-  select.disabled = !hasRuns;
-  const selectedValue = selected;
-  if (picker && typeof populateUiSelect === "function") {
-    populateUiSelect(picker, options, selectedValue);
-    bindUiSelect(picker, { maxHeight: 360, maxWidth: 720 });
-  } else {
-    select.innerHTML = options
-      .map((item) => `<option value="${escapeHtml(item.value)}">${escapeHtml(item.label)}</option>`)
-      .join("");
-    select.value = selectedValue;
-  }
-  const hint = $("#trailUpdateRunHint");
-  if (hint) {
-    hint.hidden = hasRuns || catalogLoading || catalogFailed;
-    if (!hasRuns && !catalogLoading) {
-      const isGray = window.location.port === "8786";
-      hint.innerHTML = uiText(
-        isGray
-          ? "当前 8786 灰度只有基线数据，尚无 Model Run。它使用独立空库，不会自动共享 8785 生产 Run；请先到“模型结果”导入结果。"
-          : "当前环境只有基线数据，尚无 Model Run；请先到“模型结果”导入结果。",
-        isGray
-          ? "Gray 8786 has baselines but no Model Run. It uses an isolated empty database and does not share Runs with production 8785; import a result from Model Runs first."
-          : "This environment has baselines but no Model Run; import a result from Model Runs first."
-      );
-    }
-  }
-  const baseline = normalizeBaselineIds(state.selectedBaselineIds);
-  const summary = $("#trailUpdateBaselineSummary");
-  if (summary) summary.textContent = baseline.join(" + ") || uiText("当前数据集", "Selected dataset");
 }
 
 function setTrailAttributeStatus(message = "") {
@@ -574,11 +505,9 @@ function applyTrailUpdateRouteControls(filters = {}) {
     remoteState: source.remoteState || "",
     search: String(source.search || ""),
     gtLabel: parseFilterList(source.gtLabel).filter((value) => LABELS.includes(value)),
-    modelLabel: parseFilterList(source.modelLabel),
+    modelLabel: [],
     reviewer: parseFilterList(source.annotationAuthor || source.reviewer),
-    reviewStatus: parseFilterList(source.reviewStatus).filter((value) =>
-      ["pending", "reviewed", "needs_gt_review"].includes(value)
-    ),
+    reviewStatus: [],
     trailStatus: parseFilterList(source.trailStatus).filter((value) =>
       ["querying", "synced", "pending", "not_found", "query_failed", "not_checked", "needs_exclusion", "reason_changed", "reason_missing", "excluded_keep_reason", "excluded_no_reason", "reconcile_excluded", "reconcile_not_excluded", "reason_update", "excluded", "not_excluded", "unconfirmed"].includes(value)
     ),
@@ -633,9 +562,7 @@ function trailUpdateFilteredItems(data = state.trailUpdate?.data) {
   const filters = state.trailUpdate?.filters || {};
   const search = String(filters.search || "").trim().toLocaleLowerCase();
   const gt = new Set(trailUpdateFilterValues("gtLabel"));
-  const modelLabel = new Set(trailUpdateFilterValues("modelLabel"));
   const reviewer = new Set(trailUpdateFilterValues("reviewer"));
-  const reviewStatus = new Set(trailUpdateFilterValues("reviewStatus"));
   const trailStatus = new Set(trailUpdateFilterValues("trailStatus").map(trailStatusGroup));
   return items.filter((item) => {
     const review = item.review || {};
@@ -644,9 +571,7 @@ function trailUpdateFilteredItems(data = state.trailUpdate?.data) {
     if (filters.remoteState && filters.remoteState !== trailRemoteState(item)) return false;
     if (search && !trailUpdateSearchText(item).includes(search)) return false;
     if (gt.size && !gt.has(String(item?.gt_label || ""))) return false;
-    if (modelLabel.size && !modelLabel.has(trailUpdateModelValue(item))) return false;
     if (reviewer.size && !reviewer.has(String(review.reviewer || ""))) return false;
-    if (reviewStatus.size && !reviewStatus.has(String(review.status || "pending"))) return false;
     if (trailStatus.size && !trailStatus.has(trailStatusGroup(trailReasonState(item)))) return false;
     return true;
   });
@@ -704,16 +629,8 @@ function renderTrailUpdateFilters(data = state.trailUpdate?.data) {
     state.trailUpdate.filters.gtLabel = values;
     applyTrailUpdateFilters();
   });
-  bind("#trailUpdateModelLabelFilter", options.model, filters.modelLabel, (values) => {
-    state.trailUpdate.filters.modelLabel = values;
-    applyTrailUpdateFilters();
-  });
   bind("#trailUpdateReviewerFilter", options.reviewer, filters.reviewer, (values) => {
     state.trailUpdate.filters.reviewer = values;
-    applyTrailUpdateFilters();
-  });
-  bind("#trailUpdateReviewStatusFilter", options.review, filters.reviewStatus, (values) => {
-    state.trailUpdate.filters.reviewStatus = values;
     applyTrailUpdateFilters();
   });
   bind("#trailUpdateStatusFilter", options.trail, (filters.trailStatus || []).map(trailStatusGroup), (values) => {
@@ -783,7 +700,7 @@ function clearTrailAttributePreview(message = "") {
   setTrailAttributeUpdatePreviewVisible(false);
   setTrailAttributeCapability(null);
   $("#trailUpdateCount").textContent = "—";
-  $("#trailUpdateRunSummary").textContent = "—";
+  $("#trailUpdateScopeSummary").textContent = "—";
   $("#trailUpdateStatusSummary").textContent = "—";
   const digestElement = $("#trailUpdateDigest");
   if (digestElement) digestElement.textContent = "—";
@@ -825,15 +742,14 @@ function renderTrailAttributePreview(data, { preserveRows = false } = {}) {
   const filteredItems = trailUpdateFilteredItems(data);
   const page = renderTrailUpdatePagination(filteredItems);
   const items = filteredItems.slice(page.start, page.end);
-  const run = data?.selected_run || {};
   const digest = String(data?.payload_sha256 || "");
   const capability = data?.trail_capability || {};
   setTrailAttributeUpdatePreviewVisible(true);
   setTrailAttributeCapability(data);
   $("#trailUpdateCount").textContent = String(data.local_candidate_count ?? allItems.filter(item => !item.readonly).length);
   renderTrailReconcileCoverage(data);
-  const sourceLabel = run.name || run.id || uiText("全部 Model Runs", "All model Runs");
-  $("#trailUpdateRunSummary").textContent = filteredItems.length === allItems.length
+  const sourceLabel = (data.baselines || []).join(" · ") || uiText("当前数据集", "Selected datasets");
+  $("#trailUpdateScopeSummary").textContent = filteredItems.length === allItems.length
     ? sourceLabel
     : `${sourceLabel} · ${uiText(`筛选 ${filteredItems.length}/${allItems.length} 条`, `${filteredItems.length}/${allItems.length} filtered`)}`;
   renderTrailUpdateTargetField(data);
@@ -847,7 +763,7 @@ function renderTrailAttributePreview(data, { preserveRows = false } = {}) {
   const body = $("#trailUpdateTableBody");
   if (!body) return;
   if (!allItems.length) {
-    body.innerHTML = `<tr><td colspan="6" class="trail-update-empty">${uiText("当前数据集与 Run 范围没有已标记“应该排除”的 Review。", "No reviewed “should exclude” cases in the current dataset and Run.")}</td></tr>`;
+    body.innerHTML = `<tr><td colspan="6" class="trail-update-empty">${uiText("当前数据集没有已标记排除的 Issue。", "No Issues marked for exclusion in the selected datasets.")}</td></tr>`;
     return;
   }
   if (!items.length) {
@@ -943,8 +859,8 @@ async function refreshTrailAttributeStatus({ runId, previewKey, requestSeq, forc
 async function loadTrailAttributePreview(force = false, options = {}) {
   const background = Boolean(options?.background);
   const pageContext = capturePageContext();
-  // The state owns explicit/all-Run scope, even while the Run picker is loading.
-  const runId = String(state.trailUpdate?.runId || "").trim();
+  // Legacy Run URLs must not restrict Issue-level exclusion membership.
+  const runId = "";
   state.trailUpdate.runId = runId;
   const previewKey = trailUpdatePreviewKey(runId);
   if (state.trailUpdate.selectionScope !== previewKey) {

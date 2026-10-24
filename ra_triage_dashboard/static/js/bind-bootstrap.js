@@ -937,15 +937,11 @@ function bindEvents() {
       return;
     }
     if (route.page === "trail-update") {
-      const nextRunId =
-        route.runId && state.modelRuns.some((run) => run.id === route.runId)
-          ? route.runId
-          : "";
+      const nextRunId = "";
       state.trailUpdate.runId = nextRunId;
       if (typeof applyTrailUpdateRouteControls === "function") {
         applyTrailUpdateRouteControls(route.trailUpdateFilters);
       }
-      renderTrailAttributeRunPicker();
       showPage("trail-update", {
         runId: nextRunId,
         restoreRoute: true,
@@ -1183,10 +1179,7 @@ async function bootstrap() {
     // has coverage in the active dataset. Explicit route selections are kept.
     state.selectedRunId =
       initialRoute.runId === "none" ? "" : initialRoute.runId || "";
-    state.trailUpdate.runId =
-      initialRoute.page === "trail-update" && initialRoute.runId !== "none"
-        ? initialRoute.runId || ""
-        : "";
+    state.trailUpdate.runId = "";
     if (initialRoute.page === "trail-update" && typeof applyTrailUpdateRouteControls === "function") {
       applyTrailUpdateRouteControls(initialRoute.trailUpdateFilters);
     }

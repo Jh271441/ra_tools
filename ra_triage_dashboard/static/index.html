@@ -85,7 +85,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-646`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-648`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -1108,33 +1108,13 @@
               <div class="trail-update-tabs" role="tablist" aria-label="Trail update modes">
                 <button class="trail-update-tab active" id="trailUpdateReviewTab" type="button" role="tab" aria-selected="true" aria-controls="trailUpdateReviewPanel" data-trail-update-tab="review">
                   <span class="ui-lang-zh">排除汇总</span><span class="ui-lang-en">Exclusions</span>
-                  <small><span class="ui-lang-zh">按数据集和 Run 汇总</span><span class="ui-lang-en">By dataset and Run</span></small>
+                  <small><span class="ui-lang-zh">按 Issue 汇总</span><span class="ui-lang-en">By Issue</span></small>
                 </button>
                 <button class="trail-update-tab" id="trailUpdateIssueTab" type="button" role="tab" aria-selected="false" aria-controls="trailUpdateIssuePanel" data-trail-update-tab="issue">
                   <span class="ui-lang-zh">Issue ID 屏蔽</span><span class="ui-lang-en">Shield by Issue ID</span>
-                  <small><span class="ui-lang-zh">保留模型 label，仅写排除标记</span><span class="ui-lang-en">Keep model label; write only the exclusion marker</span></small>
+                  <small><span class="ui-lang-zh">按 ID 添加排除</span><span class="ui-lang-en">Add exclusions by ID</span></small>
                 </button>
               </div>
-
-              <section class="trail-update-header-panel" id="trailUpdateReviewControlsPanel" data-trail-update-panel="review" aria-hidden="false">
-                <section class="trail-update-controls-card" id="trailUpdateOnboarding">
-                  <div class="trail-update-control-grid">
-                    <label class="trail-update-run-field">
-                      <span class="ui-lang-zh">模型 Run</span><span class="ui-lang-en">Model Run</span>
-                      <div class="ui-select trail-update-run-picker" id="trailUpdateRunPicker">
-                        <button class="ui-select-trigger" id="trailUpdateRunPickerTrigger" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="trailUpdateRunPickerPanel" aria-label="Trail update model run">
-                          <span class="ui-select-summary" id="trailUpdateRunPickerSummary">当前环境没有模型 Run</span>
-                          <span class="ui-select-caret" aria-hidden="true"></span>
-                        </button>
-                        <div class="ui-select-panel" id="trailUpdateRunPickerPanel" role="listbox" hidden></div>
-                        <select id="trailUpdateRunSelect" class="ui-select-native gateway-model-native-select" aria-hidden="true" tabindex="-1"><option value="">当前环境没有模型 Run</option></select>
-                      </div>
-                      <small class="trail-update-run-hint" id="trailUpdateRunHint" role="status" hidden></small>
-                    </label>
-                  </div>
-
-                </section>
-              </section>
 
               <section class="trail-update-header-panel hidden" id="trailUpdateIssueControlsPanel" data-trail-update-panel="issue" aria-hidden="true">
                 <section class="trail-update-controls-card">
@@ -1181,7 +1161,7 @@
               <section class="trail-update-results" id="trailUpdateResults" aria-label="Trail update results" hidden>
                 <p class="trail-reconcile-coverage" id="trailReconcileCoverage" role="status" hidden></p>
                 <section class="trail-update-summary-grid trail-update-review-summary-grid" aria-label="Trail update summary">
-                  <article class="analysis-stat-card"><span class="ui-lang-zh">本地候选</span><span class="ui-lang-en">Local candidates</span><strong id="trailUpdateCount">—</strong><small id="trailUpdateRunSummary">—</small></article>
+                  <article class="analysis-stat-card"><span class="ui-lang-zh">本地候选</span><span class="ui-lang-en">Local candidates</span><strong id="trailUpdateCount">—</strong><small id="trailUpdateScopeSummary">—</small></article>
                   <article hidden class="analysis-stat-card trail-update-field-stat-card"><span class="ui-lang-zh">更新目标字段</span><span class="ui-lang-en">Update target</span><strong id="trailUpdateInfoField" class="trail-update-target-value" title="ra_stuck_auto_result_info.ra_triage_dashboard.should_exclude">ra_stuck_auto_result_info.ra_triage_dashboard.should_exclude</strong></article>
                   <article class="page-card analysis-review-status-card trail-update-status-card" aria-labelledby="trailUpdateStatusTitle">
                     <div class="section-heading analysis-review-status-heading trail-update-status-heading">
@@ -1200,7 +1180,7 @@
                     <label><span class="ui-lang-zh">视图</span><span class="ui-lang-en">View</span><select id="trailReconcileView"><option value="local" data-zh="本地候选" data-en="Local candidates">本地候选</option><option value="reconciliation" data-zh="Trail 排除核对（只读）" data-en="Trail exclusion reconciliation (read-only)">Trail 排除核对（只读）</option></select></label>
                   </div><label class="trail-update-search-filter">
                       <span class="ui-lang-zh">检索</span><span class="ui-lang-en">Search</span>
-                      <input id="trailUpdateSearchInput" type="search" autocomplete="off" placeholder="Issue ID、说明、复核人或模型原因" />
+                      <input id="trailUpdateSearchInput" type="search" autocomplete="off" placeholder="Issue ID、理由或标注人" />
                     </label>
                     <label>
                       <span class="ui-lang-zh">Trail 更新状态</span><span class="ui-lang-en">Trail update status</span>
@@ -1214,16 +1194,8 @@
                       <div class="multi-filter" id="trailUpdateGtFilter" data-placeholder="全部 GT" data-placeholder-en="All GT"></div>
                     </label>
                     <label>
-                      <span class="ui-lang-zh">模型预测</span><span class="ui-lang-en">Model prediction</span>
-                      <div class="multi-filter" id="trailUpdateModelLabelFilter" data-placeholder="全部模型预测" data-placeholder-en="All predictions"></div>
-                    </label>
-                    <label>
                       <span class="ui-lang-zh">复核人</span><span class="ui-lang-en">Reviewer</span>
                       <div class="multi-filter" id="trailUpdateReviewerFilter" data-placeholder="全部复核人" data-placeholder-en="All reviewers"></div>
-                    </label>
-                    <label>
-                      <span class="ui-lang-zh">模型判错复核状态</span><span class="ui-lang-en">Model review status</span>
-                      <div class="multi-filter" id="trailUpdateReviewStatusFilter" data-placeholder="全部状态" data-placeholder-en="All statuses"></div>
                     </label>
 </div></details>
                     <div class="trail-update-filter-actions">
@@ -2504,7 +2476,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-646`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-648`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>
