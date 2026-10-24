@@ -17,9 +17,9 @@ function caseDecisionRecordMarkup(vote, sourceName, kind = "", adopt = false) {
   const full = vote.full_result;
   const rationale = (full ? vote.label_rationale : vote.rationale) || "";
   const badges = `${vote.expected_output ? labelBadge(vote.expected_output, "—", expectedOutputDisplayText(vote.expected_output)) : `<span class="tag">${uiText("待补齐分类", "Classification missing")}</span>`}<span class="tag ${vote.is_excluded === true ? "exclusion-tag" : ""}">${escapeHtml(caseExclusionText(vote.is_excluded))}</span>`;
-  const meta = [sourceName, `${uiText("版本", "Revision")} ${vote.id}`, kind].filter(Boolean).map(escapeHtml).join(" · ");
-  const body = `${vote.tags?.length ? `<div class="tags">${vote.tags.map(tag => `<span class="tag">${escapeHtml(tagLabel(tag))}</span>`).join("")}</div>` : ""}
-    ${rationale ? `<p>${escapeHtml(rationale)}</p>` : `<small class="history-record-empty">${uiText("未填写标注依据", "No label rationale")}</small>`}
+  const sourceMeta = [sourceName, `${uiText("版本", "Revision")} ${vote.id}`, kind].filter(Boolean).map(escapeHtml).join(" · ");
+  const meta = `<span>${sourceMeta}</span>${vote.tags?.length ? `<span class="tags">${vote.tags.map(tag => `<span class="tag">${escapeHtml(tagLabel(tag))}</span>`).join("")}</span>` : ""}${!rationale ? `<span class="history-record-empty">${uiText("未填写标注依据", "No label rationale")}</span>` : ""}`;
+  const body = `${rationale ? `<p>${escapeHtml(rationale)}</p>` : ""}
     ${full ? `${vote.rationale ? `<p><strong>${uiText("裁决人补充依据", "Decision review rationale")}</strong> ${escapeHtml(vote.rationale)}</p>` : ""}${full.adopted_revision ? `<small class="history-record-meta">${escapeHtml(uiText(`采纳 ${full.adopted_revision.author} 的版本 ${full.adopted_revision_id}`, `Adopted ${full.adopted_revision.author}'s revision ${full.adopted_revision_id}`))}</small>` : ""}` : ""}
     ${vote.attachments?.length ? `<div class="case-decision-images">${caseDecisionImageMarkup(vote.attachments)}</div>` : ""}`;
   const actions = adopt && hasDashboardWriteRole() ? `<button type="button" class="history-inline-button history-adopt-button" data-adopt-decision="${Number(vote.id)}">${uiText("采用此标注", "Use this label")}</button>` : "";
@@ -134,7 +134,7 @@ function caseDecisionEditorHeader(c) {
 }
 
 function caseDecisionEditorFields(c) {
-  return `${c.source.evidence_gaps?.length ? `<p>${uiText("证据缺口", "Evidence gaps")}: ${escapeHtml(c.source.evidence_gaps.map(evidenceLabel).join(" · "))}</p>` : ""}<label class="review-reason case-decision-rationale"><span class="review-reason-heading">${uiText("裁决人补充依据（选填）", "Decision review rationale (optional)")}</span><textarea id="caseDecisionReviewRationale" rows="2" maxlength="8000">${escapeHtml(c.rationale)}</textarea></label><label class="case-decision-confirm"><input type="checkbox" id="caseDecisionConfirmExclusion" ${c.excludedConfirmed ? "checked" : ""} required/><span>${uiText("已确认上方“是否排除”的选择", "I confirm the exclusion choice above")}</span></label><div class="case-decision-images" id="caseDecisionRetainedImages">${(c.adopted?.attachments || []).filter(a=>c.retained.includes(a.id)).map(a=>`<div>${caseDecisionImageMarkup([a])}<button type="button" class="button button-quiet" data-remove-decision-image="${escapeHtml(a.id)}">${uiText("移除引用", "Remove reference")}</button></div>`).join("")}</div><div class="case-decision-preview" id="caseDecisionPreview" aria-live="polite"></div><p class="case-label-decision-error" id="caseDecisionEditorError" role="alert">${escapeHtml(c.error ? caseExclusionErrorMessage({message:c.error}) : "")}</p>`;
+  return `${c.source.evidence_gaps?.length ? `<p>${uiText("证据缺口", "Evidence gaps")}: ${escapeHtml(c.source.evidence_gaps.map(evidenceLabel).join(" · "))}</p>` : ""}<label class="review-reason case-decision-rationale"><span class="review-reason-heading">${uiText("裁决人补充依据（选填）", "Decision review rationale (optional)")}</span><textarea id="caseDecisionReviewRationale" rows="2" maxlength="8000">${escapeHtml(c.rationale)}</textarea></label><label class="case-decision-confirm"><input type="checkbox" id="caseDecisionConfirmExclusion" ${c.excludedConfirmed ? "checked" : ""} aria-required="true" aria-describedby="caseDecisionConfirmError"/><span>${uiText("已确认上方“是否排除”的选择", "I confirm the exclusion choice above")}</span></label><p class="case-label-decision-error" id="caseDecisionConfirmError" role="alert"></p><div class="case-decision-images" id="caseDecisionRetainedImages">${(c.adopted?.attachments || []).filter(a=>c.retained.includes(a.id)).map(a=>`<div>${caseDecisionImageMarkup([a])}<button type="button" class="button button-quiet" data-remove-decision-image="${escapeHtml(a.id)}">${uiText("移除引用", "Remove reference")}</button></div>`).join("")}</div><div class="case-decision-preview" id="caseDecisionPreview" aria-live="polite"></div><p class="case-label-decision-error" id="caseDecisionEditorError" role="alert">${escapeHtml(c.error ? caseExclusionErrorMessage({message:c.error}) : "")}</p>`;
 }
 function bindCaseDecisionEditor(c) {
   $("#caseDecisionExit").addEventListener("click",()=>exitCaseDecisionEditor());
@@ -145,7 +145,15 @@ function bindCaseDecisionEditor(c) {
   $("#caseLabelingForm").addEventListener("change",()=>{rememberCaseLabelDecisionDraft();updateCaseDecisionPreview();});
   updateCaseDecisionPreview();
 }
+function updateCaseDecisionConfirmation() {
+  const c=caseLabelDecisionUi.editor, checkbox=$("#caseDecisionConfirmExclusion"), error=$("#caseDecisionConfirmError");
+  if(!c || !checkbox || !error)return;
+  if(checkbox.checked)c.confirmationInvalid=false;
+  checkbox.setAttribute("aria-invalid",String(Boolean(c.confirmationInvalid)));
+  error.textContent=c.confirmationInvalid ? uiText("请确认上方“是否排除”的选择后再提交。","Confirm the exclusion choice above before submitting.") : "";
+}
 function updateCaseDecisionPreview() {
+  updateCaseDecisionConfirmation();
   const c=caseLabelDecisionUi.editor, target=$("#caseDecisionPreview"); if(!c || !target)return;
   const p=caseLabelingFormPayload();
   const names={expected_output:uiText("分类","Classification"),tags:uiText("标签","Tags"),rationale:uiText("标注依据","Label rationale"),is_excluded:uiText("是否排除","Exclusion")};
@@ -196,7 +204,9 @@ async function adjudicateIssueLabel(event) {
   if(!c || caseLabelDecisionUi.saving || !hasDashboardWriteRole() || !isPageContextCurrent(c.pageContext) || state.caseLabeling.issueId!==c.data.issue_id || selectedBaselineQueryValue()!==c.baselines || (c.actor && c.actor !== state.session?.username))return;
   rememberCaseLabelDecisionDraft();
   const p=caseLabelingFormPayload(), error=$("#caseDecisionEditorError");
-  if(!p.expected_output || caseLabelingOutputValidation().conflict || !c.excludedConfirmed){error.textContent=uiText("请补齐分类，并确认是否排除。","Complete the classification and exclusion confirmation.");return;}
+  error.textContent="";
+  if(!p.expected_output || caseLabelingOutputValidation().conflict){error.textContent=uiText("请补齐分类并解决标签冲突。","Complete the classification and resolve conflicting tags.");return;}
+  if(!c.excludedConfirmed){c.confirmationInvalid=true;updateCaseDecisionConfirmation();$("#caseDecisionConfirmExclusion")?.focus();return;}
   if(c.images.length+c.retained.length>4){error.textContent=uiText("裁决截图最多 4 张。","Maximum 4 decision images.");return;}
   const payload={...p,full_result:true,label_rationale:p.rationale,rationale:c.rationale,adopted_revision_id:c.adoptedId,retained_attachment_ids:c.retained,
     expected_source_fingerprint:c.data.label_state?.source_fingerprint || "",expected_previous_decision_id:c.data.label_state?.decision?.id || null};

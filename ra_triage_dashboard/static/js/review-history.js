@@ -6,8 +6,7 @@
 /* One compact record layout shared by Review history and Issue decisions. */
 function historyRecordMarkup({author, authorTitle = "", createdAt, badges = "", meta = "", body = "", actions = ""}) {
   return `<article class="history-row history-record">
-    <header class="history-record-heading"><strong class="history-reviewer" title="${escapeHtml(authorTitle || author)}">${escapeHtml(author)}</strong><div class="history-record-tools"><time class="history-time" datetime="${escapeHtml(createdAt || "")}">${escapeHtml(formatTime(createdAt))}</time>${actions}</div></header>
-    ${badges ? `<div class="history-record-badges tags">${badges}</div>` : ""}
+    <header class="history-record-heading"><div class="history-record-identity"><strong class="history-reviewer" title="${escapeHtml(authorTitle || author)}">${escapeHtml(author)}</strong>${badges ? `<div class="history-record-badges tags">${badges}</div>` : ""}</div><div class="history-record-tools"><time class="history-time" datetime="${escapeHtml(createdAt || "")}">${escapeHtml(formatTime(createdAt))}</time>${actions}</div></header>
     ${meta ? `<div class="history-record-meta">${meta}</div>` : ""}${body}
   </article>`;
 }

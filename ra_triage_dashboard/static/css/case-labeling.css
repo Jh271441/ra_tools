@@ -230,25 +230,25 @@ html[data-color-theme="light"] .case-decision-records .history-time { color:var(
 .case-decision-mode p, .case-decision-result p, .case-decision-preview { overflow-wrap: anywhere; }
 .case-decision-mode .review-section-heading { margin:0; gap:8px; }
 .case-decision-mode .review-section-heading h2 { font-size:14px; }
-.case-decision-mode .history-inline-button { min-height:44px; }
+
 .case-decision-mode .quiet-meta { margin:2px 0 0; color:var(--muted); font-size:12px; line-height:1.6; }
 .case-decision-mode details { margin-top:4px; color:var(--muted); font-size:12px; }
-.case-decision-mode summary { min-height:44px; align-content:center; cursor:pointer; }
+.case-decision-mode summary { min-height:27px; align-content:center; cursor:pointer; }
 .case-decision-mode details p { white-space:pre-wrap; line-height:1.6; }
-.case-decision-confirm { display:flex; align-items:center; gap:8px; min-height:44px; color:var(--muted); font-size:12px; line-height:1.5; cursor:pointer; }
+.case-decision-confirm { display:flex; align-items:center; gap:8px; min-height:28px; color:var(--muted); font-size:12px; line-height:1.5; cursor:pointer; }
 .case-decision-confirm input { flex:0 0 auto; width:16px; height:16px; margin:0; accent-color:var(--accent); }
 .case-decision-rationale { margin-top:8px; padding-top:12px; border-top:1px solid var(--line); }
 .case-decision-images:empty, .case-label-decision-error:empty { display:none; }
 .case-decision-actions { display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:8px; margin-top:4px; }
-.case-decision-actions .history-inline-button { min-height:44px; margin-right:auto; white-space:normal; }
-.case-decision-actions .review-save-button { width:auto; min-height:48px; padding:10px 18px; white-space:normal; }
+.case-decision-actions .history-inline-button { margin-right:auto; white-space:normal; }
+.case-decision-actions .review-save-button { width:auto; white-space:normal; }
 .case-decision-images { display: flex; flex-wrap: wrap; gap: 10px; }
 .case-decision-images > div { display: grid; gap: 4px; max-width: 100%; }
 .case-decision-image { display: block; width: 112px; max-width: 100%; min-height: 44px; }
 .case-decision-image img { display: block; width: 100%; height: 76px; object-fit: contain; border-radius: 6px; border: 1px solid var(--line); }
 .case-decision-preview { color:var(--muted); font-size:12px; line-height:1.6; }
 .case-decision-history summary { cursor: pointer; min-height: 44px; padding: 10px 0; }
-.case-decision-records .button, .case-decision-mode .button, .case-decision-images .button { min-height: 44px; }
+
 .case-exclusion-status { color: var(--warning); font-size: 11px; white-space: normal; }
 .case-label-result-button:has(.case-exclusion-status) { flex-wrap: wrap; }
 .case-decision-records .history-row > .button, .case-decision-history .history-row > .button { justify-self: start; width: auto; }
@@ -263,3 +263,6 @@ html[data-color-theme="light"] .case-decision-records .history-time { color:var(
 .case-decision-result .quiet-meta + p { margin-top:8px; }
 #caseLabelDecisionDialog .dialog-actions { flex-shrink:0; margin:0; padding-top:12px; border-top:1px solid var(--line); }
 #caseLabelDecisionDialog .dialog-heading .icon-button { width:44px; min-height:44px; }
+
+.case-decision-records .history-record-meta { display:flex; align-items:center; flex-wrap:wrap; gap:4px 12px; }
+#caseDecisionConfirmError { margin:0; font-size:12px; line-height:1.5; }

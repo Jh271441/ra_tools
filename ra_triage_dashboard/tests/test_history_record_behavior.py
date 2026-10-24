@@ -31,6 +31,12 @@ const adopted=caseDecisionRecordMarkup({id:17,author:'alice',rationale:'original
 assert.ok(adopted.includes('data-adopt-decision="17"'));
 const decision=caseDecisionRecordMarkup({id:18,rationale:'',label_rationale:'final evidence',full_result:{adopted_revision:{author:'alice'},adopted_revision_id:17}},'source');
 assert.ok(decision.includes('final evidence'));assert.ok(!decision.includes('Decision review rationale'));
+const fields=caseDecisionEditorFields({source:{},rationale:'',retained:[],excludedConfirmed:false});
+const confirmation=fields.match(/<input[^>]*id="caseDecisionConfirmExclusion"[^>]*>/)[0];
+assert.ok(!/\srequired(?:\s|=|\/|>)/.test(confirmation));
+assert.ok(confirmation.includes('aria-required="true"'));
+assert.ok(confirmation.includes('aria-describedby="caseDecisionConfirmError"'));
+
 '''
         result=subprocess.run(['node','-e',script,str(root)],capture_output=True,text=True)
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)

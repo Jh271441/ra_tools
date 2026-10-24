@@ -932,7 +932,10 @@
   .history-record-heading { flex-wrap:wrap; gap:4px 10px; }
   .history-record-tools { flex:1 1 auto; min-width:0; justify-content:flex-start; }
   .history-record-tools .history-adopt-button, .history-record-tools .history-delete-button { margin-left:auto; }
-  .history-record .history-reviewer { flex-basis:100%; }
+  .history-record .history-adopt-button { min-height:44px; }
+  .history-dialog-content .history-record .history-delete-button { width:44px; height:44px; }
+  .case-decision-confirm, .case-decision-mode summary { min-height:44px; }
+  .case-decision-images .button { min-height:44px; }
   .case-decision-actions button.review-save-button { min-height:48px !important; margin-top:0; }
   #caseLabelDecisionDialog { max-height:calc(100dvh - 30px); }
   #caseLabelDecisionDialog .dialog-card { padding:12px; max-height:calc(100dvh - 32px); }

@@ -11,9 +11,9 @@ class IssueDecisionDialogBehaviorTest(unittest.TestCase):
         script=r'''
 const fs=require('fs'),vm=require('vm'),assert=require('assert/strict');
 let current=true,write=true,fail=true,posts=[],release,hold=false;
-const input={value:'judge explanation',checked:true};const error={textContent:''};
+const input={value:'judge explanation',checked:true,attributes:{},setAttribute(k,v){this.attributes[k]=v},focus(){this.focused=true}};const error={textContent:''},confirmError={textContent:''};
 const form={querySelectorAll(){return []}};
-Object.assign(global,{document:{},$:key=>key==='#caseLabelingForm'?form:key==='#caseDecisionEditorError'?error:input,
+Object.assign(global,{document:{},$:key=>key==='#caseLabelingForm'?form:key==='#caseDecisionEditorError'?error:key==='#caseDecisionConfirmError'?confirmError:input,
  state:{caseLabeling:{issueId:'cn1',pendingImages:[],dirty:true,caseData:{label_state:{state:'conflict'}}}},
  uiText:(z,e)=>e,caseExclusionErrorMessage:e=>e.message,hasDashboardWriteRole:()=>write,isPageContextCurrent:()=>current,
  selectedBaselineQueryValue:()=> '0508',enhanceDashboardSelects(){},showToast(){},acknowledgeLocalChange(){},
@@ -38,6 +38,8 @@ refreshCaseDecisionResult=async()=>{refreshes++};
  hold=false;reset();write=false;posts=[];await adjudicateIssueLabel();assert.equal(posts.length,0);
  write=true;current=false;await adjudicateIssueLabel();assert.equal(posts.length,0);
  current=true;input.checked=false;await adjudicateIssueLabel();assert.equal(posts.length,0);
+ assert.match(confirmError.textContent,/Confirm the exclusion/);assert.equal(input.attributes['aria-invalid'],'true');assert.equal(input.focused,true);
+ input.checked=true;updateCaseDecisionConfirmation();assert.equal(confirmError.textContent,'');assert.equal(input.attributes['aria-invalid'],'false');
  input.checked=true;input.value='';await adjudicateIssueLabel();assert.equal(posts.length,1);
  assert.equal(posts[0].rationale,'');assert.equal(posts[0].label_rationale,'label evidence');
 })().catch(e=>{console.error(e);process.exitCode=1});
