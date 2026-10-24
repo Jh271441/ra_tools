@@ -33,6 +33,7 @@ vm.runInThisContext(`
 (async()=>{
 restoreLabelSummaryRoute();
 assert.equal(labelSummaryFilters.gtUpdate,'ready');assert.equal(labelSummaryFilters.taskId,'task-a');
+refreshLabelSummaryLanguage();assert.equal(labelSummaryFilters.taskId,'task-a');
 const readyUrl=new URL(pageUrl('labeling-summary',labelSummaryRouteOptions()),'http://localhost');
 assert.equal(readyUrl.searchParams.get('gt_update'),'ready');assert.equal(readyUrl.searchParams.get('page'),'2');assert.equal(readyUrl.searchParams.get('baselines'),'version-20261009');
 const data={gt_update_counts:{all:9,ready:3,blocked:2},annotated:3,page:1,page_size:20,items:[{issue_id:'cn101',label_state:'resolved',gt_label:'正确触发',expected_output:'误触发',gt_update:{state:'ready',reason:'different'},rationales:['evidence']}]};

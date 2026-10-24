@@ -91,9 +91,11 @@ function setLabelSummaryView(view, { reset = false } = {}) {
 
 function refreshLabelSummaryLanguage() {
   syncLabelSummaryNavigation();
-  if (state.activePage !== "labeling-summary") return;
-  renderLabelSummaryFilters({ items: labelSummaryTasks }, labelSummaryData || {});
-  if (labelSummaryData) renderLabelingSummary(labelSummaryData);
+  if (state.activePage !== "labeling-summary" || !labelSummaryData) return;
+  // Loading has not established the task directory yet. Do not discard a
+  // restored task selection when language changes before that response.
+  renderLabelSummaryFilters({ items: labelSummaryTasks }, labelSummaryData);
+  renderLabelingSummary(labelSummaryData);
 }
 
 function labelSummaryGtViewsMarkup(data) {
@@ -423,7 +425,7 @@ async function loadLabelingSummary() {
   const root = $("#labelSummaryContent");
   if (!root) return;
   labelSummaryData = null;
-  root.innerHTML = `<div class="page-card campaign-analysis-empty">${uiText("正在汇总标注…", "Loading annotations…")}</div>`;
+  root.innerHTML = '<div class="page-card campaign-analysis-empty"><span class="ui-lang-zh">正在汇总标注…</span><span class="ui-lang-en">Loading annotations…</span></div>';
   try {
     const baselines = selectedBaselineQueryValue();
     const tasks = await api(`/api/labeling/tasks?include_combined=true&baselines=${encodeURIComponent(baselines)}`);
