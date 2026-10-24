@@ -920,7 +920,7 @@ function openHistoryDialog(kind, caseData) {
   const isModel = kind === "model";
   const isLabeling = kind === "labeling";
   const dialog = $("#historyDialog");
-  if (dialog) dialog.dataset.historyKind = isModel ? "model" : isLabeling ? "labeling" : "review";
+  if (dialog) { dialog.dataset.historyKind = isModel ? "model" : isLabeling ? "labeling" : "review"; dialog.historyCaseData = caseData; }
   const predictions = caseData.predictions || [];
   const annotations = isModel || isLabeling
     ? []

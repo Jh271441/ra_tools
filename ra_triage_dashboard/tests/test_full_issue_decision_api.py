@@ -37,6 +37,16 @@ class FullDecisionApiTest(IsolatedAsyncioTestCase):
         content=io.BytesIO();Image.new('RGB',(3,3),'red').save(content,format='PNG');content.seek(0)
         return UploadFile(filename='evidence.png',file=content)
 
+    async def test_optional_review_rationale_preserves_original_evidence(self):
+        original=self.db.label_cases_for_issue('cn1')[0]['resolution']['heads'][0]
+        self.body.update(rationale='',adopted_revision_id=original['id'])
+        saved=await decisions.adjudicate_issue_with_attachments('cn1',self.request,json.dumps(self.body),[])
+        decision=saved['decision']
+        self.assertEqual(decision['rationale'],'')
+        self.assertEqual(decision['full_result']['label_rationale'],'label evidence')
+        self.assertEqual(decision['full_result']['adopted_revision']['rationale'],'original')
+        self.assertEqual(self.db.label_cases_for_issue('cn1')[0]['resolution']['heads'][0]['rationale'],'original')
+
     async def test_multipart_stores_protected_image_and_conflict_cleans_only_new_file(self):
         saved=await decisions.adjudicate_issue_with_attachments('cn1',self.request,json.dumps(self.body),[self.upload()])
         image=saved['decision']['attachments'][0]

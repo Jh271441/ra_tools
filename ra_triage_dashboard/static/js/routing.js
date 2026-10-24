@@ -91,6 +91,7 @@ function applyUiLanguage(language, { persist = true } = {}) {
     "renderTrailUpdateFilters",
     "refreshTrailReasonLanguage",
     "refreshCaseLabelDecisionLanguage",
+    "refreshHistoryDialogLanguage",
     "refreshCaseExclusionLanguage",
     "syncCaseLabelingIssueExport",
   ];

@@ -1157,12 +1157,12 @@ function caseLabelFinalResultMarkup(caseData) {
 function caseLabelingHistoryMarkup(caseData) {
   return annotationHistory(caseLabelingHistoryAnnotations(caseData), {
     deletable: false,
-    emptyText: "尚无工作台标注。",
+    emptyText: uiText("尚无工作台标注。", "No workbench annotations yet."),
     runMeta: (item) => ({
-      title: "标注来源",
+      title: uiText("标注来源", "Annotation source"),
       text: item.labeling_task_id
-        ? `任务标注 · ${item.labeling_task_id}`
-        : "历史/自由标注",
+        ? uiText(`任务标注 · ${item.labeling_task_id}`, `Task annotation · ${item.labeling_task_id}`)
+        : uiText("历史/自由标注", "Earlier / independent annotation"),
     }),
   });
 }
@@ -1353,7 +1353,8 @@ function renderCaseLabelingEditor(caseData, {decision = null} = {}) {
           <div class="pending-screenshot-list" id="caseLabelingPendingScreenshots"></div>
         </div>
         ${decision ? caseDecisionEditorFields(decision) : ""}
-        <button class="button button-primary full-width review-save-button" type="submit" ${hasDashboardWriteRole() ? "" : "disabled"}><span class="ui-lang-zh">${decision ? "确认裁决" : supplementalOnly ? "保存任务外补充" : "保存标注"}</span><span class="ui-lang-en">${decision ? "Confirm decision" : supplementalOnly ? "Save supplemental label" : "Save label"}</span><kbd class="review-save-shortcut" aria-hidden="true">Enter</kbd></button>
+        ${decision ? `<div class="case-decision-actions"><button type="button" class="history-inline-button" id="caseDecisionEditorRefresh">${uiText("对照来源", "Compare sources")}</button>` : ""}
+        <button class="button button-primary ${decision ? "" : "full-width"} review-save-button" type="submit" ${hasDashboardWriteRole() ? "" : "disabled"}><span class="ui-lang-zh">${decision ? "确认裁决" : supplementalOnly ? "保存任务外补充" : "保存标注"}</span><span class="ui-lang-en">${decision ? "Confirm decision" : supplementalOnly ? "Save supplemental label" : "Save label"}</span><kbd class="review-save-shortcut" aria-hidden="true">Enter</kbd></button>${decision ? "</div>" : ""}
       </section>
     </form>`;
   const editor = $("#caseLabelingEditor");

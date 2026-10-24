@@ -176,12 +176,12 @@ html[data-color-theme="light"] .case-label-status[data-state="resolved"] { color
 #caseLabelingEditor .issue-tag-section > .review-exclude-toggle { margin-top:10px; }
 
 /* Use the same single-column cards and width as annotation history. */
-#caseLabelDecisionDialog { width:min(900px,calc(100vw - 30px)); height:min(86dvh,820px); }
-#caseLabelDecisionDialog .dialog-card { display:flex; flex-direction:column; height:100%; gap:14px; padding:20px; }
+#caseLabelDecisionDialog { width:min(900px,calc(100vw - 30px)); height:fit-content; max-height:min(86dvh,820px); }
+#caseLabelDecisionDialog .dialog-card { display:flex; flex-direction:column; height:auto; max-height:min(calc(86dvh - 2px),818px); gap:14px; padding:20px; overflow:hidden; }
 #caseLabelDecisionDialog .dialog-heading { border:0; padding:0; }
 #caseLabelDecisionDialog .dialog-heading h2 { margin:0 0 4px; font-size:20px; }
 .case-decision-heading-actions { display:flex; gap:6px; align-items:center; }
-#caseLabelDecisionDialog .case-label-decision-body { flex:1 1 auto; min-height:0; display:block; overflow:auto; }
+#caseLabelDecisionDialog .case-label-decision-body { flex:0 1 auto; min-height:0; display:grid; grid-auto-rows:max-content; align-content:start; gap:14px; overflow:auto; }
 #caseDecisionEvidence { display:grid; gap:14px; }
 .case-decision-records.history-dialog-content { display:grid; gap:10px; overflow:visible; padding:0; }
 .case-decision-source { display:grid; gap:8px; min-width:0; }
@@ -226,16 +226,27 @@ html[data-color-theme="light"] .case-decision-records .history-head > span,
 html[data-color-theme="light"] .case-decision-records .history-time { color:var(--muted); }
 
 /* The decision editor uses the same form, controls and media as personal labeling. */
-.case-decision-mode { padding: 12px; border: 1px solid var(--accent); border-radius: 10px; background: var(--overlay); }
+.case-decision-mode { padding:0 0 12px; border-bottom:1px solid var(--line); }
 .case-decision-mode p, .case-decision-result p, .case-decision-preview { overflow-wrap: anywhere; }
-.case-decision-mode strong { color: var(--accent); }
-.case-decision-confirm { display: flex; align-items: center; gap: 10px; min-height: 44px; }
-.case-decision-confirm input { flex: 0 0 auto; width: 20px; height: 20px; }
+.case-decision-mode .review-section-heading { margin:0; gap:8px; }
+.case-decision-mode .review-section-heading h2 { font-size:14px; }
+.case-decision-mode .history-inline-button { min-height:44px; }
+.case-decision-mode .quiet-meta { margin:2px 0 0; color:var(--muted); font-size:12px; line-height:1.6; }
+.case-decision-mode details { margin-top:4px; color:var(--muted); font-size:12px; }
+.case-decision-mode summary { min-height:44px; align-content:center; cursor:pointer; }
+.case-decision-mode details p { white-space:pre-wrap; line-height:1.6; }
+.case-decision-confirm { display:flex; align-items:center; gap:8px; min-height:44px; color:var(--muted); font-size:12px; line-height:1.5; cursor:pointer; }
+.case-decision-confirm input { flex:0 0 auto; width:16px; height:16px; margin:0; accent-color:var(--accent); }
+.case-decision-rationale { margin-top:8px; padding-top:12px; border-top:1px solid var(--line); }
+.case-decision-images:empty, .case-label-decision-error:empty { display:none; }
+.case-decision-actions { display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:8px; margin-top:4px; }
+.case-decision-actions .history-inline-button { min-height:44px; margin-right:auto; white-space:normal; }
+.case-decision-actions .review-save-button { width:auto; min-height:48px; padding:10px 18px; white-space:normal; }
 .case-decision-images { display: flex; flex-wrap: wrap; gap: 10px; }
 .case-decision-images > div { display: grid; gap: 4px; max-width: 100%; }
 .case-decision-image { display: block; width: 112px; max-width: 100%; min-height: 44px; }
 .case-decision-image img { display: block; width: 100%; height: 76px; object-fit: contain; border-radius: 6px; border: 1px solid var(--line); }
-.case-decision-preview { padding: 10px; background: var(--overlay); border-radius: 8px; }
+.case-decision-preview { color:var(--muted); font-size:12px; line-height:1.6; }
 .case-decision-history summary { cursor: pointer; min-height: 44px; padding: 10px 0; }
 .case-decision-records .button, .case-decision-mode .button, .case-decision-images .button { min-height: 44px; }
 .case-exclusion-status { color: var(--warning); font-size: 11px; white-space: normal; }
@@ -245,3 +256,10 @@ html[data-color-theme="light"] .case-decision-records .history-time { color:var(
 #caseLabelingEditor .issue-tag-section > .review-section-heading h2 { white-space: nowrap; }
 #caseLabelingEditor .issue-tag-section > .review-section-heading > .case-label-result-actions { max-width: 100%; margin-left: auto; }
 .case-label-result-button { min-width: 0; max-width: 100%; }
+
+/* Result context stays secondary to the individual annotation history. */
+.case-decision-result p { margin:0; font-size:13px; line-height:1.6; }
+.case-decision-result .quiet-meta { color:var(--muted); font-size:12px; }
+.case-decision-result .quiet-meta + p { margin-top:8px; }
+#caseLabelDecisionDialog .dialog-actions { flex-shrink:0; margin:0; padding-top:12px; border-top:1px solid var(--line); }
+#caseLabelDecisionDialog .dialog-heading .icon-button { width:44px; min-height:44px; }

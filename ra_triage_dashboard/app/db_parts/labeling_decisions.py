@@ -165,7 +165,7 @@ class LabelingDecisionsMixin:
             raise PermissionError("Issue 标签裁决需要已验证 writer 或管理员。")
         if output not in LABELS:
             raise ValueError("Issue 标签裁决必须选择合法三分类结果。")
-        if not explanation:
+        if not explanation and full_result is None:
             raise ValueError("Issue 标签裁决必须填写裁决依据。")
         if len(explanation) > 8000:
             raise ValueError("裁决依据不能超过 8000 个字符。")

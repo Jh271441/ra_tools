@@ -1443,3 +1443,18 @@ body[data-active-page="review-assignments"] .gt-sync-control { margin-left: auto
 
 .case-upload-progress { grid-column: 1 / -1; min-width: 0; font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
 .case-upload-progress .button { justify-self: start; }
+
+/* Shared history records: stable identity row, then outcome, source and evidence. */
+.history-record { min-width:0; align-content:start; }
+.history-record-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; min-width:0; }
+.history-record .history-reviewer { color:var(--text); font-size:13px; font-weight:600; white-space:normal; overflow-wrap:anywhere; }
+.history-record-tools { display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:6px 12px; flex-shrink:0; }
+.history-record .history-time { color:var(--muted); font-size:11px; }
+.history-record-meta, .history-record-empty { color:var(--muted); font-size:11px; line-height:1.5; overflow-wrap:anywhere; }
+.history-record-meta .history-run { display:block; white-space:normal; overflow-wrap:anywhere; font-size:inherit; }
+.history-record .history-record-badges { align-items:center; }
+.history-record .history-adopt-button { min-height:44px; padding:5px 9px; white-space:normal; }
+.history-dialog-content .history-record .history-delete-button { width:44px; height:44px; }
+#historyDialog[data-history-kind="review"], #historyDialog[data-history-kind="labeling"] { height:fit-content; max-height:min(86dvh,820px); }
+#historyDialog[data-history-kind="review"] .dialog-card, #historyDialog[data-history-kind="labeling"] .dialog-card { height:auto; max-height:min(calc(86dvh - 2px),818px); }
+#historyDialog .dialog-heading .icon-button { width:44px; min-height:44px; }

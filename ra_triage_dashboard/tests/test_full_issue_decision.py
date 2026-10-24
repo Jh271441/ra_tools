@@ -65,6 +65,13 @@ class FullIssueDecisionTest(TestCase):
         self.assertIsNone(d['is_excluded']);self.assertIsNone(d['full_result'])
         self.assertTrue(self.db.project_issue_exclusions(['cn1'])['cn1']['is_excluded'])
 
+    def test_legacy_classification_only_decision_still_requires_rationale(self):
+        self.vote();s=self.db.project_issue_label_states('scope',['cn1'])['cn1']
+        with self.assertRaisesRegex(ValueError,'裁决依据'):
+            self.db.adjudicate_issue_label(baseline_scope='scope',issue_id='cn1',expected_output='误触发',
+                rationale='',actor='judge',actor_source='test',actor_verified=True,
+                expected_source_fingerprint=s['source_fingerprint'])
+
     def test_adoption_must_match_issue_and_exclusion_must_be_boolean(self):
         self.vote();other=self.vote(issue='cn2')
         for adopted,excluded in [(other['id'],False),(999,False),(None,None),(None,'false')]:

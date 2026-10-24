@@ -927,3 +927,16 @@
   #caseLabelingEditor .review-tag-dropdown .tag-group-label { overflow-wrap: anywhere; }
   #caseLabelingEditor .review-tag-dropdown .tag-group-trailing { justify-self: end; }
 }
+
+@media (max-width:700px) {
+  .history-record-heading { flex-wrap:wrap; gap:4px 10px; }
+  .history-record-tools { flex:1 1 auto; min-width:0; justify-content:flex-start; }
+  .history-record-tools .history-adopt-button, .history-record-tools .history-delete-button { margin-left:auto; }
+  .history-record .history-reviewer { flex-basis:100%; }
+  .case-decision-actions button.review-save-button { min-height:48px !important; margin-top:0; }
+  #caseLabelDecisionDialog { max-height:calc(100dvh - 30px); }
+  #caseLabelDecisionDialog .dialog-card { padding:12px; max-height:calc(100dvh - 32px); }
+  #historyDialog[data-history-kind="review"], #historyDialog[data-history-kind="labeling"] { max-height:calc(100dvh - 30px); }
+  #historyDialog[data-history-kind="review"] .dialog-card, #historyDialog[data-history-kind="labeling"] .dialog-card { padding:12px; max-height:calc(100dvh - 32px); }
+  #caseLabelDecisionDialog .dialog-actions { padding-bottom:max(0px,env(safe-area-inset-bottom)); }
+}

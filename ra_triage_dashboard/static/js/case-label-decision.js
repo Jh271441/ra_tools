@@ -15,8 +15,17 @@ function caseDecisionImageMarkup(images) {
 }
 function caseDecisionRecordMarkup(vote, sourceName, kind = "", adopt = false) {
   const full = vote.full_result;
-  return `<article class="history-row"><div class="history-head">${vote.expected_output ? labelBadge(vote.expected_output, "—", expectedOutputDisplayText(vote.expected_output)) : `<span class="tag">${uiText("待补齐分类", "Classification missing")}</span>`}${kind ? `<span class="tag">${escapeHtml(kind)}</span>` : ""}<span class="tag">${escapeHtml(caseExclusionText(vote.is_excluded))}</span><span class="history-reviewer">${escapeHtml(vote.author || vote.created_by || uiText("未记录", "Unknown"))}</span><time class="history-time">${escapeHtml(formatTime(vote.created_at))}</time></div><small>${escapeHtml(sourceName)} · ${escapeHtml(uiText("版本", "Revision"))} ${escapeHtml(String(vote.id))}</small>${vote.tags?.length ? `<div class="tags">${vote.tags.map(tag => `<span class="tag">${escapeHtml(tagLabel(tag))}</span>`).join("")}</div>` : ""}<p>${escapeHtml((full ? vote.label_rationale : vote.rationale) || uiText("未填写标注依据", "No label rationale"))}</p>${full ? `<p><strong>${uiText("裁决人补充依据", "Decision review rationale")}</strong> ${escapeHtml(vote.rationale)}</p>${full.adopted_revision ? `<small>${escapeHtml(uiText(`采纳 ${full.adopted_revision.author} 的版本 ${full.adopted_revision_id}`, `Adopted ${full.adopted_revision.author}'s revision ${full.adopted_revision_id}`))}</small>` : ""}` : ""}<div class="case-decision-images">${caseDecisionImageMarkup(vote.attachments)}</div>${adopt && hasDashboardWriteRole() ? `<button type="button" class="button button-quiet" data-adopt-decision="${Number(vote.id)}">${uiText("采用此标注", "Use this label")}</button>` : ""}</article>`;
+  const rationale = (full ? vote.label_rationale : vote.rationale) || "";
+  const badges = `${vote.expected_output ? labelBadge(vote.expected_output, "—", expectedOutputDisplayText(vote.expected_output)) : `<span class="tag">${uiText("待补齐分类", "Classification missing")}</span>`}<span class="tag ${vote.is_excluded === true ? "exclusion-tag" : ""}">${escapeHtml(caseExclusionText(vote.is_excluded))}</span>`;
+  const meta = [sourceName, `${uiText("版本", "Revision")} ${vote.id}`, kind].filter(Boolean).map(escapeHtml).join(" · ");
+  const body = `${vote.tags?.length ? `<div class="tags">${vote.tags.map(tag => `<span class="tag">${escapeHtml(tagLabel(tag))}</span>`).join("")}</div>` : ""}
+    ${rationale ? `<p>${escapeHtml(rationale)}</p>` : `<small class="history-record-empty">${uiText("未填写标注依据", "No label rationale")}</small>`}
+    ${full ? `${vote.rationale ? `<p><strong>${uiText("裁决人补充依据", "Decision review rationale")}</strong> ${escapeHtml(vote.rationale)}</p>` : ""}${full.adopted_revision ? `<small class="history-record-meta">${escapeHtml(uiText(`采纳 ${full.adopted_revision.author} 的版本 ${full.adopted_revision_id}`, `Adopted ${full.adopted_revision.author}'s revision ${full.adopted_revision_id}`))}</small>` : ""}` : ""}
+    ${vote.attachments?.length ? `<div class="case-decision-images">${caseDecisionImageMarkup(vote.attachments)}</div>` : ""}`;
+  const actions = adopt && hasDashboardWriteRole() ? `<button type="button" class="history-inline-button history-adopt-button" data-adopt-decision="${Number(vote.id)}">${uiText("采用此标注", "Use this label")}</button>` : "";
+  return historyRecordMarkup({author:vote.author || vote.created_by || uiText("未记录作者", "Unknown author"),createdAt:vote.created_at,badges,meta,body,actions});
 }
+
 function caseDecisionFlowMarkup(data) {
   const explanation = caseLabelExplanation(data), result = data.label_state || {}, decision = result.decision;
   const excluded = data.exclusion_summary?.is_excluded;
@@ -33,7 +42,7 @@ function caseDecisionRevisions(data) {
 function caseLabelDecisionMarkup(data) {
   const rows = caseDecisionRevisions(data), current = rows.filter(r => !r.historical), old = rows.filter(r => r.historical);
   const history = data.decision_history || [];
-  return `${caseDecisionFlowMarkup(data)}<h3>${uiText("每人的当前标注", "Current labels")}</h3><div class="case-decision-records history-dialog-content">${current.map(r => caseDecisionRecordMarkup(r,r.sourceName,uiText("当前版本", "Current revision"),true)).join("") || `<p>${uiText("暂无标注，请先保存个人标注。", "No labels yet. Save a personal label first.")}</p>`}</div>${old.length ? `<details class="case-decision-history"><summary>${uiText("历史标注", "Earlier labels")} · ${old.length}</summary>${old.map(r => caseDecisionRecordMarkup(r,r.sourceName,uiText("旧版本", "Earlier revision"),true)).join("")}</details>` : ""}${history.length ? `<details class="case-decision-history"><summary>${uiText("裁决记录", "Decision history")} · ${history.length}</summary>${history.map(r => caseDecisionRecordMarkup(r,uiText("Issue 裁决", "Issue decision"))).join("")}</details>` : ""}`;
+  return `${caseDecisionFlowMarkup(data)}<h3 class="case-decision-section-title">${uiText("每人的当前标注", "Current labels")}</h3><div class="case-decision-records history-dialog-content">${current.map(r => caseDecisionRecordMarkup(r,r.sourceName,"",true)).join("") || `<p>${uiText("暂无标注，请先保存个人标注。", "No labels yet. Save a personal label first.")}</p>`}</div>${old.length ? `<details class="case-decision-history"><summary>${uiText("历史标注", "Earlier labels")} · ${old.length}</summary><div class="case-decision-records history-dialog-content">${old.map(r => caseDecisionRecordMarkup(r,r.sourceName,uiText("旧版本", "Earlier revision"),true)).join("")}</div></details>` : ""}${history.length ? `<details class="case-decision-history"><summary>${uiText("裁决记录", "Decision history")} · ${history.length}</summary><div class="case-decision-records history-dialog-content">${history.map(r => caseDecisionRecordMarkup(r,uiText("Issue 裁决", "Issue decision"))).join("")}</div></details>` : ""}`;
 }
 function renderCaseLabelDecisionDialog() {
   const c = caseLabelDecisionUi.context, dialog = $("#caseLabelDecisionDialog");
@@ -118,10 +127,14 @@ function exitCaseDecisionEditor({discard = false} = {}) {
   $("#caseLabelGoAdjudication")?.focus();
 }
 function caseDecisionEditorHeader(c) {
-  return `<div class="case-decision-mode" id="caseDecisionMode" tabindex="-1"><strong>${uiText("裁决模式", "Decision mode")}</strong><p>${c.adopted ? escapeHtml(uiText(`采纳 ${c.adopted.author} 的版本 ${c.adopted.id}${c.adopted.historical ? "（旧版本）" : ""}`, `Adopting ${c.adopted.author}'s revision ${c.adopted.id}${c.adopted.historical ? " (earlier revision)" : ""}`)) : uiText("重新标注，确认完整 Issue 结果", "Relabel and confirm the complete Issue result")}</p><button type="button" class="button button-quiet" id="caseDecisionExit">${uiText("退出裁决", "Exit decision mode")}</button>${c.adopted ? `<details><summary>${uiText("原作者依据（保留原文）", "Original rationale (preserved)")}</summary><p>${escapeHtml(c.adopted.rationale || uiText("未填写", "Not provided"))}</p></details>` : ""}</div>`;
+  const source = c.adopted
+    ? uiText(`采纳 ${c.adopted.author} · 版本 ${c.adopted.id}${c.adopted.historical ? "（旧版本）" : ""}`, `Adopting ${c.adopted.author} · revision ${c.adopted.id}${c.adopted.historical ? " (earlier revision)" : ""}`)
+    : uiText("重新标注，确认完整 Issue 结果", "Relabel and confirm the complete Issue result");
+  return `<section class="case-decision-mode" id="caseDecisionMode" tabindex="-1"><div class="review-section-heading"><h2>${uiText("裁决模式", "Decision mode")}</h2><div class="review-heading-actions"><button type="button" class="history-inline-button" id="caseDecisionExit">${uiText("退出裁决", "Exit decision mode")}</button></div></div><p class="quiet-meta">${escapeHtml(source)}</p>${c.adopted?.rationale ? `<details><summary>${uiText("查看原作者依据", "View original rationale")}</summary><p>${escapeHtml(c.adopted.rationale)}</p></details>` : ""}</section>`;
 }
+
 function caseDecisionEditorFields(c) {
-  return `${c.source.evidence_gaps?.length ? `<p>${uiText("证据缺口", "Evidence gaps")}: ${escapeHtml(c.source.evidence_gaps.map(evidenceLabel).join(" · "))}</p>` : ""}<label class="review-reason"><span>${uiText("裁决人补充依据", "Decision review rationale")}</span><textarea id="caseDecisionReviewRationale" rows="3" maxlength="8000" required>${escapeHtml(c.rationale)}</textarea></label><label class="case-decision-confirm"><input type="checkbox" id="caseDecisionConfirmExclusion" ${c.excludedConfirmed ? "checked" : ""} required/><span>${uiText("已确认上方“是否排除”的选择", "I confirm the exclusion choice above")}</span></label><div class="case-decision-images" id="caseDecisionRetainedImages">${(c.adopted?.attachments || []).filter(a=>c.retained.includes(a.id)).map(a=>`<div>${caseDecisionImageMarkup([a])}<button type="button" class="button button-quiet" data-remove-decision-image="${escapeHtml(a.id)}">${uiText("移除引用", "Remove reference")}</button></div>`).join("")}</div><div class="case-decision-preview" id="caseDecisionPreview" aria-live="polite"></div><p class="case-label-decision-error" id="caseDecisionEditorError" role="alert">${escapeHtml(c.error ? caseExclusionErrorMessage({message:c.error}) : "")}</p><button type="button" class="button button-quiet" id="caseDecisionEditorRefresh">${uiText("刷新并对照来源", "Refresh and compare sources")}</button>`;
+  return `${c.source.evidence_gaps?.length ? `<p>${uiText("证据缺口", "Evidence gaps")}: ${escapeHtml(c.source.evidence_gaps.map(evidenceLabel).join(" · "))}</p>` : ""}<label class="review-reason case-decision-rationale"><span class="review-reason-heading">${uiText("裁决人补充依据（选填）", "Decision review rationale (optional)")}</span><textarea id="caseDecisionReviewRationale" rows="2" maxlength="8000">${escapeHtml(c.rationale)}</textarea></label><label class="case-decision-confirm"><input type="checkbox" id="caseDecisionConfirmExclusion" ${c.excludedConfirmed ? "checked" : ""} required/><span>${uiText("已确认上方“是否排除”的选择", "I confirm the exclusion choice above")}</span></label><div class="case-decision-images" id="caseDecisionRetainedImages">${(c.adopted?.attachments || []).filter(a=>c.retained.includes(a.id)).map(a=>`<div>${caseDecisionImageMarkup([a])}<button type="button" class="button button-quiet" data-remove-decision-image="${escapeHtml(a.id)}">${uiText("移除引用", "Remove reference")}</button></div>`).join("")}</div><div class="case-decision-preview" id="caseDecisionPreview" aria-live="polite"></div><p class="case-label-decision-error" id="caseDecisionEditorError" role="alert">${escapeHtml(c.error ? caseExclusionErrorMessage({message:c.error}) : "")}</p>`;
 }
 function bindCaseDecisionEditor(c) {
   $("#caseDecisionExit").addEventListener("click",()=>exitCaseDecisionEditor());
@@ -143,7 +156,15 @@ function refreshCaseLabelDecisionLanguage() {
   renderCaseLabelingStatusPicker();
   const data = state.caseLabeling.caseData, actions = $("#caseLabelResultActions");
   if(data && actions){actions.outerHTML=caseLabelFinalResultMarkup(data);bindCaseLabelResultActions(data);}
-  if($("#caseLabelDecisionDialog")?.open)renderCaseLabelDecisionDialog();
+  if($("#caseLabelDecisionDialog")?.open){
+    const body=$("#caseLabelDecisionDialog .case-label-decision-body");
+    const scroll=body?.scrollTop || 0;
+    const expanded=Array.from(body?.querySelectorAll("details") || [],item=>item.open);
+    renderCaseLabelDecisionDialog();
+    const next=$("#caseLabelDecisionDialog .case-label-decision-body");
+    next?.querySelectorAll("details").forEach((item,index)=>{item.open=!!expanded[index];});
+    if(next)next.scrollTop=scroll;
+  }
   if(caseLabelDecisionUi.editor && !caseLabelDecisionUi.saving){
     const c=caseLabelDecisionUi.editor, focus=document.activeElement?.id, node=document.activeElement;
     const selection=node?.tagName === "TEXTAREA" ? [node.selectionStart,node.selectionEnd] : null;
@@ -175,7 +196,7 @@ async function adjudicateIssueLabel(event) {
   if(!c || caseLabelDecisionUi.saving || !hasDashboardWriteRole() || !isPageContextCurrent(c.pageContext) || state.caseLabeling.issueId!==c.data.issue_id || selectedBaselineQueryValue()!==c.baselines || (c.actor && c.actor !== state.session?.username))return;
   rememberCaseLabelDecisionDraft();
   const p=caseLabelingFormPayload(), error=$("#caseDecisionEditorError");
-  if(!p.expected_output || caseLabelingOutputValidation().conflict || !c.rationale.trim() || !c.excludedConfirmed){error.textContent=uiText("请补齐分类、裁决依据，并确认是否排除。","Complete the classification, review rationale and exclusion confirmation.");return;}
+  if(!p.expected_output || caseLabelingOutputValidation().conflict || !c.excludedConfirmed){error.textContent=uiText("请补齐分类，并确认是否排除。","Complete the classification and exclusion confirmation.");return;}
   if(c.images.length+c.retained.length>4){error.textContent=uiText("裁决截图最多 4 张。","Maximum 4 decision images.");return;}
   const payload={...p,full_result:true,label_rationale:p.rationale,rationale:c.rationale,adopted_revision_id:c.adoptedId,retained_attachment_ids:c.retained,
     expected_source_fingerprint:c.data.label_state?.source_fingerprint || "",expected_previous_decision_id:c.data.label_state?.decision?.id || null};

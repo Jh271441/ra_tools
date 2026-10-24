@@ -38,7 +38,8 @@ refreshCaseDecisionResult=async()=>{refreshes++};
  hold=false;reset();write=false;posts=[];await adjudicateIssueLabel();assert.equal(posts.length,0);
  write=true;current=false;await adjudicateIssueLabel();assert.equal(posts.length,0);
  current=true;input.checked=false;await adjudicateIssueLabel();assert.equal(posts.length,0);
- input.checked=true;input.value='';await adjudicateIssueLabel();assert.equal(posts.length,0);
+ input.checked=true;input.value='';await adjudicateIssueLabel();assert.equal(posts.length,1);
+ assert.equal(posts[0].rationale,'');assert.equal(posts[0].label_rationale,'label evidence');
 })().catch(e=>{console.error(e);process.exitCode=1});
 '''
         result=subprocess.run(['node','-e',script,str(source)],capture_output=True,text=True)
