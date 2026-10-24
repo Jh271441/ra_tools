@@ -289,15 +289,28 @@ function renderCronIncrements(history) {
   if(!panel||!host)return;
   panel.hidden=false;
   if(history?.status!=='ready') {
+    delete host.dataset.historyKey;
     host.innerHTML=`<p class="cron-note muted" role="status">${escapeHtml(history?.status==='empty'?uiText('尚无定时扫描记录。','No scheduled scans yet.'):uiText('增量记录暂不可用，累计进度仍可查看。','Increment history is unavailable; cumulative progress remains available.'))}</p>`;
     return;
   }
-  const headings=[uiText('轮次 · CST','Round · CST'),uiText('版本','Version'),uiText('新增发现','New IDs'),uiText('补齐入队','Source filled'),uiText('回刷完成','Published'),uiText('目标入库','Targets added')];
-  const note=uiText('新增为首次发现的案例；补齐为旧案例触发源齐备后入队。回刷和入库按实际完成时段统计，可含前轮待办，几列不能相加。仅保留最近14轮展示。','New IDs are first discoveries; source-filled cases were previously waiting. Publication and imports follow completion time and may include earlier work. Columns are not additive. The latest14 rounds are shown.');
-  const rows=(history.items||[]).map(row=>{
-    const state=row.scan_state==='success'?'':` · ${cronLabel(row.scan_state)}`;
-    const values=[`${cronTime(row.start_at)}${state}`,String(row.family||'').slice(4),cronCount(row.new),cronCount(row.filled),cronCount(row.published),`+${cronCount(row.target_added)}${row.target_removed?` / −${cronCount(row.target_removed)}`:''}`];
-    return `<tr>${values.map(x=>`<td>${escapeHtml(String(x))}</td>`).join('')}</tr>`;
+  const key=JSON.stringify([state.uiLanguage,history.items]);
+  if(host.dataset.historyKey===key)return;
+  const explanationOpen=Boolean(host.querySelector('details')?.open);
+  const rounds=new Map();
+  for(const row of history.items||[]) {
+    if(!rounds.has(row.start_at))rounds.set(row.start_at,[]);
+    rounds.get(row.start_at).push(row);
+  }
+  const metrics=[['new',uiText('新增发现','New IDs')],['filled',uiText('补齐入队','Source filled')],['published',uiText('回刷完成','Published')],['target_added',uiText('目标入库','Targets added')]];
+  const entries=[...rounds].map(([at,rows])=>{
+    const unchanged=row=>row.scan_state==='success'&&['new','filled','published','target_added','target_removed'].every(k=>row[k]===0);
+    const changed=rows.filter(row=>!unchanged(row)),idle=rows.filter(unchanged);
+    const state=rows.find(row=>row.scan_state!=='success')?.scan_state;
+    const lines=changed.map(row=>`<div class="cron-increment-version"><strong>${escapeHtml(String(row.family||'').slice(4))}</strong><div class="cron-increment-metrics">${metrics.map(([k,label])=>`<span><span class="muted">${escapeHtml(label)}</span><b>${k==='target_added'&&row[k]!=null?'+':''}${escapeHtml(cronCount(row[k]))}</b></span>`).join('')}${row.target_removed?`<span><span class="muted">${escapeHtml(uiText('移出目标','Targets removed'))}</span><b>−${escapeHtml(cronCount(row.target_removed))}</b></span>`:''}</div></div>`).join('');
+    const idleText=idle.length?`<p class="cron-increment-idle muted">${escapeHtml(idle.map(row=>String(row.family||'').slice(4)).join(' / '))} · ${escapeHtml(uiText('无增量','No changes'))}</p>`:'';
+    return `<li class="cron-increment-round"><div class="cron-run-heading"><strong>${escapeHtml(cronTime(at).replace(/:\d{2}$/, ''))}</strong>${state?cronChip(state):''}</div>${lines}${idleText}</li>`;
   }).join('');
-  host.innerHTML=`<div class="cron-table-wrap" tabindex="0" role="region" aria-label="${escapeHtml(uiText('每轮增量表，可横向滚动','Per-round increments, horizontally scrollable'))}"><table class="cron-table"><thead><tr>${headings.map(x=>`<th scope="col">${escapeHtml(x)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div><p class="cron-note muted">${escapeHtml(note)}</p>`;
+  const note=uiText('新增为首次发现的案例；补齐为旧案例触发源齐备后入队。回刷和入库按实际完成时段统计，可含前轮待办，几项不能相加。展示最近14轮，底层历史保留。','New IDs are first discoveries; source-filled cases were previously waiting. Publication and imports follow completion time and may include earlier work. Metrics are not additive. The latest14 rounds are shown; underlying history is retained.');
+  host.innerHTML=`<ol class="cron-increment-log">${entries}</ol><details class="cron-increment-explanation"${explanationOpen?' open':''}><summary>${escapeHtml(uiText('统计口径','Counting rules'))}</summary><p class="cron-note muted">${escapeHtml(note)}</p></details>`;
+  host.dataset.historyKey=key;
 }

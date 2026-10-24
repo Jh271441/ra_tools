@@ -940,3 +940,9 @@
   #historyDialog[data-history-kind="review"] .dialog-card, #historyDialog[data-history-kind="labeling"] .dialog-card { padding:12px; max-height:calc(100dvh - 32px); }
   #caseLabelDecisionDialog .dialog-actions { padding-bottom:max(0px,env(safe-area-inset-bottom)); }
 }
+
+@media (max-width:650px){
+ .cron-increment-explanation summary { min-height:44px;display:flex;align-items:center; }
+ .cron-increment-version { gap:5px 12px; }
+ .cron-increment-metrics { gap:7px 14px; }
+}
