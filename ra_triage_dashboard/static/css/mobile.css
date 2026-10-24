@@ -986,8 +986,6 @@
 /* Trail audit page: final responsive owner, shared controls retain touch sizing. */
 @media (max-width: 1024px) {
   .trail-history-filters { grid-template-columns:repeat(2,minmax(0,1fr)); }
-  .trail-history-diff { grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
-  .trail-history-diff > strong { grid-column:1 / -1; }
 }
 @media (max-width: 639px) {
   .trail-history-toolbar { align-items:flex-start; }
@@ -1007,6 +1005,11 @@
   .trail-history-dialog { width:calc(100vw - 16px); max-width:calc(100vw - 16px); max-height:calc(100dvh - 16px); }
   .trail-history-dialog .dialog-card { padding:12px; max-height:calc(100dvh - 18px); }
   .trail-history-diff { grid-template-columns:minmax(0,1fr); }
+  .trail-history-diff > .trail-history-arrow { transform:rotate(90deg); justify-self:center; }
+  .trail-history-page details > summary,.trail-history-dialog details > summary { min-height:44px; padding:10px 0; }
+  .trail-history-steps { gap:8px; }
+  .trail-history-steps li { flex-direction:column; align-items:flex-start; font-size:13px; }
+  .trail-history-steps li > span { flex-basis:24px; width:24px; }
   .trail-history-issue { padding:10px; }
 }
 @media (max-width: 760px) {

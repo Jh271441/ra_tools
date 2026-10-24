@@ -1,6 +1,10 @@
 .trail-history-page { display:grid; gap:12px; width:100%; }
 .trail-history-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; }
-.trail-history-toolbar p { max-width:100ch; color:var(--muted); line-height:1.5; font-size:13px; }
+.trail-history-toolbar p { color:var(--muted); line-height:1.5; }
+.trail-history-page details > summary,.trail-history-dialog details > summary { cursor:pointer; line-height:1.5; }
+.trail-history-muted { color:var(--muted); }
+.trail-history-coverage-list { margin:8px 0; padding:0; list-style:none; display:grid; gap:6px; color:var(--muted); }
+.trail-history-meter { display:grid; gap:5px; min-width:80px; max-width:110px; font-variant-numeric:tabular-nums; }
 .trail-history-filters { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; padding:14px; border:1px solid var(--line); border-radius:var(--radius); background:var(--raised); }
 .trail-history-filter-actions { display:flex; align-items:end; gap:8px; flex-wrap:wrap; }
 .trail-history-table-wrap { overflow:auto; border:1px solid var(--line); border-radius:var(--radius); background:var(--raised); }
@@ -8,9 +12,10 @@
 .trail-history-table th,.trail-history-table td { padding:12px; border-bottom:1px solid var(--line); font-size:13px; overflow-wrap:anywhere; }
 .trail-history-table th { color:var(--muted); font-weight:600; }
 .trail-history-table small { display:block; color:var(--muted); margin-top:4px; }
-.trail-history-status { display:inline-block; color:var(--muted); }
+.trail-history-status { display:inline-flex; align-items:center; gap:5px; padding:3px 7px; border:1px solid var(--line); border-radius:var(--radius); color:var(--muted); font-size:13px; }
 .trail-history-status[data-status="succeeded"] { color:var(--ok); }
 .trail-history-status[data-status="partial"],.trail-history-status[data-status="unknown"] { color:var(--warn); }
+.trail-history-status[data-status="conflict"] { color:var(--fail); }
 .trail-history-pagination { display:flex; gap:8px; justify-content:flex-end; align-items:center; padding:12px 0; flex-wrap:wrap; }
 .trail-history-pagination span { margin-right:auto; color:var(--muted); }
 .trail-history-dialog { width:min(960px,calc(100vw - 32px)); max-width:calc(100vw - 32px); max-height:calc(100dvh - 32px); padding:0; border:1px solid var(--line); border-radius:var(--radius); color:var(--text); background:var(--raised); }
@@ -19,10 +24,28 @@
 .trail-history-dialog-body p { line-height:1.5; overflow-wrap:anywhere; }
 .trail-history-id { overflow-wrap:anywhere; font-size:12px; }
 .trail-history-issue { border:1px solid var(--line); border-radius:7px; padding:12px; display:grid; gap:10px; }
-.trail-history-diff { display:grid; grid-template-columns:110px minmax(0,1fr) minmax(0,1fr); gap:12px; }
-.trail-history-diff strong { font-size:13px; font-weight:600; }
+.trail-history-issue h3 { font:inherit; font-weight:600; margin:0; }
+.trail-history-issue-heading,.trail-history-meta { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+.trail-history-meta time { color:var(--muted); }
+.trail-history-diff,.trail-history-transition { display:grid; grid-template-columns:minmax(0,1fr) 20px minmax(0,1fr); gap:12px; align-items:start; }
+.trail-history-transition > div { display:grid; gap:6px; }
+.trail-history-arrow { align-self:center; color:var(--muted); text-align:center; }
+.trail-history-value { border:1px solid var(--line); border-radius:var(--radius); padding:6px 10px; width:fit-content; max-width:100%; overflow-wrap:anywhere; }
+.trail-history-value[data-excluded="true"] { background:var(--accent-soft); color:var(--accent); }
+.trail-history-transition small { color:var(--muted); }
 .trail-history-diff small { color:var(--muted); }
-.trail-history-diff pre { font:inherit; white-space:pre-wrap; overflow-wrap:anywhere; margin:5px 0 0; padding:8px; background:var(--overlay); border-radius:5px; line-height:1.5; }
+.trail-history-diff pre,.trail-history-note { font:inherit; white-space:pre-wrap; overflow-wrap:anywhere; margin:5px 0 0; padding:8px; background:var(--overlay); border-radius:5px; line-height:1.5; }
+.trail-history-timeline { list-style:none; padding:0 0 0 12px; margin:12px 0 0 5px; border-left:2px solid var(--line); display:grid; gap:16px; }
+.trail-history-timeline > li { position:relative; display:grid; gap:8px; }
+.trail-history-timeline > li::before { content:""; position:absolute; width:8px; height:8px; border-radius:50%; background:var(--muted); left:-17px; top:10px; }
+.trail-history-timeline > li > div { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.trail-history-timeline time { color:var(--muted); }
+.trail-history-timeline ul { list-style:none; padding:0; display:grid; gap:8px; margin-top:8px; }
+.trail-history-steps { list-style:none; display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); padding:0; margin:0; gap:12px; }
+.trail-history-steps li { display:flex; align-items:center; gap:8px; color:var(--muted); padding:8px 0; border-bottom:2px solid var(--line); }
+.trail-history-steps li > span { display:grid; place-items:center; flex:0 0 24px; height:24px; border:1px solid var(--line); border-radius:50%; }
+.trail-history-steps li[aria-current="step"] { color:var(--accent); border-color:var(--accent); }
+.trail-history-steps li[data-complete="true"] { color:var(--ok); }
 .trail-history-restore { display:grid; gap:12px; border-top:1px solid var(--line); padding-top:12px; }
 .trail-history-restore > p { color:var(--muted); font-size:13px; }
 .trail-history-restore .button { justify-self:start; }

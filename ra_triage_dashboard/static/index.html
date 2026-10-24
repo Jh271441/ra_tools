@@ -86,7 +86,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-654`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-655`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -1109,7 +1109,7 @@
           </section>
 
           <section class="app-page tool-page trail-history-page hidden" id="trailHistoryPage" data-page="trail-history">
-            <div class="trail-history-toolbar"><p id="trailHistoryCoverage"></p><button class="button button-secondary" id="trailHistoryRefresh" type="button"><span class="ui-lang-zh">刷新</span><span class="ui-lang-en">Refresh</span></button></div>
+            <div class="trail-history-toolbar"><div id="trailHistoryCoverage"></div><button class="button button-secondary" id="trailHistoryRefresh" type="button"><span class="ui-lang-zh">刷新</span><span class="ui-lang-en">Refresh</span></button></div>
             <form id="trailHistoryFilters" class="trail-history-filters"></form>
             <div id="trailHistoryResults" aria-live="polite"></div>
           </section>
@@ -2490,7 +2490,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-654`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-655`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

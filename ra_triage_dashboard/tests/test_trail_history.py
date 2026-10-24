@@ -157,6 +157,28 @@ class TrailHistoryRoutesTest(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(RuntimeError):await self.commit(preview)
         self.assertEqual(self.writes,[])
 
+    async def test_enabled_restore_gate_still_rejects_non_admins_on_every_write_route(self):
+        self.settings.trail_rollback_enabled=True
+        preview=await self.preview()
+        for role in ("reader","writer"):
+            with patch.object(self.db,"access_role",return_value=role), patch.object(routes,"read_trail_model_fields",side_effect=AssertionError("remote access before authorization")):
+                for endpoint,body in ((routes.restore_preview,{"reason":"test"}),(routes.verify,{}),(routes.restore_commit,{"preview_id":preview["preview_id"],"confirm":True})):
+                    with self.assertRaises(HTTPException) as error:
+                        await endpoint("original",request(body))
+                    self.assertEqual(error.exception.status_code,403)
+        with patch.object(routes,"request_identity",return_value=SimpleNamespace(username="alice",source="unverified",verified=False)):
+            with self.assertRaises(HTTPException) as error:await self.commit(preview)
+            self.assertEqual(error.exception.status_code,403)
+        self.assertEqual(self.writes,[])
+
+    async def test_admin_cannot_skip_explicit_confirmation(self):
+        preview=await self.preview()
+        for confirm in (None,False,"true"):
+            with self.assertRaises(HTTPException) as error:
+                await routes.restore_commit("original",request({"preview_id":preview["preview_id"],"confirm":confirm}))
+            self.assertEqual(error.exception.status_code,400)
+        self.assertEqual(self.writes,[])
+
     async def test_uncertain_write_can_be_verified_after_restart(self):
         preview=await self.preview()
         original_writer=routes.write_trail_model_results
