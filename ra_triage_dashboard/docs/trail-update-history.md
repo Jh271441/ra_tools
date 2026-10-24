@@ -1,6 +1,8 @@
 # Trail 更新记录与恢复
 
-2026-10-25，本地实现；尚未部署。开发基线 `bb29d9b`，分支 `codex/trail-update-history`，静态缓存 `manual-triage-650`。
+2026-10-25，用户已授权发布。开发基线已整合至生产 `20e86ef`，分支 `codex/trail-update-history`，静态缓存 `manual-triage-654`。实际发布结果另记发布记录。
+
+发布使用 `scripts/release_trail_history_20261025.py`，复用版本化 deploy_cloud 的锁、测试、灰度、进程、健康及应用回退门禁；保留旧 canonical checkout 的本地文件和占用的 8786，独立灰度使用 18789。仅允许 SHA-256 为 `54008df2790bc6910495524f0ae622da3e448248c9fe910b5a4195281a677e3a` 的新增 migration057；不放宽通用迁移白名单。停止 Dashboard 后进行新鲜备份、临时库恢复及逐表内容指纹比对，并在恢复库先演练 migration，再应用到生产。原有业务表保持内容指纹一致，新增审计表和 schema/change-revision 元数据除外。备份保留在独立 migrations 目录；应用失败回退旧代码，保留向后兼容的新表，不覆盖后续数据。
 
 ## 页面与覆盖范围
 
