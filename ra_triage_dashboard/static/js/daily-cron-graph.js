@@ -204,7 +204,7 @@ async function openCronGraphHelp(lane) {
   const dialog = $("#dailyCronHelpDialog");
   $("#dailyCronHelpTitle").textContent = lane === "main" ? uiText("推理回刷 · 流程说明", "Daily inference · Definition") : uiText("平台与媒体 · 流程说明", "Media sidecar · Definition");
   $("#dailyCronHelpNote").textContent = lane === "main" ? uiText("09:00 CST，处理 T−2；周末照常查询。少量采集缺失 ≤5 且 ≤2% 可继续并记录，超限阻塞。空数据正常结束。", "09:00 CST, T−2 data; weekends queried normally. Acquisition gaps ≤5 AND ≤2% may continue with records; larger gaps block. Empty data completes normally.") : uiText("每天低置信度＋抽样，均分给 jasperchen / liangxianghui 联合复核。Orion 重试1次，本地最多2次；少量缺失单独记录，不影响主任务。发布1小时后清理 Camera 原始 bag。", "Daily low confidence + sampling, balanced joint-review assignments. One Orion retry, at most two local attempts. Gaps recorded independently of the main task; Camera source bags cleaned 1h after publication.");
-  if (dailyCronState.data?.incremental?.enabled && lane === "main") $("#dailyCronHelpNote").textContent = uiText("每5分钟按版本发现新增和后补；固定版本级10%概率抽样，缺源等待，其他案例继续。", "Version-scoped discovery every five minutes; stable probability sampling; missing sources wait independently.");
+  if (dailyCronState.data?.incremental?.enabled && lane === "main") $("#dailyCronHelpNote").textContent = uiText("每天07:00、19:00 CST按版本全量发现和补查；队列4并发全量处理，固定版本级10%概率抽样。缺源独立等待，每轮增量分开记录。", "Version discovery and source checks at07:00/19:00 CST; four workers process all eligible queued cases with stable10% probability sampling. Missing sources wait independently; increments are recorded per round.");
   dialog.showModal();
   const graph = await ensureCronGraphLibrary();
   if (dialog.open) graph.render($("#dailyCronHelpGraph"), buildDailyCronGraph(dailyCronState.data, lane));
@@ -247,7 +247,7 @@ function buildIncrementalCronGraph(v,definitionLane='') {
   const node=(id,label,detail,status,stateLabel,rows=[])=>({id,data:{label,detail,status:active?status:'unknown',stateLabel:active?stateLabel:uiText('观测过期','Stale observation'),rows,issues:[]}});
   const rolling=uiText('分批持续处理','Streaming per case');
   const nodes=[
-    node('main-schedule',uiText('增量发现','Discover'),uiText('每5分钟 · T−0及迟到数据','Every 5 min · T−0 and late arrivals'),'success',uiText('周期调度','Scheduled polling')),
+    node('main-schedule',uiText('增量发现','Discover'),'07:00 / 19:00 CST','success',uiText('周期调度','Scheduled polling')),
     node('main-query',uiText('版本分流','Route by version'),(v.families||[]).map(x=>x.slice(4)).join(' / '),'success',uiText('独立归集','Separate worksets')),
     node('main-wait',uiText('等待源信息','Await source'),String(c.waiting_metadata||0),'pending',uiText('不阻塞其他 case','Other cases continue')),
     node('main-verify',uiText('版本统一抽样','Version sampling'),uiText('固定种子 · 每 case 约10%','Frozen seed · 10% probability per case'),'success',uiText('固定策略','Frozen policy')),

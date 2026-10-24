@@ -60,6 +60,7 @@ def version_status(root):
         for row in document(folder / "final-failures.json").get("failures", []):
             failed.add(row.get("issue_id"))
     verified = (reused | published) & targets
+    from .cron_incremental_history import incremental_history
     return {
         "enabled": True,
         "states": states,
@@ -67,6 +68,9 @@ def version_status(root):
         "updated_at": heartbeat.get("checked_at"),
         "stale": time.time() - heartbeat.get("checked_at", 0) > 1200,
         "sampling_policy": "version_probability_v3",
+        "discovery_schedule": {"hours": [h for h in heartbeat.get("discovery_schedule", {}).get("hours", []) if type(h) is int and 0 <= h <= 23],
+                               "timezone": "Asia/Shanghai", "next_at": heartbeat.get("discovery_schedule", {}).get("next_at")},
+        "increments": incremental_history(state, control, datasets, database),
         "datasets": datasets,
         "media": {
             "selected": len(targets),

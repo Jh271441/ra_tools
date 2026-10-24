@@ -66,6 +66,13 @@ body[data-active-page="daily-cron"] .top-actions { margin-left: auto; }
 .cron-table td, .cron-table th { padding: 10px; border-bottom: 1px solid var(--line-soft); }
 .cron-table td:first-child { overflow-wrap: anywhere; min-width: 150px; max-width: 420px; }
 .cron-table td:not(:first-child) { white-space: nowrap; }
+.cron-increments { min-width:0; }
+.cron-increments .cron-section-heading { justify-content:space-between;flex-wrap:wrap; }
+.cron-increments .cron-table-wrap { margin-top:6px;max-height:320px; }
+.cron-increments .cron-table td,.cron-increments .cron-table th { padding:7px 10px; }
+.cron-increments .cron-table td:first-child { min-width:132px;white-space:nowrap; }
+.cron-increments .cron-table td:nth-child(n+3),.cron-increments .cron-table th:nth-child(n+3) { text-align:right;font-variant-numeric:tabular-nums; }
+.cron-increments .cron-note { margin:6px 0 0; }
 .daily-cron-page h3 { font-size: 12px; font-weight: 600; }
 body[data-active-page="daily-cron"] #pageTitle { font-size: 16px; }
 .daily-cron-page .button { font-size: 11px; min-height: 28px; padding: 5px 9px; }

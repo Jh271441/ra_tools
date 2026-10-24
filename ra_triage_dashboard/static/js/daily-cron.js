@@ -98,6 +98,7 @@ function renderDailyCron() {
   if (!$("#dailyCronPage")) return;
   const data = dailyCronState.data;
   if (!data) return;
+  if ($('#dailyCronIncrements')) $('#dailyCronIncrements').hidden = true;
   if (data.incremental?.enabled && !dailyCronState.selectedDay) { renderIncrementalCron(data); return; }
   const overview = data.overview, daily = overview?.daily, run = typeof cronSelectedRuns === "function" ? cronSelectedRuns(data).main : cronLatestRun(data), sidecar = data.sidecar;
   const observationAge = Date.now() / 1000 - (overview?.collected_at || 0);
@@ -276,8 +277,27 @@ function renderIncrementalCron(data) {
   $('#dailyCronMediaStatus').innerHTML=cronChip(m.failure_count?'partial':m.verified===m.selected&&m.selected?'complete':'running');
   $('#dailyCronMediaValue').textContent=cronFraction(m.verified,m.selected);
   $('#dailyCronMediaNote').textContent=uiText(`复用 ${m.reused||0} · 待媒体 ${m.queued||0} · 最终失败 ${m.failure_count||0}`,`Reused ${m.reused||0} · Media pending ${m.queued||0} · Terminal failures ${m.failure_count||0}`);
-  $('#dailyCronSchedule').textContent=uiText('每5分钟发现新增及后补；按版本处理，不限 T−2。','Discover new and enriched cases every 5 minutes; version scoped, including T−0.');
+  $('#dailyCronSchedule').textContent=v.discovery_schedule?.hours?.length?uiText('每天07:00、19:00 CST全量发现及补查；队列独立持续处理，无单轮总量上限。','Full discovery and source checks at07:00/19:00 CST; the queue continues independently without a per-round case cap.'):uiText('按版本持续处理；查询计划等待同步。','Version-scoped processing; awaiting discovery schedule.');
+  renderCronIncrements(v.increments);
   $('#dailyCronAlerts').innerHTML=`<p class="cron-note">${escapeHtml(v.stale?uiText('增量心跳过期，请核实任务。','Incremental heartbeat is stale.'):uiText('逐 case 完成后进入回刷和媒体；不等待整批。各节点为当前累计进度，缺源与异常单独等待。','Completed cases stream to publication and media independently. Nodes show cumulative progress; missing sources and ambiguous cases wait separately.'))}</p>`;
   for(const id of ['dailyCronMainTiming','dailyCronMediaTiming'])if($('#'+id))$('#'+id).textContent='';
   renderDailyCronRuns(data);renderDailyCronSidecar(data.sidecar);renderDailyCronJobs();renderCronRunSelector();void renderDailyCronGraph();
+}
+
+function renderCronIncrements(history) {
+  const panel=$('#dailyCronIncrements'), host=$('#dailyCronIncrementRows');
+  if(!panel||!host)return;
+  panel.hidden=false;
+  if(history?.status!=='ready') {
+    host.innerHTML=`<p class="cron-note muted" role="status">${escapeHtml(history?.status==='empty'?uiText('尚无定时扫描记录。','No scheduled scans yet.'):uiText('增量记录暂不可用，累计进度仍可查看。','Increment history is unavailable; cumulative progress remains available.'))}</p>`;
+    return;
+  }
+  const headings=[uiText('轮次 · CST','Round · CST'),uiText('版本','Version'),uiText('新增发现','New IDs'),uiText('补齐入队','Source filled'),uiText('回刷完成','Published'),uiText('目标入库','Targets added')];
+  const note=uiText('新增为首次发现的案例；补齐为旧案例触发源齐备后入队。回刷和入库按实际完成时段统计，可含前轮待办，几列不能相加。仅保留最近14轮展示。','New IDs are first discoveries; source-filled cases were previously waiting. Publication and imports follow completion time and may include earlier work. Columns are not additive. The latest14 rounds are shown.');
+  const rows=(history.items||[]).map(row=>{
+    const state=row.scan_state==='success'?'':` · ${cronLabel(row.scan_state)}`;
+    const values=[`${cronTime(row.start_at)}${state}`,String(row.family||'').slice(4),cronCount(row.new),cronCount(row.filled),cronCount(row.published),`+${cronCount(row.target_added)}${row.target_removed?` / −${cronCount(row.target_removed)}`:''}`];
+    return `<tr>${values.map(x=>`<td>${escapeHtml(String(x))}</td>`).join('')}</tr>`;
+  }).join('');
+  host.innerHTML=`<div class="cron-table-wrap" tabindex="0" role="region" aria-label="${escapeHtml(uiText('每轮增量表，可横向滚动','Per-round increments, horizontally scrollable'))}"><table class="cron-table"><thead><tr>${headings.map(x=>`<th scope="col">${escapeHtml(x)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div><p class="cron-note muted">${escapeHtml(note)}</p>`;
 }
