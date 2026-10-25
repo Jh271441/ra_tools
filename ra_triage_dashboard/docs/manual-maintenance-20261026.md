@@ -5,7 +5,7 @@
 整理分支 `codex/manual-git-refactor` 基于 `origin/master` 的 `2a64c4d`。
 原工作区 master 为 `b389943`，与远端分叉；使用独立工作树导入
 `ra_triage_dashboard/` 的改动，保留原工作区和其他子项目的未提交内容。
-本次没有部署、数据库迁移、数据复制或流量切换。
+首次整理阶段没有部署、数据库迁移、数据复制或流量切换；后续授权发布见下文。
 
 提交按以下职责分组：
 
@@ -73,6 +73,24 @@ RSS 与 scratch 为采样停止阈值；address space 由 shell `ulimit -v` 限�
 - 30 个修改或新增 Python 文件通过 AST 检查；12 个迁移/恢复 CLI 通过 `--help` 导入检查，未执行运维操作。
 - worker 直接脚本导入、shell 语法和 Git 空白检查通过。
 
-PostgreSQL 集成测试因没有配置临时数据库而跳过；本次没有验证真实数据库恢复和
-生产挂载。没有修改前端静态文件，因此没有改变缓存版本，也没有将本次工作描述为
-浏览器、移动端或线上验收。
+首次本地回归没有配置临时 PostgreSQL，因此跳过数据库集成用例；发布前已补齐，见下文。
+没有修改前端静态文件，因此没有改变缓存版本，也没有将本次工作描述为浏览器或移动端验收。
+
+## 授权发布与兼容验证
+
+用户要求验证无影响后部署。2026-10-26 00:35:31 CST 完成生产切换：
+
+- 运行 SHA：`7abd2b0eb9dbce94bd5244ddface308fa4abc722`。
+- 原版本／应用回退 SHA：`2a64c4da45330143be1f8141d463f9b1f484461a`。
+- 发布记录：`/volume/home/workspace/ra_triage_dashboard_deploy/releases/20261025T163255Z-7abd2b0eb9db/result.json`。
+- 临时 PostgreSQL 14 容器验证：24 passed，覆盖数据库集成和 Trail 历史；容器及临时数据已清理，没有复制生产数据库。
+- 云端精确 SHA 全套回归：950 passed、6 skipped，138.34 秒；使用现有生产 Python 环境。
+- 18789 隔离 SQLite 灰度通过，关闭外部写入、GT 同步、通知、管理员恢复和详情元数据抓取。
+- 新旧版本 81 项有效 Settings 指纹完全一致（归一化应用源码根目录，排除构建 SHA）。凭据内容没有输出或写入报告。
+- 切换前没有 queued/running 的预测、发布或单例推理任务。前端静态目录完全不变。
+- 切换后生产 SHA、PostgreSQL 持久化、overall healthy、schema57，以及原有身份、writer、Batch、GT 同步和通知策略通过检查。
+
+沿用当前生产 release 中的隔离发布入口与版本化 `deploy_cloud.py` 门禁，保存了本次
+实际执行脚本和回退配置。canonical checkout 的本地提交、文件和占用中的 8786 保留。
+部署没有注册或执行新增的迁移、恢复及备份调度工具，也没有开启资源保护。
+本次没有 schema 变更、Trail/标注写入测试、SSO 浏览器验收或真实备份恢复演练。
