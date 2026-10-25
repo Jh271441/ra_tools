@@ -582,9 +582,11 @@ assert.equal(group.hidden,false); // Existing public exclusion route remains rea
 
 
 def test_issue_exclusion_route_preserves_drafts_and_never_submits() -> None:
-    script = (ROOT / "static" / "js" / "trail-update-preview.js").read_text() + r'''
+    script = "\n".join((ROOT / "static" / "js" / name).read_text() for name in
+                       ("trail-update-state.js", "trail-update-preview.js")) + r'''
 const assert=require('node:assert/strict');
 state={trailUpdate:{}};CASE_PAGE_SIZES=[10,20];DEFAULT_CASE_PAGE_SIZE=10;LABELS=[];
+document={querySelector:()=>null};
 let rows=[],invalidations=0;
 const row=(id='',comment='')=>({id:{value:id},comment:{value:comment},querySelector(s){return s.includes('entry-id')?this.id:this.comment;}});
 trailIssueEntryRows=()=>rows;
