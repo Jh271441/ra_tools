@@ -724,6 +724,10 @@ html[data-color-theme="light"] .trail-update-state-badge.is-excluded { color:#1d
 .trail-reconcile-table .trail-update-issue { text-align:center; }
 .trail-reason-selection-bar { padding:10px 0; border-top:1px solid var(--line-soft); border-bottom:1px solid var(--line-soft); }
 .trail-update-result-actions > [hidden] { display:none; }
+.trail-non-exclusion-transition { display:flex; flex-wrap:wrap; align-items:center; gap:8px; color:var(--muted); }
+.trail-non-exclusion-transition > strong { color:var(--ok); }
+html[data-color-theme="light"] #trailNonExclusionFeedback.is-error { color:#b42318; }
+#trailNonExclusionDialog .dialog-card { max-height:calc(100dvh - 24px); overflow:auto; }
 
 .trail-update-results-heading > .trail-update-result-actions { display:flex; flex-wrap:wrap; align-items:center; }
 

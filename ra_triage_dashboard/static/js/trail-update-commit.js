@@ -184,17 +184,18 @@ function trailUpdateConfirmSetExpanded(expanded = false) {
     : '<span class="ui-lang-zh">展开全部</span><span class="ui-lang-en">Expand all</span>';
 }
 
-function openTrailUpdateConfirm({ mode = "review", data = {} } = {}) {
+function openTrailUpdateConfirm({ mode = "review", data = {}, renderOnly = false } = {}) {
   const dialog = $("#trailUpdateConfirmDialog");
   if (!dialog || typeof dialog.showModal !== "function") {
     showToast(uiText("确认弹窗不可用，已取消写入。", "The confirmation dialog is unavailable; write cancelled."), true);
     return Promise.resolve(false);
   }
-  if (trailUpdateConfirmResolver) trailUpdateConfirmClose(false);
+  if (!renderOnly && trailUpdateConfirmResolver) trailUpdateConfirmClose(false);
   const directMode = mode === "direct_issue_ids" || data?.mode === "direct_issue_ids";
   const selectedMode = data?.mode === "selected_exclusions";
   const reasonOnly = selectedMode && data.intent === "reason_only";
-  const selectedLabel = reasonOnly ? uiText("仅更新理由", "Reasons only") : uiText("排除所选案例", "Exclude selected cases");
+  const nonExclusion = selectedMode && data.intent === "unexclude";
+  const selectedLabel = nonExclusion ? uiText("同步不排除", "Sync non-exclusion") : reasonOnly ? uiText("仅更新理由", "Reasons only") : uiText("排除所选案例", "Exclude selected cases");
   const allItems = Array.isArray(data?.items) ? data.items : [];
   // The server rechecks this state immediately before the write, but make the
   // confirmation surface match the operation: only rows whose dashboard
@@ -267,6 +268,7 @@ function openTrailUpdateConfirm({ mode = "review", data = {} } = {}) {
     list.innerHTML = shownItems.length
       ? shownItems.map((item) => {
         const issueId = String(item?.issue_id || "—");
+        if (nonExclusion) return trailNonExclusionItemMarkup(item);
         if (data?.mode === "selected_exclusions") return `<article class="trail-selected-confirm"><strong>${escapeHtml(issueId)}</strong>${trailReasonComparisonMarkup(item, true)}</article>`;
         const currentLabel = directMode
           ? (item?.current_should_exclude ? uiText("已屏蔽", "Already shielded") : uiText("未屏蔽", "Not shielded"))
@@ -294,6 +296,13 @@ function openTrailUpdateConfirm({ mode = "review", data = {} } = {}) {
     "Local versions and Trail content are checked again before commit; changes require a new preview. Empty reasons preserve remote text."
   );
   dialog.dataset.confirmMode = directMode ? "direct_issue_ids" : "review";
+  if (nonExclusion) {
+    if (subtitle) subtitle.textContent = uiText("仅同步下面明确列出的 Issue；确认后才会写入 Trail。", "Only the listed Issues will be synced, after you confirm.");
+    if (bannerTitle) bannerTitle.textContent = selectedLabel;
+    if (bannerText) bannerText.textContent = uiText("排除标记 → 不排除（false）；Trail 原理由保留不变。", "Exclusion → Not excluded (false); the original Trail reason is preserved.");
+    if (note) note.textContent = uiText("服务端已核验本地不排除结论。提交前会再次检查版本和 Trail 状态；不改模型结果、GT 或本地标注。", "The server verified the local non-exclusion outcome. Versions and Trail state are checked again before writing; model results, GT and local annotations are unchanged.");
+  }
+  if (renderOnly) return;
   return new Promise((resolve) => {
     trailUpdateConfirmResolver = resolve;
     dialog.showModal();

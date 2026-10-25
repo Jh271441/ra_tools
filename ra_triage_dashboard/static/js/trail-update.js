@@ -88,6 +88,7 @@ function bindTrailAttributeUpdateEvents() {
     applyTrailUpdateFilters();
   });
   bindTrailReasonEvents();
+  bindTrailNonExclusionEvents();
   bindTrailReconcileEvents();
   $("#trailUpdateCommitButton")?.addEventListener("click", () => {
     commitTrailAttributeUpdate().catch((error) => showToast(error.message, true));

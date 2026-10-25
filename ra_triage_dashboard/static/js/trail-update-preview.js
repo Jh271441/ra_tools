@@ -331,6 +331,7 @@ function trailUpdateWriteReady(data = null) {
 }
 
 function syncTrailAttributeActions(data = state.trailUpdate?.data) {
+  if (typeof syncTrailNonExclusionControls === "function") syncTrailNonExclusionControls();
   const loading = Boolean(state.trailUpdate?.loading);
   document.querySelectorAll('[data-trail-json-preview="review"]').forEach((button) => {
     button.toggleAttribute("disabled", loading || !data?.draft);

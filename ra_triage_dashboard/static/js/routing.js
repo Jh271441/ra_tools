@@ -91,6 +91,7 @@ function applyUiLanguage(language, { persist = true } = {}) {
     "renderReviewAssignmentPage",
     "renderTrailUpdateFilters",
     "refreshTrailReasonLanguage",
+    "refreshTrailNonExclusionLanguage",
     "refreshCaseLabelDecisionLanguage",
     "refreshHistoryDialogLanguage",
     "refreshCaseExclusionLanguage",

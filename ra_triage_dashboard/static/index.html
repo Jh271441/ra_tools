@@ -86,7 +86,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-657`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-658`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -1219,7 +1219,7 @@
                       <button class="button button-quiet" id="trailUpdateResetFiltersButton" type="button"><span class="ui-lang-zh">重置</span><span class="ui-lang-en">Reset</span></button>
                     </div>
                   </form>
-                  <div class="section-heading trail-update-results-heading"><div><h3><span class="ui-lang-zh">排除候选明细</span><span class="ui-lang-en">Excluded case details</span></h3><small id="trailUpdateResultSummary" class="trail-update-result-summary" aria-live="polite">—</small></div><div class="trail-update-result-actions"><button class="button button-quiet" id="trailReasonBatchToggle" type="button" aria-expanded="false"><span class="ui-lang-zh">批量更新</span><span class="ui-lang-en">Batch update</span></button><button class="button button-quiet" data-trail-json-preview="review" type="button" disabled><span class="ui-lang-zh">预览 JSON</span><span class="ui-lang-en">Preview JSON</span></button></div></div>
+                  <div class="section-heading trail-update-results-heading"><div><h3><span class="ui-lang-zh">排除候选明细</span><span class="ui-lang-en">Excluded case details</span></h3><small id="trailUpdateResultSummary" class="trail-update-result-summary" aria-live="polite">—</small></div><div class="trail-update-result-actions"><button class="button button-quiet" id="trailNonExclusionOpen" type="button" aria-haspopup="dialog" disabled><span class="ui-lang-zh">同步不排除</span><span class="ui-lang-en">Sync non-exclusion</span></button><button class="button button-quiet" id="trailReasonBatchToggle" type="button" aria-expanded="false"><span class="ui-lang-zh">批量更新</span><span class="ui-lang-en">Batch update</span></button><button class="button button-quiet" data-trail-json-preview="review" type="button" disabled><span class="ui-lang-zh">预览 JSON</span><span class="ui-lang-en">Preview JSON</span></button></div></div>
                   <div class="trail-reason-selection-bar" hidden>
                     <label><span class="ui-lang-zh">更新类型</span><span class="ui-lang-en">Update type</span><select id="trailReasonIntent"><option value="reason_only" data-label-zh="仅更新理由" data-label-en="Reasons only">仅更新理由</option><option value="exclude" data-label-zh="排除所选案例" data-label-en="Exclude selected cases">排除所选案例</option></select></label>
                     <button class="button button-quiet" id="trailReasonSelectVisible" type="button"><span class="ui-lang-zh">选择本页可更新项</span><span class="ui-lang-en">Select eligible on this page</span></button>
@@ -2344,6 +2344,24 @@
       </div>
     </dialog>
 
+    <dialog class="dialog issue-query-dialog" id="trailNonExclusionDialog" aria-labelledby="trailNonExclusionTitle">
+      <div class="dialog-card">
+        <div class="dialog-heading">
+          <div><h2 id="trailNonExclusionTitle"><span class="ui-lang-zh">同步不排除</span><span class="ui-lang-en">Sync non-exclusion</span></h2>
+            <p class="dialog-copy"><span class="ui-lang-zh">仅同步本地已明确为“不排除”的 Issue；待裁决或有排除意见的记录不能提交。Trail 原理由保留不变。</span><span class="ui-lang-en">Sync only Issues with a confirmed local non-exclusion outcome. Unresolved or excluded outcomes cannot be submitted. Original Trail reasons are preserved.</span></p></div>
+          <button class="icon-button" type="button" data-close="trailNonExclusionDialog" aria-label="关闭" data-i18n-aria-label="dialog.close">×</button>
+        </div>
+        <label class="issue-query-field"><span class="ui-lang-zh">Issue 列表</span><span class="ui-lang-en">Issue list</span>
+          <textarea id="trailNonExclusionInput" rows="5" spellcheck="false" autocomplete="off" aria-describedby="trailNonExclusionFeedback" placeholder="cn12345678, cn23456789"></textarea>
+        </label>
+        <div class="issue-query-feedback" id="trailNonExclusionFeedback" aria-live="polite"></div>
+        <div class="dialog-actions">
+          <button class="button button-quiet" type="button" data-close="trailNonExclusionDialog"><span class="ui-lang-zh">取消</span><span class="ui-lang-en">Cancel</span></button>
+          <button class="button button-primary" id="trailNonExclusionPreview" type="button" disabled><span class="ui-lang-zh">预览改动</span><span class="ui-lang-en">Preview changes</span></button>
+        </div>
+      </div>
+    </dialog>
+
     <dialog class="dialog dialog-wide trail-update-confirm-dialog" id="trailUpdateConfirmDialog" aria-labelledby="trailUpdateConfirmTitle">
       <div class="dialog-card">
         <div class="dialog-heading">
@@ -2492,7 +2510,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-657`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-658`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

@@ -757,6 +757,12 @@
   .trail-reason-selection-bar > button { min-height:44px; white-space:normal; }
   .trail-selected-confirm .trail-reason-comparison { grid-template-columns:minmax(0,1fr); }
   #trailUpdateCommitButton { min-height:48px; white-space:normal; }
+  #trailAttributeUpdatePage .trail-update-result-actions .button { min-height:44px; white-space:normal; }
+  #trailNonExclusionDialog .dialog-card { padding:14px; gap:12px; }
+  #trailNonExclusionDialog textarea { min-height:100px; font-size:16px; }
+  #trailNonExclusionDialog .dialog-actions { flex-wrap:wrap; padding-bottom:env(safe-area-inset-bottom); }
+  #trailNonExclusionDialog .dialog-actions .button { min-height:48px; white-space:normal; }
+  #trailNonExclusionDialog .icon-button { min-width:44px; min-height:44px; }
   .trail-reason-details, .trail-reason-comparison { width:100%; min-width:0; }
 }
 
