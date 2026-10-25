@@ -15,6 +15,11 @@ from .web_paths import normalize_base_path
 HEADER_NAME_RE = re.compile(r"^[A-Za-z0-9-]{1,128}$")
 IDENTITY_NAME_RE = re.compile(r"^[A-Za-z0-9._@-]{1,128}$")
 FIELD_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,127}$")
+DASHBOARD_SSO_APP_IDS = {
+    "auto-triage.intra.xiaojukeji.com": "2103794",
+    "ra-model.intra.xiaojukeji.com": "2103860",
+}
+DASHBOARD_RETURN_HOSTS = frozenset(DASHBOARD_SSO_APP_IDS)
 
 
 def _path(name: str, default: Path) -> Path:
@@ -48,7 +53,7 @@ def _dashboard_return_url(name: str, value: str, base_path: str) -> str:
     expected_prefix = f"{base_path}/" if base_path else "/"
     if (
         parsed.scheme != "https"
-        or parsed.hostname != "auto-triage.intra.xiaojukeji.com"
+        or parsed.hostname not in DASHBOARD_RETURN_HOSTS
         or parsed.username
         or parsed.password
         or parsed.port not in {None, 443}
@@ -56,7 +61,7 @@ def _dashboard_return_url(name: str, value: str, base_path: str) -> str:
         or parsed.fragment
     ):
         raise RuntimeError(
-            f"{name} 必须是 auto-triage.intra.xiaojukeji.com 的 {expected_prefix} HTTPS 地址。"
+            f"{name} 必须是受信任 Dashboard 域名的 {expected_prefix} HTTPS 地址。"
         )
     return value
 
@@ -363,12 +368,6 @@ class Settings:
             or "X-RA-Triage-Ingress"
         )
         kylin_sso_enabled = _bool("DASHBOARD_KYLIN_SSO_ENABLED", True)
-        kylin_sso_app_id = (
-            os.getenv("DASHBOARD_KYLIN_SSO_APP_ID", "2103794").strip()
-            or "2103794"
-        )
-        if not kylin_sso_app_id.isdigit():
-            raise RuntimeError("DASHBOARD_KYLIN_SSO_APP_ID 必须是数字。")
         try:
             kylin_sso_timeout_seconds = float(
                 os.getenv("DASHBOARD_KYLIN_SSO_TIMEOUT_SECONDS", "1.5")
@@ -401,6 +400,11 @@ class Settings:
             ).strip(),
             base_path,
         )
+        kylin_sso_app_id = os.getenv("DASHBOARD_KYLIN_SSO_APP_ID", "").strip() or (
+            DASHBOARD_SSO_APP_IDS[urlparse(kylin_sso_return_url).hostname]
+        )
+        if not kylin_sso_app_id.isdigit():
+            raise RuntimeError("DASHBOARD_KYLIN_SSO_APP_ID 必须是数字。")
         kylin_sso_logout_url = _kylin_logout_url(
             kylin_sso_logout_endpoint,
             kylin_sso_app_id,
