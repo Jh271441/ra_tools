@@ -313,6 +313,12 @@ async function setBaselineScopes(
       await loadLabelingSummary();
       return;
     }
+    if (state.activePage === "labeling-new-task") {
+      await Promise.all([loadCaseLabelingTasks(), loadLabelingCombinedTasks(),
+        loadCaseLabelingCases({ page: 1, persistRoute: false })]);
+      if (isPageContextCurrent(pageContext)) updateLabelingTaskEstimate();
+      return;
+    }
     if (state.activePage === "labeling") {
       state.selectedRunId = "";
       await enterCaseLabeling({ route: parsePageRoute() });
@@ -759,6 +765,11 @@ async function refreshChangedDataNow() {
     });
     return;
   }
+  if (state.activePage === "labeling-new-task") {
+    // Collaboration updates must not reset the in-progress assignment form.
+    await Promise.all([loadCaseLabelingTasks(), loadLabelingCombinedTasks()]);
+    return;
+  }
   if (state.activePage === "labeling-summary") {
     await loadLabelingSummary();
     return;
@@ -864,6 +875,7 @@ function sharedChangeNeedsRefresh(topics) {
     runs: ["runs", "batch"],
     comparison: ["runs", "data"],
     "review-assignments": ["review", "data", "runs"],
+    "labeling-new-task": ["labeling", "review", "data", "runs"],
     prediction: ["batch", "runs"],
     intent: ["intent"],
     "intent-experiments": ["intent"],

@@ -562,7 +562,7 @@ async function enterLabelingNewTask({ route = null } = {}) {
     return;
   }
   restoreCaseLabelingRouteState(route);
-  await loadCaseLabelingTasks();
+  await Promise.all([loadCaseLabelingTasks(), loadLabelingCombinedTasks()]);
   renderCaseLabelingStatusPicker();
   renderCaseLabelingAuthorPicker();
   renderCaseLabelingAssigneePicker();
@@ -701,6 +701,7 @@ async function generateLabelingTask() {
 }
 
 function bindLabelingTaskControls() {
+  $("#labelingCombinedTaskRefresh")?.addEventListener("click", () => loadLabelingCombinedTasks());
   bindAssignmentNameInput("labeling");
   $("#caseLabelingCreateTask")?.addEventListener("click", () => {
     if (!state.session?.is_admin) {

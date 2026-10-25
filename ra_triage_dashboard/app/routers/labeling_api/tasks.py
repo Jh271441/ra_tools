@@ -12,11 +12,29 @@ import asyncio
 from ...runtime import database
 from ...work_split import distribute_issue_ids
 from ...work_split import normalize_overlap_ratio
-from ...support.baselines import resolve_request_baseline_scopes
+from ...support.baselines import resolve_request_baseline_scopes, resolve_request_baseline_ids
 from ...db_parts.task_lifecycle import normalize_task_lifecycle
 from .common import _active_labeling_scopes, _labeling_filter_values, _require_labeling_writer
+from ...combined_task_summary import combined_task_summaries
+from ...runtime import baseline_registry
 
 router = APIRouter()
+
+
+@router.get("/api/labeling/combined-tasks")
+async def list_combined_labeling_tasks(request: Request, baselines: str = "") -> dict[str, Any]:
+    await _require_labeling_writer(request)
+    scopes = await _active_labeling_scopes(resolve_request_baseline_scopes(baselines, request=request))
+    items = await asyncio.to_thread(combined_task_summaries, database, scopes)
+    baseline_ids = resolve_request_baseline_ids(baselines, request=request)
+    if baseline_ids and all(value.startswith('version-') for value in baseline_ids):
+        datasets = {'release-' + value[8:] + '-odd2' for value in baseline_ids}
+        items = [item for item in items if item['dataset_id'] in datasets]
+    for item in items:
+        if not item['appendable']:
+            item['baseline_ids'] = [entry.id for entry in baseline_registry.entries
+                                    if entry.scope in item['baseline_scopes']]
+    return {"items": items, "baseline_scopes": scopes}
 
 
 @router.get("/api/labeling/tasks")

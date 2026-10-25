@@ -5,7 +5,7 @@ serialization and active-scope guards have one explicit owner in common.
 """
 from fastapi import APIRouter
 from .labeling_api.common import _labeling_filter_values, _public_label_attachment, _public_label_case, _public_label_revision, _labeling_actor, _labeling_snapshot_actor, _snapshot_allow_partial, _require_labeling_admin, _require_labeling_writer, _active_labeling_scopes, _require_active_labeling_issue, _require_active_gt_export_batch, _labeling_payload
-from .labeling_api.tasks import list_labeling_tasks, create_labeling_task
+from .labeling_api.tasks import list_labeling_tasks, create_labeling_task, list_combined_labeling_tasks
 from .labeling_api.tasks import router as tasks_router
 from .labeling_api.queries import list_labeling_cases, labeling_summary, list_labeling_clusters, get_labeling_case
 from .labeling_api.queries import router as queries_router
@@ -21,6 +21,7 @@ from .labeling_api.exports import create_gt_export_preview, get_gt_export_previe
 from .labeling_api.exports import router as exports_router
 
 router = APIRouter()
+router.routes.append(next(route for route in tasks_router.routes if route.endpoint is list_combined_labeling_tasks))
 router.routes.append(next(route for route in tasks_router.routes if route.endpoint is list_labeling_tasks))
 router.routes.append(next(route for route in tasks_router.routes if route.endpoint is create_labeling_task))
 router.routes.append(next(route for route in queries_router.routes if route.endpoint is list_labeling_cases))

@@ -291,6 +291,15 @@
   .intent-experiment-form-footer { align-items: stretch; flex-direction: column; gap: 9px; }
   .intent-experiment-form-footer .button { width: 100%; }
   .intent-experiment-item { grid-template-columns: minmax(0, 1fr); }
+  .labeling-combined-task > .button { justify-self: start; min-height: 44px; max-width: 100%; white-space: normal; }
+  .labeling-combined-task .intent-experiment-progress { grid-template-columns: minmax(60px, 1fr) auto; }
+  .labeling-combined-people { flex-direction: column; gap: 10px; }
+  #labelingCombinedTaskRefresh { min-height: 44px; }
+  .intent-experiment-section-heading.labeling-combined-heading { display: flex; flex-direction: row; align-items: center; flex-wrap: wrap; }
+  .labeling-combined-heading h3 { flex: 1 1 100%; }
+  .labeling-combined-heading .intent-experiment-count { flex: 0 0 auto; }
+  .assignment-composer .case-experiment-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .case-experiment-fields > .labeling-task-name { grid-column: 1 / -1; }
   .intent-experiment-controls { justify-content: flex-start; flex-wrap: wrap; }
   .intent-experiment-controls .button { min-height: 44px; }
   .intent-experiment-progress { grid-template-columns: minmax(0, 1fr); }

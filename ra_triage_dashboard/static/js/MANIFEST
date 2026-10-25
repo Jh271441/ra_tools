@@ -40,6 +40,7 @@ review-attachments.js
 review-form.js
 case-label-explanation.js
 case-labeling.js
+labeling-combined-tasks.js
 case-label-decision.js
 case-exclusion-decision.js
 media-dialog.js
