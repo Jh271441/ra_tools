@@ -10,7 +10,7 @@ from fastapi import HTTPException
 from ra_triage_dashboard.app.routers.trail_update import selection as selected
 from ra_triage_dashboard.app.routers.trail_update import commit
 from ra_triage_dashboard.app.trail_exclusion_contracts import exclusion_comparison, trail_update_details
-from ra_triage_dashboard.app.trail_writer import build_trail_changes
+from ra_triage_dashboard.app.trail_writer import build_trail_changes, verify_trail_readback
 
 INFO = "ra_stuck_auto_result_info"
 
@@ -25,6 +25,13 @@ def item(issue="cn00000001", reason="new", revision=1):
                 **({"should_exclude_comment": reason} if reason else {})}}}}
 
 class ReasonComparisonTest(unittest.TestCase):
+    def test_readback_requires_boolean_not_numeric_equivalence(self):
+        for expected, numeric in ((False, 0), (True, 1)):
+            changes = [{"issue_id": "cn00000001", INFO: {"ra_triage_dashboard": {"should_exclude": expected}}}]
+            rows = [{"issue_id": "cn00000001", INFO: {"ra_triage_dashboard": {"should_exclude": numeric}}}]
+            self.assertFalse(verify_trail_readback(changes, rows)["ok"])
+            self.assertTrue(verify_trail_readback(changes, changes)["ok"])
+
     def test_matrix_and_empty_reason_preserves_exact_remote(self):
         for marker, remote, local, expected in [
             (True,"same","same","synced"), (True,"","","excluded_no_reason"),
@@ -111,6 +118,7 @@ class SelectedUpdateTest(unittest.IsolatedAsyncioTestCase):
             (selected,"_build_preview",candidates),(selected,"read_trail_model_fields",read),
             (commit,"read_trail_model_fields",read),(selected,"write_trail_model_results",write),
             (selected,"_audit",self.audit),
+            (selected,"resolve_request_baseline_scopes",lambda *a, **k:["scope"]),
         ]:
             p=patch.object(obj,name,value);p.start();self.addCleanup(p.stop)
 
@@ -118,6 +126,119 @@ class SelectedUpdateTest(unittest.IsolatedAsyncioTestCase):
         return await selected.selection_preview(request({"issue_ids":["cn00000001"],"intent":"reason_only",**extra}))
     async def submit(self,preview,**extra):
         return await selected.selection_commit(request({"confirm":True,"payload_sha256":preview["payload_sha256"],**extra}))
+
+    def false_vote(self, author="alice", excluded=False, previous=None):
+        selected.database.upsert_issues(
+            [{"issue_id": "cn00000001", "gt_label": "正确触发"}],
+            source="test", replace_gt=True, baseline_scope="scope")
+        return selected.database.create_label_revision(issue_id="cn00000001",
+            expected_output="正确触发", tags=[], evidence_gaps=[], rationale="local rationale",
+            is_excluded=excluded, author=author, author_source="test", author_verified=True,
+            expected_previous_revision_id=previous)
+
+    async def non_preview(self, **extra):
+        return await selected.non_exclusion_preview(request({"issue_ids": ["cn00000001"], **extra}))
+
+    async def test_non_exclusion_preserves_reason_and_audits_boolean_false(self):
+        vote = self.false_vote()
+        self.rows[0][INFO]["ra_triage_dashboard"]["should_exclude_comment"] = "  original\n text  "
+        preview = await self.non_preview()
+        self.assertEqual(preview["intent"], "unexclude")
+        change = preview["items"][0]
+        self.assertEqual(change["target"]["patch"], {"ra_triage_dashboard": {"should_exclude": False}})
+        self.assertEqual(change["case_label_source"]["revision_ids"], [vote["id"]])
+        self.assertEqual(change["reason_source"]["rationale"], "local rationale")
+        self.assertEqual(change["after"]["should_exclude_comment"], "  original\n text  ")
+        self.assertFalse(self.writes)
+        result = await selected.non_exclusion_commit(request({"confirm": True, "payload_sha256": preview["payload_sha256"]}))
+        self.assertTrue(result["ok"])
+        self.assertIs(self.rows[0][INFO]["ra_triage_dashboard"]["should_exclude"], False)
+        self.assertEqual(self.rows[0][INFO]["ra_triage_dashboard"]["should_exclude_comment"], "  original\n text  ")
+        self.assertEqual(self.rows[0][INFO]["other"], 17)
+        self.assertEqual(self.rows[0][INFO]["model_result"], {"label": "keep"})
+        self.assertEqual(set(self.writes[0]), {"issue_id", INFO})
+        operation = selected.database.trail_operation(preview["payload_sha256"])
+        self.assertIs(operation["items"][0]["before"]["should_exclude"], True)
+        self.assertIs(operation["items"][0]["after"]["should_exclude"], False)
+        self.assertEqual((await self.submit(preview))["submitted_count"], 0)
+        self.assertEqual(len(self.writes), 1)
+        self.assertEqual(selected.database.project_issue_exclusions(["cn00000001"])["cn00000001"]["revision_ids"], [vote["id"]])
+
+    async def test_non_exclusion_rejects_unknown_true_other_author_and_stale_local(self):
+        with self.assertRaises(HTTPException): await self.non_preview()
+        first = self.false_vote()
+        preview = await self.non_preview()
+        self.false_vote("bob", excluded=True)
+        with self.assertRaises(HTTPException): await self.submit(preview)
+        with self.assertRaises(HTTPException): await self.non_preview()
+        self.assertFalse(self.writes)
+
+    async def test_non_exclusion_revision_scope_run_and_remote_guards(self):
+        first = self.false_vote()
+        with self.assertRaises(HTTPException): await self.non_preview(model_run_id="missing-run")
+        with patch.object(selected, "resolve_request_baseline_scopes", return_value=["other"]):
+            with self.assertRaises(HTTPException): await self.non_preview()
+        preview = await self.non_preview()
+        self.false_vote(previous=first["id"])
+        with self.assertRaises(HTTPException): await self.submit(preview)
+        preview = await self.non_preview()
+        self.rows[0][INFO]["ra_triage_dashboard"]["should_exclude_comment"] = "changed remotely"
+        with self.assertRaises(HTTPException): await self.submit(preview)
+        for marker in (False, "false", 0, 1, "true", []):
+            self.rows[0][INFO]["ra_triage_dashboard"]["should_exclude"] = marker
+            with self.assertRaises(HTTPException): await self.non_preview()
+        self.assertFalse(self.writes)
+
+    async def test_non_exclusion_missing_marker_and_strict_route_intent(self):
+        self.false_vote()
+        with self.assertRaises(HTTPException): await self.non_preview(intent="exclude")
+        reason_preview = await self.preview()
+        with self.assertRaises(HTTPException):
+            await selected.non_exclusion_commit(request({"confirm": True, "payload_sha256": reason_preview["payload_sha256"]}))
+        self.rows[0][INFO] = {"other": 17}
+        preview = await self.non_preview()
+        self.assertEqual(preview["items"][0]["after"], {"should_exclude": False})
+        self.assertTrue((await self.submit(preview))["ok"])
+        self.assertNotIn("should_exclude_comment", self.rows[0][INFO]["ra_triage_dashboard"])
+
+    async def test_non_exclusion_remote_numeric_change_is_not_idempotent_success(self):
+        self.false_vote()
+        preview = await self.non_preview()
+        self.rows[0][INFO]["ra_triage_dashboard"]["should_exclude"] = 1
+        with self.assertRaises(HTTPException): await self.submit(preview)
+        self.assertFalse(self.writes)
+        self.rows[0][INFO]["ra_triage_dashboard"]["should_exclude"] = True
+        self.assertTrue((await self.submit(preview))["ok"])
+        self.rows[0][INFO]["ra_triage_dashboard"]["should_exclude"] = 0
+        with self.assertRaises(HTTPException): await self.submit(preview)
+        self.assertEqual(len(self.writes), 1)
+
+    async def test_non_exclusion_shared_auth_confirmation_audit_and_retry_guards(self):
+        self.false_vote()
+        with patch.object(selected, "has_same_origin_mutation_marker", return_value=False):
+            with self.assertRaises(HTTPException): await self.non_preview()
+        with patch.object(selected, "identity_can_write", return_value=False):
+            with self.assertRaises(HTTPException): await self.non_preview()
+        selected.settings.trail_attribute_review_write_enabled = False
+        with self.assertRaises(HTTPException): await self.non_preview()
+        selected.settings.trail_attribute_review_write_enabled = True
+        preview = await self.non_preview()
+        with self.assertRaises(HTTPException): await self.submit(preview, confirm=False)
+        self.actor.username = "bob"
+        with self.assertRaises(HTTPException): await self.submit(preview)
+        self.actor.username = "alice"
+        self.audit.side_effect = RuntimeError("audit unavailable")
+        with self.assertRaises(RuntimeError): await self.submit(preview)
+        self.assertFalse(self.writes)
+        self.audit.side_effect = None
+        original = selected.write_trail_model_results
+        def timeout(changes, **kwargs):
+            original(changes, **kwargs)
+            raise TimeoutError("lost response")
+        with patch.object(selected, "write_trail_model_results", timeout):
+            with self.assertRaises(TimeoutError): await self.submit(preview)
+        self.assertTrue((await self.submit(preview))["ok"])
+        self.assertEqual(len(self.writes), 1)
 
     async def test_selected_subset_tampering_idempotence_readback_and_other_keys(self):
         preview=await self.preview()

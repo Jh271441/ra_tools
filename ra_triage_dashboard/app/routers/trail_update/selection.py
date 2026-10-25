@@ -12,6 +12,7 @@ from fastapi import APIRouter, Request
 from ...auth import has_same_origin_mutation_marker, identity_can_write, request_identity
 from ...runtime import database, settings
 from ...support.common import _detail
+from ...support.baselines import resolve_request_baseline_scopes
 from ...trail_exclusion_contracts import canonical_json, normalise_issue_ids, normalise_trail_info_value, trail_update_details
 from ...trail_sync import read_trail_model_fields
 from ...trail_audit import audited_write, reconcile_existing
@@ -72,7 +73,15 @@ async def _body(request):
     return body
 
 
-async def _candidates(request, run_id, baselines, issue_ids):
+async def _candidates(request, run_id, baselines, issue_ids, intent="reason_only"):
+    if intent == "unexclude":
+        scopes = await asyncio.to_thread(resolve_request_baseline_scopes, baselines, request=request)
+        items = await asyncio.to_thread(database.trail_non_exclusion_candidates,
+            issue_ids, baseline_scopes=scopes, model_run_id=run_id)
+        if len(items) != len(issue_ids) or {item["issue_id"] for item in items} != set(issue_ids):
+            raise _detail(409, "所选案例必须有当前有效且明确的不排除结论；未标注、待裁决或范围外案例不可提交 / Selected cases need a current explicit non-exclusion outcome; unannotated, unresolved or out-of-scope cases cannot be submitted")
+        by_id = {item["issue_id"]: item for item in items}
+        return [by_id[issue] for issue in issue_ids]
     preview = await _build_preview(request, selected_run_id=run_id, baselines=baselines,
                                    probe_trail=False, fresh_local=True)
     by_id = {item["issue_id"]: item for item in preview["items"]}
@@ -95,13 +104,22 @@ async def _snapshot(issue_ids):
 
 @router.post("/api/trail-attribute-update/selection-preview")
 async def selection_preview(request: Request) -> dict[str, Any]:
+    return await _selection_preview(request)
+
+
+@router.post("/api/trail-attribute-update/non-exclusion-preview")
+async def non_exclusion_preview(request: Request) -> dict[str, Any]:
+    return await _selection_preview(request, required_intent="unexclude")
+
+
+async def _selection_preview(request, required_intent=None):
     identity = await _authorized(request)
     body = await _body(request)
     ids, invalid = normalise_issue_ids(body.get("issue_ids", []))
     if invalid or not ids or len(ids) > 200:
         raise _detail(422, "请选择 1–200 个有效 Issue / Select 1–200 valid Issues")
-    intent = body.get("intent", "reason_only")
-    if intent not in {"reason_only", "exclude"}:
+    intent = body.get("intent", required_intent or "reason_only")
+    if intent not in {"reason_only", "exclude", "unexclude"} or (required_intent and intent != required_intent):
         raise _detail(422, "未知更新类型 / Unknown update type")
     run_id = str(body.get("model_run_id") or "")
     baselines = body.get("baselines") or ""
@@ -109,7 +127,7 @@ async def selection_preview(request: Request) -> dict[str, Any]:
         baselines = ",".join(str(item) for item in baselines)
     if not isinstance(baselines, str):
         raise _detail(422, "数据集格式错误 / Invalid datasets")
-    items = await _candidates(request, run_id, baselines, ids)
+    items = await _candidates(request, run_id, baselines, ids, intent)
     result, before = await _snapshot(ids)
     _, info_field = _field_names()
     details = trail_update_details(result, ids, info_field=info_field,
@@ -119,10 +137,19 @@ async def selection_preview(request: Request) -> dict[str, Any]:
         issue = item["issue_id"]
         detail = details[issue]
         eligible = (detail["trail_should_exclude"] is True and detail["needs_reason_update"]) if intent == "reason_only" else detail["needs_exclusion_update"]
+        if intent == "unexclude":
+            marker = before[issue].get("should_exclude")
+            eligible = marker is True or marker is None
+            detail = {**detail, "state": "needs_non_exclusion" if eligible else "not_eligible",
+                "local_should_exclude": False, "needs_exclusion_update": False,
+                "needs_reason_update": False, "needs_non_exclusion_update": eligible,
+                "comment_policy": "preserve_remote"}
         if not eligible:
             raise _detail(409, f"{issue}: 当前状态不支持所选操作，请重新预览 / State changed; preview again")
         patch = {"should_exclude_comment": detail["local_comment"]} if intent == "reason_only" else {
             "should_exclude": True, **({"should_exclude_comment": detail["local_comment"]} if detail["local_comment"] else {})}
+        if intent == "unexclude":
+            patch = {"should_exclude": False}
         selected.append({**{key:item.get(key) for key in ("issue_id", "comment", "reason_source", "case_label_source", "baseline_id")}, "trail_detail": detail, "trail_update_status": "pending",
                          "target": {"patch": {"ra_triage_dashboard": patch}},
                          "before": before[issue], "after": {**before[issue], **patch}})
@@ -165,6 +192,15 @@ async def _audit(receipt, digest, identity, status, verified=(), failed=()):
 
 @router.post("/api/trail-attribute-update/selection-commit")
 async def selection_commit(request: Request) -> dict[str, Any]:
+    return await _selection_commit(request)
+
+
+@router.post("/api/trail-attribute-update/non-exclusion-commit")
+async def non_exclusion_commit(request: Request) -> dict[str, Any]:
+    return await _selection_commit(request, required_intent="unexclude")
+
+
+async def _selection_commit(request, required_intent=None):
     identity = await _authorized(request)
     body = await _body(request)
     if body.get("confirm") is not True:
@@ -176,8 +212,10 @@ async def selection_commit(request: Request) -> dict[str, Any]:
             raise _detail(409, "请勾选案例并重新预览；预览已过期 / Select cases and preview again; preview expired")
         if receipt["actor"] != identity.username:
             raise _detail(403, "预览操作人与当前用户不同 / Preview belongs to another user")
+        if required_intent and receipt["intent"] != required_intent:
+            raise _detail(409, "预览类型不符，请重新预览不排除更新 / Preview intent mismatch; preview non-exclusion again")
         ids = receipt["issue_ids"]
-        items = await _candidates(request, receipt["model_run_id"], receipt["baselines"], ids)
+        items = await _candidates(request, receipt["model_run_id"], receipt["baselines"], ids, receipt["intent"])
         if _local_fingerprint(items) != receipt["local_fingerprint"]:
             raise _detail(409, "本地理由版本已变化，请重新预览 / Local reason version changed; preview again")
         snapshot, current = await _snapshot(ids)
@@ -185,9 +223,9 @@ async def selection_commit(request: Request) -> dict[str, Any]:
         for item in receipt["items"]:
             issue = item["issue_id"]
             desired = {**item["after"], "operation_id": digest}
-            if current[issue] == desired:
+            if canonical_json(current[issue]) == canonical_json(desired):
                 skipped.append(issue)
-            elif current[issue] != receipt["before"][issue]:
+            elif canonical_json(current[issue]) != canonical_json(receipt["before"][issue]):
                 raise _detail(409, f"{issue}: Trail 内容已变化，请重新预览 / Trail changed; preview again")
             else:
                 pending.append(item)

@@ -10,6 +10,61 @@ from .labeling_shared import ISSUE_LABEL_GT_RELATIONS, ISSUE_LABEL_STATES, _clea
 
 
 class LabelingProjectionMixin:
+    def trail_non_exclusion_candidates(self, issue_ids, *, baseline_scopes, model_run_id=""):
+        """Explicit current false outcomes, not absence of an exclusion vote.
+
+        Re-read all source heads (not just the requesting author's/Run's votes).
+        Scope/Run select membership only; they must not hide a conflicting vote.
+        No historical-only reconciliation or legacy Run fallback authorizes false.
+        """
+        from ..labeling_rules import case_exclusion_projection
+
+        if not issue_ids or not baseline_scopes:
+            return []
+        members = self.list_cases(baseline_scopes=baseline_scopes,
+            model_run_id=model_run_id, issue_ids=issue_ids, page_size=len(issue_ids))["items"]
+        members = [row for row in members if not model_run_id or
+                   (row.get("prediction") or {}).get("model_run_id") == model_run_id]
+        cases_by_issue = self._batch_label_cases([row["issue_id"] for row in members])
+        decisions = self._current_full_issue_decisions(cases_by_issue)
+        result = []
+        for row in members:
+            issue = row["issue_id"]
+            cases = cases_by_issue.get(issue, [])
+            decision = decisions.get(issue)
+            if decision and decision.get("stale"):
+                continue
+            if not (decision and decision.get("full_result")):
+                # Even an unchecked checkbox in a draft/incomplete assignment
+                # must never cancel a remote exclusion.
+                if not cases or any((case.get("resolution") or {}).get("state") != "resolved"
+                                    for case in cases):
+                    continue
+                effective = [revision for case in cases
+                    for revision in ([case["resolution"].get("result_revision") or {}]
+                        if case["resolution"].get("method") == "adjudication"
+                        else case["resolution"].get("heads") or [])]
+                if not effective or any(revision.get("is_excluded") is not False for revision in effective):
+                    continue
+            projection = case_exclusion_projection(cases, decision)
+            if not projection or projection.get("is_excluded") is not False:
+                continue
+            revision = projection["revision"]
+            result.append({"issue_id": issue, "baseline_scope": row["baseline_scope"],
+                # Empty on purpose: build_trail_changes uses this to write the
+                # remote reason. Local rationale is audit evidence only here.
+                "comment": "", "reason_source": {
+                    "kind": "issue_decision" if projection.get("decision_id") else "case_label",
+                    "rationale": revision.get("rationale", ""),
+                    "decision_rationale": revision.get("review_rationale", ""),
+                    "author": revision.get("author", "")},
+                "case_label_source": {"revision_ids": projection["revision_ids"],
+                    "decision_id": projection.get("decision_id"),
+                    "source_fingerprint": _sha256_json({"cases": cases, "decision": decision,
+                        "baseline_scope": row["baseline_scope"], "model_run_id": model_run_id})},
+                "target": {"patch": {"ra_triage_dashboard": {"should_exclude": False}}}})
+        return result
+
     def project_issue_exclusions(self, issue_ids):
         from ..labeling_rules import case_exclusion_projection
         cases_by_issue = self._batch_label_cases(issue_ids)

@@ -166,6 +166,9 @@ def verify_trail_readback(
         from .trail_exclusion_contracts import normalise_exclusion_comment
         for key in ("operation_id", "should_exclude", "should_exclude_comment"):
             actual_value, expected_value = dashboard.get(key), expected_dashboard.get(key)
+            if key == "should_exclude" and isinstance(expected_value, bool) and actual_value is not expected_value:
+                mismatched.append(issue_id)
+                break
             if key == "should_exclude_comment":
                 actual_value = normalise_exclusion_comment(actual_value)
                 expected_value = normalise_exclusion_comment(expected_value)
