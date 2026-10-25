@@ -86,7 +86,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-656`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-657`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -558,7 +558,7 @@
               <form class="review-filters case-labeling-filters" id="caseLabelingFilterForm" data-mobile-filter-panel="caseLabelingFilters">
               <label class="case-labeling-search"><span>Issue</span><div class="issue-query-control"><input id="caseLabelingSearch" type="search" placeholder="Issue ID、场景" autocomplete="off" /><button class="button button-quiet issue-query-button" id="openCaseLabelingIssueQueryButton" data-issue-query-target="labeling" type="button">多 Issue</button></div></label>
               <label><span>标注任务</span><div class="ui-select" id="caseLabelingTaskPicker"><button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="ui-select-summary" id="caseLabelingTaskSummary">全部标注</span><span class="ui-select-caret" aria-hidden="true"></span></button><div class="ui-select-panel" role="listbox" hidden></div><select class="ui-select-native" id="caseLabelingTask" aria-hidden="true" tabindex="-1"><option value="">全部标注</option></select></div></label>
-              <label><span>结果状态</span><div class="multi-filter" id="caseLabelingStatusPicker" data-placeholder="全部状态" data-placeholder-en="All states"></div></label>
+              <label><span class="ui-lang-zh">结果状态</span><span class="ui-lang-en">Result status</span><div class="multi-filter" id="caseLabelingStatusPicker" data-placeholder="全部状态" data-placeholder-en="All states"></div></label>
               <label><span>标注人</span><div class="multi-filter" id="caseLabelingAuthorPicker" data-placeholder="全部标注人" data-placeholder-en="All labelers"></div></label>
               <label><span>任务负责人</span><div class="multi-filter" id="caseLabelingAssigneePicker" data-placeholder="全部负责人" data-placeholder-en="All assignees"></div></label>
               <label><span>GT</span><div class="multi-filter" id="caseLabelingGtPicker" data-placeholder="全部 GT" data-placeholder-en="All GT"></div></label>
@@ -2492,7 +2492,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-656`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-657`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

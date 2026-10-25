@@ -126,6 +126,20 @@ function updateMultiFilterSummary(root) {
   summary.classList.add("has-value");
 }
 
+function relabelMultiFilter(root, options) {
+  const inputs = [...root.querySelectorAll('input[type="checkbox"][data-multi-value]')];
+  // Relabel in place only when membership/order is unchanged, preserving an
+  // open menu's focus, selection and event bindings during locale changes.
+  if (inputs.length !== options.length || inputs.some((input, index) => input.value !== String(options[index].value ?? options[index].key ?? ""))) return false;
+  inputs.forEach((input, index) => {
+    const label = String(options[index].label ?? input.value);
+    input.dataset.label = label;
+    input.nextElementSibling.textContent = label;
+  });
+  updateMultiFilterSummary(root);
+  return true;
+}
+
 function setMultiFilterValues(root, values) {
   if (!root) return;
   const selected = new Set(parseFilterList(values));

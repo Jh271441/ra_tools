@@ -1,6 +1,6 @@
 """Labeling queries HTTP contracts."""
 from __future__ import annotations
-from ...labeling_rules import case_exclusion_projection
+from ...labeling_rules import LABELING_FILTER_STATUSES, case_exclusion_projection
 from fastapi import APIRouter
 from typing import Any
 from ...db import LABELS
@@ -41,8 +41,8 @@ async def list_labeling_cases(
     await _require_labeling_writer(request)
     normalized_status = _labeling_filter_values(
         status,
-        allowed={"pending", "resolved", "conflict"},
-        error="标注状态不合法。",
+        allowed=LABELING_FILTER_STATUSES,
+        error="标注状态不合法 / Invalid labeling status.",
         lower=True,
     )
     scopes = resolve_request_baseline_scopes(baselines, request=request)
@@ -155,8 +155,8 @@ async def labeling_summary(
     )
     normalized_status = _labeling_filter_values(
         status,
-        allowed={"pending", "resolved", "conflict"},
-        error="标注状态不合法。",
+        allowed=LABELING_FILTER_STATUSES,
+        error="标注状态不合法 / Invalid labeling status.",
         lower=True,
     )
     normalized_exclusion = _labeling_filter_values(
@@ -238,8 +238,8 @@ async def list_labeling_clusters(
     await _require_labeling_writer(request)
     normalized_status = _labeling_filter_values(
         status,
-        allowed={"pending", "resolved", "conflict"},
-        error="标注状态不合法。",
+        allowed=LABELING_FILTER_STATUSES,
+        error="标注状态不合法 / Invalid labeling status.",
         lower=True,
     )
     scopes = resolve_request_baseline_scopes(baselines, request=request)

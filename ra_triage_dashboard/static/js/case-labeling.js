@@ -28,7 +28,7 @@ function restoreCaseLabelingRouteState(route = null) {
   state.caseLabeling.taskId = filters.taskId ?? state.caseLabeling.taskId;
   state.caseLabeling.search = filters.search ?? state.caseLabeling.search;
   state.caseLabeling.issueIds = filters.issueIds ?? state.caseLabeling.issueIds;
-  state.caseLabeling.status = parseFilterList(filters.status ?? state.caseLabeling.status);
+  state.caseLabeling.status = normalizedLabelingStatusFilters(filters.status ?? state.caseLabeling.status);
   state.caseLabeling.author = parseFilterList(filters.author ?? state.caseLabeling.author);
   state.caseLabeling.assignee = parseFilterList(filters.assignee ?? state.caseLabeling.assignee);
   state.caseLabeling.cluster = filters.cluster ?? state.caseLabeling.cluster;
@@ -212,7 +212,10 @@ function renderCaseLabelingMultiPicker(selector, options, selected, key) {
     setMultiFilterValues(root, selected);
     return;
   }
-  if (root.classList.contains("is-open")) return;
+  if (root.classList.contains("is-open")) {
+    if (relabelMultiFilter(root, options)) root.dataset.optionsFingerprint = fingerprint;
+    return;
+  }
   renderMultiFilter(root, {
     options,
     selected,
@@ -222,11 +225,7 @@ function renderCaseLabelingMultiPicker(selector, options, selected, key) {
 }
 
 function renderCaseLabelingStatusPicker() {
-  renderCaseLabelingMultiPicker("#caseLabelingStatusPicker", [
-    { value: "pending", label: uiText("待补齐", "Incomplete") },
-    { value: "resolved", label: uiText("已确认", "Confirmed") },
-    { value: "conflict", label: uiText("有分歧 / 待复核", "Disagreement / Needs recheck") },
-  ], state.caseLabeling.status, "status");
+  renderCaseLabelingMultiPicker("#caseLabelingStatusPicker", labelingStatusFilterOptions(), state.caseLabeling.status, "status");
 }
 
 function renderCaseLabelingAuthorPicker() {

@@ -445,6 +445,8 @@
   .labeling-summary-actions { justify-content: stretch; }
   .labeling-summary-actions .button { flex: 1; }
   .multi-filter-option-row, .ui-select-option, .review-status-option { min-height: 44px; font-size: 14px; }
+  .multi-filter-option { min-height: 44px; box-sizing: border-box; font-size: 14px; }
+  .multi-filter-option span { white-space: normal; overflow-wrap: anywhere; text-overflow: clip; line-height: 1.4; }
   .ui-select-search, .multi-filter-search { font-size: 16px; min-height: 44px; }
   .ui-select-panel, .multi-filter-panel { max-width: calc(100vw - 24px); }
   .gallery-heading { gap: 10px; }

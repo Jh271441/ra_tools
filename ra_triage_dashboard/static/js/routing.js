@@ -95,6 +95,7 @@ function applyUiLanguage(language, { persist = true } = {}) {
     "refreshHistoryDialogLanguage",
     "refreshCaseExclusionLanguage",
     "syncCaseLabelingIssueExport",
+    "renderCaseLabelingStatusPicker",
     "refreshLabelSummaryLanguage",
   ];
   for (const name of refreshers) {
@@ -455,14 +456,29 @@ function normalizedRunsRouteFilters(params) {
   };
 }
 
+function normalizedLabelingStatusFilters(value, { submittedOnly = false } = {}) {
+  // Old pending meant both untouched and incomplete. Preserve gallery scope;
+  // summary already displays submitted Issues only.
+  return [...new Set(parseFilterList(value).flatMap((status) => status === "pending"
+    ? (submittedOnly ? ["incomplete"] : ["unannotated", "incomplete"])
+    : [status]))].filter((status) => ["unannotated", "incomplete", "resolved", "conflict"].includes(status));
+}
+
+function labelingStatusFilterOptions({ submittedOnly = false } = {}) {
+  return [
+    ...(!submittedOnly ? [{ value: "unannotated", label: uiText("未标注", "Not annotated") }] : []),
+    { value: "incomplete", label: uiText("已提交 · 待补齐", "Submitted · Incomplete") },
+    { value: "resolved", label: uiText("已确认", "Confirmed") },
+    { value: "conflict", label: uiText("有分歧 / 待复核", "Disagreement / Needs recheck") },
+  ];
+}
+
 function normalizedCaseLabelingRouteFilters(params) {
   const rawPage = Number.parseInt(params.get("page") || "1", 10);
   const rawPageSize = Number.parseInt(
     params.get("page_size") || String(DEFAULT_CASE_PAGE_SIZE), 10
   );
-  const status = parseFilterList(params.get("status")).filter((value) =>
-    ["pending", "resolved", "conflict"].includes(value)
-  );
+  const status = normalizedLabelingStatusFilters(params.get("status"));
   const label = parseFilterList(params.get("label")).filter((value) =>
     LABELS.includes(value)
   );

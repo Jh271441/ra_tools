@@ -4,6 +4,9 @@ from frontend_contract_fixtures import APP_ENTRY_JS, APP_JS, INDEX_HTML, STYLES_
 
 
 class FrontendLabelingContractTest(unittest.TestCase):
+    def test_case_status_filter_heading_is_bilingual(self) -> None:
+        self.assertIn('<span class="ui-lang-zh">结果状态</span><span class="ui-lang-en">Result status</span><div class="multi-filter" id="caseLabelingStatusPicker"', INDEX_HTML)
+
     def test_task_context_and_native_selects_use_product_components(self) -> None:
         self.assertIn("/api/review-task-context/", APP_JS)
         self.assertIn("历史无 Run 任务", APP_JS)

@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 from typing import Any
 from ...db import LABELS
+from ...labeling_rules import LABELING_FILTER_STATUSES
 from fastapi import Request
 from fastapi.responses import Response
 from ...support.common import _as_text
@@ -50,8 +51,8 @@ async def create_gt_export_preview(request: Request) -> dict[str, Any]:
     if not selected_issue_ids and filter_body:
         normalized_status = _labeling_filter_values(
             filter_body.get("status"),
-            allowed={"pending", "resolved", "conflict"},
-            error="标注状态不合法。",
+            allowed=LABELING_FILTER_STATUSES,
+            error="标注状态不合法 / Invalid labeling status.",
             lower=True,
         )
         normalized_exclusion = _labeling_filter_values(

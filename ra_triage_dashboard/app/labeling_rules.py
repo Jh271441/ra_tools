@@ -4,6 +4,26 @@ No runtime, database or presentation dependencies. Query filters and summary
 projections must use this same decision precedence and freshness policy.
 """
 
+LABELING_FILTER_STATUSES = frozenset({"pending", "unannotated", "incomplete", "resolved", "conflict"})
+
+
+def has_label_submission(item):
+    """Empty assignments are not submissions; an empty submitted label still is."""
+    return bool(item.get("decision")) or any(
+        (case.get("resolution") or {}).get("heads")
+        or (case.get("resolution") or {}).get("adjudication")
+        for case in item.get("label_cases") or []
+    )
+
+
+def labeling_filter_state(item):
+    """Split the pending query bucket without changing stored resolution states."""
+    status = item.get("label_state", "pending")
+    if status == "pending":
+        return "incomplete" if has_label_submission(item) else "unannotated"
+    return status
+
+
 def current_adjudication(item):
     if item.get("label_state") != "resolved":
         return None

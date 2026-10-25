@@ -92,6 +92,62 @@ class LabelingGtQueueTest(IsolatedAsyncioTestCase):
         self.assertEqual(self.db.change_revision(), before)
         self.writer.assert_awaited()
 
+    async def test_incomplete_filter_excludes_untouched_cases_across_gallery_summary_and_queue(self):
+        # A Case without an assignment and an untouched assignment both belong
+        # to Not annotated. A submitted blank conclusion is still real evidence.
+        self.db.upsert_issues([{"issue_id": "cn109", "gt_label": "正确触发"},
+                               {"issue_id": "cn110", "gt_label": "正确触发"}],
+                              source="fixture", replace_gt=True, baseline_scope="scope")
+        self.submit("cn110", "alice", "", rationale="historical blank conclusion")
+        before = self.db.change_revision()
+        expected = {
+            "unannotated": {"cn106", "cn109"},
+            "incomplete": {"cn105", "cn110"},
+            "conflict": {"cn104", "cn107"},
+            "pending": {"cn105", "cn106", "cn109", "cn110"},
+            "incomplete,conflict": {"cn104", "cn105", "cn107", "cn110"},
+        }
+        for status, ids in expected.items():
+            with self.subTest(status=status):
+                result = await queries.list_labeling_cases(self.request(), status=status, page_size=1, page=2)
+                self.assertEqual(set(result["queue_issue_ids"]), ids)
+                self.assertEqual(result["total"], len(ids))
+                self.assertEqual(len(result["items"]), 1)
+                self.assertEqual(set(self.db.labeling_case_issue_ids(baseline_scopes=["scope"], status=status)), ids)
+                summary = await queries.labeling_summary(self.request(), status=status)
+                self.assertEqual({item["issue_id"] for item in summary["items"]}, ids - {"cn106", "cn109"})
+                clusters = await queries.list_labeling_clusters(self.request(), status=status)
+                self.assertEqual(clusters["filters"]["status"], status.split(","))
+        incomplete = await queries.labeling_summary(self.request(), status="incomplete")
+        self.assertEqual(incomplete["gt_update_counts"], {"all": 2, "ready": 0, "blocked": 2})
+        self.assertTrue(all(item["label_state"] == "pending" for item in incomplete["items"]))
+        for kwargs in ({"author": "nobody"}, {"q": "not-present"}, {"issue_ids": "cn106"}):
+            result = await queries.list_labeling_cases(self.request(), status="incomplete", **kwargs)
+            self.assertEqual(result["queue_issue_ids"], [])
+        self.assertEqual(self.db.change_revision(), before)
+        # Export scoping uses the same new filter, not the whole baseline.
+        with patch.object(self.db, "labeling_case_issue_ids", wraps=self.db.labeling_case_issue_ids) as scope:
+            preview = await exports.create_gt_export_preview(self.request({
+                "baselines": "scope", "filters": {"status": "incomplete"}}))
+        self.assertEqual(scope.call_args.kwargs["status"], ["incomplete"])
+        self.assertEqual(preview["preview"]["item_count"], 0)
+        self.assertEqual(preview["preview"]["scope_summary"]["total"], 2)
+
+    async def test_incomplete_filter_preserves_task_scope_and_writer_guard(self):
+        partial = self.db.label_cases_for_issue("cn105")[0]["task_id"]
+        result = await queries.list_labeling_cases(self.request(), task_id=partial, status="incomplete")
+        self.assertEqual(result["queue_issue_ids"], ["cn105"])
+        empty = await queries.list_labeling_cases(self.request(), task_id=self.task_a, status="incomplete")
+        self.assertEqual(empty["queue_issue_ids"], [])
+        with self.assertRaises(HTTPException) as invalid:
+            await queries.list_labeling_cases(self.request(), status="not-a-state")
+        self.assertEqual(invalid.exception.status_code, 400)
+        with patch.object(queries, "_require_labeling_writer", AsyncMock(side_effect=HTTPException(403, "writer required"))), \
+             patch.object(self.db, "list_labeling_cases") as project:
+            with self.assertRaises(HTTPException):
+                await queries.list_labeling_cases(self.request(), status="incomplete")
+            project.assert_not_called()
+
     async def test_task_local_resolution_cannot_hide_global_conflict(self):
         local, _ = self.db._project_labeling_cases(baseline_scopes=["scope"], task_id=self.task_a)
         self.assertEqual(next(item for item in local if item["issue_id"] == "cn104")["label_state"], "resolved")

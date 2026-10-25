@@ -7,6 +7,30 @@ import unittest
 
 class GtQueueFrontendBehaviorTest(unittest.TestCase):
     @unittest.skipUnless(shutil.which("node"), "Node is required")
+    def test_open_status_filter_relabels_without_rebuilding_or_changing_selection(self):
+        root = Path(__file__).resolve().parents[1] / "static/js"
+        script = r'''
+const fs=require('fs'),vm=require('vm'),assert=require('assert/strict');
+const inputs=[{value:'incomplete',checked:true,dataset:{label:'Submitted · Incomplete'},nextElementSibling:{textContent:'Submitted · Incomplete'}}];
+const root={dataset:{optionsFingerprint:'old'},classList:{contains:()=>true},querySelectorAll:()=>inputs,querySelector:()=>({})};
+let updates=0;
+Object.assign(global,{$:()=>root,updateMultiFilterSummary:()=>updates++,renderMultiFilter:()=>{throw new Error('must not rebuild')},setMultiFilterValues:()=>{throw new Error('must preserve selection')}});
+function load(file,name){const text=fs.readFileSync(process.argv[1]+'/'+file,'utf8');const start=text.indexOf('function '+name+'(');const end=text.indexOf('\n}',start)+2;assert(start>=0);vm.runInThisContext(text.slice(start,end));}
+load('core-base.js','relabelMultiFilter');
+load('case-labeling.js','renderCaseLabelingMultiPicker');
+load('labeling-summary.js','renderLabelSummaryMultiPicker');
+const identity=inputs[0];
+renderCaseLabelingMultiPicker('#status',[{value:'incomplete',label:'已提交 · 待补齐'}],['incomplete'],'status');
+assert.equal(inputs[0],identity);assert.equal(inputs[0].checked,true);assert.equal(inputs[0].nextElementSibling.textContent,'已提交 · 待补齐');
+renderLabelSummaryMultiPicker('#status',[{value:'incomplete',label:'Submitted · Incomplete'}],['incomplete'],'status');
+assert.equal(inputs[0],identity);assert.equal(inputs[0].checked,true);assert.equal(inputs[0].dataset.label,'Submitted · Incomplete');assert.equal(updates,2);
+assert.equal(relabelMultiFilter(root,[{value:'resolved',label:'Confirmed'}]),false);
+assert.equal(inputs[0].dataset.label,'Submitted · Incomplete');
+'''
+        result = subprocess.run(["node", "-e", script, str(root)], text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    @unittest.skipUnless(shutil.which("node"), "Node is required")
     def test_queue_rendering_routes_language_and_stale_responses(self):
         root = Path(__file__).resolve().parents[1] / "static/js"
         script = r'''
@@ -36,6 +60,16 @@ vm.runInThisContext(`
 (async()=>{
 restoreLabelSummaryRoute();
 assert.equal(labelSummaryFilters.taskId,'task-a');assert.equal('gtUpdate' in labelSummaryFilters,false);
+assert.deepEqual(normalizedCaseLabelingRouteFilters(new URLSearchParams('status=pending')).status,['unannotated','incomplete']);
+assert.deepEqual(normalizedCaseLabelingRouteFilters(new URLSearchParams('status=incomplete,conflict,bad')).status,['incomplete','conflict']);
+assert.deepEqual(labelingStatusFilterOptions().map(item=>item.value),['unannotated','incomplete','resolved','conflict']);
+assert.deepEqual(labelingStatusFilterOptions({submittedOnly:true}).map(item=>item.value),['incomplete','resolved','conflict']);
+const initialSearch=window.location.search;
+window.location.search='?status=pending&author=alice';restoreLabelSummaryRoute({force:true});
+assert.deepEqual(labelSummaryFilters.status,['incomplete']);
+assert.equal(labelSummaryFilterPayload().status,'incomplete');
+assert.equal(new URL(labelSummaryCaseUrl(), 'http://localhost').searchParams.get('status'),'incomplete');
+window.location.search=initialSearch;restoreLabelSummaryRoute({force:true});
 refreshLabelSummaryLanguage();assert.equal(labelSummaryFilters.taskId,'task-a');
 const readyUrl=new URL(pageUrl('labeling-summary',labelSummaryRouteOptions()),'http://localhost');
 assert.equal(readyUrl.searchParams.has('gt_update'),false);assert.equal(readyUrl.searchParams.get('page'),'2');assert.equal(readyUrl.searchParams.get('baselines'),'version-20261009');
@@ -61,6 +95,7 @@ assert.match($('#labelSummaryContent').innerHTML,/GT × 标注结果/);
 assert.doesNotMatch($('#labelSummaryContent').innerHTML,/data-gt-update-view/);
 assert.equal($('#labelSummaryPageSize').enhanced,true);
 state.uiLanguage='en';labelSummaryTasks=[{id:'task-a',name:'Task A'}];labelSummaryData=data;refreshLabelSummaryLanguage();
+assert.equal(labelingStatusFilterOptions()[1].label,'Submitted · Incomplete');
 assert.match($('#labelSummaryContent').innerHTML,/Matches GT/);assert.equal(labelSummaryFilters.taskId,'task-a');
 renderAnalysisGtStatus(data);
 assert.match($('#analysisGtCardMount').innerHTML,/Matches GT/);

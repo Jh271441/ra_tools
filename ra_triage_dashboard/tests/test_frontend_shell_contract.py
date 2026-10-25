@@ -30,6 +30,8 @@ class FrontendShellContractTest(unittest.TestCase):
         self.assertIn(".trail-update-table-wrap", mobile_css)
         self.assertIn("overflow-x: auto", mobile_css)
         self.assertIn(".expected-output-rule-popover { width: min(360px, calc(100vw - 48px)); }", mobile_css)
+        self.assertIn(".multi-filter-option { min-height: 44px; box-sizing: border-box; font-size: 14px; }", mobile_css)
+        self.assertIn(".multi-filter-option span { white-space: normal; overflow-wrap: anywhere; text-overflow: clip; line-height: 1.4; }", mobile_css)
 
     def test_frontend_modules_load_in_manifest_order_from_thin_entry(self) -> None:
         names = [
@@ -45,7 +47,7 @@ class FrontendShellContractTest(unittest.TestCase):
             self.assertTrue((JS_DIR / name).is_file(), name)
             self.assertIn(f'"{name}"', APP_ENTRY_JS)
         self.assertIn("CACHE_VERSION", APP_ENTRY_JS)
-        self.assertIn("manual-triage-656", APP_ENTRY_JS)
+        self.assertIn("manual-triage-657", APP_ENTRY_JS)
         self.assertIn("function setBaselineScopes", APP_JS)
         self.assertIn("function applyInferredBaselinesFromRun", APP_JS)
         self.assertIn("clearIncompatible: true", APP_JS)

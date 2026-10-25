@@ -38,7 +38,7 @@ function restoreLabelSummaryRoute({ force = false } = {}) {
   labelSummaryFilters.search = String(params.get("q") || "").trim();
   labelSummaryFilters.issueIds = parseFilterList(params.get("issue_ids")).filter((value) => ISSUE_QUERY_ID_RE.test(value));
   labelSummaryFilters.taskId = String(params.get("task") || "").trim();
-  labelSummaryFilters.status = parseFilterList(params.get("status")).filter((value) => ["resolved", "pending", "conflict"].includes(value));
+  labelSummaryFilters.status = normalizedLabelingStatusFilters(params.get("status"), { submittedOnly: true });
   labelSummaryFilters.author = parseFilterList(params.get("author"));
   labelSummaryFilters.assignee = parseFilterList(params.get("assignee"));
   labelSummaryFilters.label = parseFilterList(params.get("label")).filter((value) => LABELS.includes(value));
@@ -111,7 +111,10 @@ function renderLabelSummaryMultiPicker(selector, options, selected, key) {
     setMultiFilterValues(root, selected);
     return;
   }
-  if (root.classList.contains("is-open")) return;
+  if (root.classList.contains("is-open")) {
+    if (relabelMultiFilter(root, options)) root.dataset.optionsFingerprint = fingerprint;
+    return;
+  }
   renderMultiFilter(root, {
     options,
     selected,
@@ -126,10 +129,9 @@ function renderLabelSummaryFilters(tasks, data) {
   const labelerOptions = [...new Set([...(data.labelers || []), ...parseFilterList(labelSummaryFilters.author)])].map((value) => ({ value, label: value }));
   const assigneeOptions = [...new Set([...(data.assignees || []), ...parseFilterList(labelSummaryFilters.assignee)])].map((value) => ({ value, label: value }));
   renderLabelSummaryPicker("#labelSummaryTaskPicker", taskOptions, labelSummaryFilters.taskId);
-  renderLabelSummaryMultiPicker("#labelSummaryStatusPicker", [
-    { value: "resolved", label: uiText("已形成结论", "Resolved") },
-    { value: "pending", label: uiText("待形成结论", "Pending") }, { value: "conflict", label: uiText("待裁决 / 需确认", "Needs adjudication / confirmation") },
-  ], labelSummaryFilters.status, "status");
+  renderLabelSummaryMultiPicker("#labelSummaryStatusPicker", labelingStatusFilterOptions({
+    submittedOnly: !labelSummaryFilters.status.includes("unannotated"),
+  }), labelSummaryFilters.status, "status");
   renderLabelSummaryMultiPicker("#labelSummaryAuthorPicker", labelerOptions, labelSummaryFilters.author, "author");
   renderLabelSummaryMultiPicker("#labelSummaryAssigneePicker", assigneeOptions, labelSummaryFilters.assignee, "assignee");
   renderLabelSummaryMultiPicker("#labelSummaryLabelPicker", LABELS.map((value) => ({ value, label: value })), labelSummaryFilters.label, "label");

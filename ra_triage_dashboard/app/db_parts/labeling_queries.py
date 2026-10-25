@@ -1,6 +1,9 @@
 """Labeling queries storage; composed by DatabaseLabelingMixin."""
 from __future__ import annotations
-from ..labeling_rules import current_adjudication, case_exclusion_projection
+from ..labeling_rules import (
+    LABELING_FILTER_STATUSES, labeling_filter_state,
+    current_adjudication, case_exclusion_projection,
+)
 from collections import defaultdict
 from typing import Any, Sequence
 from .shared import LABELS
@@ -195,8 +198,8 @@ class LabelingQueriesMixin:
                 parameters.append(task)
         normalized_authors = {value.lower() for value in _filter_values(author)}
         normalized_statuses = set(_filter_values(status)) - {"all"}
-        if normalized_statuses - {"pending", "resolved", "conflict"}:
-            raise ValueError("标注状态不合法。")
+        if normalized_statuses - LABELING_FILTER_STATUSES:
+            raise ValueError("标注状态不合法 / Invalid labeling status.")
         normalized_expected_outputs = set(_filter_values(expected_output)) - {"all"}
         if normalized_expected_outputs - set(LABELS):
             raise ValueError("标注结果类别不合法。")
@@ -297,7 +300,13 @@ class LabelingQueriesMixin:
                 elif aggregate_state == "stale":
                     aggregate_state = "conflict"
                 expected_output_value = str(shared_state.get("expected_output") or "")
-            if normalized_statuses and aggregate_state not in normalized_statuses:
+            filter_state = labeling_filter_state({
+                "label_state": aggregate_state, "label_cases": cases,
+                "decision": (shared_state or {}).get("decision"),
+            })
+            # Legacy pending URLs/API clients retain the union. New controls
+            # distinguish untouched assignments from real incomplete submissions.
+            if normalized_statuses and not normalized_statuses.intersection({aggregate_state, filter_state}):
                 continue
             if normalized_authors:
                 result_authors = {

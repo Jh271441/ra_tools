@@ -1,5 +1,6 @@
 """Read-only GT update queue, using the same candidates as audited GT exports."""
 from __future__ import annotations
+from .labeling_rules import has_label_submission
 
 
 def normalize_gt_update(value: str) -> str:
@@ -25,14 +26,6 @@ def gt_update_projection(candidate: dict) -> dict | None:
     else:
         reason = "pending"
     return {"state": "blocked", "reason": reason, "expected_output": ""}
-
-
-def has_label_submission(item: dict) -> bool:
-    return bool(item.get("decision")) or any(
-        (case.get("resolution") or {}).get("heads")
-        or (case.get("resolution") or {}).get("adjudication")
-        for case in item.get("label_cases") or []
-    )
 
 
 def select_gt_update_cases(items: list[dict], candidates: list[dict], view: str = "") -> tuple[list[dict], dict]:
