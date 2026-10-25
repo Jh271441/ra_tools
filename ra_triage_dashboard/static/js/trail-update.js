@@ -1,4 +1,13 @@
 function bindTrailAttributeUpdateEvents() {
+  $("#trailUpdateStatusSummary")?.addEventListener("click", event => {
+    const button = event.target.closest("[data-trail-status-filter]");
+    if (!button || button.disabled) return;
+    const values = trailStatusFilterValues(state.trailUpdate.filters.trailStatus);
+    const key = button.dataset.trailStatusFilter;
+    state.trailUpdate.filters.trailStatus = values.length === 1 && values[0] === key ? [] : [key];
+    applyTrailUpdateFilters();
+    $("#trailUpdateStatusSummary")?.querySelector(`[data-trail-status-filter="${CSS.escape(key)}"]`)?.focus({ preventScroll: true });
+  });
   $("#trailUpdateProgressClose")?.addEventListener("click", closeTrailUpdateProgress);
   $("#trailUpdateProgressDialog")?.addEventListener("cancel", (event) => {
     const dialog = $("#trailUpdateProgressDialog");
@@ -53,7 +62,10 @@ function bindTrailAttributeUpdateEvents() {
   });
   $("#trailUpdateSearchInput")?.addEventListener("input", scheduleTrailUpdateFilterRender);
   $("#trailUpdateResetFiltersButton")?.addEventListener("click", () => {
+    if (state.trailUpdate.filterTimer) window.clearTimeout(state.trailUpdate.filterTimer);
+    state.trailUpdate.filterTimer = null;
     state.trailUpdate.filters = {
+      sourceKind: "", localState: "", remoteState: "",
       search: "",
       gtLabel: [],
       modelLabel: [],

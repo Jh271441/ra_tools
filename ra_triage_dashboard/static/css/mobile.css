@@ -822,6 +822,11 @@
   .trail-update-filter-actions { grid-column:auto; grid-row:auto; }
   .trail-reconcile-advanced { grid-row:auto; }
   .trail-advanced-fields { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .trail-reconcile-advanced > summary { min-height:44px; }
+  #trailUpdateStatusSummary .analysis-review-status-legend-item { min-height:44px; }
+  #trailAttributeUpdatePage .trail-update-filters .ui-select-trigger,
+  #trailAttributeUpdatePage .trail-update-filters .multi-filter-trigger,
+  #trailAttributeUpdatePage .trail-update-filters input:not([type="checkbox"]) { min-height:44px; height:auto; }
 }
 @media (max-width:700px) {
   .trail-update-review-summary-grid { grid-template-columns:minmax(0,1fr); }

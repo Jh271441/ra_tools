@@ -428,9 +428,9 @@ function normalizedTrailUpdateRouteFilters(params) {
     tab: params.get("tab") === "issue" ? "issue" : "review",
     exclusionIssue: params.get("exclude_issue") || "",
     view: params.get("view") === "reconciliation" ? "reconciliation" : "local",
-    sourceKind: params.get("source_kind") || "",
-    localState: params.get("local_state") || "",
-    remoteState: params.get("remote_state") || "",
+    sourceKind: ["local", "historical", "both"].includes(params.get("source_kind")) ? params.get("source_kind") : "",
+    localState: ["true", "false", "unknown"].includes(params.get("local_state")) ? params.get("local_state") : "",
+    remoteState: ["true", "false", "unset", "unknown"].includes(params.get("remote_state")) ? params.get("remote_state") : "",
     search: params.get("q") || "",
     gtLabel: parseFilterList(params.get("gt")).filter((value) => LABELS.includes(value)),
     modelLabel: parseFilterList(params.get("model_label") || params.get("annotation") || ""),
@@ -438,9 +438,7 @@ function normalizedTrailUpdateRouteFilters(params) {
     reviewStatus: parseFilterList(params.get("review_status")).filter((value) =>
       ["pending", "reviewed", "needs_gt_review"].includes(value)
     ),
-    trailStatus: parseFilterList(params.get("trail_status")).filter((value) =>
-      ["querying", "synced", "pending", "not_found", "query_failed", "not_checked", "needs_exclusion", "reason_changed", "reason_missing", "excluded_keep_reason", "excluded_no_reason", "reconcile_excluded", "reconcile_not_excluded"].includes(value)
-    ),
+    trailStatus: trailStatusFilterValues(params.get("trail_status")),
     page: Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1,
     pageSize: CASE_PAGE_SIZES.includes(rawPageSize) ? rawPageSize : DEFAULT_CASE_PAGE_SIZE,
   };

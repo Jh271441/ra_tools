@@ -86,7 +86,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-658`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-659`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -1181,7 +1181,7 @@
                   <article hidden class="analysis-stat-card trail-update-field-stat-card"><span class="ui-lang-zh">更新目标字段</span><span class="ui-lang-en">Update target</span><strong id="trailUpdateInfoField" class="trail-update-target-value" title="ra_stuck_auto_result_info.ra_triage_dashboard.should_exclude">ra_stuck_auto_result_info.ra_triage_dashboard.should_exclude</strong></article>
                   <article class="page-card analysis-review-status-card trail-update-status-card" aria-labelledby="trailUpdateStatusTitle">
                     <div class="section-heading analysis-review-status-heading trail-update-status-heading">
-                      <div><h3 id="trailUpdateStatusTitle"><span class="ui-lang-zh">Trail 更新状态</span><span class="ui-lang-en">Trail update status</span></h3></div>
+                      <div><h3 id="trailUpdateStatusTitle"><span class="ui-lang-zh">Trail 更新状态</span><span class="ui-lang-en">Trail update status</span></h3></div><small id="trailUpdateFilterHelp"><span class="ui-lang-zh">点选状态筛选 · 随其他条件统计</span><span class="ui-lang-en">Click to filter · Counts follow other filters</span></small>
                     </div>
                     <div class="analysis-review-status-chart analysis-review-status-visual trail-update-status-chart trail-update-status-visual trail-update-status-summary" id="trailUpdateStatusSummary" aria-live="polite" role="img" aria-label="查询中">
                       <div class="analysis-review-status-bar" role="img" aria-label="查询中"><span class="analysis-review-status-segment trail-status-querying" style="width:100%"></span></div>
@@ -1202,21 +1202,20 @@
                       <span class="ui-lang-zh">Trail 更新状态</span><span class="ui-lang-en">Trail update status</span>
                       <div class="multi-filter" id="trailUpdateStatusFilter" data-placeholder="全部 Trail 状态" data-placeholder-en="All Trail statuses"></div>
                     </label>
-<details class="trail-reconcile-advanced"><summary><span class="ui-lang-zh">更多筛选</span><span class="ui-lang-en">More filters</span></summary><div class="trail-advanced-fields"><label><span class="ui-lang-zh">来源</span><span class="ui-lang-en">Source</span><select id="trailReconcileSource"><option value="" data-zh="全部来源" data-en="All sources">全部来源</option><option value="local" data-zh="本地候选" data-en="Local candidates">本地候选</option><option value="historical" data-zh="历史排除" data-en="Historical exclusions">历史排除</option><option value="both" data-zh="两者都有" data-en="Both">两者都有</option></select></label>
-<label><span class="ui-lang-zh">本地勾选</span><span class="ui-lang-en">Local exclusion</span><select id="trailReconcileLocal"><option value="" data-zh="全部" data-en="All">全部</option><option value="true" data-zh="已勾选" data-en="Selected">已勾选</option><option value="false" data-zh="未勾选" data-en="Not selected">未勾选</option><option value="unknown" data-zh="未知" data-en="Unknown">未知</option></select></label>
+<details class="trail-reconcile-advanced"><summary id="trailAdvancedFilterLabel"><span class="ui-lang-zh">更多筛选</span><span class="ui-lang-en">More filters</span></summary><div class="trail-advanced-fields"><label><span class="ui-lang-zh">记录来源</span><span class="ui-lang-en">Record source</span><select id="trailReconcileSource"><option value="" data-zh="全部来源" data-en="All sources">全部来源</option><option value="local" data-zh="仅本地候选" data-en="Local only">仅本地候选</option><option value="historical" data-zh="仅历史记录" data-en="History only">仅历史记录</option><option value="both" data-zh="本地与历史都有" data-en="Local and historical">本地与历史都有</option></select></label>
+<label><span class="ui-lang-zh">本地排除结论</span><span class="ui-lang-en">Local exclusion outcome</span><select id="trailReconcileLocal"><option value="" data-zh="全部" data-en="All">全部</option><option value="true" data-zh="排除" data-en="Excluded">排除</option><option value="false" data-zh="不排除" data-en="Not excluded">不排除</option><option value="unknown" data-zh="无本地结论" data-en="No local outcome">无本地结论</option></select></label>
 <label><span class="ui-lang-zh">Trail 排除</span><span class="ui-lang-en">Trail exclusion</span><select id="trailReconcileRemote"><option value="" data-zh="全部" data-en="All">全部</option><option value="true" data-zh="已排除" data-en="Excluded">已排除</option><option value="false" data-zh="未排除" data-en="Not excluded">未排除</option><option value="unset" data-zh="未设置" data-en="Unset">未设置</option><option value="unknown" data-zh="无法确认" data-en="Unconfirmed">无法确认</option></select></label>
                     <label>
                       <span>GT</span>
                       <div class="multi-filter" id="trailUpdateGtFilter" data-placeholder="全部 GT" data-placeholder-en="All GT"></div>
                     </label>
                     <label>
-                      <span class="ui-lang-zh">复核人</span><span class="ui-lang-en">Reviewer</span>
-                      <div class="multi-filter" id="trailUpdateReviewerFilter" data-placeholder="全部复核人" data-placeholder-en="All reviewers"></div>
+                      <span class="ui-lang-zh">理由作者</span><span class="ui-lang-en">Reason author</span>
+                      <div class="multi-filter" id="trailUpdateReviewerFilter" data-placeholder="全部作者" data-placeholder-en="All authors"></div>
                     </label>
 </div></details>
                     <div class="trail-update-filter-actions">
-                      <button class="button button-quiet" id="trailUpdateSearchButton" type="submit"><span class="ui-lang-zh">筛选</span><span class="ui-lang-en">Filter</span></button>
-                      <button class="button button-quiet" id="trailUpdateResetFiltersButton" type="button"><span class="ui-lang-zh">重置</span><span class="ui-lang-en">Reset</span></button>
+                      <button class="button button-quiet" id="trailUpdateResetFiltersButton" type="button"><span class="ui-lang-zh">重置筛选</span><span class="ui-lang-en">Reset filters</span></button>
                     </div>
                   </form>
                   <div class="section-heading trail-update-results-heading"><div><h3><span class="ui-lang-zh">排除候选明细</span><span class="ui-lang-en">Excluded case details</span></h3><small id="trailUpdateResultSummary" class="trail-update-result-summary" aria-live="polite">—</small></div><div class="trail-update-result-actions"><button class="button button-quiet" id="trailNonExclusionOpen" type="button" aria-haspopup="dialog" disabled><span class="ui-lang-zh">同步不排除</span><span class="ui-lang-en">Sync non-exclusion</span></button><button class="button button-quiet" id="trailReasonBatchToggle" type="button" aria-expanded="false"><span class="ui-lang-zh">批量更新</span><span class="ui-lang-en">Batch update</span></button><button class="button button-quiet" data-trail-json-preview="review" type="button" disabled><span class="ui-lang-zh">预览 JSON</span><span class="ui-lang-en">Preview JSON</span></button></div></div>
@@ -2510,7 +2509,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-658`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-659`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

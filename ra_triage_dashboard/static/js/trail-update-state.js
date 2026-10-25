@@ -43,12 +43,19 @@ function trailUpdateStatusEndpoint(items = [], refresh = false) {
 
 // Presentation groups are shared by badges, totals and filters. Raw API states stay intact.
 function trailStatusGroup(status) {
-  return ({reason_changed:"reason_update",reason_missing:"reason_update",excluded_keep_reason:"reason_update",excluded_no_reason:"reason_update",synced:"excluded",reconcile_excluded:"excluded",reconcile_not_excluded:"not_excluded",query_failed:"unconfirmed",not_found:"unconfirmed",pending:"unconfirmed",not_checked:"unconfirmed"})[status] || (["needs_exclusion","reason_update","synced","excluded","not_excluded","querying","unconfirmed"].includes(status) ? status : "unconfirmed");
+  return ({reason_changed:"reason_sync",reason_missing:"reason_sync",excluded_keep_reason:"reason_needed",excluded_no_reason:"reason_needed",synced:"excluded",reconcile_excluded:"excluded",reconcile_not_excluded:"not_excluded",query_failed:"unconfirmed",not_found:"unconfirmed",pending:"unconfirmed",not_checked:"unconfirmed"})[status] || (["needs_exclusion","reason_sync","reason_needed","excluded","not_excluded","querying","unconfirmed"].includes(status) ? status : "unconfirmed");
+}
+function trailStatusFilterValues(values) {
+  const valid = new Set(["reason_update", "reason_sync", "reason_needed", "querying", "synced", "pending", "not_found", "query_failed", "not_checked", "needs_exclusion", "reason_changed", "reason_missing", "excluded_keep_reason", "excluded_no_reason", "reconcile_excluded", "reconcile_not_excluded", "excluded", "not_excluded", "unconfirmed"]);
+  // Old grouped links included both writable reasons and empty local reasons.
+  return [...new Set(parseFilterList(values).filter(value => valid.has(value)).flatMap(value =>
+    value === "reason_update" ? ["reason_sync", "reason_needed"] : [trailStatusGroup(value)]))];
 }
 function trailUpdateStatusMeta(status = "not_checked") {
   const key = String(status || "not_checked");
   const labels = {
-    reason_update: ["理由待更新", "Reason needs update", "is-reason", "排除已生效；理由缺失或两端不一致", "Exclusion is active; the reason is missing or differs"],
+    reason_sync: ["理由可同步", "Reason ready to sync", "is-reason", "本地有理由且与 Trail 不同，可预览同步", "A local reason differs from Trail and can be previewed for sync"],
+    reason_needed: ["本地理由待补", "Local reason needed", "is-reason-needed", "没有可提交的本地理由；请先补充标注依据，保留 Trail 原文", "No local reason to submit; add annotation evidence first. Trail text is preserved"],
     excluded: ["已排除", "Excluded", "is-synced", "排除已生效，理由已核对", "Exclusion is active and the reason has been checked"],
     not_excluded: ["未排除", "Not excluded", "is-not-checked", "远端未排除或未设置标记；核对视图只读", "Remote marker is false or unset; reconciliation is read-only"],
     unconfirmed: ["无法确认", "Unconfirmed", "is-failed", "查询未完成或失败，请刷新重试", "Not checked or the query failed; refresh to retry"],
@@ -97,7 +104,7 @@ function trailUpdateStatusSummary(data, items) {
     }
   }
   const entries = Object.entries(counts).filter(([, count]) => count > 0);
-  const priority = ["needs_exclusion", "reason_update", "synced", "excluded", "not_excluded", "querying", "unconfirmed"];
+  const priority = ["needs_exclusion", "reason_sync", "reason_needed", "excluded", "not_excluded", "querying", "unconfirmed"];
   const primaryKey = priority.find((key) => counts[key]) || "not_checked";
   const primary = trailUpdateStatusMeta(primaryKey);
   const total = Object.values(counts).reduce((sum, count) => sum + Number(count || 0), 0);
@@ -116,11 +123,13 @@ function trailUpdateStatusSummary(data, items) {
     const legend = visualEntries.map(([key, count]) => {
       const meta = trailUpdateStatusMeta(key);
       const percent = total ? Math.round((Number(count) / total) * 1000) / 10 : 0;
-      return `<div class="analysis-review-status-legend-item trail-status-${escapeHtml(meta.key)}" data-trail-update-status-key="${escapeHtml(meta.key)}" role="listitem" tabindex="0" aria-label="${escapeHtml(`${meta.label}: ${count}, ${percent}%. ${meta.detail}`)}" title="${escapeHtml(meta.detail)}"><span class="analysis-review-status-swatch"></span><span class="analysis-review-status-legend-copy"><strong>${escapeHtml(meta.label)}</strong><small>${count} · ${percent}%</small></span></div>`;
+      const active = trailStatusFilterValues(state.trailUpdate.filters?.trailStatus).includes(meta.key);
+      return `<div role="listitem"><button type="button" class="analysis-review-status-legend-item trail-status-${escapeHtml(meta.key)}" data-trail-status-filter="${escapeHtml(meta.key)}" data-trail-update-status-key="${escapeHtml(meta.key)}" aria-pressed="${active}" aria-label="${escapeHtml(`${meta.label}: ${count}, ${percent}%. ${meta.detail}`)}" title="${escapeHtml(meta.detail)}" ${count ? "" : "disabled"}><span class="analysis-review-status-swatch"></span><span class="analysis-review-status-legend-copy"><strong>${escapeHtml(meta.label)}</strong><small>${count} · ${percent}%</small></span></button></div>`;
     }).join("");
     statusElement.innerHTML = `<div class="analysis-review-status-bar" role="img" aria-label="${escapeHtml(detail || primary.label)}">${segments}</div><div class="analysis-review-status-legend" role="list">${legend}</div>`;
     statusElement.className = "analysis-review-status-chart analysis-review-status-visual trail-update-status-chart trail-update-status-visual trail-update-status-summary";
     statusElement.title = detail;
+    statusElement.setAttribute("role", "group");
     statusElement.setAttribute("aria-label", detail || primary.label);
     if (!statusElement.dataset.hoverBound) {
       statusElement.dataset.hoverBound = "true";

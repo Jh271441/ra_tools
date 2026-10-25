@@ -471,7 +471,7 @@ function currentTrailUpdateRouteOptions(overrides = {}) {
     modelLabel: trailUpdateFilterValues("modelLabel"),
     annotationAuthor: trailUpdateFilterValues("reviewer"),
     reviewStatus: trailUpdateFilterValues("reviewStatus"),
-    trailStatus: trailUpdateFilterValues("trailStatus"),
+    trailStatus: trailStatusFilterValues(filters.trailStatus),
     page: Math.max(1, Number(state.trailUpdate?.page) || 1),
     pageSize: CASE_PAGE_SIZES.includes(Number(state.trailUpdate?.pageSize))
       ? Number(state.trailUpdate.pageSize)
@@ -481,6 +481,8 @@ function currentTrailUpdateRouteOptions(overrides = {}) {
 }
 
 function applyTrailUpdateRouteControls(filters = {}) {
+  if (state.trailUpdate.filterTimer) window.clearTimeout(state.trailUpdate.filterTimer);
+  state.trailUpdate.filterTimer = null;
   const source = filters || {};
   if (source.tab) setTrailUpdateTab(source.tab);
   state.trailUpdate.view = source.view === "reconciliation" ? "reconciliation" : "local";
@@ -501,17 +503,15 @@ function applyTrailUpdateRouteControls(filters = {}) {
     setTrailIssueStatus(uiText("已带入当前 Issue；请预览并确认排除。尚未写入 Trail。", "Issue added. Preview and confirm exclusion; Trail has not been written."));
   }
   state.trailUpdate.filters = {
-    sourceKind: source.sourceKind || "",
-    localState: source.localState || "",
-    remoteState: source.remoteState || "",
+    sourceKind: ["local", "historical", "both"].includes(source.sourceKind) ? source.sourceKind : "",
+    localState: ["true", "false", "unknown"].includes(source.localState) ? source.localState : "",
+    remoteState: ["true", "false", "unset", "unknown"].includes(source.remoteState) ? source.remoteState : "",
     search: String(source.search || ""),
     gtLabel: parseFilterList(source.gtLabel).filter((value) => LABELS.includes(value)),
     modelLabel: [],
     reviewer: parseFilterList(source.annotationAuthor || source.reviewer),
     reviewStatus: [],
-    trailStatus: parseFilterList(source.trailStatus).filter((value) =>
-      ["querying", "synced", "pending", "not_found", "query_failed", "not_checked", "needs_exclusion", "reason_changed", "reason_missing", "excluded_keep_reason", "excluded_no_reason", "reconcile_excluded", "reconcile_not_excluded", "reason_update", "excluded", "not_excluded", "unconfirmed"].includes(value)
-    ),
+    trailStatus: trailStatusFilterValues(source.trailStatus),
   };
   state.trailUpdate.page = Math.max(1, Number(source.page) || 1);
   state.trailUpdate.pageSize = CASE_PAGE_SIZES.includes(Number(source.pageSize))
@@ -523,6 +523,8 @@ function applyTrailUpdateRouteControls(filters = {}) {
   if (pageSize) pageSize.value = String(state.trailUpdate.pageSize);
   if (state.trailUpdate?.data) renderTrailAttributePreview(state.trailUpdate.data);
   enhanceNativeUiSelect(pageSize);
+  const advanced = document.querySelector(".trail-reconcile-advanced");
+  if (advanced && trailAdvancedFilterCount()) advanced.open = true;
 }
 
 function trailUpdatePersistRoute() {
@@ -538,6 +540,16 @@ function trailUpdateModelValue(item = {}) {
   return String(item?.model?.label || "").trim() || "__none__";
 }
 
+function trailReasonAuthor(item = {}) {
+  return String(item.reason_source?.author || item.review?.reviewer || "").trim();
+}
+
+function trailAdvancedFilterCount() {
+  const filters = state.trailUpdate.filters || {};
+  return [filters.sourceKind, filters.localState, filters.remoteState,
+    parseFilterList(filters.gtLabel).length, parseFilterList(filters.reviewer).length].filter(Boolean).length;
+}
+
 function trailUpdateSearchText(item = {}) {
   const review = item.review || {};
   const model = item.model || {};
@@ -549,22 +561,24 @@ function trailUpdateSearchText(item = {}) {
     model.label,
     model.reason,
     review.reviewer,
+    trailReasonAuthor(item),
     review.status,
     review.note,
     item.comment,
+    item.trail_detail?.local_comment,
     item.trail_detail?.trail_comment,
     item.baseline_id,
     item.baseline_scope,
   ].filter(Boolean).join(" ").toLocaleLowerCase();
 }
 
-function trailUpdateFilteredItems(data = state.trailUpdate?.data) {
+function trailUpdateFilteredItems(data = state.trailUpdate?.data, { ignoreStatus = false } = {}) {
   const items = Array.isArray(data?.items) ? data.items : [];
   const filters = state.trailUpdate?.filters || {};
   const search = String(filters.search || "").trim().toLocaleLowerCase();
   const gt = new Set(trailUpdateFilterValues("gtLabel"));
   const reviewer = new Set(trailUpdateFilterValues("reviewer"));
-  const trailStatus = new Set(trailUpdateFilterValues("trailStatus").map(trailStatusGroup));
+  const trailStatus = new Set(ignoreStatus ? [] : trailStatusFilterValues(filters.trailStatus));
   return items.filter((item) => {
     const review = item.review || {};
     if (filters.sourceKind && filters.sourceKind !== item.source_kind) return false;
@@ -572,7 +586,7 @@ function trailUpdateFilteredItems(data = state.trailUpdate?.data) {
     if (filters.remoteState && filters.remoteState !== trailRemoteState(item)) return false;
     if (search && !trailUpdateSearchText(item).includes(search)) return false;
     if (gt.size && !gt.has(String(item?.gt_label || ""))) return false;
-    if (reviewer.size && !reviewer.has(String(review.reviewer || ""))) return false;
+    if (reviewer.size && !reviewer.has(trailReasonAuthor(item))) return false;
     if (trailStatus.size && !trailStatus.has(trailStatusGroup(trailReasonState(item)))) return false;
     return true;
   });
@@ -581,11 +595,11 @@ function trailUpdateFilteredItems(data = state.trailUpdate?.data) {
 function trailUpdateFilterOptions(items = []) {
   const distinct = (values) => [...new Set(values.map((value) => String(value || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "zh-Hans-CN"));
   const modelValues = distinct(items.map(trailUpdateModelValue));
-  const reviewerValues = distinct(items.map((item) => item?.review?.reviewer));
+  const reviewerValues = distinct([...items.map(trailReasonAuthor), ...trailUpdateFilterValues("reviewer")]);
   const reviewValues = distinct(items.map((item) => item?.review?.status || "pending"));
-  const statusValues = distinct(items.map(item => trailStatusGroup(trailReasonState(item))));
+  const statusValues = distinct([...items.map(item => trailStatusGroup(trailReasonState(item))), ...trailStatusFilterValues(state.trailUpdate.filters?.trailStatus)]);
   return {
-    gt: LABELS.filter((label) => items.some((item) => item?.gt_label === label)).map((value) => ({ value, label: value })),
+    gt: LABELS.filter((label) => items.some((item) => item?.gt_label === label) || trailUpdateFilterValues("gtLabel").includes(label)).map((value) => ({ value, label: value })),
     model: modelValues.map((value) => ({ value, label: value === "__none__" ? uiText("未输出", "No output") : value })),
     reviewer: reviewerValues.map((value) => ({ value, label: value })),
     review: reviewValues.map((value) => ({
@@ -604,8 +618,11 @@ function applyTrailUpdateFilters({ resetPage = true, persist = true } = {}) {
 
 function scheduleTrailUpdateFilterRender() {
   if (state.trailUpdate.filterTimer) window.clearTimeout(state.trailUpdate.filterTimer);
+  const context = capturePageContext();
+  const scope = trailUpdatePreviewKey();
   state.trailUpdate.filterTimer = window.setTimeout(() => {
     state.trailUpdate.filterTimer = null;
+    if (!isPageContextCurrent(context, { matchUrl: false }) || scope !== trailUpdatePreviewKey()) return;
     const search = $("#trailUpdateSearchInput");
     state.trailUpdate.filters.search = String(search?.value || "");
     applyTrailUpdateFilters();
@@ -615,7 +632,12 @@ function scheduleTrailUpdateFilterRender() {
 function renderTrailUpdateFilters(data = state.trailUpdate?.data) {
   const items = Array.isArray(data?.items) ? data.items : [];
   const options = trailUpdateFilterOptions(items);
-  $("#trailUpdateSearchInput")?.setAttribute("placeholder", uiText("Issue ID、理由或复核人", "Issue ID, reason or reviewer"));
+  $("#trailUpdateSearchInput")?.setAttribute("placeholder", uiText("Issue ID、理由或作者", "Issue ID, reason or author"));
+  const advancedLabel = $("#trailAdvancedFilterLabel");
+  const advancedCount = trailAdvancedFilterCount();
+  if (advancedLabel) advancedLabel.textContent = uiText(`更多筛选${advancedCount ? ` · ${advancedCount}` : ""}`, `More filters${advancedCount ? ` · ${advancedCount}` : ""}`);
+  const help = $("#trailUpdateFilterHelp");
+  if (help) help.title = uiText("筛选即时生效；不同条件取交集，同一多选内取并集。图表按其他条件统计，点击状态可筛选列表。核对视图仅检索历史快照与本地候选，不是全部 Issue。", "Filters apply immediately. Different fields use AND; choices within one field use OR. The chart reflects other filters; click a status to filter the list. Reconciliation covers snapshots and local candidates, not all Issues.");
   const filters = state.trailUpdate?.filters || {};
   const search = $("#trailUpdateSearchInput");
   if (search && document.activeElement !== search) search.value = String(filters.search || "");
@@ -634,7 +656,7 @@ function renderTrailUpdateFilters(data = state.trailUpdate?.data) {
     state.trailUpdate.filters.reviewer = values;
     applyTrailUpdateFilters();
   });
-  bind("#trailUpdateStatusFilter", options.trail, (filters.trailStatus || []).map(trailStatusGroup), (values) => {
+  bind("#trailUpdateStatusFilter", options.trail, trailStatusFilterValues(filters.trailStatus), (values) => {
     state.trailUpdate.filters.trailStatus = values;
     applyTrailUpdateFilters();
   });
@@ -667,7 +689,7 @@ function renderTrailUpdatePagination(filteredItems = []) {
   if (summary) summary.textContent = `${page} / ${totalPages}`;
   if (result) {
     result.textContent = total
-      ? uiText(`当前显示 ${start}–${end} / 共 ${total} 条`, `Showing ${start}–${end} of ${total}`)
+      ? uiText(`当前显示 ${start}–${end} / 筛选结果 ${total} 条`, `Showing ${start}–${end} of ${total} matches`)
       : uiText("当前筛选没有匹配案例", "No cases match the current filters");
   }
   if (jump) {
@@ -754,7 +776,7 @@ function renderTrailAttributePreview(data, { preserveRows = false } = {}) {
     ? sourceLabel
     : `${sourceLabel} · ${uiText(`筛选 ${filteredItems.length}/${allItems.length} 条`, `${filteredItems.length}/${allItems.length} filtered`)}`;
   renderTrailUpdateTargetField(data);
-  trailUpdateStatusSummary(data, allItems);
+  trailUpdateStatusSummary(data, trailUpdateFilteredItems(data, { ignoreStatus: true }));
   syncTrailSelectionControls(data);
   const digestElement = $("#trailUpdateDigest");
   if (digestElement) {
@@ -765,10 +787,12 @@ function renderTrailAttributePreview(data, { preserveRows = false } = {}) {
   if (!body) return;
   if (!allItems.length) {
     body.innerHTML = `<tr><td colspan="6" class="trail-update-empty">${uiText("当前数据集没有已标记排除的 Issue。", "No Issues marked for exclusion in the selected datasets.")}</td></tr>`;
+    syncTrailSelectionControls(data);
     return;
   }
   if (!items.length) {
     body.innerHTML = `<tr><td colspan="6" class="trail-update-empty">${uiText("当前筛选没有匹配的排除案例。", "No excluded cases match the current filters.")}</td></tr>`;
+    syncTrailSelectionControls(data);
     return;
   }
   const rowMarkup = items.map((item) => {

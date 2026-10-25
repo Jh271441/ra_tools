@@ -25,7 +25,9 @@ function trailSelectionReady(data) {
 function trailSelectionCheckbox(item) {
   if (item.readonly || state.trailUpdate.view === "reconciliation") return "";
   const id = String(item.issue_id || "");
-  return `<label class="trail-reason-check" ${state.trailUpdate.selectionMode ? "" : "hidden"}><input type="checkbox" data-trail-reason-select="${escapeHtml(id)}" ${trailSelectedIssues().has(id) ? "checked" : ""} ${trailReasonEligible(item) ? "" : "disabled"} aria-label="${escapeHtml(uiText(`选择 ${id}`, `Select ${id}`))}"></label>`;
+  const eligible = trailReasonEligible(item);
+  const hint = eligible ? uiText("可加入本次更新", "Eligible for this update") : trailUpdateStatusMeta(trailReasonState(item)).detail;
+  return `<label class="trail-reason-check" title="${escapeHtml(hint)}" ${state.trailUpdate.selectionMode ? "" : "hidden"}><input type="checkbox" data-trail-reason-select="${escapeHtml(id)}" ${trailSelectedIssues().has(id) ? "checked" : ""} ${eligible ? "" : "disabled"} aria-label="${escapeHtml(uiText(`选择 ${id}`, `Select ${id}`))}"></label>`;
 }
 function trailReasonScopeSummary(items) {
   const excluded = items.filter(item => item.trail_detail?.trail_should_exclude === true).length;
@@ -58,12 +60,30 @@ function trailReasonComparisonMarkup(item, expanded = false) {
   const open = Boolean(state.trailUpdate.expandedReasons?.has(trailRowKey(item)));
   return `<button class="text-link trail-reason-toggle" type="button" data-trail-reason-toggle="${escapeHtml(trailRowKey(item))}" aria-haspopup="dialog">${uiText("详情", "Details")}</button>`;
 }
+function trailSelectionPageStats(data = state.trailUpdate?.data) {
+  const items = trailUpdateFilteredItems(data);
+  const size = Number(state.trailUpdate.pageSize) || DEFAULT_CASE_PAGE_SIZE;
+  const start = (Math.max(1, Number(state.trailUpdate.page) || 1) - 1) * size;
+  const pageItems = items.slice(start, start + size);
+  return {
+    visible: new Set(pageItems.map(item => item.issue_id)),
+    eligible: new Set(pageItems.filter(trailReasonEligible).map(item => item.issue_id)),
+    reasonNeeded: pageItems.filter(item => trailStatusGroup(trailReasonState(item)) === "reason_needed").length,
+  };
+}
 function syncTrailSelectionControls(data = state.trailUpdate?.data) {
   const count = $("#trailReasonSelectionCount");
   const chosen = trailSelectedIssues();
-  const visible = new Set([...document.querySelectorAll("#trailUpdateTableBody [data-trail-reason-select]")].map(node => node.dataset.trailReasonSelect));
+  const { visible, eligible, reasonNeeded } = trailSelectionPageStats(data);
   const hidden = [...chosen].filter(id => !visible.has(id)).length;
-  if (count) count.textContent = uiText(`已选 ${chosen.size} 条，其中 ${hidden} 条不在本页；筛选不改变选择`, `${chosen.size} selected, ${hidden} outside this page; filters preserve selection`);
+  const byId = new Map((data?.items || []).map(item => [item.issue_id, item]));
+  const invalid = [...chosen].filter(id => !byId.has(id) || !trailReasonEligible(byId.get(id))).length;
+  if (count) count.textContent = [
+    uiText(`已选 ${chosen.size} 条`, `${chosen.size} selected`),
+    hidden ? uiText(`${hidden} 条不在本页`, `${hidden} outside this page`) : "",
+    invalid ? uiText(`${invalid} 条已不可更新，请清空后重选`, `${invalid} no longer eligible; clear and reselect`) : "",
+    reasonNeeded ? uiText(`本页 ${reasonNeeded} 条需先补充本地理由`, `${reasonNeeded} on this page need a local reason first`) : "",
+  ].filter(Boolean).join(" · ");
   const bar = document.querySelector(".trail-reason-selection-bar");
   const selecting = Boolean(state.trailUpdate.selectionMode) && state.trailUpdate.view !== "reconciliation";
   if (bar) bar.hidden = !selecting;
@@ -83,7 +103,11 @@ function syncTrailSelectionControls(data = state.trailUpdate?.data) {
     enhanceNativeUiSelect(select);
   }
   $("#trailReasonClear")?.toggleAttribute("disabled", !chosen.size || Boolean(state.trailUpdate.selectionBusy));
-  $("#trailReasonSelectVisible")?.toggleAttribute("disabled", Boolean(state.trailUpdate.selectionBusy) || !(data?.items || []).some(trailReasonEligible));
+  const selectVisible = $("#trailReasonSelectVisible");
+  if (selectVisible) {
+    selectVisible.textContent = uiText(`选择本页可更新项（${eligible.size}）`, `Select eligible on page (${eligible.size})`);
+    selectVisible.toggleAttribute("disabled", Boolean(state.trailUpdate.selectionBusy) || !eligible.size);
+  }
 }
 function patchTrailReasonCells(data) {
   refreshTrailReasonDetails();
@@ -94,7 +118,9 @@ function patchTrailReasonCells(data) {
     const status = row.querySelector("[data-trail-update-status-issue]");
     if (status) status.innerHTML = trailUpdateStatusCellMarkup(trailReasonState(item));
     const check = row.querySelector("[data-trail-reason-select]");
-    if (check) { check.disabled = !trailReasonEligible(item); check.checked = trailSelectedIssues().has(item.issue_id); }
+    if (check) { check.disabled = !trailReasonEligible(item); check.checked = trailSelectedIssues().has(item.issue_id);
+      check.closest("label").title = trailReasonEligible(item) ? uiText("可加入本次更新", "Eligible for this update") : trailUpdateStatusMeta(trailReasonState(item)).detail;
+    }
     const summary = row.querySelector("[data-trail-reason-summary]");
     if (summary) summary.innerHTML = trailReasonSummaryMarkup(item);
     const toggle = row.querySelector("[data-trail-reason-toggle]");
@@ -139,7 +165,9 @@ function bindTrailReasonEvents() {
     syncTrailSelectionControls(); syncTrailAttributeActions();
   });
   $("#trailReasonSelectVisible")?.addEventListener("click", () => {
-    document.querySelectorAll("#trailUpdateTableBody [data-trail-reason-select]:not(:disabled)").forEach(check => { trailSelectedIssues().add(check.dataset.trailReasonSelect); check.checked = true; });
+    if (state.trailUpdate.selectionBusy) return;
+    trailSelectionPageStats().eligible.forEach(id => trailSelectedIssues().add(id));
+    patchTrailReasonCells(state.trailUpdate.data);
     syncTrailSelectionControls(); syncTrailAttributeActions();
   });
   $("#trailUpdateTableBody")?.addEventListener("click", event => {
@@ -245,6 +273,7 @@ function bindTrailReconcileEvents() {
   $("#trailReconcileView")?.addEventListener("change", event => {
     state.trailUpdate.view = event.target.value;
     state.trailUpdate.page = 1;
+    state.trailUpdate.selectionMode = false;
     trailSelectedIssues().clear();
     trailUpdatePersistRoute();
     loadTrailAttributePreview(true).catch(error => showToast(error.message, true));

@@ -478,7 +478,7 @@ class FrontendIntegrationsContractTest(unittest.TestCase):
         self.assertIn("trail_status", APP_JS)
         self.assertIn("review_status", APP_JS)
         self.assertIn("renderTrailUpdateFilters", APP_JS)
-        self.assertIn("trailUpdateStatusSummary(data, allItems)", APP_JS)
+        self.assertIn("trailUpdateStatusSummary(data, trailUpdateFilteredItems(data, { ignoreStatus: true }))", APP_JS)
         self.assertIn("allItems = Array.isArray(data?.items)", APP_JS)
         self.assertIn('uiText("理由摘要", "Reasons")', APP_JS)
         self.assertIn('data-label="预计写入 info"', APP_JS)

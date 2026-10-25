@@ -85,3 +85,38 @@ the original Trail reason that will be preserved. Review these before choosing
 Unresolved, stale or effectively excluded outcomes are rejected; empty lists and
 historical records never imply non-exclusion. Cancel performs no write, errors
 preserve input, and the result links to the corresponding Trail operation record.
+
+## 排除页筛选口径 / Exclusion filter semantics
+
+页面展示状态与更新资格共用当前候选数据：
+
+| 状态 / State | 含义 / Meaning | 理由批量更新 / Reason batch update |
+| --- | --- | --- |
+| 理由可同步 / Reason ready to sync | 本地有理由且与 Trail 不同 / Local reason differs from Trail | 可选择，再预览确认 / Select, preview and confirm |
+| 本地理由待补 / Local reason needed | 本地理由为空 / Local reason is empty | 先补充标注依据，保留远端原文 / Add local evidence first; preserve remote text |
+| 已排除 / Excluded | 排除已生效；本地候选的理由一致，历史行仅表示远端排除 / Active exclusion; local reasons match, historical rows report remote exclusion only | 无理由变更 / No reason change |
+| 待排除 / Awaiting exclusion | 本地排除，Trail 尚未排除 / Local exclusion is not active in Trail | 使用排除所选案例 / Use exclusion update |
+
+视图决定候选范围。核对视图包含历史快照成员与本地候选，始终只读；不是全部
+Issue 的实时扫描。不同筛选字段取交集，同一多选内取并集。筛选即时生效，重置
+清除所有筛选条件并保留当前视图。折叠的高级筛选显示启用条件数。
+
+图表按搜索、作者、GT、来源及本地/远端标记统计，不受自身状态选择或分页影响。
+点击图例选中对应状态，再点一次取消。列表应用全部条件，分页和“选择本页可更新项”
+只针对当前结果页。批量选择跨筛选保留，页外已选及已失效选择会明确提示。
+理由作者优先使用实际理由来源作者。URL 刷新保留状态筛选；旧 `reason_update`
+链接兼容展开为“理由可同步”和“本地理由待补”。
+
+The view defines membership. Reconciliation combines historical snapshot members
+and local candidates and is read-only, not a live scan of every Issue. Different
+fields use AND; choices within one multi-select use OR. Filters apply immediately;
+reset clears all filters while retaining the view. Collapsed advanced filters
+show the number of active fields.
+
+The chart follows search, author, GT, source and local/remote marker filters, but
+not its own status selection or pagination. Click a legend to select its status;
+click again to clear it. The list applies all filters. Pagination and select-page
+eligibility use the current result page. Selection persists across filters, with
+off-page and invalid selections reported explicitly. Reason authors prefer actual
+reason provenance. Status filters survive URL reload; legacy `reason_update`
+links expand to both ready-to-sync and local-reason-needed groups.
