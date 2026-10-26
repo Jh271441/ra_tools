@@ -1,12 +1,5 @@
 /* Shared assignment composer and its Case page adapter.
  * Loaded after legacy control bases and before later page/mobile overrides. */
-.labeling-combined-counts { display: flex; flex-wrap: wrap; gap: 8px 22px; color: var(--muted); font-size: 13px; }
-.labeling-combined-counts b { color: var(--text); font-variant-numeric: tabular-nums; }
-.labeling-combined-people { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 10px 28px; color: var(--muted); font-size: 13px; }
-.labeling-combined-people > span { display: flex; flex-wrap: wrap; gap: 5px 12px; min-width: 0; overflow-wrap: anywhere; }
-.labeling-combined-people strong { color: var(--text); }
-.labeling-combined-task .intent-experiment-progress { min-width: 0; grid-template-columns: minmax(60px, 1fr) auto; }
-.labeling-combined-task h4 { white-space: normal; overflow-wrap: anywhere; }
 #labelingCombinedTaskStatus:empty { display: none; }
 #labelingCombinedTaskRefresh { margin-left: auto; }
 .intent-experiment-section-heading.labeling-combined-heading { display: flex; flex-wrap: wrap; gap: 8px; }

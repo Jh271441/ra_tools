@@ -86,7 +86,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-672`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-673`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -547,9 +547,9 @@
             </section>
             <section class="intent-experiment-history case-experiment-history assignment-history" aria-labelledby="labelingCombinedTaskTitle">
               <div class="intent-experiment-section-heading labeling-combined-heading"><h3 id="labelingCombinedTaskTitle"><span class="ui-lang-zh">联合复核任务</span><span class="ui-lang-en">Combined review tasks</span></h3><span class="intent-experiment-count" id="labelingCombinedTaskCount">—</span><button class="button button-quiet" type="button" id="labelingCombinedTaskRefresh"><span class="ui-lang-zh">刷新</span><span class="ui-lang-en">Refresh</span></button></div>
-              <p class="quiet-meta"><span class="ui-lang-zh">与判错复核共用任务；完成数按负责人计，联合完成需两部分均确认。</span><span class="ui-lang-en">Shared with Review. Counts are per assignee; both parts must be confirmed for combined completion.</span></p>
+              <p class="quiet-meta"><span class="ui-lang-zh">全部当前联合任务 · 与判错复核共用</span><span class="ui-lang-en">All current combined tasks · Shared with Review</span></p>
               <p class="quiet-meta" id="labelingCombinedTaskStatus" role="status"></p>
-              <div class="intent-experiment-list" id="labelingCombinedTaskList"></div>
+              <div class="review-assignment-list" id="labelingCombinedTaskList"></div>
             </section>
             <section class="intent-experiment-history case-experiment-history assignment-history" aria-labelledby="labelingTaskHistoryTitle">
               <div class="intent-experiment-section-heading"><div><h3 id="labelingTaskHistoryTitle"><span class="ui-lang-zh">实验记录</span><span class="ui-lang-en">Experiment records</span></h3></div><span class="intent-experiment-count" id="labelingTaskHistoryCount">0</span></div>
@@ -2537,7 +2537,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-672`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-673`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

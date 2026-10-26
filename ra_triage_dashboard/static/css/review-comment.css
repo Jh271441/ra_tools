@@ -920,7 +920,7 @@ html[data-color-theme="light"] .detail-queue-index-input {
 .review-assignment-member { min-width: 0; display: grid; gap: 5px; padding: 2px 14px 2px 0; border: 0; border-radius: 0; background: transparent; }
 .review-assignment-member + .review-assignment-member { padding-left: 14px; border-left: 1px solid var(--line-soft); }
 .review-assignment-member-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-.review-assignment-member-heading strong { overflow: hidden; color: #dce8f2; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.review-assignment-member-heading strong { overflow: hidden; color: var(--text); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .review-assignment-member-heading span { flex: 0 0 auto; color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
 .review-assignment-member small { color: var(--faint); font-size: 9px; }
 .review-assignment-batch-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 1px; }

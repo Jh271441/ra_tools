@@ -1,8 +1,12 @@
 /* A read-only entry to existing combined tasks; never creates a labeling copy. */
-const labelingCombinedTasks = { items: [], scope: '', loaded: false, error: false, seq: 0 };
+const labelingCombinedTasks = { items: [], actor: '', loaded: false, error: false, seq: 0 };
 
 function labelingCombinedTaskHref(item) {
   return reviewAssignmentBatchHref(item, 'review');
+}
+
+function labelingCombinedTaskActor() {
+  return JSON.stringify([state.session?.username, state.session?.verified, state.session?.access_role]);
 }
 
 function renderLabelingCombinedTasks() {
@@ -19,45 +23,39 @@ function renderLabelingCombinedTasks() {
   const signature = JSON.stringify([data.items, data.loaded, state.uiLanguage,
     state.session?.username, state.session?.verified]);
   if (list.dataset.signature === signature) return;
-  const focused = document.activeElement?.closest('[data-combined-task-link]')?.dataset.combinedTaskLink;
+  const active = list.contains(document.activeElement) ? document.activeElement : null;
+  const focused = active?.closest('[data-review-assignment-batch]')?.dataset.reviewAssignmentBatch;
+  const focusedHref = active?.getAttribute('href');
   list.dataset.signature = signature;
   list.innerHTML = data.items.map(item => {
-    const total = Number(item.total || 0);
-    const percent = total ? Math.round(Number(item.labeled || 0) * 100 / total) : 0;
-    const name = item.appendable && item.release_family
-      ? `${item.release_family.slice(4)} · ${uiText('版本联合复核', 'Version combined review')}` : item.name;
-    return `<article class="intent-experiment-item case-experiment-item labeling-combined-task">
-      <div><h4>${escapeHtml(name)}</h4><div class="intent-experiment-meta">${escapeHtml(item.appendable
-        ? uiText('当前版本目标集', 'Current version targets') : uiText('联合复核任务', 'Combined review task'))} · ${escapeHtml(uiText(`${item.member_count} 个案例`, `${item.member_count} ${Number(item.member_count) === 1 ? 'case' : 'cases'}`))}</div></div>
-      <a class="button button-quiet" data-combined-task-link="${escapeHtml(item.split_id)}" href="${escapeHtml(labelingCombinedTaskHref(item))}">${escapeHtml(uiText('继续联合复核', 'Continue combined review'))}</a>
-      <div class="labeling-combined-counts">
-        <span>${escapeHtml(uiText('标注', 'Labels'))} <b>${item.labeled}/${total}</b></span>
-        <span>${escapeHtml(uiText('模型复核', 'Model review'))} <b>${item.reviewed}/${total}</b></span>
-        <span>${escapeHtml(uiText('联合完成', 'Both complete'))} <b>${item.completed}/${total}</b></span>
-      </div>
-      <div class="intent-experiment-progress"><span class="intent-experiment-progress-track"><i class="is-complete" style="width:${percent}%"></i></span><small>${percent}% ${escapeHtml(uiText('标注', 'labeled'))}</small></div>
-      <div class="labeling-combined-people">${(item.members || []).map(person => `<span><strong>${escapeHtml(person.username)}</strong><span>${escapeHtml(uiText('标注', 'Labels'))} ${person.labeled}/${person.total} · ${escapeHtml(uiText('联合', 'Both'))} ${person.completed}/${person.total}</span></span>`).join('')}</div>
-    </article>`;
-  }).join('') || (data.loaded ? `<p class="quiet-meta">${escapeHtml(uiText('当前范围暂无联合复核任务。', 'No combined review tasks in this scope.'))}</p>` : '');
-  if (focused) [...list.querySelectorAll('[data-combined-task-link]')]
-    .find(link => link.dataset.combinedTaskLink === focused)?.focus({ preventScroll: true });
+    const detailHref = `${withBase('/review-assignments')}?${new URLSearchParams({ lifecycle: 'current', split: item.split_id })}`;
+    return renderReviewAssignmentBatch(item, { detailHref });
+  }).join('') || (data.loaded ? `<div class="review-assignment-empty">${escapeHtml(uiText('暂无当前有效的联合复核任务。', 'No active combined review tasks.'))}</div>` : '');
+  if (focused && focusedHref) [...list.querySelectorAll('[data-review-assignment-batch]')]
+    .find(card => card.dataset.reviewAssignmentBatch === focused)
+    ?.querySelectorAll('a').forEach(link => {
+      if (link.getAttribute('href') === focusedHref) link.focus({ preventScroll: true });
+    });
 }
 
 async function loadLabelingCombinedTasks() {
   const data = labelingCombinedTasks;
-  const scope = selectedBaselineQueryValue();
-  const actor = String(state.session?.username || '');
+  const actor = labelingCombinedTaskActor();
   const seq = ++data.seq;
-  if (data.scope !== `${actor}:${scope}`) {
-    data.items = []; data.loaded = false; data.error = false; data.scope = `${actor}:${scope}`;
+  if (data.actor !== actor) {
+    data.items = []; data.loaded = false; data.error = false; data.actor = actor;
   }
   renderLabelingCombinedTasks();
-  const current = () => seq === data.seq && scope === selectedBaselineQueryValue()
-    && actor === String(state.session?.username || '');
+  const current = () => seq === data.seq && actor === labelingCombinedTaskActor();
   try {
-    const result = await api(`/api/labeling/combined-tasks?${new URLSearchParams({ baselines: scope })}`);
+    // Same cross-dataset discovery and progress projection as Review assignments.
+    // The creation form's baseline must not hide already assigned work.
+    const params = new URLSearchParams({ limit: '100', lifecycle: 'current', group_by_version: 'true', version_only: 'false' });
+    const result = await api(`/api/cases/work-splits?${params}`);
     if (!current()) return;
-    data.items = result.items || []; data.loaded = true; data.error = false;
+    data.items = (result.items || []).filter(item =>
+      item.workflow_mode === 'model_review_and_case_label' && reviewAssignmentCanReview(item));
+    data.loaded = true; data.error = false;
   } catch (_) {
     if (!current()) return;
     data.error = true;

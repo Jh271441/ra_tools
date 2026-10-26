@@ -99,9 +99,9 @@ class CombinedTaskFrontendTest(unittest.TestCase):
         module = Path(__file__).parents[1] / 'static/js/labeling-combined-tasks.js'
         script = r"""
 const assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('node:fs');
-let scope='1009',pending=[],renders=0;
+let scope='1009',pending=[],requests=[];
 const context={URLSearchParams,console,state:{session:{verified:true,username:'Alice'}},
- selectedBaselineQueryValue:()=>scope,api:()=>new Promise(resolve=>pending.push(resolve)),
+ selectedBaselineQueryValue:()=>scope,api:(path)=>{requests.push(path);return new Promise(resolve=>pending.push(resolve));},
  pageUrl:(page,args)=>({page,args})};
 vm.createContext(context);
 vm.runInContext(fs.readFileSync(require('node:path').join(require('node:path').dirname(process.argv[1]),'review-assignments.js'),'utf8'),context);
@@ -114,12 +114,22 @@ link=context.labelingCombinedTaskHref({split_id:'same-task',model_run_id:'same-r
 assert.equal(link.args.workSplitId,'same-task');assert.equal(link.args.runId,'same-run');
 assert.equal(link.args.workAssignee[0],'alice');assert.equal(link.args.baselines[0],'0508');
 assert.equal(link.args.comparisonStatus,'all');assert.equal(link.args.workflowMode,'model_review_and_case_label');
+const task=id=>({split_id:id,is_current:true,lifecycle:'active',workflow_mode:'model_review_and_case_label'});
 (async()=>{const first=context.loadLabelingCombinedTasks();scope='1016';const second=context.loadLabelingCombinedTasks();
-pending[1]({items:[{split_id:'new'}]});await second;pending[0]({items:[{split_id:'old'}]});await first;
+assert.ok(requests.every(path=>path.startsWith('/api/cases/work-splits?') && !path.includes('baselines=')));
+pending[1]({items:[task('new'),{...task('model-only'),workflow_mode:'model_review_only'},
+ {...task('cancelled'),lifecycle:'cancelled'},{...task('old-active'),is_current:false}]});await second;
+pending[0]({items:[task('old')]});await first;
 assert.equal(vm.runInContext('labelingCombinedTasks.items[0].split_id',context),'new');
+assert.equal(vm.runInContext('labelingCombinedTasks.items.length',context),1);
 const third=context.loadLabelingCombinedTasks();context.state.session.username='Bob';pending[2]({items:[{split_id:'wrong-actor'}]});await third;
 assert.equal(vm.runInContext('labelingCombinedTasks.items[0].split_id',context),'new');
 })().catch(error=>{console.error(error);process.exitCode=1});
 """
         result = subprocess.run(['node', '-e', script, str(module)], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_shared_cards_and_refresh_states(self):
+        script = Path(__file__).with_name('labeling_combined_cards.cjs')
+        result = subprocess.run(['node', str(script)], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
