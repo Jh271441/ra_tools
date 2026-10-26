@@ -1,6 +1,6 @@
 /* Local audit UI; writes require an explicit, actor-bound restore preview. */
 const trailHistory = { filters: {}, page: 1, operation: "", data: null, detail: null,
-  preview: null, selected: [], reason: "", error: "", busy: false, seq: 0, detailSeq: 0 };
+  preview: null, selected: [], reason: "", restoring: false, error: "", busy: false, seq: 0, detailSeq: 0 };
 
 function trailHistorySource(value) {
   const labels = {exclusion_summary:["问题排除 · 汇总","Issue exclusion · Summary"],
@@ -28,7 +28,7 @@ function restoreTrailHistoryRoute() {
   trailHistory.page=Math.max(1,Number(params.get("page"))||1);
   trailHistory.operation=params.get("operation")||"";
   if(!trailHistory.operation&&$("#trailHistoryDialog")?.open){$("#trailHistoryDialog").onclose=null;$("#trailHistoryDialog").close();}
-  trailHistory.detail=null;trailHistory.preview=null;trailHistory.reason="";trailHistory.detailSeq++;
+  trailHistory.detail=null;trailHistory.preview=null;trailHistory.reason="";trailHistory.restoring=false;trailHistory.selected=[];trailHistory.detailSeq++;
 }
 function trailHistoryRouteOptions() {
   return {...trailHistory.filters,page:trailHistory.page>1?trailHistory.page:"",operation:trailHistory.operation};
@@ -106,9 +106,10 @@ function trailHistoryDiff(item,beforeKey="before",afterKey="after",selectable=fa
   const comparison=key=>`<div class="trail-history-diff"><div><small>${from}</small><pre>${trailHistoryText(display(before,key))}</pre></div><span class="trail-history-arrow" aria-hidden="true">→</span><div><small>${to}</small><pre>${trailHistoryText(display(after,key))}</pre></div></div>`;
   const eligible=trailHistory.detail?.outcomes[item.issue_id]==="succeeded";
   const reasonChanged=JSON.stringify(before.should_exclude_comment)!==JSON.stringify(after.should_exclude_comment);
+  const flagChanged=JSON.stringify(before.should_exclude)!==JSON.stringify(after.should_exclude);
   return `<section class="trail-history-issue"><div class="trail-history-issue-heading">${selectable?`<label class="trail-history-select"><input type="checkbox" data-restore-issue="${trailHistoryText(item.issue_id)}" aria-label="${trailHistoryText(uiText(`恢复 ${item.issue_id}`,`Restore ${item.issue_id}`))}" ${trailHistory.selected.includes(item.issue_id)?"checked":""} ${!eligible||trailHistory.busy?"disabled":""}><strong>${trailHistoryText(item.issue_id)}</strong></label>`:`<h3>${trailHistoryText(item.issue_id)}</h3>`}${selectable&&!eligible?trailHistoryBadge("unknown"):""}</div>
-    ${legacy?`<details data-disclosure="legacy-${trailHistoryText(item.issue_id)}"><summary>${uiText("原记录说明","Recorded note")}</summary><pre class="trail-history-note">${trailHistoryText(display(after,"should_exclude_comment"))}</pre></details>`:`<div class="trail-history-transition"><div><small>${from}</small>${flag(before)}</div><span class="trail-history-arrow" aria-hidden="true">→</span><div><small>${to}</small>${flag(after)}</div></div>
-    <details data-disclosure="reason-${afterKey}-${trailHistoryText(item.issue_id)}" ${preview?"open":""}><summary>${uiText("排除理由","Exclusion reason")} <span class="trail-history-muted">${reasonChanged?uiText("已变化","Changed"):uiText("未变化","Unchanged")}</span></summary>${comparison("should_exclude_comment")}</details>
+    ${legacy?`<details data-disclosure="legacy-${trailHistoryText(item.issue_id)}"><summary>${uiText("原记录说明","Recorded note")}</summary><pre class="trail-history-note">${trailHistoryText(display(after,"should_exclude_comment"))}</pre></details>`:`${flagChanged?`<div class="trail-history-transition"><span class="trail-history-muted">${uiText('排除状态','Exclusion')}</span><span><small>${from}</small> ${flag(before)}</span><span class="trail-history-arrow" aria-hidden="true">→</span><span><small>${to}</small> ${flag(after)}</span></div>`:`<div class="trail-history-unchanged"><span>${uiText('排除状态未变','Exclusion unchanged')}</span>${flag(after)}</div>`}
+    <details data-disclosure="reason-${afterKey}-${trailHistoryText(item.issue_id)}" ${reasonChanged?"open":""}><summary>${uiText("排除理由","Exclusion reason")} <span class="trail-history-muted">${reasonChanged?uiText("已变化","Changed"):uiText("未变化","Unchanged")}</span></summary>${reasonChanged?comparison("should_exclude_comment"):`<pre class="trail-history-note">${trailHistoryText(display(after,"should_exclude_comment"))}</pre>`}</details>
     <details data-disclosure="marker-${afterKey}-${trailHistoryText(item.issue_id)}"><summary>${uiText("操作标识","Operation markers")}</summary>${comparison("operation_id")}</details>`}</section>`;
 }
 function trailHistoryTimeline(detail) {
@@ -122,55 +123,77 @@ function renderTrailRestoreSteps() {
 function renderTrailHistoryDetail() {
   const dialog=$("#trailHistoryDialog"),detail=trailHistory.detail;if(!dialog||!detail)return;
   const body=dialog.querySelector(".trail-history-dialog-body");
+  const scrollTop=body.dataset.operation===detail.id?body.scrollTop:0;
+  const active=document.activeElement;
+  const focusId=body.contains(active)?active.id:'';
+  const focusIssue=body.contains(active)?active.dataset.restoreIssue:'';
+  const selection=focusId==='trailHistoryReason'?[active.selectionStart,active.selectionEnd]:null;
+  const restoring=trailHistory.restoring&&detail.source!=="legacy"&&trailHistory.data?.can_restore;
+  const ready=restoring&&trailHistory.preview?.ready;
   const expanded=body.dataset.operation===detail.id?Array.from(body.querySelectorAll("details[data-disclosure]")).map(el=>[el.dataset.disclosure,el.open]):[];
   body.dataset.operation=detail.id;
-  dialog.querySelector("h2").textContent=uiText("Trail 更新详情","Trail update details");
+  dialog.querySelector("h2").textContent=restoring?uiText("恢复 Trail 更新","Restore Trail update"):uiText("Trail 更新详情","Trail update details");
   dialog.querySelector('[data-action="close"]').textContent=uiText("关闭","Close");
-  body.innerHTML=`<div class="trail-history-meta">${trailHistoryBadge(detail.status,detail.source)}<span>${trailHistoryText(detail.actor)}</span><time>${trailHistoryTime(detail.created_at)} CST</time></div><details data-disclosure="operation"><summary>${trailHistorySource(detail.source)}</summary><code class="trail-history-id">${trailHistoryText(detail.id)}</code></details>
+  body.innerHTML=`${restoring?`<section class="trail-history-restore-intro"><ol id="trailHistoryRestoreSteps" class="trail-history-steps" aria-label="${uiText("恢复步骤","Restore steps")}"></ol><p>${uiText("仅恢复所选 Issue 的 Trail 排除状态和理由；本地标注不变。","Restore only the selected Issues’ Trail exclusion state and reason; local labels stay unchanged.")}</p></section>`:''}<div class="trail-history-meta">${trailHistoryBadge(detail.status,detail.source)}<span>${trailHistoryText(detail.actor)}</span><time>${trailHistoryTime(detail.created_at)} CST</time></div><details data-disclosure="operation"><summary>${trailHistorySource(detail.source)} · ${uiText('操作信息','Operation info')}</summary><code class="trail-history-id">${trailHistoryText(detail.id)}</code></details>
     ${detail.source==="legacy"?`<p role="note" class="trail-history-muted">${uiText("旧版记录 · 无完整快照 · 不可恢复","Legacy · No complete snapshots · Restore unavailable")}</p>`:""}
     ${detail.reason?`<p>${trailHistoryText(detail.reason)}</p>`:""}
     ${detail.parent_id?`<p>${uiText("恢复自","Restores")} <button class="button button-secondary" data-related="${trailHistoryText(detail.parent_id)}">${trailHistoryText(detail.parent_id)}</button></p>`:""}
-    ${detail.items.map(item=>trailHistoryDiff(item,"before","after",detail.source!=="legacy"&&trailHistory.data?.can_restore)).join("")}
-    ${trailHistoryTimeline(detail)}
+    ${!ready?detail.items.map(item=>trailHistoryDiff(item,"before","after",restoring&&detail.restorable)).join(""):''}
+    ${!restoring?trailHistoryTimeline(detail):''}
     ${detail.children.length?`<div>${uiText("后续恢复","Subsequent restores")}: ${detail.children.map(row=>`<button class="button button-secondary" data-related="${trailHistoryText(row.id)}">${trailHistoryTime(row.created_at)} · ${trailHistoryText(row.actor)}</button>`).join(" ")}</div>`:""}
-    <section class="trail-history-restore">${detail.restorable&&trailHistory.data?.can_restore?`<ol id="trailHistoryRestoreSteps" class="trail-history-steps" aria-label="${uiText("恢复步骤","Restore steps")}"></ol>`:""}<details data-disclosure="safety"><summary>${uiText("仅恢复 Trail · 本地标注不变","Trail only · Local labels unchanged")}</summary><p>${uiText("不撤销本地裁决或通知。提交前重新检查冲突并回读；Trail 不支持原子条件写入，仍可能存在外部并发。","Local decisions and notifications stay unchanged. Conflicts are checked before writing and results are read back; Trail has no atomic conditional writes, so external concurrency remains possible.")}</p></details>
-    ${detail.source!=="legacy"&&trailHistory.data?.can_restore?`<button class="button button-secondary" data-action="verify" ${trailHistory.busy?"disabled":""}>${uiText("重新核验 Trail","Verify Trail again")}</button>`:""}
+    <section class="trail-history-restore" ${!restoring?'hidden':''}><details data-disclosure="safety"><summary>${uiText("恢复范围与风险","Restore scope and risks")}</summary><p>${uiText("不撤销本地裁决或通知。提交前重新检查冲突并回读；Trail 不支持原子条件写入，仍可能存在外部并发。","Local decisions and notifications stay unchanged. Conflicts are checked before writing and results are read back; Trail has no atomic conditional writes, so external concurrency remains possible.")}</p></details>
+    ${!ready?`<button class="button button-secondary" data-action="verify" ${trailHistory.busy?"disabled":""}>${uiText("重新核验 Trail","Verify Trail again")}</button>`:""}
     ${detail.current_conflicts?.length?`<p role="alert">${uiText("当前值已变化：","Current values changed: ")}${detail.current_conflicts.map(trailHistoryText).join(", ")}</p>`:""}
-    ${detail.restorable&&trailHistory.data?.can_restore?`<label>${uiText("恢复原因","Restore reason")}<textarea id="trailHistoryReason" rows="2" maxlength="1000" ${trailHistory.busy?"disabled":""}>${trailHistoryText(trailHistory.reason)}</textarea></label><button class="button button-secondary" data-action="preview" ${trailHistory.busy?"disabled":""}>${uiText("预览恢复","Preview restore")}</button>`:detail.source==="legacy"?"":`<p>${!trailHistory.data?.can_restore?uiText("恢复需管理员权限及已开启的开关。","Restore requires admin access and an enabled gate."):uiText("核验成功后可恢复。","Restore is available after verification.")}</p>`}
-    <div id="trailHistoryRestoreResult" aria-live="polite">${trailHistory.preview?trailHistory.preview.conflicts.length?`<p>${uiText("这些 Issue 已发生变化，未写入：","These Issues changed; nothing written: ")}${trailHistory.preview.conflicts.map(trailHistoryText).join(", ")}</p>`:`${trailHistory.preview.items.map(item=>trailHistoryDiff(item,"current","restore")).join("")}<p>${uiText(`将恢复 ${trailHistory.preview.items.length} 个 Issue`,`${trailHistory.preview.items.length} Issues will be restored`)}</p>`:""}</div></section>`;
+    ${restoring&&detail.restorable?ready?`<p>${uiText('恢复原因：','Restore reason: ')}${trailHistoryText(trailHistory.reason)}</p>`:`<label for="trailHistoryReason">${uiText("恢复原因","Restore reason")}<textarea id="trailHistoryReason" rows="2" maxlength="1000" ${trailHistory.busy?"disabled":""}>${trailHistoryText(trailHistory.reason)}</textarea></label>`:restoring?`<p>${uiText("核验成功后可恢复。","Restore is available after verification.")}</p>`:''}
+    <div id="trailHistoryRestoreResult" aria-live="polite">${trailHistory.preview?trailHistory.preview.conflicts.length?`<p role="alert">${uiText("这些 Issue 已发生变化，未写入：","These Issues changed; nothing written: ")}${trailHistory.preview.conflicts.map(trailHistoryText).join(", ")}</p>`:trailHistory.preview.items.map(item=>trailHistoryDiff(item,"current","restore")).join(""):""}</div></section>`;
   for(const [key,open] of expanded)body.querySelectorAll("details[data-disclosure]").forEach(el=>{if(el.dataset.disclosure===key)el.open=open;});
   renderTrailRestoreSteps();
   body.querySelectorAll('[data-related]').forEach(button=>button.onclick=()=>void openTrailHistoryDetail(button.dataset.related));
   body.querySelectorAll('[data-restore-issue]').forEach(input=>input.onchange=()=>{
     trailHistory.selected=Array.from(body.querySelectorAll('[data-restore-issue]:checked')).map(el=>el.dataset.restoreIssue);
-    trailHistory.preview=null;dialog.querySelector('[data-action="commit"]').disabled=true;$("#trailHistoryRestoreResult").replaceChildren();
-    renderTrailRestoreSteps();
+    trailHistory.preview=null;$("#trailHistoryRestoreResult").replaceChildren();
+    renderTrailRestoreSteps();renderTrailHistoryActions();
   });
   const reason=body.querySelector("textarea");
-  if(reason)reason.oninput=()=>{trailHistory.reason=reason.value;trailHistory.preview=null;dialog.querySelector('[data-action="commit"]').disabled=true;$("#trailHistoryRestoreResult").replaceChildren();renderTrailRestoreSteps();};
-  body.querySelector('[data-action="preview"]')?.addEventListener("click",()=>void previewTrailRestore());
+  if(reason)reason.oninput=()=>{trailHistory.reason=reason.value;trailHistory.preview=null;$("#trailHistoryRestoreResult").replaceChildren();renderTrailRestoreSteps();renderTrailHistoryActions();};
   body.querySelector('[data-action="verify"]')?.addEventListener("click",()=>void verifyTrailHistory());
-  const commit=dialog.querySelector('[data-action="commit"]');
-  commit.textContent=uiText("确认恢复","Confirm restore");commit.hidden=!detail.restorable||!trailHistory.data?.can_restore;
-  commit.disabled=trailHistory.busy||!trailHistory.preview?.ready;commit.onclick=()=>void commitTrailRestore();
+  renderTrailHistoryActions();
+  if(focusId)body.querySelector(`#${focusId}`)?.focus({preventScroll:true});
+  if(focusIssue)Array.from(body.querySelectorAll('[data-restore-issue]')).find(el=>el.dataset.restoreIssue===focusIssue)?.focus({preventScroll:true});
+  if(selection)body.querySelector('#trailHistoryReason')?.setSelectionRange(...selection);
+  body.scrollTop=scrollTop;
+}
+function renderTrailHistoryActions() {
+  const dialog=$('#trailHistoryDialog'),d=trailHistory.detail;if(!dialog||!d)return;
+  const allowed=d.source!=='legacy'&&trailHistory.data?.can_restore,editing=allowed&&trailHistory.restoring,ready=editing&&trailHistory.preview?.ready;
+  const bind=(action,label,visible,disabled,handler)=>{const b=dialog.querySelector(`[data-action="${action}"]`);b.textContent=label;b.hidden=!visible;b.disabled=trailHistory.busy||disabled;b.onclick=handler;};
+  bind('start-restore',uiText('恢复…','Restore…'),allowed&&!editing,false,()=>{trailHistory.restoring=true;trailHistory.selected=[];trailHistory.preview=null;renderTrailHistoryDetail();dialog.querySelector('.trail-history-dialog-body').scrollTop=0;dialog.querySelector('[data-restore-issue]:not(:disabled)')?.focus();});
+  bind('cancel-restore',uiText('取消恢复','Cancel restore'),editing,false,()=>{trailHistory.restoring=false;trailHistory.preview=null;trailHistory.selected=[];trailHistory.reason='';renderTrailHistoryDetail();dialog.querySelector('[data-action="start-restore"]').focus();});
+  bind('edit-preview',uiText('返回选择','Edit selection'),ready,false,()=>{trailHistory.preview=null;renderTrailHistoryDetail();$('#trailHistoryReason')?.focus();});
+  bind('preview',uiText('预览恢复','Preview restore'),editing&&!ready,!d.restorable||!trailHistory.selected.length||!trailHistory.reason.trim(),()=>void previewTrailRestore());
+  bind('commit',uiText('确认恢复','Confirm restore'),ready,!ready,()=>void commitTrailRestore());
+  const hint=$('#trailHistoryActionHint');
+  hint.textContent=!editing?'':trailHistory.busy?uiText('正在处理，请稍候…','Processing, please wait…'):ready?uiText(`将恢复 ${trailHistory.preview.items.length} 个 Issue`,`${trailHistory.preview.items.length} ${trailHistory.preview.items.length===1?'Issue':'Issues'} will be restored`):!d.restorable?uiText('请先重新核验 Trail。','Verify Trail before restoring.'):!trailHistory.selected.length?uiText('请选择要恢复的 Issue。','Select Issues to restore.'):!trailHistory.reason.trim()?uiText('填写恢复原因后预览差异。','Enter a reason to preview changes.'):uiText(`已选 ${trailHistory.selected.length} 个 Issue · 尚未写入`,`${trailHistory.selected.length} selected · Nothing written`);
+  hint.hidden=!editing;
+  dialog.querySelector('[data-action="close"]').hidden=editing;
   dialog.querySelector('[data-action="close"]').disabled=trailHistory.busy;
 }
 async function openTrailHistoryDetail(id,{updateUrl=true}={}) {
   if(trailHistory.busy)return;
-  const seq=++trailHistory.detailSeq;trailHistory.operation=id;trailHistory.detail=null;trailHistory.preview=null;trailHistory.reason="";
+  const seq=++trailHistory.detailSeq;trailHistory.operation=id;trailHistory.detail=null;trailHistory.preview=null;trailHistory.reason="";trailHistory.restoring=false;trailHistory.selected=[];
   if(updateUrl)trailHistoryUrl();const context=capturePageContext();
   try {
     const detail=await api(`/api/trail-history/${encodeURIComponent(id)}`);
     if(seq!==trailHistory.detailSeq||!isPageContextCurrent(context))return;
-    trailHistory.detail=detail;trailHistory.selected=detail.items.filter(item=>detail.outcomes[item.issue_id]==="succeeded").map(item=>item.issue_id);renderTrailHistoryDetail();const dialog=$("#trailHistoryDialog");
-    if(!dialog.open)dialog.showModal();
+    trailHistory.detail=detail;renderTrailHistoryDetail();const dialog=$("#trailHistoryDialog");
+    if(!dialog.open){dialog.showModal();dialog.querySelector('[data-action="close"]').focus({preventScroll:true});}
     dialog.oncancel=event=>{if(trailHistory.busy)event.preventDefault();};
     dialog.onclose=()=>{trailHistory.detailSeq++;trailHistory.operation="";trailHistory.preview=null;if(state.activePage==="trail-history")trailHistoryUrl();};
     dialog.querySelector('[data-action="close"]').onclick=()=>dialog.close();
   }catch(error){if(seq===trailHistory.detailSeq&&isPageContextCurrent(context))showToast(error.message,true);}
 }
 async function previewTrailRestore() {
-  if(trailHistory.busy)return;
+  if(trailHistory.busy||!trailHistory.restoring)return;
   if(!trailHistory.reason.trim()){showToast(uiText("请填写恢复原因。","Enter a restore reason."),true);$("#trailHistoryReason")?.focus();return;}
   if(!trailHistory.selected.length){showToast(uiText("请选择已核验成功的 Issue。","Select at least one verified Issue."),true);return;}
   const id=trailHistory.operation,context=capturePageContext();trailHistory.preview=null;trailHistory.busy=true;renderTrailHistoryDetail();
@@ -183,7 +206,7 @@ async function previewTrailRestore() {
   }
 }
 async function commitTrailRestore() {
-  if(trailHistory.busy||!trailHistory.preview?.ready)return;
+  if(trailHistory.busy||!trailHistory.restoring||!trailHistory.preview?.ready)return;
   const id=trailHistory.operation,preview=trailHistory.preview;trailHistory.busy=true;renderTrailHistoryDetail();
   try {
     const result=await api(`/api/trail-history/${encodeURIComponent(id)}/restore-commit`,{method:"POST",body:JSON.stringify({preview_id:preview.preview_id,confirm:true})});
@@ -199,13 +222,15 @@ function refreshTrailHistoryLanguage() {
   const form=$("#trailHistoryFilters"),values=form?Array.from(form.querySelectorAll("input,select")).map(el=>[el.name,el.value]):[];
   renderTrailHistoryFilters();for(const [name,value] of values)if(form.elements[name])form.elements[name].value=value;
   enhanceDashboardSelects(form);renderTrailHistory();renderTrailHistoryDetail();
-  if(reasonFocused)$("#trailHistoryReason")?.focus();else if(focused)form.elements[focused]?.focus();
+  if(reasonFocused)$("#trailHistoryReason")?.focus({preventScroll:true});else if(focused)form.elements[focused]?.focus();
 }
 async function verifyTrailHistory() {
   if(trailHistory.busy)return;
-  const id=trailHistory.operation;trailHistory.busy=true;trailHistory.preview=null;renderTrailHistoryDetail();
+  const id=trailHistory.operation,seq=trailHistory.detailSeq,context=capturePageContext();trailHistory.busy=true;trailHistory.preview=null;renderTrailHistoryDetail();
   try {
-    trailHistory.detail=await api(`/api/trail-history/${encodeURIComponent(id)}/verify`,{method:"POST",body:"{}"});
-    trailHistory.selected=trailHistory.detail.items.filter(item=>trailHistory.detail.outcomes[item.issue_id]==="succeeded").map(item=>item.issue_id);
+    const detail=await api(`/api/trail-history/${encodeURIComponent(id)}/verify`,{method:"POST",body:"{}"});
+    if(seq!==trailHistory.detailSeq||id!==trailHistory.operation||!isPageContextCurrent(context))return;
+    trailHistory.detail=detail;
+    trailHistory.selected=trailHistory.selected.filter(id=>trailHistory.detail.outcomes[id]==="succeeded");
   }catch(error){showToast(error.message,true);}finally{trailHistory.busy=false;renderTrailHistoryDetail();}
 }

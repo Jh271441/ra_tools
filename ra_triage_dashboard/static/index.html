@@ -86,7 +86,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-664`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-667`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -1123,7 +1123,7 @@
             <div id="trailHistoryResults" aria-live="polite"></div>
           </section>
           <dialog id="trailHistoryDialog" class="trail-history-dialog" aria-labelledby="trailHistoryDialogTitle">
-            <div class="dialog-card"><h2 id="trailHistoryDialogTitle"></h2><div class="trail-history-dialog-body"></div><div class="dialog-actions"><button class="button button-secondary" data-action="close" type="button"></button><button class="button button-danger" data-action="commit" type="button" disabled hidden></button></div></div>
+            <div class="dialog-card"><h2 id="trailHistoryDialogTitle"></h2><div class="trail-history-dialog-body"></div><div class="trail-history-dialog-footer"><p id="trailHistoryActionHint" class="trail-history-muted" role="status"></p><div class="dialog-actions"><button class="button button-secondary" data-action="close" type="button"></button><button class="button button-secondary" data-action="cancel-restore" type="button" hidden></button><button class="button button-secondary" data-action="edit-preview" type="button" hidden></button><button class="button button-secondary" data-action="start-restore" type="button" hidden></button><button class="button button-primary" data-action="preview" type="button" hidden></button><button class="button button-danger" data-action="commit" type="button" disabled hidden></button></div></div></div>
           </dialog>
           <section class="app-page tool-page trail-update-page hidden is-loading" id="trailAttributeUpdatePage" data-page="trail-update">
             <section class="page-card trail-update-header-card">
@@ -2516,7 +2516,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-664`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-667`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

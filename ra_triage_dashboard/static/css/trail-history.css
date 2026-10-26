@@ -19,18 +19,22 @@
 .trail-history-pagination { display:flex; gap:8px; justify-content:flex-end; align-items:center; padding:12px 0; flex-wrap:wrap; }
 .trail-history-pagination span { margin-right:auto; color:var(--muted); }
 .trail-history-dialog { width:min(960px,calc(100vw - 32px)); max-width:calc(100vw - 32px); max-height:calc(100dvh - 32px); padding:0; border:1px solid var(--line); border-radius:var(--radius); color:var(--text); background:var(--raised); }
-.trail-history-dialog .dialog-card { display:flex; flex-direction:column; max-height:calc(100dvh - 34px); padding:16px; gap:12px; }
-.trail-history-dialog-body { min-height:0; overflow:auto; display:grid; gap:14px; overscroll-behavior:contain; }
+.trail-history-dialog .dialog-card { display:grid; grid-template-rows:auto minmax(0,1fr) auto; max-height:calc(100dvh - 34px); box-sizing:border-box; overflow:hidden; padding:16px; gap:12px; }
+.trail-history-dialog .dialog-card > h2 { margin:0; font-size:18px; }
+.trail-history-dialog-body { min-height:0; overflow:auto; display:grid; align-content:start; gap:12px; overscroll-behavior:contain; scrollbar-gutter:stable; }
+.trail-history-dialog-body > * { min-width:0; }
 .trail-history-dialog-body p { line-height:1.5; overflow-wrap:anywhere; }
 .trail-history-id { overflow-wrap:anywhere; font-size:12px; }
 .trail-history-issue { border:1px solid var(--line); border-radius:7px; padding:12px; display:grid; gap:10px; }
 .trail-history-issue h3 { font:inherit; font-weight:600; margin:0; }
 .trail-history-issue-heading,.trail-history-meta { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
 .trail-history-meta time { color:var(--muted); }
-.trail-history-diff,.trail-history-transition { display:grid; grid-template-columns:minmax(0,1fr) 20px minmax(0,1fr); gap:12px; align-items:start; }
-.trail-history-transition > div { display:grid; gap:6px; }
+.trail-history-diff { display:grid; grid-template-columns:minmax(0,1fr) 20px minmax(0,1fr); gap:12px; align-items:start; }
+.trail-history-transition,.trail-history-unchanged { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+.trail-history-transition > span { display:inline-flex; align-items:center; gap:6px; }
+.trail-history-unchanged { color:var(--muted); font-size:13px; }
 .trail-history-arrow { align-self:center; color:var(--muted); text-align:center; }
-.trail-history-value { border:1px solid var(--line); border-radius:var(--radius); padding:6px 10px; width:fit-content; max-width:100%; overflow-wrap:anywhere; }
+.trail-history-value { display:inline-block; border:1px solid var(--line); border-radius:var(--radius); padding:2px 6px; width:fit-content; max-width:100%; font-size:13px; overflow-wrap:anywhere; }
 .trail-history-value[data-excluded="true"] { background:var(--accent-soft); color:var(--accent); }
 .trail-history-transition small { color:var(--muted); }
 .trail-history-diff small { color:var(--muted); }
@@ -47,9 +51,15 @@
 .trail-history-steps li[aria-current="step"] { color:var(--accent); border-color:var(--accent); }
 .trail-history-steps li[data-complete="true"] { color:var(--ok); }
 .trail-history-restore { display:grid; gap:12px; border-top:1px solid var(--line); padding-top:12px; }
+.trail-history-restore[hidden] { display:none; }
+.trail-history-restore-intro { display:grid; gap:8px; }
+.trail-history-restore-intro p { margin:0; color:var(--muted); font-size:13px; }
 .trail-history-restore > p { color:var(--muted); font-size:13px; }
 .trail-history-restore .button { justify-self:start; }
 .trail-history-select { display:flex; align-items:center; gap:8px; min-height:44px; }
 .trail-history-select input { width:18px; height:18px; flex:0 0 auto; }
 #trailHistoryRestoreResult { display:grid; gap:12px; }
-.trail-history-dialog .dialog-actions { display:flex; justify-content:flex-end; gap:8px; padding-top:8px; }
+.trail-history-dialog-footer { border-top:1px solid var(--line); padding-top:12px; }
+.trail-history-dialog-footer p { margin:0 0 8px; font-size:13px; overflow-wrap:anywhere; }
+.trail-history-dialog .dialog-actions { display:flex; justify-content:flex-end; gap:8px; padding:0; }
+.trail-history-dialog .dialog-actions [hidden] { display:none; }

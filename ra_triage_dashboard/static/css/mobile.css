@@ -1026,7 +1026,10 @@
   .trail-history-table td::before { content:attr(data-label); color:var(--muted); }
   .trail-history-table td small { grid-column:2; margin:0; }
   .trail-history-dialog { width:calc(100vw - 16px); max-width:calc(100vw - 16px); max-height:calc(100dvh - 16px); }
-  .trail-history-dialog .dialog-card { padding:12px; max-height:calc(100dvh - 18px); }
+  .trail-history-dialog .dialog-card { padding:12px; max-height:calc(100dvh - 18px); overflow:hidden; }
+  .trail-history-dialog-footer { padding-bottom:env(safe-area-inset-bottom); }
+  .trail-history-dialog .dialog-actions .button { flex:0 1 auto; min-width:0; }
+  .trail-history-dialog .dialog-actions { flex-wrap:wrap; }
   .trail-history-diff { grid-template-columns:minmax(0,1fr); }
   .trail-history-diff > .trail-history-arrow { transform:rotate(90deg); justify-self:center; }
   .trail-history-page details > summary,.trail-history-dialog details > summary { min-height:44px; padding:10px 0; }
