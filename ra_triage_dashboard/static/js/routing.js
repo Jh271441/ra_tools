@@ -154,6 +154,9 @@ function applyUiLanguage(language, { persist = true } = {}) {
     }
   } catch (_) {}
   document.querySelectorAll(".multi-filter").forEach((root) => {
+    if (root.id === "baselineFilter" && typeof baselinePickerOptions === "function") {
+      relabelMultiFilter(root, baselinePickerOptions(state.baselineCatalog, state.selectedBaselineIds));
+    }
     if (typeof updateMultiFilterSummary === "function") updateMultiFilterSummary(root);
   });
   // Gallery / analysis summaries use catalog when re-rendered.
