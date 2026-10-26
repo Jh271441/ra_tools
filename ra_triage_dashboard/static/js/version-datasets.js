@@ -245,7 +245,9 @@ function bindVersionTEInfo(){
 
 function versionMetricLink(scope,mode,label){
   const href=scope?.trail_links?.[mode];
-  return href?`<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(uiText('在Trail按当前统计的案例ID筛选','Filter the current recorded case IDs in Trail'))}">${escapeHtml(label)} ↗</a>`:'';
+  const byReason=scope?.trail_link_types?.[mode]==='reason_fields';
+  const note=byReason?uiText('Trail实时字段筛选，数量可能随更新变化。','Live Trail field query; counts may change as data updates.')+(scope.trail_reason_exclusions?.length?uiText('1009额外排除kEndOfLaneSequence。','1009 additionally excludes kEndOfLaneSequence.'):''):uiText('在Trail按当前统计的案例ID筛选','Filter the current recorded case IDs in Trail');
+  return href?`<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(note)}">${escapeHtml(label)} ↗</a>`:'';
 }
 function renderVersionMetricCards(dataset,scope){
   const historical=Boolean(dataset.historical),states=scope?.states||dataset.states||{};
@@ -259,7 +261,7 @@ function renderVersionMetricCards(dataset,scope){
   const sampling=scope&&!historical?uiText(`抽样${scope.sampled}/${scope.completed}（${scope.completed?(100*scope.sampled/scope.completed).toFixed(2):'0'}%）；每条准入案例独立10%概率，数量可波动。`,`Samples ${scope.sampled}/${scope.completed} (${scope.completed?(100*scope.sampled/scope.completed).toFixed(2):'0'}%); each eligible case has a 10% probability, so counts vary.`):'';
   const data=[
     [uiText(historical?'固定案例':'发现总数',historical?'Frozen cases':'Discovered'),total,historical?uiText('0821固定历史目标集，不参与本流程增量抽样。','Frozen 0821 cohort; not resampled by this workflow.'):`${counts}${breakdown?' '+breakdown+'。':''}${uiText('按触发源过滤，不按画面是否有红绿灯。','Exclusions follow trigger sources, not visible traffic lights.')}`,links.all+(!historical?versionMetricLink(scope,'excluded',uiText(`Trail · 已过滤${excluded}条`,`Trail · ${excluded} excluded cases`)):'')],
-    [uiText('已回刷','Published'),historical?'—':published,historical?uiText('历史集未登记本流程回刷状态。','Publication status is not registered for this historical cohort.'):uiText('已完成推理及Trail回刷校验；含低置信、抽样和其他案例。','Inference and Trail publication verified; includes low-confidence, sampled and other cases.'),historical?links.all:links.published],
+    [uiText('已回刷','Published'),historical?'—':published,historical?uiText('历史集未登记本流程回刷状态。','Publication status is not registered for this historical cohort.'):uiText('已完成推理及Trail回刷校验；含低置信、抽样和其他案例。','Inference and Trail publication verified; includes low-confidence, sampled and other cases.')+(scope?.trail_reason_exclusions?.length?uiText('1009查询排除kEndOfLaneSequence。','1009 query excludes kEndOfLaneSequence.'):''),historical?links.all:links.published],
     [uiText('复核目标','Review targets'),targets,historical?uiText('固定历史复核集。','Frozen historical review set.'):uiText(`低置信（未被抽样覆盖）${scope?.low_only??'—'}＋抽样${scope?.sampled??'—'}＝${targets}。`,`Low confidence excluding samples ${scope?.low_only??'—'} + sampled ${scope?.sampled??'—'} = ${targets}.`)+' '+sampling,links.targets+(!historical?versionMetricLink(scope,'sampled_targets',uiText('Trail · 抽样目标','Trail · Sampled targets')):'')],
     [uiText('待齐备','Awaiting source'),historical?'—':waiting,historical?uiText('历史集无增量待齐备队列。','No incremental source queue for the frozen cohort.'):uiText('触发源或锚点未齐备，后续补查；不计入当前抽样分母。','Trigger source or anchor is incomplete; checked later and excluded from the current sampling denominator.'),historical?links.all:links.waiting]
   ];

@@ -85,8 +85,9 @@ Keep the array-index marker literal (`query_attrs.$0`): Trail's outer codec uses
 `decodeURI`, which preserves `%24` and silently drops that malformed filter.
 Generic form-query decoders are insufficient link validation; verify with the
 native Trail codec and the request it constructs.
-The issue_id IN filter contains the exact recorded metric cohort, avoiding
-errors when raw start-event rules or source data change after a scan. Links do
+Scopes without an equivalent reason query use issue_id IN for the exact
+recorded cohort, including frozen0821 and source-waiting. Compact reason
+queries are live field views, as described below. Links do
 not inherit current gallery/date/owner/status filters. Empty cohorts omit the
 link rather than issue an empty filter that could match all cases. No Trail
 request is made during rendering. New shared scope choices support published, excluded, source-waiting and
@@ -94,3 +95,16 @@ sampled targets, while preserving older planned-sample and waiting views.
 The interactive popovers preserve DOM on identical polls, support clickable
 links, Escape/outside dismissal and viewport bounds, and retain the TE source
 info control. No persistent explanatory paragraph is added to the page.
+
+
+Incremental published/target/sample links use compact live reason-field queries:
+release-family prefix + trip_category0 + RA2/3 + ODD2, then reason not_empty
+or the low/sample enum values. Only1009 adds ra_trigger NOT_IN
+kEndOfLaneSequence, excluding31 historical labeled EOL cases found by the
+October26 audit. Other incremental versions have no extra trigger-link predicate.
+This is a link-only exception; acquisition admission still excludes all four
+configured triggers at top level or raw start. Counts remain recorded platform
+states; a live Trail query can change independently. Link hover titles distinguish
+live fields from exact recorded IDs. Discovery/excluded/source-waiting and frozen
+0821 links preserve their exact recorded IDs; reason empty is not source-waiting.
+Empty recorded scopes still omit links. No render-time Trail query is introduced.

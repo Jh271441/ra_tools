@@ -59,6 +59,17 @@ def composition(rows, *, historical=False, date=''):
                 pending=sum(r['state'] not in {'inferred','published','excluded','historical'} for r in scoped))
 
 
+def trail_filter_url(filters):
+    """Encode native Trail descriptors without escaping its .$0 array marker."""
+    params = {'__fmt': '1', 'view_id~d': '2410', 'page~d': '1', 'size~d': '20',
+              'is_us_engineer~b': '0'}
+    for i, (field, operator, value, kind) in enumerate(filters):
+        params['query_attrs.$' + str(i)] = '|'.join((field, operator, quote(value, safe=''), kind))
+    params['filter_operator'] = 'AND'
+    # Trail uses decodeURI for the outer query and preserves encoded '$'.
+    return 'https://voyager.intra.xiaojukeji.com/static/management/#/issue/pool?' + urlencode(params, safe='$')
+
+
 def trail_case_filter(rows):
     """Native Trail filter URL for this exact recorded cohort (no live query)."""
     ids = sorted({r['issue_id'] for r in rows})
@@ -66,16 +77,30 @@ def trail_case_filter(rows):
         return None  # An empty IN filter must never accidentally open all cases.
     if any(not re.fullmatch(r'cn\d+', iid) for iid in ids):
         raise ValueError('Invalid Issue ID in metric scope')
-    # Trail's native codec uses decodeURI for the outer query, which preserves
-    # encoded reserved characters. Keep '$' literal or the array key becomes
-    # a dictionary key and Trail silently drops the entire Issue ID filter.
-    filters = 'issue_id|in|' + quote(','.join(ids), safe='') + '|a_s'
-    return 'https://voyager.intra.xiaojukeji.com/static/management/#/issue/pool?' + urlencode({
-        '__fmt': '1', 'view_id~d': '2410', 'page~d': '1', 'size~d': '20',
-        'is_us_engineer~b': '0', 'query_attrs.$0': filters, 'filter_operator': 'AND'}, safe='$')
+    return trail_filter_url([('issue_id', 'in', ','.join(ids), 'a_s')])
 
 
-def count_scope(rows, *, historical=False):
+def trail_reason_filter(family, mode):
+    """Compact live reason query; the historical EOL exception is 1009-only."""
+    if not isinstance(family, str) or not re.fullmatch(r'20\d{6}', family):
+        raise ValueError('Invalid release family')
+    datetime.strptime(family, '%Y%m%d')
+    filters = [('version', 'like', '1.gen4-release-' + family, 'a_s'),
+               ('trip_category', 'in', '0', 'a_d'), ('ra_type', 'in', '2,3', 'a_d'),
+               ('trip_odd', 'in', 'ODD2', 'a_s')]
+    if family == '20261009':
+        filters.append(('ra_trigger', 'not_in', 'kEndOfLaneSequence', 'a_s'))
+    if mode == 'published':
+        filters.append(('ra_review_reason', 'not_empty', '', 's'))
+    elif mode in {'targets', 'sampled_targets'}:
+        reason = '目标集-抽样' if mode == 'sampled_targets' else '目标集-低置信,目标集-抽样'
+        filters.append(('ra_review_reason', 'in', reason, 'a_s'))
+    else:
+        raise ValueError('Invalid reason metric')
+    return trail_filter_url(filters)
+
+
+def count_scope(rows, *, historical=False, family=None):
     """Whole-version metric definitions, independent of gallery/date filters."""
     states = Counter(r['state'] for r in rows)
     completed = [r for r in rows if historical or r['state'] in {'inferred', 'published'}]
@@ -89,19 +114,31 @@ def count_scope(rows, *, historical=False):
             # Keep unmatched/start-only or business exclusions explicit.
             typed = row.get('error') == 'trigger_source_excluded' and isinstance(trigger, str) and trigger in allowed
             excluded[trigger if typed else 'other_exclusion'] += 1
+    cohorts = {
+        'all': rows,
+        'published': [r for r in rows if r['state']=='published'],
+        'targets': [r for r in rows if r.get('is_target')],
+        'source_waiting': [r for r in rows if r['state']=='waiting_metadata'],
+        'excluded': [r for r in rows if r['state']=='excluded'],
+        'sampled_targets': [r for r in rows if r.get('is_target') and r.get('is_sample')],
+    }
+    reason_modes = {'published', 'targets', 'sampled_targets'}
+    kinds, links = {}, {}
+    for mode, cohort in cohorts.items():
+        by_reason = bool(family) and not historical and mode in reason_modes
+        kinds[mode] = 'reason_fields' if by_reason else 'case_ids'
+        if not cohort:
+            links[mode] = None
+        else:
+            links[mode] = trail_reason_filter(family, mode) if by_reason else trail_case_filter(cohort)
     return dict(basis='frozen_targets' if historical else 'version_all_dates', total=len(rows), states=dict(states),
                 completed=len(completed), low_only=groups['low'], sampled=groups['sample'],
                 targets=sum(bool(r.get('is_target')) for r in rows),
                 exclusions=[dict(type=k, count=v) for k,v in sorted(excluded.items())],
                 sampling_policy=None if historical else 'version_probability_v3',
                 sampling_probability=None if historical else 0.1,
-                trail_links={
-                    'all': trail_case_filter(rows),
-                    'published': trail_case_filter([r for r in rows if r['state']=='published']),
-                    'targets': trail_case_filter([r for r in rows if r.get('is_target')]),
-                    'source_waiting': trail_case_filter([r for r in rows if r['state']=='waiting_metadata']),
-                    'excluded': trail_case_filter([r for r in rows if r['state']=='excluded']),
-                    'sampled_targets': trail_case_filter([r for r in rows if r.get('is_target') and r.get('is_sample')])})
+                trail_links=links, trail_link_types=kinds,
+                trail_reason_exclusions=['kEndOfLaneSequence'] if family=='20261009' and not historical else [])
 
 
 def workbench(db, root, dataset_id, *, page=1, page_size=24, mode='targets', q='', sort='added',
@@ -182,7 +219,7 @@ def workbench(db, root, dataset_id, *, page=1, page_size=24, mode='targets', q='
     distribution = Counter(json.dumps(r['te_value'], ensure_ascii=False) for r in targets if r['te_status']=='filled')
     result = dict(dataset_id=dataset_id, dataset=dataset, page=page, page_size=page_size, total=len(selected),
                   items=selected[(page-1)*page_size:page*page_size], date_options=date_options,assignees=sorted({(r.get('binding') or {}).get('assignee') for r in rows if (r.get('binding') or {}).get('assignee')}),
-                  snapshot_revision=snapshot_revision,count_scope=count_scope(rows,historical=historical),composition=composition(rows,historical=historical,date=date), te=dict(source_field='ra_review_result_new',
+                  snapshot_revision=snapshot_revision,count_scope=count_scope(rows,historical=historical,family=family),composition=composition(rows,historical=historical,date=date), te=dict(source_field='ra_review_result_new',
                       source_status=te['source_status'], last_success_at=te.get('last_success_at'),observed_changes=te.get('observed_changes'), summary=summarize(targets),
                       distribution=[dict(value=json.loads(k),count=v) for k,v in distribution.items()], daily=daily))
     return result, selected

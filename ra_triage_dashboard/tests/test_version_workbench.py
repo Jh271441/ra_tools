@@ -151,3 +151,55 @@ class TrailMetricLinkTests(unittest.TestCase):
         self.assertEqual((field,op,kind),('issue_id','in','a_s'))
         self.assertEqual(unquote(value).split(','),['cn1','cn2'])
         self.assertIsNone(trail_case_filter([]))
+
+    @staticmethod
+    def conditions(url):
+        from urllib.parse import parse_qs,urlsplit,unquote
+        fragment=urlsplit(url).fragment
+        raw_keys={item.partition('=')[0] for item in fragment.split('?',1)[1].split('&')}
+        assert 'query_attrs.$0' in raw_keys and all('%24' not in k for k in raw_keys)
+        decoded={}
+        for key,value in parse_qs(fragment.split('?',1)[1]).items():
+            if key.startswith('query_attrs.'):
+                field,operator,val,kind=value[0].split('|')
+                decoded[field]=(operator,unquote(val),kind)
+        return decoded
+
+    def test_reason_links_scope_eol_exception_to_1009_and_keep_version_business_filters(self):
+        fixture=VersionWorkbenchTest();fixture.setUp()
+        try:
+            for family in ['20261009','20261016','20261023']:
+                dataset='release-'+family+'-odd2'
+                fixture.db.list_version_datasets=lambda dataset=dataset:[dict(id=dataset,revision=1)]
+                value,_=workbench(fixture.db,fixture.root,dataset,mode='excluded',q='no-match',te_status='filled')
+                self.assertEqual(value['total'],0)
+                scope=value['count_scope']
+                for mode,expected in [('published',('not_empty','','s')),
+                                      ('targets',('in','目标集-低置信,目标集-抽样','a_s')),
+                                      ('sampled_targets',('in','目标集-抽样','a_s'))]:
+                    url=scope['trail_links'][mode];self.assertLess(len(url),800)
+                    fields=self.conditions(url)
+                    self.assertNotIn('issue_id',fields)
+                    self.assertEqual(fields['version'],('like','1.gen4-release-'+family,'a_s'))
+                    self.assertEqual(fields['trip_category'],('in','0','a_d'))
+                    self.assertEqual(fields['ra_type'],('in','2,3','a_d'))
+                    self.assertEqual(fields['trip_odd'],('in','ODD2','a_s'))
+                    self.assertEqual(fields['ra_review_reason'],expected)
+                    self.assertEqual(scope['trail_link_types'][mode],'reason_fields')
+                    if family=='20261009':self.assertEqual(fields['ra_trigger'],('not_in','kEndOfLaneSequence','a_s'))
+                    else:self.assertNotIn('ra_trigger',fields)
+                self.assertIn('issue_id',self.conditions(scope['trail_links']['all']))
+        finally:fixture.doCleanups()
+
+    def test_frozen_and_source_waiting_links_stay_exact_and_empty_scopes_omit_links(self):
+        from ra_triage_dashboard.app.version_workbench import count_scope
+        rows=[dict(issue_id='cn1',state='published',is_target=True,is_sample=True),
+              dict(issue_id='cn2',state='waiting_metadata')]
+        live=count_scope(rows,family='20261009')
+        self.assertEqual(self.conditions(live['trail_links']['source_waiting'])['issue_id'],('in','cn2','a_s'))
+        self.assertIsNone(live['trail_links']['excluded'])
+        frozen=count_scope(rows,family='20260821',historical=True)
+        self.assertEqual(frozen['trail_link_types']['targets'],'case_ids')
+        self.assertEqual(self.conditions(frozen['trail_links']['targets'])['issue_id'],('in','cn1','a_s'))
+        self.assertEqual(frozen['trail_reason_exclusions'],[])
+        self.assertTrue(all(link is None for link in count_scope([],family='20261009')['trail_links'].values()))
