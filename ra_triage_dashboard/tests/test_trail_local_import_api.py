@@ -82,13 +82,15 @@ class LocalImportApiTest(IsolatedAsyncioTestCase):
         # Exercise the actual remote parser independently of the mocked preview flow.
         original = self._original_remote
         with patch.object(api, "_field_names", return_value=("label", "info")), patch.object(api, "read_trail_model_fields") as read:
-            for complete, rows in ((False, []), (True, []), (True, [{"issue_id": "cn12345678"}]),
+            for complete, rows in ((False, []), (True, []),
                                    (True, [{"issue_id": "cn12345678", "info": "invalid"}])):
                 read.return_value = SimpleNamespace(complete=complete, rows=rows)
                 with self.assertRaises(HTTPException):
                     await original(["cn12345678"])
             read.return_value = SimpleNamespace(complete=True, rows=[{"issue_id": "cn12345678", "info": {"ra_triage_dashboard": self.remote["cn12345678"]}}])
             self.assertEqual(await original(["cn12345678"]), self.remote)
+            read.return_value = SimpleNamespace(complete=True, rows=[{"issue_id":"cn12345678"}])
+            self.assertEqual(await original(["cn12345678"]), {"cn12345678":{}})
 
     async def test_discovery_only_queries_not_locally_excluded_and_preserves_blocked_rows(self):
         self.db.trail_local_import_members.return_value = {"items": [

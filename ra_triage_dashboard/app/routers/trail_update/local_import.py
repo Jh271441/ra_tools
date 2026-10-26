@@ -66,8 +66,10 @@ async def _remote(ids):
     result = await asyncio.to_thread(read_trail_model_fields, ra_root=settings.ra_auto_triage_root,
         issue_ids=ids, view_id=settings.trail_view_id, chunk_size=settings.trail_sync_chunk_size)
     rows = {row.get("issue_id"): row for row in result.rows}
-    if not result.complete or len(result.rows) != len(ids) or set(rows) != set(ids) or any(field not in row for row in result.rows):
+    if not result.complete or len(result.rows) != len(ids) or set(rows) != set(ids):
         raise _detail(409, "Trail 查询不完整 / Incomplete Trail snapshot")
+    # Old Issues omit empty custom columns. Missing info is an unset marker,
+    # not an incomplete Issue snapshot and never an explicit false/true vote.
     return {issue: _owned_fields(rows[issue], field) for issue in ids}
 
 
