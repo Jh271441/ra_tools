@@ -96,6 +96,13 @@ function baselineLabelForScope(scope) {
 function appendBaselineParams(params) {
   const value = selectedBaselineQueryValue();
   if (value) params.set("baselines", value);
+  // Scope only requests already bound to the same task. Never leak a queue
+  // filter into independent labeling/media/other-page requests.
+  const split = params.get('work_split_id');
+  const taskView = state.activePage === 'review' && split && split === state.reviewWorkSplitId
+    ? state.reviewTaskView : state.activePage === 'analysis' && split && split === state.reviewAnalysis.workSplitId
+      ? state.reviewAnalysis.taskView : '';
+  if (taskView) params.set('task_view', taskView);
   return params;
 }
 

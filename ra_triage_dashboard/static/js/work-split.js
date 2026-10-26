@@ -29,6 +29,13 @@ function renderReviewTaskContext() {
   }
   const summary = $("#reviewTaskSummary");
   const exit = $("#reviewTaskContextExit");
+  const viewToggle = $('#reviewTaskViewToggle');
+  if (viewToggle) {
+    viewToggle.hidden = !task || !state.reviewTaskView;
+    viewToggle.textContent = state.reviewTaskView === 'pending'
+      ? uiText('待完成 · 查看全部', 'Pending · Show all')
+      : uiText('全部目标 · 只看待完成', 'All targets · Show pending');
+  }
   if (summary) {
     summary.hidden = !task;
     summary.textContent = task
@@ -64,6 +71,7 @@ function renderReviewTaskLoading(splitId = state.reviewWorkSplitId) {
 function clearReviewTaskContext({ clearRun = true } = {}) {
   state.reviewTaskContextRequestSeq = Number(state.reviewTaskContextRequestSeq || 0) + 1;
   state.reviewWorkSplitId = "";
+  state.reviewTaskView = '';
   state.availableReviewWorkSplitId = "";
   state.reviewTaskContext = null;
   state.reviewTaskContextError = null;
@@ -112,7 +120,7 @@ async function loadReviewTaskContext(splitId, { route = null } = {}) {
   renderReviewTaskLoading(normalized);
   renderReviewTaskContext();
   try {
-    const result = await api(`/api/review-task-context/${encodeURIComponent(normalized)}`);
+    const result = await api(`/api/review-task-context/${encodeURIComponent(normalized)}${state.reviewTaskView ? '?task_view=' + encodeURIComponent(state.reviewTaskView) : ''}`);
     if (!isCurrent()) return null;
     const task = result.task || {};
     state.reviewTaskContext = task;
@@ -332,6 +340,7 @@ function renderAnalysisWorkSplitPicker(selected = state.reviewAnalysis.workSplit
   bindUiSelect(root, {
     onChange: (value) => {
       state.reviewAnalysis.workSplitId = value || "";
+      state.reviewAnalysis.taskView = '';
       if (value) state.reviewAnalysis.availableWorkSplitId = value;
       scheduleAnalysisFilterReload?.(0);
     },
@@ -389,6 +398,7 @@ function currentReviewFilterPayload() {
     // is the full filtered set unless the admin intentionally kept it.
     work_assignee: "",
     work_split_id: state.reviewWorkSplitId || "",
+    task_view: state.reviewWorkSplitId ? (state.reviewTaskView || '') : '',
   };
 }
 
@@ -828,6 +838,13 @@ function bindWorkSplitControls() {
     loadReviewTaskContext(state.reviewWorkSplitId).then(() => loadCases({ keepSelection: false, page: 1 })).catch((error) => showToast(error.message, true));
   });
   $("#reviewTaskContextExit")?.addEventListener("click", () => exitReviewTaskContext().catch((error) => showToast(error.message, true)));
+  $('#reviewTaskViewToggle')?.addEventListener('click', () => {
+    state.reviewTaskView = state.reviewTaskView === 'pending' ? 'targets' : 'pending';
+    state.casePage = 1;
+    persistCurrentReviewRoute({ issue: '', casePage: 1 });
+    renderReviewTaskContext();
+    loadCases({ keepSelection: false, page: 1 }).catch(error => showToast(error.message, true));
+  });
   $("#reviewTaskContextErrorExit")?.addEventListener("click", () => exitReviewTaskContext().catch((error) => showToast(error.message, true)));
   $("#reviewWorkflowMode")?.addEventListener("change", (event) => {
     if (state.reviewWorkSplitId) return;

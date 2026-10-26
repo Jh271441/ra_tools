@@ -17,9 +17,11 @@ from ..runtime import _public_path, database, settings
 from ..support.baselines import (
     resolve_request_baseline_ids,
     resolve_request_baseline_scopes,
+    restrict_version_issue_ids,
 )
 from ..support.catalogs import (
     _missing_evidence_catalog,
+    _parse_issue_id_filter,
     _review_tag_catalog,
 )
 from ..support.common import (
@@ -69,6 +71,11 @@ async def review_reason_analysis(
     # conflict/agreement projection for a shared dataset.
     include_multi_reviews = True
     scopes = resolve_request_baseline_scopes(baselines, request=request)
+    if request.query_params.get("task_view"):
+        issue_ids = await asyncio.to_thread(
+            restrict_version_issue_ids, baselines, request=request,
+            issue_ids=_parse_issue_id_filter(issue_ids), task_id=work_split_id,
+        )
     payload = await asyncio.to_thread(
         _review_reason_analysis_payload,
         model_run_id=model_run_id,
@@ -449,11 +456,16 @@ async def export_review_reason_analysis(
         raise _detail(400, "format 仅支持 csv、xlsx 或 trail_xlsx。")
     scopes = resolve_request_baseline_scopes(baselines, request=request)
     export_issue_ids: str | list[str] = issue_ids
+    if request.query_params.get("task_view") and not gallery_scope:
+        export_issue_ids = await asyncio.to_thread(
+            restrict_version_issue_ids, baselines, request=request,
+            issue_ids=_parse_issue_id_filter(issue_ids), task_id=work_split_id,
+        )
     export_search = search
     export_comment_state = comment_state
     gallery_items: list[dict[str, Any]] = []
     if gallery_scope:
-        case_filters = _case_filter_kwargs(
+        case_filters = await asyncio.to_thread(_case_filter_kwargs,
             search=search,
             gt_label=gt_label,
             model_label=model_label,

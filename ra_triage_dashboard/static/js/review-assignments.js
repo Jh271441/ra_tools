@@ -102,6 +102,7 @@ function reviewAssignmentRouteOptions(item, page) {
     exclusion: "all", workSplitId: item?.split_id || "",
     baselines: item?.baseline_ids || item?.baseline_scopes || filter.baselines || filter.baseline_scopes || [],
     forceBaselines: true,
+    taskView: item?.appendable ? (page === 'review' ? 'pending' : 'targets') : '',
   };
   if (page === "analysis") {
     return {
@@ -119,6 +120,11 @@ function reviewAssignmentBatchHref(item, page) {
   return pageUrl(page, reviewAssignmentRouteOptions(item, page));
 }
 
+function reviewAssignmentActionLinks(item) {
+  const combined = item.workflow_mode === 'model_review_and_case_label';
+  return `<a class="button button-quiet" href="${escapeHtml(reviewAssignmentBatchHref(item, 'review'))}">${escapeHtml(combined ? uiText('开始联合复核', 'Start combined review') : uiText("去判错复核", "Open Review"))}</a><a class="button button-quiet" href="${escapeHtml(reviewAssignmentBatchHref(item, 'analysis'))}">${escapeHtml(uiText("去原因聚类", "Open analysis"))}</a>`;
+}
+
 function reviewAssignmentFilterValues(value) {
   return Array.isArray(value) ? value : parseFilterList(value || "");
 }
@@ -133,6 +139,7 @@ function reviewAssignmentSourceHref(filter = {}) {
     clusterKey: filter.missing_evidence || "", exclusion: filter.exclusion || "all",
     baselines: filter.baselines || filter.baseline_scopes || [], forceBaselines: true,
     workflowMode: "model_review_and_case_label", casePage: 1, casePageSize: 20,
+    taskView: '',
   });
 }
 const REVIEW_ALLOCATION_DRAFT_KEY = "manual-review-allocation-draft-v1";
@@ -205,7 +212,7 @@ function renderReviewAssignmentBatch(item) {
     ? uiText(`已转派 ${item.change_count} 次`, `${item.change_count} transfers`)
     : uiText("尚未转派", "No transfers");
   const taskLinks = item.is_current
-    ? `<a class="button button-quiet" href="${escapeHtml(reviewAssignmentBatchHref(item, "review"))}">${escapeHtml(uiText("去判错复核", "Open Review"))}</a><a class="button button-quiet" href="${escapeHtml(reviewAssignmentBatchHref(item, "analysis"))}">${escapeHtml(uiText("去原因聚类", "Open analysis"))}</a>`
+    ? reviewAssignmentActionLinks(item)
     : `<a class="button button-quiet" href="${escapeHtml(pageUrl("campaigns", { campaignId: item.split_id, lifecycle: "history" }))}">${escapeHtml(uiText("查看审计与复核", "View audit and reviews"))}</a>`;
   return `<article class="review-assignment-batch" data-review-assignment-batch="${escapeHtml(item.split_id)}">
     <header class="review-assignment-batch-header">
@@ -266,6 +273,7 @@ function reviewAssignmentIssueHref(item) {
     runId: item.split_model_run_id || detail.model_run_id || "",
     workAssignee: [item.assignee],
     workSplitId: item.source_split_id || detail.split_id,
+    taskView: detail.appendable ? 'targets' : '',
   });
 }
 
@@ -646,10 +654,8 @@ function bindReviewAssignmentsPage() {
 }
 
 function renderVersionAssignmentBatch(item){
-  const own=state.session?.verified&&(item.members||[]).some(m=>m.username===state.session.username)?state.session.username:'';
-  const href=pageUrl('version-datasets',{dataset:item.dataset_id,assignee:own,review_status:'pending',mode:'targets'});
   const percent=reviewAssignmentPercent(item.completion_ratio);
-  return `<article class="review-assignment-batch" data-review-assignment-batch="${escapeHtml(item.split_id)}"><header class="review-assignment-batch-header"><div><strong class="review-assignment-batch-title">${escapeHtml(item.release_family.slice(4))} · ${uiText('版本联合复核','Version combined review')}</strong><span class="review-assignment-batch-meta">${uiText('低置信＋抽样 · 单人负责 · 无交叉','Low confidence + sample · Single owner · No overlap')}</span><span class="review-assignment-batch-meta">${uiText('最近更新','Updated')} ${escapeHtml(versionDatasetTime(item.updated_at)+' CST')}</span></div><span class="review-assignment-status is-current">${uiText('持续追加','Appendable')}</span></header><div class="review-assignment-progress"><div class="review-assignment-progress-heading"><span>${uiText('联合复核进度','Combined review progress')}</span><strong>${item.completed_count} / ${item.assignment_count} · ${percent}%</strong></div><div class="review-assignment-progress-track"><span style="width:${percent}%"></span></div></div><div class="review-assignment-member-grid">${item.members.map(reviewAssignmentMemberMarkup).join('')}</div><footer class="review-assignment-batch-footer"><span>${item.total_count} ${uiText('个案例','cases')}</span><div class="review-assignment-batch-actions"><a class="button button-quiet" href="${escapeHtml(href)}">${uiText('开始联合复核','Start combined review')}</a><button class="button button-quiet" type="button" data-open-review-assignment="${escapeHtml(item.split_id)}">${uiText('明细与追加记录','Details and additions')}</button></div></footer></article>`;
+  return `<article class="review-assignment-batch" data-review-assignment-batch="${escapeHtml(item.split_id)}"><header class="review-assignment-batch-header"><div><strong class="review-assignment-batch-title">${escapeHtml(item.release_family.slice(4))} · ${uiText('版本联合复核','Version combined review')}</strong><span class="review-assignment-batch-meta">${uiText('低置信＋抽样 · 单人负责 · 无交叉','Low confidence + sample · Single owner · No overlap')}</span><span class="review-assignment-batch-meta">${uiText('最近更新','Updated')} ${escapeHtml(versionDatasetTime(item.updated_at)+' CST')}</span></div><span class="review-assignment-status is-current">${uiText('持续追加','Appendable')}</span></header><div class="review-assignment-progress"><div class="review-assignment-progress-heading"><span>${uiText('联合复核进度','Combined review progress')}</span><strong>${item.completed_count} / ${item.assignment_count} · ${percent}%</strong></div><div class="review-assignment-progress-track"><span style="width:${percent}%"></span></div></div><div class="review-assignment-member-grid">${item.members.map(reviewAssignmentMemberMarkup).join('')}</div><footer class="review-assignment-batch-footer"><span>${item.total_count} ${uiText('个案例','cases')}</span><div class="review-assignment-batch-actions">${reviewAssignmentActionLinks(item)}<button class="button button-quiet" type="button" data-open-review-assignment="${escapeHtml(item.split_id)}">${uiText('查看任务明细','View task detail')}</button></div></footer></article>`;
 }
 function renderVersionAssignmentHistory(detail){
   const el=$('#reviewAssignmentAppendHistory');if(!el)return;el.hidden=!detail.appendable;

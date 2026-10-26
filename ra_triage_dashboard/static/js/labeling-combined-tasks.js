@@ -2,12 +2,6 @@
 const labelingCombinedTasks = { items: [], scope: '', loaded: false, error: false, seq: 0 };
 
 function labelingCombinedTaskHref(item) {
-  if (item.appendable) {
-    const reviewer = state.session?.verified ? String(state.session.username || '').toLowerCase() : '';
-    const own = (item.members || []).some(person => person.username.toLowerCase() === reviewer);
-    return pageUrl('version-datasets', { dataset: item.dataset_id, mode: 'targets',
-      assignee: own ? reviewer : '', review_status: 'pending' });
-  }
   return reviewAssignmentBatchHref(item, 'review');
 }
 

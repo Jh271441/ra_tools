@@ -144,6 +144,7 @@ class ReviewWorkflowTest(unittest.TestCase):
                 "type": "http",
                 "method": "GET",
                 "path": "/api/review-reason-analysis/export",
+                "query_string": b"",
                 "headers": [],
             }
         )
@@ -196,6 +197,7 @@ class ReviewWorkflowTest(unittest.TestCase):
                 "type": "http",
                 "method": "GET",
                 "path": "/api/review-reason-analysis/export",
+                "query_string": b"",
                 "headers": [],
             }
         )
@@ -320,6 +322,7 @@ class ReviewWorkflowTest(unittest.TestCase):
                 "type": "http",
                 "method": "GET",
                 "path": "/api/review-reason-analysis",
+                "query_string": b"",
                 "headers": [],
             }
         )

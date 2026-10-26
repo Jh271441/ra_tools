@@ -15,7 +15,7 @@ from ..baseline_registry import (
 )
 from ..import_parsing import normalize_model_row, parse_source_bytes
 from ..runtime import baseline_registry, database, media_registry, runtime_state, settings
-from .common import _as_text
+from .common import _as_text, _detail
 
 
 def bootstrap_model_result() -> None:
@@ -264,6 +264,20 @@ def restrict_version_issue_ids(
 ) -> tuple[str, ...]:
     """Intersect current version targets; explicit historical tasks stay frozen."""
     selected = tuple(issue_ids)
+    task_view = request.query_params.get("task_view", "") if request is not None else ""
+    if task_view:
+        if task_view not in {"targets", "pending"}:
+            raise _detail(400, "Unsupported task view")
+        dataset_id = database.version_campaign_dataset(task_id) if task_id else ""
+        if not dataset_id:
+            raise _detail(400, "Current-target view requires a version task")
+        # Use the same live membership and joint completion predicate as the
+        # assignment card, never model-review status or a frozen URL ID list.
+        members = {
+            row["issue_id"] for row in database.version_dataset_gallery_rows(dataset_id)
+            if row.get("is_target") and (task_view != "pending" or not row.get("review_submitted"))
+        }
+        return tuple(sorted(members.intersection(selected) if selected else members)) or ("__empty_version_membership__",)
     requested = raw
     if not requested and request is not None:
         requested = request.query_params.get("baselines") or request.query_params.get("baseline_scopes")

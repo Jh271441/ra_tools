@@ -496,7 +496,7 @@ async def list_cases(
     page_size: int = 100,
     include_thumbnail: bool = False,
 ) -> dict[str, Any]:
-    filters = _case_filter_kwargs(
+    filters = await asyncio.to_thread(_case_filter_kwargs,
         search=search,
         gt_label=gt_label,
         model_label=model_label,
@@ -589,6 +589,14 @@ async def review_task_context(split_id: str, request: Request) -> dict[str, Any]
         baseline_registry.scope_to_id(scope) or scope
         for scope in context.get("baseline_scopes") or []
     ]
+    if request.query_params.get("task_view"):
+        from ..support.baselines import restrict_version_issue_ids
+        # Validate the explicit live queue and expose its version identity.
+        await asyncio.to_thread(restrict_version_issue_ids, request=request, task_id=split_id)
+        from ..version_review_tasks import version_task_detail
+        version = await asyncio.to_thread(version_task_detail, database, split_id)
+        context["baseline_ids"] = version["baseline_ids"]
+        context["issue_count"] = version["total_count"]
     return {"task": context}
 
 
@@ -616,7 +624,7 @@ async def list_case_issue_ids(
 ) -> dict[str, Any]:
     """Return all matching issue IDs for the current Review filters (capped)."""
 
-    filters = _case_filter_kwargs(
+    filters = await asyncio.to_thread(_case_filter_kwargs,
         search=search,
         gt_label=gt_label,
         model_label=model_label,
@@ -689,7 +697,7 @@ async def work_assignees(
 ) -> dict[str, Any]:
     """Assignee facet scoped to the current Review queue."""
 
-    filters = _case_filter_kwargs(
+    filters = await asyncio.to_thread(_case_filter_kwargs,
         search=search,
         gt_label=gt_label,
         model_label=model_label,
@@ -957,7 +965,7 @@ async def split_case_work(request: Request) -> dict[str, Any]:
     if len(task_name) > 80:
         raise _detail(400, "实验名称不能超过 80 个字符。")
     filter_body = body.get("filters") if isinstance(body.get("filters"), dict) else {}
-    filters = _case_filter_kwargs(
+    filters = await asyncio.to_thread(_case_filter_kwargs,
         search=_as_text(filter_body.get("search")),
         gt_label=_as_text(filter_body.get("gt_label")),
         model_label=_as_text(filter_body.get("model_label")),

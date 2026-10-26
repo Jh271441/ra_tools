@@ -109,7 +109,7 @@ vm.runInContext(fs.readFileSync(process.argv[1],'utf8'),context);
 vm.runInContext('renderLabelingCombinedTasks=()=>{}',context);
 const item={appendable:true,dataset_id:'release-20261009-odd2',members:[{username:'alice'}]};
 let link=context.labelingCombinedTaskHref(item);
-assert.equal(link.page,'version-datasets');assert.equal(link.args.assignee,'alice');assert.equal(link.args.mode,'targets');
+assert.equal(link.page,'review');assert.equal(link.args.workAssignee[0],'alice');assert.equal(link.args.taskView,'pending');
 link=context.labelingCombinedTaskHref({split_id:'same-task',model_run_id:'same-run',workflow_mode:'model_review_and_case_label',baseline_ids:['0508'],members:[{username:'alice'}]});
 assert.equal(link.args.workSplitId,'same-task');assert.equal(link.args.runId,'same-run');
 assert.equal(link.args.workAssignee[0],'alice');assert.equal(link.args.baselines[0],'0508');

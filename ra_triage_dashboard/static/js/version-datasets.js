@@ -189,9 +189,11 @@ function renderVersionTE(m){
   $('#versionTERate').textContent=n.total?`${filled.toFixed(1)}%`:'—';
   $('#versionTERatio').textContent=`${n.filled} / ${n.total}`;
   $('#versionTEScope').textContent=m.dataset.historical?uiText(`${n.total} 个固定目标`,`${n.total} frozen targets`):uiText(`${s.date?s.date+' · ':''}${n.total} 个目标 · 低置信＋抽样`,`${s.date?s.date+' · ':''}${n.total} targets · Low confidence + sample`);
+  const scopeFilters = [s.assignee, s.reviewStatus === 'pending' ? uiText('联合待完成', 'Combined review pending') : s.reviewStatus === 'completed' ? uiText('联合已完成', 'Combined review complete') : ''].filter(Boolean);
+  if (scopeFilters.length) $('#versionTEScope').textContent += ' · ' + scopeFilters.join(' · ');
   $('#versionTEStatusChart').innerHTML=dailyReviewStatusRows(n).map(([key,label,count])=>`<button type="button" class="te-legend-item${count===0?' is-zero':''}" data-version-te-status="${key}" aria-pressed="${s.teStatus===key}"><i class="te-swatch te-${key}"></i><span>${label}</span><strong>${count}</strong></button>`).join('');
-  $('#versionTESource').textContent=`${te.source_status==='ready'?uiText('更新','Updated'):te.source_status==='stale'?uiText('观测过期','Stale observation'):uiText('同步异常 · 未知单列','Sync unavailable · Unknown shown separately')} ${versionDatasetTime(te.last_success_at)} CST`;
-  $('#versionTESource').title=te.observed_changes?uiText(`本轮标注变化 ${te.observed_changes.te}；非当天标注量`,`Result changes this check: ${te.observed_changes.te}; not daily annotation volume`):'';
+  $('#versionTESource').textContent=`Trail · ${te.source_status==='ready'?uiText('最近核对','Last checked'):te.source_status==='stale'?uiText('观测过期','Stale observation'):uiText('同步异常 · 未知单列','Sync unavailable · Unknown shown separately')} ${versionDatasetTime(te.last_success_at)} CST`;
+  $('#versionTESource').title=uiText('来源：ra_review_result_new；不包含平台联合标注。','Source: ra_review_result_new; excludes platform combined labels.') + (te.observed_changes?uiText(` 本轮变化 ${te.observed_changes.te}；非当天标注量。`,` Changes this check: ${te.observed_changes.te}; not daily annotation volume.`):'');
   $('#versionTESource').classList.toggle('te-warning',te.source_status!=='ready');
   $('#versionTEResultCount').textContent=uiText(`${n.filled} 条`,`${n.filled} ${n.filled===1?'result':'results'}`);
   $('#versionTEDistribution').innerHTML=[...te.distribution].sort((a,b)=>b.count-a.count).map(r=>`<div class="version-result-row"><span title="${escapeHtml(versionTEResult(r.value))}">${escapeHtml(versionTEResult(r.value))}</span><span class="version-result-track"><i style="width:${n.filled?100*r.count/n.filled:0}%"></i></span><strong>${r.count}</strong></div>`).join('')||`<p class="te-chart-empty">${uiText('暂无已标结果','No filled results')}</p>`;

@@ -88,6 +88,7 @@ function applyUiLanguage(language, { persist = true } = {}) {
     "renderAnalysisCatalogFilters",
     "renderReviewerFilter",
     "renderWorkAssigneeFilter",
+    "renderReviewTaskContext",
     "renderReviewAssignmentPage",
     "renderTrailUpdateFilters",
     "refreshTrailReasonLanguage",
@@ -357,10 +358,11 @@ function normalizedReviewRouteFilters(params) {
     annotationAuthor: parseFilterList(params.get("reviewer")),
     reviewStatus,
     labelStates,
+    taskView: ['targets', 'pending'].includes(params.get('task_view')) ? params.get('task_view') : '',
     workAssignee: parseFilterList(
       params.get("work_assignee") || params.get("assignee") || ""
     ),
-    workSplitId: /^(?:split|campaign)-[A-Za-z0-9]+$/.test(params.get("work_split") || "")
+    workSplitId: /^(?:split|campaign)-[A-Za-z0-9-]{1,120}$/.test(params.get("work_split") || "")
       ? params.get("work_split")
       : "",
     workflowMode: params.get("workflow") === "model_only"
@@ -414,7 +416,8 @@ function normalizedAnalysisRouteFilters(params) {
     workAgreement: ["pending", "agreed", "conflict"].includes(params.get("work_agreement"))
       ? params.get("work_agreement")
       : "all",
-    workSplitId: /^(?:split|campaign)-[A-Za-z0-9]+$/.test(params.get("work_split") || "")
+    taskView: params.get('task_view') === 'targets' ? 'targets' : '',
+    workSplitId: /^(?:split|campaign)-[A-Za-z0-9-]{1,120}$/.test(params.get("work_split") || "")
       ? params.get("work_split")
       : "",
     page: Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1,
@@ -658,6 +661,7 @@ function currentReviewRouteOptions(overrides = {}) {
         ? workAssigneeFilterSelection()
         : getMultiFilterValues($("#workAssigneeFilter")),
     workSplitId: state.reviewWorkSplitId || "",
+    taskView: state.reviewTaskView || '',
     baselines: state.reviewTaskContext?.baseline_ids || state.selectedBaselineIds,
     forceBaselines: Boolean(state.reviewTaskContext),
     workflowMode: state.reviewWorkflowMode || "model_review_and_case_label",
@@ -699,6 +703,7 @@ function applyReviewRouteControls(route) {
   setMultiFilterValues($("#annotationFilter"), route.modelLabel);
   setMultiFilterValues($("#workAssigneeFilter"), route.workAssignee);
   state.reviewWorkSplitId = route.workSplitId || "";
+  state.reviewTaskView = route.workSplitId ? (route.taskView || '') : '';
   state.reviewWorkflowMode = route.workflowMode || "model_review_and_case_label";
   if ($("#reviewWorkflowMode")) {
     $("#reviewWorkflowMode").value = state.reviewWorkflowMode;
@@ -759,6 +764,7 @@ function currentAnalysisRouteOptions(overrides = {}) {
         : "all",
     workAgreement: $("#analysisWorkAgreementFilter")?.value || state.reviewAnalysis.workAgreement || "all",
     workSplitId: state.reviewAnalysis.workSplitId || "",
+    taskView: state.reviewAnalysis.taskView || '',
     page: state.reviewAnalysis.page,
     pageSize: state.reviewAnalysis.pageSize,
     ...overrides,
@@ -791,6 +797,7 @@ function applyAnalysisRouteControls(route) {
   renderAnalysisCommentStatePicker?.(filters.commentState || "all");
   state.reviewAnalysis.workAgreement = filters.workAgreement || "all";
   state.reviewAnalysis.workSplitId = filters.workSplitId || "";
+  state.reviewAnalysis.taskView = filters.workSplitId ? (filters.taskView || '') : '';
   if (state.reviewAnalysis.workSplitId) {
     state.reviewAnalysis.availableWorkSplitId = state.reviewAnalysis.workSplitId;
   }
@@ -961,6 +968,7 @@ function pageUrl(page, options = {}) {
     }
     if (assignee) url.searchParams.set("work_assignee", assignee);
     if (review.workSplitId) url.searchParams.set("work_split", review.workSplitId);
+    if (review.workSplitId && review.taskView) url.searchParams.set('task_view', review.taskView);
     if (review.workflowMode === "model_review_only") {
       url.searchParams.set("workflow", "model_only");
     }
@@ -1012,6 +1020,7 @@ function pageUrl(page, options = {}) {
       url.searchParams.set("work_agreement", analysis.workAgreement);
     }
     if (analysis.workSplitId) url.searchParams.set("work_split", analysis.workSplitId);
+    if (analysis.workSplitId && analysis.taskView) url.searchParams.set('task_view', analysis.taskView);
     if (Number(analysis.page) > 1) url.searchParams.set("page", String(analysis.page));
     if (Number(analysis.pageSize) !== DEFAULT_CASE_PAGE_SIZE) {
       url.searchParams.set("page_size", String(analysis.pageSize));
