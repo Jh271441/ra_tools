@@ -66,10 +66,13 @@ def trail_case_filter(rows):
         return None  # An empty IN filter must never accidentally open all cases.
     if any(not re.fullmatch(r'cn\d+', iid) for iid in ids):
         raise ValueError('Invalid Issue ID in metric scope')
+    # Trail's native codec uses decodeURI for the outer query, which preserves
+    # encoded reserved characters. Keep '$' literal or the array key becomes
+    # a dictionary key and Trail silently drops the entire Issue ID filter.
     filters = 'issue_id|in|' + quote(','.join(ids), safe='') + '|a_s'
     return 'https://voyager.intra.xiaojukeji.com/static/management/#/issue/pool?' + urlencode({
         '__fmt': '1', 'view_id~d': '2410', 'page~d': '1', 'size~d': '20',
-        'is_us_engineer~b': '0', 'query_attrs.$0': filters, 'filter_operator': 'AND'})
+        'is_us_engineer~b': '0', 'query_attrs.$0': filters, 'filter_operator': 'AND'}, safe='$')
 
 
 def count_scope(rows, *, historical=False):

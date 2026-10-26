@@ -141,6 +141,11 @@ class TrailMetricLinkTests(unittest.TestCase):
         self.assertEqual(urlsplit(url).hostname,'voyager.intra.xiaojukeji.com')
         fragment=urlsplit(url).fragment
         self.assertTrue(fragment.startswith('/issue/pool?'))
+        # Native Trail splits keys after decodeURI, not form-query decoding.
+        # An encoded '$' silently turns the array index into a dictionary key.
+        raw_keys={pair.partition('=')[0] for pair in fragment.split('?',1)[1].split('&')}
+        self.assertIn('query_attrs.$0',raw_keys)
+        self.assertNotIn('query_attrs.%240',raw_keys)
         query=parse_qs(fragment.split('?',1)[1]);self.assertEqual(query['view_id~d'],['2410'])
         field,op,value,kind=query['query_attrs.$0'][0].split('|')
         self.assertEqual((field,op,kind),('issue_id','in','a_s'))

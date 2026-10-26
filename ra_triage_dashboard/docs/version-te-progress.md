@@ -81,6 +81,10 @@ or business exclusions remain an explicit other bucket rather than an invented
 trigger. No new Trail calls or model execution occurs.
 
 Links open Voyager/Trail view2410 using its native encoded query_attrs format.
+Keep the array-index marker literal (`query_attrs.$0`): Trail's outer codec uses
+`decodeURI`, which preserves `%24` and silently drops that malformed filter.
+Generic form-query decoders are insufficient link validation; verify with the
+native Trail codec and the request it constructs.
 The issue_id IN filter contains the exact recorded metric cohort, avoiding
 errors when raw start-event rules or source data change after a scan. Links do
 not inherit current gallery/date/owner/status filters. Empty cohorts omit the
