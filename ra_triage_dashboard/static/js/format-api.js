@@ -131,6 +131,7 @@ function readStoredBaselineIds() {
 
 // Presentation unions retain the original GT scopes and task/run namespaces.
 const BASELINE_PICKER_UNIONS = [
+  ["0821", ["0821", "0821-review-extra", "0821-trail-extra"]],
   ["1009 2026-10-15", ["1009-2026-10-15", "review-2026-10-15-extra"]],
   ["1009 2026-10-16", ["1009-2026-10-16", "review-2026-10-16-extra"]],
   ["1009 2026-10-18", ["review-2026-10-18", "review-2026-10-18-extra"]],

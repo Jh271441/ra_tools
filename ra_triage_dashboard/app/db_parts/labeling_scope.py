@@ -182,7 +182,8 @@ class LabelingScopeMixin:
     def create_review_workset(
         self,
         *,
-        baseline_scope: str,
+        baseline_scope: str = "",
+        baseline_scopes: Sequence[str] = (),
         issue_ids: Sequence[str],
         name: str = "",
         selection_source_run_id: str = "",
@@ -192,9 +193,13 @@ class LabelingScopeMixin:
         created_by_verified: bool = False,
     ) -> dict[str, Any]:
         scope = str(baseline_scope or "").strip()
+        scopes = sorted(set(_clean_values(baseline_scopes) or ([scope] if scope else [])))
+        if scope and scope not in scopes:
+            raise ValueError("Workset primary scope is outside the selected scopes")
+        scope = scopes[0] if len(scopes) == 1 else ""
         ordered = list(dict.fromkeys(str(value or "").strip() for value in issue_ids))
         ordered = [value for value in ordered if value]
-        if not scope or not ordered:
+        if not scopes or not ordered:
             raise ValueError("工作集必须包含数据集和至少一个 Issue。")
         digest = hashlib.sha256("\n".join(ordered).encode("utf-8")).hexdigest()
         source_run = str(selection_source_run_id or "").strip()
@@ -209,11 +214,13 @@ class LabelingScopeMixin:
                 ).fetchall()
                 by_id.update({str(row["issue_id"]): str(row["baseline_scope"] or "") for row in rows})
             missing = [item for item in ordered if item not in by_id]
-            wrong_scope = [item for item in ordered if by_id.get(item) != scope]
+            wrong_scope = [item for item in ordered if by_id.get(item) not in scopes]
             if missing:
                 raise ValueError("工作集包含不存在的 Issue：" + "、".join(missing[:10]))
             if wrong_scope:
                 raise ValueError("工作集包含其他数据集的 Issue：" + "、".join(wrong_scope[:10]))
+            if set(by_id.values()) != set(scopes):
+                raise ValueError("Workset scopes must exactly match its members")
             existing = conn.execute(
                 """
                 SELECT * FROM review_worksets
@@ -224,6 +231,12 @@ class LabelingScopeMixin:
                 (scope, source_run, digest, len(ordered)),
             ).fetchone()
             if existing is not None:
+                stored_scopes = {str(row["baseline_scope"]) for row in conn.execute(
+                    "SELECT baseline_scope FROM review_workset_scopes WHERE workset_id=?",
+                    (existing["id"],),
+                ).fetchall()} or {str(existing["baseline_scope"])}
+                if stored_scopes != set(scopes):
+                    raise ValueError("Existing frozen Workset scope mismatch")
                 return self.get_review_workset(str(existing["id"])) or {}
             workset_id = f"workset-{uuid4().hex}"
             now = utc_now()
@@ -232,8 +245,9 @@ class LabelingScopeMixin:
                 INSERT INTO review_worksets (
                     id, baseline_scope, name, selection_source_run_id,
                     source_filter_json, member_count, members_sha256,
-                    created_by, created_by_source, created_by_verified, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    created_by, created_by_source, created_by_verified, created_at,
+                    scope_mode, scope_count, scopes_sha256
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     workset_id,
@@ -247,12 +261,26 @@ class LabelingScopeMixin:
                     str(created_by_source or "legacy").strip() or "legacy",
                     bool(created_by_verified),
                     now,
+                    "multi" if len(scopes) > 1 else "single",
+                    len(scopes),
+                    self._content_sha256([
+                        {"baseline_scope": member_scope, "issue_ids": [issue for issue in ordered if by_id[issue] == member_scope]}
+                        for member_scope in scopes
+                    ]),
                 ),
             )
             conn.executemany(
                 "INSERT INTO review_workset_items (workset_id, issue_id, ordinal) VALUES (?, ?, ?)",
                 [(workset_id, issue_id, ordinal) for ordinal, issue_id in enumerate(ordered, 1)],
             )
+            if len(scopes) > 1:
+                for ordinal, member_scope in enumerate(scopes, 1):
+                    members = [issue for issue in ordered if by_id[issue] == member_scope]
+                    conn.execute(
+                        "INSERT INTO review_workset_scopes (workset_id,baseline_scope,ordinal,member_count,members_sha256,gt_snapshot_id,gt_snapshot_sha256,label_result_snapshot_id,label_result_sha256) VALUES (?,?,?,?,?,'','','','')",
+                        (workset_id, member_scope, ordinal, len(members),
+                         hashlib.sha256("\n".join(members).encode()).hexdigest()),
+                    )
             self._mark_labeling_change(conn)
         return self.get_review_workset(workset_id) or {}
 
@@ -266,11 +294,16 @@ class LabelingScopeMixin:
                 "SELECT issue_id, ordinal FROM review_workset_items WHERE workset_id = ? ORDER BY ordinal",
                 (normalized,),
             ).fetchall()
+            scope_rows = conn.execute(
+                "SELECT baseline_scope FROM review_workset_scopes WHERE workset_id=? ORDER BY ordinal",
+                (normalized,),
+            ).fetchall()
         if row is None:
             return None
         return {
             "id": str(row["id"]),
             "baseline_scope": str(row["baseline_scope"]),
+            "baseline_scopes": [str(item["baseline_scope"]) for item in scope_rows] or [str(row["baseline_scope"])],
             "name": str(row["name"] or ""),
             "selection_source_run_id": str(row["selection_source_run_id"] or ""),
             "source_filter": _json_load(row["source_filter_json"], {}),
@@ -394,8 +427,9 @@ class LabelingScopeMixin:
         where = "WHERE split.task_kind = 'labeling' AND " + lifecycle_clause
         params: list[Any] = list(lifecycle_params)
         if scopes:
-            where += f" AND workset.baseline_scope IN ({', '.join('?' for _ in scopes)})"
-            params.extend(scopes)
+            placeholders = ', '.join('?' for _ in scopes)
+            where += f" AND (workset.baseline_scope IN ({placeholders}) OR EXISTS (SELECT 1 FROM review_workset_scopes ws WHERE ws.workset_id=workset.id AND ws.baseline_scope IN ({placeholders})))"
+            params.extend([*scopes, *scopes])
         with self.connect() as conn:
             rows = conn.execute(
                 f"""

@@ -165,15 +165,15 @@ async def create_labeling_task(request: Request) -> dict[str, Any]:
             str((await asyncio.to_thread(database.get_issue, issue_id) or {}).get("baseline_scope") or "")
             for issue_id in issue_ids
         }
-        if len(scope_values) != 1 or "" in scope_values:
-            raise ValueError("一个标注任务只能包含一个已注册数据集。")
-        if next(iter(scope_values)) not in set(
+        if not scope_values or "" in scope_values or not scope_values <= baseline_registry.allowed_scopes():
+            raise ValueError("任务只能包含已注册数据集中的 Issue。 / Task members must belong to registered datasets.")
+        if not scope_values <= set(
             await asyncio.to_thread(database.active_labeling_scopes)
         ):
             raise ValueError("该数据集的 Case 标注迁移尚未激活。")
         workset = await asyncio.to_thread(
             database.create_review_workset,
-            baseline_scope=next(iter(scope_values)),
+            baseline_scopes=sorted(scope_values),
             issue_ids=issue_ids,
             name=task_name or f"标注任务 {len(issue_ids)}",
             selection_source_run_id=_as_text(body.get("selection_source_run_id")),

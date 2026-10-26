@@ -38,5 +38,12 @@ assert(historical.selected);assert(historical.label.includes('历史'));
 
 const missing=baselinePickerOptions(catalog.filter(x=>x.id!=='review-2026-10-15-extra'),['1009-2026-10-15']);
 assert.equal(missing[1].value,'1009-2026-10-15');assert.equal(missing[1].label,'1009 2026-10-15 · 30');
+const august=[{id:'0821',count:1242},{id:'0821-review-extra',count:250},{id:'0821-trail-extra',count:513}];
+const full=baselinePickerOptions(august,august.map(x=>x.id));
+assert.equal(full.length,1);assert.equal(full[0].label,'0821 · 2005');assert.equal(full[0].partial,false);
+const old=baselinePickerOptions(august,['0821'])[0];
+assert.equal(old.value,'0821');assert(old.label.includes('1242/2005'));assert.equal(old.fullValue,august.map(x=>x.id).join(','));
+uiText=(zh,en)=>en;
+assert(baselinePickerOptions(august,['0821-review-extra'])[0].label.includes('(partial)'));
 '''
         subprocess.run(["node", "-e", script], check=True, capture_output=True)
