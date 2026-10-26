@@ -92,24 +92,45 @@ class LocalImportApiTest(IsolatedAsyncioTestCase):
             read.return_value = SimpleNamespace(complete=True, rows=[{"issue_id":"cn12345678"}])
             self.assertEqual(await original(["cn12345678"]), {"cn12345678":{}})
 
-    async def test_discovery_only_queries_not_locally_excluded_and_preserves_blocked_rows(self):
-        self.db.trail_local_import_members.return_value = {"items": [
-            {"issue_id":"cn12345678","local_excluded":False},
-            {"issue_id":"cn23456789","local_excluded":True},
-            {"issue_id":"cn34567890","local_excluded":None}],"total":101,"scanned":100,"next_cursor":"cn99999999"}
-        api._remote.return_value = {"cn12345678":{"should_exclude":True,"should_exclude_comment":"remote"},"cn34567890":{"should_exclude":1}}
+    async def test_discovery_reads_saved_remote_but_projects_current_local_and_actor(self):
+        members = [{"issue_id":id,"baseline_scope":"scope"} for id in ["cn12345678","cn23456789","cn34567890"]]
+        self.db.trail_local_import_inventory.return_value = members
+        self.db.project_issue_exclusions.return_value = {"cn12345678":{"is_excluded":False},"cn23456789":{"is_excluded":True}}
+        saved = {"status":"ready","scanned":3,"total":3,"snapshot":{"checked_at":"2026-10-26T00:00:00Z","total":3,
+            "items":[{**row,"remote":{"should_exclude":True,"should_exclude_comment":"remote"}} for row in members]}}
         self.db.preview_trail_local_import.side_effect = ValueError("Existing adjudication")
-        result = await api.local_import_candidates(request({"baselines":"scope"}))
-        api._remote.assert_awaited_once_with(["cn12345678","cn34567890"])
-        self.assertEqual(len(result["items"]),1)
+        with patch.object(api, "TrailImportDiscovery") as cache:
+            cache.return_value.read_or_start.return_value = saved
+            cache.return_value.membership_changed.return_value = False
+            result = await api.local_import_candidates(request({"baselines":"scope"}))
+            self.assertFalse(cache.return_value.read_or_start.call_args.kwargs["refresh"])
+            self.assertEqual(result["status"],"ready")
+            self.assertTrue(result["snapshot_available"])
+            self.assertEqual(len(result["items"]),2)
+            self.db.project_issue_exclusions.return_value = {row["issue_id"]:{"is_excluded":True} for row in members}
+            self.assertEqual((await api.local_import_candidates(request({"baselines":"scope"})))["items"],[])
         self.assertFalse(result["items"][0]["can_import"])
-        self.assertEqual(result["next_cursor"],"cn99999999")
+        self.assertIsNone(result["items"][1]["local_excluded"])
+        self.assertEqual(self.db.preview_trail_local_import.call_args.kwargs["actor"],"alice")
+        api._remote.assert_not_called()
         self.db.commit_trail_local_import.assert_not_called()
 
-    async def test_discovery_empty_page_does_not_query_remote(self):
-        self.db.trail_local_import_members.return_value = {"items":[],"total":0,"scanned":0,"next_cursor":None}
-        result = await api.local_import_candidates(request({"baselines":"scope"}))
-        self.assertEqual(result["items"],[])
+    async def test_discovery_scope_actor_and_refresh_contract(self):
+        self.db.trail_local_import_inventory.return_value = []
+        with patch.object(api, "TrailImportDiscovery") as cache:
+            cache.return_value.read_or_start.return_value = {"status":"running"}
+            for body in ({"baselines":"scope","refresh":"true"},{"baselines":"scope","after":"cn12345678"}):
+                with self.assertRaises(HTTPException):
+                    await api.local_import_candidates(request(body))
+            cache.assert_not_called()
+            result = await api.local_import_candidates(request({"baselines":"scope","refresh":True}))
+            self.assertEqual(result["items"],[])
+            self.assertTrue(cache.return_value.read_or_start.call_args.kwargs["refresh"])
+            self.identity.verified = False
+            cache.reset_mock()
+            with self.assertRaises(HTTPException):
+                await api.local_import_candidates(request({"baselines":"scope"}))
+            cache.assert_not_called()
         api._remote.assert_not_called()
 
     _original_remote = staticmethod(api._remote)

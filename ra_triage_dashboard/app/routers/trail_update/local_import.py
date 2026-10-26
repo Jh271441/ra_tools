@@ -11,6 +11,7 @@ from ...support.baselines import resolve_request_baseline_scopes
 from ...support.common import _detail
 from ...trail_exclusion_contracts import normalise_issue_ids, canonical_json
 from ...trail_sync import read_trail_model_fields
+from ...trail_import_discovery import TrailImportDiscovery
 from .selection import _body, _owned_fields
 from .preview import _field_names
 from .commit import commit_guard
@@ -21,33 +22,57 @@ _previews = {}
 
 @router.post("/api/trail-attribute-update/local-import-candidates")
 async def local_import_candidates(request: Request):
-    """Bounded read-only discovery across the selected datasets, 100 per request."""
+    """Read saved observations; only first visit/explicit refresh starts a scan."""
     actor = await _actor(request)
     body = await _body(request)
     baselines = body.get("baselines", "")
     if not isinstance(baselines, str):
         raise _detail(422, "数据集格式错误 / Invalid datasets")
-    after = body.get("after", "")
-    if not isinstance(after, str) or (after and normalise_issue_ids([after]) != ([after], [])):
-        raise _detail(422, "分页游标无效 / Invalid cursor")
+    refresh = body.get("refresh", False)
+    if not isinstance(refresh, bool) or body.get("after", ""):
+        raise _detail(422, "查询参数无效，请刷新页面 / Invalid scan options; reload the page")
     scopes = await asyncio.to_thread(resolve_request_baseline_scopes, baselines, request=request)
-    page = await asyncio.to_thread(database.trail_local_import_members, scopes=scopes, after=after)
-    # An absent local vote is a visible difference, never an inferred false vote.
-    members = [row for row in page["items"] if row["local_excluded"] is not True]
-    remote = await _remote([row["issue_id"] for row in members]) if members else {}
+    members = await asyncio.to_thread(database.trail_local_import_inventory, scopes=scopes)
+    cache = TrailImportDiscovery(settings.data_dir, [str(settings.ra_auto_triage_root),
+        settings.trail_view_id, _field_names(), settings.database_url])
+    try:
+        saved = await asyncio.to_thread(cache.read_or_start, scopes=scopes, members=members,
+                                        read_remote=_read_remote, refresh=refresh)
+    except RuntimeError as exc:
+        raise _detail(503, str(exc)) from exc
+    items = await asyncio.to_thread(_discovery_items, saved, members, actor, scopes)
+    snapshot = saved.get("snapshot") or {}
+    return {"items": items, "direction": "trail_to_local", "read_only": True,
+            "status": saved["status"], "error": saved.get("error", ""),
+            "scanned": saved.get("scanned", 0), "total": saved.get("total", 0),
+            "snapshot_available": bool(snapshot), "checked_at": snapshot.get("checked_at"),
+            "snapshot_total": snapshot.get("total", 0),
+            "membership_changed": cache.membership_changed(saved, members), "next_cursor": None}
+
+
+def _discovery_items(saved, members, actor, scopes):
+    """Shared remote facts never cache another actor's eligibility/local state."""
+    current = {row["issue_id"]: row["baseline_scope"] for row in members}
+    snapshot = saved.get("snapshot")
+    observed = snapshot["items"] if snapshot else saved.get("partial", [])
+    observed = [row for row in observed if current.get(row["issue_id"]) == row["baseline_scope"]]
+    projections = database.project_issue_exclusions([row["issue_id"] for row in observed]) if observed else {}
     items = []
-    for row in members:
-        source = remote[row["issue_id"]]
-        if source.get("should_exclude") is not True:
+    for row in observed:
+        local = projections.get(row["issue_id"])
+        local_excluded = local["is_excluded"] if local else None
+        if local_excluded is True:
             continue
-        item = {**row, "remote_reason": source.get("should_exclude_comment") or "", "can_import": True}
+        item = {"issue_id": row["issue_id"], "baseline_scope": row["baseline_scope"],
+                "local_excluded": local_excluded,
+                "remote_reason": row["remote"].get("should_exclude_comment") or "", "can_import": True}
         try:
-            await asyncio.to_thread(database.preview_trail_local_import,
-                issue_ids=[row["issue_id"]], actor=actor, scopes=scopes, remote=remote)
+            database.preview_trail_local_import(issue_ids=[row["issue_id"]], actor=actor,
+                scopes=scopes, remote={row["issue_id"]: row["remote"]})
         except ValueError as exc:
             item.update(can_import=False, blocked_reason=str(exc))
         items.append(item)
-    return {**page, "items": items, "direction": "trail_to_local", "read_only": True}
+    return items
 
 
 async def _actor(request):
@@ -62,8 +87,12 @@ async def _actor(request):
 
 
 async def _remote(ids):
+    return await asyncio.to_thread(_read_remote, ids)
+
+
+def _read_remote(ids):
     _, field = _field_names()
-    result = await asyncio.to_thread(read_trail_model_fields, ra_root=settings.ra_auto_triage_root,
+    result = read_trail_model_fields(ra_root=settings.ra_auto_triage_root,
         issue_ids=ids, view_id=settings.trail_view_id, chunk_size=settings.trail_sync_chunk_size)
     rows = {row.get("issue_id"): row for row in result.rows}
     if not result.complete or len(result.rows) != len(ids) or set(rows) != set(ids):

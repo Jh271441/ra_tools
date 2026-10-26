@@ -6,14 +6,21 @@ from .snapshots import _sha256_json
 
 
 class TrailLocalImportMixin:
+    def trail_local_import_inventory(self, *, scopes):
+        """Freeze the full membership for a background scan, without local votes."""
+        if not scopes:
+            return []
+        placeholders = ",".join("?" for _ in scopes)
+        with self.connect() as conn:
+            return [dict(row) for row in conn.execute(
+                f"SELECT issue_id, baseline_scope FROM issues WHERE baseline_scope IN ({placeholders}) ORDER BY issue_id",
+                scopes).fetchall()]
+
     def trail_local_import_members(self, *, scopes, after="", limit=100):
         """Scan dataset membership, not the exclusion-only/historical inventory."""
         if not scopes:
             return {"items": [], "total": 0, "next_cursor": None, "scanned": 0}
-        placeholders = ",".join("?" for _ in scopes)
-        with self.connect() as conn:
-            rows = [dict(row) for row in conn.execute(
-                f"SELECT issue_id, baseline_scope FROM issues WHERE baseline_scope IN ({placeholders}) ORDER BY issue_id", scopes).fetchall()]
+        rows = self.trail_local_import_inventory(scopes=scopes)
         remaining = [row for row in rows if row["issue_id"] > after]
         page = remaining[:limit]
         projections = self.project_issue_exclusions([row["issue_id"] for row in page])

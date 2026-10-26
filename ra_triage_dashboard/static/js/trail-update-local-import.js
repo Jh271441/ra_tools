@@ -1,6 +1,7 @@
 /* Explicit Trail → local adoption. Preview never saves or sends notifications. */
 const trailLocalImport = { epoch: 0, busy: false, preview: null, context: null, scope: "", actor: "",
-  scanId:0, scanning:false, candidates:[], selected:new Set(), scanned:0, total:0, scanError:"", scanDone:false };
+  scanId:0, scanning:false, loading:false, pollTimer:null, candidates:[], selected:new Set(), scanned:0, total:0,
+  scanError:"", scanDone:false, checkedAt:null, snapshotTotal:0, membershipChanged:false };
 function trailLocalImportIds() {
   return $("#trailLocalImportManual")?.open ? parseIssueIdsInput($("#trailLocalImportInput")?.value || "")
     : {ids:[...trailLocalImport.selected],invalid:[]};
@@ -11,11 +12,15 @@ function renderTrailLocalImportCandidates() {
   const scan = trailLocalImport;
   target.hidden = Boolean(scan.preview);
   if (typeof $("#trailLocalImportSelectAll")?.closest === "function") $("#trailLocalImportSelectAll").closest("label").hidden = Boolean(scan.preview);
-  $("#trailLocalImportScan").disabled = scan.scanning || scan.busy;
-  $("#trailLocalImportScanStatus").textContent = scan.scanError
-    ? uiText(`查询未完成：${scan.scanError}。已发现 ${scan.candidates.length} 条，不代表全部结果。`, `Scan incomplete: ${scan.scanError}. ${scan.candidates.length} found; results are partial.`)
-    : scan.scanning ? uiText(`正在核对 ${scan.scanned}/${scan.total || "…"} 条 · 已发现 ${scan.candidates.length} 条`, `Checking ${scan.scanned}/${scan.total || "…"} · ${scan.candidates.length} found`)
-    : scan.scanDone ? uiText(`已核对 ${scan.scanned} 条 · ${scan.candidates.length} 条差异 · 已选 ${scan.selected.size} 条`, `${scan.scanned} checked · ${scan.candidates.length} differences · ${scan.selected.size} selected`) : "";
+  $("#trailLocalImportScan").disabled = scan.loading || scan.scanning || scan.busy;
+  const status = [];
+  if (scan.checkedAt) status.push(uiText(`上次扫描 ${formatTime(scan.checkedAt)} · ${scan.snapshotTotal} 条`, `Last scanned ${formatTime(scan.checkedAt)} · ${scan.snapshotTotal} Issues`));
+  if (scan.scanning) status.push(uiText(`后台扫描 ${scan.scanned}/${scan.total || "…"} · 关闭窗口后继续`, `Background scan ${scan.scanned}/${scan.total || "…"} · continues after closing`));
+  else if (scan.loading && !scan.checkedAt) status.push(uiText("正在读取已保存结果…", "Loading saved results…"));
+  if (scan.scanError) status.push(uiText(`扫描未完成：${scan.scanError}。${scan.checkedAt ? "保留上次完整结果" : "当前仅为部分结果"}。`, `Scan incomplete: ${scan.scanError}. ${scan.checkedAt ? "Previous complete results retained" : "Results are partial"}.`));
+  if (scan.membershipChanged) status.push(uiText("数据集成员已变化，请刷新差异", "Dataset membership changed; refresh differences"));
+  if (scan.scanDone) status.push(uiText(`${scan.candidates.length} 条差异 · 已选 ${scan.selected.size} 条`, `${scan.candidates.length} differences · ${scan.selected.size} selected`));
+  $("#trailLocalImportScanStatus").textContent = status.join(" · ");
   const eligible = scan.candidates.filter(item=>item.can_import);
   const all = $("#trailLocalImportSelectAll");
   all.disabled = scan.busy || !eligible.length;
@@ -26,28 +31,34 @@ function renderTrailLocalImportCandidates() {
     <span class="trail-import-candidate-reason">${escapeHtml(typeof item.remote_reason === "string" && item.remote_reason || uiText("Trail 未填写理由", "No reason in Trail"))}</span>
     ${item.blocked_reason ? `<small class="is-error">${escapeHtml(item.blocked_reason)}</small>` : ""}</span></label>`).join("") || (scan.scanDone ? `<p>${uiText("未发现此类差异。", "No matching differences found.")}</p>` : "");
 }
-async function scanTrailLocalImport() {
+async function scanTrailLocalImport(refresh = false) {
   if (trailLocalImport.busy) return;
+  clearTimeout(trailLocalImport.pollTimer);
   const epoch = trailLocalImport.epoch, scanId = ++trailLocalImport.scanId;
-  Object.assign(trailLocalImport,{scanning:true,candidates:[],selected:new Set(),scanned:0,total:0,scanError:"",scanDone:false,preview:null});
+  const scope = trailLocalImport.scope;
+  trailLocalImport.loading = true;
+  if (refresh) Object.assign(trailLocalImport,{selected:new Set(),preview:null});
   refreshTrailLocalImportLanguage();
-  let after = "";
   try {
-    do {
-      const result = await api("/api/trail-attribute-update/local-import-candidates",{method:"POST",body:JSON.stringify({baselines:trailLocalImport.scope,after})});
-      if (scanId !== trailLocalImport.scanId || !trailLocalImportCurrent(epoch) || !$("#trailLocalImportDialog").open) return;
-      if (!Array.isArray(result.items) || result.direction !== "trail_to_local" || (result.next_cursor && result.next_cursor <= after)) throw new Error(uiText("查询响应无效", "Invalid scan response"));
-      const known = new Set(trailLocalImport.candidates.map(item=>item.issue_id));
-      trailLocalImport.candidates.push(...result.items.filter(item=>!known.has(item.issue_id)));
-      Object.assign(trailLocalImport,{scanned:result.scanned,total:result.total});
-      after = result.next_cursor || "";
-      renderTrailLocalImportCandidates();
-    } while (after);
-    trailLocalImport.scanDone = true;
+    const result = await api("/api/trail-attribute-update/local-import-candidates",{method:"POST",body:JSON.stringify({baselines:scope,refresh:refresh === true})});
+    if (scanId !== trailLocalImport.scanId || !trailLocalImportCurrent(epoch) || !$("#trailLocalImportDialog").open) return;
+    if (!Array.isArray(result.items) || result.direction !== "trail_to_local" || !["running","ready","failed","interrupted"].includes(result.status)) throw new Error(uiText("查询响应无效", "Invalid scan response"));
+    const eligible = new Set(result.items.filter(item=>item.can_import).map(item=>item.issue_id));
+    Object.assign(trailLocalImport,{candidates:result.items,
+      selected:new Set([...trailLocalImport.selected].filter(id=>eligible.has(id))),
+      scanned:result.scanned,total:result.total,scanning:result.status === "running",
+      scanDone:Boolean(result.snapshot_available),checkedAt:result.checked_at,
+      snapshotTotal:result.snapshot_total,membershipChanged:result.membership_changed,scanError:result.error || ""});
+    if (trailLocalImport.scanning) trailLocalImport.pollTimer = setTimeout(() => {
+      if (scanId === trailLocalImport.scanId && trailLocalImportCurrent(epoch) && $("#trailLocalImportDialog").open) scanTrailLocalImport();
+    }, 1500);
   } catch (error) {
-    if (scanId === trailLocalImport.scanId && trailLocalImportCurrent(epoch)) trailLocalImport.scanError = error.message;
+    if (scanId === trailLocalImport.scanId && trailLocalImportCurrent(epoch)) {
+      trailLocalImport.scanError = error.message;
+      trailLocalImport.scanning = false;
+    }
   } finally {
-    if (scanId === trailLocalImport.scanId) {trailLocalImport.scanning=false;refreshTrailLocalImportLanguage();}
+    if (scanId === trailLocalImport.scanId) {trailLocalImport.loading=false;refreshTrailLocalImportLanguage();}
   }
 }
 function trailLocalImportCurrent(epoch) {
@@ -63,7 +74,7 @@ function refreshTrailLocalImportLanguage() {
   }
   renderTrailLocalImportCandidates();
   const parsed = trailLocalImportIds();
-  $("#trailLocalImportPreview")?.toggleAttribute("disabled", trailLocalImport.busy || trailLocalImport.scanning || !parsed.ids.length || parsed.ids.length > 200 || Boolean(parsed.invalid.length));
+  $("#trailLocalImportPreview")?.toggleAttribute("disabled", trailLocalImport.busy || trailLocalImport.loading || trailLocalImport.scanning || !parsed.ids.length || parsed.ids.length > 200 || Boolean(parsed.invalid.length));
   $("#trailLocalImportInput")?.toggleAttribute("disabled", trailLocalImport.busy);
   const confirm = $("#trailLocalImportConfirm");
   if (confirm) {
@@ -83,7 +94,9 @@ function refreshTrailLocalImportLanguage() {
 function openTrailLocalImport() {
   if (!trailNonExclusionAllowed() || trailLocalImport.busy || state.trailUpdate.selectionBusy) return;
   trailLocalImport.epoch++;
-  Object.assign(trailLocalImport, {preview:null,context:capturePageContext(),scope:selectedBaselineQueryValue(),actor:String(state.session?.username || "")});
+  clearTimeout(trailLocalImport.pollTimer);
+  Object.assign(trailLocalImport, {preview:null,context:capturePageContext(),scope:selectedBaselineQueryValue(),actor:String(state.session?.username || ""),
+    candidates:[],selected:new Set(),scanned:0,total:0,scanError:"",scanDone:false,checkedAt:null,snapshotTotal:0,membershipChanged:false,scanning:false});
   $("#trailLocalImportFeedback").textContent = "";
   refreshTrailLocalImportLanguage();
   $("#trailLocalImportDialog").showModal();
@@ -92,7 +105,7 @@ function openTrailLocalImport() {
 async function runTrailLocalImport(commit = false) {
   const epoch = trailLocalImport.epoch;
   const feedback = $("#trailLocalImportFeedback");
-  if (trailLocalImport.busy || trailLocalImport.scanning || state.trailUpdate.selectionBusy) return;
+  if (trailLocalImport.busy || trailLocalImport.loading || trailLocalImport.scanning || state.trailUpdate.selectionBusy) return;
   if (!trailLocalImportCurrent(epoch)) {
     feedback.textContent = uiText("页面、数据集或用户已变化，请关闭后重新打开", "Page, dataset or user changed; close and reopen"); return;
   }
@@ -140,7 +153,7 @@ function bindTrailLocalImportEvents() {
   }
   $("#trailLocalImportInput")?.addEventListener("input", () => {trailLocalImport.preview=null;refreshTrailLocalImportLanguage();});
   $("#trailLocalImportManual")?.addEventListener("toggle", () => {trailLocalImport.preview=null;refreshTrailLocalImportLanguage();});
-  $("#trailLocalImportScan")?.addEventListener("click", scanTrailLocalImport);
+  $("#trailLocalImportScan")?.addEventListener("click", () => scanTrailLocalImport(true));
   $("#trailLocalImportCandidates")?.addEventListener("change", event => {
     const id = event.target.dataset.trailImportIssue;
     if (!id || trailLocalImport.busy || !trailLocalImport.candidates.some(item=>item.issue_id === id && item.can_import)) return;
@@ -155,6 +168,9 @@ function bindTrailLocalImportEvents() {
   });
   $("#trailLocalImportPreview")?.addEventListener("click", () => runTrailLocalImport(false));
   $("#trailLocalImportConfirm")?.addEventListener("click", () => runTrailLocalImport(true));
-  $("#trailLocalImportDialog")?.addEventListener("close", () => {trailLocalImport.epoch++;trailLocalImport.scanId++;trailLocalImport.scanning=false;trailLocalImport.preview=null;});
+  $("#trailLocalImportDialog")?.addEventListener("close", () => {
+    clearTimeout(trailLocalImport.pollTimer); // Stop UI polling, never the server job.
+    trailLocalImport.epoch++;trailLocalImport.scanId++;trailLocalImport.scanning=false;trailLocalImport.loading=false;trailLocalImport.preview=null;
+  });
   refreshTrailLocalImportLanguage();
 }

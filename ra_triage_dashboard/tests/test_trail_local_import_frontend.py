@@ -14,7 +14,7 @@ const nodes=new Map();
 function node(id){if(!nodes.has(id))nodes.set(id,{value:'',open:false,hidden:false,textContent:'',innerHTML:'',
  classList:{add(){},remove(){}},toggleAttribute(k,v){this[k]=v},focus(){},showModal(){this.open=true}});return nodes.get(id)}
 Object.assign(global,{$:node,state:{session:{username:'alice'},trailUpdate:{selectionBusy:false}},
- uiText:(a,b)=>lang==='zh'?a:b,escapeHtml:s=>String(s).replaceAll('<','&lt;'),
+ uiText:(a,b)=>lang==='zh'?a:b,escapeHtml:s=>String(s).replaceAll('<','&lt;'),formatTime:s=>s,
  selectedBaselineQueryValue:()=>scope,capturePageContext:()=>({epoch}),isPageContextCurrent:c=>c?.epoch===epoch,
  trailNonExclusionAllowed:()=>allowed,syncTrailAttributeActions(){},
  loadTrailAttributePreview:async()=>{if(refreshFails)throw Error('refresh failed')},
@@ -42,15 +42,27 @@ function reset(){scope='0508';allowed=true;calls=[];reply=preview;node('#trailLo
  reset();reply=Error('source conflict');await runTrailLocalImport();assert.match(node('#trailLocalImportFeedback').textContent,/source conflict/);
  assert.equal(trailLocalImport.busy,false);
  reset();node('#trailLocalImportInput').value='!invalid';await runTrailLocalImport();assert.equal(calls.length,0);
- // Dataset scan traverses pages, never commits or preselects, and ignores late responses.
+ // Reads persisted results with no cursor/refresh, never commits or preselects.
  reset();node('#trailLocalImportManual').open=false;
- reply={direction:'trail_to_local',items:[{issue_id:'cn23456789',local_excluded:null,can_import:true}],scanned:100,total:101,next_cursor:'cn23456789'};
+ reply={direction:'trail_to_local',status:'ready',snapshot_available:true,checked_at:'2026-10-26T00:00:00Z',snapshot_total:101,
+   items:[{issue_id:'cn23456789',local_excluded:null,can_import:true}],scanned:101,total:101,next_cursor:null};
  let next;const initial=api;
- api=async(url,options)=>{const body=JSON.parse(options.body);calls.push({url,body});return body.after ? {direction:'trail_to_local',items:[],scanned:101,total:101,next_cursor:null} : reply};
- await actualScan();assert.equal(calls.length,2);assert.equal(trailLocalImport.candidates.length,1);assert.equal(trailLocalImport.selected.size,0);
- assert.equal(trailLocalImport.scanDone,true);assert.match(node('#trailLocalImportScanStatus').textContent,/101 checked/);
+ api=async(url,options)=>{const body=JSON.parse(options.body);calls.push({url,body});return reply};
+ await actualScan();assert.equal(calls.length,1);assert.equal(trailLocalImport.candidates.length,1);assert.equal(trailLocalImport.selected.size,0);
+ assert.deepEqual(calls[0].body,{baselines:'0508',refresh:false});
+ assert.equal(trailLocalImport.scanDone,true);assert.match(node('#trailLocalImportScanStatus').textContent,/Last scanned/);
  trailLocalImport.selected.add('cn23456789');assert.deepEqual(trailLocalImportIds().ids,['cn23456789']);
- api=async()=>new Promise(r=>next=r);const staleScan=actualScan();epoch++;next(reply);await staleScan;assert.equal(trailLocalImport.candidates.length,0);
+ await actualScan();assert.equal(trailLocalImport.selected.size,1);assert.equal(calls[1].body.refresh,false);
+ await actualScan(true);assert.equal(calls[2].body.refresh,true);assert.equal(trailLocalImport.selected.size,0);
+ // A worker persists beyond close; the browser only polls while open.
+ reply={...reply,status:'running',scanned:100};
+ await actualScan();assert.equal(trailLocalImport.scanning,true);assert.match(node('#trailLocalImportScanStatus').textContent,/continues after closing/);
+ clearTimeout(trailLocalImport.pollTimer);
+ reply={...reply,status:'failed',error:'failed',membership_changed:true};
+ await actualScan();assert.equal(trailLocalImport.scanning,false);assert.equal(trailLocalImport.candidates.length,1);
+ assert.match(node('#trailLocalImportScanStatus').textContent,/Previous complete results retained/);
+ assert.match(node('#trailLocalImportScanStatus').textContent,/membership changed/);
+ reset();api=async()=>new Promise(r=>next=r);const staleScan=actualScan();epoch++;next(reply);await staleScan;assert.equal(trailLocalImport.candidates.length,0);
  reset();api=async()=>{throw Error('network failed')};await actualScan();assert.match(node('#trailLocalImportScanStatus').textContent,/Scan incomplete/);
 })().catch(e=>{console.error(e);process.exitCode=1});
 '''

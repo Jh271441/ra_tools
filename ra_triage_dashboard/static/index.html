@@ -86,7 +86,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-671`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-672`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -2356,7 +2356,7 @@
           <p class="dialog-copy"><span class="ui-lang-zh">采用 Trail 当前排除标记与理由，保存为我的新标注。保留历史；不修改 Trail、GT 或模型结果。已有裁决或理由冲突时需先人工核对。</span><span class="ui-lang-en">Adopt the current Trail exclusion and reason as my new annotation. History is retained; Trail, GT and model results stay unchanged. Adjudications or conflicting reasons require manual review.</span></p></div>
           <button class="icon-button" type="button" data-close="trailLocalImportDialog" aria-label="关闭" data-i18n-aria-label="dialog.close">×</button></div>
         <div class="trail-import-discovery-heading"><strong><span class="ui-lang-zh">Trail 已排除 · 本地未排除</span><span class="ui-lang-en">Excluded in Trail · Not excluded locally</span></strong>
-          <button type="button" class="button button-quiet" id="trailLocalImportScan"><span class="ui-lang-zh">重新查找</span><span class="ui-lang-en">Scan again</span></button></div>
+          <button type="button" class="button button-quiet" id="trailLocalImportScan"><span class="ui-lang-zh">刷新差异</span><span class="ui-lang-en">Refresh differences</span></button></div>
         <p id="trailLocalImportScanStatus" class="dialog-copy" aria-live="polite"></p>
         <label class="trail-import-select-all"><input type="checkbox" id="trailLocalImportSelectAll"><span class="ui-lang-zh">选择可导入项（最多 200 条）</span><span class="ui-lang-en">Select importable items (up to 200)</span></label>
         <div id="trailLocalImportCandidates" class="trail-import-candidates"></div>
@@ -2537,7 +2537,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-671`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-672`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>
