@@ -44,9 +44,15 @@ const august=[{id:'0821',count:1242},{id:'0821-review-extra',count:250},{id:'082
 const full=baselinePickerOptions(august,august.map(x=>x.id));
 assert.equal(full.length,1);assert.equal(full[0].label,'0821 · 2005');assert.equal(full[0].partial,false);
 const old=baselinePickerOptions(august,['0821'])[0];
-assert.equal(old.value,'0821');assert(old.label.includes('1242/2005'));assert.equal(old.fullValue,august.map(x=>x.id).join(','));
+assert.equal(old.value,august.map(x=>x.id).join(','));assert.equal(old.label,'0821 · 2005');assert.equal(old.partial,false);
+for(const previous of ['0821','0821,0821-review-extra','0821-review-extra','0821-trail-extra']) {
+ assert.deepEqual(normalizeBaselineIds(previous,{allowed:august.map(x=>x.id)}),august.map(x=>x.id));
+ assert.equal(baselinePickerOptions(august,previous.split(','))[0].label,'0821 · 2005');
+}
+assert.deepEqual(normalizeBaselineIds('0508,0821',{allowed:['0508',...august.map(x=>x.id)]}),['0508',...august.map(x=>x.id)]);
+assert.deepEqual(normalizeBaselineIds('0821',{allowed:['0821','0821-review-extra']}),['0821']);
 uiText=(zh,en)=>en;
-assert(baselinePickerOptions(august,['0821-review-extra'])[0].label.includes('(partial)'));
+assert.equal(baselinePickerOptions(august,['0821-review-extra'])[0].label,'0821 · 2005');
 const action=multiFilterOptionHtml({value:'0821',label:'0821 · 2005'},new Set(['0821']),{onlyThis:true});
 assert(action.includes('>Only this</button>'));assert(action.includes('Select only 0821'));
 '''

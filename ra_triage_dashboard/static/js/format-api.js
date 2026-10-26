@@ -13,6 +13,7 @@ function escapeHtml(value) {
 }
 
 const BASELINE_STORAGE_KEY = "ra-triage-baselines";
+const FULL_0821_BASELINE_IDS = ["0821", "0821-review-extra", "0821-trail-extra"];
 
 function defaultBaselineIdsFromConfig(config = state.config) {
   const fromConfig = config?.default_baseline_ids;
@@ -49,7 +50,20 @@ function normalizeBaselineIds(raw, { allowed = null, fallback = null } = {}) {
       .split(",")
       .forEach((part) => push(part));
   }
-  if (values.length) return values;
+  if (values.length) {
+    const available = allowedSet || new Set(
+      (typeof state !== "undefined" ? state.baselineCatalog || state.config?.baselines || [] : [])
+        .map((item) => String(item.id))
+    );
+    // 0821 is one user-facing dataset. Upgrade old URLs, saved selections and
+    // task links to its full registered membership; task IDs still constrain
+    // their own frozen members independently of this dataset selection.
+    if (values.some((id) => FULL_0821_BASELINE_IDS.includes(id))
+        && FULL_0821_BASELINE_IDS.every((id) => available.has(id))) {
+      return [...new Set(values.flatMap((id) => FULL_0821_BASELINE_IDS.includes(id) ? FULL_0821_BASELINE_IDS : [id]))];
+    }
+    return values;
+  }
   return (fallback || defaultBaselineIdsFromConfig()).slice();
 }
 
@@ -131,7 +145,7 @@ function readStoredBaselineIds() {
 
 // Presentation unions retain the original GT scopes and task/run namespaces.
 const BASELINE_PICKER_UNIONS = [
-  ["0821", ["0821", "0821-review-extra", "0821-trail-extra"]],
+  ["0821", FULL_0821_BASELINE_IDS],
   ["1009 2026-10-15", ["1009-2026-10-15", "review-2026-10-15-extra"]],
   ["1009 2026-10-16", ["1009-2026-10-16", "review-2026-10-16-extra"]],
   ["1009 2026-10-18", ["review-2026-10-18", "review-2026-10-18-extra"]],
@@ -144,7 +158,7 @@ const RETIRED_BASELINE_PICKER_IDS = new Set([
 
 function baselinePickerOptions(catalog, selectedIds) {
   const byId = new Map(catalog.map((item) => [String(item.id), item]));
-  const selected = new Set(selectedIds.map(String));
+  const selected = new Set(normalizeBaselineIds(selectedIds, { allowed: byId.keys(), fallback: [] }));
   const consumed = new Set();
   return catalog.flatMap((item) => {
     const id = String(item.id);
