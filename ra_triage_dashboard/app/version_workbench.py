@@ -58,9 +58,31 @@ def composition(rows, *, historical=False, date=''):
                 pending=sum(r['state'] not in {'inferred','published','excluded','historical'} for r in scoped))
 
 
+def count_scope(rows, *, historical=False):
+    """Whole-version metric definitions, independent of gallery/date filters."""
+    states = Counter(r['state'] for r in rows)
+    completed = [r for r in rows if historical or r['state'] in {'inferred', 'published'}]
+    groups = Counter('sample' if r.get('is_sample') else 'low' if r.get('is_low') else 'other' for r in completed)
+    excluded = Counter()
+    allowed = {'CZ_TL', 'kEndOfLaneSequence', 'FN_EOL', 'AbnormalTrafficLight'}
+    for row in rows:
+        if row['state'] == 'excluded':
+            trigger = row.get('trigger')
+            # The platform packet retains top-level trigger, not raw start events.
+            # Keep unmatched/start-only or business exclusions explicit.
+            typed = row.get('error') == 'trigger_source_excluded' and isinstance(trigger, str) and trigger in allowed
+            excluded[trigger if typed else 'other_exclusion'] += 1
+    return dict(basis='frozen_targets' if historical else 'version_all_dates', total=len(rows), states=dict(states),
+                completed=len(completed), low_only=groups['low'], sampled=groups['sample'],
+                targets=sum(bool(r.get('is_target')) for r in rows),
+                exclusions=[dict(type=k, count=v) for k,v in sorted(excluded.items())],
+                sampling_policy=None if historical else 'version_probability_v3',
+                sampling_probability=None if historical else 0.1)
+
+
 def workbench(db, root, dataset_id, *, page=1, page_size=24, mode='targets', q='', sort='added',
               date='', te_status='all', revision='',assignee='',review_status='all'):
-    if mode not in {'targets', 'samples', 'low', 'waiting', 'all'} or sort not in {'added', 'updated', 'occurred', 'issue'} or te_status not in {'all', 'filled', 'unfilled', 'unknown'}:
+    if mode not in {'targets', 'samples', 'low', 'waiting', 'all', 'published', 'excluded', 'source_waiting', 'sampled_targets'} or sort not in {'added', 'updated', 'occurred', 'issue'} or te_status not in {'all', 'filled', 'unfilled', 'unknown'}:
         raise ValueError('Invalid gallery filter')
     if review_status not in {'all','pending','completed'}:raise ValueError('Invalid joint-review status')
     if not 1 <= page <= 10000 or not 1 <= page_size <= 100:
@@ -106,6 +128,10 @@ def workbench(db, root, dataset_id, *, page=1, page_size=24, mode='targets', q='
         if with_date and date and row['date'] != date:
             return False
         if mode == 'targets':return bool(row.get('is_target'))
+        if mode == 'published':return row['state']=='published'
+        if mode == 'excluded':return row['state']=='excluded'
+        if mode == 'source_waiting':return row['state']=='waiting_metadata'
+        if mode == 'sampled_targets':return bool(row.get('is_target') and row.get('is_sample'))
         if mode == 'low':return bool(row.get('is_target') and not row.get('is_sample'))
         if mode == 'samples':return bool(row.get('is_sample') and row['state']!='excluded')
         if mode == 'waiting':return row['state'] in {'waiting_metadata', 'retry_wait'}
@@ -132,7 +158,7 @@ def workbench(db, root, dataset_id, *, page=1, page_size=24, mode='targets', q='
     distribution = Counter(json.dumps(r['te_value'], ensure_ascii=False) for r in targets if r['te_status']=='filled')
     result = dict(dataset_id=dataset_id, dataset=dataset, page=page, page_size=page_size, total=len(selected),
                   items=selected[(page-1)*page_size:page*page_size], date_options=date_options,assignees=sorted({(r.get('binding') or {}).get('assignee') for r in rows if (r.get('binding') or {}).get('assignee')}),
-                  snapshot_revision=snapshot_revision,composition=composition(rows,historical=historical,date=date), te=dict(source_field='ra_review_result_new',
+                  snapshot_revision=snapshot_revision,count_scope=count_scope(rows,historical=historical),composition=composition(rows,historical=historical,date=date), te=dict(source_field='ra_review_result_new',
                       source_status=te['source_status'], last_success_at=te.get('last_success_at'),observed_changes=te.get('observed_changes'), summary=summarize(targets),
                       distribution=[dict(value=json.loads(k),count=v) for k,v in distribution.items()], daily=daily))
     return result, selected

@@ -57,16 +57,10 @@ function renderVersionDatasets({force=false}={}) {
   if(picker.innerHTML!==options)picker.innerHTML=options;picker.value=s.dataset;
   $('#versionDatasetMode').value=s.mode;$('#versionDatasetSort').value=s.sort;$('#versionDatasetSearch').value=s.query;$('#versionDatasetTEStatus').value=s.teStatus;$('#versionDatasetMedia').value=s.media;$('#versionDatasetReviewStatus').value=s.reviewStatus;
   enhanceDashboardSelects(el);
-  const current=s.data.items.find(x=>x.id===s.dataset);
+  const current=s.members?.dataset_id===s.dataset?s.members.dataset:s.data.items.find(x=>x.id===s.dataset);
   if(!current){$('#versionDatasetSummary').textContent=uiText('等待首次导入','Awaiting first import');$('#versionDatasetGrid').replaceChildren();return;}
   $('#versionDatasetOwner').disabled=Boolean(current.historical);$('#versionDatasetReviewStatus').disabled=Boolean(current.historical);enhanceNativeUiSelect($('#versionDatasetOwner'));enhanceNativeUiSelect($('#versionDatasetReviewStatus'));
-  const states=current.states||{};
-  $('#versionDatasetSummary').innerHTML=[
-    [uiText('候选案例','Candidates'),current.total],
-    [uiText('已回刷','Published'),current.historical?'—':states.published||0],
-    [uiText('复核目标','Review targets'),current.targets??'—'],
-    [uiText('待齐备','Awaiting source'),current.historical?'—':states.waiting_metadata||0],
-  ].map(([label,n])=>`<article class="analysis-stat-card"><span>${label}</span><strong>${n}</strong></article>`).join('');
+  renderVersionMetricCards(current, s.members?.dataset_id===s.dataset?s.members.count_scope:null);
 
   $('#versionDatasetHistory').hidden=Boolean(current.historical);
   const m=s.members;if(!m||m.dataset_id!==s.dataset)return;
@@ -222,24 +216,53 @@ async function openVersionDatasetMedia(iid,preferredKind=''){
 }
 
 function closeVersionTEInfo(){
-  const help=$('#versionTEInfo');if(!help)return;
-  help.classList.remove('is-open');help.classList.add('is-dismissed');$('#versionTEInfoButton').setAttribute('aria-expanded','false');
+  document.querySelectorAll('[data-version-info].is-open,#versionTEInfo.is-open').forEach(help=>{
+    help.classList.remove('is-open');help.classList.add('is-dismissed');help.querySelector('button')?.setAttribute('aria-expanded','false');
+  });
 }
 function bindVersionTEInfo(){
-  const help=$('#versionTEInfo'),button=$('#versionTEInfoButton'),tip=$('#versionTEInfoTooltip');
-  const show=()=>{
+  const root=$('#versionDatasetsPage');let closing;
+  const helpOf=target=>target?.closest?.('[data-version-info],#versionTEInfo');
+  const show=help=>{
+    clearTimeout(closing);
+    if(!help.classList.contains('is-open'))closeVersionTEInfo();
+    const button=help.querySelector('button'),tip=help.querySelector('.version-te-info-tooltip');
     help.classList.remove('is-dismissed');help.classList.add('is-open');button.setAttribute('aria-expanded','true');
     const r=button.getBoundingClientRect(),w=tip.offsetWidth,h=tip.offsetHeight;
     tip.style.left=`${Math.max(12,Math.min(r.left,innerWidth-w-12))}px`;
     tip.style.top=`${Math.max(12,r.bottom+h+8<=innerHeight?r.bottom+6:r.top-h-6)}px`;
   };
-  help.addEventListener('mouseenter',show);
-  help.addEventListener('mouseleave',()=>{if(!help.contains(document.activeElement))closeVersionTEInfo();});
-  help.addEventListener('focusin',show);
-  help.addEventListener('focusout',e=>{if(!help.contains(e.relatedTarget))closeVersionTEInfo();});
-  button.addEventListener('click',show);
-  document.addEventListener('pointerdown',e=>{if(!help.contains(e.target))closeVersionTEInfo();});
-  document.addEventListener('keydown',e=>{if(e.key==='Escape'&&help.classList.contains('is-open')){e.preventDefault();closeVersionTEInfo();}});
+  root.addEventListener('pointerover',e=>{const help=helpOf(e.target);if(help)show(help);});
+  root.addEventListener('pointerout',e=>{const help=helpOf(e.target);if(help&&!help.contains(e.relatedTarget))closing=setTimeout(()=>{if(!help.contains(document.activeElement))closeVersionTEInfo();},180);});
+  root.addEventListener('focusin',e=>{const help=helpOf(e.target);if(help)show(help);});
+  root.addEventListener('focusout',e=>{const help=helpOf(e.target);if(help&&!help.contains(e.relatedTarget))closeVersionTEInfo();});
+  root.addEventListener('click',e=>{const help=helpOf(e.target);if(help&&e.target.closest('button'))show(help);});
+  document.addEventListener('pointerdown',e=>{if(!helpOf(e.target))closeVersionTEInfo();});
+  document.addEventListener('keydown',e=>{if(e.key==='Escape'){const help=document.querySelector('[data-version-info].is-open,#versionTEInfo.is-open');if(help){e.preventDefault();help.querySelector('button')?.focus();closeVersionTEInfo();}}});
   window.addEventListener('resize',closeVersionTEInfo);
-  window.addEventListener('scroll',closeVersionTEInfo,{capture:true,passive:true});
+  window.addEventListener('scroll',e=>{if(!helpOf(e.target))closeVersionTEInfo();},{capture:true,passive:true});
+}
+
+function versionMetricLink(mode,label){
+  return `<a href="${escapeHtml(pageUrl('version-datasets',{dataset:versionDatasetState.dataset,mode,sort:'added',q:'',page:1,date:'',te_status:'all',assignee:'',review_status:'all',media:versionDatasetState.media}))}" target="_blank" rel="noopener noreferrer">${escapeHtml(label)} ↗</a>`;
+}
+function renderVersionMetricCards(dataset,scope){
+  const historical=Boolean(dataset.historical),states=scope?.states||dataset.states||{};
+  const total=scope?.total??dataset.total,published=states.published||0,excluded=states.excluded||0,waiting=states.waiting_metadata||0;
+  const other=total-published-excluded-waiting,targets=scope?.targets??dataset.targets??'—';
+  const titleScope=historical?uiText('固定历史集','Frozen historical cohort'):uiText('全版本 · 全部日期','Whole version · All dates');
+  const links={all:versionMetricLink(historical?'targets':'all',uiText('查看全部案例','View all cases')),published:versionMetricLink('published',uiText('查看已回刷案例','View published cases')),targets:versionMetricLink('targets',uiText('查看复核目标','View review targets')),waiting:versionMetricLink('source_waiting',uiText('查看待源信息案例','View cases awaiting source'))};
+  const names={CZ_TL:uiText('CZ_TL（红绿灯）','CZ_TL (traffic lights)'),kEndOfLaneSequence:uiText('kEndOfLaneSequence（车道序列结束）','kEndOfLaneSequence (lane sequence end)'),other_exclusion:uiText('原始事件或其他排除','Raw-event or other exclusions')};
+  const breakdown=(scope?.exclusions||[]).map(x=>`${names[x.type]||x.type} ${x.count}`).join('；');
+  const counts=scope?uiText(`${total}＝已回刷${published}＋已过滤${excluded}＋待源${waiting}${other?'＋其他待处理'+other:''}。`,` ${total} = published ${published} + excluded ${excluded} + awaiting source ${waiting}${other?' + other pending '+other:''}.`):uiText('载入明细中…','Loading breakdown…');
+  const sampling=scope&&!historical?uiText(`抽样${scope.sampled}/${scope.completed}（${scope.completed?(100*scope.sampled/scope.completed).toFixed(2):'0'}%）；每条准入案例独立10%概率，数量可波动。`,`Samples ${scope.sampled}/${scope.completed} (${scope.completed?(100*scope.sampled/scope.completed).toFixed(2):'0'}%); each eligible case has a 10% probability, so counts vary.`):'';
+  const data=[
+    [uiText(historical?'固定案例':'发现总数',historical?'Frozen cases':'Discovered'),total,historical?uiText('0821固定历史目标集，不参与本流程增量抽样。','Frozen 0821 cohort; not resampled by this workflow.'):`${counts}${breakdown?' '+breakdown+'。':''}${uiText('按触发源过滤，不按画面是否有红绿灯。','Exclusions follow trigger sources, not visible traffic lights.')}`,links.all+(!historical?versionMetricLink('excluded',uiText(`查看已过滤${excluded}条`,`View ${excluded} excluded cases`)):'')],
+    [uiText('已回刷','Published'),historical?'—':published,historical?uiText('历史集未登记本流程回刷状态。','Publication status is not registered for this historical cohort.'):uiText('已完成推理及Trail回刷校验；含低置信、抽样和其他案例。','Inference and Trail publication verified; includes low-confidence, sampled and other cases.'),historical?links.all:links.published],
+    [uiText('复核目标','Review targets'),targets,historical?uiText('固定历史复核集。','Frozen historical review set.'):uiText(`低置信（未被抽样覆盖）${scope?.low_only??'—'}＋抽样${scope?.sampled??'—'}＝${targets}。`,`Low confidence excluding samples ${scope?.low_only??'—'} + sampled ${scope?.sampled??'—'} = ${targets}.`)+' '+sampling,links.targets+(!historical?versionMetricLink('sampled_targets',uiText('查看抽样目标','View sampled targets')):'')],
+    [uiText('待齐备','Awaiting source'),historical?'—':waiting,historical?uiText('历史集无增量待齐备队列。','No incremental source queue for the frozen cohort.'):uiText('触发源或锚点未齐备，后续补查；不计入当前抽样分母。','Trigger source or anchor is incomplete; checked later and excluded from the current sampling denominator.'),historical?links.all:links.waiting]
+  ];
+  const key=JSON.stringify([state.uiLanguage,data]);const host=$('#versionDatasetSummary');if(host.dataset.metricKey===key)return;
+  host.innerHTML=data.map(([label,n,note,link],i)=>`<article class="analysis-stat-card"><span class="version-metric-title"><span>${escapeHtml(label)}</span><span class="model-review-run-help version-te-info" data-version-info><button class="version-te-info-button" type="button" aria-label="${escapeHtml(uiText(label+'统计口径',label+' definition'))}" aria-expanded="false" aria-controls="versionMetricInfo${i}"><svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="10" r="7.5" stroke="currentColor" stroke-width="1.4"/><path d="M10 9.1v4.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="10" cy="6.3" r=".9" fill="currentColor"/></svg></button><span class="model-review-run-tooltip version-te-info-tooltip version-metric-tooltip" id="versionMetricInfo${i}" role="dialog" aria-label="${escapeHtml(uiText(label+'统计口径',label+' definition'))}"><strong>${escapeHtml(label)} · ${escapeHtml(titleScope)}</strong><span>${escapeHtml(note)}</span><span class="version-metric-links">${link}</span></span></span></span><strong>${escapeHtml(String(n))}</strong></article>`).join('');
+  host.dataset.metricKey=key;
 }

@@ -99,3 +99,34 @@ class VersionWorkbenchTest(unittest.TestCase):
         self.assertEqual(len(value['te']['daily']),14)
         self.assertIn('2026-10-01',{d['date'] for d in value['te']['daily']})
         self.assertEqual(value['te']['daily'][0]['summary']['total'],1)
+
+
+class VersionMetricScopeTests(unittest.TestCase):
+    def test_global_scope_partitions_exclusions_and_preserves_sampling_denominator(self):
+        from ra_triage_dashboard.app.version_workbench import count_scope
+        rows=[dict(state='published',is_target=True,is_sample=True,is_low=True),
+              dict(state='published',is_target=False,is_sample=False,is_low=False),
+              dict(state='waiting_metadata',is_target=False,is_sample=True),
+              dict(state='excluded',is_target=False,error='trigger_source_excluded',trigger='CZ_TL'),
+              dict(state='excluded',is_target=False,error='trigger_source_excluded',trigger='StuckModel')]
+        scope=count_scope(rows)
+        self.assertEqual(scope['total'],5);self.assertEqual(scope['completed'],2)
+        self.assertEqual(scope['sampled'],1);self.assertEqual(scope['low_only'],0)
+        self.assertEqual(scope['targets'],1)
+        self.assertEqual({x['type']:x['count'] for x in scope['exclusions']},{'CZ_TL':1,'other_exclusion':1})
+        self.assertIsNone(count_scope(rows,historical=True)['sampling_probability'])
+
+    def test_metric_case_links_are_exact_modes_and_do_not_inherit_gallery_scope(self):
+        fixture=VersionWorkbenchTest();fixture.setUp()
+        try:
+            fixture.rows.extend([
+                dict(fixture.rows[2],issue_id='cn4',state='excluded',error='trigger_source_excluded',trigger='CZ_TL'),
+                dict(fixture.rows[2],issue_id='cn5',state='waiting_metadata'),
+                dict(fixture.rows[2],issue_id='cn6',state='needs_attention',is_sample=True)])
+            counts={mode:fixture.read(mode=mode)[0]['total'] for mode in ['all','published','excluded','source_waiting','targets','sampled_targets']}
+            self.assertEqual(counts,dict(all=6,published=2,excluded=1,source_waiting=1,targets=2,sampled_targets=1))
+            scoped=fixture.read(mode='excluded',te_status='filled',q='cn4')[0]
+            self.assertEqual(scoped['count_scope']['total'],6)
+            self.assertEqual(scoped['count_scope']['sampled'],1)
+            self.assertEqual(scoped['count_scope']['completed'],2)
+        finally:fixture.doCleanups()

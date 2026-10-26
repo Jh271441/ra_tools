@@ -983,6 +983,7 @@
 }
 
 @media (max-width:650px){
+ .version-metric-links a {min-height:44px}
  .cron-increment-explanation summary { min-height:44px;display:flex;align-items:center; }
  .cron-increment-round > summary { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:7px 8px; padding:12px 0; }
  .cron-round-time { grid-column:1; gap:4px 8px; }

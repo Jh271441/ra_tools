@@ -67,3 +67,22 @@ changes means the observed values are unchanged; stale/error states remain visib
 The API stays read-only and no-store, with bounded local snapshot reads and no
 request-time Trail queries. Polling updates freshness even when gallery rows stay
 identical and preserves existing card DOM when its contents do not change.
+
+
+Metric definitions use a top-right info control on each of the four summary
+cards, with hover/focus/tap access and real case-list links. Definitions use a
+whole-version, all-dates count_scope projection independent of gallery filters.
+Discovery includes excluded and source-waiting cases; publication requires the
+published state. Targets are the low/sample union; eligible completed cases form
+the10% probability-sampling denominator, with sample precedence over low.
+Historical0821 remains fixed and never claims incremental probability sampling.
+Exclusions group known top-level trigger reasons; raw-event-only/unclassified
+or business exclusions remain an explicit other bucket rather than an invented
+trigger. No new Trail calls or model execution occurs.
+
+Links clear gallery/date/owner/status filters and select the exact recorded
+scope. New shared scope choices support published, excluded, source-waiting and
+sampled targets, while preserving older planned-sample and waiting views.
+The interactive popovers preserve DOM on identical polls, support clickable
+links, Escape/outside dismissal and viewport bounds, and retain the TE source
+info control. No persistent explanatory paragraph is added to the page.

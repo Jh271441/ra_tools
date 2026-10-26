@@ -86,7 +86,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-667`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-668`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -1812,7 +1812,7 @@
 
           <section class="app-page tool-page version-datasets-page hidden" id="versionDatasetsPage" data-page="version-datasets">
             <section class="review-commandbar version-filter-panel" data-label-zh="版本数据筛选" data-label-en="Version dataset filters" aria-label="版本数据筛选">
-              <div class="version-toolbar"><label class="version-filter-field" ><span><span class="ui-lang-zh">数据集</span><span class="ui-lang-en">Dataset</span></span><select id="versionDatasetPicker" data-label-zh="数据集" data-label-en="Dataset" aria-label="数据集"></select></label><label class="version-filter-field" ><span><span class="ui-lang-zh">案例范围</span><span class="ui-lang-en">Case scope</span></span><select id="versionDatasetMode" data-label-zh="案例范围" data-label-en="Case scope" aria-label="案例范围"><option value="targets" data-zh="低置信＋抽样" data-en="Low confidence + sample">低置信＋抽样</option><option value="low" data-zh="低置信" data-en="Low confidence">低置信</option><option value="samples" data-zh="版本随机样本" data-en="Version probability samples">版本随机样本</option><option value="waiting" data-zh="等待数据" data-en="Awaiting data">等待数据</option><option value="all" data-zh="全部与历史" data-en="All and history">全部与历史</option></select></label><label class="version-filter-field" id="versionDatasetDateField"><span><span class="ui-lang-zh">发生日期 · CST</span><span class="ui-lang-en">Occurrence date · CST</span></span><select id="versionDatasetDate" data-label-zh="发生日期 · CST" data-label-en="Occurrence date · CST" aria-label="发生日期 · CST"><option value="" data-zh="全部日期" data-en="All dates">全部日期</option></select></label></div>
+              <div class="version-toolbar"><label class="version-filter-field" ><span><span class="ui-lang-zh">数据集</span><span class="ui-lang-en">Dataset</span></span><select id="versionDatasetPicker" data-label-zh="数据集" data-label-en="Dataset" aria-label="数据集"></select></label><label class="version-filter-field" ><span><span class="ui-lang-zh">案例范围</span><span class="ui-lang-en">Case scope</span></span><select id="versionDatasetMode" data-label-zh="案例范围" data-label-en="Case scope" aria-label="案例范围"><option value="targets" data-zh="低置信＋抽样" data-en="Low confidence + sample">低置信＋抽样</option><option value="low" data-zh="低置信" data-en="Low confidence">低置信</option><option value="samples" data-zh="版本随机样本" data-en="Version probability samples">版本随机样本</option><option value="waiting" data-zh="等待数据" data-en="Awaiting data">等待数据</option><option value="published" data-zh="已回刷" data-en="Published">已回刷</option><option value="excluded" data-zh="已过滤" data-en="Excluded">已过滤</option><option value="source_waiting" data-zh="待源信息" data-en="Awaiting source">待源信息</option><option value="sampled_targets" data-zh="抽样复核目标" data-en="Sampled review targets">抽样复核目标</option><option value="all" data-zh="全部与历史" data-en="All and history">全部与历史</option></select></label><label class="version-filter-field" id="versionDatasetDateField"><span><span class="ui-lang-zh">发生日期 · CST</span><span class="ui-lang-en">Occurrence date · CST</span></span><select id="versionDatasetDate" data-label-zh="发生日期 · CST" data-label-en="Occurrence date · CST" aria-label="发生日期 · CST"><option value="" data-zh="全部日期" data-en="All dates">全部日期</option></select></label></div>
             </section>
             <div class="version-metrics" id="versionDatasetSummary" aria-live="polite"></div>
             <div id="versionTEPanel" class="version-te-grid" role="group" data-label-zh="TE 标注概览" data-label-en="TE annotation overview" aria-label="TE 标注概览">
@@ -2537,7 +2537,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-667`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-668`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

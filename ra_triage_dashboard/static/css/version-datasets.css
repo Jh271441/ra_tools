@@ -12,6 +12,10 @@ body[data-active-page="version-datasets"] .top-actions {margin-left:auto}
 .version-metrics .analysis-stat-card {grid-template-columns:minmax(0,1fr);align-content:start;gap:8px;min-height:84px;padding:12px 14px}
 .version-metrics .analysis-stat-card > span {font-size:13px;line-height:1.4}
 .version-metrics .analysis-stat-card > strong {grid-column:1;grid-row:auto;align-self:start;font-size:28px;line-height:1.1;letter-spacing:-.025em;color:var(--text)}
+.version-metric-title {display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}
+.version-metric-tooltip {pointer-events:auto;overflow-y:auto;z-index:80;width:min(360px,calc(100vw - 24px))}
+.version-metric-tooltip .version-metric-links {display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:8px}
+.version-metric-links a {color:var(--accent);text-decoration:underline;text-underline-offset:3px;display:inline-flex;align-items:center;min-height:28px}
 .version-te-grid {display:grid;grid-template-columns:minmax(280px,.95fr) minmax(240px,.85fr) minmax(300px,1.2fr);align-items:stretch;gap:12px;min-width:0}
 .version-te-grid:has(.version-days[hidden]) {grid-template-columns:minmax(280px,.95fr) minmax(240px,1.25fr)}
 .version-te-context {grid-column:1/-1;display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:4px 16px;min-width:0;font-size:12px;line-height:1.5}
