@@ -3,6 +3,8 @@
 一个独立于 `ra_auto_triage` 的 issue triage / 标注 / 模型结果对比看板。
 
 部署入口与保留规则见 [统一发布流程](docs/deployment.md)。
+Batch 与迁移工具的模块职责、配置和交付边界见
+[Manual 维护整理记录](docs/manual-maintenance-20261026.md)。
 
 ## 当前产品快照
 

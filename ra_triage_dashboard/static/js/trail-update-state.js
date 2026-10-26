@@ -43,10 +43,10 @@ function trailUpdateStatusEndpoint(items = [], refresh = false) {
 
 // Presentation groups are shared by badges, totals and filters. Raw API states stay intact.
 function trailStatusGroup(status) {
-  return ({reason_changed:"reason_sync",reason_missing:"reason_sync",excluded_keep_reason:"reason_needed",excluded_no_reason:"reason_needed",synced:"excluded",reconcile_excluded:"excluded",reconcile_not_excluded:"not_excluded",query_failed:"unconfirmed",not_found:"unconfirmed",pending:"unconfirmed",not_checked:"unconfirmed"})[status] || (["needs_exclusion","reason_sync","reason_needed","excluded","not_excluded","querying","unconfirmed"].includes(status) ? status : "unconfirmed");
+  return ({reason_changed:"reason_sync",reason_missing:"reason_sync",excluded_keep_reason:"reason_needed",excluded_no_reason:"matched",synced:"matched",reconcile_excluded:"excluded",reconcile_not_excluded:"not_excluded",query_failed:"unconfirmed",not_found:"unconfirmed",pending:"unconfirmed",not_checked:"unconfirmed"})[status] || (["needs_exclusion","reason_sync","reason_needed","matched","excluded","not_excluded","querying","unconfirmed"].includes(status) ? status : "unconfirmed");
 }
 function trailStatusFilterValues(values) {
-  const valid = new Set(["reason_update", "reason_sync", "reason_needed", "querying", "synced", "pending", "not_found", "query_failed", "not_checked", "needs_exclusion", "reason_changed", "reason_missing", "excluded_keep_reason", "excluded_no_reason", "reconcile_excluded", "reconcile_not_excluded", "excluded", "not_excluded", "unconfirmed"]);
+  const valid = new Set(["matched", "reason_update", "reason_sync", "reason_needed", "querying", "synced", "pending", "not_found", "query_failed", "not_checked", "needs_exclusion", "reason_changed", "reason_missing", "excluded_keep_reason", "excluded_no_reason", "reconcile_excluded", "reconcile_not_excluded", "excluded", "not_excluded", "unconfirmed"]);
   // Old grouped links included both writable reasons and empty local reasons.
   return [...new Set(parseFilterList(values).filter(value => valid.has(value)).flatMap(value =>
     value === "reason_update" ? ["reason_sync", "reason_needed"] : [trailStatusGroup(value)]))];
@@ -57,6 +57,7 @@ function trailUpdateStatusMeta(status = "not_checked") {
     reason_sync: ["理由可同步", "Reason ready to sync", "is-reason", "本地有理由且与 Trail 不同，可预览同步", "A local reason differs from Trail and can be previewed for sync"],
     reason_needed: ["本地理由待补", "Local reason needed", "is-reason-needed", "没有可提交的本地理由；请先补充标注依据，保留 Trail 原文", "No local reason to submit; add annotation evidence first. Trail text is preserved"],
     excluded: ["已排除", "Excluded", "is-synced", "排除已生效，理由已核对", "Exclusion is active and the reason has been checked"],
+    matched: ["已同步", "Synced", "is-synced", "本地与 Trail 排除标记、理由一致（含两端理由均为空）", "Local and Trail exclusion and reasons match, including two empty reasons"],
     not_excluded: ["未排除", "Not excluded", "is-not-checked", "远端未排除或未设置标记；核对视图只读", "Remote marker is false or unset; reconciliation is read-only"],
     unconfirmed: ["无法确认", "Unconfirmed", "is-failed", "查询未完成或失败，请刷新重试", "Not checked or the query failed; refresh to retry"],
     reconcile_excluded: ["已排除", "Excluded", "is-excluded", "仅供核对，不进入提交集合", "Read-only; excluded from submissions"],
@@ -68,7 +69,7 @@ function trailUpdateStatusMeta(status = "not_checked") {
     reason_changed: ["理由待更新", "Update reason", "is-reason", "排除已生效，仅理由不同", "Already excluded; only the reason differs"],
     reason_missing: ["理由待更新", "Update reason", "is-reason", "排除已生效，可补充理由", "Already excluded; a reason can be added"],
     excluded_keep_reason: ["理由待更新", "Reason needs update", "is-reason", "本地理由缺失，待核对原始来源；Trail 原文保留", "Local reason missing; verify its original source. The Trail text is preserved"],
-    excluded_no_reason: ["理由待更新", "Reason needs update", "is-reason", "本地和 Trail 均缺少排除理由，待补充", "Both local and Trail exclusion reasons are missing"],
+    excluded_no_reason: ["已同步", "Synced", "is-synced", "两端均已排除且理由均为空，无需更新", "Both sides are excluded with empty reasons; no update needed"],
     not_found: ["无法确认", "Unconfirmed", "is-not-found", "Trail 未返回此 Issue，请刷新重试", "Issue missing from Trail; refresh to retry"],
     query_failed: ["无法确认", "Unconfirmed", "is-failed", "查询失败或预览过期，请刷新重试", "Query failed or preview expired; refresh to retry"],
     not_checked: ["未检查", "Not checked", "is-not-checked", "请刷新查询 Trail", "Refresh to check Trail"],
@@ -104,7 +105,7 @@ function trailUpdateStatusSummary(data, items) {
     }
   }
   const entries = Object.entries(counts).filter(([, count]) => count > 0);
-  const priority = ["needs_exclusion", "reason_sync", "reason_needed", "excluded", "not_excluded", "querying", "unconfirmed"];
+  const priority = ["needs_exclusion", "reason_sync", "reason_needed", "matched", "excluded", "not_excluded", "querying", "unconfirmed"];
   const primaryKey = priority.find((key) => counts[key]) || "not_checked";
   const primary = trailUpdateStatusMeta(primaryKey);
   const total = Object.values(counts).reduce((sum, count) => sum + Number(count || 0), 0);

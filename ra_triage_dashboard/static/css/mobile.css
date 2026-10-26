@@ -772,6 +772,14 @@
   #trailNonExclusionDialog .dialog-actions { flex-wrap:wrap; padding-bottom:env(safe-area-inset-bottom); }
   #trailNonExclusionDialog .dialog-actions .button { min-height:48px; white-space:normal; }
   #trailNonExclusionDialog .icon-button { min-width:44px; min-height:44px; }
+  #trailLocalImportDialog .dialog-card { padding:14px; gap:12px; }
+  #trailLocalImportDialog textarea { min-height:100px; font-size:16px; }
+  #trailLocalImportDialog .dialog-actions { flex-wrap:wrap; padding-bottom:env(safe-area-inset-bottom); }
+  #trailLocalImportDialog .dialog-actions .button { min-height:48px; white-space:normal; }
+  #trailLocalImportDialog #trailLocalImportConfirm { min-height:48px !important; }
+  #trailLocalImportDialog .icon-button { min-width:44px; min-height:44px; }
+  #trailLocalImportDialog .trail-import-discovery-heading { flex-wrap:wrap; }
+  #trailLocalImportDialog .trail-import-candidate, #trailLocalImportDialog .trail-import-select-all, #trailLocalImportManual > summary { min-height:44px; }
   .trail-reason-details, .trail-reason-comparison { width:100%; min-width:0; }
 }
 

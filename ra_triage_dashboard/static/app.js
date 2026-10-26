@@ -65,6 +65,7 @@
     "trail-update-import.js",
     "trail-update-commit.js",
     "trail-update-non-exclusion.js",
+    "trail-update-local-import.js",
     "trail-update.js",
     "trail-history.js",
     "mobile-workbench.js",

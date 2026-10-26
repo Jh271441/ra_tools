@@ -207,7 +207,7 @@ class LabelingProjectionMixin:
                     "label_revision_ids": projection["revision_ids"],
                     "decision_id": projection.get("decision_id"),
                     "reason_source": {
-                        "kind": "issue_decision" if projection.get("decision_id") else "historical_restore" if revision.get("author_source") == "migration_reason_restore" else "case_label",
+                        "kind": "issue_decision" if projection.get("decision_id") else "historical_restore" if revision.get("author_source") == "migration_reason_restore" else "trail_import" if revision.get("author_source") == "trail_import" else "case_label",
                         "revision_id": revision.get("id"), "decision_id": projection.get("decision_id"), "author": revision.get("author", ""),
                         "author_source": revision.get("author_source", ""),
                         "created_at": revision.get("created_at", ""),
