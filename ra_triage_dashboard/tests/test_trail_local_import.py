@@ -1,4 +1,7 @@
 import tempfile
+import os
+import unittest
+from uuid import uuid4
 from pathlib import Path
 from unittest import TestCase
 
@@ -91,3 +94,25 @@ class TrailLocalImportTest(TestCase):
         self.assertIsNone(second["next_cursor"])
         self.assertIsNone(second["items"][0]["local_excluded"])
         self.assertEqual(self.db.trail_local_import_members(scopes=["other"])["items"],[])
+
+
+@unittest.skipUnless(os.getenv("DASHBOARD_TEST_POSTGRES_URL", "").startswith("postgresql://"), "Disposable PostgreSQL required")
+class TrailLocalImportPostgresTest(TestCase):
+    def test_real_jsonb_and_revision_import(self):
+        db = Database(os.environ["DASHBOARD_TEST_POSTGRES_URL"], postgres_migrations_dir=Path(__file__).resolve().parents[1]/"migrations/postgres")
+        self.addCleanup(db.close)
+        db.init()
+        issue, scope, token = "cn"+uuid4().hex[:12], "trail-test-"+uuid4().hex, uuid4().hex
+        db.upsert_issues([{"issue_id":issue,"gt_label":"正确触发"}],source="test",replace_gt=True,baseline_scope=scope)
+        db.set_labeling_scope_state(baseline_scope=scope,status="active",policy_version="test",source_inventory_sha256="a"*64,updated_by="test")
+        previous = db.create_label_revision(issue_id=issue,expected_output="正确触发",tags=["keep"],evidence_gaps=["video"],rationale="",is_excluded=False,author="pg-test",author_source="test",author_verified=True)
+        items = db.preview_trail_local_import(issue_ids=[issue],actor="pg-test",scopes=[scope],remote={issue:{"should_exclude":True,"should_exclude_comment":"remote reason"}})
+        result = db.commit_trail_local_import(operation_id=token,actor="pg-test",scopes=[scope],items=items)
+        self.assertEqual(result["imported_count"],1)
+        self.assertEqual(db.commit_trail_local_import(operation_id=token,actor="pg-test",scopes=[scope],items=items),result)
+        with db.connect() as conn:
+            row = conn.execute("SELECT * FROM label_revisions WHERE id=?",(result["items"][0]["revision_id"],)).fetchone()
+            self.assertEqual(row["tags_json"],["keep"])
+            self.assertEqual(row["evidence_gaps_json"],["video"])
+            self.assertEqual(row["supersedes_id"],previous["id"])
+        self.assertTrue(db.project_issue_exclusions([issue])[issue]["is_excluded"])

@@ -112,8 +112,8 @@ class TrailLocalImportMixin:
                     VALUES (?,?,?,?,?,TRUE,?,'trail_import',TRUE,'submission',?,?)"""
                 if self.backend == "postgresql":
                     sql += " RETURNING id"
-                cursor = conn.execute(sql, (case_id, head.get("expected_output"), head.get("tags_json", "[]"),
-                    head.get("evidence_gaps_json", "[]"), item["after"]["rationale"], actor, head.get("id"), now))
+                cursor = conn.execute(sql, (case_id, head.get("expected_output"), _json(_json_load(head.get("tags_json"), [])),
+                    _json(_json_load(head.get("evidence_gaps_json"), [])), item["after"]["rationale"], actor, head.get("id"), now))
                 revision_id = int(cursor.fetchone()["id"]) if self.backend == "postgresql" else cursor.lastrowid
                 if head:
                     for image in conn.execute("SELECT * FROM label_attachments WHERE revision_id=?", (head["id"],)).fetchall():

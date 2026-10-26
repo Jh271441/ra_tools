@@ -9,6 +9,8 @@ function renderTrailLocalImportCandidates() {
   const target = $("#trailLocalImportCandidates");
   if (!target) return;
   const scan = trailLocalImport;
+  target.hidden = Boolean(scan.preview);
+  if (typeof $("#trailLocalImportSelectAll")?.closest === "function") $("#trailLocalImportSelectAll").closest("label").hidden = Boolean(scan.preview);
   $("#trailLocalImportScan").disabled = scan.scanning || scan.busy;
   $("#trailLocalImportScanStatus").textContent = scan.scanError
     ? uiText(`查询未完成：${scan.scanError}。已发现 ${scan.candidates.length} 条，不代表全部结果。`, `Scan incomplete: ${scan.scanError}. ${scan.candidates.length} found; results are partial.`)

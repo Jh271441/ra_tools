@@ -757,8 +757,10 @@ html[data-color-theme="light"] #trailNonExclusionFeedback.is-error { color:#b423
 .trail-update-results[hidden] { display:none; }
 #trailLocalImportCandidates { max-height:32dvh; overflow:auto; }
 .trail-import-discovery-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; }
-.trail-import-candidate { display:flex; align-items:flex-start; gap:10px; padding:10px 4px; border-bottom:1px solid var(--line); }
+#trailLocalImportDialog .trail-import-candidate { display:flex; align-items:flex-start; gap:10px; padding:10px 4px; border-bottom:1px solid var(--line); }
+#trailLocalImportDialog input[type="checkbox"] { width:18px; height:18px; min-height:0; flex:0 0 18px; margin:2px 0; }
 .trail-import-candidate > span { min-width:0; display:grid; gap:4px; overflow-wrap:anywhere; }
 .trail-import-candidate small { color:var(--muted); }
 .trail-import-candidate-reason { white-space:pre-wrap; font-size:13px; }
-.trail-import-select-all { display:flex; align-items:center; gap:8px; }
+#trailLocalImportDialog .trail-import-select-all { display:flex; align-items:center; justify-content:flex-start; gap:8px; }
+#trailLocalImportDialog [hidden] { display:none !important; }
