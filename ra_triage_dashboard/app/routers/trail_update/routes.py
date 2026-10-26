@@ -648,3 +648,5 @@ async def trail_issue_exclusion_commit(request: Request) -> dict[str, Any]:
 
 from .selection import router as selection_router
 router.include_router(selection_router)
+from .local_import import router as local_import_router
+router.include_router(local_import_router)

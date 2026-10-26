@@ -45,7 +45,7 @@ function trailReasonComparisonMarkup(item, expanded = false) {
   const known = !["querying", "query_failed", "not_checked", "not_found", "pending"].includes(trailReasonState(item));
   const restored = ["historical_restore", "legacy_exclusion_note"].includes(source.kind);
   const sourceLabel = item.readonly ? uiText("无本地排除理由", "No local exclusion reason") : source.kind === "legacy_exclusion_note" ? uiText("迁移前排除备注", "Original exclusion note") : restored ? uiText("历史理由恢复", "Restored historical reason")
-    : source.kind === "case_label" ? uiText("Issue 标注", "Issue annotation") : uiText("模型复核（旧记录）", "Model review (legacy)");
+    : source.kind === "trail_import" ? uiText("Trail 导入", "Imported from Trail") : source.kind === "case_label" ? uiText("Issue 标注", "Issue annotation") : uiText("模型复核（旧记录）", "Model review (legacy)");
   const originalTime = source.original_created_at || (!restored ? source.created_at : "");
   const meta = [sourceLabel, source.author || uiText("作者未知", "Unknown author"),
     originalTime ? formatTime(originalTime) : uiText("原始时间未知", "Original time unknown"),
@@ -53,7 +53,7 @@ function trailReasonComparisonMarkup(item, expanded = false) {
     source.revision_id ? uiText(`版本 #${source.revision_id}`, `Revision #${source.revision_id}`) : "",
     source.kind === "historical_restore" && source.created_at ? uiText(`恢复时间 ${formatTime(source.created_at)}`, `Restored ${formatTime(source.created_at)}`) : ""].filter(Boolean).join(" · ");
   const remoteHint = known ? uiText("Trail 未填写理由", "No reason in Trail") : uiText("尚未确认，请刷新查询", "Unconfirmed; refresh to check");
-  const localHint = uiText("本地理由待补充；保留 Trail 原文", "Local reason needed; the Trail text is preserved");
+  const localHint = trailReasonState(item) === "excluded_no_reason" ? uiText("两端均未填写理由，已同步", "Neither side has a reason; synced") : uiText("本地理由待补充；保留 Trail 原文", "Local reason needed; the Trail text is preserved");
   const markerLabel = ({true:uiText("Trail 已排除", "Excluded in Trail"), false:uiText("Trail 未排除（false）", "Not excluded in Trail (false)"), unset:uiText("Trail 排除标记未设置", "Trail exclusion is unset"), unknown:uiText("Trail 状态无法确认", "Trail state unconfirmed")})[trailRemoteState(item)];
   const panel = `<div class="trail-reason-comparison"><section><strong>${uiText("Trail 当前理由", "Current Trail reason")}</strong><p data-trail-reason-text="remote">${escapeHtml(remote || remoteHint)}</p><small>${escapeHtml(markerLabel)} · ${uiText("远端修改时间未知", "Remote modification time unknown")}</small>${remote ? `<button type="button" class="button button-quiet" data-trail-copy-reason="remote">${uiText("复制", "Copy")}</button>` : ""}</section><section><strong>${uiText("本地最新理由", "Latest local reason")}</strong><p data-trail-reason-text="local">${escapeHtml(local || localHint)}</p><small>${escapeHtml(meta)}</small>${local ? `<button type="button" class="button button-quiet" data-trail-copy-reason="local">${uiText("复制", "Copy")}</button>` : ""}</section></div>`;
   if (expanded) return panel + trailEvidenceMarkup(item);
@@ -216,7 +216,7 @@ function trailSourceLabel(source) {
 function trailReasonSummaryMarkup(item) {
   const detail = item.trail_detail || {};
   const remote = trailRemoteState(item) === "unknown" ? uiText("尚未确认", "Unconfirmed") : detail.trail_comment || uiText("理由未填写", "No reason provided");
-  const local = detail.local_comment || item.comment || uiText("理由待补充", "Reason needed");
+  const local = detail.local_comment || item.comment || (trailReasonState(item) === "excluded_no_reason" ? uiText("理由未填写", "No reason provided") : uiText("理由待补充", "Reason needed"));
   return `<div class="trail-reason-summary"><p title="${escapeHtml(remote)}"><span>${uiText("Trail", "Trail")}</span>${escapeHtml(remote)}</p><p title="${escapeHtml(local)}"><span>${uiText("本地", "Local")}</span>${escapeHtml(local)}</p></div>`;
 }
 function trailEvidenceMarkup(item) {

@@ -101,6 +101,7 @@ function bindTrailAttributeUpdateEvents() {
   });
   bindTrailReasonEvents();
   bindTrailNonExclusionEvents();
+  bindTrailLocalImportEvents();
   bindTrailReconcileEvents();
   $("#trailUpdateCommitButton")?.addEventListener("click", () => {
     commitTrailAttributeUpdate().catch((error) => showToast(error.message, true));

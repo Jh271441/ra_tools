@@ -718,6 +718,7 @@ html[data-color-theme="light"] .trail-reconcile-table .trail-update-state-badge.
 .trail-update-state-badge.is-reason-needed { color:#fbbf24; border-color:rgba(251,191,36,.4); background:rgba(251,191,36,.08); }
 html[data-color-theme="light"] .trail-update-state-badge.is-reason-needed { color:#92400e; }
 .trail-status-excluded { --status-color:#60a5fa; }
+.trail-status-matched { --status-color:var(--ok, #34d399); }
 .trail-status-not_excluded { --status-color:#94a3b8; }
 .trail-status-unconfirmed { --status-color:#f87171; }
 html[data-color-theme="light"] .trail-update-state-badge.is-reason { color:#6d28d9; }
@@ -742,6 +743,9 @@ html[data-color-theme="light"] .trail-update-state-badge.is-excluded { color:#1d
 .trail-non-exclusion-transition > strong { color:var(--ok); }
 html[data-color-theme="light"] #trailNonExclusionFeedback.is-error { color:#b42318; }
 #trailNonExclusionDialog .dialog-card { max-height:calc(100dvh - 24px); overflow:auto; }
+#trailLocalImportDialog .dialog-card { max-height:calc(100dvh - 24px); overflow:auto; }
+#trailLocalImportDiff { display:grid; gap:10px; max-height:40dvh; overflow:auto; }
+#trailLocalImportDiff[hidden] { display:none; }
 
 .trail-update-results-heading > .trail-update-result-actions { display:flex; flex-wrap:wrap; align-items:center; }
 
@@ -751,3 +755,10 @@ html[data-color-theme="light"] #trailNonExclusionFeedback.is-error { color:#b423
 .trail-update-initial-loading i { display:block; height:30px; border-radius:5px; background:var(--overlay); }
 
 .trail-update-results[hidden] { display:none; }
+#trailLocalImportCandidates { max-height:32dvh; overflow:auto; }
+.trail-import-discovery-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.trail-import-candidate { display:flex; align-items:flex-start; gap:10px; padding:10px 4px; border-bottom:1px solid var(--line); }
+.trail-import-candidate > span { min-width:0; display:grid; gap:4px; overflow-wrap:anywhere; }
+.trail-import-candidate small { color:var(--muted); }
+.trail-import-candidate-reason { white-space:pre-wrap; font-size:13px; }
+.trail-import-select-all { display:flex; align-items:center; gap:8px; }

@@ -12,10 +12,12 @@ from .labeling_queries import LabelingQueriesMixin
 from .labeling_exports import LabelingExportsMixin
 from .labeling_reconciliation import LabelingReconciliationMixin
 from .labeling_migration import LabelingMigrationMixin
+from .trail_local_import import TrailLocalImportMixin
 from .labeling_shared import ISSUE_LABEL_GT_RELATIONS, ISSUE_LABEL_STATES, ISSUE_LABEL_STATE_FILTERS, LABEL_TASK_KINDS, _clean_values, _filter_values, _issue_decision_source_payload, _issue_label_gt_relation, _parse_labeling_cluster, _source_fingerprint
 
 
 class DatabaseLabelingMixin(
+    TrailLocalImportMixin,
     LabelingScopeMixin,
     LabelingRecordsMixin,
     LabelingDecisionsMixin,
