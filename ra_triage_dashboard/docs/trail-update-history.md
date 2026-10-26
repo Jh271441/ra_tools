@@ -1,5 +1,7 @@
 # Trail 更新记录与恢复
 
+2026-10-26 14:08:39 CST补充：本文cache667详情UI候选已随8e04e4e发布。云端973通过/7跳过，隔离灰度与生产健康/静态资源匹配通过；schema58未变。上线后内置浏览器控制超时，不宣称生产登录态视觉验收。详见[发布确认](combined-labeling-task-mirror.md)。下方“未部署”保留为实施时记录。
+
 2026-10-25 已发布，运行 SHA `8b48e2353245e3b7cabba242f9ee114533ff6014`，静态缓存 `manual-triage-655`。生产恢复开关已按用户授权开启；详情见 [可视化与恢复启用验收](trail-history-visual-release-20261025.md)。首次 schema57 迁移见 [首次发布验收](trail-update-history-release-20261025.md)。
 
 首次发布使用 `scripts/release_trail_history_20261025.py`，复用版本化 deploy_cloud 的锁、测试、灰度、进程、健康及应用回退门禁；保留旧 canonical checkout 的本地文件和占用的 8786，独立灰度使用 18789。仅允许 SHA-256 为 `54008df2790bc6910495524f0ae622da3e448248c9fe910b5a4195281a677e3a` 的新增 migration057；不放宽通用迁移白名单。停止 Dashboard 后进行新鲜备份、临时库恢复及逐表内容指纹比对，并在恢复库先演练 migration，再应用到生产。原有业务表保持内容指纹一致，新增审计表和 schema/change-revision 元数据除外。备份保留在独立 migrations 目录；应用失败回退旧代码，保留向后兼容的新表，不覆盖后续数据。后续可视化及开关启用使用 `scripts/release_trail_history_visual_20261025.py`，不再改 schema。
