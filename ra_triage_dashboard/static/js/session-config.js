@@ -209,7 +209,7 @@ function multiFilterOptionHtml(item, selectedSet, { onlyThis = false } = {}) {
   const value = String(item.value ?? item.key ?? "");
   const label = String(item.label ?? value);
   const onlyButton = onlyThis
-    ? `<button type="button" class="multi-filter-only" data-multi-only="${escapeHtml(value)}" title="只选这一项" aria-label="只选 ${escapeHtml(label)}">仅此项</button>`
+    ? `<button type="button" class="multi-filter-only" data-multi-only="${escapeHtml(value)}" title="${uiText("只选这一项", "Only this")}" aria-label="${escapeHtml(uiText(`只选 ${label}`, `Select only ${label}`))}">${uiText("仅此项", "Only this")}</button>`
     : "";
   return `<div class="multi-filter-option-row${onlyThis ? " has-only" : ""}">
     <label class="multi-filter-option">

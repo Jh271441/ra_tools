@@ -195,7 +195,7 @@ class LabelingScopeMixin:
         scope = str(baseline_scope or "").strip()
         scopes = sorted(set(_clean_values(baseline_scopes) or ([scope] if scope else [])))
         if scope and scope not in scopes:
-            raise ValueError("Workset primary scope is outside the selected scopes")
+            raise ValueError("工作集主数据集不在所选范围内。 / Workset primary scope is outside the selected scopes")
         scope = scopes[0] if len(scopes) == 1 else ""
         ordered = list(dict.fromkeys(str(value or "").strip() for value in issue_ids))
         ordered = [value for value in ordered if value]
@@ -220,7 +220,7 @@ class LabelingScopeMixin:
             if wrong_scope:
                 raise ValueError("工作集包含其他数据集的 Issue：" + "、".join(wrong_scope[:10]))
             if set(by_id.values()) != set(scopes):
-                raise ValueError("Workset scopes must exactly match its members")
+                raise ValueError("工作集数据集必须与成员完全匹配。 / Workset scopes must exactly match its members")
             existing = conn.execute(
                 """
                 SELECT * FROM review_worksets
@@ -236,7 +236,7 @@ class LabelingScopeMixin:
                     (existing["id"],),
                 ).fetchall()} or {str(existing["baseline_scope"])}
                 if stored_scopes != set(scopes):
-                    raise ValueError("Existing frozen Workset scope mismatch")
+                    raise ValueError("已有冻结工作集的数据集范围不匹配。 / Existing frozen Workset scope mismatch")
                 return self.get_review_workset(str(existing["id"])) or {}
             workset_id = f"workset-{uuid4().hex}"
             now = utc_now()

@@ -7,6 +7,8 @@ from pathlib import Path
 class BaselinePickerUnionsTest(unittest.TestCase):
     def test_counts_selection_and_partial_old_links_keep_real_scope_ids(self):
         source = (Path(__file__).resolve().parents[1] / "static/js/format-api.js").read_text()
+        shared = (Path(__file__).resolve().parents[1] / "static/js/session-config.js").read_text()
+        source += '\n' + shared[shared.index('function multiFilterOptionHtml('):shared.index('function multiFilterAllValues(')]
         script = source + r'''
 const assert=require('node:assert/strict');
 state={baselineCatalog:[],config:{},selectedBaselineIds:[]};uiText=x=>x;
@@ -45,5 +47,7 @@ const old=baselinePickerOptions(august,['0821'])[0];
 assert.equal(old.value,'0821');assert(old.label.includes('1242/2005'));assert.equal(old.fullValue,august.map(x=>x.id).join(','));
 uiText=(zh,en)=>en;
 assert(baselinePickerOptions(august,['0821-review-extra'])[0].label.includes('(partial)'));
+const action=multiFilterOptionHtml({value:'0821',label:'0821 · 2005'},new Set(['0821']),{onlyThis:true});
+assert(action.includes('>Only this</button>'));assert(action.includes('Select only 0821'));
 '''
         subprocess.run(["node", "-e", script], check=True, capture_output=True)
