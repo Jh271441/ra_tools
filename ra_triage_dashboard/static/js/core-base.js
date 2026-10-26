@@ -88,6 +88,12 @@ function getMultiFilterValues(root) {
 
 function updateMultiFilterSummary(root) {
   if (!root || root.matches?.("select")) return;
+  root.querySelectorAll('[data-multi-only]').forEach((button) => {
+    button.textContent = uiText("仅此项", "Only this");
+    button.title = uiText("只选这一项", "Only this");
+    const label = button.closest('.multi-filter-option-row')?.querySelector('input[data-multi-value]')?.dataset.label || "";
+    button.setAttribute('aria-label', uiText(`只选 ${label}`, `Select only ${label}`));
+  });
   const summary = root.querySelector(".multi-filter-summary");
   if (!summary) return;
   const values = getMultiFilterValues(root);
