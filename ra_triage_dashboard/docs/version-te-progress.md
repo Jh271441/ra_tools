@@ -70,7 +70,7 @@ identical and preserves existing card DOM when its contents do not change.
 
 
 Metric definitions use a top-right info control on each of the four summary
-cards, with hover/focus/tap access and real case-list links. Definitions use a
+cards, with hover/focus/tap access and native Trail filter links. Definitions use a
 whole-version, all-dates count_scope projection independent of gallery filters.
 Discovery includes excluded and source-waiting cases; publication requires the
 published state. Targets are the low/sample union; eligible completed cases form
@@ -80,8 +80,12 @@ Exclusions group known top-level trigger reasons; raw-event-only/unclassified
 or business exclusions remain an explicit other bucket rather than an invented
 trigger. No new Trail calls or model execution occurs.
 
-Links clear gallery/date/owner/status filters and select the exact recorded
-scope. New shared scope choices support published, excluded, source-waiting and
+Links open Voyager/Trail view2410 using its native encoded query_attrs format.
+The issue_id IN filter contains the exact recorded metric cohort, avoiding
+errors when raw start-event rules or source data change after a scan. Links do
+not inherit current gallery/date/owner/status filters. Empty cohorts omit the
+link rather than issue an empty filter that could match all cases. No Trail
+request is made during rendering. New shared scope choices support published, excluded, source-waiting and
 sampled targets, while preserving older planned-sample and waiting views.
 The interactive popovers preserve DOM on identical polls, support clickable
 links, Escape/outside dismissal and viewport bounds, and retain the TE source

@@ -7,6 +7,7 @@ import hashlib
 import io
 import json
 import re
+from urllib.parse import quote, urlencode
 
 from .daily_review_source import project, SnapshotChanged
 
@@ -58,6 +59,19 @@ def composition(rows, *, historical=False, date=''):
                 pending=sum(r['state'] not in {'inferred','published','excluded','historical'} for r in scoped))
 
 
+def trail_case_filter(rows):
+    """Native Trail filter URL for this exact recorded cohort (no live query)."""
+    ids = sorted({r['issue_id'] for r in rows})
+    if not ids:
+        return None  # An empty IN filter must never accidentally open all cases.
+    if any(not re.fullmatch(r'cn\d+', iid) for iid in ids):
+        raise ValueError('Invalid Issue ID in metric scope')
+    filters = 'issue_id|in|' + quote(','.join(ids), safe='') + '|a_s'
+    return 'https://voyager.intra.xiaojukeji.com/static/management/#/issue/pool?' + urlencode({
+        '__fmt': '1', 'view_id~d': '2410', 'page~d': '1', 'size~d': '20',
+        'is_us_engineer~b': '0', 'query_attrs.$0': filters, 'filter_operator': 'AND'})
+
+
 def count_scope(rows, *, historical=False):
     """Whole-version metric definitions, independent of gallery/date filters."""
     states = Counter(r['state'] for r in rows)
@@ -77,7 +91,14 @@ def count_scope(rows, *, historical=False):
                 targets=sum(bool(r.get('is_target')) for r in rows),
                 exclusions=[dict(type=k, count=v) for k,v in sorted(excluded.items())],
                 sampling_policy=None if historical else 'version_probability_v3',
-                sampling_probability=None if historical else 0.1)
+                sampling_probability=None if historical else 0.1,
+                trail_links={
+                    'all': trail_case_filter(rows),
+                    'published': trail_case_filter([r for r in rows if r['state']=='published']),
+                    'targets': trail_case_filter([r for r in rows if r.get('is_target')]),
+                    'source_waiting': trail_case_filter([r for r in rows if r['state']=='waiting_metadata']),
+                    'excluded': trail_case_filter([r for r in rows if r['state']=='excluded']),
+                    'sampled_targets': trail_case_filter([r for r in rows if r.get('is_target') and r.get('is_sample')])})
 
 
 def workbench(db, root, dataset_id, *, page=1, page_size=24, mode='targets', q='', sort='added',

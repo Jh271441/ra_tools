@@ -109,6 +109,7 @@ class VersionMetricScopeTests(unittest.TestCase):
               dict(state='waiting_metadata',is_target=False,is_sample=True),
               dict(state='excluded',is_target=False,error='trigger_source_excluded',trigger='CZ_TL'),
               dict(state='excluded',is_target=False,error='trigger_source_excluded',trigger='StuckModel')]
+        for i,row in enumerate(rows):row['issue_id']='cn'+str(i+1)
         scope=count_scope(rows)
         self.assertEqual(scope['total'],5);self.assertEqual(scope['completed'],2)
         self.assertEqual(scope['sampled'],1);self.assertEqual(scope['low_only'],0)
@@ -130,3 +131,18 @@ class VersionMetricScopeTests(unittest.TestCase):
             self.assertEqual(scoped['count_scope']['sampled'],1)
             self.assertEqual(scoped['count_scope']['completed'],2)
         finally:fixture.doCleanups()
+
+
+class TrailMetricLinkTests(unittest.TestCase):
+    def test_native_trail_encoding_filters_exact_ids_and_empty_never_matches_all(self):
+        from urllib.parse import parse_qs,urlsplit,unquote
+        from ra_triage_dashboard.app.version_workbench import trail_case_filter
+        url=trail_case_filter([{'issue_id':'cn2'},{'issue_id':'cn1'},{'issue_id':'cn2'}])
+        self.assertEqual(urlsplit(url).hostname,'voyager.intra.xiaojukeji.com')
+        fragment=urlsplit(url).fragment
+        self.assertTrue(fragment.startswith('/issue/pool?'))
+        query=parse_qs(fragment.split('?',1)[1]);self.assertEqual(query['view_id~d'],['2410'])
+        field,op,value,kind=query['query_attrs.$0'][0].split('|')
+        self.assertEqual((field,op,kind),('issue_id','in','a_s'))
+        self.assertEqual(unquote(value).split(','),['cn1','cn2'])
+        self.assertIsNone(trail_case_filter([]))
