@@ -12,8 +12,10 @@ The shared dataset picker unions three disjoint immutable source scopes:
 | 0821-review-extra | 250 | manual_sidecar_0821-review-extra |
 | 0821-trail-extra | 513 | manual_sidecar_0821-trail-extra |
 
-Selecting the full option sends all three real IDs. Historical partial URLs
-retain their scope and display a partial count; they are not silently broadened.
+Selecting0821 sends all three real IDs. User-requested follow-up: old0821 URLs,
+saved selections and task-entry baseline selections upgrade to the full2005
+membership once all three sources are registered. Other dataset partial unions
+are unchanged. Explicit task IDs still restrict their own frozen members.
 Source scopes, original task IDs, assignments, references, label revisions,
 adjudications, comments, attachments, GT snapshots and model results are retained.
 No old task is recreated, merged with a semantically different task, or reassigned.
