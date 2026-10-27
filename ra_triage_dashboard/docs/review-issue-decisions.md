@@ -23,7 +23,7 @@
 
 ## 入口与边界
 
-- Review 详情的「标注与裁决 / Labels & decisions」（L）复用问题标注已有弹窗。
+- Review 详情的「汇总 / Summary」（L）复用问题标注已有完整裁决弹窗。
 - writer/admin 按需读取 model-free `/api/labeling/cases/{issue}`，采用当前或历史 revision，或重新标注并裁决。
 - 最终分类、Tags、标注依据、裁决人补充依据、显式是否排除均走现有完整 Issue decision endpoint。请求不附带 Model Run/Campaign，不创建模型 Review，不完成个人任务，也不写 GT/Trail。
 - 只读用户和图库来源 badge 保留原只读来源视图。
