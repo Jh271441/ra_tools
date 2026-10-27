@@ -1,5 +1,20 @@
 # Review toolbar wrapping
 
+## Compact single-row follow-up
+
+The user prefers a single desktop row, not a better-aligned wrapped row. Detail
+now omits the non-comparable verdict entirely (including its empty wrapper),
+while preserving both original GT and model badges. Canonical Match/Mismatch
+display and classification/filter semantics are unchanged. The return action
+uses Back/返回 with its full purpose in title and accessible name; Run history
+uses a shorter visible label while retaining its full tooltip and shortcut.
+
+Cache687: IAB 1440px Chinese/dark and English/light checked with out_of_scope,
+Ares video, return, expand, inference and history all on one row. Phone320/390
+retains the existing touch-safe layout rather than forcing a wide desktop row.
+48 frontend/base-path tests and executed comparison-expression tests passed.
+The following section records the earlier CSS-only step, not the final design.
+
 Long original GT values can make the detail action group wrap even when the
 viewport exceeds the old narrow-desktop breakpoint: the sidebar and Review pane
 also consume horizontal space. The base action group now uses start alignment,

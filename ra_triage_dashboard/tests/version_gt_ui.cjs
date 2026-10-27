@@ -36,4 +36,10 @@ for(const file of ['review-form.js','media-dialog.js']) {
     assert.equal(vm.runInNewContext(expression,context),context.LABELS.includes(gt),file+' '+gt);
   }
 }
+const detailSource=fs.readFileSync(path.join(root,'review-form.js'),'utf8');
+const compareText=detailSource.match(/const compareText = ([\s\S]*?);/)[1];
+assert.equal(vm.runInNewContext(compareText,{predictionComparable:false,predictionMatches:false}),'');
+assert.match(vm.runInNewContext(compareText,{predictionComparable:true,predictionMatches:true}),/Match/);
+assert.match(vm.runInNewContext(compareText,{predictionComparable:true,predictionMatches:false}),/Mismatch/);
+assert(detailSource.includes('${predictionComparable ? `<strong'));
 console.log('PASS version GT scope status, language and missing-GT comparisons');
