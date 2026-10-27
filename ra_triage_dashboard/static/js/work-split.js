@@ -837,6 +837,7 @@ function bindWorkSplitControls() {
     loadReviewTaskContext(state.reviewWorkSplitId).then(() => loadCases({ keepSelection: false, page: 1 })).catch((error) => showToast(error.message, true));
   });
   $("#reviewTaskContextExit")?.addEventListener("click", () => exitReviewTaskContext().catch((error) => showToast(error.message, true)));
+  $('#reviewNextPendingTaskButton')?.addEventListener('click', () => jumpToNextPendingTask().catch(error => showToast(error.message, true)));
   $("#reviewTaskContextErrorExit")?.addEventListener("click", () => exitReviewTaskContext().catch((error) => showToast(error.message, true)));
   $("#reviewWorkflowMode")?.addEventListener("change", (event) => {
     if (state.reviewWorkSplitId) return;

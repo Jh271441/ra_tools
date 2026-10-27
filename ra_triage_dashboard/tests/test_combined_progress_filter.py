@@ -97,3 +97,6 @@ class CombinedProgressFilterTest(unittest.TestCase):
 
     def test_frontend_behavior(self):
         subprocess.run(["node", str(Path(__file__).with_name("combined_progress_filter.cjs"))], check=True)
+
+    def test_next_pending_task_navigation(self):
+        subprocess.run(["node", str(Path(__file__).with_name("next_pending_task.cjs"))], check=True)

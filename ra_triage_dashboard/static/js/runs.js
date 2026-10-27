@@ -180,6 +180,7 @@ function selectedCombinedTaskProgress() {
 }
 
 function renderReviewProgressFilter() {
+  if (typeof renderNextPendingTaskButton === 'function') renderNextPendingTaskButton();
   const root = $('#reviewTaskProgressFilter');
   if (!root) return;
   const combined = isCombinedTaskProgressFilter();
@@ -205,6 +206,7 @@ function renderReviewProgressFilter() {
       if (isCombinedTaskProgressFilter()) {
         state.reviewTaskProgress = values;
       }
+      if (typeof renderNextPendingTaskButton === 'function') renderNextPendingTaskButton();
       scheduleReviewFilterReload?.(0);
     },
   });
