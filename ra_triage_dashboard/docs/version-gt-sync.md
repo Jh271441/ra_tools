@@ -42,6 +42,18 @@ or rewrite frozen references. No schema migration is required.
 
 ## Release verification
 
+Raw-value extension: `04fad1af1856704d477cebeb75f8c079ff0c029c`, cache685.
+Cloud full suite: 1033 passed, 7 skipped; isolated gray and production PostgreSQL
+health gates passed. Local full suite before the final route-only regression:
+1025 passed, 14 skipped; final focused reader/roundtrip/route checks: 15 passed.
+IAB read-only fixture checks cover 1440px Chinese/dark and 320/390px mobile
+layouts, including English/light, multi-selection, URL restoration and Escape.
+These are responsive browser checks, not a physical-device test.
+Production source refresh completed; both original-value filters, their union,
+page totals and Issue-ID export counts agree. Served frontend modules match the
+release. Original values remain outside canonical GT. Production data and audit
+identifiers are intentionally not included in this public document.
+
 Released as `2021f5a114835ce1454ec1104f038ef517e27c06` with frontend cache684.
 Exact-SHA cloud tests: 1031 passed, 7 skipped. Isolated gray and production
 PostgreSQL health checks passed; four served static resources matched the release.
