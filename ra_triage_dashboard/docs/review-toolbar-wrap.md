@@ -13,6 +13,10 @@ dark and English/light (one row), plus 320/390px English/light (full return labe
 no visible horizontal overflow). This does not establish real playback or
 signed-in production visual acceptance.
 
+Released `14132e8280945a102ea2d5b15bec8f8245e0c86f` at 2026-10-27 23:20:32 CST.
+Cloud: 1035 passed, 7 skipped; isolated gray and production health/policy passed.
+Served form/CSS/loader match the release; restored label and cache689 verified.
+
 ## Right-aligned compact actions
 
 Cache688 follows the final placement request: GT and Back stay at the left,
