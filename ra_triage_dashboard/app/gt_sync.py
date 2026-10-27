@@ -17,6 +17,33 @@ TRAIL_GT_UPDATED_AT_FIELD = "last_modify_time"
 TRAIL_GT_UPDATED_BY_FIELD = "last_modificator"
 
 
+def gt_refresh_due(
+    status: dict[str, Any], *, interval_seconds: int, now: datetime | None = None
+) -> bool:
+    """Ready means usable, not fresh forever; unchanged reads renew freshness."""
+    if status.get("status") == "running":
+        return False
+    if status.get("status") != "ready" or not status.get("baselines"):
+        return True
+    current = now or datetime.now(timezone.utc)
+    for item in status["baselines"]:
+        if item.get("status") != "ready":
+            return True
+        try:
+            checked = datetime.fromisoformat(
+                str(item.get("last_checked_at") or "").replace("Z", "+00:00")
+            )
+            # Unknown timezone cannot establish a trustworthy freshness window.
+            if checked.tzinfo is None:
+                return True
+            age = (current - checked).total_seconds()
+        except (TypeError, ValueError, OverflowError):
+            return True
+        if age < 0 or age >= interval_seconds:
+            return True
+    return False
+
+
 @dataclass(frozen=True)
 class TrailGtSyncResult:
     rows: list[dict[str, str]]

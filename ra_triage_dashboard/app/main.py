@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from .static_assets import dashboard_static_app
+from .gt_sync import gt_refresh_due
 
 from .auth import has_same_origin_mutation_marker, identity_header_candidates, request_identity
 from .contracts import MAX_BATCH_JSON_REQUEST_BYTES, MAX_REVIEW_MULTIPART_REQUEST_BYTES
@@ -84,23 +85,9 @@ def _gt_sync_needs_remote_refresh() -> bool:
 
     from .support.gt_sync import gt_sync_status
 
-    status = gt_sync_status()
-    if str(status.get("status") or "") != "ready":
-        return True
-    # Already fully applied locally; only re-check Trail on the long interval.
-    # The loop already sleeps between runs, so a ready snapshot is left alone
-    # for this tick when all baselines report ready with non-zero rows.
-    baselines = status.get("baselines") or []
-    if not baselines:
-        return True
-    for item in baselines:
-        if str(item.get("status") or "") != "ready":
-            return True
-        if int(item.get("source_row_count") or 0) <= 0:
-            return True
-        if not str(item.get("last_applied_at") or "").strip():
-            return True
-    return False
+    return gt_refresh_due(
+        gt_sync_status(), interval_seconds=settings.gt_sync_interval_seconds
+    )
 
 
 async def _authoritative_gt_sync_loop() -> None:
@@ -138,7 +125,7 @@ async def _authoritative_gt_sync_loop() -> None:
                 raise
         else:
             logger.info(
-                "skip periodic Trail GT refresh; local gt_sync_state is ready"
+                "skip periodic Trail GT refresh; snapshot is fresh or sync is running"
             )
         await asyncio.sleep(settings.gt_sync_interval_seconds)
 
