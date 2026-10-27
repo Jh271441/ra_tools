@@ -363,6 +363,7 @@ function normalizedReviewRouteFilters(params) {
     annotationAuthor: parseFilterList(params.get("reviewer")),
     reviewStatus,
     labelStates,
+    issueTags: parseFilterList(params.get("issue_tags")),
     taskView: ['targets', 'pending'].includes(params.get('task_view')) ? 'targets' : '',
     taskProgress: params.has('task_progress')
       ? parseFilterList(params.get('task_progress')).filter(value => ['pending', 'completed'].includes(value))
@@ -660,6 +661,7 @@ function currentReviewRouteOptions(overrides = {}) {
         : getMultiFilterValues($("#reviewerFilter")),
     reviewStatus: selectedModelReviewStatuses(),
     labelStates: getMultiFilterValues($("#sharedLabelStateFilter")),
+    issueTags: parseFilterList(state.reviewIssueTags || []),
     commentState:
       typeof selectedReviewDiscussionFilter === "function"
         ? selectedReviewDiscussionFilter()
@@ -727,6 +729,8 @@ function applyReviewRouteControls(route) {
   renderReviewProgressFilter();
   setMultiFilterValues($("#reviewStatusFilter"), route.reviewStatus);
   setMultiFilterValues($("#sharedLabelStateFilter"), route.labelStates);
+  state.reviewIssueTags = route.issueTags || [];
+  if (typeof renderReviewIssueTagFilter === "function") renderReviewIssueTagFilter();
   setMultiFilterValues(
     $("#reviewDiscussionFilter"),
     route.commentState && route.commentState !== "all" ? [route.commentState] : []
@@ -974,6 +978,8 @@ function pageUrl(page, options = {}) {
     if (reviewer) url.searchParams.set("reviewer", reviewer);
     if (status) url.searchParams.set("status", status);
     if (labelState) url.searchParams.set("label_state", labelState);
+    const issueTags = joinFilterList(review.issueTags);
+    if (issueTags) url.searchParams.set("issue_tags", issueTags);
     if (review.commentState && review.commentState !== "all") {
       url.searchParams.set("comment_state", review.commentState);
     }

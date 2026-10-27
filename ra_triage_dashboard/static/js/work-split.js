@@ -375,6 +375,7 @@ function currentReviewFilterPayload() {
     review_status: joinFilterList(selectedModelReviewStatuses()),
     task_progress: joinFilterList(selectedCombinedTaskProgress()),
     label_state: joinFilterList(getMultiFilterValues($("#sharedLabelStateFilter"))),
+    issue_tags: joinFilterList(selectedReviewIssueTags()),
     comment_state:
       typeof selectedReviewDiscussionFilter === "function"
         ? selectedReviewDiscussionFilter()

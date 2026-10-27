@@ -212,7 +212,50 @@ function renderReviewProgressFilter() {
   });
 }
 
+function selectedReviewIssueTags() {
+  return parseFilterList(state.reviewIssueTags || []);
+}
+
+function renderReviewIssueTagFilter() {
+  const root = $('#reviewIssueTagFilter');
+  if (!root) return;
+  const selected = selectedReviewIssueTags();
+  const definitions = [
+    ['environment', 'tag.env'], ['self_intent', 'tag.ego_intent'],
+    ['false_trigger', 'tag.false_trigger'], ['true_trigger', 'tag.should_trigger'],
+    ['ra', 'tag.correct_trigger'], ['no_assist', 'tag.no_assist'],
+  ];
+  const catalog = state.config?.review_tag_catalog || [];
+  const groups = definitions.map(([key, label]) => ({
+    label: t(label), items: catalog.filter(item => item.group === key &&
+      ((!item.deleted && item.visible !== false) || selected.includes(item.key)))
+      .map(item => ({value: item.key, label: item.label})),
+  })).filter(group => group.items.length);
+  // Keep unknown/deferred URL keys visible; the server validates instead of
+  // silently broadening a shared link while the catalog is loading/changing.
+  const keys = new Set(groups.flatMap(group => group.items.map(item => item.value)));
+  const unknown = selected.filter(key => !keys.has(key));
+  if (unknown.length) groups.push({label: uiText('其他标签', 'Other tags'), items: unknown.map(value => ({value, label: value}))});
+  const options = groups.flatMap(group => group.items);
+  const signature = JSON.stringify(groups.map(group => group.items.map(item => item.value)));
+  if (root.dataset.groupSignature !== signature || !root.querySelector('.multi-filter-trigger') || !relabelMultiFilter(root, options)) {
+    renderMultiFilter(root, {groups, selected, searchable: true, onChange: values => {
+      state.reviewIssueTags = values;
+      scheduleReviewFilterReload(0);
+    }});
+    root.dataset.groupSignature = signature;
+  }
+  setMultiFilterValues(root, selected);
+  root.querySelectorAll('.multi-filter-group-label').forEach((heading, index) => { heading.textContent = groups[index].label; });
+  const search = root.querySelector('.multi-filter-search');
+  search.placeholder = uiText('搜索标签', 'Search tags');
+  search.setAttribute('aria-label', search.placeholder);
+  root.querySelector('.multi-filter-trigger').setAttribute('aria-label', uiText('Issue 标签筛选', 'Issue tag filter'));
+  root.querySelector('.multi-filter-trigger').title = uiText('同组满足任一标签，不同组同时满足', 'Match any selected tag within each group, and all selected groups');
+}
+
 function renderReviewCatalogFilters() {
+  renderReviewIssueTagFilter();
   const onChange = () => scheduleReviewFilterReload?.(0);
   renderMultiFilter($("#comparisonFilter"), {
     options: analysisComparisonMultiOptions(),

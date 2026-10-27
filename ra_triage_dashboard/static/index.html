@@ -86,7 +86,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-689`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-690`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -358,15 +358,15 @@
                     </button>
                   </div>
                 </label>
-                <label>
+                <label class="filter-gt">
                   <span>GT</span>
                   <div class="multi-filter" id="gtFilter" data-placeholder="全部 GT" data-placeholder-en="All GT" data-i18n-placeholder="filter.all_gt"></div>
                 </label>
-                <label>
+                <label class="filter-model-label">
                   <span class="ui-lang-zh">模型标注</span><span class="ui-lang-en">Model label</span>
                   <div class="multi-filter" id="annotationFilter" data-placeholder="全部模型标注" data-placeholder-en="All model labels" data-i18n-placeholder="filter.all_model_labels"></div>
                 </label>
-                <label>
+                <label class="filter-reviewer">
                   <span class="ui-lang-zh" title="按已有复核记录的提交人筛选；任务负责人用于筛选分配对象">复核提交人</span><span class="ui-lang-en">Reviewer</span>
                   <div class="multi-filter" id="reviewerFilter" data-placeholder="全部复核人" data-placeholder-en="All reviewers" data-i18n-placeholder="filter.all_reviewers"><button class="multi-filter-trigger" type="button" disabled aria-busy="true"><span>正在加载复核人…</span><span class="multi-filter-caret" aria-hidden="true"></span></button></div>
                 </label>
@@ -378,6 +378,10 @@
                   <span class="ui-lang-zh" title="跨 Run 共享的 Issue 标签状态">共享标签状态</span><span class="ui-lang-en" title="Issue label state shared across Runs">Shared label state</span>
                   <div class="multi-filter" id="sharedLabelStateFilter" data-placeholder="全部标签状态" data-placeholder-en="All label states" aria-label="Shared label state filter"></div>
                 </label>
+                <label class="filter-issue-tags">
+                  <span class="ui-lang-zh">Issue 标签</span><span class="ui-lang-en">Issue tags</span>
+                  <div class="multi-filter" id="reviewIssueTagFilter" data-summary-count="true" data-placeholder="全部 Issue 标签" data-placeholder-en="All Issue tags"></div>
+                </label>
                 <label class="filter-discussion-state">
                   <span class="ui-lang-zh">讨论</span><span class="ui-lang-en">Discussion</span>
                   <div class="multi-filter" id="reviewDiscussionFilter" data-placeholder="全部讨论状态" data-placeholder-en="All discussion states" aria-label="Discussion state filter"></div>
@@ -386,7 +390,7 @@
                   <span class="ui-lang-zh">问题排除</span><span class="ui-lang-en">Issue exclusion</span>
                   <div class="multi-filter" id="reviewExclusionFilter" data-placeholder="全部（含问题排除）" data-placeholder-en="All (including shielded)" aria-label="Issue exclusion filter"></div>
                 </label>
-                <label>
+                <label class="filter-assignee">
                   <span class="ui-lang-zh">任务负责人</span><span class="ui-lang-en">Assignee</span>
                   <div class="multi-filter" id="workAssigneeFilter" data-placeholder="全部负责人" data-placeholder-en="All assignees" data-i18n-placeholder="filter.all_assignees" aria-label="Work assignee filter"></div>
                 </label>
@@ -2541,7 +2545,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-689`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-690`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

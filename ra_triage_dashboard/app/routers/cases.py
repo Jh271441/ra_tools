@@ -45,6 +45,8 @@ from ..support.external_links import (
     resolve_disable_ra_simulation_version,
 )
 from ..support.filter_parsing import _case_filter_kwargs
+from ..support.issue_tag_filters import matches_issue_tag_groups
+from ..support.catalogs import REVIEW_TAG_ALIASES
 from ..support.identity import _admin_identity, _writer_identity
 from ..support.thumbnails import _render_case_thumbnail, _thumbnail_cache_path
 from ..review_workflow import derive_review_status, effective_expected_output
@@ -301,6 +303,7 @@ def _case_derived_issue_ids(
     )
     filters = dict(filters)
     exclusion = filters.pop("is_excluded", None)
+    issue_tag_groups = filters.pop("issue_tag_groups", ())
     matching_ids: list[str] = []
     for candidates in database.iter_case_review_candidate_batches(
         batch_size=400,
@@ -312,8 +315,15 @@ def _case_derived_issue_ids(
             else {}
         )
         exclusions = database.project_issue_exclusions([item["issue_id"] for item in candidates]) if exclusion is not None else {}
+        issue_tags = database.project_issue_tag_contexts([item["issue_id"] for item in candidates]) if issue_tag_groups else {}
         for item in candidates:
             issue_id = _as_text(item.get("issue_id"))
+            if issue_tag_groups:
+                # An existing empty Case context is authoritative, not a reason
+                # to resurrect old Run tags. Legacy fallback mirrors analysis.
+                context = issue_tags.get(issue_id, item.get("annotation") or {})
+                if not matches_issue_tag_groups(context.get("tags"), issue_tag_groups, REVIEW_TAG_ALIASES):
+                    continue
             effective_excluded = exclusions.get(issue_id, {}).get("is_excluded", bool((item.get("annotation") or {}).get("is_excluded")))
             if exclusion is not None and effective_excluded != exclusion:
                 continue
@@ -372,7 +382,7 @@ def _case_result_with_status_filter(
     """Filter derived Review and shared-label states before pagination."""
 
     tag_catalog = _review_tag_catalog()
-    if review_statuses or label_states or filters.get("is_excluded") is not None:
+    if review_statuses or label_states or filters.get("is_excluded") is not None or filters.get("issue_tag_groups"):
         matching_ids = _case_derived_issue_ids(
             filters=filters,
             review_statuses=review_statuses,
@@ -383,6 +393,7 @@ def _case_result_with_status_filter(
         page_ids = matching_ids[start : start + page_size]
         if page_ids:
             page_filters = {**filters, "issue_ids": page_ids, "is_excluded": None}
+            page_filters.pop("issue_tag_groups", None)
             raw = database.list_cases(
                 **page_filters,
                 page=1,
@@ -485,6 +496,7 @@ async def list_cases(
     annotation_author: str = "",
     review_status: str = "",
     label_state: str = "",
+    issue_tags: str = "",
     model_run_id: str = "",
     comparison: str = "",
     failure_only: bool = False,
@@ -507,6 +519,7 @@ async def list_cases(
         annotation_author=annotation_author,
         review_status=review_status,
         label_state=label_state,
+        issue_tags=issue_tags,
         model_run_id=model_run_id,
         comparison=comparison,
         failure_only=failure_only,
@@ -563,6 +576,7 @@ async def list_cases(
         "comment_state": filters["comment_state"],
         "review_status": list(review_statuses) + [value for value in str(filters.get("model_review_status") or "").split(",") if value],
         "label_state": list(label_states),
+        "issue_tags": [tag for group in filters.get("issue_tag_groups", ()) for tag in group],
         "exclusion": exclusion_filter,
         "baselines": resolve_request_baseline_ids(baselines, request=request),
         "baseline_scopes": filters.get("baseline_scopes") or [],
@@ -611,6 +625,7 @@ async def list_case_issue_ids(
     annotation_author: str = "",
     review_status: str = "",
     label_state: str = "",
+    issue_tags: str = "",
     model_run_id: str = "",
     comparison: str = "",
     failure_only: bool = False,
@@ -632,6 +647,7 @@ async def list_case_issue_ids(
         annotation_author=annotation_author,
         review_status=review_status,
         label_state=label_state,
+        issue_tags=issue_tags,
         model_run_id=model_run_id,
         comparison=comparison,
         failure_only=failure_only,
@@ -671,6 +687,7 @@ async def list_case_issue_ids(
             "comment_state": filters["comment_state"],
             "review_status": list(review_statuses) + [value for value in str(filters.get("model_review_status") or "").split(",") if value],
             "label_state": list(label_states),
+            "issue_tags": [tag for group in filters.get("issue_tag_groups", ()) for tag in group],
             "exclusion": exclusion_filter,
         },
     }
@@ -685,6 +702,7 @@ async def work_assignees(
     annotation_author: str = "",
     review_status: str = "",
     label_state: str = "",
+    issue_tags: str = "",
     model_run_id: str = "",
     comparison: str = "",
     failure_only: bool = False,
@@ -705,6 +723,7 @@ async def work_assignees(
         annotation_author=annotation_author,
         review_status=review_status,
         label_state=label_state,
+        issue_tags=issue_tags,
         model_run_id=model_run_id,
         comparison=comparison,
         failure_only=failure_only,
@@ -738,6 +757,7 @@ async def work_assignees(
             "comparison_status": filters["comparison_status"],
             "review_status": list(review_statuses) + [value for value in str(filters.get("model_review_status") or "").split(",") if value],
             "label_state": list(label_states),
+            "issue_tags": [tag for group in filters.get("issue_tag_groups", ()) for tag in group],
             "comment_state": filters["comment_state"],
             "exclusion": exclusion_filter,
             "baselines": resolve_request_baseline_ids(
@@ -972,6 +992,7 @@ async def split_case_work(request: Request) -> dict[str, Any]:
         annotation_author=_as_text(filter_body.get("annotation_author")),
         review_status=_as_text(filter_body.get("review_status")),
         label_state=_as_text(filter_body.get("label_state")),
+        issue_tags=_as_text(filter_body.get("issue_tags")),
         model_run_id=_as_text(filter_body.get("model_run_id")),
         comparison=_as_text(filter_body.get("comparison") or filter_body.get("comparison_status")),
         failure_only=bool(filter_body.get("failure_only")),
@@ -1041,6 +1062,7 @@ async def split_case_work(request: Request) -> dict[str, Any]:
                 "annotation_author": filters["annotation_author"],
                 "review_status": list(review_statuses) + [value for value in str(filters.get("model_review_status") or "").split(",") if value],
                 "label_state": list(label_states),
+                "issue_tags": [tag for group in filters.get("issue_tag_groups", ()) for tag in group],
                 "exclusion": exclusion_filter,
                 "missing_evidence": filters["missing_evidence"],
                 "issue_ids": filters.get("issue_ids") or [],
@@ -1178,6 +1200,7 @@ async def split_case_work(request: Request) -> dict[str, Any]:
             "work_assignee": filters["work_assignee"],
             "review_status": list(review_statuses) + [value for value in str(filters.get("model_review_status") or "").split(",") if value],
             "label_state": list(label_states),
+            "issue_tags": [tag for group in filters.get("issue_tag_groups", ()) for tag in group],
             "exclusion": exclusion_filter,
         },
     }

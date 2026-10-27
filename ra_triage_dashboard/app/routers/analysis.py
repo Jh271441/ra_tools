@@ -426,6 +426,7 @@ async def export_review_reason_analysis(
     annotation_author: str = "",
     review_status: str = "",
     label_state: str = "",
+    issue_tags: str = "",
     gt_label: str = "",
     annotation_label: str = "",
     model_label: str = "",
@@ -475,6 +476,7 @@ async def export_review_reason_analysis(
             annotation_author=annotation_author,
             review_status=review_status,
             label_state=label_state,
+            issue_tags=issue_tags,
             model_run_id=model_run_id,
             comparison=comparison,
             failure_only=failure_only,
@@ -505,6 +507,7 @@ async def export_review_reason_analysis(
         # analysis page's different free-text/comment projection a second time.
         export_search = ""
         export_comment_state = "all"
+        case_filters.pop("issue_tag_groups", None)
         if not export_issue_ids:
             return await asyncio.to_thread(
                 _review_analysis_export_response, {"items": []}, export_format

@@ -235,6 +235,7 @@ function renderMultiFilter(
     selected = null,
     onChange = null,
     onlyThis = false,
+    searchable = false,
   } = {}
 ) {
   if (!root || root.matches?.("select")) return;
@@ -267,7 +268,9 @@ function renderMultiFilter(
         <button type="button" class="multi-filter-action" data-multi-invert><span class="ui-lang-zh">反选</span><span class="ui-lang-en">Invert</span></button>
         <button type="button" class="multi-filter-action" data-multi-clear><span class="ui-lang-zh">清除</span><span class="ui-lang-en">Clear</span></button>
       </div>
+      ${searchable ? `<input class="multi-filter-search" type="search" autocomplete="off" placeholder="${escapeHtml(uiText("搜索标签", "Search tags"))}" aria-label="${escapeHtml(uiText("搜索标签", "Search tags"))}" />` : ""}
       <div class="multi-filter-options">${body || '<div class="multi-filter-empty"><span class="ui-lang-zh">暂无选项</span><span class="ui-lang-en">No options</span></div>'}</div>
+      ${searchable ? '<div class="multi-filter-empty" data-multi-search-empty hidden><span class="ui-lang-zh">无匹配标签</span><span class="ui-lang-en">No matching tags</span></div>' : ""}
     </div>`;
   updateMultiFilterSummary(root);
   const trigger = root.querySelector(".multi-filter-trigger");
@@ -303,16 +306,38 @@ function renderMultiFilter(
     }
   });
   panel?.addEventListener("click", (event) => event.stopPropagation());
+  root.querySelector('.multi-filter-search')?.addEventListener('input', (event) => {
+    const query = event.target.value.trim().toLocaleLowerCase();
+    let visible = 0;
+    root.querySelectorAll('.multi-filter-option-row').forEach((row) => {
+      const input = row.querySelector('[data-multi-value]');
+      const group = row.closest('.multi-filter-group')?.querySelector('.multi-filter-group-label')?.textContent || '';
+      row.hidden = !`${input?.value} ${input?.dataset.label} ${group}`.toLocaleLowerCase().includes(query);
+      if (!row.hidden) visible++;
+    });
+    root.querySelectorAll('.multi-filter-group').forEach((group) => {
+      group.hidden = ![...group.querySelectorAll('.multi-filter-option-row')].some(row => !row.hidden);
+    });
+    root.querySelector('[data-multi-search-empty]').hidden = visible > 0;
+  });
+  const actionValues = () => searchable
+    ? [...root.querySelectorAll('.multi-filter-option-row')]
+        .filter(row => !row.hidden)
+        .map(row => row.querySelector('[data-multi-value]')?.value).filter(Boolean)
+    : multiFilterAllValues(root);
   root.querySelector("[data-multi-select-all]")?.addEventListener("click", (event) => {
     event.preventDefault();
-    setMultiFilterValues(root, multiFilterAllValues(root));
+    setMultiFilterValues(root, [...new Set([...getMultiFilterValues(root), ...actionValues()])]);
     emitChange();
   });
   root.querySelector("[data-multi-invert]")?.addEventListener("click", (event) => {
     event.preventDefault();
     const selectedNow = new Set(getMultiFilterValues(root));
-    const inverted = multiFilterAllValues(root).filter((value) => !selectedNow.has(value));
-    setMultiFilterValues(root, inverted);
+    actionValues().forEach(value => {
+      if (selectedNow.has(value)) selectedNow.delete(value);
+      else selectedNow.add(value);
+    });
+    setMultiFilterValues(root, [...selectedNow]);
     emitChange();
   });
   root.querySelector("[data-multi-clear]")?.addEventListener("click", (event) => {

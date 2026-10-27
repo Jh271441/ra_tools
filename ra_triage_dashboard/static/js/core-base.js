@@ -114,6 +114,7 @@ function updateMultiFilterSummary(root) {
         : root.dataset.placeholder || "全部";
   if (!values.length) {
     summary.textContent = placeholder;
+    summary.removeAttribute("title");
     summary.classList.remove("has-value");
     return;
   }
@@ -124,7 +125,10 @@ function updateMultiFilterSummary(root) {
     return input?.dataset.label || value;
   });
   const en = typeof state !== "undefined" && state.uiLanguage === "en";
-  if (labels.length <= 2) {
+  if (root.dataset.summaryCount === "true") {
+    summary.textContent = uiText(`已选 ${values.length} 项`, `${values.length} selected`);
+    summary.title = labels.join(en ? ", " : "、");
+  } else if (labels.length <= 2) {
     summary.textContent = labels.join(en ? ", " : "、");
   } else if (typeof t === "function") {
     summary.textContent = en

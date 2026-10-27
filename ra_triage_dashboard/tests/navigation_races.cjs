@@ -23,6 +23,7 @@ function fixture(page = 'review') {
     selectedBaselineQueryValue: () => state.selectedBaselineIds.join(','),
     parseFilterList: x => Array.isArray(x) ? x : String(x || '').split(',').filter(Boolean), joinFilterList: x => (x || []).join(','),
     getMultiFilterValues: () => [], selectedModelReviewStatuses: () => [], selectedCombinedTaskProgress: () => [],
+    selectedReviewIssueTags: () => state.reviewIssueTags || [],
     renderReviewProgressFilter() {}, isCombinedTaskProgressFilter: () => false,
     selectedReviewDiscussionFilter: () => 'all', selectedReviewComparisonStatus: () => 'all',
     appendBaselineParams: () => {}, clearPendingReviewImages() {}, renderCases: d => calls.paints.push(d), clearDetail: () => calls.paints.push('cleared'),

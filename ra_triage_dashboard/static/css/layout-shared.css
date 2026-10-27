@@ -694,6 +694,8 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   border-color: #52627a; color: #ffffff; background: #162131;
 }
 .multi-filter-options { min-height: 0; flex: 0 1 auto; overflow: auto; padding: 6px; display: grid; gap: 2px; }
+.multi-filter-search { width: calc(100% - 12px); min-width: 0; flex: 0 0 auto; margin: 0 6px 4px; }
+.multi-filter-option-row[hidden], .multi-filter-group[hidden], [data-multi-search-empty][hidden] { display: none !important; }
 .multi-filter-group { display: grid; gap: 1px; margin-bottom: 4px; }
 .multi-filter-group-label {
   padding: 4px 6px 2px; color: #d8e3ee; font-size: 10px; font-weight: 700; letter-spacing: .02em;

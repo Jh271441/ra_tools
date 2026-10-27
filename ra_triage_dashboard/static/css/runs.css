@@ -172,23 +172,26 @@ html[data-color-theme="light"] .import-example-tabs { background: #f8fafc; }
   #filterForm > #reviewTaskProgressField { grid-column: span 2; }
 }
 @media (min-width: 1180px) {
-  #filterForm.review-filters { grid-template-columns: repeat(24, minmax(0, 1fr)); }
-  #filterForm.review-filters > :nth-child(1) { grid-column: span 4; }
-  #filterForm.review-filters > :nth-child(2) { grid-column: span 3; }
-  #filterForm.review-filters > :nth-child(3) { grid-column: span 6; }
-  #filterForm.review-filters > :nth-child(4) { grid-column: span 3; }
-  #filterForm.review-filters > :nth-child(5),
-  #filterForm.review-filters > :nth-child(6) { grid-column: span 4; }
-  #filterForm.review-filters > :nth-child(n+7):nth-child(-n+11) { grid-column: span 3; }
-  #filterForm.review-filters > :nth-child(12) { grid-column: span 3; }
-  #filterForm.review-filters > .review-workflow-mode { grid-column: span 4; }
-  #filterForm.review-filters > .filter-submit { grid-column: span 2; }
-  #filterForm.review-filters:has(#reviewTaskProgressField:not([hidden])) { grid-template-columns: repeat(28, minmax(0, 1fr)); }
-  #filterForm:has(#reviewTaskProgressField:not([hidden])) > :nth-child(1),
-  #filterForm:has(#reviewTaskProgressField:not([hidden])) > :nth-child(5) { grid-column: span 5; }
-  #filterForm:has(#reviewTaskProgressField:not([hidden])) > .filter-search { grid-column: span 8; }
-  #filterForm:has(#reviewTaskProgressField:not([hidden])) > .review-task-filter { grid-column: span 4; }
-  #filterForm:has(#reviewTaskProgressField:not([hidden])) > #reviewTaskProgressField { grid-column: span 3; }
+  /* Two explicit rows; semantic classes avoid shifting fields when one is added. */
+  #filterForm.review-filters { grid-template-columns: repeat(36, minmax(0, 1fr)); }
+  #filterForm.review-filters > .filter-model-run { grid-row: 1; grid-column: span 6; }
+  #filterForm.review-filters > .filter-comparison { grid-row: 1; grid-column: span 4; }
+  #filterForm.review-filters > .filter-search { grid-row: 1; grid-column: span 9; }
+  #filterForm.review-filters > .filter-gt { grid-row: 1; grid-column: span 4; }
+  #filterForm.review-filters > .filter-model-label { grid-row: 1; grid-column: span 5; }
+  #filterForm.review-filters > .filter-reviewer { grid-row: 1; grid-column: span 4; }
+  #filterForm.review-filters > .filter-review-status { grid-row: 1; grid-column: span 4; }
+  #filterForm.review-filters > .filter-shared-label-state { grid-row: 2; grid-column: span 4; }
+  #filterForm.review-filters > .filter-issue-tags { grid-row: 2; grid-column: span 5; }
+  #filterForm.review-filters > .filter-discussion-state { grid-row: 2; grid-column: span 3; }
+  #filterForm.review-filters > .filter-exclusion { grid-row: 2; grid-column: span 4; }
+  #filterForm.review-filters > .filter-assignee { grid-row: 2; grid-column: span 4; }
+  #filterForm.review-filters > .review-task-filter { grid-row: 2; grid-column: span 8; }
+  #filterForm.review-filters > #reviewTaskProgressField { grid-row: 2; grid-column: span 4; }
+  #filterForm.review-filters > .review-workflow-mode { grid-row: 2; grid-column: span 6; }
+  #filterForm.review-filters > .filter-submit { grid-row: 2; grid-column: span 2; }
+  #filterForm.review-filters:has(#reviewTaskProgressField:not([hidden])) > .review-task-filter { grid-column: span 6; }
+  #filterForm.review-filters:has(#reviewTaskProgressField:not([hidden])) > .review-workflow-mode { grid-column: span 4; }
 }
 #reviewTaskProgressField[hidden] { display: none !important; }
 .review-task-filter { min-width: 0; }

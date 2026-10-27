@@ -329,6 +329,8 @@ async function resetReviewFilters() {
   persistReviewerFilterRoute?.("review", []);
   setMultiFilterValues($("#reviewStatusFilter"), []);
   setMultiFilterValues($("#sharedLabelStateFilter"), []);
+  state.reviewIssueTags = [];
+  setMultiFilterValues($("#reviewIssueTagFilter"), []);
   setMultiFilterValues($("#reviewDiscussionFilter"), []);
   setMultiFilterValues($("#reviewExclusionFilter"), []);
   setMultiFilterValues($("#workAssigneeFilter"), []);

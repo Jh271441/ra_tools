@@ -19,6 +19,8 @@ from .catalogs import (
     resolve_review_exclusion_filter,
 )
 from .common import _as_text, _detail
+from .issue_tag_filters import parse_issue_tag_groups
+from .catalogs import _review_tag_catalog, REVIEW_TAG_ALIASES
 
 
 def _version_task_scope(value):
@@ -37,6 +39,7 @@ def _case_filter_kwargs(
     annotation_author: str = "",
     review_status: str = "",
     label_state: str = "",
+    issue_tags: str = "",
     model_run_id: str = "",
     comparison: str = "",
     failure_only: bool = False,
@@ -112,7 +115,12 @@ def _case_filter_kwargs(
     selected_ids = restrict_version_issue_ids(
         baselines, request=request, issue_ids=selected_ids, task_id=work_split_id,
     )
+    try:
+        issue_tag_groups = parse_issue_tag_groups(issue_tags, _review_tag_catalog(), REVIEW_TAG_ALIASES) if issue_tags else ()
+    except ValueError as exc:
+        raise _detail(400, str(exc)) from exc
     return {
+        **({"issue_tag_groups": issue_tag_groups} if issue_tag_groups else {}),
         "baseline_scope": scopes[0] if len(scopes) == 1 else "",
         "baseline_scopes": scopes,
         "search": search,
