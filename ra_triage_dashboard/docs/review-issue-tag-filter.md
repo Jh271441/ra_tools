@@ -37,3 +37,12 @@ URL 使用 `issue_tags` 原始键列表；路由恢复、重置、语言切换�
 - fixture 使用实际模块/样式与合成目录，不等同于生产登录验收或真实手机测试。
 
 缓存版本690。发布信息以精确 SHA 的标准发布记录为准。
+
+## 发布结果
+
+已发布 `00a66217a16a1dfe5473000bbb2c1c2d20cd0add`（cache690）。云端完整测试
+1042 passed、7 skipped；隔离灰度及生产精确 SHA/PostgreSQL 健康验证通过。
+发布记录：`/volume/home/workspace/ra_triage_dashboard_deploy/releases/20261027T162423Z-00a66217a16a/result.json`。
+生产实际返回的筛选模块、图库模块、共享多选模块、布局 CSS 和 loader 均与提交一致；
+子标签列表/ID查询计数一致，非法标签返回400。本次未做已登录生产浏览器验收。
+发布器仅清理无运行引用的旧 fb73389 候选/回退工作树，Git 与发布日志保留。
