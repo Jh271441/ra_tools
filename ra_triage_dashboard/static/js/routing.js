@@ -95,6 +95,7 @@ function applyUiLanguage(language, { persist = true } = {}) {
     "refreshTrailNonExclusionLanguage",
     "refreshTrailLocalImportLanguage",
     "refreshCaseLabelDecisionLanguage",
+    "refreshReviewFormLanguage",
     "refreshHistoryDialogLanguage",
     "refreshCaseExclusionLanguage",
     "syncCaseLabelingIssueExport",
@@ -1215,7 +1216,7 @@ function showPage(
   if (previousPage === "trail-history" && trailHistory.busy) return;
   if (previousPage === "trail-history" && target !== "trail-history") $("#trailHistoryDialog")?.close();
   if (target === "trail-history" && restoreRoute) restoreTrailHistoryRoute();
-  if (previousPage === "labeling" && typeof caseLabelDecisionUi !== "undefined" && caseLabelDecisionUi.editor) {
+  if (["labeling", "review"].includes(previousPage) && typeof caseLabelDecisionUi !== "undefined" && caseLabelDecisionUi.editor) {
     if (caseLabelDecisionUi.saving) return;
     exitCaseDecisionEditor();
   }

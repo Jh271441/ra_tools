@@ -278,3 +278,5 @@ html[data-color-theme="light"] .case-decision-records .history-time { color:var(
 .case-scene-toggle[aria-expanded="true"] .case-scene-caret { transform:rotate(90deg); }
 .case-scene-description { margin:6px 0 0; padding:8px 10px; border-left:2px solid var(--line); color:var(--muted); background:var(--overlay); font-size:12px; line-height:1.6; white-space:pre-wrap; overflow-wrap:anywhere; }
 .case-scene-description[hidden] { display:none; }
+
+.review-decision-active > #caseLabelingEditor { position:static; width:auto; min-width:0; max-height:none; overflow:visible; padding:0; border:0; background:transparent; box-shadow:none; }

@@ -7,8 +7,9 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class LabelReviewInteractionsTest(unittest.TestCase):
     def test_shortcuts_split_case_and_run_and_case_rationale_survives_drafts(self):
-        script = (ROOT / "static/js/review-draft.js").read_text() + "\n" + (ROOT / "static/js/review-form.js").read_text() + r'''
+        script = "\n".join((ROOT / f"static/js/{name}.js").read_text() for name in ["review-draft", "review-issue-decision", "review-form"]) + r'''
 const assert=require('node:assert/strict');
+const caseLabelDecisionUi={};
 state={activePage:'review',selectedCase:{issue_id:'cn1'},selectedRunId:'run1',session:{username:'alice',verified:true}};
 Element=class {closest(){return null}};
 const body=new Element(), handlers=[];let active='',draft;
@@ -58,14 +59,17 @@ assert.equal(applyReviewDraft({},draft).case_rationale,'Saved Case reason @bob')
         subprocess.run(["node"], input=script, text=True, check=True, capture_output=True)
 
     def test_label_summary_shortcut_respects_dialog_and_editing_scope(self):
-        script = (ROOT / "static/js/review-tags.js").read_text() + "\n" + (ROOT / "static/js/review-form.js").read_text() + r'''
+        script = "\n".join((ROOT / f"static/js/{name}.js").read_text() for name in ["review-tags", "review-issue-decision", "review-form"]) + r'''
 const assert=require('node:assert/strict');
+const caseLabelDecisionUi={};
 state={activePage:'review',selectedCase:{issue_id:'cn1'}};
 Element=class {constructor(editable=false){this.editable=editable}closest(){return this.editable?{}:null}};
 const body=new Element(),handlers=[];
 let opens=0,closes=0,hidden=false,otherDialog=false;
-const dialog={open:false};const button={disabled:false,closest(){return hidden?{}:null},click(){opens++;dialog.open=true}};
-$=(selector)=>selector==='#sharedLabelStateDialog'?dialog:selector==='#reviewSharedLabelState'?{querySelector(){return button}}:null;
+const dialog={open:false,close(){closes++;this.open=false}};
+const decisionDialog={open:false,close(){closes++;this.open=false}};
+const button={disabled:false,closest(){return hidden?{}:null},click(){opens++;dialog.open=true}};
+$=(selector)=>selector==='#sharedLabelStateDialog'?dialog:selector==='#caseLabelDecisionDialog'?decisionDialog:selector==='#reviewSharedLabelState'?{querySelector(){return button}}:null;
 document={documentElement:{dataset:{}},addEventListener(type,fn){handlers.push(fn)},querySelector(){return otherDialog?{}:null}};
 closeAllReviewDropdowns=()=>{};closeDialog=(id)=>{assert.equal(id,'sharedLabelStateDialog');closes++;dialog.open=false};
 bindReviewDetailActionShortcuts();const handler=handlers[0];
@@ -79,6 +83,9 @@ hidden=true;assert.notEqual(key().prevented,true);hidden=false;
 button.disabled=true;assert.notEqual(key().prevented,true);button.disabled=false;
 state.activePage='labeling';assert.notEqual(key().prevented,true);state.activePage='review';
 assert.equal(opens,1);assert.equal(closes,1);
+decisionDialog.open=true;
+assert.equal(key().prevented,true);assert.equal(decisionDialog.open,false);assert.equal(closes,2);
+assert.equal(opens,1);
 '''
         subprocess.run(["node"], input=script, text=True, check=True, capture_output=True)
 
