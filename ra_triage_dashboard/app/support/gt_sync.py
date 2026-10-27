@@ -6,6 +6,7 @@ import logging
 from typing import Any
 
 from ..gt_sync import TRAIL_GT_FIELD, read_trail_gt_labels
+from ..dataset_partitions import PARTITION_IDS, SOURCE_IDS, load_partitions
 from ..runtime import baseline_registry, database, gt_sync_lock, runtime_state, settings
 
 logger = logging.getLogger("ra_triage_dashboard")
@@ -34,6 +35,12 @@ def resolve_gt_sync_baseline_ids(
             if part.strip()
         )
     requested = list(dict.fromkeys(values))
+    if set(requested).intersection(PARTITION_IDS):
+        partitions = load_partitions(settings.data_dir)
+        if set(requested).intersection(PARTITION_IDS) - set(partitions):
+            raise ValueError("数据集分区暂不可用 / Dataset partition unavailable")
+        requested = list(dict.fromkeys(part for value in requested
+                                      for part in (SOURCE_IDS if value in PARTITION_IDS else [value])))
     invalid = [
         baseline_id
         for baseline_id in requested

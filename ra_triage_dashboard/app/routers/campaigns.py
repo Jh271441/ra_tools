@@ -14,7 +14,7 @@ from fastapi.responses import Response
 from ..db_parts.campaigns import CampaignConflictError, CampaignReadOnlyError
 from ..review_mentions import extract_review_mentions, notification_recipients
 from ..runtime import database, review_notification_dispatcher, settings
-from ..support.baselines import resolve_request_baseline_scopes
+from ..support.baselines import resolve_request_baseline_scopes, restrict_version_issue_ids
 from ..support.common import _as_text, _detail
 from ..support.identity import _admin_identity
 from .case_comments import _public_review_comment
@@ -105,6 +105,7 @@ async def list_campaigns(
         result = await asyncio.to_thread(
             database.list_campaigns,
             baseline_scopes=scopes,
+            issue_ids=await asyncio.to_thread(restrict_version_issue_ids, baselines, request=request),
             purpose=_as_text(purpose),
             lifecycle=_as_text(lifecycle or "current"),
             task_group_id=_as_text(group_id),

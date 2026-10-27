@@ -81,6 +81,10 @@ function renderGtSyncTooltip(tooltip, items, current) {
   );
   heading.append(title, source);
   tooltip.append(heading);
+  if ((state.selectedBaselineIds || []).some((id) => PARTITION_0821_BASELINE_IDS.includes(id))) {
+    appendGtSyncTooltipRow(tooltip, uiText("校验范围", "Check scope"),
+      uiText("下列原始 GT 来源全量校验；不改变分区成员", "Full original GT sources below; partition membership is unchanged"));
+  }
 
   if (!items.length) {
     const empty = document.createElement("div");
@@ -158,6 +162,9 @@ function renderGtSyncStatus(status = null) {
       ? [current]
       : [];
   const selected = new Set(normalizeBaselineIds(state.selectedBaselineIds, { fallback: [] }));
+  for (const item of state.baselineCatalog || state.config?.baselines || []) {
+    if (selected.has(item.id)) (item.source_ids || []).forEach((id) => selected.add(id));
+  }
   const items = allItems.filter((item) => !selected.size || selected.has(String(item.baseline_id || "")));
   const visibleItems = items.length ? items : allItems;
   const names = visibleItems.map((item) => String(item.status || "not_started"));

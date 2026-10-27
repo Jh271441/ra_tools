@@ -501,7 +501,7 @@ class LabelingScopeMixin:
 
 
     def labeling_task_progress(
-        self, baseline_scopes: Sequence[str], task_ids: Sequence[str]
+        self, baseline_scopes: Sequence[str], task_ids: Sequence[str], *, issue_ids: Sequence[str] = ()
     ) -> dict[str, dict[str, Any]]:
         scopes = _clean_values(baseline_scopes)
         tasks = _clean_values(task_ids)
@@ -509,6 +509,7 @@ class LabelingScopeMixin:
             return {}
         roster: dict[str, dict[str, int]] = {task: {} for task in tasks}
         placeholders = ", ".join("?" for _ in tasks)
+        selected_clause = (" AND issue.issue_id IN (" + ",".join("?" for _ in issue_ids) + ")") if issue_ids else ""
         with self.connect() as conn:
             assignment_rows = conn.execute(
                 f"""
@@ -518,9 +519,10 @@ class LabelingScopeMixin:
                 JOIN issues issue ON issue.issue_id=assignment.issue_id
                 WHERE split_id IN ({placeholders}) AND trim(assignee) != ''
                   AND issue.baseline_scope IN ({', '.join('?' for _ in scopes)})
+                  {selected_clause}
                 GROUP BY assignment.split_id, lower(trim(assignee))
                 """,
-                [*tasks, *scopes],
+                [*tasks, *scopes, *issue_ids],
             ).fetchall()
         for row in assignment_rows:
             split_id = str(row["split_id"])
@@ -529,7 +531,7 @@ class LabelingScopeMixin:
         progress: dict[str, dict[str, Any]] = {}
         for task in tasks:
             projected, _ = self._project_labeling_cases(
-                baseline_scopes=scopes, task_id=task
+                baseline_scopes=scopes, task_id=task, issue_ids=issue_ids
             )
             total = len(projected)
             resolved = 0

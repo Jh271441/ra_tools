@@ -12,7 +12,9 @@ import asyncio
 from ...runtime import database
 from ...work_split import distribute_issue_ids
 from ...work_split import normalize_overlap_ratio
-from ...support.baselines import resolve_request_baseline_scopes, resolve_request_baseline_ids
+from ...support.baselines import resolve_request_baseline_scopes, resolve_request_baseline_ids, restrict_version_issue_ids, task_baseline_ids
+from ...labeling_rules import LABELING_FILTER_STATUSES
+from ...dataset_partitions import PARTITION_IDS
 from ...db_parts.task_lifecycle import normalize_task_lifecycle
 from .common import _active_labeling_scopes, _labeling_filter_values, _require_labeling_writer
 from ...combined_task_summary import combined_task_summaries
@@ -25,15 +27,16 @@ router = APIRouter()
 async def list_combined_labeling_tasks(request: Request, baselines: str = "") -> dict[str, Any]:
     await _require_labeling_writer(request)
     scopes = await _active_labeling_scopes(resolve_request_baseline_scopes(baselines, request=request))
-    items = await asyncio.to_thread(combined_task_summaries, database, scopes)
     baseline_ids = resolve_request_baseline_ids(baselines, request=request)
+    selected_ids = await asyncio.to_thread(restrict_version_issue_ids, baselines, request=request) if set(baseline_ids).intersection(PARTITION_IDS) else ()
+    items = await asyncio.to_thread(combined_task_summaries, database, scopes, issue_ids=selected_ids)
     if baseline_ids and all(value.startswith('version-') for value in baseline_ids):
         datasets = {'release-' + value[8:] + '-odd2' for value in baseline_ids}
         items = [item for item in items if item['dataset_id'] in datasets]
     for item in items:
         if not item['appendable']:
-            item['baseline_ids'] = [entry.id for entry in baseline_registry.entries
-                                    if entry.scope in item['baseline_scopes']]
+            item['baseline_ids'] = await asyncio.to_thread(
+                task_baseline_ids, item['baseline_scopes'], item['split_id'])
     return {"items": items, "baseline_scopes": scopes}
 
 
@@ -52,8 +55,9 @@ async def list_labeling_tasks(request: Request, baselines: str = "", include_com
     if not include_combined:
         tasks = [task for task in tasks if task.get("purpose") != "model_review"]
     task_ids = [str(item["id"]) for item in tasks]
+    selected_ids = await asyncio.to_thread(restrict_version_issue_ids, baselines, request=request)
     progress = (
-        await asyncio.to_thread(database.labeling_task_progress, scopes, task_ids)
+        await asyncio.to_thread(database.labeling_task_progress, scopes, task_ids, issue_ids=selected_ids)
         if task_ids
         else {}
     )
@@ -66,6 +70,11 @@ async def list_labeling_tasks(request: Request, baselines: str = "", include_com
     }
     for item in tasks:
         item["progress"] = progress.get(str(item["id"]), dict(empty_progress))
+        if selected_ids:
+            item["frozen_member_count"] = item["member_count"]
+            item["member_count"] = item["progress"]["total"]
+    if selected_ids:
+        tasks = [item for item in tasks if item["member_count"]]
     return {"items": tasks, "baseline_scopes": scopes}
 
 @router.post("/api/labeling/tasks")
@@ -93,7 +102,7 @@ async def create_labeling_task(request: Request) -> dict[str, Any]:
         scopes = await _active_labeling_scopes(scopes)
         normalized_status = _labeling_filter_values(
             filter_body.get("status"),
-            allowed={"pending", "resolved", "conflict"},
+            allowed=LABELING_FILTER_STATUSES,
             error="标注状态不合法。",
             lower=True,
         )
@@ -124,6 +133,10 @@ async def create_labeling_task(request: Request) -> dict[str, Any]:
         normalized_issue_ids = _parse_issue_id_filter(raw_filter_issue_ids)
         if raw_filter_issue_ids.strip() and not normalized_issue_ids:
             raise _detail(400, "issue_ids 未包含有效的 Issue ID。")
+        normalized_issue_ids = await asyncio.to_thread(
+            restrict_version_issue_ids, filter_body.get("baselines"), request=request,
+            issue_ids=normalized_issue_ids, task_id=_as_text(filter_body.get("task_id")),
+        )
         try:
             resolved = await asyncio.to_thread(
                 database.labeling_case_issue_ids,
@@ -145,6 +158,10 @@ async def create_labeling_task(request: Request) -> dict[str, Any]:
         issue_ids = list(dict.fromkeys(resolved))
     if len(issue_ids) > 5000:
         raise _detail(400, "单个标注任务最多包含 5000 个 Issue。")
+    selection = body.get("baselines") or filter_body.get("baselines")
+    selected_ids = await asyncio.to_thread(restrict_version_issue_ids, selection, request=request, issue_ids=issue_ids)
+    if issue_ids and set(selected_ids) != set(issue_ids):
+        raise _detail(400, "Issue 超出所选数据集 / Issue outside selected dataset")
     assignees = body.get("assignees") or []
     if not issue_ids or not isinstance(assignees, list) or not assignees:
         raise _detail(400, "任务必须包含 Issue 和标注人。")

@@ -487,12 +487,15 @@ class DatabaseModelReviewMixin:
         return {key: row[key] for key in row.keys()}
 
     def model_review_shadow_comparison(
-        self, *, model_run_id: str, baseline_scopes: Sequence[str]
+        self, *, model_run_id: str, baseline_scopes: Sequence[str], issue_ids: Sequence[str] = ()
     ) -> dict[str, Any]:
         scopes = self._normalize_baseline_scopes(baseline_scopes)
         if not scopes:
             return {"items": [], "counts": {"matched": 0, "different": 0, "new_only": 0}}
         clause, scope_params = self._scope_in_sql(scopes, "issue.baseline_scope")
+        if issue_ids:
+            clause += " AND issue.issue_id IN (" + ",".join("?" for _ in issue_ids) + ")"
+            scope_params.extend(issue_ids)
         with self.connect() as conn:
             rows = conn.execute(
                 f"""
@@ -534,12 +537,15 @@ class DatabaseModelReviewMixin:
         return {"items": items, "counts": counts}
 
     def model_review_facets(
-        self, *, model_run_id: str, baseline_scopes: Sequence[str]
+        self, *, model_run_id: str, baseline_scopes: Sequence[str], issue_ids: Sequence[str] = ()
     ) -> dict[str, Any]:
         scopes = self._normalize_baseline_scopes(baseline_scopes)
         if not scopes:
             return {"statuses": [], "reviewers": [], "total": 0}
         clause, scope_params = self._scope_in_sql(scopes, "issue.baseline_scope")
+        if issue_ids:
+            clause += " AND issue.issue_id IN (" + ",".join("?" for _ in issue_ids) + ")"
+            scope_params.extend(issue_ids)
         with self.connect() as conn:
             status_rows = conn.execute(
                 f"""

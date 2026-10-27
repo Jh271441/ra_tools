@@ -866,7 +866,7 @@ class LabelingProjectionMixin:
         return projected
 
     def issue_label_state_counts(
-        self, baseline_scopes: Sequence[str] = ()
+        self, baseline_scopes: Sequence[str] = (), *, issue_ids: Sequence[str] = ()
     ) -> dict[str, int]:
         """Count the shared Issue-label projection without mixing Run Reviews."""
 
@@ -881,6 +881,12 @@ class LabelingProjectionMixin:
             if scopes
             else ""
         )
+        params = list(scopes)
+        if issue_ids:
+            clause = "issue_id IN (" + ",".join("?" for _ in issue_ids) + ")"
+            issue_where += (" AND " if issue_where else "WHERE ") + clause
+            label_where += (" AND " if label_where else "WHERE ") + "label_case." + clause
+            params.extend(issue_ids)
         with self.connect() as conn:
             issue_rows = conn.execute(
                 f"""
@@ -888,7 +894,7 @@ class LabelingProjectionMixin:
                 FROM issues {issue_where}
                 GROUP BY baseline_scope
                 """,
-                list(scopes),
+                params,
             ).fetchall()
             label_rows = conn.execute(
                 f"""
@@ -901,7 +907,7 @@ class LabelingProjectionMixin:
                 GROUP BY label_case.baseline_scope, label_case.issue_id
                 ORDER BY label_case.baseline_scope, label_case.issue_id
                 """,
-                list(scopes),
+                params,
             ).fetchall()
 
         totals_by_scope = {

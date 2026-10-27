@@ -119,6 +119,7 @@ async def model_review_facets(
         database.model_review_facets,
         model_run_id=_as_text(model_run_id),
         baseline_scopes=scopes,
+        issue_ids=await asyncio.to_thread(restrict_version_issue_ids, baselines, request=request),
     )
     result["baseline_scopes"] = scopes
     return result
@@ -133,6 +134,7 @@ async def model_review_shadow_comparison(
         database.model_review_shadow_comparison,
         model_run_id=_as_text(model_run_id),
         baseline_scopes=scopes,
+        issue_ids=await asyncio.to_thread(restrict_version_issue_ids, baselines, request=request),
     )
     result["baseline_scopes"] = scopes
     return result

@@ -7,7 +7,7 @@ from fastapi import APIRouter, Request
 from ...auth import has_same_origin_mutation_marker, identity_can_write, request_identity
 from ...runtime import database, settings
 from ...db import LabelAnnotationConflictError
-from ...support.baselines import resolve_request_baseline_scopes
+from ...support.baselines import resolve_request_baseline_scopes, restrict_version_issue_ids
 from ...support.common import _detail
 from ...trail_exclusion_contracts import normalise_issue_ids, canonical_json
 from ...trail_sync import read_trail_model_fields
@@ -33,6 +33,9 @@ async def local_import_candidates(request: Request):
         raise _detail(422, "查询参数无效，请刷新页面 / Invalid scan options; reload the page")
     scopes = await asyncio.to_thread(resolve_request_baseline_scopes, baselines, request=request)
     members = await asyncio.to_thread(database.trail_local_import_inventory, scopes=scopes)
+    selected = await asyncio.to_thread(restrict_version_issue_ids, baselines, request=request)
+    if selected:
+        members = [row for row in members if row["issue_id"] in set(selected)]
     cache = TrailImportDiscovery(settings.data_dir, [str(settings.ra_auto_triage_root),
         settings.trail_view_id, _field_names(), settings.database_url])
     try:
@@ -115,6 +118,9 @@ async def local_import_preview(request: Request):
     if not isinstance(baselines, str):
         raise _detail(422, "数据集格式错误 / Invalid datasets")
     scopes = await asyncio.to_thread(resolve_request_baseline_scopes, baselines, request=request)
+    selected = await asyncio.to_thread(restrict_version_issue_ids, baselines, request=request, issue_ids=ids)
+    if set(selected) != set(ids):
+        raise _detail(409, "Issue 超出所选数据集 / Issue outside selected dataset")
     remote = await _remote(ids)
     try:
         items = await asyncio.to_thread(database.preview_trail_local_import,

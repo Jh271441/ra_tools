@@ -20,6 +20,7 @@ from ..support.baselines import (
     enrich_baseline_lifecycle,
     resolve_request_baseline_ids,
     resolve_request_baseline_scopes,
+    restrict_version_issue_ids,
 )
 from ..support.catalogs import (
     _missing_evidence_catalog,
@@ -85,6 +86,12 @@ def _dashboard_config_payload() -> dict[str, Any]:
     # while retaining hidden legacy IDs for existing daily/task deep links.
     ids_by_scope = {entry.scope: entry.id for entry in baseline_registry.entries}
     ids_by_scope.update({item["scope"]: item["id"] for item in baselines})
+    active_scopes = {item["baseline_scope"] for item in labeling_states if item["status"] == "active"}
+    active_ids = [ids_by_scope[item["baseline_scope"]] for item in labeling_states
+                  if item["status"] == "active" and item["baseline_scope"] in ids_by_scope]
+    active_ids.extend(item["id"] for item in baselines
+                      if item.get("loader") == "membership_partition"
+                      and set(item["source_scopes"]).issubset(active_scopes))
     return {
         "baseline": runtime_state["baseline"],
         "baselines": baselines,
@@ -126,12 +133,7 @@ def _dashboard_config_payload() -> dict[str, Any]:
         },
         "case_labeling": {
             "scope_states": labeling_states,
-            "active_baseline_ids": [
-                baseline_id
-                for item in labeling_states
-                if item["status"] == "active"
-                and (baseline_id := ids_by_scope.get(item["baseline_scope"]))
-            ],
+            "active_baseline_ids": active_ids,
         },
         "default_failure_only": bool(default_model_run_id),
         "batch_prediction": {
@@ -329,6 +331,7 @@ async def overview(
         database.overview,
         baseline_scopes=scopes,
         model_run_id=selected,
+        issue_ids=await asyncio.to_thread(restrict_version_issue_ids, baselines, request=request),
     )
     payload["baselines"] = ids
     payload["baseline_scopes"] = scopes

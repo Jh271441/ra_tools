@@ -17,6 +17,7 @@ from ..support.baselines import (
     enrich_model_run_baseline_hint,
     resolve_request_baseline_ids,
     resolve_request_baseline_scopes,
+    restrict_version_issue_ids,
 )
 from ..support.catalogs import resolve_review_exclusion_filter
 from ..support.common import _detail
@@ -29,6 +30,7 @@ from ..support.model_source import (
 )
 from ..import_parsing import parse_source_bytes
 from ..runtime import database, settings
+from ..dataset_partitions import load_partitions
 
 router = APIRouter()
 
@@ -58,6 +60,7 @@ async def compare_model_runs(
             baseline_run_id=baseline_run_id,
             candidate_run_id=candidate_run_id,
             baseline_scopes=scopes,
+            issue_ids=await asyncio.to_thread(restrict_version_issue_ids, baselines, request=request),
             transition=transition,
             gt_label=gt_label,
             baseline_label=baseline_label,
@@ -79,6 +82,9 @@ async def compare_model_runs(
 async def comparison_case_inputs(request: Request, issue_id: str, baseline_run_id: str = "",
                                  candidate_run_id: str = "", baselines: str = "") -> dict[str, Any]:
     scopes = resolve_request_baseline_scopes(baselines, request=request)
+    selected = await asyncio.to_thread(restrict_version_issue_ids, baselines, request=request, issue_ids=(issue_id,))
+    if issue_id not in selected:
+        raise _detail(404, "Issue 不在所选数据集中 / Issue outside selected dataset")
     try:
         return await asyncio.to_thread(database.comparison_case_inputs, issue_id,
                                        (baseline_run_id, candidate_run_id), scopes)
@@ -90,16 +96,20 @@ async def comparison_case_inputs(request: Request, issue_id: str, baseline_run_i
 async def model_runs(request: Request, baselines: str = "") -> dict[str, Any]:
     scopes = resolve_request_baseline_scopes(baselines, request=request)
     items = await asyncio.to_thread(
-        database.list_model_runs, baseline_scopes=scopes
+        database.list_model_runs, baseline_scopes=scopes,
+        issue_ids=await asyncio.to_thread(restrict_version_issue_ids, baselines, request=request),
     )
     coverage_map = await asyncio.to_thread(
         database.model_run_scope_coverage_map,
         [str(item.get("id") or "") for item in items],
     )
+    partition_coverage = await asyncio.to_thread(database.model_run_partition_coverage_map,
+        [str(item.get("id") or "") for item in items], load_partitions(settings.data_dir))
     items = [
         enrich_model_run_baseline_hint(
             item,
             coverage=coverage_map.get(str(item.get("id") or ""), []),
+            partition_coverage=partition_coverage.get(str(item.get("id") or ""), {}),
         )
         for item in items
     ]
@@ -331,6 +341,7 @@ async def review_clusters(
         "items": await asyncio.to_thread(
             database.review_clusters,
             baseline_scopes=scopes,
+            issue_ids=await asyncio.to_thread(restrict_version_issue_ids, baselines, request=request, task_id=work_split_id),
             model_run_id=model_run_id,
             failure_only=failure_only,
             annotation_author=annotation_author,

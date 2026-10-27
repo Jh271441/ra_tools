@@ -14,6 +14,7 @@ function escapeHtml(value) {
 
 const BASELINE_STORAGE_KEY = "ra-triage-baselines";
 const FULL_0821_BASELINE_IDS = ["0821", "0821-review-extra", "0821-trail-extra"];
+const PARTITION_0821_BASELINE_IDS = ["0821-odd2", "0821-nonodd2"];
 
 function defaultBaselineIdsFromConfig(config = state.config) {
   const fromConfig = config?.default_baseline_ids;
@@ -32,8 +33,20 @@ function normalizeBaselineIds(raw, { allowed = null, fallback = null } = {}) {
     ? new Set([...allowed].map(String))
     : null;
   const values = [];
+  const available = allowedSet || new Set(
+    (typeof state !== "undefined" ? state.baselineCatalog || state.config?.baselines || [] : []).map((item) => String(item.id))
+  );
   const push = (text) => {
     let id = String(text || "").trim();
+    if (FULL_0821_BASELINE_IDS.includes(id) && PARTITION_0821_BASELINE_IDS.every((key) => available.has(key))) {
+      // Retired import IDs never implicitly select both independent datasets.
+      // Authenticated task context replaces this initial selection with its
+      // exact frozen dataset IDs before loading the task queue.
+      const taskIds = typeof state !== "undefined" ? state.reviewTaskContext?.baseline_ids : null;
+      const resolved = (taskIds || []).filter((key) => PARTITION_0821_BASELINE_IDS.includes(key));
+      (resolved.length ? resolved : [PARTITION_0821_BASELINE_IDS[0]]).forEach(push);
+      return;
+    }
     if (allowedSet && !allowedSet.has(id) && allowedSet.has(id.replace(/；+$/, ""))) id = id.replace(/；+$/, "");
     if (!id) return;
     if (allowedSet && !allowedSet.has(id)) return;
@@ -170,7 +183,7 @@ function baselinePickerOptions(catalog, selectedIds) {
     const count = ids.reduce((total, member) => total + Number(byId.get(member).count || 0), 0);
     const partial = chosen.length > 0 && chosen.length < ids.length;
     const selectedCount = chosen.reduce((total, member) => total + Number(byId.get(member).count || 0), 0);
-    const name = (union ? union[0] : (item.label || id)) + (RETIRED_BASELINE_PICKER_IDS.has(id) ? uiText("（历史）", " (archived)") : "");
+    const name = (union ? union[0] : uiText(item.label || id, item.label_en || item.label || id)) + (RETIRED_BASELINE_PICKER_IDS.has(id) ? uiText("（历史）", " (archived)") : "");
     const fullLabel = `${name}${union || item.count != null && item.count !== "" ? ` · ${count}` : ""}`;
     return [{
       value: (partial ? chosen : ids).join(","), fullValue: ids.join(","),
@@ -220,6 +233,11 @@ function renderBaselinePicker() {
 
 function inferredBaselineIdsFromRun(run) {
   if (!run || typeof run !== "object") return [];
+  const partitions = (state.selectedBaselineIds || []).filter((id) => PARTITION_0821_BASELINE_IDS.includes(id));
+  if (partitions.length && partitions.length === state.selectedBaselineIds.length
+      && (run.baseline_coverage || []).some((row) => partitions.includes(row.id) && row.prediction_count > 0)) {
+    return partitions;
+  }
   const allowed = new Set(
     (state.baselineCatalog.length
       ? state.baselineCatalog

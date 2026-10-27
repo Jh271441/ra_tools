@@ -1019,6 +1019,7 @@ class DatabaseCasesMixin:
         annotation_author: str = "",
         work_split_id: str = "",
         is_excluded: bool | None = None,
+        issue_ids: Sequence[str] = (),
     ) -> list[dict[str, Any]]:
         scopes = self._normalize_baseline_scopes(baseline_scopes, baseline_scope=baseline_scope)
         if not scopes:
@@ -1026,6 +1027,9 @@ class DatabaseCasesMixin:
         canonical_mode = self.legacy_business_read_mode(scopes) == "canonical"
         scope_clause, scope_params = self._scope_in_sql(scopes)
         where = [scope_clause, "ann.id IS NOT NULL"]
+        if issue_ids:
+            where.append("i.issue_id IN (" + ",".join("?" for _ in issue_ids) + ")")
+            scope_params.extend(issue_ids)
         normalized_work_split_id = str(work_split_id or "").strip()
         if normalized_work_split_id:
             annotation_join, annotation_params = self._gallery_annotation_join(
@@ -1098,6 +1102,7 @@ class DatabaseCasesMixin:
         baseline_scope: str = "",
         baseline_scopes: Sequence[str] | None = None,
         model_run_id: str = "",
+        issue_ids: Sequence[str] = (),
     ) -> dict[str, Any]:
         scopes = self._normalize_baseline_scopes(baseline_scopes, baseline_scope=baseline_scope)
         if scopes:
@@ -1107,6 +1112,10 @@ class DatabaseCasesMixin:
             # Legacy empty filter: count all issues (tests / unrestricted callers).
             scope_clause, scope_params = "1=1", []
             base_where = "WHERE 1=1"
+        if issue_ids:
+            scope_clause += " AND i.issue_id IN (" + ",".join("?" for _ in issue_ids) + ")"
+            scope_params.extend(issue_ids)
+            base_where = f"WHERE {scope_clause}"
         with self.connect() as conn:
             total = conn.execute(
                 f"SELECT COUNT(*) FROM issues i {base_where}", tuple(scope_params)
@@ -1184,7 +1193,7 @@ class DatabaseCasesMixin:
             running += conn.execute(
                 "SELECT COUNT(*) FROM batch_prediction_jobs WHERE status IN ('queued', 'running')"
             ).fetchone()[0]
-        label_state_counts = self.issue_label_state_counts(scopes)
+        label_state_counts = self.issue_label_state_counts(scopes, issue_ids=issue_ids)
         return {
             "issues": int(total),
             "labelled": int(labelled),
@@ -1352,6 +1361,7 @@ class DatabaseCasesMixin:
     def list_review_work_splits(
         self, *, limit: int = 50, model_run_id: str = "", assignee: str = "",
         lifecycle: str = "current", split_id: str = "",
+        issue_ids: Sequence[str] = (),
     ) -> list[dict[str, Any]]:
         """Return assignment batches with current completion statistics."""
 
@@ -1368,6 +1378,10 @@ class DatabaseCasesMixin:
         if run_id:
             where += " AND split.model_run_id = ?"
             parameters.append(run_id)
+        if issue_ids:
+            where += " AND EXISTS (SELECT 1 FROM review_work_assignments selected "
+            where += "WHERE selected.split_id=split.id AND selected.issue_id IN (" + ",".join("?" for _ in issue_ids) + "))"
+            parameters.extend(issue_ids)
         with self.connect() as conn:
             split_rows = conn.execute(
                 f"""

@@ -28,6 +28,9 @@ from ..support.baselines import (
     media_for_issue,
     resolve_request_baseline_ids,
     resolve_request_baseline_scopes,
+    task_baseline_ids,
+    issue_dataset_id,
+    restrict_version_issue_ids,
 )
 from ..support.catalogs import _review_tag_catalog
 from ..support.common import (
@@ -585,10 +588,7 @@ async def review_task_context(split_id: str, request: Request) -> dict[str, Any]
         raise _detail(403, str(exc)) from exc
     if context is None:
         raise _detail(404, "复核任务不存在。")
-    context["baseline_ids"] = [
-        baseline_registry.scope_to_id(scope) or scope
-        for scope in context.get("baseline_scopes") or []
-    ]
+    context["baseline_ids"] = await asyncio.to_thread(task_baseline_ids, context.get("baseline_scopes") or [], split_id)
     if request.query_params.get("task_view"):
         from ..support.baselines import restrict_version_issue_ids
         # Validate the explicit live queue and expose its version identity.
@@ -777,10 +777,8 @@ async def list_case_work_splits(
         parent_runs={p['model_run_id'] for p in parents}
         items=parents+([] if version_only else [r for r in items if r['model_run_id'] not in parent_runs])
     for item in items:
-        item["baseline_ids"] = item.get("baseline_ids") or [
-            baseline_registry.scope_to_id(scope) or scope
-            for scope in item.get("baseline_scopes") or []
-        ]
+        item["baseline_ids"] = await asyncio.to_thread(
+            task_baseline_ids, item.get("baseline_scopes") or item.get("baseline_ids") or [], item["split_id"])
     return {"items": items, "metrics": task_list_metrics(items, assignee), "lifecycle": lifecycle, "assigned_to_me": assigned_to_me, "change_revision": await asyncio.to_thread(database.change_revision)}
 
 
@@ -812,6 +810,7 @@ async def review_work_split_options(
         limit=100,
         model_run_id=_as_text(model_run_id),
         assignee=assignee, lifecycle=lifecycle,
+        issue_ids=() if all_baselines else await asyncio.to_thread(restrict_version_issue_ids, baselines, request=request),
     )
 
     def snapshot_baselines(item: dict[str, Any]) -> set[str]:
@@ -829,6 +828,8 @@ async def review_work_split_options(
             if not text:
                 continue
             normalized.add(baseline_registry.scope_to_id(text) or text)
+        if normalized.intersection({"0821", "0821-review-extra", "0821-trail-extra"}):
+            return set(task_baseline_ids(list(values), item["split_id"]))
         return normalized
 
     items = []
@@ -892,10 +893,8 @@ async def get_case_work_split(
         raise _detail(400, str(exc)) from exc
     if result is None:
         raise _detail(404, "分配批次不存在。")
-    result["baseline_ids"] = [
-        baseline_registry.scope_to_id(scope) or scope
-        for scope in result.get("baseline_scopes") or []
-    ]
+    result["baseline_ids"] = await asyncio.to_thread(
+        task_baseline_ids, result.get("baseline_scopes") or [], split_id)
     return result
 
 
@@ -1072,10 +1071,17 @@ async def split_case_work(request: Request) -> dict[str, Any]:
             )
         if filters["model_run_id"]:
             workset_scopes = list(filters.get("baseline_scopes") or [])
-            if len(workset_scopes) != 1:
-                raise ValueError(
-                    "Model Review Campaign 固定绑定一个 Workset；请一次选择一个数据集。"
-                )
+            from ..dataset_partitions import PARTITION_IDS
+            selected_ids = resolve_request_baseline_ids(filter_body.get("baselines"), request=request)
+            if len(workset_scopes) != 1 and not set(selected_ids).intersection(PARTITION_IDS):
+                raise ValueError("Model Review Campaign 固定绑定一个 Workset；请一次选择一个数据集。 / Select one dataset for a frozen Review Workset.")
+            # A frozen Workset may span original source scopes. Derive its
+            # exact scopes from the already filtered members, never rewrite
+            # Issue provenance to make a logical dataset appear single-scope.
+            member_scopes = await asyncio.to_thread(database.issue_baseline_scopes, issue_ids)
+            actual_scopes = sorted(set(member_scopes.values()))
+            if not actual_scopes or not set(actual_scopes).issubset(workset_scopes):
+                raise ValueError("工作集成员超出所选数据集 / Workset members outside selected datasets")
             by_issue: dict[str, list[dict[str, str]]] = {}
             for member in assignments:
                 member_items = member.get("items") or [
@@ -1090,7 +1096,7 @@ async def split_case_work(request: Request) -> dict[str, Any]:
                     })
             workset = await asyncio.to_thread(
                 database.create_review_workset,
-                baseline_scope=workset_scopes[0],
+                baseline_scopes=actual_scopes,
                 issue_ids=issue_ids,
                 name=task_name or f"Review Workset · {len(issue_ids)} Issues",
                 selection_source_run_id=filters["model_run_id"],
@@ -1189,6 +1195,7 @@ async def reviewers(
         database.list_analysis_reviewers,
         baseline_scopes=scopes,
         model_run_id=model_run_id,
+        issue_ids=await asyncio.to_thread(restrict_version_issue_ids, baselines, request=request),
     )
     return {"items": items, "analysis_items": items}
 
@@ -1461,9 +1468,10 @@ async def get_case(
         case["assets"], case["camera"] = empty_case_media(issue_id)
         case["media_status"] = "pending" if provider is not None else "unavailable"
     entry = baseline_registry.by_scope(scope)
-    case["baseline_id"] = entry.id if entry else ""
+    case["source_baseline_id"] = entry.id if entry else ""
+    case["baseline_id"] = await asyncio.to_thread(issue_dataset_id, issue_id, case["source_baseline_id"])
     case["issue_tag_suggestion"] = issue_tag_sources.lookup(
-        baseline_id=case["baseline_id"],
+        baseline_id=case["source_baseline_id"],
         issue_id=issue_id,
     )
     case["voyager_issue_url"] = _voyager_issue_url(issue_id)

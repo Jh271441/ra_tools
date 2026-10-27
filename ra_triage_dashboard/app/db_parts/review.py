@@ -555,6 +555,7 @@ class DatabaseReviewMixin:
         model_run_id: str = "",
         *,
         baseline_scopes: Sequence[str] | None = None,
+        issue_ids: Sequence[str] = (),
     ) -> list[dict[str, Any]]:
         """Return the shared analysis facet, including submitted blind Reviews.
 
@@ -595,6 +596,9 @@ class DatabaseReviewMixin:
             if str(row.get("issue_id") or "") not in blind_issue_ids
         ]
         source_rows.extend(submitted_blind_rows)
+        if issue_ids:
+            selected = set(issue_ids)
+            source_rows = [row for row in source_rows if row.get("issue_id") in selected]
 
         counts: dict[str, dict[str, Any]] = {}
         seen: set[tuple[str, str]] = set()

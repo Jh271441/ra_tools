@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from ..db_parts.campaigns import CampaignConflictError, CampaignReadOnlyError
 from ..db_parts.run_collections import RunCollectionConflictError
 from ..runtime import database
-from ..support.baselines import resolve_request_baseline_scopes
+from ..support.baselines import resolve_request_baseline_scopes, restrict_version_issue_ids
 from ..support.identity import _admin_identity
 from .campaigns import _require_known_assignees
 
@@ -209,12 +209,23 @@ async def create_run_evaluation(request: Request) -> dict[str, Any]:
             if body.get("baseline_scopes")
             else resolve_request_baseline_scopes(body.get("baselines"), request=request)
         )
+        selected = await asyncio.to_thread(restrict_version_issue_ids, body.get("baselines"), request=request)
+        workset_ids = body.get("workset_issue_ids") or []
+        if selected:
+            if body.get("workset_id"):
+                workset = await asyncio.to_thread(database.get_review_workset, str(body["workset_id"]))
+                if not workset or not {item["issue_id"] for item in workset["items"]}.issubset(selected):
+                    raise ValueError("冻结工作集超出所选数据集 / Frozen Workset outside selected dataset")
+            elif workset_ids and not set(workset_ids).issubset(selected):
+                raise ValueError("Issue 超出所选数据集 / Issue outside selected dataset")
+            else:
+                workset_ids = workset_ids or list(selected)
         return await asyncio.to_thread(
             database.create_run_evaluation,
             collection_id=str(body.get("collection_id") or ""),
             collection_revision=int(revision) if revision not in (None, "") else None,
             workset_id=str(body.get("workset_id") or ""),
-            workset_issue_ids=body.get("workset_issue_ids") or [],
+            workset_issue_ids=workset_ids,
             baseline_scopes=scopes or [],
             reference_type=str(body.get("reference_type") or "gt"),
             reference_id=str(body.get("reference_id") or ""),

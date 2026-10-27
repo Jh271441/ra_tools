@@ -55,5 +55,23 @@ uiText=(zh,en)=>en;
 assert.equal(baselinePickerOptions(august,['0821-review-extra'])[0].label,'0821 · 2005');
 const action=multiFilterOptionHtml({value:'0821',label:'0821 · 2005'},new Set(['0821']),{onlyThis:true});
 assert(action.includes('>Only this</button>'));assert(action.includes('Select only 0821'));
+const partitions=[{id:'0821-odd2',label:'0821 · ODD2',count:1026},
+ {id:'0821-nonodd2',label:'0821 · 非ODD2',label_en:'0821 · Non-ODD2',count:979}];
+state.baselineCatalog=partitions;
+const partitionIds=partitions.map(x=>x.id);
+assert.deepEqual(normalizeBaselineIds('0821',{allowed:partitionIds}),['0821-odd2']);
+assert.deepEqual(normalizeBaselineIds('0821-nonodd2',{allowed:partitionIds}),['0821-nonodd2']);
+assert.deepEqual(normalizeBaselineIds(partitionIds,{allowed:partitionIds}),partitionIds);
+assert.equal(baselinePickerOptions(partitions,partitionIds)[1].label,'0821 · Non-ODD2 · 979');
+global.location={search:'?work_split=old312'};
+assert.deepEqual(normalizeBaselineIds('0821-review-extra',{allowed:partitionIds}),['0821-odd2']);
+state.reviewTaskContext={baseline_ids:['0821-nonodd2']};
+assert.deepEqual(normalizeBaselineIds('0821-review-extra',{allowed:partitionIds}),['0821-nonodd2']);
+state.reviewTaskContext=null;
+global.location={search:'?issue=cn1'};
+assert.deepEqual(normalizeBaselineIds('0821',{allowed:partitionIds}),['0821-odd2']);
+state.selectedBaselineIds=['0821-nonodd2'];
+assert.deepEqual(inferredBaselineIdsFromRun({inferred_baseline_ids:partitionIds,
+ baseline_coverage:[{id:'0821-nonodd2',prediction_count:10}]}),['0821-nonodd2']);
 '''
         subprocess.run(["node", "-e", script], check=True, capture_output=True)

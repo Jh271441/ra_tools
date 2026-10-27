@@ -14,6 +14,7 @@ from ...trail_exclusion_sources import merge_reconciliation_items
 from ...support.baselines import (
     resolve_request_baseline_ids,
     resolve_request_baseline_scopes,
+    restrict_version_issue_ids,
 )
 from ...support.common import _as_text, _detail
 from ...trail_exclusion_contracts import (
@@ -456,6 +457,10 @@ async def _build_preview(
         settings.trail_attribute_write_enabled
         and getattr(settings, "trail_attribute_review_write_enabled", False)
     )
+    selected_members = await asyncio.to_thread(restrict_version_issue_ids, baselines, request=request)
+    if selected_members:
+        selected_members = set(selected_members)
+        rows = [row for row in rows if row.get("issue_id") in selected_members]
     issue_ids = [_as_text(row.get("issue_id")) for row in rows if _as_text(row.get("issue_id"))]
     # Build the deterministic local draft first.  Its expected per-Issue note
     # is needed by the later batched Trail comparison, but this local work does
@@ -480,6 +485,8 @@ async def _build_preview(
         inventory = await asyncio.to_thread(issue_tag_sources.trail_exclusion_inventory,
             root=settings.ra_auto_triage_root, baseline_ids=baseline_ids)
         historical = inventory["items"]
+        if selected_members:
+            historical = [item for item in historical if item["issue_id"] in selected_members]
         evidence = await asyncio.to_thread(database.trail_exclusion_evidence,
             [item["issue_id"] for item in historical], model_run_id=selected_run_id)
         if selected_run_id:

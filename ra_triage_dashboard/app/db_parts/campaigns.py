@@ -2793,6 +2793,7 @@ class DatabaseCampaignMixin:
         self,
         *,
         baseline_scopes: Sequence[str] | None = None,
+        issue_ids: Sequence[str] = (),
         purpose: str = "",
         lifecycle: str = "current",
         task_group_id: str = "",
@@ -2830,6 +2831,11 @@ class DatabaseCampaignMixin:
             )
             params.extend(scopes)
         term = str(query or "").strip()[:128]
+        if issue_ids:
+            where.append("EXISTS (SELECT 1 FROM campaign_issue_members selected_member "
+                         "WHERE selected_member.campaign_id=split.id AND selected_member.issue_id IN ("
+                         + ",".join("?" for _ in issue_ids) + "))")
+            params.extend(issue_ids)
         if term:
             where.append("(split.id LIKE ? OR split.campaign_name LIKE ? OR workset.name LIKE ?)")
             pattern = f"%{term}%"

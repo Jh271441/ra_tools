@@ -12,7 +12,7 @@ from fastapi import APIRouter, Request
 from ...auth import has_same_origin_mutation_marker, identity_can_write, request_identity
 from ...runtime import database, settings
 from ...support.common import _detail
-from ...support.baselines import resolve_request_baseline_scopes
+from ...support.baselines import resolve_request_baseline_scopes, restrict_version_issue_ids
 from ...trail_exclusion_contracts import canonical_json, normalise_issue_ids, normalise_trail_info_value, trail_update_details
 from ...trail_sync import read_trail_model_fields
 from ...trail_audit import audited_write, reconcile_existing
@@ -74,6 +74,9 @@ async def _body(request):
 
 
 async def _candidates(request, run_id, baselines, issue_ids, intent="reason_only"):
+    selected = await asyncio.to_thread(restrict_version_issue_ids, baselines, request=request, issue_ids=issue_ids)
+    if set(selected) != set(issue_ids):
+        raise _detail(409, "Issue 超出所选数据集 / Issue outside selected dataset")
     if intent == "unexclude":
         scopes = await asyncio.to_thread(resolve_request_baseline_scopes, baselines, request=request)
         items = await asyncio.to_thread(database.trail_non_exclusion_candidates,

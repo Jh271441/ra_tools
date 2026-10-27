@@ -3,7 +3,7 @@ import json
 from collections import defaultdict
 
 
-def combined_task_summaries(database, scopes):
+def combined_task_summaries(database, scopes, *, issue_ids=()):
     scopes = list(dict.fromkeys(scopes))
     if not scopes:
         return []
@@ -52,6 +52,9 @@ def combined_task_summaries(database, scopes):
                     ORDER BY m.issue_id, a.assignee""",
                 [campaign['id'], *([dataset_id] if dataset_id else scopes)],
             ).fetchall()
+            if issue_ids and not dataset_id:
+                selected = set(issue_ids)
+                rows = [row for row in rows if row['issue_id'] in selected]
             if not rows:
                 continue
             people = defaultdict(lambda: dict(total=0, labeled=0, reviewed=0, completed=0))

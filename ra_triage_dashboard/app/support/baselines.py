@@ -8,6 +8,7 @@ from typing import Any, Sequence
 from fastapi import Request
 
 from ..baseline import daily_baseline_display_label, load_baseline_entry
+from ..dataset_partitions import load_partitions, partition_summaries, SOURCE_IDS, SOURCE_SCOPES, PARTITION_IDS
 from ..baseline_registry import (
     detect_issue_scope_overlaps,
     ids_to_scopes,
@@ -228,18 +229,36 @@ def resolve_request_baseline_ids(
 ) -> list[str]:
     """Resolve short baseline ids from query/header; never trust raw scopes."""
 
-    allowed = baseline_registry.allowed_ids()
+    partitions = load_partitions(settings.data_dir)
+    allowed = baseline_registry.allowed_ids() | set(partitions)
     default = baseline_registry.default_ids()
     if not allowed:
         return ["0508"]
     candidate = raw
     if (candidate is None or candidate == "") and request is not None:
-        candidate = request.query_params.get("baselines") or request.query_params.get(
+        query = _request_query(request)
+        candidate = query.get("baselines") or query.get(
             "baseline_scopes"
         )
     if "version-" in str(candidate or ""):
         allowed |= {"version-"+row["release_family"] for row in database.list_version_datasets()}
+    requested = _selection_tokens(candidate)
+    if set(requested).intersection(PARTITION_IDS) - set(partitions):
+        raise _detail(503, "数据集分区暂不可用 / Dataset partition unavailable")
     return normalize_baseline_ids(candidate, allowed=allowed, default=default)
+
+
+def _selection_tokens(raw: Any) -> list[str]:
+    values = raw if isinstance(raw, (list, tuple, set)) else [raw]
+    return [part.strip() for value in values for part in str(value or "").split(",") if part.strip()]
+
+
+def _request_query(request):
+    # Optional request context is also used by internal non-HTTP callers.
+    try:
+        return request.query_params if request is not None else {}
+    except (AttributeError, KeyError):
+        return {}
 
 def resolve_request_baseline_scopes(
     raw: Any = None,
@@ -248,6 +267,8 @@ def resolve_request_baseline_scopes(
 ) -> list[str]:
     ids = resolve_request_baseline_ids(raw, request=request)
     scopes = ids_to_scopes([i for i in ids if not i.startswith("version-")], baseline_registry)
+    if set(ids).intersection(PARTITION_IDS):
+        scopes.extend(SOURCE_SCOPES)
     for version_id in ids:
         if version_id.startswith("version-"):
             scopes.extend(database.version_dataset_scopes("release-"+version_id[8:]+"-odd2"))
@@ -264,7 +285,8 @@ def restrict_version_issue_ids(
 ) -> tuple[str, ...]:
     """Intersect current version targets; explicit historical tasks stay frozen."""
     selected = tuple(issue_ids)
-    task_view = request.query_params.get("task_view", "") if request is not None else ""
+    query = _request_query(request)
+    task_view = query.get("task_view", "")
     if task_view:
         if task_view not in {"targets", "pending"}:
             raise _detail(400, "Unsupported task view")
@@ -277,11 +299,29 @@ def restrict_version_issue_ids(
             row["issue_id"] for row in database.version_dataset_gallery_rows(dataset_id)
             if row.get("is_target") and (task_view != "pending" or not row.get("review_submitted"))
         }
-        return tuple(sorted(members.intersection(selected) if selected else members)) or ("__empty_version_membership__",)
+        selected = tuple(sorted(members.intersection(selected) if selected else members)) or ("__empty_version_membership__",)
     requested = raw
     if not requested and request is not None:
-        requested = request.query_params.get("baselines") or request.query_params.get("baseline_scopes")
-    if "version-" not in str(requested) or str(task_id or "").strip():
+        requested = query.get("baselines") or query.get("baseline_scopes")
+    partition_selected = set(_selection_tokens(requested)).intersection(PARTITION_IDS)
+    if partition_selected:
+        partitions = load_partitions(settings.data_dir)
+        if not partition_selected.issubset(partitions):
+            raise _detail(503, "数据集分区暂不可用 / Dataset partition unavailable")
+        ids = resolve_request_baseline_ids(requested, request=request)
+        members = set().union(*(partitions[key] for key in partition_selected))
+        native = [entry.scope for key in ids if (entry := baseline_registry.by_id(key))]
+        with database.connect() as conn:
+            if native:
+                members.update(row['issue_id'] for row in conn.execute(
+                    'SELECT issue_id FROM issues WHERE baseline_scope IN (' + ','.join('?' for _ in native) + ')', native).fetchall())
+            for key in ids:
+                if key.startswith('version-'):
+                    members.update(row['issue_id'] for row in conn.execute(
+                        'SELECT issue_id FROM version_dataset_items WHERE dataset_id=? AND is_target=1',
+                        ('release-' + key[8:] + '-odd2',)).fetchall())
+        return tuple(sorted(members.intersection(selected) if selected else members)) or ('__empty_partition_membership__',)
+    if task_view or "version-" not in str(requested) or str(task_id or "").strip():
         return selected
     ids = resolve_request_baseline_ids(requested, request=request)
     native = [entry.scope for i in ids if not i.startswith("version-")
@@ -305,6 +345,36 @@ def restrict_version_issue_ids(
 def media_for_issue(issue_id: str, baseline_scope: str = "") -> Any:
     provider = media_registry.resolve_for_issue(issue_id, baseline_scope=baseline_scope)
     return provider or media_registry.for_baseline_id(baseline_registry.default_ids()[0])
+
+
+def task_baseline_ids(scopes, task_id):
+    """Map exact frozen task members to visible partitions without moving history."""
+    ids = [baseline_registry.scope_to_id(scope) or scope for scope in scopes]
+    partitions = load_partitions(settings.data_dir)
+    if not partitions or not set(ids).intersection(SOURCE_IDS):
+        return ids
+    with database.connect() as conn:
+        rows = conn.execute(
+            "SELECT issue_id FROM review_work_assignments WHERE split_id=? "
+            "UNION SELECT issue_id FROM campaign_issue_members WHERE campaign_id=?",
+            (task_id, task_id),
+        ).fetchall()
+    members = {row['issue_id'] for row in rows}
+    return [key for key in ids if key not in SOURCE_IDS] + [
+        key for key in PARTITION_IDS if not members or members.intersection(partitions[key])
+    ]
+
+
+def issue_dataset_id(issue_id, source_id):
+    """Public dataset identity is the frozen partition, not import provenance."""
+    if source_id in SOURCE_IDS:
+        partitions = load_partitions(settings.data_dir)
+        for key, members in partitions.items():
+            if issue_id in members:
+                return key
+        if partitions:
+            raise _detail(409, "案例不在冻结分区中 / Case missing from frozen dataset partitions")
+    return source_id
 
 def _infer_baseline_ids_from_scope_coverage(
     coverage: list[dict[str, Any]],
@@ -346,6 +416,7 @@ def enrich_model_run_baseline_hint(
     run: dict[str, Any] | None,
     *,
     coverage: list[dict[str, Any]] | None = None,
+    partition_coverage: dict[str, int] | None = None,
 ) -> dict[str, Any]:
     """Attach per-scope coverage + inferred dataset ids for UI auto-select.
 
@@ -382,6 +453,16 @@ def enrich_model_run_baseline_hint(
             }
         )
     inferred = _infer_baseline_ids_from_scope_coverage(coverage)
+    partitions = load_partitions(settings.data_dir)
+    if partitions:
+        if partition_coverage is None:
+            partition_coverage = database.model_run_partition_coverage_map([run_id], partitions).get(run_id, {})
+        by_id = [row for row in by_id if row['id'] not in SOURCE_IDS]
+        by_id.extend(dict(id=key, scope='partition_' + key, label=row['label'], label_en=row['label_en'],
+                          prediction_count=int(partition_coverage.get(key, 0)))
+                     for row in partition_summaries(partitions) if (key := row['id']))
+        inferred = [key for key in inferred if key not in SOURCE_IDS] + [
+            key for key in PARTITION_IDS if partition_coverage.get(key, 0) > 0]
     payload = dict(run)
     payload["baseline_coverage"] = by_id
     payload["unmatched_prediction_count"] = unmatched
@@ -395,6 +476,10 @@ def enrich_model_run_baseline_hint(
 
 def operational_baseline_summaries(existing, db=None):
     db = db or database
+    partitions = load_partitions(settings.data_dir)
+    if partitions:
+        existing = [item for item in existing if item.get('id') not in SOURCE_IDS]
+        existing = [*existing, *partition_summaries(partitions)]
     versions = db.list_version_datasets()
     if not versions:
         return existing

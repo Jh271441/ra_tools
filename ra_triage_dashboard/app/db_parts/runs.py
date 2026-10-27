@@ -203,6 +203,7 @@ class DatabaseRunsMixin:
         baseline_scope: str | Sequence[str] = "",
         *,
         baseline_scopes: Sequence[str] | None = None,
+        issue_ids: Sequence[str] = (),
     ) -> list[dict[str, Any]]:
         labels = tuple(LABELS)
         mismatch_sql, mismatch_params = model_prediction_mismatch_sql()
@@ -216,6 +217,9 @@ class DatabaseRunsMixin:
             # No scope filter → treat as empty membership (counts 0 against baseline).
             scopes = ["__no_such_scope__"]
         in_clause, scope_params = self._scope_in_sql(scopes, "i.baseline_scope")
+        if issue_ids:
+            in_clause += " AND i.issue_id IN (" + ",".join("?" for _ in issue_ids) + ")"
+            scope_params.extend(issue_ids)
         with self.connect() as conn:
             rows = conn.execute(
                 f"""
@@ -299,6 +303,7 @@ class DatabaseRunsMixin:
         baseline_run_id: str,
         candidate_run_id: str,
         baseline_scopes: Sequence[str],
+        issue_ids: Sequence[str] = (),
         transition: str = "all",
         gt_label: str = "all",
         baseline_label: str = "all",
@@ -367,6 +372,9 @@ class DatabaseRunsMixin:
         )
         run_placeholders = ", ".join("?" for _ in run_ids)
         scope_clause, scope_params = self._scope_in_sql(scopes, "i.baseline_scope")
+        if issue_ids:
+            scope_clause += " AND i.issue_id IN (" + ",".join("?" for _ in issue_ids) + ")"
+            scope_params.extend(issue_ids)
         with self.connect() as conn:
             if self.backend == "postgresql":
                 conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
@@ -866,6 +874,25 @@ class DatabaseRunsMixin:
         return self.model_run_scope_coverage_map([run_id]).get(
             str(run_id or "").strip(), []
         )
+
+    def model_run_partition_coverage_map(self, run_ids, partitions):
+        result = {run_id: {} for run_id in run_ids}
+        if not run_ids:
+            return result
+        with self.connect() as conn:
+            for key, members in partitions.items():
+                if not members:
+                    continue
+                rows = conn.execute(
+                    "SELECT mp.model_run_id, COUNT(*) n FROM model_predictions mp "
+                    "WHERE mp.model_run_id IN (" + ",".join("?" for _ in run_ids) + ") "
+                    "AND mp.issue_id IN (" + ",".join("?" for _ in members) + ") "
+                    "AND " + current_version_prediction_sql("mp") + " GROUP BY mp.model_run_id",
+                    [*run_ids, *sorted(members)],
+                ).fetchall()
+                for row in rows:
+                    result[row["model_run_id"]][key] = int(row["n"])
+        return result
 
     def model_run_scope_coverage_map(
         self, run_ids: Sequence[str] | None = None
