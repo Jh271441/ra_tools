@@ -331,6 +331,11 @@ html[data-color-theme="light"] .detail-queue-index-input {
 }
 .detail-context-row .detail-actions { flex: 0 0 auto; flex-wrap: nowrap; gap: 5px; }
 .detail-context-actions .history-inline-button { padding-inline: 6px; }
+@media (min-width: 1181px) {
+  .detail-context-actions { flex-basis: 390px; flex-wrap: nowrap; }
+  .detail-context-actions .detail-media-command { min-width: 0; flex-shrink: 1; }
+  .detail-context-actions .detail-media-picker-trigger { min-width: 100px; }
+}
 .detail-summary {
   min-width: 80px; max-width: 720px; flex: 1 1 80px; display: -webkit-box; overflow: hidden; color: var(--muted); font-size: 11px; line-height: 1.45;
   -webkit-box-orient: vertical; -webkit-line-clamp: 2;

@@ -295,7 +295,7 @@ function renderDetail(caseData, { preserveMedia = false } = {}) {
           <span class="comparison-side-label comparison-side-model"><span class="ui-lang-zh">当前模型</span><span class="ui-lang-en">Model</span></span>${labelBadge(primary?.model_label, uiText("未输出", "None"))}
           ${predictionComparable ? `<strong class="${!predictionMatches ? "comparison-fail" : "comparison-neutral"}">${compareText}</strong>` : ""}
         </div>
-        <button class="button button-quiet detail-back-button" id="backToGalleryButton" type="button" title="${escapeHtml(uiText("返回筛选结果", "Back to filtered gallery"))}" aria-label="${escapeHtml(uiText("返回筛选结果", "Back to filtered gallery"))}"><span class="ui-lang-zh">← 返回</span><span class="ui-lang-en">← Back</span></button>
+        <button class="button button-quiet detail-back-button" id="backToGalleryButton" type="button" title="${escapeHtml(uiText("返回筛选结果", "Back to filtered gallery"))}" aria-label="${escapeHtml(uiText("返回筛选结果", "Back to filtered gallery"))}"><span class="ui-lang-zh">← 返回筛选结果</span><span class="ui-lang-en">← Back to gallery</span></button>
         ${caseData.summary ? `<p class="detail-summary">${escapeHtml(caseData.summary)}</p>` : ""}
         <div class="detail-context-actions">
           ${detailMediaCommandMarkup(caseData)}

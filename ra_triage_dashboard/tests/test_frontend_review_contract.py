@@ -4,6 +4,12 @@ from frontend_contract_fixtures import APP_ENTRY_JS, APP_JS, INDEX_HTML, JS_DIR,
 
 
 class FrontendReviewContractTest(unittest.TestCase):
+    def test_detail_back_button_keeps_original_visible_purpose(self) -> None:
+        review_form = (JS_DIR / "review-form.js").read_text(encoding="utf-8")
+        button = review_form.split('id="backToGalleryButton"', 1)[1].split('</button>', 1)[0]
+        self.assertIn('← 返回筛选结果', button)
+        self.assertIn('← Back to gallery', button)
+
     def test_detail_toolbar_actions_align_right_on_desktop(self) -> None:
         css = (JS_DIR.parent / "css/review-comment.css").read_text(encoding="utf-8")
         actions = css.split(".detail-context-actions {", 1)[1].split("}", 1)[0]
@@ -12,6 +18,8 @@ class FrontendReviewContractTest(unittest.TestCase):
         self.assertIn("flex: 1 1 auto", actions)
         self.assertIn("min-width: 0", actions)
         self.assertIn("flex-wrap: wrap", actions)
+        self.assertIn("flex-basis: 390px; flex-wrap: nowrap", css)
+        self.assertIn(".detail-context-actions .detail-media-command { min-width: 0; flex-shrink: 1; }", css)
 
     def test_save_feedback_uses_plain_bilingual_copy(self) -> None:
         review_form = (JS_DIR / "review-form.js").read_text(encoding="utf-8")
@@ -77,7 +85,7 @@ class FrontendReviewContractTest(unittest.TestCase):
         self.assertIn("baselines", APP_JS)
         self.assertIn("/static/js/", APP_ENTRY_JS)
         self.assertIn("script.async = false", APP_ENTRY_JS)
-        self.assertIn("app.js?v=manual-triage-688", INDEX_HTML)
+        self.assertIn("app.js?v=manual-triage-689", INDEX_HTML)
         self.assertIn('"work-split.js"', APP_ENTRY_JS)
         self.assertIn('"review-assignments.js"', APP_ENTRY_JS)
         # Product logic must live in domain modules, not the entry loader.

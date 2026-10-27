@@ -1,5 +1,18 @@
 # Review toolbar wrapping
 
+## Restore the return label
+
+Cache689 restores the original visible `← 返回筛选结果` / `← Back to gallery`.
+The accessible purpose and return behavior are unchanged. Desktop media selection
+can shrink before wrapping the group, preserving right alignment with the longer
+English label. The group keeps a bounded flex basis so smaller panes can reflow;
+tablet/mobile overrides remain unchanged.
+
+45 local frontend contracts passed. IAB read-only fixture checked 1440px Chinese/
+dark and English/light (one row), plus 320/390px English/light (full return label,
+no visible horizontal overflow). This does not establish real playback or
+signed-in production visual acceptance.
+
 ## Right-aligned compact actions
 
 Cache688 follows the final placement request: GT and Back stay at the left,
