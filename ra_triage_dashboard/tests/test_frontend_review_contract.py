@@ -4,11 +4,12 @@ from frontend_contract_fixtures import APP_ENTRY_JS, APP_JS, INDEX_HTML, JS_DIR,
 
 
 class FrontendReviewContractTest(unittest.TestCase):
-    def test_detail_toolbar_wrap_alignment_is_not_viewport_dependent(self) -> None:
+    def test_detail_toolbar_actions_align_right_on_desktop(self) -> None:
         css = (JS_DIR.parent / "css/review-comment.css").read_text(encoding="utf-8")
         actions = css.split(".detail-context-actions {", 1)[1].split("}", 1)[0]
-        self.assertIn("justify-content: flex-start", actions)
-        self.assertNotIn("justify-content: flex-end", actions)
+        self.assertIn("justify-content: flex-end", actions)
+        self.assertIn("margin-left: 0", actions)
+        self.assertIn("flex: 1 1 auto", actions)
         self.assertIn("min-width: 0", actions)
         self.assertIn("flex-wrap: wrap", actions)
 
@@ -76,7 +77,7 @@ class FrontendReviewContractTest(unittest.TestCase):
         self.assertIn("baselines", APP_JS)
         self.assertIn("/static/js/", APP_ENTRY_JS)
         self.assertIn("script.async = false", APP_ENTRY_JS)
-        self.assertIn("app.js?v=manual-triage-687", INDEX_HTML)
+        self.assertIn("app.js?v=manual-triage-688", INDEX_HTML)
         self.assertIn('"work-split.js"', APP_ENTRY_JS)
         self.assertIn('"review-assignments.js"', APP_ENTRY_JS)
         # Product logic must live in domain modules, not the entry loader.

@@ -324,9 +324,9 @@ html[data-color-theme="light"] .detail-queue-index-input {
 .detail-context-row > .comparison-summary,
 .detail-context-row > .detail-back-button { flex: 0 0 auto; }
 .detail-context-actions {
-  /* The pane can wrap even on a wide viewport (sidebar/rail/long GT).
-     Keep wrapped controls at the start instead of stranding them on the right. */
-  min-width: 0; margin-left: 0; display: flex; align-items: center; justify-content: flex-start;
+  /* Keep GT/Back at the start and the compact media/action group at the end.
+     Narrow layouts retain the responsive overrides below and in mobile.css. */
+  min-width: 0; margin-left: 0; display: flex; align-items: center; justify-content: flex-end;
   flex: 1 1 auto; flex-wrap: wrap; gap: 5px;
 }
 .detail-context-row .detail-actions { flex: 0 0 auto; flex-wrap: nowrap; gap: 5px; }

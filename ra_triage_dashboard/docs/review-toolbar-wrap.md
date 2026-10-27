@@ -1,5 +1,19 @@
 # Review toolbar wrapping
 
+## Right-aligned compact actions
+
+Cache688 follows the final placement request: GT and Back stay at the left,
+while media selection, Expand, API inference and Run history align to the right
+edge of the detail content. Only the desktop action group's justification changes;
+existing tablet/mobile overrides and compact single-row labels are preserved.
+No dropdown, media, GT or submission behavior changes.
+
+Local validation: 44 frontend contracts passed; syntax and diff checks passed.
+IAB read-only fixture: 1440px Chinese/dark and English/light stay on one row,
+with Run history aligned to the content edge. 320/390px English/light preserve
+the mobile layout without visible horizontal overflow. No real playback or
+signed-in production browser verification is claimed.
+
 ## Compact single-row follow-up
 
 The user prefers a single desktop row, not a better-aligned wrapped row. Detail
