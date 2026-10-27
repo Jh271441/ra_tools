@@ -362,7 +362,10 @@ function normalizedReviewRouteFilters(params) {
     annotationAuthor: parseFilterList(params.get("reviewer")),
     reviewStatus,
     labelStates,
-    taskView: ['targets', 'pending'].includes(params.get('task_view')) ? params.get('task_view') : '',
+    taskView: ['targets', 'pending'].includes(params.get('task_view')) ? 'targets' : '',
+    taskProgress: params.has('task_progress')
+      ? parseFilterList(params.get('task_progress')).filter(value => ['pending', 'completed'].includes(value))
+      : params.get('task_view') === 'pending' ? ['pending'] : [],
     workAssignee: parseFilterList(
       params.get("work_assignee") || params.get("assignee") || ""
     ),
@@ -654,7 +657,7 @@ function currentReviewRouteOptions(overrides = {}) {
       typeof reviewerFilterSelection === "function"
         ? reviewerFilterSelection("review")
         : getMultiFilterValues($("#reviewerFilter")),
-    reviewStatus: getMultiFilterValues($("#reviewStatusFilter")),
+    reviewStatus: selectedModelReviewStatuses(),
     labelStates: getMultiFilterValues($("#sharedLabelStateFilter")),
     commentState:
       typeof selectedReviewDiscussionFilter === "function"
@@ -666,6 +669,7 @@ function currentReviewRouteOptions(overrides = {}) {
         : getMultiFilterValues($("#workAssigneeFilter")),
     workSplitId: state.reviewWorkSplitId || "",
     taskView: state.reviewTaskView || '',
+    taskProgress: selectedCombinedTaskProgress(),
     baselines: state.reviewTaskContext?.baseline_ids || state.selectedBaselineIds,
     forceBaselines: Boolean(state.reviewTaskContext),
     workflowMode: state.reviewWorkflowMode || "model_review_and_case_label",
@@ -708,6 +712,7 @@ function applyReviewRouteControls(route) {
   setMultiFilterValues($("#workAssigneeFilter"), route.workAssignee);
   state.reviewWorkSplitId = route.workSplitId || "";
   state.reviewTaskView = route.workSplitId ? (route.taskView || '') : '';
+  state.reviewTaskProgress = route.workSplitId ? (route.taskProgress || []) : [];
   state.reviewWorkflowMode = route.workflowMode || "model_review_and_case_label";
   if ($("#reviewWorkflowMode")) {
     $("#reviewWorkflowMode").value = state.reviewWorkflowMode;
@@ -718,6 +723,7 @@ function applyReviewRouteControls(route) {
   }
   renderReviewWorkSplitPicker?.(state.reviewWorkSplitId);
   setMultiFilterValues($("#reviewerFilter"), route.annotationAuthor);
+  renderReviewProgressFilter();
   setMultiFilterValues($("#reviewStatusFilter"), route.reviewStatus);
   setMultiFilterValues($("#sharedLabelStateFilter"), route.labelStates);
   setMultiFilterValues(
@@ -973,6 +979,7 @@ function pageUrl(page, options = {}) {
     if (assignee) url.searchParams.set("work_assignee", assignee);
     if (review.workSplitId) url.searchParams.set("work_split", review.workSplitId);
     if (review.workSplitId && review.taskView) url.searchParams.set('task_view', review.taskView);
+    if (review.workSplitId && review.taskProgress?.length) url.searchParams.set('task_progress', joinFilterList(review.taskProgress));
     if (review.workflowMode === "model_review_only") {
       url.searchParams.set("workflow", "model_only");
     }

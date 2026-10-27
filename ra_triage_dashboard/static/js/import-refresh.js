@@ -332,9 +332,7 @@ async function resetReviewFilters() {
   setMultiFilterValues($("#reviewDiscussionFilter"), []);
   setMultiFilterValues($("#reviewExclusionFilter"), []);
   setMultiFilterValues($("#workAssigneeFilter"), []);
-  state.reviewWorkSplitId = "";
-  state.availableReviewWorkSplitId = "";
-  renderReviewWorkSplitPicker?.("");
+  clearReviewTaskContext({ clearRun: true });
   // The task-owner filter also falls back to its URL value while its custom
   // facet is being rebuilt. Remove that durable value for an explicit reset.
   persistWorkAssigneeFilterRoute?.([]);
@@ -347,5 +345,5 @@ async function resetReviewFilters() {
   renderActiveRun();
   renderRunManager();
   await reloadReviewGallery({ includeOverview: true, historyMode: "replace" });
-  showToast("筛选已重置。");
+  showToast(uiText("筛选已重置。", "Filters reset."));
 }

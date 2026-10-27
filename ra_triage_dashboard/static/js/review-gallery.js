@@ -673,7 +673,7 @@ async function loadCases({
       : getMultiFilterValues($("#reviewerFilter"))
   );
   const reviewStatus = joinFilterList(
-    getMultiFilterValues($("#reviewStatusFilter"))
+    selectedModelReviewStatuses()
   );
   const labelState = joinFilterList(
     getMultiFilterValues($("#sharedLabelStateFilter"))
@@ -707,6 +707,8 @@ async function loadCases({
   if (modelLabel) params.set("model_label", modelLabel);
   if (annotationAuthor) params.set("annotation_author", annotationAuthor);
   if (reviewStatus) params.set("review_status", reviewStatus);
+  const taskProgress = joinFilterList(selectedCombinedTaskProgress());
+  if (taskProgress) params.set('task_progress', taskProgress);
   if (labelState) params.set("label_state", labelState);
   if (workAssignee) params.set("work_assignee", workAssignee);
   if (state.reviewWorkSplitId) params.set("work_split_id", state.reviewWorkSplitId);

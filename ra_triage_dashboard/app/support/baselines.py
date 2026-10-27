@@ -287,6 +287,22 @@ def restrict_version_issue_ids(
     selected = tuple(issue_ids)
     query = _request_query(request)
     task_view = query.get("task_view", "")
+    progress = set(_selection_tokens(query.get("task_progress", "")))
+    # Older version-task links used task_view=pending for joint delivery.
+    if task_view == "pending" and not progress:
+        progress = {"pending"}
+    if progress:
+        if not task_id or not progress.issubset({"pending", "completed"}):
+            raise _detail(400, "联合复核进度筛选无效 / Invalid combined task progress filter")
+        from ..db_parts.assignment_rules import combined_task_progress_ids
+        try:
+            members = combined_task_progress_ids(
+                database, task_id, progress,
+                _selection_tokens(query.get("work_assignee", "")),
+            )
+        except ValueError as exc:
+            raise _detail(400, str(exc)) from exc
+        selected = tuple(sorted(members.intersection(selected) if selected else members)) or ("__empty_version_membership__",)
     if task_view:
         if task_view not in {"targets", "pending"}:
             raise _detail(400, "Unsupported task view")
@@ -297,7 +313,7 @@ def restrict_version_issue_ids(
         # assignment card, never model-review status or a frozen URL ID list.
         members = {
             row["issue_id"] for row in database.version_dataset_gallery_rows(dataset_id)
-            if row.get("is_target") and (task_view != "pending" or not row.get("review_submitted"))
+            if row.get("is_target")
         }
         selected = tuple(sorted(members.intersection(selected) if selected else members)) or ("__empty_version_membership__",)
     requested = raw

@@ -102,7 +102,8 @@ function reviewAssignmentRouteOptions(item, page) {
     exclusion: "all", workSplitId: item?.split_id || "",
     baselines: item?.baseline_ids || item?.baseline_scopes || filter.baselines || filter.baseline_scopes || [],
     forceBaselines: true,
-    taskView: item?.appendable ? (page === 'review' ? 'pending' : 'targets') : '',
+    taskView: item?.appendable ? 'targets' : '',
+    taskProgress: page === 'review' && item?.workflow_mode === 'model_review_and_case_label' ? ['pending'] : [],
   };
   if (page === "analysis") {
     return {

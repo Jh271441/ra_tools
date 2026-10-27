@@ -164,6 +164,52 @@ async function loadReviewers(selections = reviewerFilterSelections()) {
   }
 }
 
+function isCombinedTaskProgressFilter() {
+  if (!state.reviewWorkSplitId) return false;
+  const task = state.reviewTaskContext;
+  return (task && task.id === state.reviewWorkSplitId ? task.workflow_mode : state.reviewWorkflowMode)
+    === 'model_review_and_case_label';
+}
+
+function selectedModelReviewStatuses() {
+  return getMultiFilterValues($('#reviewStatusFilter'));
+}
+
+function selectedCombinedTaskProgress() {
+  return isCombinedTaskProgressFilter() ? (state.reviewTaskProgress || []) : [];
+}
+
+function renderReviewProgressFilter() {
+  const root = $('#reviewTaskProgressFilter');
+  if (!root) return;
+  const combined = isCombinedTaskProgressFilter();
+  const field = $('#reviewTaskProgressField');
+  if (field) field.hidden = !combined;
+  const label = $('#reviewTaskProgressLabel');
+  if (label) {
+    label.textContent = uiText('任务状态', 'Task status');
+    label.title = uiText('按任务负责人统计：标签确认与模型复核均已提交才算完成；不代表共享标签已形成结论。', 'By assignee: complete when both label acknowledgement and model review are submitted, regardless of shared label resolution.');
+  }
+  const selected = selectedCombinedTaskProgress();
+  const options = [
+    { value: 'pending', label: uiText('待完成', 'Pending') },
+    { value: 'completed', label: uiText('已完成', 'Completed') },
+  ];
+  if (relabelMultiFilter(root, options)) {
+    setMultiFilterValues(root, selected);
+    return;
+  }
+  renderMultiFilter(root, {
+    options, selected,
+    onChange: (values) => {
+      if (isCombinedTaskProgressFilter()) {
+        state.reviewTaskProgress = values;
+      }
+      scheduleReviewFilterReload?.(0);
+    },
+  });
+}
+
 function renderReviewCatalogFilters() {
   const onChange = () => scheduleReviewFilterReload?.(0);
   renderMultiFilter($("#comparisonFilter"), {
@@ -195,15 +241,18 @@ function renderReviewCatalogFilters() {
     selected: getMultiFilterValues($("#annotationFilter")),
     onChange,
   });
-  renderMultiFilter($("#reviewStatusFilter"), {
-    options: [
-      { value: "pending", label: uiText("待开始", "Pending") },
-      { value: "in_progress", label: uiText("待复核", "Needs review") },
-      { value: "completed", label: uiText("已完成", "Completed") },
-    ],
-    selected: getMultiFilterValues($("#reviewStatusFilter")),
-    onChange,
-  });
+  renderReviewProgressFilter();
+  const modelStatusOptions = [
+    { value: 'pending', label: uiText('待开始', 'Not started') },
+    { value: 'in_progress', label: uiText('待复核', 'Needs review') },
+    { value: 'completed', label: uiText('已完成', 'Completed') },
+  ];
+  const modelStatusRoot = $('#reviewStatusFilter');
+  if (modelStatusRoot && !relabelMultiFilter(modelStatusRoot, modelStatusOptions)) {
+    renderMultiFilter(modelStatusRoot, {
+      options: modelStatusOptions, selected: selectedModelReviewStatuses(), onChange,
+    });
+  }
   renderMultiFilter($("#sharedLabelStateFilter"), {
     options: [
       { value: "none", label: uiText("未标注", "Not labeled") },

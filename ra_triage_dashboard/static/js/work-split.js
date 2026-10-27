@@ -29,13 +29,7 @@ function renderReviewTaskContext() {
   }
   const summary = $("#reviewTaskSummary");
   const exit = $("#reviewTaskContextExit");
-  const viewToggle = $('#reviewTaskViewToggle');
-  if (viewToggle) {
-    viewToggle.hidden = !task || !state.reviewTaskView;
-    viewToggle.textContent = state.reviewTaskView === 'pending'
-      ? uiText('待完成 · 查看全部', 'Pending · Show all')
-      : uiText('全部目标 · 只看待完成', 'All targets · Show pending');
-  }
+  renderReviewProgressFilter();
   if (summary) {
     summary.hidden = !task;
     summary.textContent = task
@@ -72,6 +66,7 @@ function clearReviewTaskContext({ clearRun = true } = {}) {
   state.reviewTaskContextRequestSeq = Number(state.reviewTaskContextRequestSeq || 0) + 1;
   state.reviewWorkSplitId = "";
   state.reviewTaskView = '';
+  state.reviewTaskProgress = [];
   state.availableReviewWorkSplitId = "";
   state.reviewTaskContext = null;
   state.reviewTaskContextError = null;
@@ -124,6 +119,7 @@ async function loadReviewTaskContext(splitId, { route = null } = {}) {
     if (!isCurrent()) return null;
     const task = result.task || {};
     state.reviewTaskContext = task;
+    state.reviewWorkflowMode = task.workflow_mode || 'model_review_only';
     state.reviewTaskContextLoading = false;
     state.reviewLegacyNoRunTask = Boolean(task.legacy_no_run);
     const baselineIds = (task.baseline_ids || []).map(String).filter(Boolean);
@@ -136,6 +132,7 @@ async function loadReviewTaskContext(splitId, { route = null } = {}) {
     }
     state.selectedRunId = task.model_run_id || "";
     if (route) {
+      route.workflowMode = state.reviewWorkflowMode;
       route.runId = task.model_run_id || "none";
       route.workSplitId = normalized;
     }
@@ -375,7 +372,8 @@ function currentReviewFilterPayload() {
     gt_label: joinFilterList(getMultiFilterValues($("#gtFilter"))),
     model_label: joinFilterList(getMultiFilterValues($("#annotationFilter"))),
     annotation_author: joinFilterList(getMultiFilterValues($("#reviewerFilter"))),
-    review_status: joinFilterList(getMultiFilterValues($("#reviewStatusFilter"))),
+    review_status: joinFilterList(selectedModelReviewStatuses()),
+    task_progress: joinFilterList(selectedCombinedTaskProgress()),
     label_state: joinFilterList(getMultiFilterValues($("#sharedLabelStateFilter"))),
     comment_state:
       typeof selectedReviewDiscussionFilter === "function"
@@ -556,7 +554,8 @@ async function loadWorkAssignees() {
   try {
     const params = new URLSearchParams();
     Object.entries(currentReviewFilterPayload()).forEach(([key, value]) => {
-      if (key === "work_assignee" || key === "failure_only" || !value) return;
+      // Owner counts describe the assigned scope, not the shrinking todo queue.
+      if (key === "work_assignee" || key === "task_progress" || key === "failure_only" || !value) return;
       params.set(key, String(value));
     });
     const query = params.toString();
@@ -838,13 +837,6 @@ function bindWorkSplitControls() {
     loadReviewTaskContext(state.reviewWorkSplitId).then(() => loadCases({ keepSelection: false, page: 1 })).catch((error) => showToast(error.message, true));
   });
   $("#reviewTaskContextExit")?.addEventListener("click", () => exitReviewTaskContext().catch((error) => showToast(error.message, true)));
-  $('#reviewTaskViewToggle')?.addEventListener('click', () => {
-    state.reviewTaskView = state.reviewTaskView === 'pending' ? 'targets' : 'pending';
-    state.casePage = 1;
-    persistCurrentReviewRoute({ issue: '', casePage: 1 });
-    renderReviewTaskContext();
-    loadCases({ keepSelection: false, page: 1 }).catch(error => showToast(error.message, true));
-  });
   $("#reviewTaskContextErrorExit")?.addEventListener("click", () => exitReviewTaskContext().catch((error) => showToast(error.message, true)));
   $("#reviewWorkflowMode")?.addEventListener("change", (event) => {
     if (state.reviewWorkSplitId) return;

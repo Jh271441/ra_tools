@@ -53,6 +53,37 @@ ASSIGNMENT_SUBMITTED_SQL = f"""
 """
 
 
+def combined_task_progress_ids(database, task_id, progress, assignees=()):
+    """Read task delivery, never shared resolution or another author's head.
+
+    With several selected owners, an Issue is complete only when all their
+    assigned slots are complete. Pending and completed therefore partition it.
+    """
+    task_id = database.resolve_version_campaign(task_id)
+    owners = sorted({str(owner).strip().lower() for owner in assignees if str(owner).strip()})
+    with database.connect() as conn:
+        task = conn.execute(
+            "SELECT workflow_mode FROM issue_work_splits WHERE id=?", (task_id,)
+        ).fetchone()
+        if not task or task["workflow_mode"] != "model_review_and_case_label":
+            raise ValueError("进度筛选仅支持联合复核任务 / Progress filtering requires a combined-review task")
+        owner_where = ""
+        args = [task_id]
+        if owners:
+            owner_where = " AND lower(assignment.assignee) IN (" + ",".join("?" for _ in owners) + ")"
+            args.extend(owners)
+        rows = conn.execute(
+            "SELECT assignment.issue_id, "
+            f"MIN(CASE WHEN {ASSIGNMENT_SUBMITTED_SQL} THEN 1 ELSE 0 END) AS submitted "
+            "FROM review_work_assignments assignment "
+            "JOIN issue_work_splits split ON split.id=assignment.split_id "
+            "WHERE split.id=?" + owner_where + " GROUP BY assignment.issue_id",
+            args,
+        ).fetchall()
+    return {row["issue_id"] for row in rows
+            if ("completed" if row["submitted"] else "pending") in progress}
+
+
 def legacy_batch_source(batch: Mapping[str, Any], sources: Mapping[str, Mapping[str, Any]]) -> Mapping[str, Any]:
     """Use original display metadata only for a source from the same Run."""
     source_id = str(_json_load(batch["filter_json"], {}).get("source_legacy_split_id") or "")

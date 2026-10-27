@@ -86,7 +86,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-677`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-679`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -371,7 +371,7 @@
                   <div class="multi-filter" id="reviewerFilter" data-placeholder="全部复核人" data-placeholder-en="All reviewers" data-i18n-placeholder="filter.all_reviewers"><button class="multi-filter-trigger" type="button" disabled aria-busy="true"><span>正在加载复核人…</span><span class="multi-filter-caret" aria-hidden="true"></span></button></div>
                 </label>
                 <label class="filter-review-status">
-                  <span class="ui-lang-zh" title="模型判错复核状态">模型判错复核</span><span class="ui-lang-en" title="Model error review status">Model review</span>
+                  <span class="ui-lang-zh">模型判错复核</span><span class="ui-lang-en">Model review</span>
                   <div class="multi-filter" id="reviewStatusFilter" data-placeholder="全部判错状态" data-placeholder-en="All model review statuses"></div>
                 </label>
                 <label class="filter-shared-label-state">
@@ -399,6 +399,10 @@
                   <span class="review-task-summary" id="reviewTaskSummary" hidden></span>
                   <small class="muted" id="reviewTaskPickerHint" hidden></small>
                 </div>
+                <label id="reviewTaskProgressField" hidden>
+                  <span id="reviewTaskProgressLabel"><span class="ui-lang-zh">任务状态</span><span class="ui-lang-en">Task status</span></span>
+                  <div class="multi-filter" id="reviewTaskProgressFilter" data-placeholder="全部任务状态" data-placeholder-en="All task statuses"></div>
+                </label>
                 <label class="review-workflow-mode" id="reviewWorkflowModeField"><span class="ui-lang-zh">复核模式</span><span class="ui-lang-en">Review mode</span><select id="reviewWorkflowMode"><option value="model_review_only">仅判错复核</option><option value="model_review_and_case_label" selected>判错复核 + 问题标注</option></select><small class="muted" id="reviewWorkflowModeHint" hidden>当前任务已锁定模式</small></label>
                 <button class="button button-quiet filter-submit" id="resetReviewFiltersButton" type="button"><span class="ui-lang-zh">重置</span><span class="ui-lang-en">Reset</span></button>
               </form>
@@ -423,7 +427,6 @@
                       <button class="button button-primary" id="predictFilteredButton" type="button" disabled><span class="ui-lang-zh">预测当前筛选</span><span class="ui-lang-en">Predict selection</span></button>
                     </div>
                     <div class="gallery-heading-meta">
-                      <button class="button button-quiet" id="reviewTaskViewToggle" type="button" hidden></button>
                       <span id="galleryResultSummary" data-i18n="gallery.loading">正在加载 Issue…</span>
                       <span class="count-pill" id="caseCount">—</span>
                     </div>
@@ -2537,7 +2540,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-677`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-679`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

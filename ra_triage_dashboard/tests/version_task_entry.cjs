@@ -2,7 +2,7 @@ const fs = require('fs'), vm = require('vm'), assert = require('assert'), path =
 const root = path.join(__dirname, '../static/js');
 const task = 'campaign-version-20261016-odd2';
 const state = {activePage:'review', selectedBaselineIds:['version-20261016'], reviewAnalysis:{}, reviewWorkSplitId:task, reviewTaskView:'pending'};
-const s = {state, URL, URLSearchParams, console,
+const s = {state, URL, URLSearchParams, console, t:x=>x,
   window:{location:{origin:'https://example.test', pathname:'/review', search:''}},
   PAGE_ROUTES:{review:{path:'/review'}, analysis:{path:'/review-analysis'}}, withBase:x=>x,
   $:()=>null, getMultiFilterValues:()=>[], LABELS:[], MODEL_LABELS:[], ISSUE_QUERY_ID_RE:/^cn\d+$/,
@@ -11,12 +11,13 @@ const s = {state, URL, URLSearchParams, console,
   joinFilterList:x=>(x||[]).join(','), comparisonStatusParam:x=>x,
 };
 vm.createContext(s);
-for (const file of ['routing.js','format-api.js']) vm.runInContext(fs.readFileSync(path.join(root,file),'utf8'),s);
+for (const file of ['routing.js','format-api.js','runs.js']) vm.runInContext(fs.readFileSync(path.join(root,file),'utf8'),s);
 const url = s.pageUrl('review',{workSplitId:task,taskView:'pending',workAssignee:['jasperchen'],runId:'run1'});
 const parsed = new URL(url,s.window.location.origin).searchParams;
 const route = s.normalizedReviewRouteFilters(parsed);
 assert.equal(route.workSplitId,task);
-assert.equal(route.taskView,'pending');
+assert.equal(route.taskView,'targets');
+assert.deepEqual([...route.taskProgress],['pending']);
 assert.equal(route.workAssignee[0],'jasperchen');
 assert.equal(s.normalizedAnalysisRouteFilters(new URLSearchParams('work_split='+task+'&task_view=targets')).workSplitId,task);
 assert.equal(s.normalizedAnalysisRouteFilters(new URLSearchParams('work_split='+task+'&task_view=targets')).taskView,'targets');

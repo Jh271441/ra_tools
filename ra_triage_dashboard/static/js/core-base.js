@@ -994,6 +994,8 @@ const state = {
   clusterKey: "",
   reviewQueueStale: false,
   reviewWorkSplitId: "",
+  reviewTaskView: "",
+  reviewTaskProgress: [],
   reviewTaskContext: null,
   reviewTaskContextLoading: false,
   reviewTaskContextError: null,
