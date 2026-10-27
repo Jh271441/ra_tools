@@ -304,6 +304,9 @@ class BaselineRegistryTests(unittest.TestCase):
             path = provider.get_asset_path("cn_demo", video_meta["id"])
             self.assertEqual(path, video.resolve())
 
+    # This fixture owns its media root; never resolve production media inherited
+    # by the cloud release gate instead of the temporary layout created below.
+    @patch.dict("os.environ", {"DASHBOARD_MEDIA_LAYOUT_ROOT": ""})
     def test_materialized_product_layout_is_isolated_per_baseline(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -388,6 +391,20 @@ class BaselineRegistryTests(unittest.TestCase):
             self.assertEqual(video_meta["event_time_sec"], 20)
             path = provider.get_asset_path("cn_demo", video_meta["id"])
             self.assertEqual(path, video.resolve())
+
+            # Explicit read-only media roots still override the writable data
+            # directory, as they do for isolated gray/development instances.
+            with patch.dict("os.environ", {"DASHBOARD_MEDIA_LAYOUT_ROOT": str(data_dir / "media_layouts")}):
+                overridden = build_media_registry(
+                    registry,
+                    base_path="/manual",
+                    product_asset_index=AssetIndex(ra_root=empty, manifest_path=empty / "manifest.jsonl"),
+                    product_camera_index=CameraIndex(empty),
+                    product_video_index=VideoIndex(empty),
+                    data_dir=root / "other-data",
+                ).for_baseline_id("0626")
+                self.assertEqual(overridden.media_ready_summary()["bev_indexed_issues"], 1)
+                self.assertTrue(overridden.get_assets("cn_demo")["available"])
 
 
 if __name__ == "__main__":
