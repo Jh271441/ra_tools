@@ -13,6 +13,11 @@ Cache687: IAB 1440px Chinese/dark and English/light checked with out_of_scope,
 Ares video, return, expand, inference and history all on one row. Phone320/390
 retains the existing touch-safe layout rather than forcing a wide desktop row.
 48 frontend/base-path tests and executed comparison-expression tests passed.
+Released as `2aae213ea214358f20656497272ac10427eba151` at
+2026-10-27 21:46:57 CST. Cloud suite: 1034 passed, 7 skipped; isolated gray and
+production PostgreSQL health/policy gates passed. Served Review module and loader
+match the release; shell cache687 verified. Browser acceptance used a read-only
+fixture, not signed-in production or real video playback. No business-data changes.
 The following section records the earlier CSS-only step, not the final design.
 
 Long original GT values can make the detail action group wrap even when the
