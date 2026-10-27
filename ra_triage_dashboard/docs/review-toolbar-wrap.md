@@ -1,0 +1,19 @@
+# Review toolbar wrapping
+
+Long original GT values can make the detail action group wrap even when the
+viewport exceeds the old narrow-desktop breakpoint: the sidebar and Review pane
+also consume horizontal space. The base action group now uses start alignment,
+so it stays continuous when it fits and starts at the left when it wraps. It no
+longer strands media selection and actions at the right edge of a mostly empty row.
+
+This is a CSS-only layout correction. Shared media dropdown, buttons, shortcuts,
+mobile overrides, GT values, media loading and submission semantics are unchanged.
+Frontend cache: 686.
+
+Validation: 48 related frontend/base-path tests passed. IAB read-only fixture
+checked long `out_of_scope` with Ares video selection at 1440px and 1920×1080
+Chinese/dark, plus 320px and 390px English/light. Narrow desktop wraps left;
+wide desktop stays on one row; mobile has no page-level horizontal overflow.
+Dropdown opening and Escape were checked. Fixture media intentionally has no
+playable video; this is toolbar/responsive acceptance, not video playback or
+signed-in production visual acceptance.
