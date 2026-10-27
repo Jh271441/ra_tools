@@ -234,7 +234,7 @@ function renderReviewCatalogFilters() {
     ?.toggleAttribute("disabled", !hasRun);
   if (!hasRun) setMultiFilterValues($("#comparisonFilter"), []);
   renderMultiFilter($("#gtFilter"), {
-    options: LABELS.map((label) => ({ value: label, label })),
+    options: GT_FILTER_VALUES.map((label) => ({ value: label, label })),
     selected: getMultiFilterValues($("#gtFilter")),
     onChange,
   });

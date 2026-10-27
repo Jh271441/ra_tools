@@ -6,6 +6,7 @@ import uuid
 from typing import Any, Iterable, Iterator, Sequence
 
 from ..work_split import normalize_overlap_ratio
+from ..gt_observations import TRAIL_GT_RAW_VALUES
 from .task_lifecycle import task_lifecycle_where, task_reviewable
 from .assignment_rules import (
     ASSIGNMENT_SUBMITTED_SQL,
@@ -459,10 +460,20 @@ class DatabaseCasesMixin:
             term = f"%{search.strip()}%"
             where.append("(i.issue_id LIKE ? OR i.title LIKE ? OR i.scenario LIKE ? OR i.summary LIKE ?)")
             params.extend([term, term, term, term])
-        gt_labels = tuple(value for value in _multi_values(gt_label) if value in LABELS)
-        if gt_labels:
-            where.append(f"i.gt_label IN ({', '.join('?' for _ in gt_labels)})")
-            params.extend(gt_labels)
+        gt_requested = _multi_values(gt_label)
+        if gt_requested:
+            if any(value not in (*LABELS, *TRAIL_GT_RAW_VALUES) for value in gt_requested):
+                raise ValueError("unsupported gt_label")
+            canonical = tuple(value for value in gt_requested if value in LABELS)
+            raw_values = tuple(value for value in gt_requested if value in TRAIL_GT_RAW_VALUES)
+            gt_conditions = []
+            if canonical:
+                gt_conditions.append(f"i.gt_label IN ({', '.join('?' for _ in canonical)})")
+                params.extend(canonical)
+            if raw_values:
+                gt_conditions.append(f"({self._gt_raw_label_sql()}) IN ({', '.join('?' for _ in raw_values)})")
+                params.extend(raw_values)
+            where.append('(' + ' OR '.join(gt_conditions) + ')')
         model_labels = tuple(
             value for value in _multi_values(model_label) if value in MODEL_LABELS
         )
@@ -692,7 +703,7 @@ class DatabaseCasesMixin:
             """
             rows = conn.execute(
                 f"""
-                SELECT i.*, ann.id AS annotation_id,
+                SELECT i.*, {self._gt_raw_label_sql()} AS gt_raw_label, ann.id AS annotation_id,
                        ann.label AS annotation_label, ann.review_status AS annotation_review_status,
                        ann.is_excluded AS annotation_is_excluded,
                        ann.tags_json AS annotation_tags_json,
@@ -889,7 +900,10 @@ class DatabaseCasesMixin:
 
     def get_case(self, issue_id: str) -> dict[str, Any] | None:
         with self.connect() as conn:
-            issue = conn.execute("SELECT * FROM issues WHERE issue_id = ?", (issue_id,)).fetchone()
+            issue = conn.execute(
+                f"SELECT i.*, {self._gt_raw_label_sql()} AS gt_raw_label FROM issues i WHERE i.issue_id = ?",
+                (issue_id,),
+            ).fetchone()
             if issue is None:
                 return None
             annotations = conn.execute(
@@ -1218,6 +1232,7 @@ class DatabaseCasesMixin:
             "review_note": row["review_note"],
             "trail_url": row["trail_url"],
             "gt_label": row["gt_label"] or "",
+            "gt_raw_label": (row["gt_raw_label"] or "") if "gt_raw_label" in row.keys() else "",
             "gt_source": row["gt_source"],
             "source": row["source"],
             "baseline_scope": row["baseline_scope"] if "baseline_scope" in row.keys() else "",

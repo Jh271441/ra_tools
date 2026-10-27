@@ -4,6 +4,12 @@
  * ES modules without auditing cross-file function/state dependencies.
  */
 const LABELS = ["误触发", "正确触发", "无需协助"];
+// Raw Trail observations are filter/display values, never model/annotation labels.
+const GT_RAW_VALUES = ["out_of_scope", "未接起"];
+const GT_FILTER_VALUES = [...LABELS, ...GT_RAW_VALUES];
+function gtDisplayLabel(item) {
+  return item?.gt_label || (GT_RAW_VALUES.includes(item?.gt_raw_label) ? item.gt_raw_label : "");
+}
 const STAGE1_TRUE_STUCK_LABEL = "真实卡住";
 const MODEL_LABELS = [...LABELS, STAGE1_TRUE_STUCK_LABEL];
 function modelLabelMatchesGt(modelLabel, gtLabel) {

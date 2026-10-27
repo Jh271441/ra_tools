@@ -234,6 +234,7 @@ class AuthoritativeGtSyncTest(unittest.TestCase):
             "source_updated_by": "",
         }])
         self.assertEqual(result.unmapped_issues, 2)
+        self.assertEqual(set(result.raw_labels.values()), {"out_of_scope", "未接起"})
         self.assertEqual(
             dict(result.unmapped_values), {"out_of_scope": 1, "未接起": 1}
         )

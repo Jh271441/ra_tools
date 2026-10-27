@@ -125,6 +125,10 @@ def _gt_sync_item(baseline_id: str, entries=None) -> dict[str, Any]:
             and (not active_snapshot or active_snapshot.get("member_count") != target_count)):
         persisted = {**persisted, "status": "not_started",
                      "message": "新增成员待校验 / New members await GT verification"}
+    if (entry.gt_mode == "sparse" and persisted.get("status") == "ready"
+            and (active_snapshot or {}).get("source_metadata", {}).get("raw_gt_observation_version") != 1):
+        persisted = {**persisted, "status": "not_started",
+                     "message": "GT 原值待校验 / Raw GT values await verification"}
     return {
         **persisted,
         "enabled": settings.gt_sync_enabled,
@@ -297,6 +301,7 @@ def sync_authoritative_gt(
                         requested_by_verified=identity_verified,
                         expected_issue_ids=issue_ids,
                         allow_sparse=allow_sparse,
+                        raw_labels=result.raw_labels if allow_sparse else None,
                     )
                     try:
                         database.reconcile_label_gt_export_batches_for_scope(

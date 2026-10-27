@@ -454,7 +454,7 @@ function renderMediaDialog() {
   const comparisonClass = predictionComparable && !predictionMatches ? "comparison-fail" : "comparison-neutral";
   $("#mediaDecisionSummary").hidden = Boolean(snapshot?.intentPreview);
   $("#mediaDecisionSummary").innerHTML = `
-    <span class="comparison-side-label comparison-side-gt">GT</span>${labelBadge(gtLabel, "缺失")}
+    <span class="comparison-side-label comparison-side-gt">GT</span>${labelBadge(gtDisplayLabel({gt_label: gtLabel, gt_raw_label: snapshot?.gtRawLabel}), uiText("缺失", "Missing"))}
     <b aria-hidden="true">→</b>
     <span class="comparison-side-label comparison-side-model">模型</span>${labelBadge(modelLabel, "未输出")}
     <strong class="${comparisonClass}">${comparisonText}</strong>`;
@@ -560,6 +560,7 @@ function openMedia(kind, index, { caseData = state.selectedCase } = {}) {
   state.media.snapshot = {
     issueId: String(caseData?.issue_id || ""),
     gtLabel: String(caseData?.gt_label || ""),
+    gtRawLabel: String(caseData?.gt_raw_label || ""),
     modelLabel: String(selectedPrediction?.model_label || ""),
     intentPreview: Boolean(caseData?.intent_preview),
     referenceMedia: Boolean(caseData?.reference_media),

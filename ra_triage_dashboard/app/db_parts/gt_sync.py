@@ -2,11 +2,23 @@ from __future__ import annotations
 
 from typing import Any, Iterable
 
+from ..gt_observations import TRAIL_GT_RAW_VALUES
 from .shared import LABELS, utc_now
 
 
 class DatabaseGtSyncMixin:
     """Persist and atomically apply authoritative GT snapshots."""
+
+    def _gt_raw_label_sql(self, issue_alias: str = "i") -> str:
+        """One local, active-snapshot value; never query Trail on a read path."""
+        value = (f"raw_snapshot.source_metadata_json -> 'raw_gt_values' ->> {issue_alias}.issue_id"
+                 if self.backend == "postgresql" else
+                 f"json_extract(raw_snapshot.source_metadata_json, '$.raw_gt_values.' || json_quote({issue_alias}.issue_id))")
+        return f"""CASE WHEN COALESCE({issue_alias}.gt_label, '') = '' THEN COALESCE((
+            SELECT {value} FROM gt_snapshot_active raw_active
+            JOIN gt_snapshots raw_snapshot ON raw_snapshot.id = raw_active.snapshot_id
+            WHERE raw_active.baseline_scope = {issue_alias}.baseline_scope
+        ), '') ELSE '' END"""
 
     def version_gt_sync_sources(self) -> dict[str, list[str]]:
         """Local source identity only; no gallery/JSON/media aggregation."""
@@ -170,6 +182,7 @@ class DatabaseGtSyncMixin:
         requested_by_verified: bool,
         expected_issue_ids: Iterable[str] | None = None,
         allow_sparse: bool = False,
+        raw_labels: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         normalized_scope = str(scope or "").strip()
         if not normalized_scope:
@@ -240,6 +253,12 @@ class DatabaseGtSyncMixin:
                 issue_id: materialized.get(issue_id, {}).get("gt_label", "")
                 for issue_id in expected_ids
             }
+            raw_values_observed = raw_labels is not None
+            raw_labels = dict(raw_labels or {})
+            if raw_labels and (not allow_sparse or set(raw_labels) - expected_ids
+                               or set(raw_labels) & returned_ids
+                               or any(value not in TRAIL_GT_RAW_VALUES for value in raw_labels.values())):
+                raise ValueError("Raw GT observations must be supported unmapped members of a sparse snapshot")
             snapshot_rows = {
                 issue_id: materialized.get(
                     issue_id,
@@ -251,6 +270,8 @@ class DatabaseGtSyncMixin:
                 )
                 for issue_id in sorted(target_labels)
             }
+            for issue_id, raw_label in raw_labels.items():
+                snapshot_rows[issue_id] = {**snapshot_rows[issue_id], "gt_raw_label": raw_label}
             gt_snapshot = self._create_or_reuse_gt_snapshot_with_conn(
                 conn,
                 scope=normalized_scope,
@@ -260,6 +281,7 @@ class DatabaseGtSyncMixin:
                 source_field=source_field,
                 rows=snapshot_rows,
                 source_metadata={
+                    **({"raw_gt_observation_version": 1} if raw_values_observed else {}),
                     "source_updated_at": sorted(
                         {
                             item.get("source_updated_at", "")

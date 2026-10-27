@@ -355,7 +355,7 @@ function normalizedReviewRouteFilters(params) {
     commentState: ["with", "without"].includes(params.get("comment_state")) ? params.get("comment_state") : "all",
     commentSearch: params.get("comment_search") || "",
     gtLabel: parseFilterList(params.get("gt") || gtLabel).filter((value) =>
-      LABELS.includes(value)
+      GT_FILTER_VALUES.includes(value)
     ),
     modelLabel: parseFilterList(modelLabel).filter((value) =>
       MODEL_LABELS.includes(value)

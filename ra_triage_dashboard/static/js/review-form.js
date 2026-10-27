@@ -290,7 +290,7 @@ function renderDetail(caseData, { preserveMedia = false } = {}) {
       </div>
       <div class="detail-context-row">
         <div class="comparison-summary" aria-label="${escapeHtml(uiText("GT 与当前模型对比", "GT vs current model"))}">
-          <span class="comparison-side-label comparison-side-gt">GT</span>${labelBadge(caseData.gt_label, uiText("缺失", "Missing"))}
+          <span class="comparison-side-label comparison-side-gt">GT</span>${labelBadge(gtDisplayLabel(caseData), uiText("缺失", "Missing"))}
           <b aria-hidden="true">→</b>
           <span class="comparison-side-label comparison-side-model"><span class="ui-lang-zh">当前模型</span><span class="ui-lang-en">Model</span></span>${labelBadge(primary?.model_label, uiText("未输出", "None"))}
           <strong class="${predictionComparable && !predictionMatches ? "comparison-fail" : "comparison-neutral"}">${compareText}</strong>

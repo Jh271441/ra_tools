@@ -14,6 +14,7 @@ from typing import Any, Iterable, Sequence
 from uuid import uuid4
 
 from .shared import LABELS, _json, _json_load, utc_now
+from ..gt_observations import TRAIL_GT_RAW_VALUES
 
 
 SNAPSHOT_GT_MODES = {"strict", "sparse"}
@@ -64,7 +65,11 @@ class DatabaseSnapshotMixin:
             "source_name": str(row["source_name"] or "Trail"),
             "source_view_id": int(row["source_view_id"] or 0),
             "source_field": str(row["source_field"] or ""),
-            "source_metadata": _json_load(row["source_metadata_json"], {}),
+            # Do not repeat a whole scope's per-Issue observations in every public
+            # status/detail response. Cases select only their own original value.
+            "source_metadata": {key: value for key, value in
+                                _json_load(row["source_metadata_json"], {}).items()
+                                if key != "raw_gt_values"},
             "content_sha256": str(row["content_sha256"] or ""),
             "membership_sha256": str(row["membership_sha256"] or ""),
             "member_count": int(row["member_count"] or 0),
@@ -118,6 +123,7 @@ class DatabaseSnapshotMixin:
         source_view_id: int,
         source_field: str,
         rows: dict[str, dict[str, str]],
+        raw_values_observed: bool = False,
     ) -> str:
         payload = {
             "baseline_scope": baseline_scope,
@@ -132,6 +138,12 @@ class DatabaseSnapshotMixin:
                 for issue_id in sorted(rows)
             ],
         }
+        raw_values = {key: row["gt_raw_label"] for key, row in sorted(rows.items())
+                      if row.get("gt_raw_label")}
+        if raw_values:
+            payload["raw_gt_values"] = raw_values
+        if raw_values_observed:
+            payload["raw_gt_observation_version"] = 1
         return _sha256_json(payload)
 
     def _create_or_reuse_gt_snapshot_with_conn(
@@ -172,6 +184,11 @@ class DatabaseSnapshotMixin:
                 "source_updated_at": str((raw or {}).get("source_updated_at") or ""),
                 "source_updated_by": str((raw or {}).get("source_updated_by") or ""),
             }
+            raw_label = str((raw or {}).get("gt_raw_label") or "")
+            if raw_label:
+                if mode != "sparse" or label or raw_label not in TRAIL_GT_RAW_VALUES:
+                    raise ValueError("Invalid raw GT observation")
+                normalized_rows[key]["gt_raw_label"] = raw_label
         if not normalized_rows:
             raise ValueError("GT snapshot membership must not be empty")
         current_members = {
@@ -190,9 +207,15 @@ class DatabaseSnapshotMixin:
             source_view_id=int(source_view_id),
             source_field=str(source_field or ""),
             rows=normalized_rows,
+            raw_values_observed=(source_metadata or {}).get("raw_gt_observation_version") == 1,
         )
         membership_sha = _snapshot_membership_sha(list(normalized_rows))
         source_meta = dict(source_metadata or {})
+        source_meta.pop("raw_gt_values", None)
+        raw_values = {key: row["gt_raw_label"] for key, row in normalized_rows.items()
+                      if row.get("gt_raw_label")}
+        if raw_values:
+            source_meta["raw_gt_values"] = raw_values
         source_meta.update(
             {
                 "baseline_scope": normalized_scope,

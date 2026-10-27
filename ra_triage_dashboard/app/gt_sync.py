@@ -4,12 +4,13 @@ import importlib
 import math
 import sys
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
 from .baseline import normalize_gt_label
+from .gt_observations import TRAIL_GT_RAW_VALUES
 
 
 TRAIL_GT_FIELD = "ra_merge_result"
@@ -55,6 +56,7 @@ class TrailGtSyncResult:
     message: str
     unmapped_issues: int = 0
     unmapped_values: tuple[tuple[str, int], ...] = ()
+    raw_labels: dict[str, str] = field(default_factory=dict)
 
 
 def _chunks(values: list[str], size: int) -> Iterable[list[str]]:
@@ -133,6 +135,7 @@ def read_trail_gt_labels(
     output: dict[str, dict[str, str]] = {}
     seen: set[str] = set()
     unmapped: Counter[str] = Counter()
+    raw_labels: dict[str, str] = {}
     visible: set[str] = set()
     for chunk in _chunks(ids, max(1, int(chunk_size))):
         condition = [{"attr_id": "issue_id", "val": chunk, "operator": "like"}]
@@ -187,6 +190,8 @@ def read_trail_gt_labels(
                 raw_label = str(raw.get(label_column) or "").strip() or "<空>"
                 if allow_unmapped:
                     unmapped[raw_label] += 1
+                    if raw_label in TRAIL_GT_RAW_VALUES:
+                        raw_labels[issue_id] = raw_label
                     continue
                 return TrailGtSyncResult(
                     rows=list(output.values()),
@@ -235,4 +240,5 @@ def read_trail_gt_labels(
         message=message,
         unmapped_issues=sum(unmapped.values()),
         unmapped_values=tuple(sorted(unmapped.items())),
+        raw_labels=raw_labels,
     )

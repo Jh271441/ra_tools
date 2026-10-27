@@ -131,7 +131,7 @@ function issueCard(item, options = {}) {
           <div class="issue-card-flags">${reviewFlag}${sharedLabelFlag}</div>
         </div>
         <div class="issue-card-labels">
-          <span class="issue-label-pair"><small>GT</small>${labelBadge(item.gt_label, "—")}</span>
+          <span class="issue-label-pair"><small>GT</small>${labelBadge(gtDisplayLabel(item), "—")}</span>
           ${outputPair}
           ${!isLabeling ? currentRunReviewStatusMarkup(item, { compact: true }) : ""}
           ${historicalReview ? `<span class="issue-reviewer historical-review" title="${escapeHtml(historicalReviewTitle)}"><span class="ui-lang-zh">历史 Review</span><span class="ui-lang-en">Historical review</span></span>` : ""}
@@ -147,6 +147,7 @@ function caseGallerySignature(items) {
     items: (items || []).map((item) => ({
       issue_id: item.issue_id,
       gt_label: item.gt_label || "",
+      gt_raw_label: item.gt_raw_label || "",
       is_excluded: Boolean(item.is_excluded ?? item.annotation?.is_excluded),
       prediction: item.prediction
         ? {

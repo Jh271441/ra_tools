@@ -10,6 +10,7 @@ from ..db import LABELS, MODEL_LABELS, REVIEW_STATUSES
 from ..db_parts.labeling import ISSUE_LABEL_STATE_FILTERS
 from ..db_parts.model_reviews import MODEL_REVIEW_STATUSES
 from ..model_labels import canonical_model_label
+from ..gt_observations import TRAIL_GT_RAW_VALUES
 from ..review_analysis import COMPARISON_STATUSES
 from .baselines import resolve_request_baseline_scopes
 from .catalogs import (
@@ -81,8 +82,8 @@ def _case_filter_kwargs(
         raise _detail(400, "按模型标注筛选时必须选择 Model Run。")
     gt_labels = _csv_filter_values(gt_label)
     for label in gt_labels:
-        if label not in LABELS:
-            raise _detail(400, "gt_label 不在三分类范围内。")
+        if label not in (*LABELS, *TRAIL_GT_RAW_VALUES):
+            raise _detail(400, "不支持的 GT 筛选值 / Unsupported GT filter value")
     requested_statuses = _csv_filter_values(review_status)
     for status in requested_statuses:
         if status not in REVIEW_STATUSES and status not in MODEL_REVIEW_STATUSES:
