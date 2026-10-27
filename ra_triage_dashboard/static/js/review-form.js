@@ -1727,7 +1727,7 @@ async function saveCombinedReview(event) {
     if (!runId) {
       result = await submitCaseRationalePayload(issueId, "case-label-from-review", payload, imageItems);
       acknowledgeLocalChange(result);
-      showToast(result?.case_label?.case_action === "acknowledged" ? "已确认现有 Case vote。" : "已提交 Case 标签。 ");
+      showToast(uiText("标注已保存", "Label saved"));
     } else {
       const idempotencyKey = globalThis.crypto?.randomUUID?.() || `combined-${Date.now()}-${Math.random().toString(16).slice(2)}`;
       result = await submitCaseRationalePayload(issueId, "combined-review", payload, imageItems, { "Idempotency-Key": idempotencyKey });
@@ -1741,7 +1741,7 @@ async function saveCombinedReview(event) {
         caseData.label_state = combined.label_state || caseData.label_state;
         delete caseData.label_source_contexts;
       }
-      showToast(combined.case_action === "acknowledged" ? "联合复核已提交；现有 Case vote 已确认。" : "联合复核已原子提交。 ");
+      showToast(uiText("联合复核已保存", "Combined review saved"));
     }
     clearSavedCaseRationaleImages(imageKey, imageItems);
     if (state.selectedCase === caseData && combinedReviewContextKey(caseData) === contextKey) {
