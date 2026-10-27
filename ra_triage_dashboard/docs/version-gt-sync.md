@@ -21,3 +21,13 @@ snapshot replay, lock release, configured allowlists and the frontend comparison
 and status-selection behavior. Local full suite: 1023 passed, 14 skipped before
 the final lock regression; final focused suite: 69 passed. Responsive checks use
 the actual UI with synthetic read-only data, not production submissions.
+
+## Release verification
+
+Released as `2021f5a114835ce1454ec1104f038ef517e27c06` with frontend cache684.
+Exact-SHA cloud tests: 1031 passed, 7 skipped. Isolated gray and production
+PostgreSQL health checks passed; four served static resources matched the release.
+The existing scheduled worker completed the new sources successfully. Remaining
+unmapped authoritative values were checked separately, not coerced into GT.
+Production browser navigation timed out; signed-in visual verification is not
+claimed. Local UI checks covered 1440px Chinese/dark and 320/390px English/light.
