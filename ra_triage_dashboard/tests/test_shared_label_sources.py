@@ -41,7 +41,7 @@ assert.doesNotMatch(rendered,/<input|<button/);
 assert.match(sharedLabelRevisionTagsMarkup({tags:[]}),/此版本未填写/);
 assert.match(sharedLabelRevisionTagsMarkup({}),/未提供/);
 const summary=sharedLabelStateButtonMarkup({issue_id:'cn1',label_state:{state:'resolved',sources:Array(100).fill({})}}, {showEmpty:true,summaryOnly:true});
-assert.match(summary,/标签汇总/); assert.doesNotMatch(summary,/来源 100|GT 待复核|历史/);
+assert.match(summary,/aria-label="标注汇总与裁决"/); assert.match(summary,/>汇总</); assert.doesNotMatch(summary,/来源 100|GT 待复核|历史/);
 assert.match(summary,/aria-haspopup="dialog"/);
 assert.match(summary,/aria-keyshortcuts="L"/);assert.match(summary,/>L<\/kbd>/);
 const linked=sharedLabelStateSourceMarkup({...source,label_case_id:'label-hash-123'},'cn1',{
