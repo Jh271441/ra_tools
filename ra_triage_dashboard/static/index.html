@@ -86,7 +86,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-679`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-680`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -427,6 +427,7 @@
                       <button class="button button-primary" id="predictFilteredButton" type="button" disabled><span class="ui-lang-zh">预测当前筛选</span><span class="ui-lang-en">Predict selection</span></button>
                     </div>
                     <div class="gallery-heading-meta">
+                      <button class="button button-quiet" id="reviewNextPendingTaskButton" type="button" hidden><span class="ui-lang-zh">下一个待完成</span><span class="ui-lang-en">Next pending</span></button>
                       <span id="galleryResultSummary" data-i18n="gallery.loading">正在加载 Issue…</span>
                       <span class="count-pill" id="caseCount">—</span>
                     </div>
@@ -2540,7 +2541,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-679`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-680`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

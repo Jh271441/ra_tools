@@ -501,6 +501,79 @@ function currentReviewGalleryExportParams() {
   return params;
 }
 
+function reviewShowsAllTaskProgress() {
+  const progress = selectedCombinedTaskProgress();
+  return state.activePage === 'review' && isCombinedTaskProgressFilter()
+    && Boolean(state.reviewTaskContext) && !state.reviewTaskContextLoading
+    && !state.reviewTaskContextError
+    && (!progress.length || (progress.includes('pending') && progress.includes('completed')));
+}
+
+function renderNextPendingTaskButton() {
+  const button = $('#reviewNextPendingTaskButton');
+  if (!button) return;
+  button.hidden = !reviewShowsAllTaskProgress();
+  button.disabled = Boolean(state.reviewPendingJumpBusy || state.savingAnnotation);
+  button.textContent = state.reviewPendingJumpBusy
+    ? uiText('正在查找…', 'Finding…')
+    : uiText('下一个待完成', 'Next pending');
+  button.title = uiText('保留当前筛选，从本页开始查找下一个待完成任务', 'Keep current filters and find the next pending task from this page');
+}
+
+async function jumpToNextPendingTask() {
+  if (!reviewShowsAllTaskProgress() || state.reviewPendingJumpBusy || state.savingAnnotation) return;
+  const pageContext = capturePageContext();
+  const currentId = state.selectedId || '';
+  const params = currentReviewGalleryExportParams();
+  params.delete('format');
+  params.delete('gallery_scope');
+  const scope = params.toString();
+  const isCurrent = () => {
+    const now = currentReviewGalleryExportParams();
+    now.delete('format'); now.delete('gallery_scope');
+    return isPageContextCurrent(pageContext) && reviewShowsAllTaskProgress()
+      && (state.selectedId || '') === currentId && !state.savingAnnotation && now.toString() === scope;
+  };
+  const pendingParams = new URLSearchParams(params);
+  pendingParams.set('task_progress', 'pending');
+  state.reviewPendingJumpBusy = true;
+  renderNextPendingTaskButton();
+  try {
+    // Read the same ordered filtered queue, then find its next jointly pending
+    // member. Never apply the temporary progress predicate to the user's filters.
+    const [queue, pending] = await Promise.all([
+      api(`/api/cases/issue-ids?${params}`),
+      api(`/api/cases/issue-ids?${pendingParams}`),
+    ]);
+    if (!isCurrent()) return;
+    const ids = queue.issue_ids || [];
+    const pendingIds = new Set(pending.issue_ids || []);
+    const start = currentId ? ids.indexOf(currentId) + 1
+      : Math.max(0, (state.casePage - 1) * state.casePageSize);
+    const index = ids.findIndex((id, i) => i >= start && id !== currentId && pendingIds.has(id));
+    if (index < 0) {
+      showToast(uiText('当前筛选范围内，后续没有待完成任务。', 'No further pending tasks in the current filters.'));
+      return;
+    }
+    const targetId = ids[index];
+    const targetPage = Math.floor(index / state.casePageSize) + 1;
+    if (targetPage !== state.casePage || !state.cases.some(item => item.issue_id === targetId)) {
+      await loadCases({ keepSelection: true, page: targetPage });
+      if (!isCurrent()) return;
+    }
+    if (!state.cases.some(item => item.issue_id === targetId)) {
+      showToast(uiText('列表已变化，请重试跳转。', 'The list changed. Please try again.'));
+      return;
+    }
+    await selectCase(targetId, { historyMode: currentId ? 'replace' : 'push', preserveScrollY: window.scrollY });
+  } catch (error) {
+    if (isCurrent()) throw error;
+  } finally {
+    state.reviewPendingJumpBusy = false;
+    renderNextPendingTaskButton();
+  }
+}
+
 function downloadFilteredReviewIssues() {
   if (!Number(state.caseTotal || 0)) return;
   const params = currentReviewGalleryExportParams();
