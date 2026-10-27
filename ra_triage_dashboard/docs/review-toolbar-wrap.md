@@ -17,3 +17,7 @@ wide desktop stays on one row; mobile has no page-level horizontal overflow.
 Dropdown opening and Escape were checked. Fixture media intentionally has no
 playable video; this is toolbar/responsive acceptance, not video playback or
 signed-in production visual acceptance.
+
+Released as `6987309f570babbb9b5c6f06a10602a27c533723`, cache686.
+Cloud full suite: 1034 passed, 7 skipped. Isolated gray and production PostgreSQL
+health gates passed; no migration or business data mutation was part of the fix.
