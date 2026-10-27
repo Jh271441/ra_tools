@@ -264,7 +264,7 @@ function renderDetail(caseData, { preserveMedia = false } = {}) {
   ensureDetailMediaState(caseData);
   const predCount = (caseData.predictions || []).length;
   const modelHistoryButton = `<button class="history-inline-button" id="modelHistoryLaunchButton" type="button" data-open-history="model" aria-keyshortcuts="P" title="${escapeHtml(uiText("展开或收起评测 Run 历史（P）", "Toggle Run history (P)"))}"><span class="ui-lang-zh">评测 Run 历史 · ${predCount} 条</span><span class="ui-lang-en">Run history · ${predCount}</span><kbd class="review-control-shortcut" aria-hidden="true">P</kbd></button>`;
-  const predictionComparable = MODEL_LABELS.includes(primary?.model_label);
+  const predictionComparable = MODEL_LABELS.includes(primary?.model_label) && LABELS.includes(caseData.gt_label);
   const predictionMatches = modelLabelMatchesGt(primary?.model_label, caseData.gt_label);
   const compareText = !predictionComparable
     ? `<span class="ui-lang-zh">不可比较</span><span class="ui-lang-en">N/A</span>`

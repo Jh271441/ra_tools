@@ -81,9 +81,9 @@ function renderGtSyncTooltip(tooltip, items, current) {
   );
   heading.append(title, source);
   tooltip.append(heading);
-  if ((state.selectedBaselineIds || []).some((id) => PARTITION_0821_BASELINE_IDS.includes(id))) {
+  if ((state.selectedBaselineIds || []).some((id) => PARTITION_0821_BASELINE_IDS.includes(id) || current.baseline_sources?.[id])) {
     appendGtSyncTooltipRow(tooltip, uiText("校验范围", "Check scope"),
-      uiText("下列原始 GT 来源全量校验；不改变分区成员", "Full original GT sources below; partition membership is unchanged"));
+      uiText("下列原始 GT 来源全量校验；不改变数据集成员", "Full original GT sources below; dataset membership is unchanged"));
   }
 
   if (!items.length) {
@@ -146,6 +146,23 @@ function renderGtSyncTooltip(tooltip, items, current) {
   }
 }
 
+function selectedGtSyncItems(current) {
+  const allItems = Array.isArray(current.baselines) && current.baselines.length
+    ? current.baselines : current.baseline_id ? [current] : [];
+  const selected = normalizeBaselineIds(state.selectedBaselineIds, { fallback: [] });
+  if (!selected.length) return allItems;
+  const catalog = state.baselineCatalog || state.config?.baselines || [];
+  const sources = [...new Set(selected.flatMap(id =>
+    current.baseline_sources?.[id]?.length ? current.baseline_sources[id]
+      : catalog.find(item => item.id === id)?.source_ids?.length
+        ? catalog.find(item => item.id === id).source_ids : [id]))];
+  return sources.map(id => allItems.find(item => item.baseline_id === id) || {
+    baseline_id: id,
+    baseline_label: catalog.find(item => item.id === id)?.label || id,
+    status: 'unavailable',
+  });
+}
+
 function renderGtSyncStatus(status = null) {
   const current = status || state.gtSync || state.config?.gt_sync || {};
   state.gtSync = current;
@@ -156,19 +173,9 @@ function renderGtSyncStatus(status = null) {
   const tooltip = $("#gtSyncTooltip");
   if (!control || !meta || !time || !button || !tooltip) return;
 
-  const allItems = Array.isArray(current.baselines) && current.baselines.length
-    ? current.baselines
-    : current.baseline_id
-      ? [current]
-      : [];
-  const selected = new Set(normalizeBaselineIds(state.selectedBaselineIds, { fallback: [] }));
-  for (const item of state.baselineCatalog || state.config?.baselines || []) {
-    if (selected.has(item.id)) (item.source_ids || []).forEach((id) => selected.add(id));
-  }
-  const items = allItems.filter((item) => !selected.size || selected.has(String(item.baseline_id || "")));
-  const visibleItems = items.length ? items : allItems;
+  const visibleItems = selectedGtSyncItems(current);
   const names = visibleItems.map((item) => String(item.status || "not_started"));
-  const stateName = names.some((name) => name === "running") || current.status === "running"
+  const stateName = names.some((name) => name === "running")
     ? "running"
     : names.some((name) => ["failed", "unavailable"].includes(name))
       ? "failed"
@@ -184,6 +191,8 @@ function renderGtSyncStatus(status = null) {
   control.dataset.status = stateName;
   if (running) {
     time.textContent = uiText("同步中…", "Syncing…");
+  } else if (!ready) {
+    time.textContent = failed ? uiText("校验不可用", "Check unavailable") : uiText("待校验", "Awaiting check");
   } else if (single) {
     time.textContent = checkedTime || (ready
       ? uiText("已同步", "Synced")
@@ -201,7 +210,7 @@ function renderGtSyncStatus(status = null) {
     uiText(`GT 最近校验：${time.textContent}`, `Latest GT check: ${time.textContent}`)
   );
   renderGtSyncTooltip(tooltip, visibleItems, current);
-  button.disabled = running || current.enabled === false || Boolean(state.session?.read_only);
+  button.disabled = running || current.status === 'running' || current.enabled === false || Boolean(state.session?.read_only);
   button.classList.toggle("is-running", running);
   button.querySelector(".ui-lang-zh").textContent = running ? "同步中…" : "同步";
   button.querySelector(".ui-lang-en").textContent = running ? "Syncing…" : "Sync";

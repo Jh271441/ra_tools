@@ -8,6 +8,23 @@ from .shared import LABELS, utc_now
 class DatabaseGtSyncMixin:
     """Persist and atomically apply authoritative GT snapshots."""
 
+    def version_gt_sync_sources(self) -> dict[str, list[str]]:
+        """Local source identity only; no gallery/JSON/media aggregation."""
+        with self.connect() as conn:
+            rows = conn.execute("""
+                SELECT DISTINCT d.release_family, i.baseline_scope
+                FROM version_datasets d
+                LEFT JOIN version_dataset_items v ON v.dataset_id = d.id
+                LEFT JOIN issues i ON i.issue_id = v.issue_id
+                ORDER BY d.release_family, i.baseline_scope
+            """).fetchall()
+        sources: dict[str, list[str]] = {}
+        for row in rows:
+            scopes = sources.setdefault(str(row["release_family"]), [])
+            if row["baseline_scope"]:
+                scopes.append(str(row["baseline_scope"]))
+        return sources
+
     def _ensure_gt_sync_scope_lock_with_conn(self, conn: Any, scope: str) -> None:
         conn.execute(
             """

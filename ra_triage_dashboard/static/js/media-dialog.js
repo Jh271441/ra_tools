@@ -446,9 +446,11 @@ function renderMediaDialog() {
   const videoMode = state.media.kind === "video";
   const gtLabel = snapshot?.gtLabel || "";
   const modelLabel = snapshot?.modelLabel || "";
-  const predictionComparable = MODEL_LABELS.includes(modelLabel);
+  const predictionComparable = MODEL_LABELS.includes(modelLabel) && LABELS.includes(gtLabel);
   const predictionMatches = modelLabelMatchesGt(modelLabel, gtLabel);
-  const comparisonText = predictionComparable ? (predictionMatches ? "一致" : "不一致") : "未输出";
+  const comparisonText = predictionComparable
+    ? (predictionMatches ? uiText("一致", "Match") : uiText("不一致", "Mismatch"))
+    : uiText("不可比较", "N/A");
   const comparisonClass = predictionComparable && !predictionMatches ? "comparison-fail" : "comparison-neutral";
   $("#mediaDecisionSummary").hidden = Boolean(snapshot?.intentPreview);
   $("#mediaDecisionSummary").innerHTML = `

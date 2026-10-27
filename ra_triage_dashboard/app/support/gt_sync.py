@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import Any
 
 from ..gt_sync import TRAIL_GT_FIELD, read_trail_gt_labels
@@ -12,18 +13,60 @@ from ..runtime import baseline_registry, database, gt_sync_lock, runtime_state, 
 logger = logging.getLogger("ra_triage_dashboard")
 
 
+@dataclass(frozen=True)
+class _VersionGtSource:
+    id: str
+    label: str
+    scope: str
+    gt_mode: str = "sparse"
+
+
+def _gt_sync_catalog():
+    """Resolve version selectors to original GT sources, never move Issue rows.
+
+    The incremental scope is not a file-backed baseline. Discover it from the
+    registered version membership, and keep the ordinary full-scope snapshot
+    writer (including its membership race check) as the only apply path.
+    """
+    entries = {entry.id: entry for entry in baseline_registry.entries}
+    aliases = {}
+    for family, scopes in database.version_gt_sync_sources().items():
+        public_id = "version-" + family
+        source_ids = []
+        for scope in scopes:
+            source = baseline_registry.by_scope(scope)
+            if source is not None:
+                source_ids.append(source.id)
+            elif scope == "manual_sidecar_version_" + family:
+                entries[public_id] = _VersionGtSource(public_id, family[4:], scope)
+                source_ids.append(public_id)
+            else:
+                # An unknown source must not silently become a successful partial sync.
+                source_ids.append("unavailable:" + scope)
+        aliases[public_id] = list(dict.fromkeys(source_ids))
+    return entries, aliases
+
+
 def configured_gt_sync_baseline_ids() -> list[str]:
+    entries, aliases = _gt_sync_catalog()
+    return _configured_gt_sources(entries, aliases)
+
+
+def _configured_gt_sources(entries, aliases):
     configured = tuple(settings.gt_sync_baseline_ids)
     if "*" in configured:
-        return [entry.id for entry in baseline_registry.entries]
-    return list(dict.fromkeys(configured))
+        return list(entries)
+    return list(dict.fromkeys(source for key in configured
+                              for source in aliases.get(key, [key])))
 
 def resolve_gt_sync_baseline_ids(
     raw: Any = None,
     *,
     strict: bool = False,
+    _catalog=None,
 ) -> list[str]:
-    configured = configured_gt_sync_baseline_ids()
+    entries, aliases = _catalog or _gt_sync_catalog()
+    configured = _configured_gt_sources(entries, aliases)
     if raw is None or raw == "":
         return configured
     values: list[str] = []
@@ -41,10 +84,12 @@ def resolve_gt_sync_baseline_ids(
             raise ValueError("数据集分区暂不可用 / Dataset partition unavailable")
         requested = list(dict.fromkeys(part for value in requested
                                       for part in (SOURCE_IDS if value in PARTITION_IDS else [value])))
+    requested = list(dict.fromkeys(source for key in requested
+                                  for source in (aliases.get(key) or [key])))
     invalid = [
         baseline_id
         for baseline_id in requested
-        if baseline_id not in configured
+        if baseline_id not in configured or baseline_id not in entries
     ]
     if strict and invalid:
         raise ValueError(
@@ -53,10 +98,10 @@ def resolve_gt_sync_baseline_ids(
             + "；不支持："
             + "、".join(invalid)
         )
-    return [baseline_id for baseline_id in requested if baseline_id in configured]
+    return [baseline_id for baseline_id in requested if baseline_id in configured and baseline_id in entries]
 
-def _gt_sync_item(baseline_id: str) -> dict[str, Any]:
-    entry = baseline_registry.by_id(baseline_id)
+def _gt_sync_item(baseline_id: str, entries=None) -> dict[str, Any]:
+    entry = (entries if entries is not None else _gt_sync_catalog()[0]).get(baseline_id)
     if entry is None:
         return {
             "status": "unavailable",
@@ -74,6 +119,12 @@ def _gt_sync_item(baseline_id: str) -> dict[str, Any]:
     running = running_by_scope.get(entry.scope) or {}
     if running.get("status") == "running":
         persisted = {**persisted, **running}
+    target_count = (len(database.baseline_issue_ids(scope=entry.scope))
+                    if entry.gt_mode == "sparse" else int(persisted.get("source_row_count") or 0))
+    if (isinstance(entry, _VersionGtSource) and persisted.get("status") == "ready"
+            and (not active_snapshot or active_snapshot.get("member_count") != target_count)):
+        persisted = {**persisted, "status": "not_started",
+                     "message": "新增成员待校验 / New members await GT verification"}
     return {
         **persisted,
         "enabled": settings.gt_sync_enabled,
@@ -85,17 +136,14 @@ def _gt_sync_item(baseline_id: str) -> dict[str, Any]:
         "source_field": TRAIL_GT_FIELD,
         "gt_mode": entry.gt_mode,
         "active_gt_snapshot": active_snapshot,
-        "target_row_count": (
-            len(database.baseline_issue_ids(scope=entry.scope))
-            if entry.gt_mode == "sparse"
-            else int(persisted.get("source_row_count") or 0)
-        ),
+        "target_row_count": target_count,
     }
 
 def gt_sync_status(baseline_ids: Any = None) -> dict[str, Any]:
-    configured = configured_gt_sync_baseline_ids()
-    requested = resolve_gt_sync_baseline_ids(baseline_ids)
-    items = [_gt_sync_item(baseline_id) for baseline_id in requested]
+    catalog = _gt_sync_catalog()
+    configured = _configured_gt_sources(*catalog)
+    requested = resolve_gt_sync_baseline_ids(baseline_ids, _catalog=catalog)
+    items = [_gt_sync_item(baseline_id, catalog[0]) for baseline_id in requested]
     status_names = [str(item.get("status") or "not_started") for item in items]
     if not items:
         aggregate_status = "unavailable"
@@ -133,6 +181,7 @@ def gt_sync_status(baseline_ids: Any = None) -> dict[str, Any]:
             "enabled": settings.gt_sync_enabled,
             "baseline_ids": requested,
             "configured_baseline_ids": configured,
+            "baseline_sources": catalog[1],
             "baselines": items,
             "interval_seconds": settings.gt_sync_interval_seconds,
             "source_view_id": settings.gt_sync_view_id,
@@ -151,10 +200,11 @@ def gt_sync_status(baseline_ids: Any = None) -> dict[str, Any]:
     )
     return payload
 
-def _mark_authoritative_gt_sync_running(requested: list[str]) -> None:
+def _mark_authoritative_gt_sync_running(requested: list[str], entries=None) -> None:
+    entries = entries if entries is not None else _gt_sync_catalog()[0]
     running_by_scope = runtime_state.setdefault("gt_sync", {})
     for baseline_id in requested:
-        entry = baseline_registry.by_id(baseline_id)
+        entry = entries.get(baseline_id)
         if entry is None:
             continue
         running_by_scope[entry.scope] = {
@@ -175,10 +225,11 @@ def reserve_authoritative_gt_sync(
 ) -> tuple[list[str], bool]:
     """Reserve the global worker before returning an asynchronous HTTP accept."""
 
-    requested = resolve_gt_sync_baseline_ids(baseline_ids)
+    catalog = _gt_sync_catalog()
+    requested = resolve_gt_sync_baseline_ids(baseline_ids, _catalog=catalog)
     if not gt_sync_lock.acquire(blocking=False):
         return requested, False
-    _mark_authoritative_gt_sync_running(requested)
+    _mark_authoritative_gt_sync_running(requested, catalog[0])
     return requested, True
 
 def sync_authoritative_gt(
@@ -192,18 +243,19 @@ def sync_authoritative_gt(
 ) -> dict[str, Any]:
     """Read complete fixed Trail snapshots and atomically update local GT."""
 
-    requested = resolve_gt_sync_baseline_ids(baseline_ids)
     if not _lock_acquired and not gt_sync_lock.acquire(blocking=False):
         return {
-            **gt_sync_status(requested),
+            **gt_sync_status(baseline_ids),
             "status": "running",
             "message": "已有权威 GT 同步任务在运行。",
         }
     try:
+        catalog = _gt_sync_catalog()
+        requested = resolve_gt_sync_baseline_ids(baseline_ids, _catalog=catalog)
         running_by_scope = runtime_state.setdefault("gt_sync", {})
-        _mark_authoritative_gt_sync_running(requested)
+        _mark_authoritative_gt_sync_running(requested, catalog[0])
         for baseline_id in requested:
-            entry = baseline_registry.by_id(baseline_id)
+            entry = catalog[0].get(baseline_id)
             if entry is None:
                 continue
             try:

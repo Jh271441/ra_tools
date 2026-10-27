@@ -374,7 +374,7 @@ async def authoritative_gt_sync_status(
 ) -> dict[str, Any]:
     response.headers["Cache-Control"] = "no-store, max-age=0"
     try:
-        baseline_ids = resolve_gt_sync_baseline_ids(
+        baseline_ids = await asyncio.to_thread(resolve_gt_sync_baseline_ids,
             baselines or None,
             strict=bool(baselines),
         )
@@ -397,7 +397,7 @@ async def refresh_authoritative_gt(
     submitted = body.get("requested_by", "") if isinstance(body, dict) else ""
     submitted_baselines = body.get("baselines") if isinstance(body, dict) else None
     try:
-        baseline_ids = resolve_gt_sync_baseline_ids(
+        baseline_ids = await asyncio.to_thread(resolve_gt_sync_baseline_ids,
             submitted_baselines,
             strict=submitted_baselines not in (None, "", []),
         )
@@ -406,7 +406,7 @@ async def refresh_authoritative_gt(
     actor, actor_source, actor_verified = await asyncio.to_thread(
         _action_actor, request, submitted
     )
-    requested, accepted = reserve_authoritative_gt_sync(baseline_ids)
+    requested, accepted = await asyncio.to_thread(reserve_authoritative_gt_sync, baseline_ids)
     if accepted:
         background_tasks.add_task(
             sync_authoritative_gt,
