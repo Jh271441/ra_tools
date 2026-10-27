@@ -1032,6 +1032,30 @@ function renderRaEventRows(
   return rows.length;
 }
 
+function bindRaEventDialogFocus() {
+  const dialog = $("#raEventDialog");
+  if (!dialog || dialog.dataset.escapeFocusBound === "1") return;
+  dialog.dataset.escapeFocusBound = "1";
+  const releaseTriggerFocus = () => {
+    if (document.querySelector("dialog[open]")) return false;
+    const active = document.activeElement;
+    if (!active?.matches?.("[data-open-ra-event]")) return false;
+    active.blur();
+    return true;
+  };
+  // Native dialog dismissal restores its opener before the close event. Release
+  // only that trigger, never a field the user has moved to in the meantime.
+  dialog.addEventListener("close", () => window.requestAnimationFrame(releaseTriggerFocus));
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || event.defaultPrevented || event.isComposing
+        || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+    if (releaseTriggerFocus()) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  });
+}
+
 function openRaEventDialog(caseData) {
   if (!caseData) return;
   const externalLinks = caseData.external_links || {};

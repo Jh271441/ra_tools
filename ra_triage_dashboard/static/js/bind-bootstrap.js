@@ -725,6 +725,7 @@ function bindEvents() {
     );
   });
   $("#raEventSearchButton").addEventListener("click", () => $("#raEventSearchInput")?.focus());
+  bindRaEventDialogFocus();
   $("#raEventDialog").addEventListener("close", () => {
     state.raEventDialog = { issueId: "", events: [], trailUrl: "", t0TimestampMs: NaN };
   });
