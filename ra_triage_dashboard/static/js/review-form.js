@@ -206,11 +206,46 @@ function syncExpectedOutputFromTags() {
 }
 
 // Refresh read-only sidebar metadata without replacing the editable form/draft.
+// Change display text only: draft inputs, attachments, listeners and focus survive.
+function refreshReviewFormLanguage() {
+  const root = $("#reviewPane");
+  if (!root?.querySelector("#annotationForm")) return;
+  applyDomI18n(root);
+  applyI18nPlaceholders(root);
+  root.querySelectorAll("[data-tag-dropdown-group]").forEach(dropdown => {
+    const label = dropdown.querySelector(".tag-group-label")?.textContent || "";
+    const creator = dropdown.querySelector("[data-open-review-tag-creator]");
+    if (creator) {
+      creator.dataset.tagCreateGroupLabel = label;
+      creator.title = uiText(`新增${label}标签`, `Add ${label} tag`);
+      creator.setAttribute("aria-label", creator.title);
+    }
+    const shortcut = dropdown.querySelector(".tag-group-shortcut");
+    if (shortcut) shortcut.title = uiText(`按 ${shortcut.textContent} 展开或收起`, `Press ${shortcut.textContent} to toggle`);
+  });
+  const status = root.querySelector("#modelReviewStatusInput");
+  if (status) {
+    for (const option of status.options) {
+      const definition = MODEL_REVIEW_STATUS_OPTIONS.find(item => item.value === option.value);
+      if (definition) option.textContent = uiText(definition.labelZh, definition.labelEn);
+    }
+    status.title = uiText("M 打开；1 待复核 / 2 已完成；Enter 保存", "M opens; 1 Needs review / 2 Completed; Enter saves");
+    enhanceNativeUiSelect(status);
+  }
+  updateTagSummary();
+  updateEvidenceSummary();
+  syncReviewTagCreatorPlacement(root);
+  renderCombinedReviewContextStatus();
+  enhanceDashboardSelects(root);
+}
+
 function renderReviewSummary(caseData) {
   const shared = $("#reviewSharedLabelState");
   if (shared) {
+    const restoreFocus = shared.contains(document.activeElement);
     shared.innerHTML = sharedLabelStateButtonMarkup(caseData, { showEmpty: true, summaryOnly: true });
     bindSharedLabelStateTriggers(shared, () => caseData);
+    if (restoreFocus) shared.querySelector("button")?.focus({preventScroll:true});
   }
 }
 
@@ -430,6 +465,7 @@ function savedOwnCaseRationale(caseData) {
 }
 
 function renderReview(caseData) {
+  if (typeof isReviewDecisionEditor === "function" && isReviewDecisionEditor()) return;
   const reviewRunId = currentReviewRunId(caseData);
   const runBoundModelReview = Boolean(reviewRunId);
   const combinedMode = syncReviewWorkflowMode(caseData) === "model_review_and_case_label";
@@ -833,7 +869,7 @@ function renderCombinedReviewContextStatus() {
     || Boolean(state.session?.read_only) || $("#annotationForm")?.dataset.expectedOutputConflict === "1";
 }
 
-async function loadCombinedReviewContext(caseData) {
+async function loadCombinedReviewContext(caseData, {preserveForm = false} = {}) {
   if (state.selectedCase !== caseData || state.activePage !== "review") return;
   const requestSeq = (state.combinedReviewContextRequestSeq || 0) + 1;
   state.combinedReviewContextRequestSeq = requestSeq;
@@ -870,10 +906,10 @@ async function loadCombinedReviewContext(caseData) {
     }
     // Exclusion must hydrate even when other fields have a restored/early draft.
     // Only the Case-specific draft flag can override the current Case revision.
-    populateCombinedCaseExclusion(context, caseData);
+    if (!preserveForm) populateCombinedCaseExclusion(context, caseData);
     // A delayed initial load or retry must not overwrite edits or a restored draft.
-    if (!state.reviewFormDirty && !reviewDraftForCase(caseData)) populateCombinedCaseLabel(context, caseData);
-    else {
+    if (!preserveForm && !state.reviewFormDirty && !reviewDraftForCase(caseData)) populateCombinedCaseLabel(context, caseData);
+    else if (!preserveForm) {
       const rationale = $("#combinedCaseRationale");
       if (rationale && rationale.dataset.caseRationaleDirty !== "1" && rationale.dataset.hasCaseDraft !== "1") {
         rationale.value = String(context.case_revision?.rationale || "");
@@ -1060,6 +1096,7 @@ function scheduleTrailDetailMetadata(issueId, requestSeq) {
 }
 
 async function refreshReviewCorePreservingMedia() {
+  if (typeof isReviewDecisionEditor === "function" && isReviewDecisionEditor()) return;
   const previous = state.selectedCase;
   if (!previous || previous.media_status !== "ready") {
     return selectCase(state.selectedId, { updateRoute: false });
@@ -1083,6 +1120,10 @@ async function selectCase(
   { updateRoute = true, historyMode = "push", preserveScrollY = null } = {}
 ) {
   if (!issueId || state.activePage !== "review") return;
+  if (typeof isReviewDecisionEditor === "function" && isReviewDecisionEditor()) {
+    if (caseLabelDecisionUi.saving) return;
+    exitCaseDecisionEditor();
+  }
   const preservedScrollY = Number.isFinite(Number(preserveScrollY))
     ? Math.max(0, Number(preserveScrollY))
     : null;
@@ -1353,6 +1394,15 @@ function bindReviewDetailActionShortcuts() {
     const target = event.target instanceof Element ? event.target : null;
     if (reviewShortcutHasEditableTarget(target)) return;
     const key = String(event.key || "").toLowerCase();
+    if (isReviewDecisionEditor() && !event.shiftKey && ["j", "l", "d", "e"].includes(key)) {
+      const dialog = $("#caseLabelDecisionDialog");
+      if (["j", "l"].includes(key) && dialog?.open) dialog.close();
+      else if (document.querySelector("dialog[open]")) return;
+      else if (["j", "l"].includes(key)) openCaseLabelDecision(caseLabelDecisionUi.editor.data, {compareEditor:caseLabelDecisionUi.editor});
+      else if (key === "d") $("#caseLabelingOpenDiscussion")?.click();
+      else { closeAllReviewDropdowns(); $("#caseLabelingRationale")?.focus(); }
+      event.preventDefault(); event.stopPropagation(); return;
+    }
     if (event.shiftKey && key !== "d") return;
     const caseDiscussion = !event.shiftKey && Boolean($("#issueLabelCommentsButton")) && !$("#issueLabelCommentsButton").closest("[hidden]");
     const discussionKind = caseDiscussion ? "labeling" : "review";
@@ -1382,11 +1432,11 @@ function bindReviewDetailActionShortcuts() {
       closeDialog("raEventDialog");
       return;
     }
-    const labelSummaryDialog = $("#sharedLabelStateDialog");
+    const labelSummaryDialog = $("#caseLabelDecisionDialog")?.open ? $("#caseLabelDecisionDialog") : $("#sharedLabelStateDialog");
     if (key === "l" && labelSummaryDialog?.open) {
       event.preventDefault();
       event.stopPropagation();
-      closeDialog("sharedLabelStateDialog");
+      labelSummaryDialog.close();
       return;
     }
     if (document.querySelector("dialog[open]")) return;

@@ -10,7 +10,7 @@ class IssueDecisionDialogBehaviorTest(unittest.TestCase):
         source=Path(__file__).resolve().parents[1]/'static/js/case-label-decision.js'
         script=r'''
 const fs=require('fs'),vm=require('vm'),assert=require('assert/strict');
-let current=true,write=true,fail=true,posts=[],release,hold=false;
+let current=true,write=true,fail=true,posts=[],paths=[],release,hold=false;
 const input={value:'judge explanation',checked:true,attributes:{},setAttribute(k,v){this.attributes[k]=v},focus(){this.focused=true}};const error={textContent:''},confirmError={textContent:''};
 const form={querySelectorAll(){return []}};
 Object.assign(global,{document:{},$:key=>key==='#caseLabelingForm'?form:key==='#caseDecisionEditorError'?error:key==='#caseDecisionConfirmError'?confirmError:input,
@@ -19,7 +19,7 @@ Object.assign(global,{document:{},$:key=>key==='#caseLabelingForm'?form:key==='#
  selectedBaselineQueryValue:()=> '0508',enhanceDashboardSelects(){},showToast(){},acknowledgeLocalChange(){},
  caseLabelingFormPayload:()=>({expected_output:'误触发',tags:['tag'],evidence_gaps:[],rationale:'label evidence',is_excluded:false}),
  caseLabelingOutputValidation:()=>({conflict:false}),
- api:async(path,opts)=>{posts.push(JSON.parse(opts.body));if(hold)await new Promise(r=>release=r);if(fail)throw Error('409 sources changed');return {decision:{id:8}}}
+ api:async(path,opts)=>{paths.push(path);posts.push(JSON.parse(opts.body));if(hold)await new Promise(r=>release=r);if(fail)throw Error('409 sources changed');return {decision:{id:8}}}
 });
 vm.runInThisContext(fs.readFileSync(process.argv[1],'utf8'));
 function reset(){caseLabelDecisionUi.editor={key:'draft',baselines:'0508',pageContext:{},data:{issue_id:'cn1',label_state:{source_fingerprint:'fp',decision:{id:7}}},adoptedId:2,retained:[],images:[],rationale:'judge explanation',ordinary:{images:['ordinary image'],dirty:true}};}
@@ -42,6 +42,9 @@ refreshCaseDecisionResult=async()=>{refreshes++};
  input.checked=true;updateCaseDecisionConfirmation();assert.equal(confirmError.textContent,'');assert.equal(input.attributes['aria-invalid'],'false');
  input.checked=true;input.value='';await adjudicateIssueLabel();assert.equal(posts.length,1);
  assert.equal(posts[0].rationale,'');assert.equal(posts[0].label_rationale,'label evidence');
+ state.activePage='review';state.selectedId='cn1';state.selectedRunId='model-run';state.reviewWorkSplitId='campaign';
+ reset();posts=[];paths=[];await adjudicateIssueLabel();assert.equal(paths[0],'/api/labeling/issues/cn1/decisions');
+ assert.equal(posts[0].model_run_id,undefined);assert.equal(posts[0].campaign_id,undefined);assert.equal(posts[0].is_excluded,false);assert.equal(posts[0].adopted_revision_id,2);
 })().catch(e=>{console.error(e);process.exitCode=1});
 '''
         result=subprocess.run(['node','-e',script,str(source)],capture_output=True,text=True)

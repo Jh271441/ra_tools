@@ -27,7 +27,7 @@ function caseExclusionTrailText(data) {
   return typeof data.dashboard_should_exclude === "boolean" ? caseExclusionText(data.dashboard_should_exclude) : uiText("未设置", "Unset");
 }
 function refreshCaseExclusionSummary() {
-  const c = caseLabelDecisionUi.context, data = state.caseLabeling.caseData;
+  const c = caseLabelDecisionUi.context, data = state.activePage === "review" ? state.selectedCase : state.caseLabeling.caseData;
   if (!c || !data || !$("#caseLabelDecisionDialog")?.open) return;
   if (!isPageContextCurrent(c.pageContext) || c.caseData.issue_id !== data.issue_id || c.baselines !== selectedBaselineQueryValue()) { $("#caseLabelDecisionDialog").close(); return; }
   // Deferred Trail metadata can update facts without replacing the editor or draft.

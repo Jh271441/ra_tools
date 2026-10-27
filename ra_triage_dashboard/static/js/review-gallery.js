@@ -409,6 +409,10 @@ async function changeCasePageSize(value) {
 }
 
 function returnToReviewGallery() {
+  if (typeof isReviewDecisionEditor === "function" && isReviewDecisionEditor()) {
+    if (caseLabelDecisionUi.saving) return;
+    exitCaseDecisionEditor();
+  }
   clearPendingReviewImages();
   if (window.history.state?.openedFromGallery) {
     window.history.back();

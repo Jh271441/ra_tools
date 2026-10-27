@@ -23,26 +23,29 @@ function renderReviewTagGroups(tagCatalog, chosenTags, tagOption) {
   const definitions = [
     {
       section: "scene",
+      labelKey: "tag.scene",
       label: t("tag.scene"),
       groups: [
-        { key: "environment", label: t("tag.env"), shortcut: "Q" },
-        { key: "self_intent", label: t("tag.ego_intent"), shortcut: "W" },
+        { key: "environment", labelKey: "tag.env", label: t("tag.env"), shortcut: "Q" },
+        { key: "self_intent", labelKey: "tag.ego_intent", label: t("tag.ego_intent"), shortcut: "W" },
       ],
     },
     {
       section: "interaction_decision",
+      labelKey: "tag.trigger",
       label: t("tag.trigger"),
       groups: [
-        { key: "false_trigger", label: t("tag.false_trigger"), shortcut: "A" },
-        { key: "true_trigger", label: t("tag.should_trigger"), shortcut: "S" },
+        { key: "false_trigger", labelKey: "tag.false_trigger", label: t("tag.false_trigger"), shortcut: "A" },
+        { key: "true_trigger", labelKey: "tag.should_trigger", label: t("tag.should_trigger"), shortcut: "S" },
       ],
     },
     {
       section: "egress",
+      labelKey: "tag.egress",
       label: t("tag.egress"),
       groups: [
-        { key: "ra", label: t("tag.correct_trigger"), shortcut: "Z" },
-        { key: "no_assist", label: t("tag.no_assist"), shortcut: "X" },
+        { key: "ra", labelKey: "tag.correct_trigger", label: t("tag.correct_trigger"), shortcut: "Z" },
+        { key: "no_assist", labelKey: "tag.no_assist", label: t("tag.no_assist"), shortcut: "X" },
       ],
     },
   ];
@@ -59,7 +62,7 @@ function renderReviewTagGroups(tagCatalog, chosenTags, tagOption) {
     return `
     <div class="review-tag-axis" data-tag-section="${escapeHtml(section.section)}">
       <div class="review-tag-axis-title">
-        <span>${escapeHtml(section.label)}</span>
+        <span data-i18n="${section.labelKey}">${escapeHtml(section.label)}</span>
         <span class="review-axis-selected" data-selected-tags-section="${escapeHtml(section.section)}"${sectionItems.length ? "" : " hidden"}>${selectedChipMarkup(sectionItems, section.section)}</span>
       </div>
       <div class="review-tag-groups">
@@ -71,7 +74,7 @@ function renderReviewTagGroups(tagCatalog, chosenTags, tagOption) {
           const creatorAction = `<button class="tag-catalog-add-button" type="button" data-open-review-tag-creator="${escapeHtml(group.key)}" data-tag-create-group-label="${escapeHtml(group.label)}" aria-label="${escapeHtml(uiText(`新增${group.label}标签`, `Add ${group.label} tag`))}" title="${escapeHtml(uiText(`新增${group.label}标签`, `Add ${group.label} tag`))}">＋<span class="mobile-tag-create-copy"><span class="ui-lang-zh">新增标签</span><span class="ui-lang-en">Add tag</span></span></button>`;
           return `<details class="review-tag-dropdown review-dropdown" data-tag-dropdown-group="${escapeHtml(group.key)}" data-tag-dropdown-shortcut="${escapeHtml(group.shortcut)}">
             <summary>
-              <span class="tag-group-label">${escapeHtml(group.label)}</span>
+              <span class="tag-group-label" data-i18n="${group.labelKey}">${escapeHtml(group.label)}</span>
               <kbd class="review-control-shortcut tag-group-shortcut" aria-hidden="true" title="${escapeHtml(uiText(`按 ${group.shortcut} 展开或收起`, `Press ${group.shortcut} to toggle`))}">${escapeHtml(group.shortcut)}</kbd>
               <span class="tag-group-trailing">
                 ${creatorAction}
@@ -345,7 +348,7 @@ function bindMissingEvidenceCatalogControls(root = document) {
 
 function activeReviewChromeRoot() {
   if (typeof $ !== "function") return document;
-  if (state.activePage === "labeling") return $("#caseLabelingEditor") || document;
+  if (state.activePage === "labeling" || (typeof isReviewDecisionEditor === "function" && isReviewDecisionEditor())) return $("#caseLabelingEditor") || document;
   return $("#reviewPane") || document;
 }
 
@@ -374,11 +377,11 @@ function updateTagSummary() {
         group: input.dataset.tagGroup || "",
       }));
     container.innerHTML = selected
-      .map((item) => `<button class="tag-group-selected-chip" type="button" data-remove-review-tag="${escapeHtml(item.key)}" data-remove-review-tag-group="${escapeHtml(item.group)}" data-tag-section="${escapeHtml(section)}" data-tag-group="${escapeHtml(item.group)}" title="取消选择 ${escapeHtml(item.label)}"><span>${escapeHtml(item.label)}</span><b aria-hidden="true">×</b></button>`)
+      .map((item) => `<button class="tag-group-selected-chip" type="button" data-remove-review-tag="${escapeHtml(item.key)}" data-remove-review-tag-group="${escapeHtml(item.group)}" data-tag-section="${escapeHtml(section)}" data-tag-group="${escapeHtml(item.group)}" title="${escapeHtml(uiText(`取消选择 ${item.label}`, `Deselect ${item.label}`))}"><span>${escapeHtml(item.label)}</span><b aria-hidden="true">×</b></button>`)
       .join("");
     container.hidden = selected.length === 0;
   });
-  if (state.activePage === "labeling") {
+  if (state.activePage === "labeling" || (typeof isReviewDecisionEditor === "function" && isReviewDecisionEditor())) {
     if (typeof syncCaseLabelingExpectedOutputFromTags === "function") {
       syncCaseLabelingExpectedOutputFromTags();
     }
@@ -479,7 +482,7 @@ function handleReviewDropdownKeyboard(event) {
 
 function submitActiveReviewForm() {
   if (state.savingAnnotation) return;
-  if (state.activePage === "labeling") {
+  if (state.activePage === "labeling" || (typeof isReviewDecisionEditor === "function" && isReviewDecisionEditor())) {
     $("#caseLabelingForm")?.requestSubmit();
     return;
   }
@@ -606,7 +609,7 @@ function bindReviewKeyboardShortcuts() {
       event.metaKey ||
       event.altKey ||
       !(
-        (state.activePage === "review" && state.selectedCase && document.querySelector("#annotationForm"))
+        (state.activePage === "review" && state.selectedCase && (document.querySelector("#annotationForm") || (typeof isReviewDecisionEditor === "function" && isReviewDecisionEditor())))
         || (state.activePage === "labeling" && state.caseLabeling?.issueId && document.querySelector("#caseLabelingForm"))
       ) ||
       document.querySelector("dialog[open]")

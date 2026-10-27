@@ -1902,6 +1902,10 @@ async function changeAnalysisPageSize(value) {
 }
 
 function clearDetail({ showGallery = true } = {}) {
+  if (typeof isReviewDecisionEditor === "function" && isReviewDecisionEditor()) {
+    if (caseLabelDecisionUi.saving) return;
+    exitCaseDecisionEditor();
+  }
   if (typeof cancelCaseHydration === "function") cancelCaseHydration();
   state.selectedId = "";
   state.selectedCase = null;

@@ -53,6 +53,7 @@
     "case-labeling.js",
     "labeling-combined-tasks.js",
     "case-label-decision.js",
+    "review-issue-decision.js",
     "case-exclusion-decision.js",
     "media-dialog.js",
     "batch-gateway.js",
