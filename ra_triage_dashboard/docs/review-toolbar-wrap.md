@@ -14,6 +14,10 @@ with Run history aligned to the content edge. 320/390px English/light preserve
 the mobile layout without visible horizontal overflow. No real playback or
 signed-in production browser verification is claimed.
 
+Released `fb73389e8ed9ee8a6b3f0d4b902b27297caede17` at 2026-10-27 22:18:35 CST.
+Cloud: 1034 passed, 7 skipped. Isolated gray, production PostgreSQL health and
+unchanged policy gates passed. Served CSS/loader match release; cache688 verified.
+
 ## Compact single-row follow-up
 
 The user prefers a single desktop row, not a better-aligned wrapped row. Detail
