@@ -31,6 +31,15 @@ existing tablet breakpoint to avoid overlapping controls.
 
 ## Release
 
+Placement correction deployed `59af7029ab1785a8ad48689590968bd6c46d4dbb`, cache692,
+at2026-10-28 13:11:52 CST: info sits beside the Review data scope label, above
+its picker, with no card-wide heading row.74 frontend contracts and24 local
+browser combinations passed, including relative title/info/picker geometry.
+Cloud1043passed/7skipped, isolated gray and production PostgreSQL health passed;
+served shell/loader/analysis/mobile styles verified. Receipt:
+`/volume/home/workspace/ra_triage_dashboard_deploy/releases/20261028T050903Z-59af7029ab17/result.json`.
+Signed-in production visual acceptance was not repeated.
+
 Deployed `cff092f39f88db7af3ea460836038835ea578d48`, cache691, at
 2026-10-28 11:38:05 CST. Cloud tests: 1043 passed, 7 skipped; isolated SQLite
 gray and exact production SHA/PostgreSQL health passed. Served loader, core,
