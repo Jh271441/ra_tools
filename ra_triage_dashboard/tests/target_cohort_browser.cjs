@@ -34,7 +34,8 @@ const server=http.createServer((req,res)=>{
       loadCaseLabelingCases=async()=>{window.fixtureParams=caseLabelingListParams().toString();persistCaseLabelingRoute();};
       bindCaseLabelingEvents();
     });
-    for(const width of [1440,390,320])for(const lang of ['zh','en'])for(const theme of ['dark','light'])for(const view of ['review','labeling']){
+    const columnWidths = new Map();
+    for(const width of [1920,1440,1180,1025,1024,768,390,320])for(const lang of ['zh','en'])for(const theme of ['dark','light'])for(const view of ['review','labeling']){
       await page.setViewportSize({width,height:1000});
       await page.evaluate(({view,lang,theme})=>{
         closeAllUiSelects();state.activePage=view;state.uiLanguage=lang;
@@ -47,6 +48,30 @@ const server=http.createServer((req,res)=>{
       },{view,lang,theme});
       const selector=view==='review'?'#reviewTargetGroupPicker':'#caseLabelingTargetGroupPicker';
       const trigger=page.locator(selector+' .ui-select-trigger');
+      // Both galleries use the same unit; context fields span exactly two units.
+      for(const progress of [false,true]) {
+        const layout=await page.evaluate(({view,progress})=>{
+          document.querySelector('#reviewTaskProgressField').hidden=!progress;
+          const form=document.querySelector(view==='review'?'#filterForm':'#caseLabelingFilterForm');
+          const wide='.filter-model-run,.filter-search,.review-task-filter,.review-workflow-mode,.case-labeling-search,.case-labeling-task';
+          const fields=[...form.children].filter(e=>e.getBoundingClientRect().width&&e.tagName!=='BUTTON');
+          return {gap:parseFloat(getComputedStyle(form).columnGap),fields:fields.map(e=>({
+            width:e.getBoundingClientRect().width,bottom:e.getBoundingClientRect().bottom,wide:e.matches(wide)
+          }))};
+        },{view,progress});
+        const normal=layout.fields.filter(e=>!e.wide);
+        const unit=normal[0].width;
+        assert.ok(normal.every(e=>Math.abs(e.width-unit)<1),JSON.stringify({width,view,layout}));
+        if(width>=1025){
+          assert.ok(unit>=140);
+          assert.ok(layout.fields.filter(e=>e.wide).every(e=>Math.abs(e.width-(unit*2+layout.gap))<1));
+          const key=`${width}-${lang}-${theme}`;
+          if(columnWidths.has(key))assert.ok(Math.abs(columnWidths.get(key)-unit)<1,`cross-page column width: ${key}`);
+          columnWidths.set(key,unit);
+        }
+        if(width===1920)assert.ok(new Set(layout.fields.map(e=>Math.round(e.bottom))).size<=2,JSON.stringify({width,view,lang,progress,layout}));
+      }
+      await page.evaluate(()=>{document.querySelector('#reviewTaskProgressField').hidden=true;});
       await trigger.scrollIntoViewIfNeeded();
       await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
       await trigger.click();
@@ -72,7 +97,8 @@ const server=http.createServer((req,res)=>{
       const bounds=await page.evaluate(()=>({width:innerWidth,scroll:document.documentElement.scrollWidth}));
       assert.ok(bounds.scroll<=width+1);
       if(width<640)assert.ok((await trigger.boundingBox()).height>=44);
-      if((width===1440&&lang==='zh'&&theme==='dark')||(width===320&&lang==='en'&&theme==='light'))await page.screenshot({path:`/tmp/target-cohort-${view}-${width}.png`});
+      if(([1440,1920].includes(width)&&lang==='zh'&&theme==='dark')||(width===320&&lang==='en'&&theme==='light'))await page.screenshot({path:`/tmp/target-cohort-${view}-${width}.png`});
+      if(width===1440&&lang==='zh'&&theme==='dark')await page.locator(view==='review'?'#filterForm':'#caseLabelingFilterForm').screenshot({path:`/tmp/equal-filter-${view}.png`});
       await trigger.click();await page.locator(selector+' [data-ui-select-value=""]').click();
       assert.equal(new URL(page.url()).searchParams.has('target_group'),false);
       if(view==='labeling'){

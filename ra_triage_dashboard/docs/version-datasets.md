@@ -57,6 +57,24 @@ not physical-device acceptance; signed-in checks are separately recorded above. 
 
 ## Interaction and performance
 
+### Equal-width gallery filters (2026-10-28 candidate, cache701; not deployed)
+
+Review and Case labeling now share an adaptive desktop grid with a140px minimum
+column unit and8px gaps. Ordinary categorical fields use one unit; Run, search,
+task and Review mode use two. Reset stays compact at the right edge. Remove the
+old per-field/nth-child spans rather than layering another override. At1920px
+both filter bars fit two rows; narrower desktops wrap without squeezing normal
+fields. Original DOM order, shared dropdown widgets, values and query semantics
+stay unchanged. Final tablet/phone layout is still owned by mobile.css.
+
+Validation:51 frontend/path contracts and6 subtests passed. The actual-module
+browser fixture covers64 combinations at320/390/768/1024/1025/1180/1440/1920px,
+both languages/themes/pages, plus task-progress hidden/visible in each. It checks
+equal widths within/across pages, double-width fields,1920px two-row alignment,
+popup boundaries, keyboard/Escape, selection/URL persistence, reset and phone
+44px targets/no page overflow. Screenshots were visually inspected. This is
+isolated viewport testing, not production or physical-device verification.
+
 One enhanced version selector covers each live release plus0821. Cards show model output/confidence, TE status, owner, trigger and arrival/occurrence times. Image opens the existing media preview; Issue identity retains its combined-review link. BEV/Camera, TE status, reason, date, Issue search, order and pagination are URL-restorable. The default order is latest registry arrival; bootstrap records may share a timestamp. Source-update, occurrence and Issue order remain available.
 
 Overview and gallery paint independently of global Review/GT bootstrap.24-case pages and at most4 near-viewport thumbnail loads keep images bounded. Unchanged polling retains card/image DOM; hidden tabs pause. Failed same-scope refreshes preserve the result; a scope change clears stale cards/TE/export before loading. Import history loads only while expanded. The occurrence-day chart is supplementary and collapsed by default. Shared selects, Chinese/English, theme variables and responsive styles are retained.

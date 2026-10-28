@@ -49,14 +49,10 @@ body[data-active-page^="labeling"] .header-metrics { display: none; }
 /* metrics carried margin-left:auto; keep the right cluster right-aligned. */
 body[data-active-page^="labeling"] .gt-sync-control { margin-left: auto; }
 
-#caseLabelingFilterForm.case-labeling-filters,
 #labelSummaryFilterForm.case-labeling-filters {
   grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 .case-labeling-filters .filter-submit { align-self: end; min-height: 34px; }
-@media (min-width: 1180px) {
-  #caseLabelingFilterForm.case-labeling-filters { grid-template-columns: repeat(6, minmax(0, 1fr)); }
-}
 .case-labeling-command[hidden],
 #caseLabelingGallery .gallery-pagination[hidden] { display: none !important; }
 .case-labeling-page .gallery-heading h2 { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
