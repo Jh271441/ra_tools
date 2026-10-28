@@ -160,3 +160,21 @@ configuration and PostgreSQL health verified. The follow-up fixes deployment
 ownership through delayed shutdown, and adds the requested composition order
 and compact result rows (cache696). Release status is recorded below after
 the exact-SHA production checks.
+
+## Released 2026-10-28 15:55:29 CST
+
+Production is `e286c6b7c7f9a08c2145891c9b1a209c93d2b402`, cache696.
+The split prepare/promote release passed 1047 cloud tests (7 skipped), isolated
+gray, exact runtime SHA, persistent PostgreSQL and overall health. Served shell,
+loader, version module and version/mobile CSS match the exact commit. Access and
+writer policy are unchanged; no schema migration. Receipt:
+`/volume/home/workspace/ra_triage_dashboard_deploy/releases/20261028T075121Z-e286c6b7c7f9/result.json`.
+
+Follow-up local checks passed 126 tests; IAB verified six complete result rows,
+composition before TE, 1440px Chinese/dark and 320/390px English/light with no
+horizontal overflow or clipped chart content. English result labels include
+Succeeded and Out of scope; source values remain untouched. Production Chrome
+and IAB control timed out, so authenticated visual acceptance is not claimed.
+The standard retention policy removed only the older unused clean candidate and
+rollback trees of release `20261028T050903Z-59af7029ab17`; Git history and small
+release records remain recoverable. No business data was removed.
