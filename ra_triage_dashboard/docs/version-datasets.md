@@ -57,7 +57,17 @@ not physical-device acceptance; signed-in checks are separately recorded above. 
 
 ## Interaction and performance
 
-### Equal-width gallery filters (2026-10-28 candidate, cache701; not deployed)
+### Equal-width gallery filters (2026-10-28 released, cache701)
+
+Released isolated commit276be79c73489a842c062686e06da214b0fb8e3c at
+2026-10-28T13:12:53Z, based on current production09f943d. Existing RD and raw
+planning-constraint features are retained. Main checkout/master remain unchanged;
+production runs the managed candidate under release20261028T130931Z-276be79c7348.
+Cloud1078passed/7skipped, isolated gray, exact production SHA/resources and
+persistent PostgreSQL/overall health passed. After merging the live baseline,
+90 local tests/15 subtests and all64 browser combinations passed again. Signed-in
+Chrome and IAB automation timed out; no production visual or physical-device
+acceptance is claimed. No migration, labels, GT or business-data mutation.
 
 Review and Case labeling now share an adaptive desktop grid with a140px minimum
 column unit and8px gaps. Ordinary categorical fields use one unit; Run, search,
