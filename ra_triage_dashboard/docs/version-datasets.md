@@ -57,6 +57,97 @@ not physical-device acceptance; signed-in checks are separately recorded above. 
 
 ## Interaction and performance
 
+### Statistics-first filters and bounded reads (2026-10-28 candidate, cache701)
+
+Whole-version metric cards and version composition precede the filter toolbar.
+The toolbar has Dataset, Case scope and Occurrence date. The former View picker
+only grouped case modes; its two-stage interaction is removed, with all nine
+existing modes available in the shared enhanced Case scope selector. API values,
+legacy mode URLs and statistical scope remain unchanged. Metric cards remain
+whole-version/all-dates; composition still follows occurrence date independently
+of gallery-only filters.
+
+Catalog reads are reused for30seconds. Workbench responses have a30-second,
+12-entry in-memory cache keyed by every server filter and page, excluding the
+display-only media choice. Fresh revisits reuse results; uncached scope changes
+read only workbench while the catalog is fresh. Duplicate live reads coalesce;
+aborted/late responses neither paint nor enter cache. Manual refresh and normal
+polling bypass/clear cached responses. Cache hits schedule refresh for the
+remaining lifetime, so switching scopes cannot extend freshness indefinitely.
+
+Within one dataset, scope changes retain charts with an explicit previous-scope
+notice until the replacement arrives. Old actionable cards/export clear at once.
+Errors retain that notice and a retry message; changing datasets clears old
+charts. Retained chart scope, controls and errors remain bilingual through
+language changes. Media-only changes keep the page and do not re-read statistics.
+No backend, database, label, membership or permission changes.
+
+Local gate:78 tests and6 subtests passed, including deferred-request races,
+catalog reuse, cache/TTL/force refresh, bounds, media-only changes, retained-scope
+labels and disabled stale export. Browser validation uses the actual modules and
+synthetic read-only preview at1440px Chinese/dark,320/390px English/light, and768px
+with responsive reflow. Scope selection, keyboard/Escape/outside closing, popup
+bounds,44px phone controls, locale retention, failure/recovery and empty results
+were checked. No page overflow was observed. This is not production-data or
+physical-phone acceptance. Candidate is not deployed.
+
+### Accepted chart colors integrated (2026-10-28 candidate, cache702)
+
+Ported the final accepted palette from the local “优化界面色彩” conversation
+(`codex/chart-semantic-colors`), not its earlier red/yellow or single-blue trials.
+TE result categories use theme-aware cyan/blue/teal/indigo/slate tokens, bound to
+raw values rather than rank or translated labels. Each result shows count and
+share of filled results above its full-width bar. Desktop remains progress,
+results, daily progress; existing phone order is preserved. Tablet reflow starts
+at1240px. Statistics-first layout and bounded-read strategy above remain intact.
+
+The same color task's GT donut fix is included: zero-count categories no longer
+shift remaining arcs onto another legend color; explicit item colors and original
+palette positions are preserved. No global alert colors, data or GT meaning change.
+RD statistics are unchanged. The cache703 follow-up below supersedes the
+initial integration's separate RD color contract.
+
+80 scoped tests and6 subtests pass, including zero-state GT combinations,
+TE category/locale stability, shares, empty results and the bounded-read tests.
+Combined preview verified at1440px Chinese/dark and320/390/1240/1241px English/light:
+category colors, count/share rows and wrapping, no page overflow, unchanged card
+order, scope switching and read failure/recovery. These are synthetic-data browser
+viewport checks; the GT fix is covered by actual SVG-renderer regression tests,
+not a new signed-in production visual check.
+This combined candidate is local only; neither source task is deployed by this
+integration, and the other worktree is left untouched.
+
+### Same label, same color (2026-10-29 candidate, cache703)
+
+TE result bars and RD classification legends/segments share `versionLabelColor`,
+keyed by the raw label: correct trigger uses teal, false trigger blue, and no
+assistance cyan. No duplicate RD category palette remains. RD labeled/pending
+also reuse TE's completed/pending tokens. Conflict/unknown retain their distinct
+status meanings; global GT status colors and data are unchanged.
+Regression checks require identical TE/RD mappings and both RD legend/segment
+colors in Chinese/English. Browser computed colors match at1440px Chinese/dark
+and320/390px English/light, with no page overflow.80 tests and6 subtests pass.
+Preview only; no deployment or physical-device testing.
+
+### Distinct classification colors (2026-10-29 candidate, cache704)
+
+Supersedes cache703's palette: correct trigger stays teal, false trigger becomes
+muted rose, and no assistance becomes blue. TE/RD still share `versionLabelColor`
+for both marks and legends. Light/dark tokens are explicit; labels and percentages
+remain available rather than relying on color alone. Layout and counts are unchanged.
+
+Reason analysis and Labeling summary share the GT donut: to-update blue,
+needs-attention muted indigo (no yellow), matches-GT teal. Zero-count categories
+retain their legend color; global success/warning/error tokens are unchanged.
+The preview-only `?colors=1` fixture appends two actual GT component examples
+(needs-attention zero/nonzero); this is not a new production version-page section.
+
+80 tests and6 subtests passed, including palette identity and zero-slice cases.
+IAB checked1440px Chinese in both themes and320/390px English/light: no page-level
+overflow; computed TE/RD colors match. Narrow RD legends retain their existing
+local scrolling. These are resized-browser checks, not physical-device tests.
+Local preview only; cache704 has not been deployed.
+
 ### RD overview (cache699)
 
 Two compact blocks below TE show RD completion and the three-class distribution.
@@ -103,7 +194,7 @@ switched production; fixes load real RD/planning modules in existing fixtures.
 
 One enhanced version selector covers each live release plus0821. Cards show model output/confidence, TE status, owner, trigger and arrival/occurrence times. Image opens the existing media preview; Issue identity retains its combined-review link. BEV/Camera, TE status, reason, date, Issue search, order and pagination are URL-restorable. The default order is latest registry arrival; bootstrap records may share a timestamp. Source-update, occurrence and Issue order remain available.
 
-Overview and gallery paint independently of global Review/GT bootstrap.24-case pages and at most4 near-viewport thumbnail loads keep images bounded. Unchanged polling retains card/image DOM; hidden tabs pause. Failed same-scope refreshes preserve the result; a scope change clears stale cards/TE/export before loading. Import history loads only while expanded. The occurrence-day chart is supplementary and collapsed by default. Shared selects, Chinese/English, theme variables and responsive styles are retained.
+Overview and gallery paint independently of global Review/GT bootstrap.24-case pages and at most4 near-viewport thumbnail loads keep images bounded. Unchanged polling retains card/image DOM; hidden tabs pause. Failed same-scope refreshes preserve the gallery; scope changes clear stale cards/export while retaining explicitly marked charts within the same dataset. Import history loads only while expanded. The occurrence-day chart remains visible for incremental versions. Shared selects, Chinese/English, theme variables and responsive styles are retained.
 
 ## Incremental graph
 

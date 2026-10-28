@@ -11,13 +11,24 @@ class VersionFrontendBehaviorTest(unittest.TestCase):
         html = (root / 'index.html').read_text()
         self.assertLess(html.index('id="versionDatasetSummary"'), html.index('class="version-composition"'))
         self.assertLess(html.index('class="version-composition"'), html.index('id="versionTEPanel"'))
+        self.assertLess(html.index('class="version-composition"'), html.index('class="review-commandbar version-filter-panel"'))
+        self.assertNotIn('id="versionDatasetView"', html)
         self.assertLess(html.index('id="versionTEPanel"'), html.index('id="versionRDPanel"'))
         self.assertLess(html.index('id="versionRDPanel"'), html.index('class="gallery-panel version-gallery"'))
         css = (root / 'css/version-datasets.css').read_text()
         chart = css.split('.version-result-chart {', 1)[1].split('}', 1)[0]
         self.assertNotIn('max-height', chart)
         self.assertNotIn('overflow', chart)
-        self.assertIn('minmax(32px,1fr) max-content', css)
+        self.assertIn('grid-column:1/-1;grid-row:2', css)
+        self.assertIn('background:var(--te-result-color,var(--muted))', css)
+        self.assertLess(html.index('id="versionTEDistribution"'), html.index('id="versionTEDays"'))
+        self.assertEqual(html.count('id="versionTEAllDates"'), 1)
+        self.assertIn('--version-low:var(--chart-primary)', css)
+        self.assertIn('.version-rd .rd-filled {background:var(--te-done)}', css)
+        self.assertIn('.version-rd .rd-pending {background:var(--te-pending)}', css)
+        self.assertIn('background:var(--version-label-color,var(--muted))', css)
+        tokens = (root / 'styles.css').read_text()
+        self.assertEqual(tokens.count('--chart-primary: color-mix(in srgb, var(--accent) 65%, var(--muted))'), 2)
 
     @unittest.skipUnless(shutil.which("node"), "Node is required")
     def test_date_toggle_cancellation_and_scope_safe_chart_retention(self):
@@ -72,32 +83,14 @@ assert.equal($('#versionDatasetDate').disabled,true);
 assert.equal(versionDatasetState.date,'');
 assert.equal(requests.length,5);
 versionDatasetChange({mode:'sampled_targets',assignee:'alice',teStatus:'filled',reviewStatus:'pending'});
-assert.equal(versionDatasetView(),'review');
 assert.equal(versionDatasetScopeLabel(),'随机抽样集');
-assert.equal($('#versionTEScope').textContent,'');
-assert.equal($('#versionTEPanel').hidden,false);
-assert.equal($('#versionDatasetSummary').hidden,false);
-assert.equal($('#versionDatasetView').value,'review');
-assert.equal(($('#versionDatasetMode').innerHTML.match(/<option/g)||[]).length,3);
-assert.ok(!$('#versionDatasetMode').innerHTML.includes('value="samples"'));
-switchVersionDatasetView('processing');
-assert.equal(versionDatasetState.mode,'all');
-assert.equal(versionDatasetState.teStatus,'filled');
-assert.equal(versionDatasetState.assignee,'alice');
-assert.equal($('#versionTEPanel').hidden,false);
-assert.equal($('#versionDatasetView').value,'processing');
-assert.equal(($('#versionDatasetMode').innerHTML.match(/<option/g)||[]).length,6);
-assert.ok(!$('#versionDatasetMode').innerHTML.includes('value="sampled_targets"'));
+assert.equal(($('#versionDatasetMode').innerHTML.match(/<option/g)||[]).length,9);
+assert.ok($('#versionDatasetMode').innerHTML.includes('value="samples"'));
+assert.ok($('#versionDatasetMode').innerHTML.includes('value="source_waiting"'));
 versionDatasetChange({mode:'source_waiting'});
-switchVersionDatasetView('review');
-assert.equal(versionDatasetState.mode,'sampled_targets');
 assert.equal(versionDatasetState.teStatus,'filled');
 assert.equal(versionDatasetState.assignee,'alice');
-switchVersionDatasetView('processing');
-assert.equal(versionDatasetState.mode,'source_waiting');
 assert.equal(new URL(location.href).searchParams.get('mode'),'source_waiting');
-for(const mode of ['all','samples','waiting','published','excluded','source_waiting'])assert.equal(versionDatasetView(mode),'processing');
-for(const mode of ['targets','low','sampled_targets'])assert.equal(versionDatasetView(mode),'review');
 location.pathname='/version-datasets';location.search='?dataset=A&mode=samples&date=2026-10-20&te_status=unknown';
 versionDatasetRoute();syncVersionDatasetViews();
 assert.equal(versionDatasetState.mode,'samples');
@@ -105,12 +98,8 @@ assert.equal($('#versionDatasetMode').value,'samples');
 assert.equal(versionDatasetState.date,'2026-10-20');
 assert.equal(versionDatasetState.teStatus,'unknown');
 assert.equal(versionDatasetRouteOptions().mode,'samples');
-versionDatasetState.viewMemory={review:'low',processing:'samples'};
-versionDatasetRoute();
-assert.equal(versionDatasetState.viewMemory.review,'low');
 location.search='?dataset=B&mode=sampled_targets';
 versionDatasetRoute();syncVersionDatasetViews();
-assert.deepEqual(versionDatasetState.viewMemory,{});
 assert.equal($('#versionDatasetMode').value,'sampled_targets');
 const beforeLocale=JSON.stringify(versionDatasetState);
 global.uiText=(_,en)=>en;
@@ -118,14 +107,35 @@ assert.equal(versionTEResult('成功'),'Succeeded');
 assert.equal(versionTEResult('超出范围'),'Out of scope');
 assert.equal(versionTEResult('out_of_scope'),'Out of scope');
 assert.equal(versionTEResult('custom result'),'custom result');
+// Result categories use stable distinct hues, not success/warning/error colors.
+for(const [value,color] of [['成功','chart-teal'],['正确触发','chart-teal'],['失败','chart-indigo'],['误触发','chart-rose'],['无需协助','chart-blue'],['未接起','chart-slate'],['超出范围','muted'],['out_of_scope','muted'],['custom result','muted'],['__proto__','muted']]) {
+  assert.equal(versionLabelColor(value),'var(--'+color+')');
+}
+global.dailyReviewStatusRows=()=>[];
+global.withBase=value=>value;
+$('#versionTEDailyChart').contains=()=>false;
+const sample={dataset:{historical:false},te:{summary:{total:10,filled:10,unfilled:0,unknown:0},source_status:'ready',distribution:[{value:'成功',count:2},{value:'误触发',count:8}],daily:[]}};
+renderVersionTE(sample);
+assert.doesNotMatch($('#versionTEDistribution').innerHTML,/--fail|--warn|--ok/);
+assert.ok($('#versionTEDistribution').innerHTML.includes('--te-result-color:var(--chart-rose)'));
+assert.ok($('#versionTEDistribution').innerHTML.includes('<small>80.0%</small>'));
+assert.match($('#versionTEDistribution').innerHTML,/False trigger.*width:80%/);
+assert.match($('#versionTEDistribution').innerHTML,/Succeeded.*width:20%/);
+global.uiText=zh=>zh;
+sample.te.distribution.reverse();renderVersionTE(sample);
+assert.doesNotMatch($('#versionTEDistribution').innerHTML,/--fail|--warn|--ok/);
+assert.match($('#versionTEDistribution').innerHTML,/误触发/);
+sample.te.summary={total:0,filled:0,unfilled:0,unknown:0};sample.te.distribution=[];renderVersionTE(sample);
+assert.match($('#versionTEDistribution').innerHTML,/暂无已标结果/);
+assert.doesNotMatch($('#versionTEDistribution').innerHTML,/NaN|Infinity/);
+global.uiText=(_,en)=>en;
 syncVersionDatasetViews();
 assert.ok($('#versionDatasetMode').innerHTML.includes('Low confidence (excluding samples)'));
 assert.equal($('#versionDatasetMode').value,'sampled_targets');
 assert.equal(JSON.stringify(versionDatasetState),beforeLocale);
-switchVersionDatasetView('processing');
+versionDatasetChange({mode:'all'});
 assert.equal(versionDatasetState.mode,'all');
 versionDatasetChange({dataset:'C'});
-assert.deepEqual(versionDatasetState.viewMemory,{});
 renderVersionRD({total:10,completed:5,pending:3,conflict:2,distribution:{'正确触发':3,'误触发':2,'无需协助':0}});
 const rd=$('#versionRDPanel');
 assert.ok(rd.innerHTML.includes('50.0%'));
@@ -133,6 +143,24 @@ assert.ok(rd.innerHTML.includes('60.0%'));
 assert.ok(rd.innerHTML.includes('section-heading version-chart-heading'));
 assert.equal((rd.innerHTML.match(/class="page-card version-rd-block"/g)||[]).length,2);
 assert.ok(rd.innerHTML.includes('Labeled'));
+for(const language of ['zh','en']) {
+  global.uiText=(zh,en)=>language==='zh'?zh:en;
+  renderVersionRD({total:6,completed:6,pending:0,conflict:0,distribution:{'正确触发':3,'误触发':2,'无需协助':1}});
+  for(const label of ['正确触发','误触发','无需协助']) {
+    const color=versionLabelColor(label);
+    assert.equal(rd.innerHTML.split('--version-label-color:'+color).length-1,2,'legend and chart must match TE: '+label);
+  }
+}
+global.uiText=(_,en)=>en;
+renderVersionRD({total:10,completed:5,pending:3,conflict:2,distribution:{'正确触发':3,'误触发':2,'无需协助':0}},false,{mode:'sampled_targets',date:'2026-10-22'});
+assert.ok(rd.innerHTML.includes('Random sample · 2026-10-22'));
+global.dailyReviewStatusRows=()=>[];
+$('#versionTEDailyChart').contains=()=>false;
+$('#versionDatasetExport').hidden=false;
+renderVersionTE({dataset:{historical:false},te:{summary:{total:10,filled:5,unfilled:3,unknown:2},distribution:[],daily:[],source_status:'ready'}},{scope:{mode:'sampled_targets',date:'2026-10-22',assignee:'alice',reviewStatus:'pending'},exportReady:false});
+assert.ok($('#versionTEScope').textContent.includes('2026-10-22 · Random sample · 10 targets'));
+assert.ok($('#versionTEScope').textContent.includes('alice · Combined review pending'));
+assert.equal($('#versionDatasetExport').hidden,true,'retained chart never enables old-scope export');
 renderVersionRD({total:10,completed:0,pending:10,conflict:0,distribution:{'正确触发':0,'误触发':0,'无需协助':0}});
 assert.ok(rd.innerHTML.includes('No valid classifications yet'));
 assert.ok(!rd.innerHTML.includes('NaN'));
