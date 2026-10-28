@@ -27,3 +27,14 @@ existing tablet breakpoint to avoid overlapping controls.
 - These are local browser viewport tests, not physical phones, native simulators
   or signed-in production acceptance. Release gates and live verification are
   recorded by the deployment receipt.
+
+## Release
+
+Deployed `cff092f39f88db7af3ea460836038835ea578d48`, cache691, at
+2026-10-28 11:38:05 CST. Cloud tests: 1043 passed, 7 skipped; isolated SQLite
+gray and exact production SHA/PostgreSQL health passed. Served loader, core,
+work-split, comparison and shared/mobile CSS match the commit. Production shell
+contains the info panel and neither old paragraph. Receipt:
+`/volume/home/workspace/ra_triage_dashboard_deploy/releases/20261028T033459Z-cff092f39f88/result.json`.
+Chrome and IAB control both timed out, so signed-in production visual acceptance
+is not claimed. No GT, Review, task, model-output or schema mutation.
