@@ -20,6 +20,22 @@ FAMILY = '20261009'
 DATASET = 'release-20261009-odd2'
 
 
+def preview_rd_summary(rows):
+    """Synthetic manual labels only; never use prediction or joint completion."""
+    counts = {'正确触发': 0, '误触发': 0, '无需协助': 0}
+    pending = conflict = 0
+    for row in rows:
+        sample = int(row['issue_id'][2:]) % 10
+        if sample < 3:
+            pending += 1
+        elif sample == 3:
+            conflict += 1
+        else:
+            counts['正确触发' if sample < 7 else '误触发' if sample < 9 else '无需协助'] += 1
+    return dict(source='manual_issue_labels', source_status='ready', total=len(rows), completed=sum(counts.values()), pending=pending,
+                conflict=conflict, distribution=counts, synthetic=True)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--port', type=int, default=8794)
@@ -50,7 +66,8 @@ def main():
             dataset='1009', date='', snapshot_revision='a'*64, last_success_at=datetime.now(timezone.utc).isoformat(), rows=observations)))
         (folder.parent/'version-membership-1009.json').write_text('{"schema_version":1}')
         catalog = dict(id=DATASET, release_family=FAMILY, targets=24, total=40, revision=1, historical=False)
-        db = SimpleNamespace(list_version_datasets=lambda:[catalog], version_dataset_gallery_rows=lambda _:json.loads(json.dumps(rows)))
+        db = SimpleNamespace(list_version_datasets=lambda:[catalog], version_dataset_gallery_rows=lambda _:json.loads(json.dumps(rows)),
+                             version_dataset_rd_summary=lambda ids:preview_rd_summary([{'issue_id':iid} for iid in ids]))
 
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):
@@ -83,7 +100,7 @@ def main():
                     page = source[start:end].replace('version-datasets-page hidden', 'version-datasets-page')
                     styles = re.findall(r'"([^"\n]+\.css)"', source.split('const stylesheetPaths = [')[1].split('];')[0])
                     links = ''.join(f'<link rel="stylesheet" href="/static/{p}">' for p in styles)
-                    scripts = ''.join(f'<script src="/static/js/{p}.js"></script>' for p in ['core-base','i18n-messages','i18n','format-api','daily-review','version-datasets'])
+                    scripts = ''.join(f'<script src="/static/js/{p}.js"></script>' for p in ['core-base','i18n-messages','i18n','format-api','daily-review','version-datasets','version-rd'])
                     html = f'''<!doctype html><html lang="zh-CN" data-ui-lang="zh" data-color-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>版本筛选 · 本地预览</title>{links}</head>
 <body data-active-page="version-datasets"><main style="padding:12px;max-width:1504px;margin:auto;min-width:0">
 <header class="section-heading" style="flex-wrap:wrap;gap:12px"><h1><span class="ui-lang-zh">版本数据</span><span class="ui-lang-en">Version data</span></h1><span class="muted"><span class="ui-lang-zh">本地预览 · 示例数据 · 无真实媒体</span><span class="ui-lang-en">Local preview · Sample data · No real media</span></span><div class="ui-choice-group"><button class="button button-secondary" id="previewLanguage" type="button">EN / 中文</button><button class="button button-secondary" id="previewTheme" type="button">Light / 深色</button><button class="button button-secondary" id="previewFailure" type="button">Error / 失败</button></div></header>{page}</main>{scripts}<script>

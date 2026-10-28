@@ -5,7 +5,7 @@ import json
 import re
 import uuid
 from datetime import datetime
-from .shared import utc_now
+from .shared import LABELS, utc_now
 from .version_run_consolidation import VersionRunConsolidationMixin
 from .version_dataset_rules import encoded
 from .assignment_rules import ASSIGNMENT_SUBMITTED_SQL
@@ -13,6 +13,45 @@ from .version_campaigns import VersionCampaignsMixin
 
 
 class DatabaseVersionDatasetsMixin(VersionCampaignsMixin, VersionRunConsolidationMixin):
+    def version_dataset_rd_summary(self, issue_ids):
+        """Counts only, using Manual's model-free, current Issue label projection.
+
+        Membership is supplied by the filtered version targets. Original Issue
+        baseline scopes remain authoritative, including cross-scope Campaigns.
+        Missing labels are pending; GT/predictions/joint acknowledgements are
+        never a substitute. Bound each projection to avoid oversized IN queries.
+        """
+        ids = sorted(set(issue_ids))
+        distribution = dict.fromkeys(LABELS, 0)
+        pending = conflict = 0
+        with self.connect() as conn:
+            for offset in range(0, len(ids), 400):
+                batch = ids[offset:offset + 400]
+                rows = conn.execute(
+                    f"SELECT issue_id, baseline_scope FROM issues WHERE issue_id IN ({','.join('?' for _ in batch)})",
+                    batch,
+                ).fetchall()
+                by_scope = {}
+                for row in rows:
+                    by_scope.setdefault(str(row['baseline_scope'] or ''), []).append(str(row['issue_id']))
+                projected = {}
+                for scope, members in by_scope.items():
+                    projected.update(self.project_issue_label_states(
+                        scope, members, include_sources=False, connection=conn,
+                    ))
+                for iid in batch:
+                    label = projected.get(iid, {})
+                    state, output = label.get('state'), label.get('expected_output')
+                    if state == 'resolved' and output in distribution:
+                        distribution[output] += 1
+                    elif state in {'conflict', 'stale'}:
+                        conflict += 1
+                    else:
+                        pending += 1
+        return dict(source='manual_issue_labels', source_status='ready', total=len(ids),
+                    completed=sum(distribution.values()), pending=pending, conflict=conflict,
+                    distribution=distribution)
+
     def ingest_version_dataset(self, *, family, policy, items, batch_key, actor):
         if (
             not re.fullmatch(r"20\d{6}", family)

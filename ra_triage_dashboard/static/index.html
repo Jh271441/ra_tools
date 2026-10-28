@@ -86,7 +86,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-698`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-699`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -1858,6 +1858,7 @@
               </section>
               <section class="page-card version-chart-card version-days" id="versionTEDays"><div class="section-heading version-chart-heading version-days-heading"><h2><span class="ui-lang-zh">每日进度</span><span class="ui-lang-en">Daily progress</span><small><span class="ui-lang-zh">已标 / 目标 · 发生日 CST</span><span class="ui-lang-en">Filled / targets · Occurred CST</span></small></h2><button type="button" class="button button-secondary version-dates-reset" id="versionTEAllDates" data-version-all-dates aria-pressed="true"><span class="ui-lang-zh">全部日期</span><span class="ui-lang-en">All dates</span></button></div><div class="te-daily-chart" id="versionTEDailyChart"></div></section>
             </div>
+            <div id="versionRDPanel" class="version-rd" role="group" data-label-zh="RD 标注概览" data-label-en="RD annotation overview" aria-label="RD 标注概览"><p class="version-rd-empty"><span class="ui-lang-zh">正在读取 RD 标注…</span><span class="ui-lang-en">Loading RD annotations…</span></p></div>
             <section class="gallery-panel version-gallery">
               <header class="gallery-heading"><div class="section-heading version-gallery-heading"><h2><span class="ui-lang-zh">案例列表</span><span class="ui-lang-en">Cases</span></h2><form id="versionDatasetSearchForm"><input id="versionDatasetSearch" type="search" placeholder="Issue ID" aria-label="Issue ID" maxlength="128" /><button class="button button-quiet" type="submit"><span class="ui-lang-zh">搜索</span><span class="ui-lang-en">Search</span></button></form></div><div class="version-gallery-filters"><label class="version-filter-field" ><span><span class="ui-lang-zh">负责人</span><span class="ui-lang-en">Assignee</span></span><select id="versionDatasetOwner" data-label-zh="负责人" data-label-en="Assignee" aria-label="负责人"><option value="" data-zh="全部负责人" data-en="All assignees">全部负责人</option></select></label><label class="version-filter-field" ><span><span class="ui-lang-zh">联合复核</span><span class="ui-lang-en">Combined review</span></span><select id="versionDatasetReviewStatus" data-label-zh="联合复核状态" data-label-en="Combined review status" aria-label="联合复核状态"><option value="all" data-zh="全部复核状态" data-en="All review states">全部复核状态</option><option value="pending" data-zh="联合待办" data-en="Review pending">联合待办</option><option value="completed" data-zh="联合已完成" data-en="Review completed">联合已完成</option></select></label><label class="version-filter-field" ><span><span class="ui-lang-zh">TE 状态</span><span class="ui-lang-en">TE status</span></span><select id="versionDatasetTEStatus" data-label-zh="TE 状态" data-label-en="TE status" aria-label="TE 状态"><option value="all" data-zh="全部 TE 状态" data-en="All TE states">全部 TE 状态</option><option value="unfilled" data-zh="TE 待标" data-en="TE pending">TE 待标</option><option value="filled" data-zh="TE 已标" data-en="TE filled">TE 已标</option><option value="unknown" data-zh="TE 未知" data-en="TE unknown">TE 未知</option></select></label><label class="version-filter-field" ><span><span class="ui-lang-zh">媒体</span><span class="ui-lang-en">Media</span></span><select id="versionDatasetMedia" data-label-zh="媒体" data-label-en="Media" aria-label="媒体"><option value="bev">BEV</option><option value="camera">Camera</option></select></label><label class="version-filter-field" ><span><span class="ui-lang-zh">排序</span><span class="ui-lang-en">Sort</span></span><select id="versionDatasetSort" data-label-zh="案例排序" data-label-en="Case order" aria-label="案例排序"><option value="added" data-zh="最新入库" data-en="Recently added">最新入库</option><option value="updated" data-zh="最近更新" data-en="Recently updated">最近更新</option><option value="occurred" data-zh="最近发生" data-en="Recently occurred">最近发生</option><option value="issue" data-zh="Issue 编号" data-en="Issue ID">Issue 编号</option></select></label><a class="button button-secondary" id="versionDatasetExport" hidden><span class="ui-lang-zh">导出 CSV</span><span class="ui-lang-en">Export CSV</span></a></div></header>
               <p id="versionDatasetError" class="muted" role="status"></p>
@@ -2567,7 +2568,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-698`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-699`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

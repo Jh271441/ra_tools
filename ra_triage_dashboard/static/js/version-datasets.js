@@ -42,6 +42,7 @@ function versionDatasetRouteOptions(options={}) {
 }
 function clearVersionDatasetMembers({keepCharts=false}={}){
   const s=versionDatasetState;s.members=null;s.gridKey='';s.observer?.disconnect();s.observer=null;s.imageEpoch++;
+  s.rdFailed=false;renderVersionRD();
   $('#versionDatasetGrid').replaceChildren();$('#versionDatasetPageLabel').textContent='';
   $('#versionDatasetPrev').disabled=true;$('#versionDatasetNext').disabled=true;
   $('#versionDatasetBatches').textContent='';$('#versionDatasetExport').hidden=true;
@@ -75,6 +76,7 @@ function renderVersionDatasets({force=false}={}) {
   const el=$('#versionDatasetsPage');
   el.querySelectorAll('[data-zh]').forEach(e=>e.textContent=uiText(e.dataset.zh,e.dataset.en));
   el.querySelectorAll('[data-label-zh]').forEach(e=>e.setAttribute('aria-label',uiText(e.dataset.labelZh,e.dataset.labelEn)));
+  renderVersionRD(s.members?.dataset_id===s.dataset?s.members.rd:null,Boolean(s.rdFailed));
   syncVersionDatasetViews();
   if(!s.data)return;
   const picker=$('#versionDatasetPicker');
@@ -142,6 +144,7 @@ async function loadVersionDatasetBatches(){
 }
 async function loadVersionDatasets(){
   const s=versionDatasetState;if(!s.active||document.hidden)return;
+  s.rdFailed=false;$('#versionRDPanel').setAttribute('aria-busy','true');
   clearTimeout(s.timer);const seq=++s.seq;s.controller?.abort();const controller=new AbortController();s.controller=controller;
   const valid=()=>s.active&&seq===s.seq&&!controller.signal.aborted;
   $('#versionDatasetError').textContent=uiText('读取中…','Loading…');$('#versionDatasetGrid').setAttribute('aria-busy','true');$('#versionTEPanel').setAttribute('aria-busy','true');
@@ -156,8 +159,8 @@ async function loadVersionDatasets(){
       if(!valid())return;s.members=members;renderVersionDatasets();void loadVersionDatasetBatches();
     }
     $('#versionDatasetError').textContent='';
-  }catch(error){if(valid())$('#versionDatasetError').textContent=uiText('读取失败，保留上次结果。可点击刷新重试。','Read failed. Previous results retained; refresh to retry.');}
-  finally{if(valid()){$('#versionDatasetGrid').setAttribute('aria-busy','false');$('#versionTEPanel').setAttribute('aria-busy','false');if(!document.hidden)s.timer=setTimeout(loadVersionDatasets,30000);}}
+  }catch(error){if(valid()){s.rdFailed=true;$('#versionDatasetError').textContent=uiText('读取失败，保留上次结果。可点击刷新重试。','Read failed. Previous results retained; refresh to retry.');renderVersionRD(null,true);}}
+  finally{if(valid()){$('#versionDatasetGrid').setAttribute('aria-busy','false');$('#versionTEPanel').setAttribute('aria-busy','false');$('#versionRDPanel').setAttribute('aria-busy','false');if(!document.hidden)s.timer=setTimeout(loadVersionDatasets,30000);}}
 }
 function bindVersionDatasets(){
   const s=versionDatasetState;if(s.bound)return;s.bound=true;bindVersionTEInfo();

@@ -199,6 +199,10 @@ def workbench(db, root, dataset_id, *, page=1, page_size=24, mode='targets', q='
         return True
     scoped = [r for r in rows if in_scope(r)]
     targets = [r for r in scoped if r.get('is_target')]
+    # Match TE's current-target denominator before gallery-only TE filtering or
+    # pagination. Historical 0821 has no version-registry Manual contract.
+    rd = (dict(source='manual_issue_labels', source_status='unsupported') if historical
+          else db.version_dataset_rd_summary([r['issue_id'] for r in targets]))
     grouped = {}
     for row in rows:
         if row.get('is_target') and row['date'] and in_scope(row, False):
@@ -212,12 +216,12 @@ def workbench(db, root, dataset_id, *, page=1, page_size=24, mode='targets', q='
         field = {'added':'first_seen', 'updated':'updated_at', 'occurred':'_occurred'}[sort]
         selected.sort(key=lambda r:(r.get(field) or (0 if field=='_occurred' else ''), int(r['issue_id'][2:])), reverse=True)
     for row in rows:row.pop('_occurred', None)
-    identity = json.dumps([dataset_id, dataset.get('revision'), te.get('snapshot_revision'), mode, q, date, te_status, sort,assignee,review_status], separators=(',', ':'))
+    identity = json.dumps([dataset_id, dataset.get('revision'), te.get('snapshot_revision'), rd, mode, q, date, te_status, sort,assignee,review_status], separators=(',', ':'), sort_keys=True)
     snapshot_revision = hashlib.sha256(identity.encode()).hexdigest()
     if revision and revision != snapshot_revision:
         raise SnapshotChanged('Gallery changed; refresh before exporting.')
     distribution = Counter(json.dumps(r['te_value'], ensure_ascii=False) for r in targets if r['te_status']=='filled')
-    result = dict(dataset_id=dataset_id, dataset=dataset, page=page, page_size=page_size, total=len(selected),
+    result = dict(dataset_id=dataset_id, dataset=dataset, page=page, page_size=page_size, total=len(selected), rd=rd,
                   items=selected[(page-1)*page_size:page*page_size], date_options=date_options,assignees=sorted({(r.get('binding') or {}).get('assignee') for r in rows if (r.get('binding') or {}).get('assignee')}),
                   snapshot_revision=snapshot_revision,count_scope=count_scope(rows,historical=historical,family=family),composition=composition(rows,historical=historical,date=date), te=dict(source_field='ra_review_result_new',
                       source_status=te['source_status'], last_success_at=te.get('last_success_at'),observed_changes=te.get('observed_changes'), summary=summarize(targets),
