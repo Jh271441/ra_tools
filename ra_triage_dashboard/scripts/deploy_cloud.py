@@ -183,8 +183,37 @@ def read_live():
     pid, env, cwd = matches[0]
     pane = git_pane_pid()
     require(pid == pane, "Dashboard must be the sole foreground process in its tmux pane")
-    require(cwd == REPO / "ra_triage_dashboard", "Live process uses another checkout; reconcile before deploying")
-    return pid, capture_env(env)
+    captured = capture_env(env)
+    if cwd != REPO / "ra_triage_dashboard":
+        validate_live_candidate(cwd, captured.get("DASHBOARD_BUILD_COMMIT", ""))
+        captured = rebase_env(captured, cwd.parent, REPO)
+    return pid, captured
+
+
+def validate_live_candidate(app, sha):
+    """Only a successful, owned isolated release may replace the main checkout."""
+    folder = app.parent.parent
+    require(folder.parent == STATE / "releases" and RELEASE_ID_PATTERN.fullmatch(folder.name),
+            "Live process uses an unrecognized checkout")
+    require(app == folder / "candidate" / "ra_triage_dashboard" and not folder.is_symlink(),
+            "Live process is not an owned candidate")
+    path = folder / "result.json"
+    require(path.is_file() and not path.is_symlink(), "Live candidate receipt is missing")
+    stat = path.stat()
+    require(stat.st_uid == os.getuid() and stat.st_mode & 0o077 == 0, "Unsafe live candidate receipt")
+    record = json.loads(path.read_text())
+    require(record.get("status") == "success" and record.get("isolated_ref")
+            and record.get("target") == sha and record.get("candidate") == str(app.parent),
+            "Live candidate receipt does not match runtime")
+    validate_prepared_worktree(app.parent, sha)
+
+
+def release_ref(isolated_ref="", expected_live_sha=""):
+    require(bool(isolated_ref) == bool(expected_live_sha), "Isolated ref and expected live SHA are required together")
+    if isolated_ref:
+        require(re.fullmatch(r"codex/[a-z0-9][a-z0-9-]{0,63}", isolated_ref), "Invalid isolated release branch")
+        require(re.fullmatch(r"[0-9a-f]{40}", expected_live_sha), "Expected live SHA must be full length")
+    return "origin/" + (isolated_ref or "master")
 
 def git_pane_pid():
     value = run("tmux", "list-panes", "-t", "=" + SESSION, "-F", "#{pane_pid}", stdout=subprocess.PIPE).stdout.decode().splitlines()
@@ -440,6 +469,7 @@ def preflight(
     sha,
     allow_additive_migrations=False,
     allow_schema_migrations=False,
+    isolated_ref="", expected_live_sha="",
 ):
     require(sys.platform == "linux" and REPO.is_dir() and PYTHON.is_file(), "Run on the configured cloud_server")
     require(re.fullmatch(r"[0-9a-f]{40}", sha), "Supply a full 40-character pushed commit SHA")
@@ -447,16 +477,22 @@ def preflight(
         allow_additive=allow_additive_migrations,
         allow_schema=allow_schema_migrations,
     )
-    run("git", "fetch", "origin", "master")
+    ref = release_ref(isolated_ref, expected_live_sha)
+    require(not isolated_ref or mode == "none", "Isolated releases do not permit migrations")
+    run("git", "fetch", "origin", "+refs/heads/" + (isolated_ref or "master") + ":refs/remotes/" + ref)
     require(git("branch", "--show-current") == "master", "Production checkout must be on master")
     require(not git("status", "--porcelain"), "Production checkout has local changes")
-    require(git("rev-parse", "origin/master") == sha, "Target is not current origin/master")
+    require(git("rev-parse", ref) == sha, "Target differs from the pushed release branch")
     run("git", "merge-base", "--is-ancestor", "HEAD", sha)
     pid, env = read_live()
     before = get_json(8785, "health")
     old = before.get("build_commit", "")
     require(re.fullmatch(r"[0-9a-f]{40}", old), "Live build SHA is unavailable")
     check_health(before, old, "postgresql")
+    if isolated_ref:
+        require(old == expected_live_sha, "Production changed since isolated release was authorized")
+    # Never lose already-published work, including a previous isolated release.
+    run("git", "merge-base", "--is-ancestor", old, sha)
     migrations = migration_changes(
         old,
         sha,
@@ -491,12 +527,14 @@ def check_release(
     sha,
     allow_additive_migrations=False,
     allow_schema_migrations=False,
+    isolated_ref="", expected_live_sha="",
 ):
     with deployment_lock(STATE):
         state = preflight(
             sha,
             allow_additive_migrations,
             allow_schema_migrations,
+            isolated_ref, expected_live_sha,
         )
         print(json.dumps({
             "preflight": "ok",
@@ -527,12 +565,14 @@ def prepare_release(
     sha,
     allow_additive_migrations=False,
     allow_schema_migrations=False,
+    isolated_ref="", expected_live_sha="",
 ):
     with deployment_lock(STATE):
         state = preflight(
             sha,
             allow_additive_migrations,
             allow_schema_migrations,
+            isolated_ref, expected_live_sha,
         )
         pid = state["pid"]
         env = state["env"]
@@ -551,6 +591,9 @@ def prepare_release(
             "rollback": str(rollback),
             "additive_migrations": migrations,
             "migration_mode": state["migration_mode"],
+            "isolated_ref": isolated_ref,
+            "expected_live_sha": expected_live_sha,
+            "checkout_sha": git("rev-parse", "HEAD"),
         }
         save(folder / "result.json", result)
         gray = None
@@ -569,7 +612,9 @@ def prepare_release(
                 gray = subprocess.Popen([str(PYTHON), "-m", "uvicorn", "app.main:app", "--app-dir", str(candidate / "ra_triage_dashboard"), "--host", "127.0.0.1", "--port", "8786"], cwd=candidate, env=test_env, stdout=log, stderr=subprocess.STDOUT)
             smoke(8786, sha, "sqlite")
             stop_child(gray)
-            require(git("rev-parse", "origin/master") == sha and not git("status", "--porcelain"), "Checkout changed during gray")
+            require(git("rev-parse", release_ref(isolated_ref, expected_live_sha)) == sha
+                    and git("rev-parse", "HEAD") == result["checkout_sha"]
+                    and not git("status", "--porcelain"), "Checkout changed during gray")
             now_pid, now_env = read_live()
             require(now_pid == pid and now_env == env, "Runtime changed during gray")
             save(folder / "production-before.json", {
@@ -641,6 +686,7 @@ def promote_release(
     sha=None,
     allow_additive_migrations=False,
     allow_schema_migrations=False,
+    isolated_ref="", expected_live_sha="",
 ):
     with deployment_lock(STATE):
         folder, result, recovery = load_prepared_release(release_id)
@@ -652,10 +698,13 @@ def promote_release(
             allow_schema=allow_schema_migrations,
         )
         require(result.get("migration_mode", "none") == requested_mode, "Promotion requires the same migration authorization mode used during prepare")
+        require(result.get("isolated_ref", "") == isolated_ref and result.get("expected_live_sha", "") == expected_live_sha,
+                "Promotion requires the same isolated release authorization")
         state = preflight(
             target,
             allow_additive_migrations,
             allow_schema_migrations,
+            isolated_ref, expected_live_sha,
         )
         pid = state["pid"]
         env = state["env"]
@@ -664,6 +713,7 @@ def promote_release(
         migrations = state["migrations"]
         migration_count_before = state["migration_count_before"]
         require(old == result.get("previous") == recovery.get("sha"), "Production SHA changed after prepare")
+        require(git("rev-parse", "HEAD") == result.get("checkout_sha"), "Checkout changed after prepare")
         require(pid == recovery.get("pid") and env == recovery.get("env"), "Production process or environment changed after prepare")
         require(policy(before) == recovery.get("policy") == result.get("policy"), "Production access/writer policy changed after prepare")
         require(migrations == result.get("additive_migrations"), "Migration set changed after prepare")
@@ -695,8 +745,12 @@ def promote_release(
                     migration_count_after=migration_count,
                 )
                 save(folder / "result.json", result)
-            run("git", "merge", "--ff-only", target)
-            start_production(folder, REPO / "ra_triage_dashboard", env, target, "production")
+            if isolated_ref:
+                start_production(folder, candidate / "ra_triage_dashboard",
+                                 rebase_env(env, REPO, candidate), target, "production")
+            else:
+                run("git", "merge", "--ff-only", target)
+                start_production(folder, REPO / "ra_triage_dashboard", env, target, "production")
             replacement_pid = git_pane_pid()
             after = smoke(8785, target, "postgresql")
             require(policy(after) == policy(before), "Runtime access/writer policy changed")
@@ -735,28 +789,34 @@ def deploy(
     check_only=False,
     allow_additive_migrations=False,
     allow_schema_migrations=False,
+    isolated_ref="", expected_live_sha="",
 ):
     if check_only:
         return check_release(
             sha,
             allow_additive_migrations,
             allow_schema_migrations,
+            isolated_ref, expected_live_sha,
         )
     release_id = prepare_release(
         sha,
         allow_additive_migrations,
         allow_schema_migrations,
+        isolated_ref, expected_live_sha,
     )
     return promote_release(
         release_id,
         sha,
         allow_additive_migrations,
         allow_schema_migrations,
+        isolated_ref, expected_live_sha,
     )
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--sha")
+    parser.add_argument("--isolated-ref", default="", help="explicit pushed codex branch; keep main checkout unchanged")
+    parser.add_argument("--expected-live-sha", default="", help="required current full SHA for isolated release")
     action = parser.add_mutually_exclusive_group()
     action.add_argument("--check", action="store_true", help="preflight only, without service/worktree changes")
     action.add_argument("--prepare", action="store_true", help="run tests and isolated gray, then stop before production changes")
@@ -782,6 +842,7 @@ def main():
             args.sha,
             args.allow_additive_migrations,
             args.allow_schema_migrations,
+            args.isolated_ref, args.expected_live_sha,
         )
     else:
         require(args.sha, "--sha is required")
@@ -790,6 +851,7 @@ def main():
                 args.sha,
                 args.allow_additive_migrations,
                 args.allow_schema_migrations,
+                args.isolated_ref, args.expected_live_sha,
             )
         else:
             deploy(
@@ -797,6 +859,7 @@ def main():
                 args.check,
                 args.allow_additive_migrations,
                 args.allow_schema_migrations,
+                args.isolated_ref, args.expected_live_sha,
             )
 
 if __name__ == "__main__":

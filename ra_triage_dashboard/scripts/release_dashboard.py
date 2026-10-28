@@ -56,16 +56,19 @@ def git_bytes(*args):
         raise ReleaseError(message or "Git command failed") from exc
 
 
-def resolve_target(requested_sha=None):
-    git_bytes("fetch", "origin", "master")
-    target = git_bytes("rev-parse", "origin/master").decode().strip()
+def resolve_target(requested_sha=None, isolated_ref=""):
+    if isolated_ref and not re.fullmatch(r"codex/[a-z0-9][a-z0-9-]{0,63}", isolated_ref):
+        raise ReleaseError("Invalid isolated release branch")
+    branch = isolated_ref or "master"
+    git_bytes("fetch", "origin", "+refs/heads/" + branch + ":refs/remotes/origin/" + branch)
+    target = git_bytes("rev-parse", "origin/" + branch).decode().strip()
     if not SHA_PATTERN.fullmatch(target):
         raise ReleaseError("origin/master did not resolve to a full commit SHA")
     if requested_sha is not None:
         if not SHA_PATTERN.fullmatch(requested_sha):
             raise ReleaseError("--sha must be a full 40-character commit SHA")
         if requested_sha != target:
-            raise ReleaseError("Requested SHA is not current origin/master")
+            raise ReleaseError("Requested SHA differs from the pushed release branch")
     return target
 
 
@@ -89,6 +92,8 @@ def validate_destination(host, remote_repo):
 
 def deployer_args(args, target):
     result = ["--sha", target]
+    if args.isolated_ref:
+        result.extend(["--isolated-ref", args.isolated_ref, "--expected-live-sha", args.expected_live_sha])
     if args.check:
         result.append("--check")
     elif args.prepare:
@@ -120,6 +125,8 @@ def parse_args(argv=None):
     migration.add_argument("--allow-additive-migrations", action="store_true")
     migration.add_argument("--allow-schema-migrations", action="store_true")
     parser.add_argument("--sha", help="full origin/master SHA; defaults to the fetched remote SHA")
+    parser.add_argument("--isolated-ref", default="", help="explicit pushed codex branch for isolated release")
+    parser.add_argument("--expected-live-sha", default="", help="full current runtime SHA; required for isolation")
     parser.add_argument("--host", default=DEFAULT_HOST, help=f"SSH host alias (default: {DEFAULT_HOST})")
     return parser.parse_args(argv)
 
@@ -128,7 +135,12 @@ def main(argv=None):
     args = parse_args(argv)
     try:
         validate_destination(args.host, DEFAULT_REMOTE_REPO)
-        target = resolve_target(args.sha)
+        if bool(args.isolated_ref) != bool(args.expected_live_sha):
+            raise ReleaseError("Isolated ref and expected live SHA are required together")
+        if args.isolated_ref and (not args.sha or not SHA_PATTERN.fullmatch(args.expected_live_sha)
+                                 or args.allow_additive_migrations or args.allow_schema_migrations):
+            raise ReleaseError("Isolation requires exact target/live SHAs and forbids migrations")
+        target = resolve_target(args.sha, args.isolated_ref) if args.isolated_ref else resolve_target(args.sha)
         deployer = exact_deployer(target)
         print(f"Dashboard target: {target}", flush=True)
         return run_remote(

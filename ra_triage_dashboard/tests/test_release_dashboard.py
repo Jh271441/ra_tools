@@ -17,6 +17,23 @@ spec.loader.exec_module(r)
 
 
 class ReleaseDashboardTests(unittest.TestCase):
+    def test_isolated_entry_requires_exact_pins_and_no_migrations(self):
+        for args in [ ['--isolated-ref','codex/x'], ['--expected-live-sha','a'*40],
+                     ['--isolated-ref','codex/x','--expected-live-sha','a'*40],
+                     ['--isolated-ref','codex/x','--expected-live-sha','a'*40,'--sha','b'*40,'--allow-additive-migrations'] ]:
+            with patch.object(r,'run_remote') as remote:
+                self.assertEqual(r.main(args),2)
+                remote.assert_not_called()
+        args=r.parse_args(['--isolated-ref','codex/x','--expected-live-sha','a'*40,'--sha','b'*40])
+        self.assertEqual(r.deployer_args(args,'b'*40),['--sha','b'*40,'--isolated-ref','codex/x','--expected-live-sha','a'*40])
+
+    def test_isolated_ref_must_resolve_exact_remote_sha(self):
+        with patch.object(r,'git_bytes',return_value=('a'*40).encode()) as git:
+            self.assertEqual(r.resolve_target('a'*40,'codex/layout-only'),'a'*40)
+            self.assertEqual(git.call_args_list[0].args,('fetch','origin','+refs/heads/codex/layout-only:refs/remotes/origin/codex/layout-only'))
+            with self.assertRaises(r.ReleaseError): r.resolve_target('b'*40,'codex/layout-only')
+            with self.assertRaises(r.ReleaseError): r.resolve_target('a'*40,'master')
+
     def test_default_action_runs_exact_origin_master_release(self):
         target = "a" * 40
         deployer = b"print('versioned deployer')\n"
