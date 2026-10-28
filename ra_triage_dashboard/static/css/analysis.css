@@ -25,6 +25,8 @@
 .analysis-filter-card { display: grid; gap: 7px; padding: 8px 10px; }
 .analysis-scope-heading { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-width: 0; }
 .analysis-scope-heading > .ui-info { flex: 0 0 auto; }
+.analysis-scope-heading .ui-info-button { width: 1em; height: 1em; }
+.analysis-scope-heading .ui-info-button svg { width: 1em; height: 1em; }
 .analysis-filters {
   display: grid; grid-template-columns: repeat(9, minmax(90px, 1fr)); align-items: end; gap: 6px;
 }

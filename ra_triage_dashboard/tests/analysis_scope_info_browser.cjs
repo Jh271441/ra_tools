@@ -41,7 +41,7 @@ const server = http.createServer((req, res) => {
       window.fixtureSummary = { summary: { baseline: { accuracy: 0, total_count: 598 }, candidate: { accuracy: 307 / 598, total_count: 598, correct_count: 307, prediction_count: 598 }, accuracy_delta: 307 / 598, transition_counts: { F2P: 307 }, total_count: 598, label_changed_count: 598 }, gt_references: Array.from({length: 20}, (_, i) => ({baseline_scope: 'manual_sidecar_' + i, reference_type: 'gt_snapshot', snapshot_id: 'gt-fixture'})) };
     });
     const results = [];
-    for (const width of [1440, 390, 320]) for (const lang of ['zh', 'en']) for (const theme of ['dark', 'light']) {
+    for (const width of [1920, 1440, 390, 320]) for (const lang of ['zh', 'en']) for (const theme of ['dark', 'light']) {
       await page.setViewportSize({width, height: 1000});
       for (const view of ['analysis', 'comparison']) {
         await page.evaluate(async ({view, lang, theme}) => {
@@ -72,6 +72,15 @@ const server = http.createServer((req, res) => {
           assert.ok(infoBox.x >= titleBox.x + titleBox.width, 'info follows scope label');
           assert.ok(infoBox.y < titleBox.y + titleBox.height && infoBox.y + infoBox.height > titleBox.y, 'info shares title row');
           assert.ok(infoBox.y + infoBox.height <= pickerBox.y + 1, 'info stays above picker');
+          if (width >= 640) {
+            const headingBox = await page.locator('.analysis-scope-heading').boundingBox();
+            assert.ok(infoBox.height <= titleBox.height, 'info must not exceed the label height');
+            assert.ok(Math.abs(headingBox.height - titleBox.height) <= 1, 'info must not increase heading height');
+            if (width === 1920) {
+              const peer = await page.locator('.analysis-gt-filter > span').boundingBox();
+              assert.ok(Math.abs(peer.y - titleBox.y) <= 1, 'scope and GT labels share the first-row baseline');
+            }
+          }
           await page.mouse.move(0, 0);
           await info.click();
           assert.equal(await info.getAttribute('aria-expanded'), 'true');

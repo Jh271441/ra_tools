@@ -8,6 +8,11 @@ the combined-results versus task-submitted scope. Filtering and API contracts ar
 unchanged. Run comparison no longer renders its list of internal GT source scopes
 and snapshot IDs; the API retains that metadata and the metrics are unchanged.
 
+The field-local button and SVG use 1em sizing so the desktop icon does not
+increase the natural label line height. Phone min-width/min-height remain44px
+for touch access. Browser regression also covers1920px and asserts desktop
+heading height equals label height and first-row label alignment (32 combinations).
+
 `bindUiInfoPopovers` in core-base owns the existing version-info interaction and
 the new analysis help: pointer hover, keyboard focus, click/tap, Escape, outside
 press, resize/scroll dismissal and visual-viewport bounds. Bindings are idempotent
