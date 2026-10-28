@@ -23,12 +23,12 @@
 
 .analysis-page { width: min(1480px, 100%); gap: 6px; }
 .analysis-filter-card { display: grid; gap: 7px; padding: 8px 10px; }
-.analysis-filter-heading { display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; }
-.analysis-filter-heading > .mobile-filter-bar { flex: 1; min-width: 0; }
+.analysis-scope-heading { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-width: 0; }
+.analysis-scope-heading > .ui-info { flex: 0 0 auto; }
 .analysis-filters {
   display: grid; grid-template-columns: repeat(9, minmax(90px, 1fr)); align-items: end; gap: 6px;
 }
-.analysis-filters label { min-width: 0; display: grid; gap: 3px; color: var(--faint); font-size: 11px; }
+.analysis-filters label, .analysis-filters .analysis-work-split-filter { min-width: 0; display: grid; gap: 3px; color: var(--faint); font-size: 11px; }
 .analysis-filters input:not([type="checkbox"]), .analysis-filters select, .analysis-filters .ui-select-trigger { height: 34px; min-width: 0; padding: 5px 29px 5px 8px; font-size: 12px; }
 .analysis-issue-input { width: 100%; min-width: 0; height: 34px; min-height: 34px; padding: 6px 8px; overflow: auto; resize: none; font-size: 12px; line-height: 20px; }
 .analysis-run-filter { grid-column: span 2; grid-row: 1; }

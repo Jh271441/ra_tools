@@ -63,6 +63,15 @@ const server = http.createServer((req, res) => {
         assert.equal(await page.locator('#comparisonSummary .comparison-metric').count(), 6);
         if (view === 'analysis') {
           const info = page.locator('#analysisScopeInfo button');
+          assert.equal(await page.locator('.analysis-filter-heading').count(), 0);
+          assert.equal(await page.locator('.analysis-work-split-filter #analysisScopeInfo').count(), 1);
+          await info.scrollIntoViewIfNeeded();
+          const titleBox = await page.locator('#analysisScopeLabel').boundingBox();
+          const infoBox = await info.boundingBox();
+          const pickerBox = await page.locator('#analysisWorkSplitPicker').boundingBox();
+          assert.ok(infoBox.x >= titleBox.x + titleBox.width, 'info follows scope label');
+          assert.ok(infoBox.y < titleBox.y + titleBox.height && infoBox.y + infoBox.height > titleBox.y, 'info shares title row');
+          assert.ok(infoBox.y + infoBox.height <= pickerBox.y + 1, 'info stays above picker');
           await page.mouse.move(0, 0);
           await info.click();
           assert.equal(await info.getAttribute('aria-expanded'), 'true');
@@ -70,6 +79,8 @@ const server = http.createServer((req, res) => {
           await tip.waitFor({state: 'visible'});
           assert.equal(await tip.isVisible(), true);
           const box = await tip.boundingBox();
+          if (theme === 'dark' && lang === 'zh' && width === 1440)
+            await page.screenshot({path: '/tmp/analysis-scope-inline-info.png'});
           assert.ok(box.x >= 0 && box.y >= 0 && box.x + box.width <= width && box.y + box.height <= 1000);
           assert.equal(await info.getAttribute('aria-label'), lang === 'en' ? 'About Review data scope' : 'Review 数据范围说明');
           if (width < 640) { const hit = await info.boundingBox(); assert.ok(hit.width >= 44 && hit.height >= 44); }

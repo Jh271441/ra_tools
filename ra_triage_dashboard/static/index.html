@@ -86,7 +86,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-691`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-692`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -924,26 +924,12 @@
 
           <section class="app-page tool-page analysis-page hidden" id="reviewAnalysisPage" data-page="analysis">
             <section class="page-card analysis-filter-card">
-              <div class="analysis-filter-heading">
               <div class="mobile-filter-bar">
                 <button class="button button-quiet mobile-filter-toggle" type="button"
                   data-mobile-filter-toggle="analysisFilters" aria-expanded="false" aria-controls="reviewAnalysisFilterForm">
                   <span class="ui-lang-zh">筛选</span><span class="ui-lang-en">Filters</span>
                   <span class="mobile-filter-hint" data-mobile-filter-hint="analysisFilters">展开条件</span>
                 </button>
-              </div>
-              <span class="model-review-run-help ui-info" data-ui-info id="analysisScopeInfo">
-                <button class="ui-info-button" type="button" aria-expanded="false" aria-controls="analysisScopeInfoPanel" aria-label="Review 数据范围说明" data-i18n-aria-label="analysis.scope_help" title="Review 数据范围说明" data-i18n-title="analysis.scope_help">
-                  <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="10" r="7.5" stroke="currentColor" stroke-width="1.4"/><path d="M10 9.1v4.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="10" cy="6.3" r=".9" fill="currentColor"/></svg>
-                </button>
-                <span class="model-review-run-tooltip ui-info-tooltip" id="analysisScopeInfoPanel" role="dialog" aria-label="Review 数据范围说明" data-i18n-aria-label="analysis.scope_help">
-                  <strong><span class="ui-lang-zh">Review 数据范围</span><span class="ui-lang-en">Review data scope</span></strong>
-                  <span class="ui-lang-zh">仅列出当前数据集和 Run 对应的复核任务。找不到任务时，请切换到任务对应的数据集和 Run；没有可选任务不代表没有复核记录。</span>
-                  <span class="ui-lang-en">Only tasks for the selected dataset and Run are listed. If a task is missing, switch to its dataset and Run. An empty task list does not mean there are no review records.</span>
-                  <span class="ui-lang-zh">“综合结果”汇总当前范围内的复核；选择任务后，仅查看该任务已提交的复核结果。</span>
-                  <span class="ui-lang-en">Combined results aggregates reviews in the current scope. Selecting a task shows only reviews submitted for that task.</span>
-                </span>
-              </span>
               </div>
               <form class="analysis-filters" id="reviewAnalysisFilterForm" data-mobile-filter-panel="analysisFilters">
                 <label class="analysis-run-filter">
@@ -991,14 +977,28 @@
                     </select>
                   </div>
                 </label>
-                <label class="analysis-work-split-filter">
-                  <span class="ui-lang-zh">Review 数据范围</span><span class="ui-lang-en">Review data scope</span>
+                <div class="analysis-work-split-filter">
+                  <div class="analysis-scope-heading">
+                    <span id="analysisScopeLabel"><span class="ui-lang-zh">Review 数据范围</span><span class="ui-lang-en">Review data scope</span></span>
+                    <span class="model-review-run-help ui-info" data-ui-info id="analysisScopeInfo">
+                      <button class="ui-info-button" type="button" aria-expanded="false" aria-controls="analysisScopeInfoPanel" aria-label="Review 数据范围说明" data-i18n-aria-label="analysis.scope_help" title="Review 数据范围说明" data-i18n-title="analysis.scope_help">
+                        <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="10" r="7.5" stroke="currentColor" stroke-width="1.4"/><path d="M10 9.1v4.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="10" cy="6.3" r=".9" fill="currentColor"/></svg>
+                      </button>
+                      <span class="model-review-run-tooltip ui-info-tooltip" id="analysisScopeInfoPanel" role="dialog" aria-label="Review 数据范围说明" data-i18n-aria-label="analysis.scope_help">
+                        <strong><span class="ui-lang-zh">Review 数据范围</span><span class="ui-lang-en">Review data scope</span></strong>
+                        <span class="ui-lang-zh">仅列出当前数据集和 Run 对应的复核任务。找不到任务时，请切换到任务对应的数据集和 Run；没有可选任务不代表没有复核记录。</span>
+                        <span class="ui-lang-en">Only tasks for the selected dataset and Run are listed. If a task is missing, switch to its dataset and Run. An empty task list does not mean there are no review records.</span>
+                        <span class="ui-lang-zh">“综合结果”汇总当前范围内的复核；选择任务后，仅查看该任务已提交的复核结果。</span>
+                        <span class="ui-lang-en">Combined results aggregates reviews in the current scope. Selecting a task shows only reviews submitted for that task.</span>
+                      </span>
+                    </span>
+                  </div>
                   <div class="ui-select" id="analysisWorkSplitPicker">
-                    <button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="ui-select-summary">综合结果</span><span class="ui-select-caret" aria-hidden="true"></span></button>
+                    <button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false" aria-labelledby="analysisScopeLabel analysisWorkSplitSummary"><span class="ui-select-summary" id="analysisWorkSplitSummary">综合结果</span><span class="ui-select-caret" aria-hidden="true"></span></button>
                     <div class="ui-select-panel" role="listbox" hidden></div>
                     <select class="ui-select-native" id="analysisWorkSplitFilter" aria-hidden="true" tabindex="-1"><option value="">综合结果</option></select>
                   </div>
-                </label>
+                </div>
                 <label class="analysis-gt-filter">
                   <span>GT</span>
                   <div class="multi-filter" id="analysisGtFilter" data-placeholder="全部 GT" data-placeholder-en="All GT" data-i18n-placeholder="filter.all_gt"></div>
@@ -2557,7 +2557,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-691`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-692`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

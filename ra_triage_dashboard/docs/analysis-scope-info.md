@@ -1,7 +1,8 @@
 # Compact analysis scope help
 
-The reason-analysis filter card exposes scope guidance through its top-right info
-control instead of a persistent empty-task paragraph. The bilingual explanation
+The reason-analysis Review data scope field exposes guidance through an info
+control on the right of its label, immediately above its picker, instead of a
+persistent empty-task paragraph or a card-wide heading row. The bilingual explanation
 distinguishes task discovery from the existence of Review records and explains
 the combined-results versus task-submitted scope. Filtering and API contracts are
 unchanged. Run comparison no longer renders its list of internal GT source scopes
