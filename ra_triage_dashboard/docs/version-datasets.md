@@ -75,6 +75,39 @@ popup boundaries, keyboard/Escape, selection/URL persistence, reset and phone
 44px targets/no page overflow. Screenshots were visually inspected. This is
 isolated viewport testing, not production or physical-device verification.
 
+### RD overview (cache699)
+
+Two compact blocks below TE show RD completion and the three-class distribution.
+Both use TE's shared heading typography; each heading and inline scrollable legend
+share a row on wide screens, with a thin chart below. Phone blocks stack and use
+at most three rows each. No new chart library or dropdown implementation.
+
+`workbench.rd` contains counts only from Manual's `project_issue_label_states`,
+grouped by each Issue's original baseline scope in batches of at most400.
+Resolved canonical conclusions count as completed. Conflict/stale states count
+as conflicts needing recheck; all other states (including absent and incomplete)
+are pending. Valid current Issue decisions participate through the same shared
+projection and become stale on source changes. No model, GT, TE or joint-review
+acknowledgement fallback; no human record, task, owner or schema writes.
+
+Denominator: current version targets intersected with case scope, occurrence date
+(CST), Issue search, assignee and joint-review filters, before pagination and the
+gallery-only TE-status filter. Classification percentages use completed valid
+conclusions, not total targets. Poll every30seconds through the existing request;
+counts enter snapshot identity. Failed reads show an unavailable state, not zero.
+Historical0821 explicitly reports RD unsupported rather than mixing today's
+labels into its frozen membership contract. Existing endpoint permissions stay
+unchanged; no individual labels, authors, rationale or history are added to it.
+
+Local release gate:78 relevant tests and6 subtests passed. Real SQLite regression
+covers original scopes, conflict/decision/stale state, GT/model/joint independence,
+bounded queries, filters, pagination and revision refresh. Production frontend
+modules in the isolated synthetic fixture were checked at1440zh-dark and320/390
+en-light: no page overflow, matching14px/650 TE and RD headings, compact rows,
+keyboard legend scrolling, bilingual error/empty and recovery. These are browser
+viewport tests, not physical-device tests. Cloud suite/gray/production results
+are recorded separately after the release succeeds.
+
 One enhanced version selector covers each live release plus0821. Cards show model output/confidence, TE status, owner, trigger and arrival/occurrence times. Image opens the existing media preview; Issue identity retains its combined-review link. BEV/Camera, TE status, reason, date, Issue search, order and pagination are URL-restorable. The default order is latest registry arrival; bootstrap records may share a timestamp. Source-update, occurrence and Issue order remain available.
 
 Overview and gallery paint independently of global Review/GT bootstrap.24-case pages and at most4 near-viewport thumbnail loads keep images bounded. Unchanged polling retains card/image DOM; hidden tabs pause. Failed same-scope refreshes preserve the result; a scope change clears stale cards/TE/export before loading. Import history loads only while expanded. The occurrence-day chart is supplementary and collapsed by default. Shared selects, Chinese/English, theme variables and responsive styles are retained.

@@ -11,6 +11,8 @@ class VersionFrontendBehaviorTest(unittest.TestCase):
         html = (root / 'index.html').read_text()
         self.assertLess(html.index('id="versionDatasetSummary"'), html.index('class="version-composition"'))
         self.assertLess(html.index('class="version-composition"'), html.index('id="versionTEPanel"'))
+        self.assertLess(html.index('id="versionTEPanel"'), html.index('id="versionRDPanel"'))
+        self.assertLess(html.index('id="versionRDPanel"'), html.index('class="gallery-panel version-gallery"'))
         css = (root / 'css/version-datasets.css').read_text()
         chart = css.split('.version-result-chart {', 1)[1].split('}', 1)[0]
         self.assertNotIn('max-height', chart)
@@ -26,7 +28,9 @@ const nodes=new Map();
 global.escapeHtml=value=>String(value);
 function element(){return {innerHTML:'existing chart',textContent:'existing text',disabled:false,hidden:false,dataset:{},attrs:{},handlers:{},classList:{add(){},toggle(){}},style:{setProperty(){}},replaceChildren(){this.innerHTML='';this.textContent='';},setAttribute(k,v){this.attrs[k]=v;},addEventListener(k,v){this.handlers[k]=v;},querySelectorAll(){return [];}};}
 Object.assign(global,{$:id=>{if(!nodes.has(id))nodes.set(id,element());return nodes.get(id);},uiText:zh=>zh,enhanceNativeUiSelect:()=>{},document:{addEventListener(){},hidden:false},location:{href:'http://localhost/version-datasets?dataset=A'},history:{pushState(_,__,url){location.href=String(url);}}});
+document.getElementById=id=>$('#'+id);
 vm.runInThisContext(fs.readFileSync(process.argv[1],'utf8'));
+vm.runInThisContext(fs.readFileSync(require('path').join(require('path').dirname(process.argv[1]),'version-rd.js'),'utf8'));
 vm.runInThisContext(`
 const requests=[];
 loadVersionDatasets=()=>{requests.push([versionDatasetState.dataset,versionDatasetState.date]);};
@@ -122,6 +126,27 @@ switchVersionDatasetView('processing');
 assert.equal(versionDatasetState.mode,'all');
 versionDatasetChange({dataset:'C'});
 assert.deepEqual(versionDatasetState.viewMemory,{});
+renderVersionRD({total:10,completed:5,pending:3,conflict:2,distribution:{'正确触发':3,'误触发':2,'无需协助':0}});
+const rd=$('#versionRDPanel');
+assert.ok(rd.innerHTML.includes('50.0%'));
+assert.ok(rd.innerHTML.includes('60.0%'));
+assert.ok(rd.innerHTML.includes('section-heading version-chart-heading'));
+assert.equal((rd.innerHTML.match(/class="page-card version-rd-block"/g)||[]).length,2);
+assert.ok(rd.innerHTML.includes('Labeled'));
+renderVersionRD({total:10,completed:0,pending:10,conflict:0,distribution:{'正确触发':0,'误触发':0,'无需协助':0}});
+assert.ok(rd.innerHTML.includes('No valid classifications yet'));
+assert.ok(!rd.innerHTML.includes('NaN'));
+renderVersionRD({total:0});
+assert.ok(rd.innerHTML.includes('No review targets'));
+renderVersionRD(null,true);
+assert.ok(rd.innerHTML.includes('unavailable'));
+renderVersionRD({source_status:'unsupported'});
+assert.ok(rd.innerHTML.includes('frozen historical set'));
+global.uiText=zh=>zh;
+renderVersionRD(null,true);
+assert.ok(rd.innerHTML.includes('暂不可用'));
+renderVersionRD();
+assert.ok(rd.innerHTML.includes('正在读取'));
 `);
 """
         result = subprocess.run(["node", "-e", script, str(source)], text=True, capture_output=True)

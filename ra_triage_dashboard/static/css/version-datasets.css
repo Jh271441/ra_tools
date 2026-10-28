@@ -104,3 +104,27 @@ body[data-active-page="version-datasets"] .top-actions {margin-left:auto}
 .version-gallery .issue-card {background:var(--surface,var(--raised))}.version-gallery .issue-card:hover {background:var(--overlay-1,var(--raised))}
 .version-history {color:var(--muted);font-size:12px;line-height:2}.version-history summary {cursor:pointer}
 .media-decision-summary > .media-version-metadata {font-size:11px;font-weight:400;overflow-wrap:anywhere}
+/* Compact RD overview; title typography is shared with TE. */
+.version-rd {min-width:0}
+.version-rd-grid {display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);gap:12px}
+.version-rd-block {padding:14px 16px;min-width:0;display:flex;flex-direction:column;justify-content:space-between;gap:12px}
+.version-rd-header {display:flex;flex-direction:row;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;min-width:0}
+.version-rd-header h2 {white-space:nowrap}
+.version-rd-progress-legend strong {font-size:14px;font-weight:600;color:var(--text);font-variant-numeric:tabular-nums}
+.version-rd-track,.version-rd-stack {height:8px;display:flex;overflow:hidden;border-radius:4px;background:var(--line-soft);flex-shrink:0}
+.version-rd-track > i {height:100%;min-width:0}
+.version-rd .rd-filled {background:var(--accent)}
+.version-rd .rd-pending {background:var(--line)}
+.version-rd .rd-conflict {background:var(--warn)}
+.version-rd-stack {gap:2px}
+.version-rd-stack > i {height:100%;min-width:0}
+.version-rd .rd-correct {background:var(--ok)}
+.version-rd .rd-false {background:var(--fail)}
+.version-rd .rd-assistance {background:var(--warn)}
+.version-rd-header > .version-rd-legend {display:flex;flex-direction:row;gap:14px;align-items:center;overflow-x:auto;max-width:100%;min-width:0;line-height:20px;scrollbar-width:thin}
+.version-rd-category {display:flex;align-items:center;gap:5px;flex-shrink:0;font-size:12px;white-space:nowrap}
+.version-rd-category i {width:6px;height:6px;border-radius:2px;flex-shrink:0}
+.version-rd-category span:last-child {color:var(--muted);font-variant-numeric:tabular-nums}
+.version-rd-legend:focus-visible {outline:2px solid var(--accent);outline-offset:2px}
+.version-rd-empty {margin:0;padding:14px 16px;color:var(--muted);font-size:13px}
+.version-rd-block .version-rd-empty {padding:0}

@@ -20,6 +20,7 @@ class VersionWorkbenchTest(unittest.TestCase):
                    dict(issue_id='cn2',is_target=True,is_sample=True,is_low=True,state='published',first_seen='2026-10-23',updated_at='2026-10-23',issue_time=1792479600000,binding={},prediction={'model_label':'误触发','model_confidence':0.7}),
                    dict(issue_id='cn3',is_target=False,is_sample=False,is_low=False,state='ready',first_seen='2026-10-23',updated_at='2026-10-23',issue_time=1792479600000,binding={},prediction=None)]
         self.db=SimpleNamespace(list_version_datasets=lambda:[dict(id='release-20261009-odd2',revision=1)],version_dataset_gallery_rows=lambda _:json.loads(json.dumps(self.rows)))
+        self.db.version_dataset_rd_summary=lambda ids:dict(source_status='ready',total=len(ids),completed=0,pending=len(ids),conflict=0,distribution={})
     def save(self, rows, **extra):
         data=dict(schema_version=1,source_field='ra_review_result_new',dataset='1009',date='',snapshot_revision='a'*64,last_success_at=datetime.now(timezone.utc).isoformat(),rows=rows);data.update(extra)
         (self.folder/(data['dataset']+'.json')).write_text(json.dumps(data))

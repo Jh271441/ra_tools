@@ -17,7 +17,9 @@ function playerFixture(){
  player.querySelector=s=>s==='video'?video:elements[s.replace('[data-video-','').replace(']','')];
  const root={querySelectorAll:s=>s==='video'?[video]:[player]};
  const ctx={console,URL,Event,Number,window:{setTimeout:(f,ms)=>{timers.set(++next,{f,ms});return next;},clearTimeout:id=>timers.delete(id),requestAnimationFrame:f=>f()},enhanceDashboardSelects(){},t:x=>x,uiText:x=>x,showToast(){},safeSameOriginAssetUrl:x=>x};
- vm.createContext(ctx);vm.runInContext(fs.readFileSync(src+'detail-media.js','utf8'),ctx);
+ vm.createContext(ctx);
+ vm.runInContext(fs.readFileSync(src+'planning-constraints.js','utf8'),ctx);
+ vm.runInContext(fs.readFileSync(src+'detail-media.js','utf8'),ctx);
  ctx.bindBevVideoPlayers(root);
  const flush=ms=>{for(const [id,x] of [...timers])if(x.ms===ms){timers.delete(id);x.f();}};
  return {ctx,root,player,elements,video,timers,flush};

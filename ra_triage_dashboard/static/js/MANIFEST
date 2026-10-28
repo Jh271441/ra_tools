@@ -11,6 +11,7 @@ gt-sync.js
 session-config.js
 system-status.js
 version-datasets.js
+version-rd.js
 daily-cron.js
 daily-review.js
 daily-cron-graph.js
@@ -31,6 +32,7 @@ review-assignments.js
 campaigns.js
 labeling-summary.js
 analysis.js
+planning-constraints.js
 detail-media.js
 review-draft.js
 review-history.js

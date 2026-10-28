@@ -1055,3 +1055,18 @@
   .trail-update-history-link,
   .trail-update-progress-actions .trail-update-history-link { min-height: 44px; }
 }
+@media (max-width:1024px) {
+ .version-rd-header {align-items:flex-start;flex-direction:row}
+ .version-rd-legend {flex-basis:100%}
+}
+@media (max-width:639px) {
+ .version-rd-grid {grid-template-columns:minmax(0,1fr)}
+ .version-rd-block {padding:14px;gap:12px}
+}
+@media (max-width: 760px) {
+  .bev-video-control-row [data-planning-constraint],
+  .planning-constraint-panel .button,
+  .planning-constraint-panel summary { min-height: 44px; }
+  .planning-constraint-panel summary { display: flex; align-items: center; }
+  .planning-constraint-panel .button { min-width: 44px; }
+}
