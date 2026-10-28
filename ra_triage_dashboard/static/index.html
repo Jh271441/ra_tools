@@ -86,7 +86,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-697`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-698`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -386,6 +386,10 @@
                   <span class="ui-lang-zh">讨论</span><span class="ui-lang-en">Discussion</span>
                   <div class="multi-filter" id="reviewDiscussionFilter" data-placeholder="全部讨论状态" data-placeholder-en="All discussion states" aria-label="Discussion state filter"></div>
                 </label>
+                <label class="filter-target-group">
+                  <span class="ui-lang-zh">目标集合</span><span class="ui-lang-en">Target cohort</span>
+                  <div class="ui-select" id="reviewTargetGroupPicker"><button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="ui-select-summary"><span class="ui-lang-zh">全部</span><span class="ui-lang-en">All</span></span><span class="ui-select-caret" aria-hidden="true"></span></button><div class="ui-select-panel" role="listbox" hidden></div><select class="ui-select-native" aria-hidden="true" tabindex="-1"></select></div>
+                </label>
                 <label class="filter-exclusion">
                   <span class="ui-lang-zh">问题排除</span><span class="ui-lang-en">Issue exclusion</span>
                   <div class="multi-filter" id="reviewExclusionFilter" data-placeholder="全部（含问题排除）" data-placeholder-en="All (including shielded)" aria-label="Issue exclusion filter"></div>
@@ -580,6 +584,7 @@
               <label><span>结果类别</span><div class="multi-filter" id="caseLabelingLabelPicker" data-placeholder="全部类别" data-placeholder-en="All labels"></div></label>
               <label><span>讨论</span><div class="multi-filter" id="caseLabelingDiscussionPicker" data-placeholder="全部讨论状态" data-placeholder-en="All discussions"></div></label>
               <label><span>排除</span><div class="multi-filter" id="caseLabelingExclusionPicker" data-placeholder="全部（含问题排除）" data-placeholder-en="All cases"></div></label>
+              <label class="filter-target-group"><span class="ui-lang-zh">目标集合</span><span class="ui-lang-en">Target cohort</span><div class="ui-select" id="caseLabelingTargetGroupPicker"><button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="ui-select-summary"><span class="ui-lang-zh">全部</span><span class="ui-lang-en">All</span></span><span class="ui-select-caret" aria-hidden="true"></span></button><div class="ui-select-panel" role="listbox" hidden></div><select class="ui-select-native" aria-hidden="true" tabindex="-1"></select></div></label>
               <button class="button button-quiet filter-submit" id="caseLabelingReset" type="button">重置</button>
               </form>
             </section>
@@ -2562,7 +2567,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-697`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-698`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

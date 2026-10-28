@@ -136,6 +136,7 @@ async def create_labeling_task(request: Request) -> dict[str, Any]:
         normalized_issue_ids = await asyncio.to_thread(
             restrict_version_issue_ids, filter_body.get("baselines"), request=request,
             issue_ids=normalized_issue_ids, task_id=_as_text(filter_body.get("task_id")),
+            target_group=_as_text(filter_body.get("target_group")),
         )
         try:
             resolved = await asyncio.to_thread(

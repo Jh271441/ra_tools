@@ -14,6 +14,37 @@ The bounded read-only projection selects metadata and prediction label/confidenc
 
 The model-free labeling gallery, full detail queue, summary, clusters, GT candidates and GT export previews use the same current-target membership restriction as Review. Source scopes alone include historical/non-target Issues and must not define a version gallery. Explicit Issue filters intersect the current targets; an empty intersection stays empty. Mixed selections union version targets and ordinary baseline members. An explicit historical task keeps its frozen membership. These are read-time projections; historical records and permissions are unchanged.
 
+## Review and Case labeling target cohorts (2026-10-28 candidate)
+
+Both pages expose the shared bilingual **目标集合 / Target cohort** single-select.
+These are existing `version_dataset_items` flags keyed by version dataset and
+Issue ID, not human Issue tags or a confidence threshold calculated from the
+currently selected Run:
+
+- All (empty `target_group`, or API value `all`) preserves the existing scope,
+  including frozen historical task membership.
+- Random sample (`target_group=sample`) requires `is_target=1 AND is_sample=1`.
+- Low confidence excluding samples (`target_group=low`) requires
+  `is_target=1 AND is_low=1 AND is_sample=0`, matching version-page sample precedence.
+
+The selected cohort intersects dataset, task, owner, progress and other filters.
+No-match results remain empty; invalid cohort values return400 rather than widen
+the scope. Explicit cohorts always use current registry flags, including when
+viewing a frozen task; retired/non-target members stay accessible with All.
+URL restoration, detail queues, pagination, exports and filtered task creation
+retain the cohort. This does not add a cohort control to the separate labeling
+summary page. No memberships, owners, human labels, GT or predictions are changed.
+
+Candidate cache698 is **not deployed**. Validation: local suite1047 passed,
+14 skipped (7Linux-only checks and7unconfigured disposable-PostgreSQL checks),
+141 subtests passed. Actual frontend modules in isolated browser fixtures passed
+24 page/viewport/language/theme combinations: Review and Case labeling at
+320/390/1440px, Chinese/English, dark/light. Checks include shared widgets,
+URL/request preservation, language switching, keyboard/Escape, popup boundaries,
+44px phone targets, no page overflow and filter reset. These are viewport tests,
+not physical-device or signed-in production acceptance. Regression coverage:
+`tests/test_target_cohort_filter.py` and `tests/target_cohort_browser.cjs`.
+
 ## Interaction and performance
 
 One enhanced version selector covers each live release plus0821. Cards show model output/confidence, TE status, owner, trigger and arrival/occurrence times. Image opens the existing media preview; Issue identity retains its combined-review link. BEV/Camera, TE status, reason, date, Issue search, order and pagination are URL-restorable. The default order is latest registry arrival; bootstrap records may share a timestamp. Source-update, occurrence and Issue order remain available.

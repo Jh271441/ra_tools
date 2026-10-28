@@ -112,7 +112,7 @@ function reviewAssignmentRouteOptions(item, page) {
     };
   }
   return {
-    ...common, issue: "", labelStates: [], issueTags: [], workAssignee: ownTasks ? [reviewer] : [], clusterKey: "",
+    ...common, issue: "", labelStates: [], issueTags: [], targetGroup: '', workAssignee: ownTasks ? [reviewer] : [], clusterKey: "",
     workflowMode: item?.workflow_mode || "model_review_only", casePage: 1, casePageSize: 20,
   };
 }
@@ -137,6 +137,7 @@ function reviewAssignmentSourceHref(filter = {}) {
     annotationAuthor: reviewAssignmentFilterValues(filter.annotation_author), reviewStatus: reviewAssignmentFilterValues(filter.review_status),
     labelStates: reviewAssignmentFilterValues(filter.label_state), commentState: filter.comment_state || "all",
     issueTags: reviewAssignmentFilterValues(filter.issue_tags),
+    targetGroup: filter.target_group || '',
     workAssignee: reviewAssignmentFilterValues(filter.work_assignee), workSplitId: filter.work_split_id || "",
     clusterKey: filter.missing_evidence || "", exclusion: filter.exclusion || "all",
     baselines: filter.baselines || filter.baseline_scopes || [], forceBaselines: true,

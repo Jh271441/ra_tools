@@ -40,6 +40,7 @@ def _case_filter_kwargs(
     review_status: str = "",
     label_state: str = "",
     issue_tags: str = "",
+    target_group: str | None = None,
     model_run_id: str = "",
     comparison: str = "",
     failure_only: bool = False,
@@ -113,7 +114,7 @@ def _case_filter_kwargs(
     selected_ids = _parse_issue_id_filter(issue_ids)
     from .baselines import restrict_version_issue_ids
     selected_ids = restrict_version_issue_ids(
-        baselines, request=request, issue_ids=selected_ids, task_id=work_split_id,
+        baselines, request=request, issue_ids=selected_ids, task_id=work_split_id, target_group=target_group,
     )
     try:
         issue_tag_groups = parse_issue_tag_groups(issue_tags, _review_tag_catalog(), REVIEW_TAG_ALIASES) if issue_tags else ()

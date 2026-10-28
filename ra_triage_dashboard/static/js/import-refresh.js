@@ -330,6 +330,8 @@ async function resetReviewFilters() {
   setMultiFilterValues($("#reviewStatusFilter"), []);
   setMultiFilterValues($("#sharedLabelStateFilter"), []);
   state.reviewIssueTags = [];
+  state.reviewTargetGroup = '';
+  renderReviewTargetGroupPicker();
   setMultiFilterValues($("#reviewIssueTagFilter"), []);
   setMultiFilterValues($("#reviewDiscussionFilter"), []);
   setMultiFilterValues($("#reviewExclusionFilter"), []);

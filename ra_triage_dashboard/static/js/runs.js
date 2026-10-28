@@ -216,6 +216,30 @@ function selectedReviewIssueTags() {
   return parseFilterList(state.reviewIssueTags || []);
 }
 
+function renderTargetGroupPicker(selector, selected, onChange) {
+  const root = $(selector);
+  if (!root) return;
+  const options = [
+    {value: '', label: uiText('全部', 'All')},
+    {value: 'sample', label: uiText('抽样集', 'Random sample')},
+    {value: 'low', label: uiText('低置信度（不含抽样）', 'Low confidence (excluding samples)')},
+  ];
+  // Keep unrecognized URL values visible until server validation, never widen silently.
+  if (selected && !options.some(item => item.value === selected)) options.push({value:selected, label:selected});
+  populateUiSelect(root, options, selected || '');
+  bindUiSelect(root, {onChange});
+  const trigger = root.querySelector('.ui-select-trigger');
+  trigger.title = uiText('按当前版本目标集合筛选；抽样优先于低置信度', 'Filter current version target cohorts; samples take precedence over low confidence');
+  trigger.setAttribute('aria-label', uiText('目标集合', 'Target cohort'));
+}
+
+function renderReviewTargetGroupPicker() {
+  renderTargetGroupPicker('#reviewTargetGroupPicker', state.reviewTargetGroup, value => {
+    state.reviewTargetGroup = value;
+    scheduleReviewFilterReload(0);
+  });
+}
+
 function renderReviewIssueTagFilter() {
   const root = $('#reviewIssueTagFilter');
   if (!root) return;
@@ -255,6 +279,7 @@ function renderReviewIssueTagFilter() {
 }
 
 function renderReviewCatalogFilters() {
+  renderReviewTargetGroupPicker();
   renderReviewIssueTagFilter();
   const onChange = () => scheduleReviewFilterReload?.(0);
   renderMultiFilter($("#comparisonFilter"), {

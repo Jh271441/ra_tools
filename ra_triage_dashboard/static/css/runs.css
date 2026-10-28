@@ -173,16 +173,17 @@ html[data-color-theme="light"] .import-example-tabs { background: #f8fafc; }
 }
 @media (min-width: 1180px) {
   /* Two explicit rows; semantic classes avoid shifting fields when one is added. */
-  #filterForm.review-filters { grid-template-columns: repeat(36, minmax(0, 1fr)); }
+  #filterForm.review-filters { grid-template-columns: repeat(40, minmax(0, 1fr)); }
   #filterForm.review-filters > .filter-model-run { grid-row: 1; grid-column: span 6; }
   #filterForm.review-filters > .filter-comparison { grid-row: 1; grid-column: span 4; }
-  #filterForm.review-filters > .filter-search { grid-row: 1; grid-column: span 9; }
+  #filterForm.review-filters > .filter-search { grid-row: 1; grid-column: span 13; }
   #filterForm.review-filters > .filter-gt { grid-row: 1; grid-column: span 4; }
   #filterForm.review-filters > .filter-model-label { grid-row: 1; grid-column: span 5; }
   #filterForm.review-filters > .filter-reviewer { grid-row: 1; grid-column: span 4; }
   #filterForm.review-filters > .filter-review-status { grid-row: 1; grid-column: span 4; }
   #filterForm.review-filters > .filter-shared-label-state { grid-row: 2; grid-column: span 4; }
   #filterForm.review-filters > .filter-issue-tags { grid-row: 2; grid-column: span 5; }
+  #filterForm.review-filters > .filter-target-group { grid-row: 2; grid-column: span 4; }
   #filterForm.review-filters > .filter-discussion-state { grid-row: 2; grid-column: span 3; }
   #filterForm.review-filters > .filter-exclusion { grid-row: 2; grid-column: span 4; }
   #filterForm.review-filters > .filter-assignee { grid-row: 2; grid-column: span 4; }

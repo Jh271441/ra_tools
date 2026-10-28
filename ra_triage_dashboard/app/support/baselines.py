@@ -281,6 +281,38 @@ def resolve_request_baseline_scopes(
 
 def restrict_version_issue_ids(
     raw: Any = None, *, request: Request | None = None,
+    issue_ids: Sequence[str] = (), task_id: str = "", target_group: str | None = None,
+) -> tuple[str, ...]:
+    """Compose live target cohorts with the existing dataset/task/Issue scope."""
+    group = target_group if target_group is not None else _request_query(request).get("target_group", "")
+    if group not in {"", "all", "sample", "low"}:
+        raise _detail(400, "目标集合筛选无效 / Invalid target cohort filter")
+    selected = _restrict_version_issue_ids(raw, request=request, issue_ids=issue_ids, task_id=task_id)
+    if group in {"", "all"}:
+        return selected
+    ids = resolve_request_baseline_ids(raw, request=request)
+    datasets = ["release-" + key[8:] + "-odd2" for key in ids if key.startswith("version-")]
+    task_dataset = database.version_campaign_dataset(task_id) if task_id else ""
+    if task_dataset:
+        datasets = [task_dataset]
+    scopes = resolve_request_baseline_scopes(raw, request=request)
+    # These are registry membership flags, not human tags or a new confidence threshold.
+    predicate = "v.is_sample=1" if group == "sample" else "v.is_low=1 AND v.is_sample=0"
+    sql = "SELECT DISTINCT v.issue_id FROM version_dataset_items v JOIN issues i ON i.issue_id=v.issue_id WHERE v.is_target=1 AND (" + predicate + ")"
+    args = []
+    if datasets:
+        sql += " AND v.dataset_id IN (" + ",".join("?" for _ in datasets) + ")"
+        args.extend(datasets)
+    if scopes:
+        sql += " AND i.baseline_scope IN (" + ",".join("?" for _ in scopes) + ")"
+        args.extend(scopes)
+    with database.connect() as conn:
+        members = {row["issue_id"] for row in conn.execute(sql, args).fetchall()}
+    return tuple(sorted(members.intersection(selected) if selected else members)) or ("__empty_target_cohort__",)
+
+
+def _restrict_version_issue_ids(
+    raw: Any = None, *, request: Request | None = None,
     issue_ids: Sequence[str] = (), task_id: str = "",
 ) -> tuple[str, ...]:
     """Intersect current version targets; explicit historical tasks stay frozen."""

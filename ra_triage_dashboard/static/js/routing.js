@@ -364,6 +364,7 @@ function normalizedReviewRouteFilters(params) {
     reviewStatus,
     labelStates,
     issueTags: parseFilterList(params.get("issue_tags")),
+    targetGroup: params.get('target_group') || '',
     taskView: ['targets', 'pending'].includes(params.get('task_view')) ? 'targets' : '',
     taskProgress: params.has('task_progress')
       ? parseFilterList(params.get('task_progress')).filter(value => ['pending', 'completed'].includes(value))
@@ -512,6 +513,7 @@ function normalizedCaseLabelingRouteFilters(params) {
     taskId: /^(?:split|campaign)-[A-Za-z0-9]+$/.test(params.get("task") || "")
       ? params.get("task")
       : "",
+    targetGroup: params.get('target_group') || '',
     search: params.get("q") || "",
     issueIds: parseFilterList(params.get("issue_ids")).filter((value) =>
       ISSUE_QUERY_ID_RE.test(value)
@@ -662,6 +664,7 @@ function currentReviewRouteOptions(overrides = {}) {
     reviewStatus: selectedModelReviewStatuses(),
     labelStates: getMultiFilterValues($("#sharedLabelStateFilter")),
     issueTags: parseFilterList(state.reviewIssueTags || []),
+    targetGroup: state.reviewTargetGroup || '',
     commentState:
       typeof selectedReviewDiscussionFilter === "function"
         ? selectedReviewDiscussionFilter()
@@ -730,6 +733,8 @@ function applyReviewRouteControls(route) {
   setMultiFilterValues($("#reviewStatusFilter"), route.reviewStatus);
   setMultiFilterValues($("#sharedLabelStateFilter"), route.labelStates);
   state.reviewIssueTags = route.issueTags || [];
+  state.reviewTargetGroup = route.targetGroup || '';
+  if (typeof renderReviewTargetGroupPicker === 'function') renderReviewTargetGroupPicker();
   if (typeof renderReviewIssueTagFilter === "function") renderReviewIssueTagFilter();
   setMultiFilterValues(
     $("#reviewDiscussionFilter"),
@@ -878,6 +883,7 @@ function pageUrl(page, options = {}) {
     if (labeling.issue) url.searchParams.set("issue", labeling.issue);
     if (labeling.taskId) url.searchParams.set("task", labeling.taskId);
     if (labeling.search) url.searchParams.set("q", labeling.search);
+    if (labeling.targetGroup) url.searchParams.set('target_group', labeling.targetGroup);
     const issueIds = (labeling.issueIds || []).filter((value) =>
       ISSUE_QUERY_ID_RE.test(String(value))
     );
@@ -980,6 +986,7 @@ function pageUrl(page, options = {}) {
     if (labelState) url.searchParams.set("label_state", labelState);
     const issueTags = joinFilterList(review.issueTags);
     if (issueTags) url.searchParams.set("issue_tags", issueTags);
+    if (review.targetGroup) url.searchParams.set('target_group', review.targetGroup);
     if (review.commentState && review.commentState !== "all") {
       url.searchParams.set("comment_state", review.commentState);
     }

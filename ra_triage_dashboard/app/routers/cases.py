@@ -993,6 +993,7 @@ async def split_case_work(request: Request) -> dict[str, Any]:
         review_status=_as_text(filter_body.get("review_status")),
         label_state=_as_text(filter_body.get("label_state")),
         issue_tags=_as_text(filter_body.get("issue_tags")),
+        target_group=_as_text(filter_body.get("target_group")),
         model_run_id=_as_text(filter_body.get("model_run_id")),
         comparison=_as_text(filter_body.get("comparison") or filter_body.get("comparison_status")),
         failure_only=bool(filter_body.get("failure_only")),
@@ -1053,6 +1054,7 @@ async def split_case_work(request: Request) -> dict[str, Any]:
             overlap_ratio=overlap_ratio,
         )
         filter_snapshot = {
+                "target_group": _as_text(filter_body.get("target_group")),
                 "model_run_id": filters["model_run_id"],
                 "comparison_status": filters["comparison_status"],
                 "comment_state": filters["comment_state"],

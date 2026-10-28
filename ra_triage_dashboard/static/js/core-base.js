@@ -1069,6 +1069,7 @@ const state = {
   reviewQueueStale: false,
   reviewWorkSplitId: "",
   reviewTaskView: "",
+  reviewTargetGroup: "",
   reviewTaskProgress: [],
   reviewTaskContext: null,
   reviewTaskContextLoading: false,
@@ -1109,6 +1110,7 @@ const state = {
     detailLoading: false,
   },
   caseLabeling: {
+    targetGroup: "",
     tasks: [],
     taskId: "",
     search: "",

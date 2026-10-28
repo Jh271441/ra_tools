@@ -51,7 +51,7 @@ assert.equal(route.taskView,'targets');assert.deepEqual([...route.taskProgress],
 assert.deepEqual([...s.normalizedReviewRouteFilters(new URLSearchParams('work_split='+task+'&task_progress=completed')).taskProgress],['completed']);
 // Reset must clear context and progress before any async reload; it must not
 // leave the model picker locked or resurrect URL-backed owners.
-Object.assign(s,{renderReviewWorkSplitPicker:()=>{}, persistReviewerFilterRoute:()=>{},persistWorkAssigneeFilterRoute:()=>{},
+Object.assign(s,{renderReviewTargetGroupPicker:()=>{},renderReviewWorkSplitPicker:()=>{}, persistReviewerFilterRoute:()=>{},persistWorkAssigneeFilterRoute:()=>{},
   setReviewComparisonStatus:()=>{}, renderAnalysisRunFilter:()=>{}, renderActiveRun:()=>{},renderRunManager:()=>{},
   reloadReviewGallery:async()=>{},showToast:()=>{}});
 (async()=>{

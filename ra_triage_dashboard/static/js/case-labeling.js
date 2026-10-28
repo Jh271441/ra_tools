@@ -5,6 +5,7 @@ function caseLabelingRouteOptions(overrides = {}) {
   return {
     issue: overrides.issue ?? labeling.issueId ?? "",
     taskId: overrides.taskId ?? labeling.taskId ?? "",
+    targetGroup: overrides.targetGroup ?? labeling.targetGroup ?? '',
     search: overrides.search ?? labeling.search ?? "",
     issueIds: overrides.issueIds ?? labeling.issueIds ?? [],
     status: overrides.status ?? labeling.status ?? [],
@@ -26,6 +27,7 @@ function restoreCaseLabelingRouteState(route = null) {
   const filters = route?.labelingFilters || parsePageRoute().labelingFilters || {};
   if (route?.issue) state.caseLabeling.issueId = route.issue;
   state.caseLabeling.taskId = filters.taskId ?? state.caseLabeling.taskId;
+  state.caseLabeling.targetGroup = filters.targetGroup ?? '';
   state.caseLabeling.search = filters.search ?? state.caseLabeling.search;
   state.caseLabeling.issueIds = filters.issueIds ?? state.caseLabeling.issueIds;
   state.caseLabeling.status = normalizedLabelingStatusFilters(filters.status ?? state.caseLabeling.status);
@@ -178,6 +180,7 @@ async function loadCaseLabelingClusters() {
     task_id: state.caseLabeling.taskId || "",
     q: state.caseLabeling.search || "",
     issue_ids: (state.caseLabeling.issueIds || []).join(","),
+    target_group: state.caseLabeling.targetGroup || '',
     status: joinFilterList(state.caseLabeling.status),
     author: joinFilterList(state.caseLabeling.author),
     assignee: joinFilterList(state.caseLabeling.assignee),
@@ -225,6 +228,13 @@ function renderCaseLabelingMultiPicker(selector, options, selected, key) {
 }
 
 function renderCaseLabelingStatusPicker() {
+  renderTargetGroupPicker('#caseLabelingTargetGroupPicker', state.caseLabeling.targetGroup, value => {
+    state.caseLabeling.targetGroup = value;
+    state.caseLabeling.cluster = '';
+    state.caseLabeling.page = 1;
+    persistCaseLabelingRoute({issue:'', page:1});
+    loadCaseLabelingCases({page:1}).catch(error => showToast(error.message, true));
+  });
   renderCaseLabelingMultiPicker("#caseLabelingStatusPicker", labelingStatusFilterOptions(), state.caseLabeling.status, "status");
 }
 
@@ -390,6 +400,7 @@ function labelingTaskFilterPayload() {
     task_id: state.caseLabeling.taskId || "",
     q: state.caseLabeling.search || "",
     issue_ids: (state.caseLabeling.issueIds || []).join(","),
+    target_group: state.caseLabeling.targetGroup || '',
     status: joinFilterList(state.caseLabeling.status),
     author: joinFilterList(state.caseLabeling.author),
     assignee: joinFilterList(state.caseLabeling.assignee),
@@ -928,6 +939,7 @@ function caseLabelingListParams({page = 1, pageSize = state.caseLabeling.pageSiz
     task_id: state.caseLabeling.taskId || "",
     q: state.caseLabeling.search || "",
     issue_ids: (state.caseLabeling.issueIds || []).join(","),
+    target_group: state.caseLabeling.targetGroup || '',
     status: joinFilterList(state.caseLabeling.status),
     author: joinFilterList(state.caseLabeling.author),
     assignee: joinFilterList(state.caseLabeling.assignee),
@@ -1824,6 +1836,7 @@ function bindCaseLabelingEvents() {
   });
   $("#caseLabelingReset")?.addEventListener("click", () => {
     state.caseLabeling.taskId = "";
+    state.caseLabeling.targetGroup = '';
     state.caseLabeling.issueIds = [];
     state.caseLabeling.status = [];
     state.caseLabeling.author = [];

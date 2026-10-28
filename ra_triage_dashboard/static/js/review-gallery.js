@@ -790,6 +790,7 @@ async function loadCases({
   if (labelState) params.set("label_state", labelState);
   const issueTags = joinFilterList(selectedReviewIssueTags());
   if (issueTags) params.set("issue_tags", issueTags);
+  if (state.reviewTargetGroup) params.set('target_group', state.reviewTargetGroup);
   if (workAssignee) params.set("work_assignee", workAssignee);
   if (state.reviewWorkSplitId) params.set("work_split_id", state.reviewWorkSplitId);
   if (exclusion !== "all") params.set("exclusion", exclusion);

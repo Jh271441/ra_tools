@@ -84,6 +84,7 @@ async def create_gt_export_preview(request: Request) -> dict[str, Any]:
         normalized_filter_issue_ids = await asyncio.to_thread(
             restrict_version_issue_ids, baselines, request=request,
             issue_ids=normalized_filter_issue_ids, task_id=_as_text(filter_body.get("task_id")),
+            target_group=_as_text(filter_body.get("target_group")),
         )
         try:
             selected_issue_ids = await asyncio.to_thread(
@@ -110,6 +111,7 @@ async def create_gt_export_preview(request: Request) -> dict[str, Any]:
         selected_issue_ids = list(await asyncio.to_thread(
             restrict_version_issue_ids, baselines, request=request,
             issue_ids=selected_issue_ids, task_id=_as_text(filter_body.get("task_id")),
+            target_group=_as_text(filter_body.get("target_group")),
         ))
     try:
         preview = await asyncio.to_thread(
