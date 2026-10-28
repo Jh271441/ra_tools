@@ -36,6 +36,13 @@ existing tablet breakpoint to avoid overlapping controls.
 
 ## Release
 
+Size correction deployed `6e536bbb20c5718731bdd536356875adabfd6255`, cache693,
+at2026-10-28 13:25:53 CST.74frontend tests and32local browser combinations passed;
+desktop info no taller than label, heading equals label height,1920px GT label
+alignment verified. Cloud1043passed/7skipped; gray and production PostgreSQL health
+passed, served loader/analysis CSS match exact SHA. Receipt:
+`/volume/home/workspace/ra_triage_dashboard_deploy/releases/20261028T052251Z-6e536bbb20c5/result.json`.
+
 Placement correction deployed `59af7029ab1785a8ad48689590968bd6c46d4dbb`, cache692,
 at2026-10-28 13:11:52 CST: info sits beside the Review data scope label, above
 its picker, with no card-wide heading row.74 frontend contracts and24 local
