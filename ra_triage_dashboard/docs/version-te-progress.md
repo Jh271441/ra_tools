@@ -6,8 +6,24 @@ small type hierarchy. The user-provided image is a grouping illustration rather
 than a visual template. No fonts, UI libraries, endpoints or aggregation logic
 are added for this redesign.
 
-A labeled filter panel holds dataset, case scope and occurrence date (CST). Case
-scope remains a view filter, not a configurable sampling strategy. All selectors
+A single filter panel holds Dataset / View / Case scope / Occurrence date (CST).
+View groups the existing scope options; it does not switch page layouts. Review
+targets exposes only All review targets, Random sample (`sampled_targets`) and
+Low confidence excluding samples (`low`). Data processing exposes all/history,
+published, awaiting source, awaiting data/retry, excluded and the older sample
+candidates (`samples`, including pending). Both selects use the existing shared
+enhancement. Existing mode URLs select the matching group without rewriting the
+API contract. The last mode in each group is remembered until the dataset changes;
+other filters stay visible and unchanged when switching groups.
+
+The four metrics, TE charts, composition and gallery keep their original order,
+visibility, styles and counts. No tabs, extra cards, persistent explanatory rows
+or new shared styles are added. Only the toolbar grid changes: four columns on
+desktop, two at tablet widths and the existing narrow-phone stack. The current
+cohort is named in the TE denominator line. Cohort changes clear stale charts
+while loading; same-cohort date/status changes retain existing loading behavior.
+
+Case scope remains a view filter, not a configurable sampling strategy. All selectors
 retain the shared native-select enhancement, including keyboard, Escape, outside
 close, viewport positioning, disabled states and locale preservation. The topbar's
 existing refresh action is the single manual refresh entry for this page.
@@ -108,3 +124,28 @@ states; a live Trail query can change independently. Link hover titles distingui
 live fields from exact recorded IDs. Discovery/excluded/source-waiting and frozen
 0821 links preserve their exact recorded IDs; reason empty is not source-waiting.
 Empty recorded scopes still omit links. No render-time Trail query is introduced.
+
+## Local candidate validation (2026-10-28)
+
+`python3 -m ra_triage_dashboard.tests.preview_version_filters --port 8794` serves
+the actual page fragment, shared styles/selects and page modules at
+`http://127.0.0.1:8794/version-datasets`. Its workbench uses synthetic in-memory
+registry rows and temporary TE snapshots, never production data or Trail. All
+mutations are unsupported; external links/media actions are inert in this fixture.
+The fixture has no real media and does not establish production/SSO acceptance.
+The Error button toggles failed reads; refresh or restarting resets fixture state.
+The production frontend cache is bumped together with contract expectations.
+
+Final local checks: 93 unittest cases passed (15 version frontend/workbench,
+74 frontend contracts, 4 base-path checks); touched JavaScript syntax and
+`git diff --check` passed. The workbench suite emitted an unclosed-event-loop
+ResourceWarning after passing. History-driven dataset changes clear group memory;
+same-dataset route restoration and locale switching preserve valid selections.
+
+IAB responsive fixture checks covered 1440px Chinese/dark, 320px and 390px
+English/light, and 900px tablet layout. Verified shared dropdown scope options,
+sample/low denominators, group memory, locale switching, Escape dismissal and
+popup/viewport bounds without page-level horizontal overflow. These are browser
+viewport checks, not physical-phone or simulator acceptance. No authenticated
+production, real-media or full-app-bootstrap acceptance is claimed. This is a
+local code candidate only: no push or production deployment was performed.

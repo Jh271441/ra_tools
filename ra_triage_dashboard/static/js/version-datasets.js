@@ -1,5 +1,28 @@
 /* Version worksets own their requests; global Review/GT bootstrap is independent. */
 const versionDatasetState = {active:false,seq:0,controller:null,timer:null,page:1,dataset:'',mode:'targets',sort:'added',query:'',date:'',assignee:'',reviewStatus:'all',teStatus:'all',media:'bev',mediaSeq:0,data:null,members:null,gridKey:'',bound:false,observer:null,imageEpoch:0};
+function versionDatasetView(mode=versionDatasetState.mode) {
+  return ['targets','sampled_targets','low'].includes(mode)?'review':'processing';
+}
+function versionDatasetScopeLabel(mode=versionDatasetState.mode) {
+  return ({targets:uiText('全部复核目标','All review targets'),sampled_targets:uiText('随机抽样集','Random sample'),low:uiText('低置信（不含抽样）','Low confidence (excluding samples)'),samples:uiText('抽样候选（含未就绪）','Sample candidates (including pending)'),waiting:uiText('等待数据或重试','Awaiting data or retry'),published:uiText('已回刷','Published'),excluded:uiText('已过滤','Excluded'),source_waiting:uiText('待源信息','Awaiting source'),all:uiText('全部与历史','All and history')})[mode]||mode;
+}
+function syncVersionDatasetViews() {
+  const s=versionDatasetState,view=versionDatasetView(),picker=$('#versionDatasetMode');
+  const modes=view==='review'?['targets','sampled_targets','low']:['all','published','source_waiting','waiting','excluded','samples'];
+  const options=modes.map(mode=>`<option value="${mode}">${escapeHtml(versionDatasetScopeLabel(mode))}</option>`).join('');
+  if(picker.innerHTML!==options)picker.innerHTML=options;
+  picker.value=s.mode;
+  $('#versionDatasetView').value=view;
+  enhanceNativeUiSelect(picker);
+  enhanceNativeUiSelect($('#versionDatasetView'));
+}
+function switchVersionDatasetView(view) {
+  const s=versionDatasetState,current=versionDatasetView();
+  if(view===current||!['review','processing'].includes(view))return;
+  s.viewMemory??={};
+  s.viewMemory[current]=s.mode;
+  versionDatasetChange({mode:s.viewMemory[view]||(view==='review'?'targets':'all')});
+}
 function versionDatasetTime(value) {
   if (!value) return '—';
   const n=Number(value),d=new Date(Number.isFinite(n)&&n>0 ? (n<1e11?n*1000:n) : value);
@@ -10,6 +33,7 @@ function versionDatasetStatus(state) {
 }
 function versionDatasetRoute() {
   const p=new URLSearchParams(location.search),s=versionDatasetState;
+  if(p.get('dataset')&&p.get('dataset')!==s.dataset)s.viewMemory={};
   s.dataset=p.get('dataset')||s.dataset;s.mode=p.get('mode')||'targets';s.sort=p.get('sort')||'added';s.query=p.get('q')||'';s.page=Math.max(1,Number(p.get('page'))||1);s.date=p.get('date')||'';s.teStatus=p.get('te_status')||'all';s.media=p.get('media')||'bev';s.assignee=p.get('assignee')||'';s.reviewStatus=p.get('review_status')||'all';
 }
 function versionDatasetRouteOptions(options={}) {
@@ -38,10 +62,10 @@ function setVersionDatasetsActive(active) {
   if(!active)closeVersionTEInfo();
   s.active=active;s.seq++;s.controller?.abort();clearTimeout(s.timer);
   s.observer?.disconnect();s.observer=null;s.imageEpoch++;
-  if(active){bindVersionDatasets();versionDatasetRoute();void loadVersionDatasets();}
+  if(active){bindVersionDatasets();versionDatasetRoute();syncVersionDatasetViews();void loadVersionDatasets();}
 }
 function versionDatasetChange(patch) {
-  const s=versionDatasetState,keepCharts=!patch.dataset||patch.dataset===s.dataset;if(patch.dataset&&patch.dataset!==s.dataset)patch.date='';if(patch.dataset==='historical-0821'){patch.assignee='';patch.reviewStatus='all';}Object.assign(s,{page:1},patch);s.page=Math.max(1,Number(s.page)||1);clearVersionDatasetMembers({keepCharts});syncVersionTEFilters();
+  const s=versionDatasetState,keepCharts=(!patch.dataset||patch.dataset===s.dataset)&&(!patch.mode||patch.mode===s.mode);if(patch.dataset&&patch.dataset!==s.dataset){patch.date='';s.viewMemory={};}if(patch.dataset==='historical-0821'){patch.assignee='';patch.reviewStatus='all';}Object.assign(s,{page:1},patch);s.page=Math.max(1,Number(s.page)||1);clearVersionDatasetMembers({keepCharts});syncVersionTEFilters();syncVersionDatasetViews();
   const u=new URL(location.href);
   for(const [key,value] of Object.entries({dataset:s.dataset,mode:s.mode,sort:s.sort,q:s.query,page:s.page,date:s.date,te_status:s.teStatus,media:s.media,assignee:s.assignee,review_status:s.reviewStatus}))value?u.searchParams.set(key,String(value)):u.searchParams.delete(key);
   history.pushState({},'',u);void loadVersionDatasets();
@@ -51,11 +75,12 @@ function renderVersionDatasets({force=false}={}) {
   const el=$('#versionDatasetsPage');
   el.querySelectorAll('[data-zh]').forEach(e=>e.textContent=uiText(e.dataset.zh,e.dataset.en));
   el.querySelectorAll('[data-label-zh]').forEach(e=>e.setAttribute('aria-label',uiText(e.dataset.labelZh,e.dataset.labelEn)));
+  syncVersionDatasetViews();
   if(!s.data)return;
   const picker=$('#versionDatasetPicker');
   const options=s.data.items.map(x=>`<option value="${escapeHtml(x.id)}">${escapeHtml(x.release_family.slice(4))} · ${x.targets??'—'} ${uiText('复核案例','review cases')}</option>`).join('');
   if(picker.innerHTML!==options)picker.innerHTML=options;picker.value=s.dataset;
-  $('#versionDatasetMode').value=s.mode;$('#versionDatasetSort').value=s.sort;$('#versionDatasetSearch').value=s.query;$('#versionDatasetTEStatus').value=s.teStatus;$('#versionDatasetMedia').value=s.media;$('#versionDatasetReviewStatus').value=s.reviewStatus;
+  $('#versionDatasetSort').value=s.sort;$('#versionDatasetSearch').value=s.query;$('#versionDatasetTEStatus').value=s.teStatus;$('#versionDatasetMedia').value=s.media;$('#versionDatasetReviewStatus').value=s.reviewStatus;
   enhanceDashboardSelects(el);
   const current=s.members?.dataset_id===s.dataset?s.members.dataset:s.data.items.find(x=>x.id===s.dataset);
   if(!current){$('#versionDatasetSummary').textContent=uiText('等待首次导入','Awaiting first import');$('#versionDatasetGrid').replaceChildren();return;}
@@ -136,6 +161,7 @@ async function loadVersionDatasets(){
 }
 function bindVersionDatasets(){
   const s=versionDatasetState;if(s.bound)return;s.bound=true;bindVersionTEInfo();
+  $('#versionDatasetView').addEventListener('change',e=>switchVersionDatasetView(e.target.value));
   for(const [id,key] of [['versionDatasetPicker','dataset'],['versionDatasetMode','mode'],['versionDatasetSort','sort'],['versionDatasetDate','date'],['versionDatasetTEStatus','teStatus'],['versionDatasetMedia','media'],['versionDatasetOwner','assignee'],['versionDatasetReviewStatus','reviewStatus']])$('#'+id).addEventListener('change',e=>versionDatasetChange({[key]:e.target.value}));
   $('#versionDatasetsPage').addEventListener('click',e=>{const status=e.target.closest('[data-version-te-status]');if(status){versionDatasetChange({teStatus:s.teStatus===status.dataset.versionTeStatus?'all':status.dataset.versionTeStatus});return;}const day=e.target.closest('[data-version-date]');if(day){versionDatasetChange({date:s.date===day.dataset.versionDate?'':day.dataset.versionDate});return;}if(e.target.closest('[data-version-all-dates]')){if(s.date)versionDatasetChange({date:''});return;}const open=e.target.closest('[data-version-open]');if(open)void openVersionDatasetMedia(open.dataset.versionOpen);});
   $('#versionDatasetSearchForm').addEventListener('submit',e=>{e.preventDefault();versionDatasetChange({query:$('#versionDatasetSearch').value.trim()});});
@@ -182,7 +208,7 @@ function renderVersionTE(m){
   donut.setAttribute('aria-label',uiText(`TE 已标 ${n.filled}，共 ${n.total}`,`TE filled ${n.filled} of ${n.total}`));
   $('#versionTERate').textContent=n.total?`${filled.toFixed(1)}%`:'—';
   $('#versionTERatio').textContent=`${n.filled} / ${n.total}`;
-  $('#versionTEScope').textContent=m.dataset.historical?uiText(`${n.total} 个固定目标`,`${n.total} frozen targets`):uiText(`${s.date?s.date+' · ':''}${n.total} 个目标 · 低置信＋抽样`,`${s.date?s.date+' · ':''}${n.total} targets · Low confidence + sample`);
+  $('#versionTEScope').textContent=(s.date?s.date+' · ':'')+versionDatasetScopeLabel()+' · '+(m.dataset.historical?uiText(`${n.total} 个固定目标`,`${n.total} frozen targets`):uiText(`${n.total} 个目标`,`${n.total} targets`));
   const scopeFilters = [s.assignee, s.reviewStatus === 'pending' ? uiText('联合待完成', 'Combined review pending') : s.reviewStatus === 'completed' ? uiText('联合已完成', 'Combined review complete') : ''].filter(Boolean);
   if (scopeFilters.length) $('#versionTEScope').textContent += ' · ' + scopeFilters.join(' · ');
   $('#versionTEStatusChart').innerHTML=dailyReviewStatusRows(n).map(([key,label,count])=>`<button type="button" class="te-legend-item${count===0?' is-zero':''}" data-version-te-status="${key}" aria-pressed="${s.teStatus===key}"><i class="te-swatch te-${key}"></i><span>${label}</span><strong>${count}</strong></button>`).join('');
