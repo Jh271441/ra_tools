@@ -44,7 +44,8 @@ def main():
             if target and i % 7:
                 observations.append(dict(issue_id=f'cn9000{i:03}', dataset='1009', date=day,
                     version='1.gen4-release-20261009.demo', reason='sample' if sample else 'low',
-                    te_status='filled' if i % 4 == 0 else 'unfilled', te_value='失败' if i % 4 == 0 else None))
+                    te_status='filled' if i % 4 == 0 else 'unfilled',
+                    te_value=['失败','未接起','超出范围','误触发','成功','无需协助'][i // 4 - 1] if i % 4 == 0 else None))
         (folder/'1009.json').write_text(json.dumps(dict(schema_version=1, source_field='ra_review_result_new',
             dataset='1009', date='', snapshot_revision='a'*64, last_success_at=datetime.now(timezone.utc).isoformat(), rows=observations)))
         (folder.parent/'version-membership-1009.json').write_text('{"schema_version":1}')

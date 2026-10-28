@@ -16,8 +16,11 @@ enhancement. Existing mode URLs select the matching group without rewriting the
 API contract. The last mode in each group is remembered until the dataset changes;
 other filters stay visible and unchanged when switching groups.
 
-The four metrics, TE charts, composition and gallery keep their original order,
-visibility, styles and counts. No tabs, extra cards, persistent explanatory rows
+The four metrics, TE charts, composition and gallery keep their visibility and
+counts. The follow-up moves composition directly after the metrics, before TE.
+TE result rows use label / proportional bar / count on one row, with wrapping
+labels and natural height rather than a centered, clipped inner scroll region.
+No categories are combined or omitted. No tabs, extra cards, persistent explanatory rows
 or new shared styles are added. Only the toolbar grid changes: four columns on
 desktop, two at tablet widths and the existing narrow-phone stack. The current
 cohort is named in the TE denominator line. Cohort changes clear stale charts
@@ -148,4 +151,12 @@ sample/low denominators, group memory, locale switching, Escape dismissal and
 popup/viewport bounds without page-level horizontal overflow. These are browser
 viewport checks, not physical-phone or simulator acceptance. No authenticated
 production, real-media or full-app-bootstrap acceptance is claimed. This is a
-local code candidate only: no push or production deployment was performed.
+local fixture validation record, not a production acceptance claim.
+
+The first deployment attempt (`b9e4aa9`, cache695) passed 1043 cloud tests
+(7 skipped) and isolated gray, but failed when the old process took more than
+30 seconds to exit. The original cache693 was restored with its saved
+configuration and PostgreSQL health verified. The follow-up fixes deployment
+ownership through delayed shutdown, and adds the requested composition order
+and compact result rows (cache696). Release status is recorded below after
+the exact-SHA production checks.

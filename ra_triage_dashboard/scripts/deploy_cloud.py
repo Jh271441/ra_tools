@@ -354,19 +354,28 @@ def process_alive(pid):
         return False
 
 
-def stop_production(pid):
+def wait_production_stopped(pid):
+    # SIGTERM cannot be undone: never abandon a draining server just because
+    # it exceeds a deadline. Keep the deployment lock until ownership resolves.
+    notice_at = time.monotonic() + 30
+    while process_alive(pid):
+        if time.monotonic() >= notice_at:
+            print(f"Dashboard process {pid} is still draining; retaining deployment ownership", flush=True)
+            notice_at = time.monotonic() + 15
+        time.sleep(0.2)
+    # Process exit precedes tmux removing its wrapper/session. A new owner is
+    # never ours to stop; an old wrapper must disappear before binding 8785.
+    while subprocess.run(["tmux", "has-session", "-t", "=" + SESSION], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
+        require(git_pane_pid() == pid, "Dashboard session acquired another process during shutdown")
+        time.sleep(0.1)
+
+
+def stop_production(pid, *, on_signal=None):
     require(git_pane_pid() == pid, "Production process changed during validation")
     os.kill(pid, signal.SIGTERM)
-    end = time.monotonic() + 30
-    while process_alive(pid) and time.monotonic() < end:
-        time.sleep(0.2)
-    require(not process_alive(pid), "Production did not stop gracefully")
-    # Process exit precedes tmux removing its wrapper/session; allow that bounded lag.
-    session_deadline = time.monotonic() + 5
-    while subprocess.run(["tmux", "has-session", "-t", "=" + SESSION], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
-        if time.monotonic() >= session_deadline:
-            raise DeployError("Dashboard tmux session did not exit")
-        time.sleep(0.1)
+    if on_signal is not None:
+        on_signal()
+    wait_production_stopped(pid)
 
 def in_use(path):
     for proc in Path("/proc").glob("[0-9]*"):
@@ -665,12 +674,14 @@ def promote_release(
         validate_prepared_worktree(rollback, old)
         replacement_pid = None
         production_stop_attempted = False
+        def mark_production_stopping():
+            nonlocal production_stop_attempted
+            production_stop_attempted = True
         result["status"] = "promoting"
         save(folder / "result.json", result)
         try:
             print("Prepared gray passed; promoting exact SHA", flush=True)
-            production_stop_attempted = True
-            stop_production(pid)
+            stop_production(pid, on_signal=mark_production_stopping)
             if migrations:
                 backup, migration_count = apply_additive_migrations(
                     candidate,
@@ -703,13 +714,12 @@ def promote_release(
             print(json.dumps({"status": "success", "target": target, "release_id": release_id, "record": str(folder / "result.json")}))
         except BaseException as exc:
             result.update(status="failed", error_type=type(exc).__name__)
-            if production_stop_attempted and not process_alive(pid):
+            if production_stop_attempted:
                 try:
                     if replacement_pid is not None:
                         stop_production(replacement_pid)
-                except (DeployError, subprocess.CalledProcessError):
-                    pass
-                try:
+                    else:
+                        wait_production_stopped(pid)
                     start_production(folder, rollback / "ra_triage_dashboard", rebase_env(env, REPO, rollback), old, "rollback")
                     smoke(8785, old, "postgresql")
                     result["rollback_status"] = "healthy"

@@ -33,11 +33,11 @@ body[data-active-page="version-datasets"] .top-actions {margin-left:auto}
 .version-progress-card .te-legend-item strong {font-size:20px;line-height:1.2}
 .version-progress-card .te-legend-item.is-zero strong {font-size:16px;color:var(--muted)}
 .version-progress-card .te-legend-item.is-zero .te-swatch {background:var(--line)}
-.version-result-chart {display:grid;align-content:center;align-self:center;gap:10px;min-width:0;max-height:214px;overflow-y:auto;overflow-x:hidden}
-.version-result-row {display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 12px;min-width:0;font-size:13px;line-height:1.4}
+.version-result-chart {display:grid;align-content:start;align-self:center;gap:6px;min-width:0}
+.version-result-row {display:grid;grid-template-columns:minmax(0,1.2fr) minmax(32px,1fr) max-content;align-items:center;gap:8px;min-height:26px;min-width:0;font-size:13px;line-height:1.4}
 .version-result-row > span:first-child {grid-row:1;grid-column:1;overflow-wrap:anywhere}
-.version-result-row strong {grid-row:1;grid-column:2;font-size:13px;text-align:right;font-variant-numeric:tabular-nums}
-.version-result-track {grid-column:1/-1;grid-row:2;display:block;height:6px;border-radius:3px;overflow:hidden;background:var(--line-soft)}
+.version-result-row strong {grid-row:1;grid-column:3;font-size:13px;text-align:right;font-variant-numeric:tabular-nums}
+.version-result-track {grid-column:2;grid-row:1;display:block;height:6px;border-radius:3px;overflow:hidden;background:var(--line-soft)}
 .version-result-track i {display:block;height:100%;background:var(--muted);border-radius:3px}
 .version-te-grid .te-chart-empty {min-height:100px;font-size:13px;line-height:1.5;text-align:center}
 .version-days {margin:0;min-width:0}

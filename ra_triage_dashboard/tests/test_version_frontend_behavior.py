@@ -6,6 +6,17 @@ import unittest
 
 
 class VersionFrontendBehaviorTest(unittest.TestCase):
+    def test_composition_precedes_te_and_results_do_not_clip(self):
+        root = Path(__file__).resolve().parents[1] / 'static'
+        html = (root / 'index.html').read_text()
+        self.assertLess(html.index('id="versionDatasetSummary"'), html.index('class="version-composition"'))
+        self.assertLess(html.index('class="version-composition"'), html.index('id="versionTEPanel"'))
+        css = (root / 'css/version-datasets.css').read_text()
+        chart = css.split('.version-result-chart {', 1)[1].split('}', 1)[0]
+        self.assertNotIn('max-height', chart)
+        self.assertNotIn('overflow', chart)
+        self.assertIn('minmax(32px,1fr) max-content', css)
+
     @unittest.skipUnless(shutil.which("node"), "Node is required")
     def test_date_toggle_cancellation_and_scope_safe_chart_retention(self):
         source = Path(__file__).resolve().parents[1] / "static/js/version-datasets.js"
@@ -99,6 +110,10 @@ assert.deepEqual(versionDatasetState.viewMemory,{});
 assert.equal($('#versionDatasetMode').value,'sampled_targets');
 const beforeLocale=JSON.stringify(versionDatasetState);
 global.uiText=(_,en)=>en;
+assert.equal(versionTEResult('成功'),'Succeeded');
+assert.equal(versionTEResult('超出范围'),'Out of scope');
+assert.equal(versionTEResult('out_of_scope'),'Out of scope');
+assert.equal(versionTEResult('custom result'),'custom result');
 syncVersionDatasetViews();
 assert.ok($('#versionDatasetMode').innerHTML.includes('Low confidence (excluding samples)'));
 assert.equal($('#versionDatasetMode').value,'sampled_targets');

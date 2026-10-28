@@ -178,7 +178,7 @@ function versionDatasetDetails(row){
 }
 function versionTEResult(value){
   const raw=String(value??'');
-  const labels={'失败':uiText('失败','Failed'),'out_of_scope':uiText('超出范围','Out of scope'),'误触发':uiText('误触发','False trigger'),'未接起':uiText('未接起','Unanswered'),'无需协助':uiText('无需协助','No assistance needed'),'正确触发':uiText('正确触发','Correct trigger')};
+  const labels={'失败':uiText('失败','Failed'),'成功':uiText('成功','Succeeded'),'超出范围':uiText('超出范围','Out of scope'),'out_of_scope':uiText('超出范围','Out of scope'),'误触发':uiText('误触发','False trigger'),'未接起':uiText('未接起','Unanswered'),'无需协助':uiText('无需协助','No assistance needed'),'正确触发':uiText('正确触发','Correct trigger')};
   return Object.prototype.hasOwnProperty.call(labels,raw)?labels[raw]:raw;
 }
 function versionTEBadge(row){

@@ -237,7 +237,20 @@ COMMIT;
             with self.assertRaises(d.DeployError): d.stop_production(123)
             kill.assert_not_called()
 
-    def simulate_release(self, fail_tests=False, fail_production=False, prepare_only=False, runtime_changed=False):
+    def test_slow_shutdown_retains_ownership_past_30_seconds(self):
+        signalled = MagicMock()
+        with patch.object(d,"git_pane_pid",return_value=123), patch.object(d.os,"kill") as kill, patch.object(d,"process_alive",side_effect=[True,True,False]), patch.object(d.time,"monotonic",side_effect=[0,31,31,32]), patch.object(d.time,"sleep"), patch.object(d.subprocess,"run",return_value=type("R",(),{"returncode":1})()), patch("builtins.print") as output:
+            d.stop_production(123,on_signal=signalled)
+        kill.assert_called_once_with(123,d.signal.SIGTERM)
+        signalled.assert_called_once_with()
+        self.assertIn("retaining deployment ownership",output.call_args.args[0])
+
+    def test_shutdown_never_takes_over_replaced_session(self):
+        with patch.object(d,"process_alive",return_value=False), patch.object(d.subprocess,"run",return_value=type("R",(),{"returncode":0})()), patch.object(d,"git_pane_pid",return_value=456):
+            with self.assertRaisesRegex(d.DeployError,"another process"):
+                d.wait_production_stopped(123)
+
+    def simulate_release(self, fail_tests=False, fail_production=False, prepare_only=False, runtime_changed=False, fail_stop=False):
         with tempfile.TemporaryDirectory() as temp, ExitStack() as stack:
             base=Path(temp); repo=base/"repo"; repo.mkdir(); python=base/"python"; python.touch()
             env={"DASHBOARD_DATABASE_URL_FILE":"/db", "DASHBOARD_DATA_DIR":str(base/"data")}
@@ -271,7 +284,13 @@ COMMIT;
             stack.enter_context(patch.object(d.subprocess,"Popen"))
             stack.enter_context(patch.object(d,"stop_child"))
             stack.enter_context(patch.object(d,"process_alive",return_value=False))
-            stop=stack.enter_context(patch.object(d,"stop_production"))
+            def stopping(pid, *, on_signal=None):
+                if on_signal:
+                    on_signal()
+                if fail_stop:
+                    raise d.DeployError("Interrupted after SIGTERM")
+            stop=stack.enter_context(patch.object(d,"stop_production",side_effect=stopping))
+            wait=stack.enter_context(patch.object(d,"wait_production_stopped"))
             start=stack.enter_context(patch.object(d,"start_production"))
             stack.enter_context(patch.object(d,"git_pane_pid",return_value=22))
             stack.enter_context(patch.object(d,"cleanup",return_value=[]))
@@ -279,12 +298,14 @@ COMMIT;
                 if fail_production and port==8785 and sha==target: raise d.DeployError("failed health")
                 return dict(health,build_commit=sha,storage=storage)
             stack.enter_context(patch.object(d,"smoke",side_effect=smoke))
-            if fail_tests or fail_production or runtime_changed:
+            if fail_tests or fail_production or runtime_changed or fail_stop:
                 with self.assertRaises((d.DeployError,subprocess.CalledProcessError)): d.deploy(target)
             elif prepare_only:
                 d.prepare_release(target)
             else: d.deploy(target)
             record=json.loads(next((base/"state/releases").glob("*/result.json")).read_text())
+            if fail_stop:
+                wait.assert_called_once_with(11)
             return stop.call_args_list,start.call_args_list,record
 
     def test_test_failure_never_stops_production(self):
@@ -311,6 +332,12 @@ COMMIT;
         self.assertEqual(starts[1].args[3],"b"*40)
         self.assertEqual(record["rollback_status"],"healthy")
         self.assertEqual(record["status"],"failed")
+
+    def test_failure_after_signal_waits_then_recovers_previous_sha(self):
+        stops,starts,record=self.simulate_release(fail_stop=True)
+        self.assertEqual(len(stops),1)
+        self.assertEqual(starts[0].args[3],"b"*40)
+        self.assertEqual(record["rollback_status"],"healthy")
 
     def test_success_records_verified_target(self):
         stops,starts,record=self.simulate_release()

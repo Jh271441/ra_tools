@@ -939,7 +939,7 @@
  .version-te-info-button {min-width:44px}
  .version-days .te-daily-chart {max-height:240px}
  .version-days .te-day {grid-template-columns:38px minmax(20px,1fr) 54px 44px;min-height:44px;gap:6px}
- .version-result-chart {max-height:240px}
+ .version-result-row {min-height:32px}
  .version-composition-legend {gap:8px 16px}
  .version-gallery .gallery-heading {padding:14px;gap:12px}
  .version-gallery-heading {gap:10px}
