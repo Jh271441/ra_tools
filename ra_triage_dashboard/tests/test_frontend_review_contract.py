@@ -85,7 +85,7 @@ class FrontendReviewContractTest(unittest.TestCase):
         self.assertIn("baselines", APP_JS)
         self.assertIn("/static/js/", APP_ENTRY_JS)
         self.assertIn("script.async = false", APP_ENTRY_JS)
-        self.assertIn("app.js?v=manual-triage-696", INDEX_HTML)
+        self.assertIn("app.js?v=manual-triage-697", INDEX_HTML)
         self.assertIn('"work-split.js"', APP_ENTRY_JS)
         self.assertIn('"review-assignments.js"', APP_ENTRY_JS)
         # Product logic must live in domain modules, not the entry loader.
@@ -154,6 +154,10 @@ class FrontendReviewContractTest(unittest.TestCase):
         self.assertIn(".issue-card-flag-needs-gt", STYLES_CSS)
         self.assertIn(".issue-card-flag-excluded", STYLES_CSS)
 
+    def test_multiselect_toolbar_never_shrinks_with_long_options(self) -> None:
+        self.assertIn('.multi-filter-toolbar {\n  flex: 0 0 auto;', STYLES_CSS)
+        self.assertIn('.multi-filter-actions button, .multi-filter-action { min-height: 44px; }', STYLES_CSS)
+
     def test_analysis_scope_has_no_persistent_empty_task_paragraph(self) -> None:
         self.assertNotIn("analysisWorkSplitHint", INDEX_HTML)
         self.assertNotIn("analysisWorkSplitHint", APP_JS)
@@ -196,7 +200,8 @@ class FrontendReviewContractTest(unittest.TestCase):
         self.assertIn("repeat(9, minmax(0, .58fr)) auto", STYLES_CSS)
         self.assertIn("filter-submit { height: 32px; padding: 5px 8px; white-space: nowrap; }", STYLES_CSS)
         self.assertIn(".analysis-filters label, .analysis-filters .analysis-work-split-filter { min-width: 0; display: grid; gap: 3px; color: var(--faint); font-size: 11px; }", STYLES_CSS)
-        self.assertIn('.analysis-filters input:not([type="checkbox"]), .analysis-filters select, .analysis-filters .ui-select-trigger { height: 34px; min-width: 0; padding: 5px 29px 5px 8px; font-size: 12px; }', STYLES_CSS)
+        self.assertIn('.analysis-filters input:not([type="checkbox"]), .analysis-filters select { height: 34px; min-width: 0; padding: 5px 29px 5px 8px; font-size: 12px; }', STYLES_CSS)
+        self.assertNotIn('.analysis-filters .ui-select-trigger {', (JS_DIR.parent / 'css' / 'analysis.css').read_text(encoding='utf-8'))
         self.assertIn("repeat(9, minmax(90px, 1fr))", STYLES_CSS)
         self.assertIn(".analysis-model-label-filter { grid-column: 1; grid-row: 3; }", STYLES_CSS)
         self.assertIn(".analysis-exclusion-filter { grid-column: 1; grid-row: 2; }", STYLES_CSS)

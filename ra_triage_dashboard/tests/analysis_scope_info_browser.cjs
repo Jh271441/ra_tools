@@ -6,7 +6,7 @@ const { chromium } = require('playwright');
 const root = path.resolve(__dirname, '../static');
 const original = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const css = [...original.matchAll(/"((?:css\/|vendor\/)[^"\n]+\.css|styles\.css)"/g)].map(m => m[1]);
-const modules = ['core-base', 'i18n-messages', 'i18n', 'format-api', 'session-config', 'work-split', 'run-comparison'];
+const modules = ['core-base', 'i18n-messages', 'i18n', 'format-api', 'session-config', 'work-split', 'run-comparison', 'analysis'];
 const html = original.replace(/<script\b[^>]*>[\s\S]*?<\/script>/g, '').replaceAll('{{RA_TRIAGE_BASE_PATH}}', '')
   .replace('</head>', css.map(p => `<link rel="stylesheet" href="/static/${p}">`).join('') + '</head>')
   .replace('</body>', modules.map(p => `<script src="/static/js/${p}.js"></script>`).join('') + '</body>');
@@ -54,6 +54,8 @@ const server = http.createServer((req, res) => {
           document.querySelector('#reviewAnalysisFilterForm').classList.add('is-open');
           document.querySelector('#comparisonResults').classList.remove('hidden');
           applyDomI18n(document);
+          renderAnalysisWorkAgreementPicker();
+          renderAnalysisCommentStatePicker();
           await loadAnalysisWorkSplits({force: true});
           renderRunComparisonSummary(window.fixtureSummary);
         }, {view, lang, theme});
@@ -62,6 +64,39 @@ const server = http.createServer((req, res) => {
         assert.ok(bounds.scroll <= width + 1, JSON.stringify({view, lang, theme, bounds}));
         assert.equal(await page.locator('#comparisonSummary .comparison-metric').count(), 6);
         if (view === 'analysis') {
+          const carets = await page.evaluate(() => {
+            const inset = (root, triggerClass, caretClass) => {
+              const trigger = root.querySelector(triggerClass).getBoundingClientRect();
+              const caret = root.querySelector(caretClass).getBoundingClientRect();
+              return {right: trigger.right - caret.right, center: (caret.top + caret.bottom - trigger.top - trigger.bottom) / 2};
+            };
+            return {
+              shared: inset(document.querySelector('.analysis-filters .multi-filter'), '.multi-filter-trigger', '.multi-filter-caret'),
+              singles: ['analysisWorkAgreementPicker', 'analysisWorkSplitPicker', 'analysisCommentStatePicker'].map(id => ({id, ...inset(document.getElementById(id), '.ui-select-trigger', '.ui-select-caret')})),
+            };
+          });
+          for (const caret of carets.singles) {
+            assert.ok(Math.abs(caret.right - carets.shared.right) <= 1, `shared caret inset: ${JSON.stringify({width, lang, caret, shared:carets.shared})}`);
+            assert.ok(Math.abs(caret.center) <= 1, 'caret vertically centered');
+            const trigger = page.locator(`#${caret.id} .ui-select-trigger`);
+            const native = page.locator(`#${caret.id} select`);
+            const selected = await native.inputValue();
+            assert.equal(await native.isVisible(), false);
+            await trigger.scrollIntoViewIfNeeded();
+            await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+            await trigger.click();
+            assert.equal(await trigger.getAttribute('aria-expanded'), 'true');
+            const panel = await page.locator(`#${caret.id} .ui-select-panel`).boundingBox();
+            assert.ok(panel, `visible panel: ${width}/${lang}/${theme}/${caret.id}`);
+            assert.ok(panel.x >= 0 && panel.x + panel.width <= width + 1 && panel.y >= 0 && panel.y + panel.height <= 1001);
+            await page.keyboard.press('ArrowDown');
+            await page.keyboard.press('Escape');
+            assert.equal(await trigger.getAttribute('aria-expanded'), 'false');
+            assert.equal(await native.inputValue(), selected);
+            await trigger.click();
+            await page.locator('#analysisIssueInput').click();
+            assert.equal(await trigger.getAttribute('aria-expanded'), 'false');
+          }
           const info = page.locator('#analysisScopeInfo button');
           assert.equal(await page.locator('.analysis-filter-heading').count(), 0);
           assert.equal(await page.locator('.analysis-work-split-filter #analysisScopeInfo').count(), 1);
