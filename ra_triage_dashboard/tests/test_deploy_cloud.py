@@ -250,7 +250,7 @@ COMMIT;
             with self.assertRaisesRegex(d.DeployError,"another process"):
                 d.wait_production_stopped(123)
 
-    def simulate_release(self, fail_tests=False, fail_production=False, prepare_only=False, runtime_changed=False, fail_stop=False):
+    def simulate_release(self, fail_tests=False, fail_production=False, prepare_only=False, runtime_changed=False, fail_stop=False, isolated=False, branch_changed=False, checkout_changed=False):
         with tempfile.TemporaryDirectory() as temp, ExitStack() as stack:
             base=Path(temp); repo=base/"repo"; repo.mkdir(); python=base/"python"; python.touch()
             env={"DASHBOARD_DATABASE_URL_FILE":"/db", "DASHBOARD_DATA_DIR":str(base/"data")}
@@ -259,10 +259,16 @@ COMMIT;
             stack.enter_context(patch.object(d,"STATE",base/"state"))
             stack.enter_context(patch.object(d,"PYTHON",python))
             stack.enter_context(patch.object(d.sys,"platform","linux"))
+            reads = {}
             def git(*args, **kwargs):
                 if args[0]=="branch": return "master"
-                if args[0]=="rev-parse" and args[1]=="origin/master": return target
+                if args[0]=="rev-parse" and args[1].startswith("origin/"):
+                    reads['ref'] = reads.get('ref', 0) + 1
+                    return "c"*40 if branch_changed and reads['ref'] >= 3 else target
                 if args[0]=="rev-parse" and args[1]=="HEAD":
+                    if "cwd" not in kwargs:
+                        reads['head'] = reads.get('head', 0) + 1
+                        return "c"*40 if checkout_changed and reads['head'] >= 3 else old
                     return old if Path(kwargs["cwd"]).name == "rollback" else target
                 return ""
             stack.enter_context(patch.object(d,"git",side_effect=git))
@@ -280,7 +286,7 @@ COMMIT;
                 if args[:4] == ("git", "worktree", "add", "--detach"):
                     Path(args[4]).mkdir(parents=True)
                 return MagicMock()
-            stack.enter_context(patch.object(d,"run",side_effect=run))
+            runner=stack.enter_context(patch.object(d,"run",side_effect=run))
             stack.enter_context(patch.object(d.subprocess,"Popen"))
             stack.enter_context(patch.object(d,"stop_child"))
             stack.enter_context(patch.object(d,"process_alive",return_value=False))
@@ -298,15 +304,74 @@ COMMIT;
                 if fail_production and port==8785 and sha==target: raise d.DeployError("failed health")
                 return dict(health,build_commit=sha,storage=storage)
             stack.enter_context(patch.object(d,"smoke",side_effect=smoke))
-            if fail_tests or fail_production or runtime_changed or fail_stop:
-                with self.assertRaises((d.DeployError,subprocess.CalledProcessError)): d.deploy(target)
+            options=dict(isolated_ref="codex/layout-only",expected_live_sha=old) if isolated else {}
+            if fail_tests or fail_production or runtime_changed or fail_stop or branch_changed or checkout_changed:
+                with self.assertRaises((d.DeployError,subprocess.CalledProcessError)): d.deploy(target, **options)
             elif prepare_only:
-                d.prepare_release(target)
-            else: d.deploy(target)
+                d.prepare_release(target, **options)
+            else: d.deploy(target, **options)
+            if isolated:
+                self.assertFalse(any(c.args[:2] == ('git','merge') for c in runner.call_args_list))
             record=json.loads(next((base/"state/releases").glob("*/result.json")).read_text())
             if fail_stop:
                 wait.assert_called_once_with(11)
             return stop.call_args_list,start.call_args_list,record
+
+    def test_isolated_release_uses_owned_candidate_without_merging_master(self):
+        stops, starts, record = self.simulate_release(isolated=True)
+        self.assertEqual(record['status'], 'success')
+        self.assertEqual(record['isolated_ref'], 'codex/layout-only')
+        self.assertEqual(starts[0].args[1], Path(record['candidate']) / 'ra_triage_dashboard')
+        self.assertEqual(len(stops), 1)
+
+    def test_isolated_gates_and_rollback_remain_enabled(self):
+        for failure in ('fail_tests', 'runtime_changed', 'branch_changed', 'checkout_changed'):
+            with self.subTest(failure=failure):
+                stops, starts, _ = self.simulate_release(isolated=True, **{failure: True})
+                self.assertEqual(stops, [])
+                self.assertEqual(starts, [])
+        _, starts, record = self.simulate_release(isolated=True, fail_production=True)
+        self.assertEqual(record['rollback_status'], 'healthy')
+        self.assertEqual(starts[-1].args[3], 'b'*40)
+
+    def test_isolation_requires_explicit_safe_ref_and_live_pin(self):
+        self.assertEqual(d.release_ref('codex/layout-only','b'*40), 'origin/codex/layout-only')
+        for ref, sha in [('', 'b'*40), ('master','b'*40), ('codex/../main','b'*40), ('codex/x',''), ('codex/x','short')]:
+            with self.subTest(ref=ref), self.assertRaises(d.DeployError):
+                d.release_ref(ref, sha)
+
+    def test_isolated_preflight_rejects_stale_live_pin_and_migrations(self):
+        with tempfile.TemporaryDirectory() as temp, ExitStack() as stack:
+            repo=Path(temp); python=repo/'python'; python.touch()
+            for name,value in [('REPO',repo),('PYTHON',python)]:
+                stack.enter_context(patch.object(d,name,value))
+            stack.enter_context(patch.object(d.sys,'platform','linux'))
+            runner=stack.enter_context(patch.object(d,'run'))
+            stack.enter_context(patch.object(d,'git',side_effect=lambda *a: 'master' if a[0]=='branch' else ('a'*40 if a[0]=='rev-parse' else '')))
+            stack.enter_context(patch.object(d,'read_live',return_value=(11,{})))
+            stack.enter_context(patch.object(d,'get_json',return_value=dict(ok=True,build_commit='c'*40,storage='postgresql')))
+            with self.assertRaisesRegex(d.DeployError,'Production changed'):
+                d.preflight('a'*40,isolated_ref='codex/layout-only',expected_live_sha='b'*40)
+            runner.reset_mock()
+            with self.assertRaisesRegex(d.DeployError,'do not permit migrations'):
+                d.preflight('a'*40,allow_additive_migrations=True,isolated_ref='codex/layout-only',expected_live_sha='c'*40)
+            runner.assert_not_called()
+
+    def test_live_candidate_requires_matching_private_success_receipt(self):
+        with tempfile.TemporaryDirectory() as temp, patch.object(d,'STATE',Path(temp)), patch.object(d,'validate_prepared_worktree') as validate:
+            folder=Path(temp)/'releases'/'20261028T120000Z-aaaaaaaaaaaa'
+            app=folder/'candidate'/'ra_triage_dashboard'; app.mkdir(parents=True)
+            record=dict(status='success',isolated_ref='codex/layout-only',target='a'*40,candidate=str(app.parent))
+            d.save(folder/'result.json',record)
+            d.validate_live_candidate(app,'a'*40)
+            validate.assert_called_once_with(app.parent,'a'*40)
+            with self.assertRaises(d.DeployError): d.validate_live_candidate(app,'b'*40)
+            for key,value in [('status','prepared'),('isolated_ref',''),('candidate','/tmp/other')]:
+                d.save(folder/'result.json',dict(record,**{key:value}))
+                with self.assertRaises(d.DeployError): d.validate_live_candidate(app,'a'*40)
+            d.save(folder/'result.json',record)
+            (folder/'result.json').chmod(0o644)
+            with self.assertRaises(d.DeployError): d.validate_live_candidate(app,'a'*40)
 
     def test_test_failure_never_stops_production(self):
         stops,starts,record=self.simulate_release(fail_tests=True)

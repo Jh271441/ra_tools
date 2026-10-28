@@ -12,16 +12,6 @@
   align-items: end; gap: 5px;
 }
 .review-filters > * { min-width: 0; }
-@media (min-width: 1025px) and (max-width: 1700px) {
-  #filterForm.review-filters { grid-template-columns: repeat(12, minmax(0, 1fr)); }
-  #filterForm > .filter-model-run { grid-column: span 3; }
-  #filterForm > .filter-comparison { grid-column: span 2; }
-  #filterForm > .filter-search { grid-column: span 4; }
-  #filterForm > :nth-child(4) { grid-column: span 3; }
-  #filterForm > :nth-child(n+5):nth-child(-n+11) { grid-column: span 1; }
-  #filterForm > .review-task-filter { grid-column: span 3; }
-  #filterForm > .filter-submit { grid-column: span 2; }
-}
 .review-filters label { min-width: 0; display: grid; gap: 3px; color: var(--faint); font-size: 11px; }
 .filter-review-status > .ui-lang-zh,
 .filter-review-status > .ui-lang-en {

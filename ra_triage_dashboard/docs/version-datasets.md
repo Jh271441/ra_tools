@@ -148,6 +148,34 @@ overflow; computed TE/RD colors match. Narrow RD legends retain their existing
 local scrolling. These are resized-browser checks, not physical-device tests.
 Local preview only; cache704 has not been deployed.
 
+### Equal-width gallery filters (2026-10-28 released, cache701)
+
+Released isolated commit276be79c73489a842c062686e06da214b0fb8e3c at
+2026-10-28T13:12:53Z, based on current production09f943d. Existing RD and raw
+planning-constraint features are retained. Main checkout/master remain unchanged;
+production runs the managed candidate under release20261028T130931Z-276be79c7348.
+Cloud1078passed/7skipped, isolated gray, exact production SHA/resources and
+persistent PostgreSQL/overall health passed. After merging the live baseline,
+90 local tests/15 subtests and all64 browser combinations passed again. Signed-in
+Chrome and IAB automation timed out; no production visual or physical-device
+acceptance is claimed. No migration, labels, GT or business-data mutation.
+
+Review and Case labeling now share an adaptive desktop grid with a140px minimum
+column unit and8px gaps. Ordinary categorical fields use one unit; Run, search,
+task and Review mode use two. Reset stays compact at the right edge. Remove the
+old per-field/nth-child spans rather than layering another override. At1920px
+both filter bars fit two rows; narrower desktops wrap without squeezing normal
+fields. Original DOM order, shared dropdown widgets, values and query semantics
+stay unchanged. Final tablet/phone layout is still owned by mobile.css.
+
+Validation:51 frontend/path contracts and6 subtests passed. The actual-module
+browser fixture covers64 combinations at320/390/768/1024/1025/1180/1440/1920px,
+both languages/themes/pages, plus task-progress hidden/visible in each. It checks
+equal widths within/across pages, double-width fields,1920px two-row alignment,
+popup boundaries, keyboard/Escape, selection/URL persistence, reset and phone
+44px targets/no page overflow. Screenshots were visually inspected. This is
+isolated viewport testing, not production or physical-device verification.
+
 ### RD overview (cache699)
 
 Two compact blocks below TE show RD completion and the three-class distribution.

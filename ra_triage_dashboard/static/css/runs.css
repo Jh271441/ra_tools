@@ -157,42 +157,26 @@ html[data-color-theme="light"] .import-example-tabs { background: #f8fafc; }
 .review-task-filter .review-task-drawer-body { width: min(470px, calc(100vw - 32px)); display: grid; grid-template-columns: minmax(220px, 1fr) minmax(180px, .8fr); align-items: end; gap: 9px; position: absolute; top: calc(100% + 5px); right: 0; z-index: 180; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--raised); box-shadow: 0 15px 34px rgba(0,0,0,.42); }
 .review-task-filter .review-task-drawer-body label { min-width: 0; }
 .review-task-filter .review-task-drawer-body > .muted { grid-column: 1 / -1; }
-/* Give each filter enough space to show its selected value. The task picker
-   stays in the command bar instead of opening a second floating form. */
+/* One column unit for both galleries. Long context/search fields take two
+   units; normal filters never borrow width from their neighbours. */
 @media (min-width: 1025px) {
-  #filterForm.review-filters { grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 8px; }
-  #filterForm > .filter-model-run { grid-column: span 3; }
-  #filterForm > .filter-comparison { grid-column: span 2; }
-  #filterForm > .filter-search { grid-column: span 4; }
-  #filterForm > :nth-child(4) { grid-column: span 3; }
-  #filterForm > :nth-child(n+5):nth-child(-n+11) { grid-column: span 2; }
-  #filterForm > .review-task-filter { grid-column: span 3; }
-  #filterForm > .review-workflow-mode { grid-column: span 3; }
-  #filterForm > .filter-submit { grid-column: span 2; }
-  #filterForm > #reviewTaskProgressField { grid-column: span 2; }
-}
-@media (min-width: 1180px) {
-  /* Two explicit rows; semantic classes avoid shifting fields when one is added. */
-  #filterForm.review-filters { grid-template-columns: repeat(40, minmax(0, 1fr)); }
-  #filterForm.review-filters > .filter-model-run { grid-row: 1; grid-column: span 6; }
-  #filterForm.review-filters > .filter-comparison { grid-row: 1; grid-column: span 4; }
-  #filterForm.review-filters > .filter-search { grid-row: 1; grid-column: span 13; }
-  #filterForm.review-filters > .filter-gt { grid-row: 1; grid-column: span 4; }
-  #filterForm.review-filters > .filter-model-label { grid-row: 1; grid-column: span 5; }
-  #filterForm.review-filters > .filter-reviewer { grid-row: 1; grid-column: span 4; }
-  #filterForm.review-filters > .filter-review-status { grid-row: 1; grid-column: span 4; }
-  #filterForm.review-filters > .filter-shared-label-state { grid-row: 2; grid-column: span 4; }
-  #filterForm.review-filters > .filter-issue-tags { grid-row: 2; grid-column: span 5; }
-  #filterForm.review-filters > .filter-target-group { grid-row: 2; grid-column: span 4; }
-  #filterForm.review-filters > .filter-discussion-state { grid-row: 2; grid-column: span 3; }
-  #filterForm.review-filters > .filter-exclusion { grid-row: 2; grid-column: span 4; }
-  #filterForm.review-filters > .filter-assignee { grid-row: 2; grid-column: span 4; }
-  #filterForm.review-filters > .review-task-filter { grid-row: 2; grid-column: span 8; }
-  #filterForm.review-filters > #reviewTaskProgressField { grid-row: 2; grid-column: span 4; }
-  #filterForm.review-filters > .review-workflow-mode { grid-row: 2; grid-column: span 6; }
-  #filterForm.review-filters > .filter-submit { grid-row: 2; grid-column: span 2; }
-  #filterForm.review-filters:has(#reviewTaskProgressField:not([hidden])) > .review-task-filter { grid-column: span 6; }
-  #filterForm.review-filters:has(#reviewTaskProgressField:not([hidden])) > .review-workflow-mode { grid-column: span 4; }
+  #filterForm.review-filters,
+  #caseLabelingFilterForm.case-labeling-filters {
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 8px;
+  }
+  #filterForm.review-filters > *,
+  #caseLabelingFilterForm.case-labeling-filters > * { grid-column: auto; grid-row: auto; }
+  #filterForm.review-filters > .filter-model-run,
+  #filterForm.review-filters > .filter-search,
+  #filterForm.review-filters > .review-task-filter,
+  #filterForm.review-filters > .review-workflow-mode,
+  #caseLabelingFilterForm.case-labeling-filters > .case-labeling-search,
+  #caseLabelingFilterForm.case-labeling-filters > .case-labeling-task { grid-column: span 2; }
+  #filterForm.review-filters > .filter-submit,
+  #caseLabelingFilterForm.case-labeling-filters > .filter-submit {
+    grid-column: -2 / -1; justify-self: end; min-width: 64px; width: auto;
+  }
 }
 #reviewTaskProgressField[hidden] { display: none !important; }
 .review-task-filter { min-width: 0; }
