@@ -1,6 +1,6 @@
 # Review Issue 子标签筛选
 
-## 下拉布局修复（2026-10-28，cache697，待发布）
+## 下拉布局修复（2026-10-28，cache697，已发布）
 
 长选项列表会把共享多选工具栏压缩到约16px，裁掉26px高的全选/反选/清除按钮。
 工具栏改为 `flex: 0 0 auto`，仅选项区域承担滚动；手机最终样式为实际的
@@ -18,6 +18,14 @@
 中英文及深浅主题；三个单选的展开、键盘/Escape、外部关闭、边界和保留选值均通过。
 51项相关前端/路径契约测试通过，JS语法及 `git diff --check` 通过。
 以上为本地只读合成数据浏览器验收，不代表生产登录或真实手机验收。
+
+17:49:23 CST 已发布 `22ae592e7182661082e68887a617ecd7336aa1f4`，保留已发布
+e286c6b 的版本页与优雅停止改动。云端完整测试1048 passed、7 skipped；隔离灰度、
+生产精确SHA与PostgreSQL健康通过。线上shell缓存697、loader、analysis/shared/mobile
+CSS与提交逐字节一致，身份和写入策略未变。本次未做已登录生产浏览器验收。
+发布回执：`/volume/home/workspace/ra_triage_dashboard_deploy/releases/20261028T094627Z-22ae592e7182/result.json`。
+发布器清理旧 `20261028T052251Z-6e536bbb20c5` 的无运行引用candidate/rollback副本，
+Git及发布日志保留，可重新检出历史代码。
 
 ## 契约
 
