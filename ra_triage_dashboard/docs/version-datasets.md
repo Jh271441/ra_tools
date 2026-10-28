@@ -81,14 +81,25 @@ Historical0821 explicitly reports RD unsupported rather than mixing today's
 labels into its frozen membership contract. Existing endpoint permissions stay
 unchanged; no individual labels, authors, rationale or history are added to it.
 
-Local release gate:78 relevant tests and6 subtests passed. Real SQLite regression
+Local release gate:81 relevant tests and6 subtests passed. Real SQLite regression
 covers original scopes, conflict/decision/stale state, GT/model/joint independence,
 bounded queries, filters, pagination and revision refresh. Production frontend
 modules in the isolated synthetic fixture were checked at1440zh-dark and320/390
 en-light: no page overflow, matching14px/650 TE and RD headings, compact rows,
 keyboard legend scrolling, bilingual error/empty and recovery. These are browser
-viewport tests, not physical-device tests. Cloud suite/gray/production results
-are recorded separately after the release succeeds.
+viewport tests, not physical-device tests.
+
+Released2026-10-28 20:39:26 CST as09f943d1fe65be4b791415694a827fa4af012cb4,
+cache700 (includes concurrent master planning-constraint feature). Cloud1071passed/
+7skipped; isolated gray, exact runtime SHA, PostgreSQL health and unchanged writer
+policy passed. Loader,RD/version modules and version/mobile CSS matched commit bytes.
+Receipt: `/volume/home/workspace/ra_triage_dashboard_deploy/releases/20261028T123625Z-09f943d1fe65/result.json`.
+Read-only production checks:1009 completed628/628 (false341/correct174/no-assistance113),
+sample159/low469;1016 completed0/476, sample135/low341. Subsets partitioned exactly;
+page2+TEfilled retained each RD summary. Eight loopback calls took138–364ms.
+Signed-in production Chrome automation timed out: no production visual acceptance
+claimed. Earlier preparation failures were test-fixture/cache assertions and never
+switched production; fixes load real RD/planning modules in existing fixtures.
 
 One enhanced version selector covers each live release plus0821. Cards show model output/confidence, TE status, owner, trigger and arrival/occurrence times. Image opens the existing media preview; Issue identity retains its combined-review link. BEV/Camera, TE status, reason, date, Issue search, order and pagination are URL-restorable. The default order is latest registry arrival; bootstrap records may share a timestamp. Source-update, occurrence and Issue order remain available.
 
