@@ -14,7 +14,7 @@ The bounded read-only projection selects metadata and prediction label/confidenc
 
 The model-free labeling gallery, full detail queue, summary, clusters, GT candidates and GT export previews use the same current-target membership restriction as Review. Source scopes alone include historical/non-target Issues and must not define a version gallery. Explicit Issue filters intersect the current targets; an empty intersection stays empty. Mixed selections union version targets and ordinary baseline members. An explicit historical task keeps its frozen membership. These are read-time projections; historical records and permissions are unchanged.
 
-## Review and Case labeling target cohorts (2026-10-28 candidate)
+## Review and Case labeling target cohorts (2026-10-28)
 
 Both pages expose the shared bilingual **目标集合 / Target cohort** single-select.
 These are existing `version_dataset_items` flags keyed by version dataset and
@@ -35,14 +35,24 @@ URL restoration, detail queues, pagination, exports and filtered task creation
 retain the cohort. This does not add a cohort control to the separate labeling
 summary page. No memberships, owners, human labels, GT or predictions are changed.
 
-Candidate cache698 is **not deployed**. Validation: local suite1047 passed,
+Released `70f14e297e46afa24b7cbe1583740e28052f9ed3`, cache698, at
+2026-10-28 19:47:08 CST. Cloud suite1054 passed/7 skipped; isolated gray and
+production exact SHA, persistent PostgreSQL and overall health passed. Served
+shell, loader, changed picker/routing/labeling JS and layout CSS matched the commit.
+Receipt: `/volume/home/workspace/ra_triage_dashboard_deploy/releases/20261028T114409Z-70f14e297e46/result.json`.
+Signed-in production Chrome desktop checks exercised both pages:1009 All628,
+sample159 and low excluding samples469; both cohort choices updated the URL and
+gallery. Screenshots confirmed actual controls and loaded business data. No
+business submissions or exports were performed. No real-device testing claimed.
+
+Local validation: suite1047 passed,
 14 skipped (7Linux-only checks and7unconfigured disposable-PostgreSQL checks),
 141 subtests passed. Actual frontend modules in isolated browser fixtures passed
 24 page/viewport/language/theme combinations: Review and Case labeling at
 320/390/1440px, Chinese/English, dark/light. Checks include shared widgets,
 URL/request preservation, language switching, keyboard/Escape, popup boundaries,
 44px phone targets, no page overflow and filter reset. These are viewport tests,
-not physical-device or signed-in production acceptance. Regression coverage:
+not physical-device acceptance; signed-in checks are separately recorded above. Regression coverage:
 `tests/test_target_cohort_filter.py` and `tests/target_cohort_browser.cjs`.
 
 ## Interaction and performance
