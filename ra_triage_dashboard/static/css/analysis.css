@@ -23,6 +23,8 @@
 
 .analysis-page { width: min(1480px, 100%); gap: 6px; }
 .analysis-filter-card { display: grid; gap: 7px; padding: 8px 10px; }
+.analysis-filter-heading { display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; }
+.analysis-filter-heading > .mobile-filter-bar { flex: 1; min-width: 0; }
 .analysis-filters {
   display: grid; grid-template-columns: repeat(9, minmax(90px, 1fr)); align-items: end; gap: 6px;
 }

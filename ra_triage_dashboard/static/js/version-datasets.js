@@ -216,31 +216,10 @@ async function openVersionDatasetMedia(iid,preferredKind=''){
 }
 
 function closeVersionTEInfo(){
-  document.querySelectorAll('[data-version-info].is-open,#versionTEInfo.is-open').forEach(help=>{
-    help.classList.remove('is-open');help.classList.add('is-dismissed');help.querySelector('button')?.setAttribute('aria-expanded','false');
-  });
+  closeUiInfoPopovers($('#versionDatasetsPage'));
 }
 function bindVersionTEInfo(){
-  const root=$('#versionDatasetsPage');let closing;
-  const helpOf=target=>target?.closest?.('[data-version-info],#versionTEInfo');
-  const show=help=>{
-    clearTimeout(closing);
-    if(!help.classList.contains('is-open'))closeVersionTEInfo();
-    const button=help.querySelector('button'),tip=help.querySelector('.version-te-info-tooltip');
-    help.classList.remove('is-dismissed');help.classList.add('is-open');button.setAttribute('aria-expanded','true');
-    const r=button.getBoundingClientRect(),w=tip.offsetWidth,h=tip.offsetHeight;
-    tip.style.left=`${Math.max(12,Math.min(r.left,innerWidth-w-12))}px`;
-    tip.style.top=`${Math.max(12,r.bottom+h+8<=innerHeight?r.bottom+6:r.top-h-6)}px`;
-  };
-  root.addEventListener('pointerover',e=>{const help=helpOf(e.target);if(help)show(help);});
-  root.addEventListener('pointerout',e=>{const help=helpOf(e.target);if(help&&!help.contains(e.relatedTarget))closing=setTimeout(()=>{if(!help.contains(document.activeElement))closeVersionTEInfo();},180);});
-  root.addEventListener('focusin',e=>{const help=helpOf(e.target);if(help)show(help);});
-  root.addEventListener('focusout',e=>{const help=helpOf(e.target);if(help&&!help.contains(e.relatedTarget))closeVersionTEInfo();});
-  root.addEventListener('click',e=>{const help=helpOf(e.target);if(help&&e.target.closest('button'))show(help);});
-  document.addEventListener('pointerdown',e=>{if(!helpOf(e.target))closeVersionTEInfo();});
-  document.addEventListener('keydown',e=>{if(e.key==='Escape'){const help=document.querySelector('[data-version-info].is-open,#versionTEInfo.is-open');if(help){e.preventDefault();help.querySelector('button')?.focus();closeVersionTEInfo();}}});
-  window.addEventListener('resize',closeVersionTEInfo);
-  window.addEventListener('scroll',e=>{if(!helpOf(e.target))closeVersionTEInfo();},{capture:true,passive:true});
+  bindUiInfoPopovers($('#versionDatasetsPage'));
 }
 
 function versionMetricLink(scope,mode,label){

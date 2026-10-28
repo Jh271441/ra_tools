@@ -65,6 +65,7 @@
   .intent-summary-comment-field {
     grid-column: 1 / -1 !important;
   }
+  .analysis-filters > * { grid-row: auto; }
   .analysis-case-row { grid-template-columns: minmax(130px, .7fr) minmax(0, 1.3fr); }
   .analysis-case-reason, .analysis-case-meta { grid-column: 1 / -1; }
   .analysis-case-meta { justify-content: flex-start; }
@@ -438,6 +439,7 @@
   /* Every collapsible form now has a reachable mobile toggle. */
   .review-filters:not([data-mobile-filter-panel]):not(.is-open) { display: grid !important; }
   .mobile-filter-bar .mobile-filter-toggle { min-height: 44px; font-size: 14px; }
+  .ui-info-button { min-width: 44px; min-height: 44px; }
   .review-filters.is-open, .analysis-filters.is-open { padding-top: 8px; gap: 12px; }
   #filterForm .ui-select-trigger, .review-filters .ui-select-trigger,
   .review-filters .multi-filter-trigger, .analysis-filters .multi-filter-trigger,

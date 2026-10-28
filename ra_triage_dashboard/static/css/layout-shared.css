@@ -445,6 +445,15 @@ html[data-color-theme="light"] .page-jump-control input {
 .expected-output-picker.is-conflict .ui-select-trigger {
   border-color: rgba(255,181,71,.58); box-shadow: 0 0 0 1px rgba(255,181,71,.12);
 }
+.ui-info { line-height: 1; }
+.ui-info-button { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0; border: 0; background: none; color: var(--muted); font: inherit; cursor: pointer; border-radius: 4px; }
+.ui-info-button:hover, .ui-info-button:focus-visible { color: var(--accent); outline: 1px solid var(--accent); }
+.ui-info .ui-info-tooltip { position: fixed; right: auto; bottom: auto; width: min(360px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); box-sizing: border-box; padding: 10px 12px; font-size: 12px; line-height: 1.55; font-weight: 400; overflow-wrap: anywhere; overflow-y: auto; pointer-events: auto; z-index: 80; }
+.ui-info-tooltip > strong { display: block; margin-bottom: 5px; }
+.ui-info-tooltip > span { margin-top: 5px; }
+.ui-info-tooltip > span:not([class]), html[data-ui-lang="zh"] .ui-info-tooltip > .ui-lang-zh, html[data-ui-lang="en"] .ui-info-tooltip > .ui-lang-en { display: block; }
+.model-review-run-help.ui-info.is-open .ui-info-tooltip { opacity: 1; visibility: visible; transform: none; }
+.model-review-run-help.ui-info.is-dismissed .ui-info-tooltip { opacity: 0; visibility: hidden; }
 .expected-output-rule { position: relative; }
 .expected-output-rule > summary {
   padding: 2px 0; color: #75cedf; cursor: pointer; font-size: 10px; font-weight: 650; list-style: none; white-space: nowrap;

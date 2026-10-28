@@ -587,6 +587,70 @@ function observeDashboardSelects() {
   });
 }
 
+// Shared info help, also used by the version metric/source controls.
+const uiInfoSelector = '[data-ui-info],[data-version-info],#versionTEInfo';
+const uiInfoBindings = new WeakSet();
+function closeUiInfoPopovers(root = document) {
+  root.querySelectorAll(uiInfoSelector).forEach((help) => {
+    help.classList.remove('is-open');
+    help.classList.add('is-dismissed');
+    help.querySelector('button')?.setAttribute('aria-expanded', 'false');
+  });
+}
+
+function bindUiInfoPopovers(root) {
+  if (!root || uiInfoBindings.has(root)) return;
+  uiInfoBindings.add(root);
+  let closing;
+  const helpOf = target => target?.closest?.(uiInfoSelector);
+  const close = () => { clearTimeout(closing); closeUiInfoPopovers(root); };
+  const show = help => {
+    clearTimeout(closing);
+    if (!help.classList.contains('is-open')) close();
+    const button = help.querySelector('button');
+    const tip = help.querySelector('.ui-info-tooltip,.version-te-info-tooltip');
+    if (!button || !tip) return;
+    help.classList.remove('is-dismissed');
+    help.classList.add('is-open');
+    button.setAttribute('aria-expanded', 'true');
+    const viewport = anchoredViewportBounds();
+    tip.style.maxWidth = `${Math.max(0, viewport.width - 24)}px`;
+    tip.style.maxHeight = `${Math.max(0, viewport.height - 24)}px`;
+    const rect = button.getBoundingClientRect();
+    tip.style.left = `${Math.max(viewport.left + 12, Math.min(rect.left, viewport.right - tip.offsetWidth - 12))}px`;
+    tip.style.top = `${Math.max(viewport.top + 12, Math.min(rect.bottom + tip.offsetHeight + 8 <= viewport.bottom ? rect.bottom + 6 : rect.top - tip.offsetHeight - 6, viewport.bottom - tip.offsetHeight - 12))}px`;
+  };
+  root.addEventListener('pointerover', event => {
+    const help = helpOf(event.target);
+    if (help && event.pointerType !== 'touch') show(help);
+  });
+  root.addEventListener('pointerout', event => {
+    const help = helpOf(event.target);
+    if (help && !help.contains(event.relatedTarget)) closing = setTimeout(() => {
+      if (!help.contains(document.activeElement)) close();
+    }, 180);
+  });
+  root.addEventListener('focusin', event => { const help = helpOf(event.target); if (help) show(help); });
+  root.addEventListener('focusout', event => {
+    const help = helpOf(event.target);
+    if (help && !help.contains(event.relatedTarget)) close();
+  });
+  root.addEventListener('click', event => {
+    const help = helpOf(event.target);
+    if (help && event.target.closest('button')) show(help);
+  });
+  document.addEventListener('pointerdown', event => { if (!helpOf(event.target)) close(); });
+  document.addEventListener('keydown', event => {
+    if (event.key !== 'Escape') return;
+    const help = [...root.querySelectorAll(uiInfoSelector)].find(item => item.classList.contains('is-open'));
+    if (help) { event.preventDefault(); help.querySelector('button')?.focus(); close(); }
+  });
+  window.addEventListener('resize', close);
+  window.addEventListener('scroll', event => { if (!helpOf(event.target)) close(); }, {capture: true, passive: true});
+  window.visualViewport?.addEventListener('resize', close);
+  window.visualViewport?.addEventListener('scroll', close);
+}
+
 /* Track only open panels; visualViewport reflects the on-screen keyboard. */
 const anchoredPanelContexts = new Map();
 let anchoredViewportBound = false;

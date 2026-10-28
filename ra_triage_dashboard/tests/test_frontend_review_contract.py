@@ -85,7 +85,7 @@ class FrontendReviewContractTest(unittest.TestCase):
         self.assertIn("baselines", APP_JS)
         self.assertIn("/static/js/", APP_ENTRY_JS)
         self.assertIn("script.async = false", APP_ENTRY_JS)
-        self.assertIn("app.js?v=manual-triage-690", INDEX_HTML)
+        self.assertIn("app.js?v=manual-triage-691", INDEX_HTML)
         self.assertIn('"work-split.js"', APP_ENTRY_JS)
         self.assertIn('"review-assignments.js"', APP_ENTRY_JS)
         # Product logic must live in domain modules, not the entry loader.
@@ -153,6 +153,20 @@ class FrontendReviewContractTest(unittest.TestCase):
         self.assertIn("is_excluded: Boolean(item.annotation.is_excluded)", APP_JS)
         self.assertIn(".issue-card-flag-needs-gt", STYLES_CSS)
         self.assertIn(".issue-card-flag-excluded", STYLES_CSS)
+
+    def test_analysis_scope_has_no_persistent_empty_task_paragraph(self) -> None:
+        self.assertNotIn("analysisWorkSplitHint", INDEX_HTML)
+        self.assertNotIn("analysisWorkSplitHint", APP_JS)
+        self.assertNotIn("当前数据集与 Run 下没有复核任务", INDEX_HTML)
+        self.assertIn('id="analysisWorkSplitPicker"', INDEX_HTML)
+        self.assertIn('populateUiSelect(root, options, String(selected || ""))', APP_JS)
+        self.assertIn('state.reviewAnalysis.workSplitOptions = result.items || []', APP_JS)
+        self.assertIn('id="analysisScopeInfo"', INDEX_HTML)
+        self.assertIn('aria-controls="analysisScopeInfoPanel"', INDEX_HTML)
+        self.assertIn('data-i18n-aria-label="analysis.scope_help"', INDEX_HTML)
+        self.assertIn('bindUiInfoPopovers($("#reviewAnalysisPage"))', APP_JS)
+        self.assertIn('bindUiInfoPopovers', APP_JS)
+        self.assertIn('window.visualViewport?.addEventListener', APP_JS)
 
     def test_analysis_run_scope_is_ellipsized_with_full_title(self) -> None:
         self.assertIn('$("#analysisReviewScope").title = `${reviewScope}${workSplitSuffix}`;', APP_JS)
