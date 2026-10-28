@@ -71,7 +71,7 @@ function refreshBevVideoLanguage(root = document) {
   enhanceDashboardSelects(root);
 }
 
-function videoPlayerMarkup(video, { zoomable = true, compact = false } = {}) {
+function videoPlayerMarkup(video, { zoomable = true, compact = false, issueId = "" } = {}) {
   const durationSec = Math.max(0, Number(video?.duration_ms || 0) / 1000);
   const t0PlayerSec = videoT0PlayerPosition(durationSec);
   // Review video t0 is always the clip midpoint. Some captures have stale or
@@ -84,8 +84,8 @@ function videoPlayerMarkup(video, { zoomable = true, compact = false } = {}) {
     .map((step) => `<option value="${escapeHtml(step)}" ${step === 1 ? "selected" : ""}>${escapeHtml(step)}s${step === frameStepSec ? escapeHtml(t("media.frame_step")) : ""}</option>`)
     .join("");
   const tracks = (video?.tracks || []).filter((track) => safeSameOriginAssetUrl(track.url));
-  const trackControl = tracks.length > 1
-    ? `<label><span class="ui-lang-zh">视频源</span><span class="ui-lang-en">Video source</span> <select data-video-track>${tracks.map((track) => `<option value="${escapeHtml(track.url)}" data-poster="${escapeHtml(track.poster_url || "")}" data-video-track-label="${escapeHtml(track.label || "")}">${escapeHtml(videoTrackLabel(track.label))}</option>`).join("")}</select></label>`
+  const trackControl = tracks.length > 1 && !compact
+    ? `<label><span class="ui-lang-zh">视频源</span><span class="ui-lang-en">Video source</span> <select data-video-track>${tracks.map((track) => `<option value="${escapeHtml(track.url)}" ${track.url === video.url ? "selected" : ""} data-poster="${escapeHtml(track.poster_url || "")}" data-video-track-label="${escapeHtml(track.label || "")}">${escapeHtml(videoTrackLabel(track.label))}</option>`).join("")}</select></label>`
     : "";
   const posterUrl = String(video?.poster_url || "").trim();
   const posterAttribute = posterUrl ? ` poster="${escapeHtml(posterUrl)}"` : "";
@@ -94,6 +94,7 @@ function videoPlayerMarkup(video, { zoomable = true, compact = false } = {}) {
     ? `<div class="media-viewport media-video-viewport" data-video-viewport><div class="media-canvas media-video-canvas" data-video-canvas>${videoMarkup}</div></div>`
     : `<div class="hero-media-button hero-media-video">${videoMarkup}</div>`;
   return `<div class="hero-video-player ${compact ? "is-compact" : ""}" data-bev-video-player
+      data-planning-issue="${escapeHtml(issueId)}"
       data-start-offset-sec="${escapeHtml(startOffsetSec)}"
       data-t0-player-sec="${escapeHtml(t0PlayerSec)}"
       data-duration-sec="${escapeHtml(durationSec)}"
@@ -101,6 +102,7 @@ function videoPlayerMarkup(video, { zoomable = true, compact = false } = {}) {
     ${mediaMarkup}
     <div class="bev-video-controls" aria-label="${escapeHtml(uiText("视频控制", "Video controls"))}">
       <div class="bev-video-control-row">
+        ${issueId ? `<button class="button button-quiet" type="button" data-planning-constraint aria-haspopup="dialog" aria-expanded="false">${escapeHtml(uiText("规划约束", "Planning constraint"))}</button>` : ""}
         ${trackControl}
         <button class="button button-quiet" type="button" data-video-play>${escapeHtml(t("media.play"))}</button>
         <button class="button button-quiet" type="button" data-video-jump="-1"><span data-video-jump-label>−1s</span></button>
@@ -144,6 +146,7 @@ function bindBevVideoPlayers(root) {
     if (player.dataset.videoBound === "1") return;
     player.dataset.videoBound = "1";
     const video = player.querySelector("video");
+    const planningConstraint = bindPlanningConstraint(player, video);
     const playButton = player.querySelector("[data-video-play]");
     const seek = player.querySelector("[data-video-seek]");
     const stepSelect = player.querySelector("[data-video-step]");
@@ -328,6 +331,10 @@ function bindBevVideoPlayers(root) {
       video.load();
       loading();
     };
+    video._setBevVideoTrack = (url, poster = "") => {
+      const safe = safeSameOriginAssetUrl(url);
+      if (safe && !disposed) loadSource(safe, safeSameOriginAssetUrl(poster));
+    };
     player.querySelector("[data-video-track]")?.addEventListener("change", (event) => {
       const url = safeSameOriginAssetUrl(event.target.value);
       if (!url || disposed) return;
@@ -361,7 +368,7 @@ function bindBevVideoPlayers(root) {
         focusPlayer();
         return;
       }
-      if (event.target.matches("select, input") || event.target.closest(".ui-select")) {
+      if (event.target.matches("select, input, button") || event.target.closest(".ui-select")) {
         event.stopPropagation();
         return;
       }
@@ -398,6 +405,7 @@ function bindBevVideoPlayers(root) {
     });
     video._refreshBevPlayerLanguage = () => {
       if (disposed) return;
+      planningConstraint.refresh();
       update();
       setStatus(player.dataset.loadState || "loading");
       video.setAttribute("aria-label", uiText("复核视频", "Review video"));
@@ -412,6 +420,7 @@ function bindBevVideoPlayers(root) {
     video._disposeBevPlayer = () => {
       if (disposed) return;
       disposed = true;
+      planningConstraint.dispose();
       ++sourceGeneration;
       ++seekRequest;
       cancelPendingSeek?.();
@@ -482,6 +491,7 @@ function heroMediaSection(caseData) {
     return `<section class="hero-media"><div class="no-asset hero-media-placeholder"><span>${escapeHtml(t("media.no_assets"))}</span></div></section>`;
   }
   ensureDetailMediaState(caseData);
+  const selectedTrack = video?.tracks?.find(track => track.url === state.detailMedia.videoTrack);
   const kind = state.detailMedia.kind;
   const activeFrames = kind === "camera" ? camera : frames;
   const index = Math.max(0, Math.min(
@@ -491,9 +501,10 @@ function heroMediaSection(caseData) {
   if (kind !== "video") state.detailMedia.indexes[kind] = index;
   const frame = activeFrames[index];
   const content = kind === "video" && video?.url
-    ? videoPlayerMarkup(video, {
+    ? videoPlayerMarkup(selectedTrack ? { ...video, ...selectedTrack } : video, {
         zoomable: false,
         compact: true,
+        issueId: caseData.issue_id,
       })
     : `<button type="button" class="hero-media-button${previewThumbnailUrl ? " has-preview" : ""}" data-detail-media-expand aria-label="展开${kind === "camera" ? " Camera" : " BEV"}媒体预览">
         ${previewThumbnailUrl ? `<img class="detail-media-preview" src="${escapeHtml(previewThumbnailUrl)}" alt="" aria-hidden="true" />` : ""}
@@ -703,12 +714,20 @@ function detailMediaKindOptions(caseData, available) {
       ),
       disabled: !available.video,
     },
+    ...(caseData?.assets?.video?.tracks || []).filter(track => track.url !== caseData.assets.video.url && safeSameOriginAssetUrl(track.url))
+      .map(track => ({value: `track:${track.url}`, label: videoTrackLabel(track.label), disabled: false})),
   ];
+}
+
+function detailMediaSelectedKind(caseData) {
+  const track = state.detailMedia.videoTrack;
+  return state.detailMedia.kind === "video" && track && track !== caseData?.assets?.video?.url
+    ? `track:${track}` : state.detailMedia.kind;
 }
 
 function detailMediaCommandMarkup(caseData) {
   const available = ensureDetailMediaState(caseData);
-  const kind = state.detailMedia.kind;
+  const kind = detailMediaSelectedKind(caseData);
   const options = detailMediaKindOptions(caseData, available);
   const active = options.find((item) => item.value === kind) || options[0];
   return `<div class="detail-media-command" aria-label="详情媒体控制">
@@ -781,6 +800,19 @@ function bindDetailMedia(caseData) {
     bindDetailMedia(caseData);
   };
   const switchKind = (kind) => {
+    if (kind === "video" || kind.startsWith("track:")) {
+      const descriptor = videoWithFramePosters(caseData);
+      const track = kind === "video" ? descriptor : descriptor?.tracks?.find(item => `track:${item.url}` === kind);
+      if (!track?.url) return;
+      state.detailMedia.userSelected = true;
+      state.detailMedia.videoTrack = track.url;
+      if (state.detailMedia.kind === "video") {
+        root.querySelector("video")?._setBevVideoTrack?.(track.url, track.poster_url || "");
+        focusMediaSurface();
+        return;
+      }
+      kind = "video";
+    }
     const available = kind === "video"
       ? Boolean(caseData?.assets?.video?.url)
       : Boolean((kind === "camera" ? caseData?.camera?.frames : caseData?.assets?.frames)?.length);
@@ -823,15 +855,18 @@ function bindDetailMedia(caseData) {
       if (!applyDetailImageFrame(root, caseData, kind, nextIndex, loadedImage)) render();
     });
   };
-  const expand = () => openMedia(
-    state.detailMedia.kind,
-    state.detailMedia.kind === "video" ? 0 : state.detailMedia.indexes[state.detailMedia.kind],
-    { caseData }
-  );
+  const expand = () => {
+    const descriptor = videoWithFramePosters(caseData);
+    const track = descriptor?.tracks?.find(item => item.url === state.detailMedia.videoTrack);
+    const expandedCase = track ? { ...caseData, assets: { ...caseData.assets, video: { ...descriptor, ...track } } } : caseData;
+    openMedia(state.detailMedia.kind,
+      state.detailMedia.kind === "video" ? 0 : state.detailMedia.indexes[state.detailMedia.kind],
+      { caseData: expandedCase });
+  };
   const kindSelect = pane.querySelector(`#${prefix}MediaKindSelect`);
   const kindPicker = pane.querySelector(`#${prefix}MediaKindPicker`);
   if (kindSelect) {
-    kindSelect.value = state.detailMedia.kind;
+    kindSelect.value = detailMediaSelectedKind(caseData);
     kindSelect.onchange = () => {
       const nextKind = kindSelect.value;
       // The media surface owns the B/C/V and arrow shortcuts.  Do not leave
@@ -840,7 +875,7 @@ function bindDetailMedia(caseData) {
       // stepping frames or jumping the video.
       kindSelect.blur();
       pane.querySelector(`#${prefix}MediaKindTrigger`)?.blur();
-      if (nextKind === state.detailMedia.kind) {
+      if (nextKind === detailMediaSelectedKind(caseData)) {
         focusMediaSurface();
         return;
       }
@@ -852,7 +887,7 @@ function bindDetailMedia(caseData) {
     populateUiSelect(
       kindPicker,
       detailMediaKindOptions(caseData, available),
-      state.detailMedia.kind
+      detailMediaSelectedKind(caseData)
     );
     bindUiSelect(kindPicker, { maxHeight: 260, maxWidth: 280 });
   }

@@ -178,6 +178,8 @@ async def lifespan(_: FastAPI):
                 with contextlib.suppress(asyncio.CancelledError):
                     await task
         await asyncio.to_thread(batch_prediction_runner.shutdown)
+        from .planning_constraints import shutdown as shutdown_planning_constraints
+        await asyncio.to_thread(shutdown_planning_constraints)
         await asyncio.to_thread(database.close)
 
 

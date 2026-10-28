@@ -1063,3 +1063,10 @@
  .version-rd-grid {grid-template-columns:minmax(0,1fr)}
  .version-rd-block {padding:14px;gap:12px}
 }
+@media (max-width: 760px) {
+  .bev-video-control-row [data-planning-constraint],
+  .planning-constraint-panel .button,
+  .planning-constraint-panel summary { min-height: 44px; }
+  .planning-constraint-panel summary { display: flex; align-items: center; }
+  .planning-constraint-panel .button { min-width: 44px; }
+}

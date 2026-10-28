@@ -10,6 +10,22 @@ from ra_triage_dashboard.app.routers import cases as cases_router
 
 
 class DeferredCaseMediaTest(unittest.IsolatedAsyncioTestCase):
+    async def test_planning_facts_use_issue_media_anchor_not_model_run(self):
+        from fastapi import Response, HTTPException
+        from ra_triage_dashboard.app import planning_constraints
+        provider = MagicMock()
+        provider.get_assets.return_value = {"capture": {"timestamp_ms": 1792072307919, "trip_id": "trip1"}}
+        response = Response()
+        with patch.object(cases_router.database, "get_issue", return_value={"baseline_scope": "scope"}), patch.object(cases_router, "media_for_issue", return_value=provider), patch.object(planning_constraints, "read_window", return_value={"status":"ready", "frames":[]}) as read:
+            await cases_router.get_planning_constraints("cn36864605", response, -1)
+            self.assertEqual(read.call_args.args[1:], ("cn36864605", "trip1", 1792072307919, -1))
+            self.assertEqual(response.headers['cache-control'], 'no-store')
+            provider.get_assets.return_value = {"capture": {}}
+            self.assertEqual((await cases_router.get_planning_constraints("cn36864605", response))['status'], 'unavailable')
+            self.assertEqual(read.call_count, 1)
+            with self.assertRaises(HTTPException):
+                await cases_router.get_planning_constraints("cn36864605", response, 60001)
+
     async def test_trail_metadata_resolves_disable_ra_task_version(self):
         with patch.object(
             cases_router.database,

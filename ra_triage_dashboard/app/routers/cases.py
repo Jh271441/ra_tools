@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, Response
 from fastapi.responses import FileResponse
 from PIL import Image, UnidentifiedImageError
 
@@ -1357,6 +1357,26 @@ async def get_case_trail_metadata(issue_id: str) -> dict[str, Any]:
         ),
     }
 
+
+
+@router.get("/api/cases/{issue_id}/planning-constraints")
+async def get_planning_constraints(issue_id: str, response: Response, offset_ms: int = 0) -> dict[str, Any]:
+    from ..planning_constraints import read_window
+    response.headers["Cache-Control"] = "no-store"
+    if not ISSUE_ID_RE.fullmatch(issue_id) or abs(offset_ms) > 60000:
+        raise _detail(400, "无效的案例或时间 / Invalid issue or offset")
+    case = await asyncio.to_thread(database.get_issue, issue_id)
+    if case is None:
+        raise _detail(404, "Issue 不存在 / Issue not found")
+    provider = media_for_issue(issue_id, str(case.get("baseline_scope") or ""))
+    if provider is None:
+        return {"status": "unavailable", "frames": []}
+    assets = await asyncio.to_thread(provider.get_assets, issue_id)
+    capture = assets.get("capture") or {}
+    anchor, trip = capture.get("timestamp_ms"), capture.get("trip_id")
+    if not isinstance(anchor, (int, float)) or anchor <= 0 or not trip:
+        return {"status": "unavailable", "frames": []}
+    return await asyncio.to_thread(read_window, settings.data_dir, issue_id, str(trip), int(anchor), offset_ms)
 
 
 @router.get("/api/cases/{issue_id}/media")

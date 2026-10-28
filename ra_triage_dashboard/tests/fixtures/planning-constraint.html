@@ -1,0 +1,30 @@
+<!doctype html><html data-ui-lang="zh"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Planning constraint · isolated browser fixture</title>
+<link rel="stylesheet" href="/static/styles.css"><link rel="stylesheet" href="/static/css/base.css"><link rel="stylesheet" href="/static/css/media-dialog.css"><link rel="stylesheet" href="/static/css/layout-shared.css"><link rel="stylesheet" href="/static/css/mobile.css">
+<style>body{margin:0;padding:12px;background:var(--bg);color:var(--text)}main{max-width:1100px;margin:auto}nav{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}video{width:100%;height:320px;object-fit:contain;background:#080a10}.detail-media-command{margin-bottom:12px}#fixture-status{white-space:pre-wrap;overflow-wrap:anywhere;font:12px monospace}</style>
+<main><p>隔离验收 / synthetic video & API fixture — 不连接业务数据</p><nav><button id="language">中文 / English</button><button id="theme">深 / 浅</button><button id="switch-issue">切换 Issue</button><button id="error">失败数据</button><button id="empty">无匹配数据</button><button id="unavailable">数据不可用</button><button id="restore">正常数据</button></nav><div id="detailPane"></div><pre id="fixture-status"></pre></main>
+<script src="/static/js/core-base.js"></script><script src="/static/js/i18n-messages.js"></script><script src="/static/js/i18n.js"></script><script src="/static/js/format-api.js"></script><script src="/static/js/planning-constraints.js"></script><script src="/static/js/detail-media.js"></script><script src="/static/js/media-dialog.js"></script>
+<script>
+const fixtureNativeFetch = window.fetch.bind(window);
+let fixtureMode='ready',fixtureCount=0,fixtureIssue='cn36864605';
+window.fetch=async(url,options)=>{
+ if(!String(url).includes('/planning-constraints'))return fixtureNativeFetch(url,options);
+ fixtureCount++;
+ const offset=Number(new URL(url,location.origin).searchParams.get('offset_ms')), bucket=Math.floor(offset/8000),anchor=1792072307919;
+ if(fixtureMode==='error')throw new Error('fixture failure');
+ const frames=[];
+ for(let t=bucket*8000-200;t<=bucket*8000+8200;t+=100){const id=t<1000?'tl-30004052-lane-75940685-RED-soft':'obj-43298-pred-7-region-0';frames.push({timestamp_ms:anchor+t,status:'ready',constraint_id:id,raw:`Non gap align. Dominant constraint: ${id}, Object id: 0. Earliest search brake time ix: -1`});}
+ return {ok:true,json:async()=>({status:fixtureMode==='unavailable'?'unavailable':'ready',issue_id:fixtureIssue,bucket,anchor_ms:anchor,tolerance_ms:150,frames:fixtureMode==='empty'?[]:frames})};
+};
+function fixtureRender(){
+ releaseBevVideoPlayer(document.querySelector('#detailPane'));
+ const caseData={issue_id:fixtureIssue,assets:{frames:[],video:{url:'/api/test-video',duration_ms:4000,tracks:[{url:'/api/test-video',label:'BEV 视频'},{url:'/api/test-video?camera=1',label:'Camera102 视频'}]}},camera:{frames:[]}};
+ document.querySelector('#detailPane').innerHTML=detailMediaCommandMarkup(caseData)+heroMediaSection(caseData);bindDetailMedia(caseData);
+}
+document.querySelector('#language').onclick=()=>{state.uiLanguage=state.uiLanguage==='zh'?'en':'zh';document.documentElement.dataset.uiLang=state.uiLanguage;refreshBevVideoLanguage();};
+document.querySelector('#theme').onclick=()=>{document.documentElement.dataset.colorTheme=document.documentElement.dataset.colorTheme==='light'?'dark':'light';};
+document.querySelector('#switch-issue').onclick=()=>{fixtureIssue=fixtureIssue==='cn36864605'?'cn36854187':'cn36864605';fixtureRender();};
+for(const mode of ['error','empty','unavailable','restore'])document.querySelector('#'+mode).onclick=()=>{fixtureMode=mode==='restore'?'ready':mode;fixtureRender();};
+fixtureRender();
+setInterval(()=>{const panel=document.querySelector('.planning-constraint-panel:not([hidden])'),r=panel?.getBoundingClientRect();document.querySelector('#fixture-status').textContent=JSON.stringify({issue:fixtureIssue,requests:fixtureCount,width:innerWidth,scrollWidth:document.documentElement.scrollWidth,panel:r?{left:r.left,top:r.top,right:r.right,bottom:r.bottom}:null,videoTime:document.querySelector('video')?.currentTime,selected:document.querySelector('#detailMediaKindSelect')?.value},null,2);},200);
+</script></html>
