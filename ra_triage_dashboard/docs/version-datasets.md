@@ -146,7 +146,19 @@ The preview-only `?colors=1` fixture appends two actual GT component examples
 IAB checked1440px Chinese in both themes and320/390px English/light: no page-level
 overflow; computed TE/RD colors match. Narrow RD legends retain their existing
 local scrolling. These are resized-browser checks, not physical-device tests.
-Local preview only; cache704 has not been deployed.
+Released2026-10-29 01:18:00 CST as cc222569aaec8c23577683f1ab8f4b69d561dc5f,
+cache704. This supersedes the local-only status of candidates701–704 above.
+Merged the previously isolated equal-width filter release276be79; no deployed
+features were dropped. Standard master deployment restored the main runtime path.
+Cloud1079passed/7skipped, isolated SQLite gray, exact production SHA, persistent
+PostgreSQL/database/overall health and unchanged writer policy passed. Shell,
+loader, chart tokens, version/RD/analysis modules and version/mobile/runs CSS
+matched the exact commit. No migration or business-data mutation.
+Receipt: `/volume/home/workspace/ra_triage_dashboard_deploy/releases/20261028T171427Z-cc222569aaec/result.json`.
+Local post-merge95tests/15subtests passed. Earlier responsive fixture acceptance
+is retained; no new signed-in production visual or physical-device test is claimed.
+Retention removed only clean unused candidate/rollback trees for09f943d's release;
+Git history and release logs remain recoverable. No business data was removed.
 
 ### Equal-width gallery filters (2026-10-28 released, cache701)
 

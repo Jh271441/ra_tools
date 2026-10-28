@@ -6,8 +6,8 @@ small type hierarchy. The user-provided image is a grouping illustration rather
 than a visual template. No fonts, UI libraries, endpoints or aggregation logic
 are added for this redesign.
 
-The local cache704 candidate merges the accepted chart colors with the
-statistics-first filter/read optimization. It is not deployed. See
+The released cache704 version merges the accepted chart colors with the
+statistics-first filter/read optimization (2026-10-29 01:18 CST, cc22256). See
 `version-datasets.md` for combined scope, tests and release status.
 
 Metric cards and composition precede a single filter panel containing Dataset /
