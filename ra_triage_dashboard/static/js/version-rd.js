@@ -1,13 +1,13 @@
 /* Counts come only from the server's shared Manual Issue-label projection. */
-function renderVersionRD(d=null, failed=false) {
-  const el=document.getElementById('versionRDPanel'),s=versionDatasetState;
+function renderVersionRD(d=null, failed=false, scopeState=versionDatasetState) {
+  const el=document.getElementById('versionRDPanel'),s=scopeState;
   if(!el)return;
   if(failed||d?.source_status==='unsupported'){el.innerHTML=`<p class="version-rd-empty">${failed?uiText('RD 标注暂不可用，请刷新重试','RD annotations unavailable; refresh to retry'):uiText('此历史固定集暂不提供 RD 统计','RD statistics are unavailable for this frozen historical set')}</p>`;return;}
   if(!d){el.innerHTML=`<p class="version-rd-empty">${uiText('正在读取 RD 标注…','Loading RD annotations…')}</p>`;return;}
   if(!d.total){el.innerHTML=`<p class="version-rd-empty">${uiText('当前范围暂无复核目标','No review targets in this scope')}</p>`;return;}
   const rate=(100*d.completed/d.total).toFixed(1);
   const categories=[['正确触发',uiText('正确触发','Correct trigger'),'rd-correct'],['误触发',uiText('误触发','False trigger'),'rd-false'],['无需协助',uiText('无需协助','No assistance needed'),'rd-assistance']];
-  const scope=[versionDatasetScopeLabel(),s.date||uiText('全部日期','All dates')].join(' · ');
+  const scope=[versionDatasetScopeLabel(s.mode),s.date||uiText('全部日期','All dates')].join(' · ');
   const source=uiText('Manual 当前人工结论；冲突及需复核不计已标。分母为筛选范围内全部目标，不随 TE 状态或翻页改变。','Current Manual human conclusions; conflicts and rechecks are not labeled. Denominator: all filtered targets, independent of TE status and pagination.');
   const pending=uiText(`待标 ${d.pending} · 冲突待确认 ${d.conflict}`,`Pending ${d.pending} · Conflicts to resolve ${d.conflict}`);
   const markup=`<div class="version-rd-grid">
@@ -26,9 +26,9 @@ function renderVersionRD(d=null, failed=false) {
     <section class="page-card version-rd-block" aria-labelledby="versionRDMixTitle">
       <header class="version-rd-header section-heading version-chart-heading">
         <h2 id="versionRDMixTitle" title="${escapeHtml(source+' · '+uiText('占已标有效结果','Share of valid labeled results'))}">${uiText('RD 三分类分布','RD classification mix')}</h2>
-        ${d.completed?`<div class="version-rd-legend" tabindex="0" role="group" aria-label="${escapeHtml(uiText('三分类图例；占已标有效结果，可横向滚动','Classification legend; share of valid labeled results; scroll horizontally'))}">${categories.map(([key,label,cls])=>{const count=d.distribution[key],share=(100*count/d.completed).toFixed(1);return `<span class="version-rd-category" title="${escapeHtml(label+' · '+count+' / '+d.completed)}"><i class="${cls}" aria-hidden="true"></i><span>${label}</span><span>${share}%</span></span>`;}).join('')}</div>`:''}
+        ${d.completed?`<div class="version-rd-legend" tabindex="0" role="group" aria-label="${escapeHtml(uiText('三分类图例；数量及占已标有效结果比例，可横向滚动','Classification legend; count and share of valid labeled results; scroll horizontally'))}">${categories.map(([key,label,cls])=>{const count=d.distribution[key],share=(100*count/d.completed).toFixed(1);return `<span class="version-rd-category" title="${escapeHtml(label+' · '+count+' / '+d.completed)}"><i class="${cls}" style="--version-label-color:${versionLabelColor(key)}" aria-hidden="true"></i><span>${label}</span><span>${count} · ${share}%</span></span>`;}).join('')}</div>`:''}
       </header>
-      ${d.completed?`<div class="version-rd-stack" aria-hidden="true">${categories.filter(([key])=>d.distribution[key]>0).map(([key,,cls])=>`<i class="${cls}" style="flex:${d.distribution[key]} 0 0"></i>`).join('')}</div>`:`<p class="version-rd-empty">${uiText('暂无有效三分类结果','No valid classifications yet')}</p>`}
+      ${d.completed?`<div class="version-rd-stack" aria-hidden="true">${categories.filter(([key])=>d.distribution[key]>0).map(([key,,cls])=>`<i class="${cls}" style="--version-label-color:${versionLabelColor(key)};flex:${d.distribution[key]} 0 0"></i>`).join('')}</div>`:`<p class="version-rd-empty">${uiText('暂无有效三分类结果','No valid classifications yet')}</p>`}
     </section>
   </div>`;
   // Preserve focused legends and their horizontal scroll on unchanged polling.

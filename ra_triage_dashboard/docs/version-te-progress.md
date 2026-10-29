@@ -6,25 +6,29 @@ small type hierarchy. The user-provided image is a grouping illustration rather
 than a visual template. No fonts, UI libraries, endpoints or aggregation logic
 are added for this redesign.
 
-A single filter panel holds Dataset / View / Case scope / Occurrence date (CST).
-View groups the existing scope options; it does not switch page layouts. Review
-targets exposes only All review targets, Random sample (`sampled_targets`) and
-Low confidence excluding samples (`low`). Data processing exposes all/history,
-published, awaiting source, awaiting data/retry, excluded and the older sample
-candidates (`samples`, including pending). Both selects use the existing shared
-enhancement. Existing mode URLs select the matching group without rewriting the
-API contract. The last mode in each group is remembered until the dataset changes;
-other filters stay visible and unchanged when switching groups.
+The released cache704 version merges the accepted chart colors with the
+statistics-first filter/read optimization (2026-10-29 01:18 CST, cc22256). See
+`version-datasets.md` for combined scope, tests and release status.
+
+Metric cards and composition precede a single filter panel containing Dataset /
+Case scope / Occurrence date (CST). The redundant View grouping is removed; all
+three review modes (all targets, random sample, low excluding sample) are shown
+in Case scope through the shared enhanced select in candidate705. An explicitly
+restored legacy mode remains as the current extra option until switching back;
+existing mode URLs and API values retain their meanings. RD legends now show
+counts alongside percentages. Candidate705 is not yet deployed.
 
 The four metrics, TE charts, composition and gallery keep their visibility and
 counts. The follow-up moves composition directly after the metrics, before TE.
-TE result rows use label / proportional bar / count on one row, with wrapping
-labels and natural height rather than a centered, clipped inner scroll region.
+TE result rows use label / count / filled-result share above a full-width bar,
+with wrapping labels and natural height rather than a clipped inner scroll region.
 No categories are combined or omitted. No tabs, extra cards, persistent explanatory rows
-or new shared styles are added. Only the toolbar grid changes: four columns on
-desktop, two at tablet widths and the existing narrow-phone stack. The current
-cohort is named in the TE denominator line. Cohort changes clear stale charts
-while loading; same-cohort date/status changes retain existing loading behavior.
+are added. Toolbar fields use three columns on desktop, two at tablet widths and
+the existing narrow-phone stack. The chart's cohort is named in the TE denominator
+line. Same-dataset filter changes retain charts with an explicit previous-scope
+notice until replacement; stale cards/export clear immediately. Dataset changes
+clear old charts. Bounded30-second caching and forced refresh behavior are documented
+in `version-datasets.md`.
 
 Case scope remains a view filter, not a configurable sampling strategy. All selectors
 retain the shared native-select enhancement, including keyboard, Escape, outside
@@ -36,14 +40,20 @@ values use the normal text color. TE progress, filled-result distribution
 and occurrence-date progress each have their own card. Desktop widths follow
 content needs rather than equal thirds. The donut includes both percentage and
 filled/target count. Filled progress uses the shared success color, pending is
-neutral and unknown uses the shared warning color. Result counts use one neutral
-bar color: their labels carry the outcome, without making an observed failure
-look successful. Composition uses a restrained accent/slate palette. All colors
+neutral and unknown uses the shared warning color. TE result categories use the
+shared chart tokens, not alert states: correct/succeeded teal, false trigger
+muted rose, no assistance blue, failed indigo, and unanswered slate. RD uses
+the exact same label mapping for its legend and segments.
+Raw TE values own colors regardless of rank or locale; unrecognized categories
+use muted gray. Shares divide by filled results. Composition uses a restrained
+accent/slate palette. The shared Reason analysis/Labeling summary GT donut uses
+blue for to-update, muted indigo for needs-attention, and teal for matches-GT;
+zero-value arcs no longer shift the palette away from the legend. All colors
 follow existing theme tokens. Secondary export/paging/date actions use the shared
 neutral button variant; the existing search action retains its emphasis. Daily rows keep dates, gauges, counts and percentages in stable columns;
 long lists scroll locally. Source freshness and denominator scope stay visible.
 
-Tablet uses two cards followed by a full-width date card. Phone layouts retain
+At651–1240px, tablet uses two cards followed by a full-width date card. Phone layouts retain
 the original controls, put progress then daily progress then results in one column,
 use two-column metrics and filters where they fit, stack the primary filters at
 430px and below to keep long scope names readable, and keep 44px touch targets.

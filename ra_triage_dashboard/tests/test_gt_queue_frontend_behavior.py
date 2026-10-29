@@ -75,12 +75,27 @@ const readyUrl=new URL(pageUrl('labeling-summary',labelSummaryRouteOptions()),'h
 assert.equal(readyUrl.searchParams.has('gt_update'),false);assert.equal(readyUrl.searchParams.get('page'),'2');assert.equal(readyUrl.searchParams.get('baselines'),'version-20261009');
 const data={gt_update_counts:{all:7,ready:3,blocked:3},annotated:7,page:1,page_size:20,items:[{issue_id:'cn101',label_state:'resolved',gt_label:'正确触发',expected_output:'误触发',rationales:['evidence']}]};
 assert.deepEqual(labelSummaryGtChartItems(data).map(item=>item.count),[3,3,1]);
+assert.deepEqual(labelSummaryGtChartItems(data).map(item=>item.color),['var(--chart-blue)','var(--chart-indigo)','var(--chart-teal)']);
 const markup=labelSummaryGtChartMarkup(data);
 assert.match(markup,/42.9%/);assert.match(markup,/14.3%/);assert.match(markup,/GT 待更新/);
 assert.match(markup,/section-heading analysis-review-status-heading/);
 assert.match(markup,/标注尚未齐备、来源冲突/);
 const analysisMarkup=analysisGtChartMarkup(data,{prefix:'analysis'});
 assert.equal(analysisMarkup.replaceAll('analysisGt','labelSummaryGt'),markup);
+// Zero states must not shift the remaining slices onto another legend color.
+for (const [ready,blocked,aligned] of [[281,0,374],[0,3,4],[3,4,0],[0,0,7],[0,7,0],[7,0,0],[0,0,0]]) {
+  const sample={gt_update_counts:{all:ready+blocked+aligned,ready,blocked}};
+  const items=analysisGtChartItems(sample);
+  const svg=renderAnalysisPieSvg(items,{palette:items.map(item=>item.color),animatePies:false});
+  for(const item of items){
+    const path=[...svg.matchAll(/<path [^>]*>/g)].map(match=>match[0]).find(path=>path.includes('data-pie-key="'+item.key+'"'));
+    if(item.count) {assert.ok(path);assert.ok(path.includes('fill="'+item.color+'"'));}
+    else assert.equal(path,undefined);
+  }
+}
+const categorical=renderAnalysisPieSvg([{key:'zero',count:0},{key:'b',count:1},{key:'c',count:2}],{palette:['red','green','blue']});
+assert.match(categorical,/data-pie-key="b"[^>]*fill="green"/);
+assert.match(categorical,/data-pie-key="c"[^>]*fill="blue"/);
 renderAnalysisGtStatus(data);
 assert.equal($('#analysisGtCardMount').innerHTML,analysisMarkup);
 assert.equal(typeof $('#analysisGtRules').handlers.click,'function');

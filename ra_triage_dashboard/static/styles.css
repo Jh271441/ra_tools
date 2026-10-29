@@ -12,6 +12,13 @@
   --faint: #657084;
   --accent: #24d3ef;
   --accent-soft: rgba(36, 211, 239, 0.12);
+  /* Quantitative series share the workspace accent, without alert semantics. */
+  --chart-primary: color-mix(in srgb, var(--accent) 65%, var(--muted));
+  --chart-blue: #73a5da;
+  --chart-teal: #59baa9;
+  --chart-rose: #d28ba8;
+  --chart-indigo: #9298cc;
+  --chart-slate: #91a2b8;
   --ok: #34d399;
   --fail: #f87171;
   --warn: #fbbf24;
@@ -39,6 +46,12 @@ html[data-color-theme="light"] {
   --faint: #64748b;
   --accent: #08758d;
   --accent-soft: rgba(8, 117, 141, .1);
+  --chart-primary: color-mix(in srgb, var(--accent) 65%, var(--muted));
+  --chart-blue: #3c72ac;
+  --chart-teal: #287e72;
+  --chart-rose: #ad557a;
+  --chart-indigo: #626c9f;
+  --chart-slate: #677d96;
   --ok: #087a58;
   --fail: #c23f4d;
   --warn: #9a6500;

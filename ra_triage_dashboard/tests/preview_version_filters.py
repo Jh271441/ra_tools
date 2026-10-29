@@ -98,21 +98,26 @@ def main():
                     start = source.index('          <section class="app-page tool-page version-datasets-page')
                     end = source.index('<section class="app-page tool-page daily-cron-page', start)
                     page = source[start:end].replace('version-datasets-page hidden', 'version-datasets-page')
+                    color_preview = 'colors' in parse_qs(request.query)
+                    if color_preview:
+                        page = page.replace('<section class="gallery-panel version-gallery"', '<div id="previewGtColors" class="analysis-cluster-grid"></div><section class="gallery-panel version-gallery"')
                     styles = re.findall(r'"([^"\n]+\.css)"', source.split('const stylesheetPaths = [')[1].split('];')[0])
                     links = ''.join(f'<link rel="stylesheet" href="/static/{p}">' for p in styles)
-                    scripts = ''.join(f'<script src="/static/js/{p}.js"></script>' for p in ['core-base','i18n-messages','i18n','format-api','daily-review','version-datasets','version-rd'])
+                    scripts = ''.join(f'<script src="/static/js/{p}.js"></script>' for p in ['core-base','i18n-messages','i18n','format-api','daily-review','version-datasets','version-rd','analysis'])
                     html = f'''<!doctype html><html lang="zh-CN" data-ui-lang="zh" data-color-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>版本筛选 · 本地预览</title>{links}</head>
 <body data-active-page="version-datasets"><main style="padding:12px;max-width:1504px;margin:auto;min-width:0">
 <header class="section-heading" style="flex-wrap:wrap;gap:12px"><h1><span class="ui-lang-zh">版本数据</span><span class="ui-lang-en">Version data</span></h1><span class="muted"><span class="ui-lang-zh">本地预览 · 示例数据 · 无真实媒体</span><span class="ui-lang-en">Local preview · Sample data · No real media</span></span><div class="ui-choice-group"><button class="button button-secondary" id="previewLanguage" type="button">EN / 中文</button><button class="button button-secondary" id="previewTheme" type="button">Light / 深色</button><button class="button button-secondary" id="previewFailure" type="button">Error / 失败</button></div></header>{page}</main>{scripts}<script>
 state.uiLanguage='zh';state.activePage='version-datasets';
 let previewFail=false;
 api=async(path,options={{}})=>{{if(previewFail)throw new Error('Preview failure');const r=await fetch(path,{{signal:options.signal}});if(!r.ok)throw new Error('Preview '+r.status);return r.json();}};
-document.getElementById('previewLanguage').onclick=()=>{{state.uiLanguage=state.uiLanguage==='zh'?'en':'zh';document.documentElement.dataset.uiLang=state.uiLanguage;renderVersionDatasets();}};
+function previewGtColors(){{const mount=document.getElementById('previewGtColors');if(!mount)return;mount.innerHTML=[{{all:655,ready:281,blocked:0}},{{all:655,ready:281,blocked:90}}].map((counts,i)=>'<div style="min-width:0">'+analysisGtChartMarkup({{gt_update_counts:counts}},{{prefix:'preview'+i}})+'</div>').join('');bindAnalysisPieHover(mount);}};
+document.getElementById('previewLanguage').onclick=()=>{{state.uiLanguage=state.uiLanguage==='zh'?'en':'zh';document.documentElement.dataset.uiLang=state.uiLanguage;renderVersionDatasets();previewGtColors();}};
 document.getElementById('previewTheme').onclick=()=>{{const d=document.documentElement.dataset;d.colorTheme=d.colorTheme==='dark'?'light':'dark';}};
 document.getElementById('previewFailure').onclick=()=>{{previewFail=!previewFail;loadVersionDatasets();}};
 document.addEventListener('click',e=>{{const a=e.target.closest('a');if(a&&!a.getAttribute('href')?.startsWith('/api/'))e.preventDefault();if(e.target.closest('[data-version-open]'))e.stopImmediatePropagation();}},true);
 window.addEventListener('popstate',()=>setVersionDatasetsActive(true));
 setVersionDatasetsActive(true);
+previewGtColors();
 </script></body></html>'''
                     return self.respond(html.encode(), 'text/html')
                 except Exception as error:

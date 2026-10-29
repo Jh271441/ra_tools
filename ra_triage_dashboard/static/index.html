@@ -86,7 +86,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-703`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-706`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -1853,18 +1853,17 @@
           </section>
 
           <section class="app-page tool-page version-datasets-page hidden" id="versionDatasetsPage" data-page="version-datasets">
+            <div class="version-metrics" id="versionDatasetSummary" aria-live="polite"></div>
+            <section class="version-composition" data-label-zh="版本构成" data-label-en="Version composition" aria-label="版本构成"><header><h2><span class="ui-lang-zh">版本构成</span><span class="ui-lang-en">Version composition</span></h2><span class="muted version-counts" id="versionDatasetCounts"></span></header><div class="version-composition-bar" id="versionCompositionBar" role="img"></div><div class="version-composition-legend" id="versionCompositionLegend"></div></section>
             <section class="review-commandbar version-filter-panel" data-label-zh="版本数据筛选" data-label-en="Version dataset filters" aria-label="版本数据筛选">
               <div class="version-toolbar">
                 <label class="version-filter-field"><span><span class="ui-lang-zh">数据集</span><span class="ui-lang-en">Dataset</span></span><select id="versionDatasetPicker" data-label-zh="数据集" data-label-en="Dataset" aria-label="数据集"></select></label>
-                <label class="version-filter-field"><span><span class="ui-lang-zh">查看内容</span><span class="ui-lang-en">View</span></span><select id="versionDatasetView" data-label-zh="查看内容" data-label-en="View" aria-label="查看内容"><option value="review" data-zh="复核目标" data-en="Review targets">复核目标</option><option value="processing" data-zh="数据处理" data-en="Data processing">数据处理</option></select></label>
                 <label class="version-filter-field"><span><span class="ui-lang-zh">案例范围</span><span class="ui-lang-en">Case scope</span></span><select id="versionDatasetMode" data-label-zh="案例范围" data-label-en="Case scope" aria-label="案例范围"><option value="targets" data-zh="全部复核目标" data-en="All review targets">全部复核目标</option><option value="sampled_targets" data-zh="随机抽样集" data-en="Random sample">随机抽样集</option><option value="low" data-zh="低置信（不含抽样）" data-en="Low confidence (excluding samples)">低置信（不含抽样）</option></select></label>
                 <label class="version-filter-field" id="versionDatasetDateField"><span><span class="ui-lang-zh">发生日期 · CST</span><span class="ui-lang-en">Occurrence date · CST</span></span><select id="versionDatasetDate" data-label-zh="发生日期 · CST" data-label-en="Occurrence date · CST" aria-label="发生日期 · CST"><option value="" data-zh="全部日期" data-en="All dates">全部日期</option></select></label>
               </div>
             </section>
-            <div class="version-metrics" id="versionDatasetSummary" aria-live="polite"></div>
-            <section class="version-composition" data-label-zh="版本构成" data-label-en="Version composition" aria-label="版本构成"><header><h2><span class="ui-lang-zh">版本构成</span><span class="ui-lang-en">Version composition</span></h2><span class="muted version-counts" id="versionDatasetCounts"></span></header><div class="version-composition-bar" id="versionCompositionBar" role="img"></div><div class="version-composition-legend" id="versionCompositionLegend"></div></section>
             <div id="versionTEPanel" class="version-te-grid" role="group" data-label-zh="TE 标注概览" data-label-en="TE annotation overview" aria-label="TE 标注概览">
-              <div class="version-te-context"><span class="version-te-scope muted" id="versionTEScope"></span><span class="muted" id="versionTESource" role="status"></span></div>
+              <div class="version-te-context"><span class="version-te-scope muted" id="versionTEScope"></span><span class="version-loading-status muted" id="versionDatasetLoading" role="status" hidden></span><span class="muted" id="versionTESource" role="status"></span></div>
               <section class="page-card version-chart-card version-progress-card">
                 <div class="section-heading version-chart-heading"><h2><span class="ui-lang-zh">TE 标注进度</span><span class="ui-lang-en">TE labeling progress</span><span class="model-review-run-help version-te-info" id="versionTEInfo"><button class="version-te-info-button" id="versionTEInfoButton" type="button" data-label-zh="查看 TE 标注来源" data-label-en="About the TE annotation source" aria-label="查看 TE 标注来源" aria-describedby="versionTEInfoTooltip" aria-expanded="false"><svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="10" r="7.5" stroke="currentColor" stroke-width="1.4"/><path d="M10 9.1v4.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="10" cy="6.3" r=".9" fill="currentColor"/></svg></button><span class="model-review-run-tooltip version-te-info-tooltip" id="versionTEInfoTooltip" role="tooltip"><strong><span class="ui-lang-zh">TE 标注来源</span><span class="ui-lang-en">TE annotation source</span></strong><span class="version-te-info-line"><span class="ui-lang-zh">Trail 的 RA Review Result New（ra_review_result_new），与平台联合复核分开统计。</span><span class="ui-lang-en">Trail RA Review Result New (ra_review_result_new), tracked separately from platform combined review.</span></span><span class="version-te-info-line"><span class="ui-lang-zh">分母：当前范围的低置信＋抽样目标。非空结果（含失败、未接起等）计已标；无观测记未知。</span><span class="ui-lang-en">Denominator: low-confidence and sampled targets in the current scope. Nonempty results, including failure or unanswered, count as filled; missing observations remain unknown.</span></span><span class="version-te-info-line"><span class="ui-lang-zh">按 CST 发生日聚合，晚到数据回填发生日，不代表当天标注量。约 5 分钟采集，页面每 30 秒刷新。</span><span class="ui-lang-en">Dates use occurrence time in CST, including late arrivals, rather than annotation time. Collection runs about every 5 minutes; the page refreshes every 30 seconds.</span></span></span></span></h2></div>
                 <div class="te-scope-chart"><div class="te-donut" id="versionTEDonut" role="img"><strong id="versionTERate">—</strong><small id="versionTERatio">—</small></div><div class="te-status-legend" id="versionTEStatusChart"></div></div>
@@ -2585,7 +2584,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-703`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-706`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

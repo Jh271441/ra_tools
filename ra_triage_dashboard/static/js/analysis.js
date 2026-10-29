@@ -213,11 +213,13 @@ function analysisPiePalette(panelKey) {
 const ANALYSIS_PIE_COLORS = ANALYSIS_PIE_BASE_DARK;
 
 function analysisPieArcs(items) {
-  const rows = (items || []).filter((item) => Number(item.count) > 0);
-  const sum = rows.reduce((acc, item) => acc + Number(item.count || 0), 0);
+  // Keep palette positions stable when zero-count categories have no arc.
+  const rows = (items || []).map((item, index) => ({ item, index }))
+    .filter(({ item }) => Number(item.count) > 0);
+  const sum = rows.reduce((acc, { item }) => acc + Number(item.count || 0), 0);
   if (!sum) return { arcs: [], sum: 0 };
   let angle = -Math.PI / 2;
-  const arcs = rows.map((item, index) => {
+  const arcs = rows.map(({ item, index }) => {
     const fraction = Number(item.count || 0) / sum;
     const start = angle;
     const end = angle + fraction * Math.PI * 2;
@@ -310,7 +312,7 @@ function renderAnalysisPieSvg(
   }
   const slices = arcs
     .map(({ item, index, start, end }) => {
-      const color = palette[index % palette.length];
+      const color = item.color || palette[index % palette.length];
       const percent = analysisPiePercent(item, sum);
       return `<path class="analysis-pie-slice" data-pie-index="${index}"
         data-pie-key="${escapeHtml(item.key)}"
@@ -459,9 +461,9 @@ function analysisGtChartItems(data) {
   const ready = Number(counts.ready || 0);
   const blocked = Number(counts.blocked || 0);
   return [
-    { key: "gt_ready", label: uiText("GT 待更新", "GT to update"), count: ready, color: "var(--accent)" },
-    { key: "gt_blocked", label: uiText("需确认", "Needs attention"), count: blocked, description: uiText("标注尚未齐备、来源冲突，或裁决需重新确认；暂不作为 GT 更新候选。", "Incomplete labels, conflicting sources or a stale decision; not yet eligible for a GT update."), color: "var(--warn)" },
-    { key: "gt_aligned", label: uiText("与 GT 一致", "Matches GT"), count: Math.max(0, total - ready - blocked), color: "var(--ok)" },
+    { key: "gt_ready", label: uiText("GT 待更新", "GT to update"), count: ready, color: "var(--chart-blue)" },
+    { key: "gt_blocked", label: uiText("需确认", "Needs attention"), count: blocked, description: uiText("标注尚未齐备、来源冲突，或裁决需重新确认；暂不作为 GT 更新候选。", "Incomplete labels, conflicting sources or a stale decision; not yet eligible for a GT update."), color: "var(--chart-indigo)" },
+    { key: "gt_aligned", label: uiText("与 GT 一致", "Matches GT"), count: Math.max(0, total - ready - blocked), color: "var(--chart-teal)" },
   ];
 }
 
