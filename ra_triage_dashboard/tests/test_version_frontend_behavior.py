@@ -84,9 +84,8 @@ assert.equal(versionDatasetState.date,'');
 assert.equal(requests.length,5);
 versionDatasetChange({mode:'sampled_targets',assignee:'alice',teStatus:'filled',reviewStatus:'pending'});
 assert.equal(versionDatasetScopeLabel(),'随机抽样集');
-assert.equal(($('#versionDatasetMode').innerHTML.match(/<option/g)||[]).length,9);
-assert.ok($('#versionDatasetMode').innerHTML.includes('value="samples"'));
-assert.ok($('#versionDatasetMode').innerHTML.includes('value="source_waiting"'));
+assert.equal(($('#versionDatasetMode').innerHTML.match(/<option/g)||[]).length,3);
+assert.deepEqual([...$('#versionDatasetMode').innerHTML.matchAll(/value="([^"]+)"/g)].map(m=>m[1]),['targets','sampled_targets','low']);
 versionDatasetChange({mode:'source_waiting'});
 assert.equal(versionDatasetState.teStatus,'filled');
 assert.equal(versionDatasetState.assignee,'alice');
@@ -95,12 +94,15 @@ location.pathname='/version-datasets';location.search='?dataset=A&mode=samples&d
 versionDatasetRoute();syncVersionDatasetViews();
 assert.equal(versionDatasetState.mode,'samples');
 assert.equal($('#versionDatasetMode').value,'samples');
+assert.equal(($('#versionDatasetMode').innerHTML.match(/<option/g)||[]).length,4,'only an explicitly selected legacy scope is retained');
+assert.ok(!$('#versionDatasetMode').innerHTML.includes('value="source_waiting"'));
 assert.equal(versionDatasetState.date,'2026-10-20');
 assert.equal(versionDatasetState.teStatus,'unknown');
 assert.equal(versionDatasetRouteOptions().mode,'samples');
 location.search='?dataset=B&mode=sampled_targets';
 versionDatasetRoute();syncVersionDatasetViews();
 assert.equal($('#versionDatasetMode').value,'sampled_targets');
+assert.equal(($('#versionDatasetMode').innerHTML.match(/<option/g)||[]).length,3,'returning to a target cohort removes the legacy entry');
 const beforeLocale=JSON.stringify(versionDatasetState);
 global.uiText=(_,en)=>en;
 assert.equal(versionTEResult('成功'),'Succeeded');
@@ -150,6 +152,10 @@ for(const language of ['zh','en']) {
     const color=versionLabelColor(label);
     assert.equal(rd.innerHTML.split('--version-label-color:'+color).length-1,2,'legend and chart must match TE: '+label);
   }
+  renderVersionRD({total:159,completed:159,pending:0,conflict:0,distribution:{'正确触发':50,'误触发':94,'无需协助':15}});
+  for(const value of ['50 · 31.4%','94 · 59.1%','15 · 9.4%'])assert.ok(rd.innerHTML.includes('<span>'+value+'</span>'),'visible count and share: '+value);
+  renderVersionRD({total:3,completed:3,pending:0,conflict:0,distribution:{'正确触发':3,'误触发':0,'无需协助':0}});
+  assert.equal(rd.innerHTML.split('<span>0 · 0.0%</span>').length-1,2,'zero-count categories remain in the legend');
 }
 global.uiText=(_,en)=>en;
 renderVersionRD({total:10,completed:5,pending:3,conflict:2,distribution:{'正确触发':3,'误触发':2,'无需协助':0}},false,{mode:'sampled_targets',date:'2026-10-22'});

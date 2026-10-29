@@ -22,8 +22,10 @@ function versionDatasetScopeLabel(mode=versionDatasetState.mode) {
 }
 function syncVersionDatasetViews() {
   const s=versionDatasetState,picker=$('#versionDatasetMode');
-  const modes=['targets','sampled_targets','low','all','published','source_waiting','waiting','excluded','samples'];
-  const options=modes.map(mode=>`<option value="${mode}">${escapeHtml(versionDatasetScopeLabel(mode))}</option>`).join('');
+  const modes=['targets','sampled_targets','low'];
+  // Keep an explicitly restored legacy scope truthful without listing processing modes.
+  if(s.mode&&!modes.includes(s.mode))modes.push(s.mode);
+  const options=modes.map(mode=>`<option value="${escapeHtml(mode)}">${escapeHtml(versionDatasetScopeLabel(mode))}</option>`).join('');
   if(picker.innerHTML!==options)picker.innerHTML=options;
   picker.value=s.mode;
   enhanceNativeUiSelect(picker);

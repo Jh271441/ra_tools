@@ -57,6 +57,23 @@ not physical-device acceptance; signed-in checks are separately recorded above. 
 
 ## Interaction and performance
 
+### Three review scopes and visible RD counts (2026-10-29 candidate, cache705)
+
+User correction supersedes the nine-option picker below: normal Case scope lists
+only targets, sampled_targets and low. Reuse the shared native-select enhancement.
+An explicitly restored legacy processing mode remains as the sole extra current
+option, preserving its URL/query meaning; choosing a review scope removes it.
+No API modes or data are deleted and no second View picker is reintroduced.
+
+RD classification legend shows label, count and completed-result percentage
+(for example, Correct trigger 50 · 31.4%). Zero-count categories remain visible.
+Same-label colors, compact layout, denominators and bounded reads are unchanged.
+54 tests/6 subtests passed. Actual-module synthetic IAB preview checked1440px
+Chinese/dark and320/390px English/light: three shared options, selection/URL and
+locale preservation, Escape/outside dismissal,44px options and viewport bounds;
+no page overflow. Narrow legends retain existing local scrolling. Not a physical
+device or production-data test. Candidate705 is not deployed.
+
 ### Statistics-first filters and bounded reads (2026-10-28 candidate, cache701)
 
 Whole-version metric cards and version composition precede the filter toolbar.
