@@ -57,6 +57,28 @@ not physical-device acceptance; signed-in checks are separately recorded above. 
 
 ## Interaction and performance
 
+### Two-row correction (2026-10-29 candidate/cache703; not deployed)
+
+User rejected cache701's third row, blank cells and bottom-edge task caption.
+Desktop (>1024px) now uses nine equal columns, or eight with both task-progress
+and workflow fields hidden; Case labeling uses six. Issue search spans two columns
+on both pages; other fields occupy one, including Run/task/mode. Reset fills the remaining last-row cells. This
+supersedes the previous140px auto-fit/double-span policy; DOM/tab order and shared
+dropdowns/query state remain unchanged. Tablet/phone retain mobile.css ownership.
+
+Task summary, assignment-list empty/error hints and locked-mode information live
+inside field-heading right-hand shared info popovers, not beneath the form.
+Desktop button/SVG is1em; phone preserves44px targets. Escape/outside dismissal,
+focus/hover/click and viewport bounds use bindUiInfoPopovers. No new business writes.
+The original task-exit button moves to its heading, retaining ID/listener.
+
+Regression covers both progress/mode visible/hidden combinations at all desktop
+widths, equal fields/two rows/no gaps, bilingual task summary and list empty/error,
+info font-height/popup bounds/Escape, existing filters/URL/reset and mobile targets.
+Validation:73 focused tests and6 subtests passed;64 browser combinations passed
+at320/390/768/1024/1025/1180/1440/1920px, both languages/themes/pages. Browser
+fixtures are local viewport checks, not production or real-device tests.
+
 ### Equal-width gallery filters (2026-10-28 released, cache701)
 
 Released isolated commit276be79c73489a842c062686e06da214b0fb8e3c at

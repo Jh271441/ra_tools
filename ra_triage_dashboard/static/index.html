@@ -86,7 +86,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-701`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-703`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -399,19 +399,36 @@
                   <div class="multi-filter" id="workAssigneeFilter" data-placeholder="全部负责人" data-placeholder-en="All assignees" data-i18n-placeholder="filter.all_assignees" aria-label="Work assignee filter"></div>
                 </label>
                 <div class="review-task-filter">
-                  <span><span class="ui-lang-zh">复核任务</span><span class="ui-lang-en">Review task</span></span>
+                  <div class="filter-field-heading">
+                    <span><span class="ui-lang-zh">复核任务</span><span class="ui-lang-en">Review task</span></span>
+                    <button class="review-task-exit" id="reviewTaskContextExit" type="button" hidden aria-label="退出任务范围" title="退出任务范围" data-i18n-aria-label="review.exit_task" data-i18n-title="review.exit_task">×</button>
+                    <span class="model-review-run-help ui-info" data-ui-info id="reviewTaskInfo">
+                      <button class="ui-info-button" type="button" aria-expanded="false" aria-controls="reviewTaskInfoPanel" aria-label="复核任务说明" data-i18n-aria-label="review.task_help" data-i18n-title="review.task_help"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="10" r="7.5" stroke="currentColor" stroke-width="1.4"/><path d="M10 9.1v4.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="10" cy="6.3" r=".9" fill="currentColor"/></svg></button>
+                      <span class="model-review-run-tooltip ui-info-tooltip" id="reviewTaskInfoPanel" role="dialog" data-i18n-aria-label="review.task_help">
+                        <span class="ui-lang-zh">选择任务后按该任务范围复核；“综合结果”不绑定任务。</span><span class="ui-lang-en">Selecting a task scopes reviews to that task. Combined results is not bound to a task.</span>
+                        <span class="review-task-summary" id="reviewTaskSummary" hidden></span>
+                        <span id="reviewTaskDetails" hidden></span>
+                        <span id="reviewTaskPickerHint" hidden></span>
+                      </span>
+                    </span>
+                  </div>
                   <div class="review-task-filter-row">
                     <div class="ui-select" id="reviewTaskPicker"><button class="ui-select-trigger" type="button"><span class="ui-select-summary">综合结果</span><span class="ui-select-caret" aria-hidden="true"></span></button><div class="ui-select-panel" role="listbox" hidden></div><select class="ui-select-native" id="reviewTaskFilter" aria-hidden="true" tabindex="-1"><option value="">综合结果</option></select></div>
-                    <button class="review-task-exit" id="reviewTaskContextExit" type="button" hidden aria-label="退出任务范围" title="退出任务范围">×</button>
                   </div>
-                  <span class="review-task-summary" id="reviewTaskSummary" hidden></span>
-                  <small class="muted" id="reviewTaskPickerHint" hidden></small>
                 </div>
                 <label id="reviewTaskProgressField" hidden>
                   <span id="reviewTaskProgressLabel"><span class="ui-lang-zh">任务状态</span><span class="ui-lang-en">Task status</span></span>
                   <div class="multi-filter" id="reviewTaskProgressFilter" data-placeholder="全部任务状态" data-placeholder-en="All task statuses"></div>
                 </label>
-                <label class="review-workflow-mode" id="reviewWorkflowModeField"><span class="ui-lang-zh">复核模式</span><span class="ui-lang-en">Review mode</span><select id="reviewWorkflowMode"><option value="model_review_only">仅判错复核</option><option value="model_review_and_case_label" selected>判错复核 + 问题标注</option></select><small class="muted" id="reviewWorkflowModeHint" hidden>当前任务已锁定模式</small></label>
+                <div class="review-workflow-mode" id="reviewWorkflowModeField">
+                  <div class="filter-field-heading"><span><span class="ui-lang-zh">复核模式</span><span class="ui-lang-en">Review mode</span></span>
+                    <span class="model-review-run-help ui-info" data-ui-info>
+                      <button class="ui-info-button" type="button" aria-expanded="false" aria-controls="reviewModeInfoPanel" data-i18n-aria-label="review.mode_help" data-i18n-title="review.mode_help"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="10" r="7.5" stroke="currentColor" stroke-width="1.4"/><path d="M10 9.1v4.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="10" cy="6.3" r=".9" fill="currentColor"/></svg></button>
+                      <span class="model-review-run-tooltip ui-info-tooltip" id="reviewModeInfoPanel" role="dialog" data-i18n-aria-label="review.mode_help"><span class="ui-lang-zh">选择仅判错复核，或同时填写问题标注。任务可锁定模式。</span><span class="ui-lang-en">Review model judgments only, or also label the Issue. A task may lock this mode.</span><span id="reviewWorkflowModeHint" hidden data-i18n="review.mode_locked">当前任务已锁定模式</span></span>
+                    </span>
+                  </div>
+                  <select id="reviewWorkflowMode" data-i18n-aria-label="review.mode_label"><option value="model_review_only" data-i18n="review.mode_model">仅判错复核</option><option value="model_review_and_case_label" selected data-i18n="review.mode_combined">判错复核 + 问题标注</option></select>
+                </div>
                 <button class="button button-quiet filter-submit" id="resetReviewFiltersButton" type="button"><span class="ui-lang-zh">重置</span><span class="ui-lang-en">Reset</span></button>
               </form>
               </section>
@@ -2568,7 +2585,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-701`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-703`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>
