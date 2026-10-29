@@ -1,10 +1,43 @@
 import copy
+import asyncio
+import json
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event
+from types import SimpleNamespace
+from urllib.parse import urlsplit
 from unittest.mock import patch
 from ra_triage_dashboard.app import rd_results as rd
+
+
+class AsgiClient:
+    """Exercise real FastAPI routing/validation without optional HTTP packages."""
+    def __init__(self, app):
+        self.app = app
+
+    def request(self, method, url, **kwargs):
+        target, messages = urlsplit(url), []
+        body = json.dumps(kwargs.get('json')).encode() if 'json' in kwargs else b''
+        headers = {'content-type': 'application/json', 'host': 'test', **kwargs.get('headers', {})}
+        scope = dict(type='http', asgi={'version':'3.0'}, http_version='1.1', method=method,
+                     path=target.path, raw_path=target.path.encode(), root_path='',
+                     query_string=target.query.encode(), scheme='http', server=('test',80),
+                     client=('127.0.0.1',12345), headers=[(k.lower().encode(),v.encode()) for k,v in headers.items()])
+        async def receive():
+            return {'type':'http.request', 'body':body, 'more_body':False}
+        async def send(message):
+            messages.append(message)
+        asyncio.run(self.app(scope, receive, send))
+        content = b''.join(m.get('body',b'') for m in messages if m['type']=='http.response.body')
+        return SimpleNamespace(status_code=next(m['status'] for m in messages if m['type']=='http.response.start'),
+                               text=content.decode(), json=lambda:json.loads(content))
+
+    def get(self, url, **kwargs):
+        return self.request('GET', url, **kwargs)
+
+    def post(self, url, **kwargs):
+        return self.request('POST', url, **kwargs)
 
 
 class Client:
@@ -254,8 +287,6 @@ class RDProjectionTest(unittest.TestCase):
 class RDRoutesTest(unittest.TestCase):
     def setUp(self):
         from fastapi import FastAPI, HTTPException
-        from fastapi.testclient import TestClient
-        from types import SimpleNamespace
         from ra_triage_dashboard.app.routers import rd_results as routes
         self.routes = routes
         self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
@@ -273,7 +304,7 @@ class RDRoutesTest(unittest.TestCase):
             (rd,'adapter',lambda *args:self.client),
             (routes,'settings',SimpleNamespace(data_dir=self.tmp.name,trail_rd_write_enabled=False,ra_auto_triage_root=self.tmp.name))]:
             p=patch.object(target,name,value);p.start();self.addCleanup(p.stop)
-        app=FastAPI();app.include_router(routes.router);self.http=TestClient(app)
+        app=FastAPI();app.include_router(routes.router);self.http=AsgiClient(app)
         self.body={'baselines':'fixture','issue_ids':['cn123']}
         self.headers={'X-RA-Triage-Request':'browser-v1'}
 
