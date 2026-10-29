@@ -45,6 +45,21 @@ python3 /tmp/ra-dashboard-deploy.py --sha <完整40位提交SHA>
 
 ## 自动执行
 
+### 显式开启 RD 标注上传
+
+仅在本次会话明确授权上线并开启真实 RD 上传后，使用：
+
+```bash
+python3 ra_triage_dashboard/scripts/release_dashboard.py --sha <完整40位提交SHA> --enable-trail-rd-write
+```
+
+默认发布保留所有既有写入策略。该选项只将生产
+`DASHBOARD_TRAIL_RD_WRITE_ENABLED` 设为 `true`，不改变 Issue、Review、
+AutoTriage 等其他写入策略；隔离灰度仍关闭所有 Trail 写入。
+准备记录保存原策略及请求策略；拆分 prepare/promote 时两个阶段必须重复提供
+相同选项。生产切换失败时使用原环境回退，恢复原 RD 开关。
+开启开关不会自动上传数据：管理员仍须先预览，再在有效预览中确认上传。
+
 ### 显式隔离发布（2026-10-28）
 
 仅在用户要求隔离发布时使用 `--isolated-ref codex/<branch>`，同时提供

@@ -104,6 +104,8 @@ def deployer_args(args, target):
         result.append("--allow-additive-migrations")
     if args.allow_schema_migrations:
         result.append("--allow-schema-migrations")
+    if args.enable_trail_rd_write:
+        result.append("--enable-trail-rd-write")
     return result
 
 
@@ -125,6 +127,7 @@ def parse_args(argv=None):
     migration.add_argument("--allow-additive-migrations", action="store_true")
     migration.add_argument("--allow-schema-migrations", action="store_true")
     parser.add_argument("--sha", help="full origin/master SHA; defaults to the fetched remote SHA")
+    parser.add_argument("--enable-trail-rd-write", action="store_true", help="explicitly enable confirmed Manual RD publishing in production")
     parser.add_argument("--isolated-ref", default="", help="explicit pushed codex branch for isolated release")
     parser.add_argument("--expected-live-sha", default="", help="full current runtime SHA; required for isolation")
     parser.add_argument("--host", default=DEFAULT_HOST, help=f"SSH host alias (default: {DEFAULT_HOST})")

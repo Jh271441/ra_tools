@@ -322,6 +322,14 @@ def policy(health):
     return {**{k: health.get(k) for k in keys},
             "trail_rd_write_enabled": health.get("trail_rd_write_enabled", False)}
 
+
+def requested_policy(health, enable_trail_rd_write=False):
+    expected = policy(health)
+    if enable_trail_rd_write:
+        require(isinstance(health.get("trail_rd_write_enabled"), bool), "Live RD writer policy is unavailable")
+        expected["trail_rd_write_enabled"] = True
+    return expected
+
 def smoke(port, sha, storage, *, require_notifications=True):
     health = wait_health(port, sha, storage)
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -530,7 +538,7 @@ def check_release(
     sha,
     allow_additive_migrations=False,
     allow_schema_migrations=False,
-    isolated_ref="", expected_live_sha="",
+    isolated_ref="", expected_live_sha="", enable_trail_rd_write=False,
 ):
     with deployment_lock(STATE):
         state = preflight(
@@ -546,6 +554,7 @@ def check_release(
             "migrations": state["migrations"],
             "additive_migrations": state["migrations"],
             "migration_mode": state["migration_mode"],
+            "requested_policy": requested_policy(state["before"], enable_trail_rd_write),
         }))
 
 
@@ -568,7 +577,7 @@ def prepare_release(
     sha,
     allow_additive_migrations=False,
     allow_schema_migrations=False,
-    isolated_ref="", expected_live_sha="",
+    isolated_ref="", expected_live_sha="", enable_trail_rd_write=False,
 ):
     with deployment_lock(STATE):
         state = preflight(
@@ -597,6 +606,8 @@ def prepare_release(
             "isolated_ref": isolated_ref,
             "expected_live_sha": expected_live_sha,
             "checkout_sha": git("rev-parse", "HEAD"),
+            "enable_trail_rd_write": enable_trail_rd_write,
+            "requested_policy": requested_policy(before, enable_trail_rd_write),
         }
         save(folder / "result.json", result)
         gray = None
@@ -689,7 +700,7 @@ def promote_release(
     sha=None,
     allow_additive_migrations=False,
     allow_schema_migrations=False,
-    isolated_ref="", expected_live_sha="",
+    isolated_ref="", expected_live_sha="", enable_trail_rd_write=False,
 ):
     with deployment_lock(STATE):
         folder, result, recovery = load_prepared_release(release_id)
@@ -703,6 +714,8 @@ def promote_release(
         require(result.get("migration_mode", "none") == requested_mode, "Promotion requires the same migration authorization mode used during prepare")
         require(result.get("isolated_ref", "") == isolated_ref and result.get("expected_live_sha", "") == expected_live_sha,
                 "Promotion requires the same isolated release authorization")
+        require(result.get("enable_trail_rd_write", False) == enable_trail_rd_write,
+                "Promotion requires the same explicit RD writer authorization used during prepare")
         state = preflight(
             target,
             allow_additive_migrations,
@@ -719,6 +732,8 @@ def promote_release(
         require(git("rev-parse", "HEAD") == result.get("checkout_sha"), "Checkout changed after prepare")
         require(pid == recovery.get("pid") and env == recovery.get("env"), "Production process or environment changed after prepare")
         require(policy(before) == recovery.get("policy") == result.get("policy"), "Production access/writer policy changed after prepare")
+        expected_policy = requested_policy(before, enable_trail_rd_write)
+        require(result.get("requested_policy", policy(before)) == expected_policy, "Requested production policy changed after prepare")
         require(migrations == result.get("additive_migrations"), "Migration set changed after prepare")
         require(migration_count_before == recovery.get("migration_count") == result.get("migration_count_before"), "Production migration count changed after prepare")
         candidate = folder / "candidate"
@@ -748,15 +763,18 @@ def promote_release(
                     migration_count_after=migration_count,
                 )
                 save(folder / "result.json", result)
+            production_env = dict(env)
+            if enable_trail_rd_write:
+                production_env["DASHBOARD_TRAIL_RD_WRITE_ENABLED"] = "true"
             if isolated_ref:
                 start_production(folder, candidate / "ra_triage_dashboard",
-                                 rebase_env(env, REPO, candidate), target, "production")
+                                 rebase_env(production_env, REPO, candidate), target, "production")
             else:
                 run("git", "merge", "--ff-only", target)
-                start_production(folder, REPO / "ra_triage_dashboard", env, target, "production")
+                start_production(folder, REPO / "ra_triage_dashboard", production_env, target, "production")
             replacement_pid = git_pane_pid()
             after = smoke(8785, target, "postgresql")
-            require(policy(after) == policy(before), "Runtime access/writer policy changed")
+            require(policy(after) == expected_policy, "Runtime access/writer policy differs from explicitly requested policy")
             result.update(
                 status="success",
                 policy=policy(after),
@@ -792,32 +810,33 @@ def deploy(
     check_only=False,
     allow_additive_migrations=False,
     allow_schema_migrations=False,
-    isolated_ref="", expected_live_sha="",
+    isolated_ref="", expected_live_sha="", enable_trail_rd_write=False,
 ):
     if check_only:
         return check_release(
             sha,
             allow_additive_migrations,
             allow_schema_migrations,
-            isolated_ref, expected_live_sha,
+            isolated_ref, expected_live_sha, enable_trail_rd_write,
         )
     release_id = prepare_release(
         sha,
         allow_additive_migrations,
         allow_schema_migrations,
-        isolated_ref, expected_live_sha,
+        isolated_ref, expected_live_sha, enable_trail_rd_write,
     )
     return promote_release(
         release_id,
         sha,
         allow_additive_migrations,
         allow_schema_migrations,
-        isolated_ref, expected_live_sha,
+        isolated_ref, expected_live_sha, enable_trail_rd_write,
     )
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--sha")
+    parser.add_argument("--enable-trail-rd-write", action="store_true", help="explicitly enable confirmed RD publishing; gray remains disabled")
     parser.add_argument("--isolated-ref", default="", help="explicit pushed codex branch; keep main checkout unchanged")
     parser.add_argument("--expected-live-sha", default="", help="required current full SHA for isolated release")
     action = parser.add_mutually_exclusive_group()
@@ -845,7 +864,7 @@ def main():
             args.sha,
             args.allow_additive_migrations,
             args.allow_schema_migrations,
-            args.isolated_ref, args.expected_live_sha,
+            args.isolated_ref, args.expected_live_sha, args.enable_trail_rd_write,
         )
     else:
         require(args.sha, "--sha is required")
@@ -854,7 +873,7 @@ def main():
                 args.sha,
                 args.allow_additive_migrations,
                 args.allow_schema_migrations,
-                args.isolated_ref, args.expected_live_sha,
+                args.isolated_ref, args.expected_live_sha, args.enable_trail_rd_write,
             )
         else:
             deploy(
@@ -862,7 +881,7 @@ def main():
                 args.check,
                 args.allow_additive_migrations,
                 args.allow_schema_migrations,
-                args.isolated_ref, args.expected_live_sha,
+                args.isolated_ref, args.expected_live_sha, args.enable_trail_rd_write,
             )
 
 if __name__ == "__main__":
