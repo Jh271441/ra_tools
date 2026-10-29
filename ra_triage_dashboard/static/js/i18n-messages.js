@@ -5,6 +5,13 @@
  */
 const I18N_MESSAGES = {
   zh: {
+    "review.task_help": "复核任务说明",
+    "review.mode_help": "复核模式说明",
+    "review.mode_label": "复核模式",
+    "review.mode_model": "仅判错复核",
+    "review.mode_combined": "判错复核 + 问题标注",
+    "review.mode_locked": "当前任务已锁定模式",
+    "review.exit_task": "退出任务范围",
     "app.name": "Manual Triage",
     "app.subtitle": "RA 复核工作台",
     "nav.review": "判错复核",
@@ -521,6 +528,13 @@ const I18N_MESSAGES = {
     "btn.add": "添加",
   },
   en: {
+    "review.task_help": "Review task information",
+    "review.mode_help": "Review mode information",
+    "review.mode_label": "Review mode",
+    "review.mode_model": "Model review only",
+    "review.mode_combined": "Model review + Issue labeling",
+    "review.mode_locked": "The current task locks this mode",
+    "review.exit_task": "Exit task scope",
     "app.name": "Manual Triage",
     "app.subtitle": "RA Review Workbench",
     "nav.review": "Failure review",

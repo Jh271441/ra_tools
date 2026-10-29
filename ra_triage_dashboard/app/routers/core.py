@@ -242,6 +242,7 @@ async def intent_experiments_page(request: Request) -> HTMLResponse:
 @router.get("/campaigns", include_in_schema=False)
 @router.get("/labeling-experiments", include_in_schema=False)
 @router.get("/labeling-summary", include_in_schema=False)
+@router.get("/rd-results", include_in_schema=False)
 async def run_comparison_page() -> HTMLResponse:
     """Serve the read-only Run comparison workspace and Collection workspace."""
 
@@ -282,6 +283,7 @@ async def health() -> dict[str, Any]:
         "gt_sync": await asyncio.to_thread(gt_sync_status),
         "trail_write_enabled": False,
         "trail_attribute_write_enabled": settings.trail_attribute_write_enabled,
+        "trail_rd_write_enabled": getattr(settings, "trail_rd_write_enabled", False),
         "trail_attribute_review_write_enabled": getattr(
             settings, "trail_attribute_review_write_enabled", False
         ),
@@ -698,6 +700,7 @@ async def status(response: Response) -> dict[str, Any]:
         },
         "trail_write_enabled": False,
         "trail_attribute_write_enabled": settings.trail_attribute_write_enabled,
+        "trail_rd_write_enabled": getattr(settings, "trail_rd_write_enabled", False),
         "trail_attribute_review_write_enabled": getattr(
             settings, "trail_attribute_review_write_enabled", False
         ),

@@ -20,6 +20,7 @@ from .assets import AssetIndex, CameraIndex, VideoIndex
 from .baseline_registry import BaselineEntry, BaselineRegistry
 from .timed_cache import TimedSingleFlightCache
 from .web_paths import with_base_path
+from .closeup_video import CloseupVideoIndex, WithCloseupVideo
 
 
 class MediaProvider(Protocol):
@@ -590,6 +591,8 @@ def build_media_registry(
 
     by_id: dict[str, MediaProvider] = {}
     by_scope: dict[str, MediaProvider] = {}
+    layouts_root = Path(os.getenv("DASHBOARD_MEDIA_LAYOUT_ROOT") or (Path(data_dir) / "media_layouts")) if data_dir else None
+    closeup = CloseupVideoIndex(layouts_root / "bev_closeup", base_path) if layouts_root else None
     product = ProductLayoutProvider(
         asset_index=product_asset_index,
         camera_index=product_camera_index,
@@ -617,13 +620,16 @@ def build_media_registry(
                 data_dir=data_dir,
                 fallback=product,
             )
+        if closeup is not None:
+            provider = WithCloseupVideo(provider, closeup, entry.scope)
         by_id[entry.id] = provider
         by_scope[entry.scope] = provider
     default = by_id.get(registry.default_ids()[0]) if registry.entries else product
     def version_provider(scope):
         from .baseline_registry import BaselineMediaConfig
         entry = BaselineEntry(id=scope, label=scope, scope=scope, loader="version_projection", xlsx=Path("/__virtual_version_membership__"), media=BaselineMediaConfig(provider="product_layout",layout_id=scope,extra={"strict_isolation":True}))
-        return _materialized_product_provider(entry,base_path=base_path,data_dir=data_dir,fallback=product)
+        provider = _materialized_product_provider(entry,base_path=base_path,data_dir=data_dir,fallback=product)
+        return WithCloseupVideo(provider, closeup, scope) if closeup else provider
     return MediaRegistry(by_id=by_id, by_scope=by_scope, default_provider=default or product,version_provider_factory=version_provider)
 
 

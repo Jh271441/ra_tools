@@ -101,6 +101,7 @@ function applyUiLanguage(language, { persist = true } = {}) {
     "syncCaseLabelingIssueExport",
     "renderCaseLabelingStatusPicker",
     "refreshLabelSummaryLanguage",
+    "renderRdResults",
   ];
   for (const name of refreshers) {
     try {
@@ -514,6 +515,7 @@ function normalizedCaseLabelingRouteFilters(params) {
       ? params.get("task")
       : "",
     targetGroup: params.get('target_group') || '',
+    issueTags: parseFilterList(params.get('issue_tags')),
     search: params.get("q") || "",
     issueIds: parseFilterList(params.get("issue_ids")).filter((value) =>
       ISSUE_QUERY_ID_RE.test(value)
@@ -884,6 +886,7 @@ function pageUrl(page, options = {}) {
     if (labeling.taskId) url.searchParams.set("task", labeling.taskId);
     if (labeling.search) url.searchParams.set("q", labeling.search);
     if (labeling.targetGroup) url.searchParams.set('target_group', labeling.targetGroup);
+    if (labeling.issueTags?.length) url.searchParams.set('issue_tags', joinFilterList(labeling.issueTags));
     const issueIds = (labeling.issueIds || []).filter((value) =>
       ISSUE_QUERY_ID_RE.test(String(value))
     );
@@ -914,6 +917,7 @@ function pageUrl(page, options = {}) {
       ? labelSummaryRouteOptions(options)
       : options;
     if (summary.search) url.searchParams.set("q", summary.search);
+    if (summary.issueTags?.length) url.searchParams.set("issue_tags", joinFilterList(summary.issueTags));
     const issueIds = (summary.issueIds || []).filter((value) =>
       ISSUE_QUERY_ID_RE.test(String(value))
     );
@@ -1252,6 +1256,9 @@ function showPage(
     exitCaseDecisionEditor();
   }
   const pageLoads = [];
+  if (previousPage === 'rd-results' && rdResults.committing) return;
+  if (target !== "rd-results" && typeof rdResults !== "undefined") { rdResults.previewOpen = false; rdForgetPreview(); }
+  if (target === "rd-results" && loadPageData) pageLoads.push(() => loadRdResults());
   state.pageNavigationEpoch = Number(state.pageNavigationEpoch || 0) + 1;
   if (previousPage === "review" && target !== "review" && typeof cancelCaseHydration === "function") cancelCaseHydration();
   if (target !== "review") {
@@ -1371,7 +1378,7 @@ function showPage(
       force: true,
     }).catch((error) => showToast(error.message, true)));
   }
-  if (target === "labeling-summary" && !state.session.identity_pending && !hasDashboardWriteRole()) {
+  if (["labeling-summary", "rd-results"].includes(target) && !state.session.identity_pending && !hasDashboardWriteRole()) {
     return showPage("review", { historyMode: "replace" });
   }
   if (target === "labeling-summary" && loadPageData) {

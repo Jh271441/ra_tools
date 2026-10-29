@@ -29,6 +29,8 @@ def _video_with_poster(
 
     if not isinstance(video, dict):
         return video
+    if video.get("source_id") == "bev_closeup":
+        return dict(video)
     frames = assets.get("frames") if isinstance(assets, dict) else None
     candidates = [frame for frame in (frames or []) if isinstance(frame, dict)]
     if not candidates:

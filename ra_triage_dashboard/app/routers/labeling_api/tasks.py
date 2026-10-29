@@ -20,6 +20,8 @@ from .common import _active_labeling_scopes, _labeling_filter_values, _require_l
 from ...combined_task_summary import combined_task_summaries
 from ...runtime import baseline_registry
 
+from .common import _labeling_issue_tag_groups
+
 router = APIRouter()
 
 
@@ -145,6 +147,7 @@ async def create_labeling_task(request: Request) -> dict[str, Any]:
                 task_id=_as_text(filter_body.get("task_id")),
                 search=_as_text(filter_body.get("q")),
                 issue_ids=normalized_issue_ids,
+                issue_tag_groups=_labeling_issue_tag_groups(filter_body.get("issue_tags")),
                 status=normalized_status,
                 author=_labeling_filter_values(filter_body.get("author"), lower=True),
                 assignee=_labeling_filter_values(filter_body.get("assignee"), lower=True),

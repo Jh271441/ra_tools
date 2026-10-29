@@ -33,6 +33,7 @@ function videoT0PlayerPosition(configuredDuration, decodedDuration = 0) {
 
 function videoTrackLabel(label) {
   if (label === "BEV 视频") return uiText("BEV 视频", "BEV video");
+  if (label === "局部 BEV 视频") return uiText("局部 BEV 视频", "Closeup BEV video");
   if (label === "Camera102 视频") return uiText("Camera102 视频", "Camera102 video");
   return label;
 }
@@ -41,6 +42,9 @@ function videoWithFramePosters(caseData) {
   const video = caseData?.assets?.video;
   if (!video?.url) return null;
   const withPoster = (track) => {
+    if (track.source_id === "bev_closeup") {
+      return { ...track, poster_url: safeSameOriginAssetUrl(track.poster_url || "") };
+    }
     const frames = String(track.url || "").endsWith("/camera-video")
       ? caseData?.camera?.frames || [] : caseData?.assets?.frames || [];
     const poster = safeSameOriginAssetUrl(frames[heroFrameIndex(frames)]?.url || track.poster_url || "");

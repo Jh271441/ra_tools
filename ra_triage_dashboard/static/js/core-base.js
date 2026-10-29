@@ -855,6 +855,7 @@ function stripBasePath(pathname) {
 const PAGE_ROUTES = {
   "trail-history": { path: "/trail-update-history", titleZh: "Trail 更新记录", titleEn: "Trail update history" },
   "labeling-summary": { path: "/labeling-summary", titleZh: "标注汇总", titleEn: "Labeling summary" },
+  "rd-results": { path: "/rd-results", titleZh: "标注上传", titleEn: "Label upload" },
   labeling: {
     path: "/case-labeling",
     titleZh: "问题标注",
@@ -1110,6 +1111,7 @@ const state = {
     detailLoading: false,
   },
   caseLabeling: {
+    issueTags: [],
     targetGroup: "",
     tasks: [],
     taskId: "",

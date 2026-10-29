@@ -86,7 +86,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-711`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-715`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -136,6 +136,10 @@
               <a class="sidebar-item" id="labelingSummaryNavButton" data-session-nav="writer" inert aria-disabled="true" data-page-target="labeling-summary" data-app-path="/labeling-summary" href="/labeling-summary" title="标注汇总">
                 <span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path class="icon-wash" d="M4 5h16v14H4z"/><path d="M7 16v-4m5 4V8m5 8v-6M6 19h13"/></svg></span>
                 <span class="sidebar-label"><strong class="ui-lang-zh">标注汇总</strong><strong class="ui-lang-en">Labeling summary</strong></span>
+              </a>
+              <a class="sidebar-item" id="rdResultsNavButton" data-session-nav="writer" inert aria-disabled="true" data-page-target="rd-results" data-app-path="/rd-results" href="/rd-results">
+                <span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path class="icon-wash" d="M4 15h16v5H4z"/><path d="M12 16V4m-4 4 4-4 4 4M4 15v5h16v-5"/></svg></span>
+                <span class="sidebar-label"><strong class="ui-lang-zh">标注上传</strong><strong class="ui-lang-en">Label upload</strong></span>
               </a>
               <a class="sidebar-item" id="trailAttributeUpdateNavButton" data-page-target="trail-update" data-app-path="/trail-attribute-update" href="/trail-attribute-update" title="问题排除">
                 <span class="sidebar-icon" aria-hidden="true">
@@ -399,19 +403,36 @@
                   <div class="multi-filter" id="workAssigneeFilter" data-placeholder="全部负责人" data-placeholder-en="All assignees" data-i18n-placeholder="filter.all_assignees" aria-label="Work assignee filter"></div>
                 </label>
                 <div class="review-task-filter">
-                  <span><span class="ui-lang-zh">复核任务</span><span class="ui-lang-en">Review task</span></span>
+                  <div class="filter-field-heading">
+                    <span><span class="ui-lang-zh">复核任务</span><span class="ui-lang-en">Review task</span></span>
+                    <button class="review-task-exit" id="reviewTaskContextExit" type="button" hidden aria-label="退出任务范围" title="退出任务范围" data-i18n-aria-label="review.exit_task" data-i18n-title="review.exit_task">×</button>
+                    <span class="model-review-run-help ui-info" data-ui-info id="reviewTaskInfo">
+                      <button class="ui-info-button" type="button" aria-expanded="false" aria-controls="reviewTaskInfoPanel" aria-label="复核任务说明" data-i18n-aria-label="review.task_help" data-i18n-title="review.task_help"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="10" r="7.5" stroke="currentColor" stroke-width="1.4"/><path d="M10 9.1v4.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="10" cy="6.3" r=".9" fill="currentColor"/></svg></button>
+                      <span class="model-review-run-tooltip ui-info-tooltip" id="reviewTaskInfoPanel" role="dialog" data-i18n-aria-label="review.task_help">
+                        <span class="ui-lang-zh">选择任务后按该任务范围复核；“综合结果”不绑定任务。</span><span class="ui-lang-en">Selecting a task scopes reviews to that task. Combined results is not bound to a task.</span>
+                        <span class="review-task-summary" id="reviewTaskSummary" hidden></span>
+                        <span id="reviewTaskDetails" hidden></span>
+                        <span id="reviewTaskPickerHint" hidden></span>
+                      </span>
+                    </span>
+                  </div>
                   <div class="review-task-filter-row">
                     <div class="ui-select" id="reviewTaskPicker"><button class="ui-select-trigger" type="button"><span class="ui-select-summary">综合结果</span><span class="ui-select-caret" aria-hidden="true"></span></button><div class="ui-select-panel" role="listbox" hidden></div><select class="ui-select-native" id="reviewTaskFilter" aria-hidden="true" tabindex="-1"><option value="">综合结果</option></select></div>
-                    <button class="review-task-exit" id="reviewTaskContextExit" type="button" hidden aria-label="退出任务范围" title="退出任务范围">×</button>
                   </div>
-                  <span class="review-task-summary" id="reviewTaskSummary" hidden></span>
-                  <small class="muted" id="reviewTaskPickerHint" hidden></small>
                 </div>
                 <label id="reviewTaskProgressField" hidden>
                   <span id="reviewTaskProgressLabel"><span class="ui-lang-zh">任务状态</span><span class="ui-lang-en">Task status</span></span>
                   <div class="multi-filter" id="reviewTaskProgressFilter" data-placeholder="全部任务状态" data-placeholder-en="All task statuses"></div>
                 </label>
-                <label class="review-workflow-mode" id="reviewWorkflowModeField"><span class="ui-lang-zh">复核模式</span><span class="ui-lang-en">Review mode</span><select id="reviewWorkflowMode"><option value="model_review_only">仅判错复核</option><option value="model_review_and_case_label" selected>判错复核 + 问题标注</option></select><small class="muted" id="reviewWorkflowModeHint" hidden>当前任务已锁定模式</small></label>
+                <div class="review-workflow-mode" id="reviewWorkflowModeField">
+                  <div class="filter-field-heading"><span><span class="ui-lang-zh">复核模式</span><span class="ui-lang-en">Review mode</span></span>
+                    <span class="model-review-run-help ui-info" data-ui-info>
+                      <button class="ui-info-button" type="button" aria-expanded="false" aria-controls="reviewModeInfoPanel" data-i18n-aria-label="review.mode_help" data-i18n-title="review.mode_help"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="10" r="7.5" stroke="currentColor" stroke-width="1.4"/><path d="M10 9.1v4.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="10" cy="6.3" r=".9" fill="currentColor"/></svg></button>
+                      <span class="model-review-run-tooltip ui-info-tooltip" id="reviewModeInfoPanel" role="dialog" data-i18n-aria-label="review.mode_help"><span class="ui-lang-zh">选择仅判错复核，或同时填写问题标注。任务可锁定模式。</span><span class="ui-lang-en">Review model judgments only, or also label the Issue. A task may lock this mode.</span><span id="reviewWorkflowModeHint" hidden data-i18n="review.mode_locked">当前任务已锁定模式</span></span>
+                    </span>
+                  </div>
+                  <select id="reviewWorkflowMode" data-i18n-aria-label="review.mode_label"><option value="model_review_only" data-i18n="review.mode_model">仅判错复核</option><option value="model_review_and_case_label" selected data-i18n="review.mode_combined">判错复核 + 问题标注</option></select>
+                </div>
                 <button class="button button-quiet filter-submit" id="resetReviewFiltersButton" type="button"><span class="ui-lang-zh">重置</span><span class="ui-lang-en">Reset</span></button>
               </form>
               </section>
@@ -578,6 +599,7 @@
               <label class="case-labeling-search"><span>Issue</span><div class="issue-query-control"><input id="caseLabelingSearch" type="search" placeholder="Issue ID、场景" autocomplete="off" /><button class="button button-quiet issue-query-button" id="openCaseLabelingIssueQueryButton" data-issue-query-target="labeling" type="button">多 Issue</button></div></label>
               <label class="case-labeling-task"><span>标注任务</span><div class="ui-select" id="caseLabelingTaskPicker"><button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="ui-select-summary" id="caseLabelingTaskSummary">全部标注</span><span class="ui-select-caret" aria-hidden="true"></span></button><div class="ui-select-panel" role="listbox" hidden></div><select class="ui-select-native" id="caseLabelingTask" aria-hidden="true" tabindex="-1"><option value="">全部标注</option></select></div></label>
               <label><span class="ui-lang-zh">结果状态</span><span class="ui-lang-en">Result status</span><div class="multi-filter" id="caseLabelingStatusPicker" data-placeholder="全部状态" data-placeholder-en="All states"></div></label>
+              <label><span class="ui-lang-zh">Issue 标签</span><span class="ui-lang-en">Issue tags</span><div class="multi-filter" id="caseLabelingIssueTagFilter" data-summary-count="true" data-placeholder="全部 Issue 标签" data-placeholder-en="All Issue tags"></div></label>
               <label><span>标注人</span><div class="multi-filter" id="caseLabelingAuthorPicker" data-placeholder="全部标注人" data-placeholder-en="All labelers"></div></label>
               <label><span>任务负责人</span><div class="multi-filter" id="caseLabelingAssigneePicker" data-placeholder="全部负责人" data-placeholder-en="All assignees"></div></label>
               <label><span>GT</span><div class="multi-filter" id="caseLabelingGtPicker" data-placeholder="全部 GT" data-placeholder-en="All GT"></div></label>
@@ -1143,6 +1165,7 @@
             </section>
           </section>
 
+          <section class="app-page tool-page rd-results-page hidden" id="rdResultsPage" data-page="rd-results" aria-live="polite"></section>
           <section class="app-page tool-page trail-history-page hidden" id="trailHistoryPage" data-page="trail-history">
             <div class="trail-history-toolbar"><div id="trailHistoryCoverage"></div><button class="button button-secondary" id="trailHistoryRefresh" type="button"><span class="ui-lang-zh">刷新</span><span class="ui-lang-en">Refresh</span></button></div>
             <form id="trailHistoryFilters" class="trail-history-filters"></form>
@@ -1894,6 +1917,10 @@
               <div id="dailyCronSchedule" class="cron-schedule"></div><div id="dailyCronAlerts"></div><div class="cron-history-caption muted"><span class="ui-lang-zh">近24小时 · 最严重观测</span><span class="ui-lang-en">24h · Worst observed state</span></div><div class="cron-history" id="dailyCronHistory"></div>
             </details>
             <details class="cron-panel cron-fold" id="dailyCronRunsFold"><summary><span class="ui-lang-zh">运行记录</span><span class="ui-lang-en">Run history</span></summary><div id="dailyCronRuns" class="cron-runs"></div></details>
+            <section class="cron-panel" id="dailyCronCloseup" hidden aria-labelledby="dailyCronCloseupTitle">
+              <div class="cron-section-heading"><h3 id="dailyCronCloseupTitle"><span class="ui-lang-zh">局部 BEV 视频</span><span class="ui-lang-en">Closeup BEV videos</span></h3><span id="dailyCronCloseupStatus"></span></div>
+              <div id="dailyCronCloseupValue" class="cron-sidecar-metrics"></div>
+            </section>
             <details class="cron-panel cron-fold"><summary><span class="ui-lang-zh">历史媒体回溯</span><span class="ui-lang-en">Historical media backfill</span></summary><div id="dailyCronSidecar"></div></details>
             <details class="cron-panel cron-fold" id="dailyCronJobsFold"><summary><span class="ui-lang-zh">其他定时任务</span><span class="ui-lang-en">Other scheduled tasks</span></summary><div class="cron-section-heading"><input id="dailyCronSearch" type="search" aria-label="搜索定时任务" placeholder="搜索任务或调度表达式" data-placeholder-zh="搜索任务或调度表达式" data-placeholder-en="Search task or schedule" /></div><div class="cron-table-wrap"><table class="cron-table"><thead><tr><th><span class="ui-lang-zh">任务</span><span class="ui-lang-en">Task</span></th><th><span class="ui-lang-zh">调度</span><span class="ui-lang-en">Schedule</span></th><th><span class="ui-lang-zh">日志更新 · CST</span><span class="ui-lang-en">Log updated · CST</span></th><th><span class="ui-lang-zh">活动证据</span><span class="ui-lang-en">Activity</span></th></tr></thead><tbody id="dailyCronJobs"></tbody></table></div></details>
           </section>
@@ -2567,7 +2594,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-711`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-715`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

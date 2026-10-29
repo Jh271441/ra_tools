@@ -61,6 +61,12 @@ class ReleaseDashboardTests(unittest.TestCase):
             ["--sha", target, "--promote", "20260916T073312Z-bbbbbbbbbbbb"],
         )
 
+    def test_rd_writer_enable_requires_explicit_forwarded_flag(self):
+        for action in ([], ["--prepare"], ["--promote", "release-id"]):
+            args = r.parse_args(action + ["--enable-trail-rd-write"])
+            self.assertIn("--enable-trail-rd-write", r.deployer_args(args, "a" * 40))
+        self.assertNotIn("--enable-trail-rd-write", r.deployer_args(r.parse_args([]), "a" * 40))
+
     def test_local_deployer_must_match_pushed_version(self):
         with tempfile.TemporaryDirectory() as temp:
             repo = Path(temp)

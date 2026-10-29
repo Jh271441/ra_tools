@@ -448,7 +448,8 @@
   .analysis-filters input:not([type="checkbox"]), .assignment-composer input { font-size: 16px; }
   .review-filters label, .analysis-filters label, .analysis-filters .analysis-work-split-filter { font-size: 12px; }
   #filterForm .review-task-filter-row { height: 44px; }
-  #filterForm .review-workflow-mode small, #filterForm .review-task-summary { position: static; font-size: 11px; }
+  #filterForm .filter-field-heading { font-size: 12px; min-height: 44px; }
+  #filterForm .filter-field-heading .review-task-exit { min-width: 44px; min-height: 44px; }
   .review-filters .issue-query-control { grid-template-columns: minmax(0, 1fr) 88px; }
   .labeling-summary-actions { justify-content: stretch; }
   .labeling-summary-actions .button { flex: 1; }
@@ -1071,4 +1072,41 @@
   .planning-constraint-panel summary { min-height: 44px; }
   .planning-constraint-panel summary { display: flex; align-items: center; }
   .planning-constraint-panel .button { min-width: 44px; }
+}
+@media (max-width: 760px) {
+  .rd-results-page .runs-source-heading, .rd-results-page .runs-toolbar { align-items: flex-start; flex-direction: row; flex-wrap: wrap; gap: 12px; }
+  .rd-results-page .runs-source-heading > div:first-child, .rd-results-page .runs-toolbar > div:first-child { flex: 1 1 170px; min-width: 0; }
+  .rd-metrics.run-source-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+  .rd-metrics .rd-metric { display: grid; width: 100%; max-width: none; min-height: 64px; flex: none; align-items: center; padding: 10px; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; }
+  .rd-metrics .rd-metric > span:nth-child(2), .rd-metrics .rd-metric:not(.active) > span:nth-child(2) { display: grid; }
+  .rd-metrics .rd-metric > em, .rd-metrics .rd-metric:not(.active) > em { display: block; }
+  .rd-metrics .rd-metric strong { text-align: left; }
+  .rd-metrics .run-source-icon { display: none; }
+  .rd-upload-target > div { flex-direction: column; gap: 2px; }
+  .rd-upload-target dd { width: 100%; }
+  .rd-filters.run-filter-bar { grid-template-columns: minmax(0, 1fr) auto; }
+  .rd-filters > input { grid-column: 1 / -1; }
+  .rd-selection-bar { align-items: center; }
+  .rd-selection-tools { flex: 1 1 240px; gap: 4px; }
+  .rd-results-page .job-history-row { grid-template-columns: minmax(0, 1fr); }
+  .rd-results-page input, .rd-results-page .button { min-height: 44px; max-width: 100%; }
+  .rd-results-page .rd-checkbox { min-height: 44px; min-width: 44px; }
+  .rd-results-page input[type="checkbox"] { min-height: auto; }
+  .rd-results-page .rd-table { min-width: 620px; }
+  .rd-results-page .button { white-space: normal; }
+  .rd-selection-bar [data-rd-action="preview"] { min-height: 48px !important; }
+  .rd-pagination .page-jump-control input, .rd-preview-page .rd-pagination .button, .rd-preview-page .rd-pagination .ui-select-trigger { min-height: 44px; height: 44px; }
+  .rd-pagination .page-jump-control .button { min-height: 44px; height: 44px; }
+  .rd-pagination .case-page-size { min-width: 0; }
+  .rd-preview-summary { align-items: flex-start; gap: 10px 24px; }
+  .rd-preview-counts { gap: 6px 18px; }
+  .rd-preview-info .rd-upload-target > div { grid-template-columns: 76px minmax(0, 1fr); gap: 8px; }
+  .rd-preview-info summary { display: flex; align-items: center; min-height: 44px; }
+  .rd-preview-info summary::before { content: '▸'; margin-right: 8px; }
+  .rd-preview-info[open] summary::before { content: '▾'; }
+  .rd-preview-footer { padding-bottom: env(safe-area-inset-bottom); }
+  .rd-preview-page [data-rd-action="commit"] { min-height: 48px !important; }
+}
+@media (max-width: 639px) {
+  .rd-preview-distribution { flex-basis: 100%; margin-left: 0; }
 }

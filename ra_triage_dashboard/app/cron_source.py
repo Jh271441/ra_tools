@@ -155,6 +155,11 @@ def _snapshot(ra_root: Path | None = None) -> dict:
             result["sources"]["media_daily"] = "unavailable"
     if ra_root is not None:
         try:
+            from .cron_closeup_source import closeup_status
+            result["closeup"] = closeup_status(ra_root)
+        except (OSError, ValueError, TypeError, KeyError):
+            result["closeup"] = {"state": "unavailable", "stale": True}
+        try:
             from .cron_version_source import version_status
             result['incremental'] = version_status(ra_root)
         except (OSError,ValueError,TypeError,KeyError):
