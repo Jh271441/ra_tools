@@ -17,6 +17,8 @@ from ...support.baselines import resolve_request_baseline_scopes, restrict_versi
 from .common import _active_labeling_scopes, _labeling_filter_values, _public_label_case, _require_active_labeling_issue, _require_labeling_writer
 from .comments import _public_label_comment
 
+from .common import _labeling_issue_tag_groups
+
 router = APIRouter()
 
 
@@ -27,6 +29,7 @@ async def list_labeling_cases(
     task_id: str = "",
     q: str = "",
     issue_ids: str = "",
+    issue_tags: str = "",
     status: str = "all",
     author: str = "",
     assignee: str = "",
@@ -90,6 +93,7 @@ async def list_labeling_cases(
             task_id=normalized_task_id,
             search=_as_text(q),
             issue_ids=selected_issue_ids,
+            issue_tag_groups=_labeling_issue_tag_groups(issue_tags),
             status=normalized_status,
             author=normalized_author,
             assignee=normalized_assignee,
@@ -131,6 +135,7 @@ async def labeling_summary(
     task_id: str = "",
     q: str = "",
     issue_ids: str = "",
+    issue_tags: str = "",
     status: str = "all",
     author: str = "",
     assignee: str = "",
@@ -185,6 +190,7 @@ async def labeling_summary(
             task_id=normalized_task,
             search=_as_text(q),
             issue_ids=selected_issue_ids,
+            issue_tag_groups=_labeling_issue_tag_groups(issue_tags),
             status=normalized_status,
             author=_labeling_filter_values(author, lower=True),
             assignee=_labeling_filter_values(assignee, lower=True),
@@ -227,6 +233,7 @@ async def list_labeling_clusters(
     task_id: str = "",
     q: str = "",
     issue_ids: str = "",
+    issue_tags: str = "",
     status: str = "all",
     author: str = "",
     assignee: str = "",
@@ -278,6 +285,7 @@ async def list_labeling_clusters(
             task_id=_as_text(task_id),
             search=_as_text(q),
             issue_ids=selected_issue_ids,
+            issue_tag_groups=_labeling_issue_tag_groups(issue_tags),
             status=normalized_status,
             author=normalized_author,
             assignee=normalized_assignee,

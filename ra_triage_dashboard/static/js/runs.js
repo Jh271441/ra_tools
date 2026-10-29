@@ -241,9 +241,15 @@ function renderReviewTargetGroupPicker() {
 }
 
 function renderReviewIssueTagFilter() {
-  const root = $('#reviewIssueTagFilter');
+  renderIssueTagFilter('#reviewIssueTagFilter', selectedReviewIssueTags(), values => {
+    state.reviewIssueTags = values;
+    scheduleReviewFilterReload(0);
+  });
+}
+
+function renderIssueTagFilter(selector, selected, onChange) {
+  const root = $(selector);
   if (!root) return;
-  const selected = selectedReviewIssueTags();
   const definitions = [
     ['environment', 'tag.env'], ['self_intent', 'tag.ego_intent'],
     ['false_trigger', 'tag.false_trigger'], ['true_trigger', 'tag.should_trigger'],
@@ -263,10 +269,7 @@ function renderReviewIssueTagFilter() {
   const options = groups.flatMap(group => group.items);
   const signature = JSON.stringify(groups.map(group => group.items.map(item => item.value)));
   if (root.dataset.groupSignature !== signature || !root.querySelector('.multi-filter-trigger') || !relabelMultiFilter(root, options)) {
-    renderMultiFilter(root, {groups, selected, searchable: true, onChange: values => {
-      state.reviewIssueTags = values;
-      scheduleReviewFilterReload(0);
-    }});
+    renderMultiFilter(root, {groups, selected, searchable: true, onChange});
     root.dataset.groupSignature = signature;
   }
   setMultiFilterValues(root, selected);

@@ -18,8 +18,17 @@ import re
 from ...auth import request_identity
 from ...review_workflow import resolve_expected_output
 from ...runtime import settings
+from ...support.issue_tag_filters import parse_issue_tag_groups
+from ...runtime_catalogs import REVIEW_TAG_ALIASES
 
 _COMMENT_ATTACHMENT_TOKEN_RE = re.compile(r"^[A-Za-z0-9-]{1,80}$")
+
+
+def _labeling_issue_tag_groups(value):
+    try:
+        return parse_issue_tag_groups(value, _review_tag_catalog(), REVIEW_TAG_ALIASES) if value else ()
+    except ValueError as exc:
+        raise _detail(400, str(exc)) from exc
 
 
 def _labeling_filter_values(

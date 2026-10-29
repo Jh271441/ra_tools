@@ -19,6 +19,8 @@ import openpyxl
 from ...support.baselines import resolve_request_baseline_scopes, restrict_version_issue_ids
 from .common import _active_labeling_scopes, _labeling_actor, _labeling_filter_values, _require_active_gt_export_batch, _require_labeling_admin
 
+from .common import _labeling_issue_tag_groups
+
 router = APIRouter()
 
 
@@ -93,6 +95,7 @@ async def create_gt_export_preview(request: Request) -> dict[str, Any]:
                 task_id=_as_text(filter_body.get("task_id")),
                 search=_as_text(filter_body.get("q")),
                 issue_ids=normalized_filter_issue_ids,
+                issue_tag_groups=_labeling_issue_tag_groups(filter_body.get("issue_tags")),
                 status=normalized_status,
                 author=_labeling_filter_values(filter_body.get("author"), lower=True),
                 assignee=_labeling_filter_values(filter_body.get("assignee"), lower=True),

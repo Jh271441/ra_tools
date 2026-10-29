@@ -9,6 +9,8 @@ from typing import Any, Sequence
 from .shared import LABELS
 from .labeling_shared import _clean_values, _filter_values, _parse_labeling_cluster
 from .combined_labeling import is_combined_task
+from ..support.issue_tag_filters import matches_issue_tag_groups
+from ..runtime_catalogs import REVIEW_TAG_ALIASES
 
 
 class LabelingQueriesMixin:
@@ -133,6 +135,7 @@ class LabelingQueriesMixin:
         task_id: str = "",
         search: str = "",
         issue_ids: Sequence[str] = (),
+        issue_tag_groups: Sequence[Sequence[str]] = (),
         status: str = "all",
         author: str = "",
         assignee: str = "",
@@ -232,6 +235,18 @@ class LabelingQueriesMixin:
             ).fetchall()
         if selected_issue_ids:
             rows = [row for row in rows if str(row["issue_id"] or "") in selected_issue_ids]
+        if issue_tag_groups:
+            # Same current Issue projection as Review, independent of task/Run.
+            # Filter before pagination, queue IDs, summaries and export selection.
+            matching_rows = []
+            for offset in range(0, len(rows), 400):
+                batch = rows[offset:offset + 400]
+                contexts = self.project_issue_tag_contexts([str(row["issue_id"]) for row in batch])
+                matching_rows.extend(row for row in batch if matches_issue_tag_groups(
+                    (contexts.get(str(row["issue_id"])) or {}).get("tags", []),
+                    issue_tag_groups, REVIEW_TAG_ALIASES,
+                ))
+            rows = matching_rows
         if normalized_gt_labels:
             rows = [
                 row for row in rows
@@ -378,6 +393,7 @@ class LabelingQueriesMixin:
         task_id: str = "",
         search: str = "",
         issue_ids: Sequence[str] = (),
+        issue_tag_groups: Sequence[Sequence[str]] = (),
         status: str = "all",
         author: str = "",
         assignee: str = "",
@@ -397,6 +413,7 @@ class LabelingQueriesMixin:
             task_id=task_id,
             search=search,
             issue_ids=issue_ids,
+            issue_tag_groups=issue_tag_groups,
             status=status,
             author=author,
             assignee=assignee,
@@ -446,6 +463,7 @@ class LabelingQueriesMixin:
         task_id: str = "",
         search: str = "",
         issue_ids: Sequence[str] = (),
+        issue_tag_groups: Sequence[Sequence[str]] = (),
         status: str = "all",
         author: str = "",
         assignee: str = "",
@@ -461,6 +479,7 @@ class LabelingQueriesMixin:
             task_id=task_id,
             search=search,
             issue_ids=issue_ids,
+            issue_tag_groups=issue_tag_groups,
             status=status,
             author=author,
             assignee=assignee,
@@ -484,6 +503,7 @@ class LabelingQueriesMixin:
         task_id: str = "",
         search: str = "",
         issue_ids: Sequence[str] = (),
+        issue_tag_groups: Sequence[Sequence[str]] = (),
         status: str = "all",
         author: str = "",
         assignee: str = "",
@@ -497,6 +517,7 @@ class LabelingQueriesMixin:
             task_id=task_id,
             search=search,
             issue_ids=issue_ids,
+            issue_tag_groups=issue_tag_groups,
             status=status,
             author=author,
             assignee=assignee,

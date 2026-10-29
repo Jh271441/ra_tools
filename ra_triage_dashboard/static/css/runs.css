@@ -166,18 +166,19 @@ html[data-color-theme="light"] .import-example-tabs { background: #f8fafc; }
   }
   #filterForm.review-filters { grid-template-columns: repeat(9, minmax(0, 1fr)); }
   #filterForm.review-filters:has(#reviewTaskProgressField[hidden]):has(#reviewWorkflowModeField[hidden]) { grid-template-columns: repeat(8, minmax(0, 1fr)); }
-  #caseLabelingFilterForm.case-labeling-filters { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  #caseLabelingFilterForm.case-labeling-filters { grid-template-columns: repeat(7, minmax(0, 1fr)); }
   #filterForm.review-filters > *,
   #caseLabelingFilterForm.case-labeling-filters > * { grid-column: auto; grid-row: auto; }
   #filterForm.review-filters > .filter-search,
-  #caseLabelingFilterForm.case-labeling-filters > .case-labeling-search { grid-column: span 2; }
+  #caseLabelingFilterForm.case-labeling-filters > .case-labeling-search,
+  #caseLabelingFilterForm.case-labeling-filters > .case-labeling-task { grid-column: span 2; }
   #filterForm.review-filters > .filter-submit,
   #caseLabelingFilterForm.case-labeling-filters > .filter-submit {
     grid-row: 2; justify-self: stretch; min-width: 0; width: 100%;
   }
   #filterForm.review-filters > .filter-submit { grid-column: 8 / -1; }
   #filterForm.review-filters:has(#reviewTaskProgressField:not([hidden])):has(#reviewWorkflowModeField:not([hidden])) > .filter-submit { grid-column: 9 / -1; }
-  #caseLabelingFilterForm.case-labeling-filters > .filter-submit { grid-column: 6 / -1; }
+  #caseLabelingFilterForm.case-labeling-filters > .filter-submit { grid-column: 7 / -1; }
   #filterForm .issue-query-control { grid-template-columns: minmax(0, 1fr) auto; gap: 4px; }
   #filterForm .issue-query-button { min-width: 0; padding-inline: 5px; }
 }

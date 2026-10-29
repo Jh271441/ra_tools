@@ -514,6 +514,7 @@ function normalizedCaseLabelingRouteFilters(params) {
       ? params.get("task")
       : "",
     targetGroup: params.get('target_group') || '',
+    issueTags: parseFilterList(params.get('issue_tags')),
     search: params.get("q") || "",
     issueIds: parseFilterList(params.get("issue_ids")).filter((value) =>
       ISSUE_QUERY_ID_RE.test(value)
@@ -884,6 +885,7 @@ function pageUrl(page, options = {}) {
     if (labeling.taskId) url.searchParams.set("task", labeling.taskId);
     if (labeling.search) url.searchParams.set("q", labeling.search);
     if (labeling.targetGroup) url.searchParams.set('target_group', labeling.targetGroup);
+    if (labeling.issueTags?.length) url.searchParams.set('issue_tags', joinFilterList(labeling.issueTags));
     const issueIds = (labeling.issueIds || []).filter((value) =>
       ISSUE_QUERY_ID_RE.test(String(value))
     );
@@ -914,6 +916,7 @@ function pageUrl(page, options = {}) {
       ? labelSummaryRouteOptions(options)
       : options;
     if (summary.search) url.searchParams.set("q", summary.search);
+    if (summary.issueTags?.length) url.searchParams.set("issue_tags", joinFilterList(summary.issueTags));
     const issueIds = (summary.issueIds || []).filter((value) =>
       ISSUE_QUERY_ID_RE.test(String(value))
     );

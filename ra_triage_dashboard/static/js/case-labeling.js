@@ -6,6 +6,7 @@ function caseLabelingRouteOptions(overrides = {}) {
     issue: overrides.issue ?? labeling.issueId ?? "",
     taskId: overrides.taskId ?? labeling.taskId ?? "",
     targetGroup: overrides.targetGroup ?? labeling.targetGroup ?? '',
+    issueTags: overrides.issueTags ?? labeling.issueTags ?? [],
     search: overrides.search ?? labeling.search ?? "",
     issueIds: overrides.issueIds ?? labeling.issueIds ?? [],
     status: overrides.status ?? labeling.status ?? [],
@@ -28,6 +29,7 @@ function restoreCaseLabelingRouteState(route = null) {
   if (route?.issue) state.caseLabeling.issueId = route.issue;
   state.caseLabeling.taskId = filters.taskId ?? state.caseLabeling.taskId;
   state.caseLabeling.targetGroup = filters.targetGroup ?? '';
+  state.caseLabeling.issueTags = parseFilterList(filters.issueTags || []);
   state.caseLabeling.search = filters.search ?? state.caseLabeling.search;
   state.caseLabeling.issueIds = filters.issueIds ?? state.caseLabeling.issueIds;
   state.caseLabeling.status = normalizedLabelingStatusFilters(filters.status ?? state.caseLabeling.status);
@@ -181,6 +183,7 @@ async function loadCaseLabelingClusters() {
     q: state.caseLabeling.search || "",
     issue_ids: (state.caseLabeling.issueIds || []).join(","),
     target_group: state.caseLabeling.targetGroup || '',
+    issue_tags: joinFilterList(state.caseLabeling.issueTags),
     status: joinFilterList(state.caseLabeling.status),
     author: joinFilterList(state.caseLabeling.author),
     assignee: joinFilterList(state.caseLabeling.assignee),
@@ -228,6 +231,13 @@ function renderCaseLabelingMultiPicker(selector, options, selected, key) {
 }
 
 function renderCaseLabelingStatusPicker() {
+  renderIssueTagFilter('#caseLabelingIssueTagFilter', state.caseLabeling.issueTags || [], values => {
+    state.caseLabeling.issueTags = values;
+    state.caseLabeling.cluster = '';
+    state.caseLabeling.page = 1;
+    persistCaseLabelingRoute({issue:'', page:1});
+    loadCaseLabelingCases({page:1}).catch(error => showToast(error.message, true));
+  });
   renderTargetGroupPicker('#caseLabelingTargetGroupPicker', state.caseLabeling.targetGroup, value => {
     state.caseLabeling.targetGroup = value;
     state.caseLabeling.cluster = '';
@@ -401,6 +411,7 @@ function labelingTaskFilterPayload() {
     q: state.caseLabeling.search || "",
     issue_ids: (state.caseLabeling.issueIds || []).join(","),
     target_group: state.caseLabeling.targetGroup || '',
+    issue_tags: joinFilterList(state.caseLabeling.issueTags),
     status: joinFilterList(state.caseLabeling.status),
     author: joinFilterList(state.caseLabeling.author),
     assignee: joinFilterList(state.caseLabeling.assignee),
@@ -940,6 +951,7 @@ function caseLabelingListParams({page = 1, pageSize = state.caseLabeling.pageSiz
     q: state.caseLabeling.search || "",
     issue_ids: (state.caseLabeling.issueIds || []).join(","),
     target_group: state.caseLabeling.targetGroup || '',
+    issue_tags: joinFilterList(state.caseLabeling.issueTags),
     status: joinFilterList(state.caseLabeling.status),
     author: joinFilterList(state.caseLabeling.author),
     assignee: joinFilterList(state.caseLabeling.assignee),
@@ -1837,6 +1849,7 @@ function bindCaseLabelingEvents() {
   $("#caseLabelingReset")?.addEventListener("click", () => {
     state.caseLabeling.taskId = "";
     state.caseLabeling.targetGroup = '';
+    state.caseLabeling.issueTags = [];
     state.caseLabeling.issueIds = [];
     state.caseLabeling.status = [];
     state.caseLabeling.author = [];

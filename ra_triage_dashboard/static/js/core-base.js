@@ -1110,6 +1110,7 @@ const state = {
     detailLoading: false,
   },
   caseLabeling: {
+    issueTags: [],
     targetGroup: "",
     tasks: [],
     taskId: "",

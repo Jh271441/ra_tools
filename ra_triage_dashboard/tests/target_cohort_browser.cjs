@@ -24,6 +24,7 @@ const server=http.createServer((req,res)=>{
     await page.goto(`http://127.0.0.1:${server.address().port}/review`);
     await page.evaluate(()=>{
       state.config={baselines:[{id:'version-20261009',scope:'fixture',label:'1009'}]};
+      state.config.review_tag_catalog=[{key:'gate',label:'Gate',group:'environment'},{key:'intent_u_turn',label:'U-turn',group:'self_intent'}];
       state.baselineCatalog=state.config.baselines;state.selectedBaselineIds=['version-20261009'];
       document.querySelectorAll('.multi-filter').forEach(root=>renderMultiFilter(root));
       enhanceDashboardSelects();
@@ -56,7 +57,7 @@ const server=http.createServer((req,res)=>{
           const wide='.filter-model-run,.filter-search,.review-task-filter,.review-workflow-mode,.case-labeling-search,.case-labeling-task';
           const fields=[...form.children].filter(e=>e.getBoundingClientRect().width&&e.tagName!=='BUTTON');
           return {gap:parseFloat(getComputedStyle(form).columnGap),fields:fields.map(e=>({
-            width:e.getBoundingClientRect().width,bottom:e.getBoundingClientRect().bottom,wide:e.matches(wide),search:e.matches('.filter-search,.case-labeling-search')
+            width:e.getBoundingClientRect().width,bottom:e.getBoundingClientRect().bottom,wide:e.matches(wide),search:e.matches('.filter-search,.case-labeling-search,.case-labeling-task')
           }))};
         },{view,progress,mode});
         const normal=layout.fields.filter(e=>width>=1025?!e.search:!e.wide);
@@ -137,11 +138,30 @@ const server=http.createServer((req,res)=>{
       await trigger.click();await page.locator(selector+' [data-ui-select-value=""]').click();
       assert.equal(new URL(page.url()).searchParams.has('target_group'),false);
       if(view==='labeling'){
+        const tags=page.locator('#caseLabelingIssueTagFilter');
+        await tags.locator('.multi-filter-trigger').scrollIntoViewIfNeeded();
+        await page.waitForTimeout(200);
+        await tags.locator('.multi-filter-trigger').click();
+        await tags.locator('.multi-filter-search').fill('Gate');
+        await tags.locator('[data-multi-value="gate"]').check();
+        assert.equal(new URL(page.url()).searchParams.get('issue_tags'),'gate');
+        assert.equal(new URLSearchParams(await page.evaluate(()=>window.fixtureParams)).get('issue_tags'),'gate');
+        await tags.locator('.multi-filter-search').fill('');
+        await tags.locator('[data-multi-value="intent_u_turn"]').check();
+        await page.evaluate(()=>{state.uiLanguage=state.uiLanguage==='zh'?'en':'zh';renderCaseLabelingStatusPicker();});
+        assert.equal(await tags.locator('[data-multi-value="gate"]').isChecked(),true);
+        assert.equal(await tags.locator('.multi-filter-search').isVisible(),true);
+        const tagBox=await tags.locator('.multi-filter-panel').boundingBox();
+        assert.ok(tagBox&&tagBox.x>=0&&tagBox.x+tagBox.width<=width+1&&tagBox.y>=0&&tagBox.y+tagBox.height<=1001);
+        assert.equal(await page.evaluate(()=>labelingTaskFilterPayload().issue_tags),'gate,intent_u_turn');
+        await page.keyboard.press('Escape');
         await trigger.click();await page.locator(selector+' [data-ui-select-value="sample"]').click();
         await page.locator('#caseLabelingReset').click();
         assert.deepEqual(errors,[]);
         assert.equal(await page.locator(selector+' select').inputValue(),'');
         assert.equal(new URL(page.url()).searchParams.has('target_group'),false);
+        assert.equal(new URL(page.url()).searchParams.has('issue_tags'),false);
+        assert.equal(await tags.locator('[data-multi-value="gate"]').isChecked(),false);
       }
       results.push({width,lang,theme,view});
     }

@@ -9,13 +9,14 @@ let labelSummaryTasks = [];
 let labelSummaryData = null;
 const labelSummaryFilters = {
   search: "", issueIds: [], taskId: "", status: [], author: [], assignee: [],
-  label: [], gt: [], commentState: [], exclusion: [], cluster: "",
+  label: [], gt: [], commentState: [], exclusion: [], cluster: "", issueTags: [],
 };
 
 function labelSummaryRouteOptions(overrides = {}) {
   return {
     search: overrides.search ?? labelSummaryFilters.search,
     issueIds: overrides.issueIds ?? labelSummaryFilters.issueIds,
+    issueTags: overrides.issueTags ?? labelSummaryFilters.issueTags ?? [],
     taskId: overrides.taskId ?? labelSummaryFilters.taskId,
     status: overrides.status ?? labelSummaryFilters.status,
     author: overrides.author ?? labelSummaryFilters.author,
@@ -36,6 +37,7 @@ function restoreLabelSummaryRoute({ force = false } = {}) {
   labelSummaryRouteRestored = true;
   const params = new URLSearchParams(window.location.search);
   labelSummaryFilters.search = String(params.get("q") || "").trim();
+  labelSummaryFilters.issueTags = parseFilterList(params.get("issue_tags"));
   labelSummaryFilters.issueIds = parseFilterList(params.get("issue_ids")).filter((value) => ISSUE_QUERY_ID_RE.test(value));
   labelSummaryFilters.taskId = String(params.get("task") || "").trim();
   labelSummaryFilters.status = normalizedLabelingStatusFilters(params.get("status"), { submittedOnly: true });
@@ -82,6 +84,7 @@ function labelSummaryCaseUrl(filters = {}) {
   }
   return pageUrl("labeling", { issue: "", taskId: labelSummaryFilters.taskId,
     search: labelSummaryFilters.search, issueIds: labelSummaryFilters.issueIds,
+    issueTags: labelSummaryFilters.issueTags || [],
     status: labelSummaryFilters.status,
     author: labelSummaryFilters.author, assignee: labelSummaryFilters.assignee,
     cluster: labelSummaryFilters.cluster, label: labelSummaryFilters.label,
@@ -162,6 +165,7 @@ function labelSummaryFilterPayload() {
     label: joinFilterList(labelSummaryFilters.label),
     gt: joinFilterList(labelSummaryFilters.gt),
     comment_state: joinFilterList(labelSummaryFilters.commentState),
+    issue_tags: joinFilterList(labelSummaryFilters.issueTags),
     exclusion: joinFilterList(labelSummaryFilters.exclusion),
     cluster: labelSummaryFilters.cluster,
   };
@@ -385,6 +389,7 @@ async function loadLabelingSummary() {
       label: joinFilterList(labelSummaryFilters.label),
       gt: joinFilterList(labelSummaryFilters.gt),
       comment_state: joinFilterList(labelSummaryFilters.commentState),
+      issue_tags: joinFilterList(labelSummaryFilters.issueTags),
       cluster: labelSummaryFilters.cluster,
       page: String(labelSummaryPage),
       page_size: String(labelSummaryPageSize),
@@ -434,7 +439,7 @@ document.getElementById("labelSummaryTask")?.addEventListener("change", (event) 
 document.getElementById("labelSummaryReset")?.addEventListener("click", () => {
   Object.assign(labelSummaryFilters, {
     search: "", issueIds: [], taskId: "", status: [], author: [], assignee: [],
-    label: [], gt: [], commentState: [], exclusion: [], cluster: "",
+    label: [], gt: [], commentState: [], exclusion: [], cluster: "", issueTags: [],
   });
   if (typeof updateIssueQueryButton === "function") updateIssueQueryButton();
   labelSummaryPage = 1;
