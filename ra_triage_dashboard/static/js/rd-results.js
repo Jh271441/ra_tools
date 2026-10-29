@@ -1,7 +1,7 @@
 /* Canonical Manual labels -> explicit RD publication. No automatic remote writes. */
 const rdResults = { data: null, remote: {}, selected: new Set(), epoch: 0, loading: false,
   busy: false, busyAction: '', committing: false, error: '', preview: null, operations: [], overwrite: false, baselines: '', filterDraft: null, pageJumpDraft: null,
-  previewPage: 1, previewPageSize: DEFAULT_CASE_PAGE_SIZE, previewJumpDraft: null,
+  previewPage: 1, previewPageSize: DEFAULT_CASE_PAGE_SIZE, previewJumpDraft: null, pendingPreview: null,
   filters: { q: '', status: 'all', page: 1, page_size: DEFAULT_CASE_PAGE_SIZE } };
 const rdText = (zh, en) => uiText(zh, en);
 const RD_UPLOAD_ENDPOINT = 'https://voyager.intra.xiaojukeji.com/paladin/issue/pool/multi_update/';
@@ -9,7 +9,7 @@ const RD_UPLOAD_FIELD = 'ra_rd_review_result';
 function rdStatus(value) {
   const names = { resolved: ['已完成', 'Completed'], pending: ['待上传', 'Ready to upload'],
     conflict: ['结果不同', 'Different result'], same: ['已一致', 'Already matches'], blocked: ['不可上传', 'Blocked'],
-    unchecked: ['未核对', 'Not checked'], complete: ['已核验完成', 'Verified complete'],
+    unchecked: ['未核对', 'Not checked'], preparing: ['正在生成预览', 'Preparing preview'], preview: ['预览待确认', 'Preview ready'], preview_failed: ['预览失败', 'Preview failed'], complete: ['已核验完成', 'Verified complete'],
     needs_recheck: ['需重新核对', 'Recheck required'], running: ['处理中', 'Processing'],
     verified: ['读回一致', 'Readback verified'], unverified: ['未确认', 'Unverified'], intent: ['结果待核对', 'Outcome needs checking'],
     not_attempted: ['未执行', 'Not attempted'],
@@ -18,6 +18,8 @@ function rdStatus(value) {
 }
 function rdReason(value) {
   const names = {
+    preview_check_failed: ['预览核对失败，未执行上传。可重新预览。', 'Preview check failed; nothing was uploaded. Create a new preview.'],
+    preview_interrupted: ['预览任务已中断，未执行上传。请重新预览。', 'Preview interrupted; nothing was uploaded. Create a new preview.'],
     preflight_failed: ['提交前核对未通过，未执行写入。请刷新后重新预览。', 'Preflight check failed; nothing was written. Refresh and preview again.'],
     source_changed: ['标注或 Trail 值已变化，未执行写入。', 'Labels or Trail changed; nothing was written.'],
     check_failed: ['写入前核对失败，未执行写入。', 'Check before writing failed; nothing was written.'],
@@ -56,6 +58,15 @@ function rdMetricsMarkup(data) {
   ];
   return `<div class="run-source-tabs rd-metrics" aria-label="${rdText('标注概览与筛选', 'Label overview and filters')}">${metrics.map(([filter,key,zh,en,path]) => `<button class="run-source-tab rd-metric ${rdResults.filters.status === filter ? 'active' : ''}" type="button" data-rd-filter="${filter}" aria-pressed="${rdResults.filters.status === filter}" ${rdResults.loading || rdResults.busy ? 'disabled' : ''}><span class="run-source-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="${path}"/></svg></span><span><strong>${rdText(zh,en)}</strong></span><em>${data ? data.counts[key] : '—'}</em></button>`).join('')}</div>`;
 }
+function rdSelectable(row) {
+  const remote = rdResults.remote[row.issue_id];
+  return row.group === 'resolved' && (!remote || remote.status === 'pending' || (remote.status === 'conflict' && rdResults.overwrite));
+}
+function rdPreviewProgress() {
+  const progress = rdResults.pendingPreview?.progress;
+  if (progress?.stage === 'trail') return rdText(`正在核对 Trail ${progress.checked} / ${progress.total}，完成后展示预览…`, `Checking Trail ${progress.checked} / ${progress.total}; preview will open when ready…`);
+  return rdText('正在汇总标注并核对 Trail，尚未上传…', 'Collecting labels and checking Trail; nothing uploaded yet…');
+}
 function renderRdResults() {
   if (state.activePage !== 'rd-results') return;
   const root = $('#rdResultsPage'), d = rdResults.data, f = rdResults.filters;
@@ -67,15 +78,15 @@ function renderRdResults() {
   root.innerHTML = `<section class="page-card runs-source-card rd-overview"><div class="runs-source-heading"><div><h3>${rdText('标注上传', 'Label upload')}</h3></div><div class="run-manager-actions">${rdButton('refresh', rdText('刷新', 'Refresh'), rdResults.loading || rdResults.busy, 'quiet')}</div></div>
     ${rdMetricsMarkup(d)}
     <dl class="rd-upload-target"><div><dt>${rdText('上传接口','Upload endpoint')}</dt><dd><span class="rd-http-method">POST</span><code>${RD_UPLOAD_ENDPOINT}</code></dd></div><div><dt>${rdText('目标字段','Target field')}</dt><dd><code>${RD_UPLOAD_FIELD}</code></dd></div></dl></section>
-    <section class="page-card runs-page-card rd-workspace"><div class="rd-detail-toolbar"><div class="rd-detail-heading"><h3>${rdText('标注明细', 'Label details')}</h3><span class="rd-description">${checked ? rdText(`已核对 ${checked} · 待上传 ${ready}`, `${checked} checked · ${ready} ready`) : rdText('核对后选择，或全部上传', 'Check and select, or upload all')}</span></div>
+    <section class="page-card runs-page-card rd-workspace"><div class="rd-detail-toolbar"><div class="rd-detail-heading"><h3>${rdText('标注明细', 'Label details')}</h3><span class="rd-description">${checked ? rdText(`已核对 ${checked} · 待上传 ${ready}`, `${checked} checked · ${ready} ready`) : rdText('先选标注，预览时自动核对', 'Select labels; preview checks Trail automatically')}</span></div>
     <form id="rdFilters" class="run-filter-bar rd-filters"><input id="rdSearch" name="q" aria-label="${rdText('Issue 搜索','Find Issue')}" placeholder="${rdText('搜索 Issue ID', 'Find Issue ID')}" value="${escapeHtml(draft.q)}" autocomplete="off" />
     <select id="rdState" name="status" aria-label="${rdText('标注状态','Label status')}">${[['all','全部状态','All statuses'],['resolved','已完成','Completed'],['pending','待标注','Pending labels'],['conflict','冲突 / 失效','Conflict / stale']].map(([v,zh,en]) => `<option value="${v}" ${draft.status === v ? 'selected' : ''}>${rdText(zh,en)}</option>`).join('')}</select><button class="button button-secondary" type="submit" ${rdResults.busy || rdResults.loading ? 'disabled' : ''}>${rdText('筛选','Apply')}</button>${rdButton('status',rdText('核对本页 Trail','Check page in Trail'), !d?.items.length || rdResults.busy || rdResults.loading, 'quiet')}</form></div>
-    ${rdResults.error || rdResults.loading || rdResults.busy ? `<p class="rd-notice ${rdResults.error ? 'is-error' : ''}" role="status">${escapeHtml(rdResults.error || (rdResults.loading ? rdText('正在加载标注…','Loading labels…') : rdResults.busyAction === 'preview-scope' ? rdText('正在核对全部筛选结果并生成预览…','Checking all filtered results and building preview…') : rdText('正在处理，请稍候…','Processing, please wait…')))}</p>` : ''}
-    <div class="rd-selection-bar ${rdResults.selected.size ? 'has-selection' : ''}"><div class="rd-selection-tools"><div class="run-manager-actions"><span class="rd-selection-count">${rdText('已选','Selected')} <strong>${rdResults.selected.size}</strong></span>${rdButton('select',rdText('全选本页','Select page'), !d || !checked || rdResults.busy || rdResults.loading, 'text')}</div>
+    ${rdResults.error || rdResults.loading || rdResults.busy ? `<p class="rd-notice ${rdResults.error ? 'is-error' : ''}" role="status">${escapeHtml(rdResults.error || (rdResults.loading ? rdText('正在加载标注…','Loading labels…') : rdResults.busyAction?.startsWith('preview') || rdResults.busyAction === 'resume-preview' ? rdPreviewProgress() : rdText('正在处理，请稍候…','Processing, please wait…')))}${rdResults.pendingPreview && !rdResults.busy ? `<button type="button" class="button button-quiet" data-rd-operation="${rdResults.pendingPreview.id}">${rdText('继续查看预览','Resume preview')}</button>` : ''}</p>` : ''}
+    <div class="rd-selection-bar ${rdResults.selected.size ? 'has-selection' : ''}"><div class="rd-selection-tools"><div class="run-manager-actions"><span class="rd-selection-count">${rdText('已选','Selected')} <strong>${rdResults.selected.size}</strong></span>${rdButton('select',rdText('全选本页','Select page'), !d?.items.some(rdSelectable) || rdResults.busy || rdResults.loading, 'text')}</div>
     ${state.session.is_admin ? `<label class="rd-checkbox"><input class="ui-checkbox" id="rdOverwrite" type="checkbox" ${rdResults.overwrite ? 'checked' : ''} ${rdResults.busy ? 'disabled' : ''}>${rdText('覆盖不同的 RD 结果','Overwrite different RD results')}</label>` : ''}</div>
     <div class="run-manager-actions">${d && !d.write_enabled ? `<span class="rd-notice" title="${rdText('真实写入开关关闭，核对与预览可用','Publishing is disabled; checking and preview are available')}">${rdText('写入未启用','Publishing disabled')}</span>` : ''}${state.session.is_admin ? rdButton('preview',rdText('预览所选','Preview selected'), !rdResults.selected.size || rdResults.busy || rdResults.loading, 'quiet') + rdButton('preview-scope',rdText('全部上传','Upload all'), !d?.total || !d?.counts.resolved || rdResults.busy || rdResults.loading, 'primary', rdText('核对当前筛选范围的全部页，预览后确认上传','Check all pages in the current filter, then preview and confirm upload')) : ''}</div></div>
     <div class="rd-table-wrap"><table class="rd-table"><thead><tr>${['', 'Issue', rdText('人工结论','Human label'), rdText('标注人','Contributors'), rdText('Trail 当前值','Current Trail value'), rdText('上传状态','Upload status')].map(x=>`<th>${x}</th>`).join('')}</tr></thead><tbody>${(d?.items || []).map(row => {
-      const remote = rdResults.remote[row.issue_id], eligible = row.group === 'resolved' && remote && (remote.status === 'pending' || (remote.status === 'conflict' && rdResults.overwrite));
+      const remote = rdResults.remote[row.issue_id], eligible = rdSelectable(row);
       return `<tr class="${rdResults.selected.has(row.issue_id) ? 'is-selected' : ''}"><td><label class="rd-checkbox"><input class="ui-checkbox" type="checkbox" data-rd-id="${escapeHtml(row.issue_id)}" aria-label="${escapeHtml(rdText('选择 ','Select ') + row.issue_id)}" ${rdResults.selected.has(row.issue_id) ? 'checked' : ''} ${!eligible || rdResults.busy ? 'disabled' : ''}></label></td><td><a class="rd-issue-link" href="${escapeHtml(pageUrl('labeling',{ issue: row.issue_id, baselines: state.selectedBaselineIds }))}">${escapeHtml(row.issue_id)}</a></td><td>${row.group === 'resolved' ? labelBadge(row.label, '—', rdLabel(row.label)) : `<span class="muted">${rdText(row.group === 'conflict' ? '冲突 / 失效' : '待标注', row.group === 'conflict' ? 'Conflict / stale' : 'Pending label')}</span>`}</td><td>${escapeHtml(row.authors.join(', ') || '—')}</td><td>${escapeHtml(remote ? rdLabel(remote.current) : '—')}</td><td>${rdStatusBadge(remote?.status || 'unchecked')}</td></tr>`;
     }).join('')}</tbody></table></div>${!rdResults.loading && !d?.items.length ? `<div class="rd-empty"><strong>${rdResults.error ? rdText('暂时无法加载标注','Unable to load labels') : rdText('当前范围没有标注结果','No labels in this scope')}</strong><p>${rdText('可调整顶部数据集或筛选条件后重试。','Adjust the selected datasets or filters and try again.')}</p></div>` : ''}
     ${rdPaginationMarkup(d)}</section>
@@ -155,7 +166,19 @@ async function loadRdResults() {
   } catch (error) { if (epoch === rdResults.epoch) rdResults.error = error.message; }
   finally { if (epoch === rdResults.epoch) { rdResults.loading = false; renderRdResults(); } }
 }
-async function rdPost(path, body) { return api(`/api/rd-results/${path}`, { method: 'POST', body: JSON.stringify(body) }); }
+async function rdPost(path, body) { return api(`/api/rd-results/${path}${['preview','preview-scope'].includes(path) ? '?background=true' : ''}`, { method: 'POST', body: JSON.stringify(body) }); }
+async function rdWaitPreview(receipt, epoch, scope) {
+  while (receipt.state === 'preparing') {
+    rdResults.pendingPreview = receipt;
+    renderRdResults();
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    if (epoch !== rdResults.epoch || state.activePage !== 'rd-results' || scope !== state.selectedBaselineIds.join(',')) return null;
+    receipt = await api(`/api/rd-results/operations/${receipt.id}`);
+  }
+  rdResults.pendingPreview = null;
+  if (receipt.state === 'preview_failed') throw Error(rdReason(receipt.reason));
+  return receipt;
+}
 async function rdReadReceipt(operation) {
   const receipt = await api(`/api/rd-results/operations/${operation}`);
   // A preview receipt may also belong to a commit still in preflight. It is
@@ -173,21 +196,24 @@ async function rdClick(event) {
   if (action === 'refresh') return loadRdResults();
   if (action === 'jump') return rdJumpToPage();
   if (['previous','next'].includes(action)) { rdResults.filters.page = rdResults.data.page + (action === 'next' ? 1 : -1); rdPersist(); return loadRdResults(); }
-  if (action === 'select') { rdResults.data.items.forEach(r => { const s = rdResults.remote[r.issue_id]?.status; if (s === 'pending' || (s === 'conflict' && rdResults.overwrite)) rdResults.selected.add(r.issue_id); }); return renderRdResults(); }
+  if (action === 'select') { rdResults.data.items.filter(rdSelectable).forEach(r => rdResults.selected.add(r.issue_id)); return renderRdResults(); }
   const epoch = rdResults.epoch, scope = rdResults.baselines;
-  rdResults.busy = true; rdResults.busyAction = action; rdResults.error = ''; renderRdResults();
+  rdResults.busy = true; rdResults.busyAction = operation ? 'resume-preview' : action; rdResults.error = ''; renderRdResults();
   try {
     if (action === 'history' || operation) {
-      const response = await api(`/api/rd-results/operations${operation ? '/' + operation : ''}`);
+      let response = await api(`/api/rd-results/operations${operation ? '/' + operation : ''}`);
+      if (operation) response = await rdWaitPreview(response, epoch, scope);
+      if (!response) return;
       if (epoch !== rdResults.epoch || state.activePage !== 'rd-results') return;
       if (operation) { rdResults.preview = response; rdResults.previewPage = 1; rdResults.previewJumpDraft = null; rdRenderDialog(); $('#rdResultsDialog').showModal(); }
       else rdResults.operations = response.items;
       return;
     }
-    const response = await rdPost(action, action === 'preview-scope'
+    let response = await rdPost(action, action === 'preview-scope'
       ? { baselines: scope, q: rdResults.filters.q, status: rdResults.filters.status, overwrite: rdResults.overwrite }
       : { baselines: scope, issue_ids: action === 'status' ? rdResults.data.items.map(r=>r.issue_id) : [...rdResults.selected], overwrite: rdResults.overwrite });
-    if (epoch !== rdResults.epoch || state.activePage !== 'rd-results' || scope !== state.selectedBaselineIds.join(',')) return;
+    if (action !== 'status') response = await rdWaitPreview(response, epoch, scope);
+    if (!response || epoch !== rdResults.epoch || state.activePage !== 'rd-results' || scope !== state.selectedBaselineIds.join(',')) return;
     if (action === 'status') { rdResults.remote = Object.fromEntries(response.items.map(r=>[r.issue_id,r])); rdResults.selected.clear(); }
     else { rdResults.preview = response; rdResults.previewPage = 1; rdResults.previewJumpDraft = null; rdRenderDialog(); $('#rdResultsDialog').showModal(); }
   } catch (error) { if (epoch === rdResults.epoch) rdResults.error = error.message; }

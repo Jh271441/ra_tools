@@ -3,6 +3,7 @@ import asyncio
 import re
 from typing import Literal
 from fastapi import APIRouter, Request, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, StrictBool, validator
 
 from .. import rd_results as service
@@ -121,17 +122,23 @@ async def summary(request: Request, baselines: str = '', q: str = '', status: st
 
 
 @router.post('/api/rd-results/preview-scope')
-async def preview_scope(request: Request, body: ScopeSelection):
+async def preview_scope(request: Request, body: ScopeSelection, background: bool = False):
     actor = await asyncio.to_thread(_admin_identity, request)
     if not has_same_origin_mutation_marker(request):
         raise _detail(403, '请求标记缺失 / Request marker required')
-    def load():
+    def load(progress=None):
         rows, _ = filtered_rows(request, body.baselines, body.q, body.status)
         candidates = {r['issue_id']: r for r in rows if r['group'] == 'resolved'}
-        remote = service.read_remote(service.adapter(settings.ra_auto_triage_root), list(candidates)) if candidates else {}
+        if progress:
+            progress(0, len(candidates))
+        remote = service.read_remote(service.adapter(settings.ra_auto_triage_root), list(candidates), **({'progress':progress} if progress else {})) if candidates else {}
         scope = dict(total=len(rows), blocked=len(rows) - len(candidates), q=body.q, status=body.status)
-        return store().preview(actor.username, candidates, remote, body.overwrite, body.baselines, scope=scope)
-    return await run(load)
+        return candidates, remote, scope
+    if background:
+        result = await run(store().start_preview, actor.username, body.baselines, body.overwrite, load)
+        return JSONResponse(result, status_code=202)
+    rows, remote, scope = await run(load)
+    return await run(lambda: store().preview(actor.username, rows, remote, body.overwrite, body.baselines, scope=scope))
 
 
 @router.post('/api/rd-results/status')
@@ -145,15 +152,21 @@ async def remote_status(request: Request, body: Selection):
 
 
 @router.post('/api/rd-results/preview')
-async def preview(request: Request, body: Selection):
+async def preview(request: Request, body: Selection, background: bool = False):
     actor = await asyncio.to_thread(_admin_identity, request)
     if not has_same_origin_mutation_marker(request):
         raise _detail(403, '请求标记缺失 / Request marker required')
-    def load():
+    def load(progress=None):
         rows = selected(request, body)
-        remote = service.read_remote(service.adapter(settings.ra_auto_triage_root), body.issue_ids)
-        return store().preview(actor.username, rows, remote, body.overwrite, body.baselines)
-    return await run(load)
+        if progress:
+            progress(0, len(rows))
+        remote = service.read_remote(service.adapter(settings.ra_auto_triage_root), body.issue_ids, **({'progress':progress} if progress else {}))
+        return rows, remote, None
+    if background:
+        result = await run(store().start_preview, actor.username, body.baselines, body.overwrite, load)
+        return JSONResponse(result, status_code=202)
+    rows, remote, _ = await run(load)
+    return await run(lambda: store().preview(actor.username, rows, remote, body.overwrite, body.baselines))
 
 
 @router.post('/api/rd-results/commit')
@@ -181,7 +194,7 @@ async def operations(request: Request):
         records = []
         for path in store().root.glob('*.json'):
             record = store().receipt(path.stem)
-            if record['state'] != 'preview':
+            if record['state'] != 'preview' or record.get('background_preview'):
                 records.append({k: record[k] for k in ('id', 'actor', 'created_at', 'state')})
         return {'items': sorted(records, key=lambda r: r['created_at'], reverse=True)[:30]}
     return await run(load)

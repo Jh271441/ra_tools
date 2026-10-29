@@ -6,6 +6,7 @@ writer, whose operation marker would modify another field.
 from __future__ import annotations
 
 from contextlib import contextmanager
+from concurrent.futures import ThreadPoolExecutor
 import fcntl
 import hashlib
 import importlib
@@ -15,12 +16,15 @@ from pathlib import Path
 import re
 import sys
 import tempfile
+from threading import BoundedSemaphore
 import time
 import uuid
 
 FIELD = "ra_rd_review_result"
 VALUES = {"正确触发": "成功", "误触发": "误触发", "无需协助": "无需协助"}
 PROTECTED = ("ra_stuck_auto_result", "ra_stuck_auto_result_info", "ra_review_reason", "ra_merge_result")
+_preview_workers = ThreadPoolExecutor(max_workers=2, thread_name_prefix='rd-preview')
+_preview_slots = BoundedSemaphore(2)
 
 
 def digest(value):
@@ -70,10 +74,12 @@ class RDTransport:
         return self.send_request(url, json_data, timeout).json()
 
 
-def read_remote(client, ids):
+def read_remote(client, ids, *, progress=None):
     result = {}
     for offset in range(0, len(ids), 100):
         result.update(_read_remote_chunk(client, ids[offset:offset + 100]))
+        if progress:
+            progress(len(result), len(ids))
     return result
 
 
@@ -173,6 +179,20 @@ class PublicationStore:
         its durable progress while a commit is still running.
         """
         record = self.get(operation)
+        if record['state'] == 'preparing':
+            with (self.root / (operation + '.preview-lock')).open('a') as stream:
+                try:
+                    fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    return self.public(record)
+                try:
+                    record = self.get(operation)
+                    if record['state'] == 'preparing':
+                        record.update(state='preview_failed', reason='preview_interrupted')
+                        self.save(record)
+                finally:
+                    fcntl.flock(stream, fcntl.LOCK_UN)
+            return self.public(record)
         if record['state'] != 'running':
             return self.public(record)
         with (self.root / '.lock').open('a') as stream:
@@ -193,17 +213,59 @@ class PublicationStore:
                 fcntl.flock(stream, fcntl.LOCK_UN)
         return self.public(record)
 
-    def preview(self, actor, rows, remote, overwrite, baselines, *, scope=None):
+    def start_preview(self, actor, baselines, overwrite, load):
+        """Return a durable operation before doing any local/Trail projection.
+
+        Bounded workers never perform writes. The lock also lets another process
+        detect an interrupted preview without mistaking it for an empty result.
+        """
+        if not _preview_slots.acquire(blocking=False):
+            raise ValueError('核对任务繁忙，请稍后重试 / Preview workers busy; retry shortly')
+        lock = None
+        try:
+            self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
+            operation = uuid.uuid4().hex
+            lock = (self.root / (operation + '.preview-lock')).open('a')
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            record = dict(id=operation, actor=actor, created_at=time.time(), expires_at=time.time()+600,
+                          state='preparing', overwrite=overwrite, baselines=baselines, items=[], results=[],
+                          background_preview=True, progress=dict(stage='labels', checked=0, total=0))
+            self.save(record)
+            def work():
+                try:
+                    def progress(checked, total):
+                        record['progress'] = dict(stage='trail', checked=checked, total=total)
+                        self.save(record)
+                    rows, remote, scope = load(progress)
+                    self.preview(actor, rows, remote, overwrite, baselines, scope=scope, operation=operation)
+                except Exception:
+                    record.update(state='preview_failed', reason='preview_check_failed')
+                    self.save(record)
+                finally:
+                    fcntl.flock(lock, fcntl.LOCK_UN)
+                    lock.close()
+                    _preview_slots.release()
+            _preview_workers.submit(work)
+            return self.public(record)
+        except BaseException:
+            if lock:
+                lock.close()
+            _preview_slots.release()
+            raise
+
+    def preview(self, actor, rows, remote, overwrite, baselines, *, scope=None, operation=None):
         items = []
         for iid, row in rows.items():
             status = classify(row, remote[iid])
             items.append(dict(**row, status=status, before=remote[iid], desired=VALUES.get(row['label']),
                               eligible=status == 'pending' or (status == 'conflict' and overwrite)))
-        record = dict(id=uuid.uuid4().hex, actor=actor, created_at=time.time(),
+        record = dict(id=operation or uuid.uuid4().hex, actor=actor, created_at=time.time(),
                       expires_at=time.time() + 600, overwrite=overwrite, baselines=baselines,
                       state='preview', items=items, results=[])
         if scope is not None:
             record['scope'] = scope
+        if operation is not None:
+            record['background_preview'] = True
         with self.lock():
             self.save(record)
         return self.public(record)
@@ -213,6 +275,8 @@ class PublicationStore:
         return {**{k: record[k] for k in ('id', 'actor', 'created_at', 'expires_at', 'state', 'overwrite')},
                 'reason': record.get('reason', ''),
                 'scope': record.get('scope'),
+                'progress': record.get('progress'),
+                'background_preview': record.get('background_preview', False),
                 'results': [{k: v for k, v in r.items() if k != 'after'} |
                             ({'observed': r['after'][FIELD]} if 'after' in r else {}) for r in record['results']],
                 'items': [{k: v for k, v in row.items() if k not in {'before', 'fingerprint'}} | {'current': row['before'].get(FIELD)} for row in record['items']]}

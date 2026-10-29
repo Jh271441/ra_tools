@@ -77,6 +77,47 @@ class RDResultsTest(unittest.TestCase):
     def commit(self, p):
         return self.store.commit(p['id'], 'admin', None, self.client, {'cn123'})
 
+    def test_background_preview_is_bounded_durable_and_never_writes(self):
+        release = Event()
+        def load(progress):
+            progress(0, 1)
+            release.wait(5)
+            progress(1, 1)
+            return {'cn123': self.row}, rd.read_remote(self.client, ['cn123']), None
+        with ThreadPoolExecutor(max_workers=2) as workers, patch.object(rd, '_preview_workers', workers):
+            try:
+                first = self.store.start_preview('admin', 'fixture', False, load)
+                second = self.store.start_preview('admin', 'fixture', False, load)
+                self.assertEqual(first['state'], 'preparing')
+                self.assertEqual(self.store.receipt(first['id'])['state'], 'preparing')
+                with self.assertRaisesRegex(ValueError, 'busy'):
+                    self.store.start_preview('admin', 'fixture', False, load)
+                with self.assertRaises(ValueError): self.commit(first)
+                self.assertEqual(self.client.calls, [])
+            finally:
+                release.set()
+        for job in (first, second):
+            receipt = self.store.receipt(job['id'])
+            self.assertEqual(receipt['state'], 'preview')
+            self.assertTrue(receipt['items'][0]['eligible'])
+            self.assertTrue(receipt['background_preview'])
+        self.assertEqual(self.client.calls, [])
+
+    def test_failed_and_interrupted_background_previews_cannot_be_committed(self):
+        def failed(progress):
+            progress(100, 101)
+            raise ValueError('incomplete remote chunk')
+        with ThreadPoolExecutor(max_workers=1) as workers, patch.object(rd, '_preview_workers', workers):
+            job = self.store.start_preview('admin', 'fixture', False, failed)
+        receipt = self.store.receipt(job['id'])
+        self.assertEqual((receipt['state'], receipt['reason']), ('preview_failed', 'preview_check_failed'))
+        self.assertEqual(receipt['items'], [])
+        with self.assertRaises(ValueError): self.commit(job)
+        record = self.store.get(job['id']); record['state'] = 'preparing'; self.store.save(record)
+        receipt = self.store.receipt(job['id'])
+        self.assertEqual((receipt['state'], receipt['reason']), ('preview_failed', 'preview_interrupted'))
+        self.assertEqual(self.client.calls, [])
+
     def test_exact_field_mapping_and_idempotent_receipt(self):
         p = self.preview()
         self.assertEqual(self.client.calls, [])
@@ -317,6 +358,34 @@ class RDRoutesTest(unittest.TestCase):
         self.assertEqual(p.status_code,200,p.text)
         self.assertEqual(self.http.post('/api/rd-results/commit',json={'operation_id':p.json()['id'],'confirmed':True},headers=self.headers).status_code,403)
         self.assertEqual(self.client.calls,[])
+
+    def test_background_preview_response_precedes_slow_trail_and_receipt_recovers(self):
+        for route, body in (('preview', self.body), ('preview-scope', {'baselines':'fixture'})):
+            entered, release = Event(), Event()
+            def fetch(ids):
+                entered.set()
+                release.wait(5)
+                return [copy.deepcopy(self.client.row)]
+            with ThreadPoolExecutor(max_workers=2) as workers, patch.object(rd, '_preview_workers', workers), patch.object(self.client, 'fetch', side_effect=fetch):
+                try:
+                    response = self.http.post('/api/rd-results/'+route+'?background=true', json=body, headers=self.headers)
+                    self.assertEqual(response.status_code,202,response.text)
+                    job = response.json()
+                    self.assertTrue(entered.wait(1))
+                    self.assertFalse(release.is_set())
+                    record = self.http.get('/api/rd-results/operations/'+job['id']).json()
+                    self.assertEqual(record['state'], 'preparing')
+                    self.assertEqual(record['progress'], {'stage':'trail','checked':0,'total':1})
+                    self.routes.settings.trail_rd_write_enabled=True
+                    self.assertEqual(self.http.post('/api/rd-results/commit',json={'operation_id':job['id'],'confirmed':True},headers=self.headers).status_code,409)
+                finally:
+                    release.set()
+            record = self.http.get('/api/rd-results/operations/'+job['id']).json()
+            self.assertEqual(record['state'], 'preview')
+            self.assertEqual(len(record['items']), 1)
+            history = self.http.get('/api/rd-results/operations').json()['items']
+            self.assertIn(job['id'], [r['id'] for r in history])
+            self.assertEqual(self.client.calls, [])
 
     def test_pagination_limits_and_filtered_page_bounds(self):
         rows = {f'cn{i}': dict(self.row, issue_id=f'cn{i}', state='resolved' if i < 101 else 'pending') for i in range(123)}
