@@ -12,7 +12,7 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlencode, urlparse, urlunparse
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from .review_mentions import MENTION_USERNAME_RE
 
@@ -155,6 +155,7 @@ def build_comment_notification_text(
     body: str,
     review_url: str,
     is_reply: bool = False,
+    source_label: str = "",
 ) -> str:
     excerpt = re.sub(
         r"!\[[^\]\n]*\]\(attachment:[A-Za-z0-9-]{1,80}\)",
@@ -164,11 +165,21 @@ def build_comment_notification_text(
     if len(excerpt) > 1200:
         excerpt = excerpt[:1199] + "…"
     action = "回复了你的评论" if is_reply else "在评论中提到了你"
+    parsed = urlparse(review_url)
+    issue_query = [(key, value) for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+                   if key not in {"comments", "comment", "channel", "source"}]
+    issue_url = urlunparse(parsed._replace(query=urlencode(issue_query), fragment=""))
+    source_url = review_url
+    if dict(parse_qsl(parsed.query)).get("source") == "combined_review":
+        gallery_query = [(key, value) for key, value in issue_query if key != "issue"]
+        source_url = urlunparse(parsed._replace(query=urlencode(gallery_query), fragment=""))
     lines = [
         "**【RA Triage】评论通知**",
         "",
-        f"{_markdown_plaintext(author or '一位同事')} 在 `{_markdown_plaintext(issue_id)}` 中{action}：",
+        f"{_markdown_plaintext(author or '一位同事')} 在 [{_markdown_plaintext(issue_id)}]({issue_url}) 中{action}：",
     ]
+    if source_label:
+        lines.extend(["", f"来源 / Source：[{_markdown_plaintext(source_label)}]({source_url})"])
     if excerpt:
         lines.extend(["", f"> {_markdown_plaintext(excerpt).replace(chr(10), chr(10) + '> ')}"])
     lines.extend(["", f"[查看评论]({review_url})"])
@@ -223,8 +234,27 @@ def build_discussion_url(
     return_url: str, *, issue_id: str, discussion_channel: str = "model_review",
     campaign_id: str = "", baseline_id: str = "", model_run_id: str = "",
     comment_id: int | None = None,
+    notification_source: dict | None = None,
 ) -> str:
-    """Return to the stored discussion destination, independent of the sender's page."""
+    """Keep discussion ownership, with an optional validated origin entry point."""
+    source = notification_source or {}
+    if (discussion_channel == "case" and source.get("kind") == "combined_review"
+            and source.get("review_link_available") and source.get("model_run_id")):
+        parsed = urlparse(return_url)
+        base = parsed.path.rstrip("/")
+        for suffix in ("/review", "/case-labeling", "/campaigns", "/intent-labeling"):
+            if base.endswith(suffix):
+                base = base[:-len(suffix)]
+                break
+        query = {"issue": issue_id, "run": source["model_run_id"], "comparison": "all",
+                 "comments": "1", "channel": "case", "source": "combined_review"}
+        if source.get("campaign_id"):
+            query["work_split"] = source["campaign_id"]
+        if baseline_id:
+            query["baselines"] = baseline_id
+        if comment_id is not None:
+            query["comment"] = str(int(comment_id))
+        return urlunparse(parsed._replace(path=base+"/review", query=urlencode(query), fragment=""))
     if discussion_channel not in {"case", "campaign"}:
         return build_review_url(return_url, issue_id=issue_id, model_run_id=model_run_id,
                                 open_comments=True, comment_id=comment_id)
