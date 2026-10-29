@@ -46,6 +46,7 @@ assert(!sandbox.annotationHistory([{...a,legacy_read_only:true}]).includes('data
   api:async(path)=>{assert.equal(path,'/api/review-work-splits?all_baselines=true&assigned_to_me=true');return {items:[task]};},
   uiText:(x)=>x,populateUiSelect:(_root,options)=>{shown=options;},
   bindUiSelect:(_root,options)=>{change=options.onChange;},
+  bindUiInfoPopovers:()=>{}, // Shared DOM binding; task discovery remains under test.
   reviewAssignmentRouteOptions:(item,page)=>{assert.equal(page,'review');assert.deepEqual(Array.from(item.baseline_ids),task.baselines);return item;},
   pageUrl:(_page,options)=>`/review?work_split=${options.split_id}&run=${options.model_run_id}`,
   window:{location:{assign:(url)=>{destination=url;}}},
