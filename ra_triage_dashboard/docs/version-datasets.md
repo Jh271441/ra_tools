@@ -75,9 +75,12 @@ The original task-exit button moves to its heading, retaining ID/listener.
 Regression covers both progress/mode visible/hidden combinations at all desktop
 widths, equal fields/two rows/no gaps, bilingual task summary and list empty/error,
 info font-height/popup bounds/Escape, existing filters/URL/reset and mobile targets.
-Validation:73 focused tests and6 subtests passed;64 browser combinations passed
+Validation:75 focused tests and6 subtests passed;64 browser combinations passed
 at320/390/768/1024/1025/1180/1440/1920px, both languages/themes/pages. Browser
 fixtures are local viewport checks, not production or real-device tests.
+The matrix also covers grouped tag search/selection, URL/request/export scope,
+in-place locale preservation, Escape/reset and viewport-bounded menus. Bootstrap's
+actual shared multi-filter dismissal hooks are installed in the local fixture.
 
 Case labeling reuses Review's grouped searchable Issue-tag multi-select: OR within
 groups, AND across groups. Current Issue tags scope lists, queues, clusters,
