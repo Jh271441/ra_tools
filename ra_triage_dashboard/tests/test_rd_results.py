@@ -4,7 +4,7 @@ import json
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
-from threading import Event
+from threading import Event, Lock
 from types import SimpleNamespace
 from urllib.parse import urlsplit
 from unittest.mock import patch
@@ -102,6 +102,43 @@ class RDResultsTest(unittest.TestCase):
             self.assertTrue(receipt['items'][0]['eligible'])
             self.assertTrue(receipt['background_preview'])
         self.assertEqual(self.client.calls, [])
+
+    def test_parallel_preview_reads_share_four_workers_and_preserve_order(self):
+        entered, release, guard = Event(), Event(), Lock()
+        active, peak, batches = 0, 0, []
+        def fetch(ids):
+            nonlocal active, peak
+            with guard:
+                active += 1
+                peak = max(active, peak)
+                batches.append(list(ids))
+                if active == 4:
+                    entered.set()
+            try:
+                if not release.wait(5):
+                    raise TimeoutError('Test did not release read workers')
+                return [dict(issue_id=iid, **{rd.FIELD:None}) for iid in reversed(ids)]
+            finally:
+                with guard:
+                    active -= 1
+        ids = [f'cn{i}' for i in range(201)]
+        progress = []
+        with ThreadPoolExecutor(max_workers=2) as jobs:
+            a = jobs.submit(rd.read_remote, SimpleNamespace(fetch=fetch), ids, parallel=True, progress=lambda checked,total:progress.append((checked,total)))
+            b = jobs.submit(rd.read_remote, SimpleNamespace(fetch=fetch), ids, parallel=True)
+            try:
+                self.assertTrue(entered.wait(2))
+                with guard:
+                    self.assertEqual(active, 4)
+                    self.assertEqual(len(batches), 4)
+            finally:
+                release.set()
+            self.assertEqual(list(a.result()), ids)
+            self.assertEqual(list(b.result()), ids)
+        self.assertEqual(peak, 4)
+        self.assertTrue(all(len(batch) <= 40 for batch in batches))
+        self.assertEqual(progress[-1], (201,201))
+        self.assertEqual([done for done,total in progress], sorted(done for done,total in progress))
 
     def test_failed_and_interrupted_background_previews_cannot_be_committed(self):
         def failed(progress):
@@ -430,7 +467,7 @@ class RDRoutesTest(unittest.TestCase):
             self.assertEqual(p['scope']['blocked'], 3)
             self.assertEqual(len(p['items']), 120)
             self.assertEqual(sum(item['eligible'] for item in p['items']), 118)
-            self.assertEqual([len(ids) for ids in fetches], [100,20])
+            self.assertEqual(sorted(len(ids) for ids in fetches), [40,40,40])
             self.assertEqual(writes, [])
             filtered = self.http.post('/api/rd-results/preview-scope', json={**body,'q':'cn11'}, headers=self.headers).json()
             self.assertTrue(all(item['issue_id'].startswith('cn11') for item in filtered['items']))
@@ -458,12 +495,33 @@ class RDRoutesTest(unittest.TestCase):
                 self.assertEqual(self.http.post('/api/rd-results/preview-scope',json=invalid,headers=self.headers).status_code,422)
         rows = {f'cn{i}':dict(self.row,issue_id=f'cn{i}') for i in range(101)}
         def fetch(ids):
-            return [dict(issue_id=iid, **{rd.FIELD:None}) for iid in ids] if len(ids)==100 else []
+            return [dict(issue_id=iid, **{rd.FIELD:None}) for iid in ids] if 'cn100' not in ids else []
         with patch.object(self.routes,'members',return_value=list(rows)), patch.object(rd,'local_rows',return_value=rows), \
                 patch.object(rd,'adapter',return_value=SimpleNamespace(fetch=fetch)):
             response=self.http.post('/api/rd-results/preview-scope',json=body,headers=self.headers)
             self.assertEqual(response.status_code,409,response.text)
         self.assertFalse(list(self.routes.store().root.glob('*.json')))
+        self.assertEqual(self.client.calls,[])
+
+    def test_scope_selection_exclusions_are_validated_and_never_queried_or_written(self):
+        rows = {f'cn{i}': dict(self.row, issue_id=f'cn{i}') for i in range(103)}
+        queried = []
+        def fetch(ids):
+            queried.extend(ids)
+            return [dict(issue_id=iid, **{rd.FIELD:None}) for iid in ids]
+        with patch.object(self.routes, 'members', return_value=list(rows)), \
+                patch.object(rd, 'local_rows', return_value=rows), \
+                patch.object(rd, 'adapter', return_value=SimpleNamespace(fetch=fetch)):
+            body = dict(baselines='fixture', excluded_issue_ids=['cn0','cn102'])
+            result = self.http.post('/api/rd-results/preview-scope', json=body, headers=self.headers)
+            self.assertEqual(result.status_code,200,result.text)
+            preview = result.json()
+            self.assertEqual(preview['scope']['excluded'],2)
+            self.assertEqual(len(preview['items']),101)
+            self.assertEqual(set(queried),set(rows)-{'cn0','cn102'})
+            for excluded in (['cn999'], ['cn0','cn0'], ['invalid'], ['cn0'] * 20001):
+                result = self.http.post('/api/rd-results/preview-scope', json={**body,'excluded_issue_ids':excluded}, headers=self.headers)
+                self.assertIn(result.status_code,(409,422),result.text)
         self.assertEqual(self.client.calls,[])
 
     def test_marker_validation_and_scope(self):

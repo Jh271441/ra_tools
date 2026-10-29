@@ -6,7 +6,7 @@ writer, whose operation marker would modify another field.
 from __future__ import annotations
 
 from contextlib import contextmanager
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import fcntl
 import hashlib
 import importlib
@@ -25,6 +25,8 @@ VALUES = {"正确触发": "成功", "误触发": "误触发", "无需协助": "�
 PROTECTED = ("ra_stuck_auto_result", "ra_stuck_auto_result_info", "ra_review_reason", "ra_merge_result")
 _preview_workers = ThreadPoolExecutor(max_workers=2, thread_name_prefix='rd-preview')
 _preview_slots = BoundedSemaphore(2)
+# Shared across preview jobs so two previews cannot multiply Trail concurrency.
+_trail_read_workers = ThreadPoolExecutor(max_workers=4, thread_name_prefix='rd-trail-read')
 
 
 def digest(value):
@@ -74,8 +76,22 @@ class RDTransport:
         return self.send_request(url, json_data, timeout).json()
 
 
-def read_remote(client, ids, *, progress=None):
+def read_remote(client, ids, *, progress=None, parallel=False):
     result = {}
+    if parallel and len(ids) > 40:
+        # TrailHTTP.fetch splits at 40; align to avoid nested serial requests.
+        futures = [_trail_read_workers.submit(_read_remote_chunk, client, ids[offset:offset + 40])
+                   for offset in range(0, len(ids), 40)]
+        try:
+            for future in as_completed(futures):
+                result.update(future.result())
+                if progress:
+                    progress(len(result), len(ids))
+        finally:
+            for future in futures:
+                future.cancel()
+        # Completion order must not reorder the user's frozen preview.
+        return {iid: result[iid] for iid in ids}
     for offset in range(0, len(ids), 100):
         result.update(_read_remote_chunk(client, ids[offset:offset + 100]))
         if progress:

@@ -1086,21 +1086,27 @@
   .rd-upload-target dd { width: 100%; }
   .rd-filters.run-filter-bar { grid-template-columns: minmax(0, 1fr) auto; }
   .rd-filters > input { grid-column: 1 / -1; }
-  .rd-filters [data-rd-action="status"] { grid-column: 1 / -1; justify-self: start; }
   .rd-selection-bar { align-items: center; }
   .rd-selection-tools { flex: 1 1 240px; gap: 4px; }
   .rd-results-page .job-history-row { grid-template-columns: minmax(0, 1fr); }
   .rd-results-page input, .rd-results-page .button { min-height: 44px; max-width: 100%; }
-  .rd-results-page .rd-checkbox, #rdResultsDialog .rd-checkbox { min-height: 44px; min-width: 44px; }
+  .rd-results-page .rd-checkbox { min-height: 44px; min-width: 44px; }
   .rd-results-page input[type="checkbox"] { min-height: auto; }
   .rd-results-page .rd-table { min-width: 620px; }
   .rd-results-page .button { white-space: normal; }
   .rd-selection-bar [data-rd-action="preview"] { min-height: 48px !important; }
-  .rd-selection-bar [data-rd-action="preview-scope"] { min-height: 48px !important; }
-  .rd-pagination .page-jump-control input, #rdResultsDialog .page-jump-control input,
-  #rdResultsDialog .rd-pagination .button, #rdResultsDialog .rd-pagination .ui-select-trigger { min-height: 44px; height: 44px; }
+  .rd-pagination .page-jump-control input, .rd-preview-page .rd-pagination .button, .rd-preview-page .rd-pagination .ui-select-trigger { min-height: 44px; height: 44px; }
   .rd-pagination .page-jump-control .button { min-height: 44px; height: 44px; }
-  .rd-pagination .case-page-size, #rdResultsDialog .case-page-size { min-width: 0; }
-  #rdResultsDialog [data-rd-action="commit"] { min-height: 48px !important; }
-  #rdResultsDialog .dialog-actions { padding-bottom: env(safe-area-inset-bottom); }
+  .rd-pagination .case-page-size { min-width: 0; }
+  .rd-preview-summary { align-items: flex-start; gap: 10px 24px; }
+  .rd-preview-counts { gap: 6px 18px; }
+  .rd-preview-info .rd-upload-target > div { grid-template-columns: 76px minmax(0, 1fr); gap: 8px; }
+  .rd-preview-info summary { display: flex; align-items: center; min-height: 44px; }
+  .rd-preview-info summary::before { content: '▸'; margin-right: 8px; }
+  .rd-preview-info[open] summary::before { content: '▾'; }
+  .rd-preview-footer { padding-bottom: env(safe-area-inset-bottom); }
+  .rd-preview-page [data-rd-action="commit"] { min-height: 48px !important; }
+}
+@media (max-width: 639px) {
+  .rd-preview-distribution { flex-basis: 100%; margin-left: 0; }
 }
