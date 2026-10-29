@@ -101,6 +101,7 @@ function applyUiLanguage(language, { persist = true } = {}) {
     "syncCaseLabelingIssueExport",
     "renderCaseLabelingStatusPicker",
     "refreshLabelSummaryLanguage",
+    "renderRdResults",
   ];
   for (const name of refreshers) {
     try {
@@ -1237,6 +1238,9 @@ function showPage(
     exitCaseDecisionEditor();
   }
   const pageLoads = [];
+  if (previousPage === 'rd-results' && rdResults.committing) return;
+  if (target !== "rd-results") document.querySelector("#rdResultsDialog")?.close();
+  if (target === "rd-results" && loadPageData) pageLoads.push(() => loadRdResults());
   state.pageNavigationEpoch = Number(state.pageNavigationEpoch || 0) + 1;
   if (previousPage === "review" && target !== "review" && typeof cancelCaseHydration === "function") cancelCaseHydration();
   if (target !== "review") {
@@ -1356,7 +1360,7 @@ function showPage(
       force: true,
     }).catch((error) => showToast(error.message, true)));
   }
-  if (target === "labeling-summary" && !state.session.identity_pending && !hasDashboardWriteRole()) {
+  if (["labeling-summary", "rd-results"].includes(target) && !state.session.identity_pending && !hasDashboardWriteRole()) {
     return showPage("review", { historyMode: "replace" });
   }
   if (target === "labeling-summary" && loadPageData) {

@@ -3,7 +3,7 @@ from unittest import IsolatedAsyncioTestCase
 from unittest.mock import AsyncMock, Mock, patch
 
 from fastapi import HTTPException
-from ra_triage_dashboard.app.routers.labeling_api import queries, exports, common
+from ra_triage_dashboard.app.routers.labeling_api import queries, exports, common, tasks
 from ra_triage_dashboard.app.runtime_catalogs import REVIEW_TAG_CATALOG
 from ra_triage_dashboard.app.support.issue_tag_filters import parse_issue_tag_groups
 import test_labeling_version_membership as fixture
@@ -67,3 +67,20 @@ class LabelingIssueTagsTest(IsolatedAsyncioTestCase):
         self.assertEqual([len(c.args[0]) for c in projection.call_args_list],[400,400,1])
         result=await queries.list_labeling_cases(self.request,baselines='version-20261009,version-20261016',issue_tags='gate',q='cn3')
         self.assertEqual(result['total'],0)
+
+    async def test_filter_based_task_validates_and_forwards_issue_tags(self):
+        body = dict(filters=dict(baselines='version-20261009', issue_tags='gate,intent_u_turn'))
+        request = Mock(query_params={}, json=AsyncMock(return_value=body))
+        with patch.object(tasks, '_admin_identity', return_value=Mock()), \
+             patch.object(tasks, '_active_labeling_scopes', AsyncMock(side_effect=lambda scopes: scopes)), \
+             patch.object(tasks, 'database', self.db), \
+             patch.object(self.db, 'labeling_case_issue_ids', side_effect=ValueError('stop before task writes')) as resolve:
+            with self.assertRaises(HTTPException):
+                await tasks.create_labeling_task(request)
+            self.assertEqual(resolve.call_args.kwargs['issue_tag_groups'], (('gate',), ('intent_u_turn',)))
+            resolve.reset_mock()
+            body['filters']['issue_tags'] = 'unknown-tag'
+            with self.assertRaises(HTTPException) as caught:
+                await tasks.create_labeling_task(request)
+            self.assertEqual(caught.exception.status_code, 400)
+            resolve.assert_not_called()

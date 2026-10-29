@@ -1,5 +1,35 @@
 # Version composition and TE progress
 
+## Chart hover/focus emphasis (2026-10-29 released, cache706)
+
+TE status legends and SVG ring segments highlight each other; RD progress/mix
+legends and stacked segments do the same within their own block. Other segments
+dim without changing category colors, counts, layout or filters. TE result rows
+and daily progress rows get a subtle row highlight. Existing TE-status/date click
+actions remain; readonly chart/legend inspection never loads or mutates data.
+Pointer hover is limited to fine hover-capable pointers; keyboard focus uses the
+same emphasis. Phone RD legend targets are44px and retain local horizontal scroll.
+Reduced-motion disables transitions. No added popup, request or chart dependency.
+Unchanged TE/RD markup retains focused nodes; refreshed counts/locale restore
+focus. CSS state avoids listeners and polling-induced DOM mutations.
+
+Validation:54 tests/6subtests and12 actual-module Chromium fixture combinations
+(320/390/1440px,zh/en,dark/light), reciprocal hover, leave reset, card isolation,
+keyboard/polling/locale focus, unchanged filter state, no API requests, zero/empty/
+error/loading/unsupported states, reduced-motion and no page overflow passed.
+Desktop and320px English/light screenshots inspected. Browser viewport tests only,
+not physical-device or signed-in production acceptance.
+
+Released2026-10-29 11:48:58 CST (03:48:58Z), commit
+`caf00261a1abe4d4827a70f22d1afe52b38dd463`, cache706. Cloud1079 passed/7 skipped,
+isolated SQLite gray, exact production SHA and PostgreSQL/database/overall health
+passed. Served app.js,version-datasets.js,version-rd.js,version-datasets.css and
+mobile.css match commit bytes; shell cache706 and SVG ring verified. No schema
+migration or identity/writer-policy change. Receipt:
+`/volume/home/workspace/ra_triage_dashboard_deploy/releases/20261029T034522Z-caf00261a1ab/result.json`.
+Retention removed only clean unused candidate/rollback trees for
+20261028T171427Z-cc222569aaec; Git and release records remain. No business data removed.
+
 The version page follows the existing Labeling summary design language: a bounded
 1480px reading area, shared Workbench cards and command bar, 12px spacing, and a
 small type hierarchy. The user-provided image is a grouping illustration rather
@@ -13,10 +43,12 @@ statistics-first filter/read optimization (2026-10-29 01:18 CST, cc22256). See
 Metric cards and composition precede a single filter panel containing Dataset /
 Case scope / Occurrence date (CST). The redundant View grouping is removed; all
 three review modes (all targets, random sample, low excluding sample) are shown
-in Case scope through the shared enhanced select in candidate705. An explicitly
+in Case scope through the shared enhanced select in released cache705. An explicitly
 restored legacy mode remains as the current extra option until switching back;
 existing mode URLs and API values retain their meanings. RD legends now show
-counts alongside percentages. Candidate705 is not yet deployed.
+counts alongside percentages. Released2026-10-29 10:59:15 CST, commit75b14f7;
+1079 cloud tests passed/7 skipped, isolated gray and production health passed.
+See `version-datasets.md` for the receipt and exact asset verification.
 
 The four metrics, TE charts, composition and gallery keep their visibility and
 counts. The follow-up moves composition directly after the metrics, before TE.

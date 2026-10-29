@@ -27,6 +27,10 @@ class VersionFrontendBehaviorTest(unittest.TestCase):
         self.assertIn('.version-rd .rd-filled {background:var(--te-done)}', css)
         self.assertIn('.version-rd .rd-pending {background:var(--te-pending)}', css)
         self.assertIn('background:var(--version-label-color,var(--muted))', css)
+        self.assertIn('id="versionTERing"', html)
+        self.assertIn('@media (hover:hover) and (pointer:fine)', css)
+        self.assertIn('@media (prefers-reduced-motion:reduce)', css)
+        self.assertIn('[data-version-chart]:has([data-chart-key="rd-false"]:focus-visible)', css)
         tokens = (root / 'styles.css').read_text()
         self.assertEqual(tokens.count('--chart-primary: color-mix(in srgb, var(--accent) 65%, var(--muted))'), 2)
 

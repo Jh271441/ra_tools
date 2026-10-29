@@ -86,7 +86,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-706`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-710`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -136,6 +136,10 @@
               <a class="sidebar-item" id="labelingSummaryNavButton" data-session-nav="writer" inert aria-disabled="true" data-page-target="labeling-summary" data-app-path="/labeling-summary" href="/labeling-summary" title="标注汇总">
                 <span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path class="icon-wash" d="M4 5h16v14H4z"/><path d="M7 16v-4m5 4V8m5 8v-6M6 19h13"/></svg></span>
                 <span class="sidebar-label"><strong class="ui-lang-zh">标注汇总</strong><strong class="ui-lang-en">Labeling summary</strong></span>
+              </a>
+              <a class="sidebar-item" id="rdResultsNavButton" data-session-nav="writer" inert aria-disabled="true" data-page-target="rd-results" data-app-path="/rd-results" href="/rd-results">
+                <span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path class="icon-wash" d="M4 15h16v5H4z"/><path d="M12 16V4m-4 4 4-4 4 4M4 15v5h16v-5"/></svg></span>
+                <span class="sidebar-label"><strong class="ui-lang-zh">标注上传</strong><strong class="ui-lang-en">Label upload</strong></span>
               </a>
               <a class="sidebar-item" id="trailAttributeUpdateNavButton" data-page-target="trail-update" data-app-path="/trail-attribute-update" href="/trail-attribute-update" title="问题排除">
                 <span class="sidebar-icon" aria-hidden="true">
@@ -1161,6 +1165,8 @@
             </section>
           </section>
 
+          <section class="app-page tool-page rd-results-page hidden" id="rdResultsPage" data-page="rd-results" aria-live="polite"></section>
+          <dialog id="rdResultsDialog" class="trail-history-dialog" aria-labelledby="rdResultsDialogTitle"></dialog>
           <section class="app-page tool-page trail-history-page hidden" id="trailHistoryPage" data-page="trail-history">
             <div class="trail-history-toolbar"><div id="trailHistoryCoverage"></div><button class="button button-secondary" id="trailHistoryRefresh" type="button"><span class="ui-lang-zh">刷新</span><span class="ui-lang-en">Refresh</span></button></div>
             <form id="trailHistoryFilters" class="trail-history-filters"></form>
@@ -1867,11 +1873,11 @@
               <div class="version-te-context"><span class="version-te-scope muted" id="versionTEScope"></span><span class="version-loading-status muted" id="versionDatasetLoading" role="status" hidden></span><span class="muted" id="versionTESource" role="status"></span></div>
               <section class="page-card version-chart-card version-progress-card">
                 <div class="section-heading version-chart-heading"><h2><span class="ui-lang-zh">TE 标注进度</span><span class="ui-lang-en">TE labeling progress</span><span class="model-review-run-help version-te-info" id="versionTEInfo"><button class="version-te-info-button" id="versionTEInfoButton" type="button" data-label-zh="查看 TE 标注来源" data-label-en="About the TE annotation source" aria-label="查看 TE 标注来源" aria-describedby="versionTEInfoTooltip" aria-expanded="false"><svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="10" r="7.5" stroke="currentColor" stroke-width="1.4"/><path d="M10 9.1v4.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="10" cy="6.3" r=".9" fill="currentColor"/></svg></button><span class="model-review-run-tooltip version-te-info-tooltip" id="versionTEInfoTooltip" role="tooltip"><strong><span class="ui-lang-zh">TE 标注来源</span><span class="ui-lang-en">TE annotation source</span></strong><span class="version-te-info-line"><span class="ui-lang-zh">Trail 的 RA Review Result New（ra_review_result_new），与平台联合复核分开统计。</span><span class="ui-lang-en">Trail RA Review Result New (ra_review_result_new), tracked separately from platform combined review.</span></span><span class="version-te-info-line"><span class="ui-lang-zh">分母：当前范围的低置信＋抽样目标。非空结果（含失败、未接起等）计已标；无观测记未知。</span><span class="ui-lang-en">Denominator: low-confidence and sampled targets in the current scope. Nonempty results, including failure or unanswered, count as filled; missing observations remain unknown.</span></span><span class="version-te-info-line"><span class="ui-lang-zh">按 CST 发生日聚合，晚到数据回填发生日，不代表当天标注量。约 5 分钟采集，页面每 30 秒刷新。</span><span class="ui-lang-en">Dates use occurrence time in CST, including late arrivals, rather than annotation time. Collection runs about every 5 minutes; the page refreshes every 30 seconds.</span></span></span></span></h2></div>
-                <div class="te-scope-chart"><div class="te-donut" id="versionTEDonut" role="img"><strong id="versionTERate">—</strong><small id="versionTERatio">—</small></div><div class="te-status-legend" id="versionTEStatusChart"></div></div>
+                <div class="te-scope-chart" data-version-chart><div class="te-donut" id="versionTEDonut" role="img"><svg id="versionTERing" viewBox="0 0 124 124" aria-hidden="true"></svg><strong id="versionTERate">—</strong><small id="versionTERatio">—</small></div><div class="te-status-legend" id="versionTEStatusChart"></div></div>
               </section>
               <section class="page-card version-chart-card version-results">
                 <div class="section-heading version-chart-heading"><h2><span class="ui-lang-zh">TE 结果分布</span><span class="ui-lang-en">TE results</span></h2><small id="versionTEResultCount"></small></div>
-                <div class="version-result-chart" id="versionTEDistribution"></div>
+                <div class="version-result-chart" id="versionTEDistribution" data-version-chart></div>
               </section>
               <section class="page-card version-chart-card version-days" id="versionTEDays"><div class="section-heading version-chart-heading version-days-heading"><h2><span class="ui-lang-zh">每日进度</span><span class="ui-lang-en">Daily progress</span><small><span class="ui-lang-zh">已标 / 目标 · 发生日 CST</span><span class="ui-lang-en">Filled / targets · Occurred CST</span></small></h2><button type="button" class="button button-secondary version-dates-reset" id="versionTEAllDates" data-version-all-dates aria-pressed="true"><span class="ui-lang-zh">全部日期</span><span class="ui-lang-en">All dates</span></button></div><div class="te-daily-chart" id="versionTEDailyChart"></div></section>
             </div>
@@ -2585,7 +2591,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-706`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-710`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

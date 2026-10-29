@@ -57,12 +57,12 @@ not physical-device acceptance; signed-in checks are separately recorded above. 
 
 ## Interaction and performance
 
-### Two-row correction (2026-10-29 candidate/cache703; not deployed)
+### Two-row correction and Case Issue tags (2026-10-29 candidate/cache710; not deployed)
 
 User rejected cache701's third row, blank cells and bottom-edge task caption.
 Desktop (>1024px) now uses nine equal columns, or eight with both task-progress
-and workflow fields hidden; Case labeling uses six. Issue search spans two columns
-on both pages; other fields occupy one, including Run/task/mode. Reset fills the remaining last-row cells. This
+and workflow fields hidden; Case labeling uses seven. Issue search spans two columns
+on both pages; Case task also spans two. Other fields occupy one. Reset fills the remaining last-row cells. This
 supersedes the previous140px auto-fit/double-span policy; DOM/tab order and shared
 dropdowns/query state remain unchanged. Tablet/phone retain mobile.css ownership.
 
@@ -79,7 +79,14 @@ Validation:73 focused tests and6 subtests passed;64 browser combinations passed
 at320/390/768/1024/1025/1180/1440/1920px, both languages/themes/pages. Browser
 fixtures are local viewport checks, not production or real-device tests.
 
-### Three review scopes and visible RD counts (2026-10-29 candidate, cache705)
+Case labeling reuses Review's grouped searchable Issue-tag multi-select: OR within
+groups, AND across groups. Current Issue tags scope lists, queues, clusters,
+summary, exports and filter-based tasks before pagination in batches of400.
+No Run-tag fallback; authoritative empty tags stay empty. Unknown keys fail400.
+URL/locale/detail/summary roundtrips preserve tags; reset clears them. Model-only
+Run/comparison/review-status controls are intentionally not added to Case labeling.
+
+### Three review scopes and visible RD counts (2026-10-29 released, cache705)
 
 User correction supersedes the nine-option picker below: normal Case scope lists
 only targets, sampled_targets and low. Reuse the shared native-select enhancement.
@@ -94,7 +101,17 @@ Same-label colors, compact layout, denominators and bounded reads are unchanged.
 Chinese/dark and320/390px English/light: three shared options, selection/URL and
 locale preservation, Escape/outside dismissal,44px options and viewport bounds;
 no page overflow. Narrow legends retain existing local scrolling. Not a physical
-device or production-data test. Candidate705 is not deployed.
+device or production-data test.
+
+Released2026-10-29 10:59:15 CST (02:59:15Z), commit
+`75b14f75dc17f0563aee9bff32d2f779b64518ce`, cache705. Cloud1079 passed/7 skipped;
+isolated SQLite gray and production exact-SHA/PostgreSQL/database/overall health
+passed. Identity and writer policy unchanged; no schema migration. Served app.js,
+version-datasets.js and version-rd.js match commit bytes; shell cache705 verified.
+Receipt: `/volume/home/workspace/ra_triage_dashboard_deploy/releases/20261029T025539Z-75b14f75dc17/result.json`.
+No new signed-in production visual or physical-device test. Retention removed
+only clean unused candidate/rollback trees for20261028T130931Z-276be79c7348;
+Git history and release records remain. No business data removed.
 
 ### Statistics-first filters and bounded reads (2026-10-28 candidate, cache701)
 

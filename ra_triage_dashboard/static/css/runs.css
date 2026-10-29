@@ -1,4 +1,77 @@
 /* Model Run import, source selection, and history management. */
+/* Label publication shares the Model Runs source cards and toolbar hierarchy. */
+.rd-results-page .page-card { min-width: 0; }
+.rd-results-page { font-size: 13px; }
+.rd-results-page h3 { margin: 0; color: var(--text); font-size: 16px; font-weight: 600; }
+.rd-results-page .button, .rd-results-page .ui-select-trigger, .rd-results-page input { font-size: 13px; }
+.rd-description { margin: 5px 0 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
+.rd-results-page .runs-source-heading { align-items: center; }
+.rd-metrics.run-source-tabs { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.rd-metrics .rd-metric { min-height: 54px; padding: 10px; }
+.rd-metrics .rd-metric:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.rd-metrics .rd-metric strong { font-size: 13px; font-weight: 600; white-space: normal; overflow: visible; }
+.rd-metrics .rd-metric em { min-width: 0; color: var(--text); font-size: 18px; font-weight: 600; }
+.rd-metrics svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.rd-metrics .rd-metric:disabled { cursor: default; }
+.rd-upload-target { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 24px; margin: 0; padding: 12px 0 0; border-top: 1px solid var(--line); font-size: 13px; line-height: 1.6; }
+.rd-upload-target > div { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
+.rd-upload-target dt { flex: 0 0 auto; color: var(--muted); }
+.rd-upload-target dd { display: flex; align-items: baseline; gap: 8px; min-width: 0; margin: 0; }
+.rd-upload-target code { min-width: 0; overflow-wrap: anywhere; font-size: inherit; font-weight: 400; color: var(--muted); }
+.rd-http-method { flex: 0 0 auto; color: var(--accent); font-weight: 600; }
+.rd-workspace { gap: 10px; }
+.rd-detail-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 20px; }
+.rd-detail-heading { flex: 1 1 190px; min-width: 0; display: grid; gap: 3px; }
+.rd-detail-heading .rd-description { margin: 0; }
+.rd-filters.run-filter-bar { flex: 2 1 540px; margin: 0; grid-template-columns: minmax(140px, 1fr) minmax(130px, 170px) auto auto; align-items: center; gap: 8px; }
+.rd-filters > input { width: 100%; min-width: 0; }
+.rd-filters label { min-width: 0; gap: 7px; font-size: 13px; }
+.rd-filters input, .rd-filters .button { min-height: 38px; }
+.rd-selection-bar, .rd-pagination { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+.rd-selection-bar { padding: 0; }
+.rd-selection-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 24px; min-width: 0; }
+.rd-selection-tools .run-manager-actions { gap: 16px; }
+.rd-selection-bar .text-button { min-height: 38px; padding: 8px 0; color: var(--accent); white-space: normal; text-align: left; }
+.rd-selection-bar .text-button:hover:not(:disabled) { text-decoration: underline; }
+.rd-selection-bar.has-selection .rd-selection-count strong { color: var(--accent); }
+.rd-selection-bar > .run-manager-actions { flex-wrap: wrap; gap: 8px; }
+.rd-selection-count, .rd-pagination { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.rd-selection-count strong { color: var(--text); }
+.rd-checkbox { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; line-height: 1.5; cursor: pointer; }
+.rd-checkbox .ui-checkbox { flex: 0 0 15px; }
+.rd-notice { margin: 0; padding: 4px 0; color: var(--muted); font-size: 13px; }
+.rd-notice.is-error { color: var(--fail); }
+.rd-table-wrap { overflow-x: auto; max-width: 100%; }
+.rd-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.rd-table th, .rd-table td { text-align: left; padding: 12px 10px; border-bottom: 1px solid var(--line-soft); overflow-wrap: anywhere; }
+.rd-workspace .rd-table th:first-child, .rd-workspace .rd-table td:first-child { width: 40px; }
+.rd-table th { color: var(--muted); background: var(--overlay); font-size: 13px; font-weight: 600; }
+.rd-table tbody tr:last-child td { border-bottom: 0; }
+.rd-table tbody tr:hover { background: var(--overlay); }
+.rd-table tr.is-selected { background: var(--accent-soft); }
+.rd-table td:nth-child(2) { white-space: nowrap; }
+.rd-issue-link { color: var(--accent); font-weight: 600; text-decoration: none; }
+.rd-issue-link:hover { text-decoration: underline; }
+.rd-table .label-badge { font-size: 13px; font-weight: 600; }
+.run-source-badge.rd-status { gap: 6px; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--muted); font-size: 13px; font-weight: 400; white-space: normal; }
+.rd-status::before { content: ''; width: 5px; height: 5px; flex: 0 0 5px; border-radius: 50%; background: currentColor; }
+.run-source-badge.rd-status-ok { color: var(--ok); }
+.run-source-badge.rd-status-warn { color: var(--warn); }
+.run-source-badge.rd-status-ready { color: var(--accent); }
+.rd-empty { padding: 28px 12px; text-align: center; color: var(--muted); font-size: 13px; }
+.rd-empty p { margin: 8px 0 0; font-size: 13px; }
+.rd-pagination { padding-top: 2px; }
+.rd-pagination .case-pagination-main { min-width: 0; flex-wrap: wrap; }
+#rdResultsDialog .rd-pagination { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; }
+#rdResultsDialog .rd-pagination .case-pagination-main { min-width: 0; flex-wrap: wrap; }
+#rdResultsDialog code { overflow-wrap: anywhere; }
+#rdResultsDialog .rd-table { min-width: 720px; }
+#rdResultsDialog .rd-table th:first-child, #rdResultsDialog .rd-table td:first-child { white-space: nowrap; }
+#rdResultsDialog .rd-table td:nth-child(2) { white-space: normal; }
+#rdResultsDialog .rd-table td:last-child { min-width: 180px; max-width: 260px; }
+@media (max-width: 1200px) {
+  .rd-upload-target { grid-template-columns: minmax(0, 1fr); }
+}
 .runs-source-card { display: grid; gap: 11px; }
 .runs-source-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
 .runs-source-heading h3 { margin-top: 2px; font-size: 16px; }

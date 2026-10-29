@@ -22,6 +22,12 @@ const server=http.createServer((req,res)=>{
     const page=await browser.newPage(),errors=[],results=[];
     page.on('pageerror',e=>errors.push(e.message));
     await page.goto(`http://127.0.0.1:${server.address().port}/review`);
+    // Install the actual shared multi-filter dismissal hooks without unrelated bootstrap/network work.
+    const bootstrap=fs.readFileSync(path.join(root,'js/bind-bootstrap.js'),'utf8');
+    const dismissStart=bootstrap.indexOf('  document.addEventListener("click", () => closeAllMultiFilters());');
+    const dismissEnd=bootstrap.indexOf('  $("#resetReviewAnalysisButton")',dismissStart);
+    assert.ok(dismissStart>=0&&dismissEnd>dismissStart);
+    await page.addScriptTag({content:'function hideAnalysisPieTooltip() {}\n'+bootstrap.slice(dismissStart,dismissEnd)});
     await page.evaluate(()=>{
       state.config={baselines:[{id:'version-20261009',scope:'fixture',label:'1009'}]};
       state.config.review_tag_catalog=[{key:'gate',label:'Gate',group:'environment'},{key:'intent_u_turn',label:'U-turn',group:'self_intent'}];
@@ -155,7 +161,13 @@ const server=http.createServer((req,res)=>{
         assert.ok(tagBox&&tagBox.x>=0&&tagBox.x+tagBox.width<=width+1&&tagBox.y>=0&&tagBox.y+tagBox.height<=1001);
         assert.equal(await page.evaluate(()=>labelingTaskFilterPayload().issue_tags),'gate,intent_u_turn');
         await page.keyboard.press('Escape');
-        await trigger.click();await page.locator(selector+' [data-ui-select-value="sample"]').click();
+        assert.equal(await tags.locator('.multi-filter-search').isVisible(),false);
+        await trigger.scrollIntoViewIfNeeded();
+        await trigger.focus();
+        await page.waitForTimeout(200);
+        await trigger.click();
+        assert.equal(await trigger.getAttribute('aria-expanded'),'true');
+        await page.locator(selector+' [data-ui-select-value="sample"]').click();
         await page.locator('#caseLabelingReset').click();
         assert.deepEqual(errors,[]);
         assert.equal(await page.locator(selector+' select').inputValue(),'');

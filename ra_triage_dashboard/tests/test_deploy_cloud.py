@@ -138,12 +138,15 @@ COMMIT;
         self.assertEqual(d.capture_env(env), env)
 
     def test_health_rejects_wrong_version_backend_and_writers(self):
-        health = dict(ok=True, build_commit="a"*40, storage="sqlite-mvp", trail_attribute_write_enabled=False,
+        health = dict(ok=True, build_commit="a"*40, storage="sqlite-mvp", trail_attribute_write_enabled=False, trail_rd_write_enabled=False,
                       trail_attribute_review_write_enabled=False, batch_prediction_enabled=False, autotriage_push_enabled=False)
         d.check_health(health, "a"*40, "sqlite")
-        for changes in ({"build_commit": "b"*40}, {"storage": "postgresql"}, {"batch_prediction_enabled": True}, {"ok": False}):
+        for changes in ({"build_commit": "b"*40}, {"storage": "postgresql"}, {"batch_prediction_enabled": True}, {"trail_rd_write_enabled": True}, {"ok": False}):
             with self.assertRaises(d.DeployError):
                 d.check_health(dict(health, **changes), "a"*40, "sqlite")
+        legacy = dict(health); legacy.pop('trail_rd_write_enabled')
+        self.assertEqual(d.policy(legacy), d.policy(health))
+        self.assertNotEqual(d.policy(legacy), d.policy(dict(health, trail_rd_write_enabled=True)))
 
     def test_lock_excludes_parallel_deployments(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -250,7 +253,7 @@ COMMIT;
             with self.assertRaisesRegex(d.DeployError,"another process"):
                 d.wait_production_stopped(123)
 
-    def simulate_release(self, fail_tests=False, fail_production=False, prepare_only=False, runtime_changed=False, fail_stop=False, isolated=False, branch_changed=False, checkout_changed=False):
+    def simulate_release(self, fail_tests=False, fail_production=False, prepare_only=False, runtime_changed=False, fail_stop=False, isolated=False, branch_changed=False, checkout_changed=False, enable_rd=False, authorization_changed=False):
         with tempfile.TemporaryDirectory() as temp, ExitStack() as stack:
             base=Path(temp); repo=base/"repo"; repo.mkdir(); python=base/"python"; python.touch()
             env={"DASHBOARD_DATABASE_URL_FILE":"/db", "DASHBOARD_DATA_DIR":str(base/"data")}
@@ -278,7 +281,7 @@ COMMIT;
                 live_calls += 1
                 return (12 if runtime_changed and live_calls >= 3 else 11, env)
             stack.enter_context(patch.object(d,"read_live",side_effect=read_live))
-            health={"ok":True,"build_commit":old,"storage":"postgresql"}
+            health={"ok":True,"build_commit":old,"storage":"postgresql","trail_rd_write_enabled":False}
             stack.enter_context(patch.object(d,"get_json",return_value=health))
             stack.enter_context(patch.object(d.socket,"socket"))
             def run(*args,**kwargs):
@@ -302,10 +305,16 @@ COMMIT;
             stack.enter_context(patch.object(d,"cleanup",return_value=[]))
             def smoke(port,sha,storage):
                 if fail_production and port==8785 and sha==target: raise d.DeployError("failed health")
-                return dict(health,build_commit=sha,storage=storage)
+                return dict(health,build_commit=sha,storage=storage,
+                            trail_rd_write_enabled=bool(enable_rd and port==8785 and sha==target))
             stack.enter_context(patch.object(d,"smoke",side_effect=smoke))
             options=dict(isolated_ref="codex/layout-only",expected_live_sha=old) if isolated else {}
-            if fail_tests or fail_production or runtime_changed or fail_stop or branch_changed or checkout_changed:
+            options["enable_trail_rd_write"] = enable_rd
+            if authorization_changed:
+                release_id = d.prepare_release(target, **options)
+                with self.assertRaisesRegex(d.DeployError, "same explicit RD writer authorization"):
+                    d.promote_release(release_id, target, **dict(options, enable_trail_rd_write=not enable_rd))
+            elif fail_tests or fail_production or runtime_changed or fail_stop or branch_changed or checkout_changed:
                 with self.assertRaises((d.DeployError,subprocess.CalledProcessError)): d.deploy(target, **options)
             elif prepare_only:
                 d.prepare_release(target, **options)
@@ -316,6 +325,42 @@ COMMIT;
             if fail_stop:
                 wait.assert_called_once_with(11)
             return stop.call_args_list,start.call_args_list,record
+
+    def test_explicit_rd_enable_only_changes_requested_writer_policy(self):
+        stops, starts, record = self.simulate_release(enable_rd=True)
+        self.assertEqual(record["status"], "success")
+        self.assertEqual(len(stops), 1)
+        self.assertEqual(starts[0].args[2]["DASHBOARD_TRAIL_RD_WRITE_ENABLED"], "true")
+        self.assertTrue(record["enable_trail_rd_write"])
+        self.assertEqual(record["policy"], record["requested_policy"])
+        original = dict(record["policy"], trail_rd_write_enabled=False)
+        self.assertEqual(d.requested_policy(original, True), record["policy"])
+
+    def test_rd_enable_rolls_back_original_disabled_environment(self):
+        _, starts, record = self.simulate_release(enable_rd=True, fail_production=True)
+        self.assertEqual(record["rollback_status"], "healthy")
+        self.assertEqual(starts[0].args[2]["DASHBOARD_TRAIL_RD_WRITE_ENABLED"], "true")
+        self.assertNotIn("DASHBOARD_TRAIL_RD_WRITE_ENABLED", starts[1].args[2])
+
+    def test_rd_enable_prepare_does_not_write_or_start_production(self):
+        stops, starts, record = self.simulate_release(enable_rd=True, prepare_only=True)
+        self.assertEqual((stops, starts), ([], []))
+        self.assertFalse(record["policy"]["trail_rd_write_enabled"])
+        self.assertTrue(record["requested_policy"]["trail_rd_write_enabled"])
+
+    def test_rd_enable_authorization_must_match_prepare(self):
+        for enable_rd in (False, True):
+            stops, starts, record = self.simulate_release(enable_rd=enable_rd, authorization_changed=True)
+            self.assertEqual((stops, starts), ([], []))
+            self.assertEqual(record["status"], "prepared")
+
+    def test_rd_enable_rejects_unknown_live_policy_and_preserves_other_writers(self):
+        with self.assertRaisesRegex(d.DeployError, "RD writer policy is unavailable"):
+            d.requested_policy({"ok": True}, True)
+        health = {"trail_rd_write_enabled": False, "trail_write_enabled": True,
+                  "trail_review_write_enabled": False, "autotriage_push_enabled": False}
+        self.assertEqual(d.requested_policy(health, True), dict(d.policy(health), trail_rd_write_enabled=True))
+        self.assertEqual(d.requested_policy(health), d.policy(health))
 
     def test_isolated_release_uses_owned_candidate_without_merging_master(self):
         stops, starts, record = self.simulate_release(isolated=True)
