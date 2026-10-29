@@ -57,6 +57,38 @@ not physical-device acceptance; signed-in checks are separately recorded above. 
 
 ## Interaction and performance
 
+### Two-row correction and Case Issue tags (2026-10-29 candidate/cache710; not deployed)
+
+User rejected cache701's third row, blank cells and bottom-edge task caption.
+Desktop (>1024px) now uses nine equal columns, or eight with both task-progress
+and workflow fields hidden; Case labeling uses seven. Issue search spans two columns
+on both pages; Case task also spans two. Other fields occupy one. Reset fills the remaining last-row cells. This
+supersedes the previous140px auto-fit/double-span policy; DOM/tab order and shared
+dropdowns/query state remain unchanged. Tablet/phone retain mobile.css ownership.
+
+Task summary, assignment-list empty/error hints and locked-mode information live
+inside field-heading right-hand shared info popovers, not beneath the form.
+Desktop button/SVG is1em; phone preserves44px targets. Escape/outside dismissal,
+focus/hover/click and viewport bounds use bindUiInfoPopovers. No new business writes.
+The original task-exit button moves to its heading, retaining ID/listener.
+
+Regression covers both progress/mode visible/hidden combinations at all desktop
+widths, equal fields/two rows/no gaps, bilingual task summary and list empty/error,
+info font-height/popup bounds/Escape, existing filters/URL/reset and mobile targets.
+Validation:75 focused tests and6 subtests passed;64 browser combinations passed
+at320/390/768/1024/1025/1180/1440/1920px, both languages/themes/pages. Browser
+fixtures are local viewport checks, not production or real-device tests.
+The matrix also covers grouped tag search/selection, URL/request/export scope,
+in-place locale preservation, Escape/reset and viewport-bounded menus. Bootstrap's
+actual shared multi-filter dismissal hooks are installed in the local fixture.
+
+Case labeling reuses Review's grouped searchable Issue-tag multi-select: OR within
+groups, AND across groups. Current Issue tags scope lists, queues, clusters,
+summary, exports and filter-based tasks before pagination in batches of400.
+No Run-tag fallback; authoritative empty tags stay empty. Unknown keys fail400.
+URL/locale/detail/summary roundtrips preserve tags; reset clears them. Model-only
+Run/comparison/review-status controls are intentionally not added to Case labeling.
+
 ### Three review scopes and visible RD counts (2026-10-29 released, cache705)
 
 User correction supersedes the nine-option picker below: normal Case scope lists

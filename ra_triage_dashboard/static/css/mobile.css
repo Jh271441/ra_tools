@@ -448,7 +448,8 @@
   .analysis-filters input:not([type="checkbox"]), .assignment-composer input { font-size: 16px; }
   .review-filters label, .analysis-filters label, .analysis-filters .analysis-work-split-filter { font-size: 12px; }
   #filterForm .review-task-filter-row { height: 44px; }
-  #filterForm .review-workflow-mode small, #filterForm .review-task-summary { position: static; font-size: 11px; }
+  #filterForm .filter-field-heading { font-size: 12px; min-height: 44px; }
+  #filterForm .filter-field-heading .review-task-exit { min-width: 44px; min-height: 44px; }
   .review-filters .issue-query-control { grid-template-columns: minmax(0, 1fr) 88px; }
   .labeling-summary-actions { justify-content: stretch; }
   .labeling-summary-actions .button { flex: 1; }

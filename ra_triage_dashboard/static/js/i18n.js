@@ -68,6 +68,7 @@ function applyDomI18n(root = document) {
     });
   }
   // multi-filter placeholders + summaries from active locale
+  if (typeof renderReviewTaskPickerHint === "function") renderReviewTaskPickerHint();
   root.querySelectorAll(".multi-filter").forEach((el) => {
     if (typeof updateMultiFilterSummary === "function") updateMultiFilterSummary(el);
   });

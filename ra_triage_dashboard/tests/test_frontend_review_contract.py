@@ -4,6 +4,17 @@ from frontend_contract_fixtures import APP_ENTRY_JS, APP_JS, INDEX_HTML, JS_DIR,
 
 
 class FrontendReviewContractTest(unittest.TestCase):
+    def test_gallery_filters_keep_two_rows_and_field_local_info(self):
+        self.assertIn('repeat(9, minmax(0, 1fr))', STYLES_CSS)
+        self.assertIn('repeat(8, minmax(0, 1fr))', STYLES_CSS)
+        self.assertNotIn('repeat(auto-fit, minmax(140px, 1fr))', STYLES_CSS)
+        self.assertIn('id="reviewTaskInfoPanel"', INDEX_HTML)
+        self.assertIn('id="reviewModeInfoPanel"', INDEX_HTML)
+        self.assertEqual(INDEX_HTML.count('id="reviewTaskSummary"'), 1)
+        self.assertEqual(INDEX_HTML.count('id="reviewTaskContextExit"'), 1)
+        self.assertIn('bindUiInfoPopovers($("#filterForm"))', APP_JS)
+        self.assertIn('.filter-field-heading .ui-info-button svg { width: 1em; height: 1em; }', STYLES_CSS)
+
     def test_detail_back_button_keeps_original_visible_purpose(self) -> None:
         review_form = (JS_DIR / "review-form.js").read_text(encoding="utf-8")
         button = review_form.split('id="backToGalleryButton"', 1)[1].split('</button>', 1)[0]

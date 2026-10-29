@@ -21,7 +21,7 @@ const s = {state, URL, URLSearchParams, console, t:x=>x, uiText:(zh,en)=>state.u
   defaultBaselineIdsFromConfig:()=>['0508'], normalizeBaselineIds:x=>x||['0508'],
   renderMultiFilter:(e,opts)=>{renders++;e.options=opts.options;e.values=opts.selected;e.change=opts.onChange;},
   relabelMultiFilter:(e,options)=>{if(JSON.stringify(e.options?.map(x=>x.value))!==JSON.stringify(options.map(x=>x.value)))return false;e.options=options;return true;},
-  scheduleReviewFilterReload:()=>{reloads++;},
+  scheduleReviewFilterReload:()=>{reloads++;}, bindUiInfoPopovers:()=>{},
 };
 vm.createContext(s);
 for(const file of ['routing.js','runs.js','work-split.js','review-assignments.js','import-refresh.js']) vm.runInContext(fs.readFileSync(path.join(root,file),'utf8'),s);

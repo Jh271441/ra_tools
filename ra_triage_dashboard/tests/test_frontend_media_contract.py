@@ -392,7 +392,8 @@ class FrontendMediaContractTest(unittest.TestCase):
         self.assertIn('id="caseLabelingExportGt"', INDEX_HTML)
         self.assertIn('id="caseLabelingReset"', INDEX_HTML)
         filters_form = INDEX_HTML.split('id="caseLabelingFilterForm"', 1)[1].split("</form>", 1)[0]
-        self.assertEqual(filters_form.count("<label"), 10)
+        self.assertEqual(filters_form.count("<label"), 11)
+        self.assertIn('id="caseLabelingIssueTagFilter"', filters_form)
         self.assertIn('id="caseLabelingTargetGroupPicker"', filters_form)
         self.assertNotIn('id="caseLabelingExportGt"', filters_form)
         self.assertIn(

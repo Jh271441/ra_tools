@@ -18,6 +18,7 @@ function workAssigneeRouteSelection() {
 }
 
 function renderReviewTaskContext() {
+  bindUiInfoPopovers($("#filterForm"));
   const task = state.reviewTaskContext;
   const errorCard = $("#reviewTaskContextError");
   if (errorCard) {
@@ -33,11 +34,13 @@ function renderReviewTaskContext() {
   if (summary) {
     summary.hidden = !task;
     summary.textContent = task
-      ? `${task.legacy_no_run ? "历史任务" : (task.name || "当前任务")} · ${Number(task.issue_count || 0)} 个 Issue${task.supplemental_only ? " · 任务外补充" : ""}`
+      ? `${task.legacy_no_run ? uiText("历史任务", "Historical task") : (task.name || uiText("当前任务", "Current task"))} · ${Number(task.issue_count || 0)} ${uiText("个 Issue", "Issues")}${task.supplemental_only ? uiText(" · 任务外补充", " · Supplemental review") : ""}`
       : "";
     summary.title = task?.legacy_no_run
-      ? "历史无 Run 任务，仅查看原分配范围"
-      : task ? `${task.workflow_mode === "model_review_and_case_label" ? "联合复核" : "仅判错复核"} · ${task.supplemental_only ? "未分配：提交不计任务进度 · " : ""}${task.id || ""}` : "";
+      ? uiText("历史无 Run 任务，仅查看原分配范围", "Historical task without a Run; original assignment scope only")
+      : task ? `${task.workflow_mode === "model_review_and_case_label" ? uiText("联合复核", "Combined review") : uiText("仅判错复核", "Model review only")} · ${task.supplemental_only ? uiText("未分配：提交不计任务进度 · ", "Unassigned: submissions do not count toward task progress · ") : ""}${task.id || ""}` : "";
+    const details = $("#reviewTaskDetails");
+    if (details) { details.hidden = !task; details.textContent = summary.title; }
   }
   if (exit) exit.hidden = !task || Boolean(state.reviewTaskContextError);
   if (!task) return;
@@ -222,6 +225,16 @@ function renderWorkSplitScopePicker(rootSelector, selected, available, onChange)
 let reviewTaskOptions = [];
 let reviewTaskOptionsLoadedAt = 0;
 let reviewTaskOptionsRequest = null;
+let reviewTaskOptionsError = "";
+
+function renderReviewTaskPickerHint() {
+  const hint = $("#reviewTaskPickerHint");
+  if (!hint) return;
+  hint.hidden = !reviewTaskOptionsError && (reviewTaskOptions.length > 0 || !reviewTaskOptionsLoadedAt);
+  hint.textContent = reviewTaskOptionsError
+    ? uiText("任务列表加载失败：", "Failed to load tasks: ") + reviewTaskOptionsError
+    : uiText("暂无分配给当前账号的进行中任务；综合结果不绑定任务。", "No active tasks assigned to this account. Combined results is not bound to a task.");
+}
 
 async function loadReviewTaskOptions({ force = false } = {}) {
   if (reviewTaskOptionsRequest) return reviewTaskOptionsRequest;
@@ -231,10 +244,11 @@ async function loadReviewTaskOptions({ force = false } = {}) {
       const result = await api("/api/review-work-splits?all_baselines=true&assigned_to_me=true");
       reviewTaskOptions = (result.items || []).filter((item) => !["superseded", "cancelled"].includes(item.lifecycle) && item.can_review !== false);
       reviewTaskOptionsLoadedAt = Date.now();
+      reviewTaskOptionsError = "";
       renderReviewWorkSplitPicker(state.reviewWorkSplitId, { load: false });
     } catch (error) {
-      const hint = $("#reviewTaskPickerHint");
-      if (hint) { hint.hidden = false; hint.textContent = `任务列表加载失败：${error.message}`; }
+      reviewTaskOptionsError = error.message;
+      renderReviewTaskPickerHint();
     } finally {
       reviewTaskOptionsRequest = null;
     }
@@ -243,13 +257,14 @@ async function loadReviewTaskOptions({ force = false } = {}) {
 }
 
 function renderReviewWorkSplitPicker(selected = state.reviewWorkSplitId, { load = true } = {}) {
+  bindUiInfoPopovers($("#filterForm"));
   const root = $("#reviewTaskPicker") || $("#reviewWorkSplitPicker");
   if (!root) return;
   const known = String(selected || state.availableReviewWorkSplitId || "");
   const options = [{ value: "", label: workSplitOptionLabel("") },
     ...reviewTaskOptions.map((item) => ({
       value: item.split_id,
-      label: `${item.name || "复核任务"} · ${Number(item.completed_count || 0)}/${Number(item.assignment_count || 0)}`,
+      label: `${item.name || uiText("复核任务", "Review task")} · ${Number(item.completed_count || 0)}/${Number(item.assignment_count || 0)}`,
     })),
   ];
   if (known && !options.some((item) => item.value === known)) {
@@ -276,11 +291,7 @@ function renderReviewWorkSplitPicker(selected = state.reviewWorkSplitId, { load 
     },
     maxHeight: 320, maxWidth: 520,
   });
-  const hint = $("#reviewTaskPickerHint");
-  if (hint) {
-    hint.hidden = reviewTaskOptions.length > 0 || !reviewTaskOptionsLoadedAt;
-    hint.textContent = "暂无分配给当前账号的进行中任务；综合结果不绑定任务。";
-  }
+  renderReviewTaskPickerHint();
   if (!root.dataset.taskOptionsBound) {
     root.dataset.taskOptionsBound = "true";
     root.addEventListener("focusin", () => loadReviewTaskOptions());
@@ -310,8 +321,8 @@ function syncReviewWorkflowMode(caseData = state.selectedCase) {
   select.value = mode;
   select.disabled = locked || !canCombine;
   select.title = locked
-    ? "页面模式由当前任务锁定"
-    : !canCombine ? "需要模型复核与 问题标注双重写权限" : "";
+    ? uiText("页面模式由当前任务锁定", "The current task locks this mode")
+    : !canCombine ? uiText("需要模型复核与 问题标注双重写权限", "Model review and Issue labeling write permissions are required") : "";
   field.hidden = !canCombine && !locked;
   $("#reviewWorkflowModeHint")?.toggleAttribute("hidden", !locked);
   enhanceNativeUiSelect(select);
