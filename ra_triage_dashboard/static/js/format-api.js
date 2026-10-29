@@ -285,6 +285,7 @@ async function setBaselineScopes(
   rawIds,
   { skipHistory = false, reloadActivePage = true } = {}
 ) {
+  if (state.activePage === 'rd-results' && rdResults.committing) { renderBaselinePicker(); return; }
   const allowed = new Set(
     (state.baselineCatalog.length
       ? state.baselineCatalog
@@ -346,6 +347,7 @@ async function setBaselineScopes(
   try {
     await loadConfig();
     if (!isPageContextCurrent(pageContext)) return;
+    if (state.activePage === "rd-results") { await loadRdResults(); return; }
     if (state.activePage === "review-assignments") {
       return;
     }

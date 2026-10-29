@@ -1072,3 +1072,28 @@
   .planning-constraint-panel summary { display: flex; align-items: center; }
   .planning-constraint-panel .button { min-width: 44px; }
 }
+@media (max-width: 760px) {
+  .rd-results-page .runs-source-heading, .rd-results-page .runs-toolbar { align-items: flex-start; flex-direction: row; flex-wrap: wrap; gap: 12px; }
+  .rd-results-page .runs-source-heading > div:first-child, .rd-results-page .runs-toolbar > div:first-child { flex: 1 1 170px; min-width: 0; }
+  .rd-metrics.run-source-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+  .rd-metrics .rd-metric { display: grid; width: 100%; max-width: none; min-height: 64px; flex: none; align-items: center; padding: 10px; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; }
+  .rd-metrics .rd-metric > span:nth-child(2), .rd-metrics .rd-metric:not(.active) > span:nth-child(2) { display: grid; }
+  .rd-metrics .rd-metric > em, .rd-metrics .rd-metric:not(.active) > em { display: block; }
+  .rd-metrics .rd-metric strong { text-align: left; }
+  .rd-metrics .run-source-icon { display: none; }
+  .rd-upload-target > div { flex-direction: column; gap: 2px; }
+  .rd-upload-target dd { width: 100%; }
+  .rd-filters.run-filter-bar { grid-template-columns: minmax(0, 1fr) auto; }
+  .rd-filters label:first-child { grid-column: 1 / -1; }
+  .rd-selection-bar { align-items: center; }
+  .rd-selection-tools { flex: 1 1 240px; gap: 4px; }
+  .rd-results-page .job-history-row { grid-template-columns: minmax(0, 1fr); }
+  .rd-results-page input, .rd-results-page .button { min-height: 44px; max-width: 100%; }
+  .rd-results-page .rd-checkbox, #rdResultsDialog .rd-checkbox { min-height: 44px; min-width: 44px; }
+  .rd-results-page input[type="checkbox"] { min-height: auto; }
+  .rd-results-page .rd-table { min-width: 620px; }
+  .rd-results-page .button { white-space: normal; }
+  .rd-selection-bar [data-rd-action="preview"] { min-height: 48px !important; }
+  #rdResultsDialog [data-rd-action="commit"] { min-height: 48px !important; }
+  #rdResultsDialog .dialog-actions { padding-bottom: env(safe-area-inset-bottom); }
+}

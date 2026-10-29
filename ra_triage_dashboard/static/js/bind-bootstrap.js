@@ -432,6 +432,7 @@ function bindEvents() {
     changeCasePageSize(event.target.value).catch((error) => showToast(error.message, true));
   });
   $("#refreshButton").addEventListener("click", async (event) => {
+    if (state.activePage === "rd-results") { await loadRdResults(); return; }
     const pageContext = capturePageContext();
     try {
       if (state.activePage === "trail-history") {
@@ -1141,6 +1142,7 @@ async function bootstrap() {
       || initialRoute.page === "review-assignments"
       || initialRoute.page === "labeling"
       || initialRoute.page === "labeling-summary"
+      || initialRoute.page === "rd-results"
       || initialRoute.page === "labeling-new-task"
     ) {
       await sessionRequest;
@@ -1154,7 +1156,7 @@ async function bootstrap() {
       initialRoute.page = "review";
       showToast("查看任务分配需要 writer 或管理员权限。", true);
     }
-    if (["labeling", "labeling-summary"].includes(initialRoute.page) && !hasDashboardWriteRole()) {
+    if (["labeling", "labeling-summary", "rd-results"].includes(initialRoute.page) && !hasDashboardWriteRole()) {
       initialRoute.page = "review";
       showToast("问题标注需要 writer 或管理员权限。", true);
     }
@@ -1269,6 +1271,8 @@ async function bootstrap() {
       initialPageRequests.push(initialCronRequest || loadDailyCron());
     } else if (initialRoute.page === "status") {
       initialPageRequests.push(loadStatus());
+    } else if (initialRoute.page === "rd-results") {
+      initialPageRequests.push(loadRdResults());
     } else if (initialRoute.page === "trail-history") {
       initialPageRequests.push(loadTrailHistory());
     } else if (initialRoute.page === "users") {

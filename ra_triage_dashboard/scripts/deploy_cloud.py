@@ -25,6 +25,7 @@ PREFIXES = ("DASHBOARD_", "ARES_", "CAMERA_", "RA_AUTO_TRIAGE_")
 BASE_KEYS = {"PATH", "HOME", "LANG", "LC_ALL", "TZ", "NO_PROXY", "no_proxy"}
 OFF = ("DASHBOARD_SYNC_TRAIL_ON_START", "DASHBOARD_BATCH_PREDICTION_ENABLED",
        "DASHBOARD_AUTOTRIAGE_PUSH_ENABLED", "DASHBOARD_DCHAT_NOTIFICATIONS_ENABLED",
+       "DASHBOARD_TRAIL_RD_WRITE_ENABLED",
        "DASHBOARD_TRAIL_ATTRIBUTE_WRITE_ENABLED", "DASHBOARD_TRAIL_ATTRIBUTE_REVIEW_WRITE_ENABLED")
 SENSITIVE_PATHS = (
     "ra_triage_dashboard/migrations",
@@ -300,6 +301,7 @@ def check_health(health, sha, storage):
     require(backend == storage, "Unexpected database backend")
     if storage == "sqlite":
         for key in ("trail_attribute_write_enabled", "trail_attribute_review_write_enabled",
+                    "trail_rd_write_enabled",
                     "batch_prediction_enabled", "autotriage_push_enabled"):
             require(health.get(key) is False, "Gray writer is not disabled: " + key)
 
@@ -317,7 +319,8 @@ def wait_health(port, sha, storage, timeout=120):
 def policy(health):
     keys = ("base_path", "deployment_mode", "trail_attribute_write_enabled",
             "trail_attribute_review_write_enabled", "batch_prediction_enabled", "autotriage_push_enabled")
-    return {k: health.get(k) for k in keys}
+    return {**{k: health.get(k) for k in keys},
+            "trail_rd_write_enabled": health.get("trail_rd_write_enabled", False)}
 
 def smoke(port, sha, storage, *, require_notifications=True):
     health = wait_health(port, sha, storage)
