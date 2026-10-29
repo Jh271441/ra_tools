@@ -76,6 +76,10 @@
 .rd-preview-counts > div { display: flex; align-items: baseline; gap: 8px; }
 .rd-preview-counts dt { color: var(--muted); }
 .rd-preview-counts dd { margin: 0; color: var(--text); font-weight: 500; font-variant-numeric: tabular-nums; }
+.rd-upload-progress { min-width: 0; margin-top: 4px; }
+.rd-upload-progress span { font-size: 13px; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.rd-upload-progress strong { color: var(--text); font-weight: 500; }
+.rd-upload-progress + .rd-description { font-size: 12px; }
 .rd-preview-distribution { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-left: auto; }
 .rd-preview-distribution .label-badge { font-size: 13px; font-weight: 500; }
 .rd-preview-distribution > span { display: inline-flex; align-items: center; gap: 8px; }

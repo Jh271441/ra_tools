@@ -1100,6 +1100,9 @@
   .rd-pagination .case-page-size { min-width: 0; }
   .rd-preview-summary { align-items: flex-start; gap: 10px 24px; }
   .rd-preview-counts { gap: 6px 18px; }
+  .rd-upload-progress { gap: 6px 10px; }
+  .rd-upload-progress progress { flex: 1 1 100px; }
+  .rd-upload-progress span:last-child { flex-basis: 100%; }
   .rd-preview-info .rd-upload-target > div { grid-template-columns: 76px minmax(0, 1fr); gap: 8px; }
   .rd-preview-info summary { display: flex; align-items: center; min-height: 44px; }
   .rd-preview-info summary::before { content: '▸'; margin-right: 8px; }

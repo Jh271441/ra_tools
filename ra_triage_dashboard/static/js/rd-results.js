@@ -1,7 +1,7 @@
 /* Canonical Manual labels -> explicit RD publication. No automatic remote writes. */
 const rdResults = { data: null, remote: {}, selected: new Set(), allSelected: false, excluded: new Set(), epoch: 0, loading: false,
   busy: false, busyAction: '', committing: false, error: '', preview: null, operations: [], overwrite: false, baselines: '', filterDraft: null, pageJumpDraft: null,
-  previewOpen: false, previewInfoOpen: false, listScroll: 0, previewPage: 1, previewPageSize: DEFAULT_CASE_PAGE_SIZE, previewJumpDraft: null, pendingPreview: null,
+  previewOpen: false, previewInfoOpen: false, listScroll: 0, previewPage: 1, previewPageSize: DEFAULT_CASE_PAGE_SIZE, previewJumpDraft: null, pendingPreview: null, tracking: null, trackingError: '',
   filters: { q: '', status: 'all', page: 1, page_size: DEFAULT_CASE_PAGE_SIZE } };
 const rdText = (zh, en) => uiText(zh, en);
 const RD_UPLOAD_ENDPOINT = 'https://voyager.intra.xiaojukeji.com/paladin/issue/pool/multi_update/';
@@ -35,7 +35,8 @@ function rdStatus(value) {
   const names = { resolved: ['已完成', 'Completed'], pending: ['待上传', 'Ready to upload'],
     conflict: ['结果不同', 'Different result'], same: ['已一致', 'Already matches'], blocked: ['不可上传', 'Blocked'],
     unchecked: ['未核对', 'Not checked'], preparing: ['正在生成预览', 'Preparing preview'], preview: ['预览待确认', 'Preview ready'], preview_failed: ['预览失败', 'Preview failed'], complete: ['已核验完成', 'Verified complete'],
-    needs_recheck: ['需重新核对', 'Recheck required'], running: ['处理中', 'Processing'],
+    needs_recheck: ['需重新核对', 'Recheck required'], running: ['正在上传并核验', 'Uploading and verifying'],
+    waiting: ['等待处理', 'Waiting'], checking: ['写前核对中', 'Checking before upload'], uploading: ['上传中', 'Uploading'], readback: ['读回核验中', 'Verifying readback'],
     verified: ['读回一致', 'Readback verified'], unverified: ['未确认', 'Unverified'], intent: ['结果待核对', 'Outcome needs checking'],
     not_attempted: ['未执行', 'Not attempted'],
     outcome_unknown: ['结果暂不可查', 'Outcome unavailable'] };
@@ -48,7 +49,7 @@ function rdReason(value) {
     preflight_failed: ['提交前核对未通过，未执行写入。请刷新后重新预览。', 'Preflight check failed; nothing was written. Refresh and preview again.'],
     source_changed: ['标注或 Trail 值已变化，未执行写入。', 'Labels or Trail changed; nothing was written.'],
     check_failed: ['写入前核对失败，未执行写入。', 'Check before writing failed; nothing was written.'],
-    batch_stopped: ['前序条目未核验，已停止后续上传。', 'Stopped because an earlier item could not be verified.'],
+    batch_stopped: ['批次出现异常，已停止派发后续上传。', 'A batch failed verification; no further uploads were dispatched.'],
     protected_changed: ['读回发现其他字段变化，已停止上传，需人工核对。', 'Readback found changes to other fields. Upload stopped; inspect manually.'],
     value_mismatch: ['读回值与上传值不一致，已停止上传。', 'Readback differs from the requested value. Upload stopped.'],
     readback_failed: ['写入后读回失败，结果未知；请重新核对 Trail。', 'Readback failed after writing; outcome unknown. Check Trail again.'],
@@ -227,7 +228,7 @@ async function loadRdResults() {
   } catch (error) { if (epoch === rdResults.epoch) rdResults.error = error.message; }
   finally { if (epoch === rdResults.epoch) { rdResults.loading = false; renderRdResults(); } }
 }
-async function rdPost(path, body) { return api(`/api/rd-results/${path}${['preview','preview-scope'].includes(path) ? '?background=true' : ''}`, { method: 'POST', body: JSON.stringify(body) }); }
+async function rdPost(path, body) { return api(`/api/rd-results/${path}${['preview','preview-scope','commit'].includes(path) ? '?background=true' : ''}`, { method: 'POST', body: JSON.stringify(body) }); }
 async function rdWaitPreview(receipt, epoch, scope) {
   while (receipt.state === 'preparing') {
     rdResults.pendingPreview = receipt;
@@ -245,6 +246,43 @@ async function rdReadReceipt(operation) {
   // A preview receipt may also belong to a commit still in preflight. It is
   // not proof of rejection or cancellation, and must never enable resubmission.
   return receipt.state === 'preview' ? { ...receipt, state: 'outcome_unknown', reason: 'receipt_pending' } : receipt;
+}
+async function rdTrackCommit() {
+  const p = rdResults.preview;
+  if (!p || p.state !== 'running' || (rdResults.tracking?.id === p.id && rdResults.tracking.epoch === rdResults.epoch)) return;
+  const token = { id: p.id, epoch: rdResults.epoch };
+  rdResults.tracking = token; rdResults.trackingError = '';
+  const current = () => rdResults.tracking === token && token.epoch === rdResults.epoch
+    && state.activePage === 'rd-results' && rdResults.previewOpen && rdResults.preview?.id === token.id;
+  try {
+    while (current() && rdResults.preview.state === 'running') {
+      await new Promise(resolve => setTimeout(resolve, rdResults.trackingError ? 3000 : 1000));
+      if (!current()) return;
+      try {
+        const receipt = await api(`/api/rd-results/operations/${token.id}?progress_only=true`);
+        if (!current()) return;
+        rdResults.preview = { ...rdResults.preview, ...receipt };
+        rdResults.trackingError = '';
+      } catch (_) {
+        if (!current()) return;
+        rdResults.trackingError = true;
+      }
+      // Keep keyboard/dropdown interaction stable while progress is polling.
+      if (!$('#rdResultsPage .ui-select.is-open')) rdRenderPreview();
+    }
+  } finally {
+    if (rdResults.tracking === token) rdResults.tracking = null;
+  }
+}
+function rdCommitProgress(p) {
+  const g = p.progress;
+  if (!g || !['running', 'complete', 'needs_recheck'].includes(p.state)) return '';
+  const preflight = g.stage === 'preflight';
+  const done = preflight ? g.checked || 0 : g.verified || 0, total = preflight ? g.check_total || 0 : g.total || 0;
+  const label = preflight ? rdText('提交前核对', 'Preflight check') : p.state === 'running' ? rdText('上传并读回核验', 'Upload and verify readback') : rdStatus(p.state);
+  const seconds = Math.floor(g.elapsed_seconds || 0);
+  const detail = p.state === 'running' && !preflight ? rdText(`处理中 ${g.active || 0} · 等待 ${g.waiting || 0}`, `${g.active || 0} active · ${g.waiting || 0} waiting`) : '';
+  return `<div class="cron-stage-progress rd-upload-progress" role="status"><span>${escapeHtml(label)} <strong>${done} / ${total}</strong></span><progress max="${Math.max(1,total)}" value="${done}" aria-label="${escapeHtml(label)}"></progress><span>${total ? Math.floor(done / total * 100) : 0}%${detail ? ` · ${detail}` : ''} · ${rdText(`已用时 ${seconds}s`, `${seconds}s elapsed`)}</span></div>${p.state === 'running' ? `<p class="rd-description">${rdText('后台自动更新进度；异常时停止派发，已发出的批次会继续读回核验。', 'Progress updates automatically. On failure, dispatch stops and in-flight batches finish readback verification.')}</p>` : ''}`;
 }
 async function rdClick(event) {
   const filter = event.target.closest('[data-rd-filter]')?.dataset.rdFilter;
@@ -321,10 +359,12 @@ function rdRenderPreview() {
   const overwritten = p.items.filter(r => r.eligible && r.status === 'conflict').length;
   const skipped = p.items.filter(r => !r.eligible).length;
   const preview = p.state === 'preview';
+  const running = p.state === 'running';
+  const displayState = result => result?.phase || (running && result?.state === 'not_attempted' && !result.reason ? 'waiting' : result?.state);
   const stat = (label, value) => `<div><dt>${label}</dt><dd>${value}</dd></div>`;
   const summary = preview
     ? (overwritten ? stat(rdText('将覆盖', 'Will overwrite'), overwritten) : '') + (skipped ? stat(rdText('将跳过', 'Will skip'), skipped) : '')
-    : (counts('unverified') + counts('intent') ? stat(rdText('未确认', 'Unverified'), counts('unverified') + counts('intent')) : '') + (counts('not_attempted') ? stat(rdText('未执行', 'Not attempted'), counts('not_attempted')) : '');
+    : (counts('unverified') + (running ? 0 : counts('intent')) ? stat(rdText('未确认', 'Unverified'), counts('unverified') + (running ? 0 : counts('intent'))) : '') + (!running && counts('not_attempted') ? stat(rdText('未执行', 'Not attempted'), counts('not_attempted')) : '');
   const distribution = ['正确触发', '误触发', '无需协助'].map(label => {
     const value = label === '正确触发' ? '成功' : label;
     const n = p.items.filter(row => row.eligible && row.desired === value).length;
@@ -334,8 +374,10 @@ function rdRenderPreview() {
   rdSavePreview();
   root.innerHTML = `<div id="rdResultsPreview" class="rd-preview-page" aria-labelledby="rdPreviewTitle">
     <section class="page-card runs-source-card rd-preview-overview">
-      <div class="runs-source-heading"><div><h3 id="rdPreviewTitle" tabindex="-1">${preview ? rdText('上传预览', 'Upload preview') : rdText('上传结果', 'Upload outcome')}</h3>${preview ? '' : `<p class="rd-description">${rdStatus(p.state)}</p>`}</div>${rdButton('close', rdText('返回选择', 'Back to selection'), rdResults.busy, 'quiet')}</div>
+      <div class="runs-source-heading"><div><h3 id="rdPreviewTitle" tabindex="-1">${preview ? rdText('上传预览', 'Upload preview') : running ? rdText('上传进度', 'Upload progress') : rdText('上传结果', 'Upload outcome')}</h3>${preview || p.progress ? '' : `<p class="rd-description">${rdStatus(p.state)}</p>`}</div>${rdButton('close', rdText('返回选择', 'Back to selection'), rdResults.busy, 'quiet')}</div>
       <div class="rd-preview-summary"><div class="rd-preview-total"><strong>${preview ? count : counts('verified')}</strong><span>${preview ? rdText('条可上传', 'ready to upload') : rdText('条已核验', 'verified')}</span></div>${summary ? `<dl class="rd-preview-counts">${summary}</dl>` : ''}${distribution && preview ? `<div class="rd-preview-distribution" aria-label="${rdText('上传标注分布', 'Upload label distribution')}">${distribution}</div>` : ''}</div>
+      ${rdCommitProgress(p)}
+      ${rdResults.trackingError && running ? `<p class="rd-notice is-error" role="status">${rdText('进度连接中断，任务可能仍在执行；正在重连…', 'Progress connection lost; the task may still be running. Reconnecting…')}</p>` : ''}
       ${preview && !count ? `<p class="rd-notice">${rdText('没有需要上传的变更，请检查明细或返回修改选择。', 'No changes to upload. Check the details or return to adjust your selection.')}</p>` : ''}
       ${p.reason ? `<p class="rd-notice" role="status">${escapeHtml(rdReason(p.reason))}</p>` : ''}
       ${rdResults.error ? `<p class="rd-notice is-error" role="alert">${escapeHtml(rdResults.error)}</p>` : ''}
@@ -346,9 +388,9 @@ function rdRenderPreview() {
       </div></details>
     </section>
     <section class="page-card runs-page-card rd-preview-details"><div class="runs-toolbar"><h3>${preview ? rdText('差异明细', 'Change details') : rdText('逐条结果', 'Item outcomes')}</h3><span class="rd-description">${p.scope ? rdText('已包含全部页的选中标注', 'Includes selected labels across all pages') : rdText('仅包含本次选中标注', 'Only the selected labels')}</span></div>
-      <div class="rd-table-wrap" role="region" tabindex="0" aria-label="${rdText('上传明细，可横向滚动', 'Upload details; scroll horizontally')}"><table class="rd-table"><thead><tr><th>Issue</th><th>${rdText('Trail 原值', 'Current Trail value')}</th><th>${rdText('上传值', 'New value')}</th>${preview ? '' : `<th>${rdText('读回值', 'Readback value')}</th>`}<th>${rdText('处理状态', 'Disposition')}</th></tr></thead><tbody>${visible.map(({row:r,result}) => `<tr><td>${escapeHtml(r.issue_id)}</td><td>${rdValueMarkup(r.current)}</td><td>${rdValueMarkup(r.desired)}</td>${preview ? '' : `<td>${rdValueMarkup(result?.observed)}</td>`}<td>${preview ? `<span class="run-source-badge rd-status rd-status-${r.eligible ? r.status === 'conflict' ? 'warn' : 'ready' : 'neutral'}">${escapeHtml(rdPreviewStatus(r))}</span>` : rdStatusBadge(result?.state || (!r.eligible ? r.status : 'unverified'))}${result?.reason ? `<div class="rd-row-reason">${escapeHtml(rdReason(result.reason))}</div>` : ''}</td></tr>`).join('')}</tbody></table></div>
+      <div class="rd-table-wrap" role="region" tabindex="0" aria-label="${rdText('上传明细，可横向滚动', 'Upload details; scroll horizontally')}"><table class="rd-table"><thead><tr><th>Issue</th><th>${rdText('Trail 原值', 'Current Trail value')}</th><th>${rdText('上传值', 'New value')}</th>${preview ? '' : `<th>${rdText('读回值', 'Readback value')}</th>`}<th>${rdText('处理状态', 'Disposition')}</th></tr></thead><tbody>${visible.map(({row:r,result}) => `<tr><td>${escapeHtml(r.issue_id)}</td><td>${rdValueMarkup(r.current)}</td><td>${rdValueMarkup(r.desired)}</td>${preview ? '' : `<td>${rdValueMarkup(result?.observed)}</td>`}<td>${preview ? `<span class="run-source-badge rd-status rd-status-${r.eligible ? r.status === 'conflict' ? 'warn' : 'ready' : 'neutral'}">${escapeHtml(rdPreviewStatus(r))}</span>` : rdStatusBadge(displayState(result) || (!r.eligible ? r.status : 'unverified'))}${result?.reason ? `<div class="rd-row-reason">${escapeHtml(rdReason(result.reason))}</div>` : ''}</td></tr>`).join('')}</tbody></table></div>
       ${rdPaginationMarkup({ total: outcomes.length, page: rdResults.previewPage, pages }, true)}
-      <div class="rd-preview-footer"><p class="rd-description" role="status">${rdResults.busy ? rdText('正在处理，请稍候…', 'Processing, please wait…') : preview ? rdText('预览 10 分钟内有效；数据变化后需重新预览。', 'Valid for 10 minutes. Preview again if the data changes.') : rdText('请以逐条核验结果为准。', 'Use the per-item verification results.')}${!rdResults.data?.write_enabled && preview ? ' ' + rdText('真实上传未启用。', 'Publishing is disabled.') : ''}</p><div class="run-manager-actions">${preview ? rdButton('commit', rdText(`确认上传 ${count} 条`, `Confirm upload · ${count}`), rdResults.busy || !count || !rdResults.data?.write_enabled, 'primary') : rdButton('receipt', rdText('刷新本次结果', 'Refresh outcome'), rdResults.busy)}</div></div>
+      <div class="rd-preview-footer"><p class="rd-description" role="status">${rdResults.busy ? rdText('正在读取操作记录…', 'Reading operation receipt…') : running ? rdText('无需手动刷新；可返回选择，稍后从上传记录继续查看。', 'No manual refresh needed. You can return and follow this task from publication history.') : preview ? rdText('预览 10 分钟内有效；数据变化后需重新预览。', 'Valid for 10 minutes. Preview again if the data changes.') : rdText('请以逐条核验结果为准。', 'Use the per-item verification results.')}${!rdResults.data?.write_enabled && preview ? ' ' + rdText('真实上传未启用。', 'Publishing is disabled.') : ''}</p><div class="run-manager-actions">${preview ? rdButton('commit', rdText(`确认上传 ${count} 条`, `Confirm upload · ${count}`), rdResults.busy || !count || !rdResults.data?.write_enabled, 'primary') : rdButton('receipt', rdText('刷新本次结果', 'Refresh outcome'), rdResults.busy)}</div></div>
     </section></div>`;
   enhanceDashboardSelects(root);
   root.oninput = event => { if (event.target.id === 'rdPreviewPageJump') rdResults.previewJumpDraft = event.target.value; };
@@ -371,6 +413,7 @@ function rdRenderPreview() {
     const nextFocus = focusedId ? document.getElementById(focusedId) : focusedAction ? root.querySelector(`[data-rd-action="${focusedAction}"]`) : null;
     nextFocus?.focus({ preventScroll: true });
   }
+  if (running && !rdResults.committing) rdTrackCommit();
   root.onclick = async event => {
     const action = event.target.closest('[data-rd-action]')?.dataset.rdAction;
     if (rdResults.busy) return;
@@ -386,7 +429,12 @@ function rdRenderPreview() {
       rdResults.previewPage = Math.max(1, Math.min(pages, rdResults.previewPage + (action === 'preview-next' ? 1 : -1))); rdResults.previewJumpDraft = null; rdRenderPreview(); return;
     }
     if (!['commit', 'receipt'].includes(action)) return;
-    rdResults.busy = true; rdResults.committing = true; rdResults.error = ''; rdRenderPreview();
+    rdResults.busy = true; rdResults.committing = true; rdResults.error = '';
+    if (action === 'commit') {
+      rdResults.preview = { ...p, state: 'running', results: p.items.filter(r => r.eligible).map(r => ({ issue_id: r.issue_id, state: 'not_attempted', reason: '' })),
+        progress: { stage: 'preflight', checked: 0, check_total: p.items.length, total: count, elapsed_seconds: 0 } };
+    }
+    rdRenderPreview();
     try {
       if (action === 'receipt') rdResults.preview = await rdReadReceipt(p.id);
       else {
@@ -404,7 +452,7 @@ function rdRenderPreview() {
     } catch (error) {
       rdResults.error = error.message;
       // Keep already received item outcomes if only a refresh failed.
-      rdResults.preview = { ...p, state: 'outcome_unknown', reason: 'receipt_unavailable' };
+      rdResults.preview = { ...rdResults.preview, state: 'outcome_unknown', reason: 'receipt_unavailable' };
     }
     finally { rdResults.busy = false; rdResults.committing = false; renderRdResults(); }
   };

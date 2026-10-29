@@ -183,21 +183,28 @@ async def preview(request: Request, body: Selection, background: bool = False):
 
 
 @router.post('/api/rd-results/commit')
-async def commit(request: Request, body: Commit):
+async def commit(request: Request, body: Commit, background: bool = False):
     actor = await asyncio.to_thread(_admin_identity, request)
     if not has_same_origin_mutation_marker(request) or not body.confirmed or not settings.trail_rd_write_enabled:
         raise _detail(403, 'RD 写入未启用或未确认 / RD writing disabled or not confirmed')
     def execute():
         record = store().get(body.operation_id)
-        return store().commit(body.operation_id, actor.username, database,
+        publisher = store()
+        return (publisher.start_commit if background else publisher.commit)(body.operation_id, actor.username, database,
                               service.adapter(settings.ra_auto_triage_root), lambda: set(members(request, record['baselines'])))
-    return await run(execute)
+    result = await run(execute)
+    return JSONResponse(result, status_code=202) if background else result
 
 
 @router.get('/api/rd-results/operations/{operation_id}')
-async def operation(request: Request, operation_id: str):
+async def operation(request: Request, operation_id: str, progress_only: bool = False):
     await asyncio.to_thread(_admin_identity, request)
-    return await run(lambda: store().receipt(operation_id))
+    def load():
+        receipt = store().receipt(operation_id)
+        if progress_only:
+            receipt.pop('items', None)  # Frozen rows are already held by the UI.
+        return receipt
+    return await run(load)
 
 
 @router.get('/api/rd-results/operations')

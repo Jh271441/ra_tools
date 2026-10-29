@@ -35,6 +35,16 @@ const server=http.createServer((req,res)=>{
     if(window.fixtureMode==='error')throw Error('读取失败 / Could not load results');
     if(url.includes('/operations/')){
      window.receiptCalls++;
+     if(window.operationFixture?.state==='running' && sessionStorage.getItem('fixture-progress-step')){
+      const step=Number(sessionStorage.getItem('fixture-progress-step')),p=window.operationFixture,total=p.items.length;
+      if(step===3&&!window.progressConnectionFailed){window.progressConnectionFailed=true;throw Error('fixture progress connection lost');}
+      const verified=step>=4?total:step>=2?20:0,active=step>=2&&step<4?80:0;
+      p.state=step>=4?'complete':'running';
+      p.progress={stage:step>=4?'complete':step>=2?'uploading':'preflight',checked:step>=1?40:0,check_total:total,total,verified,active,waiting:total-verified-active,elapsed_seconds:12+step};
+      p.results=p.items.map((r,i)=>({issue_id:r.issue_id,state:i<verified?'verified':i<verified+active?'intent':'not_attempted',reason:'',...(i<verified?{observed:r.desired}:i<verified+active?{phase:'readback'}:{})}));
+      sessionStorage.setItem('fixture-receipt',JSON.stringify(p));
+      const receipt=structuredClone(p);if(url.includes('progress_only=true'))delete receipt.items;return receipt;
+     }
      if(window.previewPhase){
       window.previewPolls++;
       if(window.previewMode==='lost'&&window.previewPolls===1)throw Error('预览状态暂不可用 / Preview status unavailable');
@@ -58,6 +68,12 @@ const server=http.createServer((req,res)=>{
     }
     if(url.includes('/commit')){
      window.commitCalls++;
+     if(window.commitMode==='progress'){
+      const p=window.operationFixture;
+      p.state='running';p.results=p.items.map(r=>({issue_id:r.issue_id,state:'not_attempted',reason:''}));
+      p.progress={stage:'preflight',checked:0,check_total:p.items.length,total:p.items.length,elapsed_seconds:0};
+      sessionStorage.setItem('fixture-progress-step','1');sessionStorage.setItem('fixture-receipt',JSON.stringify(p));return structuredClone(p);
+     }
      if(window.commitMode==='rejected_commit')throw Error('写入未启用 / Writing disabled');
      const partial=window.commitMode==='partial';
      window.operationFixture.state=partial?'needs_recheck':'complete';
@@ -403,7 +419,60 @@ const server=http.createServer((req,res)=>{
    assert.equal(await page.evaluate(()=>rdSavedPreview()),null);
    refreshes.push({width,lang,theme});
   }
+  const progressChecks=[];
+  for(const [width,lang,theme] of [[1440,'zh','dark'],[390,'en','dark'],[320,'en','light']]){
+   await page.setViewportSize({width,height:950});
+   await page.evaluate(async({lang,theme})=>{
+    state.uiLanguage=lang;document.documentElement.dataset.uiLang=lang;document.documentElement.dataset.colorTheme=theme;
+    window.fixtureMode='normal';window.previewMode='immediate';window.commitMode='progress';window.commitCalls=0;
+    window.fixtureRows=Array.from({length:628},(_,i)=>({issue_id:`cn${1000+i}`,group:'resolved',label:'正确触发',authors:['synthetic']}));
+    history.replaceState(null,'','/rd-results?baselines=fixture&status=all&page=1&page_size=20');await loadRdResults();
+   },{lang,theme});
+   await selectAction('all');await page.locator('[data-rd-action="preview"]').click();
+   await page.locator('[data-rd-action="commit"]').click();
+   await page.waitForFunction(()=>rdResults.preview?.progress?.checked===40);
+   assert.equal(await page.locator('[data-rd-action="commit"]').count(),0);
+   assert.match(await page.locator('.rd-upload-progress').innerText(),/40 \/ 628/);
+   await page.evaluate(()=>sessionStorage.setItem('fixture-progress-step','2'));
+   await page.waitForFunction(()=>rdResults.preview?.progress?.verified===20);
+   assert.match(await page.locator('.rd-upload-progress').innerText(),/20 \/ 628/);
+   assert.ok(!(await page.locator('#rdResultsPreview').innerText()).includes(lang==='zh'?'前序条目未核验':'Stopped because an earlier item'));
+   await page.locator('[data-rd-action="preview-next"]').click();
+   assert.equal(await page.evaluate(()=>rdResults.previewPage),2);
+   // Polling must not close the shared page-size dropdown or change its focus.
+   const picker=page.locator('#rdPreviewPageSize').locator('..');
+   await picker.locator('.ui-select-trigger').click();
+   const before=await page.evaluate(()=>window.receiptCalls);
+   await page.waitForFunction(n=>window.receiptCalls>n,before);
+   assert.equal(await picker.locator('.ui-select-trigger').getAttribute('aria-expanded'),'true');
+   await picker.locator('.ui-select-trigger').press('Escape');
+   assert.ok(await page.evaluate(()=>Math.max(document.documentElement.scrollWidth,document.body.scrollWidth)<=innerWidth+1));
+   await page.evaluate(()=>window.scrollTo(0,0));
+   await page.screenshot({path:`/tmp/rd-results-714-progress-${width}.png`,fullPage:width<640});
+   await page.evaluate(()=>sessionStorage.setItem('fixture-progress-step','3'));
+   await page.waitForFunction(()=>rdResults.trackingError===true);
+   assert.match(await page.locator('.rd-notice.is-error').innerText(),/重连|Reconnecting/);
+   assert.equal(await page.evaluate(()=>window.commitCalls),1);
+   // In-app refresh increments the page epoch without resetting JS globals.
+   await page.evaluate(()=>sessionStorage.setItem('fixture-progress-step','2'));
+   await page.evaluate(()=>loadRdResults());
+   const resumed=await page.evaluate(()=>window.receiptCalls);
+   await page.waitForFunction(n=>window.receiptCalls>n,resumed);
+   // Reload resumes receipt polling; it must not issue another POST.
+   await page.evaluate(()=>sessionStorage.setItem('fixture-progress-step','2'));
+   await page.reload();await page.waitForFunction(()=>rdResults.preview?.state==='running');
+   assert.equal(await page.locator('[data-rd-action="commit"]').count(),0);
+   assert.equal(await page.evaluate(()=>window.commitCalls),0);
+   await page.evaluate(()=>sessionStorage.setItem('fixture-progress-step','4'));
+   await page.waitForFunction(()=>rdResults.preview?.state==='complete');
+   assert.match(await page.locator('.rd-upload-progress').innerText(),/628 \/ 628/);
+   assert.equal(await page.locator('.rd-upload-progress progress').getAttribute('value'),'628');
+   assert.equal(await page.evaluate(()=>window.commitCalls),0);
+   await page.locator('[data-rd-action="close"]').click();
+   await page.evaluate(()=>sessionStorage.removeItem('fixture-progress-step'));
+   progressChecks.push({width,lang,theme});
+  }
   for(const mode of ['empty','error']){await page.evaluate(async mode=>{window.fixtureMode=mode;await loadRdResults();},mode);assert.equal(await page.locator('[data-rd-action="preview"]').isEnabled(),false);assert.ok(await page.evaluate(()=>Math.max(document.documentElement.scrollWidth,document.body.scrollWidth)<=innerWidth+1));}
-  assert.deepEqual(errors,[]);console.log(JSON.stringify({checks,pagination,largePreviews,previews,outcomes,refreshes,states:['normal','empty','error'],errors}));
+  assert.deepEqual(errors,[]);console.log(JSON.stringify({checks,pagination,largePreviews,previews,outcomes,refreshes,progressChecks,states:['normal','empty','error'],errors}));
  }finally{await browser.close();server.close();}
 })().catch(e=>{console.error(e);server.close();process.exitCode=1;});
