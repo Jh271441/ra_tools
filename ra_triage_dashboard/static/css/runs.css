@@ -19,7 +19,12 @@
 .rd-upload-target dd { display: flex; align-items: baseline; gap: 8px; min-width: 0; margin: 0; }
 .rd-upload-target code { min-width: 0; overflow-wrap: anywhere; font-size: inherit; font-weight: 400; color: var(--muted); }
 .rd-http-method { flex: 0 0 auto; color: var(--accent); font-weight: 600; }
-.rd-filters.run-filter-bar { grid-template-columns: minmax(180px, 1fr) minmax(170px, 240px) auto; align-items: end; }
+.rd-workspace { gap: 10px; }
+.rd-detail-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 20px; }
+.rd-detail-heading { flex: 1 1 190px; min-width: 0; display: grid; gap: 3px; }
+.rd-detail-heading .rd-description { margin: 0; }
+.rd-filters.run-filter-bar { flex: 2 1 540px; margin: 0; grid-template-columns: minmax(140px, 1fr) minmax(130px, 170px) auto auto; align-items: center; gap: 8px; }
+.rd-filters > input { width: 100%; min-width: 0; }
 .rd-filters label { min-width: 0; gap: 7px; font-size: 13px; }
 .rd-filters input, .rd-filters .button { min-height: 38px; }
 .rd-selection-bar, .rd-pagination { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
@@ -29,6 +34,7 @@
 .rd-selection-bar .text-button { min-height: 38px; padding: 8px 0; color: var(--accent); white-space: normal; text-align: left; }
 .rd-selection-bar .text-button:hover:not(:disabled) { text-decoration: underline; }
 .rd-selection-bar.has-selection .rd-selection-count strong { color: var(--accent); }
+.rd-selection-bar > .run-manager-actions { flex-wrap: wrap; gap: 8px; }
 .rd-selection-count, .rd-pagination { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
 .rd-selection-count strong { color: var(--text); }
 .rd-checkbox { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; line-height: 1.5; cursor: pointer; }
@@ -55,6 +61,9 @@
 .rd-empty { padding: 28px 12px; text-align: center; color: var(--muted); font-size: 13px; }
 .rd-empty p { margin: 8px 0 0; font-size: 13px; }
 .rd-pagination { padding-top: 2px; }
+.rd-pagination .case-pagination-main { min-width: 0; flex-wrap: wrap; }
+#rdResultsDialog .rd-pagination { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; }
+#rdResultsDialog .rd-pagination .case-pagination-main { min-width: 0; flex-wrap: wrap; }
 #rdResultsDialog code { overflow-wrap: anywhere; }
 #rdResultsDialog .rd-table { min-width: 720px; }
 #rdResultsDialog .rd-table th:first-child, #rdResultsDialog .rd-table td:first-child { white-space: nowrap; }

@@ -1,5 +1,6 @@
 """Authenticated RD result summary and explicit publication workflow."""
 import asyncio
+from typing import Literal
 from fastapi import APIRouter, Request, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
@@ -24,6 +25,14 @@ class Commit(BaseModel):
     model_config = ConfigDict(extra='forbid')
     operation_id: str = Field(pattern=r'^[0-9a-f]{32}$')
     confirmed: StrictBool
+
+
+class ScopeSelection(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    baselines: str = Field(min_length=1, max_length=2000)
+    q: str = Field(default='', max_length=2000)
+    status: Literal['all', 'resolved', 'pending', 'conflict'] = 'all'
+    overwrite: StrictBool = False
 
 
 def store():
@@ -66,25 +75,47 @@ async def run(call, *args):
         raise _detail(503, 'RD 服务暂不可用，请重试 / RD service unavailable; retry') from None
 
 
+def filtered_rows(request, baselines, q, status):
+    ids = members(request, baselines)
+    rows = list(service.local_rows(database, ids).values())
+    if {row['issue_id'] for row in rows} != set(ids):
+        raise _detail(409, '标注范围已变化，请刷新 / Label scope changed; refresh')
+    rows = [r for r in rows if q.strip().lower() in r['issue_id'].lower()]
+    counts = {'total': len(rows), 'resolved': 0, 'pending': 0, 'conflict': 0}
+    for row in rows:
+        key = 'resolved' if row['state'] == 'resolved' and row['label'] in service.VALUES else 'conflict' if row['state'] in {'conflict', 'stale'} else 'pending'
+        row['group'] = key
+        counts[key] += 1
+    return [r for r in rows if status == 'all' or r['group'] == status], counts
+
+
 @router.get('/api/rd-results')
-async def summary(request: Request, baselines: str = '', q: str = '', status: str = 'all', page: int = 1):
+async def summary(request: Request, baselines: str = '', q: str = '', status: str = 'all', page: int = 1, page_size: int = 20):
     await asyncio.to_thread(_writer_identity, request)
     if status not in {'all', 'resolved', 'pending', 'conflict'}:
         raise _detail(400, '筛选无效 / Invalid filter')
+    if page_size not in {10, 20, 50, 100}:
+        raise _detail(400, '每页数量无效 / Invalid page size')
     def load():
-        ids = members(request, baselines)
-        rows = list(service.local_rows(database, ids).values())
-        rows = [r for r in rows if q.strip().lower() in r['issue_id'].lower()]
-        counts = {'total': len(rows), 'resolved': 0, 'pending': 0, 'conflict': 0}
-        for row in rows:
-            key = 'resolved' if row['state'] == 'resolved' and row['label'] in service.VALUES else 'conflict' if row['state'] in {'conflict', 'stale'} else 'pending'
-            row['group'] = key
-            counts[key] += 1
-        rows = [r for r in rows if status == 'all' or r['group'] == status]
-        pages = max(1, (len(rows) + 49) // 50)
+        rows, counts = filtered_rows(request, baselines, q, status)
+        pages = max(1, (len(rows) + page_size - 1) // page_size)
         current = min(max(page, 1), pages)
-        return dict(items=rows[(current - 1)*50:current*50], counts=counts, total=len(rows), page=current, pages=pages,
+        return dict(items=rows[(current - 1)*page_size:current*page_size], counts=counts, total=len(rows), page=current, pages=pages, page_size=page_size,
                     write_enabled=settings.trail_rd_write_enabled)
+    return await run(load)
+
+
+@router.post('/api/rd-results/preview-scope')
+async def preview_scope(request: Request, body: ScopeSelection):
+    actor = await asyncio.to_thread(_admin_identity, request)
+    if not has_same_origin_mutation_marker(request):
+        raise _detail(403, '请求标记缺失 / Request marker required')
+    def load():
+        rows, _ = filtered_rows(request, body.baselines, body.q, body.status)
+        candidates = {r['issue_id']: r for r in rows if r['group'] == 'resolved'}
+        remote = service.read_remote(service.adapter(settings.ra_auto_triage_root), list(candidates)) if candidates else {}
+        scope = dict(total=len(rows), blocked=len(rows) - len(candidates), q=body.q, status=body.status)
+        return store().preview(actor.username, candidates, remote, body.overwrite, body.baselines, scope=scope)
     return await run(load)
 
 

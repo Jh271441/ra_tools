@@ -35,10 +35,12 @@ const server=http.createServer((req,res)=>{
      if(window.commitMode==='lost_receipt')throw Error('记录暂不可用 / Receipt unavailable');
      return structuredClone(window.operationFixture);
     }
-    if(url.includes('/status'))return {items:window.fixtureRows.map((r,i)=>({issue_id:r.issue_id,current:window.failureScenario?null:i===1?'无需协助':null,status:window.failureScenario?'pending':['pending','conflict','blocked'][i]}))};
+    if(url.includes('/status'))return {items:window.fixtureRows.map((r,i)=>({issue_id:r.issue_id,current:window.failureScenario?null:i===1?'无需协助':null,status:window.failureScenario?'pending':['pending','conflict','blocked'][i]})).filter(r=>JSON.parse(options.body).issue_ids.includes(r.issue_id))};
     if(url.includes('/preview')){
-     const ids=JSON.parse(options.body).issue_ids;
-     window.operationFixture={id:'a'.repeat(32),state:'preview',results:[],items:window.fixtureRows.filter(r=>ids.includes(r.issue_id)).map(r=>({issue_id:r.issue_id,current:null,desired:r.label==='正确触发'?'成功':r.label,status:'pending',eligible:true}))};
+     const body=JSON.parse(options.body),scope=url.endsWith('/preview-scope');window.lastPreviewBody=body;
+     const scopeRows=window.fixtureRows.filter(r=>r.issue_id.includes(body.q||'')&&(body.status==='all'||r.group===body.status));
+     const rows=scope?scopeRows.filter(r=>r.group==='resolved'):window.fixtureRows.filter(r=>body.issue_ids.includes(r.issue_id));
+     window.operationFixture={id:'a'.repeat(32),state:'preview',results:[],...(scope?{scope:{total:scopeRows.length,blocked:scopeRows.length-rows.length,q:body.q,status:body.status}}:{}),items:rows.map(r=>({issue_id:r.issue_id,current:null,desired:r.label==='正确触发'?'成功':r.label,status:'pending',eligible:true}))};
      return structuredClone(window.operationFixture);
     }
     if(url.includes('/commit')){
@@ -54,7 +56,11 @@ const server=http.createServer((req,res)=>{
      if(window.commitMode.startsWith('lost'))throw Error('连接中断 / Connection lost');
      return structuredClone(window.operationFixture);
     }
-    return {items:window.fixtureMode==='empty'?[]:window.fixtureRows,counts:{total:3,resolved:2,pending:0,conflict:1},page:1,pages:1,total:3,write_enabled:true};
+    const params=new URL(url,location.origin).searchParams,size=Number(params.get('page_size'))||20;
+    const rows=window.fixtureMode==='empty'?[]:window.fixtureRows.filter(r=>r.issue_id.includes(params.get('q')||''));
+    const filtered=rows.filter(r=>params.get('status')==='all'||r.group===params.get('status'));
+    const pages=Math.max(1,Math.ceil(filtered.length/size)),page=Math.max(1,Math.min(pages,Number(params.get('page'))||1));
+    return {items:filtered.slice((page-1)*size,page*size),counts:{total:rows.length,resolved:rows.filter(r=>r.group==='resolved').length,pending:rows.filter(r=>r.group==='pending').length,conflict:rows.filter(r=>r.group==='conflict').length},page,pages,page_size:size,total:filtered.length,write_enabled:window.fixtureWriteEnabled!==false};
    };
   });
   let checks=0;
@@ -113,6 +119,64 @@ const server=http.createServer((req,res)=>{
    }
    checks++;
   }
+  const pagination=[];
+  await page.evaluate(()=>{window.originalRows=structuredClone(window.fixtureRows);window.fixtureRows=Array.from({length:103},(_,i)=>({issue_id:`cn${1000+i}`,label:'正确触发',group:'resolved',authors:['reviewer_with_a_long_name']}));window.failureScenario=true;});
+  for(const [width,lang,theme] of [[1440,'zh','dark'],[743,'zh','dark'],[390,'en','dark'],[320,'en','light']]){
+   await page.setViewportSize({width,height:950});
+   await page.evaluate(async({lang,theme})=>{
+    state.uiLanguage=lang;document.documentElement.dataset.uiLang=lang;document.documentElement.dataset.colorTheme=theme;
+    history.replaceState(null,'','/rd-results?baselines=fixture&status=all&page=2&page_size=10');await loadRdResults();
+   },{lang,theme});
+   assert.equal(await page.locator('.rd-workspace tbody tr').count(),10);
+   await page.locator('[data-rd-action="status"]').click();await page.locator('[data-rd-action="select"]').click();
+   assert.equal(await page.evaluate(()=>rdResults.selected.size),10);
+   await page.locator('[data-rd-action="next"]').click();
+   assert.equal(await page.evaluate(()=>rdResults.selected.size),0);
+   assert.equal(await page.evaluate(()=>Object.keys(rdResults.remote).length),0);
+   await page.locator('#rdPageJump').fill('999');await page.locator('#rdPageJump').press('Enter');
+   assert.equal(new URL(page.url()).searchParams.get('page'),'11');
+   assert.equal(await page.locator('.rd-workspace tbody tr').count(),3);
+   await page.locator('#rdPageJump').fill('1.5');await page.locator('[data-rd-action="jump"]').click();
+   assert.equal(await page.locator('#rdPageJump').inputValue(),'11');
+   const sizeRoot=page.locator('.rd-workspace .rd-pagination .dashboard-native-ui-select');
+   await sizeRoot.locator('.ui-select-trigger').click();await page.keyboard.press('Escape');
+   assert.equal(await sizeRoot.locator('.ui-select-trigger').getAttribute('aria-expanded'),'false');
+   await sizeRoot.locator('.ui-select-trigger').click();await sizeRoot.locator('[data-ui-select-value="50"]').click();
+   assert.equal(await page.locator('.rd-workspace tbody tr').count(),50);
+   assert.equal(new URL(page.url()).searchParams.get('page'),'1');
+   assert.equal(new URL(page.url()).searchParams.get('page_size'),'50');
+   await page.locator('#rdPageJump').fill('2');
+   await page.evaluate(()=>{state.uiLanguage=state.uiLanguage==='zh'?'en':'zh';renderRdResults();});
+   assert.equal(await page.locator('#rdPageJump').inputValue(),'2');
+   assert.equal(await page.locator('#rdPageSize').inputValue(),'50');
+   await page.evaluate(()=>{window.commitCalls=0;window.fixtureWriteEnabled=false;rdResults.data.write_enabled=false;renderRdResults();});
+   await page.locator('[data-rd-action="preview-scope"]').click();
+   const dialog=page.locator('#rdResultsDialog');await dialog.waitFor({state:'visible'});
+   assert.equal(await page.evaluate(()=>rdResults.preview.items.length),103);
+   assert.equal(await page.evaluate(()=>window.lastPreviewBody.issue_ids),undefined);
+   assert.equal(await page.evaluate(()=>window.lastPreviewBody.status),'all');
+   assert.equal(await dialog.locator('[data-rd-action="commit"]').isDisabled(),true);
+   assert.equal(await page.evaluate(()=>window.commitCalls),0);
+   assert.equal(await dialog.locator('tbody tr').count(),20);
+   await dialog.locator('#rdPreviewPageJump').fill('999');await dialog.locator('#rdPreviewPageJump').press('Enter');
+   assert.equal(await dialog.locator('tbody tr').count(),3);
+   await dialog.locator('.dashboard-native-ui-select .ui-select-trigger').click();await dialog.locator('[data-ui-select-value="100"]').click();
+   assert.equal(await dialog.locator('tbody tr').count(),100);
+   assert.equal(await page.evaluate(()=>rdResults.preview.items.length),103);
+   assert.equal(await dialog.locator('[data-rd-action="commit"]').isDisabled(),true);
+   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+   const box=await dialog.boundingBox();assert.ok(box.x>=0&&box.x+box.width<=width+1&&box.y>=0&&box.y+box.height<=951);
+   if(width<760){
+    assert.ok((await dialog.locator('#rdPreviewPageJump').boundingBox()).height>=44);
+    assert.ok((await dialog.locator('[data-rd-action="preview-jump"]').boundingBox()).height>=44);
+   }
+   await dialog.locator('[data-rd-action="close"]').click();
+   await page.evaluate(lang=>{state.uiLanguage=lang;document.documentElement.dataset.uiLang=lang;renderRdResults();window.scrollTo(0,0);rdResults.previewPageSize=20;},lang);
+   await page.screenshot({path:`/tmp/rd-results-708-${width}.png`,fullPage:false});
+   if(width===1440)await page.screenshot({path:'/tmp/rd-results-708-toolbar.png',clip:{x:0,y:0,width:1440,height:480}});
+   pagination.push({width,lang,theme});
+  }
+  await page.evaluate(()=>{window.fixtureRows=window.originalRows;window.fixtureWriteEnabled=true;history.replaceState(null,'','/rd-results?baselines=fixture&status=all');});
   const outcomes=[];
   for(const [width,lang,theme] of [[1440,'zh','dark'],[390,'en','dark'],[320,'en','light']]){
    await page.setViewportSize({width,height:950});
@@ -179,6 +243,6 @@ const server=http.createServer((req,res)=>{
    }
   }
   for(const mode of ['empty','error']){await page.evaluate(async mode=>{window.fixtureMode=mode;await loadRdResults();},mode);assert.equal(await page.locator('[data-rd-action="preview"]').isEnabled(),false);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));}
-  assert.deepEqual(errors,[]);console.log(JSON.stringify({checks,outcomes,states:['normal','empty','error'],errors}));
+  assert.deepEqual(errors,[]);console.log(JSON.stringify({checks,pagination,outcomes,states:['normal','empty','error'],errors}));
  }finally{await browser.close();server.close();}
 })().catch(e=>{console.error(e);server.close();process.exitCode=1;});

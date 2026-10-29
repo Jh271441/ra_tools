@@ -318,6 +318,84 @@ class RDRoutesTest(unittest.TestCase):
         self.assertEqual(self.http.post('/api/rd-results/commit',json={'operation_id':p.json()['id'],'confirmed':True},headers=self.headers).status_code,403)
         self.assertEqual(self.client.calls,[])
 
+    def test_pagination_limits_and_filtered_page_bounds(self):
+        rows = {f'cn{i}': dict(self.row, issue_id=f'cn{i}', state='resolved' if i < 101 else 'pending') for i in range(123)}
+        with patch.object(self.routes, 'members', return_value=list(rows)), patch.object(rd, 'local_rows', return_value=rows):
+            for size in (10, 20, 50, 100):
+                result = self.http.get(f'/api/rd-results?baselines=fixture&page=999&page_size={size}').json()
+                self.assertEqual(result['page'], result['pages'])
+                self.assertEqual(result['page_size'], size)
+                self.assertEqual(result['total'], 123)
+                self.assertLessEqual(len(result['items']), size)
+                self.assertEqual(len(result['items']), 123 % size)
+            result = self.http.get('/api/rd-results?baselines=fixture&status=resolved&page=0').json()
+            self.assertEqual((result['page'], result['page_size'], result['total']), (1, 20, 101))
+            empty = self.http.get('/api/rd-results?baselines=fixture&q=missing&page=999').json()
+            self.assertEqual((empty['page'], empty['pages'], empty['items']), (1, 1, []))
+        for size in ('0', '101', '-1', '15', '1.5', 'bad'):
+            self.assertIn(self.http.get(f'/api/rd-results?baselines=fixture&page_size={size}').status_code, (400, 422))
+        self.assertEqual(self.client.calls, [])
+
+    def test_scope_preview_and_commit_cross_page_and_chunk_boundaries(self):
+        rows = {f'cn{i}': dict(self.row, issue_id=f'cn{i}', state='resolved' if i < 120 else 'pending') for i in range(123)}
+        remote = {iid: dict(issue_id=iid, **{rd.FIELD: None}, **{k:'preserved' for k in rd.PROTECTED}) for iid in rows}
+        remote['cn0'][rd.FIELD] = '成功'
+        remote['cn1'][rd.FIELD] = '误触发'
+        fetches, writes = [], []
+        def fetch(ids):
+            fetches.append(list(ids))
+            return [copy.deepcopy(remote[iid]) for iid in ids]
+        def update(values):
+            writes.append(values)
+            for iid, value in values.items(): remote[iid][rd.FIELD] = value
+            return {'code':0, 'msg':'success'}
+        client = SimpleNamespace(fetch=fetch, update=update)
+        with patch.object(self.routes, 'members', return_value=list(rows)), \
+                patch.object(rd, 'local_rows', side_effect=lambda db, ids: {iid:rows[iid] for iid in ids}), \
+                patch.object(rd, 'adapter', return_value=client):
+            body = dict(baselines='fixture', q='', status='all', overwrite=False)
+            p = self.http.post('/api/rd-results/preview-scope', json=body, headers=self.headers)
+            self.assertEqual(p.status_code, 200, p.text)
+            p = p.json()
+            self.assertEqual(p['scope']['total'], 123)
+            self.assertEqual(p['scope']['blocked'], 3)
+            self.assertEqual(len(p['items']), 120)
+            self.assertEqual(sum(item['eligible'] for item in p['items']), 118)
+            self.assertEqual([len(ids) for ids in fetches], [100,20])
+            self.assertEqual(writes, [])
+            filtered = self.http.post('/api/rd-results/preview-scope', json={**body,'q':'cn11'}, headers=self.headers).json()
+            self.assertTrue(all(item['issue_id'].startswith('cn11') for item in filtered['items']))
+            self.assertEqual(filtered['scope']['total'], 11)
+            commit = {'operation_id':p['id'], 'confirmed':True}
+            self.assertEqual(self.http.post('/api/rd-results/commit', json=commit, headers=self.headers).status_code,403)
+            self.routes.settings.trail_rd_write_enabled = True
+            result = self.http.post('/api/rd-results/commit', json=commit, headers=self.headers)
+            self.assertEqual(result.status_code, 200, result.text)
+            self.assertEqual(result.json()['state'], 'complete')
+            self.assertEqual(len(writes), 118)
+            self.assertEqual(remote['cn1'][rd.FIELD], '误触发')
+            self.assertTrue(all(set(values).issubset(set(rows) - {'cn0','cn1','cn120','cn121','cn122'}) for values in writes))
+            self.assertEqual(self.http.post('/api/rd-results/commit', json=commit, headers=self.headers).status_code,200)
+            self.assertEqual(len(writes),118)
+
+    def test_scope_preview_auth_and_failed_chunk_do_not_publish(self):
+        body = {'baselines':'fixture'}
+        self.assertEqual(self.http.post('/api/rd-results/preview-scope',json=body).status_code,403)
+        self.role='writer'
+        self.assertEqual(self.http.post('/api/rd-results/preview-scope',json=body,headers=self.headers).status_code,403)
+        self.role='admin'
+        for invalid in ({**body,'overwrite':'false'}, {**body,'status':'bad'}, {**body,'issue_ids':['cn123']}):
+            self.assertEqual(self.http.post('/api/rd-results/preview-scope',json=invalid,headers=self.headers).status_code,422)
+        rows = {f'cn{i}':dict(self.row,issue_id=f'cn{i}') for i in range(101)}
+        def fetch(ids):
+            return [dict(issue_id=iid, **{rd.FIELD:None}) for iid in ids] if len(ids)==100 else []
+        with patch.object(self.routes,'members',return_value=list(rows)), patch.object(rd,'local_rows',return_value=rows), \
+                patch.object(rd,'adapter',return_value=SimpleNamespace(fetch=fetch)):
+            response=self.http.post('/api/rd-results/preview-scope',json=body,headers=self.headers)
+            self.assertEqual(response.status_code,409,response.text)
+        self.assertFalse(list(self.routes.store().root.glob('*.json')))
+        self.assertEqual(self.client.calls,[])
+
     def test_marker_validation_and_scope(self):
         self.assertEqual(self.http.post('/api/rd-results/preview',json=self.body).status_code,403)
         for body in ({**self.body,'issue_ids':['cn999']},{**self.body,'issue_ids':['cn123','cn123']}):

@@ -71,6 +71,13 @@ class RDTransport:
 
 
 def read_remote(client, ids):
+    result = {}
+    for offset in range(0, len(ids), 100):
+        result.update(_read_remote_chunk(client, ids[offset:offset + 100]))
+    return result
+
+
+def _read_remote_chunk(client, ids):
     rows = client.fetch(ids)
     if len(rows) != len(ids) or {r.get("issue_id") for r in rows} != set(ids):
         raise ValueError("Trail 返回不完整或重复 / Incomplete or duplicate Trail response")
@@ -186,7 +193,7 @@ class PublicationStore:
                 fcntl.flock(stream, fcntl.LOCK_UN)
         return self.public(record)
 
-    def preview(self, actor, rows, remote, overwrite, baselines):
+    def preview(self, actor, rows, remote, overwrite, baselines, *, scope=None):
         items = []
         for iid, row in rows.items():
             status = classify(row, remote[iid])
@@ -195,6 +202,8 @@ class PublicationStore:
         record = dict(id=uuid.uuid4().hex, actor=actor, created_at=time.time(),
                       expires_at=time.time() + 600, overwrite=overwrite, baselines=baselines,
                       state='preview', items=items, results=[])
+        if scope is not None:
+            record['scope'] = scope
         with self.lock():
             self.save(record)
         return self.public(record)
@@ -203,6 +212,7 @@ class PublicationStore:
     def public(record):
         return {**{k: record[k] for k in ('id', 'actor', 'created_at', 'expires_at', 'state', 'overwrite')},
                 'reason': record.get('reason', ''),
+                'scope': record.get('scope'),
                 'results': [{k: v for k, v in r.items() if k != 'after'} |
                             ({'observed': r['after'][FIELD]} if 'after' in r else {}) for r in record['results']],
                 'items': [{k: v for k, v in row.items() if k not in {'before', 'fingerprint'}} | {'current': row['before'].get(FIELD)} for row in record['items']]}
@@ -241,11 +251,12 @@ class PublicationStore:
                 raise
             record['state'] = 'running'
             self.save(record)
+            results_by_id = {result['issue_id']: result for result in record['results']}
             for row in record['items']:
                 if not row['eligible']:
                     continue
                 iid = row['issue_id']
-                result = next(r for r in record['results'] if r['issue_id'] == iid)
+                result = results_by_id[iid]
                 try:
                     live = read_remote(client, [iid])[iid]
                     latest = local_rows(db, [iid]).get(iid, {})
