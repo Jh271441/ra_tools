@@ -1,8 +1,9 @@
 """Authenticated RD result summary and explicit publication workflow."""
 import asyncio
+import re
 from typing import Literal
 from fastapi import APIRouter, Request, HTTPException
-from pydantic import BaseModel, ConfigDict, Field, StrictBool
+from pydantic import BaseModel, Field, StrictBool, validator
 
 from .. import rd_results as service
 from ..runtime import database, settings
@@ -14,21 +15,36 @@ from ..support.baselines import resolve_request_baseline_scopes, restrict_versio
 router = APIRouter()
 
 
-class Selection(BaseModel):
-    model_config = ConfigDict(extra='forbid')
+class StrictBody(BaseModel):
+    # Config is supported by both deployed Pydantic 1 and workstation Pydantic 2.
+    class Config:
+        extra = 'forbid'
+
+
+class Selection(StrictBody):
     baselines: str = Field(min_length=1, max_length=2000)
-    issue_ids: list[str] = Field(min_length=1, max_length=100)
+    issue_ids: list[str]
     overwrite: StrictBool = False
 
+    @validator('issue_ids')
+    def bounded_issue_ids(cls, value):
+        if not 1 <= len(value) <= 100:
+            raise ValueError('请选择 1 到 100 条 Issue / Select 1 to 100 Issues')
+        return value
 
-class Commit(BaseModel):
-    model_config = ConfigDict(extra='forbid')
-    operation_id: str = Field(pattern=r'^[0-9a-f]{32}$')
+
+class Commit(StrictBody):
+    operation_id: str
     confirmed: StrictBool
 
+    @validator('operation_id')
+    def valid_operation_id(cls, value):
+        if not re.fullmatch(r'[0-9a-f]{32}', value):
+            raise ValueError('操作 ID 无效 / Invalid operation ID')
+        return value
 
-class ScopeSelection(BaseModel):
-    model_config = ConfigDict(extra='forbid')
+
+class ScopeSelection(StrictBody):
     baselines: str = Field(min_length=1, max_length=2000)
     q: str = Field(default='', max_length=2000)
     status: Literal['all', 'resolved', 'pending', 'conflict'] = 'all'
@@ -53,7 +69,6 @@ def members(request, baselines):
 
 def selected(request, body):
     ids = body.issue_ids
-    import re
     if len(ids) != len(set(ids)) or any(not re.fullmatch(r'cn[0-9]+', iid) for iid in ids):
         raise _detail(400, 'Issue ID 无效或重复 / Invalid or duplicate Issue IDs')
     if not set(ids).issubset(members(request, body.baselines)):

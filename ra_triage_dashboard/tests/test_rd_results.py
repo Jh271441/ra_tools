@@ -385,7 +385,8 @@ class RDRoutesTest(unittest.TestCase):
         self.assertEqual(self.http.post('/api/rd-results/preview-scope',json=body,headers=self.headers).status_code,403)
         self.role='admin'
         for invalid in ({**body,'overwrite':'false'}, {**body,'status':'bad'}, {**body,'issue_ids':['cn123']}):
-            self.assertEqual(self.http.post('/api/rd-results/preview-scope',json=invalid,headers=self.headers).status_code,422)
+            with self.subTest(body=invalid):
+                self.assertEqual(self.http.post('/api/rd-results/preview-scope',json=invalid,headers=self.headers).status_code,422)
         rows = {f'cn{i}':dict(self.row,issue_id=f'cn{i}') for i in range(101)}
         def fetch(ids):
             return [dict(issue_id=iid, **{rd.FIELD:None}) for iid in ids] if len(ids)==100 else []
@@ -401,6 +402,17 @@ class RDRoutesTest(unittest.TestCase):
         for body in ({**self.body,'issue_ids':['cn999']},{**self.body,'issue_ids':['cn123','cn123']}):
             self.assertIn(self.http.post('/api/rd-results/preview',json=body,headers=self.headers).status_code,(400,409))
         self.assertEqual(self.http.post('/api/rd-results/preview',json={**self.body,'overwrite':'false'},headers=self.headers).status_code,422)
+
+    def test_request_models_reject_extra_fields_invalid_ids_and_selection_bounds(self):
+        for route in ('status', 'preview'):
+            for changes in ({'extra':True}, {'issue_ids':[]}, {'issue_ids':[f'cn{i}' for i in range(101)]}):
+                with self.subTest(route=route, changes=changes):
+                    result = self.http.post('/api/rd-results/'+route,json={**self.body,**changes},headers=self.headers)
+                    self.assertEqual(result.status_code,422,result.text)
+        for body in ({'operation_id':'../bad','confirmed':True},
+                     {'operation_id':'a'*32,'confirmed':True,'extra':True}):
+            result = self.http.post('/api/rd-results/commit',json=body,headers=self.headers)
+            self.assertEqual(result.status_code,422,result.text)
 
     def test_enabled_confirmed_commit_and_history(self):
         self.routes.settings.trail_rd_write_enabled=True
