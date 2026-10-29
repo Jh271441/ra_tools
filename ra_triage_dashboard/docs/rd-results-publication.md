@@ -122,3 +122,13 @@ Trail 无 CAS，仍存在最终检查与远端写入之间的外部并发窗口�
 707版逻辑审计：完整本地pytest为1087通过、14跳过（92.15秒，另有本机urllib3/LibreSSL兼容警告）；pytest及httpx均仅安装于上述临时目录。覆盖授权与旧值变化、同操作并发幂等、批次部分失败、写入响应丢失、读回失败、保护字段变化、逐条范围变化、执行中断恢复、权限/开关/同源标记及范围校验。最终前端契约51项通过；浏览器包含12组320/390/1440px × 中英文 × 深浅主题基础布局，以及15组失败/恢复组合（1440px中文深色、390px英文深色、320px英文浅色 × 部分失败、响应丢失、记录不可读、提交拒绝、执行中响应丢失），另含空/加载失败状态。所有上传测试使用伪Trail；未部署、未开启真实写入、未上传真实数据，未进行真实手机或移动模拟器测试。
 
 发布准备补充（2026-10-29）：RD开关纳入health/api-status与统一发布器的灰度禁写及生产策略一致性检查。首轮云端门禁发现测试环境没有可选httpx，未切换生产；接口测试改用项目既有ASGI请求方式，仍执行真实路由、JSON解析、参数校验及权限检查，无需修改生产依赖。
+
+## 707版生产发布（2026-10-29）
+
+- 经用户明确授权上线，发布SHA为`11da97ce52c5d639c41470523cea674c2753f546`，2026-10-29T04:26:00Z（12:26 CST）切换成功；原运行SHA为`caf00261a1abe4d4827a70f22d1afe52b38dd463`。最新主分支的模型结果、版本图表及hover/focus交互均保留。
+- 入口：`https://auto-triage.intra.xiaojukeji.com/manual/rd-results`，导航位于「问题标注 → 标注上传」。当前真实上传开关`trail_rd_write_enabled=false`，支持核对与预览；本次未上传真实标注数据。
+- 统一发布器记录：`/volume/home/workspace/ra_triage_dashboard_deploy/releases/20261029T042246Z-11da97ce52c5/result.json`，状态success。云端完整pytest为1102通过、7跳过（173.55秒）；独立SQLite灰度禁写、精确SHA、生产策略一致性检查通过。
+- 生产health及api/status核验：PostgreSQL 14.11、持久化、schema58、database.ok=true、overall.status=healthy；原Issue/Review写入开关保持true，新增RD写入保持false。没有数据库迁移、运行依赖变更或其它服务发布。
+- `/rd-results`返回707 shell；app.js、rd-results.js、core-base.js、routing.js、runs.css、mobile.css、layout-shared.css均与发布提交字节一致。本地合并后113项定向检查和12组布局/15组模拟失败恢复浏览器检查通过，接口测试改为ASGI后23项通过。
+- 本次Chrome及应用内浏览器自动化连接超时；没有可复用SSO state，因此未完成新的登录态生产视觉验收，不能将本地合成数据截图当作线上登录态截图。页面已请求在应用内浏览器打开，后端和静态资源验收通过。未进行真机测试。
+- 发布器只清理了旧成功发布`20261029T025539Z-75b14f75dc17`下干净且未使用的candidate/rollback代码副本；业务数据和发布记录保留。首轮缺少httpx的失败发布记录仍保留，生产未曾切至该轮。

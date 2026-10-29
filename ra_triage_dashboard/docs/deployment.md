@@ -67,7 +67,7 @@ python3 /tmp/ra-dashboard-deploy.py --sha <完整40位提交SHA>
 2. 为目标版本和原运行版本建立独立 worktree，记录在
    `/volume/home/workspace/ra_triage_dashboard_deploy/releases/<时间-SHA>/`。
 3. 用目标版本运行完整 pytest 套件（包含 unittest 测试）。
-4. 启动 8786：独立 SQLite，关闭 Trail 启动同步、两个 Trail 写入开关、Batch、AutoTriage 发布和 DChat 通知。媒体仅复用读取路径。
+4. 启动 8786：独立 SQLite，关闭 Trail 启动同步、Issue/Review/RD 三个 Trail 写入开关、Batch、AutoTriage 发布和 DChat 通知。媒体仅复用读取路径。RD开关也包含在health和生产策略一致性检查中，旧版本缺失此字段按默认false比较。
 5. 验证精确 SHA、SQLite 隔离、写入开关和页面/API，然后停止灰度。
 6. 再次确认生产进程及配置未变化，保存恢复配置并优雅停止原进程，再快进代码并用保留的运行配置启动 8785。
 7. 验证精确 SHA、PostgreSQL 持久化、数据库及整体健康，并比较身份/业务写入策略。
