@@ -9,7 +9,8 @@ import unittest
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts/bev_closeup"
 sys.path.insert(0, str(SCRIPTS))
 from contract import verify_metadata
-from coordinator import connect, enqueue, key, pilot
+from coordinator import connect, enqueue, key, pilot, batch_activity, capture_stalled, attempted_issues, sync_verified_scopes
+from inventory import add_legacy_scopes
 from recovery import live_owned, recover
 from unittest.mock import patch
 
@@ -21,6 +22,58 @@ def source(iid="cn100", version="1009", **extra):
 
 
 class CloseupQueueTest(unittest.TestCase):
+    def test_scope_alias_requires_registered_membership_and_same_version(self):
+        rows = [source('cn100'), source('cn101', '1016')]
+        snapshot = dict(members=rows, membership_sha256='unchanged')
+        registered = dict(id='1009-2026-10-15', scope='legacy1009')
+        aliases = [dict(issue_id=i, baseline_scope='legacy1009') for i in ('cn100', 'cn101', 'cn999')]
+        with patch('inventory.get', return_value=dict(baselines=[registered])), patch('inventory.baseline_members', return_value=aliases):
+            result = add_legacy_scopes(snapshot)
+        self.assertEqual(len(result['members']), 2)
+        self.assertEqual(result['membership_sha256'], 'unchanged')
+        self.assertIn('legacy1009', rows[0]['scopes'])
+        self.assertNotIn('legacy1009', rows[1]['scopes'])
+        self.assertEqual(result['legacy_scope_evidence'][0]['applied_issue_ids'], ['cn100'])
+
+    def test_alias_extension_preserves_job_key_and_verified_video_identity(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            db = connect(root)
+            row = source()
+            enqueue(db, dict(members=[row], membership_sha256='sha'), True)
+            db.execute("UPDATE jobs SET state='verified'")
+            db.commit()
+            receipt = dict(issue_id=row['issue_id'], trip_id=row['trip_id'], anchor_ms=row['capture_timestamp_ms'], recipe_id='ego30-forward4-1080p-10fps-v1', scopes=['scope'], video_path='objects/cn100/video.mp4', sha256='original-video-hash')
+            path = root / 'published/issues/cn100/receipt.json'
+            path.parent.mkdir(parents=True)
+            path.write_text(json.dumps(receipt))
+            row['scopes'].append('verified_legacy_scope')
+            enqueue(db, dict(members=[row], membership_sha256='sha'), False)
+            sync_verified_scopes(db, root / 'published')
+            result = json.loads(path.read_text())
+            self.assertEqual(result['sha256'], 'original-video-hash')
+            self.assertEqual(result['scopes'], ['scope', 'verified_legacy_scope'])
+            self.assertEqual(db.execute('SELECT count(*) FROM jobs').fetchone()[0], 1)
+            self.assertEqual(db.execute('SELECT job_key FROM jobs').fetchone()[0], key(row))
+
+    def test_stalled_batch_does_not_charge_untouched_cases(self):
+        self.assertEqual(attempted_issues('[Ares Progress] frame-seek video issue=cn123 0/400\n[Ares Progress] frame-seek video issue=cn123 377/400\n'), {'cn123'})
+
+    def test_browser_stall_guard_observes_frame_writes_not_coordinator_heartbeat(self):
+        import os
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'capture.log').write_text('waiting')
+            os.utime(root / 'capture.log', (1000, 1000))
+            frame = root / 'capture/issue/videos/.frames/frame-000377.png'
+            frame.parent.mkdir(parents=True)
+            frame.write_bytes(b'frame')
+            os.utime(frame, (1020, 1020))
+            (root / 'process.json').write_text('fresh coordinator heartbeat')
+            self.assertEqual(batch_activity(root), 1020)
+            self.assertFalse(capture_stalled(1020, 1619))
+            self.assertTrue(capture_stalled(1020, 1620))
+
     def test_process_identity_rejects_pid_reuse_and_detects_orphan_child(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

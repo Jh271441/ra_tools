@@ -96,6 +96,37 @@ def media_sources(layouts_root, scopes):
     return sources
 
 
+def add_legacy_scopes(snapshot):
+    """Keep a version member's still-registered historical media aliases.
+
+    Only an independently read registered baseline membership can add a scope;
+    this never adds an Issue to the frozen target cohort or changes its anchor.
+    """
+    members = {r['issue_id']: r for r in snapshot['members']}
+    cohorts = []
+    for baseline in get('/health').get('baselines', []):
+        bid = str(baseline.get('id', ''))
+        match = re.fullmatch(r'(1009|1016)-\d{4}-\d{2}-\d{2}', bid)
+        if not match:
+            continue
+        rows = baseline_members(bid)
+        applied = []
+        for alias in rows:
+            row = members.get(alias['issue_id'])
+            if row is None or row['version'] != match[1]:
+                continue
+            scope = alias.get('baseline_scope')
+            if not scope or scope != baseline.get('scope'):
+                raise ValueError('legacy_media_scope_conflict')
+            row['scopes'] = sorted(set(row.get('scopes', [])) | {scope})
+            applied.append(row['issue_id'])
+        cohorts.append(dict(baseline_id=bid, scope=baseline.get('scope'),
+                            members_sha256=hashlib.sha256('\n'.join(sorted(r['issue_id'] for r in rows)).encode()).hexdigest(),
+                            registered=len(rows), applied_issue_ids=applied))
+    snapshot['legacy_scope_evidence'] = cohorts
+    return snapshot
+
+
 def build_snapshot(layouts_root, incremental=False):
     members, cohorts = {}, []
     for baseline in (() if incremental else ("0821", "0821-review-extra")):
@@ -141,9 +172,9 @@ def build_snapshot(layouts_root, incremental=False):
         else:
             row["source_status"] = "missing_anchor"
         row["scopes"] = sorted(set(row["scopes"]))
-    return dict(created_at=time.time(), platform_sha=get("/health")["build_commit"], cohorts=cohorts,
+    return add_legacy_scopes(dict(created_at=time.time(), platform_sha=get("/health")["build_commit"], cohorts=cohorts,
                 membership_sha256=hashlib.sha256("\n".join(sorted(members)).encode()).hexdigest(),
-                members=sorted(members.values(), key=lambda r: (r["version"], r["issue_id"])))
+                members=sorted(members.values(), key=lambda r: (r["version"], r["issue_id"])) ))
 
 
 def freeze(root, layouts_root):

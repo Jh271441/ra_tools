@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import signal
 import sqlite3
 import subprocess
@@ -14,7 +15,7 @@ import time
 import uuid
 
 from contract import LAYOUT, RECIPE_ID, publish, save, verify_case
-from inventory import freeze, build_snapshot, resolve_missing
+from inventory import freeze, build_snapshot, resolve_missing, add_legacy_scopes
 
 STOP = False
 
@@ -64,6 +65,10 @@ def enqueue(db, snapshot, frozen):
         if any(key(json.loads(r[0])) != key(row) for r in existing):
             event(db, "anchor_conflict", issue_id=row["issue_id"])
             continue
+        if existing:
+            previous = json.loads(existing[0][0])
+            merged = dict(previous, scopes=sorted(set(previous.get('scopes', [])) | set(row.get('scopes', []))))
+            db.execute('UPDATE jobs SET row_json=? WHERE job_key=?', (json.dumps(merged), key(row)))
         cursor = db.execute("INSERT OR IGNORE INTO jobs(job_key,issue_id,row_json,priority) VALUES(?,?,?,?)", (key(row), row["issue_id"], json.dumps(row), 10 if frozen else 0))
         new += cursor.rowcount
     db.commit()
@@ -81,6 +86,25 @@ def pilot(db):
         for n, r in enumerate(candidates[:10]):
             db.execute("UPDATE jobs SET pilot=1,priority=? WHERE job_key=?", (-100 + n * 3 + ("0821", "1009", "1016").index(version), r["job_key"]))
     db.commit()
+
+
+def sync_verified_scopes(db, publish_root):
+    root = Path(publish_root).resolve()
+    for job in db.execute("SELECT row_json FROM jobs WHERE state='verified'").fetchall():
+        row = json.loads(job[0])
+        path = root / 'issues' / row['issue_id'] / 'receipt.json'
+        receipt = json.loads(path.read_text())
+        if receipt['trip_id'] != row['trip_id'] or receipt['anchor_ms'] != row['capture_timestamp_ms'] or receipt['recipe_id'] != RECIPE_ID:
+            raise ValueError('scope_receipt_identity_conflict')
+        scopes = sorted(set(receipt.get('scopes', [])) | set(row.get('scopes', [])))
+        if scopes == receipt.get('scopes', []):
+            continue
+        receipt['scopes'] = scopes
+        object_receipt = (root / receipt['video_path']).resolve().parent / 'verification.json'
+        object_receipt.relative_to(root)
+        save(object_receipt, receipt)
+        save(path, receipt)
+        event(db, 'verified_scopes_extended', issue_id=row['issue_id'], scopes=scopes)
 
 
 def resource_state():
@@ -109,6 +133,27 @@ def status(root, db, state, current=None, **extra):
                    main_pipeline_affected=False, **extra)
     save(Path(root) / "progress.json", payload)
     return payload
+
+
+def batch_activity(batch):
+    """Observe real frame/log writes independently of the browser event loop."""
+    paths = [Path(batch) / 'capture.log', *Path(batch).glob('capture/**/frame-*.png'),
+             *Path(batch).glob('capture/**/meta.json')]
+    newest = 0
+    for path in paths:
+        try:
+            newest = max(newest, path.stat().st_mtime)
+        except FileNotFoundError:
+            pass
+    return newest
+
+
+def capture_stalled(last_activity, now, threshold=600):
+    return now - last_activity >= threshold
+
+
+def attempted_issues(log):
+    return set(re.findall(r'frame-seek video issue=([A-Za-z0-9_-]+)\s', log))
 
 
 def run_batch(args, db, jobs):
@@ -144,17 +189,29 @@ def run_batch(args, db, jobs):
                               start_ticks=owned_root.start_ticks if owned_root else None)
         save(batch / "process.json", process_record)
         deadline = time.monotonic() + 1800 * len(rows)
+        last_activity = time.time()
         while proc.poll() is None:
             tracked.update({(p.pid, p.start_ticks): p for p in descendants(proc.pid)})
             save(batch / "process.json", dict(process_record, children=[dict(pid=p.pid, start_ticks=p.start_ticks) for p in tracked.values()]))
             status(root, db, "collecting", [r["issue_id"] for r in rows], capture_pid=proc.pid, batch=str(batch), resources=resource_state())
-            if STOP or (root / "STOP").exists() or time.monotonic() > deadline:
+            last_activity = max(last_activity, batch_activity(batch))
+            stalled = capture_stalled(last_activity, time.time())
+            if stalled:
+                evidence = dict(observed_at=time.time(), last_activity=last_activity,
+                                threshold_seconds=600, process=process_record,
+                                owned_children=[dict(pid=p.pid, start_ticks=p.start_ticks) for p in tracked.values()])
+                save(batch / 'stall-evidence.json', evidence)
+                event(db, 'capture_stalled', batch=str(batch), last_activity=last_activity)
+            if STOP or (root / "STOP").exists() or time.monotonic() > deadline or stalled:
                 finish_shutdown([*tracked.values(), *([owned_root] if owned_root else [])])
                 proc.wait(timeout=30)
                 break
             time.sleep(10)
         finish_shutdown(list(tracked.values()))
-    auth_block = False
+    capture_log = (batch / 'capture.log').read_text(errors='replace')
+    attempted = attempted_issues(capture_log)
+    auth_markers = ('login redirect', 'authentication required', 'storage state has expired', 'storage state is missing')
+    auth_block = any(marker in capture_log.lower() for marker in auth_markers)
     for job, row in zip(jobs, rows):
         folder = batch / "capture" / LAYOUT / f'{row["issue_id"]}_{row["capture_timestamp_ms"]}'
         try:
@@ -170,6 +227,13 @@ def run_batch(args, db, jobs):
             failed_meta = folder / "meta.json"
             auth_block = auth_block or (failed_meta.exists() and any(s in failed_meta.read_text().lower() for s in ("sso", "storage state", "login redirect", "authentication")))
             attempts = db.execute("SELECT attempts FROM jobs WHERE job_key=?", (job["job_key"],)).fetchone()[0]
+            if attempted and row['issue_id'] not in attempted:
+                # A wedged earlier Issue must not consume the retry budget of
+                # later source rows that the batch never actually reached.
+                db.execute("UPDATE jobs SET state='queued',attempts=?,next_at=?,error=?,finished_at=? WHERE job_key=?",
+                           (max(0, attempts - 1), time.time() + 300, 'batch_interrupted_before_issue', time.time(), job['job_key']))
+                event(db, 'unattempted_issue_retained', issue_id=row['issue_id'], batch=str(batch))
+                continue
             state = "failed" if attempts >= 3 else "retry_wait"
             db.execute("UPDATE jobs SET state=?,next_at=?,error=?,finished_at=? WHERE job_key=?", (state, time.time() + min(3600, 300 * 2**(attempts - 1)), error, time.time(), job["job_key"]))
             save(batch / "verification" / row["issue_id"] / "failure.json", dict(issue_id=row["issue_id"], state=state, error=error, attempts=attempts, source=row))
@@ -203,7 +267,7 @@ def reuse_previews(args, db):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("mode", choices=("freeze", "resolve", "run", "status"))
+    p.add_argument("mode", choices=("freeze", "resolve", "scopes", "run", "status"))
     p.add_argument("--root", required=True)
     p.add_argument("--layouts-root", required=True)
     p.add_argument("--publish-root", required=True)
@@ -212,6 +276,8 @@ def main():
     p.add_argument("--storage-state", default="/tmp/ares_storage_state.json")
     p.add_argument("--preview-root")
     p.add_argument("--once", action="store_true")
+    p.add_argument("--batch-size", type=int, choices=(1, 2, 3), default=3,
+                   help="Use one Issue for an isolated failure-recovery probe; normal batches reuse three")
     args = p.parse_args()
     root = Path(args.root).resolve()
     root.mkdir(parents=True, exist_ok=True)
@@ -227,6 +293,14 @@ def main():
         snapshot = freeze(root, args.layouts_root)
         if not db.execute("SELECT count(*) FROM members").fetchone()[0]:
             enqueue(db, snapshot, True)
+        if args.mode == 'scopes':
+            aliases = add_legacy_scopes(dict(membership_sha256=snapshot['membership_sha256'],
+                                             members=[json.loads(r[0]) for r in db.execute('SELECT row_json FROM members')]))
+            save(root / 'scope-resolutions' / f'{time.time_ns()}.json', aliases)
+            enqueue(db, aliases, True)
+            sync_verified_scopes(db, args.publish_root)
+            print(json.dumps(status(root, db, 'queued'), ensure_ascii=False))
+            return
         if args.mode == "resolve":
             rows = [json.loads(r[0]) for r in db.execute("SELECT row_json FROM members WHERE source_status='missing_anchor' AND source_state='published'")]
             resolved = dict(created_at=time.time(), membership_sha256=snapshot["membership_sha256"], members=resolve_missing(rows))
@@ -278,8 +352,8 @@ def main():
                 status(root, db, "resource_wait", resources=resources)
                 time.sleep(30)
                 continue
-            query = "SELECT * FROM jobs WHERE state IN ('queued','retry_wait') AND next_at<=?" + (" AND pilot=1" if pilot_left else "") + " ORDER BY priority,issue_id LIMIT 3"
-            jobs = db.execute(query, (time.time(),)).fetchall()
+            query = "SELECT * FROM jobs WHERE state IN ('queued','retry_wait') AND next_at<=?" + (" AND pilot=1" if pilot_left else "") + " ORDER BY priority,issue_id LIMIT ?"
+            jobs = db.execute(query, (time.time(), args.batch_size)).fetchall()
             if not jobs:
                 status(root, db, "waiting" if pilot_left else "idle")
                 if args.once:
@@ -295,6 +369,7 @@ def main():
                     delta = build_snapshot(args.layouts_root, incremental=True)
                     save(root / "discoveries" / f"{int(time.time())}.json", delta)
                     enqueue(db, delta, False)
+                    sync_verified_scopes(db, args.publish_root)
                 except Exception as exc:
                     event(db, "discovery_failed", code=type(exc).__name__)
                 last_discovery = time.time()
