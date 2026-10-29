@@ -1063,6 +1063,7 @@
 @media (max-width:639px) {
  .version-rd-grid {grid-template-columns:minmax(0,1fr)}
  .version-rd-block {padding:14px;gap:12px}
+ .version-rd-category {min-height:44px}
 }
 @media (max-width: 760px) {
   .bev-video-control-row [data-planning-constraint],

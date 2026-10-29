@@ -1,5 +1,25 @@
 # Version composition and TE progress
 
+## Chart hover/focus emphasis (2026-10-29 candidate, cache706)
+
+TE status legends and SVG ring segments highlight each other; RD progress/mix
+legends and stacked segments do the same within their own block. Other segments
+dim without changing category colors, counts, layout or filters. TE result rows
+and daily progress rows get a subtle row highlight. Existing TE-status/date click
+actions remain; readonly chart/legend inspection never loads or mutates data.
+Pointer hover is limited to fine hover-capable pointers; keyboard focus uses the
+same emphasis. Phone RD legend targets are44px and retain local horizontal scroll.
+Reduced-motion disables transitions. No added popup, request or chart dependency.
+Unchanged TE/RD markup retains focused nodes; refreshed counts/locale restore
+focus. CSS state avoids listeners and polling-induced DOM mutations.
+
+Validation:54 tests/6subtests and12 actual-module Chromium fixture combinations
+(320/390/1440px,zh/en,dark/light), reciprocal hover, leave reset, card isolation,
+keyboard/polling/locale focus, unchanged filter state, no API requests, zero/empty/
+error/loading/unsupported states, reduced-motion and no page overflow passed.
+Desktop and320px English/light screenshots inspected. Browser viewport tests only,
+not physical-device or signed-in production acceptance. Candidate706 is not deployed.
+
 The version page follows the existing Labeling summary design language: a bounded
 1480px reading area, shared Workbench cards and command bar, 12px spacing, and a
 small type hierarchy. The user-provided image is a grouping illustration rather
