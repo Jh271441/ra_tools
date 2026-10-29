@@ -65,14 +65,22 @@ deferred requests; tests/test_discussion_scope.py checks cross-entry storage,
 eligible combined task posts/replies, old task read-only state, existing admin
 guard, notification scope and self reminders without network sends.
 
-Source-routing validation (2026-10-29, local candidate; not deployed): full suite
-1078 passed, 14 skipped, 150 subtests passed. `test_comment_source.py` checks exact
+Source-routing release (2026-10-29 20:04:50 CST): deployed
+`7bfb4ea46d1816e50cad1967b7adb5de8dd702c0`, cache715. Exact-SHA cloud suite:
+1142 passed, 7 skipped; isolated SQLite gray and production policy/health gates
+passed. Read-only postflight verified the actual three link targets from comment117,
+deployed Python modules, shell/cache and four static assets against the release.
+Bot credentials remained ready; historical outboxes were not replayed.
+Receipt: `/volume/home/workspace/ra_triage_dashboard_deploy/releases/20261029T120125Z-7bfb4ea46d18/result.json`.
+`test_comment_source.py` checks exact
 receipt attribution, inherited replies, spoof/cycle/scope guards, unavailable-task
 fallback and mocked delivery/idempotency. `comment_source_browser.cjs` exercises
 actual routing/discussion modules with synthetic read-only API data at 1440, 390
 and 320px, Chinese/English and dark/light themes (12 combinations), exact comment
 highlighting, shared selectors and refresh/back history. This is headless Chromium
-viewport testing, not production SSO or real-device/soft-keyboard validation.
+viewport testing. After merging current production features, 80 focused tests and
+the same 12 browser combinations passed. The in-app production browser connection
+timed out; production SSO and real-device/soft-keyboard validation remain unverified.
 
 
 ## Notification configuration during deployment
