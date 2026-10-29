@@ -32,9 +32,27 @@ rewriting them. Labeling discussion accepts current eligible combined-review tas
 already returned by its task picker. DB membership, dataset and active-task checks
 remain authoritative, including replies and attachments.
 
-Notification links are derived from the stored comment destination: issue to
-case-labeling, task to task detail, review batch to review. They retain the exact
-comment and dataset/Run/task context and never guess a different destination.
+Notification ownership remains derived from the stored comment destination.
+Navigation provenance is a separate read-only projection: a verified label-mention
+audit comment is matched to its exact label revision (body, actor, scope and
+transaction timestamp), then to its unique combined-submission receipt. Replies
+inherit that original source through their same-scope parent chain. Task membership,
+later acknowledgements and current/latest tasks never determine the source.
+
+New notifications hyperlink the Issue ID to the Workbench detail in the same
+dataset/Run/task context, without auto-opening discussion. For combined review,
+the bilingual Source value opens the original task's Review Gallery, retaining
+Run/task/dataset with comparison=all and no Issue or discussion target. Other
+Source values retain their discussion entry. View comment opens
+Review with the original Run/task and `channel=case`, so it opens the shared Issue
+discussion, not the model-Run discussion; the exact comment is highlighted. URL
+canonicalization retains that target only while Issue/Run/task/dataset stay the same.
+Task context in the dialog still requires the selected Case's server assignment.
+Closed/missing original entries fall back to Issue discussion while retaining the
+combined-review source label. Ordinary Issue labeling/discussion still returns to
+case-labeling, task comments to task detail, and model-review comments to Review.
+Standalone Issue comments without validated label-audit ancestry are not inferred
+to be combined-review comments merely because they were posted from Review.
 The runtime injects dataset IDs from the registry; URLs must use UI dataset IDs
 (such as0508), never database scope names that the picker would discard.
 Already-sent notifications are not replayed. Explicit directory-approved self
@@ -46,6 +64,23 @@ Regression evidence: tests/discussion_scope.cjs executes real dialog functions w
 deferred requests; tests/test_discussion_scope.py checks cross-entry storage,
 eligible combined task posts/replies, old task read-only state, existing admin
 guard, notification scope and self reminders without network sends.
+
+Source-routing release (2026-10-29 20:04:50 CST): deployed
+`7bfb4ea46d1816e50cad1967b7adb5de8dd702c0`, cache715. Exact-SHA cloud suite:
+1142 passed, 7 skipped; isolated SQLite gray and production policy/health gates
+passed. Read-only postflight verified the actual three link targets from comment117,
+deployed Python modules, shell/cache and four static assets against the release.
+Bot credentials remained ready; historical outboxes were not replayed.
+Receipt: `/volume/home/workspace/ra_triage_dashboard_deploy/releases/20261029T120125Z-7bfb4ea46d18/result.json`.
+`test_comment_source.py` checks exact
+receipt attribution, inherited replies, spoof/cycle/scope guards, unavailable-task
+fallback and mocked delivery/idempotency. `comment_source_browser.cjs` exercises
+actual routing/discussion modules with synthetic read-only API data at 1440, 390
+and 320px, Chinese/English and dark/light themes (12 combinations), exact comment
+highlighting, shared selectors and refresh/back history. This is headless Chromium
+viewport testing. After merging current production features, 80 focused tests and
+the same 12 browser combinations passed. The in-app production browser connection
+timed out; production SSO and real-device/soft-keyboard validation remain unverified.
 
 
 ## Notification configuration during deployment

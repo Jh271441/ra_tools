@@ -98,6 +98,7 @@ function renderDailyCron() {
   if (!$("#dailyCronPage")) return;
   const data = dailyCronState.data;
   if (!data) return;
+  renderCloseupCron(data.closeup);
   if (data.incremental?.enabled && !dailyCronState.selectedDay) { renderIncrementalCron(data); return; }
   if ($('#dailyCronIncrements')) $('#dailyCronIncrements').hidden = true;
   const overview = data.overview, daily = overview?.daily, run = typeof cronSelectedRuns === "function" ? cronSelectedRuns(data).main : cronLatestRun(data), sidecar = data.sidecar;
@@ -282,6 +283,33 @@ function renderIncrementalCron(data) {
   $('#dailyCronAlerts').innerHTML=`<p class="cron-note">${escapeHtml(v.stale?uiText('增量心跳过期，请核实任务。','Incremental heartbeat is stale.'):uiText('逐 case 完成后进入回刷和媒体；不等待整批。各节点为当前累计进度，缺源与异常单独等待。','Completed cases stream to publication and media independently. Nodes show cumulative progress; missing sources and ambiguous cases wait separately.'))}</p>`;
   for(const id of ['dailyCronMainTiming','dailyCronMediaTiming'])if($('#'+id))$('#'+id).textContent='';
   renderDailyCronRuns(data);renderDailyCronSidecar(data.sidecar);renderDailyCronJobs();renderCronRunSelector();void renderDailyCronGraph();
+}
+
+function renderCloseupCron(value) {
+  const panel = $('#dailyCronCloseup');
+  if (!panel) return;
+  panel.hidden = !value;
+  if (!value) return;
+  const labels = {
+    queued: ['已入队', 'Queued'], collecting: ['录制中', 'Recording'], waiting: ['等待重试', 'Waiting to retry'],
+    idle: ['队列空闲', 'Queue idle'], blocked_auth: ['需要刷新 Ares 登录', 'Ares login refresh required'],
+    pilot_failed_requires_review: ['小批失败待排查', 'Pilot failures need review'],
+    pilot_visual_review_required: ['小批待画面验收', 'Pilot visual review required'],
+    resource_wait: ['等待资源', 'Waiting for resources'], stopped: ['已停止', 'Stopped'],
+    interrupted_claim_requires_review: ['中断任务待恢复', 'Interrupted jobs need recovery'],
+    unavailable: ['状态不可用', 'Status unavailable'], unknown: ['状态未知', 'Unknown status']
+  };
+  const pair = value.stale ? ['心跳过期', 'Stale heartbeat'] : labels[value.state] || labels.unknown;
+  $('#dailyCronCloseupStatus').textContent = uiText(...pair);
+  const versions = [...new Set([...Object.keys(value.versions || {}), ...Object.keys(value.source_members || {})])].sort();
+  $('#dailyCronCloseupValue').innerHTML = versions.map(version => {
+    const states = value.versions?.[version] || {}, source = value.source_members?.[version] || {};
+    const published = Object.entries(source).filter(([key]) => key.startsWith('published:'));
+    const total = published.length ? published.reduce((n, [, count]) => n + count, 0) : Object.values(states).reduce((n, count) => n + count, 0);
+    const missing = published.filter(([key]) => key !== 'published:ready').reduce((n, [, count]) => n + count, 0);
+    const detail = uiText(`待处理 ${Math.max(0, total - (states.verified || 0))} · 失败 ${states.failed || 0} · 锚点待解决 ${missing}`, `Pending ${Math.max(0, total - (states.verified || 0))} · Failed ${states.failed || 0} · Unresolved anchors ${missing}`);
+    return cronMetric(version, cronFraction(states.verified || 0, total), detail, states.failed || missing ? 'warn' : 'neutral');
+  }).join('') + `<p class="cron-note muted">${escapeHtml(uiText('全部已发布成员 · 缺锚点和业务排除独立留账；不影响原双视频或主推理。', 'All published members · Missing anchors and business exclusions are tracked separately; original videos and inference continue independently.'))}</p>`;
 }
 
 // These are independent completion-window counts, never a conversion funnel.

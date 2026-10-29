@@ -1057,11 +1057,8 @@ function bindEvents() {
           renderCaseNavigation();
         }
         if (route.openComments) {
-          await openAnalysisDiscussion(route.issue, {
-            runId: route.runId || "",
-            source: "deep-link",
-            focusCommentId: route.commentId || 0,
-          });
+          if (!isPageContextCurrent(pageContext)) return;
+          await openReviewRouteDiscussion(route);
         }
       }
     } catch (error) {
@@ -1360,11 +1357,7 @@ async function bootstrap() {
           initialRoute.discussionChannel || "",
         );
       } else {
-        await openAnalysisDiscussion(initialRoute.issue, {
-          runId: initialRoute.runId || "",
-          source: "deep-link",
-          focusCommentId: initialRoute.commentId || 0,
-        });
+        await openReviewRouteDiscussion(initialRoute);
       }
     }
     if (!isPageContextCurrent(bootstrapContext)) return;

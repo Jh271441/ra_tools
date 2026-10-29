@@ -26,13 +26,16 @@ function playerFixture(){
 }
 (async()=>{
  const p=playerFixture(),v=p.video,e=p.elements;
- const media={assets:{video:{url:'/bev.mp4',tracks:[{url:'/bev.mp4'},{url:'/api/assets/cn1/camera-video'}]},frames:[{url:'/before.jpg',offset_ms:-1000},{url:'/full-bev.jpg',offset_ms:0}]},camera:{frames:[{url:'/full-camera.jpg',offset_ms:0}]}};
+ const media={assets:{video:{url:'/bev.mp4',tracks:[{url:'/bev.mp4'},{url:'/api/assets/cn1/camera-video'},{url:'/api/assets/cn1/bev-closeup-video',source_id:'bev_closeup',label:'局部 BEV 视频',poster_url:'/closeup-t0.jpg'}]},frames:[{url:'/before.jpg',offset_ms:-1000},{url:'/full-bev.jpg',offset_ms:0}]},camera:{frames:[{url:'/full-camera.jpg',offset_ms:0}]}};
  const descriptor=p.ctx.videoWithFramePosters(media);
  p.ctx.escapeHtml=String;
  const markup=p.ctx.videoPlayerMarkup(descriptor);
  assert(markup.indexOf('class="bev-video-progress-row"')<markup.indexOf('data-video-status role='),'warnings follow the timeline, never split it from playback controls');
  assert(markup.includes('data-video-status role="status" aria-live="polite" hidden'),'first paint has no loading status row');
  assert.equal(descriptor.poster_url,'/full-bev.jpg');assert.equal(descriptor.tracks[1].poster_url,'/full-camera.jpg');
+ assert.equal(descriptor.tracks[2].poster_url,'/closeup-t0.jpg','closeup source keeps its own full-resolution t0 poster');
+ assert.equal(p.ctx.videoWithFramePosters({assets:{video:media.assets.video.tracks[2],frames:media.assets.frames}}).poster_url,'/closeup-t0.jpg');
+ assert(markup.includes('data-video-track-label="局部 BEV 视频"'));
  assert.equal(media.assets.video.poster_url,undefined,'cached descriptors stay unchanged');
  assert.equal(media.assets.video.tracks[1].poster_url,undefined);
  assert.equal(p.ctx.videoWithFramePosters({assets:{video:{url:'/bev.mp4'}}}).poster_url,'','missing images use native video, never Gallery thumbnails');
@@ -54,8 +57,12 @@ function playerFixture(){
  assert.equal(v.attrs.poster,'/camera.jpg');p.flush(75);assert.equal(v.seeks.length,2,'source switch cancels queued old seek');
  v.readyState=1;v.fire('loadedmetadata');assert.equal(v.seeks.length,3);assert.equal(v.seeks.at(-1),9.9);
  v.readyState=4;v.fire('loadeddata');assert.equal(p.player.dataset.loadState,'ready');
+ e.rate.value='1.5';e.rate.fire('change');
+ e.track.value='/api/assets/cn1/bev-closeup-video';e.track.selectedOptions=[{dataset:{poster:'/closeup-t0.jpg'}}];e.track.fire('change');
+ assert.equal(v.attrs.poster,'/closeup-t0.jpg');v.readyState=1;v.fire('loadedmetadata');
+ assert.equal(v.seeks.at(-1),9.9,'closeup switch retains the event-relative position');assert.equal(v.playbackRate,1.5);
  v.error={code:2};v.fire('error');assert.equal(p.player.dataset.loadState,'error');assert(!e.retry.hidden);
- v.error=null;e.retry.fire('click');assert.equal(v.loads,2);assert.equal(p.player.dataset.loadState,'loading');assert(e.status.hidden);p.flush(12000);assert.equal(p.player.dataset.loadState,'slow');assert(!e.status.hidden);
+ v.error=null;e.retry.fire('click');assert.equal(v.loads,3);assert.equal(p.player.dataset.loadState,'loading');assert(e.status.hidden);p.flush(12000);assert.equal(p.player.dataset.loadState,'slow');assert(!e.status.hidden);
  e.seek.value='12';e.seek.fire('input');const count=v.seeks.length;p.ctx.releaseBevVideoPlayer(p.root);
  assert.equal(p.timers.size,0);v.readyState=4;v.fire('loadedmetadata');assert.equal(v.seeks.length,count);assert.equal(v.getAttribute('src'),null);
  assert(v.paused);

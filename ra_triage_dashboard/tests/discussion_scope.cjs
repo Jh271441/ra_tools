@@ -36,6 +36,21 @@ const taskComment = { id: 2, discussion_channel: 'campaign', campaign_id: 'task1
 const result = (id='task1', comments=[caseComment, taskComment], read_only=false) => ({comments, task: {id, name:'October task', read_only}, count: comments.length});
 async function open(options={}) { return s.openAnalysisDiscussion('cn1', {kind:'labeling',taskId:'task1', ...options}); }
 async function main() {
+  // Combined notification opens the Issue thread with the server-validated task.
+  let openedRoute;
+  const originalOpen=s.openAnalysisDiscussion;
+  s.openAnalysisDiscussion=async(issue,options)=>{openedRoute={issue,...options};};
+  state.selectedCase={issue_id:'cn1',review_assignment:{split_id:'task1',model_run_id:'run1'}};
+  const route={issue:'cn1',runId:'run1',workSplitId:'task1',discussionChannel:'case',commentId:117};
+  await s.openReviewRouteDiscussion(route);
+  assert.equal(openedRoute.kind,'labeling');assert.equal(openedRoute.runId,'');
+  assert.equal(openedRoute.taskId,'task1');assert.equal(openedRoute.focusCommentId,117);
+  assert.equal(openedRoute.discussionChannel,'case');
+  await s.openReviewRouteDiscussion({...route,workSplitId:'forged'});
+  assert.equal(openedRoute.taskId,'');assert.equal(openedRoute.kind,'labeling');
+  await s.openReviewRouteDiscussion({...route,discussionChannel:''});
+  assert.equal(openedRoute.kind,'');assert.equal(openedRoute.runId,'run1');
+  s.openAnalysisDiscussion=originalOpen;
   s.api = async path => { assert(path.includes('channel=both')); return result(); };
   await open();
   let c = state.analysisDiscussion;

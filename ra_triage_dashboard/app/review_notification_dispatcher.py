@@ -18,6 +18,7 @@ from .dchat import (
 )
 from .review_mentions import mentions_for_display
 from .db_parts.shared import _json_load
+from .comment_source import resolve_comment_source, comment_source_label
 
 
 logger = logging.getLogger("ra_triage_dashboard")
@@ -83,6 +84,7 @@ class ReviewNotificationDispatcher:
                     comment_id=int(item["comment_id"]),
                 )
             elif notification_kind == "comment":
+                source = resolve_comment_source(self.database, int(item["comment_id"]))
                 review_url = build_discussion_url(
                     self.settings.kylin_sso_return_url,
                     issue_id=str(item["issue_id"]),
@@ -91,6 +93,7 @@ class ReviewNotificationDispatcher:
                     baseline_id=self.baseline_ids_by_scope.get(str(item.get("baseline_scope") or ""), ""),
                     model_run_id=str(item.get("model_run_id") or ""),
                     comment_id=int(item["comment_id"]) if item.get("comment_id") else None,
+                    notification_source=source,
                 )
             else:
                 review_url = build_review_url(
@@ -113,6 +116,7 @@ class ReviewNotificationDispatcher:
                     ]
                 )
                 text = build_comment_notification_text(
+                    source_label=comment_source_label(source),
                     issue_id=str(item["issue_id"]),
                     author=display_names.get(
                         str(item.get("author") or "").lower(),
