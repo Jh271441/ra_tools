@@ -1,6 +1,6 @@
 # Version composition and TE progress
 
-## Chart hover/focus emphasis (2026-10-29 candidate, cache706)
+## Chart hover/focus emphasis (2026-10-29 released, cache706)
 
 TE status legends and SVG ring segments highlight each other; RD progress/mix
 legends and stacked segments do the same within their own block. Other segments
@@ -18,7 +18,17 @@ Validation:54 tests/6subtests and12 actual-module Chromium fixture combinations
 keyboard/polling/locale focus, unchanged filter state, no API requests, zero/empty/
 error/loading/unsupported states, reduced-motion and no page overflow passed.
 Desktop and320px English/light screenshots inspected. Browser viewport tests only,
-not physical-device or signed-in production acceptance. Candidate706 is not deployed.
+not physical-device or signed-in production acceptance.
+
+Released2026-10-29 11:48:58 CST (03:48:58Z), commit
+`caf00261a1abe4d4827a70f22d1afe52b38dd463`, cache706. Cloud1079 passed/7 skipped,
+isolated SQLite gray, exact production SHA and PostgreSQL/database/overall health
+passed. Served app.js,version-datasets.js,version-rd.js,version-datasets.css and
+mobile.css match commit bytes; shell cache706 and SVG ring verified. No schema
+migration or identity/writer-policy change. Receipt:
+`/volume/home/workspace/ra_triage_dashboard_deploy/releases/20261029T034522Z-caf00261a1ab/result.json`.
+Retention removed only clean unused candidate/rollback trees for
+20261028T171427Z-cc222569aaec; Git and release records remain. No business data removed.
 
 The version page follows the existing Labeling summary design language: a bounded
 1480px reading area, shared Workbench cards and command bar, 12px spacing, and a
