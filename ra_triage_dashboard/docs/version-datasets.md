@@ -57,7 +57,7 @@ not physical-device acceptance; signed-in checks are separately recorded above. 
 
 ## Interaction and performance
 
-### Two-row correction and Case Issue tags (2026-10-29 candidate/cache710; not deployed)
+### Two-row correction and Case Issue tags (2026-10-29 released/cache710)
 
 User rejected cache701's third row, blank cells and bottom-edge task caption.
 Desktop (>1024px) now uses nine equal columns, or eight with both task-progress
@@ -88,6 +88,16 @@ summary, exports and filter-based tasks before pagination in batches of400.
 No Run-tag fallback; authoritative empty tags stay empty. Unknown keys fail400.
 URL/locale/detail/summary roundtrips preserve tags; reset clears them. Model-only
 Run/comparison/review-status controls are intentionally not added to Case labeling.
+
+Released28e048e3 after1120 tests passed/7 skipped, isolated gray and exact-resource,
+database/persistence/overall-health gates passed. Local validation additionally
+covered8 revocation/task-discovery tests. The first preparation stopped before
+production because an old VM fixture lacked the shared info binding; the fixture
+was repaired and the full gate rerun. No product-test bypass or schema change.
+Explicit isolated deployment retains the current upstream features and leaves
+master unchanged; merge this release before the next ordinary deployment.
+Independent production Chrome control timed out; signed-in visual acceptance
+and real-device testing are not claimed. Operational receipts remain private.
 
 ### Three review scopes and visible RD counts (2026-10-29 released, cache705)
 
