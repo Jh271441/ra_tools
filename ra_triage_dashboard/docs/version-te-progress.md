@@ -13,10 +13,12 @@ statistics-first filter/read optimization (2026-10-29 01:18 CST, cc22256). See
 Metric cards and composition precede a single filter panel containing Dataset /
 Case scope / Occurrence date (CST). The redundant View grouping is removed; all
 three review modes (all targets, random sample, low excluding sample) are shown
-in Case scope through the shared enhanced select in candidate705. An explicitly
+in Case scope through the shared enhanced select in released cache705. An explicitly
 restored legacy mode remains as the current extra option until switching back;
 existing mode URLs and API values retain their meanings. RD legends now show
-counts alongside percentages. Candidate705 is not yet deployed.
+counts alongside percentages. Released2026-10-29 10:59:15 CST, commit75b14f7;
+1079 cloud tests passed/7 skipped, isolated gray and production health passed.
+See `version-datasets.md` for the receipt and exact asset verification.
 
 The four metrics, TE charts, composition and gallery keep their visibility and
 counts. The follow-up moves composition directly after the metrics, before TE.
