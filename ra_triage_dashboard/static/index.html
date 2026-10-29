@@ -86,7 +86,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-709`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-713`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -1148,7 +1148,6 @@
           </section>
 
           <section class="app-page tool-page rd-results-page hidden" id="rdResultsPage" data-page="rd-results" aria-live="polite"></section>
-          <dialog id="rdResultsDialog" class="trail-history-dialog" aria-labelledby="rdResultsDialogTitle"></dialog>
           <section class="app-page tool-page trail-history-page hidden" id="trailHistoryPage" data-page="trail-history">
             <div class="trail-history-toolbar"><div id="trailHistoryCoverage"></div><button class="button button-secondary" id="trailHistoryRefresh" type="button"><span class="ui-lang-zh">刷新</span><span class="ui-lang-en">Refresh</span></button></div>
             <form id="trailHistoryFilters" class="trail-history-filters"></form>
@@ -2573,7 +2572,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-709`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-713`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

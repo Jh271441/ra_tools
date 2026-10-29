@@ -1236,7 +1236,7 @@ function showPage(
   }
   const pageLoads = [];
   if (previousPage === 'rd-results' && rdResults.committing) return;
-  if (target !== "rd-results") document.querySelector("#rdResultsDialog")?.close();
+  if (target !== "rd-results" && typeof rdResults !== "undefined") { rdResults.previewOpen = false; rdForgetPreview(); }
   if (target === "rd-results" && loadPageData) pageLoads.push(() => loadRdResults());
   state.pageNavigationEpoch = Number(state.pageNavigationEpoch || 0) + 1;
   if (previousPage === "review" && target !== "review" && typeof cancelCaseHydration === "function") cancelCaseHydration();
