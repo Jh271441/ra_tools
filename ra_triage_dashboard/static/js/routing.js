@@ -971,10 +971,14 @@ function pageUrl(page, options = {}) {
   }
   if (page === "review-assignments") {
     const assignments = state.reviewAssignments;
-    if (assignments.lifecycle) url.searchParams.set("lifecycle", assignments.lifecycle);
-    if (assignments.assignedToMe) url.searchParams.set("assigned_to_me", "true");
     const splitId = options.reviewAssignmentSplitId || assignments.selectedSplitId;
-    if (splitId) url.searchParams.set("split", splitId);
+    if (typeof setReviewAssignmentRouteParams === "function") {
+      setReviewAssignmentRouteParams(url, splitId);
+    } else {
+      if (assignments.lifecycle) url.searchParams.set("lifecycle", assignments.lifecycle);
+      if (assignments.assignedToMe) url.searchParams.set("assigned_to_me", "true");
+      if (splitId) url.searchParams.set("split", splitId);
+    }
   }
   if (page === "campaigns") {
     if (options.campaignId) url.searchParams.set("campaign", String(options.campaignId));

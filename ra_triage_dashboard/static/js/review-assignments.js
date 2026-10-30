@@ -199,6 +199,10 @@ function reviewAssignmentMemberMarkup(member) {
   </div>`;
 }
 
+function reviewAssignmentShareAction(item) {
+  return `<button class="button button-quiet" type="button" data-share-review-assignment="${escapeHtml(item.split_id)}">${escapeHtml(uiText("复制链接", "Copy link"))}</button>`;
+}
+
 function reviewAssignmentDetailAction(item, { detailHref = '' } = {}) {
   const label = escapeHtml(uiText('查看任务明细', 'View task detail'));
   return detailHref
@@ -231,7 +235,7 @@ function renderReviewAssignmentBatch(item, options = {}) {
     </header>
     <div class="review-assignment-progress"><div class="review-assignment-progress-heading"><span>${escapeHtml(uiText("整体进度", "Overall progress"))}</span><strong>${escapeHtml(`${item.completed_count || 0} / ${item.assignment_count || 0} · ${percent}%`)}</strong></div><div class="review-assignment-progress-track"><span style="width:${percent}%"></span></div></div>
     <div class="review-assignment-member-grid">${(item.members || []).map(reviewAssignmentMemberMarkup).join("") || `<span class="quiet-meta">${escapeHtml(uiText("没有成员记录", "No member data"))}</span>`}</div>
-    <footer class="review-assignment-batch-footer"><span>${escapeHtml(`${item.total_count || 0} ${uiText("个 Issue", "Issues")} · ${changeNote}`)}</span><div class="review-assignment-batch-actions">${item.is_current && Object.keys(item.filter_snapshot || {}).some((key) => ["baselines", "baseline_scopes", "comparison_status", "search", "issue_ids"].includes(key)) ? `<a class="button button-quiet" href="${escapeHtml(reviewAssignmentSourceHref({ ...item.filter_snapshot, model_run_id: item.model_run_id || item.filter_snapshot.model_run_id }))}">${escapeHtml(uiText("查看原筛选", "View source filter"))}</a>` : ""}${taskLinks}${reviewAssignmentDetailAction(item, options)}</div></footer>
+    <footer class="review-assignment-batch-footer"><span>${escapeHtml(`${item.total_count || 0} ${uiText("个 Issue", "Issues")} · ${changeNote}`)}</span><div class="review-assignment-batch-actions">${item.is_current && Object.keys(item.filter_snapshot || {}).some((key) => ["baselines", "baseline_scopes", "comparison_status", "search", "issue_ids"].includes(key)) ? `<a class="button button-quiet" href="${escapeHtml(reviewAssignmentSourceHref({ ...item.filter_snapshot, model_run_id: item.model_run_id || item.filter_snapshot.model_run_id }))}">${escapeHtml(uiText("查看原筛选", "View source filter"))}</a>` : ""}${taskLinks}${reviewAssignmentDetailAction(item, options)}${reviewAssignmentShareAction(item)}</div></footer>
   </article>`;
 }
 
@@ -355,6 +359,8 @@ function renderReviewAssignmentDetail() {
   const detail = store.detail;
   if (!root) return;
   root.hidden = !detail && !store.detailLoading;
+  const share = $("#reviewAssignmentDetailShare");
+  if (share) share.disabled = !detail || store.detailLoading;
   if (!detail) {
     if (store.detailLoading) {
       root.hidden = false;
@@ -445,18 +451,62 @@ function renderReviewAssignmentPage() {
   renderReviewAssignmentDetail();
 }
 
-function reviewAssignmentDetailUrl(splitId = "") {
-  const url = new URL(withBase("/review-assignments"), window.location.origin);
+function setReviewAssignmentRouteParams(url, splitId = "", { includeDetailFilters = true } = {}) {
   const store = state.reviewAssignments;
   if (store.lifecycle) url.searchParams.set("lifecycle", store.lifecycle);
   if (store.assignedToMe) url.searchParams.set("assigned_to_me", "true");
-  if (splitId) url.searchParams.set("split", splitId);
+  if (!splitId) return;
+  url.searchParams.set("split", splitId);
+  if (!includeDetailFilters || splitId !== store.selectedSplitId) return;
+  if (store.assignee) url.searchParams.set("assignee", store.assignee);
+  if (["pending", "completed"].includes(store.status)) url.searchParams.set("status", store.status);
+  if (store.query) url.searchParams.set("q", store.query);
+  if (Number(store.page) > 1) url.searchParams.set("page", String(store.page));
+  if ([10, 20, 100].includes(Number(store.pageSize))) url.searchParams.set("page_size", String(store.pageSize));
+}
+
+function reviewAssignmentDetailUrl(splitId = "", options = {}) {
+  const url = new URL(withBase("/review-assignments"), window.location.origin);
+  setReviewAssignmentRouteParams(url, splitId, options);
   return `${url.pathname}${url.search}`;
+}
+
+function restoreReviewAssignmentDetailRoute(params) {
+  const store = state.reviewAssignments;
+  store.assignee = String(params.get("assignee") || "").trim();
+  store.status = ["pending", "completed"].includes(params.get("status")) ? params.get("status") : "all";
+  store.query = String(params.get("q") || "").trim().slice(0, 128);
+  const page = Number(params.get("page"));
+  store.page = Number.isSafeInteger(page) && page > 0 ? page : 1;
+  const pageSize = Number(params.get("page_size"));
+  store.pageSize = [10, 20, 50, 100].includes(pageSize) ? pageSize : 50;
+}
+
+function reviewAssignmentShareUrl(splitId = state.reviewAssignments.selectedSplitId, { taskOnly = false } = {}) {
+  const url = new URL(reviewAssignmentDetailUrl(splitId, { includeDetailFilters: !taskOnly }), window.location.origin);
+  // A task-card link names the task independently of the sender's personal view.
+  if (taskOnly) {
+    url.searchParams.delete("assigned_to_me");
+    url.searchParams.set("lifecycle", "all");
+  }
+  return url.href;
+}
+
+async function copyReviewAssignmentLink(splitId = state.reviewAssignments.selectedSplitId, options = {}) {
+  const url = reviewAssignmentShareUrl(splitId, options);
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(url);
+      showToast(uiText("任务分配链接已复制。", "Assignment link copied."));
+      return;
+    } catch (_) { /* Keep a manual copy option when browser permission is denied. */ }
+  }
+  window.prompt(uiText("请复制任务分配链接：", "Copy the assignment link:"), url);
 }
 
 async function loadReviewAssignmentDetail(
   splitId = state.reviewAssignments.selectedSplitId,
-  { updateRoute = false } = {}
+  { updateRoute = false, scrollToDetail = updateRoute } = {}
 ) {
   const store = state.reviewAssignments;
   const normalized = String(splitId || "").trim();
@@ -485,8 +535,8 @@ async function loadReviewAssignmentDetail(
         "",
         reviewAssignmentDetailUrl(normalized)
       );
-      $("#reviewAssignmentDetail")?.scrollIntoView({ behavior: "smooth", block: "start" });
     }
+    if (scrollToDetail) $("#reviewAssignmentDetail")?.scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (error) {
     if (requestSeq !== store.detailRequestSeq) return;
     store.detailLoading = false;
@@ -501,6 +551,7 @@ async function loadReviewAssignments({ force = false, splitId = "", reloadDetail
   const route = new URLSearchParams(window.location.search);
   store.lifecycle = ["versions", "current", "history", "all"].includes(route.get("lifecycle")) ? route.get("lifecycle") : "versions";
   store.assignedToMe = route.get("assigned_to_me") === "true";
+  if (splitId && route.get("split") === splitId) restoreReviewAssignmentDetailRoute(route);
   const listKey = `${store.lifecycle}:${store.assignedToMe}`;
   if (!state.modelRuns?.length) await loadRuns({ preserveEmpty: true });
   if (!state.accessUsers?.length && state.session?.is_admin && typeof loadAccessUsers === "function") {
@@ -528,7 +579,6 @@ async function loadReviewAssignments({ force = false, splitId = "", reloadDetail
     await restoreReviewAllocationDraft();
     const selected = splitId || store.selectedSplitId;
     if (selected && reloadDetail) {
-      store.page = 1;
       await loadReviewAssignmentDetail(selected, { updateRoute: false });
     }
   } catch (error) {
@@ -575,6 +625,17 @@ async function reassignReviewAssignment(row, button) {
 }
 
 function bindReviewAssignmentsPage() {
+  // Combined-task cards also appear in the labeling assignment workspace.
+  document.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-share-review-assignment]");
+    if (button) copyReviewAssignmentLink(button.dataset.shareReviewAssignment, { taskOnly: true }).catch((error) => showToast(error.message, true));
+  });
+  $("#reviewAssignmentsShare")?.addEventListener("click", () => {
+    copyReviewAssignmentLink().catch((error) => showToast(error.message, true));
+  });
+  $("#reviewAssignmentDetailShare")?.addEventListener("click", () => {
+    copyReviewAssignmentLink().catch((error) => showToast(error.message, true));
+  });
   $("#reviewAssignmentLifecycleFilter")?.addEventListener("change", (event) => {
     state.reviewAssignments.lifecycle = event.target.value || "current";
     changeReviewAssignmentListFilters();
@@ -621,37 +682,37 @@ function bindReviewAssignmentsPage() {
   $("#reviewAssignmentAssigneeFilter")?.addEventListener("change", () => {
     state.reviewAssignments.assignee = $("#reviewAssignmentAssigneeFilter")?.value || "";
     state.reviewAssignments.page = 1;
-    loadReviewAssignmentDetail().catch((error) => showToast(error.message, true));
+    loadReviewAssignmentDetail(undefined, { updateRoute: true, scrollToDetail: false }).catch((error) => showToast(error.message, true));
   });
   $("#reviewAssignmentStatusFilter")?.addEventListener("change", () => {
     state.reviewAssignments.status = $("#reviewAssignmentStatusFilter")?.value || "all";
     state.reviewAssignments.page = 1;
-    loadReviewAssignmentDetail().catch((error) => showToast(error.message, true));
+    loadReviewAssignmentDetail(undefined, { updateRoute: true, scrollToDetail: false }).catch((error) => showToast(error.message, true));
   });
   $("#reviewAssignmentSearch")?.addEventListener("input", () => {
     state.reviewAssignments.query = $("#reviewAssignmentSearch")?.value.trim() || "";
     state.reviewAssignments.page = 1;
     window.clearTimeout(state.reviewAssignments.filterTimer);
     state.reviewAssignments.filterTimer = window.setTimeout(() => {
-      loadReviewAssignmentDetail().catch((error) => showToast(error.message, true));
+      loadReviewAssignmentDetail(undefined, { updateRoute: true, scrollToDetail: false }).catch((error) => showToast(error.message, true));
     }, 240);
   });
   $("#reviewAssignmentPrevious")?.addEventListener("click", () => {
     if (state.reviewAssignments.page <= 1) return;
     state.reviewAssignments.page -= 1;
-    loadReviewAssignmentDetail().catch((error) => showToast(error.message, true));
+    loadReviewAssignmentDetail(undefined, { updateRoute: true, scrollToDetail: false }).catch((error) => showToast(error.message, true));
   });
   $("#reviewAssignmentNext")?.addEventListener("click", () => {
     const pageCount = Number(state.reviewAssignments.detail?.page_count || 1);
     if (state.reviewAssignments.page >= pageCount) return;
     state.reviewAssignments.page += 1;
-    loadReviewAssignmentDetail().catch((error) => showToast(error.message, true));
+    loadReviewAssignmentDetail(undefined, { updateRoute: true, scrollToDetail: false }).catch((error) => showToast(error.message, true));
   });
   $("#reviewAssignmentPageJumpButton")?.addEventListener("click", () => {
     const pageCount = Number(state.reviewAssignments.detail?.page_count || 1);
     const page = Math.max(1, Math.min(pageCount, Number($("#reviewAssignmentPageJump")?.value || 1)));
     state.reviewAssignments.page = page;
-    loadReviewAssignmentDetail().catch((error) => showToast(error.message, true));
+    loadReviewAssignmentDetail(undefined, { updateRoute: true, scrollToDetail: false }).catch((error) => showToast(error.message, true));
   });
   $("#reviewAssignmentPageJump")?.addEventListener("keydown", (event) => {
     if (event.key === "Enter") $("#reviewAssignmentPageJumpButton")?.click();
@@ -659,13 +720,13 @@ function bindReviewAssignmentsPage() {
   $("#reviewAssignmentPageSize")?.addEventListener("change", () => {
     state.reviewAssignments.pageSize = Number($("#reviewAssignmentPageSize")?.value || 50);
     state.reviewAssignments.page = 1;
-    loadReviewAssignmentDetail().catch((error) => showToast(error.message, true));
+    loadReviewAssignmentDetail(undefined, { updateRoute: true, scrollToDetail: false }).catch((error) => showToast(error.message, true));
   });
 }
 
 function renderVersionAssignmentBatch(item, options = {}){
   const percent=reviewAssignmentPercent(item.completion_ratio);
-  return `<article class="review-assignment-batch" data-review-assignment-batch="${escapeHtml(item.split_id)}"><header class="review-assignment-batch-header"><div><strong class="review-assignment-batch-title">${escapeHtml(item.release_family.slice(4))} · ${uiText('版本联合复核','Version combined review')}</strong><span class="review-assignment-batch-meta">${uiText('低置信＋抽样 · 单人负责 · 无交叉','Low confidence + sample · Single owner · No overlap')}</span><span class="review-assignment-batch-meta">${uiText('最近更新','Updated')} ${escapeHtml(versionDatasetTime(item.updated_at)+' CST')}</span></div><span class="review-assignment-status is-current">${uiText('持续追加','Appendable')}</span></header><div class="review-assignment-progress"><div class="review-assignment-progress-heading"><span>${uiText('联合复核进度','Combined review progress')}</span><strong>${item.completed_count} / ${item.assignment_count} · ${percent}%</strong></div><div class="review-assignment-progress-track"><span style="width:${percent}%"></span></div></div><div class="review-assignment-member-grid">${item.members.map(reviewAssignmentMemberMarkup).join('')}</div><footer class="review-assignment-batch-footer"><span>${item.total_count} ${uiText('个案例','cases')}</span><div class="review-assignment-batch-actions">${reviewAssignmentActionLinks(item)}${reviewAssignmentDetailAction(item, options)}</div></footer></article>`;
+  return `<article class="review-assignment-batch" data-review-assignment-batch="${escapeHtml(item.split_id)}"><header class="review-assignment-batch-header"><div><strong class="review-assignment-batch-title">${escapeHtml(item.release_family.slice(4))} · ${uiText('版本联合复核','Version combined review')}</strong><span class="review-assignment-batch-meta">${uiText('低置信＋抽样 · 单人负责 · 无交叉','Low confidence + sample · Single owner · No overlap')}</span><span class="review-assignment-batch-meta">${uiText('最近更新','Updated')} ${escapeHtml(versionDatasetTime(item.updated_at)+' CST')}</span></div><span class="review-assignment-status is-current">${uiText('持续追加','Appendable')}</span></header><div class="review-assignment-progress"><div class="review-assignment-progress-heading"><span>${uiText('联合复核进度','Combined review progress')}</span><strong>${item.completed_count} / ${item.assignment_count} · ${percent}%</strong></div><div class="review-assignment-progress-track"><span style="width:${percent}%"></span></div></div><div class="review-assignment-member-grid">${item.members.map(reviewAssignmentMemberMarkup).join('')}</div><footer class="review-assignment-batch-footer"><span>${item.total_count} ${uiText('个案例','cases')}</span><div class="review-assignment-batch-actions">${reviewAssignmentActionLinks(item)}${reviewAssignmentDetailAction(item, options)}${reviewAssignmentShareAction(item)}</div></footer></article>`;
 }
 function renderVersionAssignmentHistory(detail){
   const el=$('#reviewAssignmentAppendHistory');if(!el)return;el.hidden=!detail.appendable;

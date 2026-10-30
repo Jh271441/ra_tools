@@ -86,7 +86,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-719`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-720`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -651,6 +651,7 @@
                 </div>
                 <div class="review-assignments-header-actions">
                   <button class="button button-quiet" id="reviewAssignmentsGoReview" type="button"><span class="ui-lang-zh">返回图库筛选</span><span class="ui-lang-en">Filter in gallery</span></button>
+                  <button class="button button-quiet" id="reviewAssignmentsShare" type="button"><span class="ui-lang-zh">复制链接</span><span class="ui-lang-en">Copy link</span></button>
                   <button class="button button-quiet" id="reviewAssignmentsRefresh" type="button"><span class="ui-lang-zh">刷新</span><span class="ui-lang-en">Refresh</span></button>
                 </div>
               </div>
@@ -736,7 +737,10 @@
             <section class="page-card review-assignment-detail-card" id="reviewAssignmentDetail" hidden>
               <header class="review-assignment-section-heading">
                 <div><h2 id="reviewAssignmentDetailTitle"><span class="ui-lang-zh">任务明细</span><span class="ui-lang-en">Task detail</span></h2><p id="reviewAssignmentDetailMeta"></p></div>
-                <button class="button button-quiet" id="reviewAssignmentDetailClose" type="button"><span class="ui-lang-zh">收起明细</span><span class="ui-lang-en">Close detail</span></button>
+                <div class="review-assignment-batch-actions">
+                  <button class="button button-quiet" id="reviewAssignmentDetailShare" type="button" disabled><span class="ui-lang-zh">复制链接</span><span class="ui-lang-en">Copy link</span></button>
+                  <button class="button button-quiet" id="reviewAssignmentDetailClose" type="button"><span class="ui-lang-zh">收起明细</span><span class="ui-lang-en">Close detail</span></button>
+                </div>
               </header>
               <div class="review-assignment-detail-filters">
                 <label><span class="ui-lang-zh">负责人</span><span class="ui-lang-en">Assignee</span><div class="ui-select" id="reviewAssignmentAssigneePicker"><button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="ui-select-summary">全部负责人</span><span class="ui-select-caret" aria-hidden="true"></span></button><div class="ui-select-panel" role="listbox" hidden></div><select class="ui-select-native" id="reviewAssignmentAssigneeFilter" aria-hidden="true" tabindex="-1"></select></div></label>
@@ -2606,7 +2610,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-719`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-720`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

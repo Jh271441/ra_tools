@@ -891,11 +891,13 @@ html[data-color-theme="light"] .detail-queue-index-input {
 .review-assignment-metric strong { color: var(--text); font-size: 22px; line-height: 1; font-variant-numeric: tabular-nums; }
 .review-assignment-metric span { color: var(--muted); font-size: 10px; }
 .review-assignment-section-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 13px; }
-.review-assignment-section-heading > div { min-width: 0; display: grid; gap: 4px; }
+.review-assignment-section-heading > div:not(.review-assignment-batch-actions) { min-width: 0; display: grid; gap: 4px; }
 .review-assignment-section-heading h2 { color: var(--text); font-size: 17px; }
 .review-assignment-section-heading p { color: var(--muted); font-size: 11px; line-height: 1.45; }
 .review-assignment-section-heading > small { color: var(--faint); font-size: 10px; }
 .review-assignment-list-card, .review-assignment-detail-card { min-width: 0; }
+.review-assignment-detail-card > .review-assignment-section-heading { flex-wrap: wrap; }
+.review-assignment-detail-card .review-assignment-section-heading p { overflow-wrap: anywhere; }
 /* History is a page-level list, not a card inside another card. */
 .review-assignment-list-card { padding: 4px 2px 0; border: 0; border-radius: 0; background: transparent; }
 .review-assignment-list-card > .review-assignment-section-heading { margin: 0 0 4px; padding: 0 0 10px; border-bottom: 1px solid var(--line-soft); }
