@@ -64,12 +64,11 @@ class FrontendCampaignsContractTest(unittest.TestCase):
         self.assertIn('payload.assignment_audit || []', CAMPAIGNS_JS)
         self.assertIn('payload.lifecycle_audit || []', CAMPAIGNS_JS)
 
-    def test_campaign_discussions_use_shared_thread_with_channel_locked_replies(self) -> None:
+    def test_campaign_discussions_use_the_canonical_issue_thread(self) -> None:
         self.assertIn("function openAnalysisDiscussion", APP_JS)
-        self.assertIn('kind === "campaign"', APP_JS)
-        self.assertIn("/discussion`)", APP_JS)
-        self.assertIn("context.otherCampaigns", APP_JS)
-        self.assertIn("context.replyTo.discussion_channel", APP_JS)
+        self.assertIn('/api/cases/${encodeURIComponent(issueId)}/discussion', APP_JS)
+        self.assertNotIn("context.otherCampaigns", APP_JS)
+        self.assertNotIn("context.replyTo.discussion_channel", APP_JS)
         self.assertIn("list_related_campaign_comment_groups", APP_PY_COMMENTS_DB)
         self.assertIn('@router.get("/api/campaigns/{campaign_id}/issues/{issue_id}/discussion")', APP_PY_CAMPAIGNS_ROUTER)
 

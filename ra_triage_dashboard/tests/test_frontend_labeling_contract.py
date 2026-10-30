@@ -55,7 +55,7 @@ class FrontendLabelingContractTest(unittest.TestCase):
         self.assertIn(".case-labeling-card-tags {", STYLES_CSS)
         self.assertNotIn(".case-labeling-card-attributes {", STYLES_CSS)
         self.assertNotIn('issue-card-preview', APP_JS)
-        self.assertIn('/api/labeling/cases/${encodeURIComponent(issueId)}/comments', APP_JS)
+        self.assertIn('/api/cases/${encodeURIComponent(issueId)}/discussion', APP_JS)
         self.assertIn('kind === "labeling"', APP_JS)
         self.assertIn('id="caseLabelingPage" data-page="labeling"', INDEX_HTML)
         self.assertIn('path: "/case-labeling"', APP_JS)

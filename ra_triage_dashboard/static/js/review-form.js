@@ -610,7 +610,7 @@ function renderReview(caseData) {
             </h2>
           </div>
           <div class="review-heading-actions">
-            <button class="history-inline-button" id="reviewCommentsButton" type="button" data-review-comments aria-keyshortcuts="Shift+D" title="${escapeHtml(uiText("模型复核讨论（Shift+D）", "Model review discussion (Shift+D)"))}">
+            <button class="history-inline-button" id="reviewCommentsButton" type="button" data-review-comments aria-keyshortcuts="Shift+D" title="${escapeHtml(uiText("问题讨论（Shift+D）", "Issue discussion (Shift+D)"))}">
               <span class="ui-lang-zh">讨论</span><span class="ui-lang-en">Discussion</span>
               <kbd class="review-control-shortcut" aria-hidden="true">⇧ D</kbd>
             </button>
