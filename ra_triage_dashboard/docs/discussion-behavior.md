@@ -57,14 +57,41 @@ comments153/154 remain unchanged, including their reply relationship. Protected
 label-rationale metadata is present. Receipt:
 `/volume/home/workspace/ra_triage_dashboard_deploy/operations/issue-discussion-20261030/receipt.json`.
 
-New edit/delete, cross-source reply and taskless submission writes were verified
-with synthetic Chromium responses and an empty disposable PostgreSQL fixture
-(5 integration tests passed), without production test writes or colleague
-notifications. Signed-in Chrome automation could not attach to the focused QA
-tab after this release; whole-app accessibility reading was rejected to avoid
-unrelated private tabs. Therefore fresh signed-in production UI/post/edit/delete
-acceptance is not claimed for cache724. The cache722 real post/reply acceptance
-below is a historical result, not a replacement for this distinction.
+The initial read-only postflight also had synthetic Chromium coverage and
+5 integration tests against an empty disposable PostgreSQL fixture. Chrome
+automation could not attach; whole-app accessibility reading was rejected to
+avoid unrelated private tabs. The user then selected the Codex in-app browser
+and explicitly approved the exact live test messages, edit and cleanup below.
+
+### Signed-in production acceptance (2026-10-30, cache724)
+
+The Codex in-app browser used verified SSO `jasperchen` and the original
+cn37033077 Bot URL, including its Run and task parameters. No DChat conversation
+was opened; the user elected to provide DChat client feedback. The dialog showed
+one Issue thread, no view/destination selectors and no requirement to choose a
+task or Run. The approved ordinary comment160 was posted at20:59:14 CST;
+reply161 to160 was posted at21:03:43. Comment160 was edited at21:08:32, and its
+updated text also appeared in the reply quote. A fresh Issue-only URL with no
+task/Run parameters displayed the same persisted edit and reply.
+
+Soft-deleting160 at21:12:46 kept its tombstone and reply161. Deleting161 at21:15:30
+cleared that test body too. After a full page reload and reopening discussion,
+both tombstones remained, and original comments157/158 were unchanged. Final
+read-only verification at13:21:55Z confirmed versions160=3 and161=2, empty test
+bodies, the preserved161→160 parent, and audit rows1/2/3 for the edit and two
+deletions, all by verified jasperchen. New comments have case channel and empty
+campaign/Run bindings; automatically retained baseline provenance is metadata,
+not a discussion membership requirement.
+
+The sole new notification was outbox122 for reply161, addressed to jasperchen
+and sent once. No colleague was notified, and edit/delete created no additional
+notifications. Client receipt in DChat was not independently observed. Private
+before/post-reply/final receipts are under
+`/volume/home/workspace/ra_triage_dashboard_deploy/operations/issue-discussion-live-qa-20261030/`.
+This actual production UI acceptance covers desktop Chinese/dark in-app browser;
+it does not add real-phone or soft-keyboard coverage. The cache722 result below
+remains historical. The deployed runtime is still `faf34994acfe73fbe7a9baeaed2de89d6cdda348`;
+recording these results does not require another deployment.
 
 ## Historical releases
 
