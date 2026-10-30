@@ -227,13 +227,35 @@ def test_recovered_inflight_notifications_do_not_deliver_changed_text(fixture, k
 
 
 @pytest.mark.skipif(not os.getenv("DASHBOARD_TEST_POSTGRES_URL", "").startswith("postgresql://"), reason="requires an empty disposable PostgreSQL database")
-def test_postgres_comment_migration_and_cross_connection_cas():
+def test_postgres_comment_migration_and_cross_connection_cas(tmp_path):
     options = dict(postgres_migrations_dir=Path(__file__).resolve().parents[1] / "migrations" / "postgres", pool_size=3)
     db = Database(os.environ["DASHBOARD_TEST_POSTGRES_URL"], **options)
     other = Database(os.environ["DASHBOARD_TEST_POSTGRES_URL"], **options)
     try:
+        legacy_dir = tmp_path / "migrations58"
+        legacy_dir.mkdir()
+        for migration in options["postgres_migrations_dir"].glob("*.sql"):
+            if not migration.name.startswith("059_"):
+                (legacy_dir / migration.name).symlink_to(migration)
+        legacy = Database(os.environ["DASHBOARD_TEST_POSTGRES_URL"], postgres_migrations_dir=legacy_dir)
+        try:
+            legacy._apply_postgres_migrations()
+            legacy_issue = "legacy_comment_pg_" + uuid4().hex
+            legacy.upsert_issues([{"issue_id": legacy_issue}], source="isolated-test", baseline_scope="comment-pg", replace_gt=False)
+            with legacy.connect() as conn:
+                assert conn.execute("SELECT COUNT(*) AS n FROM dashboard_schema_migrations").fetchone()["n"] == 58
+                old_id = conn.execute("INSERT INTO review_comments (issue_id,body,author,author_verified,discussion_channel,baseline_scope) VALUES (?, ?, ?, ?, ?, ?) RETURNING id",
+                    (legacy_issue,"Existing human comment","alice",True,"case","comment-pg")).fetchone()["id"]
+                old_comment = dict(conn.execute("SELECT * FROM review_comments WHERE id = ?", (old_id,)).fetchone())
+        finally:
+            legacy.close()
         db.init()
         other.init()
+        with db.connect() as conn:
+            upgraded = dict(conn.execute("SELECT * FROM review_comments WHERE id = ?", (old_id,)).fetchone())
+            assert {key:upgraded[key] for key in old_comment} == old_comment
+            assert upgraded["version"] == 1 and upgraded["deleted_at"] is None
+            assert conn.execute("SELECT COUNT(*) AS n FROM dashboard_schema_migrations").fetchone()["n"] == 59
         issue = "comment_pg_" + uuid4().hex
         db.upsert_issues([{"issue_id": issue}], source="isolated-comment-test", baseline_scope="comment-pg", replace_gt=False)
         parent = db.create_review_comment(issue_id=issue, body="original", author="alice", author_verified=True,
@@ -257,7 +279,7 @@ def test_postgres_comment_migration_and_cross_connection_cas():
         assert db.get_review_comment(reply["id"])["reply_to_deleted"]
         assert len(db.comment_change_history(kind="review", comment_id=parent["id"], issue_id=issue,
             actor="alice", actor_verified=True, is_admin=False)) == 2
-        intent = db.create_intent_comment(dataset_id="comment-pg", case_id=issue, body="intent original", author="alice", author_verified=True)
+        intent = db.create_intent_comment(dataset_id="comment-pg", case_id=issue, body="intent original", author="alice", author_source="test-sso", author_verified=True)
         other.mutate_comment(kind="intent", comment_id=intent["id"], issue_id=issue, dataset_id="comment-pg", actor="alice",
             actor_source="test-sso", actor_verified=True, is_admin=False, expected_version=1, body="intent updated")
         assert db.get_intent_comment("comment-pg", issue, intent["id"])["version"] == 2
