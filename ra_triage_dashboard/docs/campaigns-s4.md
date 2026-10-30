@@ -32,12 +32,10 @@ rows remain addressable.
   read-only detail view shows the shared Workset/reference, member Runs, and
   each child Campaign's independent progress. A Model Review Group requires a
   shared Workset/reference and one child per Run.
-- Discussion channels are independent: Case public discussion is keyed by
-  baseline scope and Issue, Campaign discussion by Campaign and Issue, and
-  Model Review discussion by Run and Issue. Replies remain in the parent
-  channel. Campaign detail reuses the shared discussion dialog, shows Case
-  public plus the current Campaign, groups other Campaign threads as read-only,
-  and requires a channel choice before posting.
+- Discussions are shared by Issue across tasks and Model Runs. All entry points
+  use the same thread, without a task/channel selector. Existing task/Run fields
+  remain as provenance; users may reply to ordinary comments from old or closed
+  tasks. No task membership or active task is required to communicate.
 - Label Analysis separates Scene, Trigger/interaction, and Egress tags. It uses
   catalog labels in the UI and routes label rationales through the same
   deterministic reason-theme classifier as Review analysis. Raw tag keys remain
@@ -62,10 +60,11 @@ rows remain addressable.
   Campaign progress. `GET /api/campaigns/{id}/issues/{issue_id}/discussion`
   returns Case, current Campaign, other Campaign references, and Run-channel
   comments with their channel scopes intact.
-- Campaign comments have their own Issue discussion endpoints. Case comments
-  use `/api/cases/{issue_id}/case-comments`; Model Review comments continue to
-  use the Run-bound `/api/cases/{issue_id}/comments` endpoint. Replies across
-  channels are rejected by the server.
+- The current discussion UI reads/posts `/api/cases/{issue_id}/discussion` and
+  uploads images at `/discussion-with-attachments`. New comments are Issue-only;
+  replies may target any non-deleted comment under that Issue. The older scoped
+  comment APIs remain compatibility endpoints. Editing/deletion use the shared
+  `/api/cases/{issue_id}/comments/{comment_id}` resource with version checks.
 - `GET /api/campaigns/{id}/analysis` returns Label Analysis metrics and a
   rationale-searchable Issue page. The admin-only CSV export includes the
   underlying label revisions and rationales.

@@ -47,8 +47,8 @@ according to the remaining viewport space and repositions while the textarea
 or page scrolls. The current verified user remains a valid candidate and can
 deliberately notify themself as a follow-up reminder.
 The same comment-thread dialog is available from reason-analysis rows and
-Review exclusion candidate rows. Each entry carries its model Run binding, so
-the authoritative thread key is `issue_id + model_run_id`. Comments are
+Review exclusion candidate rows. The authoritative conversation key is `issue_id`;
+originating Run/task fields provide source context. Comments are
 versioned rows in `review_comments`; they do not append an annotation and
 cannot change the Review conclusion, tags, evidence, or exclusion flag.
 
@@ -94,15 +94,16 @@ append the local Review exclusion version and its notification outbox rows.
 Preview operations never notify.
 
 
-## Comment editing and deletion (cache723)
+## Comment editing and deletion (cache724)
 
 The shared discussion dialog exposes Edit and Delete for a verified author’s own
 ordinary comments. Dashboard administrators can manage other authors’ Issue,
 Campaign and Model Review comments. Intent uses its independent `annotate` / `manage`
 capabilities; Dashboard administration alone does not grant Intent management.
 Unverified historical authors cannot claim ownership just by entering the same name.
-Historical discussion, closed/read-only tasks and automatic label-rationale evidence
-remain read-only, including for administrators. The reserved verified root prefix
+Automatic label-rationale evidence remains read-only, including for administrators.
+Ordinary comments from closed tasks or old Runs can still be discussed and managed
+by their verified author or an administrator. The reserved verified root prefix
 `Issue 标签 #<revision> · 标注依据 / Label rationale` identifies protected evidence.
 Revise labeling conclusions through the existing labeling workflow.
 
@@ -114,8 +115,7 @@ Revise labeling conclusions through the existing labeling workflow.
 Edit JSON is `{"expected_version": 1, "body": "Corrected text"}`; deletion JSON
 is `{"expected_version": 1}`. Production mutations require the existing trusted
 SSO session and `X-RA-Triage-Request` marker. Submitted author/admin claims are
-ignored. The server checks the stored Issue/dataset/channel/task and current
-permissions. Body length is 1–3500 characters. A successful change advances
+ignored. The server checks the stored Issue/dataset and current permissions. Body length is 1–3500 characters. A successful change advances
 `version`; a stale version or already deleted record returns409. Identical text
 is a no-op. The browser retains both the inline edit draft and the independent
 new-comment draft on failure. Loading the latest comment explicitly updates the
@@ -142,3 +142,30 @@ and creates the audit table. SQLite initialization mirrors this additive change.
 An application rollback can retain schema059, but the old application does not
 understand tombstones and may expose retained images; restore service by fixing
 forward when possible. Never restore an old database backup over later human work.
+
+
+## One conversation per Issue (cache724)
+
+All Issue discussion entry points (Bot deep links, Review, labeling, Campaigns,
+reason analysis and exclusion candidates) now use the same conversation. The
+browser reads `GET /api/cases/{issue_id}/discussion`, posts JSON at the same path,
+and uploads images at `POST /api/cases/{issue_id}/discussion-with-attachments`.
+Posting needs no task, Run, baseline selection or active Campaign. It requires the
+existing verified Dashboard writer/admin identity. The task/view-channel selectors
+are hidden; the dialog identifies only its Issue.
+
+The read projection includes existing Issue, task, Model Review and legacy rows
+without modifying their IDs, content, authors, timestamps, parent links or stored
+source metadata. New posts always use the Issue channel and no task/Run binding.
+Replies can target any non-deleted comment belonging to that same Issue, including
+one originating in a closed task or an old Run. Cross-Issue replies are rejected.
+No production data rewrite or additional schema migration is needed for unification.
+The legacy scoped APIs remain available for compatibility; the current UI uses the
+canonical Issue endpoint. Intent discussion retains its separate dataset/Case key.
+
+Bot links may retain source Review/task parameters to make the original evidence
+easy to find. Those parameters do not control comment ownership or write access.
+Background URL normalization, task/Run/baseline filter changes and page refresh
+bookkeeping cannot invalidate a discussion for the same Issue. Switching to a
+different Issue still blocks a stale modal, preserves its draft and shows an error.
+Share links identify only the Issue and exact comment, with no task or Run required.

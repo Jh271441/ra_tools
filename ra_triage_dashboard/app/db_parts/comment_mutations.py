@@ -53,15 +53,8 @@ class DatabaseCommentMutationsMixin:
         if kind == "review":
             if comment_metadata(row)["is_label_evidence"]:
                 raise CommentConflictError("标注依据是只读审计记录，请通过标注流程修订结论。 / Label evidence is read-only. Revise it through the labeling workflow.")
-            if row["discussion_channel"] == "legacy":
-                raise CommentConflictError("历史讨论为只读。 / Historical discussion is read-only.")
-            issue = conn.execute("SELECT baseline_scope FROM issues WHERE issue_id = ?", (issue_id,)).fetchone()
-            if issue is None or (row["discussion_channel"] in {"case", "campaign"} and str(row["baseline_scope"] or "") != str(issue["baseline_scope"] or "")):
-                raise CommentConflictError("评论所属数据集已变化，请重新打开原讨论。 / The comment dataset changed. Reopen its original discussion.")
-            if row["discussion_channel"] == "campaign":
-                task = conn.execute("SELECT lifecycle, legacy_read_only FROM issue_work_splits WHERE id = ?", (row["campaign_id"],)).fetchone()
-                if task is None or task["lifecycle"] != "active" or task["legacy_read_only"]:
-                    raise CommentConflictError("该任务讨论为只读。 / This task discussion is read-only.")
+            if conn.execute("SELECT issue_id FROM issues WHERE issue_id = ?", (issue_id,)).fetchone() is None:
+                raise CommentMissingError("Issue 不存在。 / Issue not found.")
         return row
 
     def mutate_comment(self, *, kind: str, comment_id: int, issue_id: str,

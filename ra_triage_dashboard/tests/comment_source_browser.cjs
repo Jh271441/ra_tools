@@ -55,8 +55,8 @@ const server = http.createServer((req, res) => {
       await setup(lang,theme);
       assert.equal(await page.evaluate(()=>state.analysisDiscussion.status),'ready');
       assert.equal(await page.locator('#analysisDiscussionThread [data-comment-id="117"].is-deep-linked').count(),1);
-      assert.equal(await page.evaluate(()=>state.analysisDiscussion.kind),'labeling');
-      assert.ok((await page.evaluate(()=>window.requested)).every(p=>p.startsWith('/api/labeling/cases/cn123/comments?')));
+      assert.equal(await page.evaluate(()=>state.analysisDiscussion.kind),'issue');
+      assert.ok((await page.evaluate(()=>window.requested)).every(p=>p==='/api/cases/cn123/discussion'));
       const box=await page.locator('#analysisDiscussionDialog').boundingBox();
       assert.ok(box && box.x>=0 && box.x+box.width<=width+1 && box.y>=0 && box.y+box.height<=901,JSON.stringify({width,lang,theme,box}));
       assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
@@ -74,8 +74,8 @@ const server = http.createServer((req, res) => {
     assert.equal(await page.evaluate(()=>state.analysisDiscussion.issueId),'cn123');
     // Old model-review links keep their independent Run thread.
     await page.evaluate(async()=>{closeAnalysisDiscussion();await openReviewRouteDiscussion({issue:'cn123',runId:'run1',commentId:117});});
-    assert.equal(await page.evaluate(()=>state.analysisDiscussion.kind),'review');
-    assert.ok((await page.evaluate(()=>window.requested)).at(-1).includes('/api/cases/cn123/comments?model_run_id=run1'));
+    assert.equal(await page.evaluate(()=>state.analysisDiscussion.kind),'issue');
+    assert.ok((await page.evaluate(()=>window.requested)).at(-1).includes('/api/cases/cn123/discussion'));
     assert.deepEqual(errors,[]);
     console.log('PASS: 12 viewport/language/theme combinations; Issue vs Run endpoint, comment focus, URL refresh/history, shared select; synthetic data, no sends.');
   } finally { await browser.close(); await new Promise(resolve=>server.close(resolve)); }

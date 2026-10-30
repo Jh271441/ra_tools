@@ -40,6 +40,7 @@ from .routers import (
     case_annotations,
     case_comments,
     comment_mutations,
+    issue_discussion,
     campaigns,
     cases,
     core,
@@ -272,7 +273,7 @@ async def request_size_guard(request: Request, call_next):
             (
                 request.url.path.startswith("/api/cases/")
                 and request.url.path.endswith(
-                    ("/annotations-with-attachments", "/comments-with-attachments",
+                    ("/annotations-with-attachments", "/comments-with-attachments", "/discussion-with-attachments",
                      "/combined-review-with-attachments", "/case-label-from-review-with-attachments")
                 )
             )
@@ -282,7 +283,7 @@ async def request_size_guard(request: Request, call_next):
             )
         )
     ):
-        is_comment_upload = request.url.path.endswith("/comments-with-attachments")
+        is_comment_upload = request.url.path.endswith(("/comments-with-attachments", "/discussion-with-attachments"))
         is_label_upload = request.url.path.endswith(("/revisions-with-attachments", "/combined-review-with-attachments", "/case-label-from-review-with-attachments"))
         required_marker = (
             "comment-v1" if is_comment_upload
@@ -383,6 +384,7 @@ app.include_router(daily_review.router)
 app.include_router(cases.router)
 app.include_router(case_comments.router)
 app.include_router(comment_mutations.router)
+app.include_router(issue_discussion.router)
 app.include_router(campaigns.router)
 app.include_router(case_annotations.router)
 app.include_router(reviews.router)

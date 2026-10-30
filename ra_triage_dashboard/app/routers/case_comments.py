@@ -17,7 +17,7 @@ from ..support.attachments import (
     _store_comment_attachments,
 )
 from ..support.common import _as_text, _detail
-from ..support.identity import _action_actor
+from ..support.identity import _action_actor, _writer_identity
 
 router = APIRouter()
 
@@ -183,6 +183,11 @@ async def create_review_comment_with_attachments(
     payload: str = Form(...),
     attachments: Optional[List[UploadFile]] = File(None),
 ) -> dict[str, Any]:
+    return await _create_comment_with_attachments(issue_id, request, payload, attachments)
+
+
+async def _create_comment_with_attachments(issue_id: str, request: Request, payload: str,
+        attachments: Optional[List[UploadFile]], *, issue_discussion: bool = False):
     try:
         body = json.loads(payload)
     except (TypeError, ValueError, json.JSONDecodeError) as exc:
@@ -190,10 +195,11 @@ async def create_review_comment_with_attachments(
     if not isinstance(body, dict):
         raise _detail(400, "评论 payload 必须是 JSON 对象。")
     model_run_id = _as_text(body.get("model_run_id")).strip()
-    await _require_unmigrated_issue(
-        issue_id, database, model_run_id=model_run_id
-    )
-    _require_model_run_comment(model_run_id)
+    if not issue_discussion:
+        await _require_unmigrated_issue(issue_id, database, model_run_id=model_run_id)
+        _require_model_run_comment(model_run_id)
+    else:
+        await asyncio.to_thread(_writer_identity, request)
     uploads = attachments or []
     raw_tokens = body.get("attachment_tokens", [])
     if not isinstance(raw_tokens, list) or len(raw_tokens) != len(uploads):
@@ -220,6 +226,7 @@ async def create_review_comment_with_attachments(
             request,
             body,
             attachments=records,
+            issue_discussion=issue_discussion,
         )
     except Exception:
         persisted = False
@@ -245,6 +252,7 @@ async def _create_review_comment_record(
     body: dict[str, Any],
     *,
     attachments: list[dict[str, Any]] | None = None,
+    issue_discussion: bool = False,
 ) -> dict[str, Any]:
     text = _as_text(body.get("body")).strip()
     if not text:
@@ -252,10 +260,14 @@ async def _create_review_comment_record(
     if len(text) > 3500:
         raise _detail(400, "评论内容不能超过 3500 个字符。")
     model_run_id = _as_text(body.get("model_run_id")).strip()
-    await _require_unmigrated_issue(
-        issue_id, database, model_run_id=model_run_id
-    )
-    model_run_id = _require_model_run_comment(model_run_id)
+    if issue_discussion:
+        await asyncio.to_thread(_writer_identity, request)
+        if await asyncio.to_thread(database.get_issue, issue_id) is None:
+            raise _detail(404, "Issue 不存在。 / Issue not found.")
+        model_run_id = ""
+    else:
+        await _require_unmigrated_issue(issue_id, database, model_run_id=model_run_id)
+        model_run_id = _require_model_run_comment(model_run_id)
     author, author_source, author_verified = await asyncio.to_thread(
         _action_actor, request, body.get("author")
     )
@@ -276,7 +288,8 @@ async def _create_review_comment_record(
             raise _detail(404, "回复的评论不存在。")
         if (
             parent["issue_id"] != issue_id
-            or str(parent.get("model_run_id") or "") != model_run_id
+            or (not issue_discussion and str(parent.get("model_run_id") or "") != model_run_id)
+            or parent.get("deleted")
         ):
             raise _detail(400, "只能回复当前 Issue 与 Model Run 下的评论。")
     try:
@@ -316,16 +329,15 @@ async def _create_review_comment_record(
             notification_recipients=queued_recipients,
             reply_to_id=reply_to_id,
             attachments=attachments,
+            **({"discussion_channel": "case", "unified_issue_discussion": True} if issue_discussion else {}),
         )
     except ValueError as exc:
         raise _detail(400, str(exc)) from exc
     if queued_recipients:
         review_notification_dispatcher.wake()
-    comment_count = await asyncio.to_thread(
-        database.review_comment_count,
-        issue_id=issue_id,
-        model_run_id=model_run_id,
-    )
+    comment_count = await asyncio.to_thread(database.issue_discussion_count, issue_id) if issue_discussion else await asyncio.to_thread(
+        database.review_comment_count, issue_id=issue_id, model_run_id=model_run_id)
+
     return {
         "comment": _public_review_comment(comment),
         "comment_count": comment_count,

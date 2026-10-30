@@ -109,7 +109,7 @@ const server = http.createServer((req, res) => {
     assert((await page.locator('#analysisDiscussionSubmit').innerText()).includes('发表中'));
     await page.evaluate(()=>$('#analysisDiscussionForm').requestSubmit($('#analysisDiscussionSubmit')));
     assert.equal(await page.evaluate(()=>posts.length),1);
-    assert.deepEqual(await page.evaluate(()=>posts[0].body),{body:draft,reply_to_id:117,task_id:''});
+    assert.deepEqual(await page.evaluate(()=>posts[0].body),{body:draft,reply_to_id:117});
     await page.evaluate(()=>finishPost.resolve({comment:{id:118,body:'saved',discussion_channel:'case',author:'alice'}}));
     await page.waitForFunction(()=>!state.analysisDiscussion.saving);
     assert.equal(await page.locator('#analysisDiscussionNote').inputValue(),'');
@@ -139,7 +139,7 @@ const server = http.createServer((req, res) => {
       assert(await status.isVisible());
       assert((await status.innerText()).includes(lang==='en'?'Could not confirm':'未能确认'));
       assert.equal(await page.locator('#analysisDiscussionNote').inputValue(),draft);
-      assert(await page.locator('#analysisDiscussionChannel').isDisabled());
+      assert.equal(await page.locator('#analysisDiscussionChannelField').isVisible(),false);
       assert.equal(await page.evaluate(()=>state.analysisDiscussion.replyTo.id),117);
       assert.equal(await page.locator('#analysisDiscussionSubmit').isDisabled(),false);
       const box=await page.locator('#analysisDiscussionDialog').boundingBox();
@@ -209,7 +209,7 @@ const server = http.createServer((req, res) => {
     const afterIme=await page.locator('#analysisDiscussionSubmit').boundingBox();
     assert.equal(duringIme.y,beforeIme.y); assert.equal(afterIme.y,beforeIme.y);
     // Any real scope change still blocks posts and gives an explanation inside the modal.
-    for(const [key,value] of [['issue','cn456'],['run','run2'],['work_split','campaign-other'],['baselines','other'],['task','campaign-other'],['campaign','campaign-other'],['dataset','other'],['case','other']]) {
+    for(const [key,value] of [['issue','cn456']]) {
       await setup(); await page.locator('#analysisDiscussionNote').fill(draft);
       await page.evaluate(({key,value})=>{const next=new URL(location.href);next.searchParams.set(key,value);history.replaceState({},'',next);},{key,value});
       await page.locator('#analysisDiscussionSubmit').click();
@@ -217,6 +217,23 @@ const server = http.createServer((req, res) => {
       assert(await page.locator('#analysisDiscussionSubmitStatus').isVisible());
       assert.equal(await page.locator('#analysisDiscussionNote').inputValue(),draft);
     }
+    // Bot route normalization and task/Run switches preserve the Issue conversation.
+    for (const [key,value] of [['run','run2'],['work_split','campaign-other'],['baselines','other'],['task','closed-task'],['campaign','closed-task']]) {
+      await setup(); await page.locator('#analysisDiscussionNote').fill(draft);
+      await page.evaluate(({key,value})=>{const next=new URL(location.href);next.searchParams.set(key,value);history.replaceState({},'',next);state.pageNavigationEpoch++;},{key,value});
+      await page.locator('#analysisDiscussionSubmit').click();
+      assert.equal(await page.evaluate(()=>posts.length),1);
+      assert.equal(await page.evaluate(()=>posts[0].path),'/api/cases/cn123/discussion');
+      await page.evaluate(()=>finishPost.resolve({comment:{id:120,body:'saved',author:'alice',discussion_channel:'case'}}));
+      await page.waitForFunction(()=>!state.analysisDiscussion.saving);
+      assert.equal(await page.locator('#analysisDiscussionNote').inputValue(),'');
+    }
+    // Both an old Run link and a taskless entry load the same Issue thread.
+    await setup();
+    await page.evaluate(async()=>{document.querySelector('#analysisDiscussionDialog').close();closeAnalysisDiscussion();await openAnalysisDiscussion('cn123',{runId:'',kind:'review'});});
+    assert(await page.locator('#analysisDiscussionSubmit').isEnabled());
+    assert.equal(await page.locator('#analysisDiscussionChannelField').isVisible(),false);
+    assert.equal(await page.locator('#analysisDiscussionViewField').isVisible(),false);
     const management=[];
     const prepareManagement=async(lang='zh',theme='dark')=>{
       await setup(lang,theme);
@@ -300,7 +317,7 @@ const server = http.createServer((req, res) => {
     await page.waitForFunction(()=>!state.analysisDiscussion.commentAction.saving);
     await page.evaluate(()=>{
       const prior=api;
-      api=async(path,options)=>!options?.method&&path.includes('/comments')?
+      api=async(path,options)=>!options?.method&&path.includes('/discussion')?
         {comments:[{...state.analysisDiscussion.comments[0],body:'Latest remote text',version:8},state.analysisDiscussion.comments[1]]}:prior(path,options);
     });
     await page.locator('[data-comment-action="reload"]').click();

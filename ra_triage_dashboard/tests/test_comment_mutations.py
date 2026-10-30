@@ -16,7 +16,7 @@ from fastapi import FastAPI
 from ra_triage_dashboard.app.auth import SessionIdentity
 from ra_triage_dashboard.app.db import Database
 from ra_triage_dashboard.app.db_parts.comment_mutations import CommentConflictError
-from ra_triage_dashboard.app.routers import case_comments, comment_mutations
+from ra_triage_dashboard.app.routers import case_comments, comment_mutations, issue_discussion
 from ra_triage_dashboard.app.support import identity
 
 
@@ -64,6 +64,7 @@ def fixture(tmp_path):
     app = FastAPI()
     app.include_router(comment_mutations.router)
     app.include_router(case_comments.router)
+    app.include_router(issue_discussion.router)
     def resolve(request, settings):
         name = request.headers.get("x-test-actor", "alice")
         return SessionIdentity(username=name, source="test-sso", verified=request.headers.get("x-test-verified", "1") == "1")
@@ -72,6 +73,7 @@ def fixture(tmp_path):
         stack.enter_context(patch.object(identity, "database", db))
         stack.enter_context(patch.object(comment_mutations, "database", db))
         stack.enter_context(patch.object(case_comments, "database", db))
+        stack.enter_context(patch.object(issue_discussion, "database", db))
         stack.enter_context(patch.object(comment_mutations, "intent_dataset_registry", SimpleNamespace(has_case=lambda ds, case: ds == "intent1" and case == "cn1")))
         yield db, AsgiClient(app)
     db.close()
@@ -169,7 +171,7 @@ def test_label_evidence_and_historical_discussion_are_read_only(fixture):
     plain = create(db)
     with db.connect() as conn:
         conn.execute("UPDATE review_comments SET discussion_channel = 'legacy' WHERE id = ?", (plain["id"],))
-    assert client.patch(url(plain), json=payload).status_code == 409
+    assert client.patch(url(plain), json=payload).status_code == 200
 
 
 def test_attachment_is_not_exposed_after_delete_and_foreign_token_is_rejected(fixture):
@@ -262,6 +264,11 @@ def test_postgres_comment_migration_and_cross_connection_cas(tmp_path):
             discussion_channel="case", baseline_scope="comment-pg", require_existing_model_run=False, notification_recipients=["bob"])
         reply = db.create_review_comment(issue_id=issue, body="reply", author="bob", author_verified=True,
             discussion_channel="case", baseline_scope="comment-pg", require_existing_model_run=False, reply_to_id=parent["id"])
+        old_run = db.create_review_comment(issue_id=issue, model_run_id="old-run", body="historical Run", author="bob", author_verified=True, require_existing_model_run=False)
+        unified_reply = db.create_review_comment(issue_id=issue, body="Issue reply across sources", author="alice", author_verified=True,
+            discussion_channel="case", unified_issue_discussion=True, reply_to_id=old_run["id"], require_existing_model_run=False)
+        assert unified_reply["reply_to_id"] == old_run["id"] and not unified_reply["model_run_id"]
+        assert {item["id"] for item in db.list_issue_discussion(issue)} >= {old_run["id"],unified_reply["id"]}
         before = db.change_revision()
         def save(pair):
             database, text = pair
@@ -286,3 +293,40 @@ def test_postgres_comment_migration_and_cross_connection_cas(tmp_path):
     finally:
         other.close()
         db.close()
+
+
+def test_issue_thread_unifies_historical_sources_and_accepts_cross_source_replies(fixture):
+    db, client = fixture
+    task = create(db, body="historical task comment")
+    model = db.create_review_comment(issue_id="cn1", model_run_id="old-run", body="old Run comment", author="alice", author_verified=True, require_existing_model_run=False)
+    with db.connect() as conn:
+        conn.execute("UPDATE review_comments SET discussion_channel = 'campaign', campaign_id = 'closed-task', baseline_scope = 'old-scope' WHERE id = ?", (task["id"],))
+    listed = client.get("/api/cases/cn1/discussion").json()
+    assert {c["id"] for c in listed["comments"]} == {task["id"],model["id"]}
+    assert listed["count"] == 2
+    for parent in (task,model):
+        reply = client.request("POST", "/api/cases/cn1/discussion", json={"body":"Issue-only reply", "reply_to_id":parent["id"], "task_id":"forged", "model_run_id":"missing-run"})
+        assert reply.status_code == 200, reply.text
+        row = reply.json()["comment"]
+        assert row["reply_to_id"] == parent["id"] and row["discussion_channel"] == "case"
+        assert not row["campaign_id"] and not row["model_run_id"]
+    assert client.patch(url(task),json={"body":"Updated ordinary comment", "expected_version":1}).status_code == 200
+    assert client.request("POST", "/api/cases/cn2/discussion", json={"body":"cross-Issue rejected", "reply_to_id":task["id"]}).status_code == 400
+    assert db.issue_discussion_count("cn1") == 4
+
+
+def test_issue_image_post_uses_same_issue_thread_without_task_or_run(fixture):
+    from starlette.requests import Request
+    db, _ = fixture
+    request = Request({"type":"http", "method":"POST", "path":"/api/cases/cn1/discussion-with-attachments", "headers":[]})
+    record = dict(id="canonical-image", original_name="a.png", stored_name="a.png", media_type="image/png", size_bytes=1, width=1, height=1, sha256="a"*64)
+    async def store(uploads):
+        assert len(uploads) == 1
+        return [record], []
+    with patch.object(case_comments,"_store_comment_attachments",store):
+        result = asyncio.run(issue_discussion.post_issue_discussion_with_attachments("cn1",request,
+            payload=json_module.dumps({"body":"![test](attachment:pending-image)","attachment_tokens":["pending-image"]}),attachments=[object()]))
+    comment = result["comment"]
+    assert comment["discussion_channel"] == "case" and not comment["model_run_id"] and not comment["campaign_id"]
+    assert comment["body"] == "![test](attachment:canonical-image)"
+    assert db.list_issue_discussion("cn1")[0]["attachments"][0]["id"] == "canonical-image"

@@ -69,6 +69,21 @@ class DatabaseCommentsMixin:
             for row in rows
         ]
 
+    def list_issue_discussion(self, issue_id: str, *, limit: int = 500) -> list[dict[str, Any]]:
+        """One Issue thread; old task/Run fields are retained as source metadata."""
+        with self.connect() as conn:
+            rows = conn.execute("""SELECT c.*, parent.author AS reply_to_author,
+                parent.body AS reply_to_body, parent.deleted_at AS reply_to_deleted_at
+                FROM review_comments c LEFT JOIN review_comments parent ON parent.id = c.reply_to_id
+                WHERE c.issue_id = ? ORDER BY c.id ASC LIMIT ?""",
+                (issue_id, max(1, min(int(limit), 500)))).fetchall()
+            attachments = self._comment_attachments_for_rows(conn, rows)
+        return [self._review_comment_dict(row, attachments=attachments.get(int(row["id"]), [])) for row in rows]
+
+    def issue_discussion_count(self, issue_id: str) -> int:
+        with self.connect() as conn:
+            return int(conn.execute("SELECT COUNT(*) AS n FROM review_comments WHERE issue_id = ?", (issue_id,)).fetchone()["n"])
+
     def review_comment_count(
         self, *, issue_id: str, model_run_id: str = "",
         discussion_channel: str | None = None, campaign_id: str = "",
@@ -209,6 +224,7 @@ class DatabaseCommentsMixin:
         reply_to_id: int | None = None,
         attachments: list[dict[str, Any]] | None = None,
         require_existing_model_run: bool = True,
+        unified_issue_discussion: bool = False,
     ) -> dict[str, Any]:
         normalized_body = str(body or "").strip()
         if not normalized_body:
@@ -281,10 +297,11 @@ class DatabaseCommentsMixin:
                     raise ValueError("回复的评论不存在。")
                 if (
                     str(parent["issue_id"]) != issue_id
-                    or str(parent["discussion_channel"] or "legacy") != channel
-                    or str(parent["campaign_id"] or "") != campaign_key
-                    or str(parent["evaluation_run_id"] or "") != normalized_run_id
-                    or (scope and str(parent["baseline_scope"] or "") != scope)
+                    or (not unified_issue_discussion and (
+                        str(parent["discussion_channel"] or "legacy") != channel
+                        or str(parent["campaign_id"] or "") != campaign_key
+                        or str(parent["evaluation_run_id"] or "") != normalized_run_id
+                        or (scope and str(parent["baseline_scope"] or "") != scope)))
                 ):
                     raise ValueError("回复必须留在原问题和原讨论中。")
             insert_sql = """

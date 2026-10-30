@@ -27,7 +27,7 @@ const s = {
   isPageContextCurrent: (context,{matchUrl=true}={}) => context.epoch===state.epoch && (!matchUrl || context.url===s.window.location.pathname+s.window.location.search),
   uiText: zh => zh, escapeHtml: String, formatTime: String,
   reviewMentionDisplayName: name => name, reviewCommentBodyMarkup: body => body,
-  bindReviewMentionComposer() {}, updateReviewMentionComposer() {}, campaignLabel: value => value,
+  disposeReviewMentionComposer() {}, bindReviewMentionComposer() {}, updateReviewMentionComposer() {}, campaignLabel: value => value,
   acknowledgeLocalChange() {}, showToast() {}, selectedBaselineQueryValue: () => 'scope',
 };
 vm.createContext(s); vm.runInContext(fs.readFileSync('ra_triage_dashboard/static/js/text-input.js', 'utf8'), s); vm.runInContext(fs.readFileSync('ra_triage_dashboard/static/js/analysis.js', 'utf8'), s);
@@ -37,153 +37,56 @@ const taskComment = { id: 2, discussion_channel: 'campaign', campaign_id: 'task1
 const result = (id='task1', comments=[caseComment, taskComment], read_only=false) => ({comments, task: {id, name:'October task', read_only}, count: comments.length});
 async function open(options={}) { return s.openAnalysisDiscussion('cn1', {kind:'labeling',taskId:'task1', ...options}); }
 async function main() {
-  // Combined notification opens the Issue thread with the server-validated task.
-  let openedRoute;
-  const originalOpen=s.openAnalysisDiscussion;
-  s.openAnalysisDiscussion=async(issue,options)=>{openedRoute={issue,...options};};
-  state.selectedCase={issue_id:'cn1',review_assignment:{split_id:'task1',model_run_id:'run1'}};
-  const route={issue:'cn1',runId:'run1',workSplitId:'task1',discussionChannel:'case',commentId:117};
-  await s.openReviewRouteDiscussion(route);
-  assert.equal(openedRoute.kind,'labeling');assert.equal(openedRoute.runId,'');
-  assert.equal(openedRoute.taskId,'task1');assert.equal(openedRoute.focusCommentId,117);
-  assert.equal(openedRoute.discussionChannel,'case');
-  await s.openReviewRouteDiscussion({...route,workSplitId:'forged'});
-  assert.equal(openedRoute.taskId,'');assert.equal(openedRoute.kind,'labeling');
-  await s.openReviewRouteDiscussion({...route,discussionChannel:''});
-  assert.equal(openedRoute.kind,'');assert.equal(openedRoute.runId,'run1');
-  s.openAnalysisDiscussion=originalOpen;
-  s.api = async path => { assert(path.includes('channel=both')); return result(); };
-  await open();
-  let c = state.analysisDiscussion;
-  assert.equal(c.channel, 'case'); assert.equal(c.viewChannel, 'both');
-  assert(!element('#analysisDiscussionSubmit').disabled); assert(!element('#analysisDiscussionComposer').hidden);
+  let requested=[];
+  s.api=async path=>{requested.push(path);return result();};
+  await open({taskId:'closed-task',runId:'missing-run'});
+  assert.equal(state.analysisDiscussion.kind,'issue');
+  assert.equal(requested.at(-1),'/api/cases/cn1/discussion');
+  assert(!element('#analysisDiscussionSubmit').disabled);
+  assert(element('#analysisDiscussionViewField').hidden);
+  assert(element('#analysisDiscussionChannelField').hidden);
   assert(element('#analysisDiscussionThread').innerHTML.includes('public-body'));
   assert(element('#analysisDiscussionThread').innerHTML.includes('task-body'));
-  assert(!element('#analysisDiscussionThread').innerHTML.includes('Campaign'));
-  // Viewing scope changes actual rows, without moving a draft's destination.
-  element('#analysisDiscussionNote').value = 'draft';
-  element('#analysisDiscussionView').value = 'case'; element('#analysisDiscussionView').onchange();
-  assert(!element('#analysisDiscussionThread').innerHTML.includes('task-body'));
-  assert.equal(c.channel, 'case'); assert.equal(element('#analysisDiscussionNote').value, 'draft');
-  element('#analysisDiscussionView').value = 'campaign'; element('#analysisDiscussionView').onchange();
-  assert(!element('#analysisDiscussionThread').innerHTML.includes('public-body'));
-  assert(element('#analysisDiscussionThread').innerHTML.includes('task-body'));
-  // Reply is locked to its original scope, and cancellation restores the prior choice.
-  element('#analysisDiscussionChannel').value = 'campaign'; element('#analysisDiscussionChannel').onchange();
-  s.beginAnalysisDiscussionReply(1); assert.equal(c.channel, 'case'); assert(element('#analysisDiscussionChannel').disabled);
-  s.beginAnalysisDiscussionReply(2); assert.equal(c.preReplyChannel, 'campaign');
-  element('cancelReply').handlers.click(); assert.equal(c.replyTo, null); assert.equal(c.channel, 'campaign'); assert(!element('#analysisDiscussionChannel').disabled);
-  s.beginAnalysisDiscussionReply(1); element('#analysisDiscussionNote').value = 'reply';
-  let post = deferred(), posts = 0;
-  s.api = async (path, options) => { posts++; const body=JSON.parse(options.body); assert.equal(body.task_id, ''); assert.equal(body.reply_to_id,1); return post.promise; };
-  const saved = s.saveAnalysisDiscussion({preventDefault(){}});
-  await s.saveAnalysisDiscussion({preventDefault(){}}); assert.equal(posts,1);
-  post.resolve({comment:{id:3, body:'new-reply', discussion_channel:'case',author:'alice'},comment_count:2}); await saved;
-  assert.equal(c.replyTo,null); assert.equal(c.channel,'campaign'); assert(!element('#analysisDiscussionChannel').disabled);
-  assert.equal(c.viewChannel,'both'); assert.equal(element('#analysisDiscussionNote').value,'');
-  // Display-only URL serialization must not silently drop a valid reply.
-  s.api=async()=>result(); await open(); c=state.analysisDiscussion;
-  s.beginAnalysisDiscussionReply(1); element('#analysisDiscussionNote').value='reply after route serialization';
+  assert(s.canReplyToAnalysisDiscussion(taskComment));
+  s.beginAnalysisDiscussionReply(2);
+  element('#analysisDiscussionNote').value='reply to a historical task';
+  let post;
+  s.api=async(path,options)=>{post={path,body:JSON.parse(options.body)};return {comment:{id:3,body:'reply',author:'alice'}};};
+  await s.saveAnalysisDiscussion({preventDefault(){}});
+  assert.equal(post.path,'/api/cases/cn1/discussion');
+  assert.equal(post.body.reply_to_id,2);assert.equal(post.body.task_id,undefined);assert.equal(post.body.model_run_id,undefined);
+  assert.equal(element('#analysisDiscussionNote').value,'');
+  const share=new URL(s.analysisDiscussionShareUrl(2));
+  assert.equal(share.searchParams.get('issue'),'cn1');assert.equal(share.searchParams.get('comment'),'2');
+  for(const key of ['run','task','work_split','campaign','baselines']) assert(!share.searchParams.has(key));
   const originalSearch=s.window.location.search;
-  s.window.location.search+='&comparison=all'; posts=0;
-  s.api=async()=>{posts++;return {comment:{id:4,body:'saved',discussion_channel:'case',author:'alice'}};};
-  await s.saveAnalysisDiscussion({preventDefault(){}}); assert.equal(posts,1); assert.equal(element('#analysisDiscussionNote').value,'');
-  // Actual identity changes still reject the post with visible, preserved feedback.
-  element('#analysisDiscussionNote').value='preserved draft'; s.window.location.search=originalSearch.replace('run1','run2');
-  await s.saveAnalysisDiscussion({preventDefault(){}}); assert.equal(posts,1); assert.equal(element('#analysisDiscussionNote').value,'preserved draft');
-  assert.equal(element('#analysisDiscussionSubmitStatus').dataset.error,'true');
-  assert(element('#analysisDiscussionSubmitStatus').innerHTML.includes('Copy your draft'));
+  for (const key of ['run','task','work_split','campaign','baselines']) {
+    s.api=async()=>result();await open();element('#analysisDiscussionNote').value='retained Issue conversation';
+    const next=new URL(s.window.location.origin+s.window.location.pathname+s.window.location.search);
+    next.searchParams.set(key,'different');s.window.location.search=next.search;state.epoch++;
+    let posts=0;s.api=async()=>{posts++;return {comment:{id:4,body:'saved'}};};
+    await s.saveAnalysisDiscussion({preventDefault(){}});assert.equal(posts,1);assert.equal(element('#analysisDiscussionNote').value,'');
+    s.window.location.search=originalSearch;
+  }
+  // Only an actual switch to another Issue invalidates this Issue modal.
+  s.api=async()=>result();await open();element('#analysisDiscussionNote').value='keep my draft';
+  s.window.location.search=originalSearch.replace('cn1','cn2');let posts=0;s.api=async()=>{posts++;};
+  await s.saveAnalysisDiscussion({preventDefault(){}});assert.equal(posts,0);assert.equal(element('#analysisDiscussionNote').value,'keep my draft');
+  assert(element('#analysisDiscussionSubmitStatus').innerHTML.includes('Issue has changed'));
   s.window.location.search=originalSearch;
-  // Failure preserves reply/draft and is rendered inside the discussion rather than a toast behind it.
-  s.api=async()=>result(); await open(); s.beginAnalysisDiscussionReply(1); element('#analysisDiscussionNote').value='retry draft';
-  s.api=async()=>{throw Error('offline <unsafe>');}; await s.saveAnalysisDiscussion({preventDefault(){}});
-  assert.equal(element('#analysisDiscussionNote').value,'retry draft'); assert.equal(state.analysisDiscussion.replyTo.id,1);
-  assert(element('#analysisDiscussionSubmitStatus').innerHTML.includes('Could not confirm posting'));
-  assert(!element('#analysisDiscussionSubmit').disabled);
-  // An old save finishing in the same modal restores controls without clearing its draft after scope navigation.
-  s.api=async()=>result(); await open(); element('#analysisDiscussionNote').value='old scope draft';
-  post=deferred(); s.api=()=>post.promise;
-  const scopeSave=s.saveAnalysisDiscussion({preventDefault(){}});
-  s.window.location.search=originalSearch.replace('run1','run2');
-  post.resolve({comment:{id:9,body:'saved in original discussion',discussion_channel:'case'}}); await scopeSave;
-  assert(!element('#analysisDiscussionSubmit').disabled); assert.equal(element('#analysisDiscussionNote').value,'old scope draft');
-  assert(element('#analysisDiscussionSubmitStatus').innerHTML.includes('original discussion'));
-  s.window.location.search=originalSearch;
-  // Replying to a disabled/removed directory author cannot inject a forbidden @token.
-  s.api=async()=>result(); await open();
-  state.mentionUsers=[{username:'bob',enabled:false}]; s.beginAnalysisDiscussionReply(1);
-  assert.equal(element('#analysisDiscussionNote').value,''); assert.equal(state.analysisDiscussion.replyTo.id,1);
-  state.mentionUsers=[{username:'bob',enabled:true}]; s.beginAnalysisDiscussionReply(1);
-  assert.equal(element('#analysisDiscussionNote').value,'@bob ');
-  // Attachment validation is visible in the modal and does not wipe the draft/reply.
-  element('#analysisDiscussionNote').value='image draft';
-  s.addAnalysisDiscussionImages([{type:'image/gif',size:5}]);
-  assert(element('#analysisDiscussionSubmitStatus').innerHTML.includes('Only PNG'));
-  assert.equal(element('#analysisDiscussionNote').value,'image draft'); assert.equal(state.analysisDiscussion.replyTo.id,1);
-  // A hung POST aborts after the one bounded request; there is no automatic retry.
-  const realSet=s.window.setTimeout, realClear=s.window.clearTimeout;
-  let fireTimeout, cleared=false; posts=0;
-  s.window.setTimeout=(fn,ms)=>{assert.equal(ms,30000);fireTimeout=fn;return 1;};
-  s.window.clearTimeout=()=>{cleared=true;};
-  s.api=(path,options)=>{posts++;return new Promise((resolve,reject)=>options.signal.addEventListener('abort',()=>reject(Error('aborted'))));};
-  const timedSave=s.saveAnalysisDiscussion({preventDefault(){}}); fireTimeout(); await timedSave;
-  s.window.setTimeout=realSet; s.window.clearTimeout=realClear;
-  assert.equal(posts,1); assert(cleared); assert(!element('#analysisDiscussionSubmit').disabled);
-  assert.equal(element('#analysisDiscussionNote').value,'image draft'); assert.equal(state.analysisDiscussion.replyTo.id,1);
-  assert(element('#analysisDiscussionSubmitStatus').innerHTML.includes('请求超时'));
-  // Image uploads get a longer transfer budget than small text requests.
-  s.window.setTimeout=(fn,ms)=>{assert.equal(ms,180000);fireTimeout=fn;return 1;};
-  s.window.clearTimeout=()=>{};
-  const timedUpload=s.postAnalysisDiscussionRequest('/mock-upload',{method:'POST',body:new FormData()});
-  fireTimeout(); await assert.rejects(timedUpload,/请求超时/);
-  s.window.setTimeout=realSet; s.window.clearTimeout=realClear;
-  // Switching/cancelling a reply updates only its untouched automatically inserted mention.
-  s.api=async()=>result('task1',[caseComment,{...taskComment,author:'carol'}]); await open();
-  state.mentionUsers=[{username:'bob',enabled:true},{username:'carol',enabled:true}];
-  s.beginAnalysisDiscussionReply(1); assert.equal(element('#analysisDiscussionNote').value,'@bob ');
-  s.beginAnalysisDiscussionReply(2); assert.equal(element('#analysisDiscussionNote').value,'@carol ');
-  element('cancelReply').handlers.click(); assert.equal(element('#analysisDiscussionNote').value,'');
-  s.beginAnalysisDiscussionReply(1); element('#analysisDiscussionNote').value='@bob authored draft';
-  s.beginAnalysisDiscussionReply(2); assert.equal(element('#analysisDiscussionNote').value,'@bob authored draft');
-  element('cancelReply').handlers.click(); assert.equal(element('#analysisDiscussionNote').value,'@bob authored draft');
-  // Reopen clears the reply lock even for the same Issue.
-  s.api = async () => result(); s.beginAnalysisDiscussionReply(2); await open(); assert(!element('#analysisDiscussionChannel').disabled);
-  // Same-Issue requests must also be owned by the exact task/Run/dialog instance.
-  let first = deferred(), second = deferred();
-  s.api = path => path.includes('task_id=task1') ? first.promise : second.promise;
-  const firstOpen = open(); const secondOpen = open({taskId:'task2'});
-  second.resolve(result('task2',[{id:5,body:'task2-body',discussion_channel:'campaign',campaign_id:'task2'}])); await secondOpen;
-  first.resolve(result()); await firstOpen;
-  assert.equal(state.analysisDiscussion.taskId,'task2'); assert.equal(state.analysisDiscussion.comments[0].id,5);
-  first=deferred(); second=deferred(); s.api=path=>path.includes('model_run_id=run1')?first.promise:second.promise;
-  const r1=s.openAnalysisDiscussion('cn1',{runId:'run1'}), r2=s.openAnalysisDiscussion('cn1',{runId:'run2'});
-  second.resolve({comments:[{id:6,body:'run2-body'}]}); await r2; first.resolve({comments:[{id:7,body:'run1-body'}]}); await r1;
-  assert.equal(state.analysisDiscussion.runId,'run2'); assert.equal(state.analysisDiscussion.comments[0].id,6);
-  // A failed read preserves a draft and can retry. Page navigation/close reject late results.
-  s.api=async()=>{throw Error('offline');}; await open(); c=state.analysisDiscussion; assert.equal(c.status,'error'); assert(element('#analysisDiscussionSubmit').disabled);
-  element('#analysisDiscussionNote').value='preserved'; s.api=async()=>result(); await s.loadAnalysisDiscussion(c); assert.equal(c.status,'ready'); assert.equal(element('#analysisDiscussionNote').value,'preserved');
-  first=deferred(); s.api=()=>first.promise; const late=open(); c=state.analysisDiscussion; state.epoch++; first.resolve(result()); await late; assert.equal(c.status,'loading');
-  first=deferred(); s.api=()=>first.promise; const closed=open(); s.closeAnalysisDiscussion(); first.resolve(result()); await closed; assert.equal(state.analysisDiscussion,null);
-  // A saved old dialog cannot erase a newer dialog's draft or overwrite its rows.
-  s.api=async()=>result(); await open(); element('#analysisDiscussionNote').value='old'; post=deferred(); s.api=()=>post.promise;
-  const oldSave=s.saveAnalysisDiscussion({preventDefault(){}}); s.api=async()=>result('task2',[]); await open({taskId:'task2'}); element('#analysisDiscussionNote').value='new draft';
-  post.resolve({comment:{id:8,body:'saved elsewhere',discussion_channel:'case'}}); await oldSave;
-  assert.equal(element('#analysisDiscussionNote').value,'new draft'); assert.equal(state.analysisDiscussion.comments.length,0);
-  // Historical tasks allow public discussion, never task replies; the scope picker remains outside the composer.
-  s.api=async()=>result('task1',[caseComment,taskComment],true); await open({discussionChannel:'campaign'});
-  assert(element('#analysisDiscussionComposer').hidden); assert(!element('#analysisDiscussionChannelField').hidden); assert(!s.canReplyToAnalysisDiscussion(taskComment));
-  element('#analysisDiscussionChannel').value='case'; element('#analysisDiscussionChannel').onchange(); assert(!element('#analysisDiscussionComposer').hidden); assert(s.canReplyToAnalysisDiscussion(caseComment));
-  state.session.read_only=true; s.updateAnalysisDiscussionComposerAccess(); s.renderAnalysisDiscussionThread(); assert(element('#analysisDiscussionComposer').hidden); assert(!s.canReplyToAnalysisDiscussion(caseComment)); delete state.session.read_only;
-  // Existing task-page admin policy is preserved; writers can use public discussion.
-  s.api=async()=>({case_comments:[caseComment],campaign_comments:[taskComment],task:{id:'task1',name:'Task',read_only:false},run_comments:[{id:9,discussion_channel:'model_review',evaluation_run_id:'run-special'}]});
-  await open({kind:'campaign',campaignId:'task1',taskId:'',discussionChannel:'both'});
-  assert(!s.canReplyToAnalysisDiscussion(taskComment)); assert(s.canReplyToAnalysisDiscussion(caseComment));
-  assert(s.analysisDiscussionShareUrl(9).includes('/manual/review?')); assert(s.analysisDiscussionShareUrl(9).includes('run=run-special'));
-  // Markdown gets normal newlines; only Ctrl/Cmd+Enter posts, respecting IME and mention handling.
-  s.bindAnalysisDiscussionEnterSubmit(); let requested=0; element('#analysisDiscussionForm').requestSubmit=()=>requested++;
+  // Requests from a closed/replaced modal cannot overwrite its replacement.
+  let first=deferred();s.api=()=>first.promise;const pending=open();
+  s.closeAnalysisDiscussion();s.api=async()=>result('task2',[]);await open({taskId:'task2'});
+  element('#analysisDiscussionNote').value='new modal draft';first.resolve(result());await pending;
+  assert.equal(state.analysisDiscussion.comments.length,0);assert.equal(element('#analysisDiscussionNote').value,'new modal draft');
+  s.api=async()=>{throw Error('offline');};await open();assert.equal(state.analysisDiscussion.status,'error');
+  element('#analysisDiscussionNote').value='preserved';s.api=async()=>result();await s.loadAnalysisDiscussion(state.analysisDiscussion);
+  assert.equal(state.analysisDiscussion.status,'ready');assert.equal(element('#analysisDiscussionNote').value,'preserved');
+  state.session.read_only=true;s.updateAnalysisDiscussionComposerAccess();assert(element('#analysisDiscussionComposer').hidden);
+  assert(!s.canReplyToAnalysisDiscussion(caseComment));delete state.session.read_only;s.updateAnalysisDiscussionComposerAccess();
+  s.bindAnalysisDiscussionEnterSubmit();let submitted=0;element('#analysisDiscussionForm').requestSubmit=()=>submitted++;
   const key=opts=>{const e={key:'Enter',preventDefault(){this.defaultPrevented=true;},...opts};element('#analysisDiscussionNote').handlers.keydown(e);return e;};
-  assert(!key({}).defaultPrevented); assert.equal(requested,0); assert(key({ctrlKey:true}).defaultPrevented); assert.equal(requested,1);
-  key({metaKey:true}); assert.equal(requested,2); key({ctrlKey:true,isComposing:true}); key({ctrlKey:true,shiftKey:true}); key({ctrlKey:true,defaultPrevented:true}); assert.equal(requested,2);
-  console.log('Discussion scope, reply lifecycle, ownership races, retry, roles, shares and keyboard passed.');
+  key({});assert.equal(submitted,0);key({ctrlKey:true});key({metaKey:true});assert.equal(submitted,2);key({ctrlKey:true,isComposing:true});assert.equal(submitted,2);
+  console.log('Unified Issue thread: legacy task/Run visibility, replies, taskless writes, Bot route normalization, ownership races and keyboard passed.');
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});
