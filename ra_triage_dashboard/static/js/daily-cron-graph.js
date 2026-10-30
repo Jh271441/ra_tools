@@ -47,7 +47,7 @@ function cronTaskProgressMarkup(progress) {
 }
 
 function buildDailyCronGraph(data, definitionLane = "") {
-  if (data?.incremental?.enabled && !dailyCronState.selectedDay) return buildIncrementalCronGraph(data.incremental, definitionLane);
+  if (cronIncrementalEnabled(data) && !dailyCronState.selectedDay) return buildIncrementalCronGraph(cronSelectedIncremental(data), definitionLane);
   const { day, main: run, media } = cronSelectedRuns(data);
   const daily = data?.overview?.daily, runtime = data?.media_daily;
   const launch = cronLatestLaunch(daily, run);
@@ -214,19 +214,36 @@ function renderCronRunSelector() {
   const select = $("#dailyCronRunDate");
   if (!select) return;
   const runs = (dailyCronState.data?.overview?.daily?.runs || []).filter(run => /^daily-\d{4}-\d{2}-\d{2}$/.test(run.id));
-  const value = dailyCronState.selectedDay || "";
-  const latest = dailyCronState.data?.incremental?.enabled ? uiText("当前版本增量", "Current version incremental") : [uiText("最新运行", "Latest run"), runs[0]?.target_date_cst].filter(Boolean).join(" · ");
-  select.innerHTML = `<option value="">${escapeHtml(latest)}</option>` + runs.map(run => {
+  const incremental = dailyCronState.data?.incremental?.enabled ? dailyCronState.data.incremental : { enabled: Boolean(dailyCronState.selectedVersion) };
+  const families = cronVersionFamilies(incremental);
+  const family = dailyCronState.selectedVersion;
+  // Keep a temporarily missing selected version visible, with unknown counts, rather than switching scope.
+  if (/^\d{8}$/.test(family) && !families.includes(family)) families.push(family);
+  const value = dailyCronState.selectedDay || (incremental?.enabled ? family === 'all' ? 'all' : `version:${family}` : '');
+  const options = incremental?.enabled
+    ? families.map(f => `<option value="version:${f}">${escapeHtml(uiText('版本', 'Version'))} ${f.slice(4)} · ${f.slice(0,4)}</option>`).join('') + `<option value="all">${escapeHtml(uiText('全部版本汇总', 'All versions'))}</option>`
+    : `<option value="">${escapeHtml([uiText('最新运行', 'Latest run'), runs[0]?.target_date_cst].filter(Boolean).join(' · '))}</option>`;
+  const markup = options + runs.map(run => {
     const status = ["partial", "complete_with_gaps"].includes(run.health) ? uiText("已完成（有缺失）", "Complete with gaps") : cronLabel(run.health);
-    return `<option value="${escapeHtml(run.target_date_cst)}">${escapeHtml(run.target_date_cst)} · ${escapeHtml(status)}</option>`;
+    return `<option value="${escapeHtml(run.target_date_cst)}">${escapeHtml(uiText('旧日期批次', 'Legacy daily run'))} · ${escapeHtml(run.target_date_cst)} · ${escapeHtml(status)}</option>`;
   }).join("");
+  if (select.innerHTML !== markup) select.innerHTML = markup;
   select.value = value;
+  select.setAttribute('aria-label', uiText('选择版本或旧日期批次', 'Select version or legacy daily run'));
   const picker = enhanceNativeUiSelect(select);
-  picker?.querySelector(".ui-select-trigger")?.setAttribute("aria-label", uiText("选择运行日期", "Select run date"));
+  picker?.querySelector(".ui-select-trigger")?.setAttribute("aria-label", uiText('选择版本或旧日期批次', 'Select version or legacy daily run'));
 }
 
 function bindCronGraphEvents() {
-  $("#dailyCronRunDate")?.addEventListener("change", event => { dailyCronState.selectedDay = event.target.value; dailyCronState.selectedNode = ""; renderCronGraphDetails({ lanes: [] }, ""); renderDailyCron(); });
+  $("#dailyCronRunDate")?.addEventListener("change", event => {
+    const value = event.target.value;
+    dailyCronState.selectedDay = /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : '';
+    if (value === 'all' || /^version:\d{8}$/.test(value)) dailyCronState.selectedVersion = value.replace('version:', '');
+    dailyCronState.selectedNode = "";
+    const url = new URL(window.location.href); writeCronScope(url);
+    window.history.replaceState(window.history.state, '', url);
+    renderCronGraphDetails({ lanes: [] }, ""); renderDailyCron();
+  });
   document.querySelectorAll("[data-cron-help]").forEach(button => button.addEventListener("click", () => { void openCronGraphHelp(button.dataset.cronHelp); }));
   $("#dailyCronHelpClose")?.addEventListener("click", () => $("#dailyCronHelpDialog").close());
   $("#dailyCronHelpDialog")?.addEventListener("close", () => window.RACronGraph?.unmount($("#dailyCronHelpGraph")));
@@ -268,6 +285,17 @@ function buildIncrementalCronGraph(v,definitionLane='') {
     node('media-ready',uiText('逐条发布 / 清理','Publish / Clean per case'),uiText(`累计验证 ${m.verified||0} · 满1小时后清理`,`Verified so far ${m.verified||0} · Cleanup after1h`),mediaPending||continuing?'running':'unknown',mediaPending||continuing?rolling:uiText('清理回执未观测','Cleanup receipt not observed'),[[uiText('判定范围','Scope'),uiText('已验证 case 可先发布；清理独立记录','Verified cases publish first; cleanup has separate receipts')]])
   ];
   media[6].data.progress=cronTaskProgress(m.verified||0,m.selected||0,{stale:!active,label:uiText('当前媒体目标','Current media targets')});
+  if (v.statesUnavailable || v.unavailable) {
+    for (const n of nodes.filter(n => ['main-wait','main-infer','main-publish'].includes(n.id))) {
+      n.data.status='unknown'; n.data.stateLabel=uiText('状态暂不可用','Status unavailable');
+      n.data.detail='—'; n.data.rows=[];
+      n.data.progress=cronTaskProgress(null,null,{label:uiText('所选版本队列','Selected version queue')});
+    }
+  }
+  if (v.unavailable) for (const n of media) {
+    n.data.status='unknown'; n.data.stateLabel=uiText('状态暂不可用','Status unavailable');
+    n.data.detail='—'; n.data.rows=[]; n.data.progress=null;
+  }
   const edge=(a,b,optional=false)=>({id:a+':'+b,source:a,target:b,optional});
   let lanes=[{id:'main-lane',label:uiText('按版本增量处理','Version incremental processing'),nodes},{id:'media-lane',label:uiText('平台与独立媒体','Platform and independent media'),nodes:media}];
   let edges=[edge('main-schedule','main-query'),edge('main-query','main-wait',true),edge('main-wait','main-verify',true),edge('main-query','main-verify'),edge('main-verify','main-infer'),edge('main-infer','main-publish'),edge('main-infer','media-source',true),edge('media-source','media-import'),edge('media-import','media-camera'),edge('media-import','media-orion'),edge('media-camera','media-verify'),edge('media-orion','media-verify'),edge('media-orion','media-retry',true),edge('media-retry','media-local',true),edge('media-local','media-verify',true),edge('media-verify','media-ready')];

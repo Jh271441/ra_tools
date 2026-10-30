@@ -867,6 +867,7 @@ function applyAnalysisRouteControls(route) {
 function pageUrl(page, options = {}) {
   const config = PAGE_ROUTES[page] || PAGE_ROUTES.review;
   const url = new URL(withBase(config.path), window.location.origin);
+  if (page === 'daily-cron' && typeof writeCronScope === 'function') writeCronScope(url);
   if (page === "trail-history") {
     for (const [key, value] of Object.entries(trailHistoryRouteOptions())) if (value !== "") url.searchParams.set(key, String(value));
   }
@@ -1251,6 +1252,7 @@ function showPage(
   if (previousPage === "trail-history" && trailHistory.busy) return;
   if (previousPage === "trail-history" && target !== "trail-history") $("#trailHistoryDialog")?.close();
   if (target === "trail-history" && restoreRoute) restoreTrailHistoryRoute();
+  if (target === 'daily-cron' && restoreRoute && typeof restoreCronScope === 'function') restoreCronScope();
   if (["labeling", "review"].includes(previousPage) && typeof caseLabelDecisionUi !== "undefined" && caseLabelDecisionUi.editor) {
     if (caseLabelDecisionUi.saving) return;
     exitCaseDecisionEditor();

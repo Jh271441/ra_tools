@@ -4,6 +4,16 @@ const {chromium}=require('playwright');
 const root=path.resolve(__dirname,'../..'),staticDir=path.join(root,'ra_triage_dashboard/static');
 const report=process.env.CRON_PERFORMANCE_REPORT_DIR; if(report)fs.mkdirSync(report,{recursive:true});
 const fixture={observed_at:Date.now()/1000,sources:{overview:'ready'},overview:{collected_at:Date.now()/1000,daily:{health:'success',runs:[{id:'daily-2026-10-20',target_date_cst:'2026-10-20',state:'complete',health:'success',selected:10,inferred:10,published:10,verified:10,skipped:0}],jobs:[]}},history:[],sidecar:null,media_daily:null};
+const versionQA=process.env.CRON_VERSION_QA==='1';
+if(versionQA){
+ const families=['20261009','20261016','20261023'];
+ fixture.incremental={enabled:true,updated_at:Date.now()/1000,stale:false,families,states:{published:60},
+  media:{selected:15,verified:12},discovery_schedule:{hours:[7,19]},
+  versions:families.map((family,i)=>({family,states_status:'ready',states:{published:(i+1)*10,waiting_metadata:3},media:{selected:3+i*2,verified:2+i*2,queued:1,reused:0,failure_count:0}})),
+  datasets:families.map((release_family,i)=>({release_family,targets:3+i*2,assigned:{tester:3+i*2}})),
+  increments:{status:'ready',items:families.map(family=>({family,start_at:1793314800,new:0,filled:0,published:0,target_added:0,target_removed:0,scan_state:'success'}))}};
+ fixture.closeup={state:'collecting',versions:{'1009':{verified:8},'1016':{verified:18},'1023':{verified:28}}};
+}
 let blockedConfig=[],requests=[],writes=[];
 const server=http.createServer((req,res)=>{
  const u=new URL(req.url,'http://localhost'); requests.push({path:u.pathname,at:Date.now()});
@@ -26,7 +36,8 @@ const server=http.createServer((req,res)=>{
  const browser=await chromium.launch({headless:true});
  try{
  const results=[];
- for(const [width,lang,theme] of [[1440,'zh','dark'],[390,'en','light'],[320,'en','light']]){
+ const combinations=versionQA?[1440,390,320].flatMap(w=>['zh','en'].flatMap(l=>['dark','light'].map(t=>[w,l,t]))):[[1440,'zh','dark'],[390,'en','light'],[320,'en','light']];
+ for(const [width,lang,theme] of combinations){
  const context=await browser.newContext({viewport:{width,height:1000}});
  await context.addInitScript(({lang,theme})=>{localStorage.setItem('ra-triage-ui-language',lang);localStorage.setItem('ra-triage-color-theme',theme);},{lang,theme});
  const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));requests=[];blockedConfig=[];
@@ -41,7 +52,48 @@ const server=http.createServer((req,res)=>{
  await page.waitForFunction(()=>state.config!==null && Array.isArray(state.config.baselines));
  await page.waitForTimeout(500);
  assert.equal(requests.filter(r=>r.path==='/manual/api/daily-cron').length,1,'bootstrap must reuse snapshot');
- if(report)await page.screenshot({path:path.join(report,`cron-${width}-${lang}.png`),fullPage:false});
+ if(versionQA){
+  const control=page.locator('.cron-scope-control .ui-select-trigger');
+  assert.equal(await page.locator('#dailyCronRunDate').inputValue(),'version:20261023');
+  assert.match(await page.locator('#dailyCronMainValue').textContent(),/1023.*30 \/ 30/);
+  await control.click();
+  await page.locator('.cron-scope-control [data-ui-select-value="version:20261009"]').click();
+  assert.match(await page.locator('#dailyCronMainValue').textContent(),/1009.*10 \/ 10/);
+  assert.equal((await page.locator('#dailyCronMediaValue').textContent()).trim(),'2 / 3');
+  assert.ok((await page.locator('#dailyCronCloseupValue').textContent()).includes('1009'));
+  assert.ok(!(await page.locator('#dailyCronCloseupValue').textContent()).includes('1016'));
+  assert.ok(!(await page.locator('#dailyCronIncrementRows').textContent()).includes('1023'));
+  assert.match(page.url(),/cron_version=20261009/);
+  await control.click();await page.keyboard.press('Escape');assert.equal(await control.getAttribute('aria-expanded'),'false');
+  await control.click();await page.locator('#dailyCronScopeNote').click();assert.equal(await control.getAttribute('aria-expanded'),'false');
+  await control.focus();await page.keyboard.press('ArrowUp');await page.keyboard.press('Enter');
+  assert.equal(await page.locator('#dailyCronRunDate').inputValue(),'version:20261016');
+  await control.click();await page.locator('.cron-scope-control [data-ui-select-value="version:20261009"]').click();
+  await page.evaluate(()=>{dailyCronState.data.incremental.families.push('20261030');renderDailyCron();});
+  assert.equal(await page.locator('#dailyCronRunDate').inputValue(),'version:20261009');
+  await page.locator('#languageToggleButton').dispatchEvent('click');
+  assert.equal(await page.locator('#dailyCronRunDate').inputValue(),'version:20261009');
+  await page.locator('#languageToggleButton').dispatchEvent('click');
+  // Unknown snapshots cannot show another version's counts or a false success.
+  await page.evaluate(()=>{const v=dailyCronState.data.incremental.versions[0];v.states_status='unavailable';renderDailyCron();});
+  assert.match(await page.locator('#dailyCronMainValue').textContent(),/— \/ —/);
+  assert.equal((await page.locator('#dailyCronMediaValue').textContent()).trim(),'2 / 3');
+  await page.evaluate(()=>{dailyCronState.data.incremental.versions[0].states_status='ready';renderDailyCron();});
+  const b=await page.evaluate(()=>({scroll:document.documentElement.scrollWidth,width:innerWidth}));assert.ok(b.scroll<=width+1,JSON.stringify(b));
+  if(width<640){const box=await control.boundingBox();assert.ok(box.height>=44);}
+  await control.click();
+  const panel=page.locator('.cron-scope-control .ui-select-panel');const pb=await panel.boundingBox();
+  assert.ok(pb.x>=0&&pb.x+pb.width<=width+1,'picker fits viewport');await page.keyboard.press('Escape');
+  if(width===1440&&lang==='zh'&&theme==='dark'){
+   await page.reload({waitUntil:'domcontentloaded'});
+   await page.waitForFunction(()=>document.querySelector('#dailyCronRunDate')?.value==='version:20261009');
+   for(const resolve of blockedConfig.splice(0))resolve();
+   await page.waitForFunction(()=>state.config!==null && Array.isArray(state.config.baselines));
+   assert.match(await page.locator('#dailyCronMainValue').textContent(),/1009.*10 \/ 10/);
+  }
+  await page.waitForFunction(()=>[...document.querySelectorAll('#dailyCronGraph .cron-dag-task')].some(el=>el.textContent.includes('10 / 10')));
+ }
+ if(report)await page.screenshot({path:path.join(report,`cron-${width}-${lang}-${theme}.png`),fullPage:false});
  assert.deepEqual(errors,[]);results.push({width,lang,theme,graphWhileConfigBlockedMs:ready,bounds,errors});await context.close();
  }
  assert.deepEqual(writes,[]);if(report)fs.writeFileSync(path.join(report,'browser.json'),JSON.stringify({results,writes},null,2));console.log(JSON.stringify(results));

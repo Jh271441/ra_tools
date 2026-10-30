@@ -98,6 +98,10 @@ body[data-active-page="daily-cron"] .top-actions { margin-left: auto; }
 body[data-active-page="daily-cron"] #pageTitle { font-size: 16px; }
 .daily-cron-page .button { font-size: 11px; min-height: 28px; padding: 5px 9px; }
 .cron-page-heading { gap: 8px; }
+.cron-scope-control { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.cron-scope-control > label { flex: 0 0 auto; color: var(--muted); }
+.cron-scope-control > .dashboard-native-ui-select { width: 260px; max-width: 100%; min-width: 0; }
+#dailyCronScopeNote { margin: 0; overflow-wrap: anywhere; }
 .cron-connection { font-size: 11px; }
 .cron-monitors { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .cron-monitor { display: grid; gap: 7px; border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; background: var(--raised); min-width: 0; }

@@ -990,6 +990,11 @@
 
 @media (max-width:650px){
  .version-metric-links a {min-height:44px}
+ .cron-scope-control { flex: 1 1 100%; flex-wrap: wrap; }
+ .cron-scope-control > .dashboard-native-ui-select { flex: 1 1 180px; width: auto; }
+ .cron-scope-control .ui-select-trigger, .daily-cron-page .button, .daily-cron-page .cron-info-button { min-height:44px; }
+ .daily-cron-page .cron-info-button { min-width:44px; }
+ .cron-page-heading .cron-connection { flex:1 1 160px; }
  .cron-increment-explanation summary { min-height:44px;display:flex;align-items:center; }
  .cron-increment-round > summary { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:7px 8px; padding:12px 0; }
  .cron-round-time { grid-column:1; gap:4px 8px; }
