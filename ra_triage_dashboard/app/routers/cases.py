@@ -792,10 +792,9 @@ async def list_case_work_splits(
         lifecycle=lifecycle, assignee=assignee,
     )
     if group_by_version and lifecycle!='history':
-        from ..version_review_tasks import version_tasks
+        from ..version_review_tasks import merge_version_task_list, version_tasks
         parents=await asyncio.to_thread(version_tasks,database,assignee=assignee,model_run_id=model_run_id)
-        parent_runs={p['model_run_id'] for p in parents}
-        items=parents+([] if version_only else [r for r in items if r['model_run_id'] not in parent_runs])
+        items=merge_version_task_list(parents,items,version_only=version_only)
     for item in items:
         item["baseline_ids"] = await asyncio.to_thread(
             task_baseline_ids, item.get("baseline_scopes") or item.get("baseline_ids") or [], item["split_id"])

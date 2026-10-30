@@ -397,6 +397,10 @@ def media_for_issue(issue_id: str, baseline_scope: str = "") -> Any:
 
 def task_baseline_ids(scopes, task_id):
     """Map exact frozen task members to visible partitions without moving history."""
+    from ..version_review_tasks import supplemental_task_baseline_ids
+    version_ids = supplemental_task_baseline_ids(database, task_id)
+    if version_ids:
+        return version_ids
     ids = [baseline_registry.scope_to_id(scope) or scope for scope in scopes]
     partitions = load_partitions(settings.data_dir)
     if not partitions or not set(ids).intersection(SOURCE_IDS):
