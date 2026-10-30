@@ -22,14 +22,24 @@ def merge_version_task_list(parents, items, *, version_only=False):
 
 def supplemental_task_baseline_ids(db, task_id):
     """Resolve a frozen supplemental task to its registered version dataset."""
+    return version_task_baseline_ids(db, task_id, supplemental_only=True)
+
+
+def version_task_baseline_ids(db, task_id, *, supplemental_only=False):
+    """Validate frozen membership for explicit supplemental or canonical tasks."""
     with db.connect() as conn:
         row = conn.execute('SELECT filter_json FROM issue_work_splits WHERE id=?', (task_id,)).fetchone()
         if row is None:
             return []
         filters = json.loads(row['filter_json'] or '{}')
-        if filters.get('supplemental_review') is not True:
+        if filters.get('supplemental_review') is True:
+            dataset_id = filters.get('dataset_id')
+        elif not supplemental_only and filters.get('version_live') is True:
+            dataset_id = filters.get('version_dataset_id')
+            if not dataset_id or db.version_campaign_id(dataset_id) != task_id:
+                return []
+        else:
             return []
-        dataset_id = filters.get('dataset_id')
         version = conn.execute('SELECT release_family FROM version_datasets WHERE id=?', (dataset_id,)).fetchone()
         if version is None:
             return []

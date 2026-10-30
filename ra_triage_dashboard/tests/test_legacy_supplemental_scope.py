@@ -83,6 +83,41 @@ class LegacySupplementalScopeTests(IsolatedAsyncioTestCase):
         filters = filter_parsing._case_filter_kwargs(baselines=self.legacy, work_split_id=self.task)
         self.assertEqual(set(filters['baseline_scopes']), {'old-daily', self.sidecar})
 
+    async def test_canonical_task_sample_and_rd_gt_difference_keep_all_twenty(self):
+        result = self.db.consolidate_version_campaigns(
+            dataset_id='release-20261009-odd2', backup_sha256='a'*64, actor='test')
+        self.task = result['campaign_id']
+        with patch.object(cases, 'request_identity', return_value=SimpleNamespace(verified=True, username='liangxianghui')):
+            context = await cases.review_task_context(self.task, self.request())
+        self.assertEqual(context['task']['baseline_ids'], ['version-20261009'])
+        for issue in self.ids:
+            self.db.create_label_revision(issue_id=issue, expected_output='误触发', tags=[],
+                evidence_gaps=[], rationale='existing RD', is_excluded=False, author='rd',
+                author_source='test', author_verified=True, expected_previous_revision_id=None)
+        before = self.db.change_revision()
+        for selection in [self.legacy, 'version-20261009']:
+            request = self.request(baselines=selection, target_group='sample')
+            kwargs = dict(baselines=selection, model_run_id=self.run, work_split_id=self.task,
+                          gt_relation='differs_from_gt', comparison='all')
+            first = await cases.list_cases(request, **kwargs, page_size=10)
+            second = await cases.list_cases(request, **kwargs, page_size=10, page=2)
+            ids = await cases.list_case_issue_ids(request, **kwargs)
+            self.assertEqual((first['total'], second['total'], len(first['items']), len(second['items'])), (20,20,10,10))
+            self.assertEqual(ids['issue_ids'], self.ids)
+            response = await analysis.export_review_reason_analysis(request, **kwargs, gallery_scope=True, format='csv')
+            self.assertEqual(len(response.body.decode('utf-8-sig').splitlines()), 21)
+        self.assertEqual(self.db.change_revision(), before)
+        request = self.request(target_group='sample')
+        subset = await cases.list_case_issue_ids(request, baselines='1009-2026-10-16',
+            work_split_id=self.task, model_run_id=self.run, gt_relation='differs_from_gt')
+        self.assertEqual(subset['issue_ids'], self.ids[:10])
+
+    def test_canonical_flag_without_registration_does_not_upgrade(self):
+        with self.db.connect() as conn:
+            conn.execute('UPDATE issue_work_splits SET filter_json=? WHERE id=?',
+                         ('{"version_live":true,"version_dataset_id":"release-20261009-odd2"}', self.task))
+        self.assertEqual(baselines.resolve_request_baseline_ids(self.legacy, request=self.request()), ['1009-2026-10-16'])
+
     def test_only_exact_complete_selection_of_validated_supplemental_task_is_upgraded(self):
         request = self.request()
         self.assertEqual(baselines.resolve_request_baseline_ids(self.legacy, request=request), ['version-20261009'])

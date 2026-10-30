@@ -246,22 +246,23 @@ def resolve_request_baseline_ids(
     requested = _selection_tokens(candidate)
     if set(requested).intersection(PARTITION_IDS) - set(partitions):
         raise _detail(503, "数据集分区暂不可用 / Dataset partition unavailable")
-    legacy_ids = _legacy_supplemental_baseline_ids(requested, task_id, request)
+    legacy_ids = _legacy_version_task_baseline_ids(requested, task_id, request)
     if legacy_ids:
         return legacy_ids
     return normalize_baseline_ids(candidate, allowed=allowed, default=default)
 
 
-def _legacy_supplemental_baseline_ids(requested, task_id, request):
+def _legacy_version_task_baseline_ids(requested, task_id, request):
     """Repair only the complete provenance selection from an old task link."""
     if not any(key.startswith("manual_sidecar_version_") for key in requested):
         return []
     task_id = task_id or _request_query(request).get("work_split_id", "")
     if not task_id:
         return []
-    from ..version_review_tasks import supplemental_task_baseline_ids
+    task_id = database.resolve_version_campaign(task_id)
+    from ..version_review_tasks import version_task_baseline_ids
     try:
-        version_ids = supplemental_task_baseline_ids(database, task_id)
+        version_ids = version_task_baseline_ids(database, task_id)
     except ValueError as exc:
         raise _detail(400, str(exc)) from exc
     if not version_ids:
@@ -431,8 +432,8 @@ def task_baseline_ids(scopes, task_id):
     # Unregistered version source scopes require their public dataset selector.
     # Ordinary registered scopes keep the existing lookup-free path.
     if any(str(scope).startswith('manual_sidecar_version_') for scope in scopes):
-        from ..version_review_tasks import supplemental_task_baseline_ids
-        version_ids = supplemental_task_baseline_ids(database, task_id)
+        from ..version_review_tasks import version_task_baseline_ids
+        version_ids = version_task_baseline_ids(database, database.resolve_version_campaign(task_id))
         if version_ids:
             return version_ids
     ids = [baseline_registry.scope_to_id(scope) or scope for scope in scopes]

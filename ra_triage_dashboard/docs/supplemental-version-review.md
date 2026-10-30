@@ -33,3 +33,15 @@ All nonempty frozen members must belong to that version dataset. Deliberate sour
 subsets, extra datasets, unknown scopes and ordinary tasks retain existing behavior.
 Task membership and business filters still intersect the result. Ten rows per page
 must retain a total of twenty, including across ID queues, facets and CSV export.
+
+主任务同样适用：`version_live=true` 还必须匹配已注册的 canonical Campaign ID，
+并完成同样的冻结成员校验。任务上下文直接返回公开版本 ID，避免页面刷新后
+再次生成旧来源 URL。已存的完整旧来源查询也由共享解析器兼容。历史别名先解析
+到实际任务；普通任务或只有版本标识、没有 canonical 注册的任务不会被升级。
+回归用例包含用户报告的主任务条件 `target_group=sample` 与
+`gt_relation=differs_from_gt`，并核对列表两页、ID 队列和完整 CSV。
+
+Canonical version tasks also require their registered Campaign identity, plus the
+same frozen membership validation. Task context returns the public version ID so
+refreshes stop regenerating provenance URLs. Existing full-source legacy queries
+remain compatible. Tests cover the canonical sample / differs-from-GT queue too.
