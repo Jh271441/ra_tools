@@ -1119,3 +1119,9 @@
 @media (max-width: 639px) {
   .rd-preview-distribution { flex-basis: 100%; margin-left: 0; }
 }
+
+@media (max-width: 640px) {
+  .comment-thread-actions .analysis-discussion-link, .comment-edit-actions .button { min-height: 44px; padding: 8px 10px; }
+  .comment-edit-actions .button-primary, .comment-edit-actions .button-danger { min-height: 48px !important; }
+  .comment-edit-panel .text-link { min-height: 44px; white-space: normal; text-align: left; }
+}

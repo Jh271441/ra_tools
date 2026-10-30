@@ -49,7 +49,7 @@ deliberately notify themself as a follow-up reminder.
 The same comment-thread dialog is available from reason-analysis rows and
 Review exclusion candidate rows. Each entry carries its model Run binding, so
 the authoritative thread key is `issue_id + model_run_id`. Comments are
-append-only rows in `review_comments`; they do not append an annotation and
+versioned rows in `review_comments`; they do not append an annotation and
 cannot change the Review conclusion, tags, evidence, or exclusion flag.
 
 Intent discussion uses the same composer and server-side directory validation,
@@ -92,3 +92,53 @@ For direct Issue exclusion, all comments are validated before the first Trail
 write. Only after Trail reports a complete successful readback does the server
 append the local Review exclusion version and its notification outbox rows.
 Preview operations never notify.
+
+
+## Comment editing and deletion (cache723)
+
+The shared discussion dialog exposes Edit and Delete for a verified author’s own
+ordinary comments. Dashboard administrators can manage other authors’ Issue,
+Campaign and Model Review comments. Intent uses its independent `annotate` / `manage`
+capabilities; Dashboard administration alone does not grant Intent management.
+Unverified historical authors cannot claim ownership just by entering the same name.
+Historical discussion, closed/read-only tasks and automatic label-rationale evidence
+remain read-only, including for administrators. The reserved verified root prefix
+`Issue 标签 #<revision> · 标注依据 / Label rationale` identifies protected evidence.
+Revise labeling conclusions through the existing labeling workflow.
+
+| Scope | Edit | Delete | Private change history |
+| --- | --- | --- | --- |
+| Issue / Campaign / Model Review | `PATCH /api/cases/{issue_id}/comments/{comment_id}` | `DELETE` at the same path | `GET` at the same path plus `/history` |
+| Intent | `PATCH /api/intent-datasets/{dataset_id}/cases/{case_id}/comments/{comment_id}` | `DELETE` at the same path | `GET` at the same path plus `/history` |
+
+Edit JSON is `{"expected_version": 1, "body": "Corrected text"}`; deletion JSON
+is `{"expected_version": 1}`. Production mutations require the existing trusted
+SSO session and `X-RA-Triage-Request` marker. Submitted author/admin claims are
+ignored. The server checks the stored Issue/dataset/channel/task and current
+permissions. Body length is 1–3500 characters. A successful change advances
+`version`; a stale version or already deleted record returns409. Identical text
+is a no-op. The browser retains both the inline edit draft and the independent
+new-comment draft on failure. Loading the latest comment explicitly updates the
+expected version while preserving the user’s draft for comparison.
+
+Deletion is soft: the discussion shows a placeholder, hides text and images,
+denies attachment downloads, and retains IDs, authors, replies and thread counts.
+New replies to deleted comments are rejected. Existing reply excerpts reflect
+the current parent text or the deleted placeholder. Original text and every
+change remain in `comment_changes`, whose history endpoint is restricted to the
+verified author or the appropriate administrator. Attachment files/metadata stay
+on disk for audit; editing retains existing images and permits only that comment’s
+own attachment tokens. Uploading additional images through Edit is not supported.
+
+Edits and deletions never enqueue new DChat messages, including new @ mentions.
+Pending/retry reminders for that comment are cancelled (`failed` with an explicit
+cancellation reason). A send already in flight may finish and sent messages cannot
+be recalled. If an interrupted send is recovered into retry after the comment
+changed, the dispatcher cancels it before delivery. Unchanged original submissions
+and replies retain their existing notification behavior, including self mentions.
+
+Storage migration059 adds version/edit/delete metadata to both comment tables
+and creates the audit table. SQLite initialization mirrors this additive change.
+An application rollback can retain schema059, but the old application does not
+understand tombstones and may expose retained images; restore service by fixing
+forward when possible. Never restore an old database backup over later human work.

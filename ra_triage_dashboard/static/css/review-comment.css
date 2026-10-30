@@ -1464,3 +1464,12 @@ body[data-active-page="review-assignments"] .gt-sync-control { margin-left: auto
 #historyDialog[data-history-kind="review"], #historyDialog[data-history-kind="labeling"] { height:fit-content; max-height:min(86dvh,820px); }
 #historyDialog[data-history-kind="review"] .dialog-card, #historyDialog[data-history-kind="labeling"] .dialog-card { height:auto; max-height:min(calc(86dvh - 2px),818px); }
 #historyDialog .dialog-heading .icon-button { width:44px; min-height:44px; }
+
+/* Inline comment management retains the independent new-comment draft. */
+.comment-edit-panel { display: grid; gap: 8px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line-soft); min-width: 0; }
+.comment-edit-panel label { display: grid; gap: 6px; color: var(--muted); font-size: 12px; }
+.comment-edit-panel textarea { width: 100%; min-width: 0; box-sizing: border-box; resize: vertical; font: inherit; color: var(--text); background: var(--raised); border: 1px solid var(--line-soft); border-radius: 6px; padding: 8px; line-height: 1.5; }
+.comment-edit-panel p { margin: 0; overflow-wrap: anywhere; font-size: 12px; }
+.comment-edit-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.comment-thread-actions { flex-wrap: wrap; }
+.comment-thread-actions .analysis-discussion-link { min-height: 28px; font-size: 12px; }

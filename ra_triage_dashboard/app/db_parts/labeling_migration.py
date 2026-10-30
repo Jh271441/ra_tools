@@ -127,7 +127,7 @@ class LabelingMigrationMixin:
             raise ValueError("标注讨论频道不合法。")
         query = """
                 SELECT comment.*, parent.author AS reply_to_author,
-                       parent.body AS reply_to_body,
+                       parent.body AS reply_to_body, parent.deleted_at AS reply_to_deleted_at,
                        COALESCE(NULLIF(comment.campaign_id, ''), link.task_id, '') AS task_id,
                        COALESCE(task.campaign_name, '') AS task_name,
                        COALESCE(link.source_run_id, '') AS source_run_id,

@@ -217,7 +217,122 @@ const server = http.createServer((req, res) => {
       assert(await page.locator('#analysisDiscussionSubmitStatus').isVisible());
       assert.equal(await page.locator('#analysisDiscussionNote').inputValue(),draft);
     }
+    const management=[];
+    const prepareManagement=async(lang='zh',theme='dark')=>{
+      await setup(lang,theme);
+      assert.equal(await page.locator('[data-comment-edit]').count(),0);
+      await page.evaluate(()=>{
+        state.session.is_admin=true;
+        state.analysisDiscussion.comments[1].reply_to_id=117;
+        state.analysisDiscussion.comments[1].reply_to_body=state.analysisDiscussion.comments[0].body;
+        renderAnalysisDiscussionThread();
+        window.mutations=[];
+        const originalApi=api;
+        api=async(path,options)=>{
+          if(['PATCH','DELETE'].includes(options?.method)) {
+            mutations.push({path,method:options.method,body:JSON.parse(options.body)});
+            return new Promise((resolve,reject)=>{window.finishMutation={resolve,reject};});
+          }
+          return originalApi(path,options);
+        };
+      });
+      await page.locator('#analysisDiscussionNote').fill('Independent new-comment draft / 保留新评论草稿');
+    };
+    for(const width of [1440,390,320]) for(const lang of ['zh','en']) for(const theme of ['dark','light']) {
+      await page.setViewportSize({width,height:900}); await prepareManagement(lang,theme);
+      await page.locator('[data-comment-edit="117"]').click();
+      const edited='Revised @bob comment / 修改后的评论\nA longer English sentence to check wrapping and preserve Markdown.';
+      await page.locator('[data-comment-edit-input]').fill(edited);
+      await page.locator('[data-comment-edit-input]').dispatchEvent('compositionstart');
+      await page.locator('[data-comment-edit-input]').dispatchEvent('keydown',{key:'Enter',ctrlKey:true,keyCode:229});
+      assert.equal(await page.evaluate(()=>mutations.length),0);
+      await page.locator('[data-comment-edit-input]').dispatchEvent('compositionend');
+      await clickWithoutMovingTarget('[data-comment-action="save"]',true);
+      assert.equal(await page.evaluate(()=>mutations.length),1);
+      assert(await page.locator('[data-comment-action="save"]').isDisabled());
+      assert(await page.locator('#analysisDiscussionSubmit').isDisabled());
+      assert.deepEqual(await page.evaluate(()=>mutations[0]),{path:'/api/cases/cn123/comments/117',method:'PATCH',body:{expected_version:1,body:edited}});
+      await page.evaluate(()=>finishMutation.reject(Error('Comment changed. Reload it.')));
+      await page.waitForFunction(()=>!state.analysisDiscussion.commentAction.saving);
+      assert.equal(await page.locator('[data-comment-edit-input]').inputValue(),edited);
+      assert.equal(await page.locator('#analysisDiscussionNote').inputValue(),'Independent new-comment draft / 保留新评论草稿');
+      assert(await page.locator('.comment-edit-panel [role="alert"]').isVisible());
+      const box=await page.locator('#analysisDiscussionDialog').boundingBox();
+      assert.ok(box.x>=0&&box.x+box.width<=width+1&&box.y>=0&&box.y+box.height<=901);
+      assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+      if(width<640) assert.ok((await page.locator('[data-comment-action="save"]').boundingBox()).height>=48, JSON.stringify(await page.locator('[data-comment-action="save"]').evaluate(el=>({height:el.getBoundingClientRect().height, minHeight:getComputedStyle(el).minHeight, rules:[...document.styleSheets].flatMap(sheet=>[...sheet.cssRules]).flatMap(rule=>rule.cssRules?[...rule.cssRules]:[rule]).filter(rule=>rule.selectorText&&el.matches(rule.selectorText)&&rule.style.minHeight).map(rule=>rule.cssText)}))));
+      if(width===320&&lang==='en'&&theme==='light') await page.screenshot({path:'/tmp/comment-management-320-en-light.png'});
+      if(width===1440&&lang==='zh'&&theme==='dark') await page.screenshot({path:'/tmp/comment-management-1440-zh-dark.png'});
+      await page.locator('[data-comment-action="save"]').click();
+      await page.evaluate(edited=>finishMutation.resolve({comment:{id:117,body:edited,version:2,edited_at:'2026-10-30T09:00:00Z',author:'bob',author_verified:true,discussion_channel:'case'}}),edited);
+      await page.waitForFunction(()=>!state.analysisDiscussion.commentAction);
+      assert.equal(await page.locator('#analysisDiscussionNote').inputValue(),'Independent new-comment draft / 保留新评论草稿');
+      assert((await page.locator('[data-comment-id="119"] .comment-reply-quote').innerText()).includes('Revised'));
+      await page.locator('[data-comment-delete="117"]').click();
+      await page.locator('[data-comment-action="cancel"]').click();
+      assert.equal(await page.evaluate(()=>mutations.length),2);
+      await page.locator('[data-comment-delete="117"]').click();
+      await page.locator('[data-comment-action="save"]').click();
+      assert.deepEqual(await page.evaluate(()=>mutations[2].body),{expected_version:2});
+      await page.evaluate(()=>finishMutation.resolve({comment:{id:117,body:'',version:3,deleted:true,deleted_at:'2026-10-30T09:01:00Z',attachments:[],mentions:[]}}));
+      await page.waitForFunction(()=>!state.analysisDiscussion.commentAction);
+      assert.equal(await page.locator('[data-comment-reply="117"]').count(),0);
+      assert.equal(await page.locator('[data-comment-edit="117"]').count(),0);
+      assert((await page.locator('[data-comment-id="119"] .comment-reply-quote').innerText()).includes(lang==='en'?'Original comment deleted':'原评论已删除'));
+      assert.equal(await page.locator('#analysisDiscussionNote').inputValue(),'Independent new-comment draft / 保留新评论草稿');
+      assert.equal(await page.evaluate(()=>state.analysisDiscussion.replyTo),null);
+      management.push({width,lang,theme});
+    }
+    // Owners can edit without admin; conflicts reload explicitly while preserving both drafts.
+    await prepareManagement();
+    await page.evaluate(()=>{
+      state.session.is_admin=false;
+      state.analysisDiscussion.comments[0].author='alice';
+      renderAnalysisDiscussionThread();
+    });
+    assert.equal(await page.locator('[data-comment-edit="117"]').count(),1);
+    assert.equal(await page.locator('[data-comment-edit="119"]').count(),0);
+    await page.locator('[data-comment-edit="117"]').click();
+    await page.locator('[data-comment-edit-input]').fill('Preserved @bob draft');
+    assert((await page.locator('#analysisCommentEditMentions').innerText()).includes('修改不会发送通知'));
+    await page.locator('[data-comment-action="save"]').click();
+    await page.evaluate(()=>finishMutation.reject(Error('Conflict')));
+    await page.waitForFunction(()=>!state.analysisDiscussion.commentAction.saving);
+    await page.evaluate(()=>{
+      const prior=api;
+      api=async(path,options)=>!options?.method&&path.includes('/comments')?
+        {comments:[{...state.analysisDiscussion.comments[0],body:'Latest remote text',version:8},state.analysisDiscussion.comments[1]]}:prior(path,options);
+    });
+    await page.locator('[data-comment-action="reload"]').click();
+    await page.waitForFunction(()=>state.analysisDiscussion.commentAction.version===8);
+    assert.equal(await page.locator('[data-comment-edit-input]').inputValue(),'Preserved @bob draft');
+    assert.equal(await page.locator('#analysisDiscussionNote').inputValue(),'Independent new-comment draft / 保留新评论草稿');
+    await page.evaluate(()=>{state.uiLanguage='en';document.documentElement.dataset.uiLang='en';renderAnalysisDiscussionThread();});
+    assert((await page.locator('.comment-edit-panel [role="alert"]').innerText()).includes('Latest text loaded'));
+    assert.equal(await page.locator('[data-comment-edit-input]').inputValue(),'Preserved @bob draft');
+    await page.locator('[data-comment-action="save"]').click();
+    assert.equal(await page.evaluate(()=>mutations.at(-1).body.expected_version),8);
+    await page.evaluate(()=>finishMutation.resolve({comment:{id:117,body:'Preserved @bob draft',version:9,author:'alice',author_verified:true,discussion_channel:'case'}}));
+    await page.waitForFunction(()=>!state.analysisDiscussion.commentAction);
+    // Intent capability is independent from Dashboard writer access.
+    await page.evaluate(()=>{
+      state.analysisDiscussion.kind='intent';state.session.read_only=true;
+      state.session.can_annotate_intent=true;state.session.can_manage_intent=false;
+    });
+    assert.equal(await page.evaluate(()=>canManageAnalysisComment({author:'alice',author_verified:true})),true);
+    // An old mutation cannot clear a reopened dialog's draft or current reply.
+    await prepareManagement(); await page.locator('[data-comment-edit="117"]').click();
+    await page.locator('[data-comment-edit-input]').fill('old pending edit');
+    await page.locator('[data-comment-action="save"]').click();
+    await page.evaluate(async()=>{
+      document.querySelector('#analysisDiscussionDialog').close();closeAnalysisDiscussion();
+      await openAnalysisDiscussion('cn123',{kind:'labeling',taskId:'campaign-test',discussionChannel:'case',runId:''});
+      document.querySelector('#analysisDiscussionNote').value='new dialog draft';
+      finishMutation.resolve({comment:{id:117,body:'late result',version:2}});
+    });
+    assert.equal(await page.locator('#analysisDiscussionNote').inputValue(),'new dialog draft');
     assert.deepEqual(errors,[]);
+    console.log(JSON.stringify({commentManagement:management}));
     console.log(JSON.stringify({passed:results,scenarios:['reply pointerdown/blur/pointerup target stable','route serialization','pending/duplicate','reply success','error visible in modal','draft and reply retry','mention selection/Escape','disabled directory author','attachment validation','runtime language switch','scope change rejected']}));
   } finally { await browser.close(); await new Promise(resolve=>server.close(resolve)); }
 })().catch(error=>{console.error(error);server.close();process.exitCode=1;});

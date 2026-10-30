@@ -4,6 +4,11 @@ from .shared import utc_now
 
 
 def initialize_columns(self, conn) -> None:
+    for table in ("review_comments", "intent_case_comments"):
+        self._ensure_column(conn, table, "version", "INTEGER NOT NULL DEFAULT 1")
+        self._ensure_column(conn, table, "edited_at", "TEXT")
+        self._ensure_column(conn, table, "deleted_at", "TEXT")
+        self._ensure_column(conn, table, "updated_by", "TEXT NOT NULL DEFAULT ''")
     self._ensure_column(conn, "issue_label_decisions", "full_result_json", "TEXT")
     self._ensure_column(
         conn, "intent_experiments", "overlap_reviewers",

@@ -1215,7 +1215,7 @@ function caseLabelingCommentsMarkup(caseData) {
     return `${button}<p class="muted">尚无标注讨论。可在讨论面板回复历史线程或发起新讨论。</p>`;
   }
   const items = comments.map((comment) => {
-    const body = typeof reviewCommentBodyMarkup === "function"
+    const body = comment.deleted ? `<p>${escapeHtml(uiText("此评论已删除", "This comment was deleted"))}</p>` : typeof reviewCommentBodyMarkup === "function"
       ? reviewCommentBodyMarkup(comment.body || "", comment.attachments || [])
       : `<p>${escapeHtml(comment.body || "")}</p>`;
     const displayName = typeof reviewMentionDisplayName === "function"

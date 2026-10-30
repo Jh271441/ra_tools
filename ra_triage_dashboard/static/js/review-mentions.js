@@ -193,6 +193,10 @@ function reviewMentionComposerState(textarea) {
   return reviewMentionComposerStates.get(textarea);
 }
 
+function disposeReviewMentionComposer(textarea) {
+  if (textarea) reviewMentionComposerStates.get(textarea)?.dispose?.();
+}
+
 function reviewMentionCaretAnchor(textarea, tokenStart) {
   const rect = textarea.getBoundingClientRect();
   const computed = window.getComputedStyle(textarea);
@@ -279,7 +283,7 @@ function insertReviewMention(textarea, root, username) {
   closeReviewMentionComposer(textarea, root);
 }
 
-function reviewMentionStatus(mentions, unsupported) {
+function reviewMentionStatus(mentions, unsupported, { notify = true } = {}) {
   const enabled = Boolean(state.config?.review_notifications?.enabled);
   const verified = Boolean(state.session?.verified);
   if (unsupported.length) {
@@ -292,6 +296,7 @@ function reviewMentionStatus(mentions, unsupported) {
     };
   }
   if (!mentions.length) return { text: "", invalid: false };
+  if (!notify) return { text: uiText(`已识别 ${mentions.length} 人 · 修改不会发送通知`, `${mentions.length} mentioned · edits do not send notifications`), invalid: false };
   if (!enabled) {
     return {
       text: uiText(`已识别 ${mentions.length} 人 · DChat 尚未启用`, `${mentions.length} mentioned · DChat disabled`),
@@ -330,7 +335,7 @@ function updateReviewMentionComposer(
     ? parsedMentions.filter((name) => name !== active.query)
     : parsedMentions;
   const unsupported = mentions.filter((name) => !allowed.has(name));
-  const status = reviewMentionStatus(mentions, unsupported);
+  const status = reviewMentionStatus(mentions, unsupported, { notify: root.dataset.notificationMode !== "none" });
   const dismissed = active && composer.dismissedStart === active.start;
   const candidates = active && !dismissed
     ? reviewMentionCandidates(active.query).filter((item) => !mentions.includes(item.username)).slice(0, 8)
@@ -430,6 +435,10 @@ function bindReviewMentionComposer(
   textarea.addEventListener("scroll", reposition, { passive: true });
   window.addEventListener("resize", reposition, { passive: true });
   window.addEventListener("scroll", reposition, { passive: true, capture: true });
+  composer.dispose = () => {
+    window.removeEventListener("resize", reposition);
+    window.removeEventListener("scroll", reposition, true);
+  };
   textarea.addEventListener("blur", () => {
     delete textarea.dataset.imeComposing;
     window.setTimeout(() => {

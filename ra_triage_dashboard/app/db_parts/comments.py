@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from typing import Any
 
+from .comment_mutations import comment_metadata
+
 from .shared import _json, _json_load, utc_now
 
 
 class DatabaseCommentsMixin:
-    """Append-only discussion threads scoped to one Issue and model Run."""
+    """Discussion threads scoped to one Issue and model Run, with audited mutations."""
 
     @staticmethod
     def _comment_channel_scope(
@@ -48,7 +50,7 @@ class DatabaseCommentsMixin:
             rows = conn.execute(
                 """
                 SELECT c.*, parent.author AS reply_to_author,
-                       parent.body AS reply_to_body
+                       parent.body AS reply_to_body, parent.deleted_at AS reply_to_deleted_at
                 FROM review_comments c
                 LEFT JOIN review_comments parent ON parent.id = c.reply_to_id
                 WHERE c.issue_id = ? AND c.discussion_channel = ?
@@ -171,7 +173,7 @@ class DatabaseCommentsMixin:
             row = conn.execute(
                 """
                 SELECT c.*, parent.author AS reply_to_author,
-                       parent.body AS reply_to_body
+                       parent.body AS reply_to_body, parent.deleted_at AS reply_to_deleted_at
                 FROM review_comments c
                 LEFT JOIN review_comments parent ON parent.id = c.reply_to_id
                 WHERE c.id = ?
@@ -273,7 +275,7 @@ class DatabaseCommentsMixin:
             parent = None
             if reply_to_id is not None:
                 parent = conn.execute(
-                    "SELECT * FROM review_comments WHERE id = ?", (int(reply_to_id),)
+                    "SELECT * FROM review_comments WHERE id = ? AND deleted_at IS NULL", (int(reply_to_id),)
                 ).fetchone()
                 if parent is None:
                     raise ValueError("回复的评论不存在。")
@@ -353,7 +355,7 @@ class DatabaseCommentsMixin:
             row = conn.execute(
                 """
                 SELECT c.*, parent.author AS reply_to_author,
-                       parent.body AS reply_to_body
+                       parent.body AS reply_to_body, parent.deleted_at AS reply_to_deleted_at
                 FROM review_comments c
                 LEFT JOIN review_comments parent ON parent.id = c.reply_to_id
                 WHERE c.id = ?
@@ -365,7 +367,7 @@ class DatabaseCommentsMixin:
     def get_comment_attachment(self, attachment_id: str) -> dict[str, Any] | None:
         with self.connect() as conn:
             row = conn.execute(
-                "SELECT * FROM comment_attachments WHERE id = ?",
+                "SELECT a.* FROM comment_attachments a JOIN review_comments c ON c.id = a.comment_id WHERE a.id = ? AND c.deleted_at IS NULL",
                 (str(attachment_id or "").strip(),),
             ).fetchone()
         return self._comment_attachment_dict(row) if row else None
@@ -458,6 +460,7 @@ class DatabaseCommentsMixin:
             "reply_to_body": str(row["reply_to_body"] or "")
             if "reply_to_body" in keys
             else "",
-            "attachments": list(attachments or []),
+            "attachments": [] if comment_metadata(row)["deleted"] else list(attachments or []),
+            **comment_metadata(row),
             "created_at": str(row["created_at"]),
         }

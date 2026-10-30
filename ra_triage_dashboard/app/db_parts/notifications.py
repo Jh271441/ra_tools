@@ -10,6 +10,13 @@ class DatabaseNotificationsMixin:
         """Atomically claim one due comment-notification outbox row."""
 
         with self._write_lock, self.connect() as conn:
+            # A send interrupted before an edit may be recovered into retry later.
+            # Never deliver changed or deleted comment text on that retry.
+            conn.execute("""UPDATE comment_notifications SET status = 'failed',
+                last_error = 'Comment changed; delivery cancelled.', updated_at = ?
+                WHERE status IN ('pending', 'retry') AND comment_id IN (
+                    SELECT id FROM review_comments WHERE version > 1 OR deleted_at IS NOT NULL
+                )""", (now,))
             row = conn.execute(
                 """
                 SELECT id FROM comment_notifications
@@ -54,6 +61,13 @@ class DatabaseNotificationsMixin:
         """Atomically claim one due intent-comment notification."""
 
         with self._write_lock, self.connect() as conn:
+            # A send interrupted before an edit may be recovered into retry later.
+            # Never deliver changed or deleted comment text on that retry.
+            conn.execute("""UPDATE intent_comment_notifications SET status = 'failed',
+                last_error = 'Comment changed; delivery cancelled.', updated_at = ?
+                WHERE status IN ('pending', 'retry') AND comment_id IN (
+                    SELECT id FROM intent_case_comments WHERE version > 1 OR deleted_at IS NOT NULL
+                )""", (now,))
             row = conn.execute(
                 """
                 SELECT id FROM intent_comment_notifications

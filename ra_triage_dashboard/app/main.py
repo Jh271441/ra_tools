@@ -39,6 +39,7 @@ from .routers import (
     batch,
     case_annotations,
     case_comments,
+    comment_mutations,
     campaigns,
     cases,
     core,
@@ -381,6 +382,7 @@ app.include_router(daily_cron.router)
 app.include_router(daily_review.router)
 app.include_router(cases.router)
 app.include_router(case_comments.router)
+app.include_router(comment_mutations.router)
 app.include_router(campaigns.router)
 app.include_router(case_annotations.router)
 app.include_router(reviews.router)

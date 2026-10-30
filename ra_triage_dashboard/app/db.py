@@ -45,7 +45,11 @@ from .db_parts.snapshots import DatabaseSnapshotMixin
 from .db_parts.version_datasets import DatabaseVersionDatasetsMixin
 from .db_parts.trail_history import DatabaseTrailHistoryMixin
 
+from .db_parts.comment_mutations import DatabaseCommentMutationsMixin
+
+
 class Database(
+    DatabaseCommentMutationsMixin,
     DatabaseTrailHistoryMixin,
     DatabaseVersionDatasetsMixin,
     DatabaseAccessMixin,

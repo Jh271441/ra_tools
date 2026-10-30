@@ -1069,6 +1069,7 @@ async function loadAnalysisDiscussion(context, focusCommentId = 0) {
   } catch (error) {
     if (!isAnalysisDiscussionCurrent(context) || context.requestVersion !== requestVersion) return;
     context.status = "error";
+    disposeReviewMentionComposer($("[data-comment-edit-input]"));
     $("#analysisDiscussionThread").innerHTML = `<div class="comment-thread-empty">${escapeHtml(error.message || uiText("讨论加载失败", "Unable to load discussion"))} <button type="button" class="text-link" data-retry-discussion>${uiText("重试", "Retry")}</button></div>`;
     $("[data-retry-discussion]")?.addEventListener("click", () => loadAnalysisDiscussion(context, focusCommentId));
     updateAnalysisDiscussionComposerAccess();
@@ -1076,6 +1077,7 @@ async function loadAnalysisDiscussion(context, focusCommentId = 0) {
 }
 
 function closeAnalysisDiscussion() {
+  disposeReviewMentionComposer($("[data-comment-edit-input]"));
   clearAnalysisDiscussionImages();
   state.analysisDiscussion = null;
 }
@@ -1085,8 +1087,9 @@ function analysisDiscussionTaskId(context) {
 }
 
 function canReplyToAnalysisDiscussion(comment, context = state.analysisDiscussion) {
-  if (!context || context.status !== "ready" || context.saving || state.session?.read_only) return false;
+  if (!context || context.status !== "ready" || context.saving || context.commentAction?.saving || comment.deleted) return false;
   if (context.kind === "intent") return Boolean(state.session?.can_annotate_intent);
+  if (state.session?.read_only) return false;
   if (!(state.session?.can_write || state.session?.is_admin)) return false;
   if (context.kind === "review") return Boolean(context.runId);
   if (comment.discussion_channel === "case") return true;
@@ -1118,7 +1121,7 @@ function updateAnalysisDiscussionComposerAccess({
   if (composer) composer.hidden = hidden;
   if (submit) {
     submit.hidden = hidden;
-    submit.disabled = context.status !== "ready" || context.saving || hidden;
+    submit.disabled = context.status !== "ready" || context.saving || Boolean(context.commentAction?.saving) || hidden;
     const zh = submit.querySelector(".ui-lang-zh");
     const en = submit.querySelector(".ui-lang-en");
     if (zh) zh.textContent = context.saving ? "发表中…" : "发表评论";
@@ -1427,10 +1430,114 @@ function updateAnalysisDiscussionCount(issueId, runId, count) {
   });
 }
 
+function discussionActionText(zh, en) {
+  return `<span class="ui-lang-zh">${escapeHtml(zh)}</span><span class="ui-lang-en">${escapeHtml(en)}</span>`;
+}
+
+function canManageAnalysisComment(comment, context = state.analysisDiscussion) {
+  if (!state.session?.verified || comment.is_label_evidence || !canReplyToAnalysisDiscussion(comment, context)) return false;
+  const admin = context.kind === "intent" ? state.session.can_manage_intent : state.session.is_admin;
+  return Boolean(admin || (comment.author_verified && String(comment.author).toLowerCase() === String(state.session.username || "").toLowerCase()));
+}
+
+function analysisCommentActionMarkup(comment, context) {
+  const action = context.commentAction;
+  if (!action || action.id !== Number(comment.id)) return "";
+  const busy = action.saving ? " disabled" : "";
+  const copy = discussionActionText;
+  return `<section class="comment-edit-panel">
+    ${action.mode === "edit" ? `<label>${copy("编辑评论", "Edit comment")}<textarea data-comment-edit-input rows="4" maxlength="3500"${busy}>${escapeHtml(action.body)}</textarea></label><div class="review-mention-composer" id="analysisCommentEditMentions" data-notification-mode="none" aria-live="polite"></div>
+      <p class="discussion-notice">${copy("保留原有图片；保存修改不会发送通知。", "Existing images are retained. Saving edits does not send notifications.")}</p>`
+      : `<p>${copy("删除这条评论？保留删除占位和已有回复。已发送的提醒不会撤回。", "Delete this comment? A placeholder and existing replies remain. Sent notifications cannot be recalled.")}</p>`}
+    ${action.error ? `<p class="discussion-notice discussion-submit-status is-error" role="alert">${action.error}</p><button class="text-link" type="button" data-comment-action="reload"${busy}>${copy("加载最新评论（保留草稿）", "Load latest comment (keep draft)")}</button>` : ""}
+    <div class="comment-edit-actions">
+      <button class="button button-quiet" type="button" data-comment-action="cancel"${busy}>${copy("取消", "Cancel")}</button>
+      <button class="button ${action.mode === "edit" ? "button-primary" : "button-danger"}" type="button" data-comment-action="save"${busy}>${action.saving ? copy("处理中…", "Saving…") : action.mode === "edit" ? copy("保存修改", "Save changes") : copy("确认删除", "Delete comment")}</button>
+    </div>
+  </section>`;
+}
+
+function beginAnalysisCommentAction(commentId, mode) {
+  const context = state.analysisDiscussion;
+  const comment = context?.comments?.find(item => Number(item.id) === Number(commentId));
+  if (!comment || !isAnalysisDiscussionCurrent(context) || !canManageAnalysisComment(comment, context)) return;
+  if (context.commentAction) {
+    setAnalysisDiscussionFeedback(context, "请先保存或取消当前评论的修改。", "Save or cancel the current comment action first.", true);
+    return;
+  }
+  context.commentAction = { id: Number(comment.id), mode, body: String(comment.body || ""), version: Number(comment.version || 1), saving: false, error: "" };
+  renderAnalysisDiscussionThread();
+  $(".comment-edit-panel")?.scrollIntoView({ block: "nearest" });
+  $("[data-comment-edit-input]")?.focus({ preventScroll: true });
+}
+
+async function saveAnalysisCommentAction() {
+  const context = state.analysisDiscussion;
+  const action = context?.commentAction;
+  if (!action || action.saving || context.saving || !isAnalysisDiscussionCurrent(context)) return;
+  const comment = context.comments.find(item => Number(item.id) === action.id);
+  if (!comment || !canManageAnalysisComment(comment, context)) return;
+  if (action.mode === "edit" && !String(action.body).trim()) {
+    action.error = discussionActionText("评论内容不能为空。", "Enter a comment.");
+    renderAnalysisDiscussionThread();
+    return;
+  }
+  action.saving = true;
+  renderAnalysisDiscussionThread();
+  updateAnalysisDiscussionComposerAccess();
+  try {
+    const path = context.kind === "intent"
+      ? `/api/intent-datasets/${encodeURIComponent(context.intentDatasetId)}/cases/${encodeURIComponent(context.intentCaseId)}/comments/${action.id}`
+      : `/api/cases/${encodeURIComponent(context.issueId)}/comments/${action.id}`;
+    const result = await postAnalysisDiscussionRequest(path, { method: action.mode === "edit" ? "PATCH" : "DELETE",
+      body: JSON.stringify({ expected_version: action.version, ...(action.mode === "edit" ? {body: action.body} : {}) }) });
+    if (!isAnalysisDiscussionCurrent(context) || context.commentAction !== action) return;
+    Object.assign(comment, result.comment);
+    for (const item of context.comments) if (Number(item.reply_to_id) === action.id) {
+      item.reply_to_body = comment.body;
+      item.reply_to_deleted = Boolean(comment.deleted);
+    }
+    if (context.replyTo?.id === comment.id) {
+      if (comment.deleted) { resetAnalysisDiscussionReply(context); renderAnalysisDiscussionReplyContext(); }
+      else context.replyTo = comment;
+    }
+    context.commentAction = null;
+    if (context.kind === "labeling" && state.caseLabeling?.caseData?.issue_id === context.issueId) state.caseLabeling.caseData.comments = context.comments;
+    if (context.kind === "intent" && state.intentLabeling?.caseId === context.intentCaseId) {
+      state.intentLabeling.caseData.collaboration.comments = context.comments;
+      if (typeof renderIntentCollaboration === "function") renderIntentCollaboration();
+    }
+    setAnalysisDiscussionFeedback(context, action.mode === "edit" ? "评论已修改，未发送新通知。" : "评论已删除，已有回复保留。",
+      action.mode === "edit" ? "Comment updated. No new notifications sent." : "Comment deleted. Existing replies remain.");
+  } catch (error) {
+    if (isAnalysisDiscussionCurrent(context) && context.commentAction === action) action.error = discussionActionText("未能确认操作成功，请加载最新评论核对；草稿已保留。", "Could not confirm the change. Load the latest comment to check; your draft is preserved.") + ` ${escapeHtml(error.message || "")}`;
+  } finally {
+    action.saving = false;
+    if (isAnalysisDiscussionCurrent(context)) { renderAnalysisDiscussionThread(); updateAnalysisDiscussionComposerAccess(); }
+  }
+}
+
+async function reloadAnalysisCommentAction() {
+  const context = state.analysisDiscussion, action = context?.commentAction;
+  if (!action || action.saving) return;
+  await loadAnalysisDiscussion(context);
+  if (!isAnalysisDiscussionCurrent(context) || context.commentAction !== action || context.status !== "ready") return;
+  const comment = context.comments.find(item => Number(item.id) === action.id);
+  if (!comment || comment.deleted) {
+    action.error = discussionActionText("评论已删除，请复制草稿后取消编辑。", "The comment was deleted. Copy your draft, then cancel editing.");
+  } else {
+    action.version = Number(comment.version || 1);
+    action.error = discussionActionText("已加载最新正文。请与保留的草稿比较后再保存。", "Latest text loaded. Compare it with your preserved draft before saving.");
+  }
+  renderAnalysisDiscussionThread();
+}
+
 function renderAnalysisDiscussionThread() {
   const context = state.analysisDiscussion;
   const target = $("#analysisDiscussionThread");
   if (!target || !context) return;
+  const previousScroll = target.scrollTop;
+  disposeReviewMentionComposer(target.querySelector("[data-comment-edit-input]"));
   const renderComment = (comment, { readOnly = false } = {}) => {
     const replyExcerpt = String(comment.reply_to_body || "")
       .replace(/!\[[^\]\n]*\]\([^\n)]+\)/g, "[图片]")
@@ -1441,7 +1548,7 @@ function renderAnalysisDiscussionThread() {
       .trim()
       .slice(0, 120);
     const replyContext = comment.reply_to_id
-      ? `<div class="comment-reply-quote">回复 ${escapeHtml(reviewMentionDisplayName(comment.reply_to_author || "评论人"))}：${escapeHtml(replyExcerpt)}</div>`
+      ? `<div class="comment-reply-quote">${discussionActionText("回复", "Reply to")} ${escapeHtml(reviewMentionDisplayName(comment.reply_to_author || uiText("评论人", "author")))}: ${comment.reply_to_deleted ? discussionActionText("原评论已删除", "Original comment deleted") : escapeHtml(replyExcerpt)}</div>`
       : "";
     const commentCampaignId = String(comment.campaign_id || comment.label_task_id || "");
     const channelLabel = ["labeling", "campaign"].includes(context.kind)
@@ -1461,17 +1568,20 @@ function renderAnalysisDiscussionThread() {
       && commentCampaignId !== String(context.kind === "campaign" ? context.campaignId : context.taskId || "")
     );
     const canReply = !readOnlyOtherCampaign && canReplyToAnalysisDiscussion(comment, context);
+    const canManage = !readOnlyOtherCampaign && canManageAnalysisComment(comment, context);
     return `<article class="comment-thread-item" data-comment-id="${Number(comment.id)}">
       <div class="comment-thread-meta">
         <strong>${escapeHtml(reviewMentionDisplayName(comment.author || "unknown"))}</strong>
-        <span>${channelLabel ? `${escapeHtml(channelLabel)} · ` : ""}${comment.author_verified ? `${uiText("已验证", "Verified")} · ` : ""}${escapeHtml(formatTime(comment.created_at))}</span>
+        <span>${channelLabel ? `${escapeHtml(channelLabel)} · ` : ""}${comment.author_verified ? `${uiText("已验证", "Verified")} · ` : ""}${escapeHtml(formatTime(comment.created_at))}${comment.edited_at ? ` · ${discussionActionText("已编辑", "Edited")} ${escapeHtml(formatTime(comment.edited_at))}` : ""}</span>
       </div>
       ${replyContext}
-      <div class="comment-thread-body">${reviewCommentBodyMarkup(comment.body || "", comment.attachments || [])}</div>
+      <div class="comment-thread-body">${comment.deleted ? discussionActionText("此评论已删除", "This comment was deleted") : reviewCommentBodyMarkup(comment.body || "", comment.attachments || [])}</div>
       <div class="comment-thread-actions">
-        <button class="analysis-discussion-link" type="button" data-comment-share="${Number(comment.id)}">分享</button>
-        ${canReply ? `<button class="analysis-discussion-link" type="button" data-comment-reply="${Number(comment.id)}">回复</button>` : ""}
+        <button class="analysis-discussion-link" type="button" data-comment-share="${Number(comment.id)}">${discussionActionText("分享", "Share")}</button>
+        ${canReply ? `<button class="analysis-discussion-link" type="button" data-comment-reply="${Number(comment.id)}">${discussionActionText("回复", "Reply")}</button>` : ""}
+        ${canManage ? `<button class="analysis-discussion-link" type="button" data-comment-edit="${Number(comment.id)}">${discussionActionText("编辑", "Edit")}</button><button class="analysis-discussion-link" type="button" data-comment-delete="${Number(comment.id)}">${discussionActionText("删除", "Delete")}</button>` : ""}
       </div>
+      ${analysisCommentActionMarkup(comment, context)}
     </article>`;
   };
   if (["campaign", "labeling"].includes(context.kind)) {
@@ -1522,7 +1632,23 @@ function renderAnalysisDiscussionThread() {
       shareAnalysisDiscussionComment(Number(button.dataset.commentShare)).catch((error) => showToast(error.message, true));
     });
   });
-  target.scrollTop = target.scrollHeight;
+  target.querySelectorAll("[data-comment-edit], [data-comment-delete]").forEach(button => {
+    button.addEventListener("click", () => beginAnalysisCommentAction(Number(button.dataset.commentEdit || button.dataset.commentDelete), button.dataset.commentEdit ? "edit" : "delete"));
+  });
+  const editInput = target.querySelector("[data-comment-edit-input]");
+  if (editInput) bindReviewMentionComposer(editInput, target.querySelector("#analysisCommentEditMentions"));
+  editInput?.addEventListener("input", () => { if (context.commentAction) context.commentAction.body = editInput.value; });
+  editInput?.addEventListener("keydown", event => {
+    if (isImeComposing(event)) return;
+    if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) { event.preventDefault(); event.stopPropagation(); saveAnalysisCommentAction(); }
+  });
+  target.querySelectorAll("[data-comment-action]").forEach(button => button.addEventListener("click", () => {
+    if (context.commentAction?.saving) return;
+    if (button.dataset.commentAction === "save") saveAnalysisCommentAction();
+    else if (button.dataset.commentAction === "reload") reloadAnalysisCommentAction();
+    else { context.commentAction = null; renderAnalysisDiscussionThread(); }
+  }));
+  target.scrollTop = context.commentAction ? previousScroll : target.scrollHeight;
 }
 
 function beginAnalysisDiscussionReply(commentId) {
@@ -1598,7 +1724,7 @@ async function postAnalysisDiscussionRequest(path, options) {
     return await api(path, { ...options, signal: controller.signal });
   } catch (error) {
     if (controller.signal.aborted) {
-      throw new Error(uiText("发表评论请求超时。", "The comment request timed out."));
+      throw new Error(uiText("评论操作请求超时。", "The comment request timed out."));
     }
     throw error;
   } finally {

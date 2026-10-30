@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from .comment_mutations import comment_metadata
+
 from .shared import IntentAnnotationConflictError, _json, _json_load, utc_now
 
 
@@ -1214,7 +1216,7 @@ class DatabaseIntentMixin:
             rows = conn.execute(
                 """
                 SELECT comment.*, parent.author AS reply_to_author,
-                       parent.body AS reply_to_body
+                       parent.body AS reply_to_body, parent.deleted_at AS reply_to_deleted_at
                 FROM intent_case_comments comment
                 LEFT JOIN intent_case_comments parent
                   ON parent.id = comment.reply_to_id
@@ -1233,7 +1235,7 @@ class DatabaseIntentMixin:
             row = conn.execute(
                 """
                 SELECT comment.*, parent.author AS reply_to_author,
-                       parent.body AS reply_to_body
+                       parent.body AS reply_to_body, parent.deleted_at AS reply_to_deleted_at
                 FROM intent_case_comments comment
                 LEFT JOIN intent_case_comments parent
                   ON parent.id = comment.reply_to_id
@@ -1296,7 +1298,7 @@ class DatabaseIntentMixin:
                 parent = conn.execute(
                     """
                     SELECT id, author, body FROM intent_case_comments
-                    WHERE id = ? AND dataset_id = ? AND case_id = ?
+                    WHERE id = ? AND dataset_id = ? AND case_id = ? AND deleted_at IS NULL
                     """,
                     (normalized_reply_to_id, dataset_id, case_id),
                 ).fetchone()
@@ -1335,6 +1337,8 @@ class DatabaseIntentMixin:
                     (comment_id, dataset_id, case_id, recipient, now, now, now),
                 )
         return {
+            "version": 1, "edited_at": "", "deleted_at": "", "deleted": False,
+            "reply_to_deleted": False, "is_label_evidence": False,
             "id": comment_id,
             "body": normalized_body,
             "author": normalized_author,
@@ -1349,6 +1353,7 @@ class DatabaseIntentMixin:
     @staticmethod
     def _intent_comment_dict(row: Any) -> dict[str, Any]:
         return {
+            **comment_metadata(row),
             "id": int(row["id"]),
             "body": str(row["body"]),
             "author": str(row["author"]),
