@@ -1,23 +1,46 @@
-# Problem and task discussions
+# Issue discussions
 
-The dialog separates **Show discussions** from **Post in**. Viewing all comments
-does not select a combined posting destination. New messages default to issue
-discussion; the author may explicitly choose the current task when available.
+## Current contract (cache724)
 
-- Issue discussion is shared for the same dataset and Issue across tasks.
-- Current task discussion belongs to that task and Issue. Other task history is
-  a read-only reference; a closed/replaced task cannot receive new task messages.
-- Review batch discussion belongs to one Issue and selected model Run. These
-  records remain independent from shared Issue labels and task discussion.
-- The existing server policies stay in force: labeling discussion requires a
-  verified writer/admin; task-page task posts remain admin-only. This change does
-  not expand task-page posting access. Task management remains admin-only.
+Comments belong to an Issue and are shared across task, labeling, Model Review,
+analysis and Bot entry points. No task, Run or baseline selection is needed to
+post or reply. The dialog has one conversation and no view/destination selectors.
+Existing task/Run/legacy comments appear together, preserving their original IDs,
+authors, text, timestamps, attachments, source metadata and reply references.
+New messages use the Issue channel with no task or Run binding; a reply may target
+any non-deleted comment under that Issue. Cross-Issue replies are rejected.
 
-Viewing scope filters actual rows, preserving the draft and posting destination.
-Replies lock to the original destination. Cancelling or finishing a reply restores
-the prior posting destination and unlocks the selector. Reopening clears the lock.
-No silent task adoption occurs for a taskless reply. Enter inserts a newline;
-Ctrl/Cmd+Enter submits, respecting composition and mention picker handling.
+The canonical API is `GET/POST /api/cases/{issue_id}/discussion`, with image
+uploads at `/discussion-with-attachments`. Production writes use the existing
+verified SSO writer/admin policy and same-origin markers. Intent discussion keeps
+its separate dataset/Case identity. Task management permissions are unchanged.
+
+A Bot link may include task/Run parameters as navigation context. Background URL
+normalization, filter changes and page-epoch bookkeeping cannot block a comment
+for the same Issue. An actual switch to another Issue preserves the draft and
+blocks stale submission. Reopening/closing a dialog still rejects its late results.
+
+Verified authors can edit/delete their ordinary comments; administrators can
+manage other authors’ ordinary comments. Automatic label-rationale records stay
+read-only. Version checks reject conflicting saves. Delete keeps a tombstone,
+audit and existing replies, hides text/images and rejects new replies to the
+deleted comment. Edits/deletes create no new notifications and cancel obsolete
+pending/retry deliveries; already sent/in-flight messages cannot be recalled.
+See [API and storage details](dchat-mention-architecture.md#comment-editing-and-deletion-cache724).
+Migration059 is additive and mirrored in SQLite. Source-channel unification is
+a read/write projection change and does not rewrite production comment rows.
+
+Validation uses synthetic API/Chromium data and an empty disposable PostgreSQL
+fixture. It covers old task/Run comments, cross-source replies, missing/closed
+source tasks, Bot route normalization, exact-comment focus, refresh/history,
+ownership/conflicts, audit/tombstones, notification cancellation and independent
+drafts. Viewports320/390/1440, zh/en and dark/light are covered; this is desktop
+Chromium viewport testing, not real-device/soft-keyboard acceptance.
+
+## Historical releases
+
+The records below describe earlier versions. Their task/Run ownership contracts
+are superseded by the current Issue-only contract above.
 
 ### Comment submission and reply clicks (2026-10-30, released cache722)
 
