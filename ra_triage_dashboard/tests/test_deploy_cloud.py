@@ -253,6 +253,18 @@ COMMIT;
             with self.assertRaisesRegex(d.DeployError,"another process"):
                 d.wait_production_stopped(123)
 
+    def test_shutdown_accepts_session_disappearing_between_checks(self):
+        with patch.object(d,"process_alive",return_value=False), patch.object(d.subprocess,"run",side_effect=[
+            subprocess.CompletedProcess([],0),subprocess.CompletedProcess([],1)]), patch.object(
+                d,"git_pane_pid",side_effect=subprocess.CalledProcessError(1,['tmux','list-panes'])):
+            d.wait_production_stopped(123)
+
+    def test_shutdown_pane_failure_with_existing_session_is_not_ignored(self):
+        with patch.object(d,"process_alive",return_value=False), patch.object(d.subprocess,"run",return_value=
+            subprocess.CompletedProcess([],0)), patch.object(d,"git_pane_pid",side_effect=
+                subprocess.CalledProcessError(1,['tmux','list-panes'])):
+            with self.assertRaises(subprocess.CalledProcessError): d.wait_production_stopped(123)
+
     def simulate_release(self, fail_tests=False, fail_production=False, prepare_only=False, runtime_changed=False, fail_stop=False, isolated=False, branch_changed=False, checkout_changed=False, enable_rd=False, authorization_changed=False):
         with tempfile.TemporaryDirectory() as temp, ExitStack() as stack:
             base=Path(temp); repo=base/"repo"; repo.mkdir(); python=base/"python"; python.touch()
@@ -422,6 +434,21 @@ COMMIT;
         stops,starts,record=self.simulate_release(fail_tests=True)
         self.assertEqual(stops,[]); self.assertEqual(starts,[])
         self.assertEqual(record["status"],"failed")
+
+    def test_live_rollback_requires_exact_healthy_private_recovery_receipt(self):
+        with tempfile.TemporaryDirectory() as temp, patch.object(d,'STATE',Path(temp)), patch.object(d,'validate_prepared_worktree') as validate:
+            folder=Path(temp)/'releases'/'20261030T012606Z-aaaaaaaaaaaa'
+            app=folder/'rollback'/'ra_triage_dashboard'; app.mkdir(parents=True)
+            record=dict(status='failed',rollback_status='healthy',previous='b'*40,rollback=str(app.parent))
+            d.save(folder/'result.json',record)
+            d.validate_live_candidate(app,'b'*40)
+            validate.assert_called_once_with(app.parent,'b'*40)
+            for key,value in [('status','success'),('rollback_status','failed'),('previous','a'*40),('rollback','/tmp/other')]:
+                d.save(folder/'result.json',dict(record,**{key:value}))
+                with self.assertRaises(d.DeployError): d.validate_live_candidate(app,'b'*40)
+            d.save(folder/'result.json',record)
+            (folder/'result.json').chmod(0o644)
+            with self.assertRaises(d.DeployError): d.validate_live_candidate(app,'b'*40)
 
     def test_prepare_stops_before_production_changes(self):
         stops, starts, record = self.simulate_release(prepare_only=True)
