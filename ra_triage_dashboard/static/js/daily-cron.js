@@ -1,5 +1,46 @@
 /* Daily automation view. Uses only the same-origin, read-only monitor adapter. */
-const dailyCronState = { data: null, error: false, active: false, timer: null, controller: null, selectedDay: "", selectedNode: "" };
+const dailyCronState = { data: null, error: false, active: false, timer: null, controller: null, selectedDay: "", selectedVersion: "", selectedNode: "" };
+
+function cronVersionFamilies(value) {
+  return [...new Set([...(value?.families || []), ...(value?.versions || []).map(v => v.family),
+    ...(value?.datasets || []).map(d => d.release_family)].map(String).filter(v => /^\d{8}$/.test(v)))].sort().reverse();
+}
+
+function cronIncrementalEnabled(data) {
+  return Boolean(data?.incremental?.enabled || dailyCronState.selectedVersion);
+}
+
+function cronSelectedIncremental(data) {
+  const source = data?.incremental?.enabled ? data.incremental : {
+    enabled: true, stale: true, unavailable: true, statesUnavailable: true,
+    families: [], versions: [], datasets: [], states: {}, media: {},
+  };
+  if (!dailyCronState.selectedVersion) dailyCronState.selectedVersion = cronVersionFamilies(source)[0] || 'all';
+  const family = dailyCronState.selectedVersion;
+  if (family === 'all') return { ...source, stale: source.stale || dailyCronState.error };
+  const version = source.versions?.find(v => v.family === family);
+  return { ...source, ...version, families: [family], family,
+    stale: source.stale || dailyCronState.error,
+    unavailable: !version, statesUnavailable: !version || version.states_status !== 'ready',
+    states: version?.states || {}, media: version?.media || {},
+    datasets: (source.datasets || []).filter(d => d.release_family === family),
+    increments: source.increments && { ...source.increments,
+      items: (source.increments.items || []).filter(row => row.family === family) } };
+}
+
+function restoreCronScope() {
+  if (!window.location) return;
+  const params = new URLSearchParams(window.location.search);
+  const version = params.get('cron_version'), day = params.get('cron_day');
+  if (version === 'all' || /^\d{8}$/.test(version || '')) dailyCronState.selectedVersion = version;
+  dailyCronState.selectedDay = /^\d{4}-\d{2}-\d{2}$/.test(day || '') ? day : '';
+}
+
+function writeCronScope(url) {
+  if (dailyCronState.selectedVersion) url.searchParams.set('cron_version', dailyCronState.selectedVersion);
+  if (dailyCronState.selectedDay) url.searchParams.set('cron_day', dailyCronState.selectedDay);
+  else url.searchParams.delete('cron_day');
+}
 
 function cronTime(value) {
   if (value == null || value === "") return "—";
@@ -98,7 +139,14 @@ function renderDailyCron() {
   if (!$("#dailyCronPage")) return;
   const data = dailyCronState.data;
   if (!data) return;
-  if (data.incremental?.enabled && !dailyCronState.selectedDay) { renderIncrementalCron(data); return; }
+  const incremental = cronIncrementalEnabled(data) && !dailyCronState.selectedDay ? cronSelectedIncremental(data) : null;
+  renderCloseupCron(data.closeup, incremental?.family);
+  const scopeNote = $('#dailyCronScopeNote');
+  if (scopeNote) {
+    scopeNote.hidden = !incremental;
+    scopeNote.textContent = uiText('同一套流水线，按版本查看；旧版本仍继续采集和补齐。', 'One shared pipeline, viewed by version. Older versions continue collection and source checks.');
+  }
+  if (incremental) { renderIncrementalCron(data); return; }
   if ($('#dailyCronIncrements')) $('#dailyCronIncrements').hidden = true;
   const overview = data.overview, daily = overview?.daily, run = typeof cronSelectedRuns === "function" ? cronSelectedRuns(data).main : cronLatestRun(data), sidecar = data.sidecar;
   const observationAge = Date.now() / 1000 - (overview?.collected_at || 0);
@@ -250,6 +298,7 @@ function setDailyCronActive(active) {
   dailyCronState.controller?.abort();
   dailyCronState.controller = null;
   if (active) {
+    restoreCronScope();
     // Download the graph while the snapshot is in flight, not after it arrives.
     // Rendering owns the visible error/retry state if loading fails.
     void ensureCronGraphLibrary().catch(() => {});
@@ -266,22 +315,57 @@ document.addEventListener("visibilitychange", () => {
 
 
 function renderIncrementalCron(data) {
-  const v=data.incremental,c=v.states||{},m=v.media||{};
+  const v=cronSelectedIncremental(data),c=v.states||{},m=v.media||{};
   const eligible=Object.entries(c).filter(([k])=>!['excluded','waiting_metadata'].includes(k)).reduce((n,[,x])=>n+x,0);
   const inferred=(c.inferred||0)+(c.published||0);
-  $('#dailyCronConnection').textContent=`${uiText('版本增量','Version incremental')} · ${cronTime(v.updated_at)} CST`;
-  $('#dailyCronConnection').dataset.tone=v.stale?'warn':'ok';
-  $('#dailyCronMainStatus').innerHTML=cronChip(v.stale?'stalled':c.needs_attention?'partial':'running');
-  $('#dailyCronMainValue').textContent=`${(v.families||[]).map(x=>x.slice(4)).join(' / ')} · ${inferred} / ${eligible}`;
-  $('#dailyCronMainNote').textContent=uiText(`已推理 ${inferred} · 已回刷 ${c.published||0} · 待源 ${c.waiting_metadata||0} · 待核实 ${c.needs_attention||0}`,`Inferred ${inferred} · Published ${c.published||0} · Pending source ${c.waiting_metadata||0} · Attention ${c.needs_attention||0}`);
-  $('#dailyCronMediaStatus').innerHTML=cronChip(m.failure_count?'partial':m.verified===m.selected&&m.selected?'complete':'running');
+  const scope = v.family ? v.family.slice(4) : uiText('全部版本汇总', 'All versions');
+  const pending = (c.ready||0)+(c.running||0)+(c.retry_wait||0)+(c.inferred||0);
+  const attention = (c.needs_attention||0)+(c.identity_conflict||0);
+  $('#dailyCronConnection').textContent=`${scope} · ${uiText('版本增量','Version incremental')} · ${cronTime(v.updated_at)} CST`;
+  $('#dailyCronConnection').dataset.tone=v.stale||v.statesUnavailable?'warn':'ok';
+  $('#dailyCronMainStatus').innerHTML=cronChip(v.statesUnavailable?'unavailable':v.stale?'stalled':attention?'partial':pending?'running':c.waiting_metadata?'waiting':'complete');
+  $('#dailyCronMainValue').textContent=`${scope} · ${v.statesUnavailable ? '— / —' : cronFraction(inferred,eligible)}`;
+  $('#dailyCronMainNote').textContent=uiText(`已推理 ${inferred} · 已回刷 ${c.published||0} · 待源 ${c.waiting_metadata||0} · 待核实 ${attention}`,`Inferred ${inferred} · Published ${c.published||0} · Pending source ${c.waiting_metadata||0} · Attention ${attention}`);
+  if(v.statesUnavailable) $('#dailyCronMainNote').textContent=uiText('该版本队列状态暂不可用；不以其他版本或导入快照替代。','Version queue status unavailable; other versions and import snapshots are not substituted.');
+  $('#dailyCronMediaStatus').innerHTML=cronChip(v.unavailable?'unavailable':v.stale?'stalled':m.failure_count?'partial':m.verified===m.selected&&m.selected?'complete':!m.selected?'waiting':'running');
   $('#dailyCronMediaValue').textContent=cronFraction(m.verified,m.selected);
   $('#dailyCronMediaNote').textContent=uiText(`复用 ${m.reused||0} · 待媒体 ${m.queued||0} · 最终失败 ${m.failure_count||0}`,`Reused ${m.reused||0} · Media pending ${m.queued||0} · Terminal failures ${m.failure_count||0}`);
+  if(v.unavailable) $('#dailyCronMediaNote').textContent=uiText('该版本媒体状态暂不可用。','Version media status unavailable.');
   $('#dailyCronSchedule').textContent=v.discovery_schedule?.hours?.length?uiText('每天07:00、19:00 CST全量发现及补查；队列独立持续处理，无单轮总量上限。','Full discovery and source checks at07:00/19:00 CST; the queue continues independently without a per-round case cap.'):uiText('按版本持续处理；查询计划等待同步。','Version-scoped processing; awaiting discovery schedule.');
   renderCronIncrements(v.increments);
   $('#dailyCronAlerts').innerHTML=`<p class="cron-note">${escapeHtml(v.stale?uiText('增量心跳过期，请核实任务。','Incremental heartbeat is stale.'):uiText('逐 case 完成后进入回刷和媒体；不等待整批。各节点为当前累计进度，缺源与异常单独等待。','Completed cases stream to publication and media independently. Nodes show cumulative progress; missing sources and ambiguous cases wait separately.'))}</p>`;
   for(const id of ['dailyCronMainTiming','dailyCronMediaTiming'])if($('#'+id))$('#'+id).textContent='';
   renderDailyCronRuns(data);renderDailyCronSidecar(data.sidecar);renderDailyCronJobs();renderCronRunSelector();void renderDailyCronGraph();
+}
+
+function renderCloseupCron(value, family = '') {
+  const panel = $('#dailyCronCloseup');
+  if (!panel) return;
+  panel.hidden = !value;
+  if (!value) return;
+  const labels = {
+    queued: ['已入队', 'Queued'], collecting: ['录制中', 'Recording'], waiting: ['等待重试', 'Waiting to retry'],
+    idle: ['队列空闲', 'Queue idle'], blocked_auth: ['需要刷新 Ares 登录', 'Ares login refresh required'],
+    pilot_failed_requires_review: ['小批失败待排查', 'Pilot failures need review'],
+    pilot_visual_review_required: ['小批待画面验收', 'Pilot visual review required'],
+    resource_wait: ['等待资源', 'Waiting for resources'], stopped: ['已停止', 'Stopped'],
+    interrupted_claim_requires_review: ['中断任务待恢复', 'Interrupted jobs need recovery'],
+    unavailable: ['状态不可用', 'Status unavailable'], unknown: ['状态未知', 'Unknown status']
+  };
+  const pair = value.stale ? ['心跳过期', 'Stale heartbeat'] : labels[value.state] || labels.unknown;
+  $('#dailyCronCloseupStatus').textContent = uiText(...pair);
+  const versions = [...new Set([...Object.keys(value.versions || {}), ...Object.keys(value.source_members || {})])].sort()
+    .filter(version => !family || version === family || version === family.slice(4));
+  $('#dailyCronCloseupValue').innerHTML = versions.map(version => {
+    const states = value.versions?.[version] || {}, source = value.source_members?.[version] || {};
+    const published = Object.entries(source).filter(([key]) => key.startsWith('published:'));
+    const total = published.length ? published.reduce((n, [, count]) => n + count, 0) : Object.values(states).reduce((n, count) => n + count, 0);
+    const missing = published.filter(([key]) => key !== 'published:ready').reduce((n, [, count]) => n + count, 0);
+    const detail = uiText(`待处理 ${Math.max(0, total - (states.verified || 0))} · 失败 ${states.failed || 0} · 锚点待解决 ${missing}`, `Pending ${Math.max(0, total - (states.verified || 0))} · Failed ${states.failed || 0} · Unresolved anchors ${missing}`);
+    return cronMetric(version, cronFraction(states.verified || 0, total), detail, states.failed || missing ? 'warn' : 'neutral');
+  }).join('') + `<p class="cron-note muted">${escapeHtml(!versions.length
+    ? uiText('该版本暂无局部 BEV 回执。', 'No closeup BEV receipts for this version.')
+    : uiText('所选范围的已发布成员 · 调度状态为全局共享；不影响原双视频或主推理。', 'Published members in the selected scope. Scheduler status is shared globally; original videos and inference are unaffected.'))}</p>`;
 }
 
 // These are independent completion-window counts, never a conversion funnel.
@@ -364,7 +448,7 @@ function renderCronIncrements(history) {
       const changed = rows.filter(r => cronIncrementKeys.some(k => cronIncrementKnown(r[k]) && r[k] > 0));
       const incomplete = rows.some(r => r.scan_state !== 'success' || cronIncrementKeys.some(k => !cronIncrementKnown(r[k])));
       const brief = changed.length ? uiText(`有变化 ${changed.map(cronIncrementFamily).join(' / ')}`, `Changed: ${changed.map(cronIncrementFamily).join(' / ')}`)
-        : incomplete ? uiText('数据待确认', 'Data unconfirmed') : uiText('各版本无增量', 'No changes in any version');
+        : incomplete ? uiText('数据待确认', 'Data unconfirmed') : uiText('所选范围无增量', 'No changes in the selected scope');
       node.querySelector('summary').innerHTML = `<span class="cron-round-time">${index === 0 ? `<span class="muted">${escapeHtml(uiText('最近一轮', 'Latest round'))}</span>` : ''}<strong>${escapeHtml(cronTime(rows[0].start_at).replace(/:\d{2}$/, ''))}</strong></span><span class="cron-chip" data-tone="${tone}">${escapeHtml(status)}</span><span class="cron-round-brief muted">${escapeHtml(brief)}${incomplete && changed.length ? ` · ${escapeHtml(uiText('含未知', 'Includes unknowns'))}` : ''}</span><span class="cron-round-chevron" aria-hidden="true">⌄</span>`;
       node.querySelector('.cron-increment-body').innerHTML = cronIncrementBody(rows);
       if (list.children[index] !== node) list.insertBefore(node, list.children[index] || null);

@@ -1729,7 +1729,7 @@ function bindCaseLabelingEditorShortcuts() {
   document.addEventListener("keydown", (event) => {
     if (
       event.defaultPrevented ||
-      event.isComposing ||
+      isImeComposing(event) ||
       event.repeat ||
       event.ctrlKey ||
       event.metaKey ||

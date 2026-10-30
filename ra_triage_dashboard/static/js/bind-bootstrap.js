@@ -86,7 +86,7 @@ function bindShortcutGuide() {
   });
   $("#shortcutGuideSearchClear")?.addEventListener("click", resetShortcutGuideSearch);
   dialog?.addEventListener("keydown", (event) => {
-    if (event.isComposing || event.repeat || ["Tab", "Enter", "Escape"].includes(event.key)) return;
+    if (isImeComposing(event) || event.repeat || ["Tab", "Enter", "Escape"].includes(event.key)) return;
     if (event.key === " " && event.target instanceof Element && event.target.closest("button")) return;
     if (String(event.key || "").toLowerCase() === "h" && !event.ctrlKey && !event.metaKey && !event.altKey) return;
     const token = shortcutGuideKeyToken(event);
@@ -108,7 +108,7 @@ function bindShortcutGuide() {
     });
   });
   document.addEventListener("keydown", (event) => {
-    if (String(event.key || "").toLowerCase() !== "h" || event.isComposing || event.repeat) return;
+    if (String(event.key || "").toLowerCase() !== "h" || isImeComposing(event) || event.repeat) return;
     if (event.ctrlKey || event.metaKey || event.altKey) return;
     if (dialog?.open) {
       event.preventDefault();
@@ -127,7 +127,7 @@ function bindShortcutGuide() {
 
 function bindGlobalRefreshShortcut() {
   document.addEventListener("keydown", (event) => {
-    if (event.code !== "KeyR" || event.isComposing || event.repeat) return;
+    if (event.code !== "KeyR" || isImeComposing(event) || event.repeat) return;
     if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
     if (document.querySelector("dialog[open]")) return;
     const target = event.target instanceof Element ? event.target : null;
@@ -142,7 +142,7 @@ function bindGlobalRefreshShortcut() {
 
 function bindGlobalSidebarShortcut() {
   document.addEventListener("keydown", (event) => {
-    if (event.code !== "Backslash" || event.isComposing || event.repeat) return;
+    if (event.code !== "Backslash" || isImeComposing(event) || event.repeat) return;
     if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
     if (document.querySelector("dialog[open]")) return;
     const target = event.target instanceof Element ? event.target : null;
@@ -772,6 +772,7 @@ function bindEvents() {
   });
   document.addEventListener("keydown", (event) => {
     if (!$("#mediaDialog").open) {
+      if (isImeComposing(event)) return;
       const target = event.target instanceof Element ? event.target : null;
       const interactiveTarget = target?.closest("input, textarea, select, [contenteditable='true'], [role='textbox']");
       const comparisonCaseActive = state.activePage === "comparison" && Boolean($("#comparisonReasonDialog")?.open);
@@ -1057,11 +1058,8 @@ function bindEvents() {
           renderCaseNavigation();
         }
         if (route.openComments) {
-          await openAnalysisDiscussion(route.issue, {
-            runId: route.runId || "",
-            source: "deep-link",
-            focusCommentId: route.commentId || 0,
-          });
+          if (!isPageContextCurrent(pageContext)) return;
+          await openReviewRouteDiscussion(route);
         }
       }
     } catch (error) {
@@ -1360,11 +1358,7 @@ async function bootstrap() {
           initialRoute.discussionChannel || "",
         );
       } else {
-        await openAnalysisDiscussion(initialRoute.issue, {
-          runId: initialRoute.runId || "",
-          source: "deep-link",
-          focusCommentId: initialRoute.commentId || 0,
-        });
+        await openReviewRouteDiscussion(initialRoute);
       }
     }
     if (!isPageContextCurrent(bootstrapContext)) return;

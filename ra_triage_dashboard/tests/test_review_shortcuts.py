@@ -5,10 +5,11 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+IME_JS = (ROOT / "static" / "js" / "text-input.js").read_text()
 
 
 def test_mention_enter_and_tab_precede_comment_submit_listener() -> None:
-    script = (ROOT / "static" / "js" / "review-mentions.js").read_text() + r'''
+    script = IME_JS + (ROOT / "static" / "js" / "review-mentions.js").read_text() + r'''
 const assert=require('node:assert/strict');
 state={mentionUsers:[],config:{},session:{}};
 window={addEventListener(){},getComputedStyle(){return {};}};
@@ -68,7 +69,7 @@ assert.equal(tab.submitted,0);
 
 
 def test_review_tag_group_shortcut_toggles_open_state() -> None:
-    script = (ROOT / "static" / "js" / "review-tags.js").read_text() + r'''
+    script = IME_JS + (ROOT / "static" / "js" / "review-tags.js").read_text() + r'''
 const assert=require('node:assert/strict');
 const summary={focus:()=>{}};
 const dropdown={open:true,querySelector:()=>summary};
@@ -87,7 +88,7 @@ assert.equal(dropdown.open,true);
 
 
 def test_missing_evidence_shortcut_toggles_open_state() -> None:
-    script = (ROOT / "static" / "js" / "review-tags.js").read_text() + r'''
+    script = IME_JS + (ROOT / "static" / "js" / "review-tags.js").read_text() + r'''
 const assert=require('node:assert/strict');
 const summary={focused:false,focus(){this.focused=true;}};
 const dropdown={open:false,querySelector:()=>summary};
@@ -107,7 +108,7 @@ assert.equal(dropdown.open,false);
 
 
 def test_missing_evidence_numeric_shortcut_toggles_option() -> None:
-    script = (ROOT / "static" / "js" / "review-tags.js").read_text() + r'''
+    script = IME_JS + (ROOT / "static" / "js" / "review-tags.js").read_text() + r'''
 const assert=require('node:assert/strict');
 Event=class {constructor(type,options){this.type=type;this.bubbles=options?.bubbles;}};
 const reviewInput={disabled:false,checked:false,dispatchEvent(event){this.lastEvent=event;}};
@@ -135,7 +136,7 @@ assert.equal(toggleOpenReviewDropdownOption('q'),false);
 
 
 def test_exclude_shortcut_ignores_hidden_review_control() -> None:
-    script = (ROOT / "static" / "js" / "review-tags.js").read_text() + r'''
+    script = IME_JS + (ROOT / "static" / "js" / "review-tags.js").read_text() + r'''
 const assert=require('node:assert/strict');
 Event=class {constructor(type,options){this.type=type;this.bubbles=options?.bubbles;}};
 const input={disabled:false,checked:false,hiddenParent:true,
@@ -249,7 +250,7 @@ const context=reviewSaveNavigationContext('b');
 
 
 def test_open_review_dropdown_uses_arrows_for_navigation_and_enter_for_save() -> None:
-    script = (ROOT / "static" / "js" / "review-tags.js").read_text() + r'''
+    script = IME_JS + (ROOT / "static" / "js" / "review-tags.js").read_text() + r'''
 const assert=require('node:assert/strict');
 class MockElement {}
 Element=MockElement;
@@ -295,7 +296,7 @@ assert.equal(inputs[0].lastEvent.type,'change');
 
 
 def test_enter_submits_review_from_general_detail_focus() -> None:
-    script = (ROOT / "static" / "js" / "review-tags.js").read_text() + r'''
+    script = IME_JS + (ROOT / "static" / "js" / "review-tags.js").read_text() + r'''
 const assert=require('node:assert/strict');
 const form={requestSubmit:(button)=>{form.submittedWith=button;}};
 const saveButton={id:'reviewSaveButton'};
@@ -315,7 +316,7 @@ assert.equal(submitReviewFromKeyboard({...enter,preventDefault(){},stopPropagati
 
 
 def test_arrow_focused_option_keeps_all_dropdown_shortcuts_available() -> None:
-    script = (ROOT / "static" / "js" / "review-tags.js").read_text() + r'''
+    script = IME_JS + (ROOT / "static" / "js" / "review-tags.js").read_text() + r'''
 const assert=require('node:assert/strict');
 const tagDropdown={};
 const evidenceDropdown={};
@@ -398,7 +399,7 @@ assert.equal(formatRaEventRelativeTime(null,200000),'—');
 
 
 def test_review_history_shortcut_toggle_closes_matching_dialog() -> None:
-    script = (ROOT / "static" / "js" / "detail-media.js").read_text() + r'''
+    script = IME_JS + (ROOT / "static" / "js" / "detail-media.js").read_text() + r'''
 const assert=require('node:assert/strict');
 const dialog={open:true,dataset:{historyKind:'review'}};
 $=(selector)=>selector==='#historyDialog' ? dialog : null;
@@ -410,7 +411,7 @@ assert.equal(dialog.open,false);
 
 
 def test_review_form_scopes_edit_head_to_current_stream_while_history_keeps_all() -> None:
-    script = (ROOT / "static" / "js" / "review-draft.js").read_text() + r'''
+    script = IME_JS + (ROOT / "static" / "js" / "review-draft.js").read_text() + r'''
 const assert=require('node:assert/strict');
 const state={selectedRunId:'run-1',session:{username:'Alice'}};
 const data={review_assignment:{blind_active:true,assigned:true,mode:'blind',split_id:'split-new'},annotations:[
@@ -449,7 +450,7 @@ assert.equal(reviewWorkSplitBinding(ordinary),'');
 
 
 def test_s3_model_review_status_and_reason_do_not_leak_between_run_drafts() -> None:
-    script = (ROOT / "static" / "js" / "review-draft.js").read_text() + r'''
+    script = IME_JS + (ROOT / "static" / "js" / "review-draft.js").read_text() + r'''
 const assert=require('node:assert/strict');
 const state={selectedRunId:'run-A',session:{username:'manual_s3_probe',verified:true}};
 const detail={annotations:[
@@ -470,7 +471,7 @@ assert.equal(reviewAnnotationsForAllRuns(detail).length,3);
 
 
 def test_verified_reviewer_selects_only_own_s3_head_within_current_run() -> None:
-    script = (ROOT / "static" / "js" / "review-draft.js").read_text() + r'''
+    script = IME_JS + (ROOT / "static" / "js" / "review-draft.js").read_text() + r'''
 const assert=require('node:assert/strict');
 const alice={id:4000000000000001,review_domain:'model_review',model_run_id:'run-A',work_split_id:'',author:'alice',model_review_status:'in_progress',note:'Alice A'};
 const bob={id:4000000000000002,review_domain:'model_review',model_run_id:'run-A',work_split_id:'',author:'bob',model_review_status:'completed',note:'Bob A'};
@@ -490,7 +491,7 @@ assert.deepEqual(currentReviewAnnotation(data),{});
 
 
 def test_local_review_drafts_are_isolated_by_verified_reviewer() -> None:
-    script = (ROOT / "static" / "js" / "review-draft.js").read_text() + r'''
+    script = IME_JS + (ROOT / "static" / "js" / "review-draft.js").read_text() + r'''
 const assert=require('node:assert/strict');
 const values=new Map();
 const window={localStorage:{
@@ -518,7 +519,7 @@ assert.equal(values.has(legacyAliceKey),false);
 
 
 def test_model_status_keyboard_is_scoped_and_does_not_submit() -> None:
-    script = (ROOT / "static" / "js" / "review-tags.js").read_text() + r'''
+    script = IME_JS + (ROOT / "static" / "js" / "review-tags.js").read_text() + r'''
 const assert=require('node:assert/strict');
 state={activePage:'review',session:{}};
 let writer=true, clicks=0, changes=0;
@@ -560,7 +561,7 @@ assert.equal(changes,2);
 
 
 def test_navigation_waits_for_server_permissions() -> None:
-    script = (ROOT / "static" / "js" / "session-config.js").read_text() + r'''
+    script = IME_JS + (ROOT / "static" / "js" / "session-config.js").read_text() + r'''
 const assert=require('node:assert/strict');
 const items=['writer','admin'].map(role=>({dataset:{sessionNav:role},setAttribute(k,v){this[k]=v;}}));
 const status={},group={};
@@ -616,7 +617,7 @@ applyTrailUpdateRouteControls({tab:'review',exclusionIssue:'cn999'});assert.equa
 
 
 def test_combined_exclusion_hydrates_from_case_vote_and_separate_draft() -> None:
-    script = (ROOT / "static" / "js" / "review-form.js").read_text() + r'''
+    script = IME_JS + (ROOT / "static" / "js" / "review-form.js").read_text() + r'''
 const assert=require('node:assert/strict');
 state={session:{}};
 const input={checked:false,disabled:true};
@@ -638,7 +639,7 @@ assert.equal(input.checked,true); // A legacy Run draft cannot override the Case
 
 
 def test_delayed_trail_metadata_cannot_replace_case_exclusion() -> None:
-    script = (ROOT / "static" / "js" / "detail-media.js").read_text() + r'''
+    script = IME_JS + (ROOT / "static" / "js" / "detail-media.js").read_text() + r'''
 const assert=require('node:assert/strict');
 state={caseRequestSeq:1,selectedId:'cn1',selectedCase:{issue_id:'cn1'},reviewFormDirty:false};
 const input={checked:false,dataset:{caseExclusion:'true'}};

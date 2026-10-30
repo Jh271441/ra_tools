@@ -1,6 +1,7 @@
 # Load order for classic scripts (app.js loader + tests).
 # Keep in sync with MODULES in static/app.js.
 core-base.js
+text-input.js
 i18n-messages.js
 i18n.js
 routing.js

@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1] / "static/js"
 
 class MobileInteractionTest(unittest.TestCase):
     def run_js(self, names, assertions):
-        script = "\n".join((ROOT / name).read_text() for name in names) + assertions
+        script = (ROOT / "text-input.js").read_text() + "\n".join((ROOT / name).read_text() for name in names) + assertions
         result = subprocess.run(["node"], input=script, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
 

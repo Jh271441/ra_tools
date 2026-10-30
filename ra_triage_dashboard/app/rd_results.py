@@ -6,7 +6,7 @@ writer, whose operation marker would modify another field.
 from __future__ import annotations
 
 from contextlib import contextmanager
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed, wait, FIRST_COMPLETED
 import fcntl
 import hashlib
 import importlib
@@ -16,7 +16,7 @@ from pathlib import Path
 import re
 import sys
 import tempfile
-from threading import BoundedSemaphore
+from threading import BoundedSemaphore, Event, Lock
 import time
 import uuid
 
@@ -25,6 +25,11 @@ VALUES = {"正确触发": "成功", "误触发": "误触发", "无需协助": "�
 PROTECTED = ("ra_stuck_auto_result", "ra_stuck_auto_result_info", "ra_review_reason", "ra_merge_result")
 _preview_workers = ThreadPoolExecutor(max_workers=2, thread_name_prefix='rd-preview')
 _preview_slots = BoundedSemaphore(2)
+# Shared across preview jobs so two previews cannot multiply Trail concurrency.
+_trail_read_workers = ThreadPoolExecutor(max_workers=4, thread_name_prefix='rd-trail-read')
+UPLOAD_BATCH_SIZE = 20
+UPLOAD_CONCURRENCY = 4
+_commit_workers = ThreadPoolExecutor(max_workers=1, thread_name_prefix='rd-commit')
 
 
 def digest(value):
@@ -74,8 +79,22 @@ class RDTransport:
         return self.send_request(url, json_data, timeout).json()
 
 
-def read_remote(client, ids, *, progress=None):
+def read_remote(client, ids, *, progress=None, parallel=False):
     result = {}
+    if parallel and len(ids) > 40:
+        # TrailHTTP.fetch splits at 40; align to avoid nested serial requests.
+        futures = [_trail_read_workers.submit(_read_remote_chunk, client, ids[offset:offset + 40])
+                   for offset in range(0, len(ids), 40)]
+        try:
+            for future in as_completed(futures):
+                result.update(future.result())
+                if progress:
+                    progress(len(result), len(ids))
+        finally:
+            for future in futures:
+                future.cancel()
+        # Completion order must not reorder the user's frozen preview.
+        return {iid: result[iid] for iid in ids}
     for offset in range(0, len(ids), 100):
         result.update(_read_remote_chunk(client, ids[offset:offset + 100]))
         if progress:
@@ -137,10 +156,10 @@ class PublicationStore:
         self.root = Path(directory) / 'rd_publications'
 
     @contextmanager
-    def lock(self):
+    def lock(self, *, blocking=True):
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
         with (self.root / '.lock').open('a') as stream:
-            fcntl.flock(stream, fcntl.LOCK_EX)
+            fcntl.flock(stream, fcntl.LOCK_EX | (0 if blocking else fcntl.LOCK_NB))
             try:
                 yield
             finally:
@@ -205,9 +224,15 @@ class PublicationStore:
                 if record['state'] == 'running':
                     record['state'] = 'needs_recheck'
                     record['reason'] = 'interrupted'
+                    record['finished_at'] = time.time()
+                    record.get('progress', {}).update(stage='stopped')
                     for result in record['results']:
                         if result['state'] == 'intent':
                             result.update(state='unverified', reason='interrupted')
+                    for result in record['results']:
+                        result.pop('phase', None)
+                        if result['state'] == 'not_attempted':
+                            result['reason'] = 'batch_stopped'
                     self.save(record)
             finally:
                 fcntl.flock(stream, fcntl.LOCK_UN)
@@ -275,84 +300,208 @@ class PublicationStore:
         return {**{k: record[k] for k in ('id', 'actor', 'created_at', 'expires_at', 'state', 'overwrite')},
                 'reason': record.get('reason', ''),
                 'scope': record.get('scope'),
-                'progress': record.get('progress'),
+                'progress': PublicationStore.progress(record),
                 'background_preview': record.get('background_preview', False),
                 'results': [{k: v for k, v in r.items() if k != 'after'} |
                             ({'observed': r['after'][FIELD]} if 'after' in r else {}) for r in record['results']],
                 'items': [{k: v for k, v in row.items() if k not in {'before', 'fingerprint'}} | {'current': row['before'].get(FIELD)} for row in record['items']]}
 
-    def commit(self, operation, actor, db, client, scope_ids):
-        def current_scope():
-            return scope_ids() if callable(scope_ids) else scope_ids
+    @staticmethod
+    def progress(record):
+        progress = record.get('progress')
+        if not progress or 'started_at' not in record:
+            return progress
+        results = record['results']
+        return {**progress,
+                'total': len(results),
+                'verified': sum(r['state'] == 'verified' for r in results),
+                'unverified': sum(r['state'] == 'unverified' for r in results),
+                'active': sum(r['state'] == 'intent' or r.get('phase') == 'checking' for r in results),
+                'waiting': sum(r['state'] == 'not_attempted' and not r.get('phase') for r in results),
+                'elapsed_seconds': round(max(0, record.get('finished_at', time.time()) - record['started_at']), 1)}
 
-        with self.lock():
+    def _claim_commit(self, operation, actor):
+        record = self.get(operation)
+        if record['actor'] != actor:
+            raise ValueError('预览属于另一操作者 / Preview belongs to another actor')
+        if record['state'] == 'complete':
+            return record
+        if record['state'] != 'preview' or time.time() > record['expires_at']:
+            raise ValueError('请重新预览并核对结果 / Preview again and check current results')
+        record.update(state='running', reason='', started_at=time.time(),
+                      progress=dict(stage='preflight', checked=0, check_total=len(record['items']),
+                                    batch_size=UPLOAD_BATCH_SIZE, concurrency=UPLOAD_CONCURRENCY))
+        record['results'] = [dict(issue_id=r['issue_id'], state='not_attempted', reason='')
+                             for r in record['items'] if r['eligible']]
+        self.save(record)  # Claim before any network I/O, so GET can report preflight.
+        return record
+
+    def start_commit(self, operation, actor, db, client, scope_ids):
+        # Acquire before returning 202. No unowned queued writes, and concurrent
+        # retries of the same operation can only observe its existing receipt.
+        claim = self.lock(blocking=False)
+        try:
+            claim.__enter__()
+        except BlockingIOError:
             record = self.get(operation)
             if record['actor'] != actor:
                 raise ValueError('预览属于另一操作者 / Preview belongs to another actor')
-            if record['state'] == 'complete':
+            if record['state'] in {'running', 'complete'}:
                 return self.public(record)
-            # Interrupted requests are never blindly replayed. A new preview
-            # reads current remote state and makes partial success explicit.
-            if record['state'] != 'preview' or time.time() > record['expires_at']:
-                raise ValueError('请重新预览并核对结果 / Preview again and check current results')
-            ids = [r['issue_id'] for r in record['items']]
-            record['results'] = [dict(issue_id=r['issue_id'], state='not_attempted', reason='batch_stopped')
-                                 for r in record['items'] if r['eligible']]
-            try:
-                if not set(ids).issubset(current_scope()):
-                    raise ValueError('数据范围已变化 / Dataset membership changed')
-                local = local_rows(db, ids)
-                remote = read_remote(client, ids)
-                for row in record['items']:
-                    iid = row['issue_id']
-                    if local.get(iid, {}).get('fingerprint') != row['fingerprint'] or remote[iid] != row['before']:
-                        raise ValueError('标注或 Trail 已变化，请重新预览 / Labels or Trail changed; preview again')
-            except Exception:
-                record.update(state='needs_recheck', reason='preflight_failed')
-                for result in record['results']:
-                    result['reason'] = 'preflight_failed'
-                self.save(record)
-                raise
-            record['state'] = 'running'
-            self.save(record)
-            results_by_id = {result['issue_id']: result for result in record['results']}
-            for row in record['items']:
-                if not row['eligible']:
-                    continue
-                iid = row['issue_id']
-                result = results_by_id[iid]
+            raise ValueError('已有上传任务执行中，请稍后再试 / Another upload is running; retry later') from None
+        try:
+            record = self._claim_commit(operation, actor)
+            if record['state'] == 'complete':
+                claim.__exit__(None, None, None)
+                return self.public(record)
+            initial = self.public(record)
+            def work():
                 try:
-                    live = read_remote(client, [iid])[iid]
-                    latest = local_rows(db, [iid]).get(iid, {})
-                    if iid not in current_scope() or live != row['before'] or latest.get('fingerprint') != row['fingerprint']:
-                        result.update(state='not_attempted', reason='source_changed')
-                        break
+                    self._execute_commit(record, db, client, scope_ids)
                 except Exception:
-                    result.update(state='not_attempted', reason='check_failed')
-                    break
-                result.update(state='intent', reason='')
-                self.save(record)  # durable intent immediately before the network write
-                try:
-                    acknowledged = False
-                    try:
-                        response = client.update({iid: row['desired']})
-                        acknowledged = isinstance(response, dict) and response.get('code') == 0 and response.get('msg') == 'success'
-                    except Exception:
-                        pass  # lost responses still require readback
-                    result['acknowledged'] = acknowledged
-                    after = read_remote(client, [iid])[iid]
-                    result.update(acknowledged=acknowledged, after=after,
-                                  state='verified' if after[FIELD] == row['desired'] and all(after[k] == live[k] for k in PROTECTED) else 'unverified')
-                    if any(after[k] != live[k] for k in PROTECTED):
-                        result['reason'] = 'protected_changed'
-                    elif after[FIELD] != row['desired']:
-                        result['reason'] = 'value_mismatch'
-                except Exception:
-                    result.update(state='unverified', reason='readback_failed')
-                self.save(record)
-                if result['state'] != 'verified':
-                    break
-            expected = sum(r['eligible'] for r in record['items'])
-            record['state'] = 'complete' if expected == sum(r['state'] == 'verified' for r in record['results']) else 'needs_recheck'
-            self.save(record)
+                    # Includes unexpected worker/storage failures; leave no
+                    # ambiguous intent eligible for replay. GET also recovers
+                    # a stale running receipt after a hard process interruption.
+                    record.update(state='needs_recheck', reason=record.get('reason') or 'interrupted', finished_at=time.time())
+                    record['progress']['stage'] = 'stopped'
+                    for result in record['results']:
+                        result.pop('phase', None)
+                        if result['state'] == 'intent':
+                            result.update(state='unverified', reason='interrupted')
+                        elif result['state'] == 'not_attempted' and not result['reason']:
+                            result['reason'] = 'batch_stopped'
+                    self.save(record)
+                finally:
+                    claim.__exit__(None, None, None)
+            _commit_workers.submit(work)
+            return initial
+        except BaseException:
+            claim.__exit__(None, None, None)
+            raise
+
+    def commit(self, operation, actor, db, client, scope_ids):
+        with self.lock():
+            record = self._claim_commit(operation, actor)
+            if record['state'] != 'complete':
+                self._execute_commit(record, db, client, scope_ids)
             return self.public(record)
+
+    def _execute_commit(self, record, db, client, scope_ids):
+        def current_scope():
+            return scope_ids() if callable(scope_ids) else scope_ids
+
+        ids = [r['issue_id'] for r in record['items']]
+        try:
+            if not set(ids).issubset(current_scope()):
+                raise ValueError('数据范围已变化 / Dataset membership changed')
+            local = local_rows(db, ids)
+            def progress(checked, total):
+                record['progress'].update(checked=checked, check_total=total)
+                self.save(record)
+            remote = read_remote(client, ids, parallel=True, progress=progress)
+            for row in record['items']:
+                iid = row['issue_id']
+                if local.get(iid, {}).get('fingerprint') != row['fingerprint'] or remote[iid] != row['before']:
+                    raise ValueError('标注或 Trail 已变化，请重新预览 / Labels or Trail changed; preview again')
+        except Exception:
+            record.update(state='needs_recheck', reason='preflight_failed', finished_at=time.time())
+            record['progress']['stage'] = 'stopped'
+            for result in record['results']:
+                result['reason'] = 'preflight_failed'
+            self.save(record)
+            raise
+
+        guard, stopped = Lock(), Event()
+        results_by_id = {r['issue_id']: r for r in record['results']}
+        record['progress']['stage'] = 'uploading'
+        self.save(record)
+        eligible = [row for row in record['items'] if row['eligible']]
+        batches = iter(eligible[offset:offset + UPLOAD_BATCH_SIZE] for offset in range(0, len(eligible), UPLOAD_BATCH_SIZE))
+
+        def batch(rows):
+            batch_ids = [row['issue_id'] for row in rows]
+            with guard:
+                if stopped.is_set():
+                    return
+                for iid in batch_ids:
+                    results_by_id[iid]['phase'] = 'checking'
+                self.save(record)
+            try:
+                live = read_remote(client, batch_ids)
+                latest = local_rows(db, batch_ids)
+                members = current_scope()
+                changed = any(row['issue_id'] not in members or live[row['issue_id']] != row['before']
+                              or latest.get(row['issue_id'], {}).get('fingerprint') != row['fingerprint'] for row in rows)
+                reason = 'source_changed' if changed else ''
+            except Exception:
+                reason = 'check_failed'
+            with guard:
+                if reason or stopped.is_set():
+                    if reason:
+                        stopped.set()
+                    for iid in batch_ids:
+                        results_by_id[iid].pop('phase', None)
+                        results_by_id[iid]['reason'] = reason or 'batch_stopped'
+                    self.save(record)
+                    return
+                for iid in batch_ids:
+                    results_by_id[iid].update(state='intent', phase='uploading')
+                # All intents must reach durable storage before this batch POST.
+                self.save(record)
+            acknowledged = False
+            try:
+                response = client.update({row['issue_id']: row['desired'] for row in rows})
+                acknowledged = isinstance(response, dict) and response.get('code') == 0 and response.get('msg') == 'success'
+            except Exception:
+                pass  # Never retry writes; lost responses still require readback.
+            with guard:
+                for iid in batch_ids:
+                    results_by_id[iid].update(acknowledged=acknowledged, phase='readback')
+                self.save(record)
+            try:
+                after = read_remote(client, batch_ids)
+                outcomes = {}
+                for row in rows:
+                    iid = row['issue_id']
+                    reason = ('protected_changed' if any(after[iid][k] != live[iid][k] for k in PROTECTED)
+                              else 'value_mismatch' if after[iid][FIELD] != row['desired'] else '')
+                    outcomes[iid] = dict(after=after[iid], state='unverified' if reason else 'verified', reason=reason)
+            except Exception:
+                outcomes = {iid: dict(state='unverified', reason='readback_failed') for iid in batch_ids}
+            with guard:
+                if any(result['state'] != 'verified' for result in outcomes.values()):
+                    stopped.set()
+                for iid, outcome in outcomes.items():
+                    results_by_id[iid].update(outcome)
+                    results_by_id[iid].pop('phase', None)
+                self.save(record)
+
+        # Only keep a bounded window, never enqueue the entire dataset. After
+        # failure, drain in-flight writes/readbacks before finalizing receipts.
+        with ThreadPoolExecutor(max_workers=UPLOAD_CONCURRENCY, thread_name_prefix='rd-upload') as workers:
+            pending = set()
+            while True:
+                while not stopped.is_set() and len(pending) < UPLOAD_CONCURRENCY:
+                    rows = next(batches, None)
+                    if rows is None:
+                        break
+                    pending.add(workers.submit(batch, rows))
+                if not pending:
+                    break
+                done, pending = wait(pending, return_when=FIRST_COMPLETED)
+                for future in done:
+                    try:
+                        future.result()
+                    except Exception:
+                        stopped.set()
+            # Executor exit waits for any worker that failed outside its I/O guard.
+        for result in record['results']:
+            result.pop('phase', None)
+            if result['state'] == 'intent':
+                result.update(state='unverified', reason='interrupted')
+            elif result['state'] == 'not_attempted' and not result['reason']:
+                result['reason'] = 'batch_stopped'
+        record['state'] = 'complete' if all(r['state'] == 'verified' for r in record['results']) else 'needs_recheck'
+        record.update(finished_at=time.time())
+        record['progress']['stage'] = 'complete' if record['state'] == 'complete' else 'stopped'
+        self.save(record)

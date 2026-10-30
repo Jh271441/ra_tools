@@ -635,6 +635,8 @@ class VideoIndex:
                 ),
                 "size_bytes": path.stat().st_size,
                 "source": "ares_capture_video",
+                "anchor_ms": meta.get("request_timestamp_ms") or (meta.get("source_row") or {}).get("capture_timestamp_ms"),
+                "trip_id": meta.get("trip_id") or (meta.get("source_row") or {}).get("trip_id"),
                 "duration_ms": duration_ms,
                 "start_offset_sec": start_offset_sec,
                 "event_time_sec": (

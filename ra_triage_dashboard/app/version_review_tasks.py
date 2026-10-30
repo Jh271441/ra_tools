@@ -1,7 +1,49 @@
 """Version task projections over physically consolidated, appendable Campaigns."""
 from collections import defaultdict
+import json
 
 PREFIX='version:'
+
+
+def merge_version_task_list(parents, items, *, version_only=False):
+    """Keep explicit supplemental reviews beside their canonical version task."""
+    parent_ids = {item['split_id'] for item in parents}
+    parent_runs = {item['model_run_id'] for item in parents}
+    retained = []
+    for item in items:
+        if item['split_id'] in parent_ids:
+            continue
+        same_version = item['model_run_id'] in parent_runs
+        supplemental = (item.get('filter_snapshot') or {}).get('supplemental_review') is True
+        if (same_version and supplemental) or (not version_only and not same_version):
+            retained.append(item)
+    return parents + retained
+
+
+def supplemental_task_baseline_ids(db, task_id):
+    """Resolve a frozen supplemental task to its registered version dataset."""
+    with db.connect() as conn:
+        row = conn.execute('SELECT filter_json FROM issue_work_splits WHERE id=?', (task_id,)).fetchone()
+        if row is None:
+            return []
+        filters = json.loads(row['filter_json'] or '{}')
+        if filters.get('supplemental_review') is not True:
+            return []
+        dataset_id = filters.get('dataset_id')
+        version = conn.execute('SELECT release_family FROM version_datasets WHERE id=?', (dataset_id,)).fetchone()
+        if version is None:
+            return []
+        coverage = conn.execute('''
+            SELECT COUNT(*) AS member_count,
+                   SUM(CASE WHEN item.issue_id IS NULL THEN 1 ELSE 0 END) AS outside_count
+            FROM campaign_issue_members member
+            LEFT JOIN version_dataset_items item
+              ON item.dataset_id=? AND item.issue_id=member.issue_id
+            WHERE member.campaign_id=?
+        ''', (dataset_id, task_id)).fetchone()
+        if not coverage['member_count'] or coverage['outside_count']:
+            raise ValueError('复核任务成员超出版本数据集 / Review task members outside version dataset')
+        return ['version-' + version['release_family']]
 
 
 def task(db, dataset, *, assignee='', status='all', query='', page=1, page_size=50, detail=False):

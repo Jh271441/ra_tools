@@ -771,6 +771,9 @@ function renderReview(caseData) {
   };
   annotationForm.addEventListener("input", markDraftDirty);
   annotationForm.addEventListener("change", markDraftDirty);
+  annotationForm.addEventListener("focusout", () => {
+    window.setTimeout(() => resumeDeferredReviewRefresh(caseData), 0);
+  });
   bindReviewDraftLifecycle();
   state.reviewFormDirty = Boolean(draft);
   annotationForm.addEventListener("submit", saveAnnotation);
@@ -814,7 +817,7 @@ function populateCombinedCaseLabel(context, caseData) {
     input.dataset.selectionSource = expected ? "stored" : "empty";
   }
   const rationale = $("#combinedCaseRationale");
-  if (rationale) rationale.value = String(revision?.rationale || "");
+  if (rationale && !hasFocusedTextInput(rationale)) rationale.value = String(revision?.rationale || "");
   const tags = new Set(revision?.tags || []);
   $("#reviewPane")?.querySelectorAll('input[name="reviewTags"]').forEach((checkbox) => {
     checkbox.checked = tags.has(checkbox.value);
@@ -833,7 +836,7 @@ function populateCombinedCaseLabel(context, caseData) {
       enhanceNativeUiSelect(status);
     }
     const note = $("#annotationNote");
-    if (note) note.value = context.model_review.note || "";
+    if (note && !hasFocusedTextInput(note)) note.value = context.model_review.note || "";
     renderReviewSummary(caseData);
   } else {
     syncModelReviewProgress(null);
@@ -911,7 +914,7 @@ async function loadCombinedReviewContext(caseData, {preserveForm = false} = {}) 
     if (!preserveForm && !state.reviewFormDirty && !reviewDraftForCase(caseData)) populateCombinedCaseLabel(context, caseData);
     else if (!preserveForm) {
       const rationale = $("#combinedCaseRationale");
-      if (rationale && rationale.dataset.caseRationaleDirty !== "1" && rationale.dataset.hasCaseDraft !== "1") {
+      if (rationale && !hasFocusedTextInput(rationale) && rationale.dataset.caseRationaleDirty !== "1" && rationale.dataset.hasCaseDraft !== "1") {
         rationale.value = String(context.case_revision?.rationale || "");
         updateReviewMentionComposer(rationale, $("#combinedCaseMentionComposer"));
       }
@@ -1095,8 +1098,20 @@ function scheduleTrailDetailMetadata(issueId, requestSeq) {
   }, TRAIL_DETAIL_DELAY_MS);
 }
 
+function resumeDeferredReviewRefresh(caseData) {
+  if (state.activePage !== "review" || state.selectedCase !== caseData
+      || !state.deferredDetailRefresh || state.reviewFormDirty || state.savingAnnotation
+      || hasFocusedTextInput($("#reviewPane"))) return;
+  void refreshReviewCorePreservingMedia().catch(() => {
+    // Keep the deferred flag so the normal collaboration refresh can retry.
+  });
+}
+
 async function refreshReviewCorePreservingMedia() {
   if (typeof isReviewDecisionEditor === "function" && isReviewDecisionEditor()) return;
+  // XIM preedit may not emit input yet. Preserve the focused node, including
+  // while media is loading and while a collaboration read is in flight.
+  if (hasFocusedTextInput($("#reviewPane"))) { state.deferredDetailRefresh = true; return; }
   const previous = state.selectedCase;
   if (!previous || previous.media_status !== "ready") {
     return selectCase(state.selectedId, { updateRoute: false });
@@ -1105,7 +1120,7 @@ async function refreshReviewCorePreservingMedia() {
   const data = await api(caseCorePath(previous.issue_id), { cache: "no-store" });
   if (!isPageContextCurrent(context) || state.selectedCase !== previous) return;
   // Edits can begin while the read is in flight; never replace those fields.
-  if (state.reviewFormDirty || state.savingAnnotation || state.pendingReviewImages.length
+  if (hasFocusedTextInput($("#reviewPane")) || state.reviewFormDirty || state.savingAnnotation || state.pendingReviewImages.length
       || caseRationaleUploadTask(previous)) { state.deferredDetailRefresh = true; return; }
   for (const field of ["assets", "camera", "media_status", "preview_thumbnail_url", "external_links", "trail_metadata_status"]) {
     data[field] = previous[field];
@@ -1312,7 +1327,7 @@ function bindReviewComposerShortcuts() {
   document.addEventListener("keydown", (event) => {
     if (
       event.defaultPrevented ||
-      event.isComposing ||
+      isImeComposing(event) ||
       event.repeat ||
       event.ctrlKey ||
       event.metaKey ||
@@ -1383,7 +1398,7 @@ function bindReviewDetailActionShortcuts() {
   document.addEventListener("keydown", (event) => {
     if (
       event.defaultPrevented ||
-      event.isComposing ||
+      isImeComposing(event) ||
       event.repeat ||
       event.ctrlKey ||
       event.metaKey ||

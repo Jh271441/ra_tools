@@ -29,4 +29,20 @@ state.activePage='labeling';
 assert.equal(s.appendBaselineParams(new URLSearchParams('work_split_id='+task)).get('task_view'),null);
 state.activePage='analysis'; state.reviewAnalysis={workSplitId:task, taskView:'targets'};
 assert.equal(s.appendBaselineParams(new URLSearchParams('work_split_id='+task)).get('task_view'),'targets');
+state.activePage='review';
+const notification={issue:'cn123',runId:'run1',workSplitId:task,baselines:['version-20261016']};
+s.window.location.search='?issue=cn123&run=run1&work_split='+task+'&baselines=version-20261016&comments=1&channel=case&source=combined_review&comment=117';
+const target=new URL(s.pageUrl('review',notification),s.window.location.origin);
+assert.equal(target.searchParams.get('comment'),'117');
+assert.equal(target.searchParams.get('channel'),'case');
+// Replacement/refresh and browser history reconstruct the same exact target.
+s.window.location.search=target.search;
+assert.equal(new URL(s.pageUrl('review',notification),s.window.location.origin).searchParams.get('comment'),'117');
+for(const override of [{issue:'cn456'},{runId:'run2'},{workSplitId:''},{baselines:['other']}]) {
+  const changed=new URL(s.pageUrl('review',{...notification,...override}),s.window.location.origin);
+  assert.equal(changed.searchParams.get('comments'),null);
+  assert.equal(changed.searchParams.get('source'),null);
+}
+s.window.location.search=s.window.location.search.replace('combined_review','untrusted');
+assert.equal(new URL(s.pageUrl('review',notification),s.window.location.origin).searchParams.get('comments'),null);
 console.log('Version task routing and API scope passed');

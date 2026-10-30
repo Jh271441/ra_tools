@@ -848,6 +848,24 @@ function renderAnalysisCases(data) {
   if (jumpButton) jumpButton.disabled = pageCount <= 1;
 }
 
+function openReviewRouteDiscussion(route) {
+  // A combined-review notification still opens the shared Issue discussion,
+  // not the independent model-Run thread. The URL alone grants no task context.
+  const issueDiscussion = route.discussionChannel === "case";
+  const assignment = state.selectedCase?.review_assignment;
+  const taskId = issueDiscussion && state.selectedCase?.issue_id === route.issue
+    && assignment?.split_id === route.workSplitId
+    && assignment?.model_run_id === route.runId ? route.workSplitId : "";
+  return openAnalysisDiscussion(route.issue, {
+    runId: issueDiscussion ? "" : route.runId || "",
+    source: "deep-link",
+    kind: issueDiscussion ? "labeling" : "",
+    taskId: taskId || "",
+    discussionChannel: issueDiscussion ? "case" : "",
+    focusCommentId: route.commentId || 0,
+  });
+}
+
 async function openAnalysisDiscussion(
   issueId,
   {
@@ -1677,7 +1695,7 @@ function bindAnalysisDiscussionEnterSubmit() {
   textarea.addEventListener("keydown", (event) => {
     if (
       event.defaultPrevented
-      || event.isComposing
+      || isImeComposing(event)
       || event.key !== "Enter"
       || event.shiftKey
       || !(event.ctrlKey || event.metaKey)

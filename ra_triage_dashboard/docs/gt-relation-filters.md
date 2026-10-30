@@ -1,6 +1,6 @@
 # GT relation filters
 
-Status: local candidate, not deployed (2026-10-30, cache `manual-triage-711`).
+Status: local candidate, not deployed (2026-10-30, cache `manual-triage-719`).
 
 ## UI
 

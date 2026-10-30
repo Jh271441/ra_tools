@@ -3,7 +3,7 @@ const fs=require('node:fs'),path=require('node:path'),http=require('node:http'),
 const {chromium}=require('playwright');
 const root=path.resolve(__dirname,'../static'), original=fs.readFileSync(path.join(root,'index.html'),'utf8');
 const css=[...original.matchAll(/"((?:css\/|vendor\/)[^"\n]+\.css|styles\.css)"/g)].map(m=>m[1]);
-const modules=['core-base','i18n-messages','i18n','format-api','session-config','routing','runs','work-split','review-gallery','review-form','case-labeling'];
+const modules=['core-base','text-input','i18n-messages','i18n','format-api','session-config','routing','runs','work-split','review-gallery','review-form','case-labeling'];
 const html=original.replace(/<script\b[^>]*>[\s\S]*?<\/script>/g,'').replaceAll('{{RA_TRIAGE_BASE_PATH}}','')
   .replace('</head>',css.map(p=>`<link rel="stylesheet" href="/static/${p}">`).join('')+'</head>')
   .replace('</body>',modules.map(p=>`<script src="/static/js/${p}.js"></script>`).join('')+'</body>');

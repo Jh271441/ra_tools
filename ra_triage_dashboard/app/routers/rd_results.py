@@ -50,6 +50,13 @@ class ScopeSelection(StrictBody):
     q: str = Field(default='', max_length=2000)
     status: Literal['all', 'resolved', 'pending', 'conflict'] = 'all'
     overwrite: StrictBool = False
+    excluded_issue_ids: list[str] = Field(default_factory=list)
+
+    @validator('excluded_issue_ids')
+    def valid_exclusions(cls, value):
+        if len(value) > 20000 or len(value) != len(set(value)) or any(not re.fullmatch(r'cn[0-9]+', iid) for iid in value):
+            raise ValueError('排除项无效 / Invalid exclusions')
+        return value
 
 
 def store():
@@ -128,11 +135,17 @@ async def preview_scope(request: Request, body: ScopeSelection, background: bool
         raise _detail(403, '请求标记缺失 / Request marker required')
     def load(progress=None):
         rows, _ = filtered_rows(request, body.baselines, body.q, body.status)
-        candidates = {r['issue_id']: r for r in rows if r['group'] == 'resolved'}
+        excluded = set(body.excluded_issue_ids)
+        if not excluded.issubset({r['issue_id'] for r in rows}):
+            raise _detail(409, '选择范围已变化，请重新选择 / Selection scope changed; select again')
+        valid = [r for r in rows if r['group'] == 'resolved']
+        candidates = {r['issue_id']: r for r in valid if r['issue_id'] not in excluded}
         if progress:
             progress(0, len(candidates))
-        remote = service.read_remote(service.adapter(settings.ra_auto_triage_root), list(candidates), **({'progress':progress} if progress else {})) if candidates else {}
-        scope = dict(total=len(rows), blocked=len(rows) - len(candidates), q=body.q, status=body.status)
+        remote = service.read_remote(service.adapter(settings.ra_auto_triage_root), list(candidates), parallel=True, **({'progress':progress} if progress else {})) if candidates else {}
+        scope = dict(total=len(rows), blocked=len(rows) - len(valid), q=body.q, status=body.status)
+        if excluded:
+            scope['excluded'] = len(valid) - len(candidates)
         return candidates, remote, scope
     if background:
         result = await run(store().start_preview, actor.username, body.baselines, body.overwrite, load)
@@ -160,7 +173,7 @@ async def preview(request: Request, body: Selection, background: bool = False):
         rows = selected(request, body)
         if progress:
             progress(0, len(rows))
-        remote = service.read_remote(service.adapter(settings.ra_auto_triage_root), body.issue_ids, **({'progress':progress} if progress else {}))
+        remote = service.read_remote(service.adapter(settings.ra_auto_triage_root), body.issue_ids, parallel=True, **({'progress':progress} if progress else {}))
         return rows, remote, None
     if background:
         result = await run(store().start_preview, actor.username, body.baselines, body.overwrite, load)
@@ -170,21 +183,28 @@ async def preview(request: Request, body: Selection, background: bool = False):
 
 
 @router.post('/api/rd-results/commit')
-async def commit(request: Request, body: Commit):
+async def commit(request: Request, body: Commit, background: bool = False):
     actor = await asyncio.to_thread(_admin_identity, request)
     if not has_same_origin_mutation_marker(request) or not body.confirmed or not settings.trail_rd_write_enabled:
         raise _detail(403, 'RD 写入未启用或未确认 / RD writing disabled or not confirmed')
     def execute():
         record = store().get(body.operation_id)
-        return store().commit(body.operation_id, actor.username, database,
+        publisher = store()
+        return (publisher.start_commit if background else publisher.commit)(body.operation_id, actor.username, database,
                               service.adapter(settings.ra_auto_triage_root), lambda: set(members(request, record['baselines'])))
-    return await run(execute)
+    result = await run(execute)
+    return JSONResponse(result, status_code=202) if background else result
 
 
 @router.get('/api/rd-results/operations/{operation_id}')
-async def operation(request: Request, operation_id: str):
+async def operation(request: Request, operation_id: str, progress_only: bool = False):
     await asyncio.to_thread(_admin_identity, request)
-    return await run(lambda: store().receipt(operation_id))
+    def load():
+        receipt = store().receipt(operation_id)
+        if progress_only:
+            receipt.pop('items', None)  # Frozen rows are already held by the UI.
+        return receipt
+    return await run(load)
 
 
 @router.get('/api/rd-results/operations')

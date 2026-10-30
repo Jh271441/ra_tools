@@ -192,19 +192,23 @@ def read_live():
 
 
 def validate_live_candidate(app, sha):
-    """Only a successful, owned isolated release may replace the main checkout."""
+    """Accept only owned, receipted isolated releases or verified recovery runtimes."""
     folder = app.parent.parent
     require(folder.parent == STATE / "releases" and RELEASE_ID_PATTERN.fullmatch(folder.name),
             "Live process uses an unrecognized checkout")
-    require(app == folder / "candidate" / "ra_triage_dashboard" and not folder.is_symlink(),
-            "Live process is not an owned candidate")
+    require(app in (folder / "candidate" / "ra_triage_dashboard", folder / "rollback" / "ra_triage_dashboard")
+            and not folder.is_symlink() and not app.parent.is_symlink(), "Live process is not an owned release")
     path = folder / "result.json"
     require(path.is_file() and not path.is_symlink(), "Live candidate receipt is missing")
     stat = path.stat()
     require(stat.st_uid == os.getuid() and stat.st_mode & 0o077 == 0, "Unsafe live candidate receipt")
     record = json.loads(path.read_text())
-    require(record.get("status") == "success" and record.get("isolated_ref")
-            and record.get("target") == sha and record.get("candidate") == str(app.parent),
+    candidate = (app.parent.name == "candidate" and record.get("status") == "success" and record.get("isolated_ref")
+                 and record.get("target") == sha and record.get("candidate") == str(app.parent))
+    rollback = (app.parent.name == "rollback" and record.get("status") == "failed"
+                and record.get("rollback_status") == "healthy" and record.get("previous") == sha
+                and record.get("rollback") == str(app.parent))
+    require(candidate or rollback,
             "Live candidate receipt does not match runtime")
     validate_prepared_worktree(app.parent, sha)
 
@@ -406,7 +410,16 @@ def wait_production_stopped(pid):
     # Process exit precedes tmux removing its wrapper/session. A new owner is
     # never ours to stop; an old wrapper must disappear before binding 8785.
     while subprocess.run(["tmux", "has-session", "-t", "=" + SESSION], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
-        require(git_pane_pid() == pid, "Dashboard session acquired another process during shutdown")
+        try:
+            owner = git_pane_pid()
+        except subprocess.CalledProcessError:
+            # has-session and list-panes are not atomic: normal teardown can
+            # remove the session between them. Fail closed if it still exists.
+            if subprocess.run(["tmux", "has-session", "-t", "=" + SESSION],
+                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode != 0:
+                break
+            raise
+        require(owner == pid, "Dashboard session acquired another process during shutdown")
         time.sleep(0.1)
 
 

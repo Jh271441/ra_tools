@@ -4,7 +4,7 @@ import json
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
-from threading import Event
+from threading import Event, Lock
 from types import SimpleNamespace
 from urllib.parse import urlsplit
 from unittest.mock import patch
@@ -102,6 +102,43 @@ class RDResultsTest(unittest.TestCase):
             self.assertTrue(receipt['items'][0]['eligible'])
             self.assertTrue(receipt['background_preview'])
         self.assertEqual(self.client.calls, [])
+
+    def test_parallel_preview_reads_share_four_workers_and_preserve_order(self):
+        entered, release, guard = Event(), Event(), Lock()
+        active, peak, batches = 0, 0, []
+        def fetch(ids):
+            nonlocal active, peak
+            with guard:
+                active += 1
+                peak = max(active, peak)
+                batches.append(list(ids))
+                if active == 4:
+                    entered.set()
+            try:
+                if not release.wait(5):
+                    raise TimeoutError('Test did not release read workers')
+                return [dict(issue_id=iid, **{rd.FIELD:None}) for iid in reversed(ids)]
+            finally:
+                with guard:
+                    active -= 1
+        ids = [f'cn{i}' for i in range(201)]
+        progress = []
+        with ThreadPoolExecutor(max_workers=2) as jobs:
+            a = jobs.submit(rd.read_remote, SimpleNamespace(fetch=fetch), ids, parallel=True, progress=lambda checked,total:progress.append((checked,total)))
+            b = jobs.submit(rd.read_remote, SimpleNamespace(fetch=fetch), ids, parallel=True)
+            try:
+                self.assertTrue(entered.wait(2))
+                with guard:
+                    self.assertEqual(active, 4)
+                    self.assertEqual(len(batches), 4)
+            finally:
+                release.set()
+            self.assertEqual(list(a.result()), ids)
+            self.assertEqual(list(b.result()), ids)
+        self.assertEqual(peak, 4)
+        self.assertTrue(all(len(batch) <= 40 for batch in batches))
+        self.assertEqual(progress[-1], (201,201))
+        self.assertEqual([done for done,total in progress], sorted(done for done,total in progress))
 
     def test_failed_and_interrupted_background_previews_cannot_be_committed(self):
         def failed(progress):
@@ -262,7 +299,8 @@ class RDBatchTest(unittest.TestCase):
                         if iid == 'cn2' and mode == 'write_timeout': raise TimeoutError()
                         return {'code': 0, 'msg': 'success'}
                 client, store = BatchClient(), rd.PublicationStore(folder)
-                with patch.object(rd, 'local_rows', side_effect=lambda db, ids: {i: rows[i] for i in ids}):
+                with patch.object(rd, 'local_rows', side_effect=lambda db, ids: {i: rows[i] for i in ids}), \
+                        patch.object(rd, 'UPLOAD_BATCH_SIZE', 1), patch.object(rd, 'UPLOAD_CONCURRENCY', 1):
                     p = store.preview('admin', rows, rd.read_remote(client, list(rows)), False, 'fixture')
                     result = store.commit(p['id'], 'admin', None, client, lambda: members)
                 states = [r['state'] for r in result['results']]
@@ -287,6 +325,103 @@ class RDBatchTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             transport.send_request(url, {'user_location':'cn', 'source_id':1,
                                         'issue_info': {'cn1': {rd.FIELD:'成功', 'ra_merge_result':'成功'}}})
+
+
+class RDConcurrentUploadTest(unittest.TestCase):
+    def fixture(self, folder, count=100):
+        rows = {f'cn{i}': dict(issue_id=f'cn{i}', state='resolved', label='正确触发', fingerprint='v1') for i in range(count)}
+        remote = {iid: dict(issue_id=iid, **{rd.FIELD:None}, **{k:'preserved' for k in rd.PROTECTED}) for iid in rows}
+        store = rd.PublicationStore(folder)
+        client = SimpleNamespace(fetch=lambda ids:[copy.deepcopy(remote[iid]) for iid in ids])
+        p = store.preview('admin', rows, rd.read_remote(client, list(rows)), False, 'fixture')
+        return rows, remote, store, client, p
+
+    def test_four_batches_in_flight_failure_stops_dispatch_and_drains_receipts(self):
+        with tempfile.TemporaryDirectory() as folder:
+            rows, remote, store, client, p = self.fixture(folder)
+            entered, release_failure, release_others, failure_observed, guard = Event(), Event(), Event(), Event(), Lock()
+            calls = []
+            save = store.save
+            def observe(record):
+                save(record)
+                if any(r['state'] == 'unverified' for r in record['results']): failure_observed.set()
+            def update(values):
+                # Verify every batch's intents were durably written before POST.
+                receipt = store.get(p['id'])
+                by_id = {r['issue_id']:r for r in receipt['results']}
+                self.assertTrue(all(by_id[iid]['state']=='intent' for iid in values))
+                with guard:
+                    calls.append(dict(values))
+                    if len(calls)==4: entered.set()
+                if 'cn0' in values:
+                    if not release_failure.wait(5): raise TimeoutError()
+                    return {'code':1, 'msg':'failed'}
+                for iid,value in values.items(): remote[iid][rd.FIELD]=value
+                if not release_others.wait(5): raise TimeoutError()
+                raise TimeoutError('lost response, must still verify readback')
+            client.update=update
+            with patch.object(rd,'local_rows',side_effect=lambda db,ids:{iid:rows[iid] for iid in ids}), \
+                    patch.object(store,'save',side_effect=observe), ThreadPoolExecutor(1) as jobs:
+                job=jobs.submit(store.commit,p['id'],'admin',None,client,set(rows))
+                try:
+                    self.assertTrue(entered.wait(4))
+                    progress=store.receipt(p['id'])['progress']
+                    self.assertEqual((progress['total'],progress['active'],progress['waiting']),(100,80,20))
+                    self.assertEqual(len(calls),4)
+                    release_failure.set()
+                    self.assertTrue(failure_observed.wait(3))
+                    self.assertEqual(len(calls),4)
+                    self.assertEqual(store.receipt(p['id'])['state'],'running')
+                finally:
+                    release_failure.set(); release_others.set()
+                receipt=job.result()
+            self.assertEqual(len(calls),4)
+            self.assertTrue(all(len(values)==20 for values in calls))
+            self.assertEqual(receipt['state'],'needs_recheck')
+            self.assertEqual(receipt['progress']['verified'],60)
+            self.assertEqual(receipt['progress']['unverified'],20)
+            self.assertEqual(receipt['progress']['waiting'],20)
+            self.assertEqual(receipt['progress']['active'],0)
+            self.assertEqual([r['state'] for r in receipt['results']],['unverified']*20+['verified']*60+['not_attempted']*20)
+            self.assertTrue(all(not r['acknowledged'] for r in receipt['results'] if r['state']=='verified'))
+
+    def test_batch_partial_success_protected_changes_and_no_replay(self):
+        for mode in ('partial','protected','readback_timeout'):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as folder:
+                rows,remote,store,client,p=self.fixture(folder,20)
+                calls=[]
+                def update(values):
+                    calls.append(values)
+                    for iid,value in values.items(): remote[iid][rd.FIELD]=value
+                    if mode=='partial': remote['cn2'][rd.FIELD]=None
+                    if mode=='protected': remote['cn2'][rd.PROTECTED[0]]='external change'
+                    if mode=='readback_timeout': client.fetch=lambda ids:[]
+                    return {'code':0,'msg':'success'}
+                client.update=update
+                with patch.object(rd,'local_rows',return_value=rows):
+                    receipt=store.commit(p['id'],'admin',None,client,set(rows))
+                    with self.assertRaises(ValueError): store.commit(p['id'],'admin',None,client,set(rows))
+                self.assertEqual(len(calls),1)
+                self.assertEqual(receipt['state'],'needs_recheck')
+                self.assertEqual(receipt['results'][2]['reason'],{'partial':'value_mismatch','protected':'protected_changed','readback_timeout':'readback_failed'}[mode])
+                self.assertEqual(receipt['progress']['verified'],0 if mode=='readback_timeout' else 19)
+
+    def test_batch_source_change_prevents_whole_batch_post(self):
+        with tempfile.TemporaryDirectory() as folder:
+            rows,remote,store,client,p=self.fixture(folder,20)
+            calls=[]
+            client.update=lambda values:calls.append(values)
+            projections=0
+            def local(db,ids):
+                nonlocal projections
+                projections+=1
+                if projections>1: rows['cn2']['fingerprint']='changed'
+                return rows
+            with patch.object(rd,'local_rows',side_effect=local):
+                receipt=store.commit(p['id'],'admin',None,client,set(rows))
+            self.assertEqual(calls,[])
+            self.assertTrue(all(r['state']=='not_attempted' and r['reason']=='source_changed' for r in receipt['results']))
+
 
 
 class RDProjectionTest(unittest.TestCase):
@@ -387,6 +522,40 @@ class RDRoutesTest(unittest.TestCase):
             self.assertIn(job['id'], [r['id'] for r in history])
             self.assertEqual(self.client.calls, [])
 
+    def test_background_commit_claims_before_slow_preflight_and_survives_duplicate_submit(self):
+        self.routes.settings.trail_rd_write_enabled=True
+        p=self.http.post('/api/rd-results/preview',json=self.body,headers=self.headers).json()
+        other=self.http.post('/api/rd-results/preview',json=self.body,headers=self.headers).json()
+        entered,release=Event(),Event()
+        fetch=self.client.fetch
+        def delayed(ids):
+            entered.set()
+            if not release.wait(5): raise TimeoutError()
+            return fetch(ids)
+        with ThreadPoolExecutor(1) as workers, patch.object(rd,'_commit_workers',workers), patch.object(self.client,'fetch',side_effect=delayed):
+            try:
+                body={'operation_id':p['id'],'confirmed':True}
+                response=self.http.post('/api/rd-results/commit?background=true',json=body,headers=self.headers)
+                self.assertEqual(response.status_code,202,response.text)
+                self.assertEqual(response.json()['state'],'running')
+                self.assertTrue(entered.wait(2))
+                self.assertEqual(self.client.calls,[])
+                progress=self.http.get('/api/rd-results/operations/'+p['id']+'?progress_only=true').json()
+                self.assertNotIn('items',progress)
+                self.assertEqual(progress['progress']['stage'],'preflight')
+                self.assertEqual(progress['progress']['total'],1)
+                duplicate=self.http.post('/api/rd-results/commit?background=true',json=body,headers=self.headers)
+                self.assertEqual(duplicate.status_code,202,duplicate.text)
+                busy=self.http.post('/api/rd-results/commit?background=true',json={**body,'operation_id':other['id']},headers=self.headers)
+                self.assertEqual(busy.status_code,409,busy.text)
+            finally:
+                release.set()
+        receipt=self.http.get('/api/rd-results/operations/'+p['id']).json()
+        self.assertEqual(receipt['state'],'complete')
+        self.assertEqual(receipt['progress']['verified'],1)
+        self.assertEqual(len(self.client.calls),1)
+        self.assertEqual(self.routes.store().get(other['id'])['state'],'preview')
+
     def test_pagination_limits_and_filtered_page_bounds(self):
         rows = {f'cn{i}': dict(self.row, issue_id=f'cn{i}', state='resolved' if i < 101 else 'pending') for i in range(123)}
         with patch.object(self.routes, 'members', return_value=list(rows)), patch.object(rd, 'local_rows', return_value=rows):
@@ -430,7 +599,7 @@ class RDRoutesTest(unittest.TestCase):
             self.assertEqual(p['scope']['blocked'], 3)
             self.assertEqual(len(p['items']), 120)
             self.assertEqual(sum(item['eligible'] for item in p['items']), 118)
-            self.assertEqual([len(ids) for ids in fetches], [100,20])
+            self.assertEqual(sorted(len(ids) for ids in fetches), [40,40,40])
             self.assertEqual(writes, [])
             filtered = self.http.post('/api/rd-results/preview-scope', json={**body,'q':'cn11'}, headers=self.headers).json()
             self.assertTrue(all(item['issue_id'].startswith('cn11') for item in filtered['items']))
@@ -441,11 +610,12 @@ class RDRoutesTest(unittest.TestCase):
             result = self.http.post('/api/rd-results/commit', json=commit, headers=self.headers)
             self.assertEqual(result.status_code, 200, result.text)
             self.assertEqual(result.json()['state'], 'complete')
-            self.assertEqual(len(writes), 118)
+            self.assertEqual(sorted(map(len, writes)), [18,20,20,20,20,20])
+            self.assertEqual(sum(map(len,writes)), 118)
             self.assertEqual(remote['cn1'][rd.FIELD], '误触发')
             self.assertTrue(all(set(values).issubset(set(rows) - {'cn0','cn1','cn120','cn121','cn122'}) for values in writes))
             self.assertEqual(self.http.post('/api/rd-results/commit', json=commit, headers=self.headers).status_code,200)
-            self.assertEqual(len(writes),118)
+            self.assertEqual(sum(map(len,writes)),118)
 
     def test_scope_preview_auth_and_failed_chunk_do_not_publish(self):
         body = {'baselines':'fixture'}
@@ -458,12 +628,33 @@ class RDRoutesTest(unittest.TestCase):
                 self.assertEqual(self.http.post('/api/rd-results/preview-scope',json=invalid,headers=self.headers).status_code,422)
         rows = {f'cn{i}':dict(self.row,issue_id=f'cn{i}') for i in range(101)}
         def fetch(ids):
-            return [dict(issue_id=iid, **{rd.FIELD:None}) for iid in ids] if len(ids)==100 else []
+            return [dict(issue_id=iid, **{rd.FIELD:None}) for iid in ids] if 'cn100' not in ids else []
         with patch.object(self.routes,'members',return_value=list(rows)), patch.object(rd,'local_rows',return_value=rows), \
                 patch.object(rd,'adapter',return_value=SimpleNamespace(fetch=fetch)):
             response=self.http.post('/api/rd-results/preview-scope',json=body,headers=self.headers)
             self.assertEqual(response.status_code,409,response.text)
         self.assertFalse(list(self.routes.store().root.glob('*.json')))
+        self.assertEqual(self.client.calls,[])
+
+    def test_scope_selection_exclusions_are_validated_and_never_queried_or_written(self):
+        rows = {f'cn{i}': dict(self.row, issue_id=f'cn{i}') for i in range(103)}
+        queried = []
+        def fetch(ids):
+            queried.extend(ids)
+            return [dict(issue_id=iid, **{rd.FIELD:None}) for iid in ids]
+        with patch.object(self.routes, 'members', return_value=list(rows)), \
+                patch.object(rd, 'local_rows', return_value=rows), \
+                patch.object(rd, 'adapter', return_value=SimpleNamespace(fetch=fetch)):
+            body = dict(baselines='fixture', excluded_issue_ids=['cn0','cn102'])
+            result = self.http.post('/api/rd-results/preview-scope', json=body, headers=self.headers)
+            self.assertEqual(result.status_code,200,result.text)
+            preview = result.json()
+            self.assertEqual(preview['scope']['excluded'],2)
+            self.assertEqual(len(preview['items']),101)
+            self.assertEqual(set(queried),set(rows)-{'cn0','cn102'})
+            for excluded in (['cn999'], ['cn0','cn0'], ['invalid'], ['cn0'] * 20001):
+                result = self.http.post('/api/rd-results/preview-scope', json={**body,'excluded_issue_ids':excluded}, headers=self.headers)
+                self.assertIn(result.status_code,(409,422),result.text)
         self.assertEqual(self.client.calls,[])
 
     def test_marker_validation_and_scope(self):

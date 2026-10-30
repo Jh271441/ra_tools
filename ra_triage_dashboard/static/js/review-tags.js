@@ -490,7 +490,7 @@ function submitActiveReviewForm() {
 }
 
 function submitReviewFromDropdown(event, target) {
-  if (event.key !== "Enter" || !target?.closest?.(".review-dropdown")) {
+  if (isImeComposing(event) || event.key !== "Enter" || !target?.closest?.(".review-dropdown")) {
     return false;
   }
   event.preventDefault();
@@ -512,7 +512,7 @@ function submitReviewFromKeyboard(event, target) {
   if (
     event.key !== "Enter" ||
     event.shiftKey ||
-    event.isComposing ||
+    isImeComposing(event) ||
     reviewTouchTextEntry(target) ||
     target?.closest?.(
       "button, a, select, [role='option'], [role='listbox'], [contenteditable='true']"
@@ -570,7 +570,7 @@ function openReviewMissingEvidenceShortcut() {
 }
 
 function handleModelReviewStatusShortcut(event, target) {
-  if (state.activePage !== "review" || event.isComposing || event.repeat
+  if (state.activePage !== "review" || isImeComposing(event) || event.repeat
       || event.ctrlKey || event.metaKey || event.altKey || state.session?.read_only
       || state.session?.identity_pending || !hasDashboardWriteRole()) return false;
   const select = $("#modelReviewStatusInput");
@@ -603,7 +603,7 @@ function bindReviewKeyboardShortcuts() {
   document.addEventListener("keydown", (event) => {
     if (
       event.defaultPrevented ||
-      event.isComposing ||
+      isImeComposing(event) ||
       event.repeat ||
       event.ctrlKey ||
       event.metaKey ||
@@ -1128,6 +1128,7 @@ function bindReviewDropdownDismiss() {
   document.addEventListener(
     "keydown",
     (event) => {
+      if (isImeComposing(event)) return;
       if (event.key !== "Escape") return;
       const active = document.activeElement instanceof HTMLElement
         ? document.activeElement

@@ -890,6 +890,7 @@ function applyAnalysisRouteControls(route) {
 function pageUrl(page, options = {}) {
   const config = PAGE_ROUTES[page] || PAGE_ROUTES.review;
   const url = new URL(withBase(config.path), window.location.origin);
+  if (page === 'daily-cron' && typeof writeCronScope === 'function') writeCronScope(url);
   if (page === "trail-history") {
     for (const [key, value] of Object.entries(trailHistoryRouteOptions())) if (value !== "") url.searchParams.set(key, String(value));
   }
@@ -1187,6 +1188,24 @@ function pageUrl(page, options = {}) {
   } else if (baselineValue && baselineValue !== "0508") {
     url.searchParams.set("baselines", baselineValue);
   }
+  if (page === "review" && window.location.pathname === url.pathname) {
+    const previous = new URLSearchParams(window.location.search);
+    const notificationLink = previous.get("source") === "combined_review"
+      && previous.get("channel") === "case" && previous.get("comments") === "1";
+    const sameScope = notificationLink && ["issue", "run", "work_split"].every(
+      key => (previous.get(key) || "") === (url.searchParams.get(key) || "")
+    ) && normalizeBaselineIds(previous.get("baselines") || defaults).sort().join(",")
+      === normalizeBaselineIds(baselineValue || defaults).sort().join(",");
+    // Canonicalization must not erase an exact notification target. Never carry
+    // it to another Issue, Run, task or dataset when the user navigates away.
+    if (sameScope) {
+      url.searchParams.set("source", "combined_review");
+      url.searchParams.set("channel", "case");
+      url.searchParams.set("comments", "1");
+      const commentId = Number(previous.get("comment"));
+      if (Number.isSafeInteger(commentId) && commentId > 0) url.searchParams.set("comment", String(commentId));
+    }
+  }
   return `${url.pathname}${url.search}`;
 }
 
@@ -1259,13 +1278,14 @@ function showPage(
   if (previousPage === "trail-history" && trailHistory.busy) return;
   if (previousPage === "trail-history" && target !== "trail-history") $("#trailHistoryDialog")?.close();
   if (target === "trail-history" && restoreRoute) restoreTrailHistoryRoute();
+  if (target === 'daily-cron' && restoreRoute && typeof restoreCronScope === 'function') restoreCronScope();
   if (["labeling", "review"].includes(previousPage) && typeof caseLabelDecisionUi !== "undefined" && caseLabelDecisionUi.editor) {
     if (caseLabelDecisionUi.saving) return;
     exitCaseDecisionEditor();
   }
   const pageLoads = [];
   if (previousPage === 'rd-results' && rdResults.committing) return;
-  if (target !== "rd-results") document.querySelector("#rdResultsDialog")?.close();
+  if (target !== "rd-results" && typeof rdResults !== "undefined") { rdResults.previewOpen = false; rdForgetPreview(); }
   if (target === "rd-results" && loadPageData) pageLoads.push(() => loadRdResults());
   state.pageNavigationEpoch = Number(state.pageNavigationEpoch || 0) + 1;
   if (previousPage === "review" && target !== "review" && typeof cancelCaseHydration === "function") cancelCaseHydration();
