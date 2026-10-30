@@ -4,6 +4,26 @@
  * ES modules without auditing cross-file function/state dependencies.
  */
 
+function gtRelationFilterOptions() {
+  return [
+    { value: "matches_gt", label: uiText("与 GT 一致", "Matches GT") },
+    { value: "differs_from_gt", label: uiText("与 GT 不一致", "Differs from GT") },
+    { value: "fills_missing_gt", label: uiText("GT 缺失", "GT missing") },
+  ];
+}
+
+function normalizedGtRelationFilters(values) {
+  return parseFilterList(values).filter(value => ["matches_gt", "differs_from_gt", "fills_missing_gt"].includes(value));
+}
+
+function selectedReviewLabelStates() {
+  return getMultiFilterValues($("#sharedLabelStateFilter")).filter(value => !value.startsWith("gt:"));
+}
+
+function selectedReviewGtRelations() {
+  return normalizedGtRelationFilters(getMultiFilterValues($("#sharedLabelStateFilter")).filter(value => value.startsWith("gt:")).map(value => value.slice(3)));
+}
+
 function normalizedColorTheme(value) {
   return String(value || "").toLowerCase() === "light" ? "light" : "dark";
 }
@@ -364,6 +384,7 @@ function normalizedReviewRouteFilters(params) {
     annotationAuthor: parseFilterList(params.get("reviewer")),
     reviewStatus,
     labelStates,
+    gtRelations: normalizedGtRelationFilters(params.get("gt_relation")),
     issueTags: parseFilterList(params.get("issue_tags")),
     targetGroup: params.get('target_group') || '',
     taskView: ['targets', 'pending'].includes(params.get('task_view')) ? 'targets' : '',
@@ -526,6 +547,7 @@ function normalizedCaseLabelingRouteFilters(params) {
     cluster: cluster === "adjudicated" || /^(pair|scenario):.{1,200}$/.test(cluster) ? cluster : "",
     label,
     gt,
+    gtRelations: normalizedGtRelationFilters(params.get("gt_relation")),
     commentState,
     exclusion,
     page: Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1,
@@ -664,7 +686,8 @@ function currentReviewRouteOptions(overrides = {}) {
         ? reviewerFilterSelection("review")
         : getMultiFilterValues($("#reviewerFilter")),
     reviewStatus: selectedModelReviewStatuses(),
-    labelStates: getMultiFilterValues($("#sharedLabelStateFilter")),
+    labelStates: selectedReviewLabelStates(),
+    gtRelations: selectedReviewGtRelations(),
     issueTags: parseFilterList(state.reviewIssueTags || []),
     targetGroup: state.reviewTargetGroup || '',
     commentState:
@@ -733,7 +756,7 @@ function applyReviewRouteControls(route) {
   setMultiFilterValues($("#reviewerFilter"), route.annotationAuthor);
   renderReviewProgressFilter();
   setMultiFilterValues($("#reviewStatusFilter"), route.reviewStatus);
-  setMultiFilterValues($("#sharedLabelStateFilter"), route.labelStates);
+  setMultiFilterValues($("#sharedLabelStateFilter"), [...parseFilterList(route.labelStates), ...normalizedGtRelationFilters(route.gtRelations).map(value => `gt:${value}`)]);
   state.reviewIssueTags = route.issueTags || [];
   state.reviewTargetGroup = route.targetGroup || '';
   if (typeof renderReviewTargetGroupPicker === 'function') renderReviewTargetGroupPicker();
@@ -886,6 +909,7 @@ function pageUrl(page, options = {}) {
     if (labeling.taskId) url.searchParams.set("task", labeling.taskId);
     if (labeling.search) url.searchParams.set("q", labeling.search);
     if (labeling.targetGroup) url.searchParams.set('target_group', labeling.targetGroup);
+    if (labeling.gtRelations?.length) url.searchParams.set("gt_relation", joinFilterList(labeling.gtRelations));
     if (labeling.issueTags?.length) url.searchParams.set('issue_tags', joinFilterList(labeling.issueTags));
     const issueIds = (labeling.issueIds || []).filter((value) =>
       ISSUE_QUERY_ID_RE.test(String(value))
@@ -917,6 +941,7 @@ function pageUrl(page, options = {}) {
       ? labelSummaryRouteOptions(options)
       : options;
     if (summary.search) url.searchParams.set("q", summary.search);
+    if (summary.gtRelations?.length) url.searchParams.set("gt_relation", joinFilterList(summary.gtRelations));
     if (summary.issueTags?.length) url.searchParams.set("issue_tags", joinFilterList(summary.issueTags));
     const issueIds = (summary.issueIds || []).filter((value) =>
       ISSUE_QUERY_ID_RE.test(String(value))
@@ -988,6 +1013,7 @@ function pageUrl(page, options = {}) {
     if (reviewer) url.searchParams.set("reviewer", reviewer);
     if (status) url.searchParams.set("status", status);
     if (labelState) url.searchParams.set("label_state", labelState);
+    if (review.gtRelations?.length) url.searchParams.set("gt_relation", joinFilterList(review.gtRelations));
     const issueTags = joinFilterList(review.issueTags);
     if (issueTags) url.searchParams.set("issue_tags", issueTags);
     if (review.targetGroup) url.searchParams.set('target_group', review.targetGroup);

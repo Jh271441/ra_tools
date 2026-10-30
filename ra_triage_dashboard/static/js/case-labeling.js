@@ -15,6 +15,7 @@ function caseLabelingRouteOptions(overrides = {}) {
     cluster: overrides.cluster ?? labeling.cluster ?? "",
     label: overrides.label ?? labeling.label ?? [],
     gt: overrides.gt ?? labeling.gt ?? [],
+    gtRelations: overrides.gtRelations ?? labeling.gtRelations ?? [],
     commentState: overrides.commentState ?? labeling.commentState ?? [],
     exclusion: overrides.exclusion ?? labeling.exclusion ?? [],
     page: overrides.page ?? labeling.page ?? 1,
@@ -38,6 +39,7 @@ function restoreCaseLabelingRouteState(route = null) {
   state.caseLabeling.cluster = filters.cluster ?? state.caseLabeling.cluster;
   state.caseLabeling.label = parseFilterList(filters.label ?? state.caseLabeling.label);
   state.caseLabeling.gt = parseFilterList(filters.gt ?? state.caseLabeling.gt);
+  state.caseLabeling.gtRelations = normalizedGtRelationFilters(filters.gtRelations ?? state.caseLabeling.gtRelations);
   state.caseLabeling.commentState = parseFilterList(filters.commentState ?? state.caseLabeling.commentState);
   state.caseLabeling.exclusion = parseFilterList(filters.exclusion ?? state.caseLabeling.exclusion);
   state.caseLabeling.page = filters.page || 1;
@@ -190,6 +192,7 @@ async function loadCaseLabelingClusters() {
     exclusion: joinFilterList(state.caseLabeling.exclusion),
     label: joinFilterList(state.caseLabeling.label),
     gt: joinFilterList(state.caseLabeling.gt),
+    gt_relation: joinFilterList(state.caseLabeling.gtRelations),
     comment_state: joinFilterList(state.caseLabeling.commentState),
   });
   const result = await api(`/api/labeling/clusters?${params}`);
@@ -275,6 +278,7 @@ function renderCaseLabelingLabelPicker() {
 }
 
 function renderCaseLabelingGtPicker() {
+  renderCaseLabelingMultiPicker("#caseLabelingGtRelationPicker", gtRelationFilterOptions(), state.caseLabeling.gtRelations, "gtRelations");
   renderCaseLabelingMultiPicker("#caseLabelingGtPicker", [
     ...EXPECTED_OUTPUT_OPTIONS.filter((item) => item.value).map((item) => ({
       value: item.value, label: item.labelZh,
@@ -418,6 +422,7 @@ function labelingTaskFilterPayload() {
     cluster: state.caseLabeling.cluster || "",
     exclusion: joinFilterList(state.caseLabeling.exclusion),
     gt: joinFilterList(state.caseLabeling.gt),
+    gt_relation: joinFilterList(state.caseLabeling.gtRelations),
     comment_state: joinFilterList(state.caseLabeling.commentState),
     label: joinFilterList(state.caseLabeling.label),
   };
@@ -959,6 +964,7 @@ function caseLabelingListParams({page = 1, pageSize = state.caseLabeling.pageSiz
     exclusion: joinFilterList(state.caseLabeling.exclusion),
     label: joinFilterList(state.caseLabeling.label),
     gt: joinFilterList(state.caseLabeling.gt),
+    gt_relation: joinFilterList(state.caseLabeling.gtRelations),
     comment_state: joinFilterList(state.caseLabeling.commentState),
     page: String(Math.max(1, Number(page) || 1)),
     page_size: String(pageSize || DEFAULT_CASE_PAGE_SIZE),
@@ -1817,6 +1823,7 @@ async function enterCaseLabeling({ route = null } = {}) {
 }
 
 function bindCaseLabelingEvents() {
+  bindUiInfoPopovers($("#caseLabelingFilterForm"));
   bindCaseLabelingEditorShortcuts();
   $("#caseLabelingCreateLabelSnapshot")?.addEventListener("click", () => {
     createCaseLabelingResultSnapshot().catch((error) => showToast(error.message, true));
@@ -1857,6 +1864,7 @@ function bindCaseLabelingEvents() {
     state.caseLabeling.cluster = "";
     state.caseLabeling.label = [];
     state.caseLabeling.gt = [];
+    state.caseLabeling.gtRelations = [];
     state.caseLabeling.commentState = [];
     state.caseLabeling.exclusion = [];
     state.caseLabeling.search = "";

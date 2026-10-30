@@ -1123,6 +1123,7 @@ const state = {
     exclusion: [],
     label: [],
     gt: [],
+    gtRelations: [],
     commentState: [],
     labelers: [],
     assignees: [],

@@ -383,7 +383,8 @@ function currentReviewFilterPayload() {
     annotation_author: joinFilterList(getMultiFilterValues($("#reviewerFilter"))),
     review_status: joinFilterList(selectedModelReviewStatuses()),
     task_progress: joinFilterList(selectedCombinedTaskProgress()),
-    label_state: joinFilterList(getMultiFilterValues($("#sharedLabelStateFilter"))),
+    label_state: joinFilterList(selectedReviewLabelStates()),
+    gt_relation: joinFilterList(selectedReviewGtRelations()),
     issue_tags: joinFilterList(selectedReviewIssueTags()),
     target_group: state.reviewTargetGroup || '',
     comment_state:

@@ -1,3 +1,4 @@
+
 /* ra_triage_dashboard/static/js/runs.js
  * Model runs registry and selection
  * Loaded as a classic script (shared global scope). Do not convert to
@@ -327,7 +328,7 @@ function renderReviewCatalogFilters() {
     });
   }
   renderMultiFilter($("#sharedLabelStateFilter"), {
-    options: [
+    groups: [{ label: uiText("与 GT 的关系", "Relation to GT"), items: gtRelationFilterOptions().map(item => ({...item, value: `gt:${item.value}`})) }, { label: uiText("标注状态", "Label state"), items: [
       { value: "none", label: uiText("未标注", "Not labeled") },
       { value: "pending", label: uiText("待形成结论", "Pending") },
       { value: "resolved", label: uiText("已形成结论", "Resolved") },
@@ -340,7 +341,7 @@ function renderReviewCatalogFilters() {
         ["unknown", "GT 关系未知", "GT relation unknown"],
       ].filter(([value]) => getMultiFilterValues($("#sharedLabelStateFilter")).includes(value))
        .map(([value, zh, en]) => ({value, label: uiText(zh, en)})),
-    ],
+    ] }],
     selected: getMultiFilterValues($("#sharedLabelStateFilter")),
     onChange,
   });

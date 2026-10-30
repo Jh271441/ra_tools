@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from ..db_parts.labeling_shared import resolved_label_gt_relation
+
 import asyncio
 import hashlib
 import json
@@ -304,14 +306,16 @@ def _case_derived_issue_ids(
     filters = dict(filters)
     exclusion = filters.pop("is_excluded", None)
     issue_tag_groups = filters.pop("issue_tag_groups", ())
+    relations = filters.pop("gt_relation", ())
     matching_ids: list[str] = []
     for candidates in database.iter_case_review_candidate_batches(
         batch_size=400,
+        include_raw_gt=bool(relations),
         **filters,
     ):
         label_state_by_id = (
             _project_case_label_states(candidates, include_sources=False)
-            if allowed_label_states
+            if allowed_label_states or relations
             else {}
         )
         exclusions = database.project_issue_exclusions([item["issue_id"] for item in candidates]) if exclusion is not None else {}
@@ -332,6 +336,11 @@ def _case_derived_issue_ids(
                     "review_status"
                 ]
                 if status not in allowed_review_statuses:
+                    continue
+            if relations:
+                projection = label_state_by_id.get(issue_id, _empty_issue_label_state())
+                relation = resolved_label_gt_relation(projection.get("state"), projection.get("expected_output"), item.get("gt_label") or item.get("gt_raw_label"))
+                if relation not in relations:
                     continue
             if allowed_label_states:
                 projection = label_state_by_id.get(issue_id, _empty_issue_label_state())
@@ -382,7 +391,7 @@ def _case_result_with_status_filter(
     """Filter derived Review and shared-label states before pagination."""
 
     tag_catalog = _review_tag_catalog()
-    if review_statuses or label_states or filters.get("is_excluded") is not None or filters.get("issue_tag_groups"):
+    if review_statuses or label_states or filters.get("gt_relation") or filters.get("is_excluded") is not None or filters.get("issue_tag_groups"):
         matching_ids = _case_derived_issue_ids(
             filters=filters,
             review_statuses=review_statuses,
@@ -394,6 +403,7 @@ def _case_result_with_status_filter(
         if page_ids:
             page_filters = {**filters, "issue_ids": page_ids, "is_excluded": None}
             page_filters.pop("issue_tag_groups", None)
+            page_filters.pop("gt_relation", None)
             raw = database.list_cases(
                 **page_filters,
                 page=1,
@@ -496,6 +506,7 @@ async def list_cases(
     annotation_author: str = "",
     review_status: str = "",
     label_state: str = "",
+    gt_relation: str = "",
     issue_tags: str = "",
     model_run_id: str = "",
     comparison: str = "",
@@ -519,6 +530,7 @@ async def list_cases(
         annotation_author=annotation_author,
         review_status=review_status,
         label_state=label_state,
+        gt_relation=gt_relation,
         issue_tags=issue_tags,
         model_run_id=model_run_id,
         comparison=comparison,
@@ -576,6 +588,7 @@ async def list_cases(
         "comment_state": filters["comment_state"],
         "review_status": list(review_statuses) + [value for value in str(filters.get("model_review_status") or "").split(",") if value],
         "label_state": list(label_states),
+        "gt_relation": list(filters.get("gt_relation", ())),
         "issue_tags": [tag for group in filters.get("issue_tag_groups", ()) for tag in group],
         "exclusion": exclusion_filter,
         "baselines": resolve_request_baseline_ids(baselines, request=request),
@@ -625,6 +638,7 @@ async def list_case_issue_ids(
     annotation_author: str = "",
     review_status: str = "",
     label_state: str = "",
+    gt_relation: str = "",
     issue_tags: str = "",
     model_run_id: str = "",
     comparison: str = "",
@@ -647,6 +661,7 @@ async def list_case_issue_ids(
         annotation_author=annotation_author,
         review_status=review_status,
         label_state=label_state,
+        gt_relation=gt_relation,
         issue_tags=issue_tags,
         model_run_id=model_run_id,
         comparison=comparison,
@@ -687,6 +702,7 @@ async def list_case_issue_ids(
             "comment_state": filters["comment_state"],
             "review_status": list(review_statuses) + [value for value in str(filters.get("model_review_status") or "").split(",") if value],
             "label_state": list(label_states),
+            "gt_relation": list(filters.get("gt_relation", ())),
             "issue_tags": [tag for group in filters.get("issue_tag_groups", ()) for tag in group],
             "exclusion": exclusion_filter,
         },
@@ -702,6 +718,7 @@ async def work_assignees(
     annotation_author: str = "",
     review_status: str = "",
     label_state: str = "",
+    gt_relation: str = "",
     issue_tags: str = "",
     model_run_id: str = "",
     comparison: str = "",
@@ -723,6 +740,7 @@ async def work_assignees(
         annotation_author=annotation_author,
         review_status=review_status,
         label_state=label_state,
+        gt_relation=gt_relation,
         issue_tags=issue_tags,
         model_run_id=model_run_id,
         comparison=comparison,
@@ -757,6 +775,7 @@ async def work_assignees(
             "comparison_status": filters["comparison_status"],
             "review_status": list(review_statuses) + [value for value in str(filters.get("model_review_status") or "").split(",") if value],
             "label_state": list(label_states),
+            "gt_relation": list(filters.get("gt_relation", ())),
             "issue_tags": [tag for group in filters.get("issue_tag_groups", ()) for tag in group],
             "comment_state": filters["comment_state"],
             "exclusion": exclusion_filter,
@@ -992,6 +1011,7 @@ async def split_case_work(request: Request) -> dict[str, Any]:
         annotation_author=_as_text(filter_body.get("annotation_author")),
         review_status=_as_text(filter_body.get("review_status")),
         label_state=_as_text(filter_body.get("label_state")),
+        gt_relation=_as_text(filter_body.get("gt_relation")),
         issue_tags=_as_text(filter_body.get("issue_tags")),
         target_group=_as_text(filter_body.get("target_group")),
         model_run_id=_as_text(filter_body.get("model_run_id")),
@@ -1064,6 +1084,7 @@ async def split_case_work(request: Request) -> dict[str, Any]:
                 "annotation_author": filters["annotation_author"],
                 "review_status": list(review_statuses) + [value for value in str(filters.get("model_review_status") or "").split(",") if value],
                 "label_state": list(label_states),
+                "gt_relation": list(filters.get("gt_relation", ())),
                 "issue_tags": [tag for group in filters.get("issue_tag_groups", ()) for tag in group],
                 "exclusion": exclusion_filter,
                 "missing_evidence": filters["missing_evidence"],
@@ -1202,6 +1223,7 @@ async def split_case_work(request: Request) -> dict[str, Any]:
             "work_assignee": filters["work_assignee"],
             "review_status": list(review_statuses) + [value for value in str(filters.get("model_review_status") or "").split(",") if value],
             "label_state": list(label_states),
+            "gt_relation": list(filters.get("gt_relation", ())),
             "issue_tags": [tag for group in filters.get("issue_tag_groups", ()) for tag in group],
             "exclusion": exclusion_filter,
         },

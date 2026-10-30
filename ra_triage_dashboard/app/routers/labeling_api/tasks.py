@@ -154,6 +154,7 @@ async def create_labeling_task(request: Request) -> dict[str, Any]:
                 exclusion=normalized_exclusion,
                 expected_output=normalized_label,
                 gt_label=normalized_gt,
+                gt_relation=filter_body.get("gt_relation", ""),
                 comment_state=normalized_comment_state,
                 cluster=normalized_cluster,
             )

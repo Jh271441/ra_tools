@@ -9,7 +9,7 @@ let labelSummaryTasks = [];
 let labelSummaryData = null;
 const labelSummaryFilters = {
   search: "", issueIds: [], taskId: "", status: [], author: [], assignee: [],
-  label: [], gt: [], commentState: [], exclusion: [], cluster: "", issueTags: [],
+  label: [], gt: [], commentState: [], exclusion: [], cluster: "", issueTags: [], gtRelations: [],
 };
 
 function labelSummaryRouteOptions(overrides = {}) {
@@ -23,6 +23,7 @@ function labelSummaryRouteOptions(overrides = {}) {
     assignee: overrides.assignee ?? labelSummaryFilters.assignee,
     label: overrides.label ?? labelSummaryFilters.label,
     gt: overrides.gt ?? labelSummaryFilters.gt,
+    gtRelations: overrides.gtRelations ?? labelSummaryFilters.gtRelations ?? [],
     commentState: overrides.commentState ?? labelSummaryFilters.commentState,
     exclusion: overrides.exclusion ?? labelSummaryFilters.exclusion,
     cluster: overrides.cluster ?? labelSummaryFilters.cluster,
@@ -44,6 +45,7 @@ function restoreLabelSummaryRoute({ force = false } = {}) {
   labelSummaryFilters.author = parseFilterList(params.get("author"));
   labelSummaryFilters.assignee = parseFilterList(params.get("assignee"));
   labelSummaryFilters.label = parseFilterList(params.get("label")).filter((value) => LABELS.includes(value));
+  labelSummaryFilters.gtRelations = normalizedGtRelationFilters(params.get("gt_relation"));
   labelSummaryFilters.gt = parseFilterList(params.get("gt")).filter((value) => LABELS.includes(value));
   labelSummaryFilters.commentState = parseFilterList(params.get("comment_state")).filter((value) => ["with", "without"].includes(value));
   labelSummaryFilters.exclusion = parseFilterList(params.get("exclusion")).filter((value) => ["active", "excluded"].includes(value));
@@ -80,11 +82,13 @@ function labelSummaryCaseUrl(filters = {}) {
         baseline_ids: state.selectedBaselineIds,
       }, "review"),
       issue: filters.issue || "",
+      gtRelations: labelSummaryFilters.gtRelations || [],
     });
   }
   return pageUrl("labeling", { issue: "", taskId: labelSummaryFilters.taskId,
     search: labelSummaryFilters.search, issueIds: labelSummaryFilters.issueIds,
     issueTags: labelSummaryFilters.issueTags || [],
+    gtRelations: labelSummaryFilters.gtRelations || [],
     status: labelSummaryFilters.status,
     author: labelSummaryFilters.author, assignee: labelSummaryFilters.assignee,
     cluster: labelSummaryFilters.cluster, label: labelSummaryFilters.label,
@@ -164,6 +168,7 @@ function labelSummaryFilterPayload() {
     assignee: joinFilterList(labelSummaryFilters.assignee),
     label: joinFilterList(labelSummaryFilters.label),
     gt: joinFilterList(labelSummaryFilters.gt),
+    gt_relation: joinFilterList(labelSummaryFilters.gtRelations),
     comment_state: joinFilterList(labelSummaryFilters.commentState),
     issue_tags: joinFilterList(labelSummaryFilters.issueTags),
     exclusion: joinFilterList(labelSummaryFilters.exclusion),
@@ -388,6 +393,7 @@ async function loadLabelingSummary() {
       exclusion: joinFilterList(labelSummaryFilters.exclusion),
       label: joinFilterList(labelSummaryFilters.label),
       gt: joinFilterList(labelSummaryFilters.gt),
+    gt_relation: joinFilterList(labelSummaryFilters.gtRelations),
       comment_state: joinFilterList(labelSummaryFilters.commentState),
       issue_tags: joinFilterList(labelSummaryFilters.issueTags),
       cluster: labelSummaryFilters.cluster,
@@ -439,7 +445,7 @@ document.getElementById("labelSummaryTask")?.addEventListener("change", (event) 
 document.getElementById("labelSummaryReset")?.addEventListener("click", () => {
   Object.assign(labelSummaryFilters, {
     search: "", issueIds: [], taskId: "", status: [], author: [], assignee: [],
-    label: [], gt: [], commentState: [], exclusion: [], cluster: "", issueTags: [],
+    label: [], gt: [], commentState: [], exclusion: [], cluster: "", issueTags: [], gtRelations: [],
   });
   if (typeof updateIssueQueryButton === "function") updateIssueQueryButton();
   labelSummaryPage = 1;

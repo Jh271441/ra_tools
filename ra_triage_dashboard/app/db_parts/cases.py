@@ -845,7 +845,7 @@ class DatabaseCasesMixin:
         ]
 
     def iter_case_review_candidate_batches(
-        self, *, batch_size: int = 400, **filters: Any
+        self, *, batch_size: int = 400, include_raw_gt: bool = False, **filters: Any
     ) -> Iterator[list[dict[str, Any]]]:
         """Yield the complete Review candidate set in ordered bounded batches.
 
@@ -855,6 +855,7 @@ class DatabaseCasesMixin:
         """
 
         batch_size = min(max(1, int(batch_size)), 1000)
+        raw_gt_sql = self._gt_raw_label_sql() if include_raw_gt else "''"
         condition, params, model_args, common = self._case_list_filters(**filters)
         last_issue_id = ""
         with self.connect() as conn:
@@ -866,7 +867,7 @@ class DatabaseCasesMixin:
                 )
                 rows = conn.execute(
                     f"""
-                    SELECT DISTINCT i.issue_id, i.baseline_scope, i.gt_label,
+                    SELECT DISTINCT i.issue_id, i.baseline_scope, i.gt_label, {raw_gt_sql} AS gt_raw_label,
                            ann.id AS annotation_id,
                            ann.label AS annotation_label,
                            ann.tags_json AS annotation_tags_json,
@@ -885,6 +886,7 @@ class DatabaseCasesMixin:
                         "issue_id": str(row["issue_id"] or ""),
                         "baseline_scope": str(row["baseline_scope"] or ""),
                         "gt_label": str(row["gt_label"] or ""),
+                        "gt_raw_label": str(row["gt_raw_label"] or ""),
                         "annotation": {
                             "id": row["annotation_id"],
                             "label": str(row["annotation_label"] or ""),

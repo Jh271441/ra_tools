@@ -16,6 +16,7 @@ const root = process.argv[1];
 const core = fs.readFileSync(root + '/core-base.js', 'utf8');
 vm.runInThisContext(core.slice(core.indexOf('const LABELS ='), core.indexOf('const ANALYSIS_COMPARISON_STATUSES')));
 const routing = fs.readFileSync(root + '/routing.js', 'utf8');
+vm.runInThisContext(routing.slice(routing.indexOf('function normalizedGtRelationFilters('), routing.indexOf('function selectedReviewLabelStates(')));
 vm.runInThisContext(routing.slice(routing.indexOf('function normalizedReviewRouteFilters('), routing.indexOf('function normalizedAnalysisRouteFilters(')));
 global.parseFilterList = value => String(value || '').split(',').filter(Boolean);
 const filters = normalizedReviewRouteFilters(new URLSearchParams({

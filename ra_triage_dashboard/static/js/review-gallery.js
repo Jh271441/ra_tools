@@ -754,7 +754,7 @@ async function loadCases({
     selectedModelReviewStatuses()
   );
   const labelState = joinFilterList(
-    getMultiFilterValues($("#sharedLabelStateFilter"))
+    selectedReviewLabelStates()
   );
   const workAssignee = joinFilterList(
     typeof workAssigneeFilterSelection === "function"
@@ -788,6 +788,8 @@ async function loadCases({
   const taskProgress = joinFilterList(selectedCombinedTaskProgress());
   if (taskProgress) params.set('task_progress', taskProgress);
   if (labelState) params.set("label_state", labelState);
+  const gtRelations = joinFilterList(selectedReviewGtRelations());
+  if (gtRelations) params.set("gt_relation", gtRelations);
   const issueTags = joinFilterList(selectedReviewIssueTags());
   if (issueTags) params.set("issue_tags", issueTags);
   if (state.reviewTargetGroup) params.set('target_group', state.reviewTargetGroup);

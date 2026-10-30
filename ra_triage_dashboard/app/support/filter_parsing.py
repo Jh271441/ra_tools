@@ -8,6 +8,7 @@ from fastapi import Request
 
 from ..db import LABELS, MODEL_LABELS, REVIEW_STATUSES
 from ..db_parts.labeling import ISSUE_LABEL_STATE_FILTERS
+from ..db_parts.labeling_shared import normalize_gt_relation_filter
 from ..db_parts.model_reviews import MODEL_REVIEW_STATUSES
 from ..model_labels import canonical_model_label
 from ..gt_observations import TRAIL_GT_RAW_VALUES
@@ -39,6 +40,7 @@ def _case_filter_kwargs(
     annotation_author: str = "",
     review_status: str = "",
     label_state: str = "",
+    gt_relation: str = "",
     issue_tags: str = "",
     target_group: str | None = None,
     model_run_id: str = "",
@@ -102,6 +104,10 @@ def _case_filter_kwargs(
     model_review_statuses = tuple(
         status for status in requested_statuses if status in MODEL_REVIEW_STATUSES
     )
+    try:
+        relations = normalize_gt_relation_filter(gt_relation)
+    except ValueError as exc:
+        raise _detail(400, str(exc)) from exc
     raw_label_states = _csv_filter_values(label_state)
     if any(value not in {"all", *ISSUE_LABEL_STATE_FILTERS} for value in raw_label_states):
         raise _detail(400, "label_state 不在支持范围内。")
@@ -134,6 +140,7 @@ def _case_filter_kwargs(
         "review_statuses": review_statuses,
         "model_review_status": ",".join(model_review_statuses),
         "label_states": label_states,
+        **({"gt_relation": relations} if relations else {}),
         "model_run_id": model_run_id,
         "comparison_status": comparison_status,
         "failure_only": failure_only,

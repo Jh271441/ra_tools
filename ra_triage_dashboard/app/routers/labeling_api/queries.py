@@ -36,12 +36,17 @@ async def list_labeling_cases(
     exclusion: str = "all",
     label: str = "",
     gt: str = "",
+    gt_relation: str = "",
     comment_state: str = "all",
     cluster: str = "",
     page: int = 1,
     page_size: int = 20,
 ) -> dict[str, Any]:
     await _require_labeling_writer(request)
+    normalized_gt_relation = _labeling_filter_values(
+        gt_relation, allowed={"matches_gt", "differs_from_gt", "fills_missing_gt"},
+        error="GT 关系筛选不合法 / Invalid GT relation filter.",
+    )
     normalized_status = _labeling_filter_values(
         status,
         allowed=LABELING_FILTER_STATUSES,
@@ -100,6 +105,7 @@ async def list_labeling_cases(
             exclusion=normalized_exclusion,
             expected_output=normalized_label,
             gt_label=normalized_gt,
+            gt_relation=normalized_gt_relation,
             comment_state=normalized_comment_state,
             cluster=normalized_cluster,
             page=page,
@@ -123,6 +129,7 @@ async def list_labeling_cases(
         "exclusion": normalized_exclusion,
         "label": normalized_label,
         "gt": normalized_gt,
+        "gt_relation": normalized_gt_relation,
         "comment_state": normalized_comment_state,
         "cluster": normalized_cluster,
     }
@@ -142,6 +149,7 @@ async def labeling_summary(
     exclusion: str = "all",
     label: str = "",
     gt: str = "",
+    gt_relation: str = "",
     comment_state: str = "all",
     cluster: str = "",
     gt_update: str = "",
@@ -157,6 +165,10 @@ async def labeling_summary(
     selected_issue_ids = await asyncio.to_thread(
         restrict_version_issue_ids, baselines, request=request,
         issue_ids=normalized_issue_ids, task_id=task_id,
+    )
+    normalized_gt_relation = _labeling_filter_values(
+        gt_relation, allowed={"matches_gt", "differs_from_gt", "fills_missing_gt"},
+        error="GT 关系筛选不合法 / Invalid GT relation filter.",
     )
     normalized_status = _labeling_filter_values(
         status,
@@ -197,6 +209,7 @@ async def labeling_summary(
             exclusion=normalized_exclusion,
             expected_output=normalized_label,
             gt_label=normalized_gt,
+            gt_relation=normalized_gt_relation,
             comment_state=normalized_comment_state,
             cluster=_as_text(cluster),
         )
@@ -240,9 +253,14 @@ async def list_labeling_clusters(
     exclusion: str = "all",
     label: str = "",
     gt: str = "",
+    gt_relation: str = "",
     comment_state: str = "all",
 ) -> dict[str, Any]:
     await _require_labeling_writer(request)
+    normalized_gt_relation = _labeling_filter_values(
+        gt_relation, allowed={"matches_gt", "differs_from_gt", "fills_missing_gt"},
+        error="GT 关系筛选不合法 / Invalid GT relation filter.",
+    )
     normalized_status = _labeling_filter_values(
         status,
         allowed=LABELING_FILTER_STATUSES,
@@ -292,6 +310,7 @@ async def list_labeling_clusters(
             exclusion=normalized_exclusion,
             expected_output=normalized_label,
             gt_label=normalized_gt,
+            gt_relation=normalized_gt_relation,
             comment_state=normalized_comment_state,
         )
     except ValueError as exc:
@@ -309,6 +328,7 @@ async def list_labeling_clusters(
             "exclusion": normalized_exclusion,
             "label": normalized_label,
             "gt": normalized_gt,
+        "gt_relation": normalized_gt_relation,
             "comment_state": normalized_comment_state,
         },
     }

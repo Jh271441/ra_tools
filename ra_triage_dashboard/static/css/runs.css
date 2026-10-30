@@ -239,7 +239,7 @@ html[data-color-theme="light"] .import-example-tabs { background: #f8fafc; }
   }
   #filterForm.review-filters { grid-template-columns: repeat(9, minmax(0, 1fr)); }
   #filterForm.review-filters:has(#reviewTaskProgressField[hidden]):has(#reviewWorkflowModeField[hidden]) { grid-template-columns: repeat(8, minmax(0, 1fr)); }
-  #caseLabelingFilterForm.case-labeling-filters { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+  #caseLabelingFilterForm.case-labeling-filters { grid-template-columns: repeat(8, minmax(0, 1fr)); }
   #filterForm.review-filters > *,
   #caseLabelingFilterForm.case-labeling-filters > * { grid-column: auto; grid-row: auto; }
   #filterForm.review-filters > .filter-search,

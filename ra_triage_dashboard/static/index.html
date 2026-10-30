@@ -86,7 +86,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-710`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-711`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -379,8 +379,8 @@
                   <div class="multi-filter" id="reviewStatusFilter" data-placeholder="全部判错状态" data-placeholder-en="All model review statuses"></div>
                 </label>
                 <label class="filter-shared-label-state">
-                  <span class="ui-lang-zh" title="跨 Run 共享的 Issue 标签状态">共享标签状态</span><span class="ui-lang-en" title="Issue label state shared across Runs">Shared label state</span>
-                  <div class="multi-filter" id="sharedLabelStateFilter" data-placeholder="全部标签状态" data-placeholder-en="All label states" aria-label="Shared label state filter"></div>
+                  <div class="filter-field-heading"><span><span class="ui-lang-zh">标注状态 / GT</span><span class="ui-lang-en">Label state / GT</span></span><span class="model-review-run-help ui-info" data-ui-info><button class="ui-info-button" type="button" aria-expanded="false" aria-controls="reviewLabelGtInfo" data-i18n-aria-label="filter.label_gt_help" data-i18n-title="filter.label_gt_help"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="10" r="7.5" stroke="currentColor" stroke-width="1.4"/><path d="M10 9.1v4.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="10" cy="6.3" r=".9" fill="currentColor"/></svg></button><span class="model-review-run-tooltip ui-info-tooltip" id="reviewLabelGtInfo" role="dialog"><span class="ui-lang-zh">组内任一、组间同时满足。GT 关系比较当前有效标注结论与所选 GT；未形成结论或有分歧的 Case 不计入。GT 缺失只包含已有结论且 GT 为空的 Case。</span><span class="ui-lang-en">Selections within a group use OR; groups use AND. Compare the current resolved label with the selected GT. Unresolved or conflicting cases are excluded. GT missing includes resolved cases whose GT is empty.</span></span></span></div>
+                  <div class="multi-filter" id="sharedLabelStateFilter" data-placeholder="全部标注 / GT" data-placeholder-en="All labels / GT" data-i18n-aria-label="filter.label_gt"></div>
                 </label>
                 <label class="filter-issue-tags">
                   <span class="ui-lang-zh">Issue 标签</span><span class="ui-lang-en">Issue tags</span>
@@ -603,6 +603,16 @@
               <label><span>标注人</span><div class="multi-filter" id="caseLabelingAuthorPicker" data-placeholder="全部标注人" data-placeholder-en="All labelers"></div></label>
               <label><span>任务负责人</span><div class="multi-filter" id="caseLabelingAssigneePicker" data-placeholder="全部负责人" data-placeholder-en="All assignees"></div></label>
               <label><span>GT</span><div class="multi-filter" id="caseLabelingGtPicker" data-placeholder="全部 GT" data-placeholder-en="All GT"></div></label>
+              <label>
+                <div class="filter-field-heading">
+                  <span><span class="ui-lang-zh">GT 关系</span><span class="ui-lang-en">GT relation</span></span>
+                  <span class="model-review-run-help ui-info" data-ui-info>
+                    <button class="ui-info-button" type="button" aria-expanded="false" aria-controls="caseLabelGtInfo" data-i18n-aria-label="filter.label_gt_help" data-i18n-title="filter.label_gt_help"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="10" r="7.5" stroke="currentColor" stroke-width="1.4"/><path d="M10 9.1v4.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="10" cy="6.3" r=".9" fill="currentColor"/></svg></button>
+                    <span class="model-review-run-tooltip ui-info-tooltip" id="caseLabelGtInfo" role="dialog"><span class="ui-lang-zh">比较当前有效标注结论与所选 GT；未形成结论或有分歧的 Case 不计入。GT 缺失只包含已有结论且 GT 为空的 Case。</span><span class="ui-lang-en">Compare the current resolved label with the selected GT. Unresolved or conflicting cases are excluded. GT missing includes resolved cases whose GT is empty.</span></span>
+                  </span>
+                </div>
+                <div class="multi-filter" id="caseLabelingGtRelationPicker" data-placeholder="全部关系" data-placeholder-en="All relations" data-i18n-aria-label="filter.gt_relation"></div>
+              </label>
               <label><span>结果类别</span><div class="multi-filter" id="caseLabelingLabelPicker" data-placeholder="全部类别" data-placeholder-en="All labels"></div></label>
               <label><span>讨论</span><div class="multi-filter" id="caseLabelingDiscussionPicker" data-placeholder="全部讨论状态" data-placeholder-en="All discussions"></div></label>
               <label><span>排除</span><div class="multi-filter" id="caseLabelingExclusionPicker" data-placeholder="全部（含问题排除）" data-placeholder-en="All cases"></div></label>
@@ -2591,7 +2601,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-710`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-711`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

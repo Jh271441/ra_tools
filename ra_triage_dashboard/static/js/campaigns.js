@@ -685,6 +685,7 @@ function bindCampaignPageEvents() {
     if (filters.q) params.set("q", filters.q);
     if (filters.issue_ids) params.set("issue_ids", filters.issue_ids);
     if (filters.issue_tags) params.set("issue_tags", filters.issue_tags);
+    if (filters.gt_relation) params.set("gt_relation", filters.gt_relation);
     if (filters.status && filters.status !== "all") params.set("status", filters.status);
     if (filters.author) params.set("author", filters.author);
     if (filters.assignee) params.set("assignee", filters.assignee);

@@ -112,7 +112,7 @@ function reviewAssignmentRouteOptions(item, page) {
     };
   }
   return {
-    ...common, issue: "", labelStates: [], issueTags: [], targetGroup: '', workAssignee: ownTasks ? [reviewer] : [], clusterKey: "",
+    ...common, issue: "", labelStates: [], gtRelations: [], issueTags: [], targetGroup: '', workAssignee: ownTasks ? [reviewer] : [], clusterKey: "",
     workflowMode: item?.workflow_mode || "model_review_only", casePage: 1, casePageSize: 20,
   };
 }
@@ -135,7 +135,7 @@ function reviewAssignmentSourceHref(filter = {}) {
     search: filter.search || "", issueIds: reviewAssignmentFilterValues(filter.issue_ids),
     gtLabel: reviewAssignmentFilterValues(filter.gt_label), modelLabel: reviewAssignmentFilterValues(filter.model_label),
     annotationAuthor: reviewAssignmentFilterValues(filter.annotation_author), reviewStatus: reviewAssignmentFilterValues(filter.review_status),
-    labelStates: reviewAssignmentFilterValues(filter.label_state), commentState: filter.comment_state || "all",
+    labelStates: reviewAssignmentFilterValues(filter.label_state), gtRelations: reviewAssignmentFilterValues(filter.gt_relation), commentState: filter.comment_state || "all",
     issueTags: reviewAssignmentFilterValues(filter.issue_tags),
     targetGroup: filter.target_group || '',
     workAssignee: reviewAssignmentFilterValues(filter.work_assignee), workSplitId: filter.work_split_id || "",

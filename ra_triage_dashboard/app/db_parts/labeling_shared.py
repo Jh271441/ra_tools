@@ -25,6 +25,20 @@ ISSUE_LABEL_GT_RELATIONS = (
 )
 
 
+GT_RELATION_FILTERS = ("matches_gt", "differs_from_gt", "fills_missing_gt")
+
+
+def normalize_gt_relation_filter(value: Any) -> tuple[str, ...]:
+    values = _filter_values(value)
+    if any(item not in ("all", *GT_RELATION_FILTERS) for item in values):
+        raise ValueError("GT 关系筛选不合法 / Invalid GT relation filter.")
+    return tuple(item for item in values if item != "all")
+
+
+def resolved_label_gt_relation(state: Any, expected_output: Any, gt_label: Any) -> str:
+    return _issue_label_gt_relation(expected_output, gt_label) if state == "resolved" else "unknown"
+
+
 def _clean_values(values: Iterable[Any]) -> list[str]:
     return sorted({str(value or "").strip() for value in values if str(value or "").strip()})
 

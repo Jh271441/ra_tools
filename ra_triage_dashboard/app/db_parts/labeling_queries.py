@@ -7,7 +7,7 @@ from ..labeling_rules import (
 from collections import defaultdict
 from typing import Any, Sequence
 from .shared import LABELS
-from .labeling_shared import _clean_values, _filter_values, _parse_labeling_cluster
+from .labeling_shared import normalize_gt_relation_filter, resolved_label_gt_relation, _clean_values, _filter_values, _parse_labeling_cluster
 from .combined_labeling import is_combined_task
 from ..support.issue_tag_filters import matches_issue_tag_groups
 from ..runtime_catalogs import REVIEW_TAG_ALIASES
@@ -142,9 +142,11 @@ class LabelingQueriesMixin:
         exclusion: str = "all",
         expected_output: str = "",
         gt_label: str = "",
+        gt_relation: str = "",
         comment_state: str = "all",
         cluster: str = "",
     ) -> tuple[list[dict[str, Any]], str]:
+        relations = normalize_gt_relation_filter(gt_relation)
         scopes = _clean_values(baseline_scopes)
         if not scopes:
             return [], ""
@@ -220,12 +222,13 @@ class LabelingQueriesMixin:
         if normalized_exclusions - {"excluded", "active"}:
             raise ValueError("排除筛选不合法。")
         normalized_cluster = _parse_labeling_cluster(cluster)
+        raw_gt_sql = self._gt_raw_label_sql("issue") if relations else "''"
         selected_source_sql = (", '' AS task_source_run_id" if combined else
                                ", workset.selection_source_run_id AS task_source_run_id" if task else "")
         with self.connect() as conn:
             rows = conn.execute(
                 f"""
-                SELECT issue.issue_id, issue.baseline_scope, issue.gt_label,
+                SELECT issue.issue_id, issue.baseline_scope, issue.gt_label, {raw_gt_sql} AS gt_raw_label,
                        issue.gt_source, issue.title, issue.scenario{selected_source_sql}
                 {from_sql}
                 WHERE {where}
@@ -315,6 +318,9 @@ class LabelingQueriesMixin:
                 elif aggregate_state == "stale":
                     aggregate_state = "conflict"
                 expected_output_value = str(shared_state.get("expected_output") or "")
+            relation = resolved_label_gt_relation(aggregate_state, expected_output_value, row["gt_label"] or row["gt_raw_label"])
+            if relations and relation not in relations:
+                continue
             filter_state = labeling_filter_state({
                 "label_state": aggregate_state, "label_cases": cases,
                 "decision": (shared_state or {}).get("decision"),
@@ -400,6 +406,7 @@ class LabelingQueriesMixin:
         exclusion: str = "all",
         expected_output: str = "",
         gt_label: str = "",
+        gt_relation: str = "",
         comment_state: str = "all",
         cluster: str = "",
         page: int = 1,
@@ -420,6 +427,7 @@ class LabelingQueriesMixin:
             exclusion=exclusion,
             expected_output=expected_output,
             gt_label=gt_label,
+            gt_relation=gt_relation,
             comment_state=comment_state,
             cluster=cluster,
         )
@@ -470,6 +478,7 @@ class LabelingQueriesMixin:
         exclusion: str = "all",
         expected_output: str = "",
         gt_label: str = "",
+        gt_relation: str = "",
         comment_state: str = "all",
         cluster: str = "",
         gt_update: str = "",
@@ -486,6 +495,7 @@ class LabelingQueriesMixin:
             exclusion=exclusion,
             expected_output=expected_output,
             gt_label=gt_label,
+            gt_relation=gt_relation,
             comment_state=comment_state,
             cluster=cluster,
         )
@@ -510,6 +520,7 @@ class LabelingQueriesMixin:
         exclusion: str = "all",
         expected_output: str = "",
         gt_label: str = "",
+        gt_relation: str = "",
         comment_state: str = "all",
     ) -> list[dict[str, Any]]:
         projected, _ = self._project_labeling_cases(
@@ -524,6 +535,7 @@ class LabelingQueriesMixin:
             exclusion=exclusion,
             expected_output=expected_output,
             gt_label=gt_label,
+            gt_relation=gt_relation,
             comment_state=comment_state,
         )
         pair_counts: dict[tuple[str, str], int] = {}
