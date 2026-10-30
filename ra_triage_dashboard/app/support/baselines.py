@@ -226,6 +226,7 @@ def resolve_request_baseline_ids(
     raw: Any = None,
     *,
     request: Request | None = None,
+    task_id: str = "",
 ) -> list[str]:
     """Resolve short baseline ids from query/header; never trust raw scopes."""
 
@@ -245,7 +246,36 @@ def resolve_request_baseline_ids(
     requested = _selection_tokens(candidate)
     if set(requested).intersection(PARTITION_IDS) - set(partitions):
         raise _detail(503, "数据集分区暂不可用 / Dataset partition unavailable")
+    legacy_ids = _legacy_supplemental_baseline_ids(requested, task_id, request)
+    if legacy_ids:
+        return legacy_ids
     return normalize_baseline_ids(candidate, allowed=allowed, default=default)
+
+
+def _legacy_supplemental_baseline_ids(requested, task_id, request):
+    """Repair only the complete provenance selection from an old task link."""
+    if not any(key.startswith("manual_sidecar_version_") for key in requested):
+        return []
+    task_id = task_id or _request_query(request).get("work_split_id", "")
+    if not task_id:
+        return []
+    from ..version_review_tasks import supplemental_task_baseline_ids
+    try:
+        version_ids = supplemental_task_baseline_ids(database, task_id)
+    except ValueError as exc:
+        raise _detail(400, str(exc)) from exc
+    if not version_ids:
+        return []
+    with database.connect() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT i.baseline_scope FROM campaign_issue_members m "
+            "JOIN issues i ON i.issue_id=m.issue_id WHERE m.campaign_id=?",
+            (task_id,),
+        ).fetchall()
+    legacy_ids = {baseline_registry.scope_to_id(row["baseline_scope"]) or row["baseline_scope"]
+                  for row in rows}
+    # Subsets, extra datasets and arbitrary raw scopes keep their existing meaning.
+    return version_ids if legacy_ids and set(requested) == legacy_ids else []
 
 
 def _selection_tokens(raw: Any) -> list[str]:
@@ -264,8 +294,9 @@ def resolve_request_baseline_scopes(
     raw: Any = None,
     *,
     request: Request | None = None,
+    task_id: str = "",
 ) -> list[str]:
-    ids = resolve_request_baseline_ids(raw, request=request)
+    ids = resolve_request_baseline_ids(raw, request=request, task_id=task_id)
     scopes = ids_to_scopes([i for i in ids if not i.startswith("version-")], baseline_registry)
     if set(ids).intersection(PARTITION_IDS):
         scopes.extend(SOURCE_SCOPES)

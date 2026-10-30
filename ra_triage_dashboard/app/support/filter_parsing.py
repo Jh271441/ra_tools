@@ -116,7 +116,7 @@ def _case_filter_kwargs(
     normalized_comment_state = _as_text(comment_state).strip().lower() or "all"
     if normalized_comment_state not in {"all", "with", "without"}:
         raise _detail(400, "comment_state 仅支持 all、with 或 without。")
-    scopes = resolve_request_baseline_scopes(baselines, request=request)
+    scopes = resolve_request_baseline_scopes(baselines, request=request, task_id=work_split_id)
     selected_ids = _parse_issue_id_filter(issue_ids)
     from .baselines import restrict_version_issue_ids
     selected_ids = restrict_version_issue_ids(
