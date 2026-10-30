@@ -1,6 +1,9 @@
 # GT relation filters
 
-Status: local candidate, not deployed (2026-10-30, cache `manual-triage-719`).
+Status: deployed 2026-10-30 12:58:50 CST, cache `manual-triage-719`.
+
+Release: `ab015dd46905f1524d4b0e5cb4c7bd0c87afce95`; receipt:
+`/volume/home/workspace/ra_triage_dashboard_deploy/releases/20261030T045536Z-ab015dd46905/result.json`.
 
 ## UI
 
@@ -46,4 +49,9 @@ carry the same relation filter.
   English/light dropdown bounds and selection preservation; Chinese/dark
   desktop screenshots. Case info targets were 11px desktop and 44px mobile.
   These are browser viewport checks, not real-device or signed-in production
-  acceptance. No production deployment occurred.
+  acceptance.
+- Production release: 1169 passed / 7 skipped; isolated SQLite gray and exact-SHA
+  PostgreSQL production gates passed. Existing writer/Batch policy was preserved.
+  Read-only Review relation queries and invalid-value HTTP 400 passed; five served
+  static assets matched the release bytes. In-app tab lookup and new-tab creation
+  timed out, so signed-in production visual/Case API acceptance is not claimed.
