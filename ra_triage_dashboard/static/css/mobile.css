@@ -354,6 +354,7 @@
   dialog .dialog-card, .media-dialog-card { max-height: calc(100dvh - 12px); padding: 12px; }
   .dialog-actions { width: 100%; flex-wrap: wrap; }
   .dialog-actions .button { flex: 1 1 120px; min-height: 44px; }
+  .comment-thread-dialog #analysisDiscussionSubmit { min-height: 48px !important; }
   .comment-editor-toolbar { overflow-x: auto; }
   .comment-editor-toolbar button { min-width: 44px; min-height: 44px; }
 }

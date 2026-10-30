@@ -1420,6 +1420,8 @@ body[data-active-page="review-assignments"] .gt-sync-control { margin-left: auto
 .discussion-channel-field[hidden], .discussion-notice[hidden] { display: none; }
 .discussion-channel-field select { min-width: 0; width: auto; max-width: 100%; min-height: 30px; padding: 4px 26px 4px 8px; font-size: 11px; }
 .discussion-notice { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.45; }
+.discussion-notice.discussion-submit-status { font-size: 12px; overflow-wrap: anywhere; }
+.discussion-submit-status[data-error="true"] { color: var(--fail); }
 .discussion-keyboard-hint { color: var(--faint); font-size: 10px; }
 .comment-thread-meta { flex-wrap: wrap; }
 .comment-thread-meta > span { overflow-wrap: anywhere; }

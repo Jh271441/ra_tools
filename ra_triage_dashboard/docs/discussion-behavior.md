@@ -19,8 +19,41 @@ the prior posting destination and unlocks the selector. Reopening clears the loc
 No silent task adoption occurs for a taskless reply. Enter inserts a newline;
 Ctrl/Cmd+Enter submits, respecting composition and mention picker handling.
 
+### Comment submission feedback (2026-10-30, candidate cache721)
+
+A background URL serializer can add or reorder display filters after the dialog
+opens. Comparing the full URL made a visible, enabled Post comment button return
+without issuing a request. Dialog ownership now compares the page epoch and the
+Issue/Run/task/dataset route scope. Display filters may change; navigation, closing,
+reopening and actual scope changes still invalidate old operations.
+
+Submission feedback is inside the native modal. The old page-level toast was
+behind the modal's top layer, so users could not see validation/network failures.
+Pending submission shows Posting, prevents duplicate requests and locks draft
+editing. Failure retains the text, attachments and original reply destination;
+success clears the draft and restores the prior destination. Actual stale scope
+gets an explicit explanation and keeps the draft. Feedback uses existing bilingual
+spans, semantic theme colors and shared dialog styles. The phone submit target is
+48px. Existing permissions, persistence and notification routing remain unchanged.
+
+Before-change Chromium reproduction recorded zero POSTs after adding a display
+filter despite an enabled button, and a failed request with its toast outside the
+open modal and no inline feedback. After-change validation: 64 focused tests plus
+6 subtests, the existing deferred-request Node tests, and 12 Chromium viewport
+combinations (320/390/1440px, zh/en, dark/light). Browser tests cover pending and
+duplicate submits, reply success, visible failures, draft/reply retry, runtime
+language switching, and rejection of Issue/Run/task/dataset changes. Responses are
+synthetic; no business comments or DChat messages are sent. This is desktop
+headless Chromium viewport testing, not a real phone/soft-keyboard or production
+SSO test. No deployment has occurred. Run:
+
+```sh
+node ra_triage_dashboard/tests/discussion_scope.cjs
+node ra_triage_dashboard/tests/discussion_submit_browser.cjs
+```
+
 Each dialog owns its asynchronous reads/submissions by object identity plus page
-epoch/URL. Reopening the same Issue in another task/Run, closing or navigating
+epoch and route scope. Reopening the same Issue in another task/Run, closing or navigating
 rejects stale effects. Failed reads disable posting and allow retry without losing
 the draft. Pending submission disables duplicate requests. A late successful old
 submission does not clear a new dialog's draft. Shared discussion counts must not

@@ -86,7 +86,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-720`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-721`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -2066,6 +2066,7 @@
           <div class="comment-pending-images" id="analysisDiscussionImages"></div>
           <input id="analysisDiscussionImageInput" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden />
         </div>
+        <p class="discussion-notice discussion-submit-status" id="analysisDiscussionSubmitStatus" role="status" aria-live="polite" hidden></p>
         <div class="dialog-actions">
           <button class="button button-quiet" type="button" data-close="analysisDiscussionDialog"><span class="ui-lang-zh">关闭</span><span class="ui-lang-en">Close</span></button>
           <button class="button button-primary" id="analysisDiscussionSubmit" type="submit"><span class="ui-lang-zh">发表评论</span><span class="ui-lang-en">Post comment</span></button>
@@ -2610,7 +2611,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-720`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-721`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

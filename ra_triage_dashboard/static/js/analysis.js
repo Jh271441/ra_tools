@@ -915,6 +915,7 @@ async function openAnalysisDiscussion(
     preview: false,
   };
   const context = state.analysisDiscussion;
+  setAnalysisDiscussionFeedback(context);
   const discussionTitle = $("#analysisDiscussionTitle");
   const discussionTitleZh = discussionTitle?.querySelector(".ui-lang-zh");
   const discussionTitleEn = discussionTitle?.querySelector(".ui-lang-en");
@@ -979,7 +980,33 @@ async function openAnalysisDiscussion(
 }
 
 function isAnalysisDiscussionCurrent(context) {
-  return state.analysisDiscussion === context && isPageContextCurrent(context.pageContext);
+  return state.analysisDiscussion === context
+    && isPageContextCurrent(context.pageContext, { matchUrl: false })
+    && analysisDiscussionPageScope(context.pageContext.url)
+      === analysisDiscussionPageScope(`${window.location.pathname}${window.location.search}`);
+}
+
+function analysisDiscussionPageScope(value) {
+  const url = new URL(value, window.location.origin);
+  // Background serializers may add/reorder display filters while this modal is
+  // open. Only navigation and changes to its Issue/Run/task/dataset invalidate it.
+  const keys = ["issue", "run", "work_split", "task", "campaign", "dataset", "case", "baselines"];
+  return JSON.stringify([url.pathname, ...keys.map((key) => (
+    key === "baselines"
+      ? [...new Set(url.searchParams.getAll(key).flatMap((item) => item.split(",")))].filter(Boolean).sort()
+      : key === "dataset" ? url.searchParams.getAll(key)
+      : url.searchParams.get(key) || ""
+  ))]);
+}
+
+function setAnalysisDiscussionFeedback(context, zh = "", en = "", isError = false) {
+  if (state.analysisDiscussion !== context) return;
+  const target = $("#analysisDiscussionSubmitStatus");
+  if (!target) return;
+  target.hidden = !zh && !en;
+  target.dataset.error = String(isError);
+  target.innerHTML = `<span class="ui-lang-zh">${escapeHtml(zh)}</span><span class="ui-lang-en">${escapeHtml(en)}</span>`;
+  if (isError) target.scrollIntoView({ block: "nearest" });
 }
 
 async function loadAnalysisDiscussion(context, focusCommentId = 0) {
@@ -1092,7 +1119,17 @@ function updateAnalysisDiscussionComposerAccess({
   if (submit) {
     submit.hidden = hidden;
     submit.disabled = context.status !== "ready" || context.saving || hidden;
+    const zh = submit.querySelector(".ui-lang-zh");
+    const en = submit.querySelector(".ui-lang-en");
+    if (zh) zh.textContent = context.saving ? "发表中…" : "发表评论";
+    if (en) en.textContent = context.saving ? "Posting…" : "Post comment";
   }
+  $("#analysisDiscussionForm")?.setAttribute("aria-busy", String(context.saving));
+  const textarea = $("#analysisDiscussionNote");
+  if (textarea) textarea.readOnly = Boolean(context.saving);
+  $("#analysisDiscussionDialog")?.querySelectorAll("[data-comment-format], [data-comment-image], [data-comment-preview-toggle], [data-remove-comment-image], [data-cancel-comment-reply]").forEach((button) => {
+    button.disabled = Boolean(context.saving);
+  });
   const viewLabels = { both: uiText("全部讨论", "All discussions"), case: uiText("本问题讨论", "Issue discussion"), campaign: taskId ? uiText("当前任务讨论", "Current task discussion") : uiText("当前任务讨论（未指定任务）", "Task discussion (no task selected)") };
   ["#analysisDiscussionView", "#analysisDiscussionChannel"].forEach((id) => {
     Object.entries(viewLabels).forEach(([key, label]) => {
@@ -1173,7 +1210,7 @@ function applyAnalysisDiscussionFormat(kind) {
 
 function addAnalysisDiscussionImages(files) {
   const context = state.analysisDiscussion;
-  if (!context) return;
+  if (!context || context.saving) return;
   if (context.kind === "intent") {
     showToast("意图标注讨论暂不支持图片附件，请使用 Markdown 文本。", true);
     return;
@@ -1541,18 +1578,29 @@ function resetAnalysisDiscussionReply(context) {
 async function saveAnalysisDiscussion(event) {
   event.preventDefault();
   const context = state.analysisDiscussion;
-  if (!context || !isAnalysisDiscussionCurrent(context) || context.saving || context.status !== "ready") return;
+  if (!context || context.saving) return;
+  if (!isAnalysisDiscussionCurrent(context)) {
+    setAnalysisDiscussionFeedback(context,
+      "当前问题、任务或数据集已切换，请复制草稿后重新打开讨论。",
+      "The issue, task or dataset has changed. Copy your draft and reopen the discussion.", true);
+    return;
+  }
+  if (context.status !== "ready") {
+    setAnalysisDiscussionFeedback(context, "讨论尚未加载成功，请重试加载。草稿已保留。", "Load the discussion before posting. Your draft is preserved.", true);
+    return;
+  }
   const discussion = String($("#analysisDiscussionNote")?.value || "").trim();
   if (context?.kind === "review" && !context.runId) {
-    showToast("历史讨论为只读；请先选择复核批次再发起讨论。", true);
+    setAnalysisDiscussionFeedback(context, "历史讨论为只读；请先选择复核批次再发起讨论。", "Historical discussion is read-only. Select a review batch to post.", true);
     return;
   }
   if (!context?.issueId || !discussion) {
-    showToast("请输入讨论内容。", true);
+    setAnalysisDiscussionFeedback(context, "请输入讨论内容。", "Enter a comment.", true);
     return;
   }
   const author = String(state.session?.username || "").trim();
   if ($("#analysisDiscussionSubmit")?.disabled || $("#analysisDiscussionComposer")?.hidden) return;
+  setAnalysisDiscussionFeedback(context, "正在发表评论…", "Posting comment…");
   context.saving = true;
   updateAnalysisDiscussionComposerAccess();
   try {
@@ -1576,7 +1624,7 @@ async function saveAnalysisDiscussion(event) {
       );
     } else if (context.kind === "labeling" && context.pendingImages?.length) {
       if (!["case", "campaign"].includes(context.channel) || (context.channel === "campaign" && !context.taskId)) {
-        showToast("请选择本问题讨论或当前任务讨论。", true);
+        setAnalysisDiscussionFeedback(context, "请选择本问题讨论或当前任务讨论。", "Choose issue discussion or current task discussion.", true);
         return;
       }
       const form = new FormData();
@@ -1593,7 +1641,7 @@ async function saveAnalysisDiscussion(event) {
       });
     } else if (context.kind === "labeling") {
       if (!["case", "campaign"].includes(context.channel) || (context.channel === "campaign" && !context.taskId)) {
-        showToast("请选择本问题讨论或当前任务讨论。", true);
+        setAnalysisDiscussionFeedback(context, "请选择本问题讨论或当前任务讨论。", "Choose issue discussion or current task discussion.", true);
         return;
       }
       result = await api(`/api/labeling/cases/${encodeURIComponent(context.issueId)}/comments`, {
@@ -1606,11 +1654,11 @@ async function saveAnalysisDiscussion(event) {
       });
     } else if (context.kind === "campaign") {
       if (!["case", "campaign"].includes(context.channel)) {
-        showToast("请选择本问题讨论或当前任务讨论。", true);
+        setAnalysisDiscussionFeedback(context, "请选择本问题讨论或当前任务讨论。", "Choose issue discussion or current task discussion.", true);
         return;
       }
       if (context.replyTo && String(context.replyTo.discussion_channel || "") !== context.channel) {
-        showToast("回复必须留在原讨论中。", true);
+        setAnalysisDiscussionFeedback(context, "回复必须留在原讨论中。", "Replies must stay in the original discussion.", true);
         return;
       }
       const discussionUrl = context.channel === "campaign"
@@ -1643,7 +1691,12 @@ async function saveAnalysisDiscussion(event) {
       });
     }
     acknowledgeLocalChange(result);
-    if (!isAnalysisDiscussionCurrent(context)) return;
+    if (!isAnalysisDiscussionCurrent(context)) {
+      setAnalysisDiscussionFeedback(context,
+        "评论已发表到原讨论。页面已切换，草稿仍保留在编辑框中，请重新打开讨论。",
+        "Comment posted to the original discussion. The page has changed; your draft remains in the editor. Reopen the discussion.");
+      return;
+    }
     if (!(context.comments || []).some((item) => Number(item.id) === Number(result.comment.id))) context.comments.push(result.comment);
     if (["labeling", "campaign"].includes(context.kind) && context.viewChannel !== "both" && context.viewChannel !== context.channel) context.viewChannel = "both";
     if (context.kind === "intent" && state.intentLabeling?.caseId === context.intentCaseId) {
@@ -1674,14 +1727,21 @@ async function saveAnalysisDiscussion(event) {
       context.comments.length
     );
     const queued = result?.notification?.queued?.length || 0;
-    showToast(`评论已发表${queued ? `；DChat 通知已排队 ${queued} 人` : ""}。`);
+    setAnalysisDiscussionFeedback(context,
+      `评论已发表${queued ? `；DChat 通知已排队 ${queued} 人` : ""}。`,
+      `Comment posted.${queued ? ` DChat notifications queued for ${queued} ${queued === 1 ? "person" : "people"}.` : ""}`);
   } catch (error) {
-    if (isAnalysisDiscussionCurrent(context)) showToast(error.message, true);
+    if (state.analysisDiscussion === context) {
+      const detail = String(error.message || "");
+      setAnalysisDiscussionFeedback(context,
+        `未能确认评论发表成功，草稿已保留。请检查讨论后重试。${detail ? `（${detail}）` : ""}`,
+        `Could not confirm posting. Your draft is preserved. Check the discussion before retrying.${detail ? ` (${detail})` : ""}`, true);
+    }
   } finally {
     context.saving = false;
-    if (isAnalysisDiscussionCurrent(context)) {
+    if (state.analysisDiscussion === context) {
       updateAnalysisDiscussionComposerAccess();
-      renderAnalysisDiscussionThread();
+      if (isAnalysisDiscussionCurrent(context)) renderAnalysisDiscussionThread();
     }
   }
 }

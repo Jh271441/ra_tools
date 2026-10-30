@@ -9,7 +9,7 @@ function element(key) {
       if (selector === '[data-cancel-comment-reply]' && this.innerHTML.includes('data-cancel-comment-reply')) return element('cancelReply');
       return null;
     },
-    querySelectorAll() { return []; }, focus() {}, setSelectionRange() {},
+    querySelectorAll() { return []; }, focus() {}, setSelectionRange() {}, scrollIntoView() {},
     showModal() { this.open = true; },
     setAttribute() {}, removeAttribute() {},
   });
@@ -20,10 +20,11 @@ const s = {
   state, $: element, URL, FormData, encodeURIComponent,
   enhanceDashboardSelects() {}, // Real DOM adapter covered by dropdown_components.cjs.
   document: { querySelectorAll: () => [] },
-  window: { location: { origin: 'https://example.test' } },
+  window: { location: { origin: 'https://example.test', pathname: '/review', search: '?issue=cn1&run=run1&baselines=scope&work_split=task1' } },
   PAGE_ROUTES: { review: { path: '/review' }, labeling: { path: '/case-labeling' }, campaigns: { path: '/campaigns' } },
   withBase: path => '/manual' + path,
-  capturePageContext: () => state.epoch, isPageContextCurrent: epoch => epoch === state.epoch,
+  capturePageContext: () => ({epoch:state.epoch,url:s.window.location.pathname+s.window.location.search}),
+  isPageContextCurrent: (context,{matchUrl=true}={}) => context.epoch===state.epoch && (!matchUrl || context.url===s.window.location.pathname+s.window.location.search),
   uiText: zh => zh, escapeHtml: String, formatTime: String,
   reviewMentionDisplayName: name => name, reviewCommentBodyMarkup: body => body,
   bindReviewMentionComposer() {}, updateReviewMentionComposer() {}, campaignLabel: value => value,
@@ -80,6 +81,34 @@ async function main() {
   post.resolve({comment:{id:3, body:'new-reply', discussion_channel:'case',author:'alice'},comment_count:2}); await saved;
   assert.equal(c.replyTo,null); assert.equal(c.channel,'campaign'); assert(!element('#analysisDiscussionChannel').disabled);
   assert.equal(c.viewChannel,'both'); assert.equal(element('#analysisDiscussionNote').value,'');
+  // Display-only URL serialization must not silently drop a valid reply.
+  s.api=async()=>result(); await open(); c=state.analysisDiscussion;
+  s.beginAnalysisDiscussionReply(1); element('#analysisDiscussionNote').value='reply after route serialization';
+  const originalSearch=s.window.location.search;
+  s.window.location.search+='&comparison=all'; posts=0;
+  s.api=async()=>{posts++;return {comment:{id:4,body:'saved',discussion_channel:'case',author:'alice'}};};
+  await s.saveAnalysisDiscussion({preventDefault(){}}); assert.equal(posts,1); assert.equal(element('#analysisDiscussionNote').value,'');
+  // Actual identity changes still reject the post with visible, preserved feedback.
+  element('#analysisDiscussionNote').value='preserved draft'; s.window.location.search=originalSearch.replace('run1','run2');
+  await s.saveAnalysisDiscussion({preventDefault(){}}); assert.equal(posts,1); assert.equal(element('#analysisDiscussionNote').value,'preserved draft');
+  assert.equal(element('#analysisDiscussionSubmitStatus').dataset.error,'true');
+  assert(element('#analysisDiscussionSubmitStatus').innerHTML.includes('Copy your draft'));
+  s.window.location.search=originalSearch;
+  // Failure preserves reply/draft and is rendered inside the discussion rather than a toast behind it.
+  s.api=async()=>result(); await open(); s.beginAnalysisDiscussionReply(1); element('#analysisDiscussionNote').value='retry draft';
+  s.api=async()=>{throw Error('offline <unsafe>');}; await s.saveAnalysisDiscussion({preventDefault(){}});
+  assert.equal(element('#analysisDiscussionNote').value,'retry draft'); assert.equal(state.analysisDiscussion.replyTo.id,1);
+  assert(element('#analysisDiscussionSubmitStatus').innerHTML.includes('Could not confirm posting'));
+  assert(!element('#analysisDiscussionSubmit').disabled);
+  // An old save finishing in the same modal restores controls without clearing its draft after scope navigation.
+  s.api=async()=>result(); await open(); element('#analysisDiscussionNote').value='old scope draft';
+  post=deferred(); s.api=()=>post.promise;
+  const scopeSave=s.saveAnalysisDiscussion({preventDefault(){}});
+  s.window.location.search=originalSearch.replace('run1','run2');
+  post.resolve({comment:{id:9,body:'saved in original discussion',discussion_channel:'case'}}); await scopeSave;
+  assert(!element('#analysisDiscussionSubmit').disabled); assert.equal(element('#analysisDiscussionNote').value,'old scope draft');
+  assert(element('#analysisDiscussionSubmitStatus').innerHTML.includes('original discussion'));
+  s.window.location.search=originalSearch;
   // Reopen clears the reply lock even for the same Issue.
   s.api = async () => result(); s.beginAnalysisDiscussionReply(2); await open(); assert(!element('#analysisDiscussionChannel').disabled);
   // Same-Issue requests must also be owned by the exact task/Run/dialog instance.
