@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class LabelReviewInteractionsTest(unittest.TestCase):
     def test_shortcuts_split_case_and_run_and_case_rationale_survives_drafts(self):
-        script = "\n".join((ROOT / f"static/js/{name}.js").read_text() for name in ["review-draft", "review-issue-decision", "review-form"]) + r'''
+        script = "\n".join((ROOT / f"static/js/{name}.js").read_text() for name in ["text-input", "review-draft", "review-issue-decision", "review-form"]) + r'''
 const assert=require('node:assert/strict');
 const caseLabelDecisionUi={};
 state={activePage:'review',selectedCase:{issue_id:'cn1'},selectedRunId:'run1',session:{username:'alice',verified:true}};
@@ -59,7 +59,7 @@ assert.equal(applyReviewDraft({},draft).case_rationale,'Saved Case reason @bob')
         subprocess.run(["node"], input=script, text=True, check=True, capture_output=True)
 
     def test_label_summary_shortcut_respects_dialog_and_editing_scope(self):
-        script = "\n".join((ROOT / f"static/js/{name}.js").read_text() for name in ["review-tags", "review-issue-decision", "review-form"]) + r'''
+        script = "\n".join((ROOT / f"static/js/{name}.js").read_text() for name in ["text-input", "review-tags", "review-issue-decision", "review-form"]) + r'''
 const assert=require('node:assert/strict');
 const caseLabelDecisionUi={};
 state={activePage:'review',selectedCase:{issue_id:'cn1'}};

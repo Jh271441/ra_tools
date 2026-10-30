@@ -29,7 +29,7 @@ const s = {
   bindReviewMentionComposer() {}, updateReviewMentionComposer() {}, campaignLabel: value => value,
   acknowledgeLocalChange() {}, showToast() {}, selectedBaselineQueryValue: () => 'scope',
 };
-vm.createContext(s); vm.runInContext(fs.readFileSync('ra_triage_dashboard/static/js/analysis.js', 'utf8'), s);
+vm.createContext(s); vm.runInContext(fs.readFileSync('ra_triage_dashboard/static/js/text-input.js', 'utf8'), s); vm.runInContext(fs.readFileSync('ra_triage_dashboard/static/js/analysis.js', 'utf8'), s);
 function deferred() { let resolve, reject; const promise = new Promise((a,b) => {resolve=a; reject=b;}); return {promise, resolve, reject}; }
 const caseComment = { id: 1, discussion_channel: 'case', author: 'bob', body: 'public-body' };
 const taskComment = { id: 2, discussion_channel: 'campaign', campaign_id: 'task1', author: 'bob', body: 'task-body' };

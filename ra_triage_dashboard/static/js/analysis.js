@@ -1695,7 +1695,7 @@ function bindAnalysisDiscussionEnterSubmit() {
   textarea.addEventListener("keydown", (event) => {
     if (
       event.defaultPrevented
-      || event.isComposing
+      || isImeComposing(event)
       || event.key !== "Enter"
       || event.shiftKey
       || !(event.ctrlKey || event.metaKey)

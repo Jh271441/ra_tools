@@ -312,6 +312,7 @@ function updateReviewMentionComposer(
   textarea = $("#annotationNote"),
   root = $("#reviewMentionComposer")
 ) {
+  if (textarea?.dataset?.imeComposing === "1") return;
   if (!root || !textarea) return;
   const composer = reviewMentionComposerState(textarea);
   const parsedMentions = reviewMentions(textarea.value);
@@ -378,11 +379,21 @@ function bindReviewMentionComposer(
   textarea.dataset.reviewMentionBound = "1";
   textarea.setAttribute("autocomplete", "off");
   const composer = reviewMentionComposerState(textarea);
+  textarea.addEventListener("compositionstart", () => {
+    textarea.dataset.imeComposing = "1";
+    root.hidden = true;
+  });
+  textarea.addEventListener("compositionend", () => {
+    delete textarea.dataset.imeComposing;
+    composer.activeIndex = 0;
+    updateReviewMentionComposer(textarea, root);
+  });
   textarea.addEventListener("input", () => {
     composer.activeIndex = 0;
     updateReviewMentionComposer(textarea, root);
   });
   textarea.addEventListener("keydown", (event) => {
+    if (isImeComposing(event)) return;
     const active = activeMentionQuery(textarea);
     const options = [...root.querySelectorAll("[data-review-mention]")];
     const popoverOpen = Boolean(active && !root.hidden && root.querySelector(".review-mention-popover"));
@@ -416,6 +427,7 @@ function bindReviewMentionComposer(
   window.addEventListener("resize", reposition, { passive: true });
   window.addEventListener("scroll", reposition, { passive: true, capture: true });
   textarea.addEventListener("blur", () => {
+    delete textarea.dataset.imeComposing;
     window.setTimeout(() => {
       if (!root.contains(document.activeElement)) closeReviewMentionComposer(textarea, root);
     }, 0);

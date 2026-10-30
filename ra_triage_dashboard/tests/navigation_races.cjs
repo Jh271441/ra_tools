@@ -40,6 +40,7 @@ function fixture(page = 'review') {
       : fs.readFileSync(root + name, 'utf8');
     vm.runInContext(source, s, {filename: name});
   }
+  load('text-input.js');
   load('routing.js');
   s.persistCurrentReviewRoute = () => {}; s.persistCurrentAnalysisRoute = () => {};
   function navigate(nextPage, search = '') {
