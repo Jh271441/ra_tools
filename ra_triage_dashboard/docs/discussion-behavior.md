@@ -19,7 +19,7 @@ the prior posting destination and unlocks the selector. Reopening clears the loc
 No silent task adoption occurs for a taskless reply. Enter inserts a newline;
 Ctrl/Cmd+Enter submits, respecting composition and mention picker handling.
 
-### Comment submission and reply clicks (2026-10-30, candidate cache722)
+### Comment submission and reply clicks (2026-10-30, released cache722)
 
 The user's follow-up that replies fail more often exposed an additional cause.
 Replying automatically inserts an @mention. On textarea blur, the shared mention
@@ -71,12 +71,33 @@ duplicate submits, reply success, visible failures, draft/reply retry, runtime
 language switching, and rejection of Issue/Run/task/dataset changes. Responses are
 synthetic; no business comments or DChat messages are sent. This is desktop
 headless Chromium viewport testing, not a real phone/soft-keyboard or production
-SSO test. No deployment has occurred. Run:
+SSO test. Run:
 
 ```sh
 node ra_triage_dashboard/tests/discussion_scope.cjs
 node ra_triage_dashboard/tests/discussion_submit_browser.cjs
 ```
+
+Production release `dc4fe1eff70f55379d63ff3cb5ac3452fc8e71e6` passed the complete
+cloud gate (1180 passed, 7 skipped in 169.11s), isolated SQLite gray, and exact-SHA
+PostgreSQL health/policy checks. Release receipt:
+`/volume/home/workspace/ra_triage_dashboard_deploy/releases/20261030T092002Z-dc4fe1eff70f/result.json`.
+Five served JS/CSS assets match the release bytes. No migrations, dependencies or
+identity/writer-policy changes were made.
+
+After explicit authorization of the exact test messages, signed-in macOS Chrome
+accepted one ordinary Issue comment and one reply with `@jasperchen` on
+`cn36941385`. Native clicks held the mouse down across editor blur (100/150ms).
+Success feedback, cleared editor, restored destination, and both records after
+browser refresh/reopen were observed. Readback found exactly one each: comments
+153/154, with 154 replying to 153; count rose from 3 to 5. The sole notification
+row is for comment154, recipient `jasperchen`, status `sent`; no other colleague
+was notified. Self mentions intentionally notify the author under the existing
+backend contract. These two clearly marked acceptance records remain with user
+authorization. This production acceptance covered desktop Chinese/dark Chrome;
+phone viewport and other language/theme coverage remains the synthetic check
+above, not a real-device claim. Verification receipt:
+`/volume/home/workspace/ra_triage_dashboard_deploy/operations/comment-submit-20261030/receipt.json`.
 
 Each dialog owns its asynchronous reads/submissions by object identity plus page
 epoch and route scope. Reopening the same Issue in another task/Run, closing or navigating
