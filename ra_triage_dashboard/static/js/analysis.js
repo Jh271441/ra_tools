@@ -1212,7 +1212,7 @@ function addAnalysisDiscussionImages(files) {
   const context = state.analysisDiscussion;
   if (!context || context.saving) return;
   if (context.kind === "intent") {
-    showToast("意图标注讨论暂不支持图片附件，请使用 Markdown 文本。", true);
+    setAnalysisDiscussionFeedback(context, "意图标注讨论暂不支持图片附件，请使用 Markdown 文本。", "Intent discussion does not support images. Use Markdown text.", true);
     return;
   }
   const limits = state.config?.review_attachment_limits || {};
@@ -1220,13 +1220,13 @@ function addAnalysisDiscussionImages(files) {
   const maxBytes = Number(limits.max_bytes_each || 8 * 1024 * 1024);
   const maxTotalBytes = Number(limits.max_bytes_total || 24 * 1024 * 1024);
   const allowed = new Set(limits.media_types || ["image/png", "image/jpeg", "image/webp"]);
-  let rejected = "";
+  let rejected = null;
   [...files].forEach((file) => {
-    if (context.pendingImages.length >= maxCount) return void (rejected = `每条评论最多 ${maxCount} 张图片。`);
-    if (!allowed.has(file.type)) return void (rejected = "仅支持 PNG、JPEG 或 WebP 图片。");
-    if (file.size > maxBytes) return void (rejected = "单张图片不能超过 8 MB。");
+    if (context.pendingImages.length >= maxCount) return void (rejected = [`每条评论最多 ${maxCount} 张图片。`, `Up to ${maxCount} images per comment.`]);
+    if (!allowed.has(file.type)) return void (rejected = ["仅支持 PNG、JPEG 或 WebP 图片。", "Only PNG, JPEG and WebP images are supported."]);
+    if (file.size > maxBytes) return void (rejected = [`单张图片不能超过 ${maxBytes / (1024 * 1024)} MB。`, `Each image must be at most ${maxBytes / (1024 * 1024)} MB.`]);
     const total = context.pendingImages.reduce((sum, item) => sum + item.file.size, 0);
-    if (total + file.size > maxTotalBytes) return void (rejected = "本次图片总大小不能超过 24 MB。");
+    if (total + file.size > maxTotalBytes) return void (rejected = [`本次图片总大小不能超过 ${maxTotalBytes / (1024 * 1024)} MB。`, `Total image size must be at most ${maxTotalBytes / (1024 * 1024)} MB.`]);
     const randomId = crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`;
     const token = `pending-${String(randomId).replace(/[^A-Za-z0-9-]/g, "-")}`;
     const item = { token, file, previewUrl: URL.createObjectURL(file) };
@@ -1241,7 +1241,7 @@ function addAnalysisDiscussionImages(files) {
   });
   renderAnalysisDiscussionImages();
   if (context.preview) renderAnalysisDiscussionPreview();
-  if (rejected) showToast(rejected, true);
+  if (rejected) setAnalysisDiscussionFeedback(context, ...rejected, true);
 }
 
 function renderAnalysisDiscussionImages() {
@@ -1543,8 +1543,19 @@ function beginAnalysisDiscussionReply(commentId) {
     updateAnalysisDiscussionComposerAccess();
   }
   const textarea = $("#analysisDiscussionNote");
-  const prefix = comment.author === state.session?.username ? "" : `@${comment.author} `;
-  if (!String(textarea.value || "").trim()) textarea.value = prefix;
+  const author = String(comment.author || "").trim().toLowerCase();
+  // reply_to_id already supplies the notification recipient. Never insert a
+  // forbidden @token for an author removed/disabled in the mention directory.
+  const canMention = (state.mentionUsers || []).some((item) => item.enabled !== false
+    && String(item.username || "").trim().toLowerCase() === author);
+  const prefix = canMention && author !== String(state.session?.username || "").toLowerCase() ? `@${author} ` : "";
+  if (!String(textarea.value || "").trim() || textarea.value === context.replyMentionPrefix) {
+    textarea.value = prefix;
+    context.replyMentionPrefix = prefix;
+  } else {
+    delete context.replyMentionPrefix;
+  }
+  if (context.preview) toggleAnalysisDiscussionPreview();
   renderAnalysisDiscussionReplyContext();
   updateReviewMentionComposer(textarea, $("#analysisDiscussionMentionComposer"));
   textarea.focus();
@@ -1557,7 +1568,7 @@ function renderAnalysisDiscussionReplyContext() {
   if (!target) return;
   target.hidden = !reply;
   target.innerHTML = reply
-    ? `<span>正在回复 <strong>${escapeHtml(reviewMentionDisplayName(reply.author || "unknown"))}</strong></span><button type="button" data-cancel-comment-reply>取消回复</button>`
+    ? `<span><span class="ui-lang-zh">正在回复</span><span class="ui-lang-en">Replying to</span> <strong>${escapeHtml(reviewMentionDisplayName(reply.author || "unknown"))}</strong></span><button type="button" data-cancel-comment-reply><span class="ui-lang-zh">取消回复</span><span class="ui-lang-en">Cancel reply</span></button>`
     : "";
   target.querySelector("[data-cancel-comment-reply]")?.addEventListener("click", () => {
     resetAnalysisDiscussionReply(state.analysisDiscussion);
@@ -1567,12 +1578,32 @@ function renderAnalysisDiscussionReplyContext() {
 
 function resetAnalysisDiscussionReply(context) {
   if (!context) return;
+  const textarea = $("#analysisDiscussionNote");
+  if (context.replyMentionPrefix && textarea?.value === context.replyMentionPrefix) textarea.value = "";
+  delete context.replyMentionPrefix;
   context.replyTo = null;
   if (["labeling", "campaign"].includes(context.kind)) {
     context.channel = context.preReplyChannel || context.channel || "case";
     delete context.preReplyChannel;
   }
   updateAnalysisDiscussionComposerAccess();
+  updateReviewMentionComposer(textarea, $("#analysisDiscussionMentionComposer"));
+}
+
+async function postAnalysisDiscussionRequest(path, options) {
+  const controller = new AbortController();
+  const timeoutMs = options.body instanceof FormData ? 180_000 : 30_000;
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await api(path, { ...options, signal: controller.signal });
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error(uiText("发表评论请求超时。", "The comment request timed out."));
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+  }
 }
 
 async function saveAnalysisDiscussion(event) {
@@ -1612,7 +1643,7 @@ async function saveAnalysisDiscussion(event) {
     };
     let result;
     if (context.kind === "intent") {
-      result = await api(
+      result = await postAnalysisDiscussionRequest(
         `/api/intent-datasets/${encodeURIComponent(context.intentDatasetId)}/cases/${encodeURIComponent(context.intentCaseId)}/comments`,
         {
           method: "POST",
@@ -1634,7 +1665,7 @@ async function saveAnalysisDiscussion(event) {
       context.pendingImages.forEach((item, index) => {
         form.append("attachments", item.file, item.file.name || `comment-${index + 1}.png`);
       });
-      result = await api(`/api/labeling/cases/${encodeURIComponent(context.issueId)}/comments-with-attachments`, {
+      result = await postAnalysisDiscussionRequest(`/api/labeling/cases/${encodeURIComponent(context.issueId)}/comments-with-attachments`, {
         method: "POST",
         body: form,
         headers: { "X-RA-Triage-Request": "comment-v1" },
@@ -1644,7 +1675,7 @@ async function saveAnalysisDiscussion(event) {
         setAnalysisDiscussionFeedback(context, "请选择本问题讨论或当前任务讨论。", "Choose issue discussion or current task discussion.", true);
         return;
       }
-      result = await api(`/api/labeling/cases/${encodeURIComponent(context.issueId)}/comments`, {
+      result = await postAnalysisDiscussionRequest(`/api/labeling/cases/${encodeURIComponent(context.issueId)}/comments`, {
         method: "POST",
         body: JSON.stringify({
           body: discussion,
@@ -1664,7 +1695,7 @@ async function saveAnalysisDiscussion(event) {
       const discussionUrl = context.channel === "campaign"
         ? `/api/campaigns/${encodeURIComponent(context.campaignId)}/issues/${encodeURIComponent(context.issueId)}/comments`
         : `/api/cases/${encodeURIComponent(context.issueId)}/case-comments`;
-      result = await api(discussionUrl, {
+      result = await postAnalysisDiscussionRequest(discussionUrl, {
         method: "POST",
         headers: { "X-RA-Triage-Request": "comment-v1" },
         body: JSON.stringify({
@@ -1679,13 +1710,13 @@ async function saveAnalysisDiscussion(event) {
       context.pendingImages.forEach((item, index) => {
         form.append("attachments", item.file, item.file.name || `comment-${index + 1}.png`);
       });
-      result = await api(`/api/cases/${encodeURIComponent(context.issueId)}/comments-with-attachments`, {
+      result = await postAnalysisDiscussionRequest(`/api/cases/${encodeURIComponent(context.issueId)}/comments-with-attachments`, {
         method: "POST",
         body: form,
         headers: { "X-RA-Triage-Request": "comment-v1" },
       });
     } else {
-      result = await api(`/api/cases/${encodeURIComponent(context.issueId)}/comments`, {
+      result = await postAnalysisDiscussionRequest(`/api/cases/${encodeURIComponent(context.issueId)}/comments`, {
         method: "POST",
         body: JSON.stringify(payload),
       });

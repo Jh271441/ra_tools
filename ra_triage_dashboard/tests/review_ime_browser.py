@@ -39,7 +39,7 @@ with sync_playwright() as p:
      before=page.evaluate("id=>{window.entryNode=document.getElementById(id);return submits}",field)
      cdp.send('Input.imeSetComposition',{'text':'ni','selectionStart':2,'selectionEnd':2})
      assert box.get_attribute('data-ime-composing')=='1',(width,lang,theme,field,'compositionstart')
-     assert page.locator('#'+rootid).is_hidden(),(width,field,'mention popup must yield')
+     assert page.locator('#'+rootid+' .review-mention-popover').is_hidden(),(width,field,'mention popup must yield')
      check=page.evaluate("""async () => {
       const node=entryNode, value=node.value;
       for(const key of ['Enter','ArrowDown','ArrowUp','Escape','Tab']){

@@ -232,7 +232,7 @@ function reviewMentionCaretAnchor(textarea, tokenStart) {
 
 function positionReviewMentionPopover(textarea, root, active = activeMentionQuery(textarea)) {
   const popover = root?.querySelector(".review-mention-popover");
-  if (!popover || !active) return;
+  if (!popover || popover.hidden || !active) return;
   const anchor = reviewMentionCaretAnchor(textarea, active.start);
   const viewportMargin = 8;
   const gap = 6;
@@ -263,8 +263,10 @@ function closeReviewMentionComposer(textarea, root, { preserveTrigger = false } 
   const active = activeMentionQuery(textarea);
   composer.dismissedStart = preserveTrigger && active ? active.start : null;
   composer.activeIndex = 0;
-  root.replaceChildren();
-  root.hidden = true;
+  // Keep the status line and its layout stable through pointerdown/blur/click.
+  // Removing the whole composer here moves the Save/Post button before pointerup.
+  const popover = root.querySelector(".review-mention-popover");
+  if (popover) popover.hidden = true;
 }
 
 function insertReviewMention(textarea, root, username) {
@@ -381,7 +383,8 @@ function bindReviewMentionComposer(
   const composer = reviewMentionComposerState(textarea);
   textarea.addEventListener("compositionstart", () => {
     textarea.dataset.imeComposing = "1";
-    root.hidden = true;
+    const popover = root.querySelector(".review-mention-popover");
+    if (popover) popover.hidden = true;
   });
   textarea.addEventListener("compositionend", () => {
     delete textarea.dataset.imeComposing;
@@ -396,7 +399,8 @@ function bindReviewMentionComposer(
     if (isImeComposing(event)) return;
     const active = activeMentionQuery(textarea);
     const options = [...root.querySelectorAll("[data-review-mention]")];
-    const popoverOpen = Boolean(active && !root.hidden && root.querySelector(".review-mention-popover"));
+    const popover = root.querySelector(".review-mention-popover");
+    const popoverOpen = Boolean(active && !root.hidden && popover && !popover.hidden);
     if (event.key === "Escape" && popoverOpen) {
       event.preventDefault();
       event.stopPropagation();
@@ -429,7 +433,7 @@ function bindReviewMentionComposer(
   textarea.addEventListener("blur", () => {
     delete textarea.dataset.imeComposing;
     window.setTimeout(() => {
-      if (!root.contains(document.activeElement)) closeReviewMentionComposer(textarea, root);
+      if (document.activeElement !== textarea && !root.contains(document.activeElement)) closeReviewMentionComposer(textarea, root);
     }, 0);
   });
   updateReviewMentionComposer(textarea, root);

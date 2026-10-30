@@ -17,10 +17,10 @@ function element(key) {
 }
 const state = { selectedRunId: '', epoch: 1, session: { username: 'alice', can_write: true, is_admin: false }, caseLabeling: { caseData: { issue_id: 'cn1' } } };
 const s = {
-  state, $: element, URL, FormData, encodeURIComponent,
+  state, $: element, URL, FormData, AbortController, encodeURIComponent,
   enhanceDashboardSelects() {}, // Real DOM adapter covered by dropdown_components.cjs.
   document: { querySelectorAll: () => [] },
-  window: { location: { origin: 'https://example.test', pathname: '/review', search: '?issue=cn1&run=run1&baselines=scope&work_split=task1' } },
+  window: { location: { origin: 'https://example.test', pathname: '/review', search: '?issue=cn1&run=run1&baselines=scope&work_split=task1' }, setTimeout, clearTimeout },
   PAGE_ROUTES: { review: { path: '/review' }, labeling: { path: '/case-labeling' }, campaigns: { path: '/campaigns' } },
   withBase: path => '/manual' + path,
   capturePageContext: () => ({epoch:state.epoch,url:s.window.location.pathname+s.window.location.search}),
@@ -109,6 +109,43 @@ async function main() {
   assert(!element('#analysisDiscussionSubmit').disabled); assert.equal(element('#analysisDiscussionNote').value,'old scope draft');
   assert(element('#analysisDiscussionSubmitStatus').innerHTML.includes('original discussion'));
   s.window.location.search=originalSearch;
+  // Replying to a disabled/removed directory author cannot inject a forbidden @token.
+  s.api=async()=>result(); await open();
+  state.mentionUsers=[{username:'bob',enabled:false}]; s.beginAnalysisDiscussionReply(1);
+  assert.equal(element('#analysisDiscussionNote').value,''); assert.equal(state.analysisDiscussion.replyTo.id,1);
+  state.mentionUsers=[{username:'bob',enabled:true}]; s.beginAnalysisDiscussionReply(1);
+  assert.equal(element('#analysisDiscussionNote').value,'@bob ');
+  // Attachment validation is visible in the modal and does not wipe the draft/reply.
+  element('#analysisDiscussionNote').value='image draft';
+  s.addAnalysisDiscussionImages([{type:'image/gif',size:5}]);
+  assert(element('#analysisDiscussionSubmitStatus').innerHTML.includes('Only PNG'));
+  assert.equal(element('#analysisDiscussionNote').value,'image draft'); assert.equal(state.analysisDiscussion.replyTo.id,1);
+  // A hung POST aborts after the one bounded request; there is no automatic retry.
+  const realSet=s.window.setTimeout, realClear=s.window.clearTimeout;
+  let fireTimeout, cleared=false; posts=0;
+  s.window.setTimeout=(fn,ms)=>{assert.equal(ms,30000);fireTimeout=fn;return 1;};
+  s.window.clearTimeout=()=>{cleared=true;};
+  s.api=(path,options)=>{posts++;return new Promise((resolve,reject)=>options.signal.addEventListener('abort',()=>reject(Error('aborted'))));};
+  const timedSave=s.saveAnalysisDiscussion({preventDefault(){}}); fireTimeout(); await timedSave;
+  s.window.setTimeout=realSet; s.window.clearTimeout=realClear;
+  assert.equal(posts,1); assert(cleared); assert(!element('#analysisDiscussionSubmit').disabled);
+  assert.equal(element('#analysisDiscussionNote').value,'image draft'); assert.equal(state.analysisDiscussion.replyTo.id,1);
+  assert(element('#analysisDiscussionSubmitStatus').innerHTML.includes('请求超时'));
+  // Image uploads get a longer transfer budget than small text requests.
+  s.window.setTimeout=(fn,ms)=>{assert.equal(ms,180000);fireTimeout=fn;return 1;};
+  s.window.clearTimeout=()=>{};
+  const timedUpload=s.postAnalysisDiscussionRequest('/mock-upload',{method:'POST',body:new FormData()});
+  fireTimeout(); await assert.rejects(timedUpload,/请求超时/);
+  s.window.setTimeout=realSet; s.window.clearTimeout=realClear;
+  // Switching/cancelling a reply updates only its untouched automatically inserted mention.
+  s.api=async()=>result('task1',[caseComment,{...taskComment,author:'carol'}]); await open();
+  state.mentionUsers=[{username:'bob',enabled:true},{username:'carol',enabled:true}];
+  s.beginAnalysisDiscussionReply(1); assert.equal(element('#analysisDiscussionNote').value,'@bob ');
+  s.beginAnalysisDiscussionReply(2); assert.equal(element('#analysisDiscussionNote').value,'@carol ');
+  element('cancelReply').handlers.click(); assert.equal(element('#analysisDiscussionNote').value,'');
+  s.beginAnalysisDiscussionReply(1); element('#analysisDiscussionNote').value='@bob authored draft';
+  s.beginAnalysisDiscussionReply(2); assert.equal(element('#analysisDiscussionNote').value,'@bob authored draft');
+  element('cancelReply').handlers.click(); assert.equal(element('#analysisDiscussionNote').value,'@bob authored draft');
   // Reopen clears the reply lock even for the same Issue.
   s.api = async () => result(); s.beginAnalysisDiscussionReply(2); await open(); assert(!element('#analysisDiscussionChannel').disabled);
   // Same-Issue requests must also be owned by the exact task/Run/dialog instance.

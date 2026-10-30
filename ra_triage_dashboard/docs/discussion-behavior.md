@@ -19,7 +19,33 @@ the prior posting destination and unlocks the selector. Reopening clears the loc
 No silent task adoption occurs for a taskless reply. Enter inserts a newline;
 Ctrl/Cmd+Enter submits, respecting composition and mention picker handling.
 
-### Comment submission feedback (2026-10-30, candidate cache721)
+### Comment submission and reply clicks (2026-10-30, candidate cache722)
+
+The user's follow-up that replies fail more often exposed an additional cause.
+Replying automatically inserts an @mention. On textarea blur, the shared mention
+composer used to remove its entire status row. The native modal then recenters
+between pointerdown and pointerup: a 1280px Chromium reproduction moved the Post
+button up 9.5px and dropped the click near its lower edge (zero requests), while
+the same click without a mention produced one request and no movement. This
+explains why reply/mention-heavy flows are more exposed; it does not establish
+the cause of every historical failure. The earlier cache721 candidate missed it.
+
+Closing the mention popup now hides only the floating list, retaining the status
+row and its layout. IME composition uses the same layout-preserving behavior.
+The real browser regression holds the pointer down across blur before releasing
+on both Post and another Reply action. Targets stay in place in 12 combinations.
+Autocomplete selection, Escape, cancellation and composition remain covered,
+including Chromium CDP composition in the discussion editor. Delayed blur cleanup
+also checks whether the same input has regained focus before dismissing a popup.
+
+Other reply-path fixes: auto @ is limited to enabled directory users (the server
+already derives the notification recipient from reply_to_id); switching/cancelling
+replaces/removes an untouched automatic prefix and preserves authored text. Reply
+from Markdown preview returns to the editor. Attachment validation now reports
+inside the modal in both languages. Hung text posts abort after 30s, uploads after
+180s, with no automatic retry. The draft and reply target remain, and the message
+asks users to check the discussion first because a lost response can follow a
+committed post. No schema, backend policy or notification delivery changes.
 
 A background URL serializer can add or reorder display filters after the dialog
 opens. Comparing the full URL made a visible, enabled Post comment button return
@@ -38,7 +64,7 @@ spans, semantic theme colors and shared dialog styles. The phone submit target i
 
 Before-change Chromium reproduction recorded zero POSTs after adding a display
 filter despite an enabled button, and a failed request with its toast outside the
-open modal and no inline feedback. After-change validation: 64 focused tests plus
+open modal and no inline feedback. After-change validation: 90 focused tests plus
 6 subtests, the existing deferred-request Node tests, and 12 Chromium viewport
 combinations (320/390/1440px, zh/en, dark/light). Browser tests cover pending and
 duplicate submits, reply success, visible failures, draft/reply retry, runtime

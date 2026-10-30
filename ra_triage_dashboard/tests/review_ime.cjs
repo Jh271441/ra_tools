@@ -23,12 +23,13 @@ function mentions() {
   s.state={mentionUsers:[],config:{},session:{}};
   s.updateReviewMentionComposer=()=>{};
   const option={dataset:{reviewMention:'alice'},scrollIntoView(){}};
-  const root={hidden:false,querySelectorAll(){return [option];},querySelector(){return option;},replaceChildren(){},contains(){return false;}};
+  const popover={hidden:false};
+  const root={hidden:false,querySelectorAll(){return [option];},querySelector(selector){return selector==='.review-mention-popover'?popover:option;},replaceChildren(){},contains(){return false;}};
   const input={value:'@a',selectionStart:2,selectionEnd:2,dataset:{},setAttribute(){},focus(){},dispatchEvent(){},
     addEventListener(type,fn){listeners[type]=fn;},
     setRangeText(value,start,end){this.value=this.value.slice(0,start)+value+this.value.slice(end);this.selectionStart=this.selectionEnd=start+value.length;}};
   s.bindReviewMentionComposer(input,root);
-  return {s,input,root,listeners};
+  return {s,input,root,popover,listeners};
 }
 for(const props of [{isComposing:true},{keyCode:229},{which:229}]) {
   for(const name of ['Enter','Tab','ArrowDown','ArrowUp','Escape']) {
@@ -41,13 +42,15 @@ for(const props of [{isComposing:true},{keyCode:229},{which:229}]) {
 {
   const m=mentions();
   m.listeners.compositionstart();
-  assert.equal(m.root.hidden,true,'hide web suggestions during native composition');
+  assert.equal(m.popover.hidden,true,'hide web suggestions during native composition');
+  assert.equal(m.root.hidden,false,'keep status layout stable during native composition');
   const event=key({target:m.input});
   m.listeners.keydown(event);
   assert.equal(event.defaultPrevented,false,'composition lifecycle guards a missing browser flag');
   m.listeners.compositionend();
   assert.equal(m.input.dataset.imeComposing,undefined);
   m.root.hidden=false;
+  m.popover.hidden=false;
   m.listeners.keydown(key({target:m.input}));
   assert.equal(m.input.value,'@alice ','ordinary mention selection still works');
 }
