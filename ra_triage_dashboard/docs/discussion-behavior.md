@@ -37,6 +37,35 @@ ownership/conflicts, audit/tombstones, notification cancellation and independent
 drafts. Viewports320/390/1440, zh/en and dark/light are covered; this is desktop
 Chromium viewport testing, not real-device/soft-keyboard acceptance.
 
+### Release and production readback (2026-10-30)
+
+Production `/manual` was promoted to
+`faf34994acfe73fbe7a9baeaed2de89d6cdda348` (cache724) at
+2026-10-30T10:32:20Z. The complete cloud gate passed **1202 tests, 8 skipped**
+in 195.24s. Isolated SQLite gray passed. Before migration059, the release stopped
+writes, created a fresh checksum-verified PostgreSQL dump, restored it into a
+disposable database and matched every live table count; migration count advanced
+58 to 59. The existing writer/Batch policies and disabled AutoTriage push were
+preserved. Release receipt:
+`/volume/home/workspace/ra_triage_dashboard_deploy/releases/20261030T102830Z-faf34994acfe/result.json`.
+
+Read-only production postflight at 10:32:42Z confirmed exact-SHA healthy
+PostgreSQL service, schema59, the new canonical discussion and mutation routes,
+and eight served JS/CSS assets matching release bytes. The unified endpoint reads
+both reported Issues, `cn36941385` and `cn37033077`; previously authorized test
+comments153/154 remain unchanged, including their reply relationship. Protected
+label-rationale metadata is present. Receipt:
+`/volume/home/workspace/ra_triage_dashboard_deploy/operations/issue-discussion-20261030/receipt.json`.
+
+New edit/delete, cross-source reply and taskless submission writes were verified
+with synthetic Chromium responses and an empty disposable PostgreSQL fixture
+(5 integration tests passed), without production test writes or colleague
+notifications. Signed-in Chrome automation could not attach to the focused QA
+tab after this release; whole-app accessibility reading was rejected to avoid
+unrelated private tabs. Therefore fresh signed-in production UI/post/edit/delete
+acceptance is not claimed for cache724. The cache722 real post/reply acceptance
+below is a historical result, not a replacement for this distinction.
+
 ## Historical releases
 
 The records below describe earlier versions. Their task/Run ownership contracts
