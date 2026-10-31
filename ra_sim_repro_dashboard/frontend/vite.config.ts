@@ -1,9 +1,10 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { coldStartPlugin } from './build/coldStart.mjs';
 
 export default defineConfig({
   base: '/sim/',
-  plugins: [react()],
+  plugins: [react(), coldStartPlugin()],
   server: {
     port: 5174,
     proxy: {

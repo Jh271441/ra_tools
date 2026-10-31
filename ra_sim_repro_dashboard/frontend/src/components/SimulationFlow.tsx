@@ -7,6 +7,7 @@ import CollectionLoop, {LoopNode, useLabelGraph} from './CollectionLoop';
 import type { BoardData } from './ReleaseWorkflow';
 import { request } from '../api/workflow';
 import { useStableValue } from '../lib/useStableValue';
+import { recordLoadStage } from '../lib/loadTiming';
 import BackfillLoop, {BackfillNode, useBackfillGraph} from './BackfillLoop';
 import { collectionProgress, executionSeconds, issueAge, simulationFlow, stageMotion, type FlowStage, type StageId } from '../lib/simulationFlow';
 import { Card, CardHeader, CardTitle } from './ui/card';
@@ -22,6 +23,7 @@ const fitOptions = { padding: .08, maxZoom: 1 };
 
 function StageCard({ stage, selected, onSelect }: StageData) {
   const { t, i18n } = useTranslation();
+  useEffect(() => { recordLoadStage('flow'); }, []);
   const Icon = icons[stage.id];
   const Status = stage.state === 'complete' ? Check : stage.state === 'active' ? Activity : ['warning','blocked'].includes(stage.state) ? AlertTriangle : stage.state === 'unknown' ? CircleHelp : Clock3;
   const n = (value: number) => value.toLocaleString(i18n.language === 'zh' ? 'zh-CN' : 'en-US');

@@ -12,6 +12,7 @@ import { Activity, ArrowUpRight, ExternalLink, Layers3, RefreshCw, SlidersHorizo
 import { request } from '../api/workflow';
 import { LiveView, ViewCache } from '../lib/liveView';
 import { startVisiblePolling } from '../lib/visiblePolling';
+import { recordLoadStage } from '../lib/loadTiming';
 export { request } from '../api/workflow';
 
 let flowModule: Promise<typeof import('./SimulationFlow')> | undefined;
@@ -188,6 +189,7 @@ export function ReleaseWorkflow({ onOpenIssues }: { onOpenIssues: (release?: str
     try { await view.reload({force:true}); } finally {busyRef.current=false;setBusy(false);}
   };
   const selected=data?.selected;
+  useEffect(() => { if (selected && verified) recordLoadStage('board'); }, [selected, verified]);
   useEffect(() => {
     if (!selected || showParameters || !parameters.current) return;
     const observer = new IntersectionObserver(entries => { if (entries.some(entry => entry.isIntersecting)) { setShowParameters(true); observer.disconnect(); } }, {rootMargin:'160px'});
