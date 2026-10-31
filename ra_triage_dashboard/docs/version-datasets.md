@@ -316,3 +316,18 @@ The scheduler polls every5minutes. Each completed prediction can advance to Trai
 The parent reads current target membership, actual assignees, and the existing `ASSIGNMENT_SUBMITTED_SQL`: combined tasks count complete only after both model review and Case acknowledgment. It never conflates TE completion with joint review. Detail filters/pagination compose over that parent and expose recent addition receipts. Case links retain the original Run/Campaign identity; parent detail does not issue edits against a virtual ID. Existing source-task management is linked separately. No Campaign/Label Case/Review records, members, owners or timestamps are rewritten by this consolidation.
 
 Start combined review opens the unified version gallery scoped to the current assignee and pending joint review, with visible owner/state controls. Original frozen Campaigns keep their own scopes, including historical members no longer in the public target set. This UI grouping does not delete historical work or change the four-worker incremental launcher.
+
+## Published reference media (2026-11-01)
+
+Published or inferred version members can have indexed media without an ordinary
+`issues` row: importing only review targets does not import every published member.
+Media and thumbnail GETs resolve these exact registered references through
+`get_media_issue`; the ordinary Case/detail and all writers retain `get_issue` /
+`get_case`. Unknown, pending and excluded registry-only IDs remain unavailable.
+The reference response has empty GT and `reference_media=true`. Lookup does not
+insert Issues, change target flags, create Runs or alter review membership.
+
+Planning facts still require an actual indexed capture trip/timestamp. Registry
+membership alone does not fabricate an anchor or start a PlanningDebug read when
+capture metadata is absent. Asset delivery continues using existing confined media
+indexes. No UI, dropdown, pagination or cache-version change is needed.

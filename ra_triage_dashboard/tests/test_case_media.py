@@ -11,6 +11,34 @@ from ra_triage_dashboard.app.routers import cases as cases_router
 
 
 class DeferredCaseMediaTest(unittest.IsolatedAsyncioTestCase):
+    async def test_registry_reference_media_does_not_create_case_or_invent_planning_anchor(self):
+        from fastapi import Response, HTTPException
+        from ra_triage_dashboard.app import planning_constraints
+        provider = MagicMock()
+        provider.get_assets.return_value = {"available": False, "frames": [], "capture": {}}
+        provider.get_camera_assets.return_value = {"available": True, "frames": [{"offset_ms": 0}]}
+        provider.get_video.return_value = None
+        reference = {"issue_id": "cn36957391", "baseline_scope": "", "gt_label": "", "reference_media": True}
+        with patch.object(cases_router.database, "get_media_issue", return_value=reference), patch.object(
+            cases_router.database, "get_case", return_value=None
+        ), patch.object(cases_router, "media_for_issue", return_value=provider), patch.object(
+            planning_constraints, "read_window"
+        ) as read:
+            media = await cases_router.get_case_media("cn36957391")
+            self.assertTrue(media["reference_media"])
+            self.assertTrue(media["camera"]["available"])
+            self.assertEqual(media["gt_label"], "")
+            facts = await cases_router.get_planning_constraints("cn36957391", Response())
+            self.assertEqual(facts["status"], "unavailable")
+            read.assert_not_called()
+            with self.assertRaises(HTTPException) as error:
+                await cases_router.get_case("cn36957391")
+            self.assertEqual(error.exception.status_code, 404)
+        with patch.object(cases_router.database, "get_media_issue", return_value=None):
+            with self.assertRaises(HTTPException) as error:
+                await cases_router.get_case_media("cn9999")
+            self.assertEqual(error.exception.status_code, 404)
+
     async def test_planning_facts_use_issue_media_anchor_not_model_run(self):
         from fastapi import Response, HTTPException
         from ra_triage_dashboard.app import planning_constraints

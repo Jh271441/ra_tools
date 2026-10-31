@@ -205,7 +205,7 @@ def _resolve_thumbnail_file(issue_id: str) -> Path | None:
             ):
                 return dest
 
-    case = database.get_issue(issue_id)
+    case = database.get_media_issue(issue_id)
     if case is None:
         return None
     provider = media_for_issue(issue_id, str(case.get("baseline_scope") or ""))
@@ -1255,7 +1255,7 @@ def _resolve_camera_thumbnail(issue_id: str) -> Path | None:
     return _camera_thumbnail_cache.get_or_load(issue_id, lambda: _build_camera_thumbnail(issue_id))
 
 def _build_camera_thumbnail(issue_id: str) -> Path | None:
-    case=database.get_issue(issue_id)
+    case=database.get_media_issue(issue_id)
     if not case:return None
     provider=media_for_issue(issue_id,str(case.get("baseline_scope") or ""))
     if provider is None:return None
@@ -1395,7 +1395,7 @@ async def get_planning_constraints(issue_id: str, response: Response, offset_ms:
     response.headers["Cache-Control"] = "no-store"
     if not ISSUE_ID_RE.fullmatch(issue_id) or abs(offset_ms) > 60000:
         raise _detail(400, "无效的案例或时间 / Invalid issue or offset")
-    case = await asyncio.to_thread(database.get_issue, issue_id)
+    case = await asyncio.to_thread(database.get_media_issue, issue_id)
     if case is None:
         raise _detail(404, "Issue 不存在 / Issue not found")
     provider = media_for_issue(issue_id, str(case.get("baseline_scope") or ""))
@@ -1420,7 +1420,7 @@ async def get_case_media(issue_id: str, kind: str = "all") -> dict[str, Any]:
 
     if kind not in {"all", "images", "bev", "video"}:
         raise _detail(400, "不支持的媒体模式。")
-    case = await asyncio.to_thread(database.get_issue, issue_id)
+    case = await asyncio.to_thread(database.get_media_issue, issue_id)
     if case is None:
         raise _detail(404, "Issue 不存在。")
     provider = media_for_issue(issue_id, str(case.get("baseline_scope") or ""))
@@ -1452,6 +1452,7 @@ async def get_case_media(issue_id: str, kind: str = "all") -> dict[str, Any]:
         "assets": assets,
         "camera": camera,
         "media_status": status,
+        "reference_media": bool(case.get("reference_media")),
     }
 
 
