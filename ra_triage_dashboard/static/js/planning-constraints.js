@@ -6,6 +6,20 @@ function planningConstraintAt(frames, timestamp, tolerance = 150) {
   return frame && timestamp - frame.timestamp_ms <= tolerance ? frame : null;
 }
 
+function planningConstraintFacts(frame) {
+  // Older cached facts expose these two fields only in the exact Ares text.
+  // Read its explicit values; never infer meaning from the constraint ID.
+  const raw = typeof frame?.raw === 'string' ? frame.raw : '';
+  const brake = raw.match(/\bEarliest search brake time ix: (-?\d+|undefined)$/);
+  const brakeIndex = brake && brake[1] !== 'undefined' ? Number(brake[1]) : null;
+  return {
+    objectId: Number.isSafeInteger(frame?.object_id) ? frame.object_id : null,
+    brakeIndex: Number.isSafeInteger(brakeIndex) ? brakeIndex : null,
+    alignment: raw.startsWith('Non gap align.') ? 'Non gap align'
+      : raw.startsWith('Gap align.') ? 'Gap align' : null,
+  };
+}
+
 function bindPlanningConstraint(player, video) {
   const trigger = player.querySelector('[data-planning-constraint]');
   if (!trigger) return { dispose() {}, refresh() {} };
@@ -18,9 +32,17 @@ function bindPlanningConstraint(player, video) {
   panel.id = `planning-constraint-${issueId}-${Math.random().toString(36).slice(2)}`;
   trigger.setAttribute('aria-controls', panel.id);
   panel.innerHTML = `<div class="planning-constraint-heading"><strong data-pc-title></strong><button type="button" class="button button-quiet" data-pc-close>×</button></div>
-    <div class="planning-constraint-value" data-pc-value></div>
-    <div class="planning-constraint-actions" data-pc-actions><button type="button" class="button button-quiet" data-pc-copy></button><button type="button" class="button button-quiet" data-pc-retry hidden></button></div>
-    <div class="planning-constraint-time" data-pc-meta><span data-pc-time></span><span data-pc-lag></span></div>
+    <div class="planning-constraint-identity" data-pc-identity>
+      <div class="planning-constraint-identity-heading" data-pc-identity-heading><span data-pc-id-label></span><button type="button" class="button button-quiet" data-pc-copy></button></div>
+      <div class="planning-constraint-value" data-pc-value></div>
+      <button type="button" class="button button-quiet" data-pc-retry hidden></button>
+    </div>
+    <dl class="planning-constraint-facts" data-pc-facts>
+      <div class="planning-constraint-fact"><dt data-pc-object-label></dt><dd data-pc-object-value></dd></div>
+      <div class="planning-constraint-fact"><dt data-pc-brake-label></dt><dd data-pc-brake-value></dd></div>
+      <div class="planning-constraint-fact planning-constraint-alignment"><dt data-pc-alignment-label></dt><dd><span class="planning-constraint-chip" data-pc-alignment-value></span></dd></div>
+    </dl>
+    <dl class="planning-constraint-time" data-pc-meta><div><dt data-pc-time-label></dt><dd data-pc-time></dd></div><div><dt data-pc-lag-label></dt><dd data-pc-lag></dd></div></dl>
     <details data-pc-details><summary data-pc-summary></summary><pre data-pc-raw></pre><div class="planning-constraint-source"><p data-pc-selection></p><code>/studio_node/planning/speed_table_raw.dominantConstraint</code></div></details>`;
   // Keep the nonmodal panel in its player's top layer when media is expanded.
   (player.closest('dialog') || document.body).append(panel);
@@ -49,6 +71,12 @@ function bindPlanningConstraint(player, video) {
     panel.setAttribute('aria-label', trigger.textContent);
     el('close').setAttribute('aria-label', uiText('关闭规划约束', 'Close planning constraint'));
     el('copy').textContent = Date.now() < copiedUntil ? uiText('已复制', 'Copied') : uiText('复制 ID', 'Copy ID');
+    el('id-label').textContent = uiText('约束 ID', 'Constraint ID');
+    el('object-label').textContent = uiText('对象 ID', 'Object ID');
+    el('brake-label').textContent = uiText('刹车索引', 'Brake index');
+    el('alignment-label').textContent = uiText('对齐方式', 'Alignment');
+    el('time-label').textContent = uiText('消息时间', 'Message time');
+    el('lag-label').textContent = uiText('距播放', 'Playback lag');
     el('retry').textContent = uiText('重试', 'Retry');
     el('summary').textContent = uiText('完整原文', 'Full raw text');
     el('selection').textContent = uiText('默认选中候选轨迹 · 按消息发布时间对齐', 'Default selected candidate · aligned by publish time');
@@ -109,15 +137,20 @@ function bindPlanningConstraint(player, video) {
     el('value').classList.toggle('is-raw-id', Boolean(copyValue));
     el('copy').hidden = !copyValue;
     el('retry').hidden = data?.status !== 'error';
-    el('actions').hidden = el('copy').hidden && el('retry').hidden;
+    el('identity-heading').hidden = !copyValue;
+    el('identity').classList.toggle('is-ready', Boolean(copyValue));
+    el('facts').hidden = !copyValue;
+    const facts = planningConstraintFacts(copyValue ? frame : null);
+    for (const [name, value] of [['object', facts.objectId], ['brake', facts.brakeIndex], ['alignment', facts.alignment]]) {
+      setText(`${name}-value`, value === null ? uiText('未提供', 'Not provided') : String(value));
+      el(`${name}-value`).classList.toggle('is-missing', value === null);
+    }
     el('meta').hidden = !ready || !frame;
     el('details').hidden = !ready || !frame?.raw;
     setText('raw', ready ? frame?.raw || '' : '');
-    setText('time', ready && frame
-      ? uiText(`消息 ${frame.timestamp_ms}`, `Message ${frame.timestamp_ms}`) : '');
+    setText('time', ready && frame ? String(frame.timestamp_ms) : '');
     setText('lag', ready && frame
-      ? uiText(`距播放 ${data.anchor_ms + relative - frame.timestamp_ms} ms`,
-        `Playback lag ${data.anchor_ms + relative - frame.timestamp_ms} ms`) : '');
+      ? `${data.anchor_ms + relative - frame.timestamp_ms} ms` : '');
     place();
   };
   const close = (focus = false) => {

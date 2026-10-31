@@ -17,7 +17,7 @@ window.fetch=async(url,options)=>{
  const offset=Number(new URL(url,location.origin).searchParams.get('offset_ms')), bucket=Math.floor(offset/8000),anchor=1792072307919;
  if(fixtureMode==='error')throw new Error('fixture failure');
  const frames=[];
- for(let t=bucket*8000-200;t<=bucket*8000+8200;t+=100){const id=t<1000?'tl-30004052-lane-75940685-RED-soft':'obj-43298-pred-7-region-0';frames.push({timestamp_ms:anchor+t,status:'ready',constraint_id:id,raw:`Non gap align. Dominant constraint: ${id}, Object id: 0. Earliest search brake time ix: -1`});}
+ for(let t=bucket*8000-200;t<=bucket*8000+8200;t+=100){const id=t<1000?'tl-30004052-lane-75940685-RED-soft':'obj-43298-pred-7-region-0';frames.push({timestamp_ms:anchor+t,status:'ready',constraint_id:id,object_id:0,raw:`Non gap align. Dominant constraint: ${id}, Object id: 0. Earliest search brake time ix: -1`});}
  return {ok:true,json:async()=>({status:['loading','unavailable'].includes(fixtureMode)?fixtureMode:'ready',issue_id:fixtureIssue,bucket,anchor_ms:anchor,tolerance_ms:150,frames:fixtureMode==='empty'?[]:frames})};
 };
 function fixtureRender(){

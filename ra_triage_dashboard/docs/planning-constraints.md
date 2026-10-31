@@ -1,8 +1,10 @@
 # Manual planning constraint
 
 The inline Issue video toolbar has one compact Planning constraint button. Click
-opens an upward, nonmodal, viewport-clamped panel. Raw unique constraint ID is
-copyable; complete raw text/source is disclosed on demand. Escape, outside click
+opens an upward, nonmodal, viewport-clamped panel. A distinct ID block with a copy
+action is followed by labeled Object ID, brake-index and alignment cells. Message
+time and playback lag use a separate compact key/value section. Complete raw
+text/source stays collapsed by default and is disclosed on demand. Escape, outside click
 and the close button dismiss it; playback controls do not. Inline video sources
 are in the existing upper shared media picker (including Camera102), not a second
 bottom selector. Expanded media dialogs retain their existing source picker.
@@ -22,6 +24,12 @@ player, keeping the panel open and respecting the selected jump step. Escape
 closes only this panel and restores its opener; arrows still seek from there.
 Modified keys, IME and editable/select controls retain their native behavior.
 An expanded player's panel stays inside its containing dialog's top layer.
+
+Structured Object ID uses the explicit API field. Older cached facts expose brake
+index and gap alignment only in the extractor's exact Ares text; the display reads
+that explicit prefix/suffix without changing raw text or asking for a new source
+read. Values `0` and `-1` remain literal. Missing/unrecognized values are shown as not
+provided; the UI never derives object type or identity from a constraint-ID token.
 
 ## Extraction contract
 

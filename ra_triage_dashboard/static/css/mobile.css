@@ -1074,7 +1074,8 @@
 }
 @media (max-width: 760px) {
   .planning-constraint-panel { padding: 14px; gap: 12px; }
-  .planning-constraint-time { display: grid; gap: 4px; }
+  .planning-constraint-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .planning-constraint-alignment { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
   .bev-video-control-row [data-planning-constraint],
   .planning-constraint-panel .button,
   .planning-constraint-panel summary { min-height: 44px; }
