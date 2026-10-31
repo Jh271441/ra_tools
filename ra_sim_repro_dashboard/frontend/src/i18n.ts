@@ -8,6 +8,9 @@ void i18n.use(initReactI18next).init({
   resources: {
     zh: {
       translation: {
+        qualityGrade: {"normal": "正常", "degraded": "次正常 · 自动补齐", "blocked": "覆盖率阻断", "preparation": "场景覆盖", "results": "有效结果覆盖", "exceptions": "异常 {{count}} 条", "note_normal": "异常 ≤5 条，且有效 Issue 覆盖率 >99.5%。", "note_degraded": "有效 Issue 覆盖率 >98%；主流程继续，旁路定期补齐异常。", "note_blocked": "有效 Issue 覆盖率 ≤98%，补齐后可从断点继续。其他输入与回执核验单独执行。"},
+        backfill: {"title": "自动补齐旁路", "sync": "同步缺失数据", "prepare": "补齐场景", "simulate": "增量仿真", "merge": "更新指标", "interval": "每 {{count}} 小时", "pending": "待补 {{formattedCount}} 条", "waiting": "等待主任务", "syncing": "同步中", "preparing": "补齐中", "simulating": "增量执行中", "merging": "更新中", "waiting_bags": "等待数据回传", "complete": "已补齐，继续观察", "paused": "已暂停", "blocked": "需要核对", "stale": "进度暂不可用", "return": "回到下轮检查", "next": "下次 {{time}}（上海）", "needsReview": "本轮未通过核验，保留已有结果。", "reason_source_changed": "来源、GT 或已有场景输入已变化，需要核对新计划。", "reason_retry_limit": "失败场景已达到 3 次补跑上限，请查看执行详情。", "reason_manual_mode": "切换自动模式后继续。", "reason_execution_contract_changed": "Binary 或仿真参数已变化，需要核对。", "reason_scene_input_changed": "场景输入已变化，需要核对。", "reason_backfill_plan_changed": "补齐计划已变化，等待下轮重新检查。", "reason_preflight_failed": "增量任务预检失败，请查看任务详情。", "reason_scene_already_complete": "场景已有成功回执，已停止重复提交。"},
+        resume: {"action": "断点续跑", "running": "续跑处理中", "failed": "续跑未完成，请查看阶段异常后重试。", "error_manual_mode": "请先切换自动模式。", "error_checkpoint_changed": "断点已更新，请刷新后重试。", "error_unknown_release": "该版本尚无可续跑计划。", "error_source_changed": "来源或场景已变化，需要核对新计划。"},
         labelLoop: {"intervalHours":"每 {{count}} 小时同步", "mergeHours":"每 {{count}} 小时合并", "foundChanges":"发现变更", "noChanges":"无待处理变更", "pending":"等待处理", "changeTotal":"{{formattedCount}} 条变更", "validTotal":"{{formattedCount}} 条有效 Issue", "mergeWindow":"每 {{minutes}} 分钟合并", "checkedShort":"已检查", "nextShort":"下次检查", "mergeShort":"计划合并", "appliedShort":"已更新", "timezone":"上海时间", "title": "标注旁路", "interval": "每 {{minutes}} 分钟检查", "sync": "同步标注", "diff": "差异检查", "apply": "更新指标", "waiting": "等待首轮结果", "disabled": "未启用", "checking": "检查中", "synced": "已同步", "changes": "{{formattedCount}} 条变更", "idle": "等待下一轮", "queued": "等待合并", "paused": "手动模式", "updated": "已更新，继续观察", "needs_simulation": "需补跑", "blocked": "校验未通过", "source_error": "同步中断", "checked": "最近检查（上海）", "next": "下次检查（上海）", "merge": "合并时间（上海）", "applied": "最近更新（上海）", "rule": "标注变更按 {{minutes}} 分钟窗口合并，复用已有仿真结果重算指标；新场景或缺少回执时需补跑。原始发布快照保留。", "reason_coverage_gate": "异常数量或覆盖率未达到发布门槛。", "reason_publication_disabled": "自动发布已关闭。", "reason_input_changed": "Issue 集合或仿真输入已变化，需要新的仿真计划。", "reason_missing_results": "新纳入评测的 Issue 缺少可复用结果。", "reason_unknown_labels": "存在无法识别的标注。", "reason_snapshot_missing": "未找到对应的冻结快照。", "reason_execution_changed": "原始执行记录已变化，请重新检查。", "reason_manual_mode": "切换自动模式后继续处理。", "reason_stale": "已超过三个同步周期未完成检查。", "reason_unknown": "本轮检查未通过，保留上次有效指标。"},
         simFlow: {
           "collectionChain": "Issue 收集链路",
@@ -48,7 +51,7 @@ void i18n.use(initReactI18next).init({
           "scenesPreparing": "正在创建并核对场景，批量处理可能需要数分钟；无需手动操作。",
           "sceneBlocked": "场景准备受阻",
           "toleranceContinue": "按阈值继续",
-          "preparedWithExceptions": "异常 Issue ≤ 5 且有效 Issue 覆盖率 > 99.5%，已继续仿真。准备与结果异常共用额度，异常保留在审计中，不计入成功或准召指标。",
+          "preparedWithExceptions": "有效 Issue 覆盖率 >98% 即可继续；异常保留，并由旁路周期补齐，不计入成功或准召指标。历史任务沿用冻结策略。",
           "toleranceSummary": "有效 {{valid}} / {{total}} 条 Issue · 异常 {{count}} 条 · 覆盖 {{coverage}}",
           "scenesFailed": "部分场景准备失败，系统会自动重试。失败原因如下；补齐源数据前不会提交不完整批次。",
           "sceneFailure_missing_bag": "Issue {{issue}}：源 bag 缺失",
@@ -169,7 +172,7 @@ void i18n.use(initReactI18next).init({
           "progress": "{{stage}}进度",
           "pendingCount": "数量待回执",
           "threshold": "发布覆盖率门槛",
-          "thresholdNote": "准备和结果异常累计 ≤ 5 条 Issue，有效 Issue 覆盖率 > 99.5%，且通过终态及一致性检查。覆盖率分母保留原始应评测 Issue。",
+          "thresholdNote": "新任务有效 Issue 覆盖率 >98%，且通过终态、输入一致性和结果核验。异常数量仅提示，分母保留原始应评测 Issue；历史任务沿用冻结策略。",
           "issueCoverage": "Issue 有效覆盖率",
           "scenarioCoverage": "场景有效覆盖率",
           "job": "当前展示 Job",
@@ -381,6 +384,9 @@ void i18n.use(initReactI18next).init({
     },
     en: {
       translation: {
+        qualityGrade: {"normal": "Normal", "degraded": "Degraded \u00b7 backfilling", "blocked": "Coverage blocked", "preparation": "Scene coverage", "results": "Valid result coverage", "exceptions": "{{count}} exceptions", "note_normal": "At most 5 exceptions and valid issue coverage strictly above 99.5%.", "note_degraded": "Valid issue coverage is strictly above 98%. The main flow continues while the recovery lane fills gaps.", "note_blocked": "Valid issue coverage is at or below 98%. Resume after recovery. Input and receipt checks remain independent."},
+        backfill: {"title": "Automatic backfill", "sync": "Sync missing data", "prepare": "Prepare scenes", "simulate": "Run missing scenes", "merge": "Update metrics", "interval": "Every {{count}} hours", "pending": "{{formattedCount}} pending", "waiting": "Waiting for main run", "syncing": "Syncing", "preparing": "Preparing", "simulating": "Incremental run active", "merging": "Updating", "waiting_bags": "Waiting for bag upload", "complete": "Recovered; monitoring", "paused": "Paused", "blocked": "Review required", "stale": "Progress unavailable", "return": "Return to next check", "next": "Next {{time}} (Shanghai)", "needsReview": "Verification failed; existing results are retained.", "reason_source_changed": "Source, GT or existing scene inputs changed. Review the new plan.", "reason_retry_limit": "Failed scenes reached the limit of 3 recovery attempts. Check execution details.", "reason_manual_mode": "Switch to automatic mode to continue.", "reason_execution_contract_changed": "Binary or simulation settings changed. Review required.", "reason_scene_input_changed": "Scene inputs changed. Review required.", "reason_backfill_plan_changed": "The recovery plan changed; it will be checked in the next cycle.", "reason_preflight_failed": "Incremental preflight failed. Check execution details.", "reason_scene_already_complete": "A successful receipt exists; duplicate submission was stopped."},
+        resume: {"action": "Resume", "running": "Resuming", "failed": "Resume did not finish. Check stage exceptions and try again.", "error_manual_mode": "Switch to automatic mode first.", "error_checkpoint_changed": "The checkpoint changed. Refresh and try again.", "error_unknown_release": "No resumable plan exists for this version.", "error_source_changed": "Source or scene inputs changed. Review the new plan."},
         labelLoop: {"intervalHours_one":"Sync every hour", "intervalHours_other":"Sync every {{count}} hours", "mergeHours_one":"Batch every hour", "mergeHours_other":"Batch every {{count}} hours", "foundChanges":"Changes found", "noChanges":"No pending edits", "pending":"Pending", "changeTotal":"{{formattedCount}} edits", "validTotal":"{{formattedCount}} eligible issues", "mergeWindow":"Batch every {{minutes}} min", "checkedShort":"Checked", "nextShort":"Next check", "mergeShort":"Batch due", "appliedShort":"Updated", "timezone":"Shanghai time", "title": "Label refresh", "interval": "Check every {{minutes}} min", "sync": "Sync labels", "diff": "Check changes", "apply": "Update metrics", "waiting": "Awaiting first check", "disabled": "Disabled", "checking": "Checking", "synced": "Synced", "changes": "{{formattedCount}} changes", "idle": "Awaiting next check", "queued": "Batching changes", "paused": "Manual mode", "updated": "Updated · watching", "needs_simulation": "Simulation needed", "blocked": "Validation blocked", "source_error": "Sync interrupted", "checked": "Last check (Shanghai)", "next": "Next check (Shanghai)", "merge": "Batch due (Shanghai)", "applied": "Last update (Shanghai)", "rule": "Batch label edits over {{minutes}} minutes and recalculate using existing simulation results. New inputs or missing receipts require simulation. Original publications are retained.", "reason_coverage_gate": "Exception count or coverage did not pass publication thresholds.", "reason_publication_disabled": "Automatic publication is disabled.", "reason_input_changed": "Issue scope or simulation inputs changed. A new simulation plan is required.", "reason_missing_results": "Newly eligible issues have no reusable results.", "reason_unknown_labels": "Some labels cannot be classified.", "reason_snapshot_missing": "The matching frozen snapshot is unavailable.", "reason_execution_changed": "The original execution record changed. Revalidation is required.", "reason_manual_mode": "Resume processing in automatic mode.", "reason_stale": "No completed check for over three sync intervals.", "reason_unknown": "This check failed. The last valid metrics are retained."},
         simFlow: {
           "collectionChain": "Issue collection activity",
@@ -421,7 +427,7 @@ void i18n.use(initReactI18next).init({
           "scenesPreparing": "Scenarios are being created and checked. Batch processing can take several minutes; no manual action is needed.",
           "sceneBlocked": "Scenario preparation blocked",
           "toleranceContinue": "Continuing within limits",
-          "preparedWithExceptions": "Simulation continued with at most 5 abnormal issues and valid issue coverage strictly above 99.5%. Preparation and result exceptions share one budget. Exceptions remain in the audit and are excluded from success and precision/recall metrics.",
+          "preparedWithExceptions": "New runs may continue above 98% valid issue coverage. Exceptions remain audited and are recovered periodically; they do not count as successful or enter precision/recall metrics. Historical runs keep their frozen policy.",
           "toleranceSummary": "Valid {{valid}} / {{total}} issues · Exceptions: {{count}} · Coverage: {{coverage}}",
           "scenesFailed": "Some scenarios could not be prepared and will be retried. Causes are listed below; incomplete batches will not be submitted.",
           "sceneFailure_missing_bag": "Issue {{issue}}: source bag missing",
@@ -542,7 +548,7 @@ void i18n.use(initReactI18next).init({
           "progress": "{{stage}} progress",
           "pendingCount": "Awaiting counts",
           "threshold": "Publication threshold",
-          "thresholdNote": "At most 5 abnormal issues across preparation and results, valid issue coverage strictly above 99.5%, and terminal-state and consistency checks passed. Coverage uses the original eligible issue population.",
+          "thresholdNote": "New runs require valid issue coverage >98%, terminal-state, input consistency and result checks. Exception counts are warnings. Coverage uses the original eligible issue population; historical runs keep their frozen policy.",
           "issueCoverage": "Valid issue coverage",
           "scenarioCoverage": "Valid scenario coverage",
           "job": "Displayed job",

@@ -11,7 +11,7 @@ from app.services.release_watch import activity_identity, fetch_activity
 from app.services.release_cycle import digest
 from app.services.release_metrics import cohort_for_issue, excluded_issue, summarize_population
 from app.services.result_publication import publication, published_batch, audit_hash, coverage_policy
-from ra_api.release_tolerance import assess
+from ra_api.release_tolerance import assess, LEGACY_POLICY, policy_for
 
 CHECK_SECONDS = 3600
 MERGE_SECONDS = 6 * 3600
@@ -51,7 +51,7 @@ def plan_revision(payload, source, rows):
     if additional:
         return {'status':'needs_simulation', 'reason':'missing_results', 'issue_ids':sorted(additional)[:30], 'count':len(additional)}
     try:
-        coverage = assess(eligible, missing)
+        coverage = assess(eligible, missing, policy_for(payload) if payload.get("issue_tolerance") else LEGACY_POLICY)
     except ValueError:
         return {'status':'blocked', 'reason':'coverage_gate'}
     kept = [i for i in raw if str(i['issue_id']) not in missing]

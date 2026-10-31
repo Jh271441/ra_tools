@@ -208,6 +208,7 @@ def board(db, release="@current", force=False):
         )
     jobs = [
         {
+            "backfill": bool(b.payload.get("backfill")),
             "fingerprint": b.fingerprint,
             "job_id": b.payload.get("job_id"),
             "status": b.status,
@@ -253,8 +254,12 @@ def board(db, release="@current", force=False):
         if job["job_id"] and _due(cache, force) and current["driver_ready"]:
             refresh_ids.append(int(job["job_id"]))
     data["jobs"] = jobs
+    from app.services.release_backfill import public_state as backfill_state
+    from app.services.release_resume import public_state as resume_state
+    data["backfill"] = backfill_state(db, selected)
+    data["resume"] = resume_state(db, selected)
     from ra_api.release_tolerance import validate_frozen
-    latest_plan = next((b.payload for b in native if b.release == selected and b.payload.get("issue_tolerance")), None)
+    latest_plan = next((b.payload for b in native if b.release == selected and not b.payload.get("backfill") and b.payload.get("issue_tolerance")), None)
     if latest_plan:
         data["issue_tolerance"] = {**latest_plan["issue_tolerance"], **validate_frozen(latest_plan)}
     imported = (
@@ -263,6 +268,7 @@ def board(db, release="@current", force=False):
                 {**b.payload["result_import"], "publication_decision": b.payload.get("publication_decision")}
                 for b in native
                 if b.release == selected
+                and not b.payload.get("backfill")
                 and b.payload.get("result_import", {}).get("primary")
                 and b.payload.get("population_hash")
                 == workflow.population_identity(current_snapshot.payload)
@@ -285,6 +291,24 @@ def board(db, release="@current", force=False):
         imported = {**approved.payload["result_import"], "publication": metrics["publication"]}
         data["metrics"] = metrics
     data["evaluation"] = imported
+    from ra_api.release_tolerance import grade_counts, grade
+    from app.services.release_metrics import cohort_for_issue
+    published_grade = data['metrics'].get('publication') or {}
+    if published_grade.get('issue_count'):
+        data['quality_grade'] = {**grade_counts(published_grade['issue_count'],
+            published_grade['issue_count']-published_grade['valid_issue_count']), 'basis':'results'}
+    elif imported and (execution := next((b for b in native if b.release == selected and not b.payload.get('backfill') and b.payload.get('result_import',{}).get('task_key') == imported.get('task_key')),None)) and execution.payload.get('issue_tolerance'):
+        frozen = execution.payload['issue_tolerance']
+        invalid = {str(s['issue_id']) for s in execution.payload['scenarios'] if str(s['scenario_id']) not in execution.payload.get('results',{})}
+        invalid.update(str(f['issue_id']) for f in frozen['preparation_failures'])
+        data['quality_grade'] = {**grade(frozen['eligible_issue_ids'],invalid), 'basis':'results'}
+    elif current_snapshot and current_snapshot.payload.get('population_complete') and not current_snapshot.payload.get('mapping_error'):
+        source = current_snapshot.payload
+        eligible = {str(i['issue_id']) for i in source['issues'] if cohort_for_issue(i)}
+        mapped = {str(s['issue_id']) for s in source['scenarios'] if s.get('issue_id')}
+        if eligible:
+            data['quality_grade'] = {**grade(eligible, eligible-mapped), 'basis':'preparation'}
+
     from app.services.label_cycle import public_state
     data["label_cycle"] = public_state(db, selected)
     from app.services.release_anomalies import collection_anomalies

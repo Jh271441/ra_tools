@@ -430,3 +430,29 @@ docker compose -f ra_sim_repro_dashboard/docker-compose.yml run --rm --no-deps \
 
 原有 local Compose 是历史部署，不能作为默认恢复入口。代码 Git 同步不等于替换
 正在运行的独立部署；发布前核对 live root、数据、运行配置与服务管理器。
+
+### Issue 覆盖率等级与断点恢复（2026-10-31）
+
+新计划冻结 `issue_coverage_v2` 策略；准备异常和结果异常按原始应评测 Issue
+去重合计，多场景不会稀释分母。等级枚举为 `normal / degraded / blocked`：
+
+| 等级 | 条件 | 行为 |
+| --- | --- | --- |
+| 正常 / Normal | 异常 ≤5 且有效覆盖率 >99.5% | 正常执行与发布 |
+| 次正常 / Degraded | 未达到正常，但有效覆盖率 >98% | 继续执行；异常不计入指标，旁路补齐 |
+| 阻断 / Blocked | 有效覆盖率 ≤98% | 等待补齐后 Resume |
+
+覆盖率等级不代替来源、GT、Binary、场景输入、回执及产物核验。
+历史 `issue_exceptions_v1` 计划和 `issue_budget_v3` 审批保留冻结策略。
+
+补齐旁路由现有服务端 release worker 执行，默认六小时检查一次，在已有
+主任务终态后同步缺失场景，只为缺失/失败场景提交增量 Job。bag 尚未回传时
+显示等待数据；不会伪造上传完成或反复创建原始数据补传任务。每场景自动补跑
+最多三次，显式 Resume 可继续一次；提交状态不确定时只核对回执。
+主任务及成功结果不变，补齐指标保存为独立修订，包含逐场景执行来源、审计哈希、
+实际运行参数哈希和所有 Job ID，不将多个 Job 冒充单次完整执行。
+来源/GT、已有场景输入、Binary 或参数变化时暂停合并，保留已有发布结果。
+
+`POST /api/dashboard/workflow/resume` 接收 `release` 与看板返回的最新
+`fingerprint`（没有批次时为 null）。请求持久化，并在现有 workflow 文件锁内消费；
+重启后继续消费，重复请求复用已有 Job。接口先返回 202，再通过看板轮询获取状态。

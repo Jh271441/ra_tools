@@ -85,6 +85,7 @@ interface Evaluation {
   failures: { scenario_id: string; issue_id: string; outcome: string; outcome_detail: string }[];
 }
 interface BoardJob {
+  backfill?:boolean;
   evaluation_task_key?: string; primary_execution?: boolean; job_id: number | null; status: string; scenario_count: number | null; archived: boolean; url: string | null;
   progress: JobProgress | null; progress_error: string | null; error: string | null;
 }
@@ -94,9 +95,12 @@ export interface BoardData {
     release: string; is_current: boolean; kind: string; period: Workflow['current_period'] & { status?: string } | null;
     collection_anomalies?: import('../lib/simulationFlow').FlowAnomaly[];
     issue_count: number | null; scenario_count: number | null; source_metrics: Workflow['source_metrics'];
+    quality_grade?: {quality_level:'normal'|'degraded'|'blocked';issue_count:number;valid_issue_count:number;abnormal_issue_count:number;issue_coverage:number;basis:'results'|'preparation'};
     issue_tolerance?: { issue_count: number; valid_issue_count: number; abnormal_issue_count: number; issue_coverage: number; preparation_failures: { issue_id: string; reason: string }[] };
     publication_policy?: { enabled: boolean; minimum_coverage: number };
     label_cycle?: LabelCycleState;
+    backfill?: import('./BackfillLoop').BackfillState;
+    resume?: {enabled:boolean;status?:string;reason?:string;checkpoint:string;fingerprint?:string|null};
     collection?: { source: string; collection_status: string; issue_count: number | null; auto_count: number | null; manual_count: number | null; stale: boolean; monitor_status?: string | null; monitor_error_code?: string | null; monitor_error_action?: string | null; preparation?: { prepared: number; failed: number; failures: { issue_id: string; reason: string }[] } | null; quiet_seconds?: number; quiet_seconds_required?: number; last_issue_at?: string | null; last_success_at?: string | null; eligible_at?: string | null; population_changed_after_submission?: boolean } | null;
     metrics: Workflow['metrics']; binary_id: number | null; synced_at: string | null; population_complete: boolean; evaluation?: Evaluation | null; jobs: BoardJob[];
   };
@@ -203,7 +207,7 @@ export function ReleaseWorkflow({ onOpenIssues }: { onOpenIssues: (release?: str
       <div className="flex flex-wrap items-center gap-3"><h3 className="font-semibold" title={selected.release}>{releaseName(selected.release)}</h3>{selected.is_current && <Badge variant="secondary">当前业务版本</Badge>}{selected.kind==='archived' && <Badge>历史归档</Badge>}{selected.period?.status==='running' && <Badge variant="warning">路测收集中</Badge>}<span className="text-xs text-muted-foreground">{selected.period?.cycle_end ? `${selected.period.case_start.slice(0,10)} — ${selected.period.cycle_end}` : selected.kind==='archived'?'已归档的版本评测':''}</span></div>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><Stat title="可评测样本" value={number(source?.eligible)} detail={source?.excluded != null?`口径排除 ${number(source.excluded)} 条`:undefined}/><Stat title="关联场景" value={number(selected.scenario_count)} detail={selected.issue_count != null?`自动触发 Issue ${number(selected.issue_count)} 条`:undefined}/><Stat title="线上精确率" value={metricRate(source?.online_precision)} color="text-blue-600 dark:text-blue-400"/><Stat title="线上召回率" value={metricRate(source?.online_recall)} color="text-orange-600 dark:text-orange-400"/></div>
       <Suspense fallback={<Card role="status" className="p-5 text-sm text-muted-foreground">{t('simFlow.loading')}</Card>}>
-        <SimulationFlow key={selected.release} data={data!} stale={Boolean(error)} />
+        {release !== '@current' && <SimulationFlow key={selected.release} data={data!} stale={Boolean(error)} onRefresh={()=>load()} />}
       </Suspense>
       <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_280px]">
         <div className="min-w-0 space-y-4">{selected.evaluation ? <>

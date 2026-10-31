@@ -106,8 +106,8 @@ def publication(batch):
         return None
     try:
         standard = (validate_coverage_standard(p, approval.get("minimum_coverage"),
-                        issue_budget=approval.get("standard_version") == AUTO_STANDARD_VERSION)
-                    if approval.get("standard_version") in (AUTO_STANDARD_VERSION, LEGACY_AUTO_STANDARD_VERSION)
+                        issue_budget=approval.get("standard_version") in (AUTO_STANDARD_VERSION, LEGACY_BUDGET_STANDARD_VERSION))
+                    if approval.get("standard_version") in (AUTO_STANDARD_VERSION, LEGACY_BUDGET_STANDARD_VERSION, LEGACY_AUTO_STANDARD_VERSION)
                     else validate_standard(p))
     except ValueError:
         return None
@@ -136,7 +136,8 @@ def published_batch(db, release):
 
 
 LEGACY_AUTO_STANDARD_VERSION = "audited_coverage_v2"
-AUTO_STANDARD_VERSION = "issue_budget_v3"
+LEGACY_BUDGET_STANDARD_VERSION = "issue_budget_v3"
+AUTO_STANDARD_VERSION = "issue_coverage_v4"
 
 
 def coverage_policy(config):
@@ -144,7 +145,7 @@ def coverage_policy(config):
     from decimal import Decimal, InvalidOperation
 
     settings = config.get("result_publication", {})
-    raw = settings.get("minimum_coverage", MIN_COVERAGE)
+    raw = settings.get("minimum_coverage", 0.98)
     try:
         threshold = Decimal(str(raw))
         if isinstance(raw, bool) or not threshold.is_finite() or not 0 < threshold <= 1:
@@ -157,7 +158,7 @@ def coverage_policy(config):
     return {"enabled": enabled, "minimum_coverage": float(threshold)}
 
 
-def validate_coverage_standard(payload, minimum_coverage=MIN_COVERAGE, *, issue_budget=True):
+def validate_coverage_standard(payload, minimum_coverage=0.98, *, issue_budget=True):
     """Allow audited exceptions, never count them as successes or TP/FP/FN."""
     from decimal import Decimal
     from app.services.release_metrics import summarize_population
@@ -217,12 +218,13 @@ def validate_coverage_standard(payload, minimum_coverage=MIN_COVERAGE, *, issue_
         raise ValueError("有效样本指标或 GT 人口核验不一致")
     tolerance = {}
     if issue_budget:
-        from ra_api.release_tolerance import POLICY, assess, validate_frozen
+        from ra_api.release_tolerance import POLICY, LEGACY_POLICY, policy_for, assess, validate_frozen
+        frozen_policy = policy_for(payload) if "issue_tolerance" in payload else LEGACY_POLICY
         from app.services.release_metrics import cohort_for_issue
         original = []
         for row in payload["issues"]:
             source = dict(row)
-            if (source.get("evaluation_exclusion") or {}).get("approved_by") == POLICY["version"]:
+            if (source.get("evaluation_exclusion") or {}).get("approved_by") == frozen_policy["version"]:
                 source.pop("evaluation_exclusion")
             if cohort_for_issue(source):
                 original.append(str(source["issue_id"]))
@@ -235,16 +237,17 @@ def validate_coverage_standard(payload, minimum_coverage=MIN_COVERAGE, *, issue_
             if set(original) != set(frozen["eligible_issue_ids"]):
                 raise ValueError("原始 GT 与冻结 Issue 分母不一致")
             prep_ids = {str(f["issue_id"]) for f in frozen["preparation_failures"]}
-        elif any((i.get("evaluation_exclusion") or {}).get("approved_by") == POLICY["version"] for i in payload["issues"]):
+        elif any((i.get("evaluation_exclusion") or {}).get("approved_by") == frozen_policy["version"] for i in payload["issues"]):
             raise ValueError("缺少准备阶段异常审计")
-        tolerance = assess(original, prep_ids | invalid_issues)
+        tolerance = assess(original, prep_ids | invalid_issues, frozen_policy)
         issue_total = tolerance["issue_count"]
         if issue_valid != tolerance["valid_issue_count"]:
             raise ValueError("有效 Issue 指标分母与异常审计不一致")
-        if Decimal(issue_valid) <= Decimal(issue_total) * Decimal(str(threshold)):
-            raise ValueError(f"有效 Issue 覆盖率必须 > {threshold:.1%}")
-        tolerance.update(maximum_abnormal_issues=POLICY["maximum_abnormal_issues"],
-                         excluded_issue_ids=sorted(prep_ids | invalid_issues), comparison=">")
+        value, required = Decimal(issue_valid), Decimal(issue_total) * Decimal(str(threshold))
+        if value < required or (frozen_policy["comparison"] == ">" and value == required):
+            raise ValueError(f"有效 Issue 覆盖率必须 {frozen_policy['comparison']} {threshold:.1%}")
+        tolerance.update(maximum_abnormal_issues=frozen_policy["maximum_abnormal_issues"],
+                         excluded_issue_ids=sorted(prep_ids | invalid_issues), comparison=frozen_policy["comparison"])
     elif (Decimal(valid) < Decimal(total) * Decimal(str(threshold))
           or Decimal(issue_valid) < Decimal(issue_total) * Decimal(str(threshold))):
         raise ValueError(f"有效场景和 Issue 覆盖率均需达到 {threshold:.1%}")
@@ -268,7 +271,7 @@ def reconcile_publications(db, config):
         ReleaseSimulationBatch.status.in_(["complete", "quality_failed"])
     ).order_by(ReleaseSimulationBatch.created_at.desc())):
         p = batch.payload
-        if not p.get("result_import", {}).get("primary") or batch.release in seen:
+        if p.get("backfill") or not p.get("result_import", {}).get("primary") or batch.release in seen:
             continue
         seen.add(batch.release)
         approval = p.get("publication_approval") or {}
@@ -284,10 +287,8 @@ def reconcile_publications(db, config):
             if (approval.get("audit_hash") == fingerprint
                 and approval.get("minimum_coverage") == policy["minimum_coverage"]):
                 continue
-            snapshot = db.scalars(select(ReleaseIssueSnapshot).where(
-                ReleaseIssueSnapshot.release == batch.release
-            ).order_by(ReleaseIssueSnapshot.id.desc()).limit(1)).first()
-            if not snapshot or population_identity(snapshot.payload) != p.get("population_hash"):
+            from app.services.release_backfill import frozen_snapshot_valid
+            if not frozen_snapshot_valid(db, batch):
                 raise ValueError("当前人口与核验快照不一致，停止自动发布")
             approval = {
                 **standard, "policy": "audited_valid_samples", "automatic": True,
@@ -311,4 +312,9 @@ def reconcile_publications(db, config):
 
 def effective_publication(db, batch):
     from app.services.label_cycle import revision_metrics
-    return revision_metrics(db, batch, publication(batch))
+    from app.services.release_backfill import revision_metrics as backfill_metrics
+    base = publication(batch)
+    enriched = backfill_metrics(db, batch, base)
+    # A label revision is audited against the original execution population.
+    # Do not apply it to a larger backfill population.
+    return enriched if enriched and enriched.get("backfill_revision") else revision_metrics(db, batch, base)

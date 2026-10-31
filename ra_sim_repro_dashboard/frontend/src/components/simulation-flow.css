@@ -180,3 +180,33 @@
   .sim-flow-next.is-active, .sim-flow-next.is-scheduled { animation: none; }
   .sim-flow-travelers { display: none; }
 }
+
+.sim-flow-desktop.has-backfill-branch { height: 420px; }
+.sim-flow-desktop.has-label-branch.has-backfill-branch { height: 620px; }
+.sim-backfill-node { height: 76px; padding: 10px 12px; border: 1px dashed hsl(var(--border)); border-radius: 8px; background: hsl(var(--card)); display: flex; flex-direction: column; gap: 8px; }
+.sim-backfill-node > span { display: flex; gap: 6px; align-items: center; font-size: 12px; }
+.sim-backfill-node > strong { font-size: 12px; font-weight: 500; color: hsl(var(--muted-foreground)); }
+.sim-backfill-node.is-active { border-color: hsl(var(--primary)); }
+.sim-backfill-node.is-active svg { color: hsl(var(--primary)); animation: sim-collection-pulse 1.8s infinite; }
+.sim-backfill-node.is-warning { border-color: hsl(var(--destructive)); }
+.sim-backfill-mobile { margin-top: 16px; border: 1px dashed hsl(var(--border)); border-left: 2px solid hsl(var(--primary) / .5); border-radius: 8px; padding: 10px; min-width: 0; overflow-wrap: anywhere; }
+.sim-backfill-mobile header { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; font-size: 12px; }
+.sim-backfill-mobile header > span { color: hsl(var(--muted-foreground)); }
+.sim-flow-mobile .sim-backfill-mobile ol { padding: 12px 0; display: grid; gap: 20px; list-style: none; }
+.sim-flow-mobile .sim-backfill-mobile li { position: relative; display: grid; grid-template-columns: 16px minmax(0,1fr); gap: 4px 6px; font-size: 12px; }
+.sim-backfill-mobile li > strong { grid-column: 2; font-size: 12px; font-weight: 500; color: hsl(var(--muted-foreground)); }
+.sim-backfill-mobile li > svg:last-child:not(:first-child) { position: absolute; left: 1px; bottom: -17px; }
+.sim-backfill-mobile li.is-active { color: hsl(var(--primary)); }
+.sim-backfill-mobile .is-flowing { animation: sim-flow-next-travel 2.4s linear infinite; }
+.sim-backfill-mobile footer { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; font-size: 11px; color: hsl(var(--muted-foreground)); }
+.sim-backfill-mobile time { flex-basis: 100%; }
+.sim-backfill-mobile p { margin-top: 8px; font-size: 12px; }
+@media (prefers-reduced-motion: reduce) { .sim-backfill-node.is-active svg, .sim-backfill-mobile .is-flowing { animation: none; } }
+.sim-quality-summary { display: flex; flex-wrap: wrap; gap: 6px 12px; padding: 0 20px 12px; align-items: center; font-size: 12px; color: hsl(var(--muted-foreground)); }
+.sim-quality-grade { padding: 4px 8px; border-radius: 6px; font-weight: 500; }
+.sim-quality-grade.is-normal { color: #047857; background: #10b98118; }
+.sim-quality-grade.is-degraded { color: #a16207; background: #f59e0b18; }
+.sim-quality-grade.is-blocked { color: #b91c1c; background: #ef444418; }
+.dark .sim-quality-grade.is-normal { color: #34d399; }
+.dark .sim-quality-grade.is-degraded { color: #fbbf24; }
+.dark .sim-quality-grade.is-blocked { color: #f87171; }

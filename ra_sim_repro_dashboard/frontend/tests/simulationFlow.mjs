@@ -52,3 +52,10 @@ test('main path motion follows active and completed stages, stopping on blockers
   for(const state of ['blocked','unknown','archived'])assert.deepEqual(stageMotion({state},{state:'active'}),{animated:false,scheduled:false});
   assert.deepEqual(stageMotion({state:'complete'},{state:'complete'},true),{animated:false,scheduled:false});
 });
+
+test('recovery job cannot replace the main execution in the five stage flow',()=>{
+  const d=base();const main={...job('COMPLETED'),status:'complete'};main.progress.finished=10;
+  d.selected.jobs=[{...job(),job_id:2,backfill:true,scenario_count:1},main];
+  const model=simulationFlow(d);
+  assert.equal(model.job.job_id,1);assert.equal(model.stages[2].state,'complete');
+});

@@ -123,6 +123,7 @@ def history_kpis(db):
     ):
         if (
             batch.release in seen
+            or batch.payload.get("backfill")
             or batch.release not in allowed
             or batch.payload.get("acceptance_only")
             or (

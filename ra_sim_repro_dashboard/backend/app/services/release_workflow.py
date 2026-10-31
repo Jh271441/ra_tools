@@ -455,10 +455,13 @@ def list_issues(db, release=None, page=1, page_size=25, query="", label=""):
     population_hash = population_identity(snapshot.payload)
     batch_by_scene = {}
     batches.sort(key=lambda b: bool(b.payload.get("result_import", {}).get("primary")))
+    from app.services.release_backfill import frozen_snapshot_valid
     for batch in batches:
-        if batch.payload.get("population_hash") == population_hash:
+        if batch.payload.get("population_hash") == population_hash or frozen_snapshot_valid(db, batch):
             for scene in batch.payload.get("scenarios", []):
-                batch_by_scene[scene["scenario_id"]] = batch
+                previous = batch_by_scene.get(scene["scenario_id"])
+                if not previous or scene["scenario_id"] not in previous.payload.get("results", {}):
+                    batch_by_scene[scene["scenario_id"]] = batch
     items = []
     for issue in snapshot.payload["issues"]:
         if int(issue["ra_type"]) != 2:
@@ -764,7 +767,12 @@ def attach_job(db, fingerprint, job_id):
 def execute_batch(db, batch, config, *, release=None):
     if batch.status != "queued":
         return batch
-    current_plan = make_plan(db, config, release=release)
+    if batch.payload.get("backfill"):
+        from app.services.release_backfill import validate_delta
+        validate_delta(db, batch, config)
+        current_plan = batch.payload
+    else:
+        current_plan = make_plan(db, config, release=release)
     if current_plan["fingerprint"] != batch.fingerprint:
         batch.status = "cancelled_stale"
         db.commit()
@@ -853,13 +861,9 @@ def poll_batches(db, config):
             if state == "audited":
                 from app.services.result_integration import import_executions
 
-                snapshot = db.scalars(
-                    select(ReleaseIssueSnapshot)
-                    .where(ReleaseIssueSnapshot.release == batch.release)
-                    .order_by(ReleaseIssueSnapshot.id.desc()).limit(1)
-                ).first()
-                if not snapshot or population_identity(snapshot.payload) != batch.payload.get("population_hash"):
-                    raise ValueError("当前人口与提交快照不一致，停止结果导入")
+                from app.services.release_backfill import frozen_snapshot_valid
+                if not frozen_snapshot_valid(db, batch):
+                    raise ValueError("当前来源或场景输入与提交快照不一致，停止结果导入")
                 # Existing multi-job comparisons/publication decisions are immutable
                 # here; refreshing those requires their explicit integration plan.
                 if batch.payload.get("result_import"):
@@ -935,7 +939,8 @@ def metrics_for_snapshot(db, snapshot):
     population_hash = population_identity(snapshot.payload)
     from app.services.result_publication import published_batch, effective_publication
     published = published_batch(db, snapshot.release)
-    if published and published.payload.get("population_hash") == population_hash:
+    from app.services.release_backfill import frozen_snapshot_valid
+    if published and frozen_snapshot_valid(db, published):
         return effective_publication(db, published)
     batches = db.scalars(
         select(ReleaseSimulationBatch)
@@ -946,6 +951,8 @@ def metrics_for_snapshot(db, snapshot):
         .order_by(ReleaseSimulationBatch.updated_at.desc())
     ).all()
     for batch in batches:
+        if batch.payload.get("backfill"):
+            continue
         if batch.payload.get("result_import") and not batch.payload[
             "result_import"
         ].get("primary"):
@@ -1018,10 +1025,10 @@ def run_tick(sync_source=True, source_interval_seconds=0):
             ).all():
                 # Quiet-window batches must be freshly observed by monitor_tick,
                 # including queued batches recovered after a process restart.
-                if batch.payload.get("period", {}).get("completion_rule") in {"issue_inactivity_24h", "issue_last_time_24h"}:
+                if not batch.payload.get("backfill") and batch.payload.get("period", {}).get("completion_rule") in {"issue_inactivity_24h", "issue_last_time_24h"}:
                     continue
                 try:
-                    execute_batch(db, batch, config)
+                    execute_batch(db, batch, config, release=batch.release)
                 except ValueError as exc:
                     batch.status = "cancelled_stale"
                     batch.payload = {**batch.payload, "error": str(exc)}
@@ -1029,6 +1036,10 @@ def run_tick(sync_source=True, source_interval_seconds=0):
             poll_batches(
                 db, config
             )  # Track active jobs even after switching to manual mode.
+            from app.services.release_resume import process_requests
+            process_requests(db, config)
+            from app.services.release_backfill import tick as backfill_tick
+            backfill_tick(db, config)
 
 
 def tick():

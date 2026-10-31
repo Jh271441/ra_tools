@@ -34,8 +34,9 @@ export function simulationFlow(data: BoardData, stale = false) {
   const evaluation = s.evaluation;
   const publication = s.metrics.publication || evaluation?.publication;
   const activeStates = ['queued', 'submitting', 'running', 'verifying', 'submission_uncertain'];
-  const activeJob = s.jobs.find(j => j.progress ? ['RUNNING', 'STARTING'].includes(j.progress.state) : activeStates.includes(j.status));
-  const job = activeJob || s.jobs.find(j => j.job_id === (publication?.primary_job_id || evaluation?.primary_job_id)) || s.jobs[0];
+  const mainJobs = s.jobs.filter(j=>!j.backfill);
+  const activeJob = mainJobs.find(j => j.progress ? ['RUNNING', 'STARTING'].includes(j.progress.state) : activeStates.includes(j.status));
+  const job = activeJob || mainJobs.find(j => j.job_id === (publication?.primary_job_id || evaluation?.primary_job_id)) || mainJobs[0];
   const p = job?.progress;
   const archived = s.kind === 'archived' || Boolean(s.metrics.archived);
   const stages: FlowStage[] = [

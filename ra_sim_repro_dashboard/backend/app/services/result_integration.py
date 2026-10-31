@@ -41,6 +41,11 @@ def integrate(plan, exports, primary_job_id):
     expected = {str(s["scenario_id"]): s for s in plan["scenarios"]}
     if len(expected) != len(plan["scenarios"]) or not expected:
         raise ValueError("Scenario population is empty or duplicated")
+    from ra_api.release_tolerance import POLICY
+    contracts = {e.get('execution_contract_hash') for e in exports}
+    if (plan.get('issue_tolerance', {}).get('policy') == POLICY
+            and (len(contracts) != 1 or not next(iter(contracts)))):
+        raise ValueError('Audited runtime contract missing or inconsistent')
     indexes = {}
     for export in exports:
         jid = int(export["job_id"])
@@ -166,6 +171,7 @@ def integrate(plan, exports, primary_job_id):
     )
     return {
         "schema_version": 1,
+        **({"execution_contract_hash":next(iter(contracts))} if len(contracts)==1 and next(iter(contracts)) else {}),
         "task_key": task_id,
         "release": plan["release"],
         "binary_id": plan["binary_id"],

@@ -1,11 +1,11 @@
 from copy import deepcopy
 import pytest
-from ra_api.release_tolerance import POLICY, assess, validate_frozen
+from ra_api.release_tolerance import POLICY, LEGACY_POLICY, assess, grade, validate_frozen
 from test_release_workflow import db, config, scene_labels
 from test_result_publication import data
 from app.services import release_workflow as w
 
-@pytest.mark.parametrize('total,bad,allowed', [(1856,1,True),(200,1,False),(1001,5,True),(1000,5,False),(2000,6,False),(1,0,True),(0,0,False)])
+@pytest.mark.parametrize('total,bad,allowed', [(1856,1,True),(200,1,True),(1001,5,True),(1000,5,True),(2000,6,True),(2000,39,True),(2000,40,False),(2000,41,False),(1,0,True),(0,0,False)])
 def test_boundary(total,bad,allowed):
     if allowed:
         assert assess(map(str,range(total)),map(str,range(bad)))['abnormal_issue_count']==bad
@@ -40,7 +40,7 @@ def test_preparation_freezes_denominator_and_rechecks_source(db,config,monkeypat
 
 @pytest.mark.parametrize('case',['incomplete','duplicate','unknown_reason','mapping','unknown_gt','over_budget'])
 def test_bad_evidence_never_bypasses_gate(db,config,monkeypatch,case):
-    rows,scenes,receipt,sync=setup(db,config,monkeypatch,failed=6 if case=='over_budget' else 1,total=2000)
+    rows,scenes,receipt,sync=setup(db,config,monkeypatch,failed=40 if case=='over_budget' else 1,total=2000)
     if case=='incomplete':receipt['failed']=2
     if case=='duplicate':receipt['failures']*=2;receipt['failed']=2
     if case=='unknown_reason':receipt['failures'][0]['reason']='timeout'
@@ -54,7 +54,7 @@ def test_bad_evidence_never_bypasses_gate(db,config,monkeypatch,case):
         with pytest.raises(ValueError):w.prepare_missing_scenes(db,config)
 
 
-@pytest.mark.parametrize('prep_count,allowed',[(4,True),(5,False)])
+@pytest.mark.parametrize('prep_count,allowed',[(4,True),(5,True),(24,False)])
 def test_result_budget_includes_preparation(data,prep_count,allowed):
     from test_result_publication import ready_for_auto
     from app.services.release_metrics import summarize_population
@@ -80,7 +80,20 @@ def test_result_budget_includes_preparation(data,prep_count,allowed):
         [s for s in p['scenarios'] if s['issue_id']!='i2'],p['results'])
     if allowed:
         result=validate_coverage_standard(p)
-        assert result['abnormal_issue_count']==5
-        assert result['issue_count']==1205 and result['valid_issue_count']==1200
+        assert result['abnormal_issue_count']==prep_count+1
+        assert result['issue_count']==1201+prep_count and result['valid_issue_count']==1200
     else:
-        with pytest.raises(ValueError,match='≤ 5'):validate_coverage_standard(p)
+        with pytest.raises(ValueError,match='98%'):validate_coverage_standard(p)
+
+
+@pytest.mark.parametrize('total,bad,level',[(2000,5,'normal'),(1000,5,'degraded'),(2000,6,'degraded'),(2000,39,'degraded'),(2000,40,'blocked'),(2000,41,'blocked')])
+def test_three_quality_levels(total,bad,level):
+    assert grade(range(total),range(bad))['quality_level']==level
+
+
+def test_legacy_policy_remains_strict():
+    with pytest.raises(ValueError,match='≤ 5'):
+        assess(range(2000),range(6),LEGACY_POLICY)
+    with pytest.raises(ValueError):
+        assess(range(200),[0],LEGACY_POLICY)
+    assert assess(range(1001),range(5),LEGACY_POLICY)['quality_level']=='normal'

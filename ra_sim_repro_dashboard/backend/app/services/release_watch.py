@@ -170,7 +170,8 @@ def monitor_tick(db, config, *, now=None, activity_fetcher=None, release=None, u
     save(state)
     batches = db.scalars(select(ReleaseSimulationBatch).where(ReleaseSimulationBatch.release == release)).all()
     auto_queued = [b for b in batches if b.status == "queued" and b.payload.get("period", {}).get("completion_rule") in AUTOMATIC_RULES]
-    other = [b for b in batches if b not in auto_queued]
+    other = [b for b in batches if b not in auto_queued
+             and (b.payload.get("job_id") or b.status not in ("cancelled_stale", "preflight_failed"))]
     if other:
         return save({**state, "status": "already_submitted", "batches": [
             {"fingerprint": b.fingerprint, "status": b.status, "job_id": b.payload.get("job_id")}

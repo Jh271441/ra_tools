@@ -338,7 +338,7 @@ def poll(plan):
     (
         JobAccessor,
         TaskAccessor,
-        _,
+        TaskArgKeys,
         _,
         _,
         get_auth_token,
@@ -380,6 +380,8 @@ def poll(plan):
     if set(actual) != expected or len(actual) != len(expected):
         raise ValueError("Submitted task population mismatch")
     argument_hashes = {}
+    runtime_arguments = set()
+    scenario_key = getattr(TaskArgKeys, "SCENARIO_ID", "--scenario-id")
     for task in tasks:
         arguments = task.get("task_args") or task.get("arguments")
         if hasattr(arguments, "as_dict"):
@@ -390,6 +392,12 @@ def poll(plan):
             arguments, int(plan["binary_id"]), plan["simulation"]["recovery_mode"]
         )
         argument_hashes[str(task["signature"])] = digest(arguments)
+        runtime_arguments.add(digest({k:v for k,v in arguments.items() if k != scenario_key}))
+    from ra_api.release_tolerance import POLICY
+    if plan.get("issue_tolerance", {}).get("policy") == POLICY and (len(runtime_arguments) != 1 or not metadata.get("runtime_reference")):
+        raise ValueError("Actual task runtime parameters are inconsistent")
+    execution_contract_hash = digest({"arguments":sorted(runtime_arguments),
+        "runtime_reference":metadata.get("runtime_reference"), "binary_id":plan["binary_id"], "cluster":metadata["cluster"]}) if len(runtime_arguments) == 1 and metadata.get("runtime_reference") else None
     from orion_protos.orion_task_pb2 import OrionTask
 
     execution_progress = summarize_progress(
@@ -441,6 +449,7 @@ def poll(plan):
             "job_id": job_id,
             **{key: plan[key] for key in ("release", "binary_id", "population_hash")},
             "progress": execution_progress, "quality": summary, "rows": rows,
+            "execution_contract_hash": execution_contract_hash,
         },
     }
 
@@ -613,7 +622,7 @@ def prepare_scenes(payload):
         failures = [
             {"issue_id": str(row.issue_id),
              "reason": "missing_bag" if "does not have bags" in str(row.upload_status) else "upstream_error"}
-            for row in result[~result.upload_status.isin(["uploaded", "existing"])].head(20).itertuples()
+            for row in result[~result.upload_status.isin(["uploaded", "existing"])].itertuples()
         ]
         return {
             "ready": failed == 0,

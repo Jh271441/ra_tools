@@ -105,3 +105,16 @@ def attach(payload: Attach, tasks: BackgroundTasks, db: Session = Depends(get_db
         "status": batch.status,
         "job_id": batch.payload.get("job_id"),
     }
+
+
+class Resume(BaseModel):
+    release: str
+    fingerprint: str | None = None
+
+
+@router.post("/resume", status_code=202)
+def resume(payload: Resume, tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    from app.services.release_resume import request
+    value = guarded(request, db, payload.release, payload.fingerprint)
+    tasks.add_task(workflow.process_queued)
+    return value
