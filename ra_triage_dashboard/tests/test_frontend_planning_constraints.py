@@ -8,6 +8,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class PlanningFrontendTest(unittest.TestCase):
     @unittest.skipUnless(shutil.which('node'), 'Node unavailable')
+    def test_panel_keyboard_routes_to_its_owner_and_disposes(self):
+        subprocess.run(
+            ['node', str(ROOT/'tests/planning_constraint_keyboard.cjs')],
+            check=True, capture_output=True, text=True,
+        )
+
+    @unittest.skipUnless(shutil.which('node'), 'Node unavailable')
     def test_frame_matching_is_publish_time_causal_and_bounded(self):
         source = (ROOT/'static/js/planning-constraints.js').read_text()
         program = source + '''

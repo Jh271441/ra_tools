@@ -13,15 +13,17 @@ function bindPlanningConstraint(player, video) {
   const panel = document.createElement('section');
   panel.className = 'planning-constraint-panel';
   panel.hidden = true;
+  panel.tabIndex = -1;
   panel.setAttribute('role', 'dialog');
   panel.id = `planning-constraint-${issueId}-${Math.random().toString(36).slice(2)}`;
   trigger.setAttribute('aria-controls', panel.id);
   panel.innerHTML = `<div class="planning-constraint-heading"><strong data-pc-title></strong><button type="button" class="button button-quiet" data-pc-close>×</button></div>
     <div class="planning-constraint-value" data-pc-value></div>
-    <div class="planning-constraint-actions"><button type="button" class="button button-quiet" data-pc-copy></button><button type="button" class="button button-quiet" data-pc-retry hidden></button></div>
-    <p class="planning-constraint-time" data-pc-time></p>
-    <details data-pc-details><summary data-pc-summary></summary><pre data-pc-raw></pre><p data-pc-selection></p><code>/studio_node/planning/speed_table_raw.dominantConstraint</code></details>`;
-  document.body.append(panel);
+    <div class="planning-constraint-actions" data-pc-actions><button type="button" class="button button-quiet" data-pc-copy></button><button type="button" class="button button-quiet" data-pc-retry hidden></button></div>
+    <div class="planning-constraint-time" data-pc-meta><span data-pc-time></span><span data-pc-lag></span></div>
+    <details data-pc-details><summary data-pc-summary></summary><pre data-pc-raw></pre><div class="planning-constraint-source"><p data-pc-selection></p><code>/studio_node/planning/speed_table_raw.dominantConstraint</code></div></details>`;
+  // Keep the nonmodal panel in its player's top layer when media is expanded.
+  (player.closest('dialog') || document.body).append(panel);
   const el = key => panel.querySelector(`[data-pc-${key}]`);
   const setText = (key, value) => { if (el(key).textContent !== value) el(key).textContent = value; };
   let open = false, disposed = false, timer = null, controller = null, requestKey = null;
@@ -107,11 +109,15 @@ function bindPlanningConstraint(player, video) {
     el('value').classList.toggle('is-raw-id', Boolean(copyValue));
     el('copy').hidden = !copyValue;
     el('retry').hidden = data?.status !== 'error';
+    el('actions').hidden = el('copy').hidden && el('retry').hidden;
+    el('meta').hidden = !ready || !frame;
     el('details').hidden = !ready || !frame?.raw;
     setText('raw', ready ? frame?.raw || '' : '');
     setText('time', ready && frame
-      ? uiText(`消息 ${frame.timestamp_ms} · 距播放 ${data.anchor_ms + relative - frame.timestamp_ms} ms`,
-        `Message ${frame.timestamp_ms} · playback lag ${data.anchor_ms + relative - frame.timestamp_ms} ms`) : '');
+      ? uiText(`消息 ${frame.timestamp_ms}`, `Message ${frame.timestamp_ms}`) : '');
+    setText('lag', ready && frame
+      ? uiText(`距播放 ${data.anchor_ms + relative - frame.timestamp_ms} ms`,
+        `Playback lag ${data.anchor_ms + relative - frame.timestamp_ms} ms`) : '');
     place();
   };
   const close = (focus = false) => {
@@ -124,12 +130,30 @@ function bindPlanningConstraint(player, video) {
     if (open) { close(); return; }
     open = true; panel.hidden = false; trigger.setAttribute('aria-expanded', 'true');
     refresh(); timer = window.setInterval(refresh, 100);
+    panel.focus({preventScroll: true});
   };
   const outside = event => {
     if (open && !panel.contains(event.target) && !player.querySelector('.bev-video-controls').contains(event.target)) close();
   };
   const keyboard = event => {
-    if (open && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(true); }
+    if (disposed || event.defaultPrevented || isImeComposing(event)
+        || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (open && event.key === 'Escape') {
+      event.preventDefault(); event.stopPropagation(); close(true); return;
+    }
+    // The trigger is a button, and the panel can live outside the player. Both
+    // otherwise miss its keyboard handler. Reuse the owner's actual seek
+    // controls so step size, seek coalescing and frame readiness stay shared.
+    const target = event.target instanceof Element ? event.target : null;
+    if (!target || event.shiftKey || !['ArrowLeft', 'ArrowRight'].includes(event.key)
+        || !(trigger.contains(target) || (open && panel.contains(target)))
+        || target.closest('input, textarea, select, .ui-select, [contenteditable="true"], [role="textbox"]')) return;
+    const direction = event.key === 'ArrowLeft' ? -1 : 1;
+    const control = player.querySelector(`[data-video-jump="${direction}"]`);
+    if (!control || control.disabled) return;
+    event.preventDefault(); event.stopPropagation();
+    control.click();
+    player.focus({preventScroll: true});
   };
   trigger.addEventListener('click', toggle);
   el('close').addEventListener('click', () => close(true));

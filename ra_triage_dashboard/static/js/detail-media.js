@@ -438,6 +438,8 @@ function bindBevVideoPlayers(root) {
       (eventName) => listen(video, eventName, update)
     );
     player.addEventListener("keydown", (event) => {
+      if (event.defaultPrevented || isImeComposing(event) || event.ctrlKey
+          || event.metaKey || event.altKey || event.shiftKey) return;
       if (event.target.matches("[data-video-seek]") && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
         // A focused range input otherwise consumes the arrow key itself and
         // only moves the thumb. Route it through the decoded-frame seek path,
