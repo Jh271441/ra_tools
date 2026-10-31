@@ -4,6 +4,8 @@ export interface ResultPublication {
   comparison_conflicts: number;
   automatic?: boolean; minimum_coverage?: number; issue_coverage?: number;
   execution_failed_count?: number; quality_failed_count?: number;
+  issue_count?: number; valid_issue_count?: number; abnormal_issue_count?: number;
+  source_job_ids?: number[];
 }
 
 export interface VersionItem {

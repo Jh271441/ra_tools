@@ -32,8 +32,22 @@ def collection_anomalies(db, release, collection, batches):
     observation = workflow.get_state(db, 'release_observation:' + release)
     if not observation.get('issues') or not observation.get('activity_hash'):
         return [{'code': 'collection_change_unresolved', 'count': None, 'items': []}]
-    snapshots = list(db.scalars(select(ReleaseIssueSnapshot).where(
-        ReleaseIssueSnapshot.release == release).order_by(ReleaseIssueSnapshot.id.desc())))
+    batches = [b for b in batches if b.release == release and not b.payload.get('backfill')]
+    wanted = {b.payload.get('population_hash') for b in batches}
+    sources = {}
+    snapshots = db.scalars(select(ReleaseIssueSnapshot).where(
+        ReleaseIssueSnapshot.release == release).order_by(ReleaseIssueSnapshot.id.desc())
+        .execution_options(yield_per=1))
+    try:
+        for snapshot in snapshots:
+            if snapshot.payload.get('population_complete'):
+                identity = workflow.population_identity(snapshot.payload)
+                if identity in wanted:
+                    sources.setdefault(identity, snapshot.payload)
+                if wanted <= sources.keys():
+                    break
+    finally:
+        snapshots.close()
     lane = workflow.get_state(db, 'label_cycle:' + release)
     revision = workflow.get_state(db, lane['revision_key']) if lane.get('revision_key') else {}
     result = []
@@ -43,8 +57,7 @@ def collection_anomalies(db, release, collection, batches):
         if batch.release != release or not expected or expected == observation.get('activity_hash'):
             continue
         # Match the exact frozen source; never compare against an arbitrary latest snapshot.
-        source = next((s.payload for s in snapshots if s.payload.get('population_complete')
-                       and workflow.population_identity(s.payload) == plan.get('population_hash')), None)
+        source = sources.get(plan.get('population_hash'))
         if source and activity_identity(source['issues'], 'issue_time') == expected:
             changes = population_changes(source['issues'], observation.get('issues', []))
         else:

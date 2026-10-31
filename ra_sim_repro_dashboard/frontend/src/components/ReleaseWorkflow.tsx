@@ -115,6 +115,7 @@ function Stat({ title, value, detail, color = '' }: { title: string; value: stri
   return <div className="rounded-lg border bg-card/70 p-4"><p className="text-xs text-muted-foreground">{title}</p><p className={`mt-2 font-mono text-2xl font-semibold tabular-nums ${color}`}>{value}</p>{detail && <p className="mt-1 text-xs text-muted-foreground">{detail}</p>}</div>;
 }
 function JobCard({ job }: { job: BoardJob }) {
+  const { t } = useTranslation();
   const p = job.progress;
   const parts = p ? [
     {key:'completed', label:'成功', value:p.completed, color:'bg-emerald-500', text:'text-emerald-700 dark:text-emerald-400'},
@@ -127,7 +128,7 @@ function JobCard({ job }: { job: BoardJob }) {
   const active = p ? ['RUNNING','STARTING'].includes(p.state) : ['running','queued','submitting'].includes(job.status);
   return <Card className="overflow-hidden">
     <CardHeader><div className="flex flex-wrap items-center justify-between gap-3">
-      <div className="flex items-center gap-3"><div className="rounded-lg bg-primary/10 p-2"><Activity className="h-5 w-5 text-primary"/></div><div><CardTitle>Job {job.job_id || '待分配'}</CardTitle><p className="mt-1 text-xs text-muted-foreground">{job.primary_execution ? '执行记录 · 主结果' : job.evaluation_task_key ? '执行记录 · 复跑对照' : job.archived ? '历史归档任务' : '完整周期仿真'}</p></div></div>
+      <div className="flex items-center gap-3"><div className="rounded-lg bg-primary/10 p-2"><Activity className="h-5 w-5 text-primary"/></div><div><CardTitle>Job {job.job_id || '待分配'}</CardTitle><p className="mt-1 text-xs text-muted-foreground">{job.backfill ? t('labelLoop.incrementalJob') : job.primary_execution ? '执行记录 · 主结果' : job.evaluation_task_key ? '执行记录 · 复跑对照' : job.archived ? '历史归档任务' : '完整周期仿真'}</p></div></div>
       <div className="flex items-center gap-3">{p?.priority && <Badge variant={p.priority==='HIGH'?'warning':'outline'}>{p.priority==='HIGH'?'高优先级':p.priority==='NORMAL'?'普通优先级':p.priority}</Badge>}<Badge variant={active ? 'secondary' : p?.failed ? 'warning' : p?.state === 'COMPLETED' ? 'success' : 'outline'}>{active && <span className="h-1.5 w-1.5 rounded-full bg-blue-500"/>}{p ? jobStates[p.state] || p.state : stateNames[job.status] || job.status}</Badge>{job.url && <a href={job.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm font-medium text-primary">Orion 详情<ExternalLink className="h-3.5 w-3.5"/></a>}</div>
     </div></CardHeader>
     <CardContent className="space-y-5">
@@ -245,17 +246,17 @@ export function ReleaseWorkflow({ onOpenIssues }: { onOpenIssues: (release?: str
           <Card>
             <CardHeader><div className="flex items-center justify-between"><CardTitle>仿真评测结果</CardTitle><Badge variant={selected.metrics.archived && !selected.metrics.quality_gate_passed?'warning':selected.metrics.available?'success':'outline'}>{selected.metrics.publication?(selected.metrics.publication.automatic?'覆盖率达标 · 已发布':'已发布'):selected.metrics.archived?'归档指标':selected.metrics.available?'已通过验收':selected.evaluation?'验收未通过':'待就绪'}</Badge></div></CardHeader>
             <CardContent className="space-y-3">
-              {selected.metrics.publication && <p className="flex flex-wrap gap-x-1 text-xs leading-5 text-muted-foreground"><span>有效 {number(selected.metrics.publication.valid_scenario_count)} / {number(selected.metrics.publication.scenario_count)}</span><span>· 排除异常 {number(selected.metrics.publication.excluded_scenario_ids.length)}</span></p>}
+              {selected.metrics.publication && <p className="flex flex-wrap gap-x-1 text-xs leading-5 text-muted-foreground">{selected.metrics.publication.issue_count != null ? t('labelLoop.metricPopulation',{valid:number(selected.metrics.publication.valid_issue_count),total:number(selected.metrics.publication.issue_count),count:selected.metrics.publication.abnormal_issue_count || 0}) : <><span>有效 {number(selected.metrics.publication.valid_scenario_count)} / {number(selected.metrics.publication.scenario_count)}</span><span>· 排除异常 {number(selected.metrics.publication.excluded_scenario_ids.length)}</span></>}</p>}
               <div className="divide-y">
                 {[['精确率',selected.metrics.precision],['召回率',selected.metrics.recall],['行为复现率',selected.metrics.sim_repro_rate]].map(([label,value])=><div key={String(label)} className="flex items-center justify-between py-3 first:pt-0 last:pb-0"><span className="text-sm text-muted-foreground">{label}</span><strong className="font-mono text-xl">{selected.metrics.available?metricRate(value as number | undefined):'—'}</strong></div>)}
               </div>
               {selected.metrics.publication && <details key={selected.release} className="text-xs leading-5 text-muted-foreground">
                 <summary className="cursor-pointer hover:text-foreground">统计口径</summary>
                 <div className="mt-2 space-y-1">
-                  <p>按原评测快照统计有效样本，异常保留明细但不计入指标分母。</p>
-                  {selected.metrics.publication.automatic && <p>有效覆盖率 {metricRate(selected.metrics.publication.coverage)}，发布阈值 {metricRate(selected.metrics.publication.minimum_coverage)}。</p>}
-                  <p>以主 Job {selected.metrics.publication.primary_job_id} 为准，复跑结果不合并。</p>
-                  <p>上方路测样本为最新同步范围，可能与评测快照不同。</p>
+                  <p>{t('labelLoop.metricScope')}</p>
+                  {selected.metrics.publication.automatic && <p>{t('labelLoop.metricCoverage',{coverage:metricRate(selected.metrics.publication.issue_coverage ?? selected.metrics.publication.coverage),threshold:metricRate(selected.metrics.publication.minimum_coverage)})}</p>}
+                  <p>{t('labelLoop.metricSources',{jobs:(selected.metrics.publication.source_job_ids || [selected.metrics.publication.primary_job_id]).join(', ')})}</p>
+                  <p>{t('labelLoop.metricObserved')}</p>
                 </div>
               </details>}
               {selected.metrics.archived && !selected.metrics.quality_gate_passed && <p className="text-xs leading-5 text-amber-700 dark:text-amber-400">保留历史归档指标；质量门禁未通过，请结合异常任务查看。</p>}

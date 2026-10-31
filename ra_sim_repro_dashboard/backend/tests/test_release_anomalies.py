@@ -67,6 +67,12 @@ def test_applied_revision_resolves_only_matching_labels(db, config):
     assert result[0]['resolved'] and result[0]['count']==2
     assert result[0]['items'][0]['before'] == source['issues'][0]['ra_merge_result']
     assert result[0]['resolved_at']==revision['applied_at']
+    child = SimpleNamespace(release=release, fingerprint='incremental',
+        payload={**plan, 'population_hash':'incremental-source', 'job_id':124,
+                 'backfill':{'kind':'label_changes','base_fingerprint':batch.fingerprint}})
+    # A delta has no independent full-population snapshot. It must not invent
+    # an unresolved source change beside the applied label receipt.
+    assert collection_anomalies(db,release,collection,[child,batch]) == result
     # A later edit cannot be hidden by an older successful revision.
     newer = deepcopy(rows); newer[0]['ra_merge_result']='out_of_scope'
     w.put_state(db,'release_observation:'+release,{'activity_hash':activity_identity(newer,'issue_time'),'issues':newer})
