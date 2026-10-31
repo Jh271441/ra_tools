@@ -5,6 +5,13 @@ import re
 COHORTS = ('positive_auto', 'positive_manual', 'negative_auto')
 
 
+def scene_labels(row):
+    labels = row.get('labels', row.get('scenario_labels', []))
+    if isinstance(labels, str):
+        labels = json.loads(labels) if labels.startswith('[') else labels.split(',')
+    return {str(v).strip() for v in labels}
+
+
 def full_scene_label(period):
     release = period['release']
     if not re.fullmatch(r'gen4-release-\d{8}', release):
@@ -30,10 +37,7 @@ def full_scene_label(period):
 
 
 def validate_scene_labels(row, label, release, cohort):
-    labels = row.get('labels', row.get('scenario_labels', []))
-    if isinstance(labels, str):
-        labels = json.loads(labels) if labels.startswith('[') else labels.split(',')
-    labels = {str(v).strip() for v in labels}
+    labels = scene_labels(row)
     trigger = 'ManualTrigger' if cohort == 'positive_manual' else 'AutoTrigger'
     required = {label, f'{label}_{release}', f'{label}_{cohort}', f'{label}_{trigger}'}
     if cohort not in COHORTS or not required <= labels:
@@ -48,3 +52,24 @@ def validate_scene_labels(row, label, release, cohort):
         raise ValueError('Scenario cohort labels disagree with frozen GT')
     if labels & {f'{label}_AutoTrigger', f'{label}_ManualTrigger'} != {f'{label}_{trigger}'}:
         raise ValueError('Scenario trigger group is ambiguous')
+
+
+def cohort_label_update(row, label, release, cohort):
+    """Reconcile GT-only drift before first submission, retaining other labels.
+
+    Namespace, source identity and trigger changes require their own review.
+    The caller must establish the current GT and prohibit changes to submitted jobs.
+    """
+    labels = scene_labels(row)
+    present = [c for c in COHORTS if f'{label}_{c}' in labels]
+    if len(present) != 1 or cohort not in COHORTS:
+        raise ValueError('Scenario cohort labels are ambiguous')
+    previous = present[0]
+    validate_scene_labels(row, label, release, previous)
+    if (previous == 'positive_manual') != (cohort == 'positive_manual'):
+        raise ValueError('Scenario trigger change requires review')
+    if previous == cohort:
+        return None
+    updated = labels - {f'{label}_{previous}'} | {f'{label}_{cohort}'}
+    validate_scene_labels({'labels': sorted(updated)}, label, release, cohort)
+    return sorted(updated)

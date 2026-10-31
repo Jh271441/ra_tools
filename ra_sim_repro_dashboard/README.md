@@ -433,6 +433,11 @@ docker compose -f ra_sim_repro_dashboard/docker-compose.yml run --rm --no-deps \
 
 ### Issue 覆盖率等级与断点恢复（2026-10-31）
 
+首次提交前会按最新 Issue GT 同步已关联场景的 cohort 标签。该步骤保留
+原标签、更新记录及复查结果，验证来源 Issue、场景版本、时间窗口和执行输入；
+已有 Job 或提交状态不确定时不修改场景标签。触发类型、命名空间和输入变化
+仍需单独处理，不能通过覆盖率阈值放行。
+
 新计划冻结 `issue_coverage_v2` 策略；准备异常和结果异常按原始应评测 Issue
 去重合计，多场景不会稀释分母。等级枚举为 `normal / degraded / blocked`：
 

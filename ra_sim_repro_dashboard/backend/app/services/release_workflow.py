@@ -357,6 +357,40 @@ class ScenePreparationError(ValueError):
         self.preparation = {key: response[key] for key in ("prepared", "failed", "failures") if key in response}
 
 
+def reconcile_preparation_labels(db, config, snapshot, *, release=None):
+    """Synchronize changed GT cohorts before any external submission exists."""
+    batches = db.scalars(select(ReleaseSimulationBatch).where(
+        ReleaseSimulationBatch.release == snapshot.release)).all()
+    if any(b.payload.get('job_id') or b.status in ('submitting', 'submission_uncertain', 'running', 'verifying') for b in batches):
+        return snapshot
+    from ra_api.release_labels import full_scene_label, cohort_label_update, scene_labels
+
+    period = snapshot.payload['period']
+    label = full_scene_label(period)
+    cohorts = {str(i['issue_id']): cohort_for_issue(i) for i in snapshot.payload['issues']}
+    changes = []
+    for scene in snapshot.payload['scenarios']:
+        cohort = cohorts.get(str(scene['issue_id']))
+        if not cohort:
+            continue
+        updated = cohort_label_update(scene, label, period['release'], cohort)
+        if updated is not None:
+            changes.append({**{k:scene.get(k) for k in ('scenario_id', 'issue_id', 'scenario_revision', 'start_timestamp', 'end_timestamp')},
+                'cohort':cohort, 'before_labels':sorted(scene_labels(scene)), 'after_labels':updated})
+    if not changes:
+        return snapshot
+    payload = {'release':period['release'], 'period':period, 'label':label,
+        'source_hash':population_identity(snapshot.payload), 'changes':changes}
+    receipt = driver_call(config, 'reconcile_labels', payload)
+    if receipt.get('ready') is not True or receipt.get('verified_count') != len(changes) or receipt.get('request_hash') != digest(payload):
+        raise ValueError('Scenario cohort label synchronization failed')
+    put_state(db, 'scenario_labels:' + period['release'], {
+        'checked_at':datetime.now(timezone.utc).isoformat(), 'snapshot_id':snapshot.id,
+        'source_hash':payload['source_hash'], 'scenario_ids':[c['scenario_id'] for c in changes],
+        'count':len(changes), 'request_hash':receipt['request_hash'], 'audit_path':receipt.get('audit_path')})
+    return sync_once(db, config, release=release)
+
+
 def prepare_missing_scenes(db, config, *, release=None):
     """Automatic mode explicitly prepares the missing eligible source scenes."""
     period = simulation_period(config, release)
@@ -366,6 +400,7 @@ def prepare_missing_scenes(db, config, *, release=None):
         raise ValueError("完整人口尚未就绪")
     if snapshot.payload.get("mapping_error"):
         raise ValueError("场景查询失败，不能猜测缺失集合并创建")
+    snapshot = reconcile_preparation_labels(db, config, snapshot, release=release)
     mapped = {s["issue_id"] for s in snapshot.payload["scenarios"]}
     missing = [
         i

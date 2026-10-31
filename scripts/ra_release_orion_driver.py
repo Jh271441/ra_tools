@@ -673,6 +673,9 @@ def lookup_binary(payload):
 
 
 def dispatch(action, plan):
+    if action == 'reconcile_labels':
+        from scripts.ra_repro_reconcile_labels import reconcile_labels
+        return reconcile_labels(plan)
     if action == "progress":
         return progress(plan)
     if action == "prepare_scenes":
