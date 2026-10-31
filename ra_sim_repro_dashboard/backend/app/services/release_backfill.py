@@ -5,7 +5,6 @@ it never disguises a union as a single Orion job or picks a more favourable run.
 """
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
-from itertools import chain
 from sqlalchemy import select
 from app.models import ReleaseIssueSnapshot, ReleaseSimulationBatch
 from app.services import release_workflow as w
@@ -49,7 +48,21 @@ def _frozen_snapshot_valid(db, batch):
         latest = next(rows, None)
         if latest is None:
             return False
-        for snapshot in chain((latest,), rows):
+        if w.population_identity(latest.payload) == batch.payload['population_hash']:
+            return compatible_source(latest.payload, latest.payload)
+        # Historical executions usually froze a source near their creation.
+        # Inspect lightweight metadata first, then verify the actual JSON hash.
+        # A miss still scans the full history, including imported/late snapshots.
+        if getattr(batch, 'created_at', None):
+            created = batch.created_at.replace(tzinfo=timezone.utc)
+            candidates = db.execute(select(ReleaseIssueSnapshot.id, ReleaseIssueSnapshot.created_at).where(
+                ReleaseIssueSnapshot.release == batch.release, ReleaseIssueSnapshot.id != latest.id)).all()
+            candidates.sort(key=lambda row: (abs((row.created_at.replace(tzinfo=timezone.utc)-created).total_seconds()), -row.id))
+            for candidate in candidates[:4]:
+                snapshot = db.get(ReleaseIssueSnapshot, candidate.id)
+                if snapshot and w.population_identity(snapshot.payload) == batch.payload['population_hash']:
+                    return compatible_source(snapshot.payload, latest.payload)
+        for snapshot in rows:
             if w.population_identity(snapshot.payload) == batch.payload['population_hash']:
                 return compatible_source(snapshot.payload, latest.payload)
         return False

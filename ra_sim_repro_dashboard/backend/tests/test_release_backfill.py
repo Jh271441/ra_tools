@@ -1,7 +1,7 @@
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 import pytest
-from app.models import ReleaseSimulationBatch
+from app.models import ReleaseIssueSnapshot, ReleaseSimulationBatch
 from app.services import release_workflow as w, release_backfill as lane, release_resume as resume
 from app.services.result_publication import publication, effective_publication
 from app.services.result_integration import TRIGGER
@@ -188,3 +188,32 @@ def test_frozen_source_stream_closes_after_match_missing_source_and_error(monkey
     with pytest.raises(ValueError,match='bad source'):
         lane.frozen_snapshot_valid(None,batch)
     assert rows.closed
+
+
+@pytest.mark.parametrize('nearby',[True,False])
+def test_source_lookup_near_batch_time_retains_full_fallback_and_gt_gate(db,monkeypatch,nearby):
+    now=datetime.now(timezone.utc).replace(tzinfo=None)
+    source={'period':{'release':'test'},'issues':[{'issue_id':'1','ra_type':2,'ra_merge_result':'成功'}],'scenarios':[]}
+    batch=ReleaseSimulationBatch(fingerprint='time-lookup',release='test',status='complete',
+        created_at=now,payload={'population_hash':w.population_identity(source)})
+    db.add(batch)
+    db.add(ReleaseIssueSnapshot(period_hash='original',release='test',payload=source,
+        created_at=now+timedelta(seconds=1 if nearby else -100)))
+    for index in range(20):
+        other=deepcopy(source);other['issues'][0]['ra_merge_result']='other-'+str(index)
+        db.add(ReleaseIssueSnapshot(period_hash='other-'+str(index),release='test',payload=other,
+            created_at=now+timedelta(seconds=index+2)))
+    latest=ReleaseIssueSnapshot(period_hash='latest',release='test',
+        payload={**deepcopy(source),'scenarios':[{'scenario_id':'new','issue_id':'1'}]},
+        created_at=now+timedelta(seconds=25))
+    db.add(latest);db.commit()
+    original_hash=w.population_identity;calls=[]
+    def identity(payload):
+        calls.append(1)
+        return original_hash(payload)
+    monkeypatch.setattr(w,'population_identity',identity)
+    assert lane.frozen_snapshot_valid(db,batch)
+    assert len(calls)<8 if nearby else len(calls)>20
+    changed=deepcopy(latest.payload);changed['issues'][0]['ra_merge_result']='失败'
+    latest.payload=changed;db.commit()
+    assert not lane.frozen_snapshot_valid(db,batch)
