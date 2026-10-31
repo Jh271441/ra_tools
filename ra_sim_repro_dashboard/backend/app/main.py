@@ -3,6 +3,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 import asyncio
 import os
+import logging
 from contextlib import suppress
 
 from fastapi import FastAPI
@@ -20,12 +21,16 @@ async def lifespan(app: FastAPI):
 
     async def monitor():
         while True:
-            await asyncio.to_thread(tick)
+            try:
+                await asyncio.to_thread(tick)
+            except Exception:
+                logging.getLogger(__name__).exception("Release monitor tick failed; retry next interval")
             await asyncio.sleep(900)
 
     task = (
         asyncio.create_task(monitor())
         if os.getenv("RELEASE_WORKFLOW_ENABLED") == "1"
+        and os.getenv("RELEASE_WORKFLOW_RUNNER", "api") == "api"
         else None
     )
     try:

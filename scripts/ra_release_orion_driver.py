@@ -105,6 +105,9 @@ def validate_plan(plan):
             "positive_manual",
         ):
             raise ValueError("Scenario requires a verified source cohort")
+    if "issue_tolerance" in plan:
+        from ra_api.release_tolerance import validate_frozen
+        validate_frozen(plan)
     return plan
 
 
@@ -144,7 +147,44 @@ def check_task(arguments, binary_id, mode):
         raise ValueError("Controlled replay flags missing or duplicated")
 
 
+def verify_live_labels(plan):
+    from ra_api.release_labels import full_scene_label, validate_scene_labels
+    from ra_api.scenario_api import trail_api, ScenarioURL
+    from ra_api.sim_result_api import SimResultClient
+
+    label = plan.get('scenario_label')
+    if not label or label != full_scene_label({**plan['period'], 'scenario_creation_label': label}):
+        raise ValueError('New submissions require a canonical full label')
+    trail_api.token = SimResultClient()._app_token
+    rows = plan['scenarios']
+    for start in range(0, len(rows), 100):
+        expected = {str(r['scenario_id']): r for r in rows[start:start + 100]}
+        response = trail_api.send_request(ScenarioURL.query.value,
+            {'id': ','.join(expected), 'page': 1, 'size': 500})
+        if not response or response.get('msg') != 'success':
+            raise ValueError('Cannot verify live Scenario labels')
+        data = response['data']
+        found = data.get('res', data.get('data', []))
+        if (int(data.get('total', data.get('count', -1))) != len(expected)
+            or len(found) != len(expected) or {str(r['id']) for r in found} != set(expected)):
+            raise ValueError('Live Scenario identity coverage mismatch')
+        for row in found:
+            target = expected[str(row['id'])]
+            validate_scene_labels(row, label, plan['release'], target['cohort'])
+            if row.get('is_deleted') or row.get('version') != target.get('scenario_revision'):
+                raise ValueError('Scenario revision or deletion state changed')
+            labels = row.get('labels', [])
+            if isinstance(labels, str):
+                labels = json.loads(labels) if labels.startswith('[') else labels.split(',')
+            issue_labels = {v for v in labels if v.startswith('#') and v[1:].isdigit()}
+            if issue_labels != {'#' + str(target['issue_id']).removeprefix('cn')}:
+                raise ValueError('Live Scenario source Issue changed')
+            if any(row.get(k) != target.get(k) for k in ('start_timestamp', 'end_timestamp')):
+                raise ValueError('Live Scenario time window changed')
+
+
 def build_job(plan):
+    verify_live_labels(plan)
     from scripts.ra_repro_launch_full_orion import _load_api
     from orion.db_accessor.binary_accessor import BinaryAccessor
 
@@ -339,6 +379,7 @@ def poll(plan):
     actual = [str(t["signature"]) for t in tasks]
     if set(actual) != expected or len(actual) != len(expected):
         raise ValueError("Submitted task population mismatch")
+    argument_hashes = {}
     for task in tasks:
         arguments = task.get("task_args") or task.get("arguments")
         if hasattr(arguments, "as_dict"):
@@ -348,6 +389,20 @@ def poll(plan):
         check_task(
             arguments, int(plan["binary_id"]), plan["simulation"]["recovery_mode"]
         )
+        argument_hashes[str(task["signature"])] = digest(arguments)
+    from orion_protos.orion_task_pb2 import OrionTask
+
+    execution_progress = summarize_progress(
+        job_id, metadata, tasks, OrionTask.Status.Name, OrionJob.State.Name
+    )
+    execution_progress["priority"] = OrionJob.Priority.Name(metadata["priority"])
+    # A failed task can still be retried by Orion while its job is active.
+    # Only audit final results once both the job and every task are terminal.
+    if not ready_for_audit(execution_progress):
+        return {
+            "fingerprint": plan["fingerprint"], "job_id": job_id,
+            "status": "running", "quality_gate_passed": False, "results": {},
+        }
     manifest = pd.DataFrame(plan["scenarios"])
     manifest["scenario_id"] = manifest["scenario_id"].astype(int)
     task_results = _query_orion(job_id, token)
@@ -365,38 +420,37 @@ def poll(plan):
         task_results, on="scenario_id", how="left", validate="1:1"
     ).merge(dpe, on="scenario_id", how="left", validate="1:1")
     summary = _summarize(joined, job_id)
-    complete = summary["is_terminal_and_complete"]
-    failed = summary["terminal_failed"] > 0 or (
-        summary["terminal"] == len(joined)
-        and not summary["quality"]["gate_passed_so_far"]
-    )
-    results = {}
-    if complete:
-        for row in joined.to_dict("records"):
-            triggered = bool(float(row[_TRIGGER_METRIC]) >= 1)
-            truth_positive = row["cohort"] != "negative_auto"
-            label = (
-                ("TP" if triggered else "FN")
-                if truth_positive
-                else ("FP" if triggered else "TN")
-            )
-            results[str(row["scenario_id"])] = {
-                "sim_triggered": triggered,
-                "reproduced": triggered
-                if row["cohort"] != "positive_manual"
-                else not triggered,
-                "precision_label": label,
-                "cohort": row["cohort"],
-                "issue_id": row["issue_id"],
-            }
+    # Fresh results may lag the lightweight task inventory; keep polling.
+    if summary["terminal"] != len(joined) or summary["completed_pending_dpe_grace"]:
+        return {
+            "fingerprint": plan["fingerprint"], "job_id": job_id,
+            "status": "verifying", "quality_gate_passed": False,
+            "results": {}, "quality": summary["quality"],
+        }
+    if set(task_results["scenario_id"].astype(str)) != expected:
+        raise ValueError("Result audit task population mismatch")
+    if {str(v) for v in task_results["task_id"]} != {str(t["id"]) for t in tasks}:
+        raise ValueError("Result audit task identities differ")
+    joined["argument_hash"] = joined["scenario_id"].astype(str).map(argument_hashes)
+    # JSON conversion turns missing DPE/cache values into null, never NaN.
+    rows = json.loads(joined.to_json(orient="records"))
     return {
-        "fingerprint": plan["fingerprint"],
-        "job_id": job_id,
-        "status": "complete" if complete else "failed" if failed else "running",
-        "quality_gate_passed": complete,
-        "results": results,
-        "quality": summary["quality"],
+        "fingerprint": plan["fingerprint"], "job_id": job_id,
+        "status": "audited",
+        "execution_export": {
+            "job_id": job_id,
+            **{key: plan[key] for key in ("release", "binary_id", "population_hash")},
+            "progress": execution_progress, "quality": summary, "rows": rows,
+        },
     }
+
+
+def ready_for_audit(progress):
+    return (
+        progress["state"] == "COMPLETED"
+        and progress["total"] > 0
+        and progress["finished"] == progress["total"]
+    )
 
 
 def summarize_progress(job_id, metadata, tasks, status_name, job_state_name):
@@ -483,9 +537,9 @@ def prepare_scenes(payload):
     period = payload["period"]
     if not re.fullmatch(r"gen4-release-\d{8}", release) or not period.get("verified"):
         raise ValueError("Verified release scope required for scenario preparation")
-    label = (
-        "ra_repro_cycle_" + period["cycle_end"].replace("-", "") + "_" + release[-4:]
-    )
+    from ra_api.release_labels import full_scene_label
+
+    label = full_scene_label(period)
     if label != payload.get("label"):
         raise ValueError("Scenario label does not match period")
     rows = payload["issues"]
@@ -556,11 +610,17 @@ def prepare_scenes(payload):
         result = upload_manifest(plan, label, "jasperchen", None, 4)
         result.to_csv(output, index=False)
         failed = int((~result.upload_status.isin(["uploaded", "existing"])).sum())
+        failures = [
+            {"issue_id": str(row.issue_id),
+             "reason": "missing_bag" if "does not have bags" in str(row.upload_status) else "upstream_error"}
+            for row in result[~result.upload_status.isin(["uploaded", "existing"])].head(20).itertuples()
+        ]
         return {
             "ready": failed == 0,
             "label": label,
             "prepared": len(result) - failed,
             "failed": failed,
+            "failures": failures,
             "error": f"{failed} scenes could not be prepared" if failed else "",
         }
 
@@ -647,7 +707,8 @@ def main():
     except Exception as exc:
         response = {
             "ready": False,
-            "error": str(exc) if isinstance(exc, ValueError) else type(exc).__name__,
+            "error": (f"Missing Python module: {exc.name}" if isinstance(exc, ModuleNotFoundError)
+                      else str(exc) if isinstance(exc, ValueError) else type(exc).__name__),
         }
     json.dump(response, sys.stdout, ensure_ascii=False)
 

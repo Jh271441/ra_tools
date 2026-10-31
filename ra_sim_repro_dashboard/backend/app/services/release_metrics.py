@@ -7,6 +7,8 @@ EXCLUDED_RESULTS = {"out_of_scope", "未接起", "未填写"}
 
 
 def cohort_for_issue(issue):
+    if issue.get("evaluation_exclusion"):
+        return None
     ra_type = int(issue["ra_type"])
     result = issue.get("ra_merge_result")
     if result in GOOD_RESULTS:
@@ -27,7 +29,7 @@ def ratio(numerator, denominator):
 
 
 def excluded_issue(issue):
-    return issue.get("ra_merge_result") in EXCLUDED_RESULTS or (
+    return bool(issue.get("evaluation_exclusion")) or issue.get("ra_merge_result") in EXCLUDED_RESULTS or (
         int(issue["ra_type"]) == 3 and issue.get("ra_merge_result") == "误触发"
     )
 
@@ -84,27 +86,29 @@ def summarize_population(issues, scenarios, results):
         matches = int(not triggered if cohort == "positive_manual" else triggered)
         counts["road_matches"] += matches
         cohort_counts[cohort]["matches"] += matches
+    # Approved exclusions remain in the source count and audit, not in metrics.
+    metric_issues = [i for i in issues if not i.get("evaluation_exclusion")]
     precision_tp = sum(
         int(i["ra_type"]) == 2 and i.get("ra_merge_result") in GOOD_RESULTS
-        for i in issues
+        for i in metric_issues
     )
     precision_den = sum(
         int(i["ra_type"]) == 2
         and i.get("ra_merge_result") is not None
         and i.get("ra_merge_result") not in EXCLUDED_RESULTS
-        for i in issues
+        for i in metric_issues
     )
     recall_tp = sum(
         int(i["ra_type"]) == 2
         and i.get("ra_merge_result") is not None
         and i.get("ra_merge_result") not in EXCLUDED_RESULTS | {"误触发"}
-        for i in issues
+        for i in metric_issues
     )
     recall_den = sum(
         int(i["ra_type"]) in (2, 3)
         and i.get("ra_merge_result") is not None
         and i.get("ra_merge_result") not in EXCLUDED_RESULTS | {"误触发"}
-        for i in issues
+        for i in metric_issues
     )
     complete = (
         counts["eligible"] > 0

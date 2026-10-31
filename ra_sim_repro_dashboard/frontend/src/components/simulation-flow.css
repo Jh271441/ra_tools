@@ -1,0 +1,182 @@
+.sim-flow { container-type: inline-size; overflow: hidden; }
+.sim-collection-step { position: relative; display: flex; gap: 10px; margin: 0 20px 22px; }
+.sim-collection-step > .sim-flow-step { flex: 0 0 18px; padding-top: 18px; font-size: 10px; color: hsl(var(--muted-foreground)); }
+.sim-collection-step > .sim-flow-next { position: absolute; left: calc(50% + 5px); bottom: -20px; color: hsl(var(--muted-foreground)); }
+.sim-collection { flex: 1; min-width: 0; border: 1px solid hsl(var(--border)); border-top: 3px solid var(--stage-color); border-radius: 9px; background: hsl(var(--card)); overflow-wrap: anywhere; }
+.sim-collection-body { padding: 12px 14px 4px; border-top: 1px solid hsl(var(--border)); background: hsl(var(--muted) / .2); border-radius: 0 0 9px 9px; }
+.sim-collection-summary { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; font-size: 12px; margin-bottom: 6px; font-variant-numeric: tabular-nums; }
+.sim-collection-summary strong { font-weight: 500; color: hsl(var(--primary)); }
+.sim-collection-track { height: 5px; border-radius: 4px; overflow: hidden; background: hsl(var(--muted)); }
+.sim-collection-track > span { display: block; height: 100%; background: hsl(var(--primary)); }
+.sim-collection-note { margin-top: 7px; font-size: 11px; color: hsl(var(--muted-foreground)); }
+.sim-collection-activity { margin-bottom: 12px; }
+.sim-collection-chain { display: flex; align-items: center; list-style: none; padding: 0; margin: 0 0 10px; gap: 24px; color: hsl(var(--muted-foreground)); }
+.sim-collection-chain li { position: relative; display: flex; align-items: center; gap: 6px; font-size: 11px; min-width: 0; }
+.sim-collection-chain svg { flex-shrink: 0; }
+.sim-collection-chain li + li::before { content: ''; position: absolute; left: -19px; width: 14px; height: 2px; background: hsl(var(--border)); }
+.sim-collection-chain-current { color: hsl(var(--primary)); }
+.is-active .sim-collection-chain-current::before { background: repeating-linear-gradient(90deg,hsl(var(--primary)) 0 4px,transparent 4px 8px); background-size: 8px 2px; animation: sim-collection-travel 1s linear infinite; }
+.is-active .sim-collection-chain-current svg { animation: sim-collection-pulse 1.8s ease-in-out infinite; }
+.sim-collection-age { display: flex; align-items: baseline; flex-wrap: wrap; gap: 3px 12px; font-size: 12px; }
+.sim-collection-age > span { color: hsl(var(--muted-foreground)); }
+.sim-collection-age time { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+@keyframes sim-collection-travel { to { background-position: 8px 0; } }
+@keyframes sim-collection-pulse { 50% { opacity: .4; } }
+.sim-flow-desktop { height: 272px; border-block: 1px solid hsl(var(--border)); background: hsl(var(--muted) / .25); }
+.sim-flow .react-flow { --xy-background-color: transparent; --xy-background-pattern-color: hsl(var(--border)); --xy-edge-stroke: hsl(var(--muted-foreground)); --xy-handle-background-color: hsl(var(--card)); --xy-handle-border-color: hsl(var(--muted-foreground)); }
+.sim-flow .react-flow__handle { width: 6px; height: 6px; }
+.sim-flow .react-flow__attribution { background: hsl(var(--card) / .8); font-size: 10px; }
+.sim-flow .react-flow__attribution a { color: hsl(var(--muted-foreground)); }
+.sim-flow-node { --stage-color: hsl(var(--muted-foreground)); display: flex; flex-direction: column; width: 196px; height: 158px; padding: 15px; text-align: left; border: 1px solid hsl(var(--border)); border-top: 3px solid var(--stage-color); border-radius: 9px; background: hsl(var(--card)); color: hsl(var(--foreground)); box-shadow: 0 3px 10px hsl(var(--foreground) / .04); transition: border-color 120ms, box-shadow 120ms; }
+.sim-flow-node:hover, .sim-flow-node.is-selected { border-color: var(--stage-color); box-shadow: 0 0 0 2px color-mix(in srgb, var(--stage-color) 18%, transparent); }
+.sim-flow-node:focus-visible { outline: 3px solid hsl(var(--ring)); outline-offset: 3px; }
+.sim-flow-complete { --stage-color: #059669; }
+.sim-flow-active { --stage-color: #2563eb; }
+.sim-flow-warning { --stage-color: #b7790a; }
+.sim-flow-blocked { --stage-color: #dc2626; }
+.sim-flow-archived { --stage-color: #7c3aed; }
+.dark .sim-flow-complete { --stage-color: #34d399; }
+.dark .sim-flow-active { --stage-color: #60a5fa; }
+.dark .sim-flow-warning { --stage-color: #fbbf24; }
+.dark .sim-flow-blocked { --stage-color: #f87171; }
+.dark .sim-flow-archived { --stage-color: #a78bfa; }
+.sim-flow-node-title { display: flex; align-items: center; gap: 8px; min-height: 23px; font-size: 14px; }
+.sim-flow-node-title svg { flex-shrink: 0; color: var(--stage-color); }
+.sim-flow-count-label { margin-top: 8px; font-size: 10px; color: hsl(var(--muted-foreground)); }
+.sim-flow-count { font-size: 21px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.5; }
+.sim-flow-count > span { font-size: 13px; font-weight: 400; color: hsl(var(--muted-foreground)); }
+.sim-flow-processed { font-size: 10px; line-height: 15px; color: hsl(var(--muted-foreground)); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.sim-flow-execution .sim-flow-status { padding-top: 5px; }
+.sim-flow-track, .sim-flow-track-spacer { height: 3px; margin-top: 4px; width: 100%; flex-shrink: 0; }
+.sim-flow-track { background: hsl(var(--muted)); border-radius: 4px; overflow: hidden; }
+.sim-flow-track > span { display: block; height: 100%; background: var(--stage-color); }
+.sim-flow-status { display: flex; align-items: center; gap: 5px; margin-top: auto; padding-top: 8px; font-size: 11px; line-height: 16px; color: var(--stage-color); }
+.sim-flow-controls { display: flex; gap: 4px; }
+.sim-flow-controls button { width: 44px; height: 44px; }
+.sim-flow-legend { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding: 12px 20px; font-size: 11px; color: hsl(var(--muted-foreground)); }
+.sim-flow-legend > span { display: inline-flex; align-items: center; gap: 5px; }
+.sim-flow-legend i { width: 6px; height: 6px; border-radius: 50%; }
+.sim-flow-hint { margin-left: auto; }
+.sim-flow-detail { scroll-margin: 16px; padding: 12px 20px; border-top: 1px solid hsl(var(--border)); background: hsl(var(--muted) / .25); overflow-wrap: anywhere; }
+.sim-flow-facts { display: flex; flex-wrap: wrap; gap: 14px 30px; margin-top: 4px; }
+.sim-flow-facts > div { min-width: 0; }
+.sim-flow-facts dt { font-size: 11px; color: hsl(var(--muted-foreground)); }
+.sim-flow-facts dd { margin: 4px 0 0; font-size: 14px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.sim-flow-mobile { display: none; }
+.sim-flow-more { margin-top: 4px; }
+.sim-flow-more summary { min-height: 44px; display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 12px; color: hsl(var(--muted-foreground)); list-style: none; }
+.sim-flow-more summary::before { content: "+"; font-size: 16px; }
+.sim-flow-more[open] summary::before { content: "−"; }
+.sim-flow-more summary::-webkit-details-marker { display: none; }
+.sim-flow-more summary:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+@container (max-width: 759px) {
+  .sim-collection-step { margin: 0 16px 20px; }
+  .sim-collection-chain { gap: 12px; align-items: flex-start; }
+  .sim-collection-chain li { flex: 1 1 0; flex-direction: column; align-items: center; text-align: center; gap: 4px; font-size: 10px; }
+  .sim-collection-chain li + li::before { left: -11px; width: 10px; top: 7px; }
+  .sim-flow-desktop { display: none; }
+  .sim-flow-mobile { display: grid; list-style: none; margin: 0; padding: 4px 16px 0; gap: 20px; }
+  .sim-flow-mobile li { position: relative; display: flex; gap: 10px; min-width: 0; }
+  .sim-flow-step { flex: 0 0 18px; padding-top: 20px; font-size: 10px; color: hsl(var(--muted-foreground)); }
+  .sim-flow-next { position: absolute; left: calc(50% + 5px); bottom: -19px; color: hsl(var(--muted-foreground)); }
+  .sim-flow-mobile .sim-flow-node { display: grid; grid-template-columns: minmax(0,1fr) auto; width: 100%; height: auto; min-height: 88px; padding: 10px 12px; column-gap: 8px; }
+  .sim-flow-node-title { grid-column: 1 / -1; font-size: 13px; }
+  .sim-flow-count-label { grid-column: 1; font-size: 10px; align-self: center; }
+  .sim-flow-count { grid-column: 2; grid-row: 2 / 4; align-self: center; text-align: right; font-size: 18px; }
+  .sim-flow-count > span { font-size: 11px; display: block; }
+  .sim-flow-track, .sim-flow-track-spacer { grid-row: 4; grid-column: 1 / -1; }
+  .sim-flow-status { grid-column: 1; grid-row: 3; font-size: 10px; padding-top: 4px; flex-wrap: wrap; }
+  .sim-flow-status .ml-auto { display: none; }
+  .sim-flow-execution .sim-flow-count { grid-row: 2; }
+  .sim-flow-execution .sim-flow-processed { grid-column: 1 / -1; grid-row: 3; padding-top: 2px; }
+  .sim-flow-execution .sim-flow-status { grid-row: 5; grid-column: 1 / -1; }
+  .sim-flow-execution .sim-flow-track { height: 5px; margin-top: 6px; }
+  .sim-flow-legend { padding: 16px; gap: 8px 12px; }
+  .sim-flow-hint { display: none !important; }
+  .sim-flow-detail { padding: 16px; }
+  .sim-flow-facts { gap: 14px; }
+  .sim-flow-facts > div { flex: 1 1 120px; }
+}
+.sim-collection > .sim-flow-node { display: grid; grid-template-columns: minmax(0,1fr) auto; width: 100%; height: auto; min-height: 88px; padding: 10px 14px; column-gap: 8px; border: 0; box-shadow: none; border-radius: 6px 6px 0 0; }
+.sim-collection > .sim-flow-node .sim-flow-node-title { grid-column: 1 / -1; font-size: 14px; }
+.sim-collection > .sim-flow-node .sim-flow-count-label { grid-column: 1; font-size: 11px; }
+.sim-collection > .sim-flow-node .sim-flow-count { grid-column: 2; grid-row: 2 / 4; align-self: center; text-align: right; font-size: 20px; }
+.sim-collection > .sim-flow-node .sim-flow-status { grid-column: 1; grid-row: 3; padding-top: 4px; }
+.sim-collection > .sim-flow-node .sim-flow-track-spacer { display: none; }
+.sim-collection > .sim-flow-node:hover, .sim-collection > .sim-flow-node.is-selected { background: hsl(var(--muted) / .4); }
+@media (prefers-reduced-motion: reduce) {
+  .sim-collection-activity .sim-collection-chain-current::before, .sim-collection-activity .sim-collection-chain-current svg { animation: none; }
+  .sim-flow .react-flow__edge.animated path { animation: none; }
+  .sim-flow-node { transition: none; }
+}
+
+.sim-flow-anomalies { margin-top: 16px; }
+.sim-flow-anomaly { margin-top: 10px; padding: 12px; border: 1px solid hsl(var(--border)); border-radius: 8px; font-size: 12px; overflow-wrap: anywhere; }
+.sim-flow-anomaly > strong { color: hsl(var(--foreground)); }
+.sim-flow-anomaly p { color: hsl(var(--muted-foreground)); margin-top: 5px; line-height: 1.6; }
+.sim-flow-anomaly-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 10px; color: hsl(var(--muted-foreground)); margin-top: 6px; }
+.sim-flow-anomaly ul { margin: 8px 0 0; padding-left: 16px; max-height: 240px; overflow-y: auto; }
+.sim-flow-anomaly li { padding: 3px 0; }
+.sim-flow-node .sim-flow-status { overflow-wrap: anywhere; }
+.sim-flow-node .sim-flow-status > svg { flex-shrink: 0; }
+.sim-flow-status .ml-auto { white-space: nowrap; flex-shrink: 0; }
+.sim-flow-execution { padding-top: 10px; padding-bottom: 10px; }
+
+
+.sim-flow-waiting { --stage-color: #64748b; }
+.dark .sim-flow-waiting { --stage-color: #94a3b8; }
+.sim-flow-mobile-stage { flex: 1; min-width: 0; }
+
+/* An independent maintenance cycle, outside the five-stage business graph. */
+.sim-label-loop { border-top: 1px solid hsl(var(--border)); padding: 12px 20px 0; font-size: 14px; }
+.sim-label-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; }
+.sim-label-heading h4 { display: flex; align-items: center; gap: 8px; font-weight: 500; }
+.sim-label-heading > span { font-size: 12px; }
+.sim-label-timezone { margin-left: auto; color: hsl(var(--muted-foreground)); }
+.sim-label-canvas { width: 100%; max-width: 900px; margin: 0 auto; }
+.sim-label-node { width: 100%; height: 114px; display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border: 1px solid hsl(var(--border)); border-radius: var(--radius); background: hsl(var(--card)); color: hsl(var(--foreground)); text-align: left; }
+.sim-label-node-title { display: flex; align-items: center; gap: 6px; font-size: 14px; line-height: 20px; font-weight: 500; }
+.sim-label-node svg { flex-shrink: 0; color: hsl(var(--muted-foreground)); }
+.sim-label-node-state { display: flex; align-items: center; gap: 6px; font-size: 12px; line-height: 16px; color: hsl(var(--muted-foreground)); }
+.sim-label-node-value { font-size: 14px; line-height: 20px; }
+.sim-label-node-time { display: flex; flex-wrap: wrap; gap: 0 6px; justify-content: space-between; font-size: 12px; line-height: 16px; color: hsl(var(--muted-foreground)); }
+.sim-label-node-time time { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.sim-label-node.is-active { border-color: hsl(var(--primary)); }
+.sim-label-node.is-active svg, .sim-label-node.is-active .sim-label-node-state { color: hsl(var(--primary)); }
+.sim-label-node.is-warning { border-color: hsl(var(--destructive)); }
+.sim-label-node.is-warning .sim-label-node-state { color: hsl(var(--destructive)); }
+@container (max-width: 400px) {
+  .sim-label-loop { padding-inline: 8px; }
+  .sim-label-heading { gap: 4px 8px; }
+}
+
+.sim-flow-desktop.has-label-branch { height: 462px; }
+.sim-label-graph-caption { font-size: 12px; color: hsl(var(--muted-foreground)); white-space: nowrap; }
+.sim-label-attached { position: relative; margin-top: 20px; border-left: 1px dashed hsl(var(--muted-foreground)); }
+.sim-label-attached::before { content: ''; position: absolute; left: 22px; top: -20px; height: 20px; border-left: 1px dashed hsl(var(--muted-foreground)); }
+.sim-label-attached .sim-label-loop { padding: 8px 0 0; border-top: 1px dashed hsl(var(--border)); }
+.sim-label-attached .sim-label-heading { padding-left: 8px; }
+.sim-label-attached .sim-label-timezone { margin-right: 8px; }
+.sim-label-node.is-active .sim-label-node-state svg { animation: sim-label-spin 1.5s linear infinite; }
+@keyframes sim-label-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .sim-label-node.is-active .sim-label-node-state svg { animation: none; } }
+
+.sim-label-node.is-compact { height: 132px; }
+.sim-label-node.is-compact .sim-label-node-time { display: block; }
+.sim-label-node.is-compact time { display: block; }
+
+/* Move directional chevrons, not just the dash pattern. Keep the base path stable. */
+.sim-flow .react-flow__edge.animated .react-flow__edge-path { animation: none; }
+.sim-flow-travelers { opacity: .85; }
+.sim-flow .react-flow__edge .sim-flow-traveler path { stroke-dasharray: none; animation: none; }
+.sim-flow-next.is-scheduled { animation: sim-flow-next-travel 6s linear infinite; }
+.sim-flow-next.is-active { color: hsl(var(--primary)); animation: sim-flow-next-travel 2.4s linear infinite; }
+@keyframes sim-flow-next-travel {
+  from { translate: 0 -4px; opacity: .4; }
+  50% { opacity: 1; }
+  to { translate: 0 4px; opacity: .4; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sim-flow-next.is-active, .sim-flow-next.is-scheduled { animation: none; }
+  .sim-flow-travelers { display: none; }
+}

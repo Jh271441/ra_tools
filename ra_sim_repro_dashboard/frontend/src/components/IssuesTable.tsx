@@ -1,3 +1,4 @@
+import { releaseName } from '../lib/releaseName';
 import { useMemo } from 'react';
 import {
   createColumnHelper,
@@ -65,7 +66,7 @@ export function IssuesTable({
 }: IssuesTableProps) {
   const { t } = useTranslation();
   const versionLabelByKey = useMemo(
-    () => new Map(versions.map((version) => [version.version_key, version.label || version.version_key])),
+    () => new Map(versions.map((version) => [version.version_key, releaseName(version.version_key)])),
     [versions],
   );
   const columns = useMemo(
@@ -171,7 +172,7 @@ export function IssuesTable({
             <option value="">{t('all')}</option>
             {versions.map((version) => (
               <option key={version.version_key} value={version.version_key}>
-                {version.label || version.version_key}
+                {releaseName(version.version_key)}
               </option>
             ))}
           </select>}

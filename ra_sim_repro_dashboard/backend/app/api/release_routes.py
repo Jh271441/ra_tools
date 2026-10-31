@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.services import release_workflow as workflow
 from app.services import simulation_board
+from app.services.read_views import read_view, workflow_status
 
 router = APIRouter(prefix="/api/dashboard/workflow")
 
@@ -30,7 +31,7 @@ def guarded(fn, *args):
 
 @router.get("")
 def status(db: Session = Depends(get_db)):
-    return workflow.status(db)
+    return workflow_status(db)
 
 
 @router.get("/issues")
@@ -42,7 +43,14 @@ def issues(
     label: str = "",
     db: Session = Depends(get_db),
 ):
-    return guarded(workflow.list_issues, db, release, page, page_size, query, label)
+    return read_view(db, ("source-issues", release, page, page_size, query, label),
+                     lambda: guarded(workflow.list_issues, db, release, page, page_size, query, label), max_age=10)
+
+
+@router.get("/versions")
+def collection_versions(db: Session = Depends(get_db)):
+    from app.services.release_inventory import inventory
+    return read_view(db, "collection-inventory", lambda: inventory(db), max_age=10)
 
 
 @router.get("/board")
@@ -52,7 +60,9 @@ def board(
     refresh: bool = False,
     db: Session = Depends(get_db),
 ):
-    value = guarded(simulation_board.board, db, release, refresh)
+    value = (guarded(simulation_board.board, db, release, True) if refresh else
+             read_view(db, ("simulation-board", release),
+                       lambda: guarded(simulation_board.board, db, release, False), max_age=2))
     for job_id in value.pop("refresh_job_ids"):
         tasks.add_task(simulation_board.refresh_progress, job_id, refresh)
     return value

@@ -11,6 +11,8 @@ from app.database import SessionLocal
 from app.models import DashboardSnapshot, ReleaseIssueSnapshot, ReleaseSimulationBatch
 from app.services import release_workflow as workflow
 from app.services.release_metrics import summarize_population
+from app.services.result_publication import publication, effective_publication, published_batch, coverage_policy
+from app.services.release_inventory import inventory
 
 
 def _jobs(db, versions):
@@ -97,6 +99,7 @@ def board(db, release="@current", force=False):
     archive_config = load_versions_config()
     versions = archive_config.get("versions", {})
     periods = {p["release"]: p for p in config.get("periods", [])}
+    collections = {v["release"]: v for v in inventory(db, config)["versions"]}
     native = list(
         db.scalars(
             select(ReleaseSimulationBatch).order_by(
@@ -104,7 +107,7 @@ def board(db, release="@current", force=False):
             )
         )
     )
-    keys = set(versions) | set(periods) | {b.release for b in native}
+    keys = set(versions) | set(periods) | set(collections) | {b.release for b in native}
     if current["current_version"]:
         keys.add(current["current_version"])
     selected = current["current_version"] if release == "@current" else release
@@ -117,11 +120,13 @@ def board(db, release="@current", force=False):
         "label": versions.get(selected, {}).get("label") or selected,
         "is_current": is_current,
         "period": period,
-        "kind": "current" if is_current else "cycle" if period else "archived",
+        "kind": "current" if is_current else "cycle" if period else "observation" if selected in collections else "archived",
+        "collection": collections.get(selected),
         "issue_count": None,
         "scenario_count": None,
         "source_metrics": None,
         "metrics": {"available": False},
+        "publication_policy": coverage_policy(config),
         "binary_id": (period or {}).get("binary_id")
         or versions.get(selected, {}).get("binary_id"),
         "synced_at": None,
@@ -143,7 +148,7 @@ def board(db, release="@current", force=False):
         data["synced_at"] = (
             current["last_sync"].get("checked_at") or current["synced_at"]
         )
-    elif period:
+    elif period or selected in collections:
         snapshot = db.scalars(
             select(ReleaseIssueSnapshot)
             .where(ReleaseIssueSnapshot.release == selected)
@@ -160,7 +165,11 @@ def board(db, release="@current", force=False):
                 metrics=workflow.metrics_for_snapshot(db, snapshot),
                 synced_at=snapshot.created_at.replace(tzinfo=timezone.utc).isoformat(),
                 population_complete=snapshot.payload.get("population_complete", False),
+                binary_id=data["binary_id"] or snapshot.payload.get("period", {}).get("binary_id"),
             )
+    if selected in collections and collections[selected]["source"] == "observation":
+        collection = collections[selected]
+        data.update(issue_count=collection["auto_count"], synced_at=collection["synced_at"])
     snapshot = db.scalars(
         select(DashboardSnapshot)
         .where(DashboardSnapshot.config_hash == config_hash(archive_config))
@@ -244,10 +253,14 @@ def board(db, release="@current", force=False):
         if job["job_id"] and _due(cache, force) and current["driver_ready"]:
             refresh_ids.append(int(job["job_id"]))
     data["jobs"] = jobs
+    from ra_api.release_tolerance import validate_frozen
+    latest_plan = next((b.payload for b in native if b.release == selected and b.payload.get("issue_tolerance")), None)
+    if latest_plan:
+        data["issue_tolerance"] = {**latest_plan["issue_tolerance"], **validate_frozen(latest_plan)}
     imported = (
         next(
             (
-                b.payload["result_import"]
+                {**b.payload["result_import"], "publication_decision": b.payload.get("publication_decision")}
                 for b in native
                 if b.release == selected
                 and b.payload.get("result_import", {}).get("primary")
@@ -266,13 +279,23 @@ def board(db, release="@current", force=False):
         )
         else None
     )
+    approved = published_batch(db, selected)
+    if approved:
+        metrics = effective_publication(db, approved)
+        imported = {**approved.payload["result_import"], "publication": metrics["publication"]}
+        data["metrics"] = metrics
     data["evaluation"] = imported
+    from app.services.label_cycle import public_state
+    data["label_cycle"] = public_state(db, selected)
+    from app.services.release_anomalies import collection_anomalies
+    data["collection_anomalies"] = collection_anomalies(db, selected, data.get("collection"), native)
     return {
         "versions": [
             {
                 "release": key,
                 "is_current": key == current["current_version"],
                 "cycle_status": periods.get(key, {}).get("status"),
+                "collection_status": collections.get(key, {}).get("collection_status"),
                 "has_job": any(b.release == key for b in native)
                 or bool(versions.get(key, {}).get("sim_job_id")),
             }

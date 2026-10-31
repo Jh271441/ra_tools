@@ -19,17 +19,17 @@
   --border: 214 38% 89%;
   --input: 214 38% 87%;
   --ring: 214 94% 53%;
-  --pr-blue: 218 78% 48%;
-  --pr-cyan: 184 88% 34%;
-  --pr-red: 354 72% 49%;
-  --pr-orange: 27 92% 44%;
-  --chart-blue: 216 96% 64%;
+  --pr-precision-road: 214 82% 43%;
+  --pr-precision-sim: 214 92% 65%;
+  --pr-recall-road: 28 86% 40%;
+  --pr-recall-sim: 28 92% 63%;
+  --chart-blue: var(--primary);
   --chart-blue-soft: 216 92% 76%;
   --chart-green: 171 56% 56%;
   --chart-purple: 232 70% 68%;
   --chart-orange: 25 96% 70%;
   --chart-orange-soft: 25 90% 80%;
-  --chart-red: 204 48% 61%;
+  --chart-red: 250 30% 65%;
   --radius: 0.5rem;
 }
 
@@ -50,17 +50,17 @@
   --border: 218 18% 19%;
   --input: 218 18% 27%;
   --ring: 214 94% 58%;
-  --pr-blue: 216 90% 66%;
-  --pr-cyan: 183 76% 48%;
-  --pr-red: 354 88% 68%;
-  --pr-orange: 28 94% 59%;
+  --pr-precision-road: 214 85% 59%;
+  --pr-precision-sim: 214 94% 80%;
+  --pr-recall-road: 28 88% 56%;
+  --pr-recall-sim: 28 94% 78%;
   --chart-blue: 216 96% 68%;
   --chart-blue-soft: 216 90% 78%;
   --chart-green: 171 52% 61%;
   --chart-purple: 232 66% 72%;
   --chart-orange: 25 88% 72%;
   --chart-orange-soft: 25 84% 79%;
-  --chart-red: 204 46% 66%;
+  --chart-red: 250 36% 72%;
 }
 
 * {
@@ -172,6 +172,39 @@ body {
     0 1px 0 hsl(0 0% 100% / 0.06) inset,
     0 0 0 3px color-mix(in oklab, var(--toggle-color) 18%, transparent),
     0 12px 26px hsl(220 20% 2% / 0.24);
+}
+
+/* Series chips stay compact; selection uses tint rather than an outer halo. */
+.chart-metric,
+.chart-metric:hover,
+.chart-metric[aria-pressed="true"],
+.dark .chart-metric,
+.dark .chart-metric:hover,
+.dark .chart-metric[aria-pressed="true"] {
+  box-shadow: none;
+  transform: none;
+}
+
+/* Tools control presentation, so they do not inherit a series colour/glow. */
+.chart-tool,
+.dark .chart-tool {
+  --toggle-color: hsl(var(--muted-foreground));
+  box-shadow: none;
+}
+.chart-tool:hover,
+.chart-tool[aria-pressed="true"],
+.dark .chart-tool:hover,
+.dark .chart-tool[aria-pressed="true"] {
+  color: hsl(var(--foreground));
+  background: hsl(var(--muted));
+  border-color: hsl(var(--muted-foreground) / 0.45);
+  box-shadow: none;
+  transform: none;
+}
+.chart-tool[aria-pressed="false"] {
+  opacity: 1;
+  color: hsl(var(--muted-foreground));
+  background: transparent;
 }
 
 .sidebar-icon-button {

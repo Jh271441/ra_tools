@@ -5,6 +5,7 @@ from sqlalchemy import select
 from app.models import ReleaseIssueSnapshot, ReleaseSimulationBatch
 from app.services.release_workflow import status, effective_config, population_identity
 from app.services.release_metrics import summarize_population
+from app.services.result_publication import publication, effective_publication, published_batch
 
 
 def render_kpi(current, metrics, source):
@@ -30,7 +31,7 @@ def render_kpi(current, metrics, source):
     }
     projection = {
         "available": True,
-        "population_coverage": 1.0,
+        "population_coverage": metrics.get("publication", {}).get("coverage", 1.0),
         "sim_precision": precision,
         "sim_business_recall": recall,
         "precision_gap": precision - metrics["online_precision"]
@@ -59,8 +60,9 @@ def render_kpi(current, metrics, source):
         "fp_suppress_rate": 0,
         "root_causes": {},
         "evaluated_cases": population,
-        "dpe_coverage": 1,
-        "quality_gate_passed": True,
+        "dpe_coverage": metrics.get("publication", {}).get("coverage", 1.0),
+        "quality_gate_passed": metrics.get("quality_gate_passed", True),
+        "publication": metrics.get("publication"),
         "positive_auto_repro_rate": metrics.get("positive_auto_repro_rate") or 0,
         "negative_auto_repro_rate": metrics.get("negative_auto_repro_rate") or 0,
         "positive_manual_repro_rate": metrics.get("positive_manual_repro_rate") or 0,
@@ -77,11 +79,15 @@ def render_kpi(current, metrics, source):
     }
 
 
-def context(db):
-    value = status(db)
+def context(db, value=None):
+    value = status(db) if value is None else value
     current = value.get("current_version")
     metrics = value.get("metrics") or {}
     source = value.get("source_metrics") or {}
+    approved = published_batch(db, current) if current else None
+    if approved:
+        metrics = effective_publication(db, approved)
+        source = metrics
     kpi = (
         render_kpi(current, metrics, source)
         if metrics.get("available") and not value.get("acceptance_only")
@@ -90,7 +96,8 @@ def context(db):
     return {
         "business_current_version": current,
         "business_metrics": kpi,
-        "business_status": "complete"
+        "business_status": "published_with_exclusions"
+        if approved else "complete"
         if kpi
         else "pending_simulation"
         if current
@@ -141,4 +148,10 @@ def history_kpis(db):
         metrics = {**metrics, "job_id": batch.payload.get("job_id")}
         source = summarize_population(snapshot.payload["issues"], [], {})
         items.append(render_kpi(batch.release, metrics, source))
+    for release in allowed:
+        approved = published_batch(db, release)
+        if approved:
+            metrics = effective_publication(db, approved)
+            items = [i for i in items if i["version_key"] != release]
+            items.append(render_kpi(release, metrics, metrics))
     return sorted(items, key=lambda item: item["version_key"])

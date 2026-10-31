@@ -1,3 +1,4 @@
+import { releaseName } from '../lib/releaseName';
 import {
   Bar,
   CartesianGrid,
@@ -10,7 +11,7 @@ import {
   YAxis,
   type LabelProps,
 } from 'recharts';
-import { useState, type CSSProperties, type KeyboardEvent } from 'react';
+import { Fragment, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import { Activity, ArrowDownRight, ArrowUpRight, Gauge, ShieldCheck, Target } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { KpiSummary, SummaryResponse } from '../types';
@@ -125,13 +126,6 @@ function formatChartLabel(value: unknown) {
   return `${Math.round(numeric * 10) / 10}%`;
 }
 
-function shortVersionLabel(value: string) {
-  const dated = value.match(/(?:^|[-_])(\d{4})[-_](\d{2})[-_](\d{2})/);
-  if (dated) return `${dated[2]}-${dated[3]}`;
-  const compact = value.match(/(\d{8})/);
-  if (compact) return `${compact[1].slice(4, 6)}-${compact[1].slice(6, 8)}`;
-  return value.length > 10 ? value.slice(-10) : value;
-}
 
 function TrendValueLabel({
   color,
@@ -197,6 +191,7 @@ export function Overview({ summary, comparison, onOpenIssues, onOpenCurrent }: O
     fp: true,
   });
   const [showTrendLabels, setShowTrendLabels] = useState(true);
+  const [showRoadCounts, setShowRoadCounts] = useState(true);
 
   if (!summary) {
     return (
@@ -212,7 +207,7 @@ export function Overview({ summary, comparison, onOpenIssues, onOpenCurrent }: O
   }
 
   const current = summary.business_metrics || summary.current || summary.legacy_current;
-  if (!current) return <Card><CardContent className="p-5 text-sm">{summary.business_current_version || '当前版本'} · 待完整仿真。<button className="ml-3 text-primary" onClick={onOpenCurrent}>查看周期 Issue</button></CardContent></Card>;
+  if (!current) return <Card><CardContent className="p-5 text-sm">{summary.business_current_version ? releaseName(summary.business_current_version) : '当前版本'} · 待完整仿真。<button className="ml-3 text-primary" onClick={onOpenCurrent}>查看周期 Issue</button></CardContent></Card>;
   const businessPending = Boolean(summary.business_current_version && !summary.business_metrics);
   const kpis = [
     { label: t('simReproRate'), value: pct(current.sim_repro_rate), delta: summary.deltas.sim_repro_rate, icon: Activity, filters: { version: current.version_key, precisionLabel: 'FN' } },
@@ -223,14 +218,18 @@ export function Overview({ summary, comparison, onOpenIssues, onOpenCurrent }: O
 
   const trend = comparison.map((item) => ({
     version_key: item.version_key,
-    version: shortVersionLabel(item.version_key),
+    version: releaseName(item.version_key),
     precision: item.precision == null ? undefined : Math.round(item.precision * 1000) / 10,
     recall: item.recall == null ? undefined : Math.round(item.recall * 1000) / 10,
     f1: item.f1 == null ? undefined : Math.round(item.f1 * 1000) / 10,
     repro: Math.round(item.sim_repro_rate * 1000) / 10,
-    tp: firstNumber(item.sim_estimate?.estimated_tp, item.sim_estimate?.tp, item.reproduced_cases),
-    fn: firstNumber(item.sim_estimate?.estimated_fn, item.sim_estimate?.fn, item.road_positive_cases - item.reproduced_cases),
-    fp: firstNumber(item.sim_estimate?.estimated_fp, item.sim_estimate?.fp, item.sim_positive_cases - item.reproduced_cases),
+    tp: optionalNumber(item.sim_estimate?.estimated_tp) ?? optionalNumber(item.sim_estimate?.tp),
+    fn: optionalNumber(item.sim_estimate?.estimated_fn) ?? optionalNumber(item.sim_estimate?.fn),
+    fp: optionalNumber(item.sim_estimate?.estimated_fp) ?? optionalNumber(item.sim_estimate?.fp),
+    roadTp: optionalNumber(item.source_gt?.auto_trigger_tp),
+    roadFn: optionalNumber(item.source_gt?.manual_trigger_fn),
+    roadFp: optionalNumber(item.source_gt?.auto_trigger_fp),
+    excluded: item.publication?.excluded_scenario_ids.length ?? optionalNumber(item.sim_estimate?.terminal_failed),
   }));
   const sameVersionTrend = comparison.map((item) => {
     const projection = item.sim_estimate?.same_version_projection;
@@ -257,7 +256,7 @@ export function Overview({ summary, comparison, onOpenIssues, onOpenCurrent }: O
     };
   });
   const reproDomain: [number, number] = [60, 100];
-  const countAxis = countScale(trend.flatMap((item) => [item.tp, item.fn, item.fp]));
+  const countAxis = countScale(trend.flatMap((item) => [item.tp, item.fn, item.fp, item.roadTp, item.roadFn, item.roadFp]).filter((v): v is number => v != null));
   const trendChartRows = releaseChartRows(trend);
   const reproControls: Array<{ key: ReproMetric; label: string; color: string }> = [
     { key: 'repro', label: t('simReproRate'), color: chartColors.repro },
@@ -272,6 +271,44 @@ export function Overview({ summary, comparison, onOpenIssues, onOpenCurrent }: O
       if (current[key] && activeCount === 1) return current;
       return { ...current, [key]: !current[key] };
     });
+  }
+
+  const countSeries = [
+    { key: 'tp' as const, roadKey: 'roadTp' as const, label: 'TP', color: chartColors.model },
+    { key: 'fn' as const, roadKey: 'roadFn' as const, label: 'FN', color: chartColors.fn },
+    { key: 'fp' as const, roadKey: 'roadFp' as const, label: 'FP', color: chartColors.fp },
+  ];
+  const countText = (value: number | undefined) => value == null ? '—' : formatCount(value);
+  function comparisonTooltip({ active, label }: { active?: boolean; label?: string | number }) {
+    const row = trend[Number(label)];
+    if (!active || !row) return null;
+    return (
+      <div className="max-w-[300px] p-3 text-xs" style={releaseTooltipStyle}>
+        <div className="mb-2 font-semibold">{row.version_key}</div>
+        <div className="mb-2">{t('simReproRate')} · {formatChartLabel(row.repro)}</div>
+        <table className="w-full tabular-nums">
+          <thead><tr className="text-muted-foreground">
+            <th className="pr-3 text-left">{t('metric')}</th>
+            <th className="px-2 text-right">{t('roadBaseline')}</th>
+            <th className="px-2 text-right">{t('simCalcShort')}</th>
+            <th className="pl-2 text-right">{t('simMinusRoad')}</th>
+          </tr></thead>
+          <tbody>{countSeries.map(({ key, roadKey, label: metric, color }) => {
+            const road = row[roadKey];
+            const sim = row[key];
+            const gap = road == null || sim == null ? undefined : sim - road;
+            return <tr key={key}>
+              <th className="py-1 pr-3 text-left"><span style={{ color }}>●</span> {metric}</th>
+              <td className="px-2 text-right">{countText(road)}</td>
+              <td className="px-2 text-right">{countText(sim)}</td>
+              <td className="pl-2 text-right">{gap == null ? '—' : `${gap > 0 ? '+' : gap < 0 ? '−' : ''}${formatCount(Math.abs(gap))}`}</td>
+            </tr>;
+          })}</tbody>
+        </table>
+        <p className="mt-2 max-w-[260px] text-muted-foreground">{t('countBaselineNote')}</p>
+        {row.excluded != null && row.excluded > 0 ? <p className="mt-1 text-muted-foreground">{t('countExcludedNote', { count: row.excluded })}</p> : null}
+      </div>
+    );
   }
 
   const aggregateRows = comparison.filter((item) => item.source_gt || item.sim_estimate);
@@ -299,7 +336,7 @@ export function Overview({ summary, comparison, onOpenIssues, onOpenCurrent }: O
               <CardContent>
                 <div className="font-mono text-[22px] font-semibold leading-7">{businessPending ? "—" : item.value}</div>
                 <div className="mt-2 flex items-center gap-1 text-[12px] leading-4 text-muted-foreground">
-                  {businessPending ? <span>{summary.business_current_version} · 待完整仿真</span> : <>
+                  {businessPending ? <span>{releaseName(summary.business_current_version)} · 待完整仿真</span> : <>
                   <TrendIcon className={cn('h-3.5 w-3.5', healthy ? 'text-emerald-500 dark:text-primary' : 'text-red-500')} />
                   <span>{delta(item.delta) || '0%'}</span>
                   <span>{t('vsPrevious')}</span>
@@ -313,11 +350,34 @@ export function Overview({ summary, comparison, onOpenIssues, onOpenCurrent }: O
 
       <div className="grid grid-cols-1 gap-4">
         <Card>
-          <CardHeader className="flex-row flex-wrap items-start justify-between gap-3 px-5 pb-1 pt-3">
-            <div className="min-w-0">
+          <CardHeader className="gap-3 px-5 pb-3 pt-4">
+            <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2">
               <CardTitle>{t('continuousReproTrend')}</CardTitle>
+              <div className="ml-auto flex shrink-0 items-center gap-2" role="group" aria-label={t('chartDisplayTools')}>
+              <button
+                type="button"
+                aria-pressed={showRoadCounts}
+                title={t('roadBaselineCompare')}
+                className="chart-toggle chart-tool inline-flex h-8 items-center gap-1.5 rounded-md border border-border/80 px-2.5 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-ring"
+                onClick={() => setShowRoadCounts((value) => !value)}
+              >
+                <span aria-hidden="true" className="h-2.5 w-2.5 rounded-sm border border-dashed border-current bg-current/10" />
+                {t('roadComparisonToggle')}
+              </button>
+              <button
+                type="button"
+                aria-pressed={showTrendLabels}
+                className={cn(
+                  'chart-toggle chart-tool inline-flex h-8 items-center rounded-md border border-border/80 px-2.5 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-ring',
+                )}
+                onClick={() => setShowTrendLabels((value) => !value)}
+              >
+                {showTrendLabels ? t('hideValueLabels') : t('showValueLabels')}
+              </button>
+              </div>
             </div>
-            <div className="flex max-w-[390px] shrink-0 flex-wrap items-center justify-end gap-1">
+            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-border/60 pt-3">
+              <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label={t('chartMetricTools')}>
               {reproControls.map((item) => (
                 <button
                   key={item.key}
@@ -325,7 +385,7 @@ export function Overview({ summary, comparison, onOpenIssues, onOpenCurrent }: O
                   aria-pressed={visibleReproMetrics[item.key]}
                   style={{ '--toggle-color': item.color } as CSSProperties}
                   className={cn(
-                    'chart-toggle inline-flex h-8 items-center gap-1 rounded-md border border-border/80 px-2 text-[11px] font-semibold focus:outline-none focus:ring-1 focus:ring-ring',
+                    'chart-toggle chart-metric inline-flex h-8 items-center gap-1.5 rounded-md border border-border/80 px-2.5 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-ring',
                   )}
                   onClick={() => toggleReproMetric(item.key)}
                 >
@@ -333,20 +393,14 @@ export function Overview({ summary, comparison, onOpenIssues, onOpenCurrent }: O
                   {item.label}
                 </button>
               ))}
-              <button
-                type="button"
-                aria-pressed={showTrendLabels}
-                style={{ '--toggle-color': 'hsl(var(--primary))' } as CSSProperties}
-                className={cn(
-                  'chart-toggle inline-flex h-8 items-center rounded-md border border-border/80 px-2 text-[11px] font-semibold focus:outline-none focus:ring-1 focus:ring-ring',
-                )}
-                onClick={() => setShowTrendLabels((value) => !value)}
-              >
-                {showTrendLabels ? t('hideValueLabels') : t('showValueLabels')}
-              </button>
+              </div>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                {showRoadCounts ? <span className="inline-flex items-center gap-1.5"><span aria-hidden="true" className="h-2.5 w-2.5 rounded-sm border border-dashed border-current bg-muted" />{t('roadBaselineCompare')}</span> : null}
+                <span className="inline-flex items-center gap-1.5"><span aria-hidden="true" className="h-2.5 w-2.5 rounded-sm bg-muted-foreground/70" />{t('simCountLegend')}</span>
+              </div>
             </div>
           </CardHeader>
-          <CardContent className="px-5 pb-5 pt-0">
+          <CardContent className="px-5 pb-4 pt-0">
             <div className="overflow-x-auto">
               <div className="h-72 min-w-[680px]">
             <ResponsiveContainer width="100%" height="100%">
@@ -370,22 +424,15 @@ export function Overview({ summary, comparison, onOpenIssues, onOpenCurrent }: O
                   axisLine={false}
                   tickLine={false}
                 />
-                <Tooltip {...tooltipProps} {...releaseTooltip} labelFormatter={(index: number) => trend[index]?.version_key ?? ''} />
-                {visibleReproMetrics.tp ? (
-                  <Bar yAxisId="count" dataKey="tp" fill={chartColors.model} fillOpacity={0.78} radius={[4, 4, 0, 0]} maxBarSize={22} isAnimationActive={false}>
-                    <LabelList dataKey="tp" position="top" formatter={(value: number) => formatCount(value)} fill="hsl(var(--foreground))" stroke="hsl(var(--card))" strokeWidth={3} paintOrder="stroke" fontSize={11} fontWeight={600} />
-                  </Bar>
-                ) : null}
-                {visibleReproMetrics.fn ? (
-                  <Bar yAxisId="count" dataKey="fn" fill={chartColors.fn} fillOpacity={0.78} radius={[4, 4, 0, 0]} maxBarSize={22} isAnimationActive={false}>
-                    <LabelList dataKey="fn" position="top" formatter={(value: number) => formatCount(value)} fill="hsl(var(--foreground))" stroke="hsl(var(--card))" strokeWidth={3} paintOrder="stroke" fontSize={11} fontWeight={600} />
-                  </Bar>
-                ) : null}
-                {visibleReproMetrics.fp ? (
-                  <Bar yAxisId="count" dataKey="fp" fill={chartColors.fp} fillOpacity={0.78} radius={[4, 4, 0, 0]} maxBarSize={22} isAnimationActive={false}>
-                    <LabelList dataKey="fp" position="top" formatter={(value: number) => formatCount(value)} fill="hsl(var(--foreground))" stroke="hsl(var(--card))" strokeWidth={3} paintOrder="stroke" fontSize={11} fontWeight={600} />
-                  </Bar>
-                ) : null}
+                <Tooltip {...tooltipProps} {...releaseTooltip} content={comparisonTooltip} />
+                {countSeries.map(({ key, roadKey, label, color }) => visibleReproMetrics[key] ? (
+                  <Fragment key={key}>
+                    {showRoadCounts ? <Bar yAxisId="count" dataKey={roadKey} name={`${t('roadBaseline')} ${label}`} fill={color} fillOpacity={0.18} stroke={color} strokeDasharray="3 2" radius={[3, 3, 0, 0]} maxBarSize={16} isAnimationActive={false} /> : null}
+                    <Bar yAxisId="count" dataKey={key} name={`${t('simCalcShort')} ${label}`} fill={color} fillOpacity={0.78} radius={[4, 4, 0, 0]} maxBarSize={22} isAnimationActive={false}>
+                      {showTrendLabels ? <LabelList dataKey={key} position="top" formatter={(value: number) => value == null ? '' : formatCount(value)} fill="hsl(var(--foreground))" stroke="hsl(var(--card))" strokeWidth={3} paintOrder="stroke" fontSize={11} fontWeight={600} /> : null}
+                    </Bar>
+                  </Fragment>
+                ) : null)}
                 {visibleReproMetrics.repro ? (
                   <Line yAxisId="rate" type="linear" dataKey="repro" stroke={chartColors.repro} strokeWidth={2.5} dot={hollowDot(chartColors.repro, 3.5)} activeDot={hollowDot(chartColors.repro, 5)} isAnimationActive={false}>
                     {showTrendLabels ? <LabelList dataKey="repro" content={renderTrendLabel(chartColors.repro, -8, -14)} /> : null}
@@ -395,6 +442,7 @@ export function Overview({ summary, comparison, onOpenIssues, onOpenCurrent }: O
             </ResponsiveContainer>
               </div>
             </div>
+            <p className="mt-2 text-right text-[11px] leading-4 text-muted-foreground">{t('countHoverHint')}</p>
           </CardContent>
         </Card>
 
@@ -453,7 +501,7 @@ export function Overview({ summary, comparison, onOpenIssues, onOpenCurrent }: O
                         {...interactiveProps(() => onOpenIssues({ version: item.version_key }))}
                       >
                         <td className="px-4 py-3 text-center align-middle">
-                          <div className="font-semibold leading-5">{item.label || item.version_key}</div>
+                          <div className="font-semibold leading-5">{releaseName(item.version_key)}</div>
                           <div className="font-mono text-xs text-muted-foreground">{item.version_key}</div>
                         </td>
                         <td className="px-4 py-3 text-center align-middle">
@@ -505,8 +553,8 @@ export function Overview({ summary, comparison, onOpenIssues, onOpenCurrent }: O
                           {pct(item.dpe_coverage)}
                         </td>
                         <td className="px-4 py-3 text-center align-middle">
-                          <Badge variant={item.quality_gate_passed ? 'success' : 'destructive'}>
-                            {item.quality_gate_passed ? t('qualityPassed') : t('qualityFailed')}
+                          <Badge variant={item.publication ? 'success' : item.quality_gate_passed ? 'success' : 'destructive'}>
+                            {item.publication ? '已发布' : item.quality_gate_passed ? t('qualityPassed') : t('qualityFailed')}
                           </Badge>
                         </td>
                       </tr>
@@ -531,7 +579,7 @@ export function Overview({ summary, comparison, onOpenIssues, onOpenCurrent }: O
             <CardTitle>{t('rootCause')}</CardTitle>
             <p className="mt-1 text-[13px] leading-5 text-muted-foreground">{businessPending ? '历史已完成版本的诊断分布' : t('rootCauseSubtitle')}</p>
           </div>
-          <Badge variant="outline">{current.version_key}</Badge>
+          <Badge variant="outline" title={current.version_key}>{releaseName(current.version_key)}</Badge>
         </CardHeader>
         <CardContent>
           <div className="grid gap-3 md:grid-cols-4">

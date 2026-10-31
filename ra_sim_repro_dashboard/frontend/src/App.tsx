@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { releaseName } from './lib/releaseName';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
   BarChart3,
@@ -20,7 +21,7 @@ import { CurrentBusinessRelease, ReleaseWorkflow } from './components/ReleaseWor
 import { ReleaseIssues } from './components/ReleaseIssues';
 import { IssueDetail } from './components/IssueDetail';
 import { IssuesTable } from './components/IssuesTable';
-import { Overview } from './components/Overview';
+const Overview = lazy(() => import('./components/Overview').then(module => ({ default: module.Overview })));
 import { SystemStatus } from './components/SystemStatus';
 import { TopControls } from './components/TopControls';
 import { Badge } from './components/ui/badge';
@@ -198,22 +199,19 @@ export default function App() {
   const loadDashboard = useCallback(async () => {
     setError('');
     const [versionsResult, summaryResult, comparisonResult] = await Promise.allSettled([
-      api.versions(),
-      api.summary(),
-      api.comparison(),
+      api.versions().then(value => {
+        setVersions(value.versions);
+        localStorage.setItem('ra-dashboard-versions', JSON.stringify(value.versions));
+      }),
+      api.summary().then(value => {
+        setSummary(value);
+        localStorage.setItem('ra-dashboard-summary', JSON.stringify(value));
+      }),
+      api.comparison().then(value => {
+        setComparison(value);
+        localStorage.setItem('ra-dashboard-comparison', JSON.stringify(value));
+      }),
     ]);
-    if (versionsResult.status === 'fulfilled') {
-      setVersions(versionsResult.value.versions);
-      localStorage.setItem('ra-dashboard-versions', JSON.stringify(versionsResult.value.versions));
-    }
-    if (summaryResult.status === 'fulfilled') {
-      setSummary(summaryResult.value);
-      localStorage.setItem('ra-dashboard-summary', JSON.stringify(summaryResult.value));
-    }
-    if (comparisonResult.status === 'fulfilled') {
-      setComparison(comparisonResult.value);
-      localStorage.setItem('ra-dashboard-comparison', JSON.stringify(comparisonResult.value));
-    }
     const failed = [versionsResult, summaryResult, comparisonResult].find(
       (result) => result.status === 'rejected',
     );
@@ -250,10 +248,18 @@ export default function App() {
   useEffect(() => { setIssuePage(1); }, [filters]);
 
   useEffect(() => {
+    if (page === 'issues') {
+      // The source Issue page uses its own inventory; only legacy options need
+      // this small request. Summary and charts belong to the overview.
+      let active = true;
+      void api.versions().then(value => { if (active) setVersions(value.versions); }).catch(() => {});
+      return () => { active = false; };
+    }
+    if (page !== 'overview') return;
     void loadDashboard();
-    const timer=window.setInterval(() => void loadDashboard(),30000);
+    const timer=window.setInterval(() => { if (!document.hidden) void loadDashboard(); },30000);
     return () => window.clearInterval(timer);
-  }, [loadDashboard]);
+  }, [loadDashboard, page]);
 
   useEffect(() => {
     if (page !== 'issues' || !showLegacyIssues) return;
@@ -481,7 +487,7 @@ export default function App() {
               )}
               role={sidebarCollapsed ? 'button' : undefined}
               tabIndex={sidebarCollapsed ? 0 : undefined}
-              title={current?.label || current?.version_key || t('currentVersion')}
+              title={current?.version_key || t('currentVersion')}
               onClick={sidebarCollapsed ? () => openIssues({ version: current?.version_key || '' }) : undefined}
               onKeyDown={
                 sidebarCollapsed
@@ -502,7 +508,7 @@ export default function App() {
                     <GitCompareArrows className="h-3.5 w-3.5" />
                     {'当前业务版本'}
                   </div>
-                  <div className="truncate text-[13px] font-semibold">{current?.label || current?.version_key || '-'}</div>
+                  <div className="truncate text-[13px] font-semibold">{releaseName(current?.version_key)}</div>
                   <div className="mt-1 font-mono text-[11px] text-muted-foreground">
                     {current?.sim_job_id ? `job ${current.sim_job_id}` : 'job -'}
                   </div>
@@ -524,7 +530,7 @@ export default function App() {
                 <div className="mb-1 flex flex-wrap items-center gap-2">
                   <Badge variant="secondary">
                     <Database className="h-3.5 w-3.5" />
-                    {current?.label || '-'}
+                    {releaseName(current?.version_key)}
                   </Badge>
                   {refreshJob ? (
                     <Badge variant={refreshing ? 'warning' : refreshJob.status === 'completed' ? 'success' : 'destructive'}>
@@ -585,7 +591,7 @@ export default function App() {
                 <div className="flex min-w-0 flex-wrap items-center gap-2">
                   <Badge variant="secondary">
                     <Database className="h-3.5 w-3.5" />
-                    {'当前业务版本'}: {current?.label || current?.version_key || '-'}
+                    {'当前业务版本'}: {releaseName(current?.version_key)}
                   </Badge>
                   {current?.sim_job_id ? <Badge variant="outline">{t('job')} {current.sim_job_id}</Badge> : null}
                   <Badge variant="outline">{versions.length} {t('versions')}</Badge>
@@ -675,16 +681,16 @@ export default function App() {
               </div>
             ) : null}
 
-            {page !== 'status' && <CurrentBusinessRelease />}
+            {page !== 'status' && page !== 'issues' && <CurrentBusinessRelease />}
             {page === 'status' ? (
               <SystemStatus />
             ) : page === 'overview' ? (
-              <Overview summary={summary} comparison={visibleComparison} onOpenIssues={openIssues} onOpenCurrent={openCurrentIssues} />
+              <Suspense fallback={<p className="text-sm text-muted-foreground">正在加载总览…</p>}><Overview summary={summary} comparison={visibleComparison} onOpenIssues={openIssues} onOpenCurrent={openCurrentIssues} /></Suspense>
             ) : page === 'simulation' ? (
               <ReleaseWorkflow onOpenIssues={version => version ? openIssues({ version }) : openCurrentIssues()} />
             ) : (
-              <ReleaseIssues versions={versions} version={filters.version || '@current'} onVersionChange={version => {
-                const value = version === '@current' ? '' : version;
+              <ReleaseIssues versions={versions} version={filters.version || '@stable'} onVersionChange={version => {
+                const value = version === '@stable' ? '' : version;
                 setFilters({ ...defaultFilters, version: value });
                 setPage('issues', value);
               }} onHistoryChange={setShowLegacyIssues} history={<div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(380px,0.75fr)]">

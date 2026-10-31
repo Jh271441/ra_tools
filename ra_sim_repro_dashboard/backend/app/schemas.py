@@ -48,6 +48,7 @@ class KpiSummary(BaseModel):
     positive_manual_repro_rate: float = 0.0
     evaluated_cases: int = 0
     dpe_coverage: float = 0.0
+    publication: dict[str, Any] | None = None
     quality_gate_passed: bool = True
     root_causes: dict[str, int]
     source_gt: dict[str, Any] | None = None

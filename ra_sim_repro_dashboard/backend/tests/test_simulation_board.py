@@ -167,3 +167,39 @@ def test_archived_values_remain_visible_with_separate_quality_status(setup):
     metrics = board.board(setup, "old")["selected"]["metrics"]
     assert metrics["available"] and metrics["precision"] == 0.8
     assert metrics["archived"] and not metrics["quality_gate_passed"]
+
+
+def test_collecting_versions_are_selectable_without_period_or_job(setup, monkeypatch):
+    from datetime import datetime, timezone
+    from app.services import release_watch as watch
+    db = setup
+    now = datetime.now(timezone.utc).isoformat()
+    for release in ['gen4-release-20261009', 'gen4-release-20261016']:
+        workflow.put_state(db, 'release_monitor:' + release, dict(release=release, status='observing',
+            activity_hash=release, issue_count=1, last_success_at=now, quiet_seconds=1800))
+        workflow.put_state(db, 'release_observation:' + release, dict(activity_hash=release,
+            observed_at=now, issues=[dict(issue_id=release, ra_type=2)]))
+    monkeypatch.setattr(watch, 'fetch_activity', lambda *_: pytest.fail('GET must not fetch upstream'))
+    value = board.board(db, 'gen4-release-20261009')
+    assert {v['release'] for v in value['versions']} >= {'gen4-release-20261009', 'gen4-release-20261016'}
+    selected = value['selected']
+    assert selected['kind'] == 'observation'
+    assert selected['collection']['quiet_seconds'] == 1800
+    assert selected['issue_count'] == 1
+    assert not selected['jobs'] and not selected['metrics']['available']
+
+
+def test_observed_release_shows_prepared_scenes_before_catalog_or_job(setup, monkeypatch):
+    from datetime import datetime, timezone
+    from app.models import ReleaseIssueSnapshot
+    release = 'gen4-release-20261009'
+    now = datetime.now(timezone.utc).isoformat()
+    workflow.put_state(setup, 'release_monitor:' + release, dict(release=release,status='blocked',activity_hash='scope',issue_count=1,last_success_at=now,quiet_seconds=86400))
+    workflow.put_state(setup, 'release_observation:' + release, dict(activity_hash='scope',observed_at=now,issues=[dict(issue_id='cn1',ra_type=2)]))
+    setup.add(ReleaseIssueSnapshot(period_hash='scope',release=release,payload={'issues':[{'issue_id':'cn1','ra_type':2}], 'scenarios':[{'scenario_id':'42'}], 'period':{'binary_id':123}, 'population_complete':True}))
+    setup.commit()
+    monkeypatch.setattr(board,'summarize_population',lambda *_: {})
+    monkeypatch.setattr(workflow,'metrics_for_snapshot',lambda *_: {'available':False})
+    value=board.board(setup,release)['selected']
+    assert value['scenario_count']==1 and value['binary_id']==123
+    assert value['kind']=='observation' and not value['jobs']
