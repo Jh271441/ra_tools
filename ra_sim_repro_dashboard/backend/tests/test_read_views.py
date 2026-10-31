@@ -1,5 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
-from threading import Lock
+from threading import Event, Lock
 from time import sleep
 
 import pytest
@@ -83,6 +83,28 @@ def test_simultaneous_requests_fill_once(engine):
     with ThreadPoolExecutor(max_workers=6) as pool:
         assert list(pool.map(request, range(6))) == [{'result': 'ready'}] * 6
     assert len(calls) == 1
+
+
+def test_slow_view_does_not_block_other_views_or_cached_responses(engine):
+    started, release = Event(), Event()
+    def read(name, load):
+        with Session(engine) as db:
+            return views.read_view(db, name, load)
+    def slow():
+        started.set()
+        assert release.wait(5)
+        return 'slow-ready'
+    assert read('cached', lambda: 'cached-ready') == 'cached-ready'
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        pending = pool.submit(read, 'slow', slow)
+        try:
+            assert started.wait(2)
+            assert pool.submit(read, 'cached', lambda: pytest.fail('cache miss')).result(timeout=2) == 'cached-ready'
+            assert pool.submit(read, 'independent', lambda: 'ready').result(timeout=2) == 'ready'
+        finally:
+            release.set()
+        assert pending.result(timeout=2) == 'slow-ready'
+    assert not views._fills
 
 
 def test_expiration_failures_and_database_isolation(engine, monkeypatch):

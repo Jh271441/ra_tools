@@ -131,3 +131,30 @@ def test_changed_actual_runtime_cannot_merge_recovery(db,config,running):
     metrics=effective_publication(db,batch)
     assert metrics['publication']['valid_issue_count']==197
     assert metrics['publication']['source_job_ids']==[101]
+
+
+def test_scene_ledger_hashes_each_execution_once_and_still_rejects_tampering(db,config,running,monkeypatch):
+    from app.services import result_publication as published
+    batch,*_=running
+    w.poll_batches(db,config)
+    original_hash=published.audit_hash
+    calls=[]
+    def audit(payload):
+        calls.append(payload['job_id'])
+        return original_hash(payload)
+    monkeypatch.setattr(published,'audit_hash',audit)
+    results,lineage=lane.collect_results(db,batch,batch.payload)
+    assert len(results)==197 and len(lineage)==197
+    assert calls==[batch.payload['job_id']]
+    assert {item['audit_hash'] for item in lineage.values()}=={original_hash(batch.payload)}
+
+    lane.refresh_release(db,config,batch)
+    base=publication(batch)
+    calls.clear()
+    metrics=lane.revision_metrics(db,batch,base)
+    assert metrics.get('backfill_revision') and calls==[batch.payload['job_id']]
+    revision=deepcopy(w.get_state(db,metrics['backfill_revision']))
+    # A conflicting later entry must still fail after the execution hash is reused.
+    list(revision['lineage'].values())[-1]['audit_hash']='tampered'
+    w.put_state(db,metrics['backfill_revision'],revision)
+    assert lane.revision_metrics(db,batch,base)==base

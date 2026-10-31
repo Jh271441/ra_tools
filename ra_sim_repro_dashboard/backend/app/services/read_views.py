@@ -17,6 +17,7 @@ from app.services.release_cycle import TZ
 
 _lock = RLock()
 _values = OrderedDict()
+_fills = {}
 _MAX_ENTRIES = 96
 
 
@@ -58,19 +59,35 @@ def read_view(db, name, load, *, max_age=300):
         return load()
     token = revision(db)
     key = (token, name)
-    # Serialize fills so simultaneous page reads don't repeat the same expensive
-    # validation under the GIL. Hits only copy small public response payloads.
+    # Only requests for the same revision and view share a fill lock. A slow
+    # board must not block unrelated pages or cache hits while holding the DB.
     with _lock:
         existing = _values.get(key)
         if existing and monotonic() - existing[0] < max_age:
             _values.move_to_end(key)
             return deepcopy(existing[1])
-        value = load()
-        _values[key] = (monotonic(), deepcopy(value))
-        _values.move_to_end(key)
-        while len(_values) > _MAX_ENTRIES:
-            _values.popitem(last=False)
-        return value
+        fill = _fills.setdefault(key, [RLock(), 0])
+        fill[1] += 1
+    try:
+        with fill[0]:
+            with _lock:
+                existing = _values.get(key)
+                if existing and monotonic() - existing[0] < max_age:
+                    _values.move_to_end(key)
+                    return deepcopy(existing[1])
+            value = load()
+            cached = deepcopy(value)
+            with _lock:
+                _values[key] = (monotonic(), cached)
+                _values.move_to_end(key)
+                while len(_values) > _MAX_ENTRIES:
+                    _values.popitem(last=False)
+            return value
+    finally:
+        with _lock:
+            fill[1] -= 1
+            if not fill[1]:
+                del _fills[key]
 
 
 def workflow_status(db):

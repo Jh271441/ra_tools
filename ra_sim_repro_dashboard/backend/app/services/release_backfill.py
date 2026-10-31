@@ -5,6 +5,7 @@ it never disguises a union as a single Orion job or picks a more favourable run.
 """
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
+from itertools import chain
 from sqlalchemy import select
 from app.models import ReleaseIssueSnapshot, ReleaseSimulationBatch
 from app.services import release_workflow as w
@@ -18,8 +19,11 @@ MAX_ATTEMPTS = 3
 
 
 def snapshots(db, release):
-    return list(db.scalars(select(ReleaseIssueSnapshot).where(
-        ReleaseIssueSnapshot.release == release).order_by(ReleaseIssueSnapshot.id.desc())))
+    # Stream until the frozen source is found; most reads only need the latest
+    # snapshot. Fetching all historical JSON first multiplies memory and latency.
+    return db.scalars(select(ReleaseIssueSnapshot).where(
+        ReleaseIssueSnapshot.release == release).order_by(ReleaseIssueSnapshot.id.desc())
+        .execution_options(yield_per=1))
 
 
 def compatible_source(old, new):
@@ -35,8 +39,16 @@ def compatible_source(old, new):
 
 def frozen_snapshot_valid(db, batch):
     rows = snapshots(db, batch.release)
-    source = next((s.payload for s in rows if w.population_identity(s.payload) == batch.payload['population_hash']), None)
-    return bool(rows and source and compatible_source(source, rows[0].payload))
+    try:
+        latest = next(rows, None)
+        if latest is None:
+            return False
+        for snapshot in chain((latest,), rows):
+            if w.population_identity(snapshot.payload) == batch.payload['population_hash']:
+                return compatible_source(snapshot.payload, latest.payload)
+        return False
+    finally:
+        rows.close()
 
 
 def executions(db, release):
@@ -65,6 +77,7 @@ def collect_results(db, base, full):
         if b is not base and (not p['result_import'].get('execution_contract_hash')
                 or p['result_import']['execution_contract_hash'] != base.payload['result_import'].get('execution_contract_hash')):
             raise ValueError('execution_contract_changed')
+        execution_hash = None
         for scene in p['scenarios']:
             sid = str(scene['scenario_id'])
             if sid not in expected or any(scene.get(k) != expected[sid].get(k) for k in
@@ -75,8 +88,10 @@ def collect_results(db, base, full):
             detail = p.get('scenario_results', {}).get(sid, {})
             if detail.get('status') != 'result_ready' or detail.get('errors'):
                 raise ValueError('result_audit_missing')
+            if execution_hash is None:
+                execution_hash = audit_hash(p)
             results[sid] = p['results'][sid]
-            lineage[sid] = {'fingerprint':b.fingerprint, 'job_id':p['job_id'], 'audit_hash':audit_hash(p)}
+            lineage[sid] = {'fingerprint':b.fingerprint, 'job_id':p['job_id'], 'audit_hash':execution_hash}
     return results, lineage
 
 
@@ -131,13 +146,21 @@ def revision_metrics(db, base, metrics):
     if not revision or revision.get('base_fingerprint') != base.fingerprint:
         return metrics
     from app.services.result_publication import audit_hash
+    execution_hashes = {}
     for item in revision['lineage'].values():
-        execution = db.get(ReleaseSimulationBatch, item['fingerprint'])
-        if not execution or audit_hash(execution.payload) != item['audit_hash']:
+        fingerprint = item['fingerprint']
+        if fingerprint not in execution_hashes:
+            execution = db.get(ReleaseSimulationBatch, fingerprint)
+            execution_hashes[fingerprint] = audit_hash(execution.payload) if execution else None
+        if execution_hashes[fingerprint] is None or execution_hashes[fingerprint] != item['audit_hash']:
             return metrics
     current = snapshots(db, base.release)
-    if (not frozen_snapshot_valid(db, base) or not current
-            or w.population_identity(current[0].payload) != revision['population_hash']):
+    try:
+        latest = next(current, None)
+    finally:
+        current.close()
+    if (not latest or w.population_identity(latest.payload) != revision['population_hash']
+            or not frozen_snapshot_valid(db, base)):
         return metrics
     return {**metrics, **revision['summary'], 'generated_at':revision['applied_at'],
         'backfill_revision':revision['revision_key'],
