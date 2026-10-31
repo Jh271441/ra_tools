@@ -1025,6 +1025,29 @@ class DatabaseCasesMixin:
             return None
         return self._issue_dict(issue)
 
+    def get_media_issue(self, issue_id: str) -> dict[str, Any] | None:
+        """Resolve read-only media without admitting a registry member to Review.
+
+        The version gallery includes published, non-target members that never
+        had an ``issues`` row. Their indexed media remains viewable; labels,
+        assignments and writable Case lookup still require the ordinary row.
+        Do not invent a capture trip or timestamp from registry metadata.
+        """
+        issue = self.get_issue(issue_id)
+        if issue is not None:
+            return issue
+        with self.connect() as conn:
+            reference = conn.execute(
+                "SELECT i.issue_id FROM version_dataset_items i "
+                "JOIN version_datasets d ON d.id = i.dataset_id "
+                "WHERE i.issue_id = ? AND i.state IN ('inferred', 'published') LIMIT 1",
+                (issue_id,),
+            ).fetchone()
+        if reference is None:
+            return None
+        return {"issue_id": issue_id, "baseline_scope": "", "gt_label": "",
+                "reference_media": True}
+
     def review_clusters(
         self,
         *,

@@ -49,6 +49,35 @@ class VersionDatasetsTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.ingest([self.packet("cn3", "20261023")], "b")
 
+    def test_published_non_target_media_lookup_does_not_admit_review_case(self):
+        self.ingest([
+            dict(self.packet("cn1"), state="published"),
+            dict(self.packet("cn2"), state="inferred"),
+            self.packet("cn3"),
+            dict(self.packet("cn4"), state="excluded"),
+        ])
+        before = self.db.version_dataset_items("release-20261009-odd2", mode="all")
+        for iid in ("cn1", "cn2"):
+            reference = self.db.get_media_issue(iid)
+            self.assertTrue(reference["reference_media"])
+            self.assertEqual(reference["gt_label"], "")
+            self.assertNotIn("trip_id", reference)
+            self.assertIsNone(self.db.get_issue(iid))
+            self.assertIsNone(self.db.get_case(iid))
+        for iid in ("cn3", "cn4", "cn9999"):
+            self.assertIsNone(self.db.get_media_issue(iid))
+        self.assertEqual(self.db.version_dataset_items("release-20261009-odd2", mode="all"), before)
+        self.assertEqual(self.db.version_dataset_items("release-20261009-odd2")["total"], 0)
+        self.assertEqual(self.db.list_model_runs(), [])
+
+    def test_media_reference_keeps_existing_issue_scope_and_gt(self):
+        self.ingest([dict(self.packet(), state="published")])
+        self.db.upsert_issues([dict(issue_id="cn1", gt_label="误触发", trip_id="original_trip")],
+                              source="existing", replace_gt=False, baseline_scope="original_scope")
+        original = self.db.get_issue("cn1")
+        self.assertEqual(self.db.get_media_issue("cn1"), original)
+        self.assertEqual(self.db.get_issue("cn1"), original)
+
     def test_current_membership_filter_preserves_frozen_campaign_scope(self):
         from unittest.mock import patch
         from ra_triage_dashboard.app.support import baselines,filter_parsing
