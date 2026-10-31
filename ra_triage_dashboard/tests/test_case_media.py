@@ -3,6 +3,7 @@ from __future__ import annotations
 import threading
 import unittest
 from types import SimpleNamespace
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from ra_triage_dashboard.app import case_media
@@ -35,6 +36,7 @@ class DeferredCaseMediaTest(unittest.IsolatedAsyncioTestCase):
             cases_router,
             "settings",
             SimpleNamespace(
+                data_dir=Path("/tmp/ra-triage-test-no-simulation-links"),
                 trail_detail_metadata_enabled=True,
                 ra_auto_triage_root="/tmp/ra-auto-triage-test",
                 trail_view_id=2410,

@@ -52,6 +52,7 @@ from ..support.catalogs import REVIEW_TAG_ALIASES
 from ..support.identity import _admin_identity, _writer_identity
 from ..support.thumbnails import _render_case_thumbnail, _thumbnail_cache_path
 from ..review_workflow import derive_review_status, effective_expected_output
+from ..simulation_links import read_verified_disable_ra_simulation
 from ..auth import SessionIdentity, normalise_username, request_identity
 from ..runtime import (
     asset_index,
@@ -1339,7 +1340,13 @@ async def get_case_trail_metadata(issue_id: str) -> dict[str, Any]:
             logger.warning("Trail detail metadata unavailable issue_id=%s", issue_id)
 
     disable_ra_task_id = trail_metadata.get("te_task_id_disabe_ra")
-    if disable_ra_task_id not in (None, ""):
+    manual_simulation = await asyncio.to_thread(
+        read_verified_disable_ra_simulation,
+        settings.data_dir,
+        issue_id,
+        source_task_id=disable_ra_task_id,
+    )
+    if manual_simulation is None and disable_ra_task_id not in (None, ""):
         try:
             trail_metadata["te_task_version_disabe_ra"] = await asyncio.wait_for(
                 asyncio.to_thread(
@@ -1366,7 +1373,9 @@ async def get_case_trail_metadata(issue_id: str) -> dict[str, Any]:
     return {
         "issue_id": issue_id,
         "status": status,
-        "external_links": _case_external_links(issue_id, trail_metadata),
+        "external_links": _case_external_links(
+            issue_id, trail_metadata, disable_ra_simulation=manual_simulation
+        ),
         # This is a read-only projection of the namespaced Trail info marker.
         # It deliberately does not create a local Review annotation or alter
         # Review aggregate counts until the reviewer saves the checkbox.

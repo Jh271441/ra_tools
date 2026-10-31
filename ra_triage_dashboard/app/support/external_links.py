@@ -127,7 +127,12 @@ def _disable_ra_simulation_url(task_id: Any, task_version: Any = 0) -> str:
     return f"{voyager.scheme}://{voyager.netloc}/static/ares-animation/?{query}"
 
 
-def _case_external_links(issue_id: str, metadata: dict[str, Any]) -> dict[str, Any]:
+def _case_external_links(
+    issue_id: str,
+    metadata: dict[str, Any],
+    *,
+    disable_ra_simulation: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Expose the small, read-only RA link/event subset to the browser."""
 
     events = metadata.get("ra_event")
@@ -158,20 +163,26 @@ def _case_external_links(issue_id: str, metadata: dict[str, Any]) -> dict[str, A
     safe_events = safe_events[:64]
     event_count = len(safe_events)
     ares_metadata = ares_playback_metadata(metadata, safe_events)
+    simulation = disable_ra_simulation or {
+        "task_id": metadata.get("te_task_id_disabe_ra"),
+        "task_version": metadata.get("te_task_version_disabe_ra", 0),
+    }
     return {
         "ra_recording_url": _ra_recording_url(metadata.get("ra_id")),
         "ra_event_url": _voyager_issue_url(issue_id) if event_count else "",
         "disable_ra_simulation_url": _disable_ra_simulation_url(
-            metadata.get("te_task_id_disabe_ra"),
-            metadata.get("te_task_version_disabe_ra", 0),
+            simulation.get("task_id"),
+            simulation.get("task_version", 0),
         ),
         "ra_task_id": _as_text(metadata.get("ra_id")),
         "disable_ra_simulation_task_id": _as_text(
-            metadata.get("te_task_id_disabe_ra")
+            simulation.get("task_id")
         ),
-        "disable_ra_simulation_task_version": metadata.get(
-            "te_task_version_disabe_ra", 0
-        ),
+        "disable_ra_simulation_task_version": simulation.get("task_version", 0),
+        **({
+            "disable_ra_simulation_source": "manual",
+            "disable_ra_simulation_original_task_id": simulation["source_task_id"],
+        } if disable_ra_simulation else {}),
         "ra_event_count": event_count,
         "ra_events": safe_events,
         # These two allowlisted values are sufficient to construct the Ares
