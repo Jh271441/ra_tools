@@ -84,7 +84,9 @@ export async function layout(model) {
   for (const edge of model.edges) {
     const source = tasks.get(edge.source), target = tasks.get(edge.target);
     if (source.parentId === target.parentId) continue;
-    const right = source.lane.x + source.lane.width + OUTER_CHANNEL;
+    // A receipt can leave an intermediate task. Turn down in its next gap;
+    // a horizontal run to the lane's right edge would cross downstream cards.
+    const right = source.x + TASK_WIDTH + OUTER_CHANNEL;
     const left = target.lane.x - OUTER_CHANNEL;
     const channelY = (source.lane.y + source.lane.height + target.lane.y) / 2;
     const sourceY = source.y + source.ports.find(port => port.id === `${edge.id}:source`).y;

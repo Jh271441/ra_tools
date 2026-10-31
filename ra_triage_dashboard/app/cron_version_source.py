@@ -42,11 +42,20 @@ def version_queue_states(state):
         return None
 
 
-def media_counts(targets, reused, published, failed, queued):
-    verified = (reused | published) & targets
-    return {"selected": len(targets), "verified": len(verified),
-            "reused": len(reused & targets), "failure_count": len((failed - verified) & targets),
-            "queued": len((queued - verified) & targets)}
+def media_counts(targets, reused, published, failed, queued, closeup=None):
+    target_ids = set(targets)
+    verified = (reused | published) & target_ids
+    result = {"selected": len(targets), "verified": len(verified),
+            "reused": len(reused & target_ids), "failure_count": len((failed - verified) & target_ids),
+            "queued": len((queued - verified) & target_ids)}
+    # Existing receipts prove both original tracks, not separate in-flight
+    # track completion. Keep that lower bound explicit.
+    result.update(camera_verified=len(verified), bev_verified=len(verified),
+                  track_counts_basis="paired_publication_receipts")
+    if closeup:
+        result["closeup"] = closeup.project(targets, verified)
+        result["triple_verified"] = result["closeup"]["triple_verified"]
+    return result
 
 
 def version_status(root):
@@ -66,14 +75,29 @@ def version_status(root):
     from .runtime import database
 
     datasets = database.list_version_datasets()
-    targets_by_family = defaultdict(set)
+    from .cron_closeup_source import CloseupCohort
+    closeup = CloseupCohort(root)
+    targets_by_family = defaultdict(dict)
     with database.connect() as conn:
-        for row in conn.execute(
-            "SELECT d.release_family,i.issue_id FROM version_dataset_items i "
-            "JOIN version_datasets d ON d.id=i.dataset_id WHERE i.is_target=1"
-        ).fetchall():
-            targets_by_family[str(row["release_family"])].add(row["issue_id"])
-    targets = set().union(*targets_by_family.values())
+        target_rows = conn.execute(
+            "SELECT d.release_family,i.issue_id,i.source_json FROM version_dataset_items i "
+            "JOIN version_datasets d ON d.id=i.dataset_id WHERE i.is_target=1 LIMIT 20001"
+        ).fetchall()
+        if len(target_rows) > 20000:
+            raise ValueError("oversized_media_cohort")
+        for row in target_rows:
+            family = str(row["release_family"])
+            if len(row["source_json"]) > 100000:
+                raise ValueError("oversized_media_identity")
+            source = json.loads(row["source_json"])
+            if not isinstance(source, dict) or not re.fullmatch(r"20\d{6}", family):
+                raise ValueError("invalid_media_identity")
+            targets_by_family[family][row["issue_id"]] = {
+                "trip_id": source.get("trip_id"),
+                "ra_start_timestamp": source.get("ra_start_timestamp"),
+                "scope": "manual_sidecar_version_" + family,
+            }
+    targets = {iid: value for rows in targets_by_family.values() for iid, value in rows.items()}
     reused = set()
     published = set()
     failed = set()
@@ -104,7 +128,7 @@ def version_status(root):
         "versions": [{"family": family,
                       "states": (queue_states or {}).get(family),
                       "states_status": "ready" if queue_states is not None and family in queue_states else "unavailable",
-                      "media": media_counts(targets_by_family[family], reused, published, failed, queued)}
+                      "media": media_counts(targets_by_family[family], reused, published, failed, queued, closeup)}
                      for family in families],
         "updated_at": heartbeat.get("checked_at"),
         "stale": time.time() - heartbeat.get("checked_at", 0) > 1200,
@@ -113,5 +137,5 @@ def version_status(root):
                                "timezone": "Asia/Shanghai", "next_at": heartbeat.get("discovery_schedule", {}).get("next_at")},
         "increments": incremental_history(state, control, datasets, database),
         "datasets": datasets,
-        "media": media_counts(targets, reused, published, failed, queued),
+        "media": media_counts(targets, reused, published, failed, queued, closeup),
     }

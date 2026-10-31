@@ -97,6 +97,27 @@ function cronTimingRows(timing, { stale = false } = {}) {
 
 function cronCount(value) { return typeof value === "number" && Number.isFinite(value) ? value.toLocaleString() : "—"; }
 function cronFraction(done, total) { return `${cronCount(done)} / ${cronCount(total)}`; }
+
+function cronMediaOutcome(media, stale = false) {
+  if (stale) return 'stalled';
+  if (!media || media.closeup?.receipt_status !== 'ready') return 'unknown';
+  if (media.selected === 0) return 'waiting';
+  if (media.triple_verified === media.selected) return 'complete';
+  if (media.failure_count || media.closeup.attention || media.closeup.unknown) return 'incomplete';
+  return 'waiting';
+}
+
+function renderCronMediaTracks(media) {
+  const box = $('#dailyCronMediaTracks');
+  if (!box) return;
+  box.innerHTML = [['Camera', media?.camera_verified], ['BEV', media?.bev_verified],
+    [uiText('局部 BEV', 'Closeup BEV'), media?.closeup?.verified]].map(([label, value]) =>
+    `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(cronFraction(value, media?.selected))}</strong></div>`).join('');
+}
+
+function cronThirdMediaNote(media) {
+  return `${uiText('三项均验收 / 同批目标', 'All three verified / Same cohort')} · ${uiText('待排查', 'Needs review')} ${cronCount(media?.closeup?.attention)} · ${uiText('待队列处理', 'Queued')} ${cronCount(media?.closeup?.queued)} · ${uiText('身份或范围待核实', 'Identity / scope unconfirmed')} ${cronCount(media?.closeup?.unknown)}`;
+}
 function cronLabel(value) {
   const labels = {
     success: ["已完成", "Complete"], complete: ["已完成", "Complete"], partial: ["已完成 · 有缺失", "Complete with gaps"],
@@ -109,6 +130,7 @@ function cronLabel(value) {
     finished: ["退出正常", "Exited normally"], launching: ["已启动", "Launched"], launch_error: ["启动异常", "Launch error"],
     partial_failed: ["部分失败", "Partial failure"], unavailable: ["暂不可用", "Unavailable"],
     awaiting_frontend_release: ["等待播放器验收", "Awaiting player validation"],
+    incomplete: ["待补齐", "Incomplete"],
   };
   return labels[value] ? uiText(...labels[value]) : value || "—";
 }
@@ -116,7 +138,7 @@ function cronLabel(value) {
 function cronTone(value) {
   if (["success", "complete", "empty", "finished"].includes(value)) return "ok";
   if (["failed", "media_failed", "missed", "launch_error"].includes(value)) return "fail";
-  if (["partial", "complete_with_gaps", "stalled", "partial_failed", "inferred_with_gaps", "unavailable"].includes(value)) return "warn";
+  if (["partial", "complete_with_gaps", "stalled", "partial_failed", "inferred_with_gaps", "unavailable", "incomplete"].includes(value)) return "warn";
   return "neutral";
 }
 
@@ -137,6 +159,16 @@ function cronLatestLaunch(daily, run) {
 
 function renderDailyCron() {
   if (!$("#dailyCronPage")) return;
+  for (const [selector, zh, en] of [
+    ['[data-cron-help="main"]', '推理回刷流程说明', 'Inference pipeline definition'],
+    ['[data-cron-help="media"]', '平台与媒体流程说明', 'Platform and media pipeline definition'],
+    ['#dailyCronGraph', '两条独立任务链的动态运行图', 'Live graph of two independent pipelines'],
+    ['#dailyCronHelpClose', '关闭流程说明', 'Close pipeline definition'],
+  ]) {
+    const control = $(selector);
+    if (control) control.setAttribute('aria-label', uiText(zh, en));
+    if (control?.hasAttribute('data-cron-help')) control.title = uiText('流程说明', 'Pipeline definition');
+  }
   const data = dailyCronState.data;
   if (!data) return;
   const incremental = cronIncrementalEnabled(data) && !dailyCronState.selectedDay ? cronSelectedIncremental(data) : null;
@@ -169,13 +201,14 @@ function renderDailyCron() {
     const stages = { inference: ["采集 / 推理", "Acquisition / inference"], publication: ["回刷", "Publication"], sample_hook: ["抽样验证", "Sample verification"] };
     $("#dailyCronMainValue").textContent = `${picked.day || "—"} · ${processing ? cronFraction(run.finished, run.total) : cronFraction(run?.verified, run?.selected)}`;
     if ($("#dailyCronMainTiming")) $("#dailyCronMainTiming").textContent = cronTimingText(run?.timing, { stale: stale || dailyCronState.error });
-    if ($("#dailyCronMediaTiming")) $("#dailyCronMediaTiming").textContent = cronTimingText(media?.timing, { stale: runtime?.stale || runtime?.controller_error || dailyCronState.error });
+    if ($("#dailyCronMediaTiming")) $("#dailyCronMediaTiming").textContent = "";
     $("#dailyCronMainNote").textContent = `${processing ? `${stages[run.stage] ? uiText(...stages[run.stage]) : uiText("当前阶段", "Current stage")} · ${uiText("已处理", "Processed")} ${Math.round(run.finished / run.total * 1000) / 10}%` : uiText("已验证 / 选中", "Verified / Selected")} · ${uiText("跳过", "Skipped")} ${cronCount(run?.skipped)}`;
-    const mediaHealth = !runtime ? "unavailable" : runtime.controller_error ? "failed" : runtime.stale ? "stalled" : (media?.state === "complete" && (media.imported !== media.selected || media.assigned !== media.selected) ? "unknown" : media?.state) || "waiting";
+    const mediaHealth = !runtime ? "unavailable" : runtime.controller_error ? "failed" : cronMediaOutcome(media, runtime.stale);
     $("#dailyCronMediaStatus").innerHTML = cronChip(mediaHealth);
     const waitingForMedia = media?.state === "waiting" && media?.selected === 0;
-    $("#dailyCronMediaValue").textContent = `${picked.day || "—"} · ${waitingForMedia ? uiText("等待上游", "Waiting upstream") : cronFraction(media?.verified, media?.selected)}`;
-    $("#dailyCronMediaNote").textContent = waitingForMedia ? uiText("主流程完成后生成媒体任务", "Media tasks follow the main pipeline") : `${uiText("双媒体验证 / 目标", "Both videos / Target")} · ${uiText("终态失败", "Terminal failures")} ${cronCount(media?.failure_count)}`;
+    $("#dailyCronMediaValue").textContent = `${picked.day || "—"} · ${waitingForMedia ? uiText("等待上游", "Waiting upstream") : cronFraction(media?.triple_verified, media?.selected)}`;
+    $("#dailyCronMediaNote").textContent = waitingForMedia ? uiText("主流程完成后生成媒体任务", "Media tasks follow the main pipeline") : cronThirdMediaNote(media);
+    renderCronMediaTracks(media);
   }
   $("#dailyCronSchedule").textContent = daily
     ? `${uiText("下次计划", "Next schedule")} ${cronTime(daily.next_run_at)} CST · ${uiText("对应目标日", "Target")} ${daily.target_date || "—"} · ${uiText("调度心跳", "Scheduler heartbeat")} ${cronTime(daily.heartbeat_at)} CST`
@@ -327,9 +360,10 @@ function renderIncrementalCron(data) {
   $('#dailyCronMainValue').textContent=`${scope} · ${v.statesUnavailable ? '— / —' : cronFraction(inferred,eligible)}`;
   $('#dailyCronMainNote').textContent=uiText(`已推理 ${inferred} · 已回刷 ${c.published||0} · 待源 ${c.waiting_metadata||0} · 待核实 ${attention}`,`Inferred ${inferred} · Published ${c.published||0} · Pending source ${c.waiting_metadata||0} · Attention ${attention}`);
   if(v.statesUnavailable) $('#dailyCronMainNote').textContent=uiText('该版本队列状态暂不可用；不以其他版本或导入快照替代。','Version queue status unavailable; other versions and import snapshots are not substituted.');
-  $('#dailyCronMediaStatus').innerHTML=cronChip(v.unavailable?'unavailable':v.stale?'stalled':m.failure_count?'partial':m.verified===m.selected&&m.selected?'complete':!m.selected?'waiting':'running');
-  $('#dailyCronMediaValue').textContent=cronFraction(m.verified,m.selected);
-  $('#dailyCronMediaNote').textContent=uiText(`复用 ${m.reused||0} · 待媒体 ${m.queued||0} · 最终失败 ${m.failure_count||0}`,`Reused ${m.reused||0} · Media pending ${m.queued||0} · Terminal failures ${m.failure_count||0}`);
+  $('#dailyCronMediaStatus').innerHTML=cronChip(v.unavailable?'unavailable':cronMediaOutcome(m,v.stale));
+  $('#dailyCronMediaValue').textContent=cronFraction(m.triple_verified,m.selected);
+  $('#dailyCronMediaNote').textContent=cronThirdMediaNote(m);
+  renderCronMediaTracks(m);
   if(v.unavailable) $('#dailyCronMediaNote').textContent=uiText('该版本媒体状态暂不可用。','Version media status unavailable.');
   $('#dailyCronSchedule').textContent=v.discovery_schedule?.hours?.length?uiText('每天07:00、19:00 CST全量发现及补查；队列独立持续处理，无单轮总量上限。','Full discovery and source checks at07:00/19:00 CST; the queue continues independently without a per-round case cap.'):uiText('按版本持续处理；查询计划等待同步。','Version-scoped processing; awaiting discovery schedule.');
   renderCronIncrements(v.increments);
@@ -349,11 +383,17 @@ function renderCloseupCron(value, family = '') {
     pilot_failed_requires_review: ['小批失败待排查', 'Pilot failures need review'],
     pilot_visual_review_required: ['小批待画面验收', 'Pilot visual review required'],
     resource_wait: ['等待资源', 'Waiting for resources'], stopped: ['已停止', 'Stopped'],
+    scheduled: ['等待计划启动', 'Scheduled'],
+    download_resource_wait: ['等待下载验收资源', 'Waiting for download resources'],
+    orion_observation_unavailable: ['原生状态暂不可用', 'Native status unavailable'],
     interrupted_claim_requires_review: ['中断任务待恢复', 'Interrupted jobs need recovery'],
+    orion_results_require_review: ['未发布成员待排查', 'Unpublished cases need review'],
+    orion_running: ['离线队列处理中', 'Offline queue processing'], orion_idle: ['队列空闲', 'Queue idle'],
     unavailable: ['状态不可用', 'Status unavailable'], unknown: ['状态未知', 'Unknown status']
   };
   const pair = value.stale ? ['心跳过期', 'Stale heartbeat'] : labels[value.state] || labels.unknown;
-  $('#dailyCronCloseupStatus').textContent = uiText(...pair);
+  $('#dailyCronCloseupStatus').textContent = uiText(...pair) +
+    (!value.stale && value.state === 'scheduled' && value.next_action_at ? ` · ${cronTime(value.next_action_at)} CST` : '');
   const versions = [...new Set([...Object.keys(value.versions || {}), ...Object.keys(value.source_members || {})])].sort()
     .filter(version => !family || version === family || version === family.slice(4));
   $('#dailyCronCloseupValue').innerHTML = versions.map(version => {
@@ -365,7 +405,7 @@ function renderCloseupCron(value, family = '') {
     return cronMetric(version, cronFraction(states.verified || 0, total), detail, states.failed || missing ? 'warn' : 'neutral');
   }).join('') + `<p class="cron-note muted">${escapeHtml(!versions.length
     ? uiText('该版本暂无局部 BEV 回执。', 'No closeup BEV receipts for this version.')
-    : uiText('所选范围的已发布成员 · 调度状态为全局共享；不影响原双视频或主推理。', 'Published members in the selected scope. Scheduler status is shared globally; original videos and inference are unaffected.'))}</p>`;
+    : uiText('历史全量范围（含非 daily 成员）；当前 daily 的三媒体进度见上方。历史失败不代表正在录制。', 'Historical full scope, including non-daily members. Daily three-media coverage is shown above. Historical failures do not indicate active recording.'))}</p>`;
 }
 
 // These are independent completion-window counts, never a conversion funnel.

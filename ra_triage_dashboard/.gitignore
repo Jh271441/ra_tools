@@ -10,3 +10,8 @@ node_modules/
 playwright-report/
 test-results/
 /dchat_credentials.json
+
+# Frozen closeup rendering inputs; contain no credentials or source messages.
+!/config/bev_closeup/layout.json
+!/config/bev_closeup/manifest.json
+!/config/bev_closeup/recovery-policy.json

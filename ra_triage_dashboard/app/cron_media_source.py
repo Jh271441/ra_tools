@@ -42,7 +42,7 @@ def _ids(rows):
     return set(values)
 
 
-def _day(root, report, bags, day, replacement, observed_at=None):
+def _day(root, report, bags, day, replacement, observed_at=None, closeup=None):
     work = report / "daily" / day
     status = _read(root, work / "status.json", {})
     groups = sorted((report / "daily").glob(day + "*"))[:8]
@@ -68,6 +68,15 @@ def _day(root, report, bags, day, replacement, observed_at=None):
     if replacement and (total != entry.get("count") or receipt.get("run_id") != entry.get("run_id")):
         raise ValueError("replacement cohort mismatch")
     verified = 0
+    verified_ids = set()
+    identities = {}
+    for source_path in [group / "media-source.json" for group in groups] + [report / "media-source.json"]:
+        for source in _read(root, source_path, []):
+            iid = source.get("issue_id")
+            if iid in members:
+                identity = {k: source.get(k) for k in ("trip_id", "capture_timestamp_ms")}
+                identities[iid] = identity if iid not in identities or identities[iid] == identity else {}
+    targets = {iid: dict(identities.get(iid, {})) for iid in members}
     verified_at = 0
     verified_times = []
     for issue_id in members:
@@ -75,6 +84,8 @@ def _day(root, report, bags, day, replacement, observed_at=None):
             item = _read(root, folder / (issue_id + ".json"), {})
             if item.get("issue_id") == issue_id and item.get("state") == "verified" and item.get("bev_probe") and item.get("camera_probe"):
                 verified += 1
+                verified_ids.add(issue_id)
+                targets[issue_id]["scope"] = item.get("scope")
                 at = timestamp(item.get("verified_at"))
                 if at:
                     verified_at = max(verified_at, at)
@@ -89,7 +100,7 @@ def _day(root, report, bags, day, replacement, observed_at=None):
     camera = _read(root, bags / "daily" / day / "camera" / "status.json", {}) if not replacement else {}
     # Replacement cohorts may combine old queues; joint receipts are the safe
     # lower bound. Never attach a 74-case queue counter to a 90-case full Run.
-    camera_verified = verified if replacement else max(verified, _count(camera.get("completed")) or 0)
+    camera_verified = verified
     camera_total = total if replacement else _count(camera.get("total"))
     orion = [(_read(root, group / "status.json", {}).get("bev") or {}) for group in groups]
     orion = [item for item in orion if item]
@@ -157,7 +168,11 @@ def _day(root, report, bags, day, replacement, observed_at=None):
             kind="span", basis="local_recovery_receipts", observed=len(ends), total=claims)
     except (OSError, ValueError, TypeError, AttributeError):
         total_timing, spans, timing_error = timing(), {}, True
+    closeup_result = closeup.project(targets, verified_ids) if closeup else None
     return dict(
+        closeup=closeup_result,
+        triple_verified=closeup_result["triple_verified"] if closeup_result else None,
+        track_counts_basis="paired_publication_receipts",
         timing=total_timing, stage_timings=spans, timing_error=timing_error,
         day=day, state=state, selected=total, imported=imported, assigned=assigned,
         verified=verified, failure_count=len(failure_ids), failure_ids=failure_ids,
@@ -174,6 +189,8 @@ def _day(root, report, bags, day, replacement, observed_at=None):
 
 
 def media_snapshot(ra_root: Path) -> dict:
+    from .cron_closeup_source import CloseupCohort
+    closeup = CloseupCohort(ra_root)
     report = ra_root / "reports" / "manual_sidecar_20261019"
     bags = ra_root / "bags" / "manual_sidecar_20261019"
     heartbeat = _read(ra_root, report / "heartbeat.json")
@@ -193,7 +210,7 @@ def media_snapshot(ra_root: Path) -> dict:
     checked = heartbeat.get("checked_at")
     rows = []
     for day in sorted(days, reverse=True)[:30]:
-        row = _day(ra_root, report, bags, day, replacements.get(day), checked)
+        row = _day(ra_root, report, bags, day, replacements.get(day), checked, closeup)
         if row is not None:
             rows.append(row)
     fresh = type(checked) in (int, float) and 0 <= time.time() - checked < 300

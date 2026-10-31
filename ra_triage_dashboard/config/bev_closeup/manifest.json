@@ -1,0 +1,20 @@
+{
+  "recipe_id": "ego30-forward4-1080p-10fps-v1",
+  "layout_file": "layout.json",
+  "layout_sha256": "613e4a6c1a0c000475e1eba24f1718acb5fb4bfd04dadfd3abd4035da8aa2575",
+  "layout_size_bytes": 2666627,
+  "source": "/volume/home/workspace/ra_triage_dashboard_deploy/operations/bev-closeup-full-20261029/orion/layout-ego30-forward4.json",
+  "recovery_policy_source": "/volume/home/workspace/ra_auto_triage/tools/manual_sidecar/recovery-policy.json",
+  "recovery_policy_sha256": "80461920cb873fcdd7df16431d04dd9ae9f37b8e23984f8997e3a5696262f42f",
+  "release": "bd9f187",
+  "runtime": "ares-animation-2136c0c27e7e333e",
+  "video": {
+    "width": 1920,
+    "height": 1080,
+    "fps": 10,
+    "duration_ms": 40000,
+    "frame_count": 400,
+    "t0_ms": 20000
+  },
+  "activation": "daily_sidecar_control_required"
+}

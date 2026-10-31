@@ -86,7 +86,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-724`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-727`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -1917,7 +1917,7 @@
               </article>
               <article class="cron-monitor" data-monitor="media">
                 <div class="cron-section-heading"><h3><span class="ui-lang-zh">平台与媒体</span><span class="ui-lang-en">Platform / media</span></h3><span id="dailyCronMediaStatus"></span><button class="cron-info-button" type="button" data-cron-help="media" aria-label="平台与媒体流程说明" title="流程说明">!</button></div>
-                <strong id="dailyCronMediaValue">—</strong><span class="muted" id="dailyCronMediaNote"><span class="ui-lang-zh">完成回执触发 · 独立判定</span><span class="ui-lang-en">Completion receipt · Independent outcome</span></span><span class="cron-monitor-timing" id="dailyCronMediaTiming">—</span>
+                <strong id="dailyCronMediaValue">—</strong><span class="muted" id="dailyCronMediaNote"><span class="ui-lang-zh">完成回执触发 · 独立判定</span><span class="ui-lang-en">Completion receipt · Independent outcome</span></span><span class="cron-monitor-timing" id="dailyCronMediaTiming">—</span><div class="cron-media-tracks" id="dailyCronMediaTracks"></div>
               </article>
             </div>
             <section class="cron-panel cron-graph-panel" aria-labelledby="dailyCronGraphTitle">
@@ -1933,10 +1933,10 @@
               <div id="dailyCronSchedule" class="cron-schedule"></div><div id="dailyCronAlerts"></div><div class="cron-history-caption muted"><span class="ui-lang-zh">近24小时 · 最严重观测</span><span class="ui-lang-en">24h · Worst observed state</span></div><div class="cron-history" id="dailyCronHistory"></div>
             </details>
             <details class="cron-panel cron-fold" id="dailyCronRunsFold"><summary><span class="ui-lang-zh">运行记录</span><span class="ui-lang-en">Run history</span></summary><div id="dailyCronRuns" class="cron-runs"></div></details>
-            <section class="cron-panel" id="dailyCronCloseup" hidden aria-labelledby="dailyCronCloseupTitle">
-              <div class="cron-section-heading"><h3 id="dailyCronCloseupTitle"><span class="ui-lang-zh">局部 BEV 视频</span><span class="ui-lang-en">Closeup BEV videos</span></h3><span id="dailyCronCloseupStatus"></span></div>
+            <details class="cron-panel cron-fold" id="dailyCronCloseup" hidden aria-labelledby="dailyCronCloseupTitle">
+              <summary id="dailyCronCloseupTitle"><span class="ui-lang-zh">局部 BEV · 历史全量回溯</span><span class="ui-lang-en">Closeup BEV · Full historical backfill</span></summary><p id="dailyCronCloseupStatus" class="cron-note muted"></p>
               <div id="dailyCronCloseupValue" class="cron-sidecar-metrics"></div>
-            </section>
+            </details>
             <details class="cron-panel cron-fold"><summary><span class="ui-lang-zh">历史媒体回溯</span><span class="ui-lang-en">Historical media backfill</span></summary><div id="dailyCronSidecar"></div></details>
             <details class="cron-panel cron-fold" id="dailyCronJobsFold"><summary><span class="ui-lang-zh">其他定时任务</span><span class="ui-lang-en">Other scheduled tasks</span></summary><div class="cron-section-heading"><input id="dailyCronSearch" type="search" aria-label="搜索定时任务" placeholder="搜索任务或调度表达式" data-placeholder-zh="搜索任务或调度表达式" data-placeholder-en="Search task or schedule" /></div><div class="cron-table-wrap"><table class="cron-table"><thead><tr><th><span class="ui-lang-zh">任务</span><span class="ui-lang-en">Task</span></th><th><span class="ui-lang-zh">调度</span><span class="ui-lang-en">Schedule</span></th><th><span class="ui-lang-zh">日志更新 · CST</span><span class="ui-lang-en">Log updated · CST</span></th><th><span class="ui-lang-zh">活动证据</span><span class="ui-lang-en">Activity</span></th></tr></thead><tbody id="dailyCronJobs"></tbody></table></div></details>
           </section>
@@ -2611,7 +2611,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-724`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-727`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

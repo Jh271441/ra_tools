@@ -8,8 +8,8 @@ const versionQA=process.env.CRON_VERSION_QA==='1';
 if(versionQA){
  const families=['20261009','20261016','20261023'];
  fixture.incremental={enabled:true,updated_at:Date.now()/1000,stale:false,families,states:{published:60},
-  media:{selected:15,verified:12},discovery_schedule:{hours:[7,19]},
-  versions:families.map((family,i)=>({family,states_status:'ready',states:{published:(i+1)*10,waiting_metadata:3},media:{selected:3+i*2,verified:2+i*2,queued:1,reused:0,failure_count:0}})),
+  media:{selected:15,verified:12,camera_verified:12,bev_verified:12,triple_verified:12,closeup:{receipt_status:'ready',verified:12,queued:3,attention:0,unknown:0}},discovery_schedule:{hours:[7,19]},
+  versions:families.map((family,i)=>({family,states_status:'ready',states:{published:(i+1)*10,waiting_metadata:3},media:{selected:3+i*2,verified:2+i*2,camera_verified:2+i*2,bev_verified:2+i*2,triple_verified:2+i*2,closeup:{receipt_status:'ready',verified:2+i*2,queued:1,attention:0,unknown:0},queued:1,reused:0,failure_count:0}})),
   datasets:families.map((release_family,i)=>({release_family,targets:3+i*2,assigned:{tester:3+i*2}})),
   increments:{status:'ready',items:families.map(family=>({family,start_at:1793314800,new:0,filled:0,published:0,target_added:0,target_removed:0,scan_state:'success'}))}};
  fixture.closeup={state:'collecting',versions:{'1009':{verified:8},'1016':{verified:18},'1023':{verified:28}}};

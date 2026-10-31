@@ -249,3 +249,7 @@ body[data-active-page="daily-cron"] #pageTitle { font-size: 16px; }
   .cron-mobile-stage-button .cron-dag-task-label strong { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; line-height: 1.25; }
   .cron-mobile-stage-button .cron-dag-state-dot { margin-top: 5px; }
 }
+.cron-media-tracks { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin-top:8px; }
+.cron-media-tracks > div { min-width:0; padding:8px; border:1px solid var(--line); border-radius:8px; }
+.cron-media-tracks span { display:block; font-size:12px; color:var(--muted); overflow-wrap:anywhere; }
+.cron-media-tracks strong { display:block; font-size:14px; margin-top:4px; overflow-wrap:anywhere; }

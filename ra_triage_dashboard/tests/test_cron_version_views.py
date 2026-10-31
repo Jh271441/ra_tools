@@ -12,7 +12,7 @@ const ctx=vm.createContext({window:{},document:{addEventListener(){}},state:{col
 for(const f of process.argv.slice(1))vm.runInContext(fs.readFileSync(f,'utf8'),ctx);
 vm.runInContext(`
 const source={enabled:true,states:{published:1000},families:['20261009','20261016','20261023'],
- versions:[{family:'20261009',states_status:'ready',states:{published:10,waiting_metadata:3},media:{selected:3,verified:2}},
+ versions:[{family:'20261009',states_status:'ready',states:{published:10,waiting_metadata:3},media:{selected:3,verified:2,triple_verified:2,closeup:{receipt_status:"ready",verified:2}}},
  {family:'20261016',states_status:'ready',states:{published:20},media:{selected:5,verified:4}},
  {family:'20261023',states_status:'ready',states:{published:30},media:{selected:7,verified:6}}],
  datasets:[{release_family:'20261009',targets:3,assigned:{a:3}},{release_family:'20261016',targets:5}],
@@ -29,7 +29,7 @@ source.families.push('20261030');assert.equal(cronSelectedIncremental(data).fami
 source.versions=source.versions.filter(v=>v.family!=='20261009');
 assert.equal(cronSelectedIncremental(data).family,'20261009');assert.equal(task('main-infer').progress.mode,'unknown');
 assert.equal(task('media-verify').status,'unknown');
-source.versions.push({family:'20261009',states_status:'unavailable',states:null,media:{selected:3,verified:2}});
+source.versions.push({family:'20261009',states_status:'unavailable',states:null,media:{selected:3,verified:2,triple_verified:2,closeup:{receipt_status:"ready",verified:2}}});
 assert.equal(task('main-infer').detail,'—');assert.equal(task('media-verify').progress.done,2);
 dailyCronState.error=true;assert.equal(task('media-verify').status,'unknown');
 assert.equal(source.stale,undefined); // projection does not mutate the cached response

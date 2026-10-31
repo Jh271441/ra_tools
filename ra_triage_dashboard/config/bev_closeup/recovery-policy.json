@@ -1,0 +1,10 @@
+{
+  "orion_retry_count": 1,
+  "local_max_attempts": 2,
+  "local_workers": 2,
+  "local_deadline_seconds": 2400,
+  "max_missing_count": 5,
+  "max_missing_fraction": 0.02,
+  "camera_bag_retention_after_publish_seconds": 3600,
+  "browser_cache": "/tmp/manual-sidecar-browsers"
+}

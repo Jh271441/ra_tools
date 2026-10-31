@@ -1125,3 +1125,20 @@
   .comment-edit-actions .button-primary, .comment-edit-actions .button-danger { min-height: 48px !important; }
   .comment-edit-panel .text-link { min-height: 44px; white-space: normal; text-align: left; }
 }
+
+@media (max-width: 639px) {
+  /* Recovery states and English policies can span more than one line. */
+  .cron-mobile-stage-button { display: grid; }
+  .cron-mobile-stage-button .cron-dag-task {
+    height: auto;
+    min-height: 128px;
+    grid-template-rows: minmax(30px, auto) minmax(24px, 1fr) auto auto;
+  }
+  .cron-mobile-stage-button .cron-dag-task-meta,
+  .cron-mobile-stage-button .cron-dag-task-state,
+  .cron-mobile-stage-button .cron-dag-task-timing {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.35;
+  }
+}

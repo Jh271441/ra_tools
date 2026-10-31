@@ -40,9 +40,9 @@ class VersionStatusTest(unittest.TestCase):
             db = sqlite3.connect(':memory:'); db.row_factory = sqlite3.Row
             self.addCleanup(db.close)
             db.executescript('CREATE TABLE version_datasets(id TEXT,release_family TEXT);'
-                            'CREATE TABLE version_dataset_items(dataset_id TEXT,issue_id TEXT,is_target INTEGER);')
+                            "CREATE TABLE version_dataset_items(dataset_id TEXT,issue_id TEXT,is_target INTEGER,source_json TEXT DEFAULT '{}');")
             db.executemany('INSERT INTO version_datasets VALUES(?,?)', [(d['id'],d['release_family']) for d in datasets])
-            db.executemany('INSERT INTO version_dataset_items VALUES(?,?,?)',
+            db.executemany('INSERT INTO version_dataset_items(dataset_id,issue_id,is_target) VALUES(?,?,?)',
                            [('d0','cn1',1),('d0','cnRetired',0),('d1','cn2',1),('d2','cn3',1)])
             @contextmanager
             def connect():

@@ -4,14 +4,15 @@ import vm from 'node:vm';
 import { test } from 'node:test';
 import { layout, TASK_WIDTH, TASK_HEIGHT } from '../src/layout.mjs';
 
-function modelFor(locale, lane = '') {
+function modelFor(locale, lane = '', kind = 'daily') {
   const ctx = vm.createContext({ window: {}, document: { addEventListener() {} }, state: {}, uiText: (zh, en) => locale === 'en' ? en : zh, $: () => null, Date });
   for (const file of ['daily-cron.js', 'daily-cron-graph.js']) vm.runInContext(readFileSync(new URL(`../../../static/js/${file}`, import.meta.url), 'utf8'), ctx);
   // Screenshot case: main acquisition gap, successful Orion retry, no local receipt.
   const data = { overview: { collected_at: Date.now() / 1000, daily: { runs: [{ id: 'daily-2026-10-19', target_date_cst: '2026-10-19', state: 'complete_with_gaps', selected: 256, inferred: 255, published: 255, verified: 255, skipped: 1 }] } }, media_daily: { runs: [{ day: '2026-10-19', selected: 103, verified: 103, imported: 103, assigned: 103, camera_verified: 103, bev_verified: 103, state: 'complete', original_orion_failed: 1, retry_state: 'completed', retry_completed: 1 }] } };
-  ctx.input = data;
+  ctx.input = kind === 'daily' ? data : {states:{published:100},media:{selected:103,verified:100,
+    closeup:{receipt_status:'ready',verified:99,fallback:{verified:1,registered:3,source_blocked:2}}},datasets:[]};
   ctx.lane = lane;
-  return JSON.parse(vm.runInContext('JSON.stringify(buildDailyCronGraph(input, lane))', ctx));
+  return JSON.parse(vm.runInContext(`JSON.stringify(${kind === 'daily' ? 'buildDailyCronGraph' : 'buildIncrementalCronGraph'}(input, lane))`, ctx));
 }
 
 function samePoint(a, b) {
@@ -29,9 +30,9 @@ function segmentHitsRect(a, b, rect) {
 }
 
 for (const locale of ['zh', 'en']) {
-  for (const lane of ['', 'main', 'media']) {
-    test(`${locale} ${lane || 'combined'}: routes and labels clear task cards`, async () => {
-      const model = modelFor(locale, lane);
+  for (const kind of ['daily','incremental']) for (const lane of ['', 'main', 'media']) {
+    test(`${locale} ${kind} ${lane || 'combined'}: routes and labels clear task cards`, async () => {
+      const model = modelFor(locale, lane, kind);
       const geometry = await layout(model);
       const lanes = new Map(geometry.sizes.map(l => [l.id, l]));
       const tasks = geometry.positions.map(p => ({ ...p, x: p.x + lanes.get(p.parentId).x, y: p.y + lanes.get(p.parentId).y, width: TASK_WIDTH, height: TASK_HEIGHT }));

@@ -46,6 +46,117 @@ function cronTaskProgressMarkup(progress) {
   return `<div class="cron-task-progress" data-stale="${progress.stale}"><div class="cron-task-progress-values"><span>${escapeHtml(progress.text)}</span><strong>${escapeHtml(progress.percentText)}</strong></div><div class="cron-task-progress-track" role="progressbar" aria-label="${escapeHtml(progress.label)}" aria-valuemin="0" aria-valuemax="${progress.total}" aria-valuenow="${progress.done}" aria-valuetext="${escapeHtml(`${progress.text} · ${progress.percentText}`)}"><span style="width:${progress.completePercent}%"></span><i style="width:${progress.failurePercent}%"></i></div></div>`;
 }
 
+function cronApplyThirdMedia(nodes, media, stale) {
+  const closeup = media?.closeup;
+  const known = closeup?.receipt_status === 'ready';
+  const complete = known && media.selected > 0 && closeup.verified === media.selected;
+  const status = complete ? 'success' : !known ? 'unknown' : closeup.attention ? 'warn' : 'pending';
+  const progress = cronTaskProgress(closeup?.verified, media?.selected, {
+    stale: Boolean(stale), empty: media?.selected === 0,
+    label: uiText('同批目标的局部 BEV 发布验收', 'Closeup BEV publication receipts for the same cohort'),
+  });
+  nodes.push({id:'media-closeup',data:{
+    label:uiText('局部 BEV · Orion', 'Closeup BEV · Orion'), detail:uiText('40秒 · 400帧 · t0=20秒', '40s · 400 frames · t0=20s'),
+    status:stale?'unknown':status,
+    stateLabel:stale?cronGraphStateLabel('unknown'):closeup?.attention?uiText('待排查 / 验收', 'Needs review / verification'):cronGraphStateLabel(status), progress,
+    timingText:uiText('独立验收 / 发布', 'Verify / Publish independently'),
+    issues:closeup?.attention_ids || [],
+    rows:[...cronTaskProgressRows(progress),
+      [uiText('待队列处理', 'Queued'),cronCount(closeup?.queued)],
+      [uiText('待排查 / 验收', 'Needs review / verification'),cronCount(closeup?.attention)],
+      [uiText('身份或范围待核实', 'Identity / scope unconfirmed'),cronCount(closeup?.unknown)],
+      [uiText('恢复路径', 'Recovery path'),uiText('失败子集 Orion 重试1次 → 仍失败则本地最多2次 → 验收发布', 'Failed subset: one Orion retry → Still failed: up to two local attempts → Verify / Publish')],
+      [uiText('计数包含', 'Counts include'),uiText('Orion 与本地恢复后的有效发布回执', 'Valid publications from Orion and local recovery')],
+      [uiText('发布条件', 'Publication gate'),uiText('同 Issue / trip / 锚点 / 配方；完整时序与解码验收', 'Same Issue / trip / anchor / recipe; full timing and decode validation')],
+      [uiText('队列口径', 'Queue scope'),uiText('历史 running 不作为正在录制的证据', 'Historical running entries do not prove active recording')]],
+  }});
+  const retry = closeup?.retry;
+  const retryStatus = stale ? 'unknown' : retry?.status === 'completed' ? 'success'
+    : retry?.status === 'partial_failed' ? 'warn' : 'unknown';
+  const retryProgress = cronTaskProgress(retry?.processed, retry?.total, {stale:Boolean(stale),
+    failed:retry?.failed, label:uiText('局部 BEV 的 Orion 重试子集（含失败）', 'Closeup BEV Orion retry subset, including failures')});
+  nodes.push({id:'media-closeup-retry',data:{
+    label:uiText('局部 Orion 重试', 'Closeup Orion retry'),
+    detail:uiText('仅失败子集 · 1次', 'Failed subset only · Once'),
+    status:retryStatus,stateLabel:cronGraphStateLabel(retryStatus),progress:retryProgress,
+    timingText:uiText('与 BEV 相同策略', 'Same policy as BEV'),issues:[],
+    rows:[...cronTaskProgressRows(retryProgress),
+      [uiText('重试次数上限', 'Retry limit'),uiText('Orion 重试1次', 'One Orion retry')],
+      [uiText('原生完成 / 失败', 'Native completed / failed'),cronFraction(retry?.completed,retry?.failed)],
+      [uiText('重试证据 · CST', 'Retry evidence · CST'),cronTime(retry?.evidence_at)],
+      [uiText('后续恢复', 'Next recovery'),uiText('重试终态仍失败或验收不通过 → 本地兜底', 'Retry ends with failure or invalid output → Local fallback')],
+      [uiText('计数口径', 'Count scope'),uiText('仅本批、同身份的第二次 Orion 尝试；原生完成不等于发布', 'Same-cohort, same-identity second Orion attempt only; native completion is not publication')],
+    ],
+  }});
+  const fallback = closeup?.fallback;
+  const recovered = fallback?.verified;
+  const fallbackStatus = stale ? 'unknown' : fallback?.source_blocked > 0 ? 'warn'
+    : recovered > 0 ? 'success' : 'unknown';
+  nodes.push({id:'media-closeup-local',data:{
+    label:uiText('局部本地兜底', 'Closeup fallback'),
+    detail:uiText('全局2并发 · 最多2次', 'Global concurrency 2 · Up to 2 attempts'),
+    status:fallbackStatus, stateLabel:stale?cronGraphStateLabel('unknown')
+      :fallback?.source_blocked > 0?uiText('源异常待处理', 'Source failures pending')
+      :recovered > 0?uiText('本地恢复已发布', 'Local recovery published'):cronGraphStateLabel(fallbackStatus),
+    timingText:uiText('与 BEV 相同策略', 'Same policy as BEV'),
+    issues:fallback?.source_blocked_ids || [],
+    rows:[
+      [uiText('本地恢复发布', 'Published via local recovery'),cronCount(recovered)],
+      [uiText('已有执行证据的案例', 'Cases with execution evidence'),cronCount(fallback?.attempted_cases)],
+      [uiText('已登记恢复子集', 'Registered recovery subset'),cronCount(fallback?.registered)],
+      [uiText('源异常 / 缺口', 'Source errors / gaps'),cronCount(fallback?.source_blocked)],
+      [uiText('回执时间 · CST', 'Evidence time · CST'),cronTime(fallback?.evidence_at)],
+      [uiText('触发条件', 'Trigger'),uiText('Orion 重试终态仍失败或验收不通过', 'Orion retry ends with failure or invalid output')],
+      [uiText('尝试预算', 'Attempt budget'),uiText('本地最多2次；与原 BEV 共享全局2个名额', 'At most 2 local attempts; share 2 global slots with original BEV')],
+      [uiText('局部布局', 'Closeup layout'),'layout.json · ego30-forward4-1080p-10fps-v1'],
+      [uiText('源异常处理', 'Source failure handling'),uiText('保留证据待处理；不反复盲重试', 'Retain evidence for resolution; no blind retries')],
+      [uiText('发布条件', 'Publication gate'),uiText('同一局部配方、400帧、精确时序和完整解码验收', 'Same closeup recipe, 400 frames, exact timing and full decode validation')],
+    ],
+  }});
+  // The mobile view reads this same array in order; recovery precedes verification.
+  const closeupNodes = nodes.splice(-3);
+  const verificationIndex = nodes.findIndex(n=>n.id==='media-verify');
+  nodes.splice(verificationIndex < 0 ? nodes.length : verificationIndex, 0, ...closeupNodes);
+  const all = media?.selected > 0 && media?.triple_verified === media?.selected;
+  for (const n of nodes.filter(n=>['media-verify','media-ready'].includes(n.id))) {
+    if(n.id==='media-verify')n.data.label=uiText('三媒体验证', 'Verify three videos');
+    n.data.detail=cronFraction(media?.triple_verified,media?.selected);
+    n.data.progress=cronTaskProgress(media?.triple_verified,media?.selected,{stale:Boolean(stale),empty:media?.selected===0,
+      label:uiText('同批 Camera ∩ BEV ∩ 局部 BEV', 'Same cohort: Camera ∩ BEV ∩ Closeup BEV')});
+    n.data.rows=[...cronTaskProgressRows(n.data.progress),
+      [uiText('原双媒体已验证', 'Original two videos verified'),cronFraction(media?.verified,media?.selected)],
+      [uiText('分别发布', 'Independent publication'),uiText('各项验收后即发布；不等待三项齐全', 'Each verified track publishes without waiting for the others')],
+      [uiText('Camera 清理', 'Camera cleanup'),uiText('沿用原发布回执与1小时策略', 'Existing publication receipt and 1h policy')],
+      [uiText('统计口径', 'Count scope'),uiText('同批目标的发布回执交集；不计原生 completed', 'Intersection of publication receipts in this cohort; native completed is excluded')]];
+    if(!all)n.data.status=!known?'unknown':closeup.attention||media?.failure_count?'warn':'pending';
+    else if(n.id==='media-verify')n.data.status='success';
+    if(stale)n.data.status='unknown';
+    n.data.stateLabel=cronGraphStateLabel(n.data.status);
+    if(n.id==='media-verify' && known && !all && !stale)n.data.stateLabel=uiText('待补齐', 'Incomplete');
+    if(n.id==='media-ready') {
+      n.data.status='unknown';
+      n.data.stateLabel=uiText('按单项回执发布', 'Per-track publication');
+    }
+  }
+}
+
+// Both the live and definition graphs use the same real recovery branch.
+function cronCloseupEdges() {
+  return [
+    {id:'media-import:media-closeup',source:'media-import',target:'media-closeup'},
+    ...cronBevRecoveryEdges('media-closeup','media-closeup-retry','media-closeup-local'),
+  ];
+}
+
+// Original and closeup BEV use exactly the same recovery topology.
+function cronBevRecoveryEdges(source, retry, local) {
+  const edge=(a,b,label='',optional=false)=>({id:a+':'+b,source:a,target:b,label,optional});
+  return [edge(source,'media-verify'),edge(source,retry,uiText('失败','Failed'),true),
+    edge(retry,'media-verify',uiText('成功','Success'),true),
+    edge(retry,local,uiText('仍失败','Still failed'),true),
+    edge(local,'media-verify','',true)];
+}
+
 function buildDailyCronGraph(data, definitionLane = "") {
   if (cronIncrementalEnabled(data) && !dailyCronState.selectedDay) return buildIncrementalCronGraph(cronSelectedIncremental(data), definitionLane);
   const { day, main: run, media } = cronSelectedRuns(data);
@@ -122,6 +233,7 @@ function buildDailyCronGraph(data, definitionLane = "") {
     label: uiText("已发起的本地尝试；后续尝试会增加总数", "Launched local attempts; later attempts increase the total") });
   attach(mediaNodes[6], media?.verified, media?.selected, { ...mediaOptions, label: uiText("本批双媒体最终验证", "Final dual-media validation for this cohort") });
   attach(mediaNodes[7], media?.verified, media?.selected, { ...mediaOptions, label: uiText("双媒体验证覆盖；平台就绪还需完成分配", "Dual-media coverage; readiness also requires completed assignment") });
+  cronApplyThirdMedia(mediaNodes, media, mediaStale);
   for (const item of [...mainNodes, ...mediaNodes]) {
     if (item.data.progress?.mode === "waiting" && item.data.status === "unknown") {
       item.data.status = "pending";
@@ -139,13 +251,14 @@ function buildDailyCronGraph(data, definitionLane = "") {
     n.data.rows.push(...cronTimingRows(n.data.timing, { stale: mainStale }));
   }
   for (const n of mediaNodes) {
+    if (['media-closeup', 'media-closeup-retry', 'media-closeup-local', 'media-verify', 'media-ready'].includes(n.id)) continue;
     n.data.timing = n.id === "media-ready" ? media?.timing : media?.stage_timings?.[n.id];
     n.data.timingText = cronTimingText(n.data.timing, { compact: true, stale: mediaStale });
     n.data.rows.push(...cronTimingRows(n.data.timing, { stale: mediaStale }));
   }
   const edge = (source, target, label = "", optional = false) => ({ id: `${source}:${target}`, source, target, label, optional });
   const mainEdges = mainNodes.slice(1).map((n, i) => edge(mainNodes[i].id, n.id));
-  const mediaEdges = [edge("media-source", "media-import"), edge("media-import", "media-camera"), edge("media-import", "media-orion"), edge("media-camera", "media-verify"), edge("media-orion", "media-verify"), edge("media-orion", "media-retry", uiText("失败", "Failed"), true), edge("media-retry", "media-verify", uiText("成功", "Success"), true), edge("media-retry", "media-local", uiText("仍失败", "Still failed"), true), edge("media-local", "media-verify", "", true), edge("media-verify", "media-ready")];
+  const mediaEdges = [...cronCloseupEdges(), edge("media-source", "media-import"), edge("media-import", "media-camera"), edge("media-import", "media-orion"), edge("media-camera", "media-verify"), ...cronBevRecoveryEdges("media-orion", "media-retry", "media-local"), edge("media-verify", "media-ready")];
   let lanes = [{ id: "main-lane", label: uiText("推理回刷", "Inference / publication"), nodes: mainNodes }, { id: "media-lane", label: uiText("平台与媒体", "Platform / media"), nodes: mediaNodes }];
   let edges = [...mainEdges, ...mediaEdges, edge("main-verify", "media-source", uiText("完成回执 · 旁路不反向阻塞", "Completion receipt · No reverse blocking"), true)];
   if (definitionLane) {
@@ -185,6 +298,8 @@ async function renderDailyCronGraph() {
       void renderDailyCronGraph();
     });
     if (dailyCronState.selectedNode) renderCronGraphDetails(model, dailyCronState.selectedNode);
+    const help = $("#dailyCronHelpDialog");
+    if (help?.open) void openCronGraphHelp(help.dataset.lane);
   } catch (_error) { root.textContent = uiText("运行图加载失败，刷新重试。", "Graph unavailable; refresh to retry."); }
 }
 
@@ -202,10 +317,11 @@ function renderCronGraphDetails(model, id) {
 
 async function openCronGraphHelp(lane) {
   const dialog = $("#dailyCronHelpDialog");
+  dialog.dataset.lane = lane;
   $("#dailyCronHelpTitle").textContent = lane === "main" ? uiText("推理回刷 · 流程说明", "Daily inference · Definition") : uiText("平台与媒体 · 流程说明", "Media sidecar · Definition");
-  $("#dailyCronHelpNote").textContent = lane === "main" ? uiText("09:00 CST，处理 T−2；周末照常查询。少量采集缺失 ≤5 且 ≤2% 可继续并记录，超限阻塞。空数据正常结束。", "09:00 CST, T−2 data; weekends queried normally. Acquisition gaps ≤5 AND ≤2% may continue with records; larger gaps block. Empty data completes normally.") : uiText("每天低置信度＋抽样，均分给 jasperchen / liangxianghui 联合复核。Orion 重试1次，本地最多2次；少量缺失单独记录，不影响主任务。发布1小时后清理 Camera 原始 bag。", "Daily low confidence + sampling, balanced joint-review assignments. One Orion retry, at most two local attempts. Gaps recorded independently of the main task; Camera source bags cleaned 1h after publication.");
+  $("#dailyCronHelpNote").textContent = lane === "main" ? uiText("09:00 CST，处理 T−2；周末照常查询。少量采集缺失 ≤5 且 ≤2% 可继续并记录，超限阻塞。空数据正常结束。", "09:00 CST, T−2 data; weekends queried normally. Acquisition gaps ≤5 AND ≤2% may continue with records; larger gaps block. Empty data completes normally.") : uiText("同批目标生成 Camera、BEV、局部 BEV，分别验收发布，三项交集计为齐全。两种 BEV 均先 Orion 重试1次，仍失败或验收不通过则本地最多2次，共享全局2个本地名额。源异常保留待查。Camera 清理沿用原发布回执与1小时策略。", "Camera, BEV and closeup BEV share the target cohort and publish independently. Complete coverage is their intersection. Both BEV tracks retry Orion once, then use up to two local attempts for failures or invalid output, sharing two global local slots. Source failures retain evidence. Camera cleanup keeps its existing publication receipt and 1h policy.");
   if (dailyCronState.data?.incremental?.enabled && lane === "main") $("#dailyCronHelpNote").textContent = uiText("每天07:00、19:00 CST按版本全量发现和补查；队列4并发全量处理，固定版本级10%概率抽样。缺源独立等待，每轮增量分开记录。", "Version discovery and source checks at07:00/19:00 CST; four workers process all eligible queued cases with stable10% probability sampling. Missing sources wait independently; increments are recorded per round.");
-  dialog.showModal();
+  if (!dialog.open) dialog.showModal();
   const graph = await ensureCronGraphLibrary();
   if (dialog.open) graph.render($("#dailyCronHelpGraph"), buildDailyCronGraph(dailyCronState.data, lane));
 }
@@ -285,6 +401,14 @@ function buildIncrementalCronGraph(v,definitionLane='') {
     node('media-ready',uiText('逐条发布 / 清理','Publish / Clean per case'),uiText(`累计验证 ${m.verified||0} · 满1小时后清理`,`Verified so far ${m.verified||0} · Cleanup after1h`),mediaPending||continuing?'running':'unknown',mediaPending||continuing?rolling:uiText('清理回执未观测','Cleanup receipt not observed'),[[uiText('判定范围','Scope'),uiText('已验证 case 可先发布；清理独立记录','Verified cases publish first; cleanup has separate receipts')]])
   ];
   media[6].data.progress=cronTaskProgress(m.verified||0,m.selected||0,{stale:!active,label:uiText('当前媒体目标','Current media targets')});
+  cronApplyThirdMedia(media, m, !active);
+  for (const [id, count] of [['media-camera', m.camera_verified], ['media-orion', m.bev_verified]]) {
+    const n=media.find(n=>n.id===id);
+    n.data.progress=cronTaskProgress(count,m.selected,{stale:!active,label:uiText('同批发布验收（双媒体回执确认的覆盖）','Same-cohort publication coverage confirmed by paired receipts')});
+    n.data.detail=cronFraction(count,m.selected);
+    n.data.status=!active||count==null?'unknown':count===m.selected&&m.selected>0?'success':'pending';
+    n.data.stateLabel=cronGraphStateLabel(n.data.status);
+  }
   if (v.statesUnavailable || v.unavailable) {
     for (const n of nodes.filter(n => ['main-wait','main-infer','main-publish'].includes(n.id))) {
       n.data.status='unknown'; n.data.stateLabel=uiText('状态暂不可用','Status unavailable');
@@ -298,7 +422,7 @@ function buildIncrementalCronGraph(v,definitionLane='') {
   }
   const edge=(a,b,optional=false)=>({id:a+':'+b,source:a,target:b,optional});
   let lanes=[{id:'main-lane',label:uiText('按版本增量处理','Version incremental processing'),nodes},{id:'media-lane',label:uiText('平台与独立媒体','Platform and independent media'),nodes:media}];
-  let edges=[edge('main-schedule','main-query'),edge('main-query','main-wait',true),edge('main-wait','main-verify',true),edge('main-query','main-verify'),edge('main-verify','main-infer'),edge('main-infer','main-publish'),edge('main-infer','media-source',true),edge('media-source','media-import'),edge('media-import','media-camera'),edge('media-import','media-orion'),edge('media-camera','media-verify'),edge('media-orion','media-verify'),edge('media-orion','media-retry',true),edge('media-retry','media-local',true),edge('media-local','media-verify',true),edge('media-verify','media-ready')];
+  let edges=[edge('main-schedule','main-query'),edge('main-query','main-wait',true),edge('main-wait','main-verify',true),edge('main-query','main-verify'),edge('main-verify','main-infer'),edge('main-infer','main-publish'),edge('main-infer','media-source',true),edge('media-source','media-import'),...cronCloseupEdges(),edge('media-import','media-camera'),edge('media-import','media-orion'),edge('media-camera','media-verify'),...cronBevRecoveryEdges('media-orion','media-retry','media-local'),edge('media-verify','media-ready')];
   if(definitionLane){lanes=lanes.filter(x=>x.id===definitionLane+'-lane');const ids=new Set(lanes.flatMap(x=>x.nodes.map(n=>n.id)));edges=edges.filter(x=>ids.has(x.source)&&ids.has(x.target));lanes.forEach(l=>l.nodes.forEach(n=>{n.data.status='definition';n.data.stateLabel=cronGraphStateLabel('definition');n.data.progress=null;}));}
   return {lanes,edges,selectedNode:dailyCronState.selectedNode||'',definition:Boolean(definitionLane),active,theme:state.colorTheme||'dark',ui:{minimap:uiText('流程缩略图','Workflow minimap'),loading:uiText('加载运行图…','Loading graph…'),error:uiText('运行图暂不可用','Graph unavailable')}};
 }

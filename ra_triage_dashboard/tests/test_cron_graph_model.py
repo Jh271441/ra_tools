@@ -4,6 +4,67 @@ import unittest
 
 
 class CronGraphModelTest(unittest.TestCase):
+    def test_third_track_uses_receipt_intersection_and_never_invents_activity(self):
+        static = Path(__file__).resolve().parents[1] / 'static/js'
+        script = r"""
+const fs=require('fs'),vm=require('vm'),assert=require('assert/strict');
+const ctx=vm.createContext({window:{},document:{addEventListener(){}},state:{},uiText:zh=>zh,$:()=>null,Date,assert});
+for(const f of process.argv.slice(1))vm.runInContext(fs.readFileSync(f,'utf8'),ctx);
+vm.runInContext(`
+const m={selected:3,verified:2,camera_verified:2,bev_verified:2,triple_verified:1,
+ closeup:{receipt_status:'ready',verified:2,queued:1,attention:0,unknown:0}};
+const v={states:{published:3},media:m,datasets:[]};
+const model=()=>buildIncrementalCronGraph(v);
+const task=id=>model().lanes.flatMap(l=>l.nodes).find(n=>n.id===id).data;
+assert.equal(model().lanes.length,2);
+assert.equal(task('media-closeup').progress.done,2);
+assert.equal(task('media-verify').progress.done,1);
+assert.equal(task('media-closeup').status,'pending');
+assert.notEqual(task('media-ready').status,'success');
+assert.equal(model().edges.some(e=>e.source==='media-import'&&e.target==='media-closeup'),true);
+assert.equal(model().edges.some(e=>e.source==='media-closeup'&&e.target==='media-verify'),true);
+assert.equal(model().edges.some(e=>e.source==='media-closeup'&&e.target==='media-closeup-retry'&&e.optional),true);
+assert.equal(model().edges.some(e=>e.source==='media-closeup-retry'&&e.target==='media-closeup-local'&&e.optional),true);
+assert.equal(model().edges.some(e=>e.source==='media-closeup-retry'&&e.target==='media-verify'),true);
+assert.equal(model().edges.some(e=>e.source==='media-closeup'&&e.target==='media-closeup-local'),false);
+assert.equal(model().edges.some(e=>e.source==='media-closeup-local'&&e.target==='media-verify'),true);
+assert.equal(model().edges.some(e=>e.source==='media-closeup'&&e.target==='media-local'),false);
+assert.equal(task('media-closeup-local').status,'unknown');
+assert.equal(task('media-closeup-retry').status,'unknown');
+for(const build of [()=>model(),()=>buildIncrementalCronGraph(v,'media')]) {
+ const edges=build().edges;
+ const shape=(source,retry,local)=>{const ids={[source]:'bev',[retry]:'retry',[local]:'local'};return edges.filter(e=>ids[e.source]).map(e=>[ids[e.source],ids[e.target]||e.target,e.label||'',Boolean(e.optional)]);};
+ assert.deepEqual(shape('media-orion','media-retry','media-local'),shape('media-closeup','media-closeup-retry','media-closeup-local'));
+}
+m.closeup.retry={status:'partial_failed',total:3,processed:3,completed:2,failed:1};
+assert.equal(task('media-closeup-retry').status,'warn');
+assert.equal(task('media-closeup-retry').progress.failed,1);
+m.closeup.retry={status:'completed',total:2,processed:2,completed:2,failed:0};
+assert.equal(task('media-closeup-retry').status,'success');
+const order=model().lanes[1].nodes.map(n=>n.id);
+assert.ok(order.indexOf('media-closeup')<order.indexOf('media-closeup-retry'));
+assert.ok(order.indexOf('media-closeup-retry')<order.indexOf('media-closeup-local'));
+assert.ok(order.indexOf('media-closeup-local')<order.indexOf('media-verify'));
+m.closeup.fallback={status:'ready',registered:2,attempted_cases:1,verified:0,source_blocked:1,source_blocked_ids:['cn1']};
+assert.equal(task('media-closeup-local').status,'warn');
+assert.equal(task('media-closeup-local').issues[0],'cn1');
+m.closeup.fallback={status:'ready',registered:1,attempted_cases:1,verified:1,source_blocked:0};
+assert.equal(task('media-closeup-local').status,'success');
+v.stale=true;assert.equal(task('media-closeup-local').status,'unknown');v.stale=false;
+assert.equal(buildIncrementalCronGraph(v,'media').lanes[0].nodes.find(n=>n.id==='media-closeup-local').data.status,'definition');
+const daily={overview:{collected_at:Date.now()/1000,daily:{runs:[]}},media_daily:{runs:[]}};
+assert.equal(buildDailyCronGraph(daily,'media').edges.some(e=>e.source==='media-closeup'&&e.target==='media-closeup-retry'),true);
+assert.equal(buildDailyCronGraph(daily,'media').edges.some(e=>e.source==='media-closeup-retry'&&e.target==='media-closeup-local'),true);
+assert.equal(cronMediaOutcome(m),'waiting');
+m.closeup.attention=1;assert.equal(cronMediaOutcome(m),'incomplete');
+m.triple_verified=3;m.closeup.verified=3;assert.equal(cronMediaOutcome(m),'complete');
+m.closeup.receipt_status='unavailable';m.closeup.verified=null;m.triple_verified=null;
+assert.equal(task('media-closeup').progress.mode,'unknown');assert.equal(cronMediaOutcome(m),'unknown');
+`,ctx);
+"""
+        result = subprocess.run(['node','-e',script,str(static/'daily-cron.js'),str(static/'daily-cron-graph.js')], capture_output=True,text=True,timeout=15)
+        self.assertEqual(result.returncode,0,result.stderr)
+
     def test_incremental_completion_is_per_case_and_not_a_global_gate(self):
         static=Path(__file__).resolve().parents[1]/"static/js"
         script=r"""
@@ -16,7 +77,7 @@ const tasks=()=>buildIncrementalCronGraph(v).lanes.flatMap(l=>l.nodes).map(n=>[n
 const find=id=>tasks().find(([key])=>key===id)[1];
 if(find('main-infer').progress.total!==1639||find('main-infer').progress.done!==1585)throw Error('inference denominator missing');
 for(const id of ['main-publish','media-import','media-ready'])if(find(id).status==='success')throw Error('partial stream must not look globally complete: '+id);
-if(find('media-ready').stateLabel!=='分批持续处理')throw Error('publish/cleanup completion is per case');
+if(find('media-ready').stateLabel!=='按单项回执发布')throw Error('publish/cleanup completion is per track');
 if(find('media-retry').status!=='unknown')throw Error('retry attempts require receipts');
 if(buildIncrementalCronGraph(v,'main').lanes[0].nodes.some(n=>n.data.status!=='definition'||n.data.progress))throw Error('definition is not live evidence');
 v.states={published:10};v.media={selected:3,verified:3};if(find('media-ready').status==='success')throw Error('video verification does not prove cleanup');
@@ -33,7 +94,7 @@ const ctx = vm.createContext({ window:{}, document:{addEventListener:()=>{}}, st
 for (const path of process.argv.slice(1)) vm.runInContext(fs.readFileSync(path,'utf8'),ctx);
 vm.runInContext(`
 dailyCronState.active=true;
-const data={overview:{collected_at:Date.now()/1000,daily:{runs:[{id:'daily-2026-10-18',target_date_cst:'2026-10-18',state:'complete_with_gaps',health:'partial',selected:210,inferred:206,published:206,verified:206,skipped:4},{id:'daily-2026-10-16',target_date_cst:'2026-10-16',state:'complete',health:'success',selected:278,inferred:278,published:278,verified:278,skipped:0}]}},media_daily:{runs:[{day:'2026-10-18',selected:90,verified:90,imported:90,assigned:90,state:'complete',original_orion_total:90,original_orion_failed:2},{day:'2026-10-16',selected:112,verified:112,imported:112,assigned:112,state:'complete'}]}};
+const data={overview:{collected_at:Date.now()/1000,daily:{runs:[{id:'daily-2026-10-18',target_date_cst:'2026-10-18',state:'complete_with_gaps',health:'partial',selected:210,inferred:206,published:206,verified:206,skipped:4},{id:'daily-2026-10-16',target_date_cst:'2026-10-16',state:'complete',health:'success',selected:278,inferred:278,published:278,verified:278,skipped:0}]}},media_daily:{runs:[{day:'2026-10-18',selected:90,verified:90,triple_verified:90,closeup:{receipt_status:"ready",verified:90},imported:90,assigned:90,state:'complete',original_orion_total:90,original_orion_failed:2},{day:'2026-10-16',selected:112,verified:112,triple_verified:112,closeup:{receipt_status:"ready",verified:112},imported:112,assigned:112,state:'complete'}]}};
 function task(model,id) { return model.lanes.flatMap(l=>l.nodes).find(n=>n.id===id).data; }
 `,ctx);
 assert.equal(vm.runInContext('buildDailyCronGraph(data).lanes.length',ctx),2);
@@ -41,7 +102,7 @@ assert.equal(vm.runInContext('task(buildDailyCronGraph(data),"main-infer").statu
 vm.runInContext('data.overview.daily.runs[0].stage_timings={"main-infer":{mode:"finished",kind:"span",elapsed_seconds:6040.3,basis:"registration_to_publication"}}',ctx);
 assert.equal(vm.runInContext('task(buildDailyCronGraph(data),"main-infer").timingText',ctx),'阶段用时 1小时40分钟');
 assert.equal(vm.runInContext('task(buildDailyCronGraph(data),"main-infer").rows.some(row=>row[0]==="计时口径"&&row[1].includes("未单独记录纯推理耗时"))',ctx),true);
-assert.equal(vm.runInContext('task(buildDailyCronGraph(data),"media-ready").status',ctx),'success');
+assert.equal(vm.runInContext('task(buildDailyCronGraph(data),"media-ready").status',ctx),'unknown');
 assert.equal(vm.runInContext('task(buildDailyCronGraph(data),"media-retry").status',ctx),'unknown');
 assert.equal(vm.runInContext('buildDailyCronGraph(data).edges.some(e=>e.source.startsWith("media-")&&e.target.startsWith("main-"))',ctx),false);
 vm.runInContext('dailyCronState.selectedDay="2026-10-16"',ctx);

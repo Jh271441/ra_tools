@@ -79,7 +79,7 @@ const context = vm.createContext({
   window, document: { hidden: false, addEventListener: () => {} }, AbortController, Date,
   enhanceNativeUiSelect: () => null,
   state: { uiLanguage: "zh" },
-  $: (selector) => { if (!nodes.has(selector)) nodes.set(selector, { disabled: false, dataset: {}, textContent: "", setAttribute() {}, querySelectorAll: () => [], querySelector: () => null }); return nodes.get(selector); },
+  $: (selector) => { if (!nodes.has(selector)) nodes.set(selector, { disabled: false, dataset: {}, textContent: "", setAttribute() {}, hasAttribute: () => false, querySelectorAll: () => [], querySelector: () => null }); return nodes.get(selector); },
   uiText: (zh) => zh, escapeHtml: (value) => String(value).replaceAll("<", "&lt;").replaceAll('"', "&quot;"),
   api: () => new Promise((resolve, reject) => { request = { resolve, reject }; }),
 });
