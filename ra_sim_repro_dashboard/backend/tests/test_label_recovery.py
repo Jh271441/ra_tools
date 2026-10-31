@@ -16,6 +16,9 @@ from test_release_backfill import export, running
 def labelled(db, config, monkeypatch):
     rows, scenes, _, sync = setup(db, config, monkeypatch, failed=0, total=201)
     rows.append({'issue_id':'new', 'ra_type':2, 'ra_merge_result':'未填写'})
+    for index, row in enumerate(rows):
+        row.update(trip_id='trip-'+row['issue_id'], ra_start_timestamp=1000+index,
+                   trip_start_time=0, trip_end_time=10000)
     sync()
     calls = []
     def driver(cfg, action, payload):
@@ -198,3 +201,20 @@ def test_label_revision_keeps_regular_backfill_and_tracks_later_results(db, conf
     assert metrics['eligible'] == 199 and metrics['fp'] == 1
     assert metrics['publication']['source_job_ids'] == [101, 102, 103]
     assert base.payload == original
+
+
+def test_older_compact_monitor_is_superseded_by_verified_full_input(db, config, labelled):
+    base, source, rows, calls = labelled
+    state, due, fetcher = start(db, config, labelled)
+    child = db.get(ReleaseSimulationBatch, state['recovery']['fingerprint'])
+    compact = [{k:v for k,v in row.items() if k not in label_recovery.INPUT_FIELDS[3:]} for row in rows]
+    w.put_state(db, 'release_observation:'+base.release,
+        {'issues':compact, 'observed_at':(due-timedelta(minutes=1)).isoformat()})
+    assert label_recovery.source_valid(db, child)
+    w.put_state(db, 'release_observation:'+base.release,
+        {'issues':compact, 'observed_at':(due+timedelta(minutes=1)).isoformat()})
+    assert not label_recovery.source_valid(db, child)
+    changed = deepcopy(rows); changed[0]['trip_id'] = 'different-trip'
+    w.put_state(db, 'release_observation:'+base.release,
+        {'issues':changed, 'observed_at':(due+timedelta(minutes=1)).isoformat()})
+    assert not label_recovery.source_valid(db, child)

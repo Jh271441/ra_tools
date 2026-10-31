@@ -104,13 +104,34 @@ def test_hourly_freshness_and_reuse(prepared, monkeypatch):
     assert lane.public_state(db,batch.release,now+timedelta(hours=2))['status']=='idle'
     assert lane.public_state(db,batch.release,now+timedelta(hours=3,seconds=1))['reason']=='stale'
     identity=lane.activity_identity(source['issues'],'issue_time')
-    w.put_state(db,'release_observation:'+batch.release, {'release':batch.release,'observed_at':now.isoformat(),'issues':source['issues'],'activity_hash':identity})
+    from app.services.label_recovery import INPUT_FIELDS
+    observed = [{**row, **{k:row.get(k) for k in INPUT_FIELDS}} for row in source['issues']]
+    w.put_state(db,'release_observation:'+batch.release, {'release':batch.release,'observed_at':now.isoformat(),'issues':observed,'activity_hash':identity})
     w.put_state(db,'release_monitor:'+batch.release, {'status':'already_submitted','activity_hash':identity,'contract_hash':lane.digest({})})
     calls=[]
     monkeypatch.setattr(lane,'fetch_activity',lambda *_: (calls.append('fetch') or (batch.release,source['issues'])))
-    assert lane.fetch_observed_activity(db,{},batch.release,now+timedelta(minutes=59))[1]==source['issues']
+    assert lane.fetch_observed_activity(db,{},batch.release,now+timedelta(minutes=59))[1]==observed
     assert calls==[]
     lane.fetch_observed_activity(db,{},batch.release,now+timedelta(hours=1))
     assert calls==['fetch']
     lane.fetch_observed_activity(db,{'contract':{'time_field':'different'}},batch.release,now)
     assert calls==['fetch','fetch']
+
+
+def test_compact_monitor_requires_one_complete_query(prepared, monkeypatch):
+    db, batch, source = prepared
+    now = datetime.now(timezone.utc)
+    identity = lane.activity_identity(source['issues'], 'issue_time')
+    compact = [{k:row.get(k) for k in ('issue_id','issue_time','version','ra_type','ra_merge_result')}
+               for row in source['issues']]
+    w.put_state(db, 'release_observation:'+batch.release,
+        {'release':batch.release, 'observed_at':now.isoformat(), 'issues':compact, 'activity_hash':identity})
+    w.put_state(db, 'release_monitor:'+batch.release,
+        {'status':'already_submitted', 'activity_hash':identity, 'contract_hash':lane.digest({})})
+    calls = []
+    full = [{**row, 'trip_id':'trip-'+row['issue_id'], 'ra_start_timestamp':1000}
+            for row in source['issues']]
+    monkeypatch.setattr(lane, 'fetch_activity', lambda *_:(calls.append('fetch') or (batch.release,full)))
+    target, rows = lane.fetch_observed_activity(db, {}, batch.release, now)
+    assert target == batch.release and calls == ['fetch']
+    assert all(row['trip_id'] and row['ra_start_timestamp'] == 1000 for row in rows)

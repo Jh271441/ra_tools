@@ -122,6 +122,7 @@ def public_state(db, release, now=None):
 
 def fetch_observed_activity(db, config, release, now):
     """Reuse a validated full observation instead of querying Trail twice per cycle."""
+    from app.services.label_recovery import INPUT_FIELDS
     observed = w.get_state(db, 'release_observation:' + release)
     monitor = w.get_state(db, 'release_monitor:' + release)
     try:
@@ -130,11 +131,15 @@ def fetch_observed_activity(db, config, release, now):
         if (0 <= age < CHECK_SECONDS and monitor.get('status') != 'source_error'
                 and monitor.get('contract_hash') == digest(config.get('contract', {}))
                 and observed.get('release') == release
+                and all(all(k in row for k in INPUT_FIELDS) for row in rows)
                 and activity_identity(rows, 'issue_time') == observed.get('activity_hash') == monitor.get('activity_hash')):
             return release, rows
     except (KeyError, TypeError, ValueError):
         pass
-    return fetch_activity(config, release)
+    target, rows = fetch_activity(config, release)
+    # A fresh full query makes missing values explicit; old compact projections
+    # cannot prove whether physical inputs changed.
+    return target, [{**row, **{k:row.get(k) for k in INPUT_FIELDS}} for row in rows]
 
 
 def refresh_release(db, config, batch, *, now=None, fetcher=None):

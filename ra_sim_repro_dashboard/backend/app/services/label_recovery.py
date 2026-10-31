@@ -19,11 +19,11 @@ INPUT_FIELDS = ('version', 'issue_time', 'ra_type', 'trip_id', 'ra_start_timesta
 SCENE_FIELDS = ('issue_id', 'scenario_revision', 'start_timestamp', 'end_timestamp')
 
 
-def same_inputs(before, after):
+def same_inputs(before, after, fields=INPUT_FIELDS):
     old = {str(i['issue_id']): i for i in before}
     new = {str(i['issue_id']): i for i in after}
     return (len(old) == len(before) and len(new) == len(after) and old.keys() == new.keys()
-            and all(old[i].get(k) == new[i].get(k) for i in old for k in INPUT_FIELDS))
+            and all(old[i].get(k) == new[i].get(k) for i in old for k in fields))
 
 
 def children(db, base):
@@ -61,7 +61,13 @@ def source_valid(db, batch):
         return False
     observed = w.get_state(db, 'release_observation:' + batch.release)
     if observed.get('issues') and not same_inputs(context['source']['issues'], observed['issues']):
-        return False
+        # During migration an older monitoring projection omitted all physical
+        # fields. The newer full query that created this context supersedes it.
+        compact = all(all(k not in row for k in INPUT_FIELDS[3:]) for row in observed['issues'])
+        if (not compact or not observed.get('observed_at') or not context.get('verified_at')
+                or observed['observed_at'] > context['verified_at']
+                or not same_inputs(context['source']['issues'], observed['issues'], INPUT_FIELDS[:3])):
+            return False
     scenes = {str(s['scenario_id']): s for s in context['source']['scenarios']}
     return all(str(s['scenario_id']) in scenes and all(s.get(k) == scenes[str(s['scenario_id'])].get(k)
                for k in SCENE_FIELDS) for s in batch.payload['scenarios'])
@@ -188,6 +194,7 @@ def recover(db, config, base, source, rows, now):
             raise ValueError('preparation_receipt_invalid')
     snapshot = {**source, 'issues': issues, 'scenarios': scenes}
     context = {'base_fingerprint': base.fingerprint, 'base_audit_hash': audit_hash(base.payload),
+               'verified_at': now.isoformat(),
                'source_hash': activity_identity(rows, 'issue_time'), 'source': snapshot}
     source_key = 'label_source:' + digest(context)[:48]
     context['source_key'] = source_key
