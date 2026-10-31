@@ -7,6 +7,7 @@
     "dev": "vite --host 0.0.0.0",
     "build": "tsc --noEmit && vite build",
     "test:backtest": "node --experimental-strip-types tests/backtest.mjs",
+    "test:unit": "node --experimental-strip-types --test tests/*.mjs",
     "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {

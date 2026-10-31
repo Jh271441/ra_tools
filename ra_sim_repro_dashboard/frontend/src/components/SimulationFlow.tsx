@@ -1,10 +1,12 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Background, Handle, MarkerType, Panel, Position, ReactFlow, ReactFlowProvider, useReactFlow, type Node, type NodeProps } from '@xyflow/react';
 import { Activity, Check, ChevronDown, CircleHelp, Clock3, Database, GitBranch, Maximize, Minus, Plus, ScanLine, ShieldCheck, Upload, X, AlertTriangle } from 'lucide-react';
 import { flowEdgeTypes } from './FlowEdge';
 import CollectionLoop, {LoopNode, useLabelGraph} from './CollectionLoop';
-import { request, type BoardData } from './ReleaseWorkflow';
+import type { BoardData } from './ReleaseWorkflow';
+import { request } from '../api/workflow';
+import { useStableValue } from '../lib/useStableValue';
 import BackfillLoop, {BackfillNode, useBackfillGraph} from './BackfillLoop';
 import { collectionProgress, executionSeconds, issueAge, simulationFlow, stageMotion, type FlowStage, type StageId } from '../lib/simulationFlow';
 import { Card, CardHeader, CardTitle } from './ui/card';
@@ -16,6 +18,7 @@ type StageData = Record<string, unknown> & { stage: FlowStage; selected: boolean
 const icons = { collect: Database, prepare: ScanLine, execute: Activity, verify: ShieldCheck, publish: Upload };
 const countKeys = { collect: 'issues', prepare: 'scenarios', execute: 'simulationProgress', verify: 'valid', publish: 'publishedCount' };
 const colors = { complete: '#10b981', active: '#3b82f6', warning: '#d99616', blocked: '#ef4444', waiting: '#94a3b8', unknown: '#94a3b8', archived: '#8b5cf6' };
+const fitOptions = { padding: .08, maxZoom: 1 };
 
 function StageCard({ stage, selected, onSelect }: StageData) {
   const { t, i18n } = useTranslation();
@@ -27,7 +30,7 @@ function StageCard({ stage, selected, onSelect }: StageData) {
   const anomaly = pendingAnomalies?.[0];
   const anomalyLabel = anomaly ? `${t(`simFlow.anomaly_${anomaly.code}`)}${anomaly.count != null ? ` · ${n(anomaly.count)}` : ''}${(pendingAnomalies?.length || 0) > 1 ? ` +${pendingAnomalies!.length - 1}` : ''}` : null;
   const percent = stage.progress == null ? '—' : `${(stage.progress === 1 ? 100 : Math.min(99.9, stage.progress * 100)).toLocaleString(i18n.language === 'zh' ? 'zh-CN' : 'en-US', { maximumFractionDigits: 1 })}%`;
-  return <button type="button" className={`nodrag nopan sim-flow-node${execution ? ' sim-flow-execution' : ''} sim-flow-${stage.state}${selected ? ' is-selected' : ''}`} aria-label={t('simFlow.openStage', { stage: t(`simFlow.${stage.id}`) })} aria-pressed={selected} aria-controls="sim-flow-detail" onClick={event => { event.stopPropagation(); onSelect(stage.id); }}>
+  return <button type="button" data-stage-id={stage.id} className={`nodrag nopan sim-flow-node${execution ? ' sim-flow-execution' : ''} sim-flow-${stage.state}${selected ? ' is-selected' : ''}`} aria-label={t('simFlow.openStage', { stage: t(`simFlow.${stage.id}`) })} aria-pressed={selected} aria-controls="sim-flow-detail" onClick={event => { event.stopPropagation(); onSelect(stage.id); }}>
     <span className="sim-flow-node-title"><Icon size={17} aria-hidden="true"/><strong>{t(`simFlow.${stage.id}`)}</strong></span>
     <span className="sim-flow-count-label">{t(`simFlow.${countKeys[stage.id]}`)}</span>
     <span className="sim-flow-count">{execution ? percent : stage.count == null ? '—' : n(stage.count)}{!execution && stage.total != null && <span> / {n(stage.total)}</span>}</span>
@@ -45,8 +48,10 @@ function CollectionActivity({ lastIssue, active, paused, ready }: { lastIssue?: 
   const { t, i18n } = useTranslation();
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(timer);
+    const update = () => { if (!document.hidden) setNow(Date.now()); };
+    const timer = window.setInterval(update, 1000);
+    document.addEventListener('visibilitychange', update);
+    return () => { window.clearInterval(timer); document.removeEventListener('visibilitychange', update); };
   }, []);
   const age = issueAge(lastIssue, now);
   const absolute = age == null ? undefined : new Date(lastIssue!).toLocaleString(i18n.language === 'zh' ? 'zh-CN' : 'en-GB', { timeZone: 'Asia/Shanghai', hour12: false });
@@ -70,16 +75,19 @@ function FlowControls() {
   </Panel>;
 }
 
-export default function SimulationFlow({ data, stale, onRefresh }: { data: BoardData; stale: boolean; onRefresh?: () => Promise<unknown> }) {
+function SimulationFlow({ data, stale, readOnly = false, onRefresh }: { data: BoardData; stale: boolean; readOnly?: boolean; onRefresh?: () => Promise<unknown> }) {
   const { t, i18n } = useTranslation();
   const model = useMemo(() => simulationFlow(data, stale), [data, stale]);
   const collection = collectionProgress(data, stale);
-  const remainingStages = model.stages;
+  const remainingStages = useStableValue(model.stages);
+  const labelState = useStableValue(data.selected.label_cycle);
+  const backfillState = useStableValue(data.selected.backfill);
   const hasLabelLoop = Boolean(data.selected.label_cycle?.enabled);
   const hasBackfill = Boolean(data.selected.backfill?.enabled);
   const [resuming,setResuming] = useState(false);
   const [resumeError,setResumeError] = useState('');
   const resume = async () => {
+    if (readOnly || stale || resuming) return;
     setResuming(true);setResumeError('');
     try { await request('/resume','POST',{release:data.selected.release,fingerprint:data.selected.resume?.fingerprint || null}); await onRefresh?.(); }
     catch(err) {setResumeError(err instanceof Error?err.message:'request_failed');}
@@ -87,24 +95,61 @@ export default function SimulationFlow({ data, stale, onRefresh }: { data: Board
   };
   const [selected, setSelected] = useState<StageId | null>(null);
   const section = useRef<HTMLDivElement>(null);
+  const [compact, setCompact] = useState<boolean | null>(null);
+  const breakpointFocus = useRef<string | null>(null);
   const detail = useRef<HTMLDivElement>(null);
   const origin = useRef<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    const element = section.current;
+    if (!element) return;
+    const resize = () => {
+      const next = element.clientWidth < 760;
+      const focused = element.querySelector<HTMLElement>('.sim-flow-node:focus');
+      const id = focused?.dataset.stageId;
+      if (id) breakpointFocus.current = id;
+      setCompact(previous => previous === next ? previous : next);
+    };
+    resize();
+    const observer = new ResizeObserver(resize);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+  useLayoutEffect(() => {
+    if (!breakpointFocus.current || !section.current) return;
+    const restore = () => {
+      const replacement = section.current?.querySelector<HTMLElement>(`[data-stage-id="${breakpointFocus.current}"]`);
+      if (!replacement) return false;
+      replacement.focus({preventScroll:true});origin.current=replacement;breakpointFocus.current=null;
+      return true;
+    };
+    if (restore()) return;
+    const observer = new MutationObserver(() => { if (restore()) observer.disconnect(); });
+    observer.observe(section.current,{childList:true,subtree:true});
+    return () => observer.disconnect();
+  }, [compact]);
   const select = useCallback((id: StageId) => {
     origin.current = document.activeElement as HTMLElement;
     setSelected(id);
     // Only a deliberate selection scrolls. Polling and language changes keep the viewport.
     if ((section.current?.clientWidth || 0) < 760) requestAnimationFrame(() => detail.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }));
   }, []);
-  const close = () => { setSelected(null); origin.current?.focus({ preventScroll: true }); };
+  const close = () => { setSelected(null); (origin.current?.isConnected ? origin.current : section.current?.querySelector<HTMLElement>(`[data-stage-id="${selected}"]`))?.focus({ preventScroll: true }); };
   const stageNodes: Node<StageData>[] = useMemo(() => remainingStages.map((stage, index) => ({ id: stage.id, type: 'stage', position: { x: index * 240, y: 24 }, width: 196, height: 158, data: { stage, selected: stage.id === selected, onSelect: select, hasBranch: hasLabelLoop && stage.id === 'collect', recoveryBranch:hasBackfill && stage.id==='prepare', recoveryReturn:hasBackfill && stage.id==='verify' }, draggable: false, focusable: false, selectable: false })), [remainingStages, selected, select, hasLabelLoop, hasBackfill]);
   const stageEdges = useMemo(() => remainingStages.slice(1).map((stage, i) => ({ id: `${remainingStages[i].id}-${stage.id}`, source: remainingStages[i].id, sourceHandle:'main-out', target: stage.id, targetHandle:'main-in', type: 'flow', animated: stageMotion(remainingStages[i],stage,stale).animated, data:{scheduled:stageMotion(remainingStages[i],stage,stale).scheduled}, style: { stroke: colors[stage.state], strokeWidth: 1.8, strokeDasharray: ['unknown', 'waiting', 'archived'].includes(stage.state) ? '5 5' : undefined }, markerEnd: { type: MarkerType.ArrowClosed, color: colors[stage.state] } })), [remainingStages, stale]);
-  const labelGraph = useLabelGraph(data.selected.label_cycle, stale, 676, false);
-  const labelNodes: Node[] = hasLabelLoop ? [...stageNodes, ...labelGraph.nodes.map((node,index)=>({...node,position:{x:index*240,y:hasBackfill?466:258}})), {id:'label-caption',type:'labelCaption',position:{x:240,y:hasBackfill?432:220},data:{label:`${t('labelLoop.title')} · ${t(`labelLoop.${labelGraph.status}`)}`},focusable:false,selectable:false}] : stageNodes;
-  const labelEdges = hasLabelLoop ? [...stageEdges,...labelGraph.edges,{id:'collect-label-sync',source:'collect',sourceHandle:'branch-out',target:'label-sync',targetHandle:'branch-in',type:'flow',data:{scheduled:labelGraph.scheduled},animated:labelGraph.running,style:{stroke:labelGraph.running?'hsl(var(--primary))':'hsl(var(--muted-foreground))',strokeWidth:1.3,strokeDasharray:'4 5'},markerEnd:{type:MarkerType.ArrowClosed,color:'hsl(var(--muted-foreground))'}}] : stageEdges;
-  const recovery = useBackfillGraph(data.selected.backfill, stale, 258);
-  const nodes:Node[] = hasBackfill ? [...labelNodes,...recovery.nodes,{id:'backfill-caption',type:'labelCaption',position:{x:240,y:222},data:{label:`${t('backfill.title')} · ${t(`backfill.${recovery.status}`)}`},focusable:false,selectable:false}] : labelNodes;
-  const connector = (id:string,source:string,sourceHandle:string,target:string,targetHandle:string) => ({id,source,sourceHandle,target,targetHandle,type:'flow',animated:recovery.active,style:{stroke:'hsl(var(--muted-foreground))',strokeWidth:1.2,strokeDasharray:'4 5'},markerEnd:{type:MarkerType.ArrowClosed,color:'hsl(var(--muted-foreground))'}});
-  const edges = hasBackfill ? [...labelEdges,...recovery.edges,connector('prepare-backfill','prepare','recovery-out','backfill-sync','branch-in'),connector('backfill-verify','backfill-merge','branch-out','verify','recovery-in')] : labelEdges;
+  const labelGraph = useLabelGraph(labelState, stale, 676, false);
+  const recovery = useBackfillGraph(backfillState, stale, 258);
+  const nodes: Node[] = useMemo(() => [
+    ...stageNodes,
+    ...(hasLabelLoop ? [...labelGraph.nodes.map((node,index)=>({...node,position:{x:index*240,y:hasBackfill?466:258}})), {id:'label-caption',type:'labelCaption',position:{x:240,y:hasBackfill?432:220},data:{label:`${t('labelLoop.title')} · ${t(`labelLoop.${labelGraph.status}`)}`},focusable:false,selectable:false}] : []),
+    ...(hasBackfill ? [...recovery.nodes,{id:'backfill-caption',type:'labelCaption',position:{x:240,y:222},data:{label:`${t('backfill.title')} · ${t(`backfill.${recovery.status}`)}`},focusable:false,selectable:false}] : []),
+  ], [stageNodes,hasLabelLoop,hasBackfill,labelGraph,recovery,t]);
+  const edges = useMemo(() => {
+    const connector = (id:string,source:string,sourceHandle:string,target:string,targetHandle:string) => ({id,source,sourceHandle,target,targetHandle,type:'flow',animated:recovery.active,style:{stroke:'hsl(var(--muted-foreground))',strokeWidth:1.2,strokeDasharray:'4 5'},markerEnd:{type:MarkerType.ArrowClosed,color:'hsl(var(--muted-foreground))'}});
+    return [...stageEdges,
+      ...(hasLabelLoop ? [...labelGraph.edges,{id:'collect-label-sync',source:'collect',sourceHandle:'branch-out',target:'label-sync',targetHandle:'branch-in',type:'flow',data:{scheduled:labelGraph.scheduled},animated:labelGraph.running,style:{stroke:labelGraph.running?'hsl(var(--primary))':'hsl(var(--muted-foreground))',strokeWidth:1.3,strokeDasharray:'4 5'},markerEnd:{type:MarkerType.ArrowClosed,color:'hsl(var(--muted-foreground))'}}] : []),
+      ...(hasBackfill ? [...recovery.edges,connector('prepare-backfill','prepare','recovery-out','backfill-sync','branch-in'),connector('backfill-verify','backfill-merge','branch-out','verify','recovery-in')] : []),
+    ];
+  }, [stageEdges,hasLabelLoop,hasBackfill,labelGraph,recovery]);
   const stage = model.stages.find(v => v.id === selected);
   const s = data.selected;
   const n = (value?: number | null) => value == null ? '—' : value.toLocaleString(i18n.language === 'zh' ? 'zh-CN' : 'en-US');
@@ -116,13 +161,13 @@ export default function SimulationFlow({ data, stale, onRefresh }: { data: Board
   const facts = !stage ? [] : stage.id === 'collect' ? (collection ? [['issues', n(s.collection?.auto_count)], ['manualIssues', n(s.collection?.manual_count)], ['lastIssue', time(s.collection?.last_issue_at)], ['updated', time(s.collection?.last_success_at)], ['eligibleAt', collection.fresh ? time(s.collection?.eligible_at) : '—']] : [['synced', time(s.synced_at)], ['issues', n(s.issue_count)]]) : stage.id === 'prepare' ? [['binary', String(s.binary_id || '—')], ['scenarios', n(stage.count)]] : stage.id === 'execute' ? [['job', String(model.job?.job_id || '—')], ['executionCompleted', n(p?.completed)], ['executionRunning', n(p?.running)], ['executionQueued', n(p?.queued)], ['executionFailed', n(p?.failed)], ['executionCancelled', n(p?.cancelled)], [stale || model.job?.progress_error ? 'lastElapsed' : 'elapsed', duration], ['updated', time(p?.observed_at)]] : stage.id === 'verify' ? [['scenarioCoverage', rate(stage.progress)], ['issueCoverage', rate(model.publication?.issue_coverage)], ['conflicts', n(s.evaluation?.comparison.conflicts.length)], ['missing', n(stage.exceptionCount)]] : [['primaryJob', String(model.publication?.primary_job_id || s.metrics.job_id || '—')], ['threshold', rate(s.publication_policy?.minimum_coverage)]];
   return <Card className="sim-flow" role="region" aria-label={t('simFlow.title')}>
     <div ref={section}>
-      <CardHeader><div className="flex flex-wrap items-center justify-between gap-2"><CardTitle className="flex items-center gap-2"><GitBranch size={18} className="text-primary"/>{t('simFlow.title')}</CardTitle><div className="flex flex-wrap items-center gap-2"><span className="text-xs text-muted-foreground">{t('simFlow.phoneHint')}</span>{data.selected.resume?.enabled && <Button variant="outline" className="min-h-11" disabled={stale || resuming || data.mode!=='auto' || ['requested','running'].includes(data.selected.resume.status || '')} onClick={()=>void resume()}>{t(resuming || ['requested','running'].includes(data.selected.resume.status || '')?'resume.running':'resume.action')}</Button>}</div></div></CardHeader>
+      <CardHeader><div className="flex flex-wrap items-center justify-between gap-2"><CardTitle className="flex items-center gap-2"><GitBranch size={18} className="text-primary"/>{t('simFlow.title')}</CardTitle><div className="flex flex-wrap items-center gap-2"><span className="text-xs text-muted-foreground">{t('simFlow.phoneHint')}</span>{data.selected.resume?.enabled && <Button variant="outline" className="min-h-11" disabled={readOnly || stale || resuming || data.mode!=='auto' || ['requested','running'].includes(data.selected.resume.status || '')} onClick={()=>void resume()}>{t(resuming || ['requested','running'].includes(data.selected.resume.status || '')?'resume.running':'resume.action')}</Button>}</div></div></CardHeader>
       {s.quality_grade && <div className="sim-quality-summary"><span className={`sim-quality-grade is-${s.quality_grade.quality_level}`}>{t(`qualityGrade.${s.quality_grade.quality_level}`)}</span><span>{t(`qualityGrade.${s.quality_grade.basis}`)} {rate(s.quality_grade.issue_coverage)}</span><span>{t('qualityGrade.exceptions',{count:s.quality_grade.abnormal_issue_count})}</span></div>}
       {resumeError && <p role="alert" className="mx-5 mb-3 break-words text-sm text-destructive">{t(`resume.error_${resumeError}`,{defaultValue:t('resume.failed')})}</p>}
       {data.selected.resume?.status==='blocked' && <p role="status" className="mx-5 mb-3 break-words text-sm text-amber-700">{t(`resume.error_${data.selected.resume.reason}`,{defaultValue:t('resume.failed')})}</p>}
       {stale && <p role="status" className="mx-5 mb-3 text-sm text-amber-700 dark:text-amber-400">{t('simFlow.stale')}</p>}
-      <div className={`sim-flow-desktop${hasLabelLoop?' has-label-branch':''}${hasBackfill?' has-backfill-branch':''}`}><ReactFlowProvider><ReactFlow onNodeClick={(_, node) => {if(node.type==='stage')select(node.id as StageId);}} nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={flowEdgeTypes} fitView fitViewOptions={{padding: .08, maxZoom: 1}} minZoom={.5} maxZoom={1.6} nodesConnectable={false} nodesDraggable={false} elementsSelectable={false} edgesFocusable={false} zoomOnScroll={false} zoomOnDoubleClick={false} preventScrolling={false} deleteKeyCode={null}><Background gap={18} size={1}/><FlowControls/></ReactFlow></ReactFlowProvider></div>
-      <ol className="sim-flow-mobile">{remainingStages.map((item, i) => <li key={item.id}><span className="sim-flow-step" aria-hidden="true">{String(i + 1).padStart(2, '0')}</span><div className="sim-flow-mobile-stage"><StageCard stage={item} selected={item.id === selected} onSelect={select}/>{item.id==='collect' && hasLabelLoop && <div className="sim-label-attached"><CollectionLoop key={s.release} state={s.label_cycle} stale={stale}/></div>}{item.id==='prepare' && hasBackfill && <BackfillLoop state={s.backfill} stale={stale}/>}</div>{i < remainingStages.length - 1 && <ChevronDown className={`sim-flow-next${stageMotion(item,remainingStages[i+1],stale).animated ? ' is-active' : stageMotion(item,remainingStages[i+1],stale).scheduled ? ' is-scheduled' : ''}`} size={18} aria-hidden="true"/>}</li>)}</ol>
+      {compact === false && <div className={`sim-flow-desktop${hasLabelLoop?' has-label-branch':''}${hasBackfill?' has-backfill-branch':''}`}><ReactFlowProvider><ReactFlow onNodeClick={(_, node) => {if(node.type==='stage')select(node.id as StageId);}} nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={flowEdgeTypes} fitView fitViewOptions={fitOptions} minZoom={.5} maxZoom={1.6} nodesConnectable={false} nodesDraggable={false} elementsSelectable={false} edgesFocusable={false} zoomOnScroll={false} zoomOnDoubleClick={false} preventScrolling={false} deleteKeyCode={null}><Background gap={18} size={1}/><FlowControls/></ReactFlow></ReactFlowProvider></div>}
+      {compact === true && <ol className="sim-flow-mobile">{remainingStages.map((item, i) => <li key={item.id}><span className="sim-flow-step" aria-hidden="true">{String(i + 1).padStart(2, '0')}</span><div className="sim-flow-mobile-stage"><StageCard stage={item} selected={item.id === selected} onSelect={select}/>{item.id==='collect' && hasLabelLoop && <div className="sim-label-attached"><CollectionLoop key={s.release} state={s.label_cycle} stale={stale}/></div>}{item.id==='prepare' && hasBackfill && <BackfillLoop state={s.backfill} stale={stale}/>}</div>{i < remainingStages.length - 1 && <ChevronDown className={`sim-flow-next${stageMotion(item,remainingStages[i+1],stale).animated ? ' is-active' : stageMotion(item,remainingStages[i+1],stale).scheduled ? ' is-scheduled' : ''}`} size={18} aria-hidden="true"/>}</li>)}</ol>}
       <div className="sim-flow-legend">{(['complete','active','warning','blocked','waiting'] as const).map(state => <span key={state}><i style={{background: colors[state]}}/>{t(`simFlow.state_${state}`)}</span>)}</div>
       {model.retained && <p className="mx-5 mb-3 text-xs text-muted-foreground">{t('simFlow.retained', {job: model.publication?.primary_job_id})}</p>}
       {stage && <div ref={detail} id="sim-flow-detail" className="sim-flow-detail" role="region" aria-label={t('simFlow.details')} onKeyDown={e => { if (e.key === 'Escape') { e.stopPropagation(); close(); } }}>
@@ -153,3 +198,5 @@ export default function SimulationFlow({ data, stale, onRefresh }: { data: Board
     </div>
   </Card>;
 }
+
+export default memo(SimulationFlow);

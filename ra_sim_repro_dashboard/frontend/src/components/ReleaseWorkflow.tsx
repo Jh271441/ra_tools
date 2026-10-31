@@ -1,40 +1,30 @@
 import type { LabelCycleState } from './CollectionLoop';
 import { releaseName } from '../lib/releaseName';
-import { SimulationParameters } from './SimulationParameters';
 import type { ResultPublication } from "../types";
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, memo, Suspense, useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
+import { Select } from './ui/select';
 import { Activity, ArrowUpRight, ExternalLink, Layers3, RefreshCw, SlidersHorizontal } from 'lucide-react';
 
-const base = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/api/dashboard/workflow`;
-const SimulationFlow = lazy(() => import('./SimulationFlow'));
+import { request } from '../api/workflow';
+import { LiveView, ViewCache } from '../lib/liveView';
+import { startVisiblePolling } from '../lib/visiblePolling';
+export { request } from '../api/workflow';
+
+let flowModule: Promise<typeof import('./SimulationFlow')> | undefined;
+const preloadFlow = () => flowModule ||= import('./SimulationFlow').catch(error => { flowModule = undefined; throw error; });
+const SimulationFlow = lazy(preloadFlow);
+const SimulationParameters = lazy(() => import('./SimulationParameters').then(module => ({ default: memo(module.SimulationParameters) })));
+const boardCache = new ViewCache<BoardData>();
 function metricRate(value?: number | null) { return value == null ? '—' : (value * 100).toFixed(1) + '%'; }
 
 export function localTime(value?: string | null) {
   return value ? new Date(value).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '尚未同步';
 }
 
-const pendingReads = new Map<string, Promise<unknown>>();
-export function request<T>(path = '', method = 'GET', body?: unknown): Promise<T> {
-  const key = base + path;
-  const pending = method === 'GET' ? pendingReads.get(key) : undefined;
-  if (pending) return pending as Promise<T>;
-  const load = async () => {
-    const response = await fetch(key, { method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
-    const data = await response.json();
-    if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : '请求失败');
-    return data as T;
-  };
-  const result = load();
-  if (method === 'GET') {
-    pendingReads.set(key, result);
-    void result.finally(() => { if (pendingReads.get(key) === result) pendingReads.delete(key); }).catch(() => {});
-  }
-  return result;
-}
 export interface Workflow {
   current_version: string | null; reference_thursday: string; status: string; reason: string;
   current_period: { cycle_end: string; case_start: string; case_end_exclusive: string; evidence: string; target_road_version?: string; binary_id?: number } | null;
@@ -55,18 +45,24 @@ export interface SourceIssue {
 export const stateNames: Record<string, string> = { collecting: '待准备仿真', cancelled: '已取消', verifying: '结果核验中', excluded: '不参与评测', pending_gt: '待确认路测 GT', queued: '排队中', preflight_failed: '预检失败', cancelled_stale: '计划已过期', quality_failed: '结果未通过验收', result_ready: '结果已导入', pending_mapping: '待匹配场景', pending_simulation: '待仿真', submitting: '提交中', submission_uncertain: '提交待核对', running: '运行中', complete: '完成', failed: '失败' };
 
 export function CurrentBusinessRelease() {
+  const { t } = useTranslation();
   const [data, setData] = useState<Workflow | null>(null);
   const [error, setError] = useState('');
   useEffect(() => {
     let active = true;
-    const load = () => void request<Workflow>().then(value => { if (active) { setData(value); setError(''); } }).catch(() => { if (active) setError('当前业务版本查询失败'); });
-    load(); const timer = window.setInterval(load, 30000);
-    return () => { active = false; window.clearInterval(timer); };
+    const stop = startVisiblePolling(async () => {
+      try {
+        const value = await request<Workflow>();
+        if (active) { setData(previous => JSON.stringify(previous) === JSON.stringify(value) ? previous : value); setError(''); }
+        return value;
+      } catch { if (active) setError('businessVersionFailed'); return null; }
+    });
+    return () => { active = false; stop(); };
   }, []);
   return <div className="rounded-lg border border-border bg-card px-4 py-3 text-sm" role="status">
-    <strong title={data?.current_version || undefined}>当前业务版本：{data?.current_version ? releaseName(data.current_version) : '待核实'}</strong>
-    <span className="ml-4 text-muted-foreground">{data ? `周期结束日 ${data.current_period ? data.current_period.cycle_end : data.reference_thursday} · 每周一切换` : '正在查询'}</span>
-    {(error || data?.reason) && <p className="mt-1 text-muted-foreground">{error || data?.reason}。下方已有结果按其原版本保留。</p>}
+    <strong title={data?.current_version || undefined}>{t('simFlow.businessVersion')}：{data?.current_version ? releaseName(data.current_version) : t('simFlow.noData')}</strong>
+    <span className="ml-4 text-muted-foreground">{data ? t('simFlow.businessPeriod', { date: data.current_period ? data.current_period.cycle_end : data.reference_thursday }) : t('loading')}</span>
+    {(error || data?.reason) && <p className="mt-1 text-muted-foreground">{error ? t(`simFlow.${error}`) : data?.reason} {t('simFlow.retainedResults')}</p>}
   </div>;
 }
 
@@ -148,34 +144,60 @@ function JobCard({ job }: { job: BoardJob }) {
 
 export function ReleaseWorkflow({ onOpenIssues }: { onOpenIssues: (release?: string) => void }) {
   const { t } = useTranslation();
-  const [data, setData] = useState<BoardData | null>(null);
+  const [view] = useState(() => new LiveView<BoardData>(
+    new URLSearchParams(window.location.search).get('version') || '@current', boardCache,
+    (release, options) => request<BoardData>(`/board?${new URLSearchParams({ release, refresh: String(Boolean(options.force)) })}`, 'GET', undefined, { fresh: options.fresh || options.force }),
+  ));
+  const { key: release, data, error: readError, verified } = useSyncExternalStore(view.subscribe, view.getSnapshot);
   const [versionOptions, setVersionOptions] = useState<BoardData['versions']>([]);
-  const [release, setRelease] = useState(() => new URLSearchParams(window.location.search).get('version') || '@current');
-  const [error, setError] = useState('');
+  const [actionError, setError] = useState('');
+  const error = actionError || readError;
   const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
+  const writeDisabled = busy || !verified;
   const [notice, setNotice] = useState('');
   const parametersScrolled = useRef(false);
+  const parameters = useRef<HTMLDivElement>(null);
+  const [showParameters, setShowParameters] = useState(() => new URLSearchParams(window.location.search).get('parameters') === '1');
   const [existingJob, setExistingJob] = useState('');
   const [plan, setPlan] = useState<{fingerprint:string;release:string;binary_id:number;scenarios:unknown[];simulation:{max_concurrency:number;priority?:string}} | null>(null);
-  const generation = useRef(0);
-  const load = useCallback(async (force=false) => {
-    const id=++generation.current;
-    try {
-      const result=await request<BoardData>(`/board?${new URLSearchParams({release,refresh:String(force)})}`);
-      if(id===generation.current){setData(result);setVersionOptions(result.versions);setError('');}
-      return result;
-    }catch(err){if(id===generation.current)setError(err instanceof Error?err.message:String(err));return null;}
-  },[release]);
+  const load = useCallback(() => view.reload(), [view]);
+  const afterResume = useCallback(() => { view.invalidate(); return view.reload({fresh:true}); }, [view]);
   useEffect(()=>{
-    let active=true;let timer:number;
-    const poll=async()=>{const value=await load();if(active)timer=window.setTimeout(poll,value?.refreshing?3000:30000);};
-    void poll();return()=>{active=false;generation.current++;window.clearTimeout(timer);};
-  },[load]);
-  const act=async(fn:()=>Promise<void>)=>{setBusy(true);setError('');setNotice('');try{await fn();await load();}catch(err){setError(err instanceof Error?err.message:String(err));}finally{setBusy(false);}};
+    const stop = startVisiblePolling(() => busyRef.current ? Promise.resolve(null) : load(), value => value.refreshing);
+    return () => { stop(); view.cancel(); };
+  },[load,release,view]);
+  useEffect(() => { if (release !== '@current') void preloadFlow().catch(() => {}); }, [release]);
+  useEffect(() => {
+    if (data) setVersionOptions(previous => JSON.stringify(previous) === JSON.stringify(data.versions) ? previous : data.versions);
+  }, [data]);
+  useEffect(() => {
+    const onPopState = () => { if (!busyRef.current) { view.select(new URLSearchParams(window.location.search).get('version') || '@current'); setPlan(null); setError(''); } };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [view]);
+  const act=async(fn:()=>Promise<void>)=>{
+    if (busyRef.current || !view.getSnapshot().verified) return;
+    busyRef.current=true;setBusy(true);setError('');setNotice('');view.invalidate();
+    try { await fn(); } catch(err) {setError(err instanceof Error?err.message:String(err));}
+    finally {await view.reload({fresh:true});busyRef.current=false;setBusy(false);}
+  };
+  const refresh=async()=>{
+    if (busyRef.current) return;
+    busyRef.current=true;setBusy(true);setError('');
+    try { await view.reload({force:true}); } finally {busyRef.current=false;setBusy(false);}
+  };
   const selected=data?.selected;
   useEffect(() => {
+    if (!selected || showParameters || !parameters.current) return;
+    const observer = new IntersectionObserver(entries => { if (entries.some(entry => entry.isIntersecting)) { setShowParameters(true); observer.disconnect(); } }, {rootMargin:'160px'});
+    observer.observe(parameters.current);
+    return () => observer.disconnect();
+  }, [selected?.release, showParameters]);
+  useEffect(() => {
     if (selected && !parametersScrolled.current && new URLSearchParams(window.location.search).get('parameters') === '1') {
-      document.getElementById('simulation-parameters')?.scrollIntoView({ block: 'start' });
+      setShowParameters(true);
+      parameters.current?.scrollIntoView({ block: 'start' });
       parametersScrolled.current = true;
     }
   }, [selected?.release]);
@@ -191,23 +213,24 @@ export function ReleaseWorkflow({ onOpenIssues }: { onOpenIssues: (release?: str
   ).slice(0, 1);
   const otherJobs = jobs.filter(job => !visibleJobs.includes(job));
   const source=selected?.source_metrics;
-  function choose(value:string){generation.current++;setRelease(value);setData(null);setPlan(null);setNotice('');setExistingJob('');const url=new URL(window.location.href);if(value==='@current')url.searchParams.delete('version');else url.searchParams.set('version',value);window.history.replaceState(window.history.state,'',url.pathname+url.search);}
+  function choose(value:string){if(busyRef.current || value===release)return;view.select(value);setError('');setPlan(null);setNotice('');setExistingJob('');const url=new URL(window.location.href);if(value==='@current')url.searchParams.delete('version');else url.searchParams.set('version',value);window.history.replaceState(window.history.state,'',url.pathname+url.search);}
   return <div className="min-w-0 space-y-5">
     <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-xl font-semibold">{t('simFlow.boardTitle')}</h2><p className="mt-1 text-xs text-muted-foreground">{t('simFlow.boardSubtitle')}</p></div><div className="flex flex-wrap items-center gap-2">
-      <Button variant="outline" className="min-h-11" disabled={busy} onClick={()=>void act(async()=>{await load(true);})}><RefreshCw className="h-4 w-4"/>{t('simFlow.refreshProgress')}</Button>
-      <Button variant="outline" className="min-h-11" disabled={!selected} aria-controls="simulation-parameters" onClick={() => document.getElementById('simulation-parameters')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}><SlidersHorizontal className="h-4 w-4"/>{t('simFlow.parameters')}</Button>
+      <Button variant="outline" className="min-h-11" disabled={busy} onClick={()=>void refresh()}><RefreshCw className={`h-4 w-4${busy ? ' animate-spin' : ''}`}/>{t('simFlow.refreshProgress')}</Button>
+      <Button variant="outline" className="min-h-11" disabled={!selected} aria-controls="simulation-parameters-entry" onClick={() => {setShowParameters(true);parameters.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });}}><SlidersHorizontal className="h-4 w-4"/>{t('simFlow.parameters')}</Button>
       <Button variant="outline" className="min-h-11" disabled={!selected} onClick={()=>onOpenIssues(selected?.is_current?undefined:selected?.release)}>{t('simFlow.issueDetails')}<ArrowUpRight className="h-4 w-4"/></Button>
     </div></div>
     <nav aria-label={t('simFlow.versionFlows')} className="flex max-w-full gap-2 overflow-x-auto rounded-lg border bg-card/60 p-2">
-      <Button className="min-h-11" variant={release==='@current'?'default':'ghost'} aria-pressed={release==='@current'} onClick={()=>choose('@current')}>{t('simFlow.followCurrent')}</Button>
-      {versionOptions.map(version=><Button key={version.release} className="min-h-11" variant={release===version.release?'default':'ghost'} aria-pressed={release===version.release} title={version.release} onClick={()=>choose(version.release)}>{releaseName(version.release)}{version.collection_status==='collecting' && <span className="text-xs opacity-80">{t('simFlow.collectingShort')}</span>}</Button>)}
+      <Button className="min-h-11" disabled={busy} variant={release==='@current'?'default':'ghost'} aria-pressed={release==='@current'} onClick={()=>choose('@current')}>{t('simFlow.followCurrent')}</Button>
+      {versionOptions.map(version=><Button key={version.release} className="min-h-11" disabled={busy} variant={release===version.release?'default':'ghost'} aria-pressed={release===version.release} title={version.release} onClick={()=>choose(version.release)}>{releaseName(version.release)}{version.collection_status==='collecting' && <span className="text-xs opacity-80">{t('simFlow.collectingShort')}</span>}</Button>)}
     </nav>
     {error && <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{error}</p>}
-    {!selected ? <Card><CardContent className="p-10 text-center text-sm text-muted-foreground">正在加载版本看板…</CardContent></Card> : <>
+    {selected && !verified && !readError && <p role="status" className="flex items-center gap-2 text-xs text-muted-foreground"><RefreshCw className="h-3.5 w-3.5 animate-spin"/>{t('simFlow.checkingSnapshot')}</p>}
+    {!selected ? <Card role="status" aria-busy="true"><CardContent className="p-10 text-center text-sm text-muted-foreground">{t('simFlow.loadingBoard')}</CardContent></Card> : <>
       <div className="flex flex-wrap items-center gap-3"><h3 className="font-semibold" title={selected.release}>{releaseName(selected.release)}</h3>{selected.is_current && <Badge variant="secondary">当前业务版本</Badge>}{selected.kind==='archived' && <Badge>历史归档</Badge>}{selected.period?.status==='running' && <Badge variant="warning">路测收集中</Badge>}<span className="text-xs text-muted-foreground">{selected.period?.cycle_end ? `${selected.period.case_start.slice(0,10)} — ${selected.period.cycle_end}` : selected.kind==='archived'?'已归档的版本评测':''}</span></div>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><Stat title="可评测样本" value={number(source?.eligible)} detail={source?.excluded != null?`口径排除 ${number(source.excluded)} 条`:undefined}/><Stat title="关联场景" value={number(selected.scenario_count)} detail={selected.issue_count != null?`自动触发 Issue ${number(selected.issue_count)} 条`:undefined}/><Stat title="线上精确率" value={metricRate(source?.online_precision)} color="text-blue-600 dark:text-blue-400"/><Stat title="线上召回率" value={metricRate(source?.online_recall)} color="text-orange-600 dark:text-orange-400"/></div>
       <Suspense fallback={<Card role="status" className="p-5 text-sm text-muted-foreground">{t('simFlow.loading')}</Card>}>
-        {release !== '@current' && <SimulationFlow key={selected.release} data={data!} stale={Boolean(error)} onRefresh={()=>load()} />}
+        {release !== '@current' && <SimulationFlow key={selected.release} data={data!} stale={Boolean(readError)} readOnly={writeDisabled} onRefresh={afterResume} />}
       </Suspense>
       <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_280px]">
         <div className="min-w-0 space-y-4">{selected.evaluation ? <>
@@ -238,12 +261,14 @@ export function ReleaseWorkflow({ onOpenIssues }: { onOpenIssues: (release?: str
             </CardContent>
           </Card>
           {selected.evaluation && !selected.evaluation.publication && !selected.evaluation.quality_gate_passed && <Card><CardHeader><CardTitle>有效样本参考</CardTitle><Badge variant="warning">尚未达到发布条件</Badge></CardHeader><CardContent className="space-y-3"><p className="text-xs leading-5 text-muted-foreground">仅统计主结果中通过场景质量检查的 {number(selected.evaluation.subset_summary.eligible)} 个样本，覆盖率 {metricRate(selected.evaluation.coverage)}；失败样本未计入准召分母。</p>{[['精确率',selected.evaluation.subset_summary.precision],['召回率',selected.evaluation.subset_summary.recall],['行为复现率',selected.evaluation.subset_summary.sim_repro_rate]].map(([label,value])=><div key={String(label)} className="flex justify-between text-sm"><span>{label}</span><strong className="font-mono">{metricRate(value as number | null)}</strong></div>)}<p className="text-xs leading-5 text-amber-700">{selected.evaluation.publication_decision?.reason || t('simFlow.thresholdNote')}</p></CardContent></Card>}
-          {selected.is_current && <Card><CardHeader><CardTitle>仿真操作</CardTitle></CardHeader><CardContent className="space-y-3"><label className="flex items-center justify-between text-sm">仿真方式<select aria-label="仿真方式" className="rounded border bg-background px-3 py-2" value={data.mode} disabled={busy} onChange={event=>{const mode=event.target.value;void act(async()=>{await request('/mode','PUT',{mode});setNotice(`已保存${mode==='auto'?'自动':'手动'}模式`);});}}><option value="manual">手动</option><option value="auto" disabled={!data.driver_ready || !data.scheduler_enabled}>自动</option></select></label><Button className="w-full" disabled={busy || activeJob || data.current_status!=='ready'} onClick={()=>void act(async()=>setPlan(await request('/plan')))}>{activeJob?'已有任务运行中':'预览仿真计划'}</Button><p className="text-xs leading-5 text-muted-foreground">自动模式会补齐场景并提交仿真；Issue 同步每 15 分钟独立运行。</p>{notice && <p role="status" className="text-sm text-primary">{notice}</p>}</CardContent></Card>}
+          {selected.is_current && <Card><CardHeader><CardTitle>仿真操作</CardTitle></CardHeader><CardContent className="space-y-3"><div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span>{t('simFlow.mode')}</span><Select label={t('simFlow.mode')} value={data.mode} disabled={writeDisabled} options={[{value:'manual',label:t('simFlow.manualMode')},{value:'auto',label:t('simFlow.autoMode'),disabled:!data.driver_ready || !data.scheduler_enabled}]} onChange={mode=>{void act(async()=>{await request('/mode','PUT',{mode});setNotice(t('simFlow.modeSaved',{mode:t(mode==='auto'?'simFlow.autoMode':'simFlow.manualMode')}));});}}/></div><Button className="w-full" disabled={writeDisabled || activeJob || data.current_status!=='ready'} onClick={()=>void act(async()=>setPlan(await request('/plan')))}>{activeJob?'已有任务运行中':'预览仿真计划'}</Button><p className="text-xs leading-5 text-muted-foreground">自动模式会补齐场景并提交仿真；Issue 同步每 15 分钟独立运行。</p>{notice && <p role="status" className="text-sm text-primary">{notice}</p>}</CardContent></Card>}
         </div>
       </div>
-      {plan && selected.is_current && <Card><CardHeader><CardTitle>待提交计划</CardTitle></CardHeader><CardContent className="space-y-3 text-sm"><p title={plan.release}>{releaseName(plan.release)} · Binary {plan.binary_id} · {number(plan.scenarios.length)} 个场景</p><p className="text-xs text-muted-foreground">完整周期，prod_gen4，并发 {number(plan.simulation.max_concurrency)}，优先级 {plan.simulation.priority || 'NORMAL'}，禁用缓存，启用 DPE；沿用历史基线参数。</p><div className="flex flex-wrap gap-2"><Button disabled={busy || activeJob} onClick={()=>void act(async()=>{const result=await request<{status:string}>('/submit','POST',{fingerprint:plan.fingerprint});setNotice(stateNames[result.status]||result.status);setPlan(null);})}>提交此计划</Button><input aria-label="已有 Job ID" placeholder="关联已有 Job ID" className="rounded border bg-background p-2" value={existingJob} onChange={event=>setExistingJob(event.target.value)}/><Button variant="outline" disabled={busy || !/^\d+$/.test(existingJob)} onClick={()=>void act(async()=>{await request('/attach','POST',{fingerprint:plan.fingerprint,job_id:Number(existingJob)});setPlan(null);setNotice('Job 已关联，正在核验');})}>关联并核验</Button></div></CardContent></Card>}
+      {plan && selected.is_current && <Card><CardHeader><CardTitle>待提交计划</CardTitle></CardHeader><CardContent className="space-y-3 text-sm"><p title={plan.release}>{releaseName(plan.release)} · Binary {plan.binary_id} · {number(plan.scenarios.length)} 个场景</p><p className="text-xs text-muted-foreground">完整周期，prod_gen4，并发 {number(plan.simulation.max_concurrency)}，优先级 {plan.simulation.priority || 'NORMAL'}，禁用缓存，启用 DPE；沿用历史基线参数。</p><div className="flex flex-wrap gap-2"><Button disabled={writeDisabled || activeJob} onClick={()=>void act(async()=>{const result=await request<{status:string}>('/submit','POST',{fingerprint:plan.fingerprint});setNotice(stateNames[result.status]||result.status);setPlan(null);})}>提交此计划</Button><input aria-label="已有 Job ID" placeholder="关联已有 Job ID" className="rounded border bg-background p-2" value={existingJob} onChange={event=>setExistingJob(event.target.value)}/><Button variant="outline" disabled={writeDisabled || !/^\d+$/.test(existingJob)} onClick={()=>void act(async()=>{await request('/attach','POST',{fingerprint:plan.fingerprint,job_id:Number(existingJob)});setPlan(null);setNotice('Job 已关联，正在核验');})}>关联并核验</Button></div></CardContent></Card>}
       <details className="rounded-lg border bg-card/60 p-4"><summary className="cursor-pointer text-sm font-medium">版本与运行配置</summary><p className="mt-3 break-all text-xs text-muted-foreground">版本标识：{selected.release}</p><div className="mt-4 grid gap-4 text-sm sm:grid-cols-3"><div><p className="text-xs text-muted-foreground">目标构建 / Binary</p><p className="mt-1 break-all">{selected.period?.target_road_version || selected.release}</p><p className="font-mono text-xs text-muted-foreground">{selected.binary_id || '—'}</p></div><div><p className="text-xs text-muted-foreground">Issue 最近同步 / 归档</p><p className="mt-1">{localTime(selected.synced_at)}</p></div><div><p className="text-xs text-muted-foreground">数据口径</p><p className="mt-1">{selected.kind==='archived'?'原版本归档评测':selected.period?.status==='running'?'周期采集中':'同版本完整周期评测'}</p></div></div>{selected.period?.evidence && <p className="mt-4 border-t pt-3 text-xs leading-5 text-muted-foreground">周期依据：{selected.period.evidence}</p>}</details>
-      <SimulationParameters key={selected.release} release={selected.release} binaryId={selected.binary_id} scenarioId={new URLSearchParams(window.location.search).get('scenario') || undefined}/>
+      <div ref={parameters} id="simulation-parameters-entry" className="scroll-mt-6 min-w-0">
+        {showParameters ? <Suspense fallback={<Card role="status" className="p-5 text-sm text-muted-foreground">{t('loading')}</Card>}><SimulationParameters key={selected.release} release={selected.release} binaryId={selected.binary_id} scenarioId={new URLSearchParams(window.location.search).get('scenario') || undefined}/></Suspense> : <Card className="p-4"><Button variant="ghost" className="min-h-11" onClick={() => setShowParameters(true)}><SlidersHorizontal className="h-4 w-4"/>{t('simFlow.parameters')}</Button></Card>}
+      </div>
     </>}
   </div>;
 }

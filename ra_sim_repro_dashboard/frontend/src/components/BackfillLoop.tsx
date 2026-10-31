@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Handle, MarkerType, Position, type Node, type NodeProps } from '@xyflow/react';
 import { RefreshCw, ScanLine, Activity, GitMerge, ArrowDown, CornerUpLeft } from 'lucide-react';
@@ -24,6 +24,7 @@ export const BackfillNode = memo(function BackfillNode({data}:NodeProps<Node<Rec
 });
 export function useBackfillGraph(state?:BackfillState, stale=false, y=258) {
   const {t,i18n} = useTranslation();
+  return useMemo(() => {
   const status = stale?'stale':state?.status || 'waiting';
   const index = ['syncing','preparing','simulating','merging'].indexOf(status);
   const active = index>=0;
@@ -41,6 +42,7 @@ export function useBackfillGraph(state?:BackfillState, stale=false, y=258) {
     style:{stroke:active?'hsl(var(--primary))':'hsl(var(--muted-foreground))',strokeWidth:1.2,strokeDasharray:loop?'4 5':undefined},
     markerEnd:{type:MarkerType.ArrowClosed,color:'hsl(var(--muted-foreground))'}});
   return {nodes,edges:[edge('sync','prepare'),edge('prepare','simulate'),edge('simulate','merge'),edge('merge','sync',true)],status,active,index,values};
+  }, [state, stale, y, t, i18n.language]);
 }
 export default function BackfillLoop({state,stale}:{state?:BackfillState;stale:boolean}) {
   const {t,i18n}=useTranslation();const graph=useBackfillGraph(state,stale);

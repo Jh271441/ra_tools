@@ -21,6 +21,8 @@ void i18n.use(initReactI18next).init({
           "issueAgeTime": "{{hours}}小时 {{minutes}}分 {{seconds}}秒",
 
           "versionFlows": "按版本切换仿真流程",
+          "mode": "仿真方式", "manualMode": "手动", "autoMode": "自动", "modeSaved": "已保存{{mode}}模式",
+          "loadingBoard": "正在加载版本看板…", "checkingSnapshot": "正在核对最新进度，操作稍后可用", "businessVersion": "当前业务版本", "businessPeriod": "周期结束日 {{date}} · 每周一切换", "businessVersionFailed": "当前业务版本查询失败", "retainedResults": "已有结果按其原版本保留。",
           "boardTitle": "仿真看板", "boardSubtitle": "按版本查看收集、仿真与评测结果", "refreshProgress": "刷新进度", "parameters": "仿真参数",
           "followCurrent": "当前业务版本",
           "collectingShort": "收集中",
@@ -397,6 +399,8 @@ void i18n.use(initReactI18next).init({
           "issueAgeTime": "{{hours}}h {{minutes}}m {{seconds}}s",
 
           "versionFlows": "Switch simulation flow by release",
+          "mode": "Simulation mode", "manualMode": "Manual", "autoMode": "Automatic", "modeSaved": "Saved {{mode}} mode",
+          "loadingBoard": "Loading release board…", "checkingSnapshot": "Checking latest progress; actions will be available shortly", "businessVersion": "Current business release", "businessPeriod": "Period ends {{date}} · switches every Monday", "businessVersionFailed": "Unable to query the current business release", "retainedResults": "Existing results retain their original release.",
           "boardTitle": "Simulation dashboard", "boardSubtitle": "Collection, simulation and evaluation by release", "refreshProgress": "Refresh progress", "parameters": "Simulation parameters",
           "followCurrent": "Current business release",
           "collectingShort": "Collecting",

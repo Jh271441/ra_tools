@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Handle, MarkerType, Position, ReactFlow, type Node, type NodeProps } from '@xyflow/react';
 import { flowEdgeTypes } from './FlowEdge';
@@ -42,9 +42,11 @@ export const LoopNode = memo(function LoopNode({data}: NodeProps<Node<LoopData>>
   </>;
 });
 const nodeTypes = {labelStep: LoopNode};
+const viewport = { x: 0, y: 0, zoom: 1 };
 
 export function useLabelGraph(state: LabelCycleState | undefined, stale: boolean, width: number, compact: boolean) {
   const {t,i18n} = useTranslation();
+  return useMemo(() => {
   const status = !state?.enabled ? 'disabled' : stale ? 'source_error' : state.status;
   const running = status === 'checking';
   const scheduled = ['queued','idle','updated'].includes(status);
@@ -75,6 +77,7 @@ export function useLabelGraph(state: LabelCycleState | undefined, stale: boolean
   const edges = steps.map((step,index)=>({id:`label-${step}-next`,source:`label-${step}`,sourceHandle:'out',target:`label-${steps[(index+1)%3]}`,targetHandle:'in',type:'flow',data:{scheduled},animated:running && (index===0 || index===2),
     style:{stroke:running && index!==1 ? 'hsl(var(--primary))' : 'hsl(var(--muted-foreground))',strokeWidth:1.3,strokeDasharray:index===2?'4 5':undefined},markerEnd:{type:MarkerType.ArrowClosed,color:'hsl(var(--muted-foreground))'},pathOptions:{offset:22}}));
   return {nodes,edges,status,warning,running,scheduled};
+  }, [state, stale, width, compact, t, i18n.language]);
 }
 
 export default function CollectionLoop({state, stale}: {state?:LabelCycleState; stale:boolean}) {
@@ -91,7 +94,7 @@ export default function CollectionLoop({state, stale}: {state?:LabelCycleState; 
   return <section className="sim-label-loop" aria-label={t('labelLoop.title')}>
     <div className="sim-label-heading"><h4><RefreshCw size={16} aria-hidden="true"/>{t('labelLoop.title')}</h4><span className={warning?'text-destructive':'text-muted-foreground'} role="status">{t(`labelLoop.${status}`)}</span><span className="sim-label-timezone">{t('labelLoop.timezone')}</span></div>
     <div ref={container} className="sim-label-canvas" style={{height:compact?492:176}}>
-      {width > 0 && <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={flowEdgeTypes} viewport={{x:0,y:0,zoom:1}} minZoom={1} maxZoom={1} nodesDraggable={false} nodesConnectable={false} elementsSelectable={false} edgesFocusable={false} panOnDrag={false} zoomOnScroll={false} zoomOnPinch={false} zoomOnDoubleClick={false} preventScrolling={false} deleteKeyCode={null}/>}
+      {width > 0 && <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={flowEdgeTypes} viewport={viewport} minZoom={1} maxZoom={1} nodesDraggable={false} nodesConnectable={false} elementsSelectable={false} edgesFocusable={false} panOnDrag={false} zoomOnScroll={false} zoomOnPinch={false} zoomOnDoubleClick={false} preventScrolling={false} deleteKeyCode={null}/>}
     </div>
   </section>;
 }

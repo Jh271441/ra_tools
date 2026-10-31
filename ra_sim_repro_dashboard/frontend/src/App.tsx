@@ -18,11 +18,11 @@ import {
 import { useTranslation } from 'react-i18next';
 import { api } from './api/client';
 import { CurrentBusinessRelease, ReleaseWorkflow } from './components/ReleaseWorkflow';
-import { ReleaseIssues } from './components/ReleaseIssues';
-import { IssueDetail } from './components/IssueDetail';
-import { IssuesTable } from './components/IssuesTable';
+const ReleaseIssues = lazy(() => import('./components/ReleaseIssues').then(module => ({ default: module.ReleaseIssues })));
+const IssueDetail = lazy(() => import('./components/IssueDetail').then(module => ({ default: module.IssueDetail })));
+const IssuesTable = lazy(() => import('./components/IssuesTable').then(module => ({ default: module.IssuesTable })));
 const Overview = lazy(() => import('./components/Overview').then(module => ({ default: module.Overview })));
-import { SystemStatus } from './components/SystemStatus';
+const SystemStatus = lazy(() => import('./components/SystemStatus').then(module => ({ default: module.SystemStatus })));
 import { TopControls } from './components/TopControls';
 import { Badge } from './components/ui/badge';
 import { Button } from './components/ui/button';
@@ -682,6 +682,7 @@ export default function App() {
             ) : null}
 
             {page !== 'status' && page !== 'issues' && <CurrentBusinessRelease />}
+            <Suspense fallback={<p role="status" className="text-sm text-muted-foreground">{t('loading')}</p>}>
             {page === 'status' ? (
               <SystemStatus />
             ) : page === 'overview' ? (
@@ -710,6 +711,7 @@ export default function App() {
                 <IssueDetail selected={selectedResult} />
               </div>} />
             )}
+            </Suspense>
           </main>
         </div>
       </div>
