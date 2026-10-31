@@ -502,7 +502,10 @@ function renderMediaDialog() {
     }
     $("#mediaTitle").textContent = `${snapshot?.issueId || ""} · Ares Studio 视频${snapshot?.referenceMedia ? " · 参考媒体" : ""}`;
     $("#mediaTimeline").innerHTML = "";
-    $("#mediaHelp").textContent = "↑ / ↓ 切 Case · ← / → 按所选步长跳转 · 空格播放/暂停 · B/C/V 切媒体 · +/− 缩放 · 0 适配 · 放大后拖拽平移 · F 全屏 · Esc 退出";
+    $("#mediaHelp").textContent = uiText(
+      "↑ / ↓ 切 Case · ← / → 按所选步长跳转 · 空格播放/暂停 · B/C/V 切媒体 · Shift+V 局部 BEV · +/− 缩放 · 0 适配 · 放大后拖拽平移 · F 全屏 · Esc 退出",
+      "↑/↓ Case · ←/→ selected seek step · Space play/pause · B/C/V media · Shift+V closeup BEV · +/− zoom · 0 fit · Drag to pan when zoomed · F fullscreen · Esc close"
+    );
     setMediaZoom(state.media.zoom, { resetScroll: state.media.zoom === 1 });
     return;
   }

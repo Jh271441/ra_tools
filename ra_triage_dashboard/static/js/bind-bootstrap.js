@@ -772,6 +772,7 @@ function bindEvents() {
   });
   document.addEventListener("keydown", (event) => {
     if (!$("#mediaDialog").open) {
+      if (handleCloseupVideoShortcut(event)) return;
       if (isImeComposing(event)) return;
       const target = event.target instanceof Element ? event.target : null;
       const interactiveTarget = target?.closest("input, textarea, select, [contenteditable='true'], [role='textbox']");
@@ -850,6 +851,7 @@ function bindEvents() {
       }
       return;
     }
+    if (handleCloseupVideoShortcut(event)) return;
     if (!state.media.snapshot?.intentPreview && !event.target?.closest?.("input, textarea, select, [contenteditable=true], [role=textbox]") && !event.ctrlKey && !event.metaKey && !event.altKey && ["ArrowUp", "ArrowDown"].includes(event.key)) {
       event.preventDefault();
       navigateComparisonMediaCase(event.key === 'ArrowUp' ? -1 : 1).catch(error => showToast(error.message,true));

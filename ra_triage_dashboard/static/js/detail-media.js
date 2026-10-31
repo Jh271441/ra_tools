@@ -38,6 +38,52 @@ function videoTrackLabel(label) {
   return label;
 }
 
+function handleCloseupVideoShortcut(event) {
+  if (!event.shiftKey || String(event.key || "").toLowerCase() !== "v") return false;
+  if (event.defaultPrevented || event.repeat || isImeComposing(event)
+      || event.ctrlKey || event.metaKey || event.altKey
+      || event.target?.closest?.("input, textarea, select, [contenteditable]:not([contenteditable=false]), [role=textbox], .ui-select")) return true;
+  const dialog = $("#mediaDialog");
+  const inDialog = Boolean(dialog?.open);
+  if (document.querySelector("dialog[open]:not(#mediaDialog)")) return true;
+  if (inDialog && state.media.snapshot?.intentPreview) return true;
+  const caseData = state.activePage === "labeling" ? state.caseLabeling?.caseData : state.selectedCase;
+  const pane = typeof detailMediaPane === "function" ? detailMediaPane() : $("#detailPane");
+  if (!inDialog && (!["review", "labeling"].includes(state.activePage) || !caseData
+      || !pane?.querySelector(".detail-hero-media")
+      || document.querySelector("#reviewPane .review-dropdown[open], #caseLabelingEditor .review-dropdown[open]"))) return true;
+  event.preventDefault();
+  const descriptor = inDialog ? mediaVideo() : videoWithFramePosters(caseData);
+  const track = [descriptor, ...(descriptor?.tracks || [])].find(item => item?.source_id === "bev_closeup" && safeSameOriginAssetUrl(item.url));
+  if (!track) {
+    showToast(uiText("当前 Issue 暂无局部 BEV 视频。", "No closeup BEV video is available for this Issue."), true);
+    return true;
+  }
+  if (inDialog) {
+    if (state.media.kind !== "video") switchMediaKind("video");
+    const stage = $("#mediaVideoStage");
+    const video = stage?.querySelector("video");
+    if (video?.getAttribute("src") === track.url) return true;
+    const select = stage?.querySelector("[data-video-track]");
+    if (select?.querySelector(`option[data-video-source-id="bev_closeup"]`)) {
+      select.value = track.url;
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+      enhanceNativeUiSelect(select);
+    } else {
+      video?._setBevVideoTrack?.(track.url, track.poster_url || "");
+    }
+  } else {
+    const prefix = detailMediaPrefix();
+    const select = pane.querySelector(`#${prefix}MediaKindSelect`);
+    const value = track.url === descriptor.url ? "video" : `track:${track.url}`;
+    if (!select || !Array.from(select.options).some(option => option.value === value && !option.disabled)) return true;
+    select.value = value;
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    populateUiSelect(pane.querySelector(`#${prefix}MediaKindPicker`), detailMediaKindOptions(caseData, ensureDetailMediaState(caseData)), detailMediaSelectedKind(caseData));
+  }
+  return true;
+}
+
 function videoWithFramePosters(caseData) {
   const video = caseData?.assets?.video;
   if (!video?.url) return null;
@@ -89,7 +135,7 @@ function videoPlayerMarkup(video, { zoomable = true, compact = false, issueId = 
     .join("");
   const tracks = (video?.tracks || []).filter((track) => safeSameOriginAssetUrl(track.url));
   const trackControl = tracks.length > 1 && !compact
-    ? `<label><span class="ui-lang-zh">视频源</span><span class="ui-lang-en">Video source</span> <select data-video-track>${tracks.map((track) => `<option value="${escapeHtml(track.url)}" ${track.url === video.url ? "selected" : ""} data-poster="${escapeHtml(track.poster_url || "")}" data-video-track-label="${escapeHtml(track.label || "")}">${escapeHtml(videoTrackLabel(track.label))}</option>`).join("")}</select></label>`
+    ? `<label><span class="ui-lang-zh">视频源</span><span class="ui-lang-en">Video source</span> <select data-video-track aria-keyshortcuts="Shift+V" title="${escapeHtml(uiText("Shift+V 切换到局部 BEV 视频", "Shift+V switches to closeup BEV video"))}">${tracks.map((track) => `<option value="${escapeHtml(track.url)}" ${track.url === video.url ? "selected" : ""} data-video-source-id="${escapeHtml(track.source_id || "")}" data-poster="${escapeHtml(track.poster_url || "")}" data-video-track-label="${escapeHtml(track.label || "")}">${escapeHtml(videoTrackLabel(track.label))}</option>`).join("")}</select></label>`
     : "";
   const posterUrl = String(video?.poster_url || "").trim();
   const posterAttribute = posterUrl ? ` poster="${escapeHtml(posterUrl)}"` : "";
@@ -419,6 +465,7 @@ function bindBevVideoPlayers(root) {
       player.querySelectorAll("[data-video-track-label]").forEach(option => {
         option.textContent = videoTrackLabel(option.dataset.videoTrackLabel);
       });
+      player.querySelector("[data-video-track]")?.setAttribute("title", uiText("Shift+V 切换到局部 BEV 视频", "Shift+V switches to closeup BEV video"));
     };
     // Explicit teardown also cancels queued seeks and old metadata handlers.
     video._disposeBevPlayer = () => {

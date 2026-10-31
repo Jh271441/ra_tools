@@ -68,6 +68,10 @@ Current production uses personal Orion Ares Animation workers (limit 3000); the 
 
 播放器沿用共享视频源下拉、当前位置/倍速、重试、全屏和清理生命周期。局部源保留自己的t0海报；语言切换只改变展示。`/daily-cron` 独立显示局部视频状态、分版本验证/目标/失败/锚点待解决，过期心跳明确显示，不将局部失败算进原双视频或主推理。
 
+判错复核、问题标注及媒体弹窗支持 `Shift+V` 直接切换到当前 Issue 的局部 BEV 视频，沿用共享视频源切换并保留播放位置和倍速。输入、输入法组合、打开的选择器和其他弹窗内不触发；没有局部源时显示提示。中英文帮助和快捷键指南同步展示该入口。
+
+Press `Shift+V` to select the current Issue's closeup BEV video in Review, Issue Labeling or the media dialog. It uses the shared source switch and retains playback position and speed. Typing, IME composition, open selectors and other dialogs do not trigger the shortcut; an unavailable closeup source shows a localized message.
+
 ## 观察与恢复
 
 从 Mac/T3650 使用 host-ops 的 `hop.sh cloud_server`。每次核对实际控制器启动时间/命令/cwd/start_ticks及worker.lock、`progress.json`、`queue.sqlite3`、`orion/jobs.json`、原生Orion Job/Task、当前run的status/submit/download/verification与原子receipt。旧PID或一次网络观察超时不足以证明退出；不得重复提交。
