@@ -5,7 +5,12 @@ function FlowEdge(props: EdgeProps) {
   // Short aligned connectors must not double back when their handle offsets overlap.
   const aligned = (props.sourceY === props.targetY && props.sourcePosition === Position.Right && props.targetPosition === Position.Left)
     || (props.sourceX === props.targetX && props.sourcePosition === Position.Bottom && props.targetPosition === Position.Top);
-  const [path] = aligned ? getStraightPath(props) : getSmoothStepPath({...props, borderRadius: 6, offset: 22});
+  const [standardPath] = aligned ? getStraightPath(props) : getSmoothStepPath({...props, borderRadius: 6, offset: 22});
+  const lx = Number(props.data?.loopX), ly = Number(props.data?.loopY);
+  const {sourceX:sx,sourceY:sy,targetX:tx,targetY:ty} = props;
+  const path = props.data?.returnLane === true && Number.isFinite(lx) && Number.isFinite(ly)
+    ? `M ${sx} ${sy} L ${sx} ${ly-6} Q ${sx} ${ly} ${sx-6} ${ly} L ${lx+6} ${ly} Q ${lx} ${ly} ${lx} ${ly-6} L ${lx} ${ty+28} Q ${lx} ${ty+22} ${lx+6} ${ty+22} L ${tx-6} ${ty+22} Q ${tx} ${ty+22} ${tx} ${ty+16} L ${tx} ${ty}`
+    : standardPath;
   const moving = props.animated || props.data?.scheduled === true;
   const seconds = props.animated ? 2.4 : 6;
   return <>

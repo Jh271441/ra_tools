@@ -462,6 +462,34 @@ def ready_for_audit(progress):
     )
 
 
+def execution_contract(plan):
+    """Read actual historical runtime without re-querying DPE or importing results."""
+    from scripts.ra_repro_launch_full_orion import _load_api
+    JobAccessor, TaskAccessor, TaskArgKeys, _, _, _, _, _, Regions, TrailRegionMgr = _load_api()
+    job_id = int(plan['job_id'])
+    with TrailRegionMgr(Regions.CN, is_pre=False):
+        metadata = JobAccessor.get(job_id)
+        tasks = list(TaskAccessor.query({'job_id':job_id, 'extra_fields':'task_args'}))
+    expected = {str(s['scenario_id']) for s in plan['scenarios']}
+    if (not metadata or metadata.get('cluster') != 'prod_gen4' or not metadata.get('runtime_reference')
+            or len(tasks) != len(expected) or {str(t['signature']) for t in tasks} != expected):
+        raise ValueError('Historical execution runtime or population mismatch')
+    hashes = set()
+    scenario_key = getattr(TaskArgKeys, 'SCENARIO_ID', '--scenario-id')
+    for task in tasks:
+        arguments = task.get('task_args') or task.get('arguments')
+        if hasattr(arguments, 'as_dict'):
+            arguments = arguments.as_dict()
+        if not isinstance(arguments, dict):
+            raise ValueError('Cannot verify historical task arguments')
+        check_task(arguments, int(plan['binary_id']), plan['simulation']['recovery_mode'])
+        hashes.add(digest({k:v for k,v in arguments.items() if k != scenario_key}))
+    if len(hashes) != 1:
+        raise ValueError('Historical task runtime parameters are inconsistent')
+    return {'job_id':job_id, 'execution_contract_hash':digest({'arguments':sorted(hashes),
+        'runtime_reference':metadata['runtime_reference'], 'binary_id':plan['binary_id'], 'cluster':metadata['cluster']})}
+
+
 def summarize_progress(job_id, metadata, tasks, status_name, job_state_name):
     counts = Counter(status_name(int(task.get("status", 0))) for task in tasks)
     completed = counts["COMPLETED"]
@@ -673,6 +701,8 @@ def lookup_binary(payload):
 
 
 def dispatch(action, plan):
+    if action == 'contract':
+        return execution_contract(plan)
     if action == 'reconcile_labels':
         from scripts.ra_repro_reconcile_labels import reconcile_labels
         return reconcile_labels(plan)

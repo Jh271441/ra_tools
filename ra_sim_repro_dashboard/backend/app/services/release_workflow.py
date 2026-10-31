@@ -802,6 +802,10 @@ def attach_job(db, fingerprint, job_id):
 def execute_batch(db, batch, config, *, release=None):
     if batch.status != "queued":
         return batch
+    if (batch.payload.get('backfill', {}).get('kind') == 'label_changes'
+            and (get_state(db, 'settings', {'mode':'manual'}).get('mode') != 'auto'
+                 or config.get('result_publication', {}).get('enabled', True) is not True)):
+        return batch
     if batch.payload.get("backfill"):
         from app.services.release_backfill import validate_delta
         validate_delta(db, batch, config)

@@ -325,6 +325,4 @@ def _effective_publication(db, batch):
     base = read_projection(db, ('publication', batch.fingerprint, batch.updated_at),
                            lambda: publication(batch))
     enriched = backfill_metrics(db, batch, base)
-    # A label revision is audited against the original execution population.
-    # Do not apply it to a larger backfill population.
-    return enriched if enriched and enriched.get("backfill_revision") else revision_metrics(db, batch, base)
+    return revision_metrics(db, batch, enriched)

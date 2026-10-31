@@ -42,7 +42,7 @@ function StageCard({ stage, selected, onSelect }: StageData) {
   </button>;
 }
 const StageNode = memo(function StageNode({ data }: NodeProps<Node<StageData>>) {
-  return <><Handle id="main-in" type="target" position={Position.Left} isConnectable={false}/><StageCard {...data}/>{data.hasBranch && <Handle id="branch-out" type="source" position={Position.Bottom} isConnectable={false}/>}<Handle id="main-out" type="source" position={Position.Right} isConnectable={false}/>{data.recoveryBranch && <Handle id="recovery-out" type="source" position={Position.Bottom} isConnectable={false}/>} {data.recoveryReturn && <Handle id="recovery-in" type="target" position={Position.Bottom} isConnectable={false}/>}</>;
+  return <><Handle id="main-in" type="target" position={Position.Left} isConnectable={false}/><StageCard {...data}/>{data.hasBranch && <><Handle id="branch-out" type="source" position={Position.Bottom} style={{left:'30%'}} isConnectable={false}/><Handle id="branch-return" type="target" position={Position.Bottom} style={{left:'70%'}} isConnectable={false}/></>}<Handle id="main-out" type="source" position={Position.Right} isConnectable={false}/>{data.recoveryBranch && <Handle id="recovery-out" type="source" position={Position.Bottom} isConnectable={false}/>} {data.recoveryReturn && <Handle id="recovery-in" type="target" position={Position.Bottom} isConnectable={false}/>}</>;
 });
 const nodeTypes = { stage: StageNode, backfillStep: BackfillNode, labelStep: LoopNode, labelCaption: ({data}: NodeProps) => <div className="sim-label-graph-caption">{String(data.label)}</div> };
 
@@ -138,7 +138,7 @@ function SimulationFlow({ data, stale, readOnly = false, onRefresh }: { data: Bo
   const close = () => { setSelected(null); (origin.current?.isConnected ? origin.current : section.current?.querySelector<HTMLElement>(`[data-stage-id="${selected}"]`))?.focus({ preventScroll: true }); };
   const stageNodes: Node<StageData>[] = useMemo(() => remainingStages.map((stage, index) => ({ id: stage.id, type: 'stage', position: { x: index * 240, y: 24 }, width: 196, height: 158, data: { stage, selected: stage.id === selected, onSelect: select, hasBranch: hasLabelLoop && stage.id === 'collect', recoveryBranch:hasBackfill && stage.id==='prepare', recoveryReturn:hasBackfill && stage.id==='verify' }, draggable: false, focusable: false, selectable: false })), [remainingStages, selected, select, hasLabelLoop, hasBackfill]);
   const stageEdges = useMemo(() => remainingStages.slice(1).map((stage, i) => ({ id: `${remainingStages[i].id}-${stage.id}`, source: remainingStages[i].id, sourceHandle:'main-out', target: stage.id, targetHandle:'main-in', type: 'flow', animated: stageMotion(remainingStages[i],stage,stale).animated, data:{scheduled:stageMotion(remainingStages[i],stage,stale).scheduled}, style: { stroke: colors[stage.state], strokeWidth: 1.8, strokeDasharray: ['unknown', 'waiting', 'archived'].includes(stage.state) ? '5 5' : undefined }, markerEnd: { type: MarkerType.ArrowClosed, color: colors[stage.state] } })), [remainingStages, stale]);
-  const labelGraph = useLabelGraph(labelState, stale, 676, false);
+  const labelGraph = useLabelGraph(labelState, stale, 900, false);
   const recovery = useBackfillGraph(backfillState, stale, 258);
   const nodes: Node[] = useMemo(() => [
     ...stageNodes,
@@ -148,7 +148,8 @@ function SimulationFlow({ data, stale, readOnly = false, onRefresh }: { data: Bo
   const edges = useMemo(() => {
     const connector = (id:string,source:string,sourceHandle:string,target:string,targetHandle:string) => ({id,source,sourceHandle,target,targetHandle,type:'flow',animated:recovery.active,style:{stroke:'hsl(var(--muted-foreground))',strokeWidth:1.2,strokeDasharray:'4 5'},markerEnd:{type:MarkerType.ArrowClosed,color:'hsl(var(--muted-foreground))'}});
     return [...stageEdges,
-      ...(hasLabelLoop ? [...labelGraph.edges,{id:'collect-label-sync',source:'collect',sourceHandle:'branch-out',target:'label-sync',targetHandle:'branch-in',type:'flow',data:{scheduled:labelGraph.scheduled},animated:labelGraph.running,style:{stroke:labelGraph.running?'hsl(var(--primary))':'hsl(var(--muted-foreground))',strokeWidth:1.3,strokeDasharray:'4 5'},markerEnd:{type:MarkerType.ArrowClosed,color:'hsl(var(--muted-foreground))'}}] : []),
+      ...(hasLabelLoop ? [...labelGraph.edges.filter(edge=>edge.id!=='label-apply-next'),{id:'collect-label-sync',source:'collect',sourceHandle:'branch-out',target:'label-sync',targetHandle:'branch-in',type:'flow',data:{scheduled:labelGraph.scheduled},animated:labelGraph.running,style:{stroke:labelGraph.running?'hsl(var(--primary))':'hsl(var(--muted-foreground))',strokeWidth:1.3,strokeDasharray:'4 5'},markerEnd:{type:MarkerType.ArrowClosed,color:'hsl(var(--muted-foreground))'}},
+        {id:'label-apply-collect',source:'label-apply',sourceHandle:'branch-out',target:'collect',targetHandle:'branch-return',type:'flow',animated:labelGraph.running,data:{scheduled:labelGraph.scheduled,returnLane:true,loopY:hasBackfill?614:406,loopX:-24},style:{stroke:'hsl(var(--muted-foreground))',strokeWidth:1.3,strokeDasharray:'4 5'},markerEnd:{type:MarkerType.ArrowClosed,color:'hsl(var(--muted-foreground))'}}] : []),
       ...(hasBackfill ? [...recovery.edges,connector('prepare-backfill','prepare','recovery-out','backfill-sync','branch-in'),connector('backfill-verify','backfill-merge','branch-out','verify','recovery-in')] : []),
     ];
   }, [stageEdges,hasLabelLoop,hasBackfill,labelGraph,recovery]);

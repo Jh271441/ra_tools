@@ -39,6 +39,32 @@ def rehash(value):
     return value
 
 
+@pytest.mark.parametrize('drift', [None, 'arguments', 'population', 'runtime'])
+def test_legacy_contract_audit_uses_actual_tasks_without_results(monkeypatch, drift):
+    from contextlib import nullcontext
+    import scripts.ra_release_orion_driver as driver
+    import scripts.ra_repro_launch_full_orion as launch
+    p = plan(); p['job_id'] = 789
+    p['scenarios'].append({'scenario_id':'100', 'issue_id':'issue2', 'cohort':'positive_auto'})
+    args = {'--scenario-id':'99', '--binary-id':'123', '--simulator-cache':'disabled',
+            '--enable-dpe':'', '--sim-exec-args':' --sim_aligned_mode'}
+    tasks = [{'signature':'99', 'task_args':args}, {'signature':'100', 'task_args':{**args, '--scenario-id':'100'}}]
+    metadata = {'cluster':'prod_gen4', 'runtime_reference':'runtime-A'}
+    if drift == 'arguments': tasks[1]['task_args']['--other-flag'] = 'changed'
+    if drift == 'population': tasks[1]['signature'] = '101'
+    if drift == 'runtime': metadata['runtime_reference'] = None
+    monkeypatch.setattr(launch, '_load_api', lambda:(SimpleNamespace(get=lambda _:metadata),
+        SimpleNamespace(query=lambda _:tasks), SimpleNamespace(SCENARIO_ID='--scenario-id'),
+        None, None, None, None, None, SimpleNamespace(CN='cn'), lambda *_a,**_k:nullcontext()))
+    if drift:
+        with pytest.raises(ValueError): driver.execution_contract(p)
+    else:
+        result = driver.dispatch('contract', p)
+        assert result == {'job_id':789, 'execution_contract_hash':driver.digest({
+            'arguments':[driver.digest({k:v for k,v in args.items() if k != '--scenario-id'})],
+            'runtime_reference':'runtime-A', 'binary_id':123, 'cluster':'prod_gen4'})}
+
+
 @pytest.mark.parametrize("drift", [None, "labels", "version", "start_timestamp", "source", "coverage"])
 def test_live_scenario_guard_checks_metadata_before_build(monkeypatch, drift):
     from scripts.ra_release_orion_driver import verify_live_labels

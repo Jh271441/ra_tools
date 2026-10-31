@@ -1,4 +1,4 @@
-"""Independent label refresh lane. Never mutates execution receipts or submits jobs."""
+"""Batch label edits and recover missing results, retaining primary receipts."""
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 import fcntl
@@ -11,20 +11,20 @@ from app.services.release_watch import activity_identity, fetch_activity
 from app.services.release_cycle import digest
 from app.services.release_metrics import cohort_for_issue, excluded_issue, summarize_population
 from app.services.result_publication import publication, published_batch, audit_hash, coverage_policy
-from ra_api.release_tolerance import assess, LEGACY_POLICY, policy_for
+from ra_api.release_tolerance import assess, LEGACY_POLICY, POLICY, policy_for
 
 CHECK_SECONDS = 3600
 MERGE_SECONDS = 6 * 3600
 
 
-def plan_revision(payload, source, rows):
-    """Re-score only proven identical inputs; all input/scope additions require a new plan."""
+def plan_revision(payload, source, rows, *, recovery=None):
+    """Re-score identical physical inputs, admitting only audited recovery results."""
     old = {str(i['issue_id']): i for i in source['issues']}
     new = {str(i['issue_id']): i for i in rows}
     if len(new) != len(rows) or not new:
         raise ValueError('invalid_observation')
-    if old.keys() != new.keys() or any(old[i].get(k) != new[i].get(k)
-            for i in old.keys() & new.keys() for k in ('version', 'issue_time', 'ra_type')):
+    from app.services.label_recovery import same_inputs
+    if not same_inputs(source['issues'], rows):
         return {'status': 'needs_simulation', 'reason': 'input_changed',
                 'issue_ids': sorted(old.keys() ^ new.keys())[:30]}
     if {str(i['issue_id']) for i in payload['issues']} != old.keys():
@@ -32,10 +32,11 @@ def plan_revision(payload, source, rows):
     issues = deepcopy(payload['issues'])
     for row in issues:
         row['ra_merge_result'] = new[str(row['issue_id'])].get('ra_merge_result')
-    raw = [{k:v for k,v in row.items() if k != 'evaluation_exclusion'} for row in issues]
+    raw = [{k:v for k,v in row.items() if k != 'evaluation_exclusion' or v.get('approved_by') == 'user'} for row in issues]
     if any(not cohort_for_issue(i) and not excluded_issue(i) for i in raw):
         return {'status':'blocked', 'reason':'unknown_labels'}
-    scenes = payload['scenarios']; results = payload['results']
+    scenes = recovery['scenarios'] if recovery else payload['scenarios']
+    results = recovery['results'] if recovery else payload['results']
     mapping = {}
     for scene in scenes:
         mapping.setdefault(str(scene['issue_id']), []).append(str(scene['scenario_id']))
@@ -46,12 +47,13 @@ def plan_revision(payload, source, rows):
     eligible = {str(i['issue_id']) for i in raw if cohort_for_issue(i)}
     missing = {i for i in eligible if not mapping.get(i) or any(
         sid not in results or not isinstance(results[sid].get('sim_triggered'), bool) for sid in mapping[i])}
-    missing |= eligible & original_exclusions
+    if not recovery:
+        missing |= eligible & original_exclusions
     additional = missing - original_exclusions
-    if additional:
+    if additional and not recovery:
         return {'status':'needs_simulation', 'reason':'missing_results', 'issue_ids':sorted(additional)[:30], 'count':len(additional)}
     try:
-        coverage = assess(eligible, missing, policy_for(payload) if payload.get("issue_tolerance") else LEGACY_POLICY)
+        coverage = assess(eligible, missing, POLICY if recovery else policy_for(payload) if payload.get("issue_tolerance") else LEGACY_POLICY)
     except ValueError:
         return {'status':'blocked', 'reason':'coverage_gate'}
     kept = [i for i in raw if str(i['issue_id']) not in missing]
@@ -61,7 +63,8 @@ def plan_revision(payload, source, rows):
     changed = [{'issue_id':i,'before':old[i].get('ra_merge_result'),'after':new[i].get('ra_merge_result')}
                for i in sorted(old) if old[i].get('ra_merge_result') != new[i].get('ra_merge_result')]
     return {'status':'updated', 'summary':summary, 'coverage':coverage, 'issues':raw,
-            'changes':changed, 'change_count':len(changed), 'excluded_issue_ids':sorted(missing)}
+            'changes':changed, 'change_count':len(changed), 'excluded_issue_ids':sorted(missing),
+            **({'lineage':recovery['lineage'], 'recovery':recovery['state']} if recovery else {})}
 
 
 def revision_metrics(db, batch, base):
@@ -75,12 +78,24 @@ def revision_metrics(db, batch, base):
     revision = w.get_state(db, key)
     if revision.get('base_audit_hash') != audit_hash(batch.payload) or not revision.get('summary', {}).get('available'):
         return base
+    if revision.get('basis_backfill_revision') != base.get('backfill_revision'):
+        return base
+    hashes = {}
+    for item in revision.get('lineage', {}).values():
+        fingerprint = item['fingerprint']
+        if fingerprint not in hashes:
+            execution = db.get(ReleaseSimulationBatch, fingerprint)
+            hashes[fingerprint] = audit_hash(execution.payload) if execution else None
+        if not hashes[fingerprint] or hashes[fingerprint] != item['audit_hash']:
+            return base
     return {**base, **revision['summary'],
             'generated_at':revision['applied_at'],
             'label_revision':{k:revision[k] for k in ('revision_key','applied_at','source_hash','change_count')},
             'publication':{**base.get('publication', {}), **revision['coverage'],
                            'excluded_issue_ids':revision['excluded_issue_ids'],
-                           'label_revision_key':key}}
+                           'label_revision_key':key,
+                           **({'source_job_ids':sorted({item['job_id'] for item in revision['lineage'].values()})}
+                              if revision.get('lineage') else {})}}
 
 
 def public_state(db, release, now=None):
@@ -92,6 +107,9 @@ def public_state(db, release, now=None):
     value = {k:v for k,v in state.items() if k not in ('revision_key', 'candidate_hash')}
     value['enabled'] = os.getenv('LABEL_REFRESH_ENABLED') == '1'
     value.update(check_seconds=CHECK_SECONDS, merge_seconds=MERGE_SECONDS)
+    if value.get('recovery', {}).get('job_id'):
+        progress = w.get_state(db, f"job-progress:{value['recovery']['job_id']}")
+        value['recovery'] = {**value['recovery'], 'progress':progress.get('value')}
     last = state.get('checked_at')
     if last:
         value['next_check_at'] = (datetime.fromisoformat(last)+timedelta(seconds=CHECK_SECONDS)).isoformat()
@@ -135,9 +153,12 @@ def refresh_release(db, config, batch, *, now=None, fetcher=None):
         if target != batch.release:
             raise ValueError('version_mismatch')
         identity = activity_identity(rows, 'issue_time')
-        snapshots = db.scalars(select(ReleaseIssueSnapshot).where(ReleaseIssueSnapshot.release == batch.release).order_by(ReleaseIssueSnapshot.id.desc()))
-        source = next((s.payload for s in snapshots if s.payload.get('population_complete')
-                       and w.population_identity(s.payload) == batch.payload.get('population_hash')), None)
+        snapshots = db.scalars(select(ReleaseIssueSnapshot).where(ReleaseIssueSnapshot.release == batch.release).order_by(ReleaseIssueSnapshot.id.desc()).execution_options(yield_per=1))
+        try:
+            source = next((s.payload for s in snapshots if s.payload.get('population_complete')
+                           and w.population_identity(s.payload) == batch.payload.get('population_hash')), None)
+        finally:
+            snapshots.close()
         if not source:
             return save(status='blocked', reason='snapshot_missing')
         frozen_hash = activity_identity(source['issues'], 'issue_time')
@@ -145,10 +166,20 @@ def refresh_release(db, config, batch, *, now=None, fetcher=None):
         if identity == frozen_hash:
             return save(status='idle', reason=None, change_count=0, pending_count=0,
                         revision_key=None, candidate_hash=None, pending_since=None, next_process_at=None,
-                        applied_at=None, valid_issue_count=None, applied_source_hash=identity)
+                        applied_at=None, valid_issue_count=None, applied_source_hash=identity, recovery={})
         revision_key = 'label_revision:' + digest({'base':base_hash,'source':identity})[:48]
         existing = w.get_state(db, revision_key)
-        if existing:
+        from app.services.release_backfill import revision_metrics as backfill_metrics
+        backfill_basis = (backfill_metrics(db, batch, publication(batch)) or {}).get('backfill_revision')
+        recovery_state = w.get_state(db, 'label_recovery:' + batch.release)
+        recovering = recovery_state.get('missing_count', 0) > 0
+        pointed = w.get_state(db, previous.get('revision_key', 'label_revision:none'))
+        if (not existing and pointed.get('source_hash') == identity
+                and pointed.get('base_audit_hash') == base_hash):
+            existing = pointed
+            revision_key = pointed['revision_key']
+        basis_changed = bool(existing) and existing.get('basis_backfill_revision') != backfill_basis
+        if existing and not recovering and not basis_changed:
             return save(status='idle', reason=None, revision_key=revision_key, candidate_hash=None,
                         applied_source_hash=identity, change_count=existing['change_count'], pending_count=0,
                         applied_at=existing['applied_at'], valid_issue_count=existing['summary']['eligible'])
@@ -157,7 +188,7 @@ def refresh_release(db, config, batch, *, now=None, fetcher=None):
         # Fixed batching window: ongoing label edits do not keep postponing processing.
         pending_since = previous.get('pending_since') if previous.get('candidate_hash') else now.isoformat()
         due = datetime.fromisoformat(pending_since) + timedelta(seconds=MERGE_SECONDS)
-        if now < due:
+        if now < due and not recovering and not basis_changed:
             return save(status='queued', reason=None, candidate_hash=identity, pending_since=pending_since,
                         next_process_at=due.isoformat(), pending_count=count)
         policy = coverage_policy(config)
@@ -166,25 +197,43 @@ def refresh_release(db, config, batch, *, now=None, fetcher=None):
         if w.get_state(db, 'settings', {'mode':'manual'}).get('mode') != 'auto':
             return save(status='paused', reason='manual_mode', pending_count=count)
         revision = plan_revision(batch.payload, source, rows)
+        from app.services import label_recovery
+        has_children = bool(label_recovery.children(db, batch))
+        if revision.get('reason') == 'missing_results' or ((recovering or has_children) and revision.get('reason') in (None, 'coverage_gate')):
+            save(status='recovering', reason=None, pending_count=count)
+            from app.services.label_recovery import recover
+            recovered = recover(db, config, batch, source, rows, now)
+            revision = plan_revision(batch.payload, source, rows, recovery=recovered)
         if revision['status'] != 'updated':
-            return save(**revision, candidate_hash=identity, pending_since=pending_since, pending_count=count)
+            return save(**revision, candidate_hash=identity, pending_since=pending_since, pending_count=count,
+                        recovery=w.get_state(db, 'label_recovery:' + batch.release))
         if revision['coverage']['issue_coverage'] < policy['minimum_coverage']:
             return save(status='blocked', reason='coverage_gate', candidate_hash=identity,
                         pending_since=pending_since, pending_count=count)
         db.refresh(batch)
         if audit_hash(batch.payload) != base_hash or not publication(batch):
             return save(status='blocked', reason='execution_changed')
+        revision_key = 'label_revision:' + digest({'base':base_hash, 'source':identity,
+            'lineage':revision.get('lineage'), 'backfill':backfill_basis})[:48]
         revision.update(revision_key=revision_key,base_audit_hash=base_hash,source_hash=identity,
+                        basis_backfill_revision=backfill_basis,
                         base_job_id=batch.payload['job_id'],applied_at=now.isoformat())
         # Ledger and pointer are committed together; original batch is never rewritten.
         from app.models import ReleaseWorkflowState
-        db.add(ReleaseWorkflowState(key=revision_key,payload=revision))
-        return save(status='updated', reason=None, revision_key=revision_key, applied_source_hash=identity,
+        existing_revision = db.get(ReleaseWorkflowState, revision_key)
+        if not existing_revision:
+            db.add(ReleaseWorkflowState(key=revision_key,payload=revision))
+        else:
+            revision = existing_revision.payload
+        recovery_state = w.get_state(db, 'label_recovery:' + batch.release) if 'recovery' in revision else {}
+        return save(status='recovering' if recovery_state.get('missing_count') else 'updated',
+                    reason=None, revision_key=revision_key, applied_source_hash=identity, recovery=recovery_state,
                     candidate_hash=None,pending_since=None,next_process_at=None,pending_count=0,change_count=revision['change_count'],
                     applied_at=revision['applied_at'],valid_issue_count=revision['summary']['eligible'])
     except Exception as exc:
         db.rollback()
-        return save(status='source_error', reason=str(exc) if isinstance(exc,ValueError) else type(exc).__name__)
+        return save(status='source_error', reason=str(exc) if isinstance(exc,ValueError) else type(exc).__name__,
+                    recovery=w.get_state(db, 'label_recovery:' + batch.release))
 
 
 def tick():
@@ -193,8 +242,10 @@ def tick():
     from app.database import SessionLocal
     from app.config import DATA_DIR
     lock = Path(os.getenv('RELEASE_WORKFLOW_LOCK', str(DATA_DIR/'release-workflow.lock'))).with_name('label-cycle.lock')
-    with lock.open('w') as stream:
+    release_lock = Path(os.getenv('RELEASE_WORKFLOW_LOCK', str(DATA_DIR/'release-workflow.lock')))
+    with release_lock.open('w') as release_stream, lock.open('w') as stream:
         try:
+            fcntl.flock(release_stream,fcntl.LOCK_EX|fcntl.LOCK_NB)
             fcntl.flock(stream,fcntl.LOCK_EX|fcntl.LOCK_NB)
         except BlockingIOError:
             return

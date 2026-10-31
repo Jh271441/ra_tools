@@ -161,9 +161,11 @@
 @keyframes sim-label-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .sim-label-node.is-active .sim-label-node-state svg { animation: none; } }
 
-.sim-label-node.is-compact { height: 132px; }
+.sim-label-node.is-compact { height: 144px; }
 .sim-label-node.is-compact .sim-label-node-time { display: block; }
 .sim-label-node.is-compact time { display: block; }
+.sim-label-node-value { overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.sim-label-return { display: flex; align-items: center; gap: 6px; padding: 0 8px 10px; color: hsl(var(--muted-foreground)); font-size: 12px; }
 
 /* Move directional chevrons, not just the dash pattern. Keep the base path stable. */
 .sim-flow .react-flow__edge.animated .react-flow__edge-path { animation: none; }

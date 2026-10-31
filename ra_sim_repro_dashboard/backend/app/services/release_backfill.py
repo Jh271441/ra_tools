@@ -43,6 +43,9 @@ def frozen_snapshot_valid(db, batch):
 
 
 def _frozen_snapshot_valid(db, batch):
+    if batch.payload.get('backfill', {}).get('kind') == 'label_changes':
+        from app.services.label_recovery import source_valid
+        return source_valid(db, batch)
     rows = snapshots(db, batch.release)
     try:
         latest = next(rows, None)
@@ -86,7 +89,8 @@ def collect_results(db, base, full):
     expected = {str(s['scenario_id']): s for s in full['scenarios']}
     results, lineage = {}, {}
     candidates = [base] + [b for b in executions(db, base.release)
-        if b.payload.get('backfill', {}).get('base_fingerprint') == base.fingerprint]
+        if b.payload.get('backfill', {}).get('base_fingerprint') == base.fingerprint
+        and b.payload['backfill'].get('kind') != 'label_changes']
     for b in candidates:
         p = b.payload
         if not p.get('result_import', {}).get('primary'):
@@ -118,7 +122,8 @@ def delta_plan(db, base, full, results, *, force=False):
     pending = [s for s in full['scenarios'] if str(s['scenario_id']) not in results]
     if not pending:
         return None
-    attempts = [b for b in executions(db, base.release) if b.payload.get('backfill', {}).get('base_fingerprint') == base.fingerprint]
+    attempts = [b for b in executions(db, base.release) if b.payload.get('backfill', {}).get('base_fingerprint') == base.fingerprint
+                and b.payload['backfill'].get('kind') != 'label_changes']
     pending = [s for s in pending if sum(any(str(row['scenario_id']) == str(s['scenario_id'])
         for row in b.payload['scenarios']) for b in attempts) < (len(attempts)+1 if force else MAX_ATTEMPTS)]
     if not pending:
@@ -141,6 +146,9 @@ def delta_plan(db, base, full, results, *, force=False):
 
 
 def validate_delta(db, batch, config):
+    if batch.payload['backfill'].get('kind') == 'label_changes':
+        from app.services.label_recovery import validate_delta as validate_label_delta
+        return validate_label_delta(db, batch, config)
     metadata = batch.payload['backfill']
     base = db.get(ReleaseSimulationBatch, metadata['base_fingerprint'])
     if not base or not frozen_snapshot_valid(db, base):
@@ -200,7 +208,8 @@ def refresh_release(db, config, base, *, now=None, force=False):
         w.put_state(db, key, state)
         return state
     children = [b for b in executions(db, base.release)
-        if b.payload.get('backfill', {}).get('base_fingerprint') == base.fingerprint]
+        if b.payload.get('backfill', {}).get('base_fingerprint') == base.fingerprint
+        and b.payload['backfill'].get('kind') != 'label_changes']
     active = next((b for b in children if b.status in ACTIVE), None)
     if active:
         return save(status='simulating', fingerprint=active.fingerprint, job_id=active.payload.get('job_id'))

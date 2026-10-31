@@ -1,4 +1,4 @@
-"""Server-side label sidecar, separate from simulation submission and browser sessions."""
+"""Server-side label sidecar for GT revisions and incremental result recovery."""
 import logging
 import os
 import signal
