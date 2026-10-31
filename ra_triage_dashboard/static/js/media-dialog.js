@@ -10,7 +10,18 @@ function mediaFrames(kind) {
 }
 
 function mediaVideo() {
-  return state.media.snapshot?.video?.url ? state.media.snapshot.video : null;
+  const snapshot = state.media.snapshot;
+  const descriptor = snapshot?.video;
+  if (!descriptor?.url) return null;
+  const track = descriptor.tracks?.find(item => item.url === snapshot.videoTrack);
+  return track ? { ...descriptor, ...track, tracks: descriptor.tracks } : descriptor;
+}
+
+function rememberMediaVideoSource(url) {
+  const snapshot = state.media.snapshot;
+  if (!snapshot) return;
+  snapshot.videoTrack = url;
+  if (state.detailMedia.issueId === snapshot.issueId) state.detailMedia.preferredVideoTrack = url;
 }
 
 function preferredMediaKind(caseData) {
@@ -493,6 +504,13 @@ function renderMediaDialog() {
       videoStage.dataset.videoUrl = video.url;
       videoStage.innerHTML = videoPlayerMarkup(video);
       bindBevVideoPlayers(videoStage);
+      videoStage.querySelector("[data-video-track]")?.addEventListener("change", (event) => {
+        const url = safeSameOriginAssetUrl(event.target.value);
+        if (url) {
+          rememberMediaVideoSource(url);
+          videoStage.dataset.videoUrl = url;
+        }
+      });
       const viewport = videoStage.querySelector("[data-video-viewport]");
       const videoElement = videoStage.querySelector("video");
       bindMediaPanViewport(viewport);
@@ -503,8 +521,8 @@ function renderMediaDialog() {
     $("#mediaTitle").textContent = `${snapshot?.issueId || ""} · Ares Studio 视频${snapshot?.referenceMedia ? " · 参考媒体" : ""}`;
     $("#mediaTimeline").innerHTML = "";
     $("#mediaHelp").textContent = uiText(
-      "↑ / ↓ 切 Case · ← / → 按所选步长跳转 · 空格播放/暂停 · B/C/V 切媒体 · Shift+V 局部 BEV · +/− 缩放 · 0 适配 · 放大后拖拽平移 · F 全屏 · Esc 退出",
-      "↑/↓ Case · ←/→ selected seek step · Space play/pause · B/C/V media · Shift+V closeup BEV · +/− zoom · 0 fit · Drag to pan when zoomed · F fullscreen · Esc close"
+      "↑ / ↓ 切 Case · ← / → 按所选步长跳转 · 空格播放/暂停 · B/C/V 切媒体 · Shift+V 切换原始/局部 BEV · O 原始 BEV 视频 · +/− 缩放 · 0 适配 · 放大后拖拽平移 · F 全屏 · Esc 退出",
+      "↑/↓ Case · ←/→ selected seek step · Space play/pause · B/C/V media · Shift+V toggle original/closeup BEV · O original BEV video · +/− zoom · 0 fit · Drag to pan when zoomed · F fullscreen · Esc close"
     );
     setMediaZoom(state.media.zoom, { resetScroll: state.media.zoom === 1 });
     return;
@@ -544,7 +562,10 @@ function renderMediaDialog() {
   }
   $("#mediaHelp").textContent = snapshot?.intentPreview
     ? "← / → 切帧 · Space 同帧轮换 Camera / BEV · B/C 直达媒体 · +/− 缩放 · 0 复位 · F 全屏 · Esc 退出"
-    : "↑ / ↓ 切 Case · ← / → 切帧 · B/C/V 切媒体 · +/− 缩放 · 0 复位 · 放大后拖拽平移 · F 全屏 · Esc 退出";
+    : uiText(
+      "↑ / ↓ 切 Case · ← / → 切帧 · B/C/V 切媒体 · Shift+V 切换原始/局部 BEV · O 原始 BEV 视频 · +/− 缩放 · 0 复位 · 放大后拖拽平移 · F 全屏 · Esc 退出",
+      "↑/↓ Case · ←/→ frames · B/C/V media · Shift+V toggle original/closeup BEV · O original BEV video · +/− zoom · 0 reset · Drag to pan when zoomed · F fullscreen · Esc close"
+    );
   $("#mediaTimeline").innerHTML = mediaTimelineButtonsMarkup(frames, state.media.index, "media-frame");
   $("#mediaTimeline").querySelectorAll("[data-media-frame]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -572,6 +593,8 @@ function openMedia(kind, index, { caseData = state.selectedCase } = {}) {
     bev: [...(caseData?.assets?.frames || [])],
     camera: [...(caseData?.camera?.frames || [])],
     video: videoWithFramePosters(caseData),
+    videoTrack: state.detailMedia.issueId === String(caseData?.issue_id || "")
+      ? state.detailMedia.preferredVideoTrack || state.detailMedia.videoTrack || "" : "",
   };
   const requestedAvailable = kind === "video" ? Boolean(mediaVideo()) : Boolean(mediaFrames(kind).length);
   if (!requestedAvailable) kind = preferredMediaKind(caseData);

@@ -38,8 +38,18 @@ function videoTrackLabel(label) {
   return label;
 }
 
-function handleCloseupVideoShortcut(event) {
-  if (!event.shiftKey || String(event.key || "").toLowerCase() !== "v") return false;
+function videoSourceTracks(descriptor) {
+  const seen = new Set();
+  return [descriptor, ...(descriptor?.tracks || [])].filter(track => {
+    if (!track || !safeSameOriginAssetUrl(track.url) || seen.has(track.url)) return false;
+    seen.add(track.url);
+    return true;
+  });
+}
+
+function handleVideoSourceShortcut(event) {
+  const key = String(event.key || "").toLowerCase();
+  if (key !== "v" && (key !== "o" || event.shiftKey)) return false;
   if (event.defaultPrevented || event.repeat || isImeComposing(event)
       || event.ctrlKey || event.metaKey || event.altKey
       || event.target?.closest?.("input, textarea, select, [contenteditable]:not([contenteditable=false]), [role=textbox], .ui-select")) return true;
@@ -54,25 +64,45 @@ function handleCloseupVideoShortcut(event) {
       || document.querySelector("#reviewPane .review-dropdown[open], #caseLabelingEditor .review-dropdown[open]"))) return true;
   event.preventDefault();
   const descriptor = inDialog ? mediaVideo() : videoWithFramePosters(caseData);
-  const track = [descriptor, ...(descriptor?.tracks || [])].find(item => item?.source_id === "bev_closeup" && safeSameOriginAssetUrl(item.url));
+  const stage = inDialog ? $("#mediaVideoStage") : pane;
+  const video = stage?.querySelector("video");
+  const currentUrl = video?.getAttribute("src")
+    || (inDialog ? state.media.snapshot?.videoTrack : state.detailMedia.videoTrack)
+    || descriptor?.url;
+  const rememberedUrl = inDialog ? state.media.snapshot?.videoTrack
+    : state.detailMedia.preferredVideoTrack || state.detailMedia.videoTrack;
+  const tracks = videoSourceTracks(descriptor);
+  const original = tracks.find(track => track.source_id !== "bev_closeup"
+    && track.label !== "Camera102 视频" && !String(track.url).endsWith("/camera-video"));
+  const closeup = tracks.find(track => track.source_id === "bev_closeup");
+  const toggle = key === "v" && event.shiftKey;
+  const track = key === "o" ? original
+    : toggle ? (currentUrl === closeup?.url ? original : closeup)
+    : tracks.find(item => item.url === (rememberedUrl || currentUrl)) || original || tracks[0];
   if (!track) {
-    showToast(uiText("当前 Issue 暂无局部 BEV 视频。", "No closeup BEV video is available for this Issue."), true);
+    showToast(key === "o" || (toggle && currentUrl === closeup?.url)
+      ? uiText("当前 Issue 暂无原始 BEV 视频。", "No original BEV video is available for this Issue.")
+      : toggle
+        ? uiText("当前 Issue 暂无局部 BEV 视频。", "No closeup BEV video is available for this Issue.")
+        : uiText("当前 Issue 暂无可用视频。", "No video is available for this Issue."), true);
     return true;
   }
   if (inDialog) {
     if (state.media.kind !== "video") switchMediaKind("video");
-    const stage = $("#mediaVideoStage");
-    const video = stage?.querySelector("video");
-    if (video?.getAttribute("src") === track.url) return true;
+    const activeVideo = stage?.querySelector("video");
+    if (activeVideo?.getAttribute("src") === track.url) return true;
     const select = stage?.querySelector("[data-video-track]");
-    if (select?.querySelector(`option[data-video-source-id="bev_closeup"]`)) {
+    if (select && Array.from(select.options).some(option => option.value === track.url && !option.disabled)) {
       select.value = track.url;
       select.dispatchEvent(new Event("change", { bubbles: true }));
       enhanceNativeUiSelect(select);
     } else {
-      video?._setBevVideoTrack?.(track.url, track.poster_url || "");
+      activeVideo?._setBevVideoTrack?.(track.url, track.poster_url || "");
+      rememberMediaVideoSource(track.url);
+      stage.dataset.videoUrl = track.url;
     }
   } else {
+    if (state.detailMedia.kind === "video" && currentUrl === track.url) return true;
     const prefix = detailMediaPrefix();
     const select = pane.querySelector(`#${prefix}MediaKindSelect`);
     const value = track.url === descriptor.url ? "video" : `track:${track.url}`;
@@ -135,7 +165,7 @@ function videoPlayerMarkup(video, { zoomable = true, compact = false, issueId = 
     .join("");
   const tracks = (video?.tracks || []).filter((track) => safeSameOriginAssetUrl(track.url));
   const trackControl = tracks.length > 1 && !compact
-    ? `<label><span class="ui-lang-zh">视频源</span><span class="ui-lang-en">Video source</span> <select data-video-track aria-keyshortcuts="Shift+V" title="${escapeHtml(uiText("Shift+V 切换到局部 BEV 视频", "Shift+V switches to closeup BEV video"))}">${tracks.map((track) => `<option value="${escapeHtml(track.url)}" ${track.url === video.url ? "selected" : ""} data-video-source-id="${escapeHtml(track.source_id || "")}" data-poster="${escapeHtml(track.poster_url || "")}" data-video-track-label="${escapeHtml(track.label || "")}">${escapeHtml(videoTrackLabel(track.label))}</option>`).join("")}</select></label>`
+    ? `<label><span class="ui-lang-zh">视频源</span><span class="ui-lang-en">Video source</span> <select data-video-track aria-keyshortcuts="V Shift+V O" title="${escapeHtml(t("media.video_source_shortcuts"))}">${tracks.map((track) => `<option value="${escapeHtml(track.url)}" ${track.url === video.url ? "selected" : ""} data-video-source-id="${escapeHtml(track.source_id || "")}" data-poster="${escapeHtml(track.poster_url || "")}" data-video-track-label="${escapeHtml(track.label || "")}">${escapeHtml(videoTrackLabel(track.label))}</option>`).join("")}</select></label>`
     : "";
   const posterUrl = String(video?.poster_url || "").trim();
   const posterAttribute = posterUrl ? ` poster="${escapeHtml(posterUrl)}"` : "";
@@ -368,7 +398,7 @@ function bindBevVideoPlayers(root) {
     const loadSource = (url, poster = "") => {
       sourceGeneration += 1;
       pendingStart = video.readyState >= 1 && Number.isFinite(video.currentTime) ? video.currentTime : pendingStart;
-      resumeAfterLoad = !video.paused;
+      resumeAfterLoad = !video.paused || resumeAfterLoad;
       video.pause();
       ++seekRequest;
       cancelPendingSeek?.();
@@ -465,7 +495,7 @@ function bindBevVideoPlayers(root) {
       player.querySelectorAll("[data-video-track-label]").forEach(option => {
         option.textContent = videoTrackLabel(option.dataset.videoTrackLabel);
       });
-      player.querySelector("[data-video-track]")?.setAttribute("title", uiText("Shift+V 切换到局部 BEV 视频", "Shift+V switches to closeup BEV video"));
+      player.querySelector("[data-video-track]")?.setAttribute("title", t("media.video_source_shortcuts"));
     };
     // Explicit teardown also cancels queued seeks and old metadata handlers.
     video._disposeBevPlayer = () => {
@@ -857,6 +887,7 @@ function bindDetailMedia(caseData) {
       if (!track?.url) return;
       state.detailMedia.userSelected = true;
       state.detailMedia.videoTrack = track.url;
+      state.detailMedia.preferredVideoTrack = track.url;
       if (state.detailMedia.kind === "video") {
         root.querySelector("video")?._setBevVideoTrack?.(track.url, track.poster_url || "");
         focusMediaSurface();
