@@ -772,7 +772,7 @@ function bindEvents() {
   });
   document.addEventListener("keydown", (event) => {
     if (!$("#mediaDialog").open) {
-      if (handleCloseupVideoShortcut(event)) return;
+      if (handleVideoSourceShortcut(event)) return;
       if (isImeComposing(event)) return;
       const target = event.target instanceof Element ? event.target : null;
       const interactiveTarget = target?.closest("input, textarea, select, [contenteditable='true'], [role='textbox']");
@@ -815,8 +815,8 @@ function bindEvents() {
       const hero = typeof detailHeroMediaEl === "function" ? detailHeroMediaEl() : $("#detailHeroMedia");
       const pane = typeof detailMediaPane === "function" ? detailMediaPane() : $("#detailPane");
       const prefix = typeof detailMediaPrefix === "function" ? detailMediaPrefix() : "detail";
-      if (["b", "c", "v"].includes(key)) {
-        const kind = { b: "bev", c: "camera", v: "video" }[key];
+      if (["b", "c"].includes(key)) {
+        const kind = { b: "bev", c: "camera" }[key];
         const select = pane?.querySelector(`#${prefix}MediaKindSelect`) || $("#detailMediaKindSelect");
         const option = select?.querySelector(`option[value="${kind}"]`);
         if (select && option && !option.disabled && select.value !== kind) {
@@ -851,7 +851,7 @@ function bindEvents() {
       }
       return;
     }
-    if (handleCloseupVideoShortcut(event)) return;
+    if (handleVideoSourceShortcut(event)) return;
     if (!state.media.snapshot?.intentPreview && !event.target?.closest?.("input, textarea, select, [contenteditable=true], [role=textbox]") && !event.ctrlKey && !event.metaKey && !event.altKey && ["ArrowUp", "ArrowDown"].includes(event.key)) {
       event.preventDefault();
       navigateComparisonMediaCase(event.key === 'ArrowUp' ? -1 : 1).catch(error => showToast(error.message,true));
@@ -869,7 +869,6 @@ function bindEvents() {
       if (["ArrowRight", "]"].includes(event.key)) { event.preventDefault(); moveMedia(1); }
       if (event.key.toLowerCase() === "b") switchMediaKind("bev");
       if (event.key.toLowerCase() === "c") switchMediaKind("camera");
-      if (event.key.toLowerCase() === "v") switchMediaKind("video");
       if (event.key === " " && state.media.kind === "video") {
         event.preventDefault();
         $("#mediaVideoStage")?.querySelector("[data-video-play]")?.click();

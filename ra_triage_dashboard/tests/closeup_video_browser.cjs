@@ -66,6 +66,23 @@ const server=http.createServer((req,res)=>{
    await page.waitForFunction(()=>{const v=document.querySelector('#mediaVideoStage video');return v.readyState>=2&&!v.seeking&&Math.abs(v.currentTime-23)<.05;});
    assert.equal(await video.getAttribute('poster'),'/api/closeup-t0.jpg');
    assert.equal(await video.evaluate(v=>v.playbackRate),1.5);
+   await page.keyboard.press('v');
+   assert.equal(await video.getAttribute('src'),'/api/closeup.mp4','V keeps the chosen source');
+   assert.equal(await video.evaluate(v=>v.currentTime),23);
+   await page.keyboard.press('Shift+V');
+   await page.waitForFunction(()=>{const v=document.querySelector('#mediaVideoStage video');return v.readyState>=2&&!v.seeking&&v.getAttribute('src')==='/api/bev.mp4'&&Math.abs(v.currentTime-23)<.05;});
+   assert.equal(await video.evaluate(v=>v.playbackRate),1.5);
+   assert.equal(await video.evaluate(v=>v.paused),true);
+   await page.keyboard.press('Shift+V');
+   await page.waitForFunction(()=>document.querySelector('#mediaVideoStage video').readyState>=2&&!document.querySelector('#mediaVideoStage video').seeking);
+   await page.keyboard.press('o');
+   await page.waitForFunction(()=>{const v=document.querySelector('#mediaVideoStage video');return v.readyState>=2&&!v.seeking&&v.getAttribute('src')==='/api/bev.mp4'&&Math.abs(v.currentTime-23)<.05;});
+   await page.keyboard.press('Shift+V');
+   await page.waitForFunction(()=>document.querySelector('#mediaVideoStage video').readyState>=2&&!document.querySelector('#mediaVideoStage video').seeking);
+   await page.keyboard.press('b');
+   assert.equal(await page.evaluate(()=>state.media.kind),'bev');
+   await page.keyboard.press('v');
+   assert.equal(await video.getAttribute('src'),'/api/closeup.mp4','Returning from images remembers the video source');
    if(process.env.CLOSEUP_TEST_SCREENSHOTS&&lang==='en'&&((width===1440&&theme==='light')||(width===320&&theme==='dark'))){
     fs.mkdirSync(process.env.CLOSEUP_TEST_SCREENSHOTS,{recursive:true});
     await page.screenshot({path:path.join(process.env.CLOSEUP_TEST_SCREENSHOTS,`shortcut-${width}-${theme}.png`)});
@@ -73,7 +90,7 @@ const server=http.createServer((req,res)=>{
    assert.equal(await page.locator('[data-video-track]').locator('..').locator('.ui-select-summary').innerText(),lang==='en'?'Closeup BEV video':'局部 BEV 视频');
    assert.equal(await page.locator('[data-video-status]').isVisible(),false);
    // Changing language retains source, time and rate through the actual refresh hook.
-   await page.evaluate(()=>{state.uiLanguage=state.uiLanguage==='en'?'zh':'en';refreshBevVideoLanguage(document.querySelector('#mediaVideoStage'));});
+   await page.evaluate(()=>{state.uiLanguage=state.uiLanguage==='en'?'zh':'en';refreshBevVideoLanguage(document.querySelector('#mediaVideoStage'));renderMediaDialog();});
    assert.equal(await page.locator('[data-video-track]').inputValue(),'/api/closeup.mp4');
    assert.equal(await video.evaluate(v=>v.currentTime),23);
    const trigger=page.locator('[data-video-track]').locator('..').locator('.ui-select-trigger');
@@ -85,6 +102,15 @@ const server=http.createServer((req,res)=>{
    await pick('[data-video-track]','/api/assets/cn_fixture/camera-video');
    await page.waitForFunction(()=>document.querySelector('#mediaVideoStage video').readyState>=2);
    assert.equal(await video.getAttribute('poster'),'/api/full-camera.jpg');
+   await page.locator('#mediaVideoStage [data-bev-video-player]').focus();
+   await page.keyboard.press('v');
+   assert.equal(await video.getAttribute('src'),'/api/assets/cn_fixture/camera-video','V also remembers a manually chosen Camera video');
+   await page.keyboard.press('Shift+V');
+   await page.waitForFunction(()=>document.querySelector('#mediaVideoStage video').readyState>=2&&!document.querySelector('#mediaVideoStage video').seeking);
+   assert.equal(await video.getAttribute('src'),'/api/closeup.mp4');
+   await page.keyboard.press('Shift+V');
+   await page.waitForFunction(()=>document.querySelector('#mediaVideoStage video').readyState>=2&&!document.querySelector('#mediaVideoStage video').seeking);
+   assert.equal(await video.getAttribute('src'),'/api/bev.mp4','The BEV toggle never cycles through Camera');
    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1),true);
    assert.equal(await page.locator('#mediaDialog').evaluate(d=>d.scrollWidth<=d.clientWidth+1),true);
    if(width===1440&&lang==='zh'&&theme==='light'){
@@ -120,9 +146,35 @@ const server=http.createServer((req,res)=>{
   assert.equal(await page.locator('#mediaVideoStage video').getAttribute('src'),'/api/bev.mp4');
   await page.evaluate(()=>document.querySelector('#mediaDialog').close());
   await page.waitForFunction(()=>document.querySelector('#mediaVideoStage').innerHTML==='');
+  // Real playback survives two source changes in one task, before metadata.
+  await page.evaluate(()=>openMedia('video',0,{caseData:window.fixture}));
+  await page.waitForFunction(()=>{const v=document.querySelector('#mediaVideoStage video');return v.readyState>=2&&!v.seeking;});
+  await pick('[data-video-rate]','1.5');
+  await page.locator('#mediaVideoStage [data-video-play]').click();
+  await page.waitForFunction(()=>!document.querySelector('#mediaVideoStage video').paused);
+  await page.evaluate(()=>{
+   const player=document.querySelector('#mediaVideoStage [data-bev-video-player]');player.focus();
+   for(let n=0;n<2;n++)player.dispatchEvent(new KeyboardEvent('keydown',{key:'V',shiftKey:true,bubbles:true,cancelable:true}));
+  });
+  await page.waitForFunction(()=>{const v=document.querySelector('#mediaVideoStage video');return v.readyState>=2&&!v.paused&&!v.seeking&&v.getAttribute('src')==='/api/bev.mp4';});
+  assert.equal(await page.locator('#mediaVideoStage video').evaluate(v=>v.playbackRate),1.5);
+  await page.evaluate(()=>document.querySelector('#mediaDialog').close());
+  await page.waitForFunction(()=>document.querySelector('#mediaVideoStage').innerHTML==='');
+  // A closeup-only Issue must not be mistaken for the original BEV source.
+  await page.evaluate(()=>{
+   const closeup=window.fixture.assets.video.tracks.find(t=>t.source_id==='bev_closeup');
+   openMedia('video',0,{caseData:{...window.fixture,assets:{...window.fixture.assets,video:{...closeup,duration_ms:40000,tracks:[closeup]}}}});
+   document.querySelector('#mediaVideoStage [data-bev-video-player]').focus();
+  });
+  await page.keyboard.press('o');
+  assert.equal(await page.locator('#mediaVideoStage video').getAttribute('src'),'/api/closeup.mp4');
+  await page.keyboard.press('Shift+V');
+  assert.equal(await page.locator('#mediaVideoStage video').getAttribute('src'),'/api/closeup.mp4');
+  await page.evaluate(()=>document.querySelector('#mediaDialog').close());
+  await page.waitForFunction(()=>document.querySelector('#mediaVideoStage').innerHTML==='');
   // Use the same selector/change path in both inline detail pages.
-  for(const activePage of ['review','labeling']){
-   await page.setViewportSize({width:1440,height:950});
+  for(const activePage of ['review','labeling'])for(const width of [1440,390,320]){
+   await page.setViewportSize({width,height:950});
    await page.evaluate(activePage=>{
     state.activePage=activePage;state.selectedCase=window.fixture;state.selectedId=window.fixture.issue_id;
     state.caseLabeling={issueId:window.fixture.issue_id,caseData:window.fixture};state.detailMedia={};
@@ -139,14 +191,36 @@ const server=http.createServer((req,res)=>{
    assert.equal(await page.evaluate(()=>state.detailMedia.videoTrack),'/api/closeup.mp4');
    assert.equal(await page.evaluate(()=>detailHeroMediaEl().querySelector('video').playbackRate),1.5);
    assert.match(await page.evaluate(()=>detailMediaPane().querySelector('.ui-select-summary').textContent),/局部 BEV|Closeup BEV/);
+   await page.keyboard.press('v');
+   assert.equal(await page.evaluate(()=>detailHeroMediaEl().querySelector('video').getAttribute('src')),'/api/closeup.mp4');
+   await page.keyboard.press('Shift+V');
+   await page.waitForFunction(()=>{const v=detailHeroMediaEl().querySelector('video');return v?.readyState>=2&&!v.seeking&&v.getAttribute('src')==='/api/bev.mp4'&&Math.abs(v.currentTime-23)<.05;});
+   await page.keyboard.press('Shift+V');
+   await page.waitForFunction(()=>detailHeroMediaEl().querySelector('video')?.readyState>=2&&!detailHeroMediaEl().querySelector('video').seeking);
+   await page.keyboard.press('o');
+   await page.waitForFunction(()=>{const v=detailHeroMediaEl().querySelector('video');return v?.readyState>=2&&!v.seeking&&v.getAttribute('src')==='/api/bev.mp4'&&Math.abs(v.currentTime-23)<.05;});
+   await page.keyboard.press('Shift+V');
+   await page.waitForFunction(()=>detailHeroMediaEl().querySelector('video')?.readyState>=2&&!detailHeroMediaEl().querySelector('video').seeking);
    await page.evaluate(()=>{const select=detailMediaPane().querySelector('select.detail-media-select');select.value='camera';select.dispatchEvent(new Event('change',{bubbles:true}));});
    await page.waitForFunction(()=>detailHeroMediaEl().dataset.detailMediaKind==='camera');
    await page.evaluate(()=>detailHeroMediaEl().focus());
-   await page.keyboard.press('Shift+V');
+   await page.keyboard.press('v');
    await page.waitForFunction(()=>detailHeroMediaEl().querySelector('video')?.getAttribute('src')==='/api/closeup.mp4');
+   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1),true);
+   if(width===1440){
+    await page.evaluate(()=>detailMediaPane().querySelector('[id$="MediaExpandButton"]').click());
+    await page.locator('#mediaVideoStage [data-bev-video-player]').focus();
+    await page.keyboard.press('o');
+    await page.waitForFunction(()=>document.querySelector('#mediaVideoStage video').getAttribute('src')==='/api/bev.mp4');
+    await page.evaluate(()=>document.querySelector('#mediaDialog').close());
+    await page.waitForFunction(()=>document.querySelector('#mediaVideoStage').innerHTML==='');
+    await page.evaluate(()=>detailHeroMediaEl().focus());
+    await page.keyboard.press('v');
+    await page.waitForFunction(()=>detailHeroMediaEl().querySelector('video')?.getAttribute('src')==='/api/bev.mp4');
+   }
    await page.evaluate(()=>releaseBevVideoPlayer(detailMediaPane()));
   }
   assert.deepEqual(errors,[]);
-  console.log(JSON.stringify({status:'passed',layouts:checks,widths:[1440,390,320],languages:['zh','en'],themes:['light','dark'],coverage:['Shift+V production keyboard listener','inline review and labeling','image to closeup','input/IME/modifier/repeat guards','three sources','own poster','time/rate retention','locale refresh','shared picker','Escape/outside close','picker bounds','fullscreen source switch','missing/failed source','Cron stale/auth/empty','no horizontal overflow'],device:'desktop Chromium viewport only'}));
+  console.log(JSON.stringify({status:'passed',layouts:checks,inlineLayouts:6,widths:[1440,390,320],languages:['zh','en'],themes:['light','dark'],coverage:['Shift+V bidirectional BEV toggle','V source memory including image roundtrip','O direct original BEV','production keyboard listener','inline review and labeling','input/IME/modifier/repeat guards','Camera excluded from BEV cycle','own poster','time/rate/paused retention','locale refresh','shared picker','Escape/outside close','picker bounds','fullscreen source switch','missing/failed/closeup-only source','Cron stale/auth/empty','no horizontal overflow'],device:'desktop Chromium viewport only'}));
  }finally{await browser.close();server.close();}
 })().catch(error=>{console.error(error);server.close();process.exitCode=1;});

@@ -70,6 +70,12 @@ function playerFixture(){
  cachedError.ctx.releaseBevVideoPlayer(cachedError.root);
  const buffered=playerFixture();buffered.video.fire('loadeddata');buffered.video.fire('stalled');assert.equal(buffered.player.dataset.loadState,'ready','buffered paused video must not show slow-load warning');
  buffered.video._refreshBevPlayerLanguage();assert.equal(buffered.video.getAttribute('aria-label'),'复核视频');buffered.ctx.releaseBevVideoPlayer(buffered.root);
+ // Rapid source changes before metadata arrives must retain playing intent.
+ const rapid=playerFixture();rapid.elements.rate.value='1.5';rapid.video.currentTime=23;await rapid.video.play();
+ rapid.video._setBevVideoTrack('/closeup.mp4');rapid.video._setBevVideoTrack('/original.mp4');
+ assert(rapid.video.paused,'loading pauses the decoder');rapid.video.readyState=1;rapid.video.fire('loadedmetadata');
+ assert.equal(rapid.video.paused,false,'playback resumes after both pending source changes');
+ assert.equal(rapid.video.currentTime,23);assert.equal(rapid.video.playbackRate,1.5);rapid.ctx.releaseBevVideoPlayer(rapid.root);
  // Deferred image/video resolution paints whichever is usable first.
  const state={activePage:'review',caseRequestSeq:1,selectedId:'cn1',selectedCase:{issue_id:'cn1',assets:{},camera:{}},detailMedia:{kind:'',userSelected:false}};
  const pending={};let paints=[];
