@@ -755,7 +755,7 @@ def test_terminal_audit_imports_success_or_partial_reference(db, config, monkeyp
     if failed:
         rows[0].update(task_status=4, task_outcome='DPE exceeded memory quota')
     export = {**{k: plan[k] for k in ('release', 'binary_id', 'population_hash')},
-        'job_id': 99, 'progress': dict(job_id=99, state='COMPLETED', total=2,
+        'job_id': 99, 'execution_contract_hash': 'runtime-verified', 'progress': dict(job_id=99, state='COMPLETED', total=2,
                                      completed=2-int(failed), failed=int(failed), cancelled=0),
         'rows': rows, 'quality': {'quality': {'gate_passed_so_far': not failed}}}
     monkeypatch.setattr(w, 'driver_call', lambda *_: dict(fingerprint=plan['fingerprint'],
