@@ -172,7 +172,7 @@ def test_frozen_source_stream_closes_after_match_missing_source_and_error(monkey
             self.count+=1
             return next(self.values)
         def close(self):self.closed=True
-    batch=SimpleNamespace(release='test',payload={'population_hash':'latest'})
+    batch=SimpleNamespace(release='test',updated_at=None,payload={'population_hash':'latest'},fingerprint='test')
     monkeypatch.setattr(w,'population_identity',lambda payload:payload['hash'])
     monkeypatch.setattr(lane,'compatible_source',lambda old,new:True)
     rows=Rows([latest,original])

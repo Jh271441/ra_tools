@@ -13,6 +13,7 @@ from app.services import release_workflow as workflow
 from app.services.release_metrics import summarize_population
 from app.services.result_publication import publication, effective_publication, published_batch, coverage_policy
 from app.services.release_inventory import inventory
+from app.services.read_views import read_projection
 
 
 def _jobs(db, versions):
@@ -95,11 +96,12 @@ def refresh_progress(job_id, force=False):
 
 def board(db, release="@current", force=False):
     config = workflow.effective_config(db)
-    current = workflow.status(db, config)
+    current = read_projection(db, 'workflow-status', lambda: workflow.status(db, config))
     archive_config = load_versions_config()
     versions = archive_config.get("versions", {})
     periods = {p["release"]: p for p in config.get("periods", [])}
-    collections = {v["release"]: v for v in inventory(db, config)["versions"]}
+    collection_view = read_projection(db, 'collection-inventory', lambda: inventory(db, config), max_age=2)
+    collections = {v["release"]: v for v in collection_view["versions"]}
     native = list(
         db.scalars(
             select(ReleaseSimulationBatch).order_by(

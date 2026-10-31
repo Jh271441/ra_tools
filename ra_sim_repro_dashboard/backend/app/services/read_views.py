@@ -1,6 +1,7 @@
 """Revision-aware cache for page reads only; operational decisions stay uncached."""
 from collections import OrderedDict
 from copy import deepcopy
+from contextvars import ContextVar
 from datetime import datetime
 import os
 from pathlib import Path
@@ -18,6 +19,7 @@ from app.services.release_cycle import TZ
 _lock = RLock()
 _values = OrderedDict()
 _fills = {}
+_read_db = ContextVar('read_view_session', default=None)
 _MAX_ENTRIES = 96
 
 
@@ -75,7 +77,11 @@ def read_view(db, name, load, *, max_age=300):
                 if existing and monotonic() - existing[0] < max_age:
                     _values.move_to_end(key)
                     return deepcopy(existing[1])
-            value = load()
+            scope = _read_db.set(db)
+            try:
+                value = load()
+            finally:
+                _read_db.reset(scope)
             cached = deepcopy(value)
             with _lock:
                 _values[key] = (monotonic(), cached)
@@ -88,6 +94,14 @@ def read_view(db, name, load, *, max_age=300):
             fill[1] -= 1
             if not fill[1]:
                 del _fills[key]
+
+
+def read_projection(db, name, load, *, max_age=300):
+    """Reuse public subviews only inside a cached GET, never in worker decisions."""
+    active = _read_db.get()
+    if active is None or active is not db:
+        return load()
+    return read_view(db, name, load, max_age=max_age)
 
 
 def workflow_status(db):

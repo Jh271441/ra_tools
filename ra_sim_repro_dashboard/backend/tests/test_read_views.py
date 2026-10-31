@@ -158,6 +158,43 @@ def test_failed_fill_releases_waiters_and_nested_views_remain_readable(engine):
     assert not views._fills
 
 
+def test_shared_projection_is_cached_only_inside_page_reads(engine):
+    calls=[]
+    def load():
+        calls.append(1)
+        return {'value':len(calls)}
+    def page(name):
+        with Session(engine) as db:
+            return views.read_view(db,name,lambda:views.read_projection(db,'shared',load))
+    assert page('first-page')=={'value':1}
+    assert page('second-page')=={'value':1}
+    assert views._read_db.get() is None
+    # Scheduler/publication calls must recompute, including in the same session.
+    with Session(engine) as db:
+        assert views.read_projection(db,'shared',load)=={'value':2}
+        assert views.read_projection(db,'shared',load)=={'value':3}
+    with Session(engine) as writer:
+        writer.add(ReleaseWorkflowState(key='settings',payload={'mode':'auto'}))
+        writer.commit()
+    assert page('first-page')=={'value':4}
+
+
+def test_failed_and_dirty_page_reads_do_not_reuse_shared_projections(engine):
+    with Session(engine) as db:
+        def fail():
+            assert views.read_projection(db,'nested-failure',lambda:1)==1
+            raise ValueError('failed')
+        with pytest.raises(ValueError):views.read_view(db,'failed-page',fail)
+        assert views._read_db.get() is None
+        db.add(ReleaseWorkflowState(key='uncommitted',payload={}))
+        calls=[]
+        def load():
+            calls.append(1)
+            return len(calls)
+        for expected in (1,2):
+            assert views.read_view(db,'dirty-page',lambda:views.read_projection(db,'dirty-shared',load))==expected
+
+
 def test_expiration_failures_and_database_isolation(engine, monkeypatch):
     monkeypatch.setattr(views, 'monotonic', lambda: 1)
     with Session(engine) as db:

@@ -127,10 +127,12 @@ def publication(batch):
 
 
 def published_batch(db, release):
+    from app.services.read_views import read_projection
     for batch in db.scalars(select(ReleaseSimulationBatch).where(
         ReleaseSimulationBatch.release == release
     ).order_by(ReleaseSimulationBatch.updated_at.desc())):
-        if publication(batch):
+        if read_projection(db, ('publication', batch.fingerprint, batch.updated_at),
+                           lambda: publication(batch)):
             return batch
     return None
 
@@ -311,9 +313,17 @@ def reconcile_publications(db, config):
 
 
 def effective_publication(db, batch):
+    from app.services.read_views import read_projection
+    return read_projection(db, ('effective-publication', batch.fingerprint, batch.updated_at),
+                           lambda: _effective_publication(db, batch))
+
+
+def _effective_publication(db, batch):
     from app.services.label_cycle import revision_metrics
     from app.services.release_backfill import revision_metrics as backfill_metrics
-    base = publication(batch)
+    from app.services.read_views import read_projection
+    base = read_projection(db, ('publication', batch.fingerprint, batch.updated_at),
+                           lambda: publication(batch))
     enriched = backfill_metrics(db, batch, base)
     # A label revision is audited against the original execution population.
     # Do not apply it to a larger backfill population.

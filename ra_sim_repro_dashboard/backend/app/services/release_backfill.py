@@ -38,6 +38,12 @@ def compatible_source(old, new):
 
 
 def frozen_snapshot_valid(db, batch):
+    from app.services.read_views import read_projection
+    return read_projection(db, ('frozen-source', batch.fingerprint, batch.updated_at),
+                           lambda: _frozen_snapshot_valid(db, batch))
+
+
+def _frozen_snapshot_valid(db, batch):
     rows = snapshots(db, batch.release)
     try:
         latest = next(rows, None)
