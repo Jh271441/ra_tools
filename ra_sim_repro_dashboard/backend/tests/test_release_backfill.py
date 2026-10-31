@@ -158,3 +158,33 @@ def test_scene_ledger_hashes_each_execution_once_and_still_rejects_tampering(db,
     list(revision['lineage'].values())[-1]['audit_hash']='tampered'
     w.put_state(db,metrics['backfill_revision'],revision)
     assert lane.revision_metrics(db,batch,base)==base
+
+
+def test_frozen_source_stream_closes_after_match_missing_source_and_error(monkeypatch):
+    from types import SimpleNamespace
+    latest=SimpleNamespace(payload={'hash':'latest'})
+    original=SimpleNamespace(payload={'hash':'original'})
+    class Rows:
+        def __init__(self, values):
+            self.values=iter(values);self.count=0;self.closed=False
+        def __iter__(self):return self
+        def __next__(self):
+            self.count+=1
+            return next(self.values)
+        def close(self):self.closed=True
+    batch=SimpleNamespace(release='test',payload={'population_hash':'latest'})
+    monkeypatch.setattr(w,'population_identity',lambda payload:payload['hash'])
+    monkeypatch.setattr(lane,'compatible_source',lambda old,new:True)
+    rows=Rows([latest,original])
+    monkeypatch.setattr(lane,'snapshots',lambda *_:rows)
+    assert lane.frozen_snapshot_valid(None,batch)
+    assert rows.closed and rows.count==1
+    rows=Rows([latest,original]);batch.payload['population_hash']='original'
+    assert lane.frozen_snapshot_valid(None,batch) and rows.closed
+    rows=Rows([])
+    assert not lane.frozen_snapshot_valid(None,batch) and rows.closed
+    rows=Rows([latest])
+    monkeypatch.setattr(w,'population_identity',lambda _:(_ for _ in ()).throw(ValueError('bad source')))
+    with pytest.raises(ValueError,match='bad source'):
+        lane.frozen_snapshot_valid(None,batch)
+    assert rows.closed

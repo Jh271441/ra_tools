@@ -107,6 +107,57 @@ def test_slow_view_does_not_block_other_views_or_cached_responses(engine):
     assert not views._fills
 
 
+def test_worker_revision_during_fill_is_not_overwritten_by_old_response(engine):
+    started, release = Event(), Event()
+    with Session(engine) as db:
+        db.add(ReleaseWorkflowState(key='settings', payload={'mode': 'manual'}))
+        db.commit()
+    def read(block=False):
+        with Session(engine) as db:
+            def load():
+                mode = db.get(ReleaseWorkflowState, 'settings').payload['mode']
+                if block:
+                    started.set()
+                    assert release.wait(5)
+                return mode
+            return views.read_view(db, 'worker-race', load)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        old = pool.submit(read, True)
+        try:
+            assert started.wait(2)
+            with Session(engine) as writer:
+                writer.get(ReleaseWorkflowState, 'settings').payload = {'mode': 'auto'}
+                writer.commit()
+            assert pool.submit(read).result(timeout=2) == 'auto'
+        finally:
+            release.set()
+        assert old.result(timeout=2) == 'manual'
+    assert read() == 'auto'
+    assert not views._fills
+
+
+def test_failed_fill_releases_waiters_and_nested_views_remain_readable(engine):
+    started, release = Event(), Event()
+    def read(load):
+        with Session(engine) as db:
+            return views.read_view(db, 'failed-fill', lambda: load(db))
+    def failed(_):
+        started.set()
+        assert release.wait(5)
+        raise ValueError('failed computation')
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        failed_request = pool.submit(read, failed)
+        try:
+            assert started.wait(2)
+            pending = pool.submit(read, lambda db: views.read_view(db, 'nested', lambda: 'recovered'))
+        finally:
+            release.set()
+        with pytest.raises(ValueError, match='failed computation'):
+            failed_request.result(timeout=2)
+        assert pending.result(timeout=2) == 'recovered'
+    assert not views._fills
+
+
 def test_expiration_failures_and_database_isolation(engine, monkeypatch):
     monkeypatch.setattr(views, 'monotonic', lambda: 1)
     with Session(engine) as db:
