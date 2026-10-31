@@ -64,6 +64,24 @@ def test_input_change_missing_results_unknown(prepared):
     assert plan['coverage']['issue_coverage']==200/201
 
 
+def test_pure_gt_revision_projects_existing_issue_results(prepared):
+    from app.services.label_issue_view import applied_rows
+    db,batch,source = prepared
+    rows = deepcopy(source['issues']); rows[0]['ra_merge_result'] = '误触发'
+    now = datetime.now(timezone.utc)
+    fetch = lambda *_: (batch.release,rows)
+    lane.refresh_release(db,{},batch,now=now,fetcher=fetch)
+    state = lane.refresh_release(db,{},batch,now=now+timedelta(hours=6),fetcher=fetch)
+    assert state['status'] == 'updated'
+    assert 'lineage' not in w.get_state(db,state['revision_key'])
+    result = applied_rows(db,batch.release,{'issues':rows})
+    assert result is not None
+    projected = next(r for r in result if r['issue_id'] == rows[0]['issue_id'])
+    signal = batch.payload['results'][projected['scenario_id']]['sim_triggered']
+    assert projected['precision_label'] == ('FP' if signal else 'TN')
+    assert projected['job_id'] == batch.payload['job_id']
+
+
 def test_wait_manual_disabled_stale_audit(prepared,monkeypatch):
     db,batch,source=prepared
     now=datetime(2026,10,24,tzinfo=timezone.utc)

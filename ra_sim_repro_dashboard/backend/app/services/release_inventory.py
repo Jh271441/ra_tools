@@ -1,5 +1,6 @@
 """Read-only release collection inventory; never fetch upstream from a page request."""
 from datetime import datetime, timezone
+import json
 from sqlalchemy import select
 from app.models import ReleaseWorkflowState
 
@@ -74,20 +75,23 @@ def inventory(db, config=None, now=None):
 
 def observation_issues(db, release, page, page_size, query, label):
     observed = w.get_state(db, "release_observation:" + release)
+    from app.services.label_issue_view import applied_rows
+    applied = applied_rows(db, release, observed)
     items = []
-    for issue in observed.get("issues", []):
-        row = {
+    rows = applied if applied is not None else [{
             "issue_id": str(issue["issue_id"]), "issue_topic": str(issue.get("issue_topic") or ""),
             "source_result": issue.get("ra_merge_result"), "version_key": release,
             "road_version": str(issue.get("version", "")), "ra_type": issue.get("ra_type"),
             "issue_time": issue.get("issue_time"), "scenario_id": "", "scenario_name": "",
             "scenario_labels": [], "simulation_status": "collecting",
             "sim_triggered": None, "reproduced": None, "precision_label": None,
-        }
-        if label or (query and query.lower() not in (row["issue_id"] + " " + row["issue_topic"] + " " + row["road_version"]).lower()):
+        } for issue in observed.get("issues", [])]
+    for row in rows:
+        if ((label and label not in row['scenario_labels'])
+                or (query and query.lower() not in json.dumps(row, ensure_ascii=False).lower())):
             continue
         items.append(row)
     items.sort(key=lambda r: (r["issue_time"] or 0, r["issue_id"]), reverse=True)
     return {"items": items[(page - 1) * page_size:page * page_size], "total": len(items),
-            "page": page, "page_size": page_size, "status": "collecting" if observed else "pending",
+            "page": page, "page_size": page_size, "status": "ready" if applied is not None else "collecting" if observed else "pending",
             "synced_at": observed.get("observed_at")}

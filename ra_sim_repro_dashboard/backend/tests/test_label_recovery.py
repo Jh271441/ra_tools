@@ -218,3 +218,55 @@ def test_older_compact_monitor_is_superseded_by_verified_full_input(db, config, 
     w.put_state(db, 'release_observation:'+base.release,
         {'issues':changed, 'observed_at':(due+timedelta(minutes=1)).isoformat()})
     assert not label_recovery.source_valid(db, child)
+
+
+def test_applied_labels_reach_issue_details_with_audited_job_and_pagination(db, config, labelled, monkeypatch):
+    from app.services.release_watch import activity_identity
+    base, source, rows, calls = labelled
+    # Reclassify an existing successful trigger, and retain an untriggered value.
+    rows[0]['ra_merge_result'] = '误触发'
+    state, due, fetcher = start(db, config, labelled)
+    driver = w.driver_call
+    def untriggered_child(cfg, action, payload):
+        value = driver(cfg, action, payload)
+        if action == 'poll' and payload['job_id'] == 102:
+            from app.services.result_integration import TRIGGER
+            value['execution_export']['rows'][0][TRIGGER] = 0
+        return value
+    monkeypatch.setattr(w, 'driver_call', untriggered_child)
+    w.poll_batches(db, config)
+    label_cycle.refresh_release(db, config, base, now=due+timedelta(hours=1), fetcher=fetcher)
+    monkeypatch.setattr(w, 'effective_config', lambda _: config)
+    w.put_state(db, 'release_observation:'+base.release,
+        {'issues':deepcopy(rows), 'activity_hash':activity_identity(rows,'issue_time'),
+         'observed_at':datetime.now(timezone.utc).isoformat()})
+    w.put_state(db, 'release_monitor:'+base.release,
+        {'release':base.release,'population_changed_after_submission':True})
+    # The public list previously routed every applied GT revision to "collecting".
+    result = w.list_issues(db, base.release, query='new')
+    assert result['status'] == 'ready' and result['total'] == 1
+    assert result['items'][0]['scenario_id'] == '900'
+    assert result['items'][0]['job_id'] == 102
+    assert result['items'][0]['precision_label'] == 'FN'
+    assert result['items'][0]['sim_triggered'] is False
+    old = w.list_issues(db, base.release, query='"issue_id": "0"')['items'][0]
+    assert old['source_result'] == '误触发' and old['precision_label'] == 'FP'
+    assert old['job_id'] == 101 and old['simulation_status'] == 'result_ready'
+    assert w.list_issues(db, base.release, page=2, page_size=10)['total'] == len(rows)
+    assert len(w.list_issues(db, base.release, page=2, page_size=10)['items']) == 10
+    assert w.list_issues(db, base.release, label='fabricated')['total'] == 0
+    before = len(calls)
+    assert w.list_issues(db, base.release, query='900')['total'] == 1
+    assert len(calls) == before  # A detail GET must never call the driver/upstream.
+    # A newer unapplied edit or changed physical input must not reuse stale labels.
+    later = deepcopy(rows); later[-1]['ra_merge_result'] = '误触发'
+    w.put_state(db, 'release_observation:'+base.release, {'issues':later})
+    assert w.list_issues(db, base.release, query='new')['items'][0]['sim_triggered'] is None
+    later = deepcopy(rows); later[-1]['trip_id'] = 'changed'
+    w.put_state(db, 'release_observation:'+base.release, {'issues':later})
+    assert w.list_issues(db, base.release, query='new')['items'][0]['sim_triggered'] is None
+    w.put_state(db, 'release_observation:'+base.release, {'issues':deepcopy(rows)})
+    child = db.get(ReleaseSimulationBatch, state['recovery']['fingerprint'])
+    child.payload = {**child.payload, 'results':{}}
+    db.commit()
+    assert w.list_issues(db, base.release, query='new')['status'] == 'collecting'
