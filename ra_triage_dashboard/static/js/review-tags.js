@@ -230,6 +230,7 @@ function appendMissingEvidenceOption(item) {
   bindMissingEvidenceCatalogControls(option || list);
   bindReviewTagCatalogControls(option || list);
   syncReviewDropdownShortcutHints($("#reviewPane") || document);
+  option?.querySelector("input")?.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
 function bindMissingEvidenceCatalogControls(root = document) {
@@ -823,6 +824,7 @@ function appendReviewTagOptionToGroup(item, group) {
   option?.querySelector('input[name="reviewTags"]')?.addEventListener("change", updateTagSummary);
   bindReviewTagCatalogControls(option || list);
   syncReviewDropdownShortcutHints($("#reviewPane") || document);
+  option?.querySelector('input[name="reviewTags"]')?.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
 function resetTagOptionMenuPanel(panel) {

@@ -339,7 +339,8 @@ function syncReviewFormFromCase(caseData) {
     renderReview(caseData);
     return;
   }
-  const serverPrevious = currentReviewAnnotation(caseData);
+  const combinedMode = effectiveReviewWorkflowMode(caseData) === "model_review_and_case_label";
+  const serverPrevious = reviewFormAnnotation(caseData, combinedMode);
   const draft = reviewDraftForCase(caseData);
   const previous = applyReviewDraft(serverPrevious, draft);
   const runAnnotations = reviewAnnotationsForCurrentRun(caseData);
@@ -348,7 +349,8 @@ function syncReviewFormFromCase(caseData) {
     hasPreviousReview ? previous.missing_evidence || [] : []
   );
   const chosenTags = new Set(
-    initialReviewTagsForCurrentRun(caseData, previous, draft)
+    combinedMode && savedOwnCaseRevision(caseData)
+      ? previous.tags || [] : initialReviewTagsForCurrentRun(caseData, previous, draft)
   );
   const evidenceCatalog = state.config?.missing_evidence_catalog || [];
   const tagCatalog = state.config?.review_tag_catalog || [];
@@ -410,7 +412,11 @@ function syncReviewFormFromCase(caseData) {
     input.checked = chosenTags.has(input.value);
   });
   const excluded = $("#reviewExcludeInput");
-  if (excluded && excluded.dataset?.caseExclusion !== "true") excluded.checked = Boolean(previous.is_excluded);
+  if (excluded && (combinedMode || excluded.dataset?.caseExclusion !== "true")) {
+    excluded.checked = Boolean(previous.case_is_excluded ?? previous.is_excluded);
+  }
+  const rationale = $("#combinedCaseRationale");
+  if (combinedMode && rationale) rationale.value = String(previous.case_rationale || "");
   const expectedOutput = annotationExpectedOutput(previous);
   const expectedOutputInput = $("#expectedOutputInput");
   if (expectedOutputInput) {
@@ -443,6 +449,7 @@ function syncReviewFormFromCase(caseData) {
     state.reviewEditRunId
   );
   state.reviewFormDirty = Boolean(draft) || caseRationalePendingImages(caseData).length > 0;
+  reviewPane.querySelector("#annotationForm")._reviewDraftFields = new Set(reviewDraftEditedFields(draft));
   state.deferredDetailRefresh = false;
   clearPendingReviewImages();
   updateEvidenceSummary();
@@ -453,15 +460,30 @@ function syncReviewFormFromCase(caseData) {
   updateReviewHistory(caseData);
 }
 
-function savedOwnCaseRationale(caseData) {
+function savedOwnCaseRevision(caseData) {
   const username = String(state.session?.username || "").toLowerCase();
-  if (!username) return "";
+  if (!username) return null;
   const revisions = (caseData?.label_state?.sources || []).flatMap((source) =>
     (source.revision_summaries || []).filter((revision) =>
       String(revision.author || "").toLowerCase() === username
       && !(source.method === "adjudication" && Number(source.result_revision_id) === Number(revision.id))
     ));
-  return String(revisions.sort((a, b) => Number(b.id) - Number(a.id))[0]?.rationale || "");
+  return revisions.sort((a, b) => Number(b.id) - Number(a.id))[0] || null;
+}
+
+function savedOwnCaseRationale(caseData) {
+  return String(savedOwnCaseRevision(caseData)?.rationale || "");
+}
+
+function reviewFormAnnotation(caseData, combinedMode) {
+  const annotation = currentReviewAnnotation(caseData);
+  const revision = combinedMode ? savedOwnCaseRevision(caseData) : null;
+  if (!revision) return annotation;
+  // Model Reviews deliberately have no Case tags/output. Start with the saved
+  // own Case revision so delayed context reads cannot expose an empty label form.
+  return {...annotation, expected_output: revision.expected_output || "", tags: revision.tags || [],
+    is_excluded: Boolean(revision.is_excluded), case_is_excluded: Boolean(revision.is_excluded),
+    case_rationale: String(revision.rationale || "")};
 }
 
 function renderReview(caseData) {
@@ -472,7 +494,7 @@ function renderReview(caseData) {
   const runAnnotations = reviewAnnotationsForCurrentRun(caseData);
   const allAnnotations = reviewAnnotationsForAllRuns(caseData);
   const sourceSuggestion = currentReviewSourceSuggestion(caseData);
-  const serverPrevious = currentReviewAnnotation(caseData);
+  const serverPrevious = reviewFormAnnotation(caseData, combinedMode);
   const draft = reviewDraftForCase(caseData);
   const previous = applyReviewDraft(serverPrevious, draft);
   state.reviewEditRunId = reviewRunId;
@@ -497,7 +519,8 @@ function renderReview(caseData) {
   );
   const customEvidenceKeys = [...chosenEvidence].filter((key) => !catalogKeys.has(key));
   const chosenTags = new Set(
-    initialReviewTagsForCurrentRun(caseData, previous, draft)
+    combinedMode && savedOwnCaseRevision(caseData)
+      ? previous.tags || [] : initialReviewTagsForCurrentRun(caseData, previous, draft)
   );
   const tagCatalogKeys = new Set(tagCatalog.map((item) => item.key));
   const customTagKeys = [...chosenTags].filter((tag) => !tagCatalogKeys.has(tag));
@@ -589,7 +612,7 @@ function renderReview(caseData) {
             <span><span class="ui-lang-zh">标签依据 / 说明</span><span class="ui-lang-en">Label rationale</span></span>
             <small class="review-reason-shortcuts"><span class="ui-lang-zh"><kbd>E</kbd> 聚焦 · <kbd>⇧ Enter</kbd> 换行</span><span class="ui-lang-en"><kbd>E</kbd> Focus · <kbd>⇧ Enter</kbd> New line</span></small>
           </span>
-          <textarea id="combinedCaseRationale" data-mention-composer rows="2" aria-keyshortcuts="E Escape Enter Shift+Enter" data-has-case-draft="${draft && Object.prototype.hasOwnProperty.call(draft, "case_rationale") ? "1" : "0"}" placeholder="${escapeHtml(uiText("说明 Case 标签依据；输入 @ 可通知同事", "Explain the Case label; type @ to notify a colleague"))}">${escapeHtml(draft && Object.prototype.hasOwnProperty.call(draft, "case_rationale") ? String(draft.case_rationale || "") : savedOwnCaseRationale(caseData))}</textarea>
+          <textarea id="combinedCaseRationale" data-mention-composer rows="2" aria-keyshortcuts="E Escape Enter Shift+Enter" data-has-case-draft="${reviewDraftHasField(draft, "case_rationale") ? "1" : "0"}" placeholder="${escapeHtml(uiText("说明 Case 标签依据；输入 @ 可通知同事", "Explain the Case label; type @ to notify a colleague"))}">${escapeHtml(reviewDraftHasField(draft, "case_rationale") ? String(draft.case_rationale || "") : savedOwnCaseRationale(caseData))}</textarea>
           <div class="review-mention-composer" id="combinedCaseMentionComposer" data-mention-composer-root aria-live="polite"></div>
         </label>
         <div class="review-attachment-field" id="caseRationaleImages">
@@ -765,8 +788,10 @@ function renderReview(caseData) {
   $("#issueLabelCommentsButton")?.addEventListener("click", () => openCurrentIssueDiscussion(caseData));
   $("#combinedCaseRationale")?.addEventListener("input", (event) => { event.target.dataset.caseRationaleDirty = "1"; });
   const annotationForm = $("#annotationForm");
-  const markDraftDirty = () => {
+  annotationForm._reviewDraftFields = new Set(reviewDraftEditedFields(draft));
+  const markDraftDirty = (event) => {
     state.reviewFormDirty = true;
+    markReviewDraftField(annotationForm, event.target);
     persistReviewDraft(caseData);
   };
   annotationForm.addEventListener("input", markDraftDirty);
@@ -801,26 +826,28 @@ function populateCombinedCaseExclusion(context, caseData) {
   const excluded = $("#reviewExcludeInput");
   if (excluded) {
     const draft = reviewDraftForCase(caseData);
-    excluded.checked = typeof draft?.case_is_excluded === "boolean"
+    excluded.checked = reviewDraftHasField(draft, "case_is_excluded") && typeof draft.case_is_excluded === "boolean"
       ? draft.case_is_excluded : Boolean(revision?.is_excluded);
   }
 }
 
-function populateCombinedCaseLabel(context, caseData) {
+function populateCombinedCaseLabel(context, caseData, {preserveFields = new Set()} = {}) {
   state.combinedReviewContext = context;
   const revision = context?.case_revision || null;
-  const labelState = context?.label_state || caseData.label_state || {};
   const expected = String(revision?.expected_output || "");
   const input = $("#expectedOutputInput");
-  if (input) {
+  if (input && !preserveFields.has("expected_output")) {
     input.value = expected;
     input.dataset.selectionSource = expected ? "stored" : "empty";
   }
   const rationale = $("#combinedCaseRationale");
-  if (rationale && !hasFocusedTextInput(rationale)) rationale.value = String(revision?.rationale || "");
+  if (rationale && !preserveFields.has("case_rationale") && !hasFocusedTextInput(rationale)) {
+    rationale.value = String(revision?.rationale || "");
+    updateReviewMentionComposer(rationale, $("#combinedCaseMentionComposer"));
+  }
   const tags = new Set(revision?.tags || []);
   $("#reviewPane")?.querySelectorAll('input[name="reviewTags"]').forEach((checkbox) => {
-    checkbox.checked = tags.has(checkbox.value);
+    if (!preserveFields.has("tags")) checkbox.checked = tags.has(checkbox.value);
   });
   updateTagSummary();
   syncExpectedOutputFromTags();
@@ -830,13 +857,23 @@ function populateCombinedCaseLabel(context, caseData) {
       ...(caseData.annotations || []).filter((item) => String(item.id) !== String(context.model_review.id)),
     ];
     const status = $("#modelReviewStatusInput");
-    if (status) {
+    if (status && !preserveFields.has("model_review_status")) {
       status.value = modelReviewSubmissionStatus(context.model_review);
       syncModelReviewProgress(context.model_review);
       enhanceNativeUiSelect(status);
     }
     const note = $("#annotationNote");
-    if (note && !hasFocusedTextInput(note)) note.value = context.model_review.note || "";
+    if (note && !preserveFields.has("note") && !hasFocusedTextInput(note)) {
+      note.value = context.model_review.note || "";
+      updateReviewMentionComposer(note);
+    }
+    if (!preserveFields.has("missing_evidence")) {
+      const evidence = new Set(context.model_review.missing_evidence || []);
+      $("#reviewPane")?.querySelectorAll('input[name="missingEvidence"]').forEach((checkbox) => {
+        checkbox.checked = evidence.has(checkbox.value);
+      });
+      updateEvidenceSummary();
+    }
     renderReviewSummary(caseData);
   } else {
     syncModelReviewProgress(null);
@@ -900,6 +937,7 @@ async function loadCombinedReviewContext(caseData, {preserveForm = false} = {}) 
     }
     state.combinedReviewContext = context;
     state.combinedReviewLoad = { key, status: "ready" };
+    caseData.label_state = context.label_state || caseData.label_state;
     syncModelReviewProgress(context.model_review);
     if (context.model_review) {
       caseData.annotations = [context.model_review, ...(caseData.annotations || []).filter(
@@ -910,14 +948,14 @@ async function loadCombinedReviewContext(caseData, {preserveForm = false} = {}) 
     // Exclusion must hydrate even when other fields have a restored/early draft.
     // Only the Case-specific draft flag can override the current Case revision.
     if (!preserveForm) populateCombinedCaseExclusion(context, caseData);
-    // A delayed initial load or retry must not overwrite edits or a restored draft.
-    if (!preserveForm && !state.reviewFormDirty && !reviewDraftForCase(caseData)) populateCombinedCaseLabel(context, caseData);
-    else if (!preserveForm) {
-      const rationale = $("#combinedCaseRationale");
-      if (rationale && !hasFocusedTextInput(rationale) && rationale.dataset.caseRationaleDirty !== "1" && rationale.dataset.hasCaseDraft !== "1") {
-        rationale.value = String(context.case_revision?.rationale || "");
-        updateReviewMentionComposer(rationale, $("#combinedCaseMentionComposer"));
-      }
+    if (!preserveForm) {
+      // Protect actual edits independently: a model-note draft must not block
+      // saved Case tags/rationale, nor a Case edit block the saved model note.
+      const draft = reviewDraftForCase(caseData);
+      const formFields = $("#annotationForm")?._reviewDraftFields;
+      const preserveFields = new Set(formFields || reviewDraftEditedFields(draft));
+      if (!formFields && !draft && state.reviewFormDirty) REVIEW_DRAFT_FIELDS.forEach((field) => preserveFields.add(field));
+      populateCombinedCaseLabel(context, caseData, {preserveFields});
     }
     renderCaseRationaleImages(caseData);
     renderCombinedReviewContextStatus();
@@ -1717,11 +1755,11 @@ async function saveCombinedReview(event) {
   const imageItems = [...caseRationalePendingImages(caseData)];
   const navigationContext = reviewSaveNavigationContext(issueId);
   const contextKey = combinedReviewContextKey(caseData);
+  const draftScope = [issueId, runId, reviewWorkSplitBinding(caseData), reviewDraftReviewer(caseData)];
+  const submittedDraft = persistReviewDraft(caseData);
   if (imageItems.length) {
-    const queuedDraft = persistReviewDraft(caseData);
-    const draftScope = [issueId, runId, reviewWorkSplitBinding(caseData), reviewDraftReviewer(caseData)];
     const task = { key: imageKey, issueId, payload, imageItems, draftScope,
-      draft: queuedDraft || readReviewDraft(...draftScope), contextKey,
+      draft: submittedDraft || readReviewDraft(...draftScope), contextKey,
       action: runId ? "combined-review" : "case-label-from-review",
       headers: runId ? { "Idempotency-Key": globalThis.crypto?.randomUUID?.() || `combined-${Date.now()}-${Math.random().toString(16).slice(2)}` } : {},
     };
@@ -1759,9 +1797,25 @@ async function saveCombinedReview(event) {
       showToast(uiText("联合复核已保存", "Combined review saved"));
     }
     clearSavedCaseRationaleImages(imageKey, imageItems);
-    if (state.selectedCase === caseData && combinedReviewContextKey(caseData) === contextKey) {
+    const current = state.selectedCase === caseData && combinedReviewContextKey(caseData) === contextKey;
+    const latestDraft = current ? persistReviewDraft(caseData) : readReviewDraft(...draftScope);
+    const newerDraft = Boolean(latestDraft)
+      && caseUploadDraftSignature(latestDraft) !== caseUploadDraftSignature(submittedDraft);
+    if (newerDraft) {
+      // Typing during the request is not part of the committed payload.
+      latestDraft.saved_at = Math.max(Date.now(), annotationTimestamp(result.combined_review?.model_review) + 1);
+      try { window.localStorage.setItem(reviewDraftStorageKey(...draftScope), JSON.stringify(latestDraft)); } catch (_) {}
+    } else {
+      // Do not rely on timestamp precision or a later context read to retire a
+      // committed snapshot: server timestamps may be rounded to whole seconds.
+      clearReviewDraft(...draftScope);
+      if (current) $("#annotationForm")?._reviewDraftFields?.clear();
+    }
+    caseData.label_state = (result.combined_review || result.case_label)?.label_state || caseData.label_state;
+    delete caseData.label_source_contexts;
+    if (current) {
+      state.reviewFormDirty = newerDraft || caseRationalePendingImages(caseData).length > 0;
       await loadCombinedReviewContext(caseData);
-      if (state.selectedCase === caseData) renderReview(caseData);
     }
     await refreshReviewAfterSave(navigationContext);
   } catch (error) {

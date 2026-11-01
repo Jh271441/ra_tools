@@ -142,9 +142,9 @@ function inheritedHistoricalTagsForCurrentRun(caseData) {
 }
 
 function initialReviewTagsForCurrentRun(caseData, annotation, draft) {
-  // A local draft is an explicit user edit, including an intentionally empty
-  // set of Tags.  Likewise, a bound Review is authoritative for its Run.
-  if (draft || reviewAnnotationsForCurrentRun(caseData).length) {
+  // Preserve explicit tag edits (including clears). A draft of another field
+  // must still inherit the same historical tags as the initial clean form.
+  if (reviewDraftHasField(draft, "tags") || reviewAnnotationsForCurrentRun(caseData).length) {
     return Array.isArray(annotation?.tags) ? annotation.tags : [];
   }
   const inherited = inheritedHistoricalTagsForCurrentRun(caseData);
@@ -253,10 +253,35 @@ function reviewDraftForCase(caseData) {
 function applyReviewDraft(annotation, draft) {
   if (!draft) return annotation || {};
   const next = { ...(annotation || {}), _review_draft: true };
-  REVIEW_DRAFT_FIELDS.forEach((field) => {
+  reviewDraftEditedFields(draft).forEach((field) => {
     if (Object.prototype.hasOwnProperty.call(draft, field)) next[field] = draft[field];
   });
   return next;
+}
+
+function reviewDraftEditedFields(draft) {
+  if (!draft) return [];
+  // Older full snapshots do not identify edits. Preserve their explicit clears.
+  return Array.isArray(draft.edited_fields)
+    ? draft.edited_fields.filter((field) => REVIEW_DRAFT_FIELDS.includes(field))
+    : REVIEW_DRAFT_FIELDS;
+}
+
+function reviewDraftHasField(draft, field) {
+  return reviewDraftEditedFields(draft).includes(field)
+    && Object.prototype.hasOwnProperty.call(draft, field);
+}
+
+function markReviewDraftField(form, target) {
+  if (!form?._reviewDraftFields) return;
+  const fields = target?.name === "reviewTags" ? ["tags", "expected_output"]
+    : target?.name === "missingEvidence" ? ["missing_evidence"]
+    : ({
+      modelReviewStatusInput: ["model_review_status"], expectedOutputInput: ["expected_output"],
+      reviewExcludeInput: ["case_is_excluded", "is_excluded"], combinedCaseRationale: ["case_rationale"],
+      annotationNote: ["note"], annotationAuthor: ["author"],
+    })[target?.id] || [];
+  fields.forEach((field) => form._reviewDraftFields.add(field));
 }
 
 function persistReviewDraft(caseData) {
@@ -281,6 +306,7 @@ function persistReviewDraft(caseData) {
     case_rationale: $("#combinedCaseRationale")?.value || "",
     author: $("#annotationAuthor")?.value || "",
   };
+  if (form._reviewDraftFields) draft.edited_fields = [...form._reviewDraftFields];
   try {
     const workSplitId = reviewWorkSplitBinding(caseData);
     const reviewer = reviewDraftReviewer(
