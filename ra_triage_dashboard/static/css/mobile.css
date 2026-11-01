@@ -1077,8 +1077,7 @@
   .planning-constraint-identity { padding: 12px; }
   .bev-video-control-row [data-planning-constraint],
   .planning-constraint-panel .button,
-  .planning-constraint-panel summary { min-height: 44px; }
-  .planning-constraint-panel summary { display: flex; align-items: center; }
+  .planning-constraint-raw summary { min-height: 44px; }
   .planning-constraint-panel .button { min-width: 44px; }
 }
 @media (max-width: 760px) {

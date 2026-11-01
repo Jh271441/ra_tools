@@ -2,23 +2,21 @@
 
 The inline Issue video toolbar has one compact Planning constraint button. Click
 opens an upward, nonmodal, viewport-clamped panel. One primary card holds the
-current dominant constraint ID, copy action and Object ID row. A collapsed Debug
-details disclosure contains the earliest-brake-time index, speed-solution marker,
-message time, playback lag and complete raw text/source. Debug values never
-compete with the primary ID or imply a human-readable cause. Escape, outside click
+current dominant constraint ID, copy action and Object ID row. A collapsed Raw
+text disclosure preserves the complete original string. Separate debug fields,
+timestamps and source-path explanations are omitted. Escape, outside click
 and the close button dismiss it; playback controls do not. Inline video sources
 are in the existing upper shared media picker (including Camera102), not a second
 bottom selector. Expanded media dialogs retain their existing source picker.
 
 This is an Issue/media fact, not Model Run Reason. It follows video time and never
-translates IDs into object categories. Object ID zero and brake index -1 survive.
+translates IDs into object categories. Object ID zero remains literal.
 No matching frame, unresolved candidate, no dominant constraint, unavailable and
 failed reads are distinct; none retain an old ID. Language and theme use existing
 Workbench mechanisms. Mobile panels wrap identifiers and scroll within viewport.
 
-The panel uses a wider desktop measure, separate metadata rows and proportional
-raw-text typography with more line spacing; only IDs and the source path retain
-monospace. Narrow screens keep44px controls and a scrollable viewport-bound panel.
+The panel uses a wider desktop measure and a monospace constraint ID.
+Narrow screens keep44px controls and a scrollable viewport-bound panel.
 Opening moves focus into the nonmodal panel. Plain Left/Right from its controls
 or opener use that player's existing seek buttons, then return focus to the
 player, keeping the panel open and respecting the selected jump step. Escape
@@ -26,11 +24,10 @@ closes only this panel and restores its opener; arrows still seek from there.
 Modified keys, IME and editable/select controls retain their native behavior.
 An expanded player's panel stays inside its containing dialog's top layer.
 
-Structured Object ID uses the explicit API field. Older cached facts expose brake
-index and gap alignment only in the extractor's exact Ares text; the display reads
-that explicit prefix/suffix without changing raw text or asking for a new source
-read. Values `0` and `-1` remain literal. Missing/unrecognized values are shown as not
-provided; the UI never derives object type or identity from a constraint-ID token.
+Object ID uses only the explicit safe-integer API field. Missing/unrecognized
+values are shown as not provided; the UI never derives object type or identity
+from a constraint-ID token. Original text is rendered verbatim with textContent;
+debug values are not separately projected into the panel.
 
 ## Extraction contract
 
@@ -57,7 +54,7 @@ and `ares-utils/modules/planning/index.ts`:
 Video t0 retains the existing clip midpoint convention. Match the most recent
 published planning message at or before capture_timestamp_ms + relative video
 offset, with maximum age150ms; never look ahead or bridge a missing interval.
-Metadata contains both publish and planning timestamps; UI displays publish time.
+Metadata retains both publish and planning timestamps for alignment.
 
 ## Bounded lazy lifecycle
 
