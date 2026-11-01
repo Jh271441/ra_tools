@@ -26,23 +26,32 @@ document.createElement = () => {
   return panel;
 };
 const timers = new Set();
+(async () => {
+let targetTime = 20;
+const requests = [];
 const context = {
   Element, document, AbortController, console,
   window: { innerWidth: 1440, innerHeight: 950, setTimeout: () => 1, clearTimeout() {}, setInterval: fn => { timers.add(fn); return fn; }, clearInterval: fn => timers.delete(fn) },
   uiText: zh => zh, withBase: value => value,
   navigator: { clipboard: { writeText: async () => {} } },
-  fetch: async () => ({ ok: true, json: async () => ({ status: 'ready', bucket: 0, anchor_ms: 1000, frames: [] }) }),
+  fetch: async url => {
+    const bucket = Number(new URL(url, 'http://fixture').searchParams.get('offset_ms')) / 8000;
+    requests.push(bucket);
+    return { ok: true, json: async () => ({ status: 'ready', bucket, anchor_ms: 1000,
+      frames: [{ timestamp_ms: 1000 + bucket * 8000, status: 'ready',
+        constraint_id: `raw-id-${bucket}`, object_id: 0, raw: `Complete raw text ${bucket}` }] }) };
+  },
 };
 vm.createContext(context);
 vm.runInContext(fs.readFileSync(require('node:path').join(__dirname, '../static/js/text-input.js'), 'utf8'), context);
 vm.runInContext(fs.readFileSync(require('node:path').join(__dirname, '../static/js/planning-constraints.js'), 'utf8'), context);
 const player = new Element(), trigger = new Element(), left = new Element(), right = new Element(), dialog = new Element();
-player.dataset = { planningIssue: 'cn_fixture', startOffsetSec: '0' };
+player.dataset = { planningIssue: 'cn_fixture', startOffsetSec: '-20' };
 player.append(trigger);
 player.closest = selector => selector === 'dialog' ? dialog : null;
 player.querySelector = selector => ({ '[data-planning-constraint]': trigger, '[data-video-jump="-1"]': left, '[data-video-jump="1"]': right }[selector]);
-const video = { currentTime: 0, readyState: 4, paused: true, duration: 40 };
-const binding = context.bindPlanningConstraint(player, video), panel = dialog.children[0];
+const video = { currentTime: 0, readyState: 0, seeking: true, paused: true, duration: 40 };
+const binding = context.bindPlanningConstraint(player, video, () => targetTime), panel = dialog.children[0];
 assert(panel, 'The expanded panel must remain in its dialog top layer');
 const key = (target, name, extra = {}) => {
   const event = { target, key: name, defaultPrevented: false, preventDefault() { this.defaultPrevented = true; }, stopPropagation() { this.stopped = true; }, ...extra };
@@ -52,6 +61,27 @@ const key = (target, name, extra = {}) => {
 trigger.click();
 assert.equal(panel.hidden, false);
 assert.equal(document.activeElement, panel, 'Opening releases focus from the opener');
+await new Promise(setImmediate);
+binding.refresh();
+assert.deepEqual(requests, [0], 'Initial t0 uses the intended timeline, not the undecoded video at zero');
+assert.equal(panel.querySelector('[data-pc-value]').textContent, 'raw-id-0', 'Cached text displays before video metadata/decoded frames');
+assert.equal(panel.querySelector('[data-pc-object-value]').textContent, '0');
+assert.equal(panel.querySelector('[data-pc-raw]').textContent, 'Complete raw text 0');
+assert.equal(panel.querySelector('[data-pc-details]').hidden, false);
+video.error = { code: 2 };
+binding.refresh();
+assert.equal(panel.querySelector('[data-pc-value]').textContent, 'raw-id-0', 'A stalled/failed decoder does not hide independent text');
+targetTime = 20.3;
+binding.refresh();
+assert.equal(panel.querySelector('[data-pc-raw]').textContent, '', 'Removing the decoder gate must not bridge missing source frames');
+assert.equal(panel.querySelector('[data-pc-facts]').hidden, true);
+targetTime = 28;
+binding.refresh();
+await new Promise(setImmediate);
+binding.refresh();
+assert.deepEqual(requests, [0, 1]);
+assert.equal(panel.querySelector('[data-pc-value]').textContent, 'raw-id-1', 'A pending seek uses its requested window while old video frames remain');
+assert.equal(video.currentTime, 0, 'The test never decodes/seeks the video to obtain text');
 assert.equal(key(panel, 'ArrowRight').defaultPrevented, true);
 assert.equal(right.clicks, 1, 'One key invokes the owning seek control once');
 assert.equal(document.activeElement, player);
@@ -75,4 +105,5 @@ assert.equal(timers.size, 0);
 key(trigger, 'ArrowRight');
 assert.equal(right.clicks, 2, 'Disposal detaches the keyboard handler');
 assert.equal(document.events.get('keydown').size, 0);
-console.log('PASS planning panel focus, owner seeking, input guards, Escape and disposal');
+console.log('PASS independent planning text, pending timeline, causal gaps, focus, owner seeking, input guards, Escape and disposal');
+})().catch(error => { console.error(error); process.exitCode = 1; });

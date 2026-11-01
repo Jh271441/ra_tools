@@ -6,10 +6,10 @@ class El extends EventTarget {
  focus(){} matches(s){return s==='video'&&this.isVideo;} querySelector(){return null;} querySelectorAll(){return [];}
  fire(name){this.dispatchEvent(new Event(name));}
 }
-function playerFixture(){
+function playerFixture(videoState={}){
  const timers=new Map();let next=0;
  const elements=Object.fromEntries(['video','play','seek','step','rate','time','relative-start','t0','track','status','status-text','retry'].map(k=>[k,new El()]));
- const video=elements.video;Object.assign(video,{isVideo:true,readyState:4,duration:40,paused:true,seeking:false,loads:0,seeks:[],error:null});
+ const video=elements.video;Object.assign(video,{isVideo:true,readyState:4,duration:40,paused:true,seeking:false,loads:0,seeks:[],error:null},videoState);
  let pos=0;Object.defineProperty(video,'currentTime',{get:()=>pos,set:v=>{pos=v;video.seeks.push(v);}});
  video.pause=()=>{video.paused=true;};video.play=()=>{video.paused=false;return Promise.resolve();};
  video.load=()=>{video.loads++;video.readyState=0;};video.attrs.src='/clip.mp4';video.attrs.poster='/poster.jpg';
@@ -20,12 +20,24 @@ function playerFixture(){
  vm.createContext(ctx);
  vm.runInContext(fs.readFileSync(src+'planning-constraints.js','utf8'),ctx);
  vm.runInContext(fs.readFileSync(src+'detail-media.js','utf8'),ctx);
+ let textPosition;const bindText=ctx.bindPlanningConstraint;
+ ctx.bindPlanningConstraint=(player,video,getPosition)=>{textPosition=getPosition;return bindText(player,video,getPosition);};
  ctx.bindBevVideoPlayers(root);
  const flush=ms=>{for(const [id,x] of [...timers])if(x.ms===ms){timers.delete(id);x.f();}};
- return {ctx,root,player,elements,video,timers,flush};
+ return {ctx,root,player,elements,video,timers,flush,textPosition};
 }
 (async()=>{
  const p=playerFixture(),v=p.video,e=p.elements;
+ const undecoded=playerFixture({readyState:0,seeking:true});
+ assert.equal(undecoded.video.currentTime,0);
+ assert.equal(undecoded.elements.seek.value,'20','Initial controls show intended t0 before metadata');
+ assert.equal(undecoded.textPosition(),20,'Text and controls share initial t0 independently of decoding');
+ undecoded.elements.seek.value='21';undecoded.elements.seek.fire('input');
+ assert.equal(undecoded.textPosition(),21,'Text immediately follows a queued timeline seek');
+ assert.equal(undecoded.video.currentTime,0);
+ undecoded.flush(75);assert.equal(undecoded.textPosition(),21,'Pending metadata retains the requested text position');
+ assert.equal(undecoded.video.seeks.length,0,'No video decoding is needed to select text time');
+ undecoded.ctx.releaseBevVideoPlayer(undecoded.root);
  const media={assets:{video:{url:'/bev.mp4',tracks:[{url:'/bev.mp4'},{url:'/api/assets/cn1/camera-video'},{url:'/api/assets/cn1/bev-closeup-video',source_id:'bev_closeup',label:'局部 BEV 视频',poster_url:'/closeup-t0.jpg'}]},frames:[{url:'/before.jpg',offset_ms:-1000},{url:'/full-bev.jpg',offset_ms:0}]},camera:{frames:[{url:'/full-camera.jpg',offset_ms:0}]}};
  const descriptor=p.ctx.videoWithFramePosters(media);
  p.ctx.escapeHtml=String;
