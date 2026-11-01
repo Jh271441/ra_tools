@@ -156,6 +156,21 @@ function relabelMultiFilter(root, options) {
   return true;
 }
 
+function relabelMultiFilterGroups(root, groups) {
+  root.querySelectorAll('.multi-filter-group-label').forEach((heading, index) => {
+    heading.textContent = groups[index].label;
+  });
+  const navigation = root.querySelector('.multi-filter-group-nav');
+  if (!navigation) return;
+  navigation.setAttribute('aria-label', uiText('标签分组', 'Tag groups'));
+  navigation.querySelectorAll('[data-multi-group-jump]').forEach((button) => {
+    const label = groups[Number(button.dataset.multiGroupJump)].label;
+    button.textContent = label;
+    button.setAttribute('aria-label', uiText(`跳转到${label}`, `Go to ${label}`));
+    button.title = button.getAttribute('aria-label');
+  });
+}
+
 function setMultiFilterValues(root, values) {
   if (!root) return;
   const selected = new Set(parseFilterList(values));

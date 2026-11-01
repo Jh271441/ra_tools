@@ -79,6 +79,8 @@
 .planning-constraint-raw pre { margin: 6px 0 0; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--raised); color: var(--text); font: inherit; font-size: 12px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
 .planning-constraint-panel [hidden] { display: none; }
 .bev-video-control-row .button { min-height: 28px; padding: 4px 7px; font-size: 10px; }
+.bev-video-playback-state { flex: 0 0 8em; color: var(--muted); font-size: 10px; line-height: 1.3; overflow-wrap: anywhere; }
+[data-playback-state="playing"] .bev-video-playback-state { color: var(--accent); }
 .bev-video-control-row label { width: auto; display: inline-flex; grid-template-columns: none; align-items: center; gap: 5px; color: var(--faint); font-size: 10px; }
 .bev-video-control-row select { width: auto; min-width: 72px; height: 28px; padding: 3px 24px 3px 6px; font-size: 10px; }
 .bev-video-progress-row { min-width: 0; flex: 1 1 220px; display: grid; grid-template-columns: max-content minmax(0, 1fr) max-content; align-items: center; gap: 8px; }

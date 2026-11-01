@@ -3,25 +3,26 @@ const src='ra_triage_dashboard/static/js/';
 class El extends EventTarget {
  constructor(){super();this.dataset={};this.hidden=false;this.value='1';this.textContent='';this.attrs={};this.isConnected=true;}
  setAttribute(k,v){this.attrs[k]=v;} getAttribute(k){return this.attrs[k]||null;} removeAttribute(k){delete this.attrs[k];}
- focus(){} matches(s){return s==='video'&&this.isVideo;} querySelector(){return null;} querySelectorAll(){return [];}
- fire(name){this.dispatchEvent(new Event(name));}
+ focus(){} matches(s){return s==='video'&&this.isVideo;} closest(){return null;} querySelector(){return null;} querySelectorAll(){return [];}
+ fire(name,properties={}){const event=new Event(name,{cancelable:true});Object.assign(event,properties);this.dispatchEvent(event);return event;}
 }
-function playerFixture(videoState={}){
+function playerFixture({readyState=4,preference=false,initialTime=0,durationSec=40,...videoState}={}){
  const timers=new Map();let next=0;
- const elements=Object.fromEntries(['video','play','seek','step','rate','time','relative-start','t0','track','status','status-text','retry'].map(k=>[k,new El()]));
- const video=elements.video;Object.assign(video,{isVideo:true,readyState:4,duration:40,paused:true,seeking:false,loads:0,seeks:[],error:null},videoState);
- let pos=0;Object.defineProperty(video,'currentTime',{get:()=>pos,set:v=>{pos=v;video.seeks.push(v);}});
- video.pause=()=>{video.paused=true;};video.play=()=>{video.paused=false;return Promise.resolve();};
+ const elements=Object.fromEntries(['video','play','playback-state','seek','step','rate','time','relative-start','t0','track','status','status-text','retry'].map(k=>[k,new El()]));
+ const video=elements.video;Object.assign(video,{isVideo:true,readyState,duration:40,paused:true,seeking:false,loads:0,plays:0,seeks:[],error:null},videoState);
+ let pos=initialTime;Object.defineProperty(video,'currentTime',{get:()=>pos,set:v=>{pos=v;video.seeks.push(v);}});
+ video.pause=()=>{video.paused=true;};video.play=()=>{video.plays++;video.paused=false;video.fire('play');return Promise.resolve();};
  video.load=()=>{video.loads++;video.readyState=0;};video.attrs.src='/clip.mp4';video.attrs.poster='/poster.jpg';
- const player=new El();player.dataset={durationSec:'40',t0PlayerSec:'20',startOffsetSec:'-20'};
+ const player=new El();player.dataset={durationSec:String(durationSec),t0PlayerSec:String(durationSec/2),startOffsetSec:String(-durationSec/2)};
  player.querySelector=s=>s==='video'?video:elements[s.replace('[data-video-','').replace(']','')];
  const root={querySelectorAll:s=>s==='video'?[video]:[player]};
- const ctx={console,URL,Event,Number,window:{setTimeout:(f,ms)=>{timers.set(++next,{f,ms});return next;},clearTimeout:id=>timers.delete(id),requestAnimationFrame:f=>f()},enhanceDashboardSelects(){},t:x=>x,uiText:x=>x,showToast(){},safeSameOriginAssetUrl:x=>x};
+ const ctx={console,URL,Event,Number,window:{setTimeout:(f,ms)=>{timers.set(++next,{f,ms});return next;},clearTimeout:id=>timers.delete(id),requestAnimationFrame:f=>f()},enhanceDashboardSelects(){},t:x=>x,uiText:x=>x,showToast(){},safeSameOriginAssetUrl:x=>String(x||'').split('#')[0]};
  vm.createContext(ctx);
  vm.runInContext(fs.readFileSync(src+'planning-constraints.js','utf8'),ctx);
  vm.runInContext(fs.readFileSync(src+'detail-media.js','utf8'),ctx);
  let textPosition;const bindText=ctx.bindPlanningConstraint;
  ctx.bindPlanningConstraint=(player,video,getPosition)=>{textPosition=getPosition;return bindText(player,video,getPosition);};
+ vm.runInContext(`bevVideoPlaybackPreference = ${preference}`,ctx);
  ctx.bindBevVideoPlayers(root);
  const flush=ms=>{for(const [id,x] of [...timers])if(x.ms===ms){timers.delete(id);x.f();}};
  return {ctx,root,player,elements,video,timers,flush,textPosition};
@@ -42,6 +43,10 @@ function playerFixture(videoState={}){
  const descriptor=p.ctx.videoWithFramePosters(media);
  p.ctx.escapeHtml=String;
  const markup=p.ctx.videoPlayerMarkup(descriptor);
+ assert(p.ctx.videoPlayerMarkup({...descriptor,duration_ms:40000}).includes('src="/bev.mp4#t=20"'),'initial resource selection advertises t0 before metadata');
+ assert.equal(p.ctx.videoPlaybackSourceUrl('/bev.mp4?version=2#t=1',23.45678),'/bev.mp4?version=2#t=23.457');
+ assert.equal(p.ctx.videoPlaybackSourceUrl('/bev.mp4',0),'/bev.mp4#t=0');
+ for(const position of [null,NaN,-1,Infinity])assert.equal(p.ctx.videoPlaybackSourceUrl('/bev.mp4',position),'/bev.mp4');
  assert(markup.indexOf('class="bev-video-progress-row"')<markup.indexOf('data-video-status role='),'warnings follow the timeline, never split it from playback controls');
  assert(markup.includes('data-video-status role="status" aria-live="polite" hidden'),'first paint has no loading status row');
  assert.equal(descriptor.poster_url,'/full-bev.jpg');assert.equal(descriptor.tracks[1].poster_url,'/full-camera.jpg');
@@ -54,7 +59,7 @@ function playerFixture(videoState={}){
  // A late full image updates the existing active source without reloading it.
  const options=[{value:'/bev.mp4',dataset:{}},{value:'/api/assets/cn1/camera-video',dataset:{}}];
  p.player.querySelectorAll=()=>options;
- v.attrs.src='/api/assets/cn1/camera-video';
+ v.attrs.src='/api/assets/cn1/camera-video#t=20';
  p.ctx.refreshVideoFramePosters(p.root,media);
  assert.equal(v.attrs.poster,'/full-camera.jpg');assert.equal(options[0].dataset.poster,'/full-bev.jpg');
  assert.equal(v.loads,0);assert.deepEqual(v.seeks,[20]);v.attrs.src='/clip.mp4';
@@ -67,7 +72,7 @@ function playerFixture(videoState={}){
  assert.equal(v.seeks.length,1,'drag coalesces network seeks');p.flush(75);assert.equal(v.seeks.at(-1),9.9);assert.equal(v.seeks.length,2);
  e.seek.value='32';e.seek.fire('input');e.track.value='/camera.mp4';e.track.selectedOptions=[{dataset:{poster:'/camera.jpg'}}];e.track.fire('change');
  assert.equal(v.attrs.poster,'/camera.jpg');p.flush(75);assert.equal(v.seeks.length,2,'source switch cancels queued old seek');
- v.readyState=1;v.fire('loadedmetadata');assert.equal(v.seeks.length,3);assert.equal(v.seeks.at(-1),9.9);
+ assert.equal(v.src,'/camera.mp4#t=9.9');v.readyState=1;v.fire('loadedmetadata');assert.equal(v.seeks.length,2);assert.equal(v.seeks.at(-1),9.9);
  v.readyState=4;v.fire('loadeddata');assert.equal(p.player.dataset.loadState,'ready');
  e.rate.value='1.5';e.rate.fire('change');
  e.track.value='/api/assets/cn1/bev-closeup-video';e.track.selectedOptions=[{dataset:{poster:'/closeup-t0.jpg'}}];e.track.fire('change');
@@ -83,11 +88,52 @@ function playerFixture(videoState={}){
  const buffered=playerFixture();buffered.video.fire('loadeddata');buffered.video.fire('stalled');assert.equal(buffered.player.dataset.loadState,'ready','buffered paused video must not show slow-load warning');
  buffered.video._refreshBevPlayerLanguage();assert.equal(buffered.video.getAttribute('aria-label'),'复核视频');buffered.ctx.releaseBevVideoPlayer(buffered.root);
  // Rapid source changes before metadata arrives must retain playing intent.
- const rapid=playerFixture();rapid.elements.rate.value='1.5';rapid.video.currentTime=23;await rapid.video.play();
+ const rapid=playerFixture();rapid.elements.rate.value='1.5';rapid.video.currentTime=23;rapid.elements.play.fire('click');
  rapid.video._setBevVideoTrack('/closeup.mp4');rapid.video._setBevVideoTrack('/original.mp4');
- assert(rapid.video.paused,'loading pauses the decoder');rapid.video.readyState=1;rapid.video.fire('loadedmetadata');
+ assert.equal(rapid.video.paused,false,'loading retains the early native play request');rapid.video.readyState=1;rapid.video.fire('loadedmetadata');
  assert.equal(rapid.video.paused,false,'playback resumes after both pending source changes');
  assert.equal(rapid.video.currentTime,23);assert.equal(rapid.video.playbackRate,1.5);rapid.ctx.releaseBevVideoPlayer(rapid.root);
+ // Space acknowledges/cancels the latest intent while metadata is blocked.
+ const pendingPlay=playerFixture({readyState:0}),pe=pendingPlay.elements,pv=pendingPlay.video;
+ assert.equal(pendingPlay.player.dataset.playbackState,'paused');
+ assert.equal(pe.seek.value,'20','show the intended t0 during metadata loading');
+ pendingPlay.player.fire('keydown',{key:' '});
+ assert.equal(pe.play.textContent,'media.pause');assert.equal(pendingPlay.player.dataset.playbackState,'waiting');
+ assert.equal(pv.plays,1,'known t0 allows native asynchronous play before metadata');
+ pendingPlay.player.fire('keydown',{key:' ',repeat:true});assert.equal(pe.play.getAttribute('aria-pressed'),'true');
+ pendingPlay.player.fire('keydown',{key:' '});assert.equal(pendingPlay.player.dataset.playbackState,'paused');
+ pv.readyState=4;pv.fire('loadedmetadata');assert.equal(pv.plays,1,'cancelled pending playback must not restart later');assert(pv.paused);
+ pendingPlay.player.fire('keydown',{key:' '});assert.equal(pv.plays,2);pv.fire('playing');
+ assert.equal(pendingPlay.player.dataset.playbackState,'playing');
+ pv.fire('waiting');assert.equal(pendingPlay.player.dataset.playbackState,'buffering');
+ pv.fire('seeked');assert.equal(pendingPlay.player.dataset.playbackState,'playing','a buffered seek can resume without another playing event');
+ pv.fire('playing');
+ pv._setBevVideoTrack('/source-one.mp4');pv._setBevVideoTrack('/source-two.mp4');
+ assert.equal(pv.src,'/source-two.mp4#t=20','rapid source switches keep the native start hint');
+ assert.equal(pendingPlay.player.dataset.playbackState,'waiting');
+ assert.equal(pv.plays,4,'each new source submits asynchronous playback without waiting for metadata');
+ pv.readyState=4;pv.fire('loadedmetadata');assert.equal(pv.plays,4,'metadata must not start a duplicate play attempt');
+ pv._setBevVideoTrack('/source-three.mp4');pendingPlay.player.fire('keydown',{key:' '});
+ pv.readyState=4;pv.fire('loadedmetadata');assert.equal(pv.plays,5,'Space cancels source-resume intent, not native paused');assert(pv.paused);
+ pv._setBevVideoTrack('/source-four.mp4');assert.equal(pendingPlay.player.dataset.playbackState,'paused');
+ pendingPlay.player.fire('keydown',{key:' '});
+ pendingPlay.ctx.pauseBevVideoPlayers(pendingPlay.root);pv.readyState=4;pv.fire('loadedmetadata');
+ assert.equal(pv.plays,6,'hiding a loading player cancels its pending startup');assert(pv.paused);
+ assert.equal(vm.runInContext('bevVideoPlaybackPreference',pendingPlay.ctx),true,'system suspension does not overwrite the manual preference');
+ pendingPlay.ctx.resumeBevVideoPlayers(pendingPlay.root);assert.equal(pv.plays,7);
+ pendingPlay.ctx.releaseBevVideoPlayer(pendingPlay.root);
+ const nextCase=playerFixture({preference:true,readyState:0});
+ assert.equal(nextCase.player.dataset.playbackState,'waiting');assert.equal(nextCase.video.plays,1,'the next Case queues native playback immediately');nextCase.video.readyState=4;nextCase.video.fire('loadedmetadata');
+ assert.equal(nextCase.video.plays,1,'the next Case follows the playing preference');
+ nextCase.elements.play.fire('click');nextCase.video._setBevVideoTrack('/paused-source.mp4');
+ nextCase.video.readyState=4;nextCase.video.fire('loadedmetadata');assert.equal(nextCase.video.plays,1);
+ nextCase.ctx.releaseBevVideoPlayer(nextCase.root);
+ const hinted=playerFixture({initialTime:20});
+ assert.deepEqual(hinted.video.seeks,[],'native fragment positioning must not trigger a redundant seek');hinted.ctx.releaseBevVideoPlayer(hinted.root);
+ const unknown=playerFixture({durationSec:0,readyState:0,preference:true});
+ assert.equal(unknown.video.plays,0,'unknown midpoint still requires decoded metadata');
+ unknown.video.readyState=4;unknown.video.fire('loadedmetadata');assert.deepEqual(unknown.video.seeks,[20]);assert.equal(unknown.video.plays,1);
+ unknown.ctx.releaseBevVideoPlayer(unknown.root);
  // Deferred image/video resolution paints whichever is usable first.
  const state={activePage:'review',caseRequestSeq:1,selectedId:'cn1',selectedCase:{issue_id:'cn1',assets:{},camera:{}},detailMedia:{kind:'',userSelected:false}};
  const pending={};let paints=[];

@@ -236,16 +236,23 @@ function renderMultiFilter(
     onChange = null,
     onlyThis = false,
     searchable = false,
+    groupNavigation = false,
   } = {}
 ) {
   if (!root || root.matches?.("select")) return;
   const previous = selected == null ? getMultiFilterValues(root) : parseFilterList(selected);
   const selectedSet = new Set(previous);
   const optionOpts = { onlyThis: Boolean(onlyThis) };
+  const navigateGroups = Boolean(groupNavigation && groups?.length > 1);
+  const navigation = navigateGroups
+    ? `<div class="multi-filter-group-nav" role="group">${groups.map((group, index) =>
+        `<button type="button" class="multi-filter-action multi-filter-group-jump" data-multi-group-jump="${index}">${escapeHtml(group.label)}</button>`
+      ).join('')}</div>`
+    : '';
   const body = groups?.length
     ? groups
         .map(
-          (group) => `<div class="multi-filter-group">
+          (group, index) => `<div class="multi-filter-group" data-multi-group="${index}">
         <div class="multi-filter-group-label">${escapeHtml(group.label)}</div>
         ${(group.items || [])
           .map((item) => multiFilterOptionHtml(item, selectedSet, optionOpts))
@@ -257,6 +264,7 @@ function renderMultiFilter(
         .map((item) => multiFilterOptionHtml(item, selectedSet, optionOpts))
         .join("");
   root.classList.toggle("has-only-actions", Boolean(onlyThis));
+  root.classList.toggle("has-group-navigation", navigateGroups);
   root.innerHTML = `
     <button type="button" class="multi-filter-trigger" aria-haspopup="listbox" aria-expanded="false">
       <span class="multi-filter-summary"></span>
@@ -269,9 +277,10 @@ function renderMultiFilter(
         <button type="button" class="multi-filter-action" data-multi-clear><span class="ui-lang-zh">清除</span><span class="ui-lang-en">Clear</span></button>
       </div>
       ${searchable ? `<input class="multi-filter-search" type="search" autocomplete="off" placeholder="${escapeHtml(uiText("搜索标签", "Search tags"))}" aria-label="${escapeHtml(uiText("搜索标签", "Search tags"))}" />` : ""}
-      <div class="multi-filter-options">${body || '<div class="multi-filter-empty"><span class="ui-lang-zh">暂无选项</span><span class="ui-lang-en">No options</span></div>'}</div>
+      <div class="multi-filter-options">${navigation}${body || '<div class="multi-filter-empty"><span class="ui-lang-zh">暂无选项</span><span class="ui-lang-en">No options</span></div>'}</div>
       ${searchable ? '<div class="multi-filter-empty" data-multi-search-empty hidden><span class="ui-lang-zh">无匹配标签</span><span class="ui-lang-en">No matching tags</span></div>' : ""}
     </div>`;
+  if (groups?.length) relabelMultiFilterGroups(root, groups);
   updateMultiFilterSummary(root);
   const trigger = root.querySelector(".multi-filter-trigger");
   const panel = root.querySelector(".multi-filter-panel");
@@ -290,12 +299,13 @@ function renderMultiFilter(
     if (willOpen && panel) {
       root.classList.add("is-open");
       trigger.setAttribute("aria-expanded", "true");
+      if (navigateGroups) root.querySelector('.multi-filter-options').scrollTop = 0;
       const triggerWidth = trigger.getBoundingClientRect().width;
       const preferredWidth = onlyThis
         ? Math.max(triggerWidth, 320)
-        : Math.max(triggerWidth, 160);
+        : Math.max(triggerWidth, navigateGroups ? 280 : 160);
       openAnchoredPanel(panel, trigger, {
-        maxHeight: 280,
+        maxHeight: navigateGroups ? 420 : 280,
         // Baseline rows include a per-item action, so give their labels room.
         minWidth: preferredWidth,
         matchAnchorWidth: true,
@@ -306,6 +316,17 @@ function renderMultiFilter(
     }
   });
   panel?.addEventListener("click", (event) => event.stopPropagation());
+  root.querySelectorAll('[data-multi-group-jump]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      const options = root.querySelector('.multi-filter-options');
+      const group = options.querySelector(`[data-multi-group="${button.dataset.multiGroupJump}"]`);
+      // Scroll only this menu, preserving the page and its other filters.
+      options.scrollTop += group.getBoundingClientRect().top - options.getBoundingClientRect().top
+        - parseFloat(getComputedStyle(options).paddingTop);
+      group.querySelector('input[data-multi-value]:not(:disabled)')?.focus({preventScroll: true});
+    });
+  });
   root.querySelector('.multi-filter-search')?.addEventListener('input', (event) => {
     const query = event.target.value.trim().toLocaleLowerCase();
     let visible = 0;
@@ -317,7 +338,12 @@ function renderMultiFilter(
     });
     root.querySelectorAll('.multi-filter-group').forEach((group) => {
       group.hidden = ![...group.querySelectorAll('.multi-filter-option-row')].some(row => !row.hidden);
+      const jump = root.querySelector(`[data-multi-group-jump="${group.dataset.multiGroup}"]`);
+      if (jump) jump.hidden = group.hidden;
     });
+    const navigation = root.querySelector('.multi-filter-group-nav');
+    if (navigation) navigation.hidden = visible === 0;
+    root.querySelector('.multi-filter-options').scrollTop = 0;
     root.querySelector('[data-multi-search-empty]').hidden = visible > 0;
   });
   const actionValues = () => searchable

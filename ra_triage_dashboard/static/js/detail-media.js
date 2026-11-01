@@ -31,6 +31,15 @@ function videoT0PlayerPosition(configuredDuration, decodedDuration = 0) {
   return total / 2;
 }
 
+function videoPlaybackSourceUrl(url, startSec = null) {
+  const source = safeSameOriginAssetUrl(url);
+  const position = Number(startSec);
+  // A start-only media fragment lets the native loader request the nearest
+  // keyframe before our metadata handler runs. It never limits the clip end.
+  return source && startSec !== null && Number.isFinite(position) && position >= 0
+    ? `${source}#t=${Math.round(position * 1000) / 1000}` : source;
+}
+
 function videoTrackLabel(label) {
   if (label === "BEV 视频") return uiText("BEV 视频", "BEV video");
   if (label === "局部 BEV 视频") return uiText("局部 BEV 视频", "Closeup BEV video");
@@ -137,7 +146,7 @@ function refreshVideoFramePosters(root, caseData) {
   const tracks = [descriptor, ...descriptor.tracks];
   root?.querySelectorAll("[data-bev-video-player]").forEach(player => {
     const video = player.querySelector("video");
-    const track = tracks.find(item => item.url === video?.getAttribute("src"));
+    const track = tracks.find(item => item.url === safeSameOriginAssetUrl(video?.getAttribute("src")));
     // Updating a native poster never reloads the source or seeks the player.
     if (track?.poster_url) video.setAttribute("poster", track.poster_url);
     player.querySelectorAll("[data-video-track] option").forEach(option => {
@@ -150,6 +159,10 @@ function refreshBevVideoLanguage(root = document) {
   root.querySelectorAll("[data-bev-video-player] video").forEach(video => video._refreshBevPlayerLanguage?.());
   enhanceDashboardSelects(root);
 }
+
+// A session starts paused. Only an explicit playback choice changes the
+// preference shared by consecutive Cases, sources and the expanded player.
+let bevVideoPlaybackPreference = false;
 
 function videoPlayerMarkup(video, { zoomable = true, compact = false, issueId = "" } = {}) {
   const durationSec = Math.max(0, Number(video?.duration_ms || 0) / 1000);
@@ -169,7 +182,8 @@ function videoPlayerMarkup(video, { zoomable = true, compact = false, issueId = 
     : "";
   const posterUrl = String(video?.poster_url || "").trim();
   const posterAttribute = posterUrl ? ` poster="${escapeHtml(posterUrl)}"` : "";
-  const videoMarkup = `<video src="${escapeHtml(video.url)}"${posterAttribute} preload="metadata" playsinline draggable="false" aria-label="${escapeHtml(uiText("复核视频", "Review video"))}"></video>`;
+  const sourceUrl = videoPlaybackSourceUrl(video.url, durationSec > 0 ? t0PlayerSec : null);
+  const videoMarkup = `<video src="${escapeHtml(sourceUrl)}"${posterAttribute} preload="metadata" muted playsinline draggable="false" aria-label="${escapeHtml(uiText("复核视频", "Review video"))}"></video>`;
   const mediaMarkup = zoomable
     ? `<div class="media-viewport media-video-viewport" data-video-viewport><div class="media-canvas media-video-canvas" data-video-canvas>${videoMarkup}</div></div>`
     : `<div class="hero-media-button hero-media-video">${videoMarkup}</div>`;
@@ -185,6 +199,7 @@ function videoPlayerMarkup(video, { zoomable = true, compact = false, issueId = 
         ${issueId ? `<button class="button button-quiet" type="button" data-planning-constraint aria-haspopup="dialog" aria-expanded="false" aria-keyshortcuts="G"><span data-pc-trigger-label>${escapeHtml(uiText("规划约束", "Planning constraint"))}</span> <kbd class="review-control-shortcut detail-external-shortcut" aria-hidden="true">G</kbd></button>` : ""}
         ${trackControl}
         <button class="button button-quiet" type="button" data-video-play>${escapeHtml(t("media.play"))}</button>
+        <span class="bev-video-playback-state" data-video-playback-state role="status" aria-live="polite" aria-atomic="true">${escapeHtml(t("media.state_paused"))}</span>
         <button class="button button-quiet" type="button" data-video-jump="-1"><span data-video-jump-label>−1s</span></button>
         <button class="button button-quiet" type="button" data-video-t0 data-i18n="media.back_t0">${escapeHtml(t("media.back_t0"))}</button>
         <button class="button button-quiet" type="button" data-video-jump="1"><span data-video-jump-label>+1s</span></button>
@@ -238,7 +253,14 @@ function bindBevVideoPlayers(root) {
     let disposed = false;
     let sourceGeneration = 0;
     let pendingStart = configuredT0PlayerSec > 0 ? configuredT0PlayerSec : null;
-    let resumeAfterLoad = false;
+    let wantsPlayback = bevVideoPlaybackPreference;
+    let suspended = false;
+    let metadataGeneration = -1;
+    let sourceHasStartHint = configuredT0PlayerSec > 0;
+    let playbackAttempt = 0;
+    let playPending = false;
+    let playing = false;
+    let hasPlayed = false;
     let loadTimer = null;
     const listeners = [];
     const listen = (target, name, handler) => {
@@ -268,10 +290,15 @@ function bindBevVideoPlayers(root) {
       loadTimer = window.setTimeout(() => setStatus("slow"), 12000);
     };
     const ready = () => {
-      if (disposed || video.readyState < 2 || video.seeking) return;
+      if (disposed || video.error || video.readyState < 2 || video.seeking) return;
       if (loadTimer !== null) window.clearTimeout(loadTimer);
       loadTimer = null;
       setStatus("ready");
+      // Buffered seeks can resume without another `playing` event.
+      if (hasPlayed && wantsPlayback && !suspended && !video.paused && video.readyState >= 3) {
+        playing = true;
+        update();
+      }
     };
     let seekRequest = 0;
     let cancelPendingSeek = null;
@@ -290,7 +317,17 @@ function bindBevVideoPlayers(root) {
       seek.value = String(Math.min(Number(seek.max), Math.max(0, currentTime)));
       startLabel.textContent = formatSignedSeconds(startOffsetSec);
       timeLabel.textContent = `${formatSignedSeconds(startOffsetSec + currentTime)} / ${formatSignedSeconds(startOffsetSec + total)}`;
-      playButton.textContent = video.paused ? t("media.play") : t("media.pause");
+      const requested = wantsPlayback && !suspended;
+      const playbackState = !requested ? "paused"
+        : playing && !video.paused && !video.seeking ? "playing"
+        : hasPlayed ? "buffering" : "waiting";
+      player.dataset.playbackState = playbackState;
+      const action = t(requested ? "media.pause" : "media.play");
+      if (playButton.textContent !== action) playButton.textContent = action;
+      playButton.setAttribute("aria-pressed", String(requested));
+      const playbackStatus = player.querySelector("[data-video-playback-state]");
+      const playbackText = t(`media.state_${playbackState}`);
+      if (playbackStatus && playbackStatus.textContent !== playbackText) playbackStatus.textContent = playbackText;
     };
     const focusPlayer = () => {
       player.focus({ preventScroll: true });
@@ -359,22 +396,46 @@ function bindBevVideoPlayers(root) {
       );
       queueSeek(target);
     };
+    const startPlayback = () => {
+      if (disposed || suspended || !wantsPlayback || playPending || !video.paused
+        || (metadataGeneration !== sourceGeneration && !sourceHasStartHint)
+        || !player.isConnected || player.closest?.('dialog:not([open]), [hidden], .hidden')) return;
+      const generation = sourceGeneration;
+      const attempt = ++playbackAttempt;
+      playPending = true;
+      video.play().then(() => {
+        if (disposed || generation !== sourceGeneration || attempt !== playbackAttempt) return;
+        playPending = false;
+        update();
+      }).catch((error) => {
+        if (disposed || generation !== sourceGeneration || attempt !== playbackAttempt) return;
+        playPending = false;
+        if (error.name === "AbortError") return;
+        wantsPlayback = false;
+        playing = false;
+        update();
+        showToast(t("media.play_fail", { msg: error.message }), true);
+      });
+    };
     const togglePlayback = () => {
       if (disposed) return;
+      suspended = false;
+      wantsPlayback = !wantsPlayback;
+      bevVideoPlaybackPreference = wantsPlayback;
+      // A key press changes intent and its feedback synchronously, even before
+      // metadata/frames arrive. A second press cancels a queued play request.
+      if (!wantsPlayback) {
+        ++playbackAttempt;
+        playPending = false;
+        playing = false;
+        video.pause();
+      }
       if (queuedSeekTarget !== null) {
         const target = queuedSeekTarget;
         seekTo(target);
       }
-      if (video.paused) {
-        const generation = sourceGeneration;
-        video.play().catch((error) => {
-          if (!disposed && generation === sourceGeneration && error.name !== "AbortError") {
-            showToast(t("media.play_fail", { msg: error.message }), true);
-          }
-        });
-      } else {
-        video.pause();
-      }
+      update();
+      startPlayback();
     };
     const seekToT0 = () => {
       const target = configuredT0PlayerSec > 0
@@ -398,7 +459,10 @@ function bindBevVideoPlayers(root) {
     const loadSource = (url, poster = "") => {
       sourceGeneration += 1;
       pendingStart = video.readyState >= 1 && Number.isFinite(video.currentTime) ? video.currentTime : pendingStart;
-      resumeAfterLoad = !video.paused || resumeAfterLoad;
+      ++playbackAttempt;
+      playPending = false;
+      playing = false;
+      hasPlayed = false;
       video.pause();
       ++seekRequest;
       cancelPendingSeek?.();
@@ -407,9 +471,12 @@ function bindBevVideoPlayers(root) {
       queuedSeekTarget = null;
       if (poster) video.setAttribute("poster", poster);
       else video.removeAttribute("poster");
-      video.src = url;
+      sourceHasStartHint = pendingStart !== null && Number.isFinite(pendingStart);
+      video.src = videoPlaybackSourceUrl(url, sourceHasStartHint ? pendingStart : null);
       video.load();
       loading();
+      update();
+      startPlayback();
     };
     video._setBevVideoTrack = (url, poster = "") => {
       const safe = safeSameOriginAssetUrl(url);
@@ -437,9 +504,12 @@ function bindBevVideoPlayers(root) {
     ["loadedmetadata", "durationchange", "timeupdate", "play", "pause", "ended"].forEach(
       (eventName) => listen(video, eventName, update)
     );
+    listen(video, "playing", () => { playing = true; hasPlayed = true; update(); });
+    ["waiting", "seeking", "loadstart"].forEach(name => listen(video, name, () => { playing = false; update(); }));
+    listen(video, "ended", () => { wantsPlayback = false; playing = false; update(); });
     player.addEventListener("keydown", (event) => {
-      if (event.defaultPrevented || isImeComposing(event) || event.ctrlKey
-          || event.metaKey || event.altKey || event.shiftKey) return;
+      if (event.defaultPrevented || (typeof isImeComposing === "function" && isImeComposing(event))
+          || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
       if (event.target.matches("[data-video-seek]") && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
         // A focused range input otherwise consumes the arrow key itself and
         // only moves the thumb. Route it through the decoded-frame seek path,
@@ -461,18 +531,24 @@ function bindBevVideoPlayers(root) {
       } else if (event.key === " ") {
         event.preventDefault();
         event.stopPropagation();
-        togglePlayback();
+        if (!event.repeat) togglePlayback();
       }
     });
     player.tabIndex = 0;
     update();
     const metadataReady = () => {
-      if (disposed) return;
+      if (disposed || metadataGeneration === sourceGeneration) return;
+      metadataGeneration = sourceGeneration;
       const target = Number.isFinite(pendingStart) ? pendingStart : videoT0PlayerPosition(0, duration());
       pendingStart = null;
-      seekTo(Math.min(Math.max(0, duration()), Math.max(0, target)));
+      const position = Math.min(Math.max(0, duration()), Math.max(0, target));
+      // Native media-fragment startup may already be seeking to this point.
+      // Avoid restarting that Range request; retain an exact-seek fallback for
+      // browsers without fragment support and descriptors without duration.
+      if (Math.abs(video.currentTime - position) > 0.001) seekTo(position);
+      else update();
       video.playbackRate = Number(rateSelect.value || 1);
-      if (resumeAfterLoad) { resumeAfterLoad = false; togglePlayback(); }
+      startPlayback();
     };
     listen(video, "loadedmetadata", metadataReady);
     ["loadstart", "waiting", "seeking"].forEach(name => listen(video, name, loading));
@@ -483,8 +559,29 @@ function bindBevVideoPlayers(root) {
     listen(video, "error", () => {
       if (loadTimer !== null) window.clearTimeout(loadTimer);
       loadTimer = null;
+      ++playbackAttempt;
+      playPending = false;
+      playing = false;
       setStatus("error");
+      update();
     });
+    video._pauseBevPlayback = () => {
+      if (disposed) return;
+      suspended = true;
+      wantsPlayback = false;
+      ++playbackAttempt;
+      playPending = false;
+      playing = false;
+      video.pause();
+      update();
+    };
+    video._resumeBevPlayback = () => {
+      if (disposed) return;
+      suspended = false;
+      wantsPlayback = bevVideoPlaybackPreference;
+      update();
+      startPlayback();
+    };
     video._refreshBevPlayerLanguage = () => {
       if (disposed) return;
       planningConstraint.refresh();
@@ -504,6 +601,7 @@ function bindBevVideoPlayers(root) {
       if (disposed) return;
       disposed = true;
       planningConstraint.dispose();
+      ++playbackAttempt;
       ++sourceGeneration;
       ++seekRequest;
       cancelPendingSeek?.();
@@ -515,7 +613,19 @@ function bindBevVideoPlayers(root) {
     // Cached metadata may already have fired before the dynamic pane was bound.
     if (video.error) setStatus("error");
     else if (video.readyState >= 1) metadataReady();
+    else startPlayback();
   });
+}
+
+function pauseBevVideoPlayers(root) {
+  root?.querySelectorAll("video").forEach(video => {
+    if (video._pauseBevPlayback) video._pauseBevPlayback();
+    else video.pause();
+  });
+}
+
+function resumeBevVideoPlayers(root) {
+  root?.querySelectorAll("video").forEach(video => video._resumeBevPlayback?.());
 }
 
 function releaseBevVideoPlayer(root) {
@@ -902,7 +1012,7 @@ function bindDetailMedia(caseData) {
       : Boolean((kind === "camera" ? caseData?.camera?.frames : caseData?.assets?.frames)?.length);
     if (!available || state.detailMedia.kind === kind) return;
     state.detailMedia.userSelected = true;
-    root.querySelector("video")?.pause();
+    pauseBevVideoPlayers(root);
     if (kind === "video") {
       state.detailMedia.loadSeq += 1;
       state.detailMedia.kind = kind;

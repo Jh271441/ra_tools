@@ -350,10 +350,11 @@ def test_video_t0_shortcut_targets_twenty_second_player_position() -> None:
 const assert=require('node:assert/strict');
 escapeHtml=(value)=>String(value);
 t=(key)=>key;uiText=x=>x;
-const markup=videoPlayerMarkup({url:'video.mp4',start_offset_sec:-20,event_time_sec:0,duration_ms:40000});
+safeSameOriginAssetUrl=(url)=>String(url).split('#')[0];
+const markup=videoPlayerMarkup({url:'/api/assets/cn1/bev-video',start_offset_sec:-20,event_time_sec:0,duration_ms:40000});
 assert.match(markup,/data-start-offset-sec="-20"/);
 assert.match(markup,/data-t0-player-sec="20"/);
-assert.match(markup,/src="video.mp4"/);
+assert.match(markup,/src="\/api\/assets\/cn1\/bev-video#t=20"/);
 assert.match(markup,/preload="metadata"/);
 assert.doesNotMatch(markup,/data-event-time-sec/);
 assert.equal(videoT0PlayerPosition(40,39),20);

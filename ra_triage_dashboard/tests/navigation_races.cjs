@@ -6,7 +6,7 @@ const tick = () => new Promise(r => setImmediate(r));
 function fixture(page = 'review') {
   const calls = {pages: [], paints: [], polls: 0};
   const timers = new Map(); let timerId = 0;
-  const element = () => ({value: '', options: [], innerHTML: '', textContent: '', classList: {contains: () => false, add() {}, remove() {}, toggle() {}}, querySelector: () => null});
+  const element = () => ({value: '', options: [], innerHTML: '', textContent: '', classList: {contains: () => false, add() {}, remove() {}, toggle() {}}, querySelector: () => null, querySelectorAll: () => []});
   const elements = new Map();
   const location = {origin: 'https://example.test', pathname: '/manual/' + (page === 'labeling' ? 'case-labeling' : page), search: '', hash: ''};
   const state = {activePage: page, pageNavigationEpoch: 1, selectedId: '', selectedRunId: '', selectedCase: null,
@@ -41,6 +41,7 @@ function fixture(page = 'review') {
     vm.runInContext(source, s, {filename: name});
   }
   load('text-input.js');
+  load('detail-media.js');
   load('routing.js');
   s.persistCurrentReviewRoute = () => {}; s.persistCurrentAnalysisRoute = () => {};
   function navigate(nextPage, search = '') {

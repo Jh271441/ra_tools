@@ -761,6 +761,8 @@
 
 @media (max-width: 700px) {
   .bev-video-load-state .button { min-height: 44px; min-width: 44px; }
+  .bev-video-control-row [data-video-play] { min-height: 44px; min-width: 44px; }
+  .bev-video-playback-state { flex-basis: 8em; font-size: 12px; }
 }
 
 @media (max-width: 700px) {

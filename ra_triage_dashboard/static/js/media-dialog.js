@@ -341,7 +341,7 @@ function switchMediaKind(kind) {
     return;
   }
   if (state.media.kind === "video" && kind !== "video") {
-    $("#mediaVideoStage")?.querySelector("video")?.pause();
+    pauseBevVideoPlayers($("#mediaVideoStage"));
   }
   const currentOffset = state.media.kind === "video"
     ? null
@@ -370,6 +370,7 @@ function switchMediaKind(kind) {
       : 0;
   state.media.zoom = 1;
   renderMediaDialog();
+  if (kind === "video") resumeBevVideoPlayers($("#mediaVideoStage"));
 }
 
 function cycleIntentMediaKind() {
@@ -577,7 +578,7 @@ function renderMediaDialog() {
 
 function openMedia(kind, index, { caseData = state.selectedCase } = {}) {
   // The dialog owns playback; never leave the inline clip playing underneath.
-  detailHeroMediaEl()?.querySelector("video")?.pause();
+  pauseBevVideoPlayers(detailHeroMediaEl());
   const selectedPrediction = (caseData?.predictions || []).find(
     (item) => item.model_run_id === state.selectedRunId
   ) || caseData?.predictions?.[0];
@@ -604,6 +605,7 @@ function openMedia(kind, index, { caseData = state.selectedCase } = {}) {
   state.media.zoom = 1;
   renderMediaDialog();
   openDialog("mediaDialog");
+  if (state.media.kind === "video") resumeBevVideoPlayers($("#mediaVideoStage"));
   setMediaZoom(1, { resetScroll: true });
 }
 

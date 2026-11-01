@@ -871,7 +871,7 @@ function bindEvents() {
       if (event.key.toLowerCase() === "c") switchMediaKind("camera");
       if (event.key === " " && state.media.kind === "video") {
         event.preventDefault();
-        $("#mediaVideoStage")?.querySelector("[data-video-play]")?.click();
+        if (!event.repeat) $("#mediaVideoStage")?.querySelector("[data-video-play]")?.click();
       }
     }
     if (["+", "="].includes(event.key)) { event.preventDefault(); setMediaZoom(state.media.zoom + MEDIA_ZOOM_STEP); }

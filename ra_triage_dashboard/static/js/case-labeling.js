@@ -1486,7 +1486,7 @@ async function selectCaseLabelingIssue(issueId, { updateRoute = true } = {}) {
 function closeCaseLabelingDetail({ updateRoute = true } = {}) {
   if (caseLabelDecisionUi.saving) return;
   if (caseLabelDecisionUi.editor) exitCaseDecisionEditor();
-  $("#caseLabelingMedia")?.querySelector("video")?.pause();
+  pauseBevVideoPlayers($("#caseLabelingMedia"));
   state.caseLabeling.issueId = "";
   state.caseLabeling.caseData = null;
   state.caseLabeling.dirty = false;

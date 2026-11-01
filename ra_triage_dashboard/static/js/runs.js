@@ -270,11 +270,11 @@ function renderIssueTagFilter(selector, selected, onChange) {
   const options = groups.flatMap(group => group.items);
   const signature = JSON.stringify(groups.map(group => group.items.map(item => item.value)));
   if (root.dataset.groupSignature !== signature || !root.querySelector('.multi-filter-trigger') || !relabelMultiFilter(root, options)) {
-    renderMultiFilter(root, {groups, selected, searchable: true, onChange});
+    renderMultiFilter(root, {groups, selected, searchable: true, groupNavigation: true, onChange});
     root.dataset.groupSignature = signature;
   }
   setMultiFilterValues(root, selected);
-  root.querySelectorAll('.multi-filter-group-label').forEach((heading, index) => { heading.textContent = groups[index].label; });
+  relabelMultiFilterGroups(root, groups);
   const search = root.querySelector('.multi-filter-search');
   search.placeholder = uiText('搜索标签', 'Search tags');
   search.setAttribute('aria-label', search.placeholder);

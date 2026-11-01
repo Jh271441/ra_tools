@@ -1222,7 +1222,7 @@ function setReviewView(issueId = "") {
   detail.classList.toggle("hidden", !showingDetail);
   $("#reviewPage")?.classList.toggle("is-detail", showingDetail);
   if (!showingDetail) {
-    (typeof detailHeroMediaEl === "function" ? detailHeroMediaEl() : $("#detailHeroMedia"))?.querySelector("video")?.pause();
+    pauseBevVideoPlayers(typeof detailHeroMediaEl === "function" ? detailHeroMediaEl() : $("#detailHeroMedia"));
     closeDialog("mediaDialog");
     window.requestAnimationFrame(() => {
       window.scrollTo({ top: state.galleryScrollY, behavior: "auto" });
@@ -1293,8 +1293,8 @@ function showPage(
   if (target === "rd-results" && loadPageData) pageLoads.push(() => loadRdResults());
   state.pageNavigationEpoch = Number(state.pageNavigationEpoch || 0) + 1;
   if (previousPage === "review" && target !== "review" && typeof cancelCaseHydration === "function") cancelCaseHydration();
-  if (target !== "review") {
-    (typeof detailHeroMediaEl === "function" ? detailHeroMediaEl() : $("#detailHeroMedia"))?.querySelector("video")?.pause();
+  if (previousPage !== target && ["review", "labeling"].includes(previousPage)) {
+    pauseBevVideoPlayers(typeof detailHeroMediaEl === "function" ? detailHeroMediaEl() : $("#detailHeroMedia"));
   }
   state.activePage = target;
   document.body.dataset.activePage = target;
