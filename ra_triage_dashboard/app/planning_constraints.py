@@ -43,6 +43,10 @@ def shutdown():
 def read_window(data_dir: Path, issue_id: str, trip_id: str, anchor_ms: int, offset_ms: int):
     if not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", trip_id):
         return {"status": "unavailable", "frames": []}
+    from .planning_constraint_index import read_saved_window
+    saved = read_saved_window(data_dir, issue_id, offset_ms, trip_id=trip_id, anchor_ms=anchor_ms)
+    if saved is not None:
+        return saved
     bucket = offset_ms // 8000
     start = anchor_ms + bucket * 8000 - 200
     end = start + 8400

@@ -7,7 +7,7 @@ import hashlib
 import json
 import threading
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 from urllib.parse import quote
 
 from fastapi import APIRouter, Request, Response
@@ -1390,14 +1390,26 @@ async def get_case_trail_metadata(issue_id: str) -> dict[str, Any]:
 
 
 @router.get("/api/cases/{issue_id}/planning-constraints")
-async def get_planning_constraints(issue_id: str, response: Response, offset_ms: int = 0) -> dict[str, Any]:
+async def get_planning_constraints(
+    issue_id: str, response: Response, offset_ms: Optional[int] = None,
+    timestamp_ms: Optional[int] = None,
+) -> dict[str, Any]:
     from ..planning_constraints import read_window
+    from ..planning_constraint_index import query_offset, read_saved_window
     response.headers["Cache-Control"] = "no-store"
-    if not ISSUE_ID_RE.fullmatch(issue_id) or abs(offset_ms) > 60000:
+    if (not ISSUE_ID_RE.fullmatch(issue_id) or (offset_ms is not None and abs(offset_ms) > 60000)
+            or (offset_ms is not None and timestamp_ms is not None)
+            or (timestamp_ms is not None and not 0 < timestamp_ms <= 9007199254740991)):
         raise _detail(400, "无效的案例或时间 / Invalid issue or offset")
     case = await asyncio.to_thread(database.get_media_issue, issue_id)
     if case is None:
         raise _detail(404, "Issue 不存在 / Issue not found")
+    try:
+        saved = await asyncio.to_thread(read_saved_window, settings.data_dir, issue_id, offset_ms, timestamp_ms)
+    except ValueError:
+        raise _detail(400, "时间超出有效范围 / Time is outside the valid range")
+    if saved is not None:
+        return saved
     provider = media_for_issue(issue_id, str(case.get("baseline_scope") or ""))
     if provider is None:
         return {"status": "unavailable", "frames": []}
@@ -1406,7 +1418,11 @@ async def get_planning_constraints(issue_id: str, response: Response, offset_ms:
     anchor, trip = capture.get("timestamp_ms"), capture.get("trip_id")
     if not isinstance(anchor, (int, float)) or anchor <= 0 or not trip:
         return {"status": "unavailable", "frames": []}
-    return await asyncio.to_thread(read_window, settings.data_dir, issue_id, str(trip), int(anchor), offset_ms)
+    try:
+        relative = query_offset(int(anchor), offset_ms, timestamp_ms)
+    except ValueError:
+        raise _detail(400, "时间超出有效范围 / Time is outside the valid range")
+    return await asyncio.to_thread(read_window, settings.data_dir, issue_id, str(trip), int(anchor), relative)
 
 
 @router.get("/api/cases/{issue_id}/media")
