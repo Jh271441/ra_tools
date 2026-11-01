@@ -27,7 +27,8 @@ closes only this panel and restores its opener; arrows still seek from there.
 Modified keys, IME and editable/select controls retain their native behavior.
 An expanded player's panel stays inside its containing dialog's top layer.
 Plain G toggles the visible player's panel, including expanded media; its button
-and the shared shortcut guide show G. Text inputs, IME, held/repeated keys,
+and the shared shortcut guide show G. Its keycap reuses the same shared styling
+as the RA Event T badge. Text inputs, IME, held/repeated keys,
 modifier combinations, open pickers and unrelated dialogs retain their behavior.
 
 Object ID uses only the explicit safe-integer API field. Missing/unrecognized
