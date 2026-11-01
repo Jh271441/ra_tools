@@ -1,13 +1,13 @@
 const fs=require('fs'),vm=require('vm'),assert=require('assert');
 const root='ra_triage_dashboard/static/js/';
-const elements={combinedReviewContextStatus:{dataset:{},innerHTML:'',querySelector(){return this.innerHTML.includes('data-retry-combined-context')?{addEventListener:(_type,fn)=>{this.retry=fn;}}:null;}},reviewSaveButton:{disabled:false},reviewExcludeInput:{checked:false,disabled:true},annotationForm:{dataset:{}}};
+const elements={combinedReviewContextStatus:{dataset:{},innerHTML:'',querySelector(){return this.innerHTML.includes('data-retry-combined-context')?{addEventListener:(_type,fn)=>{this.retry=fn;}}:null;}},reviewSaveButton:{disabled:false},reviewExcludeInput:{checked:false,disabled:true},annotationForm:{dataset:{},querySelectorAll:()=>[]}};
 const state={activePage:'review',pageNavigationEpoch:1,selectedRunId:'run',reviewWorkSplitId:'campaign',session:{username:'liangxianghui',verified:true,access_role:'writer'},reviewFormDirty:false};
 const data={issue_id:'cn1',review_assignment:{assigned:true,split_id:'campaign',purpose:'model_review',workflow_mode:'model_review_and_case_label',model_run_id:'run'}};state.selectedCase=data;
 const context={issue:{issue_id:'cn1'},campaign:{id:'campaign',evaluation_run_id:'run'},assigned:true};
 const s={state,URLSearchParams,URL,window:{location:{pathname:'/manual/review',search:'?issue=cn1'}},$:key=>elements[key.slice(1)]||null,uiText:x=>x,escapeHtml:String,hasDashboardWriteRole:()=>true,showToast:()=>{}};
 vm.createContext(s);for(const name of ['routing.js','review-draft.js','review-attachments.js','review-form.js'])vm.runInContext(fs.readFileSync(root+name,'utf8'),s);
 let draft=null;s.reviewDraftForCase=()=>draft;
-let paints=0;s.populateCombinedCaseLabel=()=>{paints++;};
+let paints=0;s.populateCombinedCaseLabel=(_context,_data,options)=>{if(!options?.preserveFields?.has('tags'))paints++;};
 (async()=>{
  let resolve;s.api=()=>new Promise(r=>{resolve=r;});
  let pending=s.loadCombinedReviewContext(data);assert(elements.reviewSaveButton.disabled);assert.equal(state.combinedReviewLoad.status,'loading');
@@ -62,6 +62,6 @@ let paints=0;s.populateCombinedCaseLabel=()=>{paints++;};
  // Valid out-of-task submissions keep their separate namespace.
  state.reviewWorkSplitId='';state.selectedCase=data;state.reviewFormDirty=false;
  s.api=async path=>{assert(!path.includes('campaign_id='));return {context:{...context,campaign:{...context.campaign,id:''}}};};
- await s.loadCombinedReviewContext(data);assert.equal(paints,2);assert(!elements.reviewSaveButton.disabled);
+ await s.loadCombinedReviewContext(data);assert.equal(paints,3);assert(!elements.reviewSaveButton.disabled);
  console.log('combined context loading, error/retry, draft preservation, ownership and free-mode passed');
 })().catch(error=>{console.error(error);process.exitCode=1;});

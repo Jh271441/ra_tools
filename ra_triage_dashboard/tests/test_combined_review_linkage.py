@@ -245,3 +245,11 @@ def test_combined_context_loading_error_retry_and_draft_preservation():
         cwd=Path(__file__).resolve().parents[2], capture_output=True, text=True,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_combined_review_saved_field_hydration_and_save_races():
+    result = subprocess.run(
+        ["node", str(Path(__file__).with_name("combined_review_hydration.cjs"))],
+        cwd=Path(__file__).resolve().parents[2], capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr

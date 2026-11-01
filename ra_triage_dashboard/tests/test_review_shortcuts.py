@@ -617,7 +617,7 @@ applyTrailUpdateRouteControls({tab:'review',exclusionIssue:'cn999'});assert.equa
 
 
 def test_combined_exclusion_hydrates_from_case_vote_and_separate_draft() -> None:
-    script = IME_JS + (ROOT / "static" / "js" / "review-form.js").read_text() + r'''
+    script = IME_JS + (ROOT / "static" / "js" / "review-draft.js").read_text() + (ROOT / "static" / "js" / "review-form.js").read_text() + r'''
 const assert=require('node:assert/strict');
 state={session:{}};
 const input={checked:false,disabled:true};
