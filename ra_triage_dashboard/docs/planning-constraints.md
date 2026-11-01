@@ -18,7 +18,10 @@ No matching frame, unresolved candidate, no dominant constraint, unavailable and
 failed reads are distinct; none retain an old ID. Language and theme use existing
 Workbench mechanisms. Mobile panels wrap identifiers and scroll within viewport.
 
-The panel uses a wider desktop measure and a monospace constraint ID.
+The panel uses the page's compact typography:12px title, constraint/Object ID
+and raw text,11px secondary labels/actions, with1.6 line height for long text.
+The desktop panel is420px wide with12px outer/10px card spacing; identifiers
+remain monospace and wrap without truncation.
 Narrow screens keep44px controls and a scrollable viewport-bound panel.
 Opening moves focus into the nonmodal panel. Plain Left/Right from its controls
 or opener use that player's existing seek buttons, then return focus to the

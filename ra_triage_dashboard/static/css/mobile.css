@@ -1073,8 +1073,8 @@
  .version-rd-category {min-height:44px}
 }
 @media (max-width: 760px) {
-  .planning-constraint-panel { padding: 14px; gap: 12px; }
-  .planning-constraint-identity { padding: 12px; }
+  .planning-constraint-panel { padding: 12px; gap: 10px; }
+  .planning-constraint-identity { padding: 10px; }
   .bev-video-control-row [data-planning-constraint],
   .planning-constraint-panel .button,
   .planning-constraint-raw summary { min-height: 44px; }
