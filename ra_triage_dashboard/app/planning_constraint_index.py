@@ -87,11 +87,14 @@ def read_saved_window(
             # Preserve validation failures as HTTP400, rather than treating
             # them as an unavailable/cold window.
             relative = query_offset(saved_anchor, offset_ms, timestamp_ms)
-            if not begin <= relative < finish:
-                return None
             bucket = relative // 8000
             start = saved_anchor + bucket * 8000 - 200
             end = start + 8400
+            # The player asks for bucket starts (e.g. -24s for the first
+            # four seconds of a -20s clip), not its precise playback time.
+            # Reuse intersecting saved coverage, including its boundary bucket.
+            if end < saved_anchor + begin or start >= saved_anchor + finish:
+                return None
             if len(raw_meta) > 65536:
                 raise ValueError("Oversized metadata")
             meta = json.loads(raw_meta)
@@ -127,7 +130,8 @@ def read_saved_window(
                 "read_source": "historical_index", "reason": "index_unavailable"}
     target = saved_anchor + relative
     before = [frame for frame in frames if frame["timestamp_ms"] <= target]
-    matched = before[-1] if before and target - before[-1]["timestamp_ms"] <= TOLERANCE_MS else None
+    matched = (before[-1] if begin <= relative < finish and before
+               and target - before[-1]["timestamp_ms"] <= TOLERANCE_MS else None)
     return {
         "issue_id": issue_id, "trip_id": saved_trip, "anchor_ms": saved_anchor,
         "window_start_ms": start, "window_end_ms": end, "bucket": bucket,
