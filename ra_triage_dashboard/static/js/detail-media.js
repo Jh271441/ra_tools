@@ -226,7 +226,6 @@ function bindBevVideoPlayers(root) {
     if (player.dataset.videoBound === "1") return;
     player.dataset.videoBound = "1";
     const video = player.querySelector("video");
-    const planningConstraint = bindPlanningConstraint(player, video);
     const playButton = player.querySelector("[data-video-play]");
     const seek = player.querySelector("[data-video-seek]");
     const stepSelect = player.querySelector("[data-video-step]");
@@ -278,12 +277,15 @@ function bindBevVideoPlayers(root) {
     let cancelPendingSeek = null;
     let queuedSeekTarget = null;
     let queuedSeekTimer = null;
+    const timelinePosition = () => queuedSeekTarget ?? pendingStart
+      ?? (Number.isFinite(video.currentTime) ? video.currentTime : 0);
+    const planningConstraint = bindPlanningConstraint(player, video, timelinePosition);
     const duration = () => Number.isFinite(video.duration) ? video.duration : configuredDuration;
     const update = (previewTime = null) => {
       const total = Math.max(0, duration());
       const currentTime = previewTime !== null && Number.isFinite(Number(previewTime))
         ? Number(previewTime)
-        : video.currentTime || 0;
+        : timelinePosition();
       seek.max = String(total || configuredDuration || 40);
       seek.value = String(Math.min(Number(seek.max), Math.max(0, currentTime)));
       startLabel.textContent = formatSignedSeconds(startOffsetSec);
@@ -350,9 +352,7 @@ function bindBevVideoPlayers(root) {
     };
     const jump = (direction) => {
       const step = Math.max(0.01, Number(stepSelect.value || 1));
-      const currentTime = queuedSeekTarget !== null
-        ? queuedSeekTarget
-        : Number.isFinite(video.currentTime) ? video.currentTime : 0;
+      const currentTime = timelinePosition();
       const target = Math.min(
         Math.max(0, duration()),
         Math.max(0, currentTime + direction * step)

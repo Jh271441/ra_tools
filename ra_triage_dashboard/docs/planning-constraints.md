@@ -11,6 +11,9 @@ bottom selector. Expanded media dialogs retain their existing source picker.
 
 This is an Issue/media fact, not Model Run Reason. It follows video time and never
 translates IDs into object categories. Object ID zero remains literal.
+Text follows the player's intended timeline position (including initial t0 and
+queued seeks) independently of video metadata, buffering, decoding or errors.
+Available text is never hidden while waiting for a video frame.
 No matching frame, unresolved candidate, no dominant constraint, unavailable and
 failed reads are distinct; none retain an old ID. Language and theme use existing
 Workbench mechanisms. Mobile panels wrap identifiers and scroll within viewport.

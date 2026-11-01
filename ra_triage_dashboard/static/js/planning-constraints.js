@@ -6,7 +6,7 @@ function planningConstraintAt(frames, timestamp, tolerance = 150) {
   return frame && timestamp - frame.timestamp_ms <= tolerance ? frame : null;
 }
 
-function bindPlanningConstraint(player, video) {
+function bindPlanningConstraint(player, video, getPosition = () => video.currentTime) {
   const trigger = player.querySelector('[data-planning-constraint]');
   if (!trigger) return { dispose() {}, refresh() {} };
   const issueId = player.dataset.planningIssue;
@@ -32,7 +32,9 @@ function bindPlanningConstraint(player, video) {
   let open = false, disposed = false, timer = null, controller = null, requestKey = null;
   let epoch = 0, copyValue = '', copiedUntil = 0;
   const cache = new Map();
-  const offset = () => Math.round((video.currentTime + Number(player.dataset.startOffsetSec || 0)) * 1000);
+  // Text follows the timeline's target, including t0 before video metadata and
+  // queued seeks. Reading these small facts does not require a decoded frame.
+  const offset = () => Math.round((getPosition() + Number(player.dataset.startOffsetSec || 0)) * 1000);
   const place = () => {
     if (!open) return;
     const view = window.visualViewport;
@@ -98,11 +100,9 @@ function bindPlanningConstraint(player, video) {
         && (bucket + 1) * 8000 < (Number(player.dataset.startOffsetSec) + video.duration) * 1000) void fetchWindow(bucket + 1);
     const frame = data?.status === 'ready' && Number.isFinite(data.anchor_ms)
       ? planningConstraintAt(data.frames || [], data.anchor_ms + relative, data.tolerance_ms || 150) : null;
-    const ready = !video.seeking && video.readyState >= 2;
-    copyValue = ready && frame?.status === 'ready' ? String(frame.constraint_id || '') : '';
+    copyValue = frame?.status === 'ready' ? String(frame.constraint_id || '') : '';
     let message = uiText('当前时刻无匹配规划帧', 'No matching planning frame at this time');
-    if (!ready) message = uiText('等待视频帧就绪…', 'Waiting for video frame…');
-    else if (pending) message = data?.status === 'busy'
+    if (pending) message = data?.status === 'busy'
       ? uiText('规划数据读取中，请稍候…', 'Planning reader is busy; please wait…')
       : uiText('正在读取当前时段规划数据…', 'Loading planning data for this time window…');
     else if (data.status === 'error') message = uiText('规划数据读取失败，请重试', 'Could not load planning data. Retry.');
@@ -119,8 +119,8 @@ function bindPlanningConstraint(player, video) {
     const objectId = copyValue && Number.isSafeInteger(frame?.object_id) ? frame.object_id : null;
     setText('object-value', objectId === null ? uiText('未提供', 'Not provided') : String(objectId));
     el('object-value').classList.toggle('is-missing', objectId === null);
-    el('details').hidden = !ready || !frame?.raw;
-    setText('raw', ready ? frame?.raw || '' : '');
+    el('details').hidden = !frame?.raw;
+    setText('raw', frame?.raw || '');
     place();
   };
   const close = (focus = false) => {
