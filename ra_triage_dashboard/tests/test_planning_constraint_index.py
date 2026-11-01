@@ -103,6 +103,16 @@ class PlanningIndexTest(unittest.TestCase):
                 read_saved_window(self.data, ISSUE, offset, stamp)
         self.assertEqual(query_offset(ANCHOR, None, ANCHOR - 123), -123)
 
+    def test_all_player_buckets_reuse_saved_coverage_including_clip_start(self):
+        with patch.object(service.threading, "Thread") as worker:
+            for bucket in [-3, -2, -1, 0, 1, 2]:
+                response = service.read_window(self.data, ISSUE, TRIP, ANCHOR, bucket * 8000)
+                self.assertEqual(response["read_source"], "historical_index")
+                self.assertEqual(response["status"], "ready")
+                self.assertEqual(response["bucket"], bucket)
+            worker.assert_not_called()
+        self.assertIsNone(read_saved_window(self.data, ISSUE, timestamp_ms=ANCHOR + 20000)["matched_frame"])
+
     def test_bad_import_keeps_previous_snapshot_and_missing_source_fails(self):
         before = self.index.read_bytes()
         for change in [
