@@ -13,15 +13,20 @@ function bindPlanningConstraint(player, video) {
   const panel = document.createElement('section');
   panel.className = 'planning-constraint-panel';
   panel.hidden = true;
+  panel.tabIndex = -1;
   panel.setAttribute('role', 'dialog');
   panel.id = `planning-constraint-${issueId}-${Math.random().toString(36).slice(2)}`;
   trigger.setAttribute('aria-controls', panel.id);
   panel.innerHTML = `<div class="planning-constraint-heading"><strong data-pc-title></strong><button type="button" class="button button-quiet" data-pc-close>×</button></div>
-    <div class="planning-constraint-value" data-pc-value></div>
-    <div class="planning-constraint-actions"><button type="button" class="button button-quiet" data-pc-copy></button><button type="button" class="button button-quiet" data-pc-retry hidden></button></div>
-    <p class="planning-constraint-time" data-pc-time></p>
-    <details data-pc-details><summary data-pc-summary></summary><pre data-pc-raw></pre><p data-pc-selection></p><code>/studio_node/planning/speed_table_raw.dominantConstraint</code></details>`;
-  document.body.append(panel);
+    <div class="planning-constraint-identity" data-pc-identity>
+      <div class="planning-constraint-identity-heading" data-pc-identity-heading><span data-pc-id-label></span><button type="button" class="button button-quiet" data-pc-copy></button></div>
+      <div class="planning-constraint-value" data-pc-value></div>
+      <dl class="planning-constraint-object" data-pc-facts><dt><span class="planning-constraint-object-symbol" aria-hidden="true">ID</span><span data-pc-object-label></span></dt><dd data-pc-object-value></dd></dl>
+      <button type="button" class="button button-quiet" data-pc-retry hidden></button>
+    </div>
+    <details class="planning-constraint-raw" data-pc-details><summary data-pc-summary><span data-pc-summary-label></span><span class="planning-constraint-disclosure" aria-hidden="true">⌄</span></summary><pre data-pc-raw></pre></details>`;
+  // Keep the nonmodal panel in its player's top layer when media is expanded.
+  (player.closest('dialog') || document.body).append(panel);
   const el = key => panel.querySelector(`[data-pc-${key}]`);
   const setText = (key, value) => { if (el(key).textContent !== value) el(key).textContent = value; };
   let open = false, disposed = false, timer = null, controller = null, requestKey = null;
@@ -47,9 +52,10 @@ function bindPlanningConstraint(player, video) {
     panel.setAttribute('aria-label', trigger.textContent);
     el('close').setAttribute('aria-label', uiText('关闭规划约束', 'Close planning constraint'));
     el('copy').textContent = Date.now() < copiedUntil ? uiText('已复制', 'Copied') : uiText('复制 ID', 'Copy ID');
+    el('id-label').textContent = uiText('当前主导约束', 'Current dominant constraint');
+    el('object-label').textContent = uiText('对象 ID', 'Object ID');
     el('retry').textContent = uiText('重试', 'Retry');
-    el('summary').textContent = uiText('完整原文', 'Full raw text');
-    el('selection').textContent = uiText('默认选中候选轨迹 · 按消息发布时间对齐', 'Default selected candidate · aligned by publish time');
+    el('summary-label').textContent = uiText('原文', 'Raw text');
   };
   const fetchWindow = async bucket => {
     if (requestKey === bucket || disposed || !open) return;
@@ -107,11 +113,14 @@ function bindPlanningConstraint(player, video) {
     el('value').classList.toggle('is-raw-id', Boolean(copyValue));
     el('copy').hidden = !copyValue;
     el('retry').hidden = data?.status !== 'error';
+    el('identity-heading').hidden = !copyValue;
+    el('identity').classList.toggle('is-ready', Boolean(copyValue));
+    el('facts').hidden = !copyValue;
+    const objectId = copyValue && Number.isSafeInteger(frame?.object_id) ? frame.object_id : null;
+    setText('object-value', objectId === null ? uiText('未提供', 'Not provided') : String(objectId));
+    el('object-value').classList.toggle('is-missing', objectId === null);
     el('details').hidden = !ready || !frame?.raw;
     setText('raw', ready ? frame?.raw || '' : '');
-    setText('time', ready && frame
-      ? uiText(`消息 ${frame.timestamp_ms} · 距播放 ${data.anchor_ms + relative - frame.timestamp_ms} ms`,
-        `Message ${frame.timestamp_ms} · playback lag ${data.anchor_ms + relative - frame.timestamp_ms} ms`) : '');
     place();
   };
   const close = (focus = false) => {
@@ -124,12 +133,30 @@ function bindPlanningConstraint(player, video) {
     if (open) { close(); return; }
     open = true; panel.hidden = false; trigger.setAttribute('aria-expanded', 'true');
     refresh(); timer = window.setInterval(refresh, 100);
+    panel.focus({preventScroll: true});
   };
   const outside = event => {
     if (open && !panel.contains(event.target) && !player.querySelector('.bev-video-controls').contains(event.target)) close();
   };
   const keyboard = event => {
-    if (open && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(true); }
+    if (disposed || event.defaultPrevented || isImeComposing(event)
+        || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (open && event.key === 'Escape') {
+      event.preventDefault(); event.stopPropagation(); close(true); return;
+    }
+    // The trigger is a button, and the panel can live outside the player. Both
+    // otherwise miss its keyboard handler. Reuse the owner's actual seek
+    // controls so step size, seek coalescing and frame readiness stay shared.
+    const target = event.target instanceof Element ? event.target : null;
+    if (!target || event.shiftKey || !['ArrowLeft', 'ArrowRight'].includes(event.key)
+        || !(trigger.contains(target) || (open && panel.contains(target)))
+        || target.closest('input, textarea, select, .ui-select, [contenteditable="true"], [role="textbox"]')) return;
+    const direction = event.key === 'ArrowLeft' ? -1 : 1;
+    const control = player.querySelector(`[data-video-jump="${direction}"]`);
+    if (!control || control.disabled) return;
+    event.preventDefault(); event.stopPropagation();
+    control.click();
+    player.focus({preventScroll: true});
   };
   trigger.addEventListener('click', toggle);
   el('close').addEventListener('click', () => close(true));

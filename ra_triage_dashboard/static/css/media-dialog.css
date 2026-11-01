@@ -54,18 +54,30 @@
   padding: 5px 7px; border: 1px solid var(--line); border-radius: 7px; background: #0d121b;
 }
 .bev-video-control-row { min-width: 0; flex: 0 1 auto; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
-.planning-constraint-panel { position: fixed; z-index: 100; box-sizing: border-box; width: 380px; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--overlay); color: var(--text); box-shadow: 0 8px 24px #0003; overflow: auto; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.planning-constraint-panel { position: fixed; z-index: 100; box-sizing: border-box; display: grid; gap: 12px; width: 460px; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--overlay); color: var(--text); box-shadow: 0 8px 24px #0003; overflow: auto; overscroll-behavior: contain; font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
 .planning-constraint-panel[hidden] { display: none; }
-.planning-constraint-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
-.planning-constraint-heading strong { font-size: 13px; font-weight: 600; }
-.planning-constraint-value { user-select: text; }
-.planning-constraint-value.is-raw-id, .planning-constraint-panel pre, .planning-constraint-panel code { font: 12px/1.6 "SFMono-Regular", Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
-.planning-constraint-actions { display: flex; gap: 8px; margin-top: 8px; }
-.planning-constraint-time, .planning-constraint-panel details { color: var(--muted); font-size: 12px; }
-.planning-constraint-panel details { border-top: 1px solid var(--line); padding-top: 8px; }
-.planning-constraint-panel summary { cursor: pointer; }
-.planning-constraint-panel pre { color: var(--text); }
-.planning-constraint-panel code { color: var(--muted); }
+.planning-constraint-heading { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 12px; background: var(--overlay); }
+.planning-constraint-heading strong { font-size: 14px; font-weight: 600; }
+.planning-constraint-panel .button { min-height: 32px; padding: 5px 10px; font-size: 12px; }
+.planning-constraint-heading .button { min-width: 32px; padding-inline: 8px; }
+.planning-constraint-identity { display: grid; gap: 14px; min-width: 0; padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--raised); }
+.planning-constraint-identity.is-ready { border-left: 3px solid var(--accent); }
+.planning-constraint-identity-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; color: var(--muted); font-size: 12px; }
+.planning-constraint-identity [data-pc-retry] { justify-self: start; }
+.planning-constraint-value { min-width: 0; user-select: text; }
+.planning-constraint-value.is-raw-id { font: 500 15px/1.75 "SFMono-Regular", Consolas, monospace; white-space: pre-wrap; }
+.planning-constraint-object { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; margin: 0; padding-top: 12px; border-top: 1px solid var(--line); }
+.planning-constraint-object dt { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 12px; }
+.planning-constraint-object-symbol { display: grid; place-items: center; width: 28px; height: 28px; flex: none; border: 1px solid var(--line); border-radius: 6px; color: var(--muted); font: 600 10px "SFMono-Regular", Consolas, monospace; }
+.planning-constraint-object dd { min-width: 0; margin: 0; padding: 3px 10px; border: 1px solid var(--line); border-radius: 6px; color: var(--text); font: 600 16px/1.4 "SFMono-Regular", Consolas, monospace; overflow-wrap: anywhere; }
+.planning-constraint-object .is-missing { color: var(--muted); font: inherit; }
+.planning-constraint-raw { min-width: 0; color: var(--muted); font-size: 12px; }
+.planning-constraint-raw summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 32px; cursor: pointer; list-style: none; }
+.planning-constraint-raw summary::-webkit-details-marker { display: none; }
+.planning-constraint-disclosure { font-size: 18px; line-height: 1; }
+.planning-constraint-raw[open] .planning-constraint-disclosure { transform: rotate(180deg); }
+.planning-constraint-raw pre { margin: 8px 0 0; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--raised); color: var(--text); font: inherit; font-size: 13px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; }
+.planning-constraint-panel [hidden] { display: none; }
 .bev-video-control-row .button { min-height: 28px; padding: 4px 7px; font-size: 10px; }
 .bev-video-control-row label { width: auto; display: inline-flex; grid-template-columns: none; align-items: center; gap: 5px; color: var(--faint); font-size: 10px; }
 .bev-video-control-row select { width: auto; min-width: 72px; height: 28px; padding: 3px 24px 3px 6px; font-size: 10px; }
