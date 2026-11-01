@@ -182,7 +182,7 @@ function videoPlayerMarkup(video, { zoomable = true, compact = false, issueId = 
     ${mediaMarkup}
     <div class="bev-video-controls" aria-label="${escapeHtml(uiText("视频控制", "Video controls"))}">
       <div class="bev-video-control-row">
-        ${issueId ? `<button class="button button-quiet" type="button" data-planning-constraint aria-haspopup="dialog" aria-expanded="false">${escapeHtml(uiText("规划约束", "Planning constraint"))}</button>` : ""}
+        ${issueId ? `<button class="button button-quiet" type="button" data-planning-constraint aria-haspopup="dialog" aria-expanded="false" aria-keyshortcuts="G"><span data-pc-trigger-label>${escapeHtml(uiText("规划约束", "Planning constraint"))}</span> <kbd class="review-control-shortcut" aria-hidden="true">G</kbd></button>` : ""}
         ${trackControl}
         <button class="button button-quiet" type="button" data-video-play>${escapeHtml(t("media.play"))}</button>
         <button class="button button-quiet" type="button" data-video-jump="-1"><span data-video-jump-label>−1s</span></button>

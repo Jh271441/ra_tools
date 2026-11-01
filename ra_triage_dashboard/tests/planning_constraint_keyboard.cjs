@@ -13,6 +13,7 @@ class Element {
   click() { this.clicks = (this.clicks || 0) + 1; this.fire('click'); }
   remove() { this.removed = true; }
   getBoundingClientRect() { return { left: 20, top: 700, width: 460, height: 300 }; }
+  getClientRects() { return this.hidden ? [] : [this.getBoundingClientRect()]; }
 }
 const document = new Element();
 document.body = new Element();
@@ -46,21 +47,50 @@ vm.createContext(context);
 vm.runInContext(fs.readFileSync(require('node:path').join(__dirname, '../static/js/text-input.js'), 'utf8'), context);
 vm.runInContext(fs.readFileSync(require('node:path').join(__dirname, '../static/js/planning-constraints.js'), 'utf8'), context);
 const player = new Element(), trigger = new Element(), left = new Element(), right = new Element(), dialog = new Element();
+const triggerLabel = new Element();
+trigger.querySelector = () => triggerLabel;
+dialog.append(player);
+let activeDialog = dialog, pickerOpen = false;
+document.querySelector = selector => selector === 'dialog[open]' ? activeDialog : pickerOpen ? new Element() : null;
 player.dataset = { planningIssue: 'cn_fixture', startOffsetSec: '-20' };
 player.append(trigger);
 player.closest = selector => selector === 'dialog' ? dialog : null;
 player.querySelector = selector => ({ '[data-planning-constraint]': trigger, '[data-video-jump="-1"]': left, '[data-video-jump="1"]': right }[selector]);
 const video = { currentTime: 0, readyState: 0, seeking: true, paused: true, duration: 40 };
-const binding = context.bindPlanningConstraint(player, video, () => targetTime), panel = dialog.children[0];
+const binding = context.bindPlanningConstraint(player, video, () => targetTime), panel = dialog.children[1];
 assert(panel, 'The expanded panel must remain in its dialog top layer');
 const key = (target, name, extra = {}) => {
   const event = { target, key: name, defaultPrevented: false, preventDefault() { this.defaultPrevented = true; }, stopPropagation() { this.stopped = true; }, ...extra };
   document.fire('keydown', event);
   return event;
 };
-trigger.click();
+assert.equal(key(document.body, 'g').defaultPrevented, true, 'G opens the active player from page focus');
 assert.equal(panel.hidden, false);
 assert.equal(document.activeElement, panel, 'Opening releases focus from the opener');
+assert.equal(triggerLabel.textContent, '规划约束');
+assert.equal(trigger.attrs.title, '展开或收起规划约束（G）');
+for (const extra of [{ repeat: true }, { ctrlKey: true }, { metaKey: true }, { altKey: true }, { shiftKey: true }, { isComposing: true }, { keyCode: 229 }, { defaultPrevented: true }]) key(panel, 'g', extra);
+assert.equal(panel.hidden, false, 'G ignores held, modified and composition keys');
+const input = new Element(); input.editable = true;
+assert.equal(key(input, 'g').defaultPrevented, false, 'G never steals text input');
+activeDialog = new Element();
+assert.equal(key(document.body, 'g').defaultPrevented, false, 'Unrelated modal keeps keyboard ownership');
+activeDialog = null;
+assert.equal(key(document.body, 'g').defaultPrevented, false, 'A player in a closed modal cannot take G');
+activeDialog = dialog;
+pickerOpen = true;
+assert.equal(key(document.body, 'g').defaultPrevented, false, 'Open shared pickers retain key handling');
+pickerOpen = false;
+trigger.hidden = true;
+assert.equal(key(document.body, 'g').defaultPrevented, false, 'Hidden players cannot take G');
+trigger.hidden = false;
+await new Promise(setImmediate);
+binding.refresh();
+assert.equal(key(panel, 'G').defaultPrevented, true);
+assert.equal(panel.hidden, true, 'G closes the panel');
+assert.equal(document.activeElement, trigger, 'G close restores its opener');
+key(trigger, 'g');
+assert.equal(panel.hidden, false, 'G reopens from its button');
 await new Promise(setImmediate);
 binding.refresh();
 assert.deepEqual(requests, [0], 'Initial t0 uses the intended timeline, not the undecoded video at zero');
@@ -105,5 +135,5 @@ assert.equal(timers.size, 0);
 key(trigger, 'ArrowRight');
 assert.equal(right.clicks, 2, 'Disposal detaches the keyboard handler');
 assert.equal(document.events.get('keydown').size, 0);
-console.log('PASS independent planning text, pending timeline, causal gaps, focus, owner seeking, input guards, Escape and disposal');
+console.log('PASS G toggle, dialog/visibility/picker/input guards, independent planning text, pending timeline, causal gaps, focus, owner seeking, Escape and disposal');
 })().catch(error => { console.error(error); process.exitCode = 1; });
