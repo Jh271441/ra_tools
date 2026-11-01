@@ -1,10 +1,11 @@
 # Manual planning constraint
 
 The inline Issue video toolbar has one compact Planning constraint button. Click
-opens an upward, nonmodal, viewport-clamped panel. A distinct ID block with a copy
-action is followed by labeled Object ID, brake-index and alignment cells. Message
-time and playback lag use a separate compact key/value section. Complete raw
-text/source stays collapsed by default and is disclosed on demand. Escape, outside click
+opens an upward, nonmodal, viewport-clamped panel. One primary card holds the
+current dominant constraint ID, copy action and Object ID row. A collapsed Debug
+details disclosure contains the earliest-brake-time index, speed-solution marker,
+message time, playback lag and complete raw text/source. Debug values never
+compete with the primary ID or imply a human-readable cause. Escape, outside click
 and the close button dismiss it; playback controls do not. Inline video sources
 are in the existing upper shared media picker (including Camera102), not a second
 bottom selector. Expanded media dialogs retain their existing source picker.

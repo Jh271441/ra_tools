@@ -35,15 +35,15 @@ function bindPlanningConstraint(player, video) {
     <div class="planning-constraint-identity" data-pc-identity>
       <div class="planning-constraint-identity-heading" data-pc-identity-heading><span data-pc-id-label></span><button type="button" class="button button-quiet" data-pc-copy></button></div>
       <div class="planning-constraint-value" data-pc-value></div>
+      <dl class="planning-constraint-object" data-pc-facts><dt><span class="planning-constraint-object-symbol" aria-hidden="true">ID</span><span data-pc-object-label></span></dt><dd data-pc-object-value></dd></dl>
       <button type="button" class="button button-quiet" data-pc-retry hidden></button>
     </div>
-    <dl class="planning-constraint-facts" data-pc-facts>
-      <div class="planning-constraint-fact"><dt data-pc-object-label></dt><dd data-pc-object-value></dd></div>
-      <div class="planning-constraint-fact"><dt data-pc-brake-label></dt><dd data-pc-brake-value></dd></div>
-      <div class="planning-constraint-fact planning-constraint-alignment"><dt data-pc-alignment-label></dt><dd><span class="planning-constraint-chip" data-pc-alignment-value></span></dd></div>
-    </dl>
-    <dl class="planning-constraint-time" data-pc-meta><div><dt data-pc-time-label></dt><dd data-pc-time></dd></div><div><dt data-pc-lag-label></dt><dd data-pc-lag></dd></div></dl>
-    <details data-pc-details><summary data-pc-summary></summary><pre data-pc-raw></pre><div class="planning-constraint-source"><p data-pc-selection></p><code>/studio_node/planning/speed_table_raw.dominantConstraint</code></div></details>`;
+    <details data-pc-details><summary data-pc-summary><span data-pc-summary-label></span><span class="planning-constraint-disclosure" aria-hidden="true">⌄</span></summary>
+      <dl class="planning-constraint-debug" data-pc-debug><div><dt data-pc-brake-label></dt><dd data-pc-brake-value></dd></div><div><dt data-pc-alignment-label></dt><dd data-pc-alignment-value></dd></div></dl>
+      <dl class="planning-constraint-time" data-pc-meta><div><dt data-pc-time-label></dt><dd data-pc-time></dd></div><div><dt data-pc-lag-label></dt><dd data-pc-lag></dd></div></dl>
+      <div class="planning-constraint-raw"><strong data-pc-raw-label></strong><pre data-pc-raw></pre></div>
+      <div class="planning-constraint-source"><p data-pc-selection></p><code>/studio_node/planning/speed_table_raw.dominantConstraint</code></div>
+    </details>`;
   // Keep the nonmodal panel in its player's top layer when media is expanded.
   (player.closest('dialog') || document.body).append(panel);
   const el = key => panel.querySelector(`[data-pc-${key}]`);
@@ -71,14 +71,15 @@ function bindPlanningConstraint(player, video) {
     panel.setAttribute('aria-label', trigger.textContent);
     el('close').setAttribute('aria-label', uiText('关闭规划约束', 'Close planning constraint'));
     el('copy').textContent = Date.now() < copiedUntil ? uiText('已复制', 'Copied') : uiText('复制 ID', 'Copy ID');
-    el('id-label').textContent = uiText('约束 ID', 'Constraint ID');
+    el('id-label').textContent = uiText('当前主导约束', 'Current dominant constraint');
     el('object-label').textContent = uiText('对象 ID', 'Object ID');
-    el('brake-label').textContent = uiText('刹车索引', 'Brake index');
-    el('alignment-label').textContent = uiText('对齐方式', 'Alignment');
+    el('brake-label').textContent = uiText('最早制动时间索引', 'Earliest brake time index');
+    el('alignment-label').textContent = uiText('速度解标记', 'Speed solution marker');
     el('time-label').textContent = uiText('消息时间', 'Message time');
     el('lag-label').textContent = uiText('距播放', 'Playback lag');
     el('retry').textContent = uiText('重试', 'Retry');
-    el('summary').textContent = uiText('完整原文', 'Full raw text');
+    el('summary-label').textContent = uiText('调试详情', 'Debug details');
+    el('raw-label').textContent = uiText('完整原文', 'Full raw text');
     el('selection').textContent = uiText('默认选中候选轨迹 · 按消息发布时间对齐', 'Default selected candidate · aligned by publish time');
   };
   const fetchWindow = async bucket => {
@@ -140,6 +141,7 @@ function bindPlanningConstraint(player, video) {
     el('identity-heading').hidden = !copyValue;
     el('identity').classList.toggle('is-ready', Boolean(copyValue));
     el('facts').hidden = !copyValue;
+    el('debug').hidden = !copyValue;
     const facts = planningConstraintFacts(copyValue ? frame : null);
     for (const [name, value] of [['object', facts.objectId], ['brake', facts.brakeIndex], ['alignment', facts.alignment]]) {
       setText(`${name}-value`, value === null ? uiText('未提供', 'Not provided') : String(value));
