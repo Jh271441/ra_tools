@@ -49,9 +49,11 @@ function bindPlanningConstraint(player, video, getPosition = () => video.current
     panel.style.top = `${Math.max(top + 12, Math.min(rect.top - bounds.height - 8, top + height - bounds.height - 12))}px`;
   };
   const words = () => {
-    trigger.textContent = uiText('规划约束', 'Planning constraint');
-    el('title').textContent = trigger.textContent;
-    panel.setAttribute('aria-label', trigger.textContent);
+    const title = uiText('规划约束', 'Planning constraint');
+    trigger.querySelector('[data-pc-trigger-label]').textContent = title;
+    trigger.setAttribute('title', uiText('展开或收起规划约束（G）', 'Toggle planning constraint (G)'));
+    el('title').textContent = title;
+    panel.setAttribute('aria-label', title);
     el('close').setAttribute('aria-label', uiText('关闭规划约束', 'Close planning constraint'));
     el('copy').textContent = Date.now() < copiedUntil ? uiText('已复制', 'Copied') : uiText('复制 ID', 'Copy ID');
     el('id-label').textContent = uiText('当前主导约束', 'Current dominant constraint');
@@ -144,13 +146,26 @@ function bindPlanningConstraint(player, video, getPosition = () => video.current
     if (open && event.key === 'Escape') {
       event.preventDefault(); event.stopPropagation(); close(true); return;
     }
+    const target = event.target instanceof Element ? event.target : null;
+    const editable = target?.closest('input, textarea, select, .ui-select, [contenteditable]:not([contenteditable="false"]), [role="textbox"]');
+    if (!event.shiftKey && String(event.key).toLowerCase() === 'g') {
+      if (event.repeat || editable || trigger.disabled || !trigger.getClientRects().length) return;
+      // Only the visible player in the active dialog owns this shortcut. The
+      // inline player remains mounted underneath expanded media and other dialogs.
+      const dialog = document.querySelector('dialog[open]');
+      if (dialog ? !dialog.contains(player) : player.closest('dialog')) return;
+      if (document.querySelector('.review-dropdown[open], .ui-select.is-open, .review-status-picker.is-open, .detail-media-picker.is-open')) return;
+      event.preventDefault(); event.stopPropagation();
+      toggle();
+      if (!open) trigger.focus({preventScroll: true});
+      return;
+    }
     // The trigger is a button, and the panel can live outside the player. Both
     // otherwise miss its keyboard handler. Reuse the owner's actual seek
     // controls so step size, seek coalescing and frame readiness stay shared.
-    const target = event.target instanceof Element ? event.target : null;
     if (!target || event.shiftKey || !['ArrowLeft', 'ArrowRight'].includes(event.key)
         || !(trigger.contains(target) || (open && panel.contains(target)))
-        || target.closest('input, textarea, select, .ui-select, [contenteditable="true"], [role="textbox"]')) return;
+        || editable) return;
     const direction = event.key === 'ArrowLeft' ? -1 : 1;
     const control = player.querySelector(`[data-video-jump="${direction}"]`);
     if (!control || control.disabled) return;
