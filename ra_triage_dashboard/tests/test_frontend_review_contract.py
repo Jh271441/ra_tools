@@ -96,7 +96,7 @@ class FrontendReviewContractTest(unittest.TestCase):
         self.assertIn("baselines", APP_JS)
         self.assertIn("/static/js/", APP_ENTRY_JS)
         self.assertIn("script.async = false", APP_ENTRY_JS)
-        self.assertIn("app.js?v=manual-triage-739", INDEX_HTML)
+        self.assertIn("app.js?v=manual-triage-740", INDEX_HTML)
         self.assertIn('"work-split.js"', APP_ENTRY_JS)
         self.assertIn('"review-assignments.js"', APP_ENTRY_JS)
         # Product logic must live in domain modules, not the entry loader.
@@ -311,7 +311,7 @@ class FrontendReviewContractTest(unittest.TestCase):
         self.assertIn("function toggleOpenReviewDropdownOption(shortcut)", APP_JS)
         self.assertIn('"9", "0", "-", "="', APP_JS)
         self.assertIn("REVIEW_TAG_OPTION_SHORTCUTS.includes(shortcut)", APP_JS)
-        self.assertIn('key === "[" || key === "]"', APP_JS)
+        self.assertIn('["[", "]", "【", "】"].includes(key)', APP_JS)
         self.assertIn('class="review-control-shortcut review-nav-shortcut"', APP_JS)
         self.assertIn('.review-control-shortcut {', STYLES_CSS)
         self.assertIn("grid-template-columns: minmax(0, 1fr) auto auto", STYLES_CSS)

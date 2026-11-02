@@ -1815,6 +1815,15 @@ async function saveCombinedReview(event) {
     delete caseData.label_source_contexts;
     if (current) {
       state.reviewFormDirty = newerDraft || caseRationalePendingImages(caseData).length > 0;
+      if (!newerDraft) {
+        const composer = document.activeElement;
+        if (composer?.closest?.("#reviewPane .review-dropdown")) {
+          closeAllReviewDropdowns();
+          composer.blur();
+        } else if (composer?.matches?.("#combinedCaseRationale, #annotationNote, #reviewExcludeInput")) {
+          composer.blur();
+        }
+      }
       await loadCombinedReviewContext(caseData);
     }
     await refreshReviewAfterSave(navigationContext);

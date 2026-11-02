@@ -658,10 +658,13 @@ function bindReviewKeyboardShortcuts() {
       event.stopPropagation();
       return;
     }
-    if (reviewShortcutHasEditableTarget(target)) return;
+    if (reviewShortcutHasEditableTarget(target) && !target?.matches?.('input[type="checkbox"]')) return;
 
-    if (key === "[" || key === "]") {
-      const direction = key === "[" ? -1 : 1;
+    if (!event.shiftKey && (
+      event.code === "BracketLeft" || event.code === "BracketRight" ||
+      ["[", "]", "【", "】"].includes(key)
+    )) {
+      const direction = event.code === "BracketLeft" || ["[", "【"].includes(key) ? -1 : 1;
       if (state.activePage === "labeling") {
         event.preventDefault();
         closeAllReviewDropdowns();
