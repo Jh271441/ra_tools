@@ -86,7 +86,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-742`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-743`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -761,7 +761,7 @@
               <form class="review-filters case-labeling-filters labeling-summary-filters" id="labelSummaryFilterForm" data-mobile-filter-panel="labelSummaryFilters">
                 <label class="case-labeling-search"><span>Issue</span><div class="issue-query-control"><input id="labelSummarySearch" type="search" placeholder="Issue ID、场景" data-placeholder-zh="Issue ID、场景" data-placeholder-en="Issue ID, scene" autocomplete="off" /><button class="button button-quiet issue-query-button" id="openLabelSummaryIssueQueryButton" data-issue-query-target="labeling-summary" type="button"><span class="ui-lang-zh">多 Issue</span><span class="ui-lang-en">Issue list</span></button></div></label>
                 <label><span class="ui-lang-zh">标注任务</span><span class="ui-lang-en">Labeling task</span><div class="ui-select" id="labelSummaryTaskPicker"><button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="ui-select-summary">全部标注</span><span class="ui-select-caret" aria-hidden="true"></span></button><div class="ui-select-panel" role="listbox" hidden></div><select class="ui-select-native" id="labelSummaryTask" aria-hidden="true" tabindex="-1"><option value="">全部标注</option></select></div></label>
-                <label><span class="ui-lang-zh">结果状态</span><span class="ui-lang-en">Result state</span><div class="multi-filter" id="labelSummaryStatusPicker" data-placeholder="全部状态" data-placeholder-en="All states"></div></label>
+                <label><div class="filter-field-heading"><span><span class="ui-lang-zh">标注状态 / GT</span><span class="ui-lang-en">Label state / GT</span></span><span class="model-review-run-help ui-info" data-ui-info><button class="ui-info-button" type="button" aria-expanded="false" aria-controls="labelSummaryLabelGtInfo" data-i18n-aria-label="filter.label_gt_help" data-i18n-title="filter.label_gt_help"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="10" r="7.5" stroke="currentColor" stroke-width="1.4"/><path d="M10 9.1v4.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="10" cy="6.3" r=".9" fill="currentColor"/></svg></button><span class="model-review-run-tooltip ui-info-tooltip" id="labelSummaryLabelGtInfo" role="dialog"><span class="ui-lang-zh">组内任一、组间同时满足。GT 关系比较当前有效标注结论与所选 GT；未形成结论或有分歧的 Case 不计入。GT 缺失只包含已有结论且 GT 为空的 Case。</span><span class="ui-lang-en">Selections within a group use OR; groups use AND. Compare the current resolved label with the selected GT. Unresolved or conflicting cases are excluded. GT missing includes resolved cases whose GT is empty.</span></span></span></div><div class="multi-filter" id="labelSummaryStatusPicker" data-placeholder="全部标注 / GT" data-placeholder-en="All labels / GT" data-i18n-aria-label="filter.label_gt"></div></label>
                 <label><span class="ui-lang-zh">标注人</span><span class="ui-lang-en">Labeler</span><div class="multi-filter" id="labelSummaryAuthorPicker" data-placeholder="全部标注人" data-placeholder-en="All labelers"></div></label>
                 <label><span class="ui-lang-zh">任务负责人</span><span class="ui-lang-en">Assignee</span><div class="multi-filter" id="labelSummaryAssigneePicker" data-placeholder="全部负责人" data-placeholder-en="All assignees"></div></label>
                 <label><span>GT</span><div class="multi-filter" id="labelSummaryGtPicker" data-placeholder="全部 GT" data-placeholder-en="All GT"></div></label>
@@ -1043,6 +1043,10 @@
                 <label class="analysis-gt-filter">
                   <span>GT</span>
                   <div class="multi-filter" id="analysisGtFilter" data-placeholder="全部 GT" data-placeholder-en="All GT" data-i18n-placeholder="filter.all_gt"></div>
+                </label>
+                <label class="analysis-label-gt-filter">
+                  <div class="filter-field-heading"><span><span class="ui-lang-zh">标注状态 / GT</span><span class="ui-lang-en">Label state / GT</span></span><span class="model-review-run-help ui-info" data-ui-info><button class="ui-info-button" type="button" aria-expanded="false" aria-controls="analysisLabelGtInfo" data-i18n-aria-label="filter.label_gt_help" data-i18n-title="filter.label_gt_help"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="10" r="7.5" stroke="currentColor" stroke-width="1.4"/><path d="M10 9.1v4.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="10" cy="6.3" r=".9" fill="currentColor"/></svg></button><span class="model-review-run-tooltip ui-info-tooltip" id="analysisLabelGtInfo" role="dialog"><span class="ui-lang-zh">组内任一、组间同时满足。GT 关系比较当前有效标注结论与所选 GT；未形成结论或有分歧的 Case 不计入。GT 缺失只包含已有结论且 GT 为空的 Case。</span><span class="ui-lang-en">Selections within a group use OR; groups use AND. Compare the current resolved label with the selected GT. Unresolved or conflicting cases are excluded. GT missing includes resolved cases whose GT is empty.</span></span></span></div>
+                  <div class="multi-filter" id="analysisLabelGtFilter" data-placeholder="全部标注 / GT" data-placeholder-en="All labels / GT" data-i18n-aria-label="filter.label_gt"></div>
                 </label>
                 <label class="analysis-model-label-filter">
                   <span class="ui-lang-zh">模型预测</span><span class="ui-lang-en">Model prediction</span>
@@ -2619,7 +2623,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-742`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-743`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

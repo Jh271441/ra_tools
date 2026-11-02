@@ -96,7 +96,7 @@ class FrontendReviewContractTest(unittest.TestCase):
         self.assertIn("baselines", APP_JS)
         self.assertIn("/static/js/", APP_ENTRY_JS)
         self.assertIn("script.async = false", APP_ENTRY_JS)
-        self.assertIn("app.js?v=manual-triage-742", INDEX_HTML)
+        self.assertIn("app.js?v=manual-triage-743", INDEX_HTML)
         self.assertIn('"work-split.js"', APP_ENTRY_JS)
         self.assertIn('"review-assignments.js"', APP_ENTRY_JS)
         # Product logic must live in domain modules, not the entry loader.
@@ -218,7 +218,7 @@ class FrontendReviewContractTest(unittest.TestCase):
         self.assertIn(".analysis-exclusion-filter { grid-column: 1; grid-row: 2; }", STYLES_CSS)
         self.assertIn(".analysis-comment-state-filter { grid-column: 6; grid-row: 2; }", STYLES_CSS)
         self.assertIn(".analysis-comment-search-filter { grid-column: 7 / -1; grid-row: 2; }", STYLES_CSS)
-        self.assertIn(".analysis-search-actions { min-width: 0; display: grid; grid-column: 2 / -1; grid-row: 3; grid-template-columns: minmax(280px, 620px) auto;", STYLES_CSS)
+        self.assertIn(".analysis-search-actions { min-width: 0; display: grid; grid-column: 3 / -1; grid-row: 3; grid-template-columns: minmax(280px, 620px) auto;", STYLES_CSS)
         self.assertIn('class="analysis-model-label-filter"', INDEX_HTML)
         self.assertIn('id="analysisCommentStateFilter"', INDEX_HTML)
         self.assertIn('id="analysisCommentSearchInput"', INDEX_HTML)

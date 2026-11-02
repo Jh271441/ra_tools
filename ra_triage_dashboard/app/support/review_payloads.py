@@ -9,6 +9,8 @@ from urllib.parse import quote
 
 from ..db import LABELS, MODEL_LABELS, REVIEW_STATUSES
 from ..db_parts.model_reviews import MODEL_REVIEW_STATUSES
+from ..db_parts.labeling_shared import ISSUE_LABEL_STATE_FILTERS, normalize_gt_relation_filter
+from .label_state_filters import filter_reason_rows_by_label_gt
 from ..model_labels import canonical_model_label, model_label_matches_gt
 from ..review_workflow import derive_review_status, effective_expected_output, model_review_progress
 from ..review_analysis import COMPARISON_STATUSES, build_review_reason_analysis
@@ -32,6 +34,8 @@ def _review_reason_analysis_payload(
     failure_only: bool = False,
     annotation_author: str = "",
     review_status: str = "",
+    label_state: str = "",
+    gt_relation: str = "",
     gt_label: str = "",
     annotation_label: str = "",
     model_label: str = "",
@@ -55,6 +59,13 @@ def _review_reason_analysis_payload(
     work_split_id: str = "",
     include_multi_reviews: bool = False,
 ) -> dict[str, Any]:
+    label_states = tuple(value for value in _csv_filter_values(label_state) if value != "all")
+    if any(value not in ISSUE_LABEL_STATE_FILTERS for value in label_states):
+        raise _detail(400, "标注状态筛选不合法 / Invalid label state filter")
+    try:
+        gt_relations = normalize_gt_relation_filter(gt_relation)
+    except ValueError as exc:
+        raise _detail(400, str(exc)) from exc
     exclusion, is_excluded = resolve_review_exclusion_filter(exclusion)
     missing_evidence_catalog = _missing_evidence_catalog()
     evidence_catalog = {
@@ -511,6 +522,9 @@ def _review_reason_analysis_payload(
                 )
             )
         ]
+    if label_states or gt_relations:
+        rows = filter_reason_rows_by_label_gt(database, rows, scopes=scopes,
+            label_states=label_states, gt_relations=gt_relations)
     tag_catalog_for_analysis = {
         str(item["key"]): {
             "label": str(item["label"]),
@@ -562,6 +576,10 @@ def _review_reason_analysis_payload(
             review_params.append(
                 f"work_split={quote(normalized_work_split_id, safe='')}"
             )
+        if label_states:
+            review_params.append("label_state=" + quote(",".join(label_states), safe=""))
+        if gt_relations:
+            review_params.append("gt_relation=" + quote(",".join(gt_relations), safe=""))
         item["voyager_issue_url"] = _voyager_issue_url(issue_id)
         item["review_url"] = _public_path(f"/review?{'&'.join(review_params)}")
         if issue_id in multi_by_issue:
@@ -596,6 +614,8 @@ def _review_reason_analysis_payload(
         "failure_only": comparison_status == "mismatch",
         "annotation_author": list(authors),
         "review_status": list(statuses),
+        "label_state": list(label_states),
+        "gt_relation": list(gt_relations),
         "gt_label": list(gt_labels),
         "annotation_label": list(annotation_labels),
         "model_label": list(model_labels),

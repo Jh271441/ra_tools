@@ -291,6 +291,7 @@ function bindEvents() {
     [
       "#analysisReviewerFilter",
       "#analysisStatusFilter",
+      "#analysisLabelGtFilter",
       "#analysisGtFilter",
       "#analysisModelLabelFilter",
       "#analysisExclusionFilter",

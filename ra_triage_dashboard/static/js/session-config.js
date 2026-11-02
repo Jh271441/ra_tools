@@ -431,10 +431,24 @@ function renderConfig() {
   renderAnalysisCatalogFilters();
 }
 
+function renderLabelGtFilter(root, { selected = [], onChange = null, labeling = false } = {}) {
+  if (!root) return;
+  const groups = labelGtFilterGroups({ selected, labeling });
+  if (relabelMultiFilter(root, groups.flatMap(group => group.items))) {
+    relabelMultiFilterGroups(root, groups);
+    setMultiFilterValues(root, selected);
+    return;
+  }
+  renderMultiFilter(root, { groups, selected, onChange });
+}
+
 function renderAnalysisCatalogFilters() {
   const onChange = () => scheduleAnalysisFilterReload();
   renderAnalysisWorkAgreementPicker(state.reviewAnalysis.workAgreement || "all");
   renderAnalysisCommentStatePicker();
+  renderLabelGtFilter($("#analysisLabelGtFilter"), {
+    selected: getMultiFilterValues($("#analysisLabelGtFilter")), onChange,
+  });
   renderMultiFilter($("#analysisStatusFilter"), {
     options: [
       { value: "pending", label: t("status.pending") },

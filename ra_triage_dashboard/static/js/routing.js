@@ -16,6 +16,38 @@ function normalizedGtRelationFilters(values) {
   return parseFilterList(values).filter(value => ["matches_gt", "differs_from_gt", "fills_missing_gt"].includes(value));
 }
 
+function labelGtFilterGroups({ selected = [], labeling = false } = {}) {
+  const states = [
+    { value: labeling ? "unannotated" : "none", label: uiText("未标注", "Not labeled") },
+    { value: labeling ? "incomplete" : "pending", label: uiText("待形成结论", "Pending") },
+    { value: "resolved", label: uiText("已形成结论", "Resolved") },
+    { value: "conflict", label: uiText("需处理分歧", "Needs resolution") },
+    ...[
+      ["stale", "裁决需确认", "Decision needs review"],
+      ["matches_gt", "与 GT 一致", "Matches GT"],
+      ["needs_gt_review", "GT 待复核", "GT needs review"],
+      ["unknown", "GT 关系未知", "GT relation unknown"],
+    ].filter(([value]) => !labeling && selected.includes(value))
+      .map(([value, zh, en]) => ({ value, label: uiText(zh, en) })),
+  ];
+  return [
+    { label: uiText("与 GT 的关系", "Relation to GT"), items: gtRelationFilterOptions().map(item => ({ ...item, value: `gt:${item.value}` })) },
+    { label: uiText("标注状态", "Label state"), items: states },
+  ];
+}
+
+function labelGtFilterSelection(states = [], relations = []) {
+  return [...parseFilterList(states), ...normalizedGtRelationFilters(relations).map(value => `gt:${value}`)];
+}
+
+function splitLabelGtFilterSelection(values) {
+  const selected = parseFilterList(values);
+  return {
+    labelStates: selected.filter(value => !value.startsWith("gt:")),
+    gtRelations: normalizedGtRelationFilters(selected.filter(value => value.startsWith("gt:")).map(value => value.slice(3))),
+  };
+}
+
 function selectedReviewLabelStates() {
   return getMultiFilterValues($("#sharedLabelStateFilter")).filter(value => !value.startsWith("gt:"));
 }
@@ -438,6 +470,8 @@ function normalizedAnalysisRouteFilters(params) {
     modelLabel: modelLabels,
     annotationAuthor: parseFilterList(params.get("reviewer")),
     reviewStatus: statuses,
+    labelStates: parseFilterList(params.get("label_state")).filter(value => ["none", "pending", "resolved", "conflict", "stale", "matches_gt", "needs_gt_review", "unknown"].includes(value)),
+    gtRelations: normalizedGtRelationFilters(params.get("gt_relation")),
     missingEvidence: parseFilterList(params.get("evidence")),
     sceneTag: parseFilterList(params.get("scene_tag")),
     triggerTag: parseFilterList(params.get("trigger_tag")),
@@ -799,6 +833,7 @@ function currentAnalysisRouteOptions(overrides = {}) {
         ? reviewerFilterSelection("analysis")
         : getMultiFilterValues($("#analysisReviewerFilter")),
     reviewStatus: getMultiFilterValues($("#analysisStatusFilter")),
+    ...splitLabelGtFilterSelection(getMultiFilterValues($("#analysisLabelGtFilter"))),
     missingEvidence: getMultiFilterValues($("#analysisEvidenceFilter")),
     sceneTag: getMultiFilterValues($("#analysisSceneFilter")),
     triggerTag: getMultiFilterValues($("#analysisTriggerFilter")),
@@ -851,6 +886,7 @@ function applyAnalysisRouteControls(route) {
   setMultiFilterValues($("#analysisGtFilter"), filters.gtLabel);
   setMultiFilterValues($("#analysisModelLabelFilter"), filters.modelLabel);
   setMultiFilterValues($("#analysisStatusFilter"), filters.reviewStatus);
+  setMultiFilterValues($("#analysisLabelGtFilter"), labelGtFilterSelection(filters.labelStates, filters.gtRelations));
   setMultiFilterValues($("#analysisReviewerFilter"), filters.annotationAuthor);
   setMultiFilterValues($("#analysisEvidenceFilter"), filters.missingEvidence);
   const catalog = state.config?.review_tag_catalog || [];
@@ -1069,6 +1105,8 @@ function pageUrl(page, options = {}) {
     if (modelLabel) url.searchParams.set("model_label", modelLabel);
     if (reviewer) url.searchParams.set("reviewer", reviewer);
     if (status) url.searchParams.set("status", status);
+    if (analysis.labelStates?.length) url.searchParams.set("label_state", joinFilterList(analysis.labelStates));
+    if (analysis.gtRelations?.length) url.searchParams.set("gt_relation", joinFilterList(analysis.gtRelations));
     if (evidence) url.searchParams.set("evidence", evidence);
     if (sceneTag) url.searchParams.set("scene_tag", sceneTag);
     if (triggerTag) url.searchParams.set("trigger_tag", triggerTag);

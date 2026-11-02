@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ..db_parts.labeling_shared import resolved_label_gt_relation
+from ..db_parts.labeling_shared import resolved_label_gt_relation, matches_issue_label_states
 
 import asyncio
 import hashlib
@@ -345,35 +345,7 @@ def _case_derived_issue_ids(
                     continue
             if allowed_label_states:
                 projection = label_state_by_id.get(issue_id, _empty_issue_label_state())
-                state = str(projection.get("state") or "none")
-                relation = str(projection.get("gt_relation") or "unknown")
-                state_matches = any(
-                    (
-                        selected == state
-                        or (selected == "conflict" and state == "stale")
-                        or (
-                            selected == "needs_gt_review"
-                            and (
-                                bool(projection.get("gt_review_pending"))
-                                or (
-                                    state == "resolved"
-                                    and relation in {"differs_from_gt", "fills_missing_gt"}
-                                )
-                            )
-                        )
-                        or (
-                            selected == "matches_gt"
-                            and state == "resolved"
-                            and relation == "matches_gt"
-                        )
-                        or (
-                            selected == "unknown"
-                            and state == "resolved"
-                            and relation == "unknown"
-                        )
-                    )
-                    for selected in allowed_label_states
-                )
+                state_matches = matches_issue_label_states(projection, allowed_label_states)
                 if not state_matches:
                     continue
             if issue_id:

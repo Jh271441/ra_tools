@@ -138,14 +138,14 @@ parseFilterList=v=>Array.isArray(v)?v:String(v||'').split(',').filter(Boolean);
 joinFilterList=v=>parseFilterList(v).join(',');normalizeBaselineIds=parseFilterList;
 selectedBaselineQueryValue=()=> 'wrong-dataset';defaultBaselineIdsFromConfig=()=>['0508'];
 comparisonStatusParam=v=>String(v);parseComparisonStatuses=v=>[v];
-const stale={labelStates:['conflict'],workAssignee:['old-user'],sceneTag:['old-scene'],triggerTag:['old-trigger'],egressTag:['old-egress'],workAgreement:'conflict',commentState:'with',commentSearch:'stale',casePage:9,page:9,casePageSize:100,pageSize:100};
+const stale={labelStates:['conflict'],gtRelations:['differs_from_gt'],workAssignee:['old-user'],sceneTag:['old-scene'],triggerTag:['old-trigger'],egressTag:['old-egress'],workAgreement:'conflict',commentState:'with',commentSearch:'stale',casePage:9,page:9,casePageSize:100,pageSize:100};
 currentReviewRouteOptions=o=>({...stale,...o}); currentAnalysisRouteOptions=o=>({...stale,...o});
 const batch={split_id:'campaign-abc123',model_run_id:'run-a',workflow_mode:'model_review_only',baseline_ids:['0821'],filter_snapshot:{comparison_status:'mismatch',search:'original-search',review_status:'pending'}};
 for (const page of ['review','analysis']) {
  const url=new URL(reviewAssignmentBatchHref(batch,page),'http://localhost');
  assert.equal(url.searchParams.get('run'),'run-a');assert.equal(url.searchParams.get('baselines'),'0821');
  assert.equal(url.searchParams.get('work_split'),'campaign-abc123');assert.equal(url.searchParams.get('comparison'),'all');
- for(const key of ['q','status','label_state','work_assignee','scene_tag','trigger_tag','egress_tag','comment_state','comment_search','work_agreement','page']) assert.equal(url.searchParams.has(key),false,key);
+ for(const key of ['q','status','label_state','gt_relation','work_assignee','scene_tag','trigger_tag','egress_tag','comment_state','comment_search','work_agreement','page']) assert.equal(url.searchParams.has(key),false,key);
  const parsed=page==='review'?normalizedReviewRouteFilters(url.searchParams):normalizedAnalysisRouteFilters(url.searchParams);
  assert.equal(parsed.workSplitId,'campaign-abc123');
  if(page==='review') assert.equal(parsed.workflowMode,'model_review_only');

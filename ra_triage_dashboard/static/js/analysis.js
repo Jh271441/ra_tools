@@ -139,6 +139,8 @@ function buildAnalysisQueryParams({ format = "", includePagination = true } = {}
     ["issue_ids", joinFilterList(options.issueIds)],
     ["annotation_author", joinFilterList(options.annotationAuthor)],
     ["review_status", joinFilterList(options.reviewStatus)],
+    ["label_state", joinFilterList(options.labelStates)],
+    ["gt_relation", joinFilterList(options.gtRelations)],
     ["gt_label", joinFilterList(options.gtLabel)],
     ["model_label", joinFilterList(options.modelLabel)],
     ["missing_evidence", joinFilterList(options.missingEvidence)],

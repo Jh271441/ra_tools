@@ -107,7 +107,7 @@ function reviewAssignmentRouteOptions(item, page) {
   };
   if (page === "analysis") {
     return {
-      ...common, missingEvidence: [], sceneTag: [], triggerTag: [], egressTag: [],
+      ...common, labelStates: [], gtRelations: [], missingEvidence: [], sceneTag: [], triggerTag: [], egressTag: [],
       workAgreement: "all", legacyTag: "", page: 1, pageSize: 20,
     };
   }

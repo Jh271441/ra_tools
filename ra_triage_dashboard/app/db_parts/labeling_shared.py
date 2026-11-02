@@ -39,6 +39,41 @@ def resolved_label_gt_relation(state: Any, expected_output: Any, gt_label: Any) 
     return _issue_label_gt_relation(expected_output, gt_label) if state == "resolved" else "unknown"
 
 
+def matches_issue_label_states(projection, selected_states):
+    """Match current shared Issue state with the existing legacy filter aliases."""
+    if not selected_states:
+        return True
+    state = str(projection.get("state") or "none")
+    relation = str(projection.get("gt_relation") or "unknown")
+    return any(
+        (
+            selected == state
+            or (selected == "conflict" and state == "stale")
+            or (
+                selected == "needs_gt_review"
+                and (
+                    bool(projection.get("gt_review_pending"))
+                    or (
+                        state == "resolved"
+                        and relation in {"differs_from_gt", "fills_missing_gt"}
+                    )
+                )
+            )
+            or (
+                selected == "matches_gt"
+                and state == "resolved"
+                and relation == "matches_gt"
+            )
+            or (
+                selected == "unknown"
+                and state == "resolved"
+                and relation == "unknown"
+            )
+        )
+        for selected in selected_states
+    )
+
+
 def _clean_values(values: Iterable[Any]) -> list[str]:
     return sorted({str(value or "").strip() for value in values if str(value or "").strip()})
 

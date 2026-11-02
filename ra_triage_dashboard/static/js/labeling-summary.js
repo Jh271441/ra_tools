@@ -2,7 +2,7 @@
  * Classic-script public functions retain their existing names for routing. */
 let labelSummaryRequest = 0;
 let labelSummaryPage = 1;
-let labelSummaryPageSize = 20;
+let labelSummaryPageSize = DEFAULT_CASE_PAGE_SIZE;
 let labelSummaryRouteRestored = false;
 let labelSummarySearchTimer = null;
 let labelSummaryTasks = [];
@@ -50,8 +50,9 @@ function restoreLabelSummaryRoute({ force = false } = {}) {
   labelSummaryFilters.commentState = parseFilterList(params.get("comment_state")).filter((value) => ["with", "without"].includes(value));
   labelSummaryFilters.exclusion = parseFilterList(params.get("exclusion")).filter((value) => ["active", "excluded"].includes(value));
   labelSummaryFilters.cluster = String(params.get("cluster") || "").trim();
-  labelSummaryPage = Math.max(1, Number(params.get("page") || 1));
-  labelSummaryPageSize = CASE_PAGE_SIZES.includes(Number(params.get("page_size"))) ? Number(params.get("page_size")) : 20;
+  const requestedPage = Number(params.get("page") || 1);
+  labelSummaryPage = Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+  labelSummaryPageSize = CASE_PAGE_SIZES.includes(Number(params.get("page_size"))) ? Number(params.get("page_size")) : DEFAULT_CASE_PAGE_SIZE;
 }
 
 function refreshLabelSummaryLanguage() {
@@ -136,9 +137,19 @@ function renderLabelSummaryFilters(tasks, data) {
   const labelerOptions = [...new Set([...(data.labelers || []), ...parseFilterList(labelSummaryFilters.author)])].map((value) => ({ value, label: value }));
   const assigneeOptions = [...new Set([...(data.assignees || []), ...parseFilterList(labelSummaryFilters.assignee)])].map((value) => ({ value, label: value }));
   renderLabelSummaryPicker("#labelSummaryTaskPicker", taskOptions, labelSummaryFilters.taskId);
-  renderLabelSummaryMultiPicker("#labelSummaryStatusPicker", labelingStatusFilterOptions({
-    submittedOnly: !labelSummaryFilters.status.includes("unannotated"),
-  }), labelSummaryFilters.status, "status");
+  renderLabelGtFilter($("#labelSummaryStatusPicker"), {
+    labeling: true,
+    selected: labelGtFilterSelection(labelSummaryFilters.status, labelSummaryFilters.gtRelations),
+    onChange: values => {
+      const selection = splitLabelGtFilterSelection(values);
+      labelSummaryFilters.status = normalizedLabelingStatusFilters(selection.labelStates, { submittedOnly: true });
+      labelSummaryFilters.gtRelations = selection.gtRelations;
+      labelSummaryFilters.cluster = "";
+      labelSummaryPage = 1;
+      persistLabelSummaryRoute();
+      loadLabelingSummary().catch(error => showToast(error.message, true));
+    },
+  });
   renderLabelSummaryMultiPicker("#labelSummaryAuthorPicker", labelerOptions, labelSummaryFilters.author, "author");
   renderLabelSummaryMultiPicker("#labelSummaryAssigneePicker", assigneeOptions, labelSummaryFilters.assignee, "assignee");
   renderLabelSummaryMultiPicker("#labelSummaryLabelPicker", LABELS.map((value) => ({ value, label: value })), labelSummaryFilters.label, "label");
@@ -344,7 +355,7 @@ function renderLabelingSummary(data) {
   root.innerHTML = `<nav class="mobile-summary-tools"><button class="button button-quiet" type="button" data-mobile-scroll-target="labelSummaryCaseList">${uiText("查看标注明细", "Go to annotations")}</button><button class="button button-quiet" type="button" data-mobile-disclosure="labelSummaryClusterPanels" aria-controls="labelSummaryClusterPanels" aria-expanded="false">${uiText("场景与标签图表", "Tag charts")}</button></nav><section class="analysis-summary-grid" aria-label="Labeling overview"><article class="analysis-stat-card"><span>问题标注</span><strong>${Number(data.annotated || 0)}</strong><small>当前范围 ${Number(data.total || 0)} 个 Case</small></article><article class="analysis-stat-card"><span>已填写依据</span><strong>${Number(data.reason_count || 0)}</strong><small>未填写 ${Number(data.empty_reason_count || 0)}</small></article><button class="analysis-stat-card label-summary-adjudicated" id="labelSummaryAdjudicated" type="button" aria-pressed="${labelSummaryFilters.cluster === "adjudicated"}"><span>已裁决 Case</span><strong>${Number(data.adjudicated_count || 0)}</strong><small>${labelSummaryFilters.cluster === "adjudicated" ? "正在筛选 · 点击取消" : "查看裁决记录"}</small></button></section>
     <section class="analysis-decision-grid analysis-has-gt" aria-label="Label state and GT comparison">${labelSummaryGtChartMarkup(data)}<section class="page-card analysis-review-status-card" aria-labelledby="labelSummaryStatusTitle"><div class="section-heading analysis-review-status-heading"><div><h3 id="labelSummaryStatusTitle">${uiText("标注状态", "Labeling status")}</h3></div><small>${escapeHtml(uiText(`已提交 ${Number(data.annotated || 0)} 个 Issue`, `${Number(data.annotated || 0)} submitted Issues`))}</small></div><div class="analysis-review-status-chart" id="labelSummaryStatusChart">${labelSummaryStatusMarkup(data)}</div></section><section class="page-card analysis-confusion-card"><div class="section-heading analysis-confusion-heading"><div><h3>GT × 标注结果混淆矩阵</h3></div><small>可比较 ${comparable} · 一致 ${matches}</small></div><div class="analysis-confusion-wrap" id="labelSummaryConfusionMatrix">${labelSummaryMatrixMarkup(data)}</div></section></section>
     <section class="analysis-cluster-grid" id="labelSummaryClusterPanels" aria-label="Structured labeling clusters">${labelSummaryClusterPanels(data)}</section>
-    <section class="page-card analysis-case-card"><div class="section-heading label-summary-detail-heading"><h3>${uiText("标注依据明细", "Label rationales")}</h3><div class="label-summary-detail-actions"><button class="text-link label-summary-rules-button" id="labelSummaryRulesButton" type="button" aria-haspopup="dialog"><span aria-hidden="true">ⓘ</span> ${uiText("期望输出规则", "Result rules")}</button><small>${escapeHtml(uiText(`共 ${Number(data.annotated || 0)} 个 Case · 当前页 ${(data.items || []).length} 个`, `${Number(data.annotated || 0)} ${Number(data.annotated || 0) === 1 ? "Case" : "Cases"} · ${(data.items || []).length} on this page`))}</small></div></div><div class="analysis-case-list" id="labelSummaryCaseList">${(data.items || []).length ? data.items.map(labelSummaryCaseMarkup).join("") : `<div class="analysis-empty">${uiText("当前范围暂无标注提交", "No annotations in this scope")}</div>`}</div><nav class="case-pagination gallery-pagination label-summary-pagination" aria-label="${escapeHtml(uiText("标注明细分页", "Annotation pagination"))}"><div class="case-pagination-main"><button class="button button-quiet" id="labelSummaryPrevious" type="button" ${page <= 1 ? "disabled" : ""}>${uiText("上一页", "Previous")}</button><span id="labelSummaryPageState">${page} / ${pageCount}</span><button class="button button-quiet" id="labelSummaryNext" type="button" ${page >= pageCount ? "disabled" : ""}>${uiText("下一页", "Next")}</button><span class="page-jump-control"><label for="labelSummaryPageJump">${uiText("跳至", "Go to")}</label><input id="labelSummaryPageJump" type="number" min="1" max="${pageCount}" value="${page}" inputmode="numeric" ${pageCount <= 1 ? "disabled" : ""}/><span>${uiText("页", "page")}</span><button class="button button-quiet" id="labelSummaryPageJumpButton" type="button" ${pageCount <= 1 ? "disabled" : ""}>${uiText("跳转", "Go")}</button></span></div><label class="case-page-size" for="labelSummaryPageSize"><span>${uiText("每页", "Per page")}</span><select id="labelSummaryPageSize"><option value="10">10</option><option value="20">20</option><option value="50">50</option><option value="100">100</option></select><span>${uiText("条", "items")}</span></label></nav></section>`;
+    <section class="page-card analysis-case-card"><div class="section-heading label-summary-detail-heading"><h3>${uiText("标注依据明细", "Label rationales")}</h3><div class="label-summary-detail-actions"><button class="text-link label-summary-rules-button" id="labelSummaryRulesButton" type="button" aria-haspopup="dialog"><span aria-hidden="true">ⓘ</span> ${uiText("期望输出规则", "Result rules")}</button><small>${escapeHtml(uiText(`共 ${Number(data.annotated || 0)} 个 Case · 当前页 ${(data.items || []).length} 个`, `${Number(data.annotated || 0)} ${Number(data.annotated || 0) === 1 ? "Case" : "Cases"} · ${(data.items || []).length} on this page`))}</small></div></div><div class="analysis-case-list" id="labelSummaryCaseList">${(data.items || []).length ? data.items.map(labelSummaryCaseMarkup).join("") : `<div class="analysis-empty">${uiText("当前范围暂无标注提交", "No annotations in this scope")}</div>`}</div><nav class="case-pagination gallery-pagination label-summary-pagination" aria-label="${escapeHtml(uiText("标注明细分页", "Annotation pagination"))}"><div class="case-pagination-main"><button class="button button-quiet" id="labelSummaryPrevious" type="button" ${page <= 1 ? "disabled" : ""}>${uiText("上一页", "Previous")}</button><span id="labelSummaryPageState">${page} / ${pageCount}</span><button class="button button-quiet" id="labelSummaryNext" type="button" ${page >= pageCount ? "disabled" : ""}>${uiText("下一页", "Next")}</button><span class="page-jump-control"><label for="labelSummaryPageJump">${uiText("跳至", "Go to")}</label><input id="labelSummaryPageJump" type="number" min="1" max="${pageCount}" value="${page}" inputmode="numeric" ${pageCount <= 1 ? "disabled" : ""}/><span>${uiText("页", "page")}</span><button class="button button-quiet" id="labelSummaryPageJumpButton" type="button" ${pageCount <= 1 ? "disabled" : ""}>${uiText("跳转", "Go")}</button></span></div><label class="case-page-size" for="labelSummaryPageSize"><span>${uiText("每页", "Per page")}</span><select id="labelSummaryPageSize">${CASE_PAGE_SIZES.map(value => `<option value="${value}">${value}</option>`).join("")}</select><span>${uiText("条", "items")}</span></label></nav></section>`;
   $("#labelSummaryRulesButton")?.addEventListener("click", () => showLabelSummaryRules());
   $("#labelSummaryGtRules")?.addEventListener("click", () => showLabelSummaryRules({ gt: true }));
   $("#labelSummaryAdjudicated")?.addEventListener("click", () => {
@@ -361,9 +372,21 @@ function renderLabelingSummary(data) {
   clearAnalysisPieEnterAnimations($("#labelSummaryClusterPanels"));
   $("#labelSummaryPrevious")?.addEventListener("click", () => { labelSummaryPage = Math.max(1, page - 1); loadLabelingSummary().catch((error) => showToast(error.message, true)); });
   $("#labelSummaryNext")?.addEventListener("click", () => { labelSummaryPage = Math.min(pageCount, page + 1); loadLabelingSummary().catch((error) => showToast(error.message, true)); });
-  $("#labelSummaryPageJumpButton")?.addEventListener("click", () => { labelSummaryPage = Math.max(1, Math.min(pageCount, Number($("#labelSummaryPageJump")?.value || 1))); loadLabelingSummary().catch((error) => showToast(error.message, true)); });
+  $("#labelSummaryPageJumpButton")?.addEventListener("click", () => {
+    const input = $("#labelSummaryPageJump");
+    const value = String(input?.value || "").trim();
+    if (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value))) {
+      showToast(t("analysis.jump_range", { total: pageCount }), true);
+      if (input) { input.value = String(page); input.focus(); input.select(); }
+      return;
+    }
+    const target = Math.max(1, Math.min(pageCount, Number(value)));
+    if (target === page) return;
+    labelSummaryPage = target;
+    loadLabelingSummary().catch(error => showToast(error.message, true));
+  });
   $("#labelSummaryPageJump")?.addEventListener("keydown", (event) => { if (event.key === "Enter") $("#labelSummaryPageJumpButton")?.click(); });
-  $("#labelSummaryPageSize")?.addEventListener("change", (event) => { labelSummaryPageSize = Number(event.target.value || 20); labelSummaryPage = 1; loadLabelingSummary().catch((error) => showToast(error.message, true)); });
+  $("#labelSummaryPageSize")?.addEventListener("change", (event) => { labelSummaryPageSize = CASE_PAGE_SIZES.includes(Number(event.target.value)) ? Number(event.target.value) : DEFAULT_CASE_PAGE_SIZE; labelSummaryPage = 1; loadLabelingSummary().catch((error) => showToast(error.message, true)); });
 }
 async function loadLabelingSummary() {
   if (state.activePage !== "labeling-summary") return;
@@ -393,7 +416,7 @@ async function loadLabelingSummary() {
       exclusion: joinFilterList(labelSummaryFilters.exclusion),
       label: joinFilterList(labelSummaryFilters.label),
       gt: joinFilterList(labelSummaryFilters.gt),
-    gt_relation: joinFilterList(labelSummaryFilters.gtRelations),
+      gt_relation: joinFilterList(labelSummaryFilters.gtRelations),
       comment_state: joinFilterList(labelSummaryFilters.commentState),
       issue_tags: joinFilterList(labelSummaryFilters.issueTags),
       cluster: labelSummaryFilters.cluster,
@@ -449,7 +472,7 @@ document.getElementById("labelSummaryReset")?.addEventListener("click", () => {
   });
   if (typeof updateIssueQueryButton === "function") updateIssueQueryButton();
   labelSummaryPage = 1;
-  labelSummaryPageSize = 20;
+  labelSummaryPageSize = DEFAULT_CASE_PAGE_SIZE;
   loadLabelingSummary().catch((error) => showToast(error.message, true));
 });
 document.getElementById("labelSummaryExportGt")?.addEventListener("click", () => {
