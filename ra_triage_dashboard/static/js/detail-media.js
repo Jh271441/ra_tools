@@ -161,10 +161,6 @@ function refreshBevVideoLanguage(root = document) {
   enhanceDashboardSelects(root);
 }
 
-// A session starts paused. Only an explicit playback choice changes the
-// preference shared by consecutive Cases, sources and the expanded player.
-let bevVideoPlaybackPreference = false;
-
 function videoPlayerMarkup(video, { zoomable = true, compact = false, issueId = "" } = {}) {
   const durationSec = Math.max(0, Number(video?.duration_ms || 0) / 1000);
   const t0PlayerSec = videoT0PlayerPosition(durationSec);
@@ -253,7 +249,8 @@ function bindBevVideoPlayers(root) {
     let disposed = false;
     let sourceGeneration = 0;
     let pendingStart = configuredT0PlayerSec > 0 ? configuredT0PlayerSec : null;
-    let wantsPlayback = bevVideoPlaybackPreference;
+    // Each new Case/player waits for its own explicit Play choice at t0.
+    let wantsPlayback = false;
     let suspended = false;
     let metadataGeneration = -1;
     let sourceHasStartHint = configuredT0PlayerSec > 0;
@@ -418,7 +415,6 @@ function bindBevVideoPlayers(root) {
       if (disposed) return;
       suspended = false;
       wantsPlayback = !wantsPlayback;
-      bevVideoPlaybackPreference = wantsPlayback;
       // A key press changes intent and its feedback synchronously, even before
       // metadata/frames arrive. A second press cancels a queued play request.
       if (!wantsPlayback) {
@@ -575,7 +571,7 @@ function bindBevVideoPlayers(root) {
     video._resumeBevPlayback = () => {
       if (disposed) return;
       suspended = false;
-      wantsPlayback = bevVideoPlaybackPreference;
+      // Becoming visible again must not restore an earlier Play choice.
       update();
       startPlayback();
     };
