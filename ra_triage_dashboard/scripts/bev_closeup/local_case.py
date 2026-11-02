@@ -227,6 +227,9 @@ event('local_case_started', issue_id=ISSUE, original_time_and_media_gates=True, 
 for closed in (CASE / 'work/inputs').rglob('*.bag'):
     retain_closed_source(closed)
 wait_resources()
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+from ra_triage_dashboard.scripts.planning_text.runner import install
+install()
 from ares_animation.cli import main
 try:
     result = main(args)

@@ -1,5 +1,9 @@
 # Manual planning constraint
 
+The proposed BEV input-reuse exporter and incremental Daily ingestion are a
+design pending preview approval, not an existing production module. See
+[BEV planning-text sidecar design](planning-bev-sidecar-design.md).
+
 The inline Issue video toolbar has one compact Planning constraint button. Click
 opens an upward, nonmodal, viewport-clamped panel. One primary card holds the
 current dominant constraint ID, copy action and Object ID row. A collapsed Raw

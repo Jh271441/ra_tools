@@ -131,7 +131,7 @@ def _fetch(source: str) -> Any:
     return json.loads(raw)
 
 
-def _snapshot(ra_root: Path | None = None) -> dict:
+def _snapshot(ra_root: Path | None = None, data_dir: Path | None = None) -> dict:
     result: dict = {"observed_at": time.time(), "refresh_seconds": 30, "sources": {}}
     projectors = {"overview": _overview, "history": _history, "sidecar": _sidecar}
     # A missing sidecar/history must not hide the main pipeline, or vice versa.
@@ -161,11 +161,11 @@ def _snapshot(ra_root: Path | None = None) -> dict:
             result["closeup"] = {"state": "unavailable", "stale": True}
         try:
             from .cron_version_source import version_status
-            result['incremental'] = version_status(ra_root)
+            result['incremental'] = version_status(ra_root, data_dir)
         except (OSError,ValueError,TypeError,KeyError):
             result['incremental'] = {'enabled':True,'stale':True,'states':{},'datasets':[],'media':{}}
     return result
 
 
-def cron_snapshot(ra_root: Path | None = None) -> dict:
-    return _cache.get_or_load(str(ra_root), lambda: _snapshot(ra_root))
+def cron_snapshot(ra_root: Path | None = None, data_dir: Path | None = None) -> dict:
+    return _cache.get_or_load(str((ra_root, data_dir)), lambda: _snapshot(ra_root, data_dir))

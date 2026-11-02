@@ -41,12 +41,13 @@ function RoutedEdge({ id, data, markerEnd, style, interactionWidth, label, label
 const edgeTypes = { routed: RoutedEdge };
 
 function Graph({ model, onSelect }) {
-  const [geometry, setGeometry] = useState(null);
+  const [layoutResult, setLayoutResult] = useState(null);
   const { fitView } = useReactFlow();
   const topology = JSON.stringify([model.lanes.map(l => [l.id, l.nodes.map(n => n.id)]), model.edges.map(e => [e.id, e.source, e.target, e.label])]);
+  const geometry = layoutResult?.topology === topology ? layoutResult.geometry : null;
   useEffect(() => {
     let alive = true;
-    layout(model).then(value => { if (alive) setGeometry(value); }).catch(() => { if (alive) setGeometry({ error: true }); });
+    layout(model).then(value => { if (alive) setLayoutResult({topology, geometry: value}); }).catch(() => { if (alive) setLayoutResult({topology, geometry: { error: true }}); });
     return () => { alive = false; };
   }, [topology]);
   useEffect(() => {
@@ -59,6 +60,10 @@ function Graph({ model, onSelect }) {
     document.addEventListener('fullscreenchange', resize);
     return () => document.removeEventListener('fullscreenchange', resize);
   }, [fitView]);
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => requestAnimationFrame(() => fitView({ padding: 0.06, duration: 0, maxZoom: 1 })));
+    return () => cancelAnimationFrame(frame);
+  }, [model.selectedNode, fitView]);
   const all = model.lanes.flatMap(lane => lane.nodes);
   const byId = new Map(all.map(node => [node.id, node.data]));
   const nodes = useMemo(() => geometry && !geometry.error ? [

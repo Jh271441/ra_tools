@@ -58,7 +58,7 @@ def media_counts(targets, reused, published, failed, queued, closeup=None):
     return result
 
 
-def version_status(root):
+def version_status(root, data_dir=None):
     state = (
         Path(root).resolve().parent
         / "ra_auto_triage_deploy/state/version_incremental_v3"
@@ -75,6 +75,7 @@ def version_status(root):
     from .runtime import database
 
     datasets = database.list_version_datasets()
+    from .planning_text_daily import cohort_counts
     from .cron_closeup_source import CloseupCohort
     closeup = CloseupCohort(root)
     targets_by_family = defaultdict(dict)
@@ -128,7 +129,8 @@ def version_status(root):
         "versions": [{"family": family,
                       "states": (queue_states or {}).get(family),
                       "states_status": "ready" if queue_states is not None and family in queue_states else "unavailable",
-                      "media": media_counts(targets_by_family[family], reused, published, failed, queued, closeup)}
+                      "media": media_counts(targets_by_family[family], reused, published, failed, queued, closeup),
+                      "planning_text": cohort_counts(data_dir, targets_by_family[family])}
                      for family in families],
         "updated_at": heartbeat.get("checked_at"),
         "stale": time.time() - heartbeat.get("checked_at", 0) > 1200,
@@ -138,4 +140,5 @@ def version_status(root):
         "increments": incremental_history(state, control, datasets, database),
         "datasets": datasets,
         "media": media_counts(targets, reused, published, failed, queued, closeup),
+        "planning_text": cohort_counts(data_dir, targets),
     }

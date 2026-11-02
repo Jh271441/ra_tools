@@ -2,8 +2,9 @@
 function planningConstraintAt(frames, timestamp, tolerance = 150) {
   // Hold the latest published planning message, never look ahead in time.
   const frame = frames.filter(item => Number.isFinite(item.timestamp_ms) && item.timestamp_ms <= timestamp)
-    .reduce((best, item) => !best || item.timestamp_ms > best.timestamp_ms ? item : best, null);
-  return frame && timestamp - frame.timestamp_ms <= tolerance ? frame : null;
+    .reduce((best, item) => !best || item.timestamp_ms >= best.timestamp_ms ? item : best, null);
+  return frame && timestamp - frame.timestamp_ms <= tolerance
+    && (!Number.isFinite(frame.valid_until_ms) || timestamp < frame.valid_until_ms) ? frame : null;
 }
 
 function bindPlanningConstraint(player, video, getPosition = () => video.currentTime) {
@@ -94,7 +95,7 @@ function bindPlanningConstraint(player, video, getPosition = () => video.current
     if (!open || disposed) return;
     const relative = offset(), bucket = Math.floor(relative / 8000);
     const data = cache.get(bucket);
-    const pending = !data || ['loading', 'busy'].includes(data.status);
+    const pending = !data || ['loading', 'busy', 'pending'].includes(data.status);
     if (pending && (!data?.retryAt || Date.now() >= data.retryAt)) void fetchWindow(bucket);
     // At most one adjacent window warms while the open player is playing.
     // Paused/closed players never scan the rest of an Issue.
@@ -104,7 +105,8 @@ function bindPlanningConstraint(player, video, getPosition = () => video.current
       ? planningConstraintAt(data.frames || [], data.anchor_ms + relative, data.tolerance_ms || 150) : null;
     copyValue = frame?.status === 'ready' ? String(frame.constraint_id || '') : '';
     let message = uiText('当前时刻无匹配规划帧', 'No matching planning frame at this time');
-    if (pending) message = data?.status === 'busy'
+    if (data?.status === 'pending') message = uiText('等待约束文本回执，就绪后自动显示', 'Awaiting constraint text receipt; it will appear when ready');
+    else if (pending) message = data?.status === 'busy'
       ? uiText('规划数据读取中，请稍候…', 'Planning reader is busy; please wait…')
       : uiText('正在读取当前时段规划数据…', 'Loading planning data for this time window…');
     else if (data.status === 'error') message = uiText('规划数据读取失败，请重试', 'Could not load planning data. Retry.');
