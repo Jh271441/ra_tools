@@ -48,6 +48,21 @@ def read_saved_window(
     timestamp_ms: int | None = None, *, trip_id: str | None = None,
     anchor_ms: int | None = None,
 ) -> dict | None:
+    from .planning_text_daily import read_daily_window
+    daily = read_daily_window(data_dir, issue_id, offset_ms, timestamp_ms,
+                             trip_id=trip_id, anchor_ms=anchor_ms)
+    if daily is not None and daily.get("status") != "pending":
+        return daily
+    history = _read_history_window(data_dir, issue_id, offset_ms, timestamp_ms,
+                                   trip_id=trip_id, anchor_ms=anchor_ms)
+    return history if history is not None else daily
+
+
+def _read_history_window(
+    data_dir: Path, issue_id: str, offset_ms: int | None = None,
+    timestamp_ms: int | None = None, *, trip_id: str | None = None,
+    anchor_ms: int | None = None,
+) -> dict | None:
     """None means a true miss; a damaged index fails closed without a Bag read.
 
     Optional identity checks are used when the caller already has a capture.

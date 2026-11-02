@@ -22,7 +22,7 @@ function cronSelectedIncremental(data) {
   return { ...source, ...version, families: [family], family,
     stale: source.stale || dailyCronState.error,
     unavailable: !version, statesUnavailable: !version || version.states_status !== 'ready',
-    states: version?.states || {}, media: version?.media || {},
+    states: version?.states || {}, media: version?.media || {}, planning_text: version?.planning_text || {},
     datasets: (source.datasets || []).filter(d => d.release_family === family),
     increments: source.increments && { ...source.increments,
       items: (source.increments.items || []).filter(row => row.family === family) } };
@@ -113,6 +113,12 @@ function renderCronMediaTracks(media) {
   box.innerHTML = [['Camera', media?.camera_verified], ['BEV', media?.bev_verified],
     [uiText('局部 BEV', 'Closeup BEV'), media?.closeup?.verified]].map(([label, value]) =>
     `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(cronFraction(value, media?.selected))}</strong></div>`).join('');
+  const text = cronSelectedIncremental(dailyCronState.data)?.planning_text;
+  if (cronIncrementalEnabled(dailyCronState.data) && !dailyCronState.selectedDay) {
+    const counts = text?.status === 'ready';
+    const note = counts ? uiText(`完整 ${text.collected} · 源缺口 ${text.partial_source} · 失败 ${text.failed} · 等待 ${text.pending} · 未取得 ${text.unknown}`, `Complete ${text.collected} · Source gaps ${text.partial_source} · Failed ${text.failed} · Pending ${text.pending} · Missing ${text.unknown}`) : uiText('文字状态暂不可用', 'Text status unavailable');
+    box.insertAdjacentHTML('beforeend', `<div class="cron-text-track"><span>${escapeHtml(uiText('约束文本', 'Constraint text'))}<small>${escapeHtml(note)}</small></span><strong>${escapeHtml(cronFraction(counts ? text.with_frames : null, text?.selected))}</strong></div>`);
+  }
 }
 
 function cronThirdMediaNote(media) {

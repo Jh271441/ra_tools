@@ -16,7 +16,7 @@ const m={selected:3,verified:2,camera_verified:2,bev_verified:2,triple_verified:
 const v={states:{published:3},media:m,datasets:[]};
 const model=()=>buildIncrementalCronGraph(v);
 const task=id=>model().lanes.flatMap(l=>l.nodes).find(n=>n.id===id).data;
-assert.equal(model().lanes.length,2);
+assert.equal(model().lanes.length,3);
 assert.equal(task('media-closeup').progress.done,2);
 assert.equal(task('media-verify').progress.done,1);
 assert.equal(task('media-closeup').status,'pending');

@@ -165,7 +165,7 @@ def published_identities(db):
 
 
 def orion_command(python, source, run, layout, count, designation):
-    return [str(python), '-m', 'ares_animation', 'run-orion', '--source-rows', str(source),
+    return [str(python), str(Path(__file__).resolve().parents[1]/'planning_text/runner.py'), 'run-orion', '--source-rows', str(source),
             '--layout-json', str(layout), '--release', str(REPO/'ares_animation/releases/bd9f187.json'),
             '--video-size', '1920x1080', '--video-duration-ms', '40000', '--video-fps', '10',
             '--no-bev-frames', '--designation', designation, '--max-concurrency', str(min(1000, count)),

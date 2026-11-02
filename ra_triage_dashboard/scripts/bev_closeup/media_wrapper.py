@@ -6,6 +6,9 @@ from pathlib import Path
 sys.path.insert(0, '/volume/home/workspace/ra_auto_triage')
 from tools.manual_sidecar import controller, recovery
 from offline_daily import local_tick, save, TASK
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+from ra_triage_dashboard.scripts.planning_text.media_adapter import install
+install(controller, recovery)
 
 original = controller.process_daily
 
