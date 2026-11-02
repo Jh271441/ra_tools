@@ -68,7 +68,7 @@ def preflight(args):
         raise ValueError('production_checkout_not_release')
     with urlopen('http://127.0.0.1:8785/health', timeout=10) as response:
         health = json.load(response)
-    if health.get('ok') is not True or health.get('build_commit') != args.sha or health.get('storage') != 'postgres':
+    if health.get('ok') is not True or health.get('build_commit') != args.sha or health.get('storage') != 'postgresql':
         raise ValueError('dashboard_exact_release_required')
     profile = control(TASK)
     if not profile or profile['release_sha'] != args.expected_release:
