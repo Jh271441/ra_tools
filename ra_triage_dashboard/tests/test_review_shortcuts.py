@@ -208,7 +208,7 @@ assert.match(target.innerHTML,/data-remove-screenshot/);
 
 def test_successful_review_save_advances_when_current_leaves_filter() -> None:
     source = (ROOT / "static" / "js" / "review-form.js").read_text()
-    start = source.index("function reviewSaveNavigationContext")
+    start = source.index("async function reviewSaveNavigationContext")
     end = source.index("const CASE_DETAIL_PREFETCH_TTL_MS", start)
     routing = (ROOT / "static" / "js" / "routing.js").read_text()
     guards = routing[routing.index("function capturePageContext"):routing.index("function showPage(")]
@@ -217,13 +217,15 @@ const assert=require('node:assert/strict');
 window={scrollY:321,location:{pathname:'/manual/review',search:''}};
 let selected=[];let loads=0;let notices=[];
 state={activePage:'review',selectedId:'b',cases:[{issue_id:'a'},{issue_id:'b'},{issue_id:'c'}],casePage:1,casePageSize:20,caseTotal:3};
+currentReviewGalleryExportParams=()=>new URLSearchParams('task_progress=pending');
+api=async()=>({issue_ids:state.cases.map(item=>item.issue_id)});
 loadCases=async()=>{loads++;state.cases=[{issue_id:'a'},{issue_id:'c'}];state.caseTotal=2;};
 selectCase=async(id,options)=>{selected.push([id,options]);state.selectedId=id;};
 renderCaseNavigation=()=>{};clearDetail=()=>{};showPage=()=>{};
 uiIn=0;
 uiText=(zh)=>zh;showToast=(message)=>notices.push(message);
-const context=reviewSaveNavigationContext('b');
 (async()=>{
+  const context=await reviewSaveNavigationContext('b');
   assert.equal(context.index,1);assert.equal(context.hadNext,true);
   assert.equal(await reconcileReviewQueueAfterSave(context),true);
   assert.equal(loads,1);assert.equal(selected[0][0],'c');
@@ -241,12 +243,17 @@ const context=reviewSaveNavigationContext('b');
   state.selectedId='b';state.reviewQueueStale=false;notices=[];
   loadCases=async()=>{throw new Error('queue failed');};
   refreshReviewDerivedData=()=>{};
-  await refreshReviewAfterSave(context);
+  await refreshReviewAfterSave(await reviewSaveNavigationContext('b'));
   assert.equal(state.reviewQueueStale,true);
   assert.match(notices[0],/Review 已保存，但筛选队列刷新失败/);
 })().catch((error)=>{console.error(error);process.exitCode=1;});
 '''
     subprocess.run(["node", "-e", script], check=True, capture_output=True)
+
+
+def test_review_save_queue_deep_links_and_scope_guards() -> None:
+    subprocess.run(["node", str(Path(__file__).with_name("review_save_queue.cjs"))],
+                   check=True, capture_output=True, text=True)
 
 
 def test_open_review_dropdown_uses_arrows_for_navigation_and_enter_for_save() -> None:

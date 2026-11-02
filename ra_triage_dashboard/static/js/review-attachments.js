@@ -480,11 +480,11 @@ function enqueueCaseRationaleUpload(task) {
     caseData.label_state = (result.combined_review || result.case_label)?.label_state || caseData.label_state;
     delete caseData.label_source_contexts;
     state.reviewFormDirty = newerDraft || moreImages;
-    // Context refresh already guards Issue/Run/task/page ownership and preserves
-    // newer drafts. Do not reconcile/navigate the queue after a background save.
+    // Display reads cannot turn a committed upload into an upload retry.
     try {
       await loadCombinedReviewContext(caseData);
     } catch (_) { /* Saved is final; the context panel provides refresh retry. */ }
+    if (task.navigationContext?.issueId) await refreshReviewAfterSave(task.navigationContext);
     repaint();
   };
   state.reviewUploadTail = (state.reviewUploadTail || Promise.resolve()).catch(() => {}).then(run);

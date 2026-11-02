@@ -969,47 +969,118 @@ async function loadCombinedReviewContext(caseData, {preserveForm = false} = {}) 
   }
 }
 
-function reviewSaveNavigationContext(issueId) {
+async function reviewSaveNavigationContext(issueId) {
   const index = state.cases.findIndex(
     (item) => String(item.issue_id) === String(issueId)
   );
-  return {
+  const params = reviewSaveQueueParams();
+  const pageSize = state.casePageSize;
+  const context = {
     issueId: String(issueId || ""),
     page: Number(state.casePage || 1),
     index,
+    absoluteIndex: index < 0 ? -1 : (state.casePage - 1) * pageSize + index,
+    nextId: state.cases[index + 1]?.issue_id || "",
+    previousId: index > 0 ? state.cases[index - 1]?.issue_id || "" : "",
     hadNext: index >= 0 && (
       index < state.cases.length - 1 ||
       state.casePage * state.casePageSize < state.caseTotal
     ),
     scrollY: window.scrollY,
+    pageContext: capturePageContext(),
+    actor: state.session?.username || "",
+    filterKey: params.toString(),
   };
+  if (index >= 0) return context;
+  // A shared detail URL may omit the page, or a collaboration refresh may
+  // already have removed the selected Issue. Locate it before submitting.
+  try {
+    const ids = await reviewSaveQueueIds(params);
+    let absolute = ids.indexOf(context.issueId);
+    context.hadNext = absolute >= 0 && absolute < ids.length - 1;
+    if (absolute < 0 && params.has("task_progress")) {
+      const taskOrder = new URLSearchParams(params);
+      taskOrder.delete("task_progress");
+      if (taskOrder.get("task_view") === "pending") taskOrder.set("task_view", "targets");
+      const ordered = await reviewSaveQueueIds(taskOrder);
+      const anchor = ordered.indexOf(context.issueId);
+      if (anchor >= 0) {
+        const remaining = new Set(ids);
+        const next = ordered.slice(anchor + 1).find(id => remaining.has(id));
+        const previous = ordered.slice(0, anchor).reverse().find(id => remaining.has(id));
+        absolute = ids.indexOf(next || previous);
+        context.hadNext = Boolean(next);
+      }
+    }
+    if (absolute >= 0) {
+      context.absoluteIndex = absolute;
+      context.page = Math.floor(absolute / pageSize) + 1;
+      context.index = absolute % pageSize;
+      context.nextId = ids[absolute] === context.issueId ? ids[absolute + 1] || "" : ids[absolute];
+      context.previousId = ids[absolute] === context.issueId ? ids[absolute - 1] || "" : ids[absolute];
+    }
+  } catch (_) { /* A queue read must not prevent saving the label. */ }
+  return context;
+}
+
+function reviewSaveQueueParams() {
+  const params = currentReviewGalleryExportParams();
+  params.delete("format");
+  params.delete("gallery_scope");
+  return params;
+}
+
+async function reviewSaveQueueIds(params) {
+  // A pre-save collaboration GET must not supply this post-save read.
+  const result = await api(`/api/cases/issue-ids?${params}`, {
+    cache: "no-store", signal: new AbortController().signal,
+  });
+  return result.issue_ids || [];
+}
+
+function reviewSaveNavigationIsCurrent(context) {
+  return Boolean(context?.issueId && state.activePage === "review"
+    && String(state.selectedId || "") === context.issueId
+    && isPageContextCurrent(context.pageContext, { matchUrl: false })
+    && (state.session?.username || "") === context.actor
+    && reviewSaveQueueParams().toString() === context.filterKey);
 }
 
 async function reconcileReviewQueueAfterSave(context) {
-  if (!context?.issueId || context.index < 0) return false;
-  if (state.activePage !== "review" || String(state.selectedId || "") !== context.issueId) {
-    return false;
-  }
-  const pageContext = capturePageContext();
-  await loadCases({ keepSelection: true, page: context.page });
-  if (!isPageContextCurrent(pageContext)) return false;
-  if (String(state.selectedId || "") !== context.issueId) return false;
+  if (!reviewSaveNavigationIsCurrent(context)) return false;
+  await loadCases({ keepSelection: true, page: context.page, fresh: true });
+  if (!reviewSaveNavigationIsCurrent(context)) return false;
   if (state.cases.some((item) => String(item.issue_id) === context.issueId)) {
     renderCaseNavigation();
     return false;
   }
-  if (!state.cases.length) {
+  const ids = await reviewSaveQueueIds(new URLSearchParams(context.filterKey));
+  if (!reviewSaveNavigationIsCurrent(context)) return false;
+  // A shifted page is not evidence that the Issue left the filter.
+  const retainedIndex = ids.indexOf(context.issueId);
+  if (retainedIndex >= 0) {
+    await loadCases({ keepSelection: true, page: Math.floor(retainedIndex / state.casePageSize) + 1, fresh: true });
+    return false;
+  }
+  if (state.reviewFormDirty || state.pendingReviewImages?.length
+      || (typeof caseRationalePendingImages === "function" && caseRationalePendingImages(state.selectedCase).length)) return false;
+  if (!ids.length) {
     clearDetail({ showGallery: true });
     showPage("review", { historyMode: "replace", issue: "" });
     showToast(uiText("已保存；当前筛选已没有更多 Issue。", "Saved; no Issues remain in this filter."));
     return true;
   }
-  const targetIndex = context.hadNext
-    ? Math.min(context.index, state.cases.length - 1)
-    : Math.max(0, Math.min(context.index - 1, state.cases.length - 1));
-  const target = state.cases[targetIndex];
-  if (!target) return false;
-  await selectCase(target.issue_id, {
+  const adjacent = context.hadNext ? context.nextId : context.previousId;
+  let targetIndex = ids.indexOf(adjacent);
+  if (targetIndex < 0) targetIndex = Math.min(Math.max(0, context.absoluteIndex), ids.length - 1);
+  const targetId = ids[targetIndex];
+  const targetPage = Math.floor(targetIndex / state.casePageSize) + 1;
+  if (state.casePage !== targetPage || !state.cases.some(item => item.issue_id === targetId)) {
+    await loadCases({ keepSelection: true, page: targetPage, fresh: true });
+  }
+  if (!reviewSaveNavigationIsCurrent(context) || state.reviewFormDirty) return false;
+  if (!state.cases.some(item => item.issue_id === targetId)) throw new Error("Filtered queue changed during refresh");
+  await selectCase(targetId, {
     historyMode: "replace",
     preserveScrollY: context.scrollY,
   });
@@ -1021,10 +1092,7 @@ async function reconcileReviewQueueAfterSave(context) {
 }
 
 async function refreshReviewAfterSave(context) {
-  const stillOnSavedIssue = Boolean(
-    state.activePage === "review" &&
-    String(state.selectedId || "") === String(context?.issueId || "")
-  );
+  const stillOnSavedIssue = reviewSaveNavigationIsCurrent(context);
   try {
     if (stillOnSavedIssue) {
       await reconcileReviewQueueAfterSave(context);
@@ -1612,7 +1680,7 @@ async function saveAnnotation(event) {
   delete payload.tags;
   const screenshotItems = [...state.pendingReviewImages];
   const screenshotFiles = screenshotItems.map((item) => item.file);
-  const navigationContext = reviewSaveNavigationContext(issueId);
+  const navigationContext = await reviewSaveNavigationContext(issueId);
   const uploadKey = reviewUploadTaskKey(issueId, payload);
   const activeBackgroundUpload = state.backgroundReviewUploads.get(uploadKey);
   if (activeBackgroundUpload && !activeBackgroundUpload.failed) {
@@ -1753,22 +1821,9 @@ async function saveCombinedReview(event) {
   });
   const imageKey = caseRationaleImageKey(caseData);
   const imageItems = [...caseRationalePendingImages(caseData)];
-  const navigationContext = reviewSaveNavigationContext(issueId);
   const contextKey = combinedReviewContextKey(caseData);
   const draftScope = [issueId, runId, reviewWorkSplitBinding(caseData), reviewDraftReviewer(caseData)];
   const submittedDraft = persistReviewDraft(caseData);
-  if (imageItems.length) {
-    const task = { key: imageKey, issueId, payload, imageItems, draftScope,
-      draft: submittedDraft || readReviewDraft(...draftScope), contextKey,
-      action: runId ? "combined-review" : "case-label-from-review",
-      headers: runId ? { "Idempotency-Key": globalThis.crypto?.randomUUID?.() || `combined-${Date.now()}-${Math.random().toString(16).slice(2)}` } : {},
-    };
-    state.backgroundCaseUploads ||= new Map();
-    state.backgroundCaseUploads.set(imageKey, task);
-    enqueueCaseRationaleUpload(task);
-    showToast(uiText("图片和复核已进入后台保存，可继续切换 Issue。", "Images and review are saving in the background; you can switch Issues."));
-    return;
-  }
   state.savingAnnotation = true;
   const button = event.submitter || $("#reviewSaveButton");
   if (button) {
@@ -1776,6 +1831,19 @@ async function saveCombinedReview(event) {
     button.setAttribute("aria-busy", "true");
   }
   try {
+    const navigationContext = await reviewSaveNavigationContext(issueId);
+    if (imageItems.length) {
+      const task = { key: imageKey, issueId, payload, imageItems, draftScope, navigationContext,
+        draft: submittedDraft || readReviewDraft(...draftScope), contextKey,
+        action: runId ? "combined-review" : "case-label-from-review",
+        headers: runId ? { "Idempotency-Key": globalThis.crypto?.randomUUID?.() || `combined-${Date.now()}-${Math.random().toString(16).slice(2)}` } : {},
+      };
+      state.backgroundCaseUploads ||= new Map();
+      state.backgroundCaseUploads.set(imageKey, task);
+      enqueueCaseRationaleUpload(task);
+      showToast(uiText("图片和复核已进入后台保存，可继续切换 Issue。", "Images and review are saving in the background; you can switch Issues."));
+      return;
+    }
     let result;
     if (!runId) {
       result = await submitCaseRationalePayload(issueId, "case-label-from-review", payload, imageItems);
@@ -1801,6 +1869,17 @@ async function saveCombinedReview(event) {
     const latestDraft = current ? persistReviewDraft(caseData) : readReviewDraft(...draftScope);
     const newerDraft = Boolean(latestDraft)
       && caseUploadDraftSignature(latestDraft) !== caseUploadDraftSignature(submittedDraft);
+    if (current && !newerDraft) {
+      // Blurring an edited textarea emits change. Retire that already-saved
+      // snapshot afterwards, so the browser event cannot recreate a draft.
+      const composer = document.activeElement;
+      if (composer?.closest?.("#reviewPane .review-dropdown")) {
+        closeAllReviewDropdowns();
+        composer.blur();
+      } else if (composer?.matches?.("#combinedCaseRationale, #annotationNote, #reviewExcludeInput")) {
+        composer.blur();
+      }
+    }
     if (newerDraft) {
       // Typing during the request is not part of the committed payload.
       latestDraft.saved_at = Math.max(Date.now(), annotationTimestamp(result.combined_review?.model_review) + 1);
@@ -1815,16 +1894,9 @@ async function saveCombinedReview(event) {
     delete caseData.label_source_contexts;
     if (current) {
       state.reviewFormDirty = newerDraft || caseRationalePendingImages(caseData).length > 0;
-      if (!newerDraft) {
-        const composer = document.activeElement;
-        if (composer?.closest?.("#reviewPane .review-dropdown")) {
-          closeAllReviewDropdowns();
-          composer.blur();
-        } else if (composer?.matches?.("#combinedCaseRationale, #annotationNote, #reviewExcludeInput")) {
-          composer.blur();
-        }
-      }
-      await loadCombinedReviewContext(caseData);
+      try {
+        await loadCombinedReviewContext(caseData);
+      } catch (_) { /* The write succeeded; queue reconciliation can still proceed. */ }
     }
     await refreshReviewAfterSave(navigationContext);
   } catch (error) {

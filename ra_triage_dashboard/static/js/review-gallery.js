@@ -737,6 +737,7 @@ function renderPredictionSourceSummary() {
 async function loadCases({
   keepSelection = true,
   page = state.casePage,
+  fresh = false,
 } = {}) {
   const pageContext = capturePageContext();
   const requestSeq = ++state.caseListRequestSeq;
@@ -809,7 +810,8 @@ async function loadCases({
   params.set("page_size", String(state.casePageSize));
   params.set("include_thumbnail", "true");
   appendBaselineParams(params);
-  const data = await api(`/api/cases?${params.toString()}`);
+  const data = await api(`/api/cases?${params.toString()}`, fresh
+    ? { cache: "no-store", signal: new AbortController().signal } : {});
   if (requestSeq !== state.caseListRequestSeq || !isPageContextCurrent(pageContext)) return;
   const totalPages = Math.max(
     1,
@@ -817,7 +819,7 @@ async function loadCases({
   );
   if (state.casePage > totalPages) {
     state.casePage = totalPages;
-    return loadCases({ keepSelection, page: totalPages });
+    return loadCases({ keepSelection, page: totalPages, fresh });
   }
   renderCases(data);
   if (state.reviewTaskContext || state.reviewTaskContextError) {

@@ -99,6 +99,7 @@ async function savedDraftClearsAndNewerEditsSurvive() {
     let resolve;
     f.s.submitCaseRationalePayload = () => new Promise(r => {resolve = r;});
     const saving = f.s.saveCombinedReview({submitter: f.elements.reviewSaveButton});
+    await Promise.resolve();
     if (newerEdit) {
       f.elements.annotationNote.value = 'Typed after submit';
       f.s.persistReviewDraft(f.data);
@@ -110,6 +111,30 @@ async function savedDraftClearsAndNewerEditsSurvive() {
     assert.equal(f.state.reviewFormDirty, newerEdit);
     if (newerEdit) assert.equal(f.elements.annotationNote.value, 'Typed after submit');
   }
+}
+
+async function contextFailureStillRefreshesSavedQueue() {
+  const f = fixture();
+  f.elements.expectedOutputInput.value = '误触发';
+  f.state.combinedReviewContext = f.context;
+  f.state.combinedReviewLoad = {key:f.s.combinedReviewContextKey(f.data),status:'ready'};
+  f.s.expectedOutputSelectionState = () => ({selectedValue:'误触发',conflictKind:''});
+  f.s.reviewSaveNavigationContext = () => ({issueId:'cn1'});
+  f.s.acknowledgeLocalChange = () => {};
+  let refreshed = 0, writes = 0;
+  f.s.refreshReviewAfterSave = async () => {refreshed++;};
+  f.s.submitCaseRationalePayload = async () => {writes++;return {combined_review:{model_review:f.context.model_review}};};
+  f.s.loadCombinedReviewContext = async () => {throw new Error('context read timed out');};
+  f.s.document.activeElement = {matches:()=>true,blur:()=>{
+    // Native textarea change is emitted on blur, including programmatic blur.
+    f.saveDraft(['case_rationale']);
+  }};
+  await f.s.saveCombinedReview({submitter:f.elements.reviewSaveButton});
+  assert.equal(writes,1);
+  assert.equal(refreshed,1,'a failed display read cannot skip reconciliation after a successful save');
+  assert.equal(f.state.savingAnnotation,false);
+  assert.equal(f.state.reviewFormDirty,false,'programmatic blur cannot recreate the committed draft');
+  assert.equal(f.s.reviewDraftForCase(f.data),null);
 }
 
 function unrelatedDraftKeepsHistoricalTags() {
@@ -126,6 +151,7 @@ function unrelatedDraftKeepsHistoricalTags() {
   await delayedContextHydratesUntouchedFields();
   await intentionalClearsAndFocusedTextSurvive();
   await savedDraftClearsAndNewerEditsSurvive();
+  await contextFailureStillRefreshesSavedQueue();
   unrelatedDraftKeepsHistoricalTags();
   console.log('Combined Review saved-field hydration, intentional clears, focus and save/draft races passed');
 })().catch(error => {console.error(error); process.exitCode = 1;});
