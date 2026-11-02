@@ -1,5 +1,18 @@
 # Native video loading restoration — 2026-10-23
 
+## Explicit playback for each new video — 2026-11-02 / cache739
+
+Every newly created inline or expanded player starts paused at t0, including
+when the previous Case was playing. Remove the page-wide playback preference;
+only the current player's Play button, video click or Space can request playback.
+Returning from an image view also stays paused until another explicit Play.
+Changing the source within an already active player retains that player's current
+choice and position/rate. Preloading metadata/t0 data is independent of playback.
+
+The native start hint, Range loading and immediate asynchronous Play/cancellation
+remain. This supersedes the cross-Case preference in the historical candidates
+below. The cache737 compact toolbar remains, with no extra status text or spacer.
+
 ## Compact toolbar correction — 2026-11-02 / cache737
 
 Remove the extra Paused/Waiting/Buffering/Playing text and its reserved width

@@ -75,9 +75,10 @@ function handleVideoSourceShortcut(event) {
   const descriptor = inDialog ? mediaVideo() : videoWithFramePosters(caseData);
   const stage = inDialog ? $("#mediaVideoStage") : pane;
   const video = stage?.querySelector("video");
-  const currentUrl = video?.getAttribute("src")
+  // Native start hints (#t=...) describe playback position, not source identity.
+  const currentUrl = safeSameOriginAssetUrl(video?.getAttribute("src")
     || (inDialog ? state.media.snapshot?.videoTrack : state.detailMedia.videoTrack)
-    || descriptor?.url;
+    || descriptor?.url);
   const rememberedUrl = inDialog ? state.media.snapshot?.videoTrack
     : state.detailMedia.preferredVideoTrack || state.detailMedia.videoTrack;
   const tracks = videoSourceTracks(descriptor);
@@ -99,7 +100,7 @@ function handleVideoSourceShortcut(event) {
   if (inDialog) {
     if (state.media.kind !== "video") switchMediaKind("video");
     const activeVideo = stage?.querySelector("video");
-    if (activeVideo?.getAttribute("src") === track.url) return true;
+    if (safeSameOriginAssetUrl(activeVideo?.getAttribute("src")) === track.url) return true;
     const select = stage?.querySelector("[data-video-track]");
     if (select && Array.from(select.options).some(option => option.value === track.url && !option.disabled)) {
       select.value = track.url;
@@ -159,10 +160,6 @@ function refreshBevVideoLanguage(root = document) {
   root.querySelectorAll("[data-bev-video-player] video").forEach(video => video._refreshBevPlayerLanguage?.());
   enhanceDashboardSelects(root);
 }
-
-// A session starts paused. Only an explicit playback choice changes the
-// preference shared by consecutive Cases, sources and the expanded player.
-let bevVideoPlaybackPreference = false;
 
 function videoPlayerMarkup(video, { zoomable = true, compact = false, issueId = "" } = {}) {
   const durationSec = Math.max(0, Number(video?.duration_ms || 0) / 1000);
@@ -252,7 +249,8 @@ function bindBevVideoPlayers(root) {
     let disposed = false;
     let sourceGeneration = 0;
     let pendingStart = configuredT0PlayerSec > 0 ? configuredT0PlayerSec : null;
-    let wantsPlayback = bevVideoPlaybackPreference;
+    // Each new Case/player waits for its own explicit Play choice at t0.
+    let wantsPlayback = false;
     let suspended = false;
     let metadataGeneration = -1;
     let sourceHasStartHint = configuredT0PlayerSec > 0;
@@ -417,7 +415,6 @@ function bindBevVideoPlayers(root) {
       if (disposed) return;
       suspended = false;
       wantsPlayback = !wantsPlayback;
-      bevVideoPlaybackPreference = wantsPlayback;
       // A key press changes intent and its feedback synchronously, even before
       // metadata/frames arrive. A second press cancels a queued play request.
       if (!wantsPlayback) {
@@ -574,7 +571,7 @@ function bindBevVideoPlayers(root) {
     video._resumeBevPlayback = () => {
       if (disposed) return;
       suspended = false;
-      wantsPlayback = bevVideoPlaybackPreference;
+      // Becoming visible again must not restore an earlier Play choice.
       update();
       startPlayback();
     };

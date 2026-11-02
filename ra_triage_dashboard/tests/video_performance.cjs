@@ -6,7 +6,7 @@ class El extends EventTarget {
  focus(){} matches(s){return s==='video'&&this.isVideo;} closest(){return null;} querySelector(){return null;} querySelectorAll(){return [];}
  fire(name,properties={}){const event=new Event(name,{cancelable:true});Object.assign(event,properties);this.dispatchEvent(event);return event;}
 }
-function playerFixture({readyState=4,preference=false,initialTime=0,durationSec=40,...videoState}={}){
+function playerFixture({readyState=4,context=null,initialTime=0,durationSec=40,...videoState}={}){
  const timers=new Map();let next=0;
  const elements=Object.fromEntries(['video','play','seek','step','rate','time','relative-start','t0','track','status','status-text','retry'].map(k=>[k,new El()]));
  const video=elements.video;Object.assign(video,{isVideo:true,readyState,duration:40,paused:true,seeking:false,loads:0,plays:0,seeks:[],error:null},videoState);
@@ -16,13 +16,15 @@ function playerFixture({readyState=4,preference=false,initialTime=0,durationSec=
  const player=new El();player.dataset={durationSec:String(durationSec),t0PlayerSec:String(durationSec/2),startOffsetSec:String(-durationSec/2)};
  player.querySelector=s=>s==='video'?video:elements[s.replace('[data-video-','').replace(']','')];
  const root={querySelectorAll:s=>s==='video'?[video]:[player]};
- const ctx={console,URL,Event,Number,window:{setTimeout:(f,ms)=>{timers.set(++next,{f,ms});return next;},clearTimeout:id=>timers.delete(id),requestAnimationFrame:f=>f()},enhanceDashboardSelects(){},t:x=>x,uiText:x=>x,showToast(){},safeSameOriginAssetUrl:x=>String(x||'').split('#')[0]};
- vm.createContext(ctx);
- vm.runInContext(fs.readFileSync(src+'planning-constraints.js','utf8'),ctx);
- vm.runInContext(fs.readFileSync(src+'detail-media.js','utf8'),ctx);
+ const ctx=context||{console,URL,Event,Number,enhanceDashboardSelects(){},t:x=>x,uiText:x=>x,showToast(){},safeSameOriginAssetUrl:x=>String(x||'').split('#')[0]};
+ ctx.window={setTimeout:(f,ms)=>{timers.set(++next,{f,ms});return next;},clearTimeout:id=>timers.delete(id),requestAnimationFrame:f=>f()};
+ if(!context){
+  vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync(src+'planning-constraints.js','utf8'),ctx);
+  vm.runInContext(fs.readFileSync(src+'detail-media.js','utf8'),ctx);
+ }
  let textPosition;const bindText=ctx.bindPlanningConstraint;
  ctx.bindPlanningConstraint=(player,video,getPosition)=>{textPosition=getPosition;return bindText(player,video,getPosition);};
- vm.runInContext(`bevVideoPlaybackPreference = ${preference}`,ctx);
  ctx.bindBevVideoPlayers(root);
  const flush=ms=>{for(const [id,x] of [...timers])if(x.ms===ms){timers.delete(id);x.f();}};
  return {ctx,root,player,elements,video,timers,flush,textPosition};
@@ -120,18 +122,18 @@ function playerFixture({readyState=4,preference=false,initialTime=0,durationSec=
  pendingPlay.player.fire('keydown',{key:' '});
  pendingPlay.ctx.pauseBevVideoPlayers(pendingPlay.root);pv.readyState=4;pv.fire('loadedmetadata');
  assert.equal(pv.plays,6,'hiding a loading player cancels its pending startup');assert(pv.paused);
- assert.equal(vm.runInContext('bevVideoPlaybackPreference',pendingPlay.ctx),true,'system suspension does not overwrite the manual preference');
- pendingPlay.ctx.resumeBevVideoPlayers(pendingPlay.root);assert.equal(pv.plays,7);
+ pendingPlay.ctx.resumeBevVideoPlayers(pendingPlay.root);assert.equal(pv.plays,6,'returning to a hidden video requires another explicit Play');assert(pv.paused);
  pendingPlay.ctx.releaseBevVideoPlayer(pendingPlay.root);
- const nextCase=playerFixture({preference:true,readyState:0});
- assert.equal(nextCase.player.dataset.playbackState,'waiting');assert.equal(nextCase.video.plays,1,'the next Case queues native playback immediately');nextCase.video.readyState=4;nextCase.video.fire('loadedmetadata');
- assert.equal(nextCase.video.plays,1,'the next Case follows the playing preference');
+ const nextCase=playerFixture({context:pendingPlay.ctx,readyState:0});
+ assert.equal(nextCase.player.dataset.playbackState,'paused');assert.equal(nextCase.video.plays,0,'a new Case in the same page never inherits earlier Play');nextCase.video.readyState=4;nextCase.video.fire('loadedmetadata');
+ assert.equal(nextCase.video.plays,0,'metadata leaves a new Case paused at t0');assert.equal(nextCase.video.currentTime,20);
+ nextCase.elements.play.fire('click');assert.equal(nextCase.video.plays,1,'the new Case plays only after its own explicit choice');
  nextCase.elements.play.fire('click');nextCase.video._setBevVideoTrack('/paused-source.mp4');
  nextCase.video.readyState=4;nextCase.video.fire('loadedmetadata');assert.equal(nextCase.video.plays,1);
  nextCase.ctx.releaseBevVideoPlayer(nextCase.root);
  const hinted=playerFixture({initialTime:20});
  assert.deepEqual(hinted.video.seeks,[],'native fragment positioning must not trigger a redundant seek');hinted.ctx.releaseBevVideoPlayer(hinted.root);
- const unknown=playerFixture({durationSec:0,readyState:0,preference:true});
+ const unknown=playerFixture({durationSec:0,readyState:0});unknown.elements.play.fire('click');
  assert.equal(unknown.video.plays,0,'unknown midpoint still requires decoded metadata');
  unknown.video.readyState=4;unknown.video.fire('loadedmetadata');assert.deepEqual(unknown.video.seeks,[20]);assert.equal(unknown.video.plays,1);
  unknown.ctx.releaseBevVideoPlayer(unknown.root);

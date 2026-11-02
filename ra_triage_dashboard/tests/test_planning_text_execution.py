@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import shutil
 import struct
+import subprocess
 import sys
 import tarfile
 import tempfile
@@ -65,6 +66,20 @@ class ExecutionTest(unittest.TestCase):
                 hook.before_reduce([], 'trip-unit', self.root/'prepared')
         state = json.loads((self.root/'planning-text-prepared/state.json').read_text())
         self.assertEqual(state, dict(state='text_requires_review', error_type='RuntimeError'))
+
+    def test_exec_children_inherit_the_loaded_tool_package_outside_its_directory(self):
+        result = subprocess.run([sys.executable, '-c',
+            'from ra_triage_dashboard.scripts.planning_text import worker; print(worker.__file__)'],
+            cwd=self.root, env=hook.child_environment(), capture_output=True, text=True, timeout=10, check=True)
+        self.assertIn('scripts/planning_text/worker.py', result.stdout)
+
+    def test_text_budget_exhaustion_does_not_start_more_windows(self):
+        with patch.object(hook.time, 'monotonic', side_effect=[0]+[601]*10), patch.object(hook.subprocess, 'Popen') as start:
+            rows, errors = hook.run_windows([], MEMBER, self.root)
+        start.assert_not_called()
+        self.assertEqual(rows, [])
+        self.assertEqual(len(errors), 5)
+        self.assertEqual({error['code'] for error in errors}, {'text_execution_budget_exhausted'})
 
     def test_native_context_queries_task_args_and_validates_all_identity_fields(self):
         member = dict(MEMBER, owner='owner', extract=True)

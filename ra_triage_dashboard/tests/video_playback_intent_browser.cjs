@@ -93,7 +93,6 @@ const server = http.createServer((req, res) => {
         await page.evaluate(({view, lang, theme, id}) => {
           closeDialog('mediaDialog');
           pauseBevVideoPlayers(detailHeroMediaEl());
-          bevVideoPlaybackPreference = false;
           state.activePage = view; document.body.dataset.activePage = view;
           applyColorTheme(theme, {persist: false});
           document.querySelectorAll('.app-page').forEach(p => p.classList.toggle('hidden', p.dataset.page !== view));
@@ -106,6 +105,8 @@ const server = http.createServer((req, res) => {
         const selector = view === 'review' ? '#detailHeroMedia' : '#caseLabelingHeroMedia';
         let hero = page.locator(selector), player = hero.locator('[data-bev-video-player]');
         const focus = async () => (width === 1440 ? hero : player).focus();
+        assert.equal(await player.locator('video').evaluate(v => v.paused), true, 'a new player waits for explicit Play');
+        assert.equal(await player.locator('[data-video-play]').innerText(), lang === 'zh' ? '播放' : 'Play');
         await focus();
         await page.keyboard.press('Space');
         assert.equal(await player.getAttribute('data-playback-state'), 'waiting');
@@ -145,8 +146,12 @@ const server = http.createServer((req, res) => {
         assert.ok(await player.locator('[data-video-play]').evaluate(button => button.textContent === t(button.getAttribute('aria-pressed') === 'true' ? 'media.pause' : 'media.play')), 'the existing playback action uses the new locale');
         await page.evaluate(lang => applyUiLanguage(lang, {persist: false}), lang);
         await page.evaluate(({view, id}) => fixtureMount(view, id + '_next'), {view, id});
-        await waitPlaying(); // The next Case inherits the last explicit Play choice.
+        await waitReady();
         hero = page.locator(selector); player = hero.locator('[data-bev-video-player]');
+        assert.equal(await player.locator('video').evaluate(v => v.paused), true, 'the next Case stays paused even after the previous Case played');
+        assert.ok(await player.locator('video').evaluate(v => Math.abs(v.currentTime - 20) < .1));
+        assert.equal(await player.locator('[data-video-play]').innerText(), lang === 'zh' ? '播放' : 'Play');
+        await focus(); await page.keyboard.press('Space'); await waitPlaying();
         await focus(); await page.keyboard.press('Space');
         await page.evaluate(({view, id}) => fixtureMount(view, id + '_paused'), {view, id});
         await waitReady();
@@ -159,12 +164,18 @@ const server = http.createServer((req, res) => {
         results.push({width, lang, theme, view});
       }
     // Dialog ownership and a late metadata response after navigation away.
-    await page.evaluate(() => {bevVideoPlaybackPreference = true; openMedia('video', 0);});
-    await page.waitForFunction(() => document.querySelector('#mediaVideoStage video')?.currentTime > 20.02);
+    await page.locator('#caseLabelingHeroMedia').focus(); await page.keyboard.press('Space'); await waitPlaying();
+    await page.evaluate(() => openMedia('video', 0));
+    await page.waitForFunction(() => document.querySelector('#mediaVideoStage video')?.readyState >= 2);
+    assert.equal(await page.locator('#mediaVideoStage video').evaluate(v => v.paused), true, 'opening a new expanded player does not inherit inline Play');
     assert.equal(await page.locator('#caseLabelingHeroMedia video').evaluate(v => v.paused), true);
+    await page.locator('#mediaVideoStage [data-bev-video-player]').press('Space');
+    await page.waitForFunction(() => !document.querySelector('#mediaVideoStage video').paused && document.querySelector('#mediaVideoStage video').currentTime > 20.02);
     await page.evaluate(() => switchMediaKind('camera'));
     assert.equal(await page.locator('#mediaVideoStage video').evaluate(v => v.paused), true);
     await page.evaluate(() => switchMediaKind('video'));
+    assert.equal(await page.locator('#mediaVideoStage video').evaluate(v => v.paused), true, 'returning from images waits for another explicit Play');
+    await page.locator('#mediaVideoStage [data-bev-video-player]').press('Space');
     await page.waitForFunction(() => !document.querySelector('#mediaVideoStage video').paused);
     await page.evaluate(() => {
       closeDialog('mediaDialog'); fixtureMount('labeling', 'cn_late_hidden');

@@ -18,6 +18,14 @@ def event(state, **fields):
     print(json.dumps(dict(planning_text_event=state, **fields), sort_keys=True), flush=True)
 
 
+def child_environment():
+    # Tool loading changes the parent's sys.path, which exec does not inherit.
+    root = str(Path(__file__).resolve().parents[3])
+    paths = [root, *(os.path.abspath(p) for p in sys.path if isinstance(p, str)),
+             *os.environ.get('PYTHONPATH', '').split(os.pathsep)]
+    return dict(os.environ, PYTHONPATH=os.pathsep.join(dict.fromkeys(p for p in paths if p)))
+
+
 def save(path, value):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -85,7 +93,11 @@ def resources_ready():
 
 def run_windows(inputs, member, root):
     observations, errors = [], []
+    deadline = time.monotonic()+600
     def window(start, end, depth=0):
+        if time.monotonic() >= deadline:
+            errors.append(dict(code='text_execution_budget_exhausted', start_ms=start, end_ms=end))
+            return
         checkpoint = root/'checkpoints'/f'{start}-{end}.json'
         request = dict(inputs=[str(p) for p in inputs], start_ms=start, end_ms=end, output=str(checkpoint))
         request_file = checkpoint.with_suffix('.request.json')
@@ -98,10 +110,10 @@ def run_windows(inputs, member, root):
                 return
             with checkpoint.with_suffix('.private.log').open('ab') as log:
                 process = subprocess.Popen([sys.executable, '-m', 'ra_triage_dashboard.scripts.planning_text.worker', str(request_file)],
-                    stdout=log, stderr=log, start_new_session=True)
+                    stdout=log, stderr=log, start_new_session=True, env=child_environment())
                 timed_out = False
                 try:
-                    process.wait(timeout=120)
+                    process.wait(timeout=min(120, max(.1, deadline-time.monotonic())))
                 except subprocess.TimeoutExpired:
                     timed_out = True
                     os.killpg(process.pid, signal.SIGKILL)
@@ -109,8 +121,10 @@ def run_windows(inputs, member, root):
             if process.returncode != 0 or timed_out:
                 # Split the read window, never change any source bytes or the limits.
                 failure = json.loads(checkpoint.with_suffix('.error.json').read_text()) if checkpoint.with_suffix('.error.json').exists() else {}
+                event('window_worker_failed', error_type=failure.get('error_type', 'process_exit'),
+                      returncode=process.returncode, timed_out=timed_out)
                 splittable = timed_out or process.returncode in {-signal.SIGXFSZ, -signal.SIGKILL} or failure.get('error_type') == 'MemoryError'
-                if splittable and end-start > 262 and depth < 8:
+                if splittable and time.monotonic() < deadline and end-start > 262 and depth < 8:
                     middle = (start+end)//2
                     window(start, middle, depth+1)
                     window(middle, end, depth+1)
@@ -123,6 +137,7 @@ def run_windows(inputs, member, root):
     first, last = member['anchor_ms']-20150, member['anchor_ms']+20000
     for start in range(first, last, 8400):
         window(start, min(start+8400, last))
+    event('windows_scanned', observations=len(observations), errors=len(errors))
     return observations, errors
 
 
@@ -153,7 +168,8 @@ def upload_artifact(folder, producer):
     save(intent, dict(capture_key=load_artifact(folder)[0]['capture_key'], at=time.time()))
     with (folder.parent/'upload.private.log').open('ab') as log:
         subprocess.run([sys.executable, '-m', 'ra_triage_dashboard.scripts.planning_text.hook',
-                        '--upload', str(folder)], stdout=log, stderr=log, timeout=120, check=True)
+                        '--upload', str(folder)], stdout=log, stderr=log, timeout=120, check=True,
+                       env=child_environment())
 
 
 def export(inputs, member, producer, root, lock):

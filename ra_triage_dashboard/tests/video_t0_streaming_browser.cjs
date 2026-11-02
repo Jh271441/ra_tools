@@ -102,8 +102,10 @@ const server = http.createServer((req, res) => {
         }
         bindBevVideoPlayers(root);
       };
-      bevVideoPlaybackPreference = true; mountPlayer('initial');
+      mountPlayer('initial');
     });
+    assert.equal(await page.locator('video').evaluate(v => v.paused), true, 'preloading does not start playback');
+    await page.locator('[data-bev-video-player]').press('Space');
     assert.equal(await page.locator('video').getAttribute('src'), '/api/initial.mp4#t=20');
     assert.equal(await page.locator('video').evaluate(v => v.readyState), 0);
     assert.equal(await page.locator('video').evaluate(v => v.paused), false, 'play is submitted before metadata');
@@ -135,6 +137,8 @@ const server = http.createServer((req, res) => {
     results.push({name: 'retained-source-position', position, time: await page.locator('video').evaluate(v => v.currentTime)});
 
     await page.evaluate(() => mountPlayer('cancelled'));
+    assert.equal(await page.locator('video').evaluate(v => v.paused), true, 'a new video does not inherit Play');
+    await page.locator('[data-bev-video-player]').press('Space');
     await page.locator('[data-bev-video-player]').press('Space');
     assert.equal(await page.locator('[data-bev-video-player]').getAttribute('data-playback-state'), 'paused');
     assert.equal(await page.locator('video').evaluate(v => v.paused), true);
