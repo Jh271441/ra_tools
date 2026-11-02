@@ -361,7 +361,7 @@ safeSameOriginAssetUrl=(url)=>String(url).split('#')[0];
 const markup=videoPlayerMarkup({url:'/api/assets/cn1/bev-video',start_offset_sec:-20,event_time_sec:0,duration_ms:40000});
 assert.match(markup,/data-start-offset-sec="-20"/);
 assert.match(markup,/data-t0-player-sec="20"/);
-assert.match(markup,/src="\/api\/assets\/cn1\/bev-video#t=20"/);
+assert.match(markup,/src="\/api\/assets\/cn1\/bev-video\?playback=short-gop-v1#t=20"/);
 assert.match(markup,/preload="metadata"/);
 assert.doesNotMatch(markup,/data-event-time-sec/);
 assert.equal(videoT0PlayerPosition(40,39),20);
