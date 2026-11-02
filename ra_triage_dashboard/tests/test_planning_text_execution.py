@@ -1,5 +1,6 @@
 """Failure isolation and small-result recovery across native task outcomes."""
 import io
+import shlex
 import json
 from pathlib import Path
 import shutil
@@ -16,7 +17,7 @@ from unittest.mock import patch
 from ra_triage_dashboard.app.planning_text_artifact import identity, object_key, write_artifact
 from ra_triage_dashboard.app.planning_text_daily import register_owner, read_daily_window
 from ra_triage_dashboard.scripts.planning_text import hook, import_results, worker
-from ra_triage_dashboard.scripts.planning_text import runner
+from ra_triage_dashboard.scripts.planning_text import runner, media_adapter
 from ra_triage_dashboard.tests.test_planning_text_daily import ANCHOR, MEMBER, observation
 
 
@@ -129,6 +130,56 @@ class ExecutionTest(unittest.TestCase):
             self.assertEqual(installed.run_workflow(copy.deepcopy(baseline)), 'unchanged-video')
             original.assert_called_once_with(baseline)
         self.assertEqual(json.loads((self.root/'video/.control/planning-text/error.json').read_text())['state'], 'text_requires_review')
+
+    def test_original_bev_context_is_verified_for_primary_retry_and_local_sources(self):
+        work = self.root/'version-work'
+        work.mkdir()
+        row = dict(issue_id=MEMBER['issue_id'], trip_id=MEMBER['trip_id'], capture_timestamp_ms=MEMBER['anchor_ms'])
+        source = work/'media-source.json'
+        source.write_text(json.dumps([row]))
+        context = work/'version-context.json'
+        context.write_text(json.dumps(dict(ready=True, family='20261016', dataset_id='release-20261016-odd2')))
+        primary = runner.source_version_context(source, [row])
+        for name in ('recovery/source.json', 'recovery/local/cn1234/1/source.json'):
+            retry = self.root/name
+            retry.parent.mkdir(parents=True, exist_ok=True)
+            retry.write_text(json.dumps([row]))
+            self.assertEqual(runner.source_version_context(retry, [row], context), primary)
+            with patch.object(sys, 'argv', ['runner.py', 'run-local', '--source-rows', str(retry)]), patch.object(runner, '_read_history_window', return_value=None):
+                member = runner.members_for(dict(source_rows=str(retry), output=str(self.root/'run')), dict(data_dir=str(self.root/'data'), worker_source_sha256='d'*64), 'bev-original', claim=False, version_context_path=context)[0]
+            self.assertEqual((member['version'], member['datasets']), ('20261016', ['release-20261016-odd2']))
+        with self.assertRaisesRegex(ValueError, 'identity_mismatch'):
+            runner.source_version_context(source, [dict(row, capture_timestamp_ms=row['capture_timestamp_ms']+1)], context)
+
+    def test_recovery_adapter_carries_context_without_rewriting_frozen_claims(self):
+        from unittest.mock import Mock
+        work = self.root/'work'
+        work.mkdir()
+        context = work/'version-context.json'
+        context.write_text('{}')
+        native = SimpleNamespace(run=Mock())
+        controller = SimpleNamespace(ROOT=self.root, command=Mock())
+        fallback = str(self.root/'tools/manual_sidecar/local_fallback.py')
+        recovery = SimpleNamespace(subprocess=native)
+        def tick(_work):
+            controller.command(['python', '-m', 'ares_animation', 'run-orion', '--submit'], 'log')
+            recovery.subprocess.run(['tmux', 'new-session', '-d', '-s', 'same-owned-session', shlex.join(['python', fallback, '--attempt', '/attempt'])], check=True)
+        recovery.tick = tick
+        original_command = controller.command
+        media_adapter.install(controller, recovery)
+        recovery.tick(work)
+        forwarded = original_command.call_args.args[0]
+        self.assertEqual(forwarded[-2:], ['--planning-version-context', str(context)])
+        local = shlex.split(native.run.call_args.args[0][-1])
+        self.assertTrue(local[1].endswith('/planning_text/local_fallback.py'))
+        self.assertEqual(local[-2:], ['--planning-version-context', str(context)])
+        controller.command(['python', '-m', 'ares_animation', 'run-orion'], 'next-log')
+        self.assertNotIn('--planning-version-context', original_command.call_args.args[0])
+
+    def test_wrapper_context_option_is_removed_before_official_cli_parsing(self):
+        with patch.object(sys, 'argv', ['runner.py', 'run-local', '--planning-version-context', str(self.root/'context.json'), '--source-rows', 'source.json']):
+            self.assertEqual(runner.take_version_context(), (self.root/'context.json').resolve())
+            self.assertEqual(sys.argv, ['runner.py', 'run-local', '--source-rows', 'source.json'])
 
     def test_failed_video_task_can_publish_early_text_once_without_any_bag_read(self):
         data = self.root/'data'

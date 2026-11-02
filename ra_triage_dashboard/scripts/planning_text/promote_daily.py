@@ -95,8 +95,7 @@ def preflight(args):
 def install_release(sha_value):
     release = TASK/'daily-sidecar/releases'/sha_value
     release.mkdir(parents=True, exist_ok=False)
-    paths = ['ra_triage_dashboard/__init__.py',
-             'ra_triage_dashboard/scripts/bev_closeup', 'ra_triage_dashboard/scripts/planning_text',
+    paths = ['ra_triage_dashboard/scripts/bev_closeup', 'ra_triage_dashboard/scripts/planning_text',
              'ra_triage_dashboard/config/bev_closeup']
     paths += ['ra_triage_dashboard/app/'+name for name in (
         '__init__.py', 'planning_constraint_extract.py', 'planning_constraints.py',

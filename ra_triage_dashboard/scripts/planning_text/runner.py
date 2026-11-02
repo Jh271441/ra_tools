@@ -25,6 +25,40 @@ from ra_triage_dashboard.scripts.planning_text.hook import save
 CONTROL = Path('/volume/home/workspace/ra_triage_dashboard_deploy/operations/bev-closeup-full-20261029/planning-text/control.json')
 
 
+def take_version_context():
+    """Consume our wrapper option before forwarding the official CLI arguments."""
+    option = '--planning-version-context'
+    if option not in sys.argv:
+        return None
+    if sys.argv.count(option) != 1:
+        raise ValueError('planning_version_context_ambiguous')
+    index = sys.argv.index(option)
+    if index + 1 >= len(sys.argv):
+        raise ValueError('planning_version_context_missing')
+    path = Path(sys.argv[index + 1]).resolve()
+    del sys.argv[index:index + 2]
+    return path
+
+
+def source_version_context(source, rows, supplied=None):
+    path = Path(supplied) if supplied is not None else source.with_name('version-context.json')
+    if not path.is_file():
+        if supplied is not None:
+            raise ValueError('planning_version_context_missing')
+        return {}
+    context = json.loads(path.read_text())
+    family = context.get('family', '')
+    if (context.get('ready') is not True or not re.fullmatch(r'20[0-9]{6}', family)
+            or context.get('dataset_id') not in {'version-'+family, 'release-'+family+'-odd2'}):
+        raise ValueError('planning_version_context_mismatch')
+    authority = json.loads(path.with_name('media-source.json').read_text())
+    keys = [(r['issue_id'], r['trip_id'], r['capture_timestamp_ms']) for r in authority]
+    requested = {(r['issue_id'], r['trip_id'], r['capture_timestamp_ms']) for r in rows}
+    if len(keys) != len(set(keys)) or not requested.issubset(set(keys)):
+        raise ValueError('planning_version_context_identity_mismatch')
+    return context
+
+
 def selected_control(path=None):
     path = Path(path or os.environ.get('PLANNING_TEXT_CONTROL', str(CONTROL)))
     if not path.exists():
@@ -44,20 +78,15 @@ def selected_control(path=None):
     return value
 
 
-def members_for(config, profile, lane, *, claim=True):
+def members_for(config, profile, lane, *, claim=True, version_context_path=None):
     rows = json.loads(Path(config['source_rows']).read_text())
     members = []
     original_rows, version_context = {}, {}
     if '--source-rows' in sys.argv:
         source = Path(sys.argv[sys.argv.index('--source-rows')+1])
-        original_rows = {(r['issue_id'], r['trip_id'], r['capture_timestamp_ms']): r
-                         for r in json.loads(source.read_text())}
-        context_path = source.with_name('version-context.json')
-        if context_path.is_file():
-            version_context = json.loads(context_path.read_text())
-            family = version_context.get('family', '')
-            if not re.fullmatch(r'20[0-9]{6}', family) or version_context.get('dataset_id') != 'version-'+family:
-                raise ValueError('planning_version_context_mismatch')
+        originals = json.loads(source.read_text())
+        original_rows = {(r['issue_id'], r['trip_id'], r['capture_timestamp_ms']): r for r in originals}
+        version_context = source_version_context(source, originals, version_context_path)
     for row in rows:
         iid, trip, anchor = row['issue_id'], row['trip_id'], row['capture_timestamp_ms']
         metadata = original_rows.get((iid, trip, anchor), row)
@@ -92,14 +121,14 @@ def members_for(config, profile, lane, *, claim=True):
     return members
 
 
-def overlay_config(config, profile):
+def overlay_config(config, profile, version_context_path=None):
     from ares_animation.distribution.tool_artifact import publish_tool_artifact
     import ares_animation.workflow as workflow
     root = Path(config['output']).resolve()
     control = root/'.control/planning-text'
     lane = 'bev-closeup' if config.get('video', {}).get('size') == '1920x1080' else 'bev-original'
     submit_intent = config['target'] == 'local' or '--submit' in sys.argv
-    members = members_for(config, profile, lane, claim=submit_intent)
+    members = members_for(config, profile, lane, claim=submit_intent, version_context_path=version_context_path)
     control.mkdir(parents=True, exist_ok=True)
     save(control/('members.json' if submit_intent else 'members.preview.json'), members)
     if config['target'] == 'orion':
@@ -154,7 +183,7 @@ def overlay_config(config, profile):
     return config
 
 
-def install():
+def install(version_context_path=None):
     from ares_animation import cli
     try:
         profile = selected_control()
@@ -166,7 +195,7 @@ def install():
         def run(config, **kwargs):
             baseline = copy.deepcopy(config)
             try:
-                configured = overlay_config(config, profile)
+                configured = overlay_config(config, profile, version_context_path) if version_context_path else overlay_config(config, profile)
             except Exception as exc:
                 save(Path(config['output'])/'.control/planning-text/error.json',
                      dict(state='text_requires_review', code=type(exc).__name__,
@@ -180,7 +209,7 @@ def install():
 
 
 def main():
-    return install().main()
+    return install(take_version_context()).main()
 
 
 if __name__ == '__main__':
