@@ -65,7 +65,9 @@ from ..runtime import (
     settings,
     trail_detail_semaphore,
     video_index,
+    video_playback_cache,
 )
+from ..video_playback import RECIPE as VIDEO_PLAYBACK_RECIPE
 from ..trail_sync import read_trail_issue_metadata
 from ..work_split import distribute_issue_ids, normalize_overlap_ratio
 from ..db_parts.task_lifecycle import normalize_task_lifecycle, task_list_metrics
@@ -1553,7 +1555,7 @@ async def get_case(
 
 
 @router.get("/api/assets/{issue_id}/{asset_id}")
-async def get_asset(issue_id: str, asset_id: str) -> FileResponse:
+async def get_asset(issue_id: str, asset_id: str, playback: str = "") -> FileResponse:
     case = await asyncio.to_thread(database.get_issue, issue_id)
     scope = str((case or {}).get("baseline_scope") or "")
     provider = media_for_issue(issue_id, scope)
@@ -1581,12 +1583,16 @@ async def get_asset(issue_id: str, asset_id: str) -> FileResponse:
         else "image/png"
     )
     if suffix == ".mp4":
+        # Resolve/index/scope checks above always run first. Encoding is never
+        # awaited here: missing copies immediately retain the original stream.
+        copy = await asyncio.to_thread(video_playback_cache.request, path) if playback == VIDEO_PLAYBACK_RECIPE else None
         return FileResponse(
-            path,
+            copy or path,
             media_type=media_type,
             headers={
                 "Accept-Ranges": "bytes",
-                "Cache-Control": "private, max-age=300, must-revalidate",
+                "Cache-Control": "private, max-age=300, must-revalidate" if copy or not playback else "private, no-store",
+                "X-Video-Playback": VIDEO_PLAYBACK_RECIPE if copy else "original",
                 "Content-Disposition": "inline",
                 "X-Content-Type-Options": "nosniff",
             },

@@ -31,8 +31,17 @@ function videoT0PlayerPosition(configuredDuration, decodedDuration = 0) {
   return total / 2;
 }
 
-function videoPlaybackSourceUrl(url, startSec = null) {
+function videoCanonicalAssetUrl(url) {
   const source = safeSameOriginAssetUrl(url);
+  if (!source) return "";
+  const parsed = new URL(source, "http://localhost");
+  if (parsed.searchParams.get("playback") === "short-gop-v1") parsed.searchParams.delete("playback");
+  return parsed.pathname + parsed.search;
+}
+
+function videoPlaybackSourceUrl(url, startSec = null) {
+  const canonical = videoCanonicalAssetUrl(url);
+  const source = canonical ? `${canonical}${canonical.includes("?") ? "&" : "?"}playback=short-gop-v1` : "";
   const position = Number(startSec);
   // A start-only media fragment lets the native loader request the nearest
   // keyframe before our metadata handler runs. It never limits the clip end.
@@ -139,7 +148,7 @@ function handleVideoSourceShortcut(event) {
   const stage = inDialog ? $("#mediaVideoStage") : pane;
   const video = stage?.querySelector("video");
   // Native start hints (#t=...) describe playback position, not source identity.
-  const currentUrl = safeSameOriginAssetUrl(video?.getAttribute("src")
+  const currentUrl = videoCanonicalAssetUrl(video?.getAttribute("src")
     || (inDialog ? state.media.snapshot?.videoTrack : state.detailMedia.videoTrack)
     || descriptor?.url);
   const rememberedUrl = inDialog ? state.media.snapshot?.videoTrack
@@ -163,7 +172,7 @@ function handleVideoSourceShortcut(event) {
   if (inDialog) {
     if (state.media.kind !== "video") switchMediaKind("video");
     const activeVideo = stage?.querySelector("video");
-    if (safeSameOriginAssetUrl(activeVideo?.getAttribute("src")) === track.url) return true;
+    if (videoCanonicalAssetUrl(activeVideo?.getAttribute("src")) === track.url) return true;
     const select = stage?.querySelector("[data-video-track]");
     if (select && Array.from(select.options).some(option => option.value === track.url && !option.disabled)) {
       select.value = track.url;
@@ -210,7 +219,7 @@ function refreshVideoFramePosters(root, caseData) {
   const tracks = [descriptor, ...descriptor.tracks];
   root?.querySelectorAll("[data-bev-video-player]").forEach(player => {
     const video = player.querySelector("video");
-    const track = tracks.find(item => item.url === safeSameOriginAssetUrl(video?.getAttribute("src")));
+    const track = tracks.find(item => item.url === videoCanonicalAssetUrl(video?.getAttribute("src")));
     // Updating a native poster never reloads the source or seeks the player.
     if (track?.poster_url) video.setAttribute("poster", track.poster_url);
     player.querySelectorAll("[data-video-track] option").forEach(option => {
@@ -322,6 +331,38 @@ function bindBevVideoPlayers(root) {
     let playing = false;
     let hasPlayed = false;
     let loadTimer = null;
+    let heldFrame = null;
+    let heldTarget = null;
+    const holdFrame = (target) => {
+      heldTarget = target;
+      if (heldFrame || video.readyState < 2 || !video.videoWidth || !video.videoHeight) return;
+      // Keep the last decoded frame while native load()/seek replaces its
+      // surface. A new source's t0 poster is not the requested retained frame.
+      const canvas = document.createElement("canvas");
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      try {
+        canvas.getContext("2d").drawImage(video, 0, 0);
+      } catch { return; }
+      canvas.className = "video-source-frame";
+      canvas.setAttribute("aria-hidden", "true");
+      video.after(canvas);
+      heldFrame = canvas;
+    };
+    const releaseHeldFrame = () => {
+      if (!heldFrame || metadataGeneration !== sourceGeneration) return;
+      const canvas = heldFrame, generation = sourceGeneration, request = seekRequest, target = heldTarget;
+      const commit = () => {
+        if (disposed || generation !== sourceGeneration || request !== seekRequest || canvas !== heldFrame
+            || video.seeking || video.readyState < 2 || video.error
+            || video.currentTime < target - 0.11) return;
+        canvas.remove();
+        heldFrame = null;
+        heldTarget = null;
+      };
+      // Media events can precede compositor adoption, especially while paused.
+      window.requestAnimationFrame(() => window.requestAnimationFrame(commit));
+    };
     const listeners = [];
     const listen = (target, name, handler) => {
       target.addEventListener(name, handler);
@@ -354,6 +395,7 @@ function bindBevVideoPlayers(root) {
       if (loadTimer !== null) window.clearTimeout(loadTimer);
       loadTimer = null;
       setStatus("ready");
+      releaseHeldFrame();
       // Buffered seeks can resume without another `playing` event.
       if (hasPlayed && wantsPlayback && !suspended && !video.paused && video.readyState >= 3) {
         playing = true;
@@ -392,6 +434,7 @@ function bindBevVideoPlayers(root) {
     const seekTo = (target) => {
       if (disposed) return;
       if (video.readyState < 1) { pendingStart = target; update(target); return; }
+      holdFrame(target);
       if (queuedSeekTimer !== null) window.clearTimeout(queuedSeekTimer);
       queuedSeekTimer = null;
       queuedSeekTarget = null;
@@ -406,6 +449,7 @@ function bindBevVideoPlayers(root) {
         if (fallbackTimer) window.clearTimeout(fallbackTimer);
         cancelPendingSeek = null;
         update();
+        releaseHeldFrame();
         // Some Chromium video decoders update currentTime before the paused
         // frame reaches the compositor. Reconcile the controls on the next
         // paint without accumulating decoded-frame callbacks on paused video.
@@ -513,8 +557,9 @@ function bindBevVideoPlayers(root) {
       });
     });
     const loadSource = (url, poster = "") => {
-      sourceGeneration += 1;
       pendingStart = video.readyState >= 1 && Number.isFinite(video.currentTime) ? video.currentTime : pendingStart;
+      holdFrame(pendingStart);
+      sourceGeneration += 1;
       ++playbackAttempt;
       playPending = false;
       playing = false;
@@ -656,6 +701,8 @@ function bindBevVideoPlayers(root) {
     video._disposeBevPlayer = () => {
       if (disposed) return;
       disposed = true;
+      heldFrame?.remove();
+      heldFrame = null;
       planningConstraint.dispose();
       ++playbackAttempt;
       ++sourceGeneration;

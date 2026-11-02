@@ -46,10 +46,12 @@ function playerFixture({readyState=4,context=null,initialTime=0,durationSec=40,.
  p.ctx.escapeHtml=String;
  const markup=p.ctx.videoPlayerMarkup(descriptor);
  assert(!markup.includes('data-video-playback-state'),'playback feedback stays in the existing button, with no status slot');
- assert(p.ctx.videoPlayerMarkup({...descriptor,duration_ms:40000}).includes('src="/bev.mp4#t=20"'),'initial resource selection advertises t0 before metadata');
- assert.equal(p.ctx.videoPlaybackSourceUrl('/bev.mp4?version=2#t=1',23.45678),'/bev.mp4?version=2#t=23.457');
- assert.equal(p.ctx.videoPlaybackSourceUrl('/bev.mp4',0),'/bev.mp4#t=0');
- for(const position of [null,NaN,-1,Infinity])assert.equal(p.ctx.videoPlaybackSourceUrl('/bev.mp4',position),'/bev.mp4');
+ assert(p.ctx.videoPlayerMarkup({...descriptor,duration_ms:40000}).includes('src="/bev.mp4?playback=short-gop-v1#t=20"'),'initial resource selection advertises t0 before metadata');
+ assert.equal(p.ctx.videoPlaybackSourceUrl('/bev.mp4?version=2#t=1',23.45678),'/bev.mp4?version=2&playback=short-gop-v1#t=23.457');
+ assert.equal(p.ctx.videoPlaybackSourceUrl('/bev.mp4',0),'/bev.mp4?playback=short-gop-v1#t=0');
+ assert.equal(p.ctx.videoCanonicalAssetUrl('/bev.mp4?version=2&playback=short-gop-v1#t=20'),'/bev.mp4?version=2');
+ assert.equal(p.ctx.videoPlaybackSourceUrl('/bev.mp4?playback=short-gop-v1#t=20',23),'/bev.mp4?playback=short-gop-v1#t=23','retry does not duplicate the playback query');
+ for(const position of [null,NaN,-1,Infinity])assert.equal(p.ctx.videoPlaybackSourceUrl('/bev.mp4',position),'/bev.mp4?playback=short-gop-v1');
  assert(markup.indexOf('class="bev-video-progress-row"')<markup.indexOf('data-video-status role='),'warnings follow the timeline, never split it from playback controls');
  assert(markup.includes('data-video-status role="status" aria-live="polite" hidden'),'first paint has no loading status row');
  assert.equal(descriptor.poster_url,'/full-bev.jpg');assert.equal(descriptor.tracks[1].poster_url,'/full-camera.jpg');
@@ -75,7 +77,7 @@ function playerFixture({readyState=4,context=null,initialTime=0,durationSec=40,.
  assert.equal(v.seeks.length,1,'drag coalesces network seeks');p.flush(75);assert.equal(v.seeks.at(-1),9.9);assert.equal(v.seeks.length,2);
  e.seek.value='32';e.seek.fire('input');e.track.value='/camera.mp4';e.track.selectedOptions=[{dataset:{poster:'/camera.jpg'}}];e.track.fire('change');
  assert.equal(v.attrs.poster,'/camera.jpg');p.flush(75);assert.equal(v.seeks.length,2,'source switch cancels queued old seek');
- assert.equal(v.src,'/camera.mp4#t=9.9');v.readyState=1;v.fire('loadedmetadata');assert.equal(v.seeks.length,2);assert.equal(v.seeks.at(-1),9.9);
+ assert.equal(v.src,'/camera.mp4?playback=short-gop-v1#t=9.9');v.readyState=1;v.fire('loadedmetadata');assert.equal(v.seeks.length,2);assert.equal(v.seeks.at(-1),9.9);
  v.readyState=4;v.fire('loadeddata');assert.equal(p.player.dataset.loadState,'ready');
  e.rate.value='1.5';e.rate.fire('change');
  e.track.value='/api/assets/cn1/bev-closeup-video';e.track.selectedOptions=[{dataset:{poster:'/closeup-t0.jpg'}}];e.track.fire('change');
@@ -90,6 +92,19 @@ function playerFixture({readyState=4,context=null,initialTime=0,durationSec=40,.
  cachedError.ctx.releaseBevVideoPlayer(cachedError.root);
  const buffered=playerFixture();buffered.video.fire('loadeddata');buffered.video.fire('stalled');assert.equal(buffered.player.dataset.loadState,'ready','buffered paused video must not show slow-load warning');
  buffered.video._refreshBevPlayerLanguage();assert.equal(buffered.video.getAttribute('aria-label'),'复核视频');buffered.ctx.releaseBevVideoPlayer(buffered.root);
+ // Native load/seek may flash its new poster or frame0 before the retained
+ // target is decoded. Keep exactly the last valid frame across rapid changes.
+ const transition=playerFixture(),tv=transition.video,snapshots=[];let held=null;
+ tv.videoWidth=32;tv.videoHeight=18;
+ transition.ctx.document={createElement:()=>({getContext:()=>({drawImage:v=>snapshots.push(v.currentTime)}),setAttribute(){},remove(){held=null;}})};
+ tv.after=canvas=>{held=canvas;};
+ tv._setBevVideoTrack('/closeup.mp4','/closeup-t0.jpg');assert(held);assert.deepEqual(snapshots,[20]);
+ tv.currentTime=0;tv.readyState=2;tv.fire('loadeddata');assert(held,'frame0 before metadata must stay covered');
+ tv.readyState=1;tv.fire('loadedmetadata');assert(held,'metadata alone cannot replace the previous decoded frame');
+ tv.readyState=4;tv.fire('seeked');assert.equal(held,null,'the correctly decoded target replaces the held frame');
+ tv.currentTime=23;tv._setBevVideoTrack('/one.mp4');const firstHeld=held;
+ tv._setBevVideoTrack('/two.mp4');assert.equal(held,firstHeld);assert.deepEqual(snapshots,[20,23],'rapid sources cannot snapshot an intermediate wrong frame');
+ transition.ctx.releaseBevVideoPlayer(transition.root);assert.equal(held,null,'teardown releases the full-resolution snapshot');
  // Rapid source changes before metadata arrives must retain playing intent.
  const rapid=playerFixture();rapid.elements.rate.value='1.5';rapid.video.currentTime=23;rapid.elements.play.fire('click');
  rapid.video._setBevVideoTrack('/closeup.mp4');rapid.video._setBevVideoTrack('/original.mp4');
@@ -112,7 +127,7 @@ function playerFixture({readyState=4,context=null,initialTime=0,durationSec=40,.
  pv.fire('seeked');assert.equal(pendingPlay.player.dataset.playbackState,'playing','a buffered seek can resume without another playing event');
  pv.fire('playing');
  pv._setBevVideoTrack('/source-one.mp4');pv._setBevVideoTrack('/source-two.mp4');
- assert.equal(pv.src,'/source-two.mp4#t=20','rapid source switches keep the native start hint');
+ assert.equal(pv.src,'/source-two.mp4?playback=short-gop-v1#t=20','rapid source switches keep the native start hint');
  assert.equal(pendingPlay.player.dataset.playbackState,'waiting');
  assert.equal(pv.plays,4,'each new source submits asynchronous playback without waiting for metadata');
  pv.readyState=4;pv.fire('loadedmetadata');assert.equal(pv.plays,4,'metadata must not start a duplicate play attempt');

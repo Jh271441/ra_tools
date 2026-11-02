@@ -106,7 +106,7 @@ const server = http.createServer((req, res) => {
     });
     assert.equal(await page.locator('video').evaluate(v => v.paused), true, 'preloading does not start playback');
     await page.locator('[data-bev-video-player]').press('Space');
-    assert.equal(await page.locator('video').getAttribute('src'), '/api/initial.mp4#t=20');
+    assert.equal(await page.locator('video').getAttribute('src'), '/api/initial.mp4?playback=short-gop-v1#t=20');
     assert.equal(await page.locator('video').evaluate(v => v.readyState), 0);
     assert.equal(await page.locator('video').evaluate(v => v.paused), false, 'play is submitted before metadata');
     const waitPlaying = () => page.waitForFunction(() => !video.paused && !video.seeking && video.currentTime > 20.2
@@ -130,7 +130,7 @@ const server = http.createServer((req, res) => {
       const position = video.currentTime;
       video._setBevVideoTrack('/api/source-next.mp4'); return position;
     });
-    assert.match(await page.locator('video').getAttribute('src'), /source-next\.mp4#t=2\d/);
+    assert.match(await page.locator('video').getAttribute('src'), /source-next\.mp4\?playback=short-gop-v1#t=2\d/);
     await waitPlaying();
     assert.ok(await page.locator('video').evaluate((v, p) => v.currentTime >= p - .02, position));
     assert.equal(await page.locator('video').evaluate(v => v.playbackRate), 1.5);

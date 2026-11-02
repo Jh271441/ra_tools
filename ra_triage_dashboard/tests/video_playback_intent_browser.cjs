@@ -112,7 +112,7 @@ const server = http.createServer((req, res) => {
         assert.equal(await player.getAttribute('data-playback-state'), 'waiting');
         assert.equal(await player.locator('[data-video-play]').innerText(), lang === 'zh' ? '暂停' : 'Pause');
         assert.equal(await player.locator('video').evaluate(v => v.readyState), 0, 'feedback precedes metadata');
-        assert.equal(await player.locator('video').getAttribute('src'), `/api/${id}.mp4#t=20`);
+        assert.equal(await player.locator('video').getAttribute('src'), `/api/${id}.mp4?playback=short-gop-v1#t=20`);
         assert.equal(await player.locator('video').evaluate(v => v.paused), false, 'native asynchronous playback is already requested');
         assert.equal(await player.locator('[data-video-playback-state]').count(), 0, 'no extra visible status or spacer');
         assert.ok(await player.locator('[data-video-play]').evaluate(button => button.nextElementSibling.matches('[data-video-jump="-1"]')));
@@ -131,9 +131,11 @@ const server = http.createServer((req, res) => {
           v._setBevVideoTrack('/api/rapid-two.mp4', '/api/poster.png');
         });
         assert.equal(await player.getAttribute('data-playback-state'), 'waiting');
+        assert.equal(await player.locator('.video-source-frame').count(), 1, 'rapid source changes keep the previous decoded frame');
         await page.keyboard.press('Space');
         assert.equal(await player.getAttribute('data-playback-state'), 'paused');
         await waitReady(); assert.equal(await player.locator('video').evaluate(v => v.paused), true);
+        await page.waitForFunction(() => !detailHeroMediaEl().querySelector('.video-source-frame'));
         await page.keyboard.press('Space'); await waitPlaying();
         const before = await player.locator('video').evaluate(v => v.currentTime);
         await page.evaluate(() => {

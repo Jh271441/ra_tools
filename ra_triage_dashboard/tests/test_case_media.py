@@ -11,6 +11,32 @@ from ra_triage_dashboard.app.routers import cases as cases_router
 
 
 class DeferredCaseMediaTest(unittest.IsolatedAsyncioTestCase):
+    async def test_playback_copy_keeps_asset_scope_checks_and_falls_back_immediately(self):
+        from fastapi import HTTPException
+        provider = MagicMock()
+        original, optimized = Path("/indexed/video.mp4"), Path("/cache/video.mp4")
+        provider.get_asset_path.return_value = original
+        with patch.object(cases_router.database, "get_issue", return_value={"baseline_scope": "strict"}), \
+             patch.object(cases_router, "media_for_issue", return_value=provider), \
+             patch.object(cases_router.video_playback_cache, "request", return_value=optimized) as prepare:
+            response = await cases_router.get_asset("cn1", "bev-video-0", "short-gop-v1")
+            self.assertEqual(response.path, optimized)
+            self.assertEqual(response.headers["accept-ranges"], "bytes")
+            self.assertEqual(response.headers["x-video-playback"], "short-gop-v1")
+            prepare.assert_called_once_with(original)
+            prepare.return_value = None
+            response = await cases_router.get_asset("cn1", "bev-video-0", "short-gop-v1")
+            self.assertEqual(response.path, original)
+            self.assertIn("no-store", response.headers["cache-control"])
+            prepare.reset_mock()
+            self.assertEqual((await cases_router.get_asset("cn1", "bev-video-0")).path, original)
+            prepare.assert_not_called()
+            provider.get_asset_path.return_value = None
+            with self.assertRaises(HTTPException) as error:
+                await cases_router.get_asset("cn1", "bev-video-0", "short-gop-v1")
+            self.assertEqual(error.exception.status_code, 404)
+            prepare.assert_not_called()
+
     async def test_registry_reference_media_does_not_create_case_or_invent_planning_anchor(self):
         from fastapi import Response, HTTPException
         from ra_triage_dashboard.app import planning_constraints
