@@ -1,5 +1,15 @@
 # 局部 BEV 视频旁路
 
+## 视频起播提示与源切换（2026-11-02，候选修复）
+
+cache736/737 的原生起播提示为视频 `src` 增加 `#t=<秒>`，源快捷键仍以完整字符串比较，导致第二次 Shift+V 无法从局部 BEV 返回原始源。源身份现在复用 `safeSameOriginAssetUrl`：忽略播放片段，保留基础路径及版本查询参数。弹窗中 V/O 的同源判断也沿用此规则，避免重复选择当前源导致重新加载。现有共享下拉、视频位置／倍速／播放意图、Camera 排除规则和输入／IME 保护不变。cache738；尚未发布。
+
+Native start hints append `#t=<seconds>` to the playback URL. Source shortcuts compare canonical same-origin asset URLs, preserving base paths and version queries while ignoring playback fragments. Shift+V toggles both ways; V/O do not reload an already selected source. Candidate cache738, not deployed.
+
+验证：78 项相关测试通过。回归用例在旧实现因第二次 Shift+V 无法返回原始源而失败，修复后通过。Codex 侧边栏本地媒体夹具覆盖 Review 1440px 中文深色、320px 英文浅色、标注页 390px 英文深色和桌面展开弹窗；双向切换保留 23 秒位置、1.5 倍速与暂停状态，输入框中 Shift+V 仅输入文字，无页面横向溢出。使用实际 Workbench 模块及共享控件；两种源使用同一段本地视频，只验证切换行为，不代表线上发布、手机真机或 Safari 验收。
+
+Validation: the regression fails on the prior handler at the second Shift+V and passes with the fix. Local in-app browser coverage includes Review at 1440px (Chinese/dark) and 320px (English/light), labeling at 390px (English/dark), and the expanded desktop dialog. Both source URLs serve the same local clip. This verifies control behavior with actual Workbench modules and shared controls; it does not establish production, physical-phone, or Safari acceptance.
+
 ## Daily 三种媒体接入（2026-10-31）
 
 `/manual/daily-cron` 保持“推理回刷 / 平台与媒体”两条链。媒体内增加第三项局部 BEV，与 Camera、BEV 共用所选版本或旧日期批次的目标分母，分别验收和发布。顶部主数及“三媒体验证”节点使用同批发布回执交集，既有 `verified` 双媒体字段保留，新增 `triple_verified`，不改变其他调用方或 Camera 的原发布后1小时清理策略。

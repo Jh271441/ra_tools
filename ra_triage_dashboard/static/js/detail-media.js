@@ -75,9 +75,10 @@ function handleVideoSourceShortcut(event) {
   const descriptor = inDialog ? mediaVideo() : videoWithFramePosters(caseData);
   const stage = inDialog ? $("#mediaVideoStage") : pane;
   const video = stage?.querySelector("video");
-  const currentUrl = video?.getAttribute("src")
+  // Native start hints (#t=...) describe playback position, not source identity.
+  const currentUrl = safeSameOriginAssetUrl(video?.getAttribute("src")
     || (inDialog ? state.media.snapshot?.videoTrack : state.detailMedia.videoTrack)
-    || descriptor?.url;
+    || descriptor?.url);
   const rememberedUrl = inDialog ? state.media.snapshot?.videoTrack
     : state.detailMedia.preferredVideoTrack || state.detailMedia.videoTrack;
   const tracks = videoSourceTracks(descriptor);
@@ -99,7 +100,7 @@ function handleVideoSourceShortcut(event) {
   if (inDialog) {
     if (state.media.kind !== "video") switchMediaKind("video");
     const activeVideo = stage?.querySelector("video");
-    if (activeVideo?.getAttribute("src") === track.url) return true;
+    if (safeSameOriginAssetUrl(activeVideo?.getAttribute("src")) === track.url) return true;
     const select = stage?.querySelector("[data-video-track]");
     if (select && Array.from(select.options).some(option => option.value === track.url && !option.disabled)) {
       select.value = track.url;
