@@ -289,8 +289,8 @@ assert.equal(submitReviewFromDropdown(summaryEnter,summary),true);
 assert.equal(form.submittedWith,saveButton);
 const space={target:inputs[0],key:' ',ctrlKey:false,metaKey:false,altKey:false,preventDefault(){},stopPropagation(){}};
 assert.equal(handleReviewDropdownKeyboard(space),true);
-assert.equal(inputs[0].checked,true);
-assert.equal(inputs[0].lastEvent.type,'change');
+assert.equal(inputs[0].checked,false,'Space is reserved for video; numbers select tags');
+assert.equal(inputs[0].lastEvent,undefined);
 '''
     subprocess.run(["node", "-e", script], check=True, capture_output=True)
 

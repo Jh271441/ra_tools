@@ -147,14 +147,14 @@ function bindPlanningConstraint(player, video, getPosition = () => video.current
       event.preventDefault(); event.stopPropagation(); close(true); return;
     }
     const target = event.target instanceof Element ? event.target : null;
-    const editable = target?.closest('input, textarea, select, .ui-select, [contenteditable]:not([contenteditable="false"]), [role="textbox"]');
+    const editable = mediaShortcutHasEditableTarget(target);
     if (!event.shiftKey && String(event.key).toLowerCase() === 'g') {
       if (event.repeat || editable || trigger.disabled || !trigger.getClientRects().length) return;
       // Only the visible player in the active dialog owns this shortcut. The
       // inline player remains mounted underneath expanded media and other dialogs.
       const dialog = document.querySelector('dialog[open]');
       if (dialog ? !dialog.contains(player) : player.closest('dialog')) return;
-      if (document.querySelector('.review-dropdown[open], .ui-select.is-open, .review-status-picker.is-open, .detail-media-picker.is-open')) return;
+      if (document.querySelector('.ui-select.is-open, .review-status-picker.is-open, .detail-media-picker.is-open')) return;
       event.preventDefault(); event.stopPropagation();
       toggle();
       if (!open) trigger.focus({preventScroll: true});

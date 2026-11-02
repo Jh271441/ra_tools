@@ -377,7 +377,7 @@ function bindUiSelect(root, { onChange, maxHeight = 320, maxWidth = 420, escapeF
     event.stopPropagation();
     if (event.key === "Escape") {
       closeAllUiSelects();
-      if (escapeFocus === "blur") {
+      if (escapeFocus === "blur" || root.closest?.("#reviewPane, #detailPane, #caseLabelingDetail, #mediaDialog")) {
         event.preventDefault();
         trigger.blur();
       }
@@ -402,7 +402,7 @@ function bindUiSelect(root, { onChange, maxHeight = 320, maxWidth = 420, escapeF
       event.preventDefault();
       closeAllUiSelects();
       // Review shortcuts must leave the control; ordinary pickers restore the trigger.
-      if (escapeFocus === "blur") {
+      if (escapeFocus === "blur" || root.closest?.("#reviewPane, #detailPane, #caseLabelingDetail, #mediaDialog")) {
         const active = document.activeElement;
         if (root.contains(active)) active?.blur();
       } else trigger.focus();

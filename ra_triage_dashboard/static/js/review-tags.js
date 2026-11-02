@@ -471,11 +471,10 @@ function handleReviewDropdownKeyboard(event) {
     inputs[nextIndex].closest("label")?.scrollIntoView({ block: "nearest" });
     return true;
   }
-  if (event.key === " " && currentIndex >= 0) {
+  if (event.key === " ") {
+    if (typeof handleDetailMediaShortcut === "function") handleDetailMediaShortcut(event);
     event.preventDefault();
     event.stopPropagation();
-    currentInput.checked = !currentInput.checked;
-    currentInput.dispatchEvent(new Event("change", { bubbles: true }));
     return true;
   }
   return false;
@@ -1119,6 +1118,9 @@ function bindReviewDropdownDismiss() {
   document.addEventListener(
     "click",
     (event) => {
+      // Media shortcuts reuse the actual button actions while keeping the tag
+      // dropdown available for the next number-key selection.
+      if (typeof mediaShortcutActivating !== "undefined" && mediaShortcutActivating) return;
       const target = event.target instanceof Element ? event.target : null;
       // Fixed panels live outside the details box hit-test for some events;
       // keep clicks inside the open panel from dismissing.
@@ -1127,19 +1129,6 @@ function bindReviewDropdownDismiss() {
       }
       const current = target?.closest(".review-dropdown") || null;
       closeAllReviewDropdowns(current);
-    },
-    true
-  );
-  document.addEventListener(
-    "keydown",
-    (event) => {
-      if (isImeComposing(event)) return;
-      if (event.key !== "Escape") return;
-      const active = document.activeElement instanceof HTMLElement
-        ? document.activeElement
-        : null;
-      closeAllReviewDropdowns();
-      if (active?.closest(".review-dropdown")) active.blur();
     },
     true
   );
@@ -1156,11 +1145,32 @@ function bindReviewDropdownDismiss() {
       ) {
         return;
       }
+      const focusedDropdown = document.activeElement?.closest?.(".review-dropdown[open]");
+      if (focusedDropdown) {
+        // Media switches can change the page height and trigger scroll anchoring.
+        // Keep keyboard label selection available at the newly anchored position.
+        positionReviewDropdownPanel(focusedDropdown);
+        return;
+      }
       closeAllReviewDropdowns();
     },
     true
   );
   window.addEventListener("resize", () => closeAllReviewDropdowns());
+  // Window bubbling lets dialogs, pickers and composers consume Escape first,
+  // including controls mounted after this binding (for example planning facts).
+  window.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || event.defaultPrevented || isImeComposing(event)
+        || event.repeat || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey
+        || !["review", "labeling"].includes(state.activePage)
+        || document.querySelector("dialog[open]")) return;
+    const active = document.activeElement;
+    closeAllReviewDropdowns();
+    if (!active?.closest?.("#reviewPane, #detailPane, #caseLabelingDetail")
+        || !active.matches?.("button, a[href], summary, input, textarea, select, [contenteditable], [tabindex]")) return;
+    event.preventDefault();
+    active.blur();
+  });
 }
 
 let reviewTagCreatorViewport = null;

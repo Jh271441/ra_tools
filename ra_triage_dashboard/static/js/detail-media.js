@@ -56,12 +56,76 @@ function videoSourceTracks(descriptor) {
   });
 }
 
+let mediaShortcutActivating = false;
+
+function activateMediaShortcutControl(control, event) {
+  if (!control || control.disabled) return false;
+  event.preventDefault();
+  const previous = mediaShortcutActivating;
+  mediaShortcutActivating = true;
+  try { control.click(); }
+  finally { mediaShortcutActivating = previous; }
+  return true;
+}
+
+function handleDetailMediaShortcut(event) {
+  if (event.defaultPrevented || isImeComposing(event)
+      || event.ctrlKey || event.metaKey || event.altKey
+      || mediaShortcutHasEditableTarget(event.target)
+      || document.querySelector("dialog[open]")) return false;
+  const active = (state.activePage === "review" && state.selectedCase)
+    || (state.activePage === "labeling" && state.caseLabeling?.issueId);
+  const hero = detailHeroMediaEl();
+  if (!active || !hero) return false;
+  const pane = detailMediaPane(), prefix = detailMediaPrefix();
+  const key = String(event.key || "").toLowerCase();
+  if (["b", "c"].includes(key)) {
+    const kind = { b: "bev", c: "camera" }[key];
+    const select = pane?.querySelector(`#${prefix}MediaKindSelect`);
+    const option = select?.querySelector(`option[value="${kind}"]`);
+    if (!select || !option || option.disabled || select.value === kind) return false;
+    event.preventDefault();
+    select.value = kind;
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    return true;
+  }
+  if (key === " " && state.detailMedia.kind === "video") {
+    event.preventDefault();
+    if (!event.repeat) activateMediaShortcutControl(hero.querySelector("[data-video-play]"), event);
+    return true;
+  }
+  if (key === "arrowleft" || key === "arrowright") {
+    const direction = key === "arrowleft" ? -1 : 1;
+    const control = state.detailMedia.kind === "video"
+      ? hero.querySelector(`[data-video-jump="${direction}"]`)
+      : pane?.querySelector(direction < 0 ? `#${prefix}MediaPreviousButton` : `#${prefix}MediaNextButton`);
+    return activateMediaShortcutControl(control, event);
+  }
+  if (key === "f") {
+    return !event.repeat && activateMediaShortcutControl(pane?.querySelector(`#${prefix}MediaExpandButton`), event);
+  }
+  if (key === "0") {
+    // Large tag groups use 0 for their tenth option. That visible number
+    // binding takes precedence over the media t0 command while it is open.
+    const editor = state.activePage === "labeling" ? $("#caseLabelingEditor") : $("#reviewPane");
+    if (editor?.querySelector('.review-dropdown[open] input[data-review-dropdown-option-shortcut="0"]:not(:disabled)')) return false;
+    if (state.detailMedia.kind === "video") {
+      return activateMediaShortcutControl(hero.querySelector("[data-video-t0]"), event);
+    }
+    const caseData = state.activePage === "labeling" ? state.caseLabeling?.caseData : state.selectedCase;
+    const frames = state.detailMedia.kind === "camera" ? caseData?.camera?.frames || [] : caseData?.assets?.frames || [];
+    const t0Index = heroFrameIndex(frames);
+    return t0Index >= 0 && activateMediaShortcutControl(hero.querySelector(`[data-detail-media-frame="${t0Index}"]`), event);
+  }
+  return false;
+}
+
 function handleVideoSourceShortcut(event) {
   const key = String(event.key || "").toLowerCase();
   if (key !== "v" && (key !== "o" || event.shiftKey)) return false;
   if (event.defaultPrevented || event.repeat || isImeComposing(event)
       || event.ctrlKey || event.metaKey || event.altKey
-      || event.target?.closest?.("input, textarea, select, [contenteditable]:not([contenteditable=false]), [role=textbox], .ui-select")) return true;
+      || mediaShortcutHasEditableTarget(event.target)) return true;
   const dialog = $("#mediaDialog");
   const inDialog = Boolean(dialog?.open);
   if (document.querySelector("dialog[open]:not(#mediaDialog)")) return true;
@@ -69,8 +133,7 @@ function handleVideoSourceShortcut(event) {
   const caseData = state.activePage === "labeling" ? state.caseLabeling?.caseData : state.selectedCase;
   const pane = typeof detailMediaPane === "function" ? detailMediaPane() : $("#detailPane");
   if (!inDialog && (!["review", "labeling"].includes(state.activePage) || !caseData
-      || !pane?.querySelector(".detail-hero-media")
-      || document.querySelector("#reviewPane .review-dropdown[open], #caseLabelingEditor .review-dropdown[open]"))) return true;
+      || !pane?.querySelector(".detail-hero-media"))) return true;
   event.preventDefault();
   const descriptor = inDialog ? mediaVideo() : videoWithFramePosters(caseData);
   const stage = inDialog ? $("#mediaVideoStage") : pane;
@@ -513,7 +576,7 @@ function bindBevVideoPlayers(root) {
         focusPlayer();
         return;
       }
-      if (event.target.matches("select, input, button") || event.target.closest(".ui-select")) {
+      if (event.target.matches("select, input") || event.target.closest(".ui-select")) {
         event.stopPropagation();
         return;
       }
@@ -973,6 +1036,9 @@ function bindDetailMedia(caseData) {
   );
   if (!pane || !root) return;
   const focusMediaSurface = () => {
+    if (document.activeElement?.closest?.(
+      "#reviewPane .review-dropdown[open], #caseLabelingEditor .review-dropdown[open]"
+    )) return;
     const surface = pane?.querySelector(".detail-hero-media");
     if (!surface) return;
     surface.focus({ preventScroll: true });

@@ -96,7 +96,7 @@ class FrontendReviewContractTest(unittest.TestCase):
         self.assertIn("baselines", APP_JS)
         self.assertIn("/static/js/", APP_ENTRY_JS)
         self.assertIn("script.async = false", APP_ENTRY_JS)
-        self.assertIn("app.js?v=manual-triage-740", INDEX_HTML)
+        self.assertIn("app.js?v=manual-triage-741", INDEX_HTML)
         self.assertIn('"work-split.js"', APP_ENTRY_JS)
         self.assertIn('"review-assignments.js"', APP_ENTRY_JS)
         # Product logic must live in domain modules, not the entry loader.
@@ -294,7 +294,7 @@ class FrontendReviewContractTest(unittest.TestCase):
         self.assertIn('<kbd>I</kbd></span><strong>展开 / 收起缺失信息</strong>', INDEX_HTML)
         self.assertIn("切换已打开标签或缺失信息中的选项", INDEX_HTML)
         self.assertIn(".review-tag-dropdown[open] > summary .tag-group-shortcut", STYLES_CSS)
-        self.assertIn('if (active?.closest(".review-dropdown")) active.blur();', APP_JS)
+        self.assertIn('active.matches?.("button, a[href], summary, input, textarea, select, [contenteditable], [tabindex]")', APP_JS)
         self.assertIn("box-shadow: inset 0 0 0 1px rgba(34,211,238,.42);", STYLES_CSS)
         self.assertIn('event.key === "ArrowDown" || event.key === "ArrowUp"', APP_JS)
         self.assertIn("function submitReviewFromDropdown(event, target)", APP_JS)
@@ -304,7 +304,7 @@ class FrontendReviewContractTest(unittest.TestCase):
         self.assertIn("event.shiftKey", APP_JS)
         self.assertIn("event.isComposing", APP_JS)
         self.assertIn('$("#annotationForm")?.requestSubmit($("#reviewSaveButton") || undefined)', APP_JS)
-        self.assertIn('if (event.key === " " && currentIndex >= 0)', APP_JS)
+        self.assertIn('if (typeof handleDetailMediaShortcut === "function") handleDetailMediaShortcut(event)', APP_JS)
         self.assertIn('data-review-dropdown-option-shortcut=', APP_JS)
         self.assertIn("function syncReviewDropdownShortcutHints(root = document)", APP_JS)
         self.assertIn('input[name="reviewTags"], input[name="missingEvidence"]', APP_JS)
@@ -521,8 +521,8 @@ class FrontendReviewContractTest(unittest.TestCase):
         self.assertIn("function bindReviewDropdownDismiss", APP_JS)
         self.assertIn("reviewDropdownDismissBound", APP_JS)
         self.assertIn('target?.closest(".review-dropdown")', APP_JS)
-        self.assertIn('if (event.key !== "Escape") return;', APP_JS)
-        self.assertIn('if (active?.closest(".review-dropdown")) active.blur();', APP_JS)
+        self.assertIn('if (event.key !== "Escape" || event.defaultPrevented || isImeComposing(event)', APP_JS)
+        self.assertIn('"#reviewPane, #detailPane, #caseLabelingDetail"', APP_JS)
 
     def test_review_save_updates_history_and_reconciles_filtered_queue(self) -> None:
         save_start = APP_JS.index("async function saveAnnotation(event)")
