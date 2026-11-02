@@ -28,18 +28,30 @@ DATA = Path('/volume/home/workspace/ra_triage_dashboard_deploy/experiments/manua
 TOOLS = Path('/volume/home/workspace/ra_tools')
 
 
+def verified_release_entry(entry):
+    entry = Path(entry)
+    relative = entry.relative_to(TASK/'daily-sidecar/releases')
+    expected = subprocess.check_output(['git', 'show', relative.parts[0]+':'+str(Path(*relative.parts[1:]))], cwd=TOOLS)
+    if expected != entry.read_bytes():
+        raise ValueError('active_media_release_changed')
+    return str(entry)
+
+
 def active_media_entry():
     lines = (REPO/'tools/manual_sidecar/launch.sh').read_text().splitlines()
     entries = [part for line in lines if line.startswith('exec ') for part in shlex.split(line)
                if part.endswith('/scripts/bev_closeup/media_wrapper.py')]
     if len(entries) != 1:
         raise ValueError('unexpected_media_launch_entrypoint')
-    entry = Path(entries[0])
-    relative = entry.relative_to(TASK/'daily-sidecar/releases')
-    expected = subprocess.check_output(['git', 'show', relative.parts[0]+':'+str(Path(*relative.parts[1:]))], cwd=TOOLS)
-    if expected != entry.read_bytes():
-        raise ValueError('active_media_release_changed')
-    return str(entry)
+    return verified_release_entry(entries[0])
+
+
+def active_ensure_entry(cron):
+    entries = [part for line in cron.splitlines() if line.strip() and not line.lstrip().startswith('#')
+               for part in shlex.split(line) if part.endswith('/scripts/bev_closeup/ensure_daily.py')]
+    if len(entries) != 1:
+        raise ValueError('unexpected_ensure_cron_entrypoint')
+    return verified_release_entry(entries[0])
 
 
 def controllers(code, media_entry=None):
@@ -94,7 +106,6 @@ def preflight(args):
 
 def install_release(sha_value):
     release = TASK/'daily-sidecar/releases'/sha_value
-    release.mkdir(parents=True, exist_ok=False)
     paths = ['ra_triage_dashboard/scripts/bev_closeup', 'ra_triage_dashboard/scripts/planning_text',
              'ra_triage_dashboard/config/bev_closeup']
     paths += ['ra_triage_dashboard/app/'+name for name in (
@@ -106,6 +117,15 @@ def install_release(sha_value):
             (release/item.name).resolve().relative_to(release.resolve())
             if not (item.isfile() or item.isdir()):
                 raise ValueError('unsafe_sidecar_release_member')
+        if release.exists():
+            # A prior pre-activation check may have materialized this exact code.
+            # Reuse only a complete byte-identical tree, without deleting anything.
+            expected = {item.name: stream.extractfile(item).read() for item in stream.getmembers() if item.isfile()}
+            actual = {str(path.relative_to(release)): path.read_bytes() for path in release.rglob('*') if path.is_file()}
+            if actual != expected or any(path.is_symlink() for path in release.rglob('*')):
+                raise ValueError('existing_sidecar_release_differs')
+            return release/'ra_triage_dashboard'
+        release.mkdir(parents=True, exist_ok=False)
         stream.extractall(release)
     return release/'ra_triage_dashboard'
 
@@ -146,19 +166,19 @@ def promote(args):
             print(json.dumps(dict(status='ready', release_sha=args.sha,
                 worker_source_sha256=worker_sha, controllers=before)))
             return
-        code = install_release(args.sha)
-        hashes = {str(p.relative_to(code)): sha(p) for p in code.rglob('*') if p.is_file()}
-        if hashes['config/bev_closeup/layout.json'] != LAYOUT_SHA:
-            raise ValueError('pinned_layout_changed')
         launch = REPO/'tools/manual_sidecar/launch.sh'
         old_entry = active_media_entry()
         old_launch = launch.read_text()
         cron = subprocess.check_output(['crontab', '-l'], text=True)
-        old_ensure = str(Path(profile['code'])/'scripts/bev_closeup/ensure_daily.py')
+        old_ensure = active_ensure_entry(cron)
         if old_launch.count(old_entry) != 1 or cron.count(old_ensure) != 1:
             raise ValueError('personal_launch_or_cron_changed')
         if before['media']['children']:
             raise ValueError('media_controller_busy_retry_at_boundary')
+        code = install_release(args.sha)
+        hashes = {str(p.relative_to(code)): sha(p) for p in code.rglob('*') if p.is_file()}
+        if hashes['config/bev_closeup/layout.json'] != LAYOUT_SHA:
+            raise ValueError('pinned_layout_changed')
         save(record/'before.json', dict(profile=profile, controllers=before, launch_sha256=sha(launch)))
         (record/'launch-before.sh').write_text(old_launch)
         (record/'crontab-before.txt').write_text(cron)
