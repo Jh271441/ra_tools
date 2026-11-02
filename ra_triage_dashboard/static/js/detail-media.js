@@ -199,7 +199,6 @@ function videoPlayerMarkup(video, { zoomable = true, compact = false, issueId = 
         ${issueId ? `<button class="button button-quiet" type="button" data-planning-constraint aria-haspopup="dialog" aria-expanded="false" aria-keyshortcuts="G"><span data-pc-trigger-label>${escapeHtml(uiText("规划约束", "Planning constraint"))}</span> <kbd class="review-control-shortcut detail-external-shortcut" aria-hidden="true">G</kbd></button>` : ""}
         ${trackControl}
         <button class="button button-quiet" type="button" data-video-play>${escapeHtml(t("media.play"))}</button>
-        <span class="bev-video-playback-state" data-video-playback-state role="status" aria-live="polite" aria-atomic="true">${escapeHtml(t("media.state_paused"))}</span>
         <button class="button button-quiet" type="button" data-video-jump="-1"><span data-video-jump-label>−1s</span></button>
         <button class="button button-quiet" type="button" data-video-t0 data-i18n="media.back_t0">${escapeHtml(t("media.back_t0"))}</button>
         <button class="button button-quiet" type="button" data-video-jump="1"><span data-video-jump-label>+1s</span></button>
@@ -325,9 +324,6 @@ function bindBevVideoPlayers(root) {
       const action = t(requested ? "media.pause" : "media.play");
       if (playButton.textContent !== action) playButton.textContent = action;
       playButton.setAttribute("aria-pressed", String(requested));
-      const playbackStatus = player.querySelector("[data-video-playback-state]");
-      const playbackText = t(`media.state_${playbackState}`);
-      if (playbackStatus && playbackStatus.textContent !== playbackText) playbackStatus.textContent = playbackText;
     };
     const focusPlayer = () => {
       player.focus({ preventScroll: true });

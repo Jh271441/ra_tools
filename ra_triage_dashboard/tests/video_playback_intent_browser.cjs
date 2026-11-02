@@ -113,17 +113,16 @@ const server = http.createServer((req, res) => {
         assert.equal(await player.locator('video').evaluate(v => v.readyState), 0, 'feedback precedes metadata');
         assert.equal(await player.locator('video').getAttribute('src'), `/api/${id}.mp4#t=20`);
         assert.equal(await player.locator('video').evaluate(v => v.paused), false, 'native asynchronous playback is already requested');
-        const pendingGeometry = await player.evaluate(p => {
-          const box = el => {const r = el.getBoundingClientRect(); return {height: r.height, top: r.top};};
-          return {controls: box(p.querySelector('.bev-video-controls')), status: box(p.querySelector('[data-video-playback-state]'))};
-        });
+        assert.equal(await player.locator('[data-video-playback-state]').count(), 0, 'no extra visible status or spacer');
+        assert.ok(await player.locator('[data-video-play]').evaluate(button => button.nextElementSibling.matches('[data-video-jump="-1"]')));
+        const pendingGeometry = await player.locator('.bev-video-controls').boundingBox();
         await page.keyboard.press('Space');
         assert.equal(await player.getAttribute('data-playback-state'), 'paused');
         await waitReady();
         assert.equal(await player.locator('video').evaluate(v => v.paused), true, 'cancel remains paused after metadata');
         await page.keyboard.press('Space'); await waitPlaying();
         const readyGeometry = await player.locator('.bev-video-controls').boundingBox();
-        assert.equal(readyGeometry.height, pendingGeometry.controls.height, 'status updates never reflow the toolbar');
+        assert.equal(readyGeometry.height, pendingGeometry.height, 'playback changes never reflow the toolbar');
         if (width < 640) assert.ok((await player.locator('[data-video-play]').boundingBox()).height >= 44);
         await page.evaluate(() => {
           const v = detailHeroMediaEl().querySelector('video');
@@ -143,7 +142,7 @@ const server = http.createServer((req, res) => {
         await waitPlaying();
         assert.ok(await player.locator('video').evaluate((v, t) => v.currentTime >= t - .1, before));
         await page.evaluate(lang => applyUiLanguage(lang === 'zh' ? 'en' : 'zh', {persist: false}), lang);
-        assert.ok(await player.evaluate(p => p.querySelector('[data-video-playback-state]').textContent === t(`media.state_${p.dataset.playbackState}`)), 'live playback status uses the new locale');
+        assert.ok(await player.locator('[data-video-play]').evaluate(button => button.textContent === t(button.getAttribute('aria-pressed') === 'true' ? 'media.pause' : 'media.play')), 'the existing playback action uses the new locale');
         await page.evaluate(lang => applyUiLanguage(lang, {persist: false}), lang);
         await page.evaluate(({view, id}) => fixtureMount(view, id + '_next'), {view, id});
         await waitPlaying(); // The next Case inherits the last explicit Play choice.

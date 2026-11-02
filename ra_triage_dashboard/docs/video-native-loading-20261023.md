@@ -1,5 +1,23 @@
 # Native video loading restoration — 2026-10-23
 
+## Compact toolbar correction — 2026-11-02 / cache737
+
+Remove the extra Paused/Waiting/Buffering/Playing text and its reserved width
+from the inline and expanded player. Playback feedback uses the existing
+Play/Pause button and aria-pressed; the new status element, CSS and unused
+translations are removed. Internal asynchronous intent/cancellation and all
+t0/source/position/rate behavior remain unchanged.
+
+Resource selection advertises the known t0/current position with a start-only
+media fragment. This is a start-position hint, not a promise that the first HTTP
+request skips the MP4 header. The browser first reads required header/index and
+probe data, then uses Range to fetch the nearest decodable keyframe around the
+target. It does not have to sequentially download the entire prefix or suffix.
+The cache736 controlled trace includes an initial header/probe range followed
+by a t0-region range, and begins playback while the final30% never arrives.
+This correction does not introduce a new streaming format, keyframe layout or
+measured latency improvement.
+
 ## Release candidate assembly — 2026-11-02 / cache736
 
 The cache730/735 candidates below were assembled on the latest production master

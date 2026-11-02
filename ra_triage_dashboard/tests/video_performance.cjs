@@ -8,7 +8,7 @@ class El extends EventTarget {
 }
 function playerFixture({readyState=4,preference=false,initialTime=0,durationSec=40,...videoState}={}){
  const timers=new Map();let next=0;
- const elements=Object.fromEntries(['video','play','playback-state','seek','step','rate','time','relative-start','t0','track','status','status-text','retry'].map(k=>[k,new El()]));
+ const elements=Object.fromEntries(['video','play','seek','step','rate','time','relative-start','t0','track','status','status-text','retry'].map(k=>[k,new El()]));
  const video=elements.video;Object.assign(video,{isVideo:true,readyState,duration:40,paused:true,seeking:false,loads:0,plays:0,seeks:[],error:null},videoState);
  let pos=initialTime;Object.defineProperty(video,'currentTime',{get:()=>pos,set:v=>{pos=v;video.seeks.push(v);}});
  video.pause=()=>{video.paused=true;};video.play=()=>{video.plays++;video.paused=false;video.fire('play');return Promise.resolve();};
@@ -43,6 +43,7 @@ function playerFixture({readyState=4,preference=false,initialTime=0,durationSec=
  const descriptor=p.ctx.videoWithFramePosters(media);
  p.ctx.escapeHtml=String;
  const markup=p.ctx.videoPlayerMarkup(descriptor);
+ assert(!markup.includes('data-video-playback-state'),'playback feedback stays in the existing button, with no status slot');
  assert(p.ctx.videoPlayerMarkup({...descriptor,duration_ms:40000}).includes('src="/bev.mp4#t=20"'),'initial resource selection advertises t0 before metadata');
  assert.equal(p.ctx.videoPlaybackSourceUrl('/bev.mp4?version=2#t=1',23.45678),'/bev.mp4?version=2#t=23.457');
  assert.equal(p.ctx.videoPlaybackSourceUrl('/bev.mp4',0),'/bev.mp4#t=0');
