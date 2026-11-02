@@ -6,7 +6,7 @@ if(!root)throw Error('Set STARTUP_SAMPLES to a directory of local MP4 benchmark 
 const output=process.env.STARTUP_RESULT||path.join(root,'startup-results.json');
 const count=Number(process.env.STARTUP_COUNT||20),mbps=Number(process.env.STARTUP_MBPS||20),latency=Number(process.env.STARTUP_LATENCY||40);
 const names=(process.env.STARTUP_NAMES||'original,optimized').split(',');
-const playerJs=fs.readFileSync(path.resolve(__dirname,'../static/js/detail-media.js'),'utf8');
+const playerJs=fs.readFileSync(process.env.STARTUP_PLAYER_JS||path.resolve(__dirname,'../static/js/detail-media.js'),'utf8');
 const server=http.createServer((req,res)=>{
  const url=new URL(req.url,'http://localhost');
  if(!url.pathname.endsWith('.mp4')){res.setHeader('Content-Type','text/html');return res.end('<!doctype html><body><div id="player"></div></body>');}

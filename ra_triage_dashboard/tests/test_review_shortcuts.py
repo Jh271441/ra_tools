@@ -373,7 +373,7 @@ assert.match(markup,/data-video-t0/);
 
 def test_video_jump_preserves_current_playback_state() -> None:
     source = (ROOT / "static" / "js" / "detail-media.js").read_text()
-    seek_start = source.index("const seekTo = (target) =>")
+    seek_start = source.index("const seekTo = (target,")
     queue_start = source.index("const queueSeek = (target", seek_start)
     jump_start = source.index("const jump = (direction) =>", queue_start)
     seek_body = source[seek_start:queue_start]

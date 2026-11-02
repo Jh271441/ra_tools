@@ -318,6 +318,8 @@ function bindBevVideoPlayers(root) {
     const startOffsetSec = Number(player.dataset.startOffsetSec || 0);
     const configuredT0PlayerSec = Number(player.dataset.t0PlayerSec || 0);
     const configuredDuration = Number(player.dataset.durationSec || 0);
+    const configuredFrameStep = Number(player.dataset.frameStepSec);
+    const frameStepSec = Number.isFinite(configuredFrameStep) && configuredFrameStep > 0 ? configuredFrameStep : 0.1;
     let disposed = false;
     let sourceGeneration = 0;
     let pendingStart = configuredT0PlayerSec > 0 ? configuredT0PlayerSec : null;
@@ -333,35 +335,74 @@ function bindBevVideoPlayers(root) {
     let loadTimer = null;
     let heldFrame = null;
     let heldTarget = null;
+    let frameCallback = null;
+    let confirmedFrame = null;
+    const cancelFrameCheck = () => {
+      if (frameCallback !== null) video.cancelVideoFrameCallback?.(frameCallback);
+      frameCallback = null;
+      confirmedFrame = null;
+    };
     const holdFrame = (target) => {
       heldTarget = target;
-      if (heldFrame || video.readyState < 2 || !video.videoWidth || !video.videoHeight) return;
+      if (heldFrame) return;
       // Keep the last decoded frame while native load()/seek replaces its
-      // surface. A new source's t0 poster is not the requested retained frame.
+      // surface. Before the first decode, a neutral cover prevents the new
+      // source's t0 poster/frame0 from impersonating a different requested time.
       const canvas = document.createElement("canvas");
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      try {
-        canvas.getContext("2d").drawImage(video, 0, 0);
-      } catch { return; }
+      canvas.width = video.videoWidth || 1;
+      canvas.height = video.videoHeight || 1;
+      if (video.readyState >= 2 && !video.seeking) {
+        try { canvas.getContext("2d").drawImage(video, 0, 0); } catch { /* Keep the neutral cover. */ }
+      }
       canvas.className = "video-source-frame";
       canvas.setAttribute("aria-hidden", "true");
       video.after(canvas);
       heldFrame = canvas;
     };
+    const frameMatchesTarget = (mediaTime) => {
+      if (!Number.isFinite(mediaTime) || !Number.isFinite(heldTarget)) return false;
+      const frameIndex = time => Math.floor((time + 0.000001) / frameStepSec);
+      // currentTime may equal duration, although its last frame starts earlier.
+      const total = Number.isFinite(video.duration) ? video.duration : configuredDuration;
+      const target = total > 0 ? Math.min(heldTarget, Math.max(0, total - 0.00001)) : heldTarget;
+      return frameIndex(mediaTime) >= frameIndex(target)
+        && frameIndex(mediaTime) <= frameIndex(video.currentTime);
+    };
     const releaseHeldFrame = () => {
       if (!heldFrame || metadataGeneration !== sourceGeneration) return;
+      if (typeof video.requestVideoFrameCallback === "function" && !frameMatchesTarget(confirmedFrame)) {
+        watchPresentedFrame();
+        return;
+      }
       const canvas = heldFrame, generation = sourceGeneration, request = seekRequest, target = heldTarget;
       const commit = () => {
         if (disposed || generation !== sourceGeneration || request !== seekRequest || canvas !== heldFrame
             || video.seeking || video.readyState < 2 || video.error
-            || video.currentTime < target - 0.11) return;
+            || video.currentTime < target - frameStepSec
+            || (typeof video.requestVideoFrameCallback === "function" && !frameMatchesTarget(confirmedFrame))) return;
         canvas.remove();
         heldFrame = null;
         heldTarget = null;
+        cancelFrameCheck();
       };
-      // Media events can precede compositor adoption, especially while paused.
+      // Media events/currentTime do not prove which frame was submitted.
+      // After that proof, allow the compositor to adopt the confirmed frame.
       window.requestAnimationFrame(() => window.requestAnimationFrame(commit));
+    };
+    const watchPresentedFrame = () => {
+      if (disposed || !heldFrame || frameCallback !== null || typeof video.requestVideoFrameCallback !== "function") return;
+      const generation = sourceGeneration, request = seekRequest;
+      frameCallback = video.requestVideoFrameCallback((_now, metadata) => {
+        if (disposed || generation !== sourceGeneration || request !== seekRequest) return;
+        frameCallback = null;
+        // A paused decoder can submit its only target frame while seeking /
+        // readyState still lag behind. Retain that proof for the later ready
+        // event; waiting for a second frame would leave a paused cover stuck.
+        if (metadataGeneration === sourceGeneration && frameMatchesTarget(metadata.mediaTime)) {
+          confirmedFrame = metadata.mediaTime;
+          releaseHeldFrame();
+        } else watchPresentedFrame();
+      });
     };
     const listeners = [];
     const listen = (target, name, handler) => {
@@ -431,14 +472,15 @@ function bindBevVideoPlayers(root) {
     const focusPlayer = () => {
       player.focus({ preventScroll: true });
     };
-    const seekTo = (target) => {
+    const seekTo = (target, { preserveFrame = true } = {}) => {
       if (disposed) return;
+      if (preserveFrame || heldFrame) holdFrame(target);
       if (video.readyState < 1) { pendingStart = target; update(target); return; }
-      holdFrame(target);
       if (queuedSeekTimer !== null) window.clearTimeout(queuedSeekTimer);
       queuedSeekTimer = null;
       queuedSeekTarget = null;
       const request = ++seekRequest;
+      cancelFrameCheck();
       cancelPendingSeek?.();
       let settled = false;
       let fallbackTimer = null;
@@ -470,6 +512,7 @@ function bindBevVideoPlayers(root) {
       video.addEventListener("seeked", settle);
       // Setting currentTime preserves the native play/pause state. A jump
       // while playing must continue playback; a paused video stays paused.
+      watchPresentedFrame();
       video.currentTime = target;
       update();
       // A remote asset can delay seeked while metadata or the first keyframe
@@ -503,6 +546,11 @@ function bindBevVideoPlayers(root) {
         || !player.isConnected || player.closest?.('dialog:not([open]), [hidden], .hidden')) return;
       const generation = sourceGeneration;
       const attempt = ++playbackAttempt;
+      if (video.ended && heldFrame) {
+        heldTarget = 0; // Native Play at the end restarts the clip.
+        cancelFrameCheck();
+        watchPresentedFrame();
+      }
       playPending = true;
       video.play().then(() => {
         if (disposed || generation !== sourceGeneration || attempt !== playbackAttempt) return;
@@ -560,6 +608,7 @@ function bindBevVideoPlayers(root) {
       pendingStart = video.readyState >= 1 && Number.isFinite(video.currentTime) ? video.currentTime : pendingStart;
       holdFrame(pendingStart);
       sourceGeneration += 1;
+      cancelFrameCheck();
       ++playbackAttempt;
       playPending = false;
       playing = false;
@@ -575,6 +624,7 @@ function bindBevVideoPlayers(root) {
       sourceHasStartHint = pendingStart !== null && Number.isFinite(pendingStart);
       video.src = videoPlaybackSourceUrl(url, sourceHasStartHint ? pendingStart : null);
       video.load();
+      watchPresentedFrame();
       loading();
       update();
       startPlayback();
@@ -643,10 +693,11 @@ function bindBevVideoPlayers(root) {
       const target = Number.isFinite(pendingStart) ? pendingStart : videoT0PlayerPosition(0, duration());
       pendingStart = null;
       const position = Math.min(Math.max(0, duration()), Math.max(0, target));
+      if (heldFrame) heldTarget = position;
       // Native media-fragment startup may already be seeking to this point.
       // Avoid restarting that Range request; retain an exact-seek fallback for
       // browsers without fragment support and descriptors without duration.
-      if (Math.abs(video.currentTime - position) > 0.001) seekTo(position);
+      if (Math.abs(video.currentTime - position) > 0.001) seekTo(position, { preserveFrame: false });
       else update();
       video.playbackRate = Number(rateSelect.value || 1);
       startPlayback();
@@ -658,6 +709,7 @@ function bindBevVideoPlayers(root) {
     });
     ["loadeddata", "canplay", "playing", "seeked"].forEach(name => listen(video, name, ready));
     listen(video, "error", () => {
+      cancelFrameCheck();
       if (loadTimer !== null) window.clearTimeout(loadTimer);
       loadTimer = null;
       ++playbackAttempt;
@@ -703,6 +755,7 @@ function bindBevVideoPlayers(root) {
       disposed = true;
       heldFrame?.remove();
       heldFrame = null;
+      cancelFrameCheck();
       planningConstraint.dispose();
       ++playbackAttempt;
       ++sourceGeneration;

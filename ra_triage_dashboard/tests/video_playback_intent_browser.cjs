@@ -125,13 +125,15 @@ const server = http.createServer((req, res) => {
         const readyGeometry = await player.locator('.bev-video-controls').boundingBox();
         assert.equal(readyGeometry.height, pendingGeometry.height, 'playback changes never reflow the toolbar');
         if (width < 640) assert.ok((await player.locator('[data-video-play]').boundingBox()).height >= 44);
-        await page.evaluate(() => {
-          const v = detailHeroMediaEl().querySelector('video');
+        const switched = await page.evaluate(() => {
+          const root = detailHeroMediaEl(), v = root.querySelector('video');
           v._setBevVideoTrack('/api/rapid-one.mp4', '/api/poster.png');
           v._setBevVideoTrack('/api/rapid-two.mp4', '/api/poster.png');
+          return {state: root.querySelector('[data-bev-video-player]').dataset.playbackState,
+            held: root.querySelectorAll('.video-source-frame').length};
         });
-        assert.equal(await player.getAttribute('data-playback-state'), 'waiting');
-        assert.equal(await player.locator('.video-source-frame').count(), 1, 'rapid source changes keep the previous decoded frame');
+        assert.equal(switched.state, 'waiting', 'intent feedback is synchronous, before the next native load event');
+        assert.equal(switched.held, 1, 'rapid source changes keep the previous decoded frame');
         await page.keyboard.press('Space');
         assert.equal(await player.getAttribute('data-playback-state'), 'paused');
         await waitReady(); assert.equal(await player.locator('video').evaluate(v => v.paused), true);

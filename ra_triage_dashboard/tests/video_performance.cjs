@@ -17,6 +17,8 @@ function playerFixture({readyState=4,context=null,initialTime=0,durationSec=40,.
  player.querySelector=s=>s==='video'?video:elements[s.replace('[data-video-','').replace(']','')];
  const root={querySelectorAll:s=>s==='video'?[video]:[player]};
  const ctx=context||{console,URL,Event,Number,enhanceDashboardSelects(){},t:x=>x,uiText:x=>x,showToast(){},safeSameOriginAssetUrl:x=>String(x||'').split('#')[0]};
+ ctx.document||={createElement:()=>({getContext:()=>({drawImage(){}}),setAttribute(){},remove(){}})};
+ video.after=()=>{};
  ctx.window={setTimeout:(f,ms)=>{timers.set(++next,{f,ms});return next;},clearTimeout:id=>timers.delete(id),requestAnimationFrame:f=>f()};
  if(!context){
   vm.createContext(ctx);
@@ -105,6 +107,34 @@ function playerFixture({readyState=4,context=null,initialTime=0,durationSec=40,.
  tv.currentTime=23;tv._setBevVideoTrack('/one.mp4');const firstHeld=held;
  tv._setBevVideoTrack('/two.mp4');assert.equal(held,firstHeld);assert.deepEqual(snapshots,[20,23],'rapid sources cannot snapshot an intermediate wrong frame');
  transition.ctx.releaseBevVideoPlayer(transition.root);assert.equal(held,null,'teardown releases the full-resolution snapshot');
+ // currentTime/seeked can advance before a different decoded frame is
+ // submitted. A source poster, frame0 or stale callback must never be revealed.
+ const proof=playerFixture({videoWidth:32,videoHeight:18}),fv=proof.video,frames=new Map();let frameId=0,cover=null;
+ proof.ctx.document={createElement:()=>({getContext:()=>({drawImage(){}}),setAttribute(){},remove(){cover=null;}})};
+ fv.after=canvas=>{cover=canvas;};
+ fv.requestVideoFrameCallback=callback=>{frames.set(++frameId,callback);return frameId;};
+ fv.cancelVideoFrameCallback=id=>frames.delete(id);
+ const present=time=>{assert.equal(frames.size,1,'only one frame callback per transition');const [id,callback]=frames.entries().next().value;frames.delete(id);callback(0,{mediaTime:time});};
+ fv.currentTime=23;fv._setBevVideoTrack('/closeup.mp4','/closeup-t0.jpg');
+ fv.currentTime=0;fv.readyState=1;fv.fire('loadedmetadata');fv.readyState=4;fv.fire('seeked');
+ assert(cover,'seeked/currentTime alone cannot uncover an unconfirmed decoded frame');
+ present(0);assert(cover,'a submitted frame0 must stay covered');
+ present(20);assert(cover,'the t0 poster/frame is not the retained23s target');
+ present(23);assert.equal(cover,null,'the submitted target frame is revealed');assert.equal(frames.size,0);
+ proof.elements.seek.value='21';proof.elements.seek.fire('change');fv.fire('seeked');
+ present(23);assert(cover,'a stale later frame is invalid when seeking backwards');
+ fv.readyState=1;fv.seeking=true;present(21);assert(cover,'frame submission can precede native ready/seeked');
+ fv.readyState=4;fv.seeking=false;fv.fire('seeked');assert.equal(cover,null,'paused playback needs no second frame callback to reveal its confirmed frame');
+ fv._setBevVideoTrack('/one.mp4');const obsolete=[...frames.values()][0];
+ fv._setBevVideoTrack('/two.mp4');obsolete(0,{mediaTime:21});assert(cover,'a retired source callback cannot uncover the next source');
+ assert.equal(frames.size,1);fv.readyState=4;fv.fire('loadedmetadata');fv.fire('seeked');present(21);assert.equal(cover,null);
+ fv._setBevVideoTrack('/short.mp4');fv.duration=20;fv.currentTime=20;fv.readyState=4;fv.fire('loadedmetadata');present(19.9);
+ assert.equal(cover,null,'a shorter source clamps its target to the last actual frame');
+ fv.duration=40;proof.elements.seek.value='40';proof.elements.seek.fire('change');fv.fire('seeked');present(39.9);
+ assert.equal(cover,null,'seeking to duration must reveal the last frame, not await a nonexistent40s frame');
+ proof.elements.seek.fire('change');fv.ended=true;proof.elements.play.fire('click');fv.currentTime=0;present(0);
+ assert.equal(cover,null,'Play at the end may confirm the native restart at0');fv.ended=false;
+ fv._setBevVideoTrack('/three.mp4');proof.ctx.releaseBevVideoPlayer(proof.root);assert.equal(frames.size,0);assert.equal(cover,null);
  // Rapid source changes before metadata arrives must retain playing intent.
  const rapid=playerFixture();rapid.elements.rate.value='1.5';rapid.video.currentTime=23;rapid.elements.play.fire('click');
  rapid.video._setBevVideoTrack('/closeup.mp4');rapid.video._setBevVideoTrack('/original.mp4');

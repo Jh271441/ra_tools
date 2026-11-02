@@ -1,5 +1,44 @@
 # Native video loading restoration — 2026-10-23
 
+## Submitted-frame confirmation — 2026-11-03 / cache746
+
+The cache745 frame hold could be removed after `seeked`/`currentTime` plus two
+animation frames without proving which frame had reached the compositor. Source
+changes and explicit seeks now require a matching `requestVideoFrameCallback`
+presentation timestamp before uncovering the native surface. Reject frame0,
+the wrong t0/retained-position frame, and retired source/seek callbacks. A paused
+decoder may submit its target before native readiness catches up: retain that
+proof and reveal on the later ready event without needing a second paused frame.
+Browsers lacking this API retain the guarded native-event/paint fallback.
+
+Keep one canvas and at most one pending frame callback for a transition; cancel
+callbacks on replacement/error/disposal. A switch before any frame has decoded
+uses a neutral cover so its new t0 poster cannot impersonate a requested23s
+frame. Default initial native posters and metadata/t0 positioning are unchanged;
+there is no new initial visibility gate, loading row, timer wait or alternate
+video preload. Only the selected source loads. Explicit Play/Space/cancel and
+per-source position/rate retention remain.
+
+The adversarial regression fails against cache745 when `seeked` arrives before
+the submitted frame, including reverse seeks and stale callback generations.
+Actual-shell compositor capture additionally checks pixel colors for original,
+frame0,t0 and23s targets, plus request logs before any source switch. The manual
+fixture test uses desktop Chromium, not a physical phone or Safari/iOS:
+
+```bash
+python3 ra_triage_dashboard/tests/make_video_frame_fixtures.py /tmp/video-frame-fixtures
+NODE_PATH=/path/to/playwright/node_modules \
+FRAME_TEST_DIR=/tmp/video-frame-fixtures \
+node ra_triage_dashboard/tests/video_presented_frame_browser.cjs
+```
+
+The verifier needs Pillow in the diagnostic Python (`FRAME_PYTHON` overrides it).
+`tests/video_startup_benchmark.cjs` accepts `STARTUP_PLAYER_JS` to compare the
+prior exact module with the candidate under the same media/network settings.
+Deployment identity, before/after timings, request/pixel records and browser
+coverage limits belong in the release evidence, not a blanket no-regression or
+global p95 promise. Evidence: `/private/tmp/video-frame-handoff-20261103/`.
+
 ## Short-GOP playback copies and stable source handoff — 2026-11-02 / cache745
 
 Each new player still pauses at t0 until its own explicit Play. Native
