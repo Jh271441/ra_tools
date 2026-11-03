@@ -1602,20 +1602,7 @@ async function copyReviewIssueId(issueId, button = null) {
   const value = String(issueId || "").trim();
   if (!value) return;
   try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(value);
-    } else {
-      const input = document.createElement("textarea");
-      input.value = value;
-      input.setAttribute("readonly", "");
-      input.style.position = "fixed";
-      input.style.opacity = "0";
-      document.body.append(input);
-      input.select();
-      const copied = document.execCommand("copy");
-      input.remove();
-      if (!copied) throw new Error("copy unavailable");
-    }
+    await copyTextToClipboard(value);
     button?.classList.add("is-copied");
     window.setTimeout(() => button?.classList.remove("is-copied"), 900);
     showToast(`已复制 Issue ID：${value}`);

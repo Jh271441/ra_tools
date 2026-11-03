@@ -705,6 +705,28 @@ function api(path, options = {}) {
   return shared;
 }
 
+async function copyTextToClipboard(value) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(String(value));
+    return;
+  }
+  const focused = document.activeElement;
+  const input = document.createElement("textarea");
+  input.value = String(value);
+  input.setAttribute("readonly", "");
+  input.style.position = "fixed";
+  input.style.opacity = "0";
+  // A body-level input is inert while a native modal dialog is open.
+  (focused?.closest("dialog[open]") || Array.from(document.querySelectorAll("dialog[open]")).pop() || document.body).append(input);
+  try {
+    input.select();
+    if (!document.execCommand("copy")) throw new Error("copy unavailable");
+  } finally {
+    input.remove();
+    if (focused?.isConnected) focused.focus({ preventScroll: true });
+  }
+}
+
 function showToast(message, isError = false) {
   const toast = $("#toast");
   toast.textContent = message;

@@ -647,6 +647,12 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .ra-event-playback-link { color: inherit; text-decoration: none; white-space: nowrap; }
 .ra-event-playback-link:hover, .ra-event-playback-link:focus-visible { text-decoration: underline; text-underline-offset: 3px; }
 .ra-event-playback-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ra-event-table td.ra-event-copy-cell { padding-right: 40px; }
+/* Keep the control in a column that stays visible on phones, reserving space
+   beside the raw timestamp on desktop without enlarging the text line box. */
+.ra-event-copy-anchor { position: relative; }
+.ra-event-copy-timestamp { position: absolute; right: calc(100% + 7px); top: 50%; transform: translateY(-50%); }
+.ra-event-copy-status { flex: 1; min-width: 0; align-self: center; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
 .ra-event-empty { padding: 30px 12px; color: var(--faint); font-size: 11px; text-align: center; }
 .ra-event-dialog-actions { padding-top: 1px; }
 .config-disabled { opacity: .58; cursor: not-allowed; }

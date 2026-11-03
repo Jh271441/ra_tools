@@ -728,6 +728,7 @@ function bindEvents() {
   });
   $("#raEventSearchButton").addEventListener("click", () => $("#raEventSearchInput")?.focus());
   $("#raEventRefreshButton").addEventListener("click", refreshRaEventMetadata);
+  bindRaEventTimestampCopy();
   bindRaEventDialogFocus();
   $("#raEventDialog").addEventListener("close", () => {
     state.raEventDialog = { issueId: "", caseData: null, events: [], trailUrl: "", t0TimestampMs: NaN };

@@ -1457,11 +1457,16 @@ function renderRaEventRows(
         const timeLink = (label) => playbackUrl && label !== "—"
           ? `<a class="ra-event-playback-link" href="${escapeHtml(playbackUrl)}" target="_blank" rel="noreferrer" data-ra-event-timestamp="${escapeHtml(timestamp)}">${escapeHtml(label)}</a>`
           : `<span data-i18n-title="ra_event.unavailable" title="${escapeHtml(t("ra_event.unavailable"))}">${escapeHtml(label)}</span>`;
+        const copyButton = Number.isSafeInteger(Number(timestamp)) && Number(timestamp) > 0 && formatRaEventTimestamp(timestamp) !== "—"
+          ? `<button class="detail-copy-id-button ra-event-copy-timestamp" type="button" data-copy-ra-event-timestamp="${escapeHtml(timestamp)}">
+              <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="7" y="6" width="9" height="10" rx="2"></rect><path d="M13 6V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg>
+            </button>`
+          : "";
         return `<tr>
           <td>${escapeHtml(item?.event || "—")}</td>
           <td>${escapeHtml(item?.value ?? "—")}</td>
-          <td class="ra-event-timestamp">${timeLink(timestamp ?? "—")}</td>
-          <td class="ra-event-relative-time">${timeLink(formatRaEventRelativeTime(timestamp, t0TimestampMs))}</td>
+          <td class="ra-event-timestamp${copyButton ? " ra-event-copy-cell" : ""}">${timeLink(timestamp ?? "—")}</td>
+          <td class="ra-event-relative-time${copyButton ? " ra-event-copy-anchor" : ""}">${copyButton}${timeLink(formatRaEventRelativeTime(timestamp, t0TimestampMs))}</td>
           <td class="ra-event-formatted-time" data-ra-event-timestamp="${escapeHtml(timestamp ?? "")}">${escapeHtml(formatRaEventTimestamp(timestamp))}</td>
         </tr>`;
       })
@@ -1471,6 +1476,39 @@ function renderRaEventRows(
   if (empty) empty.hidden = rows.length > 0;
   refreshRaEventDialogLanguage();
   return rows.length;
+}
+
+function bindRaEventTimestampCopy() {
+  const body = $("#raEventTableBody");
+  if (!body || body.dataset.copyBound === "1") return;
+  body.dataset.copyBound = "1";
+  body.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-copy-ra-event-timestamp]");
+    if (!button || !body.contains(button)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    void copyRaEventTimestamp(button);
+  });
+}
+
+async function copyRaEventTimestamp(button) {
+  const timestamp = button.dataset.copyRaEventTimestamp;
+  if (!Number.isSafeInteger(Number(timestamp)) || Number(timestamp) <= 0 || formatRaEventTimestamp(timestamp) === "—") return;
+  const context = state.raEventDialog;
+  try {
+    await copyTextToClipboard(timestamp);
+    if (state.raEventDialog !== context || !$("#raEventDialog")?.open) return;
+    context.copyStatus = { key: "ra_event.copied", timestamp };
+    button.classList.add("is-copied");
+    window.clearTimeout(button.copyFeedbackTimer);
+    button.copyFeedbackTimer = window.setTimeout(() => button.classList.remove("is-copied"), 900);
+  } catch (_) {
+    if (state.raEventDialog !== context || !$("#raEventDialog")?.open) return;
+    window.clearTimeout(button.copyFeedbackTimer);
+    button.classList.remove("is-copied");
+    context.copyStatus = { key: "ra_event.copy_failed" };
+  }
+  refreshRaEventDialogLanguage();
 }
 
 function refreshRaEventDialogLanguage() {
@@ -1494,6 +1532,17 @@ function refreshRaEventDialogLanguage() {
     link.title = label;
     link.setAttribute("aria-label", label);
   });
+  dialog.querySelectorAll(".ra-event-copy-timestamp").forEach((button) => {
+    const label = t("ra_event.copy_timestamp", { timestamp: button.dataset.copyRaEventTimestamp });
+    button.title = label;
+    button.setAttribute("aria-label", label);
+  });
+  const copyStatus = $("#raEventCopyStatus");
+  if (copyStatus) {
+    const status = state.raEventDialog.copyStatus;
+    copyStatus.hidden = !status;
+    copyStatus.textContent = status ? t(status.key, status) : "";
+  }
   dialog.querySelectorAll(".ra-event-formatted-time").forEach((cell) => {
     cell.textContent = formatRaEventTimestamp(cell.dataset.raEventTimestamp);
   });
