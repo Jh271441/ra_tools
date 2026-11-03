@@ -2,6 +2,7 @@ import base64
 import copy
 import hashlib
 import json
+import os
 from pathlib import Path
 import struct
 import tempfile
@@ -88,12 +89,16 @@ class VideoStreamTest(unittest.TestCase):
         self.assertEqual(cache.get(source), ready)
         self.assertEqual(len(ready.manifest["fingerprint"]), 64)
         self.assertNotIn("path", json.dumps(ready.manifest))
+        published_mtime = ready.path.stat().st_mtime_ns
         ready.path.unlink()
         ready.path.symlink_to(self.output)
         self.assertIsNone(cache.get(source))
         ready.path.unlink()
         ready.path.write_bytes(self.data)
-        self.assertIsNone(cache.get(source))  # Even same bytes require a new receipt.
+        # Some Linux filesystems give rapid rewrites the same timestamp. Make
+        # the changed identity explicit instead of relying on wall-clock ticks.
+        os.utime(ready.path, ns=(published_mtime + 10**9, published_mtime + 10**9))
+        self.assertIsNone(cache.get(source))  # Changed metadata needs a new receipt.
         source.write_bytes(b"replacement playback copy")
         self.assertIsNone(cache.get(source))
 
