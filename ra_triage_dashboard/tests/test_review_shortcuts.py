@@ -403,7 +403,8 @@ assert.equal(formatRaEventRelativeTime(201401,200000),'t+1.401s');
 assert.equal(formatRaEventRelativeTime(null,200000),'—');
 '''
     )
-    subprocess.run(["node", "-e", script], check=True, capture_output=True)
+    # The combined modules can exceed Linux's per-argument size limit.
+    subprocess.run(["node", "-"], input=script, text=True, check=True, capture_output=True)
 
 
 def test_review_history_shortcut_toggle_closes_matching_dialog() -> None:
