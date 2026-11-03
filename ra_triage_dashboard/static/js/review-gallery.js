@@ -59,7 +59,7 @@ function issueCardLabelingAttributes(attributes) {
 function issueCard(item, options = {}) {
   const workspace = options.workspace || item.gallery_workspace || "review";
   const isLabeling = workspace === "labeling";
-  const isSelected = item.issue_id === (isLabeling ? state.caseLabeling?.issueId : state.selectedId);
+  const isSelected = item.issue_id === (isLabeling ? state.caseLabeling?.issueId : reviewPendingGalleryTargetId() || state.selectedId);
   const annotationRunId = String(item.annotation?.model_run_id || "").trim();
   const prediction = item.prediction?.label;
   const comparisonStatus = isLabeling ? "" : reviewComparisonStatusForItem(item);
@@ -112,7 +112,7 @@ function issueCard(item, options = {}) {
     ? issueCardLabelingAttributes(item.label_attributes)
     : "";
   return `
-    <article class="issue-card ${isSelected ? "selected" : ""}" data-issue-id="${escapeHtml(item.issue_id)}">
+    <article class="issue-card ${isSelected ? "selected" : ""}" data-issue-id="${escapeHtml(item.issue_id)}"${isSelected ? ' aria-current="true"' : ""}>
       <button class="issue-card-open" type="button" data-open-issue="${escapeHtml(item.issue_id)}" aria-label="${escapeHtml(openLabel)}"></button>
       <div class="issue-thumbnail">
         <div class="issue-thumbnail-placeholder" aria-hidden="true"><span>RA</span><small>${escapeHtml(t("gallery.no_bev_thumb"))}</small></div>
@@ -144,6 +144,7 @@ function issueCard(item, options = {}) {
 function caseGallerySignature(items) {
   return JSON.stringify({
     selectedId: state.selectedId,
+    galleryTargetId: reviewPendingGalleryTargetId(),
     items: (items || []).map((item) => ({
       issue_id: item.issue_id,
       gt_label: item.gt_label || "",
@@ -360,6 +361,7 @@ async function changeCasePage(delta) {
   const targetPage = state.casePage + delta;
   if (targetPage < 1 || targetPage > totalCasePages()) return;
   state.galleryScrollY = 0;
+  state.reviewPendingGalleryTarget = null;
   clearPendingReviewImages();
   await loadCases({ keepSelection: false, page: targetPage });
   if (!isPageContextCurrent(pageContext)) return;
@@ -387,6 +389,7 @@ async function jumpToCasePage(raw) {
     return;
   }
   state.galleryScrollY = 0;
+  state.reviewPendingGalleryTarget = null;
   clearPendingReviewImages();
   await loadCases({ keepSelection: false, page: target });
   if (!isPageContextCurrent(pageContext)) return;
@@ -403,6 +406,7 @@ async function changeCasePageSize(value) {
   state.casePageSize = nextPageSize;
   state.casePage = 1;
   state.galleryScrollY = 0;
+  state.reviewPendingGalleryTarget = null;
   clearPendingReviewImages();
   await loadCases({ keepSelection: false, page: 1 });
   if (!isPageContextCurrent(pageContext)) return;
@@ -522,22 +526,58 @@ function renderNextPendingTaskButton() {
   button.textContent = state.reviewPendingJumpBusy
     ? uiText('正在查找…', 'Finding…')
     : uiText('下一个待完成', 'Next pending');
-  button.title = uiText('保留当前筛选，从本页开始查找下一个待完成任务', 'Keep current filters and find the next pending task from this page');
+  button.title = uiText('保留筛选和每页条数，定位并高亮下一个待完成任务；再次点击继续查找', 'Keep filters and page size, then locate and highlight the next pending task; click again to continue');
+}
+
+function reviewPendingTaskParams() {
+  const params = currentReviewGalleryExportParams();
+  params.delete('format');
+  params.delete('gallery_scope');
+  return params;
+}
+
+function reviewPendingGalleryTargetId() {
+  const target = state.reviewPendingGalleryTarget;
+  if (!target) return '';
+  if (target.scope !== reviewPendingTaskParams().toString()
+      || target.page !== state.casePage || target.pageSize !== state.casePageSize
+      || !state.cases.some(item => item.issue_id === target.issueId)) {
+    state.reviewPendingGalleryTarget = null;
+    return '';
+  }
+  return target.issueId;
+}
+
+function highlightPendingGalleryTarget(issueId) {
+  const card = [...$('#issueList').querySelectorAll('article[data-issue-id]')]
+    .find(item => item.dataset.issueId === issueId);
+  if (!card) return;
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (!reducedMotion) {
+    card.classList.add('pending-jump-target');
+    card.addEventListener('animationend', () => card.classList.remove('pending-jump-target'), { once: true });
+  }
+  card.querySelector('[data-open-issue]')?.focus({ preventScroll: true });
+  card.scrollIntoView({ block: 'center', inline: 'nearest', behavior: reducedMotion ? 'instant' : 'smooth' });
 }
 
 async function jumpToNextPendingTask() {
   if (!reviewShowsAllTaskProgress() || state.reviewPendingJumpBusy || state.savingAnnotation) return;
   const pageContext = capturePageContext();
-  const currentId = state.selectedId || '';
-  const params = currentReviewGalleryExportParams();
-  params.delete('format');
-  params.delete('gallery_scope');
+  const selectedId = state.selectedId || '';
+  const currentId = reviewPendingGalleryTargetId() || selectedId;
+  const params = reviewPendingTaskParams();
   const scope = params.toString();
+  const pageSize = state.casePageSize;
+  const initialPage = state.casePage;
+  let expectedPage = initialPage;
+  let expectedListRequestSeq = state.caseListRequestSeq;
   const isCurrent = () => {
-    const now = currentReviewGalleryExportParams();
-    now.delete('format'); now.delete('gallery_scope');
     return isPageContextCurrent(pageContext) && reviewShowsAllTaskProgress()
-      && (state.selectedId || '') === currentId && !state.savingAnnotation && now.toString() === scope;
+      && (state.selectedId || '') === selectedId && !state.savingAnnotation
+      && state.casePage === expectedPage && state.casePageSize === pageSize
+      && state.caseListRequestSeq === expectedListRequestSeq
+      && reviewPendingTaskParams().toString() === scope;
   };
   const pendingParams = new URLSearchParams(params);
   pendingParams.set('task_progress', 'pending');
@@ -547,22 +587,25 @@ async function jumpToNextPendingTask() {
     // Read the same ordered filtered queue, then find its next jointly pending
     // member. Never apply the temporary progress predicate to the user's filters.
     const [queue, pending] = await Promise.all([
-      api(`/api/cases/issue-ids?${params}`),
-      api(`/api/cases/issue-ids?${pendingParams}`),
+      api(`/api/cases/issue-ids?${params}`, { cache: 'no-store' }),
+      api(`/api/cases/issue-ids?${pendingParams}`, { cache: 'no-store' }),
     ]);
     if (!isCurrent()) return;
     const ids = queue.issue_ids || [];
     const pendingIds = new Set(pending.issue_ids || []);
-    const start = currentId ? ids.indexOf(currentId) + 1
-      : Math.max(0, (state.casePage - 1) * state.casePageSize);
+    const anchorIndex = currentId ? ids.indexOf(currentId) : -1;
+    const start = anchorIndex >= 0 ? anchorIndex + 1
+      : Math.max(0, (state.casePage - 1) * pageSize);
     const index = ids.findIndex((id, i) => i >= start && id !== currentId && pendingIds.has(id));
     if (index < 0) {
       showToast(uiText('当前筛选范围内，后续没有待完成任务。', 'No further pending tasks in the current filters.'));
       return;
     }
     const targetId = ids[index];
-    const targetPage = Math.floor(index / state.casePageSize) + 1;
+    const targetPage = Math.floor(index / pageSize) + 1;
     if (targetPage !== state.casePage || !state.cases.some(item => item.issue_id === targetId)) {
+      expectedPage = targetPage;
+      expectedListRequestSeq = state.caseListRequestSeq + 1;
       await loadCases({ keepSelection: true, page: targetPage });
       if (!isCurrent()) return;
     }
@@ -570,9 +613,18 @@ async function jumpToNextPendingTask() {
       showToast(uiText('列表已变化，请重试跳转。', 'The list changed. Please try again.'));
       return;
     }
-    await selectCase(targetId, { historyMode: currentId ? 'replace' : 'push', preserveScrollY: window.scrollY });
+    state.reviewPendingGalleryTarget = { issueId: targetId, scope, page: targetPage, pageSize };
+    renderCases({ items: state.cases, total: state.caseTotal });
+    persistCurrentReviewRoute({ issue: '' });
+    highlightPendingGalleryTarget(targetId);
   } catch (error) {
-    if (isCurrent()) throw error;
+    if (isCurrent()) {
+      // loadCases advances the page before its request. A failed read must
+      // leave the still-visible cards on their original page for the retry.
+      state.casePage = initialPage;
+      renderCasePagination();
+      throw error;
+    }
   } finally {
     state.reviewPendingJumpBusy = false;
     renderNextPendingTaskButton();
