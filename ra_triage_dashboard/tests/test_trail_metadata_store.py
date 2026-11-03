@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import multiprocessing
 import stat
@@ -9,6 +10,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
+from urllib.parse import urlsplit
 
 from ra_triage_dashboard.app.trail_metadata_store import TrailMetadataStore
 
@@ -182,9 +184,33 @@ class TrailMetadataStoreTest(unittest.TestCase):
 
 
 class TrailMetadataApiTest(unittest.TestCase):
+    @staticmethod
+    def get(app, url):
+        """Exercise FastAPI HTTP routing using the existing dependency-free pattern."""
+        target, messages = urlsplit(url), []
+
+        async def receive():
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        async def send(message):
+            messages.append(message)
+
+        asyncio.run(app({
+            "type": "http", "asgi": {"version": "3.0"},
+            "http_version": "1.1", "method": "GET", "scheme": "http",
+            "path": target.path, "raw_path": target.path.encode(),
+            "root_path": "", "query_string": target.query.encode(),
+            "headers": [(b"host", b"test")],
+            "server": ("test", 80), "client": ("127.0.0.1", 12345),
+        }, receive, send))
+        body = b"".join(m.get("body", b"") for m in messages if m["type"] == "http.response.body")
+        return SimpleNamespace(
+            status_code=next(m["status"] for m in messages if m["type"] == "http.response.start"),
+            json=lambda: json.loads(body),
+        )
+
     def test_http_reentry_and_restart_reuse_disk_explicit_refresh_updates_it(self):
         from fastapi import FastAPI
-        from fastapi.testclient import TestClient
         from ra_triage_dashboard.app.routers import cases
 
         app = FastAPI()
@@ -194,40 +220,39 @@ class TrailMetadataApiTest(unittest.TestCase):
                 data_dir=Path(directory), trail_detail_metadata_enabled=True,
                 ra_auto_triage_root=Path("/tmp/ra-source"), trail_view_id=2410,
             )
-        ), patch.object(cases.database, "get_issue", return_value={"issue_id":"cn31842459"}), patch.object(
+        ), patch.object(cases.database, "get_issue", return_value={"issue_id": "cn31842459"}), patch.object(
             cases, "read_trail_issue_metadata", return_value=_metadata()
         ) as read:
             route = "/api/cases/cn31842459/trail-metadata"
-            with TestClient(app) as client:
-                first = client.get(route)
+            first = self.get(app, route)
             self.assertEqual(first.status_code, 200)
             self.assertEqual(first.json()["metadata_source"], "trail")
-            # New HTTP client and new store instance; no in-memory cache needed.
-            with TestClient(app) as client:
-                second = client.get(route)
-                self.assertEqual(second.json()["metadata_source"], "snapshot")
-                self.assertEqual(read.call_count, 1)
-                read.return_value = {**_metadata(), "ra_id":"updated"}
-                forced = client.get(route + "?refresh=true")
-                self.assertEqual(read.call_count, 2)
-                self.assertEqual(forced.json()["external_links"]["ra_task_id"], "updated")
-                self.assertEqual(client.get(route).json()["external_links"]["ra_task_id"], "updated")
-                self.assertEqual(read.call_count, 2)
+            # A new app/store instance and HTTP request use the same disk snapshot.
+            restarted = FastAPI()
+            restarted.include_router(cases.router)
+            second = self.get(restarted, route)
+            self.assertEqual(second.json()["metadata_source"], "snapshot")
+            self.assertEqual(read.call_count, 1)
+            read.return_value = {**_metadata(), "ra_id": "updated"}
+            forced = self.get(restarted, route + "?refresh=true")
+            self.assertEqual(read.call_count, 2)
+            self.assertEqual(forced.json()["external_links"]["ra_task_id"], "updated")
+            self.assertEqual(self.get(restarted, route).json()["external_links"]["ra_task_id"], "updated")
+            self.assertEqual(read.call_count, 2)
 
     def test_disabled_lookup_and_unknown_issue_never_create_snapshot(self):
         from fastapi import FastAPI
-        from fastapi.testclient import TestClient
         from ra_triage_dashboard.app.routers import cases
 
         app = FastAPI()
         app.include_router(cases.router)
         with tempfile.TemporaryDirectory() as directory, patch.object(
             cases, "settings", SimpleNamespace(data_dir=Path(directory), trail_detail_metadata_enabled=False)
-        ), patch.object(cases.database, "get_issue", return_value={"issue_id":"cn1"}) as issue, patch.object(
+        ), patch.object(cases.database, "get_issue", return_value={"issue_id": "cn1"}) as issue, patch.object(
             cases, "read_trail_issue_metadata"
-        ) as read, TestClient(app) as client:
-            self.assertEqual(client.get("/api/cases/cn1/trail-metadata").json()["status"], "disabled")
+        ) as read:
+            self.assertEqual(self.get(app, "/api/cases/cn1/trail-metadata").json()["status"], "disabled")
             issue.return_value = None
-            self.assertEqual(client.get("/api/cases/cn1/trail-metadata").status_code, 404)
+            self.assertEqual(self.get(app, "/api/cases/cn1/trail-metadata").status_code, 404)
             read.assert_not_called()
             self.assertEqual(list(Path(directory).iterdir()), [])
