@@ -94,7 +94,7 @@ function playerFixture({readyState=4,context=null,initialTime=0,durationSec=40,.
  cachedError.ctx.releaseBevVideoPlayer(cachedError.root);
  const buffered=playerFixture();buffered.video.fire('loadeddata');buffered.video.fire('stalled');assert.equal(buffered.player.dataset.loadState,'ready','buffered paused video must not show slow-load warning');
  buffered.video._refreshBevPlayerLanguage();assert.equal(buffered.video.getAttribute('aria-label'),'复核视频');buffered.ctx.releaseBevVideoPlayer(buffered.root);
- // Native load/seek may flash its new poster or frame0 before the retained
+ // Native load may flash its new poster or frame0 before the retained
  // target is decoded. Keep exactly the last valid frame across rapid changes.
  const transition=playerFixture(),tv=transition.video,snapshots=[];let held=null;
  tv.videoWidth=32;tv.videoHeight=18;
@@ -121,6 +121,10 @@ function playerFixture({readyState=4,context=null,initialTime=0,durationSec=40,.
  present(0);assert(cover,'a submitted frame0 must stay covered');
  present(20);assert(cover,'the t0 poster/frame is not the retained23s target');
  present(23);assert.equal(cover,null,'the submitted target frame is revealed');assert.equal(frames.size,0);
+ proof.elements.seek.value='22';proof.elements.seek.fire('change');
+ assert.equal(cover,null,'an ordinary native seek must not copy the video into a canvas');
+ assert.equal(frames.size,0,'an ordinary native seek has no additional submitted-frame gate');
+ fv._setBevVideoTrack('/back.mp4');fv.readyState=4;fv.fire('loadedmetadata');
  proof.elements.seek.value='21';proof.elements.seek.fire('change');fv.fire('seeked');
  present(23);assert(cover,'a stale later frame is invalid when seeking backwards');
  fv.readyState=1;fv.seeking=true;present(21);assert(cover,'frame submission can precede native ready/seeked');
@@ -130,11 +134,26 @@ function playerFixture({readyState=4,context=null,initialTime=0,durationSec=40,.
  assert.equal(frames.size,1);fv.readyState=4;fv.fire('loadedmetadata');fv.fire('seeked');present(21);assert.equal(cover,null);
  fv._setBevVideoTrack('/short.mp4');fv.duration=20;fv.currentTime=20;fv.readyState=4;fv.fire('loadedmetadata');present(19.9);
  assert.equal(cover,null,'a shorter source clamps its target to the last actual frame');
- fv.duration=40;proof.elements.seek.value='40';proof.elements.seek.fire('change');fv.fire('seeked');present(39.9);
+ fv.duration=40;proof.elements.seek.value='40';proof.elements.seek.fire('change');
+ assert.equal(cover,null);assert.equal(frames.size,0);
+ fv._setBevVideoTrack('/end.mp4');fv.readyState=4;fv.fire('loadedmetadata');fv.fire('seeked');present(39.9);
  assert.equal(cover,null,'seeking to duration must reveal the last frame, not await a nonexistent40s frame');
- proof.elements.seek.fire('change');fv.ended=true;proof.elements.play.fire('click');fv.currentTime=0;present(0);
+ fv._setBevVideoTrack('/replay.mp4');fv.readyState=4;fv.fire('loadedmetadata');
+ fv.ended=true;proof.elements.play.fire('click');fv.currentTime=0;present(0);
  assert.equal(cover,null,'Play at the end may confirm the native restart at0');fv.ended=false;
  fv._setBevVideoTrack('/three.mp4');proof.ctx.releaseBevVideoPlayer(proof.root);assert.equal(frames.size,0);assert.equal(cover,null);
+ // Discrete arrow jumps start decoding without the slider's75ms trailing
+ // debounce, including key repeats. Native seeks require no canvas readback.
+ const native=playerFixture({videoWidth:2560,videoHeight:1440,
+  requestVideoFrameCallback(){throw Error('Native seeks must not add a frame gate');}});
+ native.ctx.document={createElement(){throw Error('Native seeks must not copy full-resolution frames');}};
+ for(let i=0;i<5;i++){
+  native.player.fire('keydown',{key:'ArrowRight',repeat:i>0});native.flush(0);
+  assert.equal(native.video.currentTime,21+i,'each repeated key can decode before key release');
+ }
+ native.player.fire('keydown',{key:'ArrowLeft'});native.flush(0);assert.equal(native.video.currentTime,24);
+ const nativeSeeks=native.video.seeks.length;native.flush(75);assert.equal(native.video.seeks.length,nativeSeeks);
+ native.ctx.releaseBevVideoPlayer(native.root);
  // Rapid source changes before metadata arrives must retain playing intent.
  const rapid=playerFixture();rapid.elements.rate.value='1.5';rapid.video.currentTime=23;rapid.elements.play.fire('click');
  rapid.video._setBevVideoTrack('/closeup.mp4');rapid.video._setBevVideoTrack('/original.mp4');

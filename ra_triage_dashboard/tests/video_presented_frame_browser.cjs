@@ -22,6 +22,10 @@ const server = http.createServer((req, res) => {
   let file, delay = 0;
   if (url.pathname.startsWith('/api/')) {
     const name = path.basename(url.pathname);
+    if (name === 'square.png') {
+      res.writeHead(200, {'Content-Type':'image/png','Cache-Control':'no-store'});
+      return res.end(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==', 'base64'));
+    }
     if (!['bev.mp4', 'bev.png', 'closeup.mp4', 'closeup.png'].includes(name)) return res.writeHead(404).end();
     file = path.join(fixtures, name); delay = url.searchParams.has('cold') ? 1500 : name === 'closeup.mp4' ? 350 : 0;
   } else if (url.pathname.startsWith('/static/')) {
@@ -107,10 +111,45 @@ const server = http.createServer((req, res) => {
         results.push({view, width, phase: name, ms: Date.now() - begin, point: rect, expected,
           frames: phaseFrames.map(f => f.name), paused: await page.evaluate(() => v.paused), time: await page.evaluate(() => v.currentTime), initialRequests});
       };
-      await record('source-at23', () => page.evaluate(() => v._setBevVideoTrack('/api/closeup.mp4', '/api/closeup.png')), ['bev', 'target23']);
+      const changeSource = async (url, poster) => {
+        const sourceGeometry = await page.evaluate(({url,poster}) => {
+          const rect = el => {const r=el.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};};
+          const before = rect(v);
+          v._setBevVideoTrack(url, poster);
+          return {before,video:rect(v),cover:rect(v.parentElement.querySelector('.video-source-frame'))};
+        }, {url,poster});
+        for (const key of ['x','y','width','height']) {
+          assert(Math.abs(sourceGeometry.video[key] - sourceGeometry.cover[key]) < 0.02,
+            `source hold must not rescale the frame (${key}): ${JSON.stringify(sourceGeometry)}`);
+          assert(Math.abs(sourceGeometry.before[key] - sourceGeometry.video[key]) < 0.02,
+            `metadata reset must not resize the viewport (${key}): ${JSON.stringify(sourceGeometry)}`);
+        }
+        return sourceGeometry;
+      };
+      let sourceGeometry;
+      await record('source-at23', async () => {
+        sourceGeometry = await changeSource('/api/closeup.mp4', '/api/closeup.png');
+      }, ['bev', 'target23']);
+      results.at(-1).sourceGeometry = sourceGeometry;
       assert.equal(await page.evaluate(() => v.currentTime), 23);
       await record('back-to20', () => page.evaluate(() => {const s = detailHeroMediaEl().querySelector('[data-video-seek]');s.value = '20';s.dispatchEvent(new Event('change'));}), ['target23', 't0']);
       await record('rapid-sources', () => page.evaluate(() => {v._setBevVideoTrack('/api/bev.mp4', '/api/bev.png');v._setBevVideoTrack('/api/closeup.mp4', '/api/closeup.png');}), ['t0']);
+      await record('arrow-repeat', async () => {
+        await page.locator(view === 'review' ? '#detailHeroMedia [data-bev-video-player]' : '#caseLabelingHeroMedia [data-bev-video-player]').focus();
+        for (let i=0;i<3;i++) {await page.keyboard.down('ArrowRight');await page.waitForTimeout(30);}
+        assert(await page.evaluate(() => v.currentTime >= 21), 'key repeat must decode before the held key is released');
+        assert.equal(await page.evaluate(() => Boolean(v.parentElement.querySelector('.video-source-frame'))), false,
+          'same-source jumps must not copy or rescale full-resolution frames');
+        await page.keyboard.up('ArrowRight');await ready();
+        assert.equal(await page.evaluate(() => v.currentTime), 23);
+        for (let i=0;i<3;i++) {await page.keyboard.down('ArrowLeft');await page.waitForTimeout(30);}
+        await page.keyboard.up('ArrowLeft');await ready();
+        assert.equal(await page.evaluate(() => v.currentTime), 20);
+      }, ['t0','target23']);
+      await record('source-square-poster', async () => {
+        await changeSource('/api/bev.mp4', '/api/square.png');await ready();
+        await changeSource('/api/closeup.mp4', '/api/closeup.png');await ready();
+      }, ['t0','bev']);
       await record('switch-before-metadata', () => page.evaluate(() => {
         const pane = detailMediaPane(); releaseBevVideoPlayer(pane);
         const data = structuredClone(state.selectedCase);data.issue_id = 'cn_cold_frames';data.assets.video.url = '/api/bev.mp4?cold=1';

@@ -1,5 +1,49 @@
 # Native video loading restoration — 2026-10-23
 
+## Native same-source seeks and stable geometry — 2026-11-03 / cache747
+
+The cache746 held-frame path copied a full-resolution video frame on every
+left/right seek and waited for submitted-frame proof plus two paint boundaries.
+The inline native video occupied its intrinsic grid row while the absolute
+canvas used the bordered parent's slightly shorter padding box (438.1875px vs
+437.3125px in the reproduced desktop case). Swapping those surfaces produced
+the reported small zoom pulse. A trailing75ms debounce also deferred all native
+seeks during faster arrow-key repeats.
+
+Ordinary same-source seeks now retain the native video surface; no canvas
+readback or additional frame-proof gate is needed. Discrete buttons/arrows
+queue at0ms, so repeats can decode before release; slider input retains75ms
+coalescing and its final change flush. Source replacement still holds one old
+frame and confirms the target; a seek during that hold updates its target and
+cancels obsolete proof. The inline video uses zero-minimum grid tracks and
+min-width/height0 so intrinsic video/poster sizes cannot overflow its stable
+viewport; video and cover fit the same content rectangle, including during
+metadata resets or square/missing posters. Expanded zoom/pan keeps
+the existing shared canvas. Default paused-t0, selected-source-only loading,
+Play/Space/cancel, rate, source positions and the toolbar remain unchanged.
+
+The compositor regression additionally compares cover/video geometry and uses
+held/repeated real arrow keys in both directions, asserting decoded progress
+before release and no same-source canvas. Local baseline/candidate checks use
+the same prepared actual media,10 alternating paused1s jumps for each of BEV
+and closeup per version. Fully buffered media deliberately isolates UI/decoder
+overhead: measured p95 BEV255.1→128.7ms and closeup148.7→60.5ms; canvas copies
+20→0. These20 samples/version do not establish production or weak-network p95.
+
+```bash
+NODE_PATH=/path/to/playwright/node_modules \
+SEEK_SAMPLES=/tmp/local-prepared-clips \
+SEEK_PLAYER_JS=/tmp/prior-detail-media.js \
+SEEK_RESULT=/tmp/seek-before.json \
+node ra_triage_dashboard/tests/video_seek_benchmark.cjs
+```
+
+Omit `SEEK_PLAYER_JS` for the current module. Default sample filenames are
+`optimized-current.mp4` and `optimized-closeup.mp4`; override `SEEK_NAMES` and
+`SEEK_COUNT` as needed. Automatic checks never prebuffer production media.
+Evidence: `/private/tmp/video-seek-geometry-20261103/`; deployment identity and
+actual browser coverage belong in its final release records.
+
 ## Submitted-frame confirmation — 2026-11-03 / cache746
 
 The cache745 frame hold could be removed after `seeked`/`currentTime` plus two

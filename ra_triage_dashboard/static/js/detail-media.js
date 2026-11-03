@@ -472,9 +472,13 @@ function bindBevVideoPlayers(root) {
     const focusPlayer = () => {
       player.focus({ preventScroll: true });
     };
-    const seekTo = (target, { preserveFrame = true } = {}) => {
+    const seekTo = (target) => {
       if (disposed) return;
-      if (preserveFrame || heldFrame) holdFrame(target);
+      // A native seek retains this source's last frame until the target is
+      // decoded. Copying it to a full-resolution canvas adds a readback and a
+      // second scaling/compositing path on every jump. Only an in-flight
+      // source replacement needs the held-frame confirmation below.
+      if (heldFrame) heldTarget = target;
       if (video.readyState < 1) { pendingStart = target; update(target); return; }
       if (queuedSeekTimer !== null) window.clearTimeout(queuedSeekTimer);
       queuedSeekTimer = null;
@@ -538,7 +542,9 @@ function bindBevVideoPlayers(root) {
         Math.max(0, duration()),
         Math.max(0, currentTime + direction * step)
       );
-      queueSeek(target);
+      // Discrete jumps must not wait for the slider's trailing debounce;
+      // repeated arrow keys otherwise postpone every decode until release.
+      queueSeek(target, 0);
     };
     const startPlayback = () => {
       if (disposed || suspended || !wantsPlayback || playPending || !video.paused
@@ -697,7 +703,7 @@ function bindBevVideoPlayers(root) {
       // Native media-fragment startup may already be seeking to this point.
       // Avoid restarting that Range request; retain an exact-seek fallback for
       // browsers without fragment support and descriptors without duration.
-      if (Math.abs(video.currentTime - position) > 0.001) seekTo(position, { preserveFrame: false });
+      if (Math.abs(video.currentTime - position) > 0.001) seekTo(position);
       else update();
       video.playbackRate = Number(rateSelect.value || 1);
       startPlayback();
