@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import json
 import sys
+import threading
 import types
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
 
 from ra_triage_dashboard.app.trail_sync import (
+    _detail_cache,
     ares_playback_metadata,
     read_trail_issue_metadata,
 )
@@ -60,6 +63,68 @@ class _Frame:
 
 
 class TrailDetailMetadataTest(unittest.TestCase):
+    def setUp(self) -> None:
+        _detail_cache.clear()
+        self.addCleanup(_detail_cache.clear)
+
+    def read_metadata(self, **overrides):
+        return read_trail_issue_metadata(**{
+            "ra_root": Path("/tmp/ra-auto-triage-test"),
+            "issue_id": "cn31842459", "view_id": 2410, "cache_seconds": 300,
+            **overrides,
+        })
+
+    def test_concurrent_navigation_uses_one_trail_query_and_copies_events(self):
+        entered, release = threading.Event(), threading.Event()
+
+        def loader(*_args):
+            entered.set()
+            self.assertTrue(release.wait(2))
+            return {"ra_event": [{"event": "start", "timestamp": 1778504337830}]}
+
+        with patch("ra_triage_dashboard.app.trail_sync._read_trail_issue_metadata", side_effect=loader) as read:
+            with ThreadPoolExecutor(max_workers=6) as executor:
+                futures = [executor.submit(self.read_metadata) for _ in range(6)]
+                self.assertTrue(entered.wait(2))
+                release.set()
+                results = [future.result(timeout=2) for future in futures]
+            self.assertEqual(read.call_count, 1)
+            results[0]["ra_event"][0]["event"] = "modified"
+            self.assertEqual(results[1]["ra_event"][0]["event"], "start")
+            self.assertEqual(self.read_metadata()["ra_event"][0]["event"], "start")
+
+    def test_negative_cache_backoff_expiry_and_explicit_disable(self):
+        with patch("ra_triage_dashboard.app.timed_cache.time.monotonic") as clock, patch(
+            "ra_triage_dashboard.app.trail_sync._read_trail_issue_metadata",
+            side_effect=[{}, {"ra_id": "ready"}, {"ra_id": "refreshed"}, {}, {}],
+        ) as read:
+            clock.return_value = 100
+            self.assertEqual(self.read_metadata(), {})
+            clock.return_value = 129
+            self.assertEqual(self.read_metadata(), {})
+            self.assertEqual(read.call_count, 1)
+            clock.return_value = 130
+            self.assertEqual(self.read_metadata(), {"ra_id": "ready"})
+            clock.return_value = 429
+            self.assertEqual(self.read_metadata(), {"ra_id": "ready"})
+            clock.return_value = 430
+            self.assertEqual(self.read_metadata(), {"ra_id": "refreshed"})
+            self.assertEqual(self.read_metadata(cache_seconds=0), {})
+            self.assertEqual(self.read_metadata(cache_seconds=0), {})
+            self.assertEqual(read.call_count, 5)
+
+    def test_unavailable_trail_is_backed_off_and_view_and_root_are_separate(self):
+        issue_utils = types.ModuleType("utils.get_ra_issue_utils")
+        with patch.dict(sys.modules, {"utils": types.ModuleType("utils"), "utils.get_ra_issue_utils": issue_utils}), patch.object(
+            issue_utils, "get_self_issue", side_effect=RuntimeError("offline"), create=True
+        ) as read:
+            self.assertEqual(self.read_metadata(), {})
+            self.assertEqual(self.read_metadata(), {})
+            self.assertEqual(read.call_count, 1)
+            self.read_metadata(view_id=2411)
+            self.read_metadata(ra_root=Path("/tmp/other-trail-test"))
+            self.assertEqual(read.call_count, 3)
+
     def test_only_allowlisted_metadata_is_returned(self) -> None:
         utils_module = types.ModuleType("utils")
         issue_utils_module = types.ModuleType("utils.get_ra_issue_utils")

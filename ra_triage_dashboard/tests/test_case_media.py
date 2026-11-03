@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+import tempfile
 import unittest
 from types import SimpleNamespace
 from pathlib import Path
@@ -125,6 +126,8 @@ class DeferredCaseMediaTest(unittest.IsolatedAsyncioTestCase):
                 await cases_router.get_planning_constraints("cn36864605", response, 60001)
 
     async def test_trail_metadata_resolves_disable_ra_task_version(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
         with patch.object(
             cases_router.database,
             "get_issue",
@@ -133,11 +136,11 @@ class DeferredCaseMediaTest(unittest.IsolatedAsyncioTestCase):
             cases_router,
             "settings",
             SimpleNamespace(
-                data_dir=Path("/tmp/ra-triage-test-no-simulation-links"),
                 trail_detail_metadata_enabled=True,
                 ra_auto_triage_root="/tmp/ra-auto-triage-test",
                 trail_view_id=2410,
                 trail_detail_metadata_cache_seconds=0,
+                data_dir=Path(temporary.name),
             ),
         ), patch.object(
             cases_router,

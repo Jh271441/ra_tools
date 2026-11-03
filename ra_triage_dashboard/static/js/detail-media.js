@@ -1411,7 +1411,9 @@ function formatRaEventTimestamp(value) {
   const date = new Date(numeric);
   return Number.isNaN(date.getTime())
     ? "—"
-    : date.toLocaleString("zh-CN", { hour12: false });
+    : date.toLocaleString(i18nLocale() === "en" ? "en-GB" : "zh-CN", {
+        hour12: false, timeZone: "Asia/Shanghai",
+      });
 }
 
 function formatRaEventRelativeTime(value, t0TimestampMs) {
@@ -1447,19 +1449,91 @@ function renderRaEventRows(
     body.innerHTML = rows
       .map((item) => {
         const timestamp = item?.timestamp;
+        const playbackUrl = aresStudioUrl(
+          state.raEventDialog.caseData,
+          state.raEventDialog.trailUrl,
+          Number(timestamp)
+        );
+        const timeLink = (label) => playbackUrl && label !== "—"
+          ? `<a class="ra-event-playback-link" href="${escapeHtml(playbackUrl)}" target="_blank" rel="noreferrer" data-ra-event-timestamp="${escapeHtml(timestamp)}">${escapeHtml(label)}</a>`
+          : `<span data-i18n-title="ra_event.unavailable" title="${escapeHtml(t("ra_event.unavailable"))}">${escapeHtml(label)}</span>`;
         return `<tr>
           <td>${escapeHtml(item?.event || "—")}</td>
           <td>${escapeHtml(item?.value ?? "—")}</td>
-          <td class="ra-event-timestamp">${escapeHtml(timestamp ?? "—")}</td>
-          <td class="ra-event-relative-time">${escapeHtml(formatRaEventRelativeTime(timestamp, t0TimestampMs))}</td>
-          <td>${escapeHtml(formatRaEventTimestamp(timestamp))}</td>
+          <td class="ra-event-timestamp">${timeLink(timestamp ?? "—")}</td>
+          <td class="ra-event-relative-time">${timeLink(formatRaEventRelativeTime(timestamp, t0TimestampMs))}</td>
+          <td class="ra-event-formatted-time" data-ra-event-timestamp="${escapeHtml(timestamp ?? "")}">${escapeHtml(formatRaEventTimestamp(timestamp))}</td>
         </tr>`;
       })
       .join("");
   }
   const empty = $("#raEventEmpty");
   if (empty) empty.hidden = rows.length > 0;
+  refreshRaEventDialogLanguage();
   return rows.length;
+}
+
+function refreshRaEventDialogLanguage() {
+  const dialog = $("#raEventDialog");
+  if (!dialog) return;
+  const { events, issueId } = state.raEventDialog;
+  const meta = $("#raEventDialogMeta");
+  if (meta) meta.textContent = t(events.length === 1 ? "ra_event.meta_one" : "ra_event.meta", {
+    n: events.length, issue: issueId,
+  });
+  const refreshButton = $("#raEventRefreshButton");
+  if (refreshButton) refreshButton.disabled = state.raEventDialog.refreshState === "refreshing";
+  const refreshStatus = $("#raEventRefreshStatus");
+  if (refreshStatus) {
+    refreshStatus.hidden = !state.raEventDialog.refreshState;
+    refreshStatus.textContent = state.raEventDialog.refreshState
+      ? t(`ra_event.${state.raEventDialog.refreshState}`) : "";
+  }
+  dialog.querySelectorAll(".ra-event-playback-link").forEach((link) => {
+    const label = t("ra_event.open_window", { timestamp: link.dataset.raEventTimestamp });
+    link.title = label;
+    link.setAttribute("aria-label", label);
+  });
+  dialog.querySelectorAll(".ra-event-formatted-time").forEach((cell) => {
+    cell.textContent = formatRaEventTimestamp(cell.dataset.raEventTimestamp);
+  });
+}
+
+async function refreshRaEventMetadata() {
+  const context = state.raEventDialog;
+  const dialog = $("#raEventDialog");
+  if (!dialog?.open || !context.issueId || context.refreshState === "refreshing") return;
+  context.refreshState = "refreshing";
+  refreshRaEventDialogLanguage();
+  const result = await startTrailDetailMetadata(context.issueId, 0, null, { refresh: true });
+  if (state.raEventDialog !== context || !dialog.open) return;
+  if (result?.status !== "ready" || result?.refresh_status === "unavailable") {
+    context.refreshState = "refresh_failed";
+    refreshRaEventDialogLanguage();
+    return;
+  }
+  const caseData = context.caseData;
+  caseData.external_links = result.external_links || {};
+  caseData.trail_metadata_status = result.status;
+  caseData.dashboard_should_exclude = result.dashboard_should_exclude;
+  context.events = Array.isArray(caseData.external_links.ra_events) ? caseData.external_links.ra_events : [];
+  context.trailUrl = safeUrl(caseData.external_links.ra_event_url);
+  context.t0TimestampMs = reviewCaseT0TimestampMs(caseData);
+  context.refreshState = "refreshed";
+  const trailLink = $("#raEventTrailLink");
+  if (trailLink) {
+    trailLink.hidden = !context.trailUrl;
+    trailLink.href = context.trailUrl || "#";
+  }
+  renderRaEventRows(context.events, $("#raEventSearchInput")?.value || "", context.t0TimestampMs);
+  if (state.selectedCase === caseData) renderDetailExternalLinks(caseData);
+  if (state.caseLabeling.caseData === caseData) {
+    const links = $("#caseLabelingExternalLinks");
+    if (links) {
+      links.innerHTML = detailExternalLinksMarkup(caseData);
+      bindDetailExternalLinks(caseData, links);
+    }
+  }
 }
 
 function bindRaEventDialogFocus() {
@@ -1492,14 +1566,13 @@ function openRaEventDialog(caseData) {
   const events = Array.isArray(externalLinks.ra_events) ? externalLinks.ra_events : [];
   state.raEventDialog = {
     issueId: String(caseData.issue_id || ""),
+    caseData,
     events,
     trailUrl: safeUrl(externalLinks.ra_event_url),
     t0TimestampMs: reviewCaseT0TimestampMs(caseData),
   };
   const input = $("#raEventSearchInput");
   if (input) input.value = "";
-  const meta = $("#raEventDialogMeta");
-  if (meta) meta.textContent = `${events.length} 条 · ${caseData.issue_id || "当前 Issue"}`;
   const trailLink = $("#raEventTrailLink");
   if (trailLink) {
     trailLink.hidden = !state.raEventDialog.trailUrl;
@@ -1553,13 +1626,47 @@ function renderDetailExternalLinks(caseData) {
   bindDetailExternalLinks(caseData);
 }
 
-function startTrailDetailMetadata(issueId, requestSeq, signal = null) {
-  // Start this optional remote lookup independently from local media/DB
-  // loading.  The caller applies it only after the matching detail DOM exists.
-  return api(
-    "/api/cases/" + encodeURIComponent(issueId) + "/trail-metadata",
-    signal ? { signal } : {}
-  ).catch(() => null);
+const TRAIL_DETAIL_CACHE_LIMIT = 200;
+const TRAIL_DETAIL_CACHE_TTL_MS = 5 * 60 * 1000;
+const TRAIL_DETAIL_FAILURE_TTL_MS = 30 * 1000;
+const trailDetailMetadataCache = new Map();
+
+function startTrailDetailMetadata(issueId, requestSeq, signal = null, { refresh = false } = {}) {
+  if (signal?.aborted) return Promise.resolve(null);
+  const path = "/api/cases/" + encodeURIComponent(issueId) + "/trail-metadata";
+  const key = withBase(path);
+  let entry = trailDetailMetadataCache.get(key);
+  if (!entry || entry.expiresAt <= Date.now() || (refresh && !entry.refreshing)) {
+    const previous = entry;
+    // Navigation cancels only its consumer. Keep this bounded lookup alive so
+    // returning to the Issue reuses the result, rather than restarting Trail.
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 15000);
+    entry = { expiresAt: Infinity, promise: null, refreshing: refresh };
+    entry.promise = api(refresh ? path + "?refresh=true" : path, { signal: controller.signal, cache: "no-store" })
+      .catch(() => null)
+      .then(async (result) => {
+        let valid = result?.issue_id === issueId ? result : null;
+        if (refresh && valid?.status !== "ready" && previous) {
+          const saved = await previous.promise;
+          if (saved?.status === "ready") valid = { ...saved, refresh_status: "unavailable" };
+        }
+        const ready = valid?.status === "ready" || valid?.status === "disabled";
+        entry.refreshing = false;
+        entry.expiresAt = Date.now() + (ready && valid?.refresh_status !== "unavailable"
+          ? TRAIL_DETAIL_CACHE_TTL_MS : TRAIL_DETAIL_FAILURE_TTL_MS);
+        return valid;
+      })
+      .finally(() => window.clearTimeout(timeout));
+    trailDetailMetadataCache.set(key, entry);
+  }
+  trailDetailMetadataCache.delete(key);
+  trailDetailMetadataCache.set(key, entry);
+  while (trailDetailMetadataCache.size > TRAIL_DETAIL_CACHE_LIMIT) {
+    trailDetailMetadataCache.delete(trailDetailMetadataCache.keys().next().value);
+  }
+  // Callers enrich their own Case; never share mutable event arrays or links.
+  return entry.promise.then((result) => signal?.aborted ? null : structuredClone(result));
 }
 
 function applyTrailDetailMetadata(result, issueId, requestSeq) {

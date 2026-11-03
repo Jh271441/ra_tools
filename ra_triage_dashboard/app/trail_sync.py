@@ -3,11 +3,11 @@ from __future__ import annotations
 import importlib
 import json
 import sys
-import threading
-import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
+
+from .timed_cache import TimedSingleFlightCache
 
 
 TRAIL_RESULT_FIELD = "ra_stuck_auto_result"
@@ -30,8 +30,9 @@ TRAIL_DETAIL_FIELDS = (
     # its read-only "disable RA command" simulation task when one exists.
     "te_task_id_disabe_ra",
 )
-_detail_cache: dict[tuple[str, int, str], tuple[float, dict[str, Any]]] = {}
-_detail_cache_lock = threading.Lock()
+_detail_cache = TimedSingleFlightCache[tuple[str, int, str], dict[str, Any]](
+    ttl_seconds=300, max_entries=2048
+)
 
 
 @dataclass(frozen=True)
@@ -186,13 +187,21 @@ def read_trail_issue_metadata(
     if not normalized_issue_id:
         return {}
     cache_key = (str(ra_root.resolve()), int(view_id), normalized_issue_id)
-    now = time.monotonic()
     ttl = max(0, int(cache_seconds))
-    with _detail_cache_lock:
-        cached = _detail_cache.get(cache_key)
-        if ttl > 0 and cached and now - cached[0] < ttl:
-            return dict(cached[1])
+    if ttl == 0:
+        return _read_trail_issue_metadata(ra_root, normalized_issue_id, view_id)
+    # Empty/error results need a short backoff too. Share one upstream lookup
+    # across concurrent tabs, including after an HTTP waiter has timed out.
+    return _detail_cache.get_or_load(
+        cache_key,
+        lambda: _read_trail_issue_metadata(ra_root, normalized_issue_id, view_id),
+        ttl_seconds=lambda metadata: ttl if metadata else min(ttl, 30),
+    )
 
+
+def _read_trail_issue_metadata(
+    ra_root: Path, normalized_issue_id: str, view_id: int
+) -> dict[str, Any]:
     root = str(ra_root.resolve())
     if root not in sys.path:
         sys.path.insert(0, root)
@@ -242,9 +251,6 @@ def read_trail_issue_metadata(
             metadata["dashboard_should_exclude"] = dashboard_should_exclude
     if len(metadata) == 1:
         return {}
-    if ttl > 0:
-        with _detail_cache_lock:
-            _detail_cache[cache_key] = (time.monotonic(), dict(metadata))
     return metadata
 
 

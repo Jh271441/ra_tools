@@ -1458,18 +1458,21 @@ async function selectCaseLabelingIssue(issueId, { updateRoute = true } = {}) {
   renderCaseLabelingEditor(caseData);
   if (updateRoute) persistCaseLabelingRoute({ issue: normalized }, "push");
   pageContext = capturePageContext();
-  void startTrailDetailMetadata(normalized, seq).then((result) => {
+  window.setTimeout(() => {
     if (seq !== state.caseLabeling.detailSeq || state.caseLabeling.issueId !== normalized || !isPageContextCurrent(pageContext)) return;
-    caseData.external_links = result?.external_links || {};
-    caseData.trail_metadata_status = result?.status || "unavailable";
-    caseData.dashboard_should_exclude = result?.dashboard_should_exclude;
-    refreshCaseExclusionSummary();
-    const links = $("#caseLabelingExternalLinks");
-    if (links) {
-      links.innerHTML = detailExternalLinksMarkup(caseData);
-      bindDetailExternalLinks(caseData, links);
-    }
-  });
+    void startTrailDetailMetadata(normalized, seq).then((result) => {
+      if (seq !== state.caseLabeling.detailSeq || state.caseLabeling.issueId !== normalized || !isPageContextCurrent(pageContext)) return;
+      caseData.external_links = result?.external_links || {};
+      caseData.trail_metadata_status = result?.status || "unavailable";
+      caseData.dashboard_should_exclude = result?.dashboard_should_exclude;
+      refreshCaseExclusionSummary();
+      const links = $("#caseLabelingExternalLinks");
+      if (links) {
+        links.innerHTML = detailExternalLinksMarkup(caseData);
+        bindDetailExternalLinks(caseData, links);
+      }
+    });
+  }, TRAIL_DETAIL_DELAY_MS);
   try {
     const media = await api(`/api/cases/${encodeURIComponent(normalized)}/media`);
     if (seq !== state.caseLabeling.detailSeq || state.caseLabeling.issueId !== normalized || !isPageContextCurrent(pageContext)) return;

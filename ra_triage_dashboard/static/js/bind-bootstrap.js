@@ -727,9 +727,10 @@ function bindEvents() {
     );
   });
   $("#raEventSearchButton").addEventListener("click", () => $("#raEventSearchInput")?.focus());
+  $("#raEventRefreshButton").addEventListener("click", refreshRaEventMetadata);
   bindRaEventDialogFocus();
   $("#raEventDialog").addEventListener("close", () => {
-    state.raEventDialog = { issueId: "", events: [], trailUrl: "", t0TimestampMs: NaN };
+    state.raEventDialog = { issueId: "", caseData: null, events: [], trailUrl: "", t0TimestampMs: NaN };
   });
   $("#importFile").addEventListener("change", () => {
     const filename = $("#importFileName");

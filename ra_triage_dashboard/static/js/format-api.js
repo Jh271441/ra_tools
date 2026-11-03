@@ -424,7 +424,7 @@ function reviewCaseT0TimestampMs(caseData) {
   return value ?? NaN;
 }
 
-function aresStudioUrl(caseData, issueUrl) {
+function aresStudioUrl(caseData, issueUrl, timestampMs = reviewCaseT0TimestampMs(caseData)) {
   const externalLinks = caseData?.external_links || {};
   const tripId = String(
     caseData?.assets?.capture?.trip_id ||
@@ -433,7 +433,6 @@ function aresStudioUrl(caseData, issueUrl) {
     ""
   ).trim();
   const issueId = String(caseData?.issue_id || "").trim();
-  const timestampMs = reviewCaseT0TimestampMs(caseData);
   if (!issueUrl || !issueId || !tripId || !Number.isFinite(timestampMs) || timestampMs <= 0) return "";
   try {
     const url = new URL("/static/ares-studio/", issueUrl);

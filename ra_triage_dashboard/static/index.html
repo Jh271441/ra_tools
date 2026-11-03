@@ -86,7 +86,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-749`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-750`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -2409,25 +2409,27 @@
             <h2>RA Event</h2>
             <div class="ra-event-dialog-meta">
               <span id="raEventDialogMeta"></span>
-              <a class="ra-event-trail-link" id="raEventTrailLink" href="#" target="_blank" rel="noreferrer" hidden>打开 Trail Issue ↗</a>
+              <a class="ra-event-trail-link" id="raEventTrailLink" href="#" target="_blank" rel="noreferrer" data-i18n="ra_event.trail_link" hidden>打开 Trail Issue ↗</a>
+              <button class="button button-quiet ra-event-refresh-button" id="raEventRefreshButton" type="button" data-i18n="ra_event.refresh">从 Trail 刷新</button>
+              <span id="raEventRefreshStatus" role="status" aria-live="polite" hidden></span>
             </div>
           </div>
-          <button class="icon-button" type="button" data-close="raEventDialog" aria-label="关闭">×</button>
+          <button class="icon-button" type="button" data-close="raEventDialog" data-i18n-aria-label="common.close" aria-label="关闭">×</button>
         </div>
         <div class="ra-event-search-row">
-          <input id="raEventSearchInput" type="search" placeholder="Please Enter Event Name." autocomplete="off" aria-label="搜索 RA Event" />
-          <button class="button button-quiet ra-event-search-button" id="raEventSearchButton" type="button" aria-label="搜索" title="搜索">
+          <input id="raEventSearchInput" type="search" data-i18n-placeholder="ra_event.search_placeholder" data-i18n-aria-label="ra_event.search" placeholder="输入事件名称或值" autocomplete="off" aria-label="搜索 RA Event" />
+          <button class="button button-quiet ra-event-search-button" id="raEventSearchButton" type="button" data-i18n-aria-label="ra_event.search" data-i18n-title="ra_event.search" aria-label="搜索 RA Event" title="搜索 RA Event">
             <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.25"></circle><path d="m12.5 12.5 4 4"></path></svg>
           </button>
         </div>
         <div class="ra-event-table-wrap">
           <table class="ra-event-table">
             <thead>
-              <tr><th>event</th><th>value</th><th>timestamp</th><th>t ± seconds</th><th>Formatted timestamp</th></tr>
+              <tr><th data-i18n="ra_event.event">event</th><th data-i18n="ra_event.value">value</th><th data-i18n="ra_event.timestamp">timestamp</th><th data-i18n="ra_event.relative">t ± seconds</th><th data-i18n="ra_event.formatted">Formatted timestamp (UTC+8)</th></tr>
             </thead>
             <tbody id="raEventTableBody"></tbody>
           </table>
-          <div class="ra-event-empty" id="raEventEmpty" hidden>没有匹配的 RA Event。</div>
+          <div class="ra-event-empty" id="raEventEmpty" data-i18n="ra_event.empty" hidden>没有匹配的 RA Event。</div>
         </div>
         <div class="dialog-actions ra-event-dialog-actions">
           <button class="button button-quiet" type="button" data-close="raEventDialog"><span class="ui-lang-zh">取消</span><span class="ui-lang-en">Cancel</span></button>
@@ -2623,7 +2625,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-749`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-750`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

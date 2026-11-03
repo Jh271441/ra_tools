@@ -81,8 +81,18 @@ class TimedSingleFlightCache(Generic[K, V]):
         with self._lock:
             return len(self._entries)
 
-    def get_or_load(self, key: K, loader: Callable[[], V]) -> V:
-        """Return a defensive copy, loading one expired key at most once."""
+    def get_or_load(
+        self,
+        key: K,
+        loader: Callable[[], V],
+        *,
+        ttl_seconds: float | Callable[[V], float] | None = None,
+    ) -> V:
+        """Return a defensive copy, loading one expired key at most once.
+
+        A load may override the default TTL, including by inspecting its value
+        so an unavailable remote result can use a shorter retry backoff.
+        """
 
         while True:
             now = time.monotonic()
@@ -111,6 +121,11 @@ class TimedSingleFlightCache(Generic[K, V]):
 
             try:
                 value = loader()
+                ttl = self._ttl_seconds if ttl_seconds is None else float(
+                    ttl_seconds(value) if callable(ttl_seconds) else ttl_seconds
+                )
+                if ttl <= 0:
+                    raise ValueError("ttl_seconds must be positive")
             except Exception:
                 with self._lock:
                     self._inflight.pop(key, None)
@@ -121,7 +136,7 @@ class TimedSingleFlightCache(Generic[K, V]):
                 if self._generations.get(key, 0) == generation:
                     self._entries[key] = _TimedCacheEntry(
                         value=copy.deepcopy(value),
-                        expires_at=time.monotonic() + self._ttl_seconds,
+                        expires_at=time.monotonic() + ttl,
                     )
                     self._entries.move_to_end(key)
                     while len(self._entries) > self._max_entries:

@@ -3,11 +3,28 @@ from __future__ import annotations
 import threading
 import unittest
 from concurrent.futures import ThreadPoolExecutor
+from unittest.mock import patch
 
 from ra_triage_dashboard.app.timed_cache import TimedSingleFlightCache
 
 
 class TimedSingleFlightCacheTest(unittest.TestCase):
+    def test_per_result_ttl_and_failed_ttl_callback_release_waiters(self) -> None:
+        cache = TimedSingleFlightCache(ttl_seconds=300, max_entries=2)
+        with patch("ra_triage_dashboard.app.timed_cache.time.monotonic") as clock:
+            clock.return_value = 100
+            self.assertEqual(cache.get_or_load("case", lambda: {}, ttl_seconds=lambda value: 30 if not value else 300), {})
+            clock.return_value = 129
+            self.assertEqual(cache.get_or_load("case", lambda: {"unexpected": True}), {})
+            clock.return_value = 130
+            self.assertEqual(cache.get_or_load("case", lambda: {"ready": True}, ttl_seconds=10), {"ready": True})
+            clock.return_value = 140
+            self.assertEqual(cache.get_or_load("case", lambda: {"new": True}), {"new": True})
+
+        with self.assertRaises(ValueError):
+            cache.get_or_load("bad", lambda: {}, ttl_seconds=0)
+        self.assertEqual(cache.get_or_load("bad", lambda: {"recovered": True}), {"recovered": True})
+
     def test_cache_returns_defensive_copies(self) -> None:
         cache = TimedSingleFlightCache[str, dict[str, list[str]]](
             ttl_seconds=30,

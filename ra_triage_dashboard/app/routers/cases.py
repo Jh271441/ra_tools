@@ -71,6 +71,7 @@ from ..runtime import (
 from ..video_playback import RECIPE as VIDEO_PLAYBACK_RECIPE
 from ..video_stream import RECIPE as VIDEO_STREAM_RECIPE
 from ..trail_sync import read_trail_issue_metadata
+from ..trail_metadata_store import TrailMetadataStore
 from ..work_split import distribute_issue_ids, normalize_overlap_ratio
 from ..db_parts.task_lifecycle import normalize_task_lifecycle, task_list_metrics
 
@@ -1278,12 +1279,13 @@ async def get_case_thumbnail(issue_id: str, kind: str = "bev") -> FileResponse:
 
 
 @router.get("/api/cases/{issue_id}/trail-metadata")
-async def get_case_trail_metadata(issue_id: str) -> dict[str, Any]:
-    """Load optional Trail metadata without delaying the Issue detail API.
+async def get_case_trail_metadata(issue_id: str, refresh: bool = False) -> dict[str, Any]:
+    """Read a durable display snapshot, querying Trail only on a cache miss.
 
     The Issue detail response intentionally exposes only local data and any
-    metadata already imported with the case.  Trail is a best-effort external
-    dependency and is fetched by the browser after the detail has rendered.
+    metadata already imported with the case. Completed snapshots survive service
+    restarts and never expire. Explicit refresh and incomplete/failed snapshots
+    use the same cross-process single-flight path after local detail has painted.
     """
 
     case = await asyncio.to_thread(database.get_issue, issue_id)
@@ -1292,22 +1294,38 @@ async def get_case_trail_metadata(issue_id: str) -> dict[str, Any]:
 
     trail_metadata = _case_link_metadata_fallback(case)
     status = "disabled"
+    provenance: dict[str, Any] = {}
+
+    def resolve_snapshot_version(task_id: str, *, cache_seconds: float) -> int | None:
+        # A verified local replacement already owns this link. Preserve the
+        # existing route contract and avoid querying the obsolete source task.
+        if read_verified_disable_ra_simulation(
+            settings.data_dir, issue_id, source_task_id=task_id,
+        ) is not None:
+            return None
+        return resolve_disable_ra_simulation_version(task_id, cache_seconds=cache_seconds)
+
     if settings.trail_detail_metadata_enabled:
         status = "unavailable"
         try:
             async with trail_detail_semaphore:
-                fetched = await asyncio.wait_for(
+                snapshot = await asyncio.wait_for(
                     asyncio.to_thread(
-                        read_trail_issue_metadata,
+                        TrailMetadataStore(settings.data_dir / "trail_issue_metadata").get_or_fetch,
                         ra_root=settings.ra_auto_triage_root,
                         issue_id=issue_id,
                         view_id=settings.trail_view_id,
-                        cache_seconds=settings.trail_detail_metadata_cache_seconds,
+                        reader=read_trail_issue_metadata,
+                        resolver=resolve_snapshot_version,
+                        refresh=refresh,
                     ),
-                    timeout=8.0,
+                    timeout=12.0,
                 )
-            trail_metadata.update(fetched)
-            status = "ready" if fetched else "unavailable"
+            trail_metadata.update(snapshot["metadata"])
+            status = snapshot["status"]
+            provenance = {key: snapshot[key] for key in (
+                "metadata_source", "metadata_fetched_at", "refresh_status"
+            )}
         except asyncio.TimeoutError:
             status = "timeout"
             logger.warning("Trail detail metadata timed out issue_id=%s", issue_id)
@@ -1322,7 +1340,10 @@ async def get_case_trail_metadata(issue_id: str) -> dict[str, Any]:
         issue_id,
         source_task_id=disable_ra_task_id,
     )
-    if manual_simulation is None and disable_ra_task_id not in (None, ""):
+    if (
+        manual_simulation is None and disable_ra_task_id not in (None, "")
+        and "te_task_version_disabe_ra" not in trail_metadata
+    ):
         try:
             trail_metadata["te_task_version_disabe_ra"] = await asyncio.wait_for(
                 asyncio.to_thread(
@@ -1349,6 +1370,7 @@ async def get_case_trail_metadata(issue_id: str) -> dict[str, Any]:
     return {
         "issue_id": issue_id,
         "status": status,
+        **provenance,
         "external_links": _case_external_links(
             issue_id, trail_metadata, disable_ra_simulation=manual_simulation
         ),
