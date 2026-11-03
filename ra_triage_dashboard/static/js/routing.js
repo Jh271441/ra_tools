@@ -1257,6 +1257,9 @@ function setReviewView(issueId = "") {
   const detail = $("#reviewDetailView");
   if (!gallery || !detail) return;
   const showingDetail = Boolean(issueId);
+  if (!showingDetail && state.reviewPendingGalleryTarget && !reviewPendingGalleryTargetId()) {
+    renderCases({ items: state.cases, total: state.caseTotal });
+  }
   gallery.classList.toggle("hidden", showingDetail);
   detail.classList.toggle("hidden", !showingDetail);
   $("#reviewPage")?.classList.toggle("is-detail", showingDetail);

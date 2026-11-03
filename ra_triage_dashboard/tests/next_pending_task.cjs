@@ -1,8 +1,9 @@
 const fs = require('node:fs'), vm = require('node:vm'), assert = require('node:assert/strict'), path = require('node:path');
+const {execFileSync} = require('node:child_process');
 const baseScope = 'work_split_id=task&work_assignee=jasperchen&model_run_id=run&baselines=scope&label_state=conflict';
 const allIds = Array.from({length: 40}, (_, i) => `cn${i + 1}`);
 const state = {};
-let scope, epoch = 0, calls, pages, messages, located, routes, apiImpl, loadImpl, paints;
+let scope, epoch = 0, calls, pages, messages, located, routes, apiImpl, loadImpl, paints, queueIds, pendingIds;
 const button = {hidden: false, disabled: false, textContent: '', title: ''};
 const sandbox = {
   state, console, URLSearchParams, Set, Promise,
@@ -18,7 +19,10 @@ const sandbox = {
   persistCurrentReviewRoute: options => routes.push({...options, page: state.casePage, pageSize: state.casePageSize}),
 };
 vm.createContext(sandbox);
-vm.runInContext(fs.readFileSync(path.join(__dirname, '../static/js/review-gallery.js'), 'utf8'), sandbox);
+const source = process.env.NEXT_PENDING_TEST_REF
+  ? execFileSync('git', ['show', `${process.env.NEXT_PENDING_TEST_REF}:ra_triage_dashboard/static/js/review-gallery.js`], {encoding: 'utf8'})
+  : fs.readFileSync(path.join(__dirname, '../static/js/review-gallery.js'), 'utf8');
+vm.runInContext(source, sandbox);
 sandbox.renderCases = () => paints.push(sandbox.reviewPendingGalleryTargetId());
 sandbox.renderCasePagination = () => {};
 sandbox.loadCases = async options => {
@@ -32,11 +36,12 @@ function reset() {
   Object.assign(state, {activePage: 'review', reviewTaskContext: {id: 'task'}, reviewTaskContextLoading: false,
     reviewTaskContextError: null, reviewTaskProgress: [], selectedId: '', casePage: 1, casePageSize: 10,
     caseTotal: 40, cases: allIds.slice(0, 10).map(issue_id => ({issue_id})), caseListRequestSeq: 0,
-    savingAnnotation: false, reviewPendingGalleryTarget: null, reviewPendingJumpBusy: false});
+    savingAnnotation: false, reviewPendingGalleryTarget: null, reviewPendingJumpBusy: false, pageNavigationEpoch: 0});
   scope = baseScope; calls = []; pages = []; messages = []; located = []; routes = []; paints = [];
+  queueIds = allIds; pendingIds = ['cn1', 'cn3', 'cn22', 'cn23'];
   apiImpl = async url => ({issue_ids: new URL(url, 'http://fixture').searchParams.has('task_progress')
-    ? ['cn1', 'cn3', 'cn22', 'cn23'] : allIds});
-  loadImpl = async ({page}) => {state.cases = allIds.slice((page - 1) * state.casePageSize, page * state.casePageSize)
+    ? pendingIds : queueIds});
+  loadImpl = async ({page}) => {state.cases = queueIds.slice((page - 1) * state.casePageSize, page * state.casePageSize)
     .map(issue_id => ({issue_id}));};
 }
 const defer = () => {let resolve; const promise = new Promise(r => {resolve = r;}); return {promise, resolve};};
@@ -68,7 +73,28 @@ const defer = () => {let resolve; const promise = new Promise(r => {resolve = r;
     assert.equal(options.cache, 'no-store', 'Request fresh HTTP completion status');
   }
   reset(); state.casePage = 2; await loadImpl({page: 2});
-  await sandbox.jumpToNextPendingTask(); assert.equal(located[0], 'cn22', 'Start at the current page');
+  await sandbox.jumpToNextPendingTask(); assert.equal(located[0], 'cn1', 'A first click must include pending Issues before the visible page');
+  // Reported scope: 278 Issues, unfinished #200/#219, with completed #232 retained
+  // from detail on page 12. Initial lookup must recover #200 on page 10.
+  reset();
+  queueIds = Array.from({length: 278}, (_, i) => `fixture${i + 1}`);
+  queueIds[199] = 'cn35743727'; queueIds[218] = 'cn35759965'; queueIds[231] = 'cn35772161';
+  pendingIds = ['cn35743727', 'cn35759965'];
+  Object.assign(state, {casePage: 12, casePageSize: 20, caseTotal: 278, selectedId: 'cn35772161'});
+  await loadImpl({page: 12});
+  assert.equal(sandbox.reviewPendingGalleryTargetId(), '', 'Detail selection must not become the Gallery locate cursor');
+  await sandbox.jumpToNextPendingTask();
+  assert.equal(located.at(-1), 'cn35743727'); assert.equal(state.casePage, 10);
+  assert.equal(state.cases.length, 20); assert.equal(state.caseTotal, 278);
+  assert.equal(routes.at(-1).issue, ''); assert.equal(routes.at(-1).page, 10);
+  await sandbox.jumpToNextPendingTask();
+  assert.equal(located.at(-1), 'cn35759965'); assert.equal(state.casePage, 11);
+  assert.equal(state.cases.length, 20); assert.equal(state.casePageSize, 20);
+  state.pageNavigationEpoch++;
+  assert.equal(sandbox.reviewPendingGalleryTargetId(), '', 'A new Gallery visit retires its old cursor');
+  await sandbox.jumpToNextPendingTask();
+  assert.equal(located.at(-1), 'cn35743727', 'Re-entry must recover earlier unfinished work again');
+  assert.equal(state.casePage, 10);
   reset(); await sandbox.jumpToNextPendingTask(); scope += '&search=new';
   assert.equal(sandbox.reviewPendingGalleryTargetId(), '', 'Filter changes clear the old selection');
   await sandbox.jumpToNextPendingTask(); assert.equal(located.at(-1), 'cn1');
@@ -120,5 +146,5 @@ const defer = () => {let resolve; const promise = new Promise(r => {resolve = r;
   await assert.rejects(sandbox.jumpToNextPendingTask(), /offline/); assert.equal(state.reviewPendingJumpBusy, false);
   reset(); apiImpl = async () => ({issue_ids: []}); await sandbox.jumpToNextPendingTask();
   assert.equal(located.length, 0); assert.match(messages[0], /No further/);
-  console.log('Next pending gallery: repeated clicks, same/cross-page, preserved scope/size/URL, end, empty, error and race guards passed');
+  console.log('Next pending gallery: earliest unfinished Issue, #200 before retained #232, new visits, repeated clicks, scope/size/URL, end, errors and races passed');
 })().catch(error => {console.error(error); process.exitCode = 1;});

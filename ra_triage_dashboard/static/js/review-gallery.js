@@ -59,7 +59,7 @@ function issueCardLabelingAttributes(attributes) {
 function issueCard(item, options = {}) {
   const workspace = options.workspace || item.gallery_workspace || "review";
   const isLabeling = workspace === "labeling";
-  const isSelected = item.issue_id === (isLabeling ? state.caseLabeling?.issueId : reviewPendingGalleryTargetId() || state.selectedId);
+  const isSelected = item.issue_id === (isLabeling ? state.caseLabeling?.issueId : reviewPendingGalleryTargetId());
   const annotationRunId = String(item.annotation?.model_run_id || "").trim();
   const prediction = item.prediction?.label;
   const comparisonStatus = isLabeling ? "" : reviewComparisonStatusForItem(item);
@@ -526,7 +526,7 @@ function renderNextPendingTaskButton() {
   button.textContent = state.reviewPendingJumpBusy
     ? uiText('正在查找…', 'Finding…')
     : uiText('下一个待完成', 'Next pending');
-  button.title = uiText('保留筛选和每页条数，定位并高亮下一个待完成任务；再次点击继续查找', 'Keep filters and page size, then locate and highlight the next pending task; click again to continue');
+  button.title = uiText('保留筛选和每页条数，首次定位首个待完成任务；再次点击继续向后查找', 'Keep filters and page size; first locate the earliest pending task, then click again to continue');
 }
 
 function reviewPendingTaskParams() {
@@ -540,6 +540,7 @@ function reviewPendingGalleryTargetId() {
   const target = state.reviewPendingGalleryTarget;
   if (!target) return '';
   if (target.scope !== reviewPendingTaskParams().toString()
+      || target.epoch !== Number(state.pageNavigationEpoch || 0)
       || target.page !== state.casePage || target.pageSize !== state.casePageSize
       || !state.cases.some(item => item.issue_id === target.issueId)) {
     state.reviewPendingGalleryTarget = null;
@@ -565,7 +566,9 @@ async function jumpToNextPendingTask() {
   if (!reviewShowsAllTaskProgress() || state.reviewPendingJumpBusy || state.savingAnnotation) return;
   const pageContext = capturePageContext();
   const selectedId = state.selectedId || '';
-  const currentId = reviewPendingGalleryTargetId() || selectedId;
+  // Only a locate action in this Gallery visit advances the cursor. A retained
+  // detail selection or a later visible page must not hide earlier unfinished work.
+  const currentId = reviewPendingGalleryTargetId();
   const params = reviewPendingTaskParams();
   const scope = params.toString();
   const pageSize = state.casePageSize;
@@ -594,8 +597,7 @@ async function jumpToNextPendingTask() {
     const ids = queue.issue_ids || [];
     const pendingIds = new Set(pending.issue_ids || []);
     const anchorIndex = currentId ? ids.indexOf(currentId) : -1;
-    const start = anchorIndex >= 0 ? anchorIndex + 1
-      : Math.max(0, (state.casePage - 1) * pageSize);
+    const start = anchorIndex >= 0 ? anchorIndex + 1 : 0;
     const index = ids.findIndex((id, i) => i >= start && id !== currentId && pendingIds.has(id));
     if (index < 0) {
       showToast(uiText('当前筛选范围内，后续没有待完成任务。', 'No further pending tasks in the current filters.'));
@@ -613,7 +615,10 @@ async function jumpToNextPendingTask() {
       showToast(uiText('列表已变化，请重试跳转。', 'The list changed. Please try again.'));
       return;
     }
-    state.reviewPendingGalleryTarget = { issueId: targetId, scope, page: targetPage, pageSize };
+    state.reviewPendingGalleryTarget = {
+      issueId: targetId, scope, page: targetPage, pageSize,
+      epoch: Number(state.pageNavigationEpoch || 0),
+    };
     renderCases({ items: state.cases, total: state.caseTotal });
     persistCurrentReviewRoute({ issue: '' });
     highlightPendingGalleryTarget(targetId);
