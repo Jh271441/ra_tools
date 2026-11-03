@@ -111,6 +111,7 @@
   .ra-event-dialog .dialog-card { min-width: 0; overflow: hidden; }
   .ra-event-table { min-width: 520px; }
   .ra-event-table td:first-child, .ra-event-table td:nth-child(2) { overflow-wrap: anywhere; }
+  .ra-event-table td:nth-child(3), .ra-event-table td:nth-child(4) { padding-block: 0; }
   .ra-event-playback-link, .ra-event-trail-link { display: inline-flex; align-items: center; min-height: 44px; }
   .ra-event-search-button { min-width: 44px; }
   html, body { width: 100%; max-width: 100%; overflow-x: hidden; overflow-x: clip; }

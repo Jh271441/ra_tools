@@ -644,7 +644,8 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .ra-event-table td:nth-child(4) { color: var(--accent); font-family: "SFMono-Regular", Consolas, monospace; white-space: nowrap; }
 .ra-event-table td:nth-child(5) { color: #aab8c8; white-space: nowrap; }
 .ra-event-table tr:last-child td { border-bottom: 0; }
-.ra-event-playback-link { display: inline-flex; align-items: center; min-height: 26px; color: var(--accent); text-decoration: underline; text-underline-offset: 3px; white-space: nowrap; }
+.ra-event-playback-link { color: inherit; text-decoration: none; white-space: nowrap; }
+.ra-event-playback-link:hover, .ra-event-playback-link:focus-visible { text-decoration: underline; text-underline-offset: 3px; }
 .ra-event-playback-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .ra-event-empty { padding: 30px 12px; color: var(--faint); font-size: 11px; text-align: center; }
 .ra-event-dialog-actions { padding-top: 1px; }
