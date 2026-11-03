@@ -24,15 +24,48 @@
 
 无需修改主数据库 schema 或安装依赖。持久快照应随应用数据卷保留；它是可重建的显示缓存，不能用应用 Git 回滚清空。当前没有对历史 Case 做批量预取/回填，首次查看未保存的 Case 仍需要一次查询。
 
+## 链接示意
+
+```mermaid
+flowchart LR
+    A[打开 Trail Issue] --> B[Trail Issue 详情页]
+    C[点击事件时间戳 t 或相对时间] --> D[新标签页 Ares Studio]
+    D --> E[同一 Issue / trip，播放 t 前后各 10 秒]
+```
+
+| 入口 | 目标 |
+| --- | --- |
+| 打开 Trail Issue | `https://voyager.intra.xiaojukeji.com/static/management/#/issue/{issue_id}?view_id=2410` |
+| 事件时间戳 / 相对时间 | `https://voyager.intra.xiaojukeji.com/static/ares-studio/?ds=voy-ws-car&ds.issue_id={issue_id}&ds.trip_id={trip_id}&ds.start={t-10000}&ds.end={t+10000}&entry_last_page=%2Fissue%2F{issue_id}` |
+
+这里的 `t` 是该行事件的毫秒时间戳；花括号仅表示参数示意。Trail 入口打开原 Issue；事件链接的时间窗口在 Ares URL 中表达。点击已加载的事件不产生 Trail 查询。
+
+```mermaid
+flowchart TD
+    A[查看或切换 Case] --> B[浏览器短缓存]
+    B -->|未命中| C[服务端持久快照]
+    C -->|完整快照已保存| D[返回事件与链接]
+    C -->|首次缺失或到达补查时间| E[查询 Trail]
+    E --> F[原子保存文本快照]
+    F --> D
+    B -->|命中| D
+    G[手动点击从 Trail 刷新] --> E
+```
+
 ## 验证与发布
 
-准备发布版本 `manual-triage-750`。生产发布结果以精确 SHA 的统一发布器回执和服务读回为准。
+已于 **2026-11-03 23:31:22 CST** 上线 `3d8719233d893bc58f957f203bd85967b00d022a` / `manual-triage-750`，普通 master 发布；未增加依赖或数据库迁移。
+
+- 统一发布回执：`/volume/home/workspace/ra_triage_dashboard_deploy/releases/20261103T152750Z-3d8719233d89/result.json`。完整云端测试 **1298 passed, 8 skipped in 193.04s**，隔离 SQLite 灰度及精确 SHA 的生产 PostgreSQL、持久化、整体健康、身份和原写入策略检查全部通过。
+- 首次准备 `d96932e9` 在新增的两项 API 测试因云端缺少可选 httpx 而失败，其余1296项通过，未切换生产。修正为项目既有的无依赖 ASGI HTTP 请求模式后，以 `3d871923` 重新执行全部门禁通过；没有跳过这两项测试或修改共享环境。
+- 生产读回 **2026-11-03T15:32:03.914771+00:00**：shell/cache750及5项静态资源与 Git 原字节一致。`cn35759965` 首次读取8条事件，保存1097字节、0600完整快照；第二次 `metadata_source=snapshot`，读取时间、文件内容及mtime均不变，`retry_after=0`。服务端使用实际持久数据目录。
+- 浏览器自动化的新标签页、导航和DOM验收多次超时；本次未完成带SSO的线上事件点击和Ares实际播放验收。以下浏览器结果为合成数据的本地检查。
 
 - 基于最新主线的本地89项相关测试、22subtests及实际 JS 缓存测试通过。
 - 持久化覆盖：新实例/新HTTP客户端、跨一年读取无回源、4独立进程只查询一次、显式刷新、失败/不完整保留、原子写失败、缺失重试、allowlist/权限/源隔离/损坏文件/符号链接拒绝和旧排除标记保护。
 - Chromium151.0.7922.34，320/390/1440px ×zh/en ×dark/light ×Review/问题标注，共24组合；另有4刷新检查：搜索保留、忙时去重、失败保留和语言切换、旧弹窗结果拒绝。目标Ares页面由测试拦截；普通弹窗操作新增Trail元数据请求0，明确点击刷新3次。
 - Case/API为合成数据，未做业务写入。这些是桌面Chromium视口测试，不是真机/iOS/Safari验收；线上验收单独记录。
-- 本地证据：`reports/ra_event_trail_cache_20261103/`。发布环境完整测试和灰度由统一发布器执行。
+- 本地证据：`reports/ra_event_trail_cache_20261103/`。生产证据见该目录的 `production-postflight.json`；本地24组合及刷新检查见 `release-responsive-results.json`。
 
 重跑浏览器验收需已有 Playwright：
 
