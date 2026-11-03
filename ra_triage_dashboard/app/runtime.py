@@ -13,6 +13,7 @@ from typing import Any
 from .observability import BoundedObservationSet
 from .settings import Settings
 from .video_playback import VideoPlaybackCache
+from .video_stream import VideoStreamCache
 from .web_paths import render_index_html, with_base_path
 
 
@@ -22,6 +23,7 @@ _identity_diagnostic_observations = BoundedObservationSet[
 ](max_entries=1024)
 settings = Settings.from_env()
 video_playback_cache = VideoPlaybackCache(settings.data_dir / "video_playback")
+video_stream_cache = VideoStreamCache(settings.data_dir / "video_stream")
 _services = build_runtime_services(settings)
 database = _services.database
 asset_index = _services.asset_index

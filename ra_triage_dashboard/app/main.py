@@ -34,6 +34,7 @@ from .runtime import (
     review_notification_dispatcher,
     settings,
     video_playback_cache,
+    video_stream_cache,
 )
 from .routers import (
     analysis,
@@ -183,6 +184,7 @@ async def lifespan(_: FastAPI):
                     await task
         await asyncio.to_thread(batch_prediction_runner.shutdown)
         await asyncio.to_thread(video_playback_cache.shutdown)
+        await asyncio.to_thread(video_stream_cache.shutdown)
         from .planning_constraints import shutdown as shutdown_planning_constraints
         await asyncio.to_thread(shutdown_planning_constraints)
         await asyncio.to_thread(database.close)

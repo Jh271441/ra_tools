@@ -11,7 +11,7 @@ from typing import Any, Optional
 from urllib.parse import quote
 
 from fastapi import APIRouter, Request, Response
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from PIL import Image, UnidentifiedImageError
 
 from ..case_media import empty_case_media, resolve_case_media
@@ -66,8 +66,10 @@ from ..runtime import (
     trail_detail_semaphore,
     video_index,
     video_playback_cache,
+    video_stream_cache,
 )
 from ..video_playback import RECIPE as VIDEO_PLAYBACK_RECIPE
+from ..video_stream import RECIPE as VIDEO_STREAM_RECIPE
 from ..trail_sync import read_trail_issue_metadata
 from ..work_split import distribute_issue_ids, normalize_overlap_ratio
 from ..db_parts.task_lifecycle import normalize_task_lifecycle, task_list_metrics
@@ -1555,7 +1557,8 @@ async def get_case(
 
 
 @router.get("/api/assets/{issue_id}/{asset_id}")
-async def get_asset(issue_id: str, asset_id: str, playback: str = "") -> FileResponse:
+async def get_asset(issue_id: str, asset_id: str, playback: str = "", stream: str = "",
+                    fingerprint: str = "") -> Response:
     case = await asyncio.to_thread(database.get_issue, issue_id)
     scope = str((case or {}).get("baseline_scope") or "")
     provider = media_for_issue(issue_id, scope)
@@ -1575,6 +1578,26 @@ async def get_asset(issue_id: str, asset_id: str, playback: str = "") -> FileRes
     if path is None:
         raise _detail(404, "Ares / Camera 资产不存在。")
     suffix = path.suffix.lower()
+    if stream or playback == VIDEO_STREAM_RECIPE:
+        if suffix != ".mp4" or (stream and stream != VIDEO_STREAM_RECIPE):
+            raise _detail(400, "不支持的视频分片请求。 / Unsupported video segment request.")
+        # Reuse exactly the authority checks above. Only verified short-GOP
+        # inputs may be remuxed; neither preparation can block this request.
+        prepared = await asyncio.to_thread(video_playback_cache.request, path)
+        ready = await asyncio.to_thread(video_stream_cache.request, prepared) if prepared else None
+        if stream:
+            return JSONResponse(ready.manifest if ready else {"status": "pending"},
+                                status_code=200 if ready else 202,
+                                headers={"Cache-Control": "private, no-store",
+                                         "X-Content-Type-Options": "nosniff"})
+        if not ready or fingerprint != ready.manifest["fingerprint"]:
+            # Never substitute progressive/original bytes for a fragment range.
+            raise _detail(409, "视频分片已更新。 / Video segments changed.")
+        return FileResponse(ready.path, media_type="video/mp4", headers={
+            "Accept-Ranges": "bytes", "Cache-Control": "private, max-age=300, must-revalidate",
+            "X-Video-Playback": VIDEO_STREAM_RECIPE, "Content-Disposition": "inline",
+            "X-Content-Type-Options": "nosniff", "ETag": '"' + fingerprint + '"',
+        })
     media_type = (
         "video/mp4"
         if suffix == ".mp4"

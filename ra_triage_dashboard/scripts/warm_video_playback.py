@@ -18,6 +18,7 @@ from urllib.parse import unquote, urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from ra_triage_dashboard.app.video_playback import VideoPlaybackCache, source_identity
+from ra_triage_dashboard.app.video_stream import VideoStreamCache
 from ra_triage_dashboard.app.assets import VideoIndex
 from ra_triage_dashboard.app.closeup_video import CloseupVideoIndex, ASSET_ID
 
@@ -58,14 +59,19 @@ def main() -> None:
     parser.add_argument("--source-root", type=Path, action="append", default=[])
     parser.add_argument("--source", type=Path, action="append", default=[])
     parser.add_argument("--cache-root", type=Path, required=True)
+    parser.add_argument("--segments", action="store_true", help="Remux ready playback copies without encoding")
+    parser.add_argument("--playback-cache-root", type=Path, help="Existing short-GOP cache (required with --segments)")
     parser.add_argument("--workers", type=int, choices=range(1, 5), default=2)
     parser.add_argument("--report", type=Path, required=True)
     parser.add_argument("--watch", action="store_true", help="Rescan published roots every 60 seconds")
     args = parser.parse_args()
     if not args.source_root and not args.source:
         parser.error("provide at least one published source root or source")
+    if args.segments and (not args.playback_cache_root or args.cache_root.resolve() == args.playback_cache_root.resolve()):
+        parser.error("segments require a separate playback-cache-root")
     roots = [root.resolve(strict=True) for root in args.source_root]
-    cache = VideoPlaybackCache(args.cache_root)
+    cache = VideoStreamCache(args.cache_root) if args.segments else VideoPlaybackCache(args.cache_root)
+    playback_cache = VideoPlaybackCache(args.playback_cache_root) if args.segments else None
     cache.root.mkdir(parents=True, exist_ok=True)
     stop = threading.Event()
     def shutdown(_signum, _frame):
@@ -83,8 +89,12 @@ def main() -> None:
             paths = {path.resolve(strict=True) for path in args.source}
             for root in roots:
                 paths.update(indexed_sources(root))
-            state = {"recipe": "short-gop-v1", "total": len(paths), "ready": 0, "built": 0,
+            source_total = len(paths)
+            if playback_cache:
+                paths = {ready for path in paths if (ready := playback_cache.get(path))}
+            state = {"recipe": "segments-v1" if args.segments else "short-gop-v1", "total": len(paths), "ready": 0, "built": 0,
                      "unavailable": 0, "failed": 0, "workers": args.workers,
+                     "source_total": source_total, "source_unavailable": source_total - len(paths),
                      "started_at": time.time(), "status": "running"}
             def save():
                 state["updated_at"] = time.time()
@@ -141,6 +151,8 @@ def main() -> None:
             if not args.watch or stop.wait(60):
                 break
     cache.shutdown()
+    if playback_cache:
+        playback_cache.shutdown()
 
 
 if __name__ == "__main__":

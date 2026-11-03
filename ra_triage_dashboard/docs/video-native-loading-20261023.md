@@ -1,5 +1,80 @@
 # Native video loading restoration — 2026-10-23
 
+## Full-quality target-first loading — 2026-11-03 / cache748
+
+The existing short-GOP files retain exactly their current video quality. A second
+**lossless container remux** (`-c copy`, no encoder) enables native MediaSource
+loading of just the GOP containing t0 or a requested seek position. A small
+private manifest contains the init bytes and segment byte/time ranges. Each
+compressed sample SHA256, raw presentation timestamp and duration must match
+its input before atomic publication. Raw `tfdt`/signed `trun` composition times
+are used: ffprobe's fragmented-file reorder delay must not be subtracted again.
+Three actual media clips additionally passed browser pixel-hash comparisons at
+frame boundaries. Untagged SD/multiple-track/unsupported files stay native;
+there is no reduced bitrate, resolution, frame rate or preview-quality UI.
+
+The same indexed Issue/scope/provider/root checks run before both manifest and
+fragment responses. `?stream=segments-v1` returns a verified manifest or prompt202
+pending, never awaiting preparation. `?playback=segments-v1&fingerprint=...`
+requires the matching ready manifest; stale/missing data is409, never substituted
+with progressive bytes. Range responses retain native `FileResponse`, private
+caching and nosniff. Original and `short-gop-v1` contracts remain available.
+
+Only the selected source is requested. Its first Range contains the target GOP;
+streaming appends permit decoding before the whole GOP finishes. There is one
+active segment fetch. Obsolete seeks/source changes abort it; repeated seeks
+within that GOP share it. Playing fetches bounded forward data; paused playback
+keeps the two neighbors. Whole GOP eviction bounds the recent buffer, including
+partially cancelled data. Hidden players suspend network fetching, so expanding
+or switching views cannot leave a second video competing for bandwidth.
+Manifest timeout, missing cache, unsupported codecs/MSE and invalid/failed ranges
+fall back once to the existing progressive path with position, rate and current
+Play/cancel intent. Blob URLs never replace canonical asset/source identity.
+Default paused t0, source-switch submitted-frame protection, native same-source
+seeks and stable geometry remain. No new toolbar/status row is introduced.
+
+`VideoStreamCache` uses a disposable `video_stream` directory. Preparation is
+bounded and nonblocking with per-input locks, atomic receipts, source/file
+identity invalidation and a5GiB disk guard. The independent warmer mode uses
+only ready copies of current indexed captures:
+
+```bash
+python3 ra_triage_dashboard/scripts/warm_video_playback.py \
+  --segments --source-root /published/media_layouts \
+  --playback-cache-root /data/video_playback --cache-root /data/video_stream \
+  --workers 2 --watch --report /owned-worker/progress.json
+```
+
+The existing short-GOP encoder warmer is unchanged and must not be duplicated.
+No new runtime dependency or database/schema change is required. At inventory,
+14310 ready inputs totaled242.73GiB with525.29GiB free; stream copies add roughly
+the same storage, not another encoding. Counts and runtime/worker identities are
+dated observations recorded with release evidence.
+
+Controlled cold-HTTP-cache startup, Play immediately after mount, Chromium151:
+20Mbps/40ms,10 starts/clip, all30 starts below1s; per-clip p95 large BEV727ms,
+current BEV463ms, closeup302ms (combined p95552ms). At2Mbps/150ms, baseline3 and
+candidate5 starts/clip: p95 large BEV7232→3843ms, current4899→2603ms,
+closeup1863→1085ms. These are local sample measurements, not global production
+p95. Bandwidth below the video's unchanged bitrate can still cause buffering.
+Cold/unprepared streams retain native performance until preparation completes.
+
+```bash
+NODE_PATH=/path/to/playwright/node_modules \
+SEGMENT_NATIVE_ROOT=/tmp/existing-native-samples \
+SEGMENT_STREAM_ROOT=/tmp/existing-fragments-and-indexes \
+node ra_triage_dashboard/tests/video_segments_browser.cjs
+```
+
+The segment root contains `candidate-build.json` and `fragkey-{name}.mp4` for
+`big`, `current`, `closeup`; native samples use `optimized-{name}.mp4`.
+`video_startup_benchmark.cjs` accepts the same stream root as
+`STARTUP_STREAM_ROOT`; omit it for the progressive baseline. Evidence lives in
+`/private/tmp/manual-weak-network-20261103/`. Browser checks use isolated desktop
+Chromium and the Codex sidebar; viewport tests are not physical-phone/Safari/iOS
+acceptance. Final production identity and preparation progress belong in
+CURRENT_HANDOFF and release receipts.
+
 ## Native same-source seeks and stable geometry — 2026-11-03 / cache747
 
 The cache746 held-frame path copied a full-resolution video frame on every

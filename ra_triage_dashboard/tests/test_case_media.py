@@ -11,6 +11,49 @@ from ra_triage_dashboard.app.routers import cases as cases_router
 
 
 class DeferredCaseMediaTest(unittest.IsolatedAsyncioTestCase):
+    async def test_segment_manifest_reuses_scope_and_requires_matching_ready_fingerprint(self):
+        import json
+        from fastapi import HTTPException
+        from ra_triage_dashboard.app.video_stream import StreamCopy
+        provider = MagicMock()
+        original, optimized, fragments = (Path(name) for name in
+            ("/indexed/video.mp4", "/cache/video.mp4", "/segments/video.mp4"))
+        manifest = {"recipe": "segments-v1", "fingerprint": "a" * 64}
+        provider.get_asset_path.return_value = original
+        with patch.object(cases_router.database, "get_issue", return_value={"baseline_scope": "strict"}), \
+             patch.object(cases_router, "media_for_issue", return_value=provider), \
+             patch.object(cases_router.video_playback_cache, "request", return_value=optimized) as prepare, \
+             patch.object(cases_router.video_stream_cache, "request", return_value=None) as remux, \
+             patch.object(cases_router.asset_index, "get_asset_path") as unscoped:
+            response = await cases_router.get_asset("cn1", "bev-video-0", stream="segments-v1")
+            self.assertEqual(response.status_code, 202)
+            self.assertEqual(json.loads(response.body), {"status": "pending"})
+            self.assertIn("no-store", response.headers["cache-control"])
+            remux.assert_called_once_with(optimized)
+            remux.return_value = StreamCopy(fragments, manifest)
+            response = await cases_router.get_asset("cn1", "bev-video-0", stream="segments-v1")
+            self.assertEqual(json.loads(response.body), manifest)
+            with self.assertRaises(HTTPException) as error:
+                await cases_router.get_asset("cn1", "bev-video-0", playback="segments-v1", fingerprint="old")
+            self.assertEqual(error.exception.status_code, 409)
+            response = await cases_router.get_asset("cn1", "bev-video-0", playback="segments-v1", fingerprint="a" * 64)
+            self.assertEqual(response.path, fragments)
+            self.assertEqual(response.headers["accept-ranges"], "bytes")
+            self.assertEqual(response.headers["x-video-playback"], "segments-v1")
+            self.assertEqual(response.headers["etag"], '"' + "a" * 64 + '"')
+            prepare.return_value = None
+            remux.reset_mock()
+            response = await cases_router.get_asset("cn1", "bev-video-0", stream="segments-v1")
+            self.assertEqual(response.status_code, 202)
+            remux.assert_not_called()
+            provider.get_asset_path.return_value = None
+            prepare.reset_mock()
+            with self.assertRaises(HTTPException) as error:
+                await cases_router.get_asset("cn1", "bev-video-0", stream="segments-v1")
+            self.assertEqual(error.exception.status_code, 404)
+            prepare.assert_not_called()
+            unscoped.assert_not_called()
+
     async def test_playback_copy_keeps_asset_scope_checks_and_falls_back_immediately(self):
         from fastapi import HTTPException
         provider = MagicMock()

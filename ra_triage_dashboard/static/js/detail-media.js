@@ -39,6 +39,11 @@ function videoCanonicalAssetUrl(url) {
   return parsed.pathname + parsed.search;
 }
 
+function videoElementAssetUrl(video) {
+  // MediaSource uses a blob URL; source identity remains the scoped asset URL.
+  return video?.dataset?.videoSource || video?.getAttribute("src") || "";
+}
+
 function videoPlaybackSourceUrl(url, startSec = null) {
   const canonical = videoCanonicalAssetUrl(url);
   const source = canonical ? `${canonical}${canonical.includes("?") ? "&" : "?"}playback=short-gop-v1` : "";
@@ -148,7 +153,7 @@ function handleVideoSourceShortcut(event) {
   const stage = inDialog ? $("#mediaVideoStage") : pane;
   const video = stage?.querySelector("video");
   // Native start hints (#t=...) describe playback position, not source identity.
-  const currentUrl = videoCanonicalAssetUrl(video?.getAttribute("src")
+  const currentUrl = videoCanonicalAssetUrl(videoElementAssetUrl(video)
     || (inDialog ? state.media.snapshot?.videoTrack : state.detailMedia.videoTrack)
     || descriptor?.url);
   const rememberedUrl = inDialog ? state.media.snapshot?.videoTrack
@@ -172,7 +177,7 @@ function handleVideoSourceShortcut(event) {
   if (inDialog) {
     if (state.media.kind !== "video") switchMediaKind("video");
     const activeVideo = stage?.querySelector("video");
-    if (videoCanonicalAssetUrl(activeVideo?.getAttribute("src")) === track.url) return true;
+    if (videoCanonicalAssetUrl(videoElementAssetUrl(activeVideo)) === track.url) return true;
     const select = stage?.querySelector("[data-video-track]");
     if (select && Array.from(select.options).some(option => option.value === track.url && !option.disabled)) {
       select.value = track.url;
@@ -219,7 +224,7 @@ function refreshVideoFramePosters(root, caseData) {
   const tracks = [descriptor, ...descriptor.tracks];
   root?.querySelectorAll("[data-bev-video-player]").forEach(player => {
     const video = player.querySelector("video");
-    const track = tracks.find(item => item.url === videoCanonicalAssetUrl(video?.getAttribute("src")));
+    const track = tracks.find(item => item.url === videoCanonicalAssetUrl(videoElementAssetUrl(video)));
     // Updating a native poster never reloads the source or seeks the player.
     if (track?.poster_url) video.setAttribute("poster", track.poster_url);
     player.querySelectorAll("[data-video-track] option").forEach(option => {
@@ -252,7 +257,8 @@ function videoPlayerMarkup(video, { zoomable = true, compact = false, issueId = 
   const posterUrl = String(video?.poster_url || "").trim();
   const posterAttribute = posterUrl ? ` poster="${escapeHtml(posterUrl)}"` : "";
   const sourceUrl = videoPlaybackSourceUrl(video.url, durationSec > 0 ? t0PlayerSec : null);
-  const videoMarkup = `<video src="${escapeHtml(sourceUrl)}"${posterAttribute} preload="metadata" muted playsinline draggable="false" aria-label="${escapeHtml(uiText("复核视频", "Review video"))}"></video>`;
+  const segmented = typeof videoSegmentManifestUrl === "function" && videoSegmentManifestUrl(sourceUrl);
+  const videoMarkup = `<video data-video-source="${escapeHtml(sourceUrl)}"${segmented ? "" : ` src="${escapeHtml(sourceUrl)}"`}${posterAttribute} preload="metadata" muted playsinline draggable="false" aria-label="${escapeHtml(uiText("复核视频", "Review video"))}"></video>`;
   const mediaMarkup = zoomable
     ? `<div class="media-viewport media-video-viewport" data-video-viewport><div class="media-canvas media-video-canvas" data-video-canvas>${videoMarkup}</div></div>`
     : `<div class="hero-media-button hero-media-video">${videoMarkup}</div>`;
@@ -321,6 +327,7 @@ function bindBevVideoPlayers(root) {
     const configuredFrameStep = Number(player.dataset.frameStepSec);
     const frameStepSec = Number.isFinite(configuredFrameStep) && configuredFrameStep > 0 ? configuredFrameStep : 0.1;
     let disposed = false;
+    let segmentLoader = null;
     let sourceGeneration = 0;
     let pendingStart = configuredT0PlayerSec > 0 ? configuredT0PlayerSec : null;
     // Each new Case/player waits for its own explicit Play choice at t0.
@@ -479,10 +486,10 @@ function bindBevVideoPlayers(root) {
       // second scaling/compositing path on every jump. Only an in-flight
       // source replacement needs the held-frame confirmation below.
       if (heldFrame) heldTarget = target;
-      if (video.readyState < 1) { pendingStart = target; update(target); return; }
       if (queuedSeekTimer !== null) window.clearTimeout(queuedSeekTimer);
       queuedSeekTimer = null;
       queuedSeekTarget = null;
+      if (video.readyState < 1) { pendingStart = target; segmentLoader?.prioritize(); update(target); return; }
       const request = ++seekRequest;
       cancelFrameCheck();
       cancelPendingSeek?.();
@@ -518,6 +525,7 @@ function bindBevVideoPlayers(root) {
       // while playing must continue playback; a paused video stays paused.
       watchPresentedFrame();
       video.currentTime = target;
+      segmentLoader?.prioritize();
       update();
       // A remote asset can delay seeked while metadata or the first keyframe
       // is fetched. Keep controls responsive and reconcile once it arrives.
@@ -547,7 +555,7 @@ function bindBevVideoPlayers(root) {
       queueSeek(target, 0);
     };
     const startPlayback = () => {
-      if (disposed || suspended || !wantsPlayback || playPending || !video.paused
+      if (disposed || suspended || !wantsPlayback || playPending || !video.paused || !video.getAttribute("src")
         || (metadataGeneration !== sourceGeneration && !sourceHasStartHint)
         || !player.isConnected || player.closest?.('dialog:not([open]), [hidden], .hidden')) return;
       const generation = sourceGeneration;
@@ -610,9 +618,32 @@ function bindBevVideoPlayers(root) {
         button.querySelector("[data-video-jump-label]").textContent = `${sign}${step}s`;
       });
     });
-    const loadSource = (url, poster = "") => {
+    const attachSource = (url, nativeOnly = false) => {
+      segmentLoader?.dispose();
+      segmentLoader = null;
+      const source = videoPlaybackSourceUrl(url, sourceHasStartHint ? pendingStart : null);
+      video.dataset.videoSource = source;
+      if (!nativeOnly && typeof createVideoSegmentLoader === "function") {
+        segmentLoader = createVideoSegmentLoader(video, {
+          url: source,
+          position: () => metadataGeneration !== sourceGeneration && pendingStart === null && queuedSeekTarget === null
+            ? null : timelinePosition(),
+          attached: startPlayback,
+          fallback: () => {
+            if (!disposed) loadSource(url, video.getAttribute("poster") || "", true);
+          },
+        });
+      }
+      if (segmentLoader) video.removeAttribute("src");
+      else video.src = source;
+      video.load();
+    };
+    const loadSource = (url, poster = "", nativeOnly = false) => {
       pendingStart = video.readyState >= 1 && Number.isFinite(video.currentTime) ? video.currentTime : pendingStart;
-      holdFrame(pendingStart);
+      // A cold stream's first native fallback can keep the correct t0 poster.
+      // Explicit source changes and non-t0 requests retain the frame guard.
+      if (!(nativeOnly && sourceGeneration === 0 && video.readyState < 2
+          && pendingStart === configuredT0PlayerSec)) holdFrame(pendingStart);
       sourceGeneration += 1;
       cancelFrameCheck();
       ++playbackAttempt;
@@ -628,8 +659,7 @@ function bindBevVideoPlayers(root) {
       if (poster) video.setAttribute("poster", poster);
       else video.removeAttribute("poster");
       sourceHasStartHint = pendingStart !== null && Number.isFinite(pendingStart);
-      video.src = videoPlaybackSourceUrl(url, sourceHasStartHint ? pendingStart : null);
-      video.load();
+      attachSource(url, nativeOnly);
       watchPresentedFrame();
       loading();
       update();
@@ -646,7 +676,7 @@ function bindBevVideoPlayers(root) {
       loadSource(url, poster);
     });
     retry?.addEventListener("click", () => {
-      if (!disposed) loadSource(video.getAttribute("src"), video.getAttribute("poster") || "");
+      if (!disposed) loadSource(videoElementAssetUrl(video), video.getAttribute("poster") || "");
     });
     rateSelect.addEventListener("change", () => {
       video.playbackRate = Number(rateSelect.value || 1);
@@ -715,6 +745,7 @@ function bindBevVideoPlayers(root) {
     });
     ["loadeddata", "canplay", "playing", "seeked"].forEach(name => listen(video, name, ready));
     listen(video, "error", () => {
+      if (segmentLoader?.recover()) return;
       cancelFrameCheck();
       if (loadTimer !== null) window.clearTimeout(loadTimer);
       loadTimer = null;
@@ -732,11 +763,13 @@ function bindBevVideoPlayers(root) {
       playPending = false;
       playing = false;
       video.pause();
+      segmentLoader?.suspend();
       update();
     };
     video._resumeBevPlayback = () => {
       if (disposed) return;
       suspended = false;
+      segmentLoader?.resume();
       // Becoming visible again must not restore an earlier Play choice.
       update();
       startPlayback();
@@ -759,6 +792,8 @@ function bindBevVideoPlayers(root) {
     video._disposeBevPlayer = () => {
       if (disposed) return;
       disposed = true;
+      segmentLoader?.dispose();
+      segmentLoader = null;
       heldFrame?.remove();
       heldFrame = null;
       cancelFrameCheck();
@@ -772,6 +807,7 @@ function bindBevVideoPlayers(root) {
       listeners.forEach(remove => remove());
     };
     loading();
+    if (!video.getAttribute("src") && video.dataset.videoSource) attachSource(video.dataset.videoSource);
     // Cached metadata may already have fired before the dynamic pane was bound.
     if (video.error) setStatus("error");
     else if (video.readyState >= 1) metadataReady();
