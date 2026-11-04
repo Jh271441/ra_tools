@@ -1,5 +1,50 @@
 # Native video loading restoration — 2026-10-23
 
+## Paused source switching at the clip end — 2026-11-04 / cache757
+
+Issue `cn37270163` exposed a reproducible40s endpoint failure: the picker could
+show closeup BEV while the held picture remained Camera. Its three production
+manifests were already ready; this was not a missing-media diagnosis. The
+exclusive final boundary returned no GOP and was clamped to GOP0. Additionally,
+some paused decoders submitted no frame when initialized at exactly duration.
+Select the final GOP at that boundary and position a replacement just inside
+the duration (10microseconds), preserving the last actual frame and rounded
+timeline. Keep the submitted-frame guard; do not reveal an unconfirmed source.
+Signal end-of-stream immediately when the target's final GOP completes, before
+optional backward buffering, to flush its reordered final frames.
+
+Paused loading now prioritizes the next GOP before the previous neighbor. The
+next GOP can be needed to submit a target near the prior GOP's final B-frames;
+fetching a backward neighbor first added avoidable weak-network delay. Both
+neighbors remain bounded, same-source native seeks retain their existing
+surface, and source teardown/cancellation/fallback behavior remains. New
+players still start paused at t0 and request only the selected source. No
+encoding, quality, poster policy, additional UI or initial prefetch was added.
+Switching back to a visited source still rebuilds its decoder/buffer.
+
+Controlled existing-local-sample comparison (Chromium148, cold HTTP responses,
+20Mbps/40ms and2Mbps/150ms; small sample, **not production p95**):
+
+| Paused switch target21.9s | Before | Forward-first |
+| --- | --- | --- |
+| Closeup,20Mbps |626–669ms |382ms |
+| BEV,20Mbps |1118–1120ms |697ms |
+| Closeup,2Mbps |3983–4043ms |2689ms |
+| BEV,2Mbps |8847–8855ms |5680ms |
+
+The original exact40s switch remained covered indefinitely; both-direction
+replacement now confirms the final39.9s frame. Extended `video_segments_browser.cjs`
+covers23 scenarios, including nine boundary/forward-priority cases, native
+fallback, delayed optional backward bytes and26 native/stream pixel comparisons.
+Weak-network cancellation is checked at the client: CDP can throttle delivery
+after the loopback server has already finished writing. The actual-shell
+compositor regression passed48 scenarios/300 sampled frames with zero wrong
+frames at320/390/1440px in Review and Case-labeling, with representative
+English/light and Chinese/dark combinations. These are desktop browser viewport
+checks, not physical-phone/Safari/iOS results. Codex sidebar inventory timed out;
+no authenticated production playback acceptance is claimed. Evidence:
+`/private/tmp/source-switch-study-20261104/`.
+
 ## Full-quality target-first loading — 2026-11-03 / cache748
 
 The existing short-GOP files retain exactly their current video quality. A second

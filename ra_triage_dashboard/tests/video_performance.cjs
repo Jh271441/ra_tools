@@ -137,6 +137,7 @@ function playerFixture({readyState=4,context=null,initialTime=0,durationSec=40,.
  fv.duration=40;proof.elements.seek.value='40';proof.elements.seek.fire('change');
  assert.equal(cover,null);assert.equal(frames.size,0);
  fv._setBevVideoTrack('/end.mp4');fv.readyState=4;fv.fire('loadedmetadata');fv.fire('seeked');present(39.9);
+ assert(fv.currentTime<40&&fv.currentTime>39.9,'a paused source at the exclusive end must seek inside its final frame');
  assert.equal(cover,null,'seeking to duration must reveal the last frame, not await a nonexistent40s frame');
  fv._setBevVideoTrack('/replay.mp4');fv.readyState=4;fv.fire('loadedmetadata');
  fv.ended=true;proof.elements.play.fire('click');fv.currentTime=0;present(0);

@@ -733,12 +733,15 @@ function bindBevVideoPlayers(root) {
       metadataGeneration = sourceGeneration;
       const target = Number.isFinite(pendingStart) ? pendingStart : videoT0PlayerPosition(0, duration());
       pendingStart = null;
-      const position = Math.min(Math.max(0, duration()), Math.max(0, target));
+      const total = Math.max(0, duration());
+      // The exclusive end has no displayable frame in some paused decoders.
+      // Seek just inside it so source changes can confirm the final frame.
+      const position = Math.min(Math.max(0, total - 0.00001), Math.max(0, target));
       if (heldFrame) heldTarget = position;
       // Native media-fragment startup may already be seeking to this point.
       // Avoid restarting that Range request; retain an exact-seek fallback for
       // browsers without fragment support and descriptors without duration.
-      if (Math.abs(video.currentTime - position) > 0.001) seekTo(position);
+      if ((total > 0 && video.currentTime >= total) || Math.abs(video.currentTime - position) > 0.001) seekTo(position);
       else update();
       video.playbackRate = Number(rateSelect.value || 1);
       startPlayback();

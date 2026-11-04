@@ -27,7 +27,13 @@ const server=http.createServer((req,res)=>{
  const bad=kind==='segment'&&mode==='range200';
  res.writeHead(range&&!bad?206:200,{'Content-Type':'video/mp4','Cache-Control':'no-store','Accept-Ranges':'bytes','Content-Length':last-first+1,
   ...(range&&!bad?{'Content-Range':`bytes ${first}-${last}/${size}`}:{})});
- const stream=fs.createReadStream(file,{start:first,end:last});stream.pipe(res);res.on('close',()=>stream.destroy());
+ const stream=fs.createReadStream(file,{start:first,end:last});
+ // Hold optional backward data so readiness cannot accidentally depend on it.
+ const segment=manifest.segments.find(s=>s.first===first);
+ const delay=kind==='segment'&&mode==='delayprevious'&&[18,36].includes(segment?.start);
+ const timer=delay?setTimeout(()=>{if(!res.destroyed)stream.pipe(res);},2000):null;
+ if(!delay)stream.pipe(res);
+ res.on('close',()=>{if(timer)clearTimeout(timer);stream.destroy();});
 });
 (async()=>{
  await new Promise(r=>server.listen(0,'127.0.0.1',r));const browser=await chromium.launch({headless:true});const results=[],errors=[];
@@ -35,7 +41,11 @@ const server=http.createServer((req,res)=>{
   const page=await browser.newPage({viewport:{width:1440,height:1000}});page.setDefaultTimeout(30000);
   page.on('pageerror',e=>errors.push(e.message));
   if(unsupported)await page.addInitScript(()=>window.MediaSource=undefined);
-  if(network){const cdp=await page.context().newCDPSession(page);await cdp.send('Network.enable');await cdp.send('Network.setCacheDisabled',{cacheDisabled:true});await cdp.send('Network.emulateNetworkConditions',{offline:false,latency:network.latency,downloadThroughput:network.mbps*1e6/8,uploadThroughput:1e6});}
+  if(network){const cdp=await page.context().newCDPSession(page),pending=new Map();page.networkCancellations=[];
+   await cdp.send('Network.enable');await cdp.send('Network.setCacheDisabled',{cacheDisabled:true});
+   cdp.on('Network.requestWillBeSent',e=>pending.set(e.requestId,e.request.url));
+   cdp.on('Network.loadingFailed',e=>{if(e.canceled)page.networkCancellations.push(pending.get(e.requestId));});
+   await cdp.send('Network.emulateNetworkConditions',{offline:false,latency:network.latency,downloadThroughput:network.mbps*1e6/8,uploadThroughput:1e6});}
   await page.goto(`http://127.0.0.1:${server.address().port}/`);
   await page.evaluate(()=>{
    window.enhanceDashboardSelects=()=>{};window.bindPlanningConstraint=()=>({refresh(){},dispose(){}});window.uiText=(zh,en)=>en;window.t=k=>k;window.showToast=msg=>{throw Error(msg);};
@@ -48,8 +58,9 @@ const server=http.createServer((req,res)=>{
    window.mount=(mode,name='current',total=40000)=>{const root=document.querySelector('#player');releaseBevVideoPlayer(root);const url=`/api/assets/cn99999/${name}.mp4?mode=${mode}`;
     root.innerHTML=videoPlayerMarkup({url,duration_ms:total,frame_step_ms:100,tracks:[{url,label:'BEV 视频'},{url:`/api/assets/cn99999/closeup.mp4?mode=${mode}`,label:'局部 BEV 视频',source_id:'bev_closeup'}]},{zoomable:false});window.v=root.querySelector('video');watch(v);bindBevVideoPlayers(root);};
    window.frameHash=async(video,target)=>{
-    const expected=Math.floor((target+.000001)*10)/10;
-    if(Math.abs(video.currentTime-target)>.000001){const done=new Promise((r,j)=>{const t=setTimeout(()=>j(Error('seek timeout '+target)),20000);video.addEventListener('seeked',()=>{clearTimeout(t);r();},{once:true});});video.currentTime=target;await done;}
+    const seekTarget=Math.min(target,Math.max(0,video.duration-.00001));
+    const expected=Math.floor((seekTarget+.000001)*10)/10;
+    if(Math.abs(video.currentTime-seekTarget)>.000001){const done=new Promise((r,j)=>{const t=setTimeout(()=>j(Error('seek timeout '+target)),20000);video.addEventListener('seeked',()=>{clearTimeout(t);r();},{once:true});});video.currentTime=seekTarget;await done;}
     const began=performance.now();while(Math.abs((video._lastPresented??-1)-expected)>.001||video.seeking||video.readyState<2){if(performance.now()-began>20000)throw Error('submitted frame timeout '+target+' last '+video._lastPresented);await new Promise(r=>requestAnimationFrame(r));}
     await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
     const c=document.createElement('canvas');c.width=video.videoWidth;c.height=video.videoHeight;const ctx=c.getContext('2d');ctx.drawImage(video,0,0);
@@ -90,8 +101,43 @@ const server=http.createServer((req,res)=>{
    page=await makePage({mount:false});await page.evaluate(name=>mount('ready',name),name);await ready(page);
    await page.evaluate(name=>{const native=document.createElement('video');native.muted=true;native.width=320;native.src=`/native/${name}.mp4`;document.querySelector('#reference').append(native);window.reference=native;watch(native);},name);
    await page.waitForFunction(()=>reference.readyState>=1);const comparisons=[];
-   for(const target of [19.95,20.05,23.05]){const row=await page.evaluate(async target=>({target,native:await frameHash(reference,target),stream:await frameHash(v,target)}),target);assert.deepEqual(row.stream,row.native);comparisons.push(row);}
+   for(const target of [19.95,20.05,21.95,23.05,23.95]){const row=await page.evaluate(async target=>({target,native:await frameHash(reference,target),stream:await frameHash(v,target)}),target);assert.deepEqual(row.stream,row.native);comparisons.push(row);}
    results.push({scenario:'full-quality-pixels',name,comparisons});await page.close();
+  }
+  for(const [from,to,target,mode] of [
+   ['current','closeup',39.9,'ready'],['current','closeup',40,'ready'],['closeup','current',40,'ready'],
+   ['current','closeup',40,'pending'],['closeup','current',40,'pending'],
+   ['current','closeup',40,'delayprevious'],['closeup','current',40,'delayprevious'],
+   ['current','closeup',21.95,'delayprevious'],['closeup','current',21.95,'delayprevious'],
+  ]){
+   page=await makePage({mount:false});await page.evaluate(from=>mount('ready',from),from);await ready(page);
+   await page.evaluate(target=>v.currentTime=target,target);await ready(page);
+   const start=logs.length;
+   await page.evaluate(({to,mode})=>v._setBevVideoTrack(`/api/assets/cn99999/${to}.mp4?mode=${mode}`),{to,mode});
+   await ready(page);
+   const state=await page.evaluate(()=>({time:v.currentTime,frame:v._lastPresented,paused:v.paused,rate:v.playbackRate,source:v.src}));
+   assert.equal(state.paused,true);
+   assert.ok(Math.abs(state.time-target)<.001);
+   assert.equal(state.frame,target===40?39.9:Math.floor((target+.000001)*10)/10);
+   if(target===40)assert.ok(state.time<40,'source replacement must request a displayable final frame');
+   assert.equal(state.source.startsWith('blob:'),mode!=='pending');
+   const requests=logs.slice(start),manifest=indexes.find(x=>x.name===to).manifest;
+   const at=manifest.segments.findIndex(s=>Math.min(target,39.99999)<s.end);
+   if(mode!=='pending'){
+    const segment=requests.find(x=>x.kind==='segment'),s=manifest.segments[at];
+    assert.equal(segment?.range,`bytes=${s.first}-${s.last}`,'switch starts with the target GOP, including the exclusive clip end');
+   }
+   if(mode==='delayprevious'){
+    const backward=manifest.segments[at-1];
+    assert.equal(requests.some(x=>x.kind==='segment'&&x.range===`bytes=${backward.first}-${backward.last}`&&x.finished),false,
+     'target presentation must not wait for optional backward data');
+    if(target!==40){const next=manifest.segments[at+1];assert.equal(requests.filter(x=>x.kind==='segment')[1]?.range,`bytes=${next.first}-${next.last}`);}
+   }
+   await page.evaluate(to=>{const native=document.createElement('video');native.muted=true;native.src=`/native/${to}.mp4`;document.querySelector('#reference').append(native);window.reference=native;watch(native);},to);
+   await page.waitForFunction(()=>reference.readyState>=1);
+   const pixels=await page.evaluate(async target=>({native:await frameHash(reference,target),stream:await frameHash(v,target)}),target);
+   assert.deepEqual(pixels.stream,pixels.native,'end/source target pixels must match unchanged native media');
+   results.push({scenario:'source-boundary-and-forward-priority',from,to,target,mode,state,pixels,requests});await page.close();
   }
   for(const mode of ['delay','pending','malformed','range200','timeout','unsupported']){
    const start=logs.length;page=await makePage({mode,unsupported:mode==='unsupported'});
@@ -115,11 +161,13 @@ const server=http.createServer((req,res)=>{
   const current=indexes.find(x=>x.name==='current').manifest;
   const six=current.segments.find(x=>x.start<=6&&x.end>6);
   assert.equal(logs.slice(start).filter(x=>x.kind==='segment'&&x.range===`bytes=${six.first}-${six.last}`).length,1);
-  assert.ok(logs.slice(start).some(x=>x.kind==='segment'&&x.aborted));
+  // CDP throttles delivery after the loopback server can finish writing. Check
+  // cancellation at the client, where the obsolete response is still pending.
+  assert.ok(page.networkCancellations.some(url=>url?.includes('playback=segments-v1')));
   await page.evaluate(()=>v._pauseBevPlayback());const count=logs.length;await new Promise(r=>setTimeout(r,500));assert.equal(logs.length,count);
   await page.evaluate(()=>v._resumeBevPlayback());await ready(page);assert.equal(await page.evaluate(()=>v.paused),true);
   await page.evaluate(()=>releaseBevVideoPlayer(document.querySelector('#player')));const disposedCount=logs.length;await new Promise(r=>setTimeout(r,500));assert.equal(logs.length,disposedCount);
-  results.push({scenario:'weak-network-cancel-same-gop-suspend-resume-dispose',requests:logs.slice(start)});await page.close();
+  results.push({scenario:'weak-network-cancel-same-gop-suspend-resume-dispose',requests:logs.slice(start),cancellations:page.networkCancellations});await page.close();
   assert.deepEqual(errors,[]);
   fs.writeFileSync(output,JSON.stringify({browser:browser.version(),results,errors,requests:logs},null,2));console.log(JSON.stringify({output,scenarios:results.length,pixelComparisons:pixels.length,errors}));
  }finally{await browser.close();server.closeAllConnections();server.close();}

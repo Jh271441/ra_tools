@@ -30,7 +30,12 @@ function createVideoSegmentLoader(video, { url, position, attached, fallback }) 
     return Math.min(index?.duration || Infinity,
       Math.max(0, requested === null ? (index?.duration || 0) / 2 : Number(requested) || 0));
   };
-  const segmentAt = time => index?.segments.findIndex(segment => time < segment.end - .000001) ?? -1;
+  const segmentAt = time => {
+    const at = index.segments.findIndex(segment => time < segment.end - .000001);
+    // A seek to duration still belongs to the final GOP. Do not turn its
+    // unmatched exclusive end boundary into a request for the first GOP.
+    return at < 0 ? index.segments.length - 1 : at;
+  };
   const append = bytes => new Promise((resolve, reject) => {
     if (stopped) { resolve(); return; }
     const cleanup = () => {
@@ -71,9 +76,10 @@ function createVideoSegmentLoader(video, { url, position, attached, fallback }) 
   const nextSegment = () => {
     const at = Math.max(0, segmentAt(Math.min(current(), index.duration - .000001)));
     if (!loaded.has(at)) return at;
-    // While playing, all bandwidth belongs to the current/next GOP. While
-    // paused, keep only the two neighbors for instant nearby arrow jumps.
-    const candidates = video.paused ? [at - 1, at + 1]
+    // The next GOP can flush the target's final reordered frames. Give it
+    // priority over the previous neighbor even while paused, then keep both
+    // neighbors for nearby arrow jumps.
+    const candidates = video.paused ? [at + 1, at - 1]
       : index.segments.map((_, i) => i).filter(i => i > at
         && index.segments[i].start < current() + Math.max(4, video.playbackRate * 4));
     return candidates.find(i => i >= 0 && i < index.segments.length && !loaded.has(i)) ?? -1;
@@ -159,12 +165,12 @@ function createVideoSegmentLoader(video, { url, position, attached, fallback }) 
         }
         await evict();
         if (stopped || suspended) break;
+        // Flush the last frame as soon as its GOP is complete; optional
+        // backward buffering must not delay a paused end-of-clip switch.
+        if (loaded.has(index.segments.length - 1) && current() >= index.segments.at(-1).start
+            && mediaSource.readyState === "open") mediaSource.endOfStream();
         const next = nextSegment();
-        if (next < 0) {
-          if (loaded.has(index.segments.length - 1) && current() > index.segments.at(-1).start
-              && mediaSource.readyState === "open") mediaSource.endOfStream();
-          break;
-        }
+        if (next < 0) break;
         try { await fetchSegment(next); }
         catch (error) {
           if (error.name !== "AbortError" || (!resetParser && !stopped)) throw error;
