@@ -3,8 +3,8 @@ function expectedOutputDisplayText(value) {
   const option = EXPECTED_OUTPUT_OPTIONS.find(item => item.value === value);
   return option ? (i18nLocale() === "en" ? option.labelEn : option.labelZh) : value;
 }
-function caseExclusionToggleMarkup(id, checked, disabled = false, decision = false) {
-  return `<label class="review-exclude-toggle" title="${escapeHtml(uiText(decision ? "按 K 切换；随完整裁决确认" : "按 K 切换；随 Case 标签保存", decision ? "Press K to toggle; confirmed with the complete decision" : "Press K to toggle; saved with the Case label"))}"><input id="${id}" type="checkbox" aria-keyshortcuts="K" ${id === "reviewExcludeInput" ? 'data-case-exclusion="true"' : ""} ${checked ? "checked" : ""} ${disabled ? "disabled" : ""}/><span><strong class="ui-lang-zh">排除此 Issue</strong><strong class="ui-lang-en">Exclude this Issue</strong><small class="ui-lang-zh">${decision ? "随完整裁决确认；同步到 Trail 需单独确认" : "随 Case 标签保存；同步到 Trail 需单独确认"}</small><small class="ui-lang-en">${decision ? "Confirmed with the full decision; Trail sync is separate" : "Saved with the Case label; Trail sync needs separate confirmation"}</small></span><kbd class="review-control-shortcut review-exclude-shortcut" aria-hidden="true">K</kbd></label>`;
+function caseExclusionToggleMarkup(id, checked, disabled = false) {
+  return `<label class="review-exclude-toggle"><input id="${id}" type="checkbox" aria-keyshortcuts="K" ${id === "reviewExcludeInput" ? 'data-case-exclusion="true"' : ""} ${checked ? "checked" : ""} ${disabled ? "disabled" : ""}/><span><strong class="ui-lang-zh">排除此 Issue</strong><strong class="ui-lang-en">Exclude this Issue</strong></span><kbd class="review-control-shortcut review-exclude-shortcut" aria-hidden="true">K</kbd></label>`;
 }
 function caseExclusionVotes(data) {
   return (data.label_cases || []).flatMap(item => {

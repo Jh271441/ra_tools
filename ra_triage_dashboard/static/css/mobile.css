@@ -714,11 +714,9 @@
   .review-tag-dropdown .review-tag-options .tag-option-check span {
     white-space: normal; overflow: visible; overflow-wrap: anywhere; line-height: 1.5;
   }
-  .review-exclude-toggle { min-height: 56px; padding: 10px; gap: 10px; }
+  .review-exclude-toggle { min-height: 44px; padding: 8px 10px; gap: 10px; }
   .review-exclude-toggle input { width: 20px; height: 20px; }
-  .review-exclude-toggle span { display: grid; gap: 4px; overflow: visible; }
   .review-exclude-toggle strong { font-size: 14px; }
-  .review-exclude-toggle small { font-size: 12px; white-space: normal; overflow: visible; line-height: 1.5; }
   .mobile-workspace-jumps > .button:hover, .mobile-workspace-jumps > .button:focus {
     background: transparent; box-shadow: none; border-color: transparent;
   }

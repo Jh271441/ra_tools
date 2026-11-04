@@ -1337,7 +1337,7 @@ function renderCaseLabelingEditor(caseData, {decision = null} = {}) {
       <section class="review-section issue-tag-section">
         <div class="review-section-heading"><div><h2><span class="ui-lang-zh">Issue 标签</span><span class="ui-lang-en">Issue tags</span></h2></div>${caseLabelFinalResultMarkup(caseData)}<span class="evidence-summary-count" id="tagSummaryCount" hidden aria-hidden="true">${escapeHtml(t("detail.selected_n", { n: chosenTags.size }))}</span></div>
         <div class="review-tag-groups-shell">${issueTagGroups}</div>
-        ${caseExclusionToggleMarkup("caseLabelingExcluded", Boolean(source.is_excluded), false, Boolean(decision))}
+        ${caseExclusionToggleMarkup("caseLabelingExcluded", Boolean(source.is_excluded))}
       </section>
       <section class="review-section model-error-section">
         <div class="review-section-heading">
