@@ -3,7 +3,7 @@
 ## 交互
 
 - Review 和问题标注共用 RA Event 弹窗。
-- 点击毫秒时间戳或 `t±…s`，在新标签页打开该事件前后各 10 秒的 Ares Studio。复用 `aresStudioUrl`，保留原 Issue、trip 和固定的播放数据源；原详情页 Ares 入口仍以媒体 t0 为中心。
+- 点击毫秒时间戳或 `t±…s`，在新标签页打开该事件前 1 秒至后 15 秒的 Ares Studio。复用 `aresStudioUrl`，保留原 Issue、trip 和固定的播放数据源；原详情页 Ares 入口仍以媒体 t0 为中心。
 - 时间戳右侧的复制图标只复制该行原始毫秒值，不打开链接。手机隐藏原始时间戳列时，图标显示在相对时间右侧，复制内容仍为原始毫秒值；无有效时间戳时不提供复制按钮。缺少行程信息只影响跳转，不影响有效时间戳的复制。
 - 跳转使用已加载的事件元数据，不额外读取 Trail。没有有效时间戳或 trip 时显示普通文本及中英文原因，不构造错误播放地址。
 - 事件名、值和原始时间戳保持原值。格式化时间明确为 Asia/Shanghai / UTC+8。表头、搜索、计数、提示、空状态和辅助文本提供中英文；切换语言保留搜索、当前弹窗和焦点。
@@ -47,19 +47,27 @@
 
 首次94eb447c准备阶段因一项测试超过Linux单命令行参数上限失败（1297通过、1失败、8跳过），未切换生产。23b1e89f将脚本改为stdin执行并保留全部断言，随后完整门禁通过。生产IAB页面连接再次超时，未完成带SSO的点击/系统剪贴板验收；线上核验为精确资源和后端读回。本次不增加迁移、依赖或业务数据修改。
 
+## 复制间距与事件窗口（2026-11-04，cache755）
+
+时间戳列按内容宽度收紧，复制按钮和数字之间保持4px，避免短事件列表把多余表格宽度分配到两者之间。沿用同一按钮节点、原35px常规行高、手机44px目标和局部表格滚动。
+
+RA Event的原始时间戳和相对时间链接都改为`t−1000ms ～ t+15000ms`，总长度16秒；窗口起点距事件仅1秒，中文/英文提示同步。其他Ares入口继续使用各自现有的媒体t0窗口。复制始终写入原始毫秒时间戳，不添加偏移或请求Trail。
+
+本地77项相关测试及6subtests通过；Chromium151的24组中英文/主题/320、390、1440px/两类详情矩阵、4项刷新检查及4组短列表间距回归通过。截图中的四条事件复现旧间距87.67px，修正后4px，常规行高约35px（末行折叠边框为34.5px）。原始时间戳和相对链接均校验−1/+15秒，并检查新标签页目标、默认媒体t0窗口、搜索/刷新后复制、错误反馈和断点焦点。证据：`reports/ra_event_spacing_window_20261104/`。截图为本地合成Case数据，复制/目标页面由测试拦截；不是带SSO的线上实际播放、系统剪贴板或真机验收。
+
 ## 链接示意
 
 ```mermaid
 flowchart LR
     A[打开 Trail Issue] --> B[Trail Issue 详情页]
     C[点击事件时间戳 t 或相对时间] --> D[新标签页 Ares Studio]
-    D --> E[同一 Issue / trip，播放 t 前后各 10 秒]
+    D --> E[同一 Issue / trip，播放 t 前 1 秒至后 15 秒]
 ```
 
 | 入口 | 目标 |
 | --- | --- |
 | 打开 Trail Issue | `https://voyager.intra.xiaojukeji.com/static/management/#/issue/{issue_id}?view_id=2410` |
-| 事件时间戳 / 相对时间 | `https://voyager.intra.xiaojukeji.com/static/ares-studio/?ds=voy-ws-car&ds.issue_id={issue_id}&ds.trip_id={trip_id}&ds.start={t-10000}&ds.end={t+10000}&entry_last_page=%2Fissue%2F{issue_id}` |
+| 事件时间戳 / 相对时间 | `https://voyager.intra.xiaojukeji.com/static/ares-studio/?ds=voy-ws-car&ds.issue_id={issue_id}&ds.trip_id={trip_id}&ds.start={t-1000}&ds.end={t+15000}&entry_last_page=%2Fissue%2F{issue_id}` |
 
 这里的 `t` 是该行事件的毫秒时间戳；花括号仅表示参数示意。Trail 入口打开原 Issue；事件链接的时间窗口在 Ares URL 中表达。点击已加载的事件不产生 Trail 查询。
 

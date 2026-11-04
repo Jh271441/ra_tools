@@ -401,6 +401,16 @@ assert.equal(formatRaEventRelativeTime(200000,200000),'t0');
 assert.equal(formatRaEventRelativeTime(81895,200000),'t−118.105s');
 assert.equal(formatRaEventRelativeTime(201401,200000),'t+1.401s');
 assert.equal(formatRaEventRelativeTime(null,200000),'—');
+const navigationCase={issue_id:'cn1',assets:{capture:{trip_id:'trip1',timestamp_ms:200000}}};
+const issueUrl='https://voyager.intra.xiaojukeji.com/issue/cn1';
+const eventUrl=new URL(aresStudioUrl(navigationCase,issueUrl,201401,{beforeMs:1000,afterMs:15000}));
+assert.equal(eventUrl.searchParams.get('ds.start'),'200401');
+assert.equal(eventUrl.searchParams.get('ds.end'),'216401');
+assert.equal(eventUrl.searchParams.get('ds.issue_id'),'cn1');
+assert.equal(eventUrl.searchParams.get('ds.trip_id'),'trip1');
+const mediaUrl=new URL(aresStudioUrl(navigationCase,issueUrl));
+assert.equal(mediaUrl.searchParams.get('ds.start'),'190000');
+assert.equal(mediaUrl.searchParams.get('ds.end'),'210000');
 '''
     )
     # The combined modules can exceed Linux's per-argument size limit.

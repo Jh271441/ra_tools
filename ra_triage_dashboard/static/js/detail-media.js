@@ -1457,7 +1457,8 @@ function renderRaEventRows(
         const playbackUrl = aresStudioUrl(
           state.raEventDialog.caseData,
           state.raEventDialog.trailUrl,
-          Number(timestamp)
+          Number(timestamp),
+          { beforeMs: 1000, afterMs: 15000 }
         );
         const timeLink = (label) => playbackUrl && label !== "—"
           ? `<a class="ra-event-playback-link" href="${escapeHtml(playbackUrl)}" target="_blank" rel="noreferrer" data-ra-event-timestamp="${escapeHtml(timestamp)}">${escapeHtml(label)}</a>`

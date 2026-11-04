@@ -424,7 +424,12 @@ function reviewCaseT0TimestampMs(caseData) {
   return value ?? NaN;
 }
 
-function aresStudioUrl(caseData, issueUrl, timestampMs = reviewCaseT0TimestampMs(caseData)) {
+function aresStudioUrl(
+  caseData,
+  issueUrl,
+  timestampMs = reviewCaseT0TimestampMs(caseData),
+  { beforeMs = 10000, afterMs = 10000 } = {}
+) {
   const externalLinks = caseData?.external_links || {};
   const tripId = String(
     caseData?.assets?.capture?.trip_id ||
@@ -439,8 +444,8 @@ function aresStudioUrl(caseData, issueUrl, timestampMs = reviewCaseT0TimestampMs
     url.searchParams.set("ds", "voy-ws-car");
     url.searchParams.set("ds.issue_id", issueId);
     url.searchParams.set("ds.trip_id", tripId);
-    url.searchParams.set("ds.start", String(Math.round(timestampMs - 10000)));
-    url.searchParams.set("ds.end", String(Math.round(timestampMs + 10000)));
+    url.searchParams.set("ds.start", String(Math.round(timestampMs - beforeMs)));
+    url.searchParams.set("ds.end", String(Math.round(timestampMs + afterMs)));
     url.searchParams.set("entry_last_page", `/issue/${issueId}`);
     return safeUrl(url.href);
   } catch {

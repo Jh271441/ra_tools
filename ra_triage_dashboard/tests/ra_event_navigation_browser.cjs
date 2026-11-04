@@ -33,7 +33,8 @@ const server = http.createServer((req, res) => {
 (async () => {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   let browser;
-  const results = [], errors = [], density = [];
+  const results = [], errors = [], density = [], spacing = [];
+  let previousGap;
   const output = process.env.RA_EVENT_QA_OUTPUT || '/tmp/ra-event-navigation-qa';
   fs.mkdirSync(output, {recursive:true});
   try {
@@ -105,8 +106,11 @@ const server = http.createServer((req, res) => {
         const relative = dialog.locator('.ra-event-relative-time a').first();
         await relative.scrollIntoViewIfNeeded();
         const eventUrl = new URL(await relative.getAttribute('href'));
-        assert.equal(Number(eventUrl.searchParams.get('ds.start')),1788236471256);
-        assert.equal(Number(eventUrl.searchParams.get('ds.end')),1788236491256);
+        assert.equal(Number(eventUrl.searchParams.get('ds.start')),1788236480256);
+        assert.equal(Number(eventUrl.searchParams.get('ds.end')),1788236496256);
+        const rawUrl = await dialog.locator('.ra-event-timestamp a').first().getAttribute('href');
+        assert.equal(rawUrl,eventUrl.href);
+        assert.ok((await relative.getAttribute('title')).includes(lang === 'zh' ? '前 1 秒至后 15 秒' : '−1s to +15s'));
         if (width < 640) assert.ok((await relative.boundingBox()).height >= 44);
         const copy = dialog.locator('.ra-event-copy-timestamp').first();
         assert.equal(await copy.evaluate(button => button.parentElement.className),'ra-event-relative-time ra-event-copy-anchor');
@@ -124,13 +128,14 @@ const server = http.createServer((req, res) => {
           row.after(plain);
           const plainHeight = plain.getBoundingClientRect().height;
           plain.remove();
-          return {height,plainHeight,copyWidth:r.width,copyHeight:r.height,overlap:r.left < l.right,
+          return {height,plainHeight,copyWidth:r.width,copyHeight:r.height,overlap:r.left < l.right,gap:r.left-l.right,
             decoration:getComputedStyle(link).textDecorationLine};
         },width < 640);
         assert.equal(dimensions.overlap,false);
         if (width === 1440) {
           assert.equal(dimensions.height,35);
           assert.equal(dimensions.height,dimensions.plainHeight);
+          assert.ok(dimensions.gap >= 0 && dimensions.gap <= 8,JSON.stringify(dimensions));
         } else assert.ok(dimensions.copyWidth >= 44 && dimensions.copyHeight >= 44);
         density.push({width,lang,theme,view,...dimensions});
         const writesBefore = await page.evaluate(() => clipboardWrites.length);
@@ -181,6 +186,45 @@ const server = http.createServer((req, res) => {
         await dialog.waitFor({state:'hidden'});
         results.push({width,lang,theme,view});
       }
+    // A short four-event table leaves more surplus width than the long-value
+    // matrix. Reproduce the reported gap and bound the text-to-button distance.
+    await page.setViewportSize({width:1440,height:900});
+    await page.waitForFunction(() => !document.querySelector('#raEventDialog').open && !state.raEventDialog.issueId);
+    for (const lang of ['zh','en']) for (const theme of ['dark','light']) {
+      await page.evaluate(({lang,theme}) => {
+        applyUiLanguage(lang,{persist:false});
+        applyColorTheme(theme,{persist:false});
+        const data=structuredClone(fixtureCase);
+        data.issue_id='cn37211177';
+        data.assets.capture.timestamp_ms=1792837052789;
+        data.external_links.ra_events=[
+          {event:'stationary',value:null,timestamp:1792837052489},
+          {event:'start',value:'FP_STARTUP−3',timestamp:1792837052789},
+          {event:'pickup',value:1.93,timestamp:1792837054717},
+          {event:'exit',value:17.95,timestamp:1792837070743},
+        ];
+        openRaEventDialog(data);
+      },{lang,theme});
+      const dialog=page.locator('#raEventDialog');
+      const measure=()=>dialog.locator('tbody tr').evaluateAll(rows=>rows.map(row=>{
+        const link=row.querySelector('.ra-event-timestamp a').getBoundingClientRect();
+        const button=row.querySelector('.ra-event-copy-timestamp').getBoundingClientRect();
+        return {gap:button.left-link.right,height:row.getBoundingClientRect().height};
+      }));
+      const measurements=await measure();
+      for (const m of measurements) assert.ok(m.gap>=0 && m.gap<=8 && Math.abs(m.height-35)<=1,JSON.stringify(m));
+      spacing.push({lang,theme,measurements});
+      if (lang==='zh' && theme==='dark') {
+        await dialog.screenshot({path:path.join(output,'compact-four-events-1440-zh-dark.png')});
+        const oldStyle=await page.addStyleTag({content:'.ra-event-table td.ra-event-copy-cell {width:auto;padding-right:40px;}'});
+        previousGap=(await measure())[0].gap;
+        assert.ok(previousGap>16,'the previous layout must reproduce a wide gap');
+        await dialog.screenshot({path:path.join(output,'previous-four-events-1440-zh-dark.png')});
+        await oldStyle.evaluate(el=>el.remove());
+      }
+      await dialog.locator('[data-close]').first().click();
+      await page.waitForFunction(() => !document.querySelector('#raEventDialog').open && !state.raEventDialog.issueId);
+    }
     await page.evaluate(() => {
       const missing = structuredClone(fixtureCase);
       missing.assets.capture.trip_id = '';
@@ -299,9 +343,11 @@ const server = http.createServer((req, res) => {
     assert.deepEqual(errors,[]);
     const result = {browser:browser.version(),checks:results.length,metadataRequests,refreshRequests,refreshChecks:4,
       copyChecks:['raw milliseconds','no navigation','filtered rows','refreshed rows','locale and focus','missing trip',
-        'invalid timestamps','permission denial','modal fallback','fallback failure','breakpoint identity and focus'],results,density,errors};
+        'invalid timestamps','permission denial','modal fallback','fallback failure','breakpoint identity and focus'],
+      results,density,spacing,previousGap,errors};
     fs.writeFileSync(path.join(output,'results.json'),JSON.stringify(result,null,2));
-    console.log(JSON.stringify(result));
+    console.log(JSON.stringify({browser:result.browser,checks:results.length,refreshChecks:4,copyChecks:result.copyChecks,
+      spacingCases:spacing.length,previousGap,compactGap:spacing[0].measurements[0].gap,errors}));
   } finally {
     if (browser) await browser.close();
     server.close();
