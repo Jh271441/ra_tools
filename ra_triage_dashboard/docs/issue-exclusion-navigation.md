@@ -23,6 +23,9 @@ Old clients omitting the flag preserve the existing Case value and their histori
 request fingerprint. Task progress still counts each Issue once. The same behavior
 applies to Case-only submissions without a Run.
 
+The shared exclusion control shows only its bilingual label and K keycap. It has
+no explanatory subline or save/sync tooltip. Mobile uses a 44px touch target.
+
 The checkbox is disabled until Case context loads, restores exclusion from a separate
 Case draft field, and uses K like the standalone Case-labeling control. Run-history
 refresh and delayed Trail metadata cannot overwrite it. In model-only mode the Case
