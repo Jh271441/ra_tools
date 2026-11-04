@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import fcntl
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -35,6 +36,12 @@ SENSITIVE_PATHS = (
     "ra_triage_dashboard/scripts/migrate_cloud_postgres_data.sh",
 )
 POSTGRES_MIGRATION_PREFIX = "ra_triage_dashboard/migrations/postgres/"
+# A unique index requires an exact reviewed migration; generic additive SQL
+# continues to reject arbitrary uniqueness/constraint changes.
+REVIEWED_ADDITIVE_MIGRATIONS = {
+    "ra_triage_dashboard/migrations/postgres/060_comment_submission_ids.sql":
+        "fae1928d683098cbef62be2f733f129b526543164aa4f490efc9beb945956b6d",
+}
 RECORD_SCHEMA_VERSION = 2
 RELEASE_ID_PATTERN = re.compile(r"[0-9]{8}T[0-9]{6}Z-[0-9a-f]{12}(?:-[0-9]{2})?")
 MIGRATION_APPLY_CODE = """
@@ -70,6 +77,9 @@ def git(*args, cwd=REPO):
     return run("git", *args, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE).stdout.decode().strip()
 
 def validate_additive_migration_sql(path, content):
+    reviewed_digest = REVIEWED_ADDITIVE_MIGRATIONS.get(path)
+    if reviewed_digest and hashlib.sha256(content.strip().encode()).hexdigest() == reviewed_digest:
+        return
     statements = [
         statement.strip()
         for statement in re.sub(r"--[^\n]*", "", content).split(";")

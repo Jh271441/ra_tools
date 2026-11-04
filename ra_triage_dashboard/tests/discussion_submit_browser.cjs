@@ -24,7 +24,7 @@ const server = http.createServer((req, res) => {
 });
 (async () => {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  const browser = await chromium.launch({headless: true});
+  const browser = await chromium.launch({headless: true, ...(process.env.CHROMIUM_EXECUTABLE_PATH?{executablePath:process.env.CHROMIUM_EXECUTABLE_PATH}:{})});
   try {
     const page = await browser.newPage();
     const cdp = await page.context().newCDPSession(page);
@@ -45,7 +45,12 @@ const server = http.createServer((req, res) => {
         state.mentionUsers=[{username:'bob',display_name:'Bob',enabled:true},{username:'carol',display_name:'Carol',enabled:true}];
         state.config={review_notifications:{enabled:true}};
         window.posts=[];
+        window.receiptCheckOffline=true;
         api=async (path, options) => {
+          if (path.includes('/discussion-submissions/')) {
+            if (window.receiptCheckOffline) throw Error('Synthetic verification connection failure');
+            throw Object.assign(Error('Not found'),{status:404});
+          }
           if(options?.method === 'POST') {
             window.posts.push({path,body:JSON.parse(options.body)});
             return await new Promise((resolve,reject) => {
@@ -155,6 +160,7 @@ const server = http.createServer((req, res) => {
       if(width===320&&lang==='en'&&theme==='light') await page.screenshot({path:'/tmp/comment-submit-320-en-light.png'});
       if(width===1440&&lang==='zh'&&theme==='dark') await page.screenshot({path:'/tmp/comment-submit-1440-zh-dark.png'});
       // Retry preserves the original reply destination and creates one synthetic result.
+      await page.evaluate(()=>{window.receiptCheckOffline=false;});
       await page.locator('#analysisDiscussionSubmit').click();
       assert.equal(await page.evaluate(()=>posts.length),2);
       await page.evaluate(()=>finishPost.resolve({comment:{id:118,body:'saved',discussion_channel:'case',author:'alice'}}));

@@ -4,6 +4,10 @@ from .shared import utc_now
 
 
 def initialize_columns(self, conn) -> None:
+    self._ensure_column(conn, "review_comments", "client_request_id", "TEXT NOT NULL DEFAULT ''")
+    self._ensure_column(conn, "review_comments", "request_fingerprint", "TEXT NOT NULL DEFAULT ''")
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_review_comments_client_request "
+                 "ON review_comments(issue_id, lower(author), client_request_id) WHERE client_request_id <> ''")
     for table in ("review_comments", "intent_case_comments"):
         self._ensure_column(conn, table, "version", "INTEGER NOT NULL DEFAULT 1")
         self._ensure_column(conn, table, "edited_at", "TEXT")

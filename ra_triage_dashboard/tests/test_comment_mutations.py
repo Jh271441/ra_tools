@@ -237,7 +237,7 @@ def test_postgres_comment_migration_and_cross_connection_cas(tmp_path):
         legacy_dir = tmp_path / "migrations58"
         legacy_dir.mkdir()
         for migration in options["postgres_migrations_dir"].glob("*.sql"):
-            if not migration.name.startswith("059_"):
+            if int(migration.name.split("_", 1)[0]) < 59:
                 (legacy_dir / migration.name).symlink_to(migration)
         legacy = Database(os.environ["DASHBOARD_TEST_POSTGRES_URL"], postgres_migrations_dir=legacy_dir)
         try:
@@ -257,7 +257,7 @@ def test_postgres_comment_migration_and_cross_connection_cas(tmp_path):
             upgraded = dict(conn.execute("SELECT * FROM review_comments WHERE id = ?", (old_id,)).fetchone())
             assert {key:upgraded[key] for key in old_comment} == old_comment
             assert upgraded["version"] == 1 and upgraded["deleted_at"] is None
-            assert conn.execute("SELECT COUNT(*) AS n FROM dashboard_schema_migrations").fetchone()["n"] == 59
+            assert conn.execute("SELECT COUNT(*) AS n FROM dashboard_schema_migrations").fetchone()["n"] == len(list(options["postgres_migrations_dir"].glob("*.sql")))
         issue = "comment_pg_" + uuid4().hex
         db.upsert_issues([{"issue_id": issue}], source="isolated-comment-test", baseline_scope="comment-pg", replace_gt=False)
         parent = db.create_review_comment(issue_id=issue, body="original", author="alice", author_verified=True,

@@ -883,7 +883,7 @@ async function openAnalysisDiscussion(
   textarea.value = "";
   textarea.hidden = false;
   $("#analysisDiscussionPreview").hidden = true;
-  $("[data-comment-preview-toggle]").textContent = "预览";
+  $("[data-comment-preview-toggle]").innerHTML = discussionActionText("预览", "Preview");
   renderAnalysisDiscussionImages();
   updateAnalysisDiscussionComposerAccess();
   document.querySelectorAll("[data-comment-image]").forEach((button) => {
@@ -997,8 +997,9 @@ function updateAnalysisDiscussionComposerAccess() {
   submit.querySelector(".ui-lang-zh").textContent = context.saving ? "发表中…" : "发表评论";
   submit.querySelector(".ui-lang-en").textContent = context.saving ? "Posting…" : "Post comment";
   $("#analysisDiscussionForm")?.setAttribute("aria-busy", String(context.saving));
-  $("#analysisDiscussionNote").readOnly = Boolean(context.saving);
-  $("#analysisDiscussionDialog")?.querySelectorAll("[data-comment-format], [data-comment-image], [data-comment-preview-toggle], [data-remove-comment-image], [data-cancel-comment-reply]").forEach(button => {button.disabled = Boolean(context.saving);});
+  const locked = Boolean(context.saving || context.status === "posted");
+  $("#analysisDiscussionNote").readOnly = locked;
+  $("#analysisDiscussionDialog")?.querySelectorAll("[data-comment-format], [data-comment-image], [data-comment-preview-toggle], [data-remove-comment-image], [data-cancel-comment-reply]").forEach(button => {button.disabled = locked;});
   $("#analysisDiscussionChannelField").hidden = true;
   $("#analysisDiscussionViewField").hidden = true;
   const hint = $("#analysisDiscussionNotice");
@@ -1006,6 +1007,10 @@ function updateAnalysisDiscussionComposerAccess() {
   hint.textContent = context.status === "error"
     ? uiText("讨论未加载成功，请重试。草稿已保留。", "Load the discussion before posting. Your draft is preserved.")
     : uiText("评论针对当前 Issue，所有任务和复核入口共享。", "Comments belong to this Issue and are shared across tasks and review entry points.");
+}
+
+function refreshAnalysisDiscussionLanguage() {
+  if (state.analysisDiscussion && $("#analysisDiscussionDialog")?.open) updateAnalysisDiscussionComposerAccess();
 }
 
 function clearAnalysisDiscussionImages() {
@@ -1070,7 +1075,7 @@ function addAnalysisDiscussionImages(files) {
     const token = `pending-${String(randomId).replace(/[^A-Za-z0-9-]/g, "-")}`;
     const item = { token, file, previewUrl: URL.createObjectURL(file) };
     context.pendingImages.push(item);
-    const safeAlt = String(file.name || "评论图片").replace(/[\]\n]/g, "").slice(0, 80);
+    const safeAlt = String(file.name || uiText("评论图片", "Comment image")).replace(/[\]\n]/g, "").slice(0, 80);
     const textarea = $("#analysisDiscussionNote");
     const start = textarea.selectionStart ?? textarea.value.length;
     const end = textarea.selectionEnd ?? start;
@@ -1089,9 +1094,9 @@ function renderAnalysisDiscussionImages() {
   const images = state.analysisDiscussion?.pendingImages || [];
   target.innerHTML = images.map((item) => `
     <div class="comment-pending-image">
-      <img src="${escapeHtml(item.previewUrl)}" alt="${escapeHtml(item.file.name || "待上传图片")}" />
-      <span>${escapeHtml(item.file.name || "图片")}</span>
-      <button type="button" data-remove-comment-image="${escapeHtml(item.token)}" aria-label="移除图片">×</button>
+      <img src="${escapeHtml(item.previewUrl)}" alt="${escapeHtml(item.file.name || uiText("待上传图片", "Pending image"))}" />
+      <span>${escapeHtml(item.file.name || uiText("图片", "Image"))}</span>
+      <button type="button" data-remove-comment-image="${escapeHtml(item.token)}" data-i18n-aria-label="comment.remove_image" aria-label="${escapeHtml(uiText("移除图片", "Remove image"))}">×</button>
     </div>`).join("");
   target.querySelectorAll("[data-remove-comment-image]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -1120,7 +1125,7 @@ function renderAnalysisDiscussionPreview() {
     url: item.previewUrl,
   }));
   preview.innerHTML = reviewCommentBodyMarkup($("#analysisDiscussionNote")?.value || "", attachments) ||
-    `<span class="comment-markdown-empty">暂无可预览内容。</span>`;
+    `<span class="comment-markdown-empty">${discussionActionText("暂无可预览内容。", "Nothing to preview yet.")}</span>`;
 }
 
 function toggleAnalysisDiscussionPreview() {
@@ -1131,7 +1136,8 @@ function toggleAnalysisDiscussionPreview() {
   const preview = $("#analysisDiscussionPreview");
   textarea.hidden = context.preview;
   preview.hidden = !context.preview;
-  $("[data-comment-preview-toggle]").textContent = context.preview ? "继续编辑" : "预览";
+  $("[data-comment-preview-toggle]").innerHTML = context.preview
+    ? discussionActionText("继续编辑", "Continue editing") : discussionActionText("预览", "Preview");
   if (context.preview) renderAnalysisDiscussionPreview();
   else textarea.focus();
 }
@@ -1345,14 +1351,14 @@ function renderAnalysisDiscussionThread() {
     const replyContext = comment.reply_to_id
       ? `<div class="comment-reply-quote">${discussionActionText("回复", "Reply to")} ${escapeHtml(reviewMentionDisplayName(comment.reply_to_author || uiText("评论人", "author")))}: ${comment.reply_to_deleted ? discussionActionText("原评论已删除", "Original comment deleted") : escapeHtml(replyExcerpt)}</div>`
       : "";
-    const channelLabel = comment.discussion_channel === "campaign" ? uiText("来自任务讨论", "From task discussion")
-      : comment.discussion_channel === "model_review" ? uiText("来自复核讨论", "From review discussion") : "";
+    const channelLabel = comment.discussion_channel === "campaign" ? discussionActionText("来自任务讨论", "From task discussion")
+      : comment.discussion_channel === "model_review" ? discussionActionText("来自复核讨论", "From review discussion") : "";
     const canReply = canReplyToAnalysisDiscussion(comment, context);
     const canManage = canManageAnalysisComment(comment, context);
     return `<article class="comment-thread-item" data-comment-id="${Number(comment.id)}">
       <div class="comment-thread-meta">
         <strong>${escapeHtml(reviewMentionDisplayName(comment.author || "unknown"))}</strong>
-        <span>${channelLabel ? `${escapeHtml(channelLabel)} · ` : ""}${comment.author_verified ? `${uiText("已验证", "Verified")} · ` : ""}${escapeHtml(formatTime(comment.created_at))}${comment.edited_at ? ` · ${discussionActionText("已编辑", "Edited")} ${escapeHtml(formatTime(comment.edited_at))}` : ""}</span>
+        <span>${channelLabel ? `${channelLabel} · ` : ""}${comment.author_verified ? `${discussionActionText("已验证", "Verified")} · ` : ""}${escapeHtml(formatTime(comment.created_at))}${comment.edited_at ? ` · ${discussionActionText("已编辑", "Edited")} ${escapeHtml(formatTime(comment.edited_at))}` : ""}</span>
       </div>
       ${replyContext}
       <div class="comment-thread-body">${comment.deleted ? discussionActionText("此评论已删除", "This comment was deleted") : reviewCommentBodyMarkup(comment.body || "", comment.attachments || [])}</div>
@@ -1455,11 +1461,67 @@ async function postAnalysisDiscussionRequest(path, options) {
     return await api(path, { ...options, signal: controller.signal });
   } catch (error) {
     if (controller.signal.aborted) {
-      throw new Error(uiText("评论操作请求超时。", "The comment request timed out."));
+      throw apiResponseError("评论操作请求超时。", "The comment request timed out.", { code: "timeout", ambiguous: true });
     }
     throw error;
   } finally {
     window.clearTimeout(timeout);
+  }
+}
+
+function analysisDiscussionSubmission(context, payload) {
+  const signature = JSON.stringify({ ...payload, images: context.pendingImages.map(item => item.token),
+    actor: state.session?.username || "" });
+  if (context.submission?.signature !== signature) {
+    context.submission = { signature, id: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}` };
+  }
+  return context.submission;
+}
+
+async function findAnalysisDiscussionSubmission(context, submission) {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 6000);
+  try {
+    const result = await api(`/api/cases/${encodeURIComponent(context.issueId)}/discussion-submissions/${encodeURIComponent(submission.id)}`,
+      { signal: controller.signal, cache: "no-store" });
+    if (!Number.isInteger(Number(result?.comment?.id)) || Number(result.comment.id) <= 0) {
+      throw apiResponseError("无法核对评论发表结果。", "Unable to verify whether the comment was posted.", { ambiguous: true });
+    }
+    return result;
+  } catch (error) {
+    if (error.status === 404) return null;
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
+async function postIssueDiscussion(context, payload, path, options) {
+  const submission = analysisDiscussionSubmission(context, payload);
+  if (submission.result) return submission.result;
+  if (submission.uncertain) {
+    const saved = await findAnalysisDiscussionSubmission(context, submission);
+    if (saved) return (submission.result = saved);
+  }
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    if (!isAnalysisDiscussionCurrent(context)) throw new Error(uiText("讨论已切换，草稿已保留。", "The discussion has changed. Your draft is preserved."));
+    try {
+      const result = await postAnalysisDiscussionRequest(path, { ...options,
+        headers: { ...options.headers, "Idempotency-Key": submission.id } });
+      if (!Number.isInteger(Number(result?.comment?.id)) || Number(result.comment.id) <= 0) {
+        throw apiResponseError("服务器未返回有效的评论确认。", "The server did not return a valid comment receipt.", { ambiguous: true });
+      }
+      return (submission.result = result);
+    } catch (error) {
+      if (error.ambiguous === false || (error.status >= 400 && error.status < 500)) throw error;
+      submission.uncertain = true;
+      if (!isAnalysisDiscussionCurrent(context)) throw error;
+      setAnalysisDiscussionFeedback(context, "连接中断，正在核对评论是否已发表…", "Connection interrupted. Checking whether your comment was posted…");
+      const saved = await findAnalysisDiscussionSubmission(context, submission);
+      if (saved) return (submission.result = saved);
+      if (attempt === 1) throw error;
+      setAnalysisDiscussionFeedback(context, "尚未查到评论，正在重试发表…", "No saved comment found. Retrying…");
+    }
   }
 }
 
@@ -1486,6 +1548,7 @@ async function saveAnalysisDiscussion(event) {
   setAnalysisDiscussionFeedback(context, "正在发表评论…", "Posting comment…");
   context.saving = true;
   updateAnalysisDiscussionComposerAccess();
+  let committed = false;
   try {
     const payload = {
       body: discussion,
@@ -1510,17 +1573,21 @@ async function saveAnalysisDiscussion(event) {
       context.pendingImages.forEach((item, index) => {
         form.append("attachments", item.file, item.file.name || `comment-${index + 1}.png`);
       });
-      result = await postAnalysisDiscussionRequest(`/api/cases/${encodeURIComponent(context.issueId)}/discussion-with-attachments`, {
+      result = await postIssueDiscussion(context, payload, `/api/cases/${encodeURIComponent(context.issueId)}/discussion-with-attachments`, {
         method: "POST",
         body: form,
         headers: { "X-RA-Triage-Request": "comment-v1" },
       });
     } else {
-      result = await postAnalysisDiscussionRequest(`/api/cases/${encodeURIComponent(context.issueId)}/discussion`, {
+      result = await postIssueDiscussion(context, payload, `/api/cases/${encodeURIComponent(context.issueId)}/discussion`, {
         method: "POST",
         body: JSON.stringify(payload),
       });
     }
+    if (!Number.isInteger(Number(result?.comment?.id)) || Number(result.comment.id) <= 0) {
+      throw apiResponseError("服务器未返回有效的评论确认。", "The server did not return a valid comment receipt.", { ambiguous: true });
+    }
+    committed = true;
     acknowledgeLocalChange(result);
     if (!isAnalysisDiscussionCurrent(context)) {
       setAnalysisDiscussionFeedback(context,
@@ -1541,10 +1608,11 @@ async function saveAnalysisDiscussion(event) {
     resetAnalysisDiscussionReply(context);
     $("#analysisDiscussionNote").value = "";
     clearAnalysisDiscussionImages();
+    context.submission = null;
     context.preview = false;
     $("#analysisDiscussionNote").hidden = false;
     $("#analysisDiscussionPreview").hidden = true;
-    $("[data-comment-preview-toggle]").textContent = "预览";
+    $("[data-comment-preview-toggle]").innerHTML = discussionActionText("预览", "Preview");
     renderAnalysisDiscussionReplyContext();
     updateReviewMentionComposer(
       $("#analysisDiscussionNote"),
@@ -1554,24 +1622,34 @@ async function saveAnalysisDiscussion(event) {
     updateAnalysisDiscussionCount(
       context.issueId,
       context.runId,
-      context.comments.length
+      Number(result.comment_count ?? context.comments.length)
     );
     const queued = result?.notification?.queued?.length || 0;
-    setAnalysisDiscussionFeedback(context,
+    if (result.idempotent_replay) setAnalysisDiscussionFeedback(context,
+      "已确认评论已发表，无需重复提交。", "Confirmed: your comment is posted. No need to submit again.");
+    else setAnalysisDiscussionFeedback(context,
       `评论已发表${queued ? `；DChat 通知已排队 ${queued} 人` : ""}。`,
       `Comment posted.${queued ? ` DChat notifications queued for ${queued} ${queued === 1 ? "person" : "people"}.` : ""}`);
   } catch (error) {
     if (state.analysisDiscussion === context) {
-      const detail = String(error.message || "");
-      setAnalysisDiscussionFeedback(context,
-        `未能确认评论发表成功，草稿已保留。请检查讨论后重试。${detail ? `（${detail}）` : ""}`,
-        `Could not confirm posting. Your draft is preserved. Check the discussion before retrying.${detail ? ` (${detail})` : ""}`, true);
+      const zh = String(error.messages?.zh || error.message || "");
+      const en = String(error.messages?.en || error.message || "");
+      if (committed) {
+        context.status = "posted";
+        setAnalysisDiscussionFeedback(context,
+          "评论已发表，但界面刷新失败。请重新打开讨论查看。", "Your comment is posted, but the display could not refresh. Reopen the discussion to view it.", true);
+      }
+      else if (!context.submission?.uncertain && (error.ambiguous === false || (error.status >= 400 && error.status < 500))) setAnalysisDiscussionFeedback(context,
+        `评论未发表，草稿和回复对象已保留。${zh}`, `Comment not posted. Your draft and reply target are preserved. ${en}`, true);
+      else setAnalysisDiscussionFeedback(context,
+        `未能确认评论发表成功，草稿和回复对象已保留。重试会先核对，避免重复发表。${zh ? `（${zh}）` : ""}`,
+        `Could not confirm posting. Your draft and reply target are preserved. Retrying checks for a saved comment first to avoid duplicates.${en ? ` (${en})` : ""}`, true);
     }
   } finally {
     context.saving = false;
     if (state.analysisDiscussion === context) {
       updateAnalysisDiscussionComposerAccess();
-      if (isAnalysisDiscussionCurrent(context)) renderAnalysisDiscussionThread();
+      if (isAnalysisDiscussionCurrent(context) && context.status !== "posted") renderAnalysisDiscussionThread();
     }
   }
 }

@@ -53,6 +53,7 @@ function applyDomI18n(root = document) {
   const attrMap = [
     ["data-i18n-placeholder", "placeholder"],
     ["data-i18n-title", "title"],
+    ["data-i18n-alt", "alt"],
     ["data-i18n-aria-label", "aria-label"],
     ["data-i18n-value", "value"],
   ];
@@ -64,6 +65,7 @@ function applyDomI18n(root = document) {
       if (prop === "placeholder") el.placeholder = text;
       else if (prop === "title") el.title = text;
       else if (prop === "aria-label") el.setAttribute("aria-label", text);
+      else if (prop === "alt") el.setAttribute("alt", text);
       else if (prop === "value" && "value" in el) el.value = text;
     });
   }

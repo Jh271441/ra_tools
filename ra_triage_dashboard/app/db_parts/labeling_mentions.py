@@ -1,10 +1,28 @@
 """Case-label mention audit comments and outbox share the revision transaction."""
+import re
+
 from ..review_mentions import extract_review_mentions
 from .shared import _json
 
 
 def label_mention_body(revision):
     return (f"Issue 标签 #{revision['id']} · 标注依据 / Label rationale\n" + revision["rationale"])[:3500]
+
+
+def label_mention_revision_id(comment):
+    if (comment["discussion_channel"] != "case" or comment["reply_to_id"]
+            or not comment["author_verified"] or comment["deleted_at"]):
+        return None
+    match = re.match(r"\AIssue 标签 #([1-9][0-9]{0,17}) · 标注依据 / Label rationale\n", comment["body"])
+    return int(match[1]) if match else None
+
+
+def matches_label_mention_revision(comment, revision):
+    """Bind evidence to its exact historical revision, never the latest label."""
+    return bool(revision and label_mention_revision_id(comment) == int(revision["id"])
+        and all(comment[key] == revision[key] for key in
+                ("issue_id", "baseline_scope", "author", "author_source", "author_verified", "created_at"))
+        and label_mention_body(revision) == comment["body"])
 
 
 def append_label_mention_event(database, conn, *, revision, issue_id, baseline_scope, recipients):

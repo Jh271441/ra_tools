@@ -610,6 +610,10 @@ function normalizeApiPayloadUrls(value) {
 
 const API_GET_IN_FLIGHT = new Map();
 
+function apiResponseError(zh, en, properties = {}) {
+  return Object.assign(new Error(uiText(zh, en)), { messages: { zh, en }, ...properties });
+}
+
 /**
  * Execute one HTTP request.  ``api`` below adds a small single-flight layer
  * for concurrent, signal-less GETs; callers that own an AbortController keep
@@ -655,19 +659,28 @@ async function apiRequest(path, options = {}) {
           ...(options.headers || {}),
         },
       });
-      payload = normalizeApiPayloadUrls(
-        await response.json().catch((error) => {
-          if (error?.name === "AbortError") throw error;
-          return {};
-        })
-      );
+      const htmlResponse = String(response.headers?.get("content-type") || "").includes("text/html");
+      if (response.redirected && htmlResponse) {
+        throw apiResponseError("登录状态已失效，请重新登录后重试。", "Your session has expired. Sign in again and retry.",
+          { status: 401, code: "auth_required", ambiguous: false });
+      }
+      payload = normalizeApiPayloadUrls(await response.json().catch((error) => {
+        if (error?.name === "AbortError") throw error;
+        if (response.ok) throw apiResponseError(
+          "服务器返回了无法识别的响应。", "The server returned an unreadable response.",
+          { status: response.status, code: "invalid_response", ambiguous: isMutation });
+        return {};
+      }));
     } catch (error) {
       response = null;
       lastError = error;
       const timedOut = error?.name === "AbortError";
       const callerAborted = Boolean(options.signal?.aborted);
-      if (!retryableGet || callerAborted || attempt >= API_GET_MAX_ATTEMPTS - 1) {
-        if (timedOut) throw new Error("请求超时，请稍后重试。");
+      if (!retryableGet || callerAborted || error.code === "auth_required" || attempt >= API_GET_MAX_ATTEMPTS - 1) {
+        if (timedOut) throw apiResponseError("请求超时，请稍后重试。", "The request timed out. Please retry.",
+          { code: "timeout", ambiguous: isMutation });
+        if (error instanceof TypeError) throw apiResponseError("网络连接中断，请检查网络和登录状态。", "The connection was interrupted. Check your network and sign-in status.",
+          { code: "network", ambiguous: isMutation });
         throw error;
       }
     } finally {
@@ -675,15 +688,19 @@ async function apiRequest(path, options = {}) {
     }
     if (response) {
       if (response.ok) return payload;
-      const message = payload.detail || `请求失败 (${response.status})`;
+      const message = typeof payload?.detail === "string" ? payload.detail : uiText(`请求失败 (${response.status})`, `Request failed (${response.status})`);
+      const responseError = [401, 403].includes(response.status)
+        ? apiResponseError("登录状态或权限已变化，请重新登录后重试。", "Your session or permissions have changed. Sign in again and retry.",
+          { status: response.status, code: "auth_required", ambiguous: false })
+        : Object.assign(new Error(message), { status: response.status, code: "http", ambiguous: response.status >= 500 });
       if (
         !retryableGet ||
         !API_GET_RETRYABLE_STATUSES.has(response.status) ||
         attempt >= API_GET_MAX_ATTEMPTS - 1
       ) {
-        throw new Error(message);
+        throw responseError;
       }
-      lastError = new Error(message);
+      lastError = responseError;
     }
     await new Promise((resolve) => window.setTimeout(resolve, 250 * (attempt + 1)));
   }

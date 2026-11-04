@@ -1,5 +1,116 @@
 # Issue discussions
 
+## Candidate: historical images and reliable replies (2026-11-04, cache758; not deployed)
+
+### Investigation
+
+The last read-only production inspection found build
+`b90c0c1805f202f8c0bc1c4d6df95877cd7aa6cc` (cache755), PostgreSQL healthy.
+Issue `cn37255025` has audit comment182 for label revision4136. That exact
+revision has **one** `label_attachments` record, while the discussion API returned
+**zero** images for it. The audit-comment creation path copies rationale text;
+images stay with the original label revision. The renderer also previously
+required a Markdown image placeholder, which these snapshots do not have.
+
+The current production log contained three canonical comment POSTs for this
+Issue, all HTTP200, without a corresponding comment-route traceback. This does
+not identify the cause of the user's historical network failures. Code inspection
+and local HTTP failure injection confirmed several unhandled failure modes:
+
+- A lost/timeout response can follow a committed comment. Retrying previously
+  created another comment and another notification, because writes had no stable
+  request identity.
+- Successful HTTP responses with invalid JSON were converted to `{}`. Accessing
+  `result.comment` then raised a client error reported as a posting failure.
+- Expired-login HTML redirects and explicit permission errors did not have a
+  distinct recovery path. An exception updating the UI after a valid receipt was
+  also reported as a posting failure.
+- Chromium151 actually resent a POST seven times after a connection reset in
+  the local fixture. Disabling a button alone cannot prevent those wire retries.
+
+### Candidate behavior
+
+Historical images are projected on reads by validating the exact revision ID,
+Issue, baseline scope, verified actor/source, timestamp and complete audit body.
+The shared provenance resolver uses that same validation. A later revision never
+replaces an older comment's evidence. Files are not copied and human records are
+not rewritten. Protected label images retain `/api/labeling/attachments/{id}`
+and its existing writer/active-scope checks; read-only viewers see an access
+explanation. Comment bodies append images without placeholders, render inline
+images once, and use the existing image style and full-image links.
+
+Canonical Issue POSTs accept `Idempotency-Key`. Migration060 adds
+`review_comments.client_request_id` and `request_fingerprint`, plus a unique
+Issue/normalized-author/request-ID index; SQLite initialization mirrors it.
+The fingerprint binds text, reply parent and ordered normalized image hashes.
+The transaction serializes keyed writes with an Issue row lock on PostgreSQL
+and `BEGIN IMMEDIATE` on SQLite. Replays return the same current comment/tombstone
+without a new outbox entry. Different content under the same key returns409.
+Multipart replays remove only their newly normalized, uncommitted duplicate files.
+
+`GET /api/cases/{issue_id}/discussion-submissions/{request_id}` requires the
+existing verified writer permission and reads only the current actor's receipt;
+successful responses are private/no-store. It neither posts nor delivers a
+notification. After an ambiguous failure the client checks this endpoint with a
+6s deadline. A saved comment recovers success. A404 permits **one application
+retry** with the same key; wire retries by the browser use that key too. A failed
+verification retains the draft, images and parent for a later manual check.
+Explicit400/401/403/409 errors do not trigger automatic posting retries. Intent
+comments retain their separate API and do not use this Issue retry protocol.
+
+Invalid successful responses are rejected rather than treated as empty JSON;
+network, timeout and observable login/permission failures have bilingual feedback.
+A valid receipt followed by a UI exception shows “posted, reopen discussion” and
+locks further posting in that dialog, preventing accidental resubmission.
+Runtime language switches keep editor/image nodes and focus while refreshing
+image titles/alt text, toolbar labels and submission access state.
+
+### Validation and remaining gate
+
+The focused Python gates passed **151 distinct tests**, with two PostgreSQL
+tests skipped. Backend/ASGI tests cover exact historical image association, spoofed
+revision references, same-actor receipt reads, conflicting keys, cross-connection
+SQLite retries, one notification, tombstone replay and multipart duplicate-file
+cleanup. Frontend contracts, syntax and existing discussion-scope behavior pass.
+On the existing Python3.9 test environment, the legacy dispatcher constructor
+test needs a separate fresh invocation because `asyncio.run` clears its loop;
+that separate invocation passes. Production's Python runtime has not been changed.
+
+Actual shell/modules/CSS and the real API client pass a local synthetic HTTP
+Chromium151.0.7922.34 regression for reset connections,503, corrupt200 responses,
+timeout,403/400, login redirects, bounded/manual retry, post-commit UI exceptions
+and multipart retries. Twelve viewport/locale/theme combinations cover
+320/390/1440px × zh/en × dark/light, image loading, no duplicate inline image,
+English long feedback, runtime language changes, draft/reply/focus preservation
+and no page overflow. The existing reply/IME/edit/delete browser suite also passes
+twelve combinations. Representative screenshots were visually inspected. These
+are desktop browser viewport tests, not physical-phone, Safari or soft-keyboard
+acceptance. All writes and notifications in tests are synthetic/disposable.
+
+The proposed remote PostgreSQL gate was **rejected by automatic approval review**
+before execution: uploading a source/config archive and using sudo to create/drop
+a database need explicit user authorization. No test payload was uploaded and no
+remote database was created or migrated. The additive migration and PostgreSQL
+cross-connection/image-binding tests are prepared but **not yet run**. Production
+was last observed at cache755; this task performed no release, production
+comment, DChat send, service restart or production schema change. Before release, reconcile this scoped
+candidate with the latest live source and use the deployment migration/backup
+workflow. Preserve the checkout's unrelated existing changes.
+
+Run locally:
+
+```sh
+python -m pytest ra_triage_dashboard/tests/test_discussion_reliability.py -q
+node ra_triage_dashboard/tests/discussion_scope.cjs
+node ra_triage_dashboard/tests/discussion_reliability_browser.cjs
+node ra_triage_dashboard/tests/discussion_submit_browser.cjs
+```
+
+Browser scripts accept `CHROMIUM_EXECUTABLE_PATH` for an existing installation;
+the reliability script accepts `DISCUSSION_EVIDENCE_DIR` for screenshots/results.
+An existing Playwright package must be available on `NODE_PATH`. PostgreSQL tests
+only run with `DASHBOARD_TEST_POSTGRES_URL` pointing to an empty disposable DB.
+
 ## Current contract (cache724)
 
 Comments belong to an Issue and are shared across task, labeling, Model Review,

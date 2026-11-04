@@ -6,10 +6,9 @@ receipt. Never infer provenance from task membership or a revision number alone.
 """
 from __future__ import annotations
 
-import re
 from typing import Any
 
-from .db_parts.labeling_mentions import label_mention_body
+from .db_parts.labeling_mentions import label_mention_revision_id, matches_label_mention_revision
 
 
 def resolve_comment_source(database: Any, comment_id: int) -> dict[str, Any]:
@@ -37,8 +36,8 @@ def resolve_comment_source(database: Any, comment_id: int) -> dict[str, Any]:
                 return fallback
         else:
             return fallback
-        match = re.match(r"\AIssue 标签 #([1-9][0-9]{0,17}) · 标注依据 / Label rationale\n", root["body"])
-        if not match or not root["author_verified"]:
+        revision_id = label_mention_revision_id(root)
+        if revision_id is None:
             return fallback
         revision = conn.execute("""
             SELECT r.*, c.issue_id, c.baseline_scope FROM label_revisions r
@@ -46,9 +45,9 @@ def resolve_comment_source(database: Any, comment_id: int) -> dict[str, Any]:
             WHERE r.id=? AND c.issue_id=? AND c.baseline_scope=?
               AND r.author=? AND r.author_source=? AND r.author_verified=?
               AND r.created_at=?
-        """, (int(match[1]), root["issue_id"], root["baseline_scope"], root["author"],
+        """, (revision_id, root["issue_id"], root["baseline_scope"], root["author"],
               root["author_source"], True, root["created_at"])).fetchone()
-        if revision is None or label_mention_body(dict(revision)) != root["body"]:
+        if not matches_label_mention_revision(root, revision):
             return fallback
         source = {"kind": "issue_label", "label_revision_id": int(revision["id"]),
                   "root_comment_id": int(root["id"])}

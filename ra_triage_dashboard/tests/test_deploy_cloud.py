@@ -58,6 +58,32 @@ COMMIT;
                 [path],
             )
 
+    def test_reviewed_comment_index_requires_exact_migration_and_explicit_mode(self):
+        path = "ra_triage_dashboard/migrations/postgres/060_comment_submission_ids.sql"
+        content = (Path(__file__).parents[2] / path).read_text()
+        d.validate_additive_migration_sql(path, content)
+        for changed_path, changed_content in (
+            (path.replace("060_", "061_"), content),
+            (path, content.replace("lower(author)", "author")),
+            (path, content + "\n-- unreviewed change"),
+            (path, "BEGIN; CREATE UNIQUE INDEX IF NOT EXISTS arbitrary ON issues(issue_id); COMMIT;"),
+        ):
+            with self.assertRaises(d.DeployError):
+                d.validate_additive_migration_sql(changed_path, changed_content)
+
+        def git(*args, **kwargs):
+            if args[:2] == ("diff", "--name-only"):
+                return path
+            if args[:2] == ("diff", "--name-status"):
+                return "A\t" + path
+            if args[0] == "show":
+                return content
+            raise AssertionError(args)
+        with patch.object(d, "git", side_effect=git):
+            with self.assertRaises(d.DeployError):
+                d.migration_changes("old", "new")
+            self.assertEqual(d.migration_changes("old", "new", allow_additive=True), [path])
+
     def test_schema_migration_guard_accepts_only_reviewed_intent_constraints(self):
         path = "ra_triage_dashboard/migrations/postgres/038_intent_lane_change_taxonomy.sql"
         safe = """BEGIN;

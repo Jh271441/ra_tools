@@ -86,7 +86,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-757`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-758`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -2052,18 +2052,18 @@
             <span><span class="ui-lang-zh">添加评论</span><span class="ui-lang-en">Add comment</span></span>
             <small>Markdown</small>
           </div>
-          <div class="comment-editor-toolbar" role="toolbar" aria-label="Markdown 工具栏">
-            <button type="button" data-comment-format="bold" title="粗体"><strong>B</strong></button>
-            <button type="button" data-comment-format="italic" title="斜体"><em>I</em></button>
-            <button type="button" data-comment-format="code" title="行内代码">&lt;/&gt;</button>
-            <button type="button" data-comment-format="quote" title="引用">“”</button>
-            <button type="button" data-comment-format="list" title="列表">≡</button>
-            <button type="button" data-comment-format="link" title="链接">链接</button>
-            <button type="button" data-comment-image title="插入图片">图片</button>
+          <div class="comment-editor-toolbar" role="toolbar" data-i18n-aria-label="comment.markdown_toolbar" aria-label="Markdown 工具栏">
+            <button type="button" data-comment-format="bold" data-i18n-title="comment.bold" title="粗体"><strong>B</strong></button>
+            <button type="button" data-comment-format="italic" data-i18n-title="comment.italic" title="斜体"><em>I</em></button>
+            <button type="button" data-comment-format="code" data-i18n-title="comment.code" title="行内代码">&lt;/&gt;</button>
+            <button type="button" data-comment-format="quote" data-i18n-title="comment.quote" title="引用">“”</button>
+            <button type="button" data-comment-format="list" data-i18n-title="comment.list" title="列表">≡</button>
+            <button type="button" data-comment-format="link" data-i18n-title="comment.link" data-i18n="comment.link" title="链接">链接</button>
+            <button type="button" data-comment-image data-i18n-title="comment.insert_image" data-i18n="comment.image_action" title="插入图片">图片</button>
             <span class="comment-editor-toolbar-spacer"></span>
             <button type="button" data-comment-preview-toggle>预览</button>
           </div>
-          <textarea id="analysisDiscussionNote" data-mention-composer rows="4" maxlength="3500" placeholder="支持 Markdown；输入 @ 可按用户名或姓名搜索。"></textarea>
+          <textarea id="analysisDiscussionNote" data-mention-composer rows="4" maxlength="3500" data-i18n-placeholder="comment.placeholder" placeholder="支持 Markdown；输入 @ 可按用户名或姓名搜索。"></textarea>
           <small class="discussion-keyboard-hint"><span class="ui-lang-zh">Enter 换行 · Ctrl / ⌘ + Enter 发表</span><span class="ui-lang-en">Enter for a new line · Ctrl / ⌘ + Enter to post</span></small>
           <div class="review-mention-composer" id="analysisDiscussionMentionComposer" data-mention-composer-root aria-live="polite"></div>
           <div class="comment-markdown-preview comment-thread-body" id="analysisDiscussionPreview" hidden></div>
@@ -2628,7 +2628,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-757`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-758`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

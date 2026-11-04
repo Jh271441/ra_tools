@@ -3,11 +3,28 @@ from __future__ import annotations
 import asyncio
 from typing import List, Optional
 from fastapi import APIRouter, File, Form, Request, UploadFile
+from fastapi.responses import JSONResponse
 from ..runtime import database
 from ..support.common import _detail
+from ..support.identity import _writer_identity
+from ..comment_submission import validate_comment_request_id
 from .case_comments import _public_review_comment, _create_review_comment_record, _create_comment_with_attachments
 
 router = APIRouter()
+
+@router.get("/api/cases/{issue_id}/discussion-submissions/{request_id}")
+async def get_issue_discussion_submission(issue_id: str, request_id: str, request: Request):
+    identity = await asyncio.to_thread(_writer_identity, request)
+    try:
+        validate_comment_request_id(request_id)
+    except ValueError as exc:
+        raise _detail(400, str(exc)) from exc
+    comment = await asyncio.to_thread(database.get_comment_submission,
+        issue_id=issue_id, author=identity.username, request_id=request_id)
+    if comment is None:
+        raise _detail(404, "未找到此请求的评论。 / No comment found for this request.")
+    return JSONResponse({"comment": _public_review_comment(comment), "idempotent_replay": True},
+        headers={"Cache-Control": "private, no-store"})
 
 @router.get("/api/cases/{issue_id}/discussion")
 async def list_issue_discussion(issue_id: str):

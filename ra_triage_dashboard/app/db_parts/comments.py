@@ -2,13 +2,34 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..comment_submission import CommentSubmissionConflictError, validate_comment_request_id
 from .comment_mutations import comment_metadata
+from .labeling_mentions import label_mention_revision_id, matches_label_mention_revision
 
 from .shared import _json, _json_load, utc_now
 
 
 class DatabaseCommentsMixin:
     """Discussion threads scoped to one Issue and model Run, with audited mutations."""
+
+    def _comment_submission(self, conn, *, issue_id, author, request_id, fingerprint=""):
+        row = conn.execute("""SELECT c.*, parent.author AS reply_to_author,
+            parent.body AS reply_to_body, parent.deleted_at AS reply_to_deleted_at
+            FROM review_comments c LEFT JOIN review_comments parent ON parent.id=c.reply_to_id
+            WHERE c.issue_id=? AND lower(c.author)=lower(?) AND c.client_request_id=?""",
+            (issue_id, author, request_id)).fetchone()
+        if row is None:
+            return None
+        if fingerprint and row["request_fingerprint"] != fingerprint:
+            raise CommentSubmissionConflictError(
+                "评论请求标识已用于另一份内容，请重新提交。 / This request ID was used for different content.")
+        attachments = self._comment_attachments_for_rows(conn, [row])
+        return self._review_comment_dict(row, attachments=attachments.get(int(row["id"]), []))
+
+    def get_comment_submission(self, *, issue_id, author, request_id, fingerprint=""):
+        validate_comment_request_id(request_id)
+        with self.connect() as conn:
+            return self._comment_submission(conn, issue_id=issue_id, author=author, request_id=request_id, fingerprint=fingerprint)
 
     @staticmethod
     def _comment_channel_scope(
@@ -225,6 +246,8 @@ class DatabaseCommentsMixin:
         attachments: list[dict[str, Any]] | None = None,
         require_existing_model_run: bool = True,
         unified_issue_discussion: bool = False,
+        client_request_id: str = "",
+        request_fingerprint: str = "",
     ) -> dict[str, Any]:
         normalized_body = str(body or "").strip()
         if not normalized_body:
@@ -254,13 +277,25 @@ class DatabaseCommentsMixin:
             )
         )
         attachments = attachments or []
+        if client_request_id:
+            validate_comment_request_id(client_request_id)
+            if not author_verified or not unified_issue_discussion or len(request_fingerprint) != 64:
+                raise ValueError("评论重试必须绑定已验证身份与原始内容。 / Retries require verified identity and original content.")
         now = utc_now()
         with self._write_lock, self.connect() as conn:
+            if client_request_id and self.backend == "sqlite":
+                conn.execute("BEGIN IMMEDIATE")
             issue = conn.execute(
-                "SELECT issue_id, baseline_scope FROM issues WHERE issue_id = ?", (issue_id,)
+                "SELECT issue_id, baseline_scope FROM issues WHERE issue_id = ?"
+                + (" FOR UPDATE" if client_request_id and self.backend == "postgresql" else ""), (issue_id,)
             ).fetchone()
             if issue is None:
                 raise ValueError("Issue 不存在。")
+            if client_request_id:
+                existing = self._comment_submission(conn, issue_id=issue_id, author=normalized_author,
+                    request_id=client_request_id, fingerprint=request_fingerprint)
+                if existing is not None:
+                    return {**existing, "_replayed": True}
             issue_scope = str(issue["baseline_scope"] or "")
             if channel == "case":
                 if scope and scope != issue_scope:
@@ -309,8 +344,8 @@ class DatabaseCommentsMixin:
                     issue_id, model_run_id, body, author, author_source,
                     author_verified, mentions_json, reply_to_id, created_at,
                     discussion_channel, campaign_id, baseline_scope,
-                    evaluation_run_id
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    evaluation_run_id, client_request_id, request_fingerprint
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
             if self.backend == "postgresql":
                 insert_sql += " RETURNING id"
@@ -330,6 +365,8 @@ class DatabaseCommentsMixin:
                     campaign_key,
                     scope,
                     normalized_run_id,
+                    client_request_id,
+                    request_fingerprint,
                 ),
             )
             comment_id = (
@@ -427,6 +464,26 @@ class DatabaseCommentsMixin:
             grouped.setdefault(int(attachment["comment_id"]), []).append(
                 cls._comment_attachment_dict(attachment)
             )
+        candidates = {int(row["id"]): (row, label_mention_revision_id(row)) for row in rows}
+        revision_ids = list({revision_id for _, revision_id in candidates.values() if revision_id is not None})
+        if not revision_ids:
+            return grouped
+        slots = ",".join("?" for _ in revision_ids)
+        revisions = {int(row["id"]): row for row in conn.execute(f"""
+            SELECT r.*, c.issue_id, c.baseline_scope FROM label_revisions r
+            JOIN label_cases c ON c.id=r.label_case_id WHERE r.id IN ({slots})
+        """, revision_ids).fetchall()}
+        verified = {comment_id: revision_id for comment_id, (row, revision_id) in candidates.items()
+                    if matches_label_mention_revision(row, revisions.get(revision_id))}
+        if verified:
+            revision_images = {}
+            for row in conn.execute(f"""SELECT * FROM label_attachments
+                WHERE revision_id IN ({slots}) ORDER BY created_at ASC, id ASC""", revision_ids).fetchall():
+                revision_images.setdefault(int(row["revision_id"]), []).append({
+                    **cls._label_attachment_dict(row), "storage_kind": "label",
+                })
+            for comment_id, revision_id in verified.items():
+                grouped.setdefault(comment_id, []).extend(revision_images.get(revision_id, []))
         return grouped
 
     @staticmethod

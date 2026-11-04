@@ -149,6 +149,7 @@ function applyUiLanguage(language, { persist = true } = {}) {
     "refreshCaseLabelDecisionLanguage",
     "refreshReviewFormLanguage",
     "refreshHistoryDialogLanguage",
+    "refreshAnalysisDiscussionLanguage",
     "refreshRaEventDialogLanguage",
     "refreshCaseExclusionLanguage",
     "syncCaseLabelingIssueExport",

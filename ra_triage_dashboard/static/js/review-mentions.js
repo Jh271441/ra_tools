@@ -65,6 +65,16 @@ function reviewCommentPlainInlineMarkup(value) {
     .replace(/(^|[\s(>])\*([^*\n]+)\*(?=$|[\s).,!?:;，。！？：；])/g, "$1<em>$2</em>");
 }
 
+function reviewCommentImageMarkup(imageUrl, alt = "") {
+  const marker = `data-comment-image-url="${escapeHtml(imageUrl)}"`;
+  if (String(imageUrl).includes("/api/labeling/attachments/")
+      && (state.session?.read_only || !(state.session?.can_write || state.session?.is_admin))) {
+    return `<span class="comment-markdown-image-missing" ${marker} data-i18n="comment.label_image_requires_access">${escapeHtml(t("comment.label_image_requires_access"))}</span>`;
+  }
+  const label = alt || t("comment.image");
+  return `<a class="comment-markdown-image" ${marker} href="${escapeHtml(imageUrl)}" target="_blank" rel="noreferrer" data-i18n-title="comment.open_image" title="${escapeHtml(t("comment.open_image"))}"><img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(label)}"${alt ? "" : ' data-i18n-alt="comment.image"'} loading="lazy" /></a>`;
+}
+
 function reviewCommentInlineMarkup(value, attachments = []) {
   const source = String(value || "");
   const attachmentMap = new Map(
@@ -81,10 +91,9 @@ function reviewCommentInlineMarkup(value, attachments = []) {
     if (match[2]) {
       const attachmentId = String(match[2]);
       const imageUrl = attachmentMap.get(attachmentId);
-      const alt = String(match[1] || "评论图片");
       markup += imageUrl
-        ? `<a class="comment-markdown-image" href="${escapeHtml(imageUrl)}" target="_blank" rel="noreferrer"><img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(alt)}" loading="lazy" /></a>`
-        : `<span class="comment-markdown-image-missing">[图片不可用]</span>`;
+        ? reviewCommentImageMarkup(imageUrl, String(match[1] || ""))
+        : `<span class="comment-markdown-image-missing" data-i18n="comment.image_unavailable">${escapeHtml(t("comment.image_unavailable"))}</span>`;
     } else if (match[4]) {
       markup += `<a href="${escapeHtml(match[4])}" target="_blank" rel="noreferrer">${escapeHtml(match[3])}</a>`;
     } else if (match[5]) {
@@ -166,7 +175,14 @@ function reviewCommentBodyMarkup(value, attachments = []) {
     }
     blocks.push(`<p>${paragraph.map((item) => reviewCommentInlineMarkup(item, attachments)).join("<br>")}</p>`);
   }
-  return blocks.join("");
+  // Label-rationale snapshots have attachments without Markdown placeholders.
+  // Append only images not already rendered inline, including old comments.
+  const markup = blocks.join("");
+  const remaining = (attachments || []).filter(attachment => {
+    const url = attachment.url || attachment.previewUrl;
+    return url && !markup.includes(`data-comment-image-url="${escapeHtml(url)}"`);
+  });
+  return markup + remaining.map(attachment => reviewCommentImageMarkup(attachment.url || attachment.previewUrl)).join("");
 }
 
 function activeMentionQuery(textarea) {

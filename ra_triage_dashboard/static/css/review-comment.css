@@ -1034,11 +1034,11 @@ html[data-color-theme="light"] .detail-queue-index-input {
 .comment-thread-dialog .comment-thread-list { flex: 1 1 auto; }
 .comment-thread-list { min-height: 54px; max-height: min(43dvh, 390px); overflow: auto; display: grid; align-content: start; gap: 5px; padding: 6px; border: 1px solid var(--line); border-radius: 8px; background: #0b1018; }
 .comment-thread-empty { padding: 18px 10px; color: var(--faint); font-size: 11px; text-align: center; }
-.comment-thread-item { position: relative; display: grid; gap: 4px; padding: 8px 9px; border: 1px solid var(--line-soft); border-radius: 7px; background: var(--overlay); }
+.comment-thread-item { min-width: 0; position: relative; display: grid; gap: 4px; padding: 8px 9px; border: 1px solid var(--line-soft); border-radius: 7px; background: var(--overlay); }
 .comment-thread-item.is-deep-linked { border-color: rgba(34,211,238,.62); box-shadow: 0 0 0 2px rgba(34,211,238,.09); }
 .comment-thread-meta { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--faint); font-size: 10px; }
 .comment-thread-meta strong { color: #a8e8ed; font-size: 11px; }
-.comment-thread-body { color: var(--text); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.comment-thread-body { min-width: 0; color: var(--text); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
 .comment-thread-body > :first-child { margin-top: 0; }
 .comment-thread-body > :last-child { margin-bottom: 0; }
 .comment-thread-body p { margin: 3px 0; }

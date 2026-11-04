@@ -10,6 +10,9 @@ from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import FileResponse
 
 from ..review_mentions import extract_review_mentions, notification_recipients
+from ..comment_submission import (
+    CommentSubmissionConflictError, comment_request_fingerprint, validate_comment_request_id,
+)
 from .case_annotations import _require_unmigrated_issue
 from ..runtime import database, review_notification_dispatcher, settings
 from ..support.attachments import (
@@ -221,13 +224,17 @@ async def _create_comment_with_attachments(issue_id: str, request: Request, payl
                 raise _detail(400, "评论内容缺少已选图片的 Markdown 占位符。")
             text = text.replace(placeholder, f"attachment:{record['id']}")
         body["body"] = text
-        return await _create_review_comment_record(
+        result = await _create_review_comment_record(
             issue_id,
             request,
             body,
             attachments=records,
             issue_discussion=issue_discussion,
         )
+        if result.get("idempotent_replay"):
+            for path in paths:
+                await asyncio.to_thread(path.unlink, missing_ok=True)
+        return result
     except Exception:
         persisted = False
         if records:
@@ -273,6 +280,12 @@ async def _create_review_comment_record(
     )
     if not author:
         raise _detail(400, "无法确认评论人。")
+    request_id = request.headers.get("idempotency-key", "") if issue_discussion else ""
+    if request_id:
+        try:
+            validate_comment_request_id(request_id)
+        except ValueError as exc:
+            raise _detail(400, str(exc)) from exc
     raw_reply_to_id = body.get("reply_to_id")
     reply_to_id: int | None = None
     parent: dict[str, Any] | None = None
@@ -283,6 +296,16 @@ async def _create_review_comment_record(
             raise _detail(400, "reply_to_id 不合法。") from exc
         if reply_to_id <= 0:
             raise _detail(400, "reply_to_id 不合法。")
+    fingerprint = comment_request_fingerprint(text, reply_to_id, attachments or []) if request_id else ""
+    if request_id:
+        try:
+            existing = await asyncio.to_thread(database.get_comment_submission,
+                issue_id=issue_id, author=author, request_id=request_id, fingerprint=fingerprint)
+        except CommentSubmissionConflictError as exc:
+            raise _detail(409, str(exc)) from exc
+        if existing is not None:
+            return await _review_comment_response(existing, issue_discussion=True, replayed=True)
+    if reply_to_id is not None:
         parent = await asyncio.to_thread(database.get_review_comment, reply_to_id)
         if parent is None:
             raise _detail(404, "回复的评论不存在。")
@@ -329,23 +352,37 @@ async def _create_review_comment_record(
             notification_recipients=queued_recipients,
             reply_to_id=reply_to_id,
             attachments=attachments,
+            client_request_id=request_id,
+            request_fingerprint=fingerprint,
             **({"discussion_channel": "case", "unified_issue_discussion": True} if issue_discussion else {}),
         )
+    except CommentSubmissionConflictError as exc:
+        raise _detail(409, str(exc)) from exc
     except ValueError as exc:
         raise _detail(400, str(exc)) from exc
-    if queued_recipients:
+    replayed = bool(comment.pop("_replayed", False))
+    if queued_recipients and not replayed:
         review_notification_dispatcher.wake()
+    return await _review_comment_response(comment, issue_discussion=issue_discussion,
+        replayed=replayed, recipients=recipients, queued_recipients=queued_recipients)
+
+
+async def _review_comment_response(comment, *, issue_discussion=False, replayed=False,
+                                   recipients=(), queued_recipients=()):
+    issue_id = comment["issue_id"]
+    model_run_id = comment["model_run_id"]
     comment_count = await asyncio.to_thread(database.issue_discussion_count, issue_id) if issue_discussion else await asyncio.to_thread(
         database.review_comment_count, issue_id=issue_id, model_run_id=model_run_id)
 
     return {
         "comment": _public_review_comment(comment),
         "comment_count": comment_count,
+        "idempotent_replay": replayed,
         "notification": {
-            "mentions": mentions,
-            "queued": queued_recipients,
+            "mentions": comment["mentions"],
+            "queued": [] if replayed else list(queued_recipients),
             "status": (
-                "no_recipients"
+                "already_posted" if replayed else "no_recipients"
                 if not recipients
                 else "queued"
                 if queued_recipients

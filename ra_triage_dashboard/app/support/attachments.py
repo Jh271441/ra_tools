@@ -188,6 +188,7 @@ def _public_review_attachment(attachment: dict[str, Any]) -> dict[str, Any]:
     }
 
 def _public_comment_attachment(attachment: dict[str, Any]) -> dict[str, Any]:
+    endpoint = "labeling/attachments" if attachment.get("storage_kind") == "label" else "comment-attachments"
     return {
         "id": attachment["id"],
         "media_type": attachment["media_type"],
@@ -195,5 +196,5 @@ def _public_comment_attachment(attachment: dict[str, Any]) -> dict[str, Any]:
         "width": int(attachment["width"]),
         "height": int(attachment["height"]),
         "created_at": attachment.get("created_at"),
-        "url": _public_path(f"/api/comment-attachments/{attachment['id']}"),
+        "url": _public_path(f"/api/{endpoint}/{attachment['id']}"),
     }
