@@ -1,10 +1,10 @@
 # Issue discussions
 
-## Candidate: historical images and reliable replies (2026-11-04, cache758; not deployed)
+## Released: historical images and reliable replies (2026-11-04, cache758)
 
 ### Investigation
 
-The last read-only production inspection found build
+Initial read-only production inspection found build
 `b90c0c1805f202f8c0bc1c4d6df95877cd7aa6cc` (cache755), PostgreSQL healthy.
 Issue `cn37255025` has audit comment182 for label revision4136. That exact
 revision has **one** `label_attachments` record, while the discussion API returned
@@ -28,7 +28,7 @@ and local HTTP failure injection confirmed several unhandled failure modes:
 - Chromium151 actually resent a POST seven times after a connection reset in
   the local fixture. Disabling a button alone cannot prevent those wire retries.
 
-### Candidate behavior
+### Released behavior
 
 Historical images are projected on reads by validating the exact revision ID,
 Issue, baseline scope, verified actor/source, timestamp and complete audit body.
@@ -65,7 +65,7 @@ locks further posting in that dialog, preventing accidental resubmission.
 Runtime language switches keep editor/image nodes and focus while refreshing
 image titles/alt text, toolbar labels and submission access state.
 
-### Validation and remaining gate
+### Validation and production readback
 
 The focused Python gates passed **151 distinct tests**, with two PostgreSQL
 tests skipped. Backend/ASGI tests cover exact historical image association, spoofed
@@ -87,15 +87,31 @@ twelve combinations. Representative screenshots were visually inspected. These
 are desktop browser viewport tests, not physical-phone, Safari or soft-keyboard
 acceptance. All writes and notifications in tests are synthetic/disposable.
 
-The proposed remote PostgreSQL gate was **rejected by automatic approval review**
-before execution: uploading a source/config archive and using sudo to create/drop
-a database need explicit user authorization. No test payload was uploaded and no
-remote database was created or migrated. The additive migration and PostgreSQL
-cross-connection/image-binding tests are prepared but **not yet run**. Production
-was last observed at cache755; this task performed no release, production
-comment, DChat send, service restart or production schema change. Before release, reconcile this scoped
-candidate with the latest live source and use the deployment migration/backup
-workflow. Preserve the checkout's unrelated existing changes.
+The initial remote PostgreSQL proposal was rejected by automatic approval review
+before execution. The user then explicitly authorized private connection-configuration
+reads without output/export, unique disposable DB creation/removal, backup/restore
+verification, migration060 and restart. The PostgreSQL fixture's original text image ID
+was corrected to a UUID; **both PostgreSQL tests then passed** in0.92s and the unique
+test DB was removed. No candidate source or prepared receipt was edited in place.
+
+The final exact-SHA full cloud gate passed **1312 tests, 9 skipped** in201.47s;
+isolated SQLite gray passed. At **2026-11-04T14:35:37Z**, the standard deployer
+promoted `ca23f49fd7fec9c474ecb81124badfaed529b24c` (**cache758**) to `/manual`.
+Stopped-writer backup passed checksum/archive/disposable restore/all-public-table-count
+verification before schema advanced59→60. Migration060's partial unique index is
+accepted only by its exact reviewed path/content digest under explicit additive mode;
+rollback of the app keeps the backward-compatible schema. Release receipt:
+`/volume/home/workspace/ra_triage_dashboard_deploy/releases/20261104T143102Z-ca23f49fd7fe/result.json`.
+
+Read-only postflight at **2026-11-04T14:36:05.875256+00:00** confirmed exact runtime,
+cache758, schema60 and healthy persistent PostgreSQL. Actual cn37255025 comment182
+now returns the one revision4136 image; original comments182–185 retain identical
+body hashes, reply references and creation times. Eight served JS/CSS resources
+match exact Git bytes. Existing writer/Batch/AutoTriage policies are unchanged;
+anonymous protected image/receipt requests remain403. No production test comment,
+DChat send, GT/label rewrite or media/sidecar restart was performed. CUA inventory
+timed out, so this is not signed-in production click acceptance. Evidence:
+`reports/discussion_reliability_release_20261104/`.
 
 Run locally:
 
