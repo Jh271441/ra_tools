@@ -44,3 +44,7 @@ Android 15 镜像自带 Chrome124 还复现了标签弹层向下偏移：旧 Chr
 带滚动条的320px旧样式复现2行，新样式为1行；面板180→187px。
 这是桌面浏览器响应式验收，不是手机真机、Safari或已登录生产交互验收。
 证据：`reports/tag_dropdown_wrap_rollback_20261104/`。
+
+已于2026-11-04 22:57:31（Asia/Shanghai）上线 cache759，运行提交
+`6bf570e8dfd242e18d5339831f7b6379e1d16f7a`。完整云端测试1312通过、9跳过，隔离灰度与生产
+PostgreSQL/策略校验通过；schema60保持。线上4个静态资源与该提交一致。
