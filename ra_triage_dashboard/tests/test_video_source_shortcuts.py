@@ -73,15 +73,25 @@ for (const view of ['review','labeling','dialog']) {
   press(); assert.equal(changes.at(-1),original.url,'Camera is excluded from the BEV toggle');
   const before=changes.length;
   for(const guard of [{repeat:true},{ctrlKey:true},{altKey:true},{metaKey:true},{isComposing:true},
-    {keyCode:229},{defaultPrevented:true},{target:{closest:()=>({})}}]) press('V',guard);
-  blocked=true;press();blocked=false;
+    {keyCode:229},{defaultPrevented:true},{target:{closest:()=>({})}}]) {
+    press('V',guard);press('C',{shiftKey:true,...guard});
+  }
+  blocked=true;press();press('C',{shiftKey:true});blocked=false;
   assert.equal(changes.length,before,'Typing, IME, repeats, modifiers and conflicting UI keep the source');
+  mount(view,original.url);
+  press('C',{shiftKey:true});assert.equal(changes.at(-1),camera.url,'Shift+C opens Camera video');
+  press('C',{shiftKey:true});assert.equal(changes.length,1,'Shift+C does not reload the current Camera video');
+  press('v');assert.equal(changes.length,1,'V remembers the Camera video selected by Shift+C');
+  const plainC={key:'c',target:{closest:()=>null},preventDefault(){throw Error('C belongs to Camera images');}};
+  assert.equal(handleVideoSourceShortcut(plainC),false);
+  press('o');assert.equal(changes.at(-1),original.url,'O still returns from Camera video to original BEV');
 }
 for (const view of ['review','dialog']) {
   mount(view,closeup.url);
   descriptor.url=closeup.url;descriptor.source_id='bev_closeup';descriptor.tracks=[closeup];
   press();assert.equal(changes.length,0);assert.match(toasts.at(-1),/No original BEV video/);
   press('o');assert.equal(changes.length,0);assert.match(toasts.at(-1),/No original BEV video/);
+  press('C',{shiftKey:true});assert.equal(changes.length,0);assert.match(toasts.at(-1),/No Camera video/);
 }
 '''
     result = subprocess.run(["node", "-e", script], capture_output=True, text=True)

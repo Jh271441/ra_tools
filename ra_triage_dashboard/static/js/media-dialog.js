@@ -522,8 +522,8 @@ function renderMediaDialog() {
     $("#mediaTitle").textContent = `${snapshot?.issueId || ""} · Ares Studio 视频${snapshot?.referenceMedia ? " · 参考媒体" : ""}`;
     $("#mediaTimeline").innerHTML = "";
     $("#mediaHelp").textContent = uiText(
-      "↑ / ↓ 切 Case · ← / → 按所选步长跳转 · 空格播放/暂停 · B/C/V 切媒体 · Shift+V 切换原始/局部 BEV · O 原始 BEV 视频 · +/− 缩放 · 0 适配 · 放大后拖拽平移 · F 全屏 · Esc 退出",
-      "↑/↓ Case · ←/→ selected seek step · Space play/pause · B/C/V media · Shift+V toggle original/closeup BEV · O original BEV video · +/− zoom · 0 fit · Drag to pan when zoomed · F fullscreen · Esc close"
+      "↑ / ↓ 切 Case · ← / → 按所选步长跳转 · 空格播放/暂停 · B/C/V 切媒体 · Shift+V 切换原始/局部 BEV · Shift+C Camera 视频 · O 原始 BEV 视频 · +/− 缩放 · 0 适配 · 放大后拖拽平移 · F 全屏 · Esc 退出",
+      "↑/↓ Case · ←/→ selected seek step · Space play/pause · B/C/V media · Shift+V toggle original/closeup BEV · Shift+C Camera video · O original BEV video · +/− zoom · 0 fit · Drag to pan when zoomed · F fullscreen · Esc close"
     );
     setMediaZoom(state.media.zoom, { resetScroll: state.media.zoom === 1 });
     return;
@@ -564,8 +564,8 @@ function renderMediaDialog() {
   $("#mediaHelp").textContent = snapshot?.intentPreview
     ? "← / → 切帧 · Space 同帧轮换 Camera / BEV · B/C 直达媒体 · +/− 缩放 · 0 复位 · F 全屏 · Esc 退出"
     : uiText(
-      "↑ / ↓ 切 Case · ← / → 切帧 · B/C/V 切媒体 · Shift+V 切换原始/局部 BEV · O 原始 BEV 视频 · +/− 缩放 · 0 复位 · 放大后拖拽平移 · F 全屏 · Esc 退出",
-      "↑/↓ Case · ←/→ frames · B/C/V media · Shift+V toggle original/closeup BEV · O original BEV video · +/− zoom · 0 reset · Drag to pan when zoomed · F fullscreen · Esc close"
+      "↑ / ↓ 切 Case · ← / → 切帧 · B/C/V 切媒体 · Shift+V 切换原始/局部 BEV · Shift+C Camera 视频 · O 原始 BEV 视频 · +/− 缩放 · 0 复位 · 放大后拖拽平移 · F 全屏 · Esc 退出",
+      "↑/↓ Case · ←/→ frames · B/C/V media · Shift+V toggle original/closeup BEV · Shift+C Camera video · O original BEV video · +/− zoom · 0 reset · Drag to pan when zoomed · F fullscreen · Esc close"
     );
   $("#mediaTimeline").innerHTML = mediaTimelineButtonsMarkup(frames, state.media.index, "media-frame");
   $("#mediaTimeline").querySelectorAll("[data-media-frame]").forEach((button) => {

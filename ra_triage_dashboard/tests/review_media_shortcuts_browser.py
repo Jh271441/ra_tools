@@ -158,11 +158,17 @@ def run():
                             page.keyboard.press(key);ready()
                             assert expected in page.locator('#detailPane video').get_attribute('src')
                             still_open();assert tags()==before
+                        page.evaluate("(()=>{const rate=document.querySelector('#detailPane [data-video-rate]');rate.value='1.5';rate.dispatchEvent(new Event('change',{bubbles:true}));enhanceNativeUiSelect(rate);document.querySelector('#detailPane video').currentTime=23})()")
+                        ready();page.keyboard.press('Shift+C');ready()
+                        assert '/api/camera-video' in page.locator('#detailPane video').get_attribute('src')
+                        assert page.evaluate("Math.abs(document.querySelector('#detailPane video').currentTime-23)<.1&&document.querySelector('#detailPane video').playbackRate===1.5&&document.querySelector('#detailPane video').paused")
+                        still_open();assert tags()==before
                         for key,kind in [('b','bev'),('c','camera'),('v','video')]:
                             page.keyboard.press(key)
                             page.wait_for_function('kind=>state.detailMedia.kind===kind',arg=kind)
                             still_open();assert tags()==before
                         ready()
+                        assert '/api/camera-video' in page.locator('#detailPane video').get_attribute('src'),'V remembers Camera video after an image roundtrip'
                         assert page.evaluate("Boolean(document.activeElement.closest('.review-dropdown'))"),'media switching lost dropdown focus'
                         page.keyboard.press('g')
                         assert page.locator('.planning-constraint-panel:not([hidden])').count()==1
@@ -171,6 +177,12 @@ def run():
                         still_open()
                         page.keyboard.press('f')
                         assert page.locator('#mediaDialog').evaluate('(n)=>n.open')
+                        page.keyboard.press('o')
+                        page.wait_for_function("document.querySelector('#mediaVideoStage video')?.readyState>=2&&!document.querySelector('#mediaVideoStage video').seeking")
+                        page.keyboard.press('Shift+C')
+                        page.wait_for_function("(()=>{const v=document.querySelector('#mediaVideoStage video');return v?.getAttribute('src').includes('/api/camera-video')&&v.readyState>=2&&!v.seeking&&v.paused})()")
+                        page.keyboard.press('c')
+                        assert page.evaluate("state.media.kind==='camera'"),'C keeps the Camera image binding in the dialog'
                         page.keyboard.press('Escape')
                         page.wait_for_function("!document.querySelector('#mediaDialog').open")
                         still_open()
@@ -210,6 +222,9 @@ def run():
                     # Text typing, including literal spaces and v, must never play/switch.
                     ready();page.evaluate('mediaClicks=[]')
                     note=page.locator('#combinedCaseRationale');note.fill('Draft / 草稿')
+                    source=page.locator('#detailPane video').get_attribute('src')
+                    note.press('Shift+C')
+                    assert page.locator('#detailPane video').get_attribute('src')==source,'Typing Shift+C must not switch video sources'
                     note.press('Space');note.press('v');note.press('ArrowLeft')
                     assert page.evaluate('mediaClicks')==[]
                     assert note.input_value().endswith(' v')
@@ -247,6 +262,11 @@ def run():
             page.keyboard.press('Space')
             page.wait_for_function("document.querySelector('#caseLabelingMedia video').paused")
             assert page.evaluate('mediaClicks')==['play','play']
+            page.keyboard.press('Space')
+            page.wait_for_function("!document.querySelector('#caseLabelingMedia video').paused")
+            page.keyboard.press('Shift+C')
+            page.wait_for_function("(()=>{const v=document.querySelector('#caseLabelingMedia video');return v?.getAttribute('src').includes('/api/camera-video')&&v.readyState>=2&&!v.seeking&&!v.paused})()")
+            page.keyboard.press('Space')
             assert page.locator('#caseLabelingEditor .review-dropdown[open]').count()==1
             assert page.locator('#caseLabelingEditor input[name=reviewTags][value=u_turn]').is_checked() is False
             page.keyboard.press('Escape')

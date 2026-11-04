@@ -136,7 +136,8 @@ function handleDetailMediaShortcut(event) {
 
 function handleVideoSourceShortcut(event) {
   const key = String(event.key || "").toLowerCase();
-  if (key !== "v" && (key !== "o" || event.shiftKey)) return false;
+  const cameraShortcut = key === "c" && event.shiftKey;
+  if (key !== "v" && (key !== "o" || event.shiftKey) && !cameraShortcut) return false;
   if (event.defaultPrevented || event.repeat || isImeComposing(event)
       || event.ctrlKey || event.metaKey || event.altKey
       || mediaShortcutHasEditableTarget(event.target)) return true;
@@ -159,15 +160,19 @@ function handleVideoSourceShortcut(event) {
   const rememberedUrl = inDialog ? state.media.snapshot?.videoTrack
     : state.detailMedia.preferredVideoTrack || state.detailMedia.videoTrack;
   const tracks = videoSourceTracks(descriptor);
+  const camera = tracks.find(track => track.label === "Camera102 视频"
+    || String(track.url).endsWith("/camera-video"));
   const original = tracks.find(track => track.source_id !== "bev_closeup"
     && track.label !== "Camera102 视频" && !String(track.url).endsWith("/camera-video"));
   const closeup = tracks.find(track => track.source_id === "bev_closeup");
   const toggle = key === "v" && event.shiftKey;
-  const track = key === "o" ? original
+  const track = cameraShortcut ? camera : key === "o" ? original
     : toggle ? (currentUrl === closeup?.url ? original : closeup)
     : tracks.find(item => item.url === (rememberedUrl || currentUrl)) || original || tracks[0];
   if (!track) {
-    showToast(key === "o" || (toggle && currentUrl === closeup?.url)
+    showToast(cameraShortcut
+      ? uiText("当前 Issue 暂无 Camera 视频。", "No Camera video is available for this Issue.")
+      : key === "o" || (toggle && currentUrl === closeup?.url)
       ? uiText("当前 Issue 暂无原始 BEV 视频。", "No original BEV video is available for this Issue.")
       : toggle
         ? uiText("当前 Issue 暂无局部 BEV 视频。", "No closeup BEV video is available for this Issue.")
@@ -252,7 +257,7 @@ function videoPlayerMarkup(video, { zoomable = true, compact = false, issueId = 
     .join("");
   const tracks = (video?.tracks || []).filter((track) => safeSameOriginAssetUrl(track.url));
   const trackControl = tracks.length > 1 && !compact
-    ? `<label><span class="ui-lang-zh">视频源</span><span class="ui-lang-en">Video source</span> <select data-video-track aria-keyshortcuts="V Shift+V O" title="${escapeHtml(t("media.video_source_shortcuts"))}">${tracks.map((track) => `<option value="${escapeHtml(track.url)}" ${track.url === video.url ? "selected" : ""} data-video-source-id="${escapeHtml(track.source_id || "")}" data-poster="${escapeHtml(track.poster_url || "")}" data-video-track-label="${escapeHtml(track.label || "")}">${escapeHtml(videoTrackLabel(track.label))}</option>`).join("")}</select></label>`
+    ? `<label><span class="ui-lang-zh">视频源</span><span class="ui-lang-en">Video source</span> <select data-video-track aria-keyshortcuts="V Shift+V Shift+C O" title="${escapeHtml(t("media.video_source_shortcuts"))}">${tracks.map((track) => `<option value="${escapeHtml(track.url)}" ${track.url === video.url ? "selected" : ""} data-video-source-id="${escapeHtml(track.source_id || "")}" data-poster="${escapeHtml(track.poster_url || "")}" data-video-track-label="${escapeHtml(track.label || "")}">${escapeHtml(videoTrackLabel(track.label))}</option>`).join("")}</select></label>`
     : "";
   const posterUrl = String(video?.poster_url || "").trim();
   const posterAttribute = posterUrl ? ` poster="${escapeHtml(posterUrl)}"` : "";
