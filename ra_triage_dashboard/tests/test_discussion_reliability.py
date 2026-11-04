@@ -164,10 +164,12 @@ def test_postgres_submission_lock_and_historical_image_binding():
         assert db.issue_discussion_count("cn1") == 1
         with db.connect() as conn:
             assert conn.execute("SELECT count(*) n FROM comment_notifications WHERE comment_id=?", (results[0]["id"],)).fetchone()["n"] == 1
-        revision = label(db)
+        # PostgreSQL attachment IDs use uuid; SQLite fixtures also permit text.
+        attachment_id = "e6d949b4-799e-4e55-86d3-5bb80f7343c9"
+        revision = label(db, key=attachment_id)
         root = db.get_review_comment(revision["notification"]["comment_id"])
-        assert [item["id"] for item in root["attachments"]] == ["historical-image"]
-        assert _public_review_comment(root)["attachments"][0]["url"].endswith("/api/labeling/attachments/historical-image")
+        assert [item["id"] for item in root["attachments"]] == [attachment_id]
+        assert _public_review_comment(root)["attachments"][0]["url"].endswith("/api/labeling/attachments/" + attachment_id)
     finally:
         db.close()
         other.close()
