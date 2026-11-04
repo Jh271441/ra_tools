@@ -92,8 +92,8 @@ assert.equal(opens,1);
     def test_dropdown_natural_width_respects_trigger_floor_and_viewport(self):
         script = (ROOT / "static/js/review-tags.js").read_text() + r'''
 const assert=require('node:assert/strict');
-let summaryWidth=152.5,viewportWidth=1000,naturalWidth=260;
-const panel={getBoundingClientRect(){return {width:naturalWidth}},style:{},scrollHeight:1200,classList:{add(){},remove(){}},querySelector(){return null}};
+let summaryWidth=152.5,viewportWidth=1000,naturalWidth=260,labels=[];
+const panel={getBoundingClientRect(){return {width:naturalWidth}},style:{},scrollHeight:1200,classList:{add(){},remove(){}},querySelector(){return null},querySelectorAll(){return labels}};
 const summary={getBoundingClientRect(){return {width:summaryWidth,left:20,right:20+summaryWidth,top:100,bottom:140}}};
 const dropdown={open:true,querySelector(){return summary}};
 reviewDropdownPanel=()=>panel;
@@ -108,5 +108,14 @@ naturalWidth=1400;positionReviewDropdownPanel(dropdown);
 assert.equal(parseFloat(panel.style.width),984);
 viewportWidth=200;summaryWidth=300;positionReviewDropdownPanel(dropdown);
 assert.equal(parseFloat(panel.style.width),184);
+viewportWidth=320;summaryWidth=150;naturalWidth=180;
+labels=[{scrollWidth:89,clientWidth:83}];
+positionReviewDropdownPanel(dropdown);
+assert.equal(parseFloat(panel.style.width),187,'out_of_scope fits after a scrollbar consumes text space');
+labels=[{scrollWidth:400,clientWidth:83}];
+positionReviewDropdownPanel(dropdown);
+assert.equal(parseFloat(panel.style.width),304,'very long names remain constrained to the viewport');
+assert.ok(parseFloat(panel.style.left)>=8);
+assert.ok(parseFloat(panel.style.left)+parseFloat(panel.style.width)<=312);
 '''
         subprocess.run(["node"], input=script, text=True, check=True, capture_output=True)
