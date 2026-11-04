@@ -1012,7 +1012,7 @@ function positionReviewDropdownPanel(dropdown) {
   panel.style.minWidth = `${Math.min(Math.max(summaryRect.width, 180), availableWidth)}px`;
   panel.style.maxWidth = `${availableWidth}px`;
   panel.style.width = "max-content";
-  const width = Math.min(availableWidth, Math.max(summaryRect.width, 180, panel.getBoundingClientRect().width));
+  let width = Math.min(availableWidth, Math.max(summaryRect.width, 180, panel.getBoundingClientRect().width));
   panel.style.width = `${width}px`;
   // Temporarily place at origin with full width for accurate scrollHeight.
   panel.style.left = "0px";
@@ -1034,6 +1034,13 @@ function positionReviewDropdownPanel(dropdown) {
   const available = Math.max(1, Math.floor(openUp ? spaceAbove : spaceBelow));
   const maxH = Math.min(available, Math.max(1, viewport.height - margin * 2));
   panel.style.maxHeight = `${maxH}px`;
+
+  const labelOverflow = Math.max(0, ...[...panel.querySelectorAll(".tag-option-check > span, .tag-option > span")]
+    .map(label => label.scrollWidth - label.clientWidth));
+  if (labelOverflow > 0) {
+    width = Math.min(availableWidth, Math.ceil(width + labelOverflow + 1));
+    panel.style.width = `${width}px`;
+  }
 
   const height = Math.min(panel.scrollHeight || naturalH, maxH);
   let top = openUp

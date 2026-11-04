@@ -1441,13 +1441,6 @@ body[data-active-page="review-assignments"] .gt-sync-control { margin-left: auto
 
 .review-tag-options, .evidence-options { scroll-padding-block: 6px; }
 .review-tag-options .review-tag-option-row, .evidence-options .review-tag-option-row { scroll-margin-block: 6px; }
-.review-tag-dropdown .review-tag-options .tag-option-check > span,
-.evidence-dropdown .evidence-options .tag-option-check > span,
-.review-tag-options > .tag-option > span,
-.evidence-options > .tag-option > span {
-  white-space: normal; overflow: visible; text-overflow: clip;
-  overflow-wrap: anywhere; line-height: 1.5;
-}
 
 .shared-label-context { border-top: 1px solid var(--line-soft); padding-top: 7px; }
 .shared-label-source-audit { color: var(--muted); font-size: 10px; min-width: 0; }

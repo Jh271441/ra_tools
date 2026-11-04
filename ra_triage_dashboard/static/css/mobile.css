@@ -711,9 +711,6 @@
     width: 100%; min-height: 44px; padding: 8px 12px; font-size: 14px;
   }
   .review-tag-creator-slot .mobile-tag-create-copy { display: inline; }
-  .review-tag-dropdown .review-tag-options .tag-option-check span {
-    white-space: normal; overflow: visible; overflow-wrap: anywhere; line-height: 1.5;
-  }
   .review-exclude-toggle { min-height: 44px; padding: 8px 10px; gap: 10px; }
   .review-exclude-toggle input { width: 20px; height: 20px; }
   .review-exclude-toggle strong { font-size: 14px; }
