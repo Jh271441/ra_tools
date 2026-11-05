@@ -70,6 +70,10 @@ function videoSourceTracks(descriptor) {
   });
 }
 
+function isCameraVideoTrack(track) {
+  return track?.label === "Camera102 视频" || /\/camera-video(?:[?#]|$)/.test(String(track?.url || ""));
+}
+
 let mediaShortcutActivating = false;
 
 function activateMediaShortcutControl(control, event) {
@@ -160,15 +164,22 @@ function handleVideoSourceShortcut(event) {
   const rememberedUrl = inDialog ? state.media.snapshot?.videoTrack
     : state.detailMedia.preferredVideoTrack || state.detailMedia.videoTrack;
   const tracks = videoSourceTracks(descriptor);
-  const camera = tracks.find(track => track.label === "Camera102 视频"
-    || String(track.url).endsWith("/camera-video"));
+  const owner = inDialog ? state.media.snapshot : state.detailMedia;
+  const bevTracks = tracks.filter(track => !isCameraVideoTrack(track));
+  const activeBev = bevTracks.find(track => track.url === currentUrl);
+  // Camera has its own shortcut. Preserve the BEV choice before leaving it,
+  // including the default source that has not emitted a picker change yet.
+  if (cameraShortcut && activeBev && owner) owner.preferredBevVideoTrack = activeBev.url;
+  const rememberedBev = bevTracks.find(track => track.url === owner?.preferredBevVideoTrack)
+    || bevTracks.find(track => track.url === rememberedUrl);
+  const camera = tracks.find(isCameraVideoTrack);
   const original = tracks.find(track => track.source_id !== "bev_closeup"
-    && track.label !== "Camera102 视频" && !String(track.url).endsWith("/camera-video"));
+    && !isCameraVideoTrack(track));
   const closeup = tracks.find(track => track.source_id === "bev_closeup");
   const toggle = key === "v" && event.shiftKey;
   const track = cameraShortcut ? camera : key === "o" ? original
     : toggle ? (currentUrl === closeup?.url ? original : closeup)
-    : tracks.find(item => item.url === (rememberedUrl || currentUrl)) || original || tracks[0];
+    : rememberedBev || activeBev || original || closeup;
   if (!track) {
     showToast(cameraShortcut
       ? uiText("当前 Issue 暂无 Camera 视频。", "No Camera video is available for this Issue.")
@@ -176,7 +187,7 @@ function handleVideoSourceShortcut(event) {
       ? uiText("当前 Issue 暂无原始 BEV 视频。", "No original BEV video is available for this Issue.")
       : toggle
         ? uiText("当前 Issue 暂无局部 BEV 视频。", "No closeup BEV video is available for this Issue.")
-        : uiText("当前 Issue 暂无可用视频。", "No video is available for this Issue."), true);
+        : uiText("当前 Issue 暂无 BEV 视频。", "No BEV video is available for this Issue."), true);
     return true;
   }
   if (inDialog) {
@@ -1209,6 +1220,7 @@ function bindDetailMedia(caseData) {
       state.detailMedia.userSelected = true;
       state.detailMedia.videoTrack = track.url;
       state.detailMedia.preferredVideoTrack = track.url;
+      if (!isCameraVideoTrack(track)) state.detailMedia.preferredBevVideoTrack = track.url;
       if (state.detailMedia.kind === "video") {
         root.querySelector("video")?._setBevVideoTrack?.(track.url, track.poster_url || "");
         focusMediaSurface();

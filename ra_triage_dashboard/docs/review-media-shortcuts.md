@@ -5,7 +5,9 @@
 Review 和问题标注详情中的标签多选下拉展开时，媒体快捷键继续有效：
 
 - Space 播放/暂停；←/→ 跳转或切帧；B/C/V 切换媒体。
-- Shift+C 直达 Camera 视频，C 仍切换到 Camera 图片；Shift+V 切换原始/局部 BEV；O 切回原始 BEV；G 展开/收起规划约束；F 展开媒体。
+- Shift+C 直达 Camera 视频，V 返回上次选择的原始/局部 BEV 视频，C 仍切换到 Camera 图片；Shift+V 切换原始/局部 BEV；O 切回原始 BEV；G 展开/收起规划约束；F 展开媒体。
+- Camera 的视频源记忆与 BEV 选择分开；Shift+C 后按 V 能返回 BEV，并保留该播放器的时间、倍速和播放/暂停状态。详情与当前 Issue 的展开弹窗共享 BEV 选择，切换 Issue 后重置；缺少 BEV 时保留当前视图并提示，不回退到 Camera。
+- Shift+C opens Camera video; V returns to the last original/closeup BEV choice without Camera replacing that choice. The current Issue detail and expanded dialog share this choice; switching Issues resets it. Source changes preserve the player's position, rate and play/pause state. Missing BEV keeps the current view and shows localized feedback.
 - Shift+C 在 Review、问题标注详情及展开媒体中复用现有视频源切换，保留播放位置、倍速及播放/暂停状态。当前 Issue 无 Camera 视频时保留当前视图，并显示中英文提示；输入、IME、重复按键和修饰键组合不触发。
 - 0 回到 t0。若当前标签组有第十项，其可见的 0 标签快捷键优先。
 - 标签使用可见的数字行快捷键选择，上下箭头定位选项，Enter 保存，Esc 关闭。

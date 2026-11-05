@@ -86,7 +86,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-760`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-761`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -2258,7 +2258,7 @@
           <div class="shortcut-guide-row" data-shortcut-search="b c v space"><span><kbd>B</kbd><kbd>C</kbd><kbd>V</kbd><kbd>Space</kbd></span><strong>切换 BEV / Camera / 视频；播放或暂停</strong></div>
           <div class="shortcut-guide-row" data-shortcut-search="shift+c"><span><kbd>⇧ C</kbd></span><strong><span class="ui-lang-zh">直达 Camera 视频（C 切换 Camera 图片）</span><span class="ui-lang-en">Open Camera video (C for Camera images)</span></strong></div>
           <div class="shortcut-guide-row" data-shortcut-search="shift+v"><span><kbd>⇧ V</kbd></span><strong><span class="ui-lang-zh">原始 / 局部 BEV 视频双向切换</span><span class="ui-lang-en">Toggle original / closeup BEV video</span></strong></div>
-          <div class="shortcut-guide-row" data-shortcut-search="v"><span><kbd>V</kbd></span><strong><span class="ui-lang-zh">进入视频，保留上次选择的视频源</span><span class="ui-lang-en">Open video with the last selected source</span></strong></div>
+          <div class="shortcut-guide-row" data-shortcut-search="v"><span><kbd>V</kbd></span><strong><span class="ui-lang-zh">返回 BEV 视频，保留原始 / 局部选择</span><span class="ui-lang-en">Return to BEV video with the last original / closeup choice</span></strong></div>
           <div class="shortcut-guide-row" data-shortcut-search="o"><span><kbd>O</kbd></span><strong><span class="ui-lang-zh">直达原始 BEV 视频</span><span class="ui-lang-en">Open original BEV video</span></strong></div>
           <div class="shortcut-guide-row" data-shortcut-search="g"><span><kbd>G</kbd></span><strong><span class="ui-lang-zh">展开 / 收起规划约束（视频模式）</span><span class="ui-lang-en">Toggle planning constraint (video mode)</span></strong></div>
           <div class="shortcut-guide-row" data-shortcut-search="arrowleft arrowright 0 f"><span><kbd>←</kbd><kbd>→</kbd><kbd>0</kbd><kbd>F</kbd></span><strong>切换媒体帧 / 回到 t0 / 展开查看</strong></div>
@@ -2280,7 +2280,7 @@
           <div class="shortcut-guide-row" data-shortcut-search="b c v"><span><kbd>B</kbd><kbd>C</kbd><kbd>V</kbd></span><strong>切换 BEV / Camera / 视频</strong></div>
           <div class="shortcut-guide-row" data-shortcut-search="shift+c"><span><kbd>⇧ C</kbd></span><strong><span class="ui-lang-zh">直达 Camera 视频（C 切换 Camera 图片）</span><span class="ui-lang-en">Open Camera video (C for Camera images)</span></strong></div>
           <div class="shortcut-guide-row" data-shortcut-search="shift+v"><span><kbd>⇧ V</kbd></span><strong><span class="ui-lang-zh">原始 / 局部 BEV 视频双向切换</span><span class="ui-lang-en">Toggle original / closeup BEV video</span></strong></div>
-          <div class="shortcut-guide-row" data-shortcut-search="v"><span><kbd>V</kbd></span><strong><span class="ui-lang-zh">进入视频，保留上次选择的视频源</span><span class="ui-lang-en">Open video with the last selected source</span></strong></div>
+          <div class="shortcut-guide-row" data-shortcut-search="v"><span><kbd>V</kbd></span><strong><span class="ui-lang-zh">返回 BEV 视频，保留原始 / 局部选择</span><span class="ui-lang-en">Return to BEV video with the last original / closeup choice</span></strong></div>
           <div class="shortcut-guide-row" data-shortcut-search="o"><span><kbd>O</kbd></span><strong><span class="ui-lang-zh">直达原始 BEV 视频</span><span class="ui-lang-en">Open original BEV video</span></strong></div>
           <div class="shortcut-guide-row" data-shortcut-search="g"><span><kbd>G</kbd></span><strong><span class="ui-lang-zh">展开 / 收起规划约束（视频模式）</span><span class="ui-lang-en">Toggle planning constraint (video mode)</span></strong></div>
           <div class="shortcut-guide-row" data-shortcut-search="arrowleft arrowright 0 f"><span><kbd>←</kbd><kbd>→</kbd><kbd>0</kbd><kbd>F</kbd></span><strong>切换媒体帧 / 回到 t0 / 打开大图</strong></div>
@@ -2628,7 +2628,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-760`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-761`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

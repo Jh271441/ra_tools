@@ -81,7 +81,11 @@ for (const view of ['review','labeling','dialog']) {
   mount(view,original.url);
   press('C',{shiftKey:true});assert.equal(changes.at(-1),camera.url,'Shift+C opens Camera video');
   press('C',{shiftKey:true});assert.equal(changes.length,1,'Shift+C does not reload the current Camera video');
-  press('v');assert.equal(changes.length,1,'V remembers the Camera video selected by Shift+C');
+  press('v');assert.equal(changes.at(-1),original.url,'V returns from Shift+C to the last BEV source');
+  press('v');assert.equal(changes.length,2,'Repeated V keeps the BEV source without reloading');
+  press();assert.equal(changes.at(-1),closeup.url);
+  press('C',{shiftKey:true});assert.equal(changes.at(-1),camera.url);
+  press('v');assert.equal(changes.at(-1),closeup.url,'Camera must not overwrite the last closeup BEV choice');
   const plainC={key:'c',target:{closest:()=>null},preventDefault(){throw Error('C belongs to Camera images');}};
   assert.equal(handleVideoSourceShortcut(plainC),false);
   press('o');assert.equal(changes.at(-1),original.url,'O still returns from Camera video to original BEV');
@@ -92,6 +96,12 @@ for (const view of ['review','dialog']) {
   press();assert.equal(changes.length,0);assert.match(toasts.at(-1),/No original BEV video/);
   press('o');assert.equal(changes.length,0);assert.match(toasts.at(-1),/No original BEV video/);
   press('C',{shiftKey:true});assert.equal(changes.length,0);assert.match(toasts.at(-1),/No Camera video/);
+}
+for (const view of ['review','labeling','dialog']) {
+  descriptor.url=camera.url;descriptor.label=camera.label;delete descriptor.source_id;descriptor.tracks=[camera];
+  mount(view,camera.url);
+  state.detailMedia.preferredBevVideoTrack=closeup.url;state.media.snapshot.preferredBevVideoTrack=closeup.url;
+  press('v');assert.equal(changes.length,0);assert.match(toasts.at(-1),/No BEV video/,'An unavailable remembered BEV must not fall back to Camera');
 }
 '''
     result = subprocess.run(["node", "-e", script], capture_output=True, text=True)

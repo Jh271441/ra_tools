@@ -21,7 +21,12 @@ function rememberMediaVideoSource(url) {
   const snapshot = state.media.snapshot;
   if (!snapshot) return;
   snapshot.videoTrack = url;
-  if (state.detailMedia.issueId === snapshot.issueId) state.detailMedia.preferredVideoTrack = url;
+  const track = videoSourceTracks(snapshot.video).find(item => item.url === url);
+  if (track && !isCameraVideoTrack(track)) snapshot.preferredBevVideoTrack = url;
+  if (state.detailMedia.issueId === snapshot.issueId) {
+    state.detailMedia.preferredVideoTrack = url;
+    if (snapshot.preferredBevVideoTrack) state.detailMedia.preferredBevVideoTrack = snapshot.preferredBevVideoTrack;
+  }
 }
 
 function preferredMediaKind(caseData) {
@@ -596,6 +601,8 @@ function openMedia(kind, index, { caseData = state.selectedCase } = {}) {
     video: videoWithFramePosters(caseData),
     videoTrack: state.detailMedia.issueId === String(caseData?.issue_id || "")
       ? state.detailMedia.preferredVideoTrack || state.detailMedia.videoTrack || "" : "",
+    preferredBevVideoTrack: state.detailMedia.issueId === String(caseData?.issue_id || "")
+      ? state.detailMedia.preferredBevVideoTrack || "" : "",
   };
   const requestedAvailable = kind === "video" ? Boolean(mediaVideo()) : Boolean(mediaFrames(kind).length);
   if (!requestedAvailable) kind = preferredMediaKind(caseData);

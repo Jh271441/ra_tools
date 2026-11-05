@@ -104,7 +104,10 @@ const server=http.createServer((req,res)=>{
    assert.equal(await video.getAttribute('poster'),'/api/full-camera.jpg');
    await page.locator('#mediaVideoStage [data-bev-video-player]').focus();
    await page.keyboard.press('v');
-   assert.equal(await video.getAttribute('src'),'/api/assets/cn_fixture/camera-video','V also remembers a manually chosen Camera video');
+   assert.equal(await video.getAttribute('src'),'/api/closeup.mp4','V returns to the last BEV after a manually chosen Camera video');
+   await pick('[data-video-track]','/api/assets/cn_fixture/camera-video');
+   await page.waitForFunction(()=>document.querySelector('#mediaVideoStage video').readyState>=2&&!document.querySelector('#mediaVideoStage video').seeking);
+   await page.locator('#mediaVideoStage [data-bev-video-player]').focus();
    await page.keyboard.press('Shift+V');
    await page.waitForFunction(()=>document.querySelector('#mediaVideoStage video').readyState>=2&&!document.querySelector('#mediaVideoStage video').seeking);
    assert.equal(await video.getAttribute('src'),'/api/closeup.mp4');
