@@ -76,7 +76,8 @@ class CachedStaticFiles(StaticFiles):
         if encoding == "gzip":
             headers["Content-Encoding"] = "gzip"
         if self.is_not_modified(Headers(headers), request_headers):
-            return NotModifiedResponse(headers)
+            # Starlette's 304 allowlist uses lowercase header names.
+            return NotModifiedResponse(Headers(headers))
         headers["Content-Length"] = str(len(body))
         return Response(b"" if scope["method"] == "HEAD" else body,
                         media_type="text/css" if path.endswith(".css") else "text/javascript", headers=headers)

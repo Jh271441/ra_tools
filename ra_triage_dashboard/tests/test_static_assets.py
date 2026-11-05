@@ -78,8 +78,10 @@ class StaticCompressionTest(unittest.TestCase):
         self.assertIn(b"immutable", headers[b"cache-control"])
         self.assertEqual(gzip.decompress(body), expected)
         self.assertLess(len(body), len(expected) * .3)
-        status, _, body = self.request(route, extra_headers=[(b"if-none-match", headers[b"etag"])])
+        status, cached_headers, body = self.request(route, extra_headers=[(b"if-none-match", headers[b"etag"])])
         self.assertEqual((status, body), (304, b""))
+        for key in (b"etag", b"cache-control", b"vary"):
+            self.assertEqual(cached_headers[key], headers[key])
         status, head_headers, body = self.request(route, method="HEAD")
         self.assertEqual((status, body), (200, b""))
         self.assertEqual(head_headers[b"content-length"], headers[b"content-length"])
@@ -119,14 +121,22 @@ class StaticCompressionTest(unittest.TestCase):
         self.assertIn(b"text/css", headers[b"content-type"])
         self.assertEqual(gzip.decompress(body), expected)
         self.assertLess(len(body), len(expected) * .2)
-        status, _, body = self.request(route, extra_headers=[(b"if-none-match", headers[b"etag"])])
+        status, cached_headers, body = self.request(route, extra_headers=[(b"if-none-match", headers[b"etag"])])
         self.assertEqual((status, body), (304, b""))
+        for key in (b"etag", b"cache-control", b"vary"):
+            self.assertEqual(cached_headers[key], headers[key])
         status, head_headers, body = self.request(route, method="HEAD")
         self.assertEqual((status, body), (200, b""))
         self.assertEqual(head_headers[b"content-length"], headers[b"content-length"])
         status, identity_headers, body = self.request(route, encoding="identity")
         self.assertEqual((status, body), (200, expected))
         self.assertNotEqual(identity_headers[b"etag"], headers[b"etag"])
+        status, cached_headers, body = self.request(route, encoding="identity",
+                                                   extra_headers=[(b"if-none-match", identity_headers[b"etag"])])
+        self.assertEqual((status, body), (304, b""))
+        self.assertEqual(cached_headers[b"etag"], identity_headers[b"etag"])
+        self.assertIn(b"immutable", cached_headers[b"cache-control"])
+        self.assertIn(b"Accept-Encoding", cached_headers[b"vary"])
 
 
 if __name__ == "__main__":
