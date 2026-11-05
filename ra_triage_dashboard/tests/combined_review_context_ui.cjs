@@ -5,6 +5,7 @@ const state={activePage:'review',pageNavigationEpoch:1,selectedRunId:'run',revie
 const data={issue_id:'cn1',review_assignment:{assigned:true,split_id:'campaign',purpose:'model_review',workflow_mode:'model_review_and_case_label',model_run_id:'run'}};state.selectedCase=data;
 const context={issue:{issue_id:'cn1'},campaign:{id:'campaign',evaluation_run_id:'run'},assigned:true};
 const s={state,URLSearchParams,URL,window:{location:{pathname:'/manual/review',search:'?issue=cn1'}},$:key=>elements[key.slice(1)]||null,uiText:x=>x,escapeHtml:String,hasDashboardWriteRole:()=>true,showToast:()=>{}};
+let freshReads=0;s.apiRequest=(...args)=>{freshReads++;return s.api(...args);};
 vm.createContext(s);for(const name of ['routing.js','review-draft.js','review-attachments.js','review-form.js'])vm.runInContext(fs.readFileSync(root+name,'utf8'),s);
 let draft=null;s.reviewDraftForCase=()=>draft;
 let paints=0;s.populateCombinedCaseLabel=(_context,_data,options)=>{if(!options?.preserveFields?.has('tags'))paints++;};
@@ -57,6 +58,9 @@ let paints=0;s.populateCombinedCaseLabel=(_context,_data,options)=>{if(!options?
  };
  elements.reviewSaveButton.setAttribute=()=>{};elements.reviewSaveButton.removeAttribute=()=>{};
  await s.saveCombinedReview({});assert.equal(submitted.campaign_id,'');assert.equal(submitted.work_split_id,'');assert.equal(submitted.author,'liangxianghui');assert.equal(state.reviewWorkSplitId,'campaign');
+ assert.equal(freshReads,1,'the retained Issue refresh must bypass older shared GETs');
+ // Save completion no longer waits for this independent display refresh.
+ await new Promise(r=>setImmediate(r));assert.equal(state.combinedReviewLoad.status,'ready');
  state.selectedCase={...data,review_assignment:{...data.review_assignment,assigned:false,model_run_id:'wrong'}};
  let calls=0;s.api=async()=>{calls++;};await assert.rejects(s.loadCombinedReviewContext(state.selectedCase),/上下文/);assert.equal(calls,0);assert.equal(state.combinedReviewLoad.status,'error');
  // Valid out-of-task submissions keep their separate namespace.
