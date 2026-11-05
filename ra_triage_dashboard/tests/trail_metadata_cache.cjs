@@ -2,7 +2,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-const source = ['format-api.js', 'detail-media.js']
+const source = ['format-api.js', 'detail-trail.js']
   .map(name => fs.readFileSync(path.join(__dirname, '../static/js', name), 'utf8')).join('\n');
 
 vm.runInNewContext(`

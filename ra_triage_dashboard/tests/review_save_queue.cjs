@@ -33,7 +33,7 @@ function fixture({ids = ['a', 'b', 'c', 'd', 'e'], selected = 'd', page = 1} = {
   };
   vm.createContext(s);
   const select = s.selectCase;
-  vm.runInContext(fs.readFileSync(path.join(__dirname,'../static/js/review-form.js'),'utf8'),s);
+  vm.runInContext(fs.readFileSync(path.join(__dirname,'../static/js/review-submit.js'),'utf8'),s);
   s.selectCase = select;
   return {s,state,selectedIds,calls,messages,
     complete:() => {pending=pending.filter(id=>id!==selected);},

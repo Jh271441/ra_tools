@@ -41,6 +41,7 @@ function fixture(page = 'review') {
     vm.runInContext(source, s, {filename: name});
   }
   load('text-input.js');
+  if (!process.env.NAV_TEST_REF) { load('bev-video.js'); load('detail-trail.js'); }
   load('detail-media.js');
   load('routing.js');
   s.persistCurrentReviewRoute = () => {}; s.persistCurrentAnalysisRoute = () => {};

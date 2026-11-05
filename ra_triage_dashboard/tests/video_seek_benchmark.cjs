@@ -9,7 +9,7 @@ const names = (process.env.SEEK_NAMES || 'optimized-current,optimized-closeup').
 const count = Number(process.env.SEEK_COUNT || 20);
 const output = process.env.SEEK_RESULT || path.join(samples, 'seek-results.json');
 const root = path.resolve(__dirname, '../static');
-const playerJs = fs.readFileSync(process.env.SEEK_PLAYER_JS || path.join(root, 'js/detail-media.js'), 'utf8');
+const playerJs = fs.readFileSync(process.env.SEEK_PLAYER_JS || path.join(root, 'js/bev-video.js'), 'utf8');
 const shell = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const styles = JSON.parse('[' + shell.match(/const stylesheetPaths = \[([\s\S]*?)\];/)[1].trim().replace(/,$/, '') + ']');
 const html = '<!doctype html><html><head><meta charset="utf-8">'

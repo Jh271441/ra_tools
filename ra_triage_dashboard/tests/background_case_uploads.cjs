@@ -77,7 +77,7 @@ function task(issue='A'){
  // Exercise the actual form entry: snapshot queued, no global lock, duplicate submit rejected.
  state.backgroundCaseUploads.clear();draft={case_rationale:'sent',saved_at:10};
  const image={id:'entry',file:{name:'e.png'}};state.caseRationaleImages.set('A|run|task|alice',[image]);
- vm.runInContext(fs.readFileSync(root+'review-form.js','utf8'),s);
+ vm.runInContext(fs.readFileSync(root+'review-submit.js','utf8'),s);
  s.combinedReviewContextKey=()=> 'ctx';s.combinedReviewCampaignBinding=()=> 'task';s.reviewWorkSplitBinding=()=> 'task';s.expectedOutputSelectionState=()=>({selectedValue:'误触发'});s.reviewSaveNavigationContext=()=>({});s.modelReviewSubmissionStatus=()=> 'completed';s.renderCombinedReviewContextStatus=()=>{};
  state.combinedReviewContext={issue:{issue_id:'A'},campaign:{id:'task',evaluation_run_id:'run'},case_revision_id:4,model_review_storage_id:5};state.combinedReviewLoad={key:'ctx',status:'ready'};
  await s.saveCombinedReview({});assert.equal(state.savingAnnotation,false);assert.equal(state.backgroundCaseUploads.size,1);await tick();const count=calls.length;await s.saveCombinedReview({});assert.equal(calls.length,count);

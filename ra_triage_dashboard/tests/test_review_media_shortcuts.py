@@ -12,7 +12,7 @@ def run_node(source):
 
 
 def test_media_keys_allow_review_checkboxes_and_yield_to_text_and_label_numbers():
-    run_node((ROOT/'text-input.js').read_text() + (ROOT/'detail-media.js').read_text() + r'''
+    run_node((ROOT/'text-input.js').read_text() + (ROOT/'bev-video.js').read_text() + (ROOT/'detail-media.js').read_text() + r'''
 const assert=require('node:assert/strict');
 const checkbox={matches:()=>true,closest:s=>s.includes('.review-dropdown[open]')?{}:{}};
 const text={matches:()=>false,closest:()=>({})};

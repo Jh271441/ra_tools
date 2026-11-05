@@ -199,3 +199,94 @@ function refreshHistoryDialogLanguage() {
   openHistoryDialog(dialog.dataset.historyKind, dialog.historyCaseData);
   content.scrollTop = scroll;
 }
+
+function predictionCards(caseData) {
+  const predictions = caseData.predictions || [];
+  if (!predictions.length) {
+    return '<div class="no-asset">当前 case 没有 Run 模型输出。可创建 Trail 只读快照、上传批量结果，或等待 Batch 预测生成新的 Run。</div>';
+  }
+  return `<div class="model-list">${predictions
+    .map((prediction) => {
+      const selected = prediction.model_run_id === state.selectedRunId;
+      const extra = prediction.model_extra?.ra_stuck_auto_result_info;
+      const detail = prediction.model_reason || (typeof extra === "object" ? extra.text || "" : "") || "模型未返回解释。";
+      return `<article class="model-card ${selected ? "active" : ""}">
+        <div class="model-card-head"><div><h3>${escapeHtml(prediction.run_name || "模型输出")}</h3></div>${labelBadge(prediction.model_label, "未输出")}</div>
+        <p>${escapeHtml(detail)}</p>
+        <div class="model-card-meta">${formatModelConfidence(prediction.model_confidence)} confidence · ${formatTime(prediction.created_at)}${prediction.run_created_by ? ` · 创建人 ${escapeHtml(prediction.run_created_by)}` : ""}</div>
+      </article>`;
+    })
+    .join("")}</div>`;
+}
+
+function currentRunOutputMarkup(_caseData, prediction) {
+  if (!prediction) return "";
+  const reason = String(prediction.model_reason || "").trim();
+  return `<section class="current-run-output" aria-label="当前 Run Reason">
+    <div class="current-run-output-heading">
+      <div><span>当前 Run Reason</span><strong>${escapeHtml(prediction.run_name || "模型输出")}</strong></div>
+      <span>${labelBadge(prediction.model_label, "未输出")}${prediction.model_confidence === null || prediction.model_confidence === undefined ? "" : ` · ${escapeHtml(formatModelConfidence(prediction.model_confidence))} confidence`}</span>
+    </div>
+    <p class="current-run-reason">${escapeHtml(reason || "模型未返回 reason。")}</p>
+  </section>`;
+}
+
+function openHistoryDialog(kind, caseData) {
+  if (!caseData) return;
+  if (kind === "labeling" && state.activePage === "labeling") { openCaseLabelDecision(caseData); return; }
+  const isModel = kind === "model";
+  const isLabeling = kind === "labeling";
+  const dialog = $("#historyDialog");
+  if (dialog) { dialog.dataset.historyKind = isModel ? "model" : isLabeling ? "labeling" : "review"; dialog.historyCaseData = caseData; }
+  const predictions = caseData.predictions || [];
+  const annotations = isModel || isLabeling
+    ? []
+    : typeof reviewAnnotationsForAllRuns === "function"
+      ? reviewAnnotationsForAllRuns(caseData)
+      : (caseData.annotations || []);
+  $("#historyDialogTitle").textContent = isModel
+    ? uiText("评测 Run 输出历史", "Model run history")
+    : isLabeling
+      ? uiText("标注历史", "Label history")
+      : uiText("Review 历史", "Review history");
+  $("#historyDialogMeta").textContent = isModel
+    ? uiText(
+        `${predictions.length} 个模型 Run · 当前 Review Run 会高亮`,
+        `${predictions.length} model runs · current review run is highlighted`
+      )
+    : isLabeling
+      ? (() => {
+          const labelCount = (caseData.label_cases || []).reduce(
+            (count, labelCase) => count + (labelCase.resolution?.heads || []).length,
+            0
+          );
+          return uiText(`${labelCount} 条工作台标注`, `${labelCount} workbench labels`);
+        })()
+      : (() => {
+        const runCount = new Set(
+          annotations.map((item) => String(item.model_run_id || "legacy"))
+        ).size;
+        return uiText(
+          `${annotations.length} 条历史 Review · 跨 ${runCount} 个 Model Run`,
+          `${annotations.length} reviews · across ${runCount} model runs`
+        );
+      })();
+  $("#historyDialogContent").innerHTML = isModel
+    ? predictionCards(caseData)
+    : isLabeling
+      ? caseLabelingHistoryMarkup(caseData)
+      : annotationHistory(annotations);
+  if (!isModel && !isLabeling) bindAnnotationHistory($("#historyDialogContent"), caseData);
+  openDialog("historyDialog");
+}
+
+function toggleHistoryDialog(kind, caseData) {
+  const dialog = $("#historyDialog");
+  if (dialog?.open && dialog.dataset.historyKind === kind) {
+    closeDialog("historyDialog");
+    return false;
+  }
+  if (dialog?.open) closeDialog("historyDialog");
+  openHistoryDialog(kind, caseData);
+  return true;
+}

@@ -297,14 +297,17 @@ const server = http.createServer((req, res) => {
 
     // Explicit refresh uses the HTTP client, preserves search, and rejects
     // obsolete dialog responses. A failed refresh retains the last good rows.
-    let refreshRequests = 0, refreshMode = 'ready';
+    let refreshRequests = 0, refreshMode = 'ready', releaseFirstRefresh;
+    // Keep the first refresh pending until its busy/deduplication checks finish.
+    const firstRefreshResponse = new Promise(resolve => {releaseFirstRefresh = resolve;});
     const updated = await page.evaluate(() => ({issue_id:fixtureCase.issue_id,status:'ready',refresh_status:'ready',
       external_links:{...fixtureCase.external_links,ra_events:[...fixtureCase.external_links.ra_events,
         {event:'waypoint',value:'new-event',timestamp:1788236535286}]}}));
     await page.route('**/api/cases/*/trail-metadata?refresh=true', async route => {
       refreshRequests++;
       const mode = refreshMode;
-      await new Promise(resolve => setTimeout(resolve,200));
+      if (refreshRequests === 1) await firstRefreshResponse;
+      else await new Promise(resolve => setTimeout(resolve,200));
       await route.fulfill({contentType:'application/json',body:JSON.stringify(mode === 'ready' ? updated :
         {issue_id:updated.issue_id,status:'unavailable',refresh_status:'unavailable',external_links:{}})});
     });
@@ -315,6 +318,7 @@ const server = http.createServer((req, res) => {
     await refresh.click();
     assert.equal(await refresh.isDisabled(),true);
     await page.evaluate(() => document.querySelector('#raEventRefreshButton').click());
+    releaseFirstRefresh();
     await page.locator('#raEventRefreshStatus').filter({hasText:'Updated'}).waitFor();
     assert.equal(refreshRequests,1,'busy button cannot duplicate a refresh');
     assert.equal(await page.locator('#raEventSearchInput').inputValue(),'waypoint');

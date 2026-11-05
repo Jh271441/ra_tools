@@ -7,7 +7,7 @@ const { chromium } = require('playwright');
 const root = path.resolve(__dirname, '../static');
 const original = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const css = [...original.matchAll(/"((?:css\/|vendor\/)[^"\n]+\.css|styles\.css)"/g)].map(m => m[1]);
-const modules = ['core-base', 'i18n-messages', 'i18n', 'format-api', 'session-config', 'work-split', 'runs', 'trail-update-state', 'review-mentions', 'analysis', 'routing'];
+const modules = ['core-base', 'i18n-messages', 'i18n', 'format-api', 'session-config', 'work-split', 'runs', 'trail-update-state', 'review-mentions', 'analysis-charts', 'analysis', 'issue-discussion', 'routing'];
 const html = original.replace(/<script\b[^>]*>[\s\S]*?<\/script>/g, '').replaceAll('{{RA_TRIAGE_BASE_PATH}}', '')
   .replace('</head>', css.map(p => `<link rel="stylesheet" href="/static/${p}">`).join('') + '</head>')
   .replace('</body>', modules.map(p => `<script src="/static/js/${p}.js"></script>`).join('') + '</body>');

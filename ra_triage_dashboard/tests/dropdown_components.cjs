@@ -16,7 +16,7 @@ const read = name => fs.readFileSync(path.join(staticDir, name), 'utf8');
     await page.addStyleTag({content:'body {visibility:visible!important;opacity:1!important}'});
     const styles = JSON.parse('[' + html.match(/const stylesheetPaths = \[([\s\S]*?)\];/)[1].replace(/,\s*$/, '') + ']');
     for (const file of styles) await page.addStyleTag({content: read(file)});
-    for (const file of ['core-base', 'i18n-messages', 'i18n', 'format-api', 'session-config', 'detail-media']) {
+    for (const file of ['core-base', 'i18n-messages', 'i18n', 'format-api', 'session-config', 'bev-video', 'detail-media']) {
       await page.addScriptTag({content: read(`js/${file}.js`)});
     }
     // Load the actual shared multi-filter dismissal bindings without app bootstrap/API.

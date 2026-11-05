@@ -56,7 +56,7 @@ openAnchoredPanel(panel,anchor);panel.isConnected=false;listeners.scroll();asser
         self.assertEqual(result.returncode,0,result.stderr)
 
     def test_combined_review_composer_leaves_phone_newline_untouched(self):
-        self.run_js(["review-tags.js", "review-form.js"], r'''
+        self.run_js(["review-tags.js", "review-shortcuts.js"], r'''
 const assert=require('node:assert/strict');
 let keydown,submitted=0,phone=true;
 class Element { matches(s){return s==='textarea'} }

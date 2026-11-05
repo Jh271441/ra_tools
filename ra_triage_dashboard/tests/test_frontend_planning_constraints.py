@@ -40,7 +40,7 @@ assert.equal(planningConstraintAt([], 1100), null);
         self.assertNotIn("video.readyState", source)
         self.assertNotIn('mouseenter', source)
         self.assertNotIn('model_run', source)
-        media = (ROOT/'static/js/detail-media.js').read_text()
+        media = (ROOT/'static/js/detail-media.js').read_text() + (ROOT/'static/js/bev-video.js').read_text()
         self.assertIn('tracks.length > 1 && !compact', media)
         self.assertIn('planningConstraint.dispose()', media)
         self.assertIn('detailMediaSelectedKind(caseData)', media)

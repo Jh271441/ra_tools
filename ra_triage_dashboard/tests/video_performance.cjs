@@ -23,7 +23,8 @@ function playerFixture({readyState=4,context=null,initialTime=0,durationSec=40,.
  if(!context){
   vm.createContext(ctx);
   vm.runInContext(fs.readFileSync(src+'planning-constraints.js','utf8'),ctx);
-  vm.runInContext(fs.readFileSync(src+'detail-media.js','utf8'),ctx);
+  vm.runInContext(fs.readFileSync(src+'bev-video.js','utf8'),ctx);
+ vm.runInContext(fs.readFileSync(src+'detail-media.js','utf8'),ctx);
  }
  let textPosition;const bindText=ctx.bindPlanningConstraint;
  ctx.bindPlanningConstraint=(player,video,getPosition)=>{textPosition=getPosition;return bindText(player,video,getPosition);};
@@ -207,7 +208,7 @@ function playerFixture({readyState=4,context=null,initialTime=0,durationSec=40,.
  const pending={};let paints=[];
  const s={state,AbortController,URLSearchParams,console,api:path=>new Promise(resolve=>pending[path.split('kind=')[1]]=resolve),hydrateDetailMedia:d=>{paints.push(state.detailMedia.kind);return true;},hydrateDetailMediaControls:()=>{paints.push('controls');return true;},renderDetail:()=>paints.push('empty')};
  s.document={activeElement:null};s.$=()=>null;
- vm.createContext(s);vm.runInContext(fs.readFileSync(src+'text-input.js','utf8'),s);vm.runInContext(fs.readFileSync(src+'review-form.js','utf8'),s);
+ vm.createContext(s);vm.runInContext(fs.readFileSync(src+'text-input.js','utf8'),s);vm.runInContext(fs.readFileSync(src+'review-navigation.js','utf8'),s);
  const load=s.loadDeferredCaseMedia('cn1',1);
  pending.images({assets:{frames:[{url:'/frame.jpg'}]}});await new Promise(setImmediate);assert.equal(paints.length,1,'image paints without waiting for video');
  pending.video({assets:{video:{url:'/v.mp4',poster_url:'/thumb.jpg'}}});await load;assert.equal(state.detailMedia.kind,'video');assert.equal(state.selectedCase.assets.video.poster_url,'/thumb.jpg');

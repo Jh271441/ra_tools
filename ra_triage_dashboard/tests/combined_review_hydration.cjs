@@ -42,7 +42,7 @@ function fixture() {
     updateReviewHistory() {}, renderCaseRationaleImages() {}, updateReviewMentionComposer() {}, showToast() {}};
   vm.createContext(s);
   const root = process.env.REVIEW_HYDRATION_SOURCE_ROOT || path.join(__dirname, '../static/js');
-  for (const file of ['review-draft.js', 'review-attachments.js', 'review-form.js']) {
+  for (const file of ['review-draft.js', 'review-attachments.js', 'review-expected-output.js', 'review-combined.js', 'review-form.js', 'review-submit.js']) {
     vm.runInContext(fs.readFileSync(path.join(root, file), 'utf8'), s, {filename: file});
   }
   Object.assign(s, {syncExpectedOutputFromTags() {}, renderReviewSummary() {}, renderCaseRationaleImages() {}});

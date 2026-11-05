@@ -137,5 +137,5 @@ assert.equal($('#labelSummaryContent').innerHTML,'newer page');
 })().catch(error=>{console.error(error);process.exitCode=1;});
 `);
 '''
-        result = subprocess.run(["node", "-e", script, str(root / "routing.js"), str(root / "labeling-summary.js"), str(root / "analysis.js"), str(root.parent / "index.html"), str(root / "session-config.js")], text=True, capture_output=True)
+        result = subprocess.run(["node", "-e", script, str(root / "routing.js"), str(root / "labeling-summary.js"), str(root / "analysis-charts.js"), str(root.parent / "index.html"), str(root / "session-config.js")], text=True, capture_output=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

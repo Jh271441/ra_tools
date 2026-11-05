@@ -74,7 +74,7 @@ for(const props of [{isComposing:true},{keyCode:229},{which:229}]) {
 }
 async function refreshProtection() {
   const s=context();
-  vm.runInContext(source('review-form.js'),s);
+  vm.runInContext(source(process.env.IME_TEST_REF ? 'review-form.js' : 'review-navigation.js'),s);
   let reads=0, paints=0, selects=0, resolve;
   const input={matches(){return true;}};
   const pane={contains(node){return node===input;}};

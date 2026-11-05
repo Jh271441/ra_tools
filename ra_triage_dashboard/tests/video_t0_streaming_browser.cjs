@@ -39,7 +39,7 @@ function streamingFixture(source) {
 
 const media = streamingFixture(fs.readFileSync(clip));
 const requests = [];
-const playerJs = fs.readFileSync(path.resolve(__dirname, '../static/js/detail-media.js'), 'utf8');
+const playerJs = fs.readFileSync(path.resolve(__dirname, '../static/js/bev-video.js'), 'utf8');
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://localhost');
   if (!url.pathname.endsWith('.mp4')) {

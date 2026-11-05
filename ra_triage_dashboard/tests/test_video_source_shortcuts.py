@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_video_source_shortcuts_ignore_start_fragment_and_keep_guards() -> None:
-    script = (ROOT / "static/js/text-input.js").read_text() + (ROOT / "static/js/detail-media.js").read_text() + r'''
+    script = (ROOT / "static/js/text-input.js").read_text() + (ROOT / "static/js/bev-video.js").read_text() + (ROOT / "static/js/detail-media.js").read_text() + r'''
 const assert = require('node:assert/strict');
 const origin = 'https://triage.test';
 safeSameOriginAssetUrl = value => {

@@ -6,7 +6,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_ra_event_escape_and_close_focus_boundaries():
-    script = (ROOT / 'static/js/detail-media.js').read_text() + r'''
+    script = (ROOT / 'static/js/detail-trail.js').read_text() + r'''
 const assert = require('node:assert/strict');
 const handlers = {}, frames = [], keys = [];
 let open = false, blurs = 0;

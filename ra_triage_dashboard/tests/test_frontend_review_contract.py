@@ -33,7 +33,7 @@ class FrontendReviewContractTest(unittest.TestCase):
         self.assertIn(".detail-context-actions .detail-media-command { min-width: 0; flex-shrink: 1; }", css)
 
     def test_save_feedback_uses_plain_bilingual_copy(self) -> None:
-        review_form = (JS_DIR / "review-form.js").read_text(encoding="utf-8")
+        review_form = (JS_DIR / "review-submit.js").read_text(encoding="utf-8")
         self.assertIn('showToast(uiText("联合复核已保存", "Combined review saved"))', review_form)
         self.assertIn('showToast(uiText("标注已保存", "Label saved"))', review_form)
         self.assertNotIn("原子提交", review_form)
@@ -41,15 +41,16 @@ class FrontendReviewContractTest(unittest.TestCase):
 
     def test_model_review_ui_requires_a_run_and_keeps_shared_label_fields_hidden(self) -> None:
         review_form = (JS_DIR / "review-form.js").read_text(encoding="utf-8")
+        submission = (JS_DIR / "review-submit.js").read_text(encoding="utf-8")
         history = (JS_DIR / "review-history.js").read_text(encoding="utf-8")
         self.assertIn("请先选择 Model Run；共享标签和 GT 请到 问题标注工作台修改。", APP_JS)
         self.assertIn('class="review-section issue-tag-section combined-case-label-card" ${combinedMode ? "" : "hidden"}', review_form)
         self.assertIn('class="review-expected-output-field" hidden', review_form)
-        self.assertIn('delete payload.expected_output', review_form)
-        self.assertIn('delete payload.is_excluded', review_form)
-        self.assertIn('delete payload.tags', review_form)
-        self.assertIn('effectiveReviewWorkflowMode(state.selectedCase)', review_form)
-        self.assertIn('/combined-review', review_form)
+        self.assertIn('delete payload.expected_output', submission)
+        self.assertIn('delete payload.is_excluded', submission)
+        self.assertIn('delete payload.tags', submission)
+        self.assertIn('effectiveReviewWorkflowMode(state.selectedCase)', submission)
+        self.assertIn('/combined-review', (JS_DIR / "review-combined.js").read_text(encoding="utf-8"))
         self.assertIn("未选 Run", review_form)
         self.assertIn("模型复核暂不可用", review_form)
         self.assertIn("选择 Run 后可填写判错原因、缺失信息和截图", review_form)
@@ -58,8 +59,8 @@ class FrontendReviewContractTest(unittest.TestCase):
         self.assertIn('class="model-review-readonly-note model-review-run-required" role="status"', review_form)
         self.assertIn(".model-review-run-required", STYLES_CSS)
         self.assertIn("!modelReview", history)
-        self.assertIn('review_status_counts', (JS_DIR / "analysis.js").read_text(encoding="utf-8"))
-        self.assertIn('model_review_status_counts', (JS_DIR / "analysis.js").read_text(encoding="utf-8"))
+        self.assertIn('review_status_counts', (JS_DIR / "analysis-charts.js").read_text(encoding="utf-8"))
+        self.assertIn('model_review_status_counts', (JS_DIR / "analysis-charts.js").read_text(encoding="utf-8"))
 
         self.assertIn("baselineLabelForScope(item.baseline_scope)", APP_JS)
         self.assertIn("systemStatusMediaTable(baselines)", APP_JS)
@@ -96,7 +97,7 @@ class FrontendReviewContractTest(unittest.TestCase):
         self.assertIn("baselines", APP_JS)
         self.assertIn("/static/js/", APP_ENTRY_JS)
         self.assertIn("script.async = false", APP_ENTRY_JS)
-        self.assertIn("app.js?v=manual-triage-761", INDEX_HTML)
+        self.assertIn("app.js?v=manual-triage-762", INDEX_HTML)
         self.assertIn('"work-split.js"', APP_ENTRY_JS)
         self.assertIn('"review-assignments.js"', APP_ENTRY_JS)
         # Product logic must live in domain modules, not the entry loader.

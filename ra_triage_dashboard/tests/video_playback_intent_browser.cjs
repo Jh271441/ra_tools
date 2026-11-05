@@ -15,6 +15,13 @@ const modules = fs.readFileSync(path.join(root, 'js/MANIFEST'), 'utf8').split('\
 const html = original.replace(/<script\b[^>]*>[\s\S]*?<\/script>/g, '').replaceAll('{{RA_TRIAGE_BASE_PATH}}', '')
   .replace('</head>', styles.map(p => `<link rel="stylesheet" href="/static/${p}">`).join('') + '</head>')
   .replace('</body>', modules.map(p => `<script src="/static/js/${p}"></script>`).join('') + '</body>');
+let videoResponseGate = Promise.resolve();
+// Pending-state assertions own the response, rather than racing browser timing.
+function holdVideoResponses() {
+  let release;
+  videoResponseGate = new Promise(resolve => {release = resolve;});
+  return () => {videoResponseGate = Promise.resolve(); release();};
+}
 const server = http.createServer((req, res) => {
   if (req.method !== 'GET') return res.writeHead(405).end();
   const url = new URL(req.url, 'http://localhost');
@@ -34,7 +41,9 @@ const server = http.createServer((req, res) => {
   const size = fs.statSync(file).size, range = req.headers.range?.match(/^bytes=(\d+)-(\d*)$/);
   const start = range ? Number(range[1]) : 0;
   const end = range && range[2] ? Math.min(size - 1, Number(range[2])) : size - 1;
-  setTimeout(() => {
+  const gate = type === 'video/mp4' ? videoResponseGate : Promise.resolve();
+  setTimeout(async () => {
+    await gate;
     if (res.destroyed) return;
     res.setHeader('Content-Type', type); res.setHeader('Accept-Ranges', 'bytes');
     res.setHeader('Cache-Control', 'no-store'); res.setHeader('Content-Length', end - start + 1);
@@ -90,6 +99,7 @@ const server = http.createServer((req, res) => {
       for (const theme of ['dark', 'light']) for (const view of ['review', 'labeling']) {
         await page.setViewportSize({width, height: 1000});
         const id = `cn_fixture_${++n}`;
+        const releaseStartup = holdVideoResponses();
         await page.evaluate(({view, lang, theme, id}) => {
           closeDialog('mediaDialog');
           pauseBevVideoPlayers(detailHeroMediaEl());
@@ -119,23 +129,26 @@ const server = http.createServer((req, res) => {
         const pendingGeometry = await player.locator('.bev-video-controls').boundingBox();
         await page.keyboard.press('Space');
         assert.equal(await player.getAttribute('data-playback-state'), 'paused');
+        releaseStartup();
         await waitReady();
         assert.equal(await player.locator('video').evaluate(v => v.paused), true, 'cancel remains paused after metadata');
         await page.keyboard.press('Space'); await waitPlaying();
         const readyGeometry = await player.locator('.bev-video-controls').boundingBox();
         assert.equal(readyGeometry.height, pendingGeometry.height, 'playback changes never reflow the toolbar');
         if (width < 640) assert.ok((await player.locator('[data-video-play]').boundingBox()).height >= 44);
-        const switched = await page.evaluate(() => {
+        const releaseRapidSources = holdVideoResponses();
+        const switched = await page.evaluate(id => {
           const root = detailHeroMediaEl(), v = root.querySelector('video');
-          v._setBevVideoTrack('/api/rapid-one.mp4', '/api/poster.png');
-          v._setBevVideoTrack('/api/rapid-two.mp4', '/api/poster.png');
+          v._setBevVideoTrack(`/api/${id}-rapid-one.mp4`, '/api/poster.png');
+          v._setBevVideoTrack(`/api/${id}-rapid-two.mp4`, '/api/poster.png');
           return {state: root.querySelector('[data-bev-video-player]').dataset.playbackState,
             held: root.querySelectorAll('.video-source-frame').length};
-        });
+        }, id);
         assert.equal(switched.state, 'waiting', 'intent feedback is synchronous, before the next native load event');
         assert.equal(switched.held, 1, 'rapid source changes keep the previous decoded frame');
         await page.keyboard.press('Space');
         assert.equal(await player.getAttribute('data-playback-state'), 'paused');
+        releaseRapidSources();
         await waitReady(); assert.equal(await player.locator('video').evaluate(v => v.paused), true);
         await page.waitForFunction(() => !detailHeroMediaEl().querySelector('.video-source-frame'));
         await page.keyboard.press('Space'); await waitPlaying();

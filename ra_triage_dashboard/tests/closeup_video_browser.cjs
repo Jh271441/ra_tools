@@ -5,7 +5,7 @@ const root=path.resolve(__dirname,'../static'),original=fs.readFileSync(path.joi
 const clip=process.env.CLOSEUP_TEST_CLIP,poster=process.env.CLOSEUP_TEST_POSTER;
 if(!clip||!poster)throw Error('CLOSEUP_TEST_CLIP and CLOSEUP_TEST_POSTER must be local verified fixtures');
 const css=[...original.matchAll(/"((?:css\/|vendor\/)[^"\n]+\.css|styles\.css)"/g)].map(m=>m[1]);
-const modules=['core-base','i18n-messages','i18n','format-api','text-input','planning-constraints','detail-media','media-dialog','daily-cron'];
+const modules=['core-base','i18n-messages','i18n','format-api','text-input','planning-constraints','bev-video','detail-media','media-dialog','daily-cron'];
 const bootstrap=fs.readFileSync(path.join(root,'js/bind-bootstrap.js'),'utf8');
 const keyboardStart=bootstrap.indexOf('  document.addEventListener("keydown", (event) => {\n    if (!$("#mediaDialog").open)');
 const keyboardEnd=bootstrap.indexOf('  window.addEventListener("popstate"',keyboardStart);

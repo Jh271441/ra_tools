@@ -591,3 +591,14 @@ See [stages 4–6 ownership and acceptance](docs/refactor-8786-stages456-2026100
 and [repeatable 8786 verification/deployment](docs/refactor-8786-operations.md).
 The isolated 8786 deployer does not replace the production `deploy_cloud.py`
 workflow or authorize schema/configuration changes.
+
+Manual frontend ownership and the 2026-11-05 refactor are documented in
+[manual frontend modules](docs/manual-frontend-refactor-20261105.md).
+`review-form.js` owns rendering; context hydration, navigation, keyboard actions
+and submission live in `review-combined.js`, `review-navigation.js`,
+`review-shortcuts.js` and `review-submit.js`. Shared video playback belongs to
+`bev-video.js`; Trail/RA Event details to `detail-trail.js`; Issue discussion to
+`issue-discussion.js`; analysis charts to `analysis-charts.js`.
+Register each product script once in both `static/js/MANIFEST` and the thin
+`static/app.js` loader. `test_frontend_module_boundaries.py` checks registration,
+global ownership and ordered loading at root and `/manual`.

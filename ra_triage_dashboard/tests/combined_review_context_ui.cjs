@@ -6,7 +6,7 @@ const data={issue_id:'cn1',review_assignment:{assigned:true,split_id:'campaign',
 const context={issue:{issue_id:'cn1'},campaign:{id:'campaign',evaluation_run_id:'run'},assigned:true};
 const s={state,URLSearchParams,URL,window:{location:{pathname:'/manual/review',search:'?issue=cn1'}},$:key=>elements[key.slice(1)]||null,uiText:x=>x,escapeHtml:String,hasDashboardWriteRole:()=>true,showToast:()=>{}};
 let freshReads=0;s.apiRequest=(...args)=>{freshReads++;return s.api(...args);};
-vm.createContext(s);for(const name of ['routing.js','review-draft.js','review-attachments.js','review-form.js'])vm.runInContext(fs.readFileSync(root+name,'utf8'),s);
+vm.createContext(s);for(const name of ['routing.js','review-draft.js','review-attachments.js','review-expected-output.js','review-combined.js','review-form.js','review-submit.js'])vm.runInContext(fs.readFileSync(root+name,'utf8'),s);
 let draft=null;s.reviewDraftForCase=()=>draft;
 let paints=0;s.populateCombinedCaseLabel=(_context,_data,options)=>{if(!options?.preserveFields?.has('tags'))paints++;};
 (async()=>{

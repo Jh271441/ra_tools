@@ -192,7 +192,7 @@ class CombinedReviewLinkageTest(unittest.TestCase):
 
 def test_browser_binding_cache_and_stale_context():
     root = Path(__file__).resolve().parents[1] / "static/js"
-    script = "global.document={getElementById(){return null}};global.DEFAULT_CASE_PAGE_SIZE=20;\n" + (root / "review-draft.js").read_text() + (root / "review-form.js").read_text() + (root / "labeling-summary.js").read_text() + (root / "review-assignments.js").read_text() + r"""
+    script = "global.document={getElementById(){return null}};global.DEFAULT_CASE_PAGE_SIZE=20;\n" + (root / "review-draft.js").read_text() + (root / "review-combined.js").read_text() + (root / "review-navigation.js").read_text() + (root / "labeling-summary.js").read_text() + (root / "review-assignments.js").read_text() + r"""
 const assert = require('node:assert/strict');
 capturePageContext=()=>({});isPageContextCurrent=()=>true;$=()=>null;
 state = {activePage:"review", selectedRunId:'run1', reviewWorkSplitId:'campaign1', caseDetailPrefetch:new Map(), selectedId:'current'};

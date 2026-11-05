@@ -207,9 +207,9 @@ assert.match(target.innerHTML,/data-remove-screenshot/);
 
 
 def test_successful_review_save_advances_when_current_leaves_filter() -> None:
-    source = (ROOT / "static" / "js" / "review-form.js").read_text()
+    source = (ROOT / "static" / "js" / "review-submit.js").read_text()
     start = source.index("async function reviewSaveNavigationContext")
-    end = source.index("const CASE_DETAIL_PREFETCH_TTL_MS", start)
+    end = source.index("async function saveAnnotation(", start)
     routing = (ROOT / "static" / "js" / "routing.js").read_text()
     guards = routing[routing.index("function capturePageContext"):routing.index("function showPage(")]
     script = guards + source[start:end] + r'''
@@ -349,7 +349,7 @@ assert.equal(reviewDropdownShortcutAllowed(null),true);
 
 
 def test_video_t0_shortcut_targets_twenty_second_player_position() -> None:
-    source = (ROOT / "static" / "js" / "detail-media.js").read_text()
+    source = (ROOT / "static" / "js" / "bev-video.js").read_text()
     assert 'player.querySelector("[data-video-t0]").addEventListener("click", seekToT0)' in source
     assert "videoT0PlayerPosition(0, duration())" in source
     assert 'listen(video, "loadedmetadata", metadataReady)' in source
@@ -372,7 +372,7 @@ assert.match(markup,/data-video-t0/);
 
 
 def test_video_jump_preserves_current_playback_state() -> None:
-    source = (ROOT / "static" / "js" / "detail-media.js").read_text()
+    source = (ROOT / "static" / "js" / "bev-video.js").read_text()
     seek_start = source.index("const seekTo = (target)")
     queue_start = source.index("const queueSeek = (target", seek_start)
     jump_start = source.index("const jump = (direction) =>", queue_start)
@@ -386,7 +386,7 @@ def test_video_jump_preserves_current_playback_state() -> None:
 def test_ra_event_relative_time_uses_review_media_t0() -> None:
     script = (
         (ROOT / "static" / "js" / "format-api.js").read_text()
-        + (ROOT / "static" / "js" / "detail-media.js").read_text()
+        + (ROOT / "static" / "js" / "detail-trail.js").read_text()
         + r'''
 const assert=require('node:assert/strict');
 state={raEventDialog:{t0TimestampMs:0}};
@@ -418,7 +418,7 @@ assert.equal(mediaUrl.searchParams.get('ds.end'),'210000');
 
 
 def test_review_history_shortcut_toggle_closes_matching_dialog() -> None:
-    script = IME_JS + (ROOT / "static" / "js" / "detail-media.js").read_text() + r'''
+    script = IME_JS + (ROOT / "static" / "js" / "review-history.js").read_text() + r'''
 const assert=require('node:assert/strict');
 const dialog={open:true,dataset:{historyKind:'review'}};
 $=(selector)=>selector==='#historyDialog' ? dialog : null;
@@ -636,7 +636,7 @@ applyTrailUpdateRouteControls({tab:'review',exclusionIssue:'cn999'});assert.equa
 
 
 def test_combined_exclusion_hydrates_from_case_vote_and_separate_draft() -> None:
-    script = IME_JS + (ROOT / "static" / "js" / "review-draft.js").read_text() + (ROOT / "static" / "js" / "review-form.js").read_text() + r'''
+    script = IME_JS + (ROOT / "static" / "js" / "review-draft.js").read_text() + (ROOT / "static" / "js" / "review-combined.js").read_text() + r'''
 const assert=require('node:assert/strict');
 state={session:{}};
 const input={checked:false,disabled:true};
@@ -658,7 +658,7 @@ assert.equal(input.checked,true); // A legacy Run draft cannot override the Case
 
 
 def test_delayed_trail_metadata_cannot_replace_case_exclusion() -> None:
-    script = IME_JS + (ROOT / "static" / "js" / "detail-media.js").read_text() + r'''
+    script = IME_JS + (ROOT / "static" / "js" / "detail-trail.js").read_text() + r'''
 const assert=require('node:assert/strict');
 state={caseRequestSeq:1,selectedId:'cn1',selectedCase:{issue_id:'cn1'},reviewFormDirty:false};
 const input={checked:false,dataset:{caseExclusion:'true'}};
