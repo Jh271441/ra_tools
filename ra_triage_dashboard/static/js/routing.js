@@ -1583,6 +1583,12 @@ function showPage(
   // Loaders capture page/URL ownership only after the route is committed.
   // Starting them above pushState would make a valid new-page read look stale.
   const pageContext = capturePageContext();
+  if (loadPageData && previousPage !== target && ["review", "analysis"].includes(target)) {
+    // Facets are loaded when their page is used, including entry from a monitor
+    // or admin page whose bootstrap no longer fetches invisible Review data.
+    void loadReviewers().catch(() => {});
+    void loadWorkAssignees().catch(() => {});
+  }
   for (const load of pageLoads) {
     if (!isPageContextCurrent(pageContext, { matchUrl: false })) break;
     load();

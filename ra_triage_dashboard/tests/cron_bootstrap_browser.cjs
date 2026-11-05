@@ -3,6 +3,8 @@ const fs=require('node:fs'),path=require('node:path'),http=require('node:http'),
 const {chromium}=require('playwright');
 const root=path.resolve(__dirname,'../..'),staticDir=path.join(root,'ra_triage_dashboard/static');
 const bundle=fs.readFileSync(path.join(staticDir,'js/MANIFEST'),'utf8').split('\n').map(s=>s.trim()).filter(s=>s&&!s.startsWith('#')).map(name=>fs.readFileSync(path.join(staticDir,'js',name),'utf8')).join('\n;\n');
+const cssNames=JSON.parse('['+fs.readFileSync(path.join(staticDir,'index.html'),'utf8').match(/const stylesheetPaths = \[([\s\S]*?)\];/)[1].replace(/,\s*$/,'')+']');
+const cssBundle=cssNames.map(name=>fs.readFileSync(path.join(staticDir,name),'utf8')).join('\n\n');
 const report=process.env.CRON_PERFORMANCE_REPORT_DIR; if(report)fs.mkdirSync(report,{recursive:true});
 const fixture={observed_at:Date.now()/1000,sources:{overview:'ready'},overview:{collected_at:Date.now()/1000,daily:{health:'success',runs:[{id:'daily-2026-10-20',target_date_cst:'2026-10-20',state:'complete',health:'success',selected:10,inferred:10,published:10,verified:10,skipped:0}],jobs:[]}},history:[],sidecar:null,media_daily:null};
 const versionQA=process.env.CRON_VERSION_QA==='1';
@@ -27,6 +29,7 @@ const server=http.createServer((req,res)=>{
  if(u.pathname.startsWith('/manual/api/'))return json({items:[],issues:10,revision:0,poll_after_ms:30000});
  if(u.pathname.startsWith('/manual/static/')){
   if(u.pathname==='/manual/static/app-bundle.js'){res.setHeader('Content-Type','text/javascript');res.end(bundle);return;}
+  if(u.pathname==='/manual/static/app-bundle.css'){res.setHeader('Content-Type','text/css');res.end(cssBundle);return;}
   const file=path.join(staticDir,u.pathname.slice('/manual/static/'.length));
   if(!file.startsWith(staticDir+'/')){res.writeHead(403).end();return;}
   if(!fs.existsSync(file)){res.writeHead(404).end();return;}

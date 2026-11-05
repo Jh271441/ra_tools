@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from .static_assets import dashboard_static_app
+from .response_compression import TextResponseCompressionMiddleware
 from .gt_sync import gt_refresh_due
 
 from .auth import has_same_origin_mutation_marker, identity_header_candidates, request_identity
@@ -195,6 +196,7 @@ app = FastAPI(
     version="1.9.2",
     lifespan=lifespan,
 )
+app.add_middleware(TextResponseCompressionMiddleware)
 
 
 @app.middleware("http")

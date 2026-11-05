@@ -387,13 +387,13 @@ async function enterAnalysisPage({ includeOverview = false } = {}) {
 async function loadReviewReasonAnalysis({ keepPainted = false } = {}) {
   const pageContext = capturePageContext();
   const requestSeq = ++state.reviewAnalysis.requestSeq;
-  try {
-    await loadAnalysisWorkSplits();
-  } catch (_error) {
+  void loadAnalysisWorkSplits().catch(() => {
     // Task-batch options are a secondary filter facet. A transient failure
     // must not block the analysis payload or an already URL-selected Split.
-    renderAnalysisWorkSplitPicker(state.reviewAnalysis.workSplitId);
-  }
+    if (isPageContextCurrent(pageContext) && requestSeq === state.reviewAnalysis.requestSeq) {
+      renderAnalysisWorkSplitPicker(state.reviewAnalysis.workSplitId);
+    }
+  });
   if (!isPageContextCurrent(pageContext) || requestSeq !== state.reviewAnalysis.requestSeq) return;
   const params = buildAnalysisQueryParams({ includePagination: true });
   // Keep existing paint when revisiting the tab; avoid blanking for a snappier switch.

@@ -428,6 +428,16 @@ def _case_issue_ids_with_status_filter(
     review_statuses: tuple[str, ...],
     label_states: tuple[str, ...] = (),
 ) -> list[str]:
+    if (
+        not review_statuses and not label_states
+        and not filters.get("gt_relation")
+        and filters.get("is_excluded") is None
+        and not filters.get("issue_tag_groups")
+    ):
+        sql_filters = dict(filters)
+        sql_filters.pop("gt_relation", None)
+        sql_filters.pop("issue_tag_groups", None)
+        return database.list_case_issue_ids(**sql_filters, limit=None)
     return _case_derived_issue_ids(
         filters=filters,
         review_statuses=review_statuses,

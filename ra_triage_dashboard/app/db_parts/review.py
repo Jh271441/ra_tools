@@ -695,7 +695,7 @@ class DatabaseReviewMixin:
                     )
                 return """
                     LEFT JOIN review_records ann
-                      ON ann.id = COALESCE(
+                      ON ann.issue_id = i.issue_id AND ann.id = COALESCE(
                           (
                               SELECT a.id FROM review_records a
                               WHERE a.issue_id = i.issue_id
@@ -711,7 +711,7 @@ class DatabaseReviewMixin:
             run_clause = ""
         return """
             LEFT JOIN review_records ann
-              ON ann.id = (
+              ON ann.issue_id = i.issue_id AND ann.id = (
                   SELECT a.id FROM review_records a
                   WHERE a.issue_id = i.issue_id
                     AND a.work_split_id = ''

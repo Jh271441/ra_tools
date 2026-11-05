@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import gzip
 import hashlib
+import json
 from pathlib import Path
 import re
 
@@ -26,32 +27,50 @@ def build_frontend_bundle(directory: Path | str) -> bytes:
     return b"\n;\n".join((modules / name).read_bytes() for name in names)
 
 
+def build_frontend_styles(directory: Path | str) -> bytes:
+    """Use the shell's existing ordered list, including its final mobile layer."""
+    directory = Path(directory)
+    match = re.search(r"const stylesheetPaths = \[([\s\S]*?)\];", (directory / "index.html").read_text(encoding="utf-8"))
+    if not match:
+        raise RuntimeError("Missing frontend stylesheet order")
+    names = json.loads("[" + re.sub(r",\s*$", "", match[1]) + "]")
+    if not names or len(names) != len(set(names)) or any(
+        not re.fullmatch(r"(?:[a-z][a-z0-9-]*/)*[a-z][a-z0-9-]*\.css", name)
+        for name in names
+    ):
+        raise RuntimeError("Invalid frontend stylesheet order")
+    return b"\n\n".join((directory / name).read_bytes() for name in names)
+
+
 class CachedStaticFiles(StaticFiles):
     def __init__(self, directory: Path | str):
         super().__init__(directory=directory)
         # Build once during application construction, never on a request or
         # from runtime/user data. Both representations are immutable in memory.
-        body = build_frontend_bundle(directory)
         self.frontend_bundles = {
-            "identity": body,
-            "gzip": gzip.compress(body, compresslevel=5, mtime=0),
+            name: {"identity": body, "gzip": gzip.compress(body, compresslevel=5, mtime=0)}
+            for name, body in {
+                "app-bundle.js": build_frontend_bundle(directory),
+                "app-bundle.css": build_frontend_styles(directory),
+            }.items()
         }
         self.frontend_etags = {
-            encoding: '"' + hashlib.sha256(value).hexdigest() + '"'
-            for encoding, value in self.frontend_bundles.items()
+            name: {encoding: '"' + hashlib.sha256(value).hexdigest() + '"'
+                   for encoding, value in representations.items()}
+            for name, representations in self.frontend_bundles.items()
         }
 
     async def get_response(self, path: str, scope: Scope) -> Response:
-        if path != "app-bundle.js":
+        if path not in self.frontend_bundles:
             return await super().get_response(path, scope)
         if scope["method"] not in {"GET", "HEAD"}:
             raise HTTPException(status_code=405)
         request_headers = Headers(scope=scope)
         encoding = "gzip" if "gzip" in request_headers.get("accept-encoding", "") else "identity"
-        body = self.frontend_bundles[encoding]
+        body = self.frontend_bundles[path][encoding]
         headers = {
             "Cache-Control": "public, max-age=604800, immutable",
-            "ETag": self.frontend_etags[encoding],
+            "ETag": self.frontend_etags[path][encoding],
             "Vary": "Accept-Encoding",
         }
         if encoding == "gzip":
@@ -60,7 +79,7 @@ class CachedStaticFiles(StaticFiles):
             return NotModifiedResponse(headers)
         headers["Content-Length"] = str(len(body))
         return Response(b"" if scope["method"] == "HEAD" else body,
-                        media_type="text/javascript", headers=headers)
+                        media_type="text/css" if path.endswith(".css") else "text/javascript", headers=headers)
 
     def file_response(self, full_path, stat_result, scope: Scope, status_code: int = 200) -> Response:
         response = super().file_response(full_path, stat_result, scope, status_code=status_code)

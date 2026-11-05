@@ -357,7 +357,9 @@ function renderAnalysisWorkSplitPicker(selected = state.reviewAnalysis.workSplit
   });
 }
 
+let analysisWorkSplitsRequestSeq = 0;
 async function loadAnalysisWorkSplits({ force = false } = {}) {
+  const requestSeq = ++analysisWorkSplitsRequestSeq;
   const runId = state.selectedRunId || $("#analysisRunFilter")?.value || "";
   const baselines = selectedBaselineQueryValue();
   const key = `${runId}|${baselines}`;
@@ -369,6 +371,9 @@ async function loadAnalysisWorkSplits({ force = false } = {}) {
   if (runId) params.set("model_run_id", runId);
   if (baselines) params.set("baselines", baselines);
   const result = await api(`/api/review-work-splits?${params.toString()}`);
+  if (requestSeq !== analysisWorkSplitsRequestSeq
+      || runId !== (state.selectedRunId || $("#analysisRunFilter")?.value || "")
+      || baselines !== selectedBaselineQueryValue()) return [];
   state.reviewAnalysis.workSplitOptionsKey = key;
   state.reviewAnalysis.workSplitOptions = result.items || [];
   renderAnalysisWorkSplitPicker(state.reviewAnalysis.workSplitId);

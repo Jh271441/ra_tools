@@ -245,8 +245,46 @@ async function labelingEntryAndSummaryResponsesStayScoped() {
   const summary = a.s.loadLabelingSummary(); a.navigate('labeling'); a.navigate('labeling-summary'); pending.resolve({items: []}); await summary;
   assert.equal(requests, 1, 'stale task-list response must not start a summary query for a later visit');
 }
+async function optionalDirectoryDoesNotBlockIdentityOrOverwriteAnotherSession() {
+  const f = fixture('users'); f.load('session-config.js');
+  const directory = defer(); let ready = false;
+  f.state.mentionUsers = [];
+  f.s.renderSession = () => {}; f.s.renderMentionUsers = () => {};
+  f.s.api = endpoint => endpoint === '/api/session'
+    ? Promise.resolve({username: 'alice', authenticated: true, verified: true, is_admin: true})
+    : directory.promise;
+  const session = f.s.loadSession().then(() => {ready = true;});
+  await tick();
+  assert.equal(ready, true, 'permissions are ready while directory is pending');
+  f.state.session = {username: 'bob', verified: true};
+  f.state.mentionUsers = [{username: 'current-directory'}];
+  directory.resolve({items: [{username: 'obsolete-directory'}]});
+  await session; await tick();
+  assert.equal(f.state.mentionUsers[0].username, 'current-directory');
+}
+async function delayedOverviewCannotReplaceNewScopeCounts() {
+  const f = fixture(); f.load('session-config.js');
+  const first = defer(), second = defer(); let requests = 0;
+  f.s.api = () => (++requests === 1 ? first.promise : second.promise);
+  f.s.renderOverview = data => f.calls.paints.push(data.issues);
+  const oldRead = f.s.loadOverview(); f.state.selectedBaselineIds = ['0206'];
+  const newRead = f.s.loadOverview(); second.resolve({issues: 42}); await newRead;
+  first.resolve({issues: 99}); await oldRead;
+  assert.deepEqual(f.calls.paints, [42]);
+}
+async function delayedAnalysisFacetCannotReplaceNewRunOptions() {
+  const f = fixture('analysis'); f.load('work-split.js');
+  const first = defer(), second = defer(); let requests = 0;
+  f.s.api = () => (++requests === 1 ? first.promise : second.promise);
+  f.s.renderAnalysisWorkSplitPicker = () => {};
+  f.state.selectedRunId = 'old'; const oldRead = f.s.loadAnalysisWorkSplits();
+  f.state.selectedRunId = 'new'; const newRead = f.s.loadAnalysisWorkSplits();
+  second.resolve({items: [{split_id: 'new-options'}]}); await newRead;
+  first.resolve({items: [{split_id: 'old-options'}]}); await oldRead;
+  assert.equal(f.state.reviewAnalysis.workSplitOptions[0].split_id, 'new-options');
+}
 (async () => {
-  for (const test of [cronPaintDoesNotWaitForSharedBootstrap,bootstrapResumesPendingCombinedContext,assignmentAccessWaitsForWriterAndAvoidsAdminRequests,delayedReviewReloadCannotReclaimLabeling, navigationEpochTracksRealPageCommits, loadersStartAfterCanonicalRouteCommit, debounceCannotFireAfterDepartureOrRoundTrip, listPaginationAndPollingIgnoreObsoleteViews, lateTaskContextCannotRewriteLabelingUrl, bootstrapNeverReplaysInitialRouteOverNewNavigation, summaryWaitsForIdentityInsteadOfFallingBackToReview, labelingEntryAndSummaryResponsesStayScoped]) {
+  for (const test of [optionalDirectoryDoesNotBlockIdentityOrOverwriteAnotherSession, delayedOverviewCannotReplaceNewScopeCounts, delayedAnalysisFacetCannotReplaceNewRunOptions, cronPaintDoesNotWaitForSharedBootstrap,bootstrapResumesPendingCombinedContext,assignmentAccessWaitsForWriterAndAvoidsAdminRequests,delayedReviewReloadCannotReclaimLabeling, navigationEpochTracksRealPageCommits, loadersStartAfterCanonicalRouteCommit, debounceCannotFireAfterDepartureOrRoundTrip, listPaginationAndPollingIgnoreObsoleteViews, lateTaskContextCannotRewriteLabelingUrl, bootstrapNeverReplaysInitialRouteOverNewNavigation, summaryWaitsForIdentityInsteadOfFallingBackToReview, labelingEntryAndSummaryResponsesStayScoped]) {
     await test(); console.log('PASS ' + test.name);
   }
 })().catch(error => {console.error(error); process.exitCode = 1;});

@@ -408,6 +408,7 @@ class DatabaseCasesMixin:
         comment_state: str = "all",
         preferred_annotation_author: str = "",
         is_excluded: bool | None = None,
+        include_projection: bool = True,
     ) -> tuple[str, list[Any], list[Any], str]:
         where: list[str] = []
         params: list[Any] = []
@@ -619,23 +620,29 @@ class DatabaseCasesMixin:
         # for the selected Run; see ``_latest_annotation_join`` for its
         # selected-Run precedence rule.  This deliberately differs from the
         # strict Trail-writing aggregate.
-        annotation_join, annotation_params = self._gallery_annotation_join(
-            model_run_id,
-            projection_authors=authors or tuple(named),
-            preferred_annotation_author=preferred_annotation_author,
-            work_split_id=normalized_work_split_id,
-            strict_run=bool(scopes and self.legacy_business_read_mode(scopes) == "canonical"),
-        )
-        common = f"""
-            FROM issues i
-            {annotation_join}
-            LEFT JOIN model_predictions mp
-              ON mp.issue_id = i.issue_id
-             AND mp.model_run_id = ?
-        """
+        common = "FROM issues i"
+        model_args: list[Any] = []
+        # Counts/ID-only reads need a projection only when a generated WHERE
+        # predicate uses it. Keep the same predicates and binds as the page;
+        # an unfiltered total must not resolve a Review for every Issue.
+        if include_projection or "ann." in condition:
+            annotation_join, annotation_params = self._gallery_annotation_join(
+                model_run_id,
+                projection_authors=authors or tuple(named),
+                preferred_annotation_author=preferred_annotation_author,
+                work_split_id=normalized_work_split_id,
+                strict_run=bool(scopes and self.legacy_business_read_mode(scopes) == "canonical"),
+            )
+            common += f"\n{annotation_join}"
+            model_args.extend(annotation_params)
+        if include_projection or "mp." in condition:
+            common += """
+                LEFT JOIN model_predictions mp
+                  ON mp.issue_id = i.issue_id AND mp.model_run_id = ?
+            """
+            model_args.append(model_run_id)
         # The correlated annotation lookup appears before the prediction JOIN
         # in the SQL, so its bind values must precede the prediction Run id.
-        model_args = [*annotation_params, model_run_id]
         return condition, params, model_args, common
 
     def list_cases(
@@ -667,7 +674,7 @@ class DatabaseCasesMixin:
         # materialize the complete bounded workset so Tag-only legacy Reviews
         # are filtered before pagination and task handoff.
         page_size = min(max(1, page_size), 5000)
-        condition, params, model_args, common = self._case_list_filters(
+        filters = dict(
             baseline_scope=baseline_scope,
             baseline_scopes=baseline_scopes,
             search=search,
@@ -687,9 +694,14 @@ class DatabaseCasesMixin:
             preferred_annotation_author=preferred_annotation_author,
             is_excluded=is_excluded,
         )
+        condition, params, model_args, common = self._case_list_filters(**filters)
+        count_condition, count_params, count_args, count_common = self._case_list_filters(
+            **filters, include_projection=False
+        )
         with self.connect() as conn:
             total = conn.execute(
-                f"SELECT COUNT(DISTINCT i.issue_id) {common} {condition}", (*model_args, *params)
+                f"SELECT COUNT(DISTINCT i.issue_id) {count_common} {count_condition}",
+                (*count_args, *count_params),
             ).fetchone()[0]
             assignment_summary_join = """
                 LEFT JOIN (
@@ -761,7 +773,7 @@ class DatabaseCasesMixin:
         comment_state: str = "all",
         preferred_annotation_author: str = "",
         is_excluded: bool | None = None,
-        limit: int = 5000,
+        limit: int | None = 5000,
     ) -> list[str]:
         """Return ordered issue IDs matching the same filters as list_cases."""
 
@@ -784,8 +796,13 @@ class DatabaseCasesMixin:
             comment_state=comment_state,
             preferred_annotation_author=preferred_annotation_author,
             is_excluded=is_excluded,
+            include_projection=False,
         )
-        limit = min(max(1, int(limit)), 5000)
+        # Public callers retain the 5000 cap. Internal facet scans may request
+        # the complete scope, matching the uncapped derived-filter iterator.
+        limit = min(max(1, int(limit)), 5000) if limit is not None else None
+        limit_sql = "LIMIT ?" if limit is not None else ""
+        limit_args = [limit] if limit is not None else []
         with self.connect() as conn:
             rows = conn.execute(
                 f"""
@@ -793,9 +810,9 @@ class DatabaseCasesMixin:
                 {common}
                 {condition}
                 ORDER BY i.issue_id ASC
-                LIMIT ?
+                {limit_sql}
                 """,
-                (*model_args, *params, limit),
+                (*model_args, *params, *limit_args),
             ).fetchall()
         return [str(row["issue_id"] if hasattr(row, "keys") else row[0]) for row in rows]
 
@@ -1155,77 +1172,58 @@ class DatabaseCasesMixin:
             scope_clause += " AND i.issue_id IN (" + ",".join("?" for _ in issue_ids) + ")"
             scope_params.extend(issue_ids)
             base_where = f"WHERE {scope_clause}"
+        annotation_join, annotation_params = self._gallery_annotation_join(model_run_id)
+        from ..review_workflow import model_review_progress_sql
+        progress_sql, progress_params = model_review_progress_sql(model_run_id)
+        prediction_join = ""
+        prediction_sql = "NULL"
+        failure_sql = "0"
+        failure_params: list[Any] = []
+        prediction_params: list[Any] = []
+        if model_run_id:
+            prediction_join = """
+                LEFT JOIN model_predictions mp
+                  ON mp.issue_id = i.issue_id AND mp.model_run_id = ?
+            """
+            prediction_sql = "mp.id"
+            mismatch_sql, mismatch_params = model_prediction_mismatch_sql()
+            failure_sql = f"CASE WHEN i.gt_label IN (?, ?, ?) AND {mismatch_sql} THEN 1 ELSE 0 END"
+            failure_params = [*LABELS, *mismatch_params]
+            prediction_params = [model_run_id]
+        model_review_status_counts = {
+            "pending": 0, "in_progress": 0, "completed": 0, "blocked_by_label": 0,
+        }
+        total = labelled = predictions = failures = reviewed_failures = 0
         with self.connect() as conn:
-            total = conn.execute(
-                f"SELECT COUNT(*) FROM issues i {base_where}", tuple(scope_params)
-            ).fetchone()[0]
-            annotation_join, annotation_params = self._gallery_annotation_join(
-                model_run_id
-            )
-            labelled = conn.execute(
-                f"""
-                SELECT COUNT(*)
-                FROM issues i
-                {annotation_join}
-                {base_where} AND ann.id IS NOT NULL
-                """,
-                (*annotation_params, *scope_params),
-            ).fetchone()[0]
-            model_review_status_counts = {
-                "pending": 0,
-                "in_progress": 0,
-                "completed": 0,
-                "blocked_by_label": 0,
-            }
-            from ..review_workflow import model_review_progress_sql
-            progress_sql, progress_params = model_review_progress_sql(model_run_id)
+            # One Review projection supplies all overview counters. Separate
+            # count queries previously repeated the same correlated lookup up
+            # to five times for the entire dataset.
             status_rows = conn.execute(
                 f"""
-                SELECT status, COUNT(*) AS count FROM (
-                    SELECT {progress_sql} AS status FROM issues i
+                SELECT status, COUNT(*) AS count, COUNT(annotation_id) AS labelled,
+                       COUNT(prediction_id) AS predictions, SUM(is_failure) AS failures,
+                       SUM(CASE WHEN is_failure = 1 AND is_reviewed = 1 THEN 1 ELSE 0 END) AS reviewed_failures
+                FROM (
+                    SELECT {progress_sql} AS status, ann.id AS annotation_id,
+                           {prediction_sql} AS prediction_id, {failure_sql} AS is_failure,
+                           CASE WHEN ann.review_domain = 'model_review'
+                                 AND ann.model_review_status = 'completed' THEN 1 ELSE 0 END AS is_reviewed
+                    FROM issues i
                     {annotation_join}
+                    {prediction_join}
                     {base_where}
                 ) progress GROUP BY status
                 """,
-                (*progress_params, *annotation_params, *scope_params),
+                (*progress_params, *failure_params, *annotation_params, *prediction_params, *scope_params),
             ).fetchall()
             for row in status_rows:
-                model_review_status_counts[str(row["status"])] = int(row["count"] or 0)
-            predictions = failures = reviewed_failures = 0
-            if model_run_id:
-                common = f"""
-                    FROM issues i
-                    {annotation_join}
-                    LEFT JOIN model_predictions mp
-                      ON mp.issue_id = i.issue_id AND mp.model_run_id = ?
-                    WHERE {scope_clause}
-                """
-                predictions = conn.execute(
-                    f"SELECT COUNT(mp.id) {common}",
-                    (*annotation_params, model_run_id, *scope_params),
-                ).fetchone()[0]
-                mismatch_sql, mismatch_params = model_prediction_mismatch_sql()
-                failure_condition = f" AND i.gt_label IN (?, ?, ?) AND {mismatch_sql}"
-                failures = conn.execute(
-                    f"SELECT COUNT(*) {common}{failure_condition}",
-                    (
-                        *annotation_params,
-                        model_run_id,
-                        *scope_params,
-                        *LABELS,
-                        *mismatch_params,
-                    ),
-                ).fetchone()[0]
-                reviewed_failures = conn.execute(
-                    f"SELECT COUNT(*) {common}{failure_condition} AND ann.review_domain = 'model_review' AND ann.model_review_status = 'completed'",
-                    (
-                        *annotation_params,
-                        model_run_id,
-                        *scope_params,
-                        *LABELS,
-                        *mismatch_params,
-                    ),
-                ).fetchone()[0]
+                count = int(row["count"] or 0)
+                model_review_status_counts[str(row["status"])] = count
+                total += count
+                labelled += int(row["labelled"] or 0)
+                predictions += int(row["predictions"] or 0)
+                failures += int(row["failures"] or 0)
+                reviewed_failures += int(row["reviewed_failures"] or 0)
             running = conn.execute(
                 "SELECT COUNT(*) FROM inference_jobs WHERE status IN ('queued', 'running')"
             ).fetchone()[0]
@@ -2493,7 +2491,8 @@ class DatabaseCasesMixin:
             FROM review_work_assignments assignment
             JOIN issue_work_splits split ON split.id = assignment.split_id
             JOIN issues i ON i.issue_id = assignment.issue_id
-            LEFT JOIN review_records annotation ON annotation.id = (
+            LEFT JOIN review_records annotation
+              ON annotation.issue_id = assignment.issue_id AND annotation.id = (
                 SELECT candidate.id FROM review_records candidate
                 WHERE candidate.issue_id = assignment.issue_id
                   AND candidate.model_run_id = split.model_run_id

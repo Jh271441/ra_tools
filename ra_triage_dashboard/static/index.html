@@ -72,8 +72,10 @@
           "css/version-datasets.css",
           "css/mobile.css",
         ];
+        // The server builds this resource from stylesheetPaths in exact order.
+        const stylesheetRequests = ["app-bundle.css"];
         let stylesSettled = false;
-        let pendingStyles = stylesheetPaths.length;
+        let pendingStyles = stylesheetRequests.length;
         const revealShell = () => {
           if (stylesSettled) return;
           stylesSettled = true;
@@ -83,10 +85,10 @@
           pendingStyles -= 1;
           if (pendingStyles === 0) revealShell();
         };
-        stylesheetPaths.forEach((path) => {
+        stylesheetRequests.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-763`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-764`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -2628,7 +2630,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-763`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-764`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

@@ -15,7 +15,9 @@ class FrontendShellContractTest(unittest.TestCase):
             self.assertTrue((STATIC_DIR / path).is_file(), path)
             positions.append(INDEX_HTML.index(f'"{path}"'))
         self.assertEqual(positions, sorted(positions))
-        self.assertIn("pendingStyles = stylesheetPaths.length", INDEX_HTML)
+        self.assertIn('const stylesheetRequests = ["app-bundle.css"]', INDEX_HTML)
+        self.assertIn("pendingStyles = stylesheetRequests.length", INDEX_HTML)
+        self.assertIn("stylesheetRequests.forEach", INDEX_HTML)
         self.assertIn("if (pendingStyles === 0) revealShell()", INDEX_HTML)
 
     def test_final_mobile_layer_owns_phone_and_tablet_layout(self) -> None:
@@ -46,7 +48,7 @@ class FrontendShellContractTest(unittest.TestCase):
             self.assertTrue((JS_DIR / name).is_file(), name)
         self.assertIn('/static/app-bundle.js?v=${CACHE_VERSION}', APP_ENTRY_JS)
         self.assertIn("CACHE_VERSION", APP_ENTRY_JS)
-        self.assertIn("manual-triage-763", APP_ENTRY_JS)
+        self.assertIn("manual-triage-764", APP_ENTRY_JS)
         self.assertIn("function setBaselineScopes", APP_JS)
         self.assertIn("function applyInferredBaselinesFromRun", APP_JS)
         self.assertIn("clearIncompatible: true", APP_JS)

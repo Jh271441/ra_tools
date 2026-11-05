@@ -162,12 +162,8 @@ async function loadSession() {
   if (serverSession.authenticated && validDisplayName(serverSession.username)) {
     state.session = serverSession;
     renderSession();
-    try {
-      await loadMentionUsers();
-    } catch (_error) {
-      state.mentionUsers = [];
-      renderMentionUsers();
-    }
+    // The optional @ directory must not delay identity/permission readiness.
+    void loadMentionUsers().catch(() => {});
     return;
   }
   state.session = {
@@ -567,13 +563,17 @@ function renderMentionUsers() {
   `).join("");
 }
 
+let mentionUsersRequestSeq = 0;
 async function loadMentionUsers() {
+  const requestSeq = ++mentionUsersRequestSeq;
+  const session = state.session;
   if (!state.session?.verified) {
     state.mentionUsers = [];
     renderMentionUsers();
     return;
   }
   const result = await api("/api/mention-users");
+  if (requestSeq !== mentionUsersRequestSeq || state.session !== session) return;
   state.mentionUsers = result.items || [];
   renderMentionUsers();
   document.querySelectorAll("textarea[data-mention-composer]").forEach((textarea) => {
@@ -764,10 +764,17 @@ function renderOverview(data) {
   renderActiveRun(data);
 }
 
+let overviewRequestSeq = 0;
 async function loadOverview() {
+  const requestSeq = ++overviewRequestSeq;
+  const runId = state.selectedRunId;
+  const baselines = selectedBaselineQueryValue();
   const params = new URLSearchParams();
   if (state.selectedRunId) params.set("model_run_id", state.selectedRunId);
   appendBaselineParams(params);
   const query = params.toString() ? `?${params.toString()}` : "";
-  renderOverview(await api(`/api/overview${query}`));
+  const data = await api(`/api/overview${query}`);
+  if (requestSeq !== overviewRequestSeq || runId !== state.selectedRunId
+      || baselines !== selectedBaselineQueryValue()) return;
+  renderOverview(data);
 }

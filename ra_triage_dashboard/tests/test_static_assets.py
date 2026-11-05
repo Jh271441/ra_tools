@@ -2,6 +2,7 @@
 import asyncio
 import gzip
 import json
+import re
 import shutil
 import subprocess
 import tempfile
@@ -100,6 +101,32 @@ class StaticCompressionTest(unittest.TestCase):
                 (modules / "MANIFEST").write_text(manifest)
                 with self.assertRaises(RuntimeError):
                     dashboard_static_app(directory)
+
+    def test_style_bundle_preserves_cascade_mobile_layer_and_conditional_cache(self):
+        static = Path(__file__).resolve().parents[1] / "static"
+        order = re.search(r"const stylesheetPaths = \[([\s\S]*?)\];", (static / "index.html").read_text())[1]
+        names = json.loads("[" + re.sub(r",\s*$", "", order) + "]")
+        self.assertEqual(names[-1], "css/mobile.css")
+        expected = b"\n\n".join((static / name).read_bytes() for name in names)
+        # Component files currently use only data URLs; relative asset URLs
+        # would need rebasing when introducing them into the shared bundle.
+        urls = [url.strip().strip("'\"") for url in re.findall(r"url\(([^)]+)\)", expected.decode())]
+        self.assertFalse([url for url in urls if not url.startswith(("data:", "/", "https:", "http:"))])
+        self.assertIsNone(re.search(r"@import\b", expected.decode()))
+        route = "/manual/static/app-bundle.css"
+        status, headers, body = self.request(route)
+        self.assertEqual(status, 200)
+        self.assertIn(b"text/css", headers[b"content-type"])
+        self.assertEqual(gzip.decompress(body), expected)
+        self.assertLess(len(body), len(expected) * .2)
+        status, _, body = self.request(route, extra_headers=[(b"if-none-match", headers[b"etag"])])
+        self.assertEqual((status, body), (304, b""))
+        status, head_headers, body = self.request(route, method="HEAD")
+        self.assertEqual((status, body), (200, b""))
+        self.assertEqual(head_headers[b"content-length"], headers[b"content-length"])
+        status, identity_headers, body = self.request(route, encoding="identity")
+        self.assertEqual((status, body), (200, expected))
+        self.assertNotEqual(identity_headers[b"etag"], headers[b"etag"])
 
 
 if __name__ == "__main__":

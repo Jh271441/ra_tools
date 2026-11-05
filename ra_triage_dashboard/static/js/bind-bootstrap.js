@@ -1159,6 +1159,16 @@ async function bootstrap() {
         : "all";
       state.failureOnly = state.reviewComparisonStatus === "mismatch";
     }
+    // These pages do not consume the Run catalog. Start their visible payload
+    // now; keep catalog initialization for later SPA navigation in parallel.
+    let independentPageResult = null;
+    if (initialRoute.page === "status") {
+      independentPageResult = settleInitialRequests([loadStatus()], "页面");
+    } else if (initialRoute.page === "rd-results") {
+      independentPageResult = settleInitialRequests([loadRdResults()], "页面");
+    } else if (initialRoute.page === "users") {
+      independentPageResult = settleInitialRequests([loadAccessUsers(), loadMentionUsers()], "页面");
+    }
     // Case labeling is intentionally model-free. Other pages resolve the Run
     // before loading queue-dependent facets so their counts cannot race.
     if (!["labeling", "labeling-new-task", "labeling-summary"].includes(initialRoute.page)) {
@@ -1182,12 +1192,12 @@ async function bootstrap() {
     if (["comparison", "run-collections"].includes(initialRoute.page)) {
       applyRunComparisonRoute(initialRoute.comparisonFilters);
     }
-    const sharedDataPromise = ["labeling", "labeling-new-task", "labeling-summary"].includes(initialRoute.page)
-      ? Promise.resolve()
-      : settleInitialRequests(
+    const sharedDataPromise = ["review", "analysis"].includes(initialRoute.page)
+      ? settleInitialRequests(
           [loadReviewers(), loadWorkAssignees()],
           "共享数据"
-        );
+        )
+      : Promise.resolve();
     setReviewComparisonStatus(state.reviewComparisonStatus, {
       hasRun: Boolean(state.selectedRunId),
     });
@@ -1198,7 +1208,9 @@ async function bootstrap() {
       ? []
       : [{ name: "概览", promise: loadOverview() }];
     let initialDetailRequest = null;
-    if (initialRoute.page === "review" && !reviewTaskContextFailed) {
+    if (independentPageResult) {
+      initialPageRequests.push(independentPageResult);
+    } else if (initialRoute.page === "review" && !reviewTaskContextFailed) {
       initialPageRequests.push(
         { name: "Issue 图库", promise: loadCases({
           keepSelection: Boolean(initialRoute.issue),
@@ -1212,14 +1224,8 @@ async function bootstrap() {
       initialPageRequests.push(loadDailyReview());
     } else if (initialRoute.page === "daily-cron") {
       initialPageRequests.push(initialCronRequest || loadDailyCron());
-    } else if (initialRoute.page === "status") {
-      initialPageRequests.push(loadStatus());
-    } else if (initialRoute.page === "rd-results") {
-      initialPageRequests.push(loadRdResults());
     } else if (initialRoute.page === "trail-history") {
       initialPageRequests.push(loadTrailHistory());
-    } else if (initialRoute.page === "users") {
-      initialPageRequests.push(loadAccessUsers(), loadMentionUsers());
     } else if (initialRoute.page === "prediction") {
       initialPageRequests.push(loadPredictionConfig(), loadPredictionBatches());
     } else if (initialRoute.page === "comparison") {
