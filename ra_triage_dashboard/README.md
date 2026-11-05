@@ -599,6 +599,8 @@ and submission live in `review-combined.js`, `review-navigation.js`,
 `review-shortcuts.js` and `review-submit.js`. Shared video playback belongs to
 `bev-video.js`; Trail/RA Event details to `detail-trail.js`; Issue discussion to
 `issue-discussion.js`; analysis charts to `analysis-charts.js`.
-Register each product script once in both `static/js/MANIFEST` and the thin
-`static/app.js` loader. `test_frontend_module_boundaries.py` checks registration,
-global ownership and ordered loading at root and `/manual`.
+Register each product script once in `static/js/MANIFEST`. The server joins the
+modules in that order into `/static/app-bundle.js` and precompresses it once at
+startup; the thin `static/app.js` loader requests that single classic script.
+`test_frontend_module_boundaries.py` and `test_static_assets.py` check registration,
+global ownership, bundle order, caching and loading at root and `/manual`.

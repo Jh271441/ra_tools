@@ -72,8 +72,8 @@ function reset(){calls=[];reply=preview;allowed=true;scope='0508';state.session.
         root = Path(__file__).resolve().parents[1] / "static"
         html = (root / "index.html").read_text()
         self.assertIn('class="dialog issue-query-dialog" id="trailNonExclusionDialog"', html)
-        for path in (root / "app.js", root / "js/MANIFEST"):
-            self.assertIn("trail-update-non-exclusion.js", path.read_text())
+        self.assertIn("trail-update-non-exclusion.js", (root / "js/MANIFEST").read_text().splitlines())
+        self.assertIn("/static/app-bundle.js", (root / "app.js").read_text())
         script = (root / "js/trail-update-non-exclusion.js").read_text()
         self.assertIn("parseIssueIdsInput", script)
         self.assertNotIn("allowReadOnlyMutation", script)

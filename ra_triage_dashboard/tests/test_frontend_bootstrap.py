@@ -17,9 +17,9 @@ class FrontendBootstrapTest(unittest.TestCase):
             APP_JS,
         )
         self.assertIn("else {\n  bootstrap();\n}", APP_JS)
-        # Entry remains a thin ordered loader for static/js/* modules.
+        # Entry remains a thin loader; the bundle follows MANIFEST order.
         self.assertIn("script.async = false", APP_ENTRY_JS)
-        self.assertIn("/static/js/", APP_ENTRY_JS)
+        self.assertIn("/static/app-bundle.js", APP_ENTRY_JS)
 
     def test_initial_route_owns_its_heavy_requests(self) -> None:
         self.assertIn("loadPageData = true", APP_JS)

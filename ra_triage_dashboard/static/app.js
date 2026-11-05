@@ -1,108 +1,14 @@
 /* RA Triage Workbench frontend entry.
  *
- * Domain logic lives under static/js/*.js and is loaded in MANIFEST order as
- * classic scripts (shared global scope). This preserves historical behavior
- * without a bundler or ES-module graph.
- *
- * Tests concatenate static/js/*.js via the MANIFEST; do not put product logic
- * back into this file. Load order is defined only by MODULES / MANIFEST —
- * filenames are domain names without numeric prefixes.
+ * Source modules stay under static/js/*.js. The server joins them in MANIFEST
+ * order once at startup, preserving classic-script globals without one network
+ * request per source file. Product logic belongs in those modules.
  */
 (() => {
-  const CACHE_VERSION = "manual-triage-762";
-  const MODULES = [
-    "core-base.js",
-    "text-input.js",
-    "i18n-messages.js",
-    "i18n.js",
-    "routing.js",
-    "issue-query.js",
-    "format-api.js",
-    "layout-resize.js",
-    "gt-sync.js",
-    "session-config.js",
-    "system-status.js",
-    "version-datasets.js",
-    "version-rd.js",
-    "daily-cron.js",
-    "daily-review.js",
-    "daily-cron-graph.js",
-    "runs.js",
-    "run-comparison.js",
-    "run-collections.js",
-    "intent-workspaces.js",
-    "intent-summary.js",
-    "intent-media.js",
-    "intent-collaboration.js",
-    "intent-labeling.js",
-    "review-gallery.js",
-    "review-label-state.js",
-    "assignment-naming.js",
-    "assignment-people.js",
-    "work-split.js",
-    "review-assignments.js",
-    "campaigns.js",
-    "labeling-summary.js",
-    "rd-results.js",
-    "analysis-charts.js",
-    "analysis.js",
-    "issue-discussion.js",
-    "planning-constraints.js",
-    "video-segments.js",
-    "bev-video.js",
-    "detail-media.js",
-    "detail-trail.js",
-    "review-draft.js",
-    "review-history.js",
-    "review-mentions.js",
-    "review-tags.js",
-    "review-attachments.js",
-    "review-expected-output.js",
-    "review-combined.js",
-    "review-form.js",
-    "review-navigation.js",
-    "review-shortcuts.js",
-    "review-submit.js",
-    "case-label-explanation.js",
-    "case-labeling.js",
-    "labeling-combined-tasks.js",
-    "case-label-decision.js",
-    "review-issue-decision.js",
-    "case-exclusion-decision.js",
-    "media-dialog.js",
-    "batch-gateway.js",
-    "batch-config.js",
-    "batch.js",
-    "import-refresh.js",
-    "trail-update-state.js",
-    "trail-update-preview.js",
-    "trail-update-reasons.js",
-    "trail-update-import.js",
-    "trail-update-commit.js",
-    "trail-update-non-exclusion.js",
-    "trail-update-local-import.js",
-    "trail-update.js",
-    "trail-history.js",
-    "mobile-workbench.js",
-    "bind-bootstrap.js"
-  ];
-
+  const CACHE_VERSION = "manual-triage-763";
   const base = window.__RA_TRIAGE_BASE__ || "";
-  // Preload all modules first so HTTP/1.1 can pipeline downloads before ordered
-  // execution begins (async=false scripts still run in MODULES order).
-  for (const name of MODULES) {
-    const preload = document.createElement("link");
-    preload.rel = "preload";
-    preload.as = "script";
-    preload.href = `${base}/static/js/${name}?v=${CACHE_VERSION}`;
-    document.head.appendChild(preload);
-  }
-  // Insert with async=false so execution order matches MODULES even when
-  // scripts are appended dynamically (HTML5 ordered script loading).
-  for (const name of MODULES) {
-    const script = document.createElement("script");
-    script.src = `${base}/static/js/${name}?v=${CACHE_VERSION}`;
-    script.async = false;
-    document.body.appendChild(script);
-  }
+  const script = document.createElement("script");
+  script.src = `${base}/static/app-bundle.js?v=${CACHE_VERSION}`;
+  script.async = false;
+  document.body.appendChild(script);
 })();

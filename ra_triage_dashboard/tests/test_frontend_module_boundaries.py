@@ -38,15 +38,14 @@ class FrontendModuleBoundariesTest(unittest.TestCase):
         self.assertEqual(duplicates, {}, "a later script must not override another module")
 
     @unittest.skipUnless(shutil.which("node"), "Node is required")
-    def test_entry_preloads_and_executes_all_modules_in_order_under_both_base_paths(self):
+    def test_entry_loads_one_classic_bundle_under_both_base_paths(self):
         payload = json.dumps({
             "entry": load_app_entry_js(),
             "body": load_app_js(),
-            "names": manifest_names(),
         })
         script = r"""
 const fs = require('node:fs'), vm = require('node:vm'), assert = require('node:assert/strict');
-const {entry, body, names} = JSON.parse(fs.readFileSync(0, 'utf8'));
+const {entry, body} = JSON.parse(fs.readFileSync(0, 'utf8'));
 new vm.Script(body, {filename: 'ordered-frontend.js'});
 const version = entry.match(/const CACHE_VERSION = "([^"]+)"/)[1];
 for (const base of ['', '/manual']) {
@@ -57,13 +56,8 @@ for (const base of ['', '/manual']) {
     body: {appendChild: node => events.push(node)},
   };
   vm.runInNewContext(entry, {window: {__RA_TRIAGE_BASE__: base}, document});
-  assert.equal(events.length, names.length * 2);
-  const preloads = events.slice(0, names.length), scripts = events.slice(names.length);
-  names.forEach((name, index) => {
-    const url = `${base}/static/js/${name}?v=${version}`;
-    assert.deepEqual(preloads[index], {tag: 'link', rel: 'preload', as: 'script', href: url});
-    assert.deepEqual(scripts[index], {tag: 'script', src: url, async: false});
-  });
+  assert.equal(events.length, 1, 'module extraction must not add startup requests');
+  assert.deepEqual(events[0], {tag: 'script', src: `${base}/static/app-bundle.js?v=${version}`, async: false});
 }
 """
         result = subprocess.run(["node", "-e", script], input=payload, capture_output=True, text=True)

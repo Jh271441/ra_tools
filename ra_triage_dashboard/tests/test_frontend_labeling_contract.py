@@ -1,6 +1,6 @@
 """Frontend labeling source contracts; original assertions preserved."""
 import unittest
-from frontend_contract_fixtures import APP_ENTRY_JS, APP_JS, INDEX_HTML, STYLES_CSS
+from frontend_contract_fixtures import APP_ENTRY_JS, APP_JS, INDEX_HTML, MANIFEST_PATH, STYLES_CSS
 
 
 class FrontendLabelingContractTest(unittest.TestCase):
@@ -59,7 +59,7 @@ class FrontendLabelingContractTest(unittest.TestCase):
         self.assertIn('kind === "labeling"', APP_JS)
         self.assertIn('id="caseLabelingPage" data-page="labeling"', INDEX_HTML)
         self.assertIn('path: "/case-labeling"', APP_JS)
-        self.assertIn('"case-labeling.js"', APP_ENTRY_JS)
+        self.assertIn('case-labeling.js', MANIFEST_PATH.read_text().splitlines())
         self.assertIn('"css/case-labeling.css"', INDEX_HTML)
         self.assertIn('/api/labeling/cases', APP_JS)
         self.assertIn('function renderCaseLabelingEditor', APP_JS)

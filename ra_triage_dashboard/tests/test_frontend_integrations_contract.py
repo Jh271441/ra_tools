@@ -1,6 +1,6 @@
 """Frontend integrations source contracts; original assertions preserved."""
 import unittest
-from frontend_contract_fixtures import APP_ENTRY_JS, APP_JS, INDEX_HTML, STATIC_DIR, STYLES_CSS
+from frontend_contract_fixtures import APP_ENTRY_JS, APP_JS, INDEX_HTML, MANIFEST_PATH, STATIC_DIR, STYLES_CSS
 
 
 class FrontendIntegrationsContractTest(unittest.TestCase):
@@ -59,7 +59,7 @@ class FrontendIntegrationsContractTest(unittest.TestCase):
         self.assertIn("意图标注仅对已授权标注人开放。", APP_JS)
         self.assertIn('data-page="intent"', INDEX_HTML)
         self.assertIn('path: "/intent-labeling"', APP_JS)
-        self.assertIn('"intent-labeling.js"', APP_ENTRY_JS)
+        self.assertIn('intent-labeling.js', MANIFEST_PATH.read_text().splitlines())
         self.assertIn("state.intentLabeling", APP_JS)
         self.assertIn("data-intent-aggregate-axis", INDEX_HTML)
         self.assertIn("data-intent-frame-axis", INDEX_HTML)
