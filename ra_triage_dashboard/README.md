@@ -44,6 +44,14 @@ GT 导出批次。设计与迁移细节见
 [`docs/review-labeling-redesign-plan.md`](docs/review-labeling-redesign-plan.md) 和
 [`docs/dataset-migration-and-labeling-ui-design.md`](docs/dataset-migration-and-labeling-ui-design.md)。
 
+### 屏蔽 RA 仿真
+
+Manual 可为 Issue 关联经过验收的屏蔽 RA 仿真新任务，保留原 Trail Task 来源，
+只更新自身持久清单。先通过小样本，再批量重跑；任务完成、产物验收、发布和 API
+读回分别记账。任务过期、关联优先级、精确版本、重试与发布门禁见
+[屏蔽 RA 仿真恢复规格](docs/disable-ra-simulation-recovery.md)。
+该规格同时记录带观测日期的恢复快照和未完成项。
+
 ### Routing / 自车变道意图标注
 
 `/intent-labeling` 是与三分类 Review 隔离的人工标注页。页面路由、标注 API
