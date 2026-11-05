@@ -145,11 +145,11 @@ def _snapshot(ra_root: Path | None = None, data_dir: Path | None = None) -> dict
             # Both projections reuse the same queue and validated receipts.
             try:
                 cohort = CloseupCohort(ra_root)
-            except (OSError, ValueError, TypeError, KeyError) as error:
-                cohort = error
+            except (OSError, ValueError, TypeError, KeyError):
+                cohort = None
             try:
-                if isinstance(cohort, Exception):
-                    raise cohort
+                if cohort is None:
+                    raise ValueError("unavailable closeup snapshot")
                 result["media_daily"] = media_snapshot(ra_root, closeup=cohort)
                 result["sources"]["media_daily"] = "ready"
             except (OSError, ValueError, TypeError, AttributeError):
@@ -160,8 +160,9 @@ def _snapshot(ra_root: Path | None = None, data_dir: Path | None = None) -> dict
             except (OSError, ValueError, TypeError, KeyError):
                 result["closeup"] = {"state": "unavailable", "stale": True}
             try:
-                if isinstance(cohort, Exception):
-                    raise cohort
+                # A disabled version source needs no closeup evidence. If the
+                # shared load failed, let this source check its own activation
+                # before attempting its independent fallback read.
                 result['incremental'] = version_status(ra_root, data_dir, closeup=cohort)
             except (OSError,ValueError,TypeError,KeyError):
                 result['incremental'] = {'enabled':True,'stale':True,'states':{},'datasets':[],'media':{}}

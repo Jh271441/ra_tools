@@ -61,7 +61,7 @@ class DailyCronSourceTest(unittest.TestCase):
         self.assertEqual(result["closeup"], {"state": "unavailable", "stale": True})
         self.assertNotIn("private", json.dumps(result))
 
-    def test_unavailable_shared_queue_retains_monitor_and_progress(self):
+    def test_unavailable_shared_queue_retains_monitor_progress_and_disabled_version(self):
         with patch.object(cron_source, "_fetch", side_effect=lambda key: {"daily": {}} if key == "overview" else [] if key == "history" else {"state": "idle"}), \
              patch.object(cron_source, "CloseupCohort", side_effect=ValueError("private")), \
              patch.object(cron_source, "closeup_status", return_value={"state": "idle"}), \
@@ -69,7 +69,7 @@ class DailyCronSourceTest(unittest.TestCase):
             result = cron_source._snapshot(Path("/source"), Path("/data"))
         self.assertEqual(result["sources"]["overview"], "ready")
         self.assertEqual(result["sources"]["media_daily"], "unavailable")
-        self.assertTrue(result["incremental"]["stale"])
+        self.assertIsNone(result["incremental"])
         self.assertEqual(result["closeup"], {"state": "idle"})
 
     def test_independent_sources_and_private_fields(self):
