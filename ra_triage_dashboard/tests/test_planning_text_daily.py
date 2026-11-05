@@ -8,6 +8,7 @@ from unittest.mock import patch
 from ra_triage_dashboard.app.planning_text_artifact import build_result, identity, write_artifact, load_artifact
 from ra_triage_dashboard.app.planning_text_daily import register_owner, import_artifact, read_daily_window, index_path, cohort_counts, transfer_owner, capture_owner
 from ra_triage_dashboard.app.planning_constraint_index import read_saved_window
+from ra_triage_dashboard.app import planning_text_daily
 
 ANCHOR = 1790000000000
 MEMBER = dict(issue_id='cn1234', trip_id='trip-unit', anchor_ms=ANCHOR, version='1016', datasets=['version-20261016'])
@@ -24,6 +25,35 @@ def observation(ms, *, status='ready', ns=0, failed=False):
 
 
 class PlanningTextTest(unittest.TestCase):
+    def test_related_cohort_counts_share_index_without_merging_identities(self):
+        self.publish()
+        exact = {MEMBER['issue_id']: {'trip_id': MEMBER['trip_id'], 'ra_start_timestamp': ANCHOR}}
+        wrong = {MEMBER['issue_id']: {'trip_id': 'another-trip', 'ra_start_timestamp': ANCHOR}}
+        cohorts = {'version': exact, 'different_capture': wrong, 'all': {**exact, 'cn9999': {'trip_id': 'missing', 'ra_start_timestamp': ANCHOR}}, 'empty': {}}
+        expected = {key: cohort_counts(self.data, targets) for key, targets in cohorts.items()}
+        with patch.object(planning_text_daily, '_cohort_states', wraps=planning_text_daily._cohort_states) as reader:
+            actual = planning_text_daily.cohort_counts_many(self.data, cohorts)
+        self.assertEqual(actual, expected)
+        self.assertEqual(reader.call_count, 1)
+        self.assertEqual(actual['different_capture']['unknown'], 1)
+        self.assertEqual(actual['all']['selected'], 2)
+
+    def test_group_count_failure_does_not_turn_other_scopes_into_unknown(self):
+        targets = {'cn1234': {'trip_id': 'trip', 'ra_start_timestamp': ANCHOR}}
+        other = {'cn5678': {'trip_id': 'trip', 'ra_start_timestamp': ANCHOR}}
+        with patch.object(planning_text_daily, '_cohort_states', return_value={
+            ('cn1234', 'trip', ANCHOR): ('collected', 400),
+            ('cn5678', 'trip', ANCHOR): ('invalid-state', 400),
+        }):
+            results = planning_text_daily.cohort_counts_many(self.data, {'ready': targets, 'invalid': other, 'empty': {}})
+        self.assertEqual(results['ready']['collected'], 1)
+        self.assertEqual(results['invalid'], {'selected': 1, 'status': 'unavailable'})
+        self.assertEqual(results['empty']['status'], 'ready')
+        with patch.object(planning_text_daily, '_cohort_states', side_effect=ValueError('corrupt-index')):
+            failed = planning_text_daily.cohort_counts_many(self.data, {'invalid': targets, 'empty': {}})
+        self.assertEqual(failed['invalid'], {'selected': 1, 'status': 'unavailable'})
+        self.assertEqual(failed['empty']['status'], 'ready')
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

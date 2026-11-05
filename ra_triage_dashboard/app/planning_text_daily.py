@@ -223,58 +223,82 @@ def read_daily_window(data_dir, issue_id, offset_ms=None, timestamp_ms=None, *, 
         return {**base, "status": "unavailable", "reason": "index_unavailable"}
 
 
+def _cohort_states(data_dir):
+    """Read the bounded identity/status projection once for related cohorts."""
+    by_identity = {}
+    historical = Path(data_dir) / "planning_constraints/history.sqlite3"
+    if historical.exists():
+        historical.resolve().relative_to(Path(data_dir).resolve())
+        if historical.is_symlink() or historical.stat().st_size > 2 * 1024**3:
+            raise ValueError("invalid_planning_history")
+        with closing(sqlite3.connect(historical.absolute().as_uri() + "?mode=ro&immutable=1", uri=True, timeout=.1)) as db:
+            deadline = time.monotonic() + .25
+            db.set_progress_handler(lambda: int(time.monotonic() > deadline), 1000)
+            if (db.execute("PRAGMA application_id").fetchone()[0] != 0x50434958
+                    or db.execute("PRAGMA user_version").fetchone()[0] != 1
+                    or db.execute("SELECT extractor_version,source FROM configuration WHERE id=1").fetchone() != (VERSION, SOURCE)):
+                raise ValueError("invalid_planning_history")
+            rows = db.execute("SELECT issue_id,trip_id,anchor_ms,metadata_json FROM issues LIMIT 20001").fetchall()
+            if len(rows) > 20000:
+                raise ValueError("oversized_planning_cohort")
+            for iid, trip, anchor, raw in rows:
+                if len(raw) > 65536:
+                    raise ValueError("oversized_planning_metadata")
+                meta = json.loads(raw)
+                by_identity[(iid, trip, anchor)] = (meta["source_status"], meta["source_frame_count"])
+    if index_path(data_dir).exists():
+        with closing(_reader(data_dir)) as db:
+            rows = db.execute("SELECT issue_id,trip_id,anchor_ms,state,metadata_json FROM captures LIMIT 20001").fetchall()
+            if len(rows) > 20000:
+                raise ValueError("oversized_planning_cohort")
+            for iid, trip, anchor, state, raw in rows:
+                if len(raw) > 65536:
+                    raise ValueError("oversized_planning_metadata")
+                key = iid, trip, anchor
+                if state != "pending" or key not in by_identity:
+                    by_identity[key] = state, json.loads(raw).get("frame_count", 0)
+    return by_identity
+
+
+def cohort_counts_many(data_dir, cohorts):
+    """Project each scope independently from one read-only index snapshot."""
+    results = {}
+    active = {}
+    for key, targets in cohorts.items():
+        result = {"selected": len(targets), "status": "ready", "with_frames": 0,
+                  "collected": 0, "partial_source": 0, "failed": 0, "pending": 0, "unknown": 0}
+        if data_dir is None:
+            result.update(status="not_activated", unknown=len(targets))
+        elif targets:
+            active[key] = targets
+        results[key] = result
+    if not active:
+        return results
+    try:
+        by_identity = _cohort_states(data_dir)
+    except (OSError, ValueError, TypeError, KeyError, sqlite3.Error):
+        for key, targets in active.items():
+            results[key] = {"selected": len(targets), "status": "unavailable"}
+        return results
+    for key, targets in active.items():
+        result = results[key]
+        try:
+            for iid, expected in targets.items():
+                anchor = expected.get("capture_timestamp_ms") or expected.get("ra_start_timestamp")
+                found = by_identity.get((iid, expected.get("trip_id"), anchor))
+                if not found:
+                    result["unknown"] += 1
+                    continue
+                state, frames = found
+                if state not in {"collected", "partial_source", "failed", "pending"} or type(frames) is not int or frames < 0:
+                    raise ValueError("invalid_planning_cohort_state")
+                result[state] += 1
+                result["with_frames"] += int(frames > 0)
+        except (ValueError, TypeError, KeyError):
+            results[key] = {"selected": len(targets), "status": "unavailable"}
+    return results
+
+
 def cohort_counts(data_dir, targets):
     """Reuse exact historical identities; never scan the frame tables for counts."""
-    result = {"selected": len(targets), "status": "ready", "with_frames": 0,
-              "collected": 0, "partial_source": 0, "failed": 0, "pending": 0, "unknown": 0}
-    if data_dir is None:
-        return {**result, "status": "not_activated", "unknown": len(targets)}
-    if not targets:
-        return result
-    try:
-        by_identity = {}
-        historical = Path(data_dir) / "planning_constraints/history.sqlite3"
-        if historical.exists():
-            historical.resolve().relative_to(Path(data_dir).resolve())
-            if historical.is_symlink() or historical.stat().st_size > 2 * 1024**3:
-                raise ValueError("invalid_planning_history")
-            with closing(sqlite3.connect(historical.absolute().as_uri() + "?mode=ro&immutable=1", uri=True, timeout=.1)) as db:
-                deadline = time.monotonic() + .25
-                db.set_progress_handler(lambda: int(time.monotonic() > deadline), 1000)
-                if (db.execute("PRAGMA application_id").fetchone()[0] != 0x50434958
-                        or db.execute("PRAGMA user_version").fetchone()[0] != 1
-                        or db.execute("SELECT extractor_version,source FROM configuration WHERE id=1").fetchone() != (VERSION, SOURCE)):
-                    raise ValueError("invalid_planning_history")
-                rows = db.execute("SELECT issue_id,trip_id,anchor_ms,metadata_json FROM issues LIMIT 20001").fetchall()
-                if len(rows) > 20000:
-                    raise ValueError("oversized_planning_cohort")
-                for iid, trip, anchor, raw in rows:
-                    if len(raw) > 65536:
-                        raise ValueError("oversized_planning_metadata")
-                    meta = json.loads(raw)
-                    by_identity[(iid, trip, anchor)] = (meta["source_status"], meta["source_frame_count"])
-        if index_path(data_dir).exists():
-            with closing(_reader(data_dir)) as db:
-                rows = db.execute("SELECT issue_id,trip_id,anchor_ms,state,metadata_json FROM captures LIMIT 20001").fetchall()
-                if len(rows) > 20000:
-                    raise ValueError("oversized_planning_cohort")
-                for iid, trip, anchor, state, raw in rows:
-                    if len(raw) > 65536:
-                        raise ValueError("oversized_planning_metadata")
-                    key = iid, trip, anchor
-                    if state != "pending" or key not in by_identity:
-                        by_identity[key] = state, json.loads(raw).get("frame_count", 0)
-        for iid, expected in targets.items():
-            anchor = expected.get("capture_timestamp_ms") or expected.get("ra_start_timestamp")
-            found = by_identity.get((iid, expected.get("trip_id"), anchor))
-            if not found:
-                result["unknown"] += 1
-                continue
-            state, frames = found
-            if state not in {"collected", "partial_source", "failed", "pending"} or type(frames) is not int or frames < 0:
-                raise ValueError("invalid_planning_cohort_state")
-            result[state] += 1
-            result["with_frames"] += int(frames > 0)
-        return result
-    except (OSError, ValueError, TypeError, KeyError, sqlite3.Error):
-        return {"selected": len(targets), "status": "unavailable"}
+    return cohort_counts_many(data_dir, {"cohort": targets})["cohort"]

@@ -26,6 +26,12 @@ class CloseupVideoTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root, path, receipt = self.fixture(tmp)
             index = CloseupVideoIndex(root, "/manual")
+            identity = index.capture_identity("cn123", "version_scope")
+            self.assertEqual(identity, dict(trip_id="trip1", anchor_ms=receipt["anchor_ms"], producer=None))
+            identity["trip_id"] = "mutated"
+            self.assertEqual(index.capture_identity("cn123", "version_scope")["trip_id"], "trip1")
+            self.assertIsNone(index.capture_identity("cn123", "other_scope"))
+            self.assertIsNone(index.capture_identity("../cn123", "version_scope"))
             self.assertEqual(index.descriptor("cn123", "version_scope")["url"], "/manual/api/assets/cn123/bev-closeup-video")
             self.assertIsNone(index.descriptor("cn123", "other_scope"))
             self.assertIsNone(index.descriptor("../cn123", "version_scope"))
@@ -33,6 +39,7 @@ class CloseupVideoTest(unittest.TestCase):
             for patch in (dict(video_path="../../outside.mp4"), dict(time_observations_verified=False), dict(frame_count=399), dict(recipe_id="old-preview")):
                 path.write_text(json.dumps(dict(receipt, **patch)))
                 self.assertIsNone(CloseupVideoIndex(root).descriptor("cn123", "version_scope"))
+                self.assertIsNone(CloseupVideoIndex(root).capture_identity("cn123", "version_scope"))
 
     def test_tracks_preserve_original_and_reject_anchor_mismatch(self):
         with tempfile.TemporaryDirectory() as tmp:

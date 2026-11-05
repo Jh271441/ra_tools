@@ -4,6 +4,7 @@ import io
 import json
 from pathlib import Path
 import subprocess
+import threading
 import unittest
 from unittest.mock import patch
 
@@ -11,6 +12,66 @@ from ra_triage_dashboard.app import cron_source
 
 
 class DailyCronSourceTest(unittest.TestCase):
+    def test_local_sources_overlap_monitor_wait_and_share_closeup_snapshot(self):
+        cohort = object()
+        media_started = threading.Event()
+        version_started = threading.Event()
+
+        def fetch(key):
+            if key == "overview":
+                self.assertTrue(media_started.wait(3))
+                self.assertTrue(version_started.wait(3))
+                return {"daily": {"runs": []}}
+            return [] if key == "history" else {"state": "idle"}
+
+        def media(root, *, closeup):
+            self.assertIs(closeup, cohort)
+            media_started.set()
+            return {"runs": []}
+
+        def version(root, data, *, closeup):
+            self.assertIs(closeup, cohort)
+            version_started.set()
+            self.assertTrue(media_started.wait(3))
+            return {"versions": []}
+
+        with patch.object(cron_source, "_fetch", side_effect=fetch), \
+             patch.object(cron_source, "CloseupCohort", return_value=cohort) as factory, \
+             patch.object(cron_source, "media_snapshot", side_effect=media), \
+             patch.object(cron_source, "version_status", side_effect=version), \
+             patch.object(cron_source, "closeup_status", return_value={"state": "idle"}), \
+             patch.object(cron_source, "add_main_timings"):
+            result = cron_source._snapshot(Path("/source"), Path("/data"))
+        factory.assert_called_once_with(Path("/source"))
+        self.assertEqual(result["sources"], {"overview": "ready", "history": "ready", "sidecar": "ready", "media_daily": "ready"})
+        self.assertEqual(result["incremental"], {"versions": []})
+
+    def test_failed_local_projection_does_not_hide_independent_sources(self):
+        with patch.object(cron_source, "_fetch", side_effect=lambda key: {"daily": {}} if key == "overview" else [] if key == "history" else {"state": "idle"}), \
+             patch.object(cron_source, "CloseupCohort", return_value=object()), \
+             patch.object(cron_source, "media_snapshot", side_effect=OSError("private")), \
+             patch.object(cron_source, "version_status", return_value={"versions": ["kept"]}), \
+             patch.object(cron_source, "closeup_status", side_effect=ValueError("private")), \
+             patch.object(cron_source, "add_main_timings"):
+            result = cron_source._snapshot(Path("/source"), Path("/data"))
+        self.assertEqual(result["sources"]["overview"], "ready")
+        self.assertEqual(result["sources"]["media_daily"], "unavailable")
+        self.assertIsNone(result["media_daily"])
+        self.assertEqual(result["incremental"], {"versions": ["kept"]})
+        self.assertEqual(result["closeup"], {"state": "unavailable", "stale": True})
+        self.assertNotIn("private", json.dumps(result))
+
+    def test_unavailable_shared_queue_retains_monitor_and_progress(self):
+        with patch.object(cron_source, "_fetch", side_effect=lambda key: {"daily": {}} if key == "overview" else [] if key == "history" else {"state": "idle"}), \
+             patch.object(cron_source, "CloseupCohort", side_effect=ValueError("private")), \
+             patch.object(cron_source, "closeup_status", return_value={"state": "idle"}), \
+             patch.object(cron_source, "add_main_timings"):
+            result = cron_source._snapshot(Path("/source"), Path("/data"))
+        self.assertEqual(result["sources"]["overview"], "ready")
+        self.assertEqual(result["sources"]["media_daily"], "unavailable")
+        self.assertTrue(result["incremental"]["stale"])
+        self.assertEqual(result["closeup"], {"state": "idle"})
+
     def test_independent_sources_and_private_fields(self):
         payload = {
             "collected_at": 123, "command": "private command", "daily": {

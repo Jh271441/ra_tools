@@ -28,6 +28,9 @@ class CloseupCohort:
             settings = Settings.from_env()
             media_root = Path(os.getenv("DASHBOARD_MEDIA_LAYOUT_ROOT") or settings.data_dir / "media_layouts")
         self.index = CloseupVideoIndex(Path(media_root) / "bev_closeup")
+        # The same members occur in per-version and overall projections. Keep
+        # their validated receipt private to this snapshot, including misses.
+        self._receipts = {}
         self.fallback = CloseupFallback(self.root)
         self.retries = CloseupRetries(self.root)
         self.jobs = {}
@@ -69,7 +72,13 @@ class CloseupCohort:
             if not isinstance(trip, str) or not trip or type(anchor) is not int or anchor <= 0 or not scope:
                 unknown.add(iid)
                 continue
-            receipt = self.index.receipt(iid, scope)
+            key = iid, scope
+            if key not in self._receipts:
+                receipt = self.index.capture_identity(iid, scope)
+                if len(self._receipts) < 4000:
+                    self._receipts[key] = receipt
+            else:
+                receipt = self._receipts[key]
             if receipt and receipt.get("trip_id") == trip and receipt["anchor_ms"] == anchor:
                 verified.add(iid)
                 if receipt.get("producer") == "ares_animation_local":

@@ -15,8 +15,10 @@ from typing import Any
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
 from .timed_cache import TimedSingleFlightCache
+from .cron_closeup_source import CloseupCohort, closeup_status
 from .cron_media_source import media_snapshot
 from .cron_timing import add_main_timings
+from .cron_version_source import version_status
 
 MAX_RESPONSE_BYTES = 2_000_000
 SOURCE_PATHS = {
@@ -137,6 +139,32 @@ def _snapshot(ra_root: Path | None = None, data_dir: Path | None = None) -> dict
     # A missing sidecar/history must not hide the main pipeline, or vice versa.
     with ThreadPoolExecutor(max_workers=3) as pool:
         futures = {key: pool.submit(_fetch, key) for key in SOURCE_PATHS}
+        if ra_root is not None:
+            # Local scans overlap the three network waits, but stay on one
+            # thread: parallel filesystem walks contend and are slower here.
+            # Both projections reuse the same queue and validated receipts.
+            try:
+                cohort = CloseupCohort(ra_root)
+            except (OSError, ValueError, TypeError, KeyError) as error:
+                cohort = error
+            try:
+                if isinstance(cohort, Exception):
+                    raise cohort
+                result["media_daily"] = media_snapshot(ra_root, closeup=cohort)
+                result["sources"]["media_daily"] = "ready"
+            except (OSError, ValueError, TypeError, AttributeError):
+                result["media_daily"] = None
+                result["sources"]["media_daily"] = "unavailable"
+            try:
+                result["closeup"] = closeup_status(ra_root)
+            except (OSError, ValueError, TypeError, KeyError):
+                result["closeup"] = {"state": "unavailable", "stale": True}
+            try:
+                if isinstance(cohort, Exception):
+                    raise cohort
+                result['incremental'] = version_status(ra_root, data_dir, closeup=cohort)
+            except (OSError,ValueError,TypeError,KeyError):
+                result['incremental'] = {'enabled':True,'stale':True,'states':{},'datasets':[],'media':{}}
         for key, future in futures.items():
             try:
                 result[key] = projectors[key](future.result())
@@ -144,26 +172,8 @@ def _snapshot(ra_root: Path | None = None, data_dir: Path | None = None) -> dict
             except (OSError, ValueError, TypeError):
                 result[key] = None
                 result["sources"][key] = "unavailable"
-    if result.get("overview") is not None:
-        add_main_timings(result["overview"], ra_root)
-    if ra_root is not None:
-        try:
-            result["media_daily"] = media_snapshot(ra_root)
-            result["sources"]["media_daily"] = "ready"
-        except (OSError, ValueError, TypeError, AttributeError):
-            result["media_daily"] = None
-            result["sources"]["media_daily"] = "unavailable"
-    if ra_root is not None:
-        try:
-            from .cron_closeup_source import closeup_status
-            result["closeup"] = closeup_status(ra_root)
-        except (OSError, ValueError, TypeError, KeyError):
-            result["closeup"] = {"state": "unavailable", "stale": True}
-        try:
-            from .cron_version_source import version_status
-            result['incremental'] = version_status(ra_root, data_dir)
-        except (OSError,ValueError,TypeError,KeyError):
-            result['incremental'] = {'enabled':True,'stale':True,'states':{},'datasets':[],'media':{}}
+            if key == "overview" and result[key] is not None:
+                add_main_timings(result[key], ra_root)
     return result
 
 

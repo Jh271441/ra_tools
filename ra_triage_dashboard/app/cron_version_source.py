@@ -58,7 +58,7 @@ def media_counts(targets, reused, published, failed, queued, closeup=None):
     return result
 
 
-def version_status(root, data_dir=None):
+def version_status(root, data_dir=None, *, closeup=None):
     state = (
         Path(root).resolve().parent
         / "ra_auto_triage_deploy/state/version_incremental_v3"
@@ -75,9 +75,10 @@ def version_status(root, data_dir=None):
     from .runtime import database
 
     datasets = database.list_version_datasets()
-    from .planning_text_daily import cohort_counts
+    from .planning_text_daily import cohort_counts_many
     from .cron_closeup_source import CloseupCohort
-    closeup = CloseupCohort(root)
+    if closeup is None:
+        closeup = CloseupCohort(root)
     targets_by_family = defaultdict(dict)
     with database.connect() as conn:
         target_rows = conn.execute(
@@ -121,6 +122,10 @@ def version_status(root, data_dir=None):
                       | {str(d["release_family"]) for d in datasets}
                       | set(queue_states or {}), reverse=True)
     families = [f for f in families if re.fullmatch(r"\d{8}", f)]
+    planning_counts = cohort_counts_many(data_dir, {
+        **{family: targets_by_family[family] for family in families},
+        "all": targets,
+    })
     from .cron_incremental_history import incremental_history
     return {
         "enabled": True,
@@ -130,7 +135,7 @@ def version_status(root, data_dir=None):
                       "states": (queue_states or {}).get(family),
                       "states_status": "ready" if queue_states is not None and family in queue_states else "unavailable",
                       "media": media_counts(targets_by_family[family], reused, published, failed, queued, closeup),
-                      "planning_text": cohort_counts(data_dir, targets_by_family[family])}
+                      "planning_text": planning_counts[family]}
                      for family in families],
         "updated_at": heartbeat.get("checked_at"),
         "stale": time.time() - heartbeat.get("checked_at", 0) > 1200,
@@ -140,5 +145,5 @@ def version_status(root, data_dir=None):
         "increments": incremental_history(state, control, datasets, database),
         "datasets": datasets,
         "media": media_counts(targets, reused, published, failed, queued, closeup),
-        "planning_text": cohort_counts(data_dir, targets),
+        "planning_text": planning_counts["all"],
     }

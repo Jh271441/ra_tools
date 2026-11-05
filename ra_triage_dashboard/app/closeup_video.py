@@ -22,11 +22,23 @@ class CloseupVideoIndex:
         self.root = root.resolve()
         self.base_path = base_path
         self.cache = TimedSingleFlightCache(ttl_seconds=15, max_entries=4000)
+        self.identity_cache = TimedSingleFlightCache(ttl_seconds=15, max_entries=4000)
 
     def receipt(self, issue_id: str, scope: str):
         if not ISSUE_RE.fullmatch(issue_id):
             return None
         return self.cache.get_or_load((issue_id, scope), lambda: self._load(issue_id, scope))
+
+    def capture_identity(self, issue_id: str, scope: str):
+        """Validate the same receipt/assets, copying only fields used by counts."""
+        if not ISSUE_RE.fullmatch(issue_id):
+            return None
+
+        def load():
+            row = self._load(issue_id, scope)
+            return {key: row.get(key) for key in ("trip_id", "anchor_ms", "producer")} if row else None
+
+        return self.identity_cache.get_or_load((issue_id, scope), load)
 
     def _load(self, issue_id, scope):
         try:

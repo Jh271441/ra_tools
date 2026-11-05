@@ -188,9 +188,10 @@ def _day(root, report, bags, day, replacement, observed_at=None, closeup=None):
     )
 
 
-def media_snapshot(ra_root: Path) -> dict:
+def media_snapshot(ra_root: Path, *, closeup=None) -> dict:
     from .cron_closeup_source import CloseupCohort
-    closeup = CloseupCohort(ra_root)
+    if closeup is None:
+        closeup = CloseupCohort(ra_root)
     report = ra_root / "reports" / "manual_sidecar_20261019"
     bags = ra_root / "bags" / "manual_sidecar_20261019"
     heartbeat = _read(ra_root, report / "heartbeat.json")

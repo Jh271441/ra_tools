@@ -22,8 +22,9 @@ def timestamp(value):
     return value if value and value > 0 else None
 
 
-def read_receipt(root: Path, path: Path, fallback=None):
-    if root.resolve() not in path.resolve().parents or path.is_symlink():
+def read_receipt(root: Path, path: Path, fallback=None, *, resolved_root=None):
+    resolved_root = root.resolve() if resolved_root is None else resolved_root
+    if resolved_root not in path.resolve().parents or path.is_symlink():
         raise ValueError("timing receipt escapes root")
     try:
         with path.open("rb") as stream:
@@ -55,18 +56,19 @@ def timing(start=None, end=None, *, seconds=None, running=False, observed_at=Non
     return result
 
 
-def receipt_span(root, cases, members, stage, *, expected, observed_at):
+def receipt_span(root, cases, members, stage, *, expected, observed_at, resolved_root=None):
+    resolved_root = root.resolve() if resolved_root is None else resolved_root
     starts, ends = [], []
     for iid in members:
         folder = cases / iid / stage
         for attempt in sorted(folder.glob("attempt_*"))[:20]:
             match = ATTEMPT.fullmatch(attempt.name)
-            if match and not attempt.is_symlink() and root.resolve() in attempt.resolve().parents and (attempt / "intent.json").is_file():
+            if match and not attempt.is_symlink() and resolved_root in attempt.resolve().parents and (attempt / "intent.json").is_file():
                 # workflow._mutate persists time.time_ns() in the attempt name.
                 value = int(match[1]) / 1_000_000_000
                 if value <= observed_at + 5:
                     starts.append(value)
-        receipt = read_receipt(root, folder / "verified.json", {})
+        receipt = read_receipt(root, folder / "verified.json", {}, resolved_root=resolved_root)
         end = timestamp(receipt.get("verified_at")) if isinstance(receipt, dict) else None
         if end and end <= observed_at + 5:
             ends.append(end)
@@ -81,6 +83,7 @@ def receipt_span(root, cases, members, stage, *, expected, observed_at):
 def add_main_timings(overview: dict, ra_root: Path | None):
     as_of = timestamp(overview.get("collected_at"))
     daily = overview.get("daily", {})
+    resolved_root = None
     for index, run in enumerate(daily.get("runs", [])):
         run.pop("timing_error", None)
         active = run.get("health") == "running"
@@ -93,7 +96,9 @@ def add_main_timings(overview: dict, ra_root: Path | None):
         root = ra_root.parent / "ra_auto_triage_deploy"
         work = root / "state/pipeline_v1" / run["id"]
         try:
-            registration = read_receipt(root, work / "registration.json", {})
+            if resolved_root is None:
+                resolved_root = root.resolve()
+            registration = read_receipt(root, work / "registration.json", {}, resolved_root=resolved_root)
             if (registration.get("run_id") != run["id"] or
                     registration.get("scope", {}).get("date_cst") != run.get("target_date_cst") or
                     timestamp(registration.get("started_at")) != timestamp(run.get("started_at"))):
@@ -113,18 +118,18 @@ def add_main_timings(overview: dict, ra_root: Path | None):
                     pass
             stages["main-query"] = timing(max(launches) if launches else None, run.get("started_at"),
                 kind="span", basis="launch_to_registration", observed_at=as_of)
-            cohort = read_receipt(root, work / "publication_cohort.json", {})
+            cohort = read_receipt(root, work / "publication_cohort.json", {}, resolved_root=resolved_root)
             included = cohort.get("included_ids", [])
             if (cohort.get("run_id") != run["id"] or not isinstance(included, list) or
                     len(included) > MAX_MEMBERS or any(not isinstance(i, str) or not ISSUE.fullmatch(i) for i in included) or len(set(included)) != len(included) or
                     not re.fullmatch(r"[a-f0-9]{64}", str(cohort.get("selection_sha256", ""))) or
                     cohort.get("selection_sha256") != registration.get("selection_sha256")):
                 continue
-            stages["main-publish"] = receipt_span(root, work / "cases", included, "publication", expected=len(included), observed_at=as_of)
-            plan = read_receipt(root, work / "review_plan.json", {})
+            stages["main-publish"] = receipt_span(root, work / "cases", included, "publication", expected=len(included), observed_at=as_of, resolved_root=resolved_root)
+            plan = read_receipt(root, work / "review_plan.json", {}, resolved_root=resolved_root)
             sampled = plan.get("sampled_ids", [])
             if isinstance(sampled, list) and len(sampled) <= MAX_MEMBERS and all(isinstance(i, str) and i in included for i in sampled) and len(set(sampled)) == len(sampled):
-                stages["main-verify"] = receipt_span(root, work / "cases", sampled, "sample_hook", expected=len(sampled), observed_at=as_of)
+                stages["main-verify"] = receipt_span(root, work / "cases", sampled, "sample_hook", expected=len(sampled), observed_at=as_of, resolved_root=resolved_root)
             # This is a measured boundary-to-boundary span, including preparation;
             # it is not the sum of per-case model runtimes.
             publish_start = stages["main-publish"]["started_at"]

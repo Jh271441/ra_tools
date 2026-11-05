@@ -5,6 +5,7 @@ import time
 import unittest
 import sqlite3
 import hashlib
+from unittest.mock import patch
 
 from ra_triage_dashboard.app.cron_closeup_source import closeup_status, CloseupCohort, task_root
 from ra_triage_dashboard.app.closeup_video import RECIPE_ID
@@ -37,7 +38,11 @@ class CloseupStatusTest(unittest.TestCase):
                 (folder/'receipt.json').write_text(json.dumps(dict(row,**overrides)))
             receipt('cn1',producer='ares_animation_local'); receipt('cn2'); receipt('cn5',anchor_ms=999); receipt('cn6',scopes=['other'])
             before = (queue/'queue.sqlite3').read_bytes()
-            result = CloseupCohort(root/'ra_auto_triage',media).project(targets,{'cn1','cn3','cn5','retired'})
+            cohort = CloseupCohort(root/'ra_auto_triage',media)
+            with patch.object(cohort.index, 'capture_identity', wraps=cohort.index.capture_identity) as reader:
+                result = cohort.project(targets,{'cn1','cn3','cn5','retired'})
+                self.assertEqual(cohort.project(targets,{'cn1','cn3','cn5','retired'}),result)
+                self.assertEqual(reader.call_count,len(targets))
             self.assertEqual((result['verified'],result['triple_verified']), (2,1))
             self.assertEqual((result['queued'],result['attention'],result['unknown']), (1,1,2))
             self.assertEqual(result['attention_ids'],['cn3'])
@@ -46,7 +51,7 @@ class CloseupStatusTest(unittest.TestCase):
             self.assertNotIn('private',json.dumps(result))
             self.assertEqual(before,(queue/'queue.sqlite3').read_bytes())
             targets['cn1']['trip_id']='wrong'
-            self.assertEqual(CloseupCohort(root/'ra_auto_triage',media).project(targets,{'cn1'})['triple_verified'],0)
+            self.assertEqual(cohort.project(targets,{'cn1'})['triple_verified'],0)
 
     def test_missing_roots_remain_unknown_without_creating_queue(self):
         with tempfile.TemporaryDirectory() as tmp:
