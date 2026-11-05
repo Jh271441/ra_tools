@@ -5,17 +5,19 @@ const root = require('node:path').join(__dirname,'../static/js/');
 const storage = new Map(), nodes = {};
 const state = {activePage:'review',selectedCase:{issue_id:'A'},selectedId:'A',selectedRunId:'run',reviewWorkSplitId:'task',session:{username:'alice',verified:true},backgroundCaseUploads:new Map(),caseRationaleImages:new Map(),reviewUploadTail:Promise.resolve(),savingAnnotation:false};
 let calls=[], deferred=[], contextReads=0, draft={case_rationale:'sent',saved_at:10}, failRefresh=false;
-const s={state,console,Promise,Date,Map,Set,JSON,URL:{revokeObjectURL(){}},crypto:{randomUUID:()=> 'stable-key'},globalThis:null,
+const s={state,console,Promise,Date,Map,Set,JSON,URL:{revokeObjectURL(){},createObjectURL:()=> 'blob:new'},crypto:{randomUUID:()=> 'stable-key'},globalThis:null,
  window:{localStorage:{setItem(k,v){storage.set(k,v);draft=JSON.parse(v)},getItem:k=>storage.get(k)||null},setTimeout:fn=>fn()},
  document:{querySelectorAll:()=>[]},$:(id)=>nodes[id]||null,uiText:(zh,en)=>en,escapeHtml:String,showToast:()=>{},
  currentReviewRunId:()=>state.selectedRunId,reviewDraftReviewer:()=>state.session.username,
  reviewDraftStorageKey:(...x)=>x.join('|'),REVIEW_DRAFT_FIELDS:['case_rationale','note'],
  readReviewDraft:()=>draft,clearReviewDraft:()=>{draft=null},persistReviewDraft:()=>{},annotationTimestamp:()=>100,
  releasePreviewUrlLater:()=>{},acknowledgeLocalChange:()=>{},renderCombinedReviewContextStatus:()=>{},
+ hasDashboardWriteRole:()=>true,combinedReviewContextKey:()=> 'ctx',
  loadCombinedReviewContext:async()=>{contextReads++;if(failRefresh)throw new Error('refresh only')},
  FormData:class{constructor(){this.entries=[]}append(...x){this.entries.push(x)}},
  api:(path,options)=>{calls.push({path,options});return new Promise((resolve,reject)=>deferred.push({resolve,reject}))},
 };s.globalThis=s;vm.createContext(s);
+vm.runInContext(fs.readFileSync(root+'text-input.js','utf8'),s);
 vm.runInContext(fs.readFileSync(root+'review-attachments.js','utf8'),s);
 const tick=()=>new Promise(r=>setImmediate(r));
 function task(issue='A'){
@@ -24,6 +26,27 @@ function task(issue='A'){
  state.caseRationaleImages.set(t.key,[image]);state.backgroundCaseUploads.set(t.key,t);return t;
 }
 (async()=>{
+ // Saved images count toward acceptance limits, before creating new previews.
+ state.combinedReviewLoad={key:'ctx',status:'ready'};
+ state.combinedReviewContext={issue:{issue_id:'A'},case_attachments:Array.from({length:4},()=>({size_bytes:1}))};
+ s.addCaseRationaleImages([{name:'extra.png',type:'image/png',size:1}]);
+ assert.equal(s.caseRationalePendingImages().length,0);
+ state.combinedReviewContext.case_attachments=Array.from({length:3},()=>({size_bytes:8*1024*1024}));
+ s.addCaseRationaleImages([{name:'extra.png',type:'image/png',size:1}]);
+ assert.equal(s.caseRationalePendingImages().length,0);
+ state.combinedReviewContext.case_attachments=[{size_bytes:1}];
+ s.addCaseRationaleImages([{name:'allowed.png',type:'image/png',size:1}]);
+ assert.equal(s.caseRationalePendingImages().length,1);state.caseRationaleImages.clear();
+ // Background success consumes native change before clearing the saved draft.
+ nodes['#annotationForm']={_reviewDraftFields:new Set(['case_rationale'])};
+ s.document.activeElement={matches:()=>true,blur:()=>{draft={case_rationale:'sent'};state.reviewFormDirty=true;}};
+ assert.equal(s.retireSavedCaseReviewDraft(['A','run','task','alice'],{case_rationale:'sent'}, {},state.selectedCase),false);
+ assert.equal(draft,null);assert.equal(nodes['#annotationForm']._reviewDraftFields.size,0);
+ // Even before the first input event, an IME preedit must retain focus/draft.
+ draft={case_rationale:'sent'};s.document.activeElement.dataset={imeComposing:'1'};
+ s.document.activeElement.blur=()=>{throw new Error('IME must keep focus')};
+ assert.equal(s.retireSavedCaseReviewDraft(['A','run','task','alice'],{case_rationale:'sent'}, {},state.selectedCase),true);
+ assert.equal(draft.case_rationale,'sent');s.document.activeElement=null;draft={case_rationale:'sent',saved_at:10};
  // Queue returns without a page-wide submit lock and duplicate enqueue is ignored.
  let t=task();let pending=s.enqueueCaseRationaleUpload(t);s.enqueueCaseRationaleUpload(t);await tick();
  assert.equal(state.savingAnnotation,false);assert.equal(calls.length,1);assert.equal(t.status,'uploading');

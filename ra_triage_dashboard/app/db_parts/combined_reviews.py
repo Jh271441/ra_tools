@@ -23,8 +23,20 @@ def _fingerprint(value: Any) -> str:
 
 class DatabaseCombinedReviewMixin:
     @staticmethod
-    def _append_combined_case_images(conn: Any, revision_id: int, attachments: Sequence[dict[str, Any]], now: str) -> None:
-        for item in attachments:
+    def _append_combined_case_images(
+        conn: Any, revision_id: int, attachments: Sequence[dict[str, Any]], now: str,
+        *, previous_revision_id: int | None,
+    ) -> None:
+        # The caller has validated this actor's exact Issue head in the same
+        # transaction. Reuse immutable files; each revision owns its metadata.
+        retained = [{**dict(row), "id": str(uuid4())} for row in conn.execute(
+            "SELECT * FROM label_attachments WHERE revision_id=? ORDER BY created_at, id",
+            (previous_revision_id,),
+        ).fetchall()]
+        images = [*retained, *attachments]
+        if len(images) > 4 or sum(int(item["size_bytes"]) for item in images) > 24 * 1024 * 1024:
+            raise ValueError("含已保存图片最多 4 张、共 24 MB。 / Including saved images, maximum 4 images and 24 MB total.")
+        for item in images:
             conn.execute("""
                 INSERT INTO label_attachments
                 (id, revision_id, source_review_attachment_id, original_name, stored_name,
@@ -134,7 +146,7 @@ class DatabaseCombinedReviewMixin:
                  str(reviewer_source or "legacy"), current_id, now),
             )
             revision_id = int(cursor.fetchone()["id"]) if self.backend == "postgresql" else int(cursor.lastrowid)
-            self._append_combined_case_images(conn, revision_id, attachments, now)
+            self._append_combined_case_images(conn, revision_id, attachments, now, previous_revision_id=current_id)
             row = conn.execute("SELECT * FROM label_revisions WHERE id=?", (revision_id,)).fetchone()
             notification = append_label_mention_event(self, conn, revision=self._label_revision_dict(row),
                 issue_id=issue_key, baseline_scope=scope, recipients=mention_recipients)
@@ -437,7 +449,9 @@ class DatabaseCombinedReviewMixin:
                     ),
                 )
                 label_revision_id = int(cursor.fetchone()["id"]) if self.backend == "postgresql" else int(cursor.lastrowid)
-                self._append_combined_case_images(conn, label_revision_id, attachments, now)
+                self._append_combined_case_images(
+                    conn, label_revision_id, attachments, now, previous_revision_id=context.get("case_revision_id"),
+                )
                 appended_label_revision_id = label_revision_id
                 case_action = "submitted"
             post_label_state = self.project_issue_label_states(

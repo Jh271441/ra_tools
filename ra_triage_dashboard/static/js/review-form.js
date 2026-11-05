@@ -909,7 +909,7 @@ function renderCombinedReviewContextStatus() {
     || Boolean(state.session?.read_only) || $("#annotationForm")?.dataset.expectedOutputConflict === "1";
 }
 
-async function loadCombinedReviewContext(caseData, {preserveForm = false} = {}) {
+async function loadCombinedReviewContext(caseData, {preserveForm = false, fresh = false} = {}) {
   if (state.selectedCase !== caseData || state.activePage !== "review") return;
   const requestSeq = (state.combinedReviewContextRequestSeq || 0) + 1;
   state.combinedReviewContextRequestSeq = requestSeq;
@@ -927,7 +927,10 @@ async function loadCombinedReviewContext(caseData, {preserveForm = false} = {}) 
     const params = new URLSearchParams();
     if (runId) params.set("model_run_id", runId);
     if (campaignId) params.set("campaign_id", campaignId);
-    const result = await api(`/api/cases/${encodeURIComponent(caseData.issue_id)}/combined-review-context?${params.toString()}`);
+    // After a commit, do not join an older in-flight read with stale head IDs.
+    const request = fresh ? apiRequest : api;
+    const result = await request(`/api/cases/${encodeURIComponent(caseData.issue_id)}/combined-review-context?${params.toString()}`,
+      fresh ? {cache: "no-store"} : {});
     if (!current()) return;
     const context = result.context;
     if (!context?.assigned || String(context.issue?.issue_id || "") !== String(caseData.issue_id)
@@ -1852,40 +1855,19 @@ async function saveCombinedReview(event) {
       showToast(uiText("联合复核已保存", "Combined review saved"));
     }
     clearSavedCaseRationaleImages(imageKey, imageItems);
-    const current = state.selectedCase === caseData && combinedReviewContextKey(caseData) === contextKey;
-    const latestDraft = current ? persistReviewDraft(caseData) : readReviewDraft(...draftScope);
-    const newerDraft = Boolean(latestDraft)
-      && caseUploadDraftSignature(latestDraft) !== caseUploadDraftSignature(submittedDraft);
-    if (current && !newerDraft) {
-      // Blurring an edited textarea emits change. Retire that already-saved
-      // snapshot afterwards, so the browser event cannot recreate a draft.
-      const composer = document.activeElement;
-      if (composer?.closest?.("#reviewPane .review-dropdown")) {
-        closeAllReviewDropdowns();
-        composer.blur();
-      } else if (composer?.matches?.("#combinedCaseRationale, #annotationNote, #reviewExcludeInput")) {
-        composer.blur();
-      }
-    }
-    if (newerDraft) {
-      // Typing during the request is not part of the committed payload.
-      latestDraft.saved_at = Math.max(Date.now(), annotationTimestamp(result.combined_review?.model_review) + 1);
-      try { window.localStorage.setItem(reviewDraftStorageKey(...draftScope), JSON.stringify(latestDraft)); } catch (_) {}
-    } else {
-      // Do not rely on timestamp precision or a later context read to retire a
-      // committed snapshot: server timestamps may be rounded to whole seconds.
-      clearReviewDraft(...draftScope);
-      if (current) $("#annotationForm")?._reviewDraftFields?.clear();
-    }
+    const current = state.activePage === "review" && state.selectedCase === caseData
+      && combinedReviewContextKey(caseData) === contextKey;
+    const newerDraft = retireSavedCaseReviewDraft(draftScope, submittedDraft, result, current ? caseData : null);
     caseData.label_state = (result.combined_review || result.case_label)?.label_state || caseData.label_state;
     delete caseData.label_source_contexts;
     if (current) {
       state.reviewFormDirty = newerDraft || caseRationalePendingImages(caseData).length > 0;
-      try {
-        await loadCombinedReviewContext(caseData);
-      } catch (_) { /* The write succeeded; queue reconciliation can still proceed. */ }
     }
     await refreshReviewAfterSave(navigationContext);
+    if (state.activePage === "review" && state.selectedCase === caseData
+        && combinedReviewContextKey(caseData) === contextKey) {
+      loadCombinedReviewContext(caseData, {preserveForm: newerDraft, fresh: true}).catch(() => {});
+    }
   } catch (error) {
     if (Number(error?.status || 0) === 409 || String(error?.message || "").includes("变化")) {
       showToast("数据已变化，联合提交未写入任何一边；请刷新后重新确认。", true);

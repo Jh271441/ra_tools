@@ -56,14 +56,14 @@ class CombinedReviewWorkflowTest(unittest.TestCase):
             idempotency_key=f"campaign-{run_index}-{workflow}-{','.join(assignees or ['alice'])}",
         )["campaign"]
 
-    def submit(self, campaign, context, *, label="误触发", reviewer="alice", key="submit-1", status="completed", excluded=None, attachments=(), tags=()):
+    def submit(self, campaign, context, *, label="误触发", reviewer="alice", key="submit-1", status="completed", excluded=None, attachments=(), tags=(), rationale="case rationale", update_case_details=False):
         return self.db.submit_combined_review(
             issue_id="cn1", campaign_id=campaign["id"],
             model_run_id=campaign["evaluation_run_id"], reviewer=reviewer,
             reviewer_source="test", reviewer_verified=True,
             model_review_status=status, reason="model reason",
             missing_evidence=["camera"], expected_output=label,
-            tags=list(tags), rationale="case rationale",
+            tags=list(tags), rationale=rationale, update_case_details=update_case_details,
             expected_model_review_storage_id=context["model_review_storage_id"],
             expected_case_revision_id=context["case_revision_id"],
             expected_label_state_fingerprint=context["label_state_fingerprint"],
@@ -194,7 +194,10 @@ class CombinedReviewWorkflowTest(unittest.TestCase):
         self.assertEqual(detail["label_state"], second["label_state"])
         source = detail["label_state"]["sources"][0]
         images = detail["label_source_contexts"][source["label_case_id"]]["revision_attachments"]
-        self.assertEqual(images[str(second["case_revision_id"])][0]["id"], "image-2")
+        self.assertEqual(len(images[str(second["case_revision_id"])]), 2)
+        self.assertIn("image-2", {a["id"] for a in images[str(second["case_revision_id"])]})
+        self.assertNotIn("image-1", {a["id"] for a in second["case_attachments"]})
+        self.assertEqual(self.db.image_attachment_storage_bytes(), 136)
         self.assertNotIn("stored_name", str(images))
         # A failure after image insertion rolls back images and both review halves.
         current = context()
@@ -207,6 +210,55 @@ class CombinedReviewWorkflowTest(unittest.TestCase):
         with self.db.connect() as conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) n FROM combined_review_progress").fetchone()["n"], 1)
 
+    def test_editing_combined_review_retains_exact_own_images_and_history(self):
+        campaign = self.campaign(0, assignees=["alice", "bob"])
+        context = lambda actor="alice": self.db.combined_review_context(issue_id="cn1", campaign_id=campaign["id"], reviewer=actor)
+        item = {"id": "own-image", "original_name": "evidence.png", "stored_name": "own.png",
+                "media_type": "image/png", "size_bytes": 68, "width": 1, "height": 1, "sha256": "f" * 64}
+        original = self.submit(campaign, context(), attachments=[item])
+        # A peer's first vote does not inherit the shared/latest actor's image.
+        peer = self.submit(campaign, context("bob"), reviewer="bob", key="peer")
+        self.assertEqual(peer["case_attachments"], [])
+        stale = context()
+        for number, changes in enumerate([
+            {"rationale": "Edited explanation", "tags": ["queue"]},
+            {"label": "正确触发", "excluded": True},
+            {"rationale": "Edited again"},
+        ]):
+            edited = self.submit(campaign, context(), key=f"edit-{number}", update_case_details=True, **changes)
+            self.assertEqual(edited["case_action"], "submitted")
+            self.assertEqual(len(edited["case_attachments"]), 1)
+            retained = self.db.get_label_attachment(edited["case_attachments"][0]["id"])
+            self.assertEqual(retained["stored_name"], item["stored_name"])
+            self.assertEqual(retained["revision_id"], edited["case_revision_id"])
+            self.assertNotEqual(retained["id"], item["id"])
+            self.assertEqual(self.db.image_attachment_storage_bytes(), 68)
+        with self.assertRaises(AnnotationConflictError):
+            self.submit(campaign, stale, key="stale", update_case_details=True, rationale="Stale")
+        self.assertEqual(context()["case_revision_id"], edited["case_revision_id"])
+        self.assertEqual(self.db.get_label_attachment(item["id"])["revision_id"], original["case_revision_id"])
+        # Comments use another storage directory, even for an identical filename.
+        self.db.create_review_comment(issue_id="cn1", body="image", author="alice", baseline_scope="scope",
+                                      discussion_channel="case", attachments=[{**item, "id": "comment-image"}])
+        self.assertEqual(self.db.image_attachment_storage_bytes(), 136)
+
+    def test_retained_and_new_images_share_limits_and_rollback_both_halves(self):
+        campaign = self.campaign(0)
+        context = lambda: self.db.combined_review_context(issue_id="cn1", campaign_id=campaign["id"], reviewer="alice")
+        def image(number, size):
+            return {"id": f"image-{number}", "original_name": "evidence.png", "stored_name": f"image-{number}.png",
+                    "media_type": "image/png", "size_bytes": size, "width": 1, "height": 1, "sha256": str(number) * 64}
+        first = self.submit(campaign, context(), attachments=[image(i, 8 * 1024 * 1024) for i in range(1, 4)])
+        before = context()
+        for name, images in [("bytes", [image(4, 1)]), ("count", [image(5, 0), image(6, 0)])]:
+            with self.assertRaisesRegex(ValueError, "Including saved images"):
+                self.submit(campaign, before, key=name, attachments=images)
+            self.assertEqual(context()["case_revision_id"], first["case_revision_id"])
+            self.assertEqual(context()["model_review_storage_id"], first["model_review_storage_id"])
+            for item in images:
+                self.assertIsNone(self.db.get_label_attachment(item["id"]))
+        self.assertEqual(self.db.image_attachment_storage_bytes(), 24 * 1024 * 1024)
+
     def test_no_run_case_images_append_without_model_review(self):
         context = self.db.combined_review_context(issue_id="cn1", campaign_id="", reviewer="alice")
         item = {"id": "no-run-image", "original_name": "evidence.png", "stored_name": "image.png",
@@ -215,6 +267,15 @@ class CombinedReviewWorkflowTest(unittest.TestCase):
             expected_output="误触发", tags=[], rationale="evidence", expected_case_revision_id=None,
             expected_label_state_fingerprint=context["label_state_fingerprint"], attachments=[item])
         self.assertEqual(self.db.get_label_attachment(item["id"])["revision_id"], result["case_revision"]["id"])
+        latest = self.db.combined_review_context(issue_id="cn1", campaign_id="", reviewer="alice")
+        edited = self.db.submit_review_case_label(issue_id="cn1", reviewer="alice", reviewer_source="test", reviewer_verified=True,
+            expected_output="误触发", tags=["queue"], rationale="edited evidence", update_case_details=True,
+            expected_case_revision_id=latest["case_revision_id"], expected_label_state_fingerprint=latest["label_state_fingerprint"])
+        images = self.db.combined_review_context(issue_id="cn1", campaign_id="", reviewer="alice")["case_attachments"]
+        self.assertEqual(len(images), 1)
+        self.assertEqual(self.db.get_label_attachment(images[0]["id"])["stored_name"], item["stored_name"])
+        self.assertNotEqual(edited["case_revision"]["id"], result["case_revision"]["id"])
+        self.assertEqual(self.db.image_attachment_storage_bytes(), 68)
         with self.db.connect() as conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) n FROM model_review_revisions").fetchone()["n"], 0)
 

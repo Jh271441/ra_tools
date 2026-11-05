@@ -35,6 +35,7 @@ function fixture() {
       setItem: (key, value) => storage.set(key, value), removeItem: key => storage.delete(key)}},
     $: selector => elements[selector.slice(1)] || null,
     api: async () => ({context}), capturePageContext: () => ({}), isPageContextCurrent: () => true,
+    apiRequest: (...args) => s.api(...args),
     hasDashboardWriteRole: () => true, uiText: zh => zh, escapeHtml: String,
     hasFocusedTextInput: node => node === s.focused, updateTagSummary() {}, updateEvidenceSummary() {},
     syncExpectedOutputFromTags() {}, enhanceNativeUiSelect() {}, renderReviewSummary() {},

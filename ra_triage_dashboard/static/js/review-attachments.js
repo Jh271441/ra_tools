@@ -319,6 +319,12 @@ function caseRationalePendingImages(caseData = state.selectedCase) {
   return state.caseRationaleImages.get(caseRationaleImageKey(caseData)) || [];
 }
 
+function savedCaseRationaleImages(caseData = state.selectedCase) {
+  const context = state.combinedReviewContext;
+  return caseData && String(context?.issue?.issue_id || "") === String(caseData.issue_id)
+    && state.combinedReviewLoad?.key === combinedReviewContextKey(caseData) ? context.case_attachments || [] : [];
+}
+
 function labelImageMarkup(items) {
   return (items || []).map((item) => {
     const url = withBase(`/api/labeling/attachments/${encodeURIComponent(item.id)}`);
@@ -329,16 +335,14 @@ function labelImageMarkup(items) {
 function renderCaseRationaleImages(caseData = state.selectedCase) {
   const list = $("#caseRationaleImageList");
   if (!list || !caseData || state.selectedCase !== caseData) return;
-  const context = state.combinedReviewContext;
-  const saved = String(context?.issue?.issue_id || "") === String(caseData.issue_id)
-    && state.combinedReviewLoad?.key === combinedReviewContextKey(caseData) ? context.case_attachments || [] : [];
+  const saved = savedCaseRationaleImages(caseData);
   const items = caseRationalePendingImages(caseData);
   const upload = caseRationaleUploadTask(caseData);
   list.innerHTML = caseRationaleUploadMarkup(upload) + labelImageMarkup(saved) + items.map((item) => `<div class="pending-screenshot"><img src="${escapeHtml(item.previewUrl)}" alt="${escapeHtml(item.file.name || uiText("待上传标签图片", "Pending label image"))}" /><button type="button" ${upload?.imageItems.some((image) => image.id === item.id) ? "disabled" : ""} data-remove-case-image="${escapeHtml(item.id)}" aria-label="${escapeHtml(uiText("移除待上传图片", "Remove pending image"))}">×</button></div>`).join("");
   list.querySelector("[data-retry-case-upload]")?.addEventListener("click", () => enqueueCaseRationaleUpload(upload));
   list.querySelector("[data-refresh-case-upload]")?.addEventListener("click", async () => {
     try {
-      await loadCombinedReviewContext(caseData);
+      await loadCombinedReviewContext(caseData, {fresh: true});
       state.backgroundCaseUploads.delete(upload.key);
       renderCaseRationaleImages(caseData);
       renderCombinedReviewContextStatus();
@@ -356,12 +360,14 @@ function addCaseRationaleImages(files, caseData = state.selectedCase) {
   if (!hasDashboardWriteRole() || state.session?.read_only || state.selectedCase !== caseData) return;
   const limits = state.config?.review_attachment_limits || {};
   const items = caseRationalePendingImages(caseData);
+  const saved = savedCaseRationaleImages(caseData);
+  const savedBytes = saved.reduce((sum, item) => sum + Number(item.size_bytes || 0), 0);
   const allowed = new Set(limits.media_types || ["image/png", "image/jpeg", "image/webp"]);
   let rejected = false;
   for (const file of files) {
     if (!allowed.has(file.type) || file.size > Number(limits.max_bytes_each || 8388608)
-        || items.length >= Number(limits.max_count || 4)
-        || items.reduce((sum, item) => sum + item.file.size, 0) + file.size > Number(limits.max_bytes_total || 25165824)) {
+        || saved.length + items.length >= Number(limits.max_count || 4)
+        || savedBytes + items.reduce((sum, item) => sum + item.file.size, 0) + file.size > Number(limits.max_bytes_total || 25165824)) {
       rejected = true;
       continue;
     }
@@ -370,7 +376,7 @@ function addCaseRationaleImages(files, caseData = state.selectedCase) {
   state.caseRationaleImages.set(caseRationaleImageKey(caseData), items);
   if (items.length) state.reviewFormDirty = true;
   renderCaseRationaleImages(caseData);
-  if (rejected) showToast(uiText("仅支持 PNG/JPEG/WebP，最多 4 张，单张 8 MB、合计 24 MB。", "PNG/JPEG/WebP only; max 4 images, 8 MB each and 24 MB total."), true);
+  if (rejected) showToast(uiText("仅支持 PNG/JPEG/WebP，含已保存图片最多 4 张，单张 8 MB、合计 24 MB。", "PNG/JPEG/WebP only; including saved images, max 4 images, 8 MB each and 24 MB total."), true);
 }
 
 function clearSavedCaseRationaleImages(key, snapshot) {
@@ -423,6 +429,31 @@ function caseUploadDraftSignature(draft) {
   return JSON.stringify(REVIEW_DRAFT_FIELDS.map((key) => draft?.[key]));
 }
 
+function retireSavedCaseReviewDraft(draftScope, submittedDraft, result, caseData = null) {
+  const draft = (caseData ? persistReviewDraft(caseData) : null) || readReviewDraft(...draftScope);
+  const composer = caseData ? document.activeElement : null;
+  const composing = typeof isImeComposing === "function" && isImeComposing({target: composer});
+  const newerDraft = Boolean(composing || (draft
+    && caseUploadDraftSignature(draft) !== caseUploadDraftSignature(submittedDraft)));
+  if (newerDraft && draft) {
+    // New edits can predate the server commit and still be outside its snapshot.
+    draft.saved_at = Math.max(Date.now(), annotationTimestamp(result.combined_review?.model_review) + 1);
+    try { window.localStorage.setItem(reviewDraftStorageKey(...draftScope), JSON.stringify(draft)); } catch (_) {}
+  } else if (!newerDraft) {
+    // Native change fires on blur. Consume it before retiring the committed
+    // draft, and never interrupt a new IME composition or newer text edit.
+    if (composer?.closest?.("#reviewPane .review-dropdown")) {
+      closeAllReviewDropdowns();
+      composer.blur();
+    } else if (composer?.matches?.("#combinedCaseRationale, #annotationNote, #reviewExcludeInput")) {
+      composer.blur();
+    }
+    clearReviewDraft(...draftScope);
+    if (caseData) $("#annotationForm")?._reviewDraftFields?.clear();
+  }
+  return newerDraft;
+}
+
 function caseRationaleUploadMarkup(task) {
   if (!task) return "";
   const failed = task.status === "failed", conflict = task.conflict;
@@ -460,17 +491,9 @@ function enqueueCaseRationaleUpload(task) {
     // From here the write succeeded. A later display refresh failure must never
     // turn this task into an upload retry or resubmit the saved transaction.
     acknowledgeLocalChange(result);
-    const currentDraft = current() ? persistReviewDraft(state.selectedCase) : null;
-    const draft = currentDraft || readReviewDraft(...task.draftScope);
-    const newerDraft = caseUploadDraftSignature(draft) !== caseUploadDraftSignature(task.draft);
+    const newerDraft = retireSavedCaseReviewDraft(task.draftScope, task.draft, result, current() ? state.selectedCase : null);
     clearSavedCaseRationaleImages(task.key, task.imageItems);
     const moreImages = Boolean(state.caseRationaleImages?.get(task.key)?.length);
-    if (newerDraft && draft) {
-      // Edits made during upload predate the server commit, but are not part of it.
-      const annotation = result.combined_review?.model_review;
-      draft.saved_at = Math.max(Date.now(), annotationTimestamp(annotation) + 1);
-      try { window.localStorage.setItem(reviewDraftStorageKey(...task.draftScope), JSON.stringify(draft)); } catch (_) {}
-    } else clearReviewDraft(...task.draftScope);
     state.backgroundCaseUploads.delete(task.key);
     task.status = "saved";
     state.reviewQueueStale = true;
@@ -480,11 +503,12 @@ function enqueueCaseRationaleUpload(task) {
     caseData.label_state = (result.combined_review || result.case_label)?.label_state || caseData.label_state;
     delete caseData.label_source_contexts;
     state.reviewFormDirty = newerDraft || moreImages;
-    // Display reads cannot turn a committed upload into an upload retry.
-    try {
-      await loadCombinedReviewContext(caseData);
-    } catch (_) { /* Saved is final; the context panel provides refresh retry. */ }
     if (task.navigationContext?.issueId) await refreshReviewAfterSave(task.navigationContext);
+    // Queue navigation must not wait for display reads of the saved Issue.
+    // A retained Issue still needs fresh concurrency tokens, independently.
+    if (current() && state.selectedCase === caseData) {
+      loadCombinedReviewContext(caseData, {preserveForm: newerDraft, fresh: true}).catch(() => {});
+    }
     repaint();
   };
   state.reviewUploadTail = (state.reviewUploadTail || Promise.resolve()).catch(() => {}).then(run);
