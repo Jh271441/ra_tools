@@ -2,7 +2,7 @@
 const {chromium}=require('playwright');
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const base=process.env.TE_PREVIEW_URL||'http://127.0.0.1:50268';
-const out=path.resolve(__dirname,'../../reports/te_correction_preview_20261106');fs.mkdirSync(out,{recursive:true});
+const out=process.env.TE_PREVIEW_OUT||path.resolve(__dirname,'../../reports/te_correction_preview_20261106');fs.mkdirSync(out,{recursive:true});
 (async()=>{
  const browser=await chromium.launch({headless:true});
  const checks=[],errors=[];
@@ -103,7 +103,7 @@ const out=path.resolve(__dirname,'../../reports/te_correction_preview_20261106')
   await page.waitForFunction(()=>rdResults.data?.mode==='rd'&&!rdResults.loading);
   assert.equal(await page.evaluate(()=>document.activeElement.id),'rdMode-rd');
   assert.equal(await page.locator('.rd-upload-target code').last().textContent(),'ra_rd_review_result');
-  assert.equal(await page.locator('[data-rd-id]:checked').count(),0);assert.equal(await page.evaluate(()=>rdResults.overwrite),false);
+  assert.equal(await page.locator('[data-rd-id]:checked').count(),0);assert.equal(await page.locator('#rdOverwrite').count(),0);
   await page.keyboard.press('End');await page.keyboard.press('Space');
   await page.waitForFunction(()=>rdResults.data?.mode==='te-correction'&&!rdResults.loading);
   assert.equal(await page.evaluate(()=>document.activeElement.id),'rdMode-te-correction');
@@ -127,10 +127,10 @@ const out=path.resolve(__dirname,'../../reports/te_correction_preview_20261106')
   await page.locator('[data-rd-mode="rd"]').click();
   await page.waitForFunction(()=>rdResults.data?.mode==='rd');
   assert.equal(await page.locator('.rd-upload-target code').last().textContent(),'ra_rd_review_result');
-  assert.equal(await page.evaluate(()=>rdResults.overwrite),false);
+  assert.equal(await page.locator('#rdOverwrite').count(),0);
   await page.locator('[data-rd-mode="te-correction"]').click();
   await page.waitForFunction(()=>rdResults.data?.mode==='te-correction');
-  assert.equal(await page.evaluate(()=>rdResults.overwrite),false);
+  assert.equal(await page.locator('#rdOverwrite').count(),0);
   await page.evaluate(async()=>{state.selectedBaselineIds=['version-20261016','version-20261009'];rdPersist();await loadRdResults();});
   assert.equal(await page.locator('[data-rd-action="preview"]').isDisabled(),true);
   assert.ok((await page.locator('.is-error').innerText()).includes('版本')||(await page.locator('.is-error').innerText()).includes('version'));
@@ -158,7 +158,7 @@ const out=path.resolve(__dirname,'../../reports/te_correction_preview_20261106')
    await page.waitForFunction(()=>rdTERefreshing()&&!rdResults.busy);
    assert.equal(await page.locator('[data-rd-action="refresh-te"]').isDisabled(),true);
    assert.equal(await page.locator('[data-rd-id]:checked').count(),0);
-   assert.equal(await page.evaluate(()=>rdResults.overwrite),false);
+   assert.equal(await page.locator('#rdOverwrite').count(),0);
    assert.equal(await page.locator('[data-rd-action="preview"]').isDisabled(),true);
    await fits();
    if(width===1440){await page.reload();await page.waitForFunction(()=>rdResults.data&&!rdResults.loading);}

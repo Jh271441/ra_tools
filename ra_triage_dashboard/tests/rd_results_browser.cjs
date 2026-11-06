@@ -29,7 +29,7 @@ const server=http.createServer((req,res)=>{
    document.querySelectorAll('.sidebar-item[data-page-target]').forEach(p=>p.classList.toggle('active',p.dataset.pageTarget==='rd-results'));
    window.fixtureRows=[{issue_id:'cn123',label:'正确触发',group:'resolved',authors:['reviewer_with_a_long_name']},{issue_id:'cn124',label:'误触发',group:'resolved',authors:['reviewer']},{issue_id:'cn125',label:'',group:'conflict',authors:['reviewer']}];
    window.operationFixture=JSON.parse(sessionStorage.getItem('fixture-receipt')||'null');
-   window.fixtureMode='normal';
+   window.fixtureMode='normal';window.fixtureRemote={};
    window.commitMode='success';window.commitCalls=0;window.receiptCalls=0;window.previewMode='immediate';window.previewPolls=0;
    api=async(url,options={})=>{
     if(window.fixtureMode==='error')throw Error('读取失败 / Could not load results');
@@ -60,7 +60,11 @@ const server=http.createServer((req,res)=>{
      const body=JSON.parse(options.body),scope=new URL(url,location.origin).pathname.endsWith('/preview-scope');window.lastPreviewBody=body;
      const scopeRows=window.fixtureRows.filter(r=>r.issue_id.includes(body.q||'')&&(body.status==='all'||r.group===body.status));
      const rows=scope?scopeRows.filter(r=>r.group==='resolved'&&!(body.excluded_issue_ids||[]).includes(r.issue_id)):window.fixtureRows.filter(r=>body.issue_ids.includes(r.issue_id));
-     window.operationFixture={id:'a'.repeat(32),state:'preview',results:[],...(scope?{scope:{total:scopeRows.length,blocked:scopeRows.filter(r=>r.group!=='resolved').length,excluded:(body.excluded_issue_ids||[]).length,q:body.q,status:body.status}}:{}),items:rows.map(r=>({issue_id:r.issue_id,current:null,desired:r.label==='正确触发'?'成功':r.label,status:'pending',eligible:true}))};
+     window.operationFixture={id:'a'.repeat(32),state:'preview',results:[],...(scope?{scope:{total:scopeRows.length,blocked:scopeRows.filter(r=>r.group!=='resolved').length,excluded:(body.excluded_issue_ids||[]).length,q:body.q,status:body.status}}:{}),items:rows.map(r=>{
+      const current=window.fixtureRemote[r.issue_id]??null,desired=r.label==='正确触发'?'成功':r.label;
+      const status=current===desired?'same':current===null?'pending':'conflict';
+      return {issue_id:r.issue_id,current,desired,status,eligible:status==='pending'||status==='conflict'&&body.overwrite===true};
+     })};
      sessionStorage.setItem('fixture-receipt',JSON.stringify(window.operationFixture));
      window.previewPolls=0;
      if(window.previewMode!=='immediate'){window.previewPhase=true;return {...structuredClone(window.operationFixture),state:'preparing',items:[],progress:{stage:'labels',checked:0,total:0}};}
@@ -124,11 +128,7 @@ const server=http.createServer((req,res)=>{
     assert.equal(await checkbox.evaluate(el=>getComputedStyle(el).appearance),'none');
     assert.equal(await checkbox.evaluate(el=>getComputedStyle(el,'::before').content),'""');
    }
-   await page.locator('#rdOverwrite').focus();await page.keyboard.press('Space');
-   assert.equal(await page.locator('#rdOverwrite').isChecked(),true);
-   assert.equal(await page.locator('#rdOverwrite').evaluate(el=>el===document.activeElement),true);
-   await page.keyboard.press('Space');
-   assert.equal(await page.locator('#rdOverwrite').isChecked(),false);
+   assert.equal(await page.locator('#rdOverwrite').count(),0);
    await selectAction('clear');
    await page.locator('[data-rd-id="cn123"]').focus();await page.keyboard.press('Space');
    assert.equal(await page.locator('[data-rd-id="cn123"]').isChecked(),true);
@@ -145,6 +145,7 @@ const server=http.createServer((req,res)=>{
    await page.locator('#rdSearch').fill('cn draft');
    await page.locator('[data-rd-action="preview"]').click();
    const dialog=page.locator('#rdResultsPreview');await dialog.waitFor({state:'visible'});
+   assert.equal(await page.evaluate(()=>window.lastPreviewBody.overwrite),true);
    const box=await dialog.boundingBox();assert.ok(box.x>=0&&box.x+box.width<=width+1);
    assert.ok(await page.evaluate(()=>Math.max(document.documentElement.scrollWidth,document.body.scrollWidth)<=innerWidth+1));
    await page.evaluate(()=>{state.uiLanguage=state.uiLanguage==='zh'?'en':'zh';renderRdResults();});
@@ -172,6 +173,46 @@ const server=http.createServer((req,res)=>{
     await page.screenshot({path:`/tmp/rd-results-${width}.png`,fullPage:width<640});
    }
    checks++;
+  }
+  const updates=[];
+  for(const [width,lang,theme] of [[1440,'zh','dark'],[390,'en','dark'],[320,'en','light']]){
+   await page.setViewportSize({width,height:950});
+   await page.evaluate(async({lang,theme})=>{
+    state.uiLanguage=lang;document.documentElement.dataset.uiLang=lang;document.documentElement.dataset.colorTheme=theme;
+    window.fixtureRemote={cn123:'成功',cn124:'无需协助'};window.commitCalls=0;
+    history.replaceState(null,'','/rd-results?baselines=fixture&status=all');await loadRdResults();
+   },{lang,theme});
+   await selectAction('page');
+   assert.equal(await page.locator('#rdOverwrite').count(),0);
+   await page.locator('[data-rd-action="preview"]').click();await page.waitForSelector('#rdResultsPreview');
+   assert.deepEqual(await page.evaluate(()=>window.lastPreviewBody.issue_ids),['cn123','cn124']);
+   assert.equal(await page.evaluate(()=>window.lastPreviewBody.overwrite),true);
+   assert.deepEqual(await page.evaluate(()=>rdResults.preview.items.map(r=>({id:r.issue_id,current:r.current,desired:r.desired,eligible:r.eligible}))),[
+    {id:'cn123',current:'成功',desired:'成功',eligible:false},
+    {id:'cn124',current:'无需协助',desired:'误触发',eligible:true}
+   ]);
+   const same=page.locator('.rd-preview-details tbody tr').filter({hasText:'cn123'});
+   const changed=page.locator('.rd-preview-details tbody tr').filter({hasText:'cn124'});
+   assert.match(await same.innerText(),/已一致，跳过|Already matches · skip/);
+   assert.match(await changed.innerText(),/覆盖现有结果|Overwrite existing/);
+   assert.equal(await page.evaluate(()=>window.commitCalls),0);
+   assert.equal(await page.locator('[data-rd-action="commit"]').isEnabled(),true);
+   assert.ok(await page.evaluate(()=>Math.max(document.documentElement.scrollWidth,document.body.scrollWidth)<=innerWidth+1));
+   await page.screenshot({path:`/tmp/rd-default-update-${width}.png`,fullPage:true});
+   await page.locator('[data-rd-action="close"]').click();
+   await selectAction('clear');await selectAction('all');
+   await page.locator('[data-rd-action="preview"]').click();await page.waitForSelector('#rdResultsPreview');
+   assert.equal(await page.evaluate(()=>window.lastPreviewBody.overwrite),true);
+   assert.equal(await page.evaluate(()=>window.lastPreviewBody.excluded_issue_ids.length),0);
+   assert.equal(await page.evaluate(()=>rdResults.preview.items.filter(r=>r.eligible).length),1);
+   assert.equal(await page.evaluate(()=>window.commitCalls),0);
+   // Old saved previews keep their frozen eligibility, and direct users to preview again.
+   await page.evaluate(()=>{rdResults.preview.items.find(r=>r.issue_id==='cn124').eligible=false;renderRdResults();});
+   assert.match(await changed.innerText(),/请重新预览|Preview again/);
+   assert.equal(await page.locator('[data-rd-action="commit"]').isEnabled(),false);
+   await page.locator('[data-rd-action="close"]').click();
+   await page.evaluate(()=>{window.fixtureRemote={};});
+   updates.push({width,lang,theme});
   }
   const pagination=[];
   await page.evaluate(()=>{window.originalRows=structuredClone(window.fixtureRows);window.fixtureRows=Array.from({length:103},(_,i)=>({issue_id:`cn${1000+i}`,label:'正确触发',group:'resolved',authors:['reviewer_with_a_long_name']}));window.failureScenario=true;});
@@ -479,6 +520,6 @@ const server=http.createServer((req,res)=>{
    progressChecks.push({width,lang,theme});
   }
   for(const mode of ['empty','error']){await page.evaluate(async mode=>{window.fixtureMode=mode;await loadRdResults();},mode);assert.equal(await page.locator('[data-rd-action="preview"]').isEnabled(),false);assert.ok(await page.evaluate(()=>Math.max(document.documentElement.scrollWidth,document.body.scrollWidth)<=innerWidth+1));}
-  assert.deepEqual(errors,[]);console.log(JSON.stringify({checks,pagination,largePreviews,previews,outcomes,refreshes,progressChecks,states:['normal','empty','error'],errors}));
+  assert.deepEqual(errors,[]);console.log(JSON.stringify({checks,updates,pagination,largePreviews,previews,outcomes,refreshes,progressChecks,states:['normal','empty','error'],errors}));
  }finally{await browser.close();server.close();}
 })().catch(e=>{console.error(e);server.close();process.exitCode=1;});
