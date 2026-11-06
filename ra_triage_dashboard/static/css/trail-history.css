@@ -39,6 +39,15 @@
 .trail-history-section-heading,.trail-history-field-heading { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:6px 12px; }
 .trail-history-section-heading > span { color:var(--muted); font-size:12px; }
 .trail-history-changes { display:grid; gap:12px; }
+.trail-history-label-table-wrap { min-width:0; overflow:hidden; border:1px solid var(--line); border-radius:var(--radius); }
+.trail-history-label-table { width:100%; table-layout:fixed; border-collapse:collapse; text-align:left; font-size:13px; line-height:1.5; }
+.trail-history-label-table caption { padding:10px 12px; text-align:left; color:var(--text); font-size:12px; font-weight:600; }
+.trail-history-label-table th,.trail-history-label-table td { padding:10px 12px; border-top:1px solid var(--line-soft); overflow-wrap:anywhere; vertical-align:top; }
+.trail-history-label-table thead th { color:var(--muted); background:var(--overlay-2); font-size:12px; font-weight:500; }
+.trail-history-label-table tbody th { font-weight:600; }
+.trail-history-label-after { background:var(--accent-soft); }
+.trail-history-label-table .trail-history-status { max-width:100%; box-sizing:border-box; white-space:normal; overflow-wrap:anywhere; font-size:12px; }
+.trail-history-label-table tbody .trail-history-status { display:flex; width:fit-content; margin-top:6px; }
 .trail-history-issue { border:1px solid var(--line); border-radius:var(--radius); padding:14px; display:grid; gap:12px; min-width:0; }
 .trail-history-issue :is(h4,h5) { font:inherit; font-weight:600; margin:0; overflow-wrap:anywhere; }
 .trail-history-issue h5 { font-size:12px; }
@@ -76,6 +85,8 @@
 .trail-history-audit-content h4 { margin:0 0 8px; font-size:12px; font-weight:600; overflow-wrap:anywhere; }
 .trail-history-id { color:var(--muted); overflow-wrap:anywhere; font-size:12px; }
 .trail-history-audit-items { display:grid; gap:14px; }
+.trail-history-audit-fields { display:grid; gap:8px; list-style:none; margin:0; padding:0; }
+.trail-history-audit-fields li { display:flex; gap:8px; flex-wrap:wrap; min-width:0; font-size:12px; }
 .trail-history-audit-items strong { display:block; margin-bottom:6px; font-size:12px; overflow-wrap:anywhere; }
 .trail-history-audit-items .trail-history-diff { font-size:12px; }
 .trail-history-outcomes { list-style:none; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px 16px; padding:0; margin:0; }

@@ -143,19 +143,40 @@ const server=http.createServer(async(req,res)=>{
       await page.locator('#trailHistoryDialog').screenshot({path:path.join(evidenceDir,`detail-desktop-${lang}-${theme}.png`)});
     }
     await setup(390,'en','light');await page.locator('#trailHistoryDialog').screenshot({path:path.join(evidenceDir,'detail-phone-en-light.png')});
-    for(const [width,lang,theme] of [[1440,'zh','dark'],[390,'en','dark'],[320,'en','light']]) {
+    const labelLayouts=[];
+    for(const width of [320,390,1440])for(const lang of ['zh','en'])for(const theme of ['dark','light']) {
       await setup(width,lang,theme);
       await page.evaluate(()=>{
-        trailHistory.detail={...trailHistory.detail,id:'publication-'+ 'a'.repeat(32),source:'te_correction',restorable:false,
-          items:[{issue_id:'cn00000001',field:'ra_review_result_new',before:{value:'误触发'},after:{value:'成功'}}],outcomes:{cn00000001:'succeeded'}};
+        const items=Array.from({length:9},(_,index)=>({issue_id:'cn'+String(index+1).padStart(8,'0'),field:'ra_review_result_new',before:{value:index<3?'无需协助':'正确触发'},after:{value:index===8?'成功':'误触发'}}));
+        const outcomes=Object.fromEntries(items.map(item=>[item.issue_id,'succeeded']));
+        trailHistory.detail={...trailHistory.detail,id:'publication-'+ 'a'.repeat(32),source:'te_correction',restorable:false,items,outcomes,
+          events:trailHistory.detail.events.map(event=>({...event,outcomes:Object.fromEntries(items.map(item=>[item.issue_id,event.status]))}))};
         renderTrailHistoryDetail();
       });
       assert.equal(await page.locator('[data-action="start-restore"]').isVisible(),false);
-      assert.ok((await page.locator('.trail-history-issue').innerText()).includes('ra_review_result_new'));
-      assert.ok(!(await page.locator('.trail-history-issue').innerText()).includes(lang==='zh'?'排除状态':'Exclusion'));
+      const changes=page.locator('.trail-history-changes'),table=changes.locator('table');
+      assert.equal(await table.locator('caption').count(),1);assert.equal(await table.locator('tbody tr').count(),9);
+      assert.equal(await table.locator('thead th').count(),3);assert.equal(await changes.locator('.trail-history-status').count(),0);
+      assert.ok(!(await changes.innerText()).includes('ra_review_result_new'));
+      assert.ok(!(await changes.innerText()).includes(lang==='zh'?'排除状态':'Exclusion'));
+      assert.ok((await table.locator('tbody tr').last().innerText()).includes(lang==='zh'?'正确触发':'Correct trigger'));
+      assert.ok(await table.locator('th,td').evaluateAll(cells=>cells.every(el=>el.scrollWidth<=el.clientWidth+1)));
+      if(width===1440)assert.ok((await table.boundingBox()).height<550);
       await bounded(width);
       await page.locator('#trailHistoryDialog').screenshot({path:path.join(evidenceDir,`publication-${width}-${lang}-${theme}.png`)});
+      await page.locator('#trailHistoryAuditSummary').click();
+      assert.equal(await page.locator('.trail-history-audit-fields code').innerText(),'ra_review_result_new');
+      await page.evaluate(()=>applyUiLanguage(state.uiLanguage==='zh'?'en':'zh',{persist:false}));
+      assert.equal(await table.locator('tbody tr').count(),9);assert.equal(await table.locator('caption').count(),1);
+      await page.evaluate(lang=>applyUiLanguage(lang,{persist:false}),lang);
+      await page.evaluate(()=>{trailHistory.detail.status='partial';trailHistory.detail.outcomes.cn00000001='unknown';trailHistory.detail.items[0].before={};trailHistory.detail.items[1].after={value:null};renderTrailHistoryDetail();});
+      assert.equal(await table.locator('thead th').count(),3);assert.equal(await table.locator('.trail-history-status').count(),1);
+      assert.ok((await table.innerText()).includes(lang==='zh'?'结果待核验':'Outcome unknown'));
+      assert.ok((await table.innerText()).includes(lang==='zh'?'字段不存在':'Field absent'));assert.ok((await table.innerText()).includes('null'));
+      await bounded(width);assert.ok(await table.locator('th,td').evaluateAll(cells=>cells.every(el=>el.scrollWidth<=el.clientWidth+1)));
+      labelLayouts.push({width,lang,theme});
       await page.locator('[data-action="dismiss"]').click();await page.waitForFunction(()=>!$('#trailHistoryDialog').open&&!trailHistory.restoring&&!new URL(location.href).searchParams.has('operation'));
+      if(!((width===1440&&lang==='zh'&&theme==='dark')||(width===390&&lang==='en'&&theme==='dark')||(width===320&&lang==='en'&&theme==='light')))continue;
       await page.evaluate(()=>{trailHistory.operation='';return loadTrailHistory();});
       assert.equal(await page.evaluate(()=>trailHistory.error),'',await page.locator('#trailHistoryResults').innerText());
       await page.waitForFunction(()=>Boolean(trailHistory.data));
@@ -170,7 +191,7 @@ const server=http.createServer(async(req,res)=>{
       assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
     }
     assert.equal(posts.some(post=>post.path.endsWith('/restore-commit')),false);assert.deepEqual(errors,[]);
-    const result={browser:browser.version(),layouts,checks:['visible changes','one audit disclosure','audit locale/focus','long text','multiline Enter','restore draft/caret/scroll','preview subset','conflict blocks confirmation','cancel clears draft','busy disables dismissal','verification retains subset','legacy','missing/null/empty values','empty records','short viewport','failed detail'],posts:posts.map(post=>post.path),errors};
+    const result={browser:browser.version(),layouts,labelLayouts,checks:['visible changes','one audit disclosure','audit locale/focus','long text','multiline Enter','restore draft/caret/scroll','preview subset','conflict blocks confirmation','cancel clears draft','busy disables dismissal','verification retains subset','legacy','missing/null/empty values','empty records','short viewport','failed detail','nine-row label batch','shared headers and status','technical field in audit only','partial label receipts'],posts:posts.map(post=>post.path),errors};
     fs.writeFileSync(path.join(evidenceDir,'results.json'),JSON.stringify(result,null,2));console.log(JSON.stringify({...result,layouts:layouts.length,evidenceDir}));
   } finally {await browser?.close();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
 })().catch(error=>{console.error(error);process.exitCode=1;});
