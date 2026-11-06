@@ -806,7 +806,9 @@ async function refreshChangedDataNow() {
     await Promise.all([
       loadConfig(),
       loadCaseLabelingTasks(),
-      loadCaseLabelingCases({ page: state.caseLabeling.page }),
+      // A background list refresh must not clear the selected detail's URL:
+      // deferred Trail reads use that route to reject obsolete responses.
+      loadCaseLabelingCases({ page: state.caseLabeling.page, persistRoute: false }),
     ]);
     if (!isPageContextCurrent(pageContext)) return;
     if (state.caseLabeling.issueId) {

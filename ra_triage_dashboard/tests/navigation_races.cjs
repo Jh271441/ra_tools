@@ -245,6 +245,69 @@ async function labelingEntryAndSummaryResponsesStayScoped() {
   const summary = a.s.loadLabelingSummary(); a.navigate('labeling'); a.navigate('labeling-summary'); pending.resolve({items: []}); await summary;
   assert.equal(requests, 1, 'stale task-list response must not start a summary query for a later visit');
 }
+async function labelingBackgroundRefreshKeepsTrailHydration() {
+  for (const editing of [false, true]) {
+    const f = fixture('labeling');
+    f.load('format-api.js'); f.load('review-navigation.js'); f.load('case-labeling.js');
+    const location = f.s.window.location;
+    location.search = '?issue=cn37162905&baselines=0821';
+    const commit = (_state, _title, url) => {
+      const next = new URL(url, location.origin);
+      location.pathname = next.pathname; location.search = next.search;
+    };
+    f.s.window.history = {state: {}, pushState: commit, replaceState: commit};
+    f.s.pageUrl = (_page, options) => '/manual/case-labeling?' + new URLSearchParams({
+      ...(options.issue ? {issue: options.issue} : {}), baselines: '0821',
+    });
+    Object.assign(f.s, {
+      caseLabelDecisionUi: {}, structuredClone,
+      withBaselineQuery: value => value, withBase: value => value,
+      escapeHtml: value => String(value ?? ''), showToast() {},
+      clearPendingCaseLabelingImages() {}, renderCaseLabelingEditor() {},
+      renderCaseLabelingDetailMedia(data) {
+        f.s.$('#caseLabelingExternalLinks').innerHTML = f.s.detailExternalLinksMarkup(data);
+      },
+      selectedActiveLabelingBaselineIds: () => ['0821'],
+      caseLabelingListParams: () => 'baselines=0821',
+      renderCaseLabelingAuthorPicker() {}, renderCaseLabelingAssigneePicker() {},
+      renderCaseLabelingList() {}, loadCaseLabelingClusters: async () => {},
+      loadCaseLabelingSnapshotReferences: async () => {}, loadCaseLabelingTasks: async () => {},
+      loadConfig: async () => {}, refreshCaseExclusionSummary() {},
+    });
+    const metadata = defer(); let reads = 0;
+    f.s.api = async url => {
+      if (url.includes('/trail-metadata')) { reads++; return metadata.promise; }
+      if (url.includes('/media')) return {assets: {}, camera: {}};
+      if (url.includes('/api/labeling/cases/')) return {issue_id: 'cn37162905'};
+      return {items: [], page: 1, labelers: [], assignees: []};
+    };
+    await f.s.selectCaseLabelingIssue('cn37162905', {updateRoute: false});
+    f.state.caseLabeling.dirty = editing;
+    const initialCase = f.state.caseLabeling.caseData;
+    const draft = f.s.$('#caseLabelingRationale'); draft.value = 'Unsaved label rationale';
+    const originalUrl = location.pathname + location.search;
+    if (editing) {
+      // The response can arrive after a collaboration refresh while typing.
+      [...f.timers.values()][0](); await tick();
+    }
+    await f.s.refreshChangedDataNow();
+    assert.equal(location.pathname + location.search, originalUrl,
+      'background list refresh must keep the selected Issue route');
+    if (!editing) [...f.timers.values()].forEach(callback => callback());
+    metadata.resolve({issue_id: 'cn37162905', status: 'ready', external_links: {
+      ra_recording_url: 'https://fixture.test/recording', ra_events: [{event: 'start'}],
+    }});
+    for (let i = 0; i < 6; i++) await tick();
+    assert.equal(reads, 1, 'dwell and in-flight consumers must share one metadata read');
+    assert.equal(f.state.caseLabeling.caseData.trail_metadata_status, 'ready');
+    assert.ok(f.s.$('#caseLabelingExternalLinks').innerHTML.includes('RA Event'));
+    assert.ok(!f.s.$('#caseLabelingExternalLinks').innerHTML.includes('data-trail-metadata-pending'));
+    assert.equal(f.s.$('#caseLabelingRationale'), draft);
+    assert.equal(draft.value, 'Unsaved label rationale');
+    if (editing) assert.equal(f.state.caseLabeling.caseData, initialCase,
+      'collaboration updates must retain an editor with an unsaved draft');
+  }
+}
 async function optionalDirectoryDoesNotBlockIdentityOrOverwriteAnotherSession() {
   const f = fixture('users'); f.load('session-config.js');
   const directory = defer(); let ready = false;
@@ -284,7 +347,7 @@ async function delayedAnalysisFacetCannotReplaceNewRunOptions() {
   assert.equal(f.state.reviewAnalysis.workSplitOptions[0].split_id, 'new-options');
 }
 (async () => {
-  for (const test of [optionalDirectoryDoesNotBlockIdentityOrOverwriteAnotherSession, delayedOverviewCannotReplaceNewScopeCounts, delayedAnalysisFacetCannotReplaceNewRunOptions, cronPaintDoesNotWaitForSharedBootstrap,bootstrapResumesPendingCombinedContext,assignmentAccessWaitsForWriterAndAvoidsAdminRequests,delayedReviewReloadCannotReclaimLabeling, navigationEpochTracksRealPageCommits, loadersStartAfterCanonicalRouteCommit, debounceCannotFireAfterDepartureOrRoundTrip, listPaginationAndPollingIgnoreObsoleteViews, lateTaskContextCannotRewriteLabelingUrl, bootstrapNeverReplaysInitialRouteOverNewNavigation, summaryWaitsForIdentityInsteadOfFallingBackToReview, labelingEntryAndSummaryResponsesStayScoped]) {
+  for (const test of [labelingBackgroundRefreshKeepsTrailHydration, optionalDirectoryDoesNotBlockIdentityOrOverwriteAnotherSession, delayedOverviewCannotReplaceNewScopeCounts, delayedAnalysisFacetCannotReplaceNewRunOptions, cronPaintDoesNotWaitForSharedBootstrap,bootstrapResumesPendingCombinedContext,assignmentAccessWaitsForWriterAndAvoidsAdminRequests,delayedReviewReloadCannotReclaimLabeling, navigationEpochTracksRealPageCommits, loadersStartAfterCanonicalRouteCommit, debounceCannotFireAfterDepartureOrRoundTrip, listPaginationAndPollingIgnoreObsoleteViews, lateTaskContextCannotRewriteLabelingUrl, bootstrapNeverReplaysInitialRouteOverNewNavigation, summaryWaitsForIdentityInsteadOfFallingBackToReview, labelingEntryAndSummaryResponsesStayScoped]) {
     await test(); console.log('PASS ' + test.name);
   }
 })().catch(error => {console.error(error); process.exitCode = 1;});
