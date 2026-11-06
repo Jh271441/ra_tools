@@ -3,7 +3,7 @@ const fs=require('node:fs'),path=require('node:path'),http=require('node:http'),
 const {chromium}=require('playwright');
 const root=path.resolve(__dirname,'../static'),original=fs.readFileSync(path.join(root,'index.html'),'utf8');
 const css=[...original.matchAll(/"((?:css\/|vendor\/)[^"\n]+\.css|styles\.css)"/g)].map(m=>m[1]);
-const modules=['core-base','i18n-messages','i18n','format-api','session-config','routing','rd-results','review-tags','mobile-workbench'];
+const modules=['core-base','text-input','issue-query','i18n-messages','i18n','format-api','session-config','routing','rd-results','review-tags','mobile-workbench'];
 const html=original.replace(/<script\b[^>]*>[\s\S]*?<\/script>/g,'').replaceAll('{{RA_TRIAGE_BASE_PATH}}','')
  .replace('</head>',css.map(p=>`<link rel="stylesheet" href="/static/${p}">`).join('')+'</head>')
  .replace('</body>',modules.map(p=>`<script src="/static/js/${p}.js"></script>`).join('')+'</body>');
@@ -100,9 +100,15 @@ const server=http.createServer((req,res)=>{
   for(const width of [1440,390,320])for(const lang of ['zh','en'])for(const theme of ['dark','light']){
    await page.setViewportSize({width,height:950});
    await page.evaluate(async({lang,theme})=>{state.uiLanguage=lang;document.documentElement.dataset.uiLang=lang;document.documentElement.dataset.colorTheme=theme;window.fixtureMode='normal';await loadRdResults();},{lang,theme});
-   assert.equal(await page.locator('.rd-overview h3').innerText(),lang==='zh'?'标注上传':'Label upload');
-   assert.equal(await page.locator('.rd-upload-target code').first().innerText(),'https://voyager.intra.xiaojukeji.com/paladin/issue/pool/multi_update/');
-   assert.equal(await page.locator('.rd-upload-target code').last().innerText(),'ra_rd_review_result');
+   assert.equal(await page.locator('.rd-overview [data-rd-mode="rd"][aria-selected="true"]').innerText(),lang==='zh'?(width<640?'RD 上传':'RD 标注上传'):(width<640?'RD upload':'RD label upload'));
+   assert.equal(await page.locator('#rdResultsPage > .rd-mode-tabs').count(),0);
+   assert.equal(await page.locator('.rd-detail-heading .rd-description').count(),0);
+   assert.equal(await page.locator('#rdOverviewInfo').count(),0);
+   assert.equal(await page.locator('.rd-overview .rd-upload-target > div').count(),2);
+   assert.equal(await page.locator('.rd-overview .rd-upload-target').isVisible(),true);
+   assert.equal(await page.locator('[data-rd-action="refresh-te"]').count(),0);
+   assert.equal(await page.locator('.rd-upload-target code').first().textContent(),'https://voyager.intra.xiaojukeji.com/paladin/issue/pool/multi_update/');
+   assert.equal(await page.locator('.rd-upload-target code').last().textContent(),'ra_rd_review_result');
    assert.equal(await page.locator('.rd-metric small').count(),0);
    assert.equal(await page.locator('[data-rd-id="cn123"]').isEnabled(),true);
    await page.locator('[data-rd-filter="resolved"]').click();

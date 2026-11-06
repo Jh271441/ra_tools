@@ -20,6 +20,15 @@ class AsgiClient:
         target, messages = urlsplit(url), []
         body = json.dumps(kwargs.get('json')).encode() if 'json' in kwargs else b''
         headers = {'content-type': 'application/json', 'host': 'test', **kwargs.get('headers', {})}
+        if 'files' in kwargs:
+            boundary = 'synthetic-multipart-boundary'
+            parts = []
+            for name, value in kwargs.get('data', {}).items():
+                parts.append(f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n{value}\r\n'.encode())
+            for name, (filename, content, content_type) in kwargs['files'].items():
+                parts.append(f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"; filename="{filename}"\r\nContent-Type: {content_type}\r\n\r\n'.encode()+content+b'\r\n')
+            body = b''.join(parts)+f'--{boundary}--\r\n'.encode()
+            headers['content-type'] = f'multipart/form-data; boundary={boundary}'
         scope = dict(type='http', asgi={'version':'3.0'}, http_version='1.1', method=method,
                      path=target.path, raw_path=target.path.encode(), root_path='',
                      query_string=target.query.encode(), scheme='http', server=('test',80),

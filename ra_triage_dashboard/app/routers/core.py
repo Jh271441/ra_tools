@@ -284,6 +284,7 @@ async def health() -> dict[str, Any]:
         "trail_write_enabled": False,
         "trail_attribute_write_enabled": settings.trail_attribute_write_enabled,
         "trail_rd_write_enabled": getattr(settings, "trail_rd_write_enabled", False),
+        "trail_te_write_enabled": getattr(settings, "trail_te_write_enabled", False),
         "trail_attribute_review_write_enabled": getattr(
             settings, "trail_attribute_review_write_enabled", False
         ),
@@ -701,6 +702,7 @@ async def status(response: Response) -> dict[str, Any]:
         "trail_write_enabled": False,
         "trail_attribute_write_enabled": settings.trail_attribute_write_enabled,
         "trail_rd_write_enabled": getattr(settings, "trail_rd_write_enabled", False),
+        "trail_te_write_enabled": getattr(settings, "trail_te_write_enabled", False),
         "trail_attribute_review_write_enabled": getattr(
             settings, "trail_attribute_review_write_enabled", False
         ),

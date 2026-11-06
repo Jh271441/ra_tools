@@ -2,8 +2,17 @@
 /* Label publication shares the Model Runs source cards and toolbar hierarchy. */
 .rd-results-page .page-card { min-width: 0; }
 .rd-results-page { font-size: 13px; }
+.rd-mode-header { border-bottom: 1px solid var(--line); }
+.rd-mode-tabs { display: flex; align-items: stretch; gap: 24px; min-width: 0; }
+.rd-mode-tabs .rd-mode-tab { position: relative; min-height: 46px; padding: 10px 2px 14px; border: 0; border-radius: 0; color: var(--muted); background: transparent; box-shadow: none; font-weight: 600; }
+.rd-mode-tabs .rd-mode-tab:hover:not(:disabled) { color: var(--text); border-color: transparent; background: transparent; }
+.rd-mode-tabs .rd-mode-tab[aria-selected="true"] { color: var(--accent); background: transparent; }
+.rd-mode-tabs .rd-mode-tab[aria-selected="true"]::after { position: absolute; content: ''; height: 2px; inset: auto 0 -1px; background: var(--accent); border-radius: 2px 2px 0 0; }
+.rd-mode-tabs .rd-mode-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
+.rd-mode-label-compact { display: none; }
+.rd-mode-panel { display: grid; gap: 11px; min-width: 0; }
 .rd-results-page h3 { margin: 0; color: var(--text); font-size: 16px; font-weight: 600; }
-.rd-results-page .button, .rd-results-page .ui-select-trigger, .rd-results-page input { font-size: 13px; }
+.rd-results-page .button, .rd-results-page .ui-select-trigger, .rd-results-page input, .rd-results-page textarea { font-size: 13px; }
 .rd-description { margin: 5px 0 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
 .rd-results-page .runs-source-heading { align-items: center; }
 .rd-metrics.run-source-tabs { grid-template-columns: repeat(4, minmax(0, 1fr)); }
@@ -21,10 +30,11 @@
 .rd-http-method { flex: 0 0 auto; color: var(--accent); font-weight: 600; }
 .rd-workspace { gap: 10px; }
 .rd-detail-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 20px; }
-.rd-detail-heading { flex: 1 1 190px; min-width: 0; display: grid; gap: 3px; }
+.rd-detail-heading { flex: 1 1 260px; min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; }
 .rd-detail-heading .rd-description { margin: 0; }
 .rd-filters.run-filter-bar { flex: 2 1 430px; margin: 0; grid-template-columns: minmax(140px, 1fr) minmax(130px, 170px) auto; align-items: center; gap: 8px; }
-.rd-filters > input { width: 100%; min-width: 0; }
+.rd-filters > input, .rd-filters > textarea { width: 100%; min-width: 0; }
+.rd-filters textarea { box-sizing: border-box; min-height: 38px; height: 38px; max-height: 128px; resize: vertical; overflow-y: auto; }
 .rd-filters label { min-width: 0; gap: 7px; font-size: 13px; }
 .rd-filters input, .rd-filters .button { min-height: 38px; }
 .rd-selection-bar, .rd-pagination { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
@@ -33,6 +43,7 @@
 .rd-selection-tools .run-manager-actions { gap: 16px; }
 .rd-selection-tools .dashboard-native-ui-select { width: auto; min-width: 140px; max-width: 100%; }
 .rd-selection-count { overflow-wrap: anywhere; }
+.rd-selection-count .button { margin-inline-start: 8px; }
 .rd-selection-bar .text-button { min-height: 38px; padding: 8px 0; color: var(--accent); white-space: normal; text-align: left; }
 .rd-selection-bar .text-button:hover:not(:disabled) { text-decoration: underline; }
 .rd-selection-bar.has-selection .rd-selection-count strong { color: var(--accent); }
