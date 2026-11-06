@@ -48,6 +48,15 @@ const out=process.env.TE_PREVIEW_OUT||path.resolve(__dirname,'../../reports/te_c
    await page.locator('[data-rd-action="preview"]').click();
    await page.waitForSelector('#rdResultsPreview');
    assert.ok((await page.locator('.rd-preview-details th').allTextContents()).some(t=>t.includes('RD')));
+   const headings=await page.locator('.rd-preview-details th').allTextContents();
+   assert.equal(headings[2],lang==='zh'?'看板 RD 结论':'Workbench RD label');
+   assert.equal(headings[3],lang==='zh'?'Trail RD（实时）':'Trail RD (live)');
+   const emptyTrail=page.locator('.rd-preview-details tbody tr').filter({hasText:'cn35655697'});
+   assert.equal(await emptyTrail.locator('td').nth(2).innerText(),lang==='zh'?'无需协助':'No assistance needed');
+   assert.equal(await emptyTrail.locator('td').nth(3).innerText(),lang==='zh'?'未填写':'Not set');
+   const differentTrail=page.locator('.rd-preview-details tbody tr').filter({hasText:'cn35655705'});
+   assert.equal(await differentTrail.locator('td').nth(2).innerText(),lang==='zh'?'正确触发':'Correct trigger');
+   assert.equal(await differentTrail.locator('td').nth(3).innerText(),lang==='zh'?'无需协助':'No assistance needed');
    assert.ok(await page.evaluate(()=>rdResults.preview.items.some(r=>r.eligible&&r.rd_current!==r.desired)));
    assert.ok(!(await page.locator('.rd-preview-details').innerText()).includes(lang==='zh'?'尚未确认线下对齐':'Offline agreement'));
    await page.evaluate(()=>{rdResults.data.write_enabled=true;renderRdResults();});

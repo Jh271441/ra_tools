@@ -293,9 +293,12 @@ async def excel_preview(request: Request, file: UploadFile = File(...), baseline
         if outside:
             raise _detail(409, '文件含版本范围外 Issue / File contains Issues outside this version: '+', '.join(outside[:10]))
         if progress: progress(0, len(rows))
+        manual = service.local_rows(database, list(rows))
+        preview_rows = {iid: {**row, 'manual_current': service.manual_label_snapshot(manual.get(iid, {}))}
+                        for iid, row in rows.items()}
         remote = service.read_remote(trail_client(service.TE_MODE), list(rows), mode=service.TE_MODE,
             parallel=True, **({'progress':progress} if progress else {}))
-        return rows, remote, dict(total=len(rows), blocked=0, source=source)
+        return preview_rows, remote, dict(total=len(rows), blocked=0, source=source)
     # Validate scope before queuing so a mismatched workbook has an actionable error.
     current = set(await run(members, request, baselines))
     outside = [iid for iid in rows if iid not in current]
