@@ -16,6 +16,7 @@ from threading import BoundedSemaphore, Event, Lock
 import time
 import uuid
 from .label_publication_inputs import file_row_fingerprint
+from .publication_audit import sync_publication_audit
 
 FIELD = "ra_rd_review_result"
 TE_FIELD = "ra_review_result_new"
@@ -228,8 +229,42 @@ def classify(row, remote, mode=RD_MODE):
 
 
 class PublicationStore:
-    def __init__(self, directory):
+    def __init__(self, directory, *, audit_database=None, actor=None, on_refreshed=None):
         self.root = Path(directory) / 'rd_publications'
+        self.audit_database = audit_database
+        self.actor = actor
+        self.on_refreshed = on_refreshed
+
+    def sync_audit(self, record, *, required=False):
+        if self.audit_database is None:
+            return
+        try:
+            sync_publication_audit(self.audit_database, record)
+            record.pop('audit_error', None)
+        except Exception:
+            record['audit_error'] = True
+            if required:
+                record.update(state='needs_recheck', reason='audit_failed', finished_at=time.time())
+                self.save(record)
+                raise ValueError('更新记录保存失败，未上传 / Could not save update history; nothing uploaded') from None
+
+    def refresh_after_commit(self, record, client):
+        ids = [r['issue_id'] for r in record['results'] if r['state'] in {'verified', 'unverified'}]
+        if not ids:
+            return
+        record['progress']['stage'] = 'refreshing'
+        self.save(record)
+        checked_at = time.time()
+        try:
+            remote = read_remote(client, ids, parallel=True, mode=record.get('mode', RD_MODE))
+            field = target_field(record.get('mode', RD_MODE))
+            refresh = dict(status='ready', checked_at=checked_at,
+                items=[dict(issue_id=iid, current=remote[iid][field]) for iid in ids])
+            if self.on_refreshed:
+                self.on_refreshed(record, refresh)
+            record['refresh'] = refresh
+        except Exception:
+            record['refresh'] = dict(status='failed', checked_at=checked_at)
 
     @contextmanager
     def lock(self, *, blocking=True):
@@ -382,6 +417,9 @@ class PublicationStore:
                 'mode': mode, 'field': field, 'baselines': record.get('baselines', ''),
                 'policy_version': record.get('policy_version', 1),
                 'reason': record.get('reason', ''),
+                'audit_error': record.get('audit_error', False),
+                'history_operation_id': 'publication-' + record['id'],
+                'refresh': record.get('refresh'),
                 'scope': record.get('scope'),
                 'progress': PublicationStore.progress(record),
                 'background_preview': record.get('background_preview', False),
@@ -420,7 +458,10 @@ class PublicationStore:
                                     batch_size=UPLOAD_BATCH_SIZE, concurrency=UPLOAD_CONCURRENCY))
         record['results'] = [dict(issue_id=r['issue_id'], state='not_attempted', reason='')
                              for r in record['items'] if r['eligible']]
+        if self.actor is not None:
+            record.update(actor_source=getattr(self.actor, 'source', ''), actor_verified=getattr(self.actor, 'verified', False))
         self.save(record)  # Claim before any network I/O, so GET can report preflight.
+        self.sync_audit(record, required=True)
         return record
 
     def start_commit(self, operation, actor, db, client, scope_ids):
@@ -458,6 +499,7 @@ class PublicationStore:
                         elif result['state'] == 'not_attempted' and not result['reason']:
                             result['reason'] = 'batch_stopped'
                     self.save(record)
+                    self.sync_audit(record)
                 finally:
                     claim.__exit__(None, None, None)
             _commit_workers.submit(work)
@@ -500,6 +542,7 @@ class PublicationStore:
             for result in record['results']:
                 result['reason'] = 'preflight_failed'
             self.save(record)
+            self.sync_audit(record)
             raise
 
         guard, stopped = Lock(), Event()
@@ -592,7 +635,9 @@ class PublicationStore:
                 result.update(state='unverified', reason='interrupted')
             elif result['state'] == 'not_attempted' and not result['reason']:
                 result['reason'] = 'batch_stopped'
+        self.refresh_after_commit(record, client)
         record['state'] = 'complete' if all(r['state'] == 'verified' for r in record['results']) else 'needs_recheck'
         record.update(finished_at=time.time())
         record['progress']['stage'] = 'complete' if record['state'] == 'complete' else 'stopped'
+        self.sync_audit(record)
         self.save(record)

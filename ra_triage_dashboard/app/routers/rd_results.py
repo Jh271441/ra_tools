@@ -72,8 +72,11 @@ class TERefresh(StrictBody):
     baselines: str = Field(min_length=1, max_length=2000)
 
 
-def store():
-    return service.PublicationStore(settings.data_dir)
+def store(actor=None):
+    def refreshed(record, refresh):
+        if record.get('mode') == service.TE_MODE:
+            te_observation_store().record_readback(record, refresh)
+    return service.PublicationStore(settings.data_dir, audit_database=database, actor=actor, on_refreshed=refreshed)
 
 
 def validate_scope(request, baselines, mode):
@@ -145,6 +148,7 @@ def filtered_rows(request, baselines, q, status, mode=service.RD_MODE, metadata=
         snapshot, observations = te_snapshot(settings.ra_auto_triage_root, family)
         saved, refresh_status = te_observation_store().read(baselines, ids)
         observed_metadata, observed = merge_observations(snapshot, observations, saved, refresh_status)
+        observed_metadata, observed = te_observation_store().apply_readbacks(baselines, observed_metadata, observed)
         if metadata is not None:
             metadata.update(observed_metadata)
         counts = dict(total=len(rows), resolved=0, same=0, blocked=0)
@@ -316,7 +320,7 @@ async def commit(request: Request, body: Commit, background: bool = False):
         enabled = getattr(settings, 'trail_te_write_enabled', False) if mode == service.TE_MODE else settings.trail_rd_write_enabled
         if not enabled:
             raise _detail(403, '写入未启用 / Publishing is disabled')
-        publisher = store()
+        publisher = store(actor)
         return (publisher.start_commit if background else publisher.commit)(body.operation_id, actor.username, database,
                               trail_client(mode), lambda: set(members(request, record['baselines'])))
     result = await run(execute)

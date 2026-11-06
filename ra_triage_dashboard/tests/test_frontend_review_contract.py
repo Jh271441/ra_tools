@@ -97,7 +97,7 @@ class FrontendReviewContractTest(unittest.TestCase):
         self.assertIn("baselines", APP_JS)
         self.assertIn("/static/app-bundle.js", APP_ENTRY_JS)
         self.assertIn("script.async = false", APP_ENTRY_JS)
-        self.assertIn("app.js?v=manual-triage-768", INDEX_HTML)
+        self.assertIn("app.js?v=manual-triage-769", INDEX_HTML)
         self.assertIn('work-split.js', (JS_DIR / 'MANIFEST').read_text().splitlines())
         self.assertIn('review-assignments.js', (JS_DIR / 'MANIFEST').read_text().splitlines())
         # Product logic must live in domain modules, not the entry loader.

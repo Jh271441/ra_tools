@@ -1,6 +1,7 @@
 """Explicit read-only TE refreshes; local observations never authorize writes."""
 from datetime import datetime, timezone
 from pathlib import Path
+import json
 
 from .trail_import_discovery import TrailImportDiscovery
 
@@ -24,6 +25,32 @@ class TEObservationStore(TrailImportDiscovery):
                       started_at=state.get('started_at'), checked_at=snapshot.get('checked_at'),
                       membership_changed=self.membership_changed(state, members))
         return state, status
+
+    def record_readback(self, record, refresh):
+        folder = self.root / 'writebacks'
+        folder.mkdir(mode=0o700, parents=True, exist_ok=True)
+        self._save(folder / (record['id'] + '.json'), dict(baselines=record['baselines'], **refresh))
+
+    def apply_readbacks(self, baselines, metadata, observations):
+        """Fresh per-Issue observations overlay only older complete snapshots."""
+        base_stamp = _stamp(metadata.get('last_success_at'))
+        latest = {}
+        for path in (self.root / 'writebacks').glob('*.json'):
+            saved = json.loads(path.read_text())
+            if saved['baselines'] != baselines or saved['status'] != 'ready':
+                continue
+            stamp = saved['checked_at']
+            if stamp < base_stamp:
+                continue
+            for row in saved['items']:
+                if stamp >= latest.get(row['issue_id'], (0, None))[0]:
+                    value = row['current']
+                    latest[row['issue_id']] = (stamp, dict(issue_id=row['issue_id'], te_value=value,
+                        te_status='unfilled' if value in (None, '') else 'filled'))
+        observations.update({iid:value for iid, (_, value) in latest.items()})
+        if latest:
+            metadata['last_writeback_at'] = max(stamp for stamp, _ in latest.values())
+        return metadata, observations
 
 
 def _stamp(value):

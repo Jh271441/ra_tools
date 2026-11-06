@@ -84,6 +84,7 @@ function rdReason(value) {
     interrupted: ['执行中断，可能已写入；请重新核对 Trail。', 'Execution was interrupted; a write may have occurred. Check Trail again.'],
     receipt_unavailable: ['无法取得操作记录；请刷新本次结果，勿重复上传。', 'Operation receipt unavailable. Refresh this outcome before uploading again.'],
     receipt_pending: ['尚无执行结果，请稍后刷新本次结果；请求可能仍在处理中。', 'No execution outcome yet. Refresh this outcome shortly; the request may still be processing.'],
+    audit_failed: ['更新记录保存失败，未上传。', 'Could not save update history; nothing uploaded.'],
     response_recovered: ['提交响应未收到，已找回操作记录；请以逐条核验状态为准。', 'The submit response was lost; the operation receipt was recovered. Use the per-item verification states.'],
   };
   return names[value] ? rdText(...names[value]) : '';
@@ -436,12 +437,25 @@ async function rdTrackCommit() {
     if (rdResults.tracking === token) rdResults.tracking = null;
   }
 }
+async function rdRefreshPublishedSummary(p) {
+  if (!p.refresh || !['complete','needs_recheck'].includes(p.state) || rdResults.refreshedOperation === p.id) return;
+  rdResults.refreshedOperation = p.id;
+  const epoch = rdResults.epoch, scope = rdResults.baselines, mode = rdResults.mode;
+  try {
+    const data = await api(`/api/rd-results?${new URLSearchParams({ baselines:scope, mode, ...rdResults.filters })}`);
+    if (epoch !== rdResults.epoch || mode !== rdResults.mode || state.activePage !== 'rd-results' || scope !== state.selectedBaselineIds.join(',')) return;
+    rdResults.data = data; rdResults.filters.page = data.page; rdPersist();
+    if (!rdResults.previewOpen) renderRdResults();
+  } catch (_) {
+    if (epoch === rdResults.epoch) rdResults.refreshedOperation = null;
+  }
+}
 function rdCommitProgress(p) {
   const g = p.progress;
   if (!g || !['running', 'complete', 'needs_recheck'].includes(p.state)) return '';
   const preflight = g.stage === 'preflight';
   const done = preflight ? g.checked || 0 : g.verified || 0, total = preflight ? g.check_total || 0 : g.total || 0;
-  const label = preflight ? rdText('提交前核对', 'Preflight check') : p.state === 'running' ? rdText('上传并读回核验', 'Upload and verify readback') : rdStatus(p.state);
+  const label = preflight ? rdText('提交前核对', 'Preflight check') : g.stage === 'refreshing' ? rdText('刷新 Trail 标签', 'Refreshing Trail labels') : p.state === 'running' ? rdText('上传并读回核验', 'Upload and verify readback') : rdStatus(p.state);
   const seconds = Math.floor(g.elapsed_seconds || 0);
   const detail = p.state === 'running' && !preflight ? rdText(`处理中 ${g.active || 0} · 等待 ${g.waiting || 0}`, `${g.active || 0} active · ${g.waiting || 0} waiting`) : '';
   return `<div class="cron-stage-progress rd-upload-progress" role="status"><span>${escapeHtml(label)} <strong>${done} / ${total}</strong></span><progress max="${Math.max(1,total)}" value="${done}" aria-label="${escapeHtml(label)}"></progress><span>${total ? Math.floor(done / total * 100) : 0}%${detail ? ` · ${detail}` : ''} · ${rdText(`已用时 ${seconds}s`, `${seconds}s elapsed`)}</span></div>${p.state === 'running' ? `<p class="rd-description">${rdText('后台自动更新进度；异常时停止派发，已发出的批次会继续读回核验。', 'Progress updates automatically. On failure, dispatch stops and in-flight batches finish readback verification.')}</p>` : ''}`;
@@ -576,6 +590,9 @@ function rdRenderPreview() {
       ${preview && !count ? `<p class="rd-notice">${rdText('没有需要上传的变更，请检查明细或返回修改选择。', 'No changes to upload. Check the details or return to adjust your selection.')}</p>` : ''}
       ${p.reason ? `<p class="rd-notice" role="status">${escapeHtml(rdReason(p.reason))}</p>` : ''}
       ${rdResults.error ? `<p class="rd-notice is-error" role="alert">${escapeHtml(rdResults.error)}</p>` : ''}
+      ${p.refresh ? `<p class="rd-description" role="status">${p.refresh.status === 'ready' ? rdText('标签已回读刷新', 'Labels refreshed from Trail') : rdText('上传结果已保留，标签刷新失败；可手动刷新。','Upload outcomes saved; label refresh failed. Refresh manually.')}</p>` : ''}
+      ${!preview && !running && p.history_operation_id ? `<a class="text-link" href="${escapeHtml(pageUrl('trail-history', { operation:p.history_operation_id, baselines:state.selectedBaselineIds }))}">${rdText('查看 Trail 更新记录','View Trail update history')}</a>` : ''}
+      ${p.audit_error ? `<p class="rd-notice is-error" role="status">${rdText('更新记录暂未同步，请刷新 Trail 更新记录。','Update history sync pending. Refresh Trail update history.')}</p>` : ''}
       <details id="rdPreviewInfo" class="rd-preview-info" ${rdResults.previewInfoOpen ? 'open' : ''}><summary>${rdText('接口与规则', 'Endpoint and rules')}</summary><div>
         <dl class="rd-upload-target"><div><dt>${rdText('上传接口', 'Upload endpoint')}</dt><dd><span class="rd-http-method">POST</span><code>${RD_UPLOAD_ENDPOINT.replace('/paladin/', '<wbr>/paladin/')}</code></dd></div><div><dt>${rdText('更新字段', 'Updated field')}</dt><dd><code>${rdUploadField()}</code></dd></div>
         ${stat(rdText('映射规则', 'Value mapping'), rdText('正确触发 → 成功；其他结论保持原值。', 'Correct trigger → 成功; other labels keep their values.'))}${scopeDetails}
@@ -611,12 +628,15 @@ function rdRenderPreview() {
     nextFocus?.focus({ preventScroll: true });
   }
   if (running && !rdResults.committing) rdTrackCommit();
+  if (!running && !preview) rdRefreshPublishedSummary(p);
   root.onclick = async event => {
     const action = event.target.closest('[data-rd-action]')?.dataset.rdAction;
     if (rdResults.busy) return;
     if (action === 'close') {
       rdForgetPreview();
-      rdResults.previewOpen = false; renderRdResults();
+      rdResults.previewOpen = false;
+      if (['complete','needs_recheck'].includes(p.state)) await loadRdResults();
+      else renderRdResults();
       window.scrollTo(0, rdResults.listScroll);
       $('#rdResultsPage [data-rd-action="preview"]')?.focus({ preventScroll: true });
       return;

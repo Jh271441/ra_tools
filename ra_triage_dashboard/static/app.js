@@ -5,7 +5,7 @@
  * request per source file. Product logic belongs in those modules.
  */
 (() => {
-  const CACHE_VERSION = "manual-triage-768";
+  const CACHE_VERSION = "manual-triage-769";
   const base = window.__RA_TRIAGE_BASE__ || "";
   const script = document.createElement("script");
   script.src = `${base}/static/app-bundle.js?v=${CACHE_VERSION}`;

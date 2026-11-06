@@ -6,6 +6,7 @@ import unittest
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event, Lock
 from types import SimpleNamespace
+from pathlib import Path
 from urllib.parse import urlsplit
 from unittest.mock import patch
 from ra_triage_dashboard.app import rd_results as rd
@@ -475,6 +476,9 @@ class RDRoutesTest(unittest.TestCase):
         from ra_triage_dashboard.app.routers import rd_results as routes
         self.routes = routes
         self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
+        from ra_triage_dashboard.app.db import Database
+        self.audit_db = Database(Path(self.tmp.name) / 'audit.sqlite3'); self.audit_db.init(); self.addCleanup(self.audit_db.close)
+        p=patch.object(routes,'database',self.audit_db);p.start();self.addCleanup(p.stop)
         self.client = Client()
         self.row = dict(issue_id='cn123',state='resolved',label='正确触发',fingerprint='v1',authors=['alice'])
         self.role = 'admin'
