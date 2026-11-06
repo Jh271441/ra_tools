@@ -297,12 +297,11 @@ async def excel_preview(request: Request, file: UploadFile = File(...), baseline
     outside = [iid for iid in rows if iid not in current]
     if outside:
         raise _detail(409, '文件含版本范围外 Issue / File contains Issues outside this version: '+', '.join(outside[:10]))
-    aligned = overwrite == 'true'
     if background:
-        result = await run(lambda: store().start_preview(actor.username, baselines, aligned, load, mode=service.TE_MODE))
+        result = await run(lambda: store().start_preview(actor.username, baselines, False, load, mode=service.TE_MODE))
         return JSONResponse(result, status_code=202)
     selected_rows, remote, scope = await run(load)
-    return await run(lambda: store().preview(actor.username, selected_rows, remote, aligned, baselines, scope=scope, mode=service.TE_MODE))
+    return await run(lambda: store().preview(actor.username, selected_rows, remote, False, baselines, scope=scope, mode=service.TE_MODE))
 
 
 @router.post('/api/rd-results/commit')
@@ -315,8 +314,8 @@ async def commit(request: Request, body: Commit, background: bool = False):
         mode = record.get('mode', service.RD_MODE)
         validate_scope(request, record['baselines'], mode)
         enabled = getattr(settings, 'trail_te_write_enabled', False) if mode == service.TE_MODE else settings.trail_rd_write_enabled
-        if not enabled or (mode == service.TE_MODE and not record.get('offline_aligned')):
-            raise _detail(403, '写入未启用或未确认线下对齐 / Writing disabled or offline agreement not confirmed')
+        if not enabled:
+            raise _detail(403, '写入未启用 / Publishing is disabled')
         publisher = store()
         return (publisher.start_commit if background else publisher.commit)(body.operation_id, actor.username, database,
                               trail_client(mode), lambda: set(members(request, record['baselines'])))

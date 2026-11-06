@@ -41,13 +41,21 @@ const out=path.resolve(__dirname,'../../reports/te_correction_preview_20261106')
    await fits();
    const picker=page.locator('#rdFilters .ui-select-trigger');await picker.click();await page.keyboard.press('Escape');
    assert.equal(await picker.getAttribute('aria-expanded'),'false');
+   assert.equal(await page.locator('#rdOverwrite').count(),0);
    await selectAction('page');
    assert.ok(await page.locator('[data-rd-id]:checked').count()>0);
-   await page.locator('#rdOverwrite').check();
+
    await page.locator('[data-rd-action="preview"]').click();
    await page.waitForSelector('#rdResultsPreview');
    assert.ok((await page.locator('.rd-preview-details th').allTextContents()).some(t=>t.includes('RD')));
-   assert.ok((await page.locator('.rd-preview-details').innerText()).includes(lang==='zh'?'RD 未对齐':'RD agreement required'));
+   assert.ok(await page.evaluate(()=>rdResults.preview.items.some(r=>r.eligible&&r.rd_current!==r.desired)));
+   assert.ok(!(await page.locator('.rd-preview-details').innerText()).includes(lang==='zh'?'尚未确认线下对齐':'Offline agreement'));
+   await page.evaluate(()=>{rdResults.data.write_enabled=true;renderRdResults();});
+   assert.equal(await page.locator('[data-rd-action="commit"]').isEnabled(),true);
+   await page.evaluate(()=>{rdResults.preview.policy_version=1;renderRdResults();});
+   assert.equal(await page.locator('[data-rd-action="commit"]').isDisabled(),true);
+   assert.ok((await page.locator('.rd-notice.is-error').innerText()).includes(lang==='zh'?'重新预览':'preview again'));
+   await page.evaluate(()=>{rdResults.preview.policy_version=2;rdResults.data.write_enabled=false;renderRdResults();});
    assert.equal(await page.locator('[data-rd-action="commit"]').isDisabled(),true);
    await fits();
    await page.locator('#rdPreviewInfo summary').click();
@@ -77,14 +85,14 @@ const out=path.resolve(__dirname,'../../reports/te_correction_preview_20261106')
   }
   await page.setViewportSize({width:1440,height:950});await start();
   await page.locator('#rdSearch').fill('unsubmitted tab draft');
-  await page.locator('[data-rd-id]:enabled').first().check();await page.locator('#rdOverwrite').check();
+  await page.locator('[data-rd-id]:enabled').first().check();
   const beforeTabs=page.url();
   await page.locator('#rdMode-te-correction').focus();
   await page.keyboard.press('ArrowLeft');
   assert.equal(await page.evaluate(()=>document.activeElement.id),'rdMode-rd');
   assert.equal(page.url(),beforeTabs);assert.equal(await page.evaluate(()=>rdResults.mode),'te-correction');
   assert.equal(await page.locator('#rdSearch').inputValue(),'unsubmitted tab draft');
-  assert.equal(await page.locator('[data-rd-id]:checked').count(),1);assert.equal(await page.locator('#rdOverwrite').isChecked(),true);
+  assert.equal(await page.locator('[data-rd-id]:checked').count(),1);assert.equal(await page.locator('#rdOverwrite').count(),0);
   await page.evaluate(()=>renderRdResults());
   assert.equal(await page.locator('#rdMode-rd').getAttribute('tabindex'),'0');
   assert.equal(await page.evaluate(()=>document.activeElement.id),'rdMode-rd');
@@ -95,13 +103,13 @@ const out=path.resolve(__dirname,'../../reports/te_correction_preview_20261106')
   await page.waitForFunction(()=>rdResults.data?.mode==='rd'&&!rdResults.loading);
   assert.equal(await page.evaluate(()=>document.activeElement.id),'rdMode-rd');
   assert.equal(await page.locator('.rd-upload-target code').last().textContent(),'ra_rd_review_result');
-  assert.equal(await page.locator('[data-rd-id]:checked').count(),0);assert.equal(await page.locator('#rdOverwrite').isChecked(),false);
+  assert.equal(await page.locator('[data-rd-id]:checked').count(),0);assert.equal(await page.evaluate(()=>rdResults.overwrite),false);
   await page.keyboard.press('End');await page.keyboard.press('Space');
   await page.waitForFunction(()=>rdResults.data?.mode==='te-correction'&&!rdResults.loading);
   assert.equal(await page.evaluate(()=>document.activeElement.id),'rdMode-te-correction');
   assert.equal(await page.locator('#rdModePanel').getAttribute('aria-labelledby'),'rdMode-te-correction');
   await selectAction('all');
-  await page.locator('#rdOverwrite').check();
+
   await page.locator('[data-rd-id]').first().uncheck();
   const excluded=await page.locator('[data-rd-id]').first().getAttribute('data-rd-id');
   const selected=await page.evaluate(()=>rdSelectedCount());
@@ -119,10 +127,10 @@ const out=path.resolve(__dirname,'../../reports/te_correction_preview_20261106')
   await page.locator('[data-rd-mode="rd"]').click();
   await page.waitForFunction(()=>rdResults.data?.mode==='rd');
   assert.equal(await page.locator('.rd-upload-target code').last().textContent(),'ra_rd_review_result');
-  assert.equal(await page.locator('#rdOverwrite').isChecked(),false);
+  assert.equal(await page.evaluate(()=>rdResults.overwrite),false);
   await page.locator('[data-rd-mode="te-correction"]').click();
   await page.waitForFunction(()=>rdResults.data?.mode==='te-correction');
-  assert.equal(await page.locator('#rdOverwrite').isChecked(),false);
+  assert.equal(await page.evaluate(()=>rdResults.overwrite),false);
   await page.evaluate(async()=>{state.selectedBaselineIds=['version-20261016','version-20261009'];rdPersist();await loadRdResults();});
   assert.equal(await page.locator('[data-rd-action="preview"]').isDisabled(),true);
   assert.ok((await page.locator('.is-error').innerText()).includes('版本')||(await page.locator('.is-error').innerText()).includes('version'));
@@ -140,7 +148,7 @@ const out=path.resolve(__dirname,'../../reports/te_correction_preview_20261106')
    if(width===1440) {await page.locator('[data-rd-action="next"]').click();await page.waitForFunction(()=>rdResults.data?.page===2);}
    if(width===390) {await page.locator('#rdSearch').fill('cn35655696');await page.locator('#rdFilters button[type="submit"]').click();await page.waitForFunction(()=>rdResults.data?.total===1);}
    const beforePage=await page.evaluate(()=>rdResults.data.page);
-   await selectAction('page');await page.locator('#rdOverwrite').check();
+   await selectAction('page');
    if(width!==390)await page.locator('#rdSearch').fill('unsubmitted search draft');
    const responsePromise=page.waitForResponse(r=>r.url().endsWith('/api/rd-results/te-refresh')&&r.request().method()==='POST');
    await page.locator('[data-rd-action="refresh-te"]').click();
@@ -150,7 +158,7 @@ const out=path.resolve(__dirname,'../../reports/te_correction_preview_20261106')
    await page.waitForFunction(()=>rdTERefreshing()&&!rdResults.busy);
    assert.equal(await page.locator('[data-rd-action="refresh-te"]').isDisabled(),true);
    assert.equal(await page.locator('[data-rd-id]:checked').count(),0);
-   assert.equal(await page.locator('#rdOverwrite').isChecked(),false);
+   assert.equal(await page.evaluate(()=>rdResults.overwrite),false);
    assert.equal(await page.locator('[data-rd-action="preview"]').isDisabled(),true);
    await fits();
    if(width===1440){await page.reload();await page.waitForFunction(()=>rdResults.data&&!rdResults.loading);}
@@ -182,7 +190,7 @@ const out=path.resolve(__dirname,'../../reports/te_correction_preview_20261106')
   await page.reload();await page.waitForFunction(()=>rdResults.data&&!rdResults.loading);
   assert.equal(await page.evaluate(()=>rdResults.data.snapshot.refresh.status),'ready');
   assert.deepEqual(errors,[]);
-  const result={layouts:checks,refreshes:refreshChecks,coverage:['underline mode tabs','keyboard focus without activating or clearing drafts','Enter and Space mode activation','tab focus restoration','two visible target fields','explicit live TE refresh','shared select Escape','offline agreement','live RD mismatch','disabled commit','preview reload','cross-page selection and exclusions','pagination resets selection','language preserves page','mode resets agreement','single-version constraint','empty','failure'],errors};
+  const result={layouts:checks,refreshes:refreshChecks,coverage:['underline mode tabs','keyboard focus without activating or clearing drafts','Enter and Space mode activation','tab focus restoration','two visible target fields','explicit live TE refresh','shared select Escape','selection confirms offline agreement','live RD mismatch allowed','legacy preview requires re-preview','disabled commit','preview reload','cross-page selection and exclusions','pagination resets selection','language preserves page','mode clears selection','single-version constraint','empty','failure'],errors};
   fs.writeFileSync(path.join(out,'browser-results.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result));
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});
