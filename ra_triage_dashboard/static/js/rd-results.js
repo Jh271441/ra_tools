@@ -1,6 +1,6 @@
 /* Canonical Manual labels -> explicit RD publication or TE correction. */
 const rdResults = { mode: 'rd', excelFile: null, data: null, remote: {}, selected: new Set(), allSelected: false, excluded: new Set(), epoch: 0, loading: false,
-  busy: false, busyAction: '', committing: false, error: '', preview: null, operations: [], overwrite: false, baselines: '', filterDraft: null, pageJumpDraft: null,
+  busy: false, busyAction: '', committing: false, error: '', preview: null, operations: [], baselines: '', filterDraft: null, pageJumpDraft: null,
   previewOpen: false, previewInfoOpen: false, teRefresh: null, teTracking: null, listScroll: 0, previewPage: 1, previewPageSize: DEFAULT_CASE_PAGE_SIZE, previewJumpDraft: null, pendingPreview: null, tracking: null, trackingError: '',
   filters: { q: '', status: 'all', page: 1, page_size: DEFAULT_CASE_PAGE_SIZE } };
 const rdText = (zh, en) => uiText(zh, en);
@@ -153,7 +153,7 @@ function renderRdResults() {
     <select id="rdState" name="status" aria-label="${rdText('标注状态','Label status')}">${(rdIsTE() ? [['all','全部状态','All statuses'],['resolved','待修正候选','Correction candidates'],['same','已一致','Already matches'],['blocked','暂不可修正','Unavailable for correction']] : [['all','全部状态','All statuses'],['resolved','已完成','Completed'],['pending','待标注','Pending labels'],['conflict','冲突 / 失效','Conflict / stale']]).map(([v,zh,en]) => `<option value="${v}" ${draft.status === v ? 'selected' : ''}>${rdText(zh,en)}</option>`).join('')}</select><button class="button button-secondary" type="submit" ${rdResults.busy || rdResults.loading ? 'disabled' : ''}>${rdText('筛选','Apply')}</button></form></div>
     ${rdResults.error || rdResults.loading || (rdResults.busy && rdResults.busyAction !== 'refresh-te') || refreshFailed ? `<p class="rd-notice ${rdResults.error || refreshFailed ? 'is-error' : ''}" role="status">${escapeHtml(rdResults.error || (rdResults.loading ? rdText('正在加载标注…','Loading labels…') : refreshFailed ? rdText('TE 刷新失败，保留上次结果。请重试。','TE refresh failed. Previous labels retained; retry.') : rdResults.busyAction?.includes('preview') ? rdPreviewProgress() : rdText('正在处理，请稍候…','Processing, please wait…')))}${rdResults.pendingPreview && !rdResults.busy ? `<button type="button" class="button button-quiet" data-rd-operation="${rdResults.pendingPreview.id}">${rdText('继续查看预览','Resume preview')}</button>` : ''}</p>` : ''}
     <div class="rd-selection-bar ${selectedCount ? 'has-selection' : ''}"><div class="rd-selection-tools"><div class="run-manager-actions"><select id="rdSelectionAction" aria-label="${rdText('选中操作','Selection actions')}" ${selectionDisabled || fileActive ? 'disabled' : ''}><option value="" selected disabled>${rdText('选中操作','Selection actions')}</option><option value="page" ${!d?.items.some(rdSelectable) ? 'disabled' : ''}>${rdText('选择本页','Select this page')}</option><option value="all" ${!rdScopeCount() ? 'disabled' : ''}>${rdText(`选择全部 ${rdScopeCount()} 条`, `Select all ${rdScopeCount()} labels`)}</option><option value="clear" ${!selectedCount ? 'disabled' : ''}>${rdText('清空选择','Clear selection')}</option></select><span class="rd-selection-count" role="status">${fileActive ? rdText('XLSX 期望输出：','XLSX targets: ') + escapeHtml(rdResults.excelFile.name) + rdButton('clear-excel',rdText('清除文件','Clear file'),selectionDisabled,'quiet') : selectedCount ? rdText('已选','Selected') + ` <strong>${selectedCount}</strong>` + (rdResults.allSelected ? rdText(' 条 · 跨全部页',' · across all pages') : rdText(' 条',' labels')) : rdText('请选择标注','Select labels to preview')}</span></div>
-    ${state.session.is_admin && !rdIsTE() ? `<label class="rd-checkbox"><input class="ui-checkbox" id="rdOverwrite" type="checkbox" ${rdResults.overwrite ? 'checked' : ''} ${selectionDisabled ? 'disabled' : ''}>${rdText('覆盖不同的 RD 结果','Overwrite different RD results')}</label>` : ''}</div>
+    </div>
     <div class="run-manager-actions">${d && !d.write_enabled ? `<span class="rd-notice" title="${rdText('真实写入开关关闭，预览可用','Publishing is disabled; preview is available')}">${rdText('写入未启用','Publishing disabled')}</span>` : ''}${state.session.is_admin ? rdButton('preview',fileActive ? rdText('预览文件','Preview file') : rdText('预览上传','Preview upload'), (!fileActive && !selectedCount) || selectionDisabled, 'primary', rdText('自动核对选中标注，预览后确认上传','Automatically check selected labels, then preview and confirm upload')) : ''}</div></div>
     <div class="rd-table-wrap"><table class="rd-table"><thead><tr>${['', 'Issue', ...(rdIsTE() ? [rdText('当前 TE（观测）','Current TE (observed)')] : []), rdText(rdIsTE() ? 'RD 人工结论' : '人工结论',rdIsTE() ? 'RD human label' : 'Human label'), ...(rdIsTE() ? [rdText('修正状态','Correction status')] : []), rdText('标注人','Contributors')].map(x=>`<th>${x}</th>`).join('')}</tr></thead><tbody>${(d?.items || []).map(row => {
       const eligible = rdSelectable(row), selected = rdIsSelected(row);
@@ -195,7 +195,6 @@ function renderRdResults() {
       renderRdResults();
       $('#rdSelectionAction')?.closest('.ui-select')?.querySelector('.ui-select-trigger')?.focus();
     }
-    if (event.target.id === 'rdOverwrite') { rdResults.overwrite = event.target.checked; renderRdResults(); }
     if (event.target.id === 'rdPageSize') {
       const size = Number(event.target.value);
       if (!rdResults.loading && !rdResults.busy && CASE_PAGE_SIZES.includes(size)) {
@@ -234,7 +233,6 @@ function renderRdResults() {
   };
   rdSizeSearch();
   if (focus === 'rdSearch') { $('#rdSearch').focus(); $('#rdSearch').setSelectionRange(caret, caret); }
-  if (focus === 'rdOverwrite') $('#rdOverwrite')?.focus();
   if (focusedIssue) root.querySelector(`[data-rd-id="${CSS.escape(focusedIssue)}"]`)?.focus();
   if (focusedMode) {
     root.querySelectorAll('[data-rd-mode]').forEach(tab => { tab.tabIndex = tab.dataset.rdMode === focusedMode ? 0 : -1; });
@@ -272,14 +270,14 @@ async function loadRdResults() {
   if (rdResults.committing) return;
   if (rdResults.busyAction === 'refresh-te') { rdResults.busy = false; rdResults.busyAction = ''; }
   const epoch = ++rdResults.epoch, scope = state.selectedBaselineIds.join(',');
-  if (scope !== rdResults.baselines) { rdResults.overwrite = false; rdResults.operations = []; rdResults.pendingPreview = null; }
+  if (scope !== rdResults.baselines) { rdResults.operations = []; rdResults.pendingPreview = null; }
   rdResults.previewOpen = false; rdResults.preview = null; rdClearSelection(); rdResults.remote = {}; rdResults.pageJumpDraft = null;
   rdResults.excelFile = null;
   rdResults.teRefresh = null;
   rdResults.data = null; rdResults.error = ''; rdResults.loading = true; rdResults.baselines = scope;
   const params = new URLSearchParams(location.search);
   const mode = params.get('mode') === 'te-correction' ? 'te-correction' : 'rd';
-  if (mode !== rdResults.mode) { rdResults.overwrite = false; rdResults.operations = []; rdResults.pendingPreview = null; }
+  if (mode !== rdResults.mode) { rdResults.operations = []; rdResults.pendingPreview = null; }
   rdResults.mode = mode;
   const requestedPage = Number(params.get('page')), requestedSize = Number(params.get('page_size'));
   const allowedStatuses = rdIsTE() ? ['all','resolved','same','blocked'] : ['all','resolved','pending','conflict'];
@@ -341,7 +339,7 @@ async function rdRefreshTE() {
   if (!rdIsTE() || !rdValidVersion() || rdResults.busy || rdResults.loading || rdTERefreshing()) return;
   const epoch = rdResults.epoch, scope = rdResults.baselines;
   const current = () => epoch === rdResults.epoch && rdIsTE() && state.activePage === 'rd-results' && scope === state.selectedBaselineIds.join(',');
-  rdForgetPreview(); rdClearSelection(); rdResults.remote = {}; rdResults.overwrite = false; rdResults.pendingPreview = null; rdResults.excelFile = null;
+  rdForgetPreview(); rdClearSelection(); rdResults.remote = {}; rdResults.pendingPreview = null; rdResults.excelFile = null;
   rdResults.busy = true; rdResults.busyAction = 'refresh-te'; rdResults.error = '';
   rdResults.teRefresh = { status: 'running', scanned: 0, total: rdResults.data?.counts.total || 0 };
   renderRdResults();
@@ -463,7 +461,7 @@ function rdCommitProgress(p) {
 async function rdClick(event) {
   const mode = event.target.closest('[data-rd-mode]')?.dataset.rdMode;
   if (mode && mode !== rdResults.mode && !rdResults.busy && !rdResults.committing) {
-    rdForgetPreview(); rdResults.mode = mode; rdResults.overwrite = false; rdResults.operations = []; rdResults.pendingPreview = null;
+    rdForgetPreview(); rdResults.mode = mode; rdResults.operations = []; rdResults.pendingPreview = null;
     rdResults.filters.status = 'all'; rdResults.filters.page = 1;
     rdPersist(); return loadRdResults();
   }
@@ -502,8 +500,8 @@ async function rdClick(event) {
       return;
     }
     let response = await rdPost(action, action === 'preview-scope'
-      ? { baselines: scope, q: rdResults.filters.q, status: rdResults.filters.status, overwrite: rdResults.overwrite, excluded_issue_ids: [...rdResults.excluded] }
-      : { baselines: scope, issue_ids: action === 'status' ? rdResults.data.items.map(r=>r.issue_id) : [...rdResults.selected], overwrite: rdResults.overwrite });
+      ? { baselines: scope, q: rdResults.filters.q, status: rdResults.filters.status, overwrite: true, excluded_issue_ids: [...rdResults.excluded] }
+      : { baselines: scope, issue_ids: action === 'status' ? rdResults.data.items.map(r=>r.issue_id) : [...rdResults.selected], overwrite: true });
     if (action !== 'status') response = await rdWaitPreview(response, epoch, scope);
     if (!response || epoch !== rdResults.epoch || state.activePage !== 'rd-results' || scope !== state.selectedBaselineIds.join(',')) return;
     if (action === 'status') { rdResults.remote = Object.fromEntries(response.items.map(r=>[r.issue_id,r])); rdResults.selected.clear(); }
@@ -517,7 +515,7 @@ async function rdPreviewExcel() {
   const epoch = rdResults.epoch, scope = rdResults.baselines;
   rdForgetPreview(); rdResults.busy = true; rdResults.busyAction = 'excel-preview'; rdResults.error = ''; renderRdResults();
   try {
-    const body = new FormData(); body.append('file', file, file.name); body.append('baselines', scope); body.append('overwrite', String(rdResults.overwrite));
+    const body = new FormData(); body.append('file', file, file.name); body.append('baselines', scope);
     const response = await api('/api/rd-results/te-excel-preview?background=true', { method: 'POST', body });
     const receipt = await rdWaitPreview(response, epoch, scope);
     if (receipt && epoch === rdResults.epoch && scope === state.selectedBaselineIds.join(',')) rdOpenPreview(receipt);
@@ -547,7 +545,7 @@ function rdPreviewStatus(row) {
   if (rdIsTE()) return row.eligible ? rdText('修正 TE', 'Correct TE') : rdStatus(row.status);
   return row.eligible ? row.status === 'conflict' ? rdText('覆盖现有结果', 'Overwrite existing') : rdText('新增结果', 'New result')
     : row.status === 'same' ? rdText('已一致，跳过', 'Already matches · skip')
-    : row.status === 'conflict' ? rdText('未允许覆盖', 'Overwrite not allowed') : rdText('不可上传', 'Blocked');
+    : row.status === 'conflict' ? rdText('请重新预览', 'Preview again') : rdText('不可上传', 'Blocked');
 }
 function rdRenderPreview() {
   const p = rdResults.preview, root = $('#rdResultsPage');

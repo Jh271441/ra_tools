@@ -91,6 +91,26 @@ class PublicationHistoryTest(unittest.TestCase):
                 with self.assertRaises(Exception) as exc:asyncio.run(trail_history.verify(operation,None))
                 self.assertEqual(exc.exception.status_code,409)
 
+    def test_historical_receipt_without_finish_time_keeps_verified_outcome(self):
+        record=dict(id='d'*32,actor='old-user',mode='rd',state='complete',created_at=1_790_000_000,
+            baselines='version-20261009',items=[dict(issue_id='cn123',eligible=True,before={rd.FIELD:None},desired='误触发')],
+            results=[dict(issue_id='cn123',state='verified')])
+        # Older receipts have no separate completion timestamp. Force the
+        # initial pending ID to sort after the deterministic success event ID.
+        with patch('ra_triage_dashboard.app.db_parts.trail_history.uuid.uuid4',return_value=SimpleNamespace(hex='f'*32)):
+            sync_publication_audit(self.db,record)
+        operation='publication-'+record['id']
+        history=self.db.trail_operation(operation)
+        self.assertEqual(history['status'],'succeeded')
+        self.assertEqual(history['outcomes'],{'cn123':'succeeded'})
+        self.assertEqual([event['status'] for event in history['events']],['pending','succeeded'])
+        self.assertEqual(history['events'][0]['created_at'],history['events'][1]['created_at'])
+        self.assertEqual(self.db.list_trail_operations(status='succeeded')['total'],1)
+        self.assertEqual(self.db.list_trail_operations(status='pending')['total'],0)
+        sync_publication_audit(self.db,record)
+        self.assertEqual(len(self.db.trail_operation(operation)['events']),2)
+        self.assertFalse(history['actor_verified'])
+
     def test_readbacks_overlay_only_older_source_without_fabricating_full_snapshot(self):
         store=TEObservationStore(self.temp.name,'fixture');record=dict(id='b'*32,baselines='version-20261009')
         store.record_readback(record,dict(status='ready',checked_at=2_000_000_000,items=[dict(issue_id='cn123',current='成功')]))

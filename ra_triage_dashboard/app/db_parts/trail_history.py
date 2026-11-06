@@ -99,7 +99,9 @@ class DatabaseTrailHistoryMixin:
             raise ValueError("Invalid Trail event status")
         with self._write_lock, self.connect() as conn:
             previous = {}
-            for row in conn.execute("SELECT outcomes_json FROM trail_operation_events WHERE operation_id = ? ORDER BY created_at, id", (operation_id,)).fetchall():
+            # Historical receipts may share the intent timestamp. The initial
+            # pending event must precede results, regardless of random IDs.
+            for row in conn.execute("SELECT outcomes_json FROM trail_operation_events WHERE operation_id = ? ORDER BY created_at, CASE WHEN status = 'pending' THEN 0 ELSE 1 END, id", (operation_id,)).fetchall():
                 previous.update(json.loads(row["outcomes_json"]))
             previous.update(outcomes)
             if previous and all(value == "succeeded" for value in previous.values()):
@@ -119,7 +121,7 @@ class DatabaseTrailHistoryMixin:
                 for r in conn.execute("SELECT * FROM trail_operation_items WHERE operation_id = ? ORDER BY issue_id", (operation_id,)).fetchall()]
             result["events"] = [{"id": r["id"], "created_at": r["created_at"], "status": r["status"], "actor": r["actor"], "actor_source": r["actor_source"],
                 "outcomes": json.loads(r["outcomes_json"])} for r in conn.execute(
-                "SELECT * FROM trail_operation_events WHERE operation_id = ? ORDER BY created_at, id", (operation_id,)).fetchall()]
+                "SELECT * FROM trail_operation_events WHERE operation_id = ? ORDER BY created_at, CASE WHEN status = 'pending' THEN 0 ELSE 1 END, id", (operation_id,)).fetchall()]
             result["children"] = [dict(r) for r in conn.execute(
                 "SELECT id, created_at, actor FROM trail_operations WHERE parent_id = ? ORDER BY created_at, id", (operation_id,)).fetchall()]
         result["outcomes"] = {}
@@ -147,7 +149,7 @@ class DatabaseTrailHistoryMixin:
                 where.append(f"o.created_at {operator} ?")
                 params.append(value)
         if status:
-            where.append("(SELECT e.status FROM trail_operation_events e WHERE e.operation_id = o.id ORDER BY e.created_at DESC, e.id DESC LIMIT 1) = ?")
+            where.append("(SELECT e.status FROM trail_operation_events e WHERE e.operation_id = o.id ORDER BY e.created_at DESC, CASE WHEN e.status = 'pending' THEN 0 ELSE 1 END DESC, e.id DESC LIMIT 1) = ?")
             params.append(status)
         clause = " WHERE " + " AND ".join(where) if where else ""
         with self.connect() as conn:
