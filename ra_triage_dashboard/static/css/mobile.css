@@ -1063,6 +1063,10 @@
   .trail-history-diff { grid-template-columns:minmax(0,1fr); gap:8px; }
   .trail-history-diff > .trail-history-arrow { display:none; }
   .trail-history-diff-cell { padding:10px; }
+  .trail-history-label-table th,.trail-history-label-table td { padding:10px 7px; }
+  .trail-history-label-table tr > :first-child { width:38%; }
+  .trail-history-label-table caption { padding:10px; }
+  .trail-history-label-table .trail-history-status { font-size:11px; padding:2px 4px; }
   .trail-history-outcomes { grid-template-columns:minmax(0,1fr); }
   .trail-history-audit-content { padding:12px; }
   .trail-history-page details > summary,.trail-history-dialog details > summary { min-height:44px; padding:10px 0; }

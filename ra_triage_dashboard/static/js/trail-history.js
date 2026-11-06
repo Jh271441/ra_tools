@@ -116,12 +116,27 @@ function trailHistoryComparison(before,after,key,preview=false) {
   const from=preview?uiText("当前值","Current"):uiText("修改前","Before"),to=preview?uiText("恢复为","Restore to"):uiText("修改后","After");
   return `<div class="trail-history-diff"><div class="trail-history-diff-cell"><small>${from}</small><pre>${trailHistoryText(trailHistoryFieldValue(before,key))}</pre></div><span class="trail-history-arrow" aria-hidden="true">→</span><div class="trail-history-diff-cell trail-history-diff-after"><small>${to}</small><pre>${trailHistoryText(trailHistoryFieldValue(after,key))}</pre></div></div>`;
 }
+function trailHistoryLabelField(field) {
+  return field==='ra_review_result_new'?uiText('TE 标注','TE label'):field==='ra_rd_review_result'?uiText('RD 标注','RD label'):'';
+}
+function trailHistoryLabelTable(items,beforeKey='before',afterKey='after') {
+  const detail=trailHistory.detail,preview=afterKey==='restore';
+  const showOutcomes=!preview&&items.some(item=>(detail?.outcomes[item.issue_id]||'unknown')!==detail?.status);
+  const before=preview?uiText('当前值','Current'):uiText('修改前','Before'),after=preview?uiText('恢复为','Restore to'):uiText('修改后','After');
+  return `<div class="trail-history-label-table-wrap"><table class="trail-history-label-table"><caption>${trailHistoryLabelField(items[0].field)}</caption><thead><tr><th scope="col">Issue ID</th><th scope="col">${before}</th><th scope="col">${after}</th></tr></thead><tbody>${items.map(item=>`<tr><th scope="row"><span>${trailHistoryText(item.issue_id)}</span>${showOutcomes&&detail?.outcomes[item.issue_id]!=='succeeded'?trailHistoryBadge(detail?.outcomes[item.issue_id]||'unknown',detail?.source):''}</th><td>${trailHistoryText(trailHistoryFieldValue(item[beforeKey]||{},'value'))}</td><td class="trail-history-label-after">${trailHistoryText(trailHistoryFieldValue(item[afterKey]||{},'value'))}</td></tr>`).join('')}</tbody></table></div>`;
+}
+function trailHistoryChanges(items,beforeKey='before',afterKey='after',selectable=false) {
+  const groups=[],fields=new Map();
+  for(const item of items) {
+    if(!trailHistoryLabelField(item.field)){groups.push({item});continue;}
+    if(!fields.has(item.field)){const group={items:[]};fields.set(item.field,group);groups.push(group);}
+    fields.get(item.field).items.push(item);
+  }
+  return groups.map(group=>group.items?trailHistoryLabelTable(group.items,beforeKey,afterKey):trailHistoryDiff(group.item,beforeKey,afterKey,selectable)).join('');
+}
 function trailHistoryDiff(item,beforeKey="before",afterKey="after",selectable=false) {
   const before=item[beforeKey]||{},after=item[afterKey]||{};
-  if(['ra_rd_review_result','ra_review_result_new'].includes(item.field)) {
-    const outcome=trailHistory.detail?.outcomes[item.issue_id];
-    return `<section class="trail-history-issue"><div class="trail-history-issue-heading"><h4>${trailHistoryText(item.issue_id)}</h4>${trailHistoryBadge(outcome||'unknown',trailHistory.detail?.source)}</div><div class="trail-history-field-heading"><h5>${item.field==='ra_review_result_new'?uiText('TE 标注','TE label'):uiText('RD 标注','RD label')}</h5><code>${trailHistoryText(item.field)}</code></div>${trailHistoryComparison(before,after,'value')}</section>`;
-  }
+  if(trailHistoryLabelField(item.field))return trailHistoryLabelTable([item],beforeKey,afterKey);
   const flag=obj=>typeof obj.should_exclude==="boolean"?`<span class="trail-history-value" data-excluded="${obj.should_exclude}">${obj.should_exclude?uiText("已排除","Excluded"):uiText("未排除","Not excluded")}</span>`:`<span class="trail-history-value">${trailHistoryText(trailHistoryFieldValue(obj,"should_exclude"))}</span>`;
   const preview=afterKey==="restore",legacy=trailHistory.detail?.source==="legacy";
   const from=preview?uiText("当前值","Current"):uiText("修改前","Before"),to=preview?uiText("恢复为","Restore to"):uiText("修改后","After");
@@ -144,7 +159,8 @@ function trailHistoryTimeline(detail) {
   }).join("")}</ol>`:`<p class="trail-history-muted">${uiText("暂无执行事件。","No execution events.")}</p>`}</section>`;
 }
 function trailHistoryAudit(detail) {
-  return `<details class="review-history-toggle trail-history-audit" data-disclosure="audit"><summary id="trailHistoryAuditSummary"><span><strong>${uiText("审计信息","Audit details")}</strong><small>${uiText("操作标识与逐项回执","Operation markers and item receipts")}</small></span></summary><div class="trail-history-audit-content"><div><h4>${uiText("本次操作标识","Operation ID")}</h4><code class="trail-history-id">${trailHistoryText(detail.id)}</code></div>${!["legacy","rd_upload","te_correction"].includes(detail.source)?`<section><h4>${uiText("Issue 操作标识","Issue operation markers")}</h4><div class="trail-history-audit-items">${detail.items.map(item=>`<div><strong>${trailHistoryText(item.issue_id)}</strong>${trailHistoryComparison(item.before||{},item.after||{},"operation_id")}</div>`).join("")}</div></section>`:""}${detail.events.map(event=>`<section><h4>${uiText("Issue 结果","Issue outcomes")} · ${trailHistoryTime(event.created_at)} CST</h4><ul class="trail-history-outcomes">${Object.entries(event.outcomes).map(([issue,status])=>`<li><span>${trailHistoryText(issue)}</span>${trailHistoryBadge(status,detail.source)}</li>`).join("")||`<li>${uiText("暂无逐项回执","No item receipts")}</li>`}</ul></section>`).join("")}</div></details>`;
+  const fields=[...new Set(detail.items.map(item=>item.field).filter(Boolean))];
+  return `<details class="review-history-toggle trail-history-audit" data-disclosure="audit"><summary id="trailHistoryAuditSummary"><span><strong>${uiText("审计信息","Audit details")}</strong><small>${uiText("操作标识与逐项回执","Operation markers and item receipts")}</small></span></summary><div class="trail-history-audit-content"><div><h4>${uiText("本次操作标识","Operation ID")}</h4><code class="trail-history-id">${trailHistoryText(detail.id)}</code></div>${fields.length?`<section><h4>${uiText('目标字段','Target fields')}</h4><ul class="trail-history-audit-fields">${fields.map(field=>`<li><span>${trailHistoryLabelField(field)}</span><code class="trail-history-id">${trailHistoryText(field)}</code></li>`).join('')}</ul></section>`:''}${!["legacy","rd_upload","te_correction"].includes(detail.source)?`<section><h4>${uiText("Issue 操作标识","Issue operation markers")}</h4><div class="trail-history-audit-items">${detail.items.map(item=>`<div><strong>${trailHistoryText(item.issue_id)}</strong>${trailHistoryComparison(item.before||{},item.after||{},"operation_id")}</div>`).join("")}</div></section>`:""}${detail.events.map(event=>`<section><h4>${uiText("Issue 结果","Issue outcomes")} · ${trailHistoryTime(event.created_at)} CST</h4><ul class="trail-history-outcomes">${Object.entries(event.outcomes).map(([issue,status])=>`<li><span>${trailHistoryText(issue)}</span>${trailHistoryBadge(status,detail.source)}</li>`).join("")||`<li>${uiText("暂无逐项回执","No item receipts")}</li>`}</ul></section>`).join("")}</div></details>`;
 }
 function renderTrailRestoreSteps() {
   const host=$("#trailHistoryRestoreSteps");if(!host)return;
@@ -170,7 +186,7 @@ function renderTrailHistoryDetail() {
   body.innerHTML=`${restoring?`<section class="trail-history-restore-intro"><ol id="trailHistoryRestoreSteps" class="trail-history-steps" aria-label="${uiText("恢复步骤","Restore steps")}"></ol><p>${uiText("仅恢复所选 Issue 的 Trail 排除状态和理由；本地标注不变。","Restore only the selected Issues’ Trail exclusion state and reason; local labels stay unchanged.")}</p></section>`:''}${trailHistoryOverview(detail)}
     ${detail.source==="legacy"?`<p role="note" class="trail-history-muted">${uiText("旧版记录 · 无完整快照 · 不可恢复","Legacy · No complete snapshots · Restore unavailable")}</p>`:""}
     ${detail.parent_id?`<p class="trail-history-related">${uiText("恢复自","Restores")} <button type="button" class="button button-secondary" data-related="${trailHistoryText(detail.parent_id)}" title="${trailHistoryText(detail.parent_id)}">${uiText("查看原更新","View original update")}</button></p>`:""}
-    ${!ready?`<section class="trail-history-changes" aria-labelledby="trailHistoryChangesTitle"><div class="trail-history-section-heading"><h3 id="trailHistoryChangesTitle">${restoring?uiText("选择要恢复的 Issue","Select Issues to restore"):uiText("变更内容","Changes")}</h3><span>${uiText(`${detail.items.length} 个 Issue`,`${detail.items.length} ${detail.items.length===1?"Issue":"Issues"}`)}</span></div>${detail.items.map(item=>trailHistoryDiff(item,"before","after",restoring&&detail.restorable)).join("")||`<p class="trail-history-muted">${uiText("没有可展示的 Issue 记录。","No Issue records to display.")}</p>`}</section>`:''}
+    ${!ready?`<section class="trail-history-changes" aria-labelledby="trailHistoryChangesTitle"><div class="trail-history-section-heading"><h3 id="trailHistoryChangesTitle">${restoring?uiText("选择要恢复的 Issue","Select Issues to restore"):uiText("变更内容","Changes")}</h3><span>${uiText(`${detail.items.length} 个 Issue`,`${detail.items.length} ${detail.items.length===1?"Issue":"Issues"}`)}</span></div>${trailHistoryChanges(detail.items,"before","after",restoring&&detail.restorable)||`<p class="trail-history-muted">${uiText("没有可展示的 Issue 记录。","No Issue records to display.")}</p>`}</section>`:''}
     ${!restoring?trailHistoryTimeline(detail):''}
     ${detail.children.length?`<div class="trail-history-related"><span>${uiText("后续恢复","Subsequent restores")}</span>${detail.children.map(row=>`<button type="button" class="button button-secondary" data-related="${trailHistoryText(row.id)}">${trailHistoryTime(row.created_at)} · ${trailHistoryText(row.actor)}</button>`).join(" ")}</div>`:""}
     ${!restoring?trailHistoryAudit(detail):''}
