@@ -59,12 +59,14 @@ class TrailImportDiscovery:
             if os.path.exists(temporary):
                 os.unlink(temporary)
 
-    def read_or_start(self, *, scopes, members, read_remote, refresh=False):
+    def read_or_start(self, *, scopes, members, read_remote, refresh=False, start_if_missing=True):
         """Return immediately; first visit/explicit refresh starts one worker.
 
         A scope lock spans the entire scan, including across server workers.
         Failed/interrupted jobs require explicit retry. Completed snapshots have
         no automatic TTL: the UI shows their time and membership-change warning.
+        Read-only consumers can set start_if_missing=False to require an explicit
+        refresh even on the first visit. _retain_fact scopes the stored facts.
         """
         self.root.mkdir(mode=0o700, parents=True, exist_ok=True)
         path = self._path(scopes)
@@ -81,6 +83,8 @@ class TrailImportDiscovery:
                 self._save(path, state)
             if state is not None and not refresh:
                 return state
+            if state is None and not refresh and not start_if_missing:
+                return {"version": 1, "status": "not_started", "total": len(members), "scanned": 0}
             if not _slots.acquire(blocking=False):
                 raise RuntimeError("扫描繁忙，请稍后重试 / Scanner busy; retry later")
             try:
@@ -116,7 +120,7 @@ class TrailImportDiscovery:
                 # local reversal must be visible without another remote scan.
                 for member in page:
                     fact = remote[member["issue_id"]]
-                    if fact.get("should_exclude") is True:
+                    if self._retain_fact(fact):
                         observed.append({**member, "remote": fact})
                 state.update(scanned=offset + len(page), partial=list(observed))
                 self._save(path, state)
@@ -132,6 +136,10 @@ class TrailImportDiscovery:
         finally:
             lock.close()
             _slots.release()
+
+    @staticmethod
+    def _retain_fact(fact):
+        return fact.get("should_exclude") is True
 
     @staticmethod
     def membership_changed(state, members):

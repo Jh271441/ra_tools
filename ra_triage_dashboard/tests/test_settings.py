@@ -63,6 +63,15 @@ class DashboardReturnURLTest(unittest.TestCase):
 
 
 class SeedExampleSettingTest(unittest.TestCase):
+    def test_te_writer_defaults_closed_and_is_independent_of_rd(self):
+        with tempfile.TemporaryDirectory() as root, patch.dict(os.environ,
+                {'DASHBOARD_DATA_DIR':root,'DASHBOARD_TRAIL_RD_WRITE_ENABLED':'true'}, clear=True):
+            self.assertFalse(Settings.from_env().trail_te_write_enabled)
+            with patch.dict(os.environ, {'DASHBOARD_TRAIL_TE_WRITE_ENABLED':'true','DASHBOARD_TRAIL_RD_WRITE_ENABLED':'false'}):
+                configured = Settings.from_env()
+                self.assertTrue(configured.trail_te_write_enabled)
+                self.assertFalse(configured.trail_rd_write_enabled)
+
     def test_seed_examples_can_be_disabled_for_isolated_smoke_data(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir, patch.dict(
             os.environ,

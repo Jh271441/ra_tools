@@ -1,8 +1,4 @@
-"""Manual RD publication: canonical labels, frozen previews, durable receipts.
-
-This writer owns exactly ra_rd_review_result. It does not use the exclusion
-writer, whose operation marker would modify another field.
-"""
+"""Manual label publication with fixed RD and TE-correction policies."""
 from __future__ import annotations
 
 from contextlib import contextmanager
@@ -19,10 +15,31 @@ import tempfile
 from threading import BoundedSemaphore, Event, Lock
 import time
 import uuid
+from .label_publication_inputs import file_row_fingerprint
 
 FIELD = "ra_rd_review_result"
+TE_FIELD = "ra_review_result_new"
+RD_MODE = "rd"
+TE_MODE = "te-correction"
 VALUES = {"正确触发": "成功", "误触发": "误触发", "无需协助": "无需协助"}
 PROTECTED = ("ra_stuck_auto_result", "ra_stuck_auto_result_info", "ra_review_reason", "ra_merge_result")
+
+
+def target_field(mode=RD_MODE):
+    if mode not in {RD_MODE, TE_MODE}:
+        raise ValueError('上传类型无效 / Invalid publication mode')
+    return TE_FIELD if mode == TE_MODE else FIELD
+
+
+def protected_fields(mode=RD_MODE):
+    target_field(mode)
+    return (*PROTECTED, FIELD) if mode == TE_MODE else PROTECTED
+
+
+def desired_value(label, mode=RD_MODE):
+    # Field policies stay explicit even where their three legal values coincide.
+    target_field(mode)
+    return VALUES.get(label)
 _preview_workers = ThreadPoolExecutor(max_workers=2, thread_name_prefix='rd-preview')
 _preview_slots = BoundedSemaphore(2)
 # Shared across preview jobs so two previews cannot multiply Trail concurrency.
@@ -36,19 +53,29 @@ def digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False, default=str).encode()).hexdigest()
 
 
-def adapter(root):
+def adapter(root, mode=RD_MODE):
+    target_field(mode)
     root = str(Path(root).resolve())
     if root not in sys.path:
         sys.path.insert(0, root)
     result = importlib.import_module("tools.daily_auto_triage.rd_review_sync").TrailHTTP()
-    result.client = RDTransport(result.client)
+    result.client = RDTransport(result.client, mode)
+    if mode == TE_MODE:
+        # Reuse auth and reads, never the RD client's hard-coded update payload.
+        def update(values):
+            return result.client._send_request(
+                'https://voyager.intra.xiaojukeji.com/paladin/issue/pool/multi_update/',
+                dict(user_location='cn', source_id=1,
+                     issue_info={iid: {TE_FIELD: value} for iid, value in values.items()}))
+        result.update = update
     return result
 
 
 class RDTransport:
     """Reuse application auth, but isolate proxy policy and avoid write retries."""
-    def __init__(self, client):
+    def __init__(self, client, mode=RD_MODE):
         self.client = client
+        self.field = target_field(mode)
 
     def send_request(self, url, data, timeout=None):
         import requests
@@ -65,9 +92,9 @@ class RDTransport:
                     or set(data) != {'user_location', 'source_id', 'issue_info'}
                     or data['user_location'] != 'cn' or data['source_id'] != 1
                     or any(not re.fullmatch(r'cn[0-9]+', iid) or not isinstance(attrs, dict)
-                           or set(attrs) != {FIELD} or attrs[FIELD] not in VALUES.values()
+                           or set(attrs) != {self.field} or attrs[self.field] not in VALUES.values()
                            for iid, attrs in issues.items())):
-                raise ValueError('RD 上传字段无效 / Invalid RD upload fields')
+                raise ValueError('上传字段无效 / Invalid upload fields')
         with requests.Session() as session:
             session.trust_env = False
             response = session.post(url, json=data, headers=self.client._post_headers(url),
@@ -79,11 +106,12 @@ class RDTransport:
         return self.send_request(url, json_data, timeout).json()
 
 
-def read_remote(client, ids, *, progress=None, parallel=False):
+def read_remote(client, ids, *, progress=None, parallel=False, mode=RD_MODE):
+    target_field(mode)
     result = {}
     if parallel and len(ids) > 40:
         # TrailHTTP.fetch splits at 40; align to avoid nested serial requests.
-        futures = [_trail_read_workers.submit(_read_remote_chunk, client, ids[offset:offset + 40])
+        futures = [_trail_read_workers.submit(_read_remote_chunk, client, ids[offset:offset + 40], mode)
                    for offset in range(0, len(ids), 40)]
         try:
             for future in as_completed(futures):
@@ -96,22 +124,47 @@ def read_remote(client, ids, *, progress=None, parallel=False):
         # Completion order must not reorder the user's frozen preview.
         return {iid: result[iid] for iid in ids}
     for offset in range(0, len(ids), 100):
-        result.update(_read_remote_chunk(client, ids[offset:offset + 100]))
+        result.update(_read_remote_chunk(client, ids[offset:offset + 100], mode))
         if progress:
             progress(len(result), len(ids))
     return result
 
 
-def _read_remote_chunk(client, ids):
+def _read_remote_chunk(client, ids, mode=RD_MODE):
     rows = client.fetch(ids)
     if len(rows) != len(ids) or {r.get("issue_id") for r in rows} != set(ids):
         raise ValueError("Trail 返回不完整或重复 / Incomplete or duplicate Trail response")
     # The query contract exposes unset attributes as absent or null. Never
     # coerce unknown/non-string values into an empty, writable field.
+    field = target_field(mode)
     for row in rows:
-        if row.get(FIELD) is not None and not isinstance(row[FIELD], str):
+        if row.get(field) is not None and not isinstance(row[field], str):
             raise ValueError("Trail 字段格式异常 / Invalid Trail field")
-    return {r["issue_id"]: {k: r.get(k) for k in (FIELD, *PROTECTED)} for r in rows}
+        if mode == TE_MODE and row.get(FIELD) is not None and not isinstance(row[FIELD], str):
+            raise ValueError("Trail RD 字段格式异常 / Invalid Trail RD field")
+    return {r["issue_id"]: {k: r.get(k) for k in (field, *protected_fields(mode))} for r in rows}
+
+
+def read_te_observations(client, ids):
+    """Read TE only in bounded chunks. A missing field stays unknown."""
+    result = {}
+    for offset in range(0, len(ids), 40):
+        batch = ids[offset:offset + 40]
+        rows = client.fetch(batch)
+        if len(rows) != len(batch) or {r.get('issue_id') for r in rows} != set(batch):
+            raise ValueError('TE 查询不完整 / Incomplete TE observations')
+        for row in rows:
+            value = row.get(TE_FIELD)
+            if TE_FIELD not in row:
+                status = 'unknown'
+            elif value in (None, ''):
+                status = 'unfilled'
+            elif type(value) is int or isinstance(value, str) and 0 < len(value) <= 256:
+                status = 'filled'
+            else:
+                raise ValueError('TE 字段格式异常 / Invalid TE field')
+            result[row['issue_id']] = dict(te_status=status, te_value=value)
+    return result
 
 
 def local_rows(db, ids):
@@ -142,12 +195,36 @@ def local_rows(db, ids):
     return result
 
 
-def classify(row, remote):
+def publication_rows(record, db, ids):
+    source = (record.get('scope') or {}).get('source') or {}
+    if source.get('kind') != 'xlsx':
+        return local_rows(db, ids)
+    if record.get('mode') != TE_MODE or not re.fullmatch(r'[0-9a-f]{64}', source.get('sha256', '')):
+        raise ValueError('文件修正来源无效 / Invalid file correction source')
+    result = {}
+    for row in record['items']:
+        if (row.get('source_kind') != 'xlsx' or row.get('state') != 'resolved' or row.get('label') not in VALUES
+                or row.get('fingerprint') != file_row_fingerprint(source, row['issue_id'], row['label'], row['source_row'])):
+            raise ValueError('文件目标已变化 / File targets changed')
+        if row['issue_id'] in ids:
+            result[row['issue_id']] = row
+    return result
+
+
+def classify(row, remote, mode=RD_MODE):
+    field = target_field(mode)
     if row['state'] != 'resolved' or row['label'] not in VALUES:
         return 'blocked'
-    current = remote.get(FIELD)
-    if current == VALUES[row['label']]:
+    current = remote.get(field)
+    desired = desired_value(row['label'], mode)
+    if current == desired:
         return 'same'
+    if mode == TE_MODE:
+        if current in (None, ''):
+            return 'te_empty'
+        if remote.get(FIELD) != desired:
+            return 'rd_mismatch'
+        return 'conflict'
     return 'pending' if current in (None, '') else 'conflict'
 
 
@@ -238,12 +315,13 @@ class PublicationStore:
                 fcntl.flock(stream, fcntl.LOCK_UN)
         return self.public(record)
 
-    def start_preview(self, actor, baselines, overwrite, load):
+    def start_preview(self, actor, baselines, overwrite, load, *, mode=RD_MODE):
         """Return a durable operation before doing any local/Trail projection.
 
         Bounded workers never perform writes. The lock also lets another process
         detect an interrupted preview without mistaking it for an empty result.
         """
+        field = target_field(mode)
         if not _preview_slots.acquire(blocking=False):
             raise ValueError('核对任务繁忙，请稍后重试 / Preview workers busy; retry shortly')
         lock = None
@@ -253,7 +331,8 @@ class PublicationStore:
             lock = (self.root / (operation + '.preview-lock')).open('a')
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             record = dict(id=operation, actor=actor, created_at=time.time(), expires_at=time.time()+600,
-                          state='preparing', overwrite=overwrite, baselines=baselines, items=[], results=[],
+                          state='preparing', overwrite=overwrite, baselines=baselines, mode=mode, field=field,
+                          offline_aligned=mode == TE_MODE and overwrite, items=[], results=[],
                           background_preview=True, progress=dict(stage='labels', checked=0, total=0))
             self.save(record)
             def work():
@@ -262,7 +341,7 @@ class PublicationStore:
                         record['progress'] = dict(stage='trail', checked=checked, total=total)
                         self.save(record)
                     rows, remote, scope = load(progress)
-                    self.preview(actor, rows, remote, overwrite, baselines, scope=scope, operation=operation)
+                    self.preview(actor, rows, remote, overwrite, baselines, scope=scope, operation=operation, mode=mode)
                 except Exception:
                     record.update(state='preview_failed', reason='preview_check_failed')
                     self.save(record)
@@ -278,15 +357,16 @@ class PublicationStore:
             _preview_slots.release()
             raise
 
-    def preview(self, actor, rows, remote, overwrite, baselines, *, scope=None, operation=None):
+    def preview(self, actor, rows, remote, overwrite, baselines, *, scope=None, operation=None, mode=RD_MODE):
+        field = target_field(mode)
         items = []
         for iid, row in rows.items():
-            status = classify(row, remote[iid])
-            items.append(dict(**row, status=status, before=remote[iid], desired=VALUES.get(row['label']),
+            status = classify(row, remote[iid], mode)
+            items.append(dict(**row, status=status, before=remote[iid], desired=desired_value(row['label'], mode),
                               eligible=status == 'pending' or (status == 'conflict' and overwrite)))
         record = dict(id=operation or uuid.uuid4().hex, actor=actor, created_at=time.time(),
                       expires_at=time.time() + 600, overwrite=overwrite, baselines=baselines,
-                      state='preview', items=items, results=[])
+                      state='preview', mode=mode, field=field, offline_aligned=mode == TE_MODE and overwrite, items=items, results=[])
         if scope is not None:
             record['scope'] = scope
         if operation is not None:
@@ -297,14 +377,20 @@ class PublicationStore:
 
     @staticmethod
     def public(record):
+        mode = record.get('mode', RD_MODE)
+        field = target_field(mode)
         return {**{k: record[k] for k in ('id', 'actor', 'created_at', 'expires_at', 'state', 'overwrite')},
+                'mode': mode, 'field': field, 'baselines': record.get('baselines', ''),
+                'offline_aligned': record.get('offline_aligned', False),
                 'reason': record.get('reason', ''),
                 'scope': record.get('scope'),
                 'progress': PublicationStore.progress(record),
                 'background_preview': record.get('background_preview', False),
                 'results': [{k: v for k, v in r.items() if k != 'after'} |
-                            ({'observed': r['after'][FIELD]} if 'after' in r else {}) for r in record['results']],
-                'items': [{k: v for k, v in row.items() if k not in {'before', 'fingerprint'}} | {'current': row['before'].get(FIELD)} for row in record['items']]}
+                            ({'observed': r['after'][field]} if 'after' in r else {}) for r in record['results']],
+                'items': [{k: v for k, v in row.items() if k not in {'before', 'fingerprint'}} |
+                          {'current': row['before'].get(field)} |
+                          ({'rd_current': row['before'].get(FIELD)} if mode == TE_MODE else {}) for row in record['items']]}
 
     @staticmethod
     def progress(record):
@@ -387,6 +473,8 @@ class PublicationStore:
             return self.public(record)
 
     def _execute_commit(self, record, db, client, scope_ids):
+        mode = record.get('mode', RD_MODE)
+        field = target_field(mode)
         def current_scope():
             return scope_ids() if callable(scope_ids) else scope_ids
 
@@ -394,14 +482,16 @@ class PublicationStore:
         try:
             if not set(ids).issubset(current_scope()):
                 raise ValueError('数据范围已变化 / Dataset membership changed')
-            local = local_rows(db, ids)
+            local = publication_rows(record, db, ids)
             def progress(checked, total):
                 record['progress'].update(checked=checked, check_total=total)
                 self.save(record)
-            remote = read_remote(client, ids, parallel=True, progress=progress)
+            remote = read_remote(client, ids, parallel=True, progress=progress, mode=mode)
             for row in record['items']:
                 iid = row['issue_id']
-                if local.get(iid, {}).get('fingerprint') != row['fingerprint'] or remote[iid] != row['before']:
+                if (local.get(iid, {}).get('fingerprint') != row['fingerprint'] or remote[iid] != row['before']
+                        or row['desired'] != desired_value(local.get(iid, {}).get('label'), mode)
+                        or (row['eligible'] and classify(local[iid], remote[iid], mode) not in {'pending', 'conflict'})):
                     raise ValueError('标注或 Trail 已变化，请重新预览 / Labels or Trail changed; preview again')
         except Exception:
             record.update(state='needs_recheck', reason='preflight_failed', finished_at=time.time())
@@ -427,8 +517,8 @@ class PublicationStore:
                     results_by_id[iid]['phase'] = 'checking'
                 self.save(record)
             try:
-                live = read_remote(client, batch_ids)
-                latest = local_rows(db, batch_ids)
+                live = read_remote(client, batch_ids, mode=mode)
+                latest = publication_rows(record, db, batch_ids)
                 members = current_scope()
                 changed = any(row['issue_id'] not in members or live[row['issue_id']] != row['before']
                               or latest.get(row['issue_id'], {}).get('fingerprint') != row['fingerprint'] for row in rows)
@@ -459,12 +549,12 @@ class PublicationStore:
                     results_by_id[iid].update(acknowledged=acknowledged, phase='readback')
                 self.save(record)
             try:
-                after = read_remote(client, batch_ids)
+                after = read_remote(client, batch_ids, mode=mode)
                 outcomes = {}
                 for row in rows:
                     iid = row['issue_id']
-                    reason = ('protected_changed' if any(after[iid][k] != live[iid][k] for k in PROTECTED)
-                              else 'value_mismatch' if after[iid][FIELD] != row['desired'] else '')
+                    reason = ('protected_changed' if any(after[iid][k] != live[iid][k] for k in protected_fields(mode))
+                              else 'value_mismatch' if after[iid][field] != row['desired'] else '')
                     outcomes[iid] = dict(after=after[iid], state='unverified' if reason else 'verified', reason=reason)
             except Exception:
                 outcomes = {iid: dict(state='unverified', reason='readback_failed') for iid in batch_ids}

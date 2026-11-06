@@ -1097,7 +1097,8 @@
   .rd-upload-target > div { flex-direction: column; gap: 2px; }
   .rd-upload-target dd { width: 100%; }
   .rd-filters.run-filter-bar { grid-template-columns: minmax(0, 1fr) auto; }
-  .rd-filters > input { grid-column: 1 / -1; }
+  .rd-filters > input, .rd-filters > textarea { grid-column: 1 / -1; }
+  .rd-filters textarea { min-height: 44px; height: 44px; font-size: 16px; }
   .rd-selection-bar { align-items: center; }
   .rd-selection-tools { flex: 1 1 240px; gap: 4px; }
   .rd-results-page .job-history-row { grid-template-columns: minmax(0, 1fr); }
@@ -1147,4 +1148,14 @@
     overflow-wrap: anywhere;
     line-height: 1.35;
   }
+}
+
+/* Label publication tabs stay on one row with Refresh on phones. */
+@media (max-width: 639px) {
+  .rd-overview .runs-source-heading { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; }
+  .rd-mode-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .rd-mode-tabs .rd-mode-tab { min-width: 0; min-height: 44px; padding: 10px 0 13px; white-space: normal; line-height: 1.4; }
+  .rd-mode-label-full { display: none; }
+  .rd-mode-label-compact { display: inline; }
+  .rd-results-page.is-te-correction .rd-table { min-width: 760px; }
 }

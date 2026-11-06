@@ -1,0 +1,188 @@
+// Real loopback preview/UI/API; synthetic sources, real publication disabled.
+const {chromium}=require('playwright');
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const base=process.env.TE_PREVIEW_URL||'http://127.0.0.1:50268';
+const out=path.resolve(__dirname,'../../reports/te_correction_preview_20261106');fs.mkdirSync(out,{recursive:true});
+(async()=>{
+ const browser=await chromium.launch({headless:true});
+ const checks=[],errors=[];
+ try{
+  const page=await browser.newPage();page.on('pageerror',e=>errors.push(e.message));
+  const start=async(expectError=false)=>{
+   await page.goto(base+'/rd-results?baselines=version-20261016&mode=te-correction');
+   if(expectError) await page.waitForSelector('.rd-notice.is-error');
+   else await page.waitForFunction(()=>rdResults.data && !rdResults.loading);
+  };
+  const selectAction=async value=>{
+   const picker=page.locator('#rdSelectionAction').locator('..');
+   await picker.locator('.ui-select-trigger').click();
+   await picker.locator(`[data-ui-select-value="${value}"]`).click();
+  };
+  const fits=async()=>assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'page overflow');
+  for(const width of [1440,390,320])for(const lang of ['zh','en'])for(const theme of ['dark','light']){
+   await page.setViewportSize({width,height:1000});await start();
+   await page.evaluate(({lang,theme})=>{
+    state.uiLanguage=lang;document.documentElement.dataset.uiLang=lang;
+    localStorage.setItem('te-preview-language',lang);
+    applyColorTheme(theme);renderRdResults();
+   },{lang,theme});
+   assert.equal(await page.locator('.rd-upload-target code').last().textContent(),'ra_review_result_new');
+   assert.ok(await page.locator('.rd-overview [data-rd-mode="te-correction"]').getAttribute('aria-selected')==='true');
+   assert.equal(await page.locator('.rd-mode-tabs[role="tablist"] [role="tab"]').count(),2);
+   assert.equal(await page.locator('#rdModePanel').getAttribute('aria-labelledby'),'rdMode-te-correction');
+   if(width<640)for(const tab of await page.locator('.rd-mode-tab').all())assert.ok((await tab.boundingBox()).height>=44);
+   assert.equal(await page.locator('#rdResultsPage > .rd-mode-tabs').count(),0);
+   assert.equal(await page.locator('.rd-detail-heading .rd-description').count(),0);
+   assert.equal(await page.locator('#rdOverviewInfo').count(),0);
+   assert.equal(await page.locator('.rd-overview .rd-upload-target > div').count(),2);
+   assert.equal(await page.locator('.rd-overview .rd-upload-target').isVisible(),true);
+   assert.equal(await page.locator('.rd-detail-heading [data-rd-action="refresh-te"]').count(),1);
+   assert.equal(await page.locator('#rdState').evaluate(el=>getComputedStyle(el).display),'none');
+   await fits();
+   const picker=page.locator('#rdFilters .ui-select-trigger');await picker.click();await page.keyboard.press('Escape');
+   assert.equal(await picker.getAttribute('aria-expanded'),'false');
+   await selectAction('page');
+   assert.ok(await page.locator('[data-rd-id]:checked').count()>0);
+   await page.locator('#rdOverwrite').check();
+   await page.locator('[data-rd-action="preview"]').click();
+   await page.waitForSelector('#rdResultsPreview');
+   assert.ok((await page.locator('.rd-preview-details th').allTextContents()).some(t=>t.includes('RD')));
+   assert.ok((await page.locator('.rd-preview-details').innerText()).includes(lang==='zh'?'RD 未对齐':'RD agreement required'));
+   assert.equal(await page.locator('[data-rd-action="commit"]').isDisabled(),true);
+   await fits();
+   await page.locator('#rdPreviewInfo summary').click();
+   await page.waitForFunction(()=>JSON.parse(sessionStorage.getItem(rdPreviewStorageKey()))?.infoOpen === true);
+   assert.equal(await page.locator('#rdPreviewInfo code').nth(1).innerText(),'ra_review_result_new');
+   await fits();
+   if((width===1440&&lang==='zh'&&theme==='dark')||(width===320&&lang==='en'&&theme==='light'))
+    await page.screenshot({path:path.join(out,`preview-${width}-${lang}-${theme}.png`),fullPage:true});
+   await page.locator('[data-rd-action="close"]').click();
+   assert.ok(await page.locator('[data-rd-id]:checked').count()>0);
+   await page.locator('[data-rd-action="preview"]').click();
+   await page.waitForSelector('#rdResultsPreview');
+   await page.locator('#rdPreviewInfo summary').click();
+   await page.waitForFunction(()=>JSON.parse(sessionStorage.getItem(rdPreviewStorageKey()))?.infoOpen === true);
+   const id=await page.evaluate(()=>rdResults.preview.id);
+   await page.reload();await page.waitForSelector('#rdResultsPreview');
+   assert.equal(await page.evaluate(()=>rdResults.preview.id),id);
+   assert.equal(await page.locator('#rdPreviewInfo').getAttribute('open'),'');
+   assert.equal(await page.locator('html').getAttribute('data-ui-lang'),lang);
+   assert.equal(await page.locator('html').getAttribute('data-color-theme'),theme);
+   await page.locator('[data-rd-action="close"]').click();
+   assert.equal(await page.locator('[data-rd-id]:checked').count(),0);
+   await fits();
+   if((width===1440&&lang==='zh'&&theme==='dark')||(width===320&&lang==='en'&&theme==='light'))
+    await page.screenshot({path:path.join(out,`list-${width}-${lang}-${theme}.png`),fullPage:true});
+   checks.push({width,lang,theme});
+  }
+  await page.setViewportSize({width:1440,height:950});await start();
+  await page.locator('#rdSearch').fill('unsubmitted tab draft');
+  await page.locator('[data-rd-id]:enabled').first().check();await page.locator('#rdOverwrite').check();
+  const beforeTabs=page.url();
+  await page.locator('#rdMode-te-correction').focus();
+  await page.keyboard.press('ArrowLeft');
+  assert.equal(await page.evaluate(()=>document.activeElement.id),'rdMode-rd');
+  assert.equal(page.url(),beforeTabs);assert.equal(await page.evaluate(()=>rdResults.mode),'te-correction');
+  assert.equal(await page.locator('#rdSearch').inputValue(),'unsubmitted tab draft');
+  assert.equal(await page.locator('[data-rd-id]:checked').count(),1);assert.equal(await page.locator('#rdOverwrite').isChecked(),true);
+  await page.evaluate(()=>renderRdResults());
+  assert.equal(await page.locator('#rdMode-rd').getAttribute('tabindex'),'0');
+  assert.equal(await page.evaluate(()=>document.activeElement.id),'rdMode-rd');
+  await page.keyboard.press('End');assert.equal(await page.evaluate(()=>document.activeElement.id),'rdMode-te-correction');
+  await page.keyboard.press('ArrowRight');assert.equal(await page.evaluate(()=>document.activeElement.id),'rdMode-rd');
+  await page.keyboard.press('ArrowRight');assert.equal(await page.evaluate(()=>document.activeElement.id),'rdMode-te-correction');
+  await page.keyboard.press('Home');await page.keyboard.press('Enter');
+  await page.waitForFunction(()=>rdResults.data?.mode==='rd'&&!rdResults.loading);
+  assert.equal(await page.evaluate(()=>document.activeElement.id),'rdMode-rd');
+  assert.equal(await page.locator('.rd-upload-target code').last().textContent(),'ra_rd_review_result');
+  assert.equal(await page.locator('[data-rd-id]:checked').count(),0);assert.equal(await page.locator('#rdOverwrite').isChecked(),false);
+  await page.keyboard.press('End');await page.keyboard.press('Space');
+  await page.waitForFunction(()=>rdResults.data?.mode==='te-correction'&&!rdResults.loading);
+  assert.equal(await page.evaluate(()=>document.activeElement.id),'rdMode-te-correction');
+  assert.equal(await page.locator('#rdModePanel').getAttribute('aria-labelledby'),'rdMode-te-correction');
+  await selectAction('all');
+  await page.locator('#rdOverwrite').check();
+  await page.locator('[data-rd-id]').first().uncheck();
+  const excluded=await page.locator('[data-rd-id]').first().getAttribute('data-rd-id');
+  const selected=await page.evaluate(()=>rdSelectedCount());
+  await page.locator('[data-rd-action="preview"]').click();await page.waitForSelector('#rdResultsPreview');
+  assert.equal(await page.evaluate(()=>rdResults.preview.items.length),selected);
+  assert.equal(await page.evaluate(id=>rdResults.preview.items.some(r=>r.issue_id===id),excluded),false);
+  assert.ok(await page.evaluate(()=>rdResults.preview.items.length>20));
+  await page.locator('[data-rd-action="close"]').click();
+  await page.locator('[data-rd-action="next"]').click();await page.waitForFunction(()=>rdResults.data?.page===2);
+  assert.equal(await page.locator('[data-rd-id]:checked').count(),0);
+  assert.equal(new URL(page.url()).searchParams.get('mode'),'te-correction');
+  const currentPage=await page.evaluate(()=>rdResults.data.page);
+  await page.locator('#languageToggleButton').click();
+  assert.equal(await page.evaluate(()=>rdResults.data.page),currentPage);
+  await page.locator('[data-rd-mode="rd"]').click();
+  await page.waitForFunction(()=>rdResults.data?.mode==='rd');
+  assert.equal(await page.locator('.rd-upload-target code').last().textContent(),'ra_rd_review_result');
+  assert.equal(await page.locator('#rdOverwrite').isChecked(),false);
+  await page.locator('[data-rd-mode="te-correction"]').click();
+  await page.waitForFunction(()=>rdResults.data?.mode==='te-correction');
+  assert.equal(await page.locator('#rdOverwrite').isChecked(),false);
+  await page.evaluate(async()=>{state.selectedBaselineIds=['version-20261016','version-20261009'];rdPersist();await loadRdResults();});
+  assert.equal(await page.locator('[data-rd-action="preview"]').isDisabled(),true);
+  assert.ok((await page.locator('.is-error').innerText()).includes('版本')||(await page.locator('.is-error').innerText()).includes('version'));
+  await start();
+  await page.locator('#rdSearch').fill('no-such-issue');await page.locator('#rdFilters button[type="submit"]').click();
+  await page.waitForFunction(()=>rdResults.data?.total===0);assert.equal(await page.locator('[data-rd-action="preview"]').isDisabled(),true);await fits();
+  await page.route('**/api/rd-results?**',route=>route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({detail:'合成数据读取失败 / Synthetic read failure'})}));
+  await start(true);
+  assert.equal(await page.locator('[data-rd-action="preview"]').isDisabled(),true);await fits();
+  await page.unroute('**/api/rd-results?**');
+  const refreshChecks=[];
+  for(const [width,lang,theme] of [[1440,'zh','dark'],[390,'en','dark'],[320,'en','light']]) {
+   await page.setViewportSize({width,height:1000});await start();
+   await page.evaluate(({lang,theme})=>{state.uiLanguage=lang;document.documentElement.dataset.uiLang=lang;localStorage.setItem('te-preview-language',lang);applyColorTheme(theme);renderRdResults();},{lang,theme});
+   if(width===1440) {await page.locator('[data-rd-action="next"]').click();await page.waitForFunction(()=>rdResults.data?.page===2);}
+   if(width===390) {await page.locator('#rdSearch').fill('cn35655696');await page.locator('#rdFilters button[type="submit"]').click();await page.waitForFunction(()=>rdResults.data?.total===1);}
+   const beforePage=await page.evaluate(()=>rdResults.data.page);
+   await selectAction('page');await page.locator('#rdOverwrite').check();
+   if(width!==390)await page.locator('#rdSearch').fill('unsubmitted search draft');
+   const responsePromise=page.waitForResponse(r=>r.url().endsWith('/api/rd-results/te-refresh')&&r.request().method()==='POST');
+   await page.locator('[data-rd-action="refresh-te"]').click();
+   const response=await responsePromise;
+   assert.equal(response.status(),202);assert.deepEqual(response.request().postDataJSON(),{baselines:'version-20261016'});
+   assert.equal((await response.json()).total,84); // whole version, even with a one-Issue search
+   await page.waitForFunction(()=>rdTERefreshing()&&!rdResults.busy);
+   assert.equal(await page.locator('[data-rd-action="refresh-te"]').isDisabled(),true);
+   assert.equal(await page.locator('[data-rd-id]:checked').count(),0);
+   assert.equal(await page.locator('#rdOverwrite').isChecked(),false);
+   assert.equal(await page.locator('[data-rd-action="preview"]').isDisabled(),true);
+   await fits();
+   if(width===1440){await page.reload();await page.waitForFunction(()=>rdResults.data&&!rdResults.loading);}
+   await page.waitForFunction(()=>rdResults.data?.snapshot?.refresh?.status==='ready'&&!rdResults.loading&&!rdTERefreshing());
+   assert.equal(await page.evaluate(()=>rdResults.data.page),beforePage);
+   if(width===320)assert.equal(await page.locator('#rdSearch').inputValue(),'unsubmitted search draft');
+   assert.equal(await page.locator('[data-rd-action="refresh-te"]').isEnabled(),true);
+   assert.ok((await page.locator('[data-rd-action="refresh-te"]').getAttribute('title')).includes('CST'));
+   assert.equal(await page.locator('[data-rd-id]:checked').count(),0);
+   const live=await page.evaluate(()=>api('/api/rd-results?baselines=version-20261016&mode=te-correction'));
+   assert.equal(live.items.find(r=>r.issue_id==='cn35655695').te_current,'成功');
+   assert.equal(live.items.find(r=>r.issue_id==='cn35655695').group,'same');
+   assert.equal(live.snapshot.refresh.total,84);
+   await fits();refreshChecks.push({width,lang,theme,wholeVersion:84});
+  }
+  await page.route('**/api/rd-results/te-refresh',r=>r.fulfill({status:503,contentType:'application/json',body:JSON.stringify({detail:'Synthetic refresh failure'})}));
+  const beforeFailed=await page.evaluate(()=>JSON.stringify(rdResults.data.items));
+  await page.locator('[data-rd-action="refresh-te"]').click();
+  await page.waitForFunction(()=>Boolean(rdResults.error)&&!rdResults.busy);
+  assert.equal(await page.evaluate(()=>JSON.stringify(rdResults.data.items)),beforeFailed);
+  assert.equal(await page.locator('[data-rd-action="refresh-te"]').isEnabled(),true);await fits();
+  await page.unroute('**/api/rd-results/te-refresh');
+  let statusRequests=0;
+  await page.route('**/api/rd-results/te-refresh?**',r=>{statusRequests++;return r.fulfill({status:503,contentType:'application/json',body:JSON.stringify({detail:'Synthetic status failure'})});});
+  await page.locator('[data-rd-action="refresh-te"]').click();
+  await page.waitForFunction(()=>Boolean(rdResults.error)&&!rdResults.busy&&!rdTERefreshing());
+  assert.equal(statusRequests,await page.evaluate(()=>API_GET_MAX_ATTEMPTS));await fits();
+  await page.unroute('**/api/rd-results/te-refresh?**');
+  await page.reload();await page.waitForFunction(()=>rdResults.data&&!rdResults.loading);
+  assert.equal(await page.evaluate(()=>rdResults.data.snapshot.refresh.status),'ready');
+  assert.deepEqual(errors,[]);
+  const result={layouts:checks,refreshes:refreshChecks,coverage:['underline mode tabs','keyboard focus without activating or clearing drafts','Enter and Space mode activation','tab focus restoration','two visible target fields','explicit live TE refresh','shared select Escape','offline agreement','live RD mismatch','disabled commit','preview reload','cross-page selection and exclusions','pagination resets selection','language preserves page','mode resets agreement','single-version constraint','empty','failure'],errors};
+  fs.writeFileSync(path.join(out,'browser-results.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result));
+ }finally{await browser.close();}
+})().catch(e=>{console.error(e);process.exitCode=1;});
