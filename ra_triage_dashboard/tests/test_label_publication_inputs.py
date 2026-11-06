@@ -59,7 +59,7 @@ class ExcelRoutesTest(unittest.TestCase):
 
     def upload(self, rows, **kwargs):
         return self.http.post('/api/rd-results/te-excel-preview',
-            data=kwargs.get('data',{'baselines':'version-20261016','overwrite':'true'}),
+            data=kwargs.get('data',{'baselines':'version-20261016'}),
             files={'file':(kwargs.get('filename','targets.xlsx'),workbook_bytes(rows),'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')},
             headers=kwargs.get('headers',self.headers))
 
@@ -85,16 +85,20 @@ class ExcelRoutesTest(unittest.TestCase):
                 self.assertIn(result.status_code,[400,409],result.text); fetch.assert_not_called()
         self.assertEqual(self.client.calls,[])
 
-    def test_file_target_must_match_live_rd_and_rechecks_before_commit(self):
+    def test_file_target_can_differ_from_live_rd_and_rechecks_before_commit(self):
         self.client.row[rd.TE_FIELD]='成功'
         response=self.upload([['Issue ID','期望输出'],['cn123','误触发']])
-        self.assertFalse(response.json()['items'][0]['eligible'])
-        self.assertEqual(response.json()['items'][0]['status'],'rd_mismatch')
-        self.client.row[rd.FIELD]='误触发'
+        self.assertTrue(response.json()['items'][0]['eligible'])
+        self.routes.settings.trail_te_write_enabled=True
+        result=self.http.post('/api/rd-results/commit',json=dict(operation_id=response.json()['id'],confirmed=True),headers=self.headers)
+        self.assertEqual(result.status_code,200,result.text)
+        self.assertEqual(self.client.row[rd.FIELD],'成功')
+        self.assertEqual(self.client.row[rd.TE_FIELD],'误触发')
+        self.client.row[rd.TE_FIELD]='成功'
         response=self.upload([['Issue ID','期望输出'],['cn123','误触发']]); preview=response.json()
-        self.client.row[rd.FIELD]='成功'; self.routes.settings.trail_te_write_enabled=True
+        self.client.row[rd.FIELD]='无需协助'
         result=self.http.post('/api/rd-results/commit',json=dict(operation_id=preview['id'],confirmed=True),headers=self.headers)
-        self.assertEqual(result.status_code,409,result.text); self.assertEqual(self.client.calls,[])
+        self.assertEqual(result.status_code,409,result.text); self.assertEqual(len(self.client.calls),1)
 
     def test_mutated_file_target_fingerprint_is_rejected_and_old_receipts_stay_separate(self):
         self.client.row[rd.FIELD]='误触发'
@@ -110,7 +114,8 @@ class ExcelRoutesTest(unittest.TestCase):
         self.role='admin'; self.assertEqual(self.upload(rows,headers={}).status_code,403)
         self.assertEqual(self.upload(rows,data={'baselines':'fixture','overwrite':'true'}).status_code,400)
         response=self.upload(rows,data={'baselines':'version-20261016','overwrite':'false'})
-        self.assertEqual(response.status_code,200,response.text);self.assertFalse(response.json()['offline_aligned'])
+        self.assertEqual(response.status_code,200,response.text);self.assertNotIn('offline_aligned',response.json())
+        self.assertTrue(response.json()['items'][0]['eligible'])
         self.assertEqual(self.client.calls,[])
 
     def test_multi_issue_scope_preview_uses_the_same_exact_subset(self):

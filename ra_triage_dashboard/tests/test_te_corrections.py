@@ -1,4 +1,4 @@
-"""TE corrections use Manual labels, live RD agreement and one fixed target."""
+"""TE corrections use the selected offline target and one fixed field."""
 import copy
 import tempfile
 import time
@@ -40,19 +40,20 @@ class TEPublicationTest(unittest.TestCase):
         self.row = dict(issue_id='cn123', state='resolved', label='正确触发', fingerprint='v1')
         p = patch.object(rd, 'local_rows', return_value={'cn123': self.row}); p.start(); self.addCleanup(p.stop)
 
-    def preview(self, aligned=True):
-        return self.store.preview('admin', {'cn123': self.row}, rd.read_remote(self.client, ['cn123'], mode=rd.TE_MODE), aligned, 'version-20261016', mode=rd.TE_MODE)
+    def preview(self, overwrite=False):
+        return self.store.preview('admin', {'cn123': self.row}, rd.read_remote(self.client, ['cn123'], mode=rd.TE_MODE), overwrite, 'version-20261016', mode=rd.TE_MODE)
 
     def commit(self, preview):
         return self.store.commit(preview['id'], 'admin', None, self.client, {'cn123'})
 
-    def test_only_te_changes_and_receipt_freezes_mode_rd_and_agreement(self):
+    def test_only_te_changes_and_receipt_freezes_mode_rd_and_policy(self):
         before = copy.deepcopy(self.client.row)
         p = self.preview()
         self.assertEqual(p['mode'], rd.TE_MODE)
         self.assertEqual(p['field'], rd.TE_FIELD)
         self.assertEqual(p['items'][0]['rd_current'], '成功')
-        self.assertTrue(p['offline_aligned'])
+        self.assertEqual(p['policy_version'], rd.TE_POLICY_VERSION)
+        self.assertNotIn('offline_aligned', p)
         self.assertEqual(self.client.calls, [])
         result = self.commit(p)
         self.assertEqual(result['results'][0]['state'], 'verified')
@@ -62,7 +63,7 @@ class TEPublicationTest(unittest.TestCase):
         self.assertEqual(len(self.client.calls), 1)
 
     def test_ineligible_records_cannot_write(self):
-        for te, label, status in [('成功','成功','same'),(None,'成功','te_empty'),('','成功','te_empty'),('误触发',None,'rd_mismatch'),('误触发','无需协助','rd_mismatch')]:
+        for te, label, status in [('成功','成功','same'),(None,'成功','te_empty'),('','成功','te_empty')]:
             with self.subTest(te=te, rd=label):
                 self.client = TEClient(te, label)
                 p = self.preview()
@@ -78,10 +79,26 @@ class TEPublicationTest(unittest.TestCase):
             self.assertFalse(p['items'][0]['eligible'])
             self.assertEqual(p['items'][0]['status'], 'blocked')
 
-    def test_no_offline_agreement_no_eligible_rows(self):
-        p = self.preview(False)
-        self.assertFalse(p['offline_aligned'])
-        self.assertFalse(p['items'][0]['eligible'])
+    def test_selected_targets_write_without_checkbox_or_live_rd_agreement(self):
+        for live_rd in [None, '', '误触发', '无需协助']:
+            with self.subTest(rd=live_rd):
+                self.client = TEClient('失败', live_rd)
+                p = self.preview(False)
+                self.assertTrue(p['items'][0]['eligible'])
+                self.assertEqual(p['items'][0]['rd_current'], live_rd)
+                result = self.commit(p)
+                self.assertEqual(result['results'][0]['state'], 'verified')
+                self.assertEqual(self.client.row[rd.TE_FIELD], '成功')
+                self.assertEqual(self.client.row[rd.FIELD], live_rd)
+
+    def test_old_te_previews_require_fresh_preview_and_do_not_gain_eligibility(self):
+        p = self.preview()
+        record = self.store.get(p['id']); record.pop('policy_version'); record['offline_aligned'] = False
+        record['items'][0]['eligible'] = False; self.store.save(record)
+        with self.assertRaisesRegex(ValueError, '重新预览'):
+            self.commit(p)
+        self.assertFalse(self.store.receipt(p['id'])['items'][0]['eligible'])
+        self.assertEqual(self.client.calls, [])
 
     def test_remote_rd_or_te_or_manual_source_change_blocks_before_write(self):
         for field in [rd.FIELD, rd.TE_FIELD, 'fingerprint']:
@@ -252,13 +269,15 @@ class TERoutesTest(unittest.TestCase):
         self.assertEqual(r.json()['field'],rd.TE_FIELD)
         self.assertEqual(self.client.row[rd.FIELD],'成功')
 
-    def test_agreement_required_and_writer_cannot_preview_or_commit(self):
+    def test_no_agreement_checkbox_required_and_writer_still_cannot_preview_or_commit(self):
         self.body['overwrite']=False; p=self.preview(); self.routes.settings.trail_te_write_enabled=True
         r=self.http.post('/api/rd-results/commit',json=dict(operation_id=p['id'],confirmed=True),headers=self.headers)
-        self.assertEqual(r.status_code,403,r.text)
+        self.assertEqual(r.status_code,200,r.text)
+        self.assertEqual(r.json()['results'][0]['state'],'verified')
         self.role='writer'
         self.assertEqual(self.http.post('/api/rd-results/preview',json=self.body,headers=self.headers).status_code,403)
-        self.assertEqual(self.client.calls,[])
+        self.assertEqual(self.http.post('/api/rd-results/commit',json=dict(operation_id=p['id'],confirmed=True),headers=self.headers).status_code,403)
+        self.assertEqual(len(self.client.calls),1)
 
     def test_snapshot_summary_and_mode_history_isolation(self):
         r=self.http.get('/api/rd-results?baselines=version-20261016&mode=te-correction')

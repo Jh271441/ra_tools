@@ -38,14 +38,15 @@ const out=path.resolve(__dirname,'../../reports/te_correction_preview_20261106')
    await page.evaluate(()=>{state.uiLanguage=state.uiLanguage==='zh'?'en':'zh';document.documentElement.dataset.uiLang=state.uiLanguage;renderRdResults();});
    assert.equal(await page.evaluate(()=>rdResults.excelFile.name),'synthetic-te-targets.xlsx');
    await page.evaluate(lang=>{state.uiLanguage=lang;document.documentElement.dataset.uiLang=lang;renderRdResults();},lang);
-   await page.locator('#rdOverwrite').check();await fits();
+   assert.equal(await page.locator('#rdOverwrite').count(),0);await fits();
    await page.locator('[data-rd-action="preview"]').click();await page.waitForSelector('#rdResultsPreview');
    const frozen=await page.evaluate(()=>rdResults.preview);
    assert.equal(frozen.scope.source.kind,'xlsx');assert.equal(frozen.scope.source.duplicates,1);assert.equal(frozen.items.length,4);
    assert.equal(frozen.items.find(r=>r.issue_id==='cn35655705').desired,'无需协助');
    assert.equal(frozen.items.find(r=>r.issue_id==='cn35655705').eligible,true); // Manual says 正确触发.
    assert.equal(frozen.items.find(r=>r.issue_id==='cn35655704').eligible,true); // Manual is stale.
-   assert.equal(frozen.items.find(r=>r.issue_id==='cn35655697').status,'rd_mismatch');
+   assert.equal(frozen.items.find(r=>r.issue_id==='cn35655697').eligible,true);
+   assert.notEqual(frozen.items.find(r=>r.issue_id==='cn35655697').rd_current,frozen.items.find(r=>r.issue_id==='cn35655697').desired);
    assert.equal(await page.locator('[data-rd-action="commit"]').isDisabled(),true);
    assert.ok((await page.locator('.rd-preview-overview').innerText()).includes('synthetic-te-targets.xlsx'));
    assert.ok((await page.locator('.rd-preview-details th').allTextContents()).includes(lang==='zh'?'文件期望输出':'File expected output'));
@@ -65,7 +66,7 @@ const out=path.resolve(__dirname,'../../reports/te_correction_preview_20261106')
    await fits();checks.push({width,lang,theme});
   }
   assert.deepEqual(errors,[]);
-  const result={checks,coverage:['multi-Issue exact filter','duplicate IDs removed','URL reload','mobile Enter newline','invalid IDs retain scope','XLSX chooser','tab focus preserves selected file','file label overrides Manual','RD disagreement blocked','duplicate workbook rows','file source visible','preview reload','invalid workbook row','out-of-version blocked','mode activation clears file'],errors};
+  const result={checks,coverage:['multi-Issue exact filter','duplicate IDs removed','URL reload','mobile Enter newline','invalid IDs retain scope','XLSX chooser','tab focus preserves selected file','file label overrides Manual','RD disagreement does not block file target','duplicate workbook rows','file source visible','preview reload','invalid workbook row','out-of-version blocked','mode activation clears file'],errors};
   fs.writeFileSync(path.join(out,'xlsx-browser-results.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result));
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

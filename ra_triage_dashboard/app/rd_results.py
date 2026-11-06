@@ -21,6 +21,7 @@ FIELD = "ra_rd_review_result"
 TE_FIELD = "ra_review_result_new"
 RD_MODE = "rd"
 TE_MODE = "te-correction"
+TE_POLICY_VERSION = 2
 VALUES = {"正确触发": "成功", "误触发": "误触发", "无需协助": "无需协助"}
 PROTECTED = ("ra_stuck_auto_result", "ra_stuck_auto_result_info", "ra_review_reason", "ra_merge_result")
 
@@ -222,8 +223,6 @@ def classify(row, remote, mode=RD_MODE):
     if mode == TE_MODE:
         if current in (None, ''):
             return 'te_empty'
-        if remote.get(FIELD) != desired:
-            return 'rd_mismatch'
         return 'conflict'
     return 'pending' if current in (None, '') else 'conflict'
 
@@ -332,7 +331,7 @@ class PublicationStore:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             record = dict(id=operation, actor=actor, created_at=time.time(), expires_at=time.time()+600,
                           state='preparing', overwrite=overwrite, baselines=baselines, mode=mode, field=field,
-                          offline_aligned=mode == TE_MODE and overwrite, items=[], results=[],
+                          policy_version=TE_POLICY_VERSION if mode == TE_MODE else 1, items=[], results=[],
                           background_preview=True, progress=dict(stage='labels', checked=0, total=0))
             self.save(record)
             def work():
@@ -363,10 +362,10 @@ class PublicationStore:
         for iid, row in rows.items():
             status = classify(row, remote[iid], mode)
             items.append(dict(**row, status=status, before=remote[iid], desired=desired_value(row['label'], mode),
-                              eligible=status == 'pending' or (status == 'conflict' and overwrite)))
+                              eligible=status == 'pending' or (status == 'conflict' and (mode == TE_MODE or overwrite))))
         record = dict(id=operation or uuid.uuid4().hex, actor=actor, created_at=time.time(),
                       expires_at=time.time() + 600, overwrite=overwrite, baselines=baselines,
-                      state='preview', mode=mode, field=field, offline_aligned=mode == TE_MODE and overwrite, items=items, results=[])
+                      state='preview', mode=mode, field=field, policy_version=TE_POLICY_VERSION if mode == TE_MODE else 1, items=items, results=[])
         if scope is not None:
             record['scope'] = scope
         if operation is not None:
@@ -381,7 +380,7 @@ class PublicationStore:
         field = target_field(mode)
         return {**{k: record[k] for k in ('id', 'actor', 'created_at', 'expires_at', 'state', 'overwrite')},
                 'mode': mode, 'field': field, 'baselines': record.get('baselines', ''),
-                'offline_aligned': record.get('offline_aligned', False),
+                'policy_version': record.get('policy_version', 1),
                 'reason': record.get('reason', ''),
                 'scope': record.get('scope'),
                 'progress': PublicationStore.progress(record),
@@ -414,6 +413,8 @@ class PublicationStore:
             return record
         if record['state'] != 'preview' or time.time() > record['expires_at']:
             raise ValueError('请重新预览并核对结果 / Preview again and check current results')
+        if record.get('mode') == TE_MODE and record.get('policy_version', 1) != TE_POLICY_VERSION:
+            raise ValueError('TE 修正规则已更新，请重新预览 / TE correction rules changed; preview again')
         record.update(state='running', reason='', started_at=time.time(),
                       progress=dict(stage='preflight', checked=0, check_total=len(record['items']),
                                     batch_size=UPLOAD_BATCH_SIZE, concurrency=UPLOAD_CONCURRENCY))
