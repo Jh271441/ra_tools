@@ -51,6 +51,12 @@ async function openAnalysisDiscussion(
     `<div class="comment-thread-empty">${uiText("正在加载评论…", "Loading comments…")}</div>`;
   bindReviewMentionComposer(textarea, $("#analysisDiscussionMentionComposer"));
   updateReviewMentionComposer(textarea, $("#analysisDiscussionMentionComposer"));
+  // The modal makes the underlying player inert. Stop its segment traffic
+  // before the discussion GET so video buffering cannot consume that bandwidth.
+  context.suspendedVideos = [...document.querySelectorAll("video")].filter(
+    video => video._pauseBevPlayback && !video.closest("[hidden]")
+  );
+  context.suspendedVideos.forEach(video => video._pauseBevPlayback());
   $("#analysisDiscussionDialog").showModal();
   await loadAnalysisDiscussion(context, focusCommentId);
 }
@@ -130,6 +136,11 @@ async function loadAnalysisDiscussion(context, focusCommentId = 0) {
 function closeAnalysisDiscussion() {
   disposeReviewMentionComposer($("[data-comment-edit-input]"));
   clearAnalysisDiscussionImages();
+  // Re-enable only the still-visible players owned by this dialog. The shared
+  // resume hook retains the per-player explicit Play policy (no autoplay).
+  state.analysisDiscussion?.suspendedVideos?.forEach(video => {
+    if (video.isConnected && !video.closest("[hidden]")) video._resumeBevPlayback?.();
+  });
   state.analysisDiscussion = null;
 }
 

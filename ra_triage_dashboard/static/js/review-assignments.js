@@ -297,7 +297,9 @@ function reviewAssignmentPersonOptions(selected = "") {
     label: `${item.username}${item.role === "admin" ? uiText(" · 管理员", " · admin") : ""}`,
   })).filter((item) => item.value);
   if (selected && !values.some((item) => item.value === selected)) {
-    values.unshift({ value: selected, label: `${selected} · ${uiText("已移除账号", "removed user")}` });
+    const label = state.accessUsers?.length && !state.reviewAssignments.peopleLoading
+      ? `${selected} · ${uiText("已移除账号", "removed user")}` : selected;
+    values.unshift({ value: selected, label });
   }
   return values;
 }
@@ -307,6 +309,7 @@ function renderReviewAssignmentRowPersonPickers() {
   document.querySelectorAll("#reviewAssignmentDetailRows .review-assignment-person-picker").forEach((root) => {
     const native = root.querySelector(".ui-select-native");
     const selected = native?.value || root.dataset.selectedAssignee || "";
+    if (native) native.disabled = Boolean(state.reviewAssignments.peopleLoading || !state.accessUsers?.length);
     populateUiSelect(root, reviewAssignmentPersonOptions(selected), selected);
     bindUiSelect(root, {
       maxHeight: 300,
@@ -553,34 +556,45 @@ async function loadReviewAssignments({ force = false, splitId = "", reloadDetail
   store.assignedToMe = route.get("assigned_to_me") === "true";
   if (splitId && route.get("split") === splitId) restoreReviewAssignmentDetailRoute(route);
   const listKey = `${store.lifecycle}:${store.assignedToMe}`;
-  if (!state.modelRuns?.length) await loadRuns({ preserveEmpty: true });
-  if (!state.accessUsers?.length && state.session?.is_admin && typeof loadAccessUsers === "function") {
-    await loadAccessUsers();
-  }
-  if (!force && store.splits.length && store.loadedKey === listKey) {
-    renderReviewAssignmentPage();
-    if (splitId && reloadDetail) await loadReviewAssignmentDetail(splitId, { updateRoute: false });
-    await restoreReviewAllocationDraft();
-    return;
-  }
+  const cached = !force && store.splits.length && store.loadedKey === listKey;
   const requestSeq = ++store.requestSeq;
-  store.loading = true;
+  const needsUsers = !state.accessUsers?.length && state.session?.is_admin && typeof loadAccessUsers === "function";
+  store.peopleLoading = Boolean(needsUsers);
+  store.loading = !cached;
   renderReviewAssignmentPage();
+  // Catalog/user metadata enriches names and reassignment controls; neither
+  // owns the list or selected task. Never serialize their network round trips.
+  const metadata = Promise.allSettled([
+    ...(!state.modelRuns?.length ? [loadRuns({ preserveEmpty: true })] : []),
+    ...(needsUsers ? [loadAccessUsers()] : []),
+  ]);
   try {
-    const params = new URLSearchParams({ limit: "100", lifecycle: store.lifecycle==="versions"?"current":store.lifecycle,group_by_version:"true",version_only:String(store.lifecycle==="versions") });
-    if (store.assignedToMe) params.set("assigned_to_me", "true");
-    const result = await api(`/api/cases/work-splits?${params}`);
-    if (requestSeq !== store.requestSeq) return;
-    store.splits = result.items || [];
-    store.metrics = result.metrics || null;
-    store.loadedKey = listKey;
-    store.loading = false;
-    renderReviewAssignmentPage();
-    await restoreReviewAllocationDraft();
-    const selected = splitId || store.selectedSplitId;
+    if (!cached) {
+      const params = new URLSearchParams({ limit: "100", lifecycle: store.lifecycle==="versions"?"current":store.lifecycle,group_by_version:"true",version_only:String(store.lifecycle==="versions") });
+      if (store.assignedToMe) params.set("assigned_to_me", "true");
+      const result = await api(`/api/cases/work-splits?${params}`);
+      if (requestSeq !== store.requestSeq) return;
+      store.splits = result.items || [];
+      store.metrics = result.metrics || null;
+      store.loadedKey = listKey;
+      store.loading = false;
+      renderReviewAssignmentPage();
+    }
+    const selected = cached ? splitId : splitId || store.selectedSplitId;
     if (selected && reloadDetail) {
       await loadReviewAssignmentDetail(selected, { updateRoute: false });
     }
+    const metadataResults = await metadata;
+    if (requestSeq !== store.requestSeq || state.activePage !== "review-assignments") return;
+    store.peopleLoading = false;
+    // Refresh enrichment in place; do not replace detail rows or unsaved picks
+    // when a late directory request finishes.
+    renderReviewAssignmentList();
+    if (needsUsers) renderReviewAssignmentRowPersonPickers();
+    for (const result of metadataResults) {
+      if (result.status === "rejected") showToast(result.reason.message, true);
+    }
+    await restoreReviewAllocationDraft();
   } catch (error) {
     if (requestSeq !== store.requestSeq) return;
     store.loading = false;

@@ -76,10 +76,10 @@ function createVideoSegmentLoader(video, { url, position, attached, fallback }) 
   const nextSegment = () => {
     const at = Math.max(0, segmentAt(Math.min(current(), index.duration - .000001)));
     if (!loaded.has(at)) return at;
-    // The next GOP can flush the target's final reordered frames. Give it
-    // priority over the previous neighbor even while paused, then keep both
-    // neighbors for nearby arrow jumps.
-    const candidates = video.paused ? [at + 1, at - 1]
+    // The next GOP can flush the target's final reordered frames. While
+    // paused, stop there: backward prefetch competes with UI requests and is
+    // unnecessary until the reviewer actually seeks backward.
+    const candidates = video.paused ? [at + 1]
       : index.segments.map((_, i) => i).filter(i => i > at
         && index.segments[i].start < current() + Math.max(4, video.playbackRate * 4));
     return candidates.find(i => i >= 0 && i < index.segments.length && !loaded.has(i)) ?? -1;
@@ -124,6 +124,7 @@ function createVideoSegmentLoader(video, { url, position, attached, fallback }) 
     try {
       const response = await fetch(source.pathname + source.search, {
         headers: { Range: `bytes=${segment.first}-${segment.last}` }, signal: controller.signal,
+        priority: video.paused && number !== segmentAt(current()) ? "low" : "auto",
       });
       if (stopped) return;
       const expected = `bytes ${segment.first}-${segment.last}/${index.size}`;

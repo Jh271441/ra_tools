@@ -7,7 +7,8 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCE = (ROOT / 'static/js/routing.js').read_text() + (ROOT / 'static/js/review-assignments.js').read_text()
 SETUP = r'''
 const assert = require('node:assert/strict');
-global.document = {getElementById:()=>null};
+global.document = {getElementById:()=>null,querySelectorAll:()=>[]};
+$ = () => null;
 global.window = {location:{origin:'https://triage.test', search:''},history:{state:{},replaceState:()=>{}}};
 global.state = {activePage:'review-assignments',session:{},modelRuns:[{id:'run'}],reviewAssignments:{
  lifecycle:'current',assignedToMe:true,selectedSplitId:'campaign-a',detail:null,detailRequestSeq:0,
@@ -87,6 +88,52 @@ const messages=[],prompts=[];showToast=text=>messages.push(text);window.prompt=(
  navigator.clipboard.writeText=async()=>{throw Error('permission denied')};
  await copyReviewAssignmentLink();assert.equal(messages.length,1);assert.equal(prompts.length,1);assert.equal(prompts[0][1],copied);
  navigator.clipboard={};await copyReviewAssignmentLink();assert.equal(messages.length,1);assert.equal(prompts.length,2);
+})().catch(e=>{console.error(e);process.exitCode=1;});
+''')
+
+    def test_list_and_detail_paint_while_optional_metadata_is_pending(self):
+        self.run_js(r'''
+state.modelRuns=[];state.accessUsers=[];state.session.is_admin=true;
+const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};};
+const runs=deferred(),users=deferred(),detail=deferred();
+loadRuns=()=>runs.promise;loadAccessUsers=()=>users.promise;
+let paints=0,enrichments=0,restored=0,requests=[];
+renderReviewAssignmentPage=()=>paints++;
+renderReviewAssignmentList=()=>enrichments++;
+renderReviewAssignmentRowPersonPickers=()=>enrichments++;
+restoreReviewAllocationDraft=async()=>{restored++};showToast=message=>{throw Error(message)};
+api=async path=>{requests.push(path);return path.includes('/campaign-a?')?detail.promise:{items:[{split_id:'campaign-a'}]};};
+(async()=>{
+ const loading=loadReviewAssignments({splitId:'campaign-a'});
+ await new Promise(setImmediate);
+ assert.equal(state.reviewAssignments.splits[0]?.split_id,'campaign-a','list cannot wait for Run/user metadata');
+ assert.equal(state.reviewAssignments.loading,false);
+ assert.ok(requests.some(path=>path.includes('/campaign-a?')),'selected detail also starts before metadata');
+ detail.resolve({split_id:'campaign-a'});await new Promise(setImmediate);
+ assert.equal(state.reviewAssignments.detail?.split_id,'campaign-a');
+ const before=paints;runs.resolve();users.resolve();await loading;
+ assert.equal(paints,before,'late metadata must not rebuild detail rows/unsaved picks');
+ assert.equal(enrichments,2);assert.equal(restored,1);
+})().catch(e=>{console.error(e);process.exitCode=1;});
+''')
+
+    def test_optional_metadata_failure_keeps_list_and_newer_load_owns_results(self):
+        self.run_js(r'''
+state.modelRuns=[];state.session.is_admin=true;state.accessUsers=[];
+let finishFirst;const first=new Promise(r=>finishFirst=r),messages=[];
+loadRuns=async()=>{throw Error('Run catalog unavailable')};loadAccessUsers=async()=>{};
+renderReviewAssignmentPage=()=>{};renderReviewAssignmentList=()=>{};
+renderReviewAssignmentRowPersonPickers=()=>{};restoreReviewAllocationDraft=async()=>{};
+showToast=message=>messages.push(message);
+api=async path=>path.includes('lifecycle=current')?first:{items:[{split_id:'new'}]};
+(async()=>{
+ const stale=loadReviewAssignments({reloadDetail:false});
+ window.location.search='?lifecycle=history';
+ await loadReviewAssignments({force:true,reloadDetail:false});
+ finishFirst({items:[{split_id:'old'}]});await stale;
+ assert.equal(state.reviewAssignments.splits[0].split_id,'new');
+ assert.equal(state.reviewAssignments.loading,false);
+ assert.deepEqual(messages,['Run catalog unavailable']);
 })().catch(e=>{console.error(e);process.exitCode=1;});
 ''')
 

@@ -1168,6 +1168,10 @@ async function bootstrap() {
       independentPageResult = settleInitialRequests([loadRdResults()], "页面");
     } else if (initialRoute.page === "users") {
       independentPageResult = settleInitialRequests([loadAccessUsers(), loadMentionUsers()], "页面");
+    } else if (initialRoute.page === "review-assignments") {
+      independentPageResult = settleInitialRequests([loadReviewAssignments({
+        splitId: initialRoute.reviewAssignmentSplitId,
+      })], "页面");
     }
     // Case labeling is intentionally model-free. Other pages resolve the Run
     // before loading queue-dependent facets so their counts cannot race.
