@@ -213,6 +213,11 @@ def publication_rows(record, db, ids):
     return result
 
 
+def manual_label_snapshot(row):
+    """Display-only Workbench observation, independent of an XLSX target."""
+    return {'state': row.get('state', 'none'), 'label': row.get('label', '')}
+
+
 def classify(row, remote, mode=RD_MODE):
     field = target_field(mode)
     if row['state'] != 'resolved' or row['label'] not in VALUES:
@@ -427,7 +432,9 @@ class PublicationStore:
                             ({'observed': r['after'][field]} if 'after' in r else {}) for r in record['results']],
                 'items': [{k: v for k, v in row.items() if k not in {'before', 'fingerprint'}} |
                           {'current': row['before'].get(field)} |
-                          ({'rd_current': row['before'].get(FIELD)} if mode == TE_MODE else {}) for row in record['items']]}
+                          ({'rd_current': row['before'].get(FIELD),
+                            'manual_current': row.get('manual_current') if row.get('source_kind') == 'xlsx' else manual_label_snapshot(row)}
+                           if mode == TE_MODE else {}) for row in record['items']]}
 
     @staticmethod
     def progress(record):

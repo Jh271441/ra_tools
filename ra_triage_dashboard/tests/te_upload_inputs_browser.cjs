@@ -2,7 +2,7 @@
 const {chromium}=require('playwright');
 const assert=require('node:assert/strict'),path=require('node:path'),fs=require('node:fs');
 const base=process.env.TE_PREVIEW_URL||'http://127.0.0.1:50269';
-const out=path.resolve(__dirname,'../../reports/te_correction_preview_20261106');
+const out=process.env.TE_PREVIEW_OUT||path.resolve(__dirname,'../../reports/te_correction_preview_20261106');
 (async()=>{
  const browser=await chromium.launch({headless:true});const errors=[],checks=[];
  try{
@@ -47,6 +47,14 @@ const out=path.resolve(__dirname,'../../reports/te_correction_preview_20261106')
    assert.equal(frozen.items.find(r=>r.issue_id==='cn35655704').eligible,true); // Manual is stale.
    assert.equal(frozen.items.find(r=>r.issue_id==='cn35655697').eligible,true);
    assert.notEqual(frozen.items.find(r=>r.issue_id==='cn35655697').rd_current,frozen.items.find(r=>r.issue_id==='cn35655697').desired);
+   assert.deepEqual(frozen.items.find(r=>r.issue_id==='cn35655705').manual_current,{state:'resolved',label:'正确触发'});
+   const separate=page.locator('.rd-preview-details tbody tr').filter({hasText:'cn35655705'});
+   assert.equal(await separate.locator('td').nth(2).innerText(),lang==='zh'?'正确触发':'Correct trigger');
+   assert.equal(await separate.locator('td').nth(4).innerText(),lang==='zh'?'无需协助':'No assistance needed');
+   const emptyTrail=page.locator('.rd-preview-details tbody tr').filter({hasText:'cn35655697'});
+   assert.equal(await emptyTrail.locator('td').nth(3).innerText(),lang==='zh'?'未填写':'Not set');
+   const stale=page.locator('.rd-preview-details tbody tr').filter({hasText:'cn35655704'});
+   assert.equal(await stale.locator('td').nth(2).innerText(),lang==='zh'?'冲突 / 失效':'Conflict / stale');
    assert.equal(await page.locator('[data-rd-action="commit"]').isDisabled(),true);
    assert.ok((await page.locator('.rd-preview-overview').innerText()).includes('synthetic-te-targets.xlsx'));
    assert.ok((await page.locator('.rd-preview-details th').allTextContents()).includes(lang==='zh'?'文件期望输出':'File expected output'));

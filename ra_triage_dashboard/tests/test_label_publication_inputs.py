@@ -69,6 +69,8 @@ class ExcelRoutesTest(unittest.TestCase):
         response=self.upload([['issue_id','expected_output'],['cn123','误触发']])
         self.assertEqual(response.status_code,200,response.text)
         preview=response.json(); self.assertEqual(preview['items'][0]['desired'],'误触发')
+        self.assertEqual(preview['items'][0]['manual_current'], {'state':'resolved','label':'无需协助'})
+        self.assertEqual(preview['items'][0]['rd_current'], '误触发')
         self.assertEqual(preview['scope']['source']['kind'],'xlsx'); self.assertTrue(preview['items'][0]['eligible'])
         self.assertEqual(self.client.calls,[])
         self.routes.settings.trail_te_write_enabled=True
@@ -77,6 +79,19 @@ class ExcelRoutesTest(unittest.TestCase):
         self.assertEqual(result.status_code,200,result.text)
         self.assertEqual(result.json()['results'][0]['state'],'verified')
         self.assertEqual(self.client.row[rd.TE_FIELD],'误触发'); self.assertEqual(self.row['label'],'无需协助')
+
+    def test_file_target_stays_separate_when_manual_label_is_pending_or_conflicted(self):
+        for state in ['pending','conflict','stale']:
+            with self.subTest(state=state):
+                self.row.update(state=state,label='')
+                self.client.row[rd.FIELD]=None
+                preview=self.upload([['issue_id','expected_output'],['cn123','无需协助']]).json()
+                row=preview['items'][0]
+                self.assertEqual(row['manual_current'],{'state':state,'label':''})
+                self.assertIsNone(row['rd_current'])
+                self.assertEqual(row['desired'],'无需协助')
+                self.assertTrue(row['eligible'])
+        self.assertEqual(self.client.calls,[])
 
     def test_bad_or_outside_rows_never_read_or_write_trail(self):
         for rows in [[['Issue ID','期望输出'],['cn999','误触发']], [['Issue ID','期望输出'],['cn123','无效']], [['Issue ID','期望输出'],['cn123','误触发'],['cn123','无需协助']]]:
