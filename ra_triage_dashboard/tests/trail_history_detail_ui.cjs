@@ -2,7 +2,7 @@ const fs=require('fs'),vm=require('vm'),assert=require('assert'),path=require('p
 const elements=new Map();
 const element=()=>({hidden:false,disabled:false,textContent:'',innerHTML:'',dataset:{},querySelector(){return null;},focus(){}});
 const dialog={querySelector(selector){if(!elements.has(selector))elements.set(selector,element());return elements.get(selector);}};
-const s={console,Intl,Date,JSON,state:{uiLanguage:'zh'},uiText:(zh,en)=>s.state.uiLanguage==='en'?en:zh,
+const s={console,Intl,Date,JSON,DEFAULT_CASE_PAGE_SIZE:20,CASE_PAGE_SIZES:[10,20,50,100],state:{uiLanguage:'zh'},uiText:(zh,en)=>s.state.uiLanguage==='en'?en:zh,
  escapeHtml:v=>String(v).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;'),
  $:sel=>sel==='#trailHistoryDialog'?dialog:dialog.querySelector(sel),document:{activeElement:null},api:()=>{throw Error('Unexpected remote write');}};
 vm.createContext(s);vm.runInContext(fs.readFileSync(path.join(__dirname,'../static/js/trail-history.js'),'utf8'),s);

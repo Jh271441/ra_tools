@@ -16,6 +16,11 @@ const json=(res,status,value)=>{res.writeHead(status,{'Content-Type':'applicatio
 const server=http.createServer(async(req,res)=>{
   const url=new URL(req.url,'http://localhost');
   if(url.pathname.startsWith('/api/')) {
+    if(req.method==='GET'&&url.pathname==='/api/trail-history') {
+      const size=Number(url.searchParams.get('page_size'))||20,total=url.searchParams.get('issue_id')==='none'?0:47;
+      const page=Math.max(1,Math.min(Math.ceil(total/size)||1,Number(url.searchParams.get('page'))||1));
+      return json(res,200,{can_restore:true,total,page,page_size:size,items:Array.from({length:Math.min(size,Math.max(0,total-(page-1)*size))},(_,i)=>({...operation,id:'synthetic-'+((page-1)*size+i),source:'te_correction',item_count:9,succeeded_count:9,actor_verified:true}))});
+    }
     if(req.method==='POST') {
       const chunks=[];for await(const chunk of req)chunks.push(chunk);
       const body=JSON.parse(Buffer.concat(chunks).toString());posts.push({path:url.pathname,body});
@@ -118,7 +123,7 @@ const server=http.createServer(async(req,res)=>{
     verifiedOperation={...operation,restorable:false,status:'unknown',outcomes:{cn00000001:'unknown',cn00000002:'unknown'}};
     await page.locator('[data-action="verify"]').click();await page.waitForFunction(()=>!trailHistory.busy);
     assert.equal(await page.evaluate(()=>trailHistory.selected.length),0);assert.equal(await page.locator('[data-action="preview"]').isEnabled(),false);
-    await page.locator('[data-action="dismiss"]').click();await page.waitForFunction(()=>!$('#trailHistoryDialog').open);
+    await page.locator('[data-action="dismiss"]').click();await page.waitForFunction(()=>!$('#trailHistoryDialog').open&&!trailHistory.restoring&&!new URL(location.href).searchParams.has('operation'));
     assert.equal(await page.evaluate(()=>trailHistory.restoring),false);assert.equal(await page.evaluate(()=>trailHistory.reason),'');
     // Legacy, missing values, mixed receipts and an empty history remain explicit and bounded.
     await setup(390,'en','light');
@@ -138,6 +143,32 @@ const server=http.createServer(async(req,res)=>{
       await page.locator('#trailHistoryDialog').screenshot({path:path.join(evidenceDir,`detail-desktop-${lang}-${theme}.png`)});
     }
     await setup(390,'en','light');await page.locator('#trailHistoryDialog').screenshot({path:path.join(evidenceDir,'detail-phone-en-light.png')});
+    for(const [width,lang,theme] of [[1440,'zh','dark'],[390,'en','dark'],[320,'en','light']]) {
+      await setup(width,lang,theme);
+      await page.evaluate(()=>{
+        trailHistory.detail={...trailHistory.detail,id:'publication-'+ 'a'.repeat(32),source:'te_correction',restorable:false,
+          items:[{issue_id:'cn00000001',field:'ra_review_result_new',before:{value:'误触发'},after:{value:'成功'}}],outcomes:{cn00000001:'succeeded'}};
+        renderTrailHistoryDetail();
+      });
+      assert.equal(await page.locator('[data-action="start-restore"]').isVisible(),false);
+      assert.ok((await page.locator('.trail-history-issue').innerText()).includes('ra_review_result_new'));
+      assert.ok(!(await page.locator('.trail-history-issue').innerText()).includes(lang==='zh'?'排除状态':'Exclusion'));
+      await bounded(width);
+      await page.locator('#trailHistoryDialog').screenshot({path:path.join(evidenceDir,`publication-${width}-${lang}-${theme}.png`)});
+      await page.locator('[data-action="dismiss"]').click();await page.waitForFunction(()=>!$('#trailHistoryDialog').open&&!trailHistory.restoring&&!new URL(location.href).searchParams.has('operation'));
+      await page.evaluate(()=>{trailHistory.operation='';return loadTrailHistory();});
+      assert.equal(await page.evaluate(()=>trailHistory.error),'',await page.locator('#trailHistoryResults').innerText());
+      await page.waitForFunction(()=>Boolean(trailHistory.data));
+      assert.equal(await page.locator('#trailHistoryPageSize').evaluate(el=>getComputedStyle(el).display),'none');
+      assert.ok((await page.locator('#trailHistoryResults').innerText()).includes(lang==='zh'?'TE 标注修正':'TE label correction'));
+      await page.locator('#trailHistoryPageJump').fill('3');await page.locator('#trailHistoryPageJump').press('Enter');
+      await page.waitForFunction(()=>trailHistory.data?.page===3);
+      assert.equal(new URL(page.url()).searchParams.get('page'),'3');
+      const select=page.locator('#trailHistoryPageSize').locator('..');await select.locator('.ui-select-trigger').scrollIntoViewIfNeeded();await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));await select.locator('.ui-select-trigger').click();await select.locator('[data-ui-select-value="50"]').click();
+      await page.waitForFunction(()=>trailHistory.data?.page_size===50);assert.equal(await page.evaluate(()=>trailHistory.data.page),1);
+      assert.equal(new URL(page.url()).searchParams.get('page_size'),'50');
+      assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+    }
     assert.equal(posts.some(post=>post.path.endsWith('/restore-commit')),false);assert.deepEqual(errors,[]);
     const result={browser:browser.version(),layouts,checks:['visible changes','one audit disclosure','audit locale/focus','long text','multiline Enter','restore draft/caret/scroll','preview subset','conflict blocks confirmation','cancel clears draft','busy disables dismissal','verification retains subset','legacy','missing/null/empty values','empty records','short viewport','failed detail'],posts:posts.map(post=>post.path),errors};
     fs.writeFileSync(path.join(evidenceDir,'results.json'),JSON.stringify(result,null,2));console.log(JSON.stringify({...result,layouts:layouts.length,evidenceDir}));

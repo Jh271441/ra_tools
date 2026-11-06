@@ -19,11 +19,13 @@ from ..trail_sync import read_trail_model_fields
 from ..trail_writer import write_trail_model_results
 from .trail_update.commit import commit_guard
 from .trail_update.preview import _capability_for_info_write, _preview_capability_cache
+from ..publication_audit import PUBLICATION_SOURCES, reconcile_publication_history
+from ..support.baselines import resolve_request_baseline_scopes, restrict_version_issue_ids
 
 router = APIRouter()
 _previews = {}
 _TTL = 600
-SOURCES = {"exclusion_summary", "exclusion_direct", "rollback", "legacy"}
+SOURCES = {"exclusion_summary", "exclusion_direct", "rollback", "legacy", *PUBLICATION_SOURCES}
 
 
 async def _admin(request):
@@ -54,17 +56,26 @@ def _timestamp(value):
 async def history(request: Request, issue_id: str = Query("", max_length=128),
                   actor: str = Query("", max_length=128), source: str = "", status: str = "",
                   since: str = "", until: str = "", page: int = Query(1, ge=1),
-                  page_size: int = Query(20, ge=1, le=100)):
+                  page_size: int = Query(20, ge=1, le=100), baselines: str = ''):
     if source and source not in SOURCES or status and status not in {"pending", "succeeded", "partial", "unknown", "conflict"}:
         raise _detail(422, "未知筛选条件 / Unknown filter")
+    if page_size not in {10, 20, 50, 100}:
+        raise _detail(422, '每页数量无效 / Invalid page size')
+    if getattr(settings, 'data_dir', None):
+        await asyncio.to_thread(reconcile_publication_history, database, settings.data_dir)
+    scope_args = {}
+    if baselines:
+        scopes = await asyncio.to_thread(resolve_request_baseline_scopes, baselines, request=request)
+        ids = await asyncio.to_thread(restrict_version_issue_ids, baselines, request=request)
+        scope_args['issue_ids'] = await asyncio.to_thread(database.labeling_case_issue_ids, baseline_scopes=scopes, issue_ids=ids)
     result = await asyncio.to_thread(database.list_trail_operations,
         issue_id=issue_id.strip(), actor=actor.strip(), source=source, status=status,
-        since=_timestamp(since), until=_timestamp(until), page=page, page_size=page_size)
+        since=_timestamp(since), until=_timestamp(until), page=page, page_size=page_size, **scope_args)
     identity = await asyncio.to_thread(request_identity, request, settings)
     role = await asyncio.to_thread(database.access_role, identity.username) if identity.verified else ""
     result["can_restore"] = bool(role == "admin" and identity_can_write(identity, settings)
         and settings.trail_attribute_write_enabled and getattr(settings, "trail_rollback_enabled", False))
-    result["coverage"] = {"connected": ["exclusion_summary", "exclusion_direct", "rollback"],
+    result["coverage"] = {"connected": ["exclusion_summary", "exclusion_direct", "rollback", "rd_upload", "te_correction"],
         "not_connected": ["daily_publication", "sampling", "rd_sync", "external_autotriage", "trail_native"],
         "historical_values_complete": False}
     return result
@@ -72,10 +83,12 @@ async def history(request: Request, issue_id: str = Query("", max_length=128),
 
 @router.get("/api/trail-history/{operation_id}")
 async def detail(operation_id: str):
+    if operation_id.startswith('publication-') and getattr(settings, 'data_dir', None):
+        await asyncio.to_thread(reconcile_publication_history, database, settings.data_dir)
     operation = await asyncio.to_thread(database.trail_operation, operation_id)
     if operation is None:
         raise _detail(404, "更新记录不存在 / Update record not found")
-    operation["restorable"] = operation["source"] != "legacy" and "succeeded" in operation["outcomes"].values()
+    operation["restorable"] = operation["source"] in {"exclusion_summary", "exclusion_direct", "rollback"} and "succeeded" in operation["outcomes"].values()
     return operation
 
 
@@ -106,6 +119,8 @@ async def _body(request):
 async def verify(operation_id: str, request: Request):
     identity = await _admin(request)
     operation = await detail(operation_id)
+    if operation['source'] in PUBLICATION_SOURCES:
+        raise _detail(409, '标注上传请从原页面重新预览核对 / Preview label publications again on the upload page')
     if operation["source"] == "legacy":
         raise _detail(409, "旧版历史没有完整快照 / Legacy snapshots are incomplete")
     field = settings.trail_attribute_info_field

@@ -52,8 +52,9 @@ class DatabaseTrailHistoryMixin:
                 self._trail_event(conn, row["operation_id"], status, outcomes)
 
     def begin_trail_operation(self, *, operation_id, actor, actor_source,
-                              actor_verified, source, items, parent_id=None, reason=""):
-        if not items or len(items) > 200 or len({i["issue_id"] for i in items}) != len(items):
+                              actor_verified, source, items, parent_id=None, reason="", created_at=None):
+        limit = 20000 if source in {"rd_upload", "te_correction"} else 200
+        if not items or len(items) > limit or len({i["issue_id"] for i in items}) != len(items):
             raise ValueError("Invalid Trail audit items")
         items = sorted(items, key=lambda item: item["issue_id"])
         fingerprint = hashlib.sha256(encoded(items).encode()).hexdigest()
@@ -63,7 +64,7 @@ class DatabaseTrailHistoryMixin:
             conn.execute("""INSERT INTO trail_operations
                 (id, created_at, actor, actor_source, actor_verified, source, parent_id, reason, fingerprint, item_count)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING""",
-                (operation_id, audit_now(), actor, actor_source, bool(actor_verified), source,
+                (operation_id, created_at or audit_now(), actor, actor_source, bool(actor_verified), source,
                  parent_id, reason, fingerprint, len(items)))
             row = conn.execute("SELECT * FROM trail_operations WHERE id = ?", (operation_id,)).fetchone()
             # A retry may contain only the still-pending subset. Never replace the first snapshots.
@@ -81,18 +82,19 @@ class DatabaseTrailHistoryMixin:
                 conn.execute("""INSERT INTO trail_operation_items
                     (operation_id, issue_id, field, before_json, after_json) VALUES (?, ?, ?, ?, ?)""",
                     (operation_id, item["issue_id"], item["field"], encoded(item["before"]), encoded(item["after"])))
-            self._trail_event(conn, operation_id, "pending", {i["issue_id"]: "pending" for i in items})
+            self._trail_event(conn, operation_id, "pending", {i["issue_id"]: "pending" for i in items}, created_at=created_at)
 
     @staticmethod
-    def _trail_event(conn, operation_id, status, outcomes, actor=None, actor_source=None):
+    def _trail_event(conn, operation_id, status, outcomes, actor=None, actor_source=None, event_id=None, created_at=None):
         if actor is None:
             operation = conn.execute("SELECT actor, actor_source FROM trail_operations WHERE id = ?", (operation_id,)).fetchone()
             actor, actor_source = operation["actor"], operation["actor_source"]
         conn.execute("""INSERT INTO trail_operation_events
-            (id, operation_id, created_at, status, actor, actor_source, outcomes_json) VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (uuid.uuid4().hex, operation_id, audit_now(), status, actor, actor_source or "", encoded(outcomes)))
+            (id, operation_id, created_at, status, actor, actor_source, outcomes_json) VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO NOTHING""",
+            (event_id or uuid.uuid4().hex, operation_id, created_at or audit_now(), status, actor, actor_source or "", encoded(outcomes)))
 
-    def append_trail_event(self, operation_id, status, outcomes, *, actor=None, actor_source=None):
+    def append_trail_event(self, operation_id, status, outcomes, *, actor=None, actor_source=None, event_id=None, created_at=None):
         if status not in {"pending", "succeeded", "partial", "unknown", "conflict"}:
             raise ValueError("Invalid Trail event status")
         with self._write_lock, self.connect() as conn:
@@ -104,7 +106,7 @@ class DatabaseTrailHistoryMixin:
                 status = "succeeded"
             elif "succeeded" in previous.values():
                 status = "partial"
-            self._trail_event(conn, operation_id, status, outcomes, actor, actor_source)
+            self._trail_event(conn, operation_id, status, outcomes, actor, actor_source, event_id, created_at)
 
     def trail_operation(self, operation_id):
         with self.connect() as conn:
@@ -127,7 +129,7 @@ class DatabaseTrailHistoryMixin:
         result["status"] = "succeeded" if values and all(v == "succeeded" for v in values) else "partial" if "succeeded" in values else (result["events"][-1]["status"] if result["events"] else "pending")
         return result
 
-    def list_trail_operations(self, *, issue_id="", actor="", source="", status="", since="", until="", page=1, page_size=20):
+    def list_trail_operations(self, *, issue_id="", actor="", source="", status="", since="", until="", page=1, page_size=20, issue_ids=None):
         where, params = [], []
         for column, value in (("actor", actor), ("source", source)):
             if value:
@@ -136,6 +138,10 @@ class DatabaseTrailHistoryMixin:
         if issue_id:
             where.append("EXISTS (SELECT 1 FROM trail_operation_items i WHERE i.operation_id = o.id AND i.issue_id = ?)")
             params.append(issue_id)
+        if issue_ids is not None:
+            ids = sorted(set(issue_ids))
+            where.append("EXISTS (SELECT 1 FROM trail_operation_items scope_item WHERE scope_item.operation_id = o.id AND scope_item.issue_id IN (" + ",".join("?" for _ in ids) + "))" if ids else "1 = 0")
+            params.extend(ids)
         for operator, value in ((">=", since), ("<=", until)):
             if value:
                 where.append(f"o.created_at {operator} ?")
@@ -146,10 +152,12 @@ class DatabaseTrailHistoryMixin:
         clause = " WHERE " + " AND ".join(where) if where else ""
         with self.connect() as conn:
             total = conn.execute("SELECT COUNT(*) AS n FROM trail_operations o" + clause, params).fetchone()["n"]
+            pages = max(1, (total + page_size - 1) // page_size)
+            page = min(max(1, page), pages)
             rows = conn.execute("SELECT o.* FROM trail_operations o" + clause + " ORDER BY o.created_at DESC, o.id DESC LIMIT ? OFFSET ?", (*params, page_size, (page-1)*page_size)).fetchall()
             started = conn.execute("SELECT MIN(created_at) AS started FROM trail_operations WHERE source <> 'legacy'").fetchone()["started"]
         items = []
         for row in rows:
             detail = self.trail_operation(row["id"])
             items.append({**dict(row), "status": detail["status"], "succeeded_count": sum(v == "succeeded" for v in detail["outcomes"].values())})
-        return {"items": items, "total": total, "page": page, "page_size": page_size, "started_at": started}
+        return {"items": items, "total": total, "page": page, "pages": pages, "page_size": page_size, "started_at": started}
