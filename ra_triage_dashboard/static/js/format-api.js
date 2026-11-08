@@ -644,18 +644,38 @@ async function apiRequest(path, options = {}) {
   let lastError = null;
   for (let attempt = 0; attempt < (retryableGet ? API_GET_MAX_ATTEMPTS : 1); attempt += 1) {
     if (options.signal?.aborted) throw options.signal.reason || Object.assign(new Error("Request cancelled"), { name: "AbortError" });
+    const initialReads = window.__RA_TRIAGE_INITIAL_READS__;
+    const initialUrl = withBase(path);
+    const earlyEntry = retryableGet && attempt === 0 ? initialReads?.get(initialUrl) : null;
+    // Reuse only the ordinary bootstrap GET. Explicit refresh/cancellation or
+    // fetch policies own a fresh request and retire any unconsumed early read.
+    const initialRead = earlyEntry && Object.keys(requestOptions).every(key => key === "method")
+      ? earlyEntry : null;
+    if (earlyEntry) {
+      initialReads.delete(initialUrl);
+      if (!initialRead) {
+        window.clearTimeout(earlyEntry.timer);
+        earlyEntry.controller.abort();
+      }
+    }
     // Caller-owned cancellation must not disable the network deadline. Relay it
     // to the per-attempt controller, and always remove the listener on settle.
-    const controller = retryableGet ? new AbortController() : null;
+    const controller = retryableGet && !initialRead ? new AbortController() : null;
     const callerAbort = () => controller?.abort(options.signal?.reason);
     if (controller && options.signal) options.signal.addEventListener("abort", callerAbort, { once: true });
     const timeoutId = controller
       ? window.setTimeout(() => controller.abort(), API_GET_TIMEOUT_MS)
       : null;
     let response;
+    let initialBody;
     let payload = {};
     try {
-      response = await fetch(withBase(path), {
+      if (initialRead) {
+        const result = await initialRead.result;
+        if (result.error) throw result.error;
+        response = result.response;
+        initialBody = result.body;
+      } else response = await fetch(withBase(path), {
         ...requestOptions,
         ...(controller ? { signal: controller.signal } : {}),
         headers: {
@@ -669,7 +689,8 @@ async function apiRequest(path, options = {}) {
         throw apiResponseError("登录状态已失效，请重新登录后重试。", "Your session has expired. Sign in again and retry.",
           { status: 401, code: "auth_required", ambiguous: false });
       }
-      payload = normalizeApiPayloadUrls(await response.json().catch((error) => {
+      const decoded = initialRead ? Promise.resolve().then(() => JSON.parse(initialBody)) : response.json();
+      payload = normalizeApiPayloadUrls(await decoded.catch((error) => {
         if (error?.name === "AbortError") throw error;
         if (response.ok) throw apiResponseError(
           "服务器返回了无法识别的响应。", "The server returned an unreadable response.",
@@ -692,6 +713,7 @@ async function apiRequest(path, options = {}) {
     } finally {
       if (timeoutId !== null) window.clearTimeout(timeoutId);
       if (controller && options.signal) options.signal.removeEventListener("abort", callerAbort);
+      if (initialRead) window.clearTimeout(initialRead.timer);
     }
     if (response) {
       if (response.ok) return payload;

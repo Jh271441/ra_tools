@@ -6,6 +6,20 @@ const {execFileSync} = require('node:child_process');
 const {chromium} = require('playwright');
 const root = path.resolve(__dirname, '../..'), staticDir = path.join(root, 'ra_triage_dashboard/static');
 const ref = process.env.STARTUP_TEST_REF, measureOnly = process.env.STARTUP_MEASURE_ONLY === '1';
+// Request probes cover every canonical route, without calling an API arrival a
+// visible-content measurement. The existing six routes retain real DOM checks.
+const probeOnly = process.env.STARTUP_PROBE_ONLY === '1';
+const routePaths = {status: 'system-status', analysis: 'review-analysis', assignments: 'review-assignments',
+  summary: 'labeling-summary', labeling: 'case-labeling', 'labeling-new-task': 'case-labeling/new-task',
+  intent: 'intent-labeling', 'trail-update': 'trail-attribute-update', comparison: 'run-comparison',
+  'run-collections': 'multi-run-evaluation', prediction: 'batch-prediction', 'trail-history': 'trail-update-history'};
+const primaryEndpoints = {status: 'status', users: 'access-users', 'rd-results': 'rd-results',
+  analysis: 'review-reason-analysis', assignments: 'cases/work-splits', summary: 'labeling/summary',
+  review: 'cases', labeling: 'labeling/tasks', 'labeling-new-task': 'access-users', campaigns: 'campaigns',
+  intent: 'intent-datasets', 'intent-experiments': 'intent-datasets', 'intent-summary': 'intent-datasets',
+  'trail-update': 'trail-attribute-update/issue-history', runs: 'model-runs', comparison: 'model-runs',
+  'run-collections': 'run-collections', prediction: 'prediction-batches', 'daily-review': 'version-datasets',
+  'version-datasets': 'version-datasets', 'daily-cron': 'daily-cron', 'trail-history': 'trail-history'};
 const assets = new Map();
 const read = file => {
   if (!assets.has(file)) assets.set(file, ref ? execFileSync('git', ['show', `${ref}:ra_triage_dashboard/static/${file}`], {cwd: root, maxBuffer: 8e6}) : fs.readFileSync(path.join(staticDir, file)));
@@ -25,6 +39,10 @@ const server = http.createServer((req, res) => {
   const call = {path: u.pathname, at: Date.now(), aborted: false}; calls.push(call);
   res.on('close', () => {call.aborted = !res.writableFinished;});
   if (req.method !== 'GET') {writes.push(req.method + ' ' + u.pathname); res.writeHead(405).end(); return;}
+  // The production server redirects this legacy entry before serving the shell.
+  if (u.pathname === '/manual/daily-review') {
+    res.writeHead(307, {Location: '/manual/version-datasets' + u.search}).end(); return;
+  }
   const send = (body, mime) => {
     res.setHeader('Content-Type', mime);
     if (req.headers['accept-encoding']?.includes('gzip') && body.length >= 1024) {
@@ -38,8 +56,10 @@ const server = http.createServer((req, res) => {
     const blocked = ['model-runs', 'mention-users', 'review-work-splits'].includes(endpoint)
       || (activeRoute === 'assignments' && endpoint === 'access-users')
       || (activeRoute === 'summary' && endpoint === 'labeling/tasks');
-    const data = endpoint === 'dashboard-config' ? {baselines: [{id: '0508', label: '0508', scope: 'test', issue_count: 10}], default_baseline_ids: ['0508'], tag_catalog: []}
-      : endpoint === 'session' ? {username: 'tester', authenticated: true, verified: true, is_admin: true, access_role: 'admin', can_write: true}
+    const data = endpoint === 'dashboard-config' ? {baselines: [{id: '0508', label: '0508', scope: 'test', issue_count: 10}], default_baseline_ids: ['0508'], tag_catalog: [],
+      case_labeling: {active_baseline_ids: ['0508']}}
+      : endpoint === 'session' ? {username: 'tester', authenticated: true, verified: true, is_admin: true, access_role: 'admin', can_write: true,
+        can_view_intent: true, can_manage_intent: true, can_annotate_intent: true}
       : endpoint === 'access-users' ? {items: [{username: 'tester', role: 'admin', enabled: true, intent_permission: 'manage'}]}
       : endpoint === 'model-runs' ? {items: [{id: 'fixture-run', name: 'Fixture model Run', baseline_prediction_count: 10}], default_model_run_id: 'fixture-run'}
       : endpoint === 'status' ? {overall: {status: 'healthy', problems: []}, application: {build_commit: 'fixture'}, database: {available: true, persistent: true}}
@@ -63,7 +83,7 @@ const server = http.createServer((req, res) => {
     if (profile === 'transient' && endpoint === 'labeling/summary' && count === 1) {
       return setTimeout(() => res.destroy(), 120);
     }
-    if (blocked && !measureOnly) pending.push({endpoint, finish});
+    if (blocked && !measureOnly && !probeOnly) pending.push({endpoint, finish});
     else {
       const delay = profile === 'jitter' ? (endpoint === 'labeling/tasks' ? 1800 : [40, 400, 100][(endpoint.length + count) % 3])
         : blocked ? endpoint === 'model-runs' ? 900 : 1200 : 30;
@@ -90,7 +110,7 @@ const release = endpoint => {
   await new Promise(r => server.listen(0, '127.0.0.1', r));
   const browser = await chromium.launch({headless: true}), results = [];
   try {
-    const combinations = measureOnly ? Array.from({length: Number(process.env.STARTUP_TRIALS || 1)}, () => [1440, 'zh', 'dark']) : [320, 390, 1440].flatMap(w => ['zh', 'en'].flatMap(l => ['dark', 'light'].map(t => [w, l, t])));
+    const combinations = measureOnly || probeOnly ? Array.from({length: Number(process.env.STARTUP_TRIALS || 1)}, () => [1440, 'zh', 'dark']) : [320, 390, 1440].flatMap(w => ['zh', 'en'].flatMap(l => ['dark', 'light'].map(t => [w, l, t])));
     for (const route of (process.env.STARTUP_ROUTES || 'status,users,rd-results,analysis,assignments,summary').split(',')) {
       for (const [width, lang, theme] of combinations) {
         const context = await browser.newContext({viewport: {width, height: 1000}});
@@ -102,10 +122,10 @@ const release = endpoint => {
           await cdp.send('Network.emulateNetworkConditions', {offline: false, latency: Number(process.env.STARTUP_NETWORK_MS), downloadThroughput: 2500000, uploadThroughput: 2500000});
         }
         const started = Date.now();
-        const routePath = {status: 'system-status', analysis: 'review-analysis', assignments: 'review-assignments', summary: 'labeling-summary'}[route] || route;
+        const routePath = routePaths[route] || route;
         const query = route === 'assignments' ? 'baselines=0508&lifecycle=current&split=campaign-fixture' : 'baselines=0508';
         await page.goto(`http://127.0.0.1:${server.address().port}/manual/${routePath}?${query}`, {waitUntil: 'domcontentloaded'});
-        if (!measureOnly && route === 'analysis') {
+        if (!measureOnly && !probeOnly && route === 'analysis') {
           await page.waitForFunction(() => typeof state !== 'undefined' && state.config && state.session.authenticated);
           const deadline = Date.now() + 15000;
           while (!pending.some(p => p.endpoint === 'model-runs')) {
@@ -114,16 +134,39 @@ const release = endpoint => {
           }
           release('model-runs');
         }
-        await page.waitForFunction(route => route === 'status' ? document.querySelectorAll('#systemStatusGrid article').length > 0
+        if (probeOnly) {
+          assert.ok(primaryEndpoints[route], 'known route probe: ' + route);
+          const deadline = Date.now() + 20000;
+          while (!calls.some(c => c.path === '/manual/api/' + primaryEndpoints[route])) {
+            assert.ok(Date.now() < deadline, 'primary request never started: ' + route + ' ' + JSON.stringify({calls, errors}));
+            await page.waitForTimeout(10);
+          }
+        } else await page.waitForFunction(route => route === 'status' ? document.querySelectorAll('#systemStatusGrid article').length > 0
           : route === 'users' ? document.querySelectorAll('[data-access-user="tester"]').length > 0
           : route === 'rd-results' ? typeof rdResults !== 'undefined' && Boolean(rdResults.data)
           : route === 'assignments' ? document.querySelectorAll('[data-review-assignment-batch="campaign-fixture"]').length > 0
           : route === 'summary' ? document.querySelectorAll('#labelSummaryCaseList .label-summary-case-row').length > 0
+          : route === 'trail-history' ? document.querySelectorAll('#trailHistoryResults table').length > 0
           : typeof state !== 'undefined' && Boolean(state.reviewAnalysis.data), route);
-        const readyMs = Date.now() - started;
+        const readyMs = probeOnly ? undefined : Date.now() - started;
+        const firstPageRequestMs = calls.find(c => c.path === '/manual/api/' + primaryEndpoints[route])?.at - started;
+        if (!ref) await page.waitForFunction(() => performance.getEntriesByType('resource')
+          .filter(r => /\/api\/(dashboard-config|session)$/.test(new URL(r.name).pathname)).length === 2);
+        const resources = await page.evaluate(() => performance.getEntriesByType('resource')
+          .filter(r => /\/(app-bundle\.js|dashboard-config|session)(\?|$)/.test(r.name))
+          .map(r => ({path: new URL(r.name).pathname, startTime: r.startTime, responseEnd: r.responseEnd})));
+        if (!ref) {
+          const script = resources.find(r => r.path.endsWith('/app-bundle.js'));
+          assert.ok(script, 'bundle resource timing is present');
+          for (const endpoint of ['dashboard-config', 'session']) {
+            assert.equal(calls.filter(c => c.path.endsWith('/api/' + endpoint)).length, 1, endpoint + ' is fetched once');
+            const shared = resources.find(r => r.path.endsWith('/api/' + endpoint));
+            assert.ok(shared && shared.startTime < script.responseEnd, endpoint + ' overlaps bundle download');
+          }
+        }
         const bounds = await page.evaluate(() => ({scroll: document.documentElement.scrollWidth, width: innerWidth}));
         assert.ok(bounds.scroll <= width + 1, JSON.stringify({route, width, bounds}));
-        if (!measureOnly) {
+        if (!measureOnly && !probeOnly) {
           assert.ok(pending.some(p => p.endpoint === 'mention-users'), '@ directory remains optional');
           if (!['analysis', 'summary'].includes(route)) {
             assert.ok(pending.some(p => p.endpoint === 'model-runs'), 'content paints before Run catalog');
@@ -209,13 +252,15 @@ const release = endpoint => {
           assert.equal(calls.filter(c => c.path.endsWith('/app-bundle.js')).length, 1, 'preload reused by executing script');
           assert.equal(calls.filter(c => c.path.endsWith('/app.js')).length, 0, 'no loader network round trip');
         }
-        results.push({route, width, lang, theme, readyMs, bounds, errors, requests: calls.map(c => ({path: c.path, atMs: c.at - started, aborted: c.aborted}))});
+        results.push({route, width, lang, theme, readyMs, firstPageRequestMs, resources, bounds, errors, requests: calls.map(c => ({path: c.path, atMs: c.at - started, aborted: c.aborted}))});
         await context.close(); release();
       }
     }
     assert.deepEqual(writes, []);
-    const output = {browser: browser.version(), ref: ref || 'working-tree', networkLatencyMs: Number(process.env.STARTUP_NETWORK_MS || 0), profile, results};
+    const output = {browser: browser.version(), ref: ref || 'working-tree', probeOnly,
+      bundleGzipBytes: zlib.gzipSync(bundle, {level: 5}).length,
+      networkLatencyMs: Number(process.env.STARTUP_NETWORK_MS || 0), profile, results};
     if (report) fs.writeFileSync(path.join(report, 'startup.json'), JSON.stringify(output, null, 2));
-    console.log(JSON.stringify(results.map(({route, width, lang, theme, readyMs}) => ({route, width, lang, theme, readyMs}))));
+    console.log(JSON.stringify(results.map(({route, width, lang, theme, readyMs, firstPageRequestMs}) => ({route, width, lang, theme, readyMs, firstPageRequestMs}))));
   } finally {await browser.close(); release(); server.closeAllConnections(); server.close();}
 })().catch(e => {console.error(e); release(); server.closeAllConnections(); server.close(); process.exitCode = 1;});

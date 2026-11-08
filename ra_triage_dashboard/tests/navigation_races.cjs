@@ -190,6 +190,47 @@ async function cronPaintDoesNotWaitForSharedBootstrap() {
   assert.equal(leave.state.activePage, 'labeling-summary');
   assert.equal(leave.s.window.location.search, '?q=keep');
 }
+async function bootstrapRunDependenciesMatchTheVisiblePage() {
+  const independent = {
+    status: 'loadStatus', users: 'loadAccessUsers', 'rd-results': 'loadRdResults',
+    'review-assignments': 'loadReviewAssignments', 'trail-history': 'loadTrailHistory',
+    prediction: 'loadPredictionBatches', campaigns: 'loadCampaigns',
+    intent: 'loadIntentLabeling', 'intent-experiments': 'loadIntentExperimentAdmin',
+    'intent-summary': 'loadIntentSummary',
+  };
+  const dependent = {review: 'loadCases', analysis: 'loadReviewReasonAnalysis',
+    comparison: 'loadRunComparison', 'run-collections': 'loadRunCollectionsWorkbench'};
+  for (const [page, loader] of Object.entries({...independent, ...dependent})) {
+    const f = bootstrapFixture(page), runs = defer();
+    let reads = 0, overviewReads = 0, completed = false;
+    f.state.intentLabeling = {};
+    Object.assign(f.s, {
+      loadMentionUsers: async () => {}, loadPredictionConfig: async () => {},
+      applyAnalysisRouteControls() {}, applyRunComparisonRoute() {},
+      normalizedAnalysisComparisonStatus: () => 'all',
+      loadRuns: () => runs.promise,
+      loadOverview: async () => {overviewReads++;},
+      [loader]: async () => {reads++;},
+      showToast: message => {throw new Error(message);},
+    });
+    const boot = f.s.bootstrap().then(() => {completed = true;}); await tick();
+    assert.equal(reads, page in independent ? 1 : 0, page + ': only Run-dependent content waits');
+    assert.equal(overviewReads, 0, 'shared overview must use the resolved Run scope');
+    assert.equal(completed, false, 'final route commit must not invalidate pending Run metadata');
+    runs.resolve(); await boot;
+    assert.equal(reads, 1, page + ': exactly one page load');
+    assert.equal(overviewReads, 1);
+    assert.equal(f.calls.polls, 1);
+  }
+  const f = bootstrapFixture('campaigns'), runs = defer(); let overviewReads = 0;
+  f.s.loadRuns = () => runs.promise; f.s.loadCampaigns = async () => {};
+  f.s.loadOverview = async () => {overviewReads++;};
+  const boot = f.s.bootstrap(); await tick();
+  f.navigate('labeling-summary', '?q=keep'); runs.resolve(); await boot;
+  assert.equal(overviewReads, 0, 'late catalog must not start an overview read on another page');
+  assert.equal(f.state.activePage, 'labeling-summary');
+  assert.equal(f.s.window.location.search, '?q=keep');
+}
 async function bootstrapResumesPendingCombinedContext() {
   for (const status of ['loading', 'ready', 'error']) {
     const f = bootstrapFixture('review'); let resumed = 0;
@@ -364,7 +405,7 @@ async function delayedAnalysisFacetCannotReplaceNewRunOptions() {
   assert.equal(f.state.reviewAnalysis.workSplitOptions[0].split_id, 'new-options');
 }
 (async () => {
-  for (const test of [labelingBackgroundRefreshKeepsTrailHydration, optionalDirectoryDoesNotBlockIdentityOrOverwriteAnotherSession, delayedOverviewCannotReplaceNewScopeCounts, delayedAnalysisFacetCannotReplaceNewRunOptions, cronPaintDoesNotWaitForSharedBootstrap,bootstrapResumesPendingCombinedContext,assignmentAccessWaitsForWriterAndAvoidsAdminRequests,delayedReviewReloadCannotReclaimLabeling, navigationEpochTracksRealPageCommits, loadersStartAfterCanonicalRouteCommit, debounceCannotFireAfterDepartureOrRoundTrip, listPaginationAndPollingIgnoreObsoleteViews, lateTaskContextCannotRewriteLabelingUrl, bootstrapNeverReplaysInitialRouteOverNewNavigation, summaryWaitsForIdentityInsteadOfFallingBackToReview, labelingEntryAndSummaryResponsesStayScoped]) {
+  for (const test of [bootstrapRunDependenciesMatchTheVisiblePage, labelingBackgroundRefreshKeepsTrailHydration, optionalDirectoryDoesNotBlockIdentityOrOverwriteAnotherSession, delayedOverviewCannotReplaceNewScopeCounts, delayedAnalysisFacetCannotReplaceNewRunOptions, cronPaintDoesNotWaitForSharedBootstrap,bootstrapResumesPendingCombinedContext,assignmentAccessWaitsForWriterAndAvoidsAdminRequests,delayedReviewReloadCannotReclaimLabeling, navigationEpochTracksRealPageCommits, loadersStartAfterCanonicalRouteCommit, debounceCannotFireAfterDepartureOrRoundTrip, listPaginationAndPollingIgnoreObsoleteViews, lateTaskContextCannotRewriteLabelingUrl, bootstrapNeverReplaysInitialRouteOverNewNavigation, summaryWaitsForIdentityInsteadOfFallingBackToReview, labelingEntryAndSummaryResponsesStayScoped]) {
     await test(); console.log('PASS ' + test.name);
   }
 })().catch(error => {console.error(error); process.exitCode = 1;});

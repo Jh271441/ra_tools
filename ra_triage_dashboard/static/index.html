@@ -53,8 +53,36 @@
         const appPreload = document.createElement("link");
         appPreload.rel = "preload";
         appPreload.as = "script";
-        appPreload.href = `${activeBase}/static/app-bundle.js?v=manual-triage-774`;
+        appPreload.href = `${activeBase}/static/app-bundle.js?v=manual-triage-775`;
         document.head.appendChild(appPreload);
+        // These same-origin reads are required on every route. Begin them
+        // while the bundle downloads; consume once through the normal API
+        // decoder/retry/auth checks, without persisting identity or responses.
+        if (typeof fetch === "function" && typeof AbortController === "function") {
+          const initialReads = new Map();
+          window.__RA_TRIAGE_INITIAL_READS__ = initialReads;
+          for (const path of ["/api/dashboard-config", "/api/session"]) {
+            const url = `${activeBase}${path}`;
+            const controller = new AbortController();
+            const entry = { controller, timer: window.setTimeout(() => controller.abort(), 6000) };
+            entry.result = fetch(url, {
+              headers: { "Content-Type": "application/json" }, signal: controller.signal,
+            }).then(async response => ({ response, body: await response.text() }))
+              .then(result => { window.clearTimeout(entry.timer); return result; },
+                error => { window.clearTimeout(entry.timer); return { error }; });
+            initialReads.set(url, entry);
+          }
+          window.addEventListener("pagehide", () => {
+            for (const entry of initialReads.values()) {
+              controllerCleanup(entry);
+            }
+            initialReads.clear();
+          }, { once: true });
+          function controllerCleanup(entry) {
+            window.clearTimeout(entry.timer);
+            entry.controller.abort();
+          }
+        }
         const stylesheetPaths = [
           "styles.css",
           "css/base.css",
@@ -94,7 +122,7 @@
         stylesheetRequests.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-774`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-775`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -2640,7 +2668,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app-bundle.js?v=manual-triage-774`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app-bundle.js?v=manual-triage-775`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>
