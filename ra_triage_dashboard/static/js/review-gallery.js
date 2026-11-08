@@ -791,6 +791,11 @@ function renderPredictionSourceSummary() {
       : `已从 Review 当前 Case 带入 ${count.length} 个 Issue；仍按 Batch 任务保存为独立 Model Run。`;
 }
 
+function cancelCaseListLoad() {
+  state.caseListController?.abort();
+  state.caseListController = null;
+}
+
 async function loadCases({
   keepSelection = true,
   page = state.casePage,
@@ -798,6 +803,8 @@ async function loadCases({
 } = {}) {
   const pageContext = capturePageContext();
   const requestSeq = ++state.caseListRequestSeq;
+  cancelCaseListLoad();
+  const controller = state.caseListController = new AbortController();
   state.casePage = Math.max(1, Number(page) || 1);
   const params = new URLSearchParams();
   const search = $("#searchInput").value.trim();
@@ -867,8 +874,17 @@ async function loadCases({
   params.set("page_size", String(state.casePageSize));
   params.set("include_thumbnail", "true");
   appendBaselineParams(params);
-  const data = await api(`/api/cases?${params.toString()}`, fresh
-    ? { cache: "no-store", signal: new AbortController().signal } : {});
+  let data;
+  try {
+    data = await api(`/api/cases?${params.toString()}`, {
+      ...(fresh ? { cache: "no-store" } : {}), signal: controller.signal,
+    });
+  } catch (error) {
+    if (requestSeq !== state.caseListRequestSeq || !isPageContextCurrent(pageContext)) return;
+    throw error;
+  } finally {
+    if (state.caseListController === controller) state.caseListController = null;
+  }
   if (requestSeq !== state.caseListRequestSeq || !isPageContextCurrent(pageContext)) return;
   const totalPages = Math.max(
     1,

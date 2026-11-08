@@ -6,6 +6,9 @@ let labelSummaryPageSize = DEFAULT_CASE_PAGE_SIZE;
 let labelSummaryRouteRestored = false;
 let labelSummarySearchTimer = null;
 let labelSummaryTasks = [];
+let labelSummaryTaskScope = "";
+let labelSummaryTasksLoading = false;
+let labelSummaryController = null;
 let labelSummaryData = null;
 const labelSummaryFilters = {
   search: "", issueIds: [], taskId: "", status: [], author: [], assignee: [],
@@ -131,12 +134,21 @@ function renderLabelSummaryMultiPicker(selector, options, selected, key) {
   root.dataset.optionsFingerprint = fingerprint;
 }
 
-function renderLabelSummaryFilters(tasks, data) {
+function renderLabelSummaryTaskPicker(tasks) {
   const taskOptions = [{ value: "", label: uiText("全部标注（含历史迁移）", "All annotations (including migrated)") }, ...(tasks.items || []).map((task) => ({ value: task.id, label: task.name || uiText("标注任务", "Labeling task") }))];
-  if (!taskOptions.some((item) => item.value === labelSummaryFilters.taskId)) labelSummaryFilters.taskId = "";
+  if (!taskOptions.some((item) => item.value === labelSummaryFilters.taskId)) {
+    if (labelSummaryTasksLoading) taskOptions.push({ value: labelSummaryFilters.taskId, label: labelSummaryFilters.taskId });
+    else labelSummaryFilters.taskId = "";
+  }
+  const native = $("#labelSummaryTaskPicker")?.querySelector(".ui-select-native");
+  if (native) native.disabled = labelSummaryTasksLoading;
+  renderLabelSummaryPicker("#labelSummaryTaskPicker", taskOptions, labelSummaryFilters.taskId);
+}
+
+function renderLabelSummaryFilters(tasks, data) {
+  renderLabelSummaryTaskPicker(tasks);
   const labelerOptions = [...new Set([...(data.labelers || []), ...parseFilterList(labelSummaryFilters.author)])].map((value) => ({ value, label: value }));
   const assigneeOptions = [...new Set([...(data.assignees || []), ...parseFilterList(labelSummaryFilters.assignee)])].map((value) => ({ value, label: value }));
-  renderLabelSummaryPicker("#labelSummaryTaskPicker", taskOptions, labelSummaryFilters.taskId);
   renderLabelGtFilter($("#labelSummaryStatusPicker"), {
     labeling: true,
     selected: labelGtFilterSelection(labelSummaryFilters.status, labelSummaryFilters.gtRelations),
@@ -388,23 +400,33 @@ function renderLabelingSummary(data) {
   $("#labelSummaryPageJump")?.addEventListener("keydown", (event) => { if (event.key === "Enter") $("#labelSummaryPageJumpButton")?.click(); });
   $("#labelSummaryPageSize")?.addEventListener("change", (event) => { labelSummaryPageSize = CASE_PAGE_SIZES.includes(Number(event.target.value)) ? Number(event.target.value) : DEFAULT_CASE_PAGE_SIZE; labelSummaryPage = 1; loadLabelingSummary().catch((error) => showToast(error.message, true)); });
 }
+function cancelLabelingSummaryLoad() {
+  labelSummaryRequest += 1;
+  labelSummaryController?.abort();
+  labelSummaryController = null;
+}
+
 async function loadLabelingSummary() {
   if (state.activePage !== "labeling-summary") return;
-  const pageContext = capturePageContext();
+  let pageContext = capturePageContext();
   restoreLabelSummaryRoute();
-  const seq = ++labelSummaryRequest;
   const root = $("#labelSummaryContent");
   if (!root) return;
+  cancelLabelingSummaryLoad();
+  const seq = labelSummaryRequest;
+  let controller = labelSummaryController = new AbortController();
+  const isCurrent = () => seq === labelSummaryRequest && isPageContextCurrent(pageContext);
   labelSummaryData = null;
   root.innerHTML = '<div class="page-card campaign-analysis-empty"><span class="ui-lang-zh">正在汇总标注…</span><span class="ui-lang-en">Loading annotations…</span></div>';
   try {
     const baselines = selectedBaselineQueryValue();
-    const tasks = await api(`/api/labeling/tasks?include_combined=true&baselines=${encodeURIComponent(baselines)}`);
-    if (seq !== labelSummaryRequest || !isPageContextCurrent(pageContext)) return;
-    labelSummaryTasks = tasks.items || [];
-    if (!(tasks.items || []).some((task) => task.id === labelSummaryFilters.taskId)) {
-      labelSummaryFilters.taskId = "";
-    }
+    const taskId = labelSummaryFilters.taskId;
+    if (labelSummaryTaskScope !== baselines) labelSummaryTasks = [];
+    labelSummaryTasksLoading = true;
+    // Catalog reads may be shared with another consumer. Capture failures now
+    // so a slow summary cannot leave an unhandled optional-read rejection.
+    const tasksRead = api(`/api/labeling/tasks?include_combined=true&baselines=${encodeURIComponent(baselines)}`)
+      .then(value => ({ value }), error => ({ error }));
     const params = new URLSearchParams({
       baselines,
       task_id: labelSummaryFilters.taskId,
@@ -423,17 +445,57 @@ async function loadLabelingSummary() {
       page: String(labelSummaryPage),
       page_size: String(labelSummaryPageSize),
     });
-    const data = await api(`/api/labeling/summary?${params.toString()}`);
-    if (seq !== labelSummaryRequest || !isPageContextCurrent(pageContext)) return;
+    const readSummary = () => api(`/api/labeling/summary?${params.toString()}`, { signal: controller.signal })
+      .then(value => ({ value }), error => ({ error }));
+    let summaryRead = readSummary();
+    const applyTasks = result => {
+      labelSummaryTasks = result.items || [];
+      labelSummaryTaskScope = baselines;
+      labelSummaryTasksLoading = false;
+    };
+    if (taskId) {
+      // A task-specific URL still needs authoritative validation before paint.
+      // Its stats request overlaps that validation; never flash another scope.
+      const tasks = await tasksRead;
+      if (!isCurrent()) return;
+      if (tasks.error) throw tasks.error;
+      applyTasks(tasks.value);
+      if (!labelSummaryTasks.some(task => task.id === taskId)) {
+        labelSummaryFilters.taskId = "";
+        params.set("task_id", "");
+        controller.abort();
+        controller = labelSummaryController = new AbortController();
+        summaryRead = readSummary();
+      }
+    }
+    const result = await summaryRead;
+    if (!isCurrent()) return;
+    if (result.error) throw result.error;
+    const data = result.value;
     labelSummaryPage = Number(data.page || 1);
     labelSummaryPageSize = Number(data.page_size || 20);
     labelSummaryData = data;
-    renderLabelSummaryFilters(tasks, data);
+    renderLabelSummaryFilters({ items: labelSummaryTasks }, data);
     renderLabelingSummary(data);
     persistLabelSummaryRoute();
+    pageContext = capturePageContext();
+    if (!taskId) void tasksRead.then(tasks => {
+      if (!isCurrent()) return;
+      if (tasks.error) {
+        labelSummaryTasksLoading = false;
+        showToast(tasks.error.message, true);
+      } else applyTasks(tasks.value);
+      // Only enrich the shared task picker: keep the table, pagination, other
+      // filters and focused controls intact after the content already painted.
+      renderLabelSummaryTaskPicker({ items: labelSummaryTasks });
+    });
   } catch(error) {
-    if (seq === labelSummaryRequest && isPageContextCurrent(pageContext)) root.innerHTML = `<div class="page-card campaign-analysis-empty">${escapeHtml(error.message)}</div>`;
+    if (!isCurrent()) return;
+    controller.abort();
+    root.innerHTML = `<div class="page-card campaign-analysis-empty">${escapeHtml(error.message)}</div>`;
     throw error;
+  } finally {
+    if (labelSummaryController === controller) labelSummaryController = null;
   }
 }
 document.getElementById("labelSummaryFilterForm")?.addEventListener("submit", (event) => {

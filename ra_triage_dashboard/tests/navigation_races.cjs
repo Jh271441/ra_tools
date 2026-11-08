@@ -104,6 +104,21 @@ async function debounceCannotFireAfterDepartureOrRoundTrip() {
   a.navigate('labeling-summary'); analysisCallback(); await tick(); assert.equal(analysisReloads, 0);
 }
 async function listPaginationAndPollingIgnoreObsoleteViews() {
+  const cancellable = fixture(); cancellable.load('review-gallery.js');
+  cancellable.s.renderCases = d => cancellable.calls.paints.push(d);
+  const reads = [];
+  cancellable.s.api = (_url, options) => {
+    let resolve, reject;
+    const promise = new Promise((a, b) => {resolve = a; reject = b;});
+    reads.push({resolve, signal: options.signal});
+    options.signal.addEventListener('abort', () => reject(Object.assign(new Error('obsolete'), {name: 'AbortError'})), {once: true});
+    return promise;
+  };
+  const oldRead = cancellable.s.loadCases(), newRead = cancellable.s.loadCases({page: 2});
+  assert.equal(reads[0].signal.aborted, true, 'new filters cancel obsolete transfer, not just its paint');
+  await oldRead;
+  reads[1].resolve({items: [{issue_id: 'current'}], total: 40}); await newRead;
+  assert.equal(cancellable.calls.paints[0].items[0].issue_id, 'current');
   const f = fixture(); f.load('review-gallery.js'); f.s.renderCases = d => f.calls.paints.push(d); const pending = defer(); f.s.api = () => pending.promise;
   const request = f.s.loadCases(); f.navigate('labeling'); f.navigate('review');
   pending.resolve({items: [{issue_id: 'old'}], total: 1}); await request;
@@ -242,8 +257,10 @@ async function labelingEntryAndSummaryResponsesStayScoped() {
   assert.equal(listed, 0); f.s.persistCaseLabelingRoute(); assert.equal(f.s.window.location.pathname, '/manual/labeling-summary');
   const a = fixture('labeling-summary'); a.load('labeling-summary.js'); const pending = defer(); let requests = 0;
   a.s.api = () => {requests++; return pending.promise;};
-  const summary = a.s.loadLabelingSummary(); a.navigate('labeling'); a.navigate('labeling-summary'); pending.resolve({items: []}); await summary;
-  assert.equal(requests, 1, 'stale task-list response must not start a summary query for a later visit');
+  const summary = a.s.loadLabelingSummary();
+  assert.equal(requests, 2, 'task directory and summary start together');
+  a.navigate('labeling'); a.navigate('labeling-summary'); pending.resolve({items: []}); await summary;
+  assert.equal(requests, 2, 'stale response must not issue further queries for a later visit');
 }
 async function labelingBackgroundRefreshKeepsTrailHydration() {
   for (const editing of [false, true]) {

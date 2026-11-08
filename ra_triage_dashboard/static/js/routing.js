@@ -1336,6 +1336,8 @@ function showPage(
   if (target === "rd-results" && loadPageData) pageLoads.push(() => loadRdResults());
   state.pageNavigationEpoch = Number(state.pageNavigationEpoch || 0) + 1;
   if (previousPage === "review" && target !== "review" && typeof cancelCaseHydration === "function") cancelCaseHydration();
+  if (previousPage === "review" && target !== "review" && typeof cancelCaseListLoad === "function") cancelCaseListLoad();
+  if (previousPage === "labeling-summary" && target !== "labeling-summary" && typeof cancelLabelingSummaryLoad === "function") cancelLabelingSummaryLoad();
   if (previousPage !== target && ["review", "labeling"].includes(previousPage)) {
     pauseBevVideoPlayers(typeof detailHeroMediaEl === "function" ? detailHeroMediaEl() : $("#detailHeroMedia"));
   }

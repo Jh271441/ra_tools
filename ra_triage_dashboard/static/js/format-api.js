@@ -643,7 +643,12 @@ async function apiRequest(path, options = {}) {
   }
   let lastError = null;
   for (let attempt = 0; attempt < (retryableGet ? API_GET_MAX_ATTEMPTS : 1); attempt += 1) {
-    const controller = retryableGet && !options.signal ? new AbortController() : null;
+    if (options.signal?.aborted) throw options.signal.reason || Object.assign(new Error("Request cancelled"), { name: "AbortError" });
+    // Caller-owned cancellation must not disable the network deadline. Relay it
+    // to the per-attempt controller, and always remove the listener on settle.
+    const controller = retryableGet ? new AbortController() : null;
+    const callerAbort = () => controller?.abort(options.signal?.reason);
+    if (controller && options.signal) options.signal.addEventListener("abort", callerAbort, { once: true });
     const timeoutId = controller
       ? window.setTimeout(() => controller.abort(), API_GET_TIMEOUT_MS)
       : null;
@@ -676,6 +681,7 @@ async function apiRequest(path, options = {}) {
       lastError = error;
       const timedOut = error?.name === "AbortError";
       const callerAborted = Boolean(options.signal?.aborted);
+      if (callerAborted) throw error;
       if (!retryableGet || callerAborted || error.code === "auth_required" || attempt >= API_GET_MAX_ATTEMPTS - 1) {
         if (timedOut) throw apiResponseError("请求超时，请稍后重试。", "The request timed out. Please retry.",
           { code: "timeout", ambiguous: isMutation });
@@ -685,6 +691,7 @@ async function apiRequest(path, options = {}) {
       }
     } finally {
       if (timeoutId !== null) window.clearTimeout(timeoutId);
+      if (controller && options.signal) options.signal.removeEventListener("abort", callerAbort);
     }
     if (response) {
       if (response.ok) return payload;
