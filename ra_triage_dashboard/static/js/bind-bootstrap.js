@@ -1173,10 +1173,12 @@ async function bootstrap() {
         splitId: initialRoute.reviewAssignmentSplitId,
       })], "页面");
     }
-    // Case labeling is intentionally model-free. Other pages resolve the Run
-    // before loading queue-dependent facets so their counts cannot race.
+    // Only Run-dependent views need the catalog before their first payload.
+    // Other routes render their own data while the shared catalog initializes
+    // for later navigation; finish it before the final bootstrap route commit.
+    let initialRunsRequest = Promise.resolve();
     if (!["labeling", "labeling-new-task", "labeling-summary"].includes(initialRoute.page)) {
-      await settleInitialRequests(
+      initialRunsRequest = settleInitialRequests(
         [
           loadRuns({
             preferDefault: !initialRoute.runId,
@@ -1185,6 +1187,9 @@ async function bootstrap() {
         ],
         "模型 Run"
       );
+      if (["review", "analysis", "runs", "comparison", "run-collections"].includes(initialRoute.page)) {
+        await initialRunsRequest;
+      }
     } else {
       state.selectedRunId = "";
     }
@@ -1210,7 +1215,9 @@ async function bootstrap() {
     // Review home: paint cases first; cluster chips are secondary chrome.
     const initialPageRequests = ["labeling", "labeling-new-task", "labeling-summary"].includes(initialRoute.page)
       ? []
-      : [{ name: "概览", promise: loadOverview() }];
+      : [{ name: "概览", promise: initialRunsRequest.then(() => {
+          if (isPageContextCurrent(bootstrapContext, { matchUrl: false })) return loadOverview();
+        }) }];
     let initialDetailRequest = null;
     if (independentPageResult) {
       initialPageRequests.push(independentPageResult);
