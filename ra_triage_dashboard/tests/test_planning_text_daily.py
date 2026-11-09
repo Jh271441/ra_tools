@@ -102,6 +102,12 @@ class PlanningTextTest(unittest.TestCase):
         self.assertIsNone(value['matched_frame'])
         self.assertEqual(read_daily_window(self.data, 'cn1234', -21)['matched_frame']['constraint_id'], 'original-<id>')
         self.assertEqual(len(value['frames']), 2)
+        from ra_triage_dashboard.app.planning_text_daily import cohort_counts_many
+        target = {self.member['issue_id']: dict(trip_id=self.member['trip_id'], ra_start_timestamp=ANCHOR)}
+        staged = cohort_counts_many(self.data, {'cohort': target}, include_pipeline=True)['cohort']
+        self.assertEqual(staged['failed'], 1)
+        self.assertEqual(staged['pipeline']['stages']['text-source']['state'], 'complete')
+        self.assertEqual(staged['pipeline']['stages']['text-index']['state'], 'complete')
 
     def test_only_a_full_window_is_collected_and_no_constraint_is_a_frame(self):
         rows = [observation(t, status='no_constraint') for t in range(-20000, 20000, 100)]

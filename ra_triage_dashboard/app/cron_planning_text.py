@@ -16,7 +16,7 @@ from .planning_text_artifact import identity
 
 MAX_ROWS = 20000
 FRESH_SECONDS = 180
-TERMINAL = {"collected", "partial_source", "failed"}
+TERMINAL = {"collected", "partial_source"}
 QUEUE_STATES = {
     "pending", "running", "resource_wait", "retry", "owner_wait", "orion_running",
     "complete", "source_empty", "source_failed", "execution_failed", "review", "reused",
@@ -39,6 +39,15 @@ def _matches_version(member, target):
     family = scope.removeprefix("manual_sidecar_version_")
     # Both forms exist in saved authority rows. Do not infer trips or anchors.
     return member.get("version") in {family, family[-4:]}
+
+
+def _source_finished(saved):
+    if saved[0] in TERMINAL:
+        return True
+    # A failed saved receipt might be a recoverable resource/import failure.
+    # Only explicit terminal source-decode evidence closes that source phase.
+    evidence = saved[2] if len(saved) > 2 else {}
+    return saved[0] == "failed" and evidence.get("terminal_source_error") is True
 
 
 class TextPipeline:
@@ -117,7 +126,7 @@ class TextPipeline:
             saved = self.saved.get(key)
             if saved:
                 registered.add(key)
-                if saved[0] in TERMINAL:
+                if _source_finished(saved):
                     finished.add(key)
                     if saved[0] in {"partial_source", "failed"}:
                         source_done.add(key)
@@ -142,6 +151,8 @@ class TextPipeline:
                         validating.add(key)
                     elif detail.get("stage") == "index":
                         publishing.add(key)
+            if saved and saved[0] == "failed" and key not in finished and (not row or row["state"] in {"complete", "source_failed", "review", "execution_failed"}):
+                blocked.add(key)
             observed = runtime["by_identity"].get(key) if runtime else None
             if not observed or not _matches_version(observed, target) or key in finished:
                 continue

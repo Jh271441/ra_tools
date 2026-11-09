@@ -223,7 +223,13 @@ def read_daily_window(data_dir, issue_id, offset_ms=None, timestamp_ms=None, *, 
         return {**base, "status": "unavailable", "reason": "index_unavailable"}
 
 
-def _cohort_states(data_dir):
+def _cohort_evidence(meta):
+    errors = meta.get("errors")
+    return {"terminal_source_error": isinstance(errors, list) and bool(errors)
+            and all(isinstance(e, dict) and e.get("code") == "source_message_decode_failed" for e in errors)}
+
+
+def _cohort_states(data_dir, *, include_evidence=False):
     """Read the bounded identity/status projection once for related cohorts."""
     by_identity = {}
     historical = Path(data_dir) / "planning_constraints/history.sqlite3"
@@ -245,7 +251,8 @@ def _cohort_states(data_dir):
                 if len(raw) > 65536:
                     raise ValueError("oversized_planning_metadata")
                 meta = json.loads(raw)
-                by_identity[(iid, trip, anchor)] = (meta["source_status"], meta["source_frame_count"])
+                value = (meta["source_status"], meta["source_frame_count"])
+                by_identity[(iid, trip, anchor)] = value + (_cohort_evidence(meta),) if include_evidence else value
     if index_path(data_dir).exists():
         with closing(_reader(data_dir)) as db:
             rows = db.execute("SELECT issue_id,trip_id,anchor_ms,state,metadata_json FROM captures LIMIT 20001").fetchall()
@@ -256,7 +263,9 @@ def _cohort_states(data_dir):
                     raise ValueError("oversized_planning_metadata")
                 key = iid, trip, anchor
                 if state != "pending" or key not in by_identity:
-                    by_identity[key] = state, json.loads(raw).get("frame_count", 0)
+                    meta = json.loads(raw)
+                    value = (state, meta.get("frame_count", 0))
+                    by_identity[key] = value + (_cohort_evidence(meta),) if include_evidence else value
     return by_identity
 
 
@@ -280,7 +289,7 @@ def cohort_counts_many(data_dir, cohorts, *, include_pipeline=False):
                 results[key]["pipeline"] = pipeline.project(targets, results[key])
         return results
     try:
-        by_identity = _cohort_states(data_dir)
+        by_identity = _cohort_states(data_dir, include_evidence=True) if include_pipeline else _cohort_states(data_dir)
     except (OSError, ValueError, TypeError, KeyError, sqlite3.Error):
         for key, targets in active.items():
             results[key] = {"selected": len(targets), "status": "unavailable"}
@@ -294,7 +303,7 @@ def cohort_counts_many(data_dir, cohorts, *, include_pipeline=False):
                 if not found:
                     result["unknown"] += 1
                     continue
-                state, frames = found
+                state, frames = found[:2]
                 if state not in {"collected", "partial_source", "failed", "pending"} or type(frames) is not int or frames < 0:
                     raise ValueError("invalid_planning_cohort_state")
                 result[state] += 1

@@ -46,7 +46,7 @@ class TextPipelineTest(unittest.TestCase):
         before = path.read_bytes()
         runtime = self.runtime()
         for state in ('partial_source', 'failed'):
-            saved = {self.key: (state, 397)}
+            saved = {self.key: (state, 397, dict(terminal_source_error=True))}
             first = TextPipeline(self.root, saved, now=1000).project(self.targets, self.counts(state))
             self.assertTrue(all(first['stages'][name]['state'] == 'complete' for name in ('text-input', 'text-export', 'text-verify', 'text-index', 'text-recover', 'text-source')))
             runtime.unlink(missing_ok=True)
@@ -113,6 +113,15 @@ class TextPipelineTest(unittest.TestCase):
         self.assertEqual(value['runtime']['status'], 'unavailable')
         self.assertEqual(value['stages']['text-index']['state'], 'complete')
         self.assertEqual(elsewhere.read_text(), 'untrusted')
+
+    def test_resource_failure_receipt_is_not_a_completed_source(self):
+        from ra_triage_dashboard.app.planning_text_daily import _cohort_evidence
+        for errors in ([], [dict(code='worker_error', error_type='resource_wait')], None):
+            saved = {self.key: ('failed', 0, _cohort_evidence(dict(errors=errors)))}
+            result = TextPipeline(self.root, saved, now=1000).project(self.targets, self.counts('failed', 0))
+            self.assertEqual(result['stages']['text-export']['state'], 'blocked')
+            self.assertEqual(result['stages']['text-index']['completed'], 0)
+            self.assertEqual(result['stages']['text-source']['completed'], 0)
 
     def test_actual_graph_keeps_completed_stages_green_and_running_yellow(self):
         static = Path(__file__).resolve().parents[1]/'static/js'
