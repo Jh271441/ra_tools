@@ -155,3 +155,15 @@ Content-Type 与条件请求。API 和媒体路由不进入压缩器。图资源
 identity、Vary、304及API隔离。`cron_bootstrap_browser.cjs` 使用实际应用模块与
 合成只读API，卡住配置时验证图已显示、中英/深浅主题、1440/390/320px和零写请求。
 本地模拟耗时不代表生产端到端耗时；线上SSO视觉验收单独记录。
+
+## 约束文本的持久阶段（2026-11-09）
+
+文本主干为“目标登记 → Orion 文本采集 → 文字验收 → 索引发布”，从平台目标独立分叉；恢复与源缺口留证为条件分支。每个阶段使用同一 Issue/trip/anchor/版本范围，节点有已完成/阶段目标计数。已完成绿色、当前有新鲜执行证据的运行黄色、未开始或未触发分支灰色；需要人工处理的执行失败保留红色。定义图没有运行进度。
+
+`planning_text.pipeline`只读投影既有text-queue SQLite、Orion runtime小快照及已验收daily/history索引，一次读取服务所有版本范围；不查询帧表，不扫描Bag或视频，不启动worker。已验收保存结果证明采集、验收及索引阶段结束，历史结果显示复用后的完成状态。原生completed不能证明交付。完成状态不随主链路心跳、控制器空闲或重启失效；观测丢失只撤销当前运行判断，保留上次完成回执与时间提示。
+
+阶段结束和源数据质量分开：`partial_source`完整保留源缺口及原文；`failed`保留源错误和有效帧。有效源异常回执可以处理完毕，但不改成成功源数据。顶部主进度继续按真实有帧Issue统计，阶段计数含已留证的无帧结果。按需恢复只按明确恢复记录计数，“当前无待恢复项”不宣称历史从未恢复。
+
+执行仍由已有独立持久队列和watchdog接续，重启先对账原Job/上传提交intent/小结果，再复用已完成窗口、接续未完成项；监控不会重置预算或触发补采。页面复用现有30秒只读刷新、版本URL、React Flow节点及手机阶段卡。断电后恢复由原服务器的启动/cron基础设施负责；本次没有对生产机器做断电试验。
+
+The text lane projects durable registration, collection, validation and index publication separately from live execution. Saved completion remains green after idle/restart or stale observations; fresh running evidence is yellow, and unstarted/unused branches are gray. Source gaps and failures retain their quality classification independently of processing completion. Current native completion is not delivered text. The existing queue/watchdog reconciles jobs and reuses saved windows on restart; monitoring never schedules source work. Desktop/mobile, locale/theme and selected version share the same projection.

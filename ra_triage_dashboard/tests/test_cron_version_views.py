@@ -45,6 +45,6 @@ window.location.search='?cron_version=20261016&cron_day=2026-10-20';restoreCronS
 assert.equal(dailyCronState.selectedDay,'2026-10-20');
 `,ctx);
 """
-        result = subprocess.run(['node','-e',script,str(static/'daily-cron.js'),str(static/'daily-cron-graph.js')],
+        result = subprocess.run(['node','-e',script,str(static/'daily-cron.js'),str(static/'daily-cron-text.js'),str(static/'daily-cron-graph.js')],
                                 capture_output=True,text=True,timeout=15)
         self.assertEqual(result.returncode,0,result.stderr)

@@ -125,7 +125,7 @@ def version_status(root, data_dir=None, *, closeup=None):
     planning_counts = cohort_counts_many(data_dir, {
         **{family: targets_by_family[family] for family in families},
         "all": targets,
-    })
+    }, include_pipeline=True)
     from .cron_incremental_history import incremental_history
     return {
         "enabled": True,

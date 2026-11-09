@@ -15,6 +15,7 @@ version-datasets.js
 version-rd.js
 daily-cron.js
 daily-review.js
+daily-cron-text.js
 daily-cron-graph.js
 runs.js
 run-comparison.js

@@ -62,7 +62,7 @@ m.closeup.receipt_status='unavailable';m.closeup.verified=null;m.triple_verified
 assert.equal(task('media-closeup').progress.mode,'unknown');assert.equal(cronMediaOutcome(m),'unknown');
 `,ctx);
 """
-        result = subprocess.run(['node','-e',script,str(static/'daily-cron.js'),str(static/'daily-cron-graph.js')], capture_output=True,text=True,timeout=15)
+        result = subprocess.run(['node','-e',script,str(static/'daily-cron.js'),str(static/'daily-cron-text.js'),str(static/'daily-cron-graph.js')], capture_output=True,text=True,timeout=15)
         self.assertEqual(result.returncode,0,result.stderr)
 
     def test_incremental_completion_is_per_case_and_not_a_global_gate(self):
@@ -83,7 +83,7 @@ if(buildIncrementalCronGraph(v,'main').lanes[0].nodes.some(n=>n.data.status!=='d
 v.states={published:10};v.media={selected:3,verified:3};if(find('media-ready').status==='success')throw Error('video verification does not prove cleanup');
 `,ctx);
 """
-        result=subprocess.run(["node","-e",script,str(static/"daily-cron.js"),str(static/"daily-cron-graph.js")],capture_output=True,text=True,timeout=15)
+        result=subprocess.run(["node","-e",script,str(static/"daily-cron.js"),str(static/"daily-cron-text.js"),str(static/"daily-cron-graph.js")],capture_output=True,text=True,timeout=15)
         self.assertEqual(result.returncode,0,result.stderr)
 
     def test_run_scope_missing_evidence_and_state_transitions(self):
@@ -117,7 +117,7 @@ assert.equal(vm.runInContext('task(buildDailyCronGraph(running),"main-infer").st
 assert.equal(vm.runInContext('buildDailyCronGraph(data,"media").lanes.length',ctx),1);
 assert.equal(vm.runInContext('buildDailyCronGraph(data,"media").lanes[0].nodes.every(n=>n.data.status==="definition")',ctx),true);
 '''
-        result = subprocess.run(["node", "-e", script, str(static / "daily-cron.js"), str(static / "daily-cron-graph.js")], capture_output=True, text=True, timeout=15)
+        result = subprocess.run(["node", "-e", script, str(static / "daily-cron.js"), str(static / "daily-cron-text.js"), str(static / "daily-cron-graph.js")], capture_output=True, text=True, timeout=15)
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_stage_progress_preserves_scopes_failures_unknowns_and_stale_snapshots(self):
@@ -152,5 +152,5 @@ p=task('main-infer').progress;if(!p.stale||p.percent!==62.7||task('main-infer').
 if(buildDailyCronGraph(data,'media').lanes[0].nodes.some(n=>n.data.progress))throw Error('definition diagrams have no live progress');
 `,ctx);
 '''
-        result = subprocess.run(["node", "-", str(static / "daily-cron.js"), str(static / "daily-cron-graph.js")], input=script, capture_output=True, text=True, timeout=15)
+        result = subprocess.run(["node", "-", str(static / "daily-cron.js"), str(static / "daily-cron-text.js"), str(static / "daily-cron-graph.js")], input=script, capture_output=True, text=True, timeout=15)
         self.assertEqual(result.returncode, 0, result.stderr)

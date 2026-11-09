@@ -5,7 +5,7 @@ import { layout, TASK_WIDTH, TASK_HEIGHT } from './layout.mjs';
 import '@xyflow/react/dist/style.css';
 
 const roots = new Map();
-const colors = { success: 'var(--ok)', warn: 'var(--warn)', failed: 'var(--fail)', running: 'var(--accent)', pending: 'var(--faint)', skipped: 'var(--faint)', unknown: 'var(--faint)', definition: 'var(--muted)' };
+const colors = { success: 'var(--ok)', warn: 'var(--warn)', failed: 'var(--fail)', running: 'var(--warn)', pending: 'var(--faint)', skipped: 'var(--faint)', unknown: 'var(--faint)', definition: 'var(--muted)' };
 
 function TaskProgress({ progress }) {
   if (progress.mode !== 'count') return <span className="cron-task-progress-empty">{progress.text}</span>;

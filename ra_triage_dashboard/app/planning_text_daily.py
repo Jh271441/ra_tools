@@ -260,7 +260,7 @@ def _cohort_states(data_dir):
     return by_identity
 
 
-def cohort_counts_many(data_dir, cohorts):
+def cohort_counts_many(data_dir, cohorts, *, include_pipeline=False):
     """Project each scope independently from one read-only index snapshot."""
     results = {}
     active = {}
@@ -273,6 +273,11 @@ def cohort_counts_many(data_dir, cohorts):
             active[key] = targets
         results[key] = result
     if not active:
+        if include_pipeline:
+            from .cron_planning_text import TextPipeline
+            pipeline = TextPipeline(data_dir, {})
+            for key, targets in cohorts.items():
+                results[key]["pipeline"] = pipeline.project(targets, results[key])
         return results
     try:
         by_identity = _cohort_states(data_dir)
@@ -296,6 +301,11 @@ def cohort_counts_many(data_dir, cohorts):
                 result["with_frames"] += int(frames > 0)
         except (ValueError, TypeError, KeyError):
             results[key] = {"selected": len(targets), "status": "unavailable"}
+    if include_pipeline:
+        from .cron_planning_text import TextPipeline
+        pipeline = TextPipeline(data_dir, by_identity)
+        for key, targets in cohorts.items():
+            results[key]["pipeline"] = pipeline.project(targets, results[key])
     return results
 
 

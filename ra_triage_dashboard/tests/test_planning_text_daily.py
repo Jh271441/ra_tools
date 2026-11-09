@@ -37,6 +37,11 @@ class PlanningTextTest(unittest.TestCase):
         self.assertEqual(reader.call_count, 1)
         self.assertEqual(actual['different_capture']['unknown'], 1)
         self.assertEqual(actual['all']['selected'], 2)
+        with patch.object(planning_text_daily, '_cohort_states', wraps=planning_text_daily._cohort_states) as reader:
+            staged = planning_text_daily.cohort_counts_many(self.data, cohorts, include_pipeline=True)
+        self.assertEqual(reader.call_count, 1)
+        self.assertEqual(staged['version']['pipeline']['stages']['text-index']['state'], 'complete')
+        self.assertEqual(staged['different_capture']['pipeline']['stages']['text-index']['completed'], 0)
 
     def test_group_count_failure_does_not_turn_other_scopes_into_unknown(self):
         targets = {'cn1234': {'trip_id': 'trip', 'ra_start_timestamp': ANCHOR}}

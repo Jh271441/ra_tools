@@ -137,11 +137,11 @@ body[data-active-page="daily-cron"] #pageTitle { font-size: 16px; }
 .cron-dag-task[data-state="success"] { border-color: color-mix(in srgb, var(--ok) 45%, var(--line)); border-left-color: var(--ok); }
 .cron-dag-task[data-state="warn"] { border-color: color-mix(in srgb, var(--warn) 45%, var(--line)); border-left-color: var(--warn); }
 .cron-dag-task[data-state="failed"] { border-color: color-mix(in srgb, var(--fail) 45%, var(--line)); border-left-color: var(--fail); }
-.cron-dag-task[data-state="running"] { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); border-left-color: var(--accent); }
+.cron-dag-task[data-state="running"] { border-color: color-mix(in srgb, var(--warn) 45%, var(--line)); border-left-color: var(--warn); }
 .cron-dag-task[data-state="success"] .cron-dag-state-dot { background: var(--ok); }
 .cron-dag-task[data-state="warn"] .cron-dag-state-dot { background: var(--warn); }
 .cron-dag-task[data-state="failed"] .cron-dag-state-dot { background: var(--fail); }
-.cron-dag-task[data-state="running"] .cron-dag-state-dot { background: var(--accent); }
+.cron-dag-task[data-state="running"] .cron-dag-state-dot { background: var(--warn); }
 .react-flow__node-task.selected .cron-dag-task, .react-flow__node-task:focus-visible .cron-dag-task { outline: 1px solid var(--accent); outline-offset: 2px; }
 .cron-dag-task .react-flow__handle { width: 4px; height: 4px; background: var(--line); border-color: var(--muted); }
 .cron-run-graph .react-flow__minimap { border: 1px solid var(--line); border-radius: 5px; }
@@ -155,7 +155,7 @@ body[data-active-page="daily-cron"] #pageTitle { font-size: 16px; }
 .cron-graph-legend > span[data-state]::before { content: ""; display: inline-block; width: 5px; height: 5px; margin-right: 5px; border-radius: 50%; background: var(--faint); vertical-align: middle; }
 .cron-graph-legend > span[data-state="success"]::before { background: var(--ok); }
 .cron-graph-legend > span[data-state="warn"]::before { background: var(--warn); }
-.cron-graph-legend > span[data-state="running"]::before { background: var(--accent); }
+.cron-graph-legend > span[data-state="running"]::before { background: var(--warn); }
 .cron-graph-legend > span[data-state="failed"]::before { background: var(--fail); }
 .cron-graph-hint { margin-left: auto; }
 .cron-fold { padding: 10px 12px; }
@@ -204,6 +204,7 @@ body[data-active-page="daily-cron"] #pageTitle { font-size: 16px; }
 .cron-task-progress-track > span { background: var(--accent); }
 .cron-task-progress-track > i { background: var(--warn); }
 .cron-dag-task[data-state="success"] .cron-task-progress-track > span { background: var(--ok); }
+.cron-dag-task[data-state="running"] .cron-task-progress-track > span { background: var(--warn); }
 .cron-dag-task[data-state="warn"] .cron-task-progress-track > span { background: var(--ok); }
 .cron-dag-task[data-state="failed"] .cron-task-progress-track > i { background: var(--fail); }
 .cron-task-progress[data-stale="true"] .cron-task-progress-track > span { background: var(--muted); }

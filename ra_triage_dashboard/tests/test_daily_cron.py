@@ -146,6 +146,7 @@ const context = vm.createContext({
 });
 vm.runInContext(fs.readFileSync(process.argv[1], "utf8"), context);
 vm.runInContext(fs.readFileSync(process.argv[2], "utf8"), context);
+vm.runInContext(fs.readFileSync(process.argv[3], "utf8"), context);
 assert.equal(vm.runInContext("cronFraction(null, 10)", context), "— / 10");
 assert.equal(vm.runInContext("cronTime(null)", context), "—");
 assert.equal(vm.runInContext('cronLatestRun({overview:{daily:{runs:[{id:"smoke"},{id:"daily-2026-10-18"}]}}}).id', context), "daily-2026-10-18");
@@ -168,5 +169,5 @@ setImmediate(() => {
   });
 });
 '''
-        result = subprocess.run(["node", "-e", script, str(js), str(js.with_name("daily-cron-graph.js"))], capture_output=True, text=True, timeout=15)
+        result = subprocess.run(["node", "-e", script, str(js), str(js.with_name("daily-cron-graph.js")), str(js.with_name("daily-cron-text.js"))], capture_output=True, text=True, timeout=15)
         self.assertEqual(result.returncode, 0, result.stderr)
