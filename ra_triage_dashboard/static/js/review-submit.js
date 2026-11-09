@@ -4,7 +4,8 @@
  */
 
 async function reviewSaveNavigationContext(issueId) {
-  const index = state.cases.findIndex(
+  const cases = typeof reviewNavigationCases === "function" ? reviewNavigationCases() : state.cases;
+  const index = cases.findIndex(
     (item) => String(item.issue_id) === String(issueId)
   );
   const params = reviewSaveQueueParams();
@@ -14,10 +15,10 @@ async function reviewSaveNavigationContext(issueId) {
     page: Number(state.casePage || 1),
     index,
     absoluteIndex: index < 0 ? -1 : (state.casePage - 1) * pageSize + index,
-    nextId: state.cases[index + 1]?.issue_id || "",
-    previousId: index > 0 ? state.cases[index - 1]?.issue_id || "" : "",
+    nextId: cases[index + 1]?.issue_id || "",
+    previousId: index > 0 ? cases[index - 1]?.issue_id || "" : "",
     hadNext: index >= 0 && (
-      index < state.cases.length - 1 ||
+      index < cases.length - 1 ||
       state.casePage * state.casePageSize < state.caseTotal
     ),
     scrollY: window.scrollY,
@@ -83,23 +84,19 @@ function reviewSaveNavigationIsCurrent(context) {
 
 async function reconcileReviewQueueAfterSave(context) {
   if (!reviewSaveNavigationIsCurrent(context)) return false;
-  await loadCases({ keepSelection: true, page: context.page, fresh: true });
-  if (!reviewSaveNavigationIsCurrent(context)) return false;
-  if (state.cases.some((item) => String(item.issue_id) === context.issueId)) {
-    renderCaseNavigation();
-    return false;
-  }
   const ids = await reviewSaveQueueIds(new URLSearchParams(context.filterKey));
   if (!reviewSaveNavigationIsCurrent(context)) return false;
-  // A shifted page is not evidence that the Issue left the filter.
   const retainedIndex = ids.indexOf(context.issueId);
-  if (retainedIndex >= 0) {
-    await loadCases({ keepSelection: true, page: Math.floor(retainedIndex / state.casePageSize) + 1, fresh: true });
+  const hasDraft = state.reviewFormDirty || state.pendingReviewImages?.length
+    || (typeof caseRationalePendingImages === "function" && caseRationalePendingImages(state.selectedCase).length);
+  if (retainedIndex >= 0 || hasDraft) {
+    await loadCases({keepSelection:true, fresh:true, queueIds:ids,
+      page:retainedIndex >= 0 ? Math.floor(retainedIndex / state.casePageSize) + 1 : context.page});
     return false;
   }
-  if (state.reviewFormDirty || state.pendingReviewImages?.length
-      || (typeof caseRationalePendingImages === "function" && caseRationalePendingImages(state.selectedCase).length)) return false;
   if (!ids.length) {
+    await loadCases({keepSelection:true, page:1, fresh:true, queueIds:ids});
+    if (!reviewSaveNavigationIsCurrent(context) || state.reviewFormDirty) return false;
     clearDetail({ showGallery: true });
     showPage("review", { historyMode: "replace", issue: "" });
     showToast(uiText("已保存；当前筛选已没有更多 Issue。", "Saved; no Issues remain in this filter."));
@@ -110,20 +107,45 @@ async function reconcileReviewQueueAfterSave(context) {
   if (targetIndex < 0) targetIndex = Math.min(Math.max(0, context.absoluteIndex), ids.length - 1);
   const targetId = ids[targetIndex];
   const targetPage = Math.floor(targetIndex / state.casePageSize) + 1;
-  if (state.casePage !== targetPage || !state.cases.some(item => item.issue_id === targetId)) {
-    await loadCases({ keepSelection: true, page: targetPage, fresh: true });
-  }
   if (!reviewSaveNavigationIsCurrent(context) || state.reviewFormDirty) return false;
-  if (!state.cases.some(item => item.issue_id === targetId)) throw new Error("Filtered queue changed during refresh");
-  await selectCase(targetId, {
+  state.casePage = targetPage;
+  state.caseTotal = ids.length;
+  state.reviewNavigationQueue = {ids, pageSize:state.casePageSize,
+    filterKey:context.filterKey, actor:context.actor};
+  state.reviewQueueStale = true;
+  // Commit the new detail route first. Gallery rows and thumbnails must not
+  // delay opening a server-confirmed next Issue.
+  const navigation = selectCase(targetId, {
     historyMode: "replace",
     preserveScrollY: context.scrollY,
   });
-  showToast(uiText(
+  const pageContext = capturePageContext();
+  const current = () => state.activePage === "review" && state.selectedId === targetId
+    && isPageContextCurrent(pageContext) && (state.session?.username || "") === context.actor
+    && reviewSaveQueueParams().toString() === context.filterKey;
+  let pageFailed = false;
+  void loadCases({keepSelection:true, page:targetPage, fresh:true, queueIds:ids}).catch(() => {
+    pageFailed = true;
+    if (current()) reportReviewQueueRefreshFailure(context);
+  });
+  await navigation;
+  if (current() && !pageFailed) showToast(uiText(
     context.hadNext ? "已保存，已跳到下一个筛选结果。" : "已保存，已回到上一个筛选结果。",
     context.hadNext ? "Saved; moved to the next filtered Issue." : "Saved; returned to the previous filtered Issue.",
   ));
   return true;
+}
+
+function reportReviewQueueRefreshFailure(context) {
+  state.reviewQueueStale = true;
+  refreshReviewDerivedData({includeCases:false});
+  showToast(context?.savedKind === "decision" ? uiText(
+    "裁决已保存，但筛选队列刷新失败；请刷新页面继续。",
+    "Decision saved, but the filtered queue could not refresh. Refresh the page to continue.",
+  ) : uiText(
+    "Review 已保存，但筛选队列刷新失败；请刷新页面继续。",
+    "Review saved, but the filtered queue could not refresh. Refresh the page to continue.",
+  ), true);
 }
 
 async function refreshReviewAfterSave(context) {
@@ -139,15 +161,7 @@ async function refreshReviewAfterSave(context) {
       refreshReviewDerivedData({ includeCases: false });
     }
   } catch (_error) {
-    state.reviewQueueStale = true;
-    refreshReviewDerivedData({ includeCases: false });
-    showToast(context?.savedKind === "decision" ? uiText(
-      "裁决已保存，但筛选队列刷新失败；请刷新页面继续。",
-      "Decision saved, but the filtered queue could not refresh. Refresh the page to continue.",
-    ) : uiText(
-      "Review 已保存，但筛选队列刷新失败；请刷新页面继续。",
-      "Review saved, but the filtered queue could not refresh. Refresh the page to continue.",
-    ), true);
+    reportReviewQueueRefreshFailure(context);
   }
 }
 

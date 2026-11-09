@@ -52,9 +52,10 @@ async function loadCaseCore(issueId) {
 }
 
 function prefetchAdjacentCaseCores(issueId) {
-  const index = state.cases.findIndex((item) => item.issue_id === issueId);
+  const cases = typeof reviewNavigationCases === "function" ? reviewNavigationCases() : state.cases;
+  const index = cases.findIndex((item) => item.issue_id === issueId);
   if (index < 0) return;
-  [state.cases[index - 1], state.cases[index + 1]].forEach((item) => {
+  [cases[index - 1], cases[index + 1]].forEach((item) => {
     if (item?.issue_id) prefetchCaseCore(item.issue_id);
   });
 }
@@ -286,21 +287,22 @@ async function navigateAdjacentCase(delta) {
   const pageContext = capturePageContext();
   if (state.activePage !== "review" || !state.selectedId || ![-1, 1].includes(delta)) return;
   const preserveScrollY = window.scrollY;
-  let index = state.cases.findIndex((item) => item.issue_id === state.selectedId);
+  const navigationCases = () => typeof reviewNavigationCases === "function" ? reviewNavigationCases() : state.cases;
+  let index = navigationCases().findIndex((item) => item.issue_id === state.selectedId);
   if (index < 0) return;
   let targetIndex = index + delta;
   if (targetIndex < 0 && state.casePage > 1) {
     await loadCases({ keepSelection: true, page: state.casePage - 1 });
-    targetIndex = state.cases.length - 1;
+    targetIndex = navigationCases().length - 1;
   } else if (
-    targetIndex >= state.cases.length &&
+    targetIndex >= navigationCases().length &&
     state.casePage * state.casePageSize < state.caseTotal
   ) {
     await loadCases({ keepSelection: true, page: state.casePage + 1 });
     targetIndex = 0;
   }
   if (!isPageContextCurrent(pageContext)) return;
-  const target = state.cases[targetIndex];
+  const target = navigationCases()[targetIndex];
   if (target) {
     await selectCase(target.issue_id, {
       historyMode: "replace",

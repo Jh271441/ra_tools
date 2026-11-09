@@ -256,8 +256,24 @@ function renderCasePagination() {
   enhanceNativeUiSelect(pageSize);
 }
 
+function confirmedReviewQueueIds() {
+  const queue = state.reviewNavigationQueue;
+  return queue && state.activePage === "review" && queue.pageSize === state.casePageSize
+    && queue.actor === (state.session?.username || "")
+    && queue.filterKey === reviewSaveQueueParams().toString() ? queue.ids : null;
+}
+
+function reviewNavigationCases() {
+  const ids = confirmedReviewQueueIds();
+  if (!ids) return state.cases;
+  const known = new Map(state.cases.map(item => [String(item.issue_id), item]));
+  return ids.slice((state.casePage - 1) * state.casePageSize, state.casePage * state.casePageSize)
+    .map(issue_id => known.get(issue_id) || {issue_id});
+}
+
 function renderCaseNavigation() {
-  const index = state.cases.findIndex((item) => item.issue_id === state.selectedId);
+  const cases = reviewNavigationCases();
+  const index = cases.findIndex((item) => item.issue_id === state.selectedId);
   const previous = $("#previousIssueButton");
   const next = $("#nextIssueButton");
   const input = $("#detailQueueIndexInput");
@@ -265,7 +281,7 @@ function renderCaseNavigation() {
   const hasPrevious = index > 0 || (index === 0 && state.casePage > 1);
   const hasNext =
     index >= 0 &&
-    (index < state.cases.length - 1 ||
+    (index < cases.length - 1 ||
       state.casePage * state.casePageSize < state.caseTotal);
   if (previous) previous.disabled = !hasPrevious;
   if (next) next.disabled = !hasNext;
@@ -355,7 +371,7 @@ async function jumpToQueueIndex(raw) {
     if (targetPage !== state.casePage || !state.cases.length) {
       await loadCases({ keepSelection: true, page: targetPage });
     }
-    const item = state.cases[indexOnPage];
+    const item = reviewNavigationCases()[indexOnPage];
     if (!item?.issue_id) {
       showToast(t("gallery.jump_fail"), true);
       renderCaseNavigation();
@@ -441,6 +457,10 @@ function returnToReviewGallery() {
   }
   clearDetail({ showGallery: true });
   showPage("review", { historyMode: "replace", issue: "" });
+  if (state.reviewQueueStale) {
+    void loadCases({keepSelection:true, fresh:true, queueIds:confirmedReviewQueueIds()})
+      .catch(error => showToast(error.message, true));
+  }
 }
 
 function renderCases(data) {
@@ -816,6 +836,7 @@ async function loadCases({
   keepSelection = true,
   page = state.casePage,
   fresh = false,
+  queueIds = null,
 } = {}) {
   const pageContext = capturePageContext();
   const requestSeq = ++state.caseListRequestSeq;
@@ -890,9 +911,19 @@ async function loadCases({
   params.set("page_size", String(state.casePageSize));
   params.set("include_thumbnail", "true");
   appendBaselineParams(params);
+  // A fresh queue read already checked the complete filter. Revalidate only
+  // this page's IDs instead of scanning the entire dataset for the same queue.
+  const queue = Array.isArray(queueIds) ? [...new Set(queueIds.map(String))] : null;
+  let pageIds = null;
+  if (queue) {
+    state.casePage = Math.min(state.casePage, Math.max(1, Math.ceil(queue.length / state.casePageSize)));
+    pageIds = queue.slice((state.casePage - 1) * state.casePageSize, state.casePage * state.casePageSize);
+    params.set("page", "1");
+    params.set("issue_ids", pageIds.join(","));
+  }
   let data;
   try {
-    data = await api(`/api/cases?${params.toString()}`, {
+    data = pageIds && !pageIds.length ? {items:[], total:0} : await api(`/api/cases?${params.toString()}`, {
       ...(fresh ? { cache: "no-store" } : {}), signal: controller.signal,
     });
   } catch (error) {
@@ -902,6 +933,15 @@ async function loadCases({
     if (state.caseListController === controller) state.caseListController = null;
   }
   if (requestSeq !== state.caseListRequestSeq || !isPageContextCurrent(pageContext)) return;
+  if (queue) {
+    const items = new Map((data.items || []).map(item => [String(item.issue_id), item]));
+    if (Number(data.total) !== pageIds.length || pageIds.some(id => !items.has(id))) {
+      // A concurrent change invalidated the snapshot; recover a full fresh page.
+      return loadCases({keepSelection, page:state.casePage, fresh:true});
+    }
+    data = {...data, items:pageIds.map(id => items.get(id)), total:queue.length,
+      page:state.casePage, page_size:state.casePageSize};
+  }
   const totalPages = Math.max(
     1,
     Math.ceil(Number(data.total || 0) / state.casePageSize)
@@ -910,6 +950,7 @@ async function loadCases({
     state.casePage = totalPages;
     return loadCases({ keepSelection, page: totalPages, fresh });
   }
+  state.reviewNavigationQueue = null;
   renderCases(data);
   if (state.reviewTaskContext || state.reviewTaskContextError) {
     renderReviewTaskContext();

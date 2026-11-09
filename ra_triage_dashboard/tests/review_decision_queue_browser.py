@@ -9,7 +9,7 @@ from playwright.sync_api import sync_playwright
 
 
 ROOT = Path(__file__).resolve().parents[1]
-OUTPUT = Path(os.environ.get('REVIEW_DECISION_QA_OUTPUT', '/tmp/review-decision-queue-780'))
+OUTPUT = Path(os.environ.get('REVIEW_DECISION_QA_OUTPUT', '/tmp/review-decision-queue-782'))
 fixture = runpy.run_path(str(ROOT / 'tests/combined_review_hydration_browser.py'))
 setup, replacements = re.subn(r'  api = async path => \{[\s\S]+?\n  \};', '  api = fixtureApi;', fixture['SETUP'])
 assert replacements == 1
@@ -31,6 +31,8 @@ setup = setup.replace('  state.selectedCase = fixtureData;', r'''
 
 API = r'''({count, conflict})=>{
   window.qa={ids:Array.from({length:count},(_,i)=>`cn${i+1}`),resolved:new Set(),posts:[],calls:[],conflict,holdContext:false};
+  const select=selectCase;
+  selectCase=async(...args)=>{if(qa.posts.length)qa.navigationAt=performance.now();return select(...args);};
   function data(issue){
     const value={...structuredClone(fixtureData),issue_id:issue};
     if(qa.resolved.has(issue))value.label_state={...value.label_state,state:'resolved',expected_output:'误触发'};
@@ -45,13 +47,15 @@ API = r'''({count, conflict})=>{
       if(!payload.full_result || payload.model_run_id || payload.campaign_id)throw Error('Invalid decision binding');
       qa.posts.push(payload);
       if(qa.failPost)throw Object.assign(new Error('Synthetic decision conflict'),{status:409});
-      qa.resolved.add(p.split('/')[4]);return {decision:{id:900}};
+      qa.resolved.add(p.split('/')[4]);qa.committedAt=performance.now();return {decision:{id:900}};
     }
     if(p==='/api/cases'||p==='/api/cases/issue-ids'){
       if(qa.failQueue&&qa.posts.length)throw Error('Synthetic queue failure');
-      const ids=qa.ids.filter(id=>u.searchParams.get('label_state')!=='conflict'||!qa.resolved.has(id));
+      const requested=u.searchParams.get('issue_ids')?.split(',');
+      const ids=qa.ids.filter(id=>(!requested||requested.includes(id))&&(u.searchParams.get('label_state')!=='conflict'||!qa.resolved.has(id)));
       if(p.endsWith('/issue-ids'))return {issue_ids:ids};
       const page=Number(u.searchParams.get('page')||1),size=Number(u.searchParams.get('page_size')||10);
+      if(qa.pageDelay)await new Promise(resolve=>setTimeout(resolve,qa.pageDelay));
       return {total:ids.length,items:ids.slice((page-1)*size,page*size).map(data)};
     }
     if(p.endsWith('/combined-review-context')){
@@ -99,7 +103,7 @@ def run():
             assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
             if (width,language,theme)==(320,'en','light'):
                 page.screenshot(path=str(OUTPUT/'decision-320-en-light.png'),full_page=True)
-            page.evaluate("failure=>{qa.failPost=failure==='post';qa.failQueue=failure==='queue';}",failure)
+            page.evaluate("failure=>{qa.failPost=failure==='post';qa.failQueue=failure==='queue';qa.pageDelay=failure==='slow_page'?2000:0;}",failure)
             page.locator('#caseLabelingForm button[type="submit"]').click()
             return page
 
@@ -149,6 +153,19 @@ def run():
             assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
             results.append({'scenario':failure+' failure','passed':True})
             page.close()
+        page=scenario(width=320,language='en',theme='light',failure='slow_page')
+        page.wait_for_function("state.selectedCase?.issue_id==='cn13'")
+        elapsed=page.evaluate('qa.navigationAt-qa.committedAt')
+        assert elapsed<1000, elapsed
+        assert page.evaluate('state.reviewQueueStale'), 'Navigation must finish while the gallery is still delayed'
+        assert page.locator('#detailQueueIndexInput').input_value()=='12'
+        assert page.evaluate("reviewNavigationCases().slice(0,2).map(item=>item.issue_id)")==['cn11','cn13']
+        page.wait_for_function('!state.reviewQueueStale')
+        assert page.evaluate('state.caseTotal')==24
+        requests=page.evaluate("qa.calls.filter(c=>c.path==='/api/cases')")
+        assert all('issue_ids=' in request['query'] for request in requests)
+        results.append({'scenario':'gallery delayed 2000ms','post_to_navigation_ms':elapsed,'passed':True})
+        page.close()
         assert not errors, errors
         report={'browser':browser.version,'fixture':'actual shell/modules/styles and synthetic APIs',
                 'results':results,'page_errors':errors}

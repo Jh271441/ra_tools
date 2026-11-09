@@ -110,6 +110,9 @@ def run():
                 if path in ['/api/cases','/api/cases/issue-ids']:
                     selected_progress = query.get('task_progress',[''])[0].split(',')
                     ids = [issue for issue in backend['ids'] if selected_progress != ['pending'] or issue not in backend['completed']]
+                    if query.get('issue_ids'):
+                        requested = set(query['issue_ids'][0].split(','))
+                        ids = [issue for issue in ids if issue in requested]
                     if path.endswith('/issue-ids'):
                         route.fulfill(json={'issue_ids':ids})
                         return

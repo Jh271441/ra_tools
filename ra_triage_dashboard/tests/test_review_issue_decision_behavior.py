@@ -6,6 +6,13 @@ import unittest
 
 @unittest.skipUnless(shutil.which('node'), 'Node is required')
 class ReviewIssueDecisionBehaviorTest(unittest.TestCase):
+    def test_queue_navigation_does_not_wait_for_gallery_or_repeat_full_scan(self):
+        result = subprocess.run(
+            ['node', str(Path(__file__).with_name('review_queue_latency.cjs'))],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_decisions_reconcile_the_current_filtered_queue(self):
         result = subprocess.run(
             ['node', str(Path(__file__).with_name('review_decision_queue.cjs'))],

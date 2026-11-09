@@ -10,18 +10,18 @@ function fixture({ids = ['a', 'b', 'c', 'd', 'e'], selected = 'd', page = 1} = {
     selectedRunId:'run', reviewWorkSplitId:'task', session:{username:'alice'}, pendingReviewImages:[],
     reviewFormDirty:false, pageNavigationEpoch:0};
   const selectedIds = [], calls = [], messages = [];
-  let cleared = false, beforeLoad = () => {}, queueFailure = false;
+  let cleared = false, beforeQueue = () => {}, queueFailure = false;
   const s = {state, console, URLSearchParams, AbortController, Set, Map, Promise, window:{scrollY:123},
     currentReviewGalleryExportParams:() => new URLSearchParams(scope+'&format=xlsx&gallery_scope=true'),
     capturePageContext:() => ({epoch:state.pageNavigationEpoch}),
     isPageContextCurrent:context => context.epoch === state.pageNavigationEpoch,
     api:async url => {
       calls.push(url);
+      beforeQueue();
       if(queueFailure) throw new Error('queue offline');
       return {issue_ids:new URL(url,'http://fixture').searchParams.has('task_progress') ? [...pending] : [...all]};
     },
     loadCases:async({page}) => {
-      beforeLoad();
       state.caseTotal = pending.length;
       state.casePage = Math.min(page,Math.max(1,Math.ceil(pending.length/state.casePageSize)));
       state.cases = pending.slice((state.casePage-1)*2,state.casePage*2).map(issue_id=>({issue_id}));
@@ -39,7 +39,7 @@ function fixture({ids = ['a', 'b', 'c', 'd', 'e'], selected = 'd', page = 1} = {
     complete:() => {pending=pending.filter(id=>id!==selected);},
     setPending:ids=>{pending=[...ids];},
     changeScope:()=>{scope+='&search=new';},
-    onLoad:fn=>{beforeLoad=fn;},
+    onQueue:fn=>{beforeQueue=fn;},
     failQueue:()=>{queueFailure=true;},
     cleared:()=>cleared};
 }
@@ -78,12 +78,12 @@ function fixture({ids = ['a', 'b', 'c', 'd', 'e'], selected = 'd', page = 1} = {
 
   for(const change of [f=>f.changeScope(),f=>f.state.pageNavigationEpoch++,f=>f.state.selectedId='user-choice']) {
     f=fixture({selected:'b'});context=await f.s.reviewSaveNavigationContext('b');f.complete();
-    f.onLoad(()=>change(f));await f.s.reconcileReviewQueueAfterSave(context);
+    f.onQueue(()=>change(f));await f.s.reconcileReviewQueueAfterSave(context);
     assert.equal(f.selectedIds.length,0,'late save cannot reclaim a changed page/filter/Issue');
   }
 
   f=fixture({selected:'b'});context=await f.s.reviewSaveNavigationContext('b');f.complete();
-  f.onLoad(()=>{f.state.reviewFormDirty=true;});await f.s.reconcileReviewQueueAfterSave(context);
+  f.onQueue(()=>{f.state.reviewFormDirty=true;});await f.s.reconcileReviewQueueAfterSave(context);
   assert.equal(f.selectedIds.length,0,'edits made during the save/queue refresh must remain visible');
   assert(f.state.reviewFormDirty);
 

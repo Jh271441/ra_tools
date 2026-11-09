@@ -13,7 +13,7 @@ function fixture({selected = 'cn2', page = 1, ids = ['cn1', 'cn2', 'cn3'], dirty
     reviewFormDirty:dirty, caseLabeling:{pendingImages:[]}, combinedReviewContext:{}};
   const controls = {form:{querySelectorAll:() => []}, error:{textContent:''},
     confirm:{checked:true}, rationale:{value:'Decision rationale'}};
-  let failPost = false, failQueue = false, holdContext = false, beforeLoad = () => {};
+  let failPost = false, failQueue = false, holdContext = false, beforeQueue = () => {};
   const data = {issue_id:selected, label_state:{state:'conflict', source_fingerprint:'before'}};
   const s = {state, console, URLSearchParams, AbortController, Map, Set, Promise,
     window:{scrollY:123}, document:{},
@@ -33,7 +33,7 @@ function fixture({selected = 'cn2', page = 1, ids = ['cn1', 'cn2', 'cn3'], dirty
     clearDetail:() => {state.selectedId=''; state.selectedCase=null;}, showPage() {},
     selectCase:async(id, options) => {selectedIds.push({id, options}); state.selectedId=id; state.selectedCase={issue_id:id};},
     loadCases:async(options) => {
-      calls.push({kind:'list', options}); beforeLoad();
+      calls.push({kind:'list', options});
       if (failQueue) throw new Error('Queue offline');
       const visible=scope.includes('label_state=conflict') ? remaining : ['cn1', 'cn2', 'cn3'];
       state.caseTotal=visible.length;
@@ -52,6 +52,7 @@ function fixture({selected = 'cn2', page = 1, ids = ['cn1', 'cn2', 'cn3'], dirty
         return {decision:{id:9}};
       }
       if (url.includes('/issue-ids?')) {
+        beforeQueue();
         if (failQueue) throw new Error('Queue offline');
         const params=new URL(url, 'http://fixture').searchParams;
         return {issue_ids:params.has('label_state') ? [...remaining] : ['cn1', 'cn2', 'cn3']};
@@ -73,7 +74,7 @@ function fixture({selected = 'cn2', page = 1, ids = ['cn1', 'cn2', 'cn3'], dirty
     images:[], retained:[], adoptedId:7, ordinary:{}, reviewHost:{}}`, s);
   return {s, state, calls, messages, selectedIds, contextLoads, controls,
     failPost:() => {failPost=true;}, failQueue:() => {failQueue=true;},
-    holdContext:() => {holdContext=true;}, beforeLoad:fn => {beforeLoad=fn;},
+    holdContext:() => {holdContext=true;}, beforeQueue:fn => {beforeQueue=fn;},
     allFilter:() => {scope=scope.replace('&label_state=conflict', '');},
   };
 }
@@ -119,7 +120,7 @@ function fixture({selected = 'cn2', page = 1, ids = ['cn1', 'cn2', 'cn3'], dirty
 
   for (const change of [f => f.state.pageNavigationEpoch++, f => {f.state.selectedId='cn1';},
     f => {f.state.session.username='bob';}, f => f.allFilter()]) {
-    f=fixture(); f.beforeLoad(() => change(f)); await f.s.adjudicateIssueLabel();
+    f=fixture(); f.beforeQueue(() => change(f)); await f.s.adjudicateIssueLabel();
     assert.equal(f.selectedIds.length, 0, 'An obsolete decision callback cannot reclaim navigation');
   }
 
