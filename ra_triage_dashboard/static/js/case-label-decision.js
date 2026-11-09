@@ -230,6 +230,10 @@ async function adjudicateIssueLabel(event) {
   enhanceDashboardSelects(formNode);
   let committed=false;
   try{
+    const navigationContext = state.activePage === "review"
+      ? await reviewSaveNavigationContext(c.data.issue_id) : null;
+    if (navigationContext && !reviewSaveNavigationIsCurrent(navigationContext)) return;
+    if (navigationContext) navigationContext.savedKind = "decision";
     let body=JSON.stringify(payload),suffix="",headers={};
     if(c.images.length){body=new FormData();body.append("payload",JSON.stringify(payload));c.images.forEach(i=>body.append("attachments",i.file,i.file.name));suffix="-with-attachments";headers={"X-RA-Triage-Request":"labeling-v1"};}
     const saved=await api(`/api/labeling/issues/${encodeURIComponent(c.data.issue_id)}/decisions${suffix}`,{method:"POST",body,headers});
@@ -237,13 +241,21 @@ async function adjudicateIssueLabel(event) {
     caseLabelDecisionUi.saving=false;
     if(caseLabelDecisionUi.editor===c)exitCaseDecisionEditor({discard:true});
     showToast(uiText("完整裁决已保存。","Complete decision saved."));
-    await refreshCaseDecisionResult({caseData:c.data,pageContext:c.pageContext,baselines:c.baselines,actor:c.actor});
+    await refreshCaseDecisionResult({caseData:c.data,pageContext:c.pageContext,baselines:c.baselines,actor:c.actor,navigationContext});
   }catch(e){if(!committed && caseLabelDecisionUi.editor===c){c.error=e.message;error.textContent=caseExclusionErrorMessage(e);}}
   finally{caseLabelDecisionUi.saving=false;formNode.querySelectorAll("[data-decision-was-disabled]").forEach(n=>{n.disabled=n.dataset.decisionWasDisabled==="true";delete n.dataset.decisionWasDisabled;});enhanceDashboardSelects(formNode);}
 }
 async function refreshCaseDecisionResult(c) {
   try{
-    const fresh=await api(withBaselineQuery(`/api/labeling/cases/${encodeURIComponent(c.caseData.issue_id)}`));
+    if (c.navigationContext) {
+      if (!reviewSaveNavigationIsCurrent(c.navigationContext)) { state.reviewQueueStale=true; return; }
+      // Reconcile independently of the saved Issue's detail/concurrency reads.
+      await refreshReviewAfterSave(c.navigationContext);
+      if (!reviewSaveNavigationIsCurrent(c.navigationContext)) return;
+    }
+    const fresh=await api(withBaselineQuery(`/api/labeling/cases/${encodeURIComponent(c.caseData.issue_id)}`), {
+      cache:"no-store", signal:new AbortController().signal,
+    });
     if(!isPageContextCurrent(c.pageContext) || caseDecisionCurrentIssueId()!==c.caseData.issue_id || selectedBaselineQueryValue()!==c.baselines || (c.actor && c.actor !== state.session?.username))return;
     if (state.activePage === "review") { await refreshReviewDecisionResult(fresh); return; }
     for(const key of ["label_cases","label_state","label_source_contexts","decision_history","exclusion_summary"])state.caseLabeling.caseData[key]=fresh[key];

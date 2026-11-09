@@ -6,6 +6,13 @@ import unittest
 
 @unittest.skipUnless(shutil.which('node'), 'Node is required')
 class ReviewIssueDecisionBehaviorTest(unittest.TestCase):
+    def test_decisions_reconcile_the_current_filtered_queue(self):
+        result = subprocess.run(
+            ['node', str(Path(__file__).with_name('review_decision_queue.cjs'))],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_summary_entry_keeps_compact_label_and_single_existing_trigger(self):
         source = Path(__file__).resolve().parents[1] / 'static/js/review-label-state.js'
         body = source.read_text().split('if (summaryOnly) {', 1)[1].split('\n  }', 1)[0]

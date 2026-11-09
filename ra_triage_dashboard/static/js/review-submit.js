@@ -32,9 +32,10 @@ async function reviewSaveNavigationContext(issueId) {
     const ids = await reviewSaveQueueIds(params);
     let absolute = ids.indexOf(context.issueId);
     context.hadNext = absolute >= 0 && absolute < ids.length - 1;
-    if (absolute < 0 && params.has("task_progress")) {
+    if (absolute < 0 && (params.has("task_progress") || params.has("label_state"))) {
       const taskOrder = new URLSearchParams(params);
       taskOrder.delete("task_progress");
+      taskOrder.delete("label_state");
       if (taskOrder.get("task_view") === "pending") taskOrder.set("task_view", "targets");
       const ordered = await reviewSaveQueueIds(taskOrder);
       const anchor = ordered.indexOf(context.issueId);
@@ -140,7 +141,10 @@ async function refreshReviewAfterSave(context) {
   } catch (_error) {
     state.reviewQueueStale = true;
     refreshReviewDerivedData({ includeCases: false });
-    showToast(uiText(
+    showToast(context?.savedKind === "decision" ? uiText(
+      "裁决已保存，但筛选队列刷新失败；请刷新页面继续。",
+      "Decision saved, but the filtered queue could not refresh. Refresh the page to continue.",
+    ) : uiText(
       "Review 已保存，但筛选队列刷新失败；请刷新页面继续。",
       "Review saved, but the filtered queue could not refresh. Refresh the page to continue.",
     ), true);

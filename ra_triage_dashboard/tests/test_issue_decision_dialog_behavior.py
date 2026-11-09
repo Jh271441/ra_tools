@@ -43,6 +43,7 @@ refreshCaseDecisionResult=async()=>{refreshes++};
  input.checked=true;input.value='';await adjudicateIssueLabel();assert.equal(posts.length,1);
  assert.equal(posts[0].rationale,'');assert.equal(posts[0].label_rationale,'label evidence');
  state.activePage='review';state.selectedId='cn1';state.selectedRunId='model-run';state.reviewWorkSplitId='campaign';
+ reviewSaveNavigationContext=async()=>({issueId:'cn1'});reviewSaveNavigationIsCurrent=()=>true;
  reset();posts=[];paths=[];await adjudicateIssueLabel();assert.equal(paths[0],'/api/labeling/issues/cn1/decisions');
  assert.equal(posts[0].model_run_id,undefined);assert.equal(posts[0].campaign_id,undefined);assert.equal(posts[0].is_excluded,false);assert.equal(posts[0].adopted_revision_id,2);
 })().catch(e=>{console.error(e);process.exitCode=1});

@@ -61,6 +61,6 @@ async function refreshReviewDecisionResult(fresh) {
   renderReviewSummary(current);
   // Refresh the concurrency token without overwriting the personal Review draft.
   if (state.combinedReviewContext || $("#combinedReviewContextStatus")) {
-    await loadCombinedReviewContext(current, {preserveForm:true});
+    await loadCombinedReviewContext(current, {preserveForm:true, fresh:true});
   }
 }
