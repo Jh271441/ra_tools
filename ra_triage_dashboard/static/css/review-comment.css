@@ -1246,6 +1246,13 @@ html[data-color-theme="light"] .review-mention-avatar { color: #075d6d; backgrou
 }
 .header-metrics .metric-shared-labels strong { color: var(--accent); }
 .issue-card-flags { min-width: 0; flex: 0 0 auto; display: flex; align-items: center; justify-content: flex-end; gap: 4px; }
+.issue-card-heading:has(.issue-card-human-summary) { flex-wrap: wrap; align-items: baseline; }
+.issue-card-heading:has(.issue-card-human-summary) .issue-card-heading-main { flex-basis: 95px; align-items: baseline; }
+.issue-card-heading:has(.issue-card-human-summary) .issue-id { max-width: 100%; }
+.issue-card-heading:has(.issue-card-human-summary) .issue-card-flags { max-width: 100%; flex-wrap: wrap; margin-left: auto; align-items: baseline; }
+.issue-card-human-summary { min-width: 0; display: inline-flex; align-items: baseline; justify-content: flex-end; flex-wrap: wrap; gap: 6px; }
+.issue-human-label { align-items: baseline; }
+.issue-human-label .label-badge { min-height: 0; font-size: 9px; line-height: 1.35; }
 .issue-card-flag-model-no-gt {
   border-color: rgba(251,191,36,.38); color: #f3ce77; background: rgba(251,191,36,.08);
 }

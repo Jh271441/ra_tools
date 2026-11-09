@@ -48,7 +48,7 @@ class FrontendShellContractTest(unittest.TestCase):
             self.assertTrue((JS_DIR / name).is_file(), name)
         self.assertIn('/static/app-bundle.js?v=${CACHE_VERSION}', APP_ENTRY_JS)
         self.assertIn("CACHE_VERSION", APP_ENTRY_JS)
-        self.assertIn("manual-triage-780", APP_ENTRY_JS)
+        self.assertIn("manual-triage-781", APP_ENTRY_JS)
         self.assertIn("function setBaselineScopes", APP_JS)
         self.assertIn("function applyInferredBaselinesFromRun", APP_JS)
         self.assertIn("clearIncompatible: true", APP_JS)

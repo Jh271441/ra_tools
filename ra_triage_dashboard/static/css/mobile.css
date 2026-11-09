@@ -469,6 +469,8 @@
   .gallery-heading-actions .button { white-space: normal; font-size: 12px; }
   .issue-card .case-title, .issue-card .issue-title, .issue-card .case-issue-link { font-size: 14px; }
   .card-media-preview { min-height: 36px; }
+  .issue-card-human-summary { min-height: 44px; }
+  .issue-card-human-summary .shared-label-state-trigger::after { content: ""; position: absolute; inset: -13px 0; }
 
   /* Read results first; large tag charts can be opened explicitly. */
   .mobile-summary-tools { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }

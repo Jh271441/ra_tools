@@ -56,6 +56,20 @@ function issueCardLabelingAttributes(attributes) {
   return `<span class="case-labeling-card-tags">${visible}${overflow}</span>`;
 }
 
+function issueCardHumanLabelMarkup(item) {
+  // Use the same shared Issue conclusion as Case labeling. Run review records
+  // and individual source heads must never become a fallback final label.
+  const projection = item?.label_state || {};
+  const label = projection.state === "resolved" && LABELS.includes(projection.expected_output)
+    ? projection.expected_output : "";
+  const fallback = ({
+    pending: uiText("待补齐", "Incomplete"),
+    conflict: uiText("有分歧", "Disagreement"),
+    stale: uiText("待复核", "Needs recheck"),
+  })[projection.state] || uiText("未标注", "Not labeled");
+  return `<span class="issue-label-pair issue-human-label" data-shared-human-label="${escapeHtml(label)}"><small class="ui-lang-zh">人工</small><small class="ui-lang-en">Human</small>${labelBadge(label, fallback)}</span>`;
+}
+
 function issueCard(item, options = {}) {
   const workspace = options.workspace || item.gallery_workspace || "review";
   const isLabeling = workspace === "labeling";
@@ -100,6 +114,8 @@ function issueCard(item, options = {}) {
   const sharedLabelFlag = isLabeling
     ? ""
     : sharedLabelStateButtonMarkup(item, { compact: true });
+  const humanLabelSummary = isLabeling ? ""
+    : `<span class="issue-card-human-summary">${issueCardHumanLabelMarkup(item)}${sharedLabelFlag}</span>`;
   const openLabel = isLabeling
     ? `打开 ${item.issue_id} 标注`
     : `打开 ${item.issue_id} Review`;
@@ -128,7 +144,7 @@ function issueCard(item, options = {}) {
             ${labelingAttributes}
             ${evidenceRow}
           </div>
-          <div class="issue-card-flags">${reviewFlag}${sharedLabelFlag}</div>
+          <div class="issue-card-flags">${reviewFlag}${humanLabelSummary}</div>
         </div>
         <div class="issue-card-labels">
           <span class="issue-label-pair"><small>GT</small>${labelBadge(gtDisplayLabel(item), "—")}</span>
