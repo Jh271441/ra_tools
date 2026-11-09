@@ -1155,6 +1155,11 @@
     overflow-wrap: anywhere;
     line-height: 1.35;
   }
+  #dailyCronNodeDetails [data-close-cron-node] {
+    min-width: 44px;
+    min-height: 44px;
+    flex: 0 0 auto;
+  }
 }
 
 /* Label publication tabs stay on one row with Refresh on phones. */
