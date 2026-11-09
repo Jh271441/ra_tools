@@ -71,8 +71,8 @@ class BasePathTest(unittest.TestCase):
         self.assertIn('content="/manual"', subpath_shell)
         self.assertIn('window.__RA_TRIAGE_BASE__ = activeBase', subpath_shell)
         self.assertIn('`${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`', subpath_shell)
-        self.assertIn('/static/${path}?v=manual-triage-778', subpath_shell)
-        self.assertIn('/static/app-bundle.js?v=manual-triage-778', subpath_shell)
+        self.assertIn('/static/${path}?v=manual-triage-779', subpath_shell)
+        self.assertIn('/static/app-bundle.js?v=manual-triage-779', subpath_shell)
         self.assertIn('appPreload.as = "script"', subpath_shell)
         self.assertNotIn('/static/app.js?v=', subpath_shell)
 

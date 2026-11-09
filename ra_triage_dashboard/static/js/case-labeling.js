@@ -1258,7 +1258,9 @@ function syncCaseLabelingExpectedOutputFromTags() {
   populateUiSelect(picker, options, select.value);
   if (inference.value) {
     const marker = uiText("自动推断", "Inferred");
-    picker.querySelector(`[data-ui-select-value="${inference.value}"]`)?.insertAdjacentHTML(
+    const inferredOption = picker.querySelector(`[data-ui-select-value="${inference.value}"]`);
+    inferredOption?.classList.add("is-inferred");
+    inferredOption?.insertAdjacentHTML(
       "beforeend", `<span class="ui-select-inference-marker">${escapeHtml(marker)}</span>`
     );
     if (select.value === inference.value) {
