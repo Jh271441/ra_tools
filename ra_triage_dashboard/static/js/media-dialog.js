@@ -584,9 +584,11 @@ function renderMediaDialog() {
 function openMedia(kind, index, { caseData = state.selectedCase } = {}) {
   // The dialog owns playback; never leave the inline clip playing underneath.
   pauseBevVideoPlayers(detailHeroMediaEl());
-  const selectedPrediction = (caseData?.predictions || []).find(
-    (item) => item.model_run_id === state.selectedRunId
-  ) || caseData?.predictions?.[0];
+  const selectedPrediction = state.activePage === "review"
+    ? selectedRunPrediction(caseData)
+    : (caseData?.predictions || []).find(
+      (item) => item.model_run_id === state.selectedRunId
+    ) || caseData?.predictions?.[0];
   state.media.snapshot = {
     issueId: String(caseData?.issue_id || ""),
     gtLabel: String(caseData?.gt_label || ""),

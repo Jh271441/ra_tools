@@ -50,7 +50,13 @@ function renderReviewSummary(caseData) {
 function renderDetail(caseData, { preserveMedia = false } = {}) {
   const retainedMedia = preserveMedia && state.detailMedia.issueId === String(caseData.issue_id)
     ? $("#detailPane")?.querySelector(".detail-hero-media") : null;
-  const primary = (caseData.predictions || []).find((item) => item.model_run_id === state.selectedRunId) || caseData.predictions?.[0];
+  const primary = selectedRunPrediction(caseData);
+  const output = predictionOutputDetails(primary);
+  const predictionBadge = primary?.model_label
+    ? labelBadge(primary.model_label, uiText("未输出", "None"))
+    : `<span class="label-badge label-empty">${state.selectedRunId
+      ? '<span class="ui-lang-zh">未输出</span><span class="ui-lang-en">None</span>'
+      : '<span class="ui-lang-zh">未选 Run</span><span class="ui-lang-en">No Run selected</span>'}</span>`;
   const issueUrl = safeUrl(caseData.voyager_issue_url || caseData.trail_url);
   const issueId = escapeHtml(caseData.issue_id);
   const issueIdValue = String(caseData.issue_id || "");
@@ -90,7 +96,9 @@ function renderDetail(caseData, { preserveMedia = false } = {}) {
         <div class="comparison-summary" aria-label="${escapeHtml(uiText("GT 与当前模型对比", "GT vs current model"))}">
           <span class="comparison-side-label comparison-side-gt">GT</span>${labelBadge(gtDisplayLabel(caseData), uiText("缺失", "Missing"))}
           <b aria-hidden="true">→</b>
-          <span class="comparison-side-label comparison-side-model"><span class="ui-lang-zh">当前模型</span><span class="ui-lang-en">Model</span></span>${labelBadge(primary?.model_label, uiText("未输出", "None"))}
+          <span class="comparison-side-label comparison-side-model">${output.isRule
+            ? '<span class="ui-lang-zh">规则输出</span><span class="ui-lang-en">Rule output</span>'
+            : '<span class="ui-lang-zh">当前模型</span><span class="ui-lang-en">Model</span>'}</span>${predictionBadge}
           ${predictionComparable ? `<strong class="${!predictionMatches ? "comparison-fail" : "comparison-neutral"}">${compareText}</strong>` : ""}
         </div>
         <button class="button button-quiet detail-back-button" id="backToGalleryButton" type="button" title="${escapeHtml(uiText("返回筛选结果", "Back to filtered gallery"))}" aria-label="${escapeHtml(uiText("返回筛选结果", "Back to filtered gallery"))}"><span class="ui-lang-zh">← 返回筛选结果</span><span class="ui-lang-en">← Back to gallery</span></button>

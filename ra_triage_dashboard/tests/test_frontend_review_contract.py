@@ -97,7 +97,7 @@ class FrontendReviewContractTest(unittest.TestCase):
         self.assertIn("baselines", APP_JS)
         self.assertIn("/static/app-bundle.js", APP_ENTRY_JS)
         self.assertIn("script.async = false", APP_ENTRY_JS)
-        self.assertIn("app-bundle.js?v=manual-triage-777", INDEX_HTML)
+        self.assertIn("app-bundle.js?v=manual-triage-778", INDEX_HTML)
         self.assertIn('work-split.js', (JS_DIR / 'MANIFEST').read_text().splitlines())
         self.assertIn('review-assignments.js', (JS_DIR / 'MANIFEST').read_text().splitlines())
         # Product logic must live in domain modules, not the entry loader.
@@ -322,7 +322,7 @@ class FrontendReviewContractTest(unittest.TestCase):
         self.assertNotIn("review-section-help", APP_JS)
         self.assertNotIn("review-scope-note", APP_JS)
         self.assertIn("function currentRunOutputMarkup", APP_JS)
-        self.assertIn("当前 Run Reason", APP_JS)
+        self.assertIn("当前 Run 输出", APP_JS)
         self.assertNotIn("完整 Config", APP_JS)
         self.assertNotIn("原始输出对象", APP_JS)
         self.assertIn('caseExclusionToggleMarkup("reviewExcludeInput", false, true)', APP_JS)

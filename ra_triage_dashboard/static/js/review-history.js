@@ -194,40 +194,61 @@ async function revokeModelReviewVersion(caseData, annotation, button) {
 
 function refreshHistoryDialogLanguage() {
   const dialog = $("#historyDialog");
-  if (!dialog?.open || !dialog.historyCaseData || dialog.dataset.historyKind === "model") return;
+  if (!dialog?.open || !dialog.historyCaseData) return;
   const content = $("#historyDialogContent"), scroll = content.scrollTop;
   openHistoryDialog(dialog.dataset.historyKind, dialog.historyCaseData);
   content.scrollTop = scroll;
 }
 
+function predictionOutputDetails(prediction) {
+  const extra = prediction?.model_extra || {};
+  const info = extra.ra_stuck_auto_result_info || {};
+  const daily = info.daily_auto_triage || {};
+  const isRule = (extra.prediction_source || daily.prediction_source) === "pre_rule";
+  return {
+    isRule,
+    ruleConstant: (extra.confidence_source || daily.confidence_source) === "rule_constant",
+    reason: String(prediction?.model_reason || (isRule && (extra.rule_reason || daily.rule_reason))
+      || info.model_result?.reason || info.text || "").trim(),
+  };
+}
+
 function predictionCards(caseData) {
   const predictions = caseData.predictions || [];
   if (!predictions.length) {
-    return '<div class="no-asset">当前 case 没有 Run 模型输出。可创建 Trail 只读快照、上传批量结果，或等待 Batch 预测生成新的 Run。</div>';
+    return `<div class="no-asset">${escapeHtml(uiText("当前 Issue 没有 Run 输出。", "No Run output is available for this Issue."))}</div>`;
   }
   return `<div class="model-list">${predictions
     .map((prediction) => {
       const selected = prediction.model_run_id === state.selectedRunId;
-      const extra = prediction.model_extra?.ra_stuck_auto_result_info;
-      const detail = prediction.model_reason || (typeof extra === "object" ? extra.text || "" : "") || "模型未返回解释。";
+      const output = predictionOutputDetails(prediction);
+      const detail = output.reason || uiText("未提供输出说明。", "No output explanation was provided.");
+      const source = output.isRule ? uiText("规则命中", "Rule hit") : uiText("模型输出", "Model output");
+      const confidence = output.ruleConstant ? uiText("规则常数", "Rule constant") : uiText("置信度", "confidence");
       return `<article class="model-card ${selected ? "active" : ""}">
-        <div class="model-card-head"><div><h3>${escapeHtml(prediction.run_name || "模型输出")}</h3></div>${labelBadge(prediction.model_label, "未输出")}</div>
+        <div class="model-card-head"><div><h3>${escapeHtml(prediction.run_name || uiText("Run 输出", "Run output"))}</h3></div>${labelBadge(prediction.model_label, uiText("未输出", "None"))}</div>
         <p>${escapeHtml(detail)}</p>
-        <div class="model-card-meta">${formatModelConfidence(prediction.model_confidence)} confidence · ${formatTime(prediction.created_at)}${prediction.run_created_by ? ` · 创建人 ${escapeHtml(prediction.run_created_by)}` : ""}</div>
+        <div class="model-card-meta">${escapeHtml(source)} · ${formatModelConfidence(prediction.model_confidence)} ${escapeHtml(confidence)} · ${formatTime(prediction.created_at)}${prediction.run_created_by ? ` · ${escapeHtml(uiText("创建人", "Created by"))} ${escapeHtml(prediction.run_created_by)}` : ""}</div>
       </article>`;
     })
     .join("")}</div>`;
 }
 
 function currentRunOutputMarkup(_caseData, prediction) {
-  if (!prediction) return "";
-  const reason = String(prediction.model_reason || "").trim();
-  return `<section class="current-run-output" aria-label="当前 Run Reason">
+  if (!prediction || !state.selectedRunId || prediction.model_run_id !== state.selectedRunId) return "";
+  const output = predictionOutputDetails(prediction);
+  const source = output.isRule
+    ? '<span class="ui-lang-zh">规则命中</span><span class="ui-lang-en">Rule hit</span>'
+    : '<span class="ui-lang-zh">模型输出</span><span class="ui-lang-en">Model output</span>';
+  const confidence = output.ruleConstant
+    ? '<span class="ui-lang-zh">规则常数</span><span class="ui-lang-en">Rule constant</span>'
+    : '<span class="ui-lang-zh">置信度</span><span class="ui-lang-en">confidence</span>';
+  return `<section class="current-run-output" aria-labelledby="currentRunOutputTitle">
     <div class="current-run-output-heading">
-      <div><span>当前 Run Reason</span><strong>${escapeHtml(prediction.run_name || "模型输出")}</strong></div>
-      <span>${labelBadge(prediction.model_label, "未输出")}${prediction.model_confidence === null || prediction.model_confidence === undefined ? "" : ` · ${escapeHtml(formatModelConfidence(prediction.model_confidence))} confidence`}</span>
+      <div><span id="currentRunOutputTitle"><span class="ui-lang-zh">当前 Run 输出</span><span class="ui-lang-en">Current Run output</span> · ${source}</span><strong>${prediction.run_name ? escapeHtml(prediction.run_name) : '<span class="ui-lang-zh">Run 输出</span><span class="ui-lang-en">Run output</span>'}</strong></div>
+      <span>${labelBadge(prediction.model_label, uiText("未输出", "None"))}${prediction.model_confidence === null || prediction.model_confidence === undefined ? "" : ` · ${escapeHtml(formatModelConfidence(prediction.model_confidence))} ${confidence}`}</span>
     </div>
-    <p class="current-run-reason">${escapeHtml(reason || "模型未返回 reason。")}</p>
+    <p class="current-run-reason">${output.reason ? escapeHtml(output.reason) : '<span class="ui-lang-zh">未提供输出说明。</span><span class="ui-lang-en">No output explanation was provided.</span>'}</p>
   </section>`;
 }
 

@@ -470,6 +470,11 @@ function labelBadge(label, fallback = "—", displayLabel = null) {
   return `<span class="label-badge ${className}">${escapeHtml(displayLabel ?? (actual || fallback))}</span>`;
 }
 
+function selectedRunPrediction(caseData, runId = state.selectedRunId) {
+  if (!runId) return null;
+  return (caseData?.predictions || []).find((item) => item.model_run_id === runId) || null;
+}
+
 function formatModelConfidence(value) {
   if (value === null || value === undefined || value === "") return "—";
   const numeric = Number(value);

@@ -421,8 +421,8 @@ html[data-color-theme="light"] .page-jump-control input {
   display: grid; gap: 4px; min-width: 0; margin-bottom: 6px; padding: 6px 8px;
   border: 1px solid var(--line); border-radius: 8px; background: var(--overlay);
 }
-.current-run-output-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
-.current-run-output-heading > div { min-width: 0; display: grid; gap: 2px; }
+.current-run-output-heading { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.current-run-output-heading > div { min-width: 0; display: grid; gap: 2px; flex: 1 1 160px; }
 .current-run-output-heading > div > span { color: var(--faint); font-size: 9px; font-weight: 700; }
 .current-run-output-heading strong { overflow: hidden; color: var(--text); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .current-run-reason { max-height: 72px; overflow: auto; margin: 0; color: var(--text); font-size: 10px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
