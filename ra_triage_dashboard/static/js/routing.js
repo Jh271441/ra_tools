@@ -148,6 +148,7 @@ function applyUiLanguage(language, { persist = true } = {}) {
     "refreshTrailLocalImportLanguage",
     "refreshCaseLabelDecisionLanguage",
     "refreshReviewFormLanguage",
+    "syncReviewDropdownShortcutHints",
     "refreshHistoryDialogLanguage",
     "refreshAnalysisDiscussionLanguage",
     "refreshRaEventDialogLanguage",

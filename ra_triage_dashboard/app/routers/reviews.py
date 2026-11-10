@@ -8,6 +8,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import FileResponse
 
 from ..support.catalogs import (
+    _catalog_with_shortcuts,
     _missing_evidence_catalog,
     _review_tag_catalog,
     _review_tag_payload,
@@ -36,7 +37,7 @@ async def create_review_tag(request: Request) -> dict[str, Any]:
     )
     if not actor:
         raise _detail(400, "无法确认场景标签目录创建人。")
-    catalog = await asyncio.to_thread(_review_tag_catalog)
+    catalog = await asyncio.to_thread(_catalog_with_shortcuts, "tags", _review_tag_catalog)
     if any(
         str(item.get("label")) == label and not bool(item.get("deleted"))
         for item in catalog
@@ -55,7 +56,7 @@ async def create_review_tag(request: Request) -> dict[str, Any]:
         raise _detail(409, str(exc))
     return {
         "item": _review_tag_payload(item),
-        "review_tag_catalog": await asyncio.to_thread(_review_tag_catalog),
+        "review_tag_catalog": await asyncio.to_thread(_catalog_with_shortcuts, "tags", _review_tag_catalog),
         "change_revision": await asyncio.to_thread(database.change_revision),
     }
 
@@ -66,7 +67,7 @@ async def update_review_tag(key: str, request: Request) -> dict[str, Any]:
     normalized_key = _as_text(key).strip()
     if not normalized_key or len(normalized_key) > 160:
         raise _detail(400, "场景标签 key 不合法。")
-    catalog = await asyncio.to_thread(_review_tag_catalog)
+    catalog = await asyncio.to_thread(_catalog_with_shortcuts, "tags", _review_tag_catalog)
     current = next(
         (item for item in catalog if item["key"] == normalized_key),
         None,
@@ -138,7 +139,7 @@ async def update_review_tag(key: str, request: Request) -> dict[str, Any]:
     payload["group"] = group
     return {
         "item": payload,
-        "review_tag_catalog": await asyncio.to_thread(_review_tag_catalog),
+        "review_tag_catalog": await asyncio.to_thread(_catalog_with_shortcuts, "tags", _review_tag_catalog),
         "change_revision": await asyncio.to_thread(database.change_revision),
     }
 
@@ -149,7 +150,7 @@ async def delete_review_tag(key: str, request: Request) -> dict[str, Any]:
     normalized_key = _as_text(key).strip()
     if not normalized_key or len(normalized_key) > 160:
         raise _detail(400, "场景标签 key 不合法。")
-    catalog = await asyncio.to_thread(_review_tag_catalog)
+    catalog = await asyncio.to_thread(_catalog_with_shortcuts, "tags", _review_tag_catalog)
     current = next(
         (item for item in catalog if item["key"] == normalized_key),
         None,
@@ -177,7 +178,7 @@ async def delete_review_tag(key: str, request: Request) -> dict[str, Any]:
     payload["deleted"] = True
     return {
         "item": payload,
-        "review_tag_catalog": await asyncio.to_thread(_review_tag_catalog),
+        "review_tag_catalog": await asyncio.to_thread(_catalog_with_shortcuts, "tags", _review_tag_catalog),
         "change_revision": await asyncio.to_thread(database.change_revision),
     }
 
@@ -198,7 +199,7 @@ async def create_missing_evidence(request: Request) -> dict[str, Any]:
     )
     if not actor:
         raise _detail(400, "无法确认缺失信息目录创建人。")
-    catalog = await asyncio.to_thread(_missing_evidence_catalog)
+    catalog = await asyncio.to_thread(_catalog_with_shortcuts, "evidence", _missing_evidence_catalog)
     if any(
         str(item["label"]) == label and not bool(item.get("deleted"))
         for item in catalog
@@ -221,7 +222,7 @@ async def create_missing_evidence(request: Request) -> dict[str, Any]:
     item.pop("active", None)
     return {
         "item": item,
-        "missing_evidence_catalog": await asyncio.to_thread(_missing_evidence_catalog),
+        "missing_evidence_catalog": await asyncio.to_thread(_catalog_with_shortcuts, "evidence", _missing_evidence_catalog),
         "change_revision": await asyncio.to_thread(database.change_revision),
     }
 
@@ -232,7 +233,7 @@ async def update_missing_evidence(key: str, request: Request) -> dict[str, Any]:
     normalized_key = _as_text(key).strip()
     if not normalized_key or len(normalized_key) > 160:
         raise _detail(400, "缺失信息 key 不合法。")
-    catalog = await asyncio.to_thread(_missing_evidence_catalog)
+    catalog = await asyncio.to_thread(_catalog_with_shortcuts, "evidence", _missing_evidence_catalog)
     current = next(
         (item for item in catalog if item["key"] == normalized_key),
         None,
@@ -277,7 +278,7 @@ async def update_missing_evidence(key: str, request: Request) -> dict[str, Any]:
     item.pop("active", None)
     return {
         "item": item,
-        "missing_evidence_catalog": await asyncio.to_thread(_missing_evidence_catalog),
+        "missing_evidence_catalog": await asyncio.to_thread(_catalog_with_shortcuts, "evidence", _missing_evidence_catalog),
         "change_revision": await asyncio.to_thread(database.change_revision),
     }
 
@@ -288,7 +289,7 @@ async def delete_missing_evidence(key: str, request: Request) -> dict[str, Any]:
     normalized_key = _as_text(key).strip()
     if not normalized_key or len(normalized_key) > 160:
         raise _detail(400, "缺失信息 key 不合法。")
-    catalog = await asyncio.to_thread(_missing_evidence_catalog)
+    catalog = await asyncio.to_thread(_catalog_with_shortcuts, "evidence", _missing_evidence_catalog)
     current = next(
         (item for item in catalog if item["key"] == normalized_key),
         None,
@@ -326,7 +327,7 @@ async def delete_missing_evidence(key: str, request: Request) -> dict[str, Any]:
     item.pop("active", None)
     return {
         "item": item,
-        "missing_evidence_catalog": await asyncio.to_thread(_missing_evidence_catalog),
+        "missing_evidence_catalog": await asyncio.to_thread(_catalog_with_shortcuts, "evidence", _missing_evidence_catalog),
         "change_revision": await asyncio.to_thread(database.change_revision),
     }
 

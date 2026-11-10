@@ -14,9 +14,25 @@ const REVIEW_TAG_GROUP_SHORTCUTS = Object.freeze({
 const REVIEW_MISSING_EVIDENCE_SHORTCUT = "i";
 // Follow the physical number row so large groups remain one-keystroke actions:
 // items 1-9 use 1-9, item 10 uses 0, then items 11-12 use - and =.
-const REVIEW_TAG_OPTION_SHORTCUTS = Object.freeze([
+const REVIEW_TAG_OPTION_KEYS = Object.freeze([
   "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-", "=",
 ]);
+const REVIEW_TAG_OPTION_SHORTCUTS = Object.freeze([
+  ...REVIEW_TAG_OPTION_KEYS, ...REVIEW_TAG_OPTION_KEYS.map(key => `Shift+${key}`),
+]);
+const REVIEW_OPTION_ROW = ".review-tag-option-row, .tag-option";
+
+function reviewDropdownOptionShortcut(event) {
+  if (event.ctrlKey || event.metaKey || event.altKey || event.repeat || isImeComposing(event)) return "";
+  const code = String(event.code || "");
+  let key = /^Digit[0-9]$/.test(code) ? code.slice(5)
+    : code === "Minus" ? "-" : code === "Equal" ? "=" : String(event.key || "");
+  if (event.shiftKey && key.length === 1 && !REVIEW_TAG_OPTION_KEYS.includes(key)) {
+    key = REVIEW_TAG_OPTION_KEYS["!@#$%^&*()_+".indexOf(key)] || "";
+  }
+  if (!REVIEW_TAG_OPTION_KEYS.includes(key)) return "";
+  return event.shiftKey ? `Shift+${key}` : key;
+}
 
 function renderReviewTagGroups(tagCatalog, chosenTags, tagOption) {
   // Axis/group chrome is translated; option labels stay catalog Chinese (domain).
@@ -276,6 +292,7 @@ function bindMissingEvidenceCatalogControls(root = document) {
           });
           setMissingEvidenceCatalogFromResult(result);
           updateMissingEvidenceOptionRow(result.item || { key, label: value, hint });
+          syncReviewDropdownShortcutHints(activeReviewChromeRoot());
           closeDialog("missingEvidenceCreateDialog");
           showToast("缺失信息已更新。");
         } else {
@@ -403,13 +420,26 @@ function syncReviewDropdownShortcutHints(root = document) {
     const inputs = [...dropdown.querySelectorAll(
       'input[name="reviewTags"], input[name="missingEvidence"]'
     )];
+    const catalog = dropdown.hasAttribute("data-missing-evidence-dropdown")
+      ? state.config?.missing_evidence_catalog : state.config?.review_tag_catalog;
+    const items = new Map((catalog || []).map(item => [String(item.key), item]));
+    const hasSlots = (catalog || []).some(item => Object.hasOwn(item, "shortcut_slot"));
+    const group = dropdown.dataset.tagDropdownGroup;
     inputs.forEach((input, index) => {
       const label = input.closest("label");
       label?.querySelector(".tag-option-shortcut")?.remove();
       delete input.dataset.reviewDropdownOptionShortcut;
-      const shortcut = REVIEW_TAG_OPTION_SHORTCUTS[index] || "";
+      input.removeAttribute("aria-keyshortcuts");
+      const item = items.get(String(input.value));
+      if (item?.deleted || item?.visible === false || input.disabled) return;
+      if (hasSlots && group && item?.group !== group) return;
+      // Only a wholly legacy catalog falls back to DOM order. Unlisted
+      // historical values must not collide with a catalog's assigned slots.
+      const slot = hasSlots ? item?.shortcut_slot : index;
+      const shortcut = Number.isInteger(slot) ? REVIEW_TAG_OPTION_SHORTCUTS[slot] || "" : "";
       if (!label || !shortcut) return;
       input.dataset.reviewDropdownOptionShortcut = shortcut;
+      input.setAttribute("aria-keyshortcuts", shortcut);
       const hint = document.createElement("kbd");
       hint.className = "review-control-shortcut tag-option-shortcut";
       hint.setAttribute("aria-hidden", "true");
@@ -417,19 +447,103 @@ function syncReviewDropdownShortcutHints(root = document) {
         `按 ${groupShortcut} 再按 ${shortcut} 切换`,
         `Press ${groupShortcut}, then ${shortcut} to toggle`
       );
-      hint.textContent = shortcut;
+      hint.textContent = shortcut.replace("Shift+", "⇧");
       label.appendChild(hint);
     });
+    syncReviewDropdownSearch(dropdown, inputs, items);
   });
 }
 
-function toggleOpenReviewDropdownOption(shortcut) {
-  if (!REVIEW_TAG_OPTION_SHORTCUTS.includes(shortcut)) return false;
+function filterReviewDropdownOptions(panel, search, empty) {
+  const query = search.value.trim().toLocaleLowerCase();
+  let hasMatch = false;
+  panel.querySelectorAll('input[type="checkbox"]').forEach(input => {
+    const row = input.closest(".review-tag-option-row") || input.closest(".tag-option");
+    if (!row) return;
+    const label = input.closest("label")?.querySelector("span")?.textContent || input.value;
+    row.hidden = !label.toLocaleLowerCase().includes(query);
+    hasMatch ||= !row.hidden;
+  });
+  empty.hidden = hasMatch;
+  const dropdown = panel.closest(".review-dropdown[open]");
+  if (dropdown) positionReviewDropdownPanel(dropdown);
+}
+
+function syncReviewDropdownSearch(dropdown, inputs, items) {
+  const panel = reviewDropdownPanel(dropdown);
+  if (!panel) return;
+  let search = panel.querySelector("[data-review-dropdown-search]");
+  let empty = panel.querySelector("[data-review-dropdown-search-empty]");
+  const needsSearch = inputs.length > REVIEW_TAG_OPTION_SHORTCUTS.length || inputs.some(input => {
+    const item = items.get(String(input.value));
+    return item && !item.deleted && item.visible !== false && item.shortcut_slot === null;
+  });
+  if (!needsSearch) {
+    if (!search) return;
+    search.value = "";
+    filterReviewDropdownOptions(panel, search, empty);
+    search.remove();
+    empty.remove();
+    return;
+  }
+  if (!search) {
+    search = document.createElement("input");
+    search.type = "search";
+    search.autocomplete = "off";
+    search.className = "multi-filter-search review-dropdown-search";
+    search.dataset.reviewDropdownSearch = "1";
+    panel.prepend(search);
+    empty = document.createElement("p");
+    empty.className = "review-tag-empty";
+    empty.dataset.reviewDropdownSearchEmpty = "1";
+    empty.setAttribute("role", "status");
+    panel.append(empty);
+    search.addEventListener("input", () => filterReviewDropdownOptions(panel, search, empty));
+    search.addEventListener("keydown", event => {
+      if (isImeComposing(event) || !["Enter", "ArrowDown"].includes(event.key)) return;
+      const modified = event.repeat || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey;
+      if (modified && event.key !== "Enter") return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (modified) return;
+      const visible = reviewDropdownKeyboardInputs(dropdown);
+      if (event.key === "Enter" && search.value.trim() && visible.length === 1) {
+        visible[0].checked = !visible[0].checked;
+        visible[0].dispatchEvent(new Event("change", { bubbles: true }));
+      } else {
+        visible[0]?.focus({ preventScroll: true });
+        visible[0]?.closest(REVIEW_OPTION_ROW)?.scrollIntoView({ block: "nearest" });
+      }
+    });
+  }
+  const label = uiText("搜索选项", "Search options");
+  search.placeholder = label;
+  search.setAttribute("aria-label", label);
+  search.title = uiText("Enter 切换唯一匹配项，↓ 定位搜索结果", "Enter toggles a single match. Down focuses results.");
+  empty.textContent = uiText("没有匹配的选项", "No matching options");
+  filterReviewDropdownOptions(panel, search, empty);
+}
+
+function syncReviewDropdownShortcutGuide() {
+  document.querySelectorAll("[data-review-option-shortcuts]").forEach(row => {
+    const shifted = row.dataset.reviewOptionShortcuts === "shift";
+    const tokens = REVIEW_TAG_OPTION_KEYS.map(key => key === "-" ? "minus" : key === "=" ? "equal" : key);
+    row.dataset.shortcutSearch = shifted ? [...tokens.map(key => `shift+${key}`), "plus"].join(" ") : tokens.join(" ");
+  });
+}
+
+function openReviewDropdownShortcutInput(shortcut) {
   const openDropdown = activeReviewChromeRoot()?.querySelector(".review-dropdown[open]");
   const input = openDropdown?.querySelector(
     `input[data-review-dropdown-option-shortcut="${CSS.escape(shortcut)}"]`
   );
-  if (!input || input.disabled) return false;
+  return input && !input.disabled && !input.closest?.("[hidden]") ? input : null;
+}
+
+function toggleOpenReviewDropdownOption(shortcut) {
+  if (!REVIEW_TAG_OPTION_SHORTCUTS.includes(shortcut)) return false;
+  const input = openReviewDropdownShortcutInput(shortcut);
+  if (!input) return false;
   input.checked = !input.checked;
   input.dispatchEvent(new Event("change", { bubbles: true }));
   return true;
@@ -446,14 +560,14 @@ function reviewShortcutHasEditableTarget(target) {
 function reviewDropdownKeyboardInputs(dropdown) {
   if (!dropdown?.open) return [];
   return [...dropdown.querySelectorAll('input[type="checkbox"]')].filter(
-    (input) => !input.disabled
+    (input) => !input.disabled && !input.closest?.("[hidden]")
   );
 }
 
 function handleReviewDropdownKeyboard(event) {
   const target = event.target instanceof Element ? event.target : null;
   const dropdown = target?.closest(".review-dropdown[open]") || null;
-  if (!dropdown || event.ctrlKey || event.metaKey || event.altKey) return false;
+  if (!dropdown || !reviewDropdownShortcutAllowed(target) || event.ctrlKey || event.metaKey || event.altKey) return false;
   const inputs = reviewDropdownKeyboardInputs(dropdown);
   if (!inputs.length) return false;
   const currentInput = target?.matches?.('input[type="checkbox"]')
@@ -622,6 +736,7 @@ function bindReviewKeyboardShortcuts() {
     if (submitReviewFromKeyboard(event, target)) return;
     if (handleReviewDropdownKeyboard(event)) return;
     const key = String(event.key || "").toLowerCase();
+    const optionShortcut = reviewDropdownOptionShortcut(event);
     if (
       key === "k" &&
       (!reviewShortcutHasEditableTarget(target) ||
@@ -649,9 +764,9 @@ function bindReviewKeyboardShortcuts() {
       return;
     }
     if (
-      REVIEW_TAG_OPTION_SHORTCUTS.includes(key) &&
+      REVIEW_TAG_OPTION_SHORTCUTS.includes(optionShortcut) &&
       reviewDropdownShortcutAllowed(target) &&
-      toggleOpenReviewDropdownOption(key)
+      toggleOpenReviewDropdownOption(optionShortcut)
     ) {
       event.preventDefault();
       event.stopPropagation();
@@ -1105,6 +1220,11 @@ function bindReviewDropdownToggles(root) {
       const panel = reviewDropdownPanel(dropdown);
       if (!dropdown.open) {
         resetReviewDropdownPanel(panel);
+        const search = panel?.querySelector("[data-review-dropdown-search]");
+        if (search?.value) {
+          search.value = "";
+          filterReviewDropdownOptions(panel, search, panel.querySelector("[data-review-dropdown-search-empty]"));
+        }
         return;
       }
       root.querySelectorAll(".review-dropdown").forEach((other) => {
@@ -1316,6 +1436,7 @@ function bindReviewTagCatalogControls(root = document) {
           });
           setReviewTagCatalogFromResult(result);
           updateReviewTagOptionRow(result.item || { key, label: value, hint });
+          syncReviewDropdownShortcutHints(activeReviewChromeRoot());
           closeDialog("reviewTagCreateDialog");
           showToast("场景标签已更新。");
         } else {

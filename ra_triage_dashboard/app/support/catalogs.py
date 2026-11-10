@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Any, Callable, Iterable
+
+from ..review_tag_shortcuts import ReviewTagShortcutStore
 
 from ..runtime import (
     MISSING_EVIDENCE_CATALOG,
@@ -11,6 +13,8 @@ from ..runtime import (
     REVIEW_TAG_CATALOG,
     REVIEW_TAG_MANAGED_GROUPS,
     database,
+    logger,
+    settings,
 )
 from .common import _as_text, _detail
 
@@ -53,6 +57,25 @@ def _review_tag_catalog() -> tuple[dict[str, Any], ...]:
         else:
             merged[key] = item
     return tuple(merged.values())
+
+
+def _catalog_with_shortcuts(
+    namespace: str, read_catalog: Callable[[], Iterable[dict[str, Any]]]
+) -> tuple[dict[str, Any], ...]:
+    # SQLite fixtures keep UI metadata beside their own disposable database.
+    # Production PostgreSQL uses the same persistent data root across releases.
+    db_path = getattr(database, "path", None)
+    path = (
+        db_path.with_suffix(db_path.suffix + ".shortcuts.json")
+        if db_path else settings.data_dir / "review_tag_shortcuts.json"
+    )
+    try:
+        return ReviewTagShortcutStore(path).apply(namespace, read_catalog)
+    except (OSError, ValueError, TypeError):
+        # A broken metadata file must not prevent Workbench from loading or
+        # silently reassign a key to a different label. Mouse controls survive.
+        logger.warning("Catalog shortcut metadata unavailable; key hints disabled")
+        return tuple({**item, "shortcut_slot": None} for item in read_catalog())
 
 def _missing_evidence_catalog() -> tuple[dict[str, Any], ...]:
     """Return the merged catalog, including soft-deleted historical entries.

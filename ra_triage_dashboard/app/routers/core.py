@@ -23,6 +23,7 @@ from ..support.baselines import (
     restrict_version_issue_ids,
 )
 from ..support.catalogs import (
+    _catalog_with_shortcuts,
     _missing_evidence_catalog,
     _review_tag_catalog,
 )
@@ -113,8 +114,8 @@ def _dashboard_config_payload() -> dict[str, Any]:
         },
         # Local DB only — never queries Trail on page open.
         "gt_sync": gt_sync_status(),
-        "missing_evidence_catalog": _missing_evidence_catalog(),
-        "review_tag_catalog": _review_tag_catalog(),
+        "missing_evidence_catalog": _catalog_with_shortcuts("evidence", _missing_evidence_catalog),
+        "review_tag_catalog": _catalog_with_shortcuts("tags", _review_tag_catalog),
         # Free-text keyword themes were an earlier experiment and are not
         # exposed by the current structured Review workflow.
         "review_reason_theme_catalog": (),

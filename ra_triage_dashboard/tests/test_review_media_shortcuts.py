@@ -12,7 +12,7 @@ def run_node(source):
 
 
 def test_media_keys_allow_review_checkboxes_and_yield_to_text_and_label_numbers():
-    run_node((ROOT/'text-input.js').read_text() + (ROOT/'bev-video.js').read_text() + (ROOT/'detail-media.js').read_text() + r'''
+    run_node((ROOT/'text-input.js').read_text() + (ROOT/'bev-video.js').read_text() + (ROOT/'detail-media.js').read_text() + (ROOT/'review-tags.js').read_text() + r'''
 const assert=require('node:assert/strict');
 const checkbox={matches:()=>true,closest:s=>s.includes('.review-dropdown[open]')?{}:{}};
 const text={matches:()=>false,closest:()=>({})};
@@ -23,7 +23,9 @@ assert.equal(mediaShortcutHasEditableTarget(otherCheckbox),true);
 let ownZero=false,dialogOpen=false,clicks=[];
 state={activePage:'review',selectedCase:{},detailMedia:{kind:'video'}};
 document={querySelector:()=>dialogOpen?{}:null};
-$=()=>({querySelector:()=>ownZero?{}:null});
+CSS={escape:String};
+let zeroHidden=false;
+$=()=>({querySelector:()=>ownZero?{querySelector:()=>({closest:()=>zeroHidden?{}:null})}:null});
 const button=name=>({click(){assert.equal(mediaShortcutActivating,true);clicks.push(name);}});
 const controls={'[data-video-play]':button('play'),'[data-video-t0]':button('t0'),'[data-video-jump="1"]':button('right')};
 detailHeroMediaEl=()=>({querySelector:s=>controls[s]});
@@ -36,15 +38,18 @@ assert.deepEqual(clicks,['play','right']);
 assert.equal(mediaShortcutActivating,false,'Activation must not leak into real outside clicks');
 ownZero=true;
 assert.equal(handleDetailMediaShortcut(key('0')),false,'Tenth label owns its visible 0 binding');
+assert.equal(handleDetailMediaShortcut(key('0',{shiftKey:true})),false,'Shift+0 never resets video');
+zeroHidden=true;
+assert.equal(handleDetailMediaShortcut(key('0')),true,'An option hidden by search does not own 0');
 ownZero=false;
 assert.equal(handleDetailMediaShortcut(key('0')),true);
-assert.deepEqual(clicks,['play','right','t0']);
+assert.deepEqual(clicks,['play','right','t0','t0']);
 for(const guard of [{isComposing:true},{keyCode:229},{which:229},{ctrlKey:true},{metaKey:true},{altKey:true},{defaultPrevented:true},{target:text}]) {
   assert.equal(handleDetailMediaShortcut(key('ArrowRight',guard)),false);
 }
 dialogOpen=true;
 assert.equal(handleDetailMediaShortcut(key('ArrowRight')),false);
-assert.deepEqual(clicks,['play','right','t0']);
+assert.deepEqual(clicks,['play','right','t0','t0']);
 ''')
 
 

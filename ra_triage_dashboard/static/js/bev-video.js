@@ -105,11 +105,9 @@ function handleDetailMediaShortcut(event) {
   if (key === "f") {
     return !event.repeat && activateMediaShortcutControl(pane?.querySelector(`#${prefix}MediaExpandButton`), event);
   }
-  if (key === "0") {
-    // Large tag groups use 0 for their tenth option. That visible number
-    // binding takes precedence over the media t0 command while it is open.
-    const editor = state.activePage === "labeling" ? $("#caseLabelingEditor") : $("#reviewPane");
-    if (editor?.querySelector('.review-dropdown[open] input[data-review-dropdown-option-shortcut="0"]:not(:disabled)')) return false;
+  if (key === "0" && !event.shiftKey) {
+    // The visible 0 binding owns the key while its tag group is open.
+    if (openReviewDropdownShortcutInput("0")) return false;
     if (state.detailMedia.kind === "video") {
       return activateMediaShortcutControl(hero.querySelector("[data-video-t0]"), event);
     }

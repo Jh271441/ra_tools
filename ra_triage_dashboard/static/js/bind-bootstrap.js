@@ -66,6 +66,7 @@ function openShortcutGuide() {
   const page = shortcutGuidePage();
   const dialog = $("#shortcutGuideDialog");
   if (!page || !dialog || (document.querySelector("dialog[open]") && !dialog.open)) return;
+  syncReviewDropdownShortcutGuide();
   dialog.querySelectorAll("[data-shortcut-guide-page]").forEach((panel) => {
     panel.hidden = panel.dataset.shortcutGuidePage !== page;
   });

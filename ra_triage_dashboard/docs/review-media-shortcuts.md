@@ -9,8 +9,10 @@ Review 和问题标注详情中的标签多选下拉展开时，媒体快捷键�
 - Camera 的视频源记忆与 BEV 选择分开；Shift+C 后按 V 能返回 BEV，并保留该播放器的时间、倍速和播放/暂停状态。详情与当前 Issue 的展开弹窗共享 BEV 选择，切换 Issue 后重置；缺少 BEV 时保留当前视图并提示，不回退到 Camera。
 - Shift+C opens Camera video; V returns to the last original/closeup BEV choice without Camera replacing that choice. The current Issue detail and expanded dialog share this choice; switching Issues resets it. Source changes preserve the player's position, rate and play/pause state. Missing BEV keeps the current view and shows localized feedback.
 - Shift+C 在 Review、问题标注详情及展开媒体中复用现有视频源切换，保留播放位置、倍速及播放/暂停状态。当前 Issue 无 Camera 视频时保留当前视图，并显示中英文提示；输入、IME、重复按键和修饰键组合不触发。
-- 0 回到 t0。若当前标签组有第十项，其可见的 0 标签快捷键优先。
-- 标签使用可见的数字行快捷键选择，上下箭头定位选项，Enter 保存，Esc 关闭。
+- 0 回到 t0。若展开组里有可见且启用的 0 标签快捷键，该标签优先。
+- 展开的标签或缺失信息组用 `1–9、0、-、=` 切换键位 1–12，用 `Shift` 加同一排键切换键位 13–24。徽标用 `⇧` 表示 Shift。上下箭头定位选项，Enter 保存，Esc 关闭。
+- 键位按目录 ID 保存。初次分配沿用可见选项顺序，改名保留原键位，删除释放的键位可分给其他选项。标签移动到另一组时按新组的空位分配。
+- 超出键位容量的组可按名称搜索。搜索框中 Enter 切换唯一匹配项，↓ 聚焦匹配结果。关闭菜单会清空搜索，保留已选标签。
 - Space 不再切换标签复选框或开关原生 details；播放动作只执行一次。
 - 播放和跳转复用实际媒体按钮动作，保持下拉展开和标签选择；媒体切换保留已有标签下拉焦点。展开媒体或规划约束时，新弹层取得自身所需焦点。
 - 普通文本、搜索、说明、select、增强单选、contenteditable、输入法组合输入仍保留各自键盘操作。未开放任意输入控件的媒体快捷键。
@@ -22,6 +24,8 @@ Esc 由最内层控件先处理：打开的单选、规划约束和原生模态�
 原生模态框关闭后按浏览器规则恢复打开按钮的焦点；再次 Esc 可离开“历史”等按钮，随后 E 等快捷键可直接使用。输入法组合输入、修饰键和已消费事件不会被焦点释放逻辑接管。未提交的文字和标签选择不会因 Esc 被清空或保存。
 
 ## 验证入口
+
+`tests/test_review_tag_shortcut_slots.py` 覆盖固定键位、删除补位、组间独立、并发写入及数字行按键解析。共享键位保存在 Dashboard 数据目录的 `review_tag_shortcuts.json`，其中只有目录 ID 和键位编号。编辑目录的响应返回 `shortcut_slot`，历史标签和超出容量的标签为 `null`。
 
 `tests/test_review_media_shortcuts.py` 覆盖媒体输入保护、复选框放通、数字 0 优先级、激活动作范围及 Esc 的层级/页面/IME 保护；`tests/test_review_shortcuts.py` 保留标签数字选择和 Enter 保存回归。
 

@@ -53,7 +53,7 @@
         const appPreload = document.createElement("link");
         appPreload.rel = "preload";
         appPreload.as = "script";
-        appPreload.href = `${activeBase}/static/app-bundle.js?v=manual-triage-782`;
+        appPreload.href = `${activeBase}/static/app-bundle.js?v=manual-triage-783`;
         document.head.appendChild(appPreload);
         // These same-origin reads are required on every route. Begin them
         // while the bundle downloads; consume once through the normal API
@@ -122,7 +122,7 @@
         stylesheetRequests.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-782`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-783`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -2293,7 +2293,8 @@
           <div class="shortcut-guide-row" data-shortcut-search="enter shift+enter"><span><kbd>Enter</kbd><kbd>Shift</kbd> + <kbd>Enter</kbd></span><strong>保存标注 / 输入框换行</strong></div>
           <div class="shortcut-guide-row" data-shortcut-search="d j t"><span><kbd>D</kbd><kbd>J</kbd><kbd>T</kbd></span><strong>讨论 / 标注历史 / RA Event（有链接时）</strong></div>
           <div class="shortcut-guide-row" data-shortcut-search="q w a s z x"><span><kbd>Q</kbd><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>Z</kbd><kbd>X</kbd></span><strong>展开对应标签组</strong></div>
-          <div class="shortcut-guide-row" data-shortcut-search="0 1 2 3 4 5 6 7 8 9 minus equal"><span><kbd>1</kbd>–<kbd>0</kbd><kbd>-</kbd><kbd>=</kbd></span><strong>切换当前展开标签组的选项</strong></div>
+          <div class="shortcut-guide-row" data-review-option-shortcuts="plain"><span><kbd>1</kbd>–<kbd>0</kbd><kbd>-</kbd><kbd>=</kbd></span><strong><span class="ui-lang-zh">切换当前展开标签组的选项</span><span class="ui-lang-en">Toggle options in the open tag group</span></strong></div>
+          <div class="shortcut-guide-row" data-review-option-shortcuts="shift"><span><kbd>Shift</kbd> + <kbd>1</kbd>–<kbd>0</kbd><kbd>-</kbd><kbd>=</kbd></span><strong><span class="ui-lang-zh">切换扩展选项（键位 13–24）。更多选项可搜索</span><span class="ui-lang-en">Toggle extended options (slots 13–24). Search larger groups.</span></strong></div>
           <div class="shortcut-guide-row" data-shortcut-search="k"><span><kbd>K</kbd></span><strong>切换“应该排除”</strong></div>
           <div class="shortcut-guide-row" data-shortcut-search="b c v space"><span><kbd>B</kbd><kbd>C</kbd><kbd>V</kbd><kbd>Space</kbd></span><strong>切换 BEV / Camera / 视频；播放或暂停</strong></div>
           <div class="shortcut-guide-row" data-shortcut-search="shift+c"><span><kbd>⇧ C</kbd></span><strong><span class="ui-lang-zh">直达 Camera 视频（C 切换 Camera 图片）</span><span class="ui-lang-en">Open Camera video (C for Camera images)</span></strong></div>
@@ -2316,7 +2317,8 @@
           <div class="shortcut-guide-row" data-shortcut-search="i"><span><kbd>I</kbd></span><strong>展开 / 收起缺失信息</strong></div>
           <div class="shortcut-guide-row" data-shortcut-search="k"><span><kbd>K</kbd></span><strong>联合复核：切换“排除此 Issue”（随 Case 标签保存）</strong></div>
           <div class="shortcut-guide-row" data-shortcut-search="m"><span><kbd>M</kbd><kbd>1</kbd><kbd>2</kbd></span><strong><span class="ui-lang-zh">复核状态：待复核 / 已完成</span><span class="ui-lang-en">Review status: Needs review / Completed</span></strong></div>
-          <div class="shortcut-guide-row" data-shortcut-search="0 1 2 3 4 5 6 7 8 9 minus equal"><span><kbd>1</kbd>–<kbd>0</kbd><kbd>-</kbd><kbd>=</kbd></span><strong>切换已打开标签或缺失信息中的选项</strong></div>
+          <div class="shortcut-guide-row" data-review-option-shortcuts="plain"><span><kbd>1</kbd>–<kbd>0</kbd><kbd>-</kbd><kbd>=</kbd></span><strong><span class="ui-lang-zh">切换已打开标签或缺失信息中的选项</span><span class="ui-lang-en">Toggle options in open tags or missing evidence</span></strong></div>
+          <div class="shortcut-guide-row" data-review-option-shortcuts="shift"><span><kbd>Shift</kbd> + <kbd>1</kbd>–<kbd>0</kbd><kbd>-</kbd><kbd>=</kbd></span><strong><span class="ui-lang-zh">切换扩展选项（键位 13–24）。更多选项可搜索</span><span class="ui-lang-en">Toggle extended options (slots 13–24). Search larger groups.</span></strong></div>
           <div class="shortcut-guide-row" data-shortcut-search="b c v"><span><kbd>B</kbd><kbd>C</kbd><kbd>V</kbd></span><strong>切换 BEV / Camera / 视频</strong></div>
           <div class="shortcut-guide-row" data-shortcut-search="shift+c"><span><kbd>⇧ C</kbd></span><strong><span class="ui-lang-zh">直达 Camera 视频（C 切换 Camera 图片）</span><span class="ui-lang-en">Open Camera video (C for Camera images)</span></strong></div>
           <div class="shortcut-guide-row" data-shortcut-search="shift+v"><span><kbd>⇧ V</kbd></span><strong><span class="ui-lang-zh">原始 / 局部 BEV 视频双向切换</span><span class="ui-lang-en">Toggle original / closeup BEV video</span></strong></div>
@@ -2668,7 +2670,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app-bundle.js?v=manual-triage-782`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app-bundle.js?v=manual-triage-783`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

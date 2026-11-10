@@ -678,6 +678,8 @@ html[data-color-theme="light"] .detail-queue-index-input {
 .review-tag-options > .tag-option .tag-option-shortcut {
   margin-left: auto;
 }
+.review-dropdown-search { position: sticky; top: 0; z-index: 1; background: var(--raised); }
+.review-tag-options :is(.review-tag-option-row, .tag-option, [data-review-dropdown-search-empty])[hidden] { display: none; }
 .tag-option-check span {
   min-width: 0; overflow: hidden; color: #f2f6fb; font-weight: 560; text-overflow: ellipsis; white-space: nowrap;
 }
