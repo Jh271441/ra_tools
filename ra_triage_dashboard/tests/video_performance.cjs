@@ -78,10 +78,11 @@ function playerFixture({readyState=4,context=null,initialTime=0,durationSec=40,.
  warm.ctx.releaseBevVideoPlayer(warm.root);
 
  const cold = playerFixture({initialTime:20});
- let segmentPosition;
- cold.ctx.createVideoSegmentLoader = (_video,{position}) => {
+ let segmentPosition, bufferAppended;
+ cold.ctx.createVideoSegmentLoader = (_video,{position,onBufferAppended}) => {
   segmentPosition = position;
-  return {segmentForTime: time=>Math.floor(time/2),prioritize(){},dispose(){}};
+  bufferAppended = onBufferAppended;
+  return {segmentForTime: time=>Math.floor(time/2),prepareUnbufferedSeek:()=>true,prioritize(){},dispose(){}};
  };
  cold.video._setBevVideoTrack('/segmented.mp4');
  cold.video.readyState = 4;
@@ -105,6 +106,28 @@ function playerFixture({readyState=4,context=null,initialTime=0,durationSec=40,.
  assert.ok(!cold.timers.has(obsoleteTimer),'Moving across cold GOPs retires the obsolete target');
  coldSlider.fire('change');
  assert.deepEqual(cold.video.seeks,[10.9,4.7],'Release seeks the final cold target immediately');
+ cold.video.setAttribute('src','blob:fixture');
+ for (const keepPlaying of [true,false]) {
+  cold.video.currentTime = 20.8;
+  cold.video.buffered = {length:1,start:()=>20,end:()=>24};
+  if (cold.video.paused) cold.elements.play.fire('click');
+  await Promise.resolve();
+  cold.video.fire('playing');
+  cold.player.fire('keydown',{key:'ArrowLeft'});
+  cold.flush(0);
+  assert.equal(cold.video.currentTime,20.8,'An unbuffered rewind does not enter the adjacent buffered frame');
+  assert.equal(segmentPosition(),19.8,'The unbuffered rewind loads the requested time');
+  if (keepPlaying) cold.player.fire('keydown',{key:'ArrowLeft'});
+  else cold.elements.play.fire('click');
+  cold.video.buffered = {length:1,start:()=>18,end:()=>24};
+  bufferAppended();
+  if (keepPlaying) {
+   assert.equal(cold.video.currentTime,20.8,'A newer queued key press supersedes the buffered target');
+   cold.flush(0);
+  }
+  assert.equal(cold.video.currentTime,keepPlaying?18.8:19.8,'The rewind lands at the latest buffered target');
+  assert.equal(cold.video.paused,!keepPlaying,'Completing the rewind respects the latest play choice');
+ }
  cold.ctx.releaseBevVideoPlayer(cold.root);
 
  const media={assets:{video:{url:'/bev.mp4',tracks:[{url:'/bev.mp4'},{url:'/api/assets/cn1/camera-video'},{url:'/api/assets/cn1/bev-closeup-video',source_id:'bev_closeup',label:'局部 BEV 视频',poster_url:'/closeup-t0.jpg'}]},frames:[{url:'/before.jpg',offset_ms:-1000},{url:'/full-bev.jpg',offset_ms:0}]},camera:{frames:[{url:'/full-camera.jpg',offset_ms:0}]}};

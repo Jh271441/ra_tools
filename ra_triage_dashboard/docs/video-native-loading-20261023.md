@@ -1,5 +1,32 @@
 # Native video loading restoration — 2026-10-23
 
+## Rewind during playback — 2026-11-10 / cache785
+
+At t0 the previous GOP has not been played. Once the selected video is
+playing, fetch that one GOP at low priority only if the contiguous forward
+buffer covers the estimated cost of both the backward fetch and the next
+forward fetch, plus margin. Paused startup still requests only the target
+and forward GOP. The loader also keeps a useful in-flight forward request
+when a buffered rewind moves it just outside the normal lookahead window.
+This adapts [Shaka Player's backward buffer and buffered-seek handling](https://github.com/shaka-project/shaka-player/blob/main/lib/media/streaming_engine.js)
+and [hls.js's seek-aware request cancellation](https://github.com/video-dev/hls.js/blob/master/src/controller/base-stream-controller.ts).
+
+For a playing rewind into an uncached range, keep the last frame and the
+user's Play choice while giving the requested GOP priority. Seek once its
+data covers the target, then continue only if the user still wants playback.
+This avoids a native gap jump to the next buffered frame. An optional fetch
+failure alone does not switch the player to progressive playback. The
+encoded video, source selection, layout and default Pause at t0 are unchanged.
+
+In local Chromium 151 with synthetic 1080p H.264, a one-second rewind soon
+after t0 at 20 Mbps / 40 ms presented the target frame in 82–114 ms
+instead of 415–421 ms (three trials per version). A buffered rewind during
+a delayed forward transfer issued one request for that range instead of
+two. At 2 Mbps / 150 ms the cold boundary seek still needed about 4.3 s
+for the target data; it resumed near the requested frame instead of
+skipping directly to t0. These are controlled fixture measurements, not
+production percentiles. Evidence: `/private/tmp/bev-rewind-20261110/`.
+
 ## Progress slider previews — 2026-11-10 / cache784
 
 The slider updates the requested time immediately. Buffered targets share a

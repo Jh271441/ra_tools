@@ -155,6 +155,25 @@ const server=http.createServer((req,res)=>{
   await page.waitForFunction(()=>v.currentTime>21.3&&Number(document.querySelector('[data-video-seek]').value)>21.1);
   results.push({scenario:'arrow-before-manifest-and-live-timeline'});await page.close();
   for(const mode of ['ready','pending']){page=await makePage({mount:false});await page.evaluate(mode=>mount(mode,'current',0),mode);await ready(page);assert.equal(await page.evaluate(()=>v.currentTime),20);results.push({scenario:'unknown-descriptor-duration',mode});await page.close();}
+  page=await makePage({mode:'delayprevious'});await ready(page);
+  await page.evaluate(()=>document.querySelector('[data-video-play]').click());
+  await page.waitForFunction(()=>!v.paused&&v.currentTime>=20.8);
+  const rewind=await page.evaluate(()=>{
+   const from=v.currentTime,target=from-1;
+   const player=document.querySelector('[data-bev-video-player]');
+   player.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true,cancelable:true}));
+   return {from,target,frames:v._submitted.length};
+  });
+  assert.ok(rewind.target<20,'rewind crosses the start of the cached range');
+  await page.waitForFunction(({from,target})=>{
+   const seek=document.querySelector('[data-video-seek]');
+   return v.paused&&v.currentTime>=from&&Math.abs(Number(seek.value)-target)<.06;
+  },rewind);
+  await page.waitForFunction(({frames,target})=>!v.paused&&v.currentTime>target+.15
+   &&v._submitted.slice(frames).some(t=>Math.abs(t-target)<.11),rewind);
+  assert.equal(await page.locator('[data-video-play]').getAttribute('aria-pressed'),'true');
+  results.push({scenario:'playing-backward-across-cold-boundary',target:rewind.target});
+  await page.close();
   const start=logs.length;page=await makePage({network:{mbps:2,latency:150}});await ready(page);
   await page.evaluate(()=>{v.currentTime=2.05;setTimeout(()=>v.currentTime=38.05,200);setTimeout(()=>v.currentTime=6.05,400);setTimeout(()=>v.currentTime=6.15,500);setTimeout(()=>v.currentTime=6.25,600);});
   await page.waitForFunction(()=>!v.seeking&&v.readyState>=2&&Math.abs(v.currentTime-6.25)<.001);
@@ -169,6 +188,8 @@ const server=http.createServer((req,res)=>{
   await page.evaluate(()=>releaseBevVideoPlayer(document.querySelector('#player')));const disposedCount=logs.length;await new Promise(r=>setTimeout(r,500));assert.equal(logs.length,disposedCount);
   results.push({scenario:'weak-network-cancel-same-gop-suspend-resume-dispose',requests:logs.slice(start),cancellations:page.networkCancellations});await page.close();
   assert.deepEqual(errors,[]);
-  fs.writeFileSync(output,JSON.stringify({browser:browser.version(),results,errors,requests:logs},null,2));console.log(JSON.stringify({output,scenarios:results.length,pixelComparisons:pixels.length,errors}));
+  const pixelComparisons=results.reduce((count,row)=>count+(row.comparisons?.length
+   ?? (Array.isArray(row.pixels)?row.pixels.length:Number(Boolean(row.pixels)))),0);
+  fs.writeFileSync(output,JSON.stringify({browser:browser.version(),results,errors,requests:logs},null,2));console.log(JSON.stringify({output,scenarios:results.length,pixelComparisons,errors}));
  }finally{await browser.close();server.closeAllConnections();server.close();}
 })().catch(e=>{console.error(e);fs.writeFileSync(output+'.failure.json',JSON.stringify({error:e.message,requests:logs},null,2));server.closeAllConnections();server.close();process.exitCode=1;});

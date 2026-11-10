@@ -327,6 +327,7 @@ function bindBevVideoPlayers(root) {
     let segmentLoader = null;
     let sourceGeneration = 0;
     let pendingStart = configuredT0PlayerSec > 0 ? configuredT0PlayerSec : null;
+    let pendingBackwardSeek = null;
     // Each new Case/player waits for its own explicit Play choice at t0.
     let wantsPlayback = false;
     let suspended = false;
@@ -436,7 +437,7 @@ function bindBevVideoPlayers(root) {
       loadTimer = window.setTimeout(() => setStatus("slow"), 12000);
     };
     const ready = () => {
-      if (disposed || video.error || video.readyState < 2 || video.seeking) return;
+      if (disposed || video.error || pendingBackwardSeek !== null || video.readyState < 2 || video.seeking) return;
       if (loadTimer !== null) window.clearTimeout(loadTimer);
       loadTimer = null;
       setStatus("ready");
@@ -452,7 +453,7 @@ function bindBevVideoPlayers(root) {
     let queuedSeekTarget = null;
     let queuedSeekTimer = null;
     let queuedSeekGroup = null;
-    const playbackPosition = () => pendingStart
+    const playbackPosition = () => pendingBackwardSeek ?? pendingStart
       ?? (Number.isFinite(video.currentTime) ? video.currentTime : 0);
     const timelinePosition = () => queuedSeekTarget ?? playbackPosition();
     const clearQueuedSeek = () => {
@@ -492,11 +493,35 @@ function bindBevVideoPlayers(root) {
       // source replacement needs the held-frame confirmation below.
       if (heldFrame) heldTarget = target;
       clearQueuedSeek();
+      const resumePlayback = pendingBackwardSeek !== null;
+      pendingBackwardSeek = null;
       if (video.readyState < 1) { pendingStart = target; segmentLoader?.prioritize(); update(target); return; }
-      if (!heldFrame && target === video.currentTime) { update(); return; }
+      if (!heldFrame && target === video.currentTime) {
+        if (resumePlayback) {
+          segmentLoader?.prioritize();
+          ready();
+          startPlayback();
+        }
+        update();
+        return;
+      }
       const request = ++seekRequest;
       cancelFrameCheck();
       cancelPendingSeek?.();
+      if (!heldFrame && wantsPlayback && target < video.currentTime && !isBuffered(target)
+          && segmentLoader?.prepareUnbufferedSeek(target)) {
+        // Seeking across a missing range while playing can let the browser
+        // advance from the next buffered frame. Fetch the exact target first.
+        pendingBackwardSeek = target;
+        ++playbackAttempt;
+        playPending = false;
+        playing = false;
+        video.pause();
+        segmentLoader.prioritize();
+        loading();
+        update();
+        return;
+      }
       let settled = false;
       let fallbackTimer = null;
       const settle = () => {
@@ -534,6 +559,7 @@ function bindBevVideoPlayers(root) {
       // A remote asset can delay seeked while metadata or the first keyframe
       // is fetched. Keep controls responsive and reconcile once it arrives.
       fallbackTimer = window.setTimeout(settle, 800);
+      if (resumePlayback) startPlayback();
     };
     const isBuffered = (time) => {
       const ranges = video.buffered;
@@ -580,7 +606,8 @@ function bindBevVideoPlayers(root) {
       queueSeek(target, 0);
     };
     const startPlayback = () => {
-      if (disposed || suspended || !wantsPlayback || playPending || !video.paused || !video.getAttribute("src")
+      if (disposed || suspended || !wantsPlayback || pendingBackwardSeek !== null || playPending
+        || !video.paused || !video.getAttribute("src")
         || (metadataGeneration !== sourceGeneration && !sourceHasStartHint)
         || !player.isConnected || player.closest?.('dialog:not([open]), [hidden], .hidden')) return;
       const generation = sourceGeneration;
@@ -657,6 +684,11 @@ function bindBevVideoPlayers(root) {
           position: () => metadataGeneration !== sourceGeneration && pendingStart === null
             ? null : playbackPosition(),
           attached: startPlayback,
+          onBufferAppended: () => {
+            if (queuedSeekTarget === null && pendingBackwardSeek !== null && isBuffered(pendingBackwardSeek)) {
+              seekTo(pendingBackwardSeek);
+            }
+          },
           fallback: () => {
             if (!disposed) loadSource(url, video.getAttribute("poster") || "", true);
           },
@@ -667,7 +699,9 @@ function bindBevVideoPlayers(root) {
       video.load();
     };
     const loadSource = (url, poster = "", nativeOnly = false) => {
-      pendingStart = video.readyState >= 1 && Number.isFinite(video.currentTime) ? video.currentTime : pendingStart;
+      pendingStart = pendingBackwardSeek
+        ?? (video.readyState >= 1 && Number.isFinite(video.currentTime) ? video.currentTime : pendingStart);
+      pendingBackwardSeek = null;
       // A cold stream's first native fallback can keep the correct t0 poster.
       // Explicit source changes and non-t0 requests retain the frame guard.
       if (!(nativeOnly && sourceGeneration === 0 && video.readyState < 2

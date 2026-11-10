@@ -14,13 +14,17 @@ function videoSegmentManifestUrl(url) {
   return parsed.pathname + parsed.search;
 }
 
-function createVideoSegmentLoader(video, { url, position, attached, fallback, frameStepSec = 0.1 }) {
+function createVideoSegmentLoader(video, {
+  url, position, attached, fallback, onBufferAppended = () => {}, frameStepSec = 0.1,
+}) {
   const manifestUrl = videoSegmentManifestUrl(url);
   if (!manifestUrl) return null;
   let stopped = false, suspended = false, initialized = false, pumping = false;
   let mediaSource = null, buffer = null, objectUrl = "", index = null;
   let active = null, needsPump = false, resetParser = false;
   let boundarySeek = null;
+  let secondsPerByte = Infinity, rewindAttempted = false;
+  const forwardRetention = 12;
   const requests = new Set(), loaded = new Set(), touched = new Set(), listeners = [];
   const listen = (target, name, handler) => {
     target.addEventListener(name, handler);
@@ -81,9 +85,28 @@ function createVideoSegmentLoader(video, { url, position, attached, fallback, fr
     try { return { response: await fetch(url, { ...options, signal: controller.signal }), controller }; }
     catch (error) { requests.delete(controller); throw error; }
   };
+  const segmentBytes = number => index.segments[number].last - index.segments[number].first + 1;
+  const hasPlaybackReserve = (time, rewindBytes, transferCost = secondsPerByte) => {
+    const ranges = video.buffered;
+    for (let i = 0; i < (ranges?.length || 0); i++) {
+      const end = ranges.end(i);
+      if (time < ranges.start(i) || time >= end) continue;
+      const nextBytes = end < index.duration - .000001 ? segmentBytes(segmentAt(end)) : 0;
+      // Leave time for the next forward fetch and a second of margin.
+      const required = Math.max(2, 1 + (rewindBytes + nextBytes) * transferCost);
+      return (end - time) / Math.max(.25, video.playbackRate) >= required;
+    }
+    return false;
+  };
   const nextSegment = () => {
-    const at = Math.max(0, segmentAt(Math.min(current(), index.duration - .000001)));
+    const time = current(), at = segmentAt(time);
     if (!loaded.has(at)) return at;
+    const previous = at - 1;
+    // Midpoint startup has no played data to retain on the left. Warm one
+    // previous GOP once playback has enough contiguous forward data.
+    if (!video.paused && !video.seeking && video.readyState >= 3 && previous >= 0
+        && !loaded.has(previous) && !rewindAttempted
+        && Number.isFinite(secondsPerByte) && hasPlaybackReserve(time, segmentBytes(previous))) return previous;
     // The next GOP can flush the target's final reordered frames. While
     // paused, stop there: backward prefetch competes with UI requests and is
     // unnecessary until the reviewer actually seeks backward.
@@ -93,7 +116,7 @@ function createVideoSegmentLoader(video, { url, position, attached, fallback, fr
     return candidates.find(i => i >= 0 && i < index.segments.length && !loaded.has(i)) ?? -1;
   };
   const evict = async () => {
-    const start = Math.max(0, current() - 6), end = Math.min(index.duration, current() + 12);
+    const start = Math.max(0, current() - 6), end = Math.min(index.duration, current() + forwardRetention);
     for (const [first, last] of [[0, start], [end, index.duration]]) {
       const discarded = [...touched].filter(i => index.segments[i].start >= first
         && index.segments[i].end <= last);
@@ -117,7 +140,7 @@ function createVideoSegmentLoader(video, { url, position, attached, fallback, fr
       discarded.forEach(i => { loaded.delete(i); touched.delete(i); });
     }
   };
-  const fetchSegment = async (number) => {
+  const fetchSegment = async (number, rewind) => {
     const segment = index.segments[number];
     const source = new URL(url, location.origin);
     source.hash = "";
@@ -126,13 +149,14 @@ function createVideoSegmentLoader(video, { url, position, attached, fallback, fr
     source.searchParams.set("fingerprint", index.fingerprint);
     const controller = new AbortController();
     requests.add(controller);
-    active = { number, controller };
+    const transfer = { number, controller, rewind, received: 0, started: performance.now() };
+    active = transfer;
+    if (rewind) rewindAttempted = true;
     let reader = null;
-    let received = 0;
     try {
       const response = await fetch(source.pathname + source.search, {
         headers: { Range: `bytes=${segment.first}-${segment.last}` }, signal: controller.signal,
-        priority: video.paused && number !== segmentAt(current()) ? "low" : "auto",
+        priority: rewind || (video.paused && number !== segmentAt(current())) ? "low" : "auto",
       });
       if (stopped) return;
       const expected = `bytes ${segment.first}-${segment.last}/${index.size}`;
@@ -145,14 +169,16 @@ function createVideoSegmentLoader(video, { url, position, attached, fallback, fr
         const { done, value } = await reader.read();
         if (done) break;
         if (stopped || controller.signal.aborted) break;
-        received += value.byteLength;
-        if (received > segment.last - segment.first + 1) throw Error("oversized segment");
+        transfer.received += value.byteLength;
+        if (transfer.received > segmentBytes(number)) throw Error("oversized segment");
         // Streaming append lets the first decodable frames play immediately;
         // neither the rest of this GOP nor the entire clip is a readiness gate.
         await append(value);
+        if (!stopped && !controller.signal.aborted) onBufferAppended();
       }
       if (!stopped && !controller.signal.aborted) {
-        if (received !== segment.last - segment.first + 1) throw Error("truncated segment");
+        if (transfer.received !== segmentBytes(number)) throw Error("truncated segment");
+        if (!rewind) secondsPerByte = Math.max(1, performance.now() - transfer.started) / (1000 * transfer.received);
         loaded.add(number);
         retryBoundarySeek();
       }
@@ -181,9 +207,11 @@ function createVideoSegmentLoader(video, { url, position, attached, fallback, fr
             && mediaSource.readyState === "open") mediaSource.endOfStream();
         const next = nextSegment();
         if (next < 0) break;
-        try { await fetchSegment(next); }
+        const rewind = next < segmentAt(current());
+        try { await fetchSegment(next, rewind); }
         catch (error) {
-          if (error.name !== "AbortError" || (!resetParser && !stopped)) throw error;
+          if (rewind && next !== segmentAt(current())) resetParser = true;
+          else if (error.name !== "AbortError" || (!resetParser && !stopped)) throw error;
         }
         needsPump = true;
       } while (needsPump && !stopped && !suspended);
@@ -193,7 +221,20 @@ function createVideoSegmentLoader(video, { url, position, attached, fallback, fr
   const prioritize = () => {
     if (stopped || suspended) return;
     needsPump = true;
-    if (active && nextSegment() !== active.number) {
+    const next = active ? nextSegment() : -1;
+    if (active && next !== active.number) {
+      const time = current(), at = segmentAt(time);
+      if (!video.paused && loaded.has(at)) {
+        if (active.rewind && active.number === at - 1) {
+          const elapsed = (performance.now() - active.started) / 1000;
+          const cost = Math.max(secondsPerByte, active.received > 0 ? elapsed / active.received : 0);
+          if (hasPlaybackReserve(time, segmentBytes(active.number) - active.received, cost)) return;
+        } else if (active.number > at && next < at && index.segments[active.number].end <= time + forwardRetention) {
+          // A buffered rewind can shrink the lookahead window. The pending
+          // forward fragment still belongs to this playback and can finish.
+          return;
+        }
+      }
       // Abort only obsolete work. Repeated seeks inside the same GOP share
       // its in-flight response rather than restarting it with each key press.
       resetParser = true;
@@ -267,13 +308,18 @@ function createVideoSegmentLoader(video, { url, position, attached, fallback, fr
       prioritize();
     });
     listen(video, "seeked", retryBoundarySeek);
-    ["play", "pause", "timeupdate", "ratechange", "waiting"].forEach(name => listen(video, name, prioritize));
+    ["play", "playing", "pause", "timeupdate", "ratechange", "waiting"].forEach(name => listen(video, name, prioritize));
     prioritize();
   };
   // Defer so the caller owns this controller before any fallback can run.
   Promise.resolve().then(start).catch(() => recover());
   return { prioritize, dispose, recover,
     segmentForTime: time => initialized ? segmentAt(time) : null,
+    prepareUnbufferedSeek(time) {
+      if (!initialized || stopped) return false;
+      loaded.delete(segmentAt(time));
+      return true;
+    },
     suspend() {
       suspended = true;
       if (active) { resetParser = true; active.controller.abort(); }
