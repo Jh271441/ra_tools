@@ -9,9 +9,9 @@ class El extends EventTarget {
 function playerFixture({readyState=4,context=null,initialTime=0,durationSec=40,...videoState}={}){
  const timers=new Map();let next=0;
  const elements=Object.fromEntries(['video','play','seek','step','rate','time','relative-start','t0','track','status','status-text','retry'].map(k=>[k,new El()]));
- const video=elements.video;Object.assign(video,{isVideo:true,readyState,duration:40,paused:true,seeking:false,loads:0,plays:0,seeks:[],error:null},videoState);
+ const video=elements.video;Object.assign(video,{isVideo:true,readyState,duration:40,paused:true,seeking:false,loads:0,plays:0,pauses:0,seeks:[],error:null},videoState);
  let pos=initialTime;Object.defineProperty(video,'currentTime',{get:()=>pos,set:v=>{pos=v;video.seeks.push(v);}});
- video.pause=()=>{video.paused=true;};video.play=()=>{video.plays++;video.paused=false;video.fire('play');return Promise.resolve();};
+ video.pause=()=>{video.pauses++;video.paused=true;};video.play=()=>{video.plays++;video.paused=false;video.fire('play');return Promise.resolve();};
  video.load=()=>{video.loads++;video.readyState=0;};video.attrs.src='/clip.mp4';video.attrs.poster='/poster.jpg';
  const player=new El();player.dataset={durationSec:String(durationSec),t0PlayerSec:String(durationSec/2),startOffsetSec:String(-durationSec/2)};
  player.querySelector=s=>s==='video'?video:elements[s.replace('[data-video-','').replace(']','')];
@@ -75,6 +75,15 @@ function playerFixture({readyState=4,context=null,initialTime=0,durationSec=40,.
  warm.flush(50);
  slider.fire('change');
  assert.deepEqual(warm.video.seeks,[20.8,21.5],'Release does not restart an identical seek');
+ for (const playing of [false,true]) {
+  if (playing) warm.elements.play.fire('click');
+  warm.player.fire('keydown',{key:'ArrowLeft'});
+  warm.flush(0);
+  assert.equal(warm.video.currentTime,playing?19.5:20.5,'A buffered rewind seeks immediately');
+  assert.equal(warm.video.paused,!playing,'A buffered rewind preserves native playback state');
+  assert.equal(warm.video.plays,Number(playing),'A buffered rewind does not start or restart playback');
+  assert.equal(warm.video.pauses,0,'A buffered rewind does not pause the video clock');
+ }
  warm.ctx.releaseBevVideoPlayer(warm.root);
 
  const cold = playerFixture({initialTime:20});
