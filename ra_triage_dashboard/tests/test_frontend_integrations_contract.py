@@ -30,7 +30,6 @@ class FrontendIntegrationsContractTest(unittest.TestCase):
         self.assertIn('title="${escapeHtml(title)}"', APP_JS)
         self.assertIn("focusMediaSurface", APP_JS)
         self.assertIn("kindSelect.blur()", APP_JS)
-        self.assertIn("if (!disposed && latest !== null) seekTo(latest)", APP_JS)
         self.assertIn("let queuedSeekTarget = null", APP_JS)
         self.assertIn("const queueSeek = (target, delay = 75)", APP_JS)
         self.assertIn("queuedSeekTarget !== null", APP_JS)

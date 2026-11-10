@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1] / 'static/js'
 
 
 def run_node(source):
-    result = subprocess.run(['node', '-e', source], capture_output=True, text=True)
+    result = subprocess.run(['node', '-'], input=source, capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
 
 
