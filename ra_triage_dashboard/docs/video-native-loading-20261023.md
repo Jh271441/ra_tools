@@ -1,5 +1,28 @@
 # Native video loading restoration — 2026-10-23
 
+## Progress slider previews — 2026-11-10 / cache784
+
+The slider updates the requested time immediately. Buffered targets share a
+50 ms preview window that continuous input does not restart. A native seek
+already decoding buffered data finishes before the next preview. In an
+unbuffered GOP, motion within that GOP shares the original 75 ms deadline.
+Crossing GOPs coalesces transient targets, and releasing the slider submits
+the final position immediately. Segment loading follows dispatched seeks.
+When a backward seek within one frame of a buffered range settles on that
+range's first frame, the loader retries the same position once the requested
+GOP arrives. The native player presents the original resolution and frames.
+
+In Chromium with three synthetic H.264 clips, nine fully buffered drags
+produced zero frames during the drag on the previous player and 9–17 frames
+on the candidate. The candidate presented its first frame in 64–102 ms.
+Both versions made zero new requests in those buffered trials. In three
+trials at 2 Mbps and 150 ms latency, dragging within one unbuffered GOP took
+about 4.0 s before the change and 2.8 s after it, measured from the first input.
+Rapidly crossing several cold GOPs still requested only the final GOP in
+those trials. These measurements use the same local fixtures and are scoped
+to the simulated conditions. The fixture, measurements and browser results
+are in `/private/tmp/bev-scrub-20261110/`.
+
 ## Paused source switching at the clip end — 2026-11-04 / cache757
 
 Issue `cn37270163` exposed a reproducible40s endpoint failure: the picker could

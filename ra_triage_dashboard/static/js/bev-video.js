@@ -451,8 +451,16 @@ function bindBevVideoPlayers(root) {
     let cancelPendingSeek = null;
     let queuedSeekTarget = null;
     let queuedSeekTimer = null;
-    const timelinePosition = () => queuedSeekTarget ?? pendingStart
+    let queuedSeekGroup = null;
+    const playbackPosition = () => pendingStart
       ?? (Number.isFinite(video.currentTime) ? video.currentTime : 0);
+    const timelinePosition = () => queuedSeekTarget ?? playbackPosition();
+    const clearQueuedSeek = () => {
+      if (queuedSeekTimer !== null) window.clearTimeout(queuedSeekTimer);
+      queuedSeekTimer = null;
+      queuedSeekTarget = null;
+      queuedSeekGroup = null;
+    };
     const planningConstraint = bindPlanningConstraint(player, video, timelinePosition);
     const duration = () => Number.isFinite(video.duration) ? video.duration : configuredDuration;
     const update = (previewTime = null) => {
@@ -483,10 +491,9 @@ function bindBevVideoPlayers(root) {
       // second scaling/compositing path on every jump. Only an in-flight
       // source replacement needs the held-frame confirmation below.
       if (heldFrame) heldTarget = target;
-      if (queuedSeekTimer !== null) window.clearTimeout(queuedSeekTimer);
-      queuedSeekTimer = null;
-      queuedSeekTarget = null;
+      clearQueuedSeek();
       if (video.readyState < 1) { pendingStart = target; segmentLoader?.prioritize(); update(target); return; }
+      if (!heldFrame && target === video.currentTime) { update(); return; }
       const request = ++seekRequest;
       cancelFrameCheck();
       cancelPendingSeek?.();
@@ -528,17 +535,38 @@ function bindBevVideoPlayers(root) {
       // is fetched. Keep controls responsive and reconcile once it arrives.
       fallbackTimer = window.setTimeout(settle, 800);
     };
+    const isBuffered = (time) => {
+      const ranges = video.buffered;
+      for (let i = 0; i < (ranges?.length || 0); i++) {
+        if (ranges.start(i) <= time && time < ranges.end(i)) return true;
+      }
+      return false;
+    };
+    const previewInterval = 50;
     const queueSeek = (target, delay = 75) => {
       if (disposed) return;
-      const total = Math.max(0, duration());
+      const total = Math.max(0, duration() || Number(seek.max));
       queuedSeekTarget = Math.min(total, Math.max(0, Number(target) || 0));
       update(queuedSeekTarget);
+      const buffered = delay > 0 && isBuffered(queuedSeekTarget);
+      let group = null;
+      if (delay > 0) group = buffered ? "buffered" : segmentLoader?.segmentForTime(queuedSeekTarget);
+      // Buffered previews and motion within one unbuffered GOP keep the
+      // original deadline. Crossing GOPs still coalesces transient requests.
+      if (queuedSeekTimer !== null && group != null && group === queuedSeekGroup) return;
       if (queuedSeekTimer !== null) window.clearTimeout(queuedSeekTimer);
-      queuedSeekTimer = window.setTimeout(() => {
-        const latest = queuedSeekTarget;
-        queuedSeekTimer = null;
-        if (!disposed && latest !== null) seekTo(latest);
-      }, Math.max(0, delay));
+      queuedSeekGroup = group;
+      const flush = () => {
+        if (disposed || queuedSeekTarget === null) return;
+        // Give an in-flight buffered seek a chance to decode before sending
+        // another preview. A return from an unbuffered seek may proceed now.
+        if (buffered && video.seeking && cancelPendingSeek && isBuffered(video.currentTime)) {
+          queuedSeekTimer = window.setTimeout(flush, previewInterval);
+          return;
+        }
+        seekTo(queuedSeekTarget);
+      };
+      queuedSeekTimer = window.setTimeout(flush, buffered ? previewInterval : delay);
     };
     const jump = (direction) => {
       const step = Math.max(0.01, Number(stepSelect.value || 1));
@@ -623,8 +651,11 @@ function bindBevVideoPlayers(root) {
       if (!nativeOnly && typeof createVideoSegmentLoader === "function") {
         segmentLoader = createVideoSegmentLoader(video, {
           url: source,
-          position: () => metadataGeneration !== sourceGeneration && pendingStart === null && queuedSeekTarget === null
-            ? null : timelinePosition(),
+          frameStepSec,
+          // A thumb preview changes the display immediately. Network work
+          // follows the last dispatched seek, not intermediate slider values.
+          position: () => metadataGeneration !== sourceGeneration && pendingStart === null
+            ? null : playbackPosition(),
           attached: startPlayback,
           fallback: () => {
             if (!disposed) loadSource(url, video.getAttribute("poster") || "", true);
@@ -650,9 +681,7 @@ function bindBevVideoPlayers(root) {
       video.pause();
       ++seekRequest;
       cancelPendingSeek?.();
-      if (queuedSeekTimer !== null) window.clearTimeout(queuedSeekTimer);
-      queuedSeekTimer = null;
-      queuedSeekTarget = null;
+      clearQueuedSeek();
       if (poster) video.setAttribute("poster", poster);
       else video.removeAttribute("poster");
       sourceHasStartHint = pendingStart !== null && Number.isFinite(pendingStart);
@@ -723,7 +752,7 @@ function bindBevVideoPlayers(root) {
     const metadataReady = () => {
       if (disposed || metadataGeneration === sourceGeneration) return;
       metadataGeneration = sourceGeneration;
-      const target = Number.isFinite(pendingStart) ? pendingStart : videoT0PlayerPosition(0, duration());
+      const target = queuedSeekTarget ?? pendingStart ?? videoT0PlayerPosition(0, duration());
       pendingStart = null;
       const total = Math.max(0, duration());
       // The exclusive end has no displayable frame in some paused decoders.
@@ -734,7 +763,7 @@ function bindBevVideoPlayers(root) {
       // Avoid restarting that Range request; retain an exact-seek fallback for
       // browsers without fragment support and descriptors without duration.
       if ((total > 0 && video.currentTime >= total) || Math.abs(video.currentTime - position) > 0.001) seekTo(position);
-      else update();
+      else { clearQueuedSeek(); update(); }
       video.playbackRate = Number(rateSelect.value || 1);
       startPlayback();
     };
@@ -802,7 +831,7 @@ function bindBevVideoPlayers(root) {
       ++sourceGeneration;
       ++seekRequest;
       cancelPendingSeek?.();
-      if (queuedSeekTimer !== null) window.clearTimeout(queuedSeekTimer);
+      clearQueuedSeek();
       if (loadTimer !== null) window.clearTimeout(loadTimer);
       listeners.forEach(remove => remove());
     };

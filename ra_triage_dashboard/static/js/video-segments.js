@@ -14,12 +14,13 @@ function videoSegmentManifestUrl(url) {
   return parsed.pathname + parsed.search;
 }
 
-function createVideoSegmentLoader(video, { url, position, attached, fallback }) {
+function createVideoSegmentLoader(video, { url, position, attached, fallback, frameStepSec = 0.1 }) {
   const manifestUrl = videoSegmentManifestUrl(url);
   if (!manifestUrl) return null;
   let stopped = false, suspended = false, initialized = false, pumping = false;
   let mediaSource = null, buffer = null, objectUrl = "", index = null;
   let active = null, needsPump = false, resetParser = false;
+  let boundarySeek = null;
   const requests = new Set(), loaded = new Set(), touched = new Set(), listeners = [];
   const listen = (target, name, handler) => {
     target.addEventListener(name, handler);
@@ -35,6 +36,13 @@ function createVideoSegmentLoader(video, { url, position, attached, fallback }) 
     // A seek to duration still belongs to the final GOP. Do not turn its
     // unmatched exclusive end boundary into a request for the first GOP.
     return at < 0 ? index.segments.length - 1 : at;
+  };
+  const retryBoundarySeek = () => {
+    if (boundarySeek === null || stopped || suspended || video.seeking
+        || video.currentTime !== boundarySeek || !loaded.has(segmentAt(boundarySeek))) return;
+    const target = boundarySeek;
+    boundarySeek = null;
+    video.currentTime = target;
   };
   const append = bytes => new Promise((resolve, reject) => {
     if (stopped) { resolve(); return; }
@@ -146,6 +154,7 @@ function createVideoSegmentLoader(video, { url, position, attached, fallback }) 
       if (!stopped && !controller.signal.aborted) {
         if (received !== segment.last - segment.first + 1) throw Error("truncated segment");
         loaded.add(number);
+        retryBoundarySeek();
       }
     } finally {
       controller.abort();
@@ -243,12 +252,28 @@ function createVideoSegmentLoader(video, { url, position, attached, fallback }) 
     await append(Uint8Array.from(atob(index.init), char => char.charCodeAt(0)));
     if (stopped) return;
     initialized = true;
-    ["seeking", "play", "pause", "timeupdate", "ratechange", "waiting"].forEach(name => listen(video, name, prioritize));
+    listen(video, "seeking", () => {
+      boundarySeek = null;
+      const time = video.currentTime;
+      if (!loaded.has(segmentAt(time))) {
+        const ranges = video.buffered;
+        for (let i = 0; i < (ranges?.length || 0); i++) {
+          const gap = ranges.start(i) - time;
+          // A backward seek just outside a cached range can settle on its
+          // first frame. Retry once the preceding GOP has actually arrived.
+          if (gap > 0 && gap <= frameStepSec) boundarySeek = time;
+        }
+      }
+      prioritize();
+    });
+    listen(video, "seeked", retryBoundarySeek);
+    ["play", "pause", "timeupdate", "ratechange", "waiting"].forEach(name => listen(video, name, prioritize));
     prioritize();
   };
   // Defer so the caller owns this controller before any fallback can run.
   Promise.resolve().then(start).catch(() => recover());
   return { prioritize, dispose, recover,
+    segmentForTime: time => initialized ? segmentAt(time) : null,
     suspend() {
       suspended = true;
       if (active) { resetParser = true; active.controller.abort(); }

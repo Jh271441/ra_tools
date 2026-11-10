@@ -44,6 +44,69 @@ function playerFixture({readyState=4,context=null,initialTime=0,durationSec=40,.
  undecoded.flush(75);assert.equal(undecoded.textPosition(),21,'Pending metadata retains the requested text position');
  assert.equal(undecoded.video.seeks.length,0,'No video decoding is needed to select text time');
  undecoded.ctx.releaseBevVideoPlayer(undecoded.root);
+ const early = playerFixture({readyState:0,duration:NaN,durationSec:0});
+ early.elements.seek.value = '24';
+ early.elements.seek.fire('input');
+ early.video.readyState = 4;
+ early.video.duration = 40;
+ early.video.fire('loadedmetadata');
+ assert.deepEqual(early.video.seeks,[24],'Metadata must honor a slider move that is still queued');
+ early.ctx.releaseBevVideoPlayer(early.root);
+
+ const warm = playerFixture({initialTime:20,buffered:{length:1,start:()=>18,end:()=>24}});
+ const slider = warm.elements.seek;
+ slider.value = '20.2';
+ slider.fire('input');
+ const previewTimer = [...warm.timers].find(([,timer])=>timer.ms===50)?.[0];
+ for (const target of ['20.4','20.6','20.8']) {
+  slider.value = target;
+  slider.fire('input');
+ }
+ assert.ok(warm.timers.has(previewTimer),'Continuous buffered input must not postpone the first preview');
+ warm.flush(50);
+ assert.deepEqual(warm.video.seeks,[20.8],'The video advances to the latest buffered target before release');
+ warm.video.seeking = true;
+ slider.value = '21.5';
+ slider.fire('input');
+ warm.flush(50);
+ assert.deepEqual(warm.video.seeks,[20.8],'Buffered previews do not interrupt a decoding seek');
+ warm.video.seeking = false;
+ warm.video.fire('seeked');
+ warm.flush(50);
+ slider.fire('change');
+ assert.deepEqual(warm.video.seeks,[20.8,21.5],'Release does not restart an identical seek');
+ warm.ctx.releaseBevVideoPlayer(warm.root);
+
+ const cold = playerFixture({initialTime:20});
+ let segmentPosition;
+ cold.ctx.createVideoSegmentLoader = (_video,{position}) => {
+  segmentPosition = position;
+  return {segmentForTime: time=>Math.floor(time/2),prioritize(){},dispose(){}};
+ };
+ cold.video._setBevVideoTrack('/segmented.mp4');
+ cold.video.readyState = 4;
+ cold.video.fire('loadedmetadata');
+ cold.video.fire('loadeddata');
+ const coldSlider = cold.elements.seek;
+ coldSlider.value = '10.2';
+ coldSlider.fire('input');
+ const fetchTimer = [...cold.timers].find(([,timer])=>timer.ms===75)?.[0];
+ coldSlider.value = '10.9';
+ coldSlider.fire('input');
+ assert.ok(cold.timers.has(fetchTimer),'Motion in one cold GOP keeps the first request deadline');
+ assert.equal(segmentPosition(),20,'Transient thumb movement does not redirect the loader');
+ cold.flush(75);
+ assert.equal(segmentPosition(),10.9,'The loader follows the committed target');
+ coldSlider.value = '6.2';
+ coldSlider.fire('input');
+ const obsoleteTimer = [...cold.timers].find(([,timer])=>timer.ms===75)?.[0];
+ coldSlider.value = '4.7';
+ coldSlider.fire('input');
+ assert.ok(!cold.timers.has(obsoleteTimer),'Moving across cold GOPs retires the obsolete target');
+ coldSlider.fire('change');
+ assert.deepEqual(cold.video.seeks,[10.9,4.7],'Release seeks the final cold target immediately');
+ cold.ctx.releaseBevVideoPlayer(cold.root);
+
  const media={assets:{video:{url:'/bev.mp4',tracks:[{url:'/bev.mp4'},{url:'/api/assets/cn1/camera-video'},{url:'/api/assets/cn1/bev-closeup-video',source_id:'bev_closeup',label:'局部 BEV 视频',poster_url:'/closeup-t0.jpg'}]},frames:[{url:'/before.jpg',offset_ms:-1000},{url:'/full-bev.jpg',offset_ms:0}]},camera:{frames:[{url:'/full-camera.jpg',offset_ms:0}]}};
  const descriptor=p.ctx.videoWithFramePosters(media);
  p.ctx.escapeHtml=String;
