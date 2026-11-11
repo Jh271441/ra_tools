@@ -45,16 +45,16 @@ async function pausedSegments() {
   video.currentTime = 2.2; video.dispatchEvent(new Event('seeking'));
   for (let i = 0; i < 10; i++) await tick();
   assert.equal(requests.at(-1).range, 'bytes=100-199', 'backward seek still loads the requested GOP');
-  video.paused = false;
   video.readyState = 4;
   video.buffered = {length: 1, start: () => 2, end: () => 3};
-  video.dispatchEvent(new Event('play'));
+  video.dispatchEvent(new Event('timeupdate'));
   for (let i = 0; i < 10; i++) await tick();
   assert.ok(!requests.some(row => row.range === 'bytes=0-99'), 'a short forward reserve gets priority');
   video.buffered = {length: 1, start: () => 2, end: () => 8};
   video.dispatchEvent(new Event('timeupdate'));
   for (let i = 0; i < 10; i++) await tick();
-  assert.deepEqual(requests.at(-1), {range: 'bytes=0-99', priority: 'low'});
+  assert.deepEqual(requests.at(-1), {range: 'bytes=0-99', priority: 'low'},
+    'a paused player with the forward GOP and enough reserve can warm a left neighbor');
   video.dispatchEvent(new Event('timeupdate'));
   for (let i = 0; i < 10; i++) await tick();
   assert.equal(requests.filter(row => row.range === 'bytes=0-99').length, 1, 'a failed preload does not retry');

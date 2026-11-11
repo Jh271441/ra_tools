@@ -1,5 +1,26 @@
 # Native video loading restoration — 2026-10-23
 
+## Interrupted cold seeks — 2026-11-11 / cache787
+
+When a new seek supersedes a segment transfer, retain its received prefix
+for the lifetime of the selected source. Returning to the interrupted segment
+replays the prefix into the media parser and requests only the missing bytes
+with the same fingerprint. Keep at most two prefixes of up to 3 MiB each.
+The same content-range and length checks guard the resumed response.
+
+A paused player can warm one preceding GOP after the target frame and next
+GOP are ready, provided the forward buffer covers the measured transfer
+cost and margin. The selected video's target and any needed forward data
+still have priority. Playback uses the same encoded samples.
+
+In local Chromium 151 on a synthetic 1080p clip, the first left jump after
+the forward buffer filled and 650 ms elapsed took 68 ms at 20 Mbps / 40 ms,
+compared with 369 ms before the change. With a 1.4 s interruption at
+2 Mbps / 150 ms, returning to the left target took 1.88 s versus 3.13 s,
+and returning to the right target took 1.68 s versus 2.92 s. A first visit
+to an unbuffered segment at 2 Mbps still took about 3 s. Measurements and
+decoded-frame comparisons are in `/private/tmp/bev-cold-20261111/`.
+
 ## Rewind during playback — 2026-11-10 / cache785
 
 At t0 the previous GOP has not been played. Once the selected video is

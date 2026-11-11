@@ -25,6 +25,10 @@ function createVideoSegmentLoader(video, {
   let boundarySeek = null;
   let secondsPerByte = Infinity, rewindAttempted = false;
   const forwardRetention = 12;
+  // Keep only the received prefixes of two interrupted transfers. Their
+  // fingerprint is fixed for the lifetime of this loader.
+  const interrupted = new Map();
+  const maxPrefixBytes = 3 * 1024 * 1024;
   const requests = new Set(), loaded = new Set(), touched = new Set(), listeners = [];
   const listen = (target, name, handler) => {
     target.addEventListener(name, handler);
@@ -67,6 +71,7 @@ function createVideoSegmentLoader(video, {
     if (stopped) return;
     stopped = true;
     requests.forEach(request => request.abort());
+    interrupted.clear();
     listeners.forEach(remove => remove());
     if (mediaSource?.readyState === "open") {
       try { buffer?.abort(); } catch { /* A source can close during teardown. */ }
@@ -102,14 +107,13 @@ function createVideoSegmentLoader(video, {
     const time = current(), at = segmentAt(time);
     if (!loaded.has(at)) return at;
     const previous = at - 1;
-    // Midpoint startup has no played data to retain on the left. Warm one
-    // previous GOP once playback has enough contiguous forward data.
-    if (!video.paused && !video.seeking && video.readyState >= 3 && previous >= 0
+    // Warm one left neighbor after the selected video is ready and has
+    // enough forward reserve. While paused, give the forward GOP its turn
+    // first, including the bytes needed to flush a late target frame.
+    const canWarmRewind = video.paused ? video.readyState >= 2 && loaded.has(at + 1) : video.readyState >= 3;
+    if (canWarmRewind && !video.seeking && previous >= 0
         && !loaded.has(previous) && !rewindAttempted
         && Number.isFinite(secondsPerByte) && hasPlaybackReserve(time, segmentBytes(previous))) return previous;
-    // The next GOP can flush the target's final reordered frames. While
-    // paused, stop there: backward prefetch competes with UI requests and is
-    // unnecessary until the reviewer actually seeks backward.
     const candidates = video.paused ? [at + 1]
       : index.segments.map((_, i) => i).filter(i => i > at
         && index.segments[i].start < current() + Math.max(4, video.playbackRate * 4));
@@ -142,6 +146,10 @@ function createVideoSegmentLoader(video, {
   };
   const fetchSegment = async (number, rewind) => {
     const segment = index.segments[number];
+    let prefix = interrupted.get(number) || { chunks: [], length: 0 };
+    interrupted.delete(number);
+    const resumedBytes = prefix.length;
+    const first = segment.first + resumedBytes;
     const source = new URL(url, location.origin);
     source.hash = "";
     source.searchParams.delete("stream");
@@ -149,28 +157,45 @@ function createVideoSegmentLoader(video, {
     source.searchParams.set("fingerprint", index.fingerprint);
     const controller = new AbortController();
     requests.add(controller);
-    const transfer = { number, controller, rewind, received: 0, started: performance.now() };
+    const transfer = { number, controller, rewind, resumedBytes, received: resumedBytes, started: performance.now() };
     active = transfer;
     if (rewind) rewindAttempted = true;
     let reader = null;
     try {
       const response = await fetch(source.pathname + source.search, {
-        headers: { Range: `bytes=${segment.first}-${segment.last}` }, signal: controller.signal,
+        headers: { Range: `bytes=${first}-${segment.last}` }, signal: controller.signal,
         priority: rewind || (video.paused && number !== segmentAt(current())) ? "low" : "auto",
       });
-      if (stopped) return;
-      const expected = `bytes ${segment.first}-${segment.last}/${index.size}`;
+      if (stopped || controller.signal.aborted) return;
+      const expected = `bytes ${first}-${segment.last}/${index.size}`;
       if (response.status !== 206 || response.headers.get("Content-Range") !== expected || !response.body) {
         throw Error("unexpected segment range");
       }
       reader = response.body.getReader();
       touched.add(number);
+      if (resumedBytes) {
+        // A seek may have reset the MSE parser. Replay the moof and existing
+        // sample bytes locally, then append the Range response's suffix.
+        const bytes = new Uint8Array(resumedBytes);
+        let offset = 0;
+        for (const chunk of prefix.chunks) {
+          bytes.set(chunk, offset);
+          offset += chunk.byteLength;
+        }
+        prefix.chunks = [bytes];
+        await append(bytes);
+        if (!stopped && !controller.signal.aborted) onBufferAppended();
+      }
       for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
         if (stopped || controller.signal.aborted) break;
         transfer.received += value.byteLength;
         if (transfer.received > segmentBytes(number)) throw Error("oversized segment");
+        if (prefix && transfer.received <= maxPrefixBytes) {
+          prefix.chunks.push(value);
+          prefix.length = transfer.received;
+        } else prefix = null;
         // Streaming append lets the first decodable frames play immediately;
         // neither the rest of this GOP nor the entire clip is a readiness gate.
         await append(value);
@@ -178,11 +203,17 @@ function createVideoSegmentLoader(video, {
       }
       if (!stopped && !controller.signal.aborted) {
         if (transfer.received !== segmentBytes(number)) throw Error("truncated segment");
-        if (!rewind) secondsPerByte = Math.max(1, performance.now() - transfer.started) / (1000 * transfer.received);
+        if (!rewind) {
+          secondsPerByte = Math.max(1, performance.now() - transfer.started) / (1000 * (transfer.received - resumedBytes));
+        }
         loaded.add(number);
         retryBoundarySeek();
       }
     } finally {
+      if (!stopped && controller.signal.aborted && prefix?.length && prefix.length < segmentBytes(number)) {
+        interrupted.set(number, prefix);
+        if (interrupted.size > 2) interrupted.delete(interrupted.keys().next().value);
+      }
       controller.abort();
       requests.delete(controller);
       reader?.releaseLock();
@@ -224,12 +255,14 @@ function createVideoSegmentLoader(video, {
     const next = active ? nextSegment() : -1;
     if (active && next !== active.number) {
       const time = current(), at = segmentAt(time);
-      if (!video.paused && loaded.has(at)) {
+      if (loaded.has(at)) {
         if (active.rewind && active.number === at - 1) {
           const elapsed = (performance.now() - active.started) / 1000;
-          const cost = Math.max(secondsPerByte, active.received > 0 ? elapsed / active.received : 0);
+          const downloaded = active.received - active.resumedBytes;
+          const cost = Math.max(secondsPerByte, downloaded > 0 ? elapsed / downloaded : 0);
           if (hasPlaybackReserve(time, segmentBytes(active.number) - active.received, cost)) return;
-        } else if (active.number > at && next < at && index.segments[active.number].end <= time + forwardRetention) {
+        } else if (!video.paused && active.number > at && next < at
+            && index.segments[active.number].end <= time + forwardRetention) {
           // A buffered rewind can shrink the lookahead window. The pending
           // forward fragment still belongs to this playback and can finish.
           return;

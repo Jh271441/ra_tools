@@ -78,7 +78,7 @@ const server=http.createServer((req,res)=>{
   await page.evaluate(()=>{const native=document.createElement('video');native.muted=true;native.width=320;native.src='/native/current.mp4';document.querySelector('#reference').append(native);window.reference=native;watch(native);});
   await page.waitForFunction(()=>reference.readyState>=1);
   const pixels=[];
-  for(const target of [20.05,19.95,20.15,23.05,2.05,38.95,20.05]){
+  for(const target of [20.05,19.95,20.15,23.05,2.05,38.95,19,25,20.05]){
    const hashes=await page.evaluate(async target=>({target,native:await frameHash(reference,target),stream:await frameHash(v,target)}),target);
    assert.equal(hashes.stream.mediaTime,hashes.native.mediaTime);assert.equal(hashes.stream.hash,hashes.native.hash,'pixel mismatch at '+target);pixels.push(hashes);
   }
@@ -174,10 +174,45 @@ const server=http.createServer((req,res)=>{
   assert.equal(await page.locator('[data-video-play]').getAttribute('aria-pressed'),'true');
   results.push({scenario:'playing-backward-across-cold-boundary',target:rewind.target});
   await page.close();
+  const current=indexes.find(x=>x.name==='current').manifest;
+  for(const [firstKey,returnKey,step,target] of [
+   ['ArrowLeft','ArrowRight',1,19],['ArrowRight','ArrowLeft',5,25],
+  ]){
+   page=await makePage({network:{mbps:2,latency:150}});await ready(page);
+   await page.waitForFunction(()=>v.buffered.length&&v.buffered.end(v.buffered.length-1)>=23.99);
+   await page.evaluate(step=>document.querySelector('[data-video-step]').value=String(step),step);
+   const player=page.locator('[data-bev-video-player]');
+   const segment=current.segments.find(row=>row.start<=target&&target<row.end);
+   const start=logs.length;
+   await player.press(firstKey);
+   await page.waitForFunction(({start,target})=>{
+    for(let i=0;i<v.buffered.length;i++){
+     const end=v.buffered.end(i);
+     if(v.buffered.start(i)<=start+.001&&end>start+.1&&end<target) return true;
+    }
+    return false;
+   },{start:segment.start,target});
+   await player.press(returnKey);
+   await page.waitForFunction(()=>v.currentTime===20&&!v.seeking);
+   await player.press(firstKey);
+   await page.waitForFunction(target=>v.paused&&!v.seeking&&v._lastPresented===target,target);
+   const ranges=logs.slice(start).filter(row=>row.kind==='segment')
+    .map(row=>row.range.match(/^bytes=(\d+)-(\d+)$/))
+    .filter(match=>match&&Number(match[2])===segment.last);
+   assert.equal(ranges.length,2);
+   assert.equal(Number(ranges[0][1]),segment.first);
+   assert.ok(Number(ranges[1][1])>segment.first,'returning to a cold target downloads only the missing suffix');
+   assert.ok(page.networkCancellations.some(url=>url?.includes('playback=segments-v1')));
+   const native=pixels.find(row=>row.target===target).native;
+   const stream=await page.evaluate(target=>frameHash(v,target),target);
+   assert.deepEqual(stream,native,'resuming a partial fragment must preserve the exact frame pixels');
+   results.push({scenario:'resume-interrupted-cold-seek',target,
+    resumedBytes:Number(ranges[1][1])-segment.first,pixels:{native,stream}});
+   await page.close();
+  }
   const start=logs.length;page=await makePage({network:{mbps:2,latency:150}});await ready(page);
   await page.evaluate(()=>{v.currentTime=2.05;setTimeout(()=>v.currentTime=38.05,200);setTimeout(()=>v.currentTime=6.05,400);setTimeout(()=>v.currentTime=6.15,500);setTimeout(()=>v.currentTime=6.25,600);});
   await page.waitForFunction(()=>!v.seeking&&v.readyState>=2&&Math.abs(v.currentTime-6.25)<.001);
-  const current=indexes.find(x=>x.name==='current').manifest;
   const six=current.segments.find(x=>x.start<=6&&x.end>6);
   assert.equal(logs.slice(start).filter(x=>x.kind==='segment'&&x.range===`bytes=${six.first}-${six.last}`).length,1);
   // CDP throttles delivery after the loopback server can finish writing. Check
