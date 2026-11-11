@@ -1233,19 +1233,22 @@ function pageUrl(page, options = {}) {
   } else if (baselineValue && baselineValue !== "0508") {
     url.searchParams.set("baselines", baselineValue);
   }
-  if (page === "review" && window.location.pathname === url.pathname) {
+  if (["review", "labeling"].includes(page) && window.location.pathname === url.pathname) {
     const previous = new URLSearchParams(window.location.search);
-    const notificationLink = previous.get("source") === "combined_review"
-      && previous.get("channel") === "case" && previous.get("comments") === "1";
-    const sameScope = notificationLink && ["issue", "run", "work_split"].every(
+    const combinedReview = page === "review" && previous.get("source") === "combined_review"
+      && previous.get("channel") === "case";
+    const scopeKeys = page === "labeling" ? ["issue", "task"] : ["issue", "run", "work_split"];
+    const sameScope = previous.get("issue") && previous.get("comments") === "1"
+      && (page === "labeling" || combinedReview) && scopeKeys.every(
       key => (previous.get(key) || "") === (url.searchParams.get(key) || "")
     ) && normalizeBaselineIds(previous.get("baselines") || defaults).sort().join(",")
       === normalizeBaselineIds(baselineValue || defaults).sort().join(",");
     // Canonicalization must not erase an exact notification target. Never carry
     // it to another Issue, Run, task or dataset when the user navigates away.
     if (sameScope) {
-      url.searchParams.set("source", "combined_review");
-      url.searchParams.set("channel", "case");
+      if (combinedReview) url.searchParams.set("source", "combined_review");
+      const channel = previous.get("channel");
+      if (["case", "campaign", "both"].includes(channel)) url.searchParams.set("channel", channel);
       url.searchParams.set("comments", "1");
       const commentId = Number(previous.get("comment"));
       if (Number.isSafeInteger(commentId) && commentId > 0) url.searchParams.set("comment", String(commentId));

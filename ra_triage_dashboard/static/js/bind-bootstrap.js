@@ -1312,17 +1312,10 @@ async function bootstrap() {
       await settleInitialRequests([initialDetailRequest], "问题详情");
       if (!isPageContextCurrent(bootstrapContext)) return;
     }
-    if (initialRoute.openComments && initialRoute.issue) {
+    if (initialRoute.page !== "labeling" && initialRoute.openComments && initialRoute.issue) {
       await sessionRequest;
       if (!isPageContextCurrent(bootstrapContext)) return;
-      if (initialRoute.page === "labeling") {
-        await openCaseLabelingDiscussion(
-          initialRoute.commentId || 0,
-          initialRoute.discussionChannel || "",
-        );
-      } else {
-        await openReviewRouteDiscussion(initialRoute);
-      }
+      await openReviewRouteDiscussion(initialRoute);
     }
     if (!isPageContextCurrent(bootstrapContext)) return;
     showPage(initialRoute.page, {

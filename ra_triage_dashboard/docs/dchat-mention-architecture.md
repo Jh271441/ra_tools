@@ -93,6 +93,9 @@ For Issues in live version datasets, the dispatcher resolves `version-YYYYMMDD`
 from the membership table when the Issue's scope has no static registry entry.
 On older unscoped Case-labeling links, the server resolves the same selector
 after checking writer access and redirects with the original Issue and comment.
+Case labeling opens the discussion after the requested detail loads. The exact
+comment stays in the URL through refresh and history while the Issue, task and
+dataset match.
 
 For direct Issue exclusion, all comments are validated before the first Trail
 write. Only after Trail reports a complete successful readback does the server

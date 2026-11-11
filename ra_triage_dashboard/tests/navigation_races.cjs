@@ -404,8 +404,59 @@ async function delayedAnalysisFacetCannotReplaceNewRunOptions() {
   first.resolve({items: [{split_id: 'old-options'}]}); await oldRead;
   assert.equal(f.state.reviewAnalysis.workSplitOptions[0].split_id, 'new-options');
 }
+async function caseLabelingCommentLinkKeepsItsTarget() {
+  const f = fixture('labeling');
+  f.load('case-labeling.js');
+  f.s.PAGE_ROUTES.labeling.path = '/case-labeling';
+  f.state.selectedBaselineIds = ['version-20261023'];
+  f.s.window.location.search = '?issue=cn1&task=task-1&comments=1&channel=case&comment=17&baselines=version-20261023';
+  const discussion = [];
+  const detail = defer();
+  Object.assign(f.s, {
+    withBase: path => '/manual' + path,
+    defaultBaselineIdsFromConfig: () => ['0508'],
+    normalizeBaselineIds: f.s.parseFilterList,
+    restoreCaseLabelingRouteState: () => ({}),
+    loadCaseLabelingTasks: async () => {},
+    loadCaseLabelingCases: async () => {},
+    renderCaseLabelingStatusPicker() {}, renderCaseLabelingAuthorPicker() {},
+    renderCaseLabelingAssigneePicker() {}, renderCaseLabelingLabelPicker() {},
+    renderCaseLabelingGtPicker() {}, renderCaseLabelingDiscussionPicker() {},
+    renderCaseLabelingExclusionPicker() {},
+    async selectCaseLabelingIssue(issue, options) {
+      assert.equal(options.updateRoute, false);
+      await detail.promise;
+      f.state.caseLabeling.caseData = {issue_id: issue};
+    },
+    openCaseLabelingDiscussion: async (id, channel) => discussion.push([id, channel]),
+  });
+  const options = {issue: 'cn1', taskId: 'task-1'};
+  const params = overrides => new URL(f.s.pageUrl('labeling', {...options, ...overrides}), f.s.window.location.origin).searchParams;
+  assert.equal(params({}).get('comment'), '17');
+  assert.equal(params({}).get('comments'), '1');
+  assert.equal(params({}).get('channel'), 'case');
+  for (const changed of [{issue: 'cn2'}, {taskId: 'task-2'}, {baselines: ['0508']}]) {
+    assert.equal(params(changed).has('comment'), false);
+  }
+  const route = {issue: 'cn1', openComments: true, commentId: 17, discussionChannel: 'case'};
+  const entry = f.s.enterCaseLabeling({route});
+  await tick();
+  assert.deepEqual(discussion, []);
+  detail.resolve();
+  await entry;
+  assert.deepEqual(discussion, [[17, 'case']]);
+
+  const lateDetail = defer();
+  f.s.selectCaseLabelingIssue = () => lateDetail.promise;
+  const staleEntry = f.s.enterCaseLabeling({route});
+  await tick();
+  f.navigate('review');
+  lateDetail.resolve();
+  await staleEntry;
+  assert.deepEqual(discussion, [[17, 'case']], 'a late detail must not reopen discussion after navigation');
+}
 (async () => {
-  for (const test of [bootstrapRunDependenciesMatchTheVisiblePage, labelingBackgroundRefreshKeepsTrailHydration, optionalDirectoryDoesNotBlockIdentityOrOverwriteAnotherSession, delayedOverviewCannotReplaceNewScopeCounts, delayedAnalysisFacetCannotReplaceNewRunOptions, cronPaintDoesNotWaitForSharedBootstrap,bootstrapResumesPendingCombinedContext,assignmentAccessWaitsForWriterAndAvoidsAdminRequests,delayedReviewReloadCannotReclaimLabeling, navigationEpochTracksRealPageCommits, loadersStartAfterCanonicalRouteCommit, debounceCannotFireAfterDepartureOrRoundTrip, listPaginationAndPollingIgnoreObsoleteViews, lateTaskContextCannotRewriteLabelingUrl, bootstrapNeverReplaysInitialRouteOverNewNavigation, summaryWaitsForIdentityInsteadOfFallingBackToReview, labelingEntryAndSummaryResponsesStayScoped]) {
+  for (const test of [caseLabelingCommentLinkKeepsItsTarget, bootstrapRunDependenciesMatchTheVisiblePage, labelingBackgroundRefreshKeepsTrailHydration, optionalDirectoryDoesNotBlockIdentityOrOverwriteAnotherSession, delayedOverviewCannotReplaceNewScopeCounts, delayedAnalysisFacetCannotReplaceNewRunOptions, cronPaintDoesNotWaitForSharedBootstrap,bootstrapResumesPendingCombinedContext,assignmentAccessWaitsForWriterAndAvoidsAdminRequests,delayedReviewReloadCannotReclaimLabeling, navigationEpochTracksRealPageCommits, loadersStartAfterCanonicalRouteCommit, debounceCannotFireAfterDepartureOrRoundTrip, listPaginationAndPollingIgnoreObsoleteViews, lateTaskContextCannotRewriteLabelingUrl, bootstrapNeverReplaysInitialRouteOverNewNavigation, summaryWaitsForIdentityInsteadOfFallingBackToReview, labelingEntryAndSummaryResponsesStayScoped]) {
     await test(); console.log('PASS ' + test.name);
   }
 })().catch(error => {console.error(error); process.exitCode = 1;});

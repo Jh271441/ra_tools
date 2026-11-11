@@ -1823,8 +1823,15 @@ async function enterCaseLabeling({ route = null } = {}) {
   await loadCaseLabelingCases({ page: state.caseLabeling.page, persistRoute: false });
   if (!isPageContextCurrent(pageContext)) return;
   const issue = route?.issue || filters.issue || "";
-  if (issue) await selectCaseLabelingIssue(issue, { updateRoute: true });
-  else closeCaseLabelingDetail({ updateRoute: false });
+  if (!issue) {
+    closeCaseLabelingDetail({ updateRoute: false });
+    return;
+  }
+  const openComments = Boolean(route?.openComments);
+  await selectCaseLabelingIssue(issue, { updateRoute: !openComments });
+  if (openComments && isPageContextCurrent(pageContext) && state.caseLabeling.caseData?.issue_id === issue) {
+    await openCaseLabelingDiscussion(route.commentId, route.discussionChannel);
+  }
 }
 
 function bindCaseLabelingEvents() {
