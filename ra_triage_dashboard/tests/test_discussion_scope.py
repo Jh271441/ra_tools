@@ -1,12 +1,15 @@
 """Discussion destinations, historical visibility and cross-entry consistency."""
 import asyncio
+import re
 import subprocess
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
+from urllib.parse import parse_qs, urlsplit
 
 from fastapi import HTTPException
+from starlette.requests import Request
 import test_combined_reviews as workflow
 from ra_triage_dashboard.app.routers.labeling_api import comments as labeling
 from ra_triage_dashboard.app.routers import campaigns
@@ -19,6 +22,17 @@ class DiscussionScopeTest(unittest.TestCase):
 
     def create(self, **kwargs):
         return self.db.create_review_comment(issue_id='cn1', author='alice', body='discussion', **kwargs)
+
+    def register_version_member(self):
+        self.db.ingest_version_dataset(
+            family="20261023",
+            policy={"sampling_policy": "version_probability_v3", "seed": "a" * 64},
+            items=[{
+                "issue_id": "cn1", "software_version": "1.gen4-release-20261023.594",
+                "state": "published", "is_target": True, "is_low": True, "is_sample": False,
+            }],
+            batch_key="version-comment", actor="test",
+        )
 
     def test_task_comments_without_old_links_appear_in_both_entries(self):
         task = self.campaign(0)
@@ -123,6 +137,64 @@ class DiscussionScopeTest(unittest.TestCase):
         self.assertIn('baselines=0508',sent[0][1])
         self.assertNotIn('baselines=scope',sent[0][1])
         self.assertEqual(self.db.comment_notification_status()['sent'],1)
+
+    def test_notification_links_for_version_member_outside_static_registry(self):
+        from ra_triage_dashboard.app.dchat import DChatSendResult
+        from ra_triage_dashboard.app.review_notification_dispatcher import ReviewNotificationDispatcher
+
+        self.register_version_member()
+        comment = self.create(discussion_channel="case", notification_recipients=["bob"])
+        settings = SimpleNamespace(
+            dchat_delivery_mode="loopback",
+            kylin_sso_return_url="https://example.test/manual/review",
+            dchat_max_attempts=3,
+        )
+
+        async def dispatch():
+            dispatcher = ReviewNotificationDispatcher(settings, self.db, baseline_ids_by_scope={})
+            self.assertTrue(dispatcher._dispatch_one())
+            self.assertFalse(dispatcher._dispatch_one())
+
+        with patch(
+            "ra_triage_dashboard.app.review_notification_dispatcher.DChatLoopbackClient.send_to_username",
+            return_value=DChatSendResult("trace", "message"),
+        ) as send:
+            asyncio.run(dispatch())
+        send.assert_called_once()
+        links = [urlsplit(url) for url in re.findall(r"\]\((https://[^)]+)\)", send.call_args.args[1])]
+        self.assertEqual([link.path for link in links], ["/manual/case-labeling"] * 3)
+        detail = {"issue": ["cn1"], "baselines": ["version-20261023"]}
+        discussion = {**detail, "comments": ["1"], "channel": ["case"], "comment": [str(comment["id"])]}
+        self.assertEqual([parse_qs(link.query) for link in links], [detail, discussion, discussion])
+
+    def test_legacy_case_link_adds_dataset_without_changing_explicit_routes_or_access(self):
+        from ra_triage_dashboard.app.routers import core
+
+        self.register_version_member()
+        query = "issue=cn1&comments=1&channel=case&comment=221"
+
+        def request(params):
+            return Request({"type": "http", "query_string": params.encode()})
+
+        with patch.object(core, "database", self.db), patch.object(
+            core, "baseline_registry", SimpleNamespace(scope_to_id=lambda scope: None),
+        ), patch.object(core, "settings", SimpleNamespace(base_path="/manual")), patch.object(
+            core, "_writer_identity",
+        ) as require_writer:
+            response = asyncio.run(core.case_labeling_page(request(query)))
+            self.assertEqual(response.status_code, 307)
+            self.assertEqual(response.headers["cache-control"], "no-store")
+            location = urlsplit(response.headers["location"])
+            self.assertEqual(location.path, "/manual/case-labeling")
+            self.assertEqual(parse_qs(location.query), {**parse_qs(query), "baselines": ["version-20261023"]})
+            for suffix in ("&baselines=0508", "&baseline_scopes=0508", "&task=chosen-task"):
+                with self.subTest(suffix=suffix):
+                    response = asyncio.run(core.case_labeling_page(request(query + suffix)))
+                    self.assertEqual(response.status_code, 200)
+            require_writer.side_effect = HTTPException(403, "writer required")
+            with self.assertRaises(HTTPException) as error:
+                asyncio.run(core.case_labeling_page(request(query)))
+            self.assertEqual(error.exception.status_code, 403)
 
     def test_actual_frontend_discussion_behavior(self):
         root=Path(__file__).resolve().parents[2]

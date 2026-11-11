@@ -409,6 +409,21 @@ class DatabaseVersionDatasetsMixin(VersionCampaignsMixin, VersionRunConsolidatio
                 ).fetchall()
             }
 
+    def version_baseline_id_for_issue(self, issue_id: str) -> str:
+        """Find the Workbench dataset selector for an existing version member."""
+        with self.connect() as conn:
+            dataset = conn.execute(
+                """
+                SELECT d.release_family FROM version_datasets d
+                JOIN version_dataset_items v ON v.dataset_id = d.id
+                WHERE v.issue_id = ?
+                ORDER BY v.is_target DESC, d.release_family DESC
+                LIMIT 1
+                """,
+                (issue_id,),
+            ).fetchone()
+        return f"version-{dataset['release_family']}" if dataset else ""
+
     def version_dataset_scopes(self, dataset_id):
         with self.connect() as conn:
             return [

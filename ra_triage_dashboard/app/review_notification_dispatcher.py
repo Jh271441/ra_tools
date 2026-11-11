@@ -85,12 +85,17 @@ class ReviewNotificationDispatcher:
                 )
             elif notification_kind == "comment":
                 source = resolve_comment_source(self.database, int(item["comment_id"]))
+                issue_id = str(item["issue_id"])
+                channel = str(item.get("discussion_channel") or "model_review")
+                baseline_id = self.baseline_ids_by_scope.get(str(item.get("baseline_scope") or ""), "")
+                if not baseline_id and channel in {"case", "campaign"}:
+                    baseline_id = self.database.version_baseline_id_for_issue(issue_id)
                 review_url = build_discussion_url(
                     self.settings.kylin_sso_return_url,
-                    issue_id=str(item["issue_id"]),
-                    discussion_channel=str(item.get("discussion_channel") or "model_review"),
+                    issue_id=issue_id,
+                    discussion_channel=channel,
                     campaign_id=str(item.get("campaign_id") or ""),
-                    baseline_id=self.baseline_ids_by_scope.get(str(item.get("baseline_scope") or ""), ""),
+                    baseline_id=baseline_id,
                     model_run_id=str(item.get("model_run_id") or ""),
                     comment_id=int(item["comment_id"]) if item.get("comment_id") else None,
                     notification_source=source,

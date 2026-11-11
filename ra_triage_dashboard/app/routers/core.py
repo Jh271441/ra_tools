@@ -5,6 +5,7 @@ import re
 import time
 from datetime import datetime, timezone
 from typing import Any
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, BackgroundTasks, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
@@ -170,7 +171,6 @@ async def index() -> HTMLResponse:
 
 @router.get("/daily-review", include_in_schema=False)
 async def legacy_daily_review(request: Request):
-    from urllib.parse import urlencode
     from ..web_paths import with_base_path
     old=request.query_params
     dataset=old.get('dataset','1009')
@@ -192,11 +192,32 @@ async def case_labeling_new_task_page(request: Request) -> HTMLResponse:
     )
 
 
+def _case_labeling_link_baseline_id(issue_id: str) -> str:
+    issue = database.get_issue(issue_id)
+    if issue is None:
+        return ""
+    return (
+        baseline_registry.scope_to_id(str(issue.get("baseline_scope") or ""))
+        or database.version_baseline_id_for_issue(issue_id)
+    )
+
+
 @router.get("/case-labeling", include_in_schema=False)
-async def case_labeling_page(request: Request) -> HTMLResponse:
+async def case_labeling_page(request: Request) -> Response:
     """Serve the free Case-labeling workspace to writers and administrators."""
 
     await asyncio.to_thread(_writer_identity, request)
+    query = request.query_params
+    issue_id = query.get("issue", "").strip()
+    if issue_id and not any(key in query for key in ("baselines", "baseline_scopes", "task")):
+        baseline_id = await asyncio.to_thread(_case_labeling_link_baseline_id, issue_id)
+        if baseline_id:
+            params = urlencode([*query.multi_items(), ("baselines", baseline_id)])
+            return RedirectResponse(
+                with_base_path(settings.base_path, "/case-labeling") + "?" + params,
+                status_code=307,
+                headers={"Cache-Control": "no-store"},
+            )
     return HTMLResponse(
         content=INDEX_HTML,
         headers={"Cache-Control": "no-store, max-age=0"},

@@ -88,6 +88,12 @@ is used in suggestions, rendered comments, reply context, and DChat copy.
 The same deep link is exposed by the per-comment Share action, using the native
 share sheet when available and a clipboard fallback otherwise.
 
+Case discussion notifications include the public dataset selector in each link.
+For Issues in live version datasets, the dispatcher resolves `version-YYYYMMDD`
+from the membership table when the Issue's scope has no static registry entry.
+On older unscoped Case-labeling links, the server resolves the same selector
+after checking writer access and redirects with the original Issue and comment.
+
 For direct Issue exclusion, all comments are validated before the first Trail
 write. Only after Trail reports a complete successful readback does the server
 append the local Review exclusion version and its notification outbox rows.
