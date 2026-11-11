@@ -1,25 +1,15 @@
 /* Review uses the same Issue decision dialog, form and append-only endpoint. */
-let reviewDecisionRequest = 0;
 function isReviewDecisionEditor() {
   return state.activePage === "review" && Boolean(caseLabelDecisionUi.editor?.reviewHost);
 }
 async function openReviewIssueDecision(item, opener) {
   if (!hasDashboardWriteRole() || caseLabelDecisionUi.saving) return;
-  const sequence = ++reviewDecisionRequest, context = capturePageContext();
-  const baselines = selectedBaselineQueryValue(), actor = state.session?.username;
-  opener?.setAttribute("aria-busy", "true");
-  try {
-    const data = await api(withBaselineQuery(`/api/labeling/cases/${encodeURIComponent(item.issue_id)}`));
-    if (sequence !== reviewDecisionRequest || !isPageContextCurrent(context)
-        || baselines !== selectedBaselineQueryValue() || actor !== state.session?.username) return;
-    if (state.selectedId !== item.issue_id) {
-      // Gallery badges keep their read-only behavior; edit only the visible Issue.
-      openSharedLabelStateDialog(item); return;
-    }
-    openCaseLabelDecision(data);
-    caseLabelDecisionUi.context.opener = opener;
-  } catch (error) { if (isPageContextCurrent(context)) showToast(error.message, true); }
-  finally { opener?.removeAttribute("aria-busy"); }
+  if (state.selectedId !== item.issue_id) {
+    openSharedLabelStateDialog(item); return;
+  }
+  // The summary owns its read and cancellation; network latency must not hide it.
+  openCaseLabelDecision(item, {loading:true, opener});
+  await refreshUnifiedCaseDecisionSources();
 }
 function mountReviewDecisionEditor(data) {
   const pane = $("#reviewPane"), editor = $("#caseLabelingEditor");

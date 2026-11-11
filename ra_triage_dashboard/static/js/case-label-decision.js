@@ -50,12 +50,22 @@ function caseLabelDecisionMarkup(data) {
 function renderCaseLabelDecisionDialog() {
   const c = caseLabelDecisionUi.context, dialog = $("#caseLabelDecisionDialog");
   if (!c || !dialog) return;
-  dialog.innerHTML = `<div class="dialog-card"><div class="dialog-heading"><div><h2 id="caseLabelDecisionTitle">${uiText("标注与裁决", "Labels and decisions")}</h2><small>${escapeHtml(c.caseData.issue_id)}</small></div><button type="button" class="icon-button" data-close-decision aria-label="${uiText("关闭", "Close")}">×</button></div><div class="case-label-decision-body" id="caseDecisionEvidence">${caseLabelDecisionMarkup(c.caseData)}</div><div class="dialog-actions"><button type="button" class="button button-quiet" id="caseDecisionRefresh">${uiText("刷新来源", "Refresh sources")}</button><button type="button" class="button button-primary" id="caseDecisionRelabel" ${!hasDashboardWriteRole() || !caseDecisionRevisions(c.caseData).length ? "disabled" : ""}>${uiText("重新标注并裁决", "Relabel and decide")}</button><button type="button" class="button button-quiet" data-close-decision>${uiText("关闭", "Close")}</button></div></div>`;
+  const focusId = dialog.contains?.(document.activeElement) ? document.activeElement?.id : "";
+  const restoreFocusId = focusId || ([document.body, dialog].includes(document.activeElement) ? c.pendingFocusId : "");
+  const loading = c.sourcesStatus === "loading", failed = c.sourcesStatus === "error";
+  const ready = !loading && !failed;
+  const error = c.sourceError?.messages ? uiText(c.sourceError.messages.zh, c.sourceError.messages.en)
+    : c.sourceError ? caseExclusionErrorMessage(c.sourceError) : "";
+  const body = loading
+    ? `<p class="comment-thread-empty" role="status" aria-live="polite">${uiText("正在加载标注来源…", "Loading label sources…")}</p>`
+    : failed ? `<div class="case-label-decision-error" role="alert"><p>${uiText("标注来源加载失败，请重试。", "Could not load label sources. Try again.")}</p><small>${escapeHtml(error)}</small></div>`
+    : caseLabelDecisionMarkup(c.caseData);
+  dialog.innerHTML = `<div class="dialog-card"><div class="dialog-heading"><div><h2 id="caseLabelDecisionTitle">${uiText("标注与裁决", "Labels and decisions")}</h2><small>${escapeHtml(c.caseData.issue_id)}</small></div><button type="button" class="icon-button" id="caseDecisionCloseIcon" data-close-decision aria-label="${uiText("关闭", "Close")}">×</button></div><div class="case-label-decision-body" id="caseDecisionEvidence" aria-busy="${loading}">${body}</div><div class="dialog-actions"><button type="button" class="button button-quiet" id="caseDecisionRefresh" ${loading ? "disabled" : ""}>${failed ? uiText("重试加载", "Retry loading") : uiText("刷新来源", "Refresh sources")}</button><button type="button" class="button button-primary" id="caseDecisionRelabel" ${!ready || !hasDashboardWriteRole() || !caseDecisionRevisions(c.caseData).length ? "disabled" : ""}>${uiText("重新标注并裁决", "Relabel and decide")}</button><button type="button" class="button button-quiet" id="caseDecisionClose" data-close-decision>${uiText("关闭", "Close")}</button></div></div>`;
   dialog.querySelectorAll("[data-close-decision]").forEach(b => b.addEventListener("click", () => dialog.close()));
   dialog.querySelectorAll("[data-adopt-decision]").forEach(b => b.addEventListener("click", () => startCaseDecisionEditor(c.caseData, Number(b.dataset.adoptDecision))));
   $("#caseDecisionRelabel").addEventListener("click", () => startCaseDecisionEditor(c.caseData));
   $("#caseDecisionRefresh").addEventListener("click", () => void refreshUnifiedCaseDecisionSources());
-  if (c.compareEditor && c.compareEditor === caseLabelDecisionUi.editor) {
+  if (ready && c.compareEditor && c.compareEditor === caseLabelDecisionUi.editor) {
     const button = document.createElement("button");
     button.type = "button"; button.className = "button button-primary";
     button.textContent = uiText("已对照，保留草稿继续裁决", "Reviewed; continue with my draft");
@@ -69,18 +79,39 @@ function renderCaseLabelDecisionDialog() {
     });
     dialog.querySelector(".dialog-actions").appendChild(button);
   }
+  // A completed read or locale change must retain the focused dialog action.
+  if (restoreFocusId) {
+    const action = $(`#${restoreFocusId}`);
+    c.pendingFocusId = action?.disabled ? restoreFocusId : "";
+    if (action && !action.disabled) action.focus({preventScroll:true});
+  }
 }
-function openCaseLabelDecision(data, {compareEditor = null} = {}) {
+function openCaseLabelDecision(data, {compareEditor = null, loading = false, opener = document.activeElement} = {}) {
   if (caseLabelDecisionUi.saving) return;
   let dialog = $("#caseLabelDecisionDialog");
   if (!dialog) {
     dialog = document.createElement("dialog"); dialog.id = "caseLabelDecisionDialog";
     dialog.className = "dialog case-label-decision-dialog history-dialog"; dialog.setAttribute("aria-labelledby","caseLabelDecisionTitle");
     dialog.addEventListener("click", e => {if(e.target === dialog) dialog.close();});
-    dialog.addEventListener("close", () => caseLabelDecisionUi.context?.opener?.focus({preventScroll:true})); document.body.appendChild(dialog);
+    dialog.addEventListener("close", () => {
+      if (dialog.open) return;
+      const c = caseLabelDecisionUi.context;
+      c?.sourceRequest?.abort();
+      c?.suspendedVideos?.forEach(video => {
+        if (video.isConnected && !video.closest("[hidden]")) video._resumeBevPlayback?.();
+      });
+      if (c) c.suspendedVideos = [];
+      if (!caseLabelDecisionUi.editor) c?.opener?.focus({preventScroll:true});
+    }); document.body.appendChild(dialog);
   }
-  caseLabelDecisionUi.context = {caseData:structuredClone(data),baselines:selectedBaselineQueryValue(),pageContext:capturePageContext(),actor:state.session?.username || "",mode:"issue",compareEditor,opener:document.activeElement};
-  renderCaseLabelDecisionDialog(); dialog.showModal();
+  const previous = caseLabelDecisionUi.context;
+  previous?.sourceRequest?.abort();
+  const suspendedVideos = dialog.open ? previous?.suspendedVideos || []
+    : [...(document.querySelectorAll?.("video") || [])].filter(video => video._pauseBevPlayback && !video.closest("[hidden]"));
+  if (!dialog.open) suspendedVideos.forEach(video => video._pauseBevPlayback());
+  caseLabelDecisionUi.context = {caseData:structuredClone(data),baselines:selectedBaselineQueryValue(),pageContext:capturePageContext(),actor:state.session?.username || "",mode:"issue",compareEditor,opener,suspendedVideos,sourcesStatus:loading ? "loading" : "ready"};
+  renderCaseLabelDecisionDialog();
+  if (!dialog.open) dialog.showModal();
 }
 function bindCaseLabelResultActions(data) {
   $("#caseDecisionInfo")?.addEventListener("click", showCaseDecisionInfo);
@@ -92,7 +123,8 @@ function caseDecisionDraftKey(data) {
 function startCaseDecisionEditor(data, revisionId = null) {
   if (!hasDashboardWriteRole() || caseLabelDecisionUi.saving || data.issue_id !== caseDecisionCurrentIssueId()) return;
   const context = caseLabelDecisionUi.context;
-  if (context && (!isPageContextCurrent(context.pageContext) || context.baselines !== selectedBaselineQueryValue()
+  if (context && ((context.sourcesStatus && context.sourcesStatus !== "ready")
+      || !isPageContextCurrent(context.pageContext) || context.baselines !== selectedBaselineQueryValue()
       || context.actor !== (state.session?.username || ""))) return;
   if (caseLabelDecisionUi.editor) exitCaseDecisionEditor();
   const adopted = revisionId == null ? null : caseDecisionRevisions(data).find(r => r.id === revisionId);
@@ -195,13 +227,31 @@ function refreshCaseLabelDecisionLanguage() {
   }
 }
 async function refreshUnifiedCaseDecisionSources() {
-  const c=caseLabelDecisionUi.context;if(!c)return;
+  const c=caseLabelDecisionUi.context, dialog=$("#caseLabelDecisionDialog");
+  if(!c || !dialog?.open)return;
+  c.sourceRequest?.abort();
+  const controller=new AbortController();
+  c.sourceRequest=controller;c.sourcesStatus="loading";c.sourceError=null;
+  renderCaseLabelDecisionDialog();
+  const current=()=>{
+    if(c!==caseLabelDecisionUi.context || c.sourceRequest!==controller || controller.signal.aborted || !dialog.open)return false;
+    if(!isPageContextCurrent(c.pageContext) || caseDecisionCurrentIssueId()!==c.caseData.issue_id
+        || c.baselines!==selectedBaselineQueryValue() || c.actor!==(state.session?.username || "")){
+      dialog.close();return false;
+    }
+    return true;
+  };
   try {
-    const fresh=await api(withBaselineQuery(`/api/labeling/cases/${encodeURIComponent(c.caseData.issue_id)}`));
-    if(!isPageContextCurrent(c.pageContext) || caseDecisionCurrentIssueId()!==fresh.issue_id || c!==caseLabelDecisionUi.context
-      || c.baselines!==selectedBaselineQueryValue() || c.actor!==(state.session?.username || ""))return;
-    c.caseData=fresh;renderCaseLabelDecisionDialog();
-  }catch(e){showToast(e.message,true);}
+    const fresh=await api(withBaselineQuery(`/api/labeling/cases/${encodeURIComponent(c.caseData.issue_id)}`), {
+      cache:"no-store",signal:controller.signal,
+    });
+    if(!current())return;
+    if(fresh.issue_id!==c.caseData.issue_id)throw apiResponseError("返回的 Issue 不一致，请重试。","The returned Issue does not match. Retry loading.");
+    c.caseData=fresh;c.sourcesStatus="ready";renderCaseLabelDecisionDialog();
+  }catch(e){
+    if(!current())return;
+    c.sourcesStatus="error";c.sourceError=e;renderCaseLabelDecisionDialog();
+  }finally{if(c.sourceRequest===controller)c.sourceRequest=null;}
 }
 async function refreshDecisionEditorSources() {
   const c=caseLabelDecisionUi.editor;if(!c || caseLabelDecisionUi.saving)return;

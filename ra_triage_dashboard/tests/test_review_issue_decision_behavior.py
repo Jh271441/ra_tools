@@ -66,23 +66,30 @@ const pane=new Node('review'),editor=new Node('editor'),parent=new Node('labelin
 const reviewForm=new Node('review draft'),labelForm=new Node('label draft'),media=new Node('media');
 reviewForm.value='unsaved personal/model rationale';editor.replaceChildren(labelForm);parent.replaceChildren(editor,next);pane.replaceChildren(reviewForm);
 const labeling={issueId:'other',pendingImages:['label image'],dirty:true},current={issue_id:'cn1',annotations:['model'],media};
-let baseline='0508',epoch=1,writable=true,resolveApi,opens=[],loads=[],aborted=0,focused=0,relabeled=0;
+let baseline='0508',epoch=1,writable=true,resolveApi,opens=[],loads=[],aborted=0,focused=0,relabeled=0,readyPaints=0;
+const dialog={open:false,close(){this.open=false;caseLabelDecisionUi.context?.sourceRequest?.abort();}};
 Object.assign(global,{state:{activePage:'review',selectedId:'cn1',selectedCase:current,caseLabeling:labeling,session:{username:'alice'},reviewFormDirty:true,selectedRunId:'run',reviewWorkSplitId:'task',cases:[{issue_id:'cn1'}],caseDetailPrefetch:new Map([['old',{controller:{abort(){aborted++}}}]])},
-caseLabelDecisionUi:{saving:false,editor:null,context:{}},$:s=>s==='#reviewPane'?pane:s==='#caseLabelingEditor'?editor:s.includes('data-open-shared')?{focus(){focused++}}:null,
+caseLabelDecisionUi:{saving:false,editor:null,context:{}},$:s=>s==='#reviewPane'?pane:s==='#caseLabelingEditor'?editor:s==='#caseLabelDecisionDialog'?dialog:s.includes('data-open-shared')?{focus(){focused++}}:null,
 hasDashboardWriteRole:()=>writable,capturePageContext:()=>({epoch}),isPageContextCurrent:c=>c.epoch===epoch,
 selectedBaselineQueryValue:()=>baseline,withBaselineQuery:p=>p,api:()=>new Promise(r=>resolveApi=r),
-openCaseLabelDecision:data=>{opens.push(data);caseLabelDecisionUi.context={caseData:data}},openSharedLabelStateDialog(){throw Error('unexpected readonly fallback')},showToast(){},renderReviewSummary(){},
+caseDecisionCurrentIssueId:()=>state.selectedId,uiText:(_zh,en)=>en,
+openCaseLabelDecision:(data,options)=>{caseLabelDecisionUi.context?.sourceRequest?.abort();opens.push(data);dialog.open=true;caseLabelDecisionUi.context={caseData:data,pageContext:{epoch},baselines:baseline,actor:state.session.username,sourcesStatus:options.loading?'loading':'ready'};},
+renderCaseLabelDecisionDialog(){if(caseLabelDecisionUi.context.sourcesStatus==='ready')readyPaints++;},
+openSharedLabelStateDialog(){throw Error('unexpected readonly fallback')},showToast(){},renderReviewSummary(){},
 refreshReviewFormLanguage(){assert.equal(pane.childNodes[0],reviewForm);relabeled++;},
 loadCombinedReviewContext:async(data,options)=>loads.push({data,options})});
 vm.runInThisContext(fs.readFileSync(process.argv[1],'utf8'));
+const common=fs.readFileSync(require('path').join(require('path').dirname(process.argv[1]),'case-label-decision.js'),'utf8');
+vm.runInThisContext(common.slice(common.indexOf('async function refreshUnifiedCaseDecisionSources()'),common.indexOf('async function refreshDecisionEditorSources()')));
 const opener={setAttribute(){},removeAttribute(){}};
 (async()=>{
- let pending=openReviewIssueDecision(current,opener);epoch++;resolveApi(current);await pending;assert.equal(opens.length,0);
- pending=openReviewIssueDecision(current,opener);baseline='1009';resolveApi(current);await pending;assert.equal(opens.length,0);
- pending=openReviewIssueDecision(current,opener);state.session.username='bob';resolveApi(current);await pending;assert.equal(opens.length,0);
+ let pending=openReviewIssueDecision(current,opener);assert(dialog.open);assert.equal(caseLabelDecisionUi.context.sourcesStatus,'loading');
+ epoch++;resolveApi(current);await pending;assert(!dialog.open);assert.equal(readyPaints,0);
+ pending=openReviewIssueDecision(current,opener);baseline='1009';resolveApi(current);await pending;assert(!dialog.open);assert.equal(readyPaints,0);
+ pending=openReviewIssueDecision(current,opener);state.session.username='bob';resolveApi(current);await pending;assert(!dialog.open);assert.equal(readyPaints,0);
  const first=openReviewIssueDecision(current,opener),releaseFirst=resolveApi;
- pending=openReviewIssueDecision(current,opener);resolveApi(current);await pending;releaseFirst(current);await first;assert.equal(opens.length,1);
- writable=false;await openReviewIssueDecision(current,opener);assert.equal(opens.length,1);writable=true;
+ pending=openReviewIssueDecision(current,opener);resolveApi(current);await pending;releaseFirst(current);await first;assert.equal(readyPaints,1);
+ const opened=opens.length;writable=false;await openReviewIssueDecision(current,opener);assert.equal(opens.length,opened);writable=true;
  const host=mountReviewDecisionEditor(current);assert.equal(pane.childNodes[0],editor);assert.equal(host.reviewNodes[0],reviewForm);assert.notEqual(state.caseLabeling,labeling);assert.equal(state.caseLabeling.taskId,'');
  editor.replaceChildren(new Node('decision'));restoreReviewDecisionEditor(host);assert.equal(relabeled,1);
  assert.equal(pane.childNodes[0],reviewForm);assert.equal(editor.childNodes[0],labelForm);assert.equal(parent.childNodes[0],editor);assert.equal(parent.childNodes[1],next);assert.equal(reviewForm.value,'unsaved personal/model rationale');assert.equal(state.caseLabeling,labeling);assert.equal(state.reviewFormDirty,true);assert.equal(focused,1);assert.equal(pane.scrollTop,91);
