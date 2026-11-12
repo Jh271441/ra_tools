@@ -87,11 +87,11 @@ function playerFixture({readyState=4,context=null,initialTime=0,durationSec=40,.
  warm.ctx.releaseBevVideoPlayer(warm.root);
 
  const cold = playerFixture({initialTime:20});
- let segmentPosition, bufferAppended, loaderSuspended = false;
+ let segmentPosition, bufferAppended, loaderSuspended = false, prioritizeCalls = 0;
  cold.ctx.createVideoSegmentLoader = (_video,{position,onBufferAppended}) => {
   segmentPosition = position;
   bufferAppended = onBufferAppended;
-  return {segmentForTime: time=>Math.floor(time/2),prepareUnbufferedSeek:()=>true,prioritize(){},dispose(){},
+  return {segmentForTime: time=>Math.floor(time/2),prepareUnbufferedSeek:()=>true,prioritize(){prioritizeCalls++;},dispose(){},
    suspend(){loaderSuspended=true;},resume(){loaderSuspended=false;}};
  };
  cold.video._setBevVideoTrack('/segmented.mp4');
@@ -138,12 +138,75 @@ function playerFixture({readyState=4,context=null,initialTime=0,durationSec=40,.
   assert.equal(cold.video.currentTime,keepPlaying?18.8:19.8,'The rewind lands at the latest buffered target');
   assert.equal(cold.video.paused,!keepPlaying,'Completing the rewind respects the latest play choice');
  }
+ const playbackFrames = new Map();
+ let playbackFrameId = 0;
+ cold.video.requestVideoFrameCallback = callback => {
+  playbackFrames.set(++playbackFrameId,callback);
+  return playbackFrameId;
+ };
+ cold.video.cancelVideoFrameCallback = id => playbackFrames.delete(id);
+ const presentPlaybackFrame = time => {
+  assert.equal(playbackFrames.size,1,'Only one submitted-frame observer owns playback');
+  const [id,callback] = playbackFrames.entries().next().value;
+  playbackFrames.delete(id);
+  callback(0,{mediaTime:time});
+ };
  cold.video._pauseBevPlayback();
  assert.equal(loaderSuspended,true,'Opening the expanded viewer suspends the inline loader');
  cold.elements.play.fire('click');
  assert.equal(loaderSuspended,false,'Explicit Play restores the suspended loader without a separate owner resume');
  assert.equal(cold.video.paused,false,'Explicit Play restarts the native video as well');
+ await Promise.resolve();
+ cold.video.fire('playing');
+ cold.video.currentTime = 20.02;
+ cold.video.buffered = {length:1,start:()=>20,end:()=>20.2};
+ presentPlaybackFrame(20);
+ cold.video.fire('waiting');
+ assert.equal(cold.video.paused,false,'The first visible response does not wait for a rebuffer goal');
+ presentPlaybackFrame(20.1);
+ cold.video.fire('waiting');
+ assert.equal(cold.video.paused,true,'Underflow after visible motion waits for a playable run');
+ assert.equal(segmentPosition(),20.1,'Loading and timeline follow the frame actually displayed');
+ assert.equal(cold.elements.play.getAttribute('aria-pressed'),'true','Buffering retains Play intent');
+ cold.video.buffered = {length:1,start:()=>20,end:()=>20.8};
+ bufferAppended();
+ assert.equal(cold.video.paused,true,'A short append does not repeatedly restart playback');
+ cold.video.buffered = {length:1,start:()=>20,end:()=>21.2};
+ bufferAppended();
+ assert.equal(cold.video.paused,false,'Playback resumes when enough contiguous data arrives');
+ assert.equal(cold.video.currentTime,20.1,'Resume aligns the clock with the displayed frame');
+ await Promise.resolve();
+ cold.video.fire('playing');
+ presentPlaybackFrame(20.2);
+ cold.video.fire('waiting');
+ assert.equal(cold.video.paused,false,'An already buffered recovery does not wait for another append');
+ assert.equal(cold.video.currentTime,20.2,'An already buffered recovery reconciles the displayed position');
+ await Promise.resolve();
+ cold.video.fire('playing');
+ cold.video.buffered = {length:1,start:()=>20,end:()=>20.4};
+ presentPlaybackFrame(20.3);
+ cold.video.fire('waiting');
+ const retiredFrame = playbackFrames.values().next().value;
+ const beforePausePriority = prioritizeCalls;
+ cold.elements.play.fire('click');
+ assert.ok(prioritizeCalls>beforePausePriority,'Pause reconsiders network work even when the native clock was already paused');
+ cold.video.buffered = {length:1,start:()=>20,end:()=>23};
+ bufferAppended();
+ retiredFrame(0,{mediaTime:39});
+ assert.equal(cold.video.paused,true,'User Pause cancels automatic recovery');
+ assert.equal(cold.video.currentTime,20.3,'A retired frame cannot replace the paused position');
+ assert.equal(playbackFrames.size,0,'Pause retires the submitted-frame observer');
+ cold.elements.play.fire('click');
+ await Promise.resolve();
+ cold.video.fire('playing');
+ presentPlaybackFrame(20.3);
+ presentPlaybackFrame(20.4);
+ cold.video.buffered = {length:1,start:()=>20,end:()=>20.5};
+ cold.video.fire('waiting');
+ cold.video._setBevVideoTrack('/replacement.mp4');
+ assert.match(cold.video.dataset.videoSource,/#t=20\.4$/,'A source change retains the displayed buffering position');
  cold.ctx.releaseBevVideoPlayer(cold.root);
+ assert.equal(playbackFrames.size,0,'Source replacement and teardown release frame observers');
 
  const media={assets:{video:{url:'/bev.mp4',tracks:[{url:'/bev.mp4'},{url:'/api/assets/cn1/camera-video'},{url:'/api/assets/cn1/bev-closeup-video',source_id:'bev_closeup',label:'局部 BEV 视频',poster_url:'/closeup-t0.jpg'}]},frames:[{url:'/before.jpg',offset_ms:-1000},{url:'/full-bev.jpg',offset_ms:0}]},camera:{frames:[{url:'/full-camera.jpg',offset_ms:0}]}};
  const descriptor=p.ctx.videoWithFramePosters(media);

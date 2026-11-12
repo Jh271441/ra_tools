@@ -16,6 +16,7 @@ function videoSegmentManifestUrl(url) {
 
 function createVideoSegmentLoader(video, {
   url, position, attached, fallback, onBufferAppended = () => {}, frameStepSec = 0.1,
+  playbackRequested = () => !video.paused,
 }) {
   const manifestUrl = videoSegmentManifestUrl(url);
   if (!manifestUrl) return null;
@@ -105,18 +106,20 @@ function createVideoSegmentLoader(video, {
   };
   const nextSegment = () => {
     const time = current(), at = segmentAt(time);
+    const playing = playbackRequested();
     if (!loaded.has(at)) return at;
     const previous = at - 1;
     // Warm one left neighbor after the selected video is ready and has
-    // enough forward reserve. While paused, give the forward GOP its turn
-    // first, including the bytes needed to flush a late target frame.
-    const canWarmRewind = video.paused ? video.readyState >= 2 && loaded.has(at + 1) : video.readyState >= 3;
+    // enough forward reserve. Without a Play request, give the forward GOP
+    // its turn first, including bytes needed to flush a late target frame.
+    const canWarmRewind = !playing ? video.readyState >= 2 && loaded.has(at + 1) : video.readyState >= 3;
     if (canWarmRewind && !video.seeking && previous >= 0
         && !loaded.has(previous) && !rewindAttempted
         && Number.isFinite(secondsPerByte) && hasPlaybackReserve(time, segmentBytes(previous))) return previous;
-    const candidates = video.paused ? [at + 1]
+    const candidates = !playing ? [at + 1]
       : index.segments.map((_, i) => i).filter(i => i > at
-        && index.segments[i].start < current() + Math.max(4, video.playbackRate * 4));
+        && index.segments[i].start < current()
+          + Math.min(forwardRetention, Math.max(4, video.playbackRate * 6)));
     return candidates.find(i => i >= 0 && i < index.segments.length && !loaded.has(i)) ?? -1;
   };
   const evict = async () => {
@@ -164,7 +167,7 @@ function createVideoSegmentLoader(video, {
     try {
       const response = await fetch(source.pathname + source.search, {
         headers: { Range: `bytes=${first}-${segment.last}` }, signal: controller.signal,
-        priority: rewind || (video.paused && number !== segmentAt(current())) ? "low" : "auto",
+        priority: rewind || (!playbackRequested() && number !== segmentAt(current())) ? "low" : "auto",
       });
       if (stopped || controller.signal.aborted) return;
       const expected = `bytes ${first}-${segment.last}/${index.size}`;
@@ -274,7 +277,7 @@ function createVideoSegmentLoader(video, {
           const downloaded = active.received - active.resumedBytes;
           const cost = Math.max(secondsPerByte, downloaded > 0 ? elapsed / downloaded : 0);
           if (hasPlaybackReserve(time, segmentBytes(active.number) - active.received, cost)) return;
-        } else if (!video.paused && active.number > at && next < at
+        } else if (playbackRequested() && active.number > at && next < at
             && index.segments[active.number].end <= time + forwardRetention) {
           // A buffered rewind can shrink the lookahead window. The pending
           // forward fragment still belongs to this playback and can finish.

@@ -337,6 +337,7 @@ function bindBevVideoPlayers(root) {
     let playPending = false;
     let playing = false;
     let hasPlayed = false;
+    let rebufferTarget = null;
     let loadTimer = null;
     let heldFrame = null;
     let heldTarget = null;
@@ -438,6 +439,10 @@ function bindBevVideoPlayers(root) {
     };
     const ready = () => {
       if (disposed || video.error || pendingBackwardSeek !== null || video.readyState < 2 || video.seeking) return;
+      if (rebufferTarget !== null) {
+        startPlayback();
+        if (rebufferTarget !== null) return;
+      }
       if (loadTimer !== null) window.clearTimeout(loadTimer);
       loadTimer = null;
       setStatus("ready");
@@ -453,7 +458,34 @@ function bindBevVideoPlayers(root) {
     let queuedSeekTarget = null;
     let queuedSeekTimer = null;
     let queuedSeekGroup = null;
-    const playbackPosition = () => pendingBackwardSeek ?? pendingStart
+    let playbackFrameCallback = null;
+    let firstPlaybackFrame = null, lastPlaybackFrame = null;
+    const resetPlaybackFrames = () => {
+      if (playbackFrameCallback !== null) video.cancelVideoFrameCallback?.(playbackFrameCallback);
+      playbackFrameCallback = null;
+      firstPlaybackFrame = lastPlaybackFrame = null;
+    };
+    const observePlaybackFrames = () => {
+      if (disposed || !wantsPlayback || !segmentLoader || playbackFrameCallback !== null
+          || typeof video.requestVideoFrameCallback !== "function") return;
+      const generation = sourceGeneration, request = seekRequest;
+      const callback = video.requestVideoFrameCallback((_now, metadata) => {
+        if (disposed || playbackFrameCallback !== callback) return;
+        playbackFrameCallback = null;
+        if (generation === sourceGeneration && request === seekRequest
+            && metadataGeneration === sourceGeneration && wantsPlayback && !heldFrame) {
+          firstPlaybackFrame ??= metadata.mediaTime;
+          lastPlaybackFrame = metadata.mediaTime;
+          if (rebufferTarget !== null) {
+            rebufferTarget = metadata.mediaTime;
+            update();
+          }
+        }
+        observePlaybackFrames();
+      });
+      playbackFrameCallback = callback;
+    };
+    const playbackPosition = () => rebufferTarget ?? pendingBackwardSeek ?? pendingStart
       ?? (Number.isFinite(video.currentTime) ? video.currentTime : 0);
     const timelinePosition = () => queuedSeekTarget ?? playbackPosition();
     const clearQueuedSeek = () => {
@@ -464,6 +496,13 @@ function bindBevVideoPlayers(root) {
     };
     const planningConstraint = bindPlanningConstraint(player, video, timelinePosition);
     const duration = () => Number.isFinite(video.duration) ? video.duration : configuredDuration;
+    const bufferedAhead = (time) => {
+      const ranges = video.buffered;
+      for (let i = 0; i < (ranges?.length || 0); i++) {
+        if (ranges.start(i) <= time && time < ranges.end(i)) return ranges.end(i) - time;
+      }
+      return 0;
+    };
     const update = (previewTime = null) => {
       const total = Math.max(0, duration());
       const currentTime = previewTime !== null && Number.isFinite(Number(previewTime))
@@ -493,8 +532,9 @@ function bindBevVideoPlayers(root) {
       // source replacement needs the held-frame confirmation below.
       if (heldFrame) heldTarget = target;
       clearQueuedSeek();
-      const resumePlayback = pendingBackwardSeek !== null;
+      const resumePlayback = pendingBackwardSeek !== null || rebufferTarget !== null;
       pendingBackwardSeek = null;
+      rebufferTarget = null;
       if (video.readyState < 1) { pendingStart = target; segmentLoader?.prioritize(); update(target); return; }
       if (!heldFrame && target === video.currentTime) {
         if (resumePlayback) {
@@ -506,6 +546,7 @@ function bindBevVideoPlayers(root) {
         return;
       }
       const request = ++seekRequest;
+      resetPlaybackFrames();
       cancelFrameCheck();
       cancelPendingSeek?.();
       if (!heldFrame && wantsPlayback && target < video.currentTime && !isBuffered(target)
@@ -559,15 +600,10 @@ function bindBevVideoPlayers(root) {
       // A remote asset can delay seeked while metadata or the first keyframe
       // is fetched. Keep controls responsive and reconcile once it arrives.
       fallbackTimer = window.setTimeout(settle, 800);
+      observePlaybackFrames();
       if (resumePlayback) startPlayback();
     };
-    const isBuffered = (time) => {
-      const ranges = video.buffered;
-      for (let i = 0; i < (ranges?.length || 0); i++) {
-        if (ranges.start(i) <= time && time < ranges.end(i)) return true;
-      }
-      return false;
-    };
+    const isBuffered = (time) => bufferedAhead(time) > 0;
     const previewInterval = 50;
     const queueSeek = (target, delay = 75) => {
       if (disposed) return;
@@ -610,6 +646,15 @@ function bindBevVideoPlayers(root) {
         || !video.paused || !video.getAttribute("src")
         || (metadataGeneration !== sourceGeneration && !sourceHasStartHint)
         || !player.isConnected || player.closest?.('dialog:not([open]), [hidden], .hidden')) return;
+      if (rebufferTarget !== null) {
+        const target = rebufferTarget;
+        const goal = Math.min(Math.max(.5, video.playbackRate), Math.max(0, duration() - target));
+        if (queuedSeekTarget !== null || bufferedAhead(target) + .00001 < goal) return;
+        rebufferTarget = null;
+        // A starving MSE clock can lag behind the frame already on screen.
+        video.currentTime = target;
+      }
+      observePlaybackFrames();
       const generation = sourceGeneration;
       const attempt = ++playbackAttempt;
       if (video.ended && heldFrame) {
@@ -635,6 +680,9 @@ function bindBevVideoPlayers(root) {
     const togglePlayback = () => {
       if (disposed) return;
       suspended = false;
+      if (rebufferTarget !== null) video.currentTime = rebufferTarget;
+      rebufferTarget = null;
+      resetPlaybackFrames();
       wantsPlayback = !wantsPlayback;
       // A key press changes intent and its feedback synchronously, even before
       // metadata/frames arrive. A second press cancels a queued play request.
@@ -651,6 +699,7 @@ function bindBevVideoPlayers(root) {
       // A dialog can suspend the inline loader independently of the native
       // video's paused state. Explicit Play restores both parts together.
       if (wantsPlayback) segmentLoader?.resume();
+      else segmentLoader?.prioritize();
       update();
       startPlayback();
     };
@@ -682,6 +731,7 @@ function bindBevVideoPlayers(root) {
         segmentLoader = createVideoSegmentLoader(video, {
           url: source,
           frameStepSec,
+          playbackRequested: () => wantsPlayback && !suspended,
           // A thumb preview changes the display immediately. Network work
           // follows the last dispatched seek, not intermediate slider values.
           position: () => metadataGeneration !== sourceGeneration && pendingStart === null
@@ -691,6 +741,7 @@ function bindBevVideoPlayers(root) {
             if (queuedSeekTarget === null && pendingBackwardSeek !== null && isBuffered(pendingBackwardSeek)) {
               seekTo(pendingBackwardSeek);
             }
+            if (rebufferTarget !== null) startPlayback();
           },
           fallback: () => {
             if (!disposed) loadSource(url, video.getAttribute("poster") || "", true);
@@ -702,7 +753,7 @@ function bindBevVideoPlayers(root) {
       video.load();
     };
     const loadSource = (url, poster = "", nativeOnly = false) => {
-      pendingStart = pendingBackwardSeek
+      pendingStart = rebufferTarget ?? pendingBackwardSeek
         ?? (video.readyState >= 1 && Number.isFinite(video.currentTime) ? video.currentTime : pendingStart);
       pendingBackwardSeek = null;
       // A cold stream's first native fallback can keep the correct t0 poster.
@@ -715,6 +766,8 @@ function bindBevVideoPlayers(root) {
       playPending = false;
       playing = false;
       hasPlayed = false;
+      rebufferTarget = null;
+      resetPlaybackFrames();
       video.pause();
       ++seekRequest;
       cancelPendingSeek?.();
@@ -755,6 +808,20 @@ function bindBevVideoPlayers(root) {
       (eventName) => listen(video, eventName, update)
     );
     listen(video, "playing", () => { playing = true; hasPlayed = true; update(); });
+    listen(video, "waiting", () => {
+      // Let the first visible motion through. After underflow, buffer a short
+      // playable run instead of repeatedly restarting the native clock.
+      if (segmentLoader && hasPlayed && wantsPlayback && !suspended && !playPending && !video.paused && !video.seeking
+          && pendingBackwardSeek === null && firstPlaybackFrame !== null
+          && lastPlaybackFrame > firstPlaybackFrame + frameStepSec / 2) {
+        rebufferTarget = lastPlaybackFrame;
+        ++playbackAttempt;
+        playPending = false;
+        video.pause();
+        update();
+        startPlayback();
+      }
+    });
     ["waiting", "seeking", "loadstart"].forEach(name => listen(video, name, () => { playing = false; update(); }));
     listen(video, "ended", () => { wantsPlayback = false; playing = false; update(); });
     player.addEventListener("keydown", (event) => {
@@ -809,7 +876,7 @@ function bindBevVideoPlayers(root) {
     listen(video, "stalled", () => {
       if (video.readyState < 2 || video.seeking || (!video.paused && video.readyState < 3)) loading();
     });
-    ["loadeddata", "canplay", "playing", "seeked"].forEach(name => listen(video, name, ready));
+    ["loadeddata", "canplay", "canplaythrough", "progress", "playing", "seeked"].forEach(name => listen(video, name, ready));
     listen(video, "error", () => {
       if (segmentLoader?.recover()) return;
       cancelFrameCheck();
@@ -824,6 +891,9 @@ function bindBevVideoPlayers(root) {
     video._pauseBevPlayback = () => {
       if (disposed) return;
       suspended = true;
+      if (rebufferTarget !== null) video.currentTime = rebufferTarget;
+      rebufferTarget = null;
+      resetPlaybackFrames();
       wantsPlayback = false;
       ++playbackAttempt;
       playPending = false;
@@ -863,6 +933,7 @@ function bindBevVideoPlayers(root) {
       heldFrame?.remove();
       heldFrame = null;
       cancelFrameCheck();
+      resetPlaybackFrames();
       planningConstraint.dispose();
       ++playbackAttempt;
       ++sourceGeneration;

@@ -19,9 +19,10 @@ async function pausedSegments() {
   const video = new EventTarget();
   Object.assign(video, {paused: true, currentTime: 4.2, playbackRate: 1,
     load() { queueMicrotask(() => media.dispatchEvent(new Event('sourceopen'))); }});
-  const segments = [0, 1, 2, 3].map(i => ({start: i * 2, end: i * 2 + 2, first: i * 100, last: i * 100 + 99}));
+  const segments = [0, 1, 2, 3, 4, 5].map(i => ({start: i * 2, end: i * 2 + 2, first: i * 100, last: i * 100 + 99}));
   const manifest = {recipe: 'segments-v1', codec: 'avc1.640028', fingerprint: 'a'.repeat(64),
-    duration: 8, size: 400, init: 'AA==', segments};
+    duration: 12, size: 600, init: 'AA==', segments};
+  let playbackRequested = false;
   const requests = [], context = {URL: class extends URL {
     static createObjectURL() { return 'blob:fixture'; }
     static revokeObjectURL() {}
@@ -33,11 +34,12 @@ async function pausedSegments() {
     requests.push({range, priority: options.priority});
     if (range === 'bytes=0-99' && options.priority === 'low') return new Response(null, {status: 503});
     return new Response(new Uint8Array(100), {status: 206,
-      headers: {'Content-Range': range.replace('=', ' ') + '/400'}});
+      headers: {'Content-Range': range.replace('=', ' ') + '/600'}});
   }};
   vm.createContext(context); vm.runInContext(source('video-segments.js'), context);
   const loader = context.createVideoSegmentLoader(video, {url: '/api/assets/cn1/bev-video-0',
-    position: () => video.currentTime, attached() {}, fallback() { throw Error('Unexpected native fallback'); }});
+    position: () => video.currentTime, playbackRequested: () => playbackRequested,
+    attached() {}, fallback() { throw Error('Unexpected native fallback'); }});
   for (let i = 0; i < 10; i++) await tick();
   assert.deepEqual(requests.map(r => r.range), ['bytes=200-299', 'bytes=300-399'],
     'paused video fetches target and forward decoder flush only');
@@ -62,6 +64,13 @@ async function pausedSegments() {
   video.dispatchEvent(new Event('seeking'));
   for (let i = 0; i < 10; i++) await tick();
   assert.deepEqual(requests.at(-1), {range: 'bytes=0-99', priority: 'auto'}, 'an explicit seek retries the failed preload as foreground');
+  playbackRequested = true;
+  video.currentTime = 4.2;
+  video.dispatchEvent(new Event('timeupdate'));
+  for (let i = 0; i < 10; i++) await tick();
+  assert.equal(video.paused,true);
+  assert.deepEqual(requests.slice(-2).map(row => row.range),['bytes=400-499','bytes=500-599'],
+    'Automatic rebuffering keeps filling forward data while native video is paused');
   loader.dispose();
 }
 

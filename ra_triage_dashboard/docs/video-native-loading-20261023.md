@@ -1,5 +1,46 @@
 # Native video loading restoration — 2026-10-23
 
+## Weak-network continuous playback — 2026-11-12 / cache790
+
+After visible playback has begun, an MSE underflow holds the last submitted
+frame until one contiguous second at the selected rate is playable. Resume at that submitted
+frame's timestamp so the native clock, controls, planning text and network
+position stay aligned. The first motion bypasses this rebuffer goal.
+Pause, seeks, source replacement and disposal retire the owned frame callback
+and take precedence over automatic recovery. Network scheduling follows the
+user's Play intent while the native clock is paused for buffering. Explicit
+Pause reprioritizes transfers even if native pause has already occurred.
+
+Playing fetches about six seconds of forward video at the selected rate,
+capped by the existing twelve-second forward retention. A paused player
+loads its target and forward decoder neighbor. Each loader keeps one active
+Range transfer. Expanded-view handoff suspends the inline owner before
+creating its replacement.
+
+The referenced [Animation page](https://voyager.intra.xiaojukeji.com/static/ares-animation/?task_id=4973603100000128&task_version=1)
+uses a pre-generated MP4, an `autoplay muted` native video element and a
+4.4 KB initialization module that assigns the source directly. Its task
+artifact endpoint required a logged-in session, so the specific file bitrate
+and cache hit were not measured. Continuous forward buffering and a separate
+rebuffer threshold also follow the [Shaka buffering configuration](https://github.com/shaka-project/shaka-player/blob/main/docs/tutorials/network-and-buffering-config.md).
+
+Local synthetic media measurements and playback/concurrency regressions are
+in `/private/tmp/weak-video-buffer-20261112/`.
+Against cache789 on the same synthetic 1080p clip, `waiting` events fell from
+19 to 6 at 4.5 Mbps and from 58 to 12 at 2 Mbps. The 2 Mbps run recovered a
+native time of 25.89 s aligned with the displayed frame, where the baseline
+clock stayed near 20.31 s. Three-trial first-motion samples remained comparable:
+264–279 ms at 20 Mbps / 40 ms RTT and 1.32–1.54 s at 2 Mbps / 150 ms RTT.
+These are local measurements, not production p95. Bandwidth below this clip's
+approximately 4.21 Mbps average bitrate still requires buffering.
+
+The final isolated Chromium gate passed 31 playback scenarios and 30 decoded
+frame comparisons. Actual-shell Review and Case-labeling checks at desktop and
+320/390 px widths covered expanded-view handoff, rapid source replacement and
+late Play/Pause callbacks: at most one active loader owner remained, and normal
+playback advanced about 2.49 s over 2.5 s. These checks cover client concurrency,
+not multi-user server capacity or physical mobile devices.
+
 ## Explicit Play after a suspended transfer — 2026-11-12 / cache789
 
 Opening the expanded viewer suspends the inline segment loader. Explicit

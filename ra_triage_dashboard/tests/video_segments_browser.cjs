@@ -230,6 +230,46 @@ const server=http.createServer((req,res)=>{
    time:await page.evaluate(()=>v.currentTime)});
   await page.close();
   }
+  page=await makePage({network:{mbps:2,latency:150}});
+  await page.locator('[data-video-play]').click();
+  await page.waitForFunction(()=>!v.paused&&!v.seeking&&v.currentTime>23
+   &&v._lastPresented>23&&Math.abs(v.currentTime-v._lastPresented)<.2);
+  const aligned=await page.evaluate(()=>({time:v.currentTime,frame:v._lastPresented}));
+  await page.waitForFunction(()=>v.paused
+   &&document.querySelector('[data-video-play]').getAttribute('aria-pressed')==='true');
+  await page.locator('[data-video-play]').click();
+  await page.waitForTimeout(2300);
+  assert.equal(await page.evaluate(()=>v.paused),true,'Pause during rebuffering wins over later data');
+  assert.equal(await page.locator('[data-video-play]').getAttribute('aria-pressed'),'false');
+  results.push({scenario:'weak-playback-clock-and-user-pause',aligned});
+  await page.close();
+  page=await makePage({mount:false,network:{mbps:2,latency:150}});
+  await page.evaluate(()=>{
+   mount('ready');
+   const seek=document.querySelector('[data-video-seek]');
+   seek.value='39';seek.dispatchEvent(new Event('change'));
+   document.querySelector('[data-video-play]').click();
+  });
+  await page.waitForFunction(()=>v.ended&&v._lastPresented>=39.9);
+  assert.equal(await page.locator('[data-video-play]').getAttribute('aria-pressed'),'false',
+   'A rebuffer goal near the end must drain the final frames and finish playback');
+  results.push({scenario:'weak-last-gop-drains-to-ended'});
+  await page.close();
+  const rateStart=logs.length;
+  page=await makePage();await ready(page);
+  await page.evaluate(()=>{
+   const rate=document.querySelector('[data-video-rate]');
+   rate.value='2';rate.dispatchEvent(new Event('change'));
+   document.querySelector('[data-video-play]').click();
+  });
+  await page.waitForFunction(()=>v.currentTime>24);
+  await page.locator('[data-video-play]').click();
+  const rateRanges=logs.slice(rateStart).filter(row=>row.kind==='segment').map(row=>row.range);
+  assert.equal(new Set(rateRanges).size,rateRanges.length,'Faster playback cannot fetch and evict the same future GOP repeatedly');
+  const rateBuffered=await page.evaluate(()=>Array.from({length:v.buffered.length},(_,i)=>[v.buffered.start(i),v.buffered.end(i)]));
+  assert.ok(rateBuffered.reduce((n,[a,b])=>n+b-a,0)<=20.01,'Forward and backward retention remain bounded');
+  results.push({scenario:'fast-rate-forward-buffer-bound',requests:rateRanges.length,buffered:rateBuffered});
+  await page.close();
   const start=logs.length;page=await makePage({network:{mbps:2,latency:150}});await ready(page);
   await page.evaluate(()=>{v.currentTime=2.05;setTimeout(()=>v.currentTime=38.05,200);setTimeout(()=>v.currentTime=6.05,400);setTimeout(()=>v.currentTime=6.15,500);setTimeout(()=>v.currentTime=6.25,600);});
   await page.waitForFunction(()=>!v.seeking&&v.readyState>=2&&Math.abs(v.currentTime-6.25)<.001);
