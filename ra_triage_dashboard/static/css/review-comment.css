@@ -661,6 +661,9 @@ html[data-color-theme="light"] .detail-queue-index-input {
 .review-tag-option-row {
   min-width: 0; width: 100%; display: block; padding: 0; border: 0; border-radius: 0; background: transparent;
 }
+.review-tag-option-row.ui-info { line-height: inherit; }
+.review-tag-help.is-open > .review-tag-hint { opacity: 1; visibility: visible; transform: none; }
+.review-tag-hint > [data-review-tag-hint-text] { display: block; white-space: pre-wrap; }
 .review-tag-dropdown .review-tag-options .tag-option-with-menu {
   display: flex; align-items: center; gap: 4px; width: 100%; min-width: 0;
   box-sizing: border-box; padding: 4px 5px 4px 7px;
@@ -675,7 +678,7 @@ html[data-color-theme="light"] .detail-queue-index-input {
   outline: 2px solid rgba(34,211,238,.24); outline-offset: 1px;
 }
 .tag-option-check .tag-option-shortcut,
-.review-tag-options > .tag-option .tag-option-shortcut {
+.review-tag-options .tag-option > .tag-option-shortcut {
   margin-left: auto;
 }
 .review-dropdown-search { position: sticky; top: 0; z-index: 1; background: var(--raised); }

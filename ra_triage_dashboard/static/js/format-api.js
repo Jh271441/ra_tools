@@ -555,32 +555,34 @@ function reviewTagCatalogItem(key) {
   );
 }
 
+let reviewTagHintSequence = 0;
 function reviewTagOptionMarkup(item, selected = false, groupKey = "", manage = true) {
   const key = String(item?.key || "");
   const label = String(item?.label || tagLabel(key));
   const hint = String(item?.hint || "");
+  const hintId = `review-tag-hint-${++reviewTagHintSequence}`;
   const deleted = Boolean(item?.deleted);
   const canManage = Boolean(manage && !deleted);
-  if (!canManage) {
-    return `<label class="tag-option${deleted ? " tag-option-deleted" : ""}"${hint ? ` title="${escapeHtml(hint)}"` : ""}>
-      <input type="checkbox" name="reviewTags" value="${escapeHtml(key)}"${groupKey ? ` data-tag-group="${escapeHtml(groupKey)}"` : ""} ${selected ? "checked" : ""} />
-      <span>${escapeHtml(label)}</span>
-    </label>`;
-  }
-  // Manage actions live inside the option chip via a ⋯ menu (edit / delete).
-  return `<div class="review-tag-option-row" data-review-tag-option="${escapeHtml(key)}">
-    <div class="tag-option tag-option-with-menu${deleted ? " tag-option-deleted" : ""}"${hint ? ` title="${escapeHtml(hint)}"` : ""}>
-      <label class="tag-option-check">
-        <input type="checkbox" name="reviewTags" value="${escapeHtml(key)}"${groupKey ? ` data-tag-group="${escapeHtml(groupKey)}"` : ""} ${selected ? "checked" : ""} />
-        <span>${escapeHtml(label)}</span>
-      </label>
+  const check = `<input type="checkbox" name="reviewTags" value="${escapeHtml(key)}"${groupKey ? ` data-tag-group="${escapeHtml(groupKey)}"` : ""} data-ui-info-trigger aria-describedby="${hintId}" ${selected ? "checked" : ""} />
+    <span>${escapeHtml(label)}</span>`;
+  // Keep the tooltip outside the label: reading or selecting its text must
+  // never activate the checkbox through native label behavior.
+  const option = canManage ? `<div class="tag-option tag-option-with-menu">
+      <label class="tag-option-check" data-ui-info-hover>${check}</label>
       <div class="tag-option-menu">
-        <button class="tag-option-menu-toggle" type="button" data-tag-menu-toggle="${escapeHtml(key)}" aria-label="标签操作" aria-haspopup="menu" aria-expanded="false" title="更多操作">⋯</button>
+        <button class="tag-option-menu-toggle" type="button" data-tag-menu-toggle="${escapeHtml(key)}" aria-label="${escapeHtml(uiText("标签操作", "Tag actions"))}" aria-haspopup="menu" aria-expanded="false" title="${escapeHtml(uiText("更多操作", "More actions"))}">⋯</button>
         <div class="tag-option-menu-panel" role="menu" hidden>
+          <button class="tag-option-menu-item" type="button" role="menuitem" data-show-review-tag-hint="${escapeHtml(key)}">${escapeHtml(uiText("查看说明", "View description"))}</button>
           <button class="tag-option-menu-item" type="button" role="menuitem" data-edit-review-tag="${escapeHtml(key)}">修改</button>
           <button class="tag-option-menu-item is-danger" type="button" role="menuitem" data-delete-review-tag="${escapeHtml(key)}">删除</button>
         </div>
       </div>
+    </div>` : `<label class="tag-option${deleted ? " tag-option-deleted" : ""}" data-ui-info-hover>${check}</label>`;
+  return `<div class="review-tag-option-row ui-info review-tag-help" data-review-tag-option="${escapeHtml(key)}" data-review-tag-hint="${escapeHtml(hint)}" data-ui-info data-ui-info-escape="bubble" data-ui-info-placement="side">
+    ${option}
+    <div class="ui-info-tooltip model-review-run-tooltip review-tag-hint" id="${hintId}" role="tooltip">
+      <strong data-review-tag-hint-label>${escapeHtml(label)}</strong>
+      <span data-review-tag-hint-text>${escapeHtml(hint.trim() ? hint : uiText("暂无说明", "No description yet"))}</span>
     </div>
   </div>`;
 }

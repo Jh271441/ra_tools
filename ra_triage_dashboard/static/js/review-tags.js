@@ -409,6 +409,7 @@ function updateTagSummary() {
 }
 
 function syncReviewDropdownShortcutHints(root = document) {
+  syncReviewTagHints(root);
   root.querySelectorAll(".review-dropdown").forEach((dropdown) => {
     const groupShortcut = String(
       dropdown.dataset.tagDropdownShortcut ||
@@ -451,6 +452,26 @@ function syncReviewDropdownShortcutHints(root = document) {
       label.appendChild(hint);
     });
     syncReviewDropdownSearch(dropdown, inputs, items);
+  });
+}
+
+function syncReviewTagHints(root = document) {
+  root.querySelectorAll(".review-tag-help").forEach((help) => {
+    const item = reviewTagCatalogItem(help.dataset.reviewTagOption);
+    const label = help.querySelector("[data-review-tag-hint-label]");
+    const hint = help.querySelector("[data-review-tag-hint-text]");
+    if (label && item) label.textContent = String(item.label || tagLabel(item.key));
+    const text = String(item ? item.hint || "" : help.dataset.reviewTagHint || "");
+    help.dataset.reviewTagHint = text;
+    if (hint) hint.textContent = text.trim() ? text : uiText("暂无说明", "No description yet");
+    const action = help.querySelector("[data-show-review-tag-hint]");
+    if (action) action.textContent = uiText("查看说明", "View description");
+    const menu = help.querySelector("[data-tag-menu-toggle]");
+    if (menu) {
+      menu.setAttribute("aria-label", uiText("标签操作", "Tag actions"));
+      menu.title = uiText("更多操作", "More actions");
+    }
+    if (help.classList.contains("is-open")) showUiInfoPopover(help, root);
   });
 }
 
@@ -604,7 +625,8 @@ function submitActiveReviewForm() {
 }
 
 function submitReviewFromDropdown(event, target) {
-  if (isImeComposing(event) || event.key !== "Enter" || !target?.closest?.(".review-dropdown")) {
+  if (isImeComposing(event) || event.key !== "Enter" || !target?.closest?.(".review-dropdown")
+      || target.closest("button, a, [role='menuitem']")) {
     return false;
   }
   event.preventDefault();
@@ -799,7 +821,18 @@ function bindReviewKeyboardShortcuts() {
 function bindSelectedReviewTagControls(root) {
   if (!root || root.dataset.selectedReviewTagControlsBound === "1") return;
   root.dataset.selectedReviewTagControlsBound = "1";
+  bindUiInfoPopovers(root);
   root.addEventListener("click", (event) => {
+    const description = event.target.closest("[data-show-review-tag-hint]");
+    if (description && root.contains(description)) {
+      event.preventDefault();
+      event.stopPropagation();
+      const help = description.closest(".review-tag-help");
+      closeAllTagOptionMenus();
+      help?.querySelector("[data-ui-info-trigger]")?.focus({ preventScroll: true });
+      if (help) showUiInfoPopover(help, root, { pinned: true });
+      return;
+    }
     const button = event.target.closest("[data-remove-review-tag], [data-remove-review-evidence]");
     if (!button || !root.contains(button)) return;
     event.preventDefault();
@@ -840,9 +873,9 @@ function updateReviewTagOptionRow(item) {
   const label = option?.querySelector(".tag-option-check span, span");
   if (label) label.textContent = String(item?.label || tagLabel(item?.key));
   if (option) {
-    if (item?.hint) option.title = String(item.hint);
-    else option.removeAttribute("title");
+    option.removeAttribute("title");
   }
+  syncReviewTagHints(row.parentElement);
 }
 
 function markDeletedReviewTagOption(item) {
@@ -1219,6 +1252,7 @@ function bindReviewDropdownToggles(root) {
     dropdown.addEventListener("toggle", () => {
       const panel = reviewDropdownPanel(dropdown);
       if (!dropdown.open) {
+        closeUiInfoPopovers(dropdown);
         resetReviewDropdownPanel(panel);
         const search = panel?.querySelector("[data-review-dropdown-search]");
         if (search?.value) {

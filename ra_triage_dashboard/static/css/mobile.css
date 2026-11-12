@@ -678,7 +678,7 @@
     overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
   }
   .ui-select-option-label { white-space: normal; overflow-wrap: anywhere; }
-  .review-tag-dropdown .tag-option-check, .tag-option-menu-toggle,
+  .review-tag-dropdown .tag-option-check, .tag-option-menu-toggle, .tag-option-menu-item,
   .multi-filter-tools button, .multi-filter-actions button, .multi-filter-action { min-height: 44px; }
   .screenshot-paste-copy small { display: none; }
   .review-form textarea { scroll-margin-top: calc(var(--mobile-topbar-height, 62px) + 64px); }
