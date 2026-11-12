@@ -241,7 +241,8 @@ def test_withdrawal_and_suppression_recompute_without_deleting_history(db,tmp_pa
         assert conn.execute('SELECT COUNT(*) AS n FROM label_revisions WHERE label_case_id=?',(withdrawn['label_case_id'],)).fetchone()['n']==2
 
 
-def test_http_budget_covers_every_query_page_and_write(monkeypatch):
+@pytest.mark.parametrize('sdk_scheme', ['http', 'https'])
+def test_http_budget_covers_every_query_page_and_write(monkeypatch, sdk_scheme):
     from types import SimpleNamespace
     from ra_triage_dashboard.app import human_publisher as worker,rd_results
     clock=[100.0];events=[]
@@ -250,12 +251,14 @@ def test_http_budget_covers_every_query_page_and_write(monkeypatch):
     response=SimpleNamespace(raise_for_status=lambda:None)
     class Transport:
         client=SimpleNamespace(_post_headers=lambda url:{})
-        def send_request(self,url,data,timeout=None):events.append((clock[0],'read'));return response
+        def send_request(self,url,data,timeout=None):
+            assert url==worker.QUERY_ENDPOINT
+            events.append((clock[0],'read'));return response
     class Adapter:
         client=Transport()
         def fetch(self,ids):
             # Pagination inside the reused SDK must not bypass the rate limit.
-            for page in range(2):self.client.send_request(worker.QUERY_ENDPOINT,dict(page=page))
+            for page in range(2):self.client.send_request(worker.QUERY_ENDPOINT.replace('https://',sdk_scheme+'://',1),dict(page=page))
             return [dict(issue_id=i,**{f:None for f in FIELDS.values()}) for i in ids]
     class Session:
         def __enter__(self):return self
@@ -274,6 +277,8 @@ def test_http_budget_covers_every_query_page_and_write(monkeypatch):
         with pytest.raises(ValueError):client.fetch(ids)
     for lane,values in [('rd',{'bad':None}),('auto',{'cn1':'成功'}),('rd',{'cn1':''})]:
         with pytest.raises(ValueError):client.update(lane,values)
+    for url in ['https://other.example/paladin/issue/pool/query/',worker.QUERY_ENDPOINT+'?redirect=1',worker.ENDPOINT]:
+        with pytest.raises(ValueError):client.delegate.client.send_request(url,{})
     assert len(events)==5
 
 

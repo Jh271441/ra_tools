@@ -42,10 +42,10 @@ class _PacedQueryTransport:
         self.pace = pace
 
     def send_request(self, url, data, timeout=None):
-        if url != QUERY_ENDPOINT:
+        if url not in {QUERY_ENDPOINT, QUERY_ENDPOINT.replace('https://', 'http://', 1)}:
             raise ValueError('Unexpected human publication query endpoint')
         self.pace()
-        return self.delegate.send_request(url, data, timeout)
+        return self.delegate.send_request(QUERY_ENDPOINT, data, timeout)
 
 
 class HumanTrailClient:
