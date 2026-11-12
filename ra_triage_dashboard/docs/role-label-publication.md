@@ -2,7 +2,7 @@
 
 2026-11-12 验收候选。已实现本地代码和合成数据预览，**尚未上线、未迁移生产数据、未写真实 Trail**。真实写入默认关闭，等待用户验证以及 Trail 字段能力验收。
 
-部署候选已整合线上基线 `0f32502749e0dc5a4376f6ae3536d617490f7562`，保留最新视频播放与冷启动修复；静态资源版本 794，新增 schema 061。本地功能分支为 `codex/manual-role-publication-20261112`，尚未推送或部署。既有 `origin` 经 GitHub 元数据核实为公开仓库，公开推送前需明确确认本次源码发布范围。
+部署候选已整合线上基线 `0f32502749e0dc5a4376f6ae3536d617490f7562`，保留最新视频播放与冷启动修复；静态资源版本 794，新增 schema 061。本地功能分支为 `codex/manual-role-publication-20261112`。既有 `origin` 经 GitHub 元数据核实为公开仓库，用户已在本次会话明确允许推送本次源码；部署状态以发布收据为准。
 
 长期规则及两张说明流程图已归档到看板 skill 的 `references/role-label-publication.md`；本文件记录实现、验收及上线步骤，不能作为已上线证明。
 
@@ -190,4 +190,4 @@ python -m ra_triage_dashboard.scripts.migrate_human_labels --help
 
 下一步使用统一入口，以最终推送 SHA 执行 `release_dashboard.py --sha <SHA> --prepare --allow-additive-migrations`。prepare 只运行云端完整测试和隔离灰度；生产切换阶段另做停止写入后的新鲜备份、恢复与计数核验、061 安装及历史任务迁移。代码回退与数据迁移回退分别处理，不能让旧分配逻辑重新处理已迁移任务。
 
-当前远端 `git@github.com:Jh271441/ra_tools.git` 经仓库元数据核实为公开仓库。本地准备已完成，尚未推送；公开推送本次源码的范围需要明确后才能进入该发布入口。云端灰度、生产备份恢复与数据迁移、SSO 完整链路、真实 Trail 字段/NULL/指标回退均未在本阶段完成。初次发布保持 `DASHBOARD_HUMAN_LABEL_WRITE_ENABLED=false`，不自动启用历史回刷。
+当前远端 `git@github.com:Jh271441/ra_tools.git` 经仓库元数据核实为公开仓库。用户随后明确允许将本次源码推送该仓库，继续沿用统一发布入口。云端灰度、生产备份恢复与数据迁移、SSO 完整链路、真实 Trail 字段/NULL/指标回退均未在本地准备阶段完成。初次发布保持 `DASHBOARD_HUMAN_LABEL_WRITE_ENABLED=false`，不自动启用历史回刷。
