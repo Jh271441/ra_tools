@@ -1,3 +1,43 @@
+## Native Range representation identity (2026-11-12)
+
+The adaptive `playback=short-gop-v1` endpoint previously returned original MP4
+bytes while an encode was pending, then optimized MP4 bytes after publication.
+The same URL therefore changed its index, byte offsets, length and ETag during
+one native download. A local reproduction of the actual old route returned
+original bytes for the first Range and different-copy bytes for the next.
+Chromium reproduced `MEDIA_ERR_DECODE` / `PIPELINE_ERROR_DECODE` when publication
+occurred between those requests. This is a server defect; network speed alone
+does not explain it, though a slow download increases the exposure window.
+
+The adaptive URL now returns a private, non-cacheable307 to a versioned URL.
+Every subsequent Range remains on that exact original or optimized file. A
+missing/replaced version returns409 instead of substituting another file. Scope
+and indexed-root checks still run for each request. Original/short-GOP bytes,
+Range/If-Range behavior, background encode limits and the native player are
+unchanged. Versioned responses retain private five-minute caching. The resolver
+adds one same-origin HTTP round trip; it does not wait for encoding. Existing
+failed players should use their explicit Retry action to select a fresh version.
+
+Reported cn37677415: the original37797668-byte40s BEV has keyframes only at0s
+and25s, so native startup at t0=20s must decode from0s. Its39354540-byte short-GOP
+copy was published2026-11-12T11:44:18.110940Z (19:44:18 CST), has2s keyframes
+including20s, and both400-frame files passed full server-side decoding. This
+explains a material first-load/refresh difference; no browser trace was recovered
+from the user's failed tab, so it is not proof of that tab's exact error.
+
+Regression tests cover concurrent original ranges during copy publication,
+independent warm viewers, missing/replaced copies, changed sources, scope removal,
+base-path redirects, suffix ranges, If-Range and416. The actual unchanged player
+also passed cold/warm Chromium tests using synthetic40s files and256KiB HTTP
+responses:120 monotonically submitted frames per run, paused t0 and exact
+19.1/38.1/20s seeks, with one ETag/representation per download. The old route
+failed on its second request. Evidence `/private/tmp/player-cn37677415-20261112/`.
+An additional2Mbps/150ms warm-copy run passed41 advancing submitted frames,
+independent100ms clock/frame sampling and the same three seeks without a media
+error. These synthetic browser checks leave the user's profiles/tabs untouched.
+This does not claim production p95, authenticated UI acceptance or elimination
+of long-GOP startup cost. No application fragment loader was re-enabled.
+
 ## Cold-start discovery — cache793 (2026-11-12)
 
 The stable cache792 native player (`bev-video.js` and `video-segments.js`) is

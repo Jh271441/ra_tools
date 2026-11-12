@@ -57,21 +57,33 @@ class DeferredCaseMediaTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_playback_copy_keeps_asset_scope_checks_and_falls_back_immediately(self):
         from fastapi import HTTPException
+        from urllib.parse import parse_qs, urlsplit
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
         provider = MagicMock()
-        original, optimized = Path("/indexed/video.mp4"), Path("/cache/video.mp4")
+        original, optimized = Path(temporary.name) / "original.mp4", Path(temporary.name) / "copy.mp4"
+        original.write_bytes(b"original")
+        optimized.write_bytes(b"optimized")
         provider.get_asset_path.return_value = original
         with patch.object(cases_router.database, "get_issue", return_value={"baseline_scope": "strict"}), \
              patch.object(cases_router, "media_for_issue", return_value=provider), \
-             patch.object(cases_router.video_playback_cache, "request", return_value=optimized) as prepare:
+             patch.object(cases_router.video_playback_cache, "request", return_value=optimized) as prepare, \
+             patch.object(cases_router.video_playback_cache, "get", return_value=optimized):
             response = await cases_router.get_asset("cn1", "bev-video-0", "short-gop-v1")
-            self.assertEqual(response.path, optimized)
-            self.assertEqual(response.headers["accept-ranges"], "bytes")
-            self.assertEqual(response.headers["x-video-playback"], "short-gop-v1")
+            self.assertEqual(response.status_code, 307)
+            query = parse_qs(urlsplit(response.headers["location"]).query)
+            pinned = await cases_router.get_asset("cn1", "bev-video-0", query["playback"][0], fingerprint=query["fingerprint"][0])
+            self.assertEqual(pinned.path, optimized)
+            self.assertEqual(pinned.headers["accept-ranges"], "bytes")
+            self.assertEqual(pinned.headers["x-video-playback"], "short-gop-v1")
             prepare.assert_called_once_with(original)
             prepare.return_value = None
             response = await cases_router.get_asset("cn1", "bev-video-0", "short-gop-v1")
-            self.assertEqual(response.path, original)
             self.assertIn("no-store", response.headers["cache-control"])
+            query = parse_qs(urlsplit(response.headers["location"]).query)
+            self.assertEqual(query["playback"], ["original-v1"])
+            pinned = await cases_router.get_asset("cn1", "bev-video-0", query["playback"][0], fingerprint=query["fingerprint"][0])
+            self.assertEqual(pinned.path, original)
             prepare.reset_mock()
             self.assertEqual((await cases_router.get_asset("cn1", "bev-video-0")).path, original)
             prepare.assert_not_called()

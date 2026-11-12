@@ -8,10 +8,10 @@ import json
 import threading
 from pathlib import Path
 from typing import Any, Optional
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 from fastapi import APIRouter, Request, Response
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from PIL import Image, UnidentifiedImageError
 
 from ..case_media import empty_case_media, resolve_case_media
@@ -68,7 +68,7 @@ from ..runtime import (
     video_playback_cache,
     video_stream_cache,
 )
-from ..video_playback import RECIPE as VIDEO_PLAYBACK_RECIPE
+from ..video_playback import RECIPE as VIDEO_PLAYBACK_RECIPE, ORIGINAL_RECIPE, playback_fingerprint
 from ..video_stream import RECIPE as VIDEO_STREAM_RECIPE
 from ..trail_sync import read_trail_issue_metadata
 from ..trail_metadata_store import TrailMetadataStore
@@ -1638,18 +1638,40 @@ async def get_asset(issue_id: str, asset_id: str, playback: str = "", stream: st
         else "image/png"
     )
     if suffix == ".mp4":
-        # Resolve/index/scope checks above always run first. Encoding is never
-        # awaited here: missing copies immediately retain the original stream.
-        copy = await asyncio.to_thread(video_playback_cache.request, path) if playback == VIDEO_PLAYBACK_RECIPE else None
+        copy = None
+        version = ""
+        if playback == VIDEO_PLAYBACK_RECIPE and not fingerprint:
+            # A native video makes multiple Range requests. Never serve bytes
+            # from this adaptive URL: background preparation could otherwise
+            # replace the original's index/data with a differently encoded copy
+            # halfway through a single playback. Redirect to one exact version.
+            copy = await asyncio.to_thread(video_playback_cache.request, path)
+            version = await asyncio.to_thread(playback_fingerprint, copy or path)
+            url = _public_path(f"/api/assets/{quote(issue_id, safe='')}/{quote(asset_id, safe='')}")
+            return RedirectResponse(url + "?" + urlencode({
+                "playback": VIDEO_PLAYBACK_RECIPE if copy else ORIGINAL_RECIPE,
+                "fingerprint": version,
+            }), status_code=307, headers={"Cache-Control": "private, no-store"})
+        if playback in {VIDEO_PLAYBACK_RECIPE, ORIGINAL_RECIPE}:
+            # Versioned reads never build, substitute, or fall back. The asset
+            # authority checks above still apply to every request, including a
+            # cached version. Retry selects a fresh version through the entry URL.
+            copy = await asyncio.to_thread(video_playback_cache.get, path) if playback == VIDEO_PLAYBACK_RECIPE else None
+            if playback == VIDEO_PLAYBACK_RECIPE and copy is None:
+                raise _detail(409, "视频版本已更新，请重试。 / Video version changed; retry playback.")
+            version = await asyncio.to_thread(playback_fingerprint, copy or path)
+            if not fingerprint or fingerprint != version:
+                raise _detail(409, "视频版本已更新，请重试。 / Video version changed; retry playback.")
         return FileResponse(
             copy or path,
             media_type=media_type,
             headers={
                 "Accept-Ranges": "bytes",
-                "Cache-Control": "private, max-age=300, must-revalidate" if copy or not playback else "private, no-store",
+                "Cache-Control": "private, max-age=300, must-revalidate" if version or not playback else "private, no-store",
                 "X-Video-Playback": VIDEO_PLAYBACK_RECIPE if copy else "original",
                 "Content-Disposition": "inline",
                 "X-Content-Type-Options": "nosniff",
+                **({"ETag": '"' + version + '"'} if version else {}),
             },
         )
     return FileResponse(path, media_type=media_type, filename=path.name)

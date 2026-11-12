@@ -21,7 +21,18 @@ import threading
 import time
 
 RECIPE = "short-gop-v1"
+ORIGINAL_RECIPE = "original-v1"
 logger = logging.getLogger(__name__)
+
+
+def playback_fingerprint(path: Path) -> str:
+    """Version one representation without reading a video on the HTTP path."""
+    resolved = path.resolve(strict=True)
+    stat = resolved.stat()
+    return hashlib.sha256(json.dumps(
+        [str(resolved), stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns],
+        separators=(",", ":"),
+    ).encode()).hexdigest()
 
 
 def source_identity(source: Path) -> tuple[Path, str]:
