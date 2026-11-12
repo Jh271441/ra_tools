@@ -1,7 +1,13 @@
+// Production recovery: use native progressive loading until segmented playback
+// can preserve a complete clip without parser replay, eviction or clock resets.
+// Keep the isolated implementation available for regression fixtures only.
+const VIDEO_SEGMENT_LOADING_ENABLED = false;
+
 /* Target-first loading of the existing full-quality H264 samples. Native video
  * still owns decoding, currentTime, play/pause and presentation. No other track
  * is fetched. Unsupported/missing/failed streams retain progressive playback. */
 function videoSegmentManifestUrl(url) {
+  if (!VIDEO_SEGMENT_LOADING_ENABLED) return "";
   const safe = safeSameOriginAssetUrl(url);
   if (!safe || !/\/api\/assets\/[^/]+\/[^/]+$/.test(new URL(safe, location.origin).pathname)
       || typeof MediaSource === "undefined"

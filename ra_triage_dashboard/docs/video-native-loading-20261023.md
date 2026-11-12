@@ -1,3 +1,18 @@
+## Production recovery — cache792 (2026-11-12)
+
+Restore native progressive playback for the selected full-quality video. The
+segmented loader is disabled before manifest discovery: no production MediaSource,
+fragment retries/replay, application buffer eviction or automatic rebuffer seeks.
+Use `preload="auto"` so loading can continue while paused. Preserve paused t0,
+latest Play/Pause/seek intent, source-frame protection, shortcuts and explicit
+Retry at the retained position. No other source is prefetched.
+
+This is incident containment for reported freezes and apparent backward jumps,
+not a claim that the specific production freeze was reproduced. Backend health
+was 200/123 ms at inspection and production was still cache791. Native buffering
+remains browser-managed: `preload=auto` is a hint, not a guaranteed full-file cache.
+The disabled MSE fixture suite explicitly opts in only in isolated tests.
+
 # Native video loading restoration — 2026-10-23
 
 ## Interrupted downloads and terminal errors — 2026-11-12 / cache791

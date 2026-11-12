@@ -2,6 +2,16 @@
 const fs = require('node:fs'), vm = require('node:vm'), assert = require('node:assert/strict');
 const path = require('node:path');
 const source = name => fs.readFileSync(path.join(__dirname, '../static/js', name), 'utf8');
+// Exercise the retained experimental loader independently; production defaults
+// to the native path and must never instantiate MediaSource or fetch an index.
+const segmentFixtureSource = () => source('video-segments.js').replace(
+  'const VIDEO_SEGMENT_LOADING_ENABLED = false;', 'const VIDEO_SEGMENT_LOADING_ENABLED = true;');
+{
+  const context = {};
+  vm.createContext(context); vm.runInContext(source('video-segments.js'), context);
+  assert.equal(context.videoSegmentManifestUrl('/api/assets/cn1/bev-video-0'), '');
+  assert.equal(context.createVideoSegmentLoader({}, {url:'/api/assets/cn1/bev-video-0'}), null);
+}
 const tick = () => new Promise(setImmediate);
 
 async function pausedSegments() {
@@ -36,7 +46,7 @@ async function pausedSegments() {
     return new Response(new Uint8Array(100), {status: 206,
       headers: {'Content-Range': range.replace('=', ' ') + '/600'}});
   }};
-  vm.createContext(context); vm.runInContext(source('video-segments.js'), context);
+  vm.createContext(context); vm.runInContext(segmentFixtureSource(), context);
   const loader = context.createVideoSegmentLoader(video, {url: '/api/assets/cn1/bev-video-0',
     position: () => video.currentTime, playbackRequested: () => playbackRequested,
     attached() {}, fallback() { throw Error('Unexpected native fallback'); }});
@@ -137,7 +147,7 @@ async function interruptedSegments(fault, cancel = false) {
       return new Response(new Uint8Array(Number(last)-Number(first)+1),{status:206,
         headers:{'Content-Range':range.replace('=',' ')+'/500'}});
     }};
-  vm.createContext(context);vm.runInContext(source('video-segments.js'),context);
+  vm.createContext(context);vm.runInContext(segmentFixtureSource(),context);
   const loader=context.createVideoSegmentLoader(video,{url:'/api/assets/cn1/bev-video-0',
     position:()=>video.currentTime,attached(){},fallback(){fallback++;}});
   for(let i=0;i<10;i++)await tick();

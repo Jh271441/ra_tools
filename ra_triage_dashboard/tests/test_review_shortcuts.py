@@ -362,7 +362,7 @@ const markup=videoPlayerMarkup({url:'/api/assets/cn1/bev-video',start_offset_sec
 assert.match(markup,/data-start-offset-sec="-20"/);
 assert.match(markup,/data-t0-player-sec="20"/);
 assert.match(markup,/src="\/api\/assets\/cn1\/bev-video\?playback=short-gop-v1#t=20"/);
-assert.match(markup,/preload="metadata"/);
+assert.match(markup,/preload="auto"/);
 assert.doesNotMatch(markup,/data-event-time-sec/);
 assert.equal(videoT0PlayerPosition(40,39),20);
 assert.equal(videoT0PlayerPosition(0,40),20);

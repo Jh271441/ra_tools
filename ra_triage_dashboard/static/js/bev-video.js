@@ -255,7 +255,7 @@ function videoPlayerMarkup(video, { zoomable = true, compact = false, issueId = 
   const posterAttribute = posterUrl ? ` poster="${escapeHtml(posterUrl)}"` : "";
   const sourceUrl = videoPlaybackSourceUrl(video.url, durationSec > 0 ? t0PlayerSec : null);
   const segmented = typeof videoSegmentManifestUrl === "function" && videoSegmentManifestUrl(sourceUrl);
-  const videoMarkup = `<video data-video-source="${escapeHtml(sourceUrl)}"${segmented ? "" : ` src="${escapeHtml(sourceUrl)}"`}${posterAttribute} preload="metadata" muted playsinline draggable="false" aria-label="${escapeHtml(uiText("复核视频", "Review video"))}"></video>`;
+  const videoMarkup = `<video data-video-source="${escapeHtml(sourceUrl)}"${segmented ? "" : ` src="${escapeHtml(sourceUrl)}"`}${posterAttribute} preload="auto" muted playsinline draggable="false" aria-label="${escapeHtml(uiText("复核视频", "Review video"))}"></video>`;
   const mediaMarkup = zoomable
     ? `<div class="media-viewport media-video-viewport" data-video-viewport><div class="media-canvas media-video-canvas" data-video-canvas>${videoMarkup}</div></div>`
     : `<div class="hero-media-button hero-media-video">${videoMarkup}</div>`;

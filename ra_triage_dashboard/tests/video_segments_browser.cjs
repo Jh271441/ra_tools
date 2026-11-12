@@ -65,7 +65,8 @@ const server=http.createServer((req,res)=>{
    window.safeSameOriginAssetUrl=v=>{const u=new URL(String(v||''),location.origin);return u.origin===location.origin?u.pathname+u.search:'';};
    window.watch=v=>{v._submitted=[];const frame=(_now,m)=>{v._submitted.push(m.mediaTime);v._lastPresented=m.mediaTime;if(v.isConnected)v.requestVideoFrameCallback(frame);};v.requestVideoFrameCallback(frame);};
   });
-  await page.addScriptTag({path:path.join(staticRoot,'js/video-segments.js')});await page.addScriptTag({path:path.join(staticRoot,'js/bev-video.js')});await page.addScriptTag({path:path.join(staticRoot,'js/detail-media.js')});
+  // This suite explicitly opts into the disabled experimental loader.
+  await page.addScriptTag({content:fs.readFileSync(path.join(staticRoot,'js/video-segments.js'),'utf8').replace('const VIDEO_SEGMENT_LOADING_ENABLED = false;', 'const VIDEO_SEGMENT_LOADING_ENABLED = true;')});await page.addScriptTag({path:path.join(staticRoot,'js/bev-video.js')});await page.addScriptTag({path:path.join(staticRoot,'js/detail-media.js')});
   await page.evaluate(()=>{
    window.mount=(mode,name='current',total=40000)=>{const root=document.querySelector('#player');releaseBevVideoPlayer(root);const url=`/api/assets/cn99999/${name}.mp4?mode=${mode}`;
     root.innerHTML=videoPlayerMarkup({url,duration_ms:total,frame_step_ms:100,tracks:[{url,label:'BEV 视频'},{url:`/api/assets/cn99999/closeup.mp4?mode=${mode}`,label:'局部 BEV 视频',source_id:'bev_closeup'}]},{zoomable:false});window.v=root.querySelector('video');watch(v);bindBevVideoPlayers(root);};
