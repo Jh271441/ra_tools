@@ -1,6 +1,6 @@
 /* Role conclusions and synchronization are deliberately separate from task delivery. */
 const humanPublication = { lane:'rd',data:null,loading:false,busy:false,error:'',notice:'',epoch:0,selected:new Set(),preview:null,
-  filters:{q:'',status:'all',page:1,page_size:DEFAULT_CASE_PAGE_SIZE},draft:{q:'',status:'all'},infoOpen:false,history:null,historyIssue:'',historyPage:1,historySize:DEFAULT_CASE_PAGE_SIZE,timer:null };
+  filters:{q:'',status:'all',page:1,page_size:DEFAULT_CASE_PAGE_SIZE},draft:{q:'',status:'all'},history:null,historyIssue:'',historyPage:1,historySize:DEFAULT_CASE_PAGE_SIZE,timer:null };
 function humanPublicationPageActive() {
   return state.selectedBaselineIds.length>0 && state.selectedBaselineIds.every(id=>/^version-20\d{6}$/.test(id) && id.slice(8)>='20261106')
     && new URLSearchParams(location.search).get('mode')!=='te-correction';
@@ -80,15 +80,11 @@ function renderHumanPublications() {
   const h=humanPublication,d=h.data,root=$('#rdResultsPage'),disabled=h.loading||h.busy;
   const focus=document.activeElement?.id,caret=document.activeElement?.selectionStart;
   const button=(action,zh,en,off=false,primary=false,quiet=false)=>`<button type="button" class="button ${primary?'button-primary':quiet?'button-quiet':'button-secondary'}" data-hp-action="${action}" ${disabled||off?'disabled':''}>${uiText(zh,en)}</button>`;
-  const historyUrl=new URL(pageUrl('rd-results',{baselines:state.selectedBaselineIds}),location.origin);historyUrl.searchParams.set('mode','te-correction');
   const historyRow=d?.items.find(row=>row.issue_id===h.historyIssue);
   root.classList.remove('is-te-correction');root.classList.add('human-publications-page');
   root.innerHTML=`<section class="page-card runs-source-card rd-overview" aria-label="${uiText('标注上传概览','Label publication overview')}"><div class="runs-source-heading rd-mode-header"><div><div class="rd-mode-tabs" role="tablist" aria-label="${uiText('标注上传类型','Publication type')}">${['rd','te','arbitrated'].map(lane=>`<button id="hpTab-${lane}" type="button" role="tab" class="button button-secondary rd-mode-tab" data-hp-lane="${lane}" aria-label="${escapeHtml(humanLaneName(lane))}" aria-selected="${h.lane===lane}" aria-controls="hpPanel" tabindex="${h.lane===lane?0:-1}" ${disabled?'disabled':''}><span class="rd-mode-label-full">${escapeHtml(humanLaneName(lane))}</span><span class="rd-mode-label-compact" aria-hidden="true">${lane==='arbitrated'?uiText('裁决','Decision'):lane==='te'?'TE′':'RD'}</span></button>`).join('')}</div></div><div class="run-manager-actions">${button('refresh','刷新','Refresh',false,false,true)}</div></div>
     <div class="rd-mode-panel">${hpMetricsMarkup(d,disabled)}
-    <details id="hpInfo" class="rd-preview-info" ${h.infoOpen?'open':''}><summary>${uiText('上传说明','About uploads')}</summary><div>
-    <p class="rd-description">${uiText('正式标注形成结论后自动同步；任务外异议仅留作参考。可选择标注预览并重试上传。','Formal results sync automatically. Out-of-task objections remain advisory. Select labels to preview or retry an upload.')}</p>
-    <dl class="rd-upload-target"><div><dt>${uiText('目标字段','Target field')}</dt><dd><code>${escapeHtml(d?.field||({rd:'ra_rd_review_result',te:'ra_review_result_sampling',arbitrated:'ra_review_result_arbitrated'})[h.lane])}</code></dd></div></dl>
-    <a href="${escapeHtml(historyUrl.pathname+historyUrl.search)}">${uiText('原 TE 修正与历史记录','Original TE correction and history')}</a></div></details></div></section>
+    ${rdOverviewInfoMarkup(d?.field||({rd:'ra_rd_review_result',te:'ra_review_result_sampling',arbitrated:'ra_review_result_arbitrated'})[h.lane])}</div></section>
     <section id="hpPanel" class="page-card runs-page-card rd-workspace" role="tabpanel" aria-labelledby="hpTab-${h.lane}"><div class="rd-detail-toolbar"><div class="rd-detail-heading"><h3>${uiText('标注明细','Label details')}</h3></div>
     <form id="hpFilters" class="run-filter-bar rd-filters"><input id="hpSearch" maxlength="128" value="${escapeHtml(h.draft.q)}" placeholder="${uiText('搜索 Issue ID','Find Issue ID')}" aria-label="${uiText('搜索 Issue ID','Find Issue ID')}" ${disabled?'disabled':''}>
     <select id="hpStatus" aria-label="${uiText('结论筛选','Conclusion filter')}" ${disabled?'disabled':''}>${['all','resolved','pending','conflict','objection','stale','none','unassigned','inactive','unclassified'].map(value=>`<option value="${value}" ${h.draft.status===value?'selected':''}>${value==='all'?uiText('全部状态','All statuses'):escapeHtml(humanStatus(value))}</option>`).join('')}</select><button class="button button-secondary" type="submit" ${disabled?'disabled':''}>${uiText('筛选','Apply')}</button></form></div>
@@ -102,7 +98,6 @@ function renderHumanPublications() {
     ${historyRow?`<div class="rd-preview-summary">${h.lane==='arbitrated'?'':`<span>${uiText('必需标注','Required votes')} ${historyRow.submitted}/${historyRow.required}</span>`}${historyRow.checked_at?`<span>${uiText('最近核对','Last checked')} ${escapeHtml(rdObservationTime(historyRow.checked_at))} CST</span>`:''}</div>${historyRow.error_code?`<p class="rd-notice is-error">${escapeHtml(rdReason(historyRow.error_code)||humanStatus(historyRow.error_code))}</p>`:''}${historyRow.objections.length?`<div><h3>${uiText('任务外异议','Advisory objections')}</h3>${historyRow.objections.map(v=>`<p class="rd-description">${escapeHtml(v.author)} · ${escapeHtml(rdLabel(v.label))}</p>`).join('')}</div>`:''}`:''}
     ${h.history?.items.length?`<div class="rd-table-wrap"><table class="rd-table"><tbody>${h.history.items.map(i=>`<tr><td>${escapeHtml(rdObservationTime(i.created_at))} CST</td><td>${escapeHtml(humanStatus(i.action))}</td><td>${i.desired===null?'NULL':escapeHtml(rdLabel(i.desired))}</td><td>${humanBadge(i.state)}</td></tr>`).join('')}</tbody></table></div>`:`<p class="rd-description">${uiText('暂无上传尝试。','No publication attempts yet.')}</p>`}${rdPaginationMarkup(h.history,false,{prefix:'hpHistory',actionPrefix:'history-',size:h.historySize,disabled})}</section>`:''}`;
   enhanceDashboardSelects(root);
-  root.querySelector('#hpInfo').ontoggle=e=>{h.infoOpen=e.target.open;};
   root.oninput=e=>{if(e.target.id==='hpSearch')h.draft.q=e.target.value;};
   root.onchange=e=>{
     if(e.target.id==='hpStatus')h.draft.status=e.target.value;

@@ -210,3 +210,5 @@ python -m ra_triage_dashboard.scripts.migrate_human_labels --help
 
 - `https://auto-triage.intra.xiaojukeji.com/manual/rd-results?baselines=version-20261106`：三类页签、两条真实目标与本地同步状态、详情/异议/历史；真实写入不可提交。
 - `https://auto-triage.intra.xiaojukeji.com/manual/version-datasets?dataset=release-20261106-odd2`：原 RD 进度、TE 负责人及独立进度；查看原任务旧链接仍能定位同一 Issue。
+
+2026-11-13 后续验收修正：生产 SDK 的查询配置仍使用已知 HTTP 地址，限流适配器现先严格识别这两个已知协议地址，再统一规范为 HTTPS，其他主机、路径和附加查询参数仍拒绝；HTTP/HTTPS 两种配置均覆盖逐分页限流回归。用户进一步指定上传说明恢复原版，现直接复用 `rdOverviewInfoMarkup` 的“上传接口 / 目标字段”布局，不再使用新增的 `hpInfo` 折叠说明和长文案；字段仍随 RD/TE′/裁决页签切换。前端定向 63 项、12 组本机合成浏览器检查通过，候选 cache796；实际部署和回刷启用另以运行回执为准。

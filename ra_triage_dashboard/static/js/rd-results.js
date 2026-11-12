@@ -14,8 +14,8 @@ const rdPreviewStorageKey = () => `rd-results-preview:${location.pathname}:${rdR
 function rdModeTabs() {
   return `<div class="rd-mode-tabs" role="tablist" aria-label="${rdText('标注上传类型', 'Publication type')}">${[['rd','RD 上传','RD upload','RD 标注上传','RD label upload'],['te-correction','TE 修正','TE correction','TE 标注修正','TE label correction']].map(([mode,zh,en,titleZh,titleEn]) => `<button id="rdMode-${mode}" type="button" role="tab" class="button button-secondary rd-mode-tab" data-rd-mode="${mode}" aria-label="${rdText(titleZh,titleEn)}" aria-selected="${rdResults.mode === mode}" aria-controls="rdModePanel" tabindex="${rdResults.mode === mode ? '0' : '-1'}" ${rdResults.busy || rdResults.committing ? 'disabled' : ''}><span class="rd-mode-label-full">${rdText(titleZh,titleEn)}</span><span class="rd-mode-label-compact" aria-hidden="true">${rdText(zh,en)}</span></button>`).join('')}</div>`;
 }
-function rdOverviewInfoMarkup() {
-  return `<dl class="rd-upload-target"><div><dt>${rdText('上传接口','Upload endpoint')}</dt><dd><span class="rd-http-method">POST</span><code>${RD_UPLOAD_ENDPOINT}</code></dd></div><div><dt>${rdText('目标字段','Target field')}</dt><dd><code>${rdUploadField()}</code></dd></div></dl>`;
+function rdOverviewInfoMarkup(field = rdUploadField()) {
+  return `<dl class="rd-upload-target"><div><dt>${rdText('上传接口','Upload endpoint')}</dt><dd><span class="rd-http-method">POST</span><code>${RD_UPLOAD_ENDPOINT}</code></dd></div><div><dt>${rdText('目标字段','Target field')}</dt><dd><code>${escapeHtml(field)}</code></dd></div></dl>`;
 }
 const rdTERefreshing = () => rdIsTE() && rdResults.teRefresh?.status === 'running';
 const rdHasExcel = () => rdIsTE() && Boolean(rdResults.excelFile);
