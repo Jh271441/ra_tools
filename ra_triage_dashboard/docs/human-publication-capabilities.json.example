@@ -1,0 +1,25 @@
+{
+  "endpoint": "https://voyager.intra.xiaojukeji.com/paladin/issue/pool/multi_update/",
+  "qualified": false,
+  "evidence": [],
+  "fields": {
+    "ra_rd_review_result": {
+      "values": ["成功", "误触发", "无需协助"],
+      "null_clear": false,
+      "metric_null_fallback": false,
+      "absent_means_null": false
+    },
+    "ra_review_result_sampling": {
+      "values": ["成功", "误触发", "无需协助"],
+      "null_clear": false,
+      "metric_null_fallback": false,
+      "absent_means_null": false
+    },
+    "ra_review_result_arbitrated": {
+      "values": ["成功", "误触发", "无需协助"],
+      "null_clear": false,
+      "metric_null_fallback": false,
+      "absent_means_null": false
+    }
+  }
+}

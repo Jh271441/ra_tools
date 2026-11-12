@@ -132,6 +132,8 @@ class Settings:
     trail_rollback_enabled: bool
     trail_rd_write_enabled: bool
     trail_te_write_enabled: bool
+    human_label_write_enabled: bool
+    human_label_capabilities_file: Path | None
     # The Review aggregate historically writes both model label and info. Keep
     # that route independently disabled when the deployment only authorizes
     # direct Issue-ID info updates.
@@ -484,6 +486,9 @@ class Settings:
             trail_rollback_enabled=_bool("DASHBOARD_TRAIL_ROLLBACK_ENABLED", False),
             trail_rd_write_enabled=_bool("DASHBOARD_TRAIL_RD_WRITE_ENABLED", False),
             trail_te_write_enabled=_bool("DASHBOARD_TRAIL_TE_WRITE_ENABLED", False),
+            human_label_write_enabled=_bool("DASHBOARD_HUMAN_LABEL_WRITE_ENABLED", False),
+            human_label_capabilities_file=Path(os.environ['DASHBOARD_HUMAN_LABEL_CAPABILITIES_FILE']).expanduser()
+                if os.getenv('DASHBOARD_HUMAN_LABEL_CAPABILITIES_FILE','').strip() else None,
             trail_attribute_review_write_enabled=_bool(
                 "DASHBOARD_TRAIL_ATTRIBUTE_REVIEW_WRITE_ENABLED", False
             ),

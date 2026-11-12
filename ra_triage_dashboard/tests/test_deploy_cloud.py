@@ -103,6 +103,24 @@ COMMIT;
             with self.assertRaises(d.DeployError):
                 d.validate_schema_migration_sql(path, unsafe)
 
+    def test_role_publication_triggers_require_exact_review_and_migration_mode(self):
+        path = "ra_triage_dashboard/migrations/postgres/061_human_label_publication.sql"
+        content = (Path(__file__).parents[2] / path).read_text()
+        d.validate_additive_migration_sql(path, content)
+        for changed_path, changed_content in ((path.replace('061_', '062_'), content),
+                                               (path, content.replace('publication_armed INTEGER NOT NULL DEFAULT 1',
+                                                                      'publication_armed INTEGER NOT NULL DEFAULT 0'))):
+            with self.assertRaises(d.DeployError):
+                d.validate_additive_migration_sql(changed_path, changed_content)
+        def git(*args, **kwargs):
+            if args[:2] == ('diff', '--name-only'):return path
+            if args[:2] == ('diff', '--name-status'):return 'A\t' + path
+            if args[0] == 'show':return content
+            raise AssertionError(args)
+        with patch.object(d, 'git', side_effect=git):
+            with self.assertRaises(d.DeployError):d.migration_changes('old', 'new')
+            self.assertEqual(d.migration_changes('old', 'new', allow_additive=True), [path])
+
     def test_additive_migration_runs_verified_backup_before_apply(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -167,7 +185,7 @@ COMMIT;
         health = dict(ok=True, build_commit="a"*40, storage="sqlite-mvp", trail_attribute_write_enabled=False, trail_rd_write_enabled=False,
                       trail_attribute_review_write_enabled=False, batch_prediction_enabled=False, autotriage_push_enabled=False)
         d.check_health(health, "a"*40, "sqlite")
-        for changes in ({"build_commit": "b"*40}, {"storage": "postgresql"}, {"batch_prediction_enabled": True}, {"trail_rd_write_enabled": True}, {"trail_te_write_enabled": True}, {"ok": False}):
+        for changes in ({"build_commit": "b"*40}, {"storage": "postgresql"}, {"batch_prediction_enabled": True}, {"trail_rd_write_enabled": True}, {"human_label_write_enabled": True}, {"trail_te_write_enabled": True}, {"ok": False}):
             with self.assertRaises(d.DeployError):
                 d.check_health(dict(health, **changes), "a"*40, "sqlite")
         legacy = dict(health); legacy.pop('trail_rd_write_enabled')

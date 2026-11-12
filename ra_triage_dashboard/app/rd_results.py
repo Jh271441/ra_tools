@@ -177,7 +177,8 @@ def local_rows(db, ids):
             batch = ids[offset:offset + 400]
             if not batch:
                 continue
-            rows = conn.execute(f"SELECT issue_id,baseline_scope FROM issues WHERE issue_id IN ({','.join('?' for _ in batch)})", batch).fetchall()
+            rows = conn.execute(f"SELECT issue_id,baseline_scope,EXISTS(SELECT 1 FROM human_label_scopes h WHERE h.issue_id=issues.issue_id) AS human_managed FROM issues WHERE issue_id IN ({','.join('?' for _ in batch)})", batch).fetchall()
+            managed={r["issue_id"] for r in rows if r["human_managed"]}
             scopes = {}
             for row in rows:
                 if row['baseline_scope'] in active:
@@ -188,6 +189,7 @@ def local_rows(db, ids):
                     revisions = [r for s in item.get('sources', []) for r in s.get('revision_summaries', [])]
                     decision = item.get('decision') or {}
                     result[iid] = dict(issue_id=iid, baseline_scope=scope,
+                        human_managed=iid in managed,
                         state=item['state'], label=item.get('expected_output', ''),
                         fingerprint=digest(item),
                         authors=sorted({r['author'] for r in revisions if r.get('author')} | ({decision['created_by']} if decision.get('created_by') else set())),
@@ -219,6 +221,8 @@ def manual_label_snapshot(row):
 
 
 def classify(row, remote, mode=RD_MODE):
+    if mode == RD_MODE and row.get('human_managed'):
+        return 'blocked'
     field = target_field(mode)
     if row['state'] != 'resolved' or row['label'] not in VALUES:
         return 'blocked'

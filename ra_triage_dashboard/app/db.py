@@ -26,6 +26,8 @@ from .db_parts.shared import (
 )
 
 from .db_parts.access import DatabaseAccessMixin
+from .db_parts.human_labels import DatabaseHumanLabelsMixin
+from .db_parts.role_version_tasks import RoleVersionTasksMixin
 from .db_parts.batch import DatabaseBatchMixin
 from .db_parts.cases import DatabaseCasesMixin
 from .db_parts.campaigns import DatabaseCampaignMixin
@@ -49,6 +51,8 @@ from .db_parts.comment_mutations import DatabaseCommentMutationsMixin
 
 
 class Database(
+    RoleVersionTasksMixin,
+    DatabaseHumanLabelsMixin,
     DatabaseCommentMutationsMixin,
     DatabaseTrailHistoryMixin,
     DatabaseVersionDatasetsMixin,

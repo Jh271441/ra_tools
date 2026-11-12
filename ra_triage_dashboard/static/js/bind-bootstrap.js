@@ -534,7 +534,7 @@ function bindEvents() {
     const submit = event.submitter || event.currentTarget.querySelector("button[type='submit']");
     submit.disabled = true;
     try {
-      await saveAccessUser(username, $("#accessUserRole").value, $("#accessIntentPermission").value);
+      await saveAccessUser(username, $("#accessUserRole").value, $("#accessIntentPermission").value, $("#accessAnnotationRole").value);
       input.value = "";
       showToast(t("toast.access_saved"));
     } catch (error) {
@@ -549,7 +549,7 @@ function bindEvents() {
     const username = row.dataset.accessUser;
     if (event.target.closest("[data-save-access-user]")) {
       try {
-        await saveAccessUser(username, row.querySelector("[data-access-role]").value, row.querySelector("[data-intent-permission]").value);
+        await saveAccessUser(username, row.querySelector("[data-access-role]").value, row.querySelector("[data-intent-permission]").value, row.querySelector("[data-annotation-role]").value);
         showToast(t("toast.access_updated"));
       } catch (error) { showToast(error.message, true); }
     }

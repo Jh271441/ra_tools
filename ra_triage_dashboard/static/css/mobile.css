@@ -1173,3 +1173,12 @@
   .rd-mode-label-compact { display: inline; }
   .rd-results-page.is-te-correction .rd-table { min-width: 760px; }
 }
+
+@media (max-width: 760px) {
+  .access-create-permissions, .access-role-row { grid-template-columns: minmax(0,1fr) !important; }
+  .human-publications-page .rd-mode-tabs { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .human-publications-page .button-primary { min-height: 48px; }
+  .review-task-supplemental-notice { font-size: 12px; }
+  .review-task-supplemental-notice > span { min-width: 0; overflow-wrap: anywhere; }
+  .review-task-supplemental-notice summary { min-width: 44px; min-height: 44px; display: flex; align-items: center; justify-content: center; }
+}

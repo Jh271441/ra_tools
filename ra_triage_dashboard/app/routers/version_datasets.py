@@ -42,7 +42,7 @@ async def items(
 
 @router.get("/api/version-datasets/{dataset_id}/workbench")
 @router.get("/api/version-datasets/{dataset_id}/workbench.csv")
-async def gallery(request: Request, dataset_id: str, page: int = Query(1,ge=1,le=10000), page_size: int = Query(24,ge=1,le=100),
+async def gallery(request: Request, dataset_id: str, page: int = Query(1,ge=1,le=10000), page_size: int = Query(20,ge=1,le=100),
                   mode: str = "targets", q: str = Query('',max_length=128), sort: str = "added", date: str = '',
                   te_status: str = 'all', revision: str = Query('',max_length=64),assignee:str='',review_status:str='all'):
     try:

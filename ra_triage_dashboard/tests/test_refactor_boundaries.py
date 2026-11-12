@@ -33,7 +33,7 @@ assert len(runtime_catalogs.REVIEW_TAG_CATALOG)>0
             manager = MagicMock()
             manager.__enter__.side_effect = lambda: (events.append('connect'), connection)[1]
             manager.__exit__.side_effect = lambda *args: events.append('commit')
-            phases = ['schema', 'change_tracking', 'campaign_compat', 'columns', 'recovery']
+            phases = ['schema', 'change_tracking', 'campaign_compat', 'columns', 'recovery', 'human_labels']
             patches = []
             try:
                 for phase in phases:

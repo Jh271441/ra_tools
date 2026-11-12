@@ -41,6 +41,8 @@ class DatabaseVersionDatasetsMixin(VersionCampaignsMixin, VersionRunConsolidatio
                     ))
                 for iid in batch:
                     label = projected.get(iid, {})
+                    human=label.get('human_publication')
+                    if human:label=dict(state=human['lanes']['rd']['state'],expected_output=human['lanes']['rd']['label'])
                     state, output = label.get('state'), label.get('expected_output')
                     if state == 'resolved' and output in distribution:
                         distribution[output] += 1
@@ -174,11 +176,19 @@ class DatabaseVersionDatasetsMixin(VersionCampaignsMixin, VersionRunConsolidatio
                             "SELECT assignee FROM review_work_assignments WHERE split_id=? AND issue_id=? ORDER BY assignee",
                             (campaign_id, iid),
                         ).fetchall()
-                        if len(assigned) > 1:
+                        role_task=conn.execute('SELECT cohort FROM human_version_tasks WHERE dataset_id=? AND campaign_id=?',(did,campaign_id)).fetchone()
+                        if len(assigned) > 1 and not role_task:
                             raise ValueError(
                                 "Overlapping original assignments require explicit resolution"
                             )
-                        if assigned:
+                        if role_task:
+                            owners=[r['assignee'] for r in assigned]
+                            if binding.get('assignees') and set(binding['assignees'])!=set(owners):
+                                raise ValueError('Role task assignments changed')
+                            binding.update(assignees=owners,cohort=role_task['cohort'])
+                            if binding.get('assignee') not in owners:
+                                raise ValueError('Primary reviewer is not assigned')
+                        elif assigned:
                             binding["assignee"] = assigned[0]["assignee"]
                     if old and json.loads(old["binding_json"]).get("campaign_id"):
                         binding = json.loads(old["binding_json"])
@@ -371,18 +381,24 @@ class DatabaseVersionDatasetsMixin(VersionCampaignsMixin, VersionRunConsolidatio
             ).fetchall()
             if len(rows)>20000:
                 raise ValueError("Version gallery exceeds the bounded projection")
-            result=[]
+            result={}
             for row in rows:
                 item=json.loads(row["source_json"])
                 item.update(binding=json.loads(row["binding_json"]),first_seen=row["first_seen"],updated_at=row["updated_at"],
                             prediction={"model_label":row["model_label"],"model_confidence":row["model_confidence"]} if row["model_label"] else None)
-                item['review_submitted']=bool(row['review_submitted']);item['review_submitted_at']=row['review_submitted_at'] or ''
-                if row['actual_assignee']:
-                    item['binding']['assignee']=row['actual_assignee']
+                item=result.setdefault(item['issue_id'],dict(item,reviewers=[]))
                 if row['campaign_id']:
                     item['binding']['campaign_id']=row['campaign_id']
-                result.append(item)
-            return result
+                if row['actual_assignee']:
+                    item['reviewers'].append(dict(username=row['actual_assignee'],submitted=bool(row['review_submitted']),
+                                                  submitted_at=row['review_submitted_at'] or ''))
+            for item in result.values():
+                reviewers=item['reviewers']
+                item['review_submitted']=bool(reviewers) and all(r['submitted'] for r in reviewers)
+                item['review_submitted_at']=max((r['submitted_at'] for r in reviewers),default='') if item['review_submitted'] else ''
+                item['binding']['assignees']=[r['username'] for r in reviewers]
+                if len(reviewers)==1:item['binding']['assignee']=reviewers[0]['username']
+            return list(result.values())
 
     def version_dataset_arrivals(self, family):
         """Small read-only time index for TE sorting; no label authority changes."""

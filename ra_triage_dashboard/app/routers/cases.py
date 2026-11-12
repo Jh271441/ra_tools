@@ -586,7 +586,9 @@ async def list_cases(
 
 
 @router.get("/api/review-task-context/{split_id}")
-async def review_task_context(split_id: str, request: Request) -> dict[str, Any]:
+async def review_task_context(split_id: str, request: Request, issue_id: str = "") -> dict[str, Any]:
+    if issue_id:
+        split_id=await asyncio.to_thread(database.resolve_human_issue_campaign,split_id,issue_id)
     identity = await asyncio.to_thread(request_identity, request, settings)
     role = await asyncio.to_thread(database.access_role, identity.username) if identity.verified else ""
     if not identity.verified or not identity.username or role not in {"writer", "admin"}:

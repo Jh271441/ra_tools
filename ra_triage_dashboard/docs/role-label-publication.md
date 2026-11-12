@@ -1,0 +1,179 @@
+# 1106 起 Manual RD / TE′ 标注与上传
+
+2026-11-12 验收候选。已实现本地代码和合成数据预览，**尚未上线、未迁移生产数据、未写真实 Trail**。真实写入默认关闭，等待用户验证以及 Trail 字段能力验收。
+
+部署候选已整合线上基线 `0f32502749e0dc5a4376f6ae3536d617490f7562`，保留最新视频播放与冷启动修复；静态资源版本 794，新增 schema 061。本地功能分支为 `codex/manual-role-publication-20261112`，尚未推送或部署。既有 `origin` 经 GitHub 元数据核实为公开仓库，公开推送前需明确确认本次源码发布范围。
+
+长期规则及两张说明流程图已归档到看板 skill 的 `references/role-label-publication.md`；本文件记录实现、验收及上线步骤，不能作为已上线证明。
+
+## 规则速查
+
+| 情况 | 任务进度 | 正式结果与 Trail 行为 |
+|---|---|---|
+| 只分给一位 RD，他已提交 | 该人的联合复核完成后计完成 | RD 可发布 |
+| 分给两位 RD，只提交一人 | 1/2 | RD 等待另一位；已有平台发布结果失效时进入撤回 |
+| 两位必需 RD 均提交且一致 | 2/2 | RD 可发布 |
+| 两位必需 RD 均提交但不同 | 可为 2/2 | RD 冲突，不采用“后提交覆盖”或多数票；撤回平台拥有的旧结果 |
+| RD 与 TE′ 不同 | 分别计算个人进度 | 两条通道分别发布，可另行裁决 |
+| 未分配的 RD/TE 发表相同意见 | 不增加负责人进度 | 保存补充意见，不重复上传 |
+| 未分配的 RD/TE 发表不同意见 | 不改变正式任务进度 | 保存异议，正式结果与已有 Trail 值不变 |
+| 管理员将异议者正式加入任务 | 按新成员配置重新计算 | 该人的当前有效票参与本角色共识；待齐/冲突时撤回旧结果 |
+| 正式负责人采纳反馈并改标 | 保留旧版本及新版本 | 重新计算本角色；失效的裁决也撤回 |
+| 正式负责人撤回标签 | 原提交记录保留 | 当前角色等待有效标签，撤回已有平台结果 |
+| 用户 RD/TE 身份调整 | 不重写历史提交/分配身份 | 新提交按当时身份记录，角色不符的票不补齐原角色 |
+| 管理员普通标注 | 按普通标注规则 | 不自动成为裁决 |
+| 显式最终裁决 | 原始票保留 | 仅发布裁决通道；绑定的正式来源变化后失效 |
+| 来源任务停用、目标移出、标注范围停用 | 保留历史 | 不再发布有效结论；撤回拥有的旧结果 |
+| 远端已有不同值或被外部修改 | 与任务进度无关 | 转人工核对，不覆盖外部数据 |
+| 远端刚好等于期望值 | 与任务进度无关 | 记录“一致”；不据此取得所有权，之后也不能擅自清空 |
+
+“任务完成”仍要求该必需成员完成模型 Review 和 Case 标签确认，不等同于填写任意一项。两人任务只标一个人，整项任务不算完成，但已满足条件的独立 RD/TE 通道可以先发布。
+
+低置信任务本次仅设一位必需 RD。可选 TE 不自动分配；当前手动加入任务的成员都是正式必需成员。若只希望补充意见而不影响交付，应使用任务外标注，不能把新增必需成员当成“可选”。
+
+## 分配和字段
+
+一个版本保留一个 dataset / prediction Run，生成两个可追加任务：
+
+- 抽样集：`jasperchen` / `liangxianghui` 每条选一位 RD，`yupuxue` / `zhangxuzhao` 每条选一位 TE。各组累计 1:1，奇数相差最多一条；使用持久化 seed 独立随机，并平衡四种搭配，避免固定搭档。
+- 低置信集：排除抽样交集，每条分一位 RD，累计平衡。增量只追加，历史成员不重排；迁移优先保留历史负责人，后续新增逐步平衡。
+
+从 release family `20261106` 起应用；旧版本分配规则保留。业务身份 RD/TE 与 writer/admin 权限独立，默认 TE 为 `yupuxue`、`zhangxuzhao`、`lishizhong`、`zhangyang`，其余已有用户为 RD。身份编辑有审计，提交和分配均保留身份快照。
+
+| 上传页签 | 字段 | 触发 |
+|---|---|---|
+| RD 标注 | `ra_rd_review_result` | 正式 RD 共识有效 |
+| TE′ 标注 | `ra_review_result_sampling` | 正式 TE 共识有效 |
+| 裁决标注 | `ra_review_result_arbitrated` | 显式裁决且来源仍有效 |
+
+正确触发写为 Trail 枚举 `成功`，其余为 `误触发` / `无需协助`。既有 TE 修正入口的 `ra_review_result_new` 不等同于 TE′。
+
+业务指标优先级为：
+
+`ra_review_result_arbitrated > ra_review_result_sampling > ra_review_result_new > ra_rd_review_result > ra_stuck_auto_result > ra_result`
+
+代码提供对已观测六个字段的上述选择规则；缺失字段保留 unknown，只有真正 NULL 才向后回退，空字符串不当作 NULL。**外部业务指标消费者的实际读取与刷新尚未验证**；不能把上传成功等同于指标已刷新。Workbench 的不可变评测 GT 不随上传改变。
+
+## 异步处理
+
+```mermaid
+flowchart LR
+  A[保存标注和同事务 dirty 标记] --> B[按正式成员计算 RD / TE′ / 裁决]
+  B --> C[持久队列与版本号]
+  M[手动预览及提交] --> C
+  C --> D[串行限流 worker]
+  D --> E[读取远端前值]
+  E --> F{当前来源有效且前值安全?}
+  F -->|是| G[写入固定字段或撤回为 NULL]
+  F -->|否| H[废弃旧请求或人工核对]
+  G --> I[读回核验并重查当前来源]
+  I --> J[记录收据 / 恢复核对 / 处理更新结果]
+```
+
+保存 HTTP 请求不等待 Trail。worker 每轮约 10 秒，合并短时间内的变化，单批最多 20 条。自动/手动共用一个发布器、文件锁及 PostgreSQL advisory lock；真实读写每个 HTTP 请求间隔至少 1 秒，包括 SDK 内部分页。这个限额覆盖新的人工作业，不代表 Cron、外部作者等所有客户端的总 QPS。
+
+写前持久化 intent；写入超时也先读回，不盲目重发。进程重启恢复未确认 intent，指数退避，恢复读取最多 5 次后要求人工核对。失败重试有上限；手动核对使用同一队列。前值不符时不覆盖，远端恰好相同也不取得所有权。
+
+来源变更会取消过时任务；远端 I/O 期间出现新提交会在读回时重新计算，并安排补偿更新。Trail API 无 CAS，仍存在外部作者在读取与写入之间修改的竞争窗口；内部串行锁不能消除此风险，后续多方 writer 协调属于上线验收的一部分。
+
+上传页支持三通道、当前正式票/异议、同步状态、手动预览和历史。预览冻结 generation / fingerprint，15 分钟过期，提交时重新验证。列表 GET 和预览不实时请求 Trail。分页、下拉、中英文和移动端沿用现有组件；版本图库按 case 去重，展示各负责人进度并支持 TE 筛选。
+
+## 与 Cron 的负载比较
+
+前序只读观测：2026-11-05 至 11-11 CST，Cron 固定版本 `87210975464bc1ceada33c9b7e0b6c5b866f4bf5` 成功发布 1,203 条，日均约 172、最高 455。正常发布包含写前读、写入、读回；抽样另有阶段。**这不是实际 HTTP/QPS/延迟测量，也不是容量承诺。**
+
+设一天三个通道的有效值变化数为 `H_rd / H_te / H_arbitrated`，总和为 H。忽略重试、撤回和查询分页时：
+
+- 每次只到一条：约 `3 × H` 次请求。
+- 每通道理想满批：约 `3 × Σ ceil(H_lane / 20)` 次请求；10 秒合并窗口内未必能凑满。
+- 同标签重复 Enter、只改说明、相同补充意见不会新增写入。冲突撤回、重新裁决、重试会增加请求。
+
+以 H=172/455 仅作同量级示例，逐条约 516/1,365 次请求/日；均摊约 0.006/0.016 QPS。新增 TE 和裁决会增大 H，日均不能代表峰值。新 worker 的人工作业峰值被限制为 1 HTTP/s，代价是积压时延长同步等待。
+
+上线灰度需记录真实请求数、批量填充、队列最老年龄、保存至确认耗时、远端延迟、失败率、重试/撤回量；与同一时段 Cron 实测对比后再调速。本次没有压测真实 Trail。
+
+## 历史迁移和启用
+
+新增 SQLite schema 与 PostgreSQL migration `061_human_label_publication.sql`，复用现有 `issue_label_decisions`，没有第二套裁决库。生产原始任务含已提交记录，不能按空库直接重分配。
+
+1. 在获准的环境获取逻辑备份并做恢复演练，保持所有真实 writer 关闭。先在恢复库安装 migration 061，检查旧任务、引用、负责人、提交和进度数量。统一部署器仅放行该文件的精确审阅摘要，仍需显式 additive migration 模式及备份验证；没有放宽对任意触发器/函数的限制。
+2. 用 `scripts/migrate_human_labels.py --action plan` 生成只读 inventory。被阻止的范围、缺失身份依据、重复/不明来源需先处理。plan 不初始化 schema。
+3. 审阅 inventory，带备份文件执行 apply。报告 fingerprint 不匹配会拒绝；apply 在单事务内创建两个任务、保留旧 RD 负责人、添加抽样 TE、冻结原引用、迁移可变 head/进度/评论，并保存含原记录的不可变审计收据。
+4. 标签/模型 revision 和历史提交原文不改；旧任务保留为 superseded。带 Issue 的旧链接转到新任务，旧提交与迁移后旧链接的新提交均支持幂等重放。没有 Issue 的旧任务入口保留归档身份，不猜测应该去两个新任务中的哪一个。
+5. 历史 scope 的 `publication_armed=0`。即使打开总开关，也不会自动回刷这批历史；apply 不访问 Trail。缺失历史角色证据必须显式指定分类，不能用当前目录反推历史。
+6. 用户验证通过，且三个字段的枚举、真正 NULL 清空、下游回退均有实测证据后，使用私有能力收据执行独立 arm，再按批准范围开启总开关。历史启用会允许这一范围进入队列，必须审阅范围后执行。
+
+恢复库上的示例（`$ROLE_DB_URL_FILE` 是 0600 文件路径，不是连接字符串）：
+
+```bash
+python -m ra_triage_dashboard.scripts.migrate_human_labels \
+  --database-url-file "$ROLE_DB_URL_FILE" --dataset release-20261106-odd2 \
+  --action plan --output "$ROLE_RECEIPTS/plan.json"
+
+python -m ra_triage_dashboard.scripts.migrate_human_labels \
+  --database-url-file "$ROLE_DB_URL_FILE" --dataset release-20261106-odd2 \
+  --action apply --reviewed-report "$ROLE_RECEIPTS/plan.json" \
+  --backup "$ROLE_BACKUP" --actor jasperchen --historical-role rd \
+  --output "$ROLE_RECEIPTS/applied.json"
+
+# 仅在用户验证及真实字段能力验收通过、明确批准启用后执行：
+python -m ra_triage_dashboard.scripts.migrate_human_labels \
+  --database-url-file "$ROLE_DB_URL_FILE" --dataset release-20261106-odd2 \
+  --action arm --reviewed-report "$ROLE_RECEIPTS/applied.json" \
+  --capabilities "$ROLE_CAPABILITIES_FILE" --actor jasperchen \
+  --output "$ROLE_RECEIPTS/armed.json"
+```
+
+`--historical-role rd` 仅适用于已核实的原来纯 RD 批次，不是任意历史数据的默认推断。CLI 对备份文件计算 SHA256；数据库 URL 不进 argv，输出收据以 0600 创建且不覆盖已有文件。
+
+真实写入需要同时满足 `DASHBOARD_HUMAN_LABEL_WRITE_ENABLED=true` 和 `DASHBOARD_HUMAN_LABEL_CAPABILITIES_FILE` 的私有、非符号链接能力收据。示例 [human-publication-capabilities.json.example](human-publication-capabilities.json.example) 明确未验收，不能直接用于启用；需记录具体隔离测试环境、时间、Issue、请求/读回及下游回退证据。`absent_means_null` 必须单独实测，不能因字段缺失而默认开启。
+
+回滚先关闭人工作业开关并停止 worker，保留 intent/收据后核对未确认写入。代码回退不得丢弃新增 schema 和审计；已迁移数据不能直接用旧版本重新分配。需要恢复备份时应先核对备份后的新增业务记录，不能覆盖丢失它们。远端结果恢复必须经过前值核对和独立批准。
+
+## 验收记录与用户验证入口
+
+本机 Python 3.10 + SQLite；另用本机隔离 PostgreSQL 14.11 Unix socket，合成数据库、模拟 Trail。PostgreSQL 专项 21 项通过，包含真实 migration 061、迁移回滚及数据库后端断言；不会把 SQLite 结果算成 PostgreSQL 结果。
+
+完整回归：**1,412 passed、234 subtests passed、16 skipped、7 warnings**（154.37 秒）。跳过项不算通过，警告为依赖弃用提示。部署器专项 **42 passed、9 subtests passed**，包含所有 writer 灰度关闭、061 精确摘要与显式迁移模式。
+
+| 验收范围 | 实际覆盖 | 结果 |
+|---|---|---|
+| 分配与追加 | RD/TE 各组平衡、四种搭配、冻结抽样、重复包及新增包、旧分配保留、case 去重 | SQLite / PostgreSQL 合成数据库 |
+| 任务与同角色共识 | 单人、双人待齐/一致/冲突、两角色独立、自己的过期草稿拒绝 | 通过 |
+| 任务外意见 | 单独补充不能完成负责人任务、不同意见不覆盖、正式接纳后重算与撤回 | 通过 |
+| 身份与裁决 | 角色历史快照、明确裁决、正式来源变化失效、补充意见不误伤裁决 | 通过 |
+| 失效与恢复 | 标签撤回、来源屏蔽、scope 停用、事务失败不留半次提交 | 通过 |
+| 发布器 | 禁用无远端 I/O、共享锁、逐 HTTP 限流、批量与固定字段、超时读回、重启恢复、重试上限、在途新版本补偿 | 模拟 Trail 通过 |
+| 外部值与 NULL | 外部变更拒绝覆盖、相同值不取得所有权、三通道 NULL 回退和能力收据门禁 | 本地规则通过；真实接口待验证 |
+| 手动与鉴权 | 与自动同队列、预览过期/来源校验/幂等、writer/admin 门禁、请求标记、分页校验、旧 RD 接口不能绕过 | 通过 |
+| 历史迁移 | inventory 漂移拒绝、收据失败原子回滚、原负责人（含新名单外 RD）/版本/引用/进度保留、旧链接双向幂等、历史单独启用 | SQLite / PostgreSQL 通过 |
+| 上传页面 | 1440 中文深色/英文浅色、390 中文浅色/英文深色、320 英文浅色；三页签、选择清理、分页 URL、语言草稿、下拉键盘/Escape、空/失败、历史、无页面横向溢出 | 浏览器 5 组通过 |
+| 用户身份表单 | 320px、共享下拉、语言切换保留未保存身份选择、无横向溢出 | 浏览器 1 组通过，未执行目录保存 |
+| 版本图库 | 1440/390/320px、TE 负责人筛选、双人进度、第一页修改条数、跳页/刷新/语言保留、空结果 | 浏览器 3 组通过 |
+| Review 新组件 | 1440/390/320px 角色结论/异议说明，中英文切换保留草稿，手机说明按钮至少 44px | 浏览器 3 组通过，组件级范围 |
+| 静态检查 | 修改的 36 个 Python / 13 个 JS 文件、diff 空白检查、秘密扫描、skill 校验、迁移 CLI help | 通过；扫描中的 `task-*` 子串已排除误报 |
+
+浏览器共 **12 组、无 JavaScript 错误**。报告与截图位于本机 `/private/tmp/manual-role-acceptance/`，完整回归日志 `/private/tmp/role-full-final.log`，PostgreSQL 专项日志 `/private/tmp/role-pg-result.log`。最终验收截图已人工查看桌面上传页、320px 上传页/双负责人卡片/Review 说明及用户身份表单。
+
+2026-11-12 用户验证后的排版修正（本地候选 cache792）：沿用原标注上传页的字体、页签、概览统计、筛选栏、选中操作、标签和表格样式。三通道仅扩展原有页签；长说明默认折叠，行内不重复展示“已完成 + 标签”和逐条时间。任务外异议在记录入口标出，展开后保留具体意见、异常原因、核对时间和上传历史。取消本页独立的固定列宽与手机筛选布局，复用共享下拉和响应式规则；后续界面改动继续遵守此约定。
+
+该次修正的前端定向检查 **63 passed、6 subtests passed**；既有 **12 组浏览器检查**重新通过，另验证三通道 × 1440/390/320px 共 **9 组**概览筛选、选择清理、说明展开、语言切换与轮询保持状态，均无 JavaScript 错误。报告和截图在 `/private/tmp/manual-role-layout-acceptance/`。本次仅改展示层，未重跑此前的全量后端回归；这些结果仍是本机合成预览验收。
+
+真实 Trail 枚举/NULL、外部指标消费者、生产备份恢复、生产 SSO/完整媒体 Review 链路、真实手机软键盘/触摸均**未验证**。真实写入依然关闭；以上本地结果不能代替它们。用户确认页面与规则后，下一阶段是在批准的隔离/灰度环境完成这些门禁，再安排上线。
+
+主要可复跑入口：
+
+```bash
+python -m pytest ra_triage_dashboard/tests -q --tb=short
+python -m ra_triage_dashboard.tests.preview_human_publications --port 50269
+python -m ra_triage_dashboard.tests.human_publications_browser
+python -m ra_triage_dashboard.scripts.migrate_human_labels --help
+```
+
+预览使用 60 条合成 case，真实 API / 数据库 / 页面组件；外部写入关闭。可检查：
+
+- `http://127.0.0.1:50269/rd-results?baselines=version-20261106`：三通道、正式结果/异议/同步状态、预览、历史、筛选分页。
+- `http://127.0.0.1:50269/version-datasets?dataset=release-20261106-odd2`：双负责人、独立进度、TE 负责人筛选、每页条数和跳页。
+- `http://127.0.0.1:50269/rd-results?baselines=version-20261106&preview=users`：业务身份控件及语言切换草稿保留；这是表单展示预览，不提供目录保存。
+
+浏览器验收使用 macOS 无头 Chrome 的调整视口，不能称为真机或移动模拟器验收。Review 状态/异议说明为组件验收，不代替真实 SSO、媒体与完整 Review 提交链路的灰度验证。

@@ -39,6 +39,7 @@ class VersionFrontendBehaviorTest(unittest.TestCase):
         source = Path(__file__).resolve().parents[1] / "static/js/version-datasets.js"
         script = r"""
 const fs=require('fs'),vm=require('vm'),assert=require('assert/strict');
+global.DEFAULT_CASE_PAGE_SIZE=20;global.CASE_PAGE_SIZES=[10,20,50,100];
 const nodes=new Map();
 global.escapeHtml=value=>String(value);
 function element(){return {innerHTML:'existing chart',textContent:'existing text',disabled:false,hidden:false,dataset:{},attrs:{},handlers:{},classList:{add(){},toggle(){}},style:{setProperty(){}},replaceChildren(){this.innerHTML='';this.textContent='';},setAttribute(k,v){this.attrs[k]=v;},addEventListener(k,v){this.handlers[k]=v;},querySelectorAll(){return [];}};}

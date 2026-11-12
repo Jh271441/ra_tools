@@ -3,6 +3,9 @@ from __future__ import annotations
 from typing import Any, Iterable, Sequence
 
 from .shared import ACCESS_ROLES, utc_now
+from .initialize_human_labels import seed_roles
+from ..human_label_policy import initial_role
+from uuid import uuid4
 
 
 _DEFAULT_MENTION_DISPLAY_NAMES = {
@@ -74,6 +77,7 @@ class DatabaseAccessMixin:
 
         now = utc_now()
         with self._write_lock, self.connect() as conn:
+            seed_roles(conn)
             rows = conn.execute("SELECT username FROM access_users").fetchall()
             conn.executemany(
                 """
@@ -107,7 +111,8 @@ class DatabaseAccessMixin:
         with self.connect() as conn:
             rows = conn.execute(
                 """
-                SELECT username, role, intent_permission, created_by, created_at, updated_at
+                SELECT username, role, intent_permission, created_by, created_at, updated_at,
+                       (SELECT role FROM human_user_roles h WHERE h.username=access_users.username) AS annotation_role
                 FROM access_users
                 ORDER BY CASE role WHEN 'admin' THEN 0 ELSE 1 END,
                          username ASC
@@ -124,12 +129,15 @@ class DatabaseAccessMixin:
         return str(row["intent_permission"]) if row else ""
 
     def set_access_user(
-        self, *, username: str, role: str, actor: str, intent_permission: str | None = None
+        self, *, username: str, role: str, actor: str, intent_permission: str | None = None,
+        annotation_role: str | None = None,
     ) -> dict[str, Any]:
         normalized = str(username or "").strip().lower()
         normalized_role = str(role or "").strip().lower()
         if normalized_role not in ACCESS_ROLES:
             raise ValueError("权限角色必须是 writer 或 admin。")
+        if annotation_role is not None and annotation_role not in {'rd', 'te'}:
+            raise ValueError('标注身份必须是 RD 或 TE / Annotation role must be RD or TE')
         if intent_permission is not None and intent_permission not in {"manage", "annotate", "view"}:
             raise ValueError("标注权限必须是 manage、annotate 或 view。")
         now = utc_now()
@@ -158,6 +166,14 @@ class DatabaseAccessMixin:
                     """,
                     (normalized, normalized_role, intent_permission or "manage", actor, now, now),
                 )
+            previous_role = conn.execute('SELECT role FROM human_user_roles WHERE username=?', (normalized,)).fetchone()
+            business_role = annotation_role or (previous_role['role'] if previous_role else initial_role(normalized))
+            conn.execute('''INSERT INTO human_user_roles(username,role,updated_by,updated_at) VALUES(?,?,?,?)
+                ON CONFLICT(username) DO UPDATE SET role=excluded.role,updated_by=excluded.updated_by,updated_at=excluded.updated_at''',
+                (normalized, business_role, actor, now))
+            if previous_role is None or previous_role['role'] != business_role:
+                conn.execute('INSERT INTO human_role_audit(id,username,old_role,new_role,actor,created_at) VALUES(?,?,?,?,?,?)',
+                             (uuid4().hex, normalized, previous_role['role'] if previous_role else None, business_role, actor, now))
             conn.execute(
                 """
                 INSERT INTO mention_users (

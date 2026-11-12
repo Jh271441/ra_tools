@@ -543,18 +543,21 @@ class LabelingProjectionMixin:
         imported_by_issue: dict[str, dict[str, Any]] = {}
         imported_sources_by_case: dict[str, list[dict[str, Any]]] = defaultdict(list)
         decision_by_issue: dict[str, Any] = {}
+        human_by_issue = {}
+        managed = set()
         with (nullcontext(connection) if connection is not None else self.connect()) as conn:
             wanted_issue_ids = set(cleaned)
             for offset in range(0, len(cleaned), 400):
                 batch = cleaned[offset : offset + 400]
                 rows = conn.execute(
                     f"""
-                    SELECT issue_id, gt_label FROM issues
+                    SELECT issue_id, gt_label, EXISTS(SELECT 1 FROM human_label_scopes h WHERE h.issue_id=issues.issue_id) AS human_managed FROM issues
                     WHERE baseline_scope = ?
                       AND issue_id IN ({', '.join('?' for _ in batch)})
                     """,
                     (scope, *batch),
                 ).fetchall()
+                managed.update(r["issue_id"] for r in rows if r["human_managed"])
                 gt_by_issue.update(
                     {
                         str(row["issue_id"]): str(row["gt_label"] or "")
@@ -633,6 +636,7 @@ class LabelingProjectionMixin:
                     issue_key = str(row["issue_id"])
                     if issue_key in wanted_issue_ids:
                         decision_by_issue[issue_key] = row
+            human_by_issue=self.human_label_contexts(sorted(managed),connection=conn)
         for issue_id in cleaned:
             cases = cases_by_issue.get(issue_id, [])
             if not cases or issue_id not in gt_by_issue:
@@ -810,6 +814,9 @@ class LabelingProjectionMixin:
 
             source_payload = _issue_decision_source_payload(sources)
             source_fingerprint = _sha256_json(source_payload) if source_payload else ""
+            human=human_by_issue.get(issue_id)
+            if human:
+                source_fingerprint=human['source_fingerprint']
             decision_row = decision_by_issue.get(issue_id)
             decision = None
             if decision_row is not None:
@@ -817,8 +824,8 @@ class LabelingProjectionMixin:
                 decision["stale"] = (
                     not source_fingerprint
                     or decision["source_fingerprint"] != source_fingerprint
-                    or sorted(decision["source_case_ids"])
-                    != sorted(item["label_case_id"] for item in source_payload)
+                    or (not human and sorted(decision["source_case_ids"])
+                    != sorted(item["label_case_id"] for item in source_payload))
                 )
                 if decision["stale"]:
                     aggregate_state = "stale"
@@ -849,6 +856,7 @@ class LabelingProjectionMixin:
                     "source_fingerprint": source_fingerprint,
                     "sources": [],
                     "decision": decision,
+                    "human_publication": human,
                 }
                 continue
             projected[issue_id] = {
@@ -862,6 +870,7 @@ class LabelingProjectionMixin:
                 "source_fingerprint": source_fingerprint,
                 "sources": sources,
                 "decision": decision,
+                "human_publication": human,
             }
         return projected
 

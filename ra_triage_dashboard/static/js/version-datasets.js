@@ -1,9 +1,9 @@
 /* Version worksets own their requests; global Review/GT bootstrap is independent. */
-const versionDatasetState = {active:false,seq:0,controller:null,timer:null,page:1,dataset:'',mode:'targets',sort:'added',query:'',date:'',assignee:'',reviewStatus:'all',teStatus:'all',media:'bev',mediaSeq:0,data:null,members:null,overview:null,chartsPending:false,catalogAt:0,cache:new Map(),loadingKey:'',gridKey:'',bound:false,observer:null,imageEpoch:0};
+const versionDatasetState = {active:false,seq:0,controller:null,timer:null,page:1,pageSize:DEFAULT_CASE_PAGE_SIZE,dataset:'',mode:'targets',sort:'added',query:'',date:'',assignee:'',reviewStatus:'all',teStatus:'all',media:'bev',mediaSeq:0,data:null,members:null,overview:null,chartsPending:false,catalogAt:0,cache:new Map(),loadingKey:'',gridKey:'',bound:false,observer:null,imageEpoch:0};
 const VERSION_DATASET_CACHE_MS=30000;
 function versionDatasetRequestKey() {
   const s=versionDatasetState;
-  return JSON.stringify([s.dataset,s.page,s.mode,s.sort,s.query,s.date,s.teStatus,s.assignee,s.reviewStatus]);
+  return JSON.stringify([s.dataset,s.page,s.pageSize,s.mode,s.sort,s.query,s.date,s.teStatus,s.assignee,s.reviewStatus]);
 }
 function cacheVersionDatasetMembers(key,members) {
   const cache=versionDatasetState.cache;
@@ -13,6 +13,8 @@ function cacheVersionDatasetMembers(key,members) {
 function syncVersionDatasetLoading() {
   const s=versionDatasetState,el=$('#versionDatasetLoading');
   if(s.rdFailed)$('#versionDatasetError').textContent=uiText('读取失败，可点击刷新重试。','Read failed. Refresh to retry.');
+  const unavailable=Boolean(s.loadingKey||s.rdFailed||!s.members);
+  ['versionDatasetPageSize','versionDatasetJump','versionDatasetJumpButton'].forEach(id=>{const node=$('#'+id);if(node)node.disabled=unavailable||!s.members?.total;});
   el.hidden=!s.loadingKey&&!s.chartsPending;
   el.textContent=s.rdFailed?uiText('更新失败，图表仍为上次范围；请刷新重试','Update failed; charts show the previous scope. Refresh to retry'):
     s.chartsPending?uiText('正在切换筛选，图表暂显示上次范围…','Changing filters; charts show the previous scope…'):uiText('更新中…','Updating…');
@@ -40,11 +42,12 @@ function versionDatasetStatus(state) {
 }
 function versionDatasetRoute() {
   const p=new URLSearchParams(location.search),s=versionDatasetState;
+  s.pageSize=CASE_PAGE_SIZES.includes(Number(p.get('page_size')))?Number(p.get('page_size')):DEFAULT_CASE_PAGE_SIZE;
   s.dataset=p.get('dataset')||s.dataset;s.mode=p.get('mode')||'targets';s.sort=p.get('sort')||'added';s.query=p.get('q')||'';s.page=Math.max(1,Number(p.get('page'))||1);s.date=p.get('date')||'';s.teStatus=p.get('te_status')||'all';s.media=p.get('media')||'bev';s.assignee=p.get('assignee')||'';s.reviewStatus=p.get('review_status')||'all';
 }
 function versionDatasetRouteOptions(options={}) {
   const p=location.pathname.replace(/\/$/,'').endsWith('/version-datasets')?new URLSearchParams(location.search):new URLSearchParams();
-  return Object.fromEntries(['dataset','mode','sort','q','page','date','te_status','media','assignee','review_status'].map(k=>[k,options[k]??p.get(k)??'']));
+  return Object.fromEntries(['dataset','mode','sort','q','page','page_size','date','te_status','media','assignee','review_status'].map(k=>[k,options[k]??p.get(k)??'']));
 }
 function clearVersionDatasetMembers({keepCharts=false}={}){
   const s=versionDatasetState;s.members=null;s.gridKey='';s.observer?.disconnect();s.observer=null;s.imageEpoch++;
@@ -65,8 +68,8 @@ function setVersionDatasetsActive(active) {
   const s=versionDatasetState;
   if(active&&s.active){
     const previousDataset=s.dataset;
-    const before=JSON.stringify([s.dataset,s.mode,s.sort,s.query,s.page,s.date,s.teStatus,s.media,s.assignee,s.reviewStatus]);versionDatasetRoute();
-    if(before===JSON.stringify([s.dataset,s.mode,s.sort,s.query,s.page,s.date,s.teStatus,s.media,s.assignee,s.reviewStatus]))return;
+    const before=JSON.stringify([s.dataset,s.mode,s.sort,s.query,s.page,s.pageSize,s.date,s.teStatus,s.media,s.assignee,s.reviewStatus]);versionDatasetRoute();
+    if(before===JSON.stringify([s.dataset,s.mode,s.sort,s.query,s.page,s.pageSize,s.date,s.teStatus,s.media,s.assignee,s.reviewStatus]))return;
     clearVersionDatasetMembers({keepCharts:previousDataset===s.dataset});
   }
   if(!active)closeVersionTEInfo();
@@ -85,7 +88,7 @@ function versionDatasetChange(patch) {
   if(!mediaOnly)clearVersionDatasetMembers({keepCharts});
   syncVersionTEFilters();syncVersionDatasetViews();
   const u=new URL(location.href);
-  for(const [key,value] of Object.entries({dataset:s.dataset,mode:s.mode,sort:s.sort,q:s.query,page:s.page,date:s.date,te_status:s.teStatus,media:s.media,assignee:s.assignee,review_status:s.reviewStatus}))value?u.searchParams.set(key,String(value)):u.searchParams.delete(key);
+  for(const [key,value] of Object.entries({dataset:s.dataset,mode:s.mode,sort:s.sort,q:s.query,page:s.page,page_size:s.pageSize,date:s.date,te_status:s.teStatus,media:s.media,assignee:s.assignee,review_status:s.reviewStatus}))value?u.searchParams.set(key,String(value)):u.searchParams.delete(key);
   history.pushState({},'',u);
   if(mediaOnly){renderVersionDatasets();return;}
   void loadVersionDatasets({force:false});
@@ -132,8 +135,8 @@ function renderVersionDatasets({force=false}={}) {
       const confidence=pred?.model_confidence;
       const occurred=row.issue_time||row.ra_start_timestamp;
       const time=occurred?versionDatasetTime(occurred):row.date||'—';
-      const owner=binding.assignee||(current.historical?'—':uiText('未分配','Unassigned'));
-      const joint=row.is_target&&!current.historical?(row.review_submitted?uiText('复核完成','Review done'):uiText('待复核','Review pending')):'';
+      const owner=binding.assignees?.join(', ')||binding.assignee||(current.historical?'—':uiText('未分配','Unassigned'));
+      const joint=row.is_target&&!current.historical?(row.reviewers?.length>1?uiText(`复核 ${row.reviewers.filter(r=>r.submitted).length}/${row.reviewers.length}`,`Reviewed ${row.reviewers.filter(r=>r.submitted).length}/${row.reviewers.length}`):(row.review_submitted?uiText('复核完成','Review done'):uiText('待复核','Review pending'))):'';
       const details=versionDatasetDetails(row);
       const model=pred?.model_label?versionTEResult(pred.model_label):(current.historical?uiText('历史固定集','Frozen set'):versionDatasetStatus(row.state));
       return `<article class="issue-card version-card"><button type="button" class="issue-card-open" data-version-open="${escapeHtml(row.issue_id)}" title="${escapeHtml(details)}" aria-label="${escapeHtml(row.issue_id)} ${uiText('查看媒体','View media')}"></button><div class="issue-thumbnail"><div class="issue-thumbnail-placeholder"><span>${s.media.toUpperCase()}</span><small>${uiText('媒体待就绪','Media pending')}</small></div>${row.is_target?`<img data-src="${escapeHtml(withBase('/api/case-thumbnails/'+encodeURIComponent(row.issue_id)+'?kind='+s.media))}" loading="lazy" decoding="async" alt="${escapeHtml(row.issue_id)} ${s.media.toUpperCase()}" class="is-loading" />`:''}</div><div class="issue-card-body"><div class="issue-card-heading"><a class="issue-id" href="${escapeHtml(url||'https://voyager.intra.xiaojukeji.com/static/management/#/issue/'+encodeURIComponent(row.issue_id))}"${url?'':' target="_blank" rel="noopener noreferrer"'}>${escapeHtml(row.issue_id)} ↗</a><span class="muted">${row.is_sample?uiText('抽样','Sample'):row.is_low?uiText('低置信','Low'):''}</span></div><div class="version-card-line"><span title="${escapeHtml(model)}">${escapeHtml(model)}</span><span class="muted">${confidence==null?'':(confidence*100).toFixed(1)+'%'}</span></div><div class="version-card-statuses"><span class="version-te-result" data-status="${escapeHtml(row.te_status)}">${escapeHtml(versionTEBadge(row))}</span>${joint?`<span class="version-joint-result muted" title="${uiText('平台联合复核，与 TE 分开统计','Platform combined review, tracked separately from TE')}">${joint}</span>`:''}</div><div class="version-card-meta muted" title="${escapeHtml(details)}" aria-label="${escapeHtml(details)}"><span>${escapeHtml(owner)}</span><time>${escapeHtml(time)} CST</time></div></div></article>`;
@@ -141,6 +144,9 @@ function renderVersionDatasets({force=false}={}) {
 
   }
   observeVersionDatasetImages();
+  s.page=m.page;$('#versionDatasetPageSize').value=String(s.pageSize);enhanceNativeUiSelect($('#versionDatasetPageSize'));
+  $('#versionDatasetJump').value=String(m.page);$('#versionDatasetJump').max=String(Math.max(1,Math.ceil(m.total/m.page_size)));
+  $('#versionDatasetJump').disabled=$('#versionDatasetJumpButton').disabled=!m.total;
   $('#versionDatasetPageLabel').textContent=`${m.page} / ${Math.max(1,Math.ceil(m.total/m.page_size))} · ${m.total}`;
   $('#versionDatasetPrev').disabled=m.page<=1;$('#versionDatasetNext').disabled=m.page*m.page_size>=m.total;
 }
@@ -201,7 +207,7 @@ async function loadVersionDatasets({force=true}={}){
         members=cached.members;
         nextDelay=Math.max(500,VERSION_DATASET_CACHE_MS-(Date.now()-cached.at));
       }else{
-        const p=new URLSearchParams({page:s.page,page_size:24,mode:s.mode,sort:s.sort,q:s.query,date:s.date,te_status:s.teStatus,assignee:s.assignee,review_status:s.reviewStatus});
+        const p=new URLSearchParams({page:s.page,page_size:s.pageSize,mode:s.mode,sort:s.sort,q:s.query,date:s.date,te_status:s.teStatus,assignee:s.assignee,review_status:s.reviewStatus});
         members=await api(`/api/version-datasets/${encodeURIComponent(s.dataset)}/workbench?${p}`,{signal:controller.signal});
         if(!valid())return;
         cacheVersionDatasetMembers(key,members);
@@ -231,13 +237,17 @@ function bindVersionDatasets(){
   for(const [id,key] of [['versionDatasetPicker','dataset'],['versionDatasetMode','mode'],['versionDatasetSort','sort'],['versionDatasetDate','date'],['versionDatasetTEStatus','teStatus'],['versionDatasetMedia','media'],['versionDatasetOwner','assignee'],['versionDatasetReviewStatus','reviewStatus']])$('#'+id).addEventListener('change',e=>versionDatasetChange({[key]:e.target.value}));
   $('#versionDatasetsPage').addEventListener('click',e=>{const status=e.target.closest('[data-version-te-status]');if(status){versionDatasetChange({teStatus:s.teStatus===status.dataset.versionTeStatus?'all':status.dataset.versionTeStatus});return;}const day=e.target.closest('[data-version-date]');if(day){versionDatasetChange({date:s.date===day.dataset.versionDate?'':day.dataset.versionDate});return;}if(e.target.closest('[data-version-all-dates]')){if(s.date)versionDatasetChange({date:''});return;}const open=e.target.closest('[data-version-open]');if(open)void openVersionDatasetMedia(open.dataset.versionOpen);});
   $('#versionDatasetSearchForm').addEventListener('submit',e=>{e.preventDefault();versionDatasetChange({query:$('#versionDatasetSearch').value.trim()});});
+  const jump=()=>{const input=$('#versionDatasetJump'),value=Number(input.value),m=s.members;if(!m||!input.value.trim()||!Number.isSafeInteger(value))return;versionDatasetChange({page:Math.max(1,Math.min(Math.ceil(m.total/m.page_size)||1,value))});};
+  $('#versionDatasetJumpButton').addEventListener('click',jump);
+  $('#versionDatasetJump').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();jump();}});
+  $('#versionDatasetPageSize').addEventListener('change',e=>{const size=Number(e.target.value);if(CASE_PAGE_SIZES.includes(size))versionDatasetChange({pageSize:size,page:1});});
   $('#versionDatasetPrev').addEventListener('click',()=>versionDatasetChange({page:s.page-1}));$('#versionDatasetNext').addEventListener('click',()=>versionDatasetChange({page:s.page+1}));
   $('#versionDatasetHistory').addEventListener('toggle',()=>{void loadVersionDatasetBatches();});
   document.addEventListener('visibilitychange',()=>{if(!s.active)return;clearTimeout(s.timer);if(document.hidden){s.seq++;s.controller?.abort();s.observer?.disconnect();s.observer=null;s.imageEpoch++;}else void loadVersionDatasets({force:false});});
 }
 
 function versionDatasetDetails(row){
-  const owner=row.binding?.assignee||uiText('未分配','Unassigned'),trigger=row.trigger||'—';
+  const owner=row.binding?.assignees?.join(', ')||row.binding?.assignee||uiText('未分配','Unassigned'),trigger=row.trigger||'—';
   const occurred=row.issue_time||row.ra_start_timestamp;
   const time=occurred?versionDatasetTime(occurred):row.date||'—',added=versionDatasetTime(row.first_seen);
   return uiText(`负责人 ${owner} · 触发 ${trigger} · 入库 ${added} · 发生 ${time} CST`,`Assignee ${owner} · Trigger ${trigger} · Added ${added} · Occurred ${time} CST`);

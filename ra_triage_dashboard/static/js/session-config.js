@@ -522,18 +522,20 @@ function renderAnalysisCatalogFilters() {
   renderTagMulti("#analysisEgressFilter", "egress");
 }
 
-function renderAccessUsers() {
+function renderAccessUsers({preserveDrafts=false}={}) {
+  const drafts=preserveDrafts?new Map([...document.querySelectorAll("[data-access-user]")].map(row=>[row.dataset.accessUser,{role:row.querySelector("[data-access-role]").value,intent_permission:row.querySelector("[data-intent-permission]").value,annotation_role:row.querySelector("[data-annotation-role]").value}])):new Map();
   const target = $("#accessUserList");
   if (!target) return;
   if (!state.accessUsers.length) {
     target.innerHTML = `<div class="no-asset">${escapeHtml(t("access.empty"))}</div>`;
     return;
   }
-  target.innerHTML = state.accessUsers.map((item) => `
-    <div class="access-row" data-access-user="${escapeHtml(item.username)}">
+  target.innerHTML = state.accessUsers.map(original=>({...original,...drafts.get(original.username)})).map((item) => `
+    <div class="access-row access-role-row" data-access-user="${escapeHtml(item.username)}">
       <div class="access-identity"><strong>${escapeHtml(item.username)}</strong><small>${escapeHtml(item.role === "admin" ? t("access.admin_user") : t("access.writer_user"))}</small></div>
       <select data-access-role aria-label="${escapeHtml(t("access.role_aria", { user: item.username }))}"><option value="writer"${item.role === "writer" ? " selected" : ""}>${escapeHtml(t("access.writer"))}</option><option value="admin"${item.role === "admin" ? " selected" : ""}>${escapeHtml(t("access.admin"))}</option></select>
-      <select data-intent-permission aria-label="${escapeHtml(item.username)} 的标注权限"><option value="manage"${item.intent_permission === "manage" ? " selected" : ""}>创建与分配</option><option value="annotate"${item.intent_permission === "annotate" ? " selected" : ""}>仅标注</option><option value="view"${item.intent_permission === "view" ? " selected" : ""}>仅查看</option></select>
+      <select data-intent-permission aria-label="${escapeHtml(uiText(item.username+' 的标注权限','Annotation permission for '+item.username))}">${[['manage',t('access.manage')],['annotate',t('access.annotate')],['view',t('access.view')]].map(([value,label])=>`<option value="${value}"${item.intent_permission===value?' selected':''}>${escapeHtml(label)}</option>`).join('')}</select>
+      <select data-annotation-role aria-label="${escapeHtml(uiText(item.username+' 的标注身份','Annotation role for '+item.username))}"><option value="rd"${item.annotation_role==='rd'?' selected':''}>RD</option><option value="te"${item.annotation_role==='te'?' selected':''}>TE</option></select>
       <div class="access-row-actions"><button class="button button-quiet" type="button" data-save-access-user>${escapeHtml(t("access.save"))}</button><button class="button button-danger" type="button" data-remove-access-user>${escapeHtml(t("access.remove"))}</button></div>
     </div>
   `).join("");
@@ -592,10 +594,10 @@ async function saveMentionUser(username, enabled) {
   await loadMentionUsers();
 }
 
-async function saveAccessUser(username, role, intentPermission = "manage") {
+async function saveAccessUser(username, role, intentPermission = "manage", annotationRole = null) {
   const result = await api(`/api/access-users/${encodeURIComponent(username)}`, {
     method: "PUT",
-    body: JSON.stringify({ role, intent_permission: intentPermission }),
+    body: JSON.stringify({ role, intent_permission: intentPermission, ...(annotationRole ? {annotation_role:annotationRole} : {}) }),
   });
   acknowledgeLocalChange(result);
   await Promise.all([loadAccessUsers(), loadMentionUsers()]);

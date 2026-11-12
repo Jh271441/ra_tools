@@ -102,7 +102,7 @@ async function exitReviewTaskAndOpenRunPicker() {
 }
 
 async function loadReviewTaskContext(splitId, { route = null } = {}) {
-  const normalized = String(splitId || "").trim();
+  let normalized = String(splitId || "").trim();
   if (!normalized) {
     clearReviewTaskContext({ clearRun: false });
     return null;
@@ -118,9 +118,10 @@ async function loadReviewTaskContext(splitId, { route = null } = {}) {
   renderReviewTaskLoading(normalized);
   renderReviewTaskContext();
   try {
-    const result = await api(`/api/review-task-context/${encodeURIComponent(normalized)}${state.reviewTaskView ? '?task_view=' + encodeURIComponent(state.reviewTaskView) : ''}`);
+    const result = await api(`/api/review-task-context/${encodeURIComponent(normalized)}?${new URLSearchParams({...(state.reviewTaskView?{task_view:state.reviewTaskView}:{}),issue_id:route?.issue||new URLSearchParams(window.location.search).get('issue')||''})}`);
     if (!isCurrent()) return null;
     const task = result.task || {};
+    if(task.id && task.id!==normalized){normalized=task.id;state.reviewWorkSplitId=normalized;}
     state.reviewTaskContext = task;
     state.reviewWorkflowMode = task.workflow_mode || 'model_review_only';
     state.reviewTaskContextLoading = false;

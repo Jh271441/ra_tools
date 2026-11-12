@@ -1,7 +1,7 @@
 const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict');
 const nodes=new Map(),requests=[],paints=[];let now=1000;
 function node(){return {textContent:'',innerHTML:'chart',hidden:false,disabled:false,attrs:{},style:{setProperty(){}},classList:{add(){}},setAttribute(k,v){this.attrs[k]=v;},replaceChildren(){this.innerHTML='';},querySelectorAll(){return [];}};}
-const ctx={console,URL,URLSearchParams,AbortController,Date:{now:()=>now},Map,JSON,Math,
+const ctx={DEFAULT_CASE_PAGE_SIZE:20,CASE_PAGE_SIZES:[10,20,50,100],console,URL,URLSearchParams,AbortController,Date:{now:()=>now},Map,JSON,Math,
   document:{hidden:false},uiText:(zh,en)=>en,$:id=>{if(!nodes.has(id))nodes.set(id,node());return nodes.get(id);},
   setTimeout:()=>1,clearTimeout(){},renderVersionRD(){},enhanceNativeUiSelect(){},
   location:{href:'http://localhost/version-datasets'},history:{pushState(_,__,u){ctx.location.href=String(u);}},

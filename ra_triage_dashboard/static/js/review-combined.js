@@ -131,6 +131,7 @@ async function loadCombinedReviewContext(caseData, {preserveForm = false, fresh 
     state.combinedReviewContext = context;
     state.combinedReviewLoad = { key, status: "ready" };
     caseData.label_state = context.label_state || caseData.label_state;
+    if($('#humanReviewStatus'))renderHumanReviewStatus(caseData.label_state?.human_publication);
     syncModelReviewProgress(context.model_review);
     if (context.model_review) {
       caseData.annotations = [context.model_review, ...(caseData.annotations || []).filter(

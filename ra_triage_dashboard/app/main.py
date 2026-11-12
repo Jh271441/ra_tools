@@ -137,6 +137,8 @@ async def _authoritative_gt_sync_loop() -> None:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    from .human_publisher import run_human_publisher
+    human_label_task: asyncio.Task[None] | None = None
     gt_sync_task: asyncio.Task[None] | None = None
     trail_sync_task: asyncio.Task[None] | None = None
     review_notification_task: asyncio.Task[None] | None = None
@@ -147,6 +149,7 @@ async def lifespan(_: FastAPI):
         administrators=settings.team_default_managers,
     )
     database.bootstrap_mention_users()
+    human_label_task = asyncio.create_task(run_human_publisher(database, settings), name='human-label-publication')
     if settings.seed_examples_enabled:
         database.seed_examples(EXAMPLE_CASES)
     # Local-only seed from baseline workbooks / registry. No Trail I/O.
@@ -178,7 +181,7 @@ async def lifespan(_: FastAPI):
     try:
         yield
     finally:
-        for task in (review_notification_task, gt_sync_task, trail_sync_task):
+        for task in (human_label_task, review_notification_task, gt_sync_task, trail_sync_task):
             if task is not None:
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
@@ -383,6 +386,8 @@ app.mount(
 )
 
 app.include_router(version_datasets.router)
+from .routers import human_publications
+app.include_router(human_publications.router)
 app.include_router(rd_results.router)
 app.include_router(core.router)
 app.include_router(daily_cron.router)

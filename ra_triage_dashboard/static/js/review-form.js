@@ -10,6 +10,9 @@ function refreshReviewFormLanguage() {
   if (!root?.querySelector("#annotationForm")) return;
   applyDomI18n(root);
   applyI18nPlaceholders(root);
+  const humanRoot=root.querySelector('#humanReviewStatus');
+  if(humanRoot)renderHumanReviewStatus(humanRoot._humanPublication);
+  root.querySelector('.review-task-supplemental-notice summary')?.setAttribute('aria-label',uiText('查看补充复核说明','About supplemental review'));
   root.querySelectorAll("[data-tag-dropdown-group]").forEach(dropdown => {
     const label = dropdown.querySelector(".tag-group-label")?.textContent || "";
     const creator = dropdown.querySelector("[data-open-review-tag-creator]");
@@ -35,6 +38,13 @@ function refreshReviewFormLanguage() {
   syncReviewTagCreatorPlacement(root);
   renderCombinedReviewContextStatus();
   enhanceDashboardSelects(root);
+}
+
+function supplementalReviewNoticeMarkup(human) {
+  const explanation=human
+    ? ['此 Issue 未分配给你。你的标注作为补充意见保留；不同意见会显示为异议，不改变正式结论或任务进度。','You are not assigned this Issue. Your annotation is advisory; disagreement is recorded as an objection without changing the formal result or task progress.']
+    : ['此 Issue 未分配给你。复核保存在个人记录中，Case 标签参与共享结论，原分配人的进度不变。',"This Issue is assigned to another reviewer. Your review is saved in your personal history; the Case label contributes to the shared result without changing the assignee's progress."];
+  return `<div class="review-task-supplemental-notice" role="status"><span><span class="ui-lang-zh">任务外补充复核 · 不计入任务进度</span><span class="ui-lang-en">Supplemental · Not counted toward the task</span></span><details><summary aria-label="${escapeHtml(uiText('查看补充复核说明','About supplemental review'))}">ⓘ</summary><span><span class="ui-lang-zh">${escapeHtml(explanation[0])}</span><span class="ui-lang-en">${escapeHtml(explanation[1])}</span></span></details></div>`;
 }
 
 function renderReviewSummary(caseData) {
@@ -392,7 +402,7 @@ function renderReview(caseData) {
     && caseData.review_assignment?.assigned === false
   );
   const taskSupplementalNotice = taskSupplementalOnly
-    ? `<div class="review-task-supplemental-notice" role="status"><span>${escapeHtml(uiText("任务外补充复核 · 不计入任务进度", "Supplemental · Not counted toward the task"))}</span><details><summary aria-label="${escapeHtml(uiText("查看补充复核说明", "About supplemental review"))}">ⓘ</summary><span>${escapeHtml(uiText("此 Issue 未分配给你。复核保存在个人记录中，Case 标签参与共享结论，原分配人的进度不变。", "This Issue is assigned to another reviewer. Your review is saved in your personal history; the Case label contributes to the shared result without changing the assignee's progress."))}</span></details></div>`
+    ? supplementalReviewNoticeMarkup(sharedLabelState.human_publication)
     : "";
   const noRunModelReviewNotice = `<div class="model-review-readonly-note model-review-run-required" role="status">
     <span class="model-review-readonly-copy">
@@ -409,6 +419,7 @@ function renderReview(caseData) {
   $("#reviewPane").innerHTML = `
     <form class="review-form" id="annotationForm" data-issue-id="${escapeHtml(caseData.issue_id)}">
       ${taskSupplementalNotice}
+      <div id="humanReviewStatus"></div>
       <section class="review-section issue-tag-section combined-case-label-card" ${combinedMode ? "" : "hidden"}>
         <div class="review-section-heading"><div><h2><span class="ui-lang-zh">Issue 标签</span><span class="ui-lang-en">Issue tags</span> <small class="combined-mode-badge" title="${escapeHtml(uiText("联合复核", "Combined review"))}"><span class="ui-lang-zh">联合</span><span class="ui-lang-en">Combined</span></small></h2>${sourceSuggestionMarkup}</div><div class="review-case-heading-meta review-heading-actions">${sharedLabelSummary}<button class="history-inline-button" id="issueLabelCommentsButton" type="button" aria-keyshortcuts="D" title="${escapeHtml(uiText("问题讨论（D）；支持图片与 @", "Issue discussion (D); images and @mentions"))}"><span class="ui-lang-zh">讨论</span><span class="ui-lang-en">Discuss</span><kbd class="review-control-shortcut" aria-hidden="true">D</kbd></button><span class="evidence-summary-count" id="tagSummaryCount" hidden aria-hidden="true">${escapeHtml(t("detail.selected_n", { n: chosenTags.size }))}</span></div></div>
         <div class="review-tag-groups-shell">${issueTagGroups}${customTagOptions ? `<div class="review-tag-legacy"><span class="ui-lang-zh">历史标签</span><span class="ui-lang-en">Legacy tags</span><div class="review-tag-options">${customTagOptions}</div></div>` : ""}</div>
@@ -529,6 +540,7 @@ function renderReview(caseData) {
       <button class="button button-primary full-width review-save-button" id="reviewSaveButton" type="submit" aria-keyshortcuts="Enter" title="输入原因时按 Enter 保存；Shift+Enter 换行" ${runBoundModelReview ? "" : "disabled"}><span class="ui-lang-zh">保存新的模型复核版本</span><span class="ui-lang-en">Save model review version</span><kbd class="review-save-shortcut" aria-hidden="true">Enter</kbd></button>
       ${combinedMode ? '<div class="combined-review-context-status" id="combinedReviewContextStatus" role="status" aria-live="polite" hidden></div>' : ""}
     </form>`;
+  renderHumanReviewStatus(sharedLabelState.human_publication);
   if (!runBoundModelReview) {
     $("#annotationForm")?.querySelectorAll(
       "#missingEvidenceOptions input, #reviewScreenshotInput, #reviewScreenshotBrowse, #annotationAuthor, [data-open-missing-evidence-creator]"

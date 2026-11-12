@@ -36,7 +36,8 @@ def version_task_baseline_ids(db, task_id, *, supplemental_only=False):
             dataset_id = filters.get('dataset_id')
         elif not supplemental_only and filters.get('version_live') is True:
             dataset_id = filters.get('version_dataset_id')
-            if not dataset_id or db.version_campaign_id(dataset_id) != task_id:
+            if not dataset_id or (db.version_campaign_id(dataset_id) != task_id and not conn.execute(
+                'SELECT 1 FROM human_version_tasks WHERE dataset_id=? AND campaign_id=?', (dataset_id, task_id)).fetchone()):
                 return []
         else:
             return []
@@ -56,18 +57,23 @@ def version_task_baseline_ids(db, task_id, *, supplemental_only=False):
         return ['version-' + version['release_family']]
 
 
-def task(db, dataset, *, assignee='', status='all', query='', page=1, page_size=50, detail=False):
+def task(db, dataset, *, assignee='', status='all', query='', page=1, page_size=50, detail=False, campaign=None):
     if status not in {'all','pending','completed'}:raise ValueError('Invalid task status')
     rows=[r for r in db.version_dataset_gallery_rows(dataset['id']) if r.get('is_target')]
+    if campaign:
+        rows=[r for r in rows if r.get('binding',{}).get('campaign_id')==campaign['campaign_id']]
+    def reviewers(row):
+        return row.get('reviewers') if 'reviewers' in row else [dict(username=row.get('binding',{}).get('assignee',''),submitted=bool(row.get('review_submitted')),submitted_at=row.get('review_submitted_at',''))]
     counts=defaultdict(lambda:[0,0])
     for row in rows:
-        owner=(row.get('binding') or {}).get('assignee','')
-        if owner:
-            counts[owner][0]+=1;counts[owner][1]+=int(bool(row.get('review_submitted')))
+        for reviewer in reviewers(row):
+            owner=reviewer['username']
+            if owner:
+                counts[owner][0]+=1;counts[owner][1]+=int(reviewer['submitted'])
     members=[dict(username=k,assigned_count=v[0],completed_count=v[1],pending_count=v[0]-v[1],completion_ratio=v[1]/v[0]) for k,v in sorted(counts.items())]
     assigned=sum(v[0] for v in counts.values());completed=sum(v[1] for v in counts.values())
     sources=sorted({r.get('binding',{}).get('campaign_id') for r in rows if r.get('binding',{}).get('campaign_id')})
-    canonical=getattr(db,'version_campaign_id',lambda _: '')(dataset['id'])
+    canonical=campaign['campaign_id'] if campaign else getattr(db,'version_campaign_id',lambda _: '')(dataset['id'])
     result=dict(split_id=canonical or PREFIX+dataset['id'],physically_merged=bool(canonical),dataset_id=dataset['id'],release_family=dataset['release_family'],kind='version_live',appendable=True,
                 campaign_name=dataset['release_family'][4:],created_at=dataset['created_at'],updated_at=dataset['updated_at'],created_by='version-incremental-service',
                 model_run_id=dataset['run_id'],workflow_mode='model_review_and_case_label',mode='single',reviewers_per_issue=1,overlap_ratio=0,
@@ -75,16 +81,23 @@ def task(db, dataset, *, assignee='', status='all', query='', page=1, page_size=
                 completed_count=completed,pending_count=assigned-completed,completion_ratio=completed/assigned if assigned else 0,
                 members=members,baseline_ids=['version-'+dataset['release_family']],baseline_scopes=[],filter_snapshot={},change_count=0,
                 source_count=len(sources))
+    if campaign:
+        sampling=campaign['cohort']=='sampling'
+        result.update(role_cohort=campaign['cohort'],campaign_name=dataset['release_family'][4:]+' · '+('Sampling' if sampling else 'Low confidence'),
+                      mode='blind' if sampling else 'single',reviewers_per_issue=2 if sampling else 1,overlap_ratio=1 if sampling else 0,
+                      filter_snapshot=dict(version_live=True,version_dataset_id=dataset['id'],role_cohort=campaign['cohort']))
     if detail:
         items=[]
         for row in rows:
-            binding=row.get('binding') or {};owner=binding.get('assignee','')
-            if assignee and owner.lower()!=assignee.lower():continue
-            if query and query.lower() not in row['issue_id'].lower():continue
-            submitted=bool(row.get('review_submitted'))
-            if status=='completed' and not submitted or status=='pending' and submitted:continue
-            items.append(dict(issue_id=row['issue_id'],assignee=owner,source_split_id=binding.get('campaign_id',''),split_model_run_id=dataset['run_id'],
-                              assignment_kind='base',submitted=submitted,submitted_at=row.get('review_submitted_at',''),title='',scenario=''))
+            binding=row.get('binding') or {}
+            for reviewer in reviewers(row):
+                owner=reviewer['username']
+                if assignee and owner.lower()!=assignee.lower():continue
+                if query and query.lower() not in row['issue_id'].lower():continue
+                submitted=reviewer['submitted']
+                if status=='completed' and not submitted or status=='pending' and submitted:continue
+                items.append(dict(issue_id=row['issue_id'],assignee=owner,source_split_id=binding.get('campaign_id',''),split_model_run_id=dataset['run_id'],
+                                  assignment_kind='base',submitted=submitted,submitted_at=reviewer['submitted_at'],title='',scenario=''))
         items.sort(key=lambda r:(r['assignee'],r['issue_id']))
         result.update(items=items[(page-1)*page_size:page*page_size],page=page,page_size=page_size,page_count=max(1,(len(items)+page_size-1)//page_size),filtered_count=len(items),changes=[],source_splits=sources,
                       additions=[b for b in db.version_dataset_batches(dataset['id']) if b.get('target_added',0)>0])
@@ -95,13 +108,18 @@ def version_tasks(db, *, assignee='', model_run_id=''):
     result=[]
     for dataset in db.list_version_datasets():
         if model_run_id and dataset['run_id']!=model_run_id:continue
-        item=task(db,dataset)
-        if assignee and not any(m['username'].lower()==assignee.lower() for m in item['members']):continue
-        result.append(item)
+        campaigns=getattr(db,'role_version_campaigns',lambda _: [])(dataset['id']) or [None]
+        for campaign in campaigns:
+            item=task(db,dataset,campaign=campaign)
+            if assignee and not any(m['username'].lower()==assignee.lower() for m in item['members']):continue
+            result.append(item)
     return result
 
 
 def version_task_detail(db, split_id, **options):
     did=split_id[len(PREFIX):] if split_id.startswith(PREFIX) else getattr(db,'version_campaign_dataset',lambda _: '')(split_id)
     dataset=next((d for d in db.list_version_datasets() if d['id']==did),None)
-    return task(db,dataset,detail=True,**options) if dataset else None
+    if not dataset:return None
+    campaigns=getattr(db,'role_version_campaigns',lambda _: [])(dataset['id'])
+    campaign=next((c for c in campaigns if c['campaign_id']==split_id),None)
+    return task(db,dataset,detail=True,campaign=campaign,**options)

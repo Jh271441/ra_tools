@@ -104,8 +104,10 @@ function rdStatusBadge(status) {
     : status === 'pending' ? 'ready' : 'neutral';
   return `<span class="run-source-badge rd-status rd-status-${tone}">${escapeHtml(rdStatus(status))}</span>`;
 }
-function rdMetricsMarkup(data) {
-  const metrics = rdIsTE() ? [
+function rdMetricsMarkup(data, options = {}) {
+  const status = options.status ?? rdResults.filters.status;
+  const disabled = options.disabled ?? (rdResults.loading || rdResults.busy);
+  const metrics = options.metrics || (rdIsTE() ? [
     ['all','total','范围内 Issues','Issues in scope','M4 4h6v6H4zm10 0h6v6h-6zM4 14h6v6H4zm10 0h6v6h-6z'],
     ['resolved','resolved','待修正候选','Correction candidates','m5 12 4 4L19 6'],
     ['same','same','已一致','Already matches','m5 12 4 4L19 6'],
@@ -115,8 +117,8 @@ function rdMetricsMarkup(data) {
     ['resolved', 'resolved', '已完成', 'Completed', 'm5 12 4 4L19 6'],
     ['pending', 'pending', '待标注', 'Pending labels', 'M12 8v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0'],
     ['conflict', 'conflict', '需复核', 'Needs review', 'm12 3 10 18H2L12 3zm0 6v5m0 3v1'],
-  ];
-  return `<div class="run-source-tabs rd-metrics" aria-label="${rdText('标注概览与筛选', 'Label overview and filters')}">${metrics.map(([filter,key,zh,en,path]) => `<button class="run-source-tab rd-metric ${rdResults.filters.status === filter ? 'active' : ''}" type="button" data-rd-filter="${filter}" aria-pressed="${rdResults.filters.status === filter}" ${rdResults.loading || rdResults.busy ? 'disabled' : ''}><span class="run-source-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="${path}"/></svg></span><span><strong>${rdText(zh,en)}</strong></span><em>${data ? data.counts[key] : '—'}</em></button>`).join('')}</div>`;
+  ]);
+  return `<div class="run-source-tabs rd-metrics" aria-label="${rdText('标注概览与筛选', 'Label overview and filters')}">${metrics.map(([filter,key,zh,en,path]) => `<button class="run-source-tab rd-metric ${status === filter ? 'active' : ''}" type="button" data-rd-filter="${filter}" aria-pressed="${status === filter}" ${disabled ? 'disabled' : ''}><span class="run-source-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="${path}"/></svg></span><span><strong>${rdText(zh,en)}</strong></span><em>${data ? data.counts[key] : '—'}</em></button>`).join('')}</div>`;
 }
 function rdSelectable(row) {
   return row.group === 'resolved';
@@ -133,6 +135,7 @@ function rdPreviewProgress() {
   return rdText('正在汇总标注并核对 Trail，尚未上传…', 'Collecting labels and checking Trail; nothing uploaded yet…');
 }
 function renderRdResults() {
+  if (typeof humanPublicationPageActive === 'function' && humanPublicationPageActive()) return renderHumanPublications();
   if (state.activePage !== 'rd-results') return;
   if (rdResults.previewOpen && rdResults.preview) return rdRenderPreview();
   const root = $('#rdResultsPage'), d = rdResults.data, f = rdResults.filters;
@@ -239,12 +242,12 @@ function renderRdResults() {
     root.querySelector(`[data-rd-mode="${focusedMode}"]`)?.focus({ preventScroll: true });
   }
 }
-function rdPaginationMarkup(data, inDialog = false) {
-  const disabled = !data || !data.total || rdResults.loading || rdResults.busy;
+function rdPaginationMarkup(data, inDialog = false, options = {}) {
+  const disabled = !data || !data.total || (options.disabled ?? (rdResults.loading || rdResults.busy));
   const page = data?.page || 1, pages = data?.pages || 1;
-  const prefix = inDialog ? 'rdPreview' : 'rd';
-  const action = value => inDialog ? `preview-${value}` : value;
-  const size = inDialog ? rdResults.previewPageSize : rdResults.filters.page_size;
+  const prefix = options.prefix || (inDialog ? 'rdPreview' : 'rd');
+  const action = value => options.actionPrefix ? options.actionPrefix + value : inDialog ? `preview-${value}` : value;
+  const size = options.size || (inDialog ? rdResults.previewPageSize : rdResults.filters.page_size);
   return `<nav class="case-pagination rd-pagination" aria-label="${rdText('标注明细分页','Annotation pagination')}">
     <span>${data ? `${data.total} ${rdText('条结果','results')}` : '—'}</span>
     <div class="case-pagination-main">${rdButton(action('previous'),rdText('上一页','Previous'), disabled || page <= 1, 'quiet')}<span>${data ? `${page} / ${pages}` : '— / —'}</span>${rdButton(action('next'),rdText('下一页','Next'), disabled || page >= pages, 'quiet')}
@@ -267,6 +270,7 @@ function rdPersist() {
   history.replaceState(history.state, '', url);
 }
 async function loadRdResults() {
+  if (typeof humanPublicationPageActive === 'function' && humanPublicationPageActive()) return loadHumanPublications();
   if (rdResults.committing) return;
   if (rdResults.busyAction === 'refresh-te') { rdResults.busy = false; rdResults.busyAction = ''; }
   const epoch = ++rdResults.epoch, scope = state.selectedBaselineIds.join(',');

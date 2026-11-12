@@ -966,3 +966,11 @@ html[data-session-pending="true"] [data-session-nav] { display: flex !important;
 .dashboard-native-ui-select[hidden] { display: none !important; }
 .case-page-size .dashboard-native-ui-select { width: 80px; }
 .bev-video-control-row .dashboard-native-ui-select { width: auto; min-width: 76px; }
+
+/* Business identity is independent of access permission. */
+.access-create-permissions { grid-template-columns: minmax(150px,1fr) 120px 150px 130px auto; }
+.access-role-row { grid-template-columns: minmax(130px,1fr) 120px 150px 100px auto; }
+.access-role-row .ui-select, .access-create-permissions .ui-select { min-width: 0; }
+.human-role-summary { display: grid; gap: 6px; padding: 10px; color: var(--muted); border: 1px solid var(--line); border-radius: 8px; overflow-wrap: anywhere; }
+.human-publications-page details, .human-publications-page code, .human-publications-page li { overflow-wrap: anywhere; }
+.human-publications-page .rd-table th:nth-child(2) { white-space: nowrap; }

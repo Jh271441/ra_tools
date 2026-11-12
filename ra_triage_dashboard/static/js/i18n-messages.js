@@ -5,6 +5,7 @@
  */
 const I18N_MESSAGES = {
   zh: {
+    "access.manage": "创建与分配", "access.annotate": "仅标注", "access.view": "仅查看", "access.role_default": "按目录默认身份",
     "comment.image": "评论图片",
     "comment.open_image": "打开原图",
     "comment.image_unavailable": "[图片不可用]",
@@ -567,6 +568,7 @@ const I18N_MESSAGES = {
     "btn.add": "添加",
   },
   en: {
+    "access.manage": "Create and assign", "access.annotate": "Annotate only", "access.view": "View only", "access.role_default": "Directory default",
     "comment.image": "Comment image",
     "comment.open_image": "Open full image",
     "comment.image_unavailable": "[Image unavailable]",

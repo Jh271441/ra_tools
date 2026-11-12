@@ -1,3 +1,7 @@
+function roleVersionTaskName(task) {
+  if(task.role_cohort)return String(task.release_family||'').slice(4)+' · '+(task.role_cohort==='sampling'?uiText('抽样集','Sampling'):uiText('低置信集','Low confidence'));
+  return task.campaign_name || reviewAssignmentRunLabel(task.model_run_id);
+}
 /* Review assignment history, progress, and administrator task transfers. */
 
 function reviewAssignmentCanReview(item) {
@@ -230,7 +234,7 @@ function renderReviewAssignmentBatch(item, options = {}) {
     : `<a class="button button-quiet" href="${escapeHtml(pageUrl("campaigns", { campaignId: item.split_id, lifecycle: "history" }))}">${escapeHtml(uiText("查看审计与复核", "View audit and reviews"))}</a>`;
   return `<article class="review-assignment-batch" data-review-assignment-batch="${escapeHtml(item.split_id)}">
     <header class="review-assignment-batch-header">
-      <div><strong class="review-assignment-batch-title">${escapeHtml(item.campaign_name || reviewAssignmentRunLabel(item.model_run_id))} · ${escapeHtml(formatTime(item.created_at))}</strong><span class="review-assignment-batch-meta">${escapeHtml(item.split_id)} · ${escapeHtml(item.created_by || uiText("未记录", "Unknown"))} · ${escapeHtml(reviewAssignmentModeLabel(item))}</span><span class="review-assignment-batch-meta">${escapeHtml(filterLabel)}</span></div>
+      <div><strong class="review-assignment-batch-title">${escapeHtml(roleVersionTaskName(item))} · ${escapeHtml(formatTime(item.created_at))}</strong><span class="review-assignment-batch-meta">${escapeHtml(item.split_id)} · ${escapeHtml(item.created_by || uiText("未记录", "Unknown"))} · ${escapeHtml(reviewAssignmentModeLabel(item))}</span><span class="review-assignment-batch-meta">${escapeHtml(filterLabel)}</span></div>
       <span class="review-assignment-status ${statusClass}">${escapeHtml(status)}</span>
     </header>
     <div class="review-assignment-progress"><div class="review-assignment-progress-heading"><span>${escapeHtml(uiText("整体进度", "Overall progress"))}</span><strong>${escapeHtml(`${item.completed_count || 0} / ${item.assignment_count || 0} · ${percent}%`)}</strong></div><div class="review-assignment-progress-track"><span style="width:${percent}%"></span></div></div>
@@ -375,7 +379,7 @@ function renderReviewAssignmentDetail() {
   }
   detail.is_current = reviewAssignmentCanReview(detail);
   const title = $("#reviewAssignmentDetailTitle");
-  if (title) title.textContent = `${detail.campaign_name || reviewAssignmentRunLabel(detail.model_run_id)} · ${uiText("任务明细", "Task detail")}`;
+  if (title) title.textContent = `${roleVersionTaskName(detail)} · ${uiText("任务明细", "Task detail")}`;
   const meta = $("#reviewAssignmentDetailMeta");
   if (meta) {
     meta.textContent = `${detail.split_id} · ${detail.total_count || 0} ${uiText("个 Issue", "Issues")} · ${detail.assignment_count || 0} ${uiText("条任务", "tasks")} · ${reviewAssignmentModeLabel(detail)}${detail.is_current ? "" : ` · ${`${reviewAssignmentLifecycleLabel(detail)} · ${uiText("历史任务，只读", "Historical task; read-only")}`}`}`;

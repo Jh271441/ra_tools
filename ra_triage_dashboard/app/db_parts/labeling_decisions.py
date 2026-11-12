@@ -188,7 +188,14 @@ class LabelingDecisionsMixin:
             projection = self.project_issue_label_states(
                 scope, [issue_key], include_sources=True, connection=conn
             )[issue_key]
-            sources = list(projection.get("sources") or [])
+            human = projection.get("human_publication")
+            if human:
+                if not human['scope']['active'] or any(human['lanes'][r]['state'] in {'inactive','unclassified'} for r in ('rd','te')):
+                    raise ValueError('正式标注范围不可裁决 / Formal scope is unavailable for adjudication')
+                sources = [dict(label_case_id=v['label_case_id'], source_revision_ids=[v['id']])
+                           for role in ('rd','te') for v in human['lanes'][role]['source']['votes']]
+            else:
+                sources = list(projection.get("sources") or [])
             if not sources:
                 raise ValueError("当前 Issue 还没有可裁决的标注来源。")
             incomplete = [
@@ -276,6 +283,7 @@ class LabelingDecisionsMixin:
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (attachment["id"], decision_id, attachment.get("original_name", ""), attachment["stored_name"],
                      attachment["media_type"], attachment["size_bytes"], attachment["width"], attachment["height"], attachment["sha256"], now))
+            if human:self._human_dirty(conn, issue_key)
             self._mark_labeling_change(conn)
             row = conn.execute(
                 "SELECT * FROM issue_label_decisions WHERE id = ?",

@@ -26,7 +26,7 @@ PREFIXES = ("DASHBOARD_", "ARES_", "CAMERA_", "RA_AUTO_TRIAGE_")
 BASE_KEYS = {"PATH", "HOME", "LANG", "LC_ALL", "TZ", "NO_PROXY", "no_proxy"}
 OFF = ("DASHBOARD_SYNC_TRAIL_ON_START", "DASHBOARD_BATCH_PREDICTION_ENABLED",
        "DASHBOARD_AUTOTRIAGE_PUSH_ENABLED", "DASHBOARD_DCHAT_NOTIFICATIONS_ENABLED",
-       "DASHBOARD_TRAIL_RD_WRITE_ENABLED",
+       "DASHBOARD_TRAIL_RD_WRITE_ENABLED", "DASHBOARD_HUMAN_LABEL_WRITE_ENABLED",
        "DASHBOARD_TRAIL_TE_WRITE_ENABLED",
        "DASHBOARD_TRAIL_ATTRIBUTE_WRITE_ENABLED", "DASHBOARD_TRAIL_ATTRIBUTE_REVIEW_WRITE_ENABLED")
 SENSITIVE_PATHS = (
@@ -37,11 +37,13 @@ SENSITIVE_PATHS = (
     "ra_triage_dashboard/scripts/migrate_cloud_postgres_data.sh",
 )
 POSTGRES_MIGRATION_PREFIX = "ra_triage_dashboard/migrations/postgres/"
-# A unique index requires an exact reviewed migration; generic additive SQL
-# continues to reject arbitrary uniqueness/constraint changes.
+# Unique indexes and transactional event triggers require exact reviewed files;
+# generic additive SQL continues to reject arbitrary constraints and functions.
 REVIEWED_ADDITIVE_MIGRATIONS = {
     "ra_triage_dashboard/migrations/postgres/060_comment_submission_ids.sql":
         "fae1928d683098cbef62be2f733f129b526543164aa4f490efc9beb945956b6d",
+    "ra_triage_dashboard/migrations/postgres/061_human_label_publication.sql":
+        "646f328dd24db468f33e2221d5e7de993a4945d40de01e1260c2fef70e4460bd",
 }
 RECORD_SCHEMA_VERSION = 2
 RELEASE_ID_PATTERN = re.compile(r"[0-9]{8}T[0-9]{6}Z-[0-9a-f]{12}(?:-[0-9]{2})?")
@@ -315,6 +317,7 @@ def check_health(health, sha, storage):
     backend = {"sqlite-mvp": "sqlite"}.get(health.get("storage"), health.get("storage"))
     require(backend == storage, "Unexpected database backend")
     if storage == "sqlite":
+        require(health.get("human_label_write_enabled", False) is False, "Gray human writer is not disabled")
         require(health.get("trail_te_write_enabled", False) is False, "Gray TE writer is not disabled")
         for key in ("trail_attribute_write_enabled", "trail_attribute_review_write_enabled",
                     "trail_rd_write_enabled",
@@ -337,7 +340,8 @@ def policy(health):
             "trail_attribute_review_write_enabled", "batch_prediction_enabled", "autotriage_push_enabled")
     return {**{k: health.get(k) for k in keys},
             "trail_te_write_enabled": health.get("trail_te_write_enabled", False),
-            "trail_rd_write_enabled": health.get("trail_rd_write_enabled", False)}
+            "trail_rd_write_enabled": health.get("trail_rd_write_enabled", False),
+            "human_label_write_enabled": health.get("human_label_write_enabled", False)}
 
 
 def requested_policy(health, enable_trail_rd_write=False):

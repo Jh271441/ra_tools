@@ -22,6 +22,12 @@ def _fingerprint(value: Any) -> str:
 
 
 class DatabaseCombinedReviewMixin:
+    def _combined_label_fingerprint(self, conn, issue_id, reviewer, state):
+        human=self.human_label_context(issue_id,connection=conn)
+        if human:
+            return _fingerprint(dict(scope=human['scope'],members=human['members'],reviewer=reviewer.lower()))
+        return model_review_label_fingerprint(state)
+
     @staticmethod
     def _append_combined_case_images(
         conn: Any, revision_id: int, attachments: Sequence[dict[str, Any]], now: str,
@@ -102,7 +108,7 @@ class DatabaseCombinedReviewMixin:
             ).get(issue_key, {})
             if current_id != expected_case_revision_id:
                 raise LabelAnnotationConflictError("Case 标签 vote 已变化，请刷新后重新确认。")
-            if model_review_label_fingerprint(label_state) != str(expected_label_state_fingerprint or ""):
+            if self._combined_label_fingerprint(conn,issue_key,actor,label_state) != str(expected_label_state_fingerprint or ""):
                 raise LabelAnnotationConflictError("共享 Case 标签结论已变化，请刷新后重新确认。")
             excluded = bool(head["is_excluded"]) if is_excluded is None and head is not None else bool(is_excluded)
             if (not attachments and head is not None and str(head["expected_output"] or "") == output
@@ -112,7 +118,7 @@ class DatabaseCombinedReviewMixin:
                 return {
                     "case_action": "acknowledged", "case_revision": self._label_revision_dict(head),
                     "label_state": label_state,
-                    "label_state_fingerprint": model_review_label_fingerprint(label_state),
+                    "label_state_fingerprint": self._combined_label_fingerprint(conn,issue_key,actor,label_state),
                 }
             now = utc_now()
             label_case_id = str(head["label_case_id"] or "") if head is not None else ""
@@ -156,14 +162,14 @@ class DatabaseCombinedReviewMixin:
                 "case_action": "submitted", "case_revision": self._label_revision_dict(row),
                 "notification": notification,
                 "label_state": state,
-                "label_state_fingerprint": model_review_label_fingerprint(state),
+                "label_state_fingerprint": self._combined_label_fingerprint(conn,issue_key,actor,state),
             }
 
     def _combined_context_on_connection(
         self, conn: Any, *, issue_id: str, campaign_id: str, reviewer: str,
         model_run_id: str = "",
     ) -> dict[str, Any]:
-        campaign_id = self._resolve_version_campaign(conn,campaign_id)
+        campaign_id = self._resolve_human_issue_campaign(conn,campaign_id,issue_id)
         campaign = conn.execute(
             """
             SELECT id, purpose, workflow_mode, lifecycle, legacy_read_only,
@@ -264,7 +270,7 @@ class DatabaseCombinedReviewMixin:
             "case_attachments": self._combined_case_images(conn, int(label_head["id"]) if label_head is not None else None),
             "label_case_id": str(label_head["label_case_id"] or "") if label_head is not None else "",
             "label_state": label_state,
-            "label_state_fingerprint": model_review_label_fingerprint(label_state),
+            "label_state_fingerprint": self._combined_label_fingerprint(conn,issue_id,reviewer,label_state),
             "progress": (
                 {key: progress[key] for key in progress.keys()} if progress is not None else {
                     "model_review_submitted": False,
@@ -352,6 +358,16 @@ class DatabaseCombinedReviewMixin:
                 """,
                 (campaign_key, issue_key, actor, key),
             ).fetchone()
+            redirected_campaign = self._resolve_human_issue_campaign(conn, campaign_key, issue_key)
+            if replay is None and redirected_campaign != campaign_key:
+                # A request arriving through an archived case URL is stored in
+                # its current task. Look there too before enforcing head checks.
+                replay = conn.execute(
+                    """SELECT * FROM combined_review_submissions
+                    WHERE campaign_id=? AND issue_id=? AND lower(reviewer)=lower(?)
+                      AND idempotency_key=?""",
+                    (redirected_campaign, issue_key, actor, key),
+                ).fetchone()
             if replay is not None:
                 if str(replay["idempotency_fingerprint"] or "") != payload_fingerprint:
                     raise AnnotationConflictError("Idempotency-Key 已用于不同联合复核内容。")
@@ -370,6 +386,7 @@ class DatabaseCombinedReviewMixin:
                 , model_run_id=run_key
             )
             campaign = context["campaign"]
+            campaign_key=campaign["id"]
             if str(campaign.get("purpose") or "") != "model_review":
                 raise ValueError("联合复核仅适用于模型复核任务。")
             if str(campaign.get("workflow_mode") or "model_review_only") != "model_review_and_case_label":

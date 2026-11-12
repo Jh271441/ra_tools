@@ -152,7 +152,7 @@ class FrontendMediaContractTest(unittest.TestCase):
         self.assertNotIn('casePageJump?.addEventListener("change", commitCasePageJump)', APP_JS)
         # Review, analysis, Trail exclusion candidates, and admin Run
         # comparison all expose the shared jump-to-page control.
-        self.assertEqual(INDEX_HTML.count('class="page-jump-control"'), 6)
+        self.assertEqual(INDEX_HTML.count('class="page-jump-control"'), 7)
         self.assertIn("const requestedPage = state.reviewAnalysis.page", APP_JS)
         self.assertIn("state.reviewAnalysis.page = requestedPage", APP_JS)
         self.assertIn("page_count", APP_JS)

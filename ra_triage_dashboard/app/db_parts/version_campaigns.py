@@ -50,6 +50,14 @@ class VersionCampaignsMixin:
         row=conn.execute("SELECT detail_json FROM dataset_audit_events WHERE batch_key=? AND action='version_task_archived' LIMIT 1",('campaign:'+value,)).fetchone()
         return _json_load(row['detail_json'],{}).get('canonical_id',value) if row else value
 
+    def _resolve_human_issue_campaign(self,conn,campaign_id,issue_id):
+        resolved=self._resolve_version_campaign(conn,campaign_id)
+        row=conn.execute('SELECT target_campaign_id FROM human_campaign_redirects WHERE campaign_id=? AND issue_id=?',(resolved,issue_id)).fetchone()
+        return row['target_campaign_id'] if row else resolved
+
+    def resolve_human_issue_campaign(self,campaign_id,issue_id):
+        with self.connect() as conn:return self._resolve_human_issue_campaign(conn,campaign_id,issue_id)
+
     def resolve_version_campaign(self,campaign_id):
         with self.connect() as conn:return self._resolve_version_campaign(conn,campaign_id)
 
@@ -214,6 +222,9 @@ class VersionCampaignsMixin:
 
     def append_version_campaign_members(self, *, family,policy,issue_ids,current_target_ids,batch_key,actor):
         """Append directly to the same physical task; never allocate another batch Campaign."""
+        if family >= '20261106':
+            return self.append_role_version_campaign_members(family=family,policy=policy,issue_ids=issue_ids,
+                current_target_ids=current_target_ids,batch_key=batch_key,actor=actor)
         did='release-'+family+'-odd2'
         if not re.fullmatch(r'20\d{6}',family) or not actor or len(set(issue_ids))!=len(issue_ids):raise ValueError('Invalid version append identity')
         expected=digest({'family':family,'issue_ids':sorted(issue_ids),'policy':policy})

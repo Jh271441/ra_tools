@@ -5,6 +5,7 @@ from .initialize_change_tracking import initialize_change_tracking
 from .initialize_campaign_compat import initialize_campaign_compat
 from .initialize_columns import initialize_columns
 from .initialize_recovery import initialize_recovery
+from .initialize_human_labels import initialize_human_labels
 
 
 import sqlite3
@@ -436,6 +437,7 @@ class DatabaseCoreMixin:
             initialize_campaign_compat(self, conn)
             initialize_columns(self, conn)
             initialize_recovery(self, conn)
+            initialize_human_labels(self, conn)
 
     @staticmethod
     def _ensure_column(conn: Any, table: str, column: str, declaration: str) -> None:

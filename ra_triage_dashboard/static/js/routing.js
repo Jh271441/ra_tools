@@ -227,7 +227,7 @@ function applyUiLanguage(language, { persist = true } = {}) {
     if (typeof renderSystemStatus === "function") renderSystemStatus();
   } catch (_) {}
   try {
-    if (typeof renderAccessUsers === "function" && state.accessUsers) renderAccessUsers();
+    if (typeof renderAccessUsers === "function" && state.accessUsers) renderAccessUsers({preserveDrafts:true});
   } catch (_) {}
   try {
     if (typeof renderMentionUsers === "function" && state.mentionUsers) renderMentionUsers();

@@ -306,6 +306,7 @@ async def health() -> dict[str, Any]:
         "trail_write_enabled": False,
         "trail_attribute_write_enabled": settings.trail_attribute_write_enabled,
         "trail_rd_write_enabled": getattr(settings, "trail_rd_write_enabled", False),
+        "human_label_write_enabled": getattr(settings, "human_label_write_enabled", False),
         "trail_te_write_enabled": getattr(settings, "trail_te_write_enabled", False),
         "trail_attribute_review_write_enabled": getattr(
             settings, "trail_attribute_review_write_enabled", False
@@ -562,6 +563,7 @@ async def set_access_user(
             role=role,
             actor=identity.username,
             intent_permission=body.get("intent_permission") if isinstance(body, dict) else None,
+            annotation_role=body.get("annotation_role") if isinstance(body, dict) else None,
         )
     except ValueError as exc:
         raise _detail(409, str(exc))
@@ -724,6 +726,7 @@ async def status(response: Response) -> dict[str, Any]:
         "trail_write_enabled": False,
         "trail_attribute_write_enabled": settings.trail_attribute_write_enabled,
         "trail_rd_write_enabled": getattr(settings, "trail_rd_write_enabled", False),
+        "human_label_write_enabled": getattr(settings, "human_label_write_enabled", False),
         "trail_te_write_enabled": getattr(settings, "trail_te_write_enabled", False),
         "trail_attribute_review_write_enabled": getattr(
             settings, "trail_attribute_review_write_enabled", False
