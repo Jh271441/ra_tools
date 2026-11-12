@@ -1,10 +1,10 @@
 # 1106 起 Manual RD / TE′ 标注与上传
 
-2026-11-12 验收候选。已实现本地代码和合成数据预览，**尚未上线、未迁移生产数据、未写真实 Trail**。真实写入默认关闭，等待用户验证以及 Trail 字段能力验收。
+2026-11-12 已正式部署到 `/manual`：运行版本 `4be1726f10fbbbc2122718a4872841aaa3ac0b1b`、cache795、schema061，现有 1106 两条目标的审计迁移已完成。**真实 Trail 人工回刷与历史回刷仍关闭**，等待真实字段/NULL/指标回退及用户线上验收后独立启用。
 
-部署候选已整合 `66710f8ac109e565ed659884d5a0b2882bd54db8`，保留最新视频播放、冷启动及共享标签提示修复；静态资源版本 795，新增 schema 061。本地功能分支为 `codex/manual-role-publication-20261112`。既有 `origin` 经 GitHub 元数据核实为公开仓库，用户已在本次会话明确允许推送本次源码；部署状态以发布收据为准。
+正式版本已整合 `66710f8ac109e565ed659884d5a0b2882bd54db8`，保留最新视频播放、冷启动及共享标签提示修复。本地功能分支为 `codex/manual-role-publication-20261112`。用户已在本次会话明确允许公开推送，并明确批准停写、备份恢复校验、schema061、旧任务迁移及指定 TE 标注权限配置；完整发布证据见文末正式部署记录。
 
-长期规则及两张说明流程图已归档到看板 skill 的 `references/role-label-publication.md`；本文件记录实现、验收及上线步骤，不能作为已上线证明。
+长期规则及两张说明流程图已归档到看板 skill 的 `references/role-label-publication.md`；本文件记录实现、验收及上线步骤，运行状态最终以发布回执和实时健康检查为准。
 
 ## 规则速查
 
@@ -159,7 +159,7 @@ python -m ra_triage_dashboard.scripts.migrate_human_labels \
 
 该次修正的前端定向检查 **63 passed、6 subtests passed**；既有 **12 组浏览器检查**重新通过，另验证三通道 × 1440/390/320px 共 **9 组**概览筛选、选择清理、说明展开、语言切换与轮询保持状态，均无 JavaScript 错误。报告和截图在 `/private/tmp/manual-role-layout-acceptance/`。本次仅改展示层，未重跑此前的全量后端回归；这些结果仍是本机合成预览验收。
 
-真实 Trail 枚举/NULL、外部指标消费者、生产备份恢复、生产 SSO/完整媒体 Review 链路、真实手机软键盘/触摸均**未验证**。真实写入依然关闭；以上本地结果不能代替它们。用户确认页面与规则后，下一阶段是在批准的隔离/灰度环境完成这些门禁，再安排上线。
+后续正式部署已完成生产备份恢复与数据迁移。真实 Trail 枚举/NULL、外部指标消费者、生产 SSO/完整媒体 Review 提交链路、真实手机软键盘/触摸仍**未验证**。真实写入继续关闭；以上本地和后端验收不代替这些门禁，单独验收通过后才能启用回刷。
 
 主要可复跑入口：
 
@@ -191,3 +191,22 @@ python -m ra_triage_dashboard.scripts.migrate_human_labels --help
 下一步使用统一入口，以最终推送 SHA 执行 `release_dashboard.py --sha <SHA> --prepare --allow-additive-migrations`。prepare 只运行云端完整测试和隔离灰度；生产切换阶段另做停止写入后的新鲜备份、恢复与计数核验、061 安装及历史任务迁移。代码回退与数据迁移回退分别处理，不能让旧分配逻辑重新处理已迁移任务。
 
 当前远端 `git@github.com:Jh271441/ra_tools.git` 经仓库元数据核实为公开仓库。用户随后明确允许将本次源码推送该仓库，继续沿用统一发布入口。云端灰度、生产备份恢复与数据迁移、SSO 完整链路、真实 Trail 字段/NULL/指标回退均未在本地准备阶段完成。初次发布保持 `DASHBOARD_HUMAN_LABEL_WRITE_ENABLED=false`，不自动启用历史回刷。
+
+## 2026-11-12 正式部署与生产验收
+
+统一发布收据 `/volume/home/workspace/ra_triage_dashboard_deploy/releases/20261112T135002Z-4be1726f10fb/result.json`：`status=success`，22:25:18 CST 切换至 `4be1726f10fbbbc2122718a4872841aaa3ac0b1b`。精确 SHA 云端 **1,423 passed、9 skipped，229.43 秒**，隔离 SQLite 灰度通过。首次准备因可选 `httpx` 缺失未通过；改用项目既有 ASGI 客户端，原鉴权/分页/关闭写入断言完整保留，没有变更共享运行依赖。
+
+切换前另外用一致性导出快照恢复并核对 **104 张表**，在恢复库完成 061、指定人员配置和两条旧任务迁移。正式切换由发布器停写后生成新鲜逻辑备份，完成 checksum、恢复与全表计数核验，安装 schema060→061 后启动应用。22:28:36 CST 完成生产任务迁移，22:30:56 CST 后端复核健康。
+
+本次迁移范围仍为两条抽样目标，原 RD 负责人、原始 Case/模型标注版本、提交、冻结引用和旧负责人记录均逐项摘要核对不变。旧任务保留为 superseded，带 Issue 的旧链接可解析到新的抽样联合任务。RD `jasperchen` / `liangxianghui` 各一条，TE `yupuxue` / `zhangxuzhao` 各一条。当前低置信独占目标为零，其独立任务会在首条目标追加时创建。
+
+两位新 TE 登记为 `writer`、`intent_permission=annotate`；其他已登记人员的访问权限保持原值。四位指定 TE 的业务身份已登记，`zhangyang` 仅初始化业务身份，没有额外授予访问权限。三条发布通道各有两条本地状态记录；历史 scope 均 `publication_armed=0`，真实远端尝试为零，`human_label_write_enabled=false`。
+
+部署后验证 PostgreSQL 持久化/schema61/整体健康、启动 JS/CSS bundle 及七个入口/模块字节、未验证直连身份对受保护新接口的 403 拒绝、旧链接与人员权限。9 个静态资源与发布 Git 字节相同；既有原生视频与共享标签提示模块保留。以上是生产后端/资源验收，没有宣称真实 SSO 页面点击、手机或真实 Trail 写入验收。
+
+迁移与 postflight 私有回执根目录为 `/volume/home/workspace/ra_triage_dashboard_deploy/operations/manual-role-publication-20261112/20261112T135002Z-4be1726f10fb/production/`。其中 `verified-backup/` 永久保留独立副本，不受滚动备份/发布清理影响；SHA-256 为 `83319da1a75417c3d6e56f2e61b5f691a005e80b9d307b6bbd3c0034be7c753d`。不得直接用切换前备份覆盖后续新标注；数据迁移后优先按审计记录向前修复。
+
+用户验收入口：
+
+- `https://auto-triage.intra.xiaojukeji.com/manual/rd-results?baselines=version-20261106`：三类页签、两条真实目标与本地同步状态、详情/异议/历史；真实写入不可提交。
+- `https://auto-triage.intra.xiaojukeji.com/manual/version-datasets?dataset=release-20261106-odd2`：原 RD 进度、TE 负责人及独立进度；查看原任务旧链接仍能定位同一 Issue。
