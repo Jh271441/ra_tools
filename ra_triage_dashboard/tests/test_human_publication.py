@@ -347,7 +347,7 @@ def test_legacy_rd_publication_cannot_bypass_formal_roles(db):
 
 def test_manual_routes_auth_flags_pagination_and_no_remote_io(db,monkeypatch):
     from fastapi import FastAPI,HTTPException
-    from fastapi.testclient import TestClient
+    from ra_triage_dashboard.tests.test_rd_results import AsgiClient
     from types import SimpleNamespace
     from ra_triage_dashboard.app.routers import human_publications as routes
     monkeypatch.setattr(routes,'database',db)
@@ -355,7 +355,7 @@ def test_manual_routes_auth_flags_pagination_and_no_remote_io(db,monkeypatch):
     actor=SimpleNamespace(username='jasperchen')
     monkeypatch.setattr(routes,'_writer_identity',lambda req:actor)
     monkeypatch.setattr(routes,'_admin_identity',lambda req:actor)
-    app=FastAPI();app.include_router(routes.router);client=TestClient(app)
+    app=FastAPI();app.include_router(routes.router);client=AsgiClient(app)
     url='/api/human-publications?baselines=version-20261106'
     response=client.get(url);assert response.status_code==200 and response.json()['total']==60
     assert client.get(url+'&page=0').status_code==409
