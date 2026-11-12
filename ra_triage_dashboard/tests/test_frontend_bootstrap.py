@@ -52,7 +52,7 @@ class FrontendBootstrapTest(unittest.TestCase):
         self.assertNotIn("await browserLcaUsername()", session_body)
         self.assertIn("let initialDetailRequest = null", APP_JS)
         self.assertIn(
-            "initialDetailRequest = selectCase(initialRoute.issue, { updateRoute: false })",
+            "initialDetailRequest = selectCase(initialRoute.issue, {\n          updateRoute: false, videoDiscovery: initialVideoDiscovery,\n        })",
             APP_JS,
         )
         self.assertIn("const sessionRequest = resolveSessionInBackground()", APP_JS)
