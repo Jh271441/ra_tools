@@ -29,6 +29,7 @@ function createVideoSegmentLoader(video, {
   // Keep only the received prefixes of two interrupted transfers. Their
   // fingerprint is fixed for the lifetime of this loader.
   const interrupted = new Map();
+  const networkFailures = new Map();
   const maxPrefixBytes = 3 * 1024 * 1024;
   const requests = new Set(), loaded = new Set(), touched = new Set(), listeners = [];
   const listen = (target, name, handler) => {
@@ -73,6 +74,7 @@ function createVideoSegmentLoader(video, {
     stopped = true;
     requests.forEach(request => request.abort());
     interrupted.clear();
+    networkFailures.clear();
     listeners.forEach(remove => remove());
     if (mediaSource?.readyState === "open") {
       try { buffer?.abort(); } catch { /* A source can close during teardown. */ }
@@ -163,13 +165,20 @@ function createVideoSegmentLoader(video, {
     const transfer = { number, controller, rewind, resumedBytes, received: resumedBytes, started: performance.now() };
     active = transfer;
     if (rewind) rewindAttempted = true;
-    let reader = null;
+    let reader = null, networkFailed = false, preservePrefix = false;
     try {
-      const response = await fetch(source.pathname + source.search, {
-        headers: { Range: `bytes=${first}-${segment.last}` }, signal: controller.signal,
-        priority: rewind || (!playbackRequested() && number !== segmentAt(current())) ? "low" : "auto",
-      });
+      let response;
+      try {
+        response = await fetch(source.pathname + source.search, {
+          headers: { Range: `bytes=${first}-${segment.last}` }, signal: controller.signal,
+          priority: rewind || (!playbackRequested() && number !== segmentAt(current())) ? "low" : "auto",
+        });
+      } catch (error) { networkFailed = true; throw error; }
       if (stopped || controller.signal.aborted) return;
+      if ([408, 429, 500, 502, 503, 504].includes(response.status)) {
+        networkFailed = true;
+        throw Error("temporary segment response");
+      }
       const expected = `bytes ${first}-${segment.last}/${index.size}`;
       if (response.status !== 206 || response.headers.get("Content-Range") !== expected || !response.body) {
         throw Error("unexpected segment range");
@@ -203,7 +212,10 @@ function createVideoSegmentLoader(video, {
         }
       }
       for (;;) {
-        const { done, value } = await reader.read();
+        let chunk;
+        try { chunk = await reader.read(); }
+        catch (error) { networkFailed = true; throw error; }
+        const { done, value } = chunk;
         if (done) break;
         if (stopped || controller.signal.aborted) break;
         transfer.received += value.byteLength;
@@ -218,15 +230,42 @@ function createVideoSegmentLoader(video, {
         if (!stopped && !controller.signal.aborted) onBufferAppended();
       }
       if (!stopped && !controller.signal.aborted) {
-        if (transfer.received !== segmentBytes(number)) throw Error("truncated segment");
+        if (transfer.received !== segmentBytes(number)) {
+          networkFailed = true;
+          throw Error("truncated segment");
+        }
         if (!rewind) {
           secondsPerByte = Math.max(1, performance.now() - transfer.started) / (1000 * (transfer.received - resumedBytes));
         }
         loaded.add(number);
+        networkFailures.delete(number);
         retryBoundarySeek();
       }
+    } catch (error) {
+      const failures = networkFailures.get(number) || 0;
+      if ((!rewind || number === segmentAt(current())) && networkFailed
+          && !stopped && !controller.signal.aborted && failures < 2) {
+        // Keep the decoder and displayed position across transient VPN/HTTP
+        // failures. Replay the bounded prefix, then request only its suffix.
+        preservePrefix = true;
+        networkFailures.set(number, failures + 1);
+        resetParser = true;
+        await new Promise((resolve, reject) => {
+          const cancel = () => {
+            clearTimeout(timer);
+            reject(Object.assign(Error("segment retry cancelled"), { name: "AbortError" }));
+          };
+          const timer = setTimeout(() => {
+            controller.signal.removeEventListener("abort", cancel);
+            resolve();
+          }, 250 * 2 ** failures);
+          controller.signal.addEventListener("abort", cancel, { once: true });
+          if (controller.signal.aborted) cancel();
+        });
+      } else throw error;
     } finally {
-      if (!stopped && controller.signal.aborted && prefix?.length && prefix.length < segmentBytes(number)) {
+      if (!stopped && (controller.signal.aborted || preservePrefix)
+          && prefix?.length && prefix.length < segmentBytes(number)) {
         interrupted.set(number, prefix);
         if (interrupted.size > 2) interrupted.delete(interrupted.keys().next().value);
       }

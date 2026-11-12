@@ -460,6 +460,7 @@ function bindBevVideoPlayers(root) {
     let queuedSeekGroup = null;
     let playbackFrameCallback = null;
     let firstPlaybackFrame = null, lastPlaybackFrame = null;
+    let lastKnownPosition = pendingStart;
     const resetPlaybackFrames = () => {
       if (playbackFrameCallback !== null) video.cancelVideoFrameCallback?.(playbackFrameCallback);
       playbackFrameCallback = null;
@@ -504,6 +505,9 @@ function bindBevVideoPlayers(root) {
       return 0;
     };
     const update = (previewTime = null) => {
+      if (!video.error && metadataGeneration === sourceGeneration && video.readyState >= 1) {
+        lastKnownPosition = playbackPosition();
+      }
       const total = Math.max(0, duration());
       const currentTime = previewTime !== null && Number.isFinite(Number(previewTime))
         ? Number(previewTime)
@@ -642,7 +646,7 @@ function bindBevVideoPlayers(root) {
       queueSeek(target, 0);
     };
     const startPlayback = () => {
-      if (disposed || suspended || !wantsPlayback || pendingBackwardSeek !== null || playPending
+      if (disposed || suspended || video.error || !wantsPlayback || pendingBackwardSeek !== null || playPending
         || !video.paused || !video.getAttribute("src")
         || (metadataGeneration !== sourceGeneration && !sourceHasStartHint)
         || !player.isConnected || player.closest?.('dialog:not([open]), [hidden], .hidden')) return;
@@ -684,6 +688,10 @@ function bindBevVideoPlayers(root) {
       rebufferTarget = null;
       resetPlaybackFrames();
       wantsPlayback = !wantsPlayback;
+      if (wantsPlayback && video.error) {
+        loadSource(videoElementAssetUrl(video), video.getAttribute("poster") || "");
+        return;
+      }
       // A key press changes intent and its feedback synchronously, even before
       // metadata/frames arrive. A second press cancels a queued play request.
       if (!wantsPlayback) {
@@ -753,8 +761,10 @@ function bindBevVideoPlayers(root) {
       video.load();
     };
     const loadSource = (url, poster = "", nativeOnly = false) => {
-      pendingStart = rebufferTarget ?? pendingBackwardSeek
-        ?? (video.readyState >= 1 && Number.isFinite(video.currentTime) ? video.currentTime : pendingStart);
+      pendingStart = rebufferTarget ?? pendingBackwardSeek ?? pendingStart
+        ?? (video.error || video.readyState < 1 ? lastPlaybackFrame ?? lastKnownPosition
+          : Number.isFinite(video.currentTime) ? video.currentTime : lastKnownPosition);
+      if (pendingStart !== null) lastKnownPosition = pendingStart;
       pendingBackwardSeek = null;
       // A cold stream's first native fallback can keep the correct t0 poster.
       // Explicit source changes and non-t0 requests retain the frame guard.
@@ -878,13 +888,23 @@ function bindBevVideoPlayers(root) {
     });
     ["loadeddata", "canplay", "canplaythrough", "progress", "playing", "seeked"].forEach(name => listen(video, name, ready));
     listen(video, "error", () => {
+      if (!video.error) return; // An old source can queue this after load() clears its error.
       if (segmentLoader?.recover()) return;
+      pendingStart = rebufferTarget ?? pendingBackwardSeek ?? pendingStart ?? lastPlaybackFrame ?? lastKnownPosition;
+      pendingBackwardSeek = null;
+      rebufferTarget = null;
+      wantsPlayback = false;
       cancelFrameCheck();
+      resetPlaybackFrames();
+      ++seekRequest;
+      cancelPendingSeek?.();
+      clearQueuedSeek();
       if (loadTimer !== null) window.clearTimeout(loadTimer);
       loadTimer = null;
       ++playbackAttempt;
       playPending = false;
       playing = false;
+      video.pause();
       setStatus("error");
       update();
     });

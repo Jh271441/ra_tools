@@ -106,8 +106,73 @@ async function discussionOwnsSuspension() {
   assert.equal(context.state.analysisDiscussion, null);
 }
 
+async function interruptedSegments(fault, cancel = false) {
+  const ranges = [], appends = [];
+  let media, fallback = 0, parserResets = 0, loads = 0;
+  class Buffer extends EventTarget {
+    appendBuffer(bytes) { appends.push(bytes.byteLength); queueMicrotask(() => this.dispatchEvent(new Event('updateend'))); }
+    abort() { parserResets++; }
+  }
+  class Media extends EventTarget {
+    constructor() { super(); media = this; this.readyState = 'open'; }
+    static isTypeSupported() { return true; }
+    addSourceBuffer() { return new Buffer(); }
+  }
+  const video = new EventTarget();
+  Object.assign(video, {paused:true,currentTime:4.2,playbackRate:1,buffered:{length:0},
+    load() { loads++; queueMicrotask(() => media.dispatchEvent(new Event('sourceopen'))); }});
+  const manifest = {recipe:'segments-v1',codec:'avc1.640028',fingerprint:'b'.repeat(64),
+    duration:10,size:500,init:'AA==',segments:[0,1,2,3,4].map(i=>({start:i*2,end:i*2+2,first:i*100,last:i*100+99}))};
+  const context = {URL:class extends URL {static createObjectURL(){return 'blob:recovery';} static revokeObjectURL(){}},
+    location:{origin:'https://triage.test'},MediaSource:Media,AbortController,Uint8Array,atob,
+    setTimeout,clearTimeout,performance,safeSameOriginAssetUrl:value=>value,
+    fetch:async(url,options)=>{
+      if(url.includes('stream='))return new Response(JSON.stringify(manifest));
+      const range=options.headers.Range;ranges.push(range);
+      if(fault==='503'&&ranges.length<=2)return new Response(null,{status:503});
+      if(fault==='disconnect'&&ranges.length===1)return new Response(new ReadableStream({
+        start(controller){controller.enqueue(new Uint8Array(30));setImmediate(()=>controller.error(new TypeError('connection reset')));}
+      }),{status:206,headers:{'Content-Range':'bytes 200-299/500'}});
+      const [,first,last]=range.match(/bytes=(\d+)-(\d+)/);
+      return new Response(new Uint8Array(Number(last)-Number(first)+1),{status:206,
+        headers:{'Content-Range':range.replace('=',' ')+'/500'}});
+    }};
+  vm.createContext(context);vm.runInContext(source('video-segments.js'),context);
+  const loader=context.createVideoSegmentLoader(video,{url:'/api/assets/cn1/bev-video-0',
+    position:()=>video.currentTime,attached(){},fallback(){fallback++;}});
+  for(let i=0;i<10;i++)await tick();
+  if(cancel){
+    if(cancel==='suspend')loader.suspend();
+    else if(cancel==='seek'){video.currentTime=6.2;video.dispatchEvent(new Event('seeking'));}
+    else loader.dispose();
+    await new Promise(resolve=>setTimeout(resolve,350));
+    if(cancel==='seek'){
+      assert.equal(ranges.filter(range=>range==='bytes=200-299').length,1,'A new seek cancels the old retry');
+      assert.ok(ranges.includes('bytes=300-399'),'The new target takes over network work');
+    }else assert.equal(ranges.length,1,'Suspension/disposal cancels a pending network retry');
+    assert.equal(fallback,0,'An old retry cannot replace a disposed source');
+    if(cancel!=='suspend'){loader.dispose();return;}
+    loader.resume();
+  }
+  for(let i=0;i<200&&!ranges.includes('bytes=300-399')&&!fallback;i++)await new Promise(resolve=>setTimeout(resolve,10));
+  assert.equal(fallback,0,'Transient '+fault+' must not replace the current media source');
+  assert.equal(loads,1,'Network recovery keeps the existing native video');
+  if(fault==='disconnect'){
+    assert.deepEqual(ranges,['bytes=200-299','bytes=230-299','bytes=300-399'],
+      'Retry requests only the missing suffix of the interrupted GOP');
+    assert.deepEqual(appends,[1,30,30,70,100],'Parser recovery replays the prefix before its suffix');
+    assert.ok(parserResets>=1);
+  }else assert.deepEqual(ranges,['bytes=200-299','bytes=200-299','bytes=200-299','bytes=300-399']);
+  loader.dispose();
+}
+
 (async () => {
   await pausedSegments();
   await discussionOwnsSuspension();
+  await interruptedSegments('disconnect');
+  await interruptedSegments('503');
+  await interruptedSegments('503',true);
+  await interruptedSegments('503','suspend');
+  await interruptedSegments('503','seek');
   console.log('Manual network lifecycle checks passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

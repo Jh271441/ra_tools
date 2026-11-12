@@ -12,7 +12,7 @@ function playerFixture({readyState=4,context=null,initialTime=0,durationSec=40,.
  const video=elements.video;Object.assign(video,{isVideo:true,readyState,duration:40,paused:true,seeking:false,loads:0,plays:0,pauses:0,seeks:[],error:null},videoState);
  let pos=initialTime;Object.defineProperty(video,'currentTime',{get:()=>pos,set:v=>{pos=v;video.seeks.push(v);}});
  video.pause=()=>{video.pauses++;video.paused=true;};video.play=()=>{video.plays++;video.paused=false;video.fire('play');return Promise.resolve();};
- video.load=()=>{video.loads++;video.readyState=0;};video.attrs.src='/clip.mp4';video.attrs.poster='/poster.jpg';
+ video.load=()=>{video.loads++;video.readyState=0;video.error=null;};video.attrs.src='/clip.mp4';video.attrs.poster='/poster.jpg';
  const player=new El();player.dataset={durationSec:String(durationSec),t0PlayerSec:String(durationSec/2),startOffsetSec:String(-durationSec/2)};
  player.querySelector=s=>s==='video'?video:elements[s.replace('[data-video-','').replace(']','')];
  const root={querySelectorAll:s=>s==='video'?[video]:[player]};
@@ -257,6 +257,25 @@ function playerFixture({readyState=4,context=null,initialTime=0,durationSec=40,.
  assert(v.paused);
  const cachedError=playerFixture();cachedError.video.error={code:2};cachedError.video.fire('error');assert.equal(cachedError.player.dataset.loadState,'error');
  cachedError.ctx.releaseBevVideoPlayer(cachedError.root);
+ const interrupted=playerFixture();
+ interrupted.video.currentTime=22.6;interrupted.video.fire('timeupdate');
+ interrupted.elements.play.fire('click');await Promise.resolve();interrupted.video.fire('playing');
+ interrupted.video.error={code:2};interrupted.video.readyState=0;interrupted.video.currentTime=0;
+ interrupted.video.fire('error');
+ assert.equal(interrupted.elements.play.getAttribute('aria-pressed'),'false','A terminal error cannot still advertise Pause');
+ assert.equal(interrupted.elements.seek.value,'22.6','A media error retains the last known playback position');
+ interrupted.elements.retry.fire('click');
+ assert.match(interrupted.video.src,/#t=22\.6$/,'Retry resumes at the failed position after metadata was lost');
+ assert.equal(interrupted.video.paused,true,'Retry does not revive the failed Play request');
+ interrupted.video.readyState=4;interrupted.video.fire('loadedmetadata');interrupted.video.fire('loadeddata');
+ interrupted.video.fire('error');
+ assert.equal(interrupted.player.dataset.loadState,'ready','A late error event with no current media error is ignored');
+ interrupted.video.currentTime=26.3;interrupted.video.fire('timeupdate');
+ interrupted.video.error={code:2};interrupted.video.readyState=0;interrupted.video.currentTime=0;interrupted.video.fire('error');
+ interrupted.elements.play.fire('click');
+ assert.match(interrupted.video.src,/#t=26\.3$/,'Explicit Play after failure reloads the same position');
+ assert.equal(interrupted.elements.play.getAttribute('aria-pressed'),'true');
+ interrupted.ctx.releaseBevVideoPlayer(interrupted.root);
  const buffered=playerFixture();buffered.video.fire('loadeddata');buffered.video.fire('stalled');assert.equal(buffered.player.dataset.loadState,'ready','buffered paused video must not show slow-load warning');
  buffered.video._refreshBevPlayerLanguage();assert.equal(buffered.video.getAttribute('aria-label'),'复核视频');buffered.ctx.releaseBevVideoPlayer(buffered.root);
  // Native load may flash its new poster or frame0 before the retained

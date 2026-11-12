@@ -6,7 +6,7 @@ const nativeRoot=process.env.SEGMENT_NATIVE_ROOT,streamRoot=process.env.SEGMENT_
 if(!nativeRoot||!streamRoot)throw Error('Set SEGMENT_NATIVE_ROOT and SEGMENT_STREAM_ROOT');
 const output=process.env.SEGMENT_QA_OUTPUT||path.join(streamRoot,'player-qa.json');
 const indexes=JSON.parse(fs.readFileSync(path.join(streamRoot,'candidate-build.json'),'utf8'));
-const staticRoot=path.resolve(__dirname,'../static');const logs=[];
+const staticRoot=path.resolve(__dirname,'../static');const logs=[],faultAttempts=new Map(),brokenNativeServed=new Set();
 const server=http.createServer((req,res)=>{
  const url=new URL(req.url,'http://localhost'),name=path.basename(url.pathname,'.mp4'),mode=url.searchParams.get('mode')||'ready';
  if(!url.pathname.endsWith('.mp4')){res.setHeader('Content-Type','text/html');return res.end('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><div id="player"></div><div id="reference"></div>');}
@@ -17,6 +17,7 @@ const server=http.createServer((req,res)=>{
  if(kind==='manifest'){
   const send=()=>{if(res.destroyed)return;res.setHeader('Content-Type','application/json');
    if(mode==='pending')return res.writeHead(202).end('{"status":"pending"}');
+   if(mode==='broken-native'&&!brokenNativeServed.has(name))return res.writeHead(202).end('{"status":"pending"}');
    const value=mode==='malformed'?{...manifest,segments:[]} : manifest;res.end(JSON.stringify(value));};
   return mode==='delay'?setTimeout(send,400):mode==='timeout'?setTimeout(send,2400):send();
  }
@@ -24,12 +25,23 @@ const server=http.createServer((req,res)=>{
  const size=fs.statSync(file).size;if(kind==='segment')assert.equal(size,manifest.size);
  const range=req.headers.range?.match(/^bytes=(\d+)-(\d*)$/),first=range?+range[1]:0,last=range?.[2]?Math.min(size-1,+range[2]):size-1;
  if(first>last)return res.writeHead(416).end();
+ const segment=manifest.segments.find(s=>s.first<=first&&first<=s.last);
+ const faultKey=`${name}:${mode}:${segment?.start}`;
+ const attempt=(faultAttempts.get(faultKey)||0)+1;
+ if(kind==='segment')faultAttempts.set(faultKey,attempt);
+ if(kind==='segment'&&(mode==='unavailablealways'||(mode==='unavailabletwice'&&segment?.start===20&&attempt<=2))){
+  return res.writeHead(503).end();
+ }
+ if(kind==='native'&&mode==='broken-native'&&!brokenNativeServed.has(name)){
+  brokenNativeServed.add(name);return res.writeHead(200,{'Content-Type':'video/mp4'}).end('invalid media');
+ }
  const bad=kind==='segment'&&mode==='range200';
  res.writeHead(range&&!bad?206:200,{'Content-Type':'video/mp4','Cache-Control':'no-store','Accept-Ranges':'bytes','Content-Length':last-first+1,
   ...(range&&!bad?{'Content-Range':`bytes ${first}-${last}/${size}`}:{})});
- const stream=fs.createReadStream(file,{start:first,end:last});
+ const cutoff=kind==='segment'&&attempt===1&&((mode==='cutonce'&&segment?.start===20)||(mode==='cutfuture'&&segment?.start===24));
+ const stream=fs.createReadStream(file,{start:first,end:cutoff?Math.min(last,first+192*1024-1):last});
+ if(cutoff){stream.pipe(res,{end:false});stream.on('end',()=>setTimeout(()=>res.destroy(),50));res.on('close',()=>stream.destroy());return;}
  // Hold optional backward data so readiness cannot accidentally depend on it.
- const segment=manifest.segments.find(s=>s.first===first);
  const delay=kind==='segment'&&mode==='delayprevious'&&[18,36].includes(segment?.start);
  const timer=delay?setTimeout(()=>{if(!res.destroyed)stream.pipe(res);},2000):null;
  if(!delay)stream.pipe(res);
@@ -139,7 +151,45 @@ const server=http.createServer((req,res)=>{
    assert.deepEqual(pixels.stream,pixels.native,'end/source target pixels must match unchanged native media');
    results.push({scenario:'source-boundary-and-forward-priority',from,to,target,mode,state,pixels,requests});await page.close();
   }
-  for(const mode of ['delay','pending','malformed','range200','timeout','unsupported']){
+  for(const mode of ['cutonce','unavailabletwice']){
+   const start=logs.length;page=await makePage({mode});await ready(page);
+   await page.waitForFunction(()=>v.buffered.length&&v.buffered.end(v.buffered.length-1)>=23.9);
+   assert.equal(await page.evaluate(()=>v.paused&&v.currentTime===20&&v.src.startsWith('blob:')),true);
+   const requests=logs.slice(start);
+   assert.equal(requests.some(row=>row.kind==='native'),false,'Transient network errors keep the same MSE source');
+   const at=indexes.find(x=>x.name==='current').manifest.segments.find(s=>s.start===20);
+   const selected=requests.filter(row=>row.kind==='segment'&&+row.range.match(/bytes=(\d+)/)[1]>=at.first&&+row.range.match(/bytes=(\d+)/)[1]<=at.last);
+   assert.equal(selected.length,mode==='cutonce'?2:3);
+   if(mode==='cutonce')assert.ok(+selected[1].range.match(/bytes=(\d+)/)[1]>at.first,'Only the interrupted suffix is downloaded again');
+   results.push({scenario:'transient-network-keeps-position-and-source',mode,requests});await page.close();
+  }
+  {
+   const start=logs.length;page=await makePage({mode:'cutfuture'});await ready(page);
+   const source=await page.evaluate(()=>v.src);
+   await page.locator('[data-video-play]').click();
+   await page.waitForFunction(()=>v.currentTime>25&&v._lastPresented>25&&!v.paused&&!v.seeking);
+   assert.equal(await page.evaluate(()=>v.src),source,'A mid-playback transfer failure cannot reload the player');
+   assert.equal(logs.slice(start).some(row=>row.kind==='native'),false);
+   const frames=await page.evaluate(()=>v._submitted.slice());
+   assert.ok(frames.every((time,i)=>!i||time>=frames[i-1]-.001),'Retry cannot jump back to an earlier displayed frame');
+   results.push({scenario:'continuous-playback-through-network-interruption',time:await page.evaluate(()=>v.currentTime)});await page.close();
+  }
+  {
+   page=await makePage();await ready(page);
+   await page.evaluate(()=>{const seek=document.querySelector('[data-video-seek]');seek.value='23.05';seek.dispatchEvent(new Event('change'));});await ready(page);
+   await page.locator('[data-video-play]').click();
+   await page.waitForFunction(()=>v.currentTime>23.15);
+   const position=await page.evaluate(()=>{const at=v.currentTime;v._setBevVideoTrack('/api/assets/cn99999/current.mp4?mode=broken-native');return at;});
+   await page.waitForFunction(()=>document.querySelector('[data-bev-video-player]').dataset.loadState==='error');
+   assert.equal(await page.locator('[data-video-play]').getAttribute('aria-pressed'),'false','A terminal media error must stop Play intent');
+   const retained=await page.locator('[data-video-seek]').inputValue();
+   assert.ok(Math.abs(+retained-position)<.11,'Failure retains the selected position after metadata resets');
+   await page.locator('[data-video-retry]').click();await ready(page);
+   assert.equal(await page.evaluate(()=>v.paused),true);
+   assert.ok(Math.abs(await page.evaluate(()=>v.currentTime)-position)<.11,'Retry cannot return to t0 or the clip beginning');
+   results.push({scenario:'terminal-error-and-explicit-retry-retain-position',position,retained});await page.close();
+  }
+  for(const mode of ['delay','pending','malformed','range200','timeout','unsupported','unavailablealways']){
    const start=logs.length;page=await makePage({mode,unsupported:mode==='unsupported'});
    await page.evaluate(()=>{document.querySelector('[data-video-play]').click();document.querySelector('[data-video-play]').click();});await ready(page);
    const state=await page.evaluate(()=>({paused:v.paused,time:v.currentTime,source:v.src,playback:document.querySelector('[data-bev-video-player]').dataset.playbackState}));

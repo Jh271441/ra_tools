@@ -1,5 +1,43 @@
 # Native video loading restoration — 2026-10-23
 
+## Interrupted downloads and terminal errors — 2026-11-12 / cache791
+
+Transient fetch/read failures, truncated responses and temporary HTTP statuses
+retry the required GOP twice, after 250/500 ms, before the existing native fallback.
+Keep the same MediaSource and reuse the existing fingerprinted, bounded prefix
+cache. Reset the parser and replay the received prefix locally before requesting
+its missing suffix. Malformed ranges, stale fingerprints and decoder failures
+retain immediate native recovery; optional rewind failures remain optional.
+Seek, suspension and disposal cancel the owned retry delay along with its transfer.
+This adds no parallel Range request, unselected-source prefetch or quality change.
+
+Retain the committed position when a media error clears metadata/currentTime.
+Terminal failure retires pending playback, seeks and frame callbacks, and changes
+the button back to Play. Explicit Retry reloads that same position paused; Play
+after failure reloads and plays from there. Ignore an old source's error event
+when the current media element has no error. Preserve paused t0, continuous
+playback, rate, frame guards and normal same-source seeking.
+
+Local fault injection reproduces a reset in a partly delivered GOP, two temporary
+503s, exhausted retries, interruption during continuous playback, failed native
+recovery and explicit Retry after metadata loss. The isolated Chromium gate
+passed 36 scenarios and 30 decoded-frame comparisons, including monotonic displayed
+frames through a mid-playback interruption. Unit checks cover cancellation during
+retry, suspended ownership and a newer seek replacing old work. Evidence:
+`/private/tmp/player-network-recovery-20261112/`.
+Six actual-shell Review/Case-labeling runs at 320/390/1440 px, with Chinese/dark
+and English/light representatives, advanced 2.489–2.492 seconds over 2.5 seconds
+and retained a single active loader owner through rapid source changes and
+expanded-view handoff. These are isolated Chromium viewport checks, not physical
+mobile-device or multi-user load tests.
+
+The current gateway and direct-upstream routes both use Cisco utun4 (MTU 1250),
+and the live VPN statistics report DTLSv1.2. These observations do not establish a
+fixed VPN bandwidth cap. The preceding authenticated gateway trace saw about
+5.7 Mbps for one target fragment versus this video's 8 Mbps average, with later
+fragments faster; network variation can trigger recovery but must not reset the
+player. No VPN, proxy or Kylin setting changed.
+
 ## Weak-network continuous playback — 2026-11-12 / cache790
 
 After visible playback has begun, an MSE underflow holds the last submitted
