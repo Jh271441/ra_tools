@@ -152,6 +152,79 @@ function bootstrapFixture(page) {
   });
   return f;
 }
+async function selectedVideoDiscoveryOverlapsCoreAndKeepsOwnership() {
+  function prepare() {
+    const f = bootstrapFixture('review'); f.load('review-navigation.js');
+    f.state.caseDetailPrefetch = new Map();
+    f.state.detailMedia = {kind:"",userSelected:false};
+    const reads = [];
+    Object.assign(f.s, {
+      api(url, options = {}) {
+        let resolve, reject;
+        const promise = new Promise((a,b)=>{resolve=a;reject=b;});
+        const row = {url,signal:options.signal,resolve,reject}; reads.push(row);
+        options.signal?.addEventListener('abort',()=>reject(Object.assign(new Error('cancelled'),{name:'AbortError'})),{once:true});
+        return promise;
+      },
+      safeSameOriginAssetUrl: value => value, escapeHtml: value => value, restoreFailedReviewUploadImages() {},
+      renderDetail: data => f.calls.paints.push('core:'+data.issue_id), renderReview() {},
+      hydrateDetailMedia: data => {f.calls.paints.push('media:'+data.issue_id);return true;},
+      hydrateDetailMediaControls: () => true,
+      showToast: () => {},
+    });
+    return {...f,reads};
+  }
+  const f=prepare();
+  const selecting=f.s.selectCase('cn1',{updateRoute:false});
+  assert.equal(f.reads.length,2,'video discovery overlaps the core read');
+  assert.ok(f.reads[0].url.endsWith('/media?kind=video'));
+  f.reads[0].resolve({assets:{video:{url:'/video.mp4'}}});await tick();
+  assert.deepEqual(f.calls.paints,[],'descriptor cannot mount media before the current core');
+  f.reads[1].resolve({issue_id:'cn1',assets:{},camera:{}});await selecting;await tick();
+  assert.equal(f.reads.filter(row=>row.url.endsWith('kind=video')).length,1);
+  assert.deepEqual(f.calls.paints,['core:cn1','media:cn1']);
+  f.reads[2].resolve({assets:{frames:[]}});await tick();
+  assert.equal(f.state.caseMediaController,null);
+
+  const stale=prepare();
+  const old=stale.s.selectCase('cn1',{updateRoute:false});
+  const latest=stale.s.selectCase('cn2',{updateRoute:false});
+  assert.ok(stale.reads[0].signal.aborted && stale.reads[1].signal.aborted,'new Issue cancels both old reads');
+  stale.reads[2].resolve({assets:{video:{url:'/current.mp4'}}});
+  stale.reads[3].resolve({issue_id:'cn2',assets:{},camera:{}});
+  await Promise.all([old,latest]);await tick();
+  assert.deepEqual(stale.calls.paints,['core:cn2','media:cn2']);
+  stale.reads[4].resolve({assets:{frames:[]}});await tick();
+
+  const failure=prepare();
+  const failed=failure.s.selectCase('cn1',{updateRoute:false});
+  failure.reads[1].reject(new Error('core unavailable'));await failed;
+  assert.equal(failure.reads[0].signal.aborted,true,'failed core cancels unused media discovery');
+  assert.deepEqual(failure.calls.paints,[]);
+
+  for (const leave of [false,true]) {
+    const boot=prepare(), config=defer();
+    const parse=boot.s.parsePageRoute;
+    boot.s.parsePageRoute=()=>({...parse(),issue:'cn1'});
+    boot.s.loadConfig=()=>config.promise;
+    const pending=boot.s.bootstrap();await tick();
+    assert.equal(boot.reads.length,1,'deep-link descriptor starts before config/task/Run waits');
+    assert.ok(boot.reads[0].url.endsWith('kind=video'));
+    assert.deepEqual(boot.calls.paints,[]);
+    if(leave) {
+      boot.navigate('labeling-summary');config.resolve();await pending;
+      assert.equal(boot.reads[0].signal.aborted,true,'abandoned bootstrap cancels discovery');
+      assert.equal(boot.reads.length,1);continue;
+    }
+    config.resolve();await tick();
+    assert.equal(boot.reads.length,2,'selectCase consumes the early descriptor exactly once');
+    boot.reads[1].resolve({issue_id:'cn1',assets:{},camera:{}});await pending;
+    assert.equal(boot.reads[0].signal.aborted,false,'mounted detail retains pending discovery after bootstrap');
+    boot.reads[0].resolve({assets:{video:{url:'/video.mp4'}}});boot.reads[2].resolve({assets:{frames:[]}});await tick();
+    assert.ok(boot.calls.paints.includes('media:cn1'));
+  }
+}
+
 async function bootstrapNeverReplaysInitialRouteOverNewNavigation() {
   const f = bootstrapFixture('review'); const pending = defer(); f.s.loadCases = () => pending.promise;
   const boot = f.s.bootstrap(); await tick();
@@ -456,7 +529,7 @@ async function caseLabelingCommentLinkKeepsItsTarget() {
   assert.deepEqual(discussion, [[17, 'case']], 'a late detail must not reopen discussion after navigation');
 }
 (async () => {
-  for (const test of [caseLabelingCommentLinkKeepsItsTarget, bootstrapRunDependenciesMatchTheVisiblePage, labelingBackgroundRefreshKeepsTrailHydration, optionalDirectoryDoesNotBlockIdentityOrOverwriteAnotherSession, delayedOverviewCannotReplaceNewScopeCounts, delayedAnalysisFacetCannotReplaceNewRunOptions, cronPaintDoesNotWaitForSharedBootstrap,bootstrapResumesPendingCombinedContext,assignmentAccessWaitsForWriterAndAvoidsAdminRequests,delayedReviewReloadCannotReclaimLabeling, navigationEpochTracksRealPageCommits, loadersStartAfterCanonicalRouteCommit, debounceCannotFireAfterDepartureOrRoundTrip, listPaginationAndPollingIgnoreObsoleteViews, lateTaskContextCannotRewriteLabelingUrl, bootstrapNeverReplaysInitialRouteOverNewNavigation, summaryWaitsForIdentityInsteadOfFallingBackToReview, labelingEntryAndSummaryResponsesStayScoped]) {
+  for (const test of [selectedVideoDiscoveryOverlapsCoreAndKeepsOwnership, caseLabelingCommentLinkKeepsItsTarget, bootstrapRunDependenciesMatchTheVisiblePage, labelingBackgroundRefreshKeepsTrailHydration, optionalDirectoryDoesNotBlockIdentityOrOverwriteAnotherSession, delayedOverviewCannotReplaceNewScopeCounts, delayedAnalysisFacetCannotReplaceNewRunOptions, cronPaintDoesNotWaitForSharedBootstrap,bootstrapResumesPendingCombinedContext,assignmentAccessWaitsForWriterAndAvoidsAdminRequests,delayedReviewReloadCannotReclaimLabeling, navigationEpochTracksRealPageCommits, loadersStartAfterCanonicalRouteCommit, debounceCannotFireAfterDepartureOrRoundTrip, listPaginationAndPollingIgnoreObsoleteViews, lateTaskContextCannotRewriteLabelingUrl, bootstrapNeverReplaysInitialRouteOverNewNavigation, summaryWaitsForIdentityInsteadOfFallingBackToReview, labelingEntryAndSummaryResponsesStayScoped]) {
     await test(); console.log('PASS ' + test.name);
   }
 })().catch(error => {console.error(error); process.exitCode = 1;});

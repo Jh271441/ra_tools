@@ -1,3 +1,33 @@
+## Cold-start discovery — cache793 (2026-11-12)
+
+The stable cache792 native player (`bev-video.js` and `video-segments.js`) is
+byte-identical. This change only overlaps the selected Review Issue's small
+video descriptor GET with bootstrap config/task/Run dependencies and core detail
+loading. Hydration consumes that result exactly once; actual video bytes still
+start only after the current core is accepted. Images keep their independent
+paint path. New Issue/page ownership, failed core and abandoned bootstrap cancel
+unused requests; failed descriptors follow the existing image fallback. No
+neighbor/unselected-source media prefetch, source URL/encoding/cache policy,
+autoplay or playback state-machine change is introduced.
+
+Two server-loopback examples had ready short-GOP copies; video discovery took
+4–11 ms and 1 KiB video responses took7–92 ms. This does not measure browser/VPN
+startup and does not establish that every cold delay has the same cause.
+
+The actual-shell Chromium151 comparison uses a local synthetic40s H264 clip,
+empty browser caches, fixed API response delays and150ms network latency.
+At20Mbps, three contexts/version measured navigation-to-submitted-t0-frame medians
+1891.5→1491.3ms (~21%); at2Mbps a single pair measured5912.0→5574.6ms. These are
+controlled samples, not production p95. All10 desktop/mobile contexts preserved
+paused t0, one descriptor request, no unselected video requests, the same native
+player after late image hydration and monotonically displayed continuous play.
+Mobile320px English/light and390px Chinese/dark were browser viewport checks,
+not real devices. Evidence: `/private/tmp/player-cold-start-20261112/`.
+
+`navigation_races.cjs` verifies discovery overlaps core/bootstrap, never paints
+before the current core, is reused once, and cancels on failed core/new Issue/
+abandoned bootstrap. The existing native buffering limitations below remain.
+
 ## Production recovery — cache792 (2026-11-12)
 
 Restore native progressive playback for the selected full-quality video. The

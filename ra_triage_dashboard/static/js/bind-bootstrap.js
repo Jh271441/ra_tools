@@ -1060,6 +1060,10 @@ async function bootstrap() {
   // Keep shared initialization for later navigation, but off Cron's paint path.
   const initialCronRequest = initialRoute.page === "daily-cron" ? loadDailyCron() : null;
   const sessionRequest = resolveSessionInBackground();
+  // A deep-linked video's descriptor is independent of config, task and Run
+  // catalogs. Overlap that GET; only selectCase may mount the native player.
+  const initialVideoDiscovery = initialRoute.page === "review" && /^cn\d+$/.test(initialRoute.issue || "")
+    ? requestCaseVideoDiscovery(initialRoute.issue) : null;
   try {
     await settleInitialRequests([loadConfig()], "基础配置");
     if (!isPageContextCurrent(bootstrapContext, { matchUrl: false })) return;
@@ -1230,7 +1234,9 @@ async function bootstrap() {
         }) }
       );
       if (initialRoute.issue) {
-        initialDetailRequest = selectCase(initialRoute.issue, { updateRoute: false });
+        initialDetailRequest = selectCase(initialRoute.issue, {
+          updateRoute: false, videoDiscovery: initialVideoDiscovery,
+        });
       }
     } else if (initialRoute.page === "daily-review") {
       initialPageRequests.push(loadDailyReview());
@@ -1365,6 +1371,11 @@ async function bootstrap() {
   } catch (error) {
     showToast(`启动失败：${error.message}`, true);
   } finally {
+    // An obsolete/denied route must not leave speculative metadata reads alive.
+    // A mounted detail owns the controller until its media hydration completes.
+    if (initialVideoDiscovery && state.caseMediaController !== initialVideoDiscovery.controller) {
+      initialVideoDiscovery.controller.abort();
+    }
     startChangePolling();
   }
 }

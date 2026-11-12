@@ -121,7 +121,7 @@ async function refreshReviewCorePreservingMedia() {
 
 async function selectCase(
   issueId,
-  { updateRoute = true, historyMode = "push", preserveScrollY = null } = {}
+  { updateRoute = true, historyMode = "push", preserveScrollY = null, videoDiscovery = null } = {}
 ) {
   if (!issueId || state.activePage !== "review") return;
   if (typeof isReviewDecisionEditor === "function" && isReviewDecisionEditor()) {
@@ -172,9 +172,16 @@ async function selectCase(
     window.scrollTo({ top: 0, behavior: "auto" });
   }
   const pageContext = capturePageContext();
+  // Discover only this Issue's small descriptor while its core is loading.
+  // The native player and all video bytes still wait for the current detail.
+  const discovery = videoDiscovery?.issueId === issueId && !videoDiscovery.controller.signal.aborted
+    ? videoDiscovery : requestCaseVideoDiscovery(issueId);
+  if (videoDiscovery && discovery !== videoDiscovery) videoDiscovery.controller.abort();
+  state.caseMediaController = discovery.controller;
+  let mediaOwnsDiscovery = false;
   try {
-    // Review text and form state do not depend on filesystem media.  Ask for
-    // the lightweight core record first; BEV/video/camera hydrate below.
+    // Review text and form state never wait for filesystem media. The small
+    // video descriptor overlaps this core read; image discovery hydrates below.
     const data = await loadCaseCore(issueId);
     if (requestSeq !== state.caseRequestSeq || state.selectedId !== issueId || !isPageContextCurrent(pageContext)) return;
     if (loadingTimer !== null) {
@@ -194,7 +201,8 @@ async function selectCase(
         if (isPageContextCurrent(pageContext)) window.scrollTo({ top: preservedScrollY, behavior: "auto" });
       });
     }
-    void loadDeferredCaseMedia(issueId, requestSeq);
+    mediaOwnsDiscovery = true;
+    void loadDeferredCaseMedia(issueId, requestSeq, discovery);
     scheduleTrailDetailMetadata(issueId, requestSeq);
     prefetchAdjacentCaseCores(issueId);
   } catch (error) {
@@ -210,11 +218,24 @@ async function selectCase(
         <p>${escapeHtml(error.message)}</p>
       </div>`;
     showToast(error.message, true);
+  } finally {
+    if (!mediaOwnsDiscovery) {
+      discovery.controller.abort();
+      if (state.caseMediaController === discovery.controller) state.caseMediaController = null;
+    }
   }
 }
 
-async function loadDeferredCaseMedia(issueId, requestSeq) {
+function requestCaseVideoDiscovery(issueId) {
   const controller = new AbortController();
+  const promise = api(`/api/cases/${encodeURIComponent(issueId)}/media?kind=video`, {
+    cache: "no-store", signal: controller.signal,
+  }).then(value => ({ value, error: null }), error => ({ value: null, error }));
+  return { issueId, controller, promise };
+}
+
+async function loadDeferredCaseMedia(issueId, requestSeq, videoDiscovery = null) {
+  const controller = videoDiscovery?.controller || new AbortController();
   state.caseMediaController = controller;
   const request = (kind) => api(`/api/cases/${encodeURIComponent(issueId)}/media?kind=${kind}`, {
     cache: "no-store",
@@ -223,9 +244,9 @@ async function loadDeferredCaseMedia(issueId, requestSeq) {
     (value) => ({ value, error: null }),
     (error) => ({ value: null, error })
   );
-  // Start both reads together and paint each independently. A cold media
-  // volume must not block already available images or the default video view.
-  const videoRequest = request("video");
+  // Reuse early video discovery and paint each result independently. A cold
+  // media volume cannot block already available images or the default video.
+  const videoRequest = videoDiscovery?.promise || request("video");
   const imagesRequest = request("images");
   let hydrated = false;
   const isCurrent = () => (
