@@ -1,5 +1,36 @@
 # Native video loading restoration — 2026-10-23
 
+## Explicit Play after a suspended transfer — 2026-11-12 / cache789
+
+Opening the expanded viewer suspends the inline segment loader. Explicit
+Play now resumes that loader along with the native video. Previously the
+button could request playback while the loader stayed suspended.
+
+Replaying an interrupted prefix can also replace samples already queued in
+the native decoder. Once the replay overlaps the current buffered position,
+reposition the native video once at that position to rebuild decoder state.
+Retain suffix-only transfer for interrupted ranges.
+
+The actual-shell reproduction opened the expanded viewer, closed it, then
+clicked inline Play. Before the fixes, the 2.5 s observation ended at 20.08 s
+with no new requests. Restoring transfer alone loaded through 26 s while
+the clock stayed near 20.2 s. With decoder reconciliation the clock reached
+22.49 s and playback continued.
+
+Historical comparison used the same local synthetic 1080p H.264 clip, cold
+HTTP cache and two immediate-Play trials per entry in Chromium 151.
+
+| Player | 20 Mbps / 40 ms | 2 Mbps / 150 ms |
+| --- | --- | --- |
+| Native, 482a22a4 | 424–446 ms | 2776–2787 ms |
+| First segmented, d8bd518b | 256–283 ms | 1309–1312 ms |
+| Before rewind work, 5cc91ae4 | 272–275 ms | 1310–1528 ms |
+| Before this fix, 14e47edd | 260 ms | 1531–1532 ms |
+
+These samples isolate startup from the suspended-transfer failures. The
+regression now checks decoded frames advancing more than 1.5 s after Play.
+Evidence is in `/private/tmp/video-first-play-20261112/`.
+
 ## Interrupted cold seeks — 2026-11-11 / cache787
 
 When a new seek supersedes a segment transfer, retain its received prefix

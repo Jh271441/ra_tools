@@ -210,6 +210,26 @@ const server=http.createServer((req,res)=>{
     resumedBytes:Number(ranges[1][1])-segment.first,pixels:{native,stream}});
    await page.close();
   }
+  for(const ownerResumed of [false,true]){
+  page=await makePage({network:{mbps:10,latency:50}});await ready(page);
+  await page.evaluate(()=>v._pauseBevPlayback());
+  await page.waitForTimeout(70);
+  const suspendedEnd=await page.evaluate(()=>v.buffered.end(v.buffered.length-1));
+  const resumeTarget=await page.evaluate(end=>Math.max(v.currentTime+1.5,end+.1),suspendedEnd);
+  if(ownerResumed){
+   await page.evaluate(()=>v._resumeBevPlayback());
+   await page.waitForFunction(end=>v.buffered.end(v.buffered.length-1)>end+.2,suspendedEnd);
+   assert.equal(await page.evaluate(()=>v.paused),true,'Restoring a visible player still waits for explicit Play');
+  }
+  const suspendedRequests=logs.length;
+  await page.locator('[data-video-play]').click();
+  await page.waitForFunction(target=>!v.paused&&!v.seeking
+   &&v.currentTime>target&&v._lastPresented>target,resumeTarget);
+  assert.ok(logs.length>suspendedRequests,'Explicit Play resumes downloading beyond the old buffered window');
+  results.push({scenario:'explicit-play-restores-suspended-transfer',ownerResumed,suspendedEnd,
+   time:await page.evaluate(()=>v.currentTime)});
+  await page.close();
+  }
   const start=logs.length;page=await makePage({network:{mbps:2,latency:150}});await ready(page);
   await page.evaluate(()=>{v.currentTime=2.05;setTimeout(()=>v.currentTime=38.05,200);setTimeout(()=>v.currentTime=6.05,400);setTimeout(()=>v.currentTime=6.15,500);setTimeout(()=>v.currentTime=6.25,600);});
   await page.waitForFunction(()=>!v.seeking&&v.readyState>=2&&Math.abs(v.currentTime-6.25)<.001);

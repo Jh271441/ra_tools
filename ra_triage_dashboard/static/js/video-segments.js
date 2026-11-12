@@ -184,7 +184,20 @@ function createVideoSegmentLoader(video, {
         }
         prefix.chunks = [bytes];
         await append(bytes);
-        if (!stopped && !controller.signal.aborted) onBufferAppended();
+        if (!stopped && !controller.signal.aborted) {
+          // Replayed samples can replace frames queued in the native decoder.
+          // Reposition once when they overlap its current playback position.
+          const time = video.currentTime, ranges = video.buffered;
+          if (segmentAt(time) === number) {
+            for (let i = 0; i < ranges.length; i++) {
+              if (ranges.start(i) <= time && time < ranges.end(i)) {
+                video.currentTime = time;
+                break;
+              }
+            }
+          }
+          onBufferAppended();
+        }
       }
       for (;;) {
         const { done, value } = await reader.read();

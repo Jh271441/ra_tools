@@ -648,6 +648,9 @@ function bindBevVideoPlayers(root) {
         const target = queuedSeekTarget;
         seekTo(target);
       }
+      // A dialog can suspend the inline loader independently of the native
+      // video's paused state. Explicit Play restores both parts together.
+      if (wantsPlayback) segmentLoader?.resume();
       update();
       startPlayback();
     };

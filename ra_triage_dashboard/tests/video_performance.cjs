@@ -87,11 +87,12 @@ function playerFixture({readyState=4,context=null,initialTime=0,durationSec=40,.
  warm.ctx.releaseBevVideoPlayer(warm.root);
 
  const cold = playerFixture({initialTime:20});
- let segmentPosition, bufferAppended;
+ let segmentPosition, bufferAppended, loaderSuspended = false;
  cold.ctx.createVideoSegmentLoader = (_video,{position,onBufferAppended}) => {
   segmentPosition = position;
   bufferAppended = onBufferAppended;
-  return {segmentForTime: time=>Math.floor(time/2),prepareUnbufferedSeek:()=>true,prioritize(){},dispose(){}};
+  return {segmentForTime: time=>Math.floor(time/2),prepareUnbufferedSeek:()=>true,prioritize(){},dispose(){},
+   suspend(){loaderSuspended=true;},resume(){loaderSuspended=false;}};
  };
  cold.video._setBevVideoTrack('/segmented.mp4');
  cold.video.readyState = 4;
@@ -137,6 +138,11 @@ function playerFixture({readyState=4,context=null,initialTime=0,durationSec=40,.
   assert.equal(cold.video.currentTime,keepPlaying?18.8:19.8,'The rewind lands at the latest buffered target');
   assert.equal(cold.video.paused,!keepPlaying,'Completing the rewind respects the latest play choice');
  }
+ cold.video._pauseBevPlayback();
+ assert.equal(loaderSuspended,true,'Opening the expanded viewer suspends the inline loader');
+ cold.elements.play.fire('click');
+ assert.equal(loaderSuspended,false,'Explicit Play restores the suspended loader without a separate owner resume');
+ assert.equal(cold.video.paused,false,'Explicit Play restarts the native video as well');
  cold.ctx.releaseBevVideoPlayer(cold.root);
 
  const media={assets:{video:{url:'/bev.mp4',tracks:[{url:'/bev.mp4'},{url:'/api/assets/cn1/camera-video'},{url:'/api/assets/cn1/bev-closeup-video',source_id:'bev_closeup',label:'局部 BEV 视频',poster_url:'/closeup-t0.jpg'}]},frames:[{url:'/before.jpg',offset_ms:-1000},{url:'/full-bev.jpg',offset_ms:0}]},camera:{frames:[{url:'/full-camera.jpg',offset_ms:0}]}};
