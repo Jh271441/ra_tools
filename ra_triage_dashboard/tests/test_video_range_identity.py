@@ -3,10 +3,11 @@ import asyncio
 from pathlib import Path
 import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI
-from httpx import ASGITransport, AsyncClient
 
 from ra_triage_dashboard.app.routers import cases
 
@@ -35,14 +36,40 @@ class VideoRangeIdentityTest(unittest.IsolatedAsyncioTestCase):
         prefix = patch.object(cases, "_public_path", side_effect=lambda path: "/manual" + path)
         prefix.start()
         self.addCleanup(prefix.stop)
-        app = FastAPI()
-        app.add_api_route("/manual/api/assets/{issue_id}/{asset_id}", cases.get_asset)
-        self.client = AsyncClient(transport=ASGITransport(app), base_url="http://test")
-        self.addAsyncCleanup(self.client.aclose)
+        self.app = FastAPI()
+        self.app.add_api_route("/manual/api/assets/{issue_id}/{asset_id}", cases.get_asset)
         self.entry = "/manual/api/assets/cn1/bev-video-0?playback=short-gop-v1"
 
+    async def fetch(self, url, headers=None, follow_redirects=False):
+        # Exercise raw ASGI response bytes, as test_static_assets does; the
+        # production test environment does not install an HTTP client package.
+        history = []
+        for _ in range(3):
+            parsed = urlsplit(url)
+            messages = []
+            async def receive():
+                return {"type": "http.request", "body": b"", "more_body": False}
+            async def send(message):
+                messages.append(message)
+            await self.app({
+                "type": "http", "asgi": {"version": "3.0", "spec_version": "2.4"},
+                "method": "GET", "path": parsed.path, "raw_path": parsed.path.encode(), "root_path": "",
+                "query_string": parsed.query.encode(), "scheme": "http", "http_version": "1.1",
+                "headers": [(k.lower().encode(), v.encode()) for k, v in (headers or {}).items()],
+            }, receive, send)
+            response = SimpleNamespace(
+                url=url, status_code=messages[0]["status"], history=list(history),
+                headers={k.decode(): v.decode() for k, v in messages[0]["headers"]},
+                content=b"".join(message.get("body", b"") for message in messages),
+            )
+            if not follow_redirects or response.status_code != 307:
+                return response
+            history.append(response)
+            url = response.headers["location"]
+        self.fail("video resolver redirect loop")
+
     async def select(self):
-        response = await self.client.get(self.entry, headers={"Range": "bytes=0-1023"})
+        response = await self.fetch(self.entry, headers={"Range": "bytes=0-1023"})
         self.assertEqual(response.status_code, 307)
         self.assertEqual(response.content, b"")
         self.assertIn("no-store", response.headers["cache-control"])
@@ -51,12 +78,12 @@ class VideoRangeIdentityTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_cold_ranges_stay_original_after_copy_becomes_ready(self):
         url = await self.select()
-        first = await self.client.get(url, headers={"Range": "bytes=0-1023"})
+        first = await self.fetch(url, headers={"Range": "bytes=0-1023"})
         self.assertEqual(first.content, self.original.read_bytes()[:1024])
         self.request.return_value = self.get.return_value = self.copy
         ranges = [(n * 1024, (n + 1) * 1024 - 1) for n in range(1, 13)]
         responses = await asyncio.gather(*[
-            self.client.get(url, headers={"Range": f"bytes={lo}-{hi}"}) for lo, hi in ranges
+            self.fetch(url, headers={"Range": f"bytes={lo}-{hi}"}) for lo, hi in ranges
         ])
         for (lo, hi), response in zip(ranges, responses):
             self.assertEqual(response.status_code, 206)
@@ -69,7 +96,7 @@ class VideoRangeIdentityTest(unittest.IsolatedAsyncioTestCase):
         # A separate playback can choose the ready copy without changing this one.
         warm_url = await self.select()
         self.assertNotEqual(warm_url, url)
-        warm = await self.client.get(warm_url, headers={"Range": "bytes=1024-2047"})
+        warm = await self.fetch(warm_url, headers={"Range": "bytes=1024-2047"})
         self.assertEqual(warm.content, self.copy.read_bytes()[1024:2048])
         self.assertEqual(warm.headers["content-range"], "bytes 1024-2047/65792")
         self.assertNotEqual(warm.headers["etag"], first.headers["etag"])
@@ -78,11 +105,11 @@ class VideoRangeIdentityTest(unittest.IsolatedAsyncioTestCase):
         self.request.return_value = self.get.return_value = self.copy
         url = await self.select()
         self.get.return_value = None
-        missing = await self.client.get(url, headers={"Range": "bytes=1024-2047"})
+        missing = await self.fetch(url, headers={"Range": "bytes=1024-2047"})
         self.assertEqual(missing.status_code, 409)
         self.get.return_value = self.copy
         self.copy.write_bytes(b"a different MP4")
-        replaced = await self.client.get(url, headers={"Range": "bytes=1024-2047"})
+        replaced = await self.fetch(url, headers={"Range": "bytes=1024-2047"})
         self.assertEqual(replaced.status_code, 409)
         self.assertNotEqual(replaced.content, self.original.read_bytes()[1024:2048])
         self.request.assert_called_once_with(self.original)
@@ -90,25 +117,25 @@ class VideoRangeIdentityTest(unittest.IsolatedAsyncioTestCase):
     async def test_changed_original_or_revoked_scope_cannot_reuse_old_version(self):
         url = await self.select()
         self.original.write_bytes(b"new capture")
-        response = await self.client.get(url, headers={"Range": "bytes=0-3"})
+        response = await self.fetch(url, headers={"Range": "bytes=0-3"})
         self.assertEqual(response.status_code, 409)
         self.provider.get_asset_path.return_value = None
-        response = await self.client.get(url)
+        response = await self.fetch(url)
         self.assertEqual(response.status_code, 404)
         self.request.assert_called_once_with(self.original)
 
     async def test_redirect_and_version_preserve_range_and_conditional_range(self):
-        first = await self.client.get(self.entry, headers={"Range": "bytes=2048-3071"}, follow_redirects=True)
+        first = await self.fetch(self.entry, headers={"Range": "bytes=2048-3071"}, follow_redirects=True)
         self.assertEqual(first.status_code, 206)
         self.assertEqual(first.content, self.original.read_bytes()[2048:3072])
         self.assertEqual(len(first.history), 1)
-        tail = await self.client.get(first.url, headers={"Range": "bytes=-1024", "If-Range": first.headers["etag"]})
+        tail = await self.fetch(first.url, headers={"Range": "bytes=-1024", "If-Range": first.headers["etag"]})
         self.assertEqual(tail.status_code, 206)
         self.assertEqual(tail.content, self.original.read_bytes()[-1024:])
-        stale = await self.client.get(first.url, headers={"Range": "bytes=0-1023", "If-Range": '"old"'})
+        stale = await self.fetch(first.url, headers={"Range": "bytes=0-1023", "If-Range": '"old"'})
         self.assertEqual(stale.status_code, 200)
         self.assertEqual(stale.content, self.original.read_bytes())
-        invalid = await self.client.get(first.url, headers={"Range": "bytes=65536-"})
+        invalid = await self.fetch(first.url, headers={"Range": "bytes=65536-"})
         self.assertEqual(invalid.status_code, 416)
 
 
