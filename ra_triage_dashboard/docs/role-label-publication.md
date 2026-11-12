@@ -177,3 +177,17 @@ python -m ra_triage_dashboard.scripts.migrate_human_labels --help
 - `http://127.0.0.1:50269/rd-results?baselines=version-20261106&preview=users`：业务身份控件及语言切换草稿保留；这是表单展示预览，不提供目录保存。
 
 浏览器验收使用 macOS 无头 Chrome 的调整视口，不能称为真机或移动模拟器验收。Review 状态/异议说明为组件验收，不代替真实 SSO、媒体与完整 Review 提交链路的灰度验证。
+
+## 2026-11-12 部署准备记录
+
+应用候选 `a5c414163638c9c62e8c7ef1b794106be12beec5` 已重放到线上基线 `0f32502749e0dc5a4376f6ae3536d617490f7562`，冲突仅涉及静态资源版本号，统一为 cache794。最新视频播放、冷启动和 Range 下载修复均保留。21:28 CST 只读核查生产仍是该基线、PostgreSQL 健康、云端工作区干净，本次功能尚未部署。
+
+整合后本机完整回归 **1,416 passed、234 subtests passed、16 skipped、7 warnings，180.07 秒**；隔离 PostgreSQL 14.11 专项 **21 passed**；合成预览 **12 组浏览器检查通过，JavaScript 错误为 0**。36 个 Python、12 个 JavaScript 修改文件的语法检查及 diff 空白检查通过。061 的精确审阅摘要仍为 `646f328dd24db468f33e2221d5e7de993a4945d40de01e1260c2fef70e4460bd`。
+
+本机证据目录 `/private/tmp/manual-role-deployment-prep/`：`full-local.log`、`postgresql.log`、`browser.log` 和 `browser/report.json`。本记录之后的文档提交不改变已测应用代码；后续统一云端发布器仍须按最终推送 SHA 执行完整测试与隔离灰度。
+
+只读生产数据集汇总：当前 1106 起仅 `release-20261106-odd2`，总入库 202、当前目标 2（抽样 2、低置信独占 0）、revision 7。此为当时观测，不作为最终迁移清单；切换时重新生成 fingerprint，保留原负责人、提交和引用。既有任务未完成审计迁移前，增量导入会失败关闭，不能绕过门禁创建另一套分配。
+
+下一步使用统一入口，以最终推送 SHA 执行 `release_dashboard.py --sha <SHA> --prepare --allow-additive-migrations`。prepare 只运行云端完整测试和隔离灰度；生产切换阶段另做停止写入后的新鲜备份、恢复与计数核验、061 安装及历史任务迁移。代码回退与数据迁移回退分别处理，不能让旧分配逻辑重新处理已迁移任务。
+
+当前远端 `git@github.com:Jh271441/ra_tools.git` 经仓库元数据核实为公开仓库。本地准备已完成，尚未推送；公开推送本次源码的范围需要明确后才能进入该发布入口。云端灰度、生产备份恢复与数据迁移、SSO 完整链路、真实 Trail 字段/NULL/指标回退均未在本阶段完成。初次发布保持 `DASHBOARD_HUMAN_LABEL_WRITE_ENABLED=false`，不自动启用历史回刷。
