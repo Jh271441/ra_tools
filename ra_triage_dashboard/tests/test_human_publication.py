@@ -283,6 +283,7 @@ def test_http_budget_covers_every_query_page_and_write(monkeypatch, sdk_scheme):
 
 
 def test_null_priority_and_capability_gate(tmp_path):
+    from ra_triage_dashboard.app.human_publisher import ENDPOINT
     values={f:None for f in PRIORITY};values['ra_result']='TO';assert effective_metric_label(values)['field']=='ra_result'
     for field in reversed(PRIORITY):
         values[field]=field;assert effective_metric_label(values)['field']==field
@@ -290,6 +291,16 @@ def test_null_priority_and_capability_gate(tmp_path):
     del values[PRIORITY[0]];assert effective_metric_label(values)['state']=='unknown'
     with pytest.raises(ValueError):qualified_capabilities(None)
     path=tmp_path/'receipt.json';path.write_text('{}');path.chmod(0o600)
+    with pytest.raises(ValueError):qualified_capabilities(path)
+    receipt=dict(endpoint=ENDPOINT,qualified=True,evidence=[{'synthetic':True}],priority=list(PRIORITY),priority_verified=True,
+                 external_metrics_verified=False,fields={field:dict(values=['成功','误触发','无需协助'],null_clear=True,metric_null_fallback=False) for field in FIELDS.values()})
+    path.write_text(json.dumps(receipt))
+    assert qualified_capabilities(path)['external_metrics_verified'] is False
+    for invalid in [dict(priority_verified=False),dict(priority=list(reversed(PRIORITY)))]:
+        path.write_text(json.dumps(dict(receipt,**invalid)))
+        with pytest.raises(ValueError):qualified_capabilities(path)
+    receipt['fields'][FIELDS['rd']]['null_clear']=False
+    path.write_text(json.dumps(receipt))
     with pytest.raises(ValueError):qualified_capabilities(path)
 
 

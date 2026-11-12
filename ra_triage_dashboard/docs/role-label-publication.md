@@ -126,7 +126,7 @@ python -m ra_triage_dashboard.scripts.migrate_human_labels \
 
 `--historical-role rd` 仅适用于已核实的原来纯 RD 批次，不是任意历史数据的默认推断。CLI 对备份文件计算 SHA256；数据库 URL 不进 argv，输出收据以 0600 创建且不覆盖已有文件。
 
-真实写入需要同时满足 `DASHBOARD_HUMAN_LABEL_WRITE_ENABLED=true` 和 `DASHBOARD_HUMAN_LABEL_CAPABILITIES_FILE` 的私有、非符号链接能力收据。示例 [human-publication-capabilities.json.example](human-publication-capabilities.json.example) 明确未验收，不能直接用于启用；需记录具体隔离测试环境、时间、Issue、请求/读回及下游回退证据。`absent_means_null` 必须单独实测，不能因字段缺失而默认开启。
+真实写入需要同时满足 `DASHBOARD_HUMAN_LABEL_WRITE_ENABLED=true` 和 `DASHBOARD_HUMAN_LABEL_CAPABILITIES_FILE` 的私有、非符号链接能力收据。示例 [human-publication-capabilities.json.example](human-publication-capabilities.json.example) 明确未验收，不能直接用于启用；需记录具体受控 Issue、时间、枚举写入/NULL清空/读回及平台六级优先级回退证据。`priority` 必须与固定字段顺序完全一致且 `priority_verified=true`；`absent_means_null` 必须单独用空值筛选和非空对照实测，不能因字段缺失而默认开启。按用户 2026-11-13 明确的范围，Trail 回刷启用不依赖数易登录态或数易报表刷新；`external_metrics_verified` 独立保留，不能因开启回刷而改成 true。
 
 回滚先关闭人工作业开关并停止 worker，保留 intent/收据后核对未确认写入。代码回退不得丢弃新增 schema 和审计；已迁移数据不能直接用旧版本重新分配。需要恢复备份时应先核对备份后的新增业务记录，不能覆盖丢失它们。远端结果恢复必须经过前值核对和独立批准。
 

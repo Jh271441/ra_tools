@@ -2,6 +2,9 @@
   "endpoint": "https://voyager.intra.xiaojukeji.com/paladin/issue/pool/multi_update/",
   "qualified": false,
   "evidence": [],
+  "priority": ["ra_review_result_arbitrated", "ra_review_result_sampling", "ra_review_result_new", "ra_rd_review_result", "ra_stuck_auto_result", "ra_result"],
+  "priority_verified": false,
+  "external_metrics_verified": false,
   "fields": {
     "ra_rd_review_result": {
       "values": ["成功", "误触发", "无需协助"],

@@ -26,11 +26,12 @@ def qualified_capabilities(path):
     if path.is_symlink() or not path.is_file() or stat.S_IMODE(path.stat().st_mode) & 0o077:
         raise ValueError('publication_capabilities_unqualified')
     data = json.loads(path.read_text())
-    if data.get('endpoint') != ENDPOINT or not data.get('evidence') or data.get('qualified') is not True:
+    if (data.get('endpoint') != ENDPOINT or not data.get('evidence') or data.get('qualified') is not True
+            or data.get('priority') != list(PRIORITY) or data.get('priority_verified') is not True):
         raise ValueError('publication_capabilities_unqualified')
     for field in FIELDS.values():
         contract = data.get('fields', {}).get(field, {})
-        if contract.get('null_clear') is not True or contract.get('metric_null_fallback') is not True or set(contract.get('values', [])) != set(VALUES.values()):
+        if contract.get('null_clear') is not True or set(contract.get('values', [])) != set(VALUES.values()):
             raise ValueError('publication_capabilities_unqualified')
     return data
 
