@@ -99,7 +99,9 @@ async function discussionOwnsSuspension() {
   const context = {state: {}, $: get, document: {querySelectorAll: selector => selector === 'video'
     ? [visible, removed, hiddenLater, alreadyHidden] : []}, capturePageContext: () => ({}),
     uiText: zh => zh, escapeHtml: value => value};
-  vm.createContext(context); vm.runInContext(source('issue-discussion.js'), context);
+  vm.createContext(context);
+  vm.runInContext(source('discussion-drafts.js'), context);
+  vm.runInContext(source('issue-discussion.js'), context);
   for (const name of ['renderAnalysisDiscussionImages', 'updateAnalysisDiscussionComposerAccess',
     'renderAnalysisDiscussionReplyContext', 'bindReviewMentionComposer', 'updateReviewMentionComposer',
     'disposeReviewMentionComposer']) context[name] = () => {};
