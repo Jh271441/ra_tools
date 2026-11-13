@@ -84,7 +84,8 @@ class ReviewNotificationDispatcher:
                     comment_id=int(item["comment_id"]),
                 )
             elif notification_kind == "comment":
-                source = resolve_comment_source(self.database, int(item["comment_id"]))
+                source = resolve_comment_source(self.database, int(item["comment_id"]),
+                    navigation_dir=self.settings.data_dir / "comment_navigation" if getattr(self.settings,"data_dir",None) else None)
                 issue_id = str(item["issue_id"])
                 channel = str(item.get("discussion_channel") or "model_review")
                 baseline_id = self.baseline_ids_by_scope.get(str(item.get("baseline_scope") or ""), "")

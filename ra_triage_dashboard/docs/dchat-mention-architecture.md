@@ -177,4 +177,30 @@ easy to find. Those parameters do not control comment ownership or write access.
 Background URL normalization, task/Run/baseline filter changes and page refresh
 bookkeeping cannot invalidate a discussion for the same Issue. Switching to a
 different Issue still blocks a stale modal, preserves its draft and shows an error.
-Share links identify only the Issue and exact comment, with no task or Run required.
+Share links require only the Issue and exact comment; a captured Review entry
+additionally retains its Run/task navigation context.
+
+## Ordinary Review discussion origin (cache798)
+
+Issue-only comment storage remains unchanged. The Review composer adds optional
+`review_context` containing `model_run_id` and `campaign_id`. The comment transaction
+validates the Run against that Issue and resolves task aliases/Issue redirects
+before checking active model-review membership and matching evaluation Run. Invalid
+optional navigation degrades to a valid Run-only Review link or plain Issue link;
+it never prevents an otherwise valid comment. It is excluded from the content
+fingerprint, so retries with changed navigation preserve the original receipt.
+
+Before the outbox commits, the server atomically writes a0600private record under
+`DASHBOARD_DATA_DIR/comment_navigation/<id>.json`. The dispatcher verifies its
+Issue/id/actor/creation time/request identity/original-body digest against the row
+and first edit audit. Missing, malformed or rollback-only records cannot attribute
+another comment. Preserve these records with persistent application data. No schema
+or canonical comment-scope change is needed. The record's original task availability
+is rechecked on delivery; removed/closed entries fall back safely.
+
+Explicit Review comments and Case replies to their Review root now use
+`review_discussion` source metadata and return to `/review` with Run, optional task,
+dataset, `comparison=all`, and exact comment. Existing combined-review label-audit
+source checks remain unchanged. The source does not depend on the Issue's latest
+assignment, and old messages are neither rewritten nor resent. See
+[draft and notification behavior](discussion-behavior.md).

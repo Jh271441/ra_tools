@@ -13,7 +13,32 @@ from ra_triage_dashboard.app.comment_submission import comment_request_fingerpri
 from ra_triage_dashboard.app.db import Database
 from ra_triage_dashboard.app.routers import case_comments
 from ra_triage_dashboard.app.routers.case_comments import _public_review_comment
+from ra_triage_dashboard.app.comment_source import resolve_comment_source, save_comment_review_context
 from test_comment_mutations import fixture  # noqa: F401 - shared disposable ASGI fixture
+
+
+def test_review_entry_is_persisted_for_canonical_comments_without_changing_thread_scope(fixture, tmp_path):
+    db,client=fixture
+    run,_=db.import_model_run(name='review entry',source_name='fixture.json',source_sha256='4'*64,
+        metadata={},rows=[{'issue_id':'cn1','model_label':'误触发'}])
+    directory=tmp_path/'navigation'
+    with patch('ra_triage_dashboard.app.routers.case_comments.save_comment_review_context',
+               side_effect=lambda _directory,record:save_comment_review_context(directory,record)):
+        response=client.request('POST','/api/cases/cn1/discussion',json={'body':'Review draft posted',
+            'review_context':{'model_run_id':run['id']}},headers={'idempotency-key':'review-entry-api'})
+        assert response.status_code==200,response.text
+        comment=response.json()['comment']
+        assert comment['discussion_channel']=='case'
+        source=resolve_comment_source(db,comment['id'],navigation_dir=directory)
+        assert source['kind']=='review_discussion' and source['model_run_id']==run['id']
+        with db.connect() as conn:
+            row=conn.execute('SELECT model_run_id,campaign_id,evaluation_run_id FROM review_comments WHERE id=?',(comment['id'],)).fetchone()
+            assert not row['model_run_id'] and not row['campaign_id'] and not row['evaluation_run_id']
+        fallback=client.request('POST','/api/cases/cn2/discussion',json={'body':'Wrong issue context',
+            'review_context':{'model_run_id':run['id']}},headers={'idempotency-key':'cross-issue-entry'})
+        assert fallback.status_code==200,fallback.text
+        assert db.issue_discussion_count('cn2')==1
+        assert resolve_comment_source(db,fallback.json()['comment']['id'],navigation_dir=directory)['kind']=='issue_discussion'
 
 
 def image(key="historical-image"):

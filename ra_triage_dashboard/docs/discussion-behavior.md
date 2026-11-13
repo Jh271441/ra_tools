@@ -1,5 +1,62 @@
 # Issue discussions
 
+## Discussion drafts and Review entry links (2026-11-13, cache798)
+
+The main discussion composer saves text, reply target, caret and submission receipt
+identity locally, keyed by application base path, normalized account and Issue.
+Review, labeling and analysis share that Issue draft; Intent drafts use their
+separate dataset/Case key. Closing the dialog, inspecting another Case and returning,
+or reloading restores the draft. Images remain File objects in IndexedDB rather
+than base64 text in localStorage. Retention is30days and40drafts, with the existing
+four-image/24MiB total limit. Drafts stay on this browser/device, not on the server.
+Inline edits to already posted comments retain their existing lifecycle.
+
+In-memory snapshots protect current-tab edits if browser storage becomes read-only
+or full. The newer snapshot wins over stale persistent data. A missing image cache
+keeps the text and image placeholder, and blocks posting until the user explicitly
+removes/re-attaches that image; a deleted reply target likewise requires cancelling
+or changing the reply. Closing while an image read is pending cannot replace the
+actual cached files with placeholders. Browser-storage failures have bilingual
+feedback; cross-reload persistence requires working browser storage.
+
+Uncertain Issue submissions keep the original idempotency key and verification
+state through reload, so retry still checks the receipt before posting. Only a
+confirmed receipt retires its matching draft. A late success clears an unchanged
+reopened composer, while preserving newer text/images or another Issue's draft.
+This extends, rather than replaces, cache758's server deduplication protocol.
+
+Ordinary comments written from Review now carry optional `review_context` navigation
+metadata. The server validates the Issue/Run prediction and resolves migrated task
+aliases and Issue-specific human-task redirects. An invalid Run is ignored; an
+unavailable task retains only the valid Run. Optional navigation cannot block an
+otherwise valid Issue comment. Notifications return to Review with the validated
+Run/task, dataset and exact comment. A Case-page reply to a Review-root comment
+inherits that verified entry. Existing combined-label audit provenance remains
+strictly tied to the original receipt; task membership alone never infers origin.
+Previously sent DChat messages cannot be rewritten and are not resent.
+
+Validated entry records live under the persistent private
+`DASHBOARD_DATA_DIR/comment_navigation/<comment_id>.json`. The record is written
+with0600permissions by atomic replacement before the transaction's outbox is
+visible. Identity, creation time, request ID and original body SHA-256 must match;
+the first edit audit supplies the original body after editing. Rollback orphans,
+missing/malformed records or unavailable entries safely fall back. Keep this
+directory with the persistent data directory. Canonical Issue comments still have
+empty Run/task scope fields; there is no database migration or human-data rewrite.
+
+Local checks use synthetic data and mocked notification delivery: backend/API
+coverage plus Chromium151 viewport tests at320/390/1440px, zh/en, light/dark.
+Draft tests include reload, images, reply/caret restoration, account/Issue/Intent
+separation, slow-cache close/reopen, storage failures, lost-response retry and late
+success. Notification tests cover exact Review links, canonical scope, idempotency,
+task aliases/redirects, expired entries and rollback orphans. These checks do not
+constitute signed-in production or real-phone/soft-keyboard acceptance.
+
+```sh
+python ra_triage_dashboard/tests/discussion_drafts_browser.py
+python -m pytest ra_triage_dashboard/tests/test_comment_source.py ra_triage_dashboard/tests/test_discussion_reliability.py -q
+```
+
 ## Released: historical images and reliable replies (2026-11-04, cache758)
 
 ### Investigation

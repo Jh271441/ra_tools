@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
+import hashlib
 
 from ..comment_submission import CommentSubmissionConflictError, validate_comment_request_id
 from .comment_mutations import comment_metadata
@@ -248,6 +249,8 @@ class DatabaseCommentsMixin:
         unified_issue_discussion: bool = False,
         client_request_id: str = "",
         request_fingerprint: str = "",
+        review_context: dict[str, Any] | None = None,
+        record_review_context: Any = None,
     ) -> dict[str, Any]:
         normalized_body = str(body or "").strip()
         if not normalized_body:
@@ -297,6 +300,26 @@ class DatabaseCommentsMixin:
                 if existing is not None:
                     return {**existing, "_replayed": True}
             issue_scope = str(issue["baseline_scope"] or "")
+            origin_run, origin_campaign = "", ""
+            if review_context and unified_issue_discussion and channel == "case":
+                candidate_run = str(review_context.get("model_run_id") or "").strip()
+                candidate_campaign = str(review_context.get("campaign_id") or "").strip()
+                # This is optional navigation metadata, never comment ownership.
+                # Stale task routes must not prevent a valid Issue discussion.
+                if author_verified and candidate_run and conn.execute(
+                    "SELECT 1 FROM model_predictions WHERE issue_id=? AND model_run_id=?",
+                    (issue_id, candidate_run),
+                ).fetchone():
+                    origin_run = candidate_run
+                    if candidate_campaign:
+                        candidate_campaign = self._resolve_human_issue_campaign(conn, candidate_campaign, issue_id)
+                        if conn.execute("""SELECT 1 FROM issue_work_splits w
+                            JOIN campaign_issue_members m ON m.campaign_id=w.id
+                            WHERE w.id=? AND m.issue_id=? AND w.evaluation_run_id=?
+                              AND w.purpose='model_review' AND w.lifecycle='active' AND w.legacy_read_only=FALSE""",
+                            (candidate_campaign, issue_id, origin_run),
+                        ).fetchone():
+                            origin_campaign = candidate_campaign
             if channel == "case":
                 if scope and scope != issue_scope:
                     raise ValueError("本问题讨论的数据集与当前问题不匹配。")
@@ -374,6 +397,13 @@ class DatabaseCommentsMixin:
                 if self.backend == "postgresql"
                 else int(cursor.lastrowid)
             )
+            if origin_run and record_review_context is not None:
+                # Publish navigation metadata before the transactional outbox is
+                # visible. Rollback-only orphan records are ignored by row checks.
+                record_review_context({"version":1,"comment_id":comment_id,"issue_id":issue_id,
+                    "author":normalized_author,"created_at":now,"client_request_id":client_request_id,
+                    "body_sha256":hashlib.sha256(normalized_body.encode()).hexdigest(),
+                    "model_run_id":origin_run,"campaign_id":origin_campaign})
             for attachment in attachments:
                 conn.execute(
                     """

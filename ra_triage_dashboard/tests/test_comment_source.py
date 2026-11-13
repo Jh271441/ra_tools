@@ -1,19 +1,132 @@
 """Notification provenance and routing: synthetic DB and mocked transport only."""
 import re
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
 import test_combined_reviews as workflow
-from ra_triage_dashboard.app.comment_source import resolve_comment_source, comment_source_label
+import test_version_campaign_physical as version_workflow
+from ra_triage_dashboard.app.comment_source import resolve_comment_source, comment_source_label, save_comment_review_context
 from ra_triage_dashboard.app.dchat import build_discussion_url, DChatSendResult
 from ra_triage_dashboard.app.review_notification_dispatcher import ReviewNotificationDispatcher
+from ra_triage_dashboard.app.comment_submission import comment_request_fingerprint
 
 
 class CommentSourceTest(unittest.TestCase):
     setUp = workflow.CombinedReviewWorkflowTest.setUp
     campaign = workflow.CombinedReviewWorkflowTest.campaign
+
+    def test_ordinary_review_discussion_and_case_reply_keep_validated_review_entry(self):
+        task = self.campaign(0)
+        navigation=Path(self.tmp.name)/'comment_navigation'
+        body = 'Ordinary comment from Review @bob'
+        root = self.db.create_review_comment(issue_id='cn1', discussion_channel='case',
+            unified_issue_discussion=True, author='alice',author_source='test',author_verified=True,
+            body=body,client_request_id='review-navigation-1',
+            request_fingerprint=comment_request_fingerprint(body,None,[]),
+            review_context={'model_run_id':task['evaluation_run_id'],'campaign_id':task['id']},
+            record_review_context=lambda record:save_comment_review_context(navigation,record),
+            notification_recipients=['bob'])
+        for comment in [root,self.reply(root)]:
+            source=resolve_comment_source(self.db,comment['id'],navigation_dir=navigation)
+            self.assertEqual(source['kind'],'review_discussion')
+            self.assertTrue(source['review_link_available'])
+            parsed=urlparse(self.url(comment,source));query=parse_qs(parsed.query)
+            self.assertEqual(parsed.path,'/manual/review')
+            self.assertEqual(query['run'],[task['evaluation_run_id']])
+            self.assertEqual(query['work_split'],[task['id']])
+            self.assertEqual(query['comment'],[str(comment['id'])])
+        self.assertEqual(len(self.db.list_issue_discussion('cn1')),2)
+        with self.db.connect() as conn:
+            row=conn.execute('SELECT * FROM review_comments WHERE id=?',(root['id'],)).fetchone()
+            self.assertEqual(row['discussion_channel'],'case')
+            self.assertEqual(row['evaluation_run_id'],'')
+            self.assertEqual(conn.execute('SELECT COUNT(*) n FROM model_review_revisions').fetchone()['n'],0)
+        # A retry with changed navigation must reuse the original receipt/outbox.
+        replay=self.db.create_review_comment(issue_id='cn1', discussion_channel='case',
+            unified_issue_discussion=True,author='alice',author_verified=True,body=body,
+            client_request_id='review-navigation-1',request_fingerprint=comment_request_fingerprint(body,None,[]),
+            review_context={'model_run_id':'missing'})
+        self.assertEqual(replay['id'],root['id'])
+        settings=SimpleNamespace(dchat_delivery_mode='loopback',data_dir=Path(self.tmp.name),
+            kylin_sso_return_url='https://example.test/manual/review',dchat_max_attempts=3)
+        sent=[]
+        dispatcher=ReviewNotificationDispatcher(settings,self.db,baseline_ids_by_scope={'scope':'1030'})
+        with patch('ra_triage_dashboard.app.review_notification_dispatcher.DChatLoopbackClient.send_to_username',
+                   side_effect=lambda recipient,text:(sent.append(text) or DChatSendResult('trace','message'))):
+            self.assertTrue(dispatcher._dispatch_one());self.assertTrue(dispatcher._dispatch_one())
+        for text in sent:
+            self.assertIn('判错复核讨论 / Review discussion',text)
+            self.assertIn('/manual/review?',text)
+            self.assertIn(task['evaluation_run_id'],text)
+            self.assertIn(task['id'],text)
+        self.db.transition_campaign(campaign_id=task['id'],action='supersede',actor='alice',
+            expected_revision=1,idempotency_key='close-review-entry',reason='test')
+        unavailable=resolve_comment_source(self.db,root['id'],navigation_dir=navigation)
+        self.assertFalse(unavailable['review_link_available'])
+        self.assertEqual(urlparse(self.url(root,unavailable)).path,'/manual/case-labeling')
+
+    def test_invalid_optional_review_entry_never_blocks_issue_discussion(self):
+        task=self.campaign(0)
+        directory=Path(self.tmp.name)/'navigation'
+        origins=[{'model_run_id':'missing'},
+                 {'model_run_id':task['evaluation_run_id'],'campaign_id':'missing'},
+                 {'model_run_id':task['evaluation_run_id'],'campaign_id':self.campaign(1)['id']}]
+        for index,origin in enumerate(origins):
+            comment=self.db.create_review_comment(issue_id='cn1',discussion_channel='case',unified_issue_discussion=True,
+                author='alice',author_verified=True,body=f'Optional origin {index}',review_context=origin,
+                record_review_context=lambda record:save_comment_review_context(directory,record))
+            source=resolve_comment_source(self.db,comment['id'],navigation_dir=directory)
+            self.assertEqual(source['kind'],'issue_discussion' if index==0 else 'review_discussion')
+            if index:
+                self.assertEqual(source['model_run_id'],task['evaluation_run_id'])
+                self.assertEqual(source['campaign_id'],'')
+                self.assertTrue(source['review_link_available'])
+        self.db.transition_campaign(campaign_id=task['id'],action='supersede',actor='alice',
+            expected_revision=1,idempotency_key='expire-optional-entry',reason='test')
+        comment=self.db.create_review_comment(issue_id='cn1',discussion_channel='case',unified_issue_discussion=True,
+            author='alice',author_verified=True,body='Closed optional task',
+            review_context={'model_run_id':task['evaluation_run_id'],'campaign_id':task['id']},
+            record_review_context=lambda record:save_comment_review_context(directory,record))
+        source=resolve_comment_source(self.db,comment['id'],navigation_dir=directory)
+        self.assertEqual(source['model_run_id'],task['evaluation_run_id'])
+        self.assertEqual(source['campaign_id'],'')
+        with self.db.connect() as conn:
+            self.assertEqual(conn.execute('SELECT COUNT(*) n FROM review_comments').fetchone()['n'],4)
+            self.assertEqual(conn.execute("SELECT COUNT(*) n FROM review_comments WHERE model_run_id<>'' OR campaign_id<>'' OR evaluation_run_id<>''").fetchone()['n'],0)
+
+    def test_optional_review_entry_resolves_issue_specific_human_task_redirect(self):
+        old=self.campaign(0)
+        target=self.campaign(0,assignees=['bob'])
+        directory=Path(self.tmp.name)/'navigation'
+        with self.db.connect() as conn:
+            conn.execute('INSERT INTO human_campaign_redirects(campaign_id,issue_id,target_campaign_id,created_at) VALUES(?,?,?,?)',
+                         (old['id'],'cn1',target['id'],'2026-11-13T00:00:00+00:00'))
+        comment=self.db.create_review_comment(issue_id='cn1',discussion_channel='case',unified_issue_discussion=True,
+            author='alice',author_verified=True,body='Old human task URL',
+            review_context={'model_run_id':old['evaluation_run_id'],'campaign_id':old['id']},
+            record_review_context=lambda record:save_comment_review_context(directory,record))
+        source=resolve_comment_source(self.db,comment['id'],navigation_dir=directory)
+        self.assertEqual(source['campaign_id'],target['id'])
+        self.assertTrue(source['review_link_available'])
+
+    def test_navigation_write_failure_rolls_back_outbox_and_orphan_cannot_attribute_a_comment(self):
+        task=self.campaign(0);directory=Path(self.tmp.name)/'navigation'
+        def broken(record):
+            save_comment_review_context(directory,record)
+            raise RuntimeError('synthetic failure after metadata write')
+        with self.assertRaises(RuntimeError):
+            self.db.create_review_comment(issue_id='cn1',discussion_channel='case',unified_issue_discussion=True,
+                author='alice',author_verified=True,body='Original transaction',notification_recipients=['bob'],
+                review_context={'model_run_id':task['evaluation_run_id']},record_review_context=broken)
+        with self.db.connect() as conn:
+            self.assertEqual(conn.execute('SELECT COUNT(*) n FROM review_comments').fetchone()['n'],0)
+            self.assertEqual(conn.execute('SELECT COUNT(*) n FROM comment_notifications').fetchone()['n'],0)
+        comment=self.db.create_review_comment(issue_id='cn1',discussion_channel='case',author='alice',
+            author_verified=True,body='A different comment')
+        self.assertEqual(resolve_comment_source(self.db,comment['id'],navigation_dir=directory)['kind'],'issue_discussion')
 
     def combined(self):
         task = self.campaign(0)
@@ -153,3 +266,21 @@ class CommentSourceTest(unittest.TestCase):
             self.assertIn('channel=case',text)
         self.assertEqual(self.db.get_review_comment(root['id'])['campaign_id'],'')
         self.assertEqual(self.db.comment_notification_status()['sent'],2)
+
+
+class CommentSourceVersionAliasTest(unittest.TestCase):
+    setUp = version_workflow.VersionCampaignPhysicalTest.setUp
+
+    def test_optional_review_entry_resolves_archived_version_task_alias(self):
+        old=self.campaigns[0]
+        merged=self.db.consolidate_version_campaigns(dataset_id='release-20261009-odd2',
+            backup_sha256='a'*64,actor='authorized-test')
+        directory=Path(self.tmp.name)/'navigation'
+        comment=self.db.create_review_comment(issue_id='cn1',discussion_channel='case',unified_issue_discussion=True,
+            author='jasperchen',author_verified=True,body='Archived version task URL',
+            review_context={'model_run_id':self.rid,'campaign_id':old['id']},
+            record_review_context=lambda record:save_comment_review_context(directory,record))
+        source=resolve_comment_source(self.db,comment['id'],navigation_dir=directory)
+        self.assertEqual(source['kind'],'review_discussion')
+        self.assertEqual(source['campaign_id'],merged['campaign_id'])
+        self.assertTrue(source['review_link_available'])

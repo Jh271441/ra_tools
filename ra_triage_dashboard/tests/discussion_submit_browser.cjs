@@ -9,7 +9,7 @@ const replyProbe = process.argv.includes('--reply-probe');
 const root = path.resolve(__dirname, '../static');
 const original = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const css = [...original.matchAll(/"((?:css\/|vendor\/)[^"\n]+\.css|styles\.css)"/g)].map(m => m[1]);
-const modules = ['core-base', 'text-input', 'i18n-messages', 'i18n', 'format-api', 'session-config', 'work-split', 'runs', 'trail-update-state', 'review-mentions', 'analysis-charts', 'analysis', 'issue-discussion', 'routing'];
+const modules = ['core-base', 'text-input', 'i18n-messages', 'i18n', 'format-api', 'session-config', 'work-split', 'runs', 'trail-update-state', 'review-mentions', 'analysis-charts', 'analysis', 'discussion-drafts', 'issue-discussion', 'routing'];
 const html = original.replace(/<script\b[^>]*>[\s\S]*?<\/script>/g, '').replaceAll('{{RA_TRIAGE_BASE_PATH}}', '')
   .replace('</head>', css.map(p => `<link rel="stylesheet" href="/static/${p}">`).join('') + '</head>')
   .replace('</body>', modules.map(p => `<script src="/static/js/${p}.js"></script>`).join('') + '</body>');
@@ -114,7 +114,7 @@ const server = http.createServer((req, res) => {
     assert((await page.locator('#analysisDiscussionSubmit').innerText()).includes('发表中'));
     await page.evaluate(()=>$('#analysisDiscussionForm').requestSubmit($('#analysisDiscussionSubmit')));
     assert.equal(await page.evaluate(()=>posts.length),1);
-    assert.deepEqual(await page.evaluate(()=>posts[0].body),{body:draft,reply_to_id:117});
+    assert.deepEqual(await page.evaluate(()=>posts[0].body),{body:draft,reply_to_id:117,review_context:{model_run_id:'run1',campaign_id:'campaign-test'}});
     await page.evaluate(()=>finishPost.resolve({comment:{id:118,body:'saved',discussion_channel:'case',author:'alice'}}));
     await page.waitForFunction(()=>!state.analysisDiscussion.saving);
     assert.equal(await page.locator('#analysisDiscussionNote').inputValue(),'');

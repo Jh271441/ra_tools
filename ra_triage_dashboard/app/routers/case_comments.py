@@ -13,6 +13,7 @@ from ..review_mentions import extract_review_mentions, notification_recipients
 from ..comment_submission import (
     CommentSubmissionConflictError, comment_request_fingerprint, validate_comment_request_id,
 )
+from ..comment_source import save_comment_review_context
 from .case_annotations import _require_unmigrated_issue
 from ..runtime import database, review_notification_dispatcher, settings
 from ..support.attachments import (
@@ -354,6 +355,8 @@ async def _create_review_comment_record(
             attachments=attachments,
             client_request_id=request_id,
             request_fingerprint=fingerprint,
+            review_context=body.get("review_context") if issue_discussion and isinstance(body.get("review_context"), dict) else None,
+            record_review_context=(lambda record: save_comment_review_context(settings.data_dir / "comment_navigation", record)),
             **({"discussion_channel": "case", "unified_issue_discussion": True} if issue_discussion else {}),
         )
     except CommentSubmissionConflictError as exc:

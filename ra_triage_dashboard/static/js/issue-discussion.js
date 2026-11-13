@@ -18,14 +18,18 @@ async function openAnalysisDiscussion(
   } = {}
 ) {
   const isIntentDiscussion = Boolean(intentDatasetId && intentCaseId);
-  clearAnalysisDiscussionImages();
+  if (state.analysisDiscussion) closeAnalysisDiscussion();
   state.analysisDiscussion = {
     kind: isIntentDiscussion ? "intent" : "issue", issueId: String(issueId), runId: "", source,
     intentDatasetId: String(intentDatasetId || ""), intentCaseId: String(intentCaseId || ""),
     pageContext: capturePageContext(), status: "loading", saving: false,
-    replyTo: null, comments: [], pendingImages: [], preview: false,
+    replyTo: null, comments: [], pendingImages: [], preview: false, actor:discussionDraftActor(),
   };
   const context = state.analysisDiscussion;
+  context.draftKey = discussionDraftKey(context);
+  if (!isIntentDiscussion && state.activePage === "review" && state.selectedId === String(issueId) && state.selectedRunId) {
+    context.reviewOrigin = {model_run_id:String(state.selectedRunId),campaign_id:String(state.reviewWorkSplitId || "")};
+  }
   setAnalysisDiscussionFeedback(context);
   const discussionTitle = $("#analysisDiscussionTitle");
   const discussionTitleZh = discussionTitle?.querySelector(".ui-lang-zh");
@@ -35,6 +39,8 @@ async function openAnalysisDiscussion(
   $("#analysisDiscussionContext").textContent = isIntentDiscussion ? `${intentDatasetId} · ${issueId}` : String(issueId);
   const textarea = $("#analysisDiscussionNote");
   textarea.value = "";
+  const draft = restoreAnalysisDiscussionDraft(context);
+  const restoringImages = restoreDiscussionDraftImages(context, draft);
   textarea.hidden = false;
   $("#analysisDiscussionPreview").hidden = true;
   $("[data-comment-preview-toggle]").innerHTML = discussionActionText("预览", "Preview");
@@ -58,11 +64,12 @@ async function openAnalysisDiscussion(
   );
   context.suspendedVideos.forEach(video => video._pauseBevPlayback());
   $("#analysisDiscussionDialog").showModal();
-  await loadAnalysisDiscussion(context, focusCommentId);
+  await Promise.all([loadAnalysisDiscussion(context, focusCommentId), restoringImages]);
 }
 
 function isAnalysisDiscussionCurrent(context) {
   if (!context || state.analysisDiscussion !== context) return false;
+  if (context.actor !== undefined && context.actor !== discussionDraftActor()) return false;
   const previous = new URL(context.pageContext.url, window.location.origin);
   const current = new URL(window.location.pathname + window.location.search, window.location.origin);
   if (context.kind === "intent") return isPageContextCurrent(context.pageContext, { matchUrl: false })
@@ -99,6 +106,12 @@ async function loadAnalysisDiscussion(context, focusCommentId = 0) {
     if (!isAnalysisDiscussionCurrent(context) || context.requestVersion !== requestVersion) return;
     context.status = "ready";
     context.comments = result.comments || [];
+    if (context.replyTo) {
+      const parent = context.comments.find(item => Number(item.id) === Number(context.replyTo.id));
+      context.replyUnavailable = !parent || Boolean(parent.deleted);
+      if (parent) context.replyTo = parent;
+      renderAnalysisDiscussionReplyContext();
+    }
     updateAnalysisDiscussionComposerAccess();
     if (isIntentDiscussion && state.intentLabeling?.caseId === String(intentCaseId)) {
       state.intentLabeling.caseData ||= {};
@@ -133,7 +146,9 @@ async function loadAnalysisDiscussion(context, focusCommentId = 0) {
   }
 }
 
-function closeAnalysisDiscussion() {
+function closeAnalysisDiscussion(event) {
+  if (event?.type === "close" && $("#analysisDiscussionDialog")?.open) return;
+  persistAnalysisDiscussionDraft();
   disposeReviewMentionComposer($("[data-comment-edit-input]"));
   clearAnalysisDiscussionImages();
   // Re-enable only the still-visible players owned by this dialog. The shared
@@ -153,25 +168,32 @@ function canReplyToAnalysisDiscussion(comment, context = state.analysisDiscussio
 function updateAnalysisDiscussionComposerAccess() {
   const context = state.analysisDiscussion;
   if (!context) return;
-  const allowed = context.kind === "intent" ? Boolean(state.session?.can_annotate_intent)
-    : Boolean(!state.session?.read_only && (state.session?.can_write || state.session?.is_admin));
+  const actorMatches = context.actor === undefined || context.actor === discussionDraftActor();
+  const allowed = actorMatches && (context.kind === "intent" ? Boolean(state.session?.can_annotate_intent)
+    : Boolean(!state.session?.read_only && (state.session?.can_write || state.session?.is_admin)));
   $("#analysisDiscussionComposer").hidden = !allowed;
   const submit = $("#analysisDiscussionSubmit");
   submit.hidden = !allowed;
-  submit.disabled = !allowed || context.status !== "ready" || context.saving || Boolean(context.commentAction?.saving);
+  submit.disabled = !allowed || context.status !== "ready" || context.saving || Boolean(context.commentAction?.saving)
+    || context.restoringDraftImages || context.pendingImages?.some(item => item.missing) || context.replyUnavailable;
   submit.querySelector(".ui-lang-zh").textContent = context.saving ? "发表中…" : "发表评论";
   submit.querySelector(".ui-lang-en").textContent = context.saving ? "Posting…" : "Post comment";
   $("#analysisDiscussionForm")?.setAttribute("aria-busy", String(context.saving));
   const locked = Boolean(context.saving || context.status === "posted");
   $("#analysisDiscussionNote").readOnly = locked;
   $("#analysisDiscussionDialog")?.querySelectorAll("[data-comment-format], [data-comment-image], [data-comment-preview-toggle], [data-remove-comment-image], [data-cancel-comment-reply]").forEach(button => {button.disabled = locked;});
+  $("#analysisDiscussionDialog")?.querySelectorAll("[data-comment-image], [data-remove-comment-image]").forEach(button => {button.disabled = locked || Boolean(context.restoringDraftImages);});
   $("#analysisDiscussionChannelField").hidden = true;
   $("#analysisDiscussionViewField").hidden = true;
   const hint = $("#analysisDiscussionNotice");
-  hint.hidden = context.kind === "intent";
+  hint.hidden = !allowed && context.kind === "intent";
   hint.textContent = context.status === "error"
     ? uiText("讨论未加载成功，请重试。草稿已保留。", "Load the discussion before posting. Your draft is preserved.")
-    : uiText("评论针对当前 Issue，所有任务和复核入口共享。", "Comments belong to this Issue and are shared across tasks and review entry points.");
+    : context.replyUnavailable ? uiText("回复对象不可用，请取消回复或选择其他评论；文字草稿已保留。", "The reply target is unavailable. Cancel the reply or choose another comment; your text is retained.")
+    : context.restoringDraftImages ? uiText("正在恢复草稿图片…", "Restoring draft images…")
+    : context.pendingImages?.some(item => item.missing) ? uiText("草稿文字已恢复，部分图片无法读取，请移除后重新添加。", "Text restored. Some images are unavailable; remove and attach them again.")
+    : context.draftStorageError ? uiText("草稿暂存于当前页面，浏览器未能保存到本机。", "Draft retained in this page; browser storage is unavailable.")
+    : uiText("草稿自动保存在本机，关闭后可继续编辑。", "Drafts are saved on this device; close and return to continue.");
 }
 
 function refreshAnalysisDiscussionLanguage() {
@@ -219,7 +241,7 @@ function applyAnalysisDiscussionFormat(kind) {
 
 function addAnalysisDiscussionImages(files) {
   const context = state.analysisDiscussion;
-  if (!context || context.saving) return;
+  if (!context || context.saving || context.restoringDraftImages) return;
   if (context.kind === "intent") {
     setAnalysisDiscussionFeedback(context, "意图标注讨论暂不支持图片附件，请使用 Markdown 文本。", "Intent discussion does not support images. Use Markdown text.", true);
     return;
@@ -234,7 +256,7 @@ function addAnalysisDiscussionImages(files) {
     if (context.pendingImages.length >= maxCount) return void (rejected = [`每条评论最多 ${maxCount} 张图片。`, `Up to ${maxCount} images per comment.`]);
     if (!allowed.has(file.type)) return void (rejected = ["仅支持 PNG、JPEG 或 WebP 图片。", "Only PNG, JPEG and WebP images are supported."]);
     if (file.size > maxBytes) return void (rejected = [`单张图片不能超过 ${maxBytes / (1024 * 1024)} MB。`, `Each image must be at most ${maxBytes / (1024 * 1024)} MB.`]);
-    const total = context.pendingImages.reduce((sum, item) => sum + item.file.size, 0);
+    const total = context.pendingImages.reduce((sum, item) => sum + Number(item.file?.size || item.size || 0), 0);
     if (total + file.size > maxTotalBytes) return void (rejected = [`本次图片总大小不能超过 ${maxTotalBytes / (1024 * 1024)} MB。`, `Total image size must be at most ${maxTotalBytes / (1024 * 1024)} MB.`]);
     const randomId = crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`;
     const token = `pending-${String(randomId).replace(/[^A-Za-z0-9-]/g, "-")}`;
@@ -259,8 +281,8 @@ function renderAnalysisDiscussionImages() {
   const images = state.analysisDiscussion?.pendingImages || [];
   target.innerHTML = images.map((item) => `
     <div class="comment-pending-image">
-      <img src="${escapeHtml(item.previewUrl)}" alt="${escapeHtml(item.file.name || uiText("待上传图片", "Pending image"))}" />
-      <span>${escapeHtml(item.file.name || uiText("图片", "Image"))}</span>
+      ${item.previewUrl ? `<img src="${escapeHtml(item.previewUrl)}" alt="${escapeHtml(item.file?.name || item.name || uiText("待上传图片", "Pending image"))}" />` : ""}
+      <span>${escapeHtml(item.file?.name || item.name || uiText("图片", "Image"))}</span>
       <button type="button" data-remove-comment-image="${escapeHtml(item.token)}" data-i18n-aria-label="comment.remove_image" aria-label="${escapeHtml(uiText("移除图片", "Remove image"))}">×</button>
     </div>`).join("");
   target.querySelectorAll("[data-remove-comment-image]").forEach((button) => {
@@ -278,6 +300,7 @@ function renderAnalysisDiscussionImages() {
       );
       textarea.dispatchEvent(new Event("input", { bubbles: true }));
       renderAnalysisDiscussionImages();
+      updateAnalysisDiscussionComposerAccess();
     });
   });
 }
@@ -328,8 +351,11 @@ function bindAnalysisDiscussionEditor() {
     addAnalysisDiscussionImages(images);
   });
   textarea.addEventListener("input", () => {
+    persistAnalysisDiscussionDraft();
     if (state.analysisDiscussion?.preview) renderAnalysisDiscussionPreview();
   });
+  textarea.addEventListener("select", () => persistAnalysisDiscussionDraft());
+  window.addEventListener?.("pagehide", () => persistAnalysisDiscussionDraft());
 }
 
 function analysisDiscussionShareUrl(commentId) {
@@ -347,6 +373,11 @@ function analysisDiscussionShareUrl(commentId) {
   url.searchParams.set("comments", "1");
   url.searchParams.set("channel", "case");
   url.searchParams.set("comment", String(Number(commentId)));
+  if (context?.reviewOrigin) {
+    url.searchParams.set("run",context.reviewOrigin.model_run_id);
+    if (context.reviewOrigin.campaign_id) url.searchParams.set("work_split",context.reviewOrigin.campaign_id);
+    url.searchParams.set("comparison","all");
+  }
   return url.href;
 }
 
@@ -574,6 +605,7 @@ function beginAnalysisDiscussionReply(commentId) {
   );
   if (!context || !comment || !canReplyToAnalysisDiscussion(comment, context)) return;
   context.replyTo = comment;
+  context.replyUnavailable = false;
   const textarea = $("#analysisDiscussionNote");
   const author = String(comment.author || "").trim().toLowerCase();
   // reply_to_id already supplies the notification recipient. Never insert a
@@ -592,6 +624,7 @@ function beginAnalysisDiscussionReply(commentId) {
   updateReviewMentionComposer(textarea, $("#analysisDiscussionMentionComposer"));
   textarea.focus();
   textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+  persistAnalysisDiscussionDraft(context);
 }
 
 function renderAnalysisDiscussionReplyContext() {
@@ -614,8 +647,10 @@ function resetAnalysisDiscussionReply(context) {
   if (context.replyMentionPrefix && textarea?.value === context.replyMentionPrefix) textarea.value = "";
   delete context.replyMentionPrefix;
   context.replyTo = null;
+  context.replyUnavailable = false;
   updateAnalysisDiscussionComposerAccess();
   updateReviewMentionComposer(textarea, $("#analysisDiscussionMentionComposer"));
+  if (!context.saving) persistAnalysisDiscussionDraft(context);
 }
 
 async function postAnalysisDiscussionRequest(path, options) {
@@ -635,11 +670,13 @@ async function postAnalysisDiscussionRequest(path, options) {
 }
 
 function analysisDiscussionSubmission(context, payload) {
-  const signature = JSON.stringify({ ...payload, images: context.pendingImages.map(item => item.token),
-    actor: state.session?.username || "" });
+  const {review_context, ...content} = payload;
+  const signature = JSON.stringify({ ...content, images: context.pendingImages.map(item => item.token),
+    actor: discussionDraftActor() });
   if (context.submission?.signature !== signature) {
     context.submission = { signature, id: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}` };
   }
+  rememberDiscussionSubmission(context);
   return context.submission;
 }
 
@@ -671,6 +708,8 @@ async function postIssueDiscussion(context, payload, path, options) {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     if (!isAnalysisDiscussionCurrent(context)) throw new Error(uiText("讨论已切换，草稿已保留。", "The discussion has changed. Your draft is preserved."));
     try {
+      submission.uncertain = true;
+      rememberDiscussionSubmission(context);
       const result = await postAnalysisDiscussionRequest(path, { ...options,
         headers: { ...options.headers, "Idempotency-Key": submission.id } });
       if (!Number.isInteger(Number(result?.comment?.id)) || Number(result.comment.id) <= 0) {
@@ -678,7 +717,9 @@ async function postIssueDiscussion(context, payload, path, options) {
       }
       return (submission.result = result);
     } catch (error) {
-      if (error.ambiguous === false || (error.status >= 400 && error.status < 500)) throw error;
+      if (error.ambiguous === false || (error.status >= 400 && error.status < 500)) {
+        submission.uncertain = false; rememberDiscussionSubmission(context); throw error;
+      }
       submission.uncertain = true;
       if (!isAnalysisDiscussionCurrent(context)) throw error;
       setAnalysisDiscussionFeedback(context, "连接中断，正在核对评论是否已发表…", "Connection interrupted. Checking whether your comment was posted…");
@@ -711,6 +752,7 @@ async function saveAnalysisDiscussion(event) {
   }
   if ($("#analysisDiscussionSubmit")?.disabled || $("#analysisDiscussionComposer")?.hidden) return;
   setAnalysisDiscussionFeedback(context, "正在发表评论…", "Posting comment…");
+  context.sentDraft = persistAnalysisDiscussionDraft(context);
   context.saving = true;
   updateAnalysisDiscussionComposerAccess();
   let committed = false;
@@ -719,6 +761,7 @@ async function saveAnalysisDiscussion(event) {
       body: discussion,
       reply_to_id: context.replyTo?.id || null,
     };
+    if (context.reviewOrigin) payload.review_context = context.reviewOrigin;
     let result;
     if (context.kind === "intent") {
       result = await postAnalysisDiscussionRequest(
@@ -753,6 +796,18 @@ async function saveAnalysisDiscussion(event) {
       throw apiResponseError("服务器未返回有效的评论确认。", "The server did not return a valid comment receipt.", { ambiguous: true });
     }
     committed = true;
+    const matchingComposer = retireDiscussionDraft(context);
+    if (matchingComposer && matchingComposer !== context) {
+      try {
+        clearPostedDiscussionComposer(matchingComposer);
+        if (!matchingComposer.comments.some(item => Number(item.id) === Number(result.comment.id))) matchingComposer.comments.push(result.comment);
+        renderAnalysisDiscussionThread();
+        setAnalysisDiscussionFeedback(matchingComposer, "评论已发表。", "Comment posted.");
+      } catch (_) {
+        matchingComposer.status = "posted";
+        updateAnalysisDiscussionComposerAccess();
+      }
+    }
     acknowledgeLocalChange(result);
     if (!isAnalysisDiscussionCurrent(context)) {
       setAnalysisDiscussionFeedback(context,
@@ -770,19 +825,7 @@ async function saveAnalysisDiscussion(event) {
     if (context.kind !== "intent" && state.caseLabeling?.caseData?.issue_id === context.issueId) {
       state.caseLabeling.caseData.comments = context.comments;
     }
-    resetAnalysisDiscussionReply(context);
-    $("#analysisDiscussionNote").value = "";
-    clearAnalysisDiscussionImages();
-    context.submission = null;
-    context.preview = false;
-    $("#analysisDiscussionNote").hidden = false;
-    $("#analysisDiscussionPreview").hidden = true;
-    $("[data-comment-preview-toggle]").innerHTML = discussionActionText("预览", "Preview");
-    renderAnalysisDiscussionReplyContext();
-    updateReviewMentionComposer(
-      $("#analysisDiscussionNote"),
-      $("#analysisDiscussionMentionComposer")
-    );
+    clearPostedDiscussionComposer(context);
     renderAnalysisDiscussionThread();
     updateAnalysisDiscussionCount(
       context.issueId,
@@ -817,6 +860,24 @@ async function saveAnalysisDiscussion(event) {
       if (isAnalysisDiscussionCurrent(context) && context.status !== "posted") renderAnalysisDiscussionThread();
     }
   }
+}
+
+function clearPostedDiscussionComposer(context) {
+  if (state.analysisDiscussion !== context) return;
+  context.clearingSentDraft = true;
+  try {
+    $("#analysisDiscussionNote").value = "";
+    resetAnalysisDiscussionReply(context);
+    clearAnalysisDiscussionImages();
+    context.submission = null;
+    context.preview = false;
+    $("#analysisDiscussionNote").hidden = false;
+    $("#analysisDiscussionPreview").hidden = true;
+    $("[data-comment-preview-toggle]").innerHTML = discussionActionText("预览", "Preview");
+    renderAnalysisDiscussionReplyContext();
+    updateReviewMentionComposer($("#analysisDiscussionNote"), $("#analysisDiscussionMentionComposer"));
+  } finally { context.clearingSentDraft = false; }
+  persistAnalysisDiscussionDraft(context);
 }
 
 function bindAnalysisDiscussionEnterSubmit() {

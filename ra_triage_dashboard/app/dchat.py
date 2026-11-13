@@ -238,7 +238,7 @@ def build_discussion_url(
 ) -> str:
     """Keep discussion ownership, with an optional validated origin entry point."""
     source = notification_source or {}
-    if (discussion_channel == "case" and source.get("kind") == "combined_review"
+    if (discussion_channel == "case" and source.get("kind") in {"combined_review", "review_discussion"}
             and source.get("review_link_available") and source.get("model_run_id")):
         parsed = urlparse(return_url)
         base = parsed.path.rstrip("/")
@@ -247,7 +247,7 @@ def build_discussion_url(
                 base = base[:-len(suffix)]
                 break
         query = {"issue": issue_id, "run": source["model_run_id"], "comparison": "all",
-                 "comments": "1", "channel": "case", "source": "combined_review"}
+                 "comments": "1", "channel": "case", "source": source["kind"]}
         if source.get("campaign_id"):
             query["work_split"] = source["campaign_id"]
         if baseline_id:
