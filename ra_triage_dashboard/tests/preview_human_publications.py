@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from .preview_te_corrections import BOOTSTRAP
 from .test_human_publication import db as database_fixture,submit,admit,choose,Trail
 from ..app.human_publisher import HumanPublisher
+from ..app.version_review_tasks import version_tasks
 from ..app.routers import human_publications as routes
 from ..app.routers import version_datasets as version_routes
 
@@ -70,6 +71,8 @@ def create_preview_app():
     async def shell():return HTMLResponse(html,headers={'Cache-Control':'no-store'})
     @app.get('/api/preview-human-context/{issue_id}')
     def preview_context(issue_id:str):return database.human_label_context(issue_id)
+    @app.get('/api/preview-version-tasks')
+    def preview_tasks():return dict(items=version_tasks(database))
     return app
 
 

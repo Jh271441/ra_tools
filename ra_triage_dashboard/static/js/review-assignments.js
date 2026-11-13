@@ -1,5 +1,6 @@
 function roleVersionTaskName(task) {
   if(task.role_cohort)return String(task.release_family||'').slice(4)+' · '+(task.role_cohort==='sampling'?uiText('抽样集','Sampling'):uiText('低置信集','Low confidence'));
+  if(task.appendable)return String(task.release_family||'').slice(4)+' · '+uiText('版本联合复核','Version combined review');
   return task.campaign_name || reviewAssignmentRunLabel(task.model_run_id);
 }
 /* Review assignment history, progress, and administrator task transfers. */
@@ -58,6 +59,8 @@ function reviewAssignmentRunLabel(runId) {
 }
 
 function reviewAssignmentModeLabel(item) {
+  if(item?.role_cohort==='sampling')return uiText('RD＋TE 交叉标注','RD + TE cross-review');
+  if(item?.role_cohort==='low')return uiText('不含抽样 · RD 单人标注','Excludes sampling · One RD per case');
   if(item?.appendable)return uiText("联合复核 · 持续追加","Combined review · Appendable");
   const reviewers = Math.max(1, Number(item?.reviewers_per_issue || 1));
   if (reviewers <= 1) return uiText("单人分配", "Single review");
@@ -744,7 +747,8 @@ function bindReviewAssignmentsPage() {
 
 function renderVersionAssignmentBatch(item, options = {}){
   const percent=reviewAssignmentPercent(item.completion_ratio);
-  return `<article class="review-assignment-batch" data-review-assignment-batch="${escapeHtml(item.split_id)}"><header class="review-assignment-batch-header"><div><strong class="review-assignment-batch-title">${escapeHtml(item.release_family.slice(4))} · ${uiText('版本联合复核','Version combined review')}</strong><span class="review-assignment-batch-meta">${uiText('低置信＋抽样 · 单人负责 · 无交叉','Low confidence + sample · Single owner · No overlap')}</span><span class="review-assignment-batch-meta">${uiText('最近更新','Updated')} ${escapeHtml(versionDatasetTime(item.updated_at)+' CST')}</span></div><span class="review-assignment-status is-current">${uiText('持续追加','Appendable')}</span></header><div class="review-assignment-progress"><div class="review-assignment-progress-heading"><span>${uiText('联合复核进度','Combined review progress')}</span><strong>${item.completed_count} / ${item.assignment_count} · ${percent}%</strong></div><div class="review-assignment-progress-track"><span style="width:${percent}%"></span></div></div><div class="review-assignment-member-grid">${item.members.map(reviewAssignmentMemberMarkup).join('')}</div><footer class="review-assignment-batch-footer"><span>${item.total_count} ${uiText('个案例','cases')}</span><div class="review-assignment-batch-actions">${reviewAssignmentActionLinks(item)}${reviewAssignmentDetailAction(item, options)}${reviewAssignmentShareAction(item)}</div></footer></article>`;
+  const description=item.role_cohort?reviewAssignmentModeLabel(item):uiText('低置信＋抽样 · 单人负责 · 无交叉','Low confidence + sample · Single owner · No overlap');
+  return `<article class="review-assignment-batch" data-review-assignment-batch="${escapeHtml(item.split_id)}"><header class="review-assignment-batch-header"><div><strong class="review-assignment-batch-title">${escapeHtml(roleVersionTaskName(item))}</strong><span class="review-assignment-batch-meta">${escapeHtml(description)}</span><span class="review-assignment-batch-meta">${uiText('最近更新','Updated')} ${escapeHtml(versionDatasetTime(item.updated_at)+' CST')}</span></div><span class="review-assignment-status is-current">${uiText('持续追加','Appendable')}</span></header><div class="review-assignment-progress"><div class="review-assignment-progress-heading"><span>${uiText('联合复核进度','Combined review progress')}</span><strong>${item.completed_count} / ${item.assignment_count} · ${percent}%</strong></div><div class="review-assignment-progress-track"><span style="width:${percent}%"></span></div></div><div class="review-assignment-member-grid">${item.members.map(reviewAssignmentMemberMarkup).join('')}</div><footer class="review-assignment-batch-footer"><span>${item.total_count} ${uiText('个案例','cases')}</span><div class="review-assignment-batch-actions">${reviewAssignmentActionLinks(item)}${reviewAssignmentDetailAction(item, options)}${reviewAssignmentShareAction(item)}</div></footer></article>`;
 }
 function renderVersionAssignmentHistory(detail){
   const el=$('#reviewAssignmentAppendHistory');if(!el)return;el.hidden=!detail.appendable;
