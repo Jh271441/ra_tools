@@ -1,6 +1,6 @@
 # 1106 起 Manual RD / TE′ 标注与上传
 
-2026-11-13 11:48:34 CST 已发布 `/manual` 运行版本 `490856f16abf6f415e6b524799d43107152a9565`、cache797、schema061，随后生产只读核验通过。**真实 Trail 自动及手动回刷已启用且本次保留**，1106 当前 27 个目标均已启用同步资格。抽样集 7 个 case / 14 份任务，低置信集 20 个 case / 20 份任务；成员交集与按冻结 seed 检查的错分数均为 0。字段能力、NULL 清空、稀疏空值及平台六级优先级已实测；外部数易报表单独记录为未验证，不作为 Trail 开启条件。
+2026-11-13 12:17:15 CST 已发布 `/manual` 运行版本 `bc7c95b24bca9a22e64e1e0d62b6e936a7557a9f`、cache797、schema061，随后生产只读核验通过。**真实 Trail 自动及手动回刷已启用且本次保留**，1106 当前 27 个目标均已启用同步资格。抽样集 7 个 case / 14 份任务，低置信集 20 个 case / 20 份任务；成员交集与按冻结 seed 检查的错分数均为 0。字段能力、NULL 清空、稀疏空值及平台六级优先级已实测；外部数易报表单独记录为未验证，不作为 Trail 开启条件。
 
 正式版本已整合 `66710f8ac109e565ed659884d5a0b2882bd54db8`，保留最新视频播放、冷启动及共享标签提示修复。本地功能分支为 `codex/manual-role-publication-20261112`。用户已在本次会话明确允许公开推送，并明确批准停写、备份恢复校验、schema061、旧任务迁移及指定 TE 标注权限配置；完整发布证据见文末正式部署记录。
 
@@ -246,6 +246,10 @@ python -m ra_triage_dashboard.scripts.migrate_human_labels --help
 
 看板现保留该旧回执键：仅有一个任务时返回该ID，无任务或多个任务时返回空字符串；多任务映射仍以 `campaign_ids` 及逐case `bindings` 为准。不选择任一任务冒充整个版本，不改变分配、seed、不可变审计内容或原manifest。固定cron无需变更时段或重新发布即可读取兼容结果；旧版本1030的4:3:3及其他旧版本1:1保持原规则。
 
-已用当前固定发布的真实投递函数及合成SQLite数据库复现原失败并验证修复：首次新增40例，重放新增0；合计100例分为抽样11、低置信89，两个集合互斥，旧分配不变；TE成员快照及媒体尾部回调均执行，远程写入为0。本地25项专项测试通过，增加无任务、单任务、双任务的旧消费者兼容和幂等回归。完整云端及正式发布回执在发布完成后记录；这些合成结果不代表生产又执行了一轮cron。
+已用当前固定发布的真实投递函数及合成SQLite数据库复现原失败并验证修复：首次新增40例，重放新增0；合计100例分为抽样11、低置信89，两个集合互斥，旧分配不变；TE成员快照及媒体尾部回调（隔离替身）均执行，远程写入为0。另行验证已提交dataset后中断的恢复，补齐兼容后重投新增0、负责人不变，尾部正常继续。本地25项专项测试通过，增加无任务、单任务、双任务的旧消费者兼容和幂等回归；这些合成结果不代表生产又执行了一轮cron。
 
 每日流程图、版本分配边界、任务外意见、三通道异步回刷及回执兼容契约已同步到 `ra-triage/references/DAILY_CRON_FLOW.md`，由看板skill继续链接该单一入口；人工发布详细规则仍以看板的角色策略为准。
+
+兼容修复精确版本 `bc7c95b24bca9a22e64e1e0d62b6e936a7557a9f` 于12:17:15 CST正式发布，完整云端 **1427 passed、9 skipped / 230.82秒**，隔离灰度、正式PostgreSQL及身份/写入策略检查通过。回执 `/volume/home/workspace/ra_triage_dashboard_deploy/releases/20261113T041305Z-bc7c95b24bca/result.json`；生产postflight证据 `/private/tmp/manual-cron-role-acceptance/production-postflight.json`。UI仍为cache797，同一JS/CSS字节；human writer=true和原能力文件路径保留。固定cron release、07/19计划、模型及媒体协议均未改变。
+
+正常12:20 CST队列唤醒后，既有1106待投递包 `version-20261106-a86000e31d62ef86205f1e0b8e26a634`（274条成员 / 27条目标）实际变为 `delivered`：new_assignments=0、TE成员快照27，媒体queued25/reused0；1106 outbox为delivered8、superseded9、pending0，delivery_error_active=false。投递完成包括媒体入队，不能据此声称25条媒体均生成完成。本次未手动触发来源发现或模型重跑。实际回执前后证据与合成回放报告保存在 `/private/tmp/manual-cron-role-acceptance/`。
