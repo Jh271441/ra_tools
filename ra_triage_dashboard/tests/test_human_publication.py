@@ -116,6 +116,32 @@ def test_allocation_independent_balanced_and_append_stable(db):
         if cohort=='sampling':assert abs(counts['yupuxue']-counts['zhangxuzhao'])<=1
 
 
+@pytest.mark.parametrize('cohorts',[[],['sampling'],['sampling','low']])
+def test_append_receipt_keeps_pinned_single_task_cron_compatible(tmp_path,cohorts):
+    database=Database(tmp_path/'legacy-cron.sqlite');database.init()
+    try:
+        for name in ['jasperchen','liangxianghui','yupuxue','zhangxuzhao']:
+            database.set_access_user(username=name,role='admin',actor='test')
+        family='20261106';policy=dict(sampling_policy='version_probability_v3',seed='a'*64)
+        ids=[next('cn'+str(i) for i in range(1,61) if sampled(policy['seed'],family,'cn'+str(i))==(cohort=='sampling')) for cohort in cohorts]
+        rid=database.ensure_version_stream(family,'test')
+        database.append_version_predictions(run_id=rid,rows=[dict(issue_id=i,model_label='误触发',model_confidence=.7,
+            model_extra=dict(software_version='1.gen4-release-20261106.1')) for i in ids])
+        args=dict(family=family,policy=policy,issue_ids=ids,current_target_ids=ids,batch_key='legacy-cron-packet',actor='test')
+        result=database.append_version_campaign_members(**args)
+        # The deployed bridge reads this exact key before TE/media callbacks.
+        assert result['campaign_id']==(result['campaign_ids'][0] if len(cohorts)==1 else '')
+        assert len(result['campaign_ids'])==len(cohorts)
+        assert set(result['bindings'])==set(ids)
+        for cohort,iid in zip(cohorts,ids):
+            assert result['bindings'][iid]['campaign_id'].endswith('-'+cohort)
+            assert len(result['bindings'][iid]['assignees'])==(2 if cohort=='sampling' else 1)
+        repeated=database.append_version_campaign_members(**args)
+        assert repeated['added']==0 and repeated['campaign_id']==result['campaign_id']
+        assert repeated['bindings']==result['bindings']
+    finally:database.close()
+
+
 def test_single_owner_advisory_does_not_block_then_formal_admission_retracts(db,tmp_path):
     iid,b=choose(db);owner=b['assignee'];trail=Trail();publisher=HumanPublisher(db,tmp_path,trail,enabled=True)
     submit(db,iid,owner);publisher.tick(force_ids=[iid]);assert publication(db,iid)['sync_state']=='synced'

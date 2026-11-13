@@ -239,3 +239,13 @@ python -m ra_triage_dashboard.scripts.migrate_human_labels --help
 发布后只读核验运行 SHA、cache797 HTML、实际下发的 JS/CSS bundle 与任务卡模块字节均一致。human writer=true，原合格能力文件路径与所有其他写入策略保留；没有迁移、权限变更、重分配或验收写入。1106 抽样/低置信两个正式任务分别为 7/20 个 case，14/20 份任务，成员交集和错分均为 0，27 条 scope 全部 armed。任务卡和说明采用原布局；1030 仍显示原 RD 上传/TE 修正，1106 显示 RD/TE′/裁决三项。
 
 本地共 82 项定向测试、6 个 subtest 通过，5 组无头 Chrome 视口验收通过；证据在 `/private/tmp/manual-role-cards-acceptance/`，包含报告、截图与生产只读 postflight。已停止本次新建 50271 合成预览，原 50269 用户预览保留。未声称生产 SSO 点击提交或真机验收。
+
+## 每日 cron 双任务追加回执兼容
+
+2026-11-13 按用户追问检查每日 cron。实际控制仍启用固定 release `87210975464bc1ceada33c9b7e0b6c5b866f4bf5`，发现时段为07:00/19:00 CST，launcher每5分钟唤醒。其 `dashboard_bridge.apply` 调用看板的 `append_version_campaign_members`，1106起已进入双任务分流，但尾部仍读取 `assignment["campaign_id"]`，随后才生成TE成员快照并进入媒体队列。双任务返回原先只有 `campaign_ids`，会在dataset提交后触发KeyError。
+
+看板现保留该旧回执键：仅有一个任务时返回该ID，无任务或多个任务时返回空字符串；多任务映射仍以 `campaign_ids` 及逐case `bindings` 为准。不选择任一任务冒充整个版本，不改变分配、seed、不可变审计内容或原manifest。固定cron无需变更时段或重新发布即可读取兼容结果；旧版本1030的4:3:3及其他旧版本1:1保持原规则。
+
+已用当前固定发布的真实投递函数及合成SQLite数据库复现原失败并验证修复：首次新增40例，重放新增0；合计100例分为抽样11、低置信89，两个集合互斥，旧分配不变；TE成员快照及媒体尾部回调均执行，远程写入为0。本地25项专项测试通过，增加无任务、单任务、双任务的旧消费者兼容和幂等回归。完整云端及正式发布回执在发布完成后记录；这些合成结果不代表生产又执行了一轮cron。
+
+每日流程图、版本分配边界、任务外意见、三通道异步回刷及回执兼容契约已同步到 `ra-triage/references/DAILY_CRON_FLOW.md`，由看板skill继续链接该单一入口；人工发布详细规则仍以看板的角色策略为准。

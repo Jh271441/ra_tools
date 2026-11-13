@@ -137,4 +137,7 @@ class RoleVersionTasksMixin:
             receipt=dict(campaign_ids=campaign_ids,added=len(added),added_ids=added,fingerprint=expected)
             self._version_event(conn,did,batch_key,'role_task_append',receipt,actor)
             self._mark_labeling_change(conn);self._mark_run_collection_change(conn)
-            return dict(receipt,bindings=bindings)
+            # The pinned cron bridge still reads the legacy singular receipt.
+            # Multiple tasks have no primary campaign; keep per-case bindings
+            # and campaign_ids authoritative instead of choosing one cohort.
+            return dict(receipt,campaign_id=campaign_ids[0] if len(campaign_ids)==1 else '',bindings=bindings)
