@@ -57,6 +57,29 @@ python ra_triage_dashboard/tests/discussion_drafts_browser.py
 python -m pytest ra_triage_dashboard/tests/test_comment_source.py ra_triage_dashboard/tests/test_discussion_reliability.py -q
 ```
 
+### Release and readback
+
+Promoted **2026-11-13T08:26:16Z** (16:26:16CST) to
+`9e706abc656e485c89ea22eb86357c824c71c812`, **cache798**, PostgreSQL **schema61**.
+Full exact-SHA cloud gate: **1433passed,9skipped/228.80s**; isolated SQLite gray
+and production health/policy gates passed. The first candidate stopped before gray
+because a standalone network-lifecycle test omitted the new module; all manual
+discussion loaders were corrected and the entire gate rerun on the final SHA.
+Local backend/frontend gate:136passed,2skipped,9subtests. Draft browser20scenarios,
+notification-link12combinations, existing submission/reply/edit/delete browser
+checks and the fault-injection reliability suite passed on synthetic data.
+
+Read-only postflight at08:26:29Z verified the actual77-module JS bundle and changed
+assets against Git, shell cache798, healthy persistent PostgreSQL and unchanged
+TE/Issue/Review/RD/human writer policies. The reported cn37847435 comment242 retains
+its original body hash, version, timestamp and242→241reply. No production test
+comment, DChat send/resend, label rewrite or database migration was performed.
+Signed-in production CUA remained unavailable; viewport checks do not cover real
+phones, Safari or soft keyboards. Release receipt:
+`/volume/home/workspace/ra_triage_dashboard_deploy/releases/20261113T082145Z-9e706abc656e/result.json`.
+Local readback evidence: `/private/tmp/discussion-drafts-release-20261113/`;
+draft-browser evidence: `/private/tmp/discussion-drafts-20261113/`.
+
 ## Released: historical images and reliable replies (2026-11-04, cache758)
 
 ### Investigation
