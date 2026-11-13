@@ -1,6 +1,6 @@
 # 1106 起 Manual RD / TE′ 标注与上传
 
-2026-11-13 本次修复前实查 `/manual` 运行版本 `aaaff60dfbb7ad2c78c9c6557fa7b719333db4fe`、cache796、schema061。**真实 Trail 自动及手动回刷已启用**，1106 当前 27 个目标均已启用同步资格。抽样集 7 个 case / 14 份任务，低置信集 20 个 case / 20 份任务；成员交集与按冻结 seed 检查的错分数均为 0。字段能力、NULL 清空、稀疏空值及平台六级优先级已实测；外部数易报表单独记录为未验证，不作为 Trail 开启条件。后续运行版本以发布回执为准。
+2026-11-13 11:48:34 CST 已发布 `/manual` 运行版本 `490856f16abf6f415e6b524799d43107152a9565`、cache797、schema061，随后生产只读核验通过。**真实 Trail 自动及手动回刷已启用且本次保留**，1106 当前 27 个目标均已启用同步资格。抽样集 7 个 case / 14 份任务，低置信集 20 个 case / 20 份任务；成员交集与按冻结 seed 检查的错分数均为 0。字段能力、NULL 清空、稀疏空值及平台六级优先级已实测；外部数易报表单独记录为未验证，不作为 Trail 开启条件。
 
 正式版本已整合 `66710f8ac109e565ed659884d5a0b2882bd54db8`，保留最新视频播放、冷启动及共享标签提示修复。本地功能分支为 `codex/manual-role-publication-20261112`。用户已在本次会话明确允许公开推送，并明确批准停写、备份恢复校验、schema061、旧任务迁移及指定 TE 标注权限配置；完整发布证据见文末正式部署记录。
 
@@ -230,3 +230,12 @@ python -m ra_triage_dashboard.scripts.migrate_human_labels --help
 02:35:45 CST 开启 `DASHBOARD_HUMAN_LABEL_WRITE_ENABLED=true`，使用私有合格能力文件，并通过既有审计迁移 CLI 为 `release-20261106-odd2` 两条 scope 执行独立 arm。配置启用流程复用版本化部署器的发布锁、优雅停启、健康检查和失败回退，保留所有其他写入/身份策略；当前自动与手动队列门禁均开启。既有两条目标仍是 RD/TE 待标、无裁决，尚无正式结论可以回刷，不能把开关开启等同于已上传标签。
 
 私有启用记录：`/volume/home/workspace/ra_triage_dashboard_deploy/operations/manual-role-activation-20261113/enable-8f7fc7357bec4fd9a5d08d18b1b70239/result.json`，同目录包含 `postflight.json`、`armed.json`、0600 的运行配置和原配置。能力与请求/读回证据保存在同一 operation 根目录的 `fields-*` 和 `priority-*`；不提交源仓库。未来部署应从实际运行进程捕获当前 human writer=true 和私有能力文件路径；不得用之前 writer=false 的发布配置覆盖本次启用。
+
+
+## 2026-11-13 双任务卡片名称修正正式发布
+
+精确版本 `490856f16abf6f415e6b524799d43107152a9565` 于 11:48:34 CST 正式上线，cache797。统一部署器完整云端 **1424 passed、9 skipped / 232.74 秒**，隔离 SQLite 灰度和正式 PostgreSQL/健康/写入策略检查通过。首个候选在切换前被一项仍引用旧缓存号的基础路径测试拦截，生产未变；同步两处断言后完整重跑通过，没有删减测试或跳过检查。发布回执：`/volume/home/workspace/ra_triage_dashboard_deploy/releases/20261113T034422Z-490856f16abf/result.json`。
+
+发布后只读核验运行 SHA、cache797 HTML、实际下发的 JS/CSS bundle 与任务卡模块字节均一致。human writer=true，原合格能力文件路径与所有其他写入策略保留；没有迁移、权限变更、重分配或验收写入。1106 抽样/低置信两个正式任务分别为 7/20 个 case，14/20 份任务，成员交集和错分均为 0，27 条 scope 全部 armed。任务卡和说明采用原布局；1030 仍显示原 RD 上传/TE 修正，1106 显示 RD/TE′/裁决三项。
+
+本地共 82 项定向测试、6 个 subtest 通过，5 组无头 Chrome 视口验收通过；证据在 `/private/tmp/manual-role-cards-acceptance/`，包含报告、截图与生产只读 postflight。已停止本次新建 50271 合成预览，原 50269 用户预览保留。未声称生产 SSO 点击提交或真机验收。
