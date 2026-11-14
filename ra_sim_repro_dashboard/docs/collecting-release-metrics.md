@@ -35,14 +35,29 @@ and retain their final override. AutoTriage's separate profile/fallback is uncha
 Read gates neither revoke historical approval nor launch/retry simulations, alter
 labels, change collection mode or write database schema.
 
-Local validation:404backend tests,101frontend tests and production build passed.
+Local validation:404backend tests,103frontend tests and production build passed.
 Synthetic browser checks covered1440px Chinese/light,390px English/dark and320px
 English/light: pending status/counts, no1106metric point, retained release axis,
 no page overflow,44px principal action. These are browser viewport checks, not real
 phones or soft-keyboard tests. After the user explicitly authorized source transfer and deployment, candidate
 read-only PostgreSQL replay confirmed751collected/598automatic/153manual/1prior
 result for1106, pending full metrics, and retained all audited historical values.
-Production publication is recorded separately after final checks.
+Production promotion completed2026-11-15 02:16:45CST for sourcec9175473;
+a follow-upae873c5a completed02:21:41CST so the header uses latest observation
+time rather than the unrelated legacy snapshot date. Final cloud gate404passed,
+frontend103passed, build and source/asset hash verification passed. All original
+historical comparison values are unchanged; only explicit scope metadata is added.
+
+The private release root is
+`/volume/home/services/ra-sim/operations/1106-presentation-20261115/`:
+`deployment.private.json`, `date-followup.json`, `release-manifest.json`,
+`backend-tests-final.txt`, source backups and private readbacks. Runtime config
+is byte-identical, PostgreSQL/Redis/web PIDs were retained, and the original set of
+application processes was restored. No schema, labels, modes or task changes and
+no deliberate new simulation or upstream refresh were performed. Full application
+and tests were first reconciled from the actual deployed source on isolated branch
+`codex/sim-1106-publication-20261115`; master and the unrelated main checkout were
+not changed.
 
 Reproduce locally with `frontend/tests/overview-collection-preview.html`, or:
 
@@ -53,3 +68,27 @@ cd ../frontend
 npm run test:unit
 npm run build
 ```
+
+
+## Signed-in built-in-browser acceptance
+
+On2026-11-15, the Codex in-app browser opened the user's original ordinary-basis
+1106 URL. It showed751collected Issues (598automatic,153manual), one prior frozen
+result and no1106KPI/line point. Both trends retain the1106axis label. The header
+now shows the latest collection observation,2026-11-15 02:07:21CST.
+
+Actual click acceptance found that the initial progress button entered the old
+simulation-result view. Frontend follow-up5e2860ba, published02:29:49CST without
+restarting services, now opens the road collection with issue_view=collection and
+page1. It clears stale sample-date/result/detail filters while preserving valid
+page size and global release range. The same behavior applies to pending table
+rows. The existing simulation-result entry keeps its frozen-result meaning.
+
+A real signed-in click opened751Issues/38pages at20per page; Next moved to page2,
+and a full reload retained page2 and collection view. Returning to overview showed
+the correct counts, pending KPIs and historical values. The accepted overview tab
+was marked as a deliverable in the side browser. Evidence screenshot:
+`/private/tmp/sim-1106-audit-20261115/accepted-overview.jpg`.
+Final frontend gate103passed and build passed; actual served19assets matched the
+navigation manifest. Backend source remainsae873c5a; frontend source5e2860ba.
+The source/test/docs branch is pushed; documentation-only receipts need no restart.

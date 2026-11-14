@@ -48,7 +48,7 @@ test('collection progress remains visible without a legacy KPI or comparison res
   const collection=scope();
   const text=visibleText(await render({...summary(collection),current:null},[]));
   assert.ok(text.includes('751'));
-  assert.ok(text.includes('查看周期 Issue'));
+  assert.ok(text.includes('查看路测采集清单'));
   assert.ok(!text.includes('100%'));
 });
 
