@@ -17,7 +17,7 @@ export function coldStart({ base, flowJs, flowCss, evaluationJs, evaluationCss =
   const assets = [];
   if (path === root.pathname + 'simulation') {
     if (state.claimed || state.read) return;
-    const release = query.get('version') || '@current';
+    const release = query.get('version') || query.get('release') || '@current';
     start(state, root.pathname + 'api/dashboard/workflow/board?' + new URLSearchParams({ release, refresh: 'false' }));
     if (release !== '@current') assets.push([flowJs, flowCss]);
   } else if (query.get('basis') === 'auto-triage' && [root.pathname + 'overview', root.pathname + 'issues'].includes(path)) {

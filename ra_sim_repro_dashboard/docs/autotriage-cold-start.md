@@ -16,7 +16,7 @@ are filtered by release in SQL and still undergo schema/content-hash validation.
 No cache invalidation rules, metric definitions, database schema or operational
 submission behavior changed.
 
-Validation: 416 backend tests, 113 frontend tests and the production build passed.
+Validation: 416 backend tests, 114 frontend tests and the production build passed.
 On the existing service database, six serial fresh-process, read-only transactions
 compared live/candidate results. Three cold comparison runs had medians 2.1721s /
 1.6721s (23.0% reduction); queries fell from 147 to 105. All six complete JSON

@@ -43,6 +43,13 @@ test('following the current version starts its read without loading flow assets'
   await p.state.read;
 });
 
+test('ordinary simulation retains the live release alias and version priority', () => {
+  for (const query of ['release=gen4-release-20261016', 'version=gen4-release-20261016&release=ignored']) {
+    const p=page('/sim/simulation?'+query);p.run();
+    assert.equal(p.calls[0].url,boardUrl('gen4-release-20261016'));
+  }
+});
+
 test('overview/issues/status and an external asset base never start speculative API reads', () => {
   for (const path of ['/sim/overview','/sim/issues','/sim/status','/manual/simulation']) {
     const p=page(path);p.run();assert.equal(p.calls.length,0);assert.equal(p.links.length,0);
