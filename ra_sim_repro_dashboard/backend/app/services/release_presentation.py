@@ -113,7 +113,8 @@ def context(db, value=None):
         metrics = effective_publication(db, approved)
         source = metrics
     elif scope:
-        metrics = {'available': False, 'reason': scope['reason_code']}
+        metrics = {'available': False, 'reason': scope['reason_code'],
+                   'generated_at': scope.get('observed_at')}
     kpi = (
         render_kpi(current, metrics, source)
         if metrics.get("available") and not value.get("acceptance_only")

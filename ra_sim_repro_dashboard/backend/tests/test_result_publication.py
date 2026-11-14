@@ -116,6 +116,7 @@ def test_latest_observation_replaces_stale_population_counts_without_rewriting_p
     monkeypatch.setattr(routes, '_read_dashboard_snapshot', lambda _: {'generated_at':now})
     response = routes._summary(db,SimpleNamespace(headers={'x-ra-sim-client':'release-cycle-v1'}))
     assert response.current is None and response.business_collection==scope
+    assert response.generated_at.isoformat()==now
     assert batch.payload==before and publication(batch)['eligible']==199
 
 
