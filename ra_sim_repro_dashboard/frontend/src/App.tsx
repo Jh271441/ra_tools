@@ -643,7 +643,7 @@ export default function App() {
                     {t('simFlow.businessVersion')}: {releaseName(current?.version_key)}
                   </Badge>
                   {current?.sim_job_id ? <Badge variant="outline">{t('job')} {current.sim_job_id}</Badge> : null}
-                  <Badge variant="outline">{versions.length} {t('versions')}</Badge>
+                  <Badge variant="outline">{activeVersions.length} {t('versions')}</Badge>
                 </div>
                 <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
                   {basis === 'normal' && (summary ? `${t('generated')} ${new Date(summary.generated_at).toLocaleString()}` : t('noSnapshot'))}
