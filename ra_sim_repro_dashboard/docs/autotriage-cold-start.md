@@ -30,3 +30,28 @@ versions waiting 9.751s, comparison 5.253s and the overview chunk starting at
 6.098s. These browser/network observations are separate from the controlled
 backend timings. Publication/acceptance evidence is retained under the configured
 service's `operations/cold-start-20261115/` directory.
+
+Published source: `a2413c03` (API/source/assets) plus `53eb0463` (active-catalogue
+badge/assets). Only the API was restarted; runtime configuration stayed
+byte-identical. The preflight detected a live-only ordinary simulation `release`
+query alias; it was preserved with a regression test before publication.
+
+IAB acceptance with the HTTP cache disabled observed the last initial API response
+at 10.457s before / 3.420s after (one observed browser pair, affected by network and
+server state). Comparison itself took 5.253s / 2.738s. The initial requests changed
+from ordinary versions + board + profiles + comparison to evaluation versions +
+board + comparison; chart code is preloaded. Both missing-date and missing-profile
+entry URLs canonicalized without a duplicate board or comparison. The saved
+10-30 KPIs remained 88.6% reproduction, 40.8% precision, 79.4% recall and 99.7%
+coverage; 11-06 explicitly retained its saved-results fallback.
+
+Responsive browser checks covered 1440px desktop, 320px English/dark and 390px
+Chinese/light, including settings, a deliberately blocked catalogue GET and
+successful retry. No page-level horizontal overflow was observed. These were
+viewport checks, not physical-device/soft-keyboard tests. Language/theme, network
+blocking, HTTP-cache override and viewport override were restored after testing.
+The settings rule list loaded on opening; applying a different rule was not
+performed in production because automatic approval review rejected that action
+as potentially triggering recalculation. Profile transition/race behavior is
+covered by the unit regressions. Acceptance screenshot and before/after resource
+timings are retained alongside the service release evidence.
