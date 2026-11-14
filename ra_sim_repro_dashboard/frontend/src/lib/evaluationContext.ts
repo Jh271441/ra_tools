@@ -26,6 +26,17 @@ export function changeEvaluationReleaseQuery(query: URLSearchParams, release: st
   return next;
 }
 
+export function collectionIssuesQuery(query: URLSearchParams, release: string): URLSearchParams {
+  const next = changeEvaluationReleaseQuery(query, release);
+  // A collection link identifies the observed road population, independently
+  // of an old simulation result, sample date range, or selected Issue detail.
+  for (const key of ['query', 'label', 'coverage', 'changed', 'issue', 'scenario', 'issue_id', 'scenario_id',
+    'root_cause', 'trigger_type', 'precision_label', 'date_start', 'date_end', 'basis']) next.delete(key);
+  next.set('issue_view', 'collection');
+  next.set('page', '1');
+  return next;
+}
+
 export function validEvaluationDates(context: EvaluationContext): boolean {
   return (!context.date_start && !context.date_end) ||
     Boolean(context.date_start && context.date_end && context.date_start <= context.date_end);

@@ -1,6 +1,6 @@
 import { FilterPanel } from './components/ui/filter-panel';
 import { releaseName } from './lib/releaseName';
-import { changeEvaluationReleaseQuery } from './lib/evaluationContext';
+import { changeEvaluationReleaseQuery, collectionIssuesQuery } from './lib/evaluationContext';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
@@ -135,10 +135,11 @@ export default function App() {
   const [page, setPageState] = useState<Page>(pageFromLocation);
   const [basis, setBasis] = useState(() => location.pathname.endsWith('/auto-triage') || new URLSearchParams(location.search).get('basis') === 'auto-triage' ? 'auto-triage' : 'normal');
 
-  const setPage = useCallback((next: Page, version?: string) => {
+  const setPage = useCallback((next: Page, version?: string, navigationQuery?: URLSearchParams) => {
     setPageState(next);
     const currentQuery = new URLSearchParams(window.location.search);
-    const q = next === 'issues' && version ? changeEvaluationReleaseQuery(currentQuery, version) : currentQuery;
+    const q = navigationQuery ? new URLSearchParams(navigationQuery)
+      : next === 'issues' && version ? changeEvaluationReleaseQuery(currentQuery, version) : currentQuery;
     const search = q.size ? `?${q}` : '';
     const target = `${BASE_PATH}/${next}${search}`;
     if (window.location.pathname + window.location.search !== target) {
@@ -376,6 +377,14 @@ export default function App() {
     setFilters({ ...defaultFilters, version: q.get('version') || q.get('release') || '' });
     setShowLegacyIssues(false);
     setPage('issues');
+  }
+
+  function openCollectionIssues(version: string) {
+    const query = collectionIssuesQuery(new URLSearchParams(location.search), version);
+    setFilters({ ...defaultFilters, version });
+    setIssuePage(1); setSelectedResult(null); setIssues([]); setIssueTotal(0);
+    setShowLegacyIssues(false); setBasis('normal');
+    setPage('issues', version, query);
   }
 
   function applySourceFilters() {
@@ -721,7 +730,7 @@ export default function App() {
             ) : page === 'overview' && basis === 'auto-triage' ? (
               <EvaluationWorkspace page="overview" visibleReleases={visibleReleases} onNavigate={(next,version)=>{if(next==='issues' && version)setFilters({...defaultFilters,version});setPage(next,version);}} />
             ) : page === 'overview' ? (
-              <Suspense fallback={<p className="text-sm text-muted-foreground">{t('loading')}</p>}><Overview summary={summary} comparison={visibleComparison} onOpenIssues={openIssues} onOpenCurrent={openCurrentIssues} /></Suspense>
+              <Suspense fallback={<p className="text-sm text-muted-foreground">{t('loading')}</p>}><Overview summary={summary} comparison={visibleComparison} onOpenIssues={openIssues} onOpenCurrent={openCurrentIssues} onOpenCollection={openCollectionIssues} /></Suspense>
             ) : (
               <ReleaseIssues basisControl={basisControl} evaluation={basis === 'auto-triage' ? <EvaluationWorkspace key={filters.version || '@stable'} page="issues" release={filters.version || '@stable'} hideRelease onNavigate={setPage}/> : undefined} versions={versions} version={filters.version || '@stable'} onVersionChange={version => {
                 const value = version;

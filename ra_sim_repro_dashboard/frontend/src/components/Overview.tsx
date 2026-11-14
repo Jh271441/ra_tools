@@ -27,6 +27,7 @@ interface OverviewProps {
   summary: SummaryResponse | null;
   comparison: KpiSummary[];
   onOpenCurrent: () => void;
+  onOpenCollection?: (version: string) => void;
   onOpenIssues: (filters: {
     version?: string;
     rootCause?: string;
@@ -210,7 +211,7 @@ function interactiveProps(onClick: () => void) {
   };
 }
 
-export function Overview({ summary, comparison, onOpenIssues, onOpenCurrent, evaluationBasis = false, sourceAnalysis }: OverviewProps) {
+export function Overview({ summary, comparison, onOpenIssues, onOpenCurrent, onOpenCollection, evaluationBasis = false, sourceAnalysis }: OverviewProps) {
   const { t } = useTranslation();
   const [visibleReproMetrics, setVisibleReproMetrics] = useState<Record<ReproMetric, boolean>>({
     repro: true,
@@ -236,11 +237,12 @@ export function Overview({ summary, comparison, onOpenIssues, onOpenCurrent, eva
 
   const collection = !evaluationBasis ? summary.business_collection : null;
   const collectionPending = collection?.available === false;
+  const openCollection = (version?: string | null) => version && onOpenCollection ? onOpenCollection(version) : onOpenCurrent();
   const current = summary.business_metrics
     || (collectionPending ? comparison.find(item => item.version_key === summary.business_current_version) : null)
     || summary.current || summary.legacy_current;
-  if (!current) return collectionPending ? <CollectionProgress scope={collection} version={summary.business_current_version} onOpen={onOpenCurrent} />
-    : <Card><CardContent className="p-5 text-sm">{summary.business_current_version ? releaseName(summary.business_current_version) : t('businessCollection.current')} · {t('businessCollection.pendingSimulation')}<button className="ml-3 min-h-11 text-primary" onClick={onOpenCurrent}>{t('businessCollection.openIssues')}</button></CardContent></Card>;
+  if (!current) return collectionPending ? <CollectionProgress scope={collection} version={summary.business_current_version} onOpen={() => openCollection(summary.business_current_version)} />
+    : <Card><CardContent className="p-5 text-sm">{summary.business_current_version ? releaseName(summary.business_current_version) : t('businessCollection.current')} · {t('businessCollection.pendingSimulation')}<button className="ml-3 min-h-11 text-primary" onClick={() => openCollection(summary.business_current_version)}>{t('businessCollection.openIssues')}</button></CardContent></Card>;
   const businessPending = collectionPending || Boolean(summary.business_current_version && !summary.business_metrics);
   const historicalFrozen = (item: KpiSummary) => Boolean(item.collection_scope?.historical_frozen
     && item.version_key !== summary.business_current_version);
@@ -363,7 +365,7 @@ export function Overview({ summary, comparison, onOpenIssues, onOpenCurrent, eva
 
   return (
     <div className="grid gap-4">
-      {collectionPending && <CollectionProgress scope={collection} version={summary.business_current_version} onOpen={onOpenCurrent} />}
+      {collectionPending && <CollectionProgress scope={collection} version={summary.business_current_version} onOpen={() => openCollection(summary.business_current_version)} />}
       {evaluationBasis && <p role="status" className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground"><strong className="text-foreground">{t('evaluation.covered_scope_title')}</strong><span>{releaseName(current.version_key)}</span>{coveredScope && <span>{t('evaluation.covered_scope',{covered:formatCount(coveredScope.covered),eligible:formatCount(coveredScope.eligible)})}</span>}{!coveredScope?.complete && <span>{t('evaluation.full_pending_short')}</span>}</p>}
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         {kpis.map((item) => {
@@ -538,7 +540,7 @@ export function Overview({ summary, comparison, onOpenIssues, onOpenCurrent, eva
                 <tbody>
                   {aggregateRows.length ? aggregateRows.map((item) => {
                     const collection = item.collection_scope;
-                    if (collection && populationPending(item)) return <tr key={item.version_key} className="cursor-pointer border-t border-border/60 transition hover:bg-accent/35" {...interactiveProps(() => onOpenIssues({version: item.version_key}))}>
+                    if (collection && populationPending(item)) return <tr key={item.version_key} className="cursor-pointer border-t border-border/60 transition hover:bg-accent/35" {...interactiveProps(() => openCollection(item.version_key))}>
                       <td className="px-4 py-3 text-center align-middle"><div className="font-semibold leading-5">{releaseName(item.version_key)}</div><div className="font-mono text-xs text-muted-foreground">{item.version_key}</div></td>
                       <td colSpan={11} className="px-4 py-3 align-middle"><div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-sm"><Badge variant="warning">{t(`businessCollection.${collectionState(collection)}`)}</Badge><span>{t('businessCollection.collectedSummary',{collected:collection.collected_issue_count == null ? '—' : formatCount(collection.collected_issue_count),auto:collection.auto_count == null ? '—' : formatCount(collection.auto_count),manual:collection.manual_count == null ? '—' : formatCount(collection.manual_count)})}</span><span>{t('businessCollection.evaluatedSummary',{formattedCount:collection.evaluated_issue_count == null ? '—' : formatCount(collection.evaluated_issue_count)})}</span><span className="text-muted-foreground">{t('businessCollection.pendingMetrics')}</span></div></td>
                     </tr>;

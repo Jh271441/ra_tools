@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { comparisonParams, changeEvaluationRelease, changeEvaluationReleaseQuery, validEvaluationDates, comparisonRevisions } from '../src/lib/evaluationContext.ts';
+import { comparisonParams, changeEvaluationRelease, changeEvaluationReleaseQuery, collectionIssuesQuery, validEvaluationDates, comparisonRevisions } from '../src/lib/evaluationContext.ts';
 
 const selected = { release: 'gen4-release-20261016', profile_id: 'auto_triage_sql_v2', date_start: '2026-09-19', date_end: '2026-10-28' };
 
@@ -59,4 +59,31 @@ test('an explicitly selected historical scope uses the same revision in its card
   assert.deepEqual(result.map(value => value.revision_key),['historical-16','latest-23']);
   assert.equal(current16.revision_key,'latest-16');
   assert.equal(comparisonRevisions([current23],history16).length,2);
+});
+
+test('collection drill-down identifies the whole road population and survives URL reload', () => {
+  const before=new URLSearchParams({ release:'gen4-release-20261106',version:'gen4-release-20261106',
+    issue_view:'simulation',page:'5',page_size:'50',query:'cn-old',label:'old-scene',issue:'cn-old',scenario:'s-old',
+    root_cause:'FN',precision_label:'FN',coverage:'missing',changed:'1',basis:'auto-triage',
+    date_start:'2026-11-09',date_end:'2026-11-09',profile:'auto_triage_review_v1',release_start:'2026-09-12',release_end:'2026-11-12' });
+  const query=collectionIssuesQuery(before,'gen4-release-20261106');
+  const reloaded=new URL('https://dashboard.test/sim/issues?'+query).searchParams;
+  assert.equal(reloaded.get('issue_view'),'collection');
+  assert.equal(reloaded.get('page'),'1');assert.equal(reloaded.get('page_size'),'50');
+  assert.equal(reloaded.get('release'),'gen4-release-20261106');assert.equal(reloaded.get('version'),'gen4-release-20261106');
+  for(const key of ['query','label','issue','scenario','root_cause','precision_label','coverage','changed','basis','date_start','date_end']) assert.equal(reloaded.has(key),false,key);
+  assert.equal(reloaded.get('profile'),'auto_triage_review_v1');
+  assert.equal(reloaded.get('release_start'),'2026-09-12');assert.equal(reloaded.get('release_end'),'2026-11-12');
+  assert.equal(before.get('issue_view'),'simulation','the old route is retained for browser Back');
+  assert.equal(before.get('query'),'cn-old');
+});
+
+test('collection drill-down targets the clicked pending release without changing evaluation navigation', () => {
+  const before=new URLSearchParams({release:'gen4-release-20261030',version:'gen4-release-20261030',page:'9',page_size:'100',query:'stale'});
+  const collection=collectionIssuesQuery(before,'gen4-release-20261106');
+  assert.equal(collection.get('release'),'gen4-release-20261106');
+  assert.equal(collection.get('issue_view'),'collection');assert.equal(collection.get('page'),'1');
+  const evaluation=changeEvaluationReleaseQuery(before,'gen4-release-20261106');
+  assert.equal(evaluation.has('issue_view'),false);
+  assert.equal(evaluation.get('query'),'stale','existing evaluation route behavior is unchanged');
 });

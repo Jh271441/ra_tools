@@ -12,7 +12,7 @@ void i18n.use(initReactI18next).init({
         evaluation: evaluationZh,
         businessCollection: {
           current: '当前版本', collecting: '收集中', populationChanged: '待补齐最新人口', needsReview: '采集人口待核对',
-          pendingMetrics: '完整版本指标暂不展示', pendingSimulation: '待完整仿真', openIssues: '查看周期 Issue',
+          pendingMetrics: '完整版本指标暂不展示', pendingSimulation: '待完整仿真', openIssues: '查看路测采集清单',
           collected_issue_count: '已采集 Issue', auto_count: '自触发 Issue', manual_count: '人工触发 Issue', evaluated_issue_count: '旧冻结结果 Issue',
           collectedSummary: '已采集 {{collected}} 条 · 自触发 {{auto}} · 人工 {{manual}}', evaluatedSummary: '旧冻结结果 {{formattedCount}} 条',
           frozenNote: '采集数量来自最新观察；旧冻结任务的有效结果仅作历史参考，不代表当前版本已完整评测。',
@@ -404,7 +404,7 @@ void i18n.use(initReactI18next).init({
         evaluation: evaluationEn,
         businessCollection: {
           current: 'Current version', collecting: 'Collecting', populationChanged: 'Latest population awaiting results', needsReview: 'Collection population needs review',
-          pendingMetrics: 'Full-version metrics are pending', pendingSimulation: 'Awaiting complete simulation', openIssues: 'View cycle issues',
+          pendingMetrics: 'Full-version metrics are pending', pendingSimulation: 'Awaiting complete simulation', openIssues: 'View road collection',
           collected_issue_count: 'Collected issues', auto_count: 'Automatic-trigger issues', manual_count: 'Manual-trigger issues', evaluated_issue_count: 'Prior frozen-result issues',
           collectedSummary: 'Collected {{collected}} · Automatic {{auto}} · Manual {{manual}}', evaluatedSummary: 'Prior frozen results: {{formattedCount}}',
           frozenNote: 'Collection counts use the latest observation. Valid results from a prior frozen job are historical evidence and do not represent complete evaluation of this version.',
