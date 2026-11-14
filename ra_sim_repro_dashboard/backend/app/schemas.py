@@ -27,6 +27,7 @@ class VersionsResponse(BaseModel):
 
 
 class KpiSummary(BaseModel):
+    collection_scope: dict[str, Any] | None = None
     reproduction: dict[str, Any] | None = None
     evaluation_scope: dict[str, Any] | None = None
     version_key: str
@@ -58,6 +59,7 @@ class KpiSummary(BaseModel):
 
 
 class SummaryResponse(BaseModel):
+    business_collection: dict[str, Any] | None = None
     business_current_version: str | None = None
     business_metrics: KpiSummary | None = None
     business_status: str = "legacy"

@@ -28,7 +28,19 @@ export interface VersionsResponse {
   versions: VersionItem[];
 }
 
+export interface CollectionScope {
+  available: boolean;
+  reason_code?: string;
+  collection_status: string;
+  collected_issue_count: number | null;
+  auto_count: number | null;
+  manual_count: number | null;
+  evaluated_issue_count: number | null;
+  observed_at: string | null;
+}
+
 export interface KpiSummary {
+  collection_scope?: CollectionScope | null;
   reproduction?: ReproductionSummary;
   evaluation_scope?: {
     complete: boolean; covered: number; eligible: number;
@@ -66,6 +78,7 @@ export interface KpiSummary {
 }
 
 export interface SummaryResponse {
+  business_collection?: CollectionScope | null;
   business_current_version?: string | null;
   business_metrics?: KpiSummary | null;
   business_status?: string;

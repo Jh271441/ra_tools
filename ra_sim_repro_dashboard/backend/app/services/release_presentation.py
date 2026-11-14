@@ -6,6 +6,28 @@ from app.models import ReleaseIssueSnapshot, ReleaseSimulationBatch
 from app.services.release_workflow import status, effective_config, population_identity
 from app.services.release_metrics import summarize_population
 from app.services.result_publication import publication, effective_publication, published_batch
+from app.services.business_population import scope_for_batch
+
+
+def pending_kpi(release, scope, job_id=None):
+    """Keep the release visible without drawing a partial execution as full KPIs."""
+    total = scope.get('collected_issue_count') or 0
+    return {
+        'version_key': release, 'label': 'release'+release[-8:],
+        'collection_scope': scope, 'total_cases': total,
+        'road_positive_cases': 0, 'road_behavior_cases': 0,
+        'sim_positive_cases': 0, 'reproduced_cases': 0,
+        'sim_repro_rate': None, 'precision': None, 'recall': None, 'f1': None,
+        'specificity': None, 'accuracy': None, 'model_repro_rate': 0,
+        'fn_fallback_rate': 0, 'fp_suppress_rate': 0, 'root_causes': {},
+        'positive_auto_repro_rate': None, 'negative_auto_repro_rate': None,
+        'positive_manual_repro_rate': None,
+        'evaluated_cases': scope.get('evaluated_issue_count') or 0,
+        'dpe_coverage': 0, 'quality_gate_passed': False,
+        'sim_estimate': {'job_id': job_id, 'data_source': 'collection_pending',
+                         'estimated_tp': None, 'estimated_fp': None, 'estimated_fn': None,
+                         'same_version_projection': {'available': False}},
+    }
 
 
 def render_kpi(current, metrics, source):
@@ -85,9 +107,12 @@ def context(db, value=None):
     metrics = value.get("metrics") or {}
     source = value.get("source_metrics") or {}
     approved = published_batch(db, current) if current else None
-    if approved:
+    scope = scope_for_batch(db, approved) if approved else None
+    if approved and scope['available']:
         metrics = effective_publication(db, approved)
         source = metrics
+    elif scope:
+        metrics = {'available': False, 'reason': scope['reason_code']}
     kpi = (
         render_kpi(current, metrics, source)
         if metrics.get("available") and not value.get("acceptance_only")
@@ -96,8 +121,9 @@ def context(db, value=None):
     return {
         "business_current_version": current,
         "business_metrics": kpi,
-        "business_status": "published_with_exclusions"
-        if approved else "complete"
+        "business_status": "collecting" if scope and not scope['available'] and scope['collection_status'] == 'collecting'
+        else "pending_simulation" if scope and not scope['available']
+        else "published_with_exclusions" if approved else "complete"
         if kpi
         else "pending_simulation"
         if current
@@ -105,6 +131,7 @@ def context(db, value=None):
         "business_reason": metrics.get("reason", "") if not kpi else "",
         "period": value.get("current_period"),
         "metrics": metrics,
+        "business_collection": scope,
     }
 
 
@@ -146,15 +173,23 @@ def history_kpis(db):
         metrics = batch.payload.get("summary") or {}
         if not metrics.get("available"):
             continue
+        scope = scope_for_batch(db, batch)
+        if not scope['available']:
+            items.append(pending_kpi(batch.release, scope, batch.payload.get('job_id')))
+            continue
         metrics = {**metrics, "job_id": batch.payload.get("job_id")}
         source = summarize_population(snapshot.payload["issues"], [], {})
         items.append(render_kpi(batch.release, metrics, source))
     for release in allowed:
         approved = published_batch(db, release)
         if approved:
-            metrics = effective_publication(db, approved)
+            scope = scope_for_batch(db, approved)
             items = [i for i in items if i["version_key"] != release]
-            items.append(render_kpi(release, metrics, metrics))
+            if scope['available']:
+                metrics = effective_publication(db, approved)
+                items.append(render_kpi(release, metrics, metrics))
+            else:
+                items.append(pending_kpi(release, scope, approved.payload.get('job_id')))
     from app.services.ordinary_evaluation import history_kpis as ordinary_kpis
     for item in ordinary_kpis(db):
         items = [existing for existing in items if existing['version_key'] != item['version_key']]

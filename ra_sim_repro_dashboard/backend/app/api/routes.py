@@ -103,6 +103,7 @@ def _summary(db: DbSession, request: Request = None) -> SummaryResponse:
     return SummaryResponse(
         business_current_version=context['business_current_version'],business_metrics=context['business_metrics'],
         business_status=context['business_status'],business_reason=context['business_reason'],
+        business_collection=context.get('business_collection'),
         current=current if request is not None and request.headers.get('x-ra-sim-client') != 'release-cycle-v1' else context['business_metrics'],legacy_current=current,
         previous=current if context['business_metrics'] else snapshot.get('previous'),
         deltas={key:context['business_metrics'][key]-current[key] for key in ('sim_repro_rate','precision','recall','f1') if context['business_metrics'] and current and isinstance(context['business_metrics'].get(key),(int,float)) and isinstance(current.get(key),(int,float))},

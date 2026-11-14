@@ -14,7 +14,7 @@ import {
 import { Fragment, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
 import { Activity, ArrowDownRight, ArrowUpRight, Gauge, ShieldCheck, Target } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import type { KpiSummary, SummaryResponse } from '../types';
+import type { CollectionScope, KpiSummary, SummaryResponse } from '../types';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { cn } from '../lib/utils';
@@ -106,6 +106,32 @@ function firstNumber(...values: unknown[]) {
 
 function formatCount(value: number | undefined) {
   return new Intl.NumberFormat().format(Math.max(0, Math.round(value ?? 0)));
+}
+
+function collectionState(scope: CollectionScope) {
+  return scope.collection_status === 'collecting' || scope.reason_code === 'collecting' ? 'collecting' : scope.reason_code === 'population_changed' ? 'populationChanged' : 'needsReview';
+}
+
+function CollectionProgress({ scope, version, onOpen }: { scope: CollectionScope; version?: string | null; onOpen: () => void }) {
+  const { t } = useTranslation();
+  return <Card role="status" className="min-w-0">
+    <CardHeader className="flex-row flex-wrap items-start justify-between gap-3 space-y-0 pb-3">
+      <div className="min-w-0 space-y-1">
+        <CardTitle className="break-words">{version ? releaseName(version) : t('businessCollection.current')}</CardTitle>
+        <p className="text-sm leading-5 text-muted-foreground">{t(`businessCollection.${collectionState(scope)}`)} · {t('businessCollection.pendingMetrics')}</p>
+      </div>
+      <button className="min-h-11 rounded-md border px-3 py-2 text-sm text-primary focus:outline-none focus:ring-2 focus:ring-ring" onClick={onOpen}>{t('businessCollection.openIssues')}</button>
+    </CardHeader>
+    <CardContent>
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-3 md:grid-cols-4">
+        {(['collected_issue_count', 'auto_count', 'manual_count', 'evaluated_issue_count'] as const).map(key => <div key={key} className="min-w-0">
+          <dt className="break-words text-xs leading-5 text-muted-foreground">{t(`businessCollection.${key}`)}</dt>
+          <dd className="mt-1 font-mono text-lg font-semibold">{scope[key] == null ? '—' : formatCount(scope[key])}</dd>
+        </div>)}
+      </dl>
+      <p className="mt-3 text-xs leading-5 text-muted-foreground">{t('businessCollection.frozenNote')}</p>
+    </CardContent>
+  </Card>;
 }
 
 function countScale(values: number[]) {
@@ -208,9 +234,14 @@ export function Overview({ summary, comparison, onOpenIssues, onOpenCurrent, eva
     );
   }
 
-  const current = summary.business_metrics || summary.current || summary.legacy_current;
-  if (!current) return <Card><CardContent className="p-5 text-sm">{summary.business_current_version ? releaseName(summary.business_current_version) : '当前版本'} · 待完整仿真。<button className="ml-3 text-primary" onClick={onOpenCurrent}>查看周期 Issue</button></CardContent></Card>;
-  const businessPending = Boolean(summary.business_current_version && !summary.business_metrics);
+  const collection = !evaluationBasis ? summary.business_collection : null;
+  const collectionPending = collection?.available === false;
+  const current = summary.business_metrics
+    || (collectionPending ? comparison.find(item => item.version_key === summary.business_current_version) : null)
+    || summary.current || summary.legacy_current;
+  if (!current) return collectionPending ? <CollectionProgress scope={collection} version={summary.business_current_version} onOpen={onOpenCurrent} />
+    : <Card><CardContent className="p-5 text-sm">{summary.business_current_version ? releaseName(summary.business_current_version) : t('businessCollection.current')} · {t('businessCollection.pendingSimulation')}<button className="ml-3 min-h-11 text-primary" onClick={onOpenCurrent}>{t('businessCollection.openIssues')}</button></CardContent></Card>;
+  const businessPending = collectionPending || Boolean(summary.business_current_version && !summary.business_metrics);
   const coveredScope = current.evaluation_scope;
   const kpis = [
     { label: t('simReproRate'), value: pct(coveredScope ? coveredScope.repro_rate : current.sim_repro_rate), delta: summary.deltas.sim_repro_rate, icon: Activity, filters: { version: current.version_key, precisionLabel: 'FN' } },
@@ -220,25 +251,28 @@ export function Overview({ summary, comparison, onOpenIssues, onOpenCurrent, eva
   ];
 
   const trend = comparison.map((item) => {
+    const pending = item.collection_scope?.available === false;
     const display = item.evaluation_scope;
     const road = display?.road_counts;
     const repro = display ? display.repro_rate : item.sim_repro_rate;
     return ({
     version_key: item.version_key,
     version: releaseName(item.version_key),
-    precision: item.precision == null ? undefined : Math.round(item.precision * 1000) / 10,
-    recall: item.recall == null ? undefined : Math.round(item.recall * 1000) / 10,
-    f1: item.f1 == null ? undefined : Math.round(item.f1 * 1000) / 10,
-    repro: repro == null ? undefined : Math.round(repro * 1000) / 10,
-    tp: optionalNumber(item.sim_estimate?.estimated_tp) ?? optionalNumber(item.sim_estimate?.tp),
-    fn: optionalNumber(item.sim_estimate?.estimated_fn) ?? optionalNumber(item.sim_estimate?.fn),
-    fp: optionalNumber(item.sim_estimate?.estimated_fp) ?? optionalNumber(item.sim_estimate?.fp),
-    roadTp: optionalNumber(display ? road?.precision_numerator : item.source_gt?.auto_trigger_tp),
-    roadFn: optionalNumber(display ? road && road.recall_denominator-road.recall_numerator : item.source_gt?.manual_trigger_fn),
-    roadFp: optionalNumber(display ? road && road.precision_denominator-road.precision_numerator : item.source_gt?.auto_trigger_fp),
+    collection: item.collection_scope,
+    precision: pending || item.precision == null ? undefined : Math.round(item.precision * 1000) / 10,
+    recall: pending || item.recall == null ? undefined : Math.round(item.recall * 1000) / 10,
+    f1: pending || item.f1 == null ? undefined : Math.round(item.f1 * 1000) / 10,
+    repro: pending || repro == null ? undefined : Math.round(repro * 1000) / 10,
+    tp: pending ? undefined : optionalNumber(item.sim_estimate?.estimated_tp) ?? optionalNumber(item.sim_estimate?.tp),
+    fn: pending ? undefined : optionalNumber(item.sim_estimate?.estimated_fn) ?? optionalNumber(item.sim_estimate?.fn),
+    fp: pending ? undefined : optionalNumber(item.sim_estimate?.estimated_fp) ?? optionalNumber(item.sim_estimate?.fp),
+    roadTp: pending ? undefined : optionalNumber(display ? road?.precision_numerator : item.source_gt?.auto_trigger_tp),
+    roadFn: pending ? undefined : optionalNumber(display ? road && road.recall_denominator-road.recall_numerator : item.source_gt?.manual_trigger_fn),
+    roadFp: pending ? undefined : optionalNumber(display ? road && road.precision_denominator-road.precision_numerator : item.source_gt?.auto_trigger_fp),
     excluded: item.publication?.excluded_scenario_ids.length ?? optionalNumber(item.sim_estimate?.terminal_failed),
   }); });
   const sameVersionTrend = comparison.map((item) => {
+    const pending = item.collection_scope?.available === false;
     const projection = item.sim_estimate?.same_version_projection;
     const metrics = projection && typeof projection === 'object'
       ? projection as Record<string, unknown>
@@ -251,11 +285,11 @@ export function Overview({ summary, comparison, onOpenIssues, onOpenCurrent, eva
     const simRecall = display ? display.recall : optionalNumber(metrics.sim_business_recall);
     return {
       version_key: item.version_key,
-      actualPrecision: actualPrecision != null ? actualPrecision*100 : undefined,
-      actualRecall: actualRecall != null ? actualRecall*100 : undefined,
-      simPrecision: available && simPrecision != null ? simPrecision*100 : undefined,
-      simRecall: available && simRecall != null ? simRecall*100 : undefined,
-      simAllCohortRecall: available && optionalNumber(metrics.sim_all_cohort_trigger_recall) != null
+      actualPrecision: !pending && actualPrecision != null ? actualPrecision*100 : undefined,
+      actualRecall: !pending && actualRecall != null ? actualRecall*100 : undefined,
+      simPrecision: !pending && available && simPrecision != null ? simPrecision*100 : undefined,
+      simRecall: !pending && available && simRecall != null ? simRecall*100 : undefined,
+      simAllCohortRecall: !pending && available && optionalNumber(metrics.sim_all_cohort_trigger_recall) != null
         ? numberValue(metrics.sim_all_cohort_trigger_recall) * 100 : undefined,
       populationCoverage: optionalNumber(metrics.population_coverage) != null
         ? numberValue(metrics.population_coverage) * 100 : undefined,
@@ -293,7 +327,8 @@ export function Overview({ summary, comparison, onOpenIssues, onOpenCurrent, eva
     return (
       <div className="max-w-[300px] p-3 text-xs" style={releaseTooltipStyle}>
         <div className="mb-2 font-semibold">{row.version_key}</div>
-        <div className="mb-2">{t('simReproRate')} · {formatChartLabel(row.repro)}</div>
+        <div className="mb-2">{t('simReproRate')} · {row.repro == null ? '—' : formatChartLabel(row.repro)}</div>
+        {row.collection?.available === false && <p className="mb-2 leading-5 text-muted-foreground">{t(`businessCollection.${collectionState(row.collection)}`)}<br />{t('businessCollection.collectedSummary', { collected: countText(row.collection.collected_issue_count ?? undefined), auto: countText(row.collection.auto_count ?? undefined), manual: countText(row.collection.manual_count ?? undefined) })}</p>}
         <table className="w-full tabular-nums">
           <thead><tr className="text-muted-foreground">
             <th className="pr-3 text-left">{t('metric')}</th>
@@ -319,10 +354,11 @@ export function Overview({ summary, comparison, onOpenIssues, onOpenCurrent, eva
     );
   }
 
-  const aggregateRows = comparison.filter((item) => item.source_gt || item.sim_estimate);
+  const aggregateRows = comparison.filter((item) => item.collection_scope || item.source_gt || item.sim_estimate);
 
   return (
     <div className="grid gap-4">
+      {collectionPending && <CollectionProgress scope={collection} version={summary.business_current_version} onOpen={onOpenCurrent} />}
       {evaluationBasis && <p role="status" className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground"><strong className="text-foreground">{t('evaluation.covered_scope_title')}</strong><span>{releaseName(current.version_key)}</span>{coveredScope && <span>{t('evaluation.covered_scope',{covered:formatCount(coveredScope.covered),eligible:formatCount(coveredScope.eligible)})}</span>}{!coveredScope?.complete && <span>{t('evaluation.full_pending_short')}</span>}</p>}
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         {kpis.map((item) => {
@@ -343,9 +379,9 @@ export function Overview({ summary, comparison, onOpenIssues, onOpenCurrent, eva
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="font-mono text-[22px] font-semibold leading-7">{businessPending ? "—" : item.value}</div>{item.label === t('simReproRate') && current.reproduction && <p className="mt-1 text-xs text-muted-foreground" title={t('reproduction.policy')}>{t('reproduction.verified', { matched: formatCount(current.reproduction.matched), evaluated: formatCount(current.reproduction.evaluated) })}{!!current.reproduction.pending && ` · ${t('reproduction.pending_count', { amount: formatCount(current.reproduction.pending) })}`}</p>}
+                <div className="font-mono text-[22px] font-semibold leading-7">{businessPending ? "—" : item.value}</div>{!businessPending && item.label === t('simReproRate') && current.reproduction && <p className="mt-1 text-xs text-muted-foreground" title={t('reproduction.policy')}>{t('reproduction.verified', { matched: formatCount(current.reproduction.matched), evaluated: formatCount(current.reproduction.evaluated) })}{!!current.reproduction.pending && ` · ${t('reproduction.pending_count', { amount: formatCount(current.reproduction.pending) })}`}</p>}
                 <div className="mt-2 flex items-center gap-1 text-[12px] leading-4 text-muted-foreground">
-                  {businessPending ? <span>{releaseName(summary.business_current_version)} · 待完整仿真</span> : <>
+                  {businessPending ? <span>{releaseName(summary.business_current_version)} · {t('businessCollection.pendingSimulation')}</span> : <>
                   {!evaluationBasis && <><TrendIcon className={cn('h-3.5 w-3.5', healthy ? 'text-emerald-500 dark:text-primary' : 'text-red-500')} />
                   <span>{delta(item.delta) || '0%'}</span>
                   <span>{t('vsPrevious')}</span></>}
@@ -496,6 +532,11 @@ export function Overview({ summary, comparison, onOpenIssues, onOpenCurrent, eva
                 </thead>
                 <tbody>
                   {aggregateRows.length ? aggregateRows.map((item) => {
+                    const collection = item.collection_scope;
+                    if (collection?.available === false) return <tr key={item.version_key} className="cursor-pointer border-t border-border/60 transition hover:bg-accent/35" {...interactiveProps(() => onOpenIssues({version: item.version_key}))}>
+                      <td className="px-4 py-3 text-center align-middle"><div className="font-semibold leading-5">{releaseName(item.version_key)}</div><div className="font-mono text-xs text-muted-foreground">{item.version_key}</div></td>
+                      <td colSpan={11} className="px-4 py-3 align-middle"><div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-sm"><Badge variant="warning">{t(`businessCollection.${collectionState(collection)}`)}</Badge><span>{t('businessCollection.collectedSummary',{collected:collection.collected_issue_count == null ? '—' : formatCount(collection.collected_issue_count),auto:collection.auto_count == null ? '—' : formatCount(collection.auto_count),manual:collection.manual_count == null ? '—' : formatCount(collection.manual_count)})}</span><span>{t('businessCollection.evaluatedSummary',{formattedCount:collection.evaluated_issue_count == null ? '—' : formatCount(collection.evaluated_issue_count)})}</span><span className="text-muted-foreground">{t('businessCollection.pendingMetrics')}</span></div></td>
+                    </tr>;
                     const source = item.source_gt || {};
                     const sim = item.sim_estimate || {};
                     const projectionValue = sim.same_version_projection;
@@ -591,7 +632,7 @@ export function Overview({ summary, comparison, onOpenIssues, onOpenCurrent, eva
         <CardHeader className="flex-row items-center justify-between">
           <div>
             <CardTitle>{t('rootCause')}</CardTitle>
-            <p className="mt-1 text-[13px] leading-5 text-muted-foreground">{businessPending ? '历史已完成版本的诊断分布' : t('rootCauseSubtitle')}</p>
+            <p className="mt-1 text-[13px] leading-5 text-muted-foreground">{businessPending ? t('businessCollection.historicalDiagnosis') : t('rootCauseSubtitle')}</p>
           </div>
           <Badge variant="outline" title={current.version_key}>{releaseName(current.version_key)}</Badge>
         </CardHeader>

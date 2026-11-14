@@ -1043,9 +1043,13 @@ def metrics_for_snapshot(db, snapshot):
     population_hash = population_identity(snapshot.payload)
     from app.services.result_publication import published_batch, effective_publication
     published = published_batch(db, snapshot.release)
+    from app.services.business_population import scope_for_batch
     from app.services.release_backfill import frozen_snapshot_valid
     if published and frozen_snapshot_valid(db, published):
-        return effective_publication(db, published)
+        scope = scope_for_batch(db, published)
+        if scope['available']:
+            return effective_publication(db, published)
+        return {'available': False, 'reason': scope['reason_code'], 'collection_scope': scope}
     batches = db.scalars(
         select(ReleaseSimulationBatch)
         .where(
@@ -1062,6 +1066,9 @@ def metrics_for_snapshot(db, snapshot):
         ].get("primary"):
             continue
         if batch.payload.get("population_hash") == population_hash:
+            scope = scope_for_batch(db, batch)
+            if not scope['available']:
+                return {'available': False, 'reason': scope['reason_code'], 'collection_scope': scope}
             return {
                 **batch.payload.get("summary", {}),
                 "job_id": batch.payload.get("job_id"),

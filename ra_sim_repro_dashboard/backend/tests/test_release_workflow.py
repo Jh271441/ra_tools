@@ -1,5 +1,5 @@
 from copy import deepcopy
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
@@ -53,7 +53,11 @@ def db():
 
 
 def population(*args):
-    return [
+    period = args[1] if len(args) > 1 else {
+        'case_start': (reference_thursday()-timedelta(days=14)).isoformat()+'T00:00:00+08:00',
+        'release': 'gen4-release-20260918',
+    }
+    rows = [
         {
             "issue_id": "i1",
             "ra_type": 2,
@@ -62,6 +66,9 @@ def population(*args):
         },
         {"issue_id": "i2", "ra_type": 3, "ra_merge_result": "成功"},
     ]
+    for row in rows:
+        row.update(version=period['release'], issue_time=int(datetime.fromisoformat(period['case_start']).timestamp()*1000))
+    return rows
 
 
 def scene_labels(cohort):

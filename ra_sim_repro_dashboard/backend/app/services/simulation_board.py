@@ -289,9 +289,22 @@ def board(db, release="@current", force=False):
     )
     approved = published_batch(db, selected)
     if approved:
-        metrics = effective_publication(db, approved)
-        imported = {**approved.payload["result_import"], "publication": metrics["publication"]}
-        data["metrics"] = metrics
+        from app.services.business_population import scope_for_batch
+        scope = scope_for_batch(db, approved)
+        data['collection_scope'] = scope
+        if scope['available']:
+            metrics = effective_publication(db, approved)
+            imported = {**approved.payload["result_import"], "publication": metrics["publication"]}
+            data["metrics"] = metrics
+        else:
+            # The frozen execution remains audit evidence, never full-release
+            # coverage when newer observations have expanded the population.
+            imported = None
+            data['metrics'] = {'available': False, 'reason': scope['reason_code']}
+            data['population_complete'] = False
+            observed = workflow.get_state(db, 'release_observation:' + selected)
+            if observed.get('issues'):
+                data['source_metrics'] = summarize_population(observed['issues'], [], {})
     data["evaluation"] = imported
     from ra_api.release_tolerance import grade_counts, grade
     from app.services.release_metrics import cohort_for_issue
@@ -310,6 +323,8 @@ def board(db, release="@current", force=False):
         mapped = {str(s['issue_id']) for s in source['scenarios'] if s.get('issue_id')}
         if eligible:
             data['quality_grade'] = {**grade(eligible, eligible-mapped), 'basis':'preparation'}
+    if data.get('collection_scope', {}).get('available') is False:
+        data.pop('quality_grade', None)
 
     from app.services.label_cycle import public_state
     data["label_cycle"] = public_state(db, selected)
