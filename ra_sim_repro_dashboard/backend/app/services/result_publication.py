@@ -325,4 +325,5 @@ def _effective_publication(db, batch):
     base = read_projection(db, ('publication', batch.fingerprint, batch.updated_at),
                            lambda: publication(batch))
     enriched = backfill_metrics(db, batch, base)
-    return revision_metrics(db, batch, enriched)
+    from app.services.reproduction_evidence import standard_view
+    return standard_view(db, batch, revision_metrics(db, batch, enriched))

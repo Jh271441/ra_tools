@@ -315,6 +315,29 @@ def board(db, release="@current", force=False):
     data["label_cycle"] = public_state(db, selected)
     from app.services.release_anomalies import collection_anomalies
     data["collection_anomalies"] = collection_anomalies(db, selected, data.get("collection"), native)
+    from app.services import ordinary_evaluation as ordinary
+    normal = ordinary.read(db, selected)
+    if normal:
+        m = normal['metrics']
+        data.update(issue_count=sum(r['ra_type']==2 for r in normal['rows']),
+                    scenario_count=len(normal['payload']['scenarios']), population_complete=True,
+                    binary_id=normal['specification']['binary_id'], period=normal['specification']['period'],
+                    synced_at=normal['generated_at'], normal_revision_key=normal['revision_key'],
+                    metric_scope={k:normal['context'][k] for k in ('date_start','date_end')},
+                    metrics={**m, 'basis':ordinary.BASIS, 'quality_gate_passed':m['available']},
+                    source_metrics={**m['counts'], 'eligible':m['eligible'], 'excluded':normal['source_count']-m['eligible'],
+                                    'online_precision':m['online_precision'], 'online_recall':m['online_recall']},
+                    evaluation=None)
+        data.pop('issue_tolerance', None)
+        from ra_api.release_tolerance import grade_counts
+        data['quality_grade']={**grade_counts(m['eligible'], m['missing_results']), 'basis':'results'}
+        execution=workflow.get_state(db, 'evexecution:'+normal['target_binding']['execution_id'])
+        if execution.get('job_id') and not any(j['job_id']==execution['job_id'] for j in jobs):
+            jobs.insert(0, {'job_id':execution['job_id'], 'status':execution['status'], 'primary_execution':True,
+                'scenario_count':len(execution['plan']['scenarios']), 'created_at':execution.get('created_at'),
+                'progress':execution.get('progress') or execution.get('export',{}).get('progress'),
+                'archived':False, 'error':None,
+                'url':f"https://voyager.intra.xiaojukeji.com/static/management/#/orion/job/detail?job_id={execution['job_id']}"})
     return {
         "versions": [
             {
@@ -322,6 +345,8 @@ def board(db, release="@current", force=False):
                 "is_current": key == current["current_version"],
                 "cycle_status": periods.get(key, {}).get("status"),
                 "collection_status": collections.get(key, {}).get("collection_status"),
+                "collection_completed": collections.get(key, {}).get("collection_completed", False),
+                "collection_stale": collections.get(key, {}).get("stale", False),
                 "has_job": any(b.release == key for b in native)
                 or bool(versions.get(key, {}).get("sim_job_id")),
             }

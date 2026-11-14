@@ -12,6 +12,8 @@ import type { IssueListItem, SelectedIssueResult, VersionItem } from '../types';
 import { cn } from '../lib/utils';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
+import { Select } from './ui/select';
+import { Pagination } from './ui/pagination';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 
 interface IssuesTableProps {
@@ -22,6 +24,8 @@ interface IssuesTableProps {
   showVersionFilter?: boolean;
   page?: number;
   onPageChange?: (page: number) => void;
+  pageSize?: number;
+  onPageSizeChange?: (size: number) => void;
   filters: {
     version: string;
     rootCause: string;
@@ -59,6 +63,8 @@ export function IssuesTable({
   showVersionFilter = true,
   page = 1,
   onPageChange,
+  pageSize = 20,
+  onPageSizeChange,
   filters,
   onFiltersChange,
   selectedResult,
@@ -156,64 +162,17 @@ export function IssuesTable({
           <div className="relative">
             <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <input
-              className="h-9 w-full rounded-md border border-input bg-card/80 pl-9 pr-3 text-sm shadow-sm outline-none transition focus:border-ring focus:ring-1 focus:ring-ring dark:bg-background/40"
+              className="min-h-11 w-full rounded-md border border-input bg-card/80 pl-9 pr-3 text-sm shadow-sm outline-none transition focus:border-ring focus:ring-1 focus:ring-ring dark:bg-background/40"
               placeholder={t('search')}
               aria-label={t('search')}
               value={filters.query}
               onChange={(event) => onFiltersChange({ ...filters, query: event.target.value })}
             />
           </div>
-          {showVersionFilter && <select
-            aria-label="历史 Issue 版本"
-            className="h-9 rounded-md border border-input bg-card/80 px-3 text-sm shadow-sm outline-none transition focus:border-ring focus:ring-1 focus:ring-ring dark:bg-background/40"
-            value={filters.version}
-            onChange={(event) => onFiltersChange({ ...filters, version: event.target.value })}
-          >
-            <option value="">{t('all')}</option>
-            {versions.map((version) => (
-              <option key={version.version_key} value={version.version_key}>
-                {releaseName(version.version_key)}
-              </option>
-            ))}
-          </select>}
-          <select
-            className="h-9 rounded-md border border-input bg-card/80 px-3 text-sm shadow-sm outline-none transition focus:border-ring focus:ring-1 focus:ring-ring dark:bg-background/40"
-            value={filters.rootCause}
-            aria-label={t('rootCause')}
-            onChange={(event) => onFiltersChange({ ...filters, rootCause: event.target.value })}
-          >
-            <option value="">{t('rootCause')}</option>
-            <option value="FP_RULE_SUPPRESS">FP_RULE_SUPPRESS</option>
-            <option value="SIM_DIVERGENCE">SIM_DIVERGENCE</option>
-            <option value="MODEL_OR_COUNTER_INSUFFICIENT">MODEL_OR_COUNTER_INSUFFICIENT</option>
-            <option value="REPRODUCED">REPRODUCED</option>
-            <option value="FALSE_POSITIVE">FALSE_POSITIVE</option>
-            <option value="TRUE_NEGATIVE">TRUE_NEGATIVE</option>
-          </select>
-          <select
-            className="h-9 rounded-md border border-input bg-card/80 px-3 text-sm shadow-sm outline-none transition focus:border-ring focus:ring-1 focus:ring-ring dark:bg-background/40"
-            value={filters.triggerType}
-            aria-label={t('triggerType')}
-            onChange={(event) => onFiltersChange({ ...filters, triggerType: event.target.value })}
-          >
-            <option value="">{t('triggerType')}</option>
-            <option value="MODEL">MODEL</option>
-            <option value="FN">FN</option>
-            <option value="FP_SUPPRESSED">FP_SUPPRESSED</option>
-            <option value="NONE">NONE</option>
-          </select>
-          <select
-            className="h-9 rounded-md border border-input bg-card/80 px-3 text-sm shadow-sm outline-none transition focus:border-ring focus:ring-1 focus:ring-ring dark:bg-background/40"
-            value={filters.precisionLabel}
-            aria-label="TP / FP / FN / TN"
-            onChange={(event) => onFiltersChange({ ...filters, precisionLabel: event.target.value })}
-          >
-            <option value="">TP / FP / FN / TN</option>
-            <option value="TP">TP</option>
-            <option value="FP">FP</option>
-            <option value="FN">FN</option>
-            <option value="TN">TN</option>
-          </select>
+          {showVersionFilter && <Select label={t('evaluation.issue_version')} value={filters.version} options={[{value:'',label:t('all')},...versions.map(version=>({value:version.version_key,label:releaseName(version.version_key)}))]} onChange={version=>onFiltersChange({...filters,version})}/>}
+          <Select label={t('rootCause')} value={filters.rootCause} options={[{value:'',label:t('rootCause')},...['FP_RULE_SUPPRESS','SIM_DIVERGENCE','MODEL_OR_COUNTER_INSUFFICIENT','REPRODUCED','FALSE_POSITIVE','TRUE_NEGATIVE'].map(value=>({value,label:value}))]} onChange={rootCause=>onFiltersChange({...filters,rootCause})}/>
+          <Select label={t('triggerType')} value={filters.triggerType} options={[{value:'',label:t('triggerType')},...['MODEL','FN','FP_SUPPRESSED','NONE'].map(value=>({value,label:value}))]} onChange={triggerType=>onFiltersChange({...filters,triggerType})}/>
+          <Select label="TP / FP / FN / TN" value={filters.precisionLabel} options={[{value:'',label:'TP / FP / FN / TN'},...['TP','FP','FN','TN'].map(value=>({value,label:value}))]} onChange={precisionLabel=>onFiltersChange({...filters,precisionLabel})}/>
         </div>
         <div className="w-full min-w-0 max-w-[calc(100vw-2rem)] overflow-x-auto md:max-w-full">
           <table className="w-full min-w-[1160px] text-left text-[13px]">
@@ -263,7 +222,7 @@ export function IssuesTable({
             </tbody>
           </table>
         </div>
-        {onPageChange && <div className="flex items-center justify-end gap-3 border-t p-3 text-sm"><Button variant="outline" disabled={page === 1 || loading} onClick={() => onPageChange(page - 1)}>上一页</Button><span>第 {page} / {Math.max(1, Math.ceil(total / 100))} 页</span><Button variant="outline" disabled={page * 100 >= total || loading} onClick={() => onPageChange(page + 1)}>下一页</Button></div>}
+        {onPageChange && onPageSizeChange && <div className="p-3"><Pagination total={total} page={page} pageSize={pageSize} loading={loading} onPageChange={onPageChange} onPageSizeChange={onPageSizeChange}/></div>}
       </CardContent>
     </Card>
   );

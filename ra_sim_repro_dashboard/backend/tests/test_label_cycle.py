@@ -80,6 +80,11 @@ def test_pure_gt_revision_projects_existing_issue_results(prepared):
     signal = batch.payload['results'][projected['scenario_id']]['sim_triggered']
     assert projected['precision_label'] == ('FP' if signal else 'TN')
     assert projected['job_id'] == batch.payload['job_id']
+    published = applied_rows(db, batch.release, {}, published=True)
+    assert published == result
+    newer = deepcopy(rows); newer[0]['ra_merge_result'] = '失败'
+    assert applied_rows(db, batch.release, {'issues':newer}) is None
+    assert applied_rows(db, batch.release, {'issues':newer}, published=True) == published
 
 
 def test_wait_manual_disabled_stale_audit(prepared,monkeypatch):

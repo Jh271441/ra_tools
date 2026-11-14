@@ -37,9 +37,10 @@ function percentageScale(rows: PrPoint[], keys: SeriesKey[]): { domain: [number,
   return { domain: [lower, upper], ticks: Array.from({ length: 5 }, (_, index) => lower + index * step) };
 }
 
-export function PrComparison({ rows, comparison }: {
+export function PrComparison({ rows, comparison, evaluationBasis = false }: {
   rows: PrPoint[];
   comparison: KpiSummary[];
+  evaluationBasis?: boolean;
 }) {
   const { t } = useTranslation();
   const [metricMode, setMetricMode] = useState<MetricMode>('all');
@@ -74,6 +75,7 @@ export function PrComparison({ rows, comparison }: {
 
   const reason = (row: PrPoint) => {
     const item = comparison.find((value) => value.version_key === row.version_key);
+    if (item?.evaluation_scope && !item.evaluation_scope.complete) return t('evaluation.covered_scope',{covered:item.evaluation_scope.covered,eligible:item.evaluation_scope.eligible});
     const raw = item?.sim_estimate?.same_version_projection;
     const projection = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
     const coverage = projection.population_coverage;
@@ -103,7 +105,7 @@ export function PrComparison({ rows, comparison }: {
     .filter(([, enabled]) => enabled)
     .map(([key]) => ({
       key,
-      label: `${key.startsWith('actual') ? t('prOnline') : t('prSimulation')} ${t(key.includes('Precision') ? 'precision' : 'recall')}`,
+      label: `${key.startsWith('actual') ? t(evaluationBasis?'evaluation.paired_road':'prOnline') : t(evaluationBasis?'evaluation.paired_sim':'prSimulation')} ${t(key.includes('Precision') ? 'precision' : 'recall')}`,
       color: seriesColors[key],
     }));
   const scale = percentageScale(rows, series.map((item) => item.key));
@@ -111,7 +113,7 @@ export function PrComparison({ rows, comparison }: {
 
   return <div className="space-y-4">
     <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-      <CardTitle className="mr-auto shrink-0">{t('sameVersionPr')}</CardTitle>
+      <CardTitle className="mr-auto min-w-0 break-words">{t(evaluationBasis?'evaluation.paired_pr_title':'sameVersionPr')}</CardTitle>
       <div className="ml-auto flex flex-wrap items-center justify-end gap-4">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
         {series.map((item) => <span key={item.key} className="inline-flex items-center gap-2">

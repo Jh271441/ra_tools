@@ -50,6 +50,7 @@ def revision(db):
             os.getenv('RELEASE_CYCLES_CONFIG', str(CONFIG_DIR / 'release-cycles.default')),
         ]),
         os.getenv('RELEASE_DRIVER_COMMAND_JSON'), os.getenv('RELEASE_WORKFLOW_ENABLED'),
+        os.getenv('EVALUATION_WORKER_ENABLED', '1'), os.getenv('EVALUATION_CRON_ENABLED'),
         datetime.now(TZ).date(),
     )
 

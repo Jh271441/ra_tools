@@ -27,6 +27,8 @@ class VersionsResponse(BaseModel):
 
 
 class KpiSummary(BaseModel):
+    reproduction: dict[str, Any] | None = None
+    evaluation_scope: dict[str, Any] | None = None
     version_key: str
     label: str
     total_cases: int
@@ -34,18 +36,18 @@ class KpiSummary(BaseModel):
     road_behavior_cases: int = 0
     sim_positive_cases: int
     reproduced_cases: int
-    sim_repro_rate: float
+    sim_repro_rate: float | None
     model_repro_rate: float
     fn_fallback_rate: float
     fp_suppress_rate: float
     precision: float | None
     recall: float | None
     f1: float | None
-    specificity: float = 0.0
-    accuracy: float = 0.0
-    positive_auto_repro_rate: float = 0.0
-    negative_auto_repro_rate: float = 0.0
-    positive_manual_repro_rate: float = 0.0
+    specificity: float | None = 0.0
+    accuracy: float | None = 0.0
+    positive_auto_repro_rate: float | None = 0.0
+    negative_auto_repro_rate: float | None = 0.0
+    positive_manual_repro_rate: float | None = 0.0
     evaluated_cases: int = 0
     dpe_coverage: float = 0.0
     publication: dict[str, Any] | None = None

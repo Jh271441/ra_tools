@@ -49,7 +49,8 @@ def render_kpi(current, metrics, source):
         "road_behavior_cases": population,
         "sim_positive_cases": tp + fp,
         "reproduced_cases": metrics["road_matches"],
-        "sim_repro_rate": metrics["sim_repro_rate"],
+        "sim_repro_rate": metrics.get("covered_repro_rate", metrics["sim_repro_rate"]),
+        **({"reproduction": metrics["reproduction"]} if metrics.get("reproduction") else {}),
         "precision": precision,
         "recall": recall,
         "f1": f1,
@@ -63,9 +64,8 @@ def render_kpi(current, metrics, source):
         "dpe_coverage": metrics.get("publication", {}).get("coverage", 1.0),
         "quality_gate_passed": metrics.get("quality_gate_passed", True),
         "publication": metrics.get("publication"),
-        "positive_auto_repro_rate": metrics.get("positive_auto_repro_rate") or 0,
-        "negative_auto_repro_rate": metrics.get("negative_auto_repro_rate") or 0,
-        "positive_manual_repro_rate": metrics.get("positive_manual_repro_rate") or 0,
+        **{key: metrics.get(key) if metrics.get("reproduction") else metrics.get(key) or 0
+           for key in ("positive_auto_repro_rate", "negative_auto_repro_rate", "positive_manual_repro_rate")},
         "source_gt": source_gt,
         "sim_estimate": {
             "data_source": "full_release_workflow",
@@ -155,4 +155,8 @@ def history_kpis(db):
             metrics = effective_publication(db, approved)
             items = [i for i in items if i["version_key"] != release]
             items.append(render_kpi(release, metrics, metrics))
+    from app.services.ordinary_evaluation import history_kpis as ordinary_kpis
+    for item in ordinary_kpis(db):
+        items = [existing for existing in items if existing['version_key'] != item['version_key']]
+        items.append(item)
     return sorted(items, key=lambda item: item["version_key"])

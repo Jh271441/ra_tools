@@ -3,17 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import (
-    Boolean,
-    DateTime,
-    Float,
-    ForeignKey,
-    Integer,
-    JSON,
-    String,
-    Text,
-    UniqueConstraint,
-)
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -35,9 +25,7 @@ class Version(Base):
     metadata_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     last_refreshed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
-    results: Mapped[list["ScenarioVersionResult"]] = relationship(
-        back_populates="version"
-    )
+    results: Mapped[list["ScenarioVersionResult"]] = relationship(back_populates="version")
 
 
 class Scenario(Base):
@@ -48,13 +36,9 @@ class Scenario(Base):
     issue_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
     signature: Mapped[str] = mapped_column(String(256), default="")
     raw_info: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=utcnow, onupdate=utcnow
-    )
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
-    results: Mapped[list["ScenarioVersionResult"]] = relationship(
-        back_populates="scenario"
-    )
+    results: Mapped[list["ScenarioVersionResult"]] = relationship(back_populates="scenario")
 
 
 class Issue(Base):
@@ -68,26 +52,18 @@ class Issue(Base):
     issue_time: Mapped[str] = mapped_column(String(128), default="")
     url: Mapped[str] = mapped_column(Text, default="")
     raw_issue: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=utcnow, onupdate=utcnow
-    )
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
 
 class ScenarioVersionResult(Base):
     __tablename__ = "scenario_version_results"
     __table_args__ = (
-        UniqueConstraint(
-            "version_key", "scenario_id", name="uq_result_version_scenario"
-        ),
+        UniqueConstraint("version_key", "scenario_id", name="uq_result_version_scenario"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    version_key: Mapped[str] = mapped_column(
-        ForeignKey("versions.version_key"), index=True
-    )
-    scenario_id: Mapped[str] = mapped_column(
-        ForeignKey("scenarios.scenario_id"), index=True
-    )
+    version_key: Mapped[str] = mapped_column(ForeignKey("versions.version_key"), index=True)
+    scenario_id: Mapped[str] = mapped_column(ForeignKey("scenarios.scenario_id"), index=True)
     issue_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
     road_triggered: Mapped[bool] = mapped_column(Boolean, default=True)
     sim_triggered: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -101,9 +77,7 @@ class ScenarioVersionResult(Base):
     fp_reasons: Mapped[list[str]] = mapped_column(JSON, default=list)
     fn_reasons: Mapped[list[str]] = mapped_column(JSON, default=list)
     raw_metrics: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=utcnow, onupdate=utcnow
-    )
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
     version: Mapped[Version] = relationship(back_populates="results")
     scenario: Mapped[Scenario] = relationship(back_populates="results")
@@ -135,7 +109,6 @@ class RefreshJob(Base):
 
 class ReleaseIssueSnapshot(Base):
     """Atomic full upstream population, independent of any simulation result."""
-
     __tablename__ = "release_issue_snapshots"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -150,9 +123,7 @@ class ReleaseWorkflowState(Base):
 
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
     payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=utcnow, onupdate=utcnow
-    )
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
 
 class ReleaseSimulationBatch(Base):
@@ -163,6 +134,4 @@ class ReleaseSimulationBatch(Base):
     status: Mapped[str] = mapped_column(String(32), default="planned")
     payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=utcnow, onupdate=utcnow
-    )
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)

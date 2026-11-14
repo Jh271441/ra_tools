@@ -5,7 +5,7 @@ from sqlalchemy import select
 from app.models import ReleaseWorkflowState
 
 from app.services import release_workflow as w
-from app.services.release_watch import MAX_OBSERVATION_GAP_SECONDS
+from app.services.release_watch import MAX_OBSERVATION_GAP_SECONDS, QUIET_SECONDS
 
 
 def inventory(db, config=None, now=None):
@@ -20,6 +20,7 @@ def inventory(db, config=None, now=None):
         issues = snapshot.payload["issues"] if snapshot else []
         versions[period["release"]] = {
             "release": period["release"], "collection_status": "stable" if complete else "pending",
+            "collection_completed": complete,
             "source": "snapshot", "issue_count": len(issues) if snapshot else None,
             "auto_count": sum(int(i["ra_type"]) == 2 for i in issues) if snapshot else None,
             "manual_count": sum(int(i["ra_type"]) == 3 for i in issues) if snapshot else None,
@@ -39,6 +40,10 @@ def inventory(db, config=None, now=None):
         stale = not last or not 0 <= (now - datetime.fromisoformat(last)).total_seconds() <= MAX_OBSERVATION_GAP_SECONDS
         same = observed.get("activity_hash") == monitor.get("activity_hash") and bool(observed)
         stable = (not stale and same and monitor.get("quiet_seconds", 0) >= 86400)
+        # A delayed poll cannot undo a previously observed full quiet window.
+        # This display receipt does not authorize preparation or submission:
+        # collection_status/stale retain their existing freshness gate below.
+        completed = same and monitor.get("quiet_seconds", 0) >= QUIET_SECONDS
         # Keep a frozen stable population's source, but expose any late changes/error.
         item = versions.get(release)
         if item and item["collection_status"] == "stable" and not monitor.get("population_changed_after_submission"):
@@ -56,6 +61,7 @@ def inventory(db, config=None, now=None):
                 "stale": stale or not same, "monitor_status": monitor.get("status"),
             }
         versions[release].update(
+            collection_completed=bool(versions[release].get("collection_completed") or completed),
             monitor_status=monitor.get("status"),
             monitor_error_code=monitor.get("error_code"),
             monitor_error_action=monitor.get("error_action"),

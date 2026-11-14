@@ -114,6 +114,11 @@ def collect(db, base, scenes, expected_contract=None):
             # Only the trigger signal is reused. GT and TP/FP/FN are recomputed.
             results[sid] = p['results'][sid]
             lineage[sid] = {'fingerprint': b.fingerprint, 'job_id': p['job_id'], 'audit_hash': fingerprint}
+    from app.services.evaluation_pipeline import shared_results
+    shared, bindings = shared_results(db, base, {'scenarios': scenes})
+    for sid, result in shared.items():
+        if sid not in results:
+            results[sid], lineage[sid] = result, bindings[sid]
     return results, lineage
 
 

@@ -1,18 +1,17 @@
-// Verified against all task arguments in Job 47739079 (2026-10-19).
-// Simulation flags retain the baseline; output and scheduling are user template defaults.
+// Template lineage: Job 47739079. New exports use release-native history,
+// 15 s warmup and fresh inference; historical task arguments remain immutable.
 export const ORION_LAUNCH_URL = 'https://voyager.intra.xiaojukeji.com/static/management/#/orion/launch';
 export const BASELINE_JOB_URL = 'https://voyager.intra.xiaojukeji.com/static/management/#/orion/job/detail?job_id=47739079';
 
 export const SIM_FLAGS = [
-  ['--sim_disable_loading_assist_topic', '不加载路测 assist topic，重新计算仿真触发。'],
-  ['--sim_aligned_mode', '启用 aligned 仿真模式。'],
-  ['--planning_use_old_stuck_feature_extractor_length_only_in_sim', '沿用基线的卡顿特征历史长度兼容设置。'],
-  ['--planning_enable_warmup_frame_state', '启用 warmup 帧状态。'],
-  ['--planning_enable_warmup_frame_seed', '启用 warmup 帧 seed。'],
-  ['--planning_enable_sim_planner_init_state_recovery_mode', '恢复 planner 初始状态。'],
-  ['--sim_smart_agent', '启用 smart agent。'],
-  ['--sim_smart_agent_config_file SIM_dl_agent_second_order_model.conf', '使用基线的二阶 smart-agent 模型。'],
-  ['--sim_override_smart_agent_config {ego_pose_divergence_threshold:1.5,ego_heading_divergence_threshold:8}', '位置 / 航向发散阈值使用 1.5 / 8。'],
+  ['--sim_disable_loading_assist_topic', 'maskAssist'],
+  ['--sim_aligned_mode', 'aligned'],
+  ['--planning_enable_warmup_frame_state', 'warmupState'],
+  ['--planning_enable_warmup_frame_seed', 'warmupSeed'],
+  ['--planning_enable_sim_planner_init_state_recovery_mode', 'initialState'],
+  ['--sim_smart_agent', 'smartAgent'],
+  ['--sim_smart_agent_config_file SIM_dl_agent_second_order_model.conf', 'smartAgentModel'],
+  ['--sim_override_smart_agent_config {ego_pose_divergence_threshold:1.5,ego_heading_divergence_threshold:8}', 'divergence'],
 ] as const;
 
 export const SIM_EXTRA_ARGS = SIM_FLAGS.map(([flag]) => flag).join(' ');
@@ -35,21 +34,22 @@ export function buildSimulationParameters(input: ParameterInput) {
   const binary = input.binaryId.trim();
   const source = input.source.trim();
   const validBinary = /^[1-9]\d*$/.test(binary) && Number.isSafeInteger(Number(binary));
-  if (!validBinary) errors.push(binary ? 'Binary ID 无效' : '待填 Binary ID');
+  if (!validBinary) errors.push(binary ? 'binaryInvalid' : 'binaryMissing');
   const ids = [...new Set(source.split(/[\s,，]+/).filter(Boolean))];
   const validSource = input.sourceKind === 'ids'
     ? ids.length > 0 && ids.every(id => /^[1-9]\d*(?::\d+)?$/.test(id))
     : !!source && !/[\r\n\u0000]/.test(source);
-  if (!validSource) errors.push(source ? '场景格式无效' : '待填场景');
+  if (!validSource) errors.push(source ? 'sourceInvalid' : 'sourceMissing');
   const concurrency = Number(input.concurrency);
   const validConcurrency = /^\d+$/.test(input.concurrency) && Number.isInteger(concurrency) && concurrency >= 1 && concurrency <= 3000;
-  if (!validConcurrency) errors.push('并发需为 1–3000');
+  if (!validConcurrency) errors.push('concurrencyInvalid');
 
   const common = [
     '--override-enabled-modules PLANNING',
     '--use-trip-hdmap',
     '--use-dpe 1',
-    '--use-deepnet-cache 1',
+    '--use-deepnet-cache 0',
+    '--override-warmup-ms 15000',
     '--use-remote-serving 1',
     '--simulator-cache disabled',
     '--enable-log-event',
@@ -72,6 +72,7 @@ export function buildSimulationParameters(input: ParameterInput) {
       job_labels: [], region: 'CN', has_binary: true, launch_mode: 'binary', require_binary: true,
       extra_args: [
         '--use-trip-hdmap', '--simulator-cache disabled', '--routing-constraint-endpoint default',
+        '--override-warmup-ms 15000',
         '--animation-type ares_studio',
         `--ares-animation-config ${shellQuote(ANIMATION_CONFIG)}`,
       ].join(' '),
@@ -80,7 +81,7 @@ export function buildSimulationParameters(input: ParameterInput) {
     },
     launch_job_params: { priority: 'high', cluster: 'prod_gen4', max_concurrency: validConcurrency ? concurrency : null },
     sim_common_params: {
-      upload_output_bag: 'always', use_deepnet_cache: true, use_remote_serving: true,
+      upload_output_bag: 'always', use_deepnet_cache: false, use_remote_serving: true,
       use_dpe: true, override_enabled_modules: ['PLANNING'],
       sim_extra_args: SIM_EXTRA_ARGS, create_animation: input.animation,
       ignore_animation_failure: false,

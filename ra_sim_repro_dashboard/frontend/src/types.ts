@@ -1,3 +1,5 @@
+import type { ReproductionSummary } from './types/reproduction';
+
 export interface ResultPublication {
   primary_job_id: number; scenario_count: number; valid_scenario_count: number;
   excluded_scenario_ids: string[]; coverage: number; population_hash: string;
@@ -27,6 +29,13 @@ export interface VersionsResponse {
 }
 
 export interface KpiSummary {
+  reproduction?: ReproductionSummary;
+  evaluation_scope?: {
+    complete: boolean; covered: number; eligible: number;
+    precision: number | null; recall: number | null; repro_rate: number | null;
+    road_precision: number | null; road_recall: number | null;
+    road_counts: Record<string, number> | null; sim_counts: Record<string, number>;
+  };
   version_key: string;
   label: string;
   total_cases: number;
@@ -34,18 +43,18 @@ export interface KpiSummary {
   road_behavior_cases?: number;
   sim_positive_cases: number;
   reproduced_cases: number;
-  sim_repro_rate: number;
-  model_repro_rate: number;
-  fn_fallback_rate: number;
-  fp_suppress_rate: number;
+  sim_repro_rate: number | null;
+  model_repro_rate: number | null;
+  fn_fallback_rate: number | null;
+  fp_suppress_rate: number | null;
   precision: number | null;
   recall: number | null;
   f1: number | null;
-  specificity: number;
-  accuracy: number;
-  positive_auto_repro_rate: number;
-  negative_auto_repro_rate: number;
-  positive_manual_repro_rate: number;
+  specificity: number | null;
+  accuracy: number | null;
+  positive_auto_repro_rate: number | null;
+  negative_auto_repro_rate: number | null;
+  positive_manual_repro_rate: number | null;
   evaluated_cases: number;
   dpe_coverage: number;
   publication?: ResultPublication | null;
