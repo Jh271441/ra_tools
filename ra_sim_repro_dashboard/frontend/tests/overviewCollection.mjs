@@ -61,3 +61,21 @@ test('independent ordinary metrics and AutoTriage fallback keep their existing v
   assert.ok(auto.includes('79.9%'));
   assert.ok(!auto.includes('Prior frozen-result'));
 });
+
+test('historical frozen population retains its measured values and names both populations', async () => {
+  const collection={...scope('population_changed'),collection_status:'stable',historical_frozen:true,frozen_issue_count:1500,collected_issue_count:1550};
+  const historical={...metric('gen4-release-20261009'),precision:.876,collection_scope:collection};
+  const html=await render(summary(scope()),[historical,{...metric(),collection_scope:scope()}],'en');
+  const text=visibleText(html);
+  for (const value of ['Historical frozen population','Frozen population 1,500','Currently collected 1,550','87.6%']) assert.ok(text.includes(value),value);
+  assert.ok(text.includes('Full-version metrics are pending'));
+});
+
+test('a historical marker never permits current-business-version metrics', async () => {
+  const collection={...scope('population_changed'),collection_status:'stable',historical_frozen:true,frozen_issue_count:1};
+  const text=visibleText(await render(summary(collection),[{...metric(),collection_scope:collection}]));
+  assert.ok(text.includes('待补齐最新人口'));
+  assert.ok(text.includes('751'));
+  assert.ok(!text.includes('历史冻结样本'));
+  assert.ok(!text.includes('100%'));
+});

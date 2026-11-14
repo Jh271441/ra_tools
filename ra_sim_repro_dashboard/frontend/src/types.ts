@@ -30,6 +30,8 @@ export interface VersionsResponse {
 
 export interface CollectionScope {
   available: boolean;
+  historical_frozen?: boolean;
+  frozen_issue_count?: number | null;
   reason_code?: string;
   collection_status: string;
   collected_issue_count: number | null;

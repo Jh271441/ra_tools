@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.database import Base
 from app.models import ReleaseIssueSnapshot, ReleaseSimulationBatch, ReleaseWorkflowState
 from app.services import release_workflow as workflow
-from app.services.business_population import scope_for_batch
+from app.services.business_population import scope_for_batch, historical_scope
 
 
 class BusinessPopulationTest(unittest.TestCase):
@@ -93,6 +93,16 @@ class BusinessPopulationTest(unittest.TestCase):
     def test_same_count_replacement_is_population_changed(self):
         self.observe([{**self.rows[0], "issue_id": "cn3"}, self.rows[1]])
         self.assertEqual(scope_for_batch(self.db, self.batch)["reason_code"], "population_changed")
+
+    def test_only_closed_history_can_retain_original_frozen_scope(self):
+        self.observe([{**self.rows[0], 'issue_id':'late'}, self.rows[1]])
+        scope = scope_for_batch(self.db, self.batch)
+        self.assertFalse(scope['available'])
+        self.assertTrue(historical_scope(scope, is_current=False)['historical_frozen'])
+        self.assertNotIn('historical_frozen', historical_scope(scope, is_current=True))
+        for patch_scope in ({'collection_status':'collecting'}, {'collection_completed':False},
+                            {'stale':True}, {'reason_code':'invalid_population'}, {'frozen_issue_count':None}):
+            self.assertNotIn('historical_frozen', historical_scope({**scope, **patch_scope}, is_current=False))
 
     def test_collecting_same_population_does_not_publish(self):
         self.observe(completed=False)

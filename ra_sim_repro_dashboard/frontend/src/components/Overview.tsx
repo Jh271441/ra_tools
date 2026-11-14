@@ -242,6 +242,9 @@ export function Overview({ summary, comparison, onOpenIssues, onOpenCurrent, eva
   if (!current) return collectionPending ? <CollectionProgress scope={collection} version={summary.business_current_version} onOpen={onOpenCurrent} />
     : <Card><CardContent className="p-5 text-sm">{summary.business_current_version ? releaseName(summary.business_current_version) : t('businessCollection.current')} · {t('businessCollection.pendingSimulation')}<button className="ml-3 min-h-11 text-primary" onClick={onOpenCurrent}>{t('businessCollection.openIssues')}</button></CardContent></Card>;
   const businessPending = collectionPending || Boolean(summary.business_current_version && !summary.business_metrics);
+  const historicalFrozen = (item: KpiSummary) => Boolean(item.collection_scope?.historical_frozen
+    && item.version_key !== summary.business_current_version);
+  const populationPending = (item: KpiSummary) => item.collection_scope?.available === false && !historicalFrozen(item);
   const coveredScope = current.evaluation_scope;
   const kpis = [
     { label: t('simReproRate'), value: pct(coveredScope ? coveredScope.repro_rate : current.sim_repro_rate), delta: summary.deltas.sim_repro_rate, icon: Activity, filters: { version: current.version_key, precisionLabel: 'FN' } },
@@ -251,7 +254,7 @@ export function Overview({ summary, comparison, onOpenIssues, onOpenCurrent, eva
   ];
 
   const trend = comparison.map((item) => {
-    const pending = item.collection_scope?.available === false;
+    const pending = populationPending(item);
     const display = item.evaluation_scope;
     const road = display?.road_counts;
     const repro = display ? display.repro_rate : item.sim_repro_rate;
@@ -259,6 +262,7 @@ export function Overview({ summary, comparison, onOpenIssues, onOpenCurrent, eva
     version_key: item.version_key,
     version: releaseName(item.version_key),
     collection: item.collection_scope,
+    historicalFrozen: historicalFrozen(item),
     precision: pending || item.precision == null ? undefined : Math.round(item.precision * 1000) / 10,
     recall: pending || item.recall == null ? undefined : Math.round(item.recall * 1000) / 10,
     f1: pending || item.f1 == null ? undefined : Math.round(item.f1 * 1000) / 10,
@@ -272,7 +276,7 @@ export function Overview({ summary, comparison, onOpenIssues, onOpenCurrent, eva
     excluded: item.publication?.excluded_scenario_ids.length ?? optionalNumber(item.sim_estimate?.terminal_failed),
   }); });
   const sameVersionTrend = comparison.map((item) => {
-    const pending = item.collection_scope?.available === false;
+    const pending = populationPending(item);
     const projection = item.sim_estimate?.same_version_projection;
     const metrics = projection && typeof projection === 'object'
       ? projection as Record<string, unknown>
@@ -328,7 +332,8 @@ export function Overview({ summary, comparison, onOpenIssues, onOpenCurrent, eva
       <div className="max-w-[300px] p-3 text-xs" style={releaseTooltipStyle}>
         <div className="mb-2 font-semibold">{row.version_key}</div>
         <div className="mb-2">{t('simReproRate')} · {row.repro == null ? '—' : formatChartLabel(row.repro)}</div>
-        {row.collection?.available === false && <p className="mb-2 leading-5 text-muted-foreground">{t(`businessCollection.${collectionState(row.collection)}`)}<br />{t('businessCollection.collectedSummary', { collected: countText(row.collection.collected_issue_count ?? undefined), auto: countText(row.collection.auto_count ?? undefined), manual: countText(row.collection.manual_count ?? undefined) })}</p>}
+        {row.historicalFrozen && row.collection && <p className="mb-2 leading-5 text-muted-foreground"><strong>{t('businessCollection.historicalFrozen')}</strong><br />{t('businessCollection.frozenPopulationCounts', { frozen: countText(row.collection.frozen_issue_count ?? undefined), collected: countText(row.collection.collected_issue_count ?? undefined) })}</p>}
+        {!row.historicalFrozen && row.collection?.available === false && <p className="mb-2 leading-5 text-muted-foreground">{t(`businessCollection.${collectionState(row.collection)}`)}<br />{t('businessCollection.collectedSummary', { collected: countText(row.collection.collected_issue_count ?? undefined), auto: countText(row.collection.auto_count ?? undefined), manual: countText(row.collection.manual_count ?? undefined) })}</p>}
         <table className="w-full tabular-nums">
           <thead><tr className="text-muted-foreground">
             <th className="pr-3 text-left">{t('metric')}</th>
@@ -493,7 +498,7 @@ export function Overview({ summary, comparison, onOpenIssues, onOpenCurrent, eva
 
         <Card>
           <CardContent className="px-5 pb-5 pt-3">
-            <PrComparison rows={sameVersionTrend} comparison={comparison} evaluationBasis={evaluationBasis} />
+            <PrComparison rows={sameVersionTrend} comparison={comparison} evaluationBasis={evaluationBasis} businessVersion={summary.business_current_version} />
           </CardContent>
         </Card>
       </div>
@@ -533,7 +538,7 @@ export function Overview({ summary, comparison, onOpenIssues, onOpenCurrent, eva
                 <tbody>
                   {aggregateRows.length ? aggregateRows.map((item) => {
                     const collection = item.collection_scope;
-                    if (collection?.available === false) return <tr key={item.version_key} className="cursor-pointer border-t border-border/60 transition hover:bg-accent/35" {...interactiveProps(() => onOpenIssues({version: item.version_key}))}>
+                    if (collection && populationPending(item)) return <tr key={item.version_key} className="cursor-pointer border-t border-border/60 transition hover:bg-accent/35" {...interactiveProps(() => onOpenIssues({version: item.version_key}))}>
                       <td className="px-4 py-3 text-center align-middle"><div className="font-semibold leading-5">{releaseName(item.version_key)}</div><div className="font-mono text-xs text-muted-foreground">{item.version_key}</div></td>
                       <td colSpan={11} className="px-4 py-3 align-middle"><div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-sm"><Badge variant="warning">{t(`businessCollection.${collectionState(collection)}`)}</Badge><span>{t('businessCollection.collectedSummary',{collected:collection.collected_issue_count == null ? '—' : formatCount(collection.collected_issue_count),auto:collection.auto_count == null ? '—' : formatCount(collection.auto_count),manual:collection.manual_count == null ? '—' : formatCount(collection.manual_count)})}</span><span>{t('businessCollection.evaluatedSummary',{formattedCount:collection.evaluated_issue_count == null ? '—' : formatCount(collection.evaluated_issue_count)})}</span><span className="text-muted-foreground">{t('businessCollection.pendingMetrics')}</span></div></td>
                     </tr>;
@@ -554,6 +559,7 @@ export function Overview({ summary, comparison, onOpenIssues, onOpenCurrent, eva
                         <td className="px-4 py-3 text-center align-middle">
                           <div className="font-semibold leading-5">{releaseName(item.version_key)}</div>
                           <div className="font-mono text-xs text-muted-foreground">{item.version_key}</div>
+                          {historicalFrozen(item) && collection && <div className="mt-2 space-y-1 text-xs leading-5 text-muted-foreground"><Badge variant="outline" className="max-w-full whitespace-normal">{t('businessCollection.historicalFrozen')}</Badge><p>{t('businessCollection.frozenPopulationCounts',{frozen:collection.frozen_issue_count == null ? '—' : formatCount(collection.frozen_issue_count),collected:collection.collected_issue_count == null ? '—' : formatCount(collection.collected_issue_count)})}</p></div>}
                         </td>
                         <td className="px-4 py-3 text-center align-middle">
                           <div className="flex flex-col items-center justify-center gap-1 text-center">

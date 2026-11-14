@@ -289,10 +289,10 @@ def board(db, release="@current", force=False):
     )
     approved = published_batch(db, selected)
     if approved:
-        from app.services.business_population import scope_for_batch
-        scope = scope_for_batch(db, approved)
+        from app.services.business_population import scope_for_batch, historical_scope
+        scope = historical_scope(scope_for_batch(db, approved), is_current=is_current)
         data['collection_scope'] = scope
-        if scope['available']:
+        if scope['available'] or scope.get('historical_frozen'):
             metrics = effective_publication(db, approved)
             imported = {**approved.payload["result_import"], "publication": metrics["publication"]}
             data["metrics"] = metrics
@@ -323,7 +323,7 @@ def board(db, release="@current", force=False):
         mapped = {str(s['issue_id']) for s in source['scenarios'] if s.get('issue_id')}
         if eligible:
             data['quality_grade'] = {**grade(eligible, eligible-mapped), 'basis':'preparation'}
-    if data.get('collection_scope', {}).get('available') is False:
+    if data.get('collection_scope', {}).get('available') is False and not data['collection_scope'].get('historical_frozen'):
         data.pop('quality_grade', None)
 
     from app.services.label_cycle import public_state

@@ -37,10 +37,11 @@ function percentageScale(rows: PrPoint[], keys: SeriesKey[]): { domain: [number,
   return { domain: [lower, upper], ticks: Array.from({ length: 5 }, (_, index) => lower + index * step) };
 }
 
-export function PrComparison({ rows, comparison, evaluationBasis = false }: {
+export function PrComparison({ rows, comparison, evaluationBasis = false, businessVersion }: {
   rows: PrPoint[];
   comparison: KpiSummary[];
   evaluationBasis?: boolean;
+  businessVersion?: string | null;
 }) {
   const { t } = useTranslation();
   const [metricMode, setMetricMode] = useState<MetricMode>('all');
@@ -147,8 +148,13 @@ export function PrComparison({ rows, comparison, evaluationBasis = false }: {
               <Tooltip {...releaseTooltip} content={({ active, payload }) => {
                 const row = payload?.[0]?.payload as PrPoint | undefined;
                 if (!active || !row) return null;
+                const source = comparison.find(item => item.version_key === row.version_key);
+                const frozen = source?.collection_scope?.historical_frozen && row.version_key !== businessVersion
+                  ? source.collection_scope : null;
+                const count = (value?: number | null) => value == null ? '—' : new Intl.NumberFormat().format(value);
                 return <div className="max-w-xs p-3 text-xs" style={releaseTooltipStyle}>
                   <p className="mb-2 font-semibold">{row.version_key}</p>
+                  {frozen && <p className="mb-2 leading-5 text-muted-foreground"><strong>{t('businessCollection.historicalFrozen')}</strong><br />{t('businessCollection.frozenPopulationCounts',{frozen:count(frozen.frozen_issue_count),collected:count(frozen.collected_issue_count)})}</p>}
                   {series.map((item) => <p key={item.key} style={{ color: item.color }}>{item.label}: <strong>{percent(row[item.key])}</strong></p>)}
                   {bothMetrics ? <p className="mt-2 text-muted-foreground">{t('prGap')}: P {gap(row.actualPrecision, row.simPrecision)} · R {gap(row.actualRecall, row.simRecall)}</p> : null}
                   {series.some((item) => row[item.key] == null) ? <p className="mt-2 text-muted-foreground">{reason(row)}</p> : null}

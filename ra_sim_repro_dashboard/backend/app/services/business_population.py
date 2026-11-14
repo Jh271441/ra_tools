@@ -102,6 +102,16 @@ def scope_for_batch(db, batch):
                            lambda: _scope_for_batch(db, batch))
 
 
+def historical_scope(scope, *, is_current):
+    """Retain an audited past cutoff without calling it current full coverage."""
+    if (not is_current and scope.get('reason_code') == 'population_changed'
+            and scope.get('frozen_issue_count') is not None
+            and scope.get('collection_status') == 'stable'
+            and scope.get('collection_completed') is True and not scope.get('stale')):
+        return {**scope, 'historical_frozen': True}
+    return scope
+
+
 def _scope_for_batch(db, batch):
     from app.services import release_workflow as workflow
     from app.services.release_inventory import inventory

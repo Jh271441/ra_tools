@@ -25,17 +25,24 @@ results are never interpreted as zero or untriggered. The overview displays curr
 collection status/counts, automatic/manual splits and prior frozen-result count in
 Chinese and English. No arbitrary minimum sample count replaces completeness.
 
+Past, closed releases with valid original full-source evidence retain their published
+cutoff as explicitly labeled historical frozen-population metrics. Their latest
+population change is not concealed; neither the current business version nor a
+collecting/stale/invalid population may use this historical display path.
+
 Independent ordinary Shuyi revisions use their own verified report/date population
 and retain their final override. AutoTriage's separate profile/fallback is unchanged.
 Read gates neither revoke historical approval nor launch/retry simulations, alter
 labels, change collection mode or write database schema.
 
-Local validation:403backend tests,99frontend tests and production build passed.
+Local validation:404backend tests,101frontend tests and production build passed.
 Synthetic browser checks covered1440px Chinese/light,390px English/dark and320px
 English/light: pending status/counts, no1106metric point, retained release axis,
 no page overflow,44px principal action. These are browser viewport checks, not real
-phones or soft-keyboard tests. Remote candidate readback and publication still
-require authorization after automatic approval review rejected source transfer.
+phones or soft-keyboard tests. After the user explicitly authorized source transfer and deployment, candidate
+read-only PostgreSQL replay confirmed751collected/598automatic/153manual/1prior
+result for1106, pending full metrics, and retained all audited historical values.
+Production publication is recorded separately after final checks.
 
 Reproduce locally with `frontend/tests/overview-collection-preview.html`, or:
 
