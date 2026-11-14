@@ -481,7 +481,7 @@ def test_board_hashes_shared_receipt_once_and_rechecks_next_read(prepared, monke
     assert len(calls) == 2
 
 
-def test_comparison_builds_catalogue_once(prepared, monkeypatch):
+def test_comparison_skips_unused_navigation_catalogue(prepared, monkeypatch):
     db, _, _, _, revision = seed(prepared, monkeypatch)
     original, calls = at.versions, []
     def catalogue(db):
@@ -489,7 +489,7 @@ def test_comparison_builds_catalogue_once(prepared, monkeypatch):
         return original(db)
     monkeypatch.setattr(at, 'versions', catalogue)
     result = p.comparison(db, **{k:v for k,v in revision['context'].items() if k != 'release'})
-    assert len(calls) == 1
+    assert len(calls) == 0
     assert result['versions'][0]['revision']['metrics'] == revision['metrics']
 
 

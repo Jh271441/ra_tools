@@ -124,7 +124,12 @@ def save(db, release, records):
 
 def index(db, release):
     values = defaultdict(list)
-    for row in db.scalars(select(ReleaseWorkflowState).where(ReleaseWorkflowState.key.like('rtime:%'))):
+    # Filter before transferring large immutable ledgers. Still validate each
+    # returned payload and its content-addressed key below.
+    statement = select(ReleaseWorkflowState).where(
+        ReleaseWorkflowState.key.like('rtime:%'),
+        ReleaseWorkflowState.payload['release'].as_string() == release)
+    for row in db.scalars(statement):
         p = row.payload
         if p.get('release') != release or p.get('schema') != SCHEMA or row.key != 'rtime:' + digest(p)[:48]:
             continue

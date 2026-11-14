@@ -1,7 +1,10 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
+from sqlalchemy import select
+from app.config import load_versions_config, config_hash
 from app.database import get_db
+from app.models import ReleaseIssueSnapshot, Version
 from app.services import metric_profiles as profiles, evaluation_pipeline as pipeline, scenario_label_sets
 from app.services.read_views import read_view
 
@@ -50,6 +53,32 @@ class Cron(Context):
 @router.get('/profiles')
 def catalogue(db: Session = Depends(get_db)):
     return profiles.catalogue(db)
+
+
+@router.get('/versions')
+def versions(db: Session = Depends(get_db)):
+    """Navigation metadata only; no ordinary KPI calculation or write-on-read."""
+    def load():
+        config = load_versions_config()
+        releases = list(db.scalars(select(ReleaseIssueSnapshot.release).group_by(
+            ReleaseIssueSnapshot.release).order_by(ReleaseIssueSnapshot.release)))
+        saved = {v.version_key: v for v in db.scalars(select(Version).where(Version.version_key.in_(releases)))}
+        current = releases[-1] if releases else ''
+        items = []
+        for index, release in enumerate(releases):
+            record = saved.get(release)
+            configured = config.get('versions', {}).get(release, {})
+            metadata = {str(k): v for k, v in {**configured, **(record.metadata_json if record else {})}.items()
+                        if not str(k).startswith('_')}
+            metadata.setdefault('platform_gen', 'GEN4_PT')
+            if pipeline.at.RELEASE.fullmatch(release):
+                metadata.setdefault('release_date', release[-8:-4] + '-' + release[-4:-2] + '-' + release[-2:])
+            items.append({'version_key': release, 'label': record.label if record else configured.get('label', release),
+                          'sim_job_id': None, 'baseline_job_id': None, 'sort_order': index,
+                          'is_current': release == current, 'metadata_json': metadata, 'last_refreshed_at': None})
+        return {'current_version': current, 'compare_versions': releases,
+                'config_hash': config_hash(config), 'versions': items}
+    return read_view(db, 'evaluation-navigation-versions', load, max_age=30)
 
 
 @router.post('/profiles/drafts', status_code=201)

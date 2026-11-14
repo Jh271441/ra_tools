@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown, Download, ExternalLink, Settings2, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -15,6 +15,7 @@ import { evaluationKpi, evaluationSummary } from '../lib/evaluationProjection';
 import { completeMetrics, evaluationActivity } from '../lib/evaluationFlow';
 import { comparisonParams, comparisonRevisions, changeEvaluationRelease, overviewRevision } from '../lib/evaluationContext';
 import { createSavedEvaluationInitializer, savedEvaluationInitializationKey } from '../lib/evaluationInitialization';
+import { createComparisonReader, createRevisionObserver, evaluationParams as params, evaluationScope, matchingComparison } from '../lib/evaluationReads';
 import type { EvaluationBoard, EvaluationContext, EvaluationIssuePage, EvaluationRevision, MetricProfile, ProfileConfig, ProfilePreview } from '../types/evaluation';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
@@ -28,18 +29,21 @@ function readContext(): EvaluationContext {
   return { release: q.get('release') || q.get('version') || '@current', profile_id: q.get('profile') || undefined,
     date_start: q.get('date_start') || undefined, date_end: q.get('date_end') || undefined };
 }
-const params = (ctx: EvaluationContext) => new URLSearchParams(Object.entries(ctx).filter(([, v]) => v) as [string, string][]);
 const pct = (v?: number | null) => v == null ? '—' : `${(v*100).toFixed(2)}%`;
+type EvaluationComparison = { profile: MetricProfile; versions: { revision: EvaluationRevision | null; stale: boolean }[] };
 
 export function EvaluationWorkspace({ page, onNavigate, visibleReleases, release, hideRelease = false, embedded = false, onDataChange }: { page: 'overview' | 'issues' | 'simulation'; onNavigate: (page: 'overview' | 'issues' | 'simulation', release?: string) => void; visibleReleases?: string[]; release?: string; hideRelease?: boolean; embedded?: boolean; onDataChange?: (value: EvaluationBoard | null) => void }) {
   const { t, i18n } = useTranslation();
   const [ctx, setContext] = useState(() => ({ ...readContext(), ...(release ? { release } : {}) }));
   const [data, setData] = useState<EvaluationBoard | null>(null);
   const [profiles, setProfiles] = useState<MetricProfile[]>([]);
-  const [comparison, setComparison] = useState<EvaluationRevision[]>([]);
+  const [comparisonResult, setComparisonResult] = useState<{ requestedProfile?: string; value: EvaluationComparison } | null>(null);
+  const comparison = useMemo(() => matchingComparison(comparisonResult, ctx.profile_id)?.versions.filter(value => value.revision && !value.stale).map(value => value.revision!) || [], [comparisonResult, ctx.profile_id]);
   const [comparisonLoading, setComparisonLoading] = useState(page === 'overview');
   const [comparisonFailed, setComparisonFailed] = useState(false);
   const [comparisonAttempt, setComparisonAttempt] = useState(0);
+  const readComparison = useRef(createComparisonReader((profile_id?: string) => request<EvaluationComparison>(`/comparison?${comparisonParams({ release: '@current', profile_id })}`)));
+  const observeRevision = useRef(createRevisionObserver());
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [initializing, setInitializing] = useState(false);
@@ -50,7 +54,8 @@ export function EvaluationWorkspace({ page, onNavigate, visibleReleases, release
   const [actionTarget, setActionTarget] = useState<HTMLElement | null>(null);
   useEffect(() => { setActionTarget(document.getElementById('evaluation-actions')); }, [page]);
   const generation = useRef(0);
-  const scope = JSON.stringify(ctx);
+  const scope = evaluationScope(ctx);
+  const canonicalRead = useRef<{ scope: string; value: EvaluationBoard } | null>(null);
   const activeScope = useRef(scope); activeScope.current = scope;
   const time = (value?: string) => value ? new Date(value).toLocaleString(i18n.language.startsWith('zh') ? 'zh-CN' : 'en-GB', { timeZone: 'Asia/Shanghai', hour12: false }) : '—';
   const update = (next: Partial<EvaluationContext>) => {
@@ -60,41 +65,55 @@ export function EvaluationWorkspace({ page, onNavigate, visibleReleases, release
     if (!embedded) q.set('basis', 'auto-triage'); q.set('release', value.release); q.set('version', value.release); q.set('page', '1');
     for (const [key, val] of [['profile', value.profile_id], ['date_start', value.date_start], ['date_end', value.date_end]]) { if (val) q.set(key!, val); else q.delete(key!); }
     history.pushState(history.state, '', `${location.pathname}?${q}`);
-    setData(null); setContext(value);
+    canonicalRead.current = null; setComparisonAttempt(attempt => attempt + 1); setData(null); setContext(value);
   };
-  useEffect(() => { const pop = () => { setData(null); setContext({ ...readContext(), ...(release ? { release } : {}) }); setEditing(false); setSettingsOpen(false); }; addEventListener('popstate', pop); return () => removeEventListener('popstate', pop); }, []);
+  useEffect(() => { const pop = () => { canonicalRead.current = null; setComparisonAttempt(attempt => attempt + 1); setData(null); setContext({ ...readContext(), ...(release ? { release } : {}) }); setEditing(false); setSettingsOpen(false); }; addEventListener('popstate', pop); return () => removeEventListener('popstate', pop); }, []);
   const load = useCallback(async () => {
     if (activeScope.current !== scope) return null;
     const id = ++generation.current;
     try {
       const value = await request<EvaluationBoard>(`/board?${params(ctx)}`);
       if (id !== generation.current || activeScope.current !== scope) return null;
+      if (observeRevision.current(value.context, value.revision?.revision_key || null)) setComparisonAttempt(value => value + 1);
       setData(previous => JSON.stringify(previous) === JSON.stringify(value) ? previous : value); setError('');
-      if (!ctx.date_start || !ctx.profile_id || ctx.release !== value.context.release) {
+      if (scope !== evaluationScope(value.context)) {
         const canonical = value.context;
         const q = new URLSearchParams(location.search);
-        if (!embedded) q.set('basis', 'auto-triage'); q.set('release', canonical.release); q.set('version', canonical.release); q.set('profile', canonical.profile_id!);
-        q.set('date_start', canonical.date_start!); q.set('date_end', canonical.date_end!);
+        if (!embedded) q.set('basis', 'auto-triage'); q.set('release', canonical.release); q.set('version', canonical.release);
+        for (const [key, val] of [['profile', canonical.profile_id], ['date_start', canonical.date_start], ['date_end', canonical.date_end]]) { if (val) q.set(key!, val); else q.delete(key!); }
         history.replaceState(history.state, '', `${location.pathname}?${q}`);
+        canonicalRead.current = { scope: evaluationScope(canonical), value };
         setContext(canonical);
       }
       return value;
     } catch (err) { if (id === generation.current && activeScope.current === scope) setError(err instanceof Error ? err.message : 'upstream_error'); return null; }
   }, [scope]);
   useEffect(() => { onDataChange?.(data); }, [data, onDataChange]);
-  useEffect(() => { const stop = startVisiblePolling(load, value => ['queued','running'].includes(value.refresh.status || '') || value.starts.some(s => s.status === 'preparing') || value.executions.some(e => e.metrics_status === 'pending' || ['preparing','submitting','submission_uncertain','running','verifying'].includes(e.status))); return () => { ++generation.current; stop(); }; }, [load, data?.refresh.status]);
-  useEffect(() => { void request<{ versions: MetricProfile[] }>('/profiles').then(v => setProfiles(v.versions)).catch(() => {}); }, [editing]);
+  useEffect(() => {
+    // Canonicalizing the URL does not invalidate the board that supplied it.
+    // The next scheduled poll still reads the canonical scope from the server.
+    const adopted = !document.hidden && canonicalRead.current?.scope === scope ? canonicalRead.current.value : null;
+    canonicalRead.current = null;
+    let first = true;
+    const stop = startVisiblePolling(() => { if (first) { first = false; if (adopted) return Promise.resolve(adopted); } return load(); }, value => ['queued','running'].includes(value.refresh.status || '') || value.starts.some(s => s.status === 'preparing') || value.executions.some(e => e.metrics_status === 'pending' || ['preparing','submitting','submission_uncertain','running','verifying'].includes(e.status)));
+    return () => { ++generation.current; stop(); };
+  }, [load]);
+  useEffect(() => {
+    if (!settingsOpen && !editing) return;
+    let active = true;
+    void request<{ versions: MetricProfile[] }>('/profiles').then(v => { if (active) setProfiles(v.versions); }).catch(() => {});
+    return () => { active = false; };
+  }, [settingsOpen, editing]);
   useEffect(() => {
     if (page !== 'overview') return;
     let active = true;
     setComparisonLoading(true);
     setComparisonFailed(false);
-    const q = comparisonParams(ctx);
-    void request<{ versions: { revision: EvaluationRevision | null; stale: boolean }[] }>(`/comparison?${q}`).then(value => {
-      if (active) { setComparison(value.versions.filter(v => v.revision && !v.stale).map(v => v.revision!)); setComparisonLoading(false); }
+    void readComparison.current(ctx.profile_id, comparisonAttempt).then(value => {
+      if (active) { setComparisonResult({ requestedProfile: ctx.profile_id, value }); setComparisonLoading(false); }
     }).catch(() => { if (active) { setComparisonLoading(false); setComparisonFailed(true); } });
     return () => { active = false; };
-  }, [scope, page, data?.revision?.revision_key, comparisonAttempt]);
+  }, [ctx.profile_id, page, comparisonAttempt]);
   async function act(fn: () => Promise<unknown>) {
     if (busy || activeScope.current !== scope) return;
     setBusy(true); setError('');

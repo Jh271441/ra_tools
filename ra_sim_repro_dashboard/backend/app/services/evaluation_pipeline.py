@@ -14,7 +14,7 @@ from sqlalchemy import select, cast, func, JSON
 from sqlalchemy.dialects.postgresql import JSONB
 from app.config import DATA_DIR
 from app.database import SessionLocal
-from app.models import ReleaseWorkflowState, ReleaseSimulationBatch
+from app.models import ReleaseWorkflowState, ReleaseSimulationBatch, ReleaseIssueSnapshot
 from app.services import release_workflow as w, auto_triage_metrics as at
 from app.services import metric_profiles as profiles, auto_triage_warehouse as warehouse, evaluation_samples as samples
 from app.services import recall_comparison as recall_diff
@@ -222,8 +222,10 @@ def target(db, snapshot):
     config = w.effective_config(db)
     sim = config.get('simulation', {})
     period = deepcopy(snapshot.payload['period'])
-    base = at._base(db, period['release'])
     approved = audited_execution_target(db, period['release'])
+    # Approved executions supersede legacy batches. Avoid loading and auditing
+    # historical payloads that cannot affect this target.
+    base = None if approved else at._base(db, period['release'])
     if approved:
         specification = approved
     elif base:
@@ -599,7 +601,7 @@ def process(identifier):
         w.put_state(db, key, {**value, **outcome, 'finished_at': now()})
 
 
-def board(db, release='@current', profile_id=None, date_start=None, date_end=None, *, catalogue=None, execution_views=None):
+def board(db, release='@current', profile_id=None, date_start=None, date_end=None, *, catalogue=None, execution_views=None, comparison_only=False):
     from app.services import evaluation_worker
     from app.services.evaluation_sources import distribution
     ctx, snapshot, profile, key = context(db, release, profile_id, date_start, date_end)
@@ -635,18 +637,22 @@ def board(db, release='@current', profile_id=None, date_start=None, date_end=Non
                 batch_hashes[fingerprint] = at.audit_hash(batch.payload) if batch else None
             if batch_hashes[fingerprint] != binding['audit_hash']:
                 stale = True
-    histories = execution_views if execution_views is not None else public_executions(db, ctx['release'])
-    executions = histories.get(ctx['release'], [])
-    request = w.get_state(db, pointer.get('request_key', 'evrequest:none'))
-    # Retain old online requests in the audit ledger without presenting their
-    # expired session error as a failure of the new DB-only query path.
-    request = request if request.get('source_mode') == 'database' else {}
     if revision and not stale:
         from app.services.reproduction_evidence import evaluation_view
         revision = evaluation_view(db, revision)
     public_revision = {k: v for k, v in revision.items() if k not in ('source', 'payload', 'rows', 'lineage')} if revision else None
     if public_revision is not None:
         public_revision['source_distribution'] = distribution(revision)
+    # Comparison consumes only this audited projection. Avoid loading plans,
+    # start receipts and execution histories which never appear in its response.
+    if comparison_only:
+        return {'revision': public_revision, 'stale': stale}
+    histories = execution_views if execution_views is not None else public_executions(db, ctx['release'])
+    executions = histories.get(ctx['release'], [])
+    request = w.get_state(db, pointer.get('request_key', 'evrequest:none'))
+    # Retain old online requests in the audit ledger without presenting their
+    # expired session error as a failure of the new DB-only query path.
+    request = request if request.get('source_mode') == 'database' else {}
     return {'context': ctx, 'profile': profile, 'versions': at.versions(db) if catalogue is None else catalogue,
             'sample_source': source_status,
             'recall_comparison': recall_diff.compare(revision['rows'], profile['config']) if revision and not stale else None,
@@ -689,12 +695,14 @@ def issue_page(db, release='@current', profile_id=None, date_start=None, date_en
 def comparison(db, profile_id=None, date_start=None, date_end=None):
     profile = profiles.get(db, profile_id)
     values = []
-    catalogue = at.versions(db)
-    histories = public_executions(db)
-    for version in catalogue:
+    # Only release keys are needed here. The board's catalogue additionally
+    # audits legacy jobs and reads full source snapshots for navigation counts.
+    releases = db.scalars(select(ReleaseIssueSnapshot.release).group_by(
+        ReleaseIssueSnapshot.release).order_by(ReleaseIssueSnapshot.release.desc()))
+    for release in releases:
         try:
-            view = board(db, version['release'], profile['id'], date_start, date_end, catalogue=catalogue, execution_views=histories)
-            values.append({'release': version['release'], 'revision': view['revision'], 'stale': view['stale']})
+            view = board(db, release, profile['id'], date_start, date_end, comparison_only=True)
+            values.append({'release': release, 'revision': view['revision'], 'stale': view['stale']})
         except ValueError:
             continue
     return {'profile': profile, 'versions': list(reversed(values))}

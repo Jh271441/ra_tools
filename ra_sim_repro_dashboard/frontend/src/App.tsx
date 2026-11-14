@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { api } from './api/client';
+import { evaluationRequest } from './api/evaluation';
 import { CurrentBusinessRelease, ReleaseWorkflow } from './components/ReleaseWorkflow';
 const ReleaseIssues = lazy(() => import('./components/ReleaseIssues').then(module => ({ default: module.ReleaseIssues })));
 const IssueDetail = lazy(() => import('./components/IssueDetail').then(module => ({ default: module.IssueDetail })));
@@ -32,7 +33,7 @@ import { TopControls } from './components/TopControls';
 import { Badge } from './components/ui/badge';
 import { Button } from './components/ui/button';
 import { cn } from './lib/utils';
-import type { IssueListItem, KpiSummary, RefreshJob, SelectedIssueResult, SummaryResponse, VersionItem } from './types';
+import type { IssueListItem, KpiSummary, RefreshJob, SelectedIssueResult, SummaryResponse, VersionItem, VersionsResponse } from './types';
 
 function readDashboardCache<T>(key: string, fallback: T): T {
   try {
@@ -168,6 +169,9 @@ export default function App() {
   const [dark, setDark] = useState(() => localStorage.getItem('theme') === 'dark');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('sidebarCollapsed') === '1');
   const [versions, setVersions] = useState<VersionItem[]>(() => readDashboardCache('versions', []));
+  const [evaluationVersions, setEvaluationVersions] = useState<VersionItem[]>([]);
+  const [catalogueError, setCatalogueError] = useState(false);
+  const [catalogueAttempt, setCatalogueAttempt] = useState(0);
   const [summary, setSummary] = useState<SummaryResponse | null>(() => readDashboardCache<SummaryResponse | null>('summary', null));
   const [comparison, setComparison] = useState<KpiSummary[]>(() => readDashboardCache('comparison', []));
   const [issues, setIssues] = useState<IssueListItem[]>([]);
@@ -183,6 +187,8 @@ export default function App() {
   const [selectedResult, setSelectedResult] = useState<SelectedIssueResult | null>(null);
   const [refreshJob, setRefreshJob] = useState<RefreshJob | null>(null);
   const [error, setError] = useState<string>('');
+  const evaluationPage = basis === 'auto-triage' && (page === 'overview' || page === 'issues');
+  const activeVersions = evaluationPage ? evaluationVersions : versions;
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', dark);
@@ -252,7 +258,14 @@ export default function App() {
   }, [page, showLegacyIssues, basis, issuePage, issuePageSize]);
 
   useEffect(() => {
-    if (page === 'issues' || page === 'simulation' || (page === 'overview' && basis !== 'normal')) {
+    if (evaluationPage) {
+      let active = true;
+      setCatalogueError(false);
+      void evaluationRequest<VersionsResponse>('/versions').then(value => { if (active) setEvaluationVersions(value.versions); })
+        .catch(() => { if (active) setCatalogueError(true); });
+      return () => { active = false; };
+    }
+    if (page === 'issues' || page === 'simulation') {
       // The source Issue page uses its own inventory; only legacy options need
       // this small request. Summary and charts belong to the overview.
       let active = true;
@@ -263,7 +276,7 @@ export default function App() {
     void loadDashboard();
     const timer=window.setInterval(() => { if (!document.hidden) void loadDashboard(); },30000);
     return () => window.clearInterval(timer);
-  }, [loadDashboard, page, basis]);
+  }, [loadDashboard, page, basis, evaluationPage, catalogueAttempt]);
 
   useEffect(() => {
     if (page !== 'issues' || !showLegacyIssues || basis !== 'normal') return;
@@ -316,7 +329,7 @@ export default function App() {
 
   const validReleaseRange = !releaseRange.start || !releaseRange.end || releaseRange.start <= releaseRange.end;
   const releaseRangeActive = Boolean(releaseRange.start || releaseRange.end);
-  const current = useMemo(() => versions.find((item) => item.is_current), [versions]);
+  const current = useMemo(() => activeVersions.find((item) => item.is_current), [activeVersions]);
   const sourceOptions = useMemo(() => {
     const values = {
       platformGen: new Set<string>(),
@@ -324,7 +337,7 @@ export default function App() {
       bigVersion: new Set<string>(),
       testVersion: new Set<string>(),
     };
-    for (const version of versions) {
+    for (const version of activeVersions) {
       const meta = version.metadata_json || {};
       addOption(values.platformGen, meta.platform_gen);
       addOption(values.versionCategory, meta.version_category);
@@ -337,9 +350,9 @@ export default function App() {
       bigVersion: [...values.bigVersion],
       testVersion: [...values.testVersion],
     };
-  }, [versions]);
+  }, [activeVersions]);
   const matchedVersionKeys = useMemo(() => {
-    const matched = versions
+    const matched = activeVersions
       .filter((version) => {
         const meta = version.metadata_json || {};
         return (
@@ -351,13 +364,13 @@ export default function App() {
       })
       .map((version) => version.version_key);
     return new Set(matched);
-  }, [sourceFilters, versions]);
+  }, [sourceFilters, activeVersions]);
 
-  const visibleReleases = useMemo(() => versions.filter(item => {
+  const visibleReleases = useMemo(() => activeVersions.filter(item => {
     if (!validReleaseRange || !matchedVersionKeys.has(item.version_key)) return false;
     const date = versionDate(item.version_key);
     return !date || ((!releaseRange.start || date >= releaseRange.start) && (!releaseRange.end || date <= releaseRange.end));
-  }).map(item => item.version_key), [versions, matchedVersionKeys, releaseRange, validReleaseRange]);
+  }).map(item => item.version_key), [activeVersions, matchedVersionKeys, releaseRange, validReleaseRange]);
   const visibleComparison = useMemo(() => comparison.filter(item => visibleReleases.includes(item.version_key)), [comparison, visibleReleases]);
 
   async function handleRefresh() {
@@ -720,6 +733,7 @@ export default function App() {
                 {error}
               </div>
             ) : null}
+            {evaluationPage && catalogueError && <div role="alert" className="flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"><span>{t('autoTriage.loadError')}</span><Button className="min-h-11" variant="outline" onClick={() => setCatalogueAttempt(value => value + 1)}>{t('autoTriage.retry')}</Button></div>}
 
             {basis === 'normal' && page === 'overview' && <CurrentBusinessRelease />}
             <Suspense fallback={<p role="status" className="text-sm text-muted-foreground">{t('loading')}</p>}>
@@ -732,7 +746,7 @@ export default function App() {
             ) : page === 'overview' ? (
               <Suspense fallback={<p className="text-sm text-muted-foreground">{t('loading')}</p>}><Overview summary={summary} comparison={visibleComparison} onOpenIssues={openIssues} onOpenCurrent={openCurrentIssues} onOpenCollection={openCollectionIssues} /></Suspense>
             ) : (
-              <ReleaseIssues basisControl={basisControl} evaluation={basis === 'auto-triage' ? <EvaluationWorkspace key={filters.version || '@stable'} page="issues" release={filters.version || '@stable'} hideRelease onNavigate={setPage}/> : undefined} versions={versions} version={filters.version || '@stable'} onVersionChange={version => {
+              <ReleaseIssues basisControl={basisControl} evaluation={basis === 'auto-triage' ? <EvaluationWorkspace key={filters.version || '@stable'} page="issues" release={filters.version || '@stable'} hideRelease onNavigate={setPage}/> : undefined} versions={activeVersions} version={filters.version || '@stable'} onVersionChange={version => {
                 const value = version;
                 setFilters({ ...defaultFilters, version: value });
                 setPage('issues', value);
