@@ -53,7 +53,7 @@
         const appPreload = document.createElement("link");
         appPreload.rel = "preload";
         appPreload.as = "script";
-        appPreload.href = `${activeBase}/static/app-bundle.js?v=manual-triage-798`;
+        appPreload.href = `${activeBase}/static/app-bundle.js?v=manual-triage-814`;
         document.head.appendChild(appPreload);
         // These same-origin reads are required on every route. Begin them
         // while the bundle downloads; consume once through the normal API
@@ -104,6 +104,7 @@
           "css/daily-cron.css",
           "css/daily-review.css",
           "css/version-datasets.css",
+          "css/version-metrics.css",
           "css/mobile.css",
         ];
         // The server builds this resource from stylesheetPaths in exact order.
@@ -122,7 +123,7 @@
         stylesheetRequests.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-798`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-814`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -241,6 +242,7 @@
             </button>
             <div class="sidebar-nav-group-items" id="sidebarNavDaily" data-sidebar-nav-group-items="daily">
 <a class="sidebar-item" data-page-target="version-datasets" data-app-path="/version-datasets" href="/version-datasets" title="版本数据"><span class="sidebar-icon" aria-hidden="true">◫</span><span class="sidebar-label"><strong class="ui-lang-zh">版本数据</strong><strong class="ui-lang-en">Version datasets</strong></span></a>
+              <a class="sidebar-item" data-page-target="version-metrics" data-app-path="/version-metrics" href="/version-metrics" aria-label="版本指标" title="版本指标" data-i18n-aria-label="nav.version_metrics" data-i18n-title="nav.version_metrics"><span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M4 4v16h16"/><path class="icon-emphasis" d="m7 14 4-4 4 3 5-7"/></svg></span><span class="sidebar-label"><strong class="ui-lang-zh">版本指标</strong><strong class="ui-lang-en">Version metrics</strong></span></a>
               <a class="sidebar-item" id="dailyCronNavButton" data-page-target="daily-cron" data-app-path="/daily-cron" href="/daily-cron" title="每日任务">
                 <span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><circle class="icon-wash" cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="9"/><path class="icon-emphasis" d="M12 7v5l3 2"/></svg></span>
                 <span class="sidebar-label"><strong class="ui-lang-zh">每日任务</strong><strong class="ui-lang-en">Daily tasks</strong></span>
@@ -1916,7 +1918,63 @@
             </section>
           </section>
 
+          <section class="app-page tool-page version-metrics-page hidden" id="versionMetricsPage" data-page="version-metrics">
+            <section class="page-card vm-chart-panel">
+              <div class="vm-toolbar">
+                <label><span class="ui-lang-zh">版本</span><span class="ui-lang-en">Versions</span><div class="multi-filter" id="vmVersionPicker" data-placeholder="全部版本" data-placeholder-en="All versions"></div></label>
+                <label for="vmMetric"><span class="ui-lang-zh">指标</span><span class="ui-lang-en">Metric</span><select id="vmMetric"><option value="accuracy">ACC</option></select></label>
+              </div>
+              <div class="vm-scope-toolbar">
+              <details class="vm-scope"><summary class="button button-quiet"><span class="ui-lang-zh">更多筛选</span><span class="ui-lang-en">More filters</span></summary><div class="vm-scope-filters">
+                <label for="vmReference"><span class="ui-lang-zh">评测参考</span><span class="ui-lang-en">Reference</span><select id="vmReference"><option value="te">TE</option></select></label>
+                <label for="vmExclusion"><span class="ui-lang-zh">排除口径</span><span class="ui-lang-en">Exclusions</span><select id="vmExclusion"><option value="all">全部三分类有效</option></select></label>
+                <label for="vmThreshold"><span class="ui-lang-zh">模拟 conf 阈值</span><span class="ui-lang-en">Simulation conf threshold</span><select id="vmThreshold"><option value="0.90">0.90</option></select></label>
+              </div><button id="vmReset" type="button" class="button button-secondary" data-vm-zh="重置选项" data-vm-en="Reset options">重置选项</button></details>
+              <div class="vm-toolbar-actions"><button id="vmRefresh" class="button button-quiet" type="button" data-vm-zh="更新指标" data-vm-en="Update metrics">更新指标</button></div>
+              </div>
+              <div id="vmError" class="vm-error" role="alert" hidden><span id="vmErrorText"></span><button id="vmRetry" type="button" class="button button-quiet" data-vm-zh="重试" data-vm-en="Retry">重试</button></div>
+              <span id="vmStatus" class="vm-job-status" role="status" hidden></span>
+              <div class="vm-chart-heading">
+                <div id="vmLegend" class="vm-legend" role="group"></div>
+                <div class="vm-chart-meta"><span id="vmDataFreshness"></span><span id="vmThresholdNote"></span><span class="model-review-run-help ui-info" data-ui-info>
+                  <button id="vmInfoButton" type="button" class="button button-secondary vm-info-button" data-ui-info-trigger aria-expanded="false" aria-controls="vmInfoTooltip" data-vm-aria-zh="指标统计口径" data-vm-aria-en="Metric definitions" aria-label="指标统计口径">ⓘ</button>
+                  <span id="vmInfoTooltip" class="model-review-run-tooltip ui-info-tooltip" role="tooltip">
+                    <strong><span class="ui-lang-zh">统计口径</span><span class="ui-lang-en">Metric definitions</span></strong>
+                    <span id="vmReferenceNote"></span>
+                    <span><span class="ui-lang-zh">来源：Trail 快照。点击更新指标重新采集；采集时间见下方，页面刷新读取最近快照。</span><span class="ui-lang-en">Source: Trail snapshots. Update metrics to collect again; collection times are listed below. Page refresh reads the latest snapshot.</span></span>
+                    <span><span class="ui-lang-zh">概率抽样集三分类有效项参与评分；OOS、未接起及缺失标注不计入。TE/RD 已标数量包含明确的 OOS、未接起。</span><span class="ui-lang-en">Scores use valid three-class probability samples, excluding OOS, unanswered and missing labels. TE/RD filled counts include explicit OOS and unanswered labels.</span></span>
+                    <span><span class="ui-lang-zh">人工方案以同一参考替代低置信输出，仅为流程模拟；conf 不改变线上配置。</span><span class="ui-lang-en">Review schemes replace low-confidence outputs with the same reference as a simulation. The conf setting does not change production routing.</span></span>
+                    <span id="vmSchemeDefinitions"></span><span id="vmSnapshotInfo"></span>
+                  </span>
+                </span></div>
+              </div>
+              <div class="vm-chart-scroll" id="vmChart"></div>
+            </section>
+            <section class="page-card vm-report-panel">
+              <header class="vm-report-heading"><h2 data-vm-zh="各版本指标" data-vm-en="Release metrics">各版本指标</h2><span id="vmTableMetric" class="muted"></span></header>
+              <div class="rd-table-wrap vm-table-scroll"><table class="rd-table vm-report-table" id="vmReportTable"><thead id="vmReportHead"></thead><tbody id="vmReportRows"></tbody></table></div>
+              <nav class="case-pagination" data-vm-aria-zh="版本指标分页" data-vm-aria-en="Release metric pagination" aria-label="版本指标分页">
+                <div class="case-pagination-main">
+                  <button class="button button-quiet" id="vmPagePrevious" type="button" disabled><span class="ui-lang-zh">上一页</span><span class="ui-lang-en">Previous</span></button>
+                  <span id="vmPageLabel">— / —</span>
+                  <button class="button button-quiet" id="vmPageNext" type="button" disabled><span class="ui-lang-zh">下一页</span><span class="ui-lang-en">Next</span></button>
+                  <span class="page-jump-control"><label for="vmPageJump"><span class="ui-lang-zh">跳至</span><span class="ui-lang-en">Go to</span></label><input id="vmPageJump" type="number" min="1" step="1" inputmode="numeric" value="1" disabled data-vm-aria-zh="跳至版本指标页" data-vm-aria-en="Jump to release metric page" aria-label="跳至版本指标页"><button class="button button-quiet" id="vmPageJumpButton" type="button" disabled><span class="ui-lang-zh">跳转</span><span class="ui-lang-en">Go</span></button></span>
+                </div>
+                <label class="case-page-size" for="vmPageSize"><span class="ui-lang-zh">每页</span><span class="ui-lang-en">Per page</span><select id="vmPageSize" disabled><option value="10">10</option><option value="20" selected>20</option><option value="50">50</option><option value="100">100</option></select><span class="ui-lang-zh">条</span><span class="ui-lang-en">items</span></label>
+              </nav>
+            </section>
+            <details class="page-card vm-threshold-panel" id="vmThresholdAnalysis">
+              <summary><span class="ui-lang-zh">低置信阈值分析</span><span class="ui-lang-en">Low-confidence threshold analysis</span></summary>
+              <div class="vm-threshold-controls"><label for="vmThresholdFamily"><span class="ui-lang-zh">版本</span><span class="ui-lang-en">Release</span><select id="vmThresholdFamily" disabled></select></label><span id="vmThresholdScope" class="muted"></span></div>
+              <div class="rd-table-wrap vm-table-scroll"><table class="rd-table vm-threshold-table"><thead><tr>
+                <th scope="col">conf</th><th scope="col"><span class="ui-lang-zh">已回刷全量低置信</span><span class="ui-lang-en">Low confidence / published population</span></th><th scope="col"><span class="ui-lang-zh">较 0.90 减少</span><span class="ui-lang-en">Reduction from 0.90</span></th><th scope="col"><span class="ui-lang-zh">抽样人工量</span><span class="ui-lang-en">Sample review count</span></th><th scope="col"><span class="ui-lang-zh">抽样模拟 ACC</span><span class="ui-lang-en">Simulated sample ACC</span></th>
+              </tr></thead><tbody id="vmThresholdRows"></tbody></table></div>
+              <p class="vm-threshold-note"><span class="ui-lang-zh">工作量按已回刷全量统计；ACC 按当前参考的有效抽样集统计，人工结果为流程模拟。</span><span class="ui-lang-en">Workload uses the published population; ACC uses valid samples for the current reference. Human output is simulated.</span></p>
+            </details>
+            <div id="vmTooltip" class="analysis-pie-tooltip" role="tooltip" hidden></div>
+          </section>
           <section class="app-page tool-page version-datasets-page hidden" id="versionDatasetsPage" data-page="version-datasets">
+            <a id="versionDatasetMetricsLink" class="button button-quiet" hidden><span class="ui-lang-zh">查看版本指标</span><span class="ui-lang-en">View version metrics</span></a>
             <div class="version-metrics" id="versionDatasetSummary" aria-live="polite"></div>
             <section class="version-composition" data-label-zh="版本构成" data-label-en="Version composition" aria-label="版本构成"><header><h2><span class="ui-lang-zh">版本构成</span><span class="ui-lang-en">Version composition</span></h2><span class="muted version-counts" id="versionDatasetCounts"></span></header><div class="version-composition-bar" id="versionCompositionBar" role="img"></div><div class="version-composition-legend" id="versionCompositionLegend"></div></section>
             <section class="review-commandbar version-filter-panel" data-label-zh="版本数据筛选" data-label-en="Version dataset filters" aria-label="版本数据筛选">
@@ -2671,7 +2729,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app-bundle.js?v=manual-triage-798`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app-bundle.js?v=manual-triage-814`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

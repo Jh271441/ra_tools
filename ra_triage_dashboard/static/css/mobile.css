@@ -1182,3 +1182,25 @@
   .review-task-supplemental-notice > span { min-width: 0; overflow-wrap: anywhere; }
   .review-task-supplemental-notice summary { min-width: 44px; min-height: 44px; display: flex; align-items: center; justify-content: center; }
 }
+
+/* Single-chart version metrics keep the shared responsive controls. */
+@media (max-width: 639px) {
+  .vm-chart-panel {padding:12px;}
+  .vm-toolbar {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;}
+  .vm-toolbar>label,.vm-toolbar>label:last-of-type {min-width:0;}
+  .vm-toolbar-actions {margin:0;}
+  .vm-toolbar-actions .button,.vm-scope>summary {min-height:44px;}
+  .vm-scope-filters {grid-template-columns:minmax(0,1fr);}
+  .vm-chart-heading {align-items:flex-start;}
+  .vm-chart-heading .vm-legend {justify-content:flex-start;}
+  .vm-legend {gap:6px;}
+  .vm-scheme-button {min-height:44px;padding:7px 9px;font-size:12px;}
+  .vm-info-button {width:44px;min-height:44px;}
+  .vm-report-panel,.vm-threshold-panel {padding:12px;}
+  .vm-threshold-panel>summary {min-height:44px;line-height:1.6;}
+  .version-metrics-page .case-pagination {flex-wrap:wrap;gap:10px;padding:12px 0;}
+  .version-metrics-page .case-pagination-main {min-width:0;flex-wrap:wrap;}
+  .version-metrics-page .case-pagination .button,.version-metrics-page .page-jump-control input {min-height:44px;height:44px;}
+  .version-metrics-page .case-page-size .ui-select-trigger,.vm-threshold-controls .ui-select-trigger {min-height:44px;}
+  .vm-toolbar .ui-select-trigger,.vm-toolbar .multi-filter-trigger,.vm-scope-filters .ui-select-trigger {min-height:44px;}
+}

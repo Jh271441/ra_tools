@@ -126,6 +126,7 @@ function applyUiLanguage(language, { persist = true } = {}) {
   if (typeof renderDailyCron === "function") renderDailyCron();
   if (typeof renderDailyReview === "function") renderDailyReview({keepImages:true});
   if (typeof renderVersionDatasets === "function") renderVersionDatasets();
+  if (typeof renderVersionMetrics === "function") renderVersionMetrics();
   applySidebarState();
   renderSession();
   if (typeof refreshBevVideoLanguage === "function") refreshBevVideoLanguage();
@@ -933,6 +934,9 @@ function pageUrl(page, options = {}) {
   if (page === "trail-history") {
     for (const [key, value] of Object.entries(trailHistoryRouteOptions())) if (value !== "") url.searchParams.set(key, String(value));
   }
+  if (page === "version-metrics" && typeof versionMetricRouteOptions === "function") {
+    for (const [key,value] of Object.entries(versionMetricRouteOptions(options))) if(value!=='')url.searchParams.set(key,String(value));
+  }
   if (page === "version-datasets" && typeof versionDatasetRouteOptions === "function") {
     for (const [key,value] of Object.entries(versionDatasetRouteOptions(options))) if(value!=='')url.searchParams.set(key,String(value));
   }
@@ -1348,6 +1352,8 @@ function showPage(
   state.activePage = target;
   document.body.dataset.activePage = target;
   if (typeof setVersionDatasetsActive === "function") setVersionDatasetsActive(target === "version-datasets");
+  if (typeof setVersionMetricsActive === "function") setVersionMetricsActive(target === "version-metrics");
+  if (target === "version-metrics" && loadPageData) pageLoads.push(() => loadVersionMetrics());
   if (typeof setDailyCronActive === "function") setDailyCronActive(target === "daily-cron");
   if (typeof setDailyReviewActive === "function") setDailyReviewActive(target === "daily-review");
   if (typeof ensureRunCollectionsDedicatedPage === "function") {

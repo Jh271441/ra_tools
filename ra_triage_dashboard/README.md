@@ -3,6 +3,7 @@
 一个独立于 `ra_auto_triage` 的 issue triage / 标注 / 模型结果对比看板。
 
 部署入口与保留规则见 [统一发布流程](docs/deployment.md)。
+Manual 的「每日数据 → 版本指标」以趋势图、五口径报告表和阈值分析比较各版本抽样集的模型、规则与人工流程模拟指标，见 [版本指标口径](docs/version-metrics.md)。
 Batch 与迁移工具的模块职责、配置和交付边界见
 [Manual 维护整理记录](docs/manual-maintenance-20261026.md)。
 

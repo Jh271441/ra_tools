@@ -944,6 +944,7 @@ async function refreshChangedDataNow() {
   }
   if (state.activePage === "daily-review") return;
   if (state.activePage === "daily-cron") return; // independent 30s observation, not a DB revision
+  if (state.activePage === "version-metrics") return; // explicit frozen metric snapshots
   if (state.activePage === "status") {
     await loadStatus();
   }

@@ -95,6 +95,8 @@ function versionDatasetChange(patch) {
 }
 function renderVersionDatasets({force=false}={}) {
   const s=versionDatasetState;if(!s.active)return;
+  const metricsLink=$('#versionDatasetMetricsLink');
+  if(metricsLink){const family=/^release-(20\d{6})-odd2$/.exec(s.dataset)?.[1];metricsLink.hidden=!family;if(family)metricsLink.href=withBase('/version-metrics')+'?families='+family;}
   const el=$('#versionDatasetsPage');
   el.querySelectorAll('[data-zh]').forEach(e=>e.textContent=uiText(e.dataset.zh,e.dataset.en));
   el.querySelectorAll('[data-label-zh]').forEach(e=>e.setAttribute('aria-label',uiText(e.dataset.labelZh,e.dataset.labelEn)));

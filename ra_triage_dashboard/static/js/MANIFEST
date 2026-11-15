@@ -12,6 +12,8 @@ gt-sync.js
 session-config.js
 system-status.js
 version-datasets.js
+version-metrics.js
+version-metrics-reports.js
 version-rd.js
 daily-cron.js
 daily-review.js

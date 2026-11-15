@@ -937,6 +937,7 @@ function stripBasePath(pathname) {
 }
 
 const PAGE_ROUTES = {
+  "version-metrics": {path:"/version-metrics",titleZh:"版本指标",titleEn:"Version metrics"},
   "trail-history": { path: "/trail-update-history", titleZh: "Trail 更新记录", titleEn: "Trail update history" },
   "labeling-summary": { path: "/labeling-summary", titleZh: "标注汇总", titleEn: "Labeling summary" },
   "rd-results": { path: "/rd-results", titleZh: "标注上传", titleEn: "Label upload" },

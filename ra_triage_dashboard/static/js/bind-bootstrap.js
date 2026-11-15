@@ -478,6 +478,7 @@ function bindEvents() {
         showToast(t("toast.page_refreshed"));
         return;
       }
+      if (state.activePage === "version-metrics") { await loadVersionMetrics(); return; }
       if (state.activePage === "version-datasets") { await loadVersionDatasets(); return; }
       if (state.activePage === "daily-review") { await loadDailyReview(); return; }
       if (state.activePage === "daily-cron") {
@@ -1167,7 +1168,9 @@ async function bootstrap() {
     // These pages do not consume the Run catalog. Start their visible payload
     // now; keep catalog initialization for later SPA navigation in parallel.
     let independentPageResult = null;
-    if (initialRoute.page === "status") {
+    if (initialRoute.page === "version-metrics") {
+      independentPageResult = settleInitialRequests([loadVersionMetrics()], "页面");
+    } else if (initialRoute.page === "status") {
       independentPageResult = settleInitialRequests([loadStatus()], "页面");
     } else if (initialRoute.page === "rd-results") {
       independentPageResult = settleInitialRequests([loadRdResults()], "页面");

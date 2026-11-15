@@ -60,6 +60,7 @@ from .routers import (
     intent_labeling,
     legacy_cutover,
     version_datasets,
+    version_metrics,
     rd_results,
 )
 
@@ -386,6 +387,7 @@ app.mount(
 )
 
 app.include_router(version_datasets.router)
+app.include_router(version_metrics.router)
 from .routers import human_publications
 app.include_router(human_publications.router)
 app.include_router(rd_results.router)
