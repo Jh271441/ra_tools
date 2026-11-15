@@ -1197,6 +1197,7 @@
   .vm-scheme-button {min-height:44px;padding:7px 9px;font-size:12px;}
   .vm-info-button {width:44px;min-height:44px;}
   .vm-report-panel,.vm-threshold-panel {padding:12px;}
+  .vm-report-link {min-height:44px;}
   .vm-threshold-panel>summary {min-height:44px;line-height:1.6;}
   .version-metrics-page .case-pagination {flex-wrap:wrap;gap:10px;padding:12px 0;}
   .version-metrics-page .case-pagination-main {min-width:0;flex-wrap:wrap;}

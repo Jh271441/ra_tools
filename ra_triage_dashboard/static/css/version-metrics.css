@@ -58,6 +58,7 @@ body[data-active-page="version-metrics"] .top-actions {margin-left:auto}
 .vm-report-table th,.vm-report-table td,.vm-threshold-table th,.vm-threshold-table td {text-align:center;font-size:12px;line-height:1.5}
 .vm-report-table thead th {position:sticky;top:0;z-index:1;font-size:11px}
 .vm-report-table th:first-child {width:72px}
+.vm-report-link {display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:24px;font-size:11px}
 .vm-report-table strong,.vm-threshold-table strong {display:block;font-weight:500;font-variant-numeric:tabular-nums}
 .vm-report-table small,.vm-threshold-table small {display:block;margin-top:3px;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
 .vm-table-empty {padding:24px 12px!important;color:var(--muted)}

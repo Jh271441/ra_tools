@@ -1,4 +1,10 @@
 /* Report tables consume the exact summaries used by the cross-version chart. */
+const VM_REPORT_IDS={20261009:'2210331546058',20261016:'2210331433301',20261023:'2210462491274',20261030:'2210502394530'};
+function vmReportLink(family){
+  const id=VM_REPORT_IDS[family];if(!id)return '';
+  const label=uiText(`查看 ${family} 版本报告（新标签页）`,`Open ${family} release report (new tab)`);
+  return `<a class="text-link vm-report-link" href="https://cooper.didichuxing.com/didocs/${id}" target="_blank" rel="noopener noreferrer" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}">${uiText('报告','Report')}</a>`;
+}
 function vmVersionPage(rows,page=1,pageSize=DEFAULT_CASE_PAGE_SIZE){
   const size=CASE_PAGE_SIZES.includes(pageSize)?pageSize:DEFAULT_CASE_PAGE_SIZE;
   const ordered=[...rows].sort((a,b)=>b.family.localeCompare(a.family)),pages=Math.max(1,Math.ceil(ordered.length/size));
@@ -51,7 +57,7 @@ function vmRenderReports(){
   $('#vmReportHead').innerHTML=`<tr><th scope="col">${uiText('版本','Release')}</th><th scope="col">${uiText('有效／抽样','Valid / sample')}</th><th scope="col">${uiText('TE 已标','TE filled')}</th><th scope="col">${uiText('RD 已标','RD filled')}</th>`+VM_SCHEMES.map(key=>`<th scope="col" title="${escapeHtml(vmScheme(key))}">${escapeHtml(vmSchemeShort(key))}</th>`).join('')+'</tr>';
   const empty=s.error?uiText('指标读取失败，请重试','Metrics unavailable. Please retry.'):s.loading?uiText('正在读取指标…','Loading metrics…'):uiText('暂无版本数据','No release data');
   $('#vmReportRows').innerHTML=busy||!page.items.length?vmReportEmpty(empty,9):page.items.map(row=>{
-    const date=`<th scope="row" title="${escapeHtml('release-'+row.family+' · '+vmTime(row.observed_at)+' CST')}"><strong>${vmFamilyLabel(row.family)}</strong>${row.membership_changed?`<small>${uiText('版本已变化','Membership changed')}</small>`:''}</th>`;
+    const date=`<th scope="row" title="${escapeHtml('release-'+row.family+' · '+vmTime(row.observed_at)+' CST')}"><strong>${vmFamilyLabel(row.family)}</strong>${vmReportLink(row.family)}${row.membership_changed?`<small>${uiText('版本已变化','Membership changed')}</small>`:''}</th>`;
     if(row.status!=='ready')return `<tr>${date}<td colspan="8" class="vm-table-empty">${row.status==='error'?uiText('Trail 快照不可用，请更新指标','Trail snapshot unavailable. Update metrics.'):uiText('暂无 Trail 快照，请更新指标','No Trail snapshot. Update metrics.')}</td></tr>`;
     return `<tr>${date}<td><strong>${row.valid_total}/${row.sample_total}</strong></td><td>${vmCoverageCell(row,'te')}</td><td>${vmCoverageCell(row,'rd')}</td>`+VM_SCHEMES.map(key=>`<td>${vmScoreCell(row,key)}</td>`).join('')+'</tr>';
   }).join('');
