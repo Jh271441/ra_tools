@@ -6,9 +6,12 @@ links. For a verified task member, card entry carries that member’s assignee
 filter; the own-task picker does the same. Analysis remains at the batch scope.
 A copied link to a peer’s Issue does not transfer assignment ownership.
 Both list/detail APIs require the existing writer identity helper. Viewers
-and unverified identities remain denied. Bootstrap waits for session resolution;
-it delegates admin user loading to the allocation loader so writers never request
-that admin API. Creation, draft restoration and transfers remain admin-only on
+and unverified identities remain denied.
+The `/review-assignments` HTML entry uses the same writer identity check, including
+direct links and refreshes under `/manual`; it must not require admin access.
+Bootstrap waits for session resolution; it delegates admin user loading to the
+allocation loader so writers never request that admin API. Creation, draft
+restoration and transfers remain admin-only on
 both client and server. Historical allocations remain read-only.
 
 Combined context loading exposes loading/error/ready states beside submission.

@@ -238,9 +238,9 @@ async def intent_labeling_page(request: Request) -> HTMLResponse:
 
 @router.get("/review-assignments", include_in_schema=False)
 async def review_assignments_page(request: Request) -> HTMLResponse:
-    """Serve the administrator-only Review assignment management page."""
+    """Serve task allocations to verified writers and administrators."""
 
-    await asyncio.to_thread(_admin_identity, request)
+    await asyncio.to_thread(_writer_identity, request)
     return HTMLResponse(
         content=INDEX_HTML,
         headers={"Cache-Control": "no-store, max-age=0"},
