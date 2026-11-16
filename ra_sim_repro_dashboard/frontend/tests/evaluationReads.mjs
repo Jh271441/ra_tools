@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createComparisonReader, createRevisionObserver, evaluationParams, evaluationScope, matchingComparison } from '../src/lib/evaluationReads.ts';
+import { createComparisonReader, createRevisionObserver, evaluationBoardParams, evaluationParams, evaluationScope, matchingComparison } from '../src/lib/evaluationReads.ts';
 
 const ctx={release:'gen4-release-20261016',profile_id:'rules+v2',date_start:'2026-10-01',date_end:'2026-10-10'};
 const deferred=()=>{let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return{promise,resolve,reject};};
@@ -11,6 +11,9 @@ test('board scopes preserve release, profile and exact sample dates with stable 
   assert.equal(evaluationParams({release:'@current',profile_id:undefined}).toString(),'release=%40current');
   assert.notEqual(evaluationScope(ctx),evaluationScope({...ctx,date_end:'2026-10-11'}));
   assert.notEqual(evaluationScope(ctx),evaluationScope({...ctx,profile_id:'other'}));
+  assert.equal(evaluationBoardParams(ctx, 'overview').toString(), new URLSearchParams({...ctx, view:'metrics'}).toString());
+  assert.equal(evaluationBoardParams(ctx, 'issues').toString(), evaluationBoardParams(ctx, 'overview').toString());
+  assert.equal(evaluationBoardParams(ctx, 'simulation').toString(), evaluationScope(ctx));
 });
 
 test('retained history never paints a previous rule profile while a new request is pending',()=>{

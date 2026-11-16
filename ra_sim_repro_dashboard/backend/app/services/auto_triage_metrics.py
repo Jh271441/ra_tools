@@ -232,11 +232,14 @@ def _snapshot(db, release):
 
 
 def _base(db, release):
-    for batch in db.scalars(select(ReleaseSimulationBatch).where(ReleaseSimulationBatch.release == release)
-                           .order_by(ReleaseSimulationBatch.updated_at.desc())):
-        if not batch.payload.get('backfill') and publication(batch):
-            return batch
-    return None
+    from app.services.read_views import read_memo
+    def load():
+        for batch in db.scalars(select(ReleaseSimulationBatch).where(ReleaseSimulationBatch.release == release)
+                               .order_by(ReleaseSimulationBatch.updated_at.desc())):
+            if not batch.payload.get('backfill') and publication(batch):
+                return batch
+        return None
+    return read_memo(db, ('autotriage-base', release), load)
 
 
 def versions(db):
@@ -256,7 +259,9 @@ def selected_release(db, release):
         return next((r['release'] for r in candidates if r['job_id']), candidates[0]['release'] if candidates else None)
     if not RELEASE.fullmatch(release):
         raise ValueError('unknown_release')
-    if not _snapshot(db, release):
+    # Selection validates existence; context loads the chosen snapshot once.
+    # Avoid transferring/decoding the same large JSON twice for an explicit URL.
+    if db.scalar(select(ReleaseIssueSnapshot.id).where(ReleaseIssueSnapshot.release == release).limit(1)) is None:
         raise ValueError('unknown_release')
     return release
 

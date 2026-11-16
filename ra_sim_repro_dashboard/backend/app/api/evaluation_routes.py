@@ -1,4 +1,5 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from typing import Literal
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import select
@@ -102,9 +103,13 @@ def activate(version: str, body: Activate, db: Session = Depends(get_db)):
 
 
 @router.get('/board')
-def board(ctx: Context = Depends(), db: Session = Depends(get_db)):
-    return read_view(db, ('evaluation-board', *ctx.model_dump().values()),
-                     lambda: guarded(pipeline.board, db, **ctx.model_dump()), max_age=30)
+def board(ctx: Context = Depends(), view: Literal['full', 'metrics'] = 'full', db: Session = Depends(get_db)):
+    # Metric pages/settings navigate the source catalogue; simulation pages keep
+    # the full legacy publication metadata. Every revision audit is shared.
+    def load():
+        catalogue = pipeline.navigation_versions(db) if view == 'metrics' else None
+        return guarded(pipeline.board, db, **ctx.model_dump(), catalogue=catalogue)
+    return read_view(db, ('evaluation-board', view, *ctx.model_dump().values()), load, max_age=30)
 
 
 @router.get('/comparison')

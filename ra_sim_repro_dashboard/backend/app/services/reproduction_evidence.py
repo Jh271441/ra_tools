@@ -174,7 +174,7 @@ def overlay_metrics(metrics, evaluations):
             'covered_repro_rate': summary['covered_rate'], 'reproduction': summary}
 
 
-def evaluation_view(db, revision):
+def evaluation_view(db, revision, *, include_rows=True):
     release = (revision or {}).get('context', {}).get('release')
     if not release or not evaluation_active(db, release, (revision or {}).get('profile')):
         return revision
@@ -191,23 +191,33 @@ def evaluation_view(db, revision):
                     return revision
                 origins[key] = batch.payload.get('results', {})
             else:
-                state = db.get(ReleaseWorkflowState, 'evexecution:' + key)
-                e = state.payload if state else {}
-                if not e.get('audit_hash') or pipeline.execution_audit_hash(e) != origin['audit_hash']:
+                e, actual_hash = pipeline.execution_receipt(db, key)
+                if not e.get('audit_hash') or actual_hash != origin['audit_hash']:
                     return revision
                 origins[key] = e.get('results', {})
         if sid in origins[key]:
             actual[sid] = origins[key][sid]
     values = evaluate(db, revision['context']['release'], p['issues'], p['scenarios'], actual, revision['lineage'])
-    view = {**revision, 'rows': deepcopy(revision['rows']),
+    view = {**revision,
             'metrics': deepcopy(revision['metrics']), 'baseline': deepcopy(revision['baseline'])}
-    for row in view['rows']:
-        row['reproduction'] = values[str(row['issue_id'])]
-    view['metrics'] = overlay_metrics(view['metrics'], (r['reproduction'] for r in view['rows'] if r['eligible']))
+    # Aggregate reads do not return rows, so avoid recursively copying thousands
+    # of saved per-Issue receipts merely to attach a temporary timing result.
+    # Detail/Issue callers retain their independently mutable row projection.
+    if include_rows:
+        view['rows'] = deepcopy(revision['rows'])
+        for row in view['rows']:
+            row['reproduction'] = values[str(row['issue_id'])]
+    view['metrics'] = overlay_metrics(view['metrics'], (values[str(r['issue_id'])] for r in view['rows'] if r['eligible']))
     config = pipeline.profiles.DEFAULT_CONFIG
+    memberships = {}
+    def member(config, row, label_key):
+        key = (id(config), row['ra_type'], row[label_key])
+        if key not in memberships:
+            memberships[key] = pipeline.profiles.membership(config, row['ra_type'], row[label_key])
+        return memberships[key]
     if view['baseline'].get('source_available',True):
-        view['baseline'] = overlay_metrics(view['baseline'], (r['reproduction'] for r in view['rows']
-            if any(pipeline.profiles.membership(config, r['ra_type'], r['baseline_label'])[k]
+        view['baseline'] = overlay_metrics(view['baseline'], (values[str(r['issue_id'])] for r in view['rows']
+            if any(member(config, r, 'baseline_label')[k]
                    for k in ('precision_denominator', 'recall_denominator'))))
     # The cohorts describe behavioral reproduction too; do not leave old matches beside the new rate.
     for name, label_key in (('metrics', 'auto_label'), ('baseline', 'baseline_label')):
@@ -217,11 +227,11 @@ def evaluation_view(db, revision):
             group.update(matches=0, evaluated=0)
         for row in view['rows']:
             label = row[label_key]
-            membership = pipeline.profiles.membership(view['profile']['config'] if name == 'metrics' else config, row['ra_type'], label)
+            membership = member(view['profile']['config'] if name == 'metrics' else config, row, label_key)
             if not (membership['precision_denominator'] or membership['recall_denominator']):
                 continue
             group_key = ('positive_manual' if row['ra_type'] == 3 else 'positive_auto') if label in pipeline.profiles.GOOD else 'negative_auto' if label == '误触发' and row['ra_type'] == 2 else 'other_manual' if row['ra_type'] == 3 else 'other_auto'
-            matched = row['reproduction']['matched']
+            matched = values[str(row['issue_id'])]['matched']
             if type(matched) is bool:
                 view[name]['cohorts'][group_key]['matches'] += matched
                 view[name]['cohorts'][group_key]['evaluated'] += 1

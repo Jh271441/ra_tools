@@ -82,6 +82,53 @@ def test_target_without_activation_preserves_legacy_specification(prepared, monk
         'driver_revision': payload['driver_revision']}
 
 
+def test_execution_receipt_is_audited_once_per_get_and_detects_later_corruption(prepared, monkeypatch):
+    from app.services import read_views
+    db, snapshot, _, _ = prepared
+    execution = approved_target(db, snapshot)
+    binding = {'execution_id': execution['id'], 'audit_hash': execution['audit_hash']}
+    monkeypatch.setattr(w, 'effective_config', lambda _: {'simulation': {}})
+    actual_hash = p.execution_audit_hash
+    audits = []
+    def audit(value):
+        audits.append(value.get('id'))
+        return actual_hash(value)
+    monkeypatch.setattr(p, 'execution_audit_hash', audit)
+    def load():
+        p.target(db, snapshot)
+        assert all(p.binding_valid(db, binding) for _ in range(100))
+        return 'verified'
+    assert read_views.read_view(db, 'audited-target', load) == 'verified'
+    assert audits == ['approved']
+    # The memo ends with this request, even for another read in the same Session.
+    assert read_views.read_view(db, 'another-target', load) == 'verified'
+    assert audits == ['approved', 'approved']
+    changed = deepcopy(execution)
+    changed['results']['scene']['sim_triggered'] = False
+    w.put_state(db, 'evexecution:approved', changed)
+    assert read_views.read_view(db, 'binding-after-write', lambda: p.binding_valid(db, binding)) is False
+    with pytest.raises(ValueError, match='plan_stale'):
+        read_views.read_view(db, 'audited-target', load)
+    # Operational callers never reuse even a valid prior GET's audit.
+    assert p.binding_valid(db, binding) is False
+
+
+def test_explicit_release_selection_does_not_load_snapshot_payload(prepared):
+    db, snapshot, _, _ = prepared
+    db.expunge_all()
+    loaded = []
+    def track_load(session, instance):
+        loaded.append(instance)
+    event.listen(db, 'loaded_as_persistent', track_load)
+    try:
+        assert at.selected_release(db, RELEASE) == RELEASE
+        assert not loaded
+        with pytest.raises(ValueError, match='unknown_release'):
+            at.selected_release(db, 'gen4-release-20990101')
+    finally:
+        event.remove(db, 'loaded_as_persistent', track_load)
+
+
 def test_target_without_activation_or_legacy_batch_preserves_default(db, monkeypatch):
     period = {'release': RELEASE, 'binary_id': 789, 'template_job_id': 456}
     snapshot = SimpleNamespace(payload={'period': period})

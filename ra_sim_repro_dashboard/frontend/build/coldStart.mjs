@@ -27,6 +27,7 @@ export function coldStart({ base, flowJs, flowCss, evaluationJs, evaluationCss =
     for (const [param, key] of [['profile', 'profile_id'], ['date_start', 'date_start'], ['date_end', 'date_end']]) {
       if (query.get(param)) ctx.set(key, query.get(param));
     }
+    ctx.set('view', 'metrics');
     const api = root.pathname + 'api/dashboard/evaluation';
     start(evaluation.board ||= {}, api + '/board?' + ctx);
     start(evaluation.versions ||= {}, api + '/versions');

@@ -33,6 +33,15 @@ def execution_audit_hash(execution):
     return digest({k: execution.get(k) for k in ('plan', 'export', 'results')})
 
 
+def execution_receipt(db, identifier):
+    """Load and hash once per clean GET; writers always re-read and re-audit."""
+    from app.services.read_views import read_memo
+    def load():
+        value = w.get_state(db, 'evexecution:' + identifier)
+        return value, execution_audit_hash(value)
+    return read_memo(db, ('evaluation-execution', identifier), load)
+
+
 def rows(db, prefix):
     return [r.payload for r in db.scalars(select(ReleaseWorkflowState).where(ReleaseWorkflowState.key.startswith(prefix)))]
 
@@ -55,6 +64,16 @@ def public_executions(db, release=None):
         if key:
             grouped.setdefault(key, []).append(value)
     return grouped
+
+
+def navigation_versions(db):
+    """The metric page needs source navigation, not ordinary publication audits."""
+    latest = select(func.max(ReleaseIssueSnapshot.id).label('id')).group_by(
+        ReleaseIssueSnapshot.release).subquery()
+    statement = select(ReleaseIssueSnapshot.release,
+        func.json_array_length(ReleaseIssueSnapshot.payload['issues'])).join(
+        latest, ReleaseIssueSnapshot.id == latest.c.id).order_by(ReleaseIssueSnapshot.release.desc())
+    return [{'release': release, 'source_count': count} for release, count in db.execute(statement)]
 
 
 @contextmanager
@@ -191,14 +210,14 @@ def audited_execution_target(db, release):
     binding = w.get_state(db, 'evaluation_target:' + release)
     if not binding:
         return None
-    execution = w.get_state(db, 'evexecution:' + str(binding.get('execution_id', '')))
+    execution, actual_hash = execution_receipt(db, str(binding.get('execution_id', '')))
     plan, export = execution.get('plan', {}), execution.get('export', {})
     fields = ('period', 'binary_id', 'template_job_id', 'simulation', 'driver_revision')
     if (binding.get('release') != release or not binding.get('audit_hash')
             or execution.get('status') not in ('complete', 'quality_failed')
             or execution.get('id') != binding.get('execution_id')
             or execution.get('audit_hash') != binding['audit_hash']
-            or execution_audit_hash(execution) != binding['audit_hash']
+            or actual_hash != binding['audit_hash']
             or not execution.get('results') or plan.get('release') != release
             or any(field not in plan for field in fields)
             or export.get('release') != release or export.get('binary_id') != plan.get('binary_id')
@@ -405,9 +424,9 @@ def shared_results(db, base, full):
 
 
 def binding_valid(db, item):
-    execution = w.get_state(db, 'evexecution:' + item['execution_id'])
+    execution, actual_hash = execution_receipt(db, item['execution_id'])
     return bool(execution.get('audit_hash') and execution['audit_hash'] == item['audit_hash']
-                and execution['audit_hash'] == execution_audit_hash(execution))
+                and execution['audit_hash'] == actual_hash)
 
 
 def calculate(db, ctx, snapshot, profile, dashboard, observed):
@@ -639,7 +658,9 @@ def board(db, release='@current', profile_id=None, date_start=None, date_end=Non
                 stale = True
     if revision and not stale:
         from app.services.reproduction_evidence import evaluation_view
-        revision = evaluation_view(db, revision)
+        # This projection returns metrics/source aggregates, never Issue rows.
+        # Recall comparison below reads the original whole-window row signals.
+        revision = evaluation_view(db, revision, include_rows=False)
     public_revision = {k: v for k, v in revision.items() if k not in ('source', 'payload', 'rows', 'lineage')} if revision else None
     if public_revision is not None:
         public_revision['source_distribution'] = distribution(revision)

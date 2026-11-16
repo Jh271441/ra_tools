@@ -58,3 +58,37 @@ def test_comparison_keeps_identical_audited_revision_without_board_details(prepa
     monkeypatch.setattr(p.at, 'versions', lambda *a: pytest.fail('comparison audited unused navigation jobs'))
     compared = p.comparison(db)['versions']
     assert compared == [{'release': RELEASE, **compact}]
+
+
+def test_metrics_board_keeps_audits_and_navigation_without_ordinary_catalogue(prepared, monkeypatch):
+    db, snapshot, _, _, revision = seed(prepared, monkeypatch)
+    ctx = routes.Context(**revision['context'])
+    full = routes.board(ctx=ctx, view='full', db=db)
+    monkeypatch.setattr(p.at, 'versions', lambda *_: pytest.fail('metric page audited ordinary navigation jobs'))
+    metrics = routes.board(ctx=ctx, view='metrics', db=db)
+    assert metrics['versions'] == [{'release': RELEASE, 'source_count': len(snapshot.payload['issues'])}]
+    assert {k: v for k, v in metrics.items() if k != 'versions'} == {k: v for k, v in full.items() if k != 'versions'}
+    # The slim catalogue must not weaken staleness detection or cache invalidation.
+    changed = deepcopy(snapshot.payload)
+    changed['issues'][0]['trip_id'] = 'changed physical input'
+    db.add(ReleaseIssueSnapshot(release=RELEASE, period_hash='new-observation', payload=changed))
+    db.commit()
+    assert routes.board(ctx=ctx, view='metrics', db=db)['stale']
+
+
+def test_metric_navigation_uses_latest_source_counts_without_loading_json(db):
+    other = 'gen4-release-20261106'
+    for release, period, count in [(RELEASE, 'one', 1), (other, 'two', 2), (RELEASE, 'three', 3)]:
+        db.add(ReleaseIssueSnapshot(release=release, period_hash=period, payload={'issues': [{}] * count}))
+    db.commit()
+    db.expunge_all()
+    from sqlalchemy import event
+    loaded = []
+    def track_load(session, instance):
+        loaded.append(instance)
+    event.listen(db, 'loaded_as_persistent', track_load)
+    try:
+        assert p.navigation_versions(db) == [{'release': other, 'source_count': 2}, {'release': RELEASE, 'source_count': 3}]
+        assert not loaded
+    finally:
+        event.remove(db, 'loaded_as_persistent', track_load)

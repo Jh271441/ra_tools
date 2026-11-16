@@ -95,7 +95,7 @@ test('AutoTriage overview overlaps its exact board, profile comparison and light
   const q=new URLSearchParams({basis:'auto-triage',release:'gen4-release-20261016',version:'ignored',profile:'rules+v2',date_start:'2026-10-01',date_end:'2026-10-10',release_start:'2026-09-01',platform_gen:'GEN4_PT'});
   const p=page('/sim/overview?'+q);p.run();p.run();
   assert.deepEqual(p.calls.map(call=>call.url),[
-    '/sim/api/dashboard/evaluation/board?'+new URLSearchParams({release:'gen4-release-20261016',profile_id:'rules+v2',date_start:'2026-10-01',date_end:'2026-10-10'}),
+    '/sim/api/dashboard/evaluation/board?'+new URLSearchParams({release:'gen4-release-20261016',profile_id:'rules+v2',date_start:'2026-10-01',date_end:'2026-10-10',view:'metrics'}),
     '/sim/api/dashboard/evaluation/versions',
     '/sim/api/dashboard/evaluation/comparison?'+new URLSearchParams({profile_id:'rules+v2'}),
   ]);
@@ -107,10 +107,10 @@ test('AutoTriage overview overlaps its exact board, profile comparison and light
 
 test('AutoTriage issues prefetches only the exact issue scope and no history or issue rows', () => {
   const p=page('/sim/issues?basis=auto-triage');p.run();
-  assert.deepEqual(p.calls.map(call=>call.url),['/sim/api/dashboard/evaluation/board?release=%40stable','/sim/api/dashboard/evaluation/versions']);
+  assert.deepEqual(p.calls.map(call=>call.url),['/sim/api/dashboard/evaluation/board?release=%40stable&view=metrics','/sim/api/dashboard/evaluation/versions']);
   assert.deepEqual(p.links.map(link=>link.href),['https://dashboard.example/sim/assets/evaluation-b2.js','https://dashboard.example/sim/assets/common.css']);
   const root=page('/overview?basis=auto-triage');root.run({...config,base:'/'});
-  assert.equal(root.calls[0].url,'/api/dashboard/evaluation/board?release=%40current');
+  assert.equal(root.calls[0].url,'/api/dashboard/evaluation/board?release=%40current&view=metrics');
   const other=page('/sim/overview?basis=auto-triage');other.run({...config,base:'https://other.example/sim/'});
   assert.equal(other.calls.length,0);
 });

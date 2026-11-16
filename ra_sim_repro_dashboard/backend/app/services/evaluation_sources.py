@@ -38,6 +38,7 @@ def distribution(revision):
                         'triggers': {'auto': 0, 'manual': 0}, 'raw_labels': Counter(), 'labels': Counter()}
                   for key in ([*config['label']['priority'], 'no_result', 'unverified'] if review else ROUTES)}
         correct_not_precision = 0
+        memberships = {}
         for iid, row in rows.items():
             raw = source[iid]['merged_ra_auto_result']
             observed = physical.get(iid, {})
@@ -48,13 +49,18 @@ def distribution(revision):
                     return {**missing, 'error': 'source_inconsistent'}
                 route = receipt['source'] or 'no_result'
                 raw = receipt['raw_label']
+                label = receipt['label']
             elif all(key in observed for key in ('ra_stuck_auto_result', 'ra_result')):
                 model = observed['ra_stuck_auto_result']
                 expected = str(model) if model is not None else business_label(observed['ra_result'])
                 if expected == raw:
                     route = 'model' if model is not None else 'ra_result'
-            label = resolve(config, source[iid])
-            flags = membership(config, row['ra_type'], label)
+            if not review:
+                label = resolve(config, source[iid])
+            identity = (row['ra_type'], label)
+            if identity not in memberships:
+                memberships[identity] = membership(config, *identity)
+            flags = memberships[identity]
             if label != row['auto_label'] or flags != row['auto_memberships'] or row['ra_type'] not in (2,3):
                 return {**missing, 'error': 'source_inconsistent'}
             group = groups[route]

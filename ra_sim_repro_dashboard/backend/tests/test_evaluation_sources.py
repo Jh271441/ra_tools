@@ -91,6 +91,38 @@ def test_saved_scopes_and_snapshots_are_carried_without_global_combination():
     assert distribution(second)['sample_snapshot_id']=='sample-b'
 
 
+def test_review_distribution_reuses_validated_resolution_and_preserves_null_and_empty(monkeypatch):
+    from app.services import evaluation_sources as sources
+    revision = fixture()
+    config = revision['profile']['config'] = deepcopy(profiles.REVIEW_CONFIG)
+    revision['source_count'] = 3
+    dashboard = revision['source']['dashboard']['rows'] = revision['source']['dashboard']['rows'][:3]
+    revision['rows'] = revision['rows'][:3]
+    for sample, row, label in zip(dashboard, revision['rows'], ('', None, '正确触发')):
+        sample.update(ra_review_result_new=label, ra_rd_review_result=None,
+                      ra_stuck_auto_result=None, ra_original_result=None)
+        row.update(ra_type=2, auto_label=label, label_resolution=profiles.resolution(config, sample),
+                   auto_memberships=profiles.membership(config, 2, label))
+    revision['metrics']['counts'] = dict(zip(sources.MEMBERSHIPS, (0, 2, 2, 2)))
+    before = deepcopy(revision)
+    calls = []
+    def resolution(config, sample):
+        calls.append(sample['issue_id'])
+        return profiles.resolution(config, sample)
+    monkeypatch.setattr(sources, 'resolution', resolution)
+    monkeypatch.setattr(sources, 'resolve', lambda *_: (_ for _ in ()).throw(AssertionError('receipt already resolved')))
+    result = sources.distribution(revision)
+    assert result['available'] and result['counts'] == revision['metrics']['counts']
+    assert [group['count'] for group in result['groups']] == [2, 0, 0, 0, 1, 0]
+    assert {'label': '', 'count': 1} in result['groups'][0]['raw_labels']
+    assert calls == [row['issue_id'] for row in dashboard]
+    assert revision == before
+    for corrupt in ('policy_version', 'raw_label', 'trace'):
+        changed = deepcopy(revision)
+        changed['rows'][0]['label_resolution'][corrupt] = 'changed'
+        assert sources.distribution(changed) == {'available': False, 'error': 'source_inconsistent'}
+
+
 def test_board_exposes_aggregates_without_changing_the_stored_revision(prepared,monkeypatch):
     from test_evaluation_pipeline import seed
     from app.services import evaluation_pipeline as p,release_workflow as w

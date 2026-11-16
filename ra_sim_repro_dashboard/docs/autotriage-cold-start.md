@@ -55,3 +55,40 @@ performed in production because automatic approval review rejected that action
 as potentially triggering recalculation. Profile transition/race behavior is
 covered by the unit regressions. Acceptance screenshot and before/after resource
 timings are retained alongside the service release evidence.
+
+## 2026-11-16 follow-up
+
+The metric overview/Issue board now requests `view=metrics`. This returns release
+names and latest source counts directly from snapshot columns, without auditing
+every ordinary simulation publication to build navigation options. Settings keep
+the same release options; simulation pages and older clients retain the default
+full catalogue. Startup prefetch and React use the same exact URL.
+
+Aggregate metric reads calculate timing overlays without copying saved Issue
+rows that they never return. Issue/detail projections still isolate their nested
+row data. Source attribution reuses the fully validated label-resolution receipt
+and membership flags for equal trigger/label pairs, preserving NULL, empty strings,
+literal labels, mapping and source consistency checks.
+
+Large execution receipts and legacy base selections are retained only within one
+clean GET and reused by its nested audits. Every new request still checks the
+existing database/configuration revision; worker/operational calls bypass the
+memo. Failures, different Sessions and uncommitted changes cannot reuse it.
+Explicit release validation reads only a snapshot ID before context loads its
+payload. No TTL, invalidation policy, metric definition or persistent data changed.
+
+Validation: 422 backend tests, 114 frontend tests, 13 deployment tests and the
+production build passed. Three serial pairs of fresh-process read-only comparisons
+had medians **1.8207s before / 1.2354s after** (32.1% reduction), with queries
+**106 / 95**. All six complete responses had SHA256
+`2a33a0687cfe27984675a3f04cf59f6cac2aa8fac4928322a4ba59eb24248495`.
+
+Another three serial fresh-process pairs ran the three initial API handlers
+concurrently, matching the 11-06 overview's release/profile/date URLs. Total
+median was **2.5514s / 1.4762s** (42.1% reduction). Board median was
+**1.2522s / 0.3622s**. The complete response sets matched after projecting the
+intentionally slimmer navigation catalogue to its shared `release/source_count`
+fields (SHA256 `6e9c5eee39f3f383d4c1442efcf0768c02a7778f49d82f0f255877ce5efcf2c1`).
+Application caches were empty in every process; PostgreSQL/OS caches were not
+flushed. These timings exclude browser download, rendering, SSO and gateway time.
+Evidence/scripts remain in the service's `operations/cold-start-20261116/`.

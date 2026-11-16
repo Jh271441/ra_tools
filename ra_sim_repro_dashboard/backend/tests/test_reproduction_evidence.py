@@ -132,6 +132,15 @@ def test_evaluation_overlay_retains_entire_window_memberships_and_revision(db):
         assert view['metrics'][field] == original['metrics'][field]
     assert view['metrics']['cohorts']['positive_manual']['matches'] == 1
     assert revision == original
+    aggregate = e.evaluation_view(db, revision, include_rows=False)
+    assert {k: v for k, v in aggregate.items() if k != 'rows'} == {k: v for k, v in view.items() if k != 'rows'}
+    assert aggregate['rows'] is revision['rows']
+    assert revision == original
+    # Issue projections still isolate nested receipts from the saved revision.
+    view['rows'][0]['scenario_ids'].append('another-scene')
+    view['metrics']['cohorts']['positive_manual']['matches'] = -1
+    aggregate['baseline']['cohorts']['positive_manual']['matches'] = -1
+    assert revision == original
 
 
 def test_new_execution_completion_captures_times_without_rewriting_audited_results(db):

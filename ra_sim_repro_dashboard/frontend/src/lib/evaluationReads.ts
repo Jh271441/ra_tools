@@ -9,6 +9,12 @@ export function evaluationScope(context: EvaluationContext): string {
   return evaluationParams(context).toString();
 }
 
+export function evaluationBoardParams(context: EvaluationContext, page: 'overview' | 'issues' | 'simulation'): URLSearchParams {
+  const params = evaluationParams(context);
+  if (page !== 'simulation') params.set('view', 'metrics');
+  return params;
+}
+
 /** A retained history can survive date/release navigation, but never a rule change. */
 export function matchingComparison<T extends { profile: { id: string } }>(result: { requestedProfile?: string; value: T } | null, profile?: string): T | undefined {
   return result && (profile ? result.value.profile.id === profile : !result.requestedProfile) ? result.value : undefined;

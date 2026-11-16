@@ -15,7 +15,7 @@ import { evaluationKpi, evaluationSummary } from '../lib/evaluationProjection';
 import { completeMetrics, evaluationActivity } from '../lib/evaluationFlow';
 import { comparisonParams, comparisonRevisions, changeEvaluationRelease, overviewRevision } from '../lib/evaluationContext';
 import { createSavedEvaluationInitializer, savedEvaluationInitializationKey } from '../lib/evaluationInitialization';
-import { createComparisonReader, createRevisionObserver, evaluationParams as params, evaluationScope, matchingComparison } from '../lib/evaluationReads';
+import { createComparisonReader, createRevisionObserver, evaluationBoardParams, evaluationParams as params, evaluationScope, matchingComparison } from '../lib/evaluationReads';
 import type { EvaluationBoard, EvaluationContext, EvaluationIssuePage, EvaluationRevision, MetricProfile, ProfileConfig, ProfilePreview } from '../types/evaluation';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
@@ -55,6 +55,7 @@ export function EvaluationWorkspace({ page, onNavigate, visibleReleases, release
   useEffect(() => { setActionTarget(document.getElementById('evaluation-actions')); }, [page]);
   const generation = useRef(0);
   const scope = evaluationScope(ctx);
+  const boardPage = page === 'simulation' ? 'simulation' : 'overview';
   const canonicalRead = useRef<{ scope: string; value: EvaluationBoard } | null>(null);
   const activeScope = useRef(scope); activeScope.current = scope;
   const time = (value?: string) => value ? new Date(value).toLocaleString(i18n.language.startsWith('zh') ? 'zh-CN' : 'en-GB', { timeZone: 'Asia/Shanghai', hour12: false }) : '—';
@@ -72,7 +73,7 @@ export function EvaluationWorkspace({ page, onNavigate, visibleReleases, release
     if (activeScope.current !== scope) return null;
     const id = ++generation.current;
     try {
-      const value = await request<EvaluationBoard>(`/board?${params(ctx)}`);
+      const value = await request<EvaluationBoard>(`/board?${evaluationBoardParams(ctx, boardPage)}`);
       if (id !== generation.current || activeScope.current !== scope) return null;
       if (observeRevision.current(value.context, value.revision?.revision_key || null)) setComparisonAttempt(value => value + 1);
       setData(previous => JSON.stringify(previous) === JSON.stringify(value) ? previous : value); setError('');
@@ -87,7 +88,7 @@ export function EvaluationWorkspace({ page, onNavigate, visibleReleases, release
       }
       return value;
     } catch (err) { if (id === generation.current && activeScope.current === scope) setError(err instanceof Error ? err.message : 'upstream_error'); return null; }
-  }, [scope]);
+  }, [scope, boardPage]);
   useEffect(() => { onDataChange?.(data); }, [data, onDataChange]);
   useEffect(() => {
     // Canonicalizing the URL does not invalidate the board that supplied it.
