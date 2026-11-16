@@ -53,3 +53,6 @@ h.busy=false;h.restoring=false;h.detail.source='legacy';s.renderTrailHistoryActi
 h.detail.source='exclusion_summary';h.data.can_restore=false;s.renderTrailHistoryActions();assert(dialog.querySelector('[data-action="start-restore"]').hidden);
 s.state.uiLanguage='en';html=s.trailHistoryDiff(item);assert(html.includes('Exclusion reason'));assert(html.includes('Changed'));
 (async()=>{h.restoring=false;h.preview={ready:true};await s.previewTrailRestore();await s.commitTrailRestore();console.log('Trail history detail UI contracts passed');})().catch(e=>{console.error(e);process.exit(1);});
+
+assert.equal(s.trailHistoryLabelValue({field:'ra_stuck_auto_result',after:{present:true,value:'成功'}},'after'),'成功');
+assert.equal(s.trailHistoryLabelValue({field:'ra_stuck_auto_result',before:{present:true,value:'正确触发'}},'before'),'正确触发');

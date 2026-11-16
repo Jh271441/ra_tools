@@ -120,11 +120,17 @@ function trailHistoryComparison(before,after,key,preview=false) {
 function trailHistoryLabelField(field) {
   return field==='ra_stuck_auto_result'?uiText('模型主字段','Model result'):field==='ra_review_result_new'?uiText('TE 标注','TE label'):field==='ra_rd_review_result'?uiText('RD 标注','RD label'):'';
 }
+function trailHistoryLabelValue(item,key) {
+  const value=item[key]||{};
+  if(item.field!=='ra_stuck_auto_result')return trailHistoryFieldValue(value,'value');
+  if(value.present===false||!Object.prototype.hasOwnProperty.call(value,'value'))return uiText('字段不存在','Field absent');
+  return value.value===null?'null':typeof value.value==='string'?(value.value||uiText('空字符串','Empty string')):JSON.stringify(value.value);
+}
 function trailHistoryLabelTable(items,beforeKey='before',afterKey='after',selectable=false) {
   const detail=trailHistory.detail,preview=afterKey==='restore';
   const showOutcomes=!preview&&items.some(item=>(detail?.outcomes[item.issue_id]||'unknown')!==detail?.status);
   const before=preview?uiText('当前值','Current'):uiText('修改前','Before'),after=preview?uiText('恢复为','Restore to'):uiText('修改后','After');
-  return `<div class="trail-history-label-table-wrap"><table class="trail-history-label-table"><caption>${trailHistoryLabelField(items[0].field)}</caption><thead><tr><th scope="col">Issue ID</th><th scope="col">${before}</th><th scope="col">${after}</th></tr></thead><tbody>${items.map(item=>`<tr><th scope="row">${selectable?`<label class="trail-history-select"><input type="checkbox" data-restore-issue="${trailHistoryText(item.issue_id)}" aria-label="${trailHistoryText(uiText(`恢复 ${item.issue_id}`,`Restore ${item.issue_id}`))}" ${trailHistory.selected.includes(item.issue_id)?"checked":""} ${!detail?.restorable_issue_ids?.includes(item.issue_id)||trailHistory.busy?"disabled":""}><span>${trailHistoryText(item.issue_id)}</span></label>`:`<span>${trailHistoryText(item.issue_id)}</span>`}${showOutcomes&&detail?.outcomes[item.issue_id]!=='succeeded'?trailHistoryBadge(detail?.outcomes[item.issue_id]||'unknown',detail?.source):''}</th><td>${trailHistoryText(trailHistoryFieldValue(item[beforeKey]||{},'value'))}</td><td class="trail-history-label-after">${trailHistoryText(trailHistoryFieldValue(item[afterKey]||{},'value'))}</td></tr>`).join('')}</tbody></table></div>`;
+  return `<div class="trail-history-label-table-wrap"><table class="trail-history-label-table"><caption>${trailHistoryLabelField(items[0].field)}</caption><thead><tr><th scope="col">Issue ID</th><th scope="col">${before}</th><th scope="col">${after}</th></tr></thead><tbody>${items.map(item=>`<tr><th scope="row">${selectable?`<label class="trail-history-select"><input type="checkbox" data-restore-issue="${trailHistoryText(item.issue_id)}" aria-label="${trailHistoryText(uiText(`恢复 ${item.issue_id}`,`Restore ${item.issue_id}`))}" ${trailHistory.selected.includes(item.issue_id)?"checked":""} ${!detail?.restorable_issue_ids?.includes(item.issue_id)||trailHistory.busy?"disabled":""}><span>${trailHistoryText(item.issue_id)}</span></label>`:`<span>${trailHistoryText(item.issue_id)}</span>`}${showOutcomes&&detail?.outcomes[item.issue_id]!=='succeeded'?trailHistoryBadge(detail?.outcomes[item.issue_id]||'unknown',detail?.source):''}</th><td>${trailHistoryText(trailHistoryLabelValue(item,beforeKey))}</td><td class="trail-history-label-after">${trailHistoryText(trailHistoryLabelValue(item,afterKey))}</td></tr>`).join('')}</tbody></table></div>`;
 }
 function trailHistoryChanges(items,beforeKey='before',afterKey='after',selectable=false) {
   const groups=[],fields=new Map();
