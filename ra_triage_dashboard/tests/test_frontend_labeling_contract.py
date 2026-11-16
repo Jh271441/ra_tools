@@ -89,7 +89,7 @@ class FrontendLabelingContractTest(unittest.TestCase):
     def test_review_assignment_history_uses_flat_visual_hierarchy(self) -> None:
         self.assertIn(".review-assignment-list-card { padding: 4px 2px 0; border: 0;", STYLES_CSS)
         self.assertIn(".review-assignment-list { display: grid; gap: 10px; }", STYLES_CSS)
-        self.assertIn(".review-assignment-batch { display: grid; gap: 10px; padding: 13px 14px; border: 1px solid var(--line); border-radius: 9px; background: var(--overlay); }", STYLES_CSS)
+        self.assertIn(".review-assignment-batch { container: review-assignment / inline-size; display: grid; gap: 10px; padding: 13px 14px; border: 1px solid var(--line); border-radius: 9px; background: var(--overlay); }", STYLES_CSS)
         self.assertIn(".review-assignment-progress { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }", STYLES_CSS)
         self.assertIn(".review-assignment-member + .review-assignment-member { padding-left: 14px; border-left: 1px solid var(--line-soft); }", STYLES_CSS)
         self.assertIn(".review-assignment-member + .review-assignment-member { padding: 10px 0 2px; border-top: 1px solid var(--line-soft); border-left: 0; }", STYLES_CSS)
