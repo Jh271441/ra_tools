@@ -5,6 +5,16 @@
 .case-labeling-page .issue-card-heading .issue-id { flex-shrink: 0; max-width:100%; }
 .case-labeling-page .issue-card-labels { flex-wrap: wrap; }
 
+/* Four reviewers stay together as 4 / 2 / 1 columns, using the card's width. */
+@container review-assignment (max-width: 719px) {
+  .review-assignment-member-grid:where(:has(> .review-assignment-member:nth-child(4):last-child)) { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 10px; }
+  .review-assignment-member-grid:where(:has(> .review-assignment-member:nth-child(4):last-child)) > .review-assignment-member:nth-child(2n + 1) { padding-left: 0; border-left: 0; }
+}
+@container review-assignment (max-width: 439px) {
+  .review-assignment-member-grid:where(:has(> .review-assignment-member:nth-child(4):last-child)) { grid-template-columns: minmax(0, 1fr); row-gap: 0; }
+  .review-assignment-member-grid:where(:has(> .review-assignment-member:nth-child(4):last-child)) > .review-assignment-member + .review-assignment-member { padding: 10px 0 2px; border-left: 0; border-top: 1px solid var(--line-soft); }
+}
+
 @media (max-width: 1280px) {
   .app-page, .tool-page, .review-gallery-view,
   .runs-source-card, .runs-page-card,
@@ -547,7 +557,7 @@
   .review-assignment-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .review-assignment-batch-header h3, .review-assignment-batch-meta { overflow-wrap: anywhere; }
   .review-assignment-batch-title { white-space: normal; overflow-wrap: anywhere; }
-  .review-assignment-member-grid { grid-template-columns: minmax(0, 1fr); }
+  .review-assignment-member-grid { grid-template-columns: minmax(0, 1fr); row-gap: 0; }
   .review-assignment-progress-heading { flex-wrap: wrap; }
   .review-assignment-batch-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; gap: 8px; }
   .review-assignment-batch-actions .button { min-width: 0; min-height: 44px; white-space: normal; }
