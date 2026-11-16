@@ -45,7 +45,7 @@ def main(output_dir='/private/tmp/manual-role-cards-acceptance', base='http://12
                 expect(card.locator('.review-assignment-batch-title')).to_have_text(expected)
                 expect(card.locator('.review-assignment-batch-meta').first).to_have_text(
                     ('RD＋TE 交叉标注' if language=='zh' else 'RD + TE cross-review') if task['role_cohort']=='sampling'
-                    else ('不含抽样 · RD 单人标注' if language=='zh' else 'Excludes sampling · One RD per case'))
+                    else ('不含抽样 · RD＋TE 交叉标注' if language=='zh' else 'Excludes sampling · RD + TE cross-review'))
                 assert card.locator('.review-assignment-member').count()==len(task['members'])
                 expect(card.locator('.review-assignment-progress-heading strong')).to_contain_text(f"{task['completed_count']} / {task['assignment_count']}")
                 for link in card.locator('.review-assignment-batch-actions a').all():

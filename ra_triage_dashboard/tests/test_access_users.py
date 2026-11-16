@@ -68,6 +68,21 @@ class AccessUsersTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "唯一的管理员"):
                 database.delete_access_user("jasperchen")
 
+    def test_retired_te_accounts_stay_removed_without_erasing_historical_roles(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            database = self.make_database(directory)
+            names = ('jasperchen', 'yupuxue', 'zhangxuzhao', 'yupuxue_v', 'zhangxuzhao_v')
+            database.bootstrap_access_users(writers=names, administrators=('jasperchen',))
+            database.bootstrap_mention_users()
+            for old in ('yupuxue', 'zhangxuzhao'):
+                self.assertTrue(database.delete_access_user(old))
+                database.set_mention_user(username=old, enabled=False, actor='jasperchen')
+            database.bootstrap_access_users(writers=names, administrators=('jasperchen',))
+            self.assertEqual({u['username'] for u in database.list_access_users()}, {'jasperchen', 'yupuxue_v', 'zhangxuzhao_v'})
+            self.assertFalse({'yupuxue', 'zhangxuzhao'} & {u['username'] for u in database.list_mention_users()})
+            with database.connect() as conn:
+                self.assertEqual({r['role'] for r in conn.execute("SELECT role FROM human_user_roles WHERE username IN ('yupuxue','zhangxuzhao')").fetchall()}, {'te'})
+
     def test_mention_directory_is_separate_from_write_access(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             database = self.make_database(directory)

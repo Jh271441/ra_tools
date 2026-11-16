@@ -60,7 +60,9 @@ function reviewAssignmentRunLabel(runId) {
 
 function reviewAssignmentModeLabel(item) {
   if(item?.role_cohort==='sampling')return uiText('RD＋TE 交叉标注','RD + TE cross-review');
-  if(item?.role_cohort==='low')return uiText('不含抽样 · RD 单人标注','Excludes sampling · One RD per case');
+  if(item?.role_cohort==='low')return Number(item.reviewers_per_issue || 1) > 1
+    ? uiText('不含抽样 · RD＋TE 交叉标注','Excludes sampling · RD + TE cross-review')
+    : uiText('不含抽样 · RD 单人标注','Excludes sampling · One RD per case');
   if(item?.appendable)return uiText("联合复核 · 持续追加","Combined review · Appendable");
   const reviewers = Math.max(1, Number(item?.reviewers_per_issue || 1));
   if (reviewers <= 1) return uiText("单人分配", "Single review");

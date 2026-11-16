@@ -84,7 +84,9 @@ def task(db, dataset, *, assignee='', status='all', query='', page=1, page_size=
     if campaign:
         sampling=campaign['cohort']=='sampling'
         result.update(role_cohort=campaign['cohort'],campaign_name=dataset['release_family'][4:]+' · '+('Sampling' if sampling else 'Low confidence'),
-                      mode='blind' if sampling else 'single',reviewers_per_issue=2 if sampling else 1,overlap_ratio=1 if sampling else 0,
+                      mode=campaign.get('mode', 'blind' if sampling else 'single'),
+                      reviewers_per_issue=campaign.get('reviewers_per_issue', 2 if sampling else 1),
+                      overlap_ratio=campaign.get('overlap_ratio', 1 if sampling else 0),
                       filter_snapshot=dict(version_live=True,version_dataset_id=dataset['id'],role_cohort=campaign['cohort']))
     if detail:
         items=[]

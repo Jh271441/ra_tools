@@ -58,6 +58,17 @@ def create_preview_app():
       document.querySelectorAll('.app-page').forEach(p=>p.classList.toggle('hidden',p.dataset.page!==state.activePage));
       document.querySelector('#pageTitle').textContent=uiText('版本图库 · 合成数据预览','Version gallery · synthetic preview');
       applyDomI18n(document);setVersionDatasetsActive(true);
+    }else if(params.get('preview')==='tasks'){
+      const tasks=await api('/api/preview-version-tasks');
+      state.activePage='review-assignments';document.body.dataset.activePage=state.activePage;
+      document.querySelectorAll('.app-page').forEach(p=>p.classList.toggle('hidden',p.dataset.page!==state.activePage));
+      Object.assign(state.reviewAssignments,{splits:tasks.items,loading:false,lifecycle:'versions'});
+      const renderTasks=()=>{document.querySelector('#pageTitle').textContent=uiText('任务分配 · 合成数据预览','Task assignments · synthetic preview');renderReviewAssignmentPage();};
+      renderTasks();
+      document.querySelector('#languageToggleButton').onclick=()=>{
+        state.uiLanguage=state.uiLanguage==='zh'?'en':'zh';document.documentElement.dataset.uiLang=state.uiLanguage;
+        document.querySelector('#languageToggleButton').textContent=state.uiLanguage==='zh'?'EN':'中文';renderTasks();
+      };
     }else{await loadRdResults();if(params.get('preview')==='users'){
       document.querySelectorAll('.app-page').forEach(p=>p.classList.toggle('hidden',p.dataset.page!=='users'));
       document.body.dataset.activePage='users';state.activePage='users';drawHeader();applyDomI18n(document);

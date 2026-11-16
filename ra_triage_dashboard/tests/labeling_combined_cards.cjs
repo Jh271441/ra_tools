@@ -46,7 +46,7 @@ const version = {...item,split_id:'campaign-v',appendable:true,release_family:'2
   // ordinary task renderer and must not fall back to the pre-1106 combined name.
   const sampling={...version,split_id:'campaign-version-20261106-odd2-sampling',release_family:'20261106',
     baseline_ids:['version-20261106'],role_cohort:'sampling',total_count:7,assignment_count:14};
-  const low={...sampling,split_id:'campaign-version-20261106-odd2-low',role_cohort:'low',total_count:20,assignment_count:20};
+  const low={...sampling,split_id:'campaign-version-20261106-odd2-low',role_cohort:'low',reviewers_per_issue:2,total_count:20,assignment_count:40};
   fail=false;
   for(const language of ['zh','en']) {
     context.state.uiLanguage=language;
@@ -58,10 +58,10 @@ const version = {...item,split_id:'campaign-v',appendable:true,release_family:'2
       assert.ok(markup.includes(language==='zh'?'1106 · 抽样集':'1106 · Sampling'));
       assert.ok(markup.includes(language==='zh'?'1106 · 低置信集':'1106 · Low confidence'));
       assert.ok(markup.includes(language==='zh'?'RD＋TE 交叉标注':'RD + TE cross-review'));
-      assert.ok(markup.includes(language==='zh'?'不含抽样 · RD 单人标注':'Excludes sampling · One RD per case'));
+      assert.ok(markup.includes(language==='zh'?'不含抽样 · RD＋TE 交叉标注':'Excludes sampling · RD + TE cross-review'));
       assert.ok(!markup.includes('Single owner · No overlap')&&!markup.includes('低置信＋抽样'));
       assert.ok(markup.includes('work_split='+sampling.split_id)&&markup.includes('work_split='+low.split_id));
-      assert.ok(markup.includes('3 / 14')&&markup.includes('3 / 20'));
+      assert.ok(markup.includes('3 / 14')&&markup.includes('3 / 40'));
     }
     assert.equal(status.textContent,language==='zh'?'2 个任务':'2 tasks');
     const legacy=context.renderReviewAssignmentBatch({...version,release_family:'20261030'});

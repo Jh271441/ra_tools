@@ -81,7 +81,7 @@ class Trail:
 
 
 def test_allocation_independent_balanced_and_append_stable(db):
-    allocations=allocate_role_pairs([str(i) for i in range(1000)],sampled=True,seed='a'*64)
+    allocations=allocate_role_pairs([str(i) for i in range(1000)],cross_review=True,seed='a'*64)
     counts=Counter(p for r in allocations for p in r['assignees'])
     assert set(counts.values())=={500}
     pairs=Counter(tuple(r['assignees']) for r in allocations)
@@ -90,6 +90,8 @@ def test_allocation_independent_balanced_and_append_stable(db):
     assert len(rows)==len({r['issue_id'] for r in rows})==60
     tasks=version_tasks(db);assert len(tasks)==2 and sum(t['total_count'] for t in tasks)==60
     for task in tasks:
+        assert task['mode']=='blind' and task['reviewers_per_issue']==2
+        assert task['assignment_count']==2*task['total_count']
         detail=version_task_detail(db,task['split_id'])
         assert detail['split_id']==task['split_id']
         assert version_task_baseline_ids(db,task['split_id'])==['version-20261106']
@@ -113,7 +115,7 @@ def test_allocation_independent_balanced_and_append_stable(db):
     for cohort in ['sampling','low']:
         counts=Counter(p for b in added['bindings'].values() if b['cohort']==cohort for p in b['assignees'])
         assert abs(counts['jasperchen']-counts['liangxianghui'])<=1
-        if cohort=='sampling':assert abs(counts['yupuxue_v']-counts['zhangxuzhao_v'])<=1
+        assert abs(counts['yupuxue_v']-counts['zhangxuzhao_v'])<=1
 
 
 @pytest.mark.parametrize('cohorts',[[],['sampling'],['sampling','low']])
@@ -135,7 +137,7 @@ def test_append_receipt_keeps_pinned_single_task_cron_compatible(tmp_path,cohort
         assert set(result['bindings'])==set(ids)
         for cohort,iid in zip(cohorts,ids):
             assert result['bindings'][iid]['campaign_id'].endswith('-'+cohort)
-            assert len(result['bindings'][iid]['assignees'])==(2 if cohort=='sampling' else 1)
+            assert len(result['bindings'][iid]['assignees'])==2
         repeated=database.append_version_campaign_members(**args)
         assert repeated['added']==0 and repeated['campaign_id']==result['campaign_id']
         assert repeated['bindings']==result['bindings']

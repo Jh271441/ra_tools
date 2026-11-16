@@ -53,7 +53,7 @@
         const appPreload = document.createElement("link");
         appPreload.rel = "preload";
         appPreload.as = "script";
-        appPreload.href = `${activeBase}/static/app-bundle.js?v=manual-triage-815`;
+        appPreload.href = `${activeBase}/static/app-bundle.js?v=manual-triage-816`;
         document.head.appendChild(appPreload);
         // These same-origin reads are required on every route. Begin them
         // while the bundle downloads; consume once through the normal API
@@ -123,7 +123,7 @@
         stylesheetRequests.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-815`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-816`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -2729,7 +2729,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app-bundle.js?v=manual-triage-815`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app-bundle.js?v=manual-triage-816`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

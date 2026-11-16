@@ -18,7 +18,9 @@ def sampled(seed, family, issue_id):
 class RoleVersionTasksMixin:
     def role_version_campaigns(self, dataset_id):
         with self.connect() as conn:
-            return [dict(r) for r in conn.execute('SELECT * FROM human_version_tasks WHERE dataset_id=? ORDER BY cohort DESC', (dataset_id,)).fetchall()]
+            return [dict(r) for r in conn.execute('''SELECT h.*,s.mode,s.reviewers_per_issue,s.overlap_ratio
+                FROM human_version_tasks h JOIN issue_work_splits s ON s.id=h.campaign_id
+                WHERE h.dataset_id=? ORDER BY h.cohort DESC''', (dataset_id,)).fetchall()]
 
     def append_role_version_campaign_members(self, *, family,policy,issue_ids,current_target_ids,batch_key,actor,_connection=None,_historical=None):
         datetime.strptime(family,'%Y%m%d')
@@ -58,10 +60,10 @@ class RoleVersionTasksMixin:
                     namespace=digest([POLICY,did,cohort]);now=utc_now()
                     insert(conn,'issue_work_splits',dict(id=root,created_by=actor,created_at=now,seed=int(policy['seed'][:7],16),total_count=0,
                         filter_json=_json(dict(version_live=True,version_dataset_id=did,role_cohort=cohort,publication_policy=POLICY)),
-                        assignees_json='[]',overlap_ratio=1 if cohort=='sampling' else 0,purpose='model_review',evaluation_run_id=rid,model_run_id=rid,
+                        assignees_json='[]',overlap_ratio=1,purpose='model_review',evaluation_run_id=rid,model_run_id=rid,
                         reference_type='reference_set',reference_id=namespace,reference_sha256=namespace,lifecycle='active',config_revision=1,
-                        campaign_name=family[4:]+' · '+('抽样集' if cohort=='sampling' else '低置信集'),task_kind='model_review',mode='blind' if cohort=='sampling' else 'single',
-                        reviewers_per_issue=2 if cohort=='sampling' else 1,assignment_count=0,workset_id='',selection_source_run_id=rid,
+                        campaign_name=family[4:]+' · '+('抽样集' if cohort=='sampling' else '低置信集'),task_kind='model_review',mode='blind',
+                        reviewers_per_issue=2,assignment_count=0,workset_id='',selection_source_run_id=rid,
                         workflow_mode='model_review_and_case_label',updated_by=actor,updated_at=now))
                     insert(conn,'human_version_tasks',dict(dataset_id=did,cohort=cohort,campaign_id=root,seed=policy['seed'],created_at=now))
                 else:root=registered['campaign_id']
@@ -73,7 +75,7 @@ class RoleVersionTasksMixin:
                 assignments=[dict(r) for r in conn.execute('SELECT * FROM review_work_assignments WHERE split_id=? ORDER BY issue_id,assignment_kind',(root,)).fetchall()]
                 for a in assignments:assigned[a['issue_id']].append(a['assignee'])
                 new=sorted(set(ids)-{m['issue_id'] for m in members})
-                people=(*RD_REVIEWERS,*TE_REVIEWERS) if cohort=='sampling' else RD_REVIEWERS
+                people=(*RD_REVIEWERS,*TE_REVIEWERS)
                 if new:
                     for person in people:
                         account=conn.execute('SELECT a.role AS permission,h.role FROM access_users a JOIN human_user_roles h ON h.username=a.username WHERE a.username=?',(person,)).fetchone()
@@ -81,7 +83,9 @@ class RoleVersionTasksMixin:
                         if not account or account['permission'] not in {'writer','admin'} or account['role']!=expected_role:
                             raise ValueError('默认标注人员不可用 / Default reviewer unavailable: '+person)
                 previous=[dict(assignees=sorted(owners,key=lambda p:p not in RD_REVIEWERS)) for iid,owners in assigned.items() if iid in set(current_target_ids)]
-                allocations=allocate_role_pairs(new,sampled=cohort=='sampling',seed=policy['seed'],previous=previous,
+                if new and cohort=='low' and (campaign['mode']!='blind' or any(len(owners)!=2 for owners in assigned.values())):
+                    raise ValueError('旧低置信任务需先补齐 TE / Extend existing low-confidence TE assignments first')
+                allocations=allocate_role_pairs(new,seed=policy['seed'],previous=previous,
                     fixed_rd={i:v['owner'] for i,v in (_historical or {}).items()})
                 ordinals={p:max([a['ordinal'] for a in assignments if a['assignee']==p] or [0]) for p in people}
                 fresh_members=[]

@@ -62,7 +62,7 @@ def resolve_role(members, votes, role):
                 supplements=supplemental)
 
 
-def allocate_role_pairs(issue_ids, *, sampled, seed, previous=(), fixed_rd=None):
+def allocate_role_pairs(issue_ids, *, cross_review=True, seed, previous=(), fixed_rd=None):
     """Stable cumulative quotas with seeded tie breaks and balanced RD×TE pairs."""
     counts = Counter(); pairs = Counter()
     for item in previous:
@@ -72,7 +72,7 @@ def allocate_role_pairs(issue_ids, *, sampled, seed, previous=(), fixed_rd=None)
     result = []
     for iid in sorted(issue_ids, key=lambda x: digest([POLICY, seed, 'order', x])):
         rd_options = [(fixed_rd or {})[iid]] if iid in (fixed_rd or {}) else [p for p in RD_REVIEWERS if counts[p] == min(counts[x] for x in RD_REVIEWERS)]
-        if sampled:
+        if cross_review:
             te_options = [p for p in TE_REVIEWERS if counts[p] == min(counts[x] for x in TE_REVIEWERS)]
             rd, te = min(((r, t) for r in rd_options for t in te_options),
                          key=lambda pair: (pairs[pair], digest([seed, 'rd', iid, pair[0]]),
