@@ -2,13 +2,16 @@
 from pathlib import Path
 
 from .shared import utc_now
+from ..human_label_policy import TE_USERS
 
 
 def seed_roles(conn):
-    conn.execute("""INSERT INTO human_user_roles(username,role,updated_by,updated_at)
-        SELECT username, CASE WHEN username IN ('yupuxue','zhangxuzhao','lishizhong','zhangyang')
+    names = sorted(TE_USERS)
+    marks = ','.join('?' for _ in names)
+    conn.execute(f"""INSERT INTO human_user_roles(username,role,updated_by,updated_at)
+        SELECT username, CASE WHEN username IN ({marks})
         THEN 'te' ELSE 'rd' END, 'initial-directory', ? FROM access_users WHERE 1=1
-        ON CONFLICT(username) DO NOTHING""", (utc_now(),))
+        ON CONFLICT(username) DO NOTHING""", (*names, utc_now()))
 
 
 def initialize_human_labels(self, conn):

@@ -35,10 +35,10 @@
 
 一个版本保留一个 dataset / prediction Run，生成两个可追加任务：
 
-- 抽样集：`jasperchen` / `liangxianghui` 每条选一位 RD，`yupuxue` / `zhangxuzhao` 每条选一位 TE。各组累计 1:1，奇数相差最多一条；使用持久化 seed 独立随机，并平衡四种搭配，避免固定搭档。
+- 抽样集：`jasperchen` / `liangxianghui` 每条选一位 RD，`yupuxue_v` / `zhangxuzhao_v` 每条选一位 TE。各组累计 1:1，奇数相差最多一条；使用持久化 seed 独立随机，并平衡四种搭配，避免固定搭档。
 - 低置信集：排除抽样交集，每条分一位 RD，累计平衡。增量只追加，历史成员不重排；迁移优先保留历史负责人，后续新增逐步平衡。
 
-从 release family `20261106` 起应用；旧版本分配规则保留。业务身份 RD/TE 与 writer/admin 权限独立，默认 TE 为 `yupuxue`、`zhangxuzhao`、`lishizhong`、`zhangyang`，其余已有用户为 RD。身份编辑有审计，提交和分配均保留身份快照。
+从 release family `20261106` 起应用；旧版本分配规则保留。业务身份 RD/TE 与 writer/admin 权限独立，默认 TE 为 `yupuxue_v`、`zhangxuzhao_v`、`lishizhong`、`zhangyang`，其余已有用户为 RD。身份编辑有审计，提交和分配均保留身份快照。
 
 上传页面也遵循这个版本边界：选择 1030 或更早数据集时，保留原有“RD 标注上传 / TE 标注修正”；只选择 1106 起版本时显示“RD 标注 / TE′ 标注 / 裁决标注”。旧版 TE 修正与 TE′ 对应不同字段，不能为了统一页面把历史数据切到新通道。验收入口应使用 `rd-results?baselines=version-20261106`。
 

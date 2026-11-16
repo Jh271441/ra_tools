@@ -5,9 +5,9 @@ from collections import Counter
 import hashlib
 import json
 
-TE_USERS = frozenset({'yupuxue', 'zhangxuzhao', 'lishizhong', 'zhangyang'})
+TE_USERS = frozenset({'yupuxue_v', 'zhangxuzhao_v', 'yupuxue', 'zhangxuzhao', 'lishizhong', 'zhangyang'})
 RD_REVIEWERS = ('jasperchen', 'liangxianghui')
-TE_REVIEWERS = ('yupuxue', 'zhangxuzhao')
+TE_REVIEWERS = ('yupuxue_v', 'zhangxuzhao_v')
 FIELDS = {'rd': 'ra_rd_review_result', 'te': 'ra_review_result_sampling',
           'arbitrated': 'ra_review_result_arbitrated'}
 VALUES = {'正确触发': '成功', '误触发': '误触发', '无需协助': '无需协助'}

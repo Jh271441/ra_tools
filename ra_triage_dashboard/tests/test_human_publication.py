@@ -9,7 +9,7 @@ import pytest
 
 from ra_triage_dashboard.app.db import Database, LabelAnnotationConflictError, AnnotationConflictError
 from ra_triage_dashboard.app.db_parts.role_version_tasks import sampled
-from ra_triage_dashboard.app.human_label_policy import FIELDS, PRIORITY, allocate_role_pairs, effective_metric_label
+from ra_triage_dashboard.app.human_label_policy import FIELDS, PRIORITY, TE_REVIEWERS, allocate_role_pairs, effective_metric_label, initial_role
 from ra_triage_dashboard.app.human_publisher import HumanPublisher, qualified_capabilities
 from ra_triage_dashboard.app.version_review_tasks import version_tasks, version_task_detail, version_task_baseline_ids
 
@@ -17,7 +17,7 @@ from ra_triage_dashboard.app.version_review_tasks import version_tasks, version_
 @pytest.fixture
 def db(tmp_path):
     database=Database(tmp_path/'test.sqlite');database.init()
-    for name in ['jasperchen','liangxianghui','yupuxue','zhangxuzhao','observer']:
+    for name in ['jasperchen','liangxianghui','yupuxue_v','zhangxuzhao_v','observer']:
         database.set_access_user(username=name,role='admin',actor='test')
     rid=database.ensure_version_stream('20261106','test')
     ids=['cn'+str(i) for i in range(1,61)]
@@ -113,14 +113,14 @@ def test_allocation_independent_balanced_and_append_stable(db):
     for cohort in ['sampling','low']:
         counts=Counter(p for b in added['bindings'].values() if b['cohort']==cohort for p in b['assignees'])
         assert abs(counts['jasperchen']-counts['liangxianghui'])<=1
-        if cohort=='sampling':assert abs(counts['yupuxue']-counts['zhangxuzhao'])<=1
+        if cohort=='sampling':assert abs(counts['yupuxue_v']-counts['zhangxuzhao_v'])<=1
 
 
 @pytest.mark.parametrize('cohorts',[[],['sampling'],['sampling','low']])
 def test_append_receipt_keeps_pinned_single_task_cron_compatible(tmp_path,cohorts):
     database=Database(tmp_path/'legacy-cron.sqlite');database.init()
     try:
-        for name in ['jasperchen','liangxianghui','yupuxue','zhangxuzhao']:
+        for name in ['jasperchen','liangxianghui','yupuxue_v','zhangxuzhao_v']:
             database.set_access_user(username=name,role='admin',actor='test')
         family='20261106';policy=dict(sampling_policy='version_probability_v3',seed='a'*64)
         ids=[next('cn'+str(i) for i in range(1,61) if sampled(policy['seed'],family,'cn'+str(i))==(cohort=='sampling')) for cohort in cohorts]
@@ -187,6 +187,41 @@ def test_role_edits_preserve_historical_vote_and_assignment_role(db):
     assert db.human_label_context(iid)['lanes']['rd']['state']=='resolved'
     submit(db,iid,b['assignee'],'无需协助')
     assert db.human_label_context(iid)['lanes']['rd']['state']=='pending'
+
+
+def test_te_roster_uses_sso_accounts_and_preserves_legacy_role_defaults(db):
+    assert TE_REVIEWERS == ('yupuxue_v', 'zhangxuzhao_v')
+    for name in (*TE_REVIEWERS, 'yupuxue', 'zhangxuzhao'):
+        assert initial_role(name) == 'te'
+    assert initial_role('jasperchen') == 'rd'
+    with db.connect() as conn:
+        conn.execute("DELETE FROM human_user_roles WHERE username IN ('yupuxue_v','zhangxuzhao_v')")
+        from ra_triage_dashboard.app.db_parts.initialize_human_labels import seed_roles
+        seed_roles(conn)
+        assert {row['role'] for row in conn.execute("SELECT role FROM human_user_roles WHERE username IN ('yupuxue_v','zhangxuzhao_v')").fetchall()} == {'te'}
+
+
+@pytest.mark.parametrize('formal', [False, True])
+def test_explicit_resubmit_after_role_correction_appends_new_role_without_rewriting_history(db, formal):
+    iid, binding = choose(db, 'sampling')
+    actor = binding['assignees'][1]
+    if not formal:
+        with db.connect() as conn:
+            conn.execute('DELETE FROM review_work_assignments WHERE split_id=? AND issue_id=? AND assignee=?',
+                         (binding['campaign_id'], iid, actor))
+    db.set_access_user(username=actor, role='writer', actor='test', annotation_role='rd')
+    submit(db, iid, actor)
+    with db.connect() as conn:
+        old = conn.execute('''SELECT r.id,v.role FROM label_revisions r JOIN label_cases c ON c.id=r.label_case_id
+            JOIN human_vote_roles v ON v.revision_id=r.id WHERE c.issue_id=? AND r.author=? ORDER BY r.id DESC LIMIT 1''', (iid, actor)).fetchone()
+        assert old['role'] == 'rd'
+    db.set_access_user(username=actor, role='writer', actor='test', annotation_role='te')
+    submit(db, iid, actor)
+    with db.connect() as conn:
+        assert conn.execute('SELECT role FROM human_vote_roles WHERE revision_id=?', (old['id'],)).fetchone()['role'] == 'rd'
+        latest = conn.execute('''SELECT r.id,v.role FROM label_revisions r JOIN label_cases c ON c.id=r.label_case_id
+            JOIN human_vote_roles v ON v.revision_id=r.id WHERE c.issue_id=? AND r.author=? ORDER BY r.id DESC LIMIT 1''', (iid, actor)).fetchone()
+        assert latest['id'] > old['id'] and latest['role'] == 'te'
 
 
 def test_existing_final_adjudication_binds_only_formal_sources(db,tmp_path):
@@ -419,7 +454,7 @@ def test_audited_legacy_cutover_preserves_votes_owners_links_and_does_not_backfi
     from ra_triage_dashboard.app.human_label_migration import migration_plan,apply_migration,arm_migrated_sources
     database=Database(tmp_path/'legacy.sqlite');database.init()
     try:
-        for person in ['jasperchen','liangxianghui','yupuxue','zhangxuzhao','legacy_rd']:
+        for person in ['jasperchen','liangxianghui','yupuxue_v','zhangxuzhao_v','legacy_rd']:
             database.set_access_user(username=person,role='admin',actor='test')
         rid=database.ensure_version_stream('20261106','test');ids=['cn'+str(i) for i in range(1,41)]
         database.append_version_predictions(run_id=rid,rows=[dict(issue_id=i,model_label='误触发',model_confidence=.7,

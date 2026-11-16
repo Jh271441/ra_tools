@@ -22,6 +22,13 @@ def _fingerprint(value: Any) -> str:
 
 
 class DatabaseCombinedReviewMixin:
+    @staticmethod
+    def _case_vote_role_matches(conn, revision_id, reviewer):
+        role = conn.execute('''SELECT u.role AS current_role,v.role AS captured_role
+            FROM human_user_roles u LEFT JOIN human_vote_roles v ON v.revision_id=?
+            WHERE u.username=?''', (revision_id, reviewer)).fetchone()
+        return role is None or role['current_role'] == role['captured_role']
+
     def _combined_label_fingerprint(self, conn, issue_id, reviewer, state):
         human=self.human_label_context(issue_id,connection=conn)
         if human:
@@ -111,7 +118,8 @@ class DatabaseCombinedReviewMixin:
             if self._combined_label_fingerprint(conn,issue_key,actor,label_state) != str(expected_label_state_fingerprint or ""):
                 raise LabelAnnotationConflictError("共享 Case 标签结论已变化，请刷新后重新确认。")
             excluded = bool(head["is_excluded"]) if is_excluded is None and head is not None else bool(is_excluded)
-            if (not attachments and head is not None and str(head["expected_output"] or "") == output
+            if (not attachments and head is not None and self._case_vote_role_matches(conn, head['id'], actor)
+                    and str(head["expected_output"] or "") == output
                     and bool(head["is_excluded"]) == excluded
                     and (not update_case_details or (sorted(_json_load(head["tags_json"], [])) == clean_tags
                          and str(head["rationale"] or "").strip() == str(rationale or "").strip()))):
@@ -416,6 +424,7 @@ class DatabaseCombinedReviewMixin:
             current_case = context.get("case_revision") or {}
             excluded = bool(current_case.get("is_excluded")) if is_excluded is None else bool(is_excluded)
             if (not attachments and int(context.get("case_revision_id") or 0)
+                    and self._case_vote_role_matches(conn, context['case_revision_id'], actor)
                     and str(current_case.get("expected_output") or "") == output
                     and bool(current_case.get("is_excluded")) == excluded
                     and (not update_case_details or (sorted(current_case.get("tags") or []) == clean_tags
