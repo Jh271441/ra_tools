@@ -21,11 +21,12 @@ from .trail_update.commit import commit_guard
 from .trail_update.preview import _capability_for_info_write, _preview_capability_cache
 from ..publication_audit import PUBLICATION_SOURCES, reconcile_publication_history
 from ..support.baselines import resolve_request_baseline_scopes, restrict_version_issue_ids
+from .. import model_field_audit as model_audit
 
 router = APIRouter()
 _previews = {}
 _TTL = 600
-SOURCES = {"exclusion_summary", "exclusion_direct", "rollback", "legacy", *PUBLICATION_SOURCES}
+SOURCES = {"exclusion_summary", "exclusion_direct", "rollback", "legacy", *PUBLICATION_SOURCES, *model_audit.SOURCES}
 
 
 async def _admin(request):
@@ -75,7 +76,7 @@ async def history(request: Request, issue_id: str = Query("", max_length=128),
     role = await asyncio.to_thread(database.access_role, identity.username) if identity.verified else ""
     result["can_restore"] = bool(role == "admin" and identity_can_write(identity, settings)
         and settings.trail_attribute_write_enabled and getattr(settings, "trail_rollback_enabled", False))
-    result["coverage"] = {"connected": ["exclusion_summary", "exclusion_direct", "rollback", "rd_upload", "te_correction"],
+    result["coverage"] = {"connected": ["exclusion_summary", "exclusion_direct", "rollback", "rd_upload", "te_correction", *sorted(model_audit.SOURCES)],
         "not_connected": ["daily_publication", "sampling", "rd_sync", "external_autotriage", "trail_native"],
         "historical_values_complete": False}
     return result
@@ -89,17 +90,34 @@ async def detail(operation_id: str):
     if operation is None:
         raise _detail(404, "更新记录不存在 / Update record not found")
     operation["restorable"] = operation["source"] in {"exclusion_summary", "exclusion_direct", "rollback"} and "succeeded" in operation["outcomes"].values()
+    if operation['source'] in model_audit.SOURCES:
+        operation['restorable_issue_ids'] = [i['issue_id'] for i in operation['items'] if operation['outcomes'].get(i['issue_id']) == 'succeeded'
+            and i['before'].get('present') and (i['before'].get('value') is not None or _model_null_qualified())
+            ]
+        operation['restorable'] = bool(operation['restorable_issue_ids'])
     return operation
+
+
+def _model_null_qualified():
+    try:
+        import json
+        from pathlib import Path
+        value = json.loads((Path(settings.data_dir) / 'model_field_capabilities.json').read_text())
+        return value.get('field') == model_audit.FIELD and value.get('null_clear') is True and value.get('qualified') is True
+    except (OSError, ValueError, AttributeError):
+        return False
 
 
 async def _snapshot(ids, field):
     result = await asyncio.to_thread(read_trail_model_fields, ra_root=settings.ra_auto_triage_root,
         issue_ids=ids, view_id=settings.trail_view_id, chunk_size=settings.trail_sync_chunk_size)
-    if not result.complete or len(result.rows) != len(ids) or {r["issue_id"] for r in result.rows} != set(ids) or not _capability_for_info_write(result, field).get("ready"):
+    capable = (model_audit.FIELD in result.fields_visible and model_audit.INFO in result.fields_visible
+        if field == model_audit.FIELD else _capability_for_info_write(result, field).get('ready'))
+    if not result.complete or len(result.rows) != len(ids) or {r["issue_id"] for r in result.rows} != set(ids) or not capable:
         raise _detail(409, "Trail 查询或权限不完整 / Incomplete Trail snapshot or capability")
     try:
         for row in result.rows:
-            info_object(row.get(field))
+            model_audit.snapshot(row) if field == model_audit.FIELD else info_object(row.get(field))
     except ValueError:
         raise _detail(409, "Trail 数据异常 / Invalid Trail data")
     return result.rows
@@ -123,6 +141,13 @@ async def verify(operation_id: str, request: Request):
         raise _detail(409, '标注上传请从原页面重新预览核对 / Preview label publications again on the upload page')
     if operation["source"] == "legacy":
         raise _detail(409, "旧版历史没有完整快照 / Legacy snapshots are incomplete")
+    if operation['source'] in model_audit.SOURCES:
+        async with commit_guard():
+            rows = await _snapshot([i['issue_id'] for i in operation['items']], model_audit.FIELD)
+            observed = await asyncio.to_thread(model_audit.reconcile, database, operation_id, rows,
+                actor=identity.username, actor_source=identity.source)
+        return {**await detail(operation_id), 'current_conflicts': [i for i,v in observed.items() if v != 'succeeded'],
+                'observed_at': datetime.now(timezone.utc).isoformat()}
     field = settings.trail_attribute_info_field
     if any(item["field"] != field for item in operation["items"]):
         raise _detail(409, "目标字段配置已改变 / Target field configuration changed")
@@ -156,14 +181,16 @@ async def restore_preview(operation_id: str, request: Request):
     if not set(selected).issubset(known) or any(operation["outcomes"].get(iid) != "succeeded" for iid in selected):
         raise _detail(409, "仅能恢复本次操作中已核验成功的 Issue / Only verified Issues from this operation may be restored")
     operation = {**operation, "items": [item for item in operation["items"] if item["issue_id"] in selected]}
-    field = settings.trail_attribute_info_field
+    is_model = operation['source'] in model_audit.SOURCES
+    field = model_audit.FIELD if is_model else settings.trail_attribute_info_field
     if any(item["field"] != field for item in operation["items"]):
         raise _detail(409, "目标字段配置已改变 / Target field configuration changed")
     async with commit_guard():
         rows = await _snapshot([i["issue_id"] for i in operation["items"]], field)
         restore_id = "restore-" + uuid.uuid4().hex
         try:
-            changes, conflicts = restore_changes(operation, rows, restore_id)
+            changes, conflicts = (model_audit.restore(operation, rows, null_qualified=_model_null_qualified())
+                if is_model else restore_changes(operation, rows, restore_id))
         except ValueError:
             raise _detail(409, "Trail 数据异常 / Invalid Trail data")
         now = time.time()
@@ -173,14 +200,16 @@ async def restore_preview(operation_id: str, request: Request):
         if len(_previews) >= 256:
             raise _detail(503, "预览繁忙，请稍后重试 / Preview busy; retry later")
         preview = {"operation_id": restore_id, "parent_id": operation_id, "actor": identity.username,
-            "reason": reason, "expires_at": now + _TTL, "rows": rows, "changes": changes, "field": field}
+            "reason": reason, "expires_at": now + _TTL, "rows": rows, "changes": changes, "field": field,
+            "model_scalar": is_model}
         digest = hashlib.sha256(encoded({k:v for k,v in preview.items() if k != "rows"}).encode()).hexdigest()
         if not conflicts:
             _previews[digest] = preview
         return {"preview_id": digest if not conflicts else "", "expires_at": preview["expires_at"],
             "conflicts": conflicts, "ready": not conflicts, "items": [
-                {"issue_id": c["issue_id"], "current": owned(next(r for r in rows if r["issue_id"] == c["issue_id"]).get(field)),
-                 "restore": owned(c[field])} for c in changes]}
+                {"issue_id": c["issue_id"], "field": field,
+                 "current": model_audit.snapshot(next(r for r in rows if r['issue_id'] == c['issue_id'])) if is_model else owned(next(r for r in rows if r["issue_id"] == c["issue_id"]).get(field)),
+                 "restore": {"value": c[field]} if is_model else owned(c[field])} for c in changes]}
 
 
 async def _exact_readback(changes, stats, *, result_field, info_field):
@@ -206,6 +235,8 @@ async def restore_commit(operation_id: str, request: Request):
             raise _detail(403, "预览属于其他操作人 / Preview belongs to another actor")
         if preview.get("result"):
             return deepcopy(preview["result"])
+        if preview.get('model_scalar'):
+            return await _commit_model_restore(preview, identity)
         field = preview["field"]
         if field != settings.trail_attribute_info_field:
             raise _detail(409, "目标字段配置已改变 / Target field configuration changed")
@@ -240,3 +271,45 @@ async def restore_commit(operation_id: str, request: Request):
             preview["result"] = response
         _preview_capability_cache.clear()
         return response
+
+
+async def _commit_model_restore(preview, identity):
+    if preview['field'] != model_audit.FIELD:
+        raise _detail(409, '模型目标字段无效 / Invalid model target field')
+    rows = await _snapshot([c['issue_id'] for c in preview['changes']], model_audit.FIELD)
+    expected = {r['issue_id']: r for r in preview['rows']}
+    operation = await asyncio.to_thread(database.trail_operation, preview['operation_id'])
+    desired = {c['issue_id']: c[model_audit.FIELD] for c in preview['changes']}
+    for row in rows:
+        same = model_audit.matches(row, model_audit.snapshot(expected[row['issue_id']]))
+        already = operation and row.get(model_audit.FIELD) == desired[row['issue_id']] and model_audit.model_context(row) == model_audit.model_context(expected[row['issue_id']])
+        if not same and not already:
+            raise _detail(409, 'Trail在预览后发生变化，未写入 / Trail changed since preview; nothing written')
+    if not operation:
+        await asyncio.to_thread(model_audit.begin, database, operation_id=preview['operation_id'],
+            source='model_label_restore', actor=identity.username, actor_source=identity.source,
+            actor_verified=identity.verified, reason=preview['reason'], parent_id=preview['parent_id'],
+            rows=preview['rows'], changes=preview['changes'])
+    async def attempt():
+        try:
+            pending = [c for c in preview['changes'] if next(r for r in rows if r['issue_id']==c['issue_id']).get(model_audit.FIELD) != c[model_audit.FIELD]]
+            if pending:
+                await asyncio.to_thread(write_trail_model_results, pending,
+                    ra_root=settings.ra_auto_triage_root, chunk_size=settings.trail_attribute_write_chunk_size)
+            actual = await _snapshot([c['issue_id'] for c in preview['changes']], model_audit.FIELD)
+            await asyncio.to_thread(model_audit.reconcile, database, preview['operation_id'], actual)
+        except Exception:
+            await asyncio.to_thread(database.append_trail_event, preview['operation_id'], 'unknown',
+                {c['issue_id']: 'unknown' for c in preview['changes']})
+            raise
+    task = asyncio.create_task(attempt())
+    try:
+        await asyncio.shield(task)
+    except asyncio.CancelledError:
+        await task
+        raise
+    result = await detail(preview['operation_id'])
+    response = {'ok': result['status']=='succeeded', 'operation_id': preview['operation_id'], 'status': result['status']}
+    if response['ok']:
+        preview['result'] = response
+    return response

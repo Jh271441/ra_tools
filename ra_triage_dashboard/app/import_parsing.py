@@ -132,6 +132,11 @@ def normalize_model_row(row: dict[str, Any]) -> dict[str, Any] | None:
         or _label_from_structured(result_info)
         or _label_from_structured(info)
     )
+    # Trail's business enum is field-specific; model outputs remain A/B/C.
+    if raw_label == '成功' and ('ra_stuck_auto_result' in row or
+            _parse_structured(info.get('model_result')).get('label') == '正确触发' or
+            _parse_structured(info.get('daily_auto_triage')).get('model_result') == '正确触发'):
+        label = '正确触发'
     # Preserve a nonstandard class for audit/debugging.  It will be visibly
     # marked as non-comparable rather than being silently coerced to a GT label.
     if not label and raw_label and not isinstance(raw_result, (dict, list)):
