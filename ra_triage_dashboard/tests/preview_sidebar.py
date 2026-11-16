@@ -50,12 +50,37 @@ document.addEventListener('DOMContentLoaded', () => {
   document.querySelector('#shortcutHelpButton').hidden = true;
   applyColorTheme(localStorage.getItem('ra-triage-color-theme') || 'dark');
   observeDashboardSelects();bindMobileWorkbench();draw();markUiReady();
+  // Opt-in frame geometry for real before/after animation acceptance.
+  if (new URLSearchParams(location.search).has('motion')) {
+    const output = document.createElement('output');output.id = 'sidebarMotionProbe';output.hidden = true;
+    document.body.appendChild(output);let sequence = 0;
+    document.addEventListener('click', event => {
+      if (!event.target.closest('#sidebarBrandToggle, #sidebarToggle, #mobileSidebarBackdrop')) return;
+      const token = ++sequence, started = performance.now(), samples = [];
+      const record = () => {
+        if (token !== sequence) return;
+        const box = document.querySelector('#appSidebar').getBoundingClientRect();
+        const icon = document.querySelector('#caseLabelingNavButton .sidebar-icon').getBoundingClientRect();
+        const group = document.querySelector('[data-sidebar-nav-group-toggle="review"]').getBoundingClientRect();
+        const frame = document.querySelector('.app-frame').getBoundingClientRect();
+        samples.push({t:performance.now()-started,width:box.width,height:box.height,iconX:icon.x,iconY:icon.y,
+          groupY:group.y,navHeight:document.querySelector('.sidebar-nav').clientHeight,
+          footerHeight:document.querySelector('#sidebarToggle').getBoundingClientRect().height,
+          labelOpacity:Number(getComputedStyle(document.querySelector('#caseLabelingNavButton .sidebar-label')).opacity),
+          backdropOpacity:Number(getComputedStyle(document.querySelector('#mobileSidebarBackdrop')).opacity),
+          frameX:frame.x,frameWidth:frame.width});
+        if (performance.now()-started < 380) requestAnimationFrame(record);
+        else output.textContent = JSON.stringify(samples);
+      };
+      output.textContent = '';record();
+    }, true);
+  }
 });
 """
 
 
-def create_preview_app():
-    static = Path(__file__).resolve().parents[1] / 'static'
+def create_preview_app(static_directory=None):
+    static = Path(static_directory) if static_directory else Path(__file__).resolve().parents[1] / 'static'
     original = (static / 'index.html').read_text()
     styles = re.findall(r'"((?:css/|vendor/)[^"\n]+\.css|styles\.css)"', original)
     modules = [name.strip() for name in (static / 'js/MANIFEST').read_text().splitlines()
@@ -77,4 +102,6 @@ if __name__ == '__main__':
     import uvicorn
     parser = argparse.ArgumentParser()
     parser.add_argument('--port', type=int, default=50275)
-    uvicorn.run(create_preview_app(), host='127.0.0.1', port=parser.parse_args().port, access_log=False)
+    parser.add_argument('--static-dir', type=Path)
+    args = parser.parse_args()
+    uvicorn.run(create_preview_app(args.static_dir), host='127.0.0.1', port=args.port, access_log=False)

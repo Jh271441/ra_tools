@@ -1187,7 +1187,8 @@ function applySidebarState() {
   $("#sidebarToggle").setAttribute("aria-expanded", expanded);
   $("#sidebarToggle").title = `${title}（\\）`;
   $("#sidebarToggle").setAttribute("aria-label", title);
-  $("#sidebarToggle").hidden = mobile && !drawerOpen;
+  // Keep footer geometry stable while the drawer changes width.
+  $("#sidebarToggle").hidden = false;
   const collapseLabel = $("#sidebarToggle .sidebar-label");
   if (collapseLabel) collapseLabel.textContent = title;
   $("#sidebarBrandToggle").setAttribute("aria-expanded", expanded);
@@ -1204,6 +1205,9 @@ function applySidebarState() {
   }
   const frame = shell.querySelector(".app-frame");
   if (frame) frame.inert = drawerOpen;
+  document.querySelectorAll(".sidebar-copy, .sidebar-user .sidebar-label").forEach((element) => {
+    element.inert = shell.classList.contains("sidebar-collapsed");
+  });
   document.querySelectorAll("[data-sidebar-nav-group-toggle]").forEach((toggle) => {
     const label = toggle.querySelector(`.sidebar-group-label .ui-lang-${state.uiLanguage === "en" ? "en" : "zh"}`)?.textContent || "";
     const action = shell.classList.contains("sidebar-collapsed")

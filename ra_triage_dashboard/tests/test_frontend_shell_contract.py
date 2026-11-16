@@ -90,10 +90,10 @@ class FrontendShellContractTest(unittest.TestCase):
         self.assertIn("order: 2; margin-left: auto;", STYLES_CSS)
         self.assertIn(".sidebar-icon { border-color: transparent; color: #8594a8; background: transparent; }", STYLES_CSS)
         self.assertIn(".sidebar-item.active .sidebar-icon .icon-emphasis", STYLES_CSS)
-        self.assertIn("margin-left: 18px; width: calc(100% - 18px);", STYLES_CSS)
+        self.assertIn("transform: translateX(var(--sidebar-item-indent))", STYLES_CSS)
         self.assertIn("width: 100%; min-height: 44px;", STYLES_CSS)
         self.assertIn("font-size: 13px; line-height: 1.25; letter-spacing: .02em;", STYLES_CSS)
-        self.assertIn("padding-inline: 6px; scrollbar-gutter: auto; scrollbar-width: none;", STYLES_CSS)
+        self.assertIn("padding-inline: 7px; scrollbar-gutter: auto; scrollbar-width: none;", STYLES_CSS)
         self.assertGreaterEqual(
             STYLES_CSS.count(".sidebar-nav-group .sidebar-item { width: 100% !important; min-width: 0; margin-left: 0 !important; }"),
             2,

@@ -780,7 +780,7 @@ class FrontendMediaContractTest(unittest.TestCase):
         self.assertIn("height: auto; min-height: 0; aspect-ratio: 16 / 9", STYLES_CSS)
         self.assertIn("min-height: 0; flex: 0 0 auto", STYLES_CSS)
         self.assertIn("object-fit: contain", STYLES_CSS)
-        self.assertIn("html.ra-ui-ready .app-sidebar { transition: width 200ms ease-out; }", STYLES_CSS)
+        self.assertIn("html.ra-ui-ready .app-sidebar { transition: width var(--sidebar-motion-duration) var(--sidebar-motion-easing)", STYLES_CSS)
         self.assertNotIn("clamp(320px, 24cqw, 380px)", STYLES_CSS)
         self.assertNotIn("clamp(300px, 27cqw, 320px)", STYLES_CSS)
         mobile_css = (STATIC_DIR / "css/mobile.css").read_text(encoding="utf-8")
