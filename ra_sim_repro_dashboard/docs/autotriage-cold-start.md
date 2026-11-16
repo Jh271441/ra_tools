@@ -92,3 +92,26 @@ fields (SHA256 `6e9c5eee39f3f383d4c1442efcf0768c02a7778f49d82f0f255877ce5efcf2c1
 Application caches were empty in every process; PostgreSQL/OS caches were not
 flushed. These timings exclude browser download, rendering, SSO and gateway time.
 Evidence/scripts remain in the service's `operations/cold-start-20261116/`.
+
+Published `eba7ff3a` with a source-hash preflight, scoped backup and API-only
+restart (4.3s). All other service PIDs and runtime/configuration bytes remained
+unchanged. The existing HTTP entry's three initial requests took 2.9390s before
+and 1.4554s after; this is one observed server-side HTTP pair, distinct from the
+three controlled process pairs and from browser page-load time. The after read
+was the first evaluation request after the API restart.
+
+The complete live response set retained the normalized SHA256 above. Both pinned
+10-30 revisions, their seven verified TE corrections, metrics, source/provider
+data and audited execution hash were checked before/after and stayed identical.
+No database migration, configuration change, label refresh or new simulation was
+performed. Existing assets were retained for already-open tabs.
+The existing direct/prefix-stripped HTTP contract passed for ordinary pages,
+APIs and relative redirects. Served HTML and all 19 build files matched their
+publication hashes; metric-board prefix variants and invalid-view rejection
+were also verified.
+
+This follow-up changes request/projection work only; no layout or visible text
+was added. The in-app browser automation interface was unavailable for final
+page interaction and viewport acceptance, so this release does not claim a new
+authenticated browser or full page-load measurement. A browser-panel open was
+queued for the existing AutoTriage overview URL.
