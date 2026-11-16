@@ -99,18 +99,48 @@
     width: calc(100% - 60px); max-width: calc(100% - 60px); margin-left: 60px;
   }
   html.ra-ui-ready .app-frame { transition: none; }
-  .sidebar-copy, .sidebar-label, .sidebar-group-label { display: none !important; }
-  .sidebar-group-toggle { display: none; }
-  .sidebar-nav-group-items { display: grid !important; }
   .sidebar-nav { padding-inline: 6px; scrollbar-gutter: auto; scrollbar-width: none; }
   .sidebar-nav::-webkit-scrollbar { width: 0; height: 0; }
-  .sidebar-nav-group .sidebar-item { width: 100% !important; min-width: 0; margin-left: 0 !important; }
-  .sidebar-brand, .sidebar-item, .sidebar-user, .sidebar-collapse {
-    justify-content: center; padding-inline: 6px;
-  }
+  .app-shell.sidebar-collapsed .sidebar-nav-group .sidebar-item { width: 100% !important; min-width: 0; margin-left: 0 !important; }
   .runs-toolbar, .run-manager-actions {
     min-width: 0; max-width: 100%; align-self: stretch;
   }
+}
+
+/* Use the same drawer breakpoint as SIDEBAR_DRAWER_MEDIA. Tablets keep their
+ * compact rail; phones keep only the menu button. Neither changes desktop prefs. */
+@media (max-width: 1200px) {
+  .sidebar-brand .brand-triage-icon { display: none; }
+  .sidebar-brand .sidebar-menu-icon { display: block; }
+  .app-shell.sidebar-mobile-open .sidebar-menu-icon { display: none; }
+  .app-shell.sidebar-mobile-open .sidebar-close-icon { display: block; }
+  .app-shell.sidebar-mobile-open .app-sidebar {
+    width: min(280px, calc(100vw - 24px)); height: 100dvh;
+    min-height: 0; z-index: 60; overflow: hidden; border-right: 1px solid var(--line);
+    box-shadow: 18px 0 42px rgba(0,0,0,.42);
+  }
+  .app-shell.sidebar-mobile-open .sidebar-brand { width: 100%; justify-content: flex-start; padding-inline: 11px; }
+  .sidebar-brand .brand-mark,
+  .app-shell.sidebar-mobile-open .sidebar-brand .brand-mark { width: 44px; height: 44px; }
+  /* Restore labels and alignment hidden by older component media rules. */
+  .app-shell.sidebar-mobile-open .sidebar-copy,
+  .app-shell.sidebar-mobile-open .sidebar-label { display: grid; }
+  .app-shell.sidebar-mobile-open .sidebar-collapse .sidebar-label { display: block; }
+  .app-shell.sidebar-mobile-open #sidebarToggle { display: flex; }
+  .app-shell.sidebar-mobile-open .sidebar-item,
+  .app-shell.sidebar-mobile-open .sidebar-user,
+  .app-shell.sidebar-mobile-open .sidebar-collapse { justify-content: flex-start; }
+  .app-shell.sidebar-mobile-open .sidebar-nav {
+    display: grid; align-content: start; gap: 8px; overflow-x: hidden; overflow-y: auto;
+    padding: 8px; scrollbar-gutter: stable;
+  }
+  .app-shell.sidebar-mobile-open .sidebar-nav-group { display: grid; gap: 2px; }
+  .app-shell.sidebar-mobile-open .sidebar-group-toggle { min-height: 44px; }
+  .app-shell.sidebar-mobile-open .sidebar-nav-group-items[hidden] { display: none !important; }
+  .app-shell.sidebar-mobile-open .sidebar-bottom { padding-bottom: max(9px, env(safe-area-inset-bottom, 0px)); }
+  .mobile-sidebar-backdrop { position: fixed; inset: 0; z-index: 55; display: block; border: 0; background: rgba(3,8,15,.56); }
+  .mobile-sidebar-backdrop[hidden] { display: none !important; }
+  .mobile-sidebar-open, .mobile-sidebar-open body { overflow: hidden; }
 }
 
 @media (max-width: 639px) {
@@ -156,20 +186,12 @@
     display: flex; flex-direction: column; overflow: visible;
     border: 0; background: var(--raised); box-shadow: none;
   }
-  .app-shell.sidebar-mobile-open .app-sidebar {
-    width: min(280px, calc(100vw - 24px)); height: 100dvh;
-    min-height: 0; overflow: hidden; border-right: 1px solid var(--line);
-    box-shadow: 18px 0 42px rgba(0,0,0,.42);
-  }
-  .sidebar-brand { width: 56px; min-height: 56px; flex: 0 0 56px; justify-content: center; padding: 7px; border: 0; }
-  .app-shell.sidebar-mobile-open .sidebar-brand { width: 100%; justify-content: flex-start; padding-inline: 11px; }
+  .sidebar-brand { width: 56px; min-height: 56px; flex: 0 0 56px; justify-content: center; padding: 6px; border: 0; }
   .sidebar-nav { min-height: 0; flex: 1; display: grid; align-content: start; gap: 3px; padding: 8px; overflow-x: hidden; overflow-y: auto; }
   .sidebar-item { width: 100%; min-width: 0; min-height: 44px; flex: none; }
   .sidebar-bottom { display: grid; }
   .app-shell:not(.sidebar-mobile-open) .sidebar-nav,
   .app-shell:not(.sidebar-mobile-open) .sidebar-bottom { visibility: hidden; pointer-events: none; }
-  .mobile-sidebar-backdrop { position: fixed; inset: 0; z-index: 55; display: block; border: 0; background: rgba(3,8,15,.56); }
-  .mobile-sidebar-backdrop[hidden] { display: none !important; }
 
   .topbar {
     top: 0; min-width: 0; padding: 6px 8px 7px 68px;
@@ -399,24 +421,6 @@
   .gateway-provider-option, .gateway-model-option { min-height: 44px; }
 }
 
-@media (max-width: 639px) {
-  /* The mobile drawer keeps the same hierarchy as desktop instead of
-     turning every destination into a long horizontal tab strip. */
-  .app-shell.sidebar-mobile-open .sidebar-nav {
-    display: grid; align-content: start; gap: 8px; overflow-x: hidden; overflow-y: auto;
-  }
-  .app-shell.sidebar-mobile-open .sidebar-nav-group { display: grid; gap: 2px; }
-  .app-shell.sidebar-mobile-open .sidebar-group-toggle {
-    width: 100%; min-height: 40px; margin-left: 0; padding: 7px;
-  }
-  .app-shell.sidebar-mobile-open .sidebar-group-toggle .sidebar-label,
-  .app-shell.sidebar-mobile-open .sidebar-group-toggle .sidebar-group-label { display: grid; }
-  .app-shell.sidebar-mobile-open .sidebar-nav-group-items { display: grid; gap: 3px; }
-  .app-shell.sidebar-mobile-open .sidebar-nav-group-items[hidden] { display: none !important; }
-  .app-shell.sidebar-mobile-open .sidebar-group-chevron { display: block; }
-}
-
-
 /* 2026-10 phone workbench: accessible controls, compact reading order, no desktop changes. */
 .mobile-topbar-more, .mobile-workspace-jumps, .mobile-summary-tools { display: none; }
 @media (max-width: 639px) {
@@ -448,7 +452,6 @@
   .topbar .header-metrics { margin: 0; }
   .header-metrics > div { min-width: 0; }
   .header-metrics span { white-space: normal; }
-  .mobile-sidebar-open, .mobile-sidebar-open body { overflow: hidden; }
   .app-shell.sidebar-mobile-open .sidebar-nav-group .sidebar-item { min-height: 48px; }
   .sidebar-group-toggle { min-height: 44px; }
 

@@ -48,7 +48,7 @@ class FrontendShellContractTest(unittest.TestCase):
             self.assertTrue((JS_DIR / name).is_file(), name)
         self.assertIn('/static/app-bundle.js?v=${CACHE_VERSION}', APP_ENTRY_JS)
         self.assertIn("CACHE_VERSION", APP_ENTRY_JS)
-        self.assertIn("manual-triage-817", APP_ENTRY_JS)
+        self.assertIn("manual-triage-818", APP_ENTRY_JS)
         self.assertIn("function setBaselineScopes", APP_JS)
         self.assertIn("function applyInferredBaselinesFromRun", APP_JS)
         self.assertIn("clearIncompatible: true", APP_JS)
@@ -91,7 +91,7 @@ class FrontendShellContractTest(unittest.TestCase):
         self.assertIn(".sidebar-icon { border-color: transparent; color: #8594a8; background: transparent; }", STYLES_CSS)
         self.assertIn(".sidebar-item.active .sidebar-icon .icon-emphasis", STYLES_CSS)
         self.assertIn("margin-left: 18px; width: calc(100% - 18px);", STYLES_CSS)
-        self.assertIn("width: 100%; min-height: 40px;", STYLES_CSS)
+        self.assertIn("width: 100%; min-height: 44px;", STYLES_CSS)
         self.assertIn("font-size: 13px; line-height: 1.25; letter-spacing: .02em;", STYLES_CSS)
         self.assertIn("padding-inline: 6px; scrollbar-gutter: auto; scrollbar-width: none;", STYLES_CSS)
         self.assertGreaterEqual(
@@ -123,6 +123,12 @@ class FrontendShellContractTest(unittest.TestCase):
         self.assertIn("ensureSidebarNavGroupForPage(target)", APP_JS)
         self.assertIn('localStorage.setItem(SIDEBAR_NAV_GROUP_PREFS_KEY', APP_JS)
         self.assertIn("sidebar-mobile-open .sidebar-nav-group", STYLES_CSS)
+        self.assertEqual(INDEX_HTML.count('class="sidebar-group-compact"'), 5)
+        for compact_name in ("标注", "复核", "每日", "意图", "系统", "Labels", "Review", "Daily", "Intent", "System"):
+            self.assertIn(f'>{compact_name}</span>', INDEX_HTML)
+        self.assertIn('const SIDEBAR_DRAWER_MEDIA = "(max-width: 1200px)"', APP_JS)
+        self.assertIn('window.matchMedia(SIDEBAR_DRAWER_MEDIA)', APP_JS)
+        self.assertIn('bindSidebarNavigation();', APP_JS)
 
     def test_color_theme_is_persisted_and_applied_before_first_paint(self) -> None:
         self.assertIn('data-color-theme="dark"', INDEX_HTML)

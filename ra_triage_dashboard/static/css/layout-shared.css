@@ -58,7 +58,7 @@ body.is-layout-resizing .app-sidebar { transition: none !important; }
 .sidebar-nav-group-items { min-width: 0; display: grid; gap: 3px; }
 .sidebar-nav-group-items[hidden] { display: none !important; }
 .sidebar-group-toggle {
-  width: 100%; min-height: 40px; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  width: 100%; min-height: 44px; display: flex; align-items: center; justify-content: space-between; gap: 8px;
   margin-left: 0; padding: 6px 7px; border: 1px solid transparent; border-radius: 7px;
   color: var(--faint); background: transparent; text-align: left;
 }
@@ -72,7 +72,9 @@ body.is-layout-resizing .app-sidebar { transition: none !important; }
   width: 19px; height: 19px; overflow: visible; fill: none; stroke: currentColor;
   stroke-width: 1.85; stroke-linecap: round; stroke-linejoin: round;
 }
-.sidebar-group-toggle .sidebar-group-label { min-width: 0; flex: 1 1 auto; order: 1; padding: 0; color: inherit; font-size: 13px; line-height: 1.25; letter-spacing: .02em; }
+.sidebar-group-toggle .sidebar-group-label { min-width: 0; flex: 1 1 auto; order: 1; padding: 0; color: inherit; font-size: 13px; line-height: 1.25; letter-spacing: .02em; white-space: normal; }
+.sidebar-group-compact { display: none; }
+.sidebar-nav-group.has-active .sidebar-group-compact { color: var(--accent); }
 .sidebar-group-chevron {
   width: 14px; height: 14px; flex: 0 0 14px; order: 2; margin-left: auto; color: currentColor; opacity: .72;
   background: currentColor; -webkit-mask: var(--ui-chevron-mask) center / 14px 14px no-repeat; mask: var(--ui-chevron-mask) center / 14px 14px no-repeat;
@@ -90,7 +92,7 @@ body.is-layout-resizing .app-sidebar { transition: none !important; }
 .sidebar-nav-group .sidebar-item { margin-left: 18px; width: calc(100% - 18px); }
 html[data-sidebar-pref="collapsed"] .sidebar-group-label, .app-shell.sidebar-collapsed .sidebar-group-label { display: none; }
 .sidebar-item, .sidebar-collapse {
-  width: 100%; min-height: 40px; display: flex; align-items: center; gap: 9px; overflow: hidden; padding: 5px 6px;
+  width: 100%; min-height: 44px; display: flex; align-items: center; gap: 9px; overflow: hidden; padding: 5px 6px;
   border: 1px solid transparent; border-radius: 8px; color: var(--muted); background: transparent; text-align: left;
 }
 .sidebar-item[hidden] { display: none !important; }
@@ -110,8 +112,7 @@ html[data-can-view-intent="true"] #intentSummaryNavButton[hidden] { display: fle
   box-shadow: none;
 }
 @media (min-width: 640px) {
-  /* The compact icon rail keeps every destination discoverable; group headers
-     are replaced by the existing icon-only layout. */
+  /* The compact rail keeps destinations visible under named category buttons. */
   .app-shell.sidebar-collapsed .sidebar-nav,
   html[data-sidebar-pref="collapsed"] .sidebar-nav {
     padding-inline: 6px; scrollbar-gutter: auto; scrollbar-width: none;
@@ -119,7 +120,21 @@ html[data-can-view-intent="true"] #intentSummaryNavButton[hidden] { display: fle
   .app-shell.sidebar-collapsed .sidebar-nav::-webkit-scrollbar,
   html[data-sidebar-pref="collapsed"] .sidebar-nav::-webkit-scrollbar { width: 0; height: 0; }
   .app-shell.sidebar-collapsed .sidebar-group-toggle,
-  html[data-sidebar-pref="collapsed"] .sidebar-group-toggle { display: none; }
+  html[data-sidebar-pref="collapsed"] .sidebar-group-toggle {
+    display: flex; justify-content: center; min-height: 44px; padding: 6px 0; color: var(--muted); background: var(--raised);
+  }
+  .app-shell.sidebar-collapsed .sidebar-group-icon,
+  .app-shell.sidebar-collapsed .sidebar-group-chevron,
+  html[data-sidebar-pref="collapsed"] .sidebar-group-icon,
+  html[data-sidebar-pref="collapsed"] .sidebar-group-chevron { display: none; }
+  .app-shell.sidebar-collapsed .sidebar-group-compact,
+  html[data-sidebar-pref="collapsed"] .sidebar-group-compact {
+    display: block; max-width: 100%; font-size: 11px; font-weight: 750; line-height: 1.25; text-align: center;
+  }
+  .app-shell.sidebar-collapsed .sidebar-nav-group + .sidebar-nav-group,
+  html[data-sidebar-pref="collapsed"] .sidebar-nav-group + .sidebar-nav-group {
+    border-top: 1px solid var(--line); padding-top: 6px;
+  }
   .app-shell.sidebar-collapsed .sidebar-nav-group-items,
   html[data-sidebar-pref="collapsed"] .sidebar-nav-group-items { display: grid !important; }
   .app-shell.sidebar-collapsed .sidebar-nav-group .sidebar-item,
@@ -148,7 +163,8 @@ html[data-can-view-intent="true"] #intentSummaryNavButton[hidden] { display: fle
 .sidebar-bottom { display: grid; gap: 5px; padding: 9px; border-top: 1px solid var(--line); }
 .sidebar-user { min-height: 47px; display: flex; align-items: center; gap: 10px; overflow: hidden; padding: 7px; }
 .user-avatar { border-radius: 50%; color: #062128; border-color: rgba(34,211,238,.65); background: var(--accent); }
-.sidebar-collapse { min-height: 38px; border-color: var(--line); color: var(--faint); background: #10151e; }
+.sidebar-collapse { min-height: 44px; border-color: var(--line); color: var(--faint); background: #10151e; }
+.sidebar-collapse[hidden] { display: none !important; }
 .sidebar-collapse:hover { color: var(--accent); border-color: rgba(34,211,238,.35); }
 .sidebar-collapse > span:first-child { width: 32px; flex: 0 0 32px; text-align: center; font-size: 22px; line-height: 1; transition: transform 200ms ease-out; }
 .sidebar-collapse .sidebar-label { display: block; font-size: 10px; }
@@ -187,6 +203,8 @@ html[data-sidebar-pref="collapsed"] .sidebar-collapse > span:first-child {
   box-shadow: none;
 }
 .brand-triage-icon { width: 23px; height: 23px; overflow: visible; fill: none; stroke: currentColor; stroke-width: 1.65; stroke-linecap: round; stroke-linejoin: round; }
+.sidebar-brand .brand-mark { width: 44px; height: 44px; flex: 0 0 44px; }
+.sidebar-menu-icon, .sidebar-close-icon { display: none; width: 23px; height: 23px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
 .brand-mark:hover { border-color: var(--accent); color: #b9f5fb; background: rgba(34,211,238,.18); }
 .brand-mark:focus-visible { outline: 2px solid rgba(34,211,238,.7); outline-offset: 2px; }
 .dataset-state { display: inline-flex; align-items: center; gap: 8px; color: #b8d9db; font-size: 12px; white-space: nowrap; }

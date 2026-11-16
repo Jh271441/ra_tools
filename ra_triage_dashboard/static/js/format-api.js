@@ -1069,6 +1069,8 @@ function startChangePolling() {
 }
 
 const SIDEBAR_NAV_GROUP_PREFS_KEY = "ra-triage-sidebar-nav-groups-v1";
+const SIDEBAR_DRAWER_MEDIA = "(max-width: 1200px)";
+let mobileSidebarReturnFocus = null;
 
 function sidebarNavGroupElement(group) {
   return [...document.querySelectorAll("[data-sidebar-nav-group]")].find(
@@ -1144,6 +1146,12 @@ function bindSidebarNavGroups() {
       const group = toggle.dataset.sidebarNavGroupToggle || "";
       const root = sidebarNavGroupElement(group);
       if (!root) return;
+      if ($("#appShell").classList.contains("sidebar-collapsed")) {
+        if (isMobileSidebarViewport()) openMobileSidebar(toggle);
+        else toggleSidebar();
+        setSidebarNavGroupOpen(group, true);
+        return;
+      }
       setSidebarNavGroupOpen(group, root.classList.contains("is-collapsed"));
     });
   });
@@ -1151,16 +1159,17 @@ function bindSidebarNavGroups() {
 }
 
 function isMobileSidebarViewport() {
-  return typeof window.matchMedia === "function" && window.matchMedia("(max-width: 639px)").matches;
+  return typeof window.matchMedia === "function" && window.matchMedia(SIDEBAR_DRAWER_MEDIA).matches;
 }
 
 function applySidebarState() {
   const mobile = isMobileSidebarViewport();
+  if (!mobile) state.mobileSidebarOpen = false;
+  const drawerOpen = mobile && state.mobileSidebarOpen;
   const shell = $("#appShell");
-  // Phones keep a narrow logo rail; the existing desktop collapse preference must
-  // not turn the mobile drawer into a horizontal tab bar or change desktop state.
-  shell.classList.toggle("sidebar-collapsed", mobile ? true : state.sidebarCollapsed);
-  shell.classList.toggle("sidebar-mobile-open", mobile && state.mobileSidebarOpen);
+  // Phones and tablets share an overlay drawer without changing desktop prefs.
+  shell.classList.toggle("sidebar-collapsed", mobile ? !drawerOpen : state.sidebarCollapsed);
+  shell.classList.toggle("sidebar-mobile-open", drawerOpen);
   // Keep early-paint pref in sync so hard refresh matches the collapsed width without layout transition.
   if (!mobile && state.sidebarCollapsed) {
     document.documentElement.dataset.sidebarPref = "collapsed";
@@ -1178,13 +1187,66 @@ function applySidebarState() {
   $("#sidebarToggle").setAttribute("aria-expanded", expanded);
   $("#sidebarToggle").title = `${title}（\\）`;
   $("#sidebarToggle").setAttribute("aria-label", title);
-  $("#sidebarToggle").hidden = mobile;
+  $("#sidebarToggle").hidden = mobile && !drawerOpen;
+  const collapseLabel = $("#sidebarToggle .sidebar-label");
+  if (collapseLabel) collapseLabel.textContent = title;
   $("#sidebarBrandToggle").setAttribute("aria-expanded", expanded);
   $("#sidebarBrandToggle").title = title;
   $("#sidebarBrandToggle").setAttribute("aria-label", title);
+  const sidebar = $("#appSidebar");
+  sidebar.setAttribute("aria-label", uiText("工作台导航", "Workbench navigation"));
+  if (drawerOpen) {
+    sidebar.setAttribute("role", "dialog");
+    sidebar.setAttribute("aria-modal", "true");
+  } else {
+    sidebar.removeAttribute("role");
+    sidebar.removeAttribute("aria-modal");
+  }
+  const frame = shell.querySelector(".app-frame");
+  if (frame) frame.inert = drawerOpen;
+  document.querySelectorAll("[data-sidebar-nav-group-toggle]").forEach((toggle) => {
+    const label = toggle.querySelector(`.sidebar-group-label .ui-lang-${state.uiLanguage === "en" ? "en" : "zh"}`)?.textContent || "";
+    const action = shell.classList.contains("sidebar-collapsed")
+      ? uiText(`展开${label}`, `Expand ${label}`) : label;
+    toggle.title = action;
+    toggle.setAttribute("aria-label", action);
+  });
   const backdrop = $("#mobileSidebarBackdrop");
-  if (backdrop) backdrop.hidden = !(mobile && state.mobileSidebarOpen);
-  document.documentElement.classList.toggle("mobile-sidebar-open", mobile && state.mobileSidebarOpen);
+  if (backdrop) {
+    backdrop.hidden = !drawerOpen;
+    backdrop.setAttribute("aria-label", uiText("关闭工具栏", "Close navigation"));
+  }
+  document.documentElement.classList.toggle("mobile-sidebar-open", drawerOpen);
+}
+
+function bindSidebarNavigation() {
+  if (document.documentElement.dataset.sidebarNavigationBound === "1") return;
+  document.documentElement.dataset.sidebarNavigationBound = "1";
+  bindSidebarNavGroups();
+  $("#sidebarToggle").addEventListener("click", toggleSidebar);
+  $("#sidebarBrandToggle").addEventListener("click", toggleSidebar);
+  $("#mobileSidebarBackdrop")?.addEventListener("click", closeMobileSidebar);
+  document.addEventListener("keydown", handleSidebarKeydown);
+  const media = typeof window.matchMedia === "function" ? window.matchMedia(SIDEBAR_DRAWER_MEDIA) : null;
+  if (media?.addEventListener) media.addEventListener("change", applySidebarState);
+  else if (media?.addListener) media.addListener(applySidebarState);
+}
+
+function handleSidebarKeydown(event) {
+  if (!isMobileSidebarViewport() || !state.mobileSidebarOpen || event.defaultPrevented || event.isComposing) return;
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeMobileSidebar();
+  } else if (event.key === "Tab") {
+    const controls = [...$("#appSidebar").querySelectorAll("a[href], button:not(:disabled), [tabindex='0']")]
+      .filter((element) => !element.closest("[hidden], [inert]") && element.getClientRects().length);
+    const first = controls[0];
+    const last = controls[controls.length - 1];
+    if ((event.shiftKey && document.activeElement === first) || (!event.shiftKey && document.activeElement === last)) {
+      event.preventDefault();
+      (event.shiftKey ? last : first)?.focus({ preventScroll: true });
+    }
+  }
 }
 
 function markUiReady() {
@@ -1265,8 +1327,8 @@ function bindMobileFilterDrawers() {
 
 function toggleSidebar() {
   if (isMobileSidebarViewport()) {
-    state.mobileSidebarOpen = !state.mobileSidebarOpen;
-    applySidebarState();
+    if (state.mobileSidebarOpen) closeMobileSidebar();
+    else openMobileSidebar();
     return;
   }
   state.sidebarCollapsed = !state.sidebarCollapsed;
@@ -1274,8 +1336,18 @@ function toggleSidebar() {
   applySidebarState();
 }
 
+function openMobileSidebar(focusTarget = $("#sidebarBrandToggle")) {
+  mobileSidebarReturnFocus = document.activeElement;
+  state.mobileSidebarOpen = true;
+  applySidebarState();
+  focusTarget?.focus({ preventScroll: true });
+}
+
 function closeMobileSidebar() {
   if (!state.mobileSidebarOpen) return;
   state.mobileSidebarOpen = false;
   applySidebarState();
+  const target = mobileSidebarReturnFocus;
+  mobileSidebarReturnFocus = null;
+  (target?.isConnected && target.getClientRects().length ? target : $("#sidebarBrandToggle"))?.focus({ preventScroll: true });
 }

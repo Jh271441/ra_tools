@@ -122,7 +122,7 @@ class FrontendIntegrationsContractTest(unittest.TestCase):
         self.assertIn("function bindGlobalRefreshShortcut", APP_JS)
         self.assertIn("function bindGlobalSidebarShortcut", APP_JS)
         self.assertIn('event.code !== "Backslash"', APP_JS)
-        self.assertIn('id="sidebarToggle" type="button" aria-expanded="true" aria-keyshortcuts="Backslash"', INDEX_HTML)
+        self.assertIn('id="sidebarToggle" type="button" aria-controls="appSidebar" aria-expanded="true" aria-keyshortcuts="Backslash"', INDEX_HTML)
         self.assertIn('<kbd class="sidebar-shortcut" aria-hidden="true">\\</kbd>', INDEX_HTML)
         self.assertIn("展开 / 折叠左侧工具栏", INDEX_HTML)
         self.assertIn('event.code !== "KeyR"', APP_JS)

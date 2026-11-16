@@ -703,22 +703,7 @@ function bindEvents() {
   $("#themeToggleButton").addEventListener("click", () => {
     applyColorTheme(state.colorTheme === "light" ? "dark" : "light");
   });
-  bindSidebarNavGroups();
-  $("#sidebarToggle").addEventListener("click", toggleSidebar);
-  $("#sidebarBrandToggle").addEventListener("click", toggleSidebar);
-  $("#mobileSidebarBackdrop")?.addEventListener("click", closeMobileSidebar);
-  document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") closeMobileSidebar();
-  });
-  const sidebarMedia = typeof window.matchMedia === "function"
-    ? window.matchMedia("(max-width: 639px)")
-    : null;
-  const syncSidebarViewport = () => {
-    if (!isMobileSidebarViewport()) state.mobileSidebarOpen = false;
-    applySidebarState();
-  };
-  if (sidebarMedia?.addEventListener) sidebarMedia.addEventListener("change", syncSidebarViewport);
-  else if (sidebarMedia?.addListener) sidebarMedia.addListener(syncSidebarViewport);
+  bindSidebarNavigation();
   document.querySelectorAll("[data-close]").forEach((button) => button.addEventListener("click", () => closeDialog(button.dataset.close)));
   $("#mediaDialog").addEventListener("close", cleanupMediaDialog);
   $("#raEventSearchInput").addEventListener("input", (event) => {
