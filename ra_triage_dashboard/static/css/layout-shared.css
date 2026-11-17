@@ -61,7 +61,8 @@ body.is-layout-resizing .app-sidebar { transition: none !important; }
 .sidebar-nav-group-items { min-width: 0; display: grid; gap: 3px; }
 .sidebar-nav-group-items[hidden] { display: none !important; }
 .sidebar-group-toggle {
-  width: 100%; min-height: 44px; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  /* Hidden icons must not impose a minimum width on the compact rail's grid. */
+  width: 100%; min-height: 44px; min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px;
   position: relative; margin-left: 0; padding: 6px 7px; border: 1px solid transparent; border-radius: 7px;
   color: var(--faint); background: transparent; text-align: left;
   transition: color 140ms ease, background-color 140ms ease;
