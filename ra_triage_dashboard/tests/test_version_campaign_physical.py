@@ -1,4 +1,5 @@
 import hashlib,json,tempfile,unittest
+from collections import Counter
 from pathlib import Path
 from ra_triage_dashboard.app.db import Database
 
@@ -56,9 +57,67 @@ class VersionCampaignPhysicalTest(unittest.TestCase):
         rid=self.db.ensure_version_stream('20261016','test')
         self.db.append_version_predictions(run_id=rid,rows=[dict(issue_id='cn5',model_label='误触发',model_confidence=.8,model_extra=dict(software_version='1.gen4-release-20261016.1'))])
         first=self.db.append_version_campaign_members(family='20261016',policy=self.policy,issue_ids=['cn5'],current_target_ids=['cn5'],batch_key='initial',actor='service')
+        self.assertEqual(first['bindings']['cn5']['assignee'], 'jasperchen')
         again=self.db.append_version_campaign_members(family='20261016',policy=self.policy,issue_ids=['cn5'],current_target_ids=['cn5'],batch_key='initial',actor='service')
         self.assertEqual(first['campaign_id'],again['campaign_id']);self.assertEqual(again['added'],0)
         with self.db.connect() as c:self.assertEqual(c.execute('SELECT COUNT(*) AS n FROM issue_work_splits WHERE evaluation_run_id=?',(rid,)).fetchone()['n'],1)
+
+    def prepare_1030(self, ids):
+        self.db.set_access_user(username='hejianmo', role='writer', actor='tester')
+        run = self.db.ensure_version_stream('20261030', 'test')
+        self.db.append_version_predictions(run_id=run, rows=[
+            dict(issue_id=iid, model_label='误触发', model_confidence=.8,
+                 model_extra=dict(software_version='1.gen4-release-20261030.1'))
+            for iid in ids
+        ])
+
+    def test_1030_assigns_by_cumulative_quota_across_uneven_packets(self):
+        ids = [f'cn{i}' for i in range(100, 121)]
+        self.prepare_1030(ids)
+        # A historical non-target keeps its owner but does not count in the quota.
+        historical = self.db.append_version_campaign_members(
+            family='20261030', policy=self.policy, issue_ids=ids[:1],
+            current_target_ids=ids[:1], batch_key='historical', actor='service',
+        )
+        previous = {}
+        for start, end in ((1, 2), (2, 5), (5, 12), (12, 16), (16, 21)):
+            appended = self.db.append_version_campaign_members(
+                family='20261030', policy=self.policy, issue_ids=ids[start:end],
+                current_target_ids=ids[1:end], batch_key=f'next-{end}', actor='service',
+            )
+            self.assertEqual(appended['campaign_id'], historical['campaign_id'])
+            self.assertEqual(appended['added'], end - start)
+            self.assertTrue(all(appended['bindings'][iid] == value for iid, value in previous.items()))
+            previous = appended['bindings']
+        self.assertEqual(len(previous), 21)
+        self.assertEqual(previous[ids[0]], historical['bindings'][ids[0]])
+        self.assertEqual(Counter(previous[iid]['assignee'] for iid in ids[1:]), {
+            'liangxianghui': 8, 'jasperchen': 6, 'hejianmo': 6,
+        })
+
+    def test_1030_replays_frozen_packet_after_live_owner_changes(self):
+        iid = 'cn100'
+        self.prepare_1030([iid])
+        append = dict(family='20261030', policy=self.policy, issue_ids=[iid],
+                      current_target_ids=[iid], batch_key='original', actor='service')
+        first = self.db.append_version_campaign_members(**append)
+        original = dict(issue_id=iid, software_version='1.gen4-release-20261030.1',
+                        state='published', is_target=True, binding=first['bindings'][iid])
+        ingest = dict(family='20261030', policy=self.policy, batch_key='original', actor='service')
+        self.db.ingest_version_dataset(items=[original], **ingest)
+        cid = first['campaign_id']
+        self.db.update_campaign_assignment(
+            campaign_id=cid, issue_id=iid, action='reassign', actor='tester',
+            expected_revision=self.db.get_campaign(cid)['campaign']['config_revision'],
+            idempotency_key='test-rebalance', from_assignee='liangxianghui', assignee='hejianmo',
+        )
+        replayed = self.db.append_version_campaign_members(**append)
+        self.assertEqual(replayed['added'], 0)
+        self.assertTrue(self.db.ingest_version_dataset(
+            items=[dict(original, binding=replayed['bindings'][iid])], **ingest
+        )['replayed'])
+        gallery = self.db.version_dataset_gallery_rows('release-20261030-odd2')
+        self.assertEqual(gallery[0]['binding']['assignee'], 'hejianmo')
 
     def test_failed_merge_rolls_back_bindings_and_all_immutable_guards(self):
         with self.db.connect() as c:

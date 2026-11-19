@@ -12,6 +12,22 @@ import uuid
 from .shared import utc_now, _json, _json_load
 
 
+_DEFAULT_REVIEW_WEIGHTS = (('jasperchen', 1), ('liangxianghui', 1))
+_VERSION_REVIEW_WEIGHTS = {
+    '20261030': (('liangxianghui', 4), ('jasperchen', 3), ('hejianmo', 3)),
+}
+
+
+def next_version_reviewer(weights, counts):
+    """Fill the largest cumulative quota deficit after adding one target."""
+    next_total = 1 + sum(counts[person] for person, _ in weights)
+    total_weight = sum(weight for _, weight in weights)
+    return max(
+        weights,
+        key=lambda entry: next_total * entry[1] - total_weight * counts[entry[0]],
+    )[0]
+
+
 def digest(value):
     return hashlib.sha256(json.dumps(value,ensure_ascii=False,sort_keys=True,separators=(',',':'),default=str).encode()).hexdigest()
 
@@ -255,8 +271,12 @@ class VersionCampaignsMixin:
             assigned={r['issue_id']:dict(r) for r in conn.execute('SELECT * FROM review_work_assignments WHERE split_id=?',(root,)).fetchall()}
             new=sorted(set(issue_ids)-set(assigned))
             if new:
-                people=('jasperchen','liangxianghui')
-                roles={r['username']:r['role'] for r in conn.execute('SELECT username,role FROM access_users WHERE username IN (?,?)',people).fetchall()}
+                weights = _VERSION_REVIEW_WEIGHTS.get(family, _DEFAULT_REVIEW_WEIGHTS)
+                people = tuple(person for person, _ in weights)
+                placeholders = ','.join('?' for _ in people)
+                roles={r['username']:r['role'] for r in conn.execute(
+                    f'SELECT username,role FROM access_users WHERE username IN ({placeholders})', people
+                ).fetchall()}
                 if any(roles.get(p) not in {'writer','admin'} for p in people):raise ValueError('Default review users unavailable')
                 # New targets must already own a real immutable prediction.
                 members=[dict(r) for r in conn.execute('SELECT * FROM campaign_issue_members WHERE campaign_id=? ORDER BY ordinal',(root,)).fetchall()]
@@ -271,10 +291,12 @@ class VersionCampaignsMixin:
                         conn.execute("INSERT INTO labeling_scope_state(baseline_scope,status,policy_version,epoch,source_inventory_sha256,updated_by,updated_at) VALUES (?,'active',?,1,?,?,?)",(scope,'native-version-combined-v1',digest(scope),actor,utc_now()))
                     elif state['status']!='active':raise ValueError('Labeling scope is not active')
                     new_members.append(dict(campaign_id=root,issue_id=iid,baseline_scope=scope,ordinal=len(members)+len(new_members)+1,required_submitter_count=1,reviewers_per_issue=1,assignment_kinds_json=_json(['base']),config_revision=int(campaign['config_revision'])+1,created_at=utc_now()))
-                counts=Counter(a['assignee'] for iid,a in assigned.items() if iid in set(current_target_ids))
+                active_targets = set(current_target_ids)
+                counts=Counter(a['assignee'] for iid,a in assigned.items() if iid in active_targets)
                 ordinals={p:max([a['ordinal'] for a in assigned.values() if a['assignee']==p] or [0]) for p in people}
                 for m in new_members:
-                    person=min(people,key=lambda p:(counts[p],people.index(p)));counts[person]+=1;ordinals[person]+=1
+                    person = next_version_reviewer(weights, counts)
+                    counts[person]+=1;ordinals[person]+=1
                     insert(conn,'campaign_issue_members',m)
                     record=dict(split_id=root,issue_id=m['issue_id'],assignee=person,assignment_kind='base',ordinal=ordinals[person],assigned_by=actor,assigned_at=utc_now());insert(conn,'review_work_assignments',record);assigned[m['issue_id']]=record
                     insert(conn,'campaign_assignment_audit',dict(campaign_id=root,issue_id=m['issue_id'],action='assigned',assignment_kind='base',from_assignee='',to_assignee=person,changed_by=actor,changed_by_source='version_task_service',changed_by_verified=False,config_revision=int(campaign['config_revision'])+1,idempotency_key='version-add-'+digest([batch_key,m['issue_id']]),idempotency_fingerprint=digest(record),reason='append to version task',changed_at=utc_now()))
@@ -294,6 +316,20 @@ class VersionCampaignsMixin:
                 self._campaign_refresh_compat_assignment_snapshot(conn,root)
                 self._campaign_insert_revision(conn,campaign_id=root,revision_no=revision,changed_by=actor,changed_by_source='version_task_service',changed_by_verified=False,change_source='version_append',idempotency_key=batch_key)
             bindings={iid:dict(run_id=rid,campaign_id=root,assignee=a['assignee']) for iid,a in assigned.items()}
+            if replay and family in _VERSION_REVIEW_WEIGHTS:
+                ingested = conn.execute(
+                    'SELECT manifest_json FROM dataset_ingestion_batches WHERE dataset_id=? AND batch_key=?',
+                    (did, batch_key),
+                ).fetchone()
+                if ingested:
+                    # The bridge uses these bindings to recreate the original packet.
+                    # Keep its frozen owner on replay; read views use the live assignment.
+                    for item in _json_load(ingested['manifest_json'], {})['items']:
+                        previous = item.get('binding') or {}
+                        current = bindings.get(item['issue_id'])
+                        if (current and previous.get('assignee') and previous.get('run_id') == rid
+                                and previous.get('campaign_id') == root):
+                            current['assignee'] = previous['assignee']
             receipt=dict(campaign_id=root,added=len(new),added_ids=new,fingerprint=expected)
             self._version_event(conn,did,batch_key,'version_task_append',receipt,actor)
             self._mark_labeling_change(conn);self._mark_run_collection_change(conn)
