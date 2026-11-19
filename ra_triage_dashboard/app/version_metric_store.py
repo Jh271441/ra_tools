@@ -110,6 +110,10 @@ class VersionMetricStore:
                     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 except BlockingIOError:
                     return state
+                # The worker may finish after the first read and release its lock.
+                state = self._read(self.root / "refresh.json") or state
+                if state["status"] != "running":
+                    return state
                 state = dict(state, status="interrupted", error="refresh_interrupted")
                 self._save(self.root / "refresh.json", state)
             finally:

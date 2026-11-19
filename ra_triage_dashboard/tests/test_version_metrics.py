@@ -1,10 +1,12 @@
 """Metric contracts: exact populations, independent lanes, rule-only coverage and history."""
 import copy
+import fcntl
 import json
 from pathlib import Path
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 from ra_triage_dashboard.app.version_metrics import FIELDS, POLICY, evaluate, case_page, digest
 from ra_triage_dashboard.app.version_metric_store import VersionMetricStore
@@ -115,6 +117,26 @@ class VersionMetricStoreTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
         self.store=VersionMetricStore(Path(self.tmp.name))
+
+    def test_job_rechecks_terminal_state_after_acquiring_worker_lock(self):
+        state_path = self.store.root / "refresh.json"
+        real_flock = fcntl.flock
+        for status in ("ready", "failed"):
+            with self.subTest(status=status):
+                running = dict(status="running", completed=0, total=1)
+                terminal = dict(running, status=status, finished_at="2026-11-19T02:00:00+00:00")
+                self.store._save(state_path, running)
+
+                def finish_before_lock_observation(lock, operation):
+                    real_flock(lock, operation)
+                    self.store._save(state_path, terminal)
+
+                with mock.patch(
+                    "ra_triage_dashboard.app.version_metric_store.fcntl.flock",
+                    side_effect=finish_before_lock_observation,
+                ):
+                    self.assertEqual(self.store.job(), terminal)
+                self.assertEqual(self.store._read(state_path), terminal)
 
     def test_history_is_immutable_and_changes_counted(self):
         first=self.store.publish("20261030",fixture())
