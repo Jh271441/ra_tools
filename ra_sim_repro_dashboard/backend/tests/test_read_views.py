@@ -209,3 +209,27 @@ def test_expiration_failures_and_database_isolation(engine, monkeypatch):
     with Session(other) as db:
         assert views.read_view(db, 'expiry', lambda: 3, max_age=2) == 3
     other.dispose()
+
+
+def test_request_memos_are_scoped_to_clean_session_and_cleared_after_failure(engine):
+    calls = []
+    def load():
+        calls.append(1)
+        return len(calls)
+    with Session(engine) as db, Session(engine) as other:
+        def page():
+            assert views.read_memo(db, 'receipt', load) == 1
+            assert views.read_view(db, 'nested-memo', lambda: views.read_memo(db, 'receipt', load)) == 1
+            assert views.read_memo(other, 'receipt', load) == 2
+            assert views.read_memo(other, 'receipt', load) == 3
+            db.add(ReleaseWorkflowState(key='uncommitted', payload={}))
+            assert views.read_memo(db, 'receipt', load) == 4
+            assert views.read_memo(db, 'receipt', load) == 5
+            raise ValueError('failed')
+        with pytest.raises(ValueError, match='failed'):
+            views.read_view(db, 'memo-failure', page)
+        assert views._read_db.get() is None and views._read_memos.get() is None
+        db.rollback()
+        assert views.read_view(db, 'next-request', lambda: views.read_memo(db, 'receipt', load)) == 6
+        assert views.read_memo(db, 'receipt', load) == 7
+        assert views.read_memo(db, 'receipt', load) == 8

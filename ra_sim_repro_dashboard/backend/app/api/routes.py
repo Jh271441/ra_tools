@@ -11,14 +11,7 @@ from sqlalchemy.orm import Session
 from app.config import config_hash, load_versions_config, settings
 from app.database import get_db
 from app.metrics import summarize_rows
-from app.models import (
-    DashboardSnapshot,
-    Issue,
-    RefreshJob,
-    Scenario,
-    ScenarioVersionResult,
-    Version,
-)
+from app.models import DashboardSnapshot, Issue, RefreshJob, Scenario, ScenarioVersionResult, Version
 from app.schemas import (
     IssueDetailResponse,
     IssueListItem,
@@ -32,14 +25,9 @@ from app.schemas import (
     VersionOut,
     VersionsResponse,
 )
-from app.services.refresh import (
-    build_snapshot,
-    create_refresh_job,
-    refresh_dashboard,
-    sync_versions_from_config,
-)
+from app.services.refresh import build_snapshot, create_refresh_job, refresh_dashboard, sync_versions_from_config
 from app.services.system_status import collect_system_status
-from app.services.release_presentation import context as business_context, history_kpis
+from app.services.read_views import business_context, history_kpis, read_view
 
 
 router = APIRouter(prefix="/api")
@@ -61,6 +49,10 @@ def system_status(db: DbSession) -> SystemStatusResponse:
 
 @router.get("/dashboard/versions", response_model=VersionsResponse)
 def versions(db: DbSession) -> VersionsResponse:
+    return read_view(db, "versions", lambda: _versions(db))
+
+
+def _versions(db: DbSession) -> VersionsResponse:
     payload = load_versions_config()
     sync_versions_from_config(db, payload)
     configured_keys = _configured_version_keys(payload)
@@ -68,60 +60,28 @@ def versions(db: DbSession) -> VersionsResponse:
     if configured_keys:
         stmt = stmt.where(Version.version_key.in_(configured_keys))
     rows = db.execute(stmt.order_by(Version.sort_order)).scalars().all()
-    context = business_context(db)
-    business_key = context["business_current_version"]
-    output = [
-        VersionOut.model_validate(row).model_copy(
-            update={
-                "metadata_json": _public_version_metadata(row.metadata_json),
-                "is_current": row.version_key == business_key
-                if business_key
-                else False,
-            }
-        )
-        for row in rows
-    ]
+    context=business_context(db)
+    business_key=context['business_current_version']
+    output=[VersionOut.model_validate(row).model_copy(update={'metadata_json':_public_version_metadata(row.metadata_json),
+                                                            'is_current':row.version_key==business_key if business_key else False}) for row in rows]
     for item in history_kpis(db):
-        key = item["version_key"]
-        if not any(row.version_key == key for row in output):
-            output.append(
-                VersionOut(
-                    version_key=key,
-                    label=item["label"],
-                    sim_job_id=item["sim_estimate"]["job_id"],
-                    baseline_job_id=None,
-                    sort_order=max((row.sort_order for row in output), default=0) + 1,
-                    is_current=key == business_key,
-                    metadata_json={
-                        "platform_gen": "GEN4_PT",
-                        "metric_status": "complete",
-                    },
-                    last_refreshed_at=None,
-                )
-            )
-    if business_key and not any(row.version_key == business_key for row in output):
-        output.append(
-            VersionOut(
-                version_key=business_key,
-                label="release" + business_key[-8:],
-                sim_job_id=context["metrics"].get("job_id"),
-                baseline_job_id=None,
-                sort_order=max((row.sort_order for row in output), default=0) + 1,
-                is_current=True,
-                metadata_json={
-                    "platform_gen": "GEN4_PT",
-                    "release_date": business_key[-8:-4]
-                    + "-"
-                    + business_key[-4:-2]
-                    + "-"
-                    + business_key[-2:],
-                    "metric_status": context["business_status"],
-                },
-                last_refreshed_at=None,
-            )
-        )
+        key=item['version_key']
+        if item.get('evaluation_scope'):
+            output=[row.model_copy(update={'sim_job_id':item['sim_estimate']['job_id'],
+                    'metadata_json':{**row.metadata_json, 'metric_status':'complete' if item['evaluation_scope']['complete'] else 'coverage_pending',
+                                     'normal_metrics_revision':item['sim_estimate']['normal_revision_key']}})
+                    if row.version_key==key else row for row in output]
+        if not any(row.version_key==key for row in output):
+            output.append(VersionOut(version_key=key,label=item['label'],sim_job_id=item['sim_estimate']['job_id'],baseline_job_id=None,
+                          sort_order=max((row.sort_order for row in output),default=0)+1,is_current=key==business_key,
+                          metadata_json={'platform_gen':'GEN4_PT','metric_status':'complete'},last_refreshed_at=None))
+    if business_key and not any(row.version_key==business_key for row in output):
+        output.append(VersionOut(version_key=business_key,label='release'+business_key[-8:],sim_job_id=context['metrics'].get('job_id'),
+                                 baseline_job_id=None,sort_order=max((row.sort_order for row in output),default=0)+1,is_current=True,
+                                 metadata_json={'platform_gen':'GEN4_PT','release_date':business_key[-8:-4]+'-'+business_key[-4:-2]+'-'+business_key[-2:],
+                                                'metric_status':context['business_status']},last_refreshed_at=None))
     return VersionsResponse(
-        current_version=business_key or "",
+        current_version=business_key or '',
         compare_versions=[str(item) for item in payload.get("compare_versions", [])],
         config_hash=config_hash(payload),
         versions=output,
@@ -130,66 +90,50 @@ def versions(db: DbSession) -> VersionsResponse:
 
 @router.get("/dashboard/summary", response_model=SummaryResponse)
 def summary(db: DbSession, request: Request = None) -> SummaryResponse:
+    client = request.headers.get("x-ra-sim-client") if request is not None else None
+    return read_view(db, ("summary", request is not None, client), lambda: _summary(db, request))
+
+
+def _summary(db: DbSession, request: Request = None) -> SummaryResponse:
     snapshot = _read_dashboard_snapshot(db)
     current = snapshot.get("current")
-    context = business_context(db)
-    if not current and not context["business_current_version"]:
-        raise HTTPException(
-            status_code=404, detail="No dashboard data. Run refresh first."
-        )
+    context=business_context(db)
+    if not current and not context['business_current_version']:
+        raise HTTPException(status_code=404, detail="No dashboard data. Run refresh first.")
     return SummaryResponse(
-        business_current_version=context["business_current_version"],
-        business_metrics=context["business_metrics"],
-        business_status=context["business_status"],
-        business_reason=context["business_reason"],
-        current=current
-        if request is not None
-        and request.headers.get("x-ra-sim-client") != "release-cycle-v1"
-        else context["business_metrics"],
-        legacy_current=current,
-        previous=current if context["business_metrics"] else snapshot.get("previous"),
-        deltas={
-            key: context["business_metrics"][key] - current[key]
-            for key in ("sim_repro_rate", "precision", "recall", "f1")
-            if context["business_metrics"]
-            and current
-            and isinstance(context["business_metrics"].get(key), (int, float))
-            and isinstance(current.get(key), (int, float))
-        },
-        generated_at=datetime.fromisoformat(
-            context["metrics"].get("generated_at") or snapshot["generated_at"]
-        ),
+        business_current_version=context['business_current_version'],business_metrics=context['business_metrics'],
+        business_status=context['business_status'],business_reason=context['business_reason'],
+        business_collection=context.get('business_collection'),
+        current=current if request is not None and request.headers.get('x-ra-sim-client') != 'release-cycle-v1' else context['business_metrics'],legacy_current=current,
+        previous=current if context['business_metrics'] else snapshot.get('previous'),
+        deltas={key:context['business_metrics'][key]-current[key] for key in ('sim_repro_rate','precision','recall','f1') if context['business_metrics'] and current and isinstance(context['business_metrics'].get(key),(int,float)) and isinstance(current.get(key),(int,float))},
+        generated_at=datetime.fromisoformat(context['metrics'].get('generated_at') or snapshot['generated_at']),
     )
 
 
 @router.get("/dashboard/version-comparison", response_model=list[VersionComparisonItem])
 def version_comparison(db: DbSession) -> list[VersionComparisonItem]:
+    return read_view(db, "comparison", lambda: _version_comparison(db))
+
+
+def _version_comparison(db: DbSession) -> list[VersionComparisonItem]:
     snapshot = _read_dashboard_snapshot(db)
-    items = [VersionComparisonItem(**item) for item in snapshot.get("comparison", [])]
+    items=[VersionComparisonItem(**item) for item in snapshot.get('comparison',[])]
     for native in history_kpis(db):
-        items = [item for item in items if item.version_key != native["version_key"]]
-        items.append(
-            VersionComparisonItem(
-                **native,
-                sort_order=max((item.sort_order for item in items), default=0) + 1,
-            )
-        )
+        items=[item for item in items if item.version_key!=native['version_key']]
+        items.append(VersionComparisonItem(**native,sort_order=max((item.sort_order for item in items),default=0)+1))
     return items
 
 
 def _read_dashboard_snapshot(db: Session) -> dict[str, Any]:
     """Keep the last complete snapshot visible while a refresh rebuilds rows."""
     current_config_hash = config_hash(load_versions_config())
-    stored_for_config = (
-        db.execute(
-            select(DashboardSnapshot)
-            .where(DashboardSnapshot.config_hash == current_config_hash)
-            .order_by(DashboardSnapshot.created_at.desc())
-            .limit(1)
-        )
-        .scalars()
-        .first()
-    )
+    stored_for_config = db.execute(
+        select(DashboardSnapshot)
+        .where(DashboardSnapshot.config_hash == current_config_hash)
+        .order_by(DashboardSnapshot.created_at.desc())
+        .limit(1)
+    ).scalars().first()
     if stored_for_config is not None and stored_for_config.snapshot:
         return _complete_cached_snapshot(dict(stored_for_config.snapshot))
 
@@ -205,18 +149,11 @@ def _complete_cached_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
         return snapshot
     comparison = snapshot.get("comparison") or []
     current_key = str(load_versions_config().get("current_version") or "")
-    current = next(
-        (item for item in comparison if item.get("version_key") == current_key), None
-    )
+    current = next((item for item in comparison if item.get("version_key") == current_key), None)
     if current is None and comparison:
         current = comparison[-1]
     previous = comparison[-2] if len(comparison) >= 2 else None
-    return {
-        **snapshot,
-        "current": current,
-        "previous": previous,
-        "deltas": snapshot.get("deltas") or {},
-    }
+    return {**snapshot, "current": current, "previous": previous, "deltas": snapshot.get("deltas") or {}}
 
 
 @router.get("/dashboard/issues", response_model=PaginatedIssuesResponse)
@@ -263,11 +200,7 @@ def issues(
 
     total = int(db.execute(count_stmt).scalar_one())
     rows = db.execute(
-        stmt.order_by(
-            ScenarioVersionResult.updated_at.desc(),
-            ScenarioVersionResult.version_key.desc(),
-            ScenarioVersionResult.scenario_id.desc(),
-        )
+        stmt.order_by(ScenarioVersionResult.updated_at.desc(), ScenarioVersionResult.version_key.desc(), ScenarioVersionResult.scenario_id.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
     ).all()
@@ -297,9 +230,7 @@ def issues(
                 fn_reasons=result.fn_reasons,
             )
         )
-    return PaginatedIssuesResponse(
-        page=page, page_size=page_size, total=total, items=items
-    )
+    return PaginatedIssuesResponse(page=page, page_size=page_size, total=total, items=items)
 
 
 @router.get("/dashboard/issues/{issue_id}", response_model=IssueDetailResponse)
@@ -308,25 +239,15 @@ def issue_detail(issue_id: str, db: DbSession) -> IssueDetailResponse:
     issue = db.get(Issue, issue_id)
     if issue is None:
         raise HTTPException(status_code=404, detail="Issue not found")
-    scenarios = (
-        db.execute(select(Scenario).where(Scenario.issue_id == issue_id))
-        .scalars()
-        .all()
-    )
+    scenarios = db.execute(select(Scenario).where(Scenario.issue_id == issue_id)).scalars().all()
     payload = []
     for scenario in scenarios:
         results_stmt = select(ScenarioVersionResult).where(
             ScenarioVersionResult.scenario_id == scenario.scenario_id
         )
         if configured_keys:
-            results_stmt = results_stmt.where(
-                ScenarioVersionResult.version_key.in_(configured_keys)
-            )
-        results = (
-            db.execute(results_stmt.order_by(ScenarioVersionResult.version_key))
-            .scalars()
-            .all()
-        )
+            results_stmt = results_stmt.where(ScenarioVersionResult.version_key.in_(configured_keys))
+        results = db.execute(results_stmt.order_by(ScenarioVersionResult.version_key)).scalars().all()
         payload.append(
             {
                 "scenario": {
@@ -359,18 +280,10 @@ def scenario_detail(scenario_id: str, db: DbSession) -> ScenarioDetailResponse:
     scenario = db.get(Scenario, scenario_id)
     if scenario is None:
         raise HTTPException(status_code=404, detail="Scenario not found")
-    results_stmt = select(ScenarioVersionResult).where(
-        ScenarioVersionResult.scenario_id == scenario_id
-    )
+    results_stmt = select(ScenarioVersionResult).where(ScenarioVersionResult.scenario_id == scenario_id)
     if configured_keys:
-        results_stmt = results_stmt.where(
-            ScenarioVersionResult.version_key.in_(configured_keys)
-        )
-    results = (
-        db.execute(results_stmt.order_by(ScenarioVersionResult.version_key))
-        .scalars()
-        .all()
-    )
+        results_stmt = results_stmt.where(ScenarioVersionResult.version_key.in_(configured_keys))
+    results = db.execute(results_stmt.order_by(ScenarioVersionResult.version_key)).scalars().all()
     return ScenarioDetailResponse(
         scenario_id=scenario_id,
         scenario={
@@ -397,15 +310,10 @@ def refresh(
             import redis
             from rq import Queue
 
-            queue = Queue(
-                "ra_dashboard_refresh", connection=redis.from_url(settings.redis_url)
-            )
+            queue = Queue("ra_dashboard_refresh", connection=redis.from_url(settings.redis_url))
             queue.enqueue("app.worker.run_refresh_job", job.job_id, job_timeout=1800)
         except Exception as exc:
-            logger.warning(
-                "Failed to enqueue refresh job in RQ; using FastAPI background task.",
-                exc_info=True,
-            )
+            logger.warning("Failed to enqueue refresh job in RQ; using FastAPI background task.", exc_info=True)
             job.message = f"RQ enqueue failed; using local background task: {exc}"
             db.add(job)
             db.commit()

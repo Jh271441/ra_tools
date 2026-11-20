@@ -94,3 +94,59 @@ def test_previous_observer_remains_in_inventory_and_issue_browser(db, config, mo
     assert NEW in versions and newer in versions
     assert versions[NEW]['issue_count'] == 2
     assert w.list_issues(db, NEW)['total'] == 2
+
+
+def test_simulation_view_keeps_frozen_results_when_collection_is_observed(db, config, monkeypatch):
+    from app.services import release_inventory
+    seed(db, config)
+    monkeypatch.setattr(w, 'effective_config', lambda _: config)
+    snapshot = db.scalars(select(ReleaseIssueSnapshot)).one()
+    release = snapshot.release
+    monkeypatch.setattr(release_inventory, 'inventory', lambda *a: {
+        'default_release': release, 'versions': [{'release': release, 'source': 'observation'}]})
+    monkeypatch.setattr(release_inventory, 'observation_issues', lambda *a: {
+        'items': [{'issue_id': 'new-collection-only', 'sim_triggered': None}], 'total': 1})
+    db.add(ReleaseSimulationBatch(fingerprint='frozen', release=release, status='complete', payload={
+        'population_hash': w.population_identity(snapshot.payload), 'scenarios': snapshot.payload['scenarios'],
+        'results': {'1': {'sim_triggered': True, 'reproduced': True, 'precision_label': 'TP'}}}))
+    db.commit()
+    assert w.list_issues(db, release, view='collection')['items'][0]['issue_id'] == 'new-collection-only'
+    result = w.list_issues(db, release, view='simulation')
+    assert result['total'] == 2
+    assert result['items'][0]['issue_id'] == 'i1'
+    assert result['items'][0]['scenario_id'] == '1'
+    assert result['items'][0]['sim_triggered'] is True
+    assert result['items'][0]['precision_label'] == 'TP'
+
+
+def test_known_completed_collection_stays_completed_when_observation_is_overdue(db, config):
+    rows = observe(db, config)
+    checked = NOW + timedelta(days=1)
+    watch.monitor_tick(db, config, now=checked, activity_fetcher=lambda _: (NEW, rows))
+    value = inventory(db, config, checked+timedelta(days=7))
+    item = value['versions'][0]
+    assert item['collection_completed'] is True and item['stale'] is True
+    assert item['collection_status'] == 'collecting'  # Freshness gate for writes is unchanged.
+    assert value['default_release'] is None
+    assert not db.scalars(select(ReleaseSimulationBatch)).all()
+
+
+def test_elapsed_wall_clock_without_a_successful_observation_does_not_complete_collection(db, config):
+    observe(db, config)
+    value = inventory(db, config, NOW+timedelta(days=7))
+    assert value['versions'][0]['collection_completed'] is False
+    assert value['versions'][0]['stale'] is True
+    assert value['default_release'] is None
+
+
+def test_a_new_issue_reopens_previously_completed_collection(db, config):
+    rows = observe(db, config)
+    checked = NOW + timedelta(days=1)
+    watch.monitor_tick(db, config, now=checked, activity_fetcher=lambda _: (NEW, rows))
+    assert inventory(db, config, checked)['versions'][0]['collection_completed'] is True
+    changed = deepcopy(rows)
+    changed.append({**rows[0], 'issue_id':'new-late-issue', 'issue_time':int(checked.timestamp()*1000)})
+    watch.monitor_tick(db, config, now=checked+timedelta(minutes=15), activity_fetcher=lambda _: (NEW, changed))
+    item = inventory(db, config, checked+timedelta(minutes=15))['versions'][0]
+    assert item['collection_completed'] is False and item['collection_status'] == 'collecting'
+    assert not db.scalars(select(ReleaseSimulationBatch)).all()

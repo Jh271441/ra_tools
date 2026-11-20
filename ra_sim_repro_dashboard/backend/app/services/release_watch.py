@@ -163,9 +163,10 @@ def monitor_tick(db, config, *, now=None, activity_fetcher=None, release=None, u
     w.put_state(db, "release_observation:" + release, {
         "release": release, "observed_at": now.isoformat(),
         "activity_hash": state["activity_hash"],
-        "issues": [{k: row.get(k) for k in
+        "issues": [{**{k: row.get(k) for k in
                     ("issue_id", "issue_topic", "issue_time", "version", "ra_type", "ra_merge_result",
-                     "trip_id", "ra_start_timestamp", "trip_start_time", "trip_end_time")}
+                     "trip_id", "ra_start_timestamp", "trip_start_time", "trip_end_time")},
+                    **{k: row[k] for k in ('ra_stuck_auto_result', 'ra_result') if k in row}}
                    for row in rows],
     })
     save(state)

@@ -2,6 +2,7 @@ import { memo, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Handle, MarkerType, Position, type Node, type NodeProps } from '@xyflow/react';
 import { RefreshCw, ScanLine, Activity, GitMerge, ArrowDown, CornerUpLeft } from 'lucide-react';
+import { retryGeometry } from '../lib/flowLayout';
 
 export interface BackfillState {
   enabled: boolean; status: string; reason?: string; checked_at?: string; next_check_at?: string;
@@ -11,12 +12,12 @@ export interface BackfillState {
 const steps = ['sync','prepare','simulate','merge'] as const;
 type Step = typeof steps[number];
 const icons = {sync:RefreshCw,prepare:ScanLine,simulate:Activity,merge:GitMerge};
-type RecoveryData = Record<string, unknown> & {step:Step; active:boolean; value:string; warning:boolean};
+type RecoveryData = Record<string, unknown> & {step:Step; active:boolean; value:string; warning:boolean; integrated?:boolean};
 export const BackfillNode = memo(function BackfillNode({data}:NodeProps<Node<RecoveryData>>) {
   const {t} = useTranslation(); const Icon = icons[data.step];
   return <><Handle id="in" type="target" position={Position.Left} isConnectable={false}/>
     {data.step==='sync' && <Handle id="branch-in" type="target" position={Position.Top} isConnectable={false}/>}
-    <div className={`sim-backfill-node${data.active?' is-active':''}${data.warning?' is-warning':''}`}>
+    <div style={data.integrated?{height:retryGeometry.backfillHeight}:undefined} className={`sim-backfill-node${data.integrated?' is-integrated':''}${data.active?' is-active':''}${data.warning?' is-warning':''}`}>
       <span><Icon size={15} aria-hidden="true"/>{t(`backfill.${data.step}`)}</span><strong>{data.value}</strong>
     </div><Handle id="out" type="source" position={Position.Right} isConnectable={false}/>
     {data.step==='merge' && <Handle id="branch-out" type="source" position={Position.Top} isConnectable={false}/>}
@@ -25,7 +26,7 @@ export const BackfillNode = memo(function BackfillNode({data}:NodeProps<Node<Rec
 export function useBackfillGraph(state?:BackfillState, stale=false, y=258) {
   const {t,i18n} = useTranslation();
   return useMemo(() => {
-  const status = stale?'stale':state?.status || 'waiting';
+  const status = !state?.enabled?'disabled':stale?'stale':state.status || 'waiting';
   const index = ['syncing','preparing','simulating','merging'].indexOf(status);
   const active = index>=0;
   const n=(value?:number)=>value==null?'—':value.toLocaleString(i18n.language==='zh'?'zh-CN':'en-US');
@@ -33,6 +34,7 @@ export function useBackfillGraph(state?:BackfillState, stale=false, y=258) {
     t('backfill.pending',{formattedCount:n(state?.pending_count)}),
     state?.job_id?`Job ${state.job_id}`:t(`backfill.${status==='waiting_bags'?'waiting_bags':'waiting'}`),
     state?.issue_count?`${n(state.recovered_count)} / ${n(state.issue_count)}`:'—'];
+  if (status==='disabled') values.fill('—');
   const nodes:Node<RecoveryData>[] = steps.map((step,i)=>({id:`backfill-${step}`,type:'backfillStep',position:{x:240+i*240,y},
     style:{width:196},height:76,draggable:false,focusable:false,selectable:false,
     data:{step,active:index===i,value:values[i],warning:status==='blocked'&&i===1}}));

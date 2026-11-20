@@ -1,5 +1,6 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel
+from typing import Literal
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.services import release_workflow as workflow
@@ -41,10 +42,11 @@ def issues(
     page_size: int = Query(25, ge=1, le=200),
     query: str = "",
     label: str = "",
+    view: str = Query("collection", pattern="^(simulation|collection)$"),
     db: Session = Depends(get_db),
 ):
-    return read_view(db, ("source-issues", release, page, page_size, query, label),
-                     lambda: guarded(workflow.list_issues, db, release, page, page_size, query, label), max_age=10)
+    return read_view(db, ("source-issues", release, page, page_size, query, label, view),
+                     lambda: guarded(workflow.list_issues, db, release, page, page_size, query, label, view), max_age=10)
 
 
 @router.get("/versions")
@@ -117,4 +119,45 @@ def resume(payload: Resume, tasks: BackgroundTasks, db: Session = Depends(get_db
     from app.services.release_resume import request
     value = guarded(request, db, payload.release, payload.fingerprint)
     tasks.add_task(workflow.process_queued)
+    return value
+
+
+class AutoTriageRefresh(BaseModel):
+    release: str
+    refresh_labels: bool = False
+    date_start: str | None = None
+    date_end: str | None = None
+
+
+@router.get('/auto-triage')
+def auto_triage_report(release: str = '@current', date_start: str | None = None,
+                       date_end: str | None = None, db: Session = Depends(get_db)):
+    from app.services import auto_triage_metrics as metrics
+    return {**guarded(metrics.report, db, release, date_start, date_end), 'versions': metrics.versions(db)}
+
+
+@router.get('/auto-triage/issues')
+def auto_triage_issues(
+    release: str = '@current', page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=200), query: str = Query('', max_length=200),
+    coverage: Literal['', 'gap', 'reused'] = '', changed_only: bool = False,
+    date_start: str | None = None, date_end: str | None = None,
+    db: Session = Depends(get_db),
+):
+    from app.services import auto_triage_metrics as metrics
+    return guarded(metrics.issue_page, db, release, page, page_size, query, coverage, changed_only, date_start, date_end)
+
+
+@router.get('/auto-triage/gap-plan')
+def auto_triage_gap_plan(release: str = '@current', date_start: str | None = None,
+                         date_end: str | None = None, db: Session = Depends(get_db)):
+    from app.services import auto_triage_metrics as metrics
+    return guarded(metrics.gap_plan, db, release, date_start, date_end)
+
+
+@router.post('/auto-triage/recalculate', status_code=202)
+def auto_triage_recalculate(payload: AutoTriageRefresh, tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    from app.services import auto_triage_metrics as metrics
+    value = guarded(metrics.queue_refresh, db, payload.release, payload.refresh_labels, payload.date_start, payload.date_end)
+    tasks.add_task(metrics.process_refresh, value['release'], value['scope']['date_start'], value['scope']['date_end'])
     return value

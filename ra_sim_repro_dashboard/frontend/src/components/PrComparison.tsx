@@ -37,9 +37,11 @@ function percentageScale(rows: PrPoint[], keys: SeriesKey[]): { domain: [number,
   return { domain: [lower, upper], ticks: Array.from({ length: 5 }, (_, index) => lower + index * step) };
 }
 
-export function PrComparison({ rows, comparison }: {
+export function PrComparison({ rows, comparison, evaluationBasis = false, businessVersion }: {
   rows: PrPoint[];
   comparison: KpiSummary[];
+  evaluationBasis?: boolean;
+  businessVersion?: string | null;
 }) {
   const { t } = useTranslation();
   const [metricMode, setMetricMode] = useState<MetricMode>('all');
@@ -74,6 +76,7 @@ export function PrComparison({ rows, comparison }: {
 
   const reason = (row: PrPoint) => {
     const item = comparison.find((value) => value.version_key === row.version_key);
+    if (item?.evaluation_scope && !item.evaluation_scope.complete) return t('evaluation.covered_scope',{covered:item.evaluation_scope.covered,eligible:item.evaluation_scope.eligible});
     const raw = item?.sim_estimate?.same_version_projection;
     const projection = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
     const coverage = projection.population_coverage;
@@ -103,7 +106,7 @@ export function PrComparison({ rows, comparison }: {
     .filter(([, enabled]) => enabled)
     .map(([key]) => ({
       key,
-      label: `${key.startsWith('actual') ? t('prOnline') : t('prSimulation')} ${t(key.includes('Precision') ? 'precision' : 'recall')}`,
+      label: `${key.startsWith('actual') ? t(evaluationBasis?'evaluation.paired_road':'prOnline') : t(evaluationBasis?'evaluation.paired_sim':'prSimulation')} ${t(key.includes('Precision') ? 'precision' : 'recall')}`,
       color: seriesColors[key],
     }));
   const scale = percentageScale(rows, series.map((item) => item.key));
@@ -111,7 +114,7 @@ export function PrComparison({ rows, comparison }: {
 
   return <div className="space-y-4">
     <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-      <CardTitle className="mr-auto shrink-0">{t('sameVersionPr')}</CardTitle>
+      <CardTitle className="mr-auto min-w-0 break-words">{t(evaluationBasis?'evaluation.paired_pr_title':'sameVersionPr')}</CardTitle>
       <div className="ml-auto flex flex-wrap items-center justify-end gap-4">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
         {series.map((item) => <span key={item.key} className="inline-flex items-center gap-2">
@@ -145,8 +148,13 @@ export function PrComparison({ rows, comparison }: {
               <Tooltip {...releaseTooltip} content={({ active, payload }) => {
                 const row = payload?.[0]?.payload as PrPoint | undefined;
                 if (!active || !row) return null;
+                const source = comparison.find(item => item.version_key === row.version_key);
+                const frozen = source?.collection_scope?.historical_frozen && row.version_key !== businessVersion
+                  ? source.collection_scope : null;
+                const count = (value?: number | null) => value == null ? '—' : new Intl.NumberFormat().format(value);
                 return <div className="max-w-xs p-3 text-xs" style={releaseTooltipStyle}>
                   <p className="mb-2 font-semibold">{row.version_key}</p>
+                  {frozen && <p className="mb-2 leading-5 text-muted-foreground"><strong>{t('businessCollection.historicalFrozen')}</strong><br />{t('businessCollection.frozenPopulationCounts',{frozen:count(frozen.frozen_issue_count),collected:count(frozen.collected_issue_count)})}</p>}
                   {series.map((item) => <p key={item.key} style={{ color: item.color }}>{item.label}: <strong>{percent(row[item.key])}</strong></p>)}
                   {bothMetrics ? <p className="mt-2 text-muted-foreground">{t('prGap')}: P {gap(row.actualPrecision, row.simPrecision)} · R {gap(row.actualRecall, row.simRecall)}</p> : null}
                   {series.some((item) => row[item.key] == null) ? <p className="mt-2 text-muted-foreground">{reason(row)}</p> : null}

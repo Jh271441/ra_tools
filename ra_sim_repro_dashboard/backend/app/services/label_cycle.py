@@ -82,6 +82,11 @@ def revision_metrics(db, batch, base):
         return base
     hashes = {}
     for item in revision.get('lineage', {}).values():
+        if item.get('execution_id'):
+            from app.services.evaluation_pipeline import binding_valid
+            if not binding_valid(db, item):
+                return base
+            continue
         fingerprint = item['fingerprint']
         if fingerprint not in hashes:
             execution = db.get(ReleaseSimulationBatch, fingerprint)
@@ -269,3 +274,5 @@ def tick():
                     except (KeyError, TypeError, ValueError):
                         pass
                     refresh_release(db,config,batch)
+                    from app.services.auto_triage_metrics import refresh_observed
+                    refresh_observed(db, release)

@@ -212,3 +212,13 @@
 .dark .sim-quality-grade.is-normal { color: #34d399; }
 .dark .sim-quality-grade.is-degraded { color: #fbbf24; }
 .dark .sim-quality-grade.is-blocked { color: #f87171; }
+
+.sim-auto-node { display: flex; flex-direction: column; gap: 6px; width: 196px; min-height: 132px; padding: 12px; text-align: left; border: 1px dashed var(--stage-color); border-top: 3px solid var(--stage-color); border-radius: 9px; background: hsl(var(--card)); color: hsl(var(--foreground)); overflow-wrap: anywhere; }
+.sim-auto-node .sim-flow-node-title { font-size: 13px; }
+.sim-auto-node:focus-visible { outline: 3px solid hsl(var(--ring)); outline-offset: 3px; }
+.sim-auto-mobile { display: grid; gap: 10px; margin: 20px 16px 0; padding: 14px; border: 1px dashed hsl(var(--primary)); border-radius: 9px; }
+.sim-auto-mobile ol { display: grid; gap: 12px; list-style: none; margin: 0; padding: 0; }
+.sim-auto-mobile .sim-auto-node { width: 100%; min-height: 120px; }
+
+.sim-backfill-node.is-integrated { justify-content: center; overflow-wrap: anywhere; }
+.sim-backfill-node.is-integrated svg { flex-shrink: 0; }

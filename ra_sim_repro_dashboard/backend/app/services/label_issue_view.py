@@ -9,13 +9,13 @@ from app.services.release_watch import activity_identity
 from app.services.result_publication import audit_hash, effective_publication, published_batch
 
 
-def applied_rows(db, release, observed):
+def applied_rows(db, release, observed, *, published=False):
     lane = w.get_state(db, 'label_cycle:' + release)
     key = lane.get('revision_key')
     revision = w.get_state(db, key) if key else {}
     issues = observed.get('issues', [])
-    if (not revision.get('summary', {}).get('available') or not issues
-            or activity_identity(issues, 'issue_time') != revision.get('source_hash')):
+    if (not revision.get('summary', {}).get('available') or (not published and (not issues
+            or activity_identity(issues, 'issue_time') != revision.get('source_hash')))):
         return None
     base = published_batch(db, release)
     metrics = effective_publication(db, base) if base else None
@@ -35,6 +35,16 @@ def applied_rows(db, release, observed):
                 if w.population_identity(s.payload) == base.payload['population_hash']), None)
         finally:
             snapshots.close()
+    if published and frozen:
+        # Display the applied revision, even while newer collected labels await
+        # reconciliation. Physical inputs come from its audited source receipt.
+        revised_labels = {str(i['issue_id']): i for i in revision['issues']}
+        if set(revised_labels) != {str(i['issue_id']) for i in frozen['issues']}:
+            return None
+        issues = [{**i, 'ra_merge_result': revised_labels[str(i['issue_id'])].get('ra_merge_result')}
+                  for i in frozen['issues']]
+        if activity_identity(issues, 'issue_time') != revision.get('source_hash'):
+            return None
     if not frozen or not same_inputs(frozen['issues'], issues, INPUT_FIELDS):
         return None
     lineage = revision.get('lineage')

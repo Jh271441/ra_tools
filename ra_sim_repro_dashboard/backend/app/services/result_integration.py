@@ -267,4 +267,7 @@ def import_executions(db, plan, exports, primary_job_id):
         }
         db.add(cache)
     db.commit()
+    from app.services.reproduction_evidence import capture_completion
+    capture_completion(db, batch=batches[primary_job_id],
+                       export=next(e for e in exports if int(e['job_id']) == primary_job_id))
     return integrated

@@ -33,9 +33,15 @@ async def lifespan(app: FastAPI):
         and os.getenv("RELEASE_WORKFLOW_RUNNER", "api") == "api"
         else None
     )
+    from app.services import evaluation_worker
+    evaluation_task = asyncio.create_task(evaluation_worker.monitor()) if evaluation_worker.enabled() else None
     try:
         yield
     finally:
+        if evaluation_task:
+            evaluation_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await evaluation_task
         if task:
             task.cancel()
             with suppress(asyncio.CancelledError):
@@ -58,3 +64,5 @@ app.add_middleware(
 
 app.include_router(router)
 app.include_router(release_router)
+from app.api.evaluation_routes import router as evaluation_router
+app.include_router(evaluation_router)

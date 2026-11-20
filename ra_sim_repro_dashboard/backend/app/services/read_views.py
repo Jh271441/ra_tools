@@ -20,6 +20,7 @@ _lock = RLock()
 _values = OrderedDict()
 _fills = {}
 _read_db = ContextVar('read_view_session', default=None)
+_read_memos = ContextVar('read_view_memos', default=None)
 _MAX_ENTRIES = 96
 
 
@@ -50,6 +51,7 @@ def revision(db):
             os.getenv('RELEASE_CYCLES_CONFIG', str(CONFIG_DIR / 'release-cycles.default')),
         ]),
         os.getenv('RELEASE_DRIVER_COMMAND_JSON'), os.getenv('RELEASE_WORKFLOW_ENABLED'),
+        os.getenv('EVALUATION_WORKER_ENABLED', '1'), os.getenv('EVALUATION_CRON_ENABLED'),
         datetime.now(TZ).date(),
     )
 
@@ -78,9 +80,14 @@ def read_view(db, name, load, *, max_age=300):
                     _values.move_to_end(key)
                     return deepcopy(existing[1])
             scope = _read_db.set(db)
+            # Retain large immutable audit receipts only for this GET. Nested
+            # public projections may reuse them, but another request (including
+            # one using the same Session) must read and audit its own receipts.
+            memos = _read_memos.set({} if scope.old_value is not db else _read_memos.get())
             try:
                 value = load()
             finally:
+                _read_memos.reset(memos)
                 _read_db.reset(scope)
             cached = deepcopy(value)
             with _lock:
@@ -102,6 +109,17 @@ def read_projection(db, name, load, *, max_age=300):
     if active is None or active is not db:
         return load()
     return read_view(db, name, load, max_age=max_age)
+
+
+def read_memo(db, name, load):
+    """Request-local immutable intermediates, never operational/cross-GET state."""
+    values = _read_memos.get()
+    if (_read_db.get() is not db or values is None
+            or db.new or db.dirty or db.deleted):
+        return load()
+    if name not in values:
+        values[name] = load()
+    return values[name]
 
 
 def workflow_status(db):

@@ -24,7 +24,14 @@ def data():
     for e in exports:
         e["progress"].update(total=200, completed=200)
     plan["period"] = {"release": plan["release"], "binary_id": 123,
-                      "verified": True, "status": "completed"}
+                      "verified": True, "status": "completed",
+                      "cycle_end": "2026-09-03", "evidence":"synthetic closed-cycle record",
+                      "case_start": "2026-09-03T00:00:00+08:00",
+                      "case_end_exclusive": "2026-09-05T00:00:00+08:00"}
+    plan['population_complete'] = True
+    plan['source_scope'] = 'full_period'
+    for issue in plan['issues']:
+        issue.update(version=plan['release'], issue_time=1788451200000)
     plan["population_hash"] = population_identity(plan)
     for e in exports:
         e["population_hash"] = plan["population_hash"]
@@ -56,9 +63,11 @@ def test_explicit_exclusion_publishes_primary_without_changing_audit(data, monke
     assert batch.payload["scenario_results"]["2"]["status"] == "failed"
     kpi = render_kpi(plan["release"], metrics, metrics)
     assert kpi["dpe_coverage"] == .995 and not kpi["quality_gate_passed"]
-    # Later source synchronization must not erase or relabel a frozen publication.
+    # Later source synchronization retains frozen evidence but cannot present
+    # an older execution as current full-release coverage.
     newer = deepcopy(plan)
-    newer["issues"].append({"issue_id": "new", "ra_type": 2, "ra_merge_result": "成功"})
+    newer["issues"].append({"issue_id": "new", "ra_type": 2, "ra_merge_result": "成功",
+                            "version":plan['release'],"issue_time":1788451200000})
     db.add(ReleaseIssueSnapshot(release=plan["release"], period_hash="new", payload=newer))
     db.commit()
     monkeypatch.setattr("app.services.release_presentation.effective_config", lambda _: {
@@ -66,7 +75,49 @@ def test_explicit_exclusion_publishes_primary_without_changing_audit(data, monke
     assert history_kpis(db)[0]["evaluated_cases"] == 199
     monkeypatch.setattr("app.services.release_presentation.status", lambda _: {
         "current_version": plan["release"], "metrics": {"available": False}})
-    assert context(db)["business_status"] == "published_with_exclusions"
+    assert context(db)["business_status"] == "pending_simulation"
+    assert context(db)['business_metrics'] is None
+    assert publication(batch) == metrics
+
+
+def test_latest_observation_replaces_stale_population_counts_without_rewriting_publication(data, monkeypatch):
+    from datetime import datetime, timezone
+    from types import SimpleNamespace
+    from app.services import release_workflow as workflow
+    from app.api import routes
+    db, batch, plan = data
+    approve_publication(db, batch, plan['population_hash'], ['2'], 'User authorized')
+    db.commit()
+    before = deepcopy(batch.payload)
+    observed = deepcopy(plan['issues'])
+    observed.append({'issue_id':'late-manual','ra_type':3,'ra_merge_result':'成功',
+                     'version':plan['release'],'issue_time':1788451200000})
+    now = datetime.now(timezone.utc).isoformat()
+    workflow.put_state(db, 'release_observation:'+plan['release'], {
+        'release':plan['release'],'issues':observed,'activity_hash':'new-population','observed_at':now})
+    workflow.put_state(db, 'release_monitor:'+plan['release'], {
+        'release':plan['release'],'activity_hash':'new-population','quiet_seconds':0,
+        'last_success_at':now,'population_changed_after_submission':True})
+    config = {'periods':[plan['period']], 'contract':{'time_field':'issue_time','verified':True,'reference':'synthetic'}}
+    monkeypatch.setattr(workflow, 'effective_config', lambda _: config)
+    monkeypatch.setattr('app.services.release_presentation.effective_config', lambda _: config)
+    monkeypatch.setattr('app.services.release_presentation.status', lambda _: {
+        'current_version':plan['release'],'metrics':{'available':False}})
+    result = context(db)
+    assert result['business_metrics'] is None and result['business_status']=='collecting',result['business_collection']
+    scope = result['business_collection']
+    assert scope['collected_issue_count']==201 and scope['auto_count']==200 and scope['manual_count']==1
+    assert scope['evaluated_issue_count']==199 and scope['reason_code']=='population_changed'
+    row = next(item for item in history_kpis(db) if item['version_key']==plan['release'])
+    assert row['collection_scope']==scope
+    assert row['sim_repro_rate'] is None and row['precision'] is None and row['recall'] is None
+    assert row['sim_estimate']['estimated_tp'] is None
+    monkeypatch.setattr(routes, 'business_context', lambda _: result)
+    monkeypatch.setattr(routes, '_read_dashboard_snapshot', lambda _: {'generated_at':now})
+    response = routes._summary(db,SimpleNamespace(headers={'x-ra-sim-client':'release-cycle-v1'}))
+    assert response.current is None and response.business_collection==scope
+    assert response.generated_at.isoformat()==now
+    assert batch.payload==before and publication(batch)['eligible']==199
 
 
 @pytest.mark.parametrize("case", ["wrong_hash", "wrong_exclusions", "artifact_failure", "secondary"])

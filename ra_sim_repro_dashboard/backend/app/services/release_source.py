@@ -177,7 +177,9 @@ def fetch_population(config, period):
         "trip_start_time",
         "trip_end_time",
     )
-    return [{k: row.get(k) for k in fields} for row in rows]
+    # Preserve observed NULLs without manufacturing an observation for old artifacts.
+    return [{**{k: row.get(k) for k in fields},
+             **{k: row[k] for k in ('ra_stuck_auto_result', 'ra_result') if k in row}} for row in rows]
 
 
 def fetch_scenarios(period):

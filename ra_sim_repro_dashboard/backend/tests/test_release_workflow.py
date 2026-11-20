@@ -1,5 +1,5 @@
 from copy import deepcopy
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
@@ -53,7 +53,11 @@ def db():
 
 
 def population(*args):
-    return [
+    period = args[1] if len(args) > 1 else {
+        'case_start': (reference_thursday()-timedelta(days=14)).isoformat()+'T00:00:00+08:00',
+        'release': 'gen4-release-20260918',
+    }
+    rows = [
         {
             "issue_id": "i1",
             "ra_type": 2,
@@ -62,6 +66,9 @@ def population(*args):
         },
         {"issue_id": "i2", "ra_type": 3, "ra_merge_result": "成功"},
     ]
+    for row in rows:
+        row.update(version=period['release'], issue_time=int(datetime.fromisoformat(period['case_start']).timestamp()*1000))
+    return rows
 
 
 def scene_labels(cohort):
@@ -214,6 +221,39 @@ def test_priority_is_scoped_to_release_and_part_of_plan_identity(db, config):
     )
     config["simulation"]["priorities_by_release"] = {"other-release": "HIGH"}
     assert w.make_plan(db, config)["simulation"]["priority"] == "NORMAL"
+
+
+def test_new_main_plan_freezes_release_scoped_replay_policy(db, config):
+    seed(db, config)
+    original = w.make_plan(db, config)
+    config['simulation'].update(
+        warmup_ms_by_release={'gen4-release-20260918': 15000},
+        feature_history_by_release={'gen4-release-20260918': 'release-native'},
+    )
+    revised = w.make_plan(db, config)
+    assert revised['simulation']['warmup_ms'] == 15000
+    assert revised['simulation']['feature_history'] == 'release-native'
+    assert revised['fingerprint'] != original['fingerprint']
+    assert revised['scenarios'] == original['scenarios']
+    assert revised['population_hash'] == original['population_hash']
+    assert 'warmup_ms' not in original['simulation']
+    assert 'feature_history' not in original['simulation']
+    config['simulation'].update(warmup_ms_by_release={'another': 15000},
+                                feature_history_by_release={'another': 'release-native'})
+    assert w.make_plan(db, config)['fingerprint'] == original['fingerprint']
+
+
+@pytest.mark.parametrize('overrides, message', [
+    ({'warmup_ms': True}, 'simulation_warmup_invalid'),
+    ({'warmup_ms': -1}, 'simulation_warmup_invalid'),
+    ({'warmup_ms': 60001}, 'simulation_warmup_invalid'),
+    ({'feature_history': 'legacy20'}, 'simulation_feature_history_invalid'),
+])
+def test_invalid_main_replay_policy_fails_before_queue(db, config, overrides, message):
+    seed(db, config)
+    config['simulation'].update(overrides)
+    with pytest.raises(ValueError, match=message):
+        w.make_plan(db, config)
 
 
 def test_issue_visible_without_sim_and_manual_separate(db, config, monkeypatch):

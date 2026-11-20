@@ -1,3 +1,5 @@
+import type { ReproductionSummary } from './types/reproduction';
+
 export interface ResultPublication {
   primary_job_id: number; scenario_count: number; valid_scenario_count: number;
   excluded_scenario_ids: string[]; coverage: number; population_hash: string;
@@ -26,7 +28,28 @@ export interface VersionsResponse {
   versions: VersionItem[];
 }
 
+export interface CollectionScope {
+  available: boolean;
+  historical_frozen?: boolean;
+  frozen_issue_count?: number | null;
+  reason_code?: string;
+  collection_status: string;
+  collected_issue_count: number | null;
+  auto_count: number | null;
+  manual_count: number | null;
+  evaluated_issue_count: number | null;
+  observed_at: string | null;
+}
+
 export interface KpiSummary {
+  collection_scope?: CollectionScope | null;
+  reproduction?: ReproductionSummary;
+  evaluation_scope?: {
+    complete: boolean; covered: number; eligible: number;
+    precision: number | null; recall: number | null; repro_rate: number | null;
+    road_precision: number | null; road_recall: number | null;
+    road_counts: Record<string, number> | null; sim_counts: Record<string, number>;
+  };
   version_key: string;
   label: string;
   total_cases: number;
@@ -34,18 +57,18 @@ export interface KpiSummary {
   road_behavior_cases?: number;
   sim_positive_cases: number;
   reproduced_cases: number;
-  sim_repro_rate: number;
-  model_repro_rate: number;
-  fn_fallback_rate: number;
-  fp_suppress_rate: number;
+  sim_repro_rate: number | null;
+  model_repro_rate: number | null;
+  fn_fallback_rate: number | null;
+  fp_suppress_rate: number | null;
   precision: number | null;
   recall: number | null;
   f1: number | null;
-  specificity: number;
-  accuracy: number;
-  positive_auto_repro_rate: number;
-  negative_auto_repro_rate: number;
-  positive_manual_repro_rate: number;
+  specificity: number | null;
+  accuracy: number | null;
+  positive_auto_repro_rate: number | null;
+  negative_auto_repro_rate: number | null;
+  positive_manual_repro_rate: number | null;
   evaluated_cases: number;
   dpe_coverage: number;
   publication?: ResultPublication | null;
@@ -57,6 +80,7 @@ export interface KpiSummary {
 }
 
 export interface SummaryResponse {
+  business_collection?: CollectionScope | null;
   business_current_version?: string | null;
   business_metrics?: KpiSummary | null;
   business_status?: string;

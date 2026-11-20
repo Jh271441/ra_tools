@@ -87,3 +87,19 @@ test('baseline adds neither VLM nor experimental replay or animation unless requ
   const extraTokens = split(JSON.parse(generated.singleJobJson).common_params.extra_args);
   assert.equal(extraTokens[extraTokens.indexOf('--ares-animation-config') + 1], ANIMATION_CONFIG);
 });
+test('new exports use native feature history, complete warmup and fresh inference in every format', () => {
+  const generated = buildSimulationParameters(input);
+  const single = JSON.parse(generated.singleJobJson);
+  assert.equal(single.sim_common_params.use_deepnet_cache, false);
+  assert.doesNotMatch(single.sim_common_params.sim_extra_args, /old_stuck_feature_extractor_length_only_in_sim/);
+  for (const value of [generated.jobArgs, generated.simPlanArgs, single.common_params.extra_args]) {
+    const tokens = split(value);
+    assert.equal(tokens[tokens.indexOf('--override-warmup-ms') + 1], '15000');
+  }
+  for (const value of [generated.jobArgs, generated.simPlanArgs]) {
+    const tokens = split(value);
+    assert.equal(tokens[tokens.indexOf('--use-deepnet-cache') + 1], '0');
+    assert.match(tokens[tokens.indexOf('--sim-extra-args') + 1], /--sim_disable_loading_assist_topic/);
+    assert.doesNotMatch(tokens[tokens.indexOf('--sim-extra-args') + 1], /old_stuck_feature_extractor_length_only_in_sim/);
+  }
+});

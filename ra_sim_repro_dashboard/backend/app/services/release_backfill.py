@@ -115,6 +115,11 @@ def collect_results(db, base, full):
                 execution_hash = audit_hash(p)
             results[sid] = p['results'][sid]
             lineage[sid] = {'fingerprint':b.fingerprint, 'job_id':p['job_id'], 'audit_hash':execution_hash}
+    from app.services.evaluation_pipeline import shared_results
+    shared, bindings = shared_results(db, base, full)
+    for sid, result in shared.items():
+        if sid not in results:
+            results[sid], lineage[sid] = result, bindings[sid]
     return results, lineage
 
 
@@ -175,6 +180,11 @@ def revision_metrics(db, base, metrics):
     from app.services.result_publication import audit_hash
     execution_hashes = {}
     for item in revision['lineage'].values():
+        if item.get('execution_id'):
+            from app.services.evaluation_pipeline import binding_valid
+            if not binding_valid(db, item):
+                return metrics
+            continue
         fingerprint = item['fingerprint']
         if fingerprint not in execution_hashes:
             execution = db.get(ReleaseSimulationBatch, fingerprint)

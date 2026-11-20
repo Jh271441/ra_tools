@@ -73,6 +73,7 @@ export function useLabelGraph(state: LabelCycleState | undefined, stale: boolean
     recovery?.progress?.total ? t('labelLoop.recoveryProgress',{done:count(recovery.progress.finished),total:count(recovery.progress.total),percent:recovery.progress.percent.toFixed(0)})
       : recovery ? t('labelLoop.missingTotal',{formattedCount:count(recovery.missing_count)}) : t('labelLoop.reuseResults'),
     applied ? t('labelLoop.validTotal',{formattedCount:count(state?.valid_issue_count)}) : t('labelLoop.mergeHours',{count:(state?.merge_seconds || 21600)/3600})];
+  if (status==='disabled') values.fill('—');
   const times = [state?.checked_at,state?.next_check_at,recovery?.progress?.observed_at || recovery?.next_check_at,state?.pending_count ? state.next_process_at : state?.applied_at];
   const timeKeys = ['checkedShort','nextShort',recovery?.progress ? 'progressShort' : 'retryShort',state?.pending_count?'mergeShort':'appliedShort'];
   const nodes: Node<LoopData>[] = steps.map((step,index)=>({

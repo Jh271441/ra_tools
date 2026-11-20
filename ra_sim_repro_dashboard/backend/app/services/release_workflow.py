@@ -446,7 +446,9 @@ def prepare_missing_scenes(db, config, *, release=None):
         })
 
 
-def list_issues(db, release=None, page=1, page_size=25, query="", label=""):
+def list_issues(db, release=None, page=1, page_size=25, query="", label="", view="collection"):
+    if view not in ("simulation", "collection") or page < 1 or not 1 <= page_size <= 200:
+        raise ValueError("invalid_pagination")
     config = effective_config(db)
     from app.services.release_inventory import inventory, observation_issues
     catalog = inventory(db, config)
@@ -455,8 +457,24 @@ def list_issues(db, release=None, page=1, page_size=25, query="", label=""):
         if not release:
             return {"items": [], "total": 0, "page": page, "page_size": page_size, "status": "pending"}
     selected = next((v for v in catalog["versions"] if v["release"] == release), None)
-    if selected and selected["source"] == "observation":
+    if view == "collection" and selected and selected["source"] == "observation":
         return observation_issues(db, release, page, page_size, query, label)
+    if view == "simulation" and release not in (None, "", "@current"):
+        from app.services.ordinary_evaluation import issue_page as ordinary_issues
+        ordinary = ordinary_issues(db, release, page, page_size, query, label)
+        if ordinary is not None:
+            return ordinary
+        from app.services.label_issue_view import applied_rows
+        applied = applied_rows(db, release, {}, published=True)
+        if applied is not None:
+            from app.services.reproduction_evidence import annotate_standard_rows
+            applied = annotate_standard_rows(db, release, applied)
+            items = [row for row in applied if (not label or label in row['scenario_labels'])
+                     and (not query or query.casefold() in json.dumps(row, ensure_ascii=False).casefold())]
+            items.sort(key=lambda row: (row.get('issue_time') or 0, row['issue_id'], row['scenario_id']), reverse=True)
+            return {'items': items[(page-1)*page_size:page*page_size], 'total': len(items),
+                    'page': page, 'page_size': page_size, 'status': 'published'}
+
     current = resolve_current(config)
     if release in (None, "", "@current"):
         period = current["current_period"]
@@ -470,6 +488,16 @@ def list_issues(db, release=None, page=1, page_size=25, query="", label=""):
         ]
         period = candidates[0] if len(candidates) == 1 else None
     snapshot = latest_snapshot(db, period_key(config, period)) if period else None
+    if view == "simulation" and snapshot:
+        # A published simulation is bound to its frozen source, not the latest
+        # observation/snapshot whose labels may still be awaiting processing.
+        from app.services.result_publication import published_batch
+        base = published_batch(db, snapshot.release)
+        if base:
+            from app.services.auto_triage_metrics import execution_inputs
+            _, receipt = execution_inputs(db, base)
+            if receipt.get('snapshot_id'):
+                snapshot = db.get(ReleaseIssueSnapshot, receipt['snapshot_id'])
     if snapshot is None:
         return {
             "items": [],
@@ -499,7 +527,7 @@ def list_issues(db, release=None, page=1, page_size=25, query="", label=""):
                     batch_by_scene[scene["scenario_id"]] = batch
     items = []
     for issue in snapshot.payload["issues"]:
-        if int(issue["ra_type"]) != 2:
+        if view == "collection" and int(issue["ra_type"]) != 2:
             continue
         mapped = scenes_by_issue.get(str(issue["issue_id"]), [])
         for scenario in mapped or [None]:
@@ -507,6 +535,7 @@ def list_issues(db, release=None, page=1, page_size=25, query="", label=""):
                 "issue_id": str(issue["issue_id"]),
                 "issue_topic": str(issue.get("issue_topic") or ""),
                 "source_result": issue.get("ra_merge_result"),
+                "ra_type": int(issue["ra_type"]),
                 "version_key": snapshot.release,
                 "road_version": str(issue.get("version", "")),
                 "scenario_id": scenario["scenario_id"] if scenario else "",
@@ -566,6 +595,9 @@ def list_issues(db, release=None, page=1, page_size=25, query="", label=""):
             if label and label not in row["scenario_labels"]:
                 continue
             items.append(row)
+    from app.services.reproduction_evidence import annotate_standard_rows
+    if view == "simulation":
+        items = annotate_standard_rows(db, snapshot.release, items)
     return {
         "items": items[(page - 1) * page_size : page * page_size],
         "total": len(items),
@@ -573,6 +605,23 @@ def list_issues(db, release=None, page=1, page_size=25, query="", label=""):
         "page_size": page_size,
         "status": "ready",
     }
+
+
+def execution_overrides(config, release):
+    """Freeze explicit execution policy identically for main and sidecar plans."""
+    sim = config.get('simulation', {})
+    result = {}
+    warmup = sim.get('warmup_ms_by_release', {}).get(release, sim.get('warmup_ms'))
+    if warmup is not None:
+        if type(warmup) is not int or not 0 <= warmup <= 60000:
+            raise ValueError('simulation_warmup_invalid')
+        result['warmup_ms'] = warmup
+    history = sim.get('feature_history_by_release', {}).get(release, sim.get('feature_history'))
+    if history is not None:
+        if history != 'release-native':
+            raise ValueError('simulation_feature_history_invalid')
+        result['feature_history'] = history
+    return result
 
 
 def make_plan(db, config=None, *, release=None):
@@ -684,6 +733,7 @@ def make_plan(db, config=None, *, release=None):
             "cache": "disabled",
             "recovery_mode": sim.get("recovery_mode", "baseline"),
             "dpe": True,
+            **execution_overrides(config, period['release']),
         },
         "issues": [
             {**{k: i.get(k) for k in ("issue_id", "ra_type", "ra_merge_result")},
@@ -744,6 +794,16 @@ def _driver_preflight(config, plan):
     return check
 
 
+def evaluation_execution_active(db, release):
+    for row in db.scalars(select(ReleaseWorkflowState).where(ReleaseWorkflowState.key.startswith('evstart:'))):
+        value = row.payload
+        if value.get('status') in ('preparing', 'submitting', 'submission_uncertain', 'running', 'verifying') and value.get('context', {}).get('release') == release:
+            execution = get_state(db, 'evexecution:' + value.get('execution_id', 'none'))
+            if not execution or execution.get('status') in ('preparing', 'submitting', 'submission_uncertain', 'running', 'verifying'):
+                return True
+    return False
+
+
 def queue_plan(db, fingerprint, config=None, *, release=None):
     config = config if config is not None else effective_config(db)
     plan = make_plan(db, config, release=release)
@@ -752,6 +812,9 @@ def queue_plan(db, fingerprint, config=None, *, release=None):
     existing = db.get(ReleaseSimulationBatch, fingerprint)
     if existing:
         return existing
+    # Share physical execution with independent evaluation profiles.
+    if evaluation_execution_active(db, plan['release']):
+        raise ValueError('AutoTriage physical execution is active; wait before preparing another batch')
     active = db.scalars(
         select(ReleaseSimulationBatch).where(
             ReleaseSimulationBatch.release == plan["release"],
@@ -802,6 +865,8 @@ def attach_job(db, fingerprint, job_id):
 def execute_batch(db, batch, config, *, release=None):
     if batch.status != "queued":
         return batch
+    if evaluation_execution_active(db, batch.release):
+        return batch  # Retain queued work until the shared execution lane is free.
     if (batch.payload.get('backfill', {}).get('kind') == 'label_changes'
             and (get_state(db, 'settings', {'mode':'manual'}).get('mode') != 'auto'
                  or config.get('result_publication', {}).get('enabled', True) is not True)):
@@ -978,9 +1043,13 @@ def metrics_for_snapshot(db, snapshot):
     population_hash = population_identity(snapshot.payload)
     from app.services.result_publication import published_batch, effective_publication
     published = published_batch(db, snapshot.release)
+    from app.services.business_population import scope_for_batch
     from app.services.release_backfill import frozen_snapshot_valid
     if published and frozen_snapshot_valid(db, published):
-        return effective_publication(db, published)
+        scope = scope_for_batch(db, published)
+        if scope['available']:
+            return effective_publication(db, published)
+        return {'available': False, 'reason': scope['reason_code'], 'collection_scope': scope}
     batches = db.scalars(
         select(ReleaseSimulationBatch)
         .where(
@@ -997,6 +1066,9 @@ def metrics_for_snapshot(db, snapshot):
         ].get("primary"):
             continue
         if batch.payload.get("population_hash") == population_hash:
+            scope = scope_for_batch(db, batch)
+            if not scope['available']:
+                return {'available': False, 'reason': scope['reason_code'], 'collection_scope': scope}
             return {
                 **batch.payload.get("summary", {}),
                 "job_id": batch.payload.get("job_id"),
