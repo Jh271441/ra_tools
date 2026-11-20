@@ -633,6 +633,7 @@ def make_plan(db, config=None, *, release=None):
     if snapshot.payload.get("mapping_error"):
         raise ValueError(snapshot.payload["mapping_error"])
     validate_period(period, require_verified=True)
+    physical = period.get("execution_schema") == "physical_v2"
     if not snapshot.payload.get("population_complete", False):
         raise ValueError("当前周期人口尚未完整采集，不能提交全量仿真")
     if snapshot.payload.get("source_scope") == "acceptance_subset" and not config.get(
@@ -661,7 +662,9 @@ def make_plan(db, config=None, *, release=None):
                     "end_timestamp",
                 )
             },
-            "cohort": cohorts[s["issue_id"]],
+            "cohort": (
+                "source_manual" if cohorts[s["issue_id"]] == "positive_manual" else "source_auto"
+            ) if physical else cohorts[s["issue_id"]],
         }
         for s in snapshot.payload["scenarios"]
         if cohorts.get(s["issue_id"])
@@ -687,13 +690,17 @@ def make_plan(db, config=None, *, release=None):
         raise ValueError("提交优先级必须是 NORMAL 或 HIGH")
     if not period.get("binary_id") or not period.get("template_job_id"):
         raise ValueError("当前 release 缺少已核实的 binary 和任务模板")
-    from ra_api.release_labels import full_scene_label, validate_scene_labels
+    from ra_api.release_labels import full_scene_label, validate_scene_labels, validate_physical_scene_labels
 
     scenario_label = full_scene_label(period)
     for scene in snapshot.payload['scenarios']:
         cohort = cohorts.get(scene['issue_id'])
         if cohort:
-            validate_scene_labels(scene, scenario_label, period['release'], cohort)
+            if physical:
+                validate_physical_scene_labels(scene, scenario_label, period['release'],
+                    "source_manual" if cohort == "positive_manual" else "source_auto")
+            else:
+                validate_scene_labels(scene, scenario_label, period['release'], cohort)
     body = {
         "scenario_label": scenario_label,
         "period": {
@@ -717,8 +724,9 @@ def make_plan(db, config=None, *, release=None):
                 "quiet_since",
                 "observed_at",
                 "last_issue_at",
+                "execution_schema",
             )
-            if k not in ("completion_rule", "activity_hash", "quiet_since", "observed_at", "last_issue_at") or k in period
+            if k not in ("completion_rule", "activity_hash", "quiet_since", "observed_at", "last_issue_at", "execution_schema") or k in period
         },
         "release": period["release"],
         "binary_id": period["binary_id"],
@@ -743,6 +751,7 @@ def make_plan(db, config=None, *, release=None):
         ],
         "driver_revision": sim.get("driver_revision"),
         "acceptance_only": bool(sim.get("acceptance_only", False)),
+        **({"execution_schema": "physical_v2"} if physical else {}),
     }
     for issue in body["issues"]:
         failure = next((f for f in failures if str(f["issue_id"]) == str(issue["issue_id"])), None)
@@ -795,6 +804,16 @@ def _driver_preflight(config, plan):
 
 
 def evaluation_execution_active(db, release):
+    active = ("preparing", "submitting", "submission_uncertain", "running", "verifying")
+    # Some authorized/offline submitters persist an execution without evstart.
+    # Its durable intent must protect the same shared lane after a restart.
+    execution = db.scalar(select(ReleaseWorkflowState.key).where(
+        ReleaseWorkflowState.key.startswith("evexecution:"),
+        ReleaseWorkflowState.payload["status"].as_string().in_(active),
+        ReleaseWorkflowState.payload["plan"]["release"].as_string() == release,
+    ).limit(1))
+    if execution:
+        return True
     for row in db.scalars(select(ReleaseWorkflowState).where(ReleaseWorkflowState.key.startswith('evstart:'))):
         value = row.payload
         if value.get('status') in ('preparing', 'submitting', 'submission_uncertain', 'running', 'verifying') and value.get('context', {}).get('release') == release:

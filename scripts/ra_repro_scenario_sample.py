@@ -87,17 +87,19 @@ def build_manifest(source: Path, sample_size: int, seed: str,
                    releases: Iterable[str] | None, cohorts: Iterable[str] | None,
                    run_label: str,
                    pre_buffer_ms: int = DEFAULT_PRE_BUFFER_MS,
-                   post_buffer_ms: int = DEFAULT_POST_BUFFER_MS) -> pd.DataFrame:
+                   post_buffer_ms: int = DEFAULT_POST_BUFFER_MS,
+                   physical: bool = False) -> pd.DataFrame:
   if pre_buffer_ms <= 0 or post_buffer_ms <= 0:
     raise ValueError("scenario pre/post buffers must be positive")
   frame = pd.read_csv(source, low_memory=False)
   if "datae_visible_filters_match" in frame:
     frame = frame[frame["datae_visible_filters_match"].astype(str).str.lower().isin(
         ("true", "1"))]
-  frame = frame[frame["cohort"].isin(COHORTS)].copy()
+  allowed_cohorts = ("source_auto", "source_manual") if physical else COHORTS
+  frame = frame[frame["cohort"].isin(allowed_cohorts)].copy()
   if cohorts:
     wanted_cohorts = set(cohorts)
-    unknown = wanted_cohorts - set(COHORTS)
+    unknown = wanted_cohorts - set(allowed_cohorts)
     if unknown:
       raise ValueError(f"unknown cohorts: {sorted(unknown)}")
     frame = frame[frame["cohort"].isin(wanted_cohorts)]
@@ -149,10 +151,15 @@ def build_manifest(source: Path, sample_size: int, seed: str,
     release = str(row["release"])
     cohort = str(row["cohort"])
     issue_id = str(row["issue_id"])
-    trigger_group = "ManualTrigger" if cohort == "positive_manual" else "AutoTrigger"
+    trigger_group = "ManualTrigger" if cohort in ("positive_manual", "source_manual") else "AutoTrigger"
     window_token = f"pre{pre_buffer_ms}ms_post{post_buffer_ms}ms"
     scenario_name = (
         f"{run_label}_{window_token}_{release}_{cohort}_{issue_id}")
+    if physical:
+      identity = json.dumps({
+          k: row.get(k) for k in ("trip_id", "ra_start_timestamp", "trip_start_time", "trip_end_time")
+      }, sort_keys=True)
+      scenario_name += "_" + hashlib.sha256(identity.encode()).hexdigest()[:16]
     scenario_labels = [
         run_label,
         f"{run_label}_{release}",

@@ -54,6 +54,17 @@ def validate_scene_labels(row, label, release, cohort):
         raise ValueError('Scenario trigger group is ambiguous')
 
 
+def validate_physical_scene_labels(row, label, release, cohort):
+    """Keep a full namespace/trigger contract while retaining frozen GT tags."""
+    labels = scene_labels(row)
+    original = [value for value in COHORTS if f"{label}_{value}" in labels]
+    if len(original) != 1 or cohort not in ("source_auto", "source_manual"):
+        raise ValueError("Scenario cohort labels are ambiguous")
+    validate_scene_labels(row, label, release, original[0])
+    if (original[0] == "positive_manual") != (cohort == "source_manual"):
+        raise ValueError("Scenario trigger group is ambiguous")
+
+
 def cohort_label_update(row, label, release, cohort):
     """Reconcile GT-only drift before first submission, retaining other labels.
 

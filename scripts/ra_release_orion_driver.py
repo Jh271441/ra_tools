@@ -98,12 +98,17 @@ def validate_plan(plan):
         or any(not value.isdigit() or int(value) <= 0 for value in ids)
     ):
         raise ValueError("Scenario identities missing or duplicated")
-    for row in rows:
-        if not row.get("issue_id") or row.get("cohort") not in (
+    allowed = (
+        ("source_auto", "source_manual")
+        if plan.get("execution_schema") == "physical_v2"
+        else (
             "positive_auto",
             "negative_auto",
             "positive_manual",
-        ):
+        )
+    )
+    for row in rows:
+        if not row.get("issue_id") or row.get("cohort") not in allowed:
             raise ValueError("Scenario requires a verified source cohort")
     if "issue_tolerance" in plan:
         from ra_api.release_tolerance import validate_frozen
@@ -153,7 +158,8 @@ def verify_live_labels(plan):
     from ra_api.sim_result_api import SimResultClient
 
     label = plan.get('scenario_label')
-    if not label or label != full_scene_label({**plan['period'], 'scenario_creation_label': label}):
+    physical = plan.get('execution_schema') == 'physical_v2'
+    if not physical and (not label or label != full_scene_label({**plan['period'], 'scenario_creation_label': label})):
         raise ValueError('New submissions require a canonical full label')
     trail_api.token = SimResultClient()._app_token
     rows = plan['scenarios']
@@ -170,7 +176,13 @@ def verify_live_labels(plan):
             raise ValueError('Live Scenario identity coverage mismatch')
         for row in found:
             target = expected[str(row['id'])]
-            validate_scene_labels(row, label, plan['release'], target['cohort'])
+            if physical and label:
+                from ra_api.release_labels import validate_physical_scene_labels
+                if label != full_scene_label({**plan['period'], 'scenario_creation_label': label}):
+                    raise ValueError('New submissions require a canonical full label')
+                validate_physical_scene_labels(row, label, plan['release'], target['cohort'])
+            elif not physical:
+                validate_scene_labels(row, label, plan['release'], target['cohort'])
             if row.get('is_deleted') or row.get('version') != target.get('scenario_revision'):
                 raise ValueError('Scenario revision or deletion state changed')
             labels = row.get('labels', [])
@@ -231,6 +243,14 @@ def build_job(plan):
         or not metadata.get("runtime_reference")
     ):
         raise ValueError("Template runtime not valid for Gen4")
+    # Orion's protobuf map uses strings; the stored JSON can contain numbers.
+    # Preserve the template's representation only for unchanged argument values.
+    reference = templates[0].get("task_args") or templates[0].get("arguments")
+    if hasattr(reference, "as_dict"):
+        reference = reference.as_dict()
+    if not isinstance(reference, dict):
+        raise ValueError("Cannot verify template task arguments")
+    metadata = {**metadata, "preflight_reference_arguments": dict(reference)}
     job = clone_job(
         job_id=int(plan["template_job_id"]),
         task_id_list=[int(templates[0]["id"])],
@@ -394,7 +414,7 @@ def poll(plan):
         argument_hashes[str(task["signature"])] = digest(arguments)
         runtime_arguments.add(digest({k:v for k,v in arguments.items() if k != scenario_key}))
     from ra_api.release_tolerance import POLICY
-    if plan.get("issue_tolerance", {}).get("policy") == POLICY and (len(runtime_arguments) != 1 or not metadata.get("runtime_reference")):
+    if (plan.get('execution_schema') == 'physical_v2' or plan.get("issue_tolerance", {}).get("policy") == POLICY) and (len(runtime_arguments) != 1 or not metadata.get("runtime_reference")):
         raise ValueError("Actual task runtime parameters are inconsistent")
     execution_contract_hash = digest({"arguments":sorted(runtime_arguments),
         "runtime_reference":metadata.get("runtime_reference"), "binary_id":plan["binary_id"], "cluster":metadata["cluster"]}) if len(runtime_arguments) == 1 and metadata.get("runtime_reference") else None
@@ -576,10 +596,15 @@ def prepare_scenes(payload):
         raise ValueError("Verified release scope required for scenario preparation")
     from ra_api.release_labels import full_scene_label
 
-    label = full_scene_label(period)
-    if label != payload.get("label"):
+    physical = payload.get('execution_schema') == 'physical_v2'
+    label = 'ra_repro_physical_' + release[-8:] if physical else full_scene_label(period)
+    if not physical and label != payload.get("label"):
         raise ValueError("Scenario label does not match period")
     rows = payload["issues"]
+    if physical:
+        if any(type(row.get('ra_type')) is not int or row['ra_type'] not in (2, 3) for row in rows):
+            raise ValueError("Unknown source trigger type")
+        rows = [{**row, 'cohort': 'source_manual' if row['ra_type'] == 3 else 'source_auto'} for row in rows]
     if not rows or len({i["issue_id"] for i in rows}) != len(rows):
         raise ValueError("Invalid source identity population")
     for issue in rows:
@@ -587,11 +612,11 @@ def prepare_scenes(payload):
             r"\d+_\d{8}_\d{6}", issue["trip_id"]
         ):
             raise ValueError("Original trip string identity missing or invalid")
-        if issue.get("cohort") not in (
+        if issue.get("cohort") not in (('source_auto', 'source_manual') if physical else (
             "positive_auto",
             "negative_auto",
             "positive_manual",
-        ):
+        )):
             raise ValueError("Unknown source truth")
     directory = Path(os.environ["RELEASE_DRIVER_STATE_DIR"])
     directory.mkdir(parents=True, exist_ok=True)
@@ -603,7 +628,8 @@ def prepare_scenes(payload):
         frame["release"] = release
         frame.to_csv(source, index=False)
         plan = build_manifest(
-            source, 100000, "full-current-cycle", [release], None, label, 20000, 10000
+            source, 100000, "full-current-cycle", [release], None, label, 20000, 10000,
+            physical=physical
         )
         original = {r["issue_id"]: r["trip_id"] for r in rows}
         if plan.validation_error.astype(bool).any() or any(
@@ -652,12 +678,41 @@ def prepare_scenes(payload):
              "reason": "missing_bag" if "does not have bags" in str(row.upload_status) else "upstream_error"}
             for row in result[~result.upload_status.isin(["uploaded", "existing"])].itertuples()
         ]
+        scenes = []
+        if physical:
+            successful = result[result.upload_status.isin(['uploaded', 'existing'])]
+            expected = {str(int(row.scenario_id)): row for row in successful.itertuples()}
+            if len(expected) != len(successful):
+                raise ValueError('Prepared scene identity duplicated')
+            for start in range(0, len(expected), 100):
+                ids = list(expected)[start:start+100]
+                response = trail_api.send_request(
+                    "http://100.69.238.11:8000/voyager/trail/simulation/scenario/query/",
+                    {'id': ','.join(ids), 'page': 1, 'size': 500},
+                )
+                if not response or response.get('msg') != 'success':
+                    raise ValueError('Prepared scene identity unavailable')
+                found = response['data'].get('res', response['data'].get('data', []))
+                if len(found) != len(ids) or {str(r['id']) for r in found} != set(ids):
+                    raise ValueError('Prepared scene identity incomplete')
+                for row in found:
+                    original = expected[str(row['id'])]
+                    if (row.get('is_deleted')
+                            or row.get('start_timestamp') != int(original.scenario_start_timestamp)
+                            or row.get('end_timestamp') != int(original.scenario_end_timestamp)):
+                        raise ValueError('Prepared scene physical window mismatch')
+                    scenes.append({
+                        'scenario_id': str(row['id']), 'issue_id': str(original.issue_id),
+                        'scenario_revision': row['version'], 'start_timestamp': row['start_timestamp'],
+                        'end_timestamp': row['end_timestamp'], 'scenario_labels': row.get('labels', []),
+                    })
         return {
             "ready": failed == 0,
             "label": label,
             "prepared": len(result) - failed,
             "failed": failed,
             "failures": failures,
+            **({'scenarios': scenes} if physical else {}),
             "error": f"{failed} scenes could not be prepared" if failed else "",
         }
 
@@ -723,13 +778,33 @@ def dispatch(action, plan):
             else {"fingerprint": plan["fingerprint"], "job_id": None}
         )
     if action == "preflight":
-        _, metadata, _, _ = build_job(plan)
+        from scripts.ra_repro_launch_full_orion import _load_api
+        job, metadata, _, _ = build_job(plan)
+        scenario_key = getattr(_load_api()[2], 'SCENARIO_ID', '--scenario-id')
+        reference = metadata.get('preflight_reference_arguments', {})
+        hashes = {
+            digest({
+                k: (
+                    int(v) if type(reference.get(k)) is int and re.fullmatch(r"-?\d+", v)
+                    else reference[k] if k in reference and str(reference[k]) == v
+                    else v
+                )
+                for k, v in dict(task.arguments).items() if k != scenario_key
+            })
+            for task in job.mapper_tasks
+        }
+        if len(hashes) != 1:
+            raise ValueError("Actual task runtime parameters are inconsistent")
         return {
             "fingerprint": plan["fingerprint"],
             "ready": True,
             "runtime_reference": metadata["runtime_reference"],
             "scenario_count": len(plan["scenarios"]),
             "binary_id": plan["binary_id"],
+            "execution_contract_hash": digest({
+                'arguments': sorted(hashes), 'runtime_reference': metadata['runtime_reference'],
+                'binary_id': plan['binary_id'], 'cluster': metadata['cluster'],
+            }),
         }
     if action == "submit":
         directory = Path(os.environ["RELEASE_DRIVER_STATE_DIR"])

@@ -2,7 +2,9 @@
 
 Called under the workflow lock every hour. An unsuccessful/missed observation
 cannot authorize submission. Recovery uses the last Issue time, without a new wait.
-A release gets at most one automatic batch, even on failure.
+Each frozen population gets at most one automatic batch, even on failure.
+If collection resumes beyond an automatic cutoff, a fresh full population can
+run after its own quiet window. Completed and uncertain receipts are retained.
 """
 from __future__ import annotations
 
@@ -13,7 +15,7 @@ import subprocess
 
 from sqlalchemy import select
 
-from app.models import ReleaseSimulationBatch, ReleaseWorkflowState
+from app.models import ReleaseIssueSnapshot, ReleaseSimulationBatch, ReleaseWorkflowState
 from app.services.release_cycle import BASE_FILTERS, TZ, digest, validate_period
 from app.services.release_catalog import fetch_recent_releases
 from app.services.release_source import complete_query, trail_credentials
@@ -113,6 +115,7 @@ def make_period(state, rows, existing=None):
         "observed_at": state["checked_at"], "last_issue_at": state["last_issue_at"],
         "activity_hash": state["activity_hash"],
         "road_versions": sorted({str(r["version"]) for r in rows}),
+        "execution_schema": "physical_v2",
         "evidence": f"Trail全分页观察{state['issue_count']}条；最近Issue距查询时间已满24小时（含周末），最后Issue {state['last_issue_at']}",
     }
     # Retain an established full namespace; never invent a second cycle namespace.
@@ -124,6 +127,58 @@ def make_period(state, rows, existing=None):
     period["scenario_query_labels"] = [period["scenario_creation_label"]]
     period.pop("scenario_query_label_sets", None)
     return validate_period(period, require_verified=True)
+
+
+def collection_revision(db, batches, rows, release):
+    """Reopen an early automatic cutoff, never an explicit evaluation target.
+
+    GT-only edits and historical additions inside the old period stay in their
+    recovery lanes. New collection must extend the cutoff and retain every old
+    physical Issue before it can authorize a separate complete execution.
+    """
+    from app.services import release_workflow as w
+    from app.services.auto_triage_metrics import _physical
+
+    if w.get_state(db, "evaluation_target:" + release):
+        return None
+    submitted = [b for b in batches if not b.payload.get("backfill")
+                 and (b.payload.get("job_id") or b.status in ("submitting", "submission_uncertain"))]
+    if not submitted or any(b.status in ("submitting", "submission_uncertain", "running", "verifying")
+                            or b.status == "queued" and b.payload.get("backfill")
+                            for b in batches):
+        return None
+    # A manually attached or independently managed batch keeps its own plan.
+    if any(b.payload.get("attached_job")
+           or b.payload.get("period", {}).get("completion_rule") not in AUTOMATIC_RULES
+           for b in submitted):
+        return None
+    base = max(submitted, key=lambda b: b.created_at)
+    if base.status not in ("complete", "quality_failed"):
+        return None
+    current = {str(row["issue_id"]): row for row in rows}
+    prior_ids = {str(row["issue_id"]) for row in base.payload.get("issues", [])}
+    if not prior_ids or not prior_ids < current.keys():
+        return None
+    end = datetime.fromisoformat(base.payload["period"]["case_end_exclusive"])
+    if not any(int(row["issue_time"]) >= int(end.timestamp() * 1000) for row in rows):
+        return None
+    snapshots = db.scalars(select(ReleaseIssueSnapshot).where(
+        ReleaseIssueSnapshot.release == release).order_by(ReleaseIssueSnapshot.id.desc())
+        .execution_options(yield_per=1))
+    try:
+        source = next((s for s in snapshots
+                       if s.payload.get("population_complete")
+                       and w.population_identity(s.payload) == base.payload.get("population_hash")), None)
+        if source is None:
+            raise ValueError("snapshot_missing")
+        prior = {str(row["issue_id"]): row for row in source.payload["issues"]}
+        if prior.keys() != prior_ids or any(_physical(row) != _physical(current[iid])
+                                          for iid, row in prior.items()):
+            raise ValueError("source_changed")
+        return {"base_fingerprint": base.fingerprint, "source_snapshot_id": source.id,
+                "previous_issue_count": len(prior), "issue_count": len(rows)}
+    finally:
+        snapshots.close()
 
 
 def monitor_tick(db, config, *, now=None, activity_fetcher=None, release=None, update_latest=True):
@@ -171,18 +226,29 @@ def monitor_tick(db, config, *, now=None, activity_fetcher=None, release=None, u
     })
     save(state)
     batches = db.scalars(select(ReleaseSimulationBatch).where(ReleaseSimulationBatch.release == release)).all()
-    auto_queued = [b for b in batches if b.status == "queued" and b.payload.get("period", {}).get("completion_rule") in AUTOMATIC_RULES]
+    auto_queued = [b for b in batches if b.status == "queued" and not b.payload.get("backfill")
+                   and b.payload.get("period", {}).get("completion_rule") in AUTOMATIC_RULES]
     other = [b for b in batches if b not in auto_queued
              and (b.payload.get("job_id") or b.status not in ("cancelled_stale", "preflight_failed"))]
+    revision = None
     if other:
-        return save({**state, "status": "already_submitted", "batches": [
+        submitted_state = {**state, "batches": [
             {"fingerprint": b.fingerprint, "status": b.status, "job_id": b.payload.get("job_id")}
             for b in other], "population_changed_after_submission": any(
-                b.payload.get("period", {}).get("activity_hash") not in (None, state["activity_hash"]) for b in other)})
+                b.payload.get("period", {}).get("activity_hash") not in (None, state["activity_hash"]) for b in other)}
+        try:
+            revision = collection_revision(db, batches, rows, release)
+        except ValueError as exc:
+            return save({**submitted_state, "status": "blocked", "error": str(exc)})
+        if revision is None:
+            return save({**submitted_state, "status": "already_submitted"})
+        state = {**submitted_state, "collection_revision": revision}
     if state["status"] != "ready":
-        return state
+        return save(state)
     if w.get_state(db, "settings", {"mode": "manual"})["mode"] != "auto":
         return save({**state, "status": "ready_manual"})
+    if w.evaluation_execution_active(db, release):
+        return save({**state, "status": "ready"})
 
     try:
         if len(auto_queued) > 1:
@@ -221,6 +287,11 @@ def monitor_tick(db, config, *, now=None, activity_fetcher=None, release=None, u
         catalog = w.get_state(db, "catalog")
         w.put_state(db, "catalog", {**catalog, "periods": [p for p in catalog.get("periods", []) if p["release"] != release] + [period]})
         batch = w.queue_plan(db, plan["fingerprint"], target, release=release)
+        if revision:
+            w.put_state(db, "collection_revision:" + release, {
+                **revision, "fingerprint": batch.fingerprint, "activity_hash": state["activity_hash"],
+                "checked_at": state["checked_at"],
+            })
         save({**state, "status": "queued", "fingerprint": batch.fingerprint})
         batch = w.execute_batch(db, batch, target, release=release)
         return save({**state, "status": batch.status, "fingerprint": batch.fingerprint,

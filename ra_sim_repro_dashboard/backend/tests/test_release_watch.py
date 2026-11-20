@@ -124,8 +124,9 @@ def configure_pipeline(monkeypatch, db, config, rows, *, timeout=False):
     original_sync = w.sync_once
     def scenes(period):
         label = period['scenario_creation_label']
-        return [{"scenario_id": "1", "issue_id": "cn1", "scenario_labels": [
-            label, label+'_'+RELEASE, label+'_positive_auto', label+'_AutoTrigger']}]
+        return [{"scenario_id": str(index + 1), "issue_id": row["issue_id"], "scenario_labels": [
+            label, label+'_'+RELEASE, label+'_positive_auto', label+'_AutoTrigger']}
+            for index, row in enumerate(rows)]
     def sync(db, config, *, release=None):
         return original_sync(db, config, lambda *_: rows, scenes, release=release)
     monkeypatch.setattr(w, "sync_once", sync)
@@ -331,6 +332,127 @@ def test_discovery_failure_still_observes_known_release(db, config, rows):
                            activity_fetcher=lambda _, release: (release, rows))
     assert w.get_state(db, "release_monitor")["quiet_seconds"] == 2 * 86400 + 900
     assert w.get_state(db, "release_monitor_discovery")["status"] == "source_error"
+
+
+def completed_early_batch(db, config, rows, monkeypatch):
+    calls = configure_pipeline(monkeypatch, db, config, rows)
+    watch.monitor_tick(db, config, now=START + timedelta(days=1),
+                       activity_fetcher=lambda _: (RELEASE, rows))
+    batch = db.scalars(select(ReleaseSimulationBatch)).one()
+    batch.status = "complete"
+    db.commit()
+    config["periods"] = w.get_state(db, "catalog")["periods"]
+    return batch, calls
+
+
+def extend_collection(rows):
+    rows.append({**rows[0], "issue_id": "cn2",
+                 "issue_time": rows[0]["issue_time"] + 86400000})
+
+
+def test_early_cutoff_reopens_for_full_collection_once_without_rewriting_old_batch(db, config, rows, monkeypatch):
+    old, calls = completed_early_batch(db, config, rows, monkeypatch)
+    original = deepcopy(old.payload)
+    extend_collection(rows)
+    fetch = lambda _: (RELEASE, rows)
+    result = watch.monitor_tick(db, config, now=START + timedelta(days=2), activity_fetcher=fetch)
+    assert result["status"] == "running"
+    assert result["collection_revision"]["base_fingerprint"] == old.fingerprint
+    assert result["collection_revision"]["issue_count"] == 2
+    current = db.get(ReleaseSimulationBatch, result["fingerprint"])
+    assert current.fingerprint != old.fingerprint
+    assert {i["issue_id"] for i in current.payload["issues"]} == {"cn1", "cn2"}
+    assert current.payload["scenario_label"] == old.payload["scenario_label"]
+    assert current.payload["period"]["case_end_exclusive"] > old.payload["period"]["case_end_exclusive"]
+    assert old.payload == original and old.status == "complete"
+    config["periods"] = w.get_state(db, "catalog")["periods"]
+    watch.monitor_tick(db, config, now=START + timedelta(days=2, minutes=15), activity_fetcher=fetch)
+    assert calls.count("submit") == 2 and old.payload == original
+
+
+def test_full_collection_queue_recovers_after_restart_with_old_completed_receipt(db, config, rows, monkeypatch):
+    old, calls = completed_early_batch(db, config, rows, monkeypatch)
+    extend_collection(rows)
+    execute = w.execute_batch
+    monkeypatch.setattr(w, "execute_batch", lambda db, batch, config, **kwargs: batch)
+    fetch = lambda _: (RELEASE, rows)
+    queued = watch.monitor_tick(db, config, now=START + timedelta(days=2), activity_fetcher=fetch)
+    assert queued["status"] == "queued"
+    assert calls.count("submit") == 1
+    config["periods"] = w.get_state(db, "catalog")["periods"]
+    monkeypatch.setattr(w, "execute_batch", execute)
+    recovered = watch.monitor_tick(db, config, now=START + timedelta(days=2, minutes=15), activity_fetcher=fetch)
+    assert recovered["fingerprint"] == queued["fingerprint"] and recovered["status"] == "running"
+    assert calls.count("submit") == 2 and old.status == "complete"
+
+
+@pytest.mark.parametrize("status", ["running", "verifying", "submission_uncertain", "submitting"])
+def test_new_collection_waits_for_active_or_uncertain_submission(db, config, rows, monkeypatch, status):
+    old, calls = completed_early_batch(db, config, rows, monkeypatch)
+    old.status = status
+    db.commit()
+    extend_collection(rows)
+    value = watch.monitor_tick(db, config, now=START + timedelta(days=2),
+                               activity_fetcher=lambda _: (RELEASE, rows))
+    assert value["status"] == "already_submitted" and calls.count("submit") == 1
+
+
+@pytest.mark.parametrize("change", ["labels", "historical_addition", "manual", "explicit_target", "physical"])
+def test_collection_revision_guards_preserve_existing_execution(db, config, rows, monkeypatch, change):
+    old, calls = completed_early_batch(db, config, rows, monkeypatch)
+    original = deepcopy(old.payload)
+    if change == "labels":
+        rows[0]["ra_merge_result"] = "误触发"
+    elif change == "historical_addition":
+        rows.append({**rows[0], "issue_id": "cn2", "issue_time": rows[0]["issue_time"] - 1000})
+    else:
+        extend_collection(rows)
+        if change == "manual":
+            w.put_state(db, "settings", {"mode": "manual"})
+        elif change == "explicit_target":
+            w.put_state(db, "evaluation_target:" + RELEASE, {"execution_id": "explicit"})
+        else:
+            rows[0]["trip_id"] = "changed-original-trip"
+    value = watch.monitor_tick(db, config, now=START + timedelta(days=2),
+                               activity_fetcher=lambda _: (RELEASE, rows))
+    assert calls.count("submit") == 1 and old.payload == original
+    assert value["status"] == ("ready_manual" if change == "manual" else
+                               "blocked" if change == "physical" else "already_submitted")
+    if change == "physical":
+        assert value["error"] == "source_changed"
+
+
+def test_extended_collection_observes_its_own_quiet_window_before_submission(db, config, rows, monkeypatch):
+    old, calls = completed_early_batch(db, config, rows, monkeypatch)
+    now = START + timedelta(days=2)
+    rows.append({**rows[0], "issue_id": "cn2", "issue_time": int((now - timedelta(hours=1)).timestamp() * 1000)})
+    value = watch.monitor_tick(db, config, now=now, activity_fetcher=lambda _: (RELEASE, rows))
+    assert value["status"] == "observing" and value["quiet_seconds"] == 3600
+    assert calls.count("submit") == 1 and old.status == "complete"
+
+
+def test_new_release_waits_for_durable_offline_execution_without_start_record(db, config, rows, monkeypatch):
+    calls = configure_pipeline(monkeypatch, db, config, rows)
+    w.put_state(db, "evexecution:offline", {"status": "submission_uncertain", "plan": {"release": RELEASE}})
+    value = watch.monitor_tick(db, config, now=START + timedelta(days=1),
+                               activity_fetcher=lambda _: (RELEASE, rows))
+    assert value["status"] == "ready" and not calls
+    assert not db.scalars(select(ReleaseSimulationBatch)).all()
+
+
+def test_resumed_automatic_population_uses_physics_after_original_gt_changed(db, config, rows, monkeypatch):
+    old, calls = completed_early_batch(db, config, rows, monkeypatch)
+    original = deepcopy(old.payload)
+    rows[0]["ra_merge_result"] = "误触发"
+    extend_collection(rows)
+    value = watch.monitor_tick(db, config, now=START + timedelta(days=2),
+                               activity_fetcher=lambda _: (RELEASE, rows))
+    assert value["status"] == "running" and calls.count("submit") == 2
+    batch = db.get(ReleaseSimulationBatch, value["fingerprint"])
+    assert batch.payload["execution_schema"] == batch.payload["period"]["execution_schema"] == "physical_v2"
+    assert {s["cohort"] for s in batch.payload["scenarios"]} == {"source_auto"}
+    assert batch.payload["issues"][0]["ra_merge_result"] == "误触发"
+    assert old.payload == original
 
 
 def test_legacy_period_keeps_original_continuous_observation_guard(config, rows):

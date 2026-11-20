@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from app.models import ReleaseSimulationBatch, ReleaseWorkflowState
 from app.services.release_cycle import digest
-from app.services.release_metrics import summarize_population
+from app.services.release_metrics import cohort_for_issue, summarize_population
 
 TRIGGER = "dpe_assist_channel_triggered__group1"
 
@@ -43,7 +43,8 @@ def integrate(plan, exports, primary_job_id):
         raise ValueError("Scenario population is empty or duplicated")
     from ra_api.release_tolerance import POLICY
     contracts = {e.get('execution_contract_hash') for e in exports}
-    if (plan.get('issue_tolerance', {}).get('policy') == POLICY
+    physical = plan.get("execution_schema") == "physical_v2"
+    if ((physical or plan.get('issue_tolerance', {}).get('policy') == POLICY)
             and (len(contracts) != 1 or not next(iter(contracts)))):
         raise ValueError('Audited runtime contract missing or inconsistent')
     indexes = {}
@@ -121,6 +122,7 @@ def integrate(plan, exports, primary_job_id):
     )
     details = {}
     valid = {}
+    source = {str(issue["issue_id"]): issue for issue in plan["issues"]}
     for sid, row in primary.items():
         errors = checks(row)
         details[sid] = {
@@ -140,6 +142,14 @@ def integrate(plan, exports, primary_job_id):
             continue
         triggered = row[TRIGGER] >= 1
         cohort = expected[sid]["cohort"]
+        if physical:
+            issue = source.get(str(expected[sid]["issue_id"]))
+            if (not issue or cohort not in ("source_auto", "source_manual")
+                    or (int(issue["ra_type"]) == 3) != (cohort == "source_manual")):
+                raise ValueError("Execution source cohort mismatch")
+            cohort = cohort_for_issue(issue)
+            if cohort is None:
+                raise ValueError("Execution source cohort mismatch")
         label = (
             ("FP" if triggered else "TN")
             if cohort == "negative_auto"

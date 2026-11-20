@@ -416,3 +416,153 @@ def test_native_driver_reuses_existing_auth_file_without_persisting_token(tmp_pa
     assert auth.read_text()==original and 'ORION_TOKEN' not in config
     _,env=command_environment(config,{'ORION_TOKEN':'explicit-token'})
     assert env['ORION_TOKEN']=='explicit-token'
+
+
+@pytest.mark.parametrize("cohort", ["source_auto", "source_manual"])
+def test_physical_execution_is_valid_without_business_gt(cohort):
+    value = plan()
+    value["execution_schema"] = "physical_v2"
+    value["scenarios"][0]["cohort"] = cohort
+    rehash(value)
+    assert validate_plan(value) == value
+    value["scenarios"][0]["cohort"] = "negative_auto"
+    rehash(value)
+    with pytest.raises(ValueError, match="source cohort"):
+        validate_plan(value)
+
+
+@pytest.mark.parametrize("drift", [None, "source", "version", "start_timestamp"])
+def test_physical_preflight_retains_source_revision_and_window_guards(monkeypatch, drift):
+    import scripts.ra_release_orion_driver as driver
+
+    target = {"scenario_id": "99", "issue_id": "cn123", "cohort": "source_auto",
+              "scenario_revision": 0, "start_timestamp": 100, "end_timestamp": 200}
+    row = {"id": 99, "version": 0, "start_timestamp": 100, "end_timestamp": 200,
+           "labels": ["ra_repro_physical_20261016", "#123"]}
+    if drift == "source":
+        row["labels"][-1] = "#124"
+    elif drift:
+        row[drift] += 1
+    monkeypatch.setitem(sys.modules, "ra_api.scenario_api", SimpleNamespace(
+        trail_api=SimpleNamespace(send_request=lambda *a: {"msg": "success", "data": {"total": 1, "res": [row]}}),
+        ScenarioURL=SimpleNamespace(query=SimpleNamespace(value="read-only-query"))))
+    monkeypatch.setitem(sys.modules, "ra_api.sim_result_api", SimpleNamespace(
+        SimResultClient=lambda: SimpleNamespace(_app_token="test")))
+    value = {"release": "gen4-release-20261016", "period": {},
+             "execution_schema": "physical_v2", "scenarios": [target]}
+    if drift:
+        with pytest.raises(ValueError):
+            driver.verify_live_labels(value)
+    else:
+        driver.verify_live_labels(value)
+
+
+def test_physical_preparation_exports_successes_when_one_bag_is_missing(monkeypatch, tmp_path):
+    import pandas as pd
+    import scripts.ra_release_orion_driver as driver
+
+    requests = []
+    def query(url, params):
+        requests.append(params)
+        if "labels" in params:
+            return {"msg": "success", "data": {"total": 0, "data": []}}
+        assert params["id"] == "99"
+        return {"msg": "success", "data": {"res": [
+            {"id": 99, "version": 0, "start_timestamp": 100, "end_timestamp": 200,
+             "labels": ["ra_repro_physical_20261016", "#1"]}]}}
+    manifest = pd.DataFrame([
+        {"issue_id": "cn1", "trip_id": "12345_20261016_120000", "validation_error": "", "upload_status": "existing",
+         "scenario_id": 99, "scenario_start_timestamp": 100, "scenario_end_timestamp": 200},
+        {"issue_id": "cn2", "trip_id": "12345_20261016_120000", "validation_error": "", "upload_status": "failed: does not have bags",
+         "scenario_id": None, "scenario_start_timestamp": 100, "scenario_end_timestamp": 200}])
+    monkeypatch.setenv("RELEASE_DRIVER_STATE_DIR", str(tmp_path))
+    monkeypatch.setitem(sys.modules, "ra_api.scenario_api", SimpleNamespace(
+        trail_api=SimpleNamespace(send_request=query)))
+    monkeypatch.setitem(sys.modules, "ra_api.sim_result_api", SimpleNamespace(
+        SimResultClient=lambda: SimpleNamespace(_app_token="test")))
+    monkeypatch.setitem(sys.modules, "scripts.ra_repro_scenario_sample", SimpleNamespace(
+        build_manifest=lambda *a, **k: manifest.copy(), upload_manifest=lambda *a, **k: manifest.copy()))
+    result = driver.prepare_scenes({
+        "release": "gen4-release-20261016", "period": {"verified": True}, "execution_schema": "physical_v2",
+        "issues": [{"issue_id": iid, "trip_id": "12345_20261016_120000", "ra_type": 2} for iid in ("cn1", "cn2")]})
+    assert result["ready"] is False and result["prepared"] == result["failed"] == 1
+    assert result["failures"] == [{"issue_id": "cn2", "reason": "missing_bag"}]
+    assert result["scenarios"] == [
+        {"scenario_id": "99", "issue_id": "cn1", "scenario_revision": 0, "start_timestamp": 100,
+         "end_timestamp": 200, "scenario_labels": ["ra_repro_physical_20261016", "#1"]}]
+    assert len(requests) == 2
+
+
+@pytest.mark.parametrize("changed", [False, True])
+def test_preflight_hash_preserves_json_types_and_detects_changed_values(monkeypatch, changed):
+    import scripts.ra_release_orion_driver as driver
+    import scripts.ra_repro_launch_full_orion as launch
+
+    value = plan()
+    reference = {"--scenario-id": 99, "--binary-id": 123, "--scenario-version": 0,
+                 "--simulator-cache": "disabled", "--enable-dpe": ""}
+    arguments = {k: str(v) for k, v in reference.items()}
+    if changed:
+        arguments["--simulator-cache"] = "enabled"
+    job = SimpleNamespace(mapper_tasks=[SimpleNamespace(arguments=arguments)])
+    metadata = {"runtime_reference": "verified-runtime", "cluster": "prod_gen4",
+                "preflight_reference_arguments": reference}
+    monkeypatch.setattr(driver, "build_job", lambda _: (job, metadata, None, None))
+    monkeypatch.setattr(launch, "_load_api", lambda: (None, None, SimpleNamespace(SCENARIO_ID="--scenario-id")))
+    result = driver.dispatch("preflight", value)
+    historical = driver.digest({
+        "arguments": [driver.digest({k: v for k, v in reference.items() if k != "--scenario-id"})],
+        "runtime_reference": "verified-runtime", "binary_id": 123, "cluster": "prod_gen4"})
+    assert result["ready"] is True and result["fingerprint"] == value["fingerprint"]
+    assert (result["execution_contract_hash"] == historical) is (not changed)
+
+
+def test_new_release_binary_preflight_matches_platform_integer_serialization(monkeypatch):
+    import scripts.ra_release_orion_driver as driver
+    import scripts.ra_repro_launch_full_orion as launch
+
+    value = plan()
+    value["binary_id"] = 777
+    rehash(value)
+    reference = {"--scenario-id": 98, "--binary-id": 123, "--scenario-version": 0,
+                 "--simulator-cache": "disabled", "--enable-dpe": ""}
+    arguments = {**{k: str(v) for k, v in reference.items()}, "--scenario-id": "99", "--binary-id": "777"}
+    metadata = {"runtime_reference": "verified-runtime", "cluster": "prod_gen4",
+                "preflight_reference_arguments": reference}
+    job = SimpleNamespace(mapper_tasks=[SimpleNamespace(arguments=arguments)])
+    monkeypatch.setattr(driver, "build_job", lambda _: (job, metadata, None, None))
+    monkeypatch.setattr(launch, "_load_api", lambda: (None, None, SimpleNamespace(SCENARIO_ID="--scenario-id")))
+    result = driver.dispatch("preflight", value)
+    actual = {**reference, "--scenario-id": 99, "--binary-id": 777}
+    assert result["execution_contract_hash"] == driver.digest({
+        "arguments": [driver.digest({k: v for k, v in actual.items() if k != "--scenario-id"})],
+        "runtime_reference": "verified-runtime", "binary_id": 777, "cluster": "prod_gen4"})
+
+
+@pytest.mark.parametrize("problem", [None, "trigger", "namespace", "legacy"])
+def test_automatic_physical_job_keeps_full_namespace_and_trigger_guards(monkeypatch, problem):
+    import scripts.ra_release_orion_driver as driver
+
+    label = "ra_repro_full_20261109_20261106"
+    labels = [label, label + "_gen4-release-20261106", label + "_positive_auto", label + "_AutoTrigger", "#123"]
+    target = {"scenario_id": "99", "issue_id": "cn123", "cohort": "source_auto",
+              "scenario_revision": 0, "start_timestamp": 100, "end_timestamp": 200}
+    if problem == "trigger":
+        labels[2:4] = [label + "_positive_manual", label + "_ManualTrigger"]
+    elif problem == "namespace":
+        labels.remove(label)
+    elif problem == "legacy":
+        labels.append("ra_repro_cycle_20261109_1106")
+    row = {"id": 99, "version": 0, "start_timestamp": 100, "end_timestamp": 200, "labels": labels}
+    monkeypatch.setitem(sys.modules, "ra_api.scenario_api", SimpleNamespace(
+        trail_api=SimpleNamespace(send_request=lambda *a: {"msg": "success", "data": {"total": 1, "res": [row]}}),
+        ScenarioURL=SimpleNamespace(query=SimpleNamespace(value="read-only-query"))))
+    monkeypatch.setitem(sys.modules, "ra_api.sim_result_api", SimpleNamespace(
+        SimResultClient=lambda: SimpleNamespace(_app_token="test")))
+    value = {"release": "gen4-release-20261106", "period": {"release": "gen4-release-20261106"},
+             "execution_schema": "physical_v2", "scenario_label": label, "scenarios": [target]}
+    if problem:
+        with pytest.raises(ValueError):
+            driver.verify_live_labels(value)
+    else:
+        driver.verify_live_labels(value)

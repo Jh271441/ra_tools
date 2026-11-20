@@ -84,7 +84,7 @@ def validate_delta(db, batch, config):
     base = db.get(ReleaseSimulationBatch, meta['base_fingerprint'])
     if (meta.get('execution_contract_hash') != contract(db, config, base)
             or any(batch.payload.get(k) != base.payload.get(k)
-                   for k in ('binary_id', 'simulation', 'driver_revision'))
+                   for k in ('binary_id', 'simulation', 'driver_revision', 'execution_schema'))
             or batch.payload.get('template_job_id') != base.payload['job_id']):
         raise ValueError('execution_contract_changed')
     return True
@@ -97,7 +97,7 @@ def collect(db, base, scenes, expected_contract=None):
         p = b.payload
         if not p.get('result_import', {}).get('primary'):
             continue
-        if any(p.get(k) != base.payload.get(k) for k in ('binary_id', 'simulation', 'driver_revision')):
+        if any(p.get(k) != base.payload.get(k) for k in ('binary_id', 'simulation', 'driver_revision', 'execution_schema')):
             raise ValueError('execution_contract_changed')
         if b is not base and (not expected_contract or p['result_import'].get('execution_contract_hash') != expected_contract):
             raise ValueError('execution_contract_changed')
@@ -218,14 +218,24 @@ def recover(db, config, base, source, rows, now):
     from ra_api.release_labels import validate_scene_labels
     by_issue = {str(i['issue_id']): i for i in issues}
     for scene in pending:
-        validate_scene_labels(scene, base.payload['scenario_label'], base.release, cohort_for_issue(by_issue[str(scene['issue_id'])]))
+        if base.payload.get("execution_schema") == "physical_v2":
+            from ra_api.release_labels import validate_physical_scene_labels
+            validate_physical_scene_labels(scene, base.payload['scenario_label'], base.release,
+                "source_manual" if int(by_issue[str(scene['issue_id'])]["ra_type"]) == 3 else "source_auto")
+        else:
+            validate_scene_labels(scene, base.payload['scenario_label'], base.release, cohort_for_issue(by_issue[str(scene['issue_id'])]))
     ids = {str(s['issue_id']) for s in pending}
     plan = {k:deepcopy(base.payload[k]) for k in ('scenario_label', 'period', 'release', 'binary_id',
             'query_attrs', 'simulation', 'driver_revision', 'acceptance_only')}
+    if base.payload.get("execution_schema"):
+        plan["execution_schema"] = base.payload["execution_schema"]
     plan.update(template_job_id=base.payload['job_id'], population_hash=w.population_identity(snapshot),
                 issues=[{k:v for k,v in i.items() if k != 'evaluation_exclusion'} for i in issues if str(i['issue_id']) in ids],
                 scenarios=[{**{k:s.get(k) for k in ('scenario_id', *SCENE_FIELDS)},
-                    'cohort':cohort_for_issue(by_issue[str(s['issue_id'])])} for s in pending])
+                    'cohort': (
+                        "source_manual" if int(by_issue[str(s["issue_id"])]["ra_type"]) == 3 else "source_auto"
+                    ) if base.payload.get("execution_schema") == "physical_v2"
+                    else cohort_for_issue(by_issue[str(s['issue_id'])])} for s in pending])
     plan['period']['template_job_id'] = plan['template_job_id']
     plan['issue_tolerance'] = {'policy':dict(POLICY), 'population_hash':plan['population_hash'],
                                'eligible_issue_ids':sorted(ids), 'preparation_failures':[]}

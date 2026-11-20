@@ -95,7 +95,7 @@ def collect_results(db, base, full):
         p = b.payload
         if not p.get('result_import', {}).get('primary'):
             continue
-        if any(p.get(k) != base.payload.get(k) for k in ('binary_id', 'simulation', 'driver_revision', 'template_job_id')):
+        if any(p.get(k) != base.payload.get(k) for k in ('binary_id', 'simulation', 'driver_revision', 'template_job_id', 'execution_schema')):
             raise ValueError('execution_contract_changed')
         if b is not base and (not p['result_import'].get('execution_contract_hash')
                 or p['result_import']['execution_contract_hash'] != base.payload['result_import'].get('execution_contract_hash')):
@@ -138,6 +138,8 @@ def delta_plan(db, base, full, results, *, force=False):
     # can be retried individually, but metrics still require every associated scene.
     plan = {k:deepcopy(full[k]) for k in ('scenario_label','period','release','binary_id','template_job_id',
         'population_hash','query_attrs','simulation','driver_revision','acceptance_only')}
+    if full.get("execution_schema"):
+        plan["execution_schema"] = full["execution_schema"]
     plan['scenarios'] = pending
     plan['issues'] = [deepcopy(i) for i in full['issues'] if str(i['issue_id']) in ids]
     for i in plan['issues']:
@@ -164,7 +166,7 @@ def validate_delta(db, batch, config):
     results, _ = collect_results(db, base, full)
     if any(str(s['scenario_id']) in results for s in batch.payload['scenarios']):
         raise ValueError('scene_already_complete')
-    for key in ('binary_id','simulation','driver_revision','template_job_id'):
+    for key in ('binary_id','simulation','driver_revision','template_job_id','execution_schema'):
         if batch.payload.get(key) != base.payload.get(key):
             raise ValueError('execution_contract_changed')
     return True

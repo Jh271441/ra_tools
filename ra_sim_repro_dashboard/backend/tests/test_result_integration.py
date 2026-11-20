@@ -85,6 +85,60 @@ def test_same_task_two_executions_count_population_once():
     assert r["quality_gate_passed"]
 
 
+@pytest.mark.parametrize("triggered", [False, True])
+def test_physical_auto_execution_classifies_current_gt_without_rewriting_source_groups(triggered):
+    plan, exports = fixture_data()
+    plan["execution_schema"] = "physical_v2"
+    for scene in plan["scenarios"]:
+        scene["cohort"] = "source_auto"
+    for export in exports:
+        export["execution_contract_hash"] = "verified-runtime"
+        for row in export["rows"]:
+            row["cohort"] = "source_auto"
+        export["rows"][1][TRIGGER] = int(triggered)
+    original = deepcopy(plan)
+    value = integrate(plan, exports, 100)
+    assert value["quality_gate_passed"] and value["summary"]["eligible"] == 2
+    assert value["results"]["1"]["precision_label"] == "TP"
+    assert value["results"]["2"]["precision_label"] == ("FP" if triggered else "TN")
+    assert value["results"]["2"]["cohort"] == "negative_auto"
+    assert plan == original
+
+
+def test_physical_manual_execution_uses_manual_reproduction_and_positive_business_truth():
+    plan, exports = fixture_data()
+    plan["execution_schema"] = "physical_v2"
+    plan["issues"][0]["ra_type"] = 3
+    for scene in plan["scenarios"]:
+        scene["cohort"] = "source_manual" if scene["scenario_id"] == "1" else "source_auto"
+    for export in exports:
+        export["execution_contract_hash"] = "verified-runtime"
+        for row in export["rows"]:
+            row["cohort"] = "source_manual" if row["scenario_id"] == "1" else "source_auto"
+            row[TRIGGER] = 0
+    value = integrate(plan, exports, 100)
+    assert value["results"]["1"]["precision_label"] == "FN"
+    assert value["results"]["1"]["reproduced"] is True
+    assert value["results"]["1"]["cohort"] == "positive_manual"
+
+
+def test_physical_execution_rejects_trigger_group_drift_and_missing_runtime():
+    plan, exports = fixture_data()
+    plan["execution_schema"] = "physical_v2"
+    for scene in plan["scenarios"]:
+        scene["cohort"] = "source_manual"
+    for export in exports:
+        export["execution_contract_hash"] = "verified-runtime"
+        for row in export["rows"]:
+            row["cohort"] = "source_manual"
+    with pytest.raises(ValueError, match="source cohort"):
+        integrate(plan, exports, 100)
+    for export in exports:
+        export.pop("execution_contract_hash")
+    with pytest.raises(ValueError, match="runtime"):
+        integrate(plan, exports, 100)
+
+
 def test_secondary_success_cannot_hide_primary_failure():
     plan, exports = fixture_data()
     fail(exports[0], 1)

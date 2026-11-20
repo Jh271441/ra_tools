@@ -93,6 +93,31 @@ def test_partial_recovery_only_submits_new_scene_and_merges_ledger(db,config,run
     assert 'backfill_revision' not in effective_publication(db,batch)
 
 
+def test_physical_primary_preserves_schema_through_incremental_recovery(db, config, running):
+    _, _, scenes, receipt, sync, _ = running
+    w.poll_batches(db, config)
+    config["periods"][0]["execution_schema"] = "physical_v2"
+    sync()
+    plan = w.make_plan(db, config)
+    base = w.queue_plan(db, plan["fingerprint"], config)
+    w.execute_batch(db, base, config)
+    w.poll_batches(db, config)
+    assert publication(base) and base.payload["execution_schema"] == "physical_v2"
+    original = deepcopy(base.payload)
+    scenes.append({"issue_id": "0", "scenario_id": "900", "scenario_labels": scene_labels("positive_auto")})
+    receipt["failures"] = [f for f in receipt["failures"] if f["issue_id"] != "0"]
+    value = lane.refresh_release(db, config, base)
+    assert value["status"] == "simulating", value
+    child = db.get(ReleaseSimulationBatch, value["fingerprint"])
+    assert child.payload["execution_schema"] == "physical_v2"
+    assert child.payload["scenarios"][0]["cohort"] == "source_auto"
+    w.poll_batches(db, config)
+    assert child.status == "complete"
+    lane.refresh_release(db, config, base, now=datetime.now(timezone.utc) + timedelta(minutes=1))
+    assert effective_publication(db, base)["publication"]["valid_issue_count"] == 198
+    assert base.payload == original
+
+
 def test_resume_uncertain_submission_never_launches_again(db,config,running,monkeypatch):
     batch,_,_,_,_,calls=running
     batch.status='submission_uncertain';db.commit()
