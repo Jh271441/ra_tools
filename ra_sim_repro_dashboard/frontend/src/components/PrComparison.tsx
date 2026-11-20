@@ -17,10 +17,10 @@ type MetricMode = 'precision' | 'recall' | 'all';
 type SeriesKey = keyof Pick<PrPoint, 'actualPrecision' | 'actualRecall' | 'simPrecision' | 'simRecall'>;
 
 const seriesColors: Record<SeriesKey, string> = {
-  actualPrecision: 'hsl(var(--pr-blue))',
-  simPrecision: 'hsl(var(--pr-cyan))',
-  actualRecall: 'hsl(var(--pr-red))',
-  simRecall: 'hsl(var(--pr-orange))',
+  actualPrecision: 'hsl(var(--pr-precision-road))',
+  simPrecision: 'hsl(var(--pr-precision-sim))',
+  actualRecall: 'hsl(var(--pr-recall-road))',
+  simRecall: 'hsl(var(--pr-recall-sim))',
 };
 const percent = (value?: number) => value == null ? '—' : `${value.toFixed(1)}%`;
 const gap = (actual?: number, sim?: number) => actual == null || sim == null

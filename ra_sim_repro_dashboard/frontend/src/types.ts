@@ -1,3 +1,13 @@
+export interface ResultPublication {
+  primary_job_id: number; scenario_count: number; valid_scenario_count: number;
+  excluded_scenario_ids: string[]; coverage: number; population_hash: string;
+  comparison_conflicts: number;
+  automatic?: boolean; minimum_coverage?: number; issue_coverage?: number;
+  execution_failed_count?: number; quality_failed_count?: number;
+  issue_count?: number; valid_issue_count?: number; abnormal_issue_count?: number;
+  source_job_ids?: number[];
+}
+
 export interface VersionItem {
   version_key: string;
   label: string;
@@ -38,6 +48,7 @@ export interface KpiSummary {
   positive_manual_repro_rate: number;
   evaluated_cases: number;
   dpe_coverage: number;
+  publication?: ResultPublication | null;
   quality_gate_passed: boolean;
   root_causes: Record<string, number>;
   source_gt?: Record<string, unknown> | null;

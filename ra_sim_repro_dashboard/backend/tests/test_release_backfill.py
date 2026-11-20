@@ -1,0 +1,219 @@
+from copy import deepcopy
+from datetime import datetime, timedelta, timezone
+import pytest
+from app.models import ReleaseIssueSnapshot, ReleaseSimulationBatch
+from app.services import release_workflow as w, release_backfill as lane, release_resume as resume
+from app.services.result_publication import publication, effective_publication
+from app.services.result_integration import TRIGGER
+from test_release_workflow import db, config, scene_labels
+from test_issue_tolerance import setup
+
+
+def export(plan, jid):
+    scenes=plan['scenarios']
+    return {'job_id':jid,'execution_contract_hash':'runtime-123',**{k:plan[k] for k in ('release','binary_id','population_hash')},
+        'progress':{'job_id':jid,'state':'COMPLETED','total':len(scenes),'completed':len(scenes),
+                    'failed':0,'cancelled':0,'running':0,'queued':0,'unknown':0},'quality':{'quality':{}},
+        'rows':[{**s,'task_id':f'{jid}-{s["scenario_id"]}','task_status':3,'task_outcome':'Done',
+            'argument_hash':f'args-{s["scenario_id"]}','simulator_cache_hit':False,
+            'inference_log_count':1,'dpe_output_count':1,'output_bag_count':1,
+            'failed_evaluation_count':0,'unexpected_warning_count':0,TRIGGER:1} for s in scenes]}
+
+
+@pytest.fixture
+def running(db,config,monkeypatch):
+    rows,scenes,receipt,sync=setup(db,config,monkeypatch,failed=4,total=201)
+    w.prepare_missing_scenes(db,config)
+    plan=w.make_plan(db,config)
+    calls=[]
+    def driver(cfg,action,payload):
+        calls.append((action,payload.get('fingerprint')))
+        if action=='prepare_scenes':
+            return {'ready':False,'failed':len(receipt['failures']),'failures':receipt['failures']}
+        if action=='preflight':return {'fingerprint':payload['fingerprint'],'ready':True}
+        if action=='submit':return {'fingerprint':payload['fingerprint'],'job_id':100+sum(a=='submit' for a,_ in calls)}
+        if action=='receipt':return {'fingerprint':payload['fingerprint'],'job_id':payload.get('job_id')}
+        if action=='poll':return {'fingerprint':payload['fingerprint'],'job_id':payload['job_id'],
+            'status':'audited','execution_export':export(payload,payload['job_id'])}
+        raise AssertionError(action)
+    monkeypatch.setattr(w,'driver_call',driver)
+    batch=w.queue_plan(db,plan['fingerprint'],config)
+    w.execute_batch(db,batch,config)
+    w.put_state(db,'settings',{'mode':'auto'})
+    return batch,rows,scenes,receipt,sync,calls
+
+
+def test_additive_mapping_does_not_invalidate_running_frozen_job(db,config,running):
+    batch,_,scenes,_,sync,_=running
+    scenes.append({'issue_id':'0','scenario_id':'900','scenario_labels':scene_labels('positive_auto')})
+    sync()
+    assert lane.frozen_snapshot_valid(db,batch)
+    w.poll_batches(db,config)
+    assert batch.status=='complete' and publication(batch)
+    assert '900' not in batch.payload['results']
+
+
+def test_source_changes_still_block_import(db,config,running):
+    batch,rows,_,_,sync,_=running
+    rows[0]['ra_merge_result']='失败';sync()
+    w.poll_batches(db,config)
+    assert batch.status=='running' and not batch.payload.get('result_import')
+    assert batch.payload['last_poll_error']
+
+
+def test_partial_recovery_only_submits_new_scene_and_merges_ledger(db,config,running):
+    batch,_,scenes,receipt,sync,calls=running
+    w.poll_batches(db,config)
+    original=deepcopy(batch.payload)
+    assert publication(batch)['publication']['quality_level']=='degraded'
+    scenes.append({'issue_id':'0','scenario_id':'900','scenario_labels':scene_labels('positive_auto')})
+    receipt['failures']=[f for f in receipt['failures'] if f['issue_id']!='0']
+    now=datetime.now(timezone.utc)
+    value=lane.refresh_release(db,config,batch,now=now)
+    assert value['status']=='simulating',value
+    child=db.get(ReleaseSimulationBatch,value['fingerprint'])
+    assert [s['scenario_id'] for s in child.payload['scenarios']]==['900']
+    assert len(batch.payload['scenarios'])==197 and batch.payload==original
+    lane.refresh_release(db,config,batch,now=now,force=True)
+    assert sum(a=='submit' for a,_ in calls)==2
+    w.poll_batches(db,config)
+    assert child.status=='complete'
+    value=lane.refresh_release(db,config,batch,now=now+timedelta(minutes=1))
+    assert value['status']=='waiting_bags' and value['pending_count']==3,value
+    metrics=effective_publication(db,batch)
+    assert metrics['publication']['valid_issue_count']==198
+    assert metrics['publication']['issue_count']==201
+    assert metrics['publication']['source_job_ids']==[101,102]
+    assert metrics['eligible']==198 and metrics['backfill_revision']
+    assert batch.payload==original
+    count=len(calls)
+    lane.refresh_release(db,config,batch,now=now+timedelta(hours=1))
+    assert len(calls)==count
+    child.payload={**child.payload,'results':{}};db.commit()
+    assert 'backfill_revision' not in effective_publication(db,batch)
+
+
+def test_resume_uncertain_submission_never_launches_again(db,config,running,monkeypatch):
+    batch,_,_,_,_,calls=running
+    batch.status='submission_uncertain';db.commit()
+    monkeypatch.setattr(w,'effective_config',lambda _:config)
+    value=resume.request(db,batch.release,batch.fingerprint)
+    assert resume.request(db,batch.release,batch.fingerprint)==value
+    before=sum(a=='submit' for a,_ in calls)
+    resume.process_requests(db,config)
+    assert sum(a=='submit' for a,_ in calls)==before
+    assert batch.status=='complete'
+    assert resume.public_state(db,batch.release)['status']=='complete'
+
+
+def test_resume_rejects_changed_checkpoint_and_manual_mode(db,config,running,monkeypatch):
+    batch,*_=running
+    monkeypatch.setattr(w,'effective_config',lambda _:config)
+    with pytest.raises(ValueError,match='checkpoint_changed'):
+        resume.request(db,batch.release,'stale')
+    w.put_state(db,'settings',{'mode':'manual'})
+    with pytest.raises(ValueError,match='manual_mode'):
+        resume.request(db,batch.release,batch.fingerprint)
+
+
+def test_changed_actual_runtime_cannot_merge_recovery(db,config,running):
+    batch,_,scenes,receipt,_,_=running
+    w.poll_batches(db,config)
+    scenes.append({'issue_id':'0','scenario_id':'900','scenario_labels':scene_labels('positive_auto')})
+    receipt['failures']=[f for f in receipt['failures'] if f['issue_id']!='0']
+    value=lane.refresh_release(db,config,batch)
+    child=db.get(ReleaseSimulationBatch,value['fingerprint'])
+    w.poll_batches(db,config)
+    child.payload={**child.payload,'result_import':{**child.payload['result_import'],'execution_contract_hash':'changed-runtime'}}
+    db.commit()
+    result=lane.refresh_release(db,config,batch,force=True)
+    assert result['status']=='blocked' and result['reason']=='execution_contract_changed'
+    metrics=effective_publication(db,batch)
+    assert metrics['publication']['valid_issue_count']==197
+    assert metrics['publication']['source_job_ids']==[101]
+
+
+def test_scene_ledger_hashes_each_execution_once_and_still_rejects_tampering(db,config,running,monkeypatch):
+    from app.services import result_publication as published
+    batch,*_=running
+    w.poll_batches(db,config)
+    original_hash=published.audit_hash
+    calls=[]
+    def audit(payload):
+        calls.append(payload['job_id'])
+        return original_hash(payload)
+    monkeypatch.setattr(published,'audit_hash',audit)
+    results,lineage=lane.collect_results(db,batch,batch.payload)
+    assert len(results)==197 and len(lineage)==197
+    assert calls==[batch.payload['job_id']]
+    assert {item['audit_hash'] for item in lineage.values()}=={original_hash(batch.payload)}
+
+    lane.refresh_release(db,config,batch)
+    base=publication(batch)
+    calls.clear()
+    metrics=lane.revision_metrics(db,batch,base)
+    assert metrics.get('backfill_revision') and calls==[batch.payload['job_id']]
+    revision=deepcopy(w.get_state(db,metrics['backfill_revision']))
+    # A conflicting later entry must still fail after the execution hash is reused.
+    list(revision['lineage'].values())[-1]['audit_hash']='tampered'
+    w.put_state(db,metrics['backfill_revision'],revision)
+    assert lane.revision_metrics(db,batch,base)==base
+
+
+def test_frozen_source_stream_closes_after_match_missing_source_and_error(monkeypatch):
+    from types import SimpleNamespace
+    latest=SimpleNamespace(payload={'hash':'latest'})
+    original=SimpleNamespace(payload={'hash':'original'})
+    class Rows:
+        def __init__(self, values):
+            self.values=iter(values);self.count=0;self.closed=False
+        def __iter__(self):return self
+        def __next__(self):
+            self.count+=1
+            return next(self.values)
+        def close(self):self.closed=True
+    batch=SimpleNamespace(release='test',updated_at=None,payload={'population_hash':'latest'},fingerprint='test')
+    monkeypatch.setattr(w,'population_identity',lambda payload:payload['hash'])
+    monkeypatch.setattr(lane,'compatible_source',lambda old,new:True)
+    rows=Rows([latest,original])
+    monkeypatch.setattr(lane,'snapshots',lambda *_:rows)
+    assert lane.frozen_snapshot_valid(None,batch)
+    assert rows.closed and rows.count==1
+    rows=Rows([latest,original]);batch.payload['population_hash']='original'
+    assert lane.frozen_snapshot_valid(None,batch) and rows.closed
+    rows=Rows([])
+    assert not lane.frozen_snapshot_valid(None,batch) and rows.closed
+    rows=Rows([latest])
+    monkeypatch.setattr(w,'population_identity',lambda _:(_ for _ in ()).throw(ValueError('bad source')))
+    with pytest.raises(ValueError,match='bad source'):
+        lane.frozen_snapshot_valid(None,batch)
+    assert rows.closed
+
+
+@pytest.mark.parametrize('nearby',[True,False])
+def test_source_lookup_near_batch_time_retains_full_fallback_and_gt_gate(db,monkeypatch,nearby):
+    now=datetime.now(timezone.utc).replace(tzinfo=None)
+    source={'period':{'release':'test'},'issues':[{'issue_id':'1','ra_type':2,'ra_merge_result':'成功'}],'scenarios':[]}
+    batch=ReleaseSimulationBatch(fingerprint='time-lookup',release='test',status='complete',
+        created_at=now,payload={'population_hash':w.population_identity(source)})
+    db.add(batch)
+    db.add(ReleaseIssueSnapshot(period_hash='original',release='test',payload=source,
+        created_at=now+timedelta(seconds=1 if nearby else -100)))
+    for index in range(20):
+        other=deepcopy(source);other['issues'][0]['ra_merge_result']='other-'+str(index)
+        db.add(ReleaseIssueSnapshot(period_hash='other-'+str(index),release='test',payload=other,
+            created_at=now+timedelta(seconds=index+2)))
+    latest=ReleaseIssueSnapshot(period_hash='latest',release='test',
+        payload={**deepcopy(source),'scenarios':[{'scenario_id':'new','issue_id':'1'}]},
+        created_at=now+timedelta(seconds=25))
+    db.add(latest);db.commit()
+    original_hash=w.population_identity;calls=[]
+    def identity(payload):
+        calls.append(1)
+        return original_hash(payload)
+    monkeypatch.setattr(w,'population_identity',identity)
+    assert lane.frozen_snapshot_valid(db,batch)
+    assert len(calls)<8 if nearby else len(calls)>20
+    changed=deepcopy(latest.payload);changed['issues'][0]['ra_merge_result']='失败'
+    latest.payload=changed;db.commit()
+    assert not lane.frozen_snapshot_valid(db,batch)

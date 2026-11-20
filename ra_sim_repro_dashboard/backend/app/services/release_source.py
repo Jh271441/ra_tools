@@ -222,9 +222,6 @@ def fetch_scenarios(period):
 
 
 def cycle_scene_label(period):
-    return (
-        "ra_repro_cycle_"
-        + period["cycle_end"].replace("-", "")
-        + "_"
-        + period["release"][-4:]
-    )
+    from ra_api.release_labels import full_scene_label
+
+    return full_scene_label(period)

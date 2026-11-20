@@ -1,14 +1,7 @@
+import { releaseName } from './releaseName';
 /** Each release owns one equal interval; its index is the interval's centre. */
 export function releaseChartRows<T extends { version_key: string }>(rows: T[]) {
   return rows.map((row, releaseIndex) => ({ ...row, releaseIndex }));
-}
-
-function shortVersion(key: string) {
-  const separated = key.match(/(?:^|[-_])(\d{4})[-_](\d{2})[-_](\d{2})/);
-  if (separated) return `${separated[2]}-${separated[3]}`;
-  const compact = key.match(/(\d{8})/);
-  if (compact) return `${compact[1].slice(4, 6)}-${compact[1].slice(6, 8)}`;
-  return key.length > 10 ? key.slice(-10) : key;
 }
 
 export function releaseXAxis(rows: Array<{ version_key: string }>) {
@@ -21,7 +14,7 @@ export function releaseXAxis(rows: Array<{ version_key: string }>) {
     domain: [-0.5, Math.max(1, rows.length) - 0.5] as [number, number],
     ticks: rows.map((_, index) => index),
     interval: labelInterval - 1,
-    tickFormatter: (index: number) => shortVersion(rows[index]?.version_key ?? ''),
+    tickFormatter: (index: number) => releaseName(rows[index]?.version_key, new Set(rows.map(row => row.version_key.match(/\d{4}/)?.[0])).size > 1),
     padding: { left: 12, right: 12 },
     height: 30,
     tickMargin: 8,

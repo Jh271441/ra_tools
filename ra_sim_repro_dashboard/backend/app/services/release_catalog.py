@@ -9,34 +9,34 @@ import os
 
 
 def fetch_recent_releases(config):
+    # Bounded windows avoid upstream deep-pagination limits over 60 days.
     now = datetime.now(TZ)
     begin = now - timedelta(days=60)
     attrs = [
         *BASE_FILTERS,
         {"attr_id": "version", "operator": "like", "val": ["gen4-release-"]},
-        {
-            "attr_id": config["contract"]["time_field"],
-            "operator": "range",
-            "val": {
-                "min": int(begin.timestamp() * 1000),
-                "max": int(now.timestamp() * 1000),
-            },
-        },
     ]
     attrs = [{**f, "val": [2, 3]} if f["attr_id"] == "ra_type" else f for f in attrs]
     app_id, token = trail_credentials()
     base = os.getenv("TRAIL_ISSUE_BASE_URL", "http://10.88.128.83").rstrip("/")
-    return complete_query(
-        base + "/paladin/issue/pool/query/",
-        {
-            "view_id": config["contract"].get("view_id", 2410),
-            "user_location": "cn",
-            "query_attrs": attrs,
-        },
-        app_id,
-        token,
-        "issue_id",
-    )
+    rows = []
+    while begin < now:
+        end = min(begin + timedelta(days=7), now)
+        lo, hi = int(begin.timestamp() * 1000), int(end.timestamp() * 1000)
+        chunk = complete_query(
+            base + "/paladin/issue/pool/query/",
+            {"view_id": config["contract"].get("view_id", 2410), "user_location": "cn",
+             "query_attrs": [*attrs, {"attr_id": config["contract"]["time_field"],
+                                     "operator": "range", "val": {"min": lo, "max": hi - 1}}]},
+            app_id, token, "issue_id",
+        )
+        if any(not lo <= int(r[config["contract"]["time_field"]]) < hi for r in chunk):
+            raise ValueError("release发现结果超出请求时间窗口")
+        rows.extend(chunk)
+        begin = end
+    if len({str(r["issue_id"]) for r in rows}) != len(rows):
+        raise ValueError("release发现跨窗口人口重复")
+    return rows
 
 
 def infer_completed_cycles(rows, time_field="issue_time"):

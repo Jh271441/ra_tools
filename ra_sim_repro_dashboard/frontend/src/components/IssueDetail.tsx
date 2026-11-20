@@ -1,3 +1,4 @@
+import { releaseName } from '../lib/releaseName';
 import { useEffect, useMemo, useState } from 'react';
 import { ExternalLink, GitBranch, RadioTower, Tags } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -65,7 +66,7 @@ function ResultSummary({ result }: { result: ScenarioResult }) {
       <div className="mb-3 flex min-w-0 flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
           <GitBranch className="h-4 w-4 shrink-0 text-primary" />
-          <span className="truncate text-sm font-semibold">{result.version_key}</span>
+          <span className="truncate text-sm font-semibold" title={result.version_key}>{releaseName(result.version_key)}</span>
         </div>
         <Badge variant={labelVariant(result.precision_label)}>{result.precision_label}</Badge>
       </div>
@@ -249,7 +250,7 @@ export function IssueDetail({ selected }: IssueDetailProps) {
             <div className="grid gap-2">
               {scenarioData.results.map((result) => (
                 <div key={result.version_key} className="flex items-center justify-between gap-3 rounded-md bg-muted/35 px-3 py-2">
-                  <span className="truncate font-mono text-xs">{result.version_key}</span>
+                  <span className="truncate font-mono text-xs" title={result.version_key}>{releaseName(result.version_key)}</span>
                   <div className="flex shrink-0 items-center gap-2">
                     <Badge variant={labelVariant(result.precision_label)}>{result.precision_label}</Badge>
                     <span className="font-mono text-xs text-muted-foreground">

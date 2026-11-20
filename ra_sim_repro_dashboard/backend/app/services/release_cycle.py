@@ -1,4 +1,4 @@
-"""Business releases switch on Monday using the latest completed Thursday cycle."""
+"""Observed releases switch when collection closes; legacy cycles retain their calendar rule."""
 
 from __future__ import annotations
 
@@ -64,7 +64,24 @@ def validate_period(period: dict, require_verified: bool = False) -> dict:
     if start.tzinfo is None or end.tzinfo is None or start >= end:
         raise ValueError("周期必须使用带时区的左闭右开时间范围")
     cycle_end = date.fromisoformat(period["cycle_end"])
-    if cycle_end.weekday() != 3:
+    if period.get("completion_rule") == "issue_last_time_24h":
+        checked = datetime.fromisoformat(period["observed_at"])
+        last = datetime.fromisoformat(period["last_issue_at"])
+        if any(t.tzinfo is None for t in (checked, last)) or (checked - last).total_seconds() < 86400:
+            raise ValueError("最近Issue距今未满24小时")
+        if not start <= last < end <= checked:
+            raise ValueError("最近Issue时间与收集范围不一致")
+    elif period.get("completion_rule") == "issue_inactivity_24h":
+        quiet = datetime.fromisoformat(period["quiet_since"])
+        checked = datetime.fromisoformat(period["observed_at"])
+        last = datetime.fromisoformat(period["last_issue_at"])
+        if any(t.tzinfo is None for t in (quiet, checked, last)) or (
+            checked - max(quiet, last)
+        ).total_seconds() < 86400:
+            raise ValueError("连续24小时无新增Issue的观察证据不足")
+        if not start <= last < end <= checked:
+            raise ValueError("静默观察证据与人口边界不一致")
+    elif cycle_end.weekday() != 3:
         raise ValueError("周期结束日必须为周四")
     if not start.astimezone(TZ).date() <= cycle_end <= end.astimezone(TZ).date():
         raise ValueError("结束日与 case 时间范围不一致")
@@ -73,7 +90,8 @@ def validate_period(period: dict, require_verified: bool = False) -> dict:
 
 def resolve_current(config: dict, day: date | None = None) -> dict:
     """A running two-week cycle does not displace the last completed release."""
-    anchor = reference_thursday(day).isoformat()
+    today = day or datetime.now(TZ).date()
+    anchor = reference_thursday(today).isoformat()
     base = {
         "reference_thursday": anchor,
         "current_period": None,
@@ -82,11 +100,20 @@ def resolve_current(config: dict, day: date | None = None) -> dict:
         "retained_previous": False,
         "switch_weekday": "Monday",
     }
+    def observable(p):
+        if p.get('completion_rule') != 'issue_last_time_24h' or p.get('verified') is not True:
+            return False
+        try:
+            checked = datetime.fromisoformat(p['observed_at'])
+            cutoff = datetime.combine(today + timedelta(days=1), datetime.min.time(), TZ) if day else datetime.now(TZ)
+            return checked.tzinfo is not None and checked <= cutoff and date.fromisoformat(p['cycle_end']) <= today
+        except (KeyError, ValueError, TypeError):
+            return False
     eligible = [
         p
         for p in config.get("periods", [])
         if p.get("cycle_end")
-        and p["cycle_end"] <= anchor
+        and ((p.get("completion_rule") != "issue_last_time_24h" and p["cycle_end"] <= anchor) or observable(p))
         and p.get("status") == "completed"
     ]
     if not eligible:
@@ -134,6 +161,7 @@ def resolve_current(config: dict, day: date | None = None) -> dict:
         "reason": "周期依据历史数据推断，完整人口与仿真结果另行验收"
         if inferred
         else "",
+        "switch_weekday": "on_collection_complete" if period.get("completion_rule") == "issue_last_time_24h" else "Monday",
         "current_period": period,
         "current_version": period["release"],
         "period_verified": not inferred,

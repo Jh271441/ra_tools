@@ -7,10 +7,12 @@
     "dev": "vite --host 0.0.0.0",
     "build": "tsc --noEmit && vite build",
     "test:backtest": "node --experimental-strip-types tests/backtest.mjs",
+    "test:unit": "node --experimental-strip-types --test tests/*.mjs",
     "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {
     "@tanstack/react-table": "^8.20.6",
+    "@xyflow/react": "12.12.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "i18next": "^24.2.0",
