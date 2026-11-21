@@ -1,224 +1,109 @@
 # ra_tools
 
-围绕 RA issue 复核、模型结果对比、scenario 复现和模型发布的工具与服务。
+围绕 Voyager RA（Remote Assist）的 **模型训练与发布、离线与线上仿真复现、标注复核平台、算力监控与运维工具** 的主工具仓。
 
-## 项目说明
+各子模块独立维护依赖与运行方式，仓库不提供统一的 Python 包安装入口。项目级协作规范（Luban Monitor 实验登记、x86 制品版本、Workbench 分页/下拉/移动端/中英文约定）见 [`AGENTS.md`](AGENTS.md)。
 
-主要模块：
+---
 
-- `ra_triage_dashboard/`：RA Triage Workbench，包含 Review、Runs、意图标注和 Batch
-- `ra_sim_repro_dashboard/`：仿真复现看板
-- `ra_api/`：对 issue、scenario 相关内部接口的简单封装
-- `utils/`：一些通用的数据处理和分析脚本
-- `swag/`：SWAG / waypoint-assist 相关分析脚本
-- `model_release_pipeline/`：scenario dnn 模型导出、IFX 转换和 Voyager handoff 工具
-- `check_sim/`：scenario 路测 bag 下载、EzSim 复现和 road/sim 模型差异分析
-- `auto_triage_bot/`：DChat Auto Triage 只读问答 Bot（看板上下文 + 内部大模型）
+## 按主线选择入口
 
-各模块按自己的 README 安装依赖和运行；仓库没有统一的 Python 包安装入口。
+### 1. Stuck DNN 训练、离线回放与模型发布
 
-## 目录结构
+| 模块 | 职责 | 文档 |
+|---|---|---|
+| `stuck_training/` | Stuck DNN 源数据准入、低速门控帧筛选、训练包装配与 CPU 预检 | [`stuck_training/README.md`](stuck_training/README.md) |
+| `check_sim/` | Trail scenario 路测 bag 下载、EzSim 复现与 road/sim 模型输入输出分析 | [`check_sim/README.md`](check_sim/README.md) |
+| `check_sim/offline/` | 离线原生回放（NPZ / state / 逐周期输入）与三例 smoke 验收 | [`check_sim/offline/README.md`](check_sim/offline/README.md) |
+| `model_release_pipeline/` | Scenario DNN 选模、Luban 远端 ONNX 导出、IFX 转换与 Voyager handoff | [`model_release_pipeline/README.md`](model_release_pipeline/README.md) |
+
+### 2. RA 标注、复核与问答平台
+
+| 模块 | 职责 | 文档 |
+|---|---|---|
+| `ra_triage_dashboard/` | RA Triage Workbench（`/manual`）：Issue 复核、不可变 Runs 对比、意图标注与 Batch | [`ra_triage_dashboard/README.md`](ra_triage_dashboard/README.md) |
+| `auto_triage_bot/` | DChat Auto Triage 只读问答 Bot（对接 Workbench loopback API 与内部模型网关） | [`auto_triage_bot/README.md`](auto_triage_bot/README.md) |
+| `auto_triage/` | Triage JSONL 特征提取与离线分析脚本 | — |
+| `vlm/` | VLM Prompt 与多模态客户端工具 | — |
+
+> 说明：PIPO / RO VLM 的正式训练与生产代码位于独立仓库 `pipo_vlm`、`ro_vlm`（经 GitHub 同步至 Luban OFS 主生产仓），不放在本仓。
+
+### 3. 周度 Release 仿真复现看板
+
+| 模块 | 职责 | 文档 |
+|---|---|---|
+| `ra_sim_repro_dashboard/` | 仿真复现看板（`/sim`）、周度 Release 统计与调度脚本 | [`ra_sim_repro_dashboard/README.md`](ra_sim_repro_dashboard/README.md) |
+| `ops/sim_deploy/` | `/sim` 独立原生部署、数据库备份恢复、迁移与周报调度 | [`ops/sim_deploy/README.md`](ops/sim_deploy/README.md) |
+
+### 4. Luban / AXE 资源监控与服务运维
+
+| 模块 | 职责 | 文档 |
+|---|---|---|
+| `ops/luban_monitor_macos/` | Luban Monitor 原生 macOS 菜单栏 App、TensorBoard 入口与采集运维（后台在 `outputs/luban_resource_monitor/`） | [`ops/luban_monitor_macos/README.md`](ops/luban_monitor_macos/README.md) |
+| `ops/portal/` | RA Tools 聚合首页（`/manual/`、`/sim/overview` 同源转发） | [`ops/portal/README.md`](ops/portal/README.md) |
+| `ops/gateway/`、`ops/cpa/` | 网关路由与 CPA 运维配置 | [`ops/gateway/README.md`](ops/gateway/README.md)、[`ops/cpa/README.md`](ops/cpa/README.md) |
+
+### 5. 公共 API、SWAG 与可视化工具
+
+| 模块 | 职责 | 文档 |
+|---|---|---|
+| `ra_api/` | 内部 Issue / Scenario 查询与增删改查接口封装（含 `export_issues`） | — |
+| `ares_playwright/` | Ares Studio 登录态（`storage_state`）与截图工具 | [`ares_playwright/README.md`](ares_playwright/README.md) |
+| `swag/`、`swag_triage_reversed/` | SWAG / waypoint-assist 触发与逆向分析脚本 | — |
+| `utils/`、`scripts/` | 通用数据处理工具与 `check_sim` 兼容入口 | [`scripts/README.md`](scripts/README.md) |
+
+---
+
+## 目录结构与产物边界
 
 ```text
 ra_tools/
-├── ares_playwright/            # Ares Studio 登录态 / 截图
-├── auto_triage/                # triage JSONL 特征分析
-├── auto_triage_bot/            # DChat 事件、看板知识和 LLM 回复服务
-├── check_sim/                  # scenario 复现与 road/sim 分析完整链路
-│   ├── bag/ analysis/ repro/
-│   └── repro/legacy/           # 旧版按时间段下载路测 bag
-├── issue_to_scenairo.py
-├── model_release_pipeline/
-├── ra_api/                     # issue/scenario API + export_issues
-├── ra_sim_repro_dashboard/     # 仿真复现看板（含 stats 脚本）
-├── ra_triage_dashboard/        # Issue 复核、模型结果对比与意图标注
-├── ops/                        # 网关和 CPA 运维配置
-├── scripts/                    # 兼容入口（实现已迁到 check_sim 等）
-├── swag/
-├── utils/
-└── vlm/                        # VLM prompt 与 multimodal 客户端
+├── AGENTS.md                   # 项目协作规范（监控登记、制品版本、UI/i18n 约定）
+├── stuck_training/             # Stuck DNN 低速门控与源数据准入
+├── check_sim/                  # scenario 复现、road/sim 对比与 offline/ 原生回放
+├── model_release_pipeline/     # ONNX 导出、IFX 转换与发布 handoff
+├── ra_triage_dashboard/        # RA Triage Workbench (/manual)
+├── ra_sim_repro_dashboard/     # 仿真复现看板 (/sim)
+├── auto_triage_bot/            # DChat 只读问答 Bot
+├── auto_triage/                # triage JSONL 分析
+├── ra_api/                     # Issue / Scenario 内部 API 封装
+├── ares_playwright/            # Ares Studio 登录态与截图
+├── swag/ & swag_triage_reversed/
+├── vlm/ & utils/ & scripts/
+├── ops/                        # luban_monitor_macos / sim_deploy / portal / gateway / cpa
+├── docs/                       # 跨模块专题指南（如 check_sim 01-07 手册）
+├── tests/                      # 跨模块与回归测试
+├── outputs/                    # 运行时产物（含 luban_resource_monitor/ 后台源码与 runtime）
+└── reports/                    # 实验回执、仿真对账与审计报告（高频增长，勿与源码混写）
 ```
 
-## 按任务选择入口
+### 边界约定
 
-| 任务 | 文档 |
-|---|---|
-| Issue 复核、模型结果对比、意图标注 | [RA Triage Workbench](ra_triage_dashboard/README.md) |
-| Scenario / bag 下载与路测仿真比对 | [check_sim](check_sim/README.md) |
-| 仿真复现看板 | [RA Sim Repro Dashboard](ra_sim_repro_dashboard/README.md) |
-| 模型导出、转换与发布 | [Model Release Pipeline](model_release_pipeline/README.md) |
-| DChat 只读问答 Bot | [Auto Triage Bot](auto_triage_bot/README.md) |
-| Ares 登录态与截图 | [Ares Playwright](ares_playwright/README.md) |
-| 网关与 CPA | [Gateway](ops/gateway/README.md)、[CPA](ops/cpa/README.md) |
+- **代码与报告分离**：核心逻辑放入对应子模块；实验回执、临时汇总统一写入 `reports/<topic_date>/`（或 OFS 实验目录），不在仓库根目录堆积一次性脚本或临时包。
+- **运行数据外置**：看板数据库、媒体缓存、凭据与秘钥保持在代码仓外（`0600` 权限，禁止提交）。
+- **根目录历史脚本**：`issue_to_scenairo.py`、`compare_releases.py`、`sweep_all_orders.py`、`sweep_priority.py`、`test_disable_r5.py` 及 `NOTES.md`、`自触发模型仿真复现性现状.md` 为早期独立脚本/记录，新功能统一按模块归档。
 
-## 环境要求
+---
 
-- Python 3.9+
-- 常用依赖：
-  - `pandas`
-  - `requests`
-  - `PyYAML`
+## 快速参考
 
-可先手动安装：
+常用通用依赖（Python 3.9+）：
 
 ```bash
 pip install pandas requests PyYAML
 ```
 
-## 快速开始
-
-1. 克隆仓库并进入目录
+常用单模块入口示例：
 
 ```bash
-cd ra_tools
-```
-
-2. 按需安装依赖
-
-```bash
-pip install pandas requests
-```
-
-3. 直接运行目标脚本，例如：
-
-```bash
-python issue_to_scenairo.py
+# 1. 模型发布配置检查与远端实验查看
 python -m model_release_pipeline.cli print-config
-```
-
-## 核心模块
-
-### `ra_triage_dashboard/`
-
-独立的 RA Triage Workbench，提供 Issue 复核、不可变 Model Runs 对比、Routing / 变道意图标注以及批次推理。安装、配置、运行与验证见 [模块 README](ra_triage_dashboard/README.md)。运行数据、媒体和凭据独立于代码仓库保存。
-
-### `auto_triage_bot/`
-
-独立于看板运行的只读 DChat 助手。它从 RA Triage Workbench 的 loopback API 获取不可变 GT、指定 Model Run 和该 Run 的 Review，上下文受限后调用内部模型网关，并通过 DChat BotUser 回复。启动配置、回调验签和开放平台操作见 [`auto_triage_bot/README.md`](auto_triage_bot/README.md)。
-
-### `ra_api/issue_api.py`
-
-封装 issue 查询相关能力，包含：
-
-- 按条件分页查询 issue
-- 按 issue id 批量查询
-- 基于内部接口的请求签名与请求发送
-
-### `ra_api/scenario_api.py`
-
-封装 scenario 相关能力，包含增删改查能力
-
-### `issue_to_scenairo.py`
-
-一个从 RA issue 拉取数据并尝试自动创建 scenario 的示例脚本，当前逻辑包括：
-
-- 查询指定条件的 issue
-- 从事件流中提取触发时间
-- 按 trip 时间片创建 scenario
-
-### `model_release_pipeline/`
-
-封装 scenario dnn 发布链路的本机入口，包含选模、远端导出 ONNX、触发 IFX 转换，以及生成 Voyager/Kunpeng handoff 文件。
-
-本机无法直接访问 `/nfs/...` 实验目录时，可以通过 `--remote luban_1_card` 让工具 ssh 到 Luban 读取实验元信息：
-
-```bash
 python -m model_release_pipeline.cli inspect --remote luban_1_card --experiment /nfs/.../experiment
-python -m model_release_pipeline.cli export --remote luban_1_card --experiment /nfs/.../experiment --epoch 5 --dry-run
-```
 
-默认远端 Python 是 `/home/luban/miniconda3/bin/conda run -n scen_dnn python`，也可以用 `--remote-python` 临时覆盖。
-Web 页面里的 Luban remote 输入框支持一键切换，候选列表来自配置里的 `luban.host_aliases`；默认当前使用 `luban.host_alias: luban_1_card`。
+# 2. Stuck 低速门控单元测试
+python3 -m unittest stuck_training/test_low_speed_policy.py
 
-如果已手动确定 checkpoint，`export`/`release` 传 `--epoch` 会跳过自动选模，直接推进 ONNX 导出、IFX 转换和 Voyager handoff。
-
----
-
-## check_sim — Scenario 复现与 bag 工具
-
-不依赖 voyager 仓库或本地 ROS 安装，纯 pip 环境即可使用。
-
-### 前置依赖（只需装一次）
-
-```bash
-cd ra_tools
-python3 -m venv .venv
-.venv/bin/pip install rosbags
-```
-
-**proto 定义来源（二选一，优先用方式 A）：**
-
-**方式 A（推荐）**：直接引用 voyager Docker 编译产物，路径 `~/workspace/voyager/bazel-build/bin/protobuf_python/protos_python_pb/`。
-这是 `//protobuf_python:protos_python` 的输出，包含所有 onboard proto 的完整 `_pb2.py` 文件。
-如果该路径不存在，进 Docker 编译一次即可：
-
-```bash
-docker exec -it $CONTAINER_NAME_GEN4 zsh -c \
-  "cd ~/workspace/voyager && bazel build --config=local //protobuf_python:protos_python"
-# 编译产物自动写入宿主机可见的 bazel-build/bin/（cache 目录共享）
-```
-
-**方式 B（无 Docker/voyager 时的兜底）**：用 `check_sim/bag/planning_stub.proto`（手写的最小 stub，只含 `is_opened` 字段路径）：
-
-```bash
-.venv/bin/pip install grpcio-tools google-protobuf
-.venv/bin/python3 -m grpc_tools.protoc \
-    -I check_sim/bag --python_out=check_sim/bag check_sim/bag/planning_stub.proto
-```
-
-`read_bag.py` 启动时自动检测方式 A 的路径，找不到时降级到方式 B。
-
-### 1. 下载路测 bag（在 cloud_server 上执行）
-
-`check_sim/repro/legacy/download_road_bag_cloud.py` 通过内网 Tempest SDK 按 trip_id + 时间段下载 `.bag` 文件
-（`scripts/download_road_bag_cloud.py` 为兼容入口）。
-**需在 cloud_server（172.16.145.60:12017）上运行**，该机器已预装 `voy-tempest` 和 `voy-vbag`。
-
-```bash
-# 上传脚本到 cloud_server（首次）
-scp check_sim/repro/legacy/download_road_bag_cloud.py cloud_server:/tmp/
-
-# SSH 进去执行
-ssh cloud_server "python3 /tmp/download_road_bag_cloud.py \
-    --trip  10385_20260525_070411 \
-    --start 1779665020000 \
-    --end   1779665070000 \
-    --output /tmp/my_road.bag"
-
-# 把 bag 拉回本机
-scp cloud_server:/tmp/my_road.bag /tmp/
-```
-
-参数说明：
-
-| 参数 | 说明 |
-|------|------|
-| `--trip` | trip_id，格式如 `10385_20260525_070411` |
-| `--start` / `--end` | 时间范围，毫秒时间戳 |
-| `--output` | 输出 `.bag` 路径 |
-| `--topics` | 可选，指定 topic 列表（默认下载 planning_debug / assist_request / stuck_detection_recall_signal） |
-
-### 2. 本机读取 bag 并解析 proto 字段
-
-`check_sim/bag/read_bag.py` 纯 Python 读取 `.bag` 文件，解析 `planning_debug` 中的 proto 字段，**无需 ROS/voyager 环境**。
-
-首次运行时会自动编译 `planning_stub.proto` → `planning_stub_pb2.py`（之后跳过）。
-
-```bash
-# 默认：打印所有 planning_debug 消息的 is_opened 字段
+# 3. Scenario 复现与 bag 解析（详细见 check_sim/README.md）
+.venv/bin/python3 check_sim/repro/scenario_repro.py <scenario_id> --binary <binary_id>
 .venv/bin/python3 check_sim/bag/read_bag.py /tmp/my_road.bag
-
-# 只看 is_opened=True 的行
-.venv/bin/python3 check_sim/bag/read_bag.py /tmp/my_road.bag | grep True
-
-# 显示所有 topic 的所有消息
-.venv/bin/python3 check_sim/bag/read_bag.py /tmp/my_road.bag --show-all
-
-# 只看指定 topic
-.venv/bin/python3 check_sim/bag/read_bag.py /tmp/my_road.bag \
-    --topic /planning/assist_request /planning/stuck_detection_recall_signal
 ```
-
-**方式 A 的优势**：完整 pb2 覆盖所有字段，proto 有改动时重新 `bazel build` 即可，无需维护 stub。
-
-**方式 B 的局限**：`planning_stub.proto` 只保留到 `is_opened` 的字段路径（field numbers 21→14→5→1）。field number 被修改时对照 `onboard/planner/planner_protos/` 更新 stub 数字即可。

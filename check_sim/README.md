@@ -21,6 +21,7 @@ check_sim/
 │   ├── read_forcing_trajectory.py
 │   ├── bag_bev_visualizer.py
 │   └── planning_stub.proto
+├── offline/                  # 离线原生回放与三例 smoke 验收（见 offline/README.md）
 └── analysis/                 # TensorDict、ONNX 和 01-07 分析
     ├── 01_check_nearby_frames.py
     ├── ...
@@ -127,3 +128,30 @@ EzSim warmup；无 metadata 时默认排除前 5000 ms。
 
 这种延迟加载保证未安装完整 Voyager runtime 的机器仍可查看命令帮助并运行纯 NPZ
 分析。
+
+## 离线读 bag 与 Proto 来源
+
+脱离 ROS / voyager 运行 `bag/read_bag.py` 时，只需在虚拟环境安装 `rosbags`：
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install rosbags
+```
+
+Protobuf Python 绑定按优先级自动探测：
+
+1. **方式 A（推荐，完整字段）**：直接复用 voyager Docker 编译产物
+   `~/workspace/voyager/bazel-build/bin/protobuf_python/protos_python_pb/`（可通过 `VOYAGER_PROTO_PB` 覆盖）。如不存在，可在容器内执行 `bazel build --config=local //protobuf_python:protos_python`。
+2. **方式 B（无 voyager 环境兜底）**：使用 `check_sim/bag/planning_stub.proto`（仅含 `is_opened` 路径；首次运行 `read_bag.py` 会尝试自动生成，或手动执行 `.venv/bin/python3 -m grpc_tools.protoc -I check_sim/bag --python_out=check_sim/bag check_sim/bag/planning_stub.proto`）。
+
+常用读取命令：
+
+```bash
+.venv/bin/python3 check_sim/bag/read_bag.py /tmp/my_road.bag
+.venv/bin/python3 check_sim/bag/read_bag.py /tmp/my_road.bag --show-all
+.venv/bin/python3 check_sim/bag/read_bag.py /tmp/my_road.bag \
+  --topic /planning/assist_request /planning/stuck_detection_recall_signal
+```
+
+- 离线原生回放（NPZ / state / 逐周期输入）的阶段验收和运行包见 [`offline/README.md`](offline/README.md)。
+- 旧版按 trip + 时间段在 `cloud_server` 下载路测 bag 的兼容脚本保留在 `repro/legacy/download_road_bag_cloud.py`（正式链路优先使用 `repro/scenario_repro.py`）。
