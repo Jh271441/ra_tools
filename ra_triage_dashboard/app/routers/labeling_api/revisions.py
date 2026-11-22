@@ -56,6 +56,7 @@ async def create_label_revision(issue_id: str, request: Request) -> dict[str, An
             task_id=_as_text(body.get("task_id")),
             source_run_id="",
             expected_previous_revision_id=expected_previous,
+            expected_allocation_revision=body.get("expected_allocation_revision"),
             **payload,
         )
     except LabelAnnotationConflictError as exc:
@@ -111,6 +112,7 @@ async def create_label_revision_with_attachments(
             task_id=_as_text(body.get("task_id")),
             source_run_id="",
             expected_previous_revision_id=expected_previous,
+            expected_allocation_revision=body.get("expected_allocation_revision"),
             attachments=records,
             **normalized,
         )

@@ -73,6 +73,8 @@ from ..video_stream import RECIPE as VIDEO_STREAM_RECIPE
 from ..trail_sync import read_trail_issue_metadata
 from ..trail_metadata_store import TrailMetadataStore
 from ..work_split import distribute_issue_ids, normalize_overlap_ratio
+from ..db_parts.campaigns import CampaignConflictError
+from ..task_creation_allocation import prepare_creation_allocation
 from ..db_parts.task_lifecycle import normalize_task_lifecycle, task_list_metrics
 
 router = APIRouter()
@@ -802,7 +804,7 @@ async def list_case_work_splits(
     )
     if group_by_version and lifecycle!='history':
         from ..version_review_tasks import merge_version_task_list, version_tasks
-        parents=await asyncio.to_thread(version_tasks,database,assignee=assignee,model_run_id=model_run_id)
+        parents=await asyncio.to_thread(version_tasks,database,assignee=assignee,model_run_id=model_run_id,lifecycle=lifecycle)
         items=merge_version_task_list(parents,items,version_only=version_only)
     for item in items:
         item["baseline_ids"] = await asyncio.to_thread(
@@ -1031,7 +1033,7 @@ async def split_case_work(request: Request) -> dict[str, Any]:
     )
     if len(issue_ids) > 5000:
         raise _detail(400, "均分任务单次最多包含 5000 个 Issue，请收窄筛选。")
-    assignees = body.get("assignees")
+    assignees = [] if "groups" in body else body.get("assignees")
     if not isinstance(assignees, list):
         raise _detail(400, "assignees 必须是数组。")
     raw_seed = body.get("seed", None)
@@ -1055,13 +1057,28 @@ async def split_case_work(request: Request) -> dict[str, Any]:
     except ValueError as exc:
         raise _detail(400, str(exc))
     try:
-        assignments = distribute_issue_ids(
-            issue_ids,
-            assignees,
-            seed=seed,
-            reviewers_per_issue=reviewers_per_issue,
-            overlap_ratio=overlap_ratio,
-        )
+        idempotency_key = _as_text(
+            request.headers.get("idempotency-key") or body.get("idempotency_key") or body.get("request_id")
+        ).strip()[:160]
+        interactive = (body.get("preview_only") is True or "preview_token" in body or "cross_groups" in body or "groups" in body
+                       or any(isinstance(p, dict) and "review_percent" in p for p in assignees))
+        allocation_config = preview = None
+        if interactive:
+            users = await asyncio.to_thread(database.list_access_users)
+            seed, assignments, allocation_config, preview = await asyncio.to_thread(
+                prepare_creation_allocation, issue_ids, assignees,
+                reviewers=reviewers_per_issue, overlap=overlap_ratio if reviewers_per_issue > 1 else 0,
+                seed=seed, request_id=idempotency_key, body=body, identity=identity.username,
+                eligible={u["username"] for u in users if u["role"] in {"writer", "admin"}},
+            )
+            overlap_ratio = allocation_config["overlap_ratio"]
+            reviewers_per_issue = allocation_config["reviewers_per_issue"]
+        else:
+            if idempotency_key and seed is None:
+                seed = int.from_bytes(hashlib.sha256(idempotency_key.encode("utf-8")).digest()[:8], "big") % (2**31)
+            assignments = distribute_issue_ids(
+                issue_ids, assignees, seed=seed, reviewers_per_issue=reviewers_per_issue, overlap_ratio=overlap_ratio,
+            )
         filter_snapshot = {
                 "target_group": _as_text(filter_body.get("target_group")),
                 "model_run_id": filters["model_run_id"],
@@ -1089,20 +1106,6 @@ async def split_case_work(request: Request) -> dict[str, Any]:
                 ) or baseline_registry.default_ids(),
                 "baseline_scopes": filters.get("baseline_scopes") or [],
             }
-        idempotency_key = _as_text(
-            request.headers.get("idempotency-key")
-            or body.get("idempotency_key")
-            or body.get("request_id")
-        ).strip()[:160]
-        if idempotency_key and seed is None:
-            seed = int.from_bytes(hashlib.sha256(idempotency_key.encode("utf-8")).digest()[:8], "big") % (2**31)
-            assignments = distribute_issue_ids(
-                issue_ids,
-                assignees,
-                seed=seed,
-                reviewers_per_issue=reviewers_per_issue,
-                overlap_ratio=overlap_ratio,
-            )
         if filters["model_run_id"]:
             workset_scopes = list(filters.get("baseline_scopes") or [])
             from ..dataset_partitions import PARTITION_IDS
@@ -1116,6 +1119,8 @@ async def split_case_work(request: Request) -> dict[str, Any]:
             actual_scopes = sorted(set(member_scopes.values()))
             if not actual_scopes or not set(actual_scopes).issubset(workset_scopes):
                 raise ValueError("工作集成员超出所选数据集 / Workset members outside selected datasets")
+            if preview is not None and body.get("preview_only") is True:
+                return {"preview": preview}
             by_issue: dict[str, list[dict[str, str]]] = {}
             for member in assignments:
                 member_items = member.get("items") or [
@@ -1150,7 +1155,7 @@ async def split_case_work(request: Request) -> dict[str, Any]:
                     "name": task_name or f"Review task · {len(issue_ids)} Issues",
                     "seed": seed,
                     "overlap_ratio": overlap_ratio,
-                    "filters": filter_snapshot,
+                    "filters": {**filter_snapshot, "task_allocation": allocation_config} if allocation_config else filter_snapshot,
                     "members": [
                         {"issue_id": issue_id, "ordinal": ordinal,
                          "assignees": by_issue.get(issue_id, [])}
@@ -1182,6 +1187,8 @@ async def split_case_work(request: Request) -> dict[str, Any]:
                 model_run_id=filters["model_run_id"],
                 filter_snapshot=filter_snapshot,
             )
+    except CampaignConflictError as exc:
+        raise _detail(409, str(exc)) from exc
     except ValueError as exc:
         raise _detail(400, str(exc))
     return {

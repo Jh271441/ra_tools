@@ -12,6 +12,8 @@ import asyncio
 from ...runtime import database
 from ...work_split import distribute_issue_ids
 from ...work_split import normalize_overlap_ratio
+from ...db_parts.campaigns import CampaignConflictError
+from ...task_creation_allocation import prepare_creation_allocation
 from ...support.baselines import resolve_request_baseline_scopes, resolve_request_baseline_ids, restrict_version_issue_ids, task_baseline_ids
 from ...labeling_rules import LABELING_FILTER_STATUSES
 from ...dataset_partitions import PARTITION_IDS
@@ -168,7 +170,7 @@ async def create_labeling_task(request: Request) -> dict[str, Any]:
     if issue_ids and set(selected_ids) != set(issue_ids):
         raise _detail(400, "Issue 超出所选数据集 / Issue outside selected dataset")
     assignees = body.get("assignees") or []
-    if not issue_ids or not isinstance(assignees, list) or not assignees:
+    if not issue_ids or "groups" not in body and (not isinstance(assignees, list) or not assignees):
         raise _detail(400, "任务必须包含 Issue 和标注人。")
     try:
         reviewers_per_issue = int(body.get("reviewers_per_issue") or 1)
@@ -176,23 +178,34 @@ async def create_labeling_task(request: Request) -> dict[str, Any]:
         overlap_ratio = normalize_overlap_ratio(
             body.get("overlap_ratio"), reviewers_per_issue=reviewers_per_issue
         )
-        assignments = distribute_issue_ids(
-            issue_ids,
-            assignees,
-            seed=seed,
-            reviewers_per_issue=reviewers_per_issue,
-            overlap_ratio=overlap_ratio,
-        )
-        scope_values = {
-            str((await asyncio.to_thread(database.get_issue, issue_id) or {}).get("baseline_scope") or "")
-            for issue_id in issue_ids
-        }
-        if not scope_values or "" in scope_values or not scope_values <= baseline_registry.allowed_scopes():
+        idempotency_key = _as_text(request.headers.get("idempotency-key") or body.get("request_id")).strip()[:160]
+        interactive = (body.get("preview_only") is True or "preview_token" in body or "cross_groups" in body or "groups" in body
+                       or any(isinstance(p, dict) and "review_percent" in p for p in assignees))
+        allocation_config = preview = None
+        if interactive:
+            users = await asyncio.to_thread(database.list_access_users)
+            seed, assignments, allocation_config, preview = await asyncio.to_thread(
+                prepare_creation_allocation, issue_ids, assignees,
+                reviewers=reviewers_per_issue, overlap=overlap_ratio if reviewers_per_issue > 1 else 0,
+                seed=seed, request_id=idempotency_key, body=body, identity=identity.username,
+                eligible={u["username"] for u in users if u["role"] in {"writer", "admin"}},
+            )
+            overlap_ratio = allocation_config["overlap_ratio"]
+            reviewers_per_issue = allocation_config["reviewers_per_issue"]
+        else:
+            assignments = distribute_issue_ids(
+                issue_ids, assignees, seed=seed, reviewers_per_issue=reviewers_per_issue, overlap_ratio=overlap_ratio,
+            )
+        member_scopes = await asyncio.to_thread(database.issue_baseline_scopes, issue_ids)
+        scope_values = set(member_scopes.values())
+        if len(member_scopes) != len(issue_ids) or "" in scope_values or not scope_values <= baseline_registry.allowed_scopes():
             raise ValueError("任务只能包含已注册数据集中的 Issue。 / Task members must belong to registered datasets.")
         if not scope_values <= set(
             await asyncio.to_thread(database.active_labeling_scopes)
         ):
             raise ValueError("该数据集的 Case 标注迁移尚未激活。")
+        if preview is not None and body.get("preview_only") is True:
+            return {"preview": preview}
         workset = await asyncio.to_thread(
             database.create_review_workset,
             baseline_scopes=sorted(scope_values),
@@ -214,10 +227,11 @@ async def create_labeling_task(request: Request) -> dict[str, Any]:
             overlap_ratio=overlap_ratio,
             created_by_source=identity.source,
             created_by_verified=True,
-            idempotency_key=_as_text(
-                request.headers.get("idempotency-key") or body.get("request_id")
-            ).strip(),
+            idempotency_key=idempotency_key,
+            allocation_config=allocation_config,
         )
+    except CampaignConflictError as exc:
+        raise _detail(409, str(exc)) from exc
     except ValueError as exc:
         raise _detail(400, str(exc))
     return {

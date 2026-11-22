@@ -418,119 +418,6 @@ function currentReviewFilterPayload() {
   };
 }
 
-function workSplitReviewersPerIssue() {
-  const value = Number.parseInt($("#workSplitReviewersPerIssue")?.value || "1", 10);
-  return Number.isFinite(value) ? Math.max(1, value) : 1;
-}
-
-function workSplitOverlapRatio() {
-  const value = Number.parseFloat($("#workSplitOverlapRatio")?.value || "1");
-  return Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 1;
-}
-
-function renderWorkSplitOverlapPicker(selected = null) {
-  const picker = $("#workSplitOverlapPicker");
-  const requested = selected === null
-    ? workSplitOverlapRatio()
-    : Number.parseFloat(String(selected));
-  const value = Number.isFinite(requested)
-    ? Math.min(1, Math.max(0, requested))
-    : 1;
-  const options = [0, 0.1, 0.2, 0.3, 0.5, 1].map((ratio) => ({
-    value: String(ratio),
-    label: `${Math.round(ratio * 100)}%`,
-  }));
-  populateUiSelect(picker, options, String(value));
-  bindUiSelect(picker, { maxHeight: 260, maxWidth: 180 });
-  return value;
-}
-
-function updateWorkSplitOverlapVisibility() {
-  const field = $("#workSplitOverlapField");
-  if (field) field.hidden = workSplitReviewersPerIssue() <= 1;
-}
-
-function renderWorkSplitReviewersPerIssuePicker(selected = null) {
-  const picker = $("#workSplitReviewersPerIssuePicker");
-  const memberCount = readWorkSplitAssignees().length;
-  const maximum = Math.max(1, memberCount);
-  const requested = selected === null
-    ? workSplitReviewersPerIssue()
-    : Number.parseInt(String(selected), 10);
-  const value = Math.min(Math.max(1, Number.isFinite(requested) ? requested : 1), maximum);
-  populateUiSelect(
-    picker,
-    Array.from({ length: maximum }, (_, index) => ({
-      value: String(index + 1),
-      label: uiText(`${index + 1} 人`, `${index + 1} ${index ? "people" : "person"}`),
-    })),
-    String(value),
-  );
-  bindUiSelect(picker, { maxHeight: 260, maxWidth: 180 });
-  return value;
-}
-
-function updateWorkSplitEstimate() {
-  const reviewers = workSplitReviewersPerIssue();
-  const overlapRatio = workSplitOverlapRatio();
-  const people = readWorkSplitAssignees();
-  const total = workSplitTotal();
-  const target = $("#workSplitEstimate");
-  updateAssignmentNameSuggestion("review");
-  updateWorkSplitOverlapVisibility();
-  document.querySelectorAll(".work-split-person-count").forEach((input) => {
-    input.placeholder = reviewers > 1 ? "自动均衡" : t("work.even_split");
-  });
-  if (!target) return;
-  if (reviewers > people.length && people.length) {
-    target.textContent = `每个 Issue 的人数不能超过已选 ${people.length} 人`;
-    return;
-  }
-  const overlapCount = reviewers > 1 ? Math.min(total, Math.round(total * overlapRatio)) : 0;
-  const assignmentCount = total + overlapCount * (reviewers - 1);
-  const fixedTotal = people.reduce(
-    (sum, person) => sum + (person.count === null ? 0 : Number(person.count || 0)),
-    0,
-  );
-  const automaticPeople = people.filter((person) => person.count === null).length;
-  if (people.some((person) => person.count !== null && person.count > total)) {
-    target.textContent = `个人数量不能超过 ${total}，同一人不能重复领取同一个 Issue`;
-    return;
-  }
-  if (fixedTotal > assignmentCount) {
-    target.textContent = `已指定 ${fixedTotal} 条，超过任务总数 ${assignmentCount}`;
-    return;
-  }
-  if (!automaticPeople && fixedTotal !== assignmentCount) {
-    target.textContent = `已指定 ${fixedTotal} 条，需合计 ${assignmentCount} 条`;
-    return;
-  }
-  if (automaticPeople && assignmentCount - fixedTotal > automaticPeople * total) {
-    target.textContent = "剩余任务超过自动均衡人员可领取上限，请降低固定数量或增加人员";
-    return;
-  }
-  const low = people.length ? Math.floor(assignmentCount / people.length) : 0;
-  const high = people.length ? Math.ceil(assignmentCount / people.length) : 0;
-  if (reviewers === 1) {
-    target.textContent = t("work.single_estimate", { total });
-    return;
-  }
-  const estimate = t("work.blind_estimate", {
-    total,
-    ratio: Math.round(overlapRatio * 100),
-    overlap: overlapCount,
-    reviewers,
-    assignments: assignmentCount,
-  });
-  target.textContent = `${estimate} · ${
-    fixedTotal
-      ? t("work.fixed_remaining", { n: fixedTotal })
-      : t("work.person_estimate", {
-          range: `${low}${high !== low ? `～${high}` : ""}`,
-        })
-  }`;
-}
-
 function workAssigneeOptionsWithSelected(options, selected) {
   const known = new Set(options.map((item) => String(item.value || "")));
   const retained = parseFilterList(selected)
@@ -634,25 +521,12 @@ async function openWorkSplitDialog(draft = null) {
     showToast(error.message || t("work.load_users_fail"), true);
     return;
   }
-  const root = $("#workSplitPeople");
-  if (root) {
-    root.innerHTML = "";
-    ensureWorkSplitPeople(1);
-    if (!state.accessUsers?.length) {
-      showToast(t("work.no_writers"), true);
-    }
-  }
-  renderWorkSplitPersonPickers();
-  if ($("#workSplitReviewersPerIssue")) $("#workSplitReviewersPerIssue").value = "1";
   if ($("#workSplitWorkflowMode")) $("#workSplitWorkflowMode").value = "model_review_and_case_label";
   enhanceNativeUiSelect($("#workSplitWorkflowMode"));
-  renderWorkSplitReviewersPerIssuePicker(1);
-  renderWorkSplitOverlapPicker(1);
   resetAssignmentNameSuggestion("review");
-  updateWorkSplitEstimate();
   const panel = $("#workSplitPanel");
   panel.hidden = false;
-  $("#workSplitGenerate").disabled = false;
+  displayCreationGroupSetup("workSplit", workSplitDraft?.groupSetup || { groups: [newAllocationGroup()] });
   const link = $("#workSplitReturnSource");
   if (link) {
     const fallback = reviewAssignmentSourceHref(workSplitFilters());
@@ -726,49 +600,13 @@ async function generateWorkSplit() {
     return;
   }
   if (workSplitDraft?.submitted) {
-    showToast("此分配已生成；请返回图库选择范围后创建新任务。", true);
+    showToast(uiText("已创建分配。返回图库选择新任务的范围。", "Allocation created. Return to the gallery to select a new scope."), true);
     return;
   }
-  if (workSplitDraft?.dirty) { showToast("筛选已修改，请先更新范围。", true); return; }
-  const assignees = readWorkSplitAssignees();
-  if (!assignees.length) {
-    showToast(t("work.need_reviewer"), true);
-    return;
-  }
-  const reviewersPerIssue = workSplitReviewersPerIssue();
-  const overlapRatio = reviewersPerIssue > 1 ? workSplitOverlapRatio() : 0;
-  const seedRaw = $("#workSplitSeed")?.value.trim() || "";
-  const name = $("#workSplitName")?.value.trim() || "";
-  const body = {
-    filters: workSplitFilters(),
-    assignees,
-    reviewers_per_issue: reviewersPerIssue,
-    overlap_ratio: overlapRatio,
-    workflow_mode: $("#workSplitWorkflowMode")?.value || "model_review_and_case_label",
-  };
-  if (name) body.name = name;
-  if (body.reviewers_per_issue > assignees.length) {
-    showToast("每个 Issue 的复核人数不能超过已选成员数。", true);
-    return;
-  }
-  if (seedRaw !== "") {
-    const seed = Number(seedRaw);
-    if (!Number.isFinite(seed)) {
-      showToast(t("work.seed_int"), true);
-      return;
-    }
-    body.seed = seed;
-  }
-  const button = $("#workSplitGenerate");
-  if (button) {
-    button.disabled = true;
-    button.setAttribute("aria-busy", "true");
-  }
+  if (workSplitDraft?.dirty) { showToast(uiText("筛选已修改，请先更新范围。", "Filters changed. Update the scope first."), true); return; }
   try {
-    const result = await api("/api/cases/work-split", {
-      method: "POST",
-      body: JSON.stringify(body),
-    });
+    const result = await submitGroupedCreation("workSplit");
+    if (!result) return;
     acknowledgeLocalChange(result);
     state.workAssigneeRequestSeq += 1;
     if (Array.isArray(result.work_assignees)) {
@@ -785,14 +623,10 @@ async function generateWorkSplit() {
     }
     showToast(t("work.saved"));
   } catch (error) {
-    showToast(error.message, true);
-  } finally {
-    if (button) {
-      button.disabled = false;
-      button.removeAttribute("aria-busy");
-    }
+    showToast(creationAllocationError(error), true);
   }
 }
+
 
 function filterGalleryByWorkAssignee(assignee) {
   const name = String(assignee || "").trim();
@@ -845,6 +679,7 @@ function copyWorkSplitAssignment(index) {
 }
 
 function bindWorkSplitControls() {
+  bindCreationGroupSetup("workSplit");
   bindAssignmentNameInput("review");
   $("#workSplitResetDraft")?.addEventListener("click", () => {
     workSplitDraft = null;
@@ -881,39 +716,6 @@ function bindWorkSplitControls() {
     $("#workSplitPanel").hidden = true;
     navigatePage("review-assignments");
   });
-  $("#workSplitAddPerson")?.addEventListener("click", () => {
-    $("#workSplitPeople")?.insertAdjacentHTML("beforeend", workSplitPersonRow());
-    renderWorkSplitPersonPickers();
-    renderWorkSplitReviewersPerIssuePicker();
-    updateWorkSplitEstimate();
-  });
-  $("#workSplitPeople")?.addEventListener("click", (event) => {
-    const remove = event.target.closest(".work-split-remove-person");
-    if (!remove) return;
-    const row = remove.closest(".work-split-person-row");
-    const root = $("#workSplitPeople");
-    if (!row || !root) return;
-    row.remove();
-    ensureWorkSplitPeople(1);
-    renderWorkSplitPersonPickers();
-    renderWorkSplitReviewersPerIssuePicker();
-    updateWorkSplitEstimate();
-  });
-  $("#workSplitPeople")?.addEventListener("change", (event) => {
-    if (event.target.matches(".work-split-person-name")) {
-      event.target.closest(".work-split-person-picker").dataset.workSplitSelected =
-        event.target.value || "";
-      renderWorkSplitPersonPickers();
-      renderWorkSplitReviewersPerIssuePicker();
-    }
-    updateWorkSplitEstimate();
-  });
-  $("#workSplitPeople")?.addEventListener("input", (event) => {
-    if (event.target.matches(".work-split-person-count")) updateWorkSplitEstimate();
-  });
-  $("#workSplitReviewersPerIssue")?.addEventListener("change", updateWorkSplitEstimate);
-  $("#workSplitOverlapRatio")?.addEventListener("change", updateWorkSplitEstimate);
-  $("#workSplitWorkflowMode")?.addEventListener("change", updateWorkSplitEstimate);
   $("#workSplitGenerate")?.addEventListener("click", () => {
     generateWorkSplit().catch((error) => showToast(error.message, true));
   });

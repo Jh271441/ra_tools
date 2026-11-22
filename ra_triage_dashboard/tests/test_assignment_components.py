@@ -39,12 +39,22 @@ api=()=>{requests++;return new Promise(resolve=>pending.push(resolve));};
 '''
         subprocess.run(['node', '-e', script], check=True, capture_output=True)
 
-    def test_people_quotas_keep_zero_distinct_from_even_split(self):
-        script = (ROOT / 'assignment-people.js').read_text() + r'''
+    def test_group_shares_keep_zero_distinct_from_missing_input(self):
+        script = (ROOT / 'allocation-groups.js').read_text() + r'''
 const assert=require('node:assert/strict');
-const row=(name,count)=>({querySelector:selector=>({value:selector.includes('name')?name:count})});
-document={querySelectorAll:()=>[row('alice',''),row('bob','0'),row('carol','12'),row('','5')]};
-assert.deepEqual(readWorkSplitAssignees('#labelingTaskPeople'),[
- {name:'alice',count:null},{name:'bob',count:0},{name:'carol',count:12}]);
+const input=value=>({value:String(value??''),valueAsNumber:value??NaN});
+const people=[['alice',100],['bob',0],['carol',null]].map(([name,share])=>({
+  querySelector:match=>match==='[data-group-member]'?{value:name}:input(share)
+}));
+const card={dataset:{setupGroup:'rd'},querySelector:match=>
+  match==='[data-group-strategy]'?{value:'overlap'}:input(100),querySelectorAll:()=>people};
+const root={querySelector:()=>null,querySelectorAll:match=>match==='[data-setup-group]'?[card]:[]};
+const draft=readAllocationGroupSetup(root);
+assert.deepEqual(draft.groups,[{group_id:'rd',coverage_percent:100,coverage_strategy:'overlap',
+  members:[{name:'alice',review_percent:100},{name:'bob',review_percent:0},{name:'carol',review_percent:null}]}]);
+apiResponseError=(zh,en)=>({messages:{zh,en}});
+assert.ok(groupAllocationSetupError(draft));
+draft.groups[0].members.pop();
+assert.equal(groupAllocationSetupError(draft),null);
 '''
         subprocess.run(['node', '-e', script], check=True, capture_output=True)

@@ -124,12 +124,15 @@ class DatabaseModelReviewMixin:
         expected_previous_annotation_id: int | None | object = _EXPECTED_ANNOTATION_UNSET,
         attachments: list[dict[str, Any]] | None = None,
         legacy_annotation_id: int | None = None,
+        expected_allocation_revision: int | None = None,
     ) -> dict[str, Any]:
+        self._validate_allocation_revision(expected_allocation_revision)
         issue_id = str(issue_id or "").strip()
         model_run_id = str(model_run_id or "").strip()
         campaign_id = str(campaign_id or "").strip()
         reference_id = str(reference_id or "").strip()
         work_split_id = str(work_split_id or "").strip()
+        requires_assignment = bool(work_split_id)
         reviewer = str(reviewer or "").strip().lower()
         status = str(status or "pending").strip().lower()
         if not issue_id or not model_run_id:
@@ -152,6 +155,7 @@ class DatabaseModelReviewMixin:
         attachments = list(attachments or [])
         now = utc_now()
         with self._write_lock, self.connect() as conn:
+            self._lock_task_work(conn)
             issue_sql = "SELECT issue_id FROM issues WHERE issue_id = ?"
             if self.backend == "postgresql":
                 # Serialize first submissions as well as updates when no head
@@ -174,7 +178,7 @@ class DatabaseModelReviewMixin:
                 reference_id=self._version_reference_id(conn,campaign_id,issue_id,reference_id)
                 if work_split_id==original_campaign_id:work_split_id=campaign_id
                 campaign_sql = (
-                    "SELECT purpose, evaluation_run_id, reference_id, lifecycle, legacy_read_only "
+                    "SELECT purpose, evaluation_run_id, reference_id, lifecycle, legacy_read_only, config_revision, filter_json "
                     "FROM issue_work_splits WHERE id = ?"
                     + (" FOR UPDATE" if self.backend == "postgresql" else "")
                 )
@@ -199,6 +203,13 @@ class DatabaseModelReviewMixin:
                 if work_split_id and work_split_id != campaign_id:
                     raise ValueError("兼容 work_split_id 必须与 Campaign ID 一致。")
                 work_split_id = campaign_id
+                if expected_allocation_revision is not None and campaign["config_revision"] != expected_allocation_revision:
+                    raise AnnotationConflictError("任务分配已变化，草稿保留，请刷新任务后确认 / Allocation changed; your draft is retained. Reload the task and confirm")
+                if requires_assignment or _json_load(campaign["filter_json"], {}).get("task_allocation"):
+                    assigned = conn.execute("SELECT 1 FROM review_work_assignments WHERE split_id=? AND issue_id=? AND lower(assignee)=?",
+                                            (campaign_id, issue_id, reviewer)).fetchone()
+                    if not assigned:
+                        raise AnnotationConflictError("当前任务已不再分配给你，草稿保留 / This task is no longer assigned to you; your draft is retained")
             head = conn.execute(
                 """
                 SELECT head.revision_id, revision.work_split_id
@@ -314,6 +325,7 @@ class DatabaseModelReviewMixin:
             raise ValueError("模型复核版本 ID 不合法。")
         now = utc_now()
         with self._write_lock, self.connect() as conn:
+            self._lock_task_work(conn)
             conn.execute(
                 "SELECT issue_id FROM issues WHERE issue_id = ?"
                 + (" FOR UPDATE" if self.backend == "postgresql" else ""),

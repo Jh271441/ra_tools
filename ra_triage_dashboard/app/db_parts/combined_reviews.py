@@ -85,6 +85,7 @@ class DatabaseCombinedReviewMixin:
             raise ValueError("必须明确选择 Case 标签。")
         clean_tags = sorted({str(value or "").strip() for value in tags if str(value or "").strip()})
         with self._write_lock, self.connect() as conn:
+            self._lock_task_work(conn)
             issue = conn.execute(
                 "SELECT issue_id, baseline_scope, gt_label, gt_source FROM issues WHERE issue_id=?",
                 (issue_key,),
@@ -181,7 +182,7 @@ class DatabaseCombinedReviewMixin:
         campaign = conn.execute(
             """
             SELECT id, purpose, workflow_mode, lifecycle, legacy_read_only,
-                   evaluation_run_id, reference_id, workset_id
+                   evaluation_run_id, reference_id, workset_id, config_revision
             FROM issue_work_splits WHERE id = ?
             """,
             (campaign_id,),
@@ -320,7 +321,9 @@ class DatabaseCombinedReviewMixin:
         mention_recipients: Sequence[str] = (),
         update_case_details: bool = False,
         attachments: Sequence[dict[str, Any]] = (),
+        expected_allocation_revision: int | None = None,
     ) -> dict[str, Any]:
+        self._validate_allocation_revision(expected_allocation_revision)
         issue_key = str(issue_id or "").strip()
         campaign_key = str(campaign_id or "").strip()
         run_key = str(model_run_id or "").strip()
@@ -353,8 +356,7 @@ class DatabaseCombinedReviewMixin:
             "expected_label_state_fingerprint": str(expected_label_state_fingerprint or ""),
         })
         with self._write_lock, self.connect() as conn:
-            if self.backend == "postgresql":
-                conn.execute("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE")
+            self._lock_task_work(conn)
             # Fingerprint the original request first so an old task URL can replay
             # its immutable submission without changing the historical fingerprint.
             campaign_key = self._resolve_version_campaign(conn,campaign_key)
@@ -395,6 +397,8 @@ class DatabaseCombinedReviewMixin:
             )
             campaign = context["campaign"]
             campaign_key=campaign["id"]
+            if expected_allocation_revision is not None and campaign_key and campaign["config_revision"] != expected_allocation_revision:
+                raise AnnotationConflictError("任务分配已变化，草稿保留，请刷新任务后确认 / Allocation changed; your draft is retained. Reload the task and confirm")
             if str(campaign.get("purpose") or "") != "model_review":
                 raise ValueError("联合复核仅适用于模型复核任务。")
             if str(campaign.get("workflow_mode") or "model_review_only") != "model_review_and_case_label":

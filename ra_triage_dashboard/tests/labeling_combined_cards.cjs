@@ -15,7 +15,7 @@ const context = {URLSearchParams, console, document: {activeElement: null},
   pageUrl: (page, args) => '/manual/'+page+'?'+new URLSearchParams({run:args.runId,work_split:args.workSplitId,baselines:args.baselines.join(','),task_view:args.taskView}),
   api: async () => { if (fail) throw Error('offline'); return reply; }};
 vm.createContext(context);
-for (const name of ['review-assignments.js','labeling-combined-tasks.js'])
+for (const name of ['task-allocation.js','review-assignments.js','labeling-combined-tasks.js'])
   vm.runInContext(fs.readFileSync(path.join(__dirname,'../static/js',name),'utf8'),context);
 const item = {split_id:'campaign-a',campaign_name:'0821 very long task <name>',model_run_id:'run-a',
   workflow_mode:'model_review_and_case_label',is_current:true,lifecycle:'active',baseline_ids:['0821'],
@@ -67,6 +67,11 @@ const version = {...item,split_id:'campaign-v',appendable:true,release_family:'2
     const legacy=context.renderReviewAssignmentBatch({...version,release_family:'20261030'});
     assert.ok(legacy.includes(language==='zh'?'1030 · 版本联合复核':'1030 · Version combined review'));
     assert.ok(legacy.includes(language==='zh'?'低置信＋抽样 · 单人负责 · 无交叉':'Low confidence + sample · Single owner · No overlap'));
+    context.state.session.is_admin=true;
+    const edited=context.renderReviewAssignmentBatch({...version,reviewers_per_issue:3,overlap_ratio:.5});
+    assert.ok(edited.includes('50%') && edited.includes('3'));
+    assert.ok(edited.includes('data-edit-task-allocation="campaign-v"'));
+    context.state.session.is_admin=false;
   }
   fail = false; reply = {items:[]}; await context.loadLabelingCombinedTasks();
   assert.equal(count.textContent,'0'); assert.ok(html.includes('No active combined review tasks.'));

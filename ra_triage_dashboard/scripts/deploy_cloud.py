@@ -255,12 +255,21 @@ def rebase_env(env, old, new):
     return {k: new + v[len(old):] if k not in persistent_files and v.startswith(old + "/") else v
             for k, v in env.items()}
 
-def gray_env(env, candidate, data, sha):
+def configured_gray_port():
+    value = os.environ.get("RA_DASHBOARD_DEPLOY_GRAY_PORT", "8786")
+    require(value.isascii() and value.isdecimal() and len(value) <= 5,
+            "RA_DASHBOARD_DEPLOY_GRAY_PORT must be an integer port")
+    port = int(value)
+    require(1024 <= port <= 65535 and port != 8785,
+            "Choose an unprivileged gray port other than 8785")
+    return port
+
+def gray_env(env, candidate, data, sha, port=8786):
     result = rebase_env(env, REPO, candidate)
     result.update({key: "false" for key in OFF})
     result.update(DASHBOARD_DATA_DIR=str(data), DASHBOARD_DATABASE_URL="sqlite:///" + str(data / "triage.sqlite3"),
                   DASHBOARD_DATABASE_URL_FILE="", DASHBOARD_POSTGRES_PERSISTENT_DATA="false",
-                  DASHBOARD_BUILD_COMMIT=sha, DASHBOARD_PORT="8786", DASHBOARD_HOST="127.0.0.1",
+                  DASHBOARD_BUILD_COMMIT=sha, DASHBOARD_PORT=str(port), DASHBOARD_HOST="127.0.0.1",
                   DASHBOARD_BATCH_BAG_CACHE_DIR=str(data / "batch_bags"),
                   DASHBOARD_BOOTSTRAP_MODEL_JSON="", DASHBOARD_DCHAT_CREDENTIALS_FILE="",
                   DASHBOARD_TRUSTED_INGRESS_TOKEN_FILE="", DASHBOARD_DEPLOYMENT_MODE="production",
@@ -548,12 +557,14 @@ def preflight(
             isinstance(migration_count_before, int),
             "Production migration count is unavailable",
         )
+    gray_port = configured_gray_port()
     with socket.socket() as sock:
         try:
-            sock.bind(("127.0.0.1", 8786))
+            sock.bind(("127.0.0.1", gray_port))
         except OSError:
-            raise DeployError("8786 is occupied; preserve the existing gray session") from None
+            raise DeployError(f"Gray port {gray_port} is occupied; preserve its existing service") from None
     return {
+        "gray_port": gray_port,
         "pid": pid,
         "env": env,
         "before": before,
@@ -579,6 +590,7 @@ def check_release(
         )
         print(json.dumps({
             "preflight": "ok",
+            "gray_port": state["gray_port"],
             "target": sha,
             "live": state["old"],
             "migrations": state["migrations"],
@@ -627,6 +639,7 @@ def prepare_release(
         result = {
             "schema_version": RECORD_SCHEMA_VERSION,
             "status": "preparing",
+            "gray_port": state["gray_port"],
             "target": sha,
             "previous": old,
             "candidate": str(candidate),
@@ -648,13 +661,17 @@ def prepare_release(
             media = Path(env["DASHBOARD_DATA_DIR"]) / "media_layouts"
             if media.is_dir():
                 (data / "media_layouts").symlink_to(media, target_is_directory=True)
-            test_env = gray_env(env, candidate, data, sha)
+            gray_port = state["gray_port"]
+            isolated_env = gray_env(env, candidate, data, sha, port=gray_port)
+            test_env = dict(isolated_env, DASHBOARD_BASE_PATH="")
+            if test_dependencies := os.environ.get("RA_DASHBOARD_DEPLOY_TEST_PYTHONPATH"):
+                test_env["PYTHONPATH"] = test_dependencies
             print("Running complete cloud test suite", flush=True)
             with (folder / "tests.log").open("w") as log:
-                run(PYTHON, "-m", "pytest", "ra_triage_dashboard/tests", "-q", cwd=candidate, env=dict(test_env, DASHBOARD_BASE_PATH=""), stdout=log, stderr=subprocess.STDOUT, timeout=600)
+                run(PYTHON, "-m", "pytest", "ra_triage_dashboard/tests", "-q", cwd=candidate, env=test_env, stdout=log, stderr=subprocess.STDOUT, timeout=600)
             with (folder / "gray.log").open("w") as log:
-                gray = subprocess.Popen([str(PYTHON), "-m", "uvicorn", "app.main:app", "--app-dir", str(candidate / "ra_triage_dashboard"), "--host", "127.0.0.1", "--port", "8786"], cwd=candidate, env=test_env, stdout=log, stderr=subprocess.STDOUT)
-            smoke(8786, sha, "sqlite")
+                gray = subprocess.Popen([str(PYTHON), "-m", "uvicorn", "app.main:app", "--app-dir", str(candidate / "ra_triage_dashboard"), "--host", "127.0.0.1", "--port", str(gray_port)], cwd=candidate, env=isolated_env, stdout=log, stderr=subprocess.STDOUT)
+            smoke(gray_port, sha, "sqlite")
             stop_child(gray)
             require(git("rev-parse", release_ref(isolated_ref, expected_live_sha)) == sha
                     and git("rev-parse", "HEAD") == result["checkout_sha"]
@@ -758,6 +775,7 @@ def promote_release(
         old = state["old"]
         migrations = state["migrations"]
         migration_count_before = state["migration_count_before"]
+        require(state["gray_port"] == result.get("gray_port", 8786), "Gray port changed after prepare")
         require(old == result.get("previous") == recovery.get("sha"), "Production SHA changed after prepare")
         require(git("rev-parse", "HEAD") == result.get("checkout_sha"), "Checkout changed after prepare")
         require(pid == recovery.get("pid") and env == recovery.get("env"), "Production process or environment changed after prepare")

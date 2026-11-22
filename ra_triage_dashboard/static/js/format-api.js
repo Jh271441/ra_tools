@@ -358,7 +358,7 @@ async function setBaselineScopes(
     if (state.activePage === "labeling-new-task") {
       await Promise.all([loadCaseLabelingTasks(), loadLabelingCombinedTasks(),
         loadCaseLabelingCases({ page: 1, persistRoute: false })]);
-      if (isPageContextCurrent(pageContext)) updateLabelingTaskEstimate();
+      if (isPageContextCurrent(pageContext)) queueCreationGroupPreview("labelingTask");
       return;
     }
     if (state.activePage === "labeling") {

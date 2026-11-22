@@ -62,7 +62,8 @@ def resolve_role(members, votes, role):
                 supplements=supplemental)
 
 
-def allocate_role_pairs(issue_ids, *, cross_review=True, seed, previous=(), fixed_rd=None):
+def allocate_role_pairs(issue_ids, *, cross_review=True, seed, previous=(), fixed_rd=None,
+                        rd_reviewers=RD_REVIEWERS, te_reviewers=TE_REVIEWERS, reviewers_per_issue=2):
     """Stable cumulative quotas with seeded tie breaks and balanced RD×TE pairs."""
     counts = Counter(); pairs = Counter()
     for item in previous:
@@ -71,13 +72,16 @@ def allocate_role_pairs(issue_ids, *, cross_review=True, seed, previous=(), fixe
             pairs[tuple(item['assignees'])] += 1
     result = []
     for iid in sorted(issue_ids, key=lambda x: digest([POLICY, seed, 'order', x])):
-        rd_options = [(fixed_rd or {})[iid]] if iid in (fixed_rd or {}) else [p for p in RD_REVIEWERS if counts[p] == min(counts[x] for x in RD_REVIEWERS)]
+        rd_options = [(fixed_rd or {})[iid]] if iid in (fixed_rd or {}) else [p for p in rd_reviewers if counts[p] == min(counts[x] for x in rd_reviewers)]
         if cross_review:
-            te_options = [p for p in TE_REVIEWERS if counts[p] == min(counts[x] for x in TE_REVIEWERS)]
+            te_options = [p for p in te_reviewers if counts[p] == min(counts[x] for x in te_reviewers)]
             rd, te = min(((r, t) for r in rd_options for t in te_options),
                          key=lambda pair: (pairs[pair], digest([seed, 'rd', iid, pair[0]]),
                                            digest([seed, 'te', iid, pair[1]])))
             owners = [rd, te]; pairs[(rd, te)] += 1
+            while len(owners) < reviewers_per_issue:
+                owners.append(min((p for p in (*rd_reviewers, *te_reviewers) if p not in owners),
+                                  key=lambda p: (counts[p], digest([seed, iid, p]))))
         else:
             owners = [min(rd_options, key=lambda p: digest([seed, 'rd', iid, p]))]
         counts.update(owners)

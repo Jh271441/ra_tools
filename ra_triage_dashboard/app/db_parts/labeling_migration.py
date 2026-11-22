@@ -186,6 +186,7 @@ class LabelingMigrationMixin:
         policy_version: str,
     ) -> int:
         with self._write_lock, self.connect() as conn:
+            self._lock_task_work(conn)
             existing = conn.execute(
                 "SELECT id FROM label_revisions WHERE source_annotation_id = ?",
                 (int(source_annotation_id),),

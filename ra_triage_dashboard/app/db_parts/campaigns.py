@@ -1114,8 +1114,7 @@ class DatabaseCampaignMixin:
             "reason": str(reason or ""), "expected_revision": int(expected_revision),
         })
         with self._write_lock, self.connect() as conn:
-            if self.backend == "postgresql":
-                conn.execute("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE")
+            self._lock_task_work(conn)
             existing = conn.execute(
                 "SELECT idempotency_fingerprint FROM campaign_assignment_audit "
                 "WHERE campaign_id = ? AND idempotency_key = ?",
@@ -1151,6 +1150,37 @@ class DatabaseCampaignMixin:
                 (campaign_key, issue_key),
             ).fetchall()
             current = {str(row["assignee"] or "").strip().lower(): str(row["assignment_kind"] or "base") for row in current_rows}
+            if current:
+                allocation_rows = [dict(r) for r in conn.execute(
+                    "SELECT * FROM review_work_assignments WHERE split_id=? ORDER BY issue_id,ordinal,assignee",
+                    (campaign_key,),
+                ).fetchall()]
+                protection = self._allocation_protection(conn, dict(split), allocation_rows)
+                if (issue_key, source) in protection["protected"]:
+                    raise ValueError("该负责人已有保存或受保护的工作，必须保留原分配 / This author's saved or protected work must retain its assignment")
+                # Explicit formal admission of an objection adds a new position;
+                # it does not transfer an existing person's protected work. Keep
+                # that established workflow separate from bulk redistribution.
+                formal_admission = operation == "assign" and conn.execute(
+                    "SELECT 1 FROM human_version_tasks WHERE campaign_id=?", (campaign_key,),
+                ).fetchone() is not None
+                if operation in {"assign", "unassign"} and protection["has_evidence"] and not formal_admission:
+                    raise ValueError("已有保存的任务须保留原覆盖人数 / Tasks with saved work must retain their coverage counts")
+                if (issue_key, target) in protection["forbidden"] and not formal_admission:
+                    raise ValueError("目标人员有未关联的历史记录，不能自动作为新分配 / The recipient has unlinked historical work and cannot receive this slot")
+                if operation == "reassign" and conn.execute(
+                    "SELECT 1 FROM human_version_tasks WHERE campaign_id=?", (campaign_key,),
+                ).fetchone():
+                    recipient = conn.execute(
+                        "SELECT a.role AS permission,h.role FROM access_users a "
+                        "JOIN human_user_roles h ON h.username=a.username WHERE a.username=?", (target,),
+                    ).fetchone()
+                    retained_roles = {protection["captured_roles"].get((issue_key, p))
+                                      for p in current if p != source}
+                    if (not recipient or recipient["permission"] not in {"writer", "admin"}
+                            or recipient["role"] not in {"rd", "te"}
+                            or not {"rd", "te"} <= retained_roles | {recipient["role"]}):
+                        raise ValueError("转派后仍须保留有效的 RD 和 TE 覆盖 / Reassignment must retain eligible RD and TE coverage")
             if operation == "assign":
                 if target in current:
                     raise ValueError("该 Issue 已经分配给此 Assignee。")
@@ -1272,8 +1302,7 @@ class DatabaseCampaignMixin:
         })
         snapshot_id = ""
         with self._write_lock, self.connect() as conn:
-            if self.backend == "postgresql":
-                conn.execute("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE")
+            self._lock_task_work(conn)
             existing = conn.execute(
                 "SELECT snapshot_id, idempotency_fingerprint FROM campaign_lifecycle_audit "
                 "WHERE campaign_id = ? AND idempotency_key = ?",
@@ -1437,8 +1466,7 @@ class DatabaseCampaignMixin:
             "expected_revision": int(expected_revision), "reason": explanation,
         })
         with self._write_lock, self.connect() as conn:
-            if self.backend == "postgresql":
-                conn.execute("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE")
+            self._lock_task_work(conn)
             existing = conn.execute(
                 "SELECT idempotency_fingerprint FROM campaign_lifecycle_audit "
                 "WHERE campaign_id = ? AND idempotency_key = ?",
@@ -1545,8 +1573,7 @@ class DatabaseCampaignMixin:
         })
         replayed = False
         with self._write_lock, self.connect() as conn:
-            if self.backend == "postgresql":
-                conn.execute("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE")
+            self._lock_task_work(conn)
             existing = conn.execute(
                 "SELECT idempotency_fingerprint FROM campaign_lifecycle_audit "
                 "WHERE campaign_id = ? AND idempotency_key = ?",
@@ -1637,6 +1664,7 @@ class DatabaseCampaignMixin:
         changed_by_verified: bool,
         change_source: str,
         idempotency_key: str = "",
+        allocation_receipt: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         split = conn.execute(
             "SELECT * FROM issue_work_splits WHERE id = ?", (campaign_id,)
@@ -1692,6 +1720,10 @@ class DatabaseCampaignMixin:
         required_total = sum(item["required_submitter_count"] for item in members)
         config = {
             "campaign_id": campaign_id,
+            "task_allocation": _json_load(split["filter_json"], {}).get("task_allocation"),
+            "allocation_request_fingerprint": _json_load(split["filter_json"], {}).get("allocation_request_fingerprint"),
+            "reviewers_per_issue": int(split["reviewers_per_issue"] or 1),
+            "overlap_ratio": float(split["overlap_ratio"] or 0),
             "purpose": str(split["purpose"] or "") or None,
             "workset_id": str(split["workset_id"] or ""),
             "evaluation_run_id": str(split["evaluation_run_id"] or ""),
@@ -1708,6 +1740,8 @@ class DatabaseCampaignMixin:
             "required_submitter_count": required_total,
             "assignments": assignments,
         }
+        if allocation_receipt is not None:
+            config["allocation_receipt"] = allocation_receipt
         config_json = _json(config)
         config_sha = hashlib.sha256(config_json.encode("utf-8")).hexdigest()
         now = utc_now()

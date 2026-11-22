@@ -5,7 +5,7 @@ import json
 import re
 import uuid
 from datetime import datetime
-from .shared import LABELS, utc_now
+from .shared import LABELS, utc_now, _json_load
 from .version_run_consolidation import VersionRunConsolidationMixin
 from .version_dataset_rules import encoded
 from .assignment_rules import ASSIGNMENT_SUBMITTED_SQL
@@ -113,6 +113,7 @@ class DatabaseVersionDatasetsMixin(VersionCampaignsMixin, VersionRunConsolidatio
         did = "release-" + family + "-odd2"
         now = utc_now()
         with self._write_lock, self.connect() as conn:
+            self._lock_task_work(conn)
             if self.backend == "postgresql":
                 conn.execute("SELECT pg_advisory_xact_lock(hashtext(?))", (did,))
             old = conn.execute(
@@ -177,15 +178,18 @@ class DatabaseVersionDatasetsMixin(VersionCampaignsMixin, VersionRunConsolidatio
                             (campaign_id, iid),
                         ).fetchall()
                         role_task=conn.execute('SELECT cohort FROM human_version_tasks WHERE dataset_id=? AND campaign_id=?',(did,campaign_id)).fetchone()
-                        if len(assigned) > 1 and not role_task:
+                        allocation_row = conn.execute('SELECT filter_json FROM issue_work_splits WHERE id=?', (campaign_id,)).fetchone()
+                        edited_allocation = bool(_json_load(allocation_row['filter_json'], {}).get('task_allocation')) if allocation_row else False
+                        if len(assigned) > 1 and not role_task and not edited_allocation:
                             raise ValueError(
                                 "Overlapping original assignments require explicit resolution"
                             )
-                        if role_task:
+                        if role_task or edited_allocation:
                             owners=[r['assignee'] for r in assigned]
                             if binding.get('assignees') and set(binding['assignees'])!=set(owners):
                                 raise ValueError('Role task assignments changed')
-                            binding.update(assignees=owners,cohort=role_task['cohort'])
+                            binding.update(assignees=owners)
+                            if role_task: binding['cohort'] = role_task['cohort']
                             if binding.get('assignee') not in owners:
                                 raise ValueError('Primary reviewer is not assigned')
                         elif assigned:

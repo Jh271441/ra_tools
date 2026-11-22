@@ -40,6 +40,23 @@ def insert(conn, table, row):
 
 
 class VersionCampaignsMixin:
+    def _version_replay_bindings(self, conn, dataset_id, batch_key, bindings):
+        """Recreate a committed packet even after its live allocation changes."""
+        ingested = conn.execute(
+            'SELECT manifest_json FROM dataset_ingestion_batches WHERE dataset_id=? AND batch_key=?',
+            (dataset_id, batch_key),
+        ).fetchone()
+        if not ingested:
+            return
+        for item in _json_load(ingested['manifest_json'], {}).get('items', []):
+            previous = item.get('binding') or {}
+            current = bindings.get(item['issue_id'])
+            if (current and previous.get('assignee') and previous.get('run_id') == current['run_id']
+                    and self._resolve_version_campaign(conn, previous.get('campaign_id')) == current['campaign_id']):
+                campaign_id = current['campaign_id']
+                current.clear()
+                current.update(previous, campaign_id=campaign_id)
+
     def _version_event(self,conn,did,key,action,detail,actor):
         eid=str(uuid.uuid5(uuid.NAMESPACE_URL,'version-task:'+did+':'+action+':'+key))
         conn.execute('INSERT INTO dataset_audit_events(id,dataset_id,batch_key,issue_id,action,detail_json,actor,created_at) VALUES(?,?,?,\'\',?,?,?,?) ON CONFLICT(id) DO NOTHING',
@@ -140,7 +157,7 @@ class VersionCampaignsMixin:
     def consolidate_version_campaigns(self, *, dataset_id,backup_sha256,actor):
         if not re.fullmatch('[a-f0-9]{64}',backup_sha256) or not actor:raise ValueError('Verified backup and migration actor required')
         with self._write_lock,self.connect() as conn:
-            if self.backend=='sqlite':conn.execute('BEGIN IMMEDIATE')
+            self._lock_task_work(conn)
             if self.backend=='postgresql':conn.execute('SELECT pg_advisory_xact_lock(hashtext(?))',(dataset_id,))
             dataset=conn.execute('SELECT * FROM version_datasets WHERE id=?',(dataset_id,)).fetchone()
             if not dataset:raise ValueError('Unknown version dataset')
@@ -245,6 +262,7 @@ class VersionCampaignsMixin:
         if not re.fullmatch(r'20\d{6}',family) or not actor or len(set(issue_ids))!=len(issue_ids):raise ValueError('Invalid version append identity')
         expected=digest({'family':family,'issue_ids':sorted(issue_ids),'policy':policy})
         with self._write_lock,self.connect() as conn:
+            self._lock_task_work(conn)
             if self.backend=='postgresql':conn.execute('SELECT pg_advisory_xact_lock(hashtext(?))',(did,))
             dataset=conn.execute('SELECT * FROM version_datasets WHERE id=?',(did,)).fetchone()
             rid=str(uuid.uuid5(uuid.NAMESPACE_URL,'ra-triage:'+did))
@@ -268,11 +286,20 @@ class VersionCampaignsMixin:
             if replay:
                 receipt=_json_load(replay['detail_json'],{})
                 if receipt['fingerprint']!=expected:raise ValueError('Version append idempotency conflict')
-            assigned={r['issue_id']:dict(r) for r in conn.execute('SELECT * FROM review_work_assignments WHERE split_id=?',(root,)).fetchall()}
+            assignment_rows=[dict(r) for r in conn.execute('SELECT * FROM review_work_assignments WHERE split_id=? ORDER BY assignment_kind',(root,)).fetchall()]
+            assigned={}
+            for row in assignment_rows: assigned.setdefault(row['issue_id'], row)
+            custom = _json_load(campaign['filter_json'], {}).get('task_allocation')
             new=sorted(set(issue_ids)-set(assigned))
             if new:
                 weights = _VERSION_REVIEW_WEIGHTS.get(family, _DEFAULT_REVIEW_WEIGHTS)
                 people = tuple(person for person, _ in weights)
+                if custom:
+                    config = self._task_allocation(conn, root)[0]
+                    if not custom.get("groups"):
+                        self._validate_task_allocation(config, custom["assignees"], custom["reviewers_per_issue"],
+                                                       custom["overlap_ratio"], protected=True)
+                    people = tuple(p['name'] for p in custom['assignees'])
                 placeholders = ','.join('?' for _ in people)
                 roles={r['username']:r['role'] for r in conn.execute(
                     f'SELECT username,role FROM access_users WHERE username IN ({placeholders})', people
@@ -294,12 +321,31 @@ class VersionCampaignsMixin:
                 active_targets = set(current_target_ids)
                 counts=Counter(a['assignee'] for iid,a in assigned.items() if iid in active_targets)
                 ordinals={p:max([a['ordinal'] for a in assigned.values() if a['assignee']==p] or [0]) for p in people}
+                planned = defaultdict(list)
+                if custom:
+                    previous = defaultdict(list)
+                    for row in assignment_rows:
+                        if row['issue_id'] in active_targets:
+                            previous[row['issue_id']].append(row['assignee'])
+                    seed = int(campaign["seed"] or 0)
+                    rows = (self._append_group_allocation(conn, root, new, seed=seed, active_ids=active_targets)
+                            if custom.get("groups") else self._plan_task_allocation(
+                                conn, custom, new, seed=seed,
+                                previous=[dict(assignees=owners) for owners in previous.values()]))
+                    for row in rows:
+                        planned[row['issue_id']].append(row)
                 for m in new_members:
-                    person = next_version_reviewer(weights, counts)
-                    counts[person]+=1;ordinals[person]+=1
+                    rows = planned[m['issue_id']] if custom else [dict(assignee=next_version_reviewer(weights, counts), assignment_kind='base')]
+                    m.update(required_submitter_count=len(rows), reviewers_per_issue=len(rows),
+                             assignment_kinds_json=_json(sorted({r['assignment_kind'] for r in rows})))
                     insert(conn,'campaign_issue_members',m)
-                    record=dict(split_id=root,issue_id=m['issue_id'],assignee=person,assignment_kind='base',ordinal=ordinals[person],assigned_by=actor,assigned_at=utc_now());insert(conn,'review_work_assignments',record);assigned[m['issue_id']]=record
-                    insert(conn,'campaign_assignment_audit',dict(campaign_id=root,issue_id=m['issue_id'],action='assigned',assignment_kind='base',from_assignee='',to_assignee=person,changed_by=actor,changed_by_source='version_task_service',changed_by_verified=False,config_revision=int(campaign['config_revision'])+1,idempotency_key='version-add-'+digest([batch_key,m['issue_id']]),idempotency_fingerprint=digest(record),reason='append to version task',changed_at=utc_now()))
+                    for row in rows:
+                        person = row['assignee']
+                        counts[person]+=1;ordinals[person]+=1
+                        record=dict(split_id=root,issue_id=m['issue_id'],assignee=person,assignment_kind=row['assignment_kind'],ordinal=ordinals[person],assigned_by=actor,assigned_at=utc_now())
+                        insert(conn,'review_work_assignments',record);assignment_rows.append(record)
+                        assigned.setdefault(m['issue_id'], record)
+                        insert(conn,'campaign_assignment_audit',dict(campaign_id=root,issue_id=m['issue_id'],action='assigned',assignment_kind=row['assignment_kind'],from_assignee='',to_assignee=person,changed_by=actor,changed_by_source='version_task_service',changed_by_verified=False,config_revision=int(campaign['config_revision'])+1,idempotency_key='version-add-'+digest([batch_key,m['issue_id'],person]),idempotency_fingerprint=digest(record),reason='append to version task',changed_at=utc_now()))
                 refs={r['baseline_scope']:dict(r) for r in conn.execute('SELECT * FROM campaign_reference_items WHERE campaign_id=?',(root,)).fetchall()}
                 fresh={}
                 for scope in sorted({m['baseline_scope'] for m in new_members}):
@@ -314,22 +360,15 @@ class VersionCampaignsMixin:
                 revision=int(campaign['config_revision'])+1
                 conn.execute('UPDATE issue_work_splits SET workset_id=?,config_revision=?,total_count=?,updated_by=?,updated_at=? WHERE id=?',(wid,revision,len(all_members),actor,utc_now(),root))
                 self._campaign_refresh_compat_assignment_snapshot(conn,root)
+                if custom:
+                    conn.execute('UPDATE issue_work_splits SET reviewers_per_issue=? WHERE id=?',(custom['reviewers_per_issue'],root))
                 self._campaign_insert_revision(conn,campaign_id=root,revision_no=revision,changed_by=actor,changed_by_source='version_task_service',changed_by_verified=False,change_source='version_append',idempotency_key=batch_key)
             bindings={iid:dict(run_id=rid,campaign_id=root,assignee=a['assignee']) for iid,a in assigned.items()}
-            if replay and family in _VERSION_REVIEW_WEIGHTS:
-                ingested = conn.execute(
-                    'SELECT manifest_json FROM dataset_ingestion_batches WHERE dataset_id=? AND batch_key=?',
-                    (did, batch_key),
-                ).fetchone()
-                if ingested:
-                    # The bridge uses these bindings to recreate the original packet.
-                    # Keep its frozen owner on replay; read views use the live assignment.
-                    for item in _json_load(ingested['manifest_json'], {})['items']:
-                        previous = item.get('binding') or {}
-                        current = bindings.get(item['issue_id'])
-                        if (current and previous.get('assignee') and previous.get('run_id') == rid
-                                and previous.get('campaign_id') == root):
-                            current['assignee'] = previous['assignee']
+            if custom:
+                for iid, binding in bindings.items():
+                    binding['assignees'] = [a['assignee'] for a in assignment_rows if a['issue_id']==iid]
+            if replay:
+                self._version_replay_bindings(conn, did, batch_key, bindings)
             receipt=dict(campaign_id=root,added=len(new),added_ids=new,fingerprint=expected)
             self._version_event(conn,did,batch_key,'version_task_append',receipt,actor)
             self._mark_labeling_change(conn);self._mark_run_collection_change(conn)

@@ -104,6 +104,7 @@ async def _submit_combined_review(issue_id: str, request: Request, body: dict[st
             update_case_details=body.get("update_case_details") is True,
             is_excluded=_normalise_review_excluded(body["is_excluded"]) if "is_excluded" in body else None,
             expected_model_review_storage_id=_optional_int(body.get("expected_model_review_storage_id"), "expected_model_review_storage_id"),
+            expected_allocation_revision=body.get("expected_allocation_revision"),
             expected_case_revision_id=_optional_int(body.get("expected_case_revision_id"), "expected_case_revision_id"),
             expected_label_state_fingerprint=_as_text(body.get("expected_label_state_fingerprint")),
             idempotency_key=key,

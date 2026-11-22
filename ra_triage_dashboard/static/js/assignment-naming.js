@@ -28,15 +28,13 @@ function assignmentBaselineLabels(ids) {
 
 function assignmentNameContext(kind) {
   const baselineIds = assignmentBaselineIds(kind);
-  const reviewersPerIssue = kind === "review"
-    ? workSplitReviewersPerIssue()
-    : labelingTaskReviewersPerIssue();
-  const overlapRatio = reviewersPerIssue > 1
-    ? (kind === "review" ? workSplitOverlapRatio() : labelingTaskOverlapRatio())
-    : 0;
-  const assignees = kind === "review"
-    ? readWorkSplitAssignees()
-    : readLabelingTaskAssignees();
+  const prefix = kind === "review" ? "workSplit" : "labelingTask";
+  const groups = readAllocationGroupSetup($("#" + prefix + "GroupSetup"))?.groups || [];
+  const activeGroups = groups.filter((group) => group.coverage_percent > 0);
+  const reviewersPerIssue = Math.max(1, activeGroups.length);
+  const coverage = activeGroups.slice(1).reduce((sum, group) => sum + group.coverage_percent, 0);
+  const overlapRatio = Math.min(1, coverage / 100);
+  const assignees = new Set(groups.flatMap((group) => group.members.map((person) => person.name).filter(Boolean)));
   const filters = kind === "review" ? workSplitFilters() : {};
   const runId = kind === "review" ? String(filters.model_run_id || "") : "";
   const run = (state.modelRuns || []).find((item) => String(item.id || "") === runId);
@@ -47,7 +45,7 @@ function assignmentNameContext(kind) {
     caseCount: kind === "review" ? workSplitTotal() : Number(state.caseLabeling.data?.total || 0),
     reviewersPerIssue,
     overlapRatio,
-    memberCount: assignees.length,
+    memberCount: assignees.size,
     workflowMode: kind === "review"
       ? ($("#workSplitWorkflowMode")?.value || "model_review_and_case_label")
       : "",
@@ -151,6 +149,7 @@ function updateAssignmentNameSuggestion(kind, { immediate = false } = {}) {
   window.clearTimeout(slot.timer);
   const seq = ++slot.seq;
   renderAssignmentNameStatus(kind);
+  if (typeof queueCreationGroupPreview === "function") queueCreationGroupPreview(prefixForAssignmentName(kind));
   if (
     manual || !state.session?.is_admin
     || !context.baselineIds.length || !context.caseCount
@@ -194,9 +193,16 @@ function updateAssignmentNameSuggestion(kind, { immediate = false } = {}) {
         slot.appliedFingerprint = fingerprint;
       }
     } finally {
-      if (seq === slot.seq) renderAssignmentNameStatus(kind);
+      if (seq === slot.seq) {
+        renderAssignmentNameStatus(kind);
+        if (typeof queueCreationGroupPreview === "function") queueCreationGroupPreview(prefixForAssignmentName(kind));
+      }
     }
   }, immediate ? 0 : 650);
+}
+
+function prefixForAssignmentName(kind) {
+  return kind === "review" ? "workSplit" : "labelingTask";
 }
 
 function resetAssignmentNameSuggestion(kind) {

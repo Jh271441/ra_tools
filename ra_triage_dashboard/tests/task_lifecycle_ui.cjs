@@ -9,7 +9,9 @@ const sandbox={URL,URLSearchParams,state:{reviewAssignments:store,modelRuns:[{id
  pageUrl:(page,options)=>`/${page}?campaign=${options.campaignId||''}`,showToast:()=>{},
  api:async url=>{requests.push(url);return {items:[{split_id:'old',lifecycle:'superseded',is_current:false}],metrics:{batch_count:1,assignment_count:1,completed_count:1,pending_count:0}};}
 };
-vm.createContext(sandbox);vm.runInContext(fs.readFileSync('ra_triage_dashboard/static/js/review-assignments.js','utf8'),sandbox);
+vm.createContext(sandbox);
+for (const name of ['task-allocation.js', 'review-assignments.js'])
+ vm.runInContext(fs.readFileSync('ra_triage_dashboard/static/js/'+name,'utf8'),sandbox);
 const old={split_id:'old',lifecycle:'superseded',is_current:true,campaign_name:'Old task',members:[],assignment_count:4};
 const card=sandbox.renderReviewAssignmentBatch(old);
 assert(card.includes('已替代'));assert(card.includes('查看审计与复核'));assert(!card.includes('去判错复核'));assert(!card.includes('href="/review'));
@@ -44,11 +46,19 @@ for (const username of ['jasperchen','liangxianghui']) {
 sandbox.state.session={is_admin:false};
 
 assert(sandbox.renderReviewAssignmentBatch(active).includes('去判错复核'));
+assert(!sandbox.renderReviewAssignmentBatch(active).includes('data-edit-task-allocation'));
 let adminUserReads=0; sandbox.loadAccessUsers=async()=>{adminUserReads++;};
 sandbox.reassignReviewAssignment({dataset:{issueId:'cn1',originalAssignee:'bob'},querySelector:()=>({value:'writer'})});
 assert.equal(requests.length,0,'writer transfer must not call PATCH');
 // Administrator controls remain available on unfinished, current tasks.
 sandbox.state.session.is_admin=true;sandbox.document={querySelectorAll:()=>[]};
+assert(sandbox.renderReviewAssignmentBatch(active).includes('data-edit-task-allocation="active"'));
+assert(!sandbox.renderReviewAssignmentBatch(old).includes('data-edit-task-allocation'));
+assert(!sandbox.renderReviewAssignmentBatch(active).includes('删除分配'));
+sandbox.versionDatasetTime=String;
+const cancelled=sandbox.renderVersionAssignmentBatch({...active,appendable:true,lifecycle:'cancelled',is_current:false});
+assert(cancelled.includes('已取消'));assert(!cancelled.includes('开始联合复核'));
+assert(!cancelled.includes('data-edit-task-allocation'));
 sandbox.renderReviewAssignmentDetail();
 assert(elements.reviewAssignmentDetailRows.innerHTML.includes('data-review-assignment-save'));
 sandbox.state.session.is_admin=false;

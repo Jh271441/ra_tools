@@ -1,4 +1,5 @@
 import unittest
+import sqlite3
 from types import SimpleNamespace
 from ra_triage_dashboard.app.version_review_tasks import task, version_task_detail
 
@@ -30,6 +31,12 @@ class VersionReviewTasksTest(unittest.TestCase):
         self.assertIsNone(version_task_detail(self.db,'version:missing'))
 
     def test_physical_task_uses_real_campaign_id_and_old_alias(self):
+        conn = sqlite3.connect(':memory:')
+        conn.row_factory = sqlite3.Row
+        self.addCleanup(conn.close)
+        conn.execute('CREATE TABLE issue_work_splits (id TEXT, mode TEXT, reviewers_per_issue INTEGER, overlap_ratio REAL, lifecycle TEXT, legacy_read_only INTEGER, config_revision INTEGER)')
+        conn.execute('INSERT INTO issue_work_splits VALUES (?, ?, ?, ?, ?, ?, ?)', ('canonical-campaign', 'blind', 3, .5, 'active', 0, 1))
+        self.db.connect = lambda: conn
         self.db.version_campaign_id=lambda _: 'canonical-campaign'
         self.db.version_campaign_dataset=lambda _: self.dataset['id']
         for row in self.rows:
@@ -37,5 +44,6 @@ class VersionReviewTasksTest(unittest.TestCase):
         result=task(self.db,self.dataset)
         self.assertEqual(result['split_id'],'canonical-campaign')
         self.assertTrue(result['physically_merged'])
+        self.assertEqual((result['mode'], result['reviewers_per_issue'], result['overlap_ratio']), ('blind', 3, .5))
         self.assertEqual(version_task_detail(self.db,'old-campaign')['split_id'],'canonical-campaign')
         self.assertEqual(version_task_detail(self.db,'version:'+self.dataset['id'])['split_id'],'canonical-campaign')

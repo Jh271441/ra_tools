@@ -39,6 +39,11 @@ git show <完整40位提交SHA>:ra_triage_dashboard/scripts/deploy_cloud.py > /t
 python3 /tmp/ra-dashboard-deploy.py --sha <完整40位提交SHA>
 ```
 
+8786 PRE 正在使用时，在 cloud_server 调用 `deploy_cloud.py` 可通过
+`RA_DASHBOARD_DEPLOY_GRAY_PORT=18786` 指定空闲的回环灰度端口。分阶段使用
+`--prepare` 和 `--promote` 时沿用同一端口。已有的测试依赖目录可通过
+`RA_DASHBOARD_DEPLOY_TEST_PYTHONPATH` 传给 pytest，运行进程沿用各自的环境。
+
 目标必须是当前 origin/master，生产分支必须为干净的 master，并且可快进。
 发布器运行在已配置的 cloud_server，使用现有 Dashboard 专用 Python 环境。
 发布锁阻止这个入口的并发运行；其他手工部署也应迁移到此入口。

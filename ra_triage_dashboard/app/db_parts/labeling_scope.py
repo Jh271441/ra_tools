@@ -351,6 +351,7 @@ class LabelingScopeMixin:
         created_by_source: str = "legacy",
         created_by_verified: bool = False,
         idempotency_key: str = "",
+        allocation_config: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         workset = self.get_review_workset(workset_id)
         if workset is None:
@@ -387,7 +388,8 @@ class LabelingScopeMixin:
                 "name": str(workset.get("name") or "").strip(),
                 "workset_id": workset_id,
                 "seed": seed,
-                "filters": workset.get("source_filter") or {},
+                "filters": {**(workset.get("source_filter") or {}),
+                            **({"task_allocation": allocation_config} if allocation_config else {})},
                 "overlap_ratio": float(overlap_ratio),
                 "members": [
                     {
@@ -434,6 +436,7 @@ class LabelingScopeMixin:
             rows = conn.execute(
                 f"""
                 SELECT split.id, split.created_by, split.created_at, split.mode,
+                       split.lifecycle, split.legacy_read_only, split.config_revision,
                        split.reviewers_per_issue, split.overlap_ratio,
                        split.assignment_count, split.workset_id,
                        workset.selection_source_run_id AS workset_selection_source_run_id,
@@ -450,6 +453,9 @@ class LabelingScopeMixin:
         tasks = [
             {
                 "id": str(row["id"]),
+                "lifecycle": str(row["lifecycle"]),
+                "legacy_read_only": bool(row["legacy_read_only"]),
+                "config_revision": int(row["config_revision"] or 1),
                 "name": str(row["name"] or ""),
                 "baseline_scope": str(row["baseline_scope"] or ""),
                 "workset_id": str(row["workset_id"] or ""),

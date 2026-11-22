@@ -100,6 +100,7 @@ def _create_model_review_record(
             reviewer_verified=author_verified,
             label_state=label_state,
             expected_previous_annotation_id=expected_previous,
+            expected_allocation_revision=body.get("expected_allocation_revision"),
             attachments=attachments,
         )
     except AnnotationConflictError as exc:

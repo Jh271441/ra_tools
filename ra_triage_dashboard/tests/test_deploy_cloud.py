@@ -169,6 +169,16 @@ COMMIT;
         self.assertTrue(all(result[k] == "false" for k in d.OFF))
         self.assertEqual(env["DASHBOARD_DATA_DIR"], "/production")
 
+    def test_gray_port_uses_isolated_override_and_rejects_production_port(self):
+        with patch.dict(d.os.environ, {"RA_DASHBOARD_DEPLOY_GRAY_PORT": "18786"}):
+            port = d.configured_gray_port()
+        result = d.gray_env({}, Path("/candidate"), Path("/isolated"), "a" * 40, port=port)
+        self.assertEqual(result["DASHBOARD_PORT"], "18786")
+        self.assertEqual(result["DASHBOARD_HOST"], "127.0.0.1")
+        with patch.dict(d.os.environ, {"RA_DASHBOARD_DEPLOY_GRAY_PORT": "8785"}):
+            with self.assertRaises(d.DeployError):
+                d.configured_gray_port()
+
     def test_credentials_are_file_only(self):
         for key in ("DASHBOARD_DATABASE_URL", "DASHBOARD_API_KEY", "DASHBOARD_SECRET"):
             with self.assertRaises(d.DeployError):

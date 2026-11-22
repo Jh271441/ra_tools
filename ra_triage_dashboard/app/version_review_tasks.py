@@ -88,6 +88,13 @@ def task(db, dataset, *, assignee='', status='all', query='', page=1, page_size=
                       reviewers_per_issue=campaign.get('reviewers_per_issue', 2 if sampling else 1),
                       overlap_ratio=campaign.get('overlap_ratio', 1 if sampling else 0),
                       filter_snapshot=dict(version_live=True,version_dataset_id=dataset['id'],role_cohort=campaign['cohort']))
+    if canonical:
+        with db.connect() as conn:
+            config = conn.execute("SELECT mode,reviewers_per_issue,overlap_ratio,lifecycle,legacy_read_only,config_revision "
+                                  "FROM issue_work_splits WHERE id=?", (canonical,)).fetchone()
+            if config:
+                result.update(dict(config))
+                result["is_current"] = config["lifecycle"] == "active" and not config["legacy_read_only"]
     if detail:
         items=[]
         for row in rows:
@@ -106,13 +113,20 @@ def task(db, dataset, *, assignee='', status='all', query='', page=1, page_size=
     return result
 
 
-def version_tasks(db, *, assignee='', model_run_id=''):
+def version_tasks(db, *, assignee='', model_run_id='', lifecycle='current'):
+    from .db_parts.task_lifecycle import TERMINAL_TASK_LIFECYCLES, normalize_task_lifecycle
+    lifecycle = normalize_task_lifecycle(lifecycle)
     result=[]
     for dataset in db.list_version_datasets():
         if model_run_id and dataset['run_id']!=model_run_id:continue
         campaigns=getattr(db,'role_version_campaigns',lambda _: [])(dataset['id']) or [None]
         for campaign in campaigns:
             item=task(db,dataset,campaign=campaign)
+            terminal = item['lifecycle'] in TERMINAL_TASK_LIFECYCLES
+            if lifecycle == 'current' and terminal or lifecycle == 'history' and not terminal:
+                continue
+            if lifecycle not in {'current', 'history', 'all'} and item['lifecycle'] != lifecycle:
+                continue
             if assignee and not any(m['username'].lower()==assignee.lower() for m in item['members']):continue
             result.append(item)
     return result

@@ -374,6 +374,99 @@ async def update_campaign_assignment(
     return result
 
 
+@router.get("/api/campaigns/{campaign_id}/allocation")
+async def get_campaign_allocation(campaign_id: str, request: Request) -> dict[str, Any]:
+    _campaign_admin(request)
+    try:
+        return await asyncio.to_thread(database.get_campaign_allocation, campaign_id)
+    except ValueError as exc:
+        raise _detail(404, str(exc)) from exc
+
+
+@router.patch("/api/campaigns/{campaign_id}/allocation")
+async def update_campaign_allocation(campaign_id: str, request: Request) -> dict[str, Any]:
+    actor, source, verified = _campaign_admin(request)
+    body = _json_body(await request.body())
+    try:
+        result = await asyncio.to_thread(
+            database.update_campaign_allocation, campaign_id=campaign_id,
+            assignees=body.get("assignees"), reviewers_per_issue=body.get("reviewers_per_issue"),
+            overlap_ratio=body.get("overlap_ratio"), expected_revision=body.get("expected_revision"),
+            idempotency_key=_idempotency_key(request, body),
+            actor=actor, actor_source=source, actor_verified=verified,
+            quota_basis=body.get("quota_basis", "remaining"), preview_token=body.get("preview_token", ""),
+            cross_groups=body.get("cross_groups"),
+            groups=body.get("groups"),
+        )
+    except (CampaignConflictError, CampaignReadOnlyError) as exc:
+        raise _detail(409, str(exc)) from exc
+    except ValueError as exc:
+        raise _detail(400, str(exc)) from exc
+    result["change_revision"] = await asyncio.to_thread(database.change_revision)
+    return result
+
+
+@router.post("/api/campaigns/{campaign_id}/allocation/preview")
+async def preview_campaign_allocation(campaign_id: str, request: Request) -> dict[str, Any]:
+    _campaign_admin(request)
+    body = _json_body(await request.body())
+    try:
+        return await asyncio.to_thread(
+            database.preview_campaign_allocation, campaign_id=campaign_id,
+            assignees=body.get("assignees"), reviewers_per_issue=body.get("reviewers_per_issue"),
+            overlap_ratio=body.get("overlap_ratio"), expected_revision=body.get("expected_revision"),
+            quota_basis=body.get("quota_basis", "remaining"),
+            cross_groups=body.get("cross_groups"),
+            groups=body.get("groups"),
+        )
+    except (CampaignConflictError, CampaignReadOnlyError) as exc:
+        raise _detail(409, str(exc)) from exc
+    except ValueError as exc:
+        raise _detail(400, str(exc)) from exc
+
+
+@router.post("/api/campaigns/{campaign_id}/allocation/assignees/{assignee}/removal-preview")
+async def preview_campaign_member_removal(campaign_id: str, assignee: str, request: Request) -> dict[str, Any]:
+    _campaign_admin(request)
+    body = _json_body(await request.body(), maximum=16 * 1024)
+    try:
+        return await asyncio.to_thread(
+            database.preview_campaign_member_removal, campaign_id=campaign_id, assignee=assignee,
+            expected_revision=body.get("expected_revision"), quota_basis=body.get("quota_basis", "remaining"),
+        )
+    except (CampaignConflictError, CampaignReadOnlyError) as exc:
+        raise _detail(409, str(exc)) from exc
+    except ValueError as exc:
+        raise _detail(400, str(exc)) from exc
+
+
+@router.delete("/api/campaigns/{campaign_id}/allocation/assignees/{assignee}")
+async def delete_campaign_allocation_member(campaign_id: str, assignee: str, request: Request) -> dict[str, Any]:
+    actor, source, verified = _campaign_admin(request)
+    body = _json_body(await request.body(), maximum=16 * 1024)
+    try:
+        result = await asyncio.to_thread(
+            database.delete_campaign_allocation_member, campaign_id=campaign_id, assignee=assignee,
+            expected_revision=body.get("expected_revision"), quota_basis=body.get("quota_basis", "remaining"),
+            preview_token=body.get("preview_token", ""), idempotency_key=_idempotency_key(request, body),
+            actor=actor, actor_source=source, actor_verified=verified,
+        )
+    except (CampaignConflictError, CampaignReadOnlyError) as exc:
+        raise _detail(409, str(exc)) from exc
+    except ValueError as exc:
+        raise _detail(400, str(exc)) from exc
+    result["change_revision"] = await asyncio.to_thread(database.change_revision)
+    return result
+
+
+@router.delete("/api/campaigns/{campaign_id}/allocation")
+async def delete_campaign_allocation(campaign_id: str, request: Request) -> dict[str, Any]:
+    """Remove the allocation from current work using the existing cancelled state."""
+    _campaign_admin(request)
+    campaign_id = await asyncio.to_thread(database.resolve_version_campaign, campaign_id)
+    return await _transition_campaign(campaign_id, request, action="cancel")
+
+
 @router.post("/api/campaigns/{campaign_id}/close")
 async def close_campaign(campaign_id: str, request: Request) -> dict[str, Any]:
     actor, source, verified = _campaign_admin(request)

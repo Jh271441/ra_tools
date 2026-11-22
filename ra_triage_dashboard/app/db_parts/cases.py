@@ -2048,7 +2048,27 @@ class DatabaseCasesMixin:
             raise ValueError("新负责人不能为空。")
         if not actor:
             raise ValueError("任务调整人不能为空。")
+        # Canonical tasks use the same saved-work guard and audit as the editor.
+        with self.connect() as conn:
+            canonical = conn.execute("SELECT purpose,config_revision FROM issue_work_splits WHERE id=?",
+                                     (normalized_split_id,)).fetchone()
+            source = conn.execute("SELECT assignee,assignment_kind FROM review_work_assignments "
+                                  "WHERE split_id=? AND issue_id=? ORDER BY ordinal,assignee LIMIT 1",
+                                  (normalized_split_id, normalized_issue_id)).fetchone()
+        if canonical and canonical["purpose"] and source:
+            if source["assignee"] == normalized_assignee:
+                return dict(split_id=normalized_split_id, issue_id=normalized_issue_id, changed=False)
+            result = self.update_campaign_assignment(
+                campaign_id=normalized_split_id, issue_id=normalized_issue_id, action="reassign",
+                from_assignee=source["assignee"], assignee=normalized_assignee,
+                assignment_kind=source["assignment_kind"], actor=actor,
+                expected_revision=canonical["config_revision"],
+                idempotency_key=f"legacy-reassign-{uuid.uuid4().hex}",
+            )
+            return {**result, "split_id": normalized_split_id,
+                    "from_assignee": source["assignee"], "to_assignee": normalized_assignee}
         with self._write_lock, self.connect() as conn:
+            self._lock_task_work(conn)
             split = conn.execute(
                 "SELECT * FROM issue_work_splits WHERE id = ?",
                 (normalized_split_id,),
@@ -2302,6 +2322,7 @@ class DatabaseCasesMixin:
         reviewer_count = int(split["reviewers_per_issue"] or 1)
         return {
             "split_id": str(split["id"]),
+            "config_revision": int(split["config_revision"] or 1),
             "purpose": str(split["purpose"] or ""),
             "mode": str(split["mode"] or "single"),
             "model_run_id": str(split["model_run_id"] or ""),
@@ -2651,6 +2672,7 @@ class DatabaseCasesMixin:
         if not rows:
             raise ValueError("没有可写入的 Issue 分配。")
         with self._write_lock, self.connect() as conn:
+            self._lock_task_work(conn)
             conn.execute(
                 """
                 INSERT INTO issue_work_splits (
@@ -2679,7 +2701,7 @@ class DatabaseCasesMixin:
                 batch = issue_ids[offset : offset + 500]
                 conn.execute(
                     "DELETE FROM review_work_assignments WHERE split_id IN "
-                    "(SELECT id FROM issue_work_splits WHERE model_run_id = ?) "
+                    "(SELECT id FROM issue_work_splits WHERE model_run_id = ? AND COALESCE(purpose, '') = '') "
                     f"AND issue_id IN ({', '.join('?' for _ in batch)})",
                     (str(model_run_id or "").strip(), *batch),
                 )

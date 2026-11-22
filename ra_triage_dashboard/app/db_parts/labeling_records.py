@@ -320,9 +320,11 @@ class LabelingRecordsMixin:
         task_id: str = "",
         source_run_id: str = "",
         expected_previous_revision_id: int | None = None,
+        expected_allocation_revision: int | None = None,
         attachments: Sequence[dict[str, Any]] = (),
         mention_recipients: Sequence[str] = (),
     ) -> dict[str, Any]:
+        self._validate_allocation_revision(expected_allocation_revision)
         label = str(expected_output or "").strip()
         if label and label not in LABELS:
             raise ValueError("期望输出仅支持：误触发、正确触发、无需协助。")
@@ -339,6 +341,7 @@ class LabelingRecordsMixin:
         )
         now = utc_now()
         with self._write_lock, self.connect() as conn:
+            self._lock_task_work(conn)
             if self.backend == "postgresql":
                 conn.execute(
                     "SELECT id FROM label_cases WHERE id = ? FOR UPDATE",
@@ -346,7 +349,7 @@ class LabelingRecordsMixin:
                 ).fetchone()
             if task_id:
                 campaign = conn.execute(
-                    "SELECT purpose, lifecycle, legacy_read_only FROM issue_work_splits WHERE id = ?",
+                    "SELECT purpose, lifecycle, legacy_read_only, config_revision FROM issue_work_splits WHERE id = ?",
                     (task_id,),
                 ).fetchone()
                 if (
@@ -356,6 +359,8 @@ class LabelingRecordsMixin:
                     or str(campaign["purpose"] or "labeling") != "labeling"
                 ):
                     raise ValueError("该 Campaign 当前只读，不能提交标注。")
+                if expected_allocation_revision is not None and campaign["config_revision"] != expected_allocation_revision:
+                    raise LabelAnnotationConflictError("任务分配已变化，草稿保留，请刷新任务后确认 / Allocation changed; your draft is retained. Reload the task and confirm")
             if task_id:
                 assigned = conn.execute(
                     """

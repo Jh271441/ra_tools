@@ -137,26 +137,6 @@ class CampaignStorageTest(unittest.TestCase):
         self.assertEqual(created["progress"]["required_submitter_count"], 3)
         self.assertEqual([item["required_submitter_count"] for item in created["issues"]], [2, 1])
 
-        for issue_id, reviewer in (
-            ("cn001", "alice"),
-            ("cn001", "bob"),
-            ("cn002", "alice"),
-        ):
-            self.db.create_model_review(
-                issue_id=issue_id,
-                model_run_id=self.run_a["id"],
-                status="completed",
-                reason="reviewed",
-                missing_evidence=[],
-                reviewer=reviewer,
-                campaign_id=campaign_id,
-                reference_id=reference_id,
-                work_split_id=campaign_id,
-            )
-        progressed = self.db.get_campaign(campaign_id)
-        self.assertEqual(progressed["progress"]["submitted_submitter_count"], 3)
-        self.assertEqual(progressed["progress"]["completed_issue_count"], 2)
-
         change_args = {
             "campaign_id": campaign_id,
             "issue_id": "cn002",
@@ -176,6 +156,30 @@ class CampaignStorageTest(unittest.TestCase):
             self.db.update_campaign_assignment(
                 **{**change_args, "assignee": "dave"}
             )
+
+        for issue_id, reviewer in (
+            ("cn001", "alice"),
+            ("cn001", "bob"),
+            ("cn002", "alice"),
+        ):
+            self.db.create_model_review(
+                issue_id=issue_id,
+                model_run_id=self.run_a["id"],
+                status="completed",
+                reason="reviewed",
+                missing_evidence=[],
+                reviewer=reviewer,
+                campaign_id=campaign_id,
+                reference_id=reference_id,
+                work_split_id=campaign_id,
+            )
+        progressed = self.db.get_campaign(campaign_id)
+        self.assertEqual(progressed["progress"]["submitted_submitter_count"], 3)
+        self.assertEqual(progressed["progress"]["completed_issue_count"], 1)
+
+        with self.assertRaisesRegex(ValueError, "coverage counts"):
+            self.db.update_campaign_assignment(**{**change_args, "assignee": "erin",
+                "expected_revision": 2, "idempotency_key": "saved-coverage-change"})
 
         reassign_args = {
             **change_args,

@@ -209,6 +209,7 @@ async function saveAnnotation(event) {
   const payload = {
     model_run_id: state.reviewEditRunId || currentReviewRunId(state.selectedCase),
     work_split_id: reviewWorkSplitBinding(state.selectedCase),
+    expected_allocation_revision: state.selectedCase?.review_assignment?.config_revision ?? null,
     expected_previous_annotation_id: currentReviewBaseAnnotationId(
       currentReviewAnnotation(state.selectedCase),
       state.reviewEditRunId || currentReviewRunId(state.selectedCase),
@@ -367,6 +368,7 @@ async function saveCombinedReview(event) {
     reason: $("#annotationNote")?.value || "",
     missing_evidence: [...document.querySelectorAll('input[name="missingEvidence"]:checked')].map((input) => input.value),
     expected_model_review_storage_id: context.model_review_storage_id || null,
+    expected_allocation_revision: context.campaign?.config_revision ?? null,
   });
   const imageKey = caseRationaleImageKey(caseData);
   const imageItems = [...caseRationalePendingImages(caseData)];

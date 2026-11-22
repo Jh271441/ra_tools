@@ -13,8 +13,7 @@ def repair_association(database, *, submission_id, campaign_id, label_revision_i
     if not str(actor).strip() or not str(reason).strip():
         raise ValueError("修复必须记录操作人和原因。")
     with database._write_lock, database.connect() as conn:
-        if database.backend == "postgresql":
-            conn.execute("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE")
+        database._lock_task_work(conn)
         source = conn.execute(
             "SELECT * FROM combined_review_submissions WHERE id=?", (submission_id,),
         ).fetchone()

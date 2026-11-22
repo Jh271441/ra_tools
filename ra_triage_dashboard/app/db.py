@@ -31,6 +31,7 @@ from .db_parts.role_version_tasks import RoleVersionTasksMixin
 from .db_parts.batch import DatabaseBatchMixin
 from .db_parts.cases import DatabaseCasesMixin
 from .db_parts.campaigns import DatabaseCampaignMixin
+from .db_parts.campaign_allocation import DatabaseCampaignAllocationMixin
 from .db_parts.comments import DatabaseCommentsMixin
 from .db_parts.core import DatabaseCoreMixin
 from .db_parts.gt_sync import DatabaseGtSyncMixin
@@ -51,6 +52,7 @@ from .db_parts.comment_mutations import DatabaseCommentMutationsMixin
 
 
 class Database(
+    DatabaseCampaignAllocationMixin,
     RoleVersionTasksMixin,
     DatabaseHumanLabelsMixin,
     DatabaseCommentMutationsMixin,

@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class AssignmentCreationScopeTest(unittest.TestCase):
     def test_draft_submission_ignores_hidden_review_filters(self):
-        script = (ROOT / 'static/js/work-split.js').read_text() + r'''
+        script = (ROOT / 'static/js/assignment-setup.js').read_text() + (ROOT / 'static/js/work-split.js').read_text() + r'''
 const assert = require('node:assert/strict');
 state = {session:{is_admin:true}, selectedRunId:'old-run', caseTotal:999, activePage:'review-assignments', workAssigneeRequestSeq:0};
 currentReviewFilterPayload = () => ({model_run_id:'old-run', work_split_id:'old-task', search:'stale'});
@@ -15,15 +15,23 @@ workSplitDraft = {filters:{model_run_id:'new-run', baselines:'0522', comparison:
 const copy = workSplitFilters(); copy.model_run_id='changed';
 assert.equal(workSplitFilters().model_run_id,'new-run');
 assert.equal(workSplitTotal(),12);
-readWorkSplitAssignees=()=>[{name:'alice',count:null}];
-workSplitReviewersPerIssue=()=>1; workSplitOverlapRatio=()=>0;
-$=()=>null; t=(key)=>key; showToast=()=>{};
+const setup={groups:[{group_id:'group-1',coverage_percent:100,members:[{name:'alice',review_percent:100}]}],cross_groups:[]};
+readAllocationGroupSetup=()=>setup;
+$=(selector)=>selector==='#workSplitGroupSetup'?{}:null; t=(key)=>key; showToast=()=>{};
+renderCreationAllocationPreview=()=>{};
 acknowledgeLocalChange=()=>{};renderWorkAssigneeFilter=()=>{};saveReviewAllocationDraft=()=>{};
 renderWorkSplitResults=()=>{};loadReviewAssignments=async()=>{};
 let sent;
-api=async(path, options)=>{sent=JSON.parse(options.body);return {work_assignees:[]};};
+api=async(path, options)=>{
+ sent=JSON.parse(options.body);
+ return sent.preview_only ? {preview:{preview_token:"frozen-scope"}} : {work_assignees:[]};
+};
 (async()=>{
+ const body=creationAllocationBody('workSplit');
+ assert.deepEqual(body.groups,setup.groups);
+ creationAllocation.set('workSplit',{serialized:JSON.stringify(body),plan:{preview_token:'frozen-scope'},requestId:'test'});
  await generateWorkSplit();
+ assert.equal(sent.preview_token,"frozen-scope");
  assert.equal(sent.filters.model_run_id,'new-run');
  assert.equal(sent.filters.work_split_id,'');
  assert.equal(sent.filters.baselines,'0522');
@@ -105,9 +113,9 @@ assert.deepEqual(caseLabelingTagAttributes({label_state:'conflict',label_cases:[
         work_split = (ROOT / 'static/js/work-split.js').read_text()
         case_labeling = (ROOT / 'static/js/case-labeling.js').read_text()
         intent = (ROOT / 'static/js/intent-workspaces.js').read_text()
-        self.assertIn('root.innerHTML = "";\n    ensureWorkSplitPeople(1);', work_split)
+        self.assertIn("groups: [newAllocationGroup()]", work_split)
         self.assertNotIn('users.forEach((user)', work_split)
-        self.assertIn('root.innerHTML = "";\n    ensureLabelingTaskPeople(1);', case_labeling)
+        self.assertIn("groups: [newAllocationGroup()]", case_labeling)
         self.assertNotIn('users.forEach((user)', case_labeling)
         self.assertIn('intent.experimentDraftMembers = [];', intent)
         self.assertIn('setMultiFilterValues($("#intentExperimentMembers"), []);', intent)

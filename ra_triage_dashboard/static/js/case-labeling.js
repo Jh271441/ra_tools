@@ -317,6 +317,8 @@ function renderLabelingTaskHistory() {
   const list = $("#labelingTaskHistoryList");
   const count = $("#labelingTaskHistoryCount");
   if (!list) return;
+  const historyLink = $("#labelingTaskCancelledHistory");
+  if (historyLink) historyLink.href = pageUrl("campaigns", { purpose: "labeling", lifecycle: "history" });
   const tasks = state.caseLabeling.tasks || [];
   if (count) count.textContent = String(tasks.length);
   if (!tasks.length) {
@@ -337,7 +339,7 @@ function renderLabelingTaskHistory() {
       : uiText("单人标注", "Single labeler");
     return `<article class="intent-experiment-item case-experiment-item">
       <div><h4>${escapeHtml(task.name || uiText("未命名实验", "Unnamed experiment"))}</h4><div class="intent-experiment-meta">${escapeHtml(mode)} · ${escapeHtml(uiText(`${total} 个 Case`, `${total} Cases`))} · ${escapeHtml(task.created_by || "")}${task.created_at ? ` · ${escapeHtml(formatTime(task.created_at))}` : ""}</div></div>
-      <button class="button button-quiet" type="button" data-open-labeling-task="${escapeHtml(task.id || "")}">${escapeHtml(uiText("打开实验", "Open experiment"))}</button>
+      <div class="review-assignment-batch-actions">${taskAllocationEditAction(task)}<button class="button button-quiet" type="button" data-open-labeling-task="${escapeHtml(task.id || "")}">${escapeHtml(uiText("打开实验", "Open experiment"))}</button></div>
       <div class="intent-experiment-detail-row"><div class="intent-experiment-member-stats"><span>${escapeHtml(uiText(`已完成 ${resolved}`, `Completed ${resolved}`))}</span><span>${escapeHtml(uiText(`待处理 ${Math.max(0, total - resolved)}`, `Pending ${Math.max(0, total - resolved)}`))}</span>${conflict ? `<span>${escapeHtml(uiText(`冲突 ${conflict}`, `Conflicts ${conflict}`))}</span>` : ""}</div><div class="intent-experiment-progress"><span class="intent-experiment-progress-track"><i class="is-complete" style="width:${percent}%"></i></span><small>${percent}%</small></div></div>
     </article>`;
   }).join("");
@@ -483,105 +485,6 @@ async function exportLabelingGtUpdate(filters = {}, button = null) {
   }
 }
 
-function labelingTaskReviewersPerIssue() {
-  const value = Number.parseInt($("#labelingTaskReviewersPerIssue")?.value || "1", 10);
-  return Number.isFinite(value) ? Math.max(1, value) : 1;
-}
-
-function labelingTaskOverlapRatio() {
-  const value = Number.parseFloat($("#labelingTaskOverlapRatio")?.value || "1");
-  return Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 1;
-}
-
-function renderLabelingTaskPersonPickers() {
-  renderWorkSplitPersonPickers("#labelingTaskPeople");
-}
-
-function ensureLabelingTaskPeople(minRows = 2) {
-  ensureWorkSplitPeople(minRows, "#labelingTaskPeople");
-}
-
-function readLabelingTaskAssignees() {
-  return readWorkSplitAssignees("#labelingTaskPeople");
-}
-
-function updateLabelingTaskOverlapVisibility() {
-  const field = $("#labelingTaskOverlapField");
-  if (field) field.hidden = labelingTaskReviewersPerIssue() <= 1;
-}
-
-function renderLabelingTaskOverlapPicker(selected = null) {
-  const picker = $("#labelingTaskOverlapPicker");
-  if (!picker) return 1;
-  const requested =
-    selected === null ? labelingTaskOverlapRatio() : Number.parseFloat(String(selected));
-  const value = Number.isFinite(requested) ? Math.min(1, Math.max(0, requested)) : 1;
-  populateUiSelect(
-    picker,
-    [0, 0.1, 0.2, 0.3, 0.5, 1].map((ratio) => ({
-      value: String(ratio),
-      label: `${Math.round(ratio * 100)}%`,
-    })),
-    String(value),
-  );
-  bindUiSelect(picker, { maxHeight: 260, maxWidth: 180 });
-  return value;
-}
-
-function renderLabelingTaskReviewersPerIssuePicker(selected = null) {
-  const picker = $("#labelingTaskReviewersPerIssuePicker");
-  if (!picker) return 1;
-  const maximum = Math.max(1, readLabelingTaskAssignees().length);
-  const requested =
-    selected === null
-      ? labelingTaskReviewersPerIssue()
-      : Number.parseInt(String(selected), 10);
-  const value = Math.min(Math.max(1, Number.isFinite(requested) ? requested : 1), maximum);
-  populateUiSelect(
-    picker,
-    Array.from({ length: maximum }, (_, index) => ({
-      value: String(index + 1),
-      label: uiText(`${index + 1} 人`, `${index + 1} ${index ? "people" : "person"}`),
-    })),
-    String(value),
-  );
-  bindUiSelect(picker, { maxHeight: 260, maxWidth: 180 });
-  return value;
-}
-
-function updateLabelingTaskEstimate() {
-  const reviewers = labelingTaskReviewersPerIssue();
-  const overlapRatio = labelingTaskOverlapRatio();
-  const people = readLabelingTaskAssignees();
-  const total = Number(state.caseLabeling.data?.total || 0);
-  const target = $("#labelingTaskEstimate");
-  updateAssignmentNameSuggestion("labeling");
-  updateLabelingTaskOverlapVisibility();
-  document
-    .querySelectorAll("#labelingTaskPeople .work-split-person-count")
-    .forEach((input) => {
-      input.placeholder = reviewers > 1 ? "自动均衡" : t("work.even_split");
-    });
-  if (!target) return;
-  if (reviewers > people.length && people.length) {
-    target.textContent = `每个 Case 的人数不能超过已选 ${people.length} 人`;
-    return;
-  }
-  const overlapCount =
-    reviewers > 1 ? Math.min(total, Math.round(total * overlapRatio)) : 0;
-  const assignmentCount = total + overlapCount * (reviewers - 1);
-  target.textContent =
-    reviewers === 1
-      ? t("work.single_estimate", { total })
-      : t("work.blind_estimate", {
-          total,
-          ratio: Math.round(overlapRatio * 100),
-          overlap: overlapCount,
-          reviewers,
-          assignments: assignmentCount,
-        });
-}
-
 async function enterLabelingNewTask({ route = null } = {}) {
   if (!state.session?.is_admin && !state.session?.identity_pending) {
     showToast("实验分配仅限管理员。", true);
@@ -616,21 +519,9 @@ async function enterLabelingNewTask({ route = null } = {}) {
     showToast(error.message || t("work.load_users_fail"), true);
     return;
   }
-  const root = $("#labelingTaskPeople");
-  if (root) {
-    root.innerHTML = "";
-    ensureLabelingTaskPeople(1);
-    if (!state.accessUsers?.length) {
-      showToast(t("work.no_writers"), true);
-    }
-  }
-  renderLabelingTaskPersonPickers();
-  if ($("#labelingTaskReviewersPerIssue")) $("#labelingTaskReviewersPerIssue").value = "1";
   if ($("#labelingTaskSeed")) $("#labelingTaskSeed").value = "";
-  renderLabelingTaskReviewersPerIssuePicker(1);
-  renderLabelingTaskOverlapPicker(1);
   resetAssignmentNameSuggestion("labeling");
-  updateLabelingTaskEstimate();
+  displayCreationGroupSetup("labelingTask", { groups: [newAllocationGroup()] });
 }
 
 function renderLabelingTaskResults(payload) {
@@ -654,7 +545,7 @@ function renderLabelingTaskResults(payload) {
   root.classList.remove("hidden");
   root.innerHTML = `
     <div class="work-split-results-heading">
-      <strong>标注任务已创建</strong>
+      <strong>${escapeHtml(uiText("标注任务已创建", "Labeling task created"))}</strong>
       <span>${escapeHtml(task.name || task.id || "")} · ${escapeHtml(
         t("work.task_count", { n: Number(payload?.total || 0) })
       )} · ${escapeHtml(
@@ -664,7 +555,7 @@ function renderLabelingTaskResults(payload) {
       )}</span>
       <button class="button button-quiet" type="button" data-open-labeling-task="${escapeHtml(
         task.id || ""
-      )}">查看该任务</button>
+      )}">${escapeHtml(uiText("查看该任务", "Open task"))}</button>
     </div>
     <div class="work-split-card-grid">${cards}</div>
   `;
@@ -675,59 +566,21 @@ async function generateLabelingTask() {
     showToast(t("work.split_admin_only"), true);
     return;
   }
-  const assignees = readLabelingTaskAssignees();
-  if (!assignees.length) {
-    showToast(t("work.need_reviewer"), true);
-    return;
-  }
-  const reviewersPerIssue = labelingTaskReviewersPerIssue();
-  if (reviewersPerIssue > assignees.length) {
-    showToast(`每个 Case 的标注人数不能超过已选 ${assignees.length} 人。`, true);
-    return;
-  }
-  const overlapRatio = reviewersPerIssue > 1 ? labelingTaskOverlapRatio() : 0;
-  const seedRaw = ($("#labelingTaskSeed")?.value || "").trim();
-  const name = ($("#labelingTaskName")?.value || "").trim();
-  const body = {
-    filters: labelingTaskFilterPayload(),
-    assignees,
-    reviewers_per_issue: reviewersPerIssue,
-    overlap_ratio: overlapRatio,
-  };
-  if (seedRaw !== "") {
-    const seed = Number(seedRaw);
-    if (!Number.isFinite(seed)) {
-      showToast(t("work.seed_int"), true);
-      return;
-    }
-    body.seed = seed;
-  }
-  if (name) body.name = name;
-  const button = $("#labelingTaskGenerate");
-  if (button) {
-    button.disabled = true;
-    button.setAttribute("aria-busy", "true");
-  }
   try {
-    const result = await api("/api/labeling/tasks", {
-      method: "POST",
-      body: JSON.stringify(body),
-    });
+    const result = await submitGroupedCreation("labelingTask");
+    if (!result) return;
     acknowledgeLocalChange(result);
     renderLabelingTaskResults(result);
     await loadCaseLabelingTasks();
-    showToast("标注任务已创建。");
+    showToast(uiText("标注任务已创建。", "Labeling task created."));
   } catch (error) {
-    showToast(error.message || "创标注任务失败。", true);
-  } finally {
-    if (button) {
-      button.disabled = false;
-      button.removeAttribute("aria-busy");
-    }
+    showToast(creationAllocationError(error), true);
   }
 }
 
+
 function bindLabelingTaskControls() {
+  bindCreationGroupSetup("labelingTask");
   $("#labelingCombinedTaskRefresh")?.addEventListener("click", () => loadLabelingCombinedTasks());
   bindAssignmentNameInput("labeling");
   $("#caseLabelingCreateTask")?.addEventListener("click", () => {
@@ -756,37 +609,6 @@ function bindLabelingTaskControls() {
   };
   $("#labelingTaskBack")?.addEventListener("click", leaveTaskPage);
   $("#labelingTaskCancel")?.addEventListener("click", leaveTaskPage);
-  $("#labelingTaskAddPerson")?.addEventListener("click", () => {
-    $("#labelingTaskPeople")?.insertAdjacentHTML("beforeend", workSplitPersonRow());
-    renderLabelingTaskPersonPickers();
-    renderLabelingTaskReviewersPerIssuePicker();
-    updateLabelingTaskEstimate();
-  });
-  $("#labelingTaskPeople")?.addEventListener("click", (event) => {
-    const remove = event.target.closest(".work-split-remove-person");
-    if (!remove) return;
-    const row = remove.closest(".work-split-person-row");
-    if (!row) return;
-    row.remove();
-    ensureLabelingTaskPeople(1);
-    renderLabelingTaskPersonPickers();
-    renderLabelingTaskReviewersPerIssuePicker();
-    updateLabelingTaskEstimate();
-  });
-  $("#labelingTaskPeople")?.addEventListener("change", (event) => {
-    if (event.target.matches(".work-split-person-name")) {
-      event.target.closest(".work-split-person-picker").dataset.workSplitSelected =
-        event.target.value || "";
-      renderLabelingTaskPersonPickers();
-      renderLabelingTaskReviewersPerIssuePicker();
-    }
-    updateLabelingTaskEstimate();
-  });
-  $("#labelingTaskPeople")?.addEventListener("input", (event) => {
-    if (event.target.matches(".work-split-person-count")) updateLabelingTaskEstimate();
-  });
-  $("#labelingTaskReviewersPerIssue")?.addEventListener("change", updateLabelingTaskEstimate);
-  $("#labelingTaskOverlapRatio")?.addEventListener("change", updateLabelingTaskEstimate);
   $("#labelingTaskGenerate")?.addEventListener("click", () => {
     generateLabelingTask().catch((error) => showToast(error.message, true));
   });
@@ -1677,6 +1499,7 @@ async function saveCaseLabelingRevision(event) {
   const payload = {
     ...caseLabelingFormPayload(),
     expected_previous_revision_id: revision?.id || null,
+    expected_allocation_revision: caseData.allocation_revision ?? null,
   };
   const files = state.caseLabeling.pendingImages.map((item) => item.file);
   if (files.length > 4) {

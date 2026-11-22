@@ -61,9 +61,8 @@ def apply_migration(db,*,dataset_id,expected_fingerprint,backup_sha256,actor,his
         raise ValueError('Verified backup and explicit historical role policy required')
     if db.access_role(actor)!='admin':raise PermissionError('Cutover requires a directory administrator')
     with db._write_lock,db.connect() as conn:
-        if db.backend=='sqlite':conn.execute('BEGIN IMMEDIATE')
-        else:
-            conn.execute('SET TRANSACTION ISOLATION LEVEL SERIALIZABLE')
+        db._lock_task_work(conn)
+        if db.backend=='postgresql':
             conn.execute('SELECT pg_advisory_xact_lock(hashtext(?))',(dataset_id,))
         replay=conn.execute("SELECT detail_json FROM dataset_audit_events WHERE dataset_id=? AND action='role_task_cutover'",(dataset_id,)).fetchone()
         if replay:

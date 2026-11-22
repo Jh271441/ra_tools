@@ -87,8 +87,7 @@ class TrailLocalImportMixin:
     def commit_trail_local_import(self, *, operation_id, actor, scopes, items):
         """Validate all rows before any append; audit and votes commit together."""
         with self._write_lock, self.connect() as conn:
-            if self.backend == "sqlite":
-                conn.execute("BEGIN IMMEDIATE")
+            self._lock_task_work(conn)
             existing = conn.execute("SELECT actor, result_json FROM trail_local_imports WHERE operation_id=?", (operation_id,)).fetchone()
             if existing:
                 if existing["actor"] != actor:

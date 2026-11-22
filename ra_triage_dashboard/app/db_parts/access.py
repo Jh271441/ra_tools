@@ -142,6 +142,7 @@ class DatabaseAccessMixin:
             raise ValueError("标注权限必须是 manage、annotate 或 view。")
         now = utc_now()
         with self._write_lock, self.connect() as conn:
+            self._lock_task_work(conn)
             current = conn.execute(
                 "SELECT role, intent_permission FROM access_users WHERE username = ?",
                 (normalized,),
@@ -190,6 +191,7 @@ class DatabaseAccessMixin:
     def delete_access_user(self, username: str) -> bool:
         normalized = str(username or "").strip().lower()
         with self._write_lock, self.connect() as conn:
+            self._lock_task_work(conn)
             current = conn.execute(
                 "SELECT role FROM access_users WHERE username = ?",
                 (normalized,),

@@ -59,6 +59,10 @@
   /* Older Android Chromium makes query containers fixed-position containing blocks.
      Tablet/phone layout is owned by the responsive rules below. */
   .app-frame, .assignment-composer, .review-tag-dropdown, .evidence-dropdown { container-type: normal; }
+  .assignment-composer .assignment-config-fields { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .assignment-composer .case-experiment-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .assignment-config-fields > :is(.work-split-name, .labeling-task-name) { grid-column: 1 / -1; }
+  .assignment-config-fields .work-split-seed > span:first-child { white-space: normal; overflow-wrap: anywhere; }
   .review-filters,
   .analysis-filters,
   .trail-update-filters,
@@ -335,6 +339,14 @@
   .intent-experiment-form-footer { grid-column: 1 !important; }
   .intent-experiment-form-footer { align-items: stretch; flex-direction: column; gap: 9px; }
   .intent-experiment-form-footer .button { width: 100%; }
+  .intent-experiment-edit-fields input:not([type="checkbox"]),
+  .intent-experiment-edit-fields .ui-select-trigger,
+  .intent-experiment-edit-fields .multi-filter-trigger { min-height: 44px; height: auto; font-size: 16px; }
+  .intent-experiment-edit-dialog .dialog-card {
+    max-height: calc(var(--mobile-viewport-height, 100dvh) - 24px);
+    overflow-y: auto; padding-bottom: max(12px, env(safe-area-inset-bottom));
+  }
+  .intent-experiment-edit-dialog .dialog-actions .button { min-height: 48px !important; white-space: normal; }
   .intent-experiment-item { grid-template-columns: minmax(0, 1fr); }
   #labelingCombinedTaskRefresh { min-height: 44px; }
   .intent-experiment-section-heading.labeling-combined-heading { display: flex; flex-direction: row; align-items: center; flex-wrap: wrap; }
@@ -1229,4 +1241,72 @@
 /* Match the OS preference, including label and backdrop transitions. */
 @media (prefers-reduced-motion: reduce) {
   .app-sidebar, .app-frame, .app-sidebar *, .mobile-sidebar-backdrop { transition: none !important; }
+}
+@media (max-width: 760px) {
+  .task-allocation-dialog,
+  .task-allocation-dialog.is-allocation-edit { width: calc(100vw - 16px); max-width: calc(100vw - 16px); max-height: calc(var(--mobile-viewport-height, 100dvh) - 16px); }
+  .task-allocation-dialog .dialog-card,
+  .task-allocation-dialog:has(#taskAllocationPreview) .dialog-card { padding: 14px; padding-bottom: max(14px, env(safe-area-inset-bottom)); max-height: calc(var(--mobile-viewport-height, 100dvh) - 20px); }
+  .task-allocation-dialog .task-allocation-fields {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr));
+  }
+  .task-allocation-member dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .allocation-preview-facts, .allocation-preview-person dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .allocation-preview-facts dd { font-size: 15px; }
+  .task-allocation-dialog .allocation-preview-person > summary, .allocation-current-person { padding-inline: 8px; }
+  .task-allocation-preview .button { white-space: normal; }
+  .task-allocation-dialog .work-split-person-row { grid-template-columns: minmax(0, 1fr) 88px 44px; gap: 6px; }
+  .task-allocation-dialog .work-split-person-count { font-size: 16px; padding-inline: 6px; }
+  .task-allocation-dialog .is-balanced .work-split-person-row { grid-template-columns: minmax(0, 1fr) 44px; }
+  .assignment-composer .assignment-config-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .assignment-config-fields > .work-split-workflow-mode { grid-column: 1 / -1; }
+  .assignment-composer .is-balanced .work-split-person-row { grid-template-columns: minmax(0, 1fr) 44px; }
+  .assignment-composer .is-balanced .work-split-person-picker { grid-column: auto; }
+  .assignment-group-scope { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 639px), (pointer: coarse) {
+  .allocation-group-setup :is(input, textarea) { font-size: 16px !important; }
+  .allocation-group-setup :is(.ui-select-trigger, .button, .text-button, .assignment-ratio-input, details > summary),
+  .allocation-rule-scope :is(input, textarea),
+  .task-allocation-dialog.is-allocation-edit :is(.ui-select-trigger, .button, .icon-button, summary),
+  button.allocation-diff-row { min-height: 44px !important; height: auto !important; }
+  .allocation-add-member.text-button, .allocation-tool-link.text-button { display: inline-flex; align-items: center; }
+  .allocation-coverage-inline .assignment-ratio-input { width: 92px; padding-inline: 8px; }
+  .allocation-setup-member .allocation-remove-control { width: 44px !important; min-width: 44px !important; min-height: 44px !important; }
+  .allocation-setup-member { grid-template-columns: minmax(0, 1fr) 96px 44px; }
+  .allocation-group-bar { height: 44px; }
+  .task-allocation-dialog .dialog-actions .button-primary,
+  .assignment-composer .assignment-footer-row .button-primary { min-height: 48px !important; white-space: normal; }
+  .assignment-groups :is(input, textarea, .button, .multi-filter-trigger) { min-height: 44px; font-size: 16px; }
+}
+@media (max-width: 639px) {
+  .allocation-setup-cards { grid-template-columns: minmax(0, 1fr); }
+  .allocation-setup-cards:not([data-group-count="1"]) > .allocation-setup-card:nth-child(odd),
+  .allocation-setup-cards:not([data-group-count="1"]) > .allocation-setup-card:nth-child(even) {
+    padding-inline: 0; border-inline-start: 0;
+  }
+  .allocation-setup-cards:not([data-group-count="1"]) > .allocation-setup-card + .allocation-setup-card {
+    padding-top: 12px; border-top: 1px solid var(--line-soft);
+  }
+  .allocation-setup-cards:not([data-group-count="1"]) > .allocation-setup-card:not(:last-child) { padding-bottom: 12px; }
+  .allocation-rule-partners, .allocation-rule-pickers, .allocation-rule-scope { grid-template-columns: minmax(0, 1fr); }
+  .allocation-rule-tools { justify-content: flex-end; }
+  .allocation-basis-inline { width: 100%; }
+  .allocation-basis-inline .ui-select { flex: 1 1 auto; width: auto; }
+  .task-allocation-body { display: flex; flex-direction: column; overflow-y: auto; scrollbar-width: thin; }
+  .allocation-creation-layout { grid-template-columns: minmax(0, 1fr); }
+  .allocation-creation-preview { padding: 10px 0 0; border-inline-start: 0; border-top: 1px solid var(--line-soft); }
+  .allocation-diff-row { grid-template-columns: minmax(82px, 112px) minmax(24px, 1fr) auto; gap: 6px; padding-inline: 2px; }
+  .allocation-diff-values { gap: 5px; font-size: 11px; }
+  .task-allocation-body > .task-allocation-settings { overflow: visible; padding-inline-end: 0; }
+  .is-allocation-edit #taskAllocationPreview {
+    overflow: visible; border-inline-start: 0; border-block-start: 1px solid var(--line-soft);
+    margin-top: 6px; padding: 12px 0 0;
+  }
+  .task-allocation-edit-footer .task-allocation-preview-jump { display: inline-flex; align-items: center; justify-content: center; }
+  .is-allocation-edit .task-allocation-edit-footer .dialog-actions { width: auto; }
+  .is-allocation-edit .task-allocation-edit-footer .dialog-actions .button { flex: 0 1 auto; }
+}
+@media (max-width: 359px) {
+  .allocation-setup-member { grid-template-columns: minmax(0, 1fr) 90px 44px; }
 }

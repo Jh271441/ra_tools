@@ -33,8 +33,8 @@ class RoleVersionTasksMixin:
         did='release-'+family+'-odd2';rid=str(uuid.uuid5(uuid.NAMESPACE_URL,'ra-triage:'+did))
         expected=digest(dict(family=family,policy=policy,issue_ids=sorted(issue_ids)))
         with self._write_lock,(nullcontext(_connection) if _connection is not None else self.connect()) as conn:
-            if self.backend=='sqlite' and _connection is None:conn.execute('BEGIN IMMEDIATE')
-            elif self.backend=='postgresql':conn.execute('SELECT pg_advisory_xact_lock(hashtext(?))',(did,))
+            self._lock_task_work(conn)
+            if self.backend=='postgresql':conn.execute('SELECT pg_advisory_xact_lock(hashtext(?))',(did,))
             if not conn.execute("SELECT 1 FROM model_runs WHERE id=? AND kind='version_live'",(rid,)).fetchone():
                 raise ValueError('Version Run not registered')
             dataset=conn.execute('SELECT * FROM version_datasets WHERE id=?',(did,)).fetchone()
@@ -75,18 +75,38 @@ class RoleVersionTasksMixin:
                 assignments=[dict(r) for r in conn.execute('SELECT * FROM review_work_assignments WHERE split_id=? ORDER BY issue_id,assignment_kind',(root,)).fetchall()]
                 for a in assignments:assigned[a['issue_id']].append(a['assignee'])
                 new=sorted(set(ids)-{m['issue_id'] for m in members})
+                custom = _json_load(campaign['filter_json'], {}).get('task_allocation')
                 people=(*RD_REVIEWERS,*TE_REVIEWERS)
-                if new:
+                if new and not custom:
                     for person in people:
                         account=conn.execute('SELECT a.role AS permission,h.role FROM access_users a JOIN human_user_roles h ON h.username=a.username WHERE a.username=?',(person,)).fetchone()
                         expected_role='rd' if person in RD_REVIEWERS else 'te'
                         if not account or account['permission'] not in {'writer','admin'} or account['role']!=expected_role:
                             raise ValueError('默认标注人员不可用 / Default reviewer unavailable: '+person)
-                previous=[dict(assignees=sorted(owners,key=lambda p:p not in RD_REVIEWERS)) for iid,owners in assigned.items() if iid in set(current_target_ids)]
-                if new and cohort=='low' and (campaign['mode']!='blind' or any(len(owners)!=2 for owners in assigned.values())):
+                captured_roles = {(r['issue_id'], r['username']): r['role'] for r in conn.execute(
+                    'SELECT issue_id,username,role FROM human_assignment_roles WHERE campaign_id=?', (root,),
+                ).fetchall()}
+                previous=[dict(assignees=sorted(owners,key=lambda p:p not in RD_REVIEWERS),
+                    roles={p: captured_roles.get((iid,p)) for p in owners})
+                    for iid,owners in assigned.items() if iid in set(current_target_ids)]
+                if new and not custom and cohort=='low' and (campaign['mode']!='blind' or any(len(owners)!=2 for owners in assigned.values())):
                     raise ValueError('旧低置信任务需先补齐 TE / Extend existing low-confidence TE assignments first')
                 allocations=allocate_role_pairs(new,seed=policy['seed'],previous=previous,
                     fixed_rd={i:v['owner'] for i,v in (_historical or {}).items()})
+                if new and custom:
+                    config = self._task_allocation(conn, root)[0]
+                    people = tuple(p['name'] for p in custom['assignees'])
+                    if custom.get("groups"):
+                        planned = self._append_group_allocation(conn, root, new, seed=policy["seed"],
+                                                               active_ids=current_target_ids, captured=captured_roles)
+                    else:
+                        self._validate_task_allocation(config, custom["assignees"], custom["reviewers_per_issue"],
+                                                       custom["overlap_ratio"], protected=True)
+                        planned = self._plan_task_allocation(conn, custom, new, seed=policy['seed'],
+                                                             role_required=True, previous=previous)
+                    grouped = defaultdict(list)
+                    for row in planned: grouped[row['issue_id']].append(row['assignee'])
+                    allocations = [dict(issue_id=iid, assignees=owners) for iid, owners in grouped.items()]
                 ordinals={p:max([a['ordinal'] for a in assignments if a['assignee']==p] or [0]) for p in people}
                 fresh_members=[]
                 for allocation in allocations:
@@ -101,7 +121,7 @@ class RoleVersionTasksMixin:
                     elif active['status']!='active':raise ValueError('Labeling scope is not active')
                     owners=allocation['assignees'];required=len(owners)
                     member=dict(campaign_id=root,issue_id=iid,baseline_scope=scope,ordinal=len(members)+len(fresh_members)+1,
-                                required_submitter_count=required,reviewers_per_issue=required,assignment_kinds_json=_json(['base','cross'][:required]),
+                                required_submitter_count=required,reviewers_per_issue=required,assignment_kinds_json=_json(['base','cross'] if required > 1 else ['base']),
                                 config_revision=int(campaign['config_revision'])+1,created_at=utc_now())
                     insert(conn,'campaign_issue_members',member);fresh_members.append(member)
                     for index,person in enumerate(owners):
@@ -136,9 +156,12 @@ class RoleVersionTasksMixin:
                     self._campaign_insert_revision(conn,campaign_id=root,revision_no=revision,changed_by=actor,changed_by_source=POLICY,
                                                   changed_by_verified=False,change_source='version_append',idempotency_key=batch_key)
                 for iid,owners in assigned.items():
-                    ordered=sorted(owners,key=lambda p:p not in RD_REVIEWERS)
+                    base = next((a['assignee'] for a in assignments if a['issue_id'] == iid and a['assignment_kind'] == 'base'), owners[0])
+                    ordered=sorted(owners,key=lambda p:p != base)
                     bindings[iid]=dict(run_id=rid,campaign_id=root,assignee=ordered[0],assignees=ordered,cohort=cohort)
             receipt=dict(campaign_ids=campaign_ids,added=len(added),added_ids=added,fingerprint=expected)
+            if replay:
+                self._version_replay_bindings(conn, did, batch_key, bindings)
             self._version_event(conn,did,batch_key,'role_task_append',receipt,actor)
             self._mark_labeling_change(conn);self._mark_run_collection_change(conn)
             # The pinned cron bridge still reads the legacy singular receipt.

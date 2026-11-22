@@ -44,8 +44,10 @@ def test_extension_preserves_rd_work_and_adds_one_balanced_te_per_low_case(db):
     assert result['added']==len(old_rd)
     assert apply_te_extension(db,dataset_id=DATASET,actor='jasperchen',expected_fingerprint=plan['fingerprint'])['replayed']
     after_context=context(db,iid,rd)
-    for key in ['model_review', 'model_review_storage_id', 'case_revision', 'case_revision_id', 'progress', 'campaign']:
+    for key in ['model_review', 'model_review_storage_id', 'case_revision', 'case_revision_id', 'progress']:
         assert after_context[key]==before_context[key]
+    assert after_context['campaign']=={**before_context['campaign'],
+        'config_revision': before_context['campaign']['config_revision']+1}
     assert after_context['label_state_fingerprint']!=before_context['label_state_fingerprint']
     with db.connect() as c:
         assert [dict(r) for r in c.execute("SELECT * FROM review_work_assignments WHERE split_id=? AND assignment_kind='base' ORDER BY issue_id", (cid,)).fetchall()]==old_rd

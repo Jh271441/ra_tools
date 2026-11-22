@@ -397,6 +397,7 @@ async def get_labeling_case(
         "comments": [_public_label_comment(comment) for comment in comments],
         "task_id": task_key,
         "current_user_is_task_member": bool(assignment and assignment.get("assigned")),
+        "allocation_revision": assignment.get("config_revision") if assignment else None,
         "label_state": label_state.get(issue_id) or {},
         "label_source_contexts": source_contexts,
         "decision_history": decision_history,

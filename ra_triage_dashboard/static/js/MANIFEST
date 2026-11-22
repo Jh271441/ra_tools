@@ -30,7 +30,10 @@ intent-labeling.js
 review-gallery.js
 review-label-state.js
 assignment-naming.js
-assignment-people.js
+allocation-groups.js
+allocation-group-preview.js
+assignment-setup.js
+task-allocation.js
 work-split.js
 review-assignments.js
 campaigns.js

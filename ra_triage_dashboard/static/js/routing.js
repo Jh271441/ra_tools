@@ -237,28 +237,29 @@ function applyUiLanguage(language, { persist = true } = {}) {
     if (typeof renderRunManager === "function" && state.modelRuns?.length) renderRunManager();
   } catch (_) {}
   try {
-    if (typeof renderWorkSplitReviewersPerIssuePicker === "function" && $("#workSplitPanel") && !$("#workSplitPanel").hidden) {
-      renderWorkSplitPersonPickers();
-      renderWorkSplitReviewersPerIssuePicker(workSplitReviewersPerIssue());
-      updateWorkSplitEstimate();
+    if ($("#workSplitPanel") && !$("#workSplitPanel").hidden) {
+      displayCreationGroupSetup("workSplit");
       renderAssignmentNameStatus("review");
+      renderCreationAllocationPreview("workSplit");
       const summary = $("#workSplitSummary");
       const total = workSplitTotal();
       if (summary) summary.textContent = total ? t("work.summary_n", { n: total }) : t("work.no_issues");
     }
   } catch (_) {}
   try {
-    if (typeof renderLabelingTaskReviewersPerIssuePicker === "function" && state.activePage === "labeling-new-task") {
-      renderLabelingTaskPersonPickers();
-      renderLabelingTaskReviewersPerIssuePicker(labelingTaskReviewersPerIssue());
-      updateLabelingTaskEstimate();
+    if (state.activePage === "labeling-new-task" && $("#labelingTaskGroupSetup")?.childElementCount) {
+      displayCreationGroupSetup("labelingTask");
       renderAssignmentNameStatus("labeling");
+      renderCreationAllocationPreview("labelingTask");
       renderLabelingTaskHistory();
       renderLabelingCombinedTasks();
       const summary = $("#labelingTaskSummary");
       const total = Number(state.caseLabeling.data?.total || 0);
       if (summary) summary.textContent = total ? t("work.summary_n", { n: total }) : t("work.no_issues");
     }
+  } catch (_) {}
+  try {
+    if ($("#taskAllocationDialog")?.open) renderTaskAllocationEditor();
   } catch (_) {}
   try {
     if (state.activePage === "intent-experiments" && typeof initializeIntentExperimentSelects === "function") {
