@@ -1,0 +1,1433 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="ra-triage-base" content="{{RA_TRIAGE_BASE_PATH}}" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%230d9488'/%3E%3Ccircle cx='12' cy='12' r='5' fill='%23ffffff'/%3E%3C/svg%3E" />
+  <title>Original330 VLM 架构与推理流程图 · RA Triage Workbench</title>
+  <script>
+    (() => {
+      const configured = (
+        document.querySelector('meta[name="ra-triage-base"]')?.getAttribute("content") || ""
+      ).replace(/\/+$/, "");
+      const pathname = window.location.pathname || "/";
+      const activeBase =
+        configured && (pathname === configured || pathname.startsWith(`${configured}/`))
+          ? configured
+          : "";
+      window.__RA_TRIAGE_BASE__ = activeBase;
+
+      try {
+        const savedTheme = (localStorage.getItem("ra-triage-color-theme") || "").toLowerCase();
+        document.documentElement.dataset.colorTheme = savedTheme === "light" ? "light" : "dark";
+        const savedLang = (localStorage.getItem("ra-triage-ui-language") || "").toLowerCase();
+        const lang = savedLang === "en" ? "en" : "zh";
+        document.documentElement.dataset.uiLang = lang;
+        document.documentElement.lang = lang === "en" ? "en" : "zh-CN";
+      } catch (_) {
+        document.documentElement.dataset.colorTheme = "dark";
+        document.documentElement.dataset.uiLang = "zh";
+      }
+    })();
+  </script>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b0e14;
+      --raised: #11151f;
+      --overlay: #161b26;
+      --overlay-2: #1a2130;
+      --line: #232a38;
+      --line-soft: #1b2230;
+      --text: #edf2fb;
+      --muted: #8a94a6;
+      --faint: #657084;
+      --accent: #24d3ef;
+      --accent-soft: rgba(36, 211, 239, 0.12);
+      --primary: #3b82f6;
+      --primary-fg: #ffffff;
+
+      --qwen-accent: #60a5fa;
+      --qwen-solid: #2563eb;
+      --qwen-bg: rgba(59, 130, 246, 0.11);
+      --qwen-border: rgba(96, 165, 250, 0.45);
+      --qwen-badge: rgba(59, 130, 246, 0.2);
+
+      --lora-accent: #fb923c;
+      --lora-solid: #ea580c;
+      --lora-bg: rgba(249, 115, 22, 0.11);
+      --lora-border: rgba(251, 146, 60, 0.58);
+      --lora-badge: rgba(249, 115, 22, 0.2);
+
+      --eng-accent: #2dd4bf;
+      --eng-solid: #0d9488;
+      --eng-bg: rgba(20, 184, 166, 0.1);
+      --eng-border: rgba(45, 212, 191, 0.45);
+      --eng-badge: rgba(20, 184, 166, 0.2);
+
+      --radius: 12px;
+      --font-sans: Inter, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+      --font-mono: "SF Mono", "JetBrains Mono", ui-monospace, Menlo, Monaco, Consolas, monospace;
+    }
+
+    html[data-color-theme="light"] {
+      color-scheme: light;
+      --bg: #eef2f7;
+      --raised: #ffffff;
+      --overlay: #ffffff;
+      --overlay-2: #f4f7fb;
+      --line: #cbd5e1;
+      --line-soft: #e2e8f0;
+      --text: #0f172a;
+      --muted: #475569;
+      --faint: #64748b;
+      --accent: #08758d;
+      --accent-soft: rgba(8, 117, 141, 0.1);
+      --primary: #2563eb;
+      --primary-fg: #ffffff;
+
+      --qwen-accent: #1d4ed8;
+      --qwen-solid: #2563eb;
+      --qwen-bg: #eff6ff;
+      --qwen-border: #93c5fd;
+      --qwen-badge: #dbeafe;
+
+      --lora-accent: #c2410c;
+      --lora-solid: #ea580c;
+      --lora-bg: #fff7ed;
+      --lora-border: #fb923c;
+      --lora-badge: #ffedd5;
+
+      --eng-accent: #0f766e;
+      --eng-solid: #0d9488;
+      --eng-bg: #f0fdfa;
+      --eng-border: #5eead4;
+      --eng-badge: #ccfbf1;
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      min-height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      font-size: 14px;
+      line-height: 1.5;
+      overflow-x: clip;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .page-wrap {
+      width: 100%;
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 16px 24px 36px;
+      padding-left: max(24px, env(safe-area-inset-left));
+      padding-right: max(24px, env(safe-area-inset-right));
+      padding-bottom: max(36px, env(safe-area-inset-bottom));
+    }
+
+    /* Topbar */
+    .topbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 14px;
+      background: var(--raised);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      margin-bottom: 18px;
+    }
+
+    .topbar-left, .topbar-right {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .brand-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      text-decoration: none;
+      color: var(--text);
+      font-weight: 700;
+      font-size: 14px;
+      padding: 6px 10px;
+      border-radius: 8px;
+      min-height: 36px;
+      transition: background-color 0.15s ease;
+    }
+
+    .brand-link:hover {
+      background: var(--overlay-2);
+    }
+
+    .brand-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 3px;
+      background: var(--accent);
+      flex-shrink: 0;
+    }
+
+    .nav-sep {
+      width: 1px;
+      height: 18px;
+      background: var(--line);
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      min-height: 36px;
+      padding: 6px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: var(--overlay);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 12.5px;
+      font-weight: 600;
+      text-decoration: none;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+    }
+
+    .btn:hover {
+      background: var(--overlay-2);
+      border-color: var(--muted);
+    }
+
+    .btn:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    .btn-primary {
+      background: var(--eng-solid);
+      border-color: var(--eng-solid);
+      color: #ffffff;
+    }
+
+    .btn-primary:hover {
+      filter: brightness(1.06);
+      background: var(--eng-solid);
+      border-color: var(--eng-solid);
+    }
+
+    .btn-icon {
+      min-width: 36px;
+      padding: 6px 10px;
+    }
+
+    /* Hero */
+    .hero {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 12px 24px;
+      margin-bottom: 16px;
+    }
+
+    .hero-copy {
+      min-width: 0;
+      flex: 1 1 420px;
+    }
+
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--eng-accent);
+      margin: 0 0 4px;
+    }
+
+    .hero h1 {
+      margin: 0 0 6px;
+      font-size: clamp(20px, 2.2vw, 26px);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      line-height: 1.25;
+      overflow-wrap: break-word;
+    }
+
+    .hero-sub {
+      margin: 0;
+      font-size: 13.5px;
+      color: var(--muted);
+      overflow-wrap: break-word;
+    }
+
+    .hero-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .metric-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 11px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: var(--raised);
+      font-size: 12px;
+      color: var(--muted);
+      font-family: var(--font-mono);
+    }
+
+    .metric-pill strong {
+      color: var(--text);
+      font-weight: 700;
+    }
+
+    /* Main Diagram Card */
+    .stage-card {
+      background: var(--raised);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 14px 16px 16px;
+      margin-bottom: 18px;
+    }
+
+    .stage-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--line-soft);
+      margin-bottom: 12px;
+    }
+
+    .filter-group {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .filter-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 36px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: var(--overlay);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 12.5px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+    }
+
+    .filter-pill:hover {
+      background: var(--overlay-2);
+    }
+
+    .filter-pill:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    .filter-pill[aria-pressed="true"] {
+      font-weight: 700;
+    }
+
+    .filter-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .stage-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .scroll-hint {
+      display: none;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .diagram-viewport {
+      width: 100%;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      border-radius: 10px;
+      background: var(--overlay-2);
+      border: 1px solid var(--line-soft);
+      padding: 10px;
+    }
+
+    .diagram-svg {
+      display: block;
+      width: 100%;
+      height: auto;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    .diagram-viewport.is-zoom-100 .diagram-svg {
+      width: 1120px;
+      max-width: none;
+    }
+
+    .flow-node {
+      cursor: pointer;
+      outline: none;
+      transition: opacity 0.2s ease, filter 0.18s ease;
+    }
+
+    .flow-node:hover {
+      filter: brightness(1.05);
+    }
+
+    .flow-node:focus-visible rect.node-frame,
+    .flow-node.is-selected rect.node-frame {
+      stroke-width: 2.6;
+    }
+
+    .flow-node.is-dimmed,
+    .flow-edge.is-dimmed,
+    .flow-zone.is-dimmed {
+      opacity: 0.16;
+      transition: opacity 0.2s ease;
+    }
+
+    .flow-zone, .flow-edge {
+      transition: opacity 0.2s ease;
+    }
+
+    /* Inspector */
+    .inspector {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 8px 16px;
+      margin-top: 12px;
+      padding: 12px 14px;
+      border-radius: 10px;
+      background: var(--overlay-2);
+      border: 1px solid var(--line-soft);
+    }
+
+    .inspector-main {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: 8px 10px;
+      min-width: 0;
+      flex: 1 1 360px;
+    }
+
+    .inspector-badge {
+      display: inline-block;
+      padding: 2px 9px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .inspector-text {
+      font-size: 13px;
+      color: var(--text);
+      overflow-wrap: break-word;
+      line-height: 1.55;
+    }
+
+    .inspector-meta {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    /* Reference summary cards */
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .summary-card {
+      background: var(--raised);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 16px;
+      min-width: 0;
+    }
+
+    .summary-card-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .summary-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 9px;
+      border-radius: 6px;
+      font-size: 11.5px;
+      font-weight: 700;
+    }
+
+    .summary-card h2 {
+      margin: 0 0 8px;
+      font-size: 15px;
+      font-weight: 700;
+      line-height: 1.35;
+    }
+
+    .summary-list {
+      margin: 0;
+      padding-left: 16px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .summary-list li {
+      margin-bottom: 4px;
+      overflow-wrap: break-word;
+    }
+
+    .summary-list code {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--text);
+      background: var(--overlay-2);
+      padding: 1px 5px;
+      border-radius: 4px;
+      word-break: break-word;
+    }
+
+    /* Responsive breakpoints */
+    @media (max-width: 1024px) {
+      .summary-grid {
+        grid-template-columns: 1fr;
+      }
+      .scroll-hint {
+        display: inline;
+      }
+    }
+
+    @media (max-width: 639px) {
+      .page-wrap {
+        padding: 12px 12px 28px;
+        padding-left: max(12px, env(safe-area-inset-left));
+        padding-right: max(12px, env(safe-area-inset-right));
+        padding-bottom: max(28px, env(safe-area-inset-bottom));
+      }
+
+      .topbar {
+        padding: 10px;
+        gap: 8px;
+      }
+
+      .topbar-left, .topbar-right {
+        width: 100%;
+        justify-content: space-between;
+      }
+
+      .nav-sep {
+        display: none;
+      }
+
+      .brand-link, .btn, .filter-pill {
+        min-height: 44px;
+      }
+
+      .btn {
+        font-size: 13px;
+        padding: 8px 12px;
+      }
+
+      .filter-pill {
+        font-size: 12.5px;
+        padding: 8px 12px;
+      }
+
+      .stage-card {
+        padding: 12px;
+      }
+
+      .diagram-viewport {
+        padding: 8px;
+      }
+
+      .diagram-viewport.is-zoom-100 .diagram-svg {
+        width: 960px;
+        max-width: none;
+      }
+
+      .inspector-meta {
+        white-space: normal;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page-wrap">
+    <header class="topbar">
+      <div class="topbar-left">
+        <span class="brand-link" aria-label="Original330 VLM Architecture">
+          <span class="brand-dot" aria-hidden="true"></span>
+          <span data-i18n="nav.brand">Original330 VLM · 架构图</span>
+        </span>
+      </div>
+      <div class="topbar-right">
+        <a id="downloadPngLink" class="btn btn-primary" href="/static/artifacts/architecture-original-330/original330_vlm_flowchart.png" target="_blank" rel="noopener noreferrer" data-i18n="action.png">高清 PNG (3200×1840)</a>
+        <a id="downloadSvgLink" class="btn" href="/static/artifacts/architecture-original-330/original330_vlm_flowchart.svg" target="_blank" rel="noopener noreferrer" data-i18n="action.svg">矢量 SVG</a>
+        <button id="langToggleBtn" type="button" class="btn btn-icon" aria-label="Switch to English" title="Switch to English">EN</button>
+        <button id="themeToggleBtn" type="button" class="btn btn-icon" aria-label="切换到浅色模式" title="切换到浅色模式">☀</button>
+      </div>
+    </header>
+
+    <section class="hero">
+      <div class="hero-copy">
+        <p class="eyebrow" data-i18n="hero.eyebrow">DAILY CRON · AUTO-TRIAGE PRODUCTION VLM</p>
+        <h1 data-i18n="hero.title">Original330 VLM 架构与推理流程图</h1>
+        <p class="hero-sub" data-i18n="hero.subtitle">区分 Qwen3.8-27B 原生预训练基座（微调冻结）、AutoTriage 新增 LoRA 微调权重，以及前后处理工程封装。</p>
+      </div>
+      <div class="hero-badges">
+        <span class="metric-pill">Model <strong>Qwen3.8-27B/original330</strong></span>
+        <span class="metric-pill">0508 Acc <strong>87.30%</strong></span>
+        <span class="metric-pill">Macro-F1 <strong>78.49%</strong></span>
+      </div>
+    </section>
+
+    <main class="stage-card">
+      <div class="stage-toolbar">
+        <div class="filter-group" role="group" aria-label="按归属高亮模块" id="filterGroup">
+          <button type="button" class="filter-pill" data-filter="all" aria-pressed="true" data-i18n="filter.all">全部视图</button>
+          <button type="button" class="filter-pill" data-filter="qwen" aria-pressed="false">
+            <span class="filter-dot" style="background: var(--qwen-accent);" aria-hidden="true"></span>
+            <span data-i18n="filter.qwen">Qwen 原生 · 冻结</span>
+          </button>
+          <button type="button" class="filter-pill" data-filter="lora" aria-pressed="false">
+            <span class="filter-dot" style="background: var(--lora-accent);" aria-hidden="true"></span>
+            <span data-i18n="filter.lora">AutoTriage LoRA · 微调</span>
+          </button>
+          <button type="button" class="filter-pill" data-filter="eng" aria-pressed="false">
+            <span class="filter-dot" style="background: var(--eng-accent);" aria-hidden="true"></span>
+            <span data-i18n="filter.eng">AutoTriage 工程封装</span>
+          </button>
+        </div>
+
+        <div class="stage-controls">
+          <span class="scroll-hint" data-i18n="stage.swipe_hint">可左右滑动查看细节</span>
+          <button type="button" id="zoomToggleBtn" class="btn" aria-pressed="false" data-i18n="stage.zoom_detail">100% 细节视图</button>
+        </div>
+      </div>
+
+      <div id="diagramViewport" class="diagram-viewport is-fit">
+        <svg id="vlmSvg" class="diagram-svg" viewBox="0 0 1160 404" role="img" aria-label="Original330 VLM 架构与推理流程图">
+          <defs>
+            <marker id="m-eng" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+              <path d="M 1 1.5 L 8.5 5 L 1 8.5 z" style="fill: var(--eng-accent);"/>
+            </marker>
+            <marker id="m-qwen" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+              <path d="M 1 1.5 L 8.5 5 L 1 8.5 z" style="fill: var(--qwen-accent);"/>
+            </marker>
+            <marker id="m-lora" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 1 1.5 L 8.5 5 L 1 8.5 z" style="fill: var(--lora-accent);"/>
+            </marker>
+          </defs>
+
+          <!-- ZONE 1: AutoTriage Input Assembly -->
+          <g class="flow-zone" data-group="eng">
+            <rect x="6" y="8" width="232" height="388" rx="14" style="fill: var(--eng-bg); stroke: var(--eng-border);" stroke-width="1.4"/>
+            <rect x="18" y="20" width="160" height="22" rx="6" style="fill: var(--eng-solid);"/>
+            <text x="98" y="34.5" text-anchor="middle" font-size="11" font-weight="700" fill="#ffffff" data-svg-i18n="z1.pill">01 AutoTriage · 输入组装</text>
+            <text x="228" y="34.5" text-anchor="end" font-size="9.8" font-weight="600" style="fill: var(--eng-accent);" data-svg-i18n="z.eng_tag">工程封装</text>
+          </g>
+
+          <!-- Node: Pre-rule gate -->
+          <g class="flow-node" data-group="eng" data-id="prerule" tabindex="0">
+            <rect class="node-frame" x="18" y="52" width="208" height="32" rx="8" style="fill: var(--raised); stroke: var(--eng-border);" stroke-width="1.1"/>
+            <text x="122" y="72" text-anchor="middle" font-size="10.5" font-weight="600" style="fill: var(--text);" data-svg-i18n="n.prerule">前置：6 条 Bag 规则未命中进入</text>
+          </g>
+
+          <!-- Node: Camera102 9 frames -->
+          <g class="flow-node" data-group="eng" data-id="camera" tabindex="0">
+            <rect class="node-frame" x="18" y="96" width="208" height="132" rx="11" style="fill: var(--raised); stroke: var(--eng-border);" stroke-width="1.3"/>
+            <rect x="18" y="96" width="4" height="132" rx="2" style="fill: var(--eng-solid);"/>
+            <text x="32" y="119" font-size="12.2" font-weight="700" style="fill: var(--text);" data-svg-i18n="n.cam.title">前视 Camera102 · 9 帧</text>
+            <text x="32" y="137" font-size="10.5" style="fill: var(--muted);" data-svg-i18n="n.cam.sub">触发前后相对偏移（秒）</text>
+            <rect x="32" y="148" width="182" height="44" rx="7" style="fill: var(--eng-bg); stroke: var(--line-soft);" stroke-width="1"/>
+            <text x="123" y="167" text-anchor="middle" font-size="10.2" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-weight="600" style="fill: var(--eng-accent);">-19 -15 -10 -5 [0s]</text>
+            <text x="123" y="183" text-anchor="middle" font-size="10.2" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-weight="600" style="fill: var(--eng-accent);">+5  +10  +15  +19</text>
+            <text x="32" y="213" font-size="10.2" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" style="fill: var(--muted);">PIL RGB · 200K–602K px</text>
+          </g>
+
+          <!-- Node: Prompt v2.0 + Telemetry -->
+          <g class="flow-node" data-group="eng" data-id="prompt" tabindex="0">
+            <rect class="node-frame" x="18" y="242" width="208" height="140" rx="11" style="fill: var(--raised); stroke: var(--eng-border);" stroke-width="1.3"/>
+            <rect x="18" y="242" width="4" height="140" rx="2" style="fill: var(--eng-solid);"/>
+            <text x="32" y="265" font-size="12" font-weight="700" style="fill: var(--text);" data-svg-i18n="n.prompt.title">Prompt v2.0 + 结构化文本</text>
+            <text x="32" y="287" font-size="10.6" style="fill: var(--muted);" data-svg-i18n="n.prompt.l1">• 冻结 Camera9 模板（9 占位符）</text>
+            <text x="32" y="308" font-size="10.6" style="fill: var(--muted);" data-svg-i18n="n.prompt.l2">• 25 时点遥测（车速/加速度）</text>
+            <text x="32" y="329" font-size="10.6" style="fill: var(--muted);" data-svg-i18n="n.prompt.l3">• 挡位、让行信息</text>
+            <text x="32" y="350" font-size="10.6" style="fill: var(--muted);" data-svg-i18n="n.prompt.l4">• 结构化 RA Event 解析</text>
+            <text x="32" y="370" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" style="fill: var(--eng-accent);">interleave_strings=false</text>
+          </g>
+
+          <!-- ZONE 2A: Qwen Native Frozen Base -->
+          <g class="flow-zone" data-group="qwen">
+            <rect x="272" y="8" width="584" height="278" rx="14" style="fill: var(--qwen-bg); stroke: var(--qwen-border);" stroke-width="1.6"/>
+            <rect x="284" y="20" width="228" height="22" rx="6" style="fill: var(--qwen-solid);"/>
+            <text x="398" y="34.5" text-anchor="middle" font-size="11" font-weight="700" fill="#ffffff" data-svg-i18n="z2.pill">02 Qwen3.8-27B · 原生预训练基座</text>
+            <rect x="698" y="21" width="146" height="20" rx="10" style="fill: var(--qwen-badge); stroke: var(--qwen-border);" stroke-width="1"/>
+            <text x="771" y="34.5" text-anchor="middle" font-size="10.2" font-weight="700" style="fill: var(--qwen-accent);" data-svg-i18n="z2.frozen">微调全程冻结权重</text>
+          </g>
+
+          <!-- Node: Vision Encoder -->
+          <g class="flow-node" data-group="qwen" data-id="vision" tabindex="0">
+            <rect class="node-frame" x="284" y="54" width="160" height="102" rx="11" style="fill: var(--raised); stroke: var(--qwen-border);" stroke-width="1.3"/>
+            <text x="296" y="75" font-size="10.2" font-weight="700" style="fill: var(--qwen-accent);" data-svg-i18n="n.vis.tag">Qwen 原生 · 视觉</text>
+            <text x="296" y="96" font-size="12.2" font-weight="700" style="fill: var(--text);" data-svg-i18n="n.vis.title">27 层视觉编码器</text>
+            <text x="296" y="115" font-size="10.2" style="fill: var(--muted);" data-svg-i18n="n.vis.sub">图像处理器 → ViT → 投影</text>
+            <text x="296" y="134" font-size="10.2" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" style="fill: var(--qwen-accent);">d=1152 → 5120</text>
+            <text x="296" y="148" font-size="9.8" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" style="fill: var(--muted);">patch 16 · merge 2×2</text>
+          </g>
+
+          <!-- Node: Text Tokenizer + Embedding -->
+          <g class="flow-node" data-group="qwen" data-id="textenc" tabindex="0">
+            <rect class="node-frame" x="284" y="170" width="160" height="102" rx="11" style="fill: var(--raised); stroke: var(--qwen-border);" stroke-width="1.3"/>
+            <text x="296" y="191" font-size="10.2" font-weight="700" style="fill: var(--qwen-accent);" data-svg-i18n="n.txt.tag">Qwen 原生 · 文本</text>
+            <text x="296" y="212" font-size="12.2" font-weight="700" style="fill: var(--text);" data-svg-i18n="n.txt.title">Tokenizer + 嵌入</text>
+            <text x="296" y="231" font-size="10.2" style="fill: var(--muted);" data-svg-i18n="n.txt.sub">词表 248,320</text>
+            <text x="296" y="250" font-size="10.2" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" style="fill: var(--qwen-accent);">hidden_size = 5120</text>
+            <text x="296" y="264" font-size="9.8" style="fill: var(--muted);" data-svg-i18n="n.txt.sub2">生成文本 Token 序列</text>
+          </g>
+
+          <!-- Node: Sequence Fusion -->
+          <g class="flow-node" data-group="qwen" data-id="fusion" tabindex="0">
+            <rect class="node-frame" x="466" y="88" width="46" height="150" rx="10" style="fill: var(--qwen-badge); stroke: var(--qwen-border);" stroke-width="1.3"/>
+            <text x="489" y="114" text-anchor="middle" font-size="11.5" font-weight="700" style="fill: var(--text);" data-svg-i18n="n.fus.1">图</text>
+            <text x="489" y="133" text-anchor="middle" font-size="11.5" font-weight="700" style="fill: var(--text);" data-svg-i18n="n.fus.2">文</text>
+            <text x="489" y="152" text-anchor="middle" font-size="11.5" font-weight="700" style="fill: var(--text);" data-svg-i18n="n.fus.3">拼</text>
+            <text x="489" y="171" text-anchor="middle" font-size="11.5" font-weight="700" style="fill: var(--text);" data-svg-i18n="n.fus.4">接</text>
+            <rect x="472" y="186" width="34" height="20" rx="5" style="fill: var(--qwen-solid);"/>
+            <text x="489" y="200" text-anchor="middle" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-weight="700" fill="#ffffff">V+T</text>
+            <text x="489" y="226" text-anchor="middle" font-size="9.2" style="fill: var(--qwen-accent);" data-svg-i18n="n.fus.foot">同序列</text>
+          </g>
+
+          <!-- Node: 64-Layer Hybrid Decoder -->
+          <g class="flow-node" data-group="qwen" data-id="decoder" tabindex="0">
+            <rect class="node-frame" x="534" y="54" width="204" height="218" rx="12" style="fill: var(--raised); stroke: var(--qwen-solid);" stroke-width="1.8"/>
+            <text x="546" y="75" font-size="10.2" font-weight="700" style="fill: var(--qwen-accent);" data-svg-i18n="n.dec.tag">Qwen 原生 · 核心语言解码器</text>
+            <text x="546" y="96" font-size="13.5" font-weight="700" style="fill: var(--text);" data-svg-i18n="n.dec.title">64 层混合解码器</text>
+            <text x="546" y="113" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" style="fill: var(--muted);" data-svg-i18n="n.dec.sub">d=5120 · 3:1 交替 (×16组)</text>
+
+            <rect x="546" y="124" width="180" height="44" rx="8" style="fill: var(--qwen-bg); stroke: var(--qwen-border);" stroke-width="1.1"/>
+            <text x="556" y="142" font-size="11.2" font-weight="700" style="fill: var(--text);" data-svg-i18n="n.dec.b1">48 层 Gated DeltaNet</text>
+            <text x="556" y="159" font-size="9.8" style="fill: var(--lora-accent); font-weight: 600;" data-svg-i18n="n.dec.b1sub">线性注意力 · 挂载 LoRA ×5</text>
+
+            <rect x="546" y="175" width="180" height="44" rx="8" style="fill: var(--qwen-bg); stroke: var(--qwen-border);" stroke-width="1.1"/>
+            <text x="556" y="193" font-size="11.2" font-weight="700" style="fill: var(--text);" data-svg-i18n="n.dec.b2">16 层 Full Attention</text>
+            <text x="556" y="210" font-size="9.8" style="fill: var(--lora-accent); font-weight: 600;" data-svg-i18n="n.dec.b2sub">GQA 全注意力 · 挂载 LoRA ×4</text>
+
+            <rect x="546" y="226" width="180" height="34" rx="7" style="fill: var(--raised); stroke: var(--line-soft);" stroke-width="1"/>
+            <text x="636" y="247" text-anchor="middle" font-size="10.2" style="fill: var(--muted);" data-svg-i18n="n.dec.ffn">FFN / MLP (17,408) · 冻结无 LoRA</text>
+          </g>
+
+          <!-- Node: LM Head -->
+          <g class="flow-node" data-group="qwen" data-id="lmhead" tabindex="0">
+            <rect class="node-frame" x="760" y="96" width="84" height="134" rx="11" style="fill: var(--raised); stroke: var(--qwen-border);" stroke-width="1.3"/>
+            <text x="802" y="117" text-anchor="middle" font-size="9.8" font-weight="700" style="fill: var(--qwen-accent);" data-svg-i18n="n.lm.tag">Qwen 原生</text>
+            <text x="802" y="142" text-anchor="middle" font-size="13.5" font-weight="700" style="fill: var(--text);">LM Head</text>
+            <text x="802" y="160" text-anchor="middle" font-size="10" style="fill: var(--muted);" data-svg-i18n="n.lm.sub">语言模型头</text>
+            <rect x="768" y="172" width="68" height="46" rx="7" style="fill: var(--qwen-bg);"/>
+            <text x="802" y="191" text-anchor="middle" font-size="10.5" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-weight="700" style="fill: var(--qwen-accent);">248,320</text>
+            <text x="802" y="208" text-anchor="middle" font-size="9.6" style="fill: var(--muted);" data-svg-i18n="n.lm.logits">首词 Logits</text>
+          </g>
+
+          <!-- ZONE 2B: AutoTriage LoRA Adapter -->
+          <g class="flow-node" data-group="lora" data-id="lora" tabindex="0">
+            <rect class="node-frame" x="272" y="316" width="584" height="80" rx="14" style="fill: var(--lora-bg); stroke: var(--lora-solid);" stroke-width="1.8" stroke-dasharray="6 3.5"/>
+            <rect x="286" y="328" width="182" height="20" rx="6" style="fill: var(--lora-solid);"/>
+            <text x="377" y="341.5" text-anchor="middle" font-size="10.2" font-weight="700" fill="#ffffff" data-svg-i18n="n.lora.tag">AutoTriage · 唯一训练更新权重</text>
+            <text x="286" y="368" font-size="14" font-weight="700" style="fill: var(--text);">checkpoint-330 LoRA</text>
+            <text x="286" y="385" font-size="10.2" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" style="fill: var(--lora-accent);">r=16 · α=64 · Step 330/438</text>
+
+            <line x1="504" y1="328" x2="504" y2="384" style="stroke: var(--lora-border);" stroke-width="1.1"/>
+
+            <text x="520" y="342" font-size="10.8" font-weight="700" style="fill: var(--lora-accent);" data-svg-i18n="n.lora.targets">挂载两类注意力的 9 个投影层（跳过 FFN）</text>
+            <text x="520" y="362" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" style="fill: var(--text);">DeltaNet: in_proj_qkv / z / a / b / out_proj</text>
+            <text x="520" y="381" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" style="fill: var(--text);">FullAttn: q_proj / k_proj / v_proj / o_proj</text>
+          </g>
+
+          <!-- ZONE 3: AutoTriage Serving & Post-Processing -->
+          <g class="flow-zone" data-group="eng">
+            <rect x="890" y="8" width="264" height="388" rx="14" style="fill: var(--eng-bg); stroke: var(--eng-border);" stroke-width="1.4"/>
+            <rect x="902" y="20" width="174" height="22" rx="6" style="fill: var(--eng-solid);"/>
+            <text x="989" y="34.5" text-anchor="middle" font-size="11" font-weight="700" fill="#ffffff" data-svg-i18n="z3.pill">03 AutoTriage · 推理后处理</text>
+            <text x="1144" y="34.5" text-anchor="end" font-size="9.8" font-weight="600" style="fill: var(--eng-accent);" data-svg-i18n="z.eng_tag">工程封装</text>
+          </g>
+
+          <!-- Node: vLLM Decode -->
+          <g class="flow-node" data-group="eng" data-id="decode" tabindex="0">
+            <rect class="node-frame" x="902" y="54" width="240" height="94" rx="11" style="fill: var(--raised); stroke: var(--eng-border);" stroke-width="1.3"/>
+            <rect x="902" y="54" width="4" height="94" rx="2" style="fill: var(--eng-solid);"/>
+            <text x="916" y="76" font-size="11.8" font-weight="700" style="fill: var(--text);" data-svg-i18n="n.decv.title">vLLM 贪心解码（关闭 Thinking）</text>
+            <text x="916" y="96" font-size="10.2" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" style="fill: var(--eng-accent);">temp=0 · seed=0 · max_tokens=1</text>
+            <text x="916" y="116" font-size="10.4" style="fill: var(--muted);" data-svg-i18n="n.decv.l1">仅返回第 1 个 Token 及 Top Logprobs</text>
+            <text x="916" y="135" font-size="10" style="fill: var(--muted);" data-svg-i18n="n.decv.l2">无自然语言解释 · Luban :8012</text>
+          </g>
+
+          <!-- Node: 3-Class Business Mapping -->
+          <g class="flow-node" data-group="eng" data-id="labels" tabindex="0">
+            <rect class="node-frame" x="902" y="176" width="186" height="106" rx="11" style="fill: var(--raised); stroke: var(--eng-border);" stroke-width="1.3"/>
+            <rect x="902" y="176" width="4" height="106" rx="2" style="fill: var(--eng-solid);"/>
+            <text x="916" y="198" font-size="11.8" font-weight="700" style="fill: var(--text);" data-svg-i18n="n.lbl.title">业务三分类映射</text>
+            <text x="916" y="220" font-size="10.8" font-weight="600" style="fill: var(--text);" data-svg-i18n="n.lbl.a">A 正确触发 · 94.4%</text>
+            <text x="916" y="242" font-size="10.8" font-weight="600" style="fill: var(--text);" data-svg-i18n="n.lbl.b">B 误触发 · 87.1%</text>
+            <text x="916" y="264" font-size="10.8" font-weight="600" style="fill: var(--text);" data-svg-i18n="n.lbl.c">C 无需协助 · 51.6%</text>
+          </g>
+
+          <!-- Node: Confidence Calculation -->
+          <g class="flow-node" data-group="eng" data-id="conf" tabindex="0">
+            <rect class="node-frame" x="902" y="302" width="240" height="80" rx="11" style="fill: var(--raised); stroke: var(--eng-border);" stroke-width="1.3"/>
+            <rect x="902" y="302" width="4" height="80" rx="2" style="fill: var(--eng-solid);"/>
+            <text x="916" y="324" font-size="11.8" font-weight="700" style="fill: var(--text);" data-svg-i18n="n.conf.title">置信度计算（Cron 后处理）</text>
+            <text x="916" y="346" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-weight="700" style="fill: var(--eng-accent);">max(softmax([lp_A, lp_B, lp_C]))</text>
+            <text x="916" y="368" font-size="10.2" style="fill: var(--muted);" data-svg-i18n="n.conf.sub">仅对 A/B/C logprob 归一化</text>
+          </g>
+
+          <!-- EDGES -->
+          <g fill="none">
+            <path class="flow-edge" data-groups="eng,qwen" d="M 226 162 C 254 162, 256 105, 282 105" style="stroke: var(--eng-accent);" stroke-width="2" marker-end="url(#m-eng)"/>
+            <path class="flow-edge" data-groups="eng,qwen" d="M 226 312 C 254 312, 256 221, 282 221" style="stroke: var(--eng-accent);" stroke-width="2" marker-end="url(#m-eng)"/>
+            <path class="flow-edge" data-groups="qwen" d="M 444 105 C 454 105, 456 132, 464 132" style="stroke: var(--qwen-accent);" stroke-width="1.8" marker-end="url(#m-qwen)"/>
+            <path class="flow-edge" data-groups="qwen" d="M 444 221 C 454 221, 456 194, 464 194" style="stroke: var(--qwen-accent);" stroke-width="1.8" marker-end="url(#m-qwen)"/>
+            <line class="flow-edge" data-groups="qwen" x1="512" y1="163" x2="531" y2="163" style="stroke: var(--qwen-accent);" stroke-width="2" marker-end="url(#m-qwen)"/>
+            <line class="flow-edge" data-groups="qwen" x1="738" y1="163" x2="757" y2="163" style="stroke: var(--qwen-accent);" stroke-width="2" marker-end="url(#m-qwen)"/>
+            <g class="flow-edge" data-groups="lora">
+              <line x1="636" y1="316" x2="636" y2="275" style="stroke: var(--lora-accent);" stroke-width="2.2" stroke-dasharray="4.5 3" marker-end="url(#m-lora)"/>
+              <rect x="568" y="290" width="136" height="20" rx="10" style="fill: var(--raised); stroke: var(--lora-accent);" stroke-width="1.2"/>
+              <text x="636" y="303.5" text-anchor="middle" font-size="9.8" font-weight="700" style="fill: var(--lora-accent);" data-svg-i18n="e.lora">旁路挂载 ΔW = B·A</text>
+            </g>
+            <path class="flow-edge" data-groups="qwen,eng" d="M 844 163 C 872 163, 872 101, 900 101" style="stroke: var(--qwen-accent);" stroke-width="2" marker-end="url(#m-qwen)"/>
+            <g class="flow-edge" data-groups="eng">
+              <line x1="995" y1="148" x2="995" y2="173" style="stroke: var(--eng-accent);" stroke-width="2" marker-end="url(#m-eng)"/>
+              <rect x="965" y="152" width="60" height="17" rx="5" style="fill: var(--raised); stroke: var(--eng-border);" stroke-width="0.9"/>
+              <text x="995" y="164" text-anchor="middle" font-size="9.5" font-weight="700" style="fill: var(--eng-accent);">1 Token</text>
+            </g>
+            <g class="flow-edge" data-groups="eng">
+              <line x1="1116" y1="148" x2="1116" y2="299" style="stroke: var(--eng-accent);" stroke-width="2" marker-end="url(#m-eng)"/>
+              <rect x="1093" y="212" width="46" height="28" rx="6" style="fill: var(--raised); stroke: var(--eng-border);" stroke-width="0.9"/>
+              <text x="1116" y="224" text-anchor="middle" font-size="9" font-weight="700" style="fill: var(--eng-accent);">Top</text>
+              <text x="1116" y="235" text-anchor="middle" font-size="9" font-weight="700" style="fill: var(--eng-accent);">Logprobs</text>
+            </g>
+          </g>
+        </svg>
+      </div>
+
+      <div class="inspector" aria-live="polite">
+        <div class="inspector-main">
+          <span id="inspBadge" class="inspector-badge" style="background: var(--qwen-badge); color: var(--qwen-accent);">提示</span>
+          <span id="inspText" class="inspector-text">点击或悬停任意模块查看详细架构参数，或用上方标签单独高亮「Qwen 原生」与「AutoTriage 自定义」部分。</span>
+        </div>
+        <span id="inspMeta" class="inspector-meta">0508 Macro-F1 78.49%</span>
+      </div>
+    </main>
+
+    <section class="summary-grid" aria-label="架构要点汇总">
+      <article class="summary-card">
+        <div class="summary-card-head">
+          <span class="summary-tag" style="background: var(--qwen-badge); color: var(--qwen-accent);" data-i18n="card1.tag">Qwen 原生 · 冻结权重</span>
+        </div>
+        <h2 data-i18n="card1.title">Qwen3.8-27B 预训练多模态基座</h2>
+        <ul class="summary-list">
+          <li data-i18n="card1.li1">视觉分支：27 层 ViT（<code>d=1152</code>, 16 heads, <code>patch=16</code>, <code>merge=2×2</code>）经视觉投影映射至 <code>5120</code> 维。</li>
+          <li data-i18n="card1.li2">混合语言解码器：64 层（<code>d=5120</code>, 上下文 <code>262K</code>），3:1 交替包含 48 层 Gated DeltaNet 与 16 层 GQA 全注意力。</li>
+          <li data-i18n="card1.li3">原生 LM Head 直接输出首位置 <code>248,320</code> 词表 Logits；视觉编码器、FFN 与基座权重全程冻结。</li>
+        </ul>
+      </article>
+
+      <article class="summary-card">
+        <div class="summary-card-head">
+          <span class="summary-tag" style="background: var(--lora-badge); color: var(--lora-accent);" data-i18n="card2.tag">AutoTriage · 唯一训练参数</span>
+        </div>
+        <h2 data-i18n="card2.title">checkpoint-330 LoRA 微调配方</h2>
+        <ul class="summary-list">
+          <li data-i18n="card2.li1">低秩适配器：<code>r=16</code>、<code>α=64</code>、<code>dropout=0.1</code>，仅挂载两类注意力的 9 个投影矩阵，跳过 FFN/MLP。</li>
+          <li data-i18n="card2.li2">数据与损失：<code>0206v2 + 0522</code>（1,162 训练 / 132 源验证），单类别 token 监督，类别权重 <code>A:2.0 / B:2.2 / C:3.5</code>。</li>
+          <li data-i18n="card2.li3">训练进度：BF16、AdamW、<code>lr=1e-4</code>、cosine + 5% warmup，全程 6 轮 / 438 步，线上采用第 <code>330</code> 步（Epoch 4.52）。</li>
+        </ul>
+      </article>
+
+      <article class="summary-card">
+        <div class="summary-card-head">
+          <span class="summary-tag" style="background: var(--eng-badge); color: var(--eng-accent);" data-i18n="card3.tag">AutoTriage · 生产工程链路</span>
+        </div>
+        <h2 data-i18n="card3.title">每日 Cron 门控、解码与 0508 基准</h2>
+        <ul class="summary-list">
+          <li data-i18n="card3.li1">1016 起先跑 6 条 CPU Bag 前置规则；未命中或回退案例由 <code>Qwen3.8-27B/original330</code>（Luban vLLM <code>:8012</code>）推理。</li>
+          <li data-i18n="card3.li2">确定性单步解码：<code>temp=0</code>、<code>seed=0</code>、<code>max_tokens=1</code> 且关闭 thinking；仅对 A/B/C logprob 做 Softmax 归一化算置信度。</li>
+          <li data-i18n="card3.li3">0508 历史离线基准（10/02 Trail GT, 有效 1,055 例）：Acc <strong>87.30%</strong>（921/1055），Macro-F1 <strong>78.49%</strong>（A 94.38% / B 87.14% / C 51.56%）。</li>
+        </ul>
+      </article>
+    </section>
+  </div>
+
+  <script>
+    (() => {
+      const activeBase = window.__RA_TRIAGE_BASE__ || "";
+      const withBase = (path) => `${activeBase}${path}`;
+
+      document.getElementById("downloadPngLink").href = withBase(
+        "/static/artifacts/architecture-original-330/original330_vlm_flowchart.png"
+      );
+      document.getElementById("downloadSvgLink").href = withBase(
+        "/static/artifacts/architecture-original-330/original330_vlm_flowchart.svg"
+      );
+
+      const I18N = {
+        zh: {
+          "doc.title": "Original330 VLM 架构与推理流程图",
+          "nav.brand": "Original330 VLM · 架构图",
+          "action.png": "高清 PNG (3200×1840)",
+          "action.svg": "矢量 SVG",
+          "hero.eyebrow": "DAILY CRON · AUTO-TRIAGE PRODUCTION VLM",
+          "hero.title": "Original330 VLM 架构与推理流程图",
+          "hero.subtitle": "区分 Qwen3.8-27B 原生预训练基座（微调冻结）、AutoTriage 新增 LoRA 微调权重，以及前后处理工程封装。",
+          "filter.all": "全部视图",
+          "filter.qwen": "Qwen 原生 · 冻结",
+          "filter.lora": "AutoTriage LoRA · 微调",
+          "filter.eng": "AutoTriage 工程封装",
+          "filter.group_aria": "按组件归属高亮模块",
+          "stage.swipe_hint": "可左右滑动查看细节",
+          "stage.zoom_detail": "100% 细节视图",
+          "stage.zoom_fit": "适配窗口宽度",
+          "svg.aria": "Original330 VLM 架构与推理流程图",
+          "insp.default_badge": "提示",
+          "insp.default_text": "点击或悬停任意模块查看详细架构参数，或用上方标签单独高亮「Qwen 原生」与「AutoTriage 自定义」部分。",
+          "insp.default_meta": "0508 Macro-F1 78.49%",
+          "card1.tag": "Qwen 原生 · 冻结权重",
+          "card1.title": "Qwen3.8-27B 预训练多模态基座",
+          "card1.li1": "视觉分支：27 层 ViT（d=1152, 16 heads, patch=16, merge=2×2）经视觉投影映射至 5120 维。",
+          "card1.li2": "混合语言解码器：64 层（d=5120, 上下文 262K），3:1 交替包含 48 层 Gated DeltaNet 与 16 层 GQA 全注意力。",
+          "card1.li3": "原生 LM Head 直接输出首位置 248,320 词表 Logits；视觉编码器、FFN 与基座权重全程冻结。",
+          "card2.tag": "AutoTriage · 唯一训练参数",
+          "card2.title": "checkpoint-330 LoRA 微调配方",
+          "card2.li1": "低秩适配器：r=16、α=64、dropout=0.1，仅挂载两类注意力的 9 个投影矩阵，跳过 FFN/MLP。",
+          "card2.li2": "数据与损失：0206v2 + 0522（1,162 训练 / 132 源验证），单类别 token 监督，类别权重 A:2.0 / B:2.2 / C:3.5。",
+          "card2.li3": "训练进度：BF16、AdamW、lr=1e-4、cosine + 5% warmup，全程 6 轮 / 438 步，线上采用第 330 步（Epoch 4.52）。",
+          "card3.tag": "AutoTriage · 生产工程链路",
+          "card3.title": "每日 Cron 门控、解码与 0508 基准",
+          "card3.li1": "1016 起先跑 6 条 CPU Bag 前置规则；未命中或回退案例由 Qwen3.8-27B/original330（Luban vLLM :8012）推理。",
+          "card3.li2": "确定性单步解码：temp=0、seed=0、max_tokens=1 且关闭 thinking；仅对 A/B/C logprob 做 Softmax 归一化算置信度。",
+          "card3.li3": "0508 历史离线基准（10/02 Trail GT, 有效 1,055 例）：Acc 87.30%（921/1055），Macro-F1 78.49%（A 94.38% / B 87.14% / C 51.56%）。",
+          "lang.toggle_label": "EN",
+          "lang.toggle_aria": "Switch to English",
+          "theme.to_light": "切换到浅色模式",
+          "theme.to_dark": "切换到深色模式"
+        },
+        en: {
+          "doc.title": "Original330 VLM Architecture & Inference Flow",
+          "nav.brand": "Original330 VLM · Architecture",
+          "action.png": "High-res PNG (3200×1840)",
+          "action.svg": "Vector SVG",
+          "hero.eyebrow": "DAILY CRON · AUTO-TRIAGE PRODUCTION VLM",
+          "hero.title": "Original330 VLM Architecture & Inference Flow",
+          "hero.subtitle": "Clear separation of the frozen Qwen3.8-27B native base, AutoTriage fine-tuned LoRA weights, and custom input/serving pipeline.",
+          "filter.all": "All Layers",
+          "filter.qwen": "Qwen Native · Frozen",
+          "filter.lora": "AutoTriage LoRA · Trained",
+          "filter.eng": "AutoTriage Engineering",
+          "filter.group_aria": "Highlight layers by ownership",
+          "stage.swipe_hint": "Swipe horizontally to inspect details",
+          "stage.zoom_detail": "100% Detail View",
+          "stage.zoom_fit": "Fit Width",
+          "svg.aria": "Original330 VLM architecture and inference flowchart",
+          "insp.default_badge": "Guide",
+          "insp.default_text": "Click or hover any module to inspect exact hyperparameters, or use the filter pills above to isolate Qwen Native vs AutoTriage layers.",
+          "insp.default_meta": "0508 Macro-F1 78.49%",
+          "card1.tag": "Qwen Native · Frozen Weights",
+          "card1.title": "Qwen3.8-27B Pretrained Multimodal Base",
+          "card1.li1": "Vision branch: 27-layer ViT (d=1152, 16 heads, patch=16, merge=2×2) projected into 5120-dim visual tokens.",
+          "card1.li2": "Hybrid language decoder: 64 layers (d=5120, 262K ctx) alternating 3:1 with 48 Gated DeltaNet and 16 GQA Full Attention layers.",
+          "card1.li3": "Native LM Head emits first-position logits over 248,320 vocab tokens; vision encoder, FFN, and base weights stay frozen.",
+          "card2.tag": "AutoTriage · Only Trained Weights",
+          "card2.title": "checkpoint-330 LoRA Fine-Tuning Recipe",
+          "card2.li1": "Low-rank adapter: r=16, α=64, dropout=0.1 attached to 9 attention projections across both attention types (FFN/MLP skipped).",
+          "card2.li2": "Data & objective: 0206v2 + 0522 (1,162 train / 132 source-val), single-token supervision with class weights A:2.0 / B:2.2 / C:3.5.",
+          "card2.li3": "Schedule: BF16, AdamW, lr=1e-4, cosine + 5% warmup across 6 epochs / 438 steps; production serves step 330 (Epoch 4.52).",
+          "card3.tag": "AutoTriage · Production Pipeline",
+          "card3.title": "Daily Cron Gate, Decoding & 0508 Benchmark",
+          "card3.li1": "Since release 1016, 6 CPU bag pre-rules run first; misses and fallbacks route to Qwen3.8-27B/original330 (Luban vLLM :8012).",
+          "card3.li2": "Deterministic single-step decoding: temp=0, seed=0, max_tokens=1, thinking disabled; confidence is max softmax over A/B/C logprobs.",
+          "card3.li3": "Offline 0508 benchmark (10/02 Trail GT, 1,055 valid): Acc 87.30% (921/1055), Macro-F1 78.49% (Recall A 94.38% / B 87.14% / C 51.56%).",
+          "lang.toggle_label": "中文",
+          "lang.toggle_aria": "切换到中文",
+          "theme.to_light": "Switch to light theme",
+          "theme.to_dark": "Switch to dark theme"
+        }
+      };
+
+      const SVG_I18N = {
+        zh: {
+          "z1.pill": "01 AutoTriage · 输入组装",
+          "z.eng_tag": "工程封装",
+          "n.prerule": "前置：6 条 Bag 规则未命中进入",
+          "n.cam.title": "前视 Camera102 · 9 帧",
+          "n.cam.sub": "触发前后相对偏移（秒）",
+          "n.prompt.title": "Prompt v2.0 + 结构化文本",
+          "n.prompt.l1": "• 冻结 Camera9 模板（9 占位符）",
+          "n.prompt.l2": "• 25 时点遥测（车速/加速度）",
+          "n.prompt.l3": "• 挡位、让行信息",
+          "n.prompt.l4": "• 结构化 RA Event 解析",
+          "z2.pill": "02 Qwen3.8-27B · 原生预训练基座",
+          "z2.frozen": "微调全程冻结权重",
+          "n.vis.tag": "Qwen 原生 · 视觉",
+          "n.vis.title": "27 层视觉编码器",
+          "n.vis.sub": "图像处理器 → ViT → 投影",
+          "n.txt.tag": "Qwen 原生 · 文本",
+          "n.txt.title": "Tokenizer + 嵌入",
+          "n.txt.sub": "词表 248,320",
+          "n.txt.sub2": "生成文本 Token 序列",
+          "n.fus.1": "图", "n.fus.2": "文", "n.fus.3": "拼", "n.fus.4": "接",
+          "n.fus.foot": "同序列",
+          "n.dec.tag": "Qwen 原生 · 核心语言解码器",
+          "n.dec.title": "64 层混合解码器",
+          "n.dec.sub": "d=5120 · 3:1 交替 (×16组)",
+          "n.dec.b1": "48 层 Gated DeltaNet",
+          "n.dec.b1sub": "线性注意力 · 挂载 LoRA ×5",
+          "n.dec.b2": "16 层 Full Attention",
+          "n.dec.b2sub": "GQA 全注意力 · 挂载 LoRA ×4",
+          "n.dec.ffn": "FFN / MLP (17,408) · 冻结无 LoRA",
+          "n.lm.tag": "Qwen 原生",
+          "n.lm.sub": "语言模型头",
+          "n.lm.logits": "首词 Logits",
+          "n.lora.tag": "AutoTriage · 唯一训练更新权重",
+          "n.lora.targets": "挂载两类注意力的 9 个投影层（跳过 FFN）",
+          "e.lora": "旁路挂载 ΔW = B·A",
+          "z3.pill": "03 AutoTriage · 推理后处理",
+          "n.decv.title": "vLLM 贪心解码（关闭 Thinking）",
+          "n.decv.l1": "仅返回第 1 个 Token 及 Top Logprobs",
+          "n.decv.l2": "无自然语言解释 · Luban :8012",
+          "n.lbl.title": "业务三分类映射",
+          "n.lbl.a": "A 正确触发 · 94.4%",
+          "n.lbl.b": "B 误触发 · 87.1%",
+          "n.lbl.c": "C 无需协助 · 51.6%",
+          "n.conf.title": "置信度计算（Cron 后处理）",
+          "n.conf.sub": "仅对 A/B/C logprob 归一化"
+        },
+        en: {
+          "z1.pill": "01 AutoTriage · Input",
+          "z.eng_tag": "Custom",
+          "n.prerule": "Gate: 6 Bag pre-rule misses enter",
+          "n.cam.title": "Front Camera102 · 9 Frames",
+          "n.cam.sub": "Offsets around RA trigger (sec)",
+          "n.prompt.title": "Prompt v2.0 + Telemetry",
+          "n.prompt.l1": "• Frozen Camera9 template (9 slots)",
+          "n.prompt.l2": "• 25-window speed & acceleration",
+          "n.prompt.l3": "• Gear & yielding state",
+          "n.prompt.l4": "• Structured RA Event parser",
+          "z2.pill": "02 Qwen3.8-27B · Native Base",
+          "z2.frozen": "Frozen During SFT",
+          "n.vis.tag": "Qwen Native · Vision",
+          "n.vis.title": "27-Layer Vision ViT",
+          "n.vis.sub": "Image Proc → ViT → Proj",
+          "n.txt.tag": "Qwen Native · Text",
+          "n.txt.title": "Tokenizer + Embed",
+          "n.txt.sub": "Vocab 248,320",
+          "n.txt.sub2": "Text token sequence",
+          "n.fus.1": "F", "n.fus.2": "U", "n.fus.3": "S", "n.fus.4": "E",
+          "n.fus.foot": "1 Seq",
+          "n.dec.tag": "Qwen Native · Core Decoder",
+          "n.dec.title": "64-Layer Hybrid Decoder",
+          "n.dec.sub": "d=5120 · 3:1 Pattern (×16)",
+          "n.dec.b1": "48× Gated DeltaNet",
+          "n.dec.b1sub": "Linear Attn · LoRA ×5 proj",
+          "n.dec.b2": "16× Full Attention",
+          "n.dec.b2sub": "GQA Attn · LoRA ×4 proj",
+          "n.dec.ffn": "FFN / MLP (17,408) · Frozen",
+          "n.lm.tag": "Qwen Native",
+          "n.lm.sub": "LM Head",
+          "n.lm.logits": "1st Logits",
+          "n.lora.tag": "AutoTriage · Only Trained",
+          "n.lora.targets": "Attached to 9 Attention Projections (FFN Skipped)",
+          "e.lora": "Low-rank ΔW = B·A",
+          "z3.pill": "03 AutoTriage · Post-Proc",
+          "n.decv.title": "vLLM Greedy Decode (No Think)",
+          "n.decv.l1": "Returns 1st token + Top Logprobs",
+          "n.decv.l2": "No rationale text · Luban :8012",
+          "n.lbl.title": "3-Class Business Mapping",
+          "n.lbl.a": "A True Trigger · 94.4%",
+          "n.lbl.b": "B False Positive · 87.1%",
+          "n.lbl.c": "C No Assist · 51.6%",
+          "n.conf.title": "Confidence (Cron Post-Proc)",
+          "n.conf.sub": "Softmax over A/B/C logprobs only"
+        }
+      };
+
+      const DETAILS = {
+        prerule: {
+          tone: "eng",
+          zh: {
+            badge: "AutoTriage 工程",
+            text: "1016 版本起生产链路先跑 6 条 CPU Bag 前置规则（traffic_light_unknown / response / request、eol_request、pullover、perception_fp），未命中或回退案例进入 Original330。",
+            meta: "每日 07:00 / 19:00 扫描"
+          },
+          en: {
+            badge: "AutoTriage Pipeline",
+            text: "Since release 1016, six CPU bag pre-rules run first (traffic_light_*, eol_request, pullover, perception_fp); misses and fallbacks enter Original330.",
+            meta: "Daily 07:00 / 19:00 CST"
+          }
+        },
+        camera: {
+          tone: "eng",
+          zh: {
+            badge: "AutoTriage 工程",
+            text: "按 Trail 原始 ra_start_timestamp 截取前视 Camera102 9 帧（-19/-15/-10/-5/0/+5/+10/+15/+19s），PIL RGB 按 factor=28 缩放至 200,704–602,112 px。",
+            meta: "use_fast=false"
+          },
+          en: {
+            badge: "AutoTriage Pipeline",
+            text: "Samples 9 front Camera102 frames around Trail ra_start_timestamp (-19/-15/-10/-5/0/+5/+10/+15/+19s), resized with PIL RGB factor=28 into 200,704–602,112 px.",
+            meta: "use_fast=false"
+          }
+        },
+        prompt: {
+          tone: "eng",
+          zh: {
+            badge: "AutoTriage 工程",
+            text: "冻结 Camera9 Prompt v2.0 模板（9 图像占位符），注入 25 个时间窗车速/加速度/挡位/让行遥测与结构化 RA Event（支持 pickup 兼容兜底）。",
+            meta: "冻结协议 SHA"
+          },
+          en: {
+            badge: "AutoTriage Pipeline",
+            text: "Frozen Camera9 Prompt v2.0 template (9 image slots) populated with 25-window speed/accel/gear/yielding telemetry and structured RA Event (with pickup fallback).",
+            meta: "Frozen Protocol SHA"
+          }
+        },
+        vision: {
+          tone: "qwen",
+          zh: {
+            badge: "Qwen 原生 · 冻结",
+            text: "Qwen3.8-27B 原生视觉链路：图像处理器（patch=16, spatial_merge=2）→ 27 层 ViT（d=1152, 16 heads）→ 视觉投影层映射至 5120 维视觉 Token，微调全程冻结。",
+            meta: "0 参数更新"
+          },
+          en: {
+            badge: "Qwen Native · Frozen",
+            text: "Native Qwen3.8-27B vision stack: image processor (patch=16, spatial_merge=2) → 27-layer ViT (d=1152, 16 heads) → projector into 5120-dim visual tokens; fully frozen.",
+            meta: "0 Updated Params"
+          }
+        },
+        textenc: {
+          tone: "qwen",
+          zh: {
+            badge: "Qwen 原生 · 冻结",
+            text: "Qwen 原生 Tokenizer（词表 248,320）与文本词嵌入层（hidden_size=5120），微调全程冻结。",
+            meta: "0 参数更新"
+          },
+          en: {
+            badge: "Qwen Native · Frozen",
+            text: "Native Qwen Tokenizer (vocab 248,320) and token embedding table (hidden_size=5120), frozen throughout fine-tuning.",
+            meta: "0 Updated Params"
+          }
+        },
+        fusion: {
+          tone: "qwen",
+          zh: {
+            badge: "Qwen 原生 · 冻结",
+            text: "Qwen 原生多模态序列拼接机制，将视觉 Token 与文本 Token 拼入同一 5120 维序列（最大上下文 262,144）。",
+            meta: "max_pos = 262K"
+          },
+          en: {
+            badge: "Qwen Native · Frozen",
+            text: "Native Qwen multimodal token fusion placing visual and text tokens into a unified 5120-dim sequence (max context 262,144).",
+            meta: "max_pos = 262K"
+          }
+        },
+        decoder: {
+          tone: "qwen",
+          zh: {
+            badge: "Qwen 原生 · 冻结主干",
+            text: "64 层混合解码器（d=5120）：每 4 层为 3 层 Gated DeltaNet 线性注意力（48 层, 16K/48V, d=128）+ 1 层 Full Attention GQA（16 层, 24Q/4KV, d=256）；FFN(17,408) 完全冻结。",
+            meta: "48 DeltaNet + 16 Full"
+          },
+          en: {
+            badge: "Qwen Native · Frozen Backbone",
+            text: "64-layer hybrid decoder (d=5120): 3 Gated DeltaNet linear-attention layers (48 total, 16K/48V, d=128) + 1 GQA Full Attention layer (16 total, 24Q/4KV, d=256) every 4 layers; FFN (17,408) stays frozen.",
+            meta: "48 DeltaNet + 16 Full"
+          }
+        },
+        lmhead: {
+          tone: "qwen",
+          zh: {
+            badge: "Qwen 原生 · 冻结",
+            text: "复用 Qwen 原生语言模型头，直接输出首个生成位置在全词表（248,320）上的 logits，未新增分类头。",
+            meta: "CausalLM Head"
+          },
+          en: {
+            badge: "Qwen Native · Frozen",
+            text: "Reuses the native Qwen LM Head to emit first-position logits over the full 248,320 vocabulary with no separate classification head.",
+            meta: "CausalLM Head"
+          }
+        },
+        lora: {
+          tone: "lora",
+          zh: {
+            badge: "AutoTriage LoRA · 微调",
+            text: "唯一训练更新权重：r=16, α=64, dropout=0.1，挂载至两类注意力的 9 个投影层；0206v2+0522（1,162 例）单 token 加权损失（A:2.0 / B:2.2 / C:3.5），线上采用第 330/438 步（Epoch 4.52）。",
+            meta: "BF16 · lr 1e-4"
+          },
+          en: {
+            badge: "AutoTriage LoRA · Trained",
+            text: "Only trained weights: r=16, α=64, dropout=0.1 across 9 attention projections; SFT on 0206v2+0522 (1,162 examples) with single-token loss weights A:2.0 / B:2.2 / C:3.5, served at step 330/438 (Epoch 4.52).",
+            meta: "BF16 · lr 1e-4"
+          }
+        },
+        decode: {
+          tone: "eng",
+          zh: {
+            badge: "AutoTriage 工程",
+            text: "Luban vLLM（:8012）加载基座 + original330 LoRA，固定 temp=0、seed=0、max_tokens=1 且关闭 thinking，只输出 1 个类别 token 与 logprobs。",
+            meta: "确定性单步推理"
+          },
+          en: {
+            badge: "AutoTriage Pipeline",
+            text: "Luban vLLM (:8012) serves Qwen3.8-27B + original330 LoRA with temp=0, seed=0, max_tokens=1, and thinking disabled, emitting 1 token plus top logprobs.",
+            meta: "Deterministic 1-Step"
+          }
+        },
+        labels: {
+          tone: "eng",
+          zh: {
+            badge: "AutoTriage 工程",
+            text: "A/B/C 业务语义来自微调监督标签（0508 离线 Recall：A 正确触发 94.38% · B 误触发 87.14% · C 无需协助 51.56%）。",
+            meta: "Acc 87.30% (921/1055)"
+          },
+          en: {
+            badge: "AutoTriage Pipeline",
+            text: "A/B/C business semantics come from SFT labels (0508 offline Recall: A True Trigger 94.38%, B False Positive 87.14%, C No Assist 51.56%).",
+            meta: "Acc 87.30% (921/1055)"
+          }
+        },
+        conf: {
+          tone: "eng",
+          zh: {
+            badge: "AutoTriage 工程",
+            text: "由每日 cron 后处理仅提取 A/B/C 三个 token 的 logprob 做 Softmax 归一化并取最大值作为置信度（用于低置信度人工复核路由，非校准准确率）。",
+            meta: "Cron 后处理"
+          },
+          en: {
+            badge: "AutoTriage Pipeline",
+            text: "Daily cron post-processing extracts A/B/C logprobs only, applies Softmax normalization, and takes max probability as confidence for low-confidence review routing.",
+            meta: "Cron Post-Processing"
+          }
+        }
+      };
+
+      const state = {
+        lang: document.documentElement.dataset.uiLang === "en" ? "en" : "zh",
+        theme: document.documentElement.dataset.colorTheme === "light" ? "light" : "dark",
+        filter: "all",
+        selectedId: null,
+        zoomDetail: false
+      };
+
+      const filterButtons = document.querySelectorAll(".filter-pill");
+      const nodes = document.querySelectorAll(".flow-node");
+      const zones = document.querySelectorAll(".flow-zone");
+      const edges = document.querySelectorAll(".flow-edge");
+      const inspBadge = document.getElementById("inspBadge");
+      const inspText = document.getElementById("inspText");
+      const inspMeta = document.getElementById("inspMeta");
+      const langToggleBtn = document.getElementById("langToggleBtn");
+      const themeToggleBtn = document.getElementById("themeToggleBtn");
+      const zoomToggleBtn = document.getElementById("zoomToggleBtn");
+      const diagramViewport = document.getElementById("diagramViewport");
+      const vlmSvg = document.getElementById("vlmSvg");
+      const filterGroup = document.getElementById("filterGroup");
+
+      function t(key) {
+        return (I18N[state.lang] && I18N[state.lang][key]) || I18N.zh[key] || key;
+      }
+
+      function renderInspector() {
+        if (!state.selectedId || !DETAILS[state.selectedId]) {
+          inspBadge.textContent = t("insp.default_badge");
+          inspBadge.style.background = "var(--qwen-badge)";
+          inspBadge.style.color = "var(--qwen-accent)";
+          inspText.textContent = t("insp.default_text");
+          inspMeta.textContent = t("insp.default_meta");
+          return;
+        }
+        const entry = DETAILS[state.selectedId];
+        const copy = entry[state.lang] || entry.zh;
+        inspBadge.textContent = copy.badge;
+        inspBadge.style.background = `var(--${entry.tone}-badge)`;
+        inspBadge.style.color = `var(--${entry.tone}-accent)`;
+        inspText.textContent = copy.text;
+        inspMeta.textContent = copy.meta;
+      }
+
+      function applyFilter(filter) {
+        state.filter = filter;
+        filterButtons.forEach((btn) => {
+          const f = btn.dataset.filter;
+          const active = f === filter;
+          btn.setAttribute("aria-pressed", String(active));
+          if (active) {
+            if (f === "all") {
+              btn.style.background = "var(--primary)";
+              btn.style.borderColor = "var(--primary)";
+              btn.style.color = "var(--primary-fg)";
+            } else {
+              btn.style.background = `var(--${f}-badge)`;
+              btn.style.borderColor = `var(--${f}-accent)`;
+              btn.style.color = "var(--text)";
+            }
+          } else {
+            btn.style.background = "var(--overlay)";
+            btn.style.borderColor = "var(--line)";
+            btn.style.color = "var(--text)";
+          }
+        });
+
+        nodes.forEach((n) => {
+          const match = filter === "all" || n.dataset.group === filter;
+          n.classList.toggle("is-dimmed", !match);
+        });
+        zones.forEach((z) => {
+          const match = filter === "all" || z.dataset.group === filter;
+          z.classList.toggle("is-dimmed", !match);
+        });
+        edges.forEach((e) => {
+          const groups = (e.dataset.groups || "").split(",");
+          const match = filter === "all" || groups.includes(filter);
+          e.classList.toggle("is-dimmed", !match);
+        });
+      }
+
+      function applyTheme(theme, persist) {
+        state.theme = theme === "light" ? "light" : "dark";
+        document.documentElement.dataset.colorTheme = state.theme;
+        if (persist) {
+          try { localStorage.setItem("ra-triage-color-theme", state.theme); } catch (_) {}
+        }
+        const isLight = state.theme === "light";
+        themeToggleBtn.textContent = isLight ? "☾" : "☀";
+        const label = t(isLight ? "theme.to_dark" : "theme.to_light");
+        themeToggleBtn.setAttribute("aria-label", label);
+        themeToggleBtn.title = label;
+      }
+
+      function applyLanguage(lang, persist) {
+        state.lang = lang === "en" ? "en" : "zh";
+        document.documentElement.dataset.uiLang = state.lang;
+        document.documentElement.lang = state.lang === "en" ? "en" : "zh-CN";
+        if (persist) {
+          try { localStorage.setItem("ra-triage-ui-language", state.lang); } catch (_) {}
+        }
+        document.title = t("doc.title");
+        vlmSvg.setAttribute("aria-label", t("svg.aria"));
+        filterGroup.setAttribute("aria-label", t("filter.group_aria"));
+
+        document.querySelectorAll("[data-i18n]").forEach((el) => {
+          const key = el.getAttribute("data-i18n");
+          if (key) el.textContent = t(key);
+        });
+
+        const svgTable = SVG_I18N[state.lang] || SVG_I18N.zh;
+        document.querySelectorAll("[data-svg-i18n]").forEach((el) => {
+          const key = el.getAttribute("data-svg-i18n");
+          if (key && svgTable[key] != null) el.textContent = svgTable[key];
+        });
+
+        langToggleBtn.textContent = t("lang.toggle_label");
+        langToggleBtn.setAttribute("aria-label", t("lang.toggle_aria"));
+        langToggleBtn.title = t("lang.toggle_aria");
+
+        zoomToggleBtn.textContent = t(state.zoomDetail ? "stage.zoom_fit" : "stage.zoom_detail");
+        applyTheme(state.theme, false);
+        renderInspector();
+      }
+
+      function selectNode(id) {
+        state.selectedId = id;
+        nodes.forEach((n) => n.classList.toggle("is-selected", n.dataset.id === id));
+        renderInspector();
+      }
+
+      function applyZoom(zoomDetail) {
+        state.zoomDetail = Boolean(zoomDetail);
+        diagramViewport.classList.toggle("is-zoom-100", state.zoomDetail);
+        diagramViewport.classList.toggle("is-fit", !state.zoomDetail);
+        zoomToggleBtn.setAttribute("aria-pressed", String(state.zoomDetail));
+        zoomToggleBtn.textContent = t(state.zoomDetail ? "stage.zoom_fit" : "stage.zoom_detail");
+      }
+
+      filterButtons.forEach((btn) => {
+        btn.addEventListener("click", () => applyFilter(btn.dataset.filter));
+      });
+
+      nodes.forEach((n) => {
+        n.addEventListener("click", () => selectNode(n.dataset.id));
+        n.addEventListener("mouseenter", () => selectNode(n.dataset.id));
+        n.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            selectNode(n.dataset.id);
+          }
+        });
+      });
+
+      langToggleBtn.addEventListener("click", () => {
+        applyLanguage(state.lang === "en" ? "zh" : "en", true);
+      });
+
+      themeToggleBtn.addEventListener("click", () => {
+        applyTheme(state.theme === "light" ? "dark" : "light", true);
+      });
+
+      zoomToggleBtn.addEventListener("click", () => {
+        applyZoom(!state.zoomDetail);
+      });
+
+      applyZoom(window.innerWidth <= 639);
+      applyFilter("all");
+      applyLanguage(state.lang, false);
+    })();
+  </script>
+</body>
+</html>

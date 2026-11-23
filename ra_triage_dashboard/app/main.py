@@ -39,6 +39,7 @@ from .runtime import (
 )
 from .routers import (
     analysis,
+    artifacts,
     batch,
     case_annotations,
     case_comments,
@@ -392,6 +393,7 @@ from .routers import human_publications
 app.include_router(human_publications.router)
 app.include_router(rd_results.router)
 app.include_router(core.router)
+app.include_router(artifacts.router)
 app.include_router(daily_cron.router)
 app.include_router(daily_review.router)
 app.include_router(cases.router)
