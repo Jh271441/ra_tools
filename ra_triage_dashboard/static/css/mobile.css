@@ -1299,8 +1299,9 @@
   #taskAllocationGroupSetup,
   #taskAllocationLiveContent,
   .allocation-creation-preview > .allocation-live-content { padding: 10px 11px; }
-  .allocation-diff-row { grid-template-columns: minmax(82px, 112px) minmax(24px, 1fr) auto; gap: 6px; padding-inline: 2px; }
-  .allocation-diff-values { gap: 5px; font-size: 11px; }
+  .allocation-diff-list { grid-template-columns: minmax(48px, 112px) minmax(24px, 1fr) max-content fit-content(30%); column-gap: 6px; }
+  .allocation-diff-row { padding-inline: 2px; }
+  .allocation-diff-values { font-size: 11px; }
   .task-allocation-body > .task-allocation-settings { overflow: visible; padding-inline-end: 0; }
   .is-allocation-edit #taskAllocationPreview {
     overflow: visible; margin-top: 0; padding: 0;

@@ -297,10 +297,13 @@ html[data-color-theme="light"] .allocation-group-fill > i[data-seam="true"] { bo
 .allocation-diff-empty { margin: 0; padding: 2px 0; color: var(--faint); font-size: 11px; }
 .allocation-diff-legend { color: var(--muted); }
 .allocation-diff-legend .allocation-diff-outgoing { border-radius: 2px; }
-.allocation-diff-list { display: grid; gap: 2px; }
+.allocation-diff-list {
+  display: grid; grid-template-columns: minmax(112px, 148px) minmax(40px, 1fr) max-content fit-content(30%);
+  gap: 2px 8px;
+}
 .allocation-diff-row {
-  display: grid; grid-template-columns: minmax(112px, 148px) minmax(40px, 1fr) auto;
-  align-items: center; gap: 10px; width: 100%; min-width: 0; padding: 5px 6px; min-height: 32px;
+  display: grid; grid-column: 1 / -1; grid-template-columns: subgrid;
+  align-items: center; width: 100%; min-width: 0; padding: 5px 6px; min-height: 32px;
   border: 0; border-radius: 6px; background: transparent;
   color: var(--text); font-size: 12px; text-align: start;
 }
@@ -323,12 +326,12 @@ button.allocation-diff-row:hover { background: var(--overlay); }
   border-radius: 0 3px 3px 0;
 }
 .allocation-diff-values {
-  display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px;
+  display: grid; grid-column: span 2; grid-template-columns: subgrid; align-items: center; text-align: end;
   white-space: nowrap; font-size: 12px; font-variant-numeric: tabular-nums;
 }
 .allocation-diff-values > span { color: var(--muted); }
 .allocation-diff-values > span strong { color: var(--text); font-weight: 650; }
-.allocation-diff-values > strong { min-width: 3.2ch; text-align: end; color: var(--faint); font-weight: 650; }
+.allocation-diff-values > strong { white-space: normal; overflow-wrap: anywhere; color: var(--faint); font-weight: 650; }
 .allocation-diff-values > strong[data-diff-sign="in"] { color: var(--accent); }
 .allocation-diff-values > strong[data-diff-sign="out"] { color: var(--allocation-outgoing); }
 @container (max-width: 67px) {
