@@ -49,18 +49,25 @@ function renderGroupedAllocationPreview(root, plan, view, { formal = false, edit
     "<strong>" + escapeHtml(workloadPct) + "</strong> 总工作量 · " + escapeHtml(fmt(chart.case_count)) + " 个 Case · " + escapeHtml(fmt(slots)) + " 份",
     "<strong>" + escapeHtml(workloadPct) + "</strong> workload · " + escapeHtml(fmt(chart.case_count)) + " cases · " + escapeHtml(fmt(slots)) + " slots",
   );
+  const setupScope = root.closest?.(".dialog-card, .allocation-creation-layout");
   const groupsMarkup = groups.map((group, index) => {
     const name = allocationGroupName(group.group_id, index, formal);
-    const total = group.members.reduce((sum, member) => sum + member.total, 0);
+    const domCard = setupScope?.querySelector?.('[data-setup-group="' + CSS.escape(group.group_id) + '"]');
+    const domNames = domCard ? [...domCard.querySelectorAll("[data-group-member]")].map((el) => el.value).filter(Boolean) : [];
+    const configuredNames = domNames.length
+      ? domNames
+      : ((plan.groups || []).find((item) => item.group_id === group.group_id)?.members || []).map((person) => person.name);
+    const orderMap = new Map(configuredNames.map((memberName, idx) => [memberName, idx]));
+    const orderedMembers = [...group.members].sort((a, b) => (orderMap.get(a.name) ?? 999) - (orderMap.get(b.name) ?? 999));
+    const total = orderedMembers.reduce((sum, member) => sum + member.total, 0);
     const uncovered = chart.case_count - total;
-    const parts = uncovered ? [...group.members, { name: null, total: uncovered, completed: 0 }] : group.members;
+    const parts = uncovered ? [...orderedMembers, { name: null, total: uncovered, completed: 0 }] : orderedMembers;
     const segments = parts.map((person, memberIndex) => {
       const isMember = person.name != null;
       const showShared = selected.length > 0 && !view.selected.has(group.group_id);
       const active = view.selected.get(group.group_id) === person.name;
       const shared = intersections[index].get(person.name) || 0;
       const label = person.name ?? uiText("未覆盖", "Uncovered");
-      const textPlain = showShared ? fmt(shared) + "/" + fmt(person.total) : fmt(person.total);
       const countMarkup = showShared
         ? '<strong>' + escapeHtml(fmt(shared)) + '</strong><small>/' + escapeHtml(fmt(person.total)) + '</small>'
         : '<strong class="is-total">' + escapeHtml(fmt(person.total)) + '</strong>';
@@ -68,8 +75,9 @@ function renderGroupedAllocationPreview(root, plan, view, { formal = false, edit
         uiText("已完成 ", "Completed ") + fmt(person.completed) : "") +
         (selected.length ? " · " + uiText("共同 Case ", "Shared cases ") + fmt(shared) : "");
       const controls = ' data-plot-group="' + escapeHtml(group.group_id) + '" data-plot-member="' + escapeHtml(person.name ?? "") + '"';
+      const slotIndex = isMember && orderMap.has(person.name) ? orderMap.get(person.name) : memberIndex;
       const style = "--portion:" + (100 * person.total / chart.case_count) + "%;--member-color:var(--allocation-color-" +
-        ((index * 2 + memberIndex) % 4) + ");--done:" + (100 * person.completed / person.total) +
+        ((index * 2 + slotIndex) % 4) + ");--done:" + (100 * person.completed / person.total) +
         "%;--shared:" + (100 * shared / person.total) + "%";
       const hasSeam = isMember && person.completed > 0 && person.completed < person.total;
       const mark = '<span class="allocation-group-fill" aria-hidden="true"><i' + (hasSeam ? ' data-seam="true"' : '') + '></i></span>' +

@@ -7,7 +7,7 @@ function assignmentPercent(count, total) {
 function assignmentPreviewGroups(groups) {
   if (!groups?.length) return "";
   return '<details class="assignment-preview-groups"><summary>' +
-    escapeHtml(uiText("指定搭档与 Case", "Specified partners and cases")) +
+    escapeHtml(uiText("已指定的交叉搭档", "Specified cross-review partners")) +
     '</summary><ul>' + groups.map((group) => '<li><strong>' +
       escapeHtml(group.members.map((member) => member.name ?? member).join(" + ")) + '</strong><div class="quiet-meta">' +
       escapeHtml(group.issue_ids.join(", ")) + '</div></li>').join("") + '</ul></details>';

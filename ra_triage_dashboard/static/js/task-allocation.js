@@ -320,45 +320,52 @@ function renderTaskAllocationEditor(draft) {
     <header class="dialog-header"><div class="task-allocation-heading">
       <h2 id="taskAllocationTitle" tabindex="-1">${escapeHtml(uiText("修改任务分配", "Edit task allocation"))}</h2>
       ${config ? `<p class="dialog-copy">${escapeHtml(config.name || config.campaign_id)} · ${escapeHtml(uiText(
-        "已完成或已保存的工作留在原人",
-        "Saved and completed work stays with the original assignee",
+        "已完成与已保存记录自动保留",
+        "Completed and saved work stays locked",
       ))}</p>` : ""}
       </div>
       <button class="icon-button" type="button" data-allocation-close aria-label="${escapeHtml(uiText("关闭", "Close"))}">×</button></header>
     ${config ? `<div class="task-allocation-body"><div class="task-allocation-settings">
       <div class="allocation-basis-bar">
-        <label class="allocation-basis-inline"><span>${escapeHtml(uiText("分配基数", "Basis"))}</span>
-          <select id="taskAllocationBasis">
-            <option value="remaining" ${basis === "remaining" ? "selected" : ""}>${escapeHtml(uiText("按剩余量分配", "Distribute remaining work"))}</option>
-            <option value="total" ${basis === "total" ? "selected" : ""}>${escapeHtml(uiText("按全量目标补齐", "Fill toward total targets"))}</option>
-          </select></label>
-        <span class="allocation-basis-meta">${escapeHtml(config.role_movable_slots
-          ? uiText(
-            `可调 ${number.format(config.movable_slots)} / ${number.format(config.total_slots)} 份（RD ${number.format(config.role_movable_slots.rd)} · TE ${number.format(config.role_movable_slots.te)}）`,
-            `${number.format(config.movable_slots)}/${number.format(config.total_slots)} movable (RD ${number.format(config.role_movable_slots.rd)} · TE ${number.format(config.role_movable_slots.te)})`,
-          )
-          : uiText(
-            `可调 ${number.format(config.movable_slots)} / ${number.format(config.total_slots)} 份`,
-            `${number.format(config.movable_slots)} of ${number.format(config.total_slots)} movable`,
-          ))}</span>
+        <div class="allocation-section-heading">
+          <h3 class="allocation-section-title">${escapeHtml(uiText("分配组", "Allocation groups"))}</h3>
+          <span class="allocation-basis-meta">${config.role_movable_slots
+            ? uiText(
+              `可调 <strong>${escapeHtml(number.format(config.movable_slots))}</strong> 份 · RD ${escapeHtml(number.format(config.role_movable_slots.rd))} / TE ${escapeHtml(number.format(config.role_movable_slots.te))}`,
+              `<strong>${escapeHtml(number.format(config.movable_slots))}</strong> movable · RD ${escapeHtml(number.format(config.role_movable_slots.rd))} / TE ${escapeHtml(number.format(config.role_movable_slots.te))}`,
+            )
+            : uiText(
+              `可调 <strong>${escapeHtml(number.format(config.movable_slots))}</strong> 份`,
+              `<strong>${escapeHtml(number.format(config.movable_slots))}</strong> movable`,
+            )}</span>
+        </div>
+        <div class="allocation-basis-controls">
+          <label class="allocation-basis-inline"><span>${escapeHtml(uiText("分配基数", "Basis"))}</span>
+            <select id="taskAllocationBasis">
+              <option value="remaining" ${basis === "remaining" ? "selected" : ""}>${escapeHtml(uiText("按剩余量分配", "Distribute remaining work"))}</option>
+              <option value="total" ${basis === "total" ? "selected" : ""}>${escapeHtml(uiText("按全量目标补齐", "Fill toward total targets"))}</option>
+            </select></label>
+          ${config.editable ? `<button class="button button-secondary allocation-compact-btn" type="button" data-allocation-add-group>+ ${escapeHtml(uiText("添加分配组", "Add group"))}</button>` : ""}
+        </div>
       </div>
       ${basis === "total" ? `<p class="dialog-copy allocation-basis-hint">${escapeHtml(uiText(
         "已保留工作计入每人的目标配额。", "Retained work counts toward each person's target.",
       ))}</p>` : ""}
       <div id="taskAllocationGroupSetup" class="allocation-group-setup"></div>
-      <details class="task-allocation-current assignment-preview-groups" ${currentDetailsOpen ? "open" : ""}>
-        <summary><span>${escapeHtml(uiText("当前分配明细与删除", "Current allocation details & delete"))}</span>
-          <span class="dialog-copy">${escapeHtml(uiText(
-            `已完成 ${number.format(config.completed_slots)} · 保护待办 ${number.format(config.saved_pending_slots)}`,
-            `${number.format(config.completed_slots)} completed · ${number.format(config.saved_pending_slots)} protected`,
-          ))}</span></summary>
-        ${renderTaskAllocationMembers(config.progress_members || [])}
-        ${config.editable ? `<button class="button button-secondary" type="button" data-allocation-delete>${escapeHtml(uiText("删除分配", "Delete allocation"))}</button>` : ""}
-      </details></div>
+      </div>
       <section id="taskAllocationPreview" class="task-allocation-preview" aria-labelledby="taskAllocationPreviewTitle">
         <h3 id="taskAllocationPreviewTitle" tabindex="-1">${escapeHtml(uiText("实时预览", "Live preview"))}</h3>
         <div id="taskAllocationLiveContent" class="allocation-live-content"></div>
-      </section></div>` : `<p class="dialog-copy">${escapeHtml(uiText("正在加载分配…", "Loading allocation…"))}</p>`}
+      </section>
+      <details class="task-allocation-current assignment-preview-groups" ${currentDetailsOpen ? "open" : ""}>
+        <summary><span>${escapeHtml(uiText("已保存的分配明细", "Saved allocation details"))}</span>
+          <span class="allocation-disclosure-meta">${escapeHtml(uiText(
+            `已完成 ${number.format(config.completed_slots)} · 已保护待办 ${number.format(config.saved_pending_slots)}`,
+            `${number.format(config.completed_slots)} completed · ${number.format(config.saved_pending_slots)} protected pending`,
+          ))}</span></summary>
+        ${renderTaskAllocationMembers(config.progress_members || [])}
+        ${config.editable ? `<button class="button button-secondary" type="button" data-allocation-delete>${escapeHtml(uiText("删除整条分配", "Delete entire allocation"))}</button>` : ""}
+      </details></div>` : `<p class="dialog-copy">${escapeHtml(uiText("正在加载分配…", "Loading allocation…"))}</p>`}
     ${config ? `<div class="allocation-live-status">
       <p id="taskAllocationLiveStatus" class="dialog-copy" role="status"></p>
       <button class="button button-secondary" type="button" id="taskAllocationRetryPreview" data-allocation-retry-preview hidden>
@@ -497,6 +504,9 @@ async function openTaskAllocationEditor(campaignId, opener = null, removal = "")
       if (event.target.closest("[data-allocation-export]")) exportTaskAllocationChanges();
       if (event.target.closest("[data-allocation-apply]")) saveTaskAllocation();
       if (event.target.closest("[data-allocation-retry-preview]")) retryTaskAllocationPreview();
+      if (event.target.closest("[data-allocation-add-group]")) {
+        dialog.querySelector('#taskAllocationGroupSetup [data-setup-action="add-group"]')?.click();
+      }
       if (event.target.closest("[data-allocation-view-preview]")) {
         const heading = $("#taskAllocationPreviewTitle");
         heading?.scrollIntoView({ block: "start" });

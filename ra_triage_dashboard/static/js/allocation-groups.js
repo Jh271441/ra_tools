@@ -29,8 +29,13 @@ function allocationGroupOptions(options, selected) {
     (value === selected ? " selected" : "") + ">" + escapeHtml(label) + "</option>").join("");
 }
 
-function groupAllocationInput(value, label, field, disabled = false) {
-  return '<span class="assignment-ratio-input"><input data-group-field="' + field +
+function allocationColorSlot(groupIndex, memberIndex) {
+  return (groupIndex * 2 + memberIndex) % 4;
+}
+
+function groupAllocationInput(value, label, field, disabled = false, extraStyle = "") {
+  return '<span class="assignment-ratio-input"' + (extraStyle ? ' style="' + escapeHtml(extraStyle) + '"' : '') +
+    '><input data-group-field="' + field +
     '" aria-label="' + escapeHtml(label) + '" type="number" min="0" max="100" step="0.01" inputmode="decimal" required value="' +
     escapeHtml(value ?? "") + '"' + (disabled ? " disabled" : "") + '><span aria-hidden="true">%</span></span>';
 }
@@ -57,8 +62,47 @@ function readAllocationGroupSetup(root) {
     ruleLengths: [...root.querySelectorAll("[data-setup-rule]")].map((row) => row.querySelectorAll("select").length) };
 }
 
+function allocationPercentUnits(value) {
+  if (!Number.isFinite(value) || value < 0 || value > 100) return null;
+  const scaled = value * 100;
+  const units = Math.round(scaled);
+  return Math.abs(scaled - units) < 1e-7 ? units : null;
+}
+
+function splitGroupShares(total, weights) {
+  const sum = weights.reduce((count, weight) => count + weight, 0);
+  const divisor = sum || weights.length;
+  const portions = weights.map((weight, index) => {
+    const numerator = total * (sum ? weight : 1);
+    return { units: Math.floor(numerator / divisor), remainder: numerator % divisor, index };
+  });
+  const leftover = total - portions.reduce((count, portion) => count + portion.units, 0);
+  [...portions].sort((a, b) => b.remainder - a.remainder || a.index - b.index)
+    .slice(0, leftover).forEach((portion) => { portion.units += 1; });
+  return portions.map((portion) => portion.units / 100);
+}
+
+function rebalanceGroupShare(input, edit) {
+  if (edit?.input !== input) {
+    const card = input.closest("[data-setup-group]");
+    const shares = [...card.querySelectorAll("[data-setup-member]")]
+      .filter((row) => row.querySelector("[data-group-member]").value)
+      .map((row) => row.querySelector('[data-group-field="share"]'));
+    if (!shares.includes(input) || shares.length < 2) return null;
+    const peers = shares.filter((share) => share !== input);
+    // Use the proportions from the start of this edit, including while typing 100.
+    edit = { input, peers, weights: peers.map((peer) => allocationPercentUnits(peer.valueAsNumber) ?? 0) };
+  }
+  const units = allocationPercentUnits(input.valueAsNumber);
+  if (units != null) {
+    const shares = splitGroupShares(10000 - units, edit.weights);
+    edit.peers.forEach((peer, index) => { peer.value = String(shares[index]); });
+  }
+  return edit;
+}
+
 function groupAllocationSetupError(draft) {
-  const invalid = (value) => value == null || value < 0 || value > 100 || Math.abs(value * 100 - Math.round(value * 100)) > 1e-7;
+  const invalid = (value) => allocationPercentUnits(value) == null;
   if (!draft?.groups?.length || draft.groups.some((group) => !group.members.length ||
       group.members.some((person) => !person.name))) {
     return apiResponseError("请为每组选择成员。", "Select members for each group.");
@@ -112,29 +156,35 @@ function renderAllocationGroupSetup(root, draft, options) {
     const candidates = users.filter((user) => ["writer", "admin"].includes(user.role) &&
       (!role || user.human_role === role));
     const members = group.members.length ? group.members : [{ name: "", review_percent: 100 }];
-    const card = members.map((person) => {
+    const card = members.map((person, memberIndex) => {
+      const slot = allocationColorSlot(index, memberIndex);
+      const pct = Math.max(0, Math.min(100, Number(person.review_percent) || 0));
       const names = [{ value: "", label: empty }, ...candidates.map((user) => ({
         value: user.username, label: user.username,
       }))];
       if (person.name && !names.some((item) => item.value === person.name)) {
         names.push({ value: person.name, label: person.name + " · " + uiText("不可用", "Unavailable") });
       }
-      return '<div class="allocation-setup-member" data-setup-member><select data-group-member aria-label="' +
+      const rowStyle = "--member-swatch:var(--allocation-swatch-" + slot + ");--share-color:var(--allocation-swatch-" + slot + ")";
+      return '<div class="allocation-setup-member" data-setup-member data-empty="' + String(!person.name) + '" style="' + rowStyle + '">' +
+        '<span class="allocation-member-swatch" aria-hidden="true"></span>' +
+        '<select data-group-member aria-label="' +
         escapeHtml(empty) + '">' + allocationGroupOptions(names, person.name) + '</select>' +
-        groupAllocationInput(person.review_percent, shareLabel, "share") +
+        groupAllocationInput(person.review_percent, shareLabel, "share", false, "--share-fill:" + pct + "%") +
         '<button class="allocation-remove-control" type="button" data-setup-action="remove-member" aria-label="' +
         escapeHtml(removeMember) + '" title="' + escapeHtml(removeMember) + '">×</button></div>';
     }).join("");
     const coverageControl = required
-      ? '<span class="allocation-coverage-tag">' + escapeHtml(uiText("覆盖 100%", "100%")) +
+      ? '<span class="allocation-coverage-pill">' + escapeHtml(uiText("覆盖 100%", "100% cover")) +
         '<input data-group-field="coverage" aria-label="' + escapeHtml(coverageLabel) +
         '" type="number" min="0" max="100" step="0.01" value="' + escapeHtml(group.coverage_percent ?? 100) + '" disabled hidden></span>'
       : '<label class="allocation-coverage-inline"><span>' + escapeHtml(uiText("覆盖", "Cover")) + '</span>' +
         groupAllocationInput(group.coverage_percent, coverageLabel, "coverage", false) + '</label>';
     return '<section class="allocation-setup-card" data-setup-group="' + escapeHtml(group.group_id) + '">' +
       '<header class="allocation-setup-header"><div class="allocation-setup-title"><strong>' +
-      escapeHtml(allocationGroupName(group.group_id, index, formal)) + '</strong><span data-group-share></span></div>' +
-      '<div class="allocation-setup-tools">' + coverageControl +
+      escapeHtml(allocationGroupName(group.group_id, index, formal)) + '</strong>' + coverageControl +
+      '<span data-group-share hidden></span></div>' +
+      '<div class="allocation-setup-tools">' +
       '<button class="text-button allocation-tool-link" type="button" data-setup-action="equalize">' +
       escapeHtml(uiText("均分", "Even")) + '</button>' +
       (!required && groups.length > 1 ? '<button class="text-button allocation-tool-link" type="button" data-setup-action="remove-group">' +
@@ -170,27 +220,35 @@ function renderAllocationGroupSetup(root, draft, options) {
   }).join("");
   root.innerHTML = '<div class="allocation-setup-bar"><span class="allocation-setup-bar-title"><span>' +
     escapeHtml(uiText("分配组", "Allocation groups")) + '</span><small data-setup-summary></small></span>' +
-    '<button class="button button-quiet allocation-compact-btn allocation-add-group" type="button" data-setup-action="add-group">+ ' +
+    '<button class="button button-secondary allocation-compact-btn allocation-add-group" type="button" data-setup-action="add-group">+ ' +
     escapeHtml(uiText("添加分配组", "Add group")) + '</button></div>' +
     '<div class="allocation-setup-cards" data-group-count="' + groups.length + '">' + cards + '</div>' +
     (groups.length > 1 ?
     '<details class="assignment-groups allocation-partner-rules" data-setup-rules' + (draft.rulesOpen ? ' open' : '') + '><summary>' +
-    escapeHtml(uiText("指定搭档与 Case", "Specify partners and cases")) +
-    (rules.length ? '<span class="allocation-rule-count">' + rules.length + '</span>' : '') + '</summary>' +
+    '<span>' + escapeHtml(uiText("指定交叉搭档", "Cross-review partners")) + '</span>' +
+    '<span class="allocation-disclosure-meta">' + escapeHtml(rules.length
+      ? uiText(rules.length + " 条规则", rules.length + (rules.length === 1 ? " rule" : " rules"))
+      : uiText("按组自动安排", "Automatic by group")) + '</span></summary>' +
     '<p class="allocation-rules-hint">' + escapeHtml(uiText(
-      "仅配对上方各分配组已加入且比例 > 0% 的成员；如需与其他成员搭档，请先在上方对应组添加该成员。",
-      "Pairs members already in the groups above with > 0% share; add other members to a group above first.",
+      "选择不同组中比例大于 0% 的成员，再填共同复核的 Case ID 或数量。",
+      "Select members with a positive share from different groups, then enter the shared Case IDs or a count.",
     )) + '</p>' + rulesMarkup +
-    '<div class="allocation-rules-footer"><button class="button button-quiet allocation-compact-btn" type="button" data-setup-action="add-rule">+ ' +
+    '<div class="allocation-rules-footer"><button class="button button-secondary allocation-compact-btn" type="button" data-setup-action="add-rule">+ ' +
     escapeHtml(uiText("添加搭档规则", "Add partner rule")) + '</button></div></details>' : '');
   if (!editable) root.querySelectorAll("input, button, select, textarea").forEach((control) => { control.disabled = true; });
   root.querySelectorAll("select").forEach((select) => enhanceNativeUiSelect(select));
   updateGroupSetupIndicators(root);
+  let shareEdit = null;
+  const refresh = (input) => {
+    if (input.matches('[data-group-field="share"]')) shareEdit = rebalanceGroupShare(input, shareEdit);
+    updateGroupSetupIndicators(root);
+    change?.();
+  };
+  root.onfocusout = (event) => {
+    if (event.target === shareEdit?.input) shareEdit = null;
+  };
   root.oninput = (event) => {
-    if (!event.isComposing && !event.target.matches("select")) {
-      updateGroupSetupIndicators(root);
-      change?.();
-    }
+    if (!event.isComposing && !event.target.matches("select")) refresh(event.target);
   };
   root.onchange = (event) => {
     if (event.target.matches("[data-group-member]") && root.querySelector("[data-setup-rule]")) {
@@ -202,8 +260,7 @@ function renderAllocationGroupSetup(root, draft, options) {
       root.querySelectorAll("[data-setup-group]")[group]?.querySelectorAll("[data-setup-member]")[member]
         ?.querySelector(".ui-select-trigger")?.focus({ preventScroll: true });
     }
-    updateGroupSetupIndicators(root);
-    change?.();
+    refresh(event.target);
   };
   root.onclick = (event) => {
     const control = event.target.closest("[data-setup-action]");
@@ -226,9 +283,8 @@ function renderAllocationGroupSetup(root, draft, options) {
       group.members.splice(index, 1);
     }
     if (action === "equalize") {
-      const share = Math.floor(10000 / group.members.length);
-      const remainder = 10000 - share * group.members.length;
-      group.members.forEach((person, index) => { person.review_percent = (share + (index < remainder ? 1 : 0)) / 100; });
+      const shares = splitGroupShares(10000, group.members.map(() => 1));
+      group.members.forEach((person, index) => { person.review_percent = shares[index]; });
     }
     if (action === "add-rule") next.cross_groups.push({ members: [], issue_ids: [], count: null });
     if (action === "remove-rule") {
@@ -244,7 +300,8 @@ function renderAllocationGroupSetup(root, draft, options) {
       ? [...(newCard?.querySelectorAll("[data-setup-member] .ui-select-trigger") || [])].at(-1)
       : action === "add-rule" || action === "add-partner"
         ? [...(newRules[action === "add-rule" ? newRules.length - 1 : ruleIndex]?.querySelectorAll(".ui-select-trigger") || [])].at(-1)
-        : action === "remove-group" ? root.querySelector('[data-setup-action="add-group"]')
+        : action === "remove-group" ? (root.closest(".task-allocation-settings")?.querySelector("[data-allocation-add-group]")
+            || root.querySelector('[data-setup-action="add-group"]'))
           : action === "remove-member" ? newCard?.querySelector('[data-setup-action="add-member"]')
             : action === "remove-rule" ? root.querySelector('[data-setup-action="add-rule"]')
               : newCard?.querySelector('[data-setup-action="equalize"]');
@@ -263,13 +320,21 @@ function updateGroupSetupIndicators(root) {
     if (Number.isFinite(coverage)) totalCoverage += coverage;
     const strategy = card.querySelector("[data-strategy-field]");
     strategy.hidden = Number.isNaN(coverage) || coverage >= 100 || coverageInput.disabled;
-    const shares = [...card.querySelectorAll('[data-group-field="share"]')].reduce((sum, input) => sum + (input.valueAsNumber || 0), 0);
+    const rows = [...card.querySelectorAll("[data-setup-member]")];
+    let shares = 0;
+    rows.forEach((row) => {
+      const memberSelect = row.querySelector("[data-group-member]");
+      const shareInput = row.querySelector('[data-group-field="share"]');
+      const val = shareInput?.valueAsNumber || 0;
+      shares += val;
+      row.dataset.empty = String(!memberSelect?.value);
+      shareInput?.closest(".assignment-ratio-input")?.style.setProperty("--share-fill", Math.max(0, Math.min(100, val)) + "%");
+    });
     const valid = Math.round(shares * 100) === 10000;
     const shareNode = card.querySelector("[data-group-share]");
+    shareNode.hidden = valid;
     shareNode.dataset.invalid = String(!valid);
-    shareNode.textContent = valid
-      ? uiText("100%", "100%")
-      : uiText("合计 " + number.format(shares) + "% / 100%", number.format(shares) + "% / 100%");
+    shareNode.textContent = valid ? "" : uiText("合计 " + number.format(shares) + "% / 100%", number.format(shares) + "% / 100%");
   });
   const summary = root.querySelector("[data-setup-summary]");
   if (summary) {

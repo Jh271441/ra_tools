@@ -1273,7 +1273,7 @@
   .allocation-add-member.text-button, .allocation-tool-link.text-button { display: inline-flex; align-items: center; }
   .allocation-coverage-inline .assignment-ratio-input { width: 92px; padding-inline: 8px; }
   .allocation-setup-member .allocation-remove-control { width: 44px !important; min-width: 44px !important; min-height: 44px !important; }
-  .allocation-setup-member { grid-template-columns: minmax(0, 1fr) 96px 44px; }
+  .allocation-setup-member { grid-template-columns: 10px minmax(0, 1fr) 94px 44px; }
   .allocation-group-bar { height: 44px; }
   .task-allocation-dialog .dialog-actions .button-primary,
   .assignment-composer .assignment-footer-row .button-primary { min-height: 48px !important; white-space: normal; }
@@ -1291,22 +1291,24 @@
   .allocation-setup-cards:not([data-group-count="1"]) > .allocation-setup-card:not(:last-child) { padding-bottom: 12px; }
   .allocation-rule-partners, .allocation-rule-pickers, .allocation-rule-scope { grid-template-columns: minmax(0, 1fr); }
   .allocation-rule-tools { justify-content: flex-end; }
-  .allocation-basis-inline { width: 100%; }
-  .allocation-basis-inline .ui-select { flex: 1 1 auto; width: auto; }
+  .allocation-section-heading, .allocation-basis-controls, .allocation-basis-inline { width: 100%; }
+  .allocation-basis-inline .ui-select { flex: 1 1 auto; width: auto; min-width: 0; }
   .task-allocation-body { display: flex; flex-direction: column; overflow-y: auto; scrollbar-width: thin; }
   .allocation-creation-layout { grid-template-columns: minmax(0, 1fr); }
-  .allocation-creation-preview { padding: 10px 0 0; border-inline-start: 0; border-top: 1px solid var(--line-soft); }
+  .allocation-creation-preview { padding: 0; }
+  #taskAllocationGroupSetup,
+  #taskAllocationLiveContent,
+  .allocation-creation-preview > .allocation-live-content { padding: 10px 11px; }
   .allocation-diff-row { grid-template-columns: minmax(82px, 112px) minmax(24px, 1fr) auto; gap: 6px; padding-inline: 2px; }
   .allocation-diff-values { gap: 5px; font-size: 11px; }
   .task-allocation-body > .task-allocation-settings { overflow: visible; padding-inline-end: 0; }
   .is-allocation-edit #taskAllocationPreview {
-    overflow: visible; border-inline-start: 0; border-block-start: 1px solid var(--line-soft);
-    margin-top: 6px; padding: 12px 0 0;
+    overflow: visible; margin-top: 0; padding: 0;
   }
   .task-allocation-edit-footer .task-allocation-preview-jump { display: inline-flex; align-items: center; justify-content: center; }
   .is-allocation-edit .task-allocation-edit-footer .dialog-actions { width: auto; }
   .is-allocation-edit .task-allocation-edit-footer .dialog-actions .button { flex: 0 1 auto; }
 }
 @media (max-width: 359px) {
-  .allocation-setup-member { grid-template-columns: minmax(0, 1fr) 90px 44px; }
+  .allocation-setup-member { grid-template-columns: 10px minmax(0, 1fr) 88px 44px; }
 }

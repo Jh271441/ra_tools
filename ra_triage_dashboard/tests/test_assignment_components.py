@@ -58,3 +58,52 @@ draft.groups[0].members.pop();
 assert.equal(groupAllocationSetupError(draft),null);
 '''
         subprocess.run(['node', '-e', script], check=True, capture_output=True)
+
+    def test_group_share_edit_fills_only_selected_peers_to_exactly_100(self):
+        script = (ROOT / 'allocation-groups.js').read_text() + r'''
+const assert = require('node:assert/strict');
+
+function setup(values, selected = values.map(() => true)) {
+  const fields = values.map((value) => ({
+    value: String(value),
+    get valueAsNumber() { return this.value === "" ? NaN : Number(this.value); },
+    closest: () => card,
+  }));
+  const rows = fields.map((field, index) => ({
+    querySelector: (selector) => selector === "[data-group-member]"
+      ? {value: selected[index] ? "member-" + index : ""}
+      : field,
+  }));
+  const card = {querySelectorAll: () => rows};
+  return fields;
+}
+
+const values = (fields) => fields.map((field) => field.valueAsNumber);
+const pair = setup([100, 0]);
+pair[0].value = "62.35";
+rebalanceGroupShare(pair[0]);
+assert.deepEqual(values(pair), [62.35, 37.65]);
+
+const triad = setup([25, 30, 45, 0], [true, true, true, false]);
+triad[0].value = "100";
+const edit = rebalanceGroupShare(triad[0]);
+assert.deepEqual(values(triad), [100, 0, 0, 0]);
+triad[0].value = "";
+rebalanceGroupShare(triad[0], edit);
+assert.deepEqual(values(triad).slice(1), [0, 0, 0]);
+triad[0].value = "100.01";
+rebalanceGroupShare(triad[0], edit);
+assert.deepEqual(values(triad).slice(1), [0, 0, 0]);
+triad[0].value = "33.33";
+rebalanceGroupShare(triad[0], edit);
+assert.deepEqual(values(triad), [33.33, 26.67, 40, 0]);
+assert.deepEqual(values(pair), [62.35, 37.65]);
+
+const zeros = setup([100, 0, 0, 0]);
+zeros[0].value = "71";
+rebalanceGroupShare(zeros[0]);
+assert.deepEqual(values(zeros), [71, 9.67, 9.67, 9.66]);
+assert.deepEqual(splitGroupShares(10000, [1, 1, 1]), [33.34, 33.33, 33.33]);
+assert.equal(rebalanceGroupShare(setup([100])[0]), null);
+'''
+        subprocess.run(['node', '-e', script], check=True, capture_output=True)
