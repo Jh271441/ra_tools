@@ -1,16 +1,22 @@
 """Receipt-backed timing for Cron graphs; never use file mtimes or sum parallel work."""
 from __future__ import annotations
 
+from collections import OrderedDict
 import json
 from datetime import datetime
 import math
+import os
 from pathlib import Path
 import re
+import threading
 
 MAX_BYTES = 2_000_000
 MAX_MEMBERS = 1000
 ISSUE = re.compile(r"[A-Za-z0-9_-]{3,128}")
 ATTEMPT = re.compile(r"attempt_(\d{18,20})")
+_CASE_TIMING_CACHE_MAX = 4096
+_case_timing_lock = threading.Lock()
+_case_timing_cache: OrderedDict[tuple[str, int, int, int], tuple[tuple[float, ...], float | None]] = OrderedDict()
 
 
 def number(value):
@@ -58,9 +64,72 @@ def timing(start=None, end=None, *, seconds=None, running=False, observed_at=Non
 
 def receipt_span(root, cases, members, stage, *, expected, observed_at, resolved_root=None):
     resolved_root = root.resolve() if resolved_root is None else resolved_root
+    cases_resolved = cases.resolve() if cases.exists() else None
+    cases_safe = (
+        cases_resolved is not None
+        and not cases.is_symlink()
+        and (cases_resolved == resolved_root or resolved_root in cases_resolved.parents)
+    )
     starts, ends = [], []
     for iid in members:
-        folder = cases / iid / stage
+        issue_dir = cases / iid
+        folder = issue_dir / stage
+        if cases_safe and not issue_dir.is_symlink() and not folder.is_symlink():
+            verified_path = folder / "verified.json"
+            try:
+                folder_st = os.lstat(folder)
+                try:
+                    ver_st = os.lstat(verified_path)
+                    ver_is_link = os.path.islink(verified_path)
+                    ver_sig = (ver_st.st_mtime_ns, ver_st.st_size) if not ver_is_link else (-1, -1)
+                except FileNotFoundError:
+                    ver_is_link = False
+                    ver_sig = (0, 0)
+            except OSError:
+                folder_st = None
+                ver_is_link = False
+                ver_sig = (0, 0)
+            if folder_st is not None and not ver_is_link:
+                cache_key = (str(folder), folder_st.st_mtime_ns, ver_sig[0], ver_sig[1])
+                with _case_timing_lock:
+                    cached = _case_timing_cache.get(cache_key)
+                    if cached is not None:
+                        _case_timing_cache.move_to_end(cache_key)
+                if cached is not None:
+                    cached_starts, cached_end = cached
+                    for value in cached_starts:
+                        if value <= observed_at + 5:
+                            starts.append(value)
+                    if cached_end is not None and cached_end <= observed_at + 5:
+                        ends.append(cached_end)
+                    continue
+                case_starts: list[float] = []
+                for attempt in sorted(folder.glob("attempt_*"))[:20]:
+                    match = ATTEMPT.fullmatch(attempt.name)
+                    if match and not attempt.is_symlink() and (attempt / "intent.json").is_file() and not (attempt / "intent.json").is_symlink():
+                        case_starts.append(int(match[1]) / 1_000_000_000)
+                if ver_sig != (0, 0):
+                    if ver_sig[1] > MAX_BYTES:
+                        raise ValueError("timing receipt too large")
+                    with verified_path.open("rb") as stream:
+                        raw = stream.read(MAX_BYTES + 1)
+                    if len(raw) > MAX_BYTES:
+                        raise ValueError("timing receipt too large")
+                    receipt = json.loads(raw)
+                else:
+                    receipt = {}
+                case_end = timestamp(receipt.get("verified_at")) if isinstance(receipt, dict) else None
+                with _case_timing_lock:
+                    _case_timing_cache[cache_key] = (tuple(case_starts), case_end)
+                    _case_timing_cache.move_to_end(cache_key)
+                    while len(_case_timing_cache) > _CASE_TIMING_CACHE_MAX:
+                        _case_timing_cache.popitem(last=False)
+                for value in case_starts:
+                    if value <= observed_at + 5:
+                        starts.append(value)
+                if case_end is not None and case_end <= observed_at + 5:
+                    ends.append(case_end)
+                continue
         for attempt in sorted(folder.glob("attempt_*"))[:20]:
             match = ATTEMPT.fullmatch(attempt.name)
             if match and not attempt.is_symlink() and resolved_root in attempt.resolve().parents and (attempt / "intent.json").is_file():

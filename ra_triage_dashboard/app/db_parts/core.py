@@ -137,7 +137,11 @@ class DatabaseCoreMixin:
                 min_size=1,
                 max_size=self.pool_size,
                 timeout=30,
-                kwargs={"autocommit": False, "row_factory": dict_row},
+                kwargs={
+                    "autocommit": False,
+                    "row_factory": dict_row,
+                    "options": "-c jit=off",
+                },
                 open=True,
             )
 

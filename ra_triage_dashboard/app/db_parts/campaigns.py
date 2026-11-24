@@ -2569,16 +2569,12 @@ class DatabaseCampaignMixin:
                        head.campaign_id AS head_campaign_id,
                        head.reference_id AS head_reference_id
                 FROM issue_work_splits split
+                JOIN model_review_revisions revision
+                  ON revision.model_run_id = split.evaluation_run_id
                 JOIN model_review_heads head
-                  ON head.campaign_id = split.id
-                  OR EXISTS (
-                      SELECT 1 FROM model_review_revisions legacy_revision
-                      WHERE legacy_revision.id = head.revision_id
-                        AND legacy_revision.work_split_id = split.id
-                  )
-                JOIN model_review_revisions revision ON revision.id = head.revision_id
+                  ON head.revision_id = revision.id
                 WHERE split.id IN ({model_placeholders})
-                  AND revision.model_run_id = split.evaluation_run_id
+                  AND (head.campaign_id = split.id OR revision.work_split_id = split.id)
                   AND (head.campaign_id = split.id OR head.campaign_id = '')
                   AND (head.reference_id = split.reference_id OR head.reference_id = '')
                 """,

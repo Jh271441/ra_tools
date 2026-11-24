@@ -8,7 +8,11 @@ from datetime import datetime
 from .shared import LABELS, utc_now, _json_load
 from .version_run_consolidation import VersionRunConsolidationMixin
 from .version_dataset_rules import encoded
-from .assignment_rules import ASSIGNMENT_SUBMITTED_SQL
+from .assignment_rules import (
+    ASSIGNMENT_SUBMITTED_SQL,
+    MODEL_ASSIGNMENT_SCOPE_SQL,
+    MODEL_SUBMISSION_SQL,
+)
 from .version_campaigns import VersionCampaignsMixin
 
 
@@ -280,39 +284,52 @@ class DatabaseVersionDatasetsMixin(VersionCampaignsMixin, VersionRunConsolidatio
 
     def list_version_datasets(self):
         with self.connect() as conn:
-            result = []
-            for row in conn.execute(
+            dataset_rows = conn.execute(
                 "SELECT * FROM version_datasets ORDER BY release_family DESC"
+            ).fetchall()
+            if not dataset_rows:
+                return []
+            counts_by_dataset = {
+                str(row["dataset_id"]): dict(row)
+                for row in conn.execute(
+                    "SELECT dataset_id, COUNT(*) AS total, SUM(is_target) AS targets, "
+                    "SUM(is_sample) AS samples, "
+                    "SUM(CASE WHEN is_target=1 THEN is_sample ELSE 0 END) AS sampled_targets, "
+                    "SUM(CASE WHEN is_target=1 THEN is_low ELSE 0 END) AS low, "
+                    "SUM(CASE WHEN is_target=1 AND is_sample=1 AND is_low=1 THEN 1 ELSE 0 END) AS both_sample_low "
+                    "FROM version_dataset_items GROUP BY dataset_id"
+                ).fetchall()
+            }
+            states_by_dataset: dict[str, dict[str, int]] = {}
+            for row in conn.execute(
+                "SELECT dataset_id, state, COUNT(*) AS n FROM version_dataset_items GROUP BY dataset_id, state"
             ).fetchall():
+                states_by_dataset.setdefault(str(row["dataset_id"]), {})[row["state"]] = int(row["n"] or 0)
+            assigned_by_dataset: dict[str, dict[str, int]] = {}
+            for row in conn.execute(
+                "SELECT a.dataset_id, COALESCE(w.assignee,a.assignee) AS assignee, COUNT(*) AS n "
+                "FROM dataset_task_bindings a "
+                "JOIN version_dataset_items i ON i.dataset_id=a.dataset_id AND i.issue_id=a.issue_id "
+                "LEFT JOIN review_work_assignments w ON w.split_id=a.campaign_id AND w.issue_id=a.issue_id "
+                "WHERE i.is_target=1 GROUP BY a.dataset_id, COALESCE(w.assignee,a.assignee)"
+            ).fetchall():
+                assigned_by_dataset.setdefault(str(row["dataset_id"]), {})[row["assignee"]] = int(row["n"] or 0)
+
+            result = []
+            for row in dataset_rows:
                 item = dict(row)
                 item.pop("policy_json", None)
-                counts = conn.execute(
-                    "SELECT COUNT(*) AS total,SUM(is_target) AS targets,SUM(is_sample) AS samples,SUM(CASE WHEN is_target=1 THEN is_sample ELSE 0 END) AS sampled_targets,SUM(CASE WHEN is_target=1 THEN is_low ELSE 0 END) AS low FROM version_dataset_items WHERE dataset_id=?",
-                    (row["id"],),
-                ).fetchone()
+                did = str(row["id"])
+                counts = counts_by_dataset.get(did) or {}
                 item.update(
                     {
-                        k: int(counts[k] or 0)
+                        k: int(counts.get(k) or 0)
                         for k in ("total", "targets", "samples", "sampled_targets", "low")
                     }
                 )
-                item["low_only"] = item["low"] - int(conn.execute(
-                    "SELECT COUNT(*) AS n FROM version_dataset_items WHERE dataset_id=? AND is_target=1 AND is_sample=1 AND is_low=1", (row["id"],)
-                ).fetchone()["n"])
-                item["states"] = {
-                    x["state"]: x["n"]
-                    for x in conn.execute(
-                        "SELECT state,COUNT(*) AS n FROM version_dataset_items WHERE dataset_id=? GROUP BY state",
-                        (row["id"],),
-                    ).fetchall()
-                }
-                item["assigned"] = {
-                    x["assignee"]: x["n"]
-                    for x in conn.execute(
-                        "SELECT COALESCE(w.assignee,a.assignee) AS assignee,COUNT(*) AS n FROM dataset_task_bindings a JOIN version_dataset_items i ON i.dataset_id=a.dataset_id AND i.issue_id=a.issue_id LEFT JOIN review_work_assignments w ON w.split_id=a.campaign_id AND w.issue_id=a.issue_id WHERE a.dataset_id=? AND i.is_target=1 GROUP BY COALESCE(w.assignee,a.assignee)",
-                        (row["id"],),
-                    ).fetchall()
-                }
+                item["low_only"] = item["low"] - int(counts.get("both_sample_low") or 0)
+                item["states"] = states_by_dataset.get(did, {})
+                item["assigned"] = assigned_by_dataset.get(did, {})
                 result.append(item)
             return result
 
@@ -369,19 +386,57 @@ class DatabaseVersionDatasetsMixin(VersionCampaignsMixin, VersionRunConsolidatio
                 "page_size": size,
             }
 
-    def version_dataset_gallery_rows(self, dataset_id):
+    def version_dataset_gallery_rows(self, dataset_id, *, targets_only: bool = False):
         """Bounded metadata projection; no media/Trail I/O or raw prediction JSON."""
         with self.connect() as conn:
+            dataset = conn.execute(
+                "SELECT run_id FROM version_datasets WHERE id=?", (dataset_id,)
+            ).fetchone()
+            if dataset is None:
+                return []
+            run_id = str(dataset["run_id"] or "")
+            target_filter = " AND i.is_target=1" if targets_only else ""
+            if run_id:
+                pred_cols = "p.model_label,p.model_confidence"
+                pred_join = "LEFT JOIN model_predictions p ON p.model_run_id=? AND p.issue_id=i.issue_id "
+                params: list[object] = [run_id, dataset_id, dataset_id]
+            else:
+                pred_cols = "NULL AS model_label,NULL AS model_confidence"
+                pred_join = ""
+                params = [dataset_id, dataset_id]
             rows = conn.execute(
-                "SELECT i.source_json,i.binding_json,i.first_seen,i.updated_at,p.model_label,p.model_confidence,assignment.assignee AS actual_assignee,bind.campaign_id, "
-                f"CASE WHEN {ASSIGNMENT_SUBMITTED_SQL} THEN 1 ELSE 0 END AS review_submitted, "
-                "(SELECT progress.updated_at FROM combined_review_progress progress WHERE progress.campaign_id=bind.campaign_id AND progress.issue_id=i.issue_id AND lower(progress.reviewer)=lower(assignment.assignee) AND progress.model_review_submitted=true AND progress.case_label_acknowledged=true) AS review_submitted_at "
-                "FROM version_dataset_items i JOIN version_datasets d ON d.id=i.dataset_id "
-                "LEFT JOIN model_predictions p ON p.model_run_id=d.run_id AND p.issue_id=i.issue_id "
-                "LEFT JOIN dataset_task_bindings bind ON bind.dataset_id=i.dataset_id AND bind.issue_id=i.issue_id AND bind.workflow='model_review_and_case_label' "
+                f"SELECT i.source_json,i.binding_json,i.first_seen,i.updated_at,{pred_cols},assignment.assignee AS actual_assignee,bind.campaign_id, "
+                "CASE "
+                "WHEN assignment.split_id IS NULL THEN 0 "
+                "WHEN split.workflow_mode = 'model_review_and_case_label' THEN CASE WHEN prog.is_submitted = 1 THEN 1 ELSE 0 END "
+                "WHEN split.workflow_mode <> 'model_review_and_case_label' AND EXISTS ("
+                "  SELECT 1 FROM model_review_heads head "
+                "  JOIN model_review_revisions revision ON revision.id = head.revision_id "
+                "  WHERE head.issue_id = assignment.issue_id "
+                "    AND head.model_run_id = split.model_run_id "
+                "    AND lower(head.reviewer) = lower(assignment.assignee) "
+                f"   AND {MODEL_SUBMISSION_SQL} "
+                f"   AND {MODEL_ASSIGNMENT_SCOPE_SQL}"
+                ") THEN 1 ELSE 0 END AS review_submitted, "
+                "prog.submitted_at AS review_submitted_at "
+                "FROM version_dataset_items i "
+                + pred_join
+                + "LEFT JOIN dataset_task_bindings bind ON bind.dataset_id=i.dataset_id AND bind.issue_id=i.issue_id AND bind.workflow='model_review_and_case_label' "
                 "LEFT JOIN review_work_assignments assignment ON assignment.split_id=bind.campaign_id AND assignment.issue_id=i.issue_id "
                 "LEFT JOIN issue_work_splits split ON split.id=assignment.split_id "
-                "WHERE i.dataset_id=? ORDER BY i.issue_id LIMIT 20001", (dataset_id,)
+                "LEFT JOIN ("
+                "  SELECT campaign_id, issue_id, lower(reviewer) AS reviewer_lower, "
+                "         1 AS is_submitted, MAX(updated_at) AS submitted_at "
+                "  FROM combined_review_progress "
+                "  WHERE model_review_submitted=true AND case_label_acknowledged=true "
+                "    AND campaign_id IN ("
+                "      SELECT DISTINCT campaign_id FROM dataset_task_bindings "
+                "      WHERE dataset_id=? AND workflow='model_review_and_case_label'"
+                "    ) "
+                "  GROUP BY campaign_id, issue_id, lower(reviewer)"
+                ") prog ON prog.campaign_id=bind.campaign_id AND prog.issue_id=i.issue_id AND prog.reviewer_lower=lower(assignment.assignee) "
+                f"WHERE i.dataset_id=?{target_filter} ORDER BY i.issue_id LIMIT 20001",
+                params,
             ).fetchall()
             if len(rows)>20000:
                 raise ValueError("Version gallery exceeds the bounded projection")

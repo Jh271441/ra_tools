@@ -1917,7 +1917,7 @@ class DatabaseCasesMixin:
                                annotation.created_at, annotation.review_status,
                                annotation.review_domain, annotation.model_review_status,
                                EXISTS (SELECT 1 FROM model_review_revisions migrated
-                                       WHERE migrated.id + {MODEL_REVIEW_PUBLIC_ID_OFFSET} = annotation.id
+                                       WHERE migrated.id = annotation.id - {MODEL_REVIEW_PUBLIC_ID_OFFSET}
                                          AND migrated.legacy_annotation_id IS NOT NULL) AS legacy_submitted
                         FROM review_records annotation
                         WHERE annotation.model_run_id = ?

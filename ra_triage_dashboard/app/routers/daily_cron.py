@@ -11,8 +11,13 @@ router = APIRouter()
 
 
 @router.get("/api/daily-cron")
-async def daily_cron() -> JSONResponse:
+async def daily_cron(refresh: bool = False) -> JSONResponse:
     return JSONResponse(
-        await asyncio.to_thread(cron_snapshot, settings.ra_auto_triage_root, settings.data_dir),
+        await asyncio.to_thread(
+            cron_snapshot,
+            settings.ra_auto_triage_root,
+            settings.data_dir,
+            force_refresh=bool(refresh),
+        ),
         headers={"Cache-Control": "no-store, max-age=0"},
     )

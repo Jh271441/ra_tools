@@ -22,13 +22,25 @@ def _parse_iso_utc(value):
     return dt.astimezone(timezone.utc)
 
 
-def _version_last_target_added_at(db, dataset):
-    batches_fn = getattr(db, 'version_dataset_batches', None)
-    if callable(batches_fn):
-        try:
-            batches = batches_fn(dataset['id']) or []
-        except Exception:
-            batches = []
+def _dataset_target_rows(db, dataset_id):
+    fn = db.version_dataset_gallery_rows
+    try:
+        rows = fn(dataset_id, targets_only=True)
+    except TypeError:
+        rows = fn(dataset_id)
+    return [r for r in rows if r.get('is_target')]
+
+
+def _version_last_target_added_at(db, dataset, *, preloaded_batches=None):
+    batches = preloaded_batches
+    if batches is None:
+        batches_fn = getattr(db, 'version_dataset_batches', None)
+        if callable(batches_fn):
+            try:
+                batches = batches_fn(dataset['id']) or []
+            except Exception:
+                batches = []
+    if batches:
         best_dt = None
         best_raw = ''
         for batch in batches:
@@ -194,9 +206,9 @@ def version_task_baseline_ids(db, task_id, *, supplemental_only=False):
         return ['version-' + version['release_family']]
 
 
-def task(db, dataset, *, assignee='', status='all', query='', page=1, page_size=50, detail=False, campaign=None):
+def task(db, dataset, *, assignee='', status='all', query='', page=1, page_size=50, detail=False, campaign=None, preloaded_rows=None, preloaded_batches=None):
     if status not in {'all','pending','completed'}:raise ValueError('Invalid task status')
-    rows=[r for r in db.version_dataset_gallery_rows(dataset['id']) if r.get('is_target')]
+    rows=[r for r in (preloaded_rows if preloaded_rows is not None else _dataset_target_rows(db, dataset['id'])) if r.get('is_target')]
     if campaign:
         rows=[r for r in rows if r.get('binding',{}).get('campaign_id')==campaign['campaign_id']]
     def reviewers(row):
@@ -211,7 +223,7 @@ def task(db, dataset, *, assignee='', status='all', query='', page=1, page_size=
     assigned=sum(v[0] for v in counts.values());completed=sum(v[1] for v in counts.values())
     sources=sorted({r.get('binding',{}).get('campaign_id') for r in rows if r.get('binding',{}).get('campaign_id')})
     canonical=campaign['campaign_id'] if campaign else getattr(db,'version_campaign_id',lambda _: '')(dataset['id'])
-    last_added=_version_last_target_added_at(db, dataset)
+    last_added=_version_last_target_added_at(db, dataset, preloaded_batches=preloaded_batches)
     actively_appending=_is_actively_appending(last_added)
     result=dict(split_id=canonical or PREFIX+dataset['id'],physically_merged=bool(canonical),dataset_id=dataset['id'],release_family=dataset['release_family'],kind='version_live',appendable=True,
                 last_target_added_at=last_added,actively_appending=actively_appending,collection_status='appending' if actively_appending else 'collected',
@@ -336,11 +348,19 @@ def version_tasks(db, *, assignee='', model_run_id='', lifecycle='current'):
     from .db_parts.task_lifecycle import TERMINAL_TASK_LIFECYCLES, normalize_task_lifecycle
     lifecycle = normalize_task_lifecycle(lifecycle)
     result=[]
+    batches_fn = getattr(db, 'version_dataset_batches', None)
     for dataset in db.list_version_datasets():
         if model_run_id and dataset['run_id']!=model_run_id:continue
         campaigns=getattr(db,'role_version_campaigns',lambda _: [])(dataset['id']) or [None]
+        preloaded_rows=_dataset_target_rows(db, dataset['id'])
+        preloaded_batches=None
+        if callable(batches_fn):
+            try:
+                preloaded_batches = batches_fn(dataset['id']) or []
+            except Exception:
+                preloaded_batches = []
         for campaign in campaigns:
-            item=task(db,dataset,campaign=campaign)
+            item=task(db,dataset,campaign=campaign,preloaded_rows=preloaded_rows,preloaded_batches=preloaded_batches)
             terminal = item['lifecycle'] in TERMINAL_TASK_LIFECYCLES
             if lifecycle == 'current' and terminal or lifecycle == 'history' and not terminal:
                 continue

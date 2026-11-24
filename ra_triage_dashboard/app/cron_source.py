@@ -27,7 +27,7 @@ SOURCE_PATHS = {
     "sidecar": "/api/manual-sidecar",
 }
 _cache: TimedSingleFlightCache[str, dict] = TimedSingleFlightCache(
-    ttl_seconds=5, max_entries=1,
+    ttl_seconds=15, max_entries=1,
 )
 
 
@@ -178,5 +178,13 @@ def _snapshot(ra_root: Path | None = None, data_dir: Path | None = None) -> dict
     return result
 
 
-def cron_snapshot(ra_root: Path | None = None, data_dir: Path | None = None) -> dict:
-    return _cache.get_or_load(str((ra_root, data_dir)), lambda: _snapshot(ra_root, data_dir))
+def cron_snapshot(
+    ra_root: Path | None = None,
+    data_dir: Path | None = None,
+    *,
+    force_refresh: bool = False,
+) -> dict:
+    key = str((ra_root, data_dir))
+    if force_refresh:
+        _cache.invalidate(key)
+    return _cache.get_or_load(key, lambda: _snapshot(ra_root, data_dir))

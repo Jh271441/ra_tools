@@ -2,13 +2,17 @@
 import json, time
 import re
 import sqlite3
-from collections import defaultdict
+from collections import OrderedDict, defaultdict
 from contextlib import closing
 from pathlib import Path
+import threading
 
 STATE = Path(
     "/volume/home/workspace/ra_auto_triage_deploy/state/version_incremental_v3"
 )
+_DOC_CACHE_MAX = 8192
+_doc_cache_lock = threading.Lock()
+_doc_cache: OrderedDict[tuple[str, int, int], dict] = OrderedDict()
 
 
 def document(path):
@@ -19,6 +23,33 @@ def document(path):
     result = json.loads(path.read_text())
     if not isinstance(result, dict):
         raise ValueError("Invalid version status")
+    return result
+
+
+def _cached_document(path: Path) -> dict:
+    """Stat-keyed read-only JSON cache for immutable receipt files."""
+    try:
+        st = path.stat()
+    except OSError:
+        return {}
+    if not path.is_file():
+        return {}
+    if st.st_size > 2_000_000:
+        raise ValueError("Oversized version status")
+    key = (str(path), st.st_mtime_ns, st.st_size)
+    with _doc_cache_lock:
+        cached = _doc_cache.get(key)
+        if cached is not None:
+            _doc_cache.move_to_end(key)
+            return cached
+    result = json.loads(path.read_text())
+    if not isinstance(result, dict):
+        raise ValueError("Invalid version status")
+    with _doc_cache_lock:
+        _doc_cache[key] = result
+        _doc_cache.move_to_end(key)
+        while len(_doc_cache) > _DOC_CACHE_MAX:
+            _doc_cache.popitem(last=False)
     return result
 
 
@@ -105,17 +136,17 @@ def version_status(root, data_dir=None, *, closeup=None):
     failed = set()
     queued = set()
     for path in list((state / "outbox").glob("*.receipt.json"))[-1000:]:
-        receipt = document(path)
+        receipt = _cached_document(path)
         reused.update(receipt.get("media", {}).get("reused_ids", []))
         queued.update(receipt.get("media", {}).get("queued_ids", []))
     for folder in list(
         (Path(root) / "reports/manual_sidecar_20261019/versions").glob("*/*")
     )[-1000:]:
         for path in (folder / "media-publication").glob("cn*.json"):
-            receipt = document(path)
+            receipt = _cached_document(path)
             if receipt.get("state") == "verified":
                 published.add(receipt.get("issue_id"))
-        for row in document(folder / "final-failures.json").get("failures", []):
+        for row in _cached_document(folder / "final-failures.json").get("failures", []):
             failed.add(row.get("issue_id"))
     queue_states = version_queue_states(state)
     families = sorted({str(v) for v in heartbeat.get("families", [])}
