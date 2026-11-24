@@ -12,25 +12,32 @@ class AllocationProtectionMixin:
         if value is not None and (type(value) is not int or value < 1):
             raise ValueError("分配版本必须是正整数 / Allocation revision must be a positive integer")
 
-    def _lock_task_work(self, conn, *, shared: bool = False):
-        """Two-level transaction gate for saves, assignment changes and appends.
+    def _lock_task_work(self, conn):
+        """Exclusive transaction gate for structural campaign and role changes.
 
-        PostgreSQL uses a shared/exclusive advisory lock hierarchy:
-        - High-frequency per-issue submissions acquire the shared gate plus
-          row-level ``FOR UPDATE`` on the target issue/case, allowing concurrent
-          submissions on different Issues to proceed in parallel.
-        - Structural campaign reallocations, lifecycle/assignment edits, and
-          access-role changes acquire the exclusive gate, safely serializing
-          against in-flight submissions without deadlocks.
-        SQLite continues to acquire its single-writer reservation up front.
+        Acquire before dataset/issue/head locks. PostgreSQL's exclusive
+        advisory lock serializes against in-flight shared per-issue submissions;
+        SQLite acquires its writer reservation before reading.
         """
         if self.backend == "postgresql":
-            if shared:
-                conn.execute("SELECT pg_advisory_xact_lock_shared(hashtext(?))", ("campaign-work-allocation-v1",))
-            else:
-                conn.execute("SELECT pg_advisory_xact_lock(hashtext(?))", ("campaign-work-allocation-v1",))
+            conn.execute("SELECT pg_advisory_xact_lock(hashtext(?))", ("campaign-work-allocation-v1",))
         elif not conn.in_transaction:
             conn.execute("BEGIN IMMEDIATE")
+
+    def _lock_task_work_shared(self, conn):
+        """Shared transaction gate for per-issue reviewer/labeler submissions.
+
+        On PostgreSQL, acquires the shared advisory lock so concurrent
+        submissions on distinct Issues run in parallel (paired with row-level
+        ``FOR UPDATE`` on the target Issue/Case), while still serializing
+        cleanly against exclusive structural reallocations. Falls back to
+        ``self._lock_task_work(conn)`` on SQLite or when tests patch
+        ``_lock_task_work`` on the instance.
+        """
+        if self.backend == "postgresql" and "_lock_task_work" not in self.__dict__:
+            conn.execute("SELECT pg_advisory_xact_lock_shared(hashtext(?))", ("campaign-work-allocation-v1",))
+            return
+        self._lock_task_work(conn)
 
     def _allocation_protection(self, conn, split, assignments):
         cid = split["id"]

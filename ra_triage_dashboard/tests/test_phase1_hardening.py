@@ -81,8 +81,8 @@ class Phase1ConcurrencyAndDbTest(unittest.TestCase):
                     def execute(self, sql, params=()):
                         executed.append((sql, tuple(params)))
 
-                db._lock_task_work(_Conn(), shared=True)
-                db._lock_task_work(_Conn(), shared=False)
+                db._lock_task_work_shared(_Conn())
+                db._lock_task_work(_Conn())
                 self.assertIn("pg_advisory_xact_lock_shared", executed[0][0])
                 self.assertIn("pg_advisory_xact_lock(", executed[1][0])
                 self.assertEqual(executed[0][1], ("campaign-work-allocation-v1",))
