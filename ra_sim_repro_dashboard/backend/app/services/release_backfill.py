@@ -8,6 +8,7 @@ from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 from app.models import ReleaseIssueSnapshot, ReleaseSimulationBatch
+from app.repositories import state_store
 from app.services import release_workflow as w
 from app.services.release_cycle import digest
 from app.services.release_metrics import cohort_for_issue, summarize_population
@@ -61,34 +62,18 @@ def _frozen_snapshot_valid(db, batch):
         latest = next(rows, None)
         if latest is None:
             return False
-        if w.population_identity(latest.payload) == batch.payload["population_hash"]:
+        target_hash = batch.payload["population_hash"]
+        latest_hash = getattr(latest, "population_hash", None) or w.population_identity(
+            latest.payload
+        )
+        if latest_hash == target_hash:
             return compatible_source(latest.payload, latest.payload)
-        # Historical executions usually froze a source near their creation.
-        # Inspect lightweight metadata first, then verify the actual JSON hash.
-        # A miss still scans the full history, including imported/late snapshots.
-        if getattr(batch, "created_at", None):
-            created = batch.created_at.replace(tzinfo=timezone.utc)
-            candidates = db.execute(
-                select(ReleaseIssueSnapshot.id, ReleaseIssueSnapshot.created_at).where(
-                    ReleaseIssueSnapshot.release == batch.release,
-                    ReleaseIssueSnapshot.id != latest.id,
-                )
-            ).all()
-            candidates.sort(
-                key=lambda row: (
-                    abs((row.created_at.replace(tzinfo=timezone.utc) - created).total_seconds()),
-                    -row.id,
-                )
-            )
-            for candidate in candidates[:4]:
-                snapshot = db.get(ReleaseIssueSnapshot, candidate.id)
-                if (
-                    snapshot
-                    and w.population_identity(snapshot.payload) == batch.payload["population_hash"]
-                ):
-                    return compatible_source(snapshot.payload, latest.payload)
+        if db is not None:
+            indexed = state_store.find_snapshot_by_population_hash(db, batch.release, target_hash)
+            if indexed is not None and w.population_identity(indexed.payload) == target_hash:
+                return compatible_source(indexed.payload, latest.payload)
         for snapshot in rows:
-            if w.population_identity(snapshot.payload) == batch.payload["population_hash"]:
+            if w.population_identity(snapshot.payload) == target_hash:
                 return compatible_source(snapshot.payload, latest.payload)
         return False
     finally:

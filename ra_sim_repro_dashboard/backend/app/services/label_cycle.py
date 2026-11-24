@@ -445,18 +445,14 @@ def tick():
     if os.getenv("LABEL_REFRESH_ENABLED") != "1":
         return
     from app.database import SessionLocal
-    from app.config import DATA_DIR
+    from app.infra.locks import LockBusyError, advisory_lock
 
-    lock = Path(
-        os.getenv("RELEASE_WORKFLOW_LOCK", str(DATA_DIR / "release-workflow.lock"))
-    ).with_name("label-cycle.lock")
-    release_lock = Path(os.getenv("RELEASE_WORKFLOW_LOCK", str(DATA_DIR / "release-workflow.lock")))
-    with release_lock.open("w") as release_stream, lock.open("w") as stream:
-        try:
-            fcntl.flock(release_stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            return
+    try:
+        lock_ctx = advisory_lock("ra_sim:label_cycle", blocking=False)
+        lock_ctx.__enter__()
+    except LockBusyError:
+        return
+    try:
         with SessionLocal() as db:
             config = w.effective_config(db)
             releases = set(db.scalars(select(ReleaseSimulationBatch.release)))
@@ -481,3 +477,5 @@ def tick():
                     from app.services.auto_triage_metrics import refresh_observed
 
                     refresh_observed(db, release)
+    finally:
+        lock_ctx.__exit__(None, None, None)

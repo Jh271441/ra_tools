@@ -144,9 +144,10 @@ def observation_issues(db, release, page, page_size, query, label):
             for issue in observed.get("issues", [])
         ]
     )
+    needle = query.casefold()
     for row in rows:
         if (label and label not in row["scenario_labels"]) or (
-            query and query.lower() not in json.dumps(row, ensure_ascii=False).lower()
+            needle and not w._issue_row_matches_query(row, needle)
         ):
             continue
         items.append(row)

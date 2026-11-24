@@ -78,6 +78,7 @@ def board(
     refresh: bool = False,
     db: Session = Depends(get_db),
 ):
+    scope_releases = [release] if release and not release.startswith("@") else None
     value = (
         guarded(simulation_board.board, db, release, True)
         if refresh
@@ -86,6 +87,7 @@ def board(
             ("simulation-board", release),
             lambda: guarded(simulation_board.board, db, release, False),
             max_age=2,
+            scope_releases=scope_releases,
         )
     )
     for job_id in value.pop("refresh_job_ids"):

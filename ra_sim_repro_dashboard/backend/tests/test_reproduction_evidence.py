@@ -1,6 +1,10 @@
 from copy import deepcopy
 import pytest
-from app.models import ReleaseSimulationBatch, ReleaseWorkflowState
+from app.models import (
+    ReleaseSimulationBatch,
+    ReleaseWorkflowState,
+    ReproductionTimingEvidence,
+)
 from app.services import reproduction_evidence as e, reproduction_timing as t
 from app.services.release_cycle import digest
 from app.services.result_publication import audit_hash
@@ -181,7 +185,7 @@ def test_policy_requires_explicit_activation_and_invalid_ledger_is_ignored(db):
     assert e.standard_view(db, batch, metrics) is metrics
     key = e.save(db, RELEASE, [record])
     db.commit()
-    state = db.get(ReleaseWorkflowState, key)
+    state = db.get(ReproductionTimingEvidence, key)
     tampered = deepcopy(state.payload)
     tampered["records"][0]["trigger_events"][0]["request_timestamp"] = T - 500
     state.payload = tampered
@@ -288,7 +292,7 @@ def test_new_execution_completion_captures_times_without_rewriting_audited_resul
     db.add(ReleaseWorkflowState(key="evexecution:new", payload=execution))
     db.commit()
     key = e.capture_completion(db, execution=execution)
-    assert key and db.get(ReleaseWorkflowState, key)
+    assert key and db.get(ReproductionTimingEvidence, key)
     assert db.get(ReleaseWorkflowState, "evexecution:new").payload == original
     new_origin = {"execution_id": "new", "job_id": 124, "audit_hash": execution["audit_hash"]}
     assert (

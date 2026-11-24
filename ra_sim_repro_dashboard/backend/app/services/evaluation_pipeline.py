@@ -16,7 +16,9 @@ from sqlalchemy import select, cast, func, JSON
 from sqlalchemy.dialects.postgresql import JSONB
 from app.config import DATA_DIR
 from app.database import SessionLocal
+from app.infra.locks import LockBusyError, advisory_lock
 from app.models import ReleaseWorkflowState, ReleaseSimulationBatch, ReleaseIssueSnapshot
+from app.repositories import read_models_repo, state_store
 from app.services import release_workflow as w, auto_triage_metrics as at
 from app.services import (
     metric_profiles as profiles,
@@ -53,6 +55,12 @@ def execution_receipt(db, identifier):
 
 
 def rows(db, prefix):
+    if prefix == "evrevision:":
+        return state_store.list_revisions(db, include_blobs=True)
+    if prefix == "evexecution:":
+        return state_store.list_executions(db, include_heavy=True)
+    if prefix == "evrequest:":
+        return state_store.list_requests(db)
     return [
         r.payload
         for r in db.scalars(
@@ -62,25 +70,8 @@ def rows(db, prefix):
 
 
 def public_executions(db, release=None):
-    """Project status metadata in SQL; never transfer raw exports for a board."""
-    payload = ReleaseWorkflowState.payload
-    if db.get_bind().dialect.name == "postgresql":
-        public = cast(payload, JSONB)
-        for field in ("plan", "results", "export"):
-            public = public.op("-")(field)
-    else:
-        public = func.json_remove(payload, "$.plan", "$.results", "$.export", type_=JSON)
-    source_release = payload["plan"]["release"].as_string()
-    statement = select(source_release, public).where(
-        ReleaseWorkflowState.key.startswith("evexecution:")
-    )
-    if release:
-        statement = statement.where(source_release == release)
-    grouped = {}
-    for key, value in db.execute(statement):
-        if key:
-            grouped.setdefault(key, []).append(value)
-    return grouped
+    """Project lightweight execution metadata via indexed table; zero heavy export I/O."""
+    return state_store.list_public_executions_grouped(db, release=release)
 
 
 def navigation_versions(db):
@@ -103,19 +94,12 @@ def navigation_versions(db):
 
 @contextmanager
 def lock(name, shared=False):
-    path = Path(os.getenv("RELEASE_WORKFLOW_LOCK", str(DATA_DIR / "release-workflow.lock")))
-    if not shared:
-        path = path.with_name("evaluation-" + digest(name)[:20] + ".lock")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a") as stream:
-        try:
-            fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            raise ValueError("pipeline_busy") from None
-        try:
+    lock_name = "ra_sim:workflow_shared" if shared else "ra_sim:eval:" + digest(name)[:24]
+    try:
+        with advisory_lock(lock_name, blocking=False, busy_message="pipeline_busy"):
             yield
-        finally:
-            fcntl.flock(stream, fcntl.LOCK_UN)
+    except LockBusyError:
+        raise ValueError("pipeline_busy") from None
 
 
 def context(db, release="@current", profile_id=None, date_start=None, date_end=None):
@@ -1124,24 +1108,67 @@ def issue_page(
     }
 
 
+def _comparison_cache_key(profile_id, release, date_start, date_end):
+    return f"eval_cmp:{profile_id}:{release}:{date_start or ''}:{date_end or ''}"[:160]
+
+
 def comparison(db, profile_id=None, date_start=None, date_end=None):
     profile = profiles.get(db, profile_id)
     values = []
-    # Only release keys are needed here. The board's catalogue additionally
-    # audits legacy jobs and reads full source snapshots for navigation counts.
-    releases = db.scalars(
-        select(ReleaseIssueSnapshot.release)
-        .group_by(ReleaseIssueSnapshot.release)
-        .order_by(ReleaseIssueSnapshot.release.desc())
+    # Only release keys are needed here. Materialized CQRS read models skip
+    # reloading heavy 7 MB revisions & re-hashing executions for unchanged releases.
+    releases = list(
+        db.scalars(
+            select(ReleaseIssueSnapshot.release)
+            .group_by(ReleaseIssueSnapshot.release)
+            .order_by(ReleaseIssueSnapshot.release.desc())
+        )
     )
+    can_use_read_models = not (db.new or db.dirty or db.deleted)
+    versions = read_models_repo.get_release_versions(db, releases) if can_use_read_models else {}
+    global_ver = versions.get(read_models_repo.GLOBAL_RELEASE_SCOPE, 0)
+    cache_keys = {
+        rel: _comparison_cache_key(profile["id"], rel, date_start, date_end) for rel in releases
+    }
+    stored_models = (
+        read_models_repo.get_read_models_batch(db, list(cache_keys.values()))
+        if can_use_read_models
+        else {}
+    )
+    pending_upserts = []
     for release in releases:
+        rel_ver = versions.get(release, 0)
+        source_version = (
+            f"r{rel_ver}:g{global_ver}:{profile['config_hash']}:{date_start or ''}:{date_end or ''}"
+        )[:128]
+        model = stored_models.get(cache_keys[release])
+        if can_use_read_models and model is not None and model.source_version == source_version:
+            values.append(deepcopy(model.payload))
+            continue
         try:
             view = board(db, release, profile["id"], date_start, date_end, comparison_only=True)
-            values.append(
-                {"release": release, "revision": view["revision"], "stale": view["stale"]}
-            )
+            entry = {"release": release, "revision": view["revision"], "stale": view["stale"]}
+            values.append(entry)
+            if can_use_read_models:
+                pending_upserts.append((cache_keys[release], release, source_version, entry))
         except ValueError:
             continue
+    if pending_upserts and can_use_read_models:
+        try:
+            for ckey, rel, src_ver, entry in pending_upserts:
+                read_models_repo.upsert_read_model(
+                    db,
+                    cache_key=ckey,
+                    scope_release=rel,
+                    profile_id=profile["id"],
+                    view_type="eval_comparison",
+                    source_version=src_ver,
+                    payload=entry,
+                )
+            db.commit()
+        except Exception:
+            logger.debug("Skipping CQRS read model upsert in comparison()", exc_info=True)
+            db.rollback()
     return {"profile": profile, "versions": list(reversed(values))}
 
 
@@ -1474,14 +1501,17 @@ def project_execution_metrics(db, execution):
 
 
 def tick(*, schedule=True):
-    """Recover authorized work; optionally schedule DB-only hourly plans."""
+    """Recover authorized work; optionally schedule DB-only hourly plans.
+
+    Uses per-release / per-item advisory locks instead of holding a global lock
+    across long Orion driver subprocess calls.
+    """
     with SessionLocal() as db:
-        for item in rows(db, "evrequest:"):
-            if item["status"] in ("queued", "running"):
-                try:
-                    process(item["id"])
-                except ValueError:
-                    pass
+        for item in state_store.list_requests(db, statuses=("queued", "running")):
+            try:
+                process(item["id"])
+            except ValueError:
+                pass
         db.expire_all()
         for pointer in rows(db, "evcontext:"):
             if schedule and pointer.get("cron_enabled") and pointer.get("context"):
@@ -1504,61 +1534,82 @@ def tick(*, schedule=True):
                         process(request["id"])
                     except ValueError:
                         pass
-        try:
-            with lock("execution", shared=True):
-                for started in rows(db, "evstart:"):
-                    if started["status"] == "preparing":
-                        try:
-                            execution = execute_start(db, started)
-                            w.put_state(
-                                db,
-                                "evstart:" + started["id"],
-                                {
-                                    **started,
-                                    "status": execution["status"],
-                                    "execution_id": execution["id"],
-                                    "simulation_submitted": execution.get(
-                                        "simulation_submitted", False
-                                    ),
-                                    **(
-                                        {"job_id": execution["job_id"]}
-                                        if execution.get("job_id")
-                                        else {}
-                                    ),
-                                },
-                            )
-                        except Exception as exc:
-                            logger.exception(
-                                "evaluation tick execute_start failed start_id=%s",
-                                started.get("id"),
-                            )
-                            db.rollback()
-                            w.put_state(
-                                db,
-                                "evstart:" + started["id"],
-                                {
-                                    **started,
-                                    "status": "failed",
-                                    "error": str(exc)
-                                    if isinstance(exc, ValueError)
-                                    else "upstream_error",
-                                },
-                            )
-                for execution in rows(db, "evexecution:"):
-                    sync_start(db, execution)
-                    if (
-                        execution["status"] in ("complete", "quality_failed")
-                        and execution.get("metrics_status") != "complete"
-                    ):
-                        retry = execution.get("metrics_retry_at")
-                        if not retry or datetime.fromisoformat(retry) <= datetime.now(timezone.utc):
+        if schedule:
+            try:
+                state_store.prune_terminal_requests(db, keep_days=30)
+            except Exception:
+                logger.debug("Skipping terminal evaluation_requests pruning", exc_info=True)
+                db.rollback()
+
+        for started in rows(db, "evstart:"):
+            if started.get("status") != "preparing":
+                continue
+            rel = (started.get("context") or {}).get("release") or started.get("id")
+            try:
+                with lock(f"start:{rel}"):
+                    current_start = w.get_state(db, "evstart:" + started["id"])
+                    if current_start.get("status") != "preparing":
+                        continue
+                    try:
+                        execution = execute_start(db, current_start)
+                        w.put_state(
+                            db,
+                            "evstart:" + current_start["id"],
+                            {
+                                **current_start,
+                                "status": execution["status"],
+                                "execution_id": execution["id"],
+                                "simulation_submitted": execution.get(
+                                    "simulation_submitted", False
+                                ),
+                                **(
+                                    {"job_id": execution["job_id"]}
+                                    if execution.get("job_id")
+                                    else {}
+                                ),
+                            },
+                        )
+                    except Exception as exc:
+                        logger.exception(
+                            "evaluation tick execute_start failed start_id=%s",
+                            current_start.get("id"),
+                        )
+                        db.rollback()
+                        w.put_state(
+                            db,
+                            "evstart:" + current_start["id"],
+                            {
+                                **current_start,
+                                "status": "failed",
+                                "error": str(exc)
+                                if isinstance(exc, ValueError)
+                                else "upstream_error",
+                            },
+                        )
+            except ValueError:
+                continue
+
+        for execution in state_store.list_executions(db, include_heavy=True):
+            sync_start(db, execution)
+            if (
+                execution.get("status") in ("complete", "quality_failed")
+                and execution.get("metrics_status") != "complete"
+            ):
+                retry = execution.get("metrics_retry_at")
+                if not retry or datetime.fromisoformat(retry) <= datetime.now(timezone.utc):
+                    try:
+                        with lock(f"exec-metrics:{execution['id']}"):
                             project_execution_metrics(db, execution)
-                    if execution["status"] in (
-                        "submitting",
-                        "submission_uncertain",
-                        "running",
-                        "verifying",
-                    ):
+                    except ValueError:
+                        continue
+            if execution.get("status") in (
+                "submitting",
+                "submission_uncertain",
+                "running",
+                "verifying",
+            ):
+                try:
+                    with lock(f"exec-poll:{execution['id']}"):
                         try:
                             poll_execution(db, execution)
                         except Exception as exc:
@@ -1577,5 +1628,5 @@ def tick(*, schedule=True):
                                     else "upstream_error",
                                 },
                             )
-        except ValueError:
-            pass
+                except ValueError:
+                    continue

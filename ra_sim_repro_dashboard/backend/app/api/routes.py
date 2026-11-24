@@ -328,28 +328,31 @@ def issue_detail(issue_id: str, db: DbSession) -> IssueDetailResponse:
     if issue is None:
         raise HTTPException(status_code=404, detail="Issue not found")
     scenarios = db.execute(select(Scenario).where(Scenario.issue_id == issue_id)).scalars().all()
-    payload = []
-    for scenario in scenarios:
+    scenario_ids = [s.scenario_id for s in scenarios]
+    results_by_scenario: dict[str, list[ScenarioVersionResult]] = {sid: [] for sid in scenario_ids}
+    if scenario_ids:
         results_stmt = select(ScenarioVersionResult).where(
-            ScenarioVersionResult.scenario_id == scenario.scenario_id
+            ScenarioVersionResult.scenario_id.in_(scenario_ids)
         )
         if configured_keys:
             results_stmt = results_stmt.where(
                 ScenarioVersionResult.version_key.in_(configured_keys)
             )
-        results = (
-            db.execute(results_stmt.order_by(ScenarioVersionResult.version_key)).scalars().all()
-        )
-        payload.append(
-            {
-                "scenario": {
-                    "scenario_id": scenario.scenario_id,
-                    "scenario_name": scenario.scenario_name,
-                    "signature": scenario.signature,
-                },
-                "results": [_result_dict(row) for row in results],
-            }
-        )
+        for row in db.execute(results_stmt.order_by(ScenarioVersionResult.version_key)).scalars():
+            results_by_scenario.setdefault(row.scenario_id, []).append(row)
+    payload = [
+        {
+            "scenario": {
+                "scenario_id": scenario.scenario_id,
+                "scenario_name": scenario.scenario_name,
+                "signature": scenario.signature,
+            },
+            "results": [
+                _result_dict(row) for row in results_by_scenario.get(scenario.scenario_id, [])
+            ],
+        }
+        for scenario in scenarios
+    ]
     return IssueDetailResponse(
         issue_id=issue_id,
         issue={
@@ -430,11 +433,12 @@ def refresh_status(job_id: str, db: DbSession) -> RefreshJobOut:
 @router.get("/dashboard/root-causes")
 def root_causes(db: DbSession) -> dict[str, int]:
     configured_keys = _configured_version_keys()
-    stmt = select(ScenarioVersionResult)
+    stmt = select(ScenarioVersionResult.root_cause, func.count()).group_by(
+        ScenarioVersionResult.root_cause
+    )
     if configured_keys:
         stmt = stmt.where(ScenarioVersionResult.version_key.in_(configured_keys))
-    rows = db.execute(stmt).scalars().all()
-    return summarize_rows(rows)["root_causes"]
+    return {str(cause): int(count) for cause, count in db.execute(stmt).all()}
 
 
 def _result_dict(row: ScenarioVersionResult) -> dict[str, object]:

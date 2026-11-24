@@ -13,6 +13,7 @@ from app.api.evaluation_routes import router as evaluation_router
 from app.api.release_routes import router as release_router
 from app.api.routes import router
 from app.database import init_db
+from app.infra.audit import install_db_audit_sink
 from app.security import (
     identity_can_write,
     load_security_config,
@@ -27,6 +28,7 @@ from app.services.release_workflow import tick
 async def lifespan(app: FastAPI):
     validate_security_settings()
     init_db()
+    install_db_audit_sink()
 
     async def monitor():
         while True:

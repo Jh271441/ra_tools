@@ -46,14 +46,14 @@ def _due(cache, force=False):
 
 
 def refresh_progress(job_id, force=False):
-    lock_dir = Path(
-        os.getenv("RELEASE_WORKFLOW_LOCK", str(DATA_DIR / "release-workflow.lock"))
-    ).parent
-    with (lock_dir / f"job-progress-{int(job_id)}.lock").open("w") as lock:
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            return
+    from app.infra.locks import LockBusyError, advisory_lock
+
+    try:
+        lock_ctx = advisory_lock(f"ra_sim:job_progress:{int(job_id)}", blocking=False)
+        lock_ctx.__enter__()
+    except LockBusyError:
+        return
+    try:
         with SessionLocal() as db:
             if int(job_id) not in _jobs(db, load_versions_config().get("versions", {})):
                 return
@@ -97,6 +97,8 @@ def refresh_progress(job_id, force=False):
                         "error": str(exc) if isinstance(exc, ValueError) else type(exc).__name__,
                     },
                 )
+    finally:
+        lock_ctx.__exit__(None, None, None)
 
 
 def board(db, release="@current", force=False):
@@ -109,17 +111,20 @@ def board(db, release="@current", force=False):
         db, "collection-inventory", lambda: inventory(db, config), max_age=2
     )
     collections = {v["release"]: v for v in collection_view["versions"]}
-    native = list(
-        db.scalars(
-            select(ReleaseSimulationBatch).order_by(ReleaseSimulationBatch.created_at.desc())
-        )
-    )
-    keys = set(versions) | set(periods) | set(collections) | {b.release for b in native}
+    batch_releases = set(db.scalars(select(ReleaseSimulationBatch.release).distinct()))
+    keys = set(versions) | set(periods) | set(collections) | batch_releases
     if current["current_version"]:
         keys.add(current["current_version"])
     selected = current["current_version"] if release == "@current" else release
     if selected not in keys:
         raise ValueError("未知版本，无法展示仿真看板")
+    native = list(
+        db.scalars(
+            select(ReleaseSimulationBatch)
+            .where(ReleaseSimulationBatch.release == selected)
+            .order_by(ReleaseSimulationBatch.created_at.desc())
+        )
+    )
     period = periods.get(selected)
     is_current = selected == current["current_version"]
     data = {
@@ -435,8 +440,7 @@ def board(db, release="@current", force=False):
                 "collection_status": collections.get(key, {}).get("collection_status"),
                 "collection_completed": collections.get(key, {}).get("collection_completed", False),
                 "collection_stale": collections.get(key, {}).get("stale", False),
-                "has_job": any(b.release == key for b in native)
-                or bool(versions.get(key, {}).get("sim_job_id")),
+                "has_job": key in batch_releases or bool(versions.get(key, {}).get("sim_job_id")),
             }
             for key in sorted(keys, reverse=True)
         ],

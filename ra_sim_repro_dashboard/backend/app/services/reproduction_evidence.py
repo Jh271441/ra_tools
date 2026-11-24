@@ -4,6 +4,7 @@ from collections import defaultdict
 from copy import deepcopy
 from sqlalchemy import select
 from app.models import ReleaseSimulationBatch, ReleaseWorkflowState, ReleaseIssueSnapshot
+from app.repositories import state_store
 from app.services import reproduction_timing as timing
 from app.services.release_cycle import digest
 
@@ -99,8 +100,7 @@ def validate_record(db, record, source_cache=None):
     else:
         from app.services.evaluation_pipeline import execution_audit_hash
 
-        state = db.get(ReleaseWorkflowState, "evexecution:" + source["execution_id"])
-        e = state.payload if state else {}
+        e = state_store.get_execution(db, source["execution_id"], include_heavy=True)
         if (
             not e.get("audit_hash")
             or e["audit_hash"] != source["audit_hash"]
@@ -156,28 +156,18 @@ def save(db, release, records):
         "records": sorted(records, key=lambda r: digest(r["binding"])),
     }
     key = "rtime:" + digest(core)[:48]
-    existing = db.get(ReleaseWorkflowState, key)
-    if existing and existing.payload != core:
-        raise ValueError("timing_ledger_conflict")
-    if not existing:
-        db.add(ReleaseWorkflowState(key=key, payload=core))
-    return key
+    return state_store.save_timing_ledger(db, key, release, core)
 
 
 def index(db, release):
     values = defaultdict(list)
     # Filter before transferring large immutable ledgers. Still validate each
     # returned payload and its content-addressed key below.
-    statement = select(ReleaseWorkflowState).where(
-        ReleaseWorkflowState.key.like("rtime:%"),
-        ReleaseWorkflowState.payload["release"].as_string() == release,
-    )
-    for row in db.scalars(statement):
-        p = row.payload
+    for ledger_key, p in state_store.list_timing_ledgers(db, release):
         if (
             p.get("release") != release
             or p.get("schema") != SCHEMA
-            or row.key != "rtime:" + digest(p)[:48]
+            or ledger_key != "rtime:" + digest(p)[:48]
         ):
             continue
         for record in p["records"]:
@@ -345,14 +335,11 @@ def standard_inputs(db, batch, metrics):
         if revision.get("issues") is not None:
             issues = revision["issues"]
         elif revision.get("population_hash"):
-            for snapshot in db.scalars(
-                select(ReleaseIssueSnapshot)
-                .where(ReleaseIssueSnapshot.release == batch.release)
-                .order_by(ReleaseIssueSnapshot.id.desc())
-            ):
-                if at.workflow.population_identity(snapshot.payload) == revision["population_hash"]:
-                    issues = snapshot.payload["issues"]
-                    break
+            snapshot = state_store.find_snapshot_by_population_hash(
+                db, batch.release, revision["population_hash"]
+            )
+            if snapshot is not None:
+                issues = snapshot.payload["issues"]
         if revision.get("lineage"):
             lineage = revision["lineage"]
     scenes, results, physical = {}, {}, {}
@@ -369,7 +356,7 @@ def standard_inputs(db, batch, metrics):
                     inputs,
                 )
             else:
-                e = db.get(ReleaseWorkflowState, "evexecution:" + key).payload
+                e = state_store.get_execution(db, key, include_heavy=True)
                 origins[key] = (
                     {**e["plan"], "results": e["results"]},
                     {str(s["scenario_id"]): s for s in e["plan"]["scenarios"]},

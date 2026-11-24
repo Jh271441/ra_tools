@@ -6,6 +6,7 @@ Only the explicit offline publisher writes upstream. Browser APIs read receipts.
 from copy import deepcopy
 from datetime import datetime, timezone
 import json
+from app.repositories import state_store
 from app.services.release_cycle import digest
 from app.services import release_workflow as w
 
@@ -198,18 +199,17 @@ def save_verified(db, plan, verified):
             }
         )
     stamp = now()
-    for iid, scenes in grouped.items():
-        w.put_state(
-            db,
-            issue_key(plan["context"], iid),
-            {
-                "plan_id": plan["id"],
-                "revision_key": plan["revision_key"],
-                "namespace": plan["namespace"],
-                "checked_at": stamp,
-                "items": scenes,
-            },
-        )
+    ctx_hash = digest(plan["context"])
+    state_store.batch_upsert_scenario_tags(
+        db,
+        context_hash=ctx_hash,
+        plan_id=plan["id"],
+        revision_key=plan["revision_key"],
+        namespace=plan["namespace"],
+        checked_at=stamp,
+        grouped_items=grouped,
+        commit=False,
+    )
     summary = {
         k: deepcopy(plan[k])
         for k in (
@@ -232,7 +232,9 @@ def save_verified(db, plan, verified):
 
 def issue_labels(db, ctx, issue_id, current_revision_key, current_plan_id=None):
     index = w.get_state(db, index_key(ctx))
-    record = w.get_state(db, issue_key(ctx, issue_id))
+    record = state_store.get_scenario_tag(
+        db, digest(ctx), issue_id, legacy_key=issue_key(ctx, issue_id)
+    )
     status = "missing"
     if index:
         status = index.get("status", "missing")

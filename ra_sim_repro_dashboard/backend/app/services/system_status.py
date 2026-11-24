@@ -368,21 +368,9 @@ def _check_evaluation_worker(db: Session) -> dict[str, Any]:
         },
     }
     try:
-        active_exec = int(
-            db.scalar(
-                select(func.count())
-                .select_from(ReleaseWorkflowState)
-                .where(
-                    ReleaseWorkflowState.key.startswith("evexecution:"),
-                    ReleaseWorkflowState.payload["status"]
-                    .as_string()
-                    .in_(
-                        ("preparing", "submitting", "submission_uncertain", "running", "verifying")
-                    ),
-                )
-            )
-            or 0
-        )
+        from app.repositories import state_store
+
+        active_exec = state_store.count_active_executions(db)
         active_starts = int(
             db.scalar(
                 select(func.count())

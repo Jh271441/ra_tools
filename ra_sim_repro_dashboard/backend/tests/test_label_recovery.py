@@ -336,7 +336,11 @@ def test_applied_labels_reach_issue_details_with_audited_job_and_pagination(
     assert result["items"][0]["job_id"] == 102
     assert result["items"][0]["precision_label"] == "FN"
     assert result["items"][0]["sim_triggered"] is False
-    old = w.list_issues(db, base.release, query='"issue_id": "0"')["items"][0]
+    old = next(
+        row
+        for row in w.list_issues(db, base.release, query="误触发", page_size=200)["items"]
+        if row["issue_id"] == "0"
+    )
     assert old["source_result"] == "误触发" and old["precision_label"] == "FP"
     assert old["job_id"] == 101 and old["simulation_status"] == "result_ready"
     assert w.list_issues(db, base.release, page=2, page_size=10)["total"] == len(rows)

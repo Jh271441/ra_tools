@@ -1,3 +1,4 @@
+import os
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from typing import Literal
 from pydantic import BaseModel, Field
@@ -154,7 +155,14 @@ def board(
         catalogue = pipeline.navigation_versions(db) if view == "metrics" else None
         return guarded(pipeline.board, db, **ctx.model_dump(), catalogue=catalogue)
 
-    return read_view(db, ("evaluation-board", view, *ctx.model_dump().values()), load, max_age=30)
+    scope_releases = [ctx.release] if ctx.release and not ctx.release.startswith("@") else None
+    return read_view(
+        db,
+        ("evaluation-board", view, *ctx.model_dump().values()),
+        load,
+        max_age=30,
+        scope_releases=scope_releases,
+    )
 
 
 @router.get("/comparison")
@@ -211,14 +219,16 @@ def issues(
 @router.post("/runs", status_code=202)
 def refresh(body: Refresh, tasks: BackgroundTasks, db: Session = Depends(get_db)):
     value = guarded(pipeline.queue, db, **body.model_dump())
-    tasks.add_task(pipeline.process, value["id"])
+    if os.getenv("EVALUATION_WORKER_RUNNER", "api") == "api":
+        tasks.add_task(pipeline.process, value["id"])
     return value
 
 
 @router.post("/plans/{identifier}/start", status_code=202)
 def start(identifier: str, tasks: BackgroundTasks, db: Session = Depends(get_db)):
     value = guarded(pipeline.start, db, identifier)
-    tasks.add_task(pipeline.tick, schedule=False)
+    if os.getenv("EVALUATION_WORKER_RUNNER", "api") == "api":
+        tasks.add_task(pipeline.tick, schedule=False)
     return value
 
 

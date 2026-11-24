@@ -81,7 +81,7 @@ def prepare(c):
     env = json.loads((root / "secrets.json").read_text())
     env.setdefault("SIM_DEPLOYMENT_MODE", "production")
     env.setdefault("ENABLE_RQ", "0")
-    env.setdefault("EVALUATION_WORKER_RUNNER", "api")
+    env.setdefault("EVALUATION_WORKER_RUNNER", "worker")
     env.setdefault("RELEASE_WORKFLOW_LOCK", str(root / "release-workflow.lock"))
     env.setdefault(
         "AUTO_TRIAGE_SHUYI_STORAGE_STATE", str(root / "private/shuyi_storage_state.json")

@@ -348,7 +348,9 @@ def test_source_lookup_near_batch_time_retains_full_fallback_and_gt_gate(db, mon
 
     monkeypatch.setattr(w, "population_identity", identity)
     assert lane.frozen_snapshot_valid(db, batch)
-    assert len(calls) < 8 if nearby else len(calls) > 20
+    # With indexed population_hash lookup (P1), both nearby and older frozen
+    # snapshots resolve in O(1) without scanning all intermediate snapshots.
+    assert len(calls) < 8
     changed = deepcopy(latest.payload)
     changed["issues"][0]["ra_merge_result"] = "失败"
     latest.payload = changed

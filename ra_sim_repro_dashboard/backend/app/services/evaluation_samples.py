@@ -303,13 +303,25 @@ def status(db, scope, population_filters=None):
 
 def migrate(db):
     """One-shot promotion of previously reconciled receipts; never requery upstream."""
+    from app.repositories import state_store
+
     sources = []
+    seen_keys = set()
+    for rev in state_store.list_revisions(db, include_blobs=True):
+        key = rev.get("revision_key", "")
+        if key:
+            seen_keys.add(key)
+        source = rev.get("source", {})
+        if source.get("dashboard") is not None:
+            sources.append((key, source["dashboard"], source.get("labels", source.get("rows"))))
     for row in db.scalars(
         select(ReleaseWorkflowState).where(
             ReleaseWorkflowState.key.startswith("at_labels:")
             | ReleaseWorkflowState.key.startswith("evrevision:")
         )
     ):
+        if row.key in seen_keys:
+            continue
         source = row.payload.get("source", {}) if row.key.startswith("evrevision:") else row.payload
         if source.get("dashboard") is not None:
             sources.append((row.key, source["dashboard"], source.get("labels", source.get("rows"))))

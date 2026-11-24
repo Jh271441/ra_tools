@@ -14,11 +14,14 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from app.config import DATA_DIR
 from app.database import SessionLocal
+from app.domain.hashing import population_identity as _population_identity
+from app.infra.locks import LockBusyError, advisory_lock
 from app.models import (
     ReleaseIssueSnapshot,
     ReleaseWorkflowState,
     ReleaseSimulationBatch,
 )
+from app.repositories import state_store
 from app.services.release_cycle import (
     digest,
     load_cycle_config,
@@ -45,44 +48,7 @@ def period_key(config, period):
 
 
 def population_identity(payload):
-    period = payload["period"]
-    issues = [
-        {
-            **{
-                k: row.get(k)
-                for k in ("issue_id", "ra_type", "ra_merge_result", "issue_time", "version")
-            },
-            **(
-                {"evaluation_exclusion": row["evaluation_exclusion"]}
-                if row.get("evaluation_exclusion")
-                else {}
-            ),
-        }
-        for row in payload["issues"]
-    ]
-    scenarios = [
-        {
-            k: row.get(k)
-            for k in (
-                "scenario_id",
-                "issue_id",
-                "scenario_revision",
-                "start_timestamp",
-                "end_timestamp",
-            )
-        }
-        for row in payload["scenarios"]
-    ]
-    return digest(
-        {
-            "period": {
-                k: period.get(k)
-                for k in ("release", "case_start", "case_end_exclusive", "binary_id")
-            },
-            "issues": sorted(issues, key=lambda row: str(row["issue_id"])),
-            "scenarios": sorted(scenarios, key=lambda row: str(row["scenario_id"])),
-        }
-    )
+    return _population_identity(payload)
 
 
 def latest_snapshot(db, key):
@@ -95,17 +61,11 @@ def latest_snapshot(db, key):
 
 
 def get_state(db, key, default=None):
-    if not key:
-        return default or {}
-    row = db.get(ReleaseWorkflowState, key)
-    return row.payload if row else (default or {})
+    return state_store.get_routed_state(db, key, default)
 
 
 def put_state(db, key, payload):
-    row = db.get(ReleaseWorkflowState, key) or ReleaseWorkflowState(key=key)
-    row.payload = payload
-    db.add(row)
-    db.commit()
+    state_store.put_routed_state(db, key, payload, commit=True)
 
 
 def effective_config(db):
@@ -505,6 +465,30 @@ def prepare_missing_scenes(db, config, *, release=None):
         )
 
 
+def _issue_row_matches_query(row: dict, needle: str) -> bool:
+    for field in (
+        "issue_id",
+        "issue_topic",
+        "scenario_id",
+        "scenario_name",
+        "version",
+        "ra_merge_result",
+        "source_result",
+        "simulation_status",
+        "job_id",
+        "trip_id",
+        "precision_label",
+        "root_cause",
+    ):
+        val = row.get(field)
+        if val is not None and needle in str(val).casefold():
+            return True
+    labels = row.get("scenario_labels")
+    if isinstance(labels, list) and any(needle in str(item).casefold() for item in labels):
+        return True
+    return False
+
+
 def list_issues(db, release=None, page=1, page_size=25, query="", label="", view="collection"):
     if view not in ("simulation", "collection") or page < 1 or not 1 <= page_size <= 200:
         raise ValueError("invalid_pagination")
@@ -538,13 +522,12 @@ def list_issues(db, release=None, page=1, page_size=25, query="", label="", view
             from app.services.reproduction_evidence import annotate_standard_rows
 
             applied = annotate_standard_rows(db, release, applied)
+            needle = query.casefold()
             items = [
                 row
                 for row in applied
                 if (not label or label in row["scenario_labels"])
-                and (
-                    not query or query.casefold() in json.dumps(row, ensure_ascii=False).casefold()
-                )
+                and (not needle or _issue_row_matches_query(row, needle))
             ]
             items.sort(
                 key=lambda row: (row.get("issue_time") or 0, row["issue_id"], row["scenario_id"]),
@@ -673,7 +656,7 @@ def list_issues(db, release=None, page=1, page_size=25, query="", label="", view
                             for k in ("sim_triggered", "reproduced", "precision_label")
                         }
                     )
-            if query and query.lower() not in json.dumps(row, ensure_ascii=False).lower():
+            if query and not _issue_row_matches_query(row, query.casefold()):
                 continue
             if label and label not in row["scenario_labels"]:
                 continue
@@ -920,37 +903,22 @@ def _driver_preflight(config, plan):
 
 
 def evaluation_execution_active(db, release):
-    active = ("preparing", "submitting", "submission_uncertain", "running", "verifying")
     # Some authorized/offline submitters persist an execution without evstart.
     # Its durable intent must protect the same shared lane after a restart.
-    execution = db.scalar(
-        select(ReleaseWorkflowState.key)
-        .where(
-            ReleaseWorkflowState.key.startswith("evexecution:"),
-            ReleaseWorkflowState.payload["status"].as_string().in_(active),
-            ReleaseWorkflowState.payload["plan"]["release"].as_string() == release,
-        )
-        .limit(1)
-    )
-    if execution:
+    if state_store.count_active_executions(db, release=release) > 0:
         return True
     for row in db.scalars(
         select(ReleaseWorkflowState).where(ReleaseWorkflowState.key.startswith("evstart:"))
     ):
         value = row.payload
         if (
-            value.get("status")
-            in ("preparing", "submitting", "submission_uncertain", "running", "verifying")
+            value.get("status") in state_store.ACTIVE_EXECUTION_STATUSES
             and value.get("context", {}).get("release") == release
         ):
-            execution = get_state(db, "evexecution:" + value.get("execution_id", "none"))
-            if not execution or execution.get("status") in (
-                "preparing",
-                "submitting",
-                "submission_uncertain",
-                "running",
-                "verifying",
-            ):
+            execution = state_store.get_execution(
+                db, value.get("execution_id", ""), include_heavy=False
+            )
+            if not execution or execution.get("status") in state_store.ACTIVE_EXECUTION_STATUSES:
                 return True
     return False
 
@@ -1036,8 +1004,11 @@ def execute_batch(db, batch, config, *, release=None):
         batch.status = "cancelled_stale"
         db.commit()
         return batch
+    # Phase 1: short DB validation before external driver preflight (no open write tx)
+    payload_snapshot = dict(batch.payload)
+    db.commit()
     try:
-        _driver_preflight(config, batch.payload)
+        _driver_preflight(config, payload_snapshot)
     except Exception as exc:
         logger.warning(
             "execute_batch preflight failed batch=%s release=%s",
@@ -1052,10 +1023,12 @@ def execute_batch(db, batch, config, *, release=None):
         }
         db.commit()
         return batch
+    # Phase 2: persist submitting intent & close transaction before subprocess side effect
     batch.status = "submitting"
     db.commit()  # Persist before side effect. A restart never relaunches submitting.
+    # Phase 3: lockless external submit, followed by short receipt commit
     try:
-        receipt = driver_call(config, "submit", batch.payload)
+        receipt = driver_call(config, "submit", payload_snapshot)
         if receipt.get("fingerprint") != batch.fingerprint or not receipt.get("job_id"):
             raise ValueError("提交回执不完整")
         batch.payload = {**batch.payload, "job_id": receipt["job_id"]}
@@ -1249,12 +1222,12 @@ def metrics_for_snapshot(db, snapshot):
 
 
 def run_tick(sync_source=True, source_interval_seconds=0):
-    lock_path = Path(os.getenv("RELEASE_WORKFLOW_LOCK", str(DATA_DIR / "release-workflow.lock")))
-    with lock_path.open("w") as lock:
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            return
+    try:
+        lock_ctx = advisory_lock("ra_sim:release_workflow", blocking=False)
+        lock_ctx.__enter__()
+    except LockBusyError:
+        return
+    try:
         with SessionLocal() as db:
             config = effective_config(db)
             if sync_source and source_interval_seconds:
@@ -1329,6 +1302,8 @@ def run_tick(sync_source=True, source_interval_seconds=0):
             from app.services.release_backfill import tick as backfill_tick
 
             backfill_tick(db, config)
+    finally:
+        lock_ctx.__exit__(None, None, None)
 
 
 def tick():

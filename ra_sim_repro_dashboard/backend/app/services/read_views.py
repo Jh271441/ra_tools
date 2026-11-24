@@ -1,30 +1,31 @@
-"""Revision-aware cache for page reads only; operational decisions stay uncached."""
+"""Fine-grained versioned cache for page reads; operational decisions stay uncached."""
+
+from __future__ import annotations
 
 from collections import OrderedDict
 from copy import deepcopy
 from contextvars import ContextVar
 from datetime import datetime
+import hashlib
+import json
 import os
 from pathlib import Path
 from threading import RLock
 from time import monotonic
+from typing import Any
 
-from sqlalchemy import select
 from app.config import CONFIG_DIR, settings
-from app.models import (
-    DashboardSnapshot,
-    ReleaseIssueSnapshot,
-    ReleaseSimulationBatch,
-    ReleaseWorkflowState,
-)
+from app.database import engine as default_engine
+from app.repositories import read_models_repo, state_store  # noqa: F401 (registers Session hooks)
+from app.services.cache import cache as redis_cache
 from app.services.release_cycle import TZ
 
 _lock = RLock()
-_values = OrderedDict()
-_fills = {}
-_read_db = ContextVar("read_view_session", default=None)
-_read_memos = ContextVar("read_view_memos", default=None)
-_MAX_ENTRIES = 96
+_values: OrderedDict[Any, tuple[float, Any]] = OrderedDict()
+_fills: dict[Any, list[Any]] = {}
+_read_db: ContextVar[Any] = ContextVar("read_view_session", default=None)
+_read_memos: ContextVar[Any] = ContextVar("read_view_memos", default=None)
+_MAX_ENTRIES = 128
 
 
 def _file_revision(path):
@@ -36,27 +37,15 @@ def _file_revision(path):
         return str(path), None
 
 
-def revision(db):
-    # Only identifiers/timestamps cross the DB boundary, never the MB-sized JSON.
-    # Read on every request so writes by the worker or another process invalidate
-    # immediately. Keep the engine itself in the key to isolate test/other DBs.
-    statements = [
-        select(ReleaseWorkflowState.key, ReleaseWorkflowState.updated_at).order_by(
-            ReleaseWorkflowState.key
-        ),
-        select(
-            ReleaseSimulationBatch.fingerprint,
-            ReleaseSimulationBatch.status,
-            ReleaseSimulationBatch.updated_at,
-        ).order_by(ReleaseSimulationBatch.fingerprint),
-        select(ReleaseIssueSnapshot.id, ReleaseIssueSnapshot.period_hash).order_by(
-            ReleaseIssueSnapshot.id
-        ),
-        select(DashboardSnapshot.id, DashboardSnapshot.config_hash).order_by(DashboardSnapshot.id),
-    ]
+def revision(db, *, scope_releases: list[str] | None = None):
+    """Lightweight version token using `release_data_versions` (1 tiny index scan, zero JSON).
+
+    Previously scanned and sorted all 4 core tables (~10,000 rows) on every single GET.
+    """
+    versions = read_models_repo.get_version_signature(db, releases=scope_releases)
     return (
         db.get_bind(),
-        tuple(tuple(tuple(row) for row in db.execute(stmt)) for stmt in statements),
+        versions,
         tuple(
             _file_revision(path)
             for path in [
@@ -73,13 +62,30 @@ def revision(db):
     )
 
 
-def read_view(db, name, load, *, max_age=300):
+def _redis_cache_key(token, name) -> str | None:
+    try:
+        # Exclude engine object (index 0); only cache for primary configured DB engine.
+        serializable = [token[1:], name]
+        raw = json.dumps(serializable, default=str, sort_keys=True, ensure_ascii=False)
+    except Exception:
+        return None
+    return "ra_sim:view:" + hashlib.sha256(raw.encode("utf-8")).hexdigest()[:40]
+
+
+def _is_json_primitive_tree(value: Any) -> bool:
+    return isinstance(value, (dict, list))
+
+
+def read_view(db, name, load, *, max_age=300, scope_releases: list[str] | None = None):
     # Never cache uncommitted state or a failed computation. Callers of this
     # helper are GET handlers, not the scheduler, publication, or submit paths.
     if db.new or db.dirty or db.deleted:
         return load()
-    token = revision(db)
+    token = revision(db, scope_releases=scope_releases)
     key = (token, name)
+    use_redis = db.get_bind() is default_engine and redis_cache.enabled
+    redis_key = _redis_cache_key(token, name) if use_redis else None
+
     # Only requests for the same revision and view share a fill lock. A slow
     # board must not block unrelated pages or cache hits while holding the DB.
     with _lock:
@@ -96,6 +102,16 @@ def read_view(db, name, load, *, max_age=300):
                 if existing and monotonic() - existing[0] < max_age:
                     _values.move_to_end(key)
                     return deepcopy(existing[1])
+            if redis_key:
+                from_redis = redis_cache.get_json(redis_key)
+                if from_redis is not None:
+                    with _lock:
+                        _values[key] = (monotonic(), deepcopy(from_redis))
+                        _values.move_to_end(key)
+                        while len(_values) > _MAX_ENTRIES:
+                            _values.popitem(last=False)
+                    return from_redis
+
             scope = _read_db.set(db)
             # Retain large immutable audit receipts only for this GET. Nested
             # public projections may reuse them, but another request (including
@@ -112,6 +128,11 @@ def read_view(db, name, load, *, max_age=300):
                 _values.move_to_end(key)
                 while len(_values) > _MAX_ENTRIES:
                     _values.popitem(last=False)
+            if redis_key and _is_json_primitive_tree(cached):
+                try:
+                    redis_cache.set_json(redis_key, cached, ttl=max(1, int(max_age)))
+                except TypeError:
+                    pass
             return value
     finally:
         with _lock:
@@ -120,12 +141,12 @@ def read_view(db, name, load, *, max_age=300):
                 del _fills[key]
 
 
-def read_projection(db, name, load, *, max_age=300):
+def read_projection(db, name, load, *, max_age=300, scope_releases: list[str] | None = None):
     """Reuse public subviews only inside a cached GET, never in worker decisions."""
     active = _read_db.get()
     if active is None or active is not db:
         return load()
-    return read_view(db, name, load, max_age=max_age)
+    return read_view(db, name, load, max_age=max_age, scope_releases=scope_releases)
 
 
 def read_memo(db, name, load):
