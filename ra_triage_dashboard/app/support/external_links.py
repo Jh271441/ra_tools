@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
 import hashlib
 import json
 import re
@@ -20,7 +21,8 @@ from .common import _as_text
 _ARES_TASK_INFO_URL = (
     "https://voyager-hb.intra.xiaojukeji.com/proxy/get_task_info_for_ares/"
 )
-_disable_ra_version_cache: dict[str, tuple[float, int]] = {}
+_DISABLE_RA_VERSION_CACHE_MAX = 2048
+_disable_ra_version_cache: OrderedDict[str, tuple[float, int]] = OrderedDict()
 _disable_ra_version_cache_lock = threading.Lock()
 
 
@@ -66,6 +68,7 @@ def resolve_disable_ra_simulation_version(
     with _disable_ra_version_cache_lock:
         cached = _disable_ra_version_cache.get(value)
         if ttl > 0 and cached and now - cached[0] < ttl:
+            _disable_ra_version_cache.move_to_end(value)
             return cached[1]
 
     deadline = now + max(0.2, float(timeout_seconds))
@@ -106,6 +109,9 @@ def resolve_disable_ra_simulation_version(
     if ttl > 0:
         with _disable_ra_version_cache_lock:
             _disable_ra_version_cache[value] = (time.monotonic(), latest_completed)
+            _disable_ra_version_cache.move_to_end(value)
+            while len(_disable_ra_version_cache) > _DISABLE_RA_VERSION_CACHE_MAX:
+                _disable_ra_version_cache.popitem(last=False)
     return latest_completed
 
 

@@ -85,9 +85,10 @@ class DatabaseCombinedReviewMixin:
             raise ValueError("必须明确选择 Case 标签。")
         clean_tags = sorted({str(value or "").strip() for value in tags if str(value or "").strip()})
         with self._write_lock, self.connect() as conn:
-            self._lock_task_work(conn)
+            self._lock_task_work(conn, shared=True)
             issue = conn.execute(
-                "SELECT issue_id, baseline_scope, gt_label, gt_source FROM issues WHERE issue_id=?",
+                "SELECT issue_id, baseline_scope, gt_label, gt_source FROM issues WHERE issue_id=?"
+                + (" FOR UPDATE" if self.backend == "postgresql" else ""),
                 (issue_key,),
             ).fetchone()
             if issue is None:
@@ -356,7 +357,12 @@ class DatabaseCombinedReviewMixin:
             "expected_label_state_fingerprint": str(expected_label_state_fingerprint or ""),
         })
         with self._write_lock, self.connect() as conn:
-            self._lock_task_work(conn)
+            self._lock_task_work(conn, shared=True)
+            if self.backend == "postgresql":
+                conn.execute(
+                    "SELECT issue_id FROM issues WHERE issue_id=? FOR UPDATE",
+                    (issue_key,),
+                ).fetchone()
             # Fingerprint the original request first so an old task URL can replay
             # its immutable submission without changing the historical fingerprint.
             campaign_key = self._resolve_version_campaign(conn,campaign_key)

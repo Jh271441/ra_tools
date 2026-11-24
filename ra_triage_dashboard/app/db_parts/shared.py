@@ -7,6 +7,7 @@ depending on the aggregate ``Database`` class during module initialisation.
 
 from __future__ import annotations
 
+import functools
 import json
 import re
 from datetime import datetime, timezone
@@ -119,6 +120,7 @@ def _json_load(value: Any, default: Any) -> Any:
         return default
 
 
+@functools.lru_cache(maxsize=2048)
 def _postgres_sql(sql: str) -> str:
     """Translate the deliberately small SQLite query subset to psycopg."""
 

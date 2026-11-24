@@ -8,6 +8,7 @@ from .initialize_recovery import initialize_recovery
 from .initialize_human_labels import initialize_human_labels
 
 
+from collections import OrderedDict
 import sqlite3
 import threading
 import time
@@ -30,6 +31,26 @@ from .shared import (
     model_prediction_none_sql,
     utc_now,
 )
+
+
+class _BackendWriteLock:
+    """Serialize writes in-process for SQLite only; PostgreSQL uses MVCC/row locks."""
+
+    __slots__ = ("_db", "_lock")
+
+    def __init__(self, db: Any) -> None:
+        self._db = db
+        self._lock = threading.RLock()
+
+    def __enter__(self) -> _BackendWriteLock:
+        if self._db.backend == "sqlite":
+            self._lock.acquire()
+        return self
+
+    def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> bool:
+        if self._db.backend == "sqlite":
+            self._lock.release()
+        return False
 
 
 class DatabaseCoreMixin:
@@ -61,7 +82,10 @@ class DatabaseCoreMixin:
         self.postgres_migrations_dir = postgres_migrations_dir
         self.pool_size = max(2, min(int(pool_size), 32))
         self._pool: Any = None
-        self._write_lock = threading.RLock()
+        self._pool_lock = threading.Lock()
+        self._write_lock: Any = _BackendWriteLock(self)
+        self._campaign_progress_cache_lock = threading.Lock()
+        self._campaign_progress_cache: OrderedDict[tuple[Any, ...], dict[str, Any]] = OrderedDict()
 
     @property
     def storage_label(self) -> str:
@@ -104,15 +128,18 @@ class DatabaseCoreMixin:
     def _ensure_postgres_pool(self) -> None:
         if self._pool is not None:
             return
-        _, dict_row, connection_pool = self._postgres_dependencies()
-        self._pool = connection_pool(
-            conninfo=self.database_url,
-            min_size=1,
-            max_size=self.pool_size,
-            timeout=30,
-            kwargs={"autocommit": False, "row_factory": dict_row},
-            open=True,
-        )
+        with self._pool_lock:
+            if self._pool is not None:
+                return
+            _, dict_row, connection_pool = self._postgres_dependencies()
+            self._pool = connection_pool(
+                conninfo=self.database_url,
+                min_size=1,
+                max_size=self.pool_size,
+                timeout=30,
+                kwargs={"autocommit": False, "row_factory": dict_row},
+                open=True,
+            )
 
     def _apply_postgres_migrations(self) -> None:
         if self.postgres_migrations_dir is None:
@@ -125,32 +152,57 @@ class DatabaseCoreMixin:
             self.database_url, autocommit=True, row_factory=dict_row
         ) as connection:
             connection.execute(
-                """
-                CREATE TABLE IF NOT EXISTS dashboard_schema_migrations (
-                    version text PRIMARY KEY,
-                    applied_at timestamptz NOT NULL DEFAULT now()
-                )
-                """
+                "SELECT pg_advisory_lock(hashtext(%s))",
+                ("dashboard-schema-migrations-v1",),
             )
-            applied = {
-                row["version"]
-                for row in connection.execute(
-                    "SELECT version FROM dashboard_schema_migrations"
-                ).fetchall()
-            }
-            for migration in migration_files:
-                if migration.name in applied:
-                    continue
-                connection.execute(migration.read_text(encoding="utf-8"))
+            try:
                 connection.execute(
-                    "INSERT INTO dashboard_schema_migrations (version) VALUES (%s)",
-                    (migration.name,),
+                    """
+                    CREATE TABLE IF NOT EXISTS dashboard_schema_migrations (
+                        version text PRIMARY KEY,
+                        applied_at timestamptz NOT NULL DEFAULT now()
+                    )
+                    """
+                )
+                applied = {
+                    row["version"]
+                    for row in connection.execute(
+                        "SELECT version FROM dashboard_schema_migrations"
+                    ).fetchall()
+                }
+                for migration in migration_files:
+                    if migration.name in applied:
+                        continue
+                    sql_text = migration.read_text(encoding="utf-8")
+                    has_explicit_txn = any(
+                        line.strip().upper().startswith("BEGIN")
+                        for line in sql_text.splitlines()
+                        if line.strip() and not line.strip().startswith("--")
+                    )
+                    if has_explicit_txn:
+                        connection.execute(sql_text)
+                        connection.execute(
+                            "INSERT INTO dashboard_schema_migrations (version) VALUES (%s)",
+                            (migration.name,),
+                        )
+                    else:
+                        with connection.transaction():
+                            connection.execute(sql_text)
+                            connection.execute(
+                                "INSERT INTO dashboard_schema_migrations (version) VALUES (%s)",
+                                (migration.name,),
+                            )
+            finally:
+                connection.execute(
+                    "SELECT pg_advisory_unlock(hashtext(%s))",
+                    ("dashboard-schema-migrations-v1",),
                 )
 
     def close(self) -> None:
-        if self._pool is not None:
-            self._pool.close()
-            self._pool = None
+        with self._pool_lock:
+            if self._pool is not None:
+                self._pool.close()
+                self._pool = None
 
     def change_revision(self) -> int:
         with self.connect() as conn:

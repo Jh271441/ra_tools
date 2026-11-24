@@ -155,7 +155,7 @@ class DatabaseModelReviewMixin:
         attachments = list(attachments or [])
         now = utc_now()
         with self._write_lock, self.connect() as conn:
-            self._lock_task_work(conn)
+            self._lock_task_work(conn, shared=True)
             issue_sql = "SELECT issue_id FROM issues WHERE issue_id = ?"
             if self.backend == "postgresql":
                 # Serialize first submissions as well as updates when no head
@@ -325,7 +325,7 @@ class DatabaseModelReviewMixin:
             raise ValueError("模型复核版本 ID 不合法。")
         now = utc_now()
         with self._write_lock, self.connect() as conn:
-            self._lock_task_work(conn)
+            self._lock_task_work(conn, shared=True)
             conn.execute(
                 "SELECT issue_id FROM issues WHERE issue_id = ?"
                 + (" FOR UPDATE" if self.backend == "postgresql" else ""),

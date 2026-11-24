@@ -12,15 +12,23 @@ class AllocationProtectionMixin:
         if value is not None and (type(value) is not int or value < 1):
             raise ValueError("分配版本必须是正整数 / Allocation revision must be a positive integer")
 
-    def _lock_task_work(self, conn):
-        """Shared transaction gate for saves, assignment changes and appends.
+    def _lock_task_work(self, conn, *, shared: bool = False):
+        """Two-level transaction gate for saves, assignment changes and appends.
 
-        Acquire before dataset/issue/head locks. PostgreSQL's transaction advisory
-        lock covers multiple workers; SQLite acquires its writer reservation before
-        reading. No business state, counters or lock rows are persisted.
+        PostgreSQL uses a shared/exclusive advisory lock hierarchy:
+        - High-frequency per-issue submissions acquire the shared gate plus
+          row-level ``FOR UPDATE`` on the target issue/case, allowing concurrent
+          submissions on different Issues to proceed in parallel.
+        - Structural campaign reallocations, lifecycle/assignment edits, and
+          access-role changes acquire the exclusive gate, safely serializing
+          against in-flight submissions without deadlocks.
+        SQLite continues to acquire its single-writer reservation up front.
         """
         if self.backend == "postgresql":
-            conn.execute("SELECT pg_advisory_xact_lock(hashtext(?))", ("campaign-work-allocation-v1",))
+            if shared:
+                conn.execute("SELECT pg_advisory_xact_lock_shared(hashtext(?))", ("campaign-work-allocation-v1",))
+            else:
+                conn.execute("SELECT pg_advisory_xact_lock(hashtext(?))", ("campaign-work-allocation-v1",))
         elif not conn.in_transaction:
             conn.execute("BEGIN IMMEDIATE")
 

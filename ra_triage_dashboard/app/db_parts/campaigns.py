@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import re
@@ -798,7 +799,7 @@ class DatabaseCampaignMixin:
             if row is None:
                 return None
             campaign = self._campaign_public_dict(row)
-            progress = self._campaign_progress_batch(conn, [row]).get(campaign_key, {})
+            progress = self._campaign_progress_batch(conn, [row], use_cache=True).get(campaign_key, {})
             member_rows = conn.execute(
                 "SELECT campaign_id, issue_id, baseline_scope, required_submitter_count, "
                 "reviewers_per_issue, ordinal FROM campaign_issue_members "
@@ -2281,13 +2282,47 @@ class DatabaseCampaignMixin:
             return "matches_reference" if output == expected else "differs_from_reference"
         return "unknown"
 
+    def _campaign_progress_watermark(self, conn: Any) -> tuple[Any, ...] | None:
+        try:
+            row = conn.execute(
+                """
+                SELECT
+                    (SELECT revision FROM dashboard_change_revision WHERE id = 1) AS rev,
+                    (SELECT COUNT(*) FROM combined_review_progress) AS cp_n,
+                    (SELECT COALESCE(MAX(updated_at), '') FROM combined_review_progress) AS cp_m,
+                    (SELECT COUNT(*) FROM human_assignment_roles) AS hr_n,
+                    (SELECT COUNT(*) FROM label_import_suppressed_revisions) AS sup_n
+                """
+            ).fetchone()
+        except Exception:
+            return None
+        if row is None:
+            return None
+        return (
+            int(row["rev"] or 0),
+            int(row["cp_n"] or 0),
+            str(row["cp_m"] or ""),
+            int(row["hr_n"] or 0),
+            int(row["sup_n"] or 0),
+        )
+
     def _campaign_progress_batch(
-        self, conn: Any, campaign_rows: Sequence[Any]
+        self, conn: Any, campaign_rows: Sequence[Any], *, use_cache: bool = False
     ) -> dict[str, dict[str, Any]]:
         campaigns = {str(row["id"]): row for row in campaign_rows}
         ids = list(campaigns)
         if not ids:
             return {}
+        cache_key: tuple[Any, ...] | None = None
+        if use_cache:
+            watermark = self._campaign_progress_watermark(conn)
+            if watermark is not None:
+                cache_key = (watermark, tuple(sorted(ids)))
+                with self._campaign_progress_cache_lock:
+                    cached = self._campaign_progress_cache.get(cache_key)
+                    if cached is not None:
+                        self._campaign_progress_cache.move_to_end(cache_key)
+                        return copy.deepcopy(cached)
         placeholders = ", ".join("?" for _ in ids)
         members = conn.execute(
             f"""
@@ -2823,6 +2858,12 @@ class DatabaseCampaignMixin:
                 "completed"
             )
             progress[cid] = summary
+        if cache_key is not None:
+            with self._campaign_progress_cache_lock:
+                self._campaign_progress_cache[cache_key] = copy.deepcopy(progress)
+                self._campaign_progress_cache.move_to_end(cache_key)
+                while len(self._campaign_progress_cache) > 64:
+                    self._campaign_progress_cache.popitem(last=False)
         return progress
 
     def list_campaigns(
@@ -2899,7 +2940,7 @@ class DatabaseCampaignMixin:
                 """,
                 (*params, safe_page_size, offset),
             ).fetchall()
-            progress = self._campaign_progress_batch(conn, rows)
+            progress = self._campaign_progress_batch(conn, rows, use_cache=True)
             scopes_by_campaign: dict[str, list[str]] = defaultdict(list)
             ids = [str(row["id"]) for row in rows]
             if ids:

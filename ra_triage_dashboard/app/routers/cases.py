@@ -80,7 +80,9 @@ from ..db_parts.task_lifecycle import normalize_task_lifecycle, task_list_metric
 router = APIRouter()
 
 # issue_id -> (source_path, mtime_ns, size, dest_jpeg)
+_THUMBNAIL_DEST_CACHE_MAX = 4096
 _thumbnail_dest_cache: dict[str, tuple[str, int, int, Path]] = {}
+_thumbnail_dest_cache_lock = threading.Lock()
 _thumbnail_encode_gate = threading.Semaphore(8)
 
 
@@ -243,14 +245,16 @@ def _resolve_thumbnail_file(issue_id: str) -> Path | None:
     DB/filesystem/Pillow worker with one ``asyncio.to_thread`` hop.
     """
 
-    cached = _thumbnail_dest_cache.get(issue_id)
+    with _thumbnail_dest_cache_lock:
+        cached = _thumbnail_dest_cache.get(issue_id)
     if cached is not None:
         source_s, mtime_ns, size, dest = cached
         source = Path(source_s)
         try:
             stat = source.stat()
         except OSError:
-            _thumbnail_dest_cache.pop(issue_id, None)
+            with _thumbnail_dest_cache_lock:
+                _thumbnail_dest_cache.pop(issue_id, None)
         else:
             if (
                 stat.st_mtime_ns == mtime_ns
@@ -276,16 +280,17 @@ def _resolve_thumbnail_file(issue_id: str) -> Path | None:
         with _thumbnail_encode_gate:
             if not destination.is_file():
                 _ensure_case_thumbnail(source, destination)
-    _thumbnail_dest_cache[issue_id] = (
-        str(source),
-        stat.st_mtime_ns,
-        stat.st_size,
-        destination,
-    )
-    # Bound memory if the process stays up for a long gallery session.
-    if len(_thumbnail_dest_cache) > 4000:
-        for key in list(_thumbnail_dest_cache.keys())[:1000]:
-            _thumbnail_dest_cache.pop(key, None)
+    with _thumbnail_dest_cache_lock:
+        _thumbnail_dest_cache[issue_id] = (
+            str(source),
+            stat.st_mtime_ns,
+            stat.st_size,
+            destination,
+        )
+        # Bound memory safely under lock if the process stays up long-term.
+        if len(_thumbnail_dest_cache) > _THUMBNAIL_DEST_CACHE_MAX:
+            for key in list(_thumbnail_dest_cache.keys())[:1024]:
+                _thumbnail_dest_cache.pop(key, None)
     return destination
 
 

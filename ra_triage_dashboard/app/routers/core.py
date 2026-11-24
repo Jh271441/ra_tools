@@ -55,9 +55,14 @@ from ..runtime import (
     settings,
 )
 from ..system_status import backup_status, overall_status, volume_status
+from ..timed_cache import TimedSingleFlightCache
 from ..web_paths import with_base_path
 
 router = APIRouter()
+_status_fs_cache: TimedSingleFlightCache[tuple[str, str], dict[str, Any]] = TimedSingleFlightCache(
+    ttl_seconds=10.0,
+    max_entries=4,
+)
 
 
 def _filesystem_availability() -> dict[str, bool]:
@@ -668,8 +673,25 @@ async def logout() -> RedirectResponse:
 
 
 
+def _collect_status_fs_probes() -> dict[str, Any]:
+    return {
+        "backup_state": backup_status(settings.data_dir, database_url=settings.database_url),
+        "volume_state": volume_status(settings.data_dir),
+        "indexed_issues": asset_index.refresh(),
+        "filesystem": _filesystem_availability(),
+        "media_ready": media_registry.media_status_by_id(),
+    }
+
+
+def _status_fs_probe_snapshot(*, force_refresh: bool = False) -> dict[str, Any]:
+    key = (str(settings.data_dir), str(settings.database_url))
+    if force_refresh:
+        _status_fs_cache.invalidate(key)
+    return _status_fs_cache.get_or_load(key, _collect_status_fs_probes)
+
+
 @router.get("/api/status")
-async def status(response: Response) -> dict[str, Any]:
+async def status(response: Response, refresh: bool = False) -> dict[str, Any]:
     response.headers["Cache-Control"] = "no-store, max-age=0"
     try:
         database_state = await asyncio.to_thread(
@@ -688,13 +710,12 @@ async def status(response: Response) -> dict[str, Any]:
             "pool_max_size": database.pool_size,
             "latency_ms": None,
         }
-    backup_state, volume_state, indexed_issues, filesystem, media_ready = await asyncio.gather(
-        asyncio.to_thread(backup_status, settings.data_dir, database_url=settings.database_url),
-        asyncio.to_thread(volume_status, settings.data_dir),
-        asyncio.to_thread(asset_index.refresh),
-        asyncio.to_thread(_filesystem_availability),
-        asyncio.to_thread(media_registry.media_status_by_id),
-    )
+    fs_probes = await asyncio.to_thread(_status_fs_probe_snapshot, force_refresh=refresh)
+    backup_state = fs_probes["backup_state"]
+    volume_state = fs_probes["volume_state"]
+    indexed_issues = fs_probes["indexed_issues"]
+    filesystem = fs_probes["filesystem"]
+    media_ready = fs_probes["media_ready"]
     baseline_state = runtime_state["baseline"]
     baseline_states = [
         enrich_baseline_lifecycle(

@@ -373,48 +373,77 @@ class DatabaseCampaignAllocationMixin(AllocationPreviewMixin):
             after = {(r["issue_id"], r["assignee"]): r for r in new_rows}
             revision = expected_revision + 1
             now = utc_now()
+            delete_assignment_params: list[tuple[Any, ...]] = []
+            update_assignment_params: list[tuple[Any, ...]] = []
+            insert_assignment_params: list[tuple[Any, ...]] = []
+            audit_params: list[tuple[Any, ...]] = []
             for pair in sorted(before.keys() | after.keys()):
                 old, new = before.get(pair), after.get(pair)
                 if old and new and old["assignment_kind"] == new["assignment_kind"]:
                     continue
                 if old and not new:
-                    conn.execute("DELETE FROM review_work_assignments WHERE split_id=? AND issue_id=? AND assignee=?",
-                                 (campaign_id, *pair))
+                    delete_assignment_params.append((campaign_id, *pair))
                 elif old and new:
-                    conn.execute("UPDATE review_work_assignments SET assignment_kind=? WHERE split_id=? AND issue_id=? AND assignee=?",
-                                 (new["assignment_kind"], campaign_id, *pair))
+                    update_assignment_params.append((new["assignment_kind"], campaign_id, *pair))
                 else:
-                    conn.execute(
-                        "INSERT INTO review_work_assignments(split_id,issue_id,assignee,assignment_kind,ordinal,assigned_by,assigned_at) VALUES(?,?,?,?,?,?,?)",
-                        (campaign_id, *pair, new["assignment_kind"], new["ordinal"], actor, now),
+                    insert_assignment_params.append(
+                        (campaign_id, *pair, new["assignment_kind"], new["ordinal"], actor, now)
                     )
-                conn.execute(
-                    "INSERT INTO campaign_assignment_audit(campaign_id,issue_id,action,assignment_kind,from_assignee,to_assignee,"
-                    "changed_by,changed_by_source,changed_by_verified,config_revision,idempotency_key,idempotency_fingerprint,reason,changed_at)"
-                    " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                audit_params.append(
                     (campaign_id, pair[0], "reassigned" if old and new else "unassigned" if old else "assigned",
                      (new or old)["assignment_kind"], pair[1] if old else "", pair[1] if new else "",
                      actor, actor_source, bool(actor_verified), revision,
                      "allocation-" + _fingerprint([idempotency_key, pair]), fingerprint,
-                     "Untouched work redistributed; saved ownership retained: " + quota_basis, now),
+                     "Untouched work redistributed; saved ownership retained: " + quota_basis, now)
+                )
+            if delete_assignment_params:
+                conn.executemany(
+                    "DELETE FROM review_work_assignments WHERE split_id=? AND issue_id=? AND assignee=?",
+                    delete_assignment_params,
+                )
+            if update_assignment_params:
+                conn.executemany(
+                    "UPDATE review_work_assignments SET assignment_kind=? WHERE split_id=? AND issue_id=? AND assignee=?",
+                    update_assignment_params,
+                )
+            if insert_assignment_params:
+                conn.executemany(
+                    "INSERT INTO review_work_assignments(split_id,issue_id,assignee,assignment_kind,ordinal,assigned_by,assigned_at) VALUES(?,?,?,?,?,?,?)",
+                    insert_assignment_params,
+                )
+            if audit_params:
+                conn.executemany(
+                    "INSERT INTO campaign_assignment_audit(campaign_id,issue_id,action,assignment_kind,from_assignee,to_assignee,"
+                    "changed_by,changed_by_source,changed_by_verified,config_revision,idempotency_key,idempotency_fingerprint,reason,changed_at)"
+                    " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    audit_params,
                 )
             per_issue = defaultdict(list)
             for row in new_rows:
                 per_issue[row["issue_id"]].append(row)
-            for change in preview["changes"]:
-                removed = sorted(set(change["before"]) - set(change["after"]))
-                added = sorted(set(change["after"]) - set(change["before"]))
-                for old_name, new_name in zip(removed, added):
-                    conn.execute(
-                        "INSERT INTO review_work_assignment_changes "
-                        "(split_id,issue_id,from_assignee,to_assignee,changed_by,changed_at) VALUES(?,?,?,?,?,?)",
-                        (campaign_id, change["issue_id"], old_name, new_name, actor, now),
-                    )
-            for iid, rows in per_issue.items():
-                conn.execute(
+            change_params = [
+                (campaign_id, change["issue_id"], old_name, new_name, actor, now)
+                for change in preview["changes"]
+                for old_name, new_name in zip(
+                    sorted(set(change["before"]) - set(change["after"])),
+                    sorted(set(change["after"]) - set(change["before"])),
+                )
+            ]
+            if change_params:
+                conn.executemany(
+                    "INSERT INTO review_work_assignment_changes "
+                    "(split_id,issue_id,from_assignee,to_assignee,changed_by,changed_at) VALUES(?,?,?,?,?,?)",
+                    change_params,
+                )
+            member_update_params = [
+                (len(rows), len(rows), _json(sorted({r["assignment_kind"] for r in rows})), revision, campaign_id, iid)
+                for iid, rows in per_issue.items()
+            ]
+            if member_update_params:
+                conn.executemany(
                     "UPDATE campaign_issue_members SET required_submitter_count=?,reviewers_per_issue=?,assignment_kinds_json=?,"
                     "config_revision=? WHERE campaign_id=? AND issue_id=?",
-                    (len(rows), len(rows), _json(sorted({r["assignment_kind"] for r in rows})), revision, campaign_id, iid),
+                    member_update_params,
                 )
             filters["task_allocation"] = config
             filters["allocation_request_fingerprint"] = fingerprint

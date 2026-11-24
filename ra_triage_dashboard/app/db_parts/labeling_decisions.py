@@ -170,7 +170,7 @@ class LabelingDecisionsMixin:
         if len(explanation) > 8000:
             raise ValueError("裁决依据不能超过 8000 个字符。")
         with self._write_lock, self.connect() as conn:
-            self._lock_task_work(conn)
+            self._lock_task_work(conn, shared=True)
             issue_sql = (
                 "SELECT issue_id, baseline_scope FROM issues "
                 "WHERE issue_id = ? AND baseline_scope = ?"
@@ -381,7 +381,7 @@ class LabelingDecisionsMixin:
         normalized_sources = sorted({int(value) for value in source_revision_ids})
         now = utc_now()
         with self._write_lock, self.connect() as conn:
-            self._lock_task_work(conn)
+            self._lock_task_work(conn, shared=True)
             case_row = conn.execute(
                 "SELECT * FROM label_cases WHERE id = ?"
                 + (" FOR UPDATE" if self.backend == "postgresql" else ""),

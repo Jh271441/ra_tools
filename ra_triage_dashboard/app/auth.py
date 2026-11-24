@@ -104,17 +104,36 @@ def validate_identity_settings(settings: Settings) -> None:
         _read_ingress_token(settings)
 
 
+_STDLIB_URLOPEN = urlrequest.urlopen
+
+
+class _SSONoRedirect(urlrequest.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ANN001
+        return None
+
+
+def _open_sso_request(outbound: urlrequest.Request, *, timeout: float):
+    # Preserve monkeypatchability of urlrequest.urlopen in unit tests while
+    # bypassing host HTTP(S)_PROXY and blocking redirects in production.
+    if urlrequest.urlopen is not _STDLIB_URLOPEN:
+        return urlrequest.urlopen(outbound, timeout=timeout)
+    opener = urlrequest.build_opener(urlrequest.ProxyHandler({}), _SSONoRedirect())
+    return opener.open(outbound, timeout=timeout)
+
+
 class KylinSSOValidator:
     """Validate Kylin cookies server-side without delaying media requests.
 
     Only callers that actually resolve identity invoke this client. Successful
     validations are cached briefly by a digest of the ticket; raw SSO tickets
-    are never logged or retained as cache keys.
+    are never logged or retained as cache keys. Concurrent misses on the same
+    ticket share one single-flight upstream validation.
     """
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._cache: dict[str, tuple[float, str]] = {}
+        self._inflight: dict[str, threading.Event] = {}
 
     def validate(self, ticket: str, username: str, settings: Settings) -> bool:
         if not settings.kylin_sso_enabled:
@@ -123,52 +142,72 @@ class KylinSSOValidator:
         if not normalized or not ticket or len(ticket) > 4096:
             return False
         cache_key = sha256(ticket.encode("utf-8")).hexdigest()
-        now = time.monotonic()
-        with self._lock:
-            cached = self._cache.get(cache_key)
-            if cached and cached[0] > now:
-                return secrets.compare_digest(cached[1], normalized)
 
-        payload = parse.urlencode(
-            {"app_id": settings.kylin_sso_app_id, "ticket": ticket}
-        ).encode("ascii")
-        try:
-            outbound = urlrequest.Request(
-                settings.kylin_sso_check_url,
-                data=payload,
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
-                method="POST",
-            )
-            with urlrequest.urlopen(
-                outbound, timeout=settings.kylin_sso_timeout_seconds
-            ) as response:
-                raw = response.read(65537)
-            if len(raw) > 65536:
-                return False
-            result = json.loads(raw.decode("utf-8"))
-            data = result.get("data") if isinstance(result, dict) else None
-            returned = normalise_username(
-                data.get("username", "") if isinstance(data, dict) else ""
-            )
-            valid = (
-                result.get("errno") == 0
-                and bool(returned)
-                and secrets.compare_digest(returned, normalized)
-            )
-        except (OSError, TimeoutError, ValueError, TypeError):
+        while True:
+            now = time.monotonic()
+            with self._lock:
+                cached = self._cache.get(cache_key)
+                if cached and cached[0] > now:
+                    return secrets.compare_digest(cached[1], normalized)
+                waiter = self._inflight.get(cache_key)
+                if waiter is None:
+                    waiter = threading.Event()
+                    self._inflight[cache_key] = waiter
+                    leader = True
+                else:
+                    leader = False
+            if not leader:
+                waiter.wait(timeout=max(0.5, float(settings.kylin_sso_timeout_seconds) + 1.0))
+                continue
+
             valid = False
             returned = ""
+            try:
+                payload = parse.urlencode(
+                    {"app_id": settings.kylin_sso_app_id, "ticket": ticket}
+                ).encode("ascii")
+                try:
+                    outbound = urlrequest.Request(
+                        settings.kylin_sso_check_url,
+                        data=payload,
+                        headers={"Content-Type": "application/x-www-form-urlencoded"},
+                        method="POST",
+                    )
+                    with _open_sso_request(
+                        outbound, timeout=settings.kylin_sso_timeout_seconds
+                    ) as response:
+                        raw = response.read(65537)
+                    if len(raw) <= 65536:
+                        result = json.loads(raw.decode("utf-8"))
+                        data = result.get("data") if isinstance(result, dict) else None
+                        returned = normalise_username(
+                            data.get("username", "") if isinstance(data, dict) else ""
+                        )
+                        valid = (
+                            result.get("errno") == 0
+                            and bool(returned)
+                            and secrets.compare_digest(returned, normalized)
+                        )
+                except (OSError, TimeoutError, ValueError, TypeError):
+                    valid = False
+                    returned = ""
 
-        ttl = settings.kylin_sso_cache_seconds if valid else min(
-            settings.kylin_sso_cache_seconds, 10
-        )
-        with self._lock:
-            self._cache[cache_key] = (now + max(ttl, 1), returned)
-            if len(self._cache) > 4096:
-                self._cache = {
-                    key: value for key, value in self._cache.items() if value[0] > now
-                }
-        return valid
+                ttl = settings.kylin_sso_cache_seconds if valid else min(
+                    settings.kylin_sso_cache_seconds, 10
+                )
+                now_done = time.monotonic()
+                with self._lock:
+                    self._cache[cache_key] = (now_done + max(ttl, 1), returned)
+                    if len(self._cache) > 4096:
+                        self._cache = {
+                            key: value for key, value in self._cache.items() if value[0] > now_done
+                        }
+                return valid
+            finally:
+                with self._lock:
+                    if self._inflight.get(cache_key) is waiter:
+                        self._inflight.pop(cache_key, None)
+                waiter.set()
 
 
 _kylin_sso_validator = KylinSSOValidator()
