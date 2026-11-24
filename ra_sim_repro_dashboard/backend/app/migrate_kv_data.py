@@ -11,7 +11,7 @@ import json
 import logging
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
@@ -44,42 +44,54 @@ def backfill_database(db: Session, *, prune_request_days: int | None = None) -> 
         "requests_pruned": 0,
     }
 
-    # 1. Backfill ReleaseIssueSnapshot.population_hash
+    # 1. Backfill ReleaseIssueSnapshot.population_hash (Core UPDATE preserves timestamps)
     for snap in db.scalars(
         select(ReleaseIssueSnapshot).where(ReleaseIssueSnapshot.population_hash.is_(None))
     ):
         p = snap.payload or {}
         if "period" in p and "issues" in p and "scenarios" in p:
             try:
-                snap.population_hash = population_identity(p)
+                pop_hash = population_identity(p)
+                db.execute(
+                    update(ReleaseIssueSnapshot)
+                    .where(ReleaseIssueSnapshot.id == snap.id)
+                    .values(population_hash=pop_hash)
+                )
                 counts["snapshots_hashed"] += 1
             except Exception:
                 logger.warning("Failed to hash snapshot id=%s", snap.id, exc_info=True)
     db.commit()
 
-    # 2. Backfill ReleaseSimulationBatch indexed columns
+    # 2. Backfill ReleaseSimulationBatch indexed columns WITHOUT touching updated_at
+    # (published_batch orders by updated_at DESC, so ORM onupdate would invert batch precedence).
     for batch in db.scalars(select(ReleaseSimulationBatch)):
         p = batch.payload or {}
-        changed = False
         pop_hash = p.get("population_hash")
-        if isinstance(pop_hash, str) and pop_hash and batch.population_hash != pop_hash[:64]:
-            batch.population_hash = pop_hash[:64]
-            changed = True
+        new_pop_hash = (
+            pop_hash[:64] if isinstance(pop_hash, str) and pop_hash else batch.population_hash
+        )
         is_bf = bool(p.get("backfill"))
-        if batch.is_backfill != is_bf:
-            batch.is_backfill = is_bf
-            changed = True
         ri = p.get("result_import")
         is_prim = bool(isinstance(ri, dict) and ri.get("primary"))
-        if batch.is_primary != is_prim:
-            batch.is_primary = is_prim
-            changed = True
         raw_job = p.get("job_id")
         job_id = int(raw_job) if raw_job is not None and str(raw_job).isdigit() else None
-        if batch.job_id != job_id:
-            batch.job_id = job_id
-            changed = True
-        if changed:
+        if (
+            batch.population_hash != new_pop_hash
+            or batch.is_backfill != is_bf
+            or batch.is_primary != is_prim
+            or batch.job_id != job_id
+        ):
+            db.execute(
+                update(ReleaseSimulationBatch)
+                .where(ReleaseSimulationBatch.fingerprint == batch.fingerprint)
+                .values(
+                    population_hash=new_pop_hash,
+                    is_backfill=is_bf,
+                    is_primary=is_prim,
+                    job_id=job_id,
+                    updated_at=batch.updated_at,
+                )
+            )
             counts["batches_indexed"] += 1
     db.commit()
 

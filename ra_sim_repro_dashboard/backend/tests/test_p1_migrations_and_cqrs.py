@@ -210,17 +210,29 @@ def test_kv_backfill_is_idempotent_and_non_destructive(tmp_path):
         db.flush()
         # Simulate pre-P1 NULL population_hash via raw SQL
         db.execute(text("UPDATE release_issue_snapshots SET population_hash = NULL"))
+        orig_batch_ts = datetime(2026, 11, 7, 1, 2, 3)
         db.add(
             ReleaseSimulationBatch(
                 fingerprint="fp1",
                 release="gen4-release-20261106",
                 status="complete",
+                updated_at=orig_batch_ts,
                 payload={
                     "population_hash": expected_pop_hash,
                     "job_id": 8888,
                     "result_import": {"primary": True},
                 },
             )
+        )
+        db.flush()
+        # Simulate pre-P1 NULL indexed columns without changing updated_at
+        db.execute(
+            text(
+                "UPDATE release_simulation_batches "
+                "SET population_hash = NULL, is_primary = 0, job_id = NULL, updated_at = :ts "
+                "WHERE fingerprint = 'fp1'"
+            ),
+            {"ts": orig_batch_ts},
         )
         db.add(ReleaseWorkflowState(key="evrevision:testrev1", payload=rev_payload))
         db.add(ReleaseWorkflowState(key="evexecution:exec1", payload=exec_payload))
@@ -248,11 +260,16 @@ def test_kv_backfill_is_idempotent_and_non_destructive(tmp_path):
 
         first = backfill_database(db)
         assert first["snapshots_hashed"] == 1
+        assert first["batches_indexed"] == 1
         assert first["revisions_migrated"] == 1
         assert first["executions_migrated"] == 1
         assert first["requests_migrated"] == 1
         assert first["scenario_tags_migrated"] == 1
         assert first["timing_ledgers_migrated"] == 1
+
+        # Backfill must preserve ReleaseSimulationBatch.updated_at (published_batch orders DESC).
+        db.expire_all()
+        assert db.get(ReleaseSimulationBatch, "fp1").updated_at == orig_batch_ts
 
         # Second run is a clean idempotent no-op
         second = backfill_database(db)
