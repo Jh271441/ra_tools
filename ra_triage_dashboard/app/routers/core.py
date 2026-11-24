@@ -7,10 +7,19 @@ from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, BackgroundTasks, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from ..auth import identity_header_candidates, normalise_username, request_identity
+from ..core.deps import get_db, get_settings, resolve_dep
+from ..schemas import (
+    BaselinesResponse,
+    ChangeRevisionResponse,
+    DashboardConfigResponse,
+    HealthResponse,
+    SessionResponse,
+    SystemStatusResponse,
+)
 from ..contracts import (
     MAX_REVIEW_ATTACHMENT_BYTES,
     MAX_REVIEW_ATTACHMENTS,
@@ -294,7 +303,7 @@ async def legacy_import(kind: str = "issues") -> RedirectResponse:
 
 
 
-@router.get("/health")
+@router.get("/health", responses={200: {"model": HealthResponse}})
 async def health() -> dict[str, Any]:
     filesystem = await asyncio.to_thread(_filesystem_availability)
     return {
@@ -371,11 +380,12 @@ async def overview(
 
 
 
-@router.get("/api/change-revision")
+@router.get("/api/change-revision", responses={200: {"model": ChangeRevisionResponse}})
 async def change_revision(
     response: Response,
     include_gt_sync: bool = False,
     since_revision: int = 0,
+    db: Any = Depends(get_db),
 ) -> dict[str, Any]:
     """Cheap collaboration poll.
 
@@ -383,9 +393,10 @@ async def change_revision(
     seconds. Full GT sync status is optional and loaded less often by the UI.
     """
 
+    db = resolve_dep(db, lambda: database)
     response.headers["Cache-Control"] = "no-store, max-age=0"
     revision_state = await asyncio.to_thread(
-        database.change_revision_state,
+        db.change_revision_state,
         since_revision,
     )
     payload: dict[str, Any] = {
@@ -465,7 +476,7 @@ async def refresh_authoritative_gt(
 
 
 
-@router.get("/api/baselines")
+@router.get("/api/baselines", responses={200: {"model": BaselinesResponse}})
 async def list_baselines() -> dict[str, Any]:
     media = await asyncio.to_thread(media_registry.media_status_by_id)
     items = []
@@ -486,7 +497,7 @@ async def list_baselines() -> dict[str, Any]:
 
 
 
-@router.get("/api/dashboard-config")
+@router.get("/api/dashboard-config", responses={200: {"model": DashboardConfigResponse}})
 async def dashboard_config() -> dict[str, Any]:
     # One worker hop instead of several sequential first-paint thread switches.
     return await asyncio.to_thread(_dashboard_config_payload)
@@ -497,7 +508,7 @@ async def dashboard_config() -> dict[str, Any]:
 
 
 
-@router.get("/api/session")
+@router.get("/api/session", responses={200: {"model": SessionResponse}})
 async def session(request: Request, response: Response) -> dict[str, object]:
     response.headers["Cache-Control"] = "no-store, max-age=0"
     identity = await asyncio.to_thread(request_identity, request, settings)
@@ -690,24 +701,31 @@ def _status_fs_probe_snapshot(*, force_refresh: bool = False) -> dict[str, Any]:
     return _status_fs_cache.get_or_load(key, _collect_status_fs_probes)
 
 
-@router.get("/api/status")
-async def status(response: Response, refresh: bool = False) -> dict[str, Any]:
+@router.get("/api/status", responses={200: {"model": SystemStatusResponse}})
+async def status(
+    response: Response,
+    refresh: bool = False,
+    db: Any = Depends(get_db),
+    cfg: Any = Depends(get_settings),
+) -> dict[str, Any]:
+    db = resolve_dep(db, lambda: database)
+    cfg = resolve_dep(cfg, lambda: settings)
     response.headers["Cache-Control"] = "no-store, max-age=0"
     try:
         database_state = await asyncio.to_thread(
-            database.runtime_status,
-            persistent_data=settings.postgres_persistent_data,
+            db.runtime_status,
+            persistent_data=cfg.postgres_persistent_data,
         )
     except Exception:
         logger.exception("database status check failed")
         database_state = {
             "ok": False,
-            "backend": database.backend,
+            "backend": db.backend,
             "server_version": "",
             "persistent_data": False,
             "revision": 0,
             "migration_count": 0,
-            "pool_max_size": database.pool_size,
+            "pool_max_size": db.pool_size,
             "latency_ms": None,
         }
     fs_probes = await asyncio.to_thread(_status_fs_probe_snapshot, force_refresh=refresh)

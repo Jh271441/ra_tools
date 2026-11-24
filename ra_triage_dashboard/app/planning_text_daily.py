@@ -9,7 +9,7 @@ from pathlib import Path
 import sqlite3
 import time
 
-from .planning_constraints import SOURCE, VERSION
+from .planning_contracts import SOURCE, VERSION
 from .planning_text_artifact import identity, load_artifact
 
 APPLICATION_ID = 0x50434459  # PCDY; independent of the immutable historical index.
@@ -114,7 +114,7 @@ def transfer_owner(data_dir, member, previous, owner, context, evidence):
 
 def import_artifact(data_dir, folder, expected, owner):
     result, receipt, receipt_sha = load_artifact(folder, expected)
-    from .planning_constraint_index import _read_history_window
+    from .planning_history_store import _read_history_window
     prior_history = _read_history_window(Path(data_dir), result["issue_id"], 0,
                                         trip_id=result["trip_id"], anchor_ms=result["anchor_ms"])
     if prior_history is not None:
@@ -169,7 +169,7 @@ def _reader(data_dir):
 
 
 def read_daily_window(data_dir, issue_id, offset_ms=None, timestamp_ms=None, *, trip_id=None, anchor_ms=None):
-    from .planning_constraint_index import query_offset, InvalidPlanningTime
+    from .planning_contracts import query_offset, InvalidPlanningTime
     path = index_path(data_dir)
     if not path.exists() and not path.is_symlink():
         return None

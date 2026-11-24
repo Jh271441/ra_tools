@@ -76,155 +76,27 @@ from ..work_split import distribute_issue_ids, normalize_overlap_ratio
 from ..db_parts.campaigns import CampaignConflictError
 from ..task_creation_allocation import prepare_creation_allocation
 from ..db_parts.task_lifecycle import normalize_task_lifecycle, task_list_metrics
+from ..schemas import CaseDetailResponse, CaseListResponse
+from .cases_api import (
+    get_case_work_split,
+    list_case_work_splits,
+    naming_router,
+    reassign_case_work_item,
+    review_work_split_options,
+    reviewers,
+    suggest_assignment_name,
+    work_splits_router,
+)
 
 router = APIRouter()
+router.include_router(naming_router)
+router.include_router(work_splits_router)
 
 # issue_id -> (source_path, mtime_ns, size, dest_jpeg)
 _THUMBNAIL_DEST_CACHE_MAX = 4096
 _thumbnail_dest_cache: dict[str, tuple[str, int, int, Path]] = {}
 _thumbnail_dest_cache_lock = threading.Lock()
 _thumbnail_encode_gate = threading.Semaphore(8)
-
-
-@router.post("/api/assignment-name-suggestion")
-async def suggest_assignment_name(request: Request) -> dict[str, Any]:
-    """Return a rule name immediately or a validated server-owned LLM name."""
-
-    await asyncio.to_thread(_admin_identity, request)
-    raw = await request.body()
-    if len(raw) > 8 * 1024:
-        raise _detail(413, "实验名称推荐请求过大。")
-    try:
-        body = json.loads(raw)
-    except (TypeError, ValueError, UnicodeDecodeError) as exc:
-        raise _detail(400, "实验名称推荐请求必须是 JSON。") from exc
-    if not isinstance(body, dict):
-        raise _detail(400, "实验名称推荐请求必须是 JSON 对象。")
-    assignment_kind = _as_text(body.get("assignment_kind")).strip().lower()
-    if assignment_kind not in {"case_labeling", "model_review"}:
-        raise _detail(400, "实验名称推荐类型不合法。")
-    raw_baseline_ids = body.get("baseline_ids")
-    if not isinstance(raw_baseline_ids, list):
-        raise _detail(400, "baseline_ids 必须是数组。")
-    baseline_ids = list(
-        dict.fromkeys(_as_text(value).strip() for value in raw_baseline_ids)
-    )
-    baseline_ids = [value for value in baseline_ids if value]
-    if not baseline_ids or len(baseline_ids) > 8:
-        raise _detail(400, "请为名称推荐选择 1 到 8 个数据集。")
-    from ..dataset_partitions import PARTITION_IDS, SOURCE_IDS
-    version_labels: dict[str, str] = {}
-    if any(value.startswith("version-") for value in baseline_ids):
-        for row in await asyncio.to_thread(database.list_version_datasets):
-            fam = str(row.get("release_family") or "").strip()
-            if fam:
-                version_labels["version-" + fam] = str(row.get("name") or (fam[4:] + " 复核集"))
-    partition_labels = {
-        PARTITION_IDS[0]: "0821 · ODD2",
-        PARTITION_IDS[1]: "0821 · 非ODD2",
-    }
-    raw_labels_by_id: dict[str, str] = {}
-    for value in baseline_ids:
-        entry = baseline_registry.by_id(value)
-        if entry is not None:
-            raw_labels_by_id[value] = str(entry.label or entry.id)
-        elif value in partition_labels:
-            raw_labels_by_id[value] = partition_labels[value]
-        elif value in version_labels:
-            raw_labels_by_id[value] = version_labels[value]
-        else:
-            raise _detail(400, "名称推荐包含未知数据集。")
-    logical_unions = (
-        ("0821", SOURCE_IDS),
-        ("1009 2026-10-15", ("1009-2026-10-15", "review-2026-10-15-extra")),
-        ("1009 2026-10-16", ("1009-2026-10-16", "review-2026-10-16-extra")),
-        ("1009 2026-10-18", ("review-2026-10-18", "review-2026-10-18-extra")),
-    )
-    remaining_ids = set(baseline_ids)
-    dataset_labels: list[str] = []
-    for value in baseline_ids:
-        if value not in remaining_ids:
-            continue
-        matched = next(
-            (label for label, members in logical_unions if value in members and set(members).issubset(remaining_ids)),
-            None,
-        )
-        if matched is not None:
-            for _, members in logical_unions:
-                if value in members and set(members).issubset(remaining_ids):
-                    remaining_ids.difference_update(members)
-                    break
-            dataset_labels.append(matched)
-        else:
-            remaining_ids.discard(value)
-            dataset_labels.append(raw_labels_by_id[value])
-    try:
-        case_count = max(1, min(100_000, int(body.get("case_count") or 1)))
-        reviewers_per_issue = max(
-            1, min(100, int(body.get("reviewers_per_issue") or 1))
-        )
-        member_count = max(0, min(100, int(body.get("member_count") or 0)))
-        overlap_ratio = normalize_overlap_ratio(
-            body.get("overlap_ratio"),
-            reviewers_per_issue=reviewers_per_issue,
-        )
-    except (TypeError, ValueError) as exc:
-        raise _detail(400, "实验名称推荐参数不合法。") from exc
-    workflow_mode = _as_text(body.get("workflow_mode")).strip()
-    if workflow_mode not in {"", "model_review_only", "model_review_and_case_label"}:
-        raise _detail(400, "实验名称推荐工作流不合法。")
-    comparison = " ".join(_as_text(body.get("comparison") or "all").split())[:128]
-    draft_name = " ".join(
-        _as_text(body.get("draft_name")).replace("\u0000", "").split()
-    )[:80]
-    run_name = ""
-    if assignment_kind == "model_review":
-        run_id = _as_text(body.get("model_run_id")).strip()
-        run = await asyncio.to_thread(database.get_model_run, run_id)
-        if not run:
-            raise _detail(404, "名称推荐对应的 Model Run 不存在。")
-        run_name = _as_text(run.get("name") or run_id)
-    fallback = rule_based_assignment_name(
-        dataset_labels,
-        assignment_kind=assignment_kind,
-        case_count=case_count,
-        reviewers_per_issue=reviewers_per_issue,
-        overlap_ratio=overlap_ratio,
-        member_count=member_count,
-        workflow_mode=workflow_mode,
-        run_name=run_name,
-        comparison=comparison,
-    )
-    catalog_status = await asyncio.to_thread(model_catalog.status)
-    if not catalog_status.get("configured"):
-        return {"suggestion": fallback, "source": "rule", "reason": "not_configured"}
-    llm_kwargs: dict[str, Any] = {
-        "fallback": fallback,
-        "dataset_labels": dataset_labels,
-        "assignment_kind": assignment_kind,
-        "case_count": case_count,
-        "reviewers_per_issue": reviewers_per_issue,
-        "overlap_ratio": overlap_ratio,
-        "member_count": member_count,
-        "workflow_mode": workflow_mode,
-        "run_name": run_name,
-        "comparison": comparison,
-        "draft_name": draft_name,
-    }
-    if bool(body.get("force_refresh", False)):
-        llm_kwargs["bypass_cache"] = True
-    try:
-        suggestion = await asyncio.to_thread(
-            suggest_assignment_name_with_llm,
-            settings,
-            model_catalog,
-            **llm_kwargs,
-        )
-    except IntentNameSuggestionError as exc:
-        return {"suggestion": fallback, "source": "rule", "reason": exc.reason}
-    except ModelCatalogError:
-        return {"suggestion": fallback, "source": "rule", "reason": "unavailable"}
-    return {"suggestion": suggestion, "source": "llm"}
 
 
 def _visible_case_annotations(
@@ -538,7 +410,7 @@ def _ensure_case_thumbnail(source: Path, destination: Path) -> None:
         _render_case_thumbnail(source, destination)
 
 
-@router.get("/api/cases")
+@router.get("/api/cases", responses={200: {"model": CaseListResponse}})
 async def list_cases(
     request: Request,
     search: str = "",
@@ -830,209 +702,6 @@ async def work_assignees(
     }
 
 
-@router.get("/api/cases/work-splits")
-async def list_case_work_splits(
-    request: Request,
-    limit: int = 50,
-    model_run_id: str = "",
-    lifecycle: str = "current",
-    assigned_to_me: bool = False,
-    group_by_version: bool = False,
-    version_only: bool = False,
-) -> dict[str, Any]:
-    """Writer/admin history and progress for Review task allocations."""
-
-    identity = await asyncio.to_thread(_writer_identity, request)
-    try:
-        lifecycle = normalize_task_lifecycle(lifecycle)
-    except ValueError as exc:
-        raise _detail(400, str(exc)) from exc
-    assignee = identity.username if assigned_to_me else ""
-    items = await asyncio.to_thread(
-        database.list_review_work_splits,
-        limit=max(1, min(int(limit or 50), 100)),
-        model_run_id=_as_text(model_run_id),
-        lifecycle=lifecycle, assignee=assignee,
-    )
-    query_params = getattr(request, "query_params", None) or {}
-    manual_only = str(query_params.get("manual_only") or "").strip().lower() in {"1", "true", "yes"}
-    if group_by_version and lifecycle!='history':
-        from ..version_review_tasks import merge_version_task_list, version_tasks
-        parents=await asyncio.to_thread(version_tasks,database,assignee=assignee,model_run_id=model_run_id,lifecycle=lifecycle)
-        items=merge_version_task_list(parents,items,version_only=version_only,manual_only=manual_only)
-    for item in items:
-        item["baseline_ids"] = await asyncio.to_thread(
-            task_baseline_ids, item.get("baseline_scopes") or item.get("baseline_ids") or [], item["split_id"])
-    return {"items": items, "metrics": task_list_metrics(items, assignee), "lifecycle": lifecycle, "assigned_to_me": assigned_to_me, "change_revision": await asyncio.to_thread(database.change_revision)}
-
-
-@router.get("/api/review-work-splits")
-async def review_work_split_options(
-    request: Request,
-    model_run_id: str = "",
-    baselines: str = "",
-    all_baselines: bool = False,
-    assigned_to_me: bool = False,
-    lifecycle: str = "current",
-) -> dict[str, Any]:
-    """Return task options; the entry picker may discover own tasks across datasets."""
-
-    try:
-        lifecycle = normalize_task_lifecycle(lifecycle)
-    except ValueError as exc:
-        raise _detail(400, str(exc)) from exc
-    selected_baselines = set() if all_baselines else set(resolve_request_baseline_ids(baselines, request=request))
-    assignee = ""
-    if assigned_to_me:
-        from ..auth import request_identity
-        identity = await asyncio.to_thread(request_identity, request, settings)
-        if not identity.verified or not identity.username:
-            return {"items": []}
-        assignee = identity.username
-    raw_items = await asyncio.to_thread(
-        database.list_review_work_splits,
-        limit=100,
-        model_run_id=_as_text(model_run_id),
-        assignee=assignee, lifecycle=lifecycle,
-        issue_ids=() if all_baselines else await asyncio.to_thread(restrict_version_issue_ids, baselines, request=request),
-    )
-
-    def snapshot_baselines(item: dict[str, Any]) -> set[str]:
-        snapshot = item.get("filter_snapshot") or {}
-        raw = item.get("baseline_scopes") or snapshot.get("baselines") or snapshot.get("baseline_scopes") or []
-        if isinstance(raw, str):
-            values = raw.split(",")
-        elif isinstance(raw, (list, tuple, set)):
-            values = raw
-        else:
-            values = []
-        normalized = set()
-        for value in values:
-            text = str(value).strip()
-            if not text:
-                continue
-            normalized.add(baseline_registry.scope_to_id(text) or text)
-        if normalized.intersection({"0821", "0821-review-extra", "0821-trail-extra"}):
-            return set(task_baseline_ids(list(values), item["split_id"]))
-        return normalized
-
-    items = []
-    for item in raw_items:
-        can_review = bool(item.get("is_current")) and item.get("lifecycle", "active") in {"", "active"}
-        if lifecycle in {"current", "active"} and not can_review:
-            continue
-        item_baselines = snapshot_baselines(item)
-        if selected_baselines and item_baselines and selected_baselines.isdisjoint(item_baselines):
-            continue
-        items.append(
-            {
-                "split_id": str(item.get("split_id") or ""),
-                "lifecycle": str(item.get("lifecycle") or "active"),
-                "can_review": can_review,
-                "name": str(item.get("campaign_name") or ""),
-                "model_run_id": str(item.get("model_run_id") or ""),
-                "created_at": str(item.get("created_at") or ""),
-                "created_by": str(item.get("created_by") or ""),
-                "mode": str(item.get("mode") or "single"),
-                "workflow_mode": str(item.get("workflow_mode") or "model_review_only"),
-                "reviewers_per_issue": int(item.get("reviewers_per_issue") or 1),
-                "total_count": int(item.get("total_count") or 0),
-                "assignment_count": int(item.get("assignment_count") or 0),
-                "completed_count": int(item.get("completed_count") or 0),
-                "baselines": sorted(item_baselines),
-            }
-        )
-    return {"items": items}
-
-
-@router.get("/api/cases/work-splits/{split_id}")
-async def get_case_work_split(
-    split_id: str,
-    request: Request,
-    page: int = 1,
-    page_size: int = 50,
-    assignee: str = "",
-    status: str = "all",
-    q: str = "",
-) -> dict[str, Any]:
-    """Writer/admin paginated task detail for one allocation batch."""
-
-    await asyncio.to_thread(_writer_identity, request)
-    try:
-        if split_id.startswith('version:') or await asyncio.to_thread(database.version_campaign_dataset,split_id):
-            from ..version_review_tasks import version_task_detail
-            result=await asyncio.to_thread(version_task_detail,database,split_id,page=max(1,int(page)),page_size=max(10,min(int(page_size),100)),assignee=assignee,status=status,query=q[:128])
-            if result is None:raise _detail(404,'Version task not found')
-            return result
-        result = await asyncio.to_thread(
-            database.get_review_work_split,
-            split_id,
-            page=max(1, int(page or 1)),
-            page_size=max(10, min(int(page_size or 50), 100)),
-            assignee=_as_text(assignee),
-            status=_as_text(status),
-            query=_as_text(q),
-        )
-    except ValueError as exc:
-        raise _detail(400, str(exc)) from exc
-    if result is None:
-        raise _detail(404, "分配批次不存在。")
-    result["baseline_ids"] = await asyncio.to_thread(
-        task_baseline_ids, result.get("baseline_scopes") or [], split_id)
-    return result
-
-
-@router.patch("/api/cases/work-splits/{split_id}/assignments/{issue_id}")
-async def reassign_case_work_item(
-    split_id: str,
-    issue_id: str,
-    request: Request,
-) -> dict[str, Any]:
-    """Admin-only transfer of one unfinished Review task."""
-
-    identity = await asyncio.to_thread(_admin_identity, request)
-    if not ISSUE_ID_RE.fullmatch(issue_id):
-        raise _detail(404, "Issue 不存在。")
-    raw = await request.body()
-    if len(raw) > 8 * 1024:
-        raise _detail(413, "任务调整请求过大。")
-    try:
-        body = json.loads(raw)
-    except (TypeError, ValueError, UnicodeDecodeError) as exc:
-        raise _detail(400, "任务调整请求必须是 JSON。") from exc
-    if not isinstance(body, dict):
-        raise _detail(400, "任务调整请求必须是 JSON 对象。")
-    assignee = normalise_username(str(body.get("assignee") or "")).lower()
-    if not assignee:
-        raise _detail(400, "新负责人账号格式非法。")
-    access_users = await asyncio.to_thread(database.list_access_users)
-    eligible = {str(item.get("username") or "").strip().lower() for item in access_users}
-    if assignee not in eligible:
-        raise _detail(400, "新负责人不在 Dashboard 用户列表中。")
-    try:
-        change = await asyncio.to_thread(
-            database.reassign_review_work_assignment,
-            split_id=split_id,
-            issue_id=issue_id,
-            assignee=assignee,
-            changed_by=identity.username,
-        )
-    except ValueError as exc:
-        raise _detail(409, str(exc)) from exc
-    detail = await asyncio.to_thread(
-        database.get_review_work_split,
-        split_id,
-        page=1,
-        page_size=50,
-    )
-    return {
-        "change": change,
-        "split": detail,
-        "change_revision": await asyncio.to_thread(database.change_revision),
-    }
-
-
-
 @router.post("/api/cases/work-split")
 async def split_case_work(request: Request) -> dict[str, Any]:
     """Admin-only: randomly assign filtered issues and persist ownership."""
@@ -1305,24 +974,6 @@ async def split_case_work(request: Request) -> dict[str, Any]:
     }
 
 
-
-@router.get("/api/reviewers")
-async def reviewers(
-    request: Request,
-    model_run_id: str = "",
-    baselines: str = "",
-) -> dict[str, Any]:
-    scopes = resolve_request_baseline_scopes(baselines, request=request)
-    items = await asyncio.to_thread(
-        database.list_analysis_reviewers,
-        baseline_scopes=scopes,
-        model_run_id=model_run_id,
-        issue_ids=await asyncio.to_thread(restrict_version_issue_ids, baselines, request=request),
-    )
-    return {"items": items, "analysis_items": items}
-
-
-
 from ..timed_cache import TimedSingleFlightCache
 _camera_thumbnail_cache = TimedSingleFlightCache(ttl_seconds=30,max_entries=2000)
 
@@ -1568,7 +1219,7 @@ async def get_case_media(issue_id: str, kind: str = "all") -> dict[str, Any]:
     }
 
 
-@router.get("/api/cases/{issue_id}")
+@router.get("/api/cases/{issue_id}", responses={200: {"model": CaseDetailResponse}})
 async def get_case(
     issue_id: str,
     request: Request = None,

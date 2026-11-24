@@ -64,9 +64,15 @@ APP_PY_CAMPAIGNS_ROUTER = (
     STATIC_DIR.parent / "app" / "routers" / "campaigns.py"
 ).read_text(encoding="utf-8")
 APP_PY_RUN_COLLECTIONS_DB = "\n".join(p.read_text(encoding="utf-8") for p in sorted((STATIC_DIR.parent / "app" / "db_parts").glob("run_collection*.py")))
-APP_PY_CASES_ROUTER = (
-    STATIC_DIR.parent / "app" / "routers" / "cases.py"
-).read_text(encoding="utf-8")
+APP_PY_CASES_ROUTER = "\n".join(
+    [
+        (STATIC_DIR.parent / "app" / "routers" / "cases.py").read_text(encoding="utf-8"),
+        *(
+            p.read_text(encoding="utf-8")
+            for p in sorted((STATIC_DIR.parent / "app" / "routers" / "cases_api").glob("*.py"))
+        ),
+    ]
+)
 APP_PY_COMMENTS_DB = (
     STATIC_DIR.parent / "app" / "db_parts" / "comments.py"
 ).read_text(encoding="utf-8")

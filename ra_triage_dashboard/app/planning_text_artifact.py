@@ -13,7 +13,7 @@ import tempfile
 from pathlib import Path
 import re
 
-from .planning_constraints import SOURCE, VERSION
+from .planning_contracts import SOURCE, VERSION
 
 ARTIFACT_VERSION = 1
 MAX_BYTES = 2 * 1024**2

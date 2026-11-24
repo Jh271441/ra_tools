@@ -12,10 +12,11 @@ import uuid
 from .shared import utc_now, _json, _json_load
 
 
-_DEFAULT_REVIEW_WEIGHTS = (('jasperchen', 1), ('liangxianghui', 1))
-_VERSION_REVIEW_WEIGHTS = {
-    '20261030': (('liangxianghui', 4), ('jasperchen', 3), ('hejianmo', 3)),
-}
+from ..core.version_review_config import (
+    DEFAULT_REVIEW_WEIGHTS as _DEFAULT_REVIEW_WEIGHTS,
+    VERSION_REVIEW_WEIGHTS as _VERSION_REVIEW_WEIGHTS,
+    get_version_review_weights,
+)
 
 
 def next_version_reviewer(weights, counts):

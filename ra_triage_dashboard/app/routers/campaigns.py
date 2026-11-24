@@ -14,6 +14,11 @@ from fastapi.responses import Response
 from ..db_parts.campaigns import CampaignConflictError, CampaignReadOnlyError
 from ..review_mentions import extract_review_mentions, notification_recipients
 from ..runtime import database, review_notification_dispatcher, settings
+from ..schemas import (
+    AllocationPreviewResponse,
+    CampaignAllocationResponse,
+    CampaignListResponse,
+)
 from ..support.baselines import resolve_request_baseline_scopes, restrict_version_issue_ids
 from ..support.common import _as_text, _detail
 from ..support.identity import _admin_identity
@@ -88,7 +93,7 @@ async def _campaign_issue_exists(campaign_id: str, issue_id: str) -> bool:
     return bool(detail and any(str(item.get("issue_id") or "") == issue_id for item in detail.get("issues", [])))
 
 
-@router.get("/api/campaigns")
+@router.get("/api/campaigns", responses={200: {"model": CampaignListResponse}})
 async def list_campaigns(
     request: Request,
     baselines: str = "",
@@ -374,7 +379,7 @@ async def update_campaign_assignment(
     return result
 
 
-@router.get("/api/campaigns/{campaign_id}/allocation")
+@router.get("/api/campaigns/{campaign_id}/allocation", responses={200: {"model": CampaignAllocationResponse}})
 async def get_campaign_allocation(campaign_id: str, request: Request) -> dict[str, Any]:
     _campaign_admin(request)
     try:
@@ -407,7 +412,7 @@ async def update_campaign_allocation(campaign_id: str, request: Request) -> dict
     return result
 
 
-@router.post("/api/campaigns/{campaign_id}/allocation/preview")
+@router.post("/api/campaigns/{campaign_id}/allocation/preview", responses={200: {"model": AllocationPreviewResponse}})
 async def preview_campaign_allocation(campaign_id: str, request: Request) -> dict[str, Any]:
     _campaign_admin(request)
     body = _json_body(await request.body())

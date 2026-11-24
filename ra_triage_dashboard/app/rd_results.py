@@ -16,7 +16,7 @@ from threading import BoundedSemaphore, Event, Lock
 import time
 import uuid
 from .label_publication_inputs import file_row_fingerprint
-from .publication_audit import sync_publication_audit
+from .publication_audit_sync import sync_publication_audit
 
 FIELD = "ra_rd_review_result"
 TE_FIELD = "ra_review_result_new"

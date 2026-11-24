@@ -13,8 +13,8 @@ import threading
 import time
 import fcntl
 
-SOURCE = "/studio_node/planning/speed_table_raw.dominantConstraint"
-VERSION = "ares-default-8c071689-v2"
+from .planning_contracts import SOURCE, VERSION
+
 _lock = threading.Lock()
 _active: set[str] = set()
 _failures: dict[str, float] = {}

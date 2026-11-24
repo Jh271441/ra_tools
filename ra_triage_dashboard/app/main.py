@@ -6,6 +6,7 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from .core.container import AppContainer
 from .static_assets import dashboard_static_app
 from .response_compression import TextResponseCompressionMiddleware
 from .middleware import (
@@ -204,6 +205,9 @@ app = FastAPI(
     version="1.9.2",
     lifespan=lifespan,
 )
+_default_container = AppContainer.from_runtime()
+_default_container._tracks_runtime = True  # type: ignore[attr-defined]
+app.state.container = _default_container
 # Pure ASGI middleware stack (Starlette wraps LIFO: last added runs outermost).
 app.add_middleware(TextResponseCompressionMiddleware)
 app.add_middleware(

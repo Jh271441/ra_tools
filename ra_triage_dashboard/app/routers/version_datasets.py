@@ -1,19 +1,29 @@
 """Version worksets and immutable ingestion history, separate from GT baselines."""
 import asyncio, json
-from fastapi import APIRouter, HTTPException, Request, Query
+from typing import Any
+from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from fastapi.responses import Response, JSONResponse
+from ..core.deps import get_db, get_settings, resolve_dep
 from ..version_workbench import workbench, historical_dataset, gallery_csv
 from ..daily_review_source import SnapshotChanged
 from ..runtime import database, settings
+from ..schemas import VersionDatasetListResponse, VersionWorkbenchResponse
 from ..support.identity import _admin_identity
 
 router = APIRouter()
 
 
-@router.get("/api/version-datasets")
-async def datasets(include_legacy: bool = False):
-    result=await asyncio.to_thread(database.list_version_datasets)
-    if include_legacy:result.append(await asyncio.to_thread(historical_dataset,settings.ra_auto_triage_root))
+@router.get("/api/version-datasets", responses={200: {"model": VersionDatasetListResponse}})
+async def datasets(
+    include_legacy: bool = False,
+    db: Any = Depends(get_db),
+    cfg: Any = Depends(get_settings),
+):
+    db = resolve_dep(db, lambda: database)
+    cfg = resolve_dep(cfg, lambda: settings)
+    result = await asyncio.to_thread(db.list_version_datasets)
+    if include_legacy:
+        result.append(await asyncio.to_thread(historical_dataset, cfg.ra_auto_triage_root))
     return {"items": result}
 
 
@@ -40,7 +50,7 @@ async def items(
         raise HTTPException(400, str(exc)) from exc
 
 
-@router.get("/api/version-datasets/{dataset_id}/workbench")
+@router.get("/api/version-datasets/{dataset_id}/workbench", responses={200: {"model": VersionWorkbenchResponse}})
 @router.get("/api/version-datasets/{dataset_id}/workbench.csv")
 async def gallery(request: Request, dataset_id: str, page: int = Query(1,ge=1,le=10000), page_size: int = Query(20,ge=1,le=100),
                   mode: str = "targets", q: str = Query('',max_length=128), sort: str = "added", date: str = '',
