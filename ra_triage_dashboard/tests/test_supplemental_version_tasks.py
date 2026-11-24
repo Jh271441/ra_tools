@@ -50,6 +50,18 @@ class SupplementalVersionTaskTests(unittest.TestCase):
         self.assertEqual(module.merge_version_task_list([], [self.supplemental], version_only=True), [])
         self.assertEqual(module.merge_version_task_list([], [self.supplemental]), [self.supplemental])
 
+    def test_manual_tasks_and_recency_sorting_surface_new_tasks_first(self):
+        old_ver = dict(self.parent, appendable=True, last_target_added_at='2026-10-23T10:00:00+00:00', created_at='2026-10-23T04:00:00+00:00')
+        new_manual_same_run = dict(
+            split_id='manual-on-version-run', model_run_id='run1009',
+            filter_snapshot={'manual_task': True}, created_at='2026-11-24T05:19:00+00:00',
+        )
+        other_manual = dict(self.other, created_at='2026-11-01T00:00:00+00:00')
+        merged = module.merge_version_task_list([old_ver], [other_manual, new_manual_same_run, self.old_source])
+        self.assertEqual([item['split_id'] for item in merged], ['manual-on-version-run', 'ordinary', 'canonical'])
+        manual_only = module.merge_version_task_list([old_ver], [other_manual, new_manual_same_run, self.old_source], manual_only=True)
+        self.assertEqual([item['split_id'] for item in manual_only], ['manual-on-version-run', 'ordinary'])
+
 
 class SupplementalTaskDatasetTests(unittest.TestCase):
     def setUp(self):

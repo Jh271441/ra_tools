@@ -5,14 +5,18 @@
 .case-labeling-page .issue-card-heading .issue-id { flex-shrink: 0; max-width:100%; }
 .case-labeling-page .issue-card-labels { flex-wrap: wrap; }
 
-/* Four reviewers stay together as 4 / 2 / 1 columns, using the card's width. */
-@container review-assignment (max-width: 719px) {
-  .review-assignment-member-grid:where(:has(> .review-assignment-member:nth-child(4):last-child)) { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 10px; }
-  .review-assignment-member-grid:where(:has(> .review-assignment-member:nth-child(4):last-child)) > .review-assignment-member:nth-child(2n + 1) { padding-left: 0; border-left: 0; }
-}
-@container review-assignment (max-width: 439px) {
-  .review-assignment-member-grid:where(:has(> .review-assignment-member:nth-child(4):last-child)) { grid-template-columns: minmax(0, 1fr); row-gap: 0; }
-  .review-assignment-member-grid:where(:has(> .review-assignment-member:nth-child(4):last-child)) > .review-assignment-member + .review-assignment-member { padding: 10px 0 2px; border-left: 0; border-top: 1px solid var(--line-soft); }
+/* Reviewers wrap cleanly as 4 / 2 / 1 columns across any member count (2, 3, 4, 5+). */
+@media (min-width: 640px) {
+  @container review-assignment (max-width: 719px) {
+    .review-assignment-member-grid:where(:has(> .review-assignment-member:nth-child(2))) { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 10px; }
+    .review-assignment-member-grid:where(:has(> .review-assignment-member:nth-child(2))) > .review-assignment-member:nth-child(2n + 1) { padding-left: 0; padding-right: 14px; border-left: 0; }
+    .review-assignment-member-grid:where(:has(> .review-assignment-member:nth-child(2))) > .review-assignment-member:nth-child(2n) { padding-right: 0; }
+  }
+  @container review-assignment (max-width: 439px) {
+    .review-assignment-member-grid { grid-template-columns: minmax(0, 1fr); row-gap: 0; }
+    .review-assignment-member-grid > .review-assignment-member { padding-right: 0; }
+    .review-assignment-member-grid > .review-assignment-member + .review-assignment-member { padding: 10px 0 2px; border-left: 0; border-top: 1px solid var(--line-soft); }
+  }
 }
 
 @media (max-width: 1280px) {
@@ -250,6 +254,7 @@
   .review-assignment-batch-header, .review-assignment-batch-footer { align-items: flex-start; flex-direction: column; }
   .review-assignment-batch-actions { justify-content: flex-start; }
   .review-assignment-list-card { padding: 4px 0 0; }
+  .review-assignment-member { padding-right: 0; }
   .review-assignment-member + .review-assignment-member { padding: 10px 0 2px; border-top: 1px solid var(--line-soft); border-left: 0; }
 
   /* Review gallery and detail. */
@@ -687,8 +692,9 @@
 
 
 @media (max-width: 639px) {
+  .review-assignments-header:has(> #workSplitPanel[hidden]) .review-assignments-header-main { justify-content: flex-start; }
   .review-assignment-list-card > .review-assignment-section-heading { align-items: flex-start; flex-direction: column; gap: 10px; }
-  .review-assignment-section-heading > .review-assignment-list-filters { width: 100%; justify-content: flex-start; }
+  .review-assignment-section-heading > div.review-assignment-list-filters { width: 100%; justify-content: flex-start; }
   .review-assignment-list-filters .ui-select-trigger,
   .review-assignment-list-filters > .button { min-height: 44px; height: 44px; }
 }
@@ -1250,7 +1256,6 @@
   .task-allocation-dialog .task-allocation-fields {
     grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr));
   }
-  .task-allocation-member dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .allocation-preview-facts, .allocation-preview-person dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .allocation-preview-facts dd { font-size: 15px; }
   .task-allocation-dialog .allocation-preview-person > summary, .allocation-current-person { padding-inline: 8px; }
@@ -1259,21 +1264,34 @@
   .task-allocation-dialog .work-split-person-count { font-size: 16px; padding-inline: 6px; }
   .task-allocation-dialog .is-balanced .work-split-person-row { grid-template-columns: minmax(0, 1fr) 44px; }
   .assignment-composer .assignment-config-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .assignment-composer .work-split-config-fields { grid-template-columns: minmax(0, 1fr); }
   .assignment-config-fields > .work-split-workflow-mode { grid-column: 1 / -1; }
+  .review-assignments-header-actions { flex-wrap: wrap; }
+  .review-assignments-header-actions .button { min-height: 44px; }
   .assignment-composer .is-balanced .work-split-person-row { grid-template-columns: minmax(0, 1fr) 44px; }
   .assignment-composer .is-balanced .work-split-person-picker { grid-column: auto; }
   .assignment-group-scope { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 639px), (pointer: coarse) {
   .allocation-group-setup :is(input, textarea) { font-size: 16px !important; }
-  .allocation-group-setup :is(.ui-select-trigger, .button, .text-button, .assignment-ratio-input, details > summary),
-  .allocation-rule-scope :is(input, textarea),
+  .allocation-group-setup :is(.ui-select-trigger, .button, .text-button, .assignment-ratio-box, details > summary),
+  .allocation-rule-count-box > input,
+  .allocation-pairing-switch > button,
+  .allocation-unit-switch > button,
+  .allocation-strategy-switch > button,
+  .allocation-rule-scope-switch > button,
+  .allocation-rule-cases-row input,
   .task-allocation-dialog.is-allocation-edit :is(.ui-select-trigger, .button, .icon-button, summary),
   button.allocation-diff-row { min-height: 44px !important; height: auto !important; }
+  .allocation-setup-rule .allocation-remove-control { width: 44px !important; min-width: 44px !important; min-height: 44px !important; }
   .allocation-add-member.text-button, .allocation-tool-link.text-button { display: inline-flex; align-items: center; }
-  .allocation-coverage-inline .assignment-ratio-input { width: 92px; padding-inline: 8px; }
+  .allocation-add-member.text-button { padding: 0 12px; }
+  .allocation-equalize-btn.text-button { padding-inline: 10px; }
+  .allocation-coverage-inline .assignment-ratio-box { width: 58px; }
+  .allocation-setup-member .assignment-ratio-box { width: 68px; }
+  .allocation-rule-count-box > input { width: 62px; }
   .allocation-setup-member .allocation-remove-control { width: 44px !important; min-width: 44px !important; min-height: 44px !important; }
-  .allocation-setup-member { grid-template-columns: 10px minmax(0, 1fr) 94px 44px; }
+  .allocation-setup-member { grid-template-columns: 10px minmax(0, 1fr) auto 44px; }
   .allocation-group-bar { height: 44px; }
   .task-allocation-dialog .dialog-actions .button-primary,
   .assignment-composer .assignment-footer-row .button-primary { min-height: 48px !important; white-space: normal; }
@@ -1289,6 +1307,12 @@
     padding-top: 12px; border-top: 1px solid var(--line-soft);
   }
   .allocation-setup-cards:not([data-group-count="1"]) > .allocation-setup-card:not(:last-child) { padding-bottom: 12px; }
+  .allocation-pairing-bar { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; }
+  .allocation-pairing-left { display: contents; }
+  .allocation-pairing-label { grid-column: 1; grid-row: 1; }
+  .allocation-rules-info { grid-column: 2; grid-row: 1; justify-self: end; }
+  .allocation-pairing-switch { grid-column: 1 / -1; grid-row: 2; width: 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .allocation-pairing-switch > button { padding-inline: 6px; text-align: center; }
   .allocation-rule-partners, .allocation-rule-pickers, .allocation-rule-scope { grid-template-columns: minmax(0, 1fr); }
   .allocation-rule-tools { justify-content: flex-end; }
   .allocation-section-heading, .allocation-basis-controls, .allocation-basis-inline { width: 100%; }
@@ -1297,6 +1321,7 @@
   .allocation-creation-layout { grid-template-columns: minmax(0, 1fr); }
   .allocation-creation-preview { padding: 0; }
   #taskAllocationGroupSetup,
+  .allocation-creation-layout .allocation-setup-surface,
   #taskAllocationLiveContent,
   .allocation-creation-preview > .allocation-live-content { padding: 10px 11px; }
   .allocation-diff-list { grid-template-columns: minmax(48px, 112px) minmax(24px, 1fr) max-content fit-content(30%); column-gap: 6px; }
@@ -1311,5 +1336,5 @@
   .is-allocation-edit .task-allocation-edit-footer .dialog-actions .button { flex: 0 1 auto; }
 }
 @media (max-width: 359px) {
-  .allocation-setup-member { grid-template-columns: 10px minmax(0, 1fr) 88px 44px; }
+  .allocation-setup-member .assignment-ratio-box { width: 62px; }
 }

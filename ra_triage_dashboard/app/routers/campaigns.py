@@ -397,6 +397,7 @@ async def update_campaign_allocation(campaign_id: str, request: Request) -> dict
             quota_basis=body.get("quota_basis", "remaining"), preview_token=body.get("preview_token", ""),
             cross_groups=body.get("cross_groups"),
             groups=body.get("groups"),
+            pairing_mode=body.get("pairing_mode"),
         )
     except (CampaignConflictError, CampaignReadOnlyError) as exc:
         raise _detail(409, str(exc)) from exc
@@ -418,6 +419,7 @@ async def preview_campaign_allocation(campaign_id: str, request: Request) -> dic
             quota_basis=body.get("quota_basis", "remaining"),
             cross_groups=body.get("cross_groups"),
             groups=body.get("groups"),
+            pairing_mode=body.get("pairing_mode"),
         )
     except (CampaignConflictError, CampaignReadOnlyError) as exc:
         raise _detail(409, str(exc)) from exc

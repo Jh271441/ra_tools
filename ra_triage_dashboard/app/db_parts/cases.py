@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import uuid
+from collections import Counter
 from typing import Any, Iterable, Iterator, Sequence
 
 from ..work_split import normalize_overlap_ratio
@@ -1610,6 +1611,31 @@ class DatabaseCasesMixin:
             assignment_count = int(row["assignment_count"] or 0) or current_assignment_count
             total_count = int(row["total_count"] or 0) or current_issue_count
             completed_count = sum(item["completed_count"] for item in members)
+            filter_snapshot = _json_load(row["filter_json"], {})
+            alloc_groups = ((filter_snapshot.get("task_allocation") or {}).get("groups") or []) if isinstance(filter_snapshot, dict) else []
+            if alloc_groups:
+                active_by_person = Counter(
+                    owner for grp in alloc_groups for owner in (grp.get("assignments") or {}).values() if owner
+                )
+                if active_by_person:
+                    norm_members = []
+                    for item in members:
+                        uname = item["username"]
+                        act = active_by_person.get(uname, 0)
+                        comp = item["completed_count"]
+                        if act == 0 and comp == 0:
+                            continue
+                        pend = max(0, act - min(act, comp))
+                        norm_members.append({
+                            **item,
+                            "assigned_count": act,
+                            "pending_count": pend,
+                            "extra_completed_count": max(0, comp - (act - pend)),
+                            "completion_ratio": 1.0 if act == 0 and comp > 0 else round(min(1.0, comp / act), 4) if act else 0.0,
+                        })
+                    members = norm_members
+                    assignment_count = total_count if len(alloc_groups) == 1 else sum(active_by_person.values())
+                    completed_count = min(assignment_count, sum(min(m["assigned_count"], m["completed_count"]) for m in members) + (max(0, total_count - sum(active_by_person.values())) if len(alloc_groups) == 1 else 0))
             result.append(
                 {
                     "split_id": split_id,
@@ -1626,12 +1652,13 @@ class DatabaseCasesMixin:
                     "seed": row["seed"],
                     "total_count": total_count,
                     "assignment_count": assignment_count,
+                    **(dict(allocation_group_count=len(alloc_groups)) if alloc_groups else {}),
                     "mode": str(row["mode"] or "single"),
                     "reviewers_per_issue": int(row["reviewers_per_issue"] or 1),
                     "model_run_id": str(row["model_run_id"] or ""),
                     "workflow_mode": str(row["workflow_mode"] or "model_review_only"),
                     "overlap_ratio": float(row["overlap_ratio"] or 0),
-                    "filter_snapshot": _json_load(row["filter_json"], {}),
+                    "filter_snapshot": filter_snapshot,
                     "baseline_scopes": scopes_by_split.get(split_id, []),
                     "members": members,
                     "completed_count": completed_count,

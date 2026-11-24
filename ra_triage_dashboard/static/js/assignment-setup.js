@@ -19,8 +19,12 @@ const creationAllocationEndpoints = { workSplit: "/api/cases/work-split", labeli
 function creationAllocationBody(prefix) {
   const setup = readAllocationGroupSetup($("#" + prefix + "GroupSetup"));
   const review = prefix === "workSplit";
-  const body = { groups: setup.groups, cross_groups: setup.cross_groups,
-    filters: review ? workSplitFilters() : labelingTaskFilterPayload() };
+  const body = {
+    groups: setup.groups,
+    cross_groups: setup.pairing_mode === "custom" ? setup.cross_groups : [],
+    pairing_mode: setup.pairing_mode === "paired" ? "paired" : "orthogonal",
+    filters: review ? workSplitFilters() : labelingTaskFilterPayload(),
+  };
   if (review) body.workflow_mode = $("#workSplitWorkflowMode")?.value || "model_review_and_case_label";
   const name = $("#" + prefix + "Name")?.value.trim();
   const seed = $("#" + prefix + "Seed")?.value.trim();
@@ -41,6 +45,7 @@ function renderCreationAllocationPreview(prefix) {
   status.textContent = entry.error?.messages
     ? uiText(entry.error.messages.zh, entry.error.messages.en)
     : entry.plan ? "" : uiText("正在计算预览…", "Calculating preview…");
+  status.classList.toggle("task-allocation-error", Boolean(entry.error?.messages && entry.retry));
   retry.hidden = !entry.retry;
   content.hidden = !entry.plan;
   if (entry.plan) renderGroupedAllocationPreview(content, entry.plan, entry.view);
@@ -89,6 +94,14 @@ function queueCreationGroupPreview(prefix, force = false) {
   }, 400);
 }
 
+function creationAllocationCaseCount(prefix) {
+  const live = prefix === "workSplit"
+    ? (typeof workSplitTotal === "function" ? Number(workSplitTotal() || 0) : 0)
+    : Number(state.caseLabeling?.data?.total || 0);
+  if (live > 0) return live;
+  return Number(creationAllocation.get(prefix)?.plan?.group_coverage?.case_count || 0);
+}
+
 function displayCreationGroupSetup(prefix, draft = null) {
   const root = $("#" + prefix + "GroupSetup");
   if (!root) return;
@@ -98,28 +111,34 @@ function displayCreationGroupSetup(prefix, draft = null) {
     creationAllocation.set(prefix, { view: allocationPreviewView() });
   }
   const content = draft || readAllocationGroupSetup(root);
-  renderAllocationGroupSetup(root, content, { users: state.accessUsers || [], change: () => {
-    const kind = prefix === "workSplit" ? "review" : "labeling";
-    if (kind === "review" && workSplitDraft) {
-      workSplitDraft.groupSetup = readAllocationGroupSetup(root);
-      saveReviewAllocationDraft(workSplitDraft);
-    }
-    updateAssignmentNameSuggestion(kind);
-    queueCreationGroupPreview(prefix);
-  } });
+  const caseCount = creationAllocationCaseCount(prefix);
+  renderAllocationGroupSetup(root, content, {
+    users: state.accessUsers || [],
+    caseCount,
+    quotaBasis: "total",
+    change: () => {
+      const kind = prefix === "workSplit" ? "review" : "labeling";
+      if (kind === "review" && workSplitDraft) {
+        workSplitDraft.groupSetup = readAllocationGroupSetup(root);
+        saveReviewAllocationDraft(workSplitDraft);
+      }
+      updateAssignmentNameSuggestion(kind);
+      queueCreationGroupPreview(prefix);
+    },
+  });
   queueCreationGroupPreview(prefix);
   renderCreationAllocationPreview(prefix);
 }
 
 function bindCreationGroupSetup(prefix) {
   const fieldChanged = () => queueCreationGroupPreview(prefix);
+  if (prefix === "workSplit") {
+    $("#workSplitWorkflowMode")?.addEventListener("change", () => updateAssignmentNameSuggestion("review"));
+  }
   for (const id of ["Name", "Seed", "WorkflowMode"]) {
     const control = $("#" + prefix + id);
     control?.addEventListener("input", fieldChanged);
     control?.addEventListener("change", fieldChanged);
-  }
-  if (prefix === "workSplit") {
-    $("#workSplitWorkflowMode")?.addEventListener("change", () => updateAssignmentNameSuggestion("review"));
   }
   $("#" + prefix + "RetryPreview")?.addEventListener("click", () => queueCreationGroupPreview(prefix, true));
 }

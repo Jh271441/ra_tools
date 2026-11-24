@@ -495,8 +495,13 @@ function enhanceNativeUiSelect(select, { maxWidth = 520 } = {}) {
   }
   const translated = {
     workSplitWorkflowMode: {
-      model_review_only: ["仅判错复核", "Model review only"],
-      model_review_and_case_label: ["判错复核 + 问题标注", "Model review + Case label"],
+      model_review_only: ["独立判错复核任务（仅判错复核）", "Independent model review (Review only)"],
+      model_review_and_case_label: ["联合复核任务（判错复核 + 问题标注）", "Combined review (Model review + Case label)"],
+    },
+    workSplitComparison: {
+      all: ["全部 Case", "All cases"],
+      mismatch: ["仅模型判错 (MISMATCH)", "Model mismatch only"],
+      match: ["仅模型判对 (MATCH)", "Model match only"],
     },
     reviewWorkflowMode: {
       model_review_only: ["仅判错复核", "Model review only"],
@@ -641,7 +646,8 @@ function showUiInfoPopover(help, root = document, { pinned = false } = {}) {
     tip.style.top = `${Math.max(viewport.top + 12, Math.min(rect.top, viewport.bottom - tip.offsetHeight - 12))}px`;
     return;
   }
-  tip.style.left = `${Math.max(viewport.left + 12, Math.min(rect.left, viewport.right - tip.offsetWidth - 12))}px`;
+  const preferredLeft = help.dataset.uiInfoAlign === 'end' ? rect.right - tip.offsetWidth : rect.left;
+  tip.style.left = `${Math.max(viewport.left + 12, Math.min(preferredLeft, viewport.right - tip.offsetWidth - 12))}px`;
   tip.style.top = `${Math.max(viewport.top + 12, Math.min(rect.bottom + tip.offsetHeight + 8 <= viewport.bottom ? rect.bottom + 6 : rect.top - tip.offsetHeight - 6, viewport.bottom - tip.offsetHeight - 12))}px`;
 }
 

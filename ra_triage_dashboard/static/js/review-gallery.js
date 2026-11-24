@@ -718,8 +718,8 @@ function updateFilteredPredictionButton() {
   if (split && !split.hidden) {
     split.disabled = total === 0 || !state.selectedRunId;
     split.innerHTML = total
-      ? `<span class="ui-lang-zh">均分任务 · ${total}</span><span class="ui-lang-en">Split work · ${total}</span>`
-      : `<span class="ui-lang-zh">均分任务</span><span class="ui-lang-en">Split work</span>`;
+      ? `<span class="ui-lang-zh">新建分配 · ${total}</span><span class="ui-lang-en">New allocation · ${total}</span>`
+      : `<span class="ui-lang-zh">新建分配</span><span class="ui-lang-en">New allocation</span>`;
     split.title = !state.selectedRunId
       ? uiText(
           "请先选择 Model Run；若只做 Case 标签，请前往 问题标注 > 实验分配。",

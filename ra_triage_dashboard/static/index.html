@@ -57,7 +57,7 @@
         const appPreload = document.createElement("link");
         appPreload.rel = "preload";
         appPreload.as = "script";
-        appPreload.href = `${activeBase}/static/app-bundle.js?v=manual-triage-846`;
+        appPreload.href = `${activeBase}/static/app-bundle.js?v=manual-triage-871`;
         document.head.appendChild(appPreload);
         // These same-origin reads are required on every route. Begin them
         // while the bundle downloads; consume once through the normal API
@@ -127,7 +127,7 @@
         stylesheetRequests.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-846`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-871`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -496,7 +496,7 @@
                     <div class="review-quick-actions">
                       <button class="button button-quiet" id="reviewUploadModelButton" type="button"><span class="ui-lang-zh">上传模型结果</span><span class="ui-lang-en">Upload model results</span></button>
                       <button class="button button-quiet" id="exportFilteredIssuesButton" type="button" disabled><span class="ui-lang-zh">导出当前筛选</span><span class="ui-lang-en">Export selection</span></button>
-                      <button class="button button-quiet" id="splitFilteredButton" type="button" disabled><span class="ui-lang-zh">均分任务</span><span class="ui-lang-en">Split work</span></button>
+                      <button class="button button-quiet" id="splitFilteredButton" type="button" disabled><span class="ui-lang-zh">新建分配</span><span class="ui-lang-en">New allocation</span></button>
                       <button class="button button-primary" id="predictFilteredButton" type="button" disabled><span class="ui-lang-zh">预测当前筛选</span><span class="ui-lang-en">Predict selection</span></button>
                     </div>
                     <div class="gallery-heading-meta">
@@ -664,24 +664,37 @@
                   <h2 id="reviewAssignmentsHeading"><span class="ui-lang-zh">分配配置</span><span class="ui-lang-en">Assignment setup</span></h2>
                 </div>
                 <div class="review-assignments-header-actions">
-                  <button class="button button-quiet" id="reviewAssignmentsGoReview" type="button"><span class="ui-lang-zh">返回图库筛选</span><span class="ui-lang-en">Filter in gallery</span></button>
+                  <button class="button button-primary" id="reviewAssignmentsNewTask" type="button" hidden><span class="ui-lang-zh">+ 新建分配</span><span class="ui-lang-en">+ New allocation</span></button>
+                  <button class="button button-quiet" id="reviewAssignmentsGoReview" type="button"><span class="ui-lang-zh">从图库筛选</span><span class="ui-lang-en">Filter in gallery</span></button>
                   <button class="button button-quiet" id="reviewAssignmentsShare" type="button"><span class="ui-lang-zh">复制链接</span><span class="ui-lang-en">Copy link</span></button>
                   <button class="button button-quiet" id="reviewAssignmentsRefresh" type="button"><span class="ui-lang-zh">刷新</span><span class="ui-lang-en">Refresh</span></button>
                 </div>
               </div>
               <section class="work-split-inline" id="workSplitPanel" hidden>
               <div class="work-split-inline-body">
-                <div class="assignment-config-fields">
+                <div class="assignment-config-fields work-split-config-fields">
+                <label class="work-split-seed work-split-workflow-mode">
+                  <span><span class="ui-lang-zh">任务类型</span><span class="ui-lang-en">Task type</span></span>
+                  <select id="workSplitWorkflowMode">
+                    <option value="model_review_and_case_label" selected>联合复核任务（判错复核 + 问题标注）</option>
+                    <option value="model_review_only">独立判错复核任务（仅判错复核）</option>
+                  </select>
+                </label>
+                <label class="work-split-seed work-split-model-run">
+                  <span><span class="ui-lang-zh">模型 Run</span><span class="ui-lang-en">Model run</span></span>
+                  <select id="workSplitModelRun"></select>
+                </label>
+                <label class="work-split-seed work-split-comparison">
+                  <span class="work-split-scope-heading"><span><span class="ui-lang-zh">筛选范围</span><span class="ui-lang-en">Case scope</span></span><small class="work-split-scope-count" id="workSplitScopeCount" aria-live="polite"></small></span>
+                  <select id="workSplitComparison">
+                    <option value="all" selected>全部 Case</option>
+                    <option value="mismatch">仅模型判错 (MISMATCH)</option>
+                    <option value="match">仅模型判对 (MATCH)</option>
+                  </select>
+                </label>
                 <label class="work-split-seed work-split-name">
                   <span><span class="ui-lang-zh">实验名称</span><span class="ui-lang-en">Experiment name</span></span>
                   <span class="intent-experiment-name-control"><input id="workSplitName" type="text" maxlength="80" placeholder="自动生成实验名称" data-placeholder-zh="自动生成实验名称" data-placeholder-en="Generated from the experiment configuration" autocomplete="off" /><small class="assignment-name-source" id="workSplitNameStatus" aria-live="polite"></small><button class="assignment-name-refresh" id="workSplitRefreshName" type="button" aria-label="重新生成实验名称" title="重新生成实验名称" disabled><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 7v5h-5M4 17v-5h5M6.1 7a7 7 0 0 1 11.6-1L20 9M4 15l2.3 3A7 7 0 0 0 17.9 17"/></svg></button></span>
-                </label>
-                <label class="work-split-seed work-split-workflow-mode">
-                  <span><span class="ui-lang-zh">任务模式</span><span class="ui-lang-en">Task mode</span></span>
-                  <select id="workSplitWorkflowMode">
-                    <option value="model_review_only">仅判错复核</option>
-                    <option value="model_review_and_case_label" selected>判错复核 + 问题标注</option>
-                  </select>
                 </label>
               </div>
                 <div class="allocation-creation-layout">
@@ -699,7 +712,7 @@
                     <input id="workSplitSeed" type="number" inputmode="numeric" placeholder="留空则每次不同" data-placeholder-zh="留空则每次不同" data-placeholder-en="Leave blank to randomize" />
                   </label>
                   <div class="dialog-actions">
-                    <button class="button button-quiet" id="workSplitResetDraft" type="button"><span class="ui-lang-zh">清除分配草稿</span><span class="ui-lang-en">Clear draft</span></button>
+                    <button class="button button-quiet" id="workSplitResetDraft" type="button"><span class="ui-lang-zh">取消</span><span class="ui-lang-en">Cancel</span></button>
                     <button class="button button-primary" id="workSplitGenerate" type="button"><span class="ui-lang-zh">预览分配</span><span class="ui-lang-en">Preview allocation</span></button>
                   </div>
                 </div>
@@ -2675,7 +2688,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app-bundle.js?v=manual-triage-846`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app-bundle.js?v=manual-triage-871`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

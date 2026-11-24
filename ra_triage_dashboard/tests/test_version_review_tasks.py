@@ -47,3 +47,25 @@ class VersionReviewTasksTest(unittest.TestCase):
         self.assertEqual((result['mode'], result['reviewers_per_issue'], result['overlap_ratio']), ('blind', 3, .5))
         self.assertEqual(version_task_detail(self.db,'old-campaign')['split_id'],'canonical-campaign')
         self.assertEqual(version_task_detail(self.db,'version:'+self.dataset['id'])['split_id'],'canonical-campaign')
+
+    def test_collection_status_flips_after_two_days_and_resumes_on_new_targets(self):
+        from datetime import datetime, timezone
+        from ra_triage_dashboard.app.version_review_tasks import _is_actively_appending, _version_last_target_added_at
+
+        now = datetime(2026, 11, 24, 5, 0, 0, tzinfo=timezone.utc)
+        self.db.version_dataset_batches = lambda _: [
+            dict(target_added=0, created_at='2026-11-24T04:00:00+00:00'),
+            dict(target_added=5, created_at='2026-11-21T04:00:00+00:00'),
+        ]
+        stale_ts = _version_last_target_added_at(self.db, self.dataset)
+        self.assertEqual(stale_ts, '2026-11-21T04:00:00+00:00')
+        self.assertFalse(_is_actively_appending(stale_ts, now=now))
+
+        # When a new target arrives later, status automatically flips back to appending.
+        self.db.version_dataset_batches = lambda _: [
+            dict(target_added=2, created_at='2026-11-23T12:00:00+00:00'),
+            dict(target_added=5, created_at='2026-11-21T04:00:00+00:00'),
+        ]
+        fresh_ts = _version_last_target_added_at(self.db, self.dataset)
+        self.assertEqual(fresh_ts, '2026-11-23T12:00:00+00:00')
+        self.assertTrue(_is_actively_appending(fresh_ts, now=now))

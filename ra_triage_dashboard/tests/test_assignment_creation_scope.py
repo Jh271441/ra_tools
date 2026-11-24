@@ -61,7 +61,7 @@ assert.equal(route.workSplitId,'');assert.deepEqual(route.issueIds,[]);assert.de
 assert.equal(route.commentState,'all');assert.equal(route.casePage,1);
 assert.equal(route.workflowMode,'model_review_and_case_label');
 '''
-        subprocess.run(['node','-e',script], check=True, capture_output=True)
+        subprocess.run(['node'], input=script, text=True, check=True, capture_output=True)
 
     def test_assignment_metrics_precede_creation_form_without_scope_card(self):
         html = (ROOT / 'static/index.html').read_text()
@@ -75,6 +75,11 @@ assert.equal(route.workflowMode,'model_review_and_case_label');
         self.assertNotIn('id="allocationComparison"', html)
         self.assertNotIn('返回图库修改筛选', html)
         self.assertIn('id="reviewAssignmentsGoReview"', html)
+        self.assertIn('id="reviewAssignmentsNewTask"', html)
+        self.assertIn('id="workSplitModelRun"', html)
+        self.assertIn('id="workSplitComparison"', html)
+        self.assertIn('value="model_review_only"', html)
+        self.assertIn('value="model_review_and_case_label"', html)
         self.assertNotIn('id="workSplitDialogHint"', html)
         self.assertNotIn('id="workSplitSummary"', html)
 
@@ -177,7 +182,7 @@ for(const status of ['pending','in_progress','completed','pending,in_progress','
 assert.equal(normalizedAnalysisRouteFilters(new URLSearchParams('work_split=split-123')).workSplitId,'split-123');
 assert.equal(normalizedAnalysisRouteFilters(new URLSearchParams('work_split=bad/123')).workSplitId,'');
 '''
-        subprocess.run(['node','-e',script], check=True, capture_output=True)
+        subprocess.run(['node'], input=script, text=True, check=True, capture_output=True)
 
     def test_detail_button_uses_requested_batch_and_scrolls_to_result(self):
         script = (ROOT / 'static/js/review-assignments.js').read_text() + r'''
@@ -195,4 +200,4 @@ withBase=p=>p;window={location:{origin:'http://localhost'},history:{state:{},rep
  assert.equal(route,'/review-assignments?split=campaign-new');assert.equal(scrolled,true);
 })().catch(e=>{console.error(e);process.exitCode=1;});
 '''
-        subprocess.run(['node','-e',script], check=True, capture_output=True)
+        subprocess.run(['node'], input=script, text=True, check=True, capture_output=True)

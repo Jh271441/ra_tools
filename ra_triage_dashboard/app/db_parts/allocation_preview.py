@@ -3,7 +3,7 @@ import time
 from collections import Counter, defaultdict
 
 from ..allocation_coverage import CoverageConstraintError, coverage_summary, plan_cross_coverage
-from ..group_allocation import group_history, group_rules, grouped_config, grouped_preview, normalize_groups, plan_groups
+from ..group_allocation import group_history, group_rules, grouped_config, grouped_preview, normalize_groups, normalize_pairing_mode, plan_groups
 from .allocation_protection import AllocationProtectionMixin
 from .campaigns import CampaignConflictError, CampaignReadOnlyError, _fingerprint
 from ..task_allocation_policy import percentage_weights
@@ -23,7 +23,7 @@ class AllocationPreviewMixin(AllocationProtectionMixin):
 
     def _prepare_task_reallocation(self, conn, campaign_id, assignees, reviewers_per_issue,
                                    overlap_ratio, expected_revision, quota_basis, issued_at, cross_groups=None,
-                                   groups=None):
+                                   groups=None, pairing_mode=None):
         current, split, filters, old_rows = self._task_allocation(conn, campaign_id)
         if not current["editable"]:
             raise CampaignReadOnlyError("只有当前有效任务可以修改分配 / Only active tasks can be edited")
@@ -35,17 +35,22 @@ class AllocationPreviewMixin(AllocationProtectionMixin):
         if not evidence["members"]:
             raise ValueError("任务没有 Case / Task has no Cases")
         if groups is not None:
-            roles = self._group_roles(current)
-            groups = normalize_groups(groups, {u["username"] for u in current["eligible_members"]}, roles=roles)
+            groups = normalize_groups(groups, {u["username"] for u in current["eligible_members"]})
+            mode = normalize_pairing_mode(current.get("pairing_mode") if pairing_mode is None else pairing_mode)
             prior, history = self._group_history(current, old_rows, evidence)
-            rules = group_rules(current["cross_groups"], history) if cross_groups is None else cross_groups
+            rules = cross_groups
+            if rules is None:
+                ids = {group["group_id"] for group in groups}
+                rules = [rule for rule in group_rules(current["cross_groups"], history)
+                         if all(person["group_id"] in ids for person in rule["members"])]
             new_rows, placed, rules = plan_groups(
                 [m["issue_id"] for m in evidence["members"]], groups, rules, seed=int(split["seed"] or 0),
-                old_groups=prior, history=history, old_rows=old_rows, evidence=evidence, basis=quota_basis, roles=roles,
+                old_groups=prior, history=history, old_rows=old_rows, evidence=evidence, basis=quota_basis,
+                pairing_mode=mode,
             )
-            config = grouped_config(groups, placed, rules, quota_basis)
-            preview = grouped_preview(groups, old_rows, new_rows, placed, evidence)
-            preview.update(quota_basis=quota_basis, cross_groups=rules, expires_at=issued_at + 600,
+            config = grouped_config(groups, placed, rules, quota_basis, pairing_mode=mode)
+            preview = grouped_preview(groups, old_rows, new_rows, placed, evidence, old_placed=history)
+            preview.update(quota_basis=quota_basis, cross_groups=rules, pairing_mode=mode, expires_at=issued_at + 600,
                            expected_revision=expected_revision,
                            preview_token=str(issued_at) + ":" + _fingerprint([evidence["snapshot"], config, new_rows, issued_at]))
             return current, split, filters, old_rows, config, new_rows, preview
@@ -157,10 +162,10 @@ class AllocationPreviewMixin(AllocationProtectionMixin):
 
     def preview_campaign_allocation(self, *, campaign_id, assignees, reviewers_per_issue,
                                     overlap_ratio, expected_revision, quota_basis="remaining", cross_groups=None,
-                                    groups=None):
+                                    groups=None, pairing_mode=None):
         campaign_id = self.resolve_version_campaign(str(campaign_id))
         with self._write_lock, self.connect() as conn:
             self._lock_task_work(conn)
             return self._prepare_task_reallocation(
                 conn, campaign_id, assignees, reviewers_per_issue, overlap_ratio,
-                expected_revision, quota_basis, int(time.time()), cross_groups, groups)[-1]
+                expected_revision, quota_basis, int(time.time()), cross_groups, groups, pairing_mode)[-1]

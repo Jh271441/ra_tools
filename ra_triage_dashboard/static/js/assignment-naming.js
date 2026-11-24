@@ -20,10 +20,22 @@ function assignmentBaselineIds(kind) {
 
 function assignmentBaselineLabels(ids) {
   const catalog = state.baselineCatalog || state.config?.baselines || [];
-  return ids.map((id) => {
-    const item = catalog.find((entry) => String(entry.id || "") === String(id));
-    return String(item?.label || id);
-  });
+  const unions = typeof BASELINE_PICKER_UNIONS !== "undefined" ? BASELINE_PICKER_UNIONS : [];
+  const remaining = new Set(ids.map(String));
+  const labels = [];
+  for (const id of ids.map(String)) {
+    if (!remaining.has(id)) continue;
+    const union = unions.find(([, members]) => members.includes(id) && members.every((member) => remaining.has(member)));
+    if (union) {
+      union[1].forEach((member) => remaining.delete(member));
+      labels.push(String(union[0]));
+      continue;
+    }
+    remaining.delete(id);
+    const item = catalog.find((entry) => String(entry.id || "") === id);
+    labels.push(String(item?.label || id));
+  }
+  return labels;
 }
 
 function assignmentNameContext(kind) {

@@ -1177,9 +1177,11 @@ class DatabaseCampaignMixin:
                     ).fetchone()
                     retained_roles = {protection["captured_roles"].get((issue_key, p))
                                       for p in current if p != source}
+                    allocation = _json_load(split["filter_json"], {}).get("task_allocation") or {}
                     if (not recipient or recipient["permission"] not in {"writer", "admin"}
-                            or recipient["role"] not in {"rd", "te"}
-                            or not {"rd", "te"} <= retained_roles | {recipient["role"]}):
+                            or recipient["role"] not in {"rd", "te"}):
+                        raise ValueError("接收人需要正式标注资格 / The recipient needs eligibility for formal review")
+                    if not allocation.get("groups") and not {"rd", "te"} <= retained_roles | {recipient["role"]}:
                         raise ValueError("转派后仍须保留有效的 RD 和 TE 覆盖 / Reassignment must retain eligible RD and TE coverage")
             if operation == "assign":
                 if target in current:

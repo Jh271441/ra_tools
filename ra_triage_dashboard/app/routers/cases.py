@@ -110,9 +110,52 @@ async def suggest_assignment_name(request: Request) -> dict[str, Any]:
     baseline_ids = [value for value in baseline_ids if value]
     if not baseline_ids or len(baseline_ids) > 8:
         raise _detail(400, "请为名称推荐选择 1 到 8 个数据集。")
-    entries = [baseline_registry.by_id(value) for value in baseline_ids]
-    if any(entry is None for entry in entries):
-        raise _detail(400, "名称推荐包含未知数据集。")
+    from ..dataset_partitions import PARTITION_IDS, SOURCE_IDS
+    version_labels: dict[str, str] = {}
+    if any(value.startswith("version-") for value in baseline_ids):
+        for row in await asyncio.to_thread(database.list_version_datasets):
+            fam = str(row.get("release_family") or "").strip()
+            if fam:
+                version_labels["version-" + fam] = str(row.get("name") or (fam[4:] + " 复核集"))
+    partition_labels = {
+        PARTITION_IDS[0]: "0821 · ODD2",
+        PARTITION_IDS[1]: "0821 · 非ODD2",
+    }
+    raw_labels_by_id: dict[str, str] = {}
+    for value in baseline_ids:
+        entry = baseline_registry.by_id(value)
+        if entry is not None:
+            raw_labels_by_id[value] = str(entry.label or entry.id)
+        elif value in partition_labels:
+            raw_labels_by_id[value] = partition_labels[value]
+        elif value in version_labels:
+            raw_labels_by_id[value] = version_labels[value]
+        else:
+            raise _detail(400, "名称推荐包含未知数据集。")
+    logical_unions = (
+        ("0821", SOURCE_IDS),
+        ("1009 2026-10-15", ("1009-2026-10-15", "review-2026-10-15-extra")),
+        ("1009 2026-10-16", ("1009-2026-10-16", "review-2026-10-16-extra")),
+        ("1009 2026-10-18", ("review-2026-10-18", "review-2026-10-18-extra")),
+    )
+    remaining_ids = set(baseline_ids)
+    dataset_labels: list[str] = []
+    for value in baseline_ids:
+        if value not in remaining_ids:
+            continue
+        matched = next(
+            (label for label, members in logical_unions if value in members and set(members).issubset(remaining_ids)),
+            None,
+        )
+        if matched is not None:
+            for _, members in logical_unions:
+                if value in members and set(members).issubset(remaining_ids):
+                    remaining_ids.difference_update(members)
+                    break
+            dataset_labels.append(matched)
+        else:
+            remaining_ids.discard(value)
+            dataset_labels.append(raw_labels_by_id[value])
     try:
         case_count = max(1, min(100_000, int(body.get("case_count") or 1)))
         reviewers_per_issue = max(
@@ -139,7 +182,6 @@ async def suggest_assignment_name(request: Request) -> dict[str, Any]:
         if not run:
             raise _detail(404, "名称推荐对应的 Model Run 不存在。")
         run_name = _as_text(run.get("name") or run_id)
-    dataset_labels = [str(entry.label or entry.id) for entry in entries if entry]
     fallback = rule_based_assignment_name(
         dataset_labels,
         assignment_kind=assignment_kind,
@@ -802,10 +844,12 @@ async def list_case_work_splits(
         model_run_id=_as_text(model_run_id),
         lifecycle=lifecycle, assignee=assignee,
     )
+    query_params = getattr(request, "query_params", None) or {}
+    manual_only = str(query_params.get("manual_only") or "").strip().lower() in {"1", "true", "yes"}
     if group_by_version and lifecycle!='history':
         from ..version_review_tasks import merge_version_task_list, version_tasks
         parents=await asyncio.to_thread(version_tasks,database,assignee=assignee,model_run_id=model_run_id,lifecycle=lifecycle)
-        items=merge_version_task_list(parents,items,version_only=version_only)
+        items=merge_version_task_list(parents,items,version_only=version_only,manual_only=manual_only)
     for item in items:
         item["baseline_ids"] = await asyncio.to_thread(
             task_baseline_ids, item.get("baseline_scopes") or item.get("baseline_ids") or [], item["split_id"])
@@ -1098,6 +1142,7 @@ async def split_case_work(request: Request) -> dict[str, Any]:
                 "work_assignee": filters.get("work_assignee") or "",
                 "work_split_id": filters.get("work_split_id") or "",
                 "overlap_ratio": overlap_ratio,
+                "manual_task": True,
                 "baselines": filters.get("baseline_scopes") and resolve_request_baseline_ids(
                     ",".join(
                         baseline_registry.scope_to_id(s) or s
@@ -1108,9 +1153,25 @@ async def split_case_work(request: Request) -> dict[str, Any]:
             }
         if filters["model_run_id"]:
             workset_scopes = list(filters.get("baseline_scopes") or [])
-            from ..dataset_partitions import PARTITION_IDS
-            selected_ids = resolve_request_baseline_ids(filter_body.get("baselines"), request=request)
-            if len(workset_scopes) != 1 and not set(selected_ids).intersection(PARTITION_IDS):
+            from ..dataset_partitions import PARTITION_IDS, SOURCE_IDS
+            selected_ids = resolve_request_baseline_ids(
+                filter_body.get("baselines") or filter_body.get("baseline_scopes"),
+                request=request,
+            )
+            selected_set = set(selected_ids)
+            single_logical_unions = (
+                frozenset(SOURCE_IDS),
+                frozenset(("1009-2026-10-15", "review-2026-10-15-extra")),
+                frozenset(("1009-2026-10-16", "review-2026-10-16-extra")),
+                frozenset(("review-2026-10-18", "review-2026-10-18-extra")),
+            )
+            single_logical_dataset = (
+                len(workset_scopes) == 1
+                or (bool(selected_set) and selected_set.issubset(PARTITION_IDS))
+                or (len(selected_set) == 1 and next(iter(selected_set)).startswith("version-"))
+                or (bool(selected_set) and any(selected_set.issubset(union) for union in single_logical_unions))
+            )
+            if not single_logical_dataset:
                 raise ValueError("Model Review Campaign 固定绑定一个 Workset；请一次选择一个数据集。 / Select one dataset for a frozen Review Workset.")
             # A frozen Workset may span original source scopes. Derive its
             # exact scopes from the already filtered members, never rewrite
@@ -1119,6 +1180,14 @@ async def split_case_work(request: Request) -> dict[str, Any]:
             actual_scopes = sorted(set(member_scopes.values()))
             if not actual_scopes or not set(actual_scopes).issubset(workset_scopes):
                 raise ValueError("工作集成员超出所选数据集 / Workset members outside selected datasets")
+            workflow_mode = _as_text(body.get("workflow_mode") or "model_review_only")
+            if workflow_mode == "model_review_and_case_label":
+                active_labeling = set(await asyncio.to_thread(database.active_labeling_scopes))
+                if not set(actual_scopes).issubset(active_labeling):
+                    raise ValueError(
+                        "联合复核只能使用已启用 Case 标注的数据集；可切换为「独立判错复核任务」或选择已启用标注的数据集。"
+                        " / Combined review requires datasets with Case labeling enabled; switch to Independent model review or choose an enabled dataset."
+                    )
             if preview is not None and body.get("preview_only") is True:
                 return {"preview": preview}
             by_issue: dict[str, list[dict[str, str]]] = {}

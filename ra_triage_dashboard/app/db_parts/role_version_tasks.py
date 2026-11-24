@@ -98,7 +98,7 @@ class RoleVersionTasksMixin:
                     people = tuple(p['name'] for p in custom['assignees'])
                     if custom.get("groups"):
                         planned = self._append_group_allocation(conn, root, new, seed=policy["seed"],
-                                                               active_ids=current_target_ids, captured=captured_roles)
+                                                               active_ids=current_target_ids)
                     else:
                         self._validate_task_allocation(config, custom["assignees"], custom["reviewers_per_issue"],
                                                        custom["overlap_ratio"], protected=True)

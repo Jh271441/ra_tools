@@ -1,12 +1,77 @@
 """Version task projections over physically consolidated, appendable Campaigns."""
 from collections import defaultdict
+from datetime import datetime, timedelta, timezone
 import json
 
 PREFIX='version:'
+COLLECTION_ACTIVE_WINDOW_DAYS = 2
 
 
-def merge_version_task_list(parents, items, *, version_only=False):
-    """Keep explicit supplemental reviews beside their canonical version task."""
+def _parse_iso_utc(value):
+    text = str(value or '').strip()
+    if not text:
+        return None
+    if text.endswith('Z'):
+        text = text[:-1] + '+00:00'
+    try:
+        dt = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _version_last_target_added_at(db, dataset):
+    batches_fn = getattr(db, 'version_dataset_batches', None)
+    if callable(batches_fn):
+        try:
+            batches = batches_fn(dataset['id']) or []
+        except Exception:
+            batches = []
+        best_dt = None
+        best_raw = ''
+        for batch in batches:
+            try:
+                added = int(batch.get('target_added') or 0)
+            except (TypeError, ValueError):
+                added = 0
+            if added <= 0:
+                continue
+            raw = str(batch.get('created_at') or '').strip()
+            parsed = _parse_iso_utc(raw)
+            if parsed is not None and (best_dt is None or parsed > best_dt):
+                best_dt = parsed
+                best_raw = raw
+            elif not best_raw and raw:
+                best_raw = raw
+        if best_raw:
+            return best_raw
+    return str(dataset.get('updated_at') or dataset.get('created_at') or '')
+
+
+def _is_actively_appending(last_target_added_at, *, now=None, window_days=COLLECTION_ACTIVE_WINDOW_DAYS):
+    parsed = _parse_iso_utc(last_target_added_at)
+    if parsed is None:
+        return True
+    current = now if now is not None else datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    return (current - parsed) <= timedelta(days=window_days)
+
+
+def _task_sort_epoch(item):
+    raw = (
+        item.get('last_target_added_at') or item.get('updated_at') or item.get('created_at')
+        if item.get('appendable')
+        else item.get('created_at')
+    )
+    parsed = _parse_iso_utc(raw)
+    return parsed.timestamp() if parsed is not None else None
+
+
+def merge_version_task_list(parents, items, *, version_only=False, manual_only=False):
+    """Keep explicit supplemental and manually created tasks beside canonical version tasks."""
     parent_ids = {item['split_id'] for item in parents}
     parent_runs = {item['model_run_id'] for item in parents}
     retained = []
@@ -14,10 +79,29 @@ def merge_version_task_list(parents, items, *, version_only=False):
         if item['split_id'] in parent_ids:
             continue
         same_version = item['model_run_id'] in parent_runs
-        supplemental = (item.get('filter_snapshot') or {}).get('supplemental_review') is True
-        if (same_version and supplemental) or (not version_only and not same_version):
-            retained.append(item)
-    return parents + retained
+        snapshot = item.get('filter_snapshot') or {}
+        supplemental = snapshot.get('supplemental_review') is True
+        manual_created = snapshot.get('manual_task') is True
+        if manual_only:
+            if (not same_version) or supplemental or manual_created:
+                retained.append(item)
+        elif version_only:
+            if same_version and supplemental:
+                retained.append(item)
+        else:
+            if (same_version and (supplemental or manual_created)) or (not same_version):
+                retained.append(item)
+    merged = retained if manual_only else (parents + retained)
+    epochs = [_task_sort_epoch(item) for item in merged]
+    if any(epoch is not None for epoch in epochs):
+        merged = [
+            item for _, item in sorted(
+                enumerate(merged),
+                key=lambda pair: (epochs[pair[0]] is not None, epochs[pair[0]] or 0.0, -pair[0]),
+                reverse=True,
+            )
+        ]
+    return merged
 
 
 def supplemental_task_baseline_ids(db, task_id):
@@ -74,7 +158,10 @@ def task(db, dataset, *, assignee='', status='all', query='', page=1, page_size=
     assigned=sum(v[0] for v in counts.values());completed=sum(v[1] for v in counts.values())
     sources=sorted({r.get('binding',{}).get('campaign_id') for r in rows if r.get('binding',{}).get('campaign_id')})
     canonical=campaign['campaign_id'] if campaign else getattr(db,'version_campaign_id',lambda _: '')(dataset['id'])
+    last_added=_version_last_target_added_at(db, dataset)
+    actively_appending=_is_actively_appending(last_added)
     result=dict(split_id=canonical or PREFIX+dataset['id'],physically_merged=bool(canonical),dataset_id=dataset['id'],release_family=dataset['release_family'],kind='version_live',appendable=True,
+                last_target_added_at=last_added,actively_appending=actively_appending,collection_status='appending' if actively_appending else 'collected',
                 campaign_name=dataset['release_family'][4:],created_at=dataset['created_at'],updated_at=dataset['updated_at'],created_by='version-incremental-service',
                 model_run_id=dataset['run_id'],workflow_mode='model_review_and_case_label',mode='single',reviewers_per_issue=1,overlap_ratio=0,
                 lifecycle='active',is_current=True,legacy_read_only=False,total_count=len(rows),assignment_count=assigned,
@@ -90,11 +177,90 @@ def task(db, dataset, *, assignee='', status='all', query='', page=1, page_size=
                       filter_snapshot=dict(version_live=True,version_dataset_id=dataset['id'],role_cohort=campaign['cohort']))
     if canonical:
         with db.connect() as conn:
-            config = conn.execute("SELECT mode,reviewers_per_issue,overlap_ratio,lifecycle,legacy_read_only,config_revision "
-                                  "FROM issue_work_splits WHERE id=?", (canonical,)).fetchone()
+            config = conn.execute("SELECT * FROM issue_work_splits WHERE id=?", (canonical,)).fetchone()
             if config:
-                result.update(dict(config))
-                result["is_current"] = config["lifecycle"] == "active" and not config["legacy_read_only"]
+                raw_cfg = dict(config)
+                for key in ("mode", "reviewers_per_issue", "overlap_ratio", "lifecycle", "legacy_read_only", "config_revision"):
+                    if key in raw_cfg:
+                        result[key] = raw_cfg[key]
+                result["is_current"] = raw_cfg["lifecycle"] == "active" and not raw_cfg["legacy_read_only"]
+                groups = (json.loads(raw_cfg.get("filter_json") or "{}").get("task_allocation") or {}).get("groups") or []
+                if groups:
+                    result["allocation_group_count"] = len(groups)
+                    active_by_issue = defaultdict(list)
+                    for grp in groups:
+                        for iid, owner in (grp.get("assignments") or {}).items():
+                            if owner:
+                                active_by_issue[iid].append(owner)
+                    if active_by_issue:
+                        done_by_person = defaultdict(int)
+                        active_by_person = defaultdict(int)
+                        pending_by_person = defaultdict(int)
+                        active_total = 0
+                        active_completed = 0
+                        for row in rows:
+                            iid = row["issue_id"]
+                            revs = {r["username"]: bool(r["submitted"]) for r in reviewers(row) if r.get("username")}
+                            for owner, sub in revs.items():
+                                done_by_person[owner] += int(sub)
+                            act_owners = active_by_issue.get(iid, [])
+                            if act_owners:
+                                for owner in act_owners:
+                                    active_by_person[owner] += 1
+                                    active_total += 1
+                                    if revs.get(owner):
+                                        active_completed += 1
+                                    else:
+                                        pending_by_person[owner] += 1
+                            elif len(groups) == 1:
+                                active_total += 1
+                                active_completed += int(any(revs.values()))
+                        all_owners = sorted(set(done_by_person) | set(active_by_person))
+                        members = [
+                            dict(
+                                username=k,
+                                assigned_count=active_by_person[k],
+                                completed_count=done_by_person[k],
+                                pending_count=pending_by_person[k],
+                                extra_completed_count=max(0, done_by_person[k] - (active_by_person[k] - pending_by_person[k])),
+                                completion_ratio=(
+                                    1.0 if active_by_person[k] == 0 and done_by_person[k] > 0
+                                    else min(1.0, done_by_person[k] / active_by_person[k]) if active_by_person[k]
+                                    else 0.0
+                                ),
+                            )
+                            for k in all_owners
+                            if active_by_person[k] > 0 or done_by_person[k] > 0
+                        ]
+                        result.update(
+                            members=members,
+                            assignment_count=active_total,
+                            completed_count=active_completed,
+                            pending_count=max(0, active_total - active_completed),
+                            extra_completed_count=max(0, sum(done_by_person.values()) - active_completed),
+                            completion_ratio=active_completed / active_total if active_total else 0,
+                        )
+                try:
+                    conflict_row = conn.execute(
+                        """
+                        SELECT COUNT(*) AS cnt FROM (
+                            SELECT p.issue_id
+                            FROM combined_review_progress p
+                            JOIN label_revisions r ON r.id = p.case_label_revision_id
+                            LEFT JOIN campaign_issue_members m ON m.campaign_id = p.campaign_id AND m.issue_id = p.issue_id
+                            LEFT JOIN issue_label_decisions d ON d.issue_id = p.issue_id AND d.baseline_scope = m.baseline_scope
+                            WHERE p.campaign_id = ? AND p.model_review_submitted = true AND p.case_label_acknowledged = true
+                              AND d.id IS NULL
+                            GROUP BY p.issue_id
+                            HAVING COUNT(DISTINCT r.expected_output) > 1
+                        ) sub
+                        """,
+                        (canonical,),
+                    ).fetchone()
+                    if conflict_row is not None:
+                        result["conflict_count"] = int(conflict_row["cnt"] or 0)
+                except Exception:
+                    pass
     if detail:
         items=[]
         for row in rows:

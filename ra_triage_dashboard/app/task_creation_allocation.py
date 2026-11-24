@@ -4,7 +4,7 @@ import hashlib
 
 from .allocation_coverage import coverage_summary, plan_cross_coverage
 from .db_parts.campaigns import CampaignConflictError, _fingerprint
-from .group_allocation import grouped_config, grouped_preview, normalize_groups, plan_groups
+from .group_allocation import grouped_config, grouped_preview, normalize_groups, normalize_pairing_mode, plan_groups
 from .task_allocation_policy import allocate_percentages, percentage_weights, review_percent, validate_percentages
 from .task_reallocation import reallocate_slots
 from .work_split import distribute_issue_ids
@@ -21,8 +21,9 @@ def prepare_creation_allocation(issue_ids, assignees, *, reviewers, overlap, see
         seed = int.from_bytes(hashlib.sha256(request_id.encode()).digest()[:8], "big") % (2**31)
     if "groups" in body:
         groups = normalize_groups(body["groups"], eligible)
-        rows, placed, rules = plan_groups(issue_ids, groups, body.get("cross_groups", []), seed=seed)
-        config = grouped_config(groups, placed, rules, "remaining")
+        pairing_mode = normalize_pairing_mode(body.get("pairing_mode"))
+        rows, placed, rules = plan_groups(issue_ids, groups, body.get("cross_groups", []), seed=seed, pairing_mode=pairing_mode)
+        config = grouped_config(groups, placed, rules, "remaining", pairing_mode=pairing_mode)
         by_person = defaultdict(list)
         for row in rows:
             by_person[row["assignee"]].append({key: row[key] for key in ("issue_id", "assignment_kind", "ordinal")})
@@ -35,7 +36,7 @@ def prepare_creation_allocation(issue_ids, assignees, *, reviewers, overlap, see
         token = _creation_token(identity, request_id, seed, issue_ids, config, assignments, body)
         preview = grouped_preview(groups, [], rows, placed,
                                   dict(protected=set(), completed=set(), coverage_locked=set()))
-        return seed, assignments, config, {**preview, "preview_token": token, "cross_groups": rules}
+        return seed, assignments, config, {**preview, "preview_token": token, "cross_groups": rules, "pairing_mode": pairing_mode}
     names = [str(p.get("name") or "").strip().lower() if isinstance(p, dict) else "" for p in assignees]
     if len(set(names)) != len(names) or not set(names).issubset(eligible):
         raise ValueError("请选择不同且有标注权限的成员 / Select distinct members with labeling access")

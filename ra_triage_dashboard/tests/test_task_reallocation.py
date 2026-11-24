@@ -499,3 +499,145 @@ def test_minimum_transfer_and_feasible_quota_against_small_exhaustive_oracle():
                         sum(owners[i] != rows[i]["assignee"] for i in range(5)))
             best = min(score(("a",*tail)) for tail in product([p for p in weights if weights[p]],repeat=4))
             assert score(tuple(next(r["assignee"] for r in actual if r["issue_id"] == str(i)) for i in range(5))) == best
+
+
+def test_orthogonal_cross_pairing_and_set_union_round_trip_without_doubling(role_db):
+    from ra_triage_dashboard.app.group_allocation import normalize_groups, plan_groups
+    from ra_triage_dashboard.app.version_review_tasks import version_tasks
+
+    # 1. Pure orthogonal 50/50 x 50/50 pairing + cross-group shared member
+    cases = [f"case-{i:03d}" for i in range(80)]
+    elig = {"a", "b", "c", "d"}
+    g_orth = normalize_groups([
+        dict(group_id="g1", coverage_percent=100, members=[dict(name="a", review_percent=50), dict(name="b", review_percent=50)]),
+        dict(group_id="g2", coverage_percent=100, members=[dict(name="c", review_percent=50), dict(name="d", review_percent=50)]),
+    ], elig)
+    _, placed, _ = plan_groups(cases, g_orth, [], seed=19)
+    assert dict(Counter((o["g1"], o["g2"]) for o in placed.values())) == {
+        ("a", "c"): 20, ("a", "d"): 20, ("b", "c"): 20, ("b", "d"): 20,
+    }
+    g_shared = normalize_groups([
+        dict(group_id="g1", coverage_percent=100, members=[dict(name="a", review_percent=50), dict(name="b", review_percent=50)]),
+        dict(group_id="g2", coverage_percent=100, members=[dict(name="b", review_percent=50), dict(name="c", review_percent=50)]),
+    ], elig)
+    rows_shared, placed_shared, _ = plan_groups(cases, g_shared, [], seed=19)
+    assert dict(Counter(r["assignee"] for r in rows_shared)) == {"a": 40, "b": 80, "c": 40}
+    assert all(o["g1"] != o["g2"] for o in placed_shared.values())
+
+    # 2. Formal task shrink 2 -> 1 (with conflict & set union) and restore 1 -> 2 without 2x inflation
+    db = role_db
+    iid, binding = choose(db)
+    cid = binding["campaign_id"]
+    rd_user, te_user = binding["assignees"]
+    # Submit conflicting labels on iid
+    ctx_rd = db.combined_review_context(issue_id=iid, campaign_id=cid, reviewer=rd_user)
+    db.submit_combined_review(
+        issue_id=iid, campaign_id=cid, model_run_id=binding["run_id"],
+        reviewer=rd_user, reviewer_source="test", reviewer_verified=True,
+        model_review_status="completed", reason="rd view", missing_evidence=[],
+        expected_output="误触发", tags=[], rationale="rd",
+        expected_model_review_storage_id=ctx_rd["model_review_storage_id"],
+        expected_case_revision_id=ctx_rd["case_revision_id"],
+        expected_label_state_fingerprint=ctx_rd["label_state_fingerprint"],
+        idempotency_key="conf-rd",
+    )
+    ctx_te = db.combined_review_context(issue_id=iid, campaign_id=cid, reviewer=te_user)
+    db.submit_combined_review(
+        issue_id=iid, campaign_id=cid, model_run_id=binding["run_id"],
+        reviewer=te_user, reviewer_source="test", reviewer_verified=True,
+        model_review_status="completed", reason="te view", missing_evidence=[],
+        expected_output="正确触发", tags=[], rationale="te",
+        expected_model_review_storage_id=ctx_te["model_review_storage_id"],
+        expected_case_revision_id=ctx_te["case_revision_id"],
+        expected_label_state_fingerprint=ctx_te["label_state_fingerprint"],
+        idempotency_key="conf-te",
+    )
+    current = db.get_campaign_allocation(cid)
+    n_cases = current["member_count"]
+    shrink_body = request(db, cid, basis="total", names=("jasperchen", "liangxianghui"))
+    shrink_body["groups"] = [dict(
+        group_id="rd", coverage_percent=100,
+        members=[dict(name="jasperchen", review_percent=50), dict(name="liangxianghui", review_percent=50)],
+    )]
+    prev_shrink = db.preview_campaign_allocation(**shrink_body)
+    assert prev_shrink["active_slots"] == n_cases
+    assert prev_shrink["convergence"]["conflict_cases"] == 1
+    apply(db, shrink_body, prev_shrink)
+
+    card = next(t for t in version_tasks(db) if t["split_id"] == cid)
+    assert card["allocation_group_count"] == 1
+    assert card["assignment_count"] == n_cases
+    assert card["conflict_count"] == 1
+    splits = db.list_review_work_splits(limit=100)
+    assert next(s for s in splits if s["split_id"] == cid)["allocation_group_count"] == 1
+
+    # Restore 2 groups: quotas must total exactly 2 * n_cases with zero doubling
+    restore_body = request(db, cid, basis="total", names=("jasperchen", "liangxianghui", "yupuxue_v", "zhangxuzhao_v"))
+    restore_body["groups"] = [
+        dict(group_id="g1", coverage_percent=100, members=[
+            dict(name="jasperchen", review_percent=50), dict(name="liangxianghui", review_percent=50)]),
+        dict(group_id="g2", coverage_percent=100, members=[
+            dict(name="yupuxue_v", review_percent=50), dict(name="zhangxuzhao_v", review_percent=50)]),
+    ]
+    prev_rest = db.preview_campaign_allocation(**restore_body)
+    assert prev_rest["active_slots"] == 2 * n_cases
+    apply(db, restore_body, prev_rest)
+    restored_card = next(t for t in version_tasks(db) if t["split_id"] == cid)
+    assert restored_card["allocation_group_count"] == 2
+    assert restored_card["assignment_count"] == 2 * n_cases
+
+
+def test_paired_mode_matches_members_sequentially_and_persists(role_db):
+    from ra_triage_dashboard.app.group_allocation import normalize_groups, plan_groups
+
+    cases = [f"case-{i:03d}" for i in range(40)]
+    elig = {"a", "b", "c", "d"}
+    groups = normalize_groups([
+        dict(group_id="g1", coverage_percent=100, members=[dict(name="a", review_percent=50), dict(name="b", review_percent=50)]),
+        dict(group_id="g2", coverage_percent=100, members=[dict(name="c", review_percent=50), dict(name="d", review_percent=50)]),
+    ], elig)
+    _, orth_placed, _ = plan_groups(cases, groups, [], seed=7, pairing_mode="orthogonal")
+    assert dict(Counter((o["g1"], o["g2"]) for o in orth_placed.values())) == {
+        ("a", "c"): 10, ("a", "d"): 10, ("b", "c"): 10, ("b", "d"): 10,
+    }
+    _, paired_placed, _ = plan_groups(cases, groups, [], seed=7, pairing_mode="paired")
+    assert dict(Counter((o["g1"], o["g2"]) for o in paired_placed.values())) == {
+        ("a", "c"): 20, ("b", "d"): 20,
+    }
+    # Even when Group 2 is already 100% locked/completed, Group 1's movable cases still pair 1-to-1!
+    g2_locked = {(cases[i], "c" if i < 20 else "d") for i in range(40)}
+    _, lookahead_placed, _ = plan_groups(
+        cases, groups, [], seed=7, pairing_mode="paired",
+        evidence=dict(protected=g2_locked, completed=g2_locked, forbidden=set(), frozen_cases=set()),
+    )
+    assert dict(Counter((o["g1"], o["g2"]) for o in lookahead_placed.values())) == {
+        ("a", "c"): 20, ("b", "d"): 20,
+    }
+
+    # Verify DB preview / apply / reread roundtrip for pairing_mode
+    db = role_db
+    _, binding = choose(db)
+    cid = binding["campaign_id"]
+    body = request(db, cid, basis="total", names=("jasperchen", "liangxianghui", "yupuxue_v", "zhangxuzhao_v"))
+    body["groups"] = [
+        dict(group_id="rd", coverage_percent=100, members=[
+            dict(name="jasperchen", review_percent=50), dict(name="liangxianghui", review_percent=50)]),
+        dict(group_id="te", coverage_percent=100, members=[
+            dict(name="yupuxue_v", review_percent=50), dict(name="zhangxuzhao_v", review_percent=50)]),
+    ]
+    body["pairing_mode"] = "paired"
+    prev_paired = db.preview_campaign_allocation(**body)
+    assert prev_paired["pairing_mode"] == "paired"
+    combos_paired = {tuple(item["owners"]): item["count"] for item in prev_paired["group_coverage"]["combinations"]}
+    assert combos_paired.get(("jasperchen", "yupuxue_v"), 0) + combos_paired.get(("liangxianghui", "zhangxuzhao_v"), 0) == prev_paired["group_coverage"]["case_count"]
+    apply(db, body, prev_paired)
+    assert db.get_campaign_allocation(cid)["pairing_mode"] == "paired"
+
+    # Revert to orthogonal cleanly
+    body2 = request(db, cid, basis="total", names=("jasperchen", "liangxianghui", "yupuxue_v", "zhangxuzhao_v"))
+    body2["groups"] = body["groups"]
+    body2["pairing_mode"] = "orthogonal"
+    prev_orth = db.preview_campaign_allocation(**body2)
+    assert prev_orth["pairing_mode"] == "orthogonal"
+    apply(db, body2, prev_orth)
+    assert db.get_campaign_allocation(cid)["pairing_mode"] == "orthogonal"

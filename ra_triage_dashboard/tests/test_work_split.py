@@ -298,6 +298,108 @@ class WorkSplitTest(unittest.TestCase):
                 ).fetchone()["n"])
             self.assertEqual(workset_count_after_multi, workset_count_before_multi)
 
+            # A single logical multi-scope dataset such as 0821 (3 source scopes)
+            # must be allowed to create a frozen multi-scope Review Workset.
+            db.upsert_issues([{"issue_id": "cn3", "gt_label": "正确触发"}], source="test", replace_gt=True, baseline_scope="scope-2")
+            with db.connect() as conn:
+                conn.execute(
+                    "INSERT INTO gt_snapshots (id, baseline_scope, gt_mode, content_sha256, membership_sha256, member_count, valid_label_count, created_at) "
+                    "VALUES (?, ?, 'strict', ?, ?, 1, 1, ?)",
+                    ("gt-work-split-2", "scope-2", hashlib.sha256(b"work-split-gt-2").hexdigest(), "f" * 64, now),
+                )
+                conn.execute(
+                    "INSERT INTO gt_snapshot_items (snapshot_id, baseline_scope, issue_id, ordinal, gt_label) VALUES (?, ?, ?, ?, ?)",
+                    ("gt-work-split-2", "scope-2", "cn3", 1, "正确触发"),
+                )
+                conn.execute(
+                    "INSERT INTO gt_snapshot_active (baseline_scope, snapshot_id, activated_at) VALUES (?, ?, ?)",
+                    ("scope-2", "gt-work-split-2", now),
+                )
+            logical_body = {
+                **body,
+                "filters": {"model_run_id": run["id"], "baselines": "0821,0821-review-extra,0821-trail-extra"},
+                "name": "Logical 0821 Campaign",
+                "idempotency_key": "logical-0821-workset-campaign",
+            }
+            logical_bytes = json.dumps(logical_body).encode("utf-8")
+
+            async def receive_logical():
+                return {"type": "http.request", "body": logical_bytes, "more_body": False}
+
+            logical_request = Request(
+                {
+                    "type": "http",
+                    "method": "POST",
+                    "path": "/api/cases/work-split",
+                    "headers": [(b"content-type", b"application/json"),
+                                (b"idempotency-key", b"logical-0821-workset-campaign")],
+                },
+                receive_logical,
+            )
+            logical_filters = {**filters, "baseline_scopes": ["scope", "scope-2"], "issue_ids": ["cn1", "cn3"]}
+            with patch.object(
+                cases_router, "_admin_identity",
+                return_value=SimpleNamespace(username="admin", source="test", verified=True),
+            ), patch.object(cases_router, "_case_filter_kwargs", return_value=logical_filters), patch.object(
+                cases_router, "_case_issue_ids_with_status_filter", return_value=["cn1", "cn3"]
+            ), patch.object(
+                cases_router, "resolve_request_baseline_ids", return_value=["0821", "0821-review-extra", "0821-trail-extra"]
+            ), patch.object(cases_router, "database", db):
+                logical_response = asyncio.run(cases_router.split_case_work(logical_request))
+            self.assertEqual(logical_response["total"], 2)
+            logical_detail = db.get_campaign(logical_response["split_id"])
+            logical_workset = db.get_review_workset(logical_detail["campaign"]["workset_id"])
+            self.assertEqual(sorted(logical_workset["baseline_scopes"]), ["scope", "scope-2"])
+
+            # Preview for combined review must fail early when any member scope
+            # lacks active Case labeling, while independent model_review_only succeeds.
+            db.set_access_user(username="alice", role="writer", actor="test")
+            db.set_access_user(username="bob", role="writer", actor="test")
+            db.set_labeling_scope_state(
+                baseline_scope="scope",
+                status="active",
+                policy_version="test",
+                source_inventory_sha256="sha-1",
+                updated_by="admin",
+            )
+            for mode, expect_error in (("model_review_and_case_label", True), ("model_review_only", False)):
+                preview_payload = json.dumps({
+                    "filters": {"model_run_id": run["id"], "baselines": "0821,0821-review-extra,0821-trail-extra"},
+                    "groups": [{"group_id": "g1", "coverage_percent": 100, "members": [
+                        {"name": "alice", "review_percent": 50},
+                        {"name": "bob", "review_percent": 50},
+                    ]}],
+                    "workflow_mode": mode,
+                    "preview_only": True,
+                    "request_id": f"preview-{mode}",
+                }).encode("utf-8")
+
+                async def receive_preview(payload=preview_payload):
+                    return {"type": "http.request", "body": payload, "more_body": False}
+
+                preview_req = Request(
+                    {"type": "http", "method": "POST", "path": "/api/cases/work-split",
+                     "headers": [(b"content-type", b"application/json")]},
+                    receive_preview,
+                )
+                with patch.object(
+                    cases_router, "_admin_identity",
+                    return_value=SimpleNamespace(username="admin", source="test", verified=True),
+                ), patch.object(cases_router, "_case_filter_kwargs", return_value=logical_filters), patch.object(
+                    cases_router, "_case_issue_ids_with_status_filter", return_value=["cn1", "cn3"]
+                ), patch.object(
+                    cases_router, "resolve_request_baseline_ids", return_value=["0821", "0821-review-extra", "0821-trail-extra"]
+                ), patch.object(cases_router, "database", db):
+                    if expect_error:
+                        with self.assertRaises(HTTPException) as caught:
+                            asyncio.run(cases_router.split_case_work(preview_req))
+                        self.assertEqual(caught.exception.status_code, 400)
+                        self.assertIn("联合复核只能使用已启用 Case 标注的数据集", str(caught.exception.detail))
+                        self.assertIn(" / ", str(caught.exception.detail))
+                    else:
+                        preview_res = asyncio.run(cases_router.split_case_work(preview_req))
+                        self.assertIn("preview", preview_res)
+
     def test_analysis_work_split_options_only_returns_current_matching_batches(self) -> None:
         request = Request(
             {"type": "http", "method": "GET", "path": "/api/review-work-splits", "headers": []}

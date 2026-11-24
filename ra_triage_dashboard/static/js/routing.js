@@ -238,12 +238,12 @@ function applyUiLanguage(language, { persist = true } = {}) {
   } catch (_) {}
   try {
     if ($("#workSplitPanel") && !$("#workSplitPanel").hidden) {
+      enhanceNativeUiSelect($("#workSplitWorkflowMode"));
+      enhanceNativeUiSelect($("#workSplitComparison"));
+      if (typeof renderWorkSplitScopeCount === "function") renderWorkSplitScopeCount(workSplitTotal(), workSplitFilters());
       displayCreationGroupSetup("workSplit");
       renderAssignmentNameStatus("review");
       renderCreationAllocationPreview("workSplit");
-      const summary = $("#workSplitSummary");
-      const total = workSplitTotal();
-      if (summary) summary.textContent = total ? t("work.summary_n", { n: total }) : t("work.no_issues");
     }
   } catch (_) {}
   try {

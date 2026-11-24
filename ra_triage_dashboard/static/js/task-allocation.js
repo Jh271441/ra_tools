@@ -19,25 +19,6 @@ function allocationFact(label, value, { before, detail } = {}) {
   return `<div><dt>${escapeHtml(label)}</dt><dd>${content}${detail ? `<small>${escapeHtml(detail)}</small>` : ""}</dd></div>`;
 }
 
-function renderTaskAllocationMembers(members) {
-  const config = taskAllocationEditor.config;
-  return `<div class="task-allocation-members">${members.map((p) => {
-    const saved = config?.assignees.find((item) => item.name === p.name);
-    const original = saved?.review_percent == null ? uiText("未记录", "Not recorded") : `${saved.review_percent}%`;
-    const actual = assignmentPercent(p.before, config?.total_slots);
-    return `<article class="task-allocation-member"><strong>${escapeHtml(p.name)}</strong>
-      <dl>${allocationFact(uiText("原分配", "Before"), p.before)}
-        ${allocationFact(uiText("已完成并保留", "Completed, retained"), p.completed)}
-        ${allocationFact(uiText("已保存/保护待办", "Saved/protected pending"), p.saved_pending)}</dl>
-      <details><summary>${escapeHtml(uiText("比例明细", "Share details"))}</summary>
-        <p>${escapeHtml(uiText(`原配置 ${original} · 原实际占比 ${actual}`,
-          `Previous configured share ${original} · Previous actual share ${actual}`))}</p></details>
-      ${saved && config.editable ? `<button type="button" class="button button-quiet"
-        data-allocation-remove-member="${escapeHtml(p.name)}">${escapeHtml(uiText("取消此人的未开始分配", "Remove this person's unstarted assignments"))}</button>` : ""}
-    </article>`;
-  }).join("")}</div>`;
-}
-
 function allocationWorkloadBars(member, scale, number) {
   const retained = member.completed + member.saved_pending;
   const compare = member.total_after != null;
@@ -199,7 +180,10 @@ function taskAllocationDraft() {
 
 function taskAllocationRequestBody(draft, config) {
   return {
-    groups: draft.groups, cross_groups: draft.cross_groups, quota_basis: draft.quota_basis,
+    groups: draft.groups,
+    cross_groups: draft.pairing_mode === "custom" ? draft.cross_groups : [],
+    pairing_mode: draft.pairing_mode === "paired" ? "paired" : "orthogonal",
+    quota_basis: draft.quota_basis,
     expected_revision: config.expected_revision,
   };
 }
@@ -224,7 +208,7 @@ function renderTaskAllocationLivePreview() {
   $("#taskAllocationSave").disabled = editor.busy || !editor.preview || !editor.config.editable;
   const number = new Intl.NumberFormat(i18nLocale(), { maximumFractionDigits: 2 });
   if (renderGroupedAllocationPreview(content, editor.preview || editor.config, editor.plot,
-      { formal: editor.config.role_required, editing: Boolean(editor.preview) })) return;
+      { editing: Boolean(editor.preview) })) return;
   const open = new Set([...content.querySelectorAll("details[open]")].map((detail) => detail.dataset.allocationDetail));
   content.innerHTML = editor.preview ? renderTaskAllocationResults(editor.preview)
     : renderCurrentAllocationChart(editor.config, number);
@@ -296,6 +280,33 @@ async function retryTaskAllocationPreview() {
   }
 }
 
+function taskAllocationGroupCompleted(config) {
+  const completed = {};
+  for (const group of (config?.group_coverage?.groups || [])) {
+    completed[group.group_id] = (group.members || []).reduce((sum, person) => sum + (Number(person.completed) || 0), 0);
+  }
+  return completed;
+}
+
+function taskAllocationSetupOptions(config, basis) {
+  const syncUnit = (unit) => {
+    document.querySelectorAll("#taskAllocationDialog [data-allocation-unit]").forEach((btn) => {
+      const active = btn.dataset.allocationUnit === unit;
+      btn.classList.toggle("is-active", active);
+      btn.setAttribute("aria-pressed", String(active));
+    });
+  };
+  return {
+    users: config.eligible_members,
+    editable: config.editable,
+    caseCount: Number(config.member_count || 0),
+    quotaBasis: basis,
+    groupCompleted: taskAllocationGroupCompleted(config),
+    onUnitChange: syncUnit,
+    change: () => queueTaskAllocationPreview(),
+  };
+}
+
 function renderTaskAllocationEditor(draft) {
   const editor = taskAllocationEditor;
   const dialog = $("#taskAllocationDialog");
@@ -310,7 +321,6 @@ function renderTaskAllocationEditor(draft) {
   draft = draft || (config && $("#taskAllocationGroupSetup") ? taskAllocationDraft() : config);
   const basis = draft?.quota_basis || "remaining";
   const number = new Intl.NumberFormat(i18nLocale());
-  const currentDetailsOpen = dialog.querySelector(".task-allocation-current")?.open;
   const scrollSelectors = [".task-allocation-body", ".task-allocation-settings", "#taskAllocationPreview"];
   const scrollPositions = scrollSelectors.map((selector) => dialog.querySelector(selector)?.scrollTop || 0);
   const opened = [...dialog.querySelectorAll("#taskAllocationLiveContent details[data-allocation-detail][open]")]
@@ -329,17 +339,16 @@ function renderTaskAllocationEditor(draft) {
       <div class="allocation-basis-bar">
         <div class="allocation-section-heading">
           <h3 class="allocation-section-title">${escapeHtml(uiText("分配组", "Allocation groups"))}</h3>
-          <span class="allocation-basis-meta">${config.role_movable_slots
-            ? uiText(
-              `可调 <strong>${escapeHtml(number.format(config.movable_slots))}</strong> 份 · RD ${escapeHtml(number.format(config.role_movable_slots.rd))} / TE ${escapeHtml(number.format(config.role_movable_slots.te))}`,
-              `<strong>${escapeHtml(number.format(config.movable_slots))}</strong> movable · RD ${escapeHtml(number.format(config.role_movable_slots.rd))} / TE ${escapeHtml(number.format(config.role_movable_slots.te))}`,
-            )
-            : uiText(
-              `可调 <strong>${escapeHtml(number.format(config.movable_slots))}</strong> 份`,
-              `<strong>${escapeHtml(number.format(config.movable_slots))}</strong> movable`,
-            )}</span>
+          <span class="allocation-basis-meta">${uiText(
+            `可调 <strong>${escapeHtml(number.format(config.movable_slots))}</strong> 份`,
+            `<strong>${escapeHtml(number.format(config.movable_slots))}</strong> movable`,
+          )}</span>
         </div>
         <div class="allocation-basis-controls">
+          <div class="allocation-unit-switch" role="group" aria-label="${escapeHtml(uiText("数值单位", "Input unit"))}">
+            <button type="button" data-allocation-unit="percent" class="${draft?.inputUnit !== "count" ? "is-active" : ""}" aria-pressed="${draft?.inputUnit !== "count" ? "true" : "false"}" title="${escapeHtml(uiText("按百分比输入", "Enter percentages"))}">%</button>
+            <button type="button" data-allocation-unit="count" class="${draft?.inputUnit === "count" ? "is-active" : ""}" aria-pressed="${draft?.inputUnit === "count" ? "true" : "false"}" ${!(Number(config.member_count || 0) > 0) ? "disabled" : ""} title="${escapeHtml(uiText("按具体条数输入", "Enter exact case counts"))}">${escapeHtml(uiText("条", "Count"))}</button>
+          </div>
           <label class="allocation-basis-inline"><span>${escapeHtml(uiText("分配基数", "Basis"))}</span>
             <select id="taskAllocationBasis">
               <option value="remaining" ${basis === "remaining" ? "selected" : ""}>${escapeHtml(uiText("按剩余量分配", "Distribute remaining work"))}</option>
@@ -348,24 +357,12 @@ function renderTaskAllocationEditor(draft) {
           ${config.editable ? `<button class="button button-secondary allocation-compact-btn" type="button" data-allocation-add-group>+ ${escapeHtml(uiText("添加分配组", "Add group"))}</button>` : ""}
         </div>
       </div>
-      ${basis === "total" ? `<p class="dialog-copy allocation-basis-hint">${escapeHtml(uiText(
-        "已保留工作计入每人的目标配额。", "Retained work counts toward each person's target.",
-      ))}</p>` : ""}
       <div id="taskAllocationGroupSetup" class="allocation-group-setup"></div>
       </div>
       <section id="taskAllocationPreview" class="task-allocation-preview" aria-labelledby="taskAllocationPreviewTitle">
         <h3 id="taskAllocationPreviewTitle" tabindex="-1">${escapeHtml(uiText("实时预览", "Live preview"))}</h3>
         <div id="taskAllocationLiveContent" class="allocation-live-content"></div>
-      </section>
-      <details class="task-allocation-current assignment-preview-groups" ${currentDetailsOpen ? "open" : ""}>
-        <summary><span>${escapeHtml(uiText("已保存的分配明细", "Saved allocation details"))}</span>
-          <span class="allocation-disclosure-meta">${escapeHtml(uiText(
-            `已完成 ${number.format(config.completed_slots)} · 已保护待办 ${number.format(config.saved_pending_slots)}`,
-            `${number.format(config.completed_slots)} completed · ${number.format(config.saved_pending_slots)} protected pending`,
-          ))}</span></summary>
-        ${renderTaskAllocationMembers(config.progress_members || [])}
-        ${config.editable ? `<button class="button button-secondary" type="button" data-allocation-delete>${escapeHtml(uiText("删除整条分配", "Delete entire allocation"))}</button>` : ""}
-      </details></div>` : `<p class="dialog-copy">${escapeHtml(uiText("正在加载分配…", "Loading allocation…"))}</p>`}
+      </section></div>` : `<p class="dialog-copy">${escapeHtml(uiText("正在加载分配…", "Loading allocation…"))}</p>`}
     ${config ? `<div class="allocation-live-status">
       <p id="taskAllocationLiveStatus" class="dialog-copy" role="status"></p>
       <button class="button button-secondary" type="button" id="taskAllocationRetryPreview" data-allocation-retry-preview hidden>
@@ -373,8 +370,11 @@ function renderTaskAllocationEditor(draft) {
     </div>` : ""}
     <p class="task-allocation-error" role="alert" id="taskAllocationError">${escapeHtml(errorText)}</p>
     <footer class="task-allocation-edit-footer">
-      ${config ? `<button class="button button-secondary task-allocation-preview-jump" type="button" data-allocation-view-preview>
-        ${escapeHtml(uiText("查看图表", "View chart"))}</button>` : ""}
+      <div class="task-allocation-footer-start">
+        ${config ? `<button class="button button-secondary task-allocation-preview-jump" type="button" data-allocation-view-preview>
+          ${escapeHtml(uiText("查看图表", "View chart"))}</button>` : ""}
+        ${config?.editable ? `<button class="button button-quiet task-allocation-danger-btn" type="button" data-allocation-delete>${escapeHtml(uiText("删除整条分配…", "Delete allocation…"))}</button>` : ""}
+      </div>
       <div class="dialog-actions">
         <button class="button button-secondary" type="button" data-allocation-reload ${!config && editor.error ? "" : "hidden"}>${escapeHtml(uiText("重新加载分配", "Reload allocation"))}</button>
         <button class="button button-secondary" type="button" data-allocation-close>${escapeHtml(uiText("取消", "Cancel"))}</button>
@@ -385,10 +385,14 @@ function renderTaskAllocationEditor(draft) {
   </form>`;
   if (config) {
     enhanceNativeUiSelect($("#taskAllocationBasis"));
+    const initPairingMode = draft === config
+      ? (config.group_rules?.length ? "custom" : (config.pairing_mode === "paired" ? "paired" : "orthogonal"))
+      : draft.pairing_mode;
     renderAllocationGroupSetup($("#taskAllocationGroupSetup"), {
-      ...draft, cross_groups: draft === config ? config.group_rules : draft.cross_groups,
-    }, { users: config.eligible_members, formal: config.role_required, editable: config.editable,
-      change: () => queueTaskAllocationPreview() });
+      ...draft,
+      cross_groups: draft === config ? config.group_rules : draft.cross_groups,
+      pairing_mode: initPairingMode,
+    }, taskAllocationSetupOptions(config, basis));
     queueTaskAllocationPreview();
     renderTaskAllocationLivePreview();
     for (const detail of dialog.querySelectorAll("#taskAllocationLiveContent details[data-allocation-detail]")) {
@@ -423,8 +427,8 @@ function renderTaskAllocationRemoval(draft = taskAllocationDraft()) {
       ${whole ? `<p class="dialog-copy">${escapeHtml(uiText("任务及成果保留在历史记录中，后续提交将被停止。", "The task and its evidence remain in history; further submissions will stop."))}</p>
         ${config.appendable ? `<p class="dialog-copy">${escapeHtml(uiText("该任务为持续追加任务，取消后也将停止向其追加新 Case。", "This is an appendable task. Cancellation also stops new Cases from being appended."))}</p>` : ""}`
         : `<p class="dialog-copy">${escapeHtml(uiText(
-          "使用已保存的成员比例，在剩余成员中归一为 100%。原交叉人数和 RD/TE 要求保持；人数不足时，请返回修改分配并先补充接收人。",
-          "Saved shares are normalized to 100% among the remaining members. Cross-review counts and RD/TE requirements stay fixed. If recipients are insufficient, go back and add a replacement first."))}</p>
+          "使用已保存的成员比例，在剩余成员中归一为 100%。原分组数与交叉要求保持；人数不足时，请返回修改分配并先补充接收人。",
+          "Saved shares are normalized to 100% among the remaining members. Group counts and cross-review requirements stay fixed. If recipients are insufficient, go back and add a replacement first."))}</p>
         <div class="task-allocation-fields"><label><span>${escapeHtml(uiText("分配基数", "Allocation basis"))}</span>
           <select id="taskAllocationBasis">
             <option value="remaining" ${draft.quota_basis !== "total" ? "selected" : ""}>${escapeHtml(uiText("按剩余量分配", "Distribute remaining work"))}</option>
@@ -451,13 +455,7 @@ function returnToTaskAllocationEditor() {
   Object.assign(editor, { removal: "", error: "", previousDraft: null });
   invalidateTaskAllocationPreview();
   renderTaskAllocationEditor(draft);
-  if (whole) {
-    const current = $("#taskAllocationDialog .task-allocation-current");
-    if (current) {
-      current.open = true;
-      current.querySelector("[data-allocation-delete]")?.focus();
-    }
-  }
+  if (whole) $("#taskAllocationDialog [data-allocation-delete]")?.focus();
 }
 
 async function openTaskAllocationEditor(campaignId, opener = null, removal = "") {
@@ -469,6 +467,13 @@ async function openTaskAllocationEditor(campaignId, opener = null, removal = "")
     dialog.setAttribute("aria-labelledby", "taskAllocationTitle");
     document.body.append(dialog);
     dialog.addEventListener("cancel", (event) => {
+      const openInfo = dialog.querySelector("[data-ui-info].is-open");
+      if (openInfo) {
+        event.preventDefault();
+        if (typeof closeUiInfoPopovers === "function") closeUiInfoPopovers(document);
+        openInfo.querySelector("[data-ui-info-trigger], button")?.focus({ preventScroll: true });
+        return;
+      }
       if (taskAllocationEditor.busy) event.preventDefault();
       else if (taskAllocationEditor.removal === "all") {
         event.preventDefault();
@@ -491,10 +496,25 @@ async function openTaskAllocationEditor(campaignId, opener = null, removal = "")
         renderTaskAllocationEditor(draft);
         return;
       }
-      if (event.target.id === "taskAllocationBasis") queueTaskAllocationPreview();
+      if (event.target.id === "taskAllocationBasis") {
+        const setupRoot = $("#taskAllocationGroupSetup");
+        const config = taskAllocationEditor.config;
+        if (setupRoot && config && setupRoot.dataset.inputUnit === "count") {
+          const nextDraft = readAllocationGroupSetup(setupRoot);
+          renderAllocationGroupSetup(setupRoot, nextDraft, taskAllocationSetupOptions(config, event.target.value));
+        }
+        queueTaskAllocationPreview();
+      }
     });
     dialog.addEventListener("click", (event) => {
       if (taskAllocationEditor.busy) return;
+      const unitBtn = event.target.closest("[data-allocation-unit]");
+      if (unitBtn && !unitBtn.disabled) {
+        const target = unitBtn.dataset.allocationUnit;
+        dialog.querySelector('#taskAllocationGroupSetup [data-setup-action="input-unit"][data-input-unit="' + CSS.escape(target) + '"]')?.click();
+        unitBtn.focus({ preventScroll: true });
+        return;
+      }
       if (event.target.closest("[data-allocation-close]")) dialog.close();
       if (event.target.closest("[data-allocation-reload]")) {
         const removedMember = taskAllocationEditor.removeAssignee;

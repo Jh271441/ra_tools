@@ -16,16 +16,22 @@ function reviewAssignmentLifecycleLabel(item) {
   };
   const text = labels[item?.lifecycle];
   return text ? uiText(...text) : item?.is_current
-    ? uiText("当前分配", "Current") : uiText("已被后续分配覆盖", "Superseded");
+    ? uiText("手动分配", "Manual") : uiText("已被后续分配覆盖", "Superseded");
 }
 
 function renderReviewAssignmentListFilters() {
   const store = state.reviewAssignments;
   const filter = $("#reviewAssignmentLifecycleFilter");
   if (filter) {
-    filter.innerHTML = [["versions", "版本任务", "Version tasks"], ["current", "全部当前任务", "All current tasks"], ["history", "历史任务", "Historical tasks"], ["all", "全部任务", "All tasks"]]
+    filter.innerHTML = [
+      ["current", "全部进行中", "All active"],
+      ["versions", "自动任务", "Auto tasks"],
+      ["manual", "手动任务", "Manual tasks"],
+      ["history", "历史任务", "Historical tasks"],
+      ["all", "全部任务", "All tasks"],
+    ]
       .map(([value, zh, en]) => `<option value="${value}">${escapeHtml(uiText(zh, en))}</option>`).join("");
-    filter.value = store.lifecycle || "versions";
+    filter.value = store.lifecycle || "current";
     enhanceNativeUiSelect(filter);
   }
   const mine = $("#reviewAssignmentMyTasks");
@@ -59,6 +65,13 @@ function reviewAssignmentRunLabel(runId) {
 }
 
 function reviewAssignmentModeLabel(item) {
+  const groups = Number(item?.allocation_group_count || 0);
+  if (groups) {
+    const label = groups === 1
+      ? uiText("单组分配", "Single review group")
+      : uiText(groups + " 个分配组", groups + " allocation groups");
+    return item.role_cohort === "low" ? uiText("不含抽样 · ", "Excludes sampling · ") + label : label;
+  }
   if(item?.role_cohort==='sampling')return uiText('RD＋TE 交叉标注','RD + TE cross-review');
   if(item?.role_cohort==='low')return Number(item.reviewers_per_issue || 1) > 1
     ? uiText('不含抽样 · RD＋TE 交叉标注','Excludes sampling · RD + TE cross-review')
@@ -199,11 +212,18 @@ function renderReviewAssignmentMetrics(items) {
 function reviewAssignmentMemberMarkup(member) {
   const assigned = Number(member.assigned_count || 0);
   const completed = Number(member.completed_count || 0);
-  const percent = reviewAssignmentPercent(member.completion_ratio);
+  const pending = Number(member.pending_count || 0);
+  const extra = Number(member.extra_completed_count || 0);
+  const percent = assigned === 0 && completed > 0 ? 100 : reviewAssignmentPercent(member.completion_ratio);
+  const note = assigned === 0 && completed > 0
+    ? uiText(`0 条待处理 · 历史已标 ${completed}`, `0 pending · ${completed} prior completed`)
+    : extra > 0
+      ? uiText(`${pending} 条待处理 · 含相交 ${extra} 条`, `${pending} pending · +${extra} overlap`)
+      : uiText(`${pending} 条待处理`, `${pending} pending`);
   return `<div class="review-assignment-member">
     <div class="review-assignment-member-heading"><strong>${escapeHtml(member.username || "—")}</strong><span>${completed} / ${assigned}</span></div>
     <div class="review-assignment-progress-track" aria-label="${escapeHtml(`${completed} / ${assigned}`)}"><span style="width:${percent}%"></span></div>
-    <small>${escapeHtml(uiText(`${member.pending_count || 0} 条待处理`, `${member.pending_count || 0} pending`))}</small>
+    <small>${escapeHtml(note)}</small>
   </div>`;
 }
 
@@ -228,7 +248,7 @@ function renderReviewAssignmentBatch(item, options = {}) {
   item.is_current = reviewAssignmentCanReview(item);
   const percent = reviewAssignmentPercent(item.completion_ratio);
   const status = reviewAssignmentLifecycleLabel(item);
-  const statusClass = item.is_current ? "is-current" : "is-superseded";
+  const statusClass = item.is_current ? "is-manual" : "is-superseded";
   const filterLabel = reviewAssignmentFilterLabel(item);
   const changeNote = Number(item.change_count || 0)
     ? uiText(`已转派 ${item.change_count} 次`, `${item.change_count} transfers`)
@@ -262,8 +282,18 @@ function renderReviewAssignmentList() {
     if (status) status.textContent = "";
     return;
   }
+  if (!store.splits.length && store.lifecycle === "manual") {
+    root.innerHTML = `<div class="review-assignment-empty"><strong>${escapeHtml(uiText("暂无进行中的手动任务", "No active manual tasks"))}</strong><span>${escapeHtml(uiText("点击上方“+ 新建分配”或从图库筛选后创建任务。", 'Click "+ New allocation" above or filter cases in the gallery.'))}</span></div>`;
+    if (status) status.textContent = "";
+    return;
+  }
+  if (!store.splits.length && store.lifecycle === "versions") {
+    root.innerHTML = `<div class="review-assignment-empty"><strong>${escapeHtml(uiText("暂无进行中的自动任务", "No active auto tasks"))}</strong><span>${escapeHtml(uiText("可切换至“手动任务”或“全部任务”查看其他分配。", 'Switch to "Manual tasks" or "All tasks" to view other allocations.'))}</span></div>`;
+    if (status) status.textContent = "";
+    return;
+  }
   if (!store.splits.length) {
-    root.innerHTML = `<div class="review-assignment-empty"><strong>${escapeHtml(uiText("还没有生成过均分任务", "No split assignments yet"))}</strong><span>${escapeHtml(uiText("先在判错复核图库筛选，再点击“均分任务”配置人员。", "Choose a Model Run and Issue scope above, then assign reviewers."))}</span></div>`;
+    root.innerHTML = `<div class="review-assignment-empty"><strong>${escapeHtml(uiText("暂无进行中的任务分配", "No active assignments yet"))}</strong><span>${escapeHtml(uiText("点击上方“+ 新建分配”或从图库筛选后创建任务。", 'Click "+ New allocation" above or filter cases in the gallery.'))}</span></div>`;
     if (status) status.textContent = "";
     return;
   }
@@ -447,6 +477,8 @@ function renderReviewAssignmentPermissions() {
   const heading = $("#reviewAssignmentsHeading");
   if (heading) heading.textContent = isAdmin
     ? uiText("分配配置", "Assignment setup") : uiText("任务分配", "Review assignments");
+  const newBtn = $("#reviewAssignmentsNewTask");
+  if (newBtn) newBtn.hidden = !isAdmin;
   if (!isAdmin) {
     const panel = $("#workSplitPanel");
     if (panel) panel.hidden = true;
@@ -560,7 +592,7 @@ async function loadReviewAssignmentDetail(
 async function loadReviewAssignments({ force = false, splitId = "", reloadDetail = true } = {}) {
   const store = state.reviewAssignments;
   const route = new URLSearchParams(window.location.search);
-  store.lifecycle = ["versions", "current", "history", "all"].includes(route.get("lifecycle")) ? route.get("lifecycle") : "versions";
+  store.lifecycle = ["versions", "manual", "current", "history", "all"].includes(route.get("lifecycle")) ? route.get("lifecycle") : "current";
   store.assignedToMe = route.get("assigned_to_me") === "true";
   if (splitId && route.get("split") === splitId) restoreReviewAssignmentDetailRoute(route);
   const listKey = `${store.lifecycle}:${store.assignedToMe}`;
@@ -578,7 +610,14 @@ async function loadReviewAssignments({ force = false, splitId = "", reloadDetail
   ]);
   try {
     if (!cached) {
-      const params = new URLSearchParams({ limit: "100", lifecycle: store.lifecycle==="versions"?"current":store.lifecycle,group_by_version:"true",version_only:String(store.lifecycle==="versions") });
+      const apiLifecycle = (store.lifecycle === "versions" || store.lifecycle === "manual") ? "current" : store.lifecycle;
+      const params = new URLSearchParams({
+        limit: "100",
+        lifecycle: apiLifecycle,
+        group_by_version: "true",
+        version_only: String(store.lifecycle === "versions"),
+        manual_only: String(store.lifecycle === "manual"),
+      });
       if (store.assignedToMe) params.set("assigned_to_me", "true");
       const result = await api(`/api/cases/work-splits?${params}`);
       if (requestSeq !== store.requestSeq) return;
@@ -669,9 +708,26 @@ function bindReviewAssignmentsPage() {
   $("#reviewAssignmentsRefresh")?.addEventListener("click", () => {
     loadReviewAssignments({ force: true, splitId: state.reviewAssignments.selectedSplitId }).catch((error) => showToast(error.message, true));
   });
+  $("#reviewAssignmentsNewTask")?.addEventListener("click", () => {
+    if (typeof openDirectWorkSplitCreator === "function") {
+      openDirectWorkSplitCreator().catch((error) => showToast(error.message, true));
+    }
+  });
   $("#reviewAssignmentsGoReview")?.addEventListener("click", () => {
-    if (workSplitDraft?.filters) window.location.assign($("#workSplitReturnSource")?.href || reviewAssignmentSourceHref(workSplitDraft.filters));
-    else navigatePage("review");
+    if (workSplitDraft?.filters?.model_run_id) {
+      window.location.assign($("#workSplitReturnSource")?.href || reviewAssignmentSourceHref(workSplitDraft.filters));
+      return;
+    }
+    const preferredRun = state.selectedRunId
+      || (state.modelRuns || []).find((run) => Number(run.baseline_prediction_count || 0) > 0)?.id
+      || state.modelRuns?.[0]?.id
+      || "";
+    if (preferredRun) {
+      state.selectedRunId = preferredRun;
+      if ($("#modelRunFilter")) $("#modelRunFilter").value = preferredRun;
+      state.reviewQueueStale = true;
+    }
+    navigatePage("review", preferredRun ? { runId: preferredRun } : {});
   });
   $("#reviewAssignmentDetailClose")?.addEventListener("click", () => {
     const store = state.reviewAssignments;
@@ -749,12 +805,22 @@ function bindReviewAssignmentsPage() {
 function renderVersionAssignmentBatch(item, options = {}){
   const percent=reviewAssignmentPercent(item.completion_ratio);
   const active=reviewAssignmentCanReview(item);
+  const appending=active && item.actively_appending !== false;
+  const statusClass=active ? (appending ? "is-current" : "is-collected") : "is-superseded";
+  const statusLabel=active
+    ? (appending ? uiText("自动 · 持续追加", "Auto · Appending") : uiText("自动 · 收集完成", "Auto · Collected"))
+    : reviewAssignmentLifecycleLabel(item);
+  const timeStamp=item.last_target_added_at || item.updated_at;
+  const timePrefix=item.last_target_added_at ? uiText("最近新增", "Last added") : uiText("最近更新", "Updated");
   const taskLinks=active ? reviewAssignmentActionLinks(item)
     : `<a class="button button-quiet" href="${escapeHtml(pageUrl("campaigns", { campaignId: item.split_id, lifecycle: "history" }))}">${escapeHtml(uiText("查看审计与复核", "View audit and reviews"))}</a>`;
-  const description=item.role_cohort || Number(item.reviewers_per_issue || 1) > 1
+  const description=item.role_cohort || Number(item.reviewers_per_issue || 1) > 1 || Number(item.allocation_group_count || 0) > 0
     ? reviewAssignmentModeLabel(item)
     : uiText('低置信＋抽样 · 单人负责 · 无交叉','Low confidence + sample · Single owner · No overlap');
-  return `<article class="review-assignment-batch" data-review-assignment-batch="${escapeHtml(item.split_id)}"><header class="review-assignment-batch-header"><div><strong class="review-assignment-batch-title">${escapeHtml(roleVersionTaskName(item))}</strong><span class="review-assignment-batch-meta">${escapeHtml(description)}</span><span class="review-assignment-batch-meta">${uiText('最近更新','Updated')} ${escapeHtml(versionDatasetTime(item.updated_at)+' CST')}</span></div><span class="review-assignment-status ${active ? "is-current" : "is-superseded"}">${escapeHtml(active ? uiText('持续追加','Appendable') : reviewAssignmentLifecycleLabel(item))}</span></header><div class="review-assignment-progress"><div class="review-assignment-progress-heading"><span>${uiText('联合复核进度','Combined review progress')}</span><strong>${item.completed_count} / ${item.assignment_count} · ${percent}%</strong></div><div class="review-assignment-progress-track"><span style="width:${percent}%"></span></div></div><div class="review-assignment-member-grid">${item.members.map(reviewAssignmentMemberMarkup).join('')}</div><footer class="review-assignment-batch-footer"><span>${item.total_count} ${uiText('个案例','cases')}</span><div class="review-assignment-batch-actions">${taskLinks}${reviewAssignmentDetailAction(item, options)}${reviewAssignmentShareAction(item)}</div></footer></article>`;
+  const conflictBadge = Number(item.conflict_count || 0) > 0
+    ? `<span class="review-assignment-conflict-pill">${escapeHtml(uiText(`${item.conflict_count} 条相交冲突待裁决`, `${item.conflict_count} overlap conflicts`))}</span>`
+    : '';
+  return `<article class="review-assignment-batch" data-review-assignment-batch="${escapeHtml(item.split_id)}"><header class="review-assignment-batch-header"><div><strong class="review-assignment-batch-title">${escapeHtml(roleVersionTaskName(item))}</strong><span class="review-assignment-batch-meta">${escapeHtml(description)}</span><span class="review-assignment-batch-meta">${timePrefix} ${escapeHtml(versionDatasetTime(timeStamp)+' CST')}</span></div><span class="review-assignment-status ${statusClass}">${escapeHtml(statusLabel)}</span></header><div class="review-assignment-progress"><div class="review-assignment-progress-heading"><span class="review-assignment-progress-label">${uiText('联合复核进度','Combined review progress')}${conflictBadge}</span><strong>${item.completed_count} / ${item.assignment_count} · ${percent}%</strong></div><div class="review-assignment-progress-track"><span style="width:${percent}%"></span></div></div><div class="review-assignment-member-grid">${item.members.map(reviewAssignmentMemberMarkup).join('')}</div><footer class="review-assignment-batch-footer"><span>${item.total_count} ${uiText('个案例','cases')}</span><div class="review-assignment-batch-actions">${taskLinks}${reviewAssignmentDetailAction(item, options)}${reviewAssignmentShareAction(item)}</div></footer></article>`;
 }
 function renderVersionAssignmentHistory(detail){
   const el=$('#reviewAssignmentAppendHistory');if(!el)return;el.hidden=!detail.appendable;

@@ -349,6 +349,7 @@ async function setBaselineScopes(
     if (!isPageContextCurrent(pageContext)) return;
     if (state.activePage === "rd-results") { await loadRdResults(); return; }
     if (state.activePage === "review-assignments") {
+      if (typeof refreshWorkSplitCreatorForDataset === "function") await refreshWorkSplitCreatorForDataset();
       return;
     }
     if (state.activePage === "labeling-summary") {

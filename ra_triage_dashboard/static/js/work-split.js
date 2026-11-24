@@ -491,6 +491,154 @@ function updateWorkSplitAdminVisibility() {
   }
 }
 
+let workSplitScopeSeq = 0;
+
+function workSplitHasExtraGalleryFilters(filters = {}) {
+  const keys = ["search", "issue_ids", "gt_label", "model_label", "annotation_author",
+    "review_status", "label_state", "gt_relation", "issue_tags", "target_group",
+    "work_assignee", "work_split_id", "missing_evidence"];
+  return keys.some((key) => {
+    const val = filters[key];
+    return Array.isArray(val) ? val.length > 0 : Boolean(String(val || "").trim());
+  }) || Boolean(filters.comment_state && filters.comment_state !== "all")
+    || Boolean(filters.exclusion && filters.exclusion !== "all");
+}
+
+function renderWorkSplitScopeCount(total, filters = {}) {
+  const node = $("#workSplitScopeCount");
+  if (!node) return;
+  if (!filters?.model_run_id) {
+    node.textContent = uiText("请先选择 Run", "Select a Run");
+    return;
+  }
+  const n = new Intl.NumberFormat(i18nLocale()).format(Math.max(0, Number(total) || 0));
+  const extra = workSplitHasExtraGalleryFilters(filters);
+  node.textContent = extra
+    ? uiText(`图库筛选 · ${n} 个 Case`, `Gallery · ${n} cases`)
+    : uiText(`${n} 个 Case`, `${n} cases`);
+}
+
+async function populateWorkSplitRunSelect(preferredRunId = "") {
+  const runSelect = $("#workSplitModelRun");
+  let data = null;
+  try {
+    data = await api(withBaselineQuery("/api/model-runs"));
+  } catch (_) {
+    data = { items: state.modelRuns || [], default_model_run_id: "" };
+  }
+  const runs = Array.isArray(data?.items) ? data.items : [];
+  if (runs.length) state.modelRuns = runs;
+  const matching = runs.filter((run) => Number(run.baseline_prediction_count || 0) > 0);
+  const ordered = matching.length
+    ? [...matching, ...runs.filter((run) => !matching.includes(run))]
+    : runs;
+  let chosen = "";
+  if (preferredRunId && ordered.some((r) => r.id === preferredRunId)) chosen = preferredRunId;
+  else if (data?.default_model_run_id && matching.some((r) => r.id === data.default_model_run_id)) chosen = data.default_model_run_id;
+  else if (state.selectedRunId && matching.some((r) => r.id === state.selectedRunId)) chosen = state.selectedRunId;
+  else chosen = matching[0]?.id || ordered[0]?.id || "";
+  if (runSelect) {
+    runSelect.disabled = !ordered.length;
+    if (!ordered.length) {
+      runSelect.innerHTML = `<option value="">${escapeHtml(uiText("当前数据集暂无 Model Run", "No Model Run in this dataset"))}</option>`;
+      runSelect.value = "";
+    } else {
+      runSelect.innerHTML = ordered.map((run) => {
+        const count = Number(run.baseline_prediction_count || 0);
+        const label = `${run.name} · ${count} ${uiText("例", "cases")}`;
+        return `<option value="${escapeHtml(run.id)}">${escapeHtml(label)}</option>`;
+      }).join("");
+      runSelect.value = chosen;
+    }
+    enhanceNativeUiSelect(runSelect);
+  }
+  return { runId: chosen, runs: ordered };
+}
+
+async function refreshWorkSplitScope() {
+  if (!$("#workSplitPanel") || $("#workSplitPanel").hidden) return;
+  const runId = $("#workSplitModelRun")?.value || "";
+  const comparison = $("#workSplitComparison")?.value || "all";
+  const baselines = selectedBaselineQueryValue();
+  const prevFilters = workSplitDraft?.filters || {};
+  const keepGallery = Boolean(workSplitDraft?.fromReview && prevFilters.baselines === baselines);
+  const nextFilters = keepGallery
+    ? { ...prevFilters, model_run_id: runId, baselines, comparison, comparison_status: comparison }
+    : { model_run_id: runId, baselines, comparison, comparison_status: comparison, comment_state: "all", exclusion: "all" };
+  workSplitDraft = {
+    ...(workSplitDraft || {}),
+    filters: nextFilters,
+    dirty: false,
+    submitted: false,
+    fromReview: keepGallery,
+  };
+  if (!runId) {
+    workSplitDraft.total = 0;
+    renderWorkSplitScopeCount(0, nextFilters);
+    displayCreationGroupSetup("workSplit");
+    return;
+  }
+  const seq = ++workSplitScopeSeq;
+  const scopeNode = $("#workSplitScopeCount");
+  if (scopeNode) scopeNode.textContent = uiText("统计中…", "Counting…");
+  try {
+    const params = new URLSearchParams({ ...nextFilters, page: "1", page_size: "1", include_thumbnail: "false" });
+    const result = await api(`/api/cases?${params}`);
+    if (seq !== workSplitScopeSeq || $("#workSplitPanel")?.hidden) return;
+    workSplitDraft.total = Number(result.total || 0);
+    renderWorkSplitScopeCount(workSplitDraft.total, nextFilters);
+    saveReviewAllocationDraft(workSplitDraft);
+    displayCreationGroupSetup("workSplit");
+    updateAssignmentNameSuggestion("review");
+    queueCreationGroupPreview("workSplit", true);
+  } catch (error) {
+    if (seq !== workSplitScopeSeq) return;
+    workSplitDraft.total = 0;
+    renderWorkSplitScopeCount(0, nextFilters);
+    showToast(error.message, true);
+  }
+}
+
+async function openDirectWorkSplitCreator() {
+  if (!state.session?.is_admin) {
+    showToast(t("work.split_admin_only"), true);
+    return;
+  }
+  const baselines = selectedBaselineQueryValue();
+  const { runId } = await populateWorkSplitRunSelect(workSplitDraft?.filters?.model_run_id || state.selectedRunId || "");
+  if (!runId) {
+    showToast(uiText("当前数据集暂无 Model Run，请先切换数据集或上传模型预测 Run。", "No Model Run is available for the selected dataset."), true);
+    return;
+  }
+  const draft = {
+    filters: { model_run_id: runId, baselines, comparison: "all", comparison_status: "all", comment_state: "all", exclusion: "all" },
+    total: 0,
+    fromReview: false,
+    dirty: false,
+    submitted: false,
+  };
+  await openWorkSplitDialog(draft);
+  await refreshWorkSplitScope();
+}
+
+async function refreshWorkSplitCreatorForDataset() {
+  if (!$("#workSplitPanel") || $("#workSplitPanel").hidden || !state.session?.is_admin) return;
+  const { runId } = await populateWorkSplitRunSelect("");
+  if (workSplitDraft) workSplitDraft.fromReview = false;
+  if (!runId) {
+    workSplitDraft = {
+      ...(workSplitDraft || {}),
+      filters: { model_run_id: "", baselines: selectedBaselineQueryValue(), comparison: "all", comparison_status: "all" },
+      total: 0,
+      fromReview: false,
+    };
+    renderWorkSplitScopeCount(0, workSplitDraft.filters);
+    displayCreationGroupSetup("workSplit");
+    return;
+  }
+  await refreshWorkSplitScope();
+}
+
 async function openWorkSplitDialog(draft = null) {
   workSplitDraft = draft ? { ...draft, filters: { ...draft.filters }, total: draft.total } : null;
   if (!state.session?.is_admin) {
@@ -501,14 +649,7 @@ async function openWorkSplitDialog(draft = null) {
     showToast("请先选择 Model Run；若只做 Case 标签，请前往 问题标注 > 实验分配。", true);
     return;
   }
-  const total = workSplitTotal();
-  const summary = $("#workSplitSummary");
   const results = $("#workSplitResults");
-  if (summary) {
-    summary.textContent = total
-      ? t("work.summary_n", { n: total })
-      : t("work.no_issues");
-  }
   if (results) {
     results.classList.add("hidden");
     results.innerHTML = "";
@@ -523,10 +664,17 @@ async function openWorkSplitDialog(draft = null) {
   }
   if ($("#workSplitWorkflowMode")) $("#workSplitWorkflowMode").value = "model_review_and_case_label";
   enhanceNativeUiSelect($("#workSplitWorkflowMode"));
-  resetAssignmentNameSuggestion("review");
+  const comp = workSplitFilters().comparison || workSplitFilters().comparison_status || "all";
+  if ($("#workSplitComparison")) {
+    $("#workSplitComparison").value = ["all", "mismatch", "match"].includes(comp) ? comp : "all";
+    enhanceNativeUiSelect($("#workSplitComparison"));
+  }
+  await populateWorkSplitRunSelect(workSplitFilters().model_run_id);
+  renderWorkSplitScopeCount(workSplitTotal(), workSplitFilters());
   const panel = $("#workSplitPanel");
   panel.hidden = false;
   displayCreationGroupSetup("workSplit", workSplitDraft?.groupSetup || { groups: [newAllocationGroup()] });
+  resetAssignmentNameSuggestion("review");
   const link = $("#workSplitReturnSource");
   if (link) {
     const fallback = reviewAssignmentSourceHref(workSplitFilters());
@@ -619,6 +767,10 @@ async function generateWorkSplit() {
     saveReviewAllocationDraft(null);
     if (workSplitDraft) workSplitDraft.submitted = true;
     if (state.activePage === "review-assignments") {
+      if (["versions", "history"].includes(state.reviewAssignments?.lifecycle) && typeof reviewAssignmentDetailUrl === "function") {
+        state.reviewAssignments.lifecycle = "current";
+        window.history.replaceState({ page: "review-assignments" }, "", reviewAssignmentDetailUrl());
+      }
       await loadReviewAssignments({ force: true });
     }
     showToast(t("work.saved"));
@@ -681,6 +833,12 @@ function copyWorkSplitAssignment(index) {
 function bindWorkSplitControls() {
   bindCreationGroupSetup("workSplit");
   bindAssignmentNameInput("review");
+  $("#workSplitModelRun")?.addEventListener("change", () => {
+    refreshWorkSplitScope().catch((error) => showToast(error.message, true));
+  });
+  $("#workSplitComparison")?.addEventListener("change", () => {
+    refreshWorkSplitScope().catch((error) => showToast(error.message, true));
+  });
   $("#workSplitResetDraft")?.addEventListener("click", () => {
     workSplitDraft = null;
     saveReviewAllocationDraft(null);

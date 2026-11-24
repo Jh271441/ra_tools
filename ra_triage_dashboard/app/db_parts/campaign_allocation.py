@@ -6,8 +6,8 @@ from typing import Any
 from .allocation_preview import AllocationPreviewMixin
 from .campaigns import CampaignConflictError, CampaignReadOnlyError, _fingerprint
 from .shared import _json, _json_load, utc_now
-from ..human_label_policy import allocate_role_pairs
-from ..group_allocation import group_projection, group_rules, grouped_config, normalize_groups, plan_groups
+from ..human_label_policy import allocate_role_pairs, initial_role
+from ..group_allocation import convergence_summary, group_projection, group_rules, grouped_config, normalize_groups, normalize_pairing_mode, plan_groups
 from ..task_allocation_policy import allocate_percentages, percentage_weights, review_percent, validate_percentages
 from ..task_reallocation import bounded_shares
 from ..allocation_coverage import CoverageConstraintError
@@ -49,7 +49,8 @@ class DatabaseCampaignAllocationMixin(AllocationPreviewMixin):
         eligible = [u for u in users if u["role"] in {"writer", "admin"}
                     and (not role_task or u["human_role"] in {"rd", "te"})]
         config = {**config, "quota_basis": config.get("quota_basis", "remaining"),
-                  "cross_groups": config.get("cross_groups", [])}
+                  "cross_groups": config.get("cross_groups", []),
+                  "pairing_mode": normalize_pairing_mode(config.get("pairing_mode"))}
         return dict(
             campaign_id=campaign_id, name=split["campaign_name"],
             purpose=split["purpose"], workflow_mode=split["workflow_mode"],
@@ -68,9 +69,24 @@ class DatabaseCampaignAllocationMixin(AllocationPreviewMixin):
             current, split, _, rows = self._task_allocation(conn, campaign_id)
             evidence = self._allocation_protection(conn, split, rows)
             groups, owners = self._group_history(current, rows, evidence)
-            return {**current, **self._allocation_progress_summary(rows, evidence, role_required=current["role_required"]),
-                    "groups": groups, "group_rules": group_rules(current["cross_groups"], owners),
-                    "group_coverage": group_projection(groups, owners, evidence["completed"])}
+            case_ids = [m["issue_id"] for m in evidence["members"]]
+            projection = group_projection(groups, owners, evidence["completed"], case_ids=case_ids)
+            progress = self._allocation_progress_summary(rows, evidence, role_required=current["role_required"])
+            if current.get("groups"):
+                progress["active_slots"] = projection["active_slots"]
+                progress["active_completed_slots"] = projection["active_completed_slots"]
+                progress["movable_slots"] = max(
+                    0, projection["active_slots"] - projection["active_completed_slots"] - progress["saved_pending_slots"]
+                )
+            return {
+                **current,
+                **progress,
+                "active_assignment_counts": dict(Counter(name for m in owners.values() for name in m.values())),
+                "groups": groups,
+                "group_rules": group_rules(current["cross_groups"], owners),
+                "group_coverage": projection,
+                "convergence": convergence_summary(case_ids, evidence),
+            }
 
     def _allocation_without_member(self, conn, campaign_id, assignee):
         """Normalize the remaining roster; retain coverage and all saved authors."""
@@ -240,24 +256,24 @@ class DatabaseCampaignAllocationMixin(AllocationPreviewMixin):
             ])
         ]
 
-    def _append_group_allocation(self, conn, campaign_id, issue_ids, *, seed, active_ids, captured=()):
+    def _append_group_allocation(self, conn, campaign_id, issue_ids, *, seed, active_ids):
         """Add only new assignments against cumulative group targets."""
         current, _, filters, rows = self._task_allocation(conn, campaign_id)
-        prior, history = self._group_history(current, rows, {"captured_roles": dict(captured)})
-        groups = normalize_groups(prior, {user["username"] for user in current["eligible_members"]},
-                                  roles=self._group_roles(current))
+        prior, history = self._group_history(current, rows, {})
+        groups = normalize_groups(prior, {user["username"] for user in current["eligible_members"]})
         active_ids = set(active_ids)
         existing = {iid: owners for iid, owners in history.items() if iid in active_ids}
         protected_rows = [row for row in rows if row["issue_id"] in existing]
+        mode = normalize_pairing_mode(current.get("pairing_mode"))
         planned, placed, _ = plan_groups(
             [*sorted(existing), *issue_ids], groups, [], seed=seed, old_groups=prior, history=existing,
             old_rows=protected_rows, evidence=dict(coverage_locked=set(existing),
                 protected={(row["issue_id"], row["assignee"]) for row in protected_rows}),
-            basis="total", roles=self._group_roles(current), append=True,
+            basis="total", append=True, pairing_mode=mode,
         )
         added = set(issue_ids)
         config = grouped_config(groups, {**history, **{iid: placed[iid] for iid in issue_ids}},
-                                current["cross_groups"], current["quota_basis"])
+                                current["cross_groups"], current["quota_basis"], pairing_mode=mode)
         filters["task_allocation"] = config
         conn.execute("UPDATE issue_work_splits SET filter_json=?,reviewers_per_issue=?,overlap_ratio=?,mode=? WHERE id=?",
                      (_json(filters), config["reviewers_per_issue"], config["overlap_ratio"],
@@ -271,6 +287,7 @@ class DatabaseCampaignAllocationMixin(AllocationPreviewMixin):
         quota_basis: str = "remaining", preview_token: str = "", remove_assignee: str | None = None,
         cross_groups: list[dict[str, Any]] | None = None,
         groups: list[dict[str, Any]] | None = None,
+        pairing_mode: str | None = None,
     ):
         campaign_id = self.resolve_version_campaign(str(campaign_id))
         if type(expected_revision) is not int or expected_revision < 1 or not actor or not idempotency_key or len(idempotency_key) > 160:
@@ -286,6 +303,8 @@ class DatabaseCampaignAllocationMixin(AllocationPreviewMixin):
             request_config["cross_groups"] = cross_groups
         if groups is not None:
             request_config["groups"] = groups
+        if pairing_mode is not None:
+            request_config["pairing_mode"] = pairing_mode
         fingerprint = _fingerprint(request_config)
         with self._write_lock, self.connect() as conn:
             self._lock_task_work(conn)
@@ -323,7 +342,7 @@ class DatabaseCampaignAllocationMixin(AllocationPreviewMixin):
             try:
                 current, split, filters, old_rows, config, new_rows, preview = self._prepare_task_reallocation(
                     conn, campaign_id, assignees, reviewers_per_issue, overlap_ratio,
-                    expected_revision, quota_basis, issued_at, cross_groups, groups)
+                    expected_revision, quota_basis, issued_at, cross_groups, groups, pairing_mode)
             except CoverageConstraintError as exc:
                 if preview_token:
                     raise CampaignConflictError("预览已失效，请保留输入并重新预览 / Preview is stale; keep your inputs and preview again") from exc

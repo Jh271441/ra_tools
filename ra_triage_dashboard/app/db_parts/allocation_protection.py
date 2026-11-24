@@ -134,11 +134,14 @@ class AllocationProtectionMixin:
         if problems:
             raise ValueError("已有标注的任务、Run 或参考关联不明确，请先核对 / Saved evidence has ambiguous task, Run or reference links")
         # Decisions and task-local conflicts keep the Case's remaining positions.
-        frozen_cases = {r["issue_id"] for r in [*resolutions, *decisions]}
+        adjudicated_cases = {r["issue_id"] for r in [*resolutions, *decisions]}
+        frozen_cases = set(adjudicated_cases)
         outputs = defaultdict(set)
+        case_outputs = {}
         for pair, row in latest_labels.items():
             if pair in pairs and row["expected_output"] in LABELS:
                 outputs[pair[0]].add(row["expected_output"])
+                case_outputs[pair] = row["expected_output"]
         frozen_cases.update(i for i, values in outputs.items() if len(values) > 1)
         protected.update(pair for pair in pairs if pair[0] in frozen_cases)
         security = [dict(r) for r in conn.execute(
@@ -158,6 +161,7 @@ class AllocationProtectionMixin:
         ))
         return dict(protected=protected, completed=completed, forbidden=history - pairs,
                     coverage_locked={iid for iid, _ in history} | frozen_cases, frozen_cases=frozen_cases,
+                    adjudicated_cases=adjudicated_cases, case_outputs=case_outputs,
                     captured_roles=role_map, snapshot=snapshot, members=members,
                     has_evidence=bool(models or progress or labels or resolutions or decisions))
 
