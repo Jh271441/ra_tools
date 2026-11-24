@@ -2290,7 +2290,17 @@ class DatabaseCampaignMixin:
                 (SELECT COUNT(*) FROM combined_review_progress) AS cp_n,
                 (SELECT MAX(updated_at) FROM combined_review_progress) AS cp_m,
                 (SELECT COUNT(*) FROM human_assignment_roles) AS hr_n,
-                (SELECT COUNT(*) FROM label_import_suppressed_revisions) AS sup_n
+                (SELECT COUNT(*) FROM label_import_suppressed_revisions) AS sup_n,
+                (SELECT COUNT(*) FROM campaign_issue_members) AS cim_n,
+                (SELECT COUNT(*) FROM campaign_reference_items) AS cri_n,
+                (SELECT COUNT(*) FROM label_cases) AS lc_n,
+                (SELECT COALESCE(MAX(id), 0) FROM label_revisions) AS lr_max,
+                (SELECT COUNT(*) FROM label_revisions) AS lr_n,
+                (SELECT COALESCE(MAX(id), 0) FROM label_resolutions) AS lres_max,
+                (SELECT COUNT(*) FROM label_resolutions) AS lres_n,
+                (SELECT COALESCE(MAX(id), 0) FROM model_review_revisions) AS mr_max,
+                (SELECT COUNT(*) FROM model_review_heads) AS mh_n,
+                (SELECT MAX(updated_at) FROM model_review_heads) AS mh_m
             """
         ).fetchone()
         if row is None:
@@ -2301,6 +2311,35 @@ class DatabaseCampaignMixin:
             str(row["cp_m"] or ""),
             int(row["hr_n"] or 0),
             int(row["sup_n"] or 0),
+            int(row["cim_n"] or 0),
+            int(row["cri_n"] or 0),
+            int(row["lc_n"] or 0),
+            int(row["lr_max"] or 0),
+            int(row["lr_n"] or 0),
+            int(row["lres_max"] or 0),
+            int(row["lres_n"] or 0),
+            int(row["mr_max"] or 0),
+            int(row["mh_n"] or 0),
+            str(row["mh_m"] or ""),
+        )
+
+    @staticmethod
+    def _campaign_row_cache_signature(row: Any) -> tuple[Any, ...]:
+        keys = set(row.keys())
+        def _val(name: str, default: Any = "") -> Any:
+            return row[name] if name in keys else default
+        return (
+            str(_val("id", "")),
+            str(_val("lifecycle", "") or ""),
+            str(_val("purpose", "") or ""),
+            str(_val("workflow_mode", "") or ""),
+            bool(_val("legacy_read_only", False)),
+            int(_val("config_revision", 0) or 0),
+            str(_val("updated_at", "") or ""),
+            str(_val("evaluation_run_id", "") or ""),
+            str(_val("reference_id", "") or ""),
+            str(_val("workset_id", "") or ""),
+            str(_val("selection_source_run_id", "") or ""),
         )
 
     def _campaign_progress_batch(
@@ -2314,7 +2353,10 @@ class DatabaseCampaignMixin:
         if use_cache:
             watermark = self._campaign_progress_watermark(conn)
             if watermark is not None:
-                cache_key = (watermark, tuple(sorted(ids)))
+                row_sig = tuple(
+                    sorted(self._campaign_row_cache_signature(row) for row in campaign_rows)
+                )
+                cache_key = (watermark, row_sig)
                 with self._campaign_progress_cache_lock:
                     cached = self._campaign_progress_cache.get(cache_key)
                     if cached is not None:

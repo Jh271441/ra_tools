@@ -484,6 +484,11 @@ class DatabaseCoreMixin:
         if self.backend == "postgresql":
             self._apply_postgres_migrations()
         with self._write_lock, self.connect() as conn:
+            if self.backend == "postgresql":
+                conn.execute(
+                    "SELECT pg_advisory_xact_lock(hashtext(?))",
+                    ("dashboard-schema-migrations-v1",),
+                )
             initialize_schema(self, conn)
             initialize_change_tracking(self, conn)
             initialize_campaign_compat(self, conn)

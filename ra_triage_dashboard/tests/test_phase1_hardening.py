@@ -226,8 +226,61 @@ class Phase1ConcurrencyAndDbTest(unittest.TestCase):
                 self.assertTrue(updated["changed"])
                 third = db.list_campaigns(lifecycle="active", page=1, page_size=20)
                 self.assertEqual(third["items"][0]["workload"][0]["assigned_slots"], 3)
+
+                # Closing a campaign must immediately reflect closed lifecycle in progress even
+                # when dashboard_change_revision does not bump (as on PostgreSQL issue_work_splits).
+                with patch.object(db, "_campaign_progress_watermark", return_value=(1, 0, "", 0, 0, 4, 1, 0, 0, 0, 0, 0, 0, 0, "")):
+                    before_close = db.get_campaign(cid)
+                    self.assertEqual(before_close["progress"]["lifecycle"], "active")
+                    closed = db.close_campaign(
+                        campaign_id=cid,
+                        expected_revision=int(before_close["campaign"]["config_revision"]),
+                        idempotency_key="phase1-close-1",
+                        actor="alice",
+                        actor_source="kylin_ticket",
+                        actor_verified=True,
+                    )
+                    self.assertEqual(closed["campaign"]["campaign"]["lifecycle"], "closed")
+                    self.assertEqual(closed["campaign"]["progress"]["lifecycle"], "closed")
             finally:
                 db.close()
+
+    def test_init_serializes_postgres_bootstrap_with_advisory_xact_lock(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "init-lock.sqlite")
+            db.backend = "postgresql"
+            executed: list[tuple[str, tuple[object, ...]]] = []
+
+            class _FakeConn:
+                def execute(self, sql, params=()):
+                    executed.append((sql, tuple(params)))
+                    return SimpleNamespace(fetchall=lambda: [], fetchone=lambda: None)
+
+            from contextlib import contextmanager
+
+            @contextmanager
+            def _fake_connect():
+                yield _FakeConn()
+
+            with (
+                patch.object(db, "_apply_postgres_migrations"),
+                patch.object(db, "connect", side_effect=_fake_connect),
+                patch("ra_triage_dashboard.app.db_parts.core.initialize_schema"),
+                patch("ra_triage_dashboard.app.db_parts.core.initialize_change_tracking"),
+                patch("ra_triage_dashboard.app.db_parts.core.initialize_campaign_compat"),
+                patch("ra_triage_dashboard.app.db_parts.core.initialize_columns"),
+                patch("ra_triage_dashboard.app.db_parts.core.initialize_recovery"),
+                patch("ra_triage_dashboard.app.db_parts.core.initialize_human_labels"),
+            ):
+                db.init()
+            self.assertTrue(
+                any(
+                    "pg_advisory_xact_lock" in sql
+                    and params == ("dashboard-schema-migrations-v1",)
+                    for sql, params in executed
+                )
+            )
+            db.close()
 
 
 class Phase1SsoAndCachesTest(unittest.TestCase):
