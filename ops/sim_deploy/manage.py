@@ -193,7 +193,10 @@ http {{
         programs["release-worker"] = (42, f"{prefix} {py} -m app.release_worker")
     if env.get("LABEL_REFRESH_ENABLED") == "1":
         programs["label-worker"] = (44, f"{prefix} {py} -m app.label_worker")
-    if env.get("EVALUATION_WORKER_RUNNER") == "worker":
+    if (
+        env.get("EVALUATION_WORKER_ENABLED", "1") == "1"
+        and env.get("EVALUATION_WORKER_RUNNER") == "worker"
+    ):
         programs["evaluation-worker"] = (46, f"{prefix} {py} -m app.evaluation_worker")
     if env.get("WEEKLY_ENABLED") == "1" and (root / "weekly.json").exists():
         programs["weekly"] = (60, f"{py} {root}/scheduler.py {root}")
