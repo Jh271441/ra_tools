@@ -7,7 +7,11 @@ import uuid
 
 from .shared import _json, _json_load, utc_now
 from .version_campaigns import insert
+from ..group_allocation import grouped_config
 from ..human_label_policy import allocate_role_pairs, digest, RD_REVIEWERS, TE_REVIEWERS, POLICY
+
+
+SINGLE_OWNER_LOW_CONFIDENCE_FROM = '20261113'
 
 
 def sampled(seed, family, issue_id):
@@ -56,14 +60,24 @@ class RoleVersionTasksMixin:
                 registered=conn.execute('SELECT * FROM human_version_tasks WHERE dataset_id=? AND cohort=?',(did,cohort)).fetchone()
                 if not registered and not ids:continue
                 root='campaign-version-'+family+'-odd2-'+cohort
+                people=(*RD_REVIEWERS,*TE_REVIEWERS)
                 if not registered:
                     namespace=digest([POLICY,did,cohort]);now=utc_now()
+                    filters = dict(version_live=True, version_dataset_id=did, role_cohort=cohort, publication_policy=POLICY)
+                    single_owner = cohort == 'low' and family >= SINGLE_OWNER_LOW_CONFIDENCE_FROM and _historical is None
+                    if single_owner:
+                        group = dict(
+                            group_id='group-1', coverage_percent=100.0, coverage_strategy='overlap',
+                            members=[dict(name=person, review_percent=25.0) for person in people],
+                        )
+                        filters['task_allocation'] = grouped_config([group], {}, [], 'remaining')
                     insert(conn,'issue_work_splits',dict(id=root,created_by=actor,created_at=now,seed=int(policy['seed'][:7],16),total_count=0,
-                        filter_json=_json(dict(version_live=True,version_dataset_id=did,role_cohort=cohort,publication_policy=POLICY)),
-                        assignees_json='[]',overlap_ratio=1,purpose='model_review',evaluation_run_id=rid,model_run_id=rid,
+                        filter_json=_json(filters),assignees_json='[]',overlap_ratio=0 if single_owner else 1,
+                        purpose='model_review',evaluation_run_id=rid,model_run_id=rid,
                         reference_type='reference_set',reference_id=namespace,reference_sha256=namespace,lifecycle='active',config_revision=1,
-                        campaign_name=family[4:]+' · '+('抽样集' if cohort=='sampling' else '低置信集'),task_kind='model_review',mode='blind',
-                        reviewers_per_issue=2,assignment_count=0,workset_id='',selection_source_run_id=rid,
+                        campaign_name=family[4:]+' · '+('抽样集' if cohort=='sampling' else '低置信集'),task_kind='model_review',
+                        mode='single' if single_owner else 'blind',reviewers_per_issue=1 if single_owner else 2,
+                        assignment_count=0,workset_id='',selection_source_run_id=rid,
                         workflow_mode='model_review_and_case_label',updated_by=actor,updated_at=now))
                     insert(conn,'human_version_tasks',dict(dataset_id=did,cohort=cohort,campaign_id=root,seed=policy['seed'],created_at=now))
                 else:root=registered['campaign_id']
@@ -76,7 +90,6 @@ class RoleVersionTasksMixin:
                 for a in assignments:assigned[a['issue_id']].append(a['assignee'])
                 new=sorted(set(ids)-{m['issue_id'] for m in members})
                 custom = _json_load(campaign['filter_json'], {}).get('task_allocation')
-                people=(*RD_REVIEWERS,*TE_REVIEWERS)
                 if new and not custom:
                     for person in people:
                         account=conn.execute('SELECT a.role AS permission,h.role FROM access_users a JOIN human_user_roles h ON h.username=a.username WHERE a.username=?',(person,)).fetchone()
@@ -91,8 +104,6 @@ class RoleVersionTasksMixin:
                     for iid,owners in assigned.items() if iid in set(current_target_ids)]
                 if new and not custom and cohort=='low' and (campaign['mode']!='blind' or any(len(owners)!=2 for owners in assigned.values())):
                     raise ValueError('旧低置信任务需先补齐 TE / Extend existing low-confidence TE assignments first')
-                allocations=allocate_role_pairs(new,seed=policy['seed'],previous=previous,
-                    fixed_rd={i:v['owner'] for i,v in (_historical or {}).items()})
                 if new and custom:
                     config = self._task_allocation(conn, root)[0]
                     people = tuple(p['name'] for p in custom['assignees'])
@@ -107,6 +118,9 @@ class RoleVersionTasksMixin:
                     grouped = defaultdict(list)
                     for row in planned: grouped[row['issue_id']].append(row['assignee'])
                     allocations = [dict(issue_id=iid, assignees=owners) for iid, owners in grouped.items()]
+                else:
+                    allocations=allocate_role_pairs(new,seed=policy['seed'],previous=previous,
+                        fixed_rd={i:v['owner'] for i,v in (_historical or {}).items()})
                 ordinals={p:max([a['ordinal'] for a in assignments if a['assignee']==p] or [0]) for p in people}
                 fresh_members=[]
                 for allocation in allocations:

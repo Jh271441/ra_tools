@@ -118,6 +118,63 @@ def test_allocation_independent_balanced_and_append_stable(db):
         assert abs(counts['yupuxue_v']-counts['zhangxuzhao_v'])<=1
 
 
+@pytest.mark.parametrize("family", ["20261113", "20261120"])
+def test_low_confidence_defaults_to_four_disjoint_shares(tmp_path, family):
+    database = Database(tmp_path / "single-owner.sqlite")
+    database.init()
+    try:
+        rd = {"jasperchen", "liangxianghui"}
+        te = set(TE_REVIEWERS)
+        for person in rd | te:
+            database.set_access_user(username=person, role="writer", actor="test")
+        run = database.ensure_version_stream(family, "test")
+        policy = dict(sampling_policy="version_probability_v3", seed="a" * 64)
+        version = f"1.gen4-release-{family}.1"
+        members = {}
+        for batch, low_count in enumerate((7, 9), 1):
+            candidates = [f"cn{i}" for i in range(batch * 100, (batch + 1) * 100)]
+            low = [i for i in candidates if not sampled(policy["seed"], family, i)][:low_count]
+            sampling = [i for i in candidates if sampled(policy["seed"], family, i)][:2]
+            ids = low + sampling
+            database.append_version_predictions(run_id=run, rows=[
+                dict(issue_id=i, model_label="误触发", model_confidence=.7,
+                     model_extra=dict(software_version=version)) for i in ids
+            ])
+            args = dict(family=family, policy=policy, issue_ids=ids,
+                        current_target_ids=[*members, *ids], batch_key=f"packet-{batch}", actor="test")
+            result = database.append_version_campaign_members(**args)
+            bindings = result["bindings"]
+            assert result["added"] == len(ids)
+            assert all(bindings[i] == owner for i, owner in members.items())
+            assert all(bindings[i]["cohort"] == "low" and len(bindings[i]["assignees"]) == 1 for i in low)
+            assert all(bindings[i]["cohort"] == "sampling" and bindings[i]["assignees"][0] in rd
+                       and bindings[i]["assignees"][1] in te and len(bindings[i]["assignees"]) == 2 for i in sampling)
+            database.ingest_version_dataset(family=family, policy=policy, items=[
+                dict(issue_id=i, software_version=version, state="published", is_target=True,
+                     is_low=True, is_sample=i in sampling, binding=bindings[i]) for i in ids
+            ], batch_key=args["batch_key"], actor="test")
+            members.update(bindings)
+            repeated = database.append_version_campaign_members(**args)
+            assert repeated["added"] == 0
+            assert repeated["bindings"] == bindings
+
+        low_task = version_task_detail(database, f"campaign-version-{family}-odd2-low")
+        assert low_task["mode"] == "single"
+        assert low_task["overlap_ratio"] == 0
+        assert low_task["reviewers_per_issue"] == low_task["allocation_group_count"] == 1
+        assert low_task["total_count"] == low_task["assignment_count"] == 16
+        assert {m["username"]: m["assigned_count"] for m in low_task["members"]} == {
+            person: 4 for person in rd | te
+        }
+        groups = database.get_campaign_allocation(low_task["split_id"])["groups"]
+        assert len(groups) == 1 and groups[0]["coverage_percent"] == 100
+        assert {m["name"]: m["review_percent"] for m in groups[0]["members"]} == {
+            person: 25 for person in rd | te
+        }
+    finally:
+        database.close()
+
+
 @pytest.mark.parametrize('cohorts',[[],['sampling'],['sampling','low']])
 def test_append_receipt_keeps_pinned_single_task_cron_compatible(tmp_path,cohorts):
     database=Database(tmp_path/'legacy-cron.sqlite');database.init()
