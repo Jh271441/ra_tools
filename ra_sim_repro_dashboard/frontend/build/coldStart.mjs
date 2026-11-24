@@ -17,7 +17,7 @@ export function coldStart({
     if (receipt.claimed || receipt.read) return;
     receipt.url = url;
     receipt.startedAt = Date.now();
-    receipt.read = fetch(url, { headers: { 'Content-Type': 'application/json' } }).then(
+    receipt.read = fetch(url, { headers: { Accept: 'application/json' } }).then(
       async (response) => ({
         ok: response.ok,
         status: response.status,

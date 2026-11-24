@@ -9,7 +9,7 @@ from typing import Any
 
 import httpx
 
-from app.config import settings
+from app.config import mock_data_disabled, settings
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +42,8 @@ class IssueClient:
         return result
 
     def _read_mock(self) -> dict[str, dict[str, Any]]:
+        if mock_data_disabled():
+            return {}
         path = self.mock_dir / "issues.json"
         if not path.exists():
             return {}

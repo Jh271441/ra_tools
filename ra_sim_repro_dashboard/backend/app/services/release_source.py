@@ -13,15 +13,32 @@ from app.services.release_cycle import query_contract, real_labels
 
 
 def trail_credentials(scenario=False):
-    app_id = settings.scenario_app_id if scenario else os.getenv("TRAIL_ISSUE_APP_ID", "21")
-    token = settings.scenario_app_token if scenario else os.getenv("TRAIL_API_TOKEN", "")
-    if token:
+    if scenario:
+        app_id = (
+            os.getenv("SCENARIO_APP_ID")
+            or settings.scenario_app_id
+            or os.getenv("TRAIL_APP_ID", "21")
+        )
+        token = (
+            os.getenv("SCENARIO_APP_TOKEN")
+            or settings.scenario_app_token
+            or os.getenv("TRAIL_APP_TOKEN")
+            or os.getenv("TRAIL_API_TOKEN", "")
+        )
         return app_id, token
-    # Same Trail app-21 signer already used by the repository result client.
-    from ra_api.sim_result_api import SimResultClient
-
-    client = SimResultClient()
-    return client._app_id, client._app_token
+    app_id = (
+        os.getenv("TRAIL_ISSUE_APP_ID")
+        or os.getenv("TRAIL_APP_ID")
+        or settings.trail_app_id
+        or "21"
+    )
+    token = (
+        os.getenv("TRAIL_API_TOKEN")
+        or os.getenv("TRAIL_APP_TOKEN")
+        or settings.trail_app_token
+        or os.getenv("SIM_RESULT_APP_TOKEN", "")
+    )
+    return app_id, token
 
 
 def scenario_issue_id(row):
@@ -88,7 +105,23 @@ def artifact_source(period):
     path = period.get("source_artifact")
     if not path:
         return None
-    value = json.loads(Path(path).read_text())
+    from app.config import DATA_DIR, ROOT_DIR
+
+    candidate = Path(path).expanduser().resolve()
+    allowed_roots = [
+        settings.report_dir.resolve(),
+        DATA_DIR.resolve(),
+        ROOT_DIR.resolve(),
+    ]
+    source_root = os.getenv("SIM_SOURCE_ROOT", "").strip()
+    if source_root:
+        allowed_roots.append(Path(source_root).expanduser().resolve())
+    extra_root = os.getenv("SIM_ARTIFACT_ROOT", "").strip()
+    if extra_root:
+        allowed_roots.append(Path(extra_root).expanduser().resolve())
+    if not any(candidate.is_relative_to(root) for root in allowed_roots):
+        raise ValueError("source_artifact_path_forbidden")
+    value = json.loads(candidate.read_text(encoding="utf-8"))
     if (
         not isinstance(value.get("complete"), bool)
         or not isinstance(value.get("issues"), list)

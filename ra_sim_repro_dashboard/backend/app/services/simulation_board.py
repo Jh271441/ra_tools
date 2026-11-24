@@ -2,6 +2,7 @@
 
 from datetime import datetime, timezone
 import fcntl
+import logging
 import os
 from pathlib import Path
 
@@ -19,6 +20,8 @@ from app.services.result_publication import (
 )
 from app.services.release_inventory import inventory
 from app.services.read_views import read_projection
+
+logger = logging.getLogger(__name__)
 
 
 def _jobs(db, versions):
@@ -83,6 +86,7 @@ def refresh_progress(job_id, force=False):
                     raise ValueError("Orion progress counts are inconsistent")
                 workflow.put_state(db, key, {"value": result, "attempt_at": attempt})
             except Exception as exc:
+                logger.exception("simulation_board refresh_progress failed job_id=%s", job_id)
                 db.rollback()
                 workflow.put_state(
                     db,

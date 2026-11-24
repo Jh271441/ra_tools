@@ -12,7 +12,11 @@ import migrate
 
 
 class FailureRecoveryTests(unittest.TestCase):
-    def exercise(self, fail_transfer=False):
+    def exercise(
+        self,
+        fail_transfer=False,
+        status_output="api RUNNING\nworker RUNNING\nrelease-worker RUNNING\nlabel-worker RUNNING\nevaluation-worker RUNNING\nweb RUNNING\npostgres RUNNING\nredis RUNNING\n",
+    ):
         calls = []
 
         def run(args, **kwargs):
@@ -22,7 +26,7 @@ class FailureRecoveryTests(unittest.TestCase):
             command = args[-1]
             out = ""
             if command.endswith(" status"):
-                out = "api RUNNING\nworker RUNNING\nweb RUNNING\n"
+                out = status_output
             elif command.endswith(" backup"):
                 out = "/srv/source/backups/test.sql\n"
             elif "tarfile" in command:
@@ -45,10 +49,19 @@ class FailureRecoveryTests(unittest.TestCase):
         return [a[-1] for a in calls if a[0] == "ssh"]
 
     def test_partial_target_failure_keeps_source_frozen(self):
-        self.assertFalse(any(" start " in c for c in self.exercise()))
+        commands = self.exercise()
+        self.assertFalse(any(" start " in c for c in commands))
+        stop_cmd = next(c for c in commands if " stop " in c)
+        for prog in ("api", "worker", "release-worker", "label-worker", "evaluation-worker", "web"):
+            self.assertIn(prog, stop_cmd)
+        self.assertNotIn("postgres", stop_cmd)
+        self.assertNotIn("redis", stop_cmd)
 
     def test_transfer_failure_before_target_attempt_resumes_source(self):
-        self.assertTrue(any(" start " in c for c in self.exercise(fail_transfer=True)))
+        commands = self.exercise(fail_transfer=True)
+        start_cmd = next(c for c in commands if " start " in c)
+        for prog in ("api", "release-worker", "label-worker", "evaluation-worker", "web"):
+            self.assertIn(prog, start_cmd)
 
 
 if __name__ == "__main__":

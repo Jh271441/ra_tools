@@ -60,7 +60,7 @@ def prepare(c):
         raise RuntimeError("Build frontend with npm ci && npm run build -- --base=/sim/ first")
     if not (root / "venv/bin/python").exists():
         raise RuntimeError("Create root/venv and install backend/requirements.txt first")
-    for name in ("", "logs", "pgsocket", "redis", "backups", "weekly"):
+    for name in ("", "logs", "pgsocket", "redis", "backups", "weekly", "private"):
         p = root / name
         p.mkdir(parents=True, exist_ok=True)
         p.chmod(0o700)
@@ -79,11 +79,17 @@ def prepare(c):
         with (root / "postgres/postgresql.conf").open("a") as f:
             f.write(f"\nlisten_addresses = ''\nunix_socket_directories = '{root}/pgsocket'\n")
     env = json.loads((root / "secrets.json").read_text())
+    env.setdefault("SIM_DEPLOYMENT_MODE", "production")
+    env.setdefault("ENABLE_RQ", "0")
+    env.setdefault("EVALUATION_WORKER_RUNNER", "api")
+    env.setdefault("RELEASE_WORKFLOW_LOCK", str(root / "release-workflow.lock"))
+    env.setdefault(
+        "AUTO_TRIAGE_SHUYI_STORAGE_STATE", str(root / "private/shuyi_storage_state.json")
+    )
     env.update(
         SIM_SOURCE_ROOT=str(src),
         DATABASE_URL=f"postgresql+psycopg2:///ra_sim?host={root}/pgsocket",
         REDIS_URL=f"unix://{root}/redis/redis.sock",
-        ENABLE_RQ="1",
         VERSIONS_CONFIG=str(src / "ra_sim_repro_dashboard/config/versions.yaml"),
         DISABLE_MOCK_DATA="1",
         MOCK_DATA_DIR=str(root / "disabled_mock"),
@@ -106,7 +112,11 @@ error_log {root}/logs/nginx-error.log;
 events {{ worker_connections 1024; }}
 http {{
  include /etc/nginx/mime.types;
- access_log off;
+ log_format sim_sanitized '$remote_addr - [$time_local] "$request_method $uri $server_protocol" $status $body_bytes_sent $request_time';
+ access_log {root}/logs/nginx-access.log sim_sanitized;
+ gzip on;
+ gzip_min_length 1024;
+ gzip_types text/plain text/css application/json application/javascript text/xml application/xml image/svg+xml;
  client_body_temp_path {root}/nginx-client;
  proxy_temp_path {root}/nginx-proxy;
  fastcgi_temp_path {root}/nginx-fastcgi;
@@ -116,16 +126,46 @@ http {{
   listen {c["port"]};
   server_name _;
   absolute_redirect off;
+  add_header X-Content-Type-Options "nosniff" always;
+  add_header X-Frame-Options "SAMEORIGIN" always;
+  add_header Referrer-Policy "strict-origin-when-cross-origin" always;
   # Gateways may strip the external /sim prefix before forwarding.
   # Keep explicit aliases only; do not turn arbitrary missing paths into the SPA.
-  rewrite ^/(overview|issues|simulation|status|assets|weekly|favicon[.]svg)(/.*)?$ /sim/$1$2 last;
-  location /api/ {{ proxy_pass http://127.0.0.1:{c["api_port"]}/api/; proxy_read_timeout 120s; }}
+  rewrite ^/(overview|issues|simulation|auto-triage|status|assets|weekly|favicon[.]svg)(/.*)?$ /sim/$1$2 last;
+  location /api/ {{
+   proxy_pass http://127.0.0.1:{c["api_port"]}/api/;
+   proxy_read_timeout 120s;
+   proxy_set_header Host $http_host;
+   proxy_set_header X-Real-IP $remote_addr;
+   proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+   proxy_set_header X-Forwarded-Proto $scheme;
+  }}
   location = / {{ return 302 /sim/overview; }}
   location = /sim {{ return 302 /sim/overview; }}
-  location /sim/api/ {{ proxy_pass http://127.0.0.1:{c["api_port"]}/api/; proxy_read_timeout 120s; }}
+  location /sim/api/ {{
+   proxy_pass http://127.0.0.1:{c["api_port"]}/api/;
+   proxy_read_timeout 120s;
+   proxy_set_header Host $http_host;
+   proxy_set_header X-Real-IP $remote_addr;
+   proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+   proxy_set_header X-Forwarded-Proto $scheme;
+  }}
   location = /sim/weekly {{ return 302 /sim/weekly/; }}
   location /sim/weekly/ {{ alias {root}/weekly/; index index.html; }}
-  location /sim/ {{ alias {src}/ra_sim_repro_dashboard/frontend/dist/; index index.html; try_files $uri $uri/ /sim/index.html; }}
+  location /sim/assets/ {{
+   alias {src}/ra_sim_repro_dashboard/frontend/dist/assets/;
+   add_header Cache-Control "public, max-age=31536000, immutable" always;
+   add_header X-Content-Type-Options "nosniff" always;
+  }}
+  location /sim/ {{
+   alias {src}/ra_sim_repro_dashboard/frontend/dist/;
+   index index.html;
+   add_header Cache-Control "no-cache" always;
+   add_header X-Content-Type-Options "nosniff" always;
+   add_header X-Frame-Options "SAMEORIGIN" always;
+   add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+   try_files $uri $uri/ /sim/index.html;
+  }}
  }}
 }}
 """,
@@ -139,13 +179,23 @@ http {{
             30,
             f"{prefix} {py} -m uvicorn app.main:app --host 127.0.0.1 --port {c['api_port']}",
         ),
-        "worker": (
-            40,
-            f"{prefix} {root}/venv/bin/rq worker -u unix://{root}/redis/redis.sock ra_dashboard_refresh",
-        ),
         "web": (50, f'{shutil.which("nginx")} -c {root}/nginx.conf -g "daemon off;"'),
     }
-    if (root / "weekly.json").exists():
+    if env.get("ENABLE_RQ") == "1":
+        programs["worker"] = (
+            40,
+            f"{prefix} {root}/venv/bin/rq worker -u unix://{root}/redis/redis.sock ra_dashboard_refresh",
+        )
+    if (
+        env.get("RELEASE_WORKFLOW_ENABLED") == "1"
+        and env.get("RELEASE_WORKFLOW_RUNNER") == "worker"
+    ):
+        programs["release-worker"] = (42, f"{prefix} {py} -m app.release_worker")
+    if env.get("LABEL_REFRESH_ENABLED") == "1":
+        programs["label-worker"] = (44, f"{prefix} {py} -m app.label_worker")
+    if env.get("EVALUATION_WORKER_RUNNER") == "worker":
+        programs["evaluation-worker"] = (46, f"{prefix} {py} -m app.evaluation_worker")
+    if env.get("WEEKLY_ENABLED") == "1" and (root / "weekly.json").exists():
         programs["weekly"] = (60, f"{py} {root}/scheduler.py {root}")
     ini = f"""[unix_http_server]
 file={root}/supervisor.sock
@@ -182,6 +232,32 @@ umask=0077
     write(root / "supervisor.ini", ini)
     run(["nginx", "-t", "-c", root / "nginx.conf"])
     print("Prepared independent deployment; no source services changed.")
+
+
+INFRA_PROGRAMS = frozenset({"postgres", "redis"})
+
+
+def parse_non_infra_programs(status_output):
+    programs = []
+    for line in status_output.splitlines():
+        parts = line.split()
+        if not parts:
+            continue
+        name = parts[0]
+        if name not in INFRA_PROGRAMS and name not in programs:
+            programs.append(name)
+    return programs
+
+
+def active_app_programs(c):
+    result = subprocess.run(
+        ["supervisorctl", "-c", str(Path(c["root"]) / "supervisor.ini"), "status"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    programs = parse_non_infra_programs(result.stdout)
+    return programs or ["api"]
 
 
 def ctl(c, *args):
@@ -275,7 +351,8 @@ def main():
                 r"^\\(?:unrestrict|restrict) [A-Za-z0-9]+\n", "", dump_text, flags=re.M
             )
         # Never destroy an existing database without an explicit replacement and backup.
-        ctl(c, "stop", "api", "worker")
+        managed = active_app_programs(c)
+        ctl(c, "stop", *managed)
         if a.replace:
             backup(c)
             sql(c, "DROP DATABASE ra_sim;")
@@ -297,7 +374,7 @@ def main():
                 stdin=f,
                 stdout=subprocess.DEVNULL,
             )
-        ctl(c, "start", "api", "worker")
+        ctl(c, "start", *managed)
     elif a.action == "check":
         ctl(c, "status")
         verify_http(f"http://127.0.0.1:{c['port']}")

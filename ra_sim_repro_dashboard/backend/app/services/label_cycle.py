@@ -3,6 +3,7 @@
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 import fcntl
+import logging
 import os
 from pathlib import Path
 from sqlalchemy import select
@@ -18,6 +19,8 @@ from app.services.result_publication import (
     coverage_policy,
 )
 from ra_api.release_tolerance import assess, LEGACY_POLICY, POLICY, policy_for
+
+logger = logging.getLogger(__name__)
 
 CHECK_SECONDS = 3600
 MERGE_SECONDS = 6 * 3600
@@ -429,6 +432,7 @@ def refresh_release(db, config, batch, *, now=None, fetcher=None):
             valid_issue_count=revision["summary"]["eligible"],
         )
     except Exception as exc:
+        logger.exception("label_cycle refresh_release failed release=%s", batch.release)
         db.rollback()
         return save(
             status="source_error",

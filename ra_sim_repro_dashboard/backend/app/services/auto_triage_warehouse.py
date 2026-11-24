@@ -245,10 +245,16 @@ def query(scope, *, rows=False, page=1, population_filters=None, include_review=
 
 class Client:
     def __init__(self):
-        state_path = Path(
-            os.getenv("AUTO_TRIAGE_SHUYI_STORAGE_STATE", "/tmp/ares_storage_state.json")
-        )
+        from app.config import DATA_DIR
+        import stat
+
+        default_state = DATA_DIR / "private" / "shuyi_storage_state.json"
+        state_path = Path(os.getenv("AUTO_TRIAGE_SHUYI_STORAGE_STATE", str(default_state)))
         try:
+            if os.getenv("SIM_DEPLOYMENT_MODE", "development").strip().lower() == "production":
+                st = state_path.stat()
+                if stat.S_IMODE(st.st_mode) & 0o077:
+                    raise ValueError("dashboard_login_required")
             state = json.loads(state_path.read_text())
         except (OSError, ValueError):
             raise ValueError("dashboard_login_required") from None

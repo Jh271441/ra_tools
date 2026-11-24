@@ -51,9 +51,22 @@ class Settings:
     issue_app_id: str = os.getenv("ISSUE_APP_ID", "")
     issue_app_token: str = os.getenv("ISSUE_APP_TOKEN", "")
     cache_ttl_seconds: int = int(os.getenv("CACHE_TTL_SECONDS", "600"))
+    disable_mock_data: bool = os.getenv("DISABLE_MOCK_DATA", "0") == "1"
+    ssl_verify: bool | str = os.getenv("SIM_CA_BUNDLE", "").strip() or True
 
 
 settings = Settings()
+
+
+def mock_data_disabled() -> bool:
+    return os.getenv("DISABLE_MOCK_DATA") == "1" or settings.disable_mock_data
+
+
+def ssl_verify_setting() -> bool | str:
+    ca_bundle = os.getenv("SIM_CA_BUNDLE", "").strip()
+    if ca_bundle:
+        return ca_bundle
+    return settings.ssl_verify
 
 
 def load_versions_config(path: Path | None = None) -> dict[str, Any]:

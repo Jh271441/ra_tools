@@ -35,6 +35,21 @@ class ConfigTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     m.load(p)
 
+    def test_parse_non_infra_programs_includes_all_workers_and_excludes_data_stores(self):
+        sample = (
+            "postgres                         RUNNING   pid 100, uptime 1:00:00\n"
+            "redis                            RUNNING   pid 101, uptime 1:00:00\n"
+            "api                              RUNNING   pid 102, uptime 1:00:00\n"
+            "release-worker                   RUNNING   pid 103, uptime 1:00:00\n"
+            "label-worker                     RUNNING   pid 104, uptime 1:00:00\n"
+            "evaluation-worker                STOPPED   Not started\n"
+            "web                              RUNNING   pid 105, uptime 1:00:00\n"
+        )
+        self.assertEqual(
+            m.parse_non_infra_programs(sample),
+            ["api", "release-worker", "label-worker", "evaluation-worker", "web"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

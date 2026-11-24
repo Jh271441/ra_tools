@@ -92,19 +92,43 @@ if test -f {q(stage + "/weekly.json")}; then cp {q(stage + "/weekly.json")} {q(r
 if test -f {q(stage + "/weekly-schedule-state.json")}; then cp {q(stage + "/weekly-schedule-state.json")} {q(root + "/weekly-schedule-state.json")}; fi
 uv venv {q(root + "/venv")} --python python3
 uv pip install --python {q(root + "/venv/bin/python")} -r {q(c["source"] + "/ra_sim_repro_dashboard/backend/requirements.txt")}
-uv pip install --python {q(root + "/venv/bin/python")} pandas==2.3.3 requests==2.34.2
 python3 {q(root + "/manage.py")} --config {q(root + "/target.json")} prepare
 python3 {q(root + "/manage.py")} --config {q(root + "/target.json")} start
 """)
+    wait_pg = (
+        f"for i in $(seq 1 30); do "
+        f"{q(c['pg_bin'] + '/pg_isready')} -h {q(root + '/pgsocket')} >/dev/null 2>&1 && break; "
+        f"sleep 1; done; "
+        f"{q(c['pg_bin'] + '/pg_isready')} -h {q(root + '/pgsocket')} >/dev/null"
+    )
+    health_url = f"http://127.0.0.1:{c['port']}/sim/api/health"
+    wait_http_script = (
+        f"import time, urllib.request\n"
+        f"url = {health_url!r}\n"
+        f"deadline = time.time() + 30\n"
+        f"while time.time() < deadline:\n"
+        f"    try:\n"
+        f"        with urllib.request.urlopen(url, timeout=5) as r:\n"
+        f"            if r.status == 200:\n"
+        f"                break\n"
+        f"    except Exception:\n"
+        f"        time.sleep(1)\n"
+        f"else:\n"
+        f"    raise SystemExit(1)\n"
+    )
+    wait_http = "python3 -c " + q(wait_http_script)
+    remote(wait_pg)
     if dump:
         remote(
             f"python3 {q(root + '/manage.py')} --config {q(root + '/target.json')} restore --dump {q(stage + '/database.sql')}"
         )
     else:
-        remote(f"sleep 3; {q(c['pg_bin'] + '/createdb')} -h {q(root + '/pgsocket')} ra_sim")
-    remote(f"sleep 5; python3 {q(root + '/manage.py')} --config {q(root + '/target.json')} check")
+        remote(f"{q(c['pg_bin'] + '/createdb')} -h {q(root + '/pgsocket')} ra_sim")
+    remote(wait_http)
+    remote(f"python3 {q(root + '/manage.py')} --config {q(root + '/target.json')} check")
     remote(f"python3 {q(root + '/install_startup.py')} --config {q(root + '/target.json')}")
-    remote(f"sleep 5; python3 {q(root + '/manage.py')} --config {q(root + '/target.json')} check")
+    remote(wait_http)
+    remote(f"python3 {q(root + '/manage.py')} --config {q(root + '/target.json')} check")
     print("Deployment verified and persistent startup installed.")
 
 

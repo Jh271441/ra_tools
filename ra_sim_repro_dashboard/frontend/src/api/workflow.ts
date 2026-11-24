@@ -18,10 +18,17 @@ export function request<T>(
       ? claimInitialRead(key, options.fresh)
       : undefined;
   const load = async () => {
+    const headers: Record<string, string> = { Accept: 'application/json' };
+    if (method !== 'GET' && method !== 'HEAD') {
+      headers['X-RA-Sim-Request'] = 'workflow-v1';
+    }
+    if (body !== undefined) {
+      headers['Content-Type'] = 'application/json';
+    }
     const response: WireRead = await (early ||
       fetch(key, {
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: body === undefined ? undefined : JSON.stringify(body),
       }).then(async (result) => ({
         ok: result.ok,

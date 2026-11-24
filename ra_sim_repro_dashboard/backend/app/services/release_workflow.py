@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import fcntl
 import json
+import logging
 import os
 import subprocess
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -92,6 +95,8 @@ def latest_snapshot(db, key):
 
 
 def get_state(db, key, default=None):
+    if not key:
+        return default or {}
     row = db.get(ReleaseWorkflowState, key)
     return row.payload if row else (default or {})
 
@@ -154,6 +159,11 @@ def refresh_catalog(db, config):
                         period.update(identity)
                         period["template_job_id"] = config["simulation"].get("template_job_id")
                 except Exception:
+                    logger.warning(
+                        "lookup_binary failed for release=%s",
+                        period.get("release"),
+                        exc_info=True,
+                    )
                     period["binary_lookup_status"] = "pending"
         stored = {p["release"]: p for p in previous.get("periods", [])}
         stored.update({p["release"]: p for p in periods})
@@ -169,6 +179,7 @@ def refresh_catalog(db, config):
             },
         )
     except Exception as exc:
+        logger.exception("refresh_catalog failed week=%s", week)
         put_state(
             db,
             "catalog",
@@ -305,6 +316,7 @@ def sync_once(
     try:
         scenarios = scenario_fetcher(period)
     except Exception:
+        logger.exception("scenario mapping lookup failed for release=%s", period.get("release"))
         scenarios = []
         mapping_error = "场景映射查询失败，Issue 已同步，禁止提交仿真"
     ids = {str(i["issue_id"]) for i in issues}
@@ -885,7 +897,17 @@ def driver_call(config, action, payload):
             check=True,
         )
     except subprocess.TimeoutExpired as exc:
+        logger.error("Orion driver action=%s timed out after %ss", action, timeout)
         exc.action = action
+        raise
+    except subprocess.CalledProcessError as exc:
+        stderr_tail = (exc.stderr or "")[-2000:].strip()
+        logger.error(
+            "Orion driver action=%s failed rc=%s stderr=%s",
+            action,
+            exc.returncode,
+            stderr_tail,
+        )
         raise
     return json.loads(response.stdout)
 
@@ -1017,6 +1039,12 @@ def execute_batch(db, batch, config, *, release=None):
     try:
         _driver_preflight(config, batch.payload)
     except Exception as exc:
+        logger.warning(
+            "execute_batch preflight failed batch=%s release=%s",
+            batch.fingerprint,
+            batch.release,
+            exc_info=True,
+        )
         batch.status = "preflight_failed"
         batch.payload = {
             **batch.payload,
@@ -1033,6 +1061,11 @@ def execute_batch(db, batch, config, *, release=None):
         batch.payload = {**batch.payload, "job_id": receipt["job_id"]}
         batch.status = "running"
     except Exception:
+        logger.exception(
+            "execute_batch submission uncertain batch=%s release=%s",
+            batch.fingerprint,
+            batch.release,
+        )
         batch.status = "submission_uncertain"
     db.commit()
     return batch
@@ -1152,6 +1185,12 @@ def poll_batches(db, config):
             batch.payload = {k: v for k, v in batch.payload.items() if k != "last_poll_error"}
             db.commit()
         except Exception as exc:
+            logger.exception(
+                "poll_batches failed batch=%s release=%s status=%s",
+                batch.fingerprint,
+                batch.release,
+                batch.status,
+            )
             db.rollback()
             batch.payload = {
                 **batch.payload,
@@ -1255,6 +1294,7 @@ def run_tick(sync_source=True, source_interval_seconds=0):
                         prepare_missing_scenes(db, config)
                         queue_plan(db, make_plan(db, config)["fingerprint"], config)
                 except Exception as exc:
+                    logger.exception("run_tick sync_once failed")
                     db.rollback()
                     put_state(
                         db,

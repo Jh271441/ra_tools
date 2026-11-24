@@ -10,6 +10,7 @@ run after its own quiet window. Completed and uncertain receipts are retained.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import logging
 import os
 import re
 import subprocess
@@ -20,6 +21,8 @@ from app.models import ReleaseIssueSnapshot, ReleaseSimulationBatch, ReleaseWork
 from app.services.release_cycle import BASE_FILTERS, TZ, digest, validate_period
 from app.services.release_catalog import fetch_recent_releases
 from app.services.release_source import complete_query, trail_credentials
+
+logger = logging.getLogger(__name__)
 
 QUIET_SECONDS = 24 * 3600
 MAX_OBSERVATION_GAP_SECONDS = 3 * 3600
@@ -259,6 +262,7 @@ def monitor_tick(db, config, *, now=None, activity_fetcher=None, release=None, u
         now = supplied_now or datetime.now(timezone.utc)
         state = observe(previous, release, rows, now, config)
     except Exception as exc:
+        logger.exception("monitor_tick source fetch failed release=%s", release)
         db.rollback()
         return save(
             {
@@ -445,6 +449,7 @@ def monitor_tick(db, config, *, now=None, activity_fetcher=None, release=None, u
             }
         )
     except Exception as exc:
+        logger.exception("monitor_tick auto submission blocked release=%s", release)
         db.rollback()
         timeout = isinstance(exc, subprocess.TimeoutExpired)
         return save(
@@ -511,6 +516,7 @@ def monitor_releases(db, config, *, now=None, discovery_fetcher=None, activity_f
             {"checked_at": (now or datetime.now(timezone.utc)).isoformat(), "status": "complete"},
         )
     except Exception as exc:
+        logger.exception("monitor_releases discovery failed")
         db.rollback()
         w.put_state(
             db,

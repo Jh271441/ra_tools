@@ -22,30 +22,44 @@ def main(source_config, target_config):
         raise ValueError("Invalid SSH host")
     q = shlex.quote
 
-    def remote(command):
+    def remote(command, *, check=True):
         return subprocess.run(
             ["ssh", "-o", "BatchMode=yes", host, command],
-            check=True,
+            check=check,
             capture_output=True,
             text=True,
         ).stdout
 
     ctl = f"supervisorctl -c {q(root + '/supervisor.ini')}"
-    # Refuse to interrupt a refresh that may be writing a partially updated cohort.
+    # Refuse to interrupt any active refresh, Orion submission, or evaluation write.
     probe = """import json, urllib.request
 r=json.load(urllib.request.urlopen("http://127.0.0.1:"+str(CONFIG["port"])+"/sim/api/system/status",timeout=30))
 checks={c["key"]:c for c in r["checks"]}
 assert checks["queue"]["extra"]["pending_jobs"]==0, "Refresh queue not empty"
 assert checks["last_refresh"]["extra"].get("job_status") not in ("queued","running"), "Refresh still running"
+if "release_workflow" in checks:
+    rw = checks["release_workflow"].get("extra") or {}
+    assert rw.get("submitting_batches", 0) == 0, "Release workflow batch currently submitting"
+    assert rw.get("uncertain_batches", 0) == 0, "Release workflow has uncertain submission"
+if "evaluation_worker" in checks:
+    ew = checks["evaluation_worker"].get("extra") or {}
+    assert ew.get("active_starts", 0) == 0, "Evaluation launch currently preparing"
+    assert ew.get("active_executions", 0) == 0, "Evaluation execution still active"
 """
     command = "import json\nCONFIG=json.load(open(" + repr(root + "/target.json") + "))\n" + probe
     remote("python3 -c " + q(command))
-    names = remote(ctl + " status")
-    programs = [
-        n
-        for n in ("weekly", "api", "worker", "web")
-        if any(line.split()[0] == n for line in names.splitlines())
-    ]
+    names = remote(ctl + " status", check=False)
+    infra = {"postgres", "redis"}
+    programs = []
+    for line in names.splitlines():
+        parts = line.split()
+        if not parts:
+            continue
+        name = parts[0]
+        if name not in infra and name not in programs:
+            programs.append(name)
+    if not programs:
+        raise RuntimeError("No application programs discovered under Supervisor")
     frozen = False
     target_attempted = False
     try:

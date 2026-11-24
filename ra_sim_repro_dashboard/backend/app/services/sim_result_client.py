@@ -9,7 +9,7 @@ from typing import Any, Literal
 
 import httpx
 
-from app.config import settings
+from app.config import mock_data_disabled, settings, ssl_verify_setting
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +72,8 @@ class SimResultClient:
         return rows
 
     def _read_mock(self, sim_job_id: int) -> list[dict[str, Any]] | None:
+        if mock_data_disabled():
+            return None
         path = self.mock_dir / f"sim_job_{sim_job_id}.json"
         if not path.exists():
             return None
@@ -168,7 +170,7 @@ class SimResultClient:
             )
         with httpx.Client(
             timeout=settings.voyager_timeout_seconds,
-            verify=False,
+            verify=ssl_verify_setting(),
             cookies=cookies,
             trust_env=False,
         ) as client:

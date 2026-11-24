@@ -9,6 +9,7 @@ from contextlib import contextmanager
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 import fcntl
+import logging
 import os
 from pathlib import Path
 from sqlalchemy import select, cast, func, JSON
@@ -26,6 +27,8 @@ from app.services import recall_comparison as recall_diff
 from app.services.release_cycle import digest, validate_period
 from app.services.label_recovery import SCENE_FIELDS
 from app.services.result_integration import checks, TRIGGER
+
+logger = logging.getLogger(__name__)
 
 ACTIVE = ("preparing", "submitting", "submission_uncertain", "running", "verifying")
 
@@ -938,6 +941,7 @@ def process(identifier):
             )
             outcome = {"status": "complete", "revision_key": revision["revision_key"]}
         except Exception as exc:
+            logger.exception("evaluation process failed identifier=%s", identifier)
             db.rollback()
             outcome = {
                 "status": "failed",
@@ -1339,6 +1343,10 @@ def execute_start(db, value):
             raise ValueError("submission_uncertain")
         execution.update(status="running", job_id=receipt["job_id"], simulation_submitted=True)
     except Exception:
+        logger.exception(
+            "evaluation execute_start submission uncertain execution_id=%s",
+            execution.get("id"),
+        )
         execution.update(status="submission_uncertain")
     w.put_state(db, key, execution)
     return execution
@@ -1452,6 +1460,10 @@ def project_execution_metrics(db, execution):
         execution.pop("metrics_error", None)
         execution.pop("metrics_retry_at", None)
     except Exception as exc:
+        logger.exception(
+            "evaluation project_execution_metrics failed execution_id=%s",
+            execution.get("id"),
+        )
         db.rollback()
         execution.update(
             metrics_status="pending",
@@ -1516,6 +1528,10 @@ def tick(*, schedule=True):
                                 },
                             )
                         except Exception as exc:
+                            logger.exception(
+                                "evaluation tick execute_start failed start_id=%s",
+                                started.get("id"),
+                            )
                             db.rollback()
                             w.put_state(
                                 db,
@@ -1546,6 +1562,10 @@ def tick(*, schedule=True):
                         try:
                             poll_execution(db, execution)
                         except Exception as exc:
+                            logger.exception(
+                                "evaluation tick poll_execution failed execution_id=%s",
+                                execution.get("id"),
+                            )
                             db.rollback()
                             w.put_state(
                                 db,

@@ -14,9 +14,17 @@ import type {
 const API_BASE = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/api`;
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
+  const method = (init?.method || 'GET').toUpperCase();
+  const baseHeaders: Record<string, string> = {
+    'X-RA-Sim-Client': 'release-cycle-v1',
+    Accept: 'application/json',
+  };
+  if (method !== 'GET' && method !== 'HEAD') {
+    baseHeaders['X-RA-Sim-Request'] = 'browser-v1';
+  }
   const res = await fetch(url, {
     ...init,
-    headers: { 'X-RA-Sim-Client': 'release-cycle-v1', ...init?.headers },
+    headers: { ...baseHeaders, ...init?.headers },
   });
   if (!res.ok) {
     throw new Error(`${res.status} ${await res.text()}`);

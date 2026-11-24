@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 _VIP = "http://100.69.238.11:8000/voyager/trail"
 _HOST = "https://voyager.intra.xiaojukeji.com"
 _DEFAULT_APP_ID = "21"
-_DEFAULT_APP_TOKEN = "d2570c086ea9c64219c81ab95dd1e31f"
+_DEFAULT_APP_TOKEN = ""
 _DEFAULT_METRICS = [
     "dpe_collision",
     "dpe_stuck_detect",
@@ -88,22 +88,24 @@ def _parse_filter_expr(expr: str) -> List[Dict[str, Any]]:
 
         suffix = "value"
         if field_raw.endswith(".value"):
-            field_raw = field_raw[:-len(".value")]
+            field_raw = field_raw[: -len(".value")]
         elif field_raw.endswith(".status"):
-            field_raw = field_raw[:-len(".status")]
+            field_raw = field_raw[: -len(".status")]
             suffix = "status"
 
         field_raw = field_raw.replace("Base.", "group1__").replace(".", "__")
         group, metric = field_raw.split("__", 1) if "__" in field_raw else ("group1", field_raw)
 
         val = float(val_str) if "." in val_str else int(val_str)
-        filters.append({
-            "name": metric,
-            "group": group,
-            "suffix": suffix,
-            "comparison_operator": _OP_MAP[op_raw],
-            "comparison_val": val,
-        })
+        filters.append(
+            {
+                "name": metric,
+                "group": group,
+                "suffix": suffix,
+                "comparison_operator": _OP_MAP[op_raw],
+                "comparison_val": val,
+            }
+        )
     return filters
 
 
@@ -122,13 +124,28 @@ class SimResultClient:
         app_token: Optional[str] = None,
         use_vip: bool = True,
     ):
-        self._app_id = app_id or os.environ.get("SIM_RESULT_APP_ID", _DEFAULT_APP_ID)
-        self._app_token = app_token or os.environ.get("SIM_RESULT_APP_TOKEN", _DEFAULT_APP_TOKEN)
+        self._app_id = (
+            app_id
+            or os.environ.get("SIM_RESULT_APP_ID")
+            or os.environ.get("TRAIL_APP_ID")
+            or _DEFAULT_APP_ID
+        )
+        self._app_token = (
+            app_token
+            or os.environ.get("SIM_RESULT_APP_TOKEN")
+            or os.environ.get("TRAIL_APP_TOKEN")
+            or os.environ.get("TRAIL_API_TOKEN")
+            or _DEFAULT_APP_TOKEN
+        )
         base = _VIP if use_vip else _HOST
         self._url = f"{base}/simulation/sim_test/result/query_report/"
         self._last_count: int = 0
 
     def _post(self, body: Dict[str, Any]) -> Dict[str, Any]:
+        if not self._app_token:
+            raise RuntimeError(
+                "Trail API token is not configured; set SIM_RESULT_APP_TOKEN or TRAIL_APP_TOKEN."
+            )
         # 签名必须与 requests.post(json=body) 使用相同的序列化（含空格的默认格式）
         headers = {
             "content-type": "application/json",
@@ -136,7 +153,8 @@ class SimResultClient:
             "time": str(int(time.time())),
             "sign": _sign_payload(body, self._app_token),
         }
-        resp = requests.post(self._url, json=body, headers=headers, verify=False, timeout=60)
+        verify = os.environ.get("SIM_CA_BUNDLE", "").strip() or True
+        resp = requests.post(self._url, json=body, headers=headers, verify=verify, timeout=60)
         resp.raise_for_status()
         result = resp.json()
         if result.get("msg") != "success":
@@ -193,7 +211,9 @@ class SimResultClient:
         data = self._post(body)
         details = data.get("data", {}).get("details", {})
         items = details.get("results", []) if isinstance(details, dict) else []
-        self._last_count = details.get("count", len(items)) if isinstance(details, dict) else len(items)
+        self._last_count = (
+            details.get("count", len(items)) if isinstance(details, dict) else len(items)
+        )
 
         rows = []
         for item in items:
@@ -252,9 +272,15 @@ class SimResultClient:
         frames, page = [], 1
         while True:
             df = self.query_report(
-                job_id_base=job_id_base, job_id_feature=job_id_feature,
-                metrics=metrics, filter_expr=filter_expr, filters=filters,
-                order_by=order_by, order_type=order_type, page=page, size=page_size,
+                job_id_base=job_id_base,
+                job_id_feature=job_id_feature,
+                metrics=metrics,
+                filter_expr=filter_expr,
+                filters=filters,
+                order_by=order_by,
+                order_type=order_type,
+                page=page,
+                size=page_size,
             )
             if df.empty:
                 break

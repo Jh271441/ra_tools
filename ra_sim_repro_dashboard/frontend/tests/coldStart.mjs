@@ -52,7 +52,7 @@ test('cold HTML starts one read before React; the application adopts it once', a
   p.run();
   assert.equal(p.calls.length, 1);
   assert.equal(p.calls[0].url, boardUrl('gen4-release-20261016'));
-  assert.equal(p.calls[0].options.headers['Content-Type'], 'application/json');
+  assert.equal(p.calls[0].options.headers['Accept'], 'application/json');
   const read = takeInitialRead(p.state, boardUrl('gen4-release-20261016'), false, 1200);
   assert.ok(read);
   assert.equal((await read).status, 200);

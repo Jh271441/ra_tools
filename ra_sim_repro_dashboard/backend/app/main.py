@@ -6,17 +6,26 @@ import os
 import logging
 from contextlib import suppress
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.evaluation_routes import router as evaluation_router
+from app.api.release_routes import router as release_router
 from app.api.routes import router
 from app.database import init_db
-from app.api.release_routes import router as release_router
+from app.security import (
+    identity_can_write,
+    load_security_config,
+    request_identity,
+    security_middleware,
+    validate_security_settings,
+)
 from app.services.release_workflow import tick
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    validate_security_settings()
     init_db()
 
     async def monitor():
@@ -38,7 +47,9 @@ async def lifespan(app: FastAPI):
     from app.services import evaluation_worker
 
     evaluation_task = (
-        asyncio.create_task(evaluation_worker.monitor()) if evaluation_worker.enabled() else None
+        asyncio.create_task(evaluation_worker.monitor())
+        if evaluation_worker.enabled() and os.getenv("EVALUATION_WORKER_RUNNER", "api") == "api"
+        else None
     )
     try:
         yield
@@ -53,22 +64,34 @@ async def lifespan(app: FastAPI):
                 await task
 
 
+_security_cfg = load_security_config()
+
 app = FastAPI(
     title="RA Sim Repro Dashboard API",
-    version="0.1.0",
+    version="0.2.0",
     lifespan=lifespan,
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=list(_security_cfg.cors_origins),
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "X-RA-Sim-Client", "X-RA-Sim-Request"],
 )
+app.middleware("http")(security_middleware)
+
+
+@app.get("/api/auth/me")
+def auth_me(request: Request) -> dict[str, object]:
+    cfg = load_security_config()
+    identity = request_identity(request, cfg)
+    return identity.as_dict(
+        can_write=identity_can_write(identity, cfg),
+        deployment_mode=cfg.deployment_mode,
+    )
+
 
 app.include_router(router)
 app.include_router(release_router)
-from app.api.evaluation_routes import router as evaluation_router
-
 app.include_router(evaluation_router)
