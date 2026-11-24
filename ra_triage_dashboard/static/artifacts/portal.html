@@ -30,13 +30,17 @@
         document.documentElement.dataset.uiLang = "zh";
       }
 
-      const ver = "artifacts-hub-2";
+      const ver = "artifacts-hub-3";
       for (const href of [`${activeBase}/static/styles.css?v=${ver}`, `${activeBase}/static/artifacts/artifacts-hub.css?v=${ver}`]) {
         const link = document.createElement("link");
         link.rel = "stylesheet";
         link.href = href;
         document.head.appendChild(link);
       }
+      const script = document.createElement("script");
+      script.src = `${activeBase}/static/artifacts/artifacts-hub.js?v=${ver}`;
+      script.defer = true;
+      document.head.appendChild(script);
     })();
   </script>
 </head>
@@ -243,13 +247,5 @@
   </div>
 
   <div id="hubToast" class="hub-toast" hidden role="status" aria-live="polite"></div>
-
-  <script>
-    (() => {
-      const s = document.createElement("script");
-      s.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/artifacts/artifacts-hub.js?v=artifacts-hub-2`;
-      document.body.appendChild(s);
-    })();
-  </script>
 </body>
 </html>

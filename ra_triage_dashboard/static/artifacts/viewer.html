@@ -30,13 +30,22 @@
         document.documentElement.dataset.uiLang = "zh";
       }
 
-      const ver = "artifacts-hub-2";
+      const ver = "artifacts-hub-3";
       for (const href of [`${activeBase}/static/styles.css?v=${ver}`, `${activeBase}/static/artifacts/artifacts-hub.css?v=${ver}`]) {
         const link = document.createElement("link");
         link.rel = "stylesheet";
         link.href = href;
         document.head.appendChild(link);
       }
+      const script = document.createElement("script");
+      script.src = `${activeBase}/static/artifacts/artifacts-hub.js?v=${ver}`;
+      script.defer = true;
+      document.head.appendChild(script);
+      // Warm vendored Tailwind runtime in parallel with CSS/JS via same-origin HTTP cache.
+      window.__RA_TAILWIND_PROMISE__ = fetch(`${activeBase}/static/vendor/tailwindcss/tailwindcss.min.js`, {
+        cache: "force-cache",
+        credentials: "same-origin",
+      }).then((r) => (r.ok ? r.text() : "")).catch(() => "");
     })();
   </script>
 </head>
@@ -85,13 +94,7 @@
 
       <section class="viewer-stage-card">
         <div id="viewerStageLoading" class="viewer-stage-loading" data-i18n="viewer.loading">正在加载交互式图表画布...</div>
-        <iframe
-          id="artifactStageFrame"
-          class="viewer-stage-frame"
-          title="Interactive Artifact Stage"
-          sandbox="allow-scripts allow-downloads allow-popups"
-          referrerpolicy="no-referrer"
-        ></iframe>
+        <div id="viewerStagePool" class="viewer-stage-pool" data-sandbox-policy="allow-scripts allow-downloads allow-popups"></div>
       </section>
 
       <nav id="viewerBottomNav" class="viewer-bottom-nav" aria-label="Adjacent artifacts" hidden>
@@ -167,13 +170,5 @@
   </div>
 
   <div id="hubToast" class="hub-toast" hidden role="status" aria-live="polite"></div>
-
-  <script>
-    (() => {
-      const s = document.createElement("script");
-      s.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/artifacts/artifacts-hub.js?v=artifacts-hub-2`;
-      document.body.appendChild(s);
-    })();
-  </script>
 </body>
 </html>

@@ -63,8 +63,11 @@ class ArtifactStoreContractTest(unittest.TestCase):
         self.assertIn("page-jump-control", portal_html)
 
         viewer_html = (ARTIFACTS_STATIC_DIR / "viewer.html").read_text(encoding="utf-8")
-        self.assertIn('sandbox="allow-scripts allow-downloads allow-popups"', viewer_html)
+        hub_js = (ARTIFACTS_STATIC_DIR / "artifacts-hub.js").read_text(encoding="utf-8")
+        self.assertIn('allow-scripts allow-downloads allow-popups', viewer_html)
+        self.assertIn('allow-scripts allow-downloads allow-popups', hub_js)
         self.assertNotIn("allow-same-origin", viewer_html)
+        self.assertNotIn("allow-same-origin", hub_js)
 
         # Must stay absent from the Manual Workbench shell navigation.
         workbench_index = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
@@ -89,6 +92,12 @@ class ArtifactStoreContractTest(unittest.TestCase):
         self.assertIn('/manual/static/vendor/tailwindcss/tailwindcss.min.js', light_frame)
         self.assertIn('class="light"', light_frame)
         self.assertIn('data-color-theme="light"', light_frame)
+
+        slot_frame = render_artifact_frame_html(SAMPLE_AGY_HTML, inline_tailwind_slot=True, initial_theme="dark")
+        self.assertIn("<!--RA_TAILWIND_INLINE_SLOT-->", slot_frame)
+        self.assertIn("default-src 'none'", slot_frame)
+        self.assertNotIn("gstatic.com", slot_frame)
+        self.assertNotIn("tailwindcss.min.js", slot_frame)
 
     def test_store_crud_manual_edit_preservation_and_pagination(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -324,11 +333,17 @@ class ArtifactStoreContractTest(unittest.TestCase):
                     return_value="tester",
                 ),
             ):
-                # Portal HTML
+                # Portal HTML with embedded bootstrap
                 st, hdrs, body = asyncio.run(asgi_req(route_app, "GET", "/artifacts"))
                 self.assertEqual(st, 200)
                 self.assertEqual(hdrs.get(b"cache-control"), b"no-store, max-age=0")
                 self.assertIn(b'data-page="portal"', body)
+                self.assertIn(b'id="raPortalBootstrap"', body)
+
+                # Async access probe endpoint
+                st, _, body = asyncio.run(asgi_req(route_app, "GET", "/api/artifacts-access"))
+                self.assertEqual(st, 200)
+                self.assertTrue(json.loads(body)["can_manage"])
 
                 # Redirect for built-in slug
                 st, hdrs, _ = asyncio.run(
@@ -363,28 +378,58 @@ class ArtifactStoreContractTest(unittest.TestCase):
                 created = json.loads(body)
                 self.assertEqual(created["item"]["slug"], "test-diagram")
 
-                # Viewer page + sandboxed frame
+                # Viewer page (with embedded bootstrap + frame_html) + sandboxed frame + immutable ETag/304
                 st, _, body = asyncio.run(asgi_req(route_app, "GET", "/artifacts/test-diagram"))
                 self.assertEqual(st, 200)
                 self.assertIn("测试图表".encode("utf-8"), body)
+                self.assertIn(b'id="raArtifactBootstrap"', body)
+                body_str = body.decode("utf-8")
+                m = body_str.split('<script id="raArtifactBootstrap" type="application/json">', 1)[1].split("</script>", 1)[0]
+                parsed_boot = json.loads(m)
+                self.assertEqual(parsed_boot["item"]["slug"], "test-diagram")
+                self.assertIn("<!--RA_TAILWIND_INLINE_SLOT-->", parsed_boot["frame_html"])
 
+                sha12 = created["item"]["content_sha256"][:12]
                 st, hdrs, body = asyncio.run(
-                    asgi_req(route_app, "GET", "/artifacts/test-diagram/frame", query="theme=light")
+                    asgi_req(
+                        route_app,
+                        "GET",
+                        "/artifacts/test-diagram/frame",
+                        query=f"theme=light&v={sha12}-r3",
+                    )
                 )
                 self.assertEqual(st, 200)
+                self.assertIn(b"immutable", hdrs.get(b"cache-control", b""))
+                self.assertIn(b"etag", hdrs)
                 self.assertIn(b"connect-src 'none'", hdrs.get(b"content-security-policy", b""))
                 self.assertIn(b"frame-ancestors 'self'", hdrs.get(b"content-security-policy", b""))
                 self.assertNotIn(b"gstatic.com", body)
                 self.assertIn(b"../../static/vendor/tailwindcss/tailwindcss.min.js", body)
 
-                # List API + single GET with navigation
+                st304, _, _ = asyncio.run(
+                    asgi_req(
+                        route_app,
+                        "GET",
+                        "/artifacts/test-diagram/frame",
+                        query=f"theme=light&v={sha12}-r3",
+                        headers=[(b"if-none-match", hdrs[b"etag"])],
+                    )
+                )
+                self.assertEqual(st304, 304)
+
+                # List API + single GET with navigation and include_frame=1
                 st, _, body = asyncio.run(asgi_req(route_app, "GET", "/api/artifacts"))
                 self.assertEqual(st, 200)
                 listing = json.loads(body)
                 self.assertEqual(listing["total"], 2)
 
                 st, _, body = asyncio.run(
-                    asgi_req(route_app, "GET", "/api/artifacts/test-diagram", query="group=vlm-architecture")
+                    asgi_req(
+                        route_app,
+                        "GET",
+                        "/api/artifacts/test-diagram",
+                        query="group=vlm-architecture&include_frame=1",
+                    )
                 )
                 self.assertEqual(st, 200)
                 detail = json.loads(body)
@@ -392,6 +437,7 @@ class ArtifactStoreContractTest(unittest.TestCase):
                 self.assertEqual(detail["navigation"]["index"], 2)
                 self.assertEqual(detail["navigation"]["prev"]["slug"], "architecture-original-330")
                 self.assertIsNone(detail["navigation"]["next"])
+                self.assertIn("<!--RA_TAILWIND_INLINE_SLOT-->", detail["frame_html"])
 
                 # PATCH metadata
                 st, _, body = asyncio.run(

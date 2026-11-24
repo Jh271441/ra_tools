@@ -14,10 +14,11 @@ import re
 from typing import Any
 
 from fastapi import APIRouter, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from ..artifact_store import (
     DEFAULT_GROUP_LABELS,
+    FRAME_RENDERER_VERSION,
     normalize_artifact_slug,
     render_artifact_frame_html,
 )
@@ -37,6 +38,36 @@ router = APIRouter()
 
 _SAFE_HOST_RE = re.compile(r"^[A-Za-z0-9.\-:\[\]]{1,128}$")
 _TITLE_PLACEHOLDER_RE = re.compile(r"<title>.*?</title>", re.IGNORECASE | re.DOTALL)
+_HEAD_CLOSE_RE = re.compile(r"</head\s*>", re.IGNORECASE)
+_PRESET_GROUPS_PAYLOAD = [
+    {"id": gid, "label": labels[0], "label_en": labels[1]}
+    for gid, labels in DEFAULT_GROUP_LABELS.items()
+]
+
+
+def _embed_bootstrap_json(html_text: str, script_id: str, payload: dict[str, Any]) -> str:
+    """Safely inline initial page JSON before </head> to eliminate startup API RTTs."""
+    raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    safe = (
+        raw.replace("<", "\\u003c")
+        .replace("\u2028", "\\u2028")
+        .replace("\u2029", "\\u2029")
+    )
+    tag = f'<script id="{script_id}" type="application/json">{safe}</script>\n'
+    if _HEAD_CLOSE_RE.search(html_text):
+        return _HEAD_CLOSE_RE.sub(lambda m: f"{tag}{m.group(0)}", html_text, count=1)
+    return f"{tag}{html_text}"
+
+
+def _etag_matches(if_none_match: str, etag: str) -> bool:
+    if not if_none_match:
+        return False
+    target = etag.removeprefix("W/")
+    for token in if_none_match.split(","):
+        cleaned = token.strip()
+        if cleaned == "*" or cleaned.removeprefix("W/") == target:
+            return True
+    return False
 
 ARCHITECTURE_ORIGINAL_330_HTML = render_index_html(
     (
@@ -150,16 +181,49 @@ async def architecture_original_330_page() -> HTMLResponse:
 
 @router.get("/artifacts", include_in_schema=False)
 @router.get("/artifacts/", include_in_schema=False)
-async def artifacts_portal_page() -> HTMLResponse:
+async def artifacts_portal_page(
+    q: str = Query(default="", max_length=160),
+    group: str = Query(default="", max_length=64),
+    status: str = Query(default="active", max_length=16),
+    sort: str = Query(default="updated_desc", max_length=32),
+    page: int = Query(default=1, ge=1, le=10_000),
+    page_size: int = Query(
+        default=DEFAULT_ARTIFACT_PAGE_SIZE,
+        ge=1,
+        le=MAX_ARTIFACT_PAGE_SIZE,
+    ),
+) -> HTMLResponse:
+    def _load() -> dict[str, Any]:
+        listing = artifact_store.list_artifacts(
+            q=q,
+            group=group,
+            status=status,
+            sort=sort,
+            page=page,
+            page_size=page_size,
+        )
+        listing["can_manage"] = settings.deployment_mode != "production"
+        listing["preset_groups"] = _PRESET_GROUPS_PAYLOAD
+        return listing
+
+    bootstrap = await asyncio.to_thread(_load)
+    rendered = _embed_bootstrap_json(ARTIFACT_PORTAL_HTML, "raPortalBootstrap", bootstrap)
     return HTMLResponse(
-        content=ARTIFACT_PORTAL_HTML,
+        content=rendered,
         headers={"Cache-Control": "no-store, max-age=0"},
     )
 
 
 @router.get("/artifacts/{slug}", include_in_schema=False)
 @router.get("/artifacts/{slug}/", include_in_schema=False)
-async def artifact_viewer_page(slug: str, request: Request):
+async def artifact_viewer_page(
+    slug: str,
+    request: Request,
+    q: str = Query(default="", max_length=160),
+    group: str = Query(default="", max_length=64),
+    status: str = Query(default="active", max_length=16),
+    sort: str = Query(default="updated_desc", max_length=32),
+):
     try:
         normalized = normalize_artifact_slug(slug)
     except ValueError:
@@ -174,20 +238,37 @@ async def artifact_viewer_page(slug: str, request: Request):
             if request.url.path.endswith("/")
             else "../architecture-original-330"
         )
+        if request.url.query:
+            target = f"{target}?{request.url.query}"
         return RedirectResponse(url=target, status_code=302)
-    item = await asyncio.to_thread(artifact_store.get_artifact, normalized)
-    if item is None:
+    bundle = await asyncio.to_thread(
+        artifact_store.get_artifact_bundle,
+        normalized,
+        q=q,
+        group=group,
+        status=status,
+        sort=sort,
+        include_frame=True,
+    )
+    if bundle is None:
         return HTMLResponse(
             content=ARTIFACT_VIEWER_HTML,
             status_code=404,
             headers={"Cache-Control": "no-store, max-age=0"},
         )
+    item = bundle["item"]
+    bootstrap = {
+        **bundle,
+        "can_manage": settings.deployment_mode != "production",
+        "preset_groups": _PRESET_GROUPS_PAYLOAD,
+    }
     safe_title = html_escape.escape(f"{item['title']} · RA Triage Artifacts")
     rendered = _TITLE_PLACEHOLDER_RE.sub(
         f"<title>{safe_title}</title>",
         ARTIFACT_VIEWER_HTML,
         count=1,
     )
+    rendered = _embed_bootstrap_json(rendered, "raArtifactBootstrap", bootstrap)
     return HTMLResponse(
         content=rendered,
         headers={"Cache-Control": "no-store, max-age=0"},
@@ -199,7 +280,8 @@ async def artifact_frame_page(
     slug: str,
     request: Request,
     theme: str = Query(default="dark"),
-) -> HTMLResponse:
+    v: str = Query(default="", max_length=64),
+) -> Response:
     found = await asyncio.to_thread(artifact_store.read_artifact_html, slug)
     if found is None:
         return HTMLResponse(
@@ -207,25 +289,39 @@ async def artifact_frame_page(
             status_code=404,
             headers={"Cache-Control": "no-store, max-age=0"},
         )
-    _, raw_html = found
+    item, raw_html = found
+    norm_theme = "light" if str(theme or "").strip().lower() == "light" else "dark"
+    sha_prefix = str(item.get("content_sha256") or "")[:16]
+    etag = f'"{sha_prefix}-{norm_theme}-{FRAME_RENDERER_VERSION}"'
+    immutable = bool(sha_prefix) and v in {sha_prefix[:12], f"{sha_prefix[:12]}-{FRAME_RENDERER_VERSION}"}
+    cache_control = "public, max-age=604800, immutable" if immutable else "no-cache"
+    base_headers = {
+        "Cache-Control": cache_control,
+        "ETag": etag,
+        "Content-Security-Policy": _frame_csp_header(request),
+        "X-Content-Type-Options": "nosniff",
+    }
+    if _etag_matches(request.headers.get("if-none-match") or "", etag):
+        return Response(status_code=304, headers=base_headers)
     rendered = render_artifact_frame_html(
         raw_html,
         base_path=None,
-        initial_theme=theme,
+        initial_theme=norm_theme,
     )
-    return HTMLResponse(
-        content=rendered,
-        headers={
-            "Cache-Control": "no-store, max-age=0",
-            "Content-Security-Policy": _frame_csp_header(request),
-            "X-Content-Type-Options": "nosniff",
-        },
+    return HTMLResponse(content=rendered, headers=base_headers)
+
+
+@router.get("/api/artifacts-access")
+async def artifacts_access_api(request: Request) -> JSONResponse:
+    can_manage, actor = await asyncio.to_thread(_artifact_can_manage, request)
+    return JSONResponse(
+        content={"can_manage": can_manage, "actor": actor},
+        headers={"Cache-Control": "private, no-store"},
     )
 
 
 @router.get("/api/artifacts")
 async def list_artifacts_api(
-    request: Request,
     q: str = Query(default="", max_length=160),
     group: str = Query(default="", max_length=64),
     status: str = Query(default="active", max_length=16),
@@ -246,13 +342,10 @@ async def list_artifacts_api(
             page=page,
             page_size=page_size,
         )
-        can_manage, actor = _artifact_can_manage(request)
-        listing["can_manage"] = can_manage
-        listing["actor"] = actor
-        listing["preset_groups"] = [
-            {"id": gid, "label": labels[0], "label_en": labels[1]}
-            for gid, labels in DEFAULT_GROUP_LABELS.items()
-        ]
+        # Never block read-only artifact gallery queries on remote Kylin SSO.
+        # Browsers asynchronously check /api/artifacts-access after first paint.
+        listing["can_manage"] = settings.deployment_mode != "production"
+        listing["preset_groups"] = _PRESET_GROUPS_PAYLOAD
         return listing
 
     payload = await asyncio.to_thread(_load)
@@ -262,33 +355,27 @@ async def list_artifacts_api(
 @router.get("/api/artifacts/{slug}")
 async def get_artifact_api(
     slug: str,
-    request: Request,
     q: str = Query(default="", max_length=160),
     group: str = Query(default="", max_length=64),
     status: str = Query(default="active", max_length=16),
     sort: str = Query(default="updated_desc", max_length=32),
+    include_frame: bool = Query(default=False),
 ) -> JSONResponse:
     def _load() -> dict[str, Any] | None:
-        item = artifact_store.get_artifact(slug)
-        if item is None:
-            return None
-        can_manage, actor = _artifact_can_manage(request)
-        navigation = artifact_store.get_artifact_neighbors(
+        bundle = artifact_store.get_artifact_bundle(
             slug,
             q=q,
             group=group,
             status=status,
             sort=sort,
+            include_frame=include_frame,
         )
+        if bundle is None:
+            return None
         return {
-            "item": item,
-            "navigation": navigation,
-            "can_manage": can_manage,
-            "actor": actor,
-            "preset_groups": [
-                {"id": gid, "label": labels[0], "label_en": labels[1]}
-                for gid, labels in DEFAULT_GROUP_LABELS.items()
-            ],
+            **bundle,
+            "can_manage": settings.deployment_mode != "production",
+            "preset_groups": _PRESET_GROUPS_PAYLOAD,
         }
 
     payload = await asyncio.to_thread(_load)

@@ -938,6 +938,12 @@ html[data-color-theme="light"] .pill-group-workbench {
   min-height: 360px;
 }
 
+.viewer-stage-pool {
+  position: relative;
+  width: 100%;
+  min-height: 360px;
+}
+
 .viewer-stage-frame {
   display: block;
   width: 100%;
@@ -947,9 +953,31 @@ html[data-color-theme="light"] .pill-group-workbench {
   background: transparent;
 }
 
+.viewer-stage-frame.is-warm {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  visibility: hidden;
+  pointer-events: none;
+  z-index: -1;
+}
+
+.viewer-stage-frame.is-active {
+  position: relative;
+  visibility: visible;
+  pointer-events: auto;
+  z-index: 1;
+}
+
+.viewer-stage-frame.is-pending-paint {
+  opacity: 0;
+}
+
 .viewer-stage-loading {
   position: absolute;
   inset: 0;
+  z-index: 3;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -957,7 +985,7 @@ html[data-color-theme="light"] .pill-group-workbench {
   color: var(--muted);
   font-size: 13px;
   pointer-events: none;
-  transition: opacity 0.18s ease;
+  transition: opacity 0.14s ease;
 }
 
 .viewer-stage-loading.is-hidden {

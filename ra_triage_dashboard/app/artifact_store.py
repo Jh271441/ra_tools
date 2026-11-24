@@ -113,6 +113,10 @@ _TITLE_TAG_RE = re.compile(r"<title\b[^>]*>(.*?)</title>", re.IGNORECASE | re.DO
 _HEADING_TAG_RE = re.compile(r"<h[12]\b[^>]*>(.*?)</h[12]>", re.IGNORECASE | re.DOTALL)
 _HTML_TAG_STRIP_RE = re.compile(r"<[^>]+>")
 
+TAILWIND_INLINE_SLOT = "<!--RA_TAILWIND_INLINE_SLOT-->"
+FRAME_RENDERER_VERSION = "r3"
+MAX_INLINE_FRAME_HTML_BYTES = 256 * 1024
+
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
@@ -366,6 +370,19 @@ def _frame_bridge_script() -> str:
     }
   });
 
+  let readySent = false;
+  const postReady = () => {
+    if (window.parent === window) return;
+    const height = measureHeight();
+    lastPostedHeight = height;
+    if (!readySent) {
+      readySent = true;
+      window.parent.postMessage({ type: "ra-artifact-ready", height }, "*");
+    } else {
+      window.parent.postMessage({ type: "ra-artifact-height", height }, "*");
+    }
+  };
+
   if (typeof ResizeObserver === "function" && document.body) {
     new ResizeObserver(scheduleMeasure).observe(document.body);
   }
@@ -377,16 +394,16 @@ def _frame_bridge_script() -> str:
     });
   }
   window.addEventListener("load", () => {
-    postHeight(true);
+    requestAnimationFrame(() => postReady());
     setTimeout(() => postHeight(true), 120);
-    setTimeout(() => postHeight(true), 450);
+    setTimeout(() => postHeight(true), 420);
   });
   document.addEventListener("DOMContentLoaded", () => {
-    postHeight(true);
-    setTimeout(() => postHeight(true), 80);
+    requestAnimationFrame(() => postHeight(true));
+    setTimeout(() => postReady(), 90);
   });
-  setTimeout(() => postHeight(true), 60);
-  setTimeout(() => postHeight(true), 300);
+  setTimeout(() => postReady(), 180);
+  setTimeout(() => postHeight(true), 450);
 })();
 </script>"""
 
@@ -396,24 +413,28 @@ def render_artifact_frame_html(
     *,
     base_path: str | None = None,
     initial_theme: str = "dark",
+    inline_tailwind_slot: bool = False,
 ) -> str:
     """Transform an Antigravity HTML artifact for intranet-safe sandboxed display."""
-    if base_path is None:
-        # Relative from /artifacts/<slug>/frame -> /static/vendor/tailwindcss/tailwindcss.min.js
-        # Works identically under strip-proxy prefixes (/manual/artifacts/<slug>/frame)
-        # and direct-IP root deployments (/artifacts/<slug>/frame).
-        vendor_tailwind = "../../static/vendor/tailwindcss/tailwindcss.min.js"
-    else:
-        normalized_base = normalize_base_path(base_path)
-        vendor_tailwind = with_base_path(
-            normalized_base,
-            "/static/vendor/tailwindcss/tailwindcss.min.js",
-        )
     theme = "light" if str(initial_theme or "").strip().lower() == "light" else "dark"
-    rendered = _TAILWIND_CDN_SCRIPT_RE.sub(
-        f'<script src="{vendor_tailwind}"></script>',
-        raw_html,
-    )
+    if inline_tailwind_slot:
+        rendered = _TAILWIND_CDN_SCRIPT_RE.sub(TAILWIND_INLINE_SLOT, raw_html)
+    else:
+        if base_path is None:
+            # Relative from /artifacts/<slug>/frame -> /static/vendor/tailwindcss/tailwindcss.min.js
+            # Works identically under strip-proxy prefixes (/manual/artifacts/<slug>/frame)
+            # and direct-IP root deployments (/artifacts/<slug>/frame).
+            vendor_tailwind = "../../static/vendor/tailwindcss/tailwindcss.min.js"
+        else:
+            normalized_base = normalize_base_path(base_path)
+            vendor_tailwind = with_base_path(
+                normalized_base,
+                "/static/vendor/tailwindcss/tailwindcss.min.js",
+            )
+        rendered = _TAILWIND_CDN_SCRIPT_RE.sub(
+            f'<script src="{vendor_tailwind}"></script>',
+            raw_html,
+        )
     rendered = _EXTERNAL_FONT_LINK_RE.sub("", rendered)
 
     # Inject initial theme class/attribute onto <html> so first paint has no flash.
@@ -442,7 +463,20 @@ def render_artifact_frame_html(
         html_cls = ' class="light"' if theme == "light" else ""
         rendered = f'<!DOCTYPE html><html lang="zh-CN"{html_cls} data-color-theme="{theme}"><head><meta charset="UTF-8" /></head><body>{rendered}</body></html>'
 
-    style_block = _frame_theme_style()
+    csp_meta = (
+        '<meta http-equiv="Content-Security-Policy" content="'
+        "default-src 'none'; "
+        "script-src 'unsafe-inline' 'unsafe-eval'; "
+        "style-src 'unsafe-inline'; "
+        "img-src data: blob:; "
+        "font-src data:; "
+        "connect-src 'none'; "
+        "object-src 'none';"
+        '" />\n'
+        if inline_tailwind_slot
+        else ""
+    )
+    style_block = f"{csp_meta}{_frame_theme_style()}"
     if _HEAD_OPEN_TAG_RE.search(rendered):
         rendered = _HEAD_OPEN_TAG_RE.sub(
             lambda m: f"{m.group(0)}\n{style_block}\n",
@@ -792,6 +826,76 @@ class ArtifactStore:
             "next": next_item,
             "scope_matched": scope_matched,
         }
+
+    def get_artifact_bundle(
+        self,
+        slug: str,
+        *,
+        q: str = "",
+        group: str = "",
+        status: str = "active",
+        sort: str = "updated_desc",
+        include_frame: bool = False,
+        max_inline_frame_bytes: int = MAX_INLINE_FRAME_HTML_BYTES,
+    ) -> dict[str, Any] | None:
+        """Read item metadata, neighbors, and optional slot-rendered frame in one lock pass."""
+        try:
+            normalized = normalize_artifact_slug(slug)
+        except ValueError:
+            return None
+        with self._locked(exclusive=False):
+            registry = self._read_registry_unlocked()
+            all_items = self._all_items_unlocked(registry)
+            item = next((entry for entry in all_items if entry["slug"] == normalized), None)
+            if item is None:
+                return None
+            frame_html: str | None = None
+            if include_frame and not item["builtin"]:
+                html_file = self.items_dir / normalized / "source.html"
+                if html_file.is_file() and html_file.stat().st_size <= max_inline_frame_bytes:
+                    raw_html = html_file.read_text(encoding="utf-8")
+                    frame_html = render_artifact_frame_html(
+                        raw_html,
+                        inline_tailwind_slot=True,
+                        initial_theme="dark",
+                    )
+
+        ordered, _, _, _ = self._filter_and_order(
+            all_items,
+            q=q,
+            group=group,
+            status=status,
+            sort=sort,
+        )
+        pos = next((i for i, entry in enumerate(ordered) if entry["slug"] == normalized), -1)
+        scope_matched = pos >= 0
+        if pos < 0:
+            ordered, _, _, _ = self._filter_and_order(
+                all_items,
+                q="",
+                group="",
+                status="all",
+                sort=sort,
+            )
+            pos = next((i for i, entry in enumerate(ordered) if entry["slug"] == normalized), -1)
+        if pos < 0:
+            navigation = {"index": 0, "total": len(ordered), "prev": None, "next": None, "scope_matched": False}
+        else:
+            navigation = {
+                "index": pos + 1,
+                "total": len(ordered),
+                "prev": self._neighbor_summary(ordered[pos - 1]) if pos > 0 else None,
+                "next": self._neighbor_summary(ordered[pos + 1]) if pos + 1 < len(ordered) else None,
+                "scope_matched": scope_matched,
+            }
+        result: dict[str, Any] = {
+            "item": item,
+            "navigation": navigation,
+            "renderer_version": FRAME_RENDERER_VERSION,
+        }
+        if frame_html is not None:
+            result["frame_html"] = frame_html
+        return result
 
     def get_artifact(self, slug: str) -> dict[str, Any] | None:
         try:

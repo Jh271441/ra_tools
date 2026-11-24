@@ -601,6 +601,101 @@
     }
   }
 
+  const TAILWIND_SLOT = "<!--RA_TAILWIND_INLINE_SLOT-->";
+  const ACCESS_CACHE_KEY = "ra-artifacts-access-v1";
+  const ACCESS_CACHE_TTL_MS = 180_000;
+  let tailwindSourcePromise = null;
+  let manageAccessPromise = null;
+
+  function readBootstrapJson(elementId) {
+    const el = document.getElementById(elementId);
+    if (!el || !el.textContent) return null;
+    try {
+      return JSON.parse(el.textContent);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function getTailwindSource() {
+    if (tailwindSourcePromise) return tailwindSourcePromise;
+    if (window.__RA_TAILWIND_PROMISE__) {
+      tailwindSourcePromise = window.__RA_TAILWIND_PROMISE__;
+      return tailwindSourcePromise;
+    }
+    tailwindSourcePromise = fetch(withBase("/static/vendor/tailwindcss/tailwindcss.min.js"), {
+      cache: "force-cache",
+      credentials: "same-origin",
+    })
+      .then((resp) => (resp.ok ? resp.text() : ""))
+      .catch(() => "");
+    window.__RA_TAILWIND_PROMISE__ = tailwindSourcePromise;
+    return tailwindSourcePromise;
+  }
+
+  function buildSrcdocHtml(slotHtml, theme, tailwindSource) {
+    const isLight = theme === "light";
+    let html = String(slotHtml || "");
+    // Align initial <html> theme class/attribute before first paint inside sandbox.
+    html = html.replace(/<html\b([^>]*)>/i, (full, attrs) => {
+      let nextAttrs = String(attrs || "");
+      nextAttrs = nextAttrs.replace(/\bdata-color-theme\s*=\s*["'][^"']*["']/i, `data-color-theme="${isLight ? "light" : "dark"}"`);
+      if (!/\bdata-color-theme=/i.test(nextAttrs)) {
+        nextAttrs += ` data-color-theme="${isLight ? "light" : "dark"}"`;
+      }
+      if (isLight) {
+        if (/\bclass\s*=\s*"([^"]*)"/i.test(nextAttrs)) {
+          nextAttrs = nextAttrs.replace(/\bclass\s*=\s*"([^"]*)"/i, (m, cls) =>
+            cls.split(/\s+/).includes("light") ? m : `class="${cls ? `${cls} ` : ""}light"`,
+          );
+        } else {
+          nextAttrs += ' class="light"';
+        }
+      } else {
+        nextAttrs = nextAttrs.replace(/\bclass\s*=\s*"([^"]*)"/i, (_, cls) => {
+          const filtered = cls.split(/\s+/).filter((c) => c && c !== "light").join(" ");
+          return filtered ? `class="${filtered}"` : "";
+        });
+      }
+      return `<html${nextAttrs}>`;
+    });
+
+    if (html.includes(TAILWIND_SLOT)) {
+      if (tailwindSource) {
+        // Callback prevents JS String.replace from interpreting $&, $$, $' in minified Tailwind.
+        html = html.replace(TAILWIND_SLOT, () => `<script>${tailwindSource}</script>`);
+      } else {
+        const fallbackUrl = withBase("/static/vendor/tailwindcss/tailwindcss.min.js");
+        html = html.replace(TAILWIND_SLOT, () => `<script src="${fallbackUrl}"></script>`);
+      }
+    }
+    return html;
+  }
+
+  function resolveManageAccess() {
+    if (manageAccessPromise) return manageAccessPromise;
+    try {
+      const raw = sessionStorage.getItem(ACCESS_CACHE_KEY);
+      if (raw) {
+        const cached = JSON.parse(raw);
+        if (cached && typeof cached.can_manage === "boolean" && Date.now() - Number(cached.ts || 0) < ACCESS_CACHE_TTL_MS) {
+          manageAccessPromise = Promise.resolve(Boolean(cached.can_manage));
+          return manageAccessPromise;
+        }
+      }
+    } catch (_) {}
+    manageAccessPromise = apiJson("/api/artifacts-access")
+      .then((res) => {
+        const allowed = Boolean(res && res.can_manage);
+        try {
+          sessionStorage.setItem(ACCESS_CACHE_KEY, JSON.stringify({ can_manage: allowed, ts: Date.now() }));
+        } catch (_) {}
+        return allowed;
+      })
+      .catch(() => false);
+    return manageAccessPromise;
+  }
+
   /* Theme & Language shared wiring */
   function syncThemeControls() {
     document.documentElement.dataset.colorTheme = currentTheme;
@@ -611,10 +706,11 @@
       btn.setAttribute("aria-label", label);
       btn.title = label;
     }
-    const frame = document.getElementById("artifactStageFrame");
-    if (frame && frame.contentWindow) {
-      frame.contentWindow.postMessage({ type: "ra-artifact-theme", theme: currentTheme }, "*");
-    }
+    document.querySelectorAll(".viewer-stage-frame").forEach((frame) => {
+      if (frame && frame.contentWindow) {
+        frame.contentWindow.postMessage({ type: "ra-artifact-theme", theme: currentTheme }, "*");
+      }
+    });
   }
 
   function syncLangControls() {
@@ -1337,6 +1433,24 @@
       }
     });
 
+    function applyPortalPayload(data) {
+      state.items = Array.isArray(data.items) ? data.items : [];
+      state.total = Number(data.total || 0);
+      state.page = Number(data.page || 1);
+      state.pageSize = Number(data.page_size || state.pageSize);
+      state.totalPages = Math.max(1, Number(data.total_pages || 1));
+      state.groups = Array.isArray(data.groups) ? data.groups : [];
+      state.presetGroups = Array.isArray(data.preset_groups) ? data.preset_groups : [];
+      state.counts = data.counts || { active: 0, archived: 0, all: 0 };
+      if (data.can_manage) state.canManage = true;
+      state.loading = false;
+      refreshDropdownLabels();
+      renderGroupPills();
+      renderCards();
+      renderPagination();
+      updateMobileFilterState();
+    }
+
     async function loadArtifacts() {
       state.loading = true;
       state.error = "";
@@ -1353,21 +1467,7 @@
       });
       try {
         const data = await apiJson(`/api/artifacts?${qs.toString()}`);
-        state.items = Array.isArray(data.items) ? data.items : [];
-        state.total = Number(data.total || 0);
-        state.page = Number(data.page || 1);
-        state.pageSize = Number(data.page_size || state.pageSize);
-        state.totalPages = Math.max(1, Number(data.total_pages || 1));
-        state.groups = Array.isArray(data.groups) ? data.groups : [];
-        state.presetGroups = Array.isArray(data.preset_groups) ? data.preset_groups : [];
-        state.counts = data.counts || { active: 0, archived: 0, all: 0 };
-        state.canManage = Boolean(data.can_manage);
-        state.loading = false;
-        refreshDropdownLabels();
-        renderGroupPills();
-        renderCards();
-        renderPagination();
-        updateMobileFilterState();
+        applyPortalPayload(data);
       } catch (err) {
         state.loading = false;
         state.error = err.message || String(err);
@@ -1399,8 +1499,29 @@
       syncThemeControls();
     });
 
-    applyAllText();
-    loadArtifacts();
+    const initialBootstrap = readBootstrapJson("raPortalBootstrap");
+    if (initialBootstrap && Array.isArray(initialBootstrap.items)) {
+      applyPortalPayload(initialBootstrap);
+      document.title = t("portal.docTitle");
+      syncLangControls();
+      syncThemeControls();
+    } else {
+      applyAllText();
+      loadArtifacts();
+    }
+
+    // Resolve SSO write access asynchronously without delaying first paint.
+    if (!state.canManage) {
+      resolveManageAccess().then((allowed) => {
+        if (allowed && !state.canManage) {
+          state.canManage = true;
+          renderCards();
+        }
+      });
+    }
+
+    // Idle-prefetch vendored Tailwind into browser disk cache so opening any card is instant.
+    setTimeout(() => { getTailwindSource(); }, 180);
   }
 
   /* ===================== VIEWER PAGE ===================== */
@@ -1449,7 +1570,7 @@
     const bottomPrevTitle = document.getElementById("viewerBottomPrevTitle");
     const bottomNextTitle = document.getElementById("viewerBottomNextTitle");
     const bottomPos = document.getElementById("viewerBottomPos");
-    const frame = document.getElementById("artifactStageFrame");
+    const stagePoolEl = document.getElementById("viewerStagePool");
     const stageLoading = document.getElementById("viewerStageLoading");
     const notFoundCard = document.getElementById("viewerNotFound");
     const contentShell = document.getElementById("viewerContentShell");
@@ -1462,17 +1583,196 @@
     };
     syncBackLinks();
 
+    const MAX_WARM_FRAMES = 5;
+    const bundleCache = new Map(); // slug -> bundle
+    const inflightBundles = new Map(); // slug -> Promise<bundle>
+    const framePool = new Map(); // slug -> { slug, rev, iframe, ready, height, theme }
+
     let currentItem = null;
     let currentNav = null;
     let presetGroups = [];
     let canManage = false;
     let isWide = false;
     let loadSerial = 0;
+    let prewarmTimer = null;
+
+    const getActiveEntry = () => framePool.get(activeSlug) || null;
+
+    function touchPoolLru(slug) {
+      const entry = framePool.get(slug);
+      if (!entry) return;
+      framePool.delete(slug);
+      framePool.set(slug, entry);
+      while (framePool.size > MAX_WARM_FRAMES) {
+        const oldestKey = framePool.keys().next().value;
+        if (!oldestKey || oldestKey === activeSlug) break;
+        const oldest = framePool.get(oldestKey);
+        framePool.delete(oldestKey);
+        if (oldest && oldest.iframe && oldest.iframe.parentNode) {
+          oldest.iframe.parentNode.removeChild(oldest.iframe);
+        }
+      }
+    }
+
+    function buildFrameUrl(item) {
+      const sha12 = String(item.content_sha256 || "").slice(0, 12);
+      const vParam = sha12 ? `&v=${encodeURIComponent(`${sha12}-r3`)}` : "";
+      return withBase(`/artifacts/${encodeURIComponent(item.slug)}/frame?theme=${encodeURIComponent(currentTheme)}${vParam}`);
+    }
+
+    function revealEntryIfActive(entry) {
+      if (!entry || entry.slug !== activeSlug) return;
+      entry.iframe.classList.remove("is-pending-paint");
+      stageLoading.classList.add("is-hidden");
+      schedulePrewarmNeighbors();
+    }
+
+    async function ensureWarmFrame(bundle, { makeActive = false } = {}) {
+      const item = bundle && bundle.item;
+      if (!item || item.builtin) return null;
+      const slug = item.slug;
+      const rev = String(item.content_sha256 || item.revision || "");
+
+      let entry = framePool.get(slug);
+      if (entry && entry.rev !== rev) {
+        if (entry.iframe && entry.iframe.parentNode) {
+          entry.iframe.parentNode.removeChild(entry.iframe);
+        }
+        framePool.delete(slug);
+        entry = null;
+      }
+
+      if (!entry) {
+        const iframe = document.createElement("iframe");
+        iframe.className = "viewer-stage-frame is-warm is-pending-paint";
+        iframe.title = `${localizedTitle(item)} · Interactive Artifact Stage`;
+        iframe.setAttribute("sandbox", "allow-scripts allow-downloads allow-popups");
+        iframe.setAttribute("referrerpolicy", "no-referrer");
+        iframe.dataset.slug = slug;
+
+        entry = {
+          slug,
+          rev,
+          iframe,
+          ready: false,
+          height: 640,
+          theme: currentTheme,
+        };
+        framePool.set(slug, entry);
+        stagePoolEl.appendChild(iframe);
+
+        iframe.addEventListener("load", () => {
+          if (iframe.contentWindow) {
+            iframe.contentWindow.postMessage({ type: "ra-artifact-theme", theme: currentTheme }, "*");
+            iframe.contentWindow.postMessage({ type: "ra-artifact-ping" }, "*");
+          }
+          setTimeout(() => {
+            if (!entry.ready) {
+              entry.ready = true;
+              revealEntryIfActive(entry);
+            }
+          }, 260);
+        });
+
+        if (bundle.frame_html) {
+          const twSource = bundle.frame_html.includes(TAILWIND_SLOT)
+            ? await getTailwindSource()
+            : "";
+          // Entry may have been evicted while awaiting Tailwind fetch.
+          if (framePool.get(slug) !== entry) return null;
+          entry.theme = currentTheme;
+          iframe.srcdoc = buildSrcdocHtml(bundle.frame_html, currentTheme, twSource);
+        } else {
+          entry.theme = currentTheme;
+          iframe.src = buildFrameUrl(item);
+        }
+      }
+
+      touchPoolLru(slug);
+
+      if (makeActive) {
+        for (const [k, other] of framePool.entries()) {
+          if (k === slug) {
+            other.iframe.id = "artifactStageFrame";
+            other.iframe.classList.remove("is-warm");
+            other.iframe.classList.add("is-active");
+          } else {
+            if (other.iframe.id === "artifactStageFrame") other.iframe.removeAttribute("id");
+            other.iframe.classList.remove("is-active");
+            other.iframe.classList.add("is-warm");
+          }
+        }
+        if (entry.theme !== currentTheme && entry.iframe.contentWindow) {
+          entry.theme = currentTheme;
+          entry.iframe.contentWindow.postMessage({ type: "ra-artifact-theme", theme: currentTheme }, "*");
+        }
+        entry.iframe.style.height = `${entry.height}px`;
+        if (entry.ready) {
+          entry.iframe.classList.remove("is-pending-paint");
+          stageLoading.classList.add("is-hidden");
+          if (entry.iframe.contentWindow) {
+            entry.iframe.contentWindow.postMessage({ type: "ra-artifact-ping" }, "*");
+          }
+          schedulePrewarmNeighbors();
+        } else {
+          stageLoading.classList.remove("is-hidden");
+        }
+      }
+      return entry;
+    }
+
+    function fetchArtifactBundle(slugToLoad) {
+      if (bundleCache.has(slugToLoad)) {
+        return Promise.resolve(bundleCache.get(slugToLoad));
+      }
+      if (inflightBundles.has(slugToLoad)) {
+        return inflightBundles.get(slugToLoad);
+      }
+      const qs = new URLSearchParams(navContext.toString());
+      qs.set("include_frame", "1");
+      const promise = apiJson(`/api/artifacts/${encodeURIComponent(slugToLoad)}?${qs.toString()}`)
+        .then((data) => {
+          bundleCache.set(slugToLoad, data);
+          inflightBundles.delete(slugToLoad);
+          return data;
+        })
+        .catch((err) => {
+          inflightBundles.delete(slugToLoad);
+          throw err;
+        });
+      inflightBundles.set(slugToLoad, promise);
+      return promise;
+    }
+
+    function schedulePrewarmNeighbors() {
+      if (prewarmTimer) clearTimeout(prewarmTimer);
+      const navSnapshot = currentNav;
+      if (!navSnapshot) return;
+      const targets = [navSnapshot.next, navSnapshot.prev].filter(
+        (n) => n && n.slug && !n.builtin && !framePool.has(n.slug),
+      );
+      if (!targets.length) return;
+      prewarmTimer = setTimeout(async () => {
+        for (const neighbor of targets) {
+          if (framePool.has(neighbor.slug)) continue;
+          try {
+            const bundle = await fetchArtifactBundle(neighbor.slug);
+            if (bundle && bundle.item && !bundle.item.builtin) {
+              await ensureWarmFrame(bundle, { makeActive: false });
+            }
+          } catch (_) {
+            // Best-effort prefetch; ignore transient errors.
+          }
+        }
+      }, 120);
+    }
 
     const editModal = createEditModalController({
       onSaved: (updated) => {
         if (updated) {
           currentItem = updated;
+          const cached = bundleCache.get(updated.slug);
+          if (cached) cached.item = updated;
           renderMeta();
         }
       },
@@ -1484,14 +1784,15 @@
         window.location.assign(`${withBase(target.url_path)}${navSuffix()}`);
         return;
       }
-      if (document.activeElement === frame && typeof frame.blur === "function") {
-        frame.blur();
+      const activeEntry = getActiveEntry();
+      if (activeEntry && document.activeElement === activeEntry.iframe && typeof activeEntry.iframe.blur === "function") {
+        activeEntry.iframe.blur();
       }
       const nextUrl = `${withBase(`/artifacts/${encodeURIComponent(target.slug)}`)}${navSuffix()}`;
       window.history.pushState({ slug: target.slug }, "", nextUrl);
       activeSlug = target.slug;
       loadViewer(activeSlug);
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      window.scrollTo({ top: 0, behavior: "instant" });
     }
 
     function stepDirection(dir) {
@@ -1527,29 +1828,36 @@
 
     window.addEventListener("popstate", () => {
       activeSlug = parseSlugFromPath(window.location.pathname);
-      navContext = extractNavContext(window.location.search);
-      syncBackLinks();
+      const nextCtx = extractNavContext(window.location.search);
+      if (nextCtx.toString() !== navContext.toString()) {
+        navContext = nextCtx;
+        bundleCache.clear();
+        syncBackLinks();
+      }
       loadViewer(activeSlug);
     });
 
     window.addEventListener("message", (event) => {
-      if (!frame || event.source !== frame.contentWindow) return;
+      let matchedEntry = null;
+      for (const entry of framePool.values()) {
+        if (entry.iframe && entry.iframe.contentWindow === event.source) {
+          matchedEntry = entry;
+          break;
+        }
+      }
+      if (!matchedEntry) return;
       const data = event.data;
       if (!data || typeof data !== "object") return;
-      if (data.type === "ra-artifact-height" && Number.isFinite(Number(data.height))) {
+      if ((data.type === "ra-artifact-height" || data.type === "ra-artifact-ready") && Number.isFinite(Number(data.height))) {
         const nextHeight = Math.max(260, Math.min(20000, Math.ceil(Number(data.height))));
-        frame.style.height = `${nextHeight}px`;
-        stageLoading.classList.add("is-hidden");
-      } else if (data.type === "ra-artifact-nav" && (data.dir === -1 || data.dir === 1)) {
+        matchedEntry.height = nextHeight;
+        matchedEntry.iframe.style.height = `${nextHeight}px`;
+        if (data.type === "ra-artifact-ready" || matchedEntry.ready) {
+          matchedEntry.ready = true;
+          revealEntryIfActive(matchedEntry);
+        }
+      } else if (data.type === "ra-artifact-nav" && matchedEntry.slug === activeSlug && (data.dir === -1 || data.dir === 1)) {
         stepDirection(data.dir);
-      }
-    });
-
-    frame.addEventListener("load", () => {
-      stageLoading.classList.add("is-hidden");
-      if (frame.contentWindow) {
-        frame.contentWindow.postMessage({ type: "ra-artifact-theme", theme: currentTheme }, "*");
-        frame.contentWindow.postMessage({ type: "ra-artifact-ping" }, "*");
       }
     });
 
@@ -1557,8 +1865,9 @@
       isWide = !isWide;
       wrap.classList.toggle("is-wide", isWide);
       wideToggleBtn.textContent = isWide ? t("viewer.wideOff") : t("viewer.wideOn");
-      if (frame.contentWindow) {
-        setTimeout(() => frame.contentWindow.postMessage({ type: "ra-artifact-ping" }, "*"), 80);
+      const activeEntry = getActiveEntry();
+      if (activeEntry && activeEntry.iframe.contentWindow) {
+        setTimeout(() => activeEntry.iframe.contentWindow.postMessage({ type: "ra-artifact-ping" }, "*"), 80);
       }
     });
 
@@ -1638,7 +1947,7 @@
       }
       document.getElementById("viewerMetaDetails").innerHTML = details.map((d) => `<span>${escapeHtml(d)}</span>`).join("");
 
-      openCanvasLink.href = withBase(`/artifacts/${encodeURIComponent(currentItem.slug)}/frame?theme=${encodeURIComponent(currentTheme)}`);
+      openCanvasLink.href = buildFrameUrl(currentItem);
       editBtn.hidden = !canManage;
       wideToggleBtn.textContent = isWide ? t("viewer.wideOff") : t("viewer.wideOn");
       renderNavigation();
@@ -1664,23 +1973,30 @@
     document.getElementById("themeToggleBtn").addEventListener("click", () => {
       currentTheme = currentTheme === "light" ? "dark" : "light";
       try { localStorage.setItem("ra-triage-color-theme", currentTheme); } catch (_) {}
+      for (const entry of framePool.values()) {
+        entry.theme = currentTheme;
+      }
       syncThemeControls();
       if (currentItem) {
-        openCanvasLink.href = withBase(`/artifacts/${encodeURIComponent(currentItem.slug)}/frame?theme=${encodeURIComponent(currentTheme)}`);
+        openCanvasLink.href = buildFrameUrl(currentItem);
       }
     });
 
-    async function loadViewer(slugToLoad) {
+    async function loadViewer(slugToLoad, initialBundle = null) {
       const seq = ++loadSerial;
-      applyAllText();
-      stageLoading.classList.remove("is-hidden");
+      syncLangControls();
+      syncThemeControls();
+      const existingEntry = framePool.get(slugToLoad);
+      if (!existingEntry || !existingEntry.ready) {
+        stageLoading.classList.remove("is-hidden");
+      }
       try {
-        const data = await apiJson(`/api/artifacts/${encodeURIComponent(slugToLoad)}${navSuffix()}`);
+        const data = initialBundle || await fetchArtifactBundle(slugToLoad);
         if (seq !== loadSerial) return;
         currentItem = data.item;
         currentNav = data.navigation || null;
-        canManage = Boolean(data.can_manage);
-        presetGroups = Array.isArray(data.preset_groups) ? data.preset_groups : [];
+        if (data.can_manage) canManage = true;
+        presetGroups = Array.isArray(data.preset_groups) ? data.preset_groups : presetGroups;
         if (currentItem.builtin && currentItem.url_path && currentItem.url_path !== `/artifacts/${currentItem.slug}`) {
           window.location.replace(`${withBase(currentItem.url_path)}${navSuffix()}`);
           return;
@@ -1688,7 +2004,7 @@
         notFoundCard.hidden = true;
         contentShell.hidden = false;
         renderMeta();
-        frame.src = withBase(`/artifacts/${encodeURIComponent(currentItem.slug)}/frame?theme=${encodeURIComponent(currentTheme)}`);
+        await ensureWarmFrame(data, { makeActive: true });
       } catch (_) {
         if (seq !== loadSerial) return;
         currentItem = null;
@@ -1700,10 +2016,34 @@
       }
     }
 
-    loadViewer(activeSlug);
+    const initialBootstrap = readBootstrapJson("raArtifactBootstrap");
+    if (initialBootstrap && initialBootstrap.item && initialBootstrap.item.slug === activeSlug) {
+      bundleCache.set(activeSlug, initialBootstrap);
+      loadViewer(activeSlug, initialBootstrap);
+    } else {
+      loadViewer(activeSlug);
+    }
+
+    // Resolve SSO edit permission asynchronously without delaying chart render.
+    if (!canManage) {
+      resolveManageAccess().then((allowed) => {
+        if (allowed && !canManage) {
+          canManage = true;
+          if (currentItem) editBtn.hidden = false;
+        }
+      });
+    }
   }
 
-  const pageMode = document.body.dataset.page;
-  if (pageMode === "portal") initPortal();
-  else if (pageMode === "viewer") initViewer();
+  function boot() {
+    const pageMode = document.body && document.body.dataset ? document.body.dataset.page : "";
+    if (pageMode === "portal") initPortal();
+    else if (pageMode === "viewer") initViewer();
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", boot, { once: true });
+  } else {
+    boot();
+  }
 })();
