@@ -133,6 +133,8 @@ def scope_for_batch(db, batch, *, collections=None):
         db,
         ("business-population", batch.fingerprint, batch.updated_at),
         lambda: _scope_for_batch(db, batch, collections=collections),
+        max_age=1800,
+        scope_releases=[batch.release],
     )
 
 

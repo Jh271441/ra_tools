@@ -38,12 +38,21 @@ const GROUP_META: Record<
     dot: "bg-emerald-500",
     bar: "bg-emerald-500/75",
   },
+  pos: {
+    tier: "class",
+    dot: "bg-emerald-500",
+    bar: "bg-emerald-500/75",
+  },
   negative_auto: { tier: "class", dot: "bg-rose-500", bar: "bg-rose-500/75" },
+  neg: { tier: "class", dot: "bg-rose-500", bar: "bg-rose-500/75" },
   positive_manual: {
     tier: "class",
     dot: "bg-amber-500",
     bar: "bg-amber-500/75",
   },
+  normal_stop: { tier: "class", dot: "bg-sky-500", bar: "bg-sky-500/75" },
+  source_auto: { tier: "class", dot: "bg-sky-500", bar: "bg-sky-500/75" },
+  source_manual: { tier: "class", dot: "bg-amber-500", bar: "bg-amber-500/75" },
   AutoTrigger: {
     tier: "trigger",
     dot: "bg-slate-400 dark:bg-slate-500",
@@ -133,8 +142,6 @@ export function ReleaseLabelGroups({
   }
 
   const rows = summary?.rows ?? [];
-  const fullRow = rows.find((row) => row.group === "full");
-  const sharedPrefix = fullRow?.label || "";
   const totalScenes = summary?.total_scenarios ?? 0;
 
   return (
@@ -193,25 +200,25 @@ export function ReleaseLabelGroups({
                 <tr className="md:border-b md:border-border/70">
                   <th
                     scope="col"
-                    className="md:h-9 md:whitespace-nowrap md:px-4 md:text-xs md:font-medium md:text-muted-foreground lg:px-5"
+                    className="md:h-9 md:w-px md:whitespace-nowrap md:px-4 md:text-xs md:font-medium md:text-muted-foreground lg:px-5"
                   >
                     {t("evaluation.label_groups_purpose")}
                   </th>
                   <th
                     scope="col"
-                    className="md:h-9 md:px-3 md:text-xs md:font-medium md:text-muted-foreground"
+                    className="md:h-9 md:w-full md:px-3 md:text-xs md:font-medium md:text-muted-foreground"
                   >
                     {t("evaluation.label_groups_name")}
                   </th>
                   <th
                     scope="col"
-                    className="md:h-9 md:whitespace-nowrap md:px-3 md:text-right md:text-xs md:font-medium md:text-muted-foreground"
+                    className="md:h-9 md:w-px md:whitespace-nowrap md:px-3 md:text-right md:text-xs md:font-medium md:text-muted-foreground"
                   >
                     {t("evaluation.label_groups_count")}
                   </th>
                   <th
                     scope="col"
-                    className="md:h-9 md:whitespace-nowrap md:pl-2 md:pr-4 md:text-right md:text-xs md:font-medium md:text-muted-foreground lg:pr-5"
+                    className="md:h-9 md:w-px md:whitespace-nowrap md:pl-2 md:pr-4 md:text-right md:text-xs md:font-medium md:text-muted-foreground lg:pr-5"
                   >
                     {onSelectLabel
                       ? t("evaluation.label_groups_actions")
@@ -228,14 +235,6 @@ export function ReleaseLabelGroups({
                       : null;
                   const isTierBoundary =
                     prevMeta !== null && prevMeta.tier !== meta.tier;
-                  const hasSuffix = Boolean(
-                    sharedPrefix &&
-                      row.label !== sharedPrefix &&
-                      row.label.startsWith(`${sharedPrefix}_`),
-                  );
-                  const suffix = hasSuffix
-                    ? row.label.slice(sharedPrefix.length)
-                    : "";
                   const ratioPct =
                     totalScenes > 0
                       ? Math.min(
@@ -265,7 +264,7 @@ export function ReleaseLabelGroups({
                     >
                       <th
                         scope="row"
-                        className="col-start-1 row-start-1 min-w-0 text-left font-normal md:table-cell md:whitespace-nowrap md:px-4 md:py-2 md:align-middle lg:px-5"
+                        className="col-start-1 row-start-1 min-w-0 text-left font-normal md:table-cell md:w-px md:whitespace-nowrap md:px-4 md:py-2 md:align-middle lg:px-5"
                       >
                         <div className="flex min-w-0 items-center gap-2.5">
                           <span
@@ -282,24 +281,13 @@ export function ReleaseLabelGroups({
                           </span>
                         </div>
                       </th>
-                      <td className="col-span-2 row-start-2 min-w-0 md:table-cell md:px-3 md:py-1.5 md:align-middle">
+                      <td className="col-span-2 row-start-2 min-w-0 md:table-cell md:w-full md:max-w-0 md:px-3 md:py-1.5 md:align-middle">
                         <div className="flex min-w-0 items-center gap-1">
-                          <code className="min-w-0 max-w-full select-text break-words [overflow-wrap:anywhere] rounded-md border border-border/60 bg-muted/45 px-2.5 py-0.5 font-mono text-xs leading-5 dark:bg-white/[0.03] md:whitespace-nowrap md:break-normal md:[overflow-wrap:normal] md:[&_wbr]:hidden">
-                            {hasSuffix ? (
-                              <>
-                                <span className="text-muted-foreground">
-                                  {renderTokenizedText(sharedPrefix)}
-                                </span>
-                                <wbr />
-                                <span className="font-semibold text-foreground">
-                                  {renderTokenizedText(suffix)}
-                                </span>
-                              </>
-                            ) : (
-                              <span className="font-medium text-foreground">
-                                {renderTokenizedText(row.label)}
-                              </span>
-                            )}
+                          <code
+                            title={row.label}
+                            className="min-w-0 max-w-full select-text break-words [overflow-wrap:anywhere] rounded-md border border-border/60 bg-muted/45 px-2.5 py-0.5 font-mono text-xs font-medium leading-5 text-foreground dark:bg-white/[0.03] md:block md:truncate md:whitespace-nowrap md:break-normal md:[overflow-wrap:normal] md:[&_wbr]:hidden"
+                          >
+                            {renderTokenizedText(row.label)}
                           </code>
                           <button
                             type="button"
@@ -326,7 +314,7 @@ export function ReleaseLabelGroups({
                           </button>
                         </div>
                       </td>
-                      <td className="col-start-2 row-start-1 text-right md:table-cell md:whitespace-nowrap md:px-3 md:py-2 md:text-right md:align-middle">
+                      <td className="col-start-2 row-start-1 text-right md:table-cell md:w-px md:whitespace-nowrap md:px-3 md:py-2 md:text-right md:align-middle">
                         <div className="inline-flex items-center justify-end gap-2">
                           <div
                             className="hidden h-1.5 w-16 overflow-hidden rounded-full bg-muted xl:block 2xl:w-20"
@@ -345,7 +333,7 @@ export function ReleaseLabelGroups({
                           </span>
                         </div>
                       </td>
-                      <td className="col-span-2 row-start-3 md:table-cell md:whitespace-nowrap md:py-1.5 md:pl-2 md:pr-4 md:text-right md:align-middle lg:pr-5">
+                      <td className="col-span-2 row-start-3 md:table-cell md:w-px md:whitespace-nowrap md:py-1.5 md:pl-2 md:pr-4 md:text-right md:align-middle lg:pr-5">
                         <div className="flex items-center justify-between gap-2 md:justify-end">
                           <div
                             className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted md:hidden"

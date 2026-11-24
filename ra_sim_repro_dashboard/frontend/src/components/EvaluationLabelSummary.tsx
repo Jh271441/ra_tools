@@ -79,41 +79,22 @@ function renderTokenizedText(text: string) {
 
 function CopyableLabelPill({
   value,
-  sharedPrefix,
   copied,
   onCopy,
 }: {
   value: string;
-  sharedPrefix?: string;
   copied: boolean;
   onCopy: (label: string) => void;
 }) {
   const { t } = useTranslation();
-  const hasSuffix = Boolean(
-    sharedPrefix &&
-      value !== sharedPrefix &&
-      value.startsWith(`${sharedPrefix}_`),
-  );
-  const suffix = hasSuffix ? value.slice(sharedPrefix!.length) : "";
 
   return (
     <div className="flex min-w-0 items-center gap-1">
-      <code className="min-w-0 max-w-full select-text break-words [overflow-wrap:anywhere] rounded-md border border-border/60 bg-muted/45 px-2.5 py-0.5 font-mono text-xs leading-5 dark:bg-white/[0.03] md:whitespace-nowrap md:break-normal md:[overflow-wrap:normal] md:[&_wbr]:hidden">
-        {hasSuffix ? (
-          <>
-            <span className="text-muted-foreground">
-              {renderTokenizedText(sharedPrefix!)}
-            </span>
-            <wbr />
-            <span className="font-semibold text-foreground">
-              {renderTokenizedText(suffix)}
-            </span>
-          </>
-        ) : (
-          <span className="font-medium text-foreground">
-            {renderTokenizedText(value)}
-          </span>
-        )}
+      <code
+        title={value}
+        className="min-w-0 max-w-full select-text break-words [overflow-wrap:anywhere] rounded-md border border-border/60 bg-muted/45 px-2.5 py-0.5 font-mono text-xs font-medium leading-5 text-foreground dark:bg-white/[0.03] md:block md:truncate md:whitespace-nowrap md:break-normal md:[overflow-wrap:normal] md:[&_wbr]:hidden"
+      >
+        {renderTokenizedText(value)}
       </code>
       <button
         type="button"
@@ -217,8 +198,6 @@ export function EvaluationLabelSummary({
         )
       : [];
   const sharedSet = new Set(sharedLabels);
-  const sharedPrefix =
-    sharedLabels[sharedLabels.length - 1] || sharedLabels[0] || "";
   const totalScenes = selected?.scenario_count ?? 0;
 
   return (
@@ -347,31 +326,31 @@ export function EvaluationLabelSummary({
                   <tr className="md:border-b md:border-border/70">
                     <th
                       scope="col"
-                      className="md:h-9 md:whitespace-nowrap md:px-4 md:text-xs md:font-medium md:text-muted-foreground lg:px-5"
+                      className="md:h-9 md:w-px md:whitespace-nowrap md:px-4 md:text-xs md:font-medium md:text-muted-foreground lg:px-5"
                     >
                       {t("evaluation.summary_result")}
                     </th>
                     <th
                       scope="col"
-                      className="md:h-9 md:px-3 md:text-xs md:font-medium md:text-muted-foreground"
+                      className="md:h-9 md:w-full md:px-3 md:text-xs md:font-medium md:text-muted-foreground"
                     >
                       {t("evaluation.label_groups_name")}
                     </th>
                     <th
                       scope="col"
-                      className="md:h-9 md:whitespace-nowrap md:px-3 md:text-right md:text-xs md:font-medium md:text-muted-foreground"
+                      className="md:h-9 md:w-px md:whitespace-nowrap md:px-3 md:text-right md:text-xs md:font-medium md:text-muted-foreground"
                     >
                       {t("evaluation.label_groups_count")}
                     </th>
                     <th
                       scope="col"
-                      className="md:h-9 md:whitespace-nowrap md:px-3 md:text-right md:text-xs md:font-medium md:text-muted-foreground"
+                      className="md:h-9 md:w-px md:whitespace-nowrap md:px-3 md:text-right md:text-xs md:font-medium md:text-muted-foreground"
                     >
                       {t("evaluation.summary_published")}
                     </th>
                     <th
                       scope="col"
-                      className="md:h-9 md:whitespace-nowrap md:pl-2 md:pr-4 md:text-right md:text-xs md:font-medium md:text-muted-foreground lg:pr-5"
+                      className="md:h-9 md:w-px md:whitespace-nowrap md:pl-2 md:pr-4 md:text-right md:text-xs md:font-medium md:text-muted-foreground lg:pr-5"
                     >
                       {onSelectResult
                         ? t("evaluation.label_groups_actions")
@@ -420,7 +399,7 @@ export function EvaluationLabelSummary({
                       >
                         <th
                           scope="row"
-                          className="col-start-1 row-start-1 min-w-0 text-left font-normal md:table-cell md:whitespace-nowrap md:px-4 md:py-2 md:align-middle lg:px-5"
+                          className="col-start-1 row-start-1 min-w-0 text-left font-normal md:table-cell md:w-px md:whitespace-nowrap md:px-4 md:py-2 md:align-middle lg:px-5"
                         >
                           <div className="flex min-w-0 items-center gap-2.5">
                             <span
@@ -437,20 +416,19 @@ export function EvaluationLabelSummary({
                             </span>
                           </div>
                         </th>
-                        <td className="col-span-2 row-start-2 min-w-0 md:table-cell md:px-3 md:py-1.5 md:align-middle">
+                        <td className="col-span-2 row-start-2 min-w-0 md:table-cell md:w-full md:max-w-0 md:px-3 md:py-1.5 md:align-middle">
                           <div className="flex flex-col gap-1">
                             {displayLabels.map((label) => (
                               <CopyableLabelPill
                                 key={label}
                                 value={label}
-                                sharedPrefix={sharedPrefix}
                                 copied={copiedLabel === label}
                                 onCopy={(val) => void handleCopy(val)}
                               />
                             ))}
                           </div>
                         </td>
-                        <td className="col-start-2 row-start-1 text-right md:table-cell md:whitespace-nowrap md:px-3 md:py-2 md:text-right md:align-middle">
+                        <td className="col-start-2 row-start-1 text-right md:table-cell md:w-px md:whitespace-nowrap md:px-3 md:py-2 md:text-right md:align-middle">
                           <div className="inline-flex items-center justify-end gap-2">
                             <div
                               className="hidden h-1.5 w-16 overflow-hidden rounded-full bg-muted xl:block 2xl:w-20"
@@ -469,7 +447,7 @@ export function EvaluationLabelSummary({
                             </span>
                           </div>
                         </td>
-                        <td className="col-start-1 row-start-3 md:table-cell md:whitespace-nowrap md:px-3 md:py-2 md:text-right md:align-middle">
+                        <td className="col-start-1 row-start-3 md:table-cell md:w-px md:whitespace-nowrap md:px-3 md:py-2 md:text-right md:align-middle">
                           <span className="mr-1.5 text-xs text-muted-foreground md:hidden">
                             {t("evaluation.summary_published")}
                           </span>
@@ -477,7 +455,7 @@ export function EvaluationLabelSummary({
                             {format(row.published_issue_count)}
                           </span>
                         </td>
-                        <td className="col-start-2 row-start-3 md:table-cell md:whitespace-nowrap md:py-1.5 md:pl-2 md:pr-4 md:text-right md:align-middle lg:pr-5">
+                        <td className="col-start-2 row-start-3 md:table-cell md:w-px md:whitespace-nowrap md:py-1.5 md:pl-2 md:pr-4 md:text-right md:align-middle lg:pr-5">
                           <div className="flex shrink-0 items-center justify-end gap-0.5">
                             {onSelectResult && (
                               <button

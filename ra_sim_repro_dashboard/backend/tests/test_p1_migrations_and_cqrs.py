@@ -427,3 +427,89 @@ def test_navigation_versions_uses_jsonb_array_length_on_postgresql():
     assert result == [{"release": "gen4-release-20261106", "source_count": 1703}]
     assert "jsonb_array_length(" in captured[0]
     assert "json_array_length(" not in captured[0]
+
+
+def test_revision_blob_and_release_kv_writes_do_not_invalidate_other_releases(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'scoped_invalidation.db'}")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as db:
+        calls_b = []
+
+        def load_b():
+            calls_b.append(1)
+            return {"count": len(calls_b)}
+
+        assert read_view(db, "scoped-rel-b", load_b, scope_releases=["gen4-release-20261030"])[
+            "count"
+        ] == 1
+
+        # Saving an EvaluationRevision + EvaluationRevisionBlob for 10-23 must NOT bump __global__.
+        state_store.save_revision(
+            db,
+            "evrevision:rel-a-rev",
+            {
+                "revision_key": "evrevision:rel-a-rev",
+                "context": {
+                    "release": "gen4-release-20261023",
+                    "profile_id": "auto_triage_review_v1",
+                    "date_start": "2026-09-30",
+                    "date_end": "2026-11-08",
+                },
+                "profile": {"id": "auto_triage_review_v1", "config_hash": "cfg"},
+                "rows": [{"issue_id": "cn1"}],
+                "metrics": {},
+            },
+        )
+        # Writing backfill/scene_cohort_sync/evsamplescope for 10-23 must NOT bump __global__.
+        state_store.put_routed_state(db, "backfill:gen4-release-20261023", {"status": "idle"})
+        state_store.put_routed_state(
+            db, "scene_cohort_sync:gen4-release-20261023", {"status": "complete"}
+        )
+        state_store.put_routed_state(
+            db,
+            "evsamplescope:testscope",
+            {"scope": {"release": "gen4-release-20261023"}, "row_count": 1},
+        )
+
+        versions = read_models_repo.get_release_versions(db)
+        assert read_models_repo.GLOBAL_RELEASE_SCOPE not in versions
+        assert versions["gen4-release-20261023"] >= 1
+        # 10-30 scoped view stays completely warm!
+        assert read_view(db, "scoped-rel-b", load_b, scope_releases=["gen4-release-20261030"])[
+            "count"
+        ] == 1
+    engine.dispose()
+
+
+def test_scenario_label_groups_cached_for_release_uses_persisted_read_model(tmp_path, monkeypatch):
+    from app.services import release_label_groups
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'label_groups_rm.db'}")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as db:
+        cached_payload = {
+            "rows": [{"group": "full", "label": "ra_repro_test", "count": 42, "trail_url": "https://x"}],
+            "total_scenarios": 42,
+            "frozen_count": 42,
+            "sampled_at": "2026-11-24T18:00:00+00:00",
+        }
+        read_models_repo.upsert_read_model(
+            db,
+            cache_key="scenario_label_groups:gen4-release-20261106",
+            scope_release="gen4-release-20261106",
+            view_type="scenario_label_groups",
+            source_version="v:0",
+            payload=cached_payload,
+        )
+        db.commit()
+
+        monkeypatch.setattr(
+            release_label_groups,
+            "for_release",
+            lambda *_: pytest.fail("Should serve persisted DashboardReadModel without Trail HTTP"),
+        )
+        result = release_label_groups.cached_for_release(db, "gen4-release-20261106")
+        assert result == cached_payload
+    engine.dispose()

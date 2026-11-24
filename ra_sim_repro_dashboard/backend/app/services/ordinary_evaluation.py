@@ -16,6 +16,7 @@ from app.services import (
     evaluation_pipeline as p,
     release_workflow as w,
 )
+from app.services.read_views import read_projection
 
 BASIS = "ordinary_shuyi_report_v1"
 POINTER = "normalmetrics:"
@@ -232,7 +233,16 @@ def history_kpis(db):
             select(ReleaseWorkflowState).where(ReleaseWorkflowState.key.startswith(POINTER))
         )
     ]
-    return [kpi(read(db, release)) for release in releases]
+    return [
+        read_projection(
+            db,
+            ("ordinary-kpi-release", release),
+            lambda r=release: kpi(read(db, r)),
+            max_age=1800,
+            scope_releases=[release],
+        )
+        for release in releases
+    ]
 
 
 def issue_page(db, release, page, page_size, query, label):

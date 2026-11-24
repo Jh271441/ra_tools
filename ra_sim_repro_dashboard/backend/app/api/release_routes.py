@@ -68,7 +68,7 @@ def issues(
         db,
         ("source-issues", release, page, page_size, query, label, view),
         lambda: guarded(orchestrator.list_issues, db, release, page, page_size, query, label, view),
-        max_age=300,
+        max_age=1800,
         scope_releases=scope_releases,
     )
 
@@ -77,19 +77,13 @@ def issues(
 def scenario_label_groups(
     release: str = Query(pattern=r"^gen4-release-[0-9]{8}$"), db: Session = Depends(get_db)
 ):
-    return read_view(
-        db,
-        ("scenario-label-groups", release),
-        lambda: guarded(release_label_groups.for_release, db, release),
-        max_age=900,
-        scope_releases=[release],
-    )
+    return guarded(release_label_groups.cached_for_release, db, release)
 
 
 @router.get("/versions", response_model=CollectionInventoryResponse)
 def collection_versions(db: Session = Depends(get_db)):
     return read_view(
-        db, "collection-inventory", lambda: release_inventory.inventory(db), max_age=300
+        db, "collection-inventory", lambda: release_inventory.inventory(db), max_age=1800
     )
 
 

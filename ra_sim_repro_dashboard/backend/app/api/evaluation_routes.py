@@ -130,7 +130,7 @@ def versions(db: Session = Depends(get_db)):
             "versions": items,
         }
 
-    return read_view(db, "evaluation-navigation-versions", load, max_age=300)
+    return read_view(db, "evaluation-navigation-versions", load, max_age=1800)
 
 
 @router.post("/profiles/drafts", status_code=201, response_model=EvaluationProfileResponse)
@@ -176,7 +176,7 @@ def board(
         db,
         ("evaluation-board", view, *ctx.model_dump().values()),
         load,
-        max_age=300,
+        max_age=1800,
         scope_releases=scope_releases,
     )
 
@@ -193,7 +193,7 @@ def comparison(
         db,
         ("evaluation-comparison", selected, date_start, date_end),
         lambda: guarded(pipeline.comparison, db, selected, date_start, date_end),
-        max_age=300,
+        max_age=1800,
     )
 
 
@@ -232,7 +232,7 @@ def issues(
             changed_only=changed_only,
             result=result,
         ),
-        max_age=300,
+        max_age=1800,
         scope_releases=scope_releases,
     )
 
@@ -291,6 +291,6 @@ def scenario_label_summary(
         db,
         ("evaluation-scenario-label-summary", *ctx.model_dump().values(), revision),
         lambda: guarded(evaluation_label_summary.read, db, ctx.model_dump(), revision),
-        max_age=300,
+        max_age=1800,
         scope_releases=scope_releases,
     )

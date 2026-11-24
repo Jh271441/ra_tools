@@ -113,11 +113,12 @@ def read_view(
             if redis_key:
                 from_redis = redis_cache.get_json(redis_key)
                 if from_redis is not None:
-                    hydrated = (
-                        model_cls.model_validate(from_redis)
-                        if model_cls is not None
-                        else from_redis
-                    )
+                    if model_cls is not None and hasattr(model_cls, "validate_python"):
+                        hydrated = model_cls.validate_python(from_redis)
+                    elif model_cls is not None:
+                        hydrated = model_cls.model_validate(from_redis)
+                    else:
+                        hydrated = from_redis
                     with _lock:
                         _values[key] = (monotonic(), deepcopy(hydrated))
                         _values.move_to_end(key)
@@ -142,13 +143,14 @@ def read_view(
                 while len(_values) > _MAX_ENTRIES:
                     _values.popitem(last=False)
             if redis_key:
-                wire = (
-                    cached.model_dump(mode="json")
-                    if model_cls is not None and hasattr(cached, "model_dump")
-                    else cached
-                    if _is_json_primitive_tree(cached)
-                    else None
-                )
+                if model_cls is not None and hasattr(model_cls, "dump_python"):
+                    wire = model_cls.dump_python(cached, mode="json")
+                elif model_cls is not None and hasattr(cached, "model_dump"):
+                    wire = cached.model_dump(mode="json")
+                elif _is_json_primitive_tree(cached):
+                    wire = cached
+                else:
+                    wire = None
                 if wire is not None:
                     try:
                         redis_cache.set_json(redis_key, wire, ttl=max(1, int(max_age)))

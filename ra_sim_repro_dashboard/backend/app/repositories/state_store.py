@@ -55,6 +55,8 @@ def _extract_release_from_kv(key: str, payload: dict[str, Any] | None) -> str:
             payload.get("release")
             or (payload.get("context") or {}).get("release")
             or (payload.get("plan") or {}).get("release")
+            or (payload.get("scope") or {}).get("release")
+            or ((payload.get("dashboard") or {}).get("scope") or {}).get("release")
         )
         if isinstance(rel, str) and rel:
             return rel
@@ -68,6 +70,10 @@ def _extract_release_from_kv(key: str, payload: dict[str, Any] | None) -> str:
             "label_cycle",
             "evaluation_target",
             "rtime_policy",
+            "backfill",
+            "scene_cohort_sync",
+            "normalmetrics",
+            "scenario_labels",
         }:
             return suffix
     return GLOBAL_RELEASE_SCOPE
@@ -737,7 +743,33 @@ def _sync_batch_columns(obj: ReleaseSimulationBatch) -> None:
         obj.job_id = int(raw_job)
 
 
-def _affected_release_for_obj(obj: Any) -> str | None:
+def _resolve_revision_release(
+    session: Session | None, revision_key: str | None, rev_releases: dict[str, str] | None
+) -> str:
+    if revision_key:
+        if rev_releases and revision_key in rev_releases:
+            return rev_releases[revision_key]
+        if session is not None:
+            try:
+                with session.no_autoflush:
+                    rel = session.scalar(
+                        select(EvaluationRevision.release).where(
+                            EvaluationRevision.revision_key == revision_key
+                        )
+                    )
+                if isinstance(rel, str) and rel:
+                    return rel
+            except Exception:
+                pass
+    return GLOBAL_RELEASE_SCOPE
+
+
+def _affected_release_for_obj(
+    obj: Any,
+    *,
+    session: Session | None = None,
+    rev_releases: dict[str, str] | None = None,
+) -> str | None:
     if isinstance(obj, ReleaseIssueSnapshot):
         return obj.release or GLOBAL_RELEASE_SCOPE
     if isinstance(obj, ReleaseSimulationBatch):
@@ -745,13 +777,13 @@ def _affected_release_for_obj(obj: Any) -> str | None:
     if isinstance(obj, EvaluationRevision):
         return obj.release or GLOBAL_RELEASE_SCOPE
     if isinstance(obj, EvaluationRevisionBlob):
-        return GLOBAL_RELEASE_SCOPE
+        return _resolve_revision_release(session, obj.revision_key, rev_releases)
     if isinstance(obj, EvaluationExecution):
         return obj.release or GLOBAL_RELEASE_SCOPE
     if isinstance(obj, EvaluationRequest):
         return obj.release or GLOBAL_RELEASE_SCOPE
     if isinstance(obj, EvaluationScenarioTag):
-        return GLOBAL_RELEASE_SCOPE
+        return _resolve_revision_release(session, obj.revision_key, rev_releases)
     if isinstance(obj, ReproductionTimingEvidence):
         return obj.release or GLOBAL_RELEASE_SCOPE
     if isinstance(obj, ReleaseWorkflowState):
@@ -770,16 +802,21 @@ def _on_before_flush(session: Session, flush_context: Any, instances: Any) -> No
     if session.info.get("_bumping_versions"):
         return
     dirty_releases: set[str] = session.info.setdefault("_pending_version_bumps", set())
+    rev_releases = {
+        obj.revision_key: obj.release
+        for obj in (*session.new, *session.dirty, *session.deleted)
+        if isinstance(obj, EvaluationRevision) and obj.release
+    }
     for obj in (*session.new, *session.dirty):
         if isinstance(obj, ReleaseIssueSnapshot):
             _sync_snapshot_columns(obj)
         elif isinstance(obj, ReleaseSimulationBatch):
             _sync_batch_columns(obj)
-        rel = _affected_release_for_obj(obj)
+        rel = _affected_release_for_obj(obj, session=session, rev_releases=rev_releases)
         if rel:
             dirty_releases.add(rel)
     for obj in session.deleted:
-        rel = _affected_release_for_obj(obj)
+        rel = _affected_release_for_obj(obj, session=session, rev_releases=rev_releases)
         if rel:
             dirty_releases.add(rel)
 

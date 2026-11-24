@@ -2,14 +2,20 @@
 
 import csv
 from collections import defaultdict
+from copy import deepcopy
 from datetime import datetime, timezone
 import json
+import logging
+from threading import Lock, Thread
+from time import monotonic
 from urllib.parse import quote
 
 from app.config import settings
+from app.database import SessionLocal, engine as default_engine
 from app.domain.labels import full_scene_label, real_labels
 from app.domain.metrics import GOOD_RESULTS
-from app.models import Version
+from app.models import DashboardReadModel, Version, utcnow
+from app.repositories import read_models_repo
 from app.services import auto_triage_metrics, ordinary_evaluation
 from app.services.release_source import complete_query, fetch_scenarios, trail_credentials
 from app.services.report_artifacts import (
@@ -17,6 +23,13 @@ from app.services.report_artifacts import (
     resolve_report_path,
     VALID_UPLOAD_STATUSES,
 )
+
+logger = logging.getLogger(__name__)
+_SWR_LOCK = Lock()
+_INFLIGHT: set[str] = set()
+_L1_CACHE: dict[str, tuple[float, str, dict]] = {}
+_L1_TTL_SECONDS = 60.0
+_PG_FRESH_SECONDS = 1800.0
 
 
 # Trail's hash router applies decodeURI once to the whole query, then decodes
@@ -219,3 +232,117 @@ def for_release(db, release):
     version = db.get(Version, release)
     bases = historical_namespaces(version.metadata_json, release) if version else set()
     return platform_summary(release, {base: f"{base}_{release}" for base in bases})
+
+
+def _label_groups_cache_key(release: str) -> str:
+    return f"scenario_label_groups:{release}"
+
+
+def _persist_label_groups(release: str, source_version: str, payload: dict) -> None:
+    try:
+        with SessionLocal() as write_db:
+            read_models_repo.upsert_read_model(
+                write_db,
+                cache_key=_label_groups_cache_key(release),
+                scope_release=release,
+                view_type="scenario_label_groups",
+                source_version=source_version,
+                payload=payload,
+            )
+            write_db.commit()
+        with _SWR_LOCK:
+            _L1_CACHE[release] = (monotonic(), source_version, deepcopy(payload))
+    except Exception:
+        logger.debug("Skipping scenario_label_groups persistence for %s", release, exc_info=True)
+
+
+def _refresh_label_groups_async(release: str, source_version: str) -> None:
+    with _SWR_LOCK:
+        if release in _INFLIGHT:
+            return
+        _INFLIGHT.add(release)
+
+    def _run() -> None:
+        try:
+            with SessionLocal() as bg_db:
+                fresh = for_release(bg_db, release)
+            _persist_label_groups(release, source_version, fresh)
+        except Exception:
+            logger.debug(
+                "Background scenario_label_groups refresh failed for %s",
+                release,
+                exc_info=True,
+            )
+        finally:
+            with _SWR_LOCK:
+                _INFLIGHT.discard(release)
+
+    Thread(target=_run, name=f"label-groups-swr-{release}", daemon=True).start()
+
+
+def cached_for_release(db, release: str, *, fresh_seconds: float = _PG_FRESH_SECONDS) -> dict:
+    """Serve persisted scenario-label-groups from PG (<5ms) with async SWR refresh.
+
+    Avoids blocking GET requests on 4 sequential external Trail HTTP calls whenever
+    a persisted read model exists for the release.
+    """
+    is_default = False
+    try:
+        is_default = db is not None and hasattr(db, "get_bind") and db.get_bind() is default_engine
+    except Exception:
+        is_default = False
+
+    if db is None or not hasattr(db, "get"):
+        return for_release(db, release)
+
+    try:
+        versions = read_models_repo.get_release_versions(db, releases=[release])
+        source_version = f"v:{versions.get(release, 0)}"
+    except Exception:
+        source_version = "v:0"
+
+    if is_default:
+        with _SWR_LOCK:
+            cached_l1 = _L1_CACHE.get(release)
+            if (
+                cached_l1 is not None
+                and cached_l1[1] == source_version
+                and (monotonic() - cached_l1[0]) < _L1_TTL_SECONDS
+            ):
+                return deepcopy(cached_l1[2])
+
+    row = None
+    try:
+        row = db.get(DashboardReadModel, _label_groups_cache_key(release))
+    except Exception:
+        row = None
+
+    if (
+        row is not None
+        and isinstance(row.payload, dict)
+        and isinstance(row.payload.get("rows"), list)
+    ):
+        computed_at = row.computed_at
+        now_naive = utcnow()
+        if computed_at is not None and computed_at.tzinfo is not None:
+            computed_at = computed_at.astimezone(timezone.utc).replace(tzinfo=None)
+        age = (
+            (now_naive - computed_at).total_seconds()
+            if computed_at is not None
+            else fresh_seconds + 1
+        )
+        payload = deepcopy(row.payload)
+        if row.source_version == source_version and age <= fresh_seconds:
+            if is_default:
+                with _SWR_LOCK:
+                    _L1_CACHE[release] = (monotonic(), source_version, deepcopy(payload))
+            return payload
+        # Stale-while-revalidate: return persisted snapshot immediately and refresh async.
+        if is_default:
+            _refresh_label_groups_async(release, source_version)
+        return payload
+
+    fresh = for_release(db, release)
+    if is_default:
+        _persist_label_groups(release, source_version, fresh)
+    return fresh

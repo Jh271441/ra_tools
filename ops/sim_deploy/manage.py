@@ -175,12 +175,13 @@ http {{
     )
     py = root / "venv/bin/python"
     prefix = f"{py} {root}/run.py"
+    api_workers = max(1, int(env.get("API_WORKERS", "4")))
     programs = {
         "postgres": (10, f"{pg}/postgres -D {root}/postgres"),
         "redis": (20, f"{shutil.which('redis-server')} {root}/redis.conf"),
         "api": (
             30,
-            f"{prefix} {py} -m uvicorn app.main:app --host 127.0.0.1 --port {c['api_port']}",
+            f"{prefix} {py} -m uvicorn app.main:app --host 127.0.0.1 --port {c['api_port']} --workers {api_workers}",
         ),
         "web": (50, f'{shutil.which("nginx")} -c {root}/nginx.conf -g "daemon off;"'),
     }

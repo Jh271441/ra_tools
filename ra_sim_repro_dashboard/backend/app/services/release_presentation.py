@@ -9,7 +9,7 @@ from app.domain.metrics import summarize_population
 from app.models import ReleaseIssueSnapshot, ReleaseSimulationBatch
 from app.services.business_population import historical_scope, scope_for_batch
 from app.services.ordinary_evaluation import history_kpis as ordinary_kpis
-from app.services.read_views import read_view
+from app.services.read_views import read_projection, read_view
 from app.services.release_inventory import inventory as collection_inventory
 from app.services.release_workflow import effective_config, population_identity
 from app.services.result_publication import effective_publication, published_batch
@@ -178,80 +178,122 @@ def history_kpis(db):
     current_version = resolve_current(config).get("current_version")
     allowed = {p["release"] for p in config.get("periods", []) if p.get("status") == "completed"}
     collections = collection_inventory(db, config)
-    seen = set()
-    items = []
-    for batch in db.scalars(
-        select(ReleaseSimulationBatch)
-        .where(ReleaseSimulationBatch.status == "complete")
-        .order_by(ReleaseSimulationBatch.updated_at.desc())
-    ):
-        if (
-            batch.release in seen
-            or batch.payload.get("backfill")
-            or batch.release not in allowed
-            or batch.payload.get("acceptance_only")
-            or (
-                batch.payload.get("result_import")
-                and not batch.payload["result_import"].get("primary")
-            )
-        ):
+    by_release: dict[str, dict] = {}
+
+    # Highest priority first: ordinary_kpis overrides published_batch and raw batches.
+    for item in ordinary_kpis(db):
+        by_release[item["version_key"]] = item
+
+    # Second priority: approved published batches (skip releases already covered above).
+    for release in sorted(allowed):
+        if release in by_release:
             continue
-        seen.add(batch.release)
-        snapshot = db.scalars(
-            select(ReleaseIssueSnapshot)
-            .where(ReleaseIssueSnapshot.release == batch.release)
-            .order_by(ReleaseIssueSnapshot.id.desc())
-            .limit(1)
-        ).first()
-        if not snapshot or batch.payload.get("population_hash") != population_identity(
-            snapshot.payload
-        ):
-            continue
-        metrics = batch.payload.get("summary") or {}
-        if not metrics.get("available"):
-            continue
-        scope = historical_scope(
-            scope_for_batch(db, batch, collections=collections),
-            is_current=batch.release == current_version,
-        )
-        if not scope["available"] and not scope.get("historical_frozen"):
-            items.append(pending_kpi(batch.release, scope, batch.payload.get("job_id")))
-            continue
-        metrics = {**metrics, "job_id": batch.payload.get("job_id")}
-        source = summarize_population(snapshot.payload["issues"], [], {})
-        item = render_kpi(batch.release, metrics, source)
-        if scope.get("historical_frozen"):
-            item["collection_scope"] = scope
-        items.append(item)
-    for release in allowed:
-        approved = published_batch(db, release)
-        if approved:
+
+        def _load_published(rel=release):
+            approved = published_batch(db, rel)
+            if not approved:
+                return None
             scope = historical_scope(
                 scope_for_batch(db, approved, collections=collections),
-                is_current=release == current_version,
+                is_current=rel == current_version,
             )
-            items = [i for i in items if i["version_key"] != release]
             if scope["available"] or scope.get("historical_frozen"):
                 metrics = effective_publication(db, approved)
-                item = render_kpi(release, metrics, metrics)
+                item = render_kpi(rel, metrics, metrics)
                 if scope.get("historical_frozen"):
                     item["collection_scope"] = scope
-                items.append(item)
-            else:
-                items.append(pending_kpi(release, scope, approved.payload.get("job_id")))
-    for item in ordinary_kpis(db):
-        items = [existing for existing in items if existing["version_key"] != item["version_key"]]
-        items.append(item)
-    return sorted(items, key=lambda item: item["version_key"])
+                return item
+            return pending_kpi(rel, scope, approved.payload.get("job_id"))
+
+        published_item = read_projection(
+            db,
+            ("history-kpi-published", release, release == current_version),
+            _load_published,
+            max_age=1800,
+            scope_releases=[release],
+        )
+        if published_item is not None:
+            by_release[release] = published_item
+
+    # Third priority: latest complete non-backfill batch for remaining releases.
+    remaining = allowed - by_release.keys()
+    if remaining:
+        seen = set()
+        for batch in db.scalars(
+            select(ReleaseSimulationBatch)
+            .where(
+                ReleaseSimulationBatch.status == "complete",
+                ReleaseSimulationBatch.release.in_(remaining),
+            )
+            .order_by(ReleaseSimulationBatch.updated_at.desc())
+        ):
+            if (
+                batch.release in seen
+                or batch.payload.get("backfill")
+                or batch.payload.get("acceptance_only")
+                or (
+                    batch.payload.get("result_import")
+                    and not batch.payload["result_import"].get("primary")
+                )
+            ):
+                continue
+            seen.add(batch.release)
+
+            def _load_batch(b=batch):
+                snapshot = db.scalars(
+                    select(ReleaseIssueSnapshot)
+                    .where(ReleaseIssueSnapshot.release == b.release)
+                    .order_by(ReleaseIssueSnapshot.id.desc())
+                    .limit(1)
+                ).first()
+                if not snapshot:
+                    return None
+                snap_hash = getattr(snapshot, "population_hash", None) or population_identity(
+                    snapshot.payload
+                )
+                if b.payload.get("population_hash") != snap_hash:
+                    return None
+                metrics = b.payload.get("summary") or {}
+                if not metrics.get("available"):
+                    return None
+                scope = historical_scope(
+                    scope_for_batch(db, b, collections=collections),
+                    is_current=b.release == current_version,
+                )
+                if not scope["available"] and not scope.get("historical_frozen"):
+                    return pending_kpi(b.release, scope, b.payload.get("job_id"))
+                metrics = {**metrics, "job_id": b.payload.get("job_id")}
+                source = summarize_population(snapshot.payload["issues"], [], {})
+                item = render_kpi(b.release, metrics, source)
+                if scope.get("historical_frozen"):
+                    item["collection_scope"] = scope
+                return item
+
+            batch_item = read_projection(
+                db,
+                (
+                    "history-kpi-batch",
+                    batch.release,
+                    batch.fingerprint,
+                    batch.release == current_version,
+                ),
+                _load_batch,
+                max_age=1800,
+                scope_releases=[batch.release],
+            )
+            if batch_item is not None:
+                by_release[batch.release] = batch_item
+
+    return sorted(by_release.values(), key=lambda item: item["version_key"])
 
 
 def workflow_status(db):
-    return read_view(db, "workflow-status", lambda: status(db))
+    return read_view(db, "workflow-status", lambda: status(db), max_age=1800)
 
 
 def business_context(db):
-    return read_view(db, "business-context", lambda: context(db, workflow_status(db)))
+    return read_view(db, "business-context", lambda: context(db, workflow_status(db)), max_age=1800)
 
 
 def cached_history_kpis(db):
-    return read_view(db, "history-kpis", lambda: history_kpis(db))
+    return read_view(db, "history-kpis", lambda: history_kpis(db), max_age=1800)

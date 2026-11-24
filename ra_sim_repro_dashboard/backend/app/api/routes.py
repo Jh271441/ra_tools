@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
+from pydantic import TypeAdapter
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -48,6 +49,7 @@ from app.services.system_status import collect_system_status
 
 router = APIRouter(prefix="/api")
 logger = logging.getLogger(__name__)
+_VERSION_COMPARISON_LIST_ADAPTER = TypeAdapter(list[VersionComparisonItem])
 
 
 DbSession = Annotated[Session, Depends(get_db)]
@@ -74,7 +76,9 @@ def _optional_int(value: Any) -> int | None:
 
 @router.get("/dashboard/versions", response_model=VersionsResponse)
 def versions(db: DbSession) -> VersionsResponse:
-    return read_view(db, "versions", lambda: _versions(db), model_cls=VersionsResponse)
+    return read_view(
+        db, "versions", lambda: _versions(db), max_age=1800, model_cls=VersionsResponse
+    )
 
 
 def _versions(db: DbSession) -> VersionsResponse:
@@ -187,7 +191,13 @@ def _versions(db: DbSession) -> VersionsResponse:
 @router.get("/dashboard/summary", response_model=SummaryResponse)
 def summary(db: DbSession, request: Request = None) -> SummaryResponse:
     client = request.headers.get("x-ra-sim-client") if request is not None else None
-    return read_view(db, ("summary", request is not None, client), lambda: _summary(db, request))
+    return read_view(
+        db,
+        ("summary", request is not None, client),
+        lambda: _summary(db, request),
+        max_age=1800,
+        model_cls=SummaryResponse,
+    )
 
 
 def _summary(db: DbSession, request: Request = None) -> SummaryResponse:
@@ -223,7 +233,13 @@ def _summary(db: DbSession, request: Request = None) -> SummaryResponse:
 
 @router.get("/dashboard/version-comparison", response_model=list[VersionComparisonItem])
 def version_comparison(db: DbSession) -> list[VersionComparisonItem]:
-    return read_view(db, "comparison", lambda: _version_comparison(db))
+    return read_view(
+        db,
+        "comparison",
+        lambda: _version_comparison(db),
+        max_age=1800,
+        model_cls=_VERSION_COMPARISON_LIST_ADAPTER,
+    )
 
 
 def _version_comparison(db: DbSession) -> list[VersionComparisonItem]:
