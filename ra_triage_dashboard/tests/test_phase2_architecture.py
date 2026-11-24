@@ -55,18 +55,46 @@ class Phase2ArchitectureTests(unittest.TestCase):
                         deps.add(target)
             graph[mod] = deps
 
-        cycles: set[tuple[str, ...]] = set()
-        for a, adeps in graph.items():
-            for b in adeps:
-                if b in graph and a in graph[b] and a < b:
-                    cycles.add((a, b))
-                for c in graph.get(b, ()):
-                    if c in graph and a in graph[c] and a < b and a < c:
-                        cycles.add((a, b, c))
+        # Detect strongly connected components (cycles of any length).
+        index = 0
+        indices: dict[str, int] = {}
+        lowlink: dict[str, int] = {}
+        stack: list[str] = []
+        on_stack: set[str] = set()
+        sccs: list[list[str]] = []
+
+        def strongconnect(node: str) -> None:
+            nonlocal index
+            indices[node] = lowlink[node] = index
+            index += 1
+            stack.append(node)
+            on_stack.add(node)
+            for neighbor in sorted(graph.get(node, ())):
+                if neighbor not in graph:
+                    continue
+                if neighbor not in indices:
+                    strongconnect(neighbor)
+                    lowlink[node] = min(lowlink[node], lowlink[neighbor])
+                elif neighbor in on_stack:
+                    lowlink[node] = min(lowlink[node], indices[neighbor])
+            if lowlink[node] == indices[node]:
+                comp: list[str] = []
+                while True:
+                    w = stack.pop()
+                    on_stack.remove(w)
+                    comp.append(w)
+                    if w == node:
+                        break
+                if len(comp) > 1:
+                    sccs.append(sorted(comp))
+
+        for mod_name in sorted(graph):
+            if mod_name not in indices:
+                strongconnect(mod_name)
         self.assertEqual(
-            cycles,
-            set(),
-            f"Unexpected circular imports detected in app/: {sorted(cycles)}",
+            sccs,
+            [],
+            f"Unexpected circular import SCCs detected in app/: {sccs}",
         )
 
     def test_app_container_mounted_and_dependency_overrides_work(self) -> None:

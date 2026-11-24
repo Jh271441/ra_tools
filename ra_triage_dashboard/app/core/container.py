@@ -4,8 +4,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from .. import runtime as _runtime
-
 
 @dataclass
 class AppContainer:
@@ -32,6 +30,8 @@ class AppContainer:
     @classmethod
     def from_runtime(cls) -> AppContainer:
         """Bind to the active runtime module instances without duplicating pools."""
+        from .. import runtime as _runtime
+
         return cls(
             settings=_runtime.settings,
             database=_runtime.database,
