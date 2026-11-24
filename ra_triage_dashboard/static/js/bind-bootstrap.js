@@ -504,7 +504,7 @@ function bindEvents() {
   $("#gtSyncButton")?.addEventListener("click", () => {
     refreshAuthoritativeGt().catch((error) => showToast(error.message, true));
   });
-  if (!window.__RA_REACT_WORKBENCH__?.ownsPage?.("status")) {
+  if (!(window.__RA_REACT_WORKBENCH__?.ownsPage?.("status") || window.__RA_REACT_OWNED_PAGES__?.includes?.("status"))) {
     $("#refreshSystemStatusButton")?.addEventListener("click", async () => {
       const button = $("#refreshSystemStatusButton");
       button.disabled = true;
@@ -530,7 +530,7 @@ function bindEvents() {
     activateRunSourceTab("trail");
   });
   $("#reviewUploadModelButton").addEventListener("click", () => openRunImport("model"));
-  if (!window.__RA_REACT_WORKBENCH__?.ownsPage?.("users")) {
+  if (!(window.__RA_REACT_WORKBENCH__?.ownsPage?.("users") || window.__RA_REACT_OWNED_PAGES__?.includes?.("users"))) {
     $("#accessUserForm")?.addEventListener("submit", async (event) => {
       event.preventDefault();
       const input = $("#accessUserName");
@@ -1161,11 +1161,15 @@ async function bootstrap() {
     if (initialRoute.page === "version-metrics") {
       independentPageResult = settleInitialRequests([loadVersionMetrics()], "页面");
     } else if (initialRoute.page === "status") {
-      independentPageResult = settleInitialRequests([loadStatus()], "页面");
+      if (!(window.__RA_REACT_WORKBENCH__?.ownsPage?.("status") || window.__RA_REACT_OWNED_PAGES__?.includes?.("status"))) {
+        independentPageResult = settleInitialRequests([loadStatus()], "页面");
+      }
     } else if (initialRoute.page === "rd-results") {
       independentPageResult = settleInitialRequests([loadRdResults()], "页面");
     } else if (initialRoute.page === "users") {
-      independentPageResult = settleInitialRequests([loadAccessUsers(), loadMentionUsers()], "页面");
+      if (!(window.__RA_REACT_WORKBENCH__?.ownsPage?.("users") || window.__RA_REACT_OWNED_PAGES__?.includes?.("users"))) {
+        independentPageResult = settleInitialRequests([loadAccessUsers(), loadMentionUsers()], "页面");
+      }
     } else if (initialRoute.page === "review-assignments") {
       independentPageResult = settleInitialRequests([loadReviewAssignments({
         splitId: initialRoute.reviewAssignmentSplitId,

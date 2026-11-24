@@ -91,8 +91,8 @@ function baselineLifecycleLabel(status) {
 }
 
 function renderSystemStatus() {
-  if (typeof window !== "undefined" && window.__RA_REACT_WORKBENCH__?.ownsPage?.("status")) {
-    window.__RA_REACT_WORKBENCH__.notifySync();
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("status") || window.__RA_REACT_OWNED_PAGES__?.includes?.("status"))) {
+    window.__RA_REACT_WORKBENCH__?.notifySync?.();
     return;
   }
   const hero = $("#systemStatusHero");
@@ -258,8 +258,8 @@ function syncSystemStatusRefresh() {
 }
 
 async function loadStatus() {
-  if (typeof window !== "undefined" && window.__RA_REACT_WORKBENCH__?.ownsPage?.("status")) {
-    window.__RA_REACT_WORKBENCH__.refreshPage("status");
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("status") || window.__RA_REACT_OWNED_PAGES__?.includes?.("status"))) {
+    window.__RA_REACT_WORKBENCH__?.refreshPage?.("status");
     return;
   }
   if (systemStatusRefreshTimer !== null) window.clearTimeout(systemStatusRefreshTimer);

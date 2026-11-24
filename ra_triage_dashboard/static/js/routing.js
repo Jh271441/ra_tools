@@ -1538,11 +1538,11 @@ function showPage(
   if (target === "daily-cron" && loadPageData) {
     pageLoads.push(() => loadDailyCron());
   }
-  if (target === "status" && loadPageData) {
+  if (target === "status" && loadPageData && !(window.__RA_REACT_WORKBENCH__?.ownsPage?.("status") || window.__RA_REACT_OWNED_PAGES__?.includes?.("status"))) {
     pageLoads.push(() => loadStatus().catch((error) => showToast(error.message, true)));
   }
   if (target === "trail-history" && loadPageData) pageLoads.push(() => loadTrailHistory());
-  if (target === "users" && loadPageData) {
+  if (target === "users" && loadPageData && !(window.__RA_REACT_WORKBENCH__?.ownsPage?.("users") || window.__RA_REACT_OWNED_PAGES__?.includes?.("users"))) {
     pageLoads.push(() => loadAccessUsers().catch((error) => showToast(error.message, true)));
     pageLoads.push(() => loadMentionUsers().catch((error) => showToast(error.message, true)));
   }

@@ -149,6 +149,12 @@
   min-height: 38px;
 }
 
+.ra-users-filter-bar .ra-react-select {
+  flex: 0 1 180px;
+  width: auto;
+  min-width: 150px;
+}
+
 .ra-user-row,
 .ra-user-edit-row {
   display: flex;

@@ -531,8 +531,8 @@ function renderAnalysisCatalogFilters() {
 }
 
 function renderAccessUsers({preserveDrafts=false}={}) {
-  if (typeof window !== "undefined" && window.__RA_REACT_WORKBENCH__?.ownsPage?.("users")) {
-    window.__RA_REACT_WORKBENCH__.notifySync();
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("users") || window.__RA_REACT_OWNED_PAGES__?.includes?.("users"))) {
+    window.__RA_REACT_WORKBENCH__?.notifySync?.();
     return;
   }
   const drafts=preserveDrafts?new Map([...document.querySelectorAll("[data-access-user]")].map(row=>[row.dataset.accessUser,{role:row.querySelector("[data-access-role]").value,intent_permission:row.querySelector("[data-intent-permission]").value,annotation_role:row.querySelector("[data-annotation-role]").value}])):new Map();
@@ -562,8 +562,8 @@ async function loadAccessUsers() {
 }
 
 function renderMentionUsers() {
-  if (typeof window !== "undefined" && window.__RA_REACT_WORKBENCH__?.ownsPage?.("users")) {
-    window.__RA_REACT_WORKBENCH__.notifySync();
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("users") || window.__RA_REACT_OWNED_PAGES__?.includes?.("users"))) {
+    window.__RA_REACT_WORKBENCH__?.notifySync?.();
     return;
   }
   const target = $("#mentionUserList");

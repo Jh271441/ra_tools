@@ -371,7 +371,7 @@ export const UsersPage: React.FC<UsersPageProps> = ({
 
         <form
           className="access-create access-create-permissions ra-users-form"
-          id="accessUserForm"
+          id="raAccessUserForm"
           onSubmit={(e) => {
             e.preventDefault();
             const cleaned = newUsername.trim().toLowerCase();
@@ -465,7 +465,7 @@ export const UsersPage: React.FC<UsersPageProps> = ({
           />
         </div>
 
-        <div className="access-list" id="accessUserList">
+        <div className="access-list" id="raAccessUserList">
           {accessQuery.isLoading ? (
             <div className="no-asset">
               {bilingual(lang, "正在加载用户权限…", "Loading user access…")}
@@ -607,7 +607,7 @@ export const UsersPage: React.FC<UsersPageProps> = ({
 
         <form
           className="access-create ra-mention-form"
-          id="mentionUserForm"
+          id="raMentionUserForm"
           onSubmit={(e) => {
             e.preventDefault();
             const cleaned = newMentionUsername.trim().toLowerCase();
@@ -659,7 +659,7 @@ export const UsersPage: React.FC<UsersPageProps> = ({
           />
         </div>
 
-        <div className="access-list" id="mentionUserList">
+        <div className="access-list" id="raMentionUserList">
           {mentionQuery.isLoading ? (
             <div className="no-asset">
               {bilingual(lang, "正在加载可 @ 人员…", "Loading mention directory…")}
