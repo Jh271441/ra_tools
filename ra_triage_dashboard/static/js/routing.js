@@ -1607,6 +1607,9 @@ function showPage(
     load();
   }
   if (typeof syncSystemStatusRefresh === "function") syncSystemStatusRefresh();
+  if (typeof window !== "undefined" && window.__RA_REACT_WORKBENCH__?.notifySync) {
+    window.__RA_REACT_WORKBENCH__.notifySync();
+  }
   // Instant scroll keeps tab switches snappy; avoid smooth-scroll lag between pages.
   if (!preserveScroll && (target !== "review" || issue)) {
     window.scrollTo({ top: 0, behavior: "auto" });

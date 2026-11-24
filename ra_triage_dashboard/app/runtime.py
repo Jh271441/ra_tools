@@ -14,6 +14,7 @@ from .observability import BoundedObservationSet
 from .settings import Settings
 from .video_playback import VideoPlaybackCache
 from .video_stream import VideoStreamCache
+from .vite_assets import render_vite_assets_json
 from .web_paths import render_index_html, with_base_path
 
 
@@ -52,6 +53,7 @@ APP_STARTED_MONOTONIC = time.monotonic()
 INDEX_HTML = render_index_html(
     (settings.static_dir / "index.html").read_text(encoding="utf-8"),
     settings.base_path,
+    vite_assets_json=render_vite_assets_json(settings.static_dir),
 )
 
 def _public_path(path: str) -> str:

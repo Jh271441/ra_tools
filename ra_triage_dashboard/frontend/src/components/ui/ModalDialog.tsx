@@ -1,0 +1,80 @@
+import React, { useEffect, useId, useRef } from "react";
+import { bilingual, UiLanguage } from "../../bridge/useWorkbenchBridge";
+
+export interface ModalDialogProps {
+  open: boolean;
+  title: string;
+  lang: UiLanguage;
+  onClose: () => void;
+  children: React.ReactNode;
+  footer?: React.ReactNode;
+  wide?: boolean;
+}
+
+export const ModalDialog: React.FC<ModalDialogProps> = ({
+  open,
+  title,
+  lang,
+  onClose,
+  children,
+  footer,
+  wide = false,
+}) => {
+  const titleId = useId();
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+  const cardRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    previousFocusRef.current = document.activeElement as HTMLElement | null;
+    cardRef.current?.focus();
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.isComposing) return;
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      previousFocusRef.current?.focus?.();
+    };
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  return (
+    <div
+      className="ra-modal-backdrop"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div
+        ref={cardRef}
+        tabIndex={-1}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        className={`dialog-card ra-modal-card${wide ? " ra-modal-wide" : ""}`}
+      >
+        <div className="dialog-heading">
+          <h2 id={titleId}>{title}</h2>
+          <button
+            type="button"
+            className="icon-button"
+            aria-label={bilingual(lang, "关闭", "Close")}
+            onClick={onClose}
+          >
+            ×
+          </button>
+        </div>
+        <div className="ra-modal-body">{children}</div>
+        {footer && <div className="dialog-actions">{footer}</div>}
+      </div>
+    </div>
+  );
+};

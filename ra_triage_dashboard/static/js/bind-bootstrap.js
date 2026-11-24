@@ -504,18 +504,20 @@ function bindEvents() {
   $("#gtSyncButton")?.addEventListener("click", () => {
     refreshAuthoritativeGt().catch((error) => showToast(error.message, true));
   });
-  $("#refreshSystemStatusButton").addEventListener("click", async () => {
-    const button = $("#refreshSystemStatusButton");
-    button.disabled = true;
-    try {
-      await loadStatus();
-      showToast(t("toast.status_refreshed"));
-    } catch (error) {
-      showToast(error.message, true);
-    } finally {
-      button.disabled = false;
-    }
-  });
+  if (!window.__RA_REACT_WORKBENCH__?.ownsPage?.("status")) {
+    $("#refreshSystemStatusButton")?.addEventListener("click", async () => {
+      const button = $("#refreshSystemStatusButton");
+      button.disabled = true;
+      try {
+        await loadStatus();
+        showToast(t("toast.status_refreshed"));
+      } catch (error) {
+        showToast(error.message, true);
+      } finally {
+        button.disabled = false;
+      }
+    });
+  }
   $("#checkTrailButton").addEventListener("click", () => syncTrail("preview"));
   $("#syncTrailButton").addEventListener("click", () => syncTrail("create"));
   $("#runManagerImportButton").addEventListener("click", () => {
@@ -528,70 +530,72 @@ function bindEvents() {
     activateRunSourceTab("trail");
   });
   $("#reviewUploadModelButton").addEventListener("click", () => openRunImport("model"));
-  $("#accessUserForm").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const input = $("#accessUserName");
-    const username = String(input.value || "").trim().toLowerCase();
-    if (!username) return showToast(t("toast.enter_username"), true);
-    const submit = event.submitter || event.currentTarget.querySelector("button[type='submit']");
-    submit.disabled = true;
-    try {
-      await saveAccessUser(username, $("#accessUserRole").value, $("#accessIntentPermission").value, $("#accessAnnotationRole").value);
-      input.value = "";
-      showToast(t("toast.access_saved"));
-    } catch (error) {
-      showToast(error.message, true);
-    } finally {
-      submit.disabled = false;
-    }
-  });
-  $("#accessUserList").addEventListener("click", async (event) => {
-    const row = event.target.closest("[data-access-user]");
-    if (!row) return;
-    const username = row.dataset.accessUser;
-    if (event.target.closest("[data-save-access-user]")) {
+  if (!window.__RA_REACT_WORKBENCH__?.ownsPage?.("users")) {
+    $("#accessUserForm")?.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const input = $("#accessUserName");
+      const username = String(input.value || "").trim().toLowerCase();
+      if (!username) return showToast(t("toast.enter_username"), true);
+      const submit = event.submitter || event.currentTarget.querySelector("button[type='submit']");
+      submit.disabled = true;
       try {
-        await saveAccessUser(username, row.querySelector("[data-access-role]").value, row.querySelector("[data-intent-permission]").value, row.querySelector("[data-annotation-role]").value);
-        showToast(t("toast.access_updated"));
-      } catch (error) { showToast(error.message, true); }
-    }
-    if (event.target.closest("[data-remove-access-user]")) {
-      if (!window.confirm(t("access.confirm_remove", { user: username }))) return;
-      try {
-        const result = await api(`/api/access-users/${encodeURIComponent(username)}`, { method: "DELETE" });
-        acknowledgeLocalChange(result);
-        await loadAccessUsers();
-        showToast(t("toast.access_removed"));
-      } catch (error) { showToast(error.message, true); }
-    }
-  });
-  $("#mentionUserForm")?.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const input = $("#mentionUserName");
-    const username = String(input?.value || "").trim().toLowerCase();
-    if (!username) return showToast("请输入 LDAP 用户名。", true);
-    try {
-      await saveMentionUser(username, true);
-      input.value = "";
-      showToast("可 @ 人员已保存。");
-    } catch (error) { showToast(error.message, true); }
-  });
-  $("#mentionUserList")?.addEventListener("click", async (event) => {
-    const row = event.target.closest("[data-mention-user]");
-    if (!row) return;
-    const username = row.dataset.mentionUser;
-    try {
-      if (event.target.closest("[data-save-mention-user]")) {
-        await saveMentionUser(username, row.querySelector("[data-mention-enabled]").checked);
-        showToast("@ 人员状态已更新。");
-      } else if (event.target.closest("[data-remove-mention-user]")) {
-        const result = await api(`/api/mention-users/${encodeURIComponent(username)}`, { method: "DELETE" });
-        acknowledgeLocalChange(result);
-        await loadMentionUsers();
-        showToast("@ 人员已移除。");
+        await saveAccessUser(username, $("#accessUserRole").value, $("#accessIntentPermission").value, $("#accessAnnotationRole").value);
+        input.value = "";
+        showToast(t("toast.access_saved"));
+      } catch (error) {
+        showToast(error.message, true);
+      } finally {
+        submit.disabled = false;
       }
-    } catch (error) { showToast(error.message, true); }
-  });
+    });
+    $("#accessUserList")?.addEventListener("click", async (event) => {
+      const row = event.target.closest("[data-access-user]");
+      if (!row) return;
+      const username = row.dataset.accessUser;
+      if (event.target.closest("[data-save-access-user]")) {
+        try {
+          await saveAccessUser(username, row.querySelector("[data-access-role]").value, row.querySelector("[data-intent-permission]").value, row.querySelector("[data-annotation-role]").value);
+          showToast(t("toast.access_updated"));
+        } catch (error) { showToast(error.message, true); }
+      }
+      if (event.target.closest("[data-remove-access-user]")) {
+        if (!window.confirm(t("access.confirm_remove", { user: username }))) return;
+        try {
+          const result = await api(`/api/access-users/${encodeURIComponent(username)}`, { method: "DELETE" });
+          acknowledgeLocalChange(result);
+          await loadAccessUsers();
+          showToast(t("toast.access_removed"));
+        } catch (error) { showToast(error.message, true); }
+      }
+    });
+    $("#mentionUserForm")?.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const input = $("#mentionUserName");
+      const username = String(input?.value || "").trim().toLowerCase();
+      if (!username) return showToast("请输入 LDAP 用户名。", true);
+      try {
+        await saveMentionUser(username, true);
+        input.value = "";
+        showToast("可 @ 人员已保存。");
+      } catch (error) { showToast(error.message, true); }
+    });
+    $("#mentionUserList")?.addEventListener("click", async (event) => {
+      const row = event.target.closest("[data-mention-user]");
+      if (!row) return;
+      const username = row.dataset.mentionUser;
+      try {
+        if (event.target.closest("[data-save-mention-user]")) {
+          await saveMentionUser(username, row.querySelector("[data-mention-enabled]").checked);
+          showToast("@ 人员状态已更新。");
+        } else if (event.target.closest("[data-remove-mention-user]")) {
+          const result = await api(`/api/mention-users/${encodeURIComponent(username)}`, { method: "DELETE" });
+          acknowledgeLocalChange(result);
+          await loadMentionUsers();
+          showToast("@ 人员已移除。");
+        }
+      } catch (error) { showToast(error.message, true); }
+    });
+  }
   bindAnalysisDiscussionEditor();
   bindAnalysisDiscussionEnterSubmit();
   $("#analysisDiscussionDialog")?.addEventListener("close", closeAnalysisDiscussion);

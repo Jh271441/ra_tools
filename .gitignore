@@ -9,6 +9,11 @@ data/
 *.png
 *.json
 !ra_triage_dashboard/config/model_profiles.json
+!ra_triage_dashboard/frontend/package.json
+!ra_triage_dashboard/frontend/package-lock.json
+!ra_triage_dashboard/frontend/tsconfig.json
+!ra_triage_dashboard/frontend/openapi.json
+!ra_triage_dashboard/static/dist/.vite/manifest.json
 !ra_sim_repro_dashboard/frontend/package.json
 !ra_sim_repro_dashboard/frontend/package-lock.json
 !ra_sim_repro_dashboard/frontend/tsconfig.json

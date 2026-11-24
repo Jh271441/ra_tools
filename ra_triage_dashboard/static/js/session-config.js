@@ -156,6 +156,9 @@ function renderSession() {
   if (typeof renderGtSyncStatus === "function") renderGtSyncStatus();
   if (typeof renderVersionMetrics === "function") renderVersionMetrics();
   if (typeof syncReviewWorkflowMode === "function") syncReviewWorkflowMode(state.selectedCase);
+  if (typeof window !== "undefined" && window.__RA_REACT_WORKBENCH__?.notifySync) {
+    window.__RA_REACT_WORKBENCH__.notifySync();
+  }
 }
 
 async function loadSession() {
@@ -524,6 +527,10 @@ function renderAnalysisCatalogFilters() {
 }
 
 function renderAccessUsers({preserveDrafts=false}={}) {
+  if (typeof window !== "undefined" && window.__RA_REACT_WORKBENCH__?.ownsPage?.("users")) {
+    window.__RA_REACT_WORKBENCH__.notifySync();
+    return;
+  }
   const drafts=preserveDrafts?new Map([...document.querySelectorAll("[data-access-user]")].map(row=>[row.dataset.accessUser,{role:row.querySelector("[data-access-role]").value,intent_permission:row.querySelector("[data-intent-permission]").value,annotation_role:row.querySelector("[data-annotation-role]").value}])):new Map();
   const target = $("#accessUserList");
   if (!target) return;
@@ -551,6 +558,10 @@ async function loadAccessUsers() {
 }
 
 function renderMentionUsers() {
+  if (typeof window !== "undefined" && window.__RA_REACT_WORKBENCH__?.ownsPage?.("users")) {
+    window.__RA_REACT_WORKBENCH__.notifySync();
+    return;
+  }
   const target = $("#mentionUserList");
   if (!target) return;
   if (!state.mentionUsers.length) {

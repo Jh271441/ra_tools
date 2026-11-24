@@ -2689,6 +2689,7 @@
     </dialog>
 
     <div class="toast hidden" id="toast"></div>
+    <script id="raViteAssets" type="application/json">{{RA_TRIAGE_VITE_ASSETS}}</script>
     <script>
       document.querySelectorAll("[data-app-path]").forEach((link) => {
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
@@ -2697,6 +2698,27 @@
       appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app-bundle.js?v=manual-triage-874`;
       appScript.async = false;
       document.body.appendChild(appScript);
+      (() => {
+        try {
+          const el = document.getElementById("raViteAssets");
+          const parsed = el ? JSON.parse(el.textContent || "{}") : {};
+          const activeBase = window.__RA_TRIAGE_BASE__ || "";
+          for (const cssPath of Array.isArray(parsed.css) ? parsed.css : []) {
+            const link = document.createElement("link");
+            link.rel = "stylesheet";
+            link.href = `${activeBase}/static/dist/${cssPath}`;
+            document.head.appendChild(link);
+          }
+          for (const jsPath of Array.isArray(parsed.js) ? parsed.js : []) {
+            const mod = document.createElement("script");
+            mod.type = "module";
+            mod.src = `${activeBase}/static/dist/${jsPath}`;
+            document.body.appendChild(mod);
+          }
+        } catch (_error) {
+          // Legacy bundle remains active when Vite manifest is absent.
+        }
+      })();
     </script>
   </body>
 </html>

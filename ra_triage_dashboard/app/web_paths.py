@@ -4,6 +4,7 @@ import re
 
 
 BASE_PATH_TOKEN = "{{RA_TRIAGE_BASE_PATH}}"
+VITE_ASSETS_TOKEN = "{{RA_TRIAGE_VITE_ASSETS}}"
 _BASE_PATH_RE = re.compile(r"^(/[A-Za-z0-9._-]+)*$")
 
 
@@ -39,9 +40,16 @@ def with_base_path(base_path: str, path: str) -> str:
     return f"{base}{path}"
 
 
-def render_index_html(template: str, base_path: str) -> str:
-    """Inject the validated public prefix into explicit shell placeholders."""
+def render_index_html(
+    template: str,
+    base_path: str,
+    vite_assets_json: str = '{"js":[],"css":[]}',
+) -> str:
+    """Inject the validated public prefix and optional Vite asset manifest."""
 
     if BASE_PATH_TOKEN not in template:
         raise RuntimeError("index.html 缺少 RA Triage base path 占位符。")
-    return template.replace(BASE_PATH_TOKEN, normalize_base_path(base_path))
+    rendered = template.replace(BASE_PATH_TOKEN, normalize_base_path(base_path))
+    if VITE_ASSETS_TOKEN in rendered:
+        rendered = rendered.replace(VITE_ASSETS_TOKEN, vite_assets_json)
+    return rendered
