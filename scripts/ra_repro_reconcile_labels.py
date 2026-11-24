@@ -1,4 +1,4 @@
-"""Audited GT cohort label repair for scenes with no submitted simulation."""
+"""Audited GT cohort label repair for verified preparation or published metric revisions."""
 import fcntl
 import hashlib
 import json
@@ -43,6 +43,14 @@ def reconcile(payload, query, update, directory):
     def inputs(row):
         return {k:row.get(k) for k in ('name', 'scenario', 'start_timestamp', 'end_timestamp', 'scenario_tags')}
 
+    def verify_updated(sid, row):
+        identity(row, expected[sid])
+        if payload.get('published_binding') and any(row.get(k) != before[sid].get(k)
+                for k in ('version', 'trip_id', 'review_status', 'car_id', 'platform', 'description')):
+            raise ValueError('Published Scenario metadata changed after label synchronization')
+        if scene_labels(row) != set(expected[sid]['after_labels']) or inputs(row) != inputs(before[sid]):
+            raise ValueError('Scenario input or labels differ after synchronization')
+
     directory = Path(directory) / 'label-sync'
     directory.mkdir(parents=True, exist_ok=True)
     with (directory / 'reconcile.lock').open('w') as lock:
@@ -72,16 +80,29 @@ def reconcile(payload, query, update, directory):
         save()
         try:
             for sid, change in expected.items():
+                if payload.get('published_binding'):
+                    # Re-read at each write so edits made since batch preflight
+                    # do not get overwritten by an older complete label list.
+                    latest = query([sid])
+                    if (len(latest) != 1 or str(latest[0]['id']) != sid
+                            or latest[0].get('version') != before[sid].get('version')
+                            or inputs(latest[0]) != inputs(before[sid])
+                            or scene_labels(latest[0]) != set(change['before_labels'])):
+                        raise ValueError('Concurrent Scenario change during label synchronization')
+                    identity(latest[0], change)
                 response = update(sid, change['after_labels'])
                 if not response or response.get('msg') != 'success':
                     raise ValueError('Scenario cohort label update failed')
                 audit['updated_ids'].append(sid)
                 save()
+                if payload.get('published_binding'):
+                    verified = query([sid])
+                    if len(verified) != 1 or str(verified[0]['id']) != sid:
+                        raise ValueError('Scenario readback identity mismatch')
+                    verify_updated(sid, verified[0])
             after = fetch()
             for sid, row in after.items():
-                identity(row, expected[sid])
-                if scene_labels(row) != set(expected[sid]['after_labels']) or inputs(row) != inputs(before[sid]):
-                    raise ValueError('Scenario input or labels differ after synchronization')
+                verify_updated(sid, row)
             audit.update(status='complete', after=after)
             save()
         except Exception as exc:

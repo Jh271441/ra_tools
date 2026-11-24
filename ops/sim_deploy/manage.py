@@ -115,6 +115,9 @@ http {{
  log_format sim_sanitized '$remote_addr - [$time_local] "$request_method $uri $server_protocol" $status $body_bytes_sent $request_time';
  access_log {root}/logs/nginx-access.log sim_sanitized;
  gzip on;
+ gzip_vary on;
+ gzip_proxied any;
+ gzip_comp_level 5;
  gzip_min_length 1024;
  gzip_types text/plain text/css application/json application/javascript text/xml application/xml image/svg+xml;
  client_body_temp_path {root}/nginx-client;
@@ -140,8 +143,8 @@ http {{
    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
    proxy_set_header X-Forwarded-Proto $scheme;
   }}
-  location = / {{ return 302 /sim/overview; }}
-  location = /sim {{ return 302 /sim/overview; }}
+  location = / {{ return 302 /sim/overview$is_args$args; }}
+  location = /sim {{ return 302 /sim/overview$is_args$args; }}
   location /sim/api/ {{
    proxy_pass http://127.0.0.1:{c["api_port"]}/api/;
    proxy_read_timeout 120s;
@@ -150,7 +153,7 @@ http {{
    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
    proxy_set_header X-Forwarded-Proto $scheme;
   }}
-  location = /sim/weekly {{ return 302 /sim/weekly/; }}
+  location = /sim/weekly {{ return 302 /sim/weekly/$is_args$args; }}
   location /sim/weekly/ {{ alias {root}/weekly/; index index.html; }}
   location /sim/assets/ {{
    alias {src}/ra_sim_repro_dashboard/frontend/dist/assets/;
@@ -223,9 +226,9 @@ autostart=true
 autorestart=true
 startsecs=3
 startretries=10
-stopasgroup=true
+stopasgroup={'false' if name == 'release-worker' else 'true'}
 killasgroup=true
-stopwaitsecs=60
+stopwaitsecs={1900 if name == 'release-worker' else 60}
 redirect_stderr=true
 stdout_logfile={root}/logs/{name}.log
 stdout_logfile_maxbytes=10MB
