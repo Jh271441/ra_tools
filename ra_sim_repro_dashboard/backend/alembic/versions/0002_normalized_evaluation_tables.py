@@ -11,7 +11,7 @@ from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import JSONB
 
-revision = "0002_normalized_evaluation_tables"
+revision = "0002_normalized_eval_tables"
 down_revision = "0001_expand_kv_and_indexes"
 branch_labels = None
 depends_on = None

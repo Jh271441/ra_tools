@@ -90,6 +90,14 @@ def test_alembic_upgrade_downgrade_roundtrip_on_legacy_schema(tmp_path):
     cfg.set_main_option("script_location", str(BACKEND_DIR / "alembic"))
     cfg.set_main_option("sqlalchemy.url", url)
 
+    from alembic.script import ScriptDirectory
+
+    script_dir = ScriptDirectory.from_config(cfg)
+    for rev in script_dir.walk_revisions():
+        assert (
+            len(rev.revision) <= 32
+        ), f"Alembic revision ID exceeds PG VARCHAR(32): {rev.revision!r}"
+
     command.upgrade(cfg, "head")
     insp = inspect(engine)
     tables = set(insp.get_table_names())
@@ -115,6 +123,14 @@ def test_alembic_upgrade_downgrade_roundtrip_on_legacy_schema(tmp_path):
     command.downgrade(cfg, "base")
     insp_down = inspect(engine)
     assert "evaluation_revisions" not in set(insp_down.get_table_names())
+
+    from alembic.script import ScriptDirectory
+
+    script_dir = ScriptDirectory.from_config(cfg)
+    for rev in script_dir.walk_revisions():
+        assert (
+            len(rev.revision) <= 32
+        ), f"Alembic revision ID exceeds PG VARCHAR(32): {rev.revision!r}"
 
     command.upgrade(cfg, "head")
     assert "evaluation_revisions" in set(inspect(engine).get_table_names())
