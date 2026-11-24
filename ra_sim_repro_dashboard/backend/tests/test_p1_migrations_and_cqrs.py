@@ -408,3 +408,22 @@ def test_standalone_evaluation_worker_guards(monkeypatch):
     monkeypatch.setenv("EVALUATION_WORKER_RUNNER", "api")
     with pytest.raises(RuntimeError, match="EVALUATION_WORKER_RUNNER=worker"):
         eval_worker_cli.main()
+
+
+def test_navigation_versions_uses_jsonb_array_length_on_postgresql():
+    from sqlalchemy.dialects import postgresql
+
+    captured = []
+
+    class FakePgSession:
+        def get_bind(self):
+            return MagicMock(dialect=postgresql.dialect())
+
+        def execute(self, stmt):
+            captured.append(str(stmt.compile(dialect=postgresql.dialect())))
+            return [("gen4-release-20261106", 1703)]
+
+    result = p.navigation_versions(FakePgSession())
+    assert result == [{"release": "gen4-release-20261106", "source_count": 1703}]
+    assert "jsonb_array_length(" in captured[0]
+    assert "json_array_length(" not in captured[0]

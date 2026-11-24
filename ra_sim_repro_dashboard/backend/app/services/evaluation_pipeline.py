@@ -100,10 +100,13 @@ def navigation_versions(db):
         .group_by(ReleaseIssueSnapshot.release)
         .subquery()
     )
+    bind = db.get_bind()
+    is_pg = bind is not None and bind.dialect.name == "postgresql"
+    array_len = func.jsonb_array_length if is_pg else func.json_array_length
     statement = (
         select(
             ReleaseIssueSnapshot.release,
-            func.json_array_length(ReleaseIssueSnapshot.payload["issues"]),
+            array_len(ReleaseIssueSnapshot.payload["issues"]),
         )
         .join(latest, ReleaseIssueSnapshot.id == latest.c.id)
         .order_by(ReleaseIssueSnapshot.release.desc())
