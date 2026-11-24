@@ -312,17 +312,36 @@ def _allocate_group_orthogonal(cases, pool, *, basis, anchors, blocked, wanted, 
                                preferred_partners=None):
     """Assign exact group quotas while balancing cross-group partner buckets orthogonally (or 1-to-1 paired)."""
     # Shuffle Case IDs via surrogate keys so base flow never clumps alphabetically.
-    shuffled = sorted(cases, key=lambda iid: _seed_key(seed, gid, iid))
+    sha256 = hashlib.sha256
+    seed_prefix = f"{seed}:{gid}:"
+    shuffled = sorted(cases, key=lambda iid: sha256((seed_prefix + str(iid)).encode("utf-8")).hexdigest()[:16])
     width = len(str(max(1, len(shuffled))))
     fwd = {iid: f"s{idx:0{width}d}" for idx, iid in enumerate(shuffled)}
     rev = {surrogate: iid for iid, surrogate in fwd.items()}
 
+    anchor_by_issue = {}
+    for i, p in anchors:
+        if i not in anchor_by_issue:
+            anchor_by_issue[i] = p
+    sorted_pos_pool = [p for p, w in sorted(pool.items()) if w > 0]
+    default_owner = next(iter(pool))
+    has_blocked = bool(blocked)
+
     templates = []
     for iid in shuffled:
-        anchor_owner = next((p for i, p in anchors if i == iid), None)
+        anchor_owner = anchor_by_issue.get(iid)
         pin_owner = wanted.get(iid)
-        fallback = next((p for p, w in sorted(pool.items()) if w > 0 and (iid, p) not in blocked), next(iter(pool)))
-        owner = anchor_owner or pin_owner or (old_owners.get(iid) if old_owners.get(iid) in pool and (iid, old_owners.get(iid)) not in blocked else fallback)
+        old_owner = old_owners.get(iid)
+        if anchor_owner:
+            owner = anchor_owner
+        elif pin_owner:
+            owner = pin_owner
+        elif old_owner in pool and (not has_blocked or (iid, old_owner) not in blocked):
+            owner = old_owner
+        elif not has_blocked:
+            owner = sorted_pos_pool[0] if sorted_pos_pool else default_owner
+        else:
+            owner = next((p for p in sorted_pos_pool if (iid, p) not in blocked), default_owner)
         templates.append(dict(issue_id=fwd[iid], assignee=owner, assignment_kind="base", ordinal=ordinal[iid]))
 
     s_anchors = {(fwd[iid], p) for iid, p in anchors if iid in fwd}
@@ -678,14 +697,37 @@ def plan_groups(issue_ids, groups, rules, *, seed, old_groups=(), history=None,
                         ))
                     )
                 chosen = []
+                gid_pos = pos_names[gid]
+                has_forbidden = bool(forbidden)
                 for iid in ordered_cands:
                     if len(chosen) == free:
                         break
+                    f_iid = fixed.get(iid)
+                    e_iid = explicit.get(iid)
+                    # Fast path: when all earlier groups on iid are already pinned and no
+                    # extra unpinned later groups exist, matching reduces to checking that
+                    # gid has at least one member not already taken by a pinned group.
+                    if not f_iid and not e_iid:
+                        if not prev_gids:
+                            if any((not has_forbidden) or (iid, n) not in forbidden for n in gid_pos):
+                                chosen.append(iid)
+                            continue
+                        p_iid = placed.get(iid)
+                        u_iid = union_covered.get(iid)
+                        taken_prev = {
+                            (p_iid.get(p_gid) if p_iid else None) or (u_iid.get(p_gid) if u_iid else None)
+                            for p_gid in prev_gids
+                            if iid in covered[p_gid]
+                        }
+                        taken_prev.discard(None)
+                        if any(n not in taken_prev and (not has_forbidden or (iid, n) not in forbidden) for n in gid_pos):
+                            chosen.append(iid)
+                        continue
                     pinned_now = {
                         **{p_gid: placed[iid][p_gid] for p_gid in prev_gids if p_gid in placed[iid]},
                         **{p_gid: union_covered[iid][p_gid] for p_gid in prev_gids if p_gid in union_covered[iid]},
-                        **fixed.get(iid, {}),
-                        **explicit.get(iid, {}),
+                        **(f_iid or {}),
+                        **(e_iid or {}),
                     }
                     issue_groups = list(dict.fromkeys([
                         *[p_gid for p_gid in prev_gids if iid in covered[p_gid]],

@@ -1,11 +1,12 @@
 /* One task allocation editor shared by Combined Review and Case labeling. */
-const taskAllocationEditor = { config: null, busy: false, error: null, request: null, opener: null, sequence: 0, preview: null, live: null };
+const taskAllocationEditor = { config: null, busy: false, error: null, request: null, opener: null, sequence: 0, preview: null, displayPreview: null, live: null };
 
-function invalidateTaskAllocationPreview() {
+function invalidateTaskAllocationPreview({ clearDisplay = false } = {}) {
   const editor = taskAllocationEditor;
   clearTimeout(editor.live?.timer);
   editor.live?.controller?.abort();
   Object.assign(editor, { live: null, preview: null, request: null });
+  if (clearDisplay) editor.displayPreview = null;
 }
 
 function allocationComparison(before, after) {
@@ -201,16 +202,23 @@ function renderTaskAllocationLivePreview() {
   if (!content) return;
   const error = editor.live?.error?.messages;
   const status = $("#taskAllocationLiveStatus");
+  const pendingBadge = $("#taskAllocationLivePending");
+  const shown = editor.preview || editor.displayPreview || editor.config;
+  const hasChart = Boolean(shown?.group_coverage?.case_count);
+  const isPending = Boolean(!editor.preview && !error && editor.config.editable);
+  if (pendingBadge) pendingBadge.hidden = !(isPending && hasChart);
   status.textContent = error ? uiText(error.zh, error.en)
-    : editor.preview || !editor.config.editable ? "" : uiText("正在计算预览…", "Calculating preview…");
+    : isPending && !hasChart ? uiText("正在计算预览…", "Calculating preview…") : "";
   status.classList.toggle("task-allocation-error", Boolean(error));
   $("#taskAllocationRetryPreview").hidden = !editor.live?.failed;
   $("#taskAllocationSave").disabled = editor.busy || !editor.preview || !editor.config.editable;
+  content.classList.toggle("is-preview-updating", Boolean(isPending && hasChart));
+  content.classList.toggle("is-preview-stale", Boolean(error && hasChart));
   const number = new Intl.NumberFormat(i18nLocale(), { maximumFractionDigits: 2 });
-  if (renderGroupedAllocationPreview(content, editor.preview || editor.config, editor.plot,
-      { editing: Boolean(editor.preview) })) return;
+  if (renderGroupedAllocationPreview(content, shown, editor.plot,
+      { editing: Boolean(editor.preview || editor.displayPreview) })) return;
   const open = new Set([...content.querySelectorAll("details[open]")].map((detail) => detail.dataset.allocationDetail));
-  content.innerHTML = editor.preview ? renderTaskAllocationResults(editor.preview)
+  content.innerHTML = shown && (editor.preview || editor.displayPreview) ? renderTaskAllocationResults(shown)
     : renderCurrentAllocationChart(editor.config, number);
   for (const detail of content.querySelectorAll("details[data-allocation-detail]")) {
     if (open.has(detail.dataset.allocationDetail)) detail.open = true;
@@ -229,6 +237,7 @@ async function fetchTaskAllocationPreview(live, campaignId) {
     });
     if (editor.live !== live) return;
     editor.preview = preview;
+    editor.displayPreview = preview;
   } catch (error) {
     if (editor.live !== live) return;
     live.failed = error.status !== 400;
@@ -239,12 +248,24 @@ async function fetchTaskAllocationPreview(live, campaignId) {
   renderTaskAllocationLivePreview();
 }
 
-function queueTaskAllocationPreview(draft = taskAllocationDraft()) {
+function flushTaskAllocationPreview() {
+  const editor = taskAllocationEditor;
+  const live = editor.live;
+  if (!live?.timer || !editor.config?.campaign_id) return;
+  clearTimeout(live.timer);
+  live.timer = null;
+  void fetchTaskAllocationPreview(live, editor.config.campaign_id);
+}
+
+function queueTaskAllocationPreview(draft = taskAllocationDraft(), { immediate = false } = {}) {
   const editor = taskAllocationEditor;
   const config = editor.config;
   if (!config?.editable || editor.busy || editor.removal || !$("#taskAllocationDialog")?.open) return;
   const serialized = JSON.stringify(taskAllocationRequestBody(draft, config));
-  if (editor.live?.serialized === serialized) return;
+  if (editor.live?.serialized === serialized) {
+    if (immediate && editor.live?.timer) flushTaskAllocationPreview();
+    return;
+  }
   if (editor.live && editor.error) {
     editor.error = null;
     $("#taskAllocationError").textContent = "";
@@ -253,8 +274,17 @@ function queueTaskAllocationPreview(draft = taskAllocationDraft()) {
   const error = groupAllocationSetupError(draft);
   const live = { serialized, error };
   editor.live = live;
-  if (!error) live.timer = setTimeout(() => fetchTaskAllocationPreview(live, config.campaign_id), 400);
   renderTaskAllocationLivePreview();
+  if (!error) {
+    if (immediate) {
+      void fetchTaskAllocationPreview(live, config.campaign_id);
+    } else {
+      live.timer = setTimeout(() => {
+        live.timer = null;
+        void fetchTaskAllocationPreview(live, config.campaign_id);
+      }, 120);
+    }
+  }
 }
 
 async function retryTaskAllocationPreview() {
@@ -270,7 +300,7 @@ async function retryTaskAllocationPreview() {
     if (editor.live !== live) return;
     const draft = taskAllocationDraft();
     editor.config = config;
-    invalidateTaskAllocationPreview();
+    invalidateTaskAllocationPreview({ clearDisplay: true });
     renderTaskAllocationEditor(draft);
   } catch (error) {
     if (editor.live !== live) return;
@@ -303,7 +333,8 @@ function taskAllocationSetupOptions(config, basis) {
     quotaBasis: basis,
     groupCompleted: taskAllocationGroupCompleted(config),
     onUnitChange: syncUnit,
-    change: () => queueTaskAllocationPreview(),
+    change: (meta) => queueTaskAllocationPreview(undefined, meta),
+    flush: () => flushTaskAllocationPreview(),
   };
 }
 
@@ -360,7 +391,10 @@ function renderTaskAllocationEditor(draft) {
       <div id="taskAllocationGroupSetup" class="allocation-group-setup"></div>
       </div>
       <section id="taskAllocationPreview" class="task-allocation-preview" aria-labelledby="taskAllocationPreviewTitle">
-        <h3 id="taskAllocationPreviewTitle" tabindex="-1">${escapeHtml(uiText("实时预览", "Live preview"))}</h3>
+        <div class="allocation-preview-heading">
+          <h3 id="taskAllocationPreviewTitle" tabindex="-1">${escapeHtml(uiText("实时预览", "Live preview"))}</h3>
+          <span class="allocation-preview-pending" id="taskAllocationLivePending" aria-live="polite" hidden><i class="allocation-preview-spinner" aria-hidden="true"></i><span>${escapeHtml(uiText("更新中…", "Updating…"))}</span></span>
+        </div>
         <div id="taskAllocationLiveContent" class="allocation-live-content"></div>
       </section></div>` : `<p class="dialog-copy">${escapeHtml(uiText("正在加载分配…", "Loading allocation…"))}</p>`}
     ${config ? `<div class="allocation-live-status">
@@ -393,7 +427,7 @@ function renderTaskAllocationEditor(draft) {
       cross_groups: draft === config ? config.group_rules : draft.cross_groups,
       pairing_mode: initPairingMode,
     }, taskAllocationSetupOptions(config, basis));
-    queueTaskAllocationPreview();
+    queueTaskAllocationPreview(undefined, { immediate: true });
     renderTaskAllocationLivePreview();
     for (const detail of dialog.querySelectorAll("#taskAllocationLiveContent details[data-allocation-detail]")) {
       if (opened.includes(detail.dataset.allocationDetail)) detail.open = true;
@@ -481,7 +515,7 @@ async function openTaskAllocationEditor(campaignId, opener = null, removal = "")
       }
     });
     dialog.addEventListener("close", () => {
-      invalidateTaskAllocationPreview();
+      invalidateTaskAllocationPreview({ clearDisplay: true });
       taskAllocationEditor.sequence += 1;
       taskAllocationEditor.opener?.focus();
     });
@@ -503,7 +537,7 @@ async function openTaskAllocationEditor(campaignId, opener = null, removal = "")
           const nextDraft = readAllocationGroupSetup(setupRoot);
           renderAllocationGroupSetup(setupRoot, nextDraft, taskAllocationSetupOptions(config, event.target.value));
         }
-        queueTaskAllocationPreview();
+        queueTaskAllocationPreview(undefined, { immediate: true });
       }
     });
     dialog.addEventListener("click", (event) => {
@@ -535,7 +569,7 @@ async function openTaskAllocationEditor(campaignId, opener = null, removal = "")
       if (event.target.closest("[data-allocation-delete]")) {
         taskAllocationEditor.previousDraft = taskAllocationDraft();
         Object.assign(taskAllocationEditor, { removal: "all", error: "" });
-        invalidateTaskAllocationPreview();
+        invalidateTaskAllocationPreview({ clearDisplay: true });
         renderTaskAllocationEditor();
         dialog.querySelector("[data-allocation-back]")?.focus();
       }
@@ -543,7 +577,7 @@ async function openTaskAllocationEditor(campaignId, opener = null, removal = "")
       if (removeMember) {
         taskAllocationEditor.previousDraft = taskAllocationDraft();
         Object.assign(taskAllocationEditor, { removal: "member", removeAssignee: removeMember.dataset.allocationRemoveMember, error: "" });
-        invalidateTaskAllocationPreview();
+        invalidateTaskAllocationPreview({ clearDisplay: true });
         renderTaskAllocationEditor();
         $("#taskAllocationSave")?.focus();
       }
@@ -551,7 +585,7 @@ async function openTaskAllocationEditor(campaignId, opener = null, removal = "")
 
     });
   }
-  invalidateTaskAllocationPreview();
+  invalidateTaskAllocationPreview({ clearDisplay: true });
   Object.assign(taskAllocationEditor, { config: null, busy: false, error: null, removal, removeAssignee: "", plot: allocationPreviewView() });
   if (opener) taskAllocationEditor.opener = opener;
   const sequence = ++taskAllocationEditor.sequence;
@@ -594,7 +628,7 @@ async function saveTaskAllocation() {
     });
   } catch (error) {
     const stale = error.status === 409;
-    if (stale) invalidateTaskAllocationPreview();
+    if (stale) invalidateTaskAllocationPreview({ clearDisplay: true });
     const bilingual = error.status === 400 && typeof error.message === "string" ? error.message.split(" / ") : [];
     const validationError = bilingual.length === 2 ? apiResponseError(bilingual[0], bilingual[1]) : null;
     editor.error = stale

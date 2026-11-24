@@ -70,8 +70,42 @@ def _task_sort_epoch(item):
     return parsed.timestamp() if parsed is not None else None
 
 
+def _version_family_rank(item):
+    family = str(item.get('release_family') or '').strip()
+    if family.isdigit():
+        return (1, int(family), family)
+    if family:
+        return (1, 0, family)
+    return (0, 0, '')
+
+
+def _sort_version_parents(parents):
+    if not parents or not any(item.get('release_family') for item in parents):
+        return list(parents)
+    return [
+        item for _, item in sorted(
+            enumerate(parents),
+            key=lambda pair: (_version_family_rank(pair[1]), -pair[0]),
+            reverse=True,
+        )
+    ]
+
+
+def _sort_items_by_recency(items):
+    epochs = [_task_sort_epoch(item) for item in items]
+    if not any(epoch is not None for epoch in epochs):
+        return list(items)
+    return [
+        item for _, item in sorted(
+            enumerate(items),
+            key=lambda pair: (epochs[pair[0]] is not None, epochs[pair[0]] or 0.0, -pair[0]),
+            reverse=True,
+        )
+    ]
+
+
 def merge_version_task_list(parents, items, *, version_only=False, manual_only=False):
-    """Keep explicit supplemental and manually created tasks beside canonical version tasks."""
+    """Keep version tasks strictly in version order while surfacing newer manual tasks first."""
     parent_ids = {item['split_id'] for item in parents}
     parent_runs = {item['model_run_id'] for item in parents}
     retained = []
@@ -91,16 +125,35 @@ def merge_version_task_list(parents, items, *, version_only=False, manual_only=F
         else:
             if (same_version and (supplemental or manual_created)) or (not same_version):
                 retained.append(item)
-    merged = retained if manual_only else (parents + retained)
-    epochs = [_task_sort_epoch(item) for item in merged]
-    if any(epoch is not None for epoch in epochs):
-        merged = [
-            item for _, item in sorted(
-                enumerate(merged),
-                key=lambda pair: (epochs[pair[0]] is not None, epochs[pair[0]] or 0.0, -pair[0]),
-                reverse=True,
-            )
-        ]
+    ordered_retained = _sort_items_by_recency(retained)
+    if manual_only:
+        return ordered_retained
+    ordered_parents = _sort_version_parents(parents)
+    if not ordered_retained:
+        return ordered_parents
+    if not ordered_parents:
+        return ordered_retained
+    # Stable two-pointer merge: automatic version tasks strictly keep version descending
+    # order, manual tasks strictly keep recency descending order, and brand-new manual
+    # tasks float above older versions without ever scrambling two versions.
+    parent_epochs = [_task_sort_epoch(item) for item in ordered_parents]
+    retained_epochs = [_task_sort_epoch(item) for item in ordered_retained]
+    merged = []
+    pi = 0
+    ri = 0
+    while pi < len(ordered_parents) and ri < len(ordered_retained):
+        pe = parent_epochs[pi]
+        re = retained_epochs[ri]
+        if re is not None and (pe is None or re >= pe):
+            merged.append(ordered_retained[ri])
+            ri += 1
+        else:
+            merged.append(ordered_parents[pi])
+            pi += 1
+    if pi < len(ordered_parents):
+        merged.extend(ordered_parents[pi:])
+    if ri < len(ordered_retained):
+        merged.extend(ordered_retained[ri:])
     return merged
 
 

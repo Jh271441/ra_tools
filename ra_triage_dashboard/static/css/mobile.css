@@ -1250,7 +1250,7 @@
 }
 @media (max-width: 760px) {
   .task-allocation-dialog,
-  .task-allocation-dialog.is-allocation-edit { width: calc(100vw - 16px); max-width: calc(100vw - 16px); max-height: calc(var(--mobile-viewport-height, 100dvh) - 16px); }
+  .task-allocation-dialog.is-allocation-edit { width: calc(100vw - 16px); max-width: calc(100vw - 16px); max-height: calc(var(--mobile-viewport-height, 100dvh) - 16px); margin: 8px auto auto; }
   .task-allocation-dialog .dialog-card,
   .task-allocation-dialog:has(#taskAllocationPreview) .dialog-card { padding: 14px; padding-bottom: max(14px, env(safe-area-inset-bottom)); max-height: calc(var(--mobile-viewport-height, 100dvh) - 20px); }
   .task-allocation-dialog .task-allocation-fields {
@@ -1288,14 +1288,20 @@
   .allocation-add-member.text-button { padding: 0 12px; }
   .allocation-equalize-btn.text-button { padding-inline: 10px; }
   .allocation-coverage-inline .assignment-ratio-box { width: 58px; }
-  .allocation-setup-member .assignment-ratio-box { width: 68px; }
+  .allocation-setup-member .assignment-ratio-box { width: 64px; }
   .allocation-rule-count-box > input { width: 62px; }
-  .allocation-setup-member .allocation-remove-control { width: 44px !important; min-width: 44px !important; min-height: 44px !important; }
-  .allocation-setup-member { grid-template-columns: 10px minmax(0, 1fr) auto 44px; }
+  .allocation-setup-member .allocation-drag-handle { width: 32px !important; min-width: 32px !important; min-height: 44px !important; }
+  .allocation-setup-member .allocation-remove-control { width: 40px !important; min-width: 40px !important; min-height: 44px !important; }
+  .allocation-setup-member { grid-template-columns: 32px minmax(0, 1fr) auto 40px; gap: 5px; }
+  .allocation-setup-actions { padding-inline-start: 37px; }
   .allocation-group-bar { height: 44px; }
   .task-allocation-dialog .dialog-actions .button-primary,
   .assignment-composer .assignment-footer-row .button-primary { min-height: 48px !important; white-space: normal; }
   .assignment-groups :is(input, textarea, .button, .multi-filter-trigger) { min-height: 44px; font-size: 16px; }
+}
+@media (max-width: 360px) {
+  .allocation-setup-member .assignment-ratio-box { width: 54px; }
+  .allocation-setup-member { gap: 4px; }
 }
 @media (max-width: 639px) {
   .allocation-setup-cards { grid-template-columns: minmax(0, 1fr); }

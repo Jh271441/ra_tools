@@ -149,22 +149,50 @@ def _postgres_sql(sql: str) -> str:
     return re.sub(r"\s+LIKE\s+", " ILIKE ", translated, flags=re.IGNORECASE)
 
 
-class _CompatRow:
-    """Expose psycopg mapping rows through sqlite3.Row's tiny used surface."""
+_PG_CONVERT_OIDS = frozenset({1114, 1184, 2950})  # timestamp, timestamptz, uuid
 
-    def __init__(self, values: dict[str, Any]):
-        self._values = values
-        self._keys = tuple(values.keys())
+
+def _coerce_pg_value(value: Any) -> Any:
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, UUID):
+        return str(value)
+    return value
+
+
+class _CompatRow(dict):
+    """Expose psycopg mapping rows through sqlite3.Row's surface at native dict speed."""
+
+    __slots__ = ("_keys",)
+
+    def __init__(
+        self,
+        values: dict[str, Any],
+        *,
+        convert_keys: tuple[str, ...] | None = None,
+        shared_keys: tuple[str, ...] | None = None,
+    ):
+        if convert_keys is None:
+            converted = {k: _coerce_pg_value(v) for k, v in values.items()}
+            super().__init__(converted)
+        elif convert_keys:
+            for k in convert_keys:
+                v = values.get(k)
+                if v is not None:
+                    values[k] = _coerce_pg_value(v)
+            super().__init__(values)
+        else:
+            super().__init__(values)
+        self._keys = (
+            shared_keys
+            if shared_keys is not None and len(shared_keys) == len(self)
+            else tuple(super().keys())
+        )
 
     def __getitem__(self, key: str | int) -> Any:
         if isinstance(key, int):
             key = self._keys[key]
-        value = self._values[key]
-        if isinstance(value, datetime):
-            return value.isoformat()
-        if isinstance(value, UUID):
-            return str(value)
-        return value
+        return super().__getitem__(key)
 
     def keys(self) -> tuple[str, ...]:
         return self._keys
@@ -182,12 +210,29 @@ class _PostgresCursor:
     def lastrowid(self) -> None:
         return None
 
+    def _row_meta(self) -> tuple[tuple[str, ...] | None, tuple[str, ...] | None]:
+        desc = getattr(self._cursor, "description", None)
+        if not desc:
+            return None, None
+        keys = tuple(col.name for col in desc)
+        if all(getattr(col, "type_code", None) is not None for col in desc):
+            convert = tuple(col.name for col in desc if col.type_code in _PG_CONVERT_OIDS)
+            return keys, convert
+        return keys, None
+
     def fetchone(self) -> _CompatRow | None:
         row = self._cursor.fetchone()
-        return _CompatRow(row) if row is not None else None
+        if row is None:
+            return None
+        keys, convert = self._row_meta()
+        return _CompatRow(row, convert_keys=convert, shared_keys=keys)
 
     def fetchall(self) -> list[_CompatRow]:
-        return [_CompatRow(row) for row in self._cursor.fetchall()]
+        rows = self._cursor.fetchall()
+        if not rows:
+            return []
+        keys, convert = self._row_meta()
+        return [_CompatRow(row, convert_keys=convert, shared_keys=keys) for row in rows]
 
 
 class _NoopCursor:

@@ -62,6 +62,42 @@ class SupplementalVersionTaskTests(unittest.TestCase):
         manual_only = module.merge_version_task_list([old_ver], [other_manual, new_manual_same_run, self.old_source], manual_only=True)
         self.assertEqual([item['split_id'] for item in manual_only], ['manual-on-version-run', 'ordinary'])
 
+    def test_automatic_version_tasks_keep_version_order_even_when_older_version_backfills_later(self):
+        v1113_samp = dict(
+            split_id='v1113-s', model_run_id='r1113', release_family='20261113',
+            appendable=True, last_target_added_at='2026-11-23T08:00:00+00:00',
+        )
+        v1113_low = dict(
+            split_id='v1113-l', model_run_id='r1113', release_family='20261113',
+            appendable=True, last_target_added_at='2026-11-23T08:00:00+00:00',
+        )
+        v1106_backfill = dict(
+            split_id='v1106-s', model_run_id='r1106', release_family='20261106',
+            appendable=True, last_target_added_at='2026-11-24T04:00:00+00:00',
+        )
+        v1030 = dict(
+            split_id='v1030', model_run_id='r1030', release_family='20261030',
+            appendable=True, last_target_added_at='2026-11-10T00:00:00+00:00',
+        )
+        manual_newest = dict(
+            split_id='manual-new', model_run_id='r0821',
+            filter_snapshot={'manual_task': True}, created_at='2026-11-24T05:30:00+00:00',
+        )
+        manual_mid = dict(
+            split_id='manual-mid', model_run_id='r0821',
+            filter_snapshot={'manual_task': True}, created_at='2026-11-15T00:00:00+00:00',
+        )
+        # Deliberately pass parents out of order to verify version-family sorting + cohort tie-break
+        parents = [v1030, v1106_backfill, v1113_samp, v1113_low]
+        version_only = module.merge_version_task_list(parents, [manual_newest, manual_mid], version_only=True)
+        self.assertEqual([item['split_id'] for item in version_only], ['v1113-s', 'v1113-l', 'v1106-s', 'v1030'])
+
+        merged = module.merge_version_task_list(parents, [manual_mid, manual_newest])
+        self.assertEqual(
+            [item['split_id'] for item in merged],
+            ['manual-new', 'v1113-s', 'v1113-l', 'v1106-s', 'manual-mid', 'v1030'],
+        )
+
 
 class SupplementalTaskDatasetTests(unittest.TestCase):
     def setUp(self):

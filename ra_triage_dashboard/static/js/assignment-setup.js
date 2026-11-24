@@ -38,26 +38,53 @@ function renderCreationAllocationPreview(prefix) {
   if (!entry) return;
   const button = $("#" + prefix + "Generate");
   const status = $("#" + prefix + "PreviewStatus");
+  const pendingBadge = $("#" + prefix + "PreviewPending");
   const content = $("#" + prefix + "PlanPreview");
   const retry = $("#" + prefix + "RetryPreview");
+  const shownPlan = entry.plan || (!entry.retry ? entry.lastPlan : null);
+  const isPending = Boolean(!entry.plan && !entry.error);
   button.disabled = !entry.plan || entry.busy || entry.closed;
   button.textContent = entry.busy ? uiText("正在创建…", "Creating…") : uiText("创建分配", "Create allocation");
+  if (pendingBadge) pendingBadge.hidden = !(isPending && shownPlan);
   status.textContent = entry.error?.messages
     ? uiText(entry.error.messages.zh, entry.error.messages.en)
-    : entry.plan ? "" : uiText("正在计算预览…", "Calculating preview…");
+    : isPending && !shownPlan ? uiText("正在计算预览…", "Calculating preview…") : "";
   status.classList.toggle("task-allocation-error", Boolean(entry.error?.messages && entry.retry));
   retry.hidden = !entry.retry;
-  content.hidden = !entry.plan;
-  if (entry.plan) renderGroupedAllocationPreview(content, entry.plan, entry.view);
-  else content.replaceChildren();
+  content.hidden = !shownPlan;
+  content.classList.toggle("is-preview-updating", Boolean(isPending && shownPlan));
+  content.classList.toggle("is-preview-stale", Boolean(entry.error && shownPlan));
+  if (shownPlan) renderGroupedAllocationPreview(content, shownPlan, entry.view);
+  else {
+    delete content.dataset.previewStructKey;
+    content.replaceChildren();
+  }
 }
 
 function cancelCreationAllocationPreview(entry) {
   clearTimeout(entry.timer);
+  entry.timer = null;
+  entry.runFetch = null;
   entry.controller?.abort();
 }
 
-function queueCreationGroupPreview(prefix, force = false) {
+function flushCreationGroupPreview(prefix) {
+  const entry = creationAllocation.get(prefix);
+  if (!entry?.timer || !entry.runFetch) return;
+  clearTimeout(entry.timer);
+  entry.timer = null;
+  const run = entry.runFetch;
+  entry.runFetch = null;
+  void run();
+}
+
+function queueCreationGroupPreview(prefix, optionsOrForce = false) {
+  const opts = typeof optionsOrForce === "object" && optionsOrForce !== null
+    ? optionsOrForce
+    : { force: Boolean(optionsOrForce), immediate: Boolean(optionsOrForce) };
+  const force = Boolean(opts.force);
+  const immediate = Boolean(opts.immediate);
+  const delay = typeof opts.delay === "number" ? opts.delay : 120;
   const entry = creationAllocation.get(prefix);
   const root = $("#" + prefix + "GroupSetup");
   if (!entry || !root?.childElementCount || entry.busy || !state.session?.is_admin) return;
@@ -65,7 +92,10 @@ function queueCreationGroupPreview(prefix, force = false) {
   if (prefix === "labelingTask" && state.activePage !== "labeling-new-task") return;
   const body = creationAllocationBody(prefix);
   const serialized = JSON.stringify(body);
-  if (!force && serialized === entry.serialized) return;
+  if (!force && serialized === entry.serialized) {
+    if (immediate && entry.timer) flushCreationGroupPreview(prefix);
+    return;
+  }
   cancelCreationAllocationPreview(entry);
   const draft = readAllocationGroupSetup(root);
   const error = groupAllocationSetupError(draft) ||
@@ -76,22 +106,34 @@ function queueCreationGroupPreview(prefix, force = false) {
   const controller = new AbortController();
   entry.controller = controller;
   const requestId = entry.requestId;
-  entry.timer = setTimeout(async () => {
+  const runFetch = async () => {
     const timeout = setTimeout(() => controller.abort(), 20000);
     try {
       const result = await api(creationAllocationEndpoints[prefix], { method: "POST", signal: controller.signal,
         body: JSON.stringify({ ...body, request_id: requestId, preview_only: true }) });
       if (creationAllocation.get(prefix) !== entry || entry.requestId !== requestId) return;
       entry.plan = result.preview;
+      entry.lastPlan = result.preview;
     } catch (failure) {
       if (creationAllocation.get(prefix) !== entry || entry.requestId !== requestId) return;
       entry.error = taskAllocationPreviewError(failure);
       entry.retry = true;
+      entry.lastPlan = null;
     } finally {
       clearTimeout(timeout);
     }
     renderCreationAllocationPreview(prefix);
-  }, 400);
+  };
+  if (immediate || delay <= 0) {
+    void runFetch();
+  } else {
+    entry.runFetch = runFetch;
+    entry.timer = setTimeout(() => {
+      entry.timer = null;
+      entry.runFetch = null;
+      void runFetch();
+    }, delay);
+  }
 }
 
 function creationAllocationCaseCount(prefix) {
@@ -116,31 +158,31 @@ function displayCreationGroupSetup(prefix, draft = null) {
     users: state.accessUsers || [],
     caseCount,
     quotaBasis: "total",
-    change: () => {
+    change: (meta) => {
       const kind = prefix === "workSplit" ? "review" : "labeling";
       if (kind === "review" && workSplitDraft) {
         workSplitDraft.groupSetup = readAllocationGroupSetup(root);
         saveReviewAllocationDraft(workSplitDraft);
       }
       updateAssignmentNameSuggestion(kind);
-      queueCreationGroupPreview(prefix);
+      queueCreationGroupPreview(prefix, { immediate: Boolean(meta?.immediate) });
     },
+    flush: () => flushCreationGroupPreview(prefix),
   });
-  queueCreationGroupPreview(prefix);
+  queueCreationGroupPreview(prefix, { immediate: true });
   renderCreationAllocationPreview(prefix);
 }
 
 function bindCreationGroupSetup(prefix) {
-  const fieldChanged = () => queueCreationGroupPreview(prefix);
   if (prefix === "workSplit") {
     $("#workSplitWorkflowMode")?.addEventListener("change", () => updateAssignmentNameSuggestion("review"));
   }
   for (const id of ["Name", "Seed", "WorkflowMode"]) {
     const control = $("#" + prefix + id);
-    control?.addEventListener("input", fieldChanged);
-    control?.addEventListener("change", fieldChanged);
+    control?.addEventListener("input", () => queueCreationGroupPreview(prefix, { delay: id === "Name" ? 220 : 120 }));
+    control?.addEventListener("change", () => queueCreationGroupPreview(prefix, { immediate: true }));
   }
-  $("#" + prefix + "RetryPreview")?.addEventListener("click", () => queueCreationGroupPreview(prefix, true));
+  $("#" + prefix + "RetryPreview")?.addEventListener("click", () => queueCreationGroupPreview(prefix, { force: true, immediate: true }));
 }
 
 async function submitGroupedCreation(prefix) {

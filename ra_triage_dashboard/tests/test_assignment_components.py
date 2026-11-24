@@ -242,5 +242,158 @@ const countEq = computeGroupEqualizeSuggestion([{name: 'a', review_percent: 40},
 assert.ok(countEq);
 assert.deepEqual(countEq.shares, [59, 58]);
 '''
-        subprocess.run(['node', '-e', script], check=True, capture_output=True)
+        subprocess.run(['node'], input=script, text=True, check=True, capture_output=True)
+
+    def test_sequential_pin_rebalance_and_member_drag_move(self):
+        groups_src = (ROOT / 'allocation-groups.js').read_text()
+        self.assertIn('data-drag-handle', groups_src)
+        self.assertIn('moveAllocationGroupMember', groups_src)
+        self.assertNotIn('onkeydown', groups_src)
+        script = groups_src + r'''
+const assert = require('node:assert/strict');
+
+function makeGroupCard(values, { unit = 'percent', denom = 100 } = {}) {
+  const root = { dataset: { inputUnit: unit } };
+  const fields = values.map((v) => ({
+    value: String(v),
+    get valueAsNumber() { return this.value === '' ? NaN : Number(this.value); },
+    closest: () => card,
+  }));
+  const rows = fields.map((field, idx) => ({
+    querySelector: (sel) => sel === '[data-group-member]' ? { value: 'u' + idx } : field,
+  }));
+  const card = {
+    dataset: { memberDenom: String(denom) },
+    closest: () => root,
+    querySelectorAll: () => rows,
+  };
+  return { fields, card };
+}
+
+// Scheme A (%): [0, 50, 50] -> edit u0=40 -> [40, 30, 30] -> edit u1=25 -> [40, 25, 35]
+const pct = makeGroupCard([0, 50, 50]);
+pct.fields[0].value = '40';
+rebalanceGroupShare(pct.fields[0]);
+assert.deepEqual(pct.fields.map((f) => f.valueAsNumber), [40, 30, 30]);
+
+pct.fields[1].value = '25';
+const bEdit = rebalanceGroupShare(pct.fields[1]);
+assert.deepEqual(pct.fields.map((f) => f.valueAsNumber), [40, 25, 35]);
+
+// Overflow inside same focus session scales pinned peers and restores cleanly on backspace
+pct.fields[1].value = '70';
+rebalanceGroupShare(pct.fields[1], bEdit);
+assert.deepEqual(pct.fields.map((f) => f.valueAsNumber), [30, 70, 0]);
+pct.fields[1].value = '25';
+rebalanceGroupShare(pct.fields[1], bEdit);
+assert.deepEqual(pct.fields.map((f) => f.valueAsNumber), [40, 25, 35]);
+
+// Editing 3rd member when all others are pinned releases oldest-edited (u0), keeping u1=25 intact
+pct.fields[2].value = '30';
+rebalanceGroupShare(pct.fields[2]);
+assert.deepEqual(pct.fields.map((f) => f.valueAsNumber), [45, 25, 30]);
+
+// Scheme A (count mode): [0, 50, 50] with denom=100 -> 40 -> 25 -> [40, 25, 35]
+const cnt = makeGroupCard([0, 50, 50], { unit: 'count', denom: 100 });
+cnt.fields[0].value = '40';
+rebalanceGroupShare(cnt.fields[0]);
+assert.deepEqual(cnt.fields.map((f) => Number(f.value)), [40, 30, 30]);
+cnt.fields[1].value = '25';
+rebalanceGroupShare(cnt.fields[1]);
+assert.deepEqual(cnt.fields.map((f) => Number(f.value)), [40, 25, 35]);
+
+// Drag move: cross-group into non-empty group inserts at 0% and rescales source group
+const draft = {
+  groups: [
+    { group_id: 'group-1', coverage_percent: 100, members: [
+      { name: 'alice', review_percent: 40 },
+      { name: 'bob', review_percent: 60 },
+    ] },
+    { group_id: 'group-2', coverage_percent: 100, members: [
+      { name: 'carol', review_percent: 50 },
+      { name: 'dave', review_percent: 50 },
+    ] },
+  ],
+  cross_groups: [
+    { members: [{ group_id: 'group-1', name: 'alice' }, { group_id: 'group-2', name: 'carol' }], count: 10, issue_ids: [] },
+  ],
+};
+const moved = moveAllocationGroupMember(draft, 0, 0, 1, 1);
+assert.deepEqual(moved, { moved: true, sameGroup: false, memberName: 'alice', targetGroupIndex: 1, targetMemberIndex: 1 });
+assert.deepEqual(draft.groups[0].members, [{ name: 'bob', review_percent: 100 }]);
+assert.deepEqual(draft.groups[1].members, [
+  { name: 'carol', review_percent: 50 },
+  { name: 'alice', review_percent: 0 },
+  { name: 'dave', review_percent: 50 },
+]);
+assert.deepEqual(draft.cross_groups[0].members, [{ group_id: 'group-2', name: 'carol' }]);
+
+// Duplicate move rejected cleanly without mutating state
+const dup = moveAllocationGroupMember(draft, 1, 1, 0, 0);
+assert.equal(dup.moved, true);
+const dup2 = moveAllocationGroupMember(draft, 0, 0, 0, 1);
+assert.deepEqual(dup2, { moved: false, reason: 'noop' });
+const dupGroup = {
+  groups: [
+    { group_id: 'group-1', members: [{ name: 'alice', review_percent: 100 }] },
+    { group_id: 'group-2', members: [{ name: 'alice', review_percent: 50 }, { name: 'bob', review_percent: 50 }] },
+  ],
+};
+assert.deepEqual(moveAllocationGroupMember(dupGroup, 0, 0, 1, 0), {
+  moved: false, reason: 'duplicate', memberName: 'alice', targetGroupIndex: 1,
+});
+assert.equal(dupGroup.groups[0].members.length, 1);
+assert.equal(dupGroup.groups[1].members.length, 2);
+
+// Moving last member leaves empty placeholder in source; moving into empty group gives 100%
+const emptyTargetDraft = {
+  groups: [
+    { group_id: 'group-1', members: [{ name: 'alice', review_percent: 100 }] },
+    { group_id: 'group-2', members: [{ name: '', review_percent: 100 }] },
+  ],
+};
+const toEmpty = moveAllocationGroupMember(emptyTargetDraft, 0, 0, 1, 0);
+assert.equal(toEmpty.moved, true);
+assert.deepEqual(emptyTargetDraft.groups[0].members, [{ name: '', review_percent: 100 }]);
+assert.deepEqual(emptyTargetDraft.groups[1].members, [{ name: 'alice', review_percent: 100 }]);
+
+// Intra-group reorder preserves shares
+const reorderDraft = {
+  groups: [{ group_id: 'group-1', members: [
+    { name: 'alice', review_percent: 40 },
+    { name: 'bob', review_percent: 25 },
+    { name: 'carol', review_percent: 35 },
+  ] }],
+};
+assert.deepEqual(moveAllocationGroupMember(reorderDraft, 0, 0, 0, 3), {
+  moved: true, sameGroup: true, memberName: 'alice', targetGroupIndex: 0, targetMemberIndex: 2,
+});
+assert.deepEqual(reorderDraft.groups[0].members, [
+  { name: 'bob', review_percent: 25 },
+  { name: 'carol', review_percent: 35 },
+  { name: 'alice', review_percent: 40 },
+]);
+'''
+        subprocess.run(['node'], input=script, text=True, check=True, capture_output=True)
+
+    def test_preview_stale_while_revalidate_and_in_place_patching_contracts(self):
+        task_src = (ROOT / 'task-allocation.js').read_text()
+        setup_src = (ROOT / 'assignment-setup.js').read_text()
+        preview_src = (ROOT / 'allocation-group-preview.js').read_text()
+        css_src = (ROOT.parent / 'css' / 'assignment-composer.css').read_text()
+        html_src = (ROOT.parent / 'index.html').read_text()
+
+        self.assertIn('displayPreview', task_src)
+        self.assertIn('taskAllocationLivePending', task_src)
+        self.assertIn('is-preview-updating', task_src)
+        self.assertIn('entry.lastPlan', setup_src)
+        self.assertIn('PreviewPending', setup_src)
+        self.assertIn('is-preview-updating', setup_src)
+        self.assertIn('previewStructKey', preview_src)
+        self.assertIn('root._previewState', preview_src)
+        self.assertIn('workSplitPreviewPending', html_src)
+        self.assertIn('labelingTaskPreviewPending', html_src)
+        self.assertIn('.allocation-preview-pending', css_src)
+        self.assertIn('allocationPreviewSweep', css_src)
+        self.assertIn('margin: max(20px, 4dvh) auto auto;', css_src)
 

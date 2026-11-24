@@ -63,60 +63,88 @@ class _Flow:
 
     def send(self, source, sink, required):
         graph = self.graph
-        potential = [0] * len(graph)
+        n = len(graph)
+        potential = [0] * n
         delivered = 0
-        while delivered < required:
-            dist = [float("inf")] * len(graph)
-            dist[source] = 0
-            queue = [(0, source)]
-            while queue:
-                d, u = heappop(queue)
-                if d != dist[u]:
-                    continue
-                for v, capacity, cost, _ in graph[u]:
-                    nd = d + cost + potential[u] - potential[v]
-                    if capacity and nd < dist[v]:
-                        dist[v] = nd
-                        heappush(queue, (nd, v))
-            if dist[sink] == float("inf"):
-                raise ValueError("部分 Case 无法满足不重复负责人及 RD/TE 要求，请增加接收人员 / Some Cases cannot satisfy unique-reviewer or RD/TE coverage; add eligible recipients")
-            for u, d in enumerate(dist):
-                if d != float("inf"):
-                    potential[u] += d
-            # Dinic on the zero reduced-cost residual graph avoids one Dijkstra
-            # per Case, including on several-thousand-Case version tasks.
-            while True:
-                levels = [-1] * len(graph)
+        inf = 10**18
+        _heappop = heappop
+        _heappush = heappush
+        _deque = deque
+
+        def run_zero_cost_dinic():
+            nonlocal delivered
+            while delivered < required:
+                levels = [-1] * n
                 levels[source] = 0
-                queue = deque([source])
-                while queue:
-                    u = queue.popleft()
+                q = _deque([source])
+                while q:
+                    u = q.popleft()
+                    pu = potential[u]
+                    lu1 = levels[u] + 1
                     for v, capacity, cost, _ in graph[u]:
-                        if capacity and levels[v] < 0 and cost + potential[u] - potential[v] == 0:
-                            levels[v] = levels[u] + 1
-                            queue.append(v)
+                        if capacity and levels[v] < 0 and cost + pu - potential[v] == 0:
+                            levels[v] = lu1
+                            if v != sink:
+                                q.append(v)
                 if levels[sink] < 0:
-                    break
-                cursor = [0] * len(graph)
+                    return
+                cursor = [0] * n
 
                 def push(u, amount):
                     if u == sink:
                         return amount
-                    while cursor[u] < len(graph[u]):
-                        e = graph[u][cursor[u]]
-                        v, capacity, cost, reverse = e
-                        if capacity and levels[v] == levels[u] + 1 and cost + potential[u] - potential[v] == 0:
-                            sent = push(v, min(amount, capacity))
+                    edges_u = graph[u]
+                    n_edges = len(edges_u)
+                    pu = potential[u]
+                    next_level = levels[u] + 1
+                    idx = cursor[u]
+                    while idx < n_edges:
+                        e = edges_u[idx]
+                        v = e[0]
+                        capacity = e[1]
+                        if capacity and levels[v] == next_level and e[2] + pu - potential[v] == 0:
+                            sent = push(v, amount if amount < capacity else capacity)
                             if sent:
-                                e[1] -= sent
-                                graph[v][reverse][1] += sent
+                                e[1] = capacity - sent
+                                graph[v][e[3]][1] += sent
+                                cursor[u] = idx
                                 return sent
-                        cursor[u] += 1
+                        idx += 1
+                    cursor[u] = idx
                     return 0
-                while sent := push(source, required - delivered):
+
+                while delivered < required:
+                    sent = push(source, required - delivered)
+                    if not sent:
+                        break
                     delivered += sent
-                if delivered == required:
-                    return
+
+        # Initial potential=0 is already dual-feasible when all initial forward costs >= 0.
+        # Push all zero-cost paths first before running Dijkstra.
+        if all(e[2] >= 0 for adj in graph for e in adj if e[1]):
+            run_zero_cost_dinic()
+
+        while delivered < required:
+            dist = [inf] * n
+            dist[source] = 0
+            queue = [(0, source)]
+            while queue:
+                d, u = _heappop(queue)
+                if d != dist[u]:
+                    continue
+                pu = potential[u]
+                for v, capacity, cost, _ in graph[u]:
+                    if capacity:
+                        nd = d + cost + pu - potential[v]
+                        if nd < dist[v]:
+                            dist[v] = nd
+                            _heappush(queue, (nd, v))
+            if dist[sink] == inf:
+                raise ValueError("部分 Case 无法满足不重复负责人及 RD/TE 要求，请增加接收人员 / Some Cases cannot satisfy unique-reviewer or RD/TE coverage; add eligible recipients")
+            for u, d in enumerate(dist):
+                if d != inf:
+                    potential[u] += d
+            run_zero_cost_dinic()
 
 
 def reallocate_slots(rows, weights, *, basis, protected, completed=(), roles=None,
@@ -142,16 +170,29 @@ def reallocate_slots(rows, weights, *, basis, protected, completed=(), roles=Non
     protected_by_issue = defaultdict(set)
     for iid, p in protected:
         protected_by_issue[iid].add(p)
+    pos_names = [p for p in names if weights[p] > 0 and (not roles or roles.get(p) in {"rd", "te"})]
     eligible = {}
     capacity = Counter()
+    has_forbidden = bool(forbidden)
+    has_pinned = bool(pinned_members)
     for iid, required in counts.items():
-        owners = protected_by_issue[iid]
-        remaining = required - len(owners)
-        eligible[iid] = [p for p in names if weights[p] > 0 and p not in owners
-                         and (iid, p) not in forbidden
-                         and (iid not in pinned_members or p in pinned_members[iid])
-                         and (not roles or roles.get(p) in {"rd", "te"})] if remaining else []
-        capacity.update(eligible[iid])
+        owners = protected_by_issue.get(iid)
+        remaining = required - (len(owners) if owners else 0)
+        if not remaining:
+            eligible[iid] = []
+            continue
+        if not owners and not has_forbidden and not has_pinned:
+            cands = pos_names
+        else:
+            pinned = pinned_members.get(iid) if has_pinned else None
+            cands = [
+                p for p in pos_names
+                if (not owners or p not in owners)
+                and (not has_forbidden or (iid, p) not in forbidden)
+                and (pinned is None or p in pinned)
+            ]
+        eligible[iid] = cands
+        capacity.update(cands)
     count = sum(counts.values())
     remaining_count = count - len(protected)
     independent_roles = bool(roles) and all(required == 2 for required in counts.values())

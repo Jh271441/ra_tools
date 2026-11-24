@@ -57,7 +57,7 @@
         const appPreload = document.createElement("link");
         appPreload.rel = "preload";
         appPreload.as = "script";
-        appPreload.href = `${activeBase}/static/app-bundle.js?v=manual-triage-871`;
+        appPreload.href = `${activeBase}/static/app-bundle.js?v=manual-triage-874`;
         document.head.appendChild(appPreload);
         // These same-origin reads are required on every route. Begin them
         // while the bundle downloads; consume once through the normal API
@@ -127,7 +127,7 @@
         stylesheetRequests.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-871`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-874`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -573,7 +573,10 @@
                 <div class="allocation-creation-layout">
                   <div id="labelingTaskGroupSetup" class="allocation-group-setup"></div>
                   <section class="allocation-creation-preview">
-                    <h3><span class="ui-lang-zh">实时预览</span><span class="ui-lang-en">Live preview</span></h3>
+                    <div class="allocation-preview-heading">
+                      <h3><span class="ui-lang-zh">实时预览</span><span class="ui-lang-en">Live preview</span></h3>
+                      <span class="allocation-preview-pending" id="labelingTaskPreviewPending" aria-live="polite" hidden><i class="allocation-preview-spinner" aria-hidden="true"></i><span class="ui-lang-zh">更新中…</span><span class="ui-lang-en">Updating…</span></span>
+                    </div>
                     <p class="dialog-copy" id="labelingTaskPreviewStatus" role="status"></p>
                     <button class="button button-quiet" id="labelingTaskRetryPreview" type="button" hidden><span class="ui-lang-zh">重新计算</span><span class="ui-lang-en">Recalculate</span></button>
                     <div id="labelingTaskPlanPreview" class="allocation-live-content" hidden></div>
@@ -700,7 +703,10 @@
                 <div class="allocation-creation-layout">
                   <div id="workSplitGroupSetup" class="allocation-group-setup"></div>
                   <section class="allocation-creation-preview">
-                    <h3><span class="ui-lang-zh">实时预览</span><span class="ui-lang-en">Live preview</span></h3>
+                    <div class="allocation-preview-heading">
+                      <h3><span class="ui-lang-zh">实时预览</span><span class="ui-lang-en">Live preview</span></h3>
+                      <span class="allocation-preview-pending" id="workSplitPreviewPending" aria-live="polite" hidden><i class="allocation-preview-spinner" aria-hidden="true"></i><span class="ui-lang-zh">更新中…</span><span class="ui-lang-en">Updating…</span></span>
+                    </div>
                     <p class="dialog-copy" id="workSplitPreviewStatus" role="status"></p>
                     <button class="button button-quiet" id="workSplitRetryPreview" type="button" hidden><span class="ui-lang-zh">重新计算</span><span class="ui-lang-en">Recalculate</span></button>
                     <div id="workSplitPlanPreview" class="allocation-live-content" hidden></div>
@@ -2688,7 +2694,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app-bundle.js?v=manual-triage-871`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app-bundle.js?v=manual-triage-874`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

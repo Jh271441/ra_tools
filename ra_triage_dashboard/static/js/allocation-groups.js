@@ -193,34 +193,148 @@ function rebalanceGroupShare(input, edit) {
       .map((row) => row.querySelector('[data-group-field="share"]'));
     if (!shares.includes(input) || shares.length < 2) return null;
     const peers = shares.filter((share) => share !== input);
-    if (isCount) {
-      const denom = Math.max(0, Math.round(Number(card.dataset?.memberDenom || 0)));
-      edit = {
-        input, peers, isCount: true, denom,
-        weights: peers.map((peer) => {
-          const v = peer.value === "" ? NaN : Number(peer.value);
-          return Number.isInteger(v) && v >= 0 ? v : 0;
-        }),
-      };
-    } else {
-      // Use the proportions from the start of this edit, including while typing 100.
-      edit = { input, peers, isCount: false, weights: peers.map((peer) => allocationPercentUnits(peer.valueAsNumber) ?? 0) };
+    const readWeight = (el) => {
+      if (isCount) {
+        const v = el.value === "" ? NaN : Number(el.value);
+        return Number.isInteger(v) && v >= 0 ? v : 0;
+      }
+      return allocationPercentUnits(el.valueAsNumber) ?? 0;
+    };
+    const history = Array.isArray(card._pinnedShares)
+      ? card._pinnedShares.filter((el) => shares.includes(el) && el !== input)
+      : [];
+    let pinnedPeers = peers.filter((peer) => history.includes(peer));
+    let freePeers = peers.filter((peer) => !history.includes(peer));
+    let releasedPeer = null;
+    if (!freePeers.length && pinnedPeers.length) {
+      releasedPeer = history[0] || pinnedPeers[0];
+      pinnedPeers = pinnedPeers.filter((peer) => peer !== releasedPeer);
+      freePeers = [releasedPeer];
     }
+    const pinnedInitial = pinnedPeers.map(readWeight);
+    const pinnedSum = pinnedInitial.reduce((acc, w) => acc + w, 0);
+    const freeWeights = freePeers.map(readWeight);
+    const denom = isCount ? Math.max(0, Math.round(Number(card.dataset?.memberDenom || 0))) : 10000;
+    edit = {
+      input, card, shares, isCount, denom,
+      pinnedPeers, pinnedInitial, pinnedSum,
+      freePeers, freeWeights, releasedPeer,
+    };
   }
+  const commitPin = () => {
+    const prev = Array.isArray(edit.card._pinnedShares) ? edit.card._pinnedShares : [];
+    const next = prev.filter((el) => edit.shares.includes(el) && el !== edit.input && el !== edit.releasedPeer);
+    next.push(edit.input);
+    edit.card._pinnedShares = next;
+  };
   if (edit.isCount) {
     const val = input.value === "" ? NaN : Number(input.value);
     if (Number.isInteger(val) && val >= 0 && val <= edit.denom) {
-      const counts = apportionIntegerCounts(edit.denom - val, edit.weights);
-      edit.peers.forEach((peer, index) => { peer.value = String(counts[index]); });
+      const rem = edit.denom - val;
+      if (rem >= edit.pinnedSum) {
+        edit.pinnedPeers.forEach((peer, index) => { peer.value = String(edit.pinnedInitial[index]); });
+        const counts = apportionIntegerCounts(rem - edit.pinnedSum, edit.freeWeights);
+        edit.freePeers.forEach((peer, index) => { peer.value = String(counts[index]); });
+      } else {
+        edit.freePeers.forEach((peer) => { peer.value = "0"; });
+        const counts = apportionIntegerCounts(rem, edit.pinnedInitial);
+        edit.pinnedPeers.forEach((peer, index) => { peer.value = String(counts[index]); });
+      }
+      commitPin();
     }
     return edit;
   }
   const units = allocationPercentUnits(input.valueAsNumber);
   if (units != null) {
-    const shares = splitGroupShares(10000 - units, edit.weights);
-    edit.peers.forEach((peer, index) => { peer.value = String(shares[index]); });
+    const rem = 10000 - units;
+    if (rem >= edit.pinnedSum) {
+      edit.pinnedPeers.forEach((peer, index) => { peer.value = String(edit.pinnedInitial[index] / 100); });
+      const shares = splitGroupShares(rem - edit.pinnedSum, edit.freeWeights);
+      edit.freePeers.forEach((peer, index) => { peer.value = String(shares[index]); });
+    } else {
+      edit.freePeers.forEach((peer) => { peer.value = "0"; });
+      const shares = splitGroupShares(rem, edit.pinnedInitial);
+      edit.pinnedPeers.forEach((peer, index) => { peer.value = String(shares[index]); });
+    }
+    commitPin();
   }
   return edit;
+}
+
+function moveAllocationGroupMember(draft, fromGroupIndex, fromMemberIndex, toGroupIndex, toSlot) {
+  const groups = draft?.groups || [];
+  const sourceGroup = groups[fromGroupIndex];
+  const targetGroup = groups[toGroupIndex];
+  if (!sourceGroup || !targetGroup) return { moved: false, reason: "invalid" };
+  const sourceMember = sourceGroup.members?.[fromMemberIndex];
+  if (!sourceMember?.name) return { moved: false, reason: "empty" };
+  const rawSlot = Number.isInteger(toSlot) ? toSlot : targetGroup.members.length;
+  const clampedSlot = Math.max(0, Math.min(targetGroup.members.length, rawSlot));
+
+  if (fromGroupIndex === toGroupIndex) {
+    if (clampedSlot === fromMemberIndex || clampedSlot === fromMemberIndex + 1) {
+      return { moved: false, reason: "noop" };
+    }
+    const [item] = sourceGroup.members.splice(fromMemberIndex, 1);
+    const insertIndex = clampedSlot > fromMemberIndex ? clampedSlot - 1 : clampedSlot;
+    sourceGroup.members.splice(insertIndex, 0, item);
+    return {
+      moved: true,
+      sameGroup: true,
+      memberName: item.name,
+      targetGroupIndex: toGroupIndex,
+      targetMemberIndex: insertIndex,
+    };
+  }
+
+  if (targetGroup.members.some((member) => member.name === sourceMember.name)) {
+    return {
+      moved: false,
+      reason: "duplicate",
+      memberName: sourceMember.name,
+      targetGroupIndex: toGroupIndex,
+    };
+  }
+
+  const [item] = sourceGroup.members.splice(fromMemberIndex, 1);
+  if (!sourceGroup.members.length) {
+    sourceGroup.members.push({ name: "", review_percent: 100 });
+  } else {
+    completeGroupShares(sourceGroup.members);
+  }
+
+  const targetSelected = targetGroup.members.filter((member) => member.name);
+  let insertedIndex = 0;
+  if (!targetSelected.length) {
+    targetGroup.members = [{ name: item.name, review_percent: 100 }];
+    insertedIndex = 0;
+  } else {
+    const slotMember = targetGroup.members[clampedSlot];
+    if (slotMember && !slotMember.name) {
+      targetGroup.members[clampedSlot] = { name: item.name, review_percent: 0 };
+      insertedIndex = clampedSlot;
+    } else {
+      targetGroup.members.splice(clampedSlot, 0, { name: item.name, review_percent: 0 });
+      insertedIndex = clampedSlot;
+    }
+  }
+
+  if (Array.isArray(draft.cross_groups)) {
+    draft.cross_groups.forEach((rule) => {
+      if (!Array.isArray(rule.members)) return;
+      rule.members = rule.members.filter(
+        (person) => !(person.group_id === sourceGroup.group_id && person.name === item.name),
+      );
+    });
+  }
+
+  return {
+    moved: true,
+    sameGroup: false,
+    memberName: item.name,
+    targetGroupIndex: toGroupIndex,
+    targetMemberIndex: insertedIndex,
+  };
 }
 
 function computeGroupEqualizeSuggestion(members, { unit = "percent", denom = 100 } = {}) {
@@ -390,6 +504,11 @@ function renderAllocationGroupSetup(root, draft, options) {
     const suggestion = editable
       ? computeGroupEqualizeSuggestion(displayMembers, { unit: inputUnit, denom: memberDenom })
       : null;
+    const dragHelp = uiText(
+      "拖动调整顺序或移至其他组（聚焦后也可用方向键）",
+      "Drag to reorder or move to another group (arrow keys supported)",
+    );
+    const canDragGroup = editable && (groups.length > 1 || selectedMembers.length > 1);
     const card = displayMembers.map((person, memberIndex) => {
       const slot = allocationColorSlot(index, memberIndex);
       const val = Number(person.review_percent) || 0;
@@ -403,8 +522,19 @@ function renderAllocationGroupSetup(root, draft, options) {
         names.push({ value: person.name, label: person.name + " · " + uiText("不可用", "Unavailable") });
       }
       const rowStyle = "--member-swatch:var(--allocation-swatch-" + slot + ");--share-color:var(--allocation-swatch-" + slot + ")";
-      return '<div class="allocation-setup-member" data-setup-member data-empty="' + String(!person.name) + '" style="' + rowStyle + '">' +
-        '<span class="allocation-member-swatch" aria-hidden="true"></span>' +
+      const canDragRow = canDragGroup && Boolean(person.name);
+      const leadingControl = canDragRow
+        ? '<button class="allocation-drag-handle" type="button" data-drag-handle aria-label="' +
+          escapeHtml(person.name + " · " + dragHelp) + '" title="' + escapeHtml(dragHelp) + '">' +
+          '<span class="allocation-drag-swatch" aria-hidden="true"></span>' +
+          '<svg class="allocation-drag-grip" viewBox="0 0 8 14" fill="currentColor" aria-hidden="true">' +
+          '<circle cx="2" cy="3" r="1.15"/><circle cx="6" cy="3" r="1.15"/>' +
+          '<circle cx="2" cy="7" r="1.15"/><circle cx="6" cy="7" r="1.15"/>' +
+          '<circle cx="2" cy="11" r="1.15"/><circle cx="6" cy="11" r="1.15"/></svg></button>'
+        : '<span class="allocation-member-swatch" aria-hidden="true"></span>';
+      return '<div class="allocation-setup-member" data-setup-member data-empty="' + String(!person.name) +
+        '" data-draggable="' + String(canDragRow) + '" style="' + rowStyle + '">' +
+        leadingControl +
         '<select data-group-member aria-label="' +
         escapeHtml(empty) + '">' + allocationGroupOptions(names, person.name) + '</select>' +
         groupAllocationInput(person.review_percent, shareLabel, "share", {
@@ -563,11 +693,13 @@ function renderAllocationGroupSetup(root, draft, options) {
     escapeHtml(uiText("添加分配组", "Add group")) + '</button></div></div>' +
     '<div class="allocation-setup-surface">' +
     '<div class="allocation-setup-cards" data-group-count="' + groups.length + '">' + cards + '</div>' +
+    '<p class="allocation-drag-status" data-drag-status role="status" aria-live="polite" hidden></p>' +
     pairingSectionMarkup + '</div>';
 
   if (!editable) root.querySelectorAll("input, button:not(.ui-info-button):not([data-input-unit]), select, textarea").forEach((control) => { control.disabled = true; });
   root.querySelectorAll("select").forEach((select) => enhanceNativeUiSelect(select));
   updateGroupSetupIndicators(root);
+  bindAllocationMemberDrag(root, options, change);
 
   let shareEdit = null;
   const applyEqualizeForGroup = (groupIndex) => {
@@ -578,10 +710,10 @@ function renderAllocationGroupSetup(root, draft, options) {
     renderAllocationGroupSetup(root, next, options);
     const newCard = root.querySelectorAll("[data-setup-group]")[groupIndex];
     newCard?.querySelector('[data-setup-action="add-member"]')?.focus({ preventScroll: true });
-    change?.();
+    change?.({ immediate: true });
   };
 
-  const refresh = (input) => {
+  const refresh = (input, meta = {}) => {
     if (isCount && input.matches('[data-group-field="coverage"]')) {
       const card = input.closest("[data-setup-group]");
       const covVal = input.value === "" ? NaN : Number(input.value);
@@ -591,6 +723,7 @@ function renderAllocationGroupSetup(root, draft, options) {
         const oldDenom = Math.max(0, Math.round(Number(card.dataset.memberDenom || 0)));
         if (newDenom > 0 && newDenom !== oldDenom) {
           card.dataset.memberDenom = String(newDenom);
+          card._pinnedShares = [];
           const memberRows = [...card.querySelectorAll("[data-setup-member]")];
           const selectedInputs = memberRows
             .filter((row) => row.querySelector("[data-group-member]").value)
@@ -610,13 +743,16 @@ function renderAllocationGroupSetup(root, draft, options) {
     }
     if (input.matches('[data-group-field="share"]')) shareEdit = rebalanceGroupShare(input, shareEdit);
     updateGroupSetupIndicators(root);
-    change?.();
+    change?.(meta);
   };
   root.onfocusout = (event) => {
     if (event.target === shareEdit?.input) shareEdit = null;
+    if (event.target?.matches?.('[data-group-field], [data-rule-count], [data-rule-cases]')) {
+      options?.flush?.();
+    }
   };
   root.oninput = (event) => {
-    if (!event.isComposing && !event.target.matches("select")) refresh(event.target);
+    if (!event.isComposing && !event.target.matches("select")) refresh(event.target, { immediate: false });
   };
   root.onchange = (event) => {
     if (event.target.matches("[data-group-member]")) {
@@ -630,10 +766,10 @@ function renderAllocationGroupSetup(root, draft, options) {
       renderAllocationGroupSetup(root, next, options);
       root.querySelectorAll("[data-setup-group]")[groupIdx]?.querySelectorAll("[data-setup-member]")[memberIdx]
         ?.querySelector(".ui-select-trigger")?.focus({ preventScroll: true });
-      change?.();
+      change?.({ immediate: true });
       return;
     }
-    refresh(event.target);
+    refresh(event.target, { immediate: true });
   };
   root.onclick = (event) => {
     const infoWrap = event.target.closest?.(".allocation-rules-info");
@@ -747,7 +883,7 @@ function renderAllocationGroupSetup(root, draft, options) {
                 : action === "remove-rule" ? (root.querySelector('[data-setup-action="add-rule"]') || root.querySelector('[data-pairing-mode="orthogonal"]'))
                   : newCard?.querySelector('[data-setup-action="add-member"]');
     focus?.focus({ preventScroll: action !== "add-group" && action !== "add-member" });
-    change?.();
+    change?.({ immediate: true });
   };
 }
 
@@ -854,4 +990,273 @@ function updateGroupSetupIndicators(root) {
           cards.length + (cards.length === 1 ? " group · " : " groups · ") + number.format(totalCoverage) + "%",
         );
   }
+}
+
+function bindAllocationMemberDrag(root, options, change) {
+  if (root._dragStatusTimer) {
+    clearTimeout(root._dragStatusTimer);
+    root._dragStatusTimer = null;
+  }
+  if (root._allocationDragKeyHandler) {
+    root.removeEventListener("keydown", root._allocationDragKeyHandler);
+    root._allocationDragKeyHandler = null;
+  }
+  root.onpointerdown = null;
+  if (options?.editable === false) return;
+
+  const showDragStatus = (message, tone = "warn") => {
+    const banner = root.querySelector("[data-drag-status]");
+    if (!banner) return;
+    banner.textContent = message;
+    banner.dataset.tone = tone;
+    banner.hidden = !message;
+    if (root._dragStatusTimer) clearTimeout(root._dragStatusTimer);
+    if (message) {
+      root._dragStatusTimer = setTimeout(() => {
+        banner.hidden = true;
+        banner.textContent = "";
+      }, 3600);
+    }
+  };
+
+  const commitMove = (fromGroupIndex, fromMemberIndex, toGroupIndex, toSlot) => {
+    const next = readAllocationGroupSetup(root);
+    if (!next) return false;
+    const outcome = moveAllocationGroupMember(next, fromGroupIndex, fromMemberIndex, toGroupIndex, toSlot);
+    if (!outcome.moved) {
+      if (outcome.reason === "duplicate") {
+        const gLabel = allocationGroupName(toGroupIndex);
+        showDragStatus(
+          uiText(
+            "「" + outcome.memberName + "」已在" + gLabel + "中，未重复移入。",
+            '"' + outcome.memberName + '" is already in ' + gLabel + ".",
+          ),
+          "warn",
+        );
+      }
+      return false;
+    }
+    renderAllocationGroupSetup(root, next, options);
+    const targetCard = root.querySelectorAll("[data-setup-group]")[outcome.targetGroupIndex];
+    const targetRow = targetCard?.querySelectorAll("[data-setup-member]")[outcome.targetMemberIndex];
+    (targetRow?.querySelector("[data-drag-handle]") || targetRow?.querySelector(".ui-select-trigger"))
+      ?.focus({ preventScroll: true });
+    change?.({ immediate: true });
+    return true;
+  };
+
+  const keyHandler = (event) => {
+    const handle = event.target?.closest?.("[data-drag-handle]");
+    if (!handle) return;
+    if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) return;
+    const cards = [...root.querySelectorAll("[data-setup-group]")];
+    const sourceCard = handle.closest("[data-setup-group]");
+    const sourceRow = handle.closest("[data-setup-member]");
+    const fromGroupIndex = cards.indexOf(sourceCard);
+    if (fromGroupIndex < 0) return;
+    const rows = [...sourceCard.querySelectorAll("[data-setup-member]")];
+    const fromMemberIndex = rows.indexOf(sourceRow);
+    if (fromMemberIndex < 0) return;
+
+    if (event.key === "ArrowUp" && fromMemberIndex > 0) {
+      event.preventDefault();
+      commitMove(fromGroupIndex, fromMemberIndex, fromGroupIndex, fromMemberIndex - 1);
+    } else if (event.key === "ArrowDown" && fromMemberIndex < rows.length - 1) {
+      event.preventDefault();
+      commitMove(fromGroupIndex, fromMemberIndex, fromGroupIndex, fromMemberIndex + 2);
+    } else if (event.key === "ArrowLeft" && fromGroupIndex > 0) {
+      event.preventDefault();
+      commitMove(fromGroupIndex, fromMemberIndex, fromGroupIndex - 1, null);
+    } else if (event.key === "ArrowRight" && fromGroupIndex < cards.length - 1) {
+      event.preventDefault();
+      commitMove(fromGroupIndex, fromMemberIndex, fromGroupIndex + 1, null);
+    }
+  };
+  root._allocationDragKeyHandler = keyHandler;
+  root.addEventListener("keydown", keyHandler);
+
+  root.onpointerdown = (event) => {
+    const handle = event.target?.closest?.("[data-drag-handle]");
+    if (!handle) return;
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    const cards = [...root.querySelectorAll("[data-setup-group]")];
+    const sourceCard = handle.closest("[data-setup-group]");
+    const sourceRow = handle.closest("[data-setup-member]");
+    const fromGroupIndex = cards.indexOf(sourceCard);
+    if (fromGroupIndex < 0 || !sourceRow) return;
+    const sourceRows = [...sourceCard.querySelectorAll("[data-setup-member]")];
+    const fromMemberIndex = sourceRows.indexOf(sourceRow);
+    const memberName = sourceRow.querySelector("[data-group-member]")?.value || "";
+    if (fromMemberIndex < 0 || !memberName) return;
+
+    const shareVal = sourceRow.querySelector('[data-group-field="share"]')?.value || "";
+    const unitLabel = root.dataset?.inputUnit === "count" ? uiText("条", "cases") : "%";
+    const swatchColor = getComputedStyle(sourceRow).getPropertyValue("--member-swatch").trim() || "var(--accent)";
+    const pointerId = event.pointerId;
+    const startX = event.clientX;
+    const startY = event.clientY;
+    let dragging = false;
+    let ghost = null;
+    let ghostNote = null;
+    let dropState = null;
+
+    const clearDropVisuals = () => {
+      root.querySelectorAll(".is-drop-target, .is-drop-duplicate, .is-drop-before, .is-drop-after").forEach((el) => {
+        el.classList.remove("is-drop-target", "is-drop-duplicate", "is-drop-before", "is-drop-after");
+      });
+    };
+
+    const computeDropTarget = (clientX, clientY) => {
+      const margin = 8;
+      let targetCard = null;
+      let toGroupIndex = -1;
+      for (let i = 0; i < cards.length; i += 1) {
+        const rect = cards[i].getBoundingClientRect();
+        if (
+          clientX >= rect.left - margin && clientX <= rect.right + margin &&
+          clientY >= rect.top - margin && clientY <= rect.bottom + margin
+        ) {
+          targetCard = cards[i];
+          toGroupIndex = i;
+          break;
+        }
+      }
+      if (!targetCard) return null;
+      const rows = [...targetCard.querySelectorAll("[data-setup-member]")];
+      const duplicate = toGroupIndex !== fromGroupIndex && rows.some(
+        (row) => row.querySelector("[data-group-member]")?.value === memberName,
+      );
+      if (duplicate) {
+        return { targetCard, toGroupIndex, duplicate: true, noop: false };
+      }
+      let toSlot = rows.length;
+      let indicatorRow = rows[rows.length - 1] || null;
+      let indicatorPos = "after";
+      for (let i = 0; i < rows.length; i += 1) {
+        const rect = rows[i].getBoundingClientRect();
+        if (clientY < rect.top + rect.height / 2) {
+          toSlot = i;
+          indicatorRow = rows[i];
+          indicatorPos = "before";
+          break;
+        }
+      }
+      const noop = toGroupIndex === fromGroupIndex && (toSlot === fromMemberIndex || toSlot === fromMemberIndex + 1);
+      return { targetCard, toGroupIndex, toSlot, indicatorRow, indicatorPos, duplicate: false, noop };
+    };
+
+    const startGhost = (clientX, clientY) => {
+      dragging = true;
+      root.classList.add("is-dragging-member");
+      sourceRow.classList.add("is-drag-source");
+      document.querySelectorAll(".ui-select.is-open").forEach((sel) => {
+        sel.classList.remove("is-open");
+        const panel = sel.querySelector(".ui-select-panel");
+        if (panel) panel.hidden = true;
+        const trigger = sel.querySelector(".ui-select-trigger");
+        if (trigger) trigger.setAttribute("aria-expanded", "false");
+      });
+      ghost = document.createElement("div");
+      ghost.className = "allocation-drag-ghost";
+      ghost.style.setProperty("--member-swatch", swatchColor);
+      ghost.innerHTML =
+        '<span class="allocation-drag-ghost-dot" aria-hidden="true"></span>' +
+        '<strong class="allocation-drag-ghost-name">' + escapeHtml(memberName) + '</strong>' +
+        (shareVal !== "" ? '<span class="allocation-drag-ghost-share">' + escapeHtml(shareVal + (unitLabel === "%" ? "%" : " " + unitLabel)) + '</span>' : '') +
+        '<span class="allocation-drag-ghost-note" hidden></span>';
+      ghostNote = ghost.querySelector(".allocation-drag-ghost-note");
+      (root.closest("dialog") || document.body).appendChild(ghost);
+      ghost.style.transform = "translate3d(" + Math.round(clientX + 12) + "px, " + Math.round(clientY - 18) + "px, 0)";
+    };
+
+    const onPointerMove = (moveEvent) => {
+      if (moveEvent.pointerId !== pointerId) return;
+      if (!dragging) {
+        if (Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY) < 4) return;
+        startGhost(moveEvent.clientX, moveEvent.clientY);
+      }
+      moveEvent.preventDefault();
+      if (ghost) {
+        ghost.style.transform = "translate3d(" + Math.round(moveEvent.clientX + 12) + "px, " + Math.round(moveEvent.clientY - 18) + "px, 0)";
+      }
+      clearDropVisuals();
+      dropState = computeDropTarget(moveEvent.clientX, moveEvent.clientY);
+      if (ghost) ghost.classList.toggle("is-duplicate", Boolean(dropState?.duplicate));
+      if (ghostNote) {
+        if (dropState?.duplicate) {
+          ghostNote.textContent = uiText("该组已有此成员", "Already in group");
+          ghostNote.hidden = false;
+        } else if (dropState && !dropState.noop && dropState.toGroupIndex !== fromGroupIndex) {
+          const targetSelected = [...dropState.targetCard.querySelectorAll("[data-setup-member]")]
+            .some((row) => Boolean(row.querySelector("[data-group-member]")?.value));
+          const isCountMode = root.dataset?.inputUnit === "count";
+          const gLabel = allocationGroupName(dropState.toGroupIndex);
+          ghostNote.textContent = targetSelected
+            ? uiText(
+                "移入 " + gLabel + (isCountMode ? " · 0 条" : " · 0%"),
+                "Move to " + gLabel + (isCountMode ? " · 0" : " · 0%"),
+              )
+            : uiText(
+                "移入 " + gLabel + (isCountMode ? " · 全部" : " · 100%"),
+                "Move to " + gLabel + (isCountMode ? " · All" : " · 100%"),
+              );
+          ghostNote.hidden = false;
+        } else {
+          ghostNote.hidden = true;
+        }
+      }
+      if (!dropState) return;
+      if (dropState.duplicate) {
+        dropState.targetCard.classList.add("is-drop-duplicate");
+      } else {
+        dropState.targetCard.classList.add("is-drop-target");
+        if (!dropState.noop && dropState.indicatorRow) {
+          dropState.indicatorRow.classList.add(dropState.indicatorPos === "before" ? "is-drop-before" : "is-drop-after");
+        }
+      }
+    };
+
+    const finish = (commit) => {
+      window.removeEventListener("pointermove", onPointerMove, { passive: false });
+      window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("pointercancel", onPointerCancel);
+      window.removeEventListener("keydown", onEscape, true);
+      clearDropVisuals();
+      root.classList.remove("is-dragging-member");
+      sourceRow.classList.remove("is-drag-source");
+      if (ghost) {
+        ghost.remove();
+        ghost = null;
+      }
+      if (commit && dragging && dropState) {
+        if (dropState.duplicate) {
+          commitMove(fromGroupIndex, fromMemberIndex, dropState.toGroupIndex, 0);
+        } else if (!dropState.noop) {
+          commitMove(fromGroupIndex, fromMemberIndex, dropState.toGroupIndex, dropState.toSlot);
+        }
+      }
+    };
+
+    const onPointerUp = (upEvent) => {
+      if (upEvent.pointerId !== pointerId) return;
+      finish(true);
+    };
+    const onPointerCancel = (cancelEvent) => {
+      if (cancelEvent.pointerId !== pointerId) return;
+      finish(false);
+    };
+    const onEscape = (keyEvent) => {
+      if (keyEvent.key !== "Escape") return;
+      if (dragging) {
+        keyEvent.preventDefault();
+        keyEvent.stopPropagation();
+        finish(false);
+      }
+    };
+
+    window.addEventListener("pointermove", onPointerMove, { passive: false });
+    window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("pointercancel", onPointerCancel);
+    window.addEventListener("keydown", onEscape, true);
+  };
 }
