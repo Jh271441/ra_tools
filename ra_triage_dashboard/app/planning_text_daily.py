@@ -114,9 +114,16 @@ def transfer_owner(data_dir, member, previous, owner, context, evidence):
 
 def import_artifact(data_dir, folder, expected, owner):
     result, receipt, receipt_sha = load_artifact(folder, expected)
+    import sys
     from .planning_history_store import _read_history_window
-    prior_history = _read_history_window(Path(data_dir), result["issue_id"], 0,
-                                        trip_id=result["trip_id"], anchor_ms=result["anchor_ms"])
+
+    index_mod = (
+        sys.modules.get("ra_triage_dashboard.app.planning_constraint_index")
+        or sys.modules.get("app.planning_constraint_index")
+    )
+    history_reader = getattr(index_mod, "_read_history_window", _read_history_window)
+    prior_history = history_reader(Path(data_dir), result["issue_id"], 0,
+                                   trip_id=result["trip_id"], anchor_ms=result["anchor_ms"])
     if prior_history is not None:
         raise ValueError("planning_history_already_authoritative")
     key = result["capture_key"]

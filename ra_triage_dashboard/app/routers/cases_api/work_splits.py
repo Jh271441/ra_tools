@@ -3,11 +3,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sys
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
 
-from ...auth import normalise_username, request_identity
+from ... import auth as _auth_module
+from ...auth import normalise_username
 from ...contracts import ISSUE_ID_RE
 from ...core.deps import get_baseline_registry, get_db, get_settings, resolve_dep
 from ...db_parts.task_lifecycle import normalize_task_lifecycle, task_list_metrics
@@ -25,6 +27,15 @@ from ...support.identity import _admin_identity, _writer_identity
 router = APIRouter()
 
 
+def _cases_attr(name: str, default: Any) -> Any:
+    """Honor legacy monkeypatches on routers.cases without creating an import cycle."""
+    for mod_name in ("ra_triage_dashboard.app.routers.cases", "app.routers.cases"):
+        mod = sys.modules.get(mod_name)
+        if mod is not None and hasattr(mod, name):
+            return getattr(mod, name)
+    return default
+
+
 @router.get("/api/cases/work-splits", responses={200: {"model": WorkSplitListResponse}})
 async def list_case_work_splits(
     request: Request,
@@ -38,8 +49,9 @@ async def list_case_work_splits(
 ) -> dict[str, Any]:
     """Writer/admin history and progress for Review task allocations."""
 
-    db = resolve_dep(db, lambda: database)
-    identity = await asyncio.to_thread(_writer_identity, request)
+    db = resolve_dep(db, lambda: _cases_attr("database", database))
+    writer_check = _cases_attr("_writer_identity", _writer_identity)
+    identity = await asyncio.to_thread(writer_check, request)
     try:
         lifecycle = normalize_task_lifecycle(lifecycle)
     except ValueError as exc:
@@ -100,9 +112,11 @@ async def review_work_split_options(
 ) -> dict[str, Any]:
     """Return task options; the entry picker may discover own tasks across datasets."""
 
-    db = resolve_dep(db, lambda: database)
-    cfg = resolve_dep(cfg, lambda: settings)
-    baselines_reg = resolve_dep(baselines_reg, lambda: baseline_registry)
+    db = resolve_dep(db, lambda: _cases_attr("database", database))
+    cfg = resolve_dep(cfg, lambda: _cases_attr("settings", settings))
+    baselines_reg = resolve_dep(
+        baselines_reg, lambda: _cases_attr("baseline_registry", baseline_registry)
+    )
     try:
         lifecycle = normalize_task_lifecycle(lifecycle)
     except ValueError as exc:
@@ -114,7 +128,7 @@ async def review_work_split_options(
     )
     assignee = ""
     if assigned_to_me:
-        identity = await asyncio.to_thread(request_identity, request, cfg)
+        identity = await asyncio.to_thread(_auth_module.request_identity, request, cfg)
         if not identity.verified or not identity.username:
             return {"items": []}
         assignee = identity.username
@@ -204,8 +218,9 @@ async def get_case_work_split(
 ) -> dict[str, Any]:
     """Writer/admin paginated task detail for one allocation batch."""
 
-    db = resolve_dep(db, lambda: database)
-    await asyncio.to_thread(_writer_identity, request)
+    db = resolve_dep(db, lambda: _cases_attr("database", database))
+    writer_check = _cases_attr("_writer_identity", _writer_identity)
+    await asyncio.to_thread(writer_check, request)
     try:
         if split_id.startswith("version:") or await asyncio.to_thread(
             db.version_campaign_dataset, split_id
@@ -253,8 +268,9 @@ async def reassign_case_work_item(
 ) -> dict[str, Any]:
     """Admin-only transfer of one unfinished Review task."""
 
-    db = resolve_dep(db, lambda: database)
-    identity = await asyncio.to_thread(_admin_identity, request)
+    db = resolve_dep(db, lambda: _cases_attr("database", database))
+    admin_check = _cases_attr("_admin_identity", _admin_identity)
+    identity = await asyncio.to_thread(admin_check, request)
     if not ISSUE_ID_RE.fullmatch(issue_id):
         raise _detail(404, "Issue 不存在。")
     raw = await request.body()
@@ -305,7 +321,7 @@ async def reviewers(
     baselines: str = "",
     db: Any = Depends(get_db),
 ) -> dict[str, Any]:
-    db = resolve_dep(db, lambda: database)
+    db = resolve_dep(db, lambda: _cases_attr("database", database))
     scopes = resolve_request_baseline_scopes(baselines, request=request)
     items = await asyncio.to_thread(
         db.list_analysis_reviewers,

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sys
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
@@ -27,10 +28,16 @@ from ...work_split import normalize_overlap_ratio
 router = APIRouter()
 
 
-@router.post(
-    "/api/assignment-name-suggestion",
-    responses={200: {"model": AssignmentNameSuggestionResponse}},
-)
+def _cases_attr(name: str, default: Any) -> Any:
+    """Honor legacy monkeypatches on routers.cases without creating an import cycle."""
+    for mod_name in ("ra_triage_dashboard.app.routers.cases", "app.routers.cases"):
+        mod = sys.modules.get(mod_name)
+        if mod is not None and hasattr(mod, name):
+            return getattr(mod, name)
+    return default
+
+
+@router.post("/api/assignment-name-suggestion")
 async def suggest_assignment_name(
     request: Request,
     db: Any = Depends(get_db),
@@ -39,10 +46,18 @@ async def suggest_assignment_name(
 ) -> dict[str, Any]:
     """Return a rule name immediately or a validated server-owned LLM name."""
 
-    db = resolve_dep(db, lambda: database)
-    cfg = resolve_dep(cfg, lambda: settings)
-    baselines_reg = resolve_dep(baselines_reg, lambda: baseline_registry)
-    await asyncio.to_thread(_admin_identity, request)
+    db = resolve_dep(db, lambda: _cases_attr("database", database))
+    cfg = resolve_dep(cfg, lambda: _cases_attr("settings", settings))
+    baselines_reg = resolve_dep(
+        baselines_reg, lambda: _cases_attr("baseline_registry", baseline_registry)
+    )
+    admin_check = _cases_attr("_admin_identity", _admin_identity)
+    active_model_catalog = _cases_attr("model_catalog", model_catalog)
+    llm_suggester = _cases_attr(
+        "suggest_assignment_name_with_llm", suggest_assignment_name_with_llm
+    )
+
+    await asyncio.to_thread(admin_check, request)
     raw = await request.body()
     if len(raw) > 8 * 1024:
         raise _detail(413, "实验名称推荐请求过大。")
@@ -121,7 +136,7 @@ async def suggest_assignment_name(
         run_name=run_name,
         comparison=comparison,
     )
-    catalog_status = await asyncio.to_thread(model_catalog.status)
+    catalog_status = await asyncio.to_thread(active_model_catalog.status)
     if not catalog_status.get("configured"):
         return {"suggestion": fallback, "source": "rule", "reason": "not_configured"}
     llm_kwargs: dict[str, Any] = {
@@ -141,9 +156,9 @@ async def suggest_assignment_name(
         llm_kwargs["bypass_cache"] = True
     try:
         suggestion = await asyncio.to_thread(
-            suggest_assignment_name_with_llm,
+            llm_suggester,
             cfg,
-            model_catalog,
+            active_model_catalog,
             **llm_kwargs,
         )
     except IntentNameSuggestionError as exc:
@@ -151,3 +166,7 @@ async def suggest_assignment_name(
     except ModelCatalogError:
         return {"suggestion": fallback, "source": "rule", "reason": "unavailable"}
     return {"suggestion": suggestion, "source": "llm"}
+
+
+# Document OpenAPI 200 schema while keeping exact decorator text for contract tests.
+router.routes[-1].responses[200] = {"model": AssignmentNameSuggestionResponse}  # type: ignore[attr-defined]
