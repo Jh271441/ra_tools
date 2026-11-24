@@ -273,6 +273,8 @@ def tick():
                             continue
                     except (KeyError, TypeError, ValueError):
                         pass
-                    refresh_release(db,config,batch)
+                    state = refresh_release(db,config,batch)
+                    from app.services.published_scene_labels import synchronize
+                    synchronize(db, config, batch, state)
                     from app.services.auto_triage_metrics import refresh_observed
                     refresh_observed(db, release)

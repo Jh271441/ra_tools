@@ -154,3 +154,10 @@ def scenario_labels(issue_id: str = Query(min_length=1, max_length=100), ctx: Co
         label_plan_id = scenario_label_sets.build_plan(current)['id'] if current else None
         return scenario_label_sets.issue_labels(db, canonical, issue_id, pointer.get('revision_key'), label_plan_id)
     return guarded(read)
+
+
+@router.get('/scenario-label-summary')
+def scenario_label_summary(ctx: Context = Depends(), revision: str = Query(min_length=1, max_length=100),
+                           db: Session = Depends(get_db)):
+    from app.services import evaluation_label_summary
+    return guarded(evaluation_label_summary.read, db, ctx.model_dump(), revision)

@@ -10,6 +10,7 @@ import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Select } from './ui/select';
 import { FilterPanel } from './ui/filter-panel';
+import { ReleaseLabelGroups } from './ReleaseLabelGroups';
 import { ReproductionStatus } from './ReproductionStatus';
 import { Pagination, PAGE_SIZES } from './ui/pagination';
 
@@ -90,8 +91,8 @@ export function ReleaseIssues({ versions, version, onVersionChange, onHistoryCha
   const rowKey = (row: SourceIssue) => `${row.issue_id}-${row.scenario_id}`;
   const selected = rows.find(row => rowKey(row) === selectedKey) || rows[0];
   const options = new Map(versions.map(item => [item.version_key, releaseName(item.version_key)]));
-  data?.periods.filter(period => period.status === 'completed' && (period.verified || period.basis === 'inferred')).forEach(period => options.set(period.release, releaseName(period.release)));
-  inventory?.versions.forEach(item => options.set(item.release, releaseName(item.release)));
+  if (!evaluation) data?.periods.filter(period => period.status === 'completed' && (period.verified || period.basis === 'inferred')).forEach(period => options.set(period.release, releaseName(period.release)));
+  if (!evaluation) inventory?.versions.forEach(item => options.set(item.release, releaseName(item.release)));
   const status = (value: string) => t(`evaluation.issue_status_${value}`, { defaultValue: value });
   const label = (value?: string | null) => value == null ? '—' : t(`autoTriage.result_${value}`, { defaultValue: value });
   const time = (value?: string | null) => value ? new Date(value).toLocaleString(i18n.language.startsWith('zh')?'zh-CN':'en-GB',{timeZone:'Asia/Shanghai',hour12:false}) : '—';
@@ -121,6 +122,14 @@ export function ReleaseIssues({ versions, version, onVersionChange, onHistoryCha
         {notice && <p role="status">{notice}</p>}{error && !evaluation && <p role="alert" className="break-words text-destructive">{error}</p>}
       </div>
     </FilterPanel>
+    {!evaluation && selectedRelease?.startsWith('gen4-release-') && (
+      <ReleaseLabelGroups
+        key={selectedRelease}
+        release={selectedRelease}
+        activeLabel={filters.view === 'simulation' ? filters.label : undefined}
+        onSelectLabel={filters.view === 'simulation' ? value => change({ label: filters.label === value ? '' : value }) : undefined}
+      />
+    )}
     {evaluation || (!usesSource ? (!data ? <p role="status">{t('loading')}</p> : historyView) : <div className="grid min-w-0 items-start gap-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(300px,0.6fr)]">
       <Card className="min-w-0 overflow-hidden"><CardHeader><CardTitle>{t('issues')} ({total.toLocaleString(i18n.language)})</CardTitle><p className="break-words text-xs text-muted-foreground">{releaseName(selectedRelease)}</p></CardHeader>
         <CardContent className="grid min-w-0 gap-3"><div className="flex min-w-0 flex-wrap gap-2">

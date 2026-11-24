@@ -7,6 +7,7 @@ import { SimulationJobCard, SimulationMetricCard, SimulationStat, simulationResu
 import { EvaluationScenarioLabels } from './EvaluationScenarioLabels';
 import { ReproductionStatus } from './ReproductionStatus';
 import { EvaluationSettings } from './EvaluationSettings';
+import { EvaluationLabelSummary } from './EvaluationLabelSummary';
 import { EvaluationSources } from './EvaluationSources';
 import { cn } from '../lib/utils';
 import { releaseName } from '../lib/releaseName';
@@ -30,7 +31,7 @@ function readContext(): EvaluationContext {
     date_start: q.get('date_start') || undefined, date_end: q.get('date_end') || undefined };
 }
 const pct = (v?: number | null) => v == null ? '—' : `${(v*100).toFixed(2)}%`;
-type EvaluationComparison = { profile: MetricProfile; versions: { revision: EvaluationRevision | null; stale: boolean }[] };
+type EvaluationComparison = { profile: MetricProfile; versions: { release: string; revision: EvaluationRevision | null; stale: boolean }[] };
 
 export function EvaluationWorkspace({ page, onNavigate, visibleReleases, release, hideRelease = false, embedded = false, onDataChange }: { page: 'overview' | 'issues' | 'simulation'; onNavigate: (page: 'overview' | 'issues' | 'simulation', release?: string) => void; visibleReleases?: string[]; release?: string; hideRelease?: boolean; embedded?: boolean; onDataChange?: (value: EvaluationBoard | null) => void }) {
   const { t, i18n } = useTranslation();
@@ -154,6 +155,10 @@ export function EvaluationWorkspace({ page, onNavigate, visibleReleases, release
     {showingSaved && overview && <div role="status" className="flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-md border bg-muted/30 p-3 text-sm"><span className="min-w-0 break-words">{t('evaluation.overview_saved_context', { requested: releaseName(ctx.release), saved: releaseName(overview.context.release) })}</span><Button className="min-h-11" variant="outline" onClick={()=>update(overview.context)}>{t('evaluation.open_saved_release', { release: releaseName(overview.context.release) })}</Button></div>}
     {data && !revision && data.sample_source.status==='ready' && <div role="status" className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-4 text-sm"><span>{t(calculatingSaved ? 'evaluation.calculating_saved' : 'evaluation.flow_ready_recalculate')}</span>{!calculatingSaved && !showError && <Button className="min-h-11" variant="outline" onClick={()=>void refresh()}>{t('evaluation.recalculate_short')}</Button>}</div>}
     {page==='overview' && overview && <Suspense fallback={<p>{t('loading')}</p>}><Overview evaluationBasis sourceAnalysis={<EvaluationSources revision={overview} revisions={comparison.filter(item=>!visibleReleases||visibleReleases.includes(item.context.release))} stale={false} busy={working} onRelease={release=>update({release})}/>} summary={evaluationSummary(overview)} comparison={comparisonRevisions(comparison,overview).map(item=>evaluationKpi(item)).filter(item=>!visibleReleases || visibleReleases.includes(item.version_key))} onOpenCurrent={()=>onNavigate('issues',overview.context.release)} onOpenIssues={filters=>{if(filters.version)update({release:filters.version});onNavigate('issues',filters.version);}}/></Suspense>}
+    {page==='issues' && <EvaluationLabelSummary key={scope + '/' + (data?.stale ? 'stale' : revision?.revision_key || '')}
+      ctx={ctx} loading={!data && !error} revision={!data?.stale && revision && evaluationScope(revision.context) === scope ? revision.revision_key : undefined}/>}
+    {page==='issues' && revision && !data?.stale && evaluationScope(revision.context) === scope &&
+      <EvaluationSources revision={revision} revisions={[]} stale={false} busy={working}/>}
     {page==='issues' && revision && <EvaluationIssues ctx={ctx} revision={revision.revision_key} label={label}/>}
     {page==='simulation' && data && <EvaluationSimulationResults data={data} ctx={ctx} busy={busy} working={working} act={act}/>}
     {editing && data && createPortal(<ProfileEditor ctx={ctx} profile={data.profile} profiles={profiles} onClose={()=>setEditing(false)} onPublished={async profile=>{update({profile_id:profile.id});setEditing(false);setSettingsOpen(false);}}/>, document.body)}

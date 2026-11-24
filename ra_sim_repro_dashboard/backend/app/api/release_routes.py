@@ -49,6 +49,12 @@ def issues(
                      lambda: guarded(workflow.list_issues, db, release, page, page_size, query, label, view), max_age=10)
 
 
+@router.get("/scenario-label-groups")
+def scenario_label_groups(release: str = Query(pattern=r"^gen4-release-[0-9]{8}$"), db: Session = Depends(get_db)):
+    from app.services.release_label_groups import for_release
+    return read_view(db, ("scenario-label-groups", release), lambda: guarded(for_release, db, release))
+
+
 @router.get("/versions")
 def collection_versions(db: Session = Depends(get_db)):
     from app.services.release_inventory import inventory

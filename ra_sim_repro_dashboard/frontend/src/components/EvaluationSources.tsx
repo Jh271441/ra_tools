@@ -17,7 +17,7 @@ function Bar({ parts, label }: { parts: { amount: number; total: number; color: 
 }
 
 export function EvaluationSources({ revision, revisions, stale, busy, onRelease }: {
-  revision: EvaluationRevision; revisions: EvaluationRevision[]; stale: boolean; busy: boolean; onRelease: (release: string) => void;
+  revision: EvaluationRevision; revisions: EvaluationRevision[]; stale: boolean; busy: boolean; onRelease?: (release: string) => void;
 }) {
   const { t, i18n } = useTranslation();
   const data = revision.source_distribution;
@@ -38,7 +38,7 @@ export function EvaluationSources({ revision, revisions, stale, busy, onRelease 
     <p className="text-xs text-muted-foreground">{t('evaluation.sources_classified',{amount:number(group.classified_count)})}{group.classes.other>0 && ` · ${t('evaluation.sources_other',{amount:number(group.classes.other)})}`}</p>
   </div>;
   return <Card className="min-w-0" data-evaluation-sources>
-    <CardHeader className="flex-row flex-wrap items-center justify-between gap-3 space-y-0"><CardTitle>{t('evaluation.sources_title')}</CardTitle><Select value={revision.context.release} options={options} label={t('evaluation.sources_version')} disabled={busy} onChange={onRelease}/></CardHeader>
+    <CardHeader className="flex-row flex-wrap items-center justify-between gap-3 space-y-0"><CardTitle>{t('evaluation.sources_title')}</CardTitle>{onRelease && <Select value={revision.context.release} options={options} label={t('evaluation.sources_version')} disabled={busy} onChange={onRelease}/>}</CardHeader>
     <CardContent className="min-w-0 space-y-4">
       {!ready ? <p role="status" className="py-3 text-sm text-muted-foreground">{t(stale?'evaluation.sources_stale':'evaluation.sources_unavailable')}</p> : <>
         <div className="space-y-3"><p className="text-sm font-medium">{t('evaluation.sources_total',{amount:number(total)})}</p><Bar parts={parts} label={parts.map(part=>part.label).join('; ')}/><div className="flex flex-wrap gap-x-5 gap-y-2 text-sm">{parts.filter(part=>part.amount>0).map(part=><span key={part.label} className="inline-flex items-center gap-2"><span className="h-2 w-2 rounded-full" style={{backgroundColor:part.color}}/>{part.label}</span>)}</div></div>
