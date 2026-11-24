@@ -234,6 +234,45 @@
       padding: 6px 10px;
     }
 
+    [hidden] {
+      display: none !important;
+    }
+
+    .artifact-pager {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      padding: 2px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: var(--overlay);
+    }
+
+    .artifact-pager-btn {
+      min-width: 32px;
+      min-height: 30px;
+      padding: 2px 8px;
+      border: 0;
+      background: transparent;
+    }
+
+    .artifact-pager-btn:disabled {
+      opacity: 0.42;
+      cursor: not-allowed;
+    }
+
+    .artifact-pager-pos {
+      min-width: 48px;
+      padding: 0 6px;
+      text-align: center;
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
     /* Hero */
     .hero {
       display: flex;
@@ -611,6 +650,11 @@
         </span>
       </div>
       <div class="topbar-right">
+        <div id="artifactNeighborPager" class="artifact-pager" role="group" aria-label="Switch artifacts" hidden>
+          <button id="artifactPrevBtn" type="button" class="btn artifact-pager-btn" disabled aria-label="上一张">←</button>
+          <span id="artifactPagerPos" class="artifact-pager-pos">0 / 0</span>
+          <button id="artifactNextBtn" type="button" class="btn artifact-pager-btn" disabled aria-label="下一张">→</button>
+        </div>
         <a id="downloadPngLink" class="btn btn-primary" href="/static/artifacts/architecture-original-330/original330_vlm_flowchart.png" target="_blank" rel="noopener noreferrer" data-i18n="action.png">高清 PNG (3200×1840)</a>
         <a id="downloadSvgLink" class="btn" href="/static/artifacts/architecture-original-330/original330_vlm_flowchart.svg" target="_blank" rel="noopener noreferrer" data-i18n="action.svg">矢量 SVG</a>
         <button id="langToggleBtn" type="button" class="btn btn-icon" aria-label="Switch to English" title="Switch to English">EN</button>
@@ -912,7 +956,17 @@
       const activeBase = window.__RA_TRIAGE_BASE__ || "";
       const withBase = (path) => `${activeBase}${path}`;
 
-      document.getElementById("artifactsPortalLink").href = withBase("/artifacts");
+      const navParams = (() => {
+        const src = new URLSearchParams(window.location.search || "");
+        const out = new URLSearchParams();
+        for (const k of ["q", "group", "status", "sort"]) {
+          const v = (src.get(k) || "").trim();
+          if (v) out.set(k, v);
+        }
+        return out.toString() ? `?${out.toString()}` : "";
+      })();
+
+      document.getElementById("artifactsPortalLink").href = `${withBase("/artifacts")}${navParams}`;
       document.getElementById("downloadPngLink").href = withBase(
         "/static/artifacts/architecture-original-330/original330_vlm_flowchart.png"
       );
@@ -1416,8 +1470,76 @@
         });
       });
 
+      let neighborNav = null;
+      const neighborPager = document.getElementById("artifactNeighborPager");
+      const neighborPrevBtn = document.getElementById("artifactPrevBtn");
+      const neighborNextBtn = document.getElementById("artifactNextBtn");
+      const neighborPosEl = document.getElementById("artifactPagerPos");
+
+      function neighborTitle(item) {
+        if (!item) return "";
+        return (state.lang === "en" ? (item.title_en || item.title) : item.title) || item.slug;
+      }
+
+      function renderNeighborPager() {
+        if (!neighborNav || !neighborNav.total || neighborNav.total <= 1) {
+          neighborPager.hidden = true;
+          return;
+        }
+        neighborPosEl.textContent = `${neighborNav.index} / ${neighborNav.total}`;
+        const prev = neighborNav.prev;
+        const next = neighborNav.next;
+        neighborPrevBtn.disabled = !prev;
+        neighborNextBtn.disabled = !next;
+        neighborPrevBtn.title = prev
+          ? (state.lang === "en" ? `Previous: ${neighborTitle(prev)} (←)` : `上一张：${neighborTitle(prev)}（←）`)
+          : (state.lang === "en" ? "First artifact" : "已是第一张");
+        neighborPrevBtn.setAttribute("aria-label", neighborPrevBtn.title);
+        neighborNextBtn.title = next
+          ? (state.lang === "en" ? `Next: ${neighborTitle(next)} (→)` : `下一张：${neighborTitle(next)}（→）`)
+          : (state.lang === "en" ? "Last artifact" : "已是最后一张");
+        neighborNextBtn.setAttribute("aria-label", neighborNextBtn.title);
+        neighborPager.hidden = false;
+      }
+
+      function goNeighbor(dir) {
+        if (!neighborNav) return;
+        const target = dir < 0 ? neighborNav.prev : neighborNav.next;
+        if (!target || !target.url_path) return;
+        window.location.assign(`${withBase(target.url_path)}${navParams}`);
+      }
+
+      neighborPrevBtn.addEventListener("click", () => goNeighbor(-1));
+      neighborNextBtn.addEventListener("click", () => goNeighbor(1));
+      window.addEventListener("keydown", (e) => {
+        if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+        const tag = e.target && e.target.tagName ? String(e.target.tagName).toUpperCase() : "";
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || (e.target && e.target.isContentEditable)) return;
+        if ((e.key === "ArrowLeft" || e.key === "[") && neighborNav && neighborNav.prev) {
+          e.preventDefault();
+          goNeighbor(-1);
+        } else if ((e.key === "ArrowRight" || e.key === "]") && neighborNav && neighborNav.next) {
+          e.preventDefault();
+          goNeighbor(1);
+        }
+      });
+
+      fetch(`${withBase("/api/artifacts/architecture-original-330")}${navParams}`, {
+        headers: { Accept: "application/json" },
+        credentials: "same-origin",
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (data && data.navigation) {
+            neighborNav = data.navigation;
+            renderNeighborPager();
+          }
+        })
+        .catch(() => {});
+
       langToggleBtn.addEventListener("click", () => {
         applyLanguage(state.lang === "en" ? "zh" : "en", true);
+        renderNeighborPager();
       });
 
       themeToggleBtn.addEventListener("click", () => {

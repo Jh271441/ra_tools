@@ -30,7 +30,7 @@
         document.documentElement.dataset.uiLang = "zh";
       }
 
-      const ver = "artifacts-hub-1";
+      const ver = "artifacts-hub-2";
       for (const href of [`${activeBase}/static/styles.css?v=${ver}`, `${activeBase}/static/artifacts/artifacts-hub.css?v=${ver}`]) {
         const link = document.createElement("link");
         link.rel = "stylesheet";
@@ -51,6 +51,11 @@
         </div>
       </div>
       <div class="hub-topbar-right">
+        <div id="viewerPager" class="viewer-pager" role="group" aria-label="Switch artifacts" hidden>
+          <button id="viewerPrevBtn" type="button" class="btn btn-icon viewer-pager-btn" disabled aria-label="上一个">←</button>
+          <span id="viewerPagerPos" class="viewer-pager-pos">0 / 0</span>
+          <button id="viewerNextBtn" type="button" class="btn btn-icon viewer-pager-btn" disabled aria-label="下一个">→</button>
+        </div>
         <button id="viewerCopyLinkBtn" type="button" class="btn btn-primary" data-i18n="viewer.copyLink">复制链接</button>
         <button id="viewerWideToggleBtn" type="button" class="btn" data-i18n="viewer.wideOn">宽幅铺满</button>
         <a id="viewerOpenCanvasLink" class="btn" href="#" target="_blank" rel="noopener noreferrer" data-i18n="viewer.openCanvas">纯画布</a>
@@ -88,6 +93,21 @@
           referrerpolicy="no-referrer"
         ></iframe>
       </section>
+
+      <nav id="viewerBottomNav" class="viewer-bottom-nav" aria-label="Adjacent artifacts" hidden>
+        <button id="viewerBottomPrev" type="button" class="viewer-nav-card viewer-nav-card-prev" disabled>
+          <span class="viewer-nav-kicker" data-i18n="viewer.prevLabel">← 上一张</span>
+          <span id="viewerBottomPrevTitle" class="viewer-nav-title">—</span>
+        </button>
+        <div class="viewer-nav-center">
+          <span id="viewerBottomPos" class="viewer-nav-pos">0 / 0</span>
+          <span class="viewer-nav-kbd" data-i18n="viewer.kbdHint">← / → 切换</span>
+        </div>
+        <button id="viewerBottomNext" type="button" class="viewer-nav-card viewer-nav-card-next" disabled>
+          <span class="viewer-nav-kicker" data-i18n="viewer.nextLabel">下一张 →</span>
+          <span id="viewerBottomNextTitle" class="viewer-nav-title">—</span>
+        </button>
+      </nav>
     </div>
   </div>
 
@@ -151,7 +171,7 @@
   <script>
     (() => {
       const s = document.createElement("script");
-      s.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/artifacts/artifacts-hub.js?v=artifacts-hub-1`;
+      s.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/artifacts/artifacts-hub.js?v=artifacts-hub-2`;
       document.body.appendChild(s);
     })();
   </script>

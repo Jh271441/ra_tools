@@ -260,14 +260,29 @@ async def list_artifacts_api(
 
 
 @router.get("/api/artifacts/{slug}")
-async def get_artifact_api(slug: str, request: Request) -> JSONResponse:
+async def get_artifact_api(
+    slug: str,
+    request: Request,
+    q: str = Query(default="", max_length=160),
+    group: str = Query(default="", max_length=64),
+    status: str = Query(default="active", max_length=16),
+    sort: str = Query(default="updated_desc", max_length=32),
+) -> JSONResponse:
     def _load() -> dict[str, Any] | None:
         item = artifact_store.get_artifact(slug)
         if item is None:
             return None
         can_manage, actor = _artifact_can_manage(request)
+        navigation = artifact_store.get_artifact_neighbors(
+            slug,
+            q=q,
+            group=group,
+            status=status,
+            sort=sort,
+        )
         return {
             "item": item,
+            "navigation": navigation,
             "can_manage": can_manage,
             "actor": actor,
             "preset_groups": [

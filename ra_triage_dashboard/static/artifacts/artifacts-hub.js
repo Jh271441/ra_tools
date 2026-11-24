@@ -101,6 +101,13 @@
       "viewer.wideOff": "标准宽度",
       "viewer.openCanvas": "纯画布",
       "viewer.edit": "编辑",
+      "viewer.prevLabel": "← 上一张",
+      "viewer.nextLabel": "下一张 →",
+      "viewer.prevTooltip": "上一张：{title}（←）",
+      "viewer.nextTooltip": "下一张：{title}（→）",
+      "viewer.noPrev": "已是第一张",
+      "viewer.noNext": "已是最后一张",
+      "viewer.kbdHint": "← / → 切换",
       "viewer.loading": "正在加载交互式图表画布...",
       "viewer.notFoundTitle": "未找到该 Artifact",
       "viewer.notFoundDesc": "链接对应的图表不存在或已被删除，请返回图表库查看全部内容。",
@@ -197,6 +204,13 @@
       "viewer.wideOff": "Standard width",
       "viewer.openCanvas": "Raw canvas",
       "viewer.edit": "Edit",
+      "viewer.prevLabel": "← Previous",
+      "viewer.nextLabel": "Next →",
+      "viewer.prevTooltip": "Previous: {title} (←)",
+      "viewer.nextTooltip": "Next: {title} (→)",
+      "viewer.noPrev": "First artifact",
+      "viewer.noNext": "Last artifact",
+      "viewer.kbdHint": "← / → to switch",
       "viewer.loading": "Loading interactive artifact canvas...",
       "viewer.notFoundTitle": "Artifact not found",
       "viewer.notFoundDesc": "This artifact does not exist or was removed. Return to the Artifact Gallery to browse available items.",
@@ -1147,8 +1161,15 @@
         return;
       }
 
+      const navParams = new URLSearchParams();
+      if (state.q) navParams.set("q", state.q);
+      if (state.group) navParams.set("group", state.group);
+      if (state.status !== "active") navParams.set("status", state.status);
+      if (state.sort !== "updated_desc") navParams.set("sort", state.sort);
+      const navSuffix = navParams.toString() ? `?${navParams.toString()}` : "";
+
       const cardsHtml = state.items.map((item) => {
-        const href = withBase(item.url_path);
+        const href = `${withBase(item.url_path)}${navSuffix}`;
         const title = localizedTitle(item);
         const summary = localizedSummary(item);
         const groupLabel = localizedGroup(item);
@@ -1384,9 +1405,33 @@
 
   /* ===================== VIEWER PAGE ===================== */
   function initViewer() {
-    const pathname = window.location.pathname.replace(/\/+$/, "");
-    const parts = pathname.split("/");
-    const slug = decodeURIComponent(parts[parts.length - 1] || "");
+    const parseSlugFromPath = (pathname) => {
+      const cleaned = (pathname || "").replace(/\/+$/, "");
+      const parts = cleaned.split("/");
+      return decodeURIComponent(parts[parts.length - 1] || "");
+    };
+
+    const extractNavContext = (search) => {
+      const params = new URLSearchParams(search || "");
+      const ctx = new URLSearchParams();
+      const q = (params.get("q") || "").trim();
+      const group = (params.get("group") || "").trim();
+      const status = params.get("status") || "";
+      const sort = params.get("sort") || "";
+      if (q) ctx.set("q", q);
+      if (group) ctx.set("group", group);
+      if (status && ["active", "archived", "all"].includes(status) && status !== "active") {
+        ctx.set("status", status);
+      }
+      if (sort && ["updated_desc", "updated_asc", "title_asc", "created_desc"].includes(sort) && sort !== "updated_desc") {
+        ctx.set("sort", sort);
+      }
+      return ctx;
+    };
+
+    let activeSlug = parseSlugFromPath(window.location.pathname);
+    let navContext = extractNavContext(window.location.search);
+    const navSuffix = () => (navContext.toString() ? `?${navContext.toString()}` : "");
 
     const wrap = document.getElementById("viewerWrap");
     const backLink = document.getElementById("viewerBackLink");
@@ -1394,19 +1439,35 @@
     const copyLinkBtn = document.getElementById("viewerCopyLinkBtn");
     const wideToggleBtn = document.getElementById("viewerWideToggleBtn");
     const editBtn = document.getElementById("viewerEditBtn");
+    const pagerEl = document.getElementById("viewerPager");
+    const prevBtn = document.getElementById("viewerPrevBtn");
+    const nextBtn = document.getElementById("viewerNextBtn");
+    const pagerPos = document.getElementById("viewerPagerPos");
+    const bottomNav = document.getElementById("viewerBottomNav");
+    const bottomPrevBtn = document.getElementById("viewerBottomPrev");
+    const bottomNextBtn = document.getElementById("viewerBottomNext");
+    const bottomPrevTitle = document.getElementById("viewerBottomPrevTitle");
+    const bottomNextTitle = document.getElementById("viewerBottomNextTitle");
+    const bottomPos = document.getElementById("viewerBottomPos");
     const frame = document.getElementById("artifactStageFrame");
     const stageLoading = document.getElementById("viewerStageLoading");
     const notFoundCard = document.getElementById("viewerNotFound");
     const contentShell = document.getElementById("viewerContentShell");
 
-    backLink.href = withBase("/artifacts");
-    const notFoundBack = document.getElementById("notFoundBackLink");
-    if (notFoundBack) notFoundBack.href = withBase("/artifacts");
+    const syncBackLinks = () => {
+      const portalUrl = `${withBase("/artifacts")}${navSuffix()}`;
+      backLink.href = portalUrl;
+      const notFoundBack = document.getElementById("notFoundBackLink");
+      if (notFoundBack) notFoundBack.href = portalUrl;
+    };
+    syncBackLinks();
 
     let currentItem = null;
+    let currentNav = null;
     let presetGroups = [];
     let canManage = false;
     let isWide = false;
+    let loadSerial = 0;
 
     const editModal = createEditModalController({
       onSaved: (updated) => {
@@ -1417,6 +1478,60 @@
       },
     });
 
+    function navigateToNeighbor(target) {
+      if (!target || !target.slug) return;
+      if (target.builtin && target.url_path && target.url_path !== `/artifacts/${target.slug}`) {
+        window.location.assign(`${withBase(target.url_path)}${navSuffix()}`);
+        return;
+      }
+      if (document.activeElement === frame && typeof frame.blur === "function") {
+        frame.blur();
+      }
+      const nextUrl = `${withBase(`/artifacts/${encodeURIComponent(target.slug)}`)}${navSuffix()}`;
+      window.history.pushState({ slug: target.slug }, "", nextUrl);
+      activeSlug = target.slug;
+      loadViewer(activeSlug);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+
+    function stepDirection(dir) {
+      if (!currentNav) return;
+      const modalBackdrop = document.getElementById("editModalBackdrop");
+      if (modalBackdrop && !modalBackdrop.hidden) return;
+      const target = dir < 0 ? currentNav.prev : currentNav.next;
+      if (target) navigateToNeighbor(target);
+    }
+
+    prevBtn.addEventListener("click", () => stepDirection(-1));
+    nextBtn.addEventListener("click", () => stepDirection(1));
+    bottomPrevBtn.addEventListener("click", () => stepDirection(-1));
+    bottomNextBtn.addEventListener("click", () => stepDirection(1));
+
+    window.addEventListener("keydown", (event) => {
+      if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      const target = event.target;
+      const tag = target && target.tagName ? String(target.tagName).toUpperCase() : "";
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || (target && target.isContentEditable)) return;
+      if (event.key === "ArrowLeft" || event.key === "[") {
+        if (currentNav && currentNav.prev) {
+          event.preventDefault();
+          stepDirection(-1);
+        }
+      } else if (event.key === "ArrowRight" || event.key === "]") {
+        if (currentNav && currentNav.next) {
+          event.preventDefault();
+          stepDirection(1);
+        }
+      }
+    });
+
+    window.addEventListener("popstate", () => {
+      activeSlug = parseSlugFromPath(window.location.pathname);
+      navContext = extractNavContext(window.location.search);
+      syncBackLinks();
+      loadViewer(activeSlug);
+    });
+
     window.addEventListener("message", (event) => {
       if (!frame || event.source !== frame.contentWindow) return;
       const data = event.data;
@@ -1425,6 +1540,8 @@
         const nextHeight = Math.max(260, Math.min(20000, Math.ceil(Number(data.height))));
         frame.style.height = `${nextHeight}px`;
         stageLoading.classList.add("is-hidden");
+      } else if (data.type === "ra-artifact-nav" && (data.dir === -1 || data.dir === 1)) {
+        stepDirection(data.dir);
       }
     });
 
@@ -1452,6 +1569,38 @@
     editBtn.addEventListener("click", () => {
       if (currentItem && editModal) editModal.open(currentItem, presetGroups);
     });
+
+    function renderNavigation() {
+      const nav = currentNav;
+      if (!nav || !nav.total || nav.total <= 1) {
+        pagerEl.hidden = true;
+        bottomNav.hidden = true;
+        return;
+      }
+      const posText = `${nav.index} / ${nav.total}`;
+      pagerPos.textContent = posText;
+      bottomPos.textContent = posText;
+
+      const prev = nav.prev;
+      const next = nav.next;
+      const prevTitle = prev ? localizedTitle(prev) : "";
+      const nextTitle = next ? localizedTitle(next) : "";
+
+      prevBtn.disabled = !prev;
+      nextBtn.disabled = !next;
+      prevBtn.title = prev ? t("viewer.prevTooltip", { title: prevTitle }) : t("viewer.noPrev");
+      prevBtn.setAttribute("aria-label", prevBtn.title);
+      nextBtn.title = next ? t("viewer.nextTooltip", { title: nextTitle }) : t("viewer.noNext");
+      nextBtn.setAttribute("aria-label", nextBtn.title);
+
+      bottomPrevBtn.disabled = !prev;
+      bottomNextBtn.disabled = !next;
+      bottomPrevTitle.textContent = prev ? prevTitle : t("viewer.noPrev");
+      bottomNextTitle.textContent = next ? nextTitle : t("viewer.noNext");
+
+      pagerEl.hidden = false;
+      bottomNav.hidden = false;
+    }
 
     function renderMeta() {
       if (!currentItem) return;
@@ -1492,6 +1641,7 @@
       openCanvasLink.href = withBase(`/artifacts/${encodeURIComponent(currentItem.slug)}/frame?theme=${encodeURIComponent(currentTheme)}`);
       editBtn.hidden = !canManage;
       wideToggleBtn.textContent = isWide ? t("viewer.wideOff") : t("viewer.wideOn");
+      renderNavigation();
     }
 
     function applyAllText() {
@@ -1499,7 +1649,10 @@
       syncThemeControls();
       if (editModal) editModal.refreshGroupOptions(presetGroups);
       if (currentItem) renderMeta();
-      else wideToggleBtn.textContent = isWide ? t("viewer.wideOff") : t("viewer.wideOn");
+      else {
+        wideToggleBtn.textContent = isWide ? t("viewer.wideOff") : t("viewer.wideOn");
+        renderNavigation();
+      }
     }
 
     document.getElementById("langToggleBtn").addEventListener("click", () => {
@@ -1517,15 +1670,19 @@
       }
     });
 
-    async function loadViewer() {
+    async function loadViewer(slugToLoad) {
+      const seq = ++loadSerial;
       applyAllText();
+      stageLoading.classList.remove("is-hidden");
       try {
-        const data = await apiJson(`/api/artifacts/${encodeURIComponent(slug)}`);
+        const data = await apiJson(`/api/artifacts/${encodeURIComponent(slugToLoad)}${navSuffix()}`);
+        if (seq !== loadSerial) return;
         currentItem = data.item;
+        currentNav = data.navigation || null;
         canManage = Boolean(data.can_manage);
         presetGroups = Array.isArray(data.preset_groups) ? data.preset_groups : [];
         if (currentItem.builtin && currentItem.url_path && currentItem.url_path !== `/artifacts/${currentItem.slug}`) {
-          window.location.replace(withBase(currentItem.url_path));
+          window.location.replace(`${withBase(currentItem.url_path)}${navSuffix()}`);
           return;
         }
         notFoundCard.hidden = true;
@@ -1533,12 +1690,17 @@
         renderMeta();
         frame.src = withBase(`/artifacts/${encodeURIComponent(currentItem.slug)}/frame?theme=${encodeURIComponent(currentTheme)}`);
       } catch (_) {
+        if (seq !== loadSerial) return;
+        currentItem = null;
+        currentNav = null;
+        pagerEl.hidden = true;
+        bottomNav.hidden = true;
         contentShell.hidden = true;
         notFoundCard.hidden = false;
       }
     }
 
-    loadViewer();
+    loadViewer(activeSlug);
   }
 
   const pageMode = document.body.dataset.page;

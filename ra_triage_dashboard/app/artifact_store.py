@@ -351,6 +351,21 @@ def _frame_bridge_script() -> str:
     }
   });
 
+  window.addEventListener("keydown", (event) => {
+    if (window.parent === window) return;
+    if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    const target = event.target;
+    const tag = target && target.tagName ? String(target.tagName).toUpperCase() : "";
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || (target && target.isContentEditable)) return;
+    if (event.key === "ArrowLeft" || event.key === "[") {
+      event.preventDefault();
+      window.parent.postMessage({ type: "ra-artifact-nav", dir: -1 }, "*");
+    } else if (event.key === "ArrowRight" || event.key === "]") {
+      event.preventDefault();
+      window.parent.postMessage({ type: "ra-artifact-nav", dir: 1 }, "*");
+    }
+  });
+
   if (typeof ResizeObserver === "function" && document.body) {
     new ResizeObserver(scheduleMeasure).observe(document.body);
   }
@@ -586,30 +601,23 @@ class ArtifactStore:
             combined.append(self._public_item(rec))
         return combined
 
-    def list_artifacts(
-        self,
+    @staticmethod
+    def _filter_and_order(
+        all_items: list[dict[str, Any]],
         *,
         q: str = "",
         group: str = "",
         status: str = "active",
         sort: str = "updated_desc",
-        page: int = 1,
-        page_size: int = DEFAULT_ARTIFACT_PAGE_SIZE,
-    ) -> dict[str, Any]:
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int, int]:
         status_norm = str(status or "active").strip().lower()
         if status_norm not in {"active", "archived", "all"}:
             status_norm = "active"
         sort_norm = str(sort or "updated_desc").strip().lower()
         if sort_norm not in {"updated_desc", "updated_asc", "title_asc", "created_desc"}:
             sort_norm = "updated_desc"
-        safe_page_size = max(1, min(MAX_ARTIFACT_PAGE_SIZE, int(page_size or DEFAULT_ARTIFACT_PAGE_SIZE)))
-        safe_page = max(1, int(page or 1))
         query = _clean_text(q, max_len=160).lower()
         group_filter = _clean_text(group, max_len=64).lower()
-
-        with self._locked(exclusive=False):
-            registry = self._read_registry_unlocked()
-            all_items = self._all_items_unlocked(registry)
 
         active_count = sum(1 for item in all_items if not item["archived"])
         archived_count = sum(1 for item in all_items if item["archived"])
@@ -674,10 +682,48 @@ class ArtifactStore:
             filtered.sort(key=lambda item: (item["created_at"], item["slug"]), reverse=True)
         else:
             filtered.sort(key=lambda item: (item["updated_at"], item["slug"]), reverse=True)
-        # Keep pinned artifacts ahead of regular items within the active sort order.
         pinned_items = [item for item in filtered if item["pinned"]]
         regular_items = [item for item in filtered if not item["pinned"]]
         ordered = pinned_items + regular_items
+        return ordered, groups, active_count, archived_count
+
+    @staticmethod
+    def _neighbor_summary(item: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "slug": item["slug"],
+            "title": item["title"],
+            "title_en": item["title_en"],
+            "group": item["group"],
+            "group_label": item["group_label"],
+            "group_label_en": item["group_label_en"],
+            "url_path": item["url_path"],
+            "builtin": bool(item.get("builtin")),
+        }
+
+    def list_artifacts(
+        self,
+        *,
+        q: str = "",
+        group: str = "",
+        status: str = "active",
+        sort: str = "updated_desc",
+        page: int = 1,
+        page_size: int = DEFAULT_ARTIFACT_PAGE_SIZE,
+    ) -> dict[str, Any]:
+        safe_page_size = max(1, min(MAX_ARTIFACT_PAGE_SIZE, int(page_size or DEFAULT_ARTIFACT_PAGE_SIZE)))
+        safe_page = max(1, int(page or 1))
+
+        with self._locked(exclusive=False):
+            registry = self._read_registry_unlocked()
+            all_items = self._all_items_unlocked(registry)
+
+        ordered, groups, active_count, archived_count = self._filter_and_order(
+            all_items,
+            q=q,
+            group=group,
+            status=status,
+            sort=sort,
+        )
 
         total = len(ordered)
         total_pages = max(1, (total + safe_page_size - 1) // safe_page_size)
@@ -697,6 +743,54 @@ class ArtifactStore:
                 "archived": archived_count,
                 "all": len(all_items),
             },
+        }
+
+    def get_artifact_neighbors(
+        self,
+        slug: str,
+        *,
+        q: str = "",
+        group: str = "",
+        status: str = "active",
+        sort: str = "updated_desc",
+    ) -> dict[str, Any]:
+        try:
+            normalized = normalize_artifact_slug(slug)
+        except ValueError:
+            return {"index": 0, "total": 0, "prev": None, "next": None, "scope_matched": False}
+        with self._locked(exclusive=False):
+            registry = self._read_registry_unlocked()
+            all_items = self._all_items_unlocked(registry)
+
+        ordered, _, _, _ = self._filter_and_order(
+            all_items,
+            q=q,
+            group=group,
+            status=status,
+            sort=sort,
+        )
+        pos = next((i for i, item in enumerate(ordered) if item["slug"] == normalized), -1)
+        scope_matched = pos >= 0
+        if pos < 0:
+            # Fallback to full unfiltered catalog so archived or direct-linked items remain browsable.
+            ordered, _, _, _ = self._filter_and_order(
+                all_items,
+                q="",
+                group="",
+                status="all",
+                sort=sort,
+            )
+            pos = next((i for i, item in enumerate(ordered) if item["slug"] == normalized), -1)
+        if pos < 0:
+            return {"index": 0, "total": len(ordered), "prev": None, "next": None, "scope_matched": False}
+        prev_item = self._neighbor_summary(ordered[pos - 1]) if pos > 0 else None
+        next_item = self._neighbor_summary(ordered[pos + 1]) if pos + 1 < len(ordered) else None
+        return {
+            "index": pos + 1,
+            "total": len(ordered),
+            "prev": prev_item,
+            "next": next_item,
+            "scope_matched": scope_matched,
         }
 
     def get_artifact(self, slug: str) -> dict[str, Any] | None:

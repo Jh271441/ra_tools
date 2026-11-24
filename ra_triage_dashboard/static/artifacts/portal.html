@@ -30,7 +30,7 @@
         document.documentElement.dataset.uiLang = "zh";
       }
 
-      const ver = "artifacts-hub-1";
+      const ver = "artifacts-hub-2";
       for (const href of [`${activeBase}/static/styles.css?v=${ver}`, `${activeBase}/static/artifacts/artifacts-hub.css?v=${ver}`]) {
         const link = document.createElement("link");
         link.rel = "stylesheet";
@@ -247,7 +247,7 @@
   <script>
     (() => {
       const s = document.createElement("script");
-      s.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/artifacts/artifacts-hub.js?v=artifacts-hub-1`;
+      s.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/artifacts/artifacts-hub.js?v=artifacts-hub-2`;
       document.body.appendChild(s);
     })();
   </script>

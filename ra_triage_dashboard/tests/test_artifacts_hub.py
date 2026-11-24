@@ -82,6 +82,7 @@ class ArtifactStoreContractTest(unittest.TestCase):
         self.assertIn('../../static/vendor/tailwindcss/tailwindcss.min.js', dark_frame)
         self.assertIn('id="ra-agy-theme-tokens"', dark_frame)
         self.assertIn('id="ra-agy-bridge"', dark_frame)
+        self.assertIn('ra-artifact-nav', dark_frame)
         self.assertIn('data-color-theme="dark"', dark_frame)
 
         light_frame = render_artifact_frame_html(SAMPLE_AGY_HTML, base_path="/manual", initial_theme="light")
@@ -181,6 +182,36 @@ class ArtifactStoreContractTest(unittest.TestCase):
             page_clamped = store.list_artifacts(status="all", page=99, page_size=3)
             self.assertEqual(page_clamped["page"], 3)
             self.assertEqual(len(page_clamped["items"]), 1)
+
+            # Neighbor navigation follows exact active filter/sort order.
+            nav_group = store.get_artifact_neighbors(
+                "demo-chart-2",
+                group="workbench-ui",
+                sort="title_asc",
+            )
+            self.assertTrue(nav_group["scope_matched"])
+            self.assertEqual(nav_group["index"], 3)
+            self.assertEqual(nav_group["total"], 5)
+            self.assertEqual(nav_group["prev"]["slug"], "demo-chart-1")
+            self.assertEqual(nav_group["next"]["slug"], "demo-chart-3")
+
+            nav_first = store.get_artifact_neighbors(
+                "demo-chart-0",
+                group="workbench-ui",
+                sort="title_asc",
+            )
+            self.assertIsNone(nav_first["prev"])
+            self.assertEqual(nav_first["next"]["slug"], "demo-chart-1")
+
+            # Archived item outside active filter falls back to full catalog cleanly.
+            nav_fallback = store.get_artifact_neighbors(
+                "lora-mounting-inside-layers",
+                status="active",
+                sort="title_asc",
+            )
+            self.assertFalse(nav_fallback["scope_matched"])
+            self.assertEqual(nav_fallback["total"], 7)
+            self.assertGreaterEqual(nav_fallback["index"], 1)
 
             # Delete dynamic artifact cleanly.
             self.assertTrue(store.delete_artifact("demo-chart-0"))
@@ -346,11 +377,21 @@ class ArtifactStoreContractTest(unittest.TestCase):
                 self.assertNotIn(b"gstatic.com", body)
                 self.assertIn(b"../../static/vendor/tailwindcss/tailwindcss.min.js", body)
 
-                # List API
+                # List API + single GET with navigation
                 st, _, body = asyncio.run(asgi_req(route_app, "GET", "/api/artifacts"))
                 self.assertEqual(st, 200)
                 listing = json.loads(body)
                 self.assertEqual(listing["total"], 2)
+
+                st, _, body = asyncio.run(
+                    asgi_req(route_app, "GET", "/api/artifacts/test-diagram", query="group=vlm-architecture")
+                )
+                self.assertEqual(st, 200)
+                detail = json.loads(body)
+                self.assertEqual(detail["navigation"]["total"], 2)
+                self.assertEqual(detail["navigation"]["index"], 2)
+                self.assertEqual(detail["navigation"]["prev"]["slug"], "architecture-original-330")
+                self.assertIsNone(detail["navigation"]["next"])
 
                 # PATCH metadata
                 st, _, body = asyncio.run(
