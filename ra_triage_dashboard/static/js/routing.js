@@ -1535,7 +1535,7 @@ function showPage(
     }
   }
   if (target === "daily-review" && loadPageData) pageLoads.push(() => loadDailyReview());
-  if (target === "daily-cron" && loadPageData) {
+  if (target === "daily-cron" && loadPageData && !(window.__RA_REACT_WORKBENCH__?.ownsPage?.("daily-cron") || window.__RA_REACT_OWNED_PAGES__?.includes?.("daily-cron"))) {
     pageLoads.push(() => loadDailyCron());
   }
   if (target === "status" && loadPageData && !(window.__RA_REACT_WORKBENCH__?.ownsPage?.("status") || window.__RA_REACT_OWNED_PAGES__?.includes?.("status"))) {

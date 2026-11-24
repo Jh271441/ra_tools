@@ -564,6 +564,9 @@ async function loadRuns({
   renderRunSourceSummary();
   renderActiveRun();
   renderRunManager();
+  if (typeof window !== "undefined" && window.__RA_REACT_WORKBENCH__?.ownsPage?.("runs-manager")) {
+    window.__RA_REACT_WORKBENCH__.refreshPage("runs-manager");
+  }
   if (typeof renderRunComparisonSelectors === "function") {
     renderRunComparisonSelectors();
   }
@@ -780,6 +783,7 @@ function changeRunManagerPageSize(value) {
 }
 
 function renderRunFilters() {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("runs-manager") || window.__RA_REACT_OWNED_PAGES__?.includes?.("runs-manager"))) return;
   const select = $("#runPersonFilter");
   if (!select) return;
   const previous = select.value;
@@ -836,6 +840,7 @@ function renderActiveRun(overview = null) {
 }
 
 function renderRunManager() {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("runs-manager") || window.__RA_REACT_OWNED_PAGES__?.includes?.("runs-manager"))) return;
   const list = $("#modelRunList");
   if (!list) return;
   const filteredRuns = filteredModelRuns();

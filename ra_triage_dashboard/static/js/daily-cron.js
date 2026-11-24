@@ -164,6 +164,7 @@ function cronLatestLaunch(daily, run) {
 }
 
 function renderDailyCron() {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("daily-cron") || window.__RA_REACT_OWNED_PAGES__?.includes?.("daily-cron"))) return;
   if (!$("#dailyCronPage")) return;
   for (const [selector, zh, en] of [
     ['[data-cron-help="main"]', '推理回刷流程说明', 'Inference pipeline definition'],
@@ -299,6 +300,7 @@ function renderDailyCronJobs() {
 }
 
 async function loadDailyCron() {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("daily-cron") || window.__RA_REACT_OWNED_PAGES__?.includes?.("daily-cron"))) return;
   if (!dailyCronState.active || dailyCronState.controller) return;
   const controller = new AbortController();
   dailyCronState.controller = controller;
@@ -330,6 +332,7 @@ async function loadDailyCron() {
 }
 
 function setDailyCronActive(active) {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("daily-cron") || window.__RA_REACT_OWNED_PAGES__?.includes?.("daily-cron"))) return;
   if (dailyCronState.active === active) return;
   dailyCronState.active = active;
   window.clearInterval(dailyCronState.timer);

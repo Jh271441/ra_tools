@@ -701,15 +701,108 @@ html[data-color-theme="light"] .ra-modal-card {
   }
 }
 
+/* Wave 3.3: Daily Cron & Runs Manager islands responsive & overflow protection */
+#dailyCronPage,
+.ra-daily-cron-root,
+.ra-runs-manager-root {
+  min-width: 0;
+  max-width: 100%;
+  display: grid;
+  gap: 12px;
+  overflow-x: clip;
+}
+
+.ra-cron-scope-control {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.ra-cron-scope-control .ra-react-select {
+  min-width: min(100%, 210px);
+  max-width: 100%;
+}
+
+.ra-daily-cron-root .cron-monitors,
+.ra-daily-cron-root .cron-monitor,
+.ra-daily-cron-root .cron-panel,
+.ra-daily-cron-root .cron-graph-workspace,
+.ra-daily-cron-root .cron-media-tracks,
+.ra-daily-cron-root .cron-increment-version,
+.ra-daily-cron-root .cron-run {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.ra-daily-cron-root .cron-monitor > strong,
+.ra-daily-cron-root .cron-monitor > span,
+.ra-daily-cron-root .cron-connection {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.ra-cron-jobs-search {
+  margin-top: 8px;
+  margin-bottom: 8px;
+}
+
+.ra-cron-jobs-search input[type="search"] {
+  width: min(100%, 340px);
+  min-width: 0;
+  min-height: 36px;
+}
+
+.ra-runs-filter-bar {
+  align-items: end;
+}
+
+.ra-runs-filter-bar input[type="search"] {
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+}
+
+.ra-runs-filter-bar .ra-react-select {
+  width: 100%;
+}
+
+.ra-runs-manager-root .run-row,
+.ra-runs-manager-root .run-row-main,
+.ra-runs-manager-root .run-row-title,
+.ra-runs-manager-root .run-row-meta {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.ra-runs-manager-root .run-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 /* Mobile touch targets >= 44px / primary 48px */
 @media (max-width: 768px) {
   #systemStatusPage .button,
   .ra-users-root .button,
   .ra-assignments-root .button,
+  .ra-daily-cron-root .button,
+  .ra-runs-manager-root .button,
   .ra-alloc-modal-root .button,
   .ra-new-alloc-root .button,
   .ra-react-select .ui-select-trigger,
-  .ra-react-pagination input[type="number"] {
+  .ra-react-pagination input[type="number"],
+  .ra-runs-filter-bar input[type="search"],
+  .ra-cron-jobs-search input[type="search"] {
+    min-height: 44px;
+  }
+
+  .ra-daily-cron-root .cron-info-button {
+    min-width: 44px;
     min-height: 44px;
   }
 

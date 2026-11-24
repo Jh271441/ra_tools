@@ -15,8 +15,20 @@ const AllocationEditorModal = React.lazy(() =>
     default: m.AllocationEditorModal,
   })),
 );
+const DailyCronPage = React.lazy(() =>
+  import("./pages/DailyCronPage").then((m) => ({ default: m.DailyCronPage })),
+);
+const RunsManagerIsland = React.lazy(() =>
+  import("./pages/RunsManagerIsland").then((m) => ({ default: m.RunsManagerIsland })),
+);
 
-const OWNED_PAGES = new Set<string>(["status", "users", "review-assignments"]);
+const OWNED_PAGES = new Set<string>([
+  "status",
+  "users",
+  "review-assignments",
+  "daily-cron",
+  "runs-manager",
+]);
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -70,6 +82,31 @@ const ReviewAssignmentsIsland: React.FC = () => {
         active={active}
         lang={lang}
         isAdmin={Boolean(effectiveSession?.is_admin)}
+        username={effectiveSession?.username || ""}
+      />
+    </Suspense>
+  );
+};
+
+const DailyCronIsland: React.FC = () => {
+  const { activePage, lang, theme } = useWorkbenchBridge();
+  const active = activePage === "daily-cron";
+  return (
+    <Suspense fallback={<div className="no-asset">{lang === "en" ? "Loading…" : "加载中…"}</div>}>
+      <DailyCronPage active={active} lang={lang} theme={theme} />
+    </Suspense>
+  );
+};
+
+const RunsManagerReactIsland: React.FC = () => {
+  const { activePage, lang } = useWorkbenchBridge();
+  const active = activePage === "runs";
+  const { effectiveSession } = useResolvedSession(active);
+  return (
+    <Suspense fallback={<div className="no-asset">{lang === "en" ? "Loading…" : "加载中…"}</div>}>
+      <RunsManagerIsland
+        active={active}
+        lang={lang}
         username={effectiveSession?.username || ""}
       />
     </Suspense>
@@ -154,6 +191,32 @@ function mountIslands(): void {
     );
   }
 
+  const dailyCronSection = document.getElementById("dailyCronPage");
+  if (dailyCronSection && dailyCronSection.dataset.reactMounted !== "true") {
+    dailyCronSection.dataset.reactMounted = "true";
+    dailyCronSection.replaceChildren();
+    createRoot(dailyCronSection).render(
+      <React.StrictMode>
+        <QueryClientProvider client={queryClient}>
+          <DailyCronIsland />
+        </QueryClientProvider>
+      </React.StrictMode>,
+    );
+  }
+
+  const runsManagerCard = document.querySelector<HTMLElement>("#runsPage .runs-page-card");
+  if (runsManagerCard && runsManagerCard.dataset.reactMounted !== "true") {
+    runsManagerCard.dataset.reactMounted = "true";
+    runsManagerCard.replaceChildren();
+    createRoot(runsManagerCard).render(
+      <React.StrictMode>
+        <QueryClientProvider client={queryClient}>
+          <RunsManagerReactIsland />
+        </QueryClientProvider>
+      </React.StrictMode>,
+    );
+  }
+
   let modalRoot = document.getElementById("raReactModalRoot");
   if (!modalRoot) {
     modalRoot = document.createElement("div");
@@ -170,7 +233,7 @@ function mountIslands(): void {
 }
 
 const handle: ReactWorkbenchHandle = {
-  version: "vite-react-ts-3.2",
+  version: "vite-react-ts-3.3",
   ownsPage: (page: string) => OWNED_PAGES.has(page),
   refreshPage: (page: string) => {
     if (page === "status") {
@@ -181,6 +244,10 @@ const handle: ReactWorkbenchHandle = {
     } else if (page === "review-assignments") {
       void queryClient.invalidateQueries({ queryKey: ["review-assignments-list"] });
       void queryClient.invalidateQueries({ queryKey: ["review-assignment-detail"] });
+    } else if (page === "daily-cron") {
+      void queryClient.invalidateQueries({ queryKey: ["daily-cron"] });
+    } else if (page === "runs-manager") {
+      void queryClient.invalidateQueries({ queryKey: ["model-runs"] });
     }
     window.dispatchEvent(new Event("ra:workbench-sync"));
   },

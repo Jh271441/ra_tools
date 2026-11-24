@@ -1,33 +1,64 @@
 {
-  "_AllocationEditorModal-D3j9WSeQ.js": {
-    "file": "assets/AllocationEditorModal-D3j9WSeQ.js",
+  "_AllocationEditorModal-CHOkiEbN.js": {
+    "file": "assets/AllocationEditorModal-CHOkiEbN.js",
     "name": "AllocationEditorModal",
     "isDynamicEntry": true,
+    "imports": [
+      "src/main.tsx",
+      "_ModalDialog-EnuV3GvP.js"
+    ]
+  },
+  "_ModalDialog-EnuV3GvP.js": {
+    "file": "assets/ModalDialog-EnuV3GvP.js",
+    "name": "ModalDialog",
     "imports": [
       "src/main.tsx"
     ]
   },
   "src/main.tsx": {
-    "file": "assets/main-DgI3Y2dZ.js",
+    "file": "assets/main-tbSSiBG0.js",
     "name": "main",
     "src": "src/main.tsx",
     "isEntry": true,
     "dynamicImports": [
       "src/pages/ReviewAssignmentsPage.tsx",
-      "_AllocationEditorModal-D3j9WSeQ.js"
+      "_AllocationEditorModal-CHOkiEbN.js",
+      "src/pages/DailyCronPage.tsx",
+      "src/pages/RunsManagerIsland.tsx"
     ],
     "css": [
-      "assets/main-DSu6QZ6k.css"
+      "assets/main-fCW5_4id.css"
+    ]
+  },
+  "src/pages/DailyCronPage.tsx": {
+    "file": "assets/DailyCronPage-B2KviqZ6.js",
+    "name": "DailyCronPage",
+    "src": "src/pages/DailyCronPage.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.tsx",
+      "_ModalDialog-EnuV3GvP.js"
     ]
   },
   "src/pages/ReviewAssignmentsPage.tsx": {
-    "file": "assets/ReviewAssignmentsPage-D7WQM980.js",
+    "file": "assets/ReviewAssignmentsPage-BgTdu8Jj.js",
     "name": "ReviewAssignmentsPage",
     "src": "src/pages/ReviewAssignmentsPage.tsx",
     "isDynamicEntry": true,
     "imports": [
       "src/main.tsx",
-      "_AllocationEditorModal-D3j9WSeQ.js"
+      "_AllocationEditorModal-CHOkiEbN.js",
+      "_ModalDialog-EnuV3GvP.js"
+    ]
+  },
+  "src/pages/RunsManagerIsland.tsx": {
+    "file": "assets/RunsManagerIsland-CH1lBN-B.js",
+    "name": "RunsManagerIsland",
+    "src": "src/pages/RunsManagerIsland.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.tsx",
+      "_ModalDialog-EnuV3GvP.js"
     ]
   }
 }

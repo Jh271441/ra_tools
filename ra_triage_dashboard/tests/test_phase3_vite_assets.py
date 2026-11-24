@@ -91,6 +91,24 @@ class Phase3ViteAssetsTest(unittest.TestCase):
             self.assertEqual(status, 200, f"Expected HTTP 200 for /manual/static/dist/{rel}")
             self.assertIn(b"immutable", headers.get(b"cache-control", b""))
 
+        manifest_data = json.loads(
+            (STATIC_DIR / "dist" / ".vite" / "manifest.json").read_text(encoding="utf-8")
+        )
+        chunk_by_name = {
+            entry.get("name"): entry
+            for entry in manifest_data.values()
+            if isinstance(entry, dict) and entry.get("name")
+        }
+        for expected_chunk in (
+            "ReviewAssignmentsPage",
+            "AllocationEditorModal",
+            "DailyCronPage",
+            "RunsManagerIsland",
+        ):
+            self.assertIn(expected_chunk, chunk_by_name)
+            chunk_rel = chunk_by_name[expected_chunk]["file"]
+            self.assertTrue((STATIC_DIR / "dist" / chunk_rel).is_file())
+
 
 if __name__ == "__main__":
     unittest.main()

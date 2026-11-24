@@ -498,9 +498,11 @@ function bindEvents() {
       showToast(error.message, true);
     }
   });
-  if (typeof bindCronGraphEvents === "function") bindCronGraphEvents();
-  $("#dailyCronRefresh")?.addEventListener("click", () => loadDailyCron());
-  $("#dailyCronSearch")?.addEventListener("input", () => renderDailyCronJobs());
+  if (!(window.__RA_REACT_WORKBENCH__?.ownsPage?.("daily-cron") || window.__RA_REACT_OWNED_PAGES__?.includes?.("daily-cron"))) {
+    if (typeof bindCronGraphEvents === "function") bindCronGraphEvents();
+    $("#dailyCronRefresh")?.addEventListener("click", () => loadDailyCron());
+    $("#dailyCronSearch")?.addEventListener("input", () => renderDailyCronJobs());
+  }
   $("#gtSyncButton")?.addEventListener("click", () => {
     refreshAuthoritativeGt().catch((error) => showToast(error.message, true));
   });
@@ -622,39 +624,41 @@ function bindEvents() {
       "filtered"
     );
   });
-  $("#refreshRunsButton").addEventListener("click", async () => {
-    try {
-      await loadRuns();
-      await loadOverview();
-      showToast(t("toast.runs_refreshed"));
-    } catch (error) {
-      showToast(error.message, true);
-    }
-  });
-  $("#runPersonFilter").addEventListener("change", resetRunManagerPageAndRender);
-  $("#runKindFilter").addEventListener("change", resetRunManagerPageAndRender);
-  $("#runSearchInput").addEventListener("input", resetRunManagerPageAndRender);
-  $("#runPagePrevious")?.addEventListener("click", () => changeRunManagerPage(-1));
-  $("#runPageNext")?.addEventListener("click", () => changeRunManagerPage(1));
-  const runPageJump = $("#runPageJump");
-  const commitRunPageJump = () => jumpToRunManagerPage(runPageJump?.value);
-  $("#runPageJumpButton")?.addEventListener("click", commitRunPageJump);
-  runPageJump?.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      commitRunPageJump();
-    } else if (event.key === "Escape") {
-      event.preventDefault();
-      renderRunManager();
-      runPageJump.blur();
-    }
-  });
-  runPageJump?.addEventListener("focus", () => {
-    window.requestAnimationFrame(() => runPageJump.select());
-  });
-  $("#runPageSize")?.addEventListener("change", (event) => {
-    changeRunManagerPageSize(event.target.value);
-  });
+  if (!(window.__RA_REACT_WORKBENCH__?.ownsPage?.("runs-manager") || window.__RA_REACT_OWNED_PAGES__?.includes?.("runs-manager"))) {
+    $("#refreshRunsButton")?.addEventListener("click", async () => {
+      try {
+        await loadRuns();
+        await loadOverview();
+        showToast(t("toast.runs_refreshed"));
+      } catch (error) {
+        showToast(error.message, true);
+      }
+    });
+    $("#runPersonFilter")?.addEventListener("change", resetRunManagerPageAndRender);
+    $("#runKindFilter")?.addEventListener("change", resetRunManagerPageAndRender);
+    $("#runSearchInput")?.addEventListener("input", resetRunManagerPageAndRender);
+    $("#runPagePrevious")?.addEventListener("click", () => changeRunManagerPage(-1));
+    $("#runPageNext")?.addEventListener("click", () => changeRunManagerPage(1));
+    const runPageJump = $("#runPageJump");
+    const commitRunPageJump = () => jumpToRunManagerPage(runPageJump?.value);
+    $("#runPageJumpButton")?.addEventListener("click", commitRunPageJump);
+    runPageJump?.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        commitRunPageJump();
+      } else if (event.key === "Escape") {
+        event.preventDefault();
+        renderRunManager();
+        runPageJump.blur();
+      }
+    });
+    runPageJump?.addEventListener("focus", () => {
+      window.requestAnimationFrame(() => runPageJump.select());
+    });
+    $("#runPageSize")?.addEventListener("change", (event) => {
+      changeRunManagerPageSize(event.target.value);
+    });
+  }
   $("#batchRequesterFilter").addEventListener("change", () => {
     loadPredictionBatches().catch((error) => showToast(error.message, true));
   });
