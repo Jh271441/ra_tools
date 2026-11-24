@@ -5,7 +5,11 @@ from sqlalchemy.orm import Session
 from app.database import Base
 from app.models import DashboardSnapshot, ReleaseSimulationBatch
 from app.config import config_hash
-from app.services import simulation_board as board, release_workflow as workflow
+from app.services import (
+    release_workflow as workflow,
+    simulation_board as board,
+    workflow_orchestrator as orchestrator,
+)
 
 
 @pytest.fixture
@@ -39,7 +43,7 @@ def setup(monkeypatch, tmp_path):
     }
     monkeypatch.setattr(board, "load_versions_config", lambda: archive)
     monkeypatch.setattr(workflow, "effective_config", lambda _: config)
-    monkeypatch.setattr(workflow, "status", lambda *_: current)
+    monkeypatch.setattr(orchestrator, "status", lambda *_: current)
     monkeypatch.setenv("RELEASE_WORKFLOW_LOCK", str(tmp_path / "workflow.lock"))
     db.add(
         ReleaseSimulationBatch(
@@ -234,7 +238,7 @@ def test_observed_release_shows_prepared_scenes_before_catalog_or_job(setup, mon
     )
     setup.commit()
     monkeypatch.setattr(board, "summarize_population", lambda *_: {})
-    monkeypatch.setattr(workflow, "metrics_for_snapshot", lambda *_: {"available": False})
+    monkeypatch.setattr(orchestrator, "metrics_for_snapshot", lambda *_: {"available": False})
     value = board.board(setup, release)["selected"]
     assert value["scenario_count"] == 1 and value["binary_id"] == 123
     assert value["kind"] == "observation" and not value["jobs"]

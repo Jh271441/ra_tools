@@ -11,6 +11,9 @@ import re
 from sqlalchemy import select
 
 from app.models import ReleaseIssueSnapshot
+from app.services import release_workflow as workflow
+from app.services.read_views import read_projection
+from app.services.release_inventory import inventory
 
 
 def _identity(rows, release):
@@ -125,8 +128,6 @@ def scope_for_batch(db, batch):
     This function neither queries upstream nor changes snapshots, approvals,
     execution state or label revisions. Missing evidence fails closed.
     """
-    from app.services.read_views import read_projection
-
     return read_projection(
         db,
         ("business-population", batch.fingerprint, batch.updated_at),
@@ -149,10 +150,6 @@ def historical_scope(scope, *, is_current):
 
 
 def _scope_for_batch(db, batch):
-    from app.services import release_workflow as workflow
-    from app.services.release_inventory import inventory
-    from app.services.read_views import read_projection
-
     payload = batch.payload if isinstance(batch.payload, dict) else {}
     release = batch.release
     result = {

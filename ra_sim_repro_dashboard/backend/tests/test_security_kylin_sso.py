@@ -21,7 +21,11 @@ from app.security import (
 from app.services import auto_triage_warehouse, release_source, system_status
 from app.services.issue_client import IssueClient
 from app.services.sim_result_client import SimResultClient
-from ra_api import sim_result_api
+
+try:
+    from ra_api import sim_result_api
+except ImportError:  # Standalone container runs without monorepo ra_api on PYTHONPATH.
+    sim_result_api = None
 
 
 @pytest.fixture(autouse=True)
@@ -244,6 +248,8 @@ def test_shuyi_storage_state_enforces_0600_in_production_and_avoids_tmp_default(
 
 
 def test_ra_api_sim_result_has_no_hardcoded_token_and_verifies_ssl_by_default(monkeypatch):
+    if sim_result_api is None:
+        pytest.skip("ra_api not mounted in standalone backend runtime")
     assert sim_result_api._DEFAULT_APP_TOKEN == ""
     monkeypatch.delenv("SIM_RESULT_APP_TOKEN", raising=False)
     monkeypatch.delenv("TRAIL_APP_TOKEN", raising=False)

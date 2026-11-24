@@ -20,6 +20,7 @@ from app.models import (
     Version,
 )
 from app.schemas import (
+    HealthResponse,
     IssueDetailResponse,
     IssueListItem,
     PaginatedIssuesResponse,
@@ -36,10 +37,13 @@ from app.services.refresh import (
     build_snapshot,
     create_refresh_job,
     refresh_dashboard,
-    sync_versions_from_config,
+)
+from app.services.read_views import read_view
+from app.services.release_presentation import (
+    business_context,
+    cached_history_kpis as history_kpis,
 )
 from app.services.system_status import collect_system_status
-from app.services.read_views import business_context, history_kpis, read_view
 
 
 router = APIRouter(prefix="/api")
@@ -49,14 +53,23 @@ logger = logging.getLogger(__name__)
 DbSession = Annotated[Session, Depends(get_db)]
 
 
-@router.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+@router.get("/health", response_model=HealthResponse)
+def health() -> HealthResponse:
+    return HealthResponse(status="ok")
 
 
 @router.get("/system/status", response_model=SystemStatusResponse)
 def system_status(db: DbSession) -> SystemStatusResponse:
     return SystemStatusResponse(**collect_system_status(db))
+
+
+def _optional_int(value: Any) -> int | None:
+    if value in (None, ""):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 @router.get("/dashboard/versions", response_model=VersionsResponse)
@@ -66,23 +79,49 @@ def versions(db: DbSession) -> VersionsResponse:
 
 def _versions(db: DbSession) -> VersionsResponse:
     payload = load_versions_config()
-    sync_versions_from_config(db, payload)
     configured_keys = _configured_version_keys(payload)
     stmt = select(Version)
     if configured_keys:
         stmt = stmt.where(Version.version_key.in_(configured_keys))
-    rows = db.execute(stmt.order_by(Version.sort_order)).scalars().all()
+    stored = {row.version_key: row for row in db.execute(stmt).scalars().all()}
     context = business_context(db)
     business_key = context["business_current_version"]
-    output = [
-        VersionOut.model_validate(row).model_copy(
-            update={
-                "metadata_json": _public_version_metadata(row.metadata_json),
-                "is_current": row.version_key == business_key if business_key else False,
-            }
-        )
-        for row in rows
-    ]
+    ordered_keys = configured_keys or sorted(stored, key=lambda k: stored[k].sort_order)
+    output: list[VersionOut] = []
+    for idx, version_key in enumerate(ordered_keys):
+        row = stored.get(version_key)
+        item = dict(payload.get("versions", {}).get(version_key, {}))
+        if row is not None:
+            merged_meta = {**item, **_public_version_metadata(row.metadata_json)}
+            output.append(
+                VersionOut(
+                    version_key=row.version_key,
+                    label=str(item.get("label") or row.label or version_key),
+                    sim_job_id=_optional_int(item.get("sim_job_id"))
+                    if "sim_job_id" in item
+                    else row.sim_job_id,
+                    baseline_job_id=_optional_int(item.get("baseline_job_id"))
+                    if "baseline_job_id" in item
+                    else row.baseline_job_id,
+                    sort_order=idx,
+                    is_current=row.version_key == business_key if business_key else False,
+                    metadata_json=_public_version_metadata(merged_meta),
+                    last_refreshed_at=row.last_refreshed_at,
+                )
+            )
+        else:
+            output.append(
+                VersionOut(
+                    version_key=version_key,
+                    label=str(item.get("label") or version_key),
+                    sim_job_id=_optional_int(item.get("sim_job_id")),
+                    baseline_job_id=_optional_int(item.get("baseline_job_id")),
+                    sort_order=idx,
+                    is_current=version_key == business_key if business_key else False,
+                    metadata_json=_public_version_metadata(item),
+                    last_refreshed_at=None,
+                )
+            )
     for item in history_kpis(db):
         key = item["version_key"]
         if item.get("evaluation_scope"):
@@ -430,7 +469,7 @@ def refresh_status(job_id: str, db: DbSession) -> RefreshJobOut:
     return RefreshJobOut.model_validate(job)
 
 
-@router.get("/dashboard/root-causes")
+@router.get("/dashboard/root-causes", response_model=dict[str, int])
 def root_causes(db: DbSession) -> dict[str, int]:
     configured_keys = _configured_version_keys()
     stmt = select(ScenarioVersionResult.root_cause, func.count()).group_by(

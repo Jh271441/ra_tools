@@ -2,7 +2,12 @@ from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 import pytest
 from app.models import ReleaseIssueSnapshot, ReleaseSimulationBatch
-from app.services import release_workflow as w, release_backfill as lane, release_resume as resume
+from app.services import (
+    release_backfill as lane,
+    release_resume as resume,
+    release_workflow as w,
+    workflow_orchestrator as orchestrator,
+)
 from app.services.result_publication import publication, effective_publication
 from app.services.result_integration import TRIGGER
 from test_release_workflow import db, config, scene_labels
@@ -94,7 +99,7 @@ def test_additive_mapping_does_not_invalidate_running_frozen_job(db, config, run
     )
     sync()
     assert lane.frozen_snapshot_valid(db, batch)
-    w.poll_batches(db, config)
+    orchestrator.poll_batches(db, config)
     assert batch.status == "complete" and publication(batch)
     assert "900" not in batch.payload["results"]
 
@@ -103,14 +108,14 @@ def test_source_changes_still_block_import(db, config, running):
     batch, rows, _, _, sync, _ = running
     rows[0]["ra_merge_result"] = "失败"
     sync()
-    w.poll_batches(db, config)
+    orchestrator.poll_batches(db, config)
     assert batch.status == "running" and not batch.payload.get("result_import")
     assert batch.payload["last_poll_error"]
 
 
 def test_partial_recovery_only_submits_new_scene_and_merges_ledger(db, config, running):
     batch, _, scenes, receipt, sync, calls = running
-    w.poll_batches(db, config)
+    orchestrator.poll_batches(db, config)
     original = deepcopy(batch.payload)
     assert publication(batch)["publication"]["quality_level"] == "degraded"
     scenes.append(
@@ -125,7 +130,7 @@ def test_partial_recovery_only_submits_new_scene_and_merges_ledger(db, config, r
     assert len(batch.payload["scenarios"]) == 197 and batch.payload == original
     lane.refresh_release(db, config, batch, now=now, force=True)
     assert sum(a == "submit" for a, _ in calls) == 2
-    w.poll_batches(db, config)
+    orchestrator.poll_batches(db, config)
     assert child.status == "complete"
     value = lane.refresh_release(db, config, batch, now=now + timedelta(minutes=1))
     assert value["status"] == "waiting_bags" and value["pending_count"] == 3, value
@@ -145,13 +150,13 @@ def test_partial_recovery_only_submits_new_scene_and_merges_ledger(db, config, r
 
 def test_physical_primary_preserves_schema_through_incremental_recovery(db, config, running):
     _, _, scenes, receipt, sync, _ = running
-    w.poll_batches(db, config)
+    orchestrator.poll_batches(db, config)
     config["periods"][0]["execution_schema"] = "physical_v2"
     sync()
     plan = w.make_plan(db, config)
     base = w.queue_plan(db, plan["fingerprint"], config)
     w.execute_batch(db, base, config)
-    w.poll_batches(db, config)
+    orchestrator.poll_batches(db, config)
     assert publication(base) and base.payload["execution_schema"] == "physical_v2"
     original = deepcopy(base.payload)
     scenes.append(
@@ -163,7 +168,7 @@ def test_physical_primary_preserves_schema_through_incremental_recovery(db, conf
     child = db.get(ReleaseSimulationBatch, value["fingerprint"])
     assert child.payload["execution_schema"] == "physical_v2"
     assert child.payload["scenarios"][0]["cohort"] == "source_auto"
-    w.poll_batches(db, config)
+    orchestrator.poll_batches(db, config)
     assert child.status == "complete"
     lane.refresh_release(db, config, base, now=datetime.now(timezone.utc) + timedelta(minutes=1))
     assert effective_publication(db, base)["publication"]["valid_issue_count"] == 198
@@ -196,14 +201,14 @@ def test_resume_rejects_changed_checkpoint_and_manual_mode(db, config, running, 
 
 def test_changed_actual_runtime_cannot_merge_recovery(db, config, running):
     batch, _, scenes, receipt, _, _ = running
-    w.poll_batches(db, config)
+    orchestrator.poll_batches(db, config)
     scenes.append(
         {"issue_id": "0", "scenario_id": "900", "scenario_labels": scene_labels("positive_auto")}
     )
     receipt["failures"] = [f for f in receipt["failures"] if f["issue_id"] != "0"]
     value = lane.refresh_release(db, config, batch)
     child = db.get(ReleaseSimulationBatch, value["fingerprint"])
-    w.poll_batches(db, config)
+    orchestrator.poll_batches(db, config)
     child.payload = {
         **child.payload,
         "result_import": {
@@ -222,10 +227,10 @@ def test_changed_actual_runtime_cannot_merge_recovery(db, config, running):
 def test_scene_ledger_hashes_each_execution_once_and_still_rejects_tampering(
     db, config, running, monkeypatch
 ):
-    from app.services import result_publication as published
+    from app.services import publication_core as published
 
     batch, *_ = running
-    w.poll_batches(db, config)
+    orchestrator.poll_batches(db, config)
     original_hash = published.audit_hash
     calls = []
 

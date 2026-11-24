@@ -17,25 +17,23 @@ import subprocess
 
 from sqlalchemy import select
 
+from app.domain.labels import (
+    AUTOMATIC_RULES,
+    MAX_OBSERVATION_GAP_SECONDS,
+    QUIET_SECONDS,
+    WATCH_RULE as RULE,
+    activity_identity,
+    full_scene_label,
+    physical_fields as _physical,
+    validate_monitor_config,
+)
 from app.models import ReleaseIssueSnapshot, ReleaseSimulationBatch, ReleaseWorkflowState
+from app.services import release_workflow as w
 from app.services.release_cycle import BASE_FILTERS, TZ, digest, validate_period
 from app.services.release_catalog import fetch_recent_releases
 from app.services.release_source import complete_query, trail_credentials
 
 logger = logging.getLogger(__name__)
-
-QUIET_SECONDS = 24 * 3600
-MAX_OBSERVATION_GAP_SECONDS = 3 * 3600
-RULE = "issue_last_time_24h"
-AUTOMATIC_RULES = {RULE, "issue_inactivity_24h"}
-
-
-def validate_monitor_config(config):
-    contract = config.get("contract", {})
-    if not all(contract.get(k) for k in ("verified", "reference", "time_field")):
-        raise ValueError("自动观察要求已核实的数易查询口径")
-    if config.get("simulation", {}).get("acceptance_only"):
-        raise ValueError("验收子集禁止开启自动仿真")
 
 
 def release_key(row):
@@ -147,8 +145,6 @@ def make_period(state, rows, existing=None):
     for key in ("scenario_creation_label", "scenario_query_labels", "scenario_query_label_sets"):
         if existing and key in existing:
             period[key] = existing[key]
-    from ra_api.release_labels import full_scene_label
-
     period["scenario_creation_label"] = full_scene_label(period)
     period["scenario_query_labels"] = [period["scenario_creation_label"]]
     period.pop("scenario_query_label_sets", None)
@@ -162,9 +158,6 @@ def collection_revision(db, batches, rows, release):
     recovery lanes. New collection must extend the cutoff and retain every old
     physical Issue before it can authorize a separate complete execution.
     """
-    from app.services import release_workflow as w
-    from app.services.auto_triage_metrics import _physical
-
     if w.get_state(db, "evaluation_target:" + release):
         return None
     submitted = [
@@ -231,8 +224,6 @@ def collection_revision(db, batches, rows, release):
 
 
 def monitor_tick(db, config, *, now=None, activity_fetcher=None, release=None, update_latest=True):
-    from app.services import release_workflow as w
-
     supplied_now = now
     now = now or datetime.now(timezone.utc)
     fetch = activity_fetcher or (lambda c: fetch_activity(c, release))
@@ -475,8 +466,6 @@ def monitor_releases(db, config, *, now=None, discovery_fetcher=None, activity_f
     existing installation does not unexpectedly launch its entire historical archive.
     Each release keeps its own quiet window and submission receipts.
     """
-    from app.services import release_workflow as w
-
     previous = w.get_state(db, "release_monitor")
     tracked = {
         row.payload["release"]

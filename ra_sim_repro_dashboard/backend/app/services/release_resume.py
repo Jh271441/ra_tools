@@ -1,11 +1,18 @@
-"""Durable Resume requests consumed under the release workflow file lock."""
+"""Durable Resume requests consumed under the release workflow advisory lock."""
 
 from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
+
 from app.models import ReleaseWorkflowState
-from app.services import release_workflow as w
-from app.services.release_backfill import ACTIVE, executions, original, refresh_release
+from app.services import batch_poller, release_watch, release_workflow as w
+from app.services.release_backfill import (
+    ACTIVE,
+    executions,
+    original,
+    refresh_release,
+    validate_delta,
+)
 
 
 def public_state(db, release):
@@ -52,7 +59,8 @@ def request(db, release, fingerprint=None):
     return value
 
 
-def process_requests(db, config):
+def process_requests(db, config, *, poll_fn=None):
+    poll_fn = poll_fn or batch_poller.poll_batches
     requests = list(
         db.scalars(
             select(ReleaseWorkflowState).where(ReleaseWorkflowState.key.startswith("resume:"))
@@ -77,13 +85,17 @@ def process_requests(db, config):
                 if active.status == "queued":
                     # Automatic plans require a fresh quiet-window observation.
                     if active.payload.get("backfill"):
-                        w.execute_batch(db, active, config, release=release)
+                        w.execute_batch(
+                            db,
+                            active,
+                            config,
+                            release=release,
+                            delta_validator=validate_delta,
+                        )
                     else:
-                        from app.services.release_watch import monitor_tick
-
-                        monitor_tick(db, config, release=release, update_latest=False)
+                        release_watch.monitor_tick(db, config, release=release, update_latest=False)
                 # Poll/reconcile an existing Job. Never reset uncertain submissions.
-                w.poll_batches(db, config)
+                poll_fn(db, config)
                 save(status="complete", outcome="tracking", job_id=active.payload.get("job_id"))
                 continue
             base = original(db, release)
@@ -126,9 +138,9 @@ def process_requests(db, config):
                     "error": batch.payload.get("error"),
                 }
             else:
-                from app.services.release_watch import monitor_tick
-
-                result = monitor_tick(db, config, release=release, update_latest=False)
+                result = release_watch.monitor_tick(
+                    db, config, release=release, update_latest=False
+                )
             save(
                 status="blocked"
                 if result["status"]

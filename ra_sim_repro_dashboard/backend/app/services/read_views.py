@@ -16,9 +16,9 @@ from typing import Any
 
 from app.config import CONFIG_DIR, settings
 from app.database import engine as default_engine
+from app.domain.cycle import TZ
+from app.infra.cache import cache as redis_cache
 from app.repositories import read_models_repo, state_store  # noqa: F401 (registers Session hooks)
-from app.services.cache import cache as redis_cache
-from app.services.release_cycle import TZ
 
 _lock = RLock()
 _values: OrderedDict[Any, tuple[float, Any]] = OrderedDict()
@@ -157,21 +157,3 @@ def read_memo(db, name, load):
     if name not in values:
         values[name] = load()
     return values[name]
-
-
-def workflow_status(db):
-    from app.services.release_workflow import status
-
-    return read_view(db, "workflow-status", lambda: status(db))
-
-
-def business_context(db):
-    from app.services.release_presentation import context
-
-    return read_view(db, "business-context", lambda: context(db, workflow_status(db)))
-
-
-def history_kpis(db):
-    from app.services.release_presentation import history_kpis as build
-
-    return read_view(db, "history-kpis", lambda: build(db))

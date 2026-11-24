@@ -1,7 +1,13 @@
-"""Static architecture guardrails to track and lock refactoring progress.
+"""Static and runtime architecture guardrails locking P0-P2 invariants permanently.
 
-Ratchet bounds downward as P1/P2 land until SCC == 0, local imports == 0,
-and cross-repo ra_api imports == 0.
+Enforces:
+- Zero cyclic SCCs across `app/`
+- Zero function-local `app.*` imports
+- Zero cross-repo `ra_api` imports
+- 100% pure `app/domain/` (no DB/HTTP/subprocess/OS/upper-layer imports)
+- Strictly downward layer dependencies (infra -> domain -> clients -> repositories -> services -> api)
+- Explicit Pydantic `response_model` on every `/api/*` FastAPI route
+- Read-only `GET /api/dashboard/versions` (zero write-on-GET)
 """
 
 from __future__ import annotations
@@ -10,13 +16,45 @@ import ast
 import collections
 from pathlib import Path
 
+from fastapi.routing import APIRoute
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine, func, select
+from sqlalchemy.orm import Session
+from sqlalchemy.pool import StaticPool
+
 APP_ROOT = Path(__file__).resolve().parents[1] / "app"
 
-# Current phase ratchets (tightened to 0 at P2 completion).
-MAX_NONTRIVIAL_SCCS = 1
-MAX_SCC_SIZE = 25
-MAX_LOCAL_APP_IMPORTS = 140
-MAX_RA_API_IMPORTS = 25
+# Locked at 0 after P2 completion — never regress.
+MAX_NONTRIVIAL_SCCS = 0
+MAX_SCC_SIZE = 0
+MAX_LOCAL_APP_IMPORTS = 0
+MAX_RA_API_IMPORTS = 0
+
+_FORBIDDEN_DOMAIN_TOP_MODULES = {
+    "sqlalchemy",
+    "httpx",
+    "requests",
+    "subprocess",
+    "os",
+    "redis",
+    "rq",
+    "fastapi",
+    "starlette",
+    "alembic",
+    "fcntl",
+}
+
+_FORBIDDEN_DOMAIN_APP_PREFIXES = (
+    "app.infra",
+    "app.clients",
+    "app.repositories",
+    "app.services",
+    "app.api",
+    "app.database",
+    "app.models",
+    "app.config",
+    "app.security",
+)
 
 
 def _collect_app_modules() -> dict[str, Path]:
@@ -118,5 +156,122 @@ def test_architecture_coupling_ratchets() -> None:
     max_scc = max((len(c) for c in sccs), default=0)
     assert len(sccs) <= MAX_NONTRIVIAL_SCCS, f"Unexpected cyclic SCCs: {sccs}"
     assert max_scc <= MAX_SCC_SIZE, f"SCC grew to {max_scc}: {sccs}"
-    assert len(local_imports) <= MAX_LOCAL_APP_IMPORTS, f"Local imports grew ({len(local_imports)})"
-    assert len(ra_api_imports) <= MAX_RA_API_IMPORTS, f"ra_api imports grew ({len(ra_api_imports)})"
+    assert (
+        len(local_imports) <= MAX_LOCAL_APP_IMPORTS
+    ), f"Unexpected function-local app imports ({len(local_imports)}): {local_imports}"
+    assert (
+        len(ra_api_imports) <= MAX_RA_API_IMPORTS
+    ), f"Unexpected cross-repo ra_api imports ({len(ra_api_imports)}): {ra_api_imports}"
+
+
+def test_domain_layer_is_pure() -> None:
+    domain_dir = APP_ROOT / "domain"
+    domain_files = sorted(domain_dir.glob("*.py"))
+    assert domain_files, "Expected pure modules under app/domain/"
+    violations: list[str] = []
+    for path in domain_files:
+        tree = ast.parse(path.read_text(encoding="utf-8"), str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module:
+                top = node.module.split(".")[0]
+                if top in _FORBIDDEN_DOMAIN_TOP_MODULES or node.module.startswith(
+                    _FORBIDDEN_DOMAIN_APP_PREFIXES
+                ):
+                    violations.append(f"{path.name}:{node.lineno} imports {node.module}")
+            elif isinstance(node, ast.Import):
+                for alias in node.names:
+                    top = alias.name.split(".")[0]
+                    if top in _FORBIDDEN_DOMAIN_TOP_MODULES or alias.name.startswith(
+                        _FORBIDDEN_DOMAIN_APP_PREFIXES
+                    ):
+                        violations.append(f"{path.name}:{node.lineno} imports {alias.name}")
+    assert not violations, f"Pure domain layer violations: {violations}"
+
+
+def test_layer_dependencies_are_strictly_downward() -> None:
+    modules = _collect_app_modules()
+    graph, _, _ = _build_dependency_graph(modules)
+    forbidden: dict[str, tuple[str, ...]] = {
+        "infra": ("clients", "repositories", "services", "api"),
+        "domain": ("infra", "clients", "repositories", "services", "api", "database", "models"),
+        "clients": ("repositories", "services", "api"),
+        "repositories": ("services", "api"),
+    }
+    violations: list[str] = []
+    for src, targets in sorted(graph.items()):
+        layer = src.split(".")[0]
+        banned = forbidden.get(layer)
+        if not banned:
+            continue
+        for dst in sorted(targets):
+            dst_layer = dst.split(".")[0]
+            if dst_layer in banned:
+                violations.append(f"{src} -> {dst}")
+    assert not violations, f"Upward layer dependency violations: {violations}"
+
+
+def test_every_api_route_declares_response_model() -> None:
+    from app.main import app
+
+    missing: list[str] = []
+    for route in app.routes:
+        if isinstance(route, APIRoute) and route.path.startswith("/api/"):
+            if route.response_model is None:
+                methods = ",".join(sorted(route.methods or ()))
+                missing.append(f"{methods} {route.path}")
+    assert not missing, f"API routes missing explicit response_model: {missing}"
+
+
+def test_versions_get_is_strictly_read_only(monkeypatch) -> None:
+    from app.api import routes
+    from app.database import Base, get_db
+    from app.main import app
+    from app.models import Version
+
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    db = Session(engine)
+    monkeypatch.setattr(
+        routes,
+        "load_versions_config",
+        lambda: {
+            "current_version": "gen4-release-20261120",
+            "compare_versions": ["gen4-release-20261113"],
+            "versions": {
+                "gen4-release-20261113": {"label": "release20261113", "sim_job_id": 1001},
+                "gen4-release-20261120": {"label": "release20261120", "sim_job_id": 1002},
+            },
+        },
+    )
+    monkeypatch.setattr(
+        routes,
+        "business_context",
+        lambda _db: {
+            "business_current_version": "gen4-release-20261120",
+            "business_metrics": None,
+            "business_status": "pending_simulation",
+            "business_reason": "",
+            "metrics": {},
+        },
+    )
+    monkeypatch.setattr(routes, "history_kpis", lambda _db: [])
+    app.dependency_overrides[get_db] = lambda: db
+    try:
+        client = TestClient(app)
+        resp = client.get("/api/dashboard/versions")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert [v["version_key"] for v in body["versions"]] == [
+            "gen4-release-20261113",
+            "gen4-release-20261120",
+        ]
+        # Zero writes on GET: versions table must remain empty.
+        assert db.scalar(select(func.count()).select_from(Version)) == 0
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+        db.close()
+        engine.dispose()

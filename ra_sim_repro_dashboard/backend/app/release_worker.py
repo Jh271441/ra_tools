@@ -8,7 +8,7 @@ import threading
 import signal
 
 from app.database import init_db
-from app.services.release_workflow import tick
+from app.services.workflow_orchestrator import tick
 
 
 def main():

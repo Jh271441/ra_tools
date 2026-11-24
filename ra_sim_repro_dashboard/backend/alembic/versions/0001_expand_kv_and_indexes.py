@@ -33,9 +33,34 @@ def _existing_indexes(table_name: str) -> set[str]:
     return {idx["name"] for idx in inspector.get_indexes(table_name)}
 
 
+_LEGACY_TABLES = (
+    "versions",
+    "scenarios",
+    "issues",
+    "scenario_version_results",
+    "dashboard_snapshots",
+    "refresh_jobs",
+    "release_issue_snapshots",
+    "release_simulation_batches",
+    "release_workflow_state",
+)
+
+
 def upgrade() -> None:
     bind = op.get_bind()
     is_pg = bind.dialect.name == "postgresql"
+    inspector = sa.inspect(bind)
+
+    # Bootstrap legacy baseline tables on brand-new empty databases; no-op on existing DBs.
+    missing_legacy = [t for t in _LEGACY_TABLES if not inspector.has_table(t)]
+    if missing_legacy:
+        from app.database import Base
+        import app.models  # noqa: F401
+
+        tables_to_create = [
+            Base.metadata.tables[name] for name in missing_legacy if name in Base.metadata.tables
+        ]
+        Base.metadata.create_all(bind=bind, tables=tables_to_create, checkfirst=True)
 
     # 1. Widen release_workflow_state.key (64 -> 128) and convert payload to JSONB on PG
     if _existing_columns("release_workflow_state"):

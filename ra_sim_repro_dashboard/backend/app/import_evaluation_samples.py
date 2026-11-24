@@ -16,9 +16,14 @@ import json
 import os
 from pathlib import Path
 from app.database import SessionLocal
-from app.services import evaluation_samples as samples, evaluation_pipeline as pipeline
-from app.services import auto_triage_warehouse as warehouse, auto_triage_metrics as at
-from app.services import metric_profiles
+from app.services import (
+    auto_triage_metrics as at,
+    auto_triage_warehouse as warehouse,
+    evaluation_pipeline as pipeline,
+    evaluation_samples as samples,
+    evaluation_trail,
+    metric_profiles,
+)
 
 
 def recalculate_contexts(db, releases, extra_contexts=()):
@@ -89,8 +94,6 @@ def main():
     )
     args = parser.parse_args()
     if args.command == "verify-trail":
-        from app.services import evaluation_trail
-
         if args.output.exists():
             raise ValueError("evidence_file_exists")
         reference = json.loads(args.reference.read_text())["dashboard"]
@@ -149,8 +152,6 @@ def main():
                     args.date_end,
                 )
                 if args.command == "fetch-trail":
-                    from app.services import evaluation_trail
-
                     if profile["config"]["label"]["source"] != "coalesce":
                         raise ValueError("trail_review_profile_required")
                     acquired = evaluation_trail.collect(scope, selected)

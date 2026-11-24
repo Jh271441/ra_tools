@@ -7,14 +7,15 @@ stay unchanged. Offline publication is explicit; page reads never query upstream
 from copy import deepcopy
 from datetime import datetime, timezone
 from sqlalchemy import select
+from app.domain import metrics as profiles
+from app.domain.hashing import digest
 from app.models import ReleaseWorkflowState
-from app.services import evaluation_pipeline as p, release_workflow as w
 from app.services import (
     auto_triage_metrics as at,
     auto_triage_warehouse as warehouse,
-    metric_profiles as profiles,
+    evaluation_pipeline as p,
+    release_workflow as w,
 )
-from app.services.release_cycle import digest
 
 BASIS = "ordinary_shuyi_report_v1"
 POINTER = "normalmetrics:"

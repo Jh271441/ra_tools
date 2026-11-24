@@ -2,23 +2,18 @@
 
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
-import fcntl
 import logging
 import os
-from pathlib import Path
 from sqlalchemy import select
-from app.models import ReleaseSimulationBatch, ReleaseIssueSnapshot
-from app.services import release_workflow as w
-from app.services.release_watch import activity_identity, fetch_activity
-from app.services.release_cycle import digest
-from app.services.release_metrics import cohort_for_issue, excluded_issue, summarize_population
-from app.services.result_publication import (
-    publication,
-    published_batch,
-    audit_hash,
-    coverage_policy,
-)
-from ra_api.release_tolerance import assess, LEGACY_POLICY, POLICY, policy_for
+from app.domain.coverage import LEGACY_POLICY, POLICY, assess, coverage_policy, policy_for
+from app.domain.hashing import audit_hash, digest
+from app.domain.labels import INPUT_FIELDS, activity_identity, same_inputs
+from app.domain.metrics import cohort_for_issue, excluded_issue, summarize_population
+from app.models import ReleaseIssueSnapshot, ReleaseSimulationBatch, ReleaseWorkflowState
+from app.repositories.release_repo import binding_valid_uncached as binding_valid
+from app.services import label_recovery, release_backfill, release_workflow as w
+from app.services.publication_core import publication, published_batch
+from app.services.release_watch import fetch_activity
 
 logger = logging.getLogger(__name__)
 
@@ -32,8 +27,6 @@ def plan_revision(payload, source, rows, *, recovery=None):
     new = {str(i["issue_id"]): i for i in rows}
     if len(new) != len(rows) or not new:
         raise ValueError("invalid_observation")
-    from app.services.label_recovery import same_inputs
-
     if not same_inputs(source["issues"], rows):
         return {
             "status": "needs_simulation",
@@ -145,8 +138,6 @@ def revision_metrics(db, batch, base):
     hashes = {}
     for item in revision.get("lineage", {}).values():
         if item.get("execution_id"):
-            from app.services.evaluation_pipeline import binding_valid
-
             if not binding_valid(db, item):
                 return base
             continue
@@ -213,8 +204,6 @@ def public_state(db, release, now=None):
 
 def fetch_observed_activity(db, config, release, now):
     """Reuse a validated full observation instead of querying Trail twice per cycle."""
-    from app.services.label_recovery import INPUT_FIELDS
-
     observed = w.get_state(db, "release_observation:" + release)
     monitor = w.get_state(db, "release_monitor:" + release)
     try:
@@ -307,11 +296,9 @@ def refresh_release(db, config, batch, *, now=None, fetcher=None):
             )
         revision_key = "label_revision:" + digest({"base": base_hash, "source": identity})[:48]
         existing = w.get_state(db, revision_key)
-        from app.services.release_backfill import revision_metrics as backfill_metrics
-
-        backfill_basis = (backfill_metrics(db, batch, publication(batch)) or {}).get(
-            "backfill_revision"
-        )
+        backfill_basis = (
+            release_backfill.revision_metrics(db, batch, publication(batch)) or {}
+        ).get("backfill_revision")
         recovery_state = w.get_state(db, "label_recovery:" + batch.release)
         recovering = recovery_state.get("missing_count", 0) > 0
         pointed = w.get_state(db, previous.get("revision_key", "label_revision:none"))
@@ -357,16 +344,12 @@ def refresh_release(db, config, batch, *, now=None, fetcher=None):
         if w.get_state(db, "settings", {"mode": "manual"}).get("mode") != "auto":
             return save(status="paused", reason="manual_mode", pending_count=count)
         revision = plan_revision(batch.payload, source, rows)
-        from app.services import label_recovery
-
         has_children = bool(label_recovery.children(db, batch))
         if revision.get("reason") == "missing_results" or (
             (recovering or has_children) and revision.get("reason") in (None, "coverage_gate")
         ):
             save(status="recovering", reason=None, pending_count=count)
-            from app.services.label_recovery import recover
-
-            recovered = recover(db, config, batch, source, rows, now)
+            recovered = label_recovery.recover(db, config, batch, source, rows, now)
             revision = plan_revision(batch.payload, source, rows, recovery=recovered)
         if revision["status"] != "updated":
             return save(
@@ -407,8 +390,6 @@ def refresh_release(db, config, batch, *, now=None, fetcher=None):
             applied_at=now.isoformat(),
         )
         # Ledger and pointer are committed together; original batch is never rewritten.
-        from app.models import ReleaseWorkflowState
-
         existing_revision = db.get(ReleaseWorkflowState, revision_key)
         if not existing_revision:
             db.add(ReleaseWorkflowState(key=revision_key, payload=revision))
@@ -439,43 +420,3 @@ def refresh_release(db, config, batch, *, now=None, fetcher=None):
             reason=str(exc) if isinstance(exc, ValueError) else type(exc).__name__,
             recovery=w.get_state(db, "label_recovery:" + batch.release),
         )
-
-
-def tick():
-    if os.getenv("LABEL_REFRESH_ENABLED") != "1":
-        return
-    from app.database import SessionLocal
-    from app.infra.locks import LockBusyError, advisory_lock
-
-    try:
-        lock_ctx = advisory_lock("ra_sim:label_cycle", blocking=False)
-        lock_ctx.__enter__()
-    except LockBusyError:
-        return
-    try:
-        with SessionLocal() as db:
-            config = w.effective_config(db)
-            releases = set(db.scalars(select(ReleaseSimulationBatch.release)))
-            for release in sorted(releases):
-                batch = published_batch(db, release)
-                # Start from watched releases, never silently backfill the historical archive.
-                if batch and w.get_state(db, "release_monitor:" + release):
-                    previous = w.get_state(db, "label_cycle:" + release)
-                    try:
-                        elapsed = (
-                            datetime.now(timezone.utc)
-                            - datetime.fromisoformat(previous["checked_at"])
-                        ).total_seconds()
-                        if 0 <= elapsed < CHECK_SECONDS:
-                            continue
-                    except (KeyError, TypeError, ValueError):
-                        pass
-                    state = refresh_release(db, config, batch)
-                    from app.services.published_scene_labels import synchronize
-
-                    synchronize(db, config, batch, state)
-                    from app.services.auto_triage_metrics import refresh_observed
-
-                    refresh_observed(db, release)
-    finally:
-        lock_ctx.__exit__(None, None, None)

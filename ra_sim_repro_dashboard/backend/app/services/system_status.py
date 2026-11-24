@@ -10,7 +10,7 @@ from typing import Any
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
-from app.config import DATA_DIR, mock_data_disabled, settings
+from app.config import DATA_DIR, config_hash, load_versions_config, mock_data_disabled, settings
 from app.models import (
     Issue,
     RefreshJob,
@@ -20,6 +20,7 @@ from app.models import (
     ScenarioVersionResult,
     Version,
 )
+from app.repositories import state_store
 
 
 REFRESH_QUEUE_NAME = "ra_dashboard_refresh"
@@ -152,8 +153,6 @@ def _check_queue(redis_client: Any) -> dict[str, Any]:
 
 
 def _check_versions_config() -> dict[str, Any]:
-    from app.config import config_hash, load_versions_config
-
     check: dict[str, Any] = {
         "key": "versions_config",
         "status": "error",
@@ -368,8 +367,6 @@ def _check_evaluation_worker(db: Session) -> dict[str, Any]:
         },
     }
     try:
-        from app.repositories import state_store
-
         active_exec = state_store.count_active_executions(db)
         active_starts = int(
             db.scalar(

@@ -10,8 +10,12 @@ from datetime import datetime, timedelta, timezone
 import os
 from zoneinfo import ZoneInfo
 
-from app.services import auto_triage_warehouse as warehouse, metric_profiles as profiles
-from app.services import evaluation_labels
+from app.domain.hashing import digest
+from app.domain.labels import QUERY_FIELDS
+from app.domain import labels as evaluation_labels, metrics as domain_metrics
+from app.services import auto_triage_warehouse as warehouse, release_source
+
+profiles = domain_metrics
 
 VIEW_ID = 1000
 PLATFORMS = {7: "GEN4_PT", 8: "GEN4_SOP"}
@@ -139,8 +143,6 @@ def project(raw, scope, population_filters):
 
 
 def collect(scope, population_filters):
-    from app.services import release_source, auto_triage_metrics as at
-
     body = query(scope, population_filters)  # Validate before accessing credentials or network.
     appid, token = release_source.trail_credentials()
     base = os.getenv("TRAIL_ISSUE_BASE_URL", "http://10.88.128.83").rstrip("/")
@@ -150,7 +152,7 @@ def collect(scope, population_filters):
     )
     ids = sorted(str(r["issue_id"]) for r in listed)
     fields = sorted(
-        set(at.QUERY_FIELDS)
+        set(QUERY_FIELDS)
         | set(RAW_FIELDS)
         | {"create_time", "platform", "trip_category", "trip_odd", "last_modify_time"}
     )
@@ -204,8 +206,6 @@ def collect(scope, population_filters):
 
 def receipt(candidate):
     """Build a Trail-native receipt, without inventing a warehouse baseline column."""
-    from app.services.release_cycle import digest
-
     scope, selected = candidate["scope"], candidate["population_filters"]
     if candidate.get("provider") != "trail" or candidate.get("view_id") != VIEW_ID:
         raise ValueError("trail_source_invalid")

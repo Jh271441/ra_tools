@@ -607,10 +607,43 @@ docker compose -f ra_sim_repro_dashboard/docker-compose.yml run --rm --no-deps \
 - Source GT 和 sim estimate 同时保留，便于定位是源场景挖掘差异还是仿真复现差异。
 - 后端对内部 API 做 fallback，保证看板可启动、可展示最近一次有效数据。
 
-## 17. 后续扩展
+## 17. P0–P2 重构架构说明（当前主线）
 
-- 增加 Alembic migration 管理数据库结构变更。
-- 增加 API contract tests，覆盖 `/summary`、`/issues`、`/scenarios`。
-- 对 issue 明细增加 scenario timeline 或 bag frame 入口。
-- 支持多 config profile，比如 Q2 release、Q3 release、实验版本。
-- 为 refresh job 增加 per-version 进度和 warning 明细表。
+系统已完成 P0（安全与运维加固）、P1（Alembic 迁移 + 规范化持久化 + CQRS 读模型 + 分布式锁 + 独立 Worker）、P2（无环 5 层 DAG + 强类型 API Schema + 遗产清理）重构。
+
+### 17.1 严格 5 层无环依赖架构
+
+通过 `backend/tests/test_architecture_guard.py` 静态与运行时门禁永久锁定：
+- **Tarjan SCC = 0**（无任何循环依赖）
+- **函数局部 `app.*` 导入 = 0**
+- **跨仓 `ra_api` 依赖 = 0**（`backend/Dockerfile` 可独立构建）
+- **每个 `/api/*` FastAPI 路由均声明显式 Pydantic `response_model`**
+- **`GET /api/dashboard/versions` 严格只读（零写库副作用）**
+
+```text
+Layer 0 — app/infra/          统一配置 (pydantic-settings)、Shuyi 外部配置 (config/shuyi-report.json)、
+                              Redis Lua 安全锁缓存、PG pg_advisory_lock 分布式锁、审计落库
+Layer 1 — app/domain/         100% 纯逻辑层（禁止 sqlalchemy/httpx/requests/subprocess/os）
+                              hashing / coverage / labels / metrics / cycle / timing
+Layer 2 — app/clients/        统一 HTTP 签名基类与 ScenarioPlatformClient（移除硬编码凭据与 verify=False）
+Layer 3 — app/repositories/   state_store（规范化路由持久化）、read_models_repo（CQRS 读模型与版本戳）、
+                              profile_repo、release_repo
+Layer 4 — app/services/       严格有向无环服务层；release_workflow（核心原语）与
+                              workflow_orchestrator（顶层编排/调度/状态）解耦
+Layer 5 — app/api/            FastAPI 路由 + 全量 Pydantic response_model 契约
+```
+
+### 17.2 安全与审计边界（P0）
+
+- 生产模式强制由服务端对 Kylin SSO Ticket（`app_id=2103794`）进行后端校验，拒绝无校验头直通；所有写接口强制校验 `X-RA-Sim-Request` CSRF 请求头与严格 CORS 白名单。
+- 写操作权限由 `SIM_WRITE_ALLOWLIST` / `SIM_DEPLOYMENT_MODE` 控制，操作者与结果持久化至 `admin_audit_logs` 表。
+- 生产环境强制 `DISABLE_MOCK_DATA=1`、`shuyi_storage_state.json` 权限检查（`0600`），`GET /api/system/status` 脱敏数据库 DSN。
+- 运维脚本（`ops/sim_deploy/{manage,migrate,deploy}.py`）统一进程管理与防双写检查。
+
+### 17.3 持久化、CQRS 与独立 Worker（P1）
+
+- **Alembic 迁移**：`backend/alembic/`（`0001_baseline` + `0002_normalized_evaluation_tables`），提供幂等无损回填脚本 `python -m app.migrate_kv_data`。
+- **规范化业务表**：`evaluation_scenario_tags`、`evaluation_requests`、`evaluation_revisions`、`evaluation_revision_blobs`、`evaluation_executions`、`reproduction_timing_evidence`、`dashboard_read_models`、`release_data_versions`、`admin_audit_logs`，并为 `release_issue_snapshots` / `release_simulation_batches` 增加 `population_hash` 索引列。
+- **CQRS 读模型**：`/api/dashboard/evaluation/comparison` 及版本视图按 per-release `release_data_versions` 精准失效，避免全表扫描与重复哈希。
+- **独立 Worker 进程**：除 `app.release_worker` 和 `app.label_worker` 外，新增独立 `python -m app.evaluation_worker`（受 `EVALUATION_WORKER_RUNNER=worker` 控制），通过 PostgreSQL advisory lock 协调并发，不再把长耗时外部驱动调用耦合在 API 进程内。
+- **已下线旧接口**：已移除 4 个被 `/api/dashboard/evaluation*` 完整替代的旧路由 `/api/dashboard/workflow/auto-triage*` 及对应废弃前端组件（`AutoTriageMetrics.tsx`、`EvaluationFlow.tsx`）。

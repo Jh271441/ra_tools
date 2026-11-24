@@ -1,4 +1,4 @@
-"""Single source of truth for deterministic content hashing and population identity."""
+"""Single source of truth for deterministic content hashing and audit digests (100% pure)."""
 
 from __future__ import annotations
 
@@ -52,3 +52,42 @@ def population_identity(payload: dict[str, Any]) -> str:
             "scenarios": sorted(scenarios, key=lambda row: str(row["scenario_id"])),
         }
     )
+
+
+def audit_hash(payload: dict[str, Any]) -> str:
+    fields: dict[str, Any] = {
+        k: payload.get(k)
+        for k in (
+            "job_id",
+            "binary_id",
+            "population_hash",
+            "issues",
+            "scenarios",
+            "results",
+            "scenario_results",
+            "result_import",
+            "period",
+            "execution_progress",
+        )
+    }
+    if "issue_tolerance" in payload:
+        fields["issue_tolerance"] = payload["issue_tolerance"]
+    return digest(fields)
+
+
+def execution_audit_hash(execution: dict[str, Any]) -> str:
+    return digest({k: execution.get(k) for k in ("plan", "export", "results")})
+
+
+def preparation_core(value: dict[str, Any]) -> dict[str, Any]:
+    return {
+        k: value[k]
+        for k in (
+            "context",
+            "sample_snapshot_id",
+            "specification",
+            "issues",
+            "scenarios",
+            "failures",
+        )
+    }

@@ -5,8 +5,12 @@ profile's independent membership counts remain unchanged.
 """
 
 from collections import Counter
-from .auto_triage_metrics import business_label
-from .metric_profiles import membership, resolve, resolution
+from app.domain.labels import business_label
+from app.domain.metrics import (
+    membership,
+    resolution_for_config as resolution,
+    resolve_label_for_config as resolve,
+)
 
 ROUTES = ("model", "ra_result", "unverified")
 MEMBERSHIPS = (

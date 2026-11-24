@@ -18,6 +18,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
 from app.database import engine as default_engine
+from app.domain.hashing import digest as _digest
 
 _local_guard = threading.Lock()
 _local_locks: dict[str, threading.RLock] = {}
@@ -97,3 +98,14 @@ def advisory_lock(
             else:
                 _local_holders[name] = prev_holder
         lock.release()
+
+
+@contextmanager
+def pipeline_lock(name: str, *, shared: bool = False) -> Iterator[None]:
+    """Named non-blocking advisory lock raising `ValueError('pipeline_busy')` on contention."""
+    lock_name = "ra_sim:workflow_shared" if shared else f"ra_sim:eval:{_digest(name)[:24]}"
+    try:
+        with advisory_lock(lock_name, blocking=False, busy_message="pipeline_busy"):
+            yield
+    except LockBusyError:
+        raise ValueError("pipeline_busy") from None

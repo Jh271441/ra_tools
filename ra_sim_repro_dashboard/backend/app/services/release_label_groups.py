@@ -6,17 +6,17 @@ from datetime import datetime, timezone
 import json
 from urllib.parse import quote
 
-from ra_api.release_labels import full_scene_label
-from app.services.release_cycle import real_labels
-from app.services.release_metrics import GOOD_RESULTS
 from app.config import settings
+from app.domain.labels import full_scene_label, real_labels
+from app.domain.metrics import GOOD_RESULTS
+from app.models import Version
+from app.services import auto_triage_metrics, ordinary_evaluation
 from app.services.release_source import complete_query, fetch_scenarios, trail_credentials
 from app.services.report_artifacts import (
     canonical_scenario_id,
     resolve_report_path,
     VALID_UPLOAD_STATUSES,
 )
-from app.models import Version
 
 
 # Trail's hash router applies decodeURI once to the whole query, then decodes
@@ -189,9 +189,6 @@ def platform_summary(release, queries, common=None, frozen_count=None):
 
 
 def for_release(db, release):
-    from app.services import ordinary_evaluation
-    from app.services.auto_triage_metrics import _snapshot
-
     revision = ordinary_evaluation.read(db, release)
     if revision is not None:
         scenes = revision["payload"]["scenarios"]
@@ -203,7 +200,7 @@ def for_release(db, release):
             release, queries, frozen_count=len({str(s["scenario_id"]) for s in scenes})
         )
 
-    snapshot = _snapshot(db, release)
+    snapshot = auto_triage_metrics._snapshot(db, release)
     if (
         snapshot
         and snapshot.payload.get("scenarios")

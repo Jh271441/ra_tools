@@ -3,10 +3,10 @@
 from datetime import datetime, timezone
 import json
 from sqlalchemy import select
+from app.domain.labels import MAX_OBSERVATION_GAP_SECONDS, QUIET_SECONDS
 from app.models import ReleaseWorkflowState
-
 from app.services import release_workflow as w
-from app.services.release_watch import MAX_OBSERVATION_GAP_SECONDS, QUIET_SECONDS
+from app.services.label_issue_view import applied_rows
 
 
 def inventory(db, config=None, now=None):
@@ -117,8 +117,6 @@ def inventory(db, config=None, now=None):
 
 def observation_issues(db, release, page, page_size, query, label):
     observed = w.get_state(db, "release_observation:" + release)
-    from app.services.label_issue_view import applied_rows
-
     applied = applied_rows(db, release, observed)
     items = []
     rows = (

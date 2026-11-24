@@ -8,27 +8,47 @@ never automatically launched again. Source polling never starts a simulation.
 from contextlib import contextmanager
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
-import fcntl
 import logging
-import os
-from pathlib import Path
-from sqlalchemy import select, cast, func, JSON
-from sqlalchemy.dialects.postgresql import JSONB
-from app.config import DATA_DIR
+from types import SimpleNamespace
+from sqlalchemy import select, func
 from app.database import SessionLocal
-from app.infra.locks import LockBusyError, advisory_lock
+from app.domain import metrics as domain_metrics
+from app.domain.cycle import TRIGGER, checks, validate_period
+from app.domain.hashing import digest
+from app.domain.labels import SCENE_FIELDS
+from app.infra.locks import pipeline_lock
+from app.infra.settings import (
+    EVALUATION_POLL_SECONDS,
+    evaluation_scheduling_enabled,
+    evaluation_worker_enabled,
+)
 from app.models import ReleaseWorkflowState, ReleaseSimulationBatch, ReleaseIssueSnapshot
-from app.repositories import read_models_repo, state_store
-from app.services import release_workflow as w, auto_triage_metrics as at
+from app.repositories import profile_repo, read_models_repo, state_store
 from app.services import (
-    metric_profiles as profiles,
+    auto_triage_metrics as at,
     auto_triage_warehouse as warehouse,
     evaluation_samples as samples,
+    recall_comparison as recall_diff,
+    release_workflow as w,
 )
-from app.services import recall_comparison as recall_diff
-from app.services.release_cycle import digest, validate_period
-from app.services.label_recovery import SCENE_FIELDS
-from app.services.result_integration import checks, TRIGGER
+from app.services.evaluation_sources import distribution
+from app.services.label_recovery import contract as label_recovery_contract
+from app.services.read_views import read_memo
+from app.services.reproduction_evidence import capture_completion, evaluation_view
+
+profiles = SimpleNamespace(
+    GOOD=domain_metrics.GOOD,
+    EXCLUDED=domain_metrics.EXCLUDED,
+    DEFAULT_CONFIG=domain_metrics.DEFAULT_CONFIG,
+    BUILTIN=domain_metrics.BUILTIN,
+    REVIEW_CONFIG=domain_metrics.REVIEW_CONFIG,
+    REVIEW=domain_metrics.REVIEW,
+    BUILTINS=domain_metrics.BUILTINS,
+    membership=domain_metrics.membership,
+    resolve=domain_metrics.resolve_label_for_config,
+    resolution=domain_metrics.resolution_for_config,
+    get=profile_repo.get_profile,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +65,6 @@ def execution_audit_hash(execution):
 
 def execution_receipt(db, identifier):
     """Load and hash once per clean GET; writers always re-read and re-audit."""
-    from app.services.read_views import read_memo
 
     def load():
         value = w.get_state(db, "evexecution:" + identifier)
@@ -94,12 +113,8 @@ def navigation_versions(db):
 
 @contextmanager
 def lock(name, shared=False):
-    lock_name = "ra_sim:workflow_shared" if shared else "ra_sim:eval:" + digest(name)[:24]
-    try:
-        with advisory_lock(lock_name, blocking=False, busy_message="pipeline_busy"):
-            yield
-    except LockBusyError:
-        raise ValueError("pipeline_busy") from None
+    with pipeline_lock(name, shared=shared):
+        yield
 
 
 def context(db, release="@current", profile_id=None, date_start=None, date_end=None):
@@ -945,9 +960,6 @@ def board(
     execution_views=None,
     comparison_only=False,
 ):
-    from app.services import evaluation_worker
-    from app.services.evaluation_sources import distribution
-
     ctx, snapshot, profile, key = context(db, release, profile_id, date_start, date_end)
     pointer = w.get_state(db, key)
     revision = w.get_state(db, pointer.get("revision_key", "evrevision:none"))
@@ -992,8 +1004,6 @@ def board(
             if batch_hashes[fingerprint] != binding["audit_hash"]:
                 stale = True
     if revision and not stale:
-        from app.services.reproduction_evidence import evaluation_view
-
         # This projection returns metrics/source aggregates, never Issue rows.
         # Recall comparison below reads the original whole-window row signals.
         revision = evaluation_view(db, revision, include_rows=False)
@@ -1031,10 +1041,9 @@ def board(
         "cron": {
             "enabled": pointer.get("cron_enabled", False),
             "interval_seconds": 3600,
-            "effective": pointer.get("cron_enabled", False)
-            and evaluation_worker.scheduling_enabled(),
-            "processing_enabled": evaluation_worker.enabled(),
-            "poll_seconds": evaluation_worker.POLL_SECONDS,
+            "effective": pointer.get("cron_enabled", False) and evaluation_scheduling_enabled(),
+            "processing_enabled": evaluation_worker_enabled(),
+            "poll_seconds": EVALUATION_POLL_SECONDS,
             "next_check_at": pointer.get("next_check_at"),
         },
         "executions": [
@@ -1074,8 +1083,6 @@ def issue_page(
     ):
         raise ValueError("invalid_pagination")
     revision = current_revision(db, release, profile_id, date_start, date_end)
-    from app.services.reproduction_evidence import evaluation_view
-
     revision = evaluation_view(db, revision)
     config = profiles.get(db, profile_id)["config"]
 
@@ -1357,9 +1364,7 @@ def execute_start(db, value):
         raise ValueError("preflight_failed")
     base = at._base(db, body["release"])
     if base and same_runtime(base.payload, specification):
-        from app.services.label_recovery import contract
-
-        if preflight.get("execution_contract_hash") != contract(db, config, base):
+        if preflight.get("execution_contract_hash") != label_recovery_contract(db, config, base):
             raise ValueError("execution_contract_changed")
     validate_current()
     execution.update(status="submitting", preflight=preflight)
@@ -1450,8 +1455,6 @@ def poll_execution(db, execution):
         execution["metrics_status"] = "pending"
     w.put_state(db, "evexecution:" + execution["id"], execution)
     if execution["status"] in ("complete", "quality_failed"):
-        from app.services.reproduction_evidence import capture_completion
-
         capture_completion(db, execution=execution)
     sync_start(db, execution)
     if execution["status"] in ("complete", "quality_failed"):

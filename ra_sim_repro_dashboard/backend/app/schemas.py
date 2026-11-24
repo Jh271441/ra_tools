@@ -171,3 +171,205 @@ class SystemStatusResponse(BaseModel):
     uptime_seconds: int
     enable_rq: bool
     checks: list[SystemCheck]
+
+
+class HealthResponse(BaseModel):
+    status: str
+
+
+class AuthMeResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    authenticated: bool
+    user: str | None = None
+    source: str
+    can_write: bool
+    deployment_mode: str
+
+
+class WorkflowStatusResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    status: str
+    mode: str
+    driver_ready: bool
+    scheduler_enabled: bool
+    current_version: str | None = None
+    periods: list[dict[str, Any]] = []
+    batches: list[dict[str, Any]] = []
+
+
+class WorkflowIssuesPageResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    items: list[dict[str, Any]]
+    total: int
+    page: int
+    page_size: int
+    status: str
+
+
+class ScenarioLabelGroupsResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    rows: list[dict[str, Any]]
+    total_scenarios: int
+    frozen_count: int | None = None
+    sampled_at: str
+
+
+class CollectionInventoryResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    default_release: str | None = None
+    versions: list[dict[str, Any]]
+
+
+class SimulationBoardResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    versions: list[dict[str, Any]]
+    selected: dict[str, Any]
+    mode: str
+    driver_ready: bool
+    scheduler_enabled: bool
+    current_status: str
+    refreshing: bool
+
+
+class WorkflowSyncResponse(BaseModel):
+    status: str
+
+
+class WorkflowPlanResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    fingerprint: str
+    release: str
+    binary_id: int | str | None = None
+    scenarios: list[dict[str, Any]] = []
+
+
+class WorkflowBatchReceiptResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    fingerprint: str
+    status: str
+    job_id: int | str | None = None
+
+
+class WorkflowResumeResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    release: str
+    status: str
+
+
+class EvaluationProfileResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    id: str
+    name: str
+    status: str
+    config: dict[str, Any]
+    config_hash: str
+
+
+class EvaluationProfileCatalogueResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    active: str
+    versions: list[dict[str, Any]]
+    label_sources: list[dict[str, Any]]
+
+
+class EvaluationPreviewResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    profile_id: str
+    config_hash: str
+    context: dict[str, Any]
+    base_revision: str
+    preview_hash: str
+    metrics: dict[str, Any]
+    previous_metrics: dict[str, Any]
+
+
+class EvaluationActivateResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    active: str
+    audit_key: str
+    contexts: list[dict[str, Any]]
+
+
+class EvaluationBoardResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    context: dict[str, Any]
+    profile: dict[str, Any]
+    versions: list[dict[str, Any]]
+    sample_source: dict[str, Any]
+    revision: dict[str, Any] | None = None
+    stale: bool
+    refresh: dict[str, Any] = {}
+    plan: dict[str, Any] = {}
+    cron: dict[str, Any]
+    executions: list[dict[str, Any]] = []
+    starts: list[dict[str, Any]] = []
+
+
+class EvaluationComparisonResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    profile: dict[str, Any]
+    versions: list[dict[str, Any]]
+
+
+class EvaluationIssuesPageResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    items: list[dict[str, Any]]
+    total: int
+    page: int
+    page_size: int
+    pages: int
+    revision_key: str | None = None
+
+
+class EvaluationRunResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    id: str
+    status: str
+    context: dict[str, Any]
+
+
+class EvaluationStartResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    status: str
+    plan_id: str
+    simulation_submitted: bool = False
+
+
+class EvaluationCronResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    enabled: bool
+    interval_seconds: int
+    effective: bool
+    processing_enabled: bool
+    poll_seconds: int
+
+
+class EvaluationScenarioLabelsResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    status: str
+
+
+class EvaluationScenarioLabelSummaryResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    status: str

@@ -2,7 +2,11 @@ from datetime import datetime, timedelta, timezone
 from copy import deepcopy
 
 from test_release_workflow import config, db, seed
-from app.services import release_workflow as w, release_watch as watch
+from app.services import (
+    release_watch as watch,
+    release_workflow as w,
+    workflow_orchestrator as orchestrator,
+)
 from app.services.release_inventory import inventory
 from app.models import ReleaseSimulationBatch, ReleaseIssueSnapshot
 from sqlalchemy import select
@@ -48,16 +52,16 @@ def test_stable_default_and_collecting_details_no_simulation(db, config, monkeyp
         new["auto_count"],
         new["manual_count"],
     ) == (NEW, "collecting", 2, 1, 1)
-    assert w.list_issues(db, "@stable")["items"][0]["issue_id"] == "i1"
-    current = w.list_issues(db, NEW)
+    assert orchestrator.list_issues(db, "@stable")["items"][0]["issue_id"] == "i1"
+    current = orchestrator.list_issues(db, NEW)
     assert current["total"] == 2
     assert all(
         i["sim_triggered"] is None and i["simulation_status"] == "collecting"
         for i in current["items"]
     )
-    assert w.list_issues(db, NEW, query="manual")["total"] == 1
-    assert w.list_issues(db, NEW, page_size=1, page=2)["items"][0]["issue_id"] == "cn2"
-    assert w.list_issues(db, NEW, label="fabricated")["total"] == 0
+    assert orchestrator.list_issues(db, NEW, query="manual")["total"] == 1
+    assert orchestrator.list_issues(db, NEW, page_size=1, page=2)["items"][0]["issue_id"] == "cn2"
+    assert orchestrator.list_issues(db, NEW, label="fabricated")["total"] == 0
     assert db.scalars(select(ReleaseSimulationBatch)).all() == []
     assert len(db.scalars(select(ReleaseIssueSnapshot)).all()) == 1
 
@@ -72,7 +76,7 @@ def test_failed_observation_retains_rows_but_not_eligible(db, config, monkeypatc
     watch.monitor_tick(db, config, now=NOW + timedelta(minutes=15), activity_fetcher=fail)
     item = inventory(db, config, NOW + timedelta(minutes=15))["versions"][0]
     assert item["stale"] and item["eligible_at"] is None
-    assert w.list_issues(db, NEW)["total"] == 2
+    assert orchestrator.list_issues(db, NEW)["total"] == 2
     assert inventory(db, config, NOW)["default_release"] is None
 
 
@@ -96,7 +100,7 @@ def test_stable_only_after_full_day_and_not_after_gap(db, config):
 def test_missing_or_partial_snapshots_not_default(db, config, monkeypatch):
     monkeypatch.setattr(w, "effective_config", lambda _: config)
     assert inventory(db, config)["default_release"] is None
-    assert w.list_issues(db, "@stable")["items"] == []
+    assert orchestrator.list_issues(db, "@stable")["items"] == []
     seed(db, config)
     snap = db.scalars(select(ReleaseIssueSnapshot)).one()
     snap.payload = {**snap.payload, "population_complete": False}
@@ -112,7 +116,7 @@ def test_same_count_replacement_visible_keeps_last_issue_age(db, config, monkeyp
     watch.monitor_tick(
         db, config, now=NOW + timedelta(minutes=15), activity_fetcher=lambda _: (NEW, changed)
     )
-    assert {i["issue_id"] for i in w.list_issues(db, NEW)["items"]} == {"cn2", "cn3"}
+    assert {i["issue_id"] for i in orchestrator.list_issues(db, NEW)["items"]} == {"cn2", "cn3"}
     assert w.get_state(db, "release_monitor")["quiet_seconds"] == 4500
 
 
@@ -131,7 +135,7 @@ def test_previous_observer_remains_in_inventory_and_issue_browser(db, config, mo
     }
     assert NEW in versions and newer in versions
     assert versions[NEW]["issue_count"] == 2
-    assert w.list_issues(db, NEW)["total"] == 2
+    assert orchestrator.list_issues(db, NEW)["total"] == 2
 
 
 def test_simulation_view_keeps_frozen_results_when_collection_is_observed(db, config, monkeypatch):
@@ -173,10 +177,10 @@ def test_simulation_view_keeps_frozen_results_when_collection_is_observed(db, co
     )
     db.commit()
     assert (
-        w.list_issues(db, release, view="collection")["items"][0]["issue_id"]
+        orchestrator.list_issues(db, release, view="collection")["items"][0]["issue_id"]
         == "new-collection-only"
     )
-    result = w.list_issues(db, release, view="simulation")
+    result = orchestrator.list_issues(db, release, view="simulation")
     assert result["total"] == 2
     assert result["items"][0]["issue_id"] == "i1"
     assert result["items"][0]["scenario_id"] == "1"

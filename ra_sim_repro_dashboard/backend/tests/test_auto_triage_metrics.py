@@ -410,28 +410,20 @@ def test_read_apis_never_query_upstream_or_submit_and_validate_pages(prepared, m
     db, _, _, labels = prepared
     lane.recalculate(db, RELEASE, fetcher=lambda _: deepcopy(labels))
     monkeypatch.setattr(lane, "fetch_labels", lambda *_: pytest.fail("GET must not query Trail"))
+    # Service-layer read APIs remain pure DB reads without querying upstream.
+    assert lane.report(db, RELEASE)["result"]["metrics"]["covered"] == 4
+    assert lane.issue_page(db, RELEASE, coverage="gap")["total"] == 1
+    assert lane.gap_plan(db, RELEASE)["simulation_submitted"] is False
+    # Deprecated v1 HTTP routes under /api/dashboard/workflow/auto-triage* are retired in favor of /api/dashboard/evaluation*.
     app = FastAPI()
     app.include_router(router)
     app.dependency_overrides[get_db] = lambda: db
     client = TestClient(app)
     prefix = "/api/dashboard/workflow/auto-triage"
-    assert (
-        client.get(prefix, params={"release": RELEASE}).json()["result"]["metrics"]["covered"] == 4
-    )
-    assert (
-        client.get(prefix + "/issues", params={"release": RELEASE, "coverage": "gap"}).json()[
-            "total"
-        ]
-        == 1
-    )
-    assert (
-        client.get(prefix + "/gap-plan", params={"release": RELEASE}).json()["simulation_submitted"]
-        is False
-    )
-    assert client.get(prefix + "/issues?page=0").status_code == 422
-    assert client.get(prefix + "/issues?page_size=999").status_code == 422
-    assert client.get(prefix + "/issues?coverage=unknown").status_code == 422
-    assert client.get(prefix + "?release=invalid").status_code == 409
+    assert client.get(prefix, params={"release": RELEASE}).status_code == 404
+    assert client.get(prefix + "/issues", params={"release": RELEASE}).status_code == 404
+    assert client.get(prefix + "/gap-plan", params={"release": RELEASE}).status_code == 404
+    assert client.post(prefix + "/recalculate", json={"release": RELEASE}).status_code == 404
 
 
 def test_input_change_during_label_read_rejects_publication(prepared):

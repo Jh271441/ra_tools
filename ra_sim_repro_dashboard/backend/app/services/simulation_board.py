@@ -1,25 +1,29 @@
 """Per-release board with cached, read-only Orion task progress."""
 
 from datetime import datetime, timezone
-import fcntl
 import logging
-import os
-from pathlib import Path
 
 from sqlalchemy import select
-from app.config import DATA_DIR, config_hash, load_versions_config
+
+from app.config import config_hash, load_versions_config
 from app.database import SessionLocal
+from app.domain.coverage import coverage_policy, grade, grade_counts, validate_frozen
+from app.domain.metrics import cohort_for_issue, summarize_population
+from app.infra.locks import LockBusyError, advisory_lock
 from app.models import DashboardSnapshot, ReleaseIssueSnapshot, ReleaseSimulationBatch
-from app.services import release_workflow as workflow
-from app.services.release_metrics import summarize_population
-from app.services.result_publication import (
-    publication,
-    effective_publication,
-    published_batch,
-    coverage_policy,
+from app.services import (
+    ordinary_evaluation as ordinary,
+    release_workflow as workflow,
+    workflow_orchestrator as orchestrator,
 )
-from app.services.release_inventory import inventory
+from app.services.business_population import historical_scope, scope_for_batch
+from app.services.label_cycle import public_state as label_cycle_state
 from app.services.read_views import read_projection
+from app.services.release_anomalies import collection_anomalies
+from app.services.release_backfill import public_state as backfill_state
+from app.services.release_inventory import inventory
+from app.services.release_resume import public_state as resume_state
+from app.services.result_publication import effective_publication, published_batch
 
 logger = logging.getLogger(__name__)
 
@@ -46,8 +50,6 @@ def _due(cache, force=False):
 
 
 def refresh_progress(job_id, force=False):
-    from app.infra.locks import LockBusyError, advisory_lock
-
     try:
         lock_ctx = advisory_lock(f"ra_sim:job_progress:{int(job_id)}", blocking=False)
         lock_ctx.__enter__()
@@ -103,7 +105,7 @@ def refresh_progress(job_id, force=False):
 
 def board(db, release="@current", force=False):
     config = workflow.effective_config(db)
-    current = read_projection(db, "workflow-status", lambda: workflow.status(db, config))
+    current = read_projection(db, "workflow-status", lambda: orchestrator.status(db, config))
     archive_config = load_versions_config()
     versions = archive_config.get("versions", {})
     periods = {p["release"]: p for p in config.get("periods", [])}
@@ -175,7 +177,7 @@ def board(db, release="@current", force=False):
                 issue_count=sum(int(i["ra_type"]) == 2 for i in snapshot.payload["issues"]),
                 scenario_count=len(snapshot.payload["scenarios"]),
                 source_metrics=summarize_population(snapshot.payload["issues"], [], {}),
-                metrics=workflow.metrics_for_snapshot(db, snapshot),
+                metrics=orchestrator.metrics_for_snapshot(db, snapshot),
                 synced_at=snapshot.created_at.replace(tzinfo=timezone.utc).isoformat(),
                 population_complete=snapshot.payload.get("population_complete", False),
                 binary_id=data["binary_id"] or snapshot.payload.get("period", {}).get("binary_id"),
@@ -256,12 +258,8 @@ def board(db, release="@current", force=False):
         if job["job_id"] and _due(cache, force) and current["driver_ready"]:
             refresh_ids.append(int(job["job_id"]))
     data["jobs"] = jobs
-    from app.services.release_backfill import public_state as backfill_state
-    from app.services.release_resume import public_state as resume_state
-
     data["backfill"] = backfill_state(db, selected)
     data["resume"] = resume_state(db, selected)
-    from ra_api.release_tolerance import validate_frozen
 
     latest_plan = next(
         (
@@ -303,8 +301,6 @@ def board(db, release="@current", force=False):
     )
     approved = published_batch(db, selected)
     if approved:
-        from app.services.business_population import scope_for_batch, historical_scope
-
         scope = historical_scope(scope_for_batch(db, approved), is_current=is_current)
         data["collection_scope"] = scope
         if scope["available"] or scope.get("historical_frozen"):
@@ -321,8 +317,6 @@ def board(db, release="@current", force=False):
             if observed.get("issues"):
                 data["source_metrics"] = summarize_population(observed["issues"], [], {})
     data["evaluation"] = imported
-    from ra_api.release_tolerance import grade_counts, grade
-    from app.services.release_metrics import cohort_for_issue
 
     published_grade = data["metrics"].get("publication") or {}
     if published_grade.get("issue_count"):
@@ -373,16 +367,10 @@ def board(db, release="@current", force=False):
     ].get("historical_frozen"):
         data.pop("quality_grade", None)
 
-    from app.services.label_cycle import public_state
-
-    data["label_cycle"] = public_state(db, selected)
-    from app.services.release_anomalies import collection_anomalies
-
+    data["label_cycle"] = label_cycle_state(db, selected)
     data["collection_anomalies"] = collection_anomalies(
         db, selected, data.get("collection"), native
     )
-    from app.services import ordinary_evaluation as ordinary
-
     normal = ordinary.read(db, selected)
     if normal:
         m = normal["metrics"]
@@ -406,8 +394,6 @@ def board(db, release="@current", force=False):
             evaluation=None,
         )
         data.pop("issue_tolerance", None)
-        from ra_api.release_tolerance import grade_counts
-
         data["quality_grade"] = {
             **grade_counts(m["eligible"], m["missing_results"]),
             "basis": "results",

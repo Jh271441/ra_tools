@@ -9,14 +9,10 @@ from typing import Any
 
 import httpx
 
+from app.clients.http_base import sign_trail_payload as _sign_payload
 from app.config import mock_data_disabled, settings
 
 logger = logging.getLogger(__name__)
-
-
-def _sign_payload(payload: dict[str, Any], token: str) -> str:
-    text = json.dumps(payload) + "&token=" + token
-    return hashlib.md5(text.encode("utf-8")).hexdigest()
 
 
 class IssueClient:

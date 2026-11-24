@@ -3,14 +3,18 @@
 from datetime import datetime, timezone
 import logging
 
+from app.domain.coverage import coverage_policy
+from app.domain.labels import (
+    SCENE_FIELDS,
+    cohort_label_update,
+    full_scene_label,
+    real_labels,
+)
 from app.models import ReleaseIssueSnapshot
+from app.repositories.release_repo import latest_snapshot_for_release as _snapshot
 from app.services import release_workflow as w
-from app.services.auto_triage_metrics import _snapshot
-from app.services.label_recovery import SCENE_FIELDS
-from app.services.release_cycle import real_labels
 from app.services.reproduction_evidence import standard_inputs
-from app.services.result_publication import coverage_policy, effective_publication
-from ra_api.release_labels import cohort_label_update, full_scene_label
+from app.services.result_publication import effective_publication
 
 
 def plan_changes(issues, scenes, live, period):

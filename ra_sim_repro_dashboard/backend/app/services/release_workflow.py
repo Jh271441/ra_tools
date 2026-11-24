@@ -1,27 +1,39 @@
+"""Core release workflow primitives: snapshots, config, plans, batch execution, and driver calls.
+
+High-level orchestration (status, list_issues, poll_batches, run_tick) lives in
+`app.services.workflow_orchestrator` so this module remains strictly acyclic at Tier 4.2.
+"""
+
 from __future__ import annotations
 
-import fcntl
 import json
 import logging
 import os
 import subprocess
-from datetime import datetime, timezone, timedelta
-from pathlib import Path
-
-logger = logging.getLogger(__name__)
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
-from app.config import DATA_DIR
+
 from app.database import SessionLocal
+from app.domain.coverage import POLICY, assess, validate_frozen
+from app.domain.cycle import TZ
 from app.domain.hashing import population_identity as _population_identity
-from app.infra.locks import LockBusyError, advisory_lock
+from app.domain.labels import (
+    cohort_label_update,
+    full_scene_label,
+    scene_labels,
+    validate_monitor_config,
+    validate_physical_scene_labels,
+    validate_scene_labels,
+)
 from app.models import (
     ReleaseIssueSnapshot,
-    ReleaseWorkflowState,
     ReleaseSimulationBatch,
+    ReleaseWorkflowState,
 )
 from app.repositories import state_store
+from app.services import release_catalog
 from app.services.release_cycle import (
     digest,
     load_cycle_config,
@@ -31,10 +43,16 @@ from app.services.release_cycle import (
 )
 from app.services.release_metrics import (
     cohort_for_issue,
-    summarize_population,
     excluded_issue,
 )
-from app.services.release_source import fetch_population, fetch_scenarios
+from app.services.release_source import (
+    artifact_source,
+    cycle_scene_label,
+    fetch_population,
+    fetch_scenarios,
+)
+
+logger = logging.getLogger(__name__)
 
 
 def period_key(config, period):
@@ -82,12 +100,6 @@ def effective_config(db):
 def refresh_catalog(db, config):
     if not config.get("discover_cycles"):
         return
-    from app.services.release_catalog import (
-        fetch_recent_releases,
-        infer_completed_cycles,
-    )
-    from app.services.release_cycle import TZ
-
     now = datetime.now(TZ)
     week = (now.date() - timedelta(days=now.weekday())).isoformat()
     previous = get_state(db, "catalog")
@@ -99,8 +111,8 @@ def refresh_catalog(db, config):
         return
     attempts = previous.get("attempts", 0) + 1 if previous.get("attempt_week") == week else 1
     try:
-        periods, warnings = infer_completed_cycles(
-            fetch_recent_releases(config), config["contract"]["time_field"]
+        periods, warnings = release_catalog.infer_completed_cycles(
+            release_catalog.fetch_recent_releases(config), config["contract"]["time_field"]
         )
         # A watcher-frozen population must keep its boundaries and identity;
         # later release transitions are only evidence for missing periods.
@@ -151,66 +163,6 @@ def refresh_catalog(db, config):
                 "error": type(exc).__name__,
             },
         )
-
-
-def status(db, config=None):
-    config = config if config is not None else effective_config(db)
-    result = resolve_current(config)
-    period = result["current_period"]
-    snapshot = latest_snapshot(db, period_key(config, period)) if period else None
-    driver_ready = bool(config.get("simulation", {}).get("driver_command"))
-    return {
-        **result,
-        "mode": get_state(db, "settings", {"mode": "manual"})["mode"],
-        "driver_ready": driver_ready,
-        "scheduler_enabled": os.getenv("RELEASE_WORKFLOW_ENABLED") == "1",
-        "last_sync": get_state(db, "sync"),
-        "release_monitor": get_state(db, "release_monitor"),
-        "snapshot_id": snapshot.id if snapshot else None,
-        "population_complete": snapshot.payload.get("population_complete", False)
-        if snapshot
-        else False,
-        "collected_through": snapshot.payload.get("collected_through") if snapshot else None,
-        "acceptance_only": bool(config.get("simulation", {}).get("acceptance_only", False)),
-        "metrics": metrics_for_snapshot(db, snapshot),
-        "source_metrics": summarize_population(snapshot.payload["issues"], [], {})
-        if snapshot
-        else None,
-        "synced_at": snapshot.created_at.replace(tzinfo=timezone.utc).isoformat()
-        if snapshot
-        else None,
-        "issue_count": sum(int(i["ra_type"]) == 2 for i in snapshot.payload["issues"])
-        if snapshot
-        else 0,
-        "manual_population_count": sum(int(i["ra_type"]) == 3 for i in snapshot.payload["issues"])
-        if snapshot
-        else 0,
-        "scenario_count": len(snapshot.payload["scenarios"]) if snapshot else 0,
-        "periods": [
-            {
-                "release": p.get("release"),
-                "cycle_end": p.get("cycle_end"),
-                "verified": p.get("verified", False),
-                "basis": p.get("basis"),
-                "status": p.get("status"),
-            }
-            for p in config.get("periods", [])
-        ],
-        "batches": [
-            {
-                "fingerprint": b.fingerprint,
-                "release": b.release,
-                "status": b.status,
-                "job_id": b.payload.get("job_id"),
-                "scenario_count": len(b.payload.get("scenarios", [])),
-            }
-            for b in db.scalars(
-                select(ReleaseSimulationBatch)
-                .order_by(ReleaseSimulationBatch.created_at.desc())
-                .limit(20)
-            )
-        ],
-    }
 
 
 def simulation_period(config, release=None):
@@ -284,8 +236,6 @@ def sync_once(
     if len({s["scenario_id"] for s in scenarios}) != len(scenarios):
         raise ValueError("场景 ID 不唯一")
     key = period_key(config, period)
-    from app.services.release_source import artifact_source
-
     artifact = artifact_source(period)
     payload = {
         "period": period,
@@ -340,8 +290,6 @@ def reconcile_preparation_labels(db, config, snapshot, *, release=None):
         for b in batches
     ):
         return snapshot
-    from ra_api.release_labels import full_scene_label, cohort_label_update, scene_labels
-
     period = snapshot.payload["period"]
     label = full_scene_label(period)
     cohorts = {str(i["issue_id"]): cohort_for_issue(i) for i in snapshot.payload["issues"]}
@@ -419,8 +367,6 @@ def prepare_missing_scenes(db, config, *, release=None):
     ]
     if not missing:
         return
-    from app.services.release_source import cycle_scene_label
-
     payload = {
         "period": period,
         "release": period["release"],
@@ -431,8 +377,6 @@ def prepare_missing_scenes(db, config, *, release=None):
     # Keep successfully created scenes visible even if one source bag is missing.
     refreshed = sync_once(db, config, release=release)
     if response.get("ready") is not True:
-        from ra_api.release_tolerance import assess
-
         rows = refreshed.payload["issues"]
         eligible = {str(i["issue_id"]) for i in rows if cohort_for_issue(i)}
         remaining = eligible - {str(s["issue_id"]) for s in refreshed.payload["scenarios"]}
@@ -487,191 +431,6 @@ def _issue_row_matches_query(row: dict, needle: str) -> bool:
     if isinstance(labels, list) and any(needle in str(item).casefold() for item in labels):
         return True
     return False
-
-
-def list_issues(db, release=None, page=1, page_size=25, query="", label="", view="collection"):
-    if view not in ("simulation", "collection") or page < 1 or not 1 <= page_size <= 200:
-        raise ValueError("invalid_pagination")
-    config = effective_config(db)
-    from app.services.release_inventory import inventory, observation_issues
-
-    catalog = inventory(db, config)
-    if release == "@stable":
-        release = catalog["default_release"]
-        if not release:
-            return {
-                "items": [],
-                "total": 0,
-                "page": page,
-                "page_size": page_size,
-                "status": "pending",
-            }
-    selected = next((v for v in catalog["versions"] if v["release"] == release), None)
-    if view == "collection" and selected and selected["source"] == "observation":
-        return observation_issues(db, release, page, page_size, query, label)
-    if view == "simulation" and release not in (None, "", "@current"):
-        from app.services.ordinary_evaluation import issue_page as ordinary_issues
-
-        ordinary = ordinary_issues(db, release, page, page_size, query, label)
-        if ordinary is not None:
-            return ordinary
-        from app.services.label_issue_view import applied_rows
-
-        applied = applied_rows(db, release, {}, published=True)
-        if applied is not None:
-            from app.services.reproduction_evidence import annotate_standard_rows
-
-            applied = annotate_standard_rows(db, release, applied)
-            needle = query.casefold()
-            items = [
-                row
-                for row in applied
-                if (not label or label in row["scenario_labels"])
-                and (not needle or _issue_row_matches_query(row, needle))
-            ]
-            items.sort(
-                key=lambda row: (row.get("issue_time") or 0, row["issue_id"], row["scenario_id"]),
-                reverse=True,
-            )
-            return {
-                "items": items[(page - 1) * page_size : page * page_size],
-                "total": len(items),
-                "page": page,
-                "page_size": page_size,
-                "status": "published",
-            }
-
-    current = resolve_current(config)
-    if release in (None, "", "@current"):
-        period = current["current_period"]
-    else:
-        candidates = [
-            p
-            for p in config.get("periods", [])
-            if p.get("release") == release
-            and p.get("status") == "completed"
-            and (p.get("verified") or p.get("basis") == "inferred")
-        ]
-        period = candidates[0] if len(candidates) == 1 else None
-    snapshot = latest_snapshot(db, period_key(config, period)) if period else None
-    if view == "simulation" and snapshot:
-        # A published simulation is bound to its frozen source, not the latest
-        # observation/snapshot whose labels may still be awaiting processing.
-        from app.services.result_publication import published_batch
-
-        base = published_batch(db, snapshot.release)
-        if base:
-            from app.services.auto_triage_metrics import execution_inputs
-
-            _, receipt = execution_inputs(db, base)
-            if receipt.get("snapshot_id"):
-                snapshot = db.get(ReleaseIssueSnapshot, receipt["snapshot_id"])
-    if snapshot is None:
-        return {
-            "items": [],
-            "total": 0,
-            "page": page,
-            "page_size": page_size,
-            "status": current["status"],
-        }
-    scenarios = snapshot.payload["scenarios"]
-    scenes_by_issue = {}
-    for scene in scenarios:
-        scenes_by_issue.setdefault(scene["issue_id"], []).append(scene)
-    batches = db.scalars(
-        select(ReleaseSimulationBatch)
-        .where(ReleaseSimulationBatch.release == snapshot.release)
-        .order_by(ReleaseSimulationBatch.updated_at)
-    ).all()
-    population_hash = population_identity(snapshot.payload)
-    batch_by_scene = {}
-    batches.sort(key=lambda b: bool(b.payload.get("result_import", {}).get("primary")))
-    from app.services.release_backfill import frozen_snapshot_valid
-
-    for batch in batches:
-        if batch.payload.get("population_hash") == population_hash or frozen_snapshot_valid(
-            db, batch
-        ):
-            for scene in batch.payload.get("scenarios", []):
-                previous = batch_by_scene.get(scene["scenario_id"])
-                if not previous or scene["scenario_id"] not in previous.payload.get("results", {}):
-                    batch_by_scene[scene["scenario_id"]] = batch
-    items = []
-    for issue in snapshot.payload["issues"]:
-        if view == "collection" and int(issue["ra_type"]) != 2:
-            continue
-        mapped = scenes_by_issue.get(str(issue["issue_id"]), [])
-        for scenario in mapped or [None]:
-            row = {
-                "issue_id": str(issue["issue_id"]),
-                "issue_topic": str(issue.get("issue_topic") or ""),
-                "source_result": issue.get("ra_merge_result"),
-                "ra_type": int(issue["ra_type"]),
-                "version_key": snapshot.release,
-                "road_version": str(issue.get("version", "")),
-                "scenario_id": scenario["scenario_id"] if scenario else "",
-                "scenario_name": scenario.get("scenario_name", "") if scenario else "",
-                "scenario_labels": scenario["scenario_labels"] if scenario else [],
-                "simulation_status": "excluded"
-                if excluded_issue(issue)
-                else "pending_gt"
-                if cohort_for_issue(issue) is None
-                else "pending_simulation"
-                if scenario
-                else "pending_mapping",
-                "sim_triggered": None,
-                "reproduced": None,
-                "precision_label": None,
-            }
-            # A result from another population/config cannot silently evaluate this snapshot.
-            batch = batch_by_scene.get(row["scenario_id"])
-            if batch:
-                row["simulation_status"] = batch.status
-                result = batch.payload.get("results", {}).get(row["scenario_id"])
-                imported = batch.payload.get("result_import", {}).get("primary", False)
-                detail = (
-                    batch.payload.get("scenario_results", {}).get(row["scenario_id"], {})
-                    if imported
-                    else {}
-                )
-                if detail:
-                    row.update(
-                        simulation_status=detail["status"],
-                        job_id=detail["job_id"],
-                        result_note=(
-                            str(detail.get("outcome") or "")
-                            + "\n"
-                            + str(detail.get("outcome_detail") or "")
-                        )
-                        if detail.get("errors")
-                        else "两次执行触发结果不一致"
-                        if detail.get("conflict")
-                        else "",
-                        execution_conflict=detail.get("conflict", False),
-                    )
-                if (batch.status == "complete" or imported) and result:
-                    row.update(
-                        {
-                            k: result.get(k)
-                            for k in ("sim_triggered", "reproduced", "precision_label")
-                        }
-                    )
-            if query and not _issue_row_matches_query(row, query.casefold()):
-                continue
-            if label and label not in row["scenario_labels"]:
-                continue
-            items.append(row)
-    from app.services.reproduction_evidence import annotate_standard_rows
-
-    if view == "simulation":
-        items = annotate_standard_rows(db, snapshot.release, items)
-    return {
-        "items": items[(page - 1) * page_size : page * page_size],
-        "total": len(items),
-        "page": page,
-        "page_size": page_size,
-        "status": "ready",
-    }
 
 
 def execution_overrides(config, release):
@@ -738,8 +497,6 @@ def make_plan(db, config=None, *, release=None):
     ]
     mapped = {s["issue_id"] for s in scenarios}
     missing = {iid for iid, cohort in cohorts.items() if cohort} - mapped
-    from ra_api.release_tolerance import POLICY, assess, validate_frozen
-
     preparation = get_state(db, "preparation_tolerance:" + period["release"])
     failures = preparation.get("failures", []) if missing else []
     if missing and (
@@ -760,12 +517,6 @@ def make_plan(db, config=None, *, release=None):
         raise ValueError("提交优先级必须是 NORMAL 或 HIGH")
     if not period.get("binary_id") or not period.get("template_job_id"):
         raise ValueError("当前 release 缺少已核实的 binary 和任务模板")
-    from ra_api.release_labels import (
-        full_scene_label,
-        validate_scene_labels,
-        validate_physical_scene_labels,
-    )
-
     scenario_label = full_scene_label(period)
     for scene in snapshot.payload["scenarios"]:
         cohort = cohorts.get(scene["issue_id"])
@@ -983,7 +734,7 @@ def attach_job(db, fingerprint, job_id):
     return batch
 
 
-def execute_batch(db, batch, config, *, release=None):
+def execute_batch(db, batch, config, *, release=None, delta_validator=None):
     if batch.status != "queued":
         return batch
     if evaluation_execution_active(db, batch.release):
@@ -994,9 +745,9 @@ def execute_batch(db, batch, config, *, release=None):
     ):
         return batch
     if batch.payload.get("backfill"):
-        from app.services.release_backfill import validate_delta
-
-        validate_delta(db, batch, config)
+        if delta_validator is None:
+            raise ValueError("delta_validator_required")
+        delta_validator(db, batch, config)
         current_plan = batch.payload
     else:
         current_plan = make_plan(db, config, release=release)
@@ -1051,19 +802,12 @@ def submit_plan(db, fingerprint, config=None):
     return execute_batch(db, batch, config)
 
 
-def process_queued():
-    """Dispatch queue without fetching a new source population first."""
-    run_tick(sync_source=False)
-
-
 def set_mode(db, mode):
     if mode not in ("manual", "auto"):
         raise ValueError("无效的仿真模式")
     if mode == "auto":
         config = effective_config(db)
         if config.get("release_monitor", {}).get("enabled"):
-            from app.services.release_watch import validate_monitor_config
-
             validate_monitor_config(config)
             if not config.get("simulation", {}).get("driver_command"):
                 raise ValueError("Orion 驱动尚未配置")
@@ -1073,238 +817,3 @@ def set_mode(db, mode):
         if os.getenv("RELEASE_WORKFLOW_ENABLED") != "1":
             raise ValueError("服务端定时调度尚未启用")
     put_state(db, "settings", {"mode": mode})
-
-
-def poll_batches(db, config):
-    for batch in db.scalars(
-        select(ReleaseSimulationBatch).where(
-            ReleaseSimulationBatch.status.in_(
-                ["running", "verifying", "submitting", "submission_uncertain"]
-            )
-        )
-    ).all():
-        try:
-            if batch.status in ("submitting", "submission_uncertain"):
-                receipt = driver_call(config, "receipt", batch.payload)
-                if receipt.get("fingerprint") == batch.fingerprint and receipt.get("job_id"):
-                    batch.payload = {**batch.payload, "job_id": receipt["job_id"]}
-                    batch.status = "running"
-                    db.commit()
-                else:
-                    batch.status = "submission_uncertain"
-                    db.commit()
-                    continue
-            result = driver_call(config, "poll", batch.payload)
-            if result.get("fingerprint") != batch.fingerprint or str(result.get("job_id")) != str(
-                batch.payload["job_id"]
-            ):
-                raise ValueError("结果与提交批次不匹配")
-            state = result.get("status")
-            if state == "audited":
-                from app.services.result_integration import import_executions
-
-                from app.services.release_backfill import frozen_snapshot_valid
-
-                if not frozen_snapshot_valid(db, batch):
-                    raise ValueError("当前来源或场景输入与提交快照不一致，停止结果导入")
-                # Existing multi-job comparisons/publication decisions are immutable
-                # here; refreshing those requires their explicit integration plan.
-                if batch.payload.get("result_import"):
-                    raise ValueError("已有评测整合记录，请按原整合计划核验")
-                export = result.get("execution_export") or {}
-                if str(export.get("job_id")) != str(batch.payload["job_id"]):
-                    raise ValueError("核验导出与提交 Job 不匹配")
-                import_executions(db, batch.payload, [export], int(batch.payload["job_id"]))
-            elif state == "complete":
-                expected = {s["scenario_id"] for s in batch.payload["scenarios"]}
-                if (
-                    result.get("quality_gate_passed") is not True
-                    or set(result.get("results", {})) != expected
-                ):
-                    batch.status = "quality_failed"
-                    batch.payload = {
-                        **batch.payload,
-                        "error": "结果覆盖或质量门禁未通过",
-                    }
-                else:
-                    for row in result["results"].values():
-                        if not all(
-                            isinstance(row.get(k), bool) for k in ("sim_triggered", "reproduced")
-                        ) or row.get("precision_label") not in ("TP", "FP", "FN", "TN"):
-                            raise ValueError("仿真结果不完整")
-                    summary = summarize_population(
-                        batch.payload["issues"],
-                        batch.payload["scenarios"],
-                        result["results"],
-                    )
-                    batch.payload = {
-                        **batch.payload,
-                        "results": result["results"],
-                        "summary": summary,
-                    }
-                    batch.status = "complete" if summary["available"] else "quality_failed"
-            elif state in ("running", "verifying"):
-                batch.status = state
-                batch.payload = {**batch.payload, "quality": result.get("quality", {})}
-            elif state == "failed":
-                # Legacy drivers used failed for a single task while the job was
-                # still running. Never freeze monitoring on that ambiguous signal.
-                batch.status = "verifying"
-                batch.payload = {**batch.payload, "quality": result.get("quality", {})}
-            elif state == "cancelled":
-                batch.status = "cancelled"
-            else:
-                raise ValueError("结果驱动返回未知核验状态")
-            batch.payload = {k: v for k, v in batch.payload.items() if k != "last_poll_error"}
-            db.commit()
-        except Exception as exc:
-            logger.exception(
-                "poll_batches failed batch=%s release=%s status=%s",
-                batch.fingerprint,
-                batch.release,
-                batch.status,
-            )
-            db.rollback()
-            batch.payload = {
-                **batch.payload,
-                "last_poll_error": str(exc) if isinstance(exc, ValueError) else type(exc).__name__,
-            }
-            db.commit()
-
-    from app.services.result_publication import reconcile_publications
-
-    reconcile_publications(db, config)
-
-
-def metrics_for_snapshot(db, snapshot):
-    if not snapshot:
-        return {"available": False, "reason": "尚无完整周期人口快照"}
-    population_hash = population_identity(snapshot.payload)
-    from app.services.result_publication import published_batch, effective_publication
-
-    published = published_batch(db, snapshot.release)
-    from app.services.business_population import scope_for_batch
-    from app.services.release_backfill import frozen_snapshot_valid
-
-    if published and frozen_snapshot_valid(db, published):
-        scope = scope_for_batch(db, published)
-        if scope["available"]:
-            return effective_publication(db, published)
-        return {"available": False, "reason": scope["reason_code"], "collection_scope": scope}
-    batches = db.scalars(
-        select(ReleaseSimulationBatch)
-        .where(
-            ReleaseSimulationBatch.release == snapshot.release,
-            ReleaseSimulationBatch.status == "complete",
-        )
-        .order_by(ReleaseSimulationBatch.updated_at.desc())
-    ).all()
-    for batch in batches:
-        if batch.payload.get("backfill"):
-            continue
-        if batch.payload.get("result_import") and not batch.payload["result_import"].get("primary"):
-            continue
-        if batch.payload.get("population_hash") == population_hash:
-            scope = scope_for_batch(db, batch)
-            if not scope["available"]:
-                return {
-                    "available": False,
-                    "reason": scope["reason_code"],
-                    "collection_scope": scope,
-                }
-            return {
-                **batch.payload.get("summary", {}),
-                "job_id": batch.payload.get("job_id"),
-                "release": snapshot.release,
-                "generated_at": batch.updated_at.replace(tzinfo=timezone.utc).isoformat(),
-            }
-    return {"available": False, "reason": "当前人口尚无通过验收的完整仿真结果"}
-
-
-def run_tick(sync_source=True, source_interval_seconds=0):
-    try:
-        lock_ctx = advisory_lock("ra_sim:release_workflow", blocking=False)
-        lock_ctx.__enter__()
-    except LockBusyError:
-        return
-    try:
-        with SessionLocal() as db:
-            config = effective_config(db)
-            if sync_source and source_interval_seconds:
-                now = datetime.now(timezone.utc)
-                last = get_state(db, "source_poll").get("started_at")
-                try:
-                    age = (now - datetime.fromisoformat(last)).total_seconds()
-                    sync_source = not 0 <= age < source_interval_seconds
-                except (TypeError, ValueError):
-                    pass
-                if sync_source:
-                    put_state(
-                        db,
-                        "source_poll",
-                        {
-                            "started_at": now.isoformat(),
-                            "interval_seconds": source_interval_seconds,
-                        },
-                    )
-            watch_enabled = config.get("release_monitor", {}).get("enabled", False)
-            if sync_source and watch_enabled:
-                from app.services.release_watch import monitor_releases
-
-                monitor_releases(db, config)
-                config = effective_config(db)
-            if sync_source:
-                # Discover historical releases even while the watcher observes
-                # each tracked release. Discovery never queues simulations.
-                refresh_catalog(db, config)
-                config = effective_config(db)
-                try:
-                    sync_once(db, config)
-                    if (
-                        not watch_enabled
-                        and get_state(db, "settings", {"mode": "manual"})["mode"] == "auto"
-                    ):
-                        prepare_missing_scenes(db, config)
-                        queue_plan(db, make_plan(db, config)["fingerprint"], config)
-                except Exception as exc:
-                    logger.exception("run_tick sync_once failed")
-                    db.rollback()
-                    put_state(
-                        db,
-                        "sync",
-                        {
-                            "status": "failed",
-                            "reason": str(exc)
-                            if isinstance(exc, ValueError)
-                            else type(exc).__name__,
-                            "checked_at": datetime.now(timezone.utc).isoformat(),
-                        },
-                    )
-            for batch in db.scalars(
-                select(ReleaseSimulationBatch).where(ReleaseSimulationBatch.status == "queued")
-            ).all():
-                # Quiet-window batches must be freshly observed by monitor_tick,
-                # including queued batches recovered after a process restart.
-                if not batch.payload.get("backfill") and batch.payload.get("period", {}).get(
-                    "completion_rule"
-                ) in {"issue_inactivity_24h", "issue_last_time_24h"}:
-                    continue
-                try:
-                    execute_batch(db, batch, config, release=batch.release)
-                except ValueError as exc:
-                    batch.status = "cancelled_stale"
-                    batch.payload = {**batch.payload, "error": str(exc)}
-                    db.commit()
-            poll_batches(db, config)  # Track active jobs even after switching to manual mode.
-            from app.services.release_resume import process_requests
-
-            process_requests(db, config)
-            from app.services.release_backfill import tick as backfill_tick
-
-            backfill_tick(db, config)
-    finally:
-        lock_ctx.__exit__(None, None, None)
-
-
-def tick():
-    run_tick(source_interval_seconds=3600)

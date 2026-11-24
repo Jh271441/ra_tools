@@ -5,37 +5,23 @@ from datetime import timedelta
 
 from sqlalchemy import select
 
+from app.domain.coverage import POLICY, validate_frozen
+from app.domain.hashing import audit_hash, digest
+from app.domain.labels import (
+    INPUT_FIELDS,
+    SCENE_FIELDS,
+    activity_identity,
+    same_inputs,
+    validate_physical_scene_labels,
+    validate_scene_labels,
+)
+from app.domain.metrics import cohort_for_issue, excluded_issue
 from app.models import ReleaseSimulationBatch
+from app.repositories.release_repo import shared_results
 from app.services import release_workflow as w
-from app.services.release_cycle import digest
-from app.services.release_metrics import cohort_for_issue, excluded_issue
-from app.services.release_watch import activity_identity
-from app.services.result_publication import audit_hash
-from ra_api.release_tolerance import POLICY, validate_frozen
 
 INTERVAL_SECONDS = 6 * 3600
 ACTIVE = ("queued", "submitting", "submission_uncertain", "running", "verifying")
-INPUT_FIELDS = (
-    "version",
-    "issue_time",
-    "ra_type",
-    "trip_id",
-    "ra_start_timestamp",
-    "trip_start_time",
-    "trip_end_time",
-)
-SCENE_FIELDS = ("issue_id", "scenario_revision", "start_timestamp", "end_timestamp")
-
-
-def same_inputs(before, after, fields=INPUT_FIELDS):
-    old = {str(i["issue_id"]): i for i in before}
-    new = {str(i["issue_id"]): i for i in after}
-    return (
-        len(old) == len(before)
-        and len(new) == len(after)
-        and old.keys() == new.keys()
-        and all(old[i].get(k) == new[i].get(k) for i in old for k in fields)
-    )
 
 
 def children(db, base):
@@ -161,8 +147,6 @@ def collect(db, base, scenes, expected_contract=None):
                 "job_id": p["job_id"],
                 "audit_hash": fingerprint,
             }
-    from app.services.evaluation_pipeline import shared_results
-
     shared, bindings = shared_results(db, base, {"scenarios": scenes})
     for sid, result in shared.items():
         if sid not in results:
@@ -318,13 +302,9 @@ def recover(db, config, base, source, rows, now):
     if not pending:
         return finish("blocked", reason="retry_limit", job_id=None)
     expected_contract = contract(db, config, base)
-    from ra_api.release_labels import validate_scene_labels
-
     by_issue = {str(i["issue_id"]): i for i in issues}
     for scene in pending:
         if base.payload.get("execution_schema") == "physical_v2":
-            from ra_api.release_labels import validate_physical_scene_labels
-
             validate_physical_scene_labels(
                 scene,
                 base.payload["scenario_label"],
@@ -405,7 +385,7 @@ def recover(db, config, base, source, rows, now):
     finish(
         "simulating", fingerprint=child.fingerprint, job_id=child.payload.get("job_id"), reason=None
     )
-    w.execute_batch(db, child, config, release=base.release)
+    w.execute_batch(db, child, config, release=base.release, delta_validator=validate_delta)
     return finish(
         "simulating" if child.status in ACTIVE else "blocked",
         fingerprint=child.fingerprint,

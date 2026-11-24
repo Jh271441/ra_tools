@@ -7,7 +7,11 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 from app.database import Base
 from app.models import ReleaseSimulationBatch
-from app.services import release_watch as watch, release_workflow as w
+from app.services import (
+    release_watch as watch,
+    release_workflow as w,
+    workflow_orchestrator as orchestrator,
+)
 from app.services.release_cycle import validate_period
 
 START = datetime(2026, 10, 16, 0, tzinfo=timezone.utc)
@@ -312,13 +316,13 @@ def test_tick_routes_watch_without_legacy_auto_submission(db, config, monkeypatc
     calls = []
     monkeypatch.setattr(watch, "monitor_releases", lambda *_: calls.append("watch"))
     monkeypatch.setattr(w, "sync_once", lambda *_: None)
-    monkeypatch.setattr(w, "poll_batches", lambda *_: calls.append("poll"))
+    monkeypatch.setattr(orchestrator, "poll_batches", lambda *_: calls.append("poll"))
     monkeypatch.setattr(w, "refresh_catalog", lambda *_: calls.append("catalog"))
     monkeypatch.setattr(
         w, "prepare_missing_scenes", Mock(side_effect=AssertionError("legacy auto submit"))
     )
     monkeypatch.setattr(w, "queue_plan", Mock(side_effect=AssertionError("legacy auto submit")))
-    w.run_tick()
+    orchestrator.run_tick()
     assert calls == ["watch", "catalog", "poll"]
 
 
@@ -722,14 +726,14 @@ def test_hourly_source_throttle_preserves_job_polling(db, config, monkeypatch, t
     monkeypatch.setattr(watch, "monitor_releases", lambda *_: calls.append("watch"))
     monkeypatch.setattr(w, "refresh_catalog", lambda *_: calls.append("catalog"))
     monkeypatch.setattr(w, "sync_once", lambda *_: calls.append("sync"))
-    monkeypatch.setattr(w, "poll_batches", lambda *_: calls.append("poll"))
-    w.tick()
-    w.tick()
+    monkeypatch.setattr(orchestrator, "poll_batches", lambda *_: calls.append("poll"))
+    orchestrator.tick()
+    orchestrator.tick()
     assert calls == ["watch", "catalog", "sync", "poll", "poll"]
     w.put_state(
         db,
         "source_poll",
         {"started_at": (datetime.now(timezone.utc) - timedelta(hours=1, seconds=1)).isoformat()},
     )
-    w.tick()
+    orchestrator.tick()
     assert calls[-4:] == ["watch", "catalog", "sync", "poll"]

@@ -9,6 +9,7 @@ from typing import Any, Literal
 
 import httpx
 
+from app.clients.http_base import sign_trail_payload as _sign_payload
 from app.config import mock_data_disabled, settings, ssl_verify_setting
 
 logger = logging.getLogger(__name__)
@@ -23,11 +24,6 @@ TRIGGER_METRIC = "dpe_assist_channel_triggered"
 
 class DataSourceUnavailable(RuntimeError):
     """Raised when no configured real API can be used."""
-
-
-def _sign_payload(payload: dict[str, Any], token: str) -> str:
-    text = json.dumps(payload) + "&token=" + token
-    return hashlib.md5(text.encode("utf-8")).hexdigest()
 
 
 class SimResultClient:

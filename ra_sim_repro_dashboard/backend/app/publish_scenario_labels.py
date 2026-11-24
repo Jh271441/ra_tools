@@ -12,7 +12,9 @@ import os
 from pathlib import Path
 import time
 import requests
+from app.clients.scenario_publisher import ScenarioPlatformClient
 from app.database import SessionLocal
+from app.domain.hashing import digest
 from app.services import evaluation_pipeline as pipeline, scenario_label_sets as tags
 
 
@@ -26,36 +28,33 @@ def write(path, value):
 
 class Platform:
     def __init__(self):
-        from ra_api.scenario_api import ScenarioURL, trail_api
-        from ra_api.sim_result_api import SimResultClient
-
-        self.urls, self.api = ScenarioURL, trail_api
-        self.api.token = SimResultClient()._app_token
-        self.session = requests.Session()
-        self.session.trust_env = True
+        self.api = ScenarioPlatformClient()
+        self.session = self.api.session
 
     def post(self, url, payload, read_only=False):
+        body = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
         headers = {
-            "content-type": "application/json",
-            "appid": "21",
-            "time": str(int(time.time())),
-            "sign": self.api._sign_for_json_string(json.dumps(payload)),
+            "Content-Type": "application/json",
+            "app_id": os.getenv("SCENARIO_APP_ID", "voyager-autotest"),
+            "sign": self.api._sign_for_json_string(body),
         }
-        # Retry transient reads only. An ambiguous mutation is never repeated.
-        for attempt in range(3 if read_only else 1):
+        attempts = 3 if read_only else 1
+        for attempt in range(attempts):
             try:
-                response = self.session.post(url, json=payload, headers=headers, timeout=60)
+                response = self.session.post(
+                    url, data=body.encode("utf-8"), headers=headers, timeout=60
+                )
                 response.raise_for_status()
                 value = response.json()
-                if value.get("msg") != "success":
-                    raise ValueError("scenario_api_failed")
+                if value.get("errno") != 0:
+                    raise ValueError(f"scenario_platform_errno_{value.get('errno')}")
                 return value
             except requests.RequestException as exc:
-                response = getattr(exc, "response", None)
-                transient = response is None or response.status_code in (502, 503, 504, 596)
-                if not read_only or not transient or attempt == 2:
+                status = getattr(getattr(exc, "response", None), "status_code", None)
+                transient = status is None or status >= 500 or status == 429
+                if not read_only or not transient or attempt + 1 >= attempts:
                     raise
-                time.sleep(0.25 * (attempt + 1))
+                time.sleep(attempt + 1)
 
     def query(self, ids=None, label=None):
         result = []
@@ -66,7 +65,7 @@ class Platform:
                 payload["id"] = ",".join(ids)
             if label:
                 payload["labels"] = label
-            value = self.post(self.urls.query.value, payload, read_only=True)["data"]
+            value = self.post(self.api.query_url, payload, read_only=True)["data"]
             rows = value.get("res", value.get("data", []))
             count = int(value.get("total", value.get("count", -1)))
             if count < 0 or not isinstance(rows, list):
@@ -83,7 +82,7 @@ class Platform:
     def append(self, row, expected):
         values = sorted(tags.labels(row) | set(expected["add_labels"]))
         return self.post(
-            self.urls.update.value,
+            self.api.update_url,
             {
                 "id": int(expected["scenario_id"]),
                 "labels": ",".join(values),
@@ -203,8 +202,6 @@ def publish(
 
 
 def resume_allowlist(plan, value):
-    from app.services.release_cycle import digest
-
     core = {k: v for k, v in value.items() if k != "verification_hash"}
     if digest(core) != value.get("verification_hash") or value.get("plan_id") != plan["id"]:
         raise ValueError("invalid_resume_receipt")

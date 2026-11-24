@@ -323,7 +323,7 @@ def test_behavior_filters_preserve_whole_window_trigger_and_paginate(monkeypatch
     monkeypatch.setattr(
         p, "current_revision", lambda *a, **k: {"rows": rows, "revision_key": "frozen"}
     )
-    monkeypatch.setattr(profiles, "get", lambda *a: profiles.BUILTIN)
+    monkeypatch.setattr(p.profiles, "get", lambda *a: profiles.BUILTIN)
     page = p.issue_page(None, coverage="after_manual", page=2, page_size=10)
     assert page["total"] == 12 and len(page["items"]) == 2
     assert all(r["sim_triggered"] is True for r in page["items"])

@@ -2,44 +2,20 @@
 
 from __future__ import annotations
 
-import math
 from datetime import datetime, timezone
 from sqlalchemy import select
+from app.domain.coverage import POLICY
+from app.domain.cycle import TRIGGER, checks
+from app.domain.hashing import digest
+from app.domain.metrics import cohort_for_issue, summarize_population
 from app.models import ReleaseSimulationBatch, ReleaseWorkflowState
-from app.services.release_cycle import digest
-from app.services.release_metrics import cohort_for_issue, summarize_population
-
-TRIGGER = "dpe_assist_channel_triggered__group1"
-
-
-def checks(row):
-    errors = []
-    if row.get("task_status") != 3 or not str(row.get("task_outcome", "")).startswith("Done"):
-        errors.append("task_failed")
-    if row.get("simulator_cache_hit") is not False:
-        errors.append("cache_unverified")
-    for key in ("inference_log_count", "dpe_output_count", "output_bag_count"):
-        if not isinstance(row.get(key), (int, float)) or row[key] <= 0:
-            errors.append(key)
-    for key in ("failed_evaluation_count", "unexpected_warning_count"):
-        if row.get(key) != 0:
-            errors.append(key)
-    value = row.get(TRIGGER)
-    if (
-        isinstance(value, bool)
-        or not isinstance(value, (int, float))
-        or not math.isfinite(value)
-        or value < -1
-    ):
-        errors.append("dpe_missing")
-    return errors
+from app.services.reproduction_evidence import capture_completion
 
 
 def integrate(plan, exports, primary_job_id):
     expected = {str(s["scenario_id"]): s for s in plan["scenarios"]}
     if len(expected) != len(plan["scenarios"]) or not expected:
         raise ValueError("Scenario population is empty or duplicated")
-    from ra_api.release_tolerance import POLICY
 
     contracts = {e.get("execution_contract_hash") for e in exports}
     physical = plan.get("execution_schema") == "physical_v2"
@@ -262,8 +238,6 @@ def import_executions(db, plan, exports, primary_job_id):
         }
         db.add(cache)
     db.commit()
-    from app.services.reproduction_evidence import capture_completion
-
     capture_completion(
         db,
         batch=batches[primary_job_id],

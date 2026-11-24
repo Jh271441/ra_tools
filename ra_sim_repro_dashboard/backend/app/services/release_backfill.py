@@ -7,12 +7,14 @@ it never disguises a union as a single Orion job or picks a more favourable run.
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
+from app.domain.coverage import POLICY, assess, grade, validate_frozen
+from app.domain.hashing import digest
+from app.domain.metrics import cohort_for_issue, summarize_population
 from app.models import ReleaseIssueSnapshot, ReleaseSimulationBatch
 from app.repositories import state_store
-from app.services import release_workflow as w
-from app.services.release_cycle import digest
-from app.services.release_metrics import cohort_for_issue, summarize_population
-from ra_api.release_tolerance import POLICY, assess, grade, validate_frozen
+from app.repositories.release_repo import binding_valid_uncached as binding_valid, shared_results
+from app.services import label_recovery, publication_core, release_workflow as w
+from app.services.read_views import read_projection
 
 INTERVAL_SECONDS = 6 * 3600
 ACTIVE = ("queued", "submitting", "submission_uncertain", "running", "verifying")
@@ -43,8 +45,6 @@ def compatible_source(old, new):
 
 
 def frozen_snapshot_valid(db, batch):
-    from app.services.read_views import read_projection
-
     return read_projection(
         db,
         ("frozen-source", batch.fingerprint, batch.updated_at),
@@ -54,9 +54,7 @@ def frozen_snapshot_valid(db, batch):
 
 def _frozen_snapshot_valid(db, batch):
     if batch.payload.get("backfill", {}).get("kind") == "label_changes":
-        from app.services.label_recovery import source_valid
-
-        return source_valid(db, batch)
+        return label_recovery.source_valid(db, batch)
     rows = snapshots(db, batch.release)
     try:
         latest = next(rows, None)
@@ -103,8 +101,6 @@ def original(db, release):
 
 def collect_results(db, base, full):
     """First audited success is retained; failed scenes alone are eligible for retry."""
-    from app.services.result_publication import audit_hash
-
     expected = {str(s["scenario_id"]): s for s in full["scenarios"]}
     results, lineage = {}, {}
     candidates = [base] + [
@@ -154,15 +150,13 @@ def collect_results(db, base, full):
             if detail.get("status") != "result_ready" or detail.get("errors"):
                 raise ValueError("result_audit_missing")
             if execution_hash is None:
-                execution_hash = audit_hash(p)
+                execution_hash = publication_core.audit_hash(p)
             results[sid] = p["results"][sid]
             lineage[sid] = {
                 "fingerprint": b.fingerprint,
                 "job_id": p["job_id"],
                 "audit_hash": execution_hash,
             }
-    from app.services.evaluation_pipeline import shared_results
-
     shared, bindings = shared_results(db, base, full)
     for sid, result in shared.items():
         if sid not in results:
@@ -233,9 +227,7 @@ def delta_plan(db, base, full, results, *, force=False):
 
 def validate_delta(db, batch, config):
     if batch.payload["backfill"].get("kind") == "label_changes":
-        from app.services.label_recovery import validate_delta as validate_label_delta
-
-        return validate_label_delta(db, batch, config)
+        return label_recovery.validate_delta(db, batch, config)
     metadata = batch.payload["backfill"]
     base = db.get(ReleaseSimulationBatch, metadata["base_fingerprint"])
     if not base or not frozen_snapshot_valid(db, base):
@@ -265,20 +257,18 @@ def revision_metrics(db, base, metrics):
     revision = w.get_state(db, state.get("revision_key", "backfill:none"))
     if not revision or revision.get("base_fingerprint") != base.fingerprint:
         return metrics
-    from app.services.result_publication import audit_hash
-
     execution_hashes = {}
     for item in revision["lineage"].values():
         if item.get("execution_id"):
-            from app.services.evaluation_pipeline import binding_valid
-
             if not binding_valid(db, item):
                 return metrics
             continue
         fingerprint = item["fingerprint"]
         if fingerprint not in execution_hashes:
             execution = db.get(ReleaseSimulationBatch, fingerprint)
-            execution_hashes[fingerprint] = audit_hash(execution.payload) if execution else None
+            execution_hashes[fingerprint] = (
+                publication_core.audit_hash(execution.payload) if execution else None
+            )
         if (
             execution_hashes[fingerprint] is None
             or execution_hashes[fingerprint] != item["audit_hash"]
@@ -369,9 +359,7 @@ def refresh_release(db, config, base, *, now=None, force=False):
             if not mapping.get(iid) or any(sid not in results for sid in mapping[iid])
         }
         coverage = grade(eligible, missing)
-        from app.services.result_publication import publication
-
-        if publication(base) and coverage["quality_level"] != "blocked":
+        if publication_core.publication(base) and coverage["quality_level"] != "blocked":
             save(status="merging", **timing)
             rows = [i for i in full["issues"] if str(i["issue_id"]) in eligible - missing]
             summary = summarize_population(rows, full["scenarios"], results)
@@ -420,7 +408,7 @@ def refresh_release(db, config, base, *, now=None, force=False):
                 fingerprint=batch.fingerprint,
                 **timing,
             )
-            w.execute_batch(db, batch, config, release=base.release)
+            w.execute_batch(db, batch, config, release=base.release, delta_validator=validate_delta)
             return save(
                 status="simulating" if batch.status in ACTIVE else "blocked",
                 reason=None if batch.status in ACTIVE else batch.status,

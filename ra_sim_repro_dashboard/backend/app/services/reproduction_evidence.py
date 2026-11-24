@@ -1,12 +1,22 @@
 """Immutable timing sidecar. Reads never contact Scenario, Orion, Trail or Shuyi."""
 
+from __future__ import annotations
+
 from collections import defaultdict
 from copy import deepcopy
-from sqlalchemy import select
-from app.models import ReleaseSimulationBatch, ReleaseWorkflowState, ReleaseIssueSnapshot
-from app.repositories import state_store
-from app.services import reproduction_timing as timing
-from app.services.release_cycle import digest
+
+from app.domain.hashing import audit_hash, digest, execution_audit_hash
+from app.domain.labels import INPUT_FIELDS, SCENE_FIELDS, physical_fields
+from app.domain.metrics import (
+    DEFAULT_CONFIG,
+    GOOD,
+    cohort_for_issue,
+    membership as profile_membership,
+)
+from app.domain import timing
+from app.models import ReleaseSimulationBatch, ReleaseWorkflowState
+from app.repositories import profile_repo, release_repo, state_store
+from app.services.read_views import read_memo
 
 SCHEMA = "reproduction_evidence_v1"
 
@@ -22,8 +32,6 @@ def evaluation_policy_key(release, profile_id):
 
 def evaluation_active(db, release, profile):
     """A metric profile may opt in without changing ordinary simulation history."""
-    from app.services import metric_profiles
-
     current, seen = profile or {}, set()
     while current.get("id"):
         identifier = current["id"]
@@ -44,14 +52,11 @@ def evaluation_active(db, release, profile):
                 raise ValueError("reproduction_policy_invalid")
             return value["enabled"]
         parent = current.get("parent")
-        current = metric_profiles.get(db, parent) if parent else {}
+        current = profile_repo.get_profile(db, parent) if parent else {}
     return active(db, release)
 
 
 def binding(release, issue, scene, signal, lineage):
-    from app.services.auto_triage_metrics import _physical
-    from app.services.label_recovery import SCENE_FIELDS
-
     execution = {
         k: lineage.get(k)
         for k in ("fingerprint", "execution_id", "audit_hash", "job_id")
@@ -68,7 +73,7 @@ def binding(release, issue, scene, signal, lineage):
     return {
         "release": release,
         "issue_id": str(issue["issue_id"]),
-        "physical": _physical(issue),
+        "physical": physical_fields(issue),
         "scene": {
             "scenario_id": str(scene["scenario_id"]),
             **{k: scene.get(k) for k in SCENE_FIELDS},
@@ -80,9 +85,6 @@ def binding(release, issue, scene, signal, lineage):
 
 def validate_record(db, record, source_cache=None):
     """Validate the stored execution, physical input and task before any DB write."""
-    from app.services import auto_triage_metrics as at
-    from app.services.result_publication import audit_hash
-
     value = record["binding"]
     source = value["execution"]
     sid, iid = str(value["scene"]["scenario_id"]), str(value["issue_id"])
@@ -95,11 +97,9 @@ def validate_record(db, record, source_cache=None):
         if not batch or audit_hash(batch.payload) != source["audit_hash"]:
             raise ValueError("timing_execution_changed")
         p = batch.payload
-        inputs, _ = at.execution_inputs(db, batch)
+        inputs, _ = release_repo.execution_inputs(db, batch)
         tasks = p.get("scenario_results", {})
     else:
-        from app.services.evaluation_pipeline import execution_audit_hash
-
         e = state_store.get_execution(db, source["execution_id"], include_heavy=True)
         if (
             not e.get("audit_hash")
@@ -131,7 +131,6 @@ def validate_record(db, record, source_cache=None):
     if not isinstance(record.get("artifact_sha256"), str) or len(record["artifact_sha256"]) != 64:
         raise ValueError("timing_artifact_unverified")
     events = record.get("trigger_events")
-    # Validate the signal even when this Issue lacks a usable manual anchor.
     test = timing.classify(
         3,
         scene.get("start_timestamp"),
@@ -161,8 +160,6 @@ def save(db, release, records):
 
 def index(db, release):
     values = defaultdict(list)
-    # Filter before transferring large immutable ledgers. Still validate each
-    # returned payload and its content-addressed key below.
     for ledger_key, p in state_store.list_timing_ledgers(db, release):
         if (
             p.get("release") != release
@@ -220,25 +217,30 @@ def overlay_metrics(metrics, evaluations):
     }
 
 
+def _execution_receipt_memo(db, identifier):
+    def load():
+        value = state_store.get_execution(db, identifier, include_heavy=True)
+        return value, execution_audit_hash(value)
+
+    return read_memo(db, ("evaluation-execution", identifier), load)
+
+
 def evaluation_view(db, revision, *, include_rows=True):
     release = (revision or {}).get("context", {}).get("release")
     if not release or not evaluation_active(db, release, (revision or {}).get("profile")):
         return revision
     p = revision["payload"]
-    # Resolve each execution once, retaining each scene's raw signal for multi-scene Issues.
-    from app.services import evaluation_pipeline as pipeline
-
     actual, origins = {}, {}
     for sid, origin in revision["lineage"].items():
         key = origin.get("fingerprint") or origin.get("execution_id")
         if key not in origins:
             if origin.get("fingerprint"):
                 batch = db.get(ReleaseSimulationBatch, key)
-                if not batch or pipeline.at.audit_hash(batch.payload) != origin["audit_hash"]:
+                if not batch or audit_hash(batch.payload) != origin["audit_hash"]:
                     return revision
                 origins[key] = batch.payload.get("results", {})
             else:
-                e, actual_hash = pipeline.execution_receipt(db, key)
+                e, actual_hash = _execution_receipt_memo(db, key)
                 if not e.get("audit_hash") or actual_hash != origin["audit_hash"]:
                     return revision
                 origins[key] = e.get("results", {})
@@ -252,9 +254,6 @@ def evaluation_view(db, revision, *, include_rows=True):
         "metrics": deepcopy(revision["metrics"]),
         "baseline": deepcopy(revision["baseline"]),
     }
-    # Aggregate reads do not return rows, so avoid recursively copying thousands
-    # of saved per-Issue receipts merely to attach a temporary timing result.
-    # Detail/Issue callers retain their independently mutable row projection.
     if include_rows:
         view["rows"] = deepcopy(revision["rows"])
         for row in view["rows"]:
@@ -262,13 +261,12 @@ def evaluation_view(db, revision, *, include_rows=True):
     view["metrics"] = overlay_metrics(
         view["metrics"], (values[str(r["issue_id"])] for r in view["rows"] if r["eligible"])
     )
-    config = pipeline.profiles.DEFAULT_CONFIG
     memberships = {}
 
     def member(config, row, label_key):
         key = (id(config), row["ra_type"], row[label_key])
         if key not in memberships:
-            memberships[key] = pipeline.profiles.membership(config, row["ra_type"], row[label_key])
+            memberships[key] = profile_membership(config, row["ra_type"], row[label_key])
         return memberships[key]
 
     if view["baseline"].get("source_available", True):
@@ -278,12 +276,11 @@ def evaluation_view(db, revision, *, include_rows=True):
                 values[str(r["issue_id"])]
                 for r in view["rows"]
                 if any(
-                    member(config, r, "baseline_label")[k]
+                    member(DEFAULT_CONFIG, r, "baseline_label")[k]
                     for k in ("precision_denominator", "recall_denominator")
                 )
             ),
         )
-    # The cohorts describe behavioral reproduction too; do not leave old matches beside the new rate.
     for name, label_key in (("metrics", "auto_label"), ("baseline", "baseline_label")):
         if view[name].get("source_available") is False:
             continue
@@ -291,14 +288,14 @@ def evaluation_view(db, revision, *, include_rows=True):
             group.update(matches=0, evaluated=0)
         for row in view["rows"]:
             label = row[label_key]
-            membership = member(
-                view["profile"]["config"] if name == "metrics" else config, row, label_key
+            m = member(
+                view["profile"]["config"] if name == "metrics" else DEFAULT_CONFIG, row, label_key
             )
-            if not (membership["precision_denominator"] or membership["recall_denominator"]):
+            if not (m["precision_denominator"] or m["recall_denominator"]):
                 continue
             group_key = (
                 ("positive_manual" if row["ra_type"] == 3 else "positive_auto")
-                if label in pipeline.profiles.GOOD
+                if label in GOOD
                 else "negative_auto"
                 if label == "误触发" and row["ra_type"] == 2
                 else "other_manual"
@@ -314,11 +311,9 @@ def evaluation_view(db, revision, *, include_rows=True):
 
 def standard_inputs(db, batch, metrics):
     """Resolve only the already validated effective publication, including retries."""
-    from app.services import auto_triage_metrics as at
-
     p = batch.payload
     issues = p["issues"]
-    base_hash = at.audit_hash(p)
+    base_hash = audit_hash(p)
     lineage = {
         str(s["scenario_id"]): {
             "fingerprint": batch.fingerprint,
@@ -349,7 +344,7 @@ def standard_inputs(db, batch, metrics):
         if key not in origins:
             if origin.get("fingerprint"):
                 b = db.get(ReleaseSimulationBatch, key)
-                inputs, _ = at.execution_inputs(db, b)
+                inputs, _ = release_repo.execution_inputs(db, b)
                 origins[key] = (
                     b.payload,
                     {str(s["scenario_id"]): s for s in b.payload["scenarios"]},
@@ -372,9 +367,6 @@ def standard_inputs(db, batch, metrics):
         for i in issues
         if str(i["issue_id"]) not in excluded
     ]
-    # Compact legacy plans omit physical fields; use the pre-registration input.
-    from app.services.label_recovery import INPUT_FIELDS
-
     for row in rows:
         for field in INPUT_FIELDS:
             if field not in row:
@@ -385,11 +377,8 @@ def standard_inputs(db, batch, metrics):
 def standard_view(db, batch, metrics):
     if not metrics or not active(db, batch.release):
         return metrics
-    from app.services.release_metrics import cohort_for_issue
-
     issues, scenes, results, lineage = standard_inputs(db, batch, metrics)
     eligible = [i for i in issues if cohort_for_issue(i)]
-    # Never replace an audited denominator using an unresolved source revision.
     if len(eligible) != metrics["eligible"]:
         return metrics
     values = evaluate(db, batch.release, eligible, scenes, results, lineage)
@@ -402,18 +391,10 @@ def standard_view(db, batch, metrics):
     return view
 
 
-def annotate_standard_rows(db, release, rows):
-    if not active(db, release):
-        return rows
-    from app.services.result_publication import published_batch, effective_publication
-
-    batch = published_batch(db, release)
-    metrics = effective_publication(db, batch) if batch else None
-    if not metrics or not metrics.get("reproduction"):
+def annotate_rows_for_publication(db, release, batch, metrics, rows):
+    if not active(db, release) or not metrics or not metrics.get("reproduction"):
         return rows
     issues, scenes, results, lineage = standard_inputs(db, batch, metrics)
-    from app.services.release_metrics import cohort_for_issue
-
     issues = [i for i in issues if cohort_for_issue(i)]
     values = evaluate(db, release, issues, scenes, results, lineage)
     return [
@@ -431,11 +412,8 @@ def annotate_standard_rows(db, release, rows):
 
 def capture_batch(db, batch, export):
     """Store completion evidence separately from historical publication hashes."""
-    from app.services.auto_triage_metrics import execution_inputs
-    from app.services.result_publication import audit_hash
-
     p = batch.payload
-    inputs, _ = execution_inputs(db, batch)
+    inputs, _ = release_repo.execution_inputs(db, batch)
     scenes = {str(s["scenario_id"]): s for s in p["scenarios"]}
     origin = {"fingerprint": batch.fingerprint, "job_id": p["job_id"], "audit_hash": audit_hash(p)}
     records = []

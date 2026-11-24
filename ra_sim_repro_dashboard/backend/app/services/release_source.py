@@ -1,14 +1,18 @@
 """Read-only signed Trail queries. Partial responses fail closed."""
 
 from __future__ import annotations
-import hashlib
+
+import ast
+from datetime import datetime
 import json
 import os
-import time
-import httpx
-import ast
 from pathlib import Path
-from app.config import settings
+
+import httpx
+
+from app.clients.http_base import trail_signed_headers
+from app.config import DATA_DIR, ROOT_DIR, settings
+from app.domain.labels import full_scene_label
 from app.services.release_cycle import query_contract, real_labels
 
 
@@ -60,13 +64,7 @@ def scenario_issue_id(row):
 def signed_query(url, body, app_id, token):
     if not token or not app_id:
         raise RuntimeError("上游查询凭据未配置")
-    text = json.dumps(body)
-    headers = {
-        "content-type": "application/json",
-        "appid": str(app_id),
-        "time": str(int(time.time())),
-        "sign": hashlib.md5((text + "&token=" + token).encode()).hexdigest(),
-    }
+    text, headers = trail_signed_headers(body, app_id, token)
     with httpx.Client(timeout=60, trust_env=False) as client:
         response = client.post(url, content=text, headers=headers)
         response.raise_for_status()
@@ -105,8 +103,6 @@ def artifact_source(period):
     path = period.get("source_artifact")
     if not path:
         return None
-    from app.config import DATA_DIR, ROOT_DIR
-
     candidate = Path(path).expanduser().resolve()
     allowed_roots = [
         settings.report_dir.resolve(),
@@ -152,8 +148,6 @@ def fetch_population(config, period):
         )
     )
     # Validate the returned population, not only the requested filter.
-    from datetime import datetime
-
     lo = int(datetime.fromisoformat(period["case_start"]).timestamp() * 1000)
     hi = int(datetime.fromisoformat(period["case_end_exclusive"]).timestamp() * 1000)
     for row in rows:
@@ -258,6 +252,4 @@ def fetch_scenarios(period):
 
 
 def cycle_scene_label(period):
-    from ra_api.release_labels import full_scene_label
-
     return full_scene_label(period)

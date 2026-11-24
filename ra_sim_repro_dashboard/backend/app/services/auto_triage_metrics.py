@@ -16,50 +16,38 @@ import re
 
 from sqlalchemy import func, select
 
+from app import database
 from app.config import DATA_DIR
+from app.domain.hashing import audit_hash, digest
+from app.domain.labels import (
+    INPUT_FIELDS,
+    KNOWN_RESULTS,
+    LABEL_FIELDS,
+    QUERY_FIELDS,
+    RAW_RESULTS,
+    SCENE_FIELDS,
+    business_label,
+    physical_fields as _physical,
+)
+from app.domain.metrics import EXCLUDED_RESULTS, GOOD_RESULTS, ratio
 from app.models import ReleaseIssueSnapshot, ReleaseSimulationBatch, ReleaseWorkflowState
-from app.services import release_workflow as workflow
-from app.services.label_recovery import INPUT_FIELDS, SCENE_FIELDS
-from app.services.release_cycle import digest
-from app.services.release_metrics import GOOD_RESULTS, EXCLUDED_RESULTS, ratio
-from app.services.result_publication import audit_hash, publication
-from app.services import auto_triage_warehouse as warehouse
+from app.repositories import release_repo
+from app.services import (
+    auto_triage_warehouse as warehouse,
+    evaluation_samples,
+    release_source,
+    release_workflow as workflow,
+)
+from app.services.publication_core import publication
+from app.services.read_views import read_memo
 
 BASIS = "auto_triage_sql_v2"
-LABEL_FIELDS = ("ra_stuck_auto_result", "ra_result")
-QUERY_FIELDS = (
-    "issue_id",
-    *INPUT_FIELDS,
-    "issue_topic",
-    "ra_merge_result",
-    *LABEL_FIELDS,
-    "is_deleted",
-)
-RAW_RESULTS = {
-    0: "未填写",
-    1: "成功",
-    2: "失败",
-    3: "限制使用",
-    4: "无需协助",
-    5: "误触发",
-    6: "未接起",
-}
-KNOWN_RESULTS = GOOD_RESULTS | EXCLUDED_RESULTS | {"误触发", "正确触发"}
 RELEASE = re.compile(r"gen4-release-\d{8}")
 STALE_SECONDS = 30 * 60
 
 
 def now_iso():
     return datetime.now(timezone.utc).isoformat()
-
-
-def business_label(value):
-    """Map only the original RA enum, without rewriting model/warehouse labels."""
-    if value is None or isinstance(value, str) and value in KNOWN_RESULTS:
-        return value
-    if type(value) is int or isinstance(value, str) and value.isdecimal():
-        return RAW_RESULTS.get(int(value), str(value))
-    return str(value)
 
 
 def resolve_label(row):
@@ -91,44 +79,8 @@ def cohort(ra_type, label):
     return None
 
 
-def _physical(row):
-    result = {key: row.get(key) for key in INPUT_FIELDS}
-    for key in ("ra_type", "issue_time", "ra_start_timestamp", "trip_start_time", "trip_end_time"):
-        value = result[key]
-        if isinstance(value, str) and value.isdecimal():
-            result[key] = int(value)
-    return result
-
-
 def source_identity(payload):
-    return digest(
-        {
-            "period": {
-                k: payload["period"].get(k)
-                for k in ("release", "case_start", "case_end_exclusive", "binary_id")
-            },
-            "issues": sorted(
-                (
-                    {
-                        "issue_id": str(i["issue_id"]),
-                        **_physical(i),
-                        "user_exclusion": i.get("evaluation_exclusion")
-                        if (i.get("evaluation_exclusion") or {}).get("approved_by") == "user"
-                        else None,
-                    }
-                    for i in payload["issues"]
-                ),
-                key=lambda i: i["issue_id"],
-            ),
-            "scenarios": sorted(
-                (
-                    {k: s.get(k) for k in ("scenario_id", *SCENE_FIELDS)}
-                    for s in payload["scenarios"]
-                ),
-                key=lambda s: str(s["scenario_id"]),
-            ),
-        }
-    )
+    return release_repo.source_identity(payload)
 
 
 def _summary(rows, label_key):
@@ -339,14 +291,12 @@ def project(payload, labels, results, *, incompatible_scenes=()):
 
 
 def fetch_labels(issue_ids):
-    from app.services.release_source import signed_query, trail_credentials
-
-    app_id, token = trail_credentials()
+    app_id, token = release_source.trail_credentials()
     base = os.getenv("TRAIL_ISSUE_BASE_URL", "http://10.88.128.83").rstrip("/")
     result = {}
     for offset in range(0, len(issue_ids), 200):
         ids = issue_ids[offset : offset + 200]
-        rows = signed_query(
+        rows = release_source.signed_query(
             base + "/paladin/issue/pool/query_by_issue_id_list/",
             {"source_id": 1, "issue_id_list": ids, "select_field_list": list(QUERY_FIELDS)},
             app_id,
@@ -375,8 +325,6 @@ def _snapshot(db, release):
 
 
 def _base(db, release):
-    from app.services.read_views import read_memo
-
     def load():
         for batch in db.scalars(
             select(ReleaseSimulationBatch)
@@ -655,8 +603,6 @@ def recalculate(
     inventory_identity = source_identity(snapshot.payload)
     pointer = workflow.get_state(db, view_key)
     prior = workflow.get_state(db, pointer.get("label_key", "at_labels:none"))
-    from app.services import evaluation_samples
-
     if refresh_labels:
         dashboard = (warehouse_fetcher or warehouse.fetch)(scope)
         if dashboard["scope"] != scope:
@@ -986,11 +932,9 @@ def _lock_path(release, scope):
 
 
 def process_refresh(release, date_start=None, date_end=None):
-    from app.database import SessionLocal
-
     if not RELEASE.fullmatch(release):
         raise ValueError("unknown_release")
-    with SessionLocal() as db:
+    with database.SessionLocal() as db:
         _, _, scope, _, refresh_key = view_context(db, release, date_start, date_end)
     with _lock_path(release, scope).open("a") as stream:
         try:
@@ -998,7 +942,7 @@ def process_refresh(release, date_start=None, date_end=None):
         except BlockingIOError:
             return
         while True:
-            with SessionLocal() as db:
+            with database.SessionLocal() as db:
                 state = workflow.get_state(db, refresh_key)
                 if state.get("status") != "queued":
                     return

@@ -1,15 +1,17 @@
 """Explain recall changes on paired, covered Issues without changing metrics."""
 
-from app.services import metric_profiles as profiles
+from app.domain import metrics as domain_metrics
 
 
 def transition(row, config):
     if row.get("result_status") != "reused" or type(row.get("sim_triggered")) is not bool:
         return None
-    source = profiles.membership(config, row["ra_type"], row["auto_label"])
+    source = domain_metrics.membership(config, row["ra_type"], row["auto_label"])
     if not (source["precision_denominator"] or source["recall_denominator"]):
         return None
-    simulated = profiles.membership(config, 2 if row["sim_triggered"] else 3, row["auto_label"])
+    simulated = domain_metrics.membership(
+        config, 2 if row["sim_triggered"] else 3, row["auto_label"]
+    )
     delta = simulated["recall_numerator"] - source["recall_numerator"]
     return "recall_gain" if delta > 0 else "recall_loss" if delta < 0 else None
 
@@ -21,8 +23,8 @@ def compare(rows, config):
     for row in rows:
         if row.get("result_status") != "reused" or type(row.get("sim_triggered")) is not bool:
             continue
-        road = profiles.membership(config, row["ra_type"], row["auto_label"])
-        sim = profiles.membership(config, 2 if row["sim_triggered"] else 3, row["auto_label"])
+        road = domain_metrics.membership(config, row["ra_type"], row["auto_label"])
+        sim = domain_metrics.membership(config, 2 if row["sim_triggered"] else 3, row["auto_label"])
         # Match the existing evaluation population, including custom profiles.
         if not (road["precision_denominator"] or road["recall_denominator"]):
             continue

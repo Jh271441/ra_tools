@@ -5,7 +5,12 @@ import pytest
 from sqlalchemy import select
 
 from app.models import ReleaseIssueSnapshot, ReleaseSimulationBatch
-from app.services import label_cycle, label_recovery, release_workflow as w
+from app.services import (
+    label_cycle,
+    label_recovery,
+    release_workflow as w,
+    workflow_orchestrator as orchestrator,
+)
 from app.services.result_publication import (
     effective_publication,
     publication,
@@ -61,7 +66,7 @@ def labelled(db, config, monkeypatch):
     plan = w.make_plan(db, config)
     base = w.queue_plan(db, plan["fingerprint"], config)
     w.execute_batch(db, base, config)
-    w.poll_batches(db, config)
+    orchestrator.poll_batches(db, config)
     assert publication(base)
     source = next(
         s.payload
@@ -105,7 +110,7 @@ def test_incremental_label_recovery_updates_metrics_and_resumes_without_duplicat
     assert child.payload["template_job_id"] == base.payload["job_id"]
     label_cycle.refresh_release(db, config, base, now=due + timedelta(minutes=1), fetcher=fetcher)
     assert calls.count("submit") == 2
-    w.poll_batches(db, config)
+    orchestrator.poll_batches(db, config)
     assert child.status == "complete"
     result = label_cycle.refresh_release(
         db, config, base, now=due + timedelta(hours=1), fetcher=fetcher
@@ -179,7 +184,7 @@ def test_legacy_runtime_is_audited_once_and_runtime_drift_cannot_merge(
     reconcile_publications(db, config)
     original = deepcopy(base.payload)
     value, due, fetcher = start(db, config, labelled)
-    w.poll_batches(db, config)
+    orchestrator.poll_batches(db, config)
     child = db.get(ReleaseSimulationBatch, value["recovery"]["fingerprint"])
     child.payload = {
         **child.payload,
@@ -202,7 +207,7 @@ def test_unknown_gt_during_recovery_and_manual_queue_cannot_launch(db, config, l
     db.commit()
     w.put_state(db, "settings", {"mode": "manual"})
     before = calls.count("submit")
-    w.execute_batch(db, child, config)
+    orchestrator.execute_batch(db, child, config)
     assert child.status == "queued" and calls.count("submit") == before
     w.put_state(db, "settings", {"mode": "auto"})
     rows[0]["ra_merge_result"] = "unknown"
@@ -212,7 +217,7 @@ def test_unknown_gt_during_recovery_and_manual_queue_cannot_launch(db, config, l
     assert result["reason"] == "unknown_labels" and calls.count("submit") == before
     w.put_state(db, "release_observation:" + base.release, {"issues": rows})
     with pytest.raises(ValueError, match="unknown_labels"):
-        w.execute_batch(db, child, config)
+        orchestrator.execute_batch(db, child, config)
     assert calls.count("submit") == before
 
 
@@ -223,7 +228,7 @@ def test_label_revision_keeps_regular_backfill_and_tracks_later_results(
 
     base, rows, scenes, receipt, sync, calls = running
     monkeypatch.setattr(w, "fetch_scenarios", lambda period: deepcopy(scenes))
-    w.poll_batches(db, config)
+    orchestrator.poll_batches(db, config)
     original = deepcopy(base.payload)
     scenes.append(
         {"issue_id": "0", "scenario_id": "900", "scenario_labels": scene_labels("positive_auto")}
@@ -231,7 +236,7 @@ def test_label_revision_keeps_regular_backfill_and_tracks_later_results(
     receipt["failures"] = [f for f in receipt["failures"] if f["issue_id"] != "0"]
     now = datetime.now(timezone.utc)
     release_backfill.refresh_release(db, config, base, now=now)
-    w.poll_batches(db, config)
+    orchestrator.poll_batches(db, config)
     release_backfill.refresh_release(db, config, base, now=now + timedelta(minutes=1))
     assert effective_publication(db, base)["eligible"] == 198
 
@@ -254,7 +259,7 @@ def test_label_revision_keeps_regular_backfill_and_tracks_later_results(
     )
     receipt["failures"] = [f for f in receipt["failures"] if f["issue_id"] != "1"]
     release_backfill.refresh_release(db, config, base, now=due + timedelta(minutes=2))
-    w.poll_batches(db, config)
+    orchestrator.poll_batches(db, config)
     release_backfill.refresh_release(db, config, base, now=due + timedelta(minutes=3))
     label_cycle.refresh_release(db, config, base, now=due + timedelta(minutes=4), fetcher=fetcher)
     metrics = effective_publication(db, base)
@@ -312,7 +317,7 @@ def test_applied_labels_reach_issue_details_with_audited_job_and_pagination(
         return value
 
     monkeypatch.setattr(w, "driver_call", untriggered_child)
-    w.poll_batches(db, config)
+    orchestrator.poll_batches(db, config)
     label_cycle.refresh_release(db, config, base, now=due + timedelta(hours=1), fetcher=fetcher)
     monkeypatch.setattr(w, "effective_config", lambda _: config)
     w.put_state(
@@ -330,7 +335,7 @@ def test_applied_labels_reach_issue_details_with_audited_job_and_pagination(
         {"release": base.release, "population_changed_after_submission": True},
     )
     # The public list previously routed every applied GT revision to "collecting".
-    result = w.list_issues(db, base.release, query="new")
+    result = orchestrator.list_issues(db, base.release, query="new")
     assert result["status"] == "ready" and result["total"] == 1
     assert result["items"][0]["scenario_id"] == "900"
     assert result["items"][0]["job_id"] == 102
@@ -338,28 +343,34 @@ def test_applied_labels_reach_issue_details_with_audited_job_and_pagination(
     assert result["items"][0]["sim_triggered"] is False
     old = next(
         row
-        for row in w.list_issues(db, base.release, query="误触发", page_size=200)["items"]
+        for row in orchestrator.list_issues(db, base.release, query="误触发", page_size=200)[
+            "items"
+        ]
         if row["issue_id"] == "0"
     )
     assert old["source_result"] == "误触发" and old["precision_label"] == "FP"
     assert old["job_id"] == 101 and old["simulation_status"] == "result_ready"
-    assert w.list_issues(db, base.release, page=2, page_size=10)["total"] == len(rows)
-    assert len(w.list_issues(db, base.release, page=2, page_size=10)["items"]) == 10
-    assert w.list_issues(db, base.release, label="fabricated")["total"] == 0
+    assert orchestrator.list_issues(db, base.release, page=2, page_size=10)["total"] == len(rows)
+    assert len(orchestrator.list_issues(db, base.release, page=2, page_size=10)["items"]) == 10
+    assert orchestrator.list_issues(db, base.release, label="fabricated")["total"] == 0
     before = len(calls)
-    assert w.list_issues(db, base.release, query="900")["total"] == 1
+    assert orchestrator.list_issues(db, base.release, query="900")["total"] == 1
     assert len(calls) == before  # A detail GET must never call the driver/upstream.
     # A newer unapplied edit or changed physical input must not reuse stale labels.
     later = deepcopy(rows)
     later[-1]["ra_merge_result"] = "误触发"
     w.put_state(db, "release_observation:" + base.release, {"issues": later})
-    assert w.list_issues(db, base.release, query="new")["items"][0]["sim_triggered"] is None
+    assert (
+        orchestrator.list_issues(db, base.release, query="new")["items"][0]["sim_triggered"] is None
+    )
     later = deepcopy(rows)
     later[-1]["trip_id"] = "changed"
     w.put_state(db, "release_observation:" + base.release, {"issues": later})
-    assert w.list_issues(db, base.release, query="new")["items"][0]["sim_triggered"] is None
+    assert (
+        orchestrator.list_issues(db, base.release, query="new")["items"][0]["sim_triggered"] is None
+    )
     w.put_state(db, "release_observation:" + base.release, {"issues": deepcopy(rows)})
     child = db.get(ReleaseSimulationBatch, state["recovery"]["fingerprint"])
     child.payload = {**child.payload, "results": {}}
     db.commit()
-    assert w.list_issues(db, base.release, query="new")["status"] == "collecting"
+    assert orchestrator.list_issues(db, base.release, query="new")["status"] == "collecting"

@@ -7,9 +7,25 @@ from sqlalchemy import select
 from app.config import load_versions_config, config_hash
 from app.database import get_db
 from app.models import ReleaseIssueSnapshot, Version
+from app.schemas import (
+    EvaluationActivateResponse,
+    EvaluationBoardResponse,
+    EvaluationComparisonResponse,
+    EvaluationCronResponse,
+    EvaluationIssuesPageResponse,
+    EvaluationPreviewResponse,
+    EvaluationProfileCatalogueResponse,
+    EvaluationProfileResponse,
+    EvaluationRunResponse,
+    EvaluationScenarioLabelSummaryResponse,
+    EvaluationScenarioLabelsResponse,
+    EvaluationStartResponse,
+    VersionsResponse,
+)
 from app.services import (
-    metric_profiles as profiles,
+    evaluation_label_summary,
     evaluation_pipeline as pipeline,
+    metric_profiles as profiles,
     scenario_label_sets,
 )
 from app.services.read_views import read_view
@@ -58,12 +74,12 @@ class Cron(Context):
     enabled: bool
 
 
-@router.get("/profiles")
+@router.get("/profiles", response_model=EvaluationProfileCatalogueResponse)
 def catalogue(db: Session = Depends(get_db)):
     return profiles.catalogue(db)
 
 
-@router.get("/versions")
+@router.get("/versions", response_model=VersionsResponse)
 def versions(db: Session = Depends(get_db)):
     """Navigation metadata only; no ordinary KPI calculation or write-on-read."""
 
@@ -117,22 +133,22 @@ def versions(db: Session = Depends(get_db)):
     return read_view(db, "evaluation-navigation-versions", load, max_age=30)
 
 
-@router.post("/profiles/drafts", status_code=201)
+@router.post("/profiles/drafts", status_code=201, response_model=EvaluationProfileResponse)
 def draft(body: Draft, db: Session = Depends(get_db)):
     return guarded(profiles.draft, db, **body.model_dump())
 
 
-@router.post("/profiles/{version}/preview")
+@router.post("/profiles/{version}/preview", response_model=EvaluationPreviewResponse)
 def preview(version: str, body: Context, db: Session = Depends(get_db)):
     return guarded(pipeline.preview, db, version, **body.model_dump())
 
 
-@router.post("/profiles/{version}/publish")
+@router.post("/profiles/{version}/publish", response_model=EvaluationProfileResponse)
 def publish(version: str, body: Publish, db: Session = Depends(get_db)):
     return guarded(profiles.publish, db, version, body.preview_hash, activate=body.activate)
 
 
-@router.post("/profiles/{version}/activate")
+@router.post("/profiles/{version}/activate", response_model=EvaluationActivateResponse)
 def activate(version: str, body: Activate, db: Session = Depends(get_db)):
     return guarded(
         profiles.activate,
@@ -143,7 +159,7 @@ def activate(version: str, body: Activate, db: Session = Depends(get_db)):
     )
 
 
-@router.get("/board")
+@router.get("/board", response_model=EvaluationBoardResponse)
 def board(
     ctx: Context = Depends(),
     view: Literal["full", "metrics"] = "full",
@@ -165,7 +181,7 @@ def board(
     )
 
 
-@router.get("/comparison")
+@router.get("/comparison", response_model=EvaluationComparisonResponse)
 def comparison(
     profile_id: str | None = None,
     date_start: str | None = None,
@@ -181,7 +197,7 @@ def comparison(
     )
 
 
-@router.get("/issues")
+@router.get("/issues", response_model=EvaluationIssuesPageResponse)
 def issues(
     ctx: Context = Depends(),
     page: int = Query(1, ge=1),
@@ -216,7 +232,7 @@ def issues(
     )
 
 
-@router.post("/runs", status_code=202)
+@router.post("/runs", status_code=202, response_model=EvaluationRunResponse)
 def refresh(body: Refresh, tasks: BackgroundTasks, db: Session = Depends(get_db)):
     value = guarded(pipeline.queue, db, **body.model_dump())
     if os.getenv("EVALUATION_WORKER_RUNNER", "api") == "api":
@@ -224,7 +240,7 @@ def refresh(body: Refresh, tasks: BackgroundTasks, db: Session = Depends(get_db)
     return value
 
 
-@router.post("/plans/{identifier}/start", status_code=202)
+@router.post("/plans/{identifier}/start", status_code=202, response_model=EvaluationStartResponse)
 def start(identifier: str, tasks: BackgroundTasks, db: Session = Depends(get_db)):
     value = guarded(pipeline.start, db, identifier)
     if os.getenv("EVALUATION_WORKER_RUNNER", "api") == "api":
@@ -232,12 +248,12 @@ def start(identifier: str, tasks: BackgroundTasks, db: Session = Depends(get_db)
     return value
 
 
-@router.put("/cron")
+@router.put("/cron", response_model=EvaluationCronResponse)
 def cron(body: Cron, db: Session = Depends(get_db)):
     return guarded(pipeline.set_cron, db, **body.model_dump())
 
 
-@router.get("/scenario-labels")
+@router.get("/scenario-labels", response_model=EvaluationScenarioLabelsResponse)
 def scenario_labels(
     issue_id: str = Query(min_length=1, max_length=100),
     ctx: Context = Depends(),
@@ -259,12 +275,10 @@ def scenario_labels(
     return guarded(read)
 
 
-@router.get("/scenario-label-summary")
+@router.get("/scenario-label-summary", response_model=EvaluationScenarioLabelSummaryResponse)
 def scenario_label_summary(
     ctx: Context = Depends(),
     revision: str = Query(min_length=1, max_length=100),
     db: Session = Depends(get_db),
 ):
-    from app.services import evaluation_label_summary
-
     return guarded(evaluation_label_summary.read, db, ctx.model_dump(), revision)

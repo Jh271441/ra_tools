@@ -1,11 +1,29 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel
-from typing import Literal
 from sqlalchemy.orm import Session
+
 from app.database import get_db
-from app.services import release_workflow as workflow
-from app.services import simulation_board
-from app.services.read_views import read_view, workflow_status
+from app.schemas import (
+    CollectionInventoryResponse,
+    ScenarioLabelGroupsResponse,
+    SimulationBoardResponse,
+    WorkflowBatchReceiptResponse,
+    WorkflowIssuesPageResponse,
+    WorkflowPlanResponse,
+    WorkflowResumeResponse,
+    WorkflowStatusResponse,
+    WorkflowSyncResponse,
+)
+from app.services import (
+    release_inventory,
+    release_label_groups,
+    release_resume,
+    release_workflow as workflow,
+    simulation_board,
+    workflow_orchestrator as orchestrator,
+)
+from app.services.read_views import read_view
+from app.services.release_presentation import workflow_status
 
 router = APIRouter(prefix="/api/dashboard/workflow")
 
@@ -30,12 +48,12 @@ def guarded(fn, *args):
         raise HTTPException(409, str(exc)) from exc
 
 
-@router.get("")
+@router.get("", response_model=WorkflowStatusResponse)
 def status(db: Session = Depends(get_db)):
     return workflow_status(db)
 
 
-@router.get("/issues")
+@router.get("/issues", response_model=WorkflowIssuesPageResponse)
 def issues(
     release: str = "@current",
     page: int = Query(1, ge=1),
@@ -48,30 +66,30 @@ def issues(
     return read_view(
         db,
         ("source-issues", release, page, page_size, query, label, view),
-        lambda: guarded(workflow.list_issues, db, release, page, page_size, query, label, view),
+        lambda: guarded(orchestrator.list_issues, db, release, page, page_size, query, label, view),
         max_age=10,
     )
 
 
-@router.get("/scenario-label-groups")
+@router.get("/scenario-label-groups", response_model=ScenarioLabelGroupsResponse)
 def scenario_label_groups(
     release: str = Query(pattern=r"^gen4-release-[0-9]{8}$"), db: Session = Depends(get_db)
 ):
-    from app.services.release_label_groups import for_release
-
     return read_view(
-        db, ("scenario-label-groups", release), lambda: guarded(for_release, db, release)
+        db,
+        ("scenario-label-groups", release),
+        lambda: guarded(release_label_groups.for_release, db, release),
     )
 
 
-@router.get("/versions")
+@router.get("/versions", response_model=CollectionInventoryResponse)
 def collection_versions(db: Session = Depends(get_db)):
-    from app.services.release_inventory import inventory
+    return read_view(
+        db, "collection-inventory", lambda: release_inventory.inventory(db), max_age=10
+    )
 
-    return read_view(db, "collection-inventory", lambda: inventory(db), max_age=10)
 
-
-@router.get("/board")
+@router.get("/board", response_model=SimulationBoardResponse)
 def board(
     tasks: BackgroundTasks,
     release: str = "@current",
@@ -95,27 +113,27 @@ def board(
     return value
 
 
-@router.post("/sync", status_code=202)
+@router.post("/sync", status_code=202, response_model=WorkflowSyncResponse)
 def sync(tasks: BackgroundTasks):
-    tasks.add_task(workflow.tick)
+    tasks.add_task(orchestrator.tick)
     return {"status": "requested"}
 
 
-@router.put("/mode")
+@router.put("/mode", response_model=WorkflowStatusResponse)
 def mode(payload: Mode, db: Session = Depends(get_db)):
-    guarded(workflow.set_mode, db, payload.mode)
-    return workflow.status(db)
+    guarded(orchestrator.set_mode, db, payload.mode)
+    return orchestrator.status(db)
 
 
-@router.get("/plan")
+@router.get("/plan", response_model=WorkflowPlanResponse)
 def plan(db: Session = Depends(get_db)):
     return guarded(workflow.make_plan, db)
 
 
-@router.post("/submit", status_code=202)
+@router.post("/submit", status_code=202, response_model=WorkflowBatchReceiptResponse)
 def submit(payload: Submit, tasks: BackgroundTasks, db: Session = Depends(get_db)):
     batch = guarded(workflow.queue_plan, db, payload.fingerprint)
-    tasks.add_task(workflow.process_queued)
+    tasks.add_task(orchestrator.process_queued)
     return {
         "fingerprint": batch.fingerprint,
         "status": batch.status,
@@ -123,10 +141,10 @@ def submit(payload: Submit, tasks: BackgroundTasks, db: Session = Depends(get_db
     }
 
 
-@router.post("/attach", status_code=202)
+@router.post("/attach", status_code=202, response_model=WorkflowBatchReceiptResponse)
 def attach(payload: Attach, tasks: BackgroundTasks, db: Session = Depends(get_db)):
     batch = guarded(workflow.attach_job, db, payload.fingerprint, payload.job_id)
-    tasks.add_task(workflow.process_queued)
+    tasks.add_task(orchestrator.process_queued)
     return {
         "fingerprint": batch.fingerprint,
         "status": batch.status,
@@ -139,95 +157,8 @@ class Resume(BaseModel):
     fingerprint: str | None = None
 
 
-@router.post("/resume", status_code=202)
+@router.post("/resume", status_code=202, response_model=WorkflowResumeResponse)
 def resume(payload: Resume, tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    from app.services.release_resume import request
-
-    value = guarded(request, db, payload.release, payload.fingerprint)
-    tasks.add_task(workflow.process_queued)
-    return value
-
-
-class AutoTriageRefresh(BaseModel):
-    release: str
-    refresh_labels: bool = False
-    date_start: str | None = None
-    date_end: str | None = None
-
-
-@router.get("/auto-triage")
-def auto_triage_report(
-    release: str = "@current",
-    date_start: str | None = None,
-    date_end: str | None = None,
-    db: Session = Depends(get_db),
-):
-    from app.services import auto_triage_metrics as metrics
-
-    return {
-        **guarded(metrics.report, db, release, date_start, date_end),
-        "versions": metrics.versions(db),
-    }
-
-
-@router.get("/auto-triage/issues")
-def auto_triage_issues(
-    release: str = "@current",
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=200),
-    query: str = Query("", max_length=200),
-    coverage: Literal["", "gap", "reused"] = "",
-    changed_only: bool = False,
-    date_start: str | None = None,
-    date_end: str | None = None,
-    db: Session = Depends(get_db),
-):
-    from app.services import auto_triage_metrics as metrics
-
-    return guarded(
-        metrics.issue_page,
-        db,
-        release,
-        page,
-        page_size,
-        query,
-        coverage,
-        changed_only,
-        date_start,
-        date_end,
-    )
-
-
-@router.get("/auto-triage/gap-plan")
-def auto_triage_gap_plan(
-    release: str = "@current",
-    date_start: str | None = None,
-    date_end: str | None = None,
-    db: Session = Depends(get_db),
-):
-    from app.services import auto_triage_metrics as metrics
-
-    return guarded(metrics.gap_plan, db, release, date_start, date_end)
-
-
-@router.post("/auto-triage/recalculate", status_code=202)
-def auto_triage_recalculate(
-    payload: AutoTriageRefresh, tasks: BackgroundTasks, db: Session = Depends(get_db)
-):
-    from app.services import auto_triage_metrics as metrics
-
-    value = guarded(
-        metrics.queue_refresh,
-        db,
-        payload.release,
-        payload.refresh_labels,
-        payload.date_start,
-        payload.date_end,
-    )
-    tasks.add_task(
-        metrics.process_refresh,
-        value["release"],
-        value["scope"]["date_start"],
-        value["scope"]["date_end"],
-    )
+    value = guarded(release_resume.request, db, payload.release, payload.fingerprint)
+    tasks.add_task(orchestrator.process_queued)
     return value

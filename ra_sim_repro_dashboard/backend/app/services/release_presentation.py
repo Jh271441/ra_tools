@@ -1,13 +1,18 @@
 """Business-cycle KPIs and completed history, independent of legacy snapshots."""
 
 from __future__ import annotations
+
 from sqlalchemy import select
+
+from app.domain.cycle import resolve_current
+from app.domain.metrics import summarize_population
 from app.models import ReleaseIssueSnapshot, ReleaseSimulationBatch
-from app.services.release_workflow import status, effective_config, population_identity
-from app.services.release_metrics import summarize_population
-from app.services.result_publication import publication, effective_publication, published_batch
-from app.services.business_population import scope_for_batch, historical_scope
-from app.services.release_cycle import resolve_current
+from app.services.business_population import historical_scope, scope_for_batch
+from app.services.ordinary_evaluation import history_kpis as ordinary_kpis
+from app.services.read_views import read_view
+from app.services.release_workflow import effective_config, population_identity
+from app.services.result_publication import effective_publication, published_batch
+from app.services.workflow_orchestrator import status
 
 
 def pending_kpi(release, scope, job_id=None):
@@ -230,9 +235,19 @@ def history_kpis(db):
                 items.append(item)
             else:
                 items.append(pending_kpi(release, scope, approved.payload.get("job_id")))
-    from app.services.ordinary_evaluation import history_kpis as ordinary_kpis
-
     for item in ordinary_kpis(db):
         items = [existing for existing in items if existing["version_key"] != item["version_key"]]
         items.append(item)
     return sorted(items, key=lambda item: item["version_key"])
+
+
+def workflow_status(db):
+    return read_view(db, "workflow-status", lambda: status(db))
+
+
+def business_context(db):
+    return read_view(db, "business-context", lambda: context(db, workflow_status(db)))
+
+
+def cached_history_kpis(db):
+    return read_view(db, "history-kpis", lambda: history_kpis(db))

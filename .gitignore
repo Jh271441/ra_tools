@@ -13,6 +13,7 @@ data/
 !ra_sim_repro_dashboard/frontend/package-lock.json
 !ra_sim_repro_dashboard/frontend/tsconfig.json
 !ra_sim_repro_dashboard/data/mock/*.json
+!ra_sim_repro_dashboard/config/shuyi-report.json
 model_release_pipeline/.runs/
 model_release_pipeline/web_frontend/node_modules/
 model_release_pipeline/web_frontend/dist/

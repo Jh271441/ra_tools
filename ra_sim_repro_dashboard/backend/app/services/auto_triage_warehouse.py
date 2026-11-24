@@ -12,40 +12,26 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import stat
 import time
 
 import httpx
 
-REPORT_ID = 288969
-SLICE_ID = 13096015
-REVIEW_SLICE_ID = 11214491
-SOURCE = "table_1726127226310"
-PROJECT_ID = 22760
-ENDPOINT = "https://bigdata.xiaojukeji.com/newReport/report/v2/display/viewReportData"
+from app.domain.metrics import DEFAULT_FILTERS, REVIEW_CONFIG
+from app.infra.settings import DATA_DIR, load_shuyi_report_config
+
+_SHUYI = load_shuyi_report_config()
+REPORT_ID = _SHUYI["report_id"]
+SLICE_ID = _SHUYI["slice_id"]
+REVIEW_SLICE_ID = _SHUYI["review_slice_id"]
+SOURCE = _SHUYI["source"]
+PROJECT_ID = _SHUYI["project_id"]
+ENDPOINT = _SHUYI["endpoint"]
 GOOD = {"成功", "失败", "无需协助", "限制使用"}
 EXCLUDED = {"out_of_scope", "未接起", "未填写"}
-FIELDS = {
-    "issue_id": ("datae_column_cdf8654c9e", 2),
-    "big_version": ("datae_column_3aa42d9e30", 2),
-    "create_date": ("datae_column_135ffc9af2", 3),
-    "ra_trigger_type": ("datae_column_9fb276f760", 2),
-    "merged_ra_result": ("datae_column_ddfbf7ac5c", 2),
-    "merged_ra_auto_result": ("datae_column_263be8f49e", 2),
-    "trip_odd": ("datae_column_a48e91a041", 2),
-    "trip_category_name": ("datae_column_7d8eb1b28b", 2),
-    "version_category": ("datae_column_bdd6873ef3", 2),
-    "is_deleted": ("datae_column_67a0822312", 1),
-}
-REVIEW_FIELDS = {
-    "platform_gen": ("datae_column_3da008e2eb", 2),
-    "merged_ra_rd_result": ("datae_column_948aead35f", 2),
-}
-RAW_FIELDS = {
-    "ra_review_result_new": ("datae_column_b7fec7c307", 2),  # dataset te_ra_result
-    "ra_rd_review_result": ("datae_column_9ffadb0441", 2),
-    "ra_stuck_auto_result": ("datae_column_a608bfc321", 2),
-    "ra_original_result": ("datae_column_b66ccf16a3", 2),  # dataset ops_ra_result
-}
+FIELDS = _SHUYI["fields"]
+REVIEW_FIELDS = _SHUYI["review_fields"]
+RAW_FIELDS = _SHUYI["raw_fields"]
 COLUMN_FIELDS = {**FIELDS, **REVIEW_FIELDS, **RAW_FIELDS}
 LABEL_PAIRS = (("auto", "merged_ra_auto_result"), ("baseline", "merged_ra_result"))
 
@@ -146,8 +132,6 @@ def count_metric(name, expression):
 
 
 def query(scope, *, rows=False, page=1, population_filters=None, include_review=False):
-    from app.services.metric_profiles import DEFAULT_FILTERS, REVIEW_CONFIG
-
     selected = population_filters or (
         REVIEW_CONFIG["population"]["filters"] if include_review else DEFAULT_FILTERS
     )
@@ -245,9 +229,6 @@ def query(scope, *, rows=False, page=1, population_filters=None, include_review=
 
 class Client:
     def __init__(self):
-        from app.config import DATA_DIR
-        import stat
-
         default_state = DATA_DIR / "private" / "shuyi_storage_state.json"
         state_path = Path(os.getenv("AUTO_TRIAGE_SHUYI_STORAGE_STATE", str(default_state)))
         try:
@@ -327,8 +308,6 @@ def decode(data, payload):
 
 
 def validate_receipt(receipt):
-    from app.services.metric_profiles import DEFAULT_FILTERS
-
     selected = receipt.get("population_filters") or DEFAULT_FILTERS
     scope, rows, counts = receipt["scope"], receipt["rows"], receipt["counts"]
     pairs = label_pairs(receipt)
@@ -359,8 +338,6 @@ def validate_receipt(receipt):
 
 def fetch(scope, client=None, *, population_filters=None, include_review=False):
     if include_review and population_filters is None:
-        from app.services.metric_profiles import REVIEW_CONFIG
-
         population_filters = deepcopy(REVIEW_CONFIG["population"]["filters"])
     owned = client is None
     client = client or Client()

@@ -8,6 +8,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.config import config_hash, load_versions_config
+from app.database import SessionLocal
 from app.metrics import as_float, classify_result, first_present, normalize_reasons, summarize_rows
 from app.models import (
     DashboardSnapshot,
@@ -81,8 +82,6 @@ def sync_versions_from_config(db: Session, payload: dict[str, Any]) -> list[Vers
 def refresh_dashboard(job_id: str, db: Session | None = None) -> None:
     own_session = db is None
     if db is None:
-        from app.database import SessionLocal
-
         db = SessionLocal()
     try:
         _refresh_dashboard(job_id, db)

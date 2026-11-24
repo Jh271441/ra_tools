@@ -2,12 +2,12 @@
 
 from sqlalchemy import select
 
+from app.domain.hashing import audit_hash
+from app.domain.labels import INPUT_FIELDS, SCENE_FIELDS, activity_identity, same_inputs
+from app.domain.metrics import cohort_for_issue, excluded_issue
 from app.models import ReleaseIssueSnapshot, ReleaseSimulationBatch
 from app.services import release_workflow as w
-from app.services.label_recovery import INPUT_FIELDS, SCENE_FIELDS, same_inputs
-from app.services.release_metrics import cohort_for_issue, excluded_issue
-from app.services.release_watch import activity_identity
-from app.services.result_publication import audit_hash, effective_publication, published_batch
+from app.services.result_publication import effective_publication, published_batch
 
 
 def applied_rows(db, release, observed, *, published=False):

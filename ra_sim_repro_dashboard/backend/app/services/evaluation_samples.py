@@ -9,10 +9,17 @@ but remain subject to the simulation reuse audit in evaluation_pipeline.
 from copy import deepcopy
 from datetime import date, datetime, timezone
 from sqlalchemy import select
+from app.domain.cycle import RELEASE
+from app.domain.hashing import digest
+from app.domain.labels import QUERY_FIELDS, physical_fields
+from app.domain import labels as evaluation_labels, metrics as domain_metrics
+from app.infra.locks import pipeline_lock as lock
 from app.models import ReleaseWorkflowState
-from app.services import auto_triage_warehouse as warehouse, metric_profiles as profiles
-from app.services import evaluation_labels
-from app.services.release_cycle import digest
+from app.repositories import state_store
+from app.services import auto_triage_warehouse as warehouse
+from app.services.evaluation_trail import validate_native
+
+profiles = domain_metrics
 
 SNAPSHOT = "evsample:"
 INDEX = "evsamplescope:"
@@ -68,11 +75,9 @@ def compatible_filters(source, selected):
 
 
 def validate(dashboard, physical):
-    from app.services import auto_triage_metrics as at
-
     try:
         scope = dashboard["scope"]
-        if set(scope) != {"release", "date_start", "date_end"} or not at.RELEASE.fullmatch(
+        if set(scope) != {"release", "date_start", "date_end"} or not RELEASE.fullmatch(
             scope["release"]
         ):
             raise ValueError("sample_scope_invalid")
@@ -100,10 +105,8 @@ def validate(dashboard, physical):
                 if prefix + "_is_null" in row and row[prefix + "_is_null"] != int(value is None):
                     raise ValueError("dashboard_null_projection_missing")
             if dashboard.get("schema_version") in (2, 3):
-                if set(selected) != set(profiles.REVIEW_CONFIG["population"]["filters"]):
+                if set(selected) != set(domain_metrics.REVIEW_CONFIG["population"]["filters"]):
                     raise ValueError("sample_review_filters_incomplete")
-                # Store all four observed sources, even when an earlier source wins.
-                # A later priority edit must never manufacture a missing observation.
                 for field in (
                     evaluation_labels.SOURCE_FIELDS[k] for k in evaluation_labels.CURRENT_PRIORITY
                 ):
@@ -115,7 +118,7 @@ def validate(dashboard, physical):
                         row[field] is None
                     ):
                         raise ValueError("dashboard_null_projection_missing")
-                resolved = profiles.resolution(profiles.REVIEW_CONFIG, row)
+                resolved = domain_metrics.resolution_for_config(domain_metrics.REVIEW_CONFIG, row)
                 if (
                     resolved["status"] not in evaluation_labels.READY
                     or resolved["raw_label"] != row["merged_ra_rd_result"]
@@ -129,13 +132,13 @@ def validate(dashboard, physical):
         for row in dashboard["rows"]:
             iid = row["issue_id"]
             label = physical[iid]
-            if str(label["issue_id"]) != iid or not all(k in label for k in at.QUERY_FIELDS):
+            if str(label["issue_id"]) != iid or not all(k in label for k in QUERY_FIELDS):
                 raise ValueError("label_projection_incomplete")
-            if at._physical(label)["ra_type"] != (2 if row["ra_trigger_type"] == "自触发" else 3):
+            if physical_fields(label)["ra_type"] != (
+                2 if row["ra_trigger_type"] == "自触发" else 3
+            ):
                 raise ValueError("dashboard_trigger_type_changed")
         if dashboard.get("schema_version") == 3:
-            from app.services.evaluation_trail import validate_native
-
             validate_native(dashboard, physical)
     except (KeyError, TypeError, AttributeError):
         raise ValueError("sample_snapshot_invalid") from None
@@ -144,8 +147,6 @@ def validate(dashboard, physical):
 
 def import_snapshot(db, dashboard, physical, *, provenance):
     """Trusted offline entry point. No network. Validate before changing any row."""
-    from app.services.evaluation_pipeline import lock
-
     selected = validate(dashboard, physical)
     dashboard = {
         k: v
@@ -303,8 +304,6 @@ def status(db, scope, population_filters=None):
 
 def migrate(db):
     """One-shot promotion of previously reconciled receipts; never requery upstream."""
-    from app.repositories import state_store
-
     sources = []
     seen_keys = set()
     for rev in state_store.list_revisions(db, include_blobs=True):

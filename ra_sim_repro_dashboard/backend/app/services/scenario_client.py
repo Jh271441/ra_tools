@@ -9,6 +9,10 @@ from typing import Any
 
 import httpx
 
+from app.clients.http_base import (
+    sign_trail_payload as _sign_payload,
+    sign_trail_text as _sign_text,
+)
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -136,15 +140,6 @@ def source_counts_from_index(index: dict[str, dict[str, Any]]) -> dict[str, int]
         if "negative_normal_stop" in groups:
             counts["normal_wait_tn_partial"] += 1
     return counts
-
-
-def _sign_payload(payload: dict[str, Any], token: str) -> str:
-    text = json.dumps(payload) + "&token=" + token
-    return hashlib.md5(text.encode("utf-8")).hexdigest()
-
-
-def _sign_text(text: str, token: str) -> str:
-    return hashlib.md5((text + "&token=" + token).encode("utf-8")).hexdigest()
 
 
 def _extract_items(data: dict[str, Any]) -> list[dict[str, Any]]:

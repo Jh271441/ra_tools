@@ -5,7 +5,11 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 from app.database import Base
 from app.models import ReleaseIssueSnapshot
-from app.services import release_workflow as w, release_source as source
+from app.services import (
+    release_source as source,
+    release_workflow as w,
+    workflow_orchestrator as orchestrator,
+)
 from app.services.release_cycle import (
     reference_thursday,
     resolve_current,
@@ -211,7 +215,7 @@ def test_plan_uses_configured_concurrency_and_cancelled_job_allows_replacement(
             "status": "cancelled",
         },
     )
-    w.poll_batches(db, config)
+    orchestrator.poll_batches(db, config)
     assert batch.status == "cancelled"
     config["simulation"]["max_concurrency"] = 1000
     new = w.make_plan(db, config)
@@ -273,13 +277,13 @@ def test_invalid_main_replay_policy_fails_before_queue(db, config, overrides, me
 def test_issue_visible_without_sim_and_manual_separate(db, config, monkeypatch):
     seed(db, config)
     monkeypatch.setattr(w, "load_cycle_config", lambda: config)
-    result = w.list_issues(db)
+    result = orchestrator.list_issues(db)
     assert result["total"] == 1
     assert result["items"][0]["sim_triggered"] is None
     assert result["items"][0]["precision_label"] is None
     assert result["items"][0]["scenario_labels"] == scene_labels("positive_auto") + ["actual-tag"]
-    assert w.list_issues(db, label="synthetic")["total"] == 0
-    assert w.status(db)["manual_population_count"] == 1
+    assert orchestrator.list_issues(db, label="synthetic")["total"] == 0
+    assert orchestrator.status(db)["manual_population_count"] == 1
 
 
 def test_mapping_failure_keeps_issues_blocks_submission(db, config, monkeypatch):
@@ -288,7 +292,7 @@ def test_mapping_failure_keeps_issues_blocks_submission(db, config, monkeypatch)
 
     w.sync_once(db, config, population, fail)
     monkeypatch.setattr(w, "load_cycle_config", lambda: config)
-    assert w.list_issues(db)["items"][0]["simulation_status"] == "pending_mapping"
+    assert orchestrator.list_issues(db)["items"][0]["simulation_status"] == "pending_mapping"
     with pytest.raises(ValueError, match="场景映射查询失败"):
         w.make_plan(db, config)
 
@@ -297,7 +301,7 @@ def test_changed_contract_hides_stale_population(db, config, monkeypatch):
     seed(db, config)
     config["contract"]["reference"] = "new contract"
     monkeypatch.setattr(w, "load_cycle_config", lambda: config)
-    assert w.list_issues(db)["total"] == 0
+    assert orchestrator.list_issues(db)["total"] == 0
 
 
 def test_submit_idempotence_and_stale_plan(db, config, monkeypatch):
@@ -346,9 +350,9 @@ def test_auto_mode_requires_scheduler_and_driver(db, config, monkeypatch):
         w.set_mode(db, "auto")
     monkeypatch.setenv("RELEASE_WORKFLOW_ENABLED", "1")
     w.set_mode(db, "auto")
-    assert w.status(db)["mode"] == "auto"
+    assert orchestrator.status(db)["mode"] == "auto"
     w.set_mode(db, "manual")
-    assert w.status(db)["mode"] == "manual"
+    assert orchestrator.status(db)["mode"] == "manual"
 
 
 def test_partial_upstream_fails(monkeypatch):
@@ -469,11 +473,11 @@ def test_poll_completion_quality_and_manual_tracking(db, config, monkeypatch):
             "results": results,
         },
     )
-    w.poll_batches(db, config)
+    orchestrator.poll_batches(db, config)
     assert batch.status == "complete"
     snapshot = db.scalars(select(ReleaseIssueSnapshot)).first()
-    assert w.metrics_for_snapshot(db, snapshot)["available"] is True
-    assert w.metrics_for_snapshot(db, snapshot)["eligible"] == 2
+    assert orchestrator.metrics_for_snapshot(db, snapshot)["available"] is True
+    assert orchestrator.metrics_for_snapshot(db, snapshot)["eligible"] == 2
 
 
 def test_poll_incomplete_coverage_not_published(db, config, monkeypatch):
@@ -500,11 +504,11 @@ def test_poll_incomplete_coverage_not_published(db, config, monkeypatch):
             "results": {},
         },
     )
-    w.poll_batches(db, config)
+    orchestrator.poll_batches(db, config)
     assert batch.status == "quality_failed"
-    assert not w.metrics_for_snapshot(db, db.scalars(select(ReleaseIssueSnapshot)).first())[
-        "available"
-    ]
+    assert not orchestrator.metrics_for_snapshot(
+        db, db.scalars(select(ReleaseIssueSnapshot)).first()
+    )["available"]
 
 
 def test_multiple_scenarios_do_not_multiply_population():
@@ -858,7 +862,7 @@ def test_terminal_audit_imports_success_or_partial_reference(db, config, monkeyp
             fingerprint=plan["fingerprint"], job_id=99, status="audited", execution_export=export
         ),
     )
-    w.poll_batches(db, config)
+    orchestrator.poll_batches(db, config)
     assert batch.status == ("quality_failed" if failed else "complete")
     evaluation = batch.payload["result_import"]
     assert evaluation["valid_scenario_count"] == 2 - int(failed)
@@ -871,7 +875,9 @@ def test_terminal_audit_imports_success_or_partial_reference(db, config, monkeyp
     else:
         assert batch.payload["publication_decision"]["status"] == "blocked"
     assert (
-        w.metrics_for_snapshot(db, db.scalars(select(ReleaseIssueSnapshot)).first())["available"]
+        orchestrator.metrics_for_snapshot(db, db.scalars(select(ReleaseIssueSnapshot)).first())[
+            "available"
+        ]
         is not failed
     )
 
@@ -896,7 +902,7 @@ def test_legacy_failed_signal_keeps_polling_then_recovers(db, config, monkeypatc
         lambda *_: dict(fingerprint=plan["fingerprint"], job_id=99, status=next(state)),
     )
     for expected in ["verifying", "running", "verifying"]:
-        w.poll_batches(db, config)
+        orchestrator.poll_batches(db, config)
         assert batch.status == expected
 
 
@@ -931,7 +937,7 @@ def test_audit_error_is_visible_and_does_not_freeze_polling(db, config, monkeypa
         )
 
     monkeypatch.setattr(w, "driver_call", call)
-    w.poll_batches(db, config)
+    orchestrator.poll_batches(db, config)
     assert batch.status == "verifying"
     assert batch.payload.get("last_poll_error")
     assert "result_import" not in batch.payload

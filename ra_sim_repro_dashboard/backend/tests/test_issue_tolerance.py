@@ -1,6 +1,6 @@
 from copy import deepcopy
 import pytest
-from ra_api.release_tolerance import POLICY, LEGACY_POLICY, assess, grade, validate_frozen
+from app.domain.coverage import LEGACY_POLICY, POLICY, assess, grade, validate_frozen
 from test_release_workflow import db, config, scene_labels
 from test_result_publication import data
 from app.services import release_workflow as w

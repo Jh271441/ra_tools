@@ -415,11 +415,37 @@ docker compose -f ra_sim_repro_dashboard/docker-compose.yml run --rm --no-deps \
 - 对比 `source_gt.data_source` 是 `scenario_api` 还是 `config_fallback`。
 - 对比 `sim_estimate.data_source` 是 `query_report` 还是 fallback。
 
-## 16. 进一步文档
+## 16. 进一步文档与近期重构说明
 
-- [ARCHITECTURE.md](ARCHITECTURE.md): 完整架构、数据模型、刷新链路、前端模块和扩展计划。
+- [ARCHITECTURE.md](ARCHITECTURE.md): 完整架构、5 层无环 DAG、P0 安全边界、P1 Alembic/CQRS/独立 Worker 持久化、数据模型与 API 契约。
 - [config/versions.example.yaml](config/versions.example.yaml): 新版本配置模板。
-- [docker-compose.yml](docker-compose.yml): 本地完整服务编排。
+- [config/shuyi-report.json](config/shuyi-report.json): 数易报表 / 切片 / 字段外部化配置。
+- [docker-compose.yml](docker-compose.yml): 本地完整服务编排（`backend/Dockerfile` 已移除 `ra_api` 跨仓依赖并内置 Alembic）。
+
+关键运维命令：
+
+```bash
+# 数据库结构迁移与幂等回填（升级前必执行）
+cd ra_sim_repro_dashboard/backend
+alembic upgrade head
+python -m app.migrate_kv_data
+
+# 独立 Worker 入口（配合 *_RUNNER=worker 防止 API 与 Worker 双写）
+python -m app.release_worker
+python -m app.label_worker
+python -m app.evaluation_worker
+```
+
+代码规范与架构门禁检查：
+
+```bash
+cd ra_sim_repro_dashboard/backend
+ruff format --check --config pyproject.toml app tests alembic ../../ops/sim_deploy
+pytest tests/test_architecture_guard.py tests -q
+
+cd ../frontend
+npm run format:check && npm run test:unit && npm run build
+```
 
 ## 独立部署与域名入口
 
