@@ -1,10 +1,13 @@
 """Compress complete page/JSON reads without buffering media or streams."""
 from __future__ import annotations
 
+import asyncio
 import gzip
 
 from starlette.datastructures import Headers, MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
+
+_ASYNC_COMPRESS_THRESHOLD_BYTES = 16 * 1024
 
 
 def _accepts_gzip(value: str) -> bool:
@@ -68,7 +71,12 @@ class TextResponseCompressionMiddleware:
                 ):
                     headers.add_vary_header("Accept-Encoding")
                     if accepts_gzip:
-                        compressed = gzip.compress(body, compresslevel=5, mtime=0)
+                        if len(body) >= _ASYNC_COMPRESS_THRESHOLD_BYTES:
+                            compressed = await asyncio.to_thread(
+                                gzip.compress, body, 5, mtime=0
+                            )
+                        else:
+                            compressed = gzip.compress(body, compresslevel=5, mtime=0)
                         headers["Content-Encoding"] = "gzip"
                         headers["Content-Length"] = str(len(compressed))
                         if "etag" in headers and not headers["etag"].startswith("W/"):

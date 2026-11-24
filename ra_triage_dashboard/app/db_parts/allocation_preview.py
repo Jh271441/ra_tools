@@ -21,9 +21,7 @@ class AllocationPreviewMixin(AllocationProtectionMixin):
         return group_history({**current, "group_eligible_names": {u["username"] for u in current["eligible_members"]}},
                              rows, evidence, roles=self._group_roles(current))
 
-    def _prepare_task_reallocation(self, conn, campaign_id, assignees, reviewers_per_issue,
-                                   overlap_ratio, expected_revision, quota_basis, issued_at, cross_groups=None,
-                                   groups=None, pairing_mode=None):
+    def _load_reallocation_snapshot(self, conn, campaign_id, *, expected_revision, quota_basis):
         current, split, filters, old_rows = self._task_allocation(conn, campaign_id)
         if not current["editable"]:
             raise CampaignReadOnlyError("只有当前有效任务可以修改分配 / Only active tasks can be edited")
@@ -34,6 +32,19 @@ class AllocationPreviewMixin(AllocationProtectionMixin):
         evidence = self._allocation_protection(conn, split, old_rows)
         if not evidence["members"]:
             raise ValueError("任务没有 Case / Task has no Cases")
+        all_roles = (
+            {r["username"]: r["role"] for r in conn.execute("SELECT username,role FROM human_user_roles").fetchall()}
+            if current["role_required"]
+            else None
+        )
+        return current, split, filters, old_rows, evidence, all_roles
+
+    def _compute_task_reallocation(
+        self, current, split, filters, old_rows, evidence,
+        assignees, reviewers_per_issue, overlap_ratio, expected_revision,
+        quota_basis, issued_at, cross_groups=None, groups=None,
+        pairing_mode=None, *, all_roles=None,
+    ):
         if groups is not None:
             groups = normalize_groups(groups, {u["username"] for u in current["eligible_members"]})
             mode = normalize_pairing_mode(current.get("pairing_mode") if pairing_mode is None else pairing_mode)
@@ -71,8 +82,8 @@ class AllocationPreviewMixin(AllocationProtectionMixin):
         templates = old_rows
         if coverage_changed and not evidence["has_evidence"] and groups == []:
             templates = self._plan_task_allocation(
-                conn, config, [m["issue_id"] for m in evidence["members"]],
-                seed=int(split["seed"] or 0), role_required=current["role_required"])
+                None, config, [m["issue_id"] for m in evidence["members"]],
+                seed=int(split["seed"] or 0), role_required=current["role_required"], roles=all_roles)
             old_groups = defaultdict(list)
             new_groups = defaultdict(list)
             for row in old_rows:
@@ -92,8 +103,9 @@ class AllocationPreviewMixin(AllocationProtectionMixin):
         elif any(p["count"] is not None for p in people):
             if evidence["has_evidence"]:
                 raise ValueError("接续任务请使用均分或个人比例 / Use equal shares or personal percentages for tasks with saved work")
-            quota_rows = self._plan_task_allocation(conn, config, [m["issue_id"] for m in evidence["members"]],
-                                                    seed=int(split["seed"] or 0), role_required=current["role_required"])
+            quota_rows = self._plan_task_allocation(
+                None, config, [m["issue_id"] for m in evidence["members"]],
+                seed=int(split["seed"] or 0), role_required=current["role_required"], roles=all_roles)
             weights = {p["name"]: sum(r["assignee"] == p["name"] for r in quota_rows) for p in people}
         else:
             weights = {p["name"]: 1 for p in people}
@@ -160,12 +172,36 @@ class AllocationPreviewMixin(AllocationProtectionMixin):
         ])
         return current, split, filters, old_rows, config, new_rows, preview
 
+    def _prepare_task_reallocation(self, conn, campaign_id, assignees, reviewers_per_issue,
+                                   overlap_ratio, expected_revision, quota_basis, issued_at, cross_groups=None,
+                                   groups=None, pairing_mode=None):
+        current, split, filters, old_rows, evidence, all_roles = self._load_reallocation_snapshot(
+            conn, campaign_id, expected_revision=expected_revision, quota_basis=quota_basis,
+        )
+        return self._compute_task_reallocation(
+            current, split, filters, old_rows, evidence,
+            assignees, reviewers_per_issue, overlap_ratio, expected_revision,
+            quota_basis, issued_at, cross_groups, groups, pairing_mode,
+            all_roles=all_roles,
+        )
+
     def preview_campaign_allocation(self, *, campaign_id, assignees, reviewers_per_issue,
                                     overlap_ratio, expected_revision, quota_basis="remaining", cross_groups=None,
                                     groups=None, pairing_mode=None):
+        """Compute a snapshot-bound preview without holding global write locks.
+
+        Optimistic validation in ``update_campaign_allocation`` re-verifies
+        ``expected_revision`` and the signed ``preview_token`` under write locks
+        before mutating any row.
+        """
         campaign_id = self.resolve_version_campaign(str(campaign_id))
-        with self._write_lock, self.connect() as conn:
-            self._lock_task_work(conn)
-            return self._prepare_task_reallocation(
-                conn, campaign_id, assignees, reviewers_per_issue, overlap_ratio,
-                expected_revision, quota_basis, int(time.time()), cross_groups, groups, pairing_mode)[-1]
+        with self.connect() as conn:
+            current, split, filters, old_rows, evidence, all_roles = self._load_reallocation_snapshot(
+                conn, campaign_id, expected_revision=expected_revision, quota_basis=quota_basis,
+            )
+        return self._compute_task_reallocation(
+            current, split, filters, old_rows, evidence,
+            assignees, reviewers_per_issue, overlap_ratio, expected_revision,
+            quota_basis, int(time.time()), cross_groups, groups, pairing_mode,
+            all_roles=all_roles,
+        )[-1]

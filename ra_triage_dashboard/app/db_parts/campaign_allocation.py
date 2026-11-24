@@ -1,4 +1,6 @@
 """Atomic, audited editing of a task's allocation without changing its evidence."""
+from __future__ import annotations
+
 from collections import Counter, defaultdict
 import time
 from typing import Any
@@ -65,28 +67,27 @@ class DatabaseCampaignAllocationMixin(AllocationPreviewMixin):
     def get_campaign_allocation(self, campaign_id):
         campaign_id = self.resolve_version_campaign(str(campaign_id))
         with self.connect() as conn:
-            self._lock_task_work(conn)
             current, split, _, rows = self._task_allocation(conn, campaign_id)
             evidence = self._allocation_protection(conn, split, rows)
-            groups, owners = self._group_history(current, rows, evidence)
-            case_ids = [m["issue_id"] for m in evidence["members"]]
-            projection = group_projection(groups, owners, evidence["completed"], case_ids=case_ids)
-            progress = self._allocation_progress_summary(rows, evidence, role_required=current["role_required"])
-            if current.get("groups"):
-                progress["active_slots"] = projection["active_slots"]
-                progress["active_completed_slots"] = projection["active_completed_slots"]
-                progress["movable_slots"] = max(
-                    0, projection["active_slots"] - projection["active_completed_slots"] - progress["saved_pending_slots"]
-                )
-            return {
-                **current,
-                **progress,
-                "active_assignment_counts": dict(Counter(name for m in owners.values() for name in m.values())),
-                "groups": groups,
-                "group_rules": group_rules(current["cross_groups"], owners),
-                "group_coverage": projection,
-                "convergence": convergence_summary(case_ids, evidence),
-            }
+        groups, owners = self._group_history(current, rows, evidence)
+        case_ids = [m["issue_id"] for m in evidence["members"]]
+        projection = group_projection(groups, owners, evidence["completed"], case_ids=case_ids)
+        progress = self._allocation_progress_summary(rows, evidence, role_required=current["role_required"])
+        if current.get("groups"):
+            progress["active_slots"] = projection["active_slots"]
+            progress["active_completed_slots"] = projection["active_completed_slots"]
+            progress["movable_slots"] = max(
+                0, projection["active_slots"] - projection["active_completed_slots"] - progress["saved_pending_slots"]
+            )
+        return {
+            **current,
+            **progress,
+            "active_assignment_counts": dict(Counter(name for m in owners.values() for name in m.values())),
+            "groups": groups,
+            "group_rules": group_rules(current["cross_groups"], owners),
+            "group_coverage": projection,
+            "convergence": convergence_summary(case_ids, evidence),
+        }
 
     def _allocation_without_member(self, conn, campaign_id, assignee):
         """Normalize the remaining roster; retain coverage and all saved authors."""
@@ -124,13 +125,19 @@ class DatabaseCampaignAllocationMixin(AllocationPreviewMixin):
     def preview_campaign_member_removal(self, *, campaign_id, assignee, expected_revision,
                                         quota_basis="remaining"):
         campaign_id = self.resolve_version_campaign(str(campaign_id))
-        with self._write_lock, self.connect() as conn:
-            self._lock_task_work(conn)
+        with self.connect() as conn:
             config = self._allocation_without_member(conn, campaign_id, assignee)
-            preview = self._prepare_task_reallocation(
-                conn, campaign_id, **config, expected_revision=expected_revision,
-                quota_basis=quota_basis, issued_at=int(time.time()))[-1]
-            return {**preview, "removed_assignee": str(assignee).strip().lower()}
+            current, split, filters, old_rows, evidence, all_roles = self._load_reallocation_snapshot(
+                conn, campaign_id, expected_revision=expected_revision, quota_basis=quota_basis,
+            )
+        preview = self._compute_task_reallocation(
+            current, split, filters, old_rows, evidence,
+            config["assignees"], config["reviewers_per_issue"], config["overlap_ratio"],
+            expected_revision, quota_basis, int(time.time()),
+            config.get("cross_groups"), config.get("groups"),
+            all_roles=all_roles,
+        )[-1]
+        return {**preview, "removed_assignee": str(assignee).strip().lower()}
 
     def delete_campaign_allocation_member(self, *, campaign_id, assignee, expected_revision,
                                           idempotency_key, actor, actor_source="legacy",
@@ -197,19 +204,25 @@ class DatabaseCampaignAllocationMixin(AllocationPreviewMixin):
                 raise ValueError("持续追加任务需要足够的正比例成员覆盖新 Case / Appendable tasks need enough positive-share members for new Cases")
         return dict(assignees=people, reviewers_per_issue=reviewers_per_issue, overlap_ratio=ratio)
 
-    def _plan_task_allocation(self, conn, config, issue_ids, *, seed, role_required=False, previous=()):
+    def _plan_task_allocation(self, conn, config, issue_ids, *, seed, role_required=False, previous=(), roles=None):
         """Also used by incremental tasks so saved membership governs future appends."""
         people = config["assignees"]
         if any("review_percent" in p for p in people):
-            roles = {r["username"]: r["role"] for r in conn.execute("SELECT username,role FROM human_user_roles").fetchall()} if role_required else None
+            resolved_roles = (
+                roles if roles is not None
+                else ({r["username"]: r["role"] for r in conn.execute("SELECT username,role FROM human_user_roles").fetchall()} if role_required else None)
+            )
             return allocate_percentages(issue_ids, people, reviewers=config["reviewers_per_issue"],
-                overlap=config["overlap_ratio"], seed=seed, roles=roles, previous=previous)
+                overlap=config["overlap_ratio"], seed=seed, roles=resolved_roles, previous=previous)
         if role_required:
-            roles = {r["username"]: r["role"] for r in conn.execute("SELECT username,role FROM human_user_roles").fetchall()}
+            resolved_roles = (
+                roles if roles is not None
+                else {r["username"]: r["role"] for r in conn.execute("SELECT username,role FROM human_user_roles").fetchall()}
+            )
             rows = allocate_role_pairs(
                 issue_ids, seed=seed, previous=previous,
-                rd_reviewers=tuple(p["name"] for p in people if roles.get(p["name"]) == "rd"),
-                te_reviewers=tuple(p["name"] for p in people if roles.get(p["name"]) == "te"),
+                rd_reviewers=tuple(p["name"] for p in people if resolved_roles.get(p["name"]) == "rd"),
+                te_reviewers=tuple(p["name"] for p in people if resolved_roles.get(p["name"]) == "te"),
                 reviewers_per_issue=config["reviewers_per_issue"],
             )
             return [

@@ -196,22 +196,27 @@ async def suggest_assignment_name(request: Request) -> dict[str, Any]:
     catalog_status = await asyncio.to_thread(model_catalog.status)
     if not catalog_status.get("configured"):
         return {"suggestion": fallback, "source": "rule", "reason": "not_configured"}
+    llm_kwargs: dict[str, Any] = {
+        "fallback": fallback,
+        "dataset_labels": dataset_labels,
+        "assignment_kind": assignment_kind,
+        "case_count": case_count,
+        "reviewers_per_issue": reviewers_per_issue,
+        "overlap_ratio": overlap_ratio,
+        "member_count": member_count,
+        "workflow_mode": workflow_mode,
+        "run_name": run_name,
+        "comparison": comparison,
+        "draft_name": draft_name,
+    }
+    if bool(body.get("force_refresh", False)):
+        llm_kwargs["bypass_cache"] = True
     try:
         suggestion = await asyncio.to_thread(
             suggest_assignment_name_with_llm,
             settings,
             model_catalog,
-            fallback=fallback,
-            dataset_labels=dataset_labels,
-            assignment_kind=assignment_kind,
-            case_count=case_count,
-            reviewers_per_issue=reviewers_per_issue,
-            overlap_ratio=overlap_ratio,
-            member_count=member_count,
-            workflow_mode=workflow_mode,
-            run_name=run_name,
-            comparison=comparison,
-            draft_name=draft_name,
+            **llm_kwargs,
         )
     except IntentNameSuggestionError as exc:
         return {"suggestion": fallback, "source": "rule", "reason": exc.reason}

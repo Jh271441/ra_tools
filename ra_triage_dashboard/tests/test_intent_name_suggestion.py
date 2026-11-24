@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 from ra_triage_dashboard.app.intent_name_suggestion import (
     IntentNameSuggestionError,
+    reset_name_suggestion_runtime,
     rule_based_assignment_name,
     rule_based_intent_name,
     suggest_assignment_name_with_llm,
@@ -31,7 +32,7 @@ class _Opener:
     def open(self, request, timeout):
         body = json.loads(request.data)
         assignment = "Case 标注和模型复核" in body["messages"][0]["content"]
-        assert timeout == (15 if assignment else 8)
+        assert timeout == 8
         assert body["max_tokens"] == (128 if assignment else 64)
         assert request.get_header("Apikey") == "secret"
         assert json.loads(request.data)["model"] == "Qwen3.8-27B/Qwen3.8-27B"
@@ -46,6 +47,11 @@ class _Catalog:
 
 
 class IntentNameSuggestionTest(unittest.TestCase):
+    def setUp(self) -> None:
+        reset_name_suggestion_runtime()
+
+    def tearDown(self) -> None:
+        reset_name_suggestion_runtime()
     def test_case_assignment_rule_name_is_immediate_and_descriptive(self):
         self.assertEqual(
             rule_based_assignment_name(

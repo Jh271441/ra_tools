@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+from collections import OrderedDict
+import hashlib
 import json
 import re
+import threading
+import time
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
@@ -17,6 +21,118 @@ from .settings import Settings
 MAX_RESPONSE_BYTES = 64 * 1024
 MAX_SUGGESTION_CHARS = 80
 INTENT_NAME_MODEL_ID = "Qwen3.8-27B/Qwen3.8-27B"
+ASSIGNMENT_NAME_TIMEOUT_SECONDS = 8
+INTENT_NAME_TIMEOUT_SECONDS = 8
+NAME_SUGGESTION_CACHE_MAX_ENTRIES = 256
+NAME_SUGGESTION_CACHE_TTL_SECONDS = 1800.0
+NAME_SUGGESTION_CIRCUIT_FAILURE_THRESHOLD = 3
+NAME_SUGGESTION_CIRCUIT_COOLDOWN_SECONDS = 30.0
+
+
+class _InFlightSlot:
+    __slots__ = ("event", "result", "error")
+
+    def __init__(self) -> None:
+        self.event = threading.Event()
+        self.result: str | None = None
+        self.error: BaseException | None = None
+
+
+class _NameSuggestionRuntime:
+    """Thread-safe bounded cache, single-flight dedup, and transport breaker."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._cache: OrderedDict[str, tuple[float, str]] = OrderedDict()
+        self._inflight: dict[str, _InFlightSlot] = {}
+        self._consecutive_failures = 0
+        self._circuit_open_until = 0.0
+
+    def reset(self) -> None:
+        with self._lock:
+            self._cache.clear()
+            self._inflight.clear()
+            self._consecutive_failures = 0
+            self._circuit_open_until = 0.0
+
+    def get_cached(self, key: str) -> str | None:
+        now = time.monotonic()
+        with self._lock:
+            entry = self._cache.get(key)
+            if entry is None:
+                return None
+            expires_at, value = entry
+            if expires_at <= now:
+                self._cache.pop(key, None)
+                return None
+            self._cache.move_to_end(key)
+            return value
+
+    def store_cached(self, key: str, value: str) -> None:
+        expires_at = time.monotonic() + NAME_SUGGESTION_CACHE_TTL_SECONDS
+        with self._lock:
+            self._cache[key] = (expires_at, value)
+            self._cache.move_to_end(key)
+            while len(self._cache) > NAME_SUGGESTION_CACHE_MAX_ENTRIES:
+                self._cache.popitem(last=False)
+
+    def check_circuit(self) -> None:
+        now = time.monotonic()
+        with self._lock:
+            if self._circuit_open_until > now:
+                raise IntentNameSuggestionError(
+                    "模型名称推荐暂不可用。", reason="unavailable"
+                )
+
+    def record_success(self) -> None:
+        with self._lock:
+            self._consecutive_failures = 0
+            self._circuit_open_until = 0.0
+
+    def record_transport_failure(self) -> None:
+        now = time.monotonic()
+        with self._lock:
+            self._consecutive_failures += 1
+            if self._consecutive_failures >= NAME_SUGGESTION_CIRCUIT_FAILURE_THRESHOLD:
+                self._circuit_open_until = now + NAME_SUGGESTION_CIRCUIT_COOLDOWN_SECONDS
+
+    def acquire_flight(self, key: str) -> tuple[_InFlightSlot, bool]:
+        with self._lock:
+            existing = self._inflight.get(key)
+            if existing is not None:
+                return existing, False
+            slot = _InFlightSlot()
+            self._inflight[key] = slot
+            return slot, True
+
+    def finish_flight(
+        self, key: str, slot: _InFlightSlot, *, result: str | None = None, error: BaseException | None = None
+    ) -> None:
+        slot.result = result
+        slot.error = error
+        with self._lock:
+            if self._inflight.get(key) is slot:
+                self._inflight.pop(key, None)
+        slot.event.set()
+
+
+_suggestion_runtime = _NameSuggestionRuntime()
+
+
+def reset_name_suggestion_runtime() -> None:
+    """Clear in-memory name-suggestion cache and circuit breaker state."""
+    _suggestion_runtime.reset()
+
+
+def _suggestion_cache_key(
+    *, system_prompt: str, prompt: str, max_tokens: int
+) -> str:
+    raw = json.dumps(
+        [INTENT_NAME_MODEL_ID, system_prompt, prompt, int(max_tokens)],
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
 
 
 class IntentNameSuggestionError(RuntimeError):
@@ -247,57 +363,92 @@ def _request_name_completion(
     *,
     prompt: str,
     system_prompt: str,
-    timeout: int = 8,
+    timeout: int = INTENT_NAME_TIMEOUT_SECONDS,
     max_tokens: int = 64,
+    bypass_cache: bool = False,
 ) -> str:
-    provider_id = "kylin"
-    api_key = read_provider_api_key(settings, provider_id)
-    chat_url = model_gateway_chat_url(settings, provider_id)
-    body = json.dumps(
-        {
-            "model": INTENT_NAME_MODEL_ID,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": prompt},
-            ],
-            "temperature": 0.3,
-            "max_tokens": max_tokens,
-            "stream": False,
-        },
-        ensure_ascii=False,
-    ).encode("utf-8")
-    request = Request(
-        chat_url,
-        data=body,
-        method="POST",
-        headers={
-            "Accept": "application/json",
-            "Content-Type": "application/json",
-            **(
-                {"Authorization": f"Bearer {api_key}"}
-                if provider_id == "tokenservice"
-                else {"apikey": api_key}
-            ),
-        },
+    cache_key = _suggestion_cache_key(
+        system_prompt=system_prompt, prompt=prompt, max_tokens=max_tokens
     )
+    if not bypass_cache:
+        cached = _suggestion_runtime.get_cached(cache_key)
+        if cached is not None:
+            return cached
+    _suggestion_runtime.check_circuit()
+    slot, owner = _suggestion_runtime.acquire_flight(cache_key)
+    if not owner:
+        if not slot.event.wait(timeout=max(1, int(timeout)) + 1):
+            raise IntentNameSuggestionError("模型名称推荐暂不可用。", reason="timeout")
+        if slot.error is not None:
+            raise slot.error
+        if slot.result is not None:
+            return slot.result
+        raise IntentNameSuggestionError("模型名称推荐暂不可用。", reason="unavailable")
+
+    provider_id = "kylin"
+    result_text: str | None = None
+    caught_error: BaseException | None = None
     try:
-        with build_opener(ProxyHandler({}), _NoRedirect()).open(request, timeout=timeout) as response:
-            if response.status != 200:
-                raise IntentNameSuggestionError("模型名称推荐暂不可用。", reason="unavailable")
-            raw = response.read(MAX_RESPONSE_BYTES + 1)
-    except (HTTPError, URLError, TimeoutError, OSError, ValueError) as exc:
-        timed_out = isinstance(exc, TimeoutError) or isinstance(getattr(exc, "reason", None), TimeoutError)
-        raise IntentNameSuggestionError(
-            "模型名称推荐暂不可用。", reason="timeout" if timed_out else "unavailable"
-        ) from exc
-    if len(raw) > MAX_RESPONSE_BYTES:
-        raise IntentNameSuggestionError("模型名称推荐响应过大。")
-    try:
-        payload = json.loads(raw)
-        content = payload["choices"][0]["message"]["content"]
-    except (KeyError, IndexError, TypeError, ValueError, UnicodeDecodeError) as exc:
-        raise IntentNameSuggestionError("模型名称推荐响应格式非法。") from exc
-    return _normalized_suggestion(content)
+        api_key = read_provider_api_key(settings, provider_id)
+        chat_url = model_gateway_chat_url(settings, provider_id)
+        body = json.dumps(
+            {
+                "model": INTENT_NAME_MODEL_ID,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": prompt},
+                ],
+                "temperature": 0.3,
+                "max_tokens": max_tokens,
+                "stream": False,
+            },
+            ensure_ascii=False,
+        ).encode("utf-8")
+        request = Request(
+            chat_url,
+            data=body,
+            method="POST",
+            headers={
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+                **(
+                    {"Authorization": f"Bearer {api_key}"}
+                    if provider_id == "tokenservice"
+                    else {"apikey": api_key}
+                ),
+            },
+        )
+        try:
+            with build_opener(ProxyHandler({}), _NoRedirect()).open(request, timeout=timeout) as response:
+                if response.status != 200:
+                    _suggestion_runtime.record_transport_failure()
+                    raise IntentNameSuggestionError("模型名称推荐暂不可用。", reason="unavailable")
+                raw = response.read(MAX_RESPONSE_BYTES + 1)
+        except IntentNameSuggestionError:
+            raise
+        except (HTTPError, URLError, TimeoutError, OSError, ValueError) as exc:
+            _suggestion_runtime.record_transport_failure()
+            timed_out = isinstance(exc, TimeoutError) or isinstance(getattr(exc, "reason", None), TimeoutError)
+            raise IntentNameSuggestionError(
+                "模型名称推荐暂不可用。", reason="timeout" if timed_out else "unavailable"
+            ) from exc
+        _suggestion_runtime.record_success()
+        if len(raw) > MAX_RESPONSE_BYTES:
+            raise IntentNameSuggestionError("模型名称推荐响应过大。")
+        try:
+            payload = json.loads(raw)
+            content = payload["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError, ValueError, UnicodeDecodeError) as exc:
+            raise IntentNameSuggestionError("模型名称推荐响应格式非法。") from exc
+        result_text = _normalized_suggestion(content)
+        return result_text
+    except BaseException as exc:
+        caught_error = exc
+        raise
+    finally:
+        _suggestion_runtime.finish_flight(
+            cache_key, slot, result=result_text, error=caught_error
+        )
 
 
 def suggest_intent_name_with_llm(
@@ -313,6 +464,7 @@ def suggest_intent_name_with_llm(
     member_count: int,
     draft_name: str = "",
     label_scope: str = "routing",
+    bypass_cache: bool = False,
 ) -> str:
     if annotation_mode == "full":
         mode_label = "全量盲标"
@@ -334,12 +486,15 @@ def suggest_intent_name_with_llm(
         f"规则名称参考：{fallback}\n"
         "请在保留所有关键信息的前提下优化措辞，不要与规则名称完全相同。"
     )
-    return _validate_contextual_suggestion(
-        _request_name_completion(
-            settings,
-            prompt=prompt,
-            system_prompt="你负责为内部数据标注实验命名。",
-        ),
+    system_prompt = "你负责为内部数据标注实验命名。"
+    completion_kwargs: dict[str, Any] = {
+        "prompt": prompt,
+        "system_prompt": system_prompt,
+    }
+    if bypass_cache:
+        completion_kwargs["bypass_cache"] = True
+    validated = _validate_contextual_suggestion(
+        _request_name_completion(settings, **completion_kwargs),
         dataset_labels=dataset_labels,
         annotation_mode=annotation_mode,
         case_count=case_count,
@@ -348,6 +503,11 @@ def suggest_intent_name_with_llm(
         member_count=member_count,
         label_scope=label_scope,
     )
+    _suggestion_runtime.store_cached(
+        _suggestion_cache_key(system_prompt=system_prompt, prompt=prompt, max_tokens=64),
+        validated,
+    )
+    return validated
 
 
 def suggest_assignment_name_with_llm(
@@ -365,6 +525,7 @@ def suggest_assignment_name_with_llm(
     run_name: str = "",
     comparison: str = "all",
     draft_name: str = "",
+    bypass_cache: bool = False,
 ) -> str:
     subject = "Case标注" if assignment_kind == "case_labeling" else (
         "联合复核" if workflow_mode == "model_review_and_case_label" else "判错复核"
@@ -397,14 +558,17 @@ def suggest_assignment_name_with_llm(
         "分配方式使用给定片段，不要根据每Case人数改成单人。"
         "可以调整片段顺序或连接词，不得改变任务含义；规则名称已合适时允许原样返回。"
     )
-    suggestion = _request_name_completion(
-        settings,
-        prompt=prompt,
-        system_prompt="你负责为内部 Case 标注和模型复核任务命名。",
-        timeout=15,
-        max_tokens=128,
-    )
-    return _validate_assignment_suggestion(
+    system_prompt = "你负责为内部 Case 标注和模型复核任务命名。"
+    completion_kwargs: dict[str, Any] = {
+        "prompt": prompt,
+        "system_prompt": system_prompt,
+        "timeout": ASSIGNMENT_NAME_TIMEOUT_SECONDS,
+        "max_tokens": 128,
+    }
+    if bypass_cache:
+        completion_kwargs["bypass_cache"] = True
+    suggestion = _request_name_completion(settings, **completion_kwargs)
+    validated = _validate_assignment_suggestion(
         suggestion,
         fallback=fallback,
         dataset_labels=dataset_labels,
@@ -417,3 +581,8 @@ def suggest_assignment_name_with_llm(
         run_name=run_name,
         comparison=comparison,
     )
+    _suggestion_runtime.store_cached(
+        _suggestion_cache_key(system_prompt=system_prompt, prompt=prompt, max_tokens=128),
+        validated,
+    )
+    return validated
