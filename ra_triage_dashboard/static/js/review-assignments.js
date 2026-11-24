@@ -486,6 +486,10 @@ function renderReviewAssignmentPermissions() {
 }
 
 function renderReviewAssignmentPage() {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("review-assignments") || window.__RA_REACT_OWNED_PAGES__?.includes?.("review-assignments"))) {
+    window.__RA_REACT_WORKBENCH__?.notifySync?.();
+    return;
+  }
   if (!$("#reviewAssignmentsPage")) return;
   renderReviewAssignmentPermissions();
   renderReviewAssignmentListFilters();
@@ -590,6 +594,10 @@ async function loadReviewAssignmentDetail(
 }
 
 async function loadReviewAssignments({ force = false, splitId = "", reloadDetail = true } = {}) {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("review-assignments") || window.__RA_REACT_OWNED_PAGES__?.includes?.("review-assignments"))) {
+    window.__RA_REACT_WORKBENCH__?.refreshPage?.("review-assignments");
+    return;
+  }
   const store = state.reviewAssignments;
   const route = new URLSearchParams(window.location.search);
   store.lifecycle = ["versions", "manual", "current", "history", "all"].includes(route.get("lifecycle")) ? route.get("lifecycle") : "current";

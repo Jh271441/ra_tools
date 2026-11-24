@@ -493,6 +493,9 @@ function returnToTaskAllocationEditor() {
 }
 
 async function openTaskAllocationEditor(campaignId, opener = null, removal = "") {
+  if (!removal && typeof window !== "undefined" && window.__RA_REACT_WORKBENCH__?.openTaskAllocationEditor?.(campaignId)) {
+    return;
+  }
   let dialog = $("#taskAllocationDialog");
   if (!dialog) {
     dialog = document.createElement("dialog");

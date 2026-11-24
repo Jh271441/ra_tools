@@ -1,11 +1,33 @@
 {
+  "_AllocationEditorModal-BgsFF5wW.js": {
+    "file": "assets/AllocationEditorModal-BgsFF5wW.js",
+    "name": "AllocationEditorModal",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.tsx"
+    ]
+  },
   "src/main.tsx": {
-    "file": "assets/main-BfFbT-1r.js",
+    "file": "assets/main-CCeXkbqj.js",
     "name": "main",
     "src": "src/main.tsx",
     "isEntry": true,
+    "dynamicImports": [
+      "src/pages/ReviewAssignmentsPage.tsx",
+      "_AllocationEditorModal-BgsFF5wW.js"
+    ],
     "css": [
-      "assets/main-BWUbimhW.css"
+      "assets/main-ql24Jm5g.css"
+    ]
+  },
+  "src/pages/ReviewAssignmentsPage.tsx": {
+    "file": "assets/ReviewAssignmentsPage-fXWgzAZd.js",
+    "name": "ReviewAssignmentsPage",
+    "src": "src/pages/ReviewAssignmentsPage.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.tsx",
+      "_AllocationEditorModal-BgsFF5wW.js"
     ]
   }
 }
