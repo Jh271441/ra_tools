@@ -23,6 +23,10 @@ export const ModalDialog: React.FC<ModalDialogProps> = ({
   const titleId = useId();
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const cardRef = useRef<HTMLDivElement | null>(null);
+  const onCloseRef = useRef(onClose);
+  const backdropPressRef = useRef(false);
+
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     if (!open) return;
@@ -32,8 +36,10 @@ export const ModalDialog: React.FC<ModalDialogProps> = ({
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.isComposing) return;
       if (event.key === "Escape") {
+        // Let open dropdowns handle Escape first without closing the modal.
+        if (document.querySelector(".ra-react-select.is-open")) return;
         event.preventDefault();
-        onClose();
+        onCloseRef.current();
       }
     };
     document.addEventListener("keydown", handleKeyDown);
@@ -41,7 +47,7 @@ export const ModalDialog: React.FC<ModalDialogProps> = ({
       document.removeEventListener("keydown", handleKeyDown);
       previousFocusRef.current?.focus?.();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 
@@ -50,7 +56,13 @@ export const ModalDialog: React.FC<ModalDialogProps> = ({
       className="ra-modal-backdrop"
       role="presentation"
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
+        backdropPressRef.current = event.target === event.currentTarget;
+      }}
+      onClick={(event) => {
+        if (backdropPressRef.current && event.target === event.currentTarget) {
+          onCloseRef.current();
+        }
+        backdropPressRef.current = false;
       }}
     >
       <div
@@ -60,6 +72,10 @@ export const ModalDialog: React.FC<ModalDialogProps> = ({
         aria-modal="true"
         aria-labelledby={titleId}
         className={`dialog-card ra-modal-card${wide ? " ra-modal-wide" : ""}`}
+        onMouseDown={(event) => {
+          backdropPressRef.current = false;
+          event.stopPropagation();
+        }}
       >
         <div className="dialog-heading">
           <h2 id={titleId}>{title}</h2>
@@ -67,7 +83,7 @@ export const ModalDialog: React.FC<ModalDialogProps> = ({
             type="button"
             className="icon-button"
             aria-label={bilingual(lang, "关闭", "Close")}
-            onClick={onClose}
+            onClick={() => onCloseRef.current()}
           >
             ×
           </button>

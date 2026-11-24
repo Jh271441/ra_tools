@@ -246,14 +246,34 @@ export const NewAllocationModal: React.FC<NewAllocationModalProps> = ({
     [previewBody],
   );
 
+  const requestIdRef = useRef<string>(
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `split-${Date.now()}`,
+  );
+
   const previewQuery = useQuery<AllocationPreviewPayload>({
     queryKey: ["new-work-split-preview", serializedPreview],
-    queryFn: ({ signal }) =>
-      apiRequest<AllocationPreviewPayload>("/api/cases/work-split/preview", {
-        method: "POST",
-        body: JSON.parse(serializedPreview),
-        signal,
-      }),
+    queryFn: async ({ signal }) => {
+      const nextReqId =
+        typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+          ? crypto.randomUUID()
+          : `split-${Date.now()}`;
+      requestIdRef.current = nextReqId;
+      const res = await apiRequest<{ preview?: AllocationPreviewPayload } & AllocationPreviewPayload>(
+        "/api/cases/work-split",
+        {
+          method: "POST",
+          body: {
+            ...JSON.parse(serializedPreview),
+            request_id: nextReqId,
+            preview_only: true,
+          },
+          signal,
+        },
+      );
+      return res.preview || res;
+    },
     enabled: open && Boolean(serializedPreview),
     placeholderData: keepPreviousData,
     retry: false,
@@ -265,15 +285,11 @@ export const NewAllocationModal: React.FC<NewAllocationModalProps> = ({
       if (!previewBody || !previewQuery.data?.preview_token) {
         throw new Error(bilingual(lang, "请先等待预览完成。", "Wait for preview before creating."));
       }
-      const reqId =
-        typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-          ? crypto.randomUUID()
-          : `split-${Date.now()}`;
       return apiRequest("/api/cases/work-split", {
         method: "POST",
         body: {
           ...previewBody,
-          request_id: reqId,
+          request_id: requestIdRef.current,
           preview_token: previewQuery.data.preview_token,
         },
       });

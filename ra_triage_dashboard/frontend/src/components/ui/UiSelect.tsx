@@ -194,6 +194,7 @@ export const UiSelect: React.FC<UiSelectProps> = ({
           role="listbox"
           aria-label={ariaLabel}
           className={`ui-select-panel is-positioned ra-react-select-menu${openUpward ? " is-upward" : ""}`}
+          onMouseDown={(e) => e.stopPropagation()}
         >
           {options.map((option, index) => {
             const isSelected = option.value === value;
