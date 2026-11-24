@@ -137,16 +137,18 @@ export const SystemStatusPage: React.FC<SystemStatusPageProps> = ({ active, lang
     const data = statusQuery.data;
     if (!data || typeof window === "undefined") return;
     const win = window as unknown as {
+      __RA_TRIAGE_STATE__?: { systemStatus?: unknown; config?: Record<string, unknown> };
       state?: { systemStatus?: unknown; config?: Record<string, unknown> };
       renderConfig?: () => void;
     };
-    if (win.state) {
-      win.state.systemStatus = data;
+    const legacyState = win.__RA_TRIAGE_STATE__ || win.state;
+    if (legacyState) {
+      legacyState.systemStatus = data;
       if (data.baseline || data.trail_sync) {
-        win.state.config = {
-          ...(win.state.config || {}),
-          baseline: data.baseline || win.state.config?.baseline,
-          trail_sync: data.trail_sync || win.state.config?.trail_sync,
+        legacyState.config = {
+          ...(legacyState.config || {}),
+          baseline: data.baseline || legacyState.config?.baseline,
+          trail_sync: data.trail_sync || legacyState.config?.trail_sync,
         };
         win.renderConfig?.();
       }

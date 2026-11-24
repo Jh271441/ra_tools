@@ -35,10 +35,12 @@ function readActivePage(): string {
 
 function readLegacySession(): WorkbenchBridgeState["session"] {
   if (typeof window === "undefined") return null;
-  const legacyState = (
-    window as unknown as { state?: { session?: WorkbenchBridgeState["session"] } }
-  ).state;
-  return legacyState?.session || null;
+  const win = window as unknown as {
+    __RA_TRIAGE_SESSION__?: WorkbenchBridgeState["session"];
+    __RA_TRIAGE_STATE__?: { session?: WorkbenchBridgeState["session"] };
+    state?: { session?: WorkbenchBridgeState["session"] };
+  };
+  return win.__RA_TRIAGE_SESSION__ || win.__RA_TRIAGE_STATE__?.session || win.state?.session || null;
 }
 
 export function useWorkbenchBridge(): WorkbenchBridgeState {

@@ -156,8 +156,12 @@ function renderSession() {
   if (typeof renderGtSyncStatus === "function") renderGtSyncStatus();
   if (typeof renderVersionMetrics === "function") renderVersionMetrics();
   if (typeof syncReviewWorkflowMode === "function") syncReviewWorkflowMode(state.selectedCase);
-  if (typeof window !== "undefined" && window.__RA_REACT_WORKBENCH__?.notifySync) {
-    window.__RA_REACT_WORKBENCH__.notifySync();
+  if (typeof window !== "undefined") {
+    window.__RA_TRIAGE_STATE__ = state;
+    window.__RA_TRIAGE_SESSION__ = state.session ? { ...state.session } : null;
+    if (window.__RA_REACT_WORKBENCH__?.notifySync) {
+      window.__RA_REACT_WORKBENCH__.notifySync();
+    }
   }
 }
 

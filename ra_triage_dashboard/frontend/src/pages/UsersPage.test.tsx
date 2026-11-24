@@ -13,14 +13,23 @@ afterEach(() => {
 });
 
 describe("UsersPage", () => {
-  it("blocks non-admin sessions cleanly in ZH and EN", () => {
-    const { rerender } = renderWithQuery(<UsersPage active lang="zh" isAdmin={false} />);
-    expect(screen.getByText("该页面仅限 Dashboard 管理员访问。")).toBeInTheDocument();
+  it("shows verifying state while session is loading and blocks non-admin sessions cleanly", () => {
+    const { rerender } = renderWithQuery(
+      <UsersPage active lang="zh" isAdmin={false} sessionLoading />,
+    );
+    expect(screen.getByText("正在验证管理员权限…")).toBeInTheDocument();
 
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     rerender(
       <QueryClientProvider client={client}>
-        <UsersPage active lang="en" isAdmin={false} />
+        <UsersPage active lang="zh" isAdmin={false} sessionLoading={false} />
+      </QueryClientProvider>,
+    );
+    expect(screen.getByText("该页面仅限 Dashboard 管理员访问。")).toBeInTheDocument();
+
+    rerender(
+      <QueryClientProvider client={client}>
+        <UsersPage active lang="en" isAdmin={false} sessionLoading={false} />
       </QueryClientProvider>,
     );
     expect(

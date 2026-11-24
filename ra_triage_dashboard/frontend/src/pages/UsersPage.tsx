@@ -32,6 +32,7 @@ export interface UsersPageProps {
   active: boolean;
   lang: UiLanguage;
   isAdmin: boolean;
+  sessionLoading?: boolean;
 }
 
 function readInitialPagination(): { page: number; pageSize: number } {
@@ -61,7 +62,12 @@ function notifyLegacyRevision(result: unknown) {
   }
 }
 
-export const UsersPage: React.FC<UsersPageProps> = ({ active, lang, isAdmin }) => {
+export const UsersPage: React.FC<UsersPageProps> = ({
+  active,
+  lang,
+  isAdmin,
+  sessionLoading = false,
+}) => {
   const queryClient = useQueryClient();
   const initial = useMemo(() => readInitialPagination(), []);
   const [page, setPage] = useState(initial.page);
@@ -103,14 +109,22 @@ export const UsersPage: React.FC<UsersPageProps> = ({ active, lang, isAdmin }) =
 
   useEffect(() => {
     if (!accessQuery.data?.items || typeof window === "undefined") return;
-    const win = window as unknown as { state?: { accessUsers?: AccessUser[] } };
-    if (win.state) win.state.accessUsers = accessQuery.data.items;
+    const win = window as unknown as {
+      __RA_TRIAGE_STATE__?: { accessUsers?: AccessUser[] };
+      state?: { accessUsers?: AccessUser[] };
+    };
+    const legacyState = win.__RA_TRIAGE_STATE__ || win.state;
+    if (legacyState) legacyState.accessUsers = accessQuery.data.items;
   }, [accessQuery.data]);
 
   useEffect(() => {
     if (!mentionQuery.data?.items || typeof window === "undefined") return;
-    const win = window as unknown as { state?: { mentionUsers?: MentionUser[] } };
-    if (win.state) win.state.mentionUsers = mentionQuery.data.items;
+    const win = window as unknown as {
+      __RA_TRIAGE_STATE__?: { mentionUsers?: MentionUser[] };
+      state?: { mentionUsers?: MentionUser[] };
+    };
+    const legacyState = win.__RA_TRIAGE_STATE__ || win.state;
+    if (legacyState) legacyState.mentionUsers = mentionQuery.data.items;
   }, [mentionQuery.data]);
 
   const saveUserMutation = useMutation({
@@ -309,6 +323,18 @@ export const UsersPage: React.FC<UsersPageProps> = ({ active, lang, isAdmin }) =
       [user.username]: { ...getDraft(user), ...patch },
     }));
   };
+
+  if (sessionLoading) {
+    return (
+      <div className="ra-users-root" data-react-island="users">
+        <section className="access-panel">
+          <p className="no-asset">
+            {bilingual(lang, "正在验证管理员权限…", "Verifying administrator access…")}
+          </p>
+        </section>
+      </div>
+    );
+  }
 
   if (!isAdmin) {
     return (

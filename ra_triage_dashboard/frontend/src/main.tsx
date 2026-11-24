@@ -1,7 +1,8 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useWorkbenchBridge } from "./bridge/useWorkbenchBridge";
+import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
+import { apiRequest } from "./api/client";
+import { useWorkbenchBridge, WorkbenchBridgeState } from "./bridge/useWorkbenchBridge";
 import { SystemStatusPage } from "./pages/SystemStatusPage";
 import { UsersPage } from "./pages/UsersPage";
 import "./styles/react-workbench.css";
@@ -24,11 +25,22 @@ const SystemStatusIsland: React.FC = () => {
 
 const UsersIsland: React.FC = () => {
   const { activePage, lang, session } = useWorkbenchBridge();
+  const active = activePage === "users";
+  const sessionQuery = useQuery<NonNullable<WorkbenchBridgeState["session"]>>({
+    queryKey: ["session"],
+    queryFn: ({ signal }) =>
+      apiRequest<NonNullable<WorkbenchBridgeState["session"]>>("/api/session", { signal }),
+    enabled: active && !session?.verified,
+    staleTime: 30_000,
+  });
+  const effectiveSession = session?.verified ? session : sessionQuery.data || session;
+  const sessionLoading = active && !effectiveSession?.verified && sessionQuery.isFetching;
   return (
     <UsersPage
-      active={activePage === "users"}
+      active={active}
       lang={lang}
-      isAdmin={Boolean(session?.is_admin)}
+      isAdmin={Boolean(effectiveSession?.is_admin)}
+      sessionLoading={sessionLoading}
     />
   );
 };
