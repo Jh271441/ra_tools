@@ -759,6 +759,10 @@ def _affected_release_for_obj(obj: Any) -> str | None:
     if isinstance(obj, ReproductionTimingEvidence):
         return obj.release or GLOBAL_RELEASE_SCOPE
     if isinstance(obj, ReleaseWorkflowState):
+        if obj.key.startswith("job-progress:"):
+            # Ephemeral Orion UI progress polling cache; must not invalidate
+            # global read views (versions, history-kpis, comparison, summary).
+            return None
         return _extract_release_from_kv(obj.key, obj.payload)
     if isinstance(obj, (DashboardSnapshot, Version)):
         return GLOBAL_RELEASE_SCOPE

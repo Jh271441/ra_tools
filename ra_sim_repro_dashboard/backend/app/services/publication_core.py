@@ -18,6 +18,7 @@ from app.domain.coverage import (
 from app.domain.hashing import audit_hash, population_identity
 from app.domain.metrics import cohort_for_issue, summarize_population
 from app.models import ReleaseIssueSnapshot, ReleaseSimulationBatch
+from app.repositories import state_store
 from app.services.read_views import read_projection
 
 STANDARD_VERSION = "primary_execution_v1"
@@ -98,12 +99,8 @@ def approve_publication(db, batch, population_hash, excluded_ids, reason):
         or audit.get("population_hash") != population_hash
     ):
         raise ValueError("Frozen evaluation population mismatch")
-    if not any(
-        (s.population_hash or population_identity(s.payload)) == population_hash
-        for s in db.scalars(
-            select(ReleaseIssueSnapshot).where(ReleaseIssueSnapshot.release == batch.release)
-        )
-    ):
+    matched_snap = state_store.find_snapshot_by_population_hash(db, batch.release, population_hash)
+    if matched_snap is None or population_identity(matched_snap.payload) != population_hash:
         raise ValueError("Original audited source snapshot is missing")
     if (
         len(set(excluded)) != len(excluded)

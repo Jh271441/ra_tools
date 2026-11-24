@@ -11,6 +11,7 @@ import re
 from sqlalchemy import select
 
 from app.models import ReleaseIssueSnapshot
+from app.repositories import state_store
 from app.services import release_workflow as workflow
 from app.services.read_views import read_projection
 from app.services.release_inventory import inventory
@@ -169,38 +170,37 @@ def _scope_for_batch(db, batch):
         if payload.get("acceptance_only") or payload.get("release") != release:
             return result
         lo, hi = _period_bounds(payload.get("period"), release)
-        snapshots = db.scalars(
+        latest = db.scalars(
             select(ReleaseIssueSnapshot)
             .where(ReleaseIssueSnapshot.release == release)
             .order_by(ReleaseIssueSnapshot.id.desc())
-            .execution_options(yield_per=1)
+            .limit(1)
+        ).first()
+        if latest is None:
+            return result
+        target_hash = payload.get("population_hash")
+        latest_hash = getattr(latest, "population_hash", None) or workflow.population_identity(
+            latest.payload
         )
-        try:
-            latest = next(snapshots, None)
+        if target_hash and latest_hash == target_hash:
+            original = latest
+        elif target_hash:
+            original = state_store.find_snapshot_by_population_hash(db, release, target_hash)
+            if (
+                original is not None
+                and workflow.population_identity(original.payload) != target_hash
+            ):
+                original = None
+        else:
             original = None
-            for snapshot in [latest] if latest is not None else []:
-                if workflow.population_identity(snapshot.payload) == payload.get("population_hash"):
-                    original = snapshot
-            if original is None:
-                original = next(
-                    (
-                        snapshot
-                        for snapshot in snapshots
-                        if workflow.population_identity(snapshot.payload)
-                        == payload.get("population_hash")
-                    ),
-                    None,
-                )
-            if latest is None or original is None:
-                return result
-            frozen = _full_source(original.payload, release)
-            _validate_batch_population(payload.get("issues"), frozen)
-            if _period_bounds(original.payload.get("period"), release) != (lo, hi):
-                return result
-            result["frozen_issue_count"] = len(frozen)
-            latest_payload = latest.payload
-        finally:
-            snapshots.close()
+        if original is None:
+            return result
+        frozen = _full_source(original.payload, release)
+        _validate_batch_population(payload.get("issues"), frozen)
+        if _period_bounds(original.payload.get("period"), release) != (lo, hi):
+            return result
+        result["frozen_issue_count"] = len(frozen)
+        latest_payload = latest.payload
 
         observation = workflow.get_state(db, "release_observation:" + release)
         if observation:

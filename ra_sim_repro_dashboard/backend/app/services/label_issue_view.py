@@ -6,6 +6,7 @@ from app.domain.hashing import audit_hash
 from app.domain.labels import INPUT_FIELDS, SCENE_FIELDS, activity_identity, same_inputs
 from app.domain.metrics import cohort_for_issue, excluded_issue
 from app.models import ReleaseIssueSnapshot, ReleaseSimulationBatch
+from app.repositories import state_store
 from app.services import release_workflow as w
 from app.services.result_publication import effective_publication, published_batch
 
@@ -36,23 +37,14 @@ def applied_rows(db, release, observed, *, published=False):
         else None
     )
     if frozen is None:
-        snapshots = db.scalars(
-            select(ReleaseIssueSnapshot)
-            .where(ReleaseIssueSnapshot.release == release)
-            .order_by(ReleaseIssueSnapshot.id.desc())
-            .execution_options(yield_per=1)
+        target_hash = base.payload.get("population_hash")
+        snap = (
+            state_store.find_snapshot_by_population_hash(db, release, target_hash)
+            if target_hash
+            else None
         )
-        try:
-            frozen = next(
-                (
-                    s.payload
-                    for s in snapshots
-                    if w.population_identity(s.payload) == base.payload["population_hash"]
-                ),
-                None,
-            )
-        finally:
-            snapshots.close()
+        if snap is not None and w.population_identity(snap.payload) == target_hash:
+            frozen = snap.payload
     if published and frozen:
         # Display the applied revision, even while newer collected labels await
         # reconciliation. Physical inputs come from its audited source receipt.
