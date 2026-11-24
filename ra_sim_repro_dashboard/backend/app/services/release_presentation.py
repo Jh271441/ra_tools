@@ -10,6 +10,7 @@ from app.models import ReleaseIssueSnapshot, ReleaseSimulationBatch
 from app.services.business_population import historical_scope, scope_for_batch
 from app.services.ordinary_evaluation import history_kpis as ordinary_kpis
 from app.services.read_views import read_view
+from app.services.release_inventory import inventory as collection_inventory
 from app.services.release_workflow import effective_config, population_identity
 from app.services.result_publication import effective_publication, published_batch
 from app.services.workflow_orchestrator import status
@@ -176,6 +177,7 @@ def history_kpis(db):
     config = effective_config(db)
     current_version = resolve_current(config).get("current_version")
     allowed = {p["release"] for p in config.get("periods", []) if p.get("status") == "completed"}
+    collections = collection_inventory(db, config)
     seen = set()
     items = []
     for batch in db.scalars(
@@ -209,7 +211,8 @@ def history_kpis(db):
         if not metrics.get("available"):
             continue
         scope = historical_scope(
-            scope_for_batch(db, batch), is_current=batch.release == current_version
+            scope_for_batch(db, batch, collections=collections),
+            is_current=batch.release == current_version,
         )
         if not scope["available"] and not scope.get("historical_frozen"):
             items.append(pending_kpi(batch.release, scope, batch.payload.get("job_id")))
@@ -224,7 +227,8 @@ def history_kpis(db):
         approved = published_batch(db, release)
         if approved:
             scope = historical_scope(
-                scope_for_batch(db, approved), is_current=release == current_version
+                scope_for_batch(db, approved, collections=collections),
+                is_current=release == current_version,
             )
             items = [i for i in items if i["version_key"] != release]
             if scope["available"] or scope.get("historical_frozen"):

@@ -130,7 +130,7 @@ def versions(db: Session = Depends(get_db)):
             "versions": items,
         }
 
-    return read_view(db, "evaluation-navigation-versions", load, max_age=30)
+    return read_view(db, "evaluation-navigation-versions", load, max_age=300)
 
 
 @router.post("/profiles/drafts", status_code=201, response_model=EvaluationProfileResponse)
@@ -176,7 +176,7 @@ def board(
         db,
         ("evaluation-board", view, *ctx.model_dump().values()),
         load,
-        max_age=30,
+        max_age=300,
         scope_releases=scope_releases,
     )
 
@@ -193,7 +193,7 @@ def comparison(
         db,
         ("evaluation-comparison", selected, date_start, date_end),
         lambda: guarded(pipeline.comparison, db, selected, date_start, date_end),
-        max_age=30,
+        max_age=300,
     )
 
 
@@ -205,8 +205,10 @@ def issues(
     query: str = Query("", max_length=200),
     coverage: str = "",
     changed_only: bool = False,
+    result: str = Query("", max_length=64),
     db: Session = Depends(get_db),
 ):
+    scope_releases = [ctx.release] if ctx.release and not ctx.release.startswith("@") else None
     return read_view(
         db,
         (
@@ -217,6 +219,7 @@ def issues(
             query,
             coverage,
             changed_only,
+            result,
         ),
         lambda: guarded(
             pipeline.issue_page,
@@ -227,8 +230,10 @@ def issues(
             query=query,
             coverage=coverage,
             changed_only=changed_only,
+            result=result,
         ),
-        max_age=30,
+        max_age=300,
+        scope_releases=scope_releases,
     )
 
 
@@ -281,4 +286,11 @@ def scenario_label_summary(
     revision: str = Query(min_length=1, max_length=100),
     db: Session = Depends(get_db),
 ):
-    return guarded(evaluation_label_summary.read, db, ctx.model_dump(), revision)
+    scope_releases = [ctx.release] if ctx.release and not ctx.release.startswith("@") else None
+    return read_view(
+        db,
+        ("evaluation-scenario-label-summary", *ctx.model_dump().values(), revision),
+        lambda: guarded(evaluation_label_summary.read, db, ctx.model_dump(), revision),
+        max_age=300,
+        scope_releases=scope_releases,
+    )

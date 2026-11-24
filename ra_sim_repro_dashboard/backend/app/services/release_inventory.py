@@ -2,9 +2,9 @@
 
 from datetime import datetime, timezone
 import json
-from sqlalchemy import select
+from sqlalchemy import func, select
 from app.domain.labels import MAX_OBSERVATION_GAP_SECONDS, QUIET_SECONDS
-from app.models import ReleaseWorkflowState
+from app.models import ReleaseIssueSnapshot, ReleaseWorkflowState
 from app.services import release_workflow as w
 from app.services.label_issue_view import applied_rows
 
@@ -13,10 +13,28 @@ def inventory(db, config=None, now=None):
     config = config if config is not None else w.effective_config(db)
     now = now or datetime.now(timezone.utc)
     versions = {}
-    for period in config.get("periods", []):
-        if period.get("status") != "completed" or not period.get("verified"):
-            continue
-        snapshot = w.latest_snapshot(db, w.period_key(config, period))
+    verified_periods = [
+        (period, w.period_key(config, period))
+        for period in config.get("periods", [])
+        if period.get("status") == "completed" and period.get("verified")
+    ]
+    period_keys = [key for _, key in verified_periods]
+    snapshots_by_key = {}
+    if period_keys:
+        latest_ids = (
+            select(func.max(ReleaseIssueSnapshot.id).label("id"))
+            .where(ReleaseIssueSnapshot.period_hash.in_(period_keys))
+            .group_by(ReleaseIssueSnapshot.period_hash)
+            .subquery()
+        )
+        for snap in db.scalars(
+            select(ReleaseIssueSnapshot).join(
+                latest_ids, ReleaseIssueSnapshot.id == latest_ids.c.id
+            )
+        ):
+            snapshots_by_key[snap.period_hash] = snap
+    for period, pkey in verified_periods:
+        snapshot = snapshots_by_key.get(pkey)
         complete = bool(snapshot and snapshot.payload.get("population_complete"))
         issues = snapshot.payload["issues"] if snapshot else []
         versions[period["release"]] = {
@@ -48,9 +66,20 @@ def inventory(db, config=None, now=None):
     latest = w.get_state(db, "release_monitor")
     if latest.get("release"):
         monitors[latest["release"]] = latest
+    obs_keys = [f"release_observation:{rel}" for rel in monitors]
+    observations = (
+        {
+            row.key: row.payload
+            for row in db.scalars(
+                select(ReleaseWorkflowState).where(ReleaseWorkflowState.key.in_(obs_keys))
+            )
+        }
+        if obs_keys
+        else {}
+    )
     for monitor in monitors.values():
         release = monitor["release"]
-        observed = w.get_state(db, "release_observation:" + release)
+        observed = observations.get("release_observation:" + release) or {}
         last = monitor.get("last_success_at")
         stale = (
             not last

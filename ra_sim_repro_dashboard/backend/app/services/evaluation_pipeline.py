@@ -1068,6 +1068,7 @@ def issue_page(
     query="",
     coverage="",
     changed_only=False,
+    result="",
 ):
     if (
         page < 1
@@ -1107,6 +1108,7 @@ def issue_page(
         if (not query or query.casefold() in (r["issue_id"] + " " + r["issue_topic"]).casefold())
         and matches(r)
         and (not changed_only or r["changed"])
+        and (not result or r.get("auto_label") == result)
     ]
     return {
         "items": values[(page - 1) * page_size : page * page_size],
@@ -1153,7 +1155,7 @@ def comparison(db, profile_id=None, date_start=None, date_end=None):
         )[:128]
         model = stored_models.get(cache_keys[release])
         if can_use_read_models and model is not None and model.source_version == source_version:
-            values.append(deepcopy(model.payload))
+            values.append(dict(model.payload))
             continue
         try:
             view = board(db, release, profile["id"], date_start, date_end, comparison_only=True)

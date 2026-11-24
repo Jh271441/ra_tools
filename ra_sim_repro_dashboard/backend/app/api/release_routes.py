@@ -63,11 +63,13 @@ def issues(
     view: str = Query("collection", pattern="^(simulation|collection)$"),
     db: Session = Depends(get_db),
 ):
+    scope_releases = [release] if release and not release.startswith("@") else None
     return read_view(
         db,
         ("source-issues", release, page, page_size, query, label, view),
         lambda: guarded(orchestrator.list_issues, db, release, page, page_size, query, label, view),
-        max_age=10,
+        max_age=300,
+        scope_releases=scope_releases,
     )
 
 
@@ -79,13 +81,15 @@ def scenario_label_groups(
         db,
         ("scenario-label-groups", release),
         lambda: guarded(release_label_groups.for_release, db, release),
+        max_age=900,
+        scope_releases=[release],
     )
 
 
 @router.get("/versions", response_model=CollectionInventoryResponse)
 def collection_versions(db: Session = Depends(get_db)):
     return read_view(
-        db, "collection-inventory", lambda: release_inventory.inventory(db), max_age=10
+        db, "collection-inventory", lambda: release_inventory.inventory(db), max_age=300
     )
 
 
@@ -104,7 +108,7 @@ def board(
             db,
             ("simulation-board", release),
             lambda: guarded(simulation_board.board, db, release, False),
-            max_age=2,
+            max_age=30,
             scope_releases=scope_releases,
         )
     )

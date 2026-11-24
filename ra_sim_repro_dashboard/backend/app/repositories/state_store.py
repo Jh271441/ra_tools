@@ -147,19 +147,37 @@ def save_revision(
         db.commit()
 
 
+def _unmigrated_kv_rows(
+    db: Session, prefix: str, seen_full_keys: set[str]
+) -> list[ReleaseWorkflowState]:
+    """Check PK index only first; never fetch legacy JSONB payloads when all rows are migrated."""
+    missing = [
+        key
+        for key in db.scalars(
+            select(ReleaseWorkflowState.key).where(ReleaseWorkflowState.key.startswith(prefix))
+        )
+        if key not in seen_full_keys
+    ]
+    if not missing:
+        return []
+    return list(
+        db.scalars(select(ReleaseWorkflowState).where(ReleaseWorkflowState.key.in_(missing)))
+    )
+
+
 def _reconstruct_revision(
     rev: EvaluationRevision, blob: EvaluationRevisionBlob | None
 ) -> dict[str, Any]:
-    out = deepcopy(rev.summary_payload) if isinstance(rev.summary_payload, dict) else {}
+    out = dict(rev.summary_payload) if isinstance(rev.summary_payload, dict) else {}
     if blob is not None:
         if not _is_missing_sentinel(blob.rows_payload):
-            out["rows"] = deepcopy(blob.rows_payload)
+            out["rows"] = blob.rows_payload
         if not _is_missing_sentinel(blob.source_payload):
-            out["source"] = deepcopy(blob.source_payload)
+            out["source"] = blob.source_payload
         if not _is_missing_sentinel(blob.payload_blob):
-            out["payload"] = deepcopy(blob.payload_blob)
+            out["payload"] = blob.payload_blob
         if not _is_missing_sentinel(blob.lineage_payload):
-            out["lineage"] = deepcopy(blob.lineage_payload)
+            out["lineage"] = blob.lineage_payload
     return out
 
 
@@ -169,10 +187,10 @@ def get_revision_summary(db: Session, revision_key: str) -> dict[str, Any]:
         return {}
     rev = db.get(EvaluationRevision, revision_key)
     if rev is not None:
-        return deepcopy(rev.summary_payload)
+        return dict(rev.summary_payload) if isinstance(rev.summary_payload, dict) else {}
     legacy = db.get(ReleaseWorkflowState, revision_key)
     if legacy is not None and isinstance(legacy.payload, dict):
-        return {k: deepcopy(v) for k, v in legacy.payload.items() if k not in REVISION_BLOB_FIELDS}
+        return {k: v for k, v in legacy.payload.items() if k not in REVISION_BLOB_FIELDS}
     return {}
 
 
@@ -184,7 +202,7 @@ def get_revision_full(db: Session, revision_key: str) -> dict[str, Any]:
         blob = db.get(EvaluationRevisionBlob, revision_key)
         return _reconstruct_revision(rev, blob)
     legacy = db.get(ReleaseWorkflowState, revision_key)
-    return deepcopy(legacy.payload) if legacy is not None else {}
+    return dict(legacy.payload) if legacy is not None and isinstance(legacy.payload, dict) else {}
 
 
 def list_revisions(db: Session, *, include_blobs: bool = True) -> list[dict[str, Any]]:
@@ -205,21 +223,12 @@ def list_revisions(db: Session, *, include_blobs: bool = True) -> list[dict[str,
         if include_blobs:
             items.append(_reconstruct_revision(rev, blobs_by_key.get(rev.revision_key)))
         else:
-            items.append(deepcopy(rev.summary_payload))
-    for row in db.scalars(
-        select(ReleaseWorkflowState).where(ReleaseWorkflowState.key.startswith("evrevision:"))
-    ):
-        if row.key not in seen:
-            if include_blobs:
-                items.append(deepcopy(row.payload))
-            else:
-                items.append(
-                    {
-                        k: deepcopy(v)
-                        for k, v in row.payload.items()
-                        if k not in REVISION_BLOB_FIELDS
-                    }
-                )
+            items.append(dict(rev.summary_payload) if isinstance(rev.summary_payload, dict) else {})
+    for row in _unmigrated_kv_rows(db, "evrevision:", seen):
+        if include_blobs:
+            items.append(dict(row.payload))
+        else:
+            items.append({k: v for k, v in row.payload.items() if k not in REVISION_BLOB_FIELDS})
     return items
 
 
@@ -233,10 +242,9 @@ def _split_execution(value: dict[str, Any]) -> tuple[dict[str, Any], dict[str, A
 
 
 def _merge_execution(meta: dict[str, Any], heavy: dict[str, Any] | None) -> dict[str, Any]:
-    out = deepcopy(meta) if isinstance(meta, dict) else {}
+    out = dict(meta) if isinstance(meta, dict) else {}
     if isinstance(heavy, dict):
-        for k, v in heavy.items():
-            out[k] = deepcopy(v)
+        out.update(heavy)
     return out
 
 
@@ -299,7 +307,7 @@ def get_execution(db: Session, execution_id: str, *, include_heavy: bool = True)
             )
         ).scalar_one_or_none()
         if meta is not None:
-            return deepcopy(meta)
+            return dict(meta) if isinstance(meta, dict) else {}
     else:
         row = db.get(EvaluationExecution, execution_id)
         if row is not None:
@@ -307,10 +315,8 @@ def get_execution(db: Session, execution_id: str, *, include_heavy: bool = True)
     legacy = db.get(ReleaseWorkflowState, "evexecution:" + execution_id)
     if legacy is not None:
         if not include_heavy:
-            return {
-                k: deepcopy(v) for k, v in legacy.payload.items() if k not in EXECUTION_HEAVY_FIELDS
-            }
-        return deepcopy(legacy.payload)
+            return {k: v for k, v in legacy.payload.items() if k not in EXECUTION_HEAVY_FIELDS}
+        return dict(legacy.payload)
     return {}
 
 
@@ -321,7 +327,7 @@ def list_executions(
     statuses: tuple[str, ...] | None = None,
     include_heavy: bool = True,
 ) -> list[dict[str, Any]]:
-    seen: set[str] = set()
+    seen_all_ids = set(db.scalars(select(EvaluationExecution.execution_id)))
     items: list[dict[str, Any]] = []
 
     if include_heavy:
@@ -331,7 +337,6 @@ def list_executions(
         if statuses is not None:
             stmt = stmt.where(EvaluationExecution.status.in_(statuses))
         for row in db.scalars(stmt):
-            seen.add(row.execution_id)
             items.append(_merge_execution(row.meta_payload, row.heavy_payload))
     else:
         stmt = select(EvaluationExecution.execution_id, EvaluationExecution.meta_payload)
@@ -339,17 +344,12 @@ def list_executions(
             stmt = stmt.where(EvaluationExecution.release == release)
         if statuses is not None:
             stmt = stmt.where(EvaluationExecution.status.in_(statuses))
-        for eid, meta in db.execute(stmt):
-            seen.add(eid)
-            items.append(deepcopy(meta))
+        for _eid, meta in db.execute(stmt):
+            items.append(dict(meta) if isinstance(meta, dict) else {})
 
-    # Merge any unmigrated legacy KV rows (tests or pre-backfill PG data)
-    for kv in db.scalars(
-        select(ReleaseWorkflowState).where(ReleaseWorkflowState.key.startswith("evexecution:"))
-    ):
-        eid = kv.key.removeprefix("evexecution:")
-        if eid in seen:
-            continue
+    # Merge any unmigrated legacy KV rows without loading migrated JSONB blobs
+    seen_kv_keys = {"evexecution:" + eid for eid in seen_all_ids}
+    for kv in _unmigrated_kv_rows(db, "evexecution:", seen_kv_keys):
         p = kv.payload or {}
         if release is not None:
             kv_rel = (p.get("plan") or {}).get("release") or (p.get("context") or {}).get("release")
@@ -358,9 +358,9 @@ def list_executions(
         if statuses is not None and p.get("status") not in statuses:
             continue
         if include_heavy:
-            items.append(deepcopy(p))
+            items.append(dict(p))
         else:
-            items.append({k: deepcopy(v) for k, v in p.items() if k not in EXECUTION_HEAVY_FIELDS})
+            items.append({k: v for k, v in p.items() if k not in EXECUTION_HEAVY_FIELDS})
     return items
 
 
@@ -369,7 +369,7 @@ def list_public_executions_grouped(
 ) -> dict[str, list[dict[str, Any]]]:
     """Return lightweight execution metadata grouped by release (zero heavy JSON)."""
     grouped: dict[str, list[dict[str, Any]]] = {}
-    seen: set[str] = set()
+    seen_all_ids = set(db.scalars(select(EvaluationExecution.execution_id)))
     stmt = select(
         EvaluationExecution.execution_id,
         EvaluationExecution.release,
@@ -377,39 +377,32 @@ def list_public_executions_grouped(
     )
     if release:
         stmt = stmt.where(EvaluationExecution.release == release)
-    for eid, rel, meta in db.execute(stmt):
-        seen.add(eid)
+    for _eid, rel, meta in db.execute(stmt):
         if rel:
-            grouped.setdefault(rel, []).append(deepcopy(meta))
-    for kv in db.scalars(
-        select(ReleaseWorkflowState).where(ReleaseWorkflowState.key.startswith("evexecution:"))
-    ):
-        eid = kv.key.removeprefix("evexecution:")
-        if eid in seen:
-            continue
+            grouped.setdefault(rel, []).append(dict(meta) if isinstance(meta, dict) else {})
+    seen_kv_keys = {"evexecution:" + eid for eid in seen_all_ids}
+    for kv in _unmigrated_kv_rows(db, "evexecution:", seen_kv_keys):
         p = kv.payload or {}
         rel = (p.get("plan") or {}).get("release") or (p.get("context") or {}).get("release")
         if not rel or (release and rel != release):
             continue
         grouped.setdefault(rel, []).append(
-            {k: deepcopy(v) for k, v in p.items() if k not in EXECUTION_HEAVY_FIELDS}
+            {k: v for k, v in p.items() if k not in EXECUTION_HEAVY_FIELDS}
         )
     return grouped
 
 
 def count_active_executions(db: Session, release: str | None = None) -> int:
+    seen_all_ids = set(db.scalars(select(EvaluationExecution.execution_id)))
     stmt = select(EvaluationExecution.execution_id).where(
         EvaluationExecution.status.in_(ACTIVE_EXECUTION_STATUSES)
     )
     if release is not None:
         stmt = stmt.where(EvaluationExecution.release == release)
     active_ids = set(db.scalars(stmt).all())
-    for kv in db.scalars(
-        select(ReleaseWorkflowState).where(ReleaseWorkflowState.key.startswith("evexecution:"))
-    ):
+    seen_kv_keys = {"evexecution:" + eid for eid in seen_all_ids}
+    for kv in _unmigrated_kv_rows(db, "evexecution:", seen_kv_keys):
         eid = kv.key.removeprefix("evexecution:")
-        if eid in active_ids:
-            continue
         p = kv.payload or {}
         if p.get("status") not in ACTIVE_EXECUTION_STATUSES:
             continue
@@ -465,30 +458,25 @@ def get_request(db: Session, request_id: str) -> dict[str, Any]:
         return {}
     row = db.get(EvaluationRequest, request_id)
     if row is not None:
-        return deepcopy(row.payload)
+        return dict(row.payload) if isinstance(row.payload, dict) else {}
     legacy = db.get(ReleaseWorkflowState, "evrequest:" + request_id)
-    return deepcopy(legacy.payload) if legacy is not None else {}
+    return dict(legacy.payload) if legacy is not None and isinstance(legacy.payload, dict) else {}
 
 
 def list_requests(db: Session, *, statuses: tuple[str, ...] | None = None) -> list[dict[str, Any]]:
-    seen: set[str] = set()
+    seen_all_ids = set(db.scalars(select(EvaluationRequest.request_id)))
     items: list[dict[str, Any]] = []
     stmt = select(EvaluationRequest)
     if statuses is not None:
         stmt = stmt.where(EvaluationRequest.status.in_(statuses))
     for row in db.scalars(stmt):
-        seen.add(row.request_id)
-        items.append(deepcopy(row.payload))
-    for kv in db.scalars(
-        select(ReleaseWorkflowState).where(ReleaseWorkflowState.key.startswith("evrequest:"))
-    ):
-        rid = kv.key.removeprefix("evrequest:")
-        if rid in seen:
-            continue
+        items.append(dict(row.payload) if isinstance(row.payload, dict) else {})
+    seen_kv_keys = {"evrequest:" + rid for rid in seen_all_ids}
+    for kv in _unmigrated_kv_rows(db, "evrequest:", seen_kv_keys):
         p = kv.payload or {}
         if statuses is not None and p.get("status") not in statuses:
             continue
-        items.append(deepcopy(p))
+        items.append(dict(p))
     return items
 
 
@@ -615,22 +603,27 @@ def save_timing_ledger(db: Session, ledger_key: str, release: str, core: dict[st
 
 
 def list_timing_ledgers(db: Session, release: str) -> list[tuple[str, dict[str, Any]]]:
-    seen: set[str] = set()
+    all_migrated = set(db.scalars(select(ReproductionTimingEvidence.ledger_key)))
     results: list[tuple[str, dict[str, Any]]] = []
     for row in db.scalars(
         select(ReproductionTimingEvidence).where(ReproductionTimingEvidence.release == release)
     ):
-        seen.add(row.ledger_key)
         results.append((row.ledger_key, row.payload))
-    # Fallback to legacy KV rows for unmigrated data or tests inserting directly into KV
-    stmt = select(ReleaseWorkflowState).where(
-        ReleaseWorkflowState.key.like("rtime:%"),
-        ReleaseWorkflowState.payload["release"].as_string() == release,
-    )
-    for row in db.scalars(stmt):
-        if row.key not in seen:
-            seen.add(row.key)
-            results.append((row.key, row.payload))
+    missing = [
+        key
+        for key in db.scalars(
+            select(ReleaseWorkflowState.key).where(ReleaseWorkflowState.key.startswith("rtime:"))
+        )
+        if key not in all_migrated
+    ]
+    if missing:
+        stmt = select(ReleaseWorkflowState).where(
+            ReleaseWorkflowState.key.like("rtime:%"),
+            ReleaseWorkflowState.payload["release"].as_string() == release,
+        )
+        for kv in db.scalars(stmt):
+            if kv.key not in all_migrated:
+                results.append((kv.key, kv.payload))
     return results
 
 
@@ -693,6 +686,9 @@ def put_routed_state(
     if row is None:
         db.add(ReleaseWorkflowState(key=key, payload=payload))
     else:
+        if row.payload == payload:
+            # Skip no-op rewrites so release_data_versions caches are not falsely invalidated.
+            return
         row.payload = payload
     if commit:
         db.commit()

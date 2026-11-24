@@ -74,7 +74,7 @@ def _optional_int(value: Any) -> int | None:
 
 @router.get("/dashboard/versions", response_model=VersionsResponse)
 def versions(db: DbSession) -> VersionsResponse:
-    return read_view(db, "versions", lambda: _versions(db))
+    return read_view(db, "versions", lambda: _versions(db), model_cls=VersionsResponse)
 
 
 def _versions(db: DbSession) -> VersionsResponse:

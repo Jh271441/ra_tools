@@ -123,7 +123,7 @@ def _validate_batch_population(rows, frozen):
             raise ValueError("batch Issue time differs from its source")
 
 
-def scope_for_batch(db, batch):
+def scope_for_batch(db, batch, *, collections=None):
     """Explain whether a native frozen publication covers current collection.
 
     This function neither queries upstream nor changes snapshots, approvals,
@@ -132,7 +132,7 @@ def scope_for_batch(db, batch):
     return read_projection(
         db,
         ("business-population", batch.fingerprint, batch.updated_at),
-        lambda: _scope_for_batch(db, batch),
+        lambda: _scope_for_batch(db, batch, collections=collections),
     )
 
 
@@ -150,7 +150,7 @@ def historical_scope(scope, *, is_current):
     return scope
 
 
-def _scope_for_batch(db, batch):
+def _scope_for_batch(db, batch, *, collections=None):
     payload = batch.payload if isinstance(batch.payload, dict) else {}
     release = batch.release
     result = {
@@ -211,11 +211,14 @@ def _scope_for_batch(db, batch):
             observed_at = datetime.fromisoformat(observation["observed_at"])
             if observed_at.tzinfo is None:
                 return result
-            collections = read_projection(
-                db, "business-population-inventory", lambda: inventory(db)
+            resolved_collections = (
+                collections
+                if collections is not None
+                else read_projection(db, "business-population-inventory", lambda: inventory(db))
             )
             collection = next(
-                (item for item in collections["versions"] if item["release"] == release), None
+                (item for item in resolved_collections["versions"] if item["release"] == release),
+                None,
             )
             if collection:
                 result.update(

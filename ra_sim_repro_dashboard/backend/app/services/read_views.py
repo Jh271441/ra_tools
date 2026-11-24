@@ -76,7 +76,15 @@ def _is_json_primitive_tree(value: Any) -> bool:
     return isinstance(value, (dict, list))
 
 
-def read_view(db, name, load, *, max_age=300, scope_releases: list[str] | None = None):
+def read_view(
+    db,
+    name,
+    load,
+    *,
+    max_age=300,
+    scope_releases: list[str] | None = None,
+    model_cls: Any = None,
+):
     # Never cache uncommitted state or a failed computation. Callers of this
     # helper are GET handlers, not the scheduler, publication, or submit paths.
     if db.new or db.dirty or db.deleted:
@@ -105,12 +113,17 @@ def read_view(db, name, load, *, max_age=300, scope_releases: list[str] | None =
             if redis_key:
                 from_redis = redis_cache.get_json(redis_key)
                 if from_redis is not None:
+                    hydrated = (
+                        model_cls.model_validate(from_redis)
+                        if model_cls is not None
+                        else from_redis
+                    )
                     with _lock:
-                        _values[key] = (monotonic(), deepcopy(from_redis))
+                        _values[key] = (monotonic(), deepcopy(hydrated))
                         _values.move_to_end(key)
                         while len(_values) > _MAX_ENTRIES:
                             _values.popitem(last=False)
-                    return from_redis
+                    return hydrated
 
             scope = _read_db.set(db)
             # Retain large immutable audit receipts only for this GET. Nested
@@ -128,11 +141,19 @@ def read_view(db, name, load, *, max_age=300, scope_releases: list[str] | None =
                 _values.move_to_end(key)
                 while len(_values) > _MAX_ENTRIES:
                     _values.popitem(last=False)
-            if redis_key and _is_json_primitive_tree(cached):
-                try:
-                    redis_cache.set_json(redis_key, cached, ttl=max(1, int(max_age)))
-                except TypeError:
-                    pass
+            if redis_key:
+                wire = (
+                    cached.model_dump(mode="json")
+                    if model_cls is not None and hasattr(cached, "model_dump")
+                    else cached
+                    if _is_json_primitive_tree(cached)
+                    else None
+                )
+                if wire is not None:
+                    try:
+                        redis_cache.set_json(redis_key, wire, ttl=max(1, int(max_age)))
+                    except TypeError:
+                        pass
             return value
     finally:
         with _lock:
