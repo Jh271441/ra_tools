@@ -38,6 +38,7 @@ autotriage_source = _services.autotriage_source
 batch_prediction_runner = _services.batch_prediction_runner
 review_notification_dispatcher = _services.review_notification_dispatcher
 issue_tag_sources = _services.issue_tag_sources
+artifact_store = _services.artifact_store
 
 trail_sync_lock = threading.Lock()
 gt_sync_lock = threading.Lock()

@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="ra-triage-base" content="{{RA_TRIAGE_BASE_PATH}}" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%230d9488'/%3E%3Ccircle cx='12' cy='12' r='5' fill='%23ffffff'/%3E%3C/svg%3E" />
+  <title>图表与交互 Artifact 库 · RA Triage</title>
+  <script>
+    (() => {
+      const configured = (
+        document.querySelector('meta[name="ra-triage-base"]')?.getAttribute("content") || ""
+      ).replace(/\/+$/, "");
+      const pathname = window.location.pathname || "/";
+      const activeBase =
+        configured && (pathname === configured || pathname.startsWith(`${configured}/`))
+          ? configured
+          : "";
+      window.__RA_TRIAGE_BASE__ = activeBase;
+
+      try {
+        const savedTheme = (localStorage.getItem("ra-triage-color-theme") || "").toLowerCase();
+        document.documentElement.dataset.colorTheme = savedTheme === "light" ? "light" : "dark";
+        const savedLang = (localStorage.getItem("ra-triage-ui-language") || "").toLowerCase();
+        const lang = savedLang === "en" ? "en" : "zh";
+        document.documentElement.dataset.uiLang = lang;
+        document.documentElement.lang = lang === "en" ? "en" : "zh-CN";
+      } catch (_) {
+        document.documentElement.dataset.colorTheme = "dark";
+        document.documentElement.dataset.uiLang = "zh";
+      }
+
+      const ver = "artifacts-hub-1";
+      for (const href of [`${activeBase}/static/styles.css?v=${ver}`, `${activeBase}/static/artifacts/artifacts-hub.css?v=${ver}`]) {
+        const link = document.createElement("link");
+        link.rel = "stylesheet";
+        link.href = href;
+        document.head.appendChild(link);
+      }
+    })();
+  </script>
+</head>
+<body data-page="portal">
+  <div class="hub-wrap">
+    <header class="hub-topbar">
+      <div class="hub-topbar-left">
+        <span class="hub-brand">
+          <span class="hub-brand-dot" aria-hidden="true"></span>
+          <span data-i18n="portal.brand">Artifact 图表库</span>
+          <span id="hubTotalBadge" class="hub-count-badge">0</span>
+        </span>
+      </div>
+      <div class="hub-topbar-right">
+        <button id="openUploadBtn" type="button" class="btn btn-primary" hidden data-i18n="portal.upload">上传 HTML</button>
+        <a id="workbenchBackLink" class="btn" href="/review" data-i18n="portal.workbench">返回工作台</a>
+        <button id="langToggleBtn" type="button" class="btn btn-icon" aria-label="Switch to English">EN</button>
+        <button id="themeToggleBtn" type="button" class="btn btn-icon" aria-label="切换到浅色模式">☀</button>
+      </div>
+    </header>
+
+    <section class="hub-hero">
+      <div class="hub-hero-copy">
+        <p class="hub-eyebrow" data-i18n="portal.eyebrow">RA TRIAGE · ARTIFACTS HUB</p>
+        <h1 data-i18n="portal.title">图表与交互 Artifact 管理入口</h1>
+        <p class="hub-hero-sub" data-i18n="portal.subtitle">统一托管与分享各对话生成的架构图、诊断图与交互原型；新图表通过异步 Hook 自动同步，无需重新发版。</p>
+      </div>
+      <div class="hub-stats-row">
+        <span class="hub-stat-pill"><span data-i18n="portal.statActive">活跃</span> <strong id="statActiveCount">0</strong></span>
+        <span class="hub-stat-pill"><span data-i18n="portal.statArchived">已归档</span> <strong id="statArchivedCount">0</strong></span>
+        <span class="hub-stat-pill"><span data-i18n="portal.statTotal">总计</span> <strong id="statTotalCount">0</strong></span>
+      </div>
+    </section>
+
+    <p id="readOnlyBanner" class="hub-hero-sub" style="margin: 0 0 12px;" hidden data-i18n="portal.readOnlyHint">当前为只读模式；通过企业 SSO 登录后可编辑、归档或上传。</p>
+
+    <div class="hub-mobile-filter-bar">
+      <button id="mobileFilterToggle" type="button" class="btn" aria-expanded="false" aria-controls="hubControlsCard" data-i18n="portal.filterToggle">筛选与排序</button>
+    </div>
+
+    <section id="hubControlsCard" class="hub-controls-card" aria-label="Filters">
+      <div class="hub-controls-top">
+        <div class="hub-search-box">
+          <input id="artifactSearchInput" type="search" autocomplete="off" data-i18n-placeholder="portal.searchPlaceholder" placeholder="搜索标题、slug、标签、摘要或对话 ID..." />
+          <button id="artifactSearchClear" type="button" class="hub-search-clear" hidden data-i18n-aria="portal.searchClear" aria-label="清空搜索">✕</button>
+        </div>
+        <div class="hub-select-row">
+          <div class="hub-filter-field">
+            <span class="hub-filter-label" data-i18n="portal.filterStatus">状态</span>
+            <div id="statusFilterSelect"></div>
+          </div>
+          <div class="hub-filter-field">
+            <span class="hub-filter-label" data-i18n="portal.filterSort">排序</span>
+            <div id="sortFilterSelect"></div>
+          </div>
+        </div>
+      </div>
+      <div id="groupPillsBar" class="hub-group-pills" role="group" aria-label="Groups"></div>
+    </section>
+
+    <main id="artifactListContainer" aria-live="polite"></main>
+
+    <nav id="artifactPagination" class="case-pagination" aria-label="Pagination" hidden>
+      <span id="paginationTotal" class="case-pagination-total">共 0 条</span>
+      <div class="case-pagination-main">
+        <button id="pagePrevBtn" type="button" class="btn btn-sm" data-i18n="portal.prev">上一页</button>
+        <span id="paginationRatio">第 0 / 0 页</span>
+        <button id="pageNextBtn" type="button" class="btn btn-sm" data-i18n="portal.next">下一页</button>
+        <span class="page-jump-control">
+          <label for="pageJumpInput" data-i18n="portal.jumpLabel">跳至</label>
+          <input id="pageJumpInput" type="number" min="1" step="1" inputmode="numeric" />
+          <button id="pageJumpBtn" type="button" class="btn btn-sm" data-i18n="portal.jumpGo">跳转</button>
+        </span>
+      </div>
+      <div class="case-page-size">
+        <span data-i18n="portal.pageSizeLabel">每页</span>
+        <div id="pageSizeSelect"></div>
+      </div>
+    </nav>
+  </div>
+
+  <!-- Edit Metadata Modal -->
+  <div id="editModalBackdrop" class="hub-modal-backdrop" hidden role="dialog" aria-modal="true" aria-labelledby="editModalTitle">
+    <form id="editArtifactForm" class="hub-modal" novalidate>
+      <div class="hub-modal-header">
+        <h2 id="editModalTitle" data-i18n="modal.editTitle">编辑 Artifact 信息</h2>
+        <button type="button" class="btn btn-icon btn-ghost" data-close-edit data-i18n-aria="modal.close" aria-label="关闭">✕</button>
+      </div>
+      <div class="hub-modal-body">
+        <p id="editFormError" class="form-error" hidden role="alert"></p>
+        <div class="form-grid-2">
+          <div class="form-field">
+            <label for="editTitleZh" data-i18n="modal.fieldTitleZh">中文标题</label>
+            <input id="editTitleZh" type="text" maxlength="160" required />
+          </div>
+          <div class="form-field">
+            <label for="editTitleEn" data-i18n="modal.fieldTitleEn">英文标题</label>
+            <input id="editTitleEn" type="text" maxlength="160" />
+          </div>
+        </div>
+        <div class="form-grid-2">
+          <div class="form-field">
+            <label data-i18n="modal.fieldGroup">所属分组</label>
+            <div id="editGroupSelect"></div>
+          </div>
+          <div class="form-field">
+            <label for="editTags" data-i18n="modal.fieldTags">标签（逗号分隔）</label>
+            <input id="editTags" type="text" maxlength="320" data-i18n-placeholder="modal.tagsPlaceholder" placeholder="例如：VLM, LoRA, PIPO" />
+          </div>
+        </div>
+        <div class="form-field">
+          <label for="editSummaryZh" data-i18n="modal.fieldSummaryZh">中文摘要</label>
+          <textarea id="editSummaryZh" maxlength="600"></textarea>
+        </div>
+        <div class="form-field">
+          <label for="editSummaryEn" data-i18n="modal.fieldSummaryEn">英文摘要</label>
+          <textarea id="editSummaryEn" maxlength="600"></textarea>
+        </div>
+        <div class="form-checkbox-row">
+          <label class="form-checkbox-label">
+            <input id="editPinned" type="checkbox" />
+            <span data-i18n="modal.fieldPinned">置顶显示</span>
+          </label>
+          <label class="form-checkbox-label">
+            <input id="editArchived" type="checkbox" />
+            <span data-i18n="modal.fieldArchived">归档（隐藏出默认活跃列表）</span>
+          </label>
+        </div>
+      </div>
+      <div class="hub-modal-footer">
+        <button type="button" class="btn" data-close-edit data-i18n="modal.cancel">取消</button>
+        <button id="editSubmitBtn" type="submit" class="btn btn-primary" data-i18n="modal.save">保存修改</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Upload HTML Modal -->
+  <div id="uploadModalBackdrop" class="hub-modal-backdrop" hidden role="dialog" aria-modal="true" aria-labelledby="uploadModalTitle">
+    <form id="uploadArtifactForm" class="hub-modal" novalidate>
+      <div class="hub-modal-header">
+        <h2 id="uploadModalTitle" data-i18n="modal.uploadTitle">上传 HTML Artifact</h2>
+        <button type="button" class="btn btn-icon btn-ghost" data-close-upload data-i18n-aria="modal.close" aria-label="关闭">✕</button>
+      </div>
+      <div class="hub-modal-body">
+        <p id="uploadFormError" class="form-error" hidden role="alert"></p>
+        <div class="form-field">
+          <label data-i18n="modal.fieldFile">选择或拖拽 HTML 文件（最大 4 MB）</label>
+          <div id="uploadDropzone" class="form-dropzone">
+            <span id="uploadDropText" data-i18n="modal.dropHint">点击选择 .html 文件，或将文件拖到此处</span>
+            <input id="uploadHtmlFile" type="file" accept=".html,.htm,text/html" hidden />
+          </div>
+        </div>
+        <div class="form-grid-2">
+          <div class="form-field">
+            <label for="uploadSlug" data-i18n="modal.fieldSlug">URL 路径标识（slug）</label>
+            <input id="uploadSlug" type="text" maxlength="96" data-i18n-placeholder="modal.slugPlaceholder" placeholder="例如：lora-mounting-inside-layers" required />
+          </div>
+          <div class="form-field">
+            <label data-i18n="modal.fieldGroup">所属分组</label>
+            <div id="uploadGroupSelect"></div>
+          </div>
+        </div>
+        <div class="form-grid-2">
+          <div class="form-field">
+            <label for="uploadTitleZh" data-i18n="modal.fieldTitleZh">中文标题</label>
+            <input id="uploadTitleZh" type="text" maxlength="160" required />
+          </div>
+          <div class="form-field">
+            <label for="uploadTitleEn" data-i18n="modal.fieldTitleEn">英文标题</label>
+            <input id="uploadTitleEn" type="text" maxlength="160" />
+          </div>
+        </div>
+        <div class="form-field">
+          <label for="uploadTags" data-i18n="modal.fieldTags">标签（逗号分隔）</label>
+          <input id="uploadTags" type="text" maxlength="320" data-i18n-placeholder="modal.tagsPlaceholder" placeholder="例如：VLM, LoRA, PIPO" />
+        </div>
+        <div class="form-field">
+          <label for="uploadSummaryZh" data-i18n="modal.fieldSummaryZh">中文摘要</label>
+          <textarea id="uploadSummaryZh" maxlength="600"></textarea>
+        </div>
+      </div>
+      <div class="hub-modal-footer">
+        <button type="button" class="btn" data-close-upload data-i18n="modal.cancel">取消</button>
+        <button id="uploadSubmitBtn" type="submit" class="btn btn-primary" data-i18n="modal.uploadSubmit">上传并发布</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Delete Confirm Modal -->
+  <div id="deleteModalBackdrop" class="hub-modal-backdrop" hidden role="dialog" aria-modal="true" aria-labelledby="deleteModalTitle">
+    <div class="hub-modal" style="width: min(440px, 100%);">
+      <div class="hub-modal-header">
+        <h2 id="deleteModalTitle" data-i18n="modal.deleteTitle">确认删除 Artifact</h2>
+        <button type="button" class="btn btn-icon btn-ghost" data-close-delete data-i18n-aria="modal.close" aria-label="关闭">✕</button>
+      </div>
+      <div class="hub-modal-body">
+        <p id="deleteModalBody" style="margin: 0;"></p>
+      </div>
+      <div class="hub-modal-footer">
+        <button type="button" class="btn" data-close-delete data-i18n="modal.cancel">取消</button>
+        <button id="deleteConfirmBtn" type="button" class="btn btn-danger" style="min-height: 44px;" data-i18n="modal.deleteConfirm">确认删除</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="hubToast" class="hub-toast" hidden role="status" aria-live="polite"></div>
+
+  <script>
+    (() => {
+      const s = document.createElement("script");
+      s.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/artifacts/artifacts-hub.js?v=artifacts-hub-1`;
+      document.body.appendChild(s);
+    })();
+  </script>
+</body>
+</html>

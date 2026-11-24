@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="ra-triage-base" content="{{RA_TRIAGE_BASE_PATH}}" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%230d9488'/%3E%3Ccircle cx='12' cy='12' r='5' fill='%23ffffff'/%3E%3C/svg%3E" />
+  <title>Artifact 查看器 · RA Triage</title>
+  <script>
+    (() => {
+      const configured = (
+        document.querySelector('meta[name="ra-triage-base"]')?.getAttribute("content") || ""
+      ).replace(/\/+$/, "");
+      const pathname = window.location.pathname || "/";
+      const activeBase =
+        configured && (pathname === configured || pathname.startsWith(`${configured}/`))
+          ? configured
+          : "";
+      window.__RA_TRIAGE_BASE__ = activeBase;
+
+      try {
+        const savedTheme = (localStorage.getItem("ra-triage-color-theme") || "").toLowerCase();
+        document.documentElement.dataset.colorTheme = savedTheme === "light" ? "light" : "dark";
+        const savedLang = (localStorage.getItem("ra-triage-ui-language") || "").toLowerCase();
+        const lang = savedLang === "en" ? "en" : "zh";
+        document.documentElement.dataset.uiLang = lang;
+        document.documentElement.lang = lang === "en" ? "en" : "zh-CN";
+      } catch (_) {
+        document.documentElement.dataset.colorTheme = "dark";
+        document.documentElement.dataset.uiLang = "zh";
+      }
+
+      const ver = "artifacts-hub-1";
+      for (const href of [`${activeBase}/static/styles.css?v=${ver}`, `${activeBase}/static/artifacts/artifacts-hub.css?v=${ver}`]) {
+        const link = document.createElement("link");
+        link.rel = "stylesheet";
+        link.href = href;
+        document.head.appendChild(link);
+      }
+    })();
+  </script>
+</head>
+<body data-page="viewer">
+  <div id="viewerWrap" class="hub-wrap">
+    <header class="hub-topbar">
+      <div class="hub-topbar-left">
+        <a id="viewerBackLink" class="btn" href="/artifacts" data-i18n="viewer.back">← 图表库</a>
+        <div class="hub-viewer-crumb">
+          <span class="hub-brand-dot" aria-hidden="true"></span>
+          <span id="viewerCrumbTitle" class="hub-viewer-crumb-title">Artifact</span>
+        </div>
+      </div>
+      <div class="hub-topbar-right">
+        <button id="viewerCopyLinkBtn" type="button" class="btn btn-primary" data-i18n="viewer.copyLink">复制链接</button>
+        <button id="viewerWideToggleBtn" type="button" class="btn" data-i18n="viewer.wideOn">宽幅铺满</button>
+        <a id="viewerOpenCanvasLink" class="btn" href="#" target="_blank" rel="noopener noreferrer" data-i18n="viewer.openCanvas">纯画布</a>
+        <button id="viewerEditBtn" type="button" class="btn" hidden data-i18n="viewer.edit">编辑</button>
+        <button id="langToggleBtn" type="button" class="btn btn-icon" aria-label="Switch to English">EN</button>
+        <button id="themeToggleBtn" type="button" class="btn btn-icon" aria-label="切换到浅色模式">☀</button>
+      </div>
+    </header>
+
+    <div id="viewerNotFound" class="hub-state-card" hidden>
+      <h1 class="hub-state-title" data-i18n="viewer.notFoundTitle">未找到该 Artifact</h1>
+      <p class="hub-state-desc" data-i18n="viewer.notFoundDesc">链接对应的图表不存在或已被删除，请返回图表库查看全部内容。</p>
+      <a id="notFoundBackLink" class="btn btn-primary" href="/artifacts" data-i18n="viewer.backToPortal">返回 Artifact 图表库</a>
+    </div>
+
+    <div id="viewerContentShell">
+      <section class="viewer-meta-bar">
+        <div class="viewer-meta-top">
+          <div style="min-width: 0; flex: 1 1 360px;">
+            <h1 id="viewerTitle" class="viewer-meta-title">...</h1>
+            <p id="viewerSummary" class="viewer-meta-summary" hidden></p>
+          </div>
+          <div id="viewerMetaChips" class="viewer-meta-chips"></div>
+        </div>
+        <div id="viewerMetaDetails" class="viewer-meta-details"></div>
+      </section>
+
+      <section class="viewer-stage-card">
+        <div id="viewerStageLoading" class="viewer-stage-loading" data-i18n="viewer.loading">正在加载交互式图表画布...</div>
+        <iframe
+          id="artifactStageFrame"
+          class="viewer-stage-frame"
+          title="Interactive Artifact Stage"
+          sandbox="allow-scripts allow-downloads allow-popups"
+          referrerpolicy="no-referrer"
+        ></iframe>
+      </section>
+    </div>
+  </div>
+
+  <!-- Edit Metadata Modal -->
+  <div id="editModalBackdrop" class="hub-modal-backdrop" hidden role="dialog" aria-modal="true" aria-labelledby="editModalTitle">
+    <form id="editArtifactForm" class="hub-modal" novalidate>
+      <div class="hub-modal-header">
+        <h2 id="editModalTitle" data-i18n="modal.editTitle">编辑 Artifact 信息</h2>
+        <button type="button" class="btn btn-icon btn-ghost" data-close-edit data-i18n-aria="modal.close" aria-label="关闭">✕</button>
+      </div>
+      <div class="hub-modal-body">
+        <p id="editFormError" class="form-error" hidden role="alert"></p>
+        <div class="form-grid-2">
+          <div class="form-field">
+            <label for="editTitleZh" data-i18n="modal.fieldTitleZh">中文标题</label>
+            <input id="editTitleZh" type="text" maxlength="160" required />
+          </div>
+          <div class="form-field">
+            <label for="editTitleEn" data-i18n="modal.fieldTitleEn">英文标题</label>
+            <input id="editTitleEn" type="text" maxlength="160" />
+          </div>
+        </div>
+        <div class="form-grid-2">
+          <div class="form-field">
+            <label data-i18n="modal.fieldGroup">所属分组</label>
+            <div id="editGroupSelect"></div>
+          </div>
+          <div class="form-field">
+            <label for="editTags" data-i18n="modal.fieldTags">标签（逗号分隔）</label>
+            <input id="editTags" type="text" maxlength="320" data-i18n-placeholder="modal.tagsPlaceholder" placeholder="例如：VLM, LoRA, PIPO" />
+          </div>
+        </div>
+        <div class="form-field">
+          <label for="editSummaryZh" data-i18n="modal.fieldSummaryZh">中文摘要</label>
+          <textarea id="editSummaryZh" maxlength="600"></textarea>
+        </div>
+        <div class="form-field">
+          <label for="editSummaryEn" data-i18n="modal.fieldSummaryEn">英文摘要</label>
+          <textarea id="editSummaryEn" maxlength="600"></textarea>
+        </div>
+        <div class="form-checkbox-row">
+          <label class="form-checkbox-label">
+            <input id="editPinned" type="checkbox" />
+            <span data-i18n="modal.fieldPinned">置顶显示</span>
+          </label>
+          <label class="form-checkbox-label">
+            <input id="editArchived" type="checkbox" />
+            <span data-i18n="modal.fieldArchived">归档（隐藏出默认活跃列表）</span>
+          </label>
+        </div>
+      </div>
+      <div class="hub-modal-footer">
+        <button type="button" class="btn" data-close-edit data-i18n="modal.cancel">取消</button>
+        <button id="editSubmitBtn" type="submit" class="btn btn-primary" data-i18n="modal.save">保存修改</button>
+      </div>
+    </form>
+  </div>
+
+  <div id="hubToast" class="hub-toast" hidden role="status" aria-live="polite"></div>
+
+  <script>
+    (() => {
+      const s = document.createElement("script");
+      s.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/artifacts/artifacts-hub.js?v=artifacts-hub-1`;
+      document.body.appendChild(s);
+    })();
+  </script>
+</body>
+</html>

@@ -675,6 +675,13 @@ class Settings:
     def case_thumbnails_dir(self) -> Path:
         return self.data_dir / "case_thumbnails"
 
+    @property
+    def artifacts_dir(self) -> Path:
+        override = os.getenv("DASHBOARD_ARTIFACTS_DIR", "").strip()
+        if override:
+            return Path(override).expanduser().resolve()
+        return self.data_dir / "artifacts"
+
     def ensure_directories(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.jobs_dir.mkdir(parents=True, exist_ok=True)
@@ -682,6 +689,7 @@ class Settings:
         self.review_attachments_dir.mkdir(parents=True, exist_ok=True)
         self.comment_attachments_dir.mkdir(parents=True, exist_ok=True)
         self.case_thumbnails_dir.mkdir(parents=True, exist_ok=True)
+        self.artifacts_dir.mkdir(parents=True, exist_ok=True)
         self.batch_bag_cache_dir.mkdir(parents=True, exist_ok=True)
         if self.storage_backend == "sqlite":
             self.db_path.parent.mkdir(parents=True, exist_ok=True)

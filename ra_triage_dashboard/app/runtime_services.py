@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import os
 from pathlib import Path
+from .artifact_store import ArtifactStore
 from .assets import AssetIndex, CameraIndex, VideoIndex
 from .auth import validate_identity_settings
 from .autotriage_source import AutoTriageSource
@@ -36,6 +37,7 @@ class RuntimeServices:
     batch_prediction_runner: BatchPredictionRunner
     review_notification_dispatcher: ReviewNotificationDispatcher
     issue_tag_sources: IssueTagSourceIndex
+    artifact_store: ArtifactStore
 
 
 def load_active_baseline_registry(settings: Settings) -> BaselineRegistry:
@@ -96,6 +98,10 @@ def build_runtime_services(settings: Settings) -> RuntimeServices:
     batch_prediction_runner = BatchPredictionRunner(settings, database)
     review_notification_dispatcher = ReviewNotificationDispatcher(settings, database, baseline_ids_by_scope={entry.scope: entry.id for entry in baseline_registry.entries})
     issue_tag_sources = IssueTagSourceIndex()
+    artifact_store = ArtifactStore(
+        settings.artifacts_dir,
+        static_dir=settings.static_dir,
+    )
     return RuntimeServices(
         database=database,
         asset_index=asset_index,
@@ -110,4 +116,5 @@ def build_runtime_services(settings: Settings) -> RuntimeServices:
         batch_prediction_runner=batch_prediction_runner,
         review_notification_dispatcher=review_notification_dispatcher,
         issue_tag_sources=issue_tag_sources,
+        artifact_store=artifact_store,
     )

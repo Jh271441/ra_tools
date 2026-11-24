@@ -1,0 +1,9 @@
+{
+  "name": "tailwindcss-browser-runtime",
+  "source": "https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js",
+  "license": "MIT",
+  "purpose": "Local intranet-safe Tailwind CSS browser runtime for standalone Antigravity HTML artifacts without external CDN requests.",
+  "artifacts": {
+    "tailwindcss.min.js": "c90f926b51b38f78efe878d1891896beb1150d9a3b859d0312e1d2f172181fb0"
+  }
+}

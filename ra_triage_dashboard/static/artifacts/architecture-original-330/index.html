@@ -604,6 +604,7 @@
   <div class="page-wrap">
     <header class="topbar">
       <div class="topbar-left">
+        <a id="artifactsPortalLink" class="btn" href="/artifacts" data-i18n="nav.portal">← 图表库</a>
         <span class="brand-link" aria-label="Original330 VLM Architecture">
           <span class="brand-dot" aria-hidden="true"></span>
           <span data-i18n="nav.brand">Original330 VLM · 架构图</span>
@@ -911,6 +912,7 @@
       const activeBase = window.__RA_TRIAGE_BASE__ || "";
       const withBase = (path) => `${activeBase}${path}`;
 
+      document.getElementById("artifactsPortalLink").href = withBase("/artifacts");
       document.getElementById("downloadPngLink").href = withBase(
         "/static/artifacts/architecture-original-330/original330_vlm_flowchart.png"
       );
@@ -921,6 +923,7 @@
       const I18N = {
         zh: {
           "doc.title": "Original330 VLM 架构与推理流程图",
+          "nav.portal": "← 图表库",
           "nav.brand": "Original330 VLM · 架构图",
           "action.png": "高清 PNG (3200×1840)",
           "action.svg": "矢量 SVG",
@@ -961,6 +964,7 @@
         },
         en: {
           "doc.title": "Original330 VLM Architecture & Inference Flow",
+          "nav.portal": "← Gallery",
           "nav.brand": "Original330 VLM · Architecture",
           "action.png": "High-res PNG (3200×1840)",
           "action.svg": "Vector SVG",
