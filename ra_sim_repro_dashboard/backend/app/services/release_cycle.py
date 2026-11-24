@@ -33,9 +33,7 @@ def digest(value) -> str:
 def load_cycle_config() -> dict:
     from app.config import CONFIG_DIR
 
-    path = Path(
-        os.getenv("RELEASE_CYCLES_CONFIG", str(CONFIG_DIR / "release-cycles.default"))
-    )
+    path = Path(os.getenv("RELEASE_CYCLES_CONFIG", str(CONFIG_DIR / "release-cycles.default")))
     if not path.exists():
         return {"periods": []}
     value = json.loads(path.read_text())
@@ -67,7 +65,10 @@ def validate_period(period: dict, require_verified: bool = False) -> dict:
     if period.get("completion_rule") == "issue_last_time_24h":
         checked = datetime.fromisoformat(period["observed_at"])
         last = datetime.fromisoformat(period["last_issue_at"])
-        if any(t.tzinfo is None for t in (checked, last)) or (checked - last).total_seconds() < 86400:
+        if (
+            any(t.tzinfo is None for t in (checked, last))
+            or (checked - last).total_seconds() < 86400
+        ):
             raise ValueError("最近Issue距今未满24小时")
         if not start <= last < end <= checked:
             raise ValueError("最近Issue时间与收集范围不一致")
@@ -75,9 +76,10 @@ def validate_period(period: dict, require_verified: bool = False) -> dict:
         quiet = datetime.fromisoformat(period["quiet_since"])
         checked = datetime.fromisoformat(period["observed_at"])
         last = datetime.fromisoformat(period["last_issue_at"])
-        if any(t.tzinfo is None for t in (quiet, checked, last)) or (
-            checked - max(quiet, last)
-        ).total_seconds() < 86400:
+        if (
+            any(t.tzinfo is None for t in (quiet, checked, last))
+            or (checked - max(quiet, last)).total_seconds() < 86400
+        ):
             raise ValueError("连续24小时无新增Issue的观察证据不足")
         if not start <= last < end <= checked:
             raise ValueError("静默观察证据与人口边界不一致")
@@ -100,20 +102,33 @@ def resolve_current(config: dict, day: date | None = None) -> dict:
         "retained_previous": False,
         "switch_weekday": "Monday",
     }
+
     def observable(p):
-        if p.get('completion_rule') != 'issue_last_time_24h' or p.get('verified') is not True:
+        if p.get("completion_rule") != "issue_last_time_24h" or p.get("verified") is not True:
             return False
         try:
-            checked = datetime.fromisoformat(p['observed_at'])
-            cutoff = datetime.combine(today + timedelta(days=1), datetime.min.time(), TZ) if day else datetime.now(TZ)
-            return checked.tzinfo is not None and checked <= cutoff and date.fromisoformat(p['cycle_end']) <= today
+            checked = datetime.fromisoformat(p["observed_at"])
+            cutoff = (
+                datetime.combine(today + timedelta(days=1), datetime.min.time(), TZ)
+                if day
+                else datetime.now(TZ)
+            )
+            return (
+                checked.tzinfo is not None
+                and checked <= cutoff
+                and date.fromisoformat(p["cycle_end"]) <= today
+            )
         except (KeyError, ValueError, TypeError):
             return False
+
     eligible = [
         p
         for p in config.get("periods", [])
         if p.get("cycle_end")
-        and ((p.get("completion_rule") != "issue_last_time_24h" and p["cycle_end"] <= anchor) or observable(p))
+        and (
+            (p.get("completion_rule") != "issue_last_time_24h" and p["cycle_end"] <= anchor)
+            or observable(p)
+        )
         and p.get("status") == "completed"
     ]
     if not eligible:
@@ -158,10 +173,10 @@ def resolve_current(config: dict, day: date | None = None) -> dict:
     return {
         **base,
         "status": "ready",
-        "reason": "周期依据历史数据推断，完整人口与仿真结果另行验收"
-        if inferred
-        else "",
-        "switch_weekday": "on_collection_complete" if period.get("completion_rule") == "issue_last_time_24h" else "Monday",
+        "reason": "周期依据历史数据推断，完整人口与仿真结果另行验收" if inferred else "",
+        "switch_weekday": "on_collection_complete"
+        if period.get("completion_rule") == "issue_last_time_24h"
+        else "Monday",
         "current_period": period,
         "current_version": period["release"],
         "period_verified": not inferred,
@@ -169,9 +184,7 @@ def resolve_current(config: dict, day: date | None = None) -> dict:
     }
 
 
-def query_contract(
-    config: dict, period: dict, include_manual: bool = False
-) -> list[dict]:
+def query_contract(config: dict, period: dict, include_manual: bool = False) -> list[dict]:
     validate_period(period)
     contract = config["contract"]
     if (
@@ -204,15 +217,9 @@ def real_labels(raw: dict) -> list[str]:
     value = raw.get("labels", raw.get("scenario_labels", []))
     if isinstance(value, str):
         try:
-            value = (
-                json.loads(value)
-                if value.lstrip().startswith("[")
-                else value.split(",")
-            )
+            value = json.loads(value) if value.lstrip().startswith("[") else value.split(",")
         except json.JSONDecodeError:
             return []
     if not isinstance(value, list):
         return []
-    return sorted(
-        {str(v).strip() for v in value if isinstance(v, (str, int)) and str(v).strip()}
-    )
+    return sorted({str(v).strip() for v in value if isinstance(v, (str, int)) and str(v).strip()})

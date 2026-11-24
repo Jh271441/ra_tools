@@ -29,9 +29,7 @@ def validate_config(c):
     c = dict(c)
     for key in ("root", "source", "pg_bin"):
         if not Path(c[key]).is_absolute() or ".." in Path(c[key]).parts:
-            raise ValueError(
-                f"Expected an absolute target path without parent traversal: {key}"
-            )
+            raise ValueError(f"Expected an absolute target path without parent traversal: {key}")
         c[key] = str(Path(c[key]))
         if not re.fullmatch(r"/[A-Za-z0-9_/.-]+", c[key]):
             raise ValueError(f"Unsupported path characters: {key}")
@@ -59,13 +57,9 @@ def prepare(c):
         if not (pg / tool).is_file():
             raise RuntimeError(f"Missing {pg / tool}")
     if not (src / "ra_sim_repro_dashboard/frontend/dist/index.html").is_file():
-        raise RuntimeError(
-            "Build frontend with npm ci && npm run build -- --base=/sim/ first"
-        )
+        raise RuntimeError("Build frontend with npm ci && npm run build -- --base=/sim/ first")
     if not (root / "venv/bin/python").exists():
-        raise RuntimeError(
-            "Create root/venv and install backend/requirements.txt first"
-        )
+        raise RuntimeError("Create root/venv and install backend/requirements.txt first")
     for name in ("", "logs", "pgsocket", "redis", "backups", "weekly"):
         p = root / name
         p.mkdir(parents=True, exist_ok=True)
@@ -83,9 +77,7 @@ def prepare(c):
             ]
         )
         with (root / "postgres/postgresql.conf").open("a") as f:
-            f.write(
-                f"\nlisten_addresses = ''\nunix_socket_directories = '{root}/pgsocket'\n"
-            )
+            f.write(f"\nlisten_addresses = ''\nunix_socket_directories = '{root}/pgsocket'\n")
     env = json.loads((root / "secrets.json").read_text())
     env.update(
         SIM_SOURCE_ROOT=str(src),
@@ -217,11 +209,7 @@ def backup(c):
     dest = (
         root
         / "backups"
-        / (
-            "database-"
-            + dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-            + ".sql"
-        )
+        / ("database-" + dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%S%fZ") + ".sql")
     )
     temp = dest.with_suffix(".tmp")
     with temp.open("wb") as f:
@@ -275,9 +263,7 @@ def main():
         # New pg_dump clients emit restrict guards that older psql cannot parse.
         # Accept only a matched pair in an explicitly supplied, trusted dump.
         dump_text = Path(a.dump).read_text()
-        guards = re.findall(
-            r"^\\(unrestrict|restrict) ([A-Za-z0-9]+)$", dump_text, re.M
-        )
+        guards = re.findall(r"^\\(unrestrict|restrict) ([A-Za-z0-9]+)$", dump_text, re.M)
         if guards:
             if (
                 len(guards) != 2

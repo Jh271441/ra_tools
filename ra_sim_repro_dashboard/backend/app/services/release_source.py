@@ -13,12 +13,8 @@ from app.services.release_cycle import query_contract, real_labels
 
 
 def trail_credentials(scenario=False):
-    app_id = (
-        settings.scenario_app_id if scenario else os.getenv("TRAIL_ISSUE_APP_ID", "21")
-    )
-    token = (
-        settings.scenario_app_token if scenario else os.getenv("TRAIL_API_TOKEN", "")
-    )
+    app_id = settings.scenario_app_id if scenario else os.getenv("TRAIL_ISSUE_APP_ID", "21")
+    token = settings.scenario_app_token if scenario else os.getenv("TRAIL_API_TOKEN", "")
     if token:
         return app_id, token
     # Same Trail app-21 signer already used by the repository result client.
@@ -178,8 +174,13 @@ def fetch_population(config, period):
         "trip_end_time",
     )
     # Preserve observed NULLs without manufacturing an observation for old artifacts.
-    return [{**{k: row.get(k) for k in fields},
-             **{k: row[k] for k in ('ra_stuck_auto_result', 'ra_result') if k in row}} for row in rows]
+    return [
+        {
+            **{k: row.get(k) for k in fields},
+            **{k: row[k] for k in ("ra_stuck_auto_result", "ra_result") if k in row},
+        }
+        for row in rows
+    ]
 
 
 def fetch_scenarios(period):

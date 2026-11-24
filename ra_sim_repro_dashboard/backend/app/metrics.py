@@ -82,7 +82,9 @@ def classify_result(raw: dict[str, Any]) -> ClassifiedResult:
 
     if any(reason in MODEL_REASONS or "ASSIST_STUCK_MODEL" in reason for reason in fn_reasons):
         trigger_type = "MODEL"
-    elif by_model or (model_score is not None and threshold is not None and model_score >= threshold):
+    elif by_model or (
+        model_score is not None and threshold is not None and model_score >= threshold
+    ):
         trigger_type = "MODEL"
     elif any(reason.startswith(FN_PREFIXES) for reason in fn_reasons):
         trigger_type = "FN"
@@ -164,11 +166,7 @@ def summarize_rows(rows: list[Any]) -> dict[str, Any]:
     fp_suppress_count = sum(1 for row in rows if row.root_cause == "FP_RULE_SUPPRESS")
     rows_have_source_groups = any(source_groups(row) for row in rows)
     if rows_have_source_groups:
-        repro_rows = [
-            row
-            for row in rows
-            if source_groups(row) & ROAD_BEHAVIOR_SOURCE_GROUPS
-        ]
+        repro_rows = [row for row in rows if source_groups(row) & ROAD_BEHAVIOR_SOURCE_GROUPS]
         reproduced = sum(
             1
             for row in repro_rows
@@ -182,11 +180,11 @@ def summarize_rows(rows: list[Any]) -> dict[str, Any]:
         repro_rows = [row for row in rows if row.road_triggered]
         reproduced = sum(1 for row in repro_rows if row.sim_triggered)
     repro_source_cases = len(repro_rows)
-    auto_trigger_source_cases = sum(
-        1
-        for row in rows
-        if source_groups(row) & {"positive_auto", "negative_auto"}
-    ) if rows_have_source_groups else repro_source_cases
+    auto_trigger_source_cases = (
+        sum(1 for row in rows if source_groups(row) & {"positive_auto", "negative_auto"})
+        if rows_have_source_groups
+        else repro_source_cases
+    )
 
     cohort_rows = {
         group: [row for row in rows if group in source_groups(row)]

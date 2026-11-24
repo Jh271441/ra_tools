@@ -101,18 +101,10 @@ python3 {q(root + "/manage.py")} --config {q(root + "/target.json")} start
             f"python3 {q(root + '/manage.py')} --config {q(root + '/target.json')} restore --dump {q(stage + '/database.sql')}"
         )
     else:
-        remote(
-            f"sleep 3; {q(c['pg_bin'] + '/createdb')} -h {q(root + '/pgsocket')} ra_sim"
-        )
-    remote(
-        f"sleep 5; python3 {q(root + '/manage.py')} --config {q(root + '/target.json')} check"
-    )
-    remote(
-        f"python3 {q(root + '/install_startup.py')} --config {q(root + '/target.json')}"
-    )
-    remote(
-        f"sleep 5; python3 {q(root + '/manage.py')} --config {q(root + '/target.json')} check"
-    )
+        remote(f"sleep 3; {q(c['pg_bin'] + '/createdb')} -h {q(root + '/pgsocket')} ra_sim")
+    remote(f"sleep 5; python3 {q(root + '/manage.py')} --config {q(root + '/target.json')} check")
+    remote(f"python3 {q(root + '/install_startup.py')} --config {q(root + '/target.json')}")
+    remote(f"sleep 5; python3 {q(root + '/manage.py')} --config {q(root + '/target.json')} check")
     print("Deployment verified and persistent startup installed.")
 
 
@@ -126,6 +118,4 @@ if __name__ == "__main__":
     p.add_argument("--schedule-state")
     p.add_argument("--weekly-data")
     a = p.parse_args()
-    deploy(
-        a.target, a.bundle, a.secrets, a.dump, a.weekly, a.schedule_state, a.weekly_data
-    )
+    deploy(a.target, a.bundle, a.secrets, a.dump, a.weekly, a.schedule_state, a.weekly_data)

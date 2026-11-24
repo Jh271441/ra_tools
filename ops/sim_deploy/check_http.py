@@ -65,9 +65,7 @@ def verify_http(base_url):
             "/api/dashboard/summary",
         ):
             status, headers, body = get(prefix + suffix)
-            if status != 200 or "application/json" not in headers.get(
-                "Content-Type", ""
-            ):
+            if status != 200 or "application/json" not in headers.get("Content-Type", ""):
                 raise RuntimeError(f"API is not healthy: {prefix}{suffix}")
             json.loads(body)
     print("Direct and prefix-stripped pages, assets, APIs and relative redirects: OK")

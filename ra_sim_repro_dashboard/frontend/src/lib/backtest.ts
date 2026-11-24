@@ -44,9 +44,14 @@ function cohortTriggerRate(row: Record<string, unknown>, cohortName: string) {
   const evaluated = optionalNumeric(metrics.evaluated);
   const triggerRate = optionalNumeric(metrics.trigger_rate);
   if (
-    expected == null || expected <= 0 || evaluated !== expected || triggerRate == null
-    || triggerRate < 0 || triggerRate > 1
-  ) return undefined;
+    expected == null ||
+    expected <= 0 ||
+    evaluated !== expected ||
+    triggerRate == null ||
+    triggerRate < 0 ||
+    triggerRate > 1
+  )
+    return undefined;
   return triggerRate;
 }
 
@@ -73,48 +78,37 @@ export function poststratifyBacktestWindow(
     const negativeAutoRate = cohortTriggerRate(matrix, 'negative_auto');
     const positiveManualRate = cohortTriggerRate(matrix, 'positive_manual');
     if (
-      expected <= 0 || evaluated !== expected || dpeCoverage < 1
-      || positiveAutoRate == null || negativeAutoRate == null
-      || positiveManualRate == null
-    ) return { ...EMPTY_COUNTS };
+      expected <= 0 ||
+      evaluated !== expected ||
+      dpeCoverage < 1 ||
+      positiveAutoRate == null ||
+      negativeAutoRate == null ||
+      positiveManualRate == null
+    )
+      return { ...EMPTY_COUNTS };
 
     const source = sourceRows[index];
-    const precisionAutoTp = optionalNumeric(
-      source.precision_auto_tp ?? source.auto_trigger_tp,
-    );
-    const precisionAutoFp = optionalNumeric(
-      source.precision_auto_fp ?? source.auto_trigger_fp,
-    );
-    const recallAutoTp = optionalNumeric(
-      source.recall_auto_tp ?? source.auto_trigger_tp,
-    );
-    const recallManualFn = optionalNumeric(
-      source.recall_manual_fn ?? source.manual_trigger_fn,
-    );
+    const precisionAutoTp = optionalNumeric(source.precision_auto_tp ?? source.auto_trigger_tp);
+    const precisionAutoFp = optionalNumeric(source.precision_auto_fp ?? source.auto_trigger_fp);
+    const recallAutoTp = optionalNumeric(source.recall_auto_tp ?? source.auto_trigger_tp);
+    const recallManualFn = optionalNumeric(source.recall_manual_fn ?? source.manual_trigger_fn);
     if (
-      precisionAutoTp == null || precisionAutoTp < 0
-      || precisionAutoFp == null || precisionAutoFp < 0
-      || recallAutoTp == null || recallAutoTp < 0
-      || recallManualFn == null || recallManualFn < 0
-    ) return { ...EMPTY_COUNTS };
-    precisionTp += (
-      precisionAutoTp * positiveAutoRate
-      + recallManualFn * positiveManualRate
-    );
+      precisionAutoTp == null ||
+      precisionAutoTp < 0 ||
+      precisionAutoFp == null ||
+      precisionAutoFp < 0 ||
+      recallAutoTp == null ||
+      recallAutoTp < 0 ||
+      recallManualFn == null ||
+      recallManualFn < 0
+    )
+      return { ...EMPTY_COUNTS };
+    precisionTp += precisionAutoTp * positiveAutoRate + recallManualFn * positiveManualRate;
     precisionFp += precisionAutoFp * negativeAutoRate;
-    recallTp += (
-      recallAutoTp * positiveAutoRate
-      + recallManualFn * positiveManualRate
-    );
-    positiveAutoNotTriggered += (
-      recallAutoTp - recallAutoTp * positiveAutoRate
-    );
-    positiveManualNotTriggered += (
-      recallManualFn - recallManualFn * positiveManualRate
-    );
-    negativeAutoNotTriggered += (
-      precisionAutoFp - precisionAutoFp * negativeAutoRate
-    );
+    recallTp += recallAutoTp * positiveAutoRate + recallManualFn * positiveManualRate;
+    positiveAutoNotTriggered += recallAutoTp - recallAutoTp * positiveAutoRate;
+    positiveManualNotTriggered += recallManualFn - recallManualFn * positiveManualRate;
+    negativeAutoNotTriggered += precisionAutoFp - precisionAutoFp * negativeAutoRate;
   }
   const businessRecallFn = positiveAutoNotTriggered + positiveManualNotTriggered;
   return {

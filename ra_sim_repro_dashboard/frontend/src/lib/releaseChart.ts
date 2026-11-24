@@ -14,7 +14,11 @@ export function releaseXAxis(rows: Array<{ version_key: string }>) {
     domain: [-0.5, Math.max(1, rows.length) - 0.5] as [number, number],
     ticks: rows.map((_, index) => index),
     interval: labelInterval - 1,
-    tickFormatter: (index: number) => releaseName(rows[index]?.version_key, new Set(rows.map(row => row.version_key.match(/\d{4}/)?.[0])).size > 1),
+    tickFormatter: (index: number) =>
+      releaseName(
+        rows[index]?.version_key,
+        new Set(rows.map((row) => row.version_key.match(/\d{4}/)?.[0])).size > 1,
+      ),
     padding: { left: 12, right: 12 },
     height: 30,
     tickMargin: 8,

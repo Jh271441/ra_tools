@@ -197,8 +197,13 @@ def _check_versions_config() -> dict[str, Any]:
 
 def _check_mock_data() -> dict[str, Any]:
     if os.getenv("DISABLE_MOCK_DATA") == "1":
-        return {"key": "mock_data", "status": "skipped", "latency_ms": None,
-                "detail": "Mock data disabled in production", "extra": {}}
+        return {
+            "key": "mock_data",
+            "status": "skipped",
+            "latency_ms": None,
+            "detail": "Mock data disabled in production",
+            "extra": {},
+        }
     check: dict[str, Any] = {
         "key": "mock_data",
         "status": "warn",
@@ -230,9 +235,11 @@ def _check_last_refresh(db: Session) -> dict[str, Any]:
         "extra": {},
     }
     try:
-        job = db.execute(
-            select(RefreshJob).order_by(RefreshJob.created_at.desc()).limit(1)
-        ).scalars().first()
+        job = (
+            db.execute(select(RefreshJob).order_by(RefreshJob.created_at.desc()).limit(1))
+            .scalars()
+            .first()
+        )
         if job is None:
             check["error"] = "No refresh job has run yet"
             return check

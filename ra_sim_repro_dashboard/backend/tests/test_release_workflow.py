@@ -31,8 +31,7 @@ def config():
                 "verified": True,
                 "evidence": "test run record",
                 "cycle_end": anchor.isoformat(),
-                "case_start": (anchor - timedelta(days=14)).isoformat()
-                + "T00:00:00+08:00",
+                "case_start": (anchor - timedelta(days=14)).isoformat() + "T00:00:00+08:00",
                 "case_end_exclusive": anchor.isoformat() + "T00:00:00+08:00",
                 "binary_id": 123,
                 "template_job_id": 456,
@@ -53,10 +52,15 @@ def db():
 
 
 def population(*args):
-    period = args[1] if len(args) > 1 else {
-        'case_start': (reference_thursday()-timedelta(days=14)).isoformat()+'T00:00:00+08:00',
-        'release': 'gen4-release-20260918',
-    }
+    period = (
+        args[1]
+        if len(args) > 1
+        else {
+            "case_start": (reference_thursday() - timedelta(days=14)).isoformat()
+            + "T00:00:00+08:00",
+            "release": "gen4-release-20260918",
+        }
+    )
     rows = [
         {
             "issue_id": "i1",
@@ -67,14 +71,22 @@ def population(*args):
         {"issue_id": "i2", "ra_type": 3, "ra_merge_result": "成功"},
     ]
     for row in rows:
-        row.update(version=period['release'], issue_time=int(datetime.fromisoformat(period['case_start']).timestamp()*1000))
+        row.update(
+            version=period["release"],
+            issue_time=int(datetime.fromisoformat(period["case_start"]).timestamp() * 1000),
+        )
     return rows
 
 
 def scene_labels(cohort):
     prefix = "ra_repro_full_20261008_20260918"
     trigger = "ManualTrigger" if cohort == "positive_manual" else "AutoTrigger"
-    return [prefix, prefix + "_gen4-release-20260918", prefix + "_" + cohort, prefix + "_" + trigger]
+    return [
+        prefix,
+        prefix + "_gen4-release-20260918",
+        prefix + "_" + cohort,
+        prefix + "_" + trigger,
+    ]
 
 
 def scenarios(*args):
@@ -98,7 +110,14 @@ def seed(db, config):
     return w.sync_once(db, config, population, scenarios)
 
 
-@pytest.mark.parametrize("labels", [[], scene_labels("negative_auto"), scene_labels("positive_auto") + ["ra_repro_cycle_20261008_0918"]])
+@pytest.mark.parametrize(
+    "labels",
+    [
+        [],
+        scene_labels("negative_auto"),
+        scene_labels("positive_auto") + ["ra_repro_cycle_20261008_0918"],
+    ],
+)
 def test_plan_blocks_missing_or_conflicting_canonical_labels(db, config, labels):
     seed(db, config)
     snapshot = db.scalars(select(ReleaseIssueSnapshot)).first()
@@ -127,9 +146,10 @@ def test_full_period_kept(config, days):
     times = filters[-1]["val"]
     assert times["max"] - times["min"] + 1 == days * 86400000
     assert next(f for f in filters if f["attr_id"] == "ra_type")["val"] == [2]
-    assert next(
-        f for f in query_contract(config, p, True) if f["attr_id"] == "ra_type"
-    )["val"] == [2, 3]
+    assert next(f for f in query_contract(config, p, True) if f["attr_id"] == "ra_type")["val"] == [
+        2,
+        3,
+    ]
 
 
 def test_no_guess_on_missing_unverified_or_ambiguous(config):
@@ -152,9 +172,10 @@ def test_overlap_and_timezone_block(config):
 
 
 def test_labels_are_real_only():
-    assert real_labels(
-        {"source_labels": ["synthetic"], "labels": "actual, second,actual"}
-    ) == ["actual", "second"]
+    assert real_labels({"source_labels": ["synthetic"], "labels": "actual, second,actual"}) == [
+        "actual",
+        "second",
+    ]
     assert real_labels({"source_labels": ["release", "cohort"]}) == []
 
 
@@ -194,14 +215,8 @@ def test_plan_uses_configured_concurrency_and_cancelled_job_allows_replacement(
     assert batch.status == "cancelled"
     config["simulation"]["max_concurrency"] = 1000
     new = w.make_plan(db, config)
-    assert (
-        new["simulation"]["max_concurrency"] == 1000
-        and new["fingerprint"] != old["fingerprint"]
-    )
-    assert (
-        new["scenarios"] == old["scenarios"]
-        and new["population_hash"] == old["population_hash"]
-    )
+    assert new["simulation"]["max_concurrency"] == 1000 and new["fingerprint"] != old["fingerprint"]
+    assert new["scenarios"] == old["scenarios"] and new["population_hash"] == old["population_hash"]
     assert w.queue_plan(db, new["fingerprint"], config).status == "queued"
 
 
@@ -211,14 +226,8 @@ def test_priority_is_scoped_to_release_and_part_of_plan_identity(db, config):
     assert old["simulation"]["priority"] == "NORMAL"
     config["simulation"]["priorities_by_release"] = {"gen4-release-20260918": "HIGH"}
     new = w.make_plan(db, config)
-    assert (
-        new["simulation"]["priority"] == "HIGH"
-        and new["fingerprint"] != old["fingerprint"]
-    )
-    assert (
-        old["population_hash"] == new["population_hash"]
-        and old["scenarios"] == new["scenarios"]
-    )
+    assert new["simulation"]["priority"] == "HIGH" and new["fingerprint"] != old["fingerprint"]
+    assert old["population_hash"] == new["population_hash"] and old["scenarios"] == new["scenarios"]
     config["simulation"]["priorities_by_release"] = {"other-release": "HIGH"}
     assert w.make_plan(db, config)["simulation"]["priority"] == "NORMAL"
 
@@ -226,32 +235,37 @@ def test_priority_is_scoped_to_release_and_part_of_plan_identity(db, config):
 def test_new_main_plan_freezes_release_scoped_replay_policy(db, config):
     seed(db, config)
     original = w.make_plan(db, config)
-    config['simulation'].update(
-        warmup_ms_by_release={'gen4-release-20260918': 15000},
-        feature_history_by_release={'gen4-release-20260918': 'release-native'},
+    config["simulation"].update(
+        warmup_ms_by_release={"gen4-release-20260918": 15000},
+        feature_history_by_release={"gen4-release-20260918": "release-native"},
     )
     revised = w.make_plan(db, config)
-    assert revised['simulation']['warmup_ms'] == 15000
-    assert revised['simulation']['feature_history'] == 'release-native'
-    assert revised['fingerprint'] != original['fingerprint']
-    assert revised['scenarios'] == original['scenarios']
-    assert revised['population_hash'] == original['population_hash']
-    assert 'warmup_ms' not in original['simulation']
-    assert 'feature_history' not in original['simulation']
-    config['simulation'].update(warmup_ms_by_release={'another': 15000},
-                                feature_history_by_release={'another': 'release-native'})
-    assert w.make_plan(db, config)['fingerprint'] == original['fingerprint']
+    assert revised["simulation"]["warmup_ms"] == 15000
+    assert revised["simulation"]["feature_history"] == "release-native"
+    assert revised["fingerprint"] != original["fingerprint"]
+    assert revised["scenarios"] == original["scenarios"]
+    assert revised["population_hash"] == original["population_hash"]
+    assert "warmup_ms" not in original["simulation"]
+    assert "feature_history" not in original["simulation"]
+    config["simulation"].update(
+        warmup_ms_by_release={"another": 15000},
+        feature_history_by_release={"another": "release-native"},
+    )
+    assert w.make_plan(db, config)["fingerprint"] == original["fingerprint"]
 
 
-@pytest.mark.parametrize('overrides, message', [
-    ({'warmup_ms': True}, 'simulation_warmup_invalid'),
-    ({'warmup_ms': -1}, 'simulation_warmup_invalid'),
-    ({'warmup_ms': 60001}, 'simulation_warmup_invalid'),
-    ({'feature_history': 'legacy20'}, 'simulation_feature_history_invalid'),
-])
+@pytest.mark.parametrize(
+    "overrides, message",
+    [
+        ({"warmup_ms": True}, "simulation_warmup_invalid"),
+        ({"warmup_ms": -1}, "simulation_warmup_invalid"),
+        ({"warmup_ms": 60001}, "simulation_warmup_invalid"),
+        ({"feature_history": "legacy20"}, "simulation_feature_history_invalid"),
+    ],
+)
 def test_invalid_main_replay_policy_fails_before_queue(db, config, overrides, message):
     seed(db, config)
-    config['simulation'].update(overrides)
+    config["simulation"].update(overrides)
     with pytest.raises(ValueError, match=message):
         w.make_plan(db, config)
 
@@ -314,13 +328,9 @@ def test_uncertain_submission_not_retried(db, config, monkeypatch):
         return {"fingerprint": payload["fingerprint"], "ready": True}
 
     monkeypatch.setattr(w, "driver_call", driver)
-    assert (
-        w.submit_plan(db, plan["fingerprint"], config).status == "submission_uncertain"
-    )
+    assert w.submit_plan(db, plan["fingerprint"], config).status == "submission_uncertain"
     monkeypatch.setattr(w, "driver_call", lambda *_: pytest.fail("must not retry"))
-    assert (
-        w.submit_plan(db, plan["fingerprint"], config).status == "submission_uncertain"
-    )
+    assert w.submit_plan(db, plan["fingerprint"], config).status == "submission_uncertain"
 
 
 def test_auto_mode_requires_scheduler_and_driver(db, config, monkeypatch):
@@ -375,9 +385,7 @@ def test_switch_only_monday_and_retain_completed_release(config):
     config["periods"].append(following)
     for day in [date(2026, 10, 1), date(2026, 10, 2), date(2026, 10, 4)]:
         assert resolve_current(config, day)["current_version"] == "gen4-release-20260918"
-    assert (
-        resolve_current(config, date(2026, 10, 5))["current_version"] == "next-release"
-    )
+    assert resolve_current(config, date(2026, 10, 5))["current_version"] == "next-release"
     following["status"] = "running"
     value = resolve_current(config, date(2026, 10, 5))
     assert value["current_version"] == "gen4-release-20260918"
@@ -494,9 +502,9 @@ def test_poll_incomplete_coverage_not_published(db, config, monkeypatch):
     )
     w.poll_batches(db, config)
     assert batch.status == "quality_failed"
-    assert not w.metrics_for_snapshot(
-        db, db.scalars(select(ReleaseIssueSnapshot)).first()
-    )["available"]
+    assert not w.metrics_for_snapshot(db, db.scalars(select(ReleaseIssueSnapshot)).first())[
+        "available"
+    ]
 
 
 def test_multiple_scenarios_do_not_multiply_population():
@@ -540,10 +548,7 @@ def test_metadata_and_labels_do_not_resubmit_same_population(db, config):
 def test_actual_scenario_label_mapping_is_unambiguous():
     from app.services.release_source import scenario_issue_id
 
-    assert (
-        scenario_issue_id({"labels": ["scenario_from_issue", "#36182045"]})
-        == "cn36182045"
-    )
+    assert scenario_issue_id({"labels": ["scenario_from_issue", "#36182045"]}) == "cn36182045"
     with pytest.raises(ValueError):
         scenario_issue_id({"labels": ["#36182045", "#36182046"]})
     with pytest.raises(ValueError):
@@ -591,9 +596,7 @@ def test_period_discovery_does_not_close_release_with_late_tail():
     def row(release, day):
         return {
             "version": f"1.gen4-release-{release}.555",
-            "issue_time": int(
-                datetime.fromisoformat(day + "T12:00:00+08:00").timestamp() * 1000
-            ),
+            "issue_time": int(datetime.fromisoformat(day + "T12:00:00+08:00").timestamp() * 1000),
         }
 
     periods, warnings = infer_completed_cycles(
@@ -619,9 +622,7 @@ def test_cosmetic_source_changes_keep_plan_fingerprint(db, config):
     assert w.make_plan(db, config)["fingerprint"] == before
 
 
-def test_active_release_batch_prevents_second_population_launch(
-    db, config, monkeypatch
-):
+def test_active_release_batch_prevents_second_population_launch(db, config, monkeypatch):
     seed(db, config)
     plan = w.make_plan(db, config)
     monkeypatch.setattr(
@@ -729,126 +730,208 @@ def test_acceptance_subset_never_publishes_full_cycle_kpi(db, config, monkeypatc
 
 
 def exclusion_decision(config):
-    return {"issue_id": "missing", "release": config['periods'][0]['release'],
-            "approved_by": "user", "approved_at": "2026-10-19T00:00:00+00:00",
-            "reason": "User explicitly excludes missing GT from this evaluation",
-            "source": {"version": "road-build", "ra_type": 2, "ra_merge_result": None}}
+    return {
+        "issue_id": "missing",
+        "release": config["periods"][0]["release"],
+        "approved_by": "user",
+        "approved_at": "2026-10-19T00:00:00+00:00",
+        "reason": "User explicitly excludes missing GT from this evaluation",
+        "source": {"version": "road-build", "ra_type": 2, "ra_merge_result": None},
+    }
 
 
 def test_scoped_exclusion_preserves_raw_truth_and_unblocks_only_approved_issue(db, config):
     from app.services.release_metrics import summarize_population
-    unknown = {"issue_id": "missing", "version": "road-build", "ra_type": 2, "ra_merge_result": None}
+
+    unknown = {
+        "issue_id": "missing",
+        "version": "road-build",
+        "ra_type": 2,
+        "ra_merge_result": None,
+    }
     rows = population() + [unknown]
     fetch = lambda *_: rows
     first = w.sync_once(db, config, fetch, scenarios)
     old_hash = w.population_identity(first.payload)
-    with pytest.raises(ValueError, match='GT'):
+    with pytest.raises(ValueError, match="GT"):
         w.make_plan(db, config)
     decision = exclusion_decision(config)
-    w.put_state(db, 'issue_exclusions:' + decision['release'], {'items': [decision]})
+    w.put_state(db, "issue_exclusions:" + decision["release"], {"items": [decision]})
     snapshot = w.sync_once(db, config, fetch, scenarios)
-    assert len(snapshot.payload['issues']) == 3
-    assert snapshot.payload['issues'][-1]['ra_merge_result'] is None
-    assert 'evaluation_exclusion' not in unknown  # Do not mutate source responses.
+    assert len(snapshot.payload["issues"]) == 3
+    assert snapshot.payload["issues"][-1]["ra_merge_result"] is None
+    assert "evaluation_exclusion" not in unknown  # Do not mutate source responses.
     assert w.population_identity(snapshot.payload) != old_hash
     plan = w.make_plan(db, config)
-    assert len(plan['scenarios']) == 2
-    assert plan['issues'][-1]['evaluation_exclusion'] == decision
+    assert len(plan["scenarios"]) == 2
+    assert plan["issues"][-1]["evaluation_exclusion"] == decision
     assert w.sync_once(db, config, fetch, scenarios).id == snapshot.id
-    metrics = summarize_population(snapshot.payload['issues'], snapshot.payload['scenarios'], {
-        '1': {'sim_triggered': True}, '2': {'sim_triggered': False}})
-    assert metrics['available'] is True
-    assert metrics['unclassified'] == 0 and metrics['excluded'] == 1
-    assert metrics['eligible'] == 2
+    metrics = summarize_population(
+        snapshot.payload["issues"],
+        snapshot.payload["scenarios"],
+        {"1": {"sim_triggered": True}, "2": {"sim_triggered": False}},
+    )
+    assert metrics["available"] is True
+    assert metrics["unclassified"] == 0 and metrics["excluded"] == 1
+    assert metrics["eligible"] == 2
     # Same missing GT in another release remains unclassified.
-    assert 'evaluation_exclusion' not in w.apply_issue_exclusions(db, 'other-release', [unknown])[0]
-    with pytest.raises(ValueError, match='源标注已变化'):
-        w.sync_once(db, config, lambda *_: population()+[{**unknown,'ra_merge_result':'成功'}], scenarios)
-    with pytest.raises(ValueError, match='不在当前人口'):
+    assert "evaluation_exclusion" not in w.apply_issue_exclusions(db, "other-release", [unknown])[0]
+    with pytest.raises(ValueError, match="源标注已变化"):
+        w.sync_once(
+            db,
+            config,
+            lambda *_: population() + [{**unknown, "ra_merge_result": "成功"}],
+            scenarios,
+        )
+    with pytest.raises(ValueError, match="不在当前人口"):
         w.sync_once(db, config, population, scenarios)
 
 
 def test_exclusion_cannot_hide_other_unknown_truth_or_arrive_from_upstream(db, config):
     decision = exclusion_decision(config)
-    unknown = {"issue_id": "missing", **decision['source'], 'evaluation_exclusion': decision}
-    cleaned = w.apply_issue_exclusions(db, decision['release'], [unknown])
-    assert 'evaluation_exclusion' not in cleaned[0]
-    w.put_state(db, 'issue_exclusions:' + decision['release'], {'items': [decision]})
-    w.sync_once(db, config, lambda *_: population()+[unknown,{**unknown,'issue_id':'another'}], scenarios)
-    with pytest.raises(ValueError, match='1 个 Issue 的 GT'):
+    unknown = {"issue_id": "missing", **decision["source"], "evaluation_exclusion": decision}
+    cleaned = w.apply_issue_exclusions(db, decision["release"], [unknown])
+    assert "evaluation_exclusion" not in cleaned[0]
+    w.put_state(db, "issue_exclusions:" + decision["release"], {"items": [decision]})
+    w.sync_once(
+        db,
+        config,
+        lambda *_: population() + [unknown, {**unknown, "issue_id": "another"}],
+        scenarios,
+    )
+    with pytest.raises(ValueError, match="1 个 Issue 的 GT"):
         w.make_plan(db, config)
 
 
-@pytest.mark.parametrize('failed', [False, True])
+@pytest.mark.parametrize("failed", [False, True])
 def test_terminal_audit_imports_success_or_partial_reference(db, config, monkeypatch, failed):
     from app.models import ReleaseSimulationBatch
+
     seed(db, config)
     plan = w.make_plan(db, config)
-    batch = ReleaseSimulationBatch(fingerprint=plan['fingerprint'], release=plan['release'],
-        status='verifying', payload={**plan, 'job_id': 99})
-    db.add(batch); db.commit()
-    rows = [{**s, 'task_id': '99'+s['scenario_id'], 'task_status': 3,
-        'task_outcome': 'Done', 'argument_hash': 'verified-'+s['scenario_id'],
-        'simulator_cache_hit': False, 'inference_log_count': 1, 'dpe_output_count': 1,
-        'output_bag_count': 1, 'failed_evaluation_count': 0, 'unexpected_warning_count': 0,
-        'dpe_assist_channel_triggered__group1': -1} for s in plan['scenarios']]
+    batch = ReleaseSimulationBatch(
+        fingerprint=plan["fingerprint"],
+        release=plan["release"],
+        status="verifying",
+        payload={**plan, "job_id": 99},
+    )
+    db.add(batch)
+    db.commit()
+    rows = [
+        {
+            **s,
+            "task_id": "99" + s["scenario_id"],
+            "task_status": 3,
+            "task_outcome": "Done",
+            "argument_hash": "verified-" + s["scenario_id"],
+            "simulator_cache_hit": False,
+            "inference_log_count": 1,
+            "dpe_output_count": 1,
+            "output_bag_count": 1,
+            "failed_evaluation_count": 0,
+            "unexpected_warning_count": 0,
+            "dpe_assist_channel_triggered__group1": -1,
+        }
+        for s in plan["scenarios"]
+    ]
     if failed:
-        rows[0].update(task_status=4, task_outcome='DPE exceeded memory quota')
-    export = {**{k: plan[k] for k in ('release', 'binary_id', 'population_hash')},
-        'job_id': 99, 'execution_contract_hash': 'runtime-verified', 'progress': dict(job_id=99, state='COMPLETED', total=2,
-                                     completed=2-int(failed), failed=int(failed), cancelled=0),
-        'rows': rows, 'quality': {'quality': {'gate_passed_so_far': not failed}}}
-    monkeypatch.setattr(w, 'driver_call', lambda *_: dict(fingerprint=plan['fingerprint'],
-        job_id=99, status='audited', execution_export=export))
+        rows[0].update(task_status=4, task_outcome="DPE exceeded memory quota")
+    export = {
+        **{k: plan[k] for k in ("release", "binary_id", "population_hash")},
+        "job_id": 99,
+        "execution_contract_hash": "runtime-verified",
+        "progress": dict(
+            job_id=99,
+            state="COMPLETED",
+            total=2,
+            completed=2 - int(failed),
+            failed=int(failed),
+            cancelled=0,
+        ),
+        "rows": rows,
+        "quality": {"quality": {"gate_passed_so_far": not failed}},
+    }
+    monkeypatch.setattr(
+        w,
+        "driver_call",
+        lambda *_: dict(
+            fingerprint=plan["fingerprint"], job_id=99, status="audited", execution_export=export
+        ),
+    )
     w.poll_batches(db, config)
-    assert batch.status == ('quality_failed' if failed else 'complete')
-    evaluation = batch.payload['result_import']
-    assert evaluation['valid_scenario_count'] == 2-int(failed)
-    assert evaluation['missing_scenario_count'] == int(failed)
-    assert evaluation['quality_gate_passed'] is not failed
-    assert evaluation['subset_summary']['available']
-    assert bool(evaluation['failures']) is failed
+    assert batch.status == ("quality_failed" if failed else "complete")
+    evaluation = batch.payload["result_import"]
+    assert evaluation["valid_scenario_count"] == 2 - int(failed)
+    assert evaluation["missing_scenario_count"] == int(failed)
+    assert evaluation["quality_gate_passed"] is not failed
+    assert evaluation["subset_summary"]["available"]
+    assert bool(evaluation["failures"]) is failed
     if not failed:
-        assert batch.payload['publication_approval']['automatic']
+        assert batch.payload["publication_approval"]["automatic"]
     else:
-        assert batch.payload['publication_decision']['status'] == 'blocked'
-    assert w.metrics_for_snapshot(db, db.scalars(select(ReleaseIssueSnapshot)).first())['available'] is not failed
+        assert batch.payload["publication_decision"]["status"] == "blocked"
+    assert (
+        w.metrics_for_snapshot(db, db.scalars(select(ReleaseIssueSnapshot)).first())["available"]
+        is not failed
+    )
 
 
 def test_legacy_failed_signal_keeps_polling_then_recovers(db, config, monkeypatch):
     from app.models import ReleaseSimulationBatch
+
     seed(db, config)
     plan = w.make_plan(db, config)
-    batch = ReleaseSimulationBatch(fingerprint=plan['fingerprint'], release=plan['release'],
-        status='running', payload={**plan, 'job_id': 99})
-    db.add(batch); db.commit()
-    state = iter(['failed', 'running', 'verifying'])
-    monkeypatch.setattr(w, 'driver_call', lambda *_: dict(fingerprint=plan['fingerprint'],
-        job_id=99, status=next(state)))
-    for expected in ['verifying', 'running', 'verifying']:
+    batch = ReleaseSimulationBatch(
+        fingerprint=plan["fingerprint"],
+        release=plan["release"],
+        status="running",
+        payload={**plan, "job_id": 99},
+    )
+    db.add(batch)
+    db.commit()
+    state = iter(["failed", "running", "verifying"])
+    monkeypatch.setattr(
+        w,
+        "driver_call",
+        lambda *_: dict(fingerprint=plan["fingerprint"], job_id=99, status=next(state)),
+    )
+    for expected in ["verifying", "running", "verifying"]:
         w.poll_batches(db, config)
         assert batch.status == expected
 
 
-@pytest.mark.parametrize('problem', ['population', 'unknown_state', 'timeout'])
+@pytest.mark.parametrize("problem", ["population", "unknown_state", "timeout"])
 def test_audit_error_is_visible_and_does_not_freeze_polling(db, config, monkeypatch, problem):
     from app.models import ReleaseSimulationBatch
+
     seed(db, config)
     plan = w.make_plan(db, config)
-    batch = ReleaseSimulationBatch(fingerprint=plan['fingerprint'], release=plan['release'],
-        status='verifying', payload={**plan, 'job_id': 99})
-    db.add(batch); db.commit()
-    if problem == 'population':
+    batch = ReleaseSimulationBatch(
+        fingerprint=plan["fingerprint"],
+        release=plan["release"],
+        status="verifying",
+        payload={**plan, "job_id": 99},
+    )
+    db.add(batch)
+    db.commit()
+    if problem == "population":
         snapshot = db.scalars(select(ReleaseIssueSnapshot)).first()
-        payload = deepcopy(snapshot.payload); payload['issues'][0]['ra_merge_result'] = '误触发'
-        snapshot.payload = payload; db.commit()
+        payload = deepcopy(snapshot.payload)
+        payload["issues"][0]["ra_merge_result"] = "误触发"
+        snapshot.payload = payload
+        db.commit()
+
     def call(*_):
-        if problem == 'timeout':
+        if problem == "timeout":
             raise TimeoutError()
-        return dict(fingerprint=plan['fingerprint'], job_id=99,
-                    status='audited' if problem == 'population' else 'nonsense')
-    monkeypatch.setattr(w, 'driver_call', call)
+        return dict(
+            fingerprint=plan["fingerprint"],
+            job_id=99,
+            status="audited" if problem == "population" else "nonsense",
+        )
+
+    monkeypatch.setattr(w, "driver_call", call)
     w.poll_batches(db, config)
-    assert batch.status == 'verifying'
-    assert batch.payload.get('last_poll_error')
-    assert 'result_import' not in batch.payload
+    assert batch.status == "verifying"
+    assert batch.payload.get("last_poll_error")
+    assert "result_import" not in batch.payload

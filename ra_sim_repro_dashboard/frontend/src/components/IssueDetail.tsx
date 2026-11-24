@@ -3,7 +3,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { ExternalLink, GitBranch, RadioTower, Tags } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
-import type { IssueDetailResponse, ScenarioDetailResponse, ScenarioResult, SelectedIssueResult } from '../types';
+import type {
+  IssueDetailResponse,
+  ScenarioDetailResponse,
+  ScenarioResult,
+  SelectedIssueResult,
+} from '../types';
 import { Badge } from './ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 
@@ -51,7 +56,10 @@ function MetricRow({ label, value }: { label: string; value: unknown }) {
   return (
     <div className="flex items-center justify-between gap-3 border-b border-border/50 py-2 last:border-b-0">
       <span className="text-xs text-muted-foreground">{label}</span>
-      <span className="max-w-[62%] truncate text-right font-mono text-xs text-foreground" title={valueText(value)}>
+      <span
+        className="max-w-[62%] truncate text-right font-mono text-xs text-foreground"
+        title={valueText(value)}
+      >
         {valueText(value)}
       </span>
     </div>
@@ -66,15 +74,26 @@ function ResultSummary({ result }: { result: ScenarioResult }) {
       <div className="mb-3 flex min-w-0 flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
           <GitBranch className="h-4 w-4 shrink-0 text-primary" />
-          <span className="truncate text-sm font-semibold" title={result.version_key}>{releaseName(result.version_key)}</span>
+          <span className="truncate text-sm font-semibold" title={result.version_key}>
+            {releaseName(result.version_key)}
+          </span>
         </div>
         <Badge variant={labelVariant(result.precision_label)}>{result.precision_label}</Badge>
       </div>
       <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
         <div className="min-w-0 rounded-md border border-border/60 bg-background/45 px-3">
-          <MetricRow label={t('roadSignal')} value={result.road_triggered ? t('roadTriggered') : t('roadNotTriggered')} />
-          <MetricRow label={t('simSignal')} value={result.sim_triggered ? t('simTriggered') : t('simNotTriggered')} />
-          <MetricRow label={t('triggerMetric')} value={field(raw, 'dpe_assist_channel_triggered')} />
+          <MetricRow
+            label={t('roadSignal')}
+            value={result.road_triggered ? t('roadTriggered') : t('roadNotTriggered')}
+          />
+          <MetricRow
+            label={t('simSignal')}
+            value={result.sim_triggered ? t('simTriggered') : t('simNotTriggered')}
+          />
+          <MetricRow
+            label={t('triggerMetric')}
+            value={field(raw, 'dpe_assist_channel_triggered')}
+          />
           <MetricRow label={t('job')} value={field(raw, 'job_id')} />
         </div>
         <div className="min-w-0 rounded-md border border-border/60 bg-background/45 px-3">
@@ -112,7 +131,9 @@ export function IssueDetail({ selected }: IssueDetailProps) {
     setError('');
     void Promise.all([
       api.scenarioDetail(selected.scenario_id),
-      selected.issue_id ? api.issueDetail(selected.issue_id).catch(() => null) : Promise.resolve(null),
+      selected.issue_id
+        ? api.issueDetail(selected.issue_id).catch(() => null)
+        : Promise.resolve(null),
     ])
       .then(([scenarioResult, issueResult]) => {
         if (cancelled) return;
@@ -166,7 +187,9 @@ export function IssueDetail({ selected }: IssueDetailProps) {
         <CardHeader>
           <CardTitle>{t('issueDetail')}</CardTitle>
         </CardHeader>
-        <CardContent className="flex min-h-[220px] items-center justify-center text-sm text-muted-foreground">{t('loading')}</CardContent>
+        <CardContent className="flex min-h-[220px] items-center justify-center text-sm text-muted-foreground">
+          {t('loading')}
+        </CardContent>
       </Card>
     );
   }
@@ -187,8 +210,13 @@ export function IssueDetail({ selected }: IssueDetailProps) {
   const issue = issueData?.issue || {};
   const scenario = scenarioData.scenario || {};
   const issueId = String(issue.issue_id || selected.issue_id || '');
-  const title = String(issue.issue_topic || scenario.scenario_name || issueId || selected.scenario_id);
-  const issueUrl = String(issue.url || (issueId ? `https://voyager.intra.xiaojukeji.com/paladin/issue/detail/${issueId}` : ''));
+  const title = String(
+    issue.issue_topic || scenario.scenario_name || issueId || selected.scenario_id,
+  );
+  const issueUrl = String(
+    issue.url ||
+      (issueId ? `https://voyager.intra.xiaojukeji.com/paladin/issue/detail/${issueId}` : ''),
+  );
 
   return (
     <Card className={panelClass}>
@@ -199,12 +227,21 @@ export function IssueDetail({ selected }: IssueDetailProps) {
             <div className="mt-2 flex flex-wrap gap-2">
               {issueId ? <Badge variant="secondary">{issueId}</Badge> : null}
               <Badge variant="outline">{selected.scenario_id}</Badge>
-              <Badge variant={labelVariant(selectedResult.precision_label)}>{selectedResult.precision_label}</Badge>
-              {issue.issue_time ? <Badge variant="outline">{issueTime(issue.issue_time)}</Badge> : null}
+              <Badge variant={labelVariant(selectedResult.precision_label)}>
+                {selectedResult.precision_label}
+              </Badge>
+              {issue.issue_time ? (
+                <Badge variant="outline">{issueTime(issue.issue_time)}</Badge>
+              ) : null}
             </div>
           </div>
           {issueUrl ? (
-            <a className="inline-flex items-center gap-1 text-sm font-medium text-primary" href={issueUrl} target="_blank" rel="noreferrer">
+            <a
+              className="inline-flex items-center gap-1 text-sm font-medium text-primary"
+              href={issueUrl}
+              target="_blank"
+              rel="noreferrer"
+            >
               {t('open')}
               <ExternalLink className="h-3.5 w-3.5" />
             </a>
@@ -236,7 +273,11 @@ export function IssueDetail({ selected }: IssueDetailProps) {
             </div>
             <div className="flex flex-wrap gap-1.5">
               {sourceLabels.map((label) => (
-                <Badge key={label} variant="outline" className="max-w-full break-all font-mono text-[11px]">
+                <Badge
+                  key={label}
+                  variant="outline"
+                  className="max-w-full break-all font-mono text-[11px]"
+                >
                   {label}
                 </Badge>
               ))}
@@ -249,10 +290,17 @@ export function IssueDetail({ selected }: IssueDetailProps) {
             <div className="mb-2 text-[13px] font-semibold leading-5">{t('otherVersions')}</div>
             <div className="grid gap-2">
               {scenarioData.results.map((result) => (
-                <div key={result.version_key} className="flex items-center justify-between gap-3 rounded-md bg-muted/35 px-3 py-2">
-                  <span className="truncate font-mono text-xs" title={result.version_key}>{releaseName(result.version_key)}</span>
+                <div
+                  key={result.version_key}
+                  className="flex items-center justify-between gap-3 rounded-md bg-muted/35 px-3 py-2"
+                >
+                  <span className="truncate font-mono text-xs" title={result.version_key}>
+                    {releaseName(result.version_key)}
+                  </span>
                   <div className="flex shrink-0 items-center gap-2">
-                    <Badge variant={labelVariant(result.precision_label)}>{result.precision_label}</Badge>
+                    <Badge variant={labelVariant(result.precision_label)}>
+                      {result.precision_label}
+                    </Badge>
                     <span className="font-mono text-xs text-muted-foreground">
                       {result.sim_triggered ? t('simTriggered') : t('simNotTriggered')}
                     </span>
@@ -270,7 +318,10 @@ export function IssueDetail({ selected }: IssueDetailProps) {
             </div>
             <div className="grid max-h-56 gap-2 overflow-auto pr-1">
               {issueData.scenarios.slice(0, 12).map((entry) => (
-                <div key={String(entry.scenario.scenario_id)} className="rounded-md bg-muted/35 px-3 py-2">
+                <div
+                  key={String(entry.scenario.scenario_id)}
+                  className="rounded-md bg-muted/35 px-3 py-2"
+                >
                   <div className="font-mono text-xs">{String(entry.scenario.scenario_id)}</div>
                   <div className="mt-1 truncate text-xs text-muted-foreground">
                     {String(entry.scenario.scenario_name || '')}

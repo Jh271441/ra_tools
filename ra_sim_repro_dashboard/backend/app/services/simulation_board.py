@@ -11,7 +11,12 @@ from app.database import SessionLocal
 from app.models import DashboardSnapshot, ReleaseIssueSnapshot, ReleaseSimulationBatch
 from app.services import release_workflow as workflow
 from app.services.release_metrics import summarize_population
-from app.services.result_publication import publication, effective_publication, published_batch, coverage_policy
+from app.services.result_publication import (
+    publication,
+    effective_publication,
+    published_batch,
+    coverage_policy,
+)
 from app.services.release_inventory import inventory
 from app.services.read_views import read_projection
 
@@ -59,9 +64,7 @@ def refresh_progress(job_id, force=False):
                     workflow.effective_config(db), "progress", {"job_id": int(job_id)}
                 )
                 if result.get("job_id") != int(job_id) or "total" not in result:
-                    raise ValueError(
-                        result.get("error") or "Orion progress response mismatch"
-                    )
+                    raise ValueError(result.get("error") or "Orion progress response mismatch")
                 counts = [
                     result.get(k)
                     for k in (
@@ -87,26 +90,24 @@ def refresh_progress(job_id, force=False):
                     {
                         **cache,
                         "attempt_at": attempt,
-                        "error": str(exc)
-                        if isinstance(exc, ValueError)
-                        else type(exc).__name__,
+                        "error": str(exc) if isinstance(exc, ValueError) else type(exc).__name__,
                     },
                 )
 
 
 def board(db, release="@current", force=False):
     config = workflow.effective_config(db)
-    current = read_projection(db, 'workflow-status', lambda: workflow.status(db, config))
+    current = read_projection(db, "workflow-status", lambda: workflow.status(db, config))
     archive_config = load_versions_config()
     versions = archive_config.get("versions", {})
     periods = {p["release"]: p for p in config.get("periods", [])}
-    collection_view = read_projection(db, 'collection-inventory', lambda: inventory(db, config), max_age=2)
+    collection_view = read_projection(
+        db, "collection-inventory", lambda: inventory(db, config), max_age=2
+    )
     collections = {v["release"]: v for v in collection_view["versions"]}
     native = list(
         db.scalars(
-            select(ReleaseSimulationBatch).order_by(
-                ReleaseSimulationBatch.created_at.desc()
-            )
+            select(ReleaseSimulationBatch).order_by(ReleaseSimulationBatch.created_at.desc())
         )
     )
     keys = set(versions) | set(periods) | set(collections) | {b.release for b in native}
@@ -122,15 +123,20 @@ def board(db, release="@current", force=False):
         "label": versions.get(selected, {}).get("label") or selected,
         "is_current": is_current,
         "period": period,
-        "kind": "current" if is_current else "cycle" if period else "observation" if selected in collections else "archived",
+        "kind": "current"
+        if is_current
+        else "cycle"
+        if period
+        else "observation"
+        if selected in collections
+        else "archived",
         "collection": collections.get(selected),
         "issue_count": None,
         "scenario_count": None,
         "source_metrics": None,
         "metrics": {"available": False},
         "publication_policy": coverage_policy(config),
-        "binary_id": (period or {}).get("binary_id")
-        or versions.get(selected, {}).get("binary_id"),
+        "binary_id": (period or {}).get("binary_id") or versions.get(selected, {}).get("binary_id"),
         "synced_at": None,
         "population_complete": False,
     }
@@ -147,9 +153,7 @@ def board(db, release="@current", force=False):
                 )
             }
         )
-        data["synced_at"] = (
-            current["last_sync"].get("checked_at") or current["synced_at"]
-        )
+        data["synced_at"] = current["last_sync"].get("checked_at") or current["synced_at"]
     elif period or selected in collections:
         snapshot = db.scalars(
             select(ReleaseIssueSnapshot)
@@ -159,9 +163,7 @@ def board(db, release="@current", force=False):
         ).first()
         if snapshot:
             data.update(
-                issue_count=sum(
-                    int(i["ra_type"]) == 2 for i in snapshot.payload["issues"]
-                ),
+                issue_count=sum(int(i["ra_type"]) == 2 for i in snapshot.payload["issues"]),
                 scenario_count=len(snapshot.payload["scenarios"]),
                 source_metrics=summarize_population(snapshot.payload["issues"], [], {}),
                 metrics=workflow.metrics_for_snapshot(db, snapshot),
@@ -201,10 +203,7 @@ def board(db, release="@current", force=False):
                 and historical.get("recall") is not None,
                 "archived": True,
                 "quality_gate_passed": bool(historical.get("quality_gate_passed")),
-                **{
-                    k: historical.get(k)
-                    for k in ("precision", "recall", "sim_repro_rate")
-                },
+                **{k: historical.get(k) for k in ("precision", "recall", "sim_repro_rate")},
             },
             synced_at=snapshot.created_at.replace(tzinfo=timezone.utc).isoformat(),
         )
@@ -219,9 +218,7 @@ def board(db, release="@current", force=False):
             "error": b.payload.get("error") or b.payload.get("last_poll_error"),
             "archived": False,
             "evaluation_task_key": b.payload.get("result_import", {}).get("task_key"),
-            "primary_execution": b.payload.get("result_import", {}).get(
-                "primary", False
-            ),
+            "primary_execution": b.payload.get("result_import", {}).get("primary", False),
         }
         for b in native
         if b.release == selected
@@ -231,9 +228,7 @@ def board(db, release="@current", force=False):
         jobs.append(
             {
                 "job_id": legacy_id,
-                "status": "complete"
-                if data["metrics"].get("available")
-                else "verifying",
+                "status": "complete" if data["metrics"].get("available") else "verifying",
                 "scenario_count": historical.get("total_cases") if historical else None,
                 "archived": True,
                 "error": None,
@@ -241,11 +236,7 @@ def board(db, release="@current", force=False):
         )
     refresh_ids = []
     for job in jobs:
-        cache = (
-            workflow.get_state(db, f"job-progress:{job['job_id']}")
-            if job["job_id"]
-            else {}
-        )
+        cache = workflow.get_state(db, f"job-progress:{job['job_id']}") if job["job_id"] else {}
         job.update(
             progress=cache.get("value"),
             progress_error=cache.get("error"),
@@ -258,16 +249,30 @@ def board(db, release="@current", force=False):
     data["jobs"] = jobs
     from app.services.release_backfill import public_state as backfill_state
     from app.services.release_resume import public_state as resume_state
+
     data["backfill"] = backfill_state(db, selected)
     data["resume"] = resume_state(db, selected)
     from ra_api.release_tolerance import validate_frozen
-    latest_plan = next((b.payload for b in native if b.release == selected and not b.payload.get("backfill") and b.payload.get("issue_tolerance")), None)
+
+    latest_plan = next(
+        (
+            b.payload
+            for b in native
+            if b.release == selected
+            and not b.payload.get("backfill")
+            and b.payload.get("issue_tolerance")
+        ),
+        None,
+    )
     if latest_plan:
         data["issue_tolerance"] = {**latest_plan["issue_tolerance"], **validate_frozen(latest_plan)}
     imported = (
         next(
             (
-                {**b.payload["result_import"], "publication_decision": b.payload.get("publication_decision")}
+                {
+                    **b.payload["result_import"],
+                    "publication_decision": b.payload.get("publication_decision"),
+                }
                 for b in native
                 if b.release == selected
                 and not b.payload.get("backfill")
@@ -290,9 +295,10 @@ def board(db, release="@current", force=False):
     approved = published_batch(db, selected)
     if approved:
         from app.services.business_population import scope_for_batch, historical_scope
+
         scope = historical_scope(scope_for_batch(db, approved), is_current=is_current)
-        data['collection_scope'] = scope
-        if scope['available'] or scope.get('historical_frozen'):
+        data["collection_scope"] = scope
+        if scope["available"] or scope.get("historical_frozen"):
             metrics = effective_publication(db, approved)
             imported = {**approved.payload["result_import"], "publication": metrics["publication"]}
             data["metrics"] = metrics
@@ -300,59 +306,122 @@ def board(db, release="@current", force=False):
             # The frozen execution remains audit evidence, never full-release
             # coverage when newer observations have expanded the population.
             imported = None
-            data['metrics'] = {'available': False, 'reason': scope['reason_code']}
-            data['population_complete'] = False
-            observed = workflow.get_state(db, 'release_observation:' + selected)
-            if observed.get('issues'):
-                data['source_metrics'] = summarize_population(observed['issues'], [], {})
+            data["metrics"] = {"available": False, "reason": scope["reason_code"]}
+            data["population_complete"] = False
+            observed = workflow.get_state(db, "release_observation:" + selected)
+            if observed.get("issues"):
+                data["source_metrics"] = summarize_population(observed["issues"], [], {})
     data["evaluation"] = imported
     from ra_api.release_tolerance import grade_counts, grade
     from app.services.release_metrics import cohort_for_issue
-    published_grade = data['metrics'].get('publication') or {}
-    if published_grade.get('issue_count'):
-        data['quality_grade'] = {**grade_counts(published_grade['issue_count'],
-            published_grade['issue_count']-published_grade['valid_issue_count']), 'basis':'results'}
-    elif imported and (execution := next((b for b in native if b.release == selected and not b.payload.get('backfill') and b.payload.get('result_import',{}).get('task_key') == imported.get('task_key')),None)) and execution.payload.get('issue_tolerance'):
-        frozen = execution.payload['issue_tolerance']
-        invalid = {str(s['issue_id']) for s in execution.payload['scenarios'] if str(s['scenario_id']) not in execution.payload.get('results',{})}
-        invalid.update(str(f['issue_id']) for f in frozen['preparation_failures'])
-        data['quality_grade'] = {**grade(frozen['eligible_issue_ids'],invalid), 'basis':'results'}
-    elif current_snapshot and current_snapshot.payload.get('population_complete') and not current_snapshot.payload.get('mapping_error'):
+
+    published_grade = data["metrics"].get("publication") or {}
+    if published_grade.get("issue_count"):
+        data["quality_grade"] = {
+            **grade_counts(
+                published_grade["issue_count"],
+                published_grade["issue_count"] - published_grade["valid_issue_count"],
+            ),
+            "basis": "results",
+        }
+    elif (
+        imported
+        and (
+            execution := next(
+                (
+                    b
+                    for b in native
+                    if b.release == selected
+                    and not b.payload.get("backfill")
+                    and b.payload.get("result_import", {}).get("task_key")
+                    == imported.get("task_key")
+                ),
+                None,
+            )
+        )
+        and execution.payload.get("issue_tolerance")
+    ):
+        frozen = execution.payload["issue_tolerance"]
+        invalid = {
+            str(s["issue_id"])
+            for s in execution.payload["scenarios"]
+            if str(s["scenario_id"]) not in execution.payload.get("results", {})
+        }
+        invalid.update(str(f["issue_id"]) for f in frozen["preparation_failures"])
+        data["quality_grade"] = {**grade(frozen["eligible_issue_ids"], invalid), "basis": "results"}
+    elif (
+        current_snapshot
+        and current_snapshot.payload.get("population_complete")
+        and not current_snapshot.payload.get("mapping_error")
+    ):
         source = current_snapshot.payload
-        eligible = {str(i['issue_id']) for i in source['issues'] if cohort_for_issue(i)}
-        mapped = {str(s['issue_id']) for s in source['scenarios'] if s.get('issue_id')}
+        eligible = {str(i["issue_id"]) for i in source["issues"] if cohort_for_issue(i)}
+        mapped = {str(s["issue_id"]) for s in source["scenarios"] if s.get("issue_id")}
         if eligible:
-            data['quality_grade'] = {**grade(eligible, eligible-mapped), 'basis':'preparation'}
-    if data.get('collection_scope', {}).get('available') is False and not data['collection_scope'].get('historical_frozen'):
-        data.pop('quality_grade', None)
+            data["quality_grade"] = {**grade(eligible, eligible - mapped), "basis": "preparation"}
+    if data.get("collection_scope", {}).get("available") is False and not data[
+        "collection_scope"
+    ].get("historical_frozen"):
+        data.pop("quality_grade", None)
 
     from app.services.label_cycle import public_state
+
     data["label_cycle"] = public_state(db, selected)
     from app.services.release_anomalies import collection_anomalies
-    data["collection_anomalies"] = collection_anomalies(db, selected, data.get("collection"), native)
+
+    data["collection_anomalies"] = collection_anomalies(
+        db, selected, data.get("collection"), native
+    )
     from app.services import ordinary_evaluation as ordinary
+
     normal = ordinary.read(db, selected)
     if normal:
-        m = normal['metrics']
-        data.update(issue_count=sum(r['ra_type']==2 for r in normal['rows']),
-                    scenario_count=len(normal['payload']['scenarios']), population_complete=True,
-                    binary_id=normal['specification']['binary_id'], period=normal['specification']['period'],
-                    synced_at=normal['generated_at'], normal_revision_key=normal['revision_key'],
-                    metric_scope={k:normal['context'][k] for k in ('date_start','date_end')},
-                    metrics={**m, 'basis':ordinary.BASIS, 'quality_gate_passed':m['available']},
-                    source_metrics={**m['counts'], 'eligible':m['eligible'], 'excluded':normal['source_count']-m['eligible'],
-                                    'online_precision':m['online_precision'], 'online_recall':m['online_recall']},
-                    evaluation=None)
-        data.pop('issue_tolerance', None)
+        m = normal["metrics"]
+        data.update(
+            issue_count=sum(r["ra_type"] == 2 for r in normal["rows"]),
+            scenario_count=len(normal["payload"]["scenarios"]),
+            population_complete=True,
+            binary_id=normal["specification"]["binary_id"],
+            period=normal["specification"]["period"],
+            synced_at=normal["generated_at"],
+            normal_revision_key=normal["revision_key"],
+            metric_scope={k: normal["context"][k] for k in ("date_start", "date_end")},
+            metrics={**m, "basis": ordinary.BASIS, "quality_gate_passed": m["available"]},
+            source_metrics={
+                **m["counts"],
+                "eligible": m["eligible"],
+                "excluded": normal["source_count"] - m["eligible"],
+                "online_precision": m["online_precision"],
+                "online_recall": m["online_recall"],
+            },
+            evaluation=None,
+        )
+        data.pop("issue_tolerance", None)
         from ra_api.release_tolerance import grade_counts
-        data['quality_grade']={**grade_counts(m['eligible'], m['missing_results']), 'basis':'results'}
-        execution=workflow.get_state(db, 'evexecution:'+normal['target_binding']['execution_id'])
-        if execution.get('job_id') and not any(j['job_id']==execution['job_id'] for j in jobs):
-            jobs.insert(0, {'job_id':execution['job_id'], 'status':execution['status'], 'primary_execution':True,
-                'scenario_count':len(execution['plan']['scenarios']), 'created_at':execution.get('created_at'),
-                'progress':execution.get('progress') or execution.get('export',{}).get('progress'),
-                'archived':False, 'error':None,
-                'url':f"https://voyager.intra.xiaojukeji.com/static/management/#/orion/job/detail?job_id={execution['job_id']}"})
+
+        data["quality_grade"] = {
+            **grade_counts(m["eligible"], m["missing_results"]),
+            "basis": "results",
+        }
+        execution = workflow.get_state(
+            db, "evexecution:" + normal["target_binding"]["execution_id"]
+        )
+        if execution.get("job_id") and not any(j["job_id"] == execution["job_id"] for j in jobs):
+            jobs.insert(
+                0,
+                {
+                    "job_id": execution["job_id"],
+                    "status": execution["status"],
+                    "primary_execution": True,
+                    "scenario_count": len(execution["plan"]["scenarios"]),
+                    "created_at": execution.get("created_at"),
+                    "progress": execution.get("progress")
+                    or execution.get("export", {}).get("progress"),
+                    "archived": False,
+                    "error": None,
+                    "url": f"https://voyager.intra.xiaojukeji.com/static/management/#/orion/job/detail?job_id={execution['job_id']}",
+                },
+            )
     return {
         "versions": [
             {

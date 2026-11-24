@@ -12,13 +12,7 @@ def cohort_for_issue(issue):
     ra_type = int(issue["ra_type"])
     result = issue.get("ra_merge_result")
     if result in GOOD_RESULTS:
-        return (
-            "positive_auto"
-            if ra_type == 2
-            else "positive_manual"
-            if ra_type == 3
-            else None
-        )
+        return "positive_auto" if ra_type == 2 else "positive_manual" if ra_type == 3 else None
     if result == "误触发" and ra_type == 2:
         return "negative_auto"
     return None
@@ -29,8 +23,10 @@ def ratio(numerator, denominator):
 
 
 def excluded_issue(issue):
-    return bool(issue.get("evaluation_exclusion")) or issue.get("ra_merge_result") in EXCLUDED_RESULTS or (
-        int(issue["ra_type"]) == 3 and issue.get("ra_merge_result") == "误触发"
+    return (
+        bool(issue.get("evaluation_exclusion"))
+        or issue.get("ra_merge_result") in EXCLUDED_RESULTS
+        or (int(issue["ra_type"]) == 3 and issue.get("ra_merge_result") == "误触发")
     )
 
 
@@ -38,9 +34,7 @@ def summarize_population(issues, scenarios, results):
     """Publish only a complete eligible population; unknown GT remains explicit."""
     groups = {}
     for scenario in scenarios:
-        groups.setdefault(str(scenario["issue_id"]), []).append(
-            str(scenario["scenario_id"])
-        )
+        groups.setdefault(str(scenario["issue_id"]), []).append(str(scenario["scenario_id"]))
     counts = {
         "tp": 0,
         "fp": 0,
@@ -54,8 +48,7 @@ def summarize_population(issues, scenarios, results):
     }
     source_auto_tp = source_auto_fp = source_manual_fn = 0
     cohort_counts = {
-        k: {"count": 0, "matches": 0}
-        for k in ("positive_auto", "negative_auto", "positive_manual")
+        k: {"count": 0, "matches": 0} for k in ("positive_auto", "negative_auto", "positive_manual")
     }
     for issue in issues:
         cohort = cohort_for_issue(issue)
@@ -72,8 +65,7 @@ def summarize_population(issues, scenarios, results):
         cohort_counts[cohort]["count"] += 1
         ids = groups.get(str(issue["issue_id"]), [])
         if not ids or any(
-            sid not in results
-            or not isinstance(results[sid].get("sim_triggered"), bool)
+            sid not in results or not isinstance(results[sid].get("sim_triggered"), bool)
             for sid in ids
         ):
             counts["missing_results"] += 1
@@ -89,8 +81,7 @@ def summarize_population(issues, scenarios, results):
     # Approved exclusions remain in the source count and audit, not in metrics.
     metric_issues = [i for i in issues if not i.get("evaluation_exclusion")]
     precision_tp = sum(
-        int(i["ra_type"]) == 2 and i.get("ra_merge_result") in GOOD_RESULTS
-        for i in metric_issues
+        int(i["ra_type"]) == 2 and i.get("ra_merge_result") in GOOD_RESULTS for i in metric_issues
     )
     precision_den = sum(
         int(i["ra_type"]) == 2
@@ -111,9 +102,7 @@ def summarize_population(issues, scenarios, results):
         for i in metric_issues
     )
     complete = (
-        counts["eligible"] > 0
-        and not counts["missing_results"]
-        and not counts["unclassified"]
+        counts["eligible"] > 0 and not counts["missing_results"] and not counts["unclassified"]
     )
     return {
         "available": complete,
@@ -122,15 +111,9 @@ def summarize_population(issues, scenarios, results):
             k + "_repro_rate": ratio(v["matches"], v["count"]) if complete else None
             for k, v in cohort_counts.items()
         },
-        "precision": ratio(counts["tp"], counts["tp"] + counts["fp"])
-        if complete
-        else None,
-        "recall": ratio(counts["tp"], counts["tp"] + counts["fn"])
-        if complete
-        else None,
-        "sim_repro_rate": ratio(counts["road_matches"], counts["eligible"])
-        if complete
-        else None,
+        "precision": ratio(counts["tp"], counts["tp"] + counts["fp"]) if complete else None,
+        "recall": ratio(counts["tp"], counts["tp"] + counts["fn"]) if complete else None,
+        "sim_repro_rate": ratio(counts["road_matches"], counts["eligible"]) if complete else None,
         "online_precision": ratio(precision_tp, precision_den),
         "online_recall": ratio(recall_tp, recall_den),
         "precision_auto_tp": precision_tp,

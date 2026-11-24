@@ -21,24 +21,46 @@ import { useTranslation } from 'react-i18next';
 import { api } from './api/client';
 import { evaluationRequest } from './api/evaluation';
 import { CurrentBusinessRelease, ReleaseWorkflow } from './components/ReleaseWorkflow';
-const ReleaseIssues = lazy(() => import('./components/ReleaseIssues').then(module => ({ default: module.ReleaseIssues })));
-const IssueDetail = lazy(() => import('./components/IssueDetail').then(module => ({ default: module.IssueDetail })));
-const IssuesTable = lazy(() => import('./components/IssuesTable').then(module => ({ default: module.IssuesTable })));
-const Overview = lazy(() => import('./components/Overview').then(module => ({ default: module.Overview })));
-const SystemStatus = lazy(() => import('./components/SystemStatus').then(module => ({ default: module.SystemStatus })));
-const EvaluationWorkspace = lazy(() => import('./components/EvaluationWorkspace').then(module => ({ default: module.EvaluationWorkspace })));
+const ReleaseIssues = lazy(() =>
+  import('./components/ReleaseIssues').then((module) => ({ default: module.ReleaseIssues })),
+);
+const IssueDetail = lazy(() =>
+  import('./components/IssueDetail').then((module) => ({ default: module.IssueDetail })),
+);
+const IssuesTable = lazy(() =>
+  import('./components/IssuesTable').then((module) => ({ default: module.IssuesTable })),
+);
+const Overview = lazy(() =>
+  import('./components/Overview').then((module) => ({ default: module.Overview })),
+);
+const SystemStatus = lazy(() =>
+  import('./components/SystemStatus').then((module) => ({ default: module.SystemStatus })),
+);
+const EvaluationWorkspace = lazy(() =>
+  import('./components/EvaluationWorkspace').then((module) => ({
+    default: module.EvaluationWorkspace,
+  })),
+);
 import { Select } from './components/ui/select';
 import { PAGE_SIZES } from './components/ui/pagination';
 import { TopControls } from './components/TopControls';
 import { Badge } from './components/ui/badge';
 import { Button } from './components/ui/button';
 import { cn } from './lib/utils';
-import type { IssueListItem, KpiSummary, RefreshJob, SelectedIssueResult, SummaryResponse, VersionItem, VersionsResponse } from './types';
+import type {
+  IssueListItem,
+  KpiSummary,
+  RefreshJob,
+  SelectedIssueResult,
+  SummaryResponse,
+  VersionItem,
+  VersionsResponse,
+} from './types';
 
 function readDashboardCache<T>(key: string, fallback: T): T {
   try {
     const raw = localStorage.getItem(`ra-dashboard-${key}`);
-    return raw ? JSON.parse(raw) as T : fallback;
+    return raw ? (JSON.parse(raw) as T) : fallback;
   } catch {
     return fallback;
   }
@@ -106,14 +128,25 @@ function twoMonthRange() {
   return { start: dateInputValue(start), end: dateInputValue(end) };
 }
 
-const SOURCE_PARAMS = { platformGen:'platform_gen', versionCategory:'version_category', bigVersion:'big_version', testVersion:'test_version' };
+const SOURCE_PARAMS = {
+  platformGen: 'platform_gen',
+  versionCategory: 'version_category',
+  bigVersion: 'big_version',
+  testVersion: 'test_version',
+};
 function readSourceFilters() {
   const q = new URLSearchParams(location.search);
-  return Object.fromEntries(Object.entries(SOURCE_PARAMS).map(([key,param]) => [key,q.get(param) || ''])) as typeof defaultSourceFilters;
+  return Object.fromEntries(
+    Object.entries(SOURCE_PARAMS).map(([key, param]) => [key, q.get(param) || '']),
+  ) as typeof defaultSourceFilters;
 }
 function readReleaseRange() {
-  const q = new URLSearchParams(location.search), fallback = twoMonthRange();
-  return { start:q.has('release_start') ? q.get('release_start')! : fallback.start, end:q.has('release_end') ? q.get('release_end')! : fallback.end };
+  const q = new URLSearchParams(location.search),
+    fallback = twoMonthRange();
+  return {
+    start: q.has('release_start') ? q.get('release_start')! : fallback.start,
+    end: q.has('release_end') ? q.get('release_end')! : fallback.end,
+  };
 }
 
 function versionDate(value: string) {
@@ -126,21 +159,52 @@ function versionDate(value: string) {
   return separated ? `${separated[1]}-${separated[2]}-${separated[3]}` : null;
 }
 
-function SelectFilter({label,value,options,onChange}:{label:string;value:string;options:string[];onChange:(value:string)=>void}) {
-  const {t}=useTranslation();
-  return <label className="grid min-w-0 gap-1.5 text-xs font-medium text-muted-foreground xl:flex-1 xl:basis-[90px] [&_.ui-select-trigger]:w-full"><span>{label}</span><Select label={label} value={value} options={[{value:'',label:t('all')},...options.map(option=>({value:option,label:option}))]} onChange={onChange}/></label>;
+function SelectFilter({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: string[];
+  onChange: (value: string) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <label className="grid min-w-0 gap-1.5 text-xs font-medium text-muted-foreground xl:flex-1 xl:basis-[90px] [&_.ui-select-trigger]:w-full">
+      <span>{label}</span>
+      <Select
+        label={label}
+        value={value}
+        options={[
+          { value: '', label: t('all') },
+          ...options.map((option) => ({ value: option, label: option })),
+        ]}
+        onChange={onChange}
+      />
+    </label>
+  );
 }
 
 export default function App() {
   const { t } = useTranslation();
   const [page, setPageState] = useState<Page>(pageFromLocation);
-  const [basis, setBasis] = useState(() => location.pathname.endsWith('/auto-triage') || new URLSearchParams(location.search).get('basis') === 'auto-triage' ? 'auto-triage' : 'normal');
+  const [basis, setBasis] = useState(() =>
+    location.pathname.endsWith('/auto-triage') ||
+    new URLSearchParams(location.search).get('basis') === 'auto-triage'
+      ? 'auto-triage'
+      : 'normal',
+  );
 
   const setPage = useCallback((next: Page, version?: string, navigationQuery?: URLSearchParams) => {
     setPageState(next);
     const currentQuery = new URLSearchParams(window.location.search);
-    const q = navigationQuery ? new URLSearchParams(navigationQuery)
-      : next === 'issues' && version ? changeEvaluationReleaseQuery(currentQuery, version) : currentQuery;
+    const q = navigationQuery
+      ? new URLSearchParams(navigationQuery)
+      : next === 'issues' && version
+        ? changeEvaluationReleaseQuery(currentQuery, version)
+        : currentQuery;
     const search = q.size ? `?${q}` : '';
     const target = `${BASE_PATH}/${next}${search}`;
     if (window.location.pathname + window.location.search !== target) {
@@ -152,36 +216,63 @@ export default function App() {
   useEffect(() => {
     // Normalize bare /sim/ to a canonical module URL without adding a history entry.
     const q = new URLSearchParams(location.search);
-    if (location.pathname.endsWith('/auto-triage')) { q.set('basis','auto-triage'); q.set('sidecar','1'); }
-    window.history.replaceState({ page: pageFromLocation() }, '', `${BASE_PATH}/${pageFromLocation()}${q.size ? `?${q}` : ''}`);
+    if (location.pathname.endsWith('/auto-triage')) {
+      q.set('basis', 'auto-triage');
+      q.set('sidecar', '1');
+    }
+    window.history.replaceState(
+      { page: pageFromLocation() },
+      '',
+      `${BASE_PATH}/${pageFromLocation()}${q.size ? `?${q}` : ''}`,
+    );
     const onPopState = () => {
       setPageState(pageFromLocation());
-      setBasis(new URLSearchParams(location.search).get('basis') === 'auto-triage' ? 'auto-triage' : 'normal');
+      setBasis(
+        new URLSearchParams(location.search).get('basis') === 'auto-triage'
+          ? 'auto-triage'
+          : 'normal',
+      );
       const q = new URLSearchParams(window.location.search);
       setFilters({ ...defaultFilters, version: q.get('version') || q.get('release') || '' });
-      setSourceFilters(readSourceFilters()); setReleaseRange(readReleaseRange());
+      setSourceFilters(readSourceFilters());
+      setReleaseRange(readReleaseRange());
       setIssuePage(Math.max(1, Number(q.get('page')) || 1));
-      const size = Number(q.get('page_size') || 20); setIssuePageSize(PAGE_SIZES.includes(size) ? size : 20);
+      const size = Number(q.get('page_size') || 20);
+      setIssuePageSize(PAGE_SIZES.includes(size) ? size : 20);
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
   const [dark, setDark] = useState(() => localStorage.getItem('theme') === 'dark');
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('sidebarCollapsed') === '1');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+    () => localStorage.getItem('sidebarCollapsed') === '1',
+  );
   const [versions, setVersions] = useState<VersionItem[]>(() => readDashboardCache('versions', []));
   const [evaluationVersions, setEvaluationVersions] = useState<VersionItem[]>([]);
   const [catalogueError, setCatalogueError] = useState(false);
   const [catalogueAttempt, setCatalogueAttempt] = useState(0);
-  const [summary, setSummary] = useState<SummaryResponse | null>(() => readDashboardCache<SummaryResponse | null>('summary', null));
-  const [comparison, setComparison] = useState<KpiSummary[]>(() => readDashboardCache('comparison', []));
+  const [summary, setSummary] = useState<SummaryResponse | null>(() =>
+    readDashboardCache<SummaryResponse | null>('summary', null),
+  );
+  const [comparison, setComparison] = useState<KpiSummary[]>(() =>
+    readDashboardCache('comparison', []),
+  );
   const [issues, setIssues] = useState<IssueListItem[]>([]);
   const [issuesLoading, setIssuesLoading] = useState(false);
   const [showLegacyIssues, setShowLegacyIssues] = useState(false);
   const [issueTotal, setIssueTotal] = useState(0);
-  const [issuePage, setIssuePage] = useState(() => Math.max(1, Number(new URLSearchParams(location.search).get('page')) || 1));
-  const [issuePageSize, setIssuePageSize] = useState(() => { const size = Number(new URLSearchParams(location.search).get('page_size') || 20); return PAGE_SIZES.includes(size) ? size : 20; });
+  const [issuePage, setIssuePage] = useState(() =>
+    Math.max(1, Number(new URLSearchParams(location.search).get('page')) || 1),
+  );
+  const [issuePageSize, setIssuePageSize] = useState(() => {
+    const size = Number(new URLSearchParams(location.search).get('page_size') || 20);
+    return PAGE_SIZES.includes(size) ? size : 20;
+  });
   const issueGeneration = useRef(0);
-  const [filters, setFilters] = useState(() => { const q = new URLSearchParams(window.location.search); return { ...defaultFilters, version: q.get('version') || q.get('release') || '' }; });
+  const [filters, setFilters] = useState(() => {
+    const q = new URLSearchParams(window.location.search);
+    return { ...defaultFilters, version: q.get('version') || q.get('release') || '' };
+  });
   const [sourceFilters, setSourceFilters] = useState(readSourceFilters);
   const [releaseRange, setReleaseRange] = useState(readReleaseRange);
   const [selectedResult, setSelectedResult] = useState<SelectedIssueResult | null>(null);
@@ -204,15 +295,15 @@ export default function App() {
   const loadDashboard = useCallback(async () => {
     setError('');
     const [versionsResult, summaryResult, comparisonResult] = await Promise.allSettled([
-      api.versions().then(value => {
+      api.versions().then((value) => {
         setVersions(value.versions);
         localStorage.setItem('ra-dashboard-versions', JSON.stringify(value.versions));
       }),
-      api.summary().then(value => {
+      api.summary().then((value) => {
         setSummary(value);
         localStorage.setItem('ra-dashboard-summary', JSON.stringify(value));
       }),
-      api.comparison().then(value => {
+      api.comparison().then((value) => {
         setComparison(value);
         localStorage.setItem('ra-dashboard-comparison', JSON.stringify(value));
       }),
@@ -229,7 +320,10 @@ export default function App() {
     const generation = ++issueGeneration.current;
     setIssuesLoading(true);
     try {
-      const params = new URLSearchParams({ page: String(issuePage), page_size: String(issuePageSize) });
+      const params = new URLSearchParams({
+        page: String(issuePage),
+        page_size: String(issuePageSize),
+      });
       if (filters.version) params.set('version', filters.version);
       if (filters.rootCause) params.set('root_cause', filters.rootCause);
       if (filters.triggerType) params.set('trigger_type', filters.triggerType);
@@ -244,16 +338,23 @@ export default function App() {
       setIssues(result.items);
       setIssueTotal(result.total);
     } catch (err) {
-      if (generation === issueGeneration.current) setError(err instanceof Error ? err.message : String(err));
+      if (generation === issueGeneration.current)
+        setError(err instanceof Error ? err.message : String(err));
     } finally {
       if (generation === issueGeneration.current) setIssuesLoading(false);
     }
   }, [filters, issuePage, issuePageSize]);
 
-  const changeIssueFilters = (value: typeof filters) => { setIssuePage(1); setSelectedResult(null); setFilters(value); };
+  const changeIssueFilters = (value: typeof filters) => {
+    setIssuePage(1);
+    setSelectedResult(null);
+    setFilters(value);
+  };
   useEffect(() => {
     if (page !== 'issues' || !showLegacyIssues || basis !== 'normal') return;
-    const q = new URLSearchParams(location.search); q.set('page', String(issuePage)); q.set('page_size', String(issuePageSize));
+    const q = new URLSearchParams(location.search);
+    q.set('page', String(issuePage));
+    q.set('page_size', String(issuePageSize));
     history.replaceState(history.state, '', `${location.pathname}?${q}`);
   }, [page, showLegacyIssues, basis, issuePage, issuePageSize]);
 
@@ -261,20 +362,36 @@ export default function App() {
     if (evaluationPage) {
       let active = true;
       setCatalogueError(false);
-      void evaluationRequest<VersionsResponse>('/versions').then(value => { if (active) setEvaluationVersions(value.versions); })
-        .catch(() => { if (active) setCatalogueError(true); });
-      return () => { active = false; };
+      void evaluationRequest<VersionsResponse>('/versions')
+        .then((value) => {
+          if (active) setEvaluationVersions(value.versions);
+        })
+        .catch(() => {
+          if (active) setCatalogueError(true);
+        });
+      return () => {
+        active = false;
+      };
     }
     if (page === 'issues' || page === 'simulation') {
       // The source Issue page uses its own inventory; only legacy options need
       // this small request. Summary and charts belong to the overview.
       let active = true;
-      void api.versions().then(value => { if (active) setVersions(value.versions); }).catch(() => {});
-      return () => { active = false; };
+      void api
+        .versions()
+        .then((value) => {
+          if (active) setVersions(value.versions);
+        })
+        .catch(() => {});
+      return () => {
+        active = false;
+      };
     }
     if (page !== 'overview' || basis !== 'normal') return;
     void loadDashboard();
-    const timer=window.setInterval(() => { if (!document.hidden) void loadDashboard(); },30000);
+    const timer = window.setInterval(() => {
+      if (!document.hidden) void loadDashboard();
+    }, 30000);
     return () => window.clearInterval(timer);
   }, [loadDashboard, page, basis, evaluationPage, catalogueAttempt]);
 
@@ -322,12 +439,18 @@ export default function App() {
   useEffect(() => {
     if (page !== 'overview') return;
     const q = new URLSearchParams(location.search);
-    for (const [key,param] of Object.entries(SOURCE_PARAMS)) { const value = sourceFilters[key as keyof typeof sourceFilters]; if (value) q.set(param,value); else q.delete(param); }
-    q.set('release_start',releaseRange.start); q.set('release_end',releaseRange.end);
-    history.replaceState(history.state,'',`${location.pathname}?${q}`);
+    for (const [key, param] of Object.entries(SOURCE_PARAMS)) {
+      const value = sourceFilters[key as keyof typeof sourceFilters];
+      if (value) q.set(param, value);
+      else q.delete(param);
+    }
+    q.set('release_start', releaseRange.start);
+    q.set('release_end', releaseRange.end);
+    history.replaceState(history.state, '', `${location.pathname}?${q}`);
   }, [page, sourceFilters, releaseRange]);
 
-  const validReleaseRange = !releaseRange.start || !releaseRange.end || releaseRange.start <= releaseRange.end;
+  const validReleaseRange =
+    !releaseRange.start || !releaseRange.end || releaseRange.start <= releaseRange.end;
   const releaseRangeActive = Boolean(releaseRange.start || releaseRange.end);
   const current = useMemo(() => activeVersions.find((item) => item.is_current), [activeVersions]);
   const sourceOptions = useMemo(() => {
@@ -366,12 +489,25 @@ export default function App() {
     return new Set(matched);
   }, [sourceFilters, activeVersions]);
 
-  const visibleReleases = useMemo(() => activeVersions.filter(item => {
-    if (!validReleaseRange || !matchedVersionKeys.has(item.version_key)) return false;
-    const date = versionDate(item.version_key);
-    return !date || ((!releaseRange.start || date >= releaseRange.start) && (!releaseRange.end || date <= releaseRange.end));
-  }).map(item => item.version_key), [activeVersions, matchedVersionKeys, releaseRange, validReleaseRange]);
-  const visibleComparison = useMemo(() => comparison.filter(item => visibleReleases.includes(item.version_key)), [comparison, visibleReleases]);
+  const visibleReleases = useMemo(
+    () =>
+      activeVersions
+        .filter((item) => {
+          if (!validReleaseRange || !matchedVersionKeys.has(item.version_key)) return false;
+          const date = versionDate(item.version_key);
+          return (
+            !date ||
+            ((!releaseRange.start || date >= releaseRange.start) &&
+              (!releaseRange.end || date <= releaseRange.end))
+          );
+        })
+        .map((item) => item.version_key),
+    [activeVersions, matchedVersionKeys, releaseRange, validReleaseRange],
+  );
+  const visibleComparison = useMemo(
+    () => comparison.filter((item) => visibleReleases.includes(item.version_key)),
+    [comparison, visibleReleases],
+  );
 
   async function handleRefresh() {
     setError('');
@@ -395,8 +531,12 @@ export default function App() {
   function openCollectionIssues(version: string) {
     const query = collectionIssuesQuery(new URLSearchParams(location.search), version);
     setFilters({ ...defaultFilters, version });
-    setIssuePage(1); setSelectedResult(null); setIssues([]); setIssueTotal(0);
-    setShowLegacyIssues(false); setBasis('normal');
+    setIssuePage(1);
+    setSelectedResult(null);
+    setIssues([]);
+    setIssueTotal(0);
+    setShowLegacyIssues(false);
+    setBasis('normal');
     setPage('issues', version, query);
   }
 
@@ -414,17 +554,37 @@ export default function App() {
     setFilters((value) => ({ ...value, version: '' }));
   }
 
-  const basisControl = <label className="grid min-w-0 gap-1.5 text-xs font-medium text-muted-foreground xl:basis-[150px] [&_.ui-select-trigger]:w-full">
-    <span>{t('evaluation.basis')}</span>
-    <Select label={t('evaluation.basis')} value={basis} options={[{ value:'normal',label:t('evaluation.normal') },{ value:'auto-triage',label:t('evaluation.show_auto') }]} onChange={value => {
-      const q = new URLSearchParams(location.search), release = q.get('version') || q.get('release') || filters.version;
-      if (value === 'normal') q.delete('basis'); else q.set('basis', value);
-      q.set('page','1'); q.delete('coverage'); q.delete('changed');
-      if (release) { q.set('version',release); q.set('release',release); }
-      setFilters({ ...defaultFilters, version: release || '' }); setIssuePage(1); setSelectedResult(null);
-      history.pushState(history.state,'',`${location.pathname}?${q}`); setBasis(value);
-    }}/>
-  </label>;
+  const basisControl = (
+    <label className="grid min-w-0 gap-1.5 text-xs font-medium text-muted-foreground xl:basis-[150px] [&_.ui-select-trigger]:w-full">
+      <span>{t('evaluation.basis')}</span>
+      <Select
+        label={t('evaluation.basis')}
+        value={basis}
+        options={[
+          { value: 'normal', label: t('evaluation.normal') },
+          { value: 'auto-triage', label: t('evaluation.show_auto') },
+        ]}
+        onChange={(value) => {
+          const q = new URLSearchParams(location.search),
+            release = q.get('version') || q.get('release') || filters.version;
+          if (value === 'normal') q.delete('basis');
+          else q.set('basis', value);
+          q.set('page', '1');
+          q.delete('coverage');
+          q.delete('changed');
+          if (release) {
+            q.set('version', release);
+            q.set('release', release);
+          }
+          setFilters({ ...defaultFilters, version: release || '' });
+          setIssuePage(1);
+          setSelectedResult(null);
+          history.pushState(history.state, '', `${location.pathname}?${q}`);
+          setBasis(value);
+        }}
+      />
+    </label>
+  );
 
   return (
     <div className="min-h-screen text-foreground">
@@ -513,7 +673,12 @@ export default function App() {
             </Button>
           </nav>
 
-          <div className={cn('mt-auto grid gap-3 border-t border-border/70', sidebarCollapsed ? 'p-3' : 'p-4')}>
+          <div
+            className={cn(
+              'mt-auto grid gap-3 border-t border-border/70',
+              sidebarCollapsed ? 'p-3' : 'p-4',
+            )}
+          >
             <TopControls
               showRefresh={basis === 'normal' || page === 'simulation'}
               dark={dark}
@@ -523,46 +688,63 @@ export default function App() {
               compact={sidebarCollapsed}
             />
             {!sidebarCollapsed && refreshJob ? (
-              <Badge variant={refreshing ? 'warning' : refreshJob.status === 'completed' ? 'success' : 'destructive'} className="justify-center">
+              <Badge
+                variant={
+                  refreshing
+                    ? 'warning'
+                    : refreshJob.status === 'completed'
+                      ? 'success'
+                      : 'destructive'
+                }
+                className="justify-center"
+              >
                 {refreshJob.status} {refreshJob.progress}%
               </Badge>
             ) : null}
-            {basis === 'normal' && <div
-              className={cn(
-                sidebarCollapsed
-                  ? 'sidebar-icon-button flex cursor-pointer items-center justify-center'
-                  : 'metric-surface rounded-lg border p-3',
-              )}
-              role={sidebarCollapsed ? 'button' : undefined}
-              tabIndex={sidebarCollapsed ? 0 : undefined}
-              title={current?.version_key || t('currentVersion')}
-              onClick={sidebarCollapsed ? () => openIssues({ version: current?.version_key || '' }) : undefined}
-              onKeyDown={
-                sidebarCollapsed
-                  ? (event) => {
-                      if (event.key === 'Enter' || event.key === ' ') {
-                        event.preventDefault();
-                        openIssues({ version: current?.version_key || '' });
+            {basis === 'normal' && (
+              <div
+                className={cn(
+                  sidebarCollapsed
+                    ? 'sidebar-icon-button flex cursor-pointer items-center justify-center'
+                    : 'metric-surface rounded-lg border p-3',
+                )}
+                role={sidebarCollapsed ? 'button' : undefined}
+                tabIndex={sidebarCollapsed ? 0 : undefined}
+                title={current?.version_key || t('currentVersion')}
+                onClick={
+                  sidebarCollapsed
+                    ? () => openIssues({ version: current?.version_key || '' })
+                    : undefined
+                }
+                onKeyDown={
+                  sidebarCollapsed
+                    ? (event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          openIssues({ version: current?.version_key || '' });
+                        }
                       }
-                    }
-                  : undefined
-              }
-            >
-              {sidebarCollapsed ? (
-                <GitCompareArrows className="h-4 w-4 text-primary" />
-              ) : (
-                <>
-                  <div className="mb-2 flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                    <GitCompareArrows className="h-3.5 w-3.5" />
-                    {t('simFlow.businessVersion')}
-                  </div>
-                  <div className="truncate text-[13px] font-semibold">{releaseName(current?.version_key)}</div>
-                  <div className="mt-1 font-mono text-[11px] text-muted-foreground">
-                    {current?.sim_job_id ? `job ${current.sim_job_id}` : 'job -'}
-                  </div>
-                </>
-              )}
-            </div>}
+                    : undefined
+                }
+              >
+                {sidebarCollapsed ? (
+                  <GitCompareArrows className="h-4 w-4 text-primary" />
+                ) : (
+                  <>
+                    <div className="mb-2 flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                      <GitCompareArrows className="h-3.5 w-3.5" />
+                      {t('simFlow.businessVersion')}
+                    </div>
+                    <div className="truncate text-[13px] font-semibold">
+                      {releaseName(current?.version_key)}
+                    </div>
+                    <div className="mt-1 font-mono text-[11px] text-muted-foreground">
+                      {current?.sim_job_id ? `job ${current.sim_job_id}` : 'job -'}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         </aside>
 
@@ -578,16 +760,34 @@ export default function App() {
                 <div className="mb-1 flex flex-wrap items-center gap-2">
                   <Badge variant="secondary">
                     <Database className="h-3.5 w-3.5" />
-                    {basis === 'auto-triage' && page !== 'simulation' ? t('autoTriage.autoBasis') : releaseName(current?.version_key)}
+                    {basis === 'auto-triage' && page !== 'simulation'
+                      ? t('autoTriage.autoBasis')
+                      : releaseName(current?.version_key)}
                   </Badge>
                   {refreshJob ? (
-                    <Badge variant={refreshing ? 'warning' : refreshJob.status === 'completed' ? 'success' : 'destructive'}>
+                    <Badge
+                      variant={
+                        refreshing
+                          ? 'warning'
+                          : refreshJob.status === 'completed'
+                            ? 'success'
+                            : 'destructive'
+                      }
+                    >
                       {refreshJob.status} {refreshJob.progress}%
                     </Badge>
                   ) : null}
                 </div>
                 <h1 className="truncate text-lg font-semibold tracking-normal">
-                  {page === 'overview' ? t('appTitle') : page === 'issues' ? t('issues') : page === 'simulation' ? t('simulation') : page === 'auto-triage' ? t('autoTriage.nav') : t('systemStatus')}
+                  {page === 'overview'
+                    ? t('appTitle')
+                    : page === 'issues'
+                      ? t('issues')
+                      : page === 'simulation'
+                        ? t('simulation')
+                        : page === 'auto-triage'
+                          ? t('autoTriage.nav')
+                          : t('systemStatus')}
                 </h1>
               </div>
               <div className="grid gap-2">
@@ -608,7 +808,11 @@ export default function App() {
                     <ListChecks className="h-4 w-4" />
                     {t('issues')}
                   </Button>
-                  <Button variant={page === 'simulation' ? 'default' : 'ghost'} size="sm" onClick={() => setPage('simulation')}>
+                  <Button
+                    variant={page === 'simulation' ? 'default' : 'ghost'}
+                    size="sm"
+                    onClick={() => setPage('simulation')}
+                  >
                     <FlaskConical className="h-4 w-4" />
                     {t('simulation')}
                   </Button>
@@ -622,7 +826,7 @@ export default function App() {
                   </Button>
                 </nav>
                 <TopControls
-              showRefresh={basis === 'normal' || page === 'simulation'}
+                  showRefresh={basis === 'normal' || page === 'simulation'}
                   dark={dark}
                   onToggleDark={() => setDark((value) => !value)}
                   onRefresh={handleRefresh}
@@ -635,97 +839,137 @@ export default function App() {
 
           <main className="grid min-w-0 gap-5 p-4 md:p-6">
             {page === 'overview' ? (
-            <FilterPanel>
-              <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-                <div className="flex min-w-0 flex-wrap items-center gap-2">
-                  <Badge variant="secondary">
-                    <Database className="h-3.5 w-3.5" />
-                    {t('simFlow.businessVersion')}: {releaseName(current?.version_key)}
-                  </Badge>
-                  {current?.sim_job_id ? <Badge variant="outline">{t('job')} {current.sim_job_id}</Badge> : null}
-                  <Badge variant="outline">{activeVersions.length} {t('versions')}</Badge>
+              <FilterPanel>
+                <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    <Badge variant="secondary">
+                      <Database className="h-3.5 w-3.5" />
+                      {t('simFlow.businessVersion')}: {releaseName(current?.version_key)}
+                    </Badge>
+                    {current?.sim_job_id ? (
+                      <Badge variant="outline">
+                        {t('job')} {current.sim_job_id}
+                      </Badge>
+                    ) : null}
+                    <Badge variant="outline">
+                      {activeVersions.length} {t('versions')}
+                    </Badge>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                    {basis === 'normal' &&
+                      (summary
+                        ? `${t('generated')} ${new Date(summary.generated_at).toLocaleString()}`
+                        : t('noSnapshot'))}
+                  </div>
                 </div>
-                <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                  {basis === 'normal' && (summary ? `${t('generated')} ${new Date(summary.generated_at).toLocaleString()}` : t('noSnapshot'))}
-                </div>
-              </div>
 
-              <div className="grid min-w-0 items-end gap-3 border-t border-border/60 pt-3 sm:grid-cols-2 xl:flex xl:flex-wrap">
-                <div className="grid min-w-0 gap-1.5 text-xs font-medium text-muted-foreground sm:col-span-2 xl:basis-[300px] xl:grow">
-                  <div className="flex items-center gap-2">
-                    <span className="inline-flex items-center gap-1">
-                      <CalendarDays className="h-3.5 w-3.5" />
-                      {t('releaseDateRange')}
-                    </span>
-                    <div className="ml-auto flex items-center gap-1.5">
-                      <button type="button" className="whitespace-nowrap text-[11px] font-semibold text-primary hover:underline focus:outline-none focus:ring-1 focus:ring-ring" onClick={() => setReleaseRange(twoMonthRange())}>
-                        {t('lastTwoMonths')}
-                      </button>
-                      <span className="text-[11px] text-muted-foreground">·</span>
-                      <button type="button" className={cn('whitespace-nowrap text-[11px] font-semibold hover:underline focus:outline-none focus:ring-1 focus:ring-ring', !releaseRange.start && !releaseRange.end ? 'text-foreground' : 'text-primary')} onClick={() => setReleaseRange({ start: '', end: '' })}>
-                        {t('all')}
-                      </button>
+                <div className="grid min-w-0 items-end gap-3 border-t border-border/60 pt-3 sm:grid-cols-2 xl:flex xl:flex-wrap">
+                  <div className="grid min-w-0 gap-1.5 text-xs font-medium text-muted-foreground sm:col-span-2 xl:basis-[300px] xl:grow">
+                    <div className="flex items-center gap-2">
+                      <span className="inline-flex items-center gap-1">
+                        <CalendarDays className="h-3.5 w-3.5" />
+                        {t('releaseDateRange')}
+                      </span>
+                      <div className="ml-auto flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          className="whitespace-nowrap text-[11px] font-semibold text-primary hover:underline focus:outline-none focus:ring-1 focus:ring-ring"
+                          onClick={() => setReleaseRange(twoMonthRange())}
+                        >
+                          {t('lastTwoMonths')}
+                        </button>
+                        <span className="text-[11px] text-muted-foreground">·</span>
+                        <button
+                          type="button"
+                          className={cn(
+                            'whitespace-nowrap text-[11px] font-semibold hover:underline focus:outline-none focus:ring-1 focus:ring-ring',
+                            !releaseRange.start && !releaseRange.end
+                              ? 'text-foreground'
+                              : 'text-primary',
+                          )}
+                          onClick={() => setReleaseRange({ start: '', end: '' })}
+                        >
+                          {t('all')}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                      <input
+                        id="global-release-date-start"
+                        type="date"
+                        aria-label={t('evaluation.filter_start')}
+                        className="min-h-11 w-0 min-w-0 flex-1 rounded-md border border-input bg-card/80 px-2 text-xs font-normal text-foreground shadow-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring dark:bg-background/40"
+                        value={releaseRange.start}
+                        onChange={(event) =>
+                          setReleaseRange((current) => ({ ...current, start: event.target.value }))
+                        }
+                      />
+                      <span className="text-xs text-muted-foreground">—</span>
+                      <input
+                        id="global-release-date-end"
+                        type="date"
+                        aria-label={t('evaluation.filter_end')}
+                        className="min-h-11 w-0 min-w-0 flex-1 rounded-md border border-input bg-card/80 px-2 text-xs font-normal text-foreground shadow-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring dark:bg-background/40"
+                        value={releaseRange.end}
+                        onChange={(event) =>
+                          setReleaseRange((current) => ({ ...current, end: event.target.value }))
+                        }
+                      />
                     </div>
                   </div>
-                  <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                    <input
-                      id="global-release-date-start"
-                      type="date"
-                      aria-label={t('evaluation.filter_start')}
-                      className="min-h-11 w-0 min-w-0 flex-1 rounded-md border border-input bg-card/80 px-2 text-xs font-normal text-foreground shadow-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring dark:bg-background/40"
-                      value={releaseRange.start}
-                      onChange={(event) => setReleaseRange((current) => ({ ...current, start: event.target.value }))}
-                    />
-                    <span className="text-xs text-muted-foreground">—</span>
-                    <input
-                      id="global-release-date-end"
-                      type="date"
-                      aria-label={t('evaluation.filter_end')}
-                      className="min-h-11 w-0 min-w-0 flex-1 rounded-md border border-input bg-card/80 px-2 text-xs font-normal text-foreground shadow-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring dark:bg-background/40"
-                      value={releaseRange.end}
-                      onChange={(event) => setReleaseRange((current) => ({ ...current, end: event.target.value }))}
-                    />
+                  <SelectFilter
+                    label={t('platformGen')}
+                    value={sourceFilters.platformGen}
+                    options={sourceOptions.platformGen}
+                    onChange={(value) =>
+                      setSourceFilters((current) => ({ ...current, platformGen: value }))
+                    }
+                  />
+                  <SelectFilter
+                    label={t('versionCategory')}
+                    value={sourceFilters.versionCategory}
+                    options={sourceOptions.versionCategory}
+                    onChange={(value) =>
+                      setSourceFilters((current) => ({ ...current, versionCategory: value }))
+                    }
+                  />
+                  <SelectFilter
+                    label={t('bigVersion')}
+                    value={sourceFilters.bigVersion}
+                    options={sourceOptions.bigVersion}
+                    onChange={(value) =>
+                      setSourceFilters((current) => ({ ...current, bigVersion: value }))
+                    }
+                  />
+                  <SelectFilter
+                    label={t('testVersion')}
+                    value={sourceFilters.testVersion}
+                    options={sourceOptions.testVersion}
+                    onChange={(value) =>
+                      setSourceFilters((current) => ({ ...current, testVersion: value }))
+                    }
+                  />
+                  {basisControl}
+                  {basis === 'auto-triage' && (
+                    <div id="evaluation-actions" className="flex items-end" />
+                  )}
+                  <div className="flex flex-wrap items-end gap-2 sm:col-span-2 xl:ml-auto">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="min-h-11"
+                      onClick={resetSourceFilters}
+                    >
+                      <RotateCcw className="h-4 w-4" />
+                      {t('reset')}
+                    </Button>
+                    <Button size="sm" className="min-h-11" onClick={applySourceFilters}>
+                      <Search className="h-4 w-4" />
+                      {t('searchAction')}
+                    </Button>
                   </div>
                 </div>
-                <SelectFilter
-                  label={t('platformGen')}
-                  value={sourceFilters.platformGen}
-                  options={sourceOptions.platformGen}
-                  onChange={(value) => setSourceFilters((current) => ({ ...current, platformGen: value }))}
-                />
-                <SelectFilter
-                  label={t('versionCategory')}
-                  value={sourceFilters.versionCategory}
-                  options={sourceOptions.versionCategory}
-                  onChange={(value) => setSourceFilters((current) => ({ ...current, versionCategory: value }))}
-                />
-                <SelectFilter
-                  label={t('bigVersion')}
-                  value={sourceFilters.bigVersion}
-                  options={sourceOptions.bigVersion}
-                  onChange={(value) => setSourceFilters((current) => ({ ...current, bigVersion: value }))}
-                />
-                <SelectFilter
-                  label={t('testVersion')}
-                  value={sourceFilters.testVersion}
-                  options={sourceOptions.testVersion}
-                  onChange={(value) => setSourceFilters((current) => ({ ...current, testVersion: value }))}
-                />
-                {basisControl}
-                {basis === 'auto-triage' && <div id="evaluation-actions" className="flex items-end"/>}
-                <div className="flex flex-wrap items-end gap-2 sm:col-span-2 xl:ml-auto">
-                <Button variant="outline" size="sm" className="min-h-11" onClick={resetSourceFilters}>
-                  <RotateCcw className="h-4 w-4" />
-                  {t('reset')}
-                </Button>
-                <Button size="sm" className="min-h-11" onClick={applySourceFilters}>
-                  <Search className="h-4 w-4" />
-                  {t('searchAction')}
-                </Button>
-                </div>
-              </div>
-
-            </FilterPanel>
+              </FilterPanel>
             ) : null}
 
             {error && page !== 'status' && basis === 'normal' ? (
@@ -733,42 +977,110 @@ export default function App() {
                 {error}
               </div>
             ) : null}
-            {evaluationPage && catalogueError && <div role="alert" className="flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"><span>{t('autoTriage.loadError')}</span><Button className="min-h-11" variant="outline" onClick={() => setCatalogueAttempt(value => value + 1)}>{t('autoTriage.retry')}</Button></div>}
+            {evaluationPage && catalogueError && (
+              <div
+                role="alert"
+                className="flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
+              >
+                <span>{t('autoTriage.loadError')}</span>
+                <Button
+                  className="min-h-11"
+                  variant="outline"
+                  onClick={() => setCatalogueAttempt((value) => value + 1)}
+                >
+                  {t('autoTriage.retry')}
+                </Button>
+              </div>
+            )}
 
             {basis === 'normal' && page === 'overview' && <CurrentBusinessRelease />}
-            <Suspense fallback={<p role="status" className="text-sm text-muted-foreground">{t('loading')}</p>}>
-            {page === 'status' ? (
-              <SystemStatus />
-            ) : page === 'simulation' ? (
-              <ReleaseWorkflow onOpenIssues={version => version ? openIssues({ version }) : openCurrentIssues()} />
-            ) : page === 'overview' && basis === 'auto-triage' ? (
-              <EvaluationWorkspace page="overview" visibleReleases={visibleReleases} onNavigate={(next,version)=>{if(next==='issues' && version)setFilters({...defaultFilters,version});setPage(next,version);}} />
-            ) : page === 'overview' ? (
-              <Suspense fallback={<p className="text-sm text-muted-foreground">{t('loading')}</p>}><Overview summary={summary} comparison={visibleComparison} onOpenIssues={openIssues} onOpenCurrent={openCurrentIssues} onOpenCollection={openCollectionIssues} /></Suspense>
-            ) : (
-              <ReleaseIssues basisControl={basisControl} evaluation={basis === 'auto-triage' ? <EvaluationWorkspace key={filters.version || '@stable'} page="issues" release={filters.version || '@stable'} hideRelease onNavigate={setPage}/> : undefined} versions={activeVersions} version={filters.version || '@stable'} onVersionChange={version => {
-                const value = version;
-                setFilters({ ...defaultFilters, version: value });
-                setPage('issues', value);
-              }} onHistoryChange={setShowLegacyIssues} history={<div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(380px,0.75fr)]">
-                <IssuesTable
-                  items={issues}
-                  versions={versions}
-                  total={issueTotal}
-                  loading={issuesLoading}
-                  showVersionFilter={false}
-                  page={issuePage}
-                  pageSize={issuePageSize}
-                  onPageSizeChange={size => { setIssuePageSize(size); setIssuePage(1); setSelectedResult(null); }}
-                  onPageChange={page => { setIssuePage(page); setSelectedResult(null); }}
-                  filters={filters}
-                  onFiltersChange={changeIssueFilters}
-                  selectedResult={selectedResult}
-                  onSelectResult={setSelectedResult}
+            <Suspense
+              fallback={
+                <p role="status" className="text-sm text-muted-foreground">
+                  {t('loading')}
+                </p>
+              }
+            >
+              {page === 'status' ? (
+                <SystemStatus />
+              ) : page === 'simulation' ? (
+                <ReleaseWorkflow
+                  onOpenIssues={(version) =>
+                    version ? openIssues({ version }) : openCurrentIssues()
+                  }
                 />
-                <IssueDetail selected={selectedResult} />
-              </div>} />
-            )}
+              ) : page === 'overview' && basis === 'auto-triage' ? (
+                <EvaluationWorkspace
+                  page="overview"
+                  visibleReleases={visibleReleases}
+                  onNavigate={(next, version) => {
+                    if (next === 'issues' && version) setFilters({ ...defaultFilters, version });
+                    setPage(next, version);
+                  }}
+                />
+              ) : page === 'overview' ? (
+                <Suspense
+                  fallback={<p className="text-sm text-muted-foreground">{t('loading')}</p>}
+                >
+                  <Overview
+                    summary={summary}
+                    comparison={visibleComparison}
+                    onOpenIssues={openIssues}
+                    onOpenCurrent={openCurrentIssues}
+                    onOpenCollection={openCollectionIssues}
+                  />
+                </Suspense>
+              ) : (
+                <ReleaseIssues
+                  basisControl={basisControl}
+                  evaluation={
+                    basis === 'auto-triage' ? (
+                      <EvaluationWorkspace
+                        key={filters.version || '@stable'}
+                        page="issues"
+                        release={filters.version || '@stable'}
+                        hideRelease
+                        onNavigate={setPage}
+                      />
+                    ) : undefined
+                  }
+                  versions={activeVersions}
+                  version={filters.version || '@stable'}
+                  onVersionChange={(version) => {
+                    const value = version;
+                    setFilters({ ...defaultFilters, version: value });
+                    setPage('issues', value);
+                  }}
+                  onHistoryChange={setShowLegacyIssues}
+                  history={
+                    <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(380px,0.75fr)]">
+                      <IssuesTable
+                        items={issues}
+                        versions={versions}
+                        total={issueTotal}
+                        loading={issuesLoading}
+                        showVersionFilter={false}
+                        page={issuePage}
+                        pageSize={issuePageSize}
+                        onPageSizeChange={(size) => {
+                          setIssuePageSize(size);
+                          setIssuePage(1);
+                          setSelectedResult(null);
+                        }}
+                        onPageChange={(page) => {
+                          setIssuePage(page);
+                          setSelectedResult(null);
+                        }}
+                        filters={filters}
+                        onFiltersChange={changeIssueFilters}
+                        selectedResult={selectedResult}
+                        onSelectResult={setSelectedResult}
+                      />
+                      <IssueDetail selected={selectedResult} />
+                    </div>
+                  }
+                />
+              )}
             </Suspense>
           </main>
         </div>

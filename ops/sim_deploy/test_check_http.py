@@ -25,13 +25,9 @@ class HttpContractTests(unittest.TestCase):
                 target = "/sim/overview" if path == "/sim" else "/sim/weekly/"
                 return Response(b"", status=302, Location=target)
             if canonical.startswith("/api/"):
-                return Response(
-                    json.dumps({"ok": True}).encode(), content_type="application/json"
-                )
+                return Response(json.dumps({"ok": True}).encode(), content_type="application/json")
             if canonical.startswith("/assets/"):
-                return Response(
-                    b"console.log(1)", content_type="application/javascript"
-                )
+                return Response(b"console.log(1)", content_type="application/javascript")
             return Response(b'<script src="/sim/assets/app.js"></script>')
 
         with patch("check_http.urllib.request.build_opener") as build:
@@ -46,17 +42,13 @@ class HttpContractTests(unittest.TestCase):
             self.run_check(
                 (
                     "/sim",
-                    lambda: Response(
-                        b"", status=302, Location="http://example:8787/sim/overview"
-                    ),
+                    lambda: Response(b"", status=302, Location="http://example:8787/sim/overview"),
                 )
             )
 
     def test_rejects_stripped_asset_404(self):
         with self.assertRaisesRegex(RuntimeError, "gateway mismatch"):
-            self.run_check(
-                ("/assets/app.js", lambda: Response(b"not found", status=404))
-            )
+            self.run_check(("/assets/app.js", lambda: Response(b"not found", status=404)))
 
     def test_rejects_stripped_simulation_page_404(self):
         with self.assertRaisesRegex(RuntimeError, "gateway mismatch"):

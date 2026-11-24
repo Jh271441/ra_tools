@@ -98,7 +98,10 @@ function CheckCard({ check }: { check: SystemCheck }) {
               <div className="truncate text-muted-foreground" title={key}>
                 {key}
               </div>
-              <div className="mt-1 truncate font-mono text-sm font-semibold" title={extraValue(value)}>
+              <div
+                className="mt-1 truncate font-mono text-sm font-semibold"
+                title={extraValue(value)}
+              >
                 {extraValue(value)}
               </div>
             </div>
@@ -141,7 +144,7 @@ export function SystemStatus() {
     return () => window.clearInterval(timer);
   }, [load]);
 
-  const overall: SystemCheckStatus = error ? 'error' : status?.overall ?? 'skipped';
+  const overall: SystemCheckStatus = error ? 'error' : (status?.overall ?? 'skipped');
 
   return (
     <div className="grid min-w-0 gap-5">

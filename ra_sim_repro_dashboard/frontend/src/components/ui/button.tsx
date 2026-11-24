@@ -10,9 +10,11 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const variants: Record<ButtonVariant, string> = {
-  default: 'bg-primary text-primary-foreground shadow-[0_8px_18px_hsl(var(--primary)/0.2)] hover:bg-primary/90 dark:shadow-[0_8px_22px_hsl(var(--primary)/0.16)]',
+  default:
+    'bg-primary text-primary-foreground shadow-[0_8px_18px_hsl(var(--primary)/0.2)] hover:bg-primary/90 dark:shadow-[0_8px_22px_hsl(var(--primary)/0.16)]',
   secondary: 'bg-accent text-accent-foreground hover:bg-accent/80 dark:bg-accent/70',
-  outline: 'border border-input bg-card/70 shadow-sm backdrop-blur hover:border-ring/50 hover:bg-accent hover:text-accent-foreground dark:bg-card/60 dark:hover:bg-accent/70',
+  outline:
+    'border border-input bg-card/70 shadow-sm backdrop-blur hover:border-ring/50 hover:bg-accent hover:text-accent-foreground dark:bg-card/60 dark:hover:bg-accent/70',
   ghost: 'hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/60',
 };
 
@@ -22,7 +24,10 @@ const sizes: Record<ButtonSize, string> = {
   icon: 'h-9 w-9 rounded-md p-0',
 };
 
-export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button({ className, variant = 'default', size = 'md', ...props }, ref) {
+export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
+  { className, variant = 'default', size = 'md', ...props },
+  ref,
+) {
   return (
     <button
       ref={ref}

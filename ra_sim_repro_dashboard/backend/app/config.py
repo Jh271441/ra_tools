@@ -24,9 +24,7 @@ class Settings:
     )
     redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     enable_rq: bool = os.getenv("ENABLE_RQ", "0") == "1"
-    versions_config: Path = Path(
-        os.getenv("VERSIONS_CONFIG", str(CONFIG_DIR / "versions.yaml"))
-    )
+    versions_config: Path = Path(os.getenv("VERSIONS_CONFIG", str(CONFIG_DIR / "versions.yaml")))
     mock_data_dir: Path = Path(os.getenv("MOCK_DATA_DIR", str(DATA_DIR / "mock")))
     report_dir: Path = Path(os.getenv("REPORT_DIR", str(DEFAULT_REPORT_DIR)))
     trail_base_url: str = os.getenv("TRAIL_BASE_URL", "http://100.69.238.11:8000/voyager/trail")

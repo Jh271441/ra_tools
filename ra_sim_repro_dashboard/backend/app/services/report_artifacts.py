@@ -92,9 +92,15 @@ def load_online_release_metrics(
         recall_denominator = int(metrics["recall_denominator"])
     except (KeyError, TypeError, ValueError):
         return {}
-    if any(value < 0 for value in (
-        precision_tp, precision_fp, recall_tp, recall_fn,
-    )):
+    if any(
+        value < 0
+        for value in (
+            precision_tp,
+            precision_fp,
+            recall_tp,
+            recall_fn,
+        )
+    ):
         return {}
     if (
         precision_numerator != precision_tp
@@ -134,9 +140,9 @@ def load_binary_backtest_sources(
         if isinstance(metrics, dict)
     }
     declared_sources = target.get("source_releases")
-    if isinstance(declared_sources, list) and {
-        str(version) for version in declared_sources
-    } != set(normalized):
+    if isinstance(declared_sources, list) and {str(version) for version in declared_sources} != set(
+        normalized
+    ):
         return {}
     try:
         window_size = int(target.get("window_size"))

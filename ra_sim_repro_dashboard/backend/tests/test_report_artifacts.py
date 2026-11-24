@@ -27,20 +27,25 @@ def _complete_cohorts(expected=10, trigger_rate=0.5):
 
 def test_load_online_release_metrics_validates_separate_pr_populations(tmp_path):
     path = tmp_path / "online.json"
-    path.write_text(json.dumps({
-        "releases": {
-            "v1": {
-                "precision_auto_tp": 988,
-                "precision_auto_fp": 188,
-                "precision_numerator": 988,
-                "precision_denominator": 1176,
-                "recall_auto_tp": 990,
-                "recall_manual_fn": 212,
-                "recall_numerator": 990,
-                "recall_denominator": 1202,
+    path.write_text(
+        json.dumps(
+            {
+                "releases": {
+                    "v1": {
+                        "precision_auto_tp": 988,
+                        "precision_auto_fp": 188,
+                        "precision_numerator": 988,
+                        "precision_denominator": 1176,
+                        "recall_auto_tp": 990,
+                        "recall_manual_fn": 212,
+                        "recall_numerator": 990,
+                        "recall_denominator": 1202,
+                    }
+                }
             }
-        }
-    }), encoding="utf-8")
+        ),
+        encoding="utf-8",
+    )
     config = {"online_metrics": {"result_metrics": str(path)}}
 
     result = load_online_release_metrics(config, "v1")
@@ -247,39 +252,42 @@ def test_same_version_projection_rejects_stale_partial_population():
 
 def test_load_binary_backtest_sources_by_target_release(tmp_path):
     path = tmp_path / "backtest.json"
-    path.write_text(json.dumps({
-        "targets": {
-            "v2": {
-                "quality_gate_passed": True,
-                "source_releases": ["v1", "v2"],
-                "window_size": 2,
-                "sources": {
-                    "v1": {
-                        "expected": 30,
-                        "evaluated": 30,
-                        "dpe_coverage": 1.0,
-                        "cohorts": _complete_cohorts(),
-                        "estimated_tp": 8,
-                        "estimated_fp": 2,
-                        "estimated_fn": 1,
-                    },
+    path.write_text(
+        json.dumps(
+            {
+                "targets": {
                     "v2": {
-                        "expected": 30,
-                        "evaluated": 30,
-                        "dpe_coverage": 1.0,
-                        "cohorts": _complete_cohorts(),
-                        "estimated_tp": 9,
-                        "estimated_fp": 1,
-                        "estimated_fn": 0,
-                    },
+                        "quality_gate_passed": True,
+                        "source_releases": ["v1", "v2"],
+                        "window_size": 2,
+                        "sources": {
+                            "v1": {
+                                "expected": 30,
+                                "evaluated": 30,
+                                "dpe_coverage": 1.0,
+                                "cohorts": _complete_cohorts(),
+                                "estimated_tp": 8,
+                                "estimated_fp": 2,
+                                "estimated_fn": 1,
+                            },
+                            "v2": {
+                                "expected": 30,
+                                "evaluated": 30,
+                                "dpe_coverage": 1.0,
+                                "cohorts": _complete_cohorts(),
+                                "estimated_tp": 9,
+                                "estimated_fp": 1,
+                                "estimated_fn": 0,
+                            },
+                        },
+                    }
                 }
             }
-        }
-    }), encoding="utf-8")
+        ),
+        encoding="utf-8",
+    )
 
-    sources = load_binary_backtest_sources({
-        "binary_backtest": {"result_metrics": str(path)}
-    }, "v2")
+    sources = load_binary_backtest_sources({"binary_backtest": {"result_metrics": str(path)}}, "v2")
 
     assert sources["v1"]["estimated_tp"] == 8
     assert sources["v2"]["estimated_fp"] == 1
@@ -288,53 +296,63 @@ def test_load_binary_backtest_sources_by_target_release(tmp_path):
 def test_binary_backtest_reader_invalidates_cache_when_artifact_changes(tmp_path):
     path = tmp_path / "backtest.json"
     config = {"binary_backtest": {"result_metrics": str(path)}}
-    path.write_text(json.dumps({
-        "targets": {
-            "v2": {
-                "quality_gate_passed": True,
-                "source_releases": ["v1"],
-                "window_size": 1,
-                "sources": {
-                    "v1": {
-                        "expected": 1,
-                        "evaluated": 1,
-                        "dpe_coverage": 1.0,
-                        "cohorts": _complete_cohorts(expected=1),
-                        "estimated_tp": 1,
+    path.write_text(
+        json.dumps(
+            {
+                "targets": {
+                    "v2": {
+                        "quality_gate_passed": True,
+                        "source_releases": ["v1"],
+                        "window_size": 1,
+                        "sources": {
+                            "v1": {
+                                "expected": 1,
+                                "evaluated": 1,
+                                "dpe_coverage": 1.0,
+                                "cohorts": _complete_cohorts(expected=1),
+                                "estimated_tp": 1,
+                            }
+                        },
                     }
-                },
+                }
             }
-        }
-    }), encoding="utf-8")
+        ),
+        encoding="utf-8",
+    )
 
     first = load_binary_backtest_sources(config, "v2")
     assert first["v1"]["estimated_tp"] == 1
 
-    path.write_text(json.dumps({
-        "targets": {
-            "v2": {
-                "quality_gate_passed": True,
-                "source_releases": ["v1", "v2"],
-                "window_size": 2,
-                "sources": {
-                    "v1": {
-                        "expected": 1,
-                        "evaluated": 1,
-                        "dpe_coverage": 1.0,
-                        "cohorts": _complete_cohorts(expected=1),
-                        "estimated_tp": 123,
-                    },
+    path.write_text(
+        json.dumps(
+            {
+                "targets": {
                     "v2": {
-                        "expected": 1,
-                        "evaluated": 1,
-                        "dpe_coverage": 1.0,
-                        "cohorts": _complete_cohorts(expected=1),
-                        "estimated_tp": 456,
-                    },
+                        "quality_gate_passed": True,
+                        "source_releases": ["v1", "v2"],
+                        "window_size": 2,
+                        "sources": {
+                            "v1": {
+                                "expected": 1,
+                                "evaluated": 1,
+                                "dpe_coverage": 1.0,
+                                "cohorts": _complete_cohorts(expected=1),
+                                "estimated_tp": 123,
+                            },
+                            "v2": {
+                                "expected": 1,
+                                "evaluated": 1,
+                                "dpe_coverage": 1.0,
+                                "cohorts": _complete_cohorts(expected=1),
+                                "estimated_tp": 456,
+                            },
+                        },
+                    }
                 }
             }
-        }
-    }), encoding="utf-8")
+        ),
+        encoding="utf-8",
+    )
 
     second = load_binary_backtest_sources(config, "v2")
     assert second["v1"]["estimated_tp"] == 123

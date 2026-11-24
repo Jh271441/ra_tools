@@ -39,7 +39,12 @@ export interface AutoTriageIssue {
   sim_triggered: boolean | null;
   precision_label: string | null;
   raw_model_result: string | null;
-  sim_memberships: { precision_numerator: number; precision_denominator: number; recall_numerator: number; recall_denominator: number } | null;
+  sim_memberships: {
+    precision_numerator: number;
+    precision_denominator: number;
+    recall_numerator: number;
+    recall_denominator: number;
+  } | null;
   job_ids: number[];
 }
 
@@ -64,7 +69,12 @@ export interface AutoTriageResult {
   coverage_reasons: Record<string, number>;
   transitions: { before: string; after: string; count: number }[];
   scope: { release: string; date_start: string; date_end: string };
-  reconciliation: { status: string; checked_issues: number; dashboard_only_ids: string[]; inventory_only_ids: string[] };
+  reconciliation: {
+    status: string;
+    checked_issues: number;
+    dashboard_only_ids: string[];
+    inventory_only_ids: string[];
+  };
 }
 
 export interface AutoTriageReport {
@@ -76,7 +86,13 @@ export interface AutoTriageReport {
   scope?: { release: string; date_start: string; date_end: string };
   refresh: { status?: string; error?: string; finished_at?: string; requested_at?: string };
   result: AutoTriageResult | null;
-  versions: { release: string; snapshot_id: number; source_count: number; source_complete: boolean; job_id: number | null }[];
+  versions: {
+    release: string;
+    snapshot_id: number;
+    source_count: number;
+    source_complete: boolean;
+    job_id: number | null;
+  }[];
 }
 
 export interface AutoTriageIssuePage {

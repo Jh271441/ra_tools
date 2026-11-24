@@ -91,12 +91,18 @@ def test_refresh_keeps_existing_results_when_sim_fetch_fails(monkeypatch):
             "v1": {
                 "label": "release v1",
                 "sim_jobs": {"positive_job_id": 101, "negative_job_id": 102},
-                "source_gt_counts": {"auto_trigger_tp": 1, "manual_trigger_fn": 0, "auto_trigger_fp": 0},
+                "source_gt_counts": {
+                    "auto_trigger_tp": 1,
+                    "manual_trigger_fn": 0,
+                    "auto_trigger_fp": 0,
+                },
             }
         },
     }
     try:
-        db.add(RefreshJob(job_id="job1", status="queued", progress=0, config_hash=config_hash(payload)))
+        db.add(
+            RefreshJob(job_id="job1", status="queued", progress=0, config_hash=config_hash(payload))
+        )
         db.add(
             Version(
                 version_key="v1",
@@ -195,16 +201,18 @@ def test_build_snapshot_injects_binary_backtest_matrix(monkeypatch):
         monkeypatch.setattr(
             refresh_module,
             "load_binary_backtest_sources",
-            lambda config, version_key: ({
-                "v1": {"estimated_tp": 7, "estimated_fp": 1, "estimated_fn": 3},
-                "v2": {"estimated_tp": 8, "estimated_fp": 2, "estimated_fn": 2},
-            } if version_key == "v2" else {}),
+            lambda config, version_key: (
+                {
+                    "v1": {"estimated_tp": 7, "estimated_fp": 1, "estimated_fn": 3},
+                    "v2": {"estimated_tp": 8, "estimated_fp": 2, "estimated_fn": 2},
+                }
+                if version_key == "v2"
+                else {}
+            ),
         )
 
         snapshot = refresh_module.build_snapshot(db, payload)
-        comparison = {
-            row["version_key"]: row for row in snapshot["comparison"]
-        }
+        comparison = {row["version_key"]: row for row in snapshot["comparison"]}
 
         matrix = comparison["v2"]["sim_estimate"]["binary_backtest_sources"]
         assert matrix["v1"]["estimated_tp"] == 7

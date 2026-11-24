@@ -25,10 +25,21 @@ def fetch_recent_releases(config):
         lo, hi = int(begin.timestamp() * 1000), int(end.timestamp() * 1000)
         chunk = complete_query(
             base + "/paladin/issue/pool/query/",
-            {"view_id": config["contract"].get("view_id", 2410), "user_location": "cn",
-             "query_attrs": [*attrs, {"attr_id": config["contract"]["time_field"],
-                                     "operator": "range", "val": {"min": lo, "max": hi - 1}}]},
-            app_id, token, "issue_id",
+            {
+                "view_id": config["contract"].get("view_id", 2410),
+                "user_location": "cn",
+                "query_attrs": [
+                    *attrs,
+                    {
+                        "attr_id": config["contract"]["time_field"],
+                        "operator": "range",
+                        "val": {"min": lo, "max": hi - 1},
+                    },
+                ],
+            },
+            app_id,
+            token,
+            "issue_id",
         )
         if any(not lo <= int(r[config["contract"]["time_field"]]) < hi for r in chunk):
             raise ValueError("release发现结果超出请求时间窗口")
@@ -79,9 +90,7 @@ def infer_completed_cycles(rows, time_field="issue_time"):
             )
             continue
         if current["first"].date().weekday() != 3:
-            warnings.append(
-                {"release": release, "reason": "查询窗口截断或主周期起点不明"}
-            )
+            warnings.append({"release": release, "reason": "查询窗口截断或主周期起点不明"})
             continue
         start = datetime.combine(current["first"].date(), datetime.min.time(), TZ)
         stop = datetime.combine(end + timedelta(days=1), datetime.min.time(), TZ)

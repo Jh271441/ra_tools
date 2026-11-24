@@ -27,17 +27,32 @@ type Props = {
   onSelectLabel?: (label: string) => void;
 };
 
-const GROUP_META: Record<string, { tier: 'scope' | 'class' | 'trigger'; dot: string; bar: string }> = {
+const GROUP_META: Record<
+  string,
+  { tier: 'scope' | 'class' | 'trigger'; dot: string; bar: string }
+> = {
   full: { tier: 'scope', dot: 'bg-primary', bar: 'bg-primary/70' },
   release: { tier: 'scope', dot: 'bg-primary/65', bar: 'bg-primary/55' },
   positive_auto: { tier: 'class', dot: 'bg-emerald-500', bar: 'bg-emerald-500/75' },
   negative_auto: { tier: 'class', dot: 'bg-rose-500', bar: 'bg-rose-500/75' },
   positive_manual: { tier: 'class', dot: 'bg-amber-500', bar: 'bg-amber-500/75' },
-  AutoTrigger: { tier: 'trigger', dot: 'bg-slate-400 dark:bg-slate-500', bar: 'bg-slate-400/75 dark:bg-slate-500/75' },
-  ManualTrigger: { tier: 'trigger', dot: 'bg-slate-400 dark:bg-slate-500', bar: 'bg-slate-400/75 dark:bg-slate-500/75' },
+  AutoTrigger: {
+    tier: 'trigger',
+    dot: 'bg-slate-400 dark:bg-slate-500',
+    bar: 'bg-slate-400/75 dark:bg-slate-500/75',
+  },
+  ManualTrigger: {
+    tier: 'trigger',
+    dot: 'bg-slate-400 dark:bg-slate-500',
+    bar: 'bg-slate-400/75 dark:bg-slate-500/75',
+  },
 };
 
-const DEFAULT_META = { tier: 'scope' as const, dot: 'bg-muted-foreground/50', bar: 'bg-muted-foreground/40' };
+const DEFAULT_META = {
+  tier: 'scope' as const,
+  dot: 'bg-muted-foreground/50',
+  bar: 'bg-muted-foreground/40',
+};
 
 function formatShare(count: number, total: number) {
   if (total <= 0) return '—';
@@ -74,14 +89,23 @@ export function ReleaseLabelGroups({ release, activeLabel, onSelectLabel }: Prop
     setFailed(false);
     setSummary(null);
     void request<Summary>(`/scenario-label-groups?release=${encodeURIComponent(release)}`)
-      .then(result => { if (active) setSummary(result); })
-      .catch(() => { if (active) setFailed(true); });
-    return () => { active = false; };
+      .then((result) => {
+        if (active) setSummary(result);
+      })
+      .catch(() => {
+        if (active) setFailed(true);
+      });
+    return () => {
+      active = false;
+    };
   }, [release, attempt]);
 
-  useEffect(() => () => {
-    if (copyTimer.current !== null) window.clearTimeout(copyTimer.current);
-  }, []);
+  useEffect(
+    () => () => {
+      if (copyTimer.current !== null) window.clearTimeout(copyTimer.current);
+    },
+    [],
+  );
 
   async function handleCopy(label: string) {
     try {
@@ -95,14 +119,16 @@ export function ReleaseLabelGroups({ release, activeLabel, onSelectLabel }: Prop
   }
 
   const rows = summary?.rows ?? [];
-  const fullRow = rows.find(row => row.group === 'full');
+  const fullRow = rows.find((row) => row.group === 'full');
   const sharedPrefix = fullRow?.label || '';
   const totalScenes = summary?.total_scenarios ?? 0;
 
   return (
     <Card data-release-labels={release} className="overflow-hidden">
       <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 border-b border-border/70 px-5 py-3">
-        <CardTitle>{t('evaluation.label_groups_title', { release: releaseName(release) })}</CardTitle>
+        <CardTitle>
+          {t('evaluation.label_groups_title', { release: releaseName(release) })}
+        </CardTitle>
         {rows.length > 0 && (
           <Badge variant="secondary" className="font-medium tabular-nums">
             {t('evaluation.label_groups_summary', {
@@ -119,9 +145,12 @@ export function ReleaseLabelGroups({ release, activeLabel, onSelectLabel }: Prop
           </span>
         )}
         {failed ? (
-          <div role="alert" className="flex flex-wrap items-center justify-center gap-3 px-5 py-6 text-center text-sm">
+          <div
+            role="alert"
+            className="flex flex-wrap items-center justify-center gap-3 px-5 py-6 text-center text-sm"
+          >
             <span>{t('evaluation.scenario_labels_failed')}</span>
-            <Button variant="outline" className="min-h-11" onClick={() => retry(n => n + 1)}>
+            <Button variant="outline" className="min-h-11" onClick={() => retry((n) => n + 1)}>
               {t('autoTriage.retry')}
             </Button>
           </div>
@@ -137,16 +166,28 @@ export function ReleaseLabelGroups({ release, activeLabel, onSelectLabel }: Prop
               </caption>
               <thead className="sr-only md:not-sr-only md:table-header-group md:bg-muted/45 dark:md:bg-white/[0.025]">
                 <tr className="md:border-b md:border-border/70">
-                  <th scope="col" className="md:h-9 md:px-5 md:text-xs md:font-medium md:text-muted-foreground">
+                  <th
+                    scope="col"
+                    className="md:h-9 md:px-5 md:text-xs md:font-medium md:text-muted-foreground"
+                  >
                     {t('evaluation.label_groups_purpose')}
                   </th>
-                  <th scope="col" className="md:h-9 md:px-3 md:text-xs md:font-medium md:text-muted-foreground">
+                  <th
+                    scope="col"
+                    className="md:h-9 md:px-3 md:text-xs md:font-medium md:text-muted-foreground"
+                  >
                     {t('evaluation.label_groups_name')}
                   </th>
-                  <th scope="col" className="md:h-9 md:px-3 md:text-right md:text-xs md:font-medium md:text-muted-foreground">
+                  <th
+                    scope="col"
+                    className="md:h-9 md:px-3 md:text-right md:text-xs md:font-medium md:text-muted-foreground"
+                  >
                     {t('evaluation.label_groups_count')}
                   </th>
-                  <th scope="col" className="md:h-9 md:pl-2 md:pr-5 md:text-right md:text-xs md:font-medium md:text-muted-foreground">
+                  <th
+                    scope="col"
+                    className="md:h-9 md:pl-2 md:pr-5 md:text-right md:text-xs md:font-medium md:text-muted-foreground"
+                  >
                     {onSelectLabel ? t('evaluation.label_groups_actions') : 'Trail'}
                   </th>
                 </tr>
@@ -154,11 +195,19 @@ export function ReleaseLabelGroups({ release, activeLabel, onSelectLabel }: Prop
               <tbody className="block md:table-row-group">
                 {rows.map((row, index) => {
                   const meta = GROUP_META[row.group] ?? DEFAULT_META;
-                  const prevMeta = index > 0 ? (GROUP_META[rows[index - 1].group] ?? DEFAULT_META) : null;
+                  const prevMeta =
+                    index > 0 ? (GROUP_META[rows[index - 1].group] ?? DEFAULT_META) : null;
                   const isTierBoundary = prevMeta !== null && prevMeta.tier !== meta.tier;
-                  const hasSuffix = Boolean(sharedPrefix && row.label !== sharedPrefix && row.label.startsWith(`${sharedPrefix}_`));
+                  const hasSuffix = Boolean(
+                    sharedPrefix &&
+                      row.label !== sharedPrefix &&
+                      row.label.startsWith(`${sharedPrefix}_`),
+                  );
                   const suffix = hasSuffix ? row.label.slice(sharedPrefix.length) : '';
-                  const ratioPct = totalScenes > 0 ? Math.min(100, Math.max(0, (row.count / totalScenes) * 100)) : 0;
+                  const ratioPct =
+                    totalScenes > 0
+                      ? Math.min(100, Math.max(0, (row.count / totalScenes) * 100))
+                      : 0;
                   const shareText = formatShare(row.count, totalScenes);
                   const isFiltered = Boolean(activeLabel && activeLabel === row.label);
                   const isCopied = copiedLabel === row.label;
@@ -168,7 +217,8 @@ export function ReleaseLabelGroups({ release, activeLabel, onSelectLabel }: Prop
                       key={row.label}
                       className={cn(
                         'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 px-4 py-2.5 transition-colors md:table-row md:px-0 md:py-0',
-                        index > 0 && (isTierBoundary ? 'border-t border-border' : 'border-t border-border/50'),
+                        index > 0 &&
+                          (isTierBoundary ? 'border-t border-border' : 'border-t border-border/50'),
                         isFiltered ? 'bg-primary/[0.06] hover:bg-primary/10' : 'hover:bg-accent/35',
                       )}
                     >
@@ -177,7 +227,10 @@ export function ReleaseLabelGroups({ release, activeLabel, onSelectLabel }: Prop
                         className="col-start-1 row-start-1 min-w-0 text-left font-normal md:table-cell md:max-w-[15rem] md:px-5 md:py-0.5 md:align-middle"
                       >
                         <div className="flex min-w-0 items-center gap-2.5">
-                          <span className={cn('h-2 w-2 shrink-0 rounded-full', meta.dot)} aria-hidden="true" />
+                          <span
+                            className={cn('h-2 w-2 shrink-0 rounded-full', meta.dot)}
+                            aria-hidden="true"
+                          />
                           <span className="min-w-0 break-words text-[13px] font-medium leading-snug text-foreground">
                             {t(`evaluation.label_group_${row.group}`, { defaultValue: row.group })}
                           </span>
@@ -188,24 +241,40 @@ export function ReleaseLabelGroups({ release, activeLabel, onSelectLabel }: Prop
                           <code className="min-w-0 max-w-full select-text break-words [overflow-wrap:anywhere] rounded-md border border-border/60 bg-muted/45 px-2.5 py-1 font-mono text-xs leading-5 dark:bg-white/[0.03] min-[1180px]:whitespace-nowrap min-[1180px]:break-normal min-[1180px]:[overflow-wrap:normal] min-[1180px]:[&_wbr]:hidden">
                             {hasSuffix ? (
                               <>
-                                <span className="text-muted-foreground">{renderTokenizedText(sharedPrefix)}</span>
+                                <span className="text-muted-foreground">
+                                  {renderTokenizedText(sharedPrefix)}
+                                </span>
                                 <wbr />
-                                <span className="font-semibold text-foreground">{renderTokenizedText(suffix)}</span>
+                                <span className="font-semibold text-foreground">
+                                  {renderTokenizedText(suffix)}
+                                </span>
                               </>
                             ) : (
-                              <span className="font-medium text-foreground">{renderTokenizedText(row.label)}</span>
+                              <span className="font-medium text-foreground">
+                                {renderTokenizedText(row.label)}
+                              </span>
                             )}
                           </code>
                           <button
                             type="button"
                             onClick={() => void handleCopy(row.label)}
-                            title={t(isCopied ? 'evaluation.label_groups_copied' : 'evaluation.label_groups_copy')}
-                            aria-label={t('evaluation.label_groups_copy_aria', { label: row.label })}
+                            title={t(
+                              isCopied
+                                ? 'evaluation.label_groups_copied'
+                                : 'evaluation.label_groups_copy',
+                            )}
+                            aria-label={t('evaluation.label_groups_copy_aria', {
+                              label: row.label,
+                            })}
                             className="group inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-md text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                           >
                             <span className="inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors group-hover:bg-accent group-hover:text-foreground">
                               {isCopied ? (
-                                <Check size={14} className="text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+                                <Check
+                                  size={14}
+                                  className="text-emerald-600 dark:text-emerald-400"
+                                  aria-hidden="true"
+                                />
                               ) : (
                                 <Copy size={14} aria-hidden="true" />
                               )}
@@ -219,7 +288,10 @@ export function ReleaseLabelGroups({ release, activeLabel, onSelectLabel }: Prop
                             className="hidden h-1.5 w-16 overflow-hidden rounded-full bg-muted xl:block 2xl:w-24"
                             aria-hidden="true"
                           >
-                            <div className={cn('h-full rounded-full', meta.bar)} style={{ width: `${ratioPct}%` }} />
+                            <div
+                              className={cn('h-full rounded-full', meta.bar)}
+                              style={{ width: `${ratioPct}%` }}
+                            />
                           </div>
                           <span className="font-mono text-[13px] font-semibold tabular-nums text-foreground">
                             {row.count.toLocaleString(i18n.language)}
@@ -231,8 +303,14 @@ export function ReleaseLabelGroups({ release, activeLabel, onSelectLabel }: Prop
                       </td>
                       <td className="col-span-2 row-start-3 md:table-cell md:whitespace-nowrap md:py-0.5 md:pl-2 md:pr-4 md:text-right md:align-middle">
                         <div className="flex items-center justify-between gap-2 md:justify-end">
-                          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted md:hidden" aria-hidden="true">
-                            <div className={cn('h-full rounded-full', meta.bar)} style={{ width: `${ratioPct}%` }} />
+                          <div
+                            className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted md:hidden"
+                            aria-hidden="true"
+                          >
+                            <div
+                              className={cn('h-full rounded-full', meta.bar)}
+                              style={{ width: `${ratioPct}%` }}
+                            />
                           </div>
                           <div className="flex shrink-0 items-center justify-end gap-0.5">
                             {onSelectLabel && (
@@ -257,7 +335,13 @@ export function ReleaseLabelGroups({ release, activeLabel, onSelectLabel }: Prop
                                   )}
                                 >
                                   <Filter size={12} aria-hidden="true" />
-                                  <span>{t(isFiltered ? 'evaluation.label_groups_filtered' : 'evaluation.label_groups_filter')}</span>
+                                  <span>
+                                    {t(
+                                      isFiltered
+                                        ? 'evaluation.label_groups_filtered'
+                                        : 'evaluation.label_groups_filter',
+                                    )}
+                                  </span>
                                 </span>
                               </button>
                             )}

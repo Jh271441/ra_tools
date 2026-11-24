@@ -49,9 +49,7 @@ function labelVariant(label: string): 'success' | 'warning' | 'destructive' | 'o
 
 function triggerBadge(value: boolean, positiveLabel: string, negativeLabel: string) {
   return (
-    <Badge variant={value ? 'success' : 'outline'}>
-      {value ? positiveLabel : negativeLabel}
-    </Badge>
+    <Badge variant={value ? 'success' : 'outline'}>{value ? positiveLabel : negativeLabel}</Badge>
   );
 }
 
@@ -72,7 +70,8 @@ export function IssuesTable({
 }: IssuesTableProps) {
   const { t } = useTranslation();
   const versionLabelByKey = useMemo(
-    () => new Map(versions.map((version) => [version.version_key, releaseName(version.version_key)])),
+    () =>
+      new Map(versions.map((version) => [version.version_key, releaseName(version.version_key)])),
     [versions],
   );
   const columns = useMemo(
@@ -105,7 +104,9 @@ export function IssuesTable({
         header: t('version'),
         cell: (info) => (
           <div>
-            <div className="font-medium">{versionLabelByKey.get(info.getValue()) || info.getValue()}</div>
+            <div className="font-medium">
+              {versionLabelByKey.get(info.getValue()) || info.getValue()}
+            </div>
             <div className="font-mono text-[11px] text-muted-foreground">{info.getValue()}</div>
           </div>
         ),
@@ -119,7 +120,11 @@ export function IssuesTable({
         header: t('triggerStatus'),
         cell: (info) => (
           <div className="flex flex-wrap gap-1">
-            {triggerBadge(info.row.original.road_triggered, t('roadTriggered'), t('roadNotTriggered'))}
+            {triggerBadge(
+              info.row.original.road_triggered,
+              t('roadTriggered'),
+              t('roadNotTriggered'),
+            )}
             {triggerBadge(info.row.original.sim_triggered, t('simTriggered'), t('simNotTriggered'))}
           </div>
         ),
@@ -148,10 +153,26 @@ export function IssuesTable({
       <CardHeader className="border-b border-border/70">
         <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div>
-            <CardTitle>{t('issues')} ({total})</CardTitle>
-            <p className="mt-1 text-[13px] leading-5 text-muted-foreground">{t('issuesSubtitle')}</p>
+            <CardTitle>
+              {t('issues')} ({total})
+            </CardTitle>
+            <p className="mt-1 text-[13px] leading-5 text-muted-foreground">
+              {t('issuesSubtitle')}
+            </p>
           </div>
-          <Button variant="outline" size="sm" onClick={() => onFiltersChange({ version: showVersionFilter ? '' : filters.version, rootCause: '', triggerType: '', precisionLabel: '', query: '' })}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              onFiltersChange({
+                version: showVersionFilter ? '' : filters.version,
+                rootCause: '',
+                triggerType: '',
+                precisionLabel: '',
+                query: '',
+              })
+            }
+          >
             <Filter className="h-4 w-4" />
             {t('reset')}
           </Button>
@@ -169,10 +190,54 @@ export function IssuesTable({
               onChange={(event) => onFiltersChange({ ...filters, query: event.target.value })}
             />
           </div>
-          {showVersionFilter && <Select label={t('evaluation.issue_version')} value={filters.version} options={[{value:'',label:t('all')},...versions.map(version=>({value:version.version_key,label:releaseName(version.version_key)}))]} onChange={version=>onFiltersChange({...filters,version})}/>}
-          <Select label={t('rootCause')} value={filters.rootCause} options={[{value:'',label:t('rootCause')},...['FP_RULE_SUPPRESS','SIM_DIVERGENCE','MODEL_OR_COUNTER_INSUFFICIENT','REPRODUCED','FALSE_POSITIVE','TRUE_NEGATIVE'].map(value=>({value,label:value}))]} onChange={rootCause=>onFiltersChange({...filters,rootCause})}/>
-          <Select label={t('triggerType')} value={filters.triggerType} options={[{value:'',label:t('triggerType')},...['MODEL','FN','FP_SUPPRESSED','NONE'].map(value=>({value,label:value}))]} onChange={triggerType=>onFiltersChange({...filters,triggerType})}/>
-          <Select label="TP / FP / FN / TN" value={filters.precisionLabel} options={[{value:'',label:'TP / FP / FN / TN'},...['TP','FP','FN','TN'].map(value=>({value,label:value}))]} onChange={precisionLabel=>onFiltersChange({...filters,precisionLabel})}/>
+          {showVersionFilter && (
+            <Select
+              label={t('evaluation.issue_version')}
+              value={filters.version}
+              options={[
+                { value: '', label: t('all') },
+                ...versions.map((version) => ({
+                  value: version.version_key,
+                  label: releaseName(version.version_key),
+                })),
+              ]}
+              onChange={(version) => onFiltersChange({ ...filters, version })}
+            />
+          )}
+          <Select
+            label={t('rootCause')}
+            value={filters.rootCause}
+            options={[
+              { value: '', label: t('rootCause') },
+              ...[
+                'FP_RULE_SUPPRESS',
+                'SIM_DIVERGENCE',
+                'MODEL_OR_COUNTER_INSUFFICIENT',
+                'REPRODUCED',
+                'FALSE_POSITIVE',
+                'TRUE_NEGATIVE',
+              ].map((value) => ({ value, label: value })),
+            ]}
+            onChange={(rootCause) => onFiltersChange({ ...filters, rootCause })}
+          />
+          <Select
+            label={t('triggerType')}
+            value={filters.triggerType}
+            options={[
+              { value: '', label: t('triggerType') },
+              ...['MODEL', 'FN', 'FP_SUPPRESSED', 'NONE'].map((value) => ({ value, label: value })),
+            ]}
+            onChange={(triggerType) => onFiltersChange({ ...filters, triggerType })}
+          />
+          <Select
+            label="TP / FP / FN / TN"
+            value={filters.precisionLabel}
+            options={[
+              { value: '', label: 'TP / FP / FN / TN' },
+              ...['TP', 'FP', 'FN', 'TN'].map((value) => ({ value, label: value })),
+            ]}
+            onChange={(precisionLabel) => onFiltersChange({ ...filters, precisionLabel })}
+          />
         </div>
         <div className="w-full min-w-0 max-w-[calc(100vw-2rem)] overflow-x-auto md:max-w-full">
           <table className="w-full min-w-[1160px] text-left text-[13px]">
@@ -180,7 +245,10 @@ export function IssuesTable({
               {table.getHeaderGroups().map((headerGroup) => (
                 <tr key={headerGroup.id}>
                   {headerGroup.headers.map((header) => (
-                    <th key={header.id} className="h-10 px-4 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    <th
+                      key={header.id}
+                      className="h-10 px-4 text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
+                    >
                       {flexRender(header.column.columnDef.header, header.getContext())}
                     </th>
                   ))}
@@ -190,7 +258,10 @@ export function IssuesTable({
             <tbody>
               {items.length === 0 ? (
                 <tr>
-                  <td colSpan={columns.length} className="px-4 py-10 text-center text-sm text-muted-foreground">
+                  <td
+                    colSpan={columns.length}
+                    className="px-4 py-10 text-center text-sm text-muted-foreground"
+                  >
                     {loading ? t('loading') : t('noIssues')}
                   </td>
                 </tr>
@@ -222,7 +293,18 @@ export function IssuesTable({
             </tbody>
           </table>
         </div>
-        {onPageChange && onPageSizeChange && <div className="p-3"><Pagination total={total} page={page} pageSize={pageSize} loading={loading} onPageChange={onPageChange} onPageSizeChange={onPageSizeChange}/></div>}
+        {onPageChange && onPageSizeChange && (
+          <div className="p-3">
+            <Pagination
+              total={total}
+              page={page}
+              pageSize={pageSize}
+              loading={loading}
+              onPageChange={onPageChange}
+              onPageSizeChange={onPageSizeChange}
+            />
+          </div>
+        )}
       </CardContent>
     </Card>
   );

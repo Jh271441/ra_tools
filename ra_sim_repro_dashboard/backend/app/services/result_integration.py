@@ -14,9 +14,7 @@ TRIGGER = "dpe_assist_channel_triggered__group1"
 
 def checks(row):
     errors = []
-    if row.get("task_status") != 3 or not str(row.get("task_outcome", "")).startswith(
-        "Done"
-    ):
+    if row.get("task_status") != 3 or not str(row.get("task_outcome", "")).startswith("Done"):
         errors.append("task_failed")
     if row.get("simulator_cache_hit") is not False:
         errors.append("cache_unverified")
@@ -42,26 +40,21 @@ def integrate(plan, exports, primary_job_id):
     if len(expected) != len(plan["scenarios"]) or not expected:
         raise ValueError("Scenario population is empty or duplicated")
     from ra_api.release_tolerance import POLICY
-    contracts = {e.get('execution_contract_hash') for e in exports}
+
+    contracts = {e.get("execution_contract_hash") for e in exports}
     physical = plan.get("execution_schema") == "physical_v2"
-    if ((physical or plan.get('issue_tolerance', {}).get('policy') == POLICY)
-            and (len(contracts) != 1 or not next(iter(contracts)))):
-        raise ValueError('Audited runtime contract missing or inconsistent')
+    if (physical or plan.get("issue_tolerance", {}).get("policy") == POLICY) and (
+        len(contracts) != 1 or not next(iter(contracts))
+    ):
+        raise ValueError("Audited runtime contract missing or inconsistent")
     indexes = {}
     for export in exports:
         jid = int(export["job_id"])
         progress = export["progress"]
         rows = {str(r["scenario_id"]): r for r in export["rows"]}
-        if (
-            jid in indexes
-            or len(rows) != len(export["rows"])
-            or set(rows) != set(expected)
-        ):
+        if jid in indexes or len(rows) != len(export["rows"]) or set(rows) != set(expected):
             raise ValueError("Execution scenario population mismatch")
-        if any(
-            export.get(k) != plan.get(k)
-            for k in ("release", "binary_id", "population_hash")
-        ):
+        if any(export.get(k) != plan.get(k) for k in ("release", "binary_id", "population_hash")):
             raise ValueError("Execution release, binary or population mismatch")
         if (
             progress.get("job_id") != jid
@@ -90,18 +83,13 @@ def integrate(plan, exports, primary_job_id):
         raise ValueError("Primary execution missing")
     primary = indexes[primary_job_id]
     for other in indexes.values():
-        if any(
-            other[sid]["argument_hash"] != primary[sid]["argument_hash"]
-            for sid in expected
-        ):
+        if any(other[sid]["argument_hash"] != primary[sid]["argument_hash"] for sid in expected):
             raise ValueError("Actual execution parameters differ")
     conflicts = []
     comparable = 0
     if len(indexes) > 1:
         for sid in expected:
-            values = [
-                r[sid][TRIGGER] >= 1 for r in indexes.values() if not checks(r[sid])
-            ]
+            values = [r[sid][TRIGGER] >= 1 for r in indexes.values() if not checks(r[sid])]
             if len(values) == len(indexes):
                 comparable += 1
                 if len(set(values)) > 1:
@@ -144,8 +132,11 @@ def integrate(plan, exports, primary_job_id):
         cohort = expected[sid]["cohort"]
         if physical:
             issue = source.get(str(expected[sid]["issue_id"]))
-            if (not issue or cohort not in ("source_auto", "source_manual")
-                    or (int(issue["ra_type"]) == 3) != (cohort == "source_manual")):
+            if (
+                not issue
+                or cohort not in ("source_auto", "source_manual")
+                or (int(issue["ra_type"]) == 3) != (cohort == "source_manual")
+            ):
                 raise ValueError("Execution source cohort mismatch")
             cohort = cohort_for_issue(issue)
             if cohort is None:
@@ -165,23 +156,21 @@ def integrate(plan, exports, primary_job_id):
     full = summarize_population(plan["issues"], plan["scenarios"], valid)
     valid_issues = {str(expected[sid]["issue_id"]) for sid in valid}
     # Exclude an entire issue if one of its associated scenarios is missing.
-    invalid_issues = {
-        str(expected[sid]["issue_id"]) for sid in expected if sid not in valid
-    }
+    invalid_issues = {str(expected[sid]["issue_id"]) for sid in expected if sid not in valid}
     valid_issues -= invalid_issues
     subset = summarize_population(
         [i for i in plan["issues"] if str(i["issue_id"]) in valid_issues],
         [s for s in plan["scenarios"] if str(s["issue_id"]) in valid_issues],
         valid,
     )
-    passed = (
-        full["available"]
-        and not conflicts
-        and all(not checks(r) for r in primary.values())
-    )
+    passed = full["available"] and not conflicts and all(not checks(r) for r in primary.values())
     return {
         "schema_version": 1,
-        **({"execution_contract_hash":next(iter(contracts))} if len(contracts)==1 and next(iter(contracts)) else {}),
+        **(
+            {"execution_contract_hash": next(iter(contracts))}
+            if len(contracts) == 1 and next(iter(contracts))
+            else {}
+        ),
         "task_key": task_id,
         "release": plan["release"],
         "binary_id": plan["binary_id"],
@@ -263,11 +252,7 @@ def import_executions(db, plan, exports, primary_job_id):
             }
             batch.status = integrated["status"]
         else:
-            batch.status = (
-                "quality_failed"
-                if not integrated["quality_gate_passed"]
-                else "complete"
-            )
+            batch.status = "quality_failed" if not integrated["quality_gate_passed"] else "complete"
     for export in exports:
         key = f"job-progress:{export['job_id']}"
         cache = db.get(ReleaseWorkflowState, key) or ReleaseWorkflowState(key=key)
@@ -278,6 +263,10 @@ def import_executions(db, plan, exports, primary_job_id):
         db.add(cache)
     db.commit()
     from app.services.reproduction_evidence import capture_completion
-    capture_completion(db, batch=batches[primary_job_id],
-                       export=next(e for e in exports if int(e['job_id']) == primary_job_id))
+
+    capture_completion(
+        db,
+        batch=batches[primary_job_id],
+        export=next(e for e in exports if int(e["job_id"]) == primary_job_id),
+    )
     return integrated

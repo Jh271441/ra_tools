@@ -32,7 +32,9 @@ class RedisCache:
     def set_json(self, key: str, value: Any, ttl: int | None = None) -> None:
         if not self._client:
             return
-        self._client.setex(key, ttl or settings.cache_ttl_seconds, json.dumps(value, ensure_ascii=False))
+        self._client.setex(
+            key, ttl or settings.cache_ttl_seconds, json.dumps(value, ensure_ascii=False)
+        )
 
     def delete_prefix(self, prefix: str) -> None:
         if not self._client:

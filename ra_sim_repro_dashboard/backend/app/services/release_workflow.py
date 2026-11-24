@@ -45,10 +45,15 @@ def population_identity(payload):
     period = payload["period"]
     issues = [
         {
-            **{k: row.get(k) for k in
-               ("issue_id", "ra_type", "ra_merge_result", "issue_time", "version")},
-            **({"evaluation_exclusion": row["evaluation_exclusion"]}
-               if row.get("evaluation_exclusion") else {}),
+            **{
+                k: row.get(k)
+                for k in ("issue_id", "ra_type", "ra_merge_result", "issue_time", "version")
+            },
+            **(
+                {"evaluation_exclusion": row["evaluation_exclusion"]}
+                if row.get("evaluation_exclusion")
+                else {}
+            ),
         }
         for row in payload["issues"]
     ]
@@ -124,13 +129,10 @@ def refresh_catalog(db, config):
     if previous.get("checked_week") == week:
         return
     if previous.get("attempt_week") == week and (
-        previous.get("attempts", 0) >= 3
-        or now.timestamp() < previous.get("retry_after", 0)
+        previous.get("attempts", 0) >= 3 or now.timestamp() < previous.get("retry_after", 0)
     ):
         return
-    attempts = (
-        previous.get("attempts", 0) + 1 if previous.get("attempt_week") == week else 1
-    )
+    attempts = previous.get("attempts", 0) + 1 if previous.get("attempt_week") == week else 1
     try:
         periods, warnings = infer_completed_cycles(
             fetch_recent_releases(config), config["contract"]["time_field"]
@@ -138,8 +140,10 @@ def refresh_catalog(db, config):
         # A watcher-frozen population must keep its boundaries and identity;
         # later release transitions are only evidence for missing periods.
         frozen = {
-            p["release"] for p in config.get("periods", [])
-            if p.get("verified") and p.get("completion_rule") in {"issue_inactivity_24h", "issue_last_time_24h"}
+            p["release"]
+            for p in config.get("periods", [])
+            if p.get("verified")
+            and p.get("completion_rule") in {"issue_inactivity_24h", "issue_last_time_24h"}
         }
         periods = [p for p in periods if p["release"] not in frozen]
         for period in periods:
@@ -148,9 +152,7 @@ def refresh_catalog(db, config):
                     identity = driver_call(config, "lookup_binary", period)
                     if identity.get("binary_id") and identity.get("binary_commit"):
                         period.update(identity)
-                        period["template_job_id"] = config["simulation"].get(
-                            "template_job_id"
-                        )
+                        period["template_job_id"] = config["simulation"].get("template_job_id")
                 except Exception:
                     period["binary_lookup_status"] = "pending"
         stored = {p["release"]: p for p in previous.get("periods", [])}
@@ -197,12 +199,8 @@ def status(db, config=None):
         "population_complete": snapshot.payload.get("population_complete", False)
         if snapshot
         else False,
-        "collected_through": snapshot.payload.get("collected_through")
-        if snapshot
-        else None,
-        "acceptance_only": bool(
-            config.get("simulation", {}).get("acceptance_only", False)
-        ),
+        "collected_through": snapshot.payload.get("collected_through") if snapshot else None,
+        "acceptance_only": bool(config.get("simulation", {}).get("acceptance_only", False)),
         "metrics": metrics_for_snapshot(db, snapshot),
         "source_metrics": summarize_population(snapshot.payload["issues"], [], {})
         if snapshot
@@ -213,9 +211,7 @@ def status(db, config=None):
         "issue_count": sum(int(i["ra_type"]) == 2 for i in snapshot.payload["issues"])
         if snapshot
         else 0,
-        "manual_population_count": sum(
-            int(i["ra_type"]) == 3 for i in snapshot.payload["issues"]
-        )
+        "manual_population_count": sum(int(i["ra_type"]) == 3 for i in snapshot.payload["issues"])
         if snapshot
         else 0,
         "scenario_count": len(snapshot.payload["scenarios"]) if snapshot else 0,
@@ -270,8 +266,12 @@ def apply_issue_exclusions(db, release, issues):
         row = {k: v for k, v in source.items() if k != "evaluation_exclusion"}
         decision = by_id.get(str(row["issue_id"]))
         if decision:
-            if (decision.get("release") != release or not decision.get("reason")
-                    or not decision.get("approved_at") or decision.get("approved_by") != "user"):
+            if (
+                decision.get("release") != release
+                or not decision.get("reason")
+                or not decision.get("approved_at")
+                or decision.get("approved_by") != "user"
+            ):
                 raise ValueError("评测排除记录缺少明确授权")
             expected = decision.get("source", {})
             if set(expected) != {"version", "ra_type", "ra_merge_result"} or any(
@@ -333,9 +333,7 @@ def sync_once(
     if previous and digest(previous.payload) == digest(payload):
         snapshot = previous
     else:
-        snapshot = ReleaseIssueSnapshot(
-            period_hash=key, release=period["release"], payload=payload
-        )
+        snapshot = ReleaseIssueSnapshot(period_hash=key, release=period["release"], payload=payload)
         db.add(snapshot)
         db.commit()
     put_state(
@@ -354,40 +352,80 @@ def sync_once(
 class ScenePreparationError(ValueError):
     def __init__(self, response):
         super().__init__("场景准备失败：" + str(response.get("error", "请查看失败清单")))
-        self.preparation = {key: response[key] for key in ("prepared", "failed", "failures") if key in response}
+        self.preparation = {
+            key: response[key] for key in ("prepared", "failed", "failures") if key in response
+        }
 
 
 def reconcile_preparation_labels(db, config, snapshot, *, release=None):
     """Synchronize changed GT cohorts before any external submission exists."""
-    batches = db.scalars(select(ReleaseSimulationBatch).where(
-        ReleaseSimulationBatch.release == snapshot.release)).all()
-    if any(b.payload.get('job_id') or b.status in ('submitting', 'submission_uncertain', 'running', 'verifying') for b in batches):
+    batches = db.scalars(
+        select(ReleaseSimulationBatch).where(ReleaseSimulationBatch.release == snapshot.release)
+    ).all()
+    if any(
+        b.payload.get("job_id")
+        or b.status in ("submitting", "submission_uncertain", "running", "verifying")
+        for b in batches
+    ):
         return snapshot
     from ra_api.release_labels import full_scene_label, cohort_label_update, scene_labels
 
-    period = snapshot.payload['period']
+    period = snapshot.payload["period"]
     label = full_scene_label(period)
-    cohorts = {str(i['issue_id']): cohort_for_issue(i) for i in snapshot.payload['issues']}
+    cohorts = {str(i["issue_id"]): cohort_for_issue(i) for i in snapshot.payload["issues"]}
     changes = []
-    for scene in snapshot.payload['scenarios']:
-        cohort = cohorts.get(str(scene['issue_id']))
+    for scene in snapshot.payload["scenarios"]:
+        cohort = cohorts.get(str(scene["issue_id"]))
         if not cohort:
             continue
-        updated = cohort_label_update(scene, label, period['release'], cohort)
+        updated = cohort_label_update(scene, label, period["release"], cohort)
         if updated is not None:
-            changes.append({**{k:scene.get(k) for k in ('scenario_id', 'issue_id', 'scenario_revision', 'start_timestamp', 'end_timestamp')},
-                'cohort':cohort, 'before_labels':sorted(scene_labels(scene)), 'after_labels':updated})
+            changes.append(
+                {
+                    **{
+                        k: scene.get(k)
+                        for k in (
+                            "scenario_id",
+                            "issue_id",
+                            "scenario_revision",
+                            "start_timestamp",
+                            "end_timestamp",
+                        )
+                    },
+                    "cohort": cohort,
+                    "before_labels": sorted(scene_labels(scene)),
+                    "after_labels": updated,
+                }
+            )
     if not changes:
         return snapshot
-    payload = {'release':period['release'], 'period':period, 'label':label,
-        'source_hash':population_identity(snapshot.payload), 'changes':changes}
-    receipt = driver_call(config, 'reconcile_labels', payload)
-    if receipt.get('ready') is not True or receipt.get('verified_count') != len(changes) or receipt.get('request_hash') != digest(payload):
-        raise ValueError('Scenario cohort label synchronization failed')
-    put_state(db, 'scenario_labels:' + period['release'], {
-        'checked_at':datetime.now(timezone.utc).isoformat(), 'snapshot_id':snapshot.id,
-        'source_hash':payload['source_hash'], 'scenario_ids':[c['scenario_id'] for c in changes],
-        'count':len(changes), 'request_hash':receipt['request_hash'], 'audit_path':receipt.get('audit_path')})
+    payload = {
+        "release": period["release"],
+        "period": period,
+        "label": label,
+        "source_hash": population_identity(snapshot.payload),
+        "changes": changes,
+    }
+    receipt = driver_call(config, "reconcile_labels", payload)
+    if (
+        receipt.get("ready") is not True
+        or receipt.get("verified_count") != len(changes)
+        or receipt.get("request_hash") != digest(payload)
+    ):
+        raise ValueError("Scenario cohort label synchronization failed")
+    put_state(
+        db,
+        "scenario_labels:" + period["release"],
+        {
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+            "snapshot_id": snapshot.id,
+            "source_hash": payload["source_hash"],
+            "scenario_ids": [c["scenario_id"] for c in changes],
+            "count": len(changes),
+            "request_hash": receipt["request_hash"],
+            "audit_path": receipt.get("audit_path"),
+        },
+    )
     return sync_once(db, config, release=release)
 
 
@@ -422,6 +460,7 @@ def prepare_missing_scenes(db, config, *, release=None):
     refreshed = sync_once(db, config, release=release)
     if response.get("ready") is not True:
         from ra_api.release_tolerance import assess
+
         rows = refreshed.payload["issues"]
         eligible = {str(i["issue_id"]) for i in rows if cohort_for_issue(i)}
         remaining = eligible - {str(s["issue_id"]) for s in refreshed.payload["scenarios"]}
@@ -429,21 +468,29 @@ def prepare_missing_scenes(db, config, *, release=None):
         failed_ids = [str(f.get("issue_id", "")) for f in failures]
         # Only a complete, explicit failure receipt and a successful full requery
         # can authorize exceptions. Timeouts and incomplete mappings still block.
-        if (refreshed.payload.get("mapping_error") or not remaining
-                or type(response.get("failed")) is not int
-                or response["failed"] != len(failures) or len(set(failed_ids)) != len(failures)
-                or set(failed_ids) != remaining
-                or not remaining <= {str(i["issue_id"]) for i in missing}
-                or any(f.get("reason") not in ("missing_bag", "upstream_error") for f in failures)):
+        if (
+            refreshed.payload.get("mapping_error")
+            or not remaining
+            or type(response.get("failed")) is not int
+            or response["failed"] != len(failures)
+            or len(set(failed_ids)) != len(failures)
+            or set(failed_ids) != remaining
+            or not remaining <= {str(i["issue_id"]) for i in missing}
+            or any(f.get("reason") not in ("missing_bag", "upstream_error") for f in failures)
+        ):
             raise ScenePreparationError(response)
         try:
             assess(eligible, remaining)
         except ValueError:
             raise ScenePreparationError(response) from None
-        put_state(db, "preparation_tolerance:" + period["release"], {
-            "population_hash": population_identity(refreshed.payload),
-            "failures": sorted(failures, key=lambda f: str(f["issue_id"])),
-        })
+        put_state(
+            db,
+            "preparation_tolerance:" + period["release"],
+            {
+                "population_hash": population_identity(refreshed.payload),
+                "failures": sorted(failures, key=lambda f: str(f["issue_id"])),
+            },
+        )
 
 
 def list_issues(db, release=None, page=1, page_size=25, query="", label="", view="collection"):
@@ -451,29 +498,53 @@ def list_issues(db, release=None, page=1, page_size=25, query="", label="", view
         raise ValueError("invalid_pagination")
     config = effective_config(db)
     from app.services.release_inventory import inventory, observation_issues
+
     catalog = inventory(db, config)
     if release == "@stable":
         release = catalog["default_release"]
         if not release:
-            return {"items": [], "total": 0, "page": page, "page_size": page_size, "status": "pending"}
+            return {
+                "items": [],
+                "total": 0,
+                "page": page,
+                "page_size": page_size,
+                "status": "pending",
+            }
     selected = next((v for v in catalog["versions"] if v["release"] == release), None)
     if view == "collection" and selected and selected["source"] == "observation":
         return observation_issues(db, release, page, page_size, query, label)
     if view == "simulation" and release not in (None, "", "@current"):
         from app.services.ordinary_evaluation import issue_page as ordinary_issues
+
         ordinary = ordinary_issues(db, release, page, page_size, query, label)
         if ordinary is not None:
             return ordinary
         from app.services.label_issue_view import applied_rows
+
         applied = applied_rows(db, release, {}, published=True)
         if applied is not None:
             from app.services.reproduction_evidence import annotate_standard_rows
+
             applied = annotate_standard_rows(db, release, applied)
-            items = [row for row in applied if (not label or label in row['scenario_labels'])
-                     and (not query or query.casefold() in json.dumps(row, ensure_ascii=False).casefold())]
-            items.sort(key=lambda row: (row.get('issue_time') or 0, row['issue_id'], row['scenario_id']), reverse=True)
-            return {'items': items[(page-1)*page_size:page*page_size], 'total': len(items),
-                    'page': page, 'page_size': page_size, 'status': 'published'}
+            items = [
+                row
+                for row in applied
+                if (not label or label in row["scenario_labels"])
+                and (
+                    not query or query.casefold() in json.dumps(row, ensure_ascii=False).casefold()
+                )
+            ]
+            items.sort(
+                key=lambda row: (row.get("issue_time") or 0, row["issue_id"], row["scenario_id"]),
+                reverse=True,
+            )
+            return {
+                "items": items[(page - 1) * page_size : page * page_size],
+                "total": len(items),
+                "page": page,
+                "page_size": page_size,
+                "status": "published",
+            }
 
     current = resolve_current(config)
     if release in (None, "", "@current"):
@@ -492,12 +563,14 @@ def list_issues(db, release=None, page=1, page_size=25, query="", label="", view
         # A published simulation is bound to its frozen source, not the latest
         # observation/snapshot whose labels may still be awaiting processing.
         from app.services.result_publication import published_batch
+
         base = published_batch(db, snapshot.release)
         if base:
             from app.services.auto_triage_metrics import execution_inputs
+
             _, receipt = execution_inputs(db, base)
-            if receipt.get('snapshot_id'):
-                snapshot = db.get(ReleaseIssueSnapshot, receipt['snapshot_id'])
+            if receipt.get("snapshot_id"):
+                snapshot = db.get(ReleaseIssueSnapshot, receipt["snapshot_id"])
     if snapshot is None:
         return {
             "items": [],
@@ -519,8 +592,11 @@ def list_issues(db, release=None, page=1, page_size=25, query="", label="", view
     batch_by_scene = {}
     batches.sort(key=lambda b: bool(b.payload.get("result_import", {}).get("primary")))
     from app.services.release_backfill import frozen_snapshot_valid
+
     for batch in batches:
-        if batch.payload.get("population_hash") == population_hash or frozen_snapshot_valid(db, batch):
+        if batch.payload.get("population_hash") == population_hash or frozen_snapshot_valid(
+            db, batch
+        ):
             for scene in batch.payload.get("scenarios", []):
                 previous = batch_by_scene.get(scene["scenario_id"])
                 if not previous or scene["scenario_id"] not in previous.payload.get("results", {}):
@@ -559,9 +635,7 @@ def list_issues(db, release=None, page=1, page_size=25, query="", label="", view
                 result = batch.payload.get("results", {}).get(row["scenario_id"])
                 imported = batch.payload.get("result_import", {}).get("primary", False)
                 detail = (
-                    batch.payload.get("scenario_results", {}).get(
-                        row["scenario_id"], {}
-                    )
+                    batch.payload.get("scenario_results", {}).get(row["scenario_id"], {})
                     if imported
                     else {}
                 )
@@ -587,15 +661,13 @@ def list_issues(db, release=None, page=1, page_size=25, query="", label="", view
                             for k in ("sim_triggered", "reproduced", "precision_label")
                         }
                     )
-            if (
-                query
-                and query.lower() not in json.dumps(row, ensure_ascii=False).lower()
-            ):
+            if query and query.lower() not in json.dumps(row, ensure_ascii=False).lower():
                 continue
             if label and label not in row["scenario_labels"]:
                 continue
             items.append(row)
     from app.services.reproduction_evidence import annotate_standard_rows
+
     if view == "simulation":
         items = annotate_standard_rows(db, snapshot.release, items)
     return {
@@ -609,18 +681,18 @@ def list_issues(db, release=None, page=1, page_size=25, query="", label="", view
 
 def execution_overrides(config, release):
     """Freeze explicit execution policy identically for main and sidecar plans."""
-    sim = config.get('simulation', {})
+    sim = config.get("simulation", {})
     result = {}
-    warmup = sim.get('warmup_ms_by_release', {}).get(release, sim.get('warmup_ms'))
+    warmup = sim.get("warmup_ms_by_release", {}).get(release, sim.get("warmup_ms"))
     if warmup is not None:
         if type(warmup) is not int or not 0 <= warmup <= 60000:
-            raise ValueError('simulation_warmup_invalid')
-        result['warmup_ms'] = warmup
-    history = sim.get('feature_history_by_release', {}).get(release, sim.get('feature_history'))
+            raise ValueError("simulation_warmup_invalid")
+        result["warmup_ms"] = warmup
+    history = sim.get("feature_history_by_release", {}).get(release, sim.get("feature_history"))
     if history is not None:
-        if history != 'release-native':
-            raise ValueError('simulation_feature_history_invalid')
-        result['feature_history'] = history
+        if history != "release-native":
+            raise ValueError("simulation_feature_history_invalid")
+        result["feature_history"] = history
     return result
 
 
@@ -640,9 +712,7 @@ def make_plan(db, config=None, *, release=None):
         "simulation", {}
     ).get("acceptance_only"):
         raise ValueError("验收子集不能作为正式全量人口提交")
-    cohorts = {
-        str(i["issue_id"]): cohort_for_issue(i) for i in snapshot.payload["issues"]
-    }
+    cohorts = {str(i["issue_id"]): cohort_for_issue(i) for i in snapshot.payload["issues"]}
     unknown = [
         i
         for i in snapshot.payload["issues"]
@@ -664,7 +734,9 @@ def make_plan(db, config=None, *, release=None):
             },
             "cohort": (
                 "source_manual" if cohorts[s["issue_id"]] == "positive_manual" else "source_auto"
-            ) if physical else cohorts[s["issue_id"]],
+            )
+            if physical
+            else cohorts[s["issue_id"]],
         }
         for s in snapshot.payload["scenarios"]
         if cohorts.get(s["issue_id"])
@@ -672,10 +744,13 @@ def make_plan(db, config=None, *, release=None):
     mapped = {s["issue_id"] for s in scenarios}
     missing = {iid for iid, cohort in cohorts.items() if cohort} - mapped
     from ra_api.release_tolerance import POLICY, assess, validate_frozen
+
     preparation = get_state(db, "preparation_tolerance:" + period["release"])
     failures = preparation.get("failures", []) if missing else []
-    if missing and (preparation.get("population_hash") != population_identity(snapshot.payload)
-                    or {str(f["issue_id"]) for f in failures} != missing):
+    if missing and (
+        preparation.get("population_hash") != population_identity(snapshot.payload)
+        or {str(f["issue_id"]) for f in failures} != missing
+    ):
         raise ValueError(f"{len(missing)} 个 Issue 尚未匹配场景，暂不提交全量仿真")
     eligible_ids = sorted(iid for iid, cohort in cohorts.items() if cohort)
     assess(eligible_ids, missing)
@@ -690,17 +765,25 @@ def make_plan(db, config=None, *, release=None):
         raise ValueError("提交优先级必须是 NORMAL 或 HIGH")
     if not period.get("binary_id") or not period.get("template_job_id"):
         raise ValueError("当前 release 缺少已核实的 binary 和任务模板")
-    from ra_api.release_labels import full_scene_label, validate_scene_labels, validate_physical_scene_labels
+    from ra_api.release_labels import (
+        full_scene_label,
+        validate_scene_labels,
+        validate_physical_scene_labels,
+    )
 
     scenario_label = full_scene_label(period)
-    for scene in snapshot.payload['scenarios']:
-        cohort = cohorts.get(scene['issue_id'])
+    for scene in snapshot.payload["scenarios"]:
+        cohort = cohorts.get(scene["issue_id"])
         if cohort:
             if physical:
-                validate_physical_scene_labels(scene, scenario_label, period['release'],
-                    "source_manual" if cohort == "positive_manual" else "source_auto")
+                validate_physical_scene_labels(
+                    scene,
+                    scenario_label,
+                    period["release"],
+                    "source_manual" if cohort == "positive_manual" else "source_auto",
+                )
             else:
-                validate_scene_labels(scene, scenario_label, period['release'], cohort)
+                validate_scene_labels(scene, scenario_label, period["release"], cohort)
     body = {
         "scenario_label": scenario_label,
         "period": {
@@ -726,7 +809,16 @@ def make_plan(db, config=None, *, release=None):
                 "last_issue_at",
                 "execution_schema",
             )
-            if k not in ("completion_rule", "activity_hash", "quiet_since", "observed_at", "last_issue_at", "execution_schema") or k in period
+            if k
+            not in (
+                "completion_rule",
+                "activity_hash",
+                "quiet_since",
+                "observed_at",
+                "last_issue_at",
+                "execution_schema",
+            )
+            or k in period
         },
         "release": period["release"],
         "binary_id": period["binary_id"],
@@ -741,12 +833,17 @@ def make_plan(db, config=None, *, release=None):
             "cache": "disabled",
             "recovery_mode": sim.get("recovery_mode", "baseline"),
             "dpe": True,
-            **execution_overrides(config, period['release']),
+            **execution_overrides(config, period["release"]),
         },
         "issues": [
-            {**{k: i.get(k) for k in ("issue_id", "ra_type", "ra_merge_result")},
-             **({"evaluation_exclusion": i["evaluation_exclusion"]}
-                if i.get("evaluation_exclusion") else {})}
+            {
+                **{k: i.get(k) for k in ("issue_id", "ra_type", "ra_merge_result")},
+                **(
+                    {"evaluation_exclusion": i["evaluation_exclusion"]}
+                    if i.get("evaluation_exclusion")
+                    else {}
+                ),
+            }
             for i in snapshot.payload["issues"]
         ],
         "driver_revision": sim.get("driver_revision"),
@@ -756,22 +853,24 @@ def make_plan(db, config=None, *, release=None):
     for issue in body["issues"]:
         failure = next((f for f in failures if str(f["issue_id"]) == str(issue["issue_id"])), None)
         if failure:
-            issue["evaluation_exclusion"] = {"approved_by": POLICY["version"],
-                "reason": failure["reason"], "stage": "preparation"}
-    body["issue_tolerance"] = {"policy": dict(POLICY),
-        "population_hash": body["population_hash"], "eligible_issue_ids": eligible_ids,
-        "preparation_failures": failures}
+            issue["evaluation_exclusion"] = {
+                "approved_by": POLICY["version"],
+                "reason": failure["reason"],
+                "stage": "preparation",
+            }
+    body["issue_tolerance"] = {
+        "policy": dict(POLICY),
+        "population_hash": body["population_hash"],
+        "eligible_issue_ids": eligible_ids,
+        "preparation_failures": failures,
+    }
     validate_frozen(body)
     return {**body, "fingerprint": digest(body)}
 
 
 def driver_call(config, action, payload):
     command = config.get("simulation", {}).get("driver_command")
-    if (
-        not isinstance(command, list)
-        or not command
-        or not all(isinstance(v, str) for v in command)
-    ):
+    if not isinstance(command, list) or not command or not all(isinstance(v, str) for v in command):
         raise ValueError("新版本 Orion 提交与结果校验驱动尚未配置")
     # Scene creation can upload thousands of Issues through four workers. Keep
     # its batch budget separate from the short submit/lookup request budget.
@@ -793,13 +892,8 @@ def driver_call(config, action, payload):
 
 def _driver_preflight(config, plan):
     check = driver_call(config, "preflight", plan)
-    if (
-        check.get("fingerprint") != plan["fingerprint"]
-        or check.get("ready") is not True
-    ):
-        raise ValueError(
-            "Orion 预检未通过：" + str(check.get("error", "配置与计划不一致"))
-        )
+    if check.get("fingerprint") != plan["fingerprint"] or check.get("ready") is not True:
+        raise ValueError("Orion 预检未通过：" + str(check.get("error", "配置与计划不一致")))
     return check
 
 
@@ -807,18 +901,34 @@ def evaluation_execution_active(db, release):
     active = ("preparing", "submitting", "submission_uncertain", "running", "verifying")
     # Some authorized/offline submitters persist an execution without evstart.
     # Its durable intent must protect the same shared lane after a restart.
-    execution = db.scalar(select(ReleaseWorkflowState.key).where(
-        ReleaseWorkflowState.key.startswith("evexecution:"),
-        ReleaseWorkflowState.payload["status"].as_string().in_(active),
-        ReleaseWorkflowState.payload["plan"]["release"].as_string() == release,
-    ).limit(1))
+    execution = db.scalar(
+        select(ReleaseWorkflowState.key)
+        .where(
+            ReleaseWorkflowState.key.startswith("evexecution:"),
+            ReleaseWorkflowState.payload["status"].as_string().in_(active),
+            ReleaseWorkflowState.payload["plan"]["release"].as_string() == release,
+        )
+        .limit(1)
+    )
     if execution:
         return True
-    for row in db.scalars(select(ReleaseWorkflowState).where(ReleaseWorkflowState.key.startswith('evstart:'))):
+    for row in db.scalars(
+        select(ReleaseWorkflowState).where(ReleaseWorkflowState.key.startswith("evstart:"))
+    ):
         value = row.payload
-        if value.get('status') in ('preparing', 'submitting', 'submission_uncertain', 'running', 'verifying') and value.get('context', {}).get('release') == release:
-            execution = get_state(db, 'evexecution:' + value.get('execution_id', 'none'))
-            if not execution or execution.get('status') in ('preparing', 'submitting', 'submission_uncertain', 'running', 'verifying'):
+        if (
+            value.get("status")
+            in ("preparing", "submitting", "submission_uncertain", "running", "verifying")
+            and value.get("context", {}).get("release") == release
+        ):
+            execution = get_state(db, "evexecution:" + value.get("execution_id", "none"))
+            if not execution or execution.get("status") in (
+                "preparing",
+                "submitting",
+                "submission_uncertain",
+                "running",
+                "verifying",
+            ):
                 return True
     return False
 
@@ -832,8 +942,10 @@ def queue_plan(db, fingerprint, config=None, *, release=None):
     if existing:
         return existing
     # Share physical execution with independent evaluation profiles.
-    if evaluation_execution_active(db, plan['release']):
-        raise ValueError('AutoTriage physical execution is active; wait before preparing another batch')
+    if evaluation_execution_active(db, plan["release"]):
+        raise ValueError(
+            "AutoTriage physical execution is active; wait before preparing another batch"
+        )
     active = db.scalars(
         select(ReleaseSimulationBatch).where(
             ReleaseSimulationBatch.release == plan["release"],
@@ -886,12 +998,14 @@ def execute_batch(db, batch, config, *, release=None):
         return batch
     if evaluation_execution_active(db, batch.release):
         return batch  # Retain queued work until the shared execution lane is free.
-    if (batch.payload.get('backfill', {}).get('kind') == 'label_changes'
-            and (get_state(db, 'settings', {'mode':'manual'}).get('mode') != 'auto'
-                 or config.get('result_publication', {}).get('enabled', True) is not True)):
+    if batch.payload.get("backfill", {}).get("kind") == "label_changes" and (
+        get_state(db, "settings", {"mode": "manual"}).get("mode") != "auto"
+        or config.get("result_publication", {}).get("enabled", True) is not True
+    ):
         return batch
     if batch.payload.get("backfill"):
         from app.services.release_backfill import validate_delta
+
         validate_delta(db, batch, config)
         current_plan = batch.payload
     else:
@@ -943,6 +1057,7 @@ def set_mode(db, mode):
         config = effective_config(db)
         if config.get("release_monitor", {}).get("enabled"):
             from app.services.release_watch import validate_monitor_config
+
             validate_monitor_config(config)
             if not config.get("simulation", {}).get("driver_command"):
                 raise ValueError("Orion 驱动尚未配置")
@@ -965,9 +1080,7 @@ def poll_batches(db, config):
         try:
             if batch.status in ("submitting", "submission_uncertain"):
                 receipt = driver_call(config, "receipt", batch.payload)
-                if receipt.get("fingerprint") == batch.fingerprint and receipt.get(
-                    "job_id"
-                ):
+                if receipt.get("fingerprint") == batch.fingerprint and receipt.get("job_id"):
                     batch.payload = {**batch.payload, "job_id": receipt["job_id"]}
                     batch.status = "running"
                     db.commit()
@@ -976,15 +1089,16 @@ def poll_batches(db, config):
                     db.commit()
                     continue
             result = driver_call(config, "poll", batch.payload)
-            if result.get("fingerprint") != batch.fingerprint or str(
-                result.get("job_id")
-            ) != str(batch.payload["job_id"]):
+            if result.get("fingerprint") != batch.fingerprint or str(result.get("job_id")) != str(
+                batch.payload["job_id"]
+            ):
                 raise ValueError("结果与提交批次不匹配")
             state = result.get("status")
             if state == "audited":
                 from app.services.result_integration import import_executions
 
                 from app.services.release_backfill import frozen_snapshot_valid
+
                 if not frozen_snapshot_valid(db, batch):
                     raise ValueError("当前来源或场景输入与提交快照不一致，停止结果导入")
                 # Existing multi-job comparisons/publication decisions are immutable
@@ -1009,8 +1123,7 @@ def poll_batches(db, config):
                 else:
                     for row in result["results"].values():
                         if not all(
-                            isinstance(row.get(k), bool)
-                            for k in ("sim_triggered", "reproduced")
+                            isinstance(row.get(k), bool) for k in ("sim_triggered", "reproduced")
                         ) or row.get("precision_label") not in ("TP", "FP", "FN", "TN"):
                             raise ValueError("仿真结果不完整")
                     summary = summarize_population(
@@ -1023,9 +1136,7 @@ def poll_batches(db, config):
                         "results": result["results"],
                         "summary": summary,
                     }
-                    batch.status = (
-                        "complete" if summary["available"] else "quality_failed"
-                    )
+                    batch.status = "complete" if summary["available"] else "quality_failed"
             elif state in ("running", "verifying"):
                 batch.status = state
                 batch.payload = {**batch.payload, "quality": result.get("quality", {})}
@@ -1038,21 +1149,18 @@ def poll_batches(db, config):
                 batch.status = "cancelled"
             else:
                 raise ValueError("结果驱动返回未知核验状态")
-            batch.payload = {
-                k: v for k, v in batch.payload.items() if k != "last_poll_error"
-            }
+            batch.payload = {k: v for k, v in batch.payload.items() if k != "last_poll_error"}
             db.commit()
         except Exception as exc:
             db.rollback()
             batch.payload = {
                 **batch.payload,
-                "last_poll_error": str(exc)
-                if isinstance(exc, ValueError)
-                else type(exc).__name__,
+                "last_poll_error": str(exc) if isinstance(exc, ValueError) else type(exc).__name__,
             }
             db.commit()
 
     from app.services.result_publication import reconcile_publications
+
     reconcile_publications(db, config)
 
 
@@ -1061,14 +1169,16 @@ def metrics_for_snapshot(db, snapshot):
         return {"available": False, "reason": "尚无完整周期人口快照"}
     population_hash = population_identity(snapshot.payload)
     from app.services.result_publication import published_batch, effective_publication
+
     published = published_batch(db, snapshot.release)
     from app.services.business_population import scope_for_batch
     from app.services.release_backfill import frozen_snapshot_valid
+
     if published and frozen_snapshot_valid(db, published):
         scope = scope_for_batch(db, published)
-        if scope['available']:
+        if scope["available"]:
             return effective_publication(db, published)
-        return {'available': False, 'reason': scope['reason_code'], 'collection_scope': scope}
+        return {"available": False, "reason": scope["reason_code"], "collection_scope": scope}
     batches = db.scalars(
         select(ReleaseSimulationBatch)
         .where(
@@ -1080,29 +1190,27 @@ def metrics_for_snapshot(db, snapshot):
     for batch in batches:
         if batch.payload.get("backfill"):
             continue
-        if batch.payload.get("result_import") and not batch.payload[
-            "result_import"
-        ].get("primary"):
+        if batch.payload.get("result_import") and not batch.payload["result_import"].get("primary"):
             continue
         if batch.payload.get("population_hash") == population_hash:
             scope = scope_for_batch(db, batch)
-            if not scope['available']:
-                return {'available': False, 'reason': scope['reason_code'], 'collection_scope': scope}
+            if not scope["available"]:
+                return {
+                    "available": False,
+                    "reason": scope["reason_code"],
+                    "collection_scope": scope,
+                }
             return {
                 **batch.payload.get("summary", {}),
                 "job_id": batch.payload.get("job_id"),
                 "release": snapshot.release,
-                "generated_at": batch.updated_at.replace(
-                    tzinfo=timezone.utc
-                ).isoformat(),
+                "generated_at": batch.updated_at.replace(tzinfo=timezone.utc).isoformat(),
             }
     return {"available": False, "reason": "当前人口尚无通过验收的完整仿真结果"}
 
 
 def run_tick(sync_source=True, source_interval_seconds=0):
-    lock_path = Path(
-        os.getenv("RELEASE_WORKFLOW_LOCK", str(DATA_DIR / "release-workflow.lock"))
-    )
+    lock_path = Path(os.getenv("RELEASE_WORKFLOW_LOCK", str(DATA_DIR / "release-workflow.lock")))
     with lock_path.open("w") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -1112,17 +1220,25 @@ def run_tick(sync_source=True, source_interval_seconds=0):
             config = effective_config(db)
             if sync_source and source_interval_seconds:
                 now = datetime.now(timezone.utc)
-                last = get_state(db, 'source_poll').get('started_at')
+                last = get_state(db, "source_poll").get("started_at")
                 try:
                     age = (now - datetime.fromisoformat(last)).total_seconds()
                     sync_source = not 0 <= age < source_interval_seconds
                 except (TypeError, ValueError):
                     pass
                 if sync_source:
-                    put_state(db, 'source_poll', {'started_at':now.isoformat(), 'interval_seconds':source_interval_seconds})
+                    put_state(
+                        db,
+                        "source_poll",
+                        {
+                            "started_at": now.isoformat(),
+                            "interval_seconds": source_interval_seconds,
+                        },
+                    )
             watch_enabled = config.get("release_monitor", {}).get("enabled", False)
             if sync_source and watch_enabled:
                 from app.services.release_watch import monitor_releases
+
                 monitor_releases(db, config)
                 config = effective_config(db)
             if sync_source:
@@ -1132,7 +1248,10 @@ def run_tick(sync_source=True, source_interval_seconds=0):
                 config = effective_config(db)
                 try:
                     sync_once(db, config)
-                    if not watch_enabled and get_state(db, "settings", {"mode": "manual"})["mode"] == "auto":
+                    if (
+                        not watch_enabled
+                        and get_state(db, "settings", {"mode": "manual"})["mode"] == "auto"
+                    ):
                         prepare_missing_scenes(db, config)
                         queue_plan(db, make_plan(db, config)["fingerprint"], config)
                 except Exception as exc:
@@ -1149,13 +1268,13 @@ def run_tick(sync_source=True, source_interval_seconds=0):
                         },
                     )
             for batch in db.scalars(
-                select(ReleaseSimulationBatch).where(
-                    ReleaseSimulationBatch.status == "queued"
-                )
+                select(ReleaseSimulationBatch).where(ReleaseSimulationBatch.status == "queued")
             ).all():
                 # Quiet-window batches must be freshly observed by monitor_tick,
                 # including queued batches recovered after a process restart.
-                if not batch.payload.get("backfill") and batch.payload.get("period", {}).get("completion_rule") in {"issue_inactivity_24h", "issue_last_time_24h"}:
+                if not batch.payload.get("backfill") and batch.payload.get("period", {}).get(
+                    "completion_rule"
+                ) in {"issue_inactivity_24h", "issue_last_time_24h"}:
                     continue
                 try:
                     execute_batch(db, batch, config, release=batch.release)
@@ -1163,12 +1282,12 @@ def run_tick(sync_source=True, source_interval_seconds=0):
                     batch.status = "cancelled_stale"
                     batch.payload = {**batch.payload, "error": str(exc)}
                     db.commit()
-            poll_batches(
-                db, config
-            )  # Track active jobs even after switching to manual mode.
+            poll_batches(db, config)  # Track active jobs even after switching to manual mode.
             from app.services.release_resume import process_requests
+
             process_requests(db, config)
             from app.services.release_backfill import tick as backfill_tick
+
             backfill_tick(db, config)
 
 

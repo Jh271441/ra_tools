@@ -36,7 +36,9 @@ class SimResultClient:
     def __init__(self, mock_dir: Path | None = None) -> None:
         self.mock_dir = mock_dir or settings.mock_data_dir
 
-    def query_job(self, sim_job_id: int, baseline_job_id: int | None = None) -> list[dict[str, Any]]:
+    def query_job(
+        self, sim_job_id: int, baseline_job_id: int | None = None
+    ) -> list[dict[str, Any]]:
         mock_rows = self._read_mock(sim_job_id)
         if mock_rows is not None:
             return mock_rows
@@ -81,7 +83,9 @@ class SimResultClient:
             return payload
         return []
 
-    def _query_all_pages(self, sim_job_id: int, baseline_job_id: int | None) -> list[dict[str, Any]]:
+    def _query_all_pages(
+        self, sim_job_id: int, baseline_job_id: int | None
+    ) -> list[dict[str, Any]]:
         if settings.voyager_cookie:
             return self._query_all_pages_with_post(
                 sim_job_id=sim_job_id,
@@ -201,7 +205,9 @@ class SimResultClient:
             for metric, groups in item.get("metric_results", {}).items():
                 for group, metric_result in groups.items():
                     value = metric_result.get("value", {})
-                    row[f"{metric}__{group}"] = value.get("value") if isinstance(value, dict) else value
+                    row[f"{metric}__{group}"] = (
+                        value.get("value") if isinstance(value, dict) else value
+                    )
                     if isinstance(value, dict) and "status" in value:
                         row[f"{metric}__{group}__status"] = value.get("status")
                     if isinstance(metric_result.get("diff"), dict):

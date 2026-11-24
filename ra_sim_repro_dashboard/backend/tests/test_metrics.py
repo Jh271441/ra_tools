@@ -62,8 +62,12 @@ def test_negative_dataset_labels_have_clear_roots():
 
 def test_summary_rates():
     rows = [
-        classify_result({"road_triggered": True, "sim_triggered": True, "fn_reasons": ["ASSIST_STUCK_MODEL"]}),
-        classify_result({"road_triggered": True, "sim_triggered": False, "max_scen_dnn": 0.1, "threshold": 0.5}),
+        classify_result(
+            {"road_triggered": True, "sim_triggered": True, "fn_reasons": ["ASSIST_STUCK_MODEL"]}
+        ),
+        classify_result(
+            {"road_triggered": True, "sim_triggered": False, "max_scen_dnn": 0.1, "threshold": 0.5}
+        ),
         classify_result({"road_triggered": False, "sim_triggered": True}),
     ]
     summary = summarize_rows(rows)
@@ -75,12 +79,42 @@ def test_summary_rates():
 
 def test_summary_repro_rate_uses_all_three_road_behavior_cohorts():
     rows = [
-        Row(road_triggered=True, sim_triggered=True, precision_label="TP", source_groups=["positive_auto"]),
-        Row(road_triggered=True, sim_triggered=False, precision_label="FN", source_groups=["positive_auto"]),
-        Row(road_triggered=True, sim_triggered=True, precision_label="TP", source_groups=["positive_manual"]),
-        Row(road_triggered=True, sim_triggered=False, precision_label="FN", source_groups=["positive_manual"]),
-        Row(road_triggered=False, sim_triggered=True, precision_label="FP", source_groups=["negative_auto"]),
-        Row(road_triggered=False, sim_triggered=False, precision_label="TN", source_groups=["negative_auto"]),
+        Row(
+            road_triggered=True,
+            sim_triggered=True,
+            precision_label="TP",
+            source_groups=["positive_auto"],
+        ),
+        Row(
+            road_triggered=True,
+            sim_triggered=False,
+            precision_label="FN",
+            source_groups=["positive_auto"],
+        ),
+        Row(
+            road_triggered=True,
+            sim_triggered=True,
+            precision_label="TP",
+            source_groups=["positive_manual"],
+        ),
+        Row(
+            road_triggered=True,
+            sim_triggered=False,
+            precision_label="FN",
+            source_groups=["positive_manual"],
+        ),
+        Row(
+            road_triggered=False,
+            sim_triggered=True,
+            precision_label="FP",
+            source_groups=["negative_auto"],
+        ),
+        Row(
+            road_triggered=False,
+            sim_triggered=False,
+            precision_label="TN",
+            source_groups=["negative_auto"],
+        ),
     ]
 
     summary = summarize_rows(rows)

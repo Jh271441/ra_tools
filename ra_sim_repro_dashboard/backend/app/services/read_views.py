@@ -1,4 +1,5 @@
 """Revision-aware cache for page reads only; operational decisions stay uncached."""
+
 from collections import OrderedDict
 from copy import deepcopy
 from contextvars import ContextVar
@@ -11,7 +12,9 @@ from time import monotonic
 from sqlalchemy import select
 from app.config import CONFIG_DIR, settings
 from app.models import (
-    DashboardSnapshot, ReleaseIssueSnapshot, ReleaseSimulationBatch,
+    DashboardSnapshot,
+    ReleaseIssueSnapshot,
+    ReleaseSimulationBatch,
     ReleaseWorkflowState,
 )
 from app.services.release_cycle import TZ
@@ -19,8 +22,8 @@ from app.services.release_cycle import TZ
 _lock = RLock()
 _values = OrderedDict()
 _fills = {}
-_read_db = ContextVar('read_view_session', default=None)
-_read_memos = ContextVar('read_view_memos', default=None)
+_read_db = ContextVar("read_view_session", default=None)
+_read_memos = ContextVar("read_view_memos", default=None)
 _MAX_ENTRIES = 96
 
 
@@ -38,20 +41,34 @@ def revision(db):
     # Read on every request so writes by the worker or another process invalidate
     # immediately. Keep the engine itself in the key to isolate test/other DBs.
     statements = [
-        select(ReleaseWorkflowState.key, ReleaseWorkflowState.updated_at).order_by(ReleaseWorkflowState.key),
-        select(ReleaseSimulationBatch.fingerprint, ReleaseSimulationBatch.status, ReleaseSimulationBatch.updated_at).order_by(ReleaseSimulationBatch.fingerprint),
-        select(ReleaseIssueSnapshot.id, ReleaseIssueSnapshot.period_hash).order_by(ReleaseIssueSnapshot.id),
+        select(ReleaseWorkflowState.key, ReleaseWorkflowState.updated_at).order_by(
+            ReleaseWorkflowState.key
+        ),
+        select(
+            ReleaseSimulationBatch.fingerprint,
+            ReleaseSimulationBatch.status,
+            ReleaseSimulationBatch.updated_at,
+        ).order_by(ReleaseSimulationBatch.fingerprint),
+        select(ReleaseIssueSnapshot.id, ReleaseIssueSnapshot.period_hash).order_by(
+            ReleaseIssueSnapshot.id
+        ),
         select(DashboardSnapshot.id, DashboardSnapshot.config_hash).order_by(DashboardSnapshot.id),
     ]
     return (
         db.get_bind(),
         tuple(tuple(tuple(row) for row in db.execute(stmt)) for stmt in statements),
-        tuple(_file_revision(path) for path in [
-            settings.versions_config, CONFIG_DIR / 'versions.example.yaml',
-            os.getenv('RELEASE_CYCLES_CONFIG', str(CONFIG_DIR / 'release-cycles.default')),
-        ]),
-        os.getenv('RELEASE_DRIVER_COMMAND_JSON'), os.getenv('RELEASE_WORKFLOW_ENABLED'),
-        os.getenv('EVALUATION_WORKER_ENABLED', '1'), os.getenv('EVALUATION_CRON_ENABLED'),
+        tuple(
+            _file_revision(path)
+            for path in [
+                settings.versions_config,
+                CONFIG_DIR / "versions.example.yaml",
+                os.getenv("RELEASE_CYCLES_CONFIG", str(CONFIG_DIR / "release-cycles.default")),
+            ]
+        ),
+        os.getenv("RELEASE_DRIVER_COMMAND_JSON"),
+        os.getenv("RELEASE_WORKFLOW_ENABLED"),
+        os.getenv("EVALUATION_WORKER_ENABLED", "1"),
+        os.getenv("EVALUATION_CRON_ENABLED"),
         datetime.now(TZ).date(),
     )
 
@@ -114,8 +131,7 @@ def read_projection(db, name, load, *, max_age=300):
 def read_memo(db, name, load):
     """Request-local immutable intermediates, never operational/cross-GET state."""
     values = _read_memos.get()
-    if (_read_db.get() is not db or values is None
-            or db.new or db.dirty or db.deleted):
+    if _read_db.get() is not db or values is None or db.new or db.dirty or db.deleted:
         return load()
     if name not in values:
         values[name] = load()
@@ -124,14 +140,17 @@ def read_memo(db, name, load):
 
 def workflow_status(db):
     from app.services.release_workflow import status
-    return read_view(db, 'workflow-status', lambda: status(db))
+
+    return read_view(db, "workflow-status", lambda: status(db))
 
 
 def business_context(db):
     from app.services.release_presentation import context
-    return read_view(db, 'business-context', lambda: context(db, workflow_status(db)))
+
+    return read_view(db, "business-context", lambda: context(db, workflow_status(db)))
 
 
 def history_kpis(db):
     from app.services.release_presentation import history_kpis as build
-    return read_view(db, 'history-kpis', lambda: build(db))
+
+    return read_view(db, "history-kpis", lambda: build(db))

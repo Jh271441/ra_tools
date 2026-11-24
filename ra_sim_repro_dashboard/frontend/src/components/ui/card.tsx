@@ -2,7 +2,12 @@ import type { HTMLAttributes } from 'react';
 import { cn } from '../../lib/utils';
 
 export function Card({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('apple-panel min-w-0 rounded-lg border text-card-foreground', className)} {...props} />;
+  return (
+    <div
+      className={cn('apple-panel min-w-0 rounded-lg border text-card-foreground', className)}
+      {...props}
+    />
+  );
 }
 
 export function CardHeader({ className, ...props }: HTMLAttributes<HTMLDivElement>) {

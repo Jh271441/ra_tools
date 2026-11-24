@@ -60,9 +60,7 @@ def main(root):
                     timeout=3600,
                     check=True,
                 )
-                state["status"] = json.loads((root / "weekly/status.json").read_text())[
-                    "status"
-                ]
+                state["status"] = json.loads((root / "weekly/status.json").read_text())["status"]
             except Exception as exc:
                 state["status"] = "check_failed"
                 print(type(exc).__name__, flush=True)

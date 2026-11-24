@@ -29,9 +29,7 @@ def choose_period(config, day):
     end = last_cycle_end(day).isoformat()
     matches = [p for p in config["periods"] if p["cycle_end"] == end]
     if len(matches) != 1:
-        raise ValueError(
-            f"Expected one authoritative period ending {end}; found {len(matches)}"
-        )
+        raise ValueError(f"Expected one authoritative period ending {end}; found {len(matches)}")
     period = matches[0]
     start = dt.datetime.fromisoformat(period["case_start"])
     stop = dt.datetime.fromisoformat(period["case_end_exclusive"])
@@ -42,9 +40,7 @@ def choose_period(config, day):
 
 def atomic(path, data):
     temp = path.with_suffix(path.suffix + ".tmp")
-    temp.write_text(
-        json.dumps(data, ensure_ascii=False, indent=2, allow_nan=False) + "\n"
-    )
+    temp.write_text(json.dumps(data, ensure_ascii=False, indent=2, allow_nan=False) + "\n")
     temp.replace(path)
 
 
@@ -68,15 +64,11 @@ def evaluate(config, day, output):
         json.dumps(config["contract"], sort_keys=True).encode()
     ).hexdigest()
     if not config["contract"].get("verified") or not period.get("verified"):
-        result["reason"] = (
-            "数易筛选、日期边界和 release 周期尚未核实，禁止发布推测指标。"
-        )
+        result["reason"] = "数易筛选、日期边界和 release 周期尚未核实，禁止发布推测指标。"
         return result
     contract = config["contract"]
     if not contract.get("reference") or not period.get("evidence"):
-        raise ValueError(
-            "Verified configuration requires contract reference and period evidence"
-        )
+        raise ValueError("Verified configuration requires contract reference and period evidence")
     if not period.get("job_ids") or not period.get("manifest"):
         result.update(
             status="pending_simulation",
@@ -92,9 +84,7 @@ def evaluate(config, day, output):
     from scripts.ra_repro_validate_orion import validate
 
     start = int(dt.datetime.fromisoformat(period["case_start"]).timestamp() * 1000)
-    stop = int(
-        dt.datetime.fromisoformat(period["case_end_exclusive"]).timestamp() * 1000
-    )
+    stop = int(dt.datetime.fromisoformat(period["case_end_exclusive"]).timestamp() * 1000)
     attrs = list(contract["query_attrs"]) + [
         {
             "attr_id": "version",
@@ -145,9 +135,7 @@ def evaluate(config, day, output):
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "manifest.csv"
         selected.to_csv(path, index=False)
-        metrics = validate(
-            period["job_ids"], path, period["release"], os.environ["ORION_TOKEN"]
-        )
+        metrics = validate(period["job_ids"], path, period["release"], os.environ["ORION_TOKEN"])
     result["metrics"] = metrics
     cohorts = metrics["cohorts"]
     numerator = sum(int(v["road_behavior_matches"]) for v in cohorts.values())
@@ -163,9 +151,7 @@ def evaluate(config, day, output):
         and not metrics.get("cross_job_result_conflict_count")
         and denominator == len(issue_ids)
     )
-    result.update(
-        status="complete" if complete else "incomplete_simulation", published=complete
-    )
+    result.update(status="complete" if complete else "incomplete_simulation", published=complete)
     result["reason"] = (
         "复现率为有效仿真与路测触发行为一致的比例；自动场景应触发，人工场景应不触发。"
         if complete
@@ -246,15 +232,11 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--config", required=True, type=Path)
     p.add_argument("--output", required=True, type=Path)
-    p.add_argument(
-        "--as-of", type=dt.date.fromisoformat, default=dt.datetime.now(TZ).date()
-    )
+    p.add_argument("--as-of", type=dt.date.fromisoformat, default=dt.datetime.now(TZ).date())
     a = p.parse_args()
     r = execute(a.config, a.output, a.as_of)
     print(
-        json.dumps(
-            {k: r.get(k) for k in ("status", "published", "reason")}, ensure_ascii=False
-        )
+        json.dumps({k: r.get(k) for k in ("status", "published", "reason")}, ensure_ascii=False)
         if r
         else "Another check is running"
     )

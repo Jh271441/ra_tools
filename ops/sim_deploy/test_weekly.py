@@ -58,9 +58,7 @@ class WeeklyTests(unittest.TestCase):
         now = dt.datetime(2026, 9, 29, 10, tzinfo=tz)
         self.assertTrue(scheduler.due(now, {}))
         self.assertFalse(scheduler.due(now, {"week": "2026-09-28", "attempts": 3}))
-        self.assertFalse(
-            scheduler.due(now, {"week": "2026-09-28", "status": "complete"})
-        )
+        self.assertFalse(scheduler.due(now, {"week": "2026-09-28", "status": "complete"}))
         self.assertFalse(
             scheduler.due(
                 now,

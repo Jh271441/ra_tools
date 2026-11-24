@@ -7,3 +7,6 @@ frontend/dist/
 data/*.db
 data/*.db-*
 .env
+
+data/*.lock
+data/dev.db*

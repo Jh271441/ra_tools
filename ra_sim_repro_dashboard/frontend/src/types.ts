@@ -1,12 +1,21 @@
 import type { ReproductionSummary } from './types/reproduction';
 
 export interface ResultPublication {
-  primary_job_id: number; scenario_count: number; valid_scenario_count: number;
-  excluded_scenario_ids: string[]; coverage: number; population_hash: string;
+  primary_job_id: number;
+  scenario_count: number;
+  valid_scenario_count: number;
+  excluded_scenario_ids: string[];
+  coverage: number;
+  population_hash: string;
   comparison_conflicts: number;
-  automatic?: boolean; minimum_coverage?: number; issue_coverage?: number;
-  execution_failed_count?: number; quality_failed_count?: number;
-  issue_count?: number; valid_issue_count?: number; abnormal_issue_count?: number;
+  automatic?: boolean;
+  minimum_coverage?: number;
+  issue_coverage?: number;
+  execution_failed_count?: number;
+  quality_failed_count?: number;
+  issue_count?: number;
+  valid_issue_count?: number;
+  abnormal_issue_count?: number;
   source_job_ids?: number[];
 }
 
@@ -45,10 +54,16 @@ export interface KpiSummary {
   collection_scope?: CollectionScope | null;
   reproduction?: ReproductionSummary;
   evaluation_scope?: {
-    complete: boolean; covered: number; eligible: number;
-    precision: number | null; recall: number | null; repro_rate: number | null;
-    road_precision: number | null; road_recall: number | null;
-    road_counts: Record<string, number> | null; sim_counts: Record<string, number>;
+    complete: boolean;
+    covered: number;
+    eligible: number;
+    precision: number | null;
+    recall: number | null;
+    repro_rate: number | null;
+    road_precision: number | null;
+    road_recall: number | null;
+    road_counts: Record<string, number> | null;
+    sim_counts: Record<string, number>;
   };
   version_key: string;
   label: string;

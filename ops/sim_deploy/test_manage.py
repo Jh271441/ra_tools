@@ -4,9 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-s = importlib.util.spec_from_file_location(
-    "manage", Path(__file__).with_name("manage.py")
-)
+s = importlib.util.spec_from_file_location("manage", Path(__file__).with_name("manage.py"))
 m = importlib.util.module_from_spec(s)
 s.loader.exec_module(m)
 

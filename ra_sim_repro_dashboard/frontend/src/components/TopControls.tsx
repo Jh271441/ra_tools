@@ -13,12 +13,22 @@ interface TopControlsProps {
   showRefresh?: boolean;
 }
 
-export function TopControls({ dark, onToggleDark, onRefresh, refreshing, compact = false, className, showRefresh = true }: TopControlsProps) {
+export function TopControls({
+  dark,
+  onToggleDark,
+  onRefresh,
+  refreshing,
+  compact = false,
+  className,
+  showRefresh = true,
+}: TopControlsProps) {
   const { t, i18n } = useTranslation();
   const nextLang = i18n.language === 'zh' ? 'en' : 'zh';
 
   return (
-    <div className={cn('flex flex-wrap items-center gap-2', compact && 'grid grid-cols-1', className)}>
+    <div
+      className={cn('flex flex-wrap items-center gap-2', compact && 'grid grid-cols-1', className)}
+    >
       <Button
         variant={compact ? 'ghost' : 'outline'}
         size={compact ? 'icon' : 'sm'}
@@ -44,18 +54,22 @@ export function TopControls({ dark, onToggleDark, onRefresh, refreshing, compact
         {dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
         {!compact ? t('theme') : null}
       </Button>
-      {showRefresh && <Button
-        variant={compact ? 'ghost' : 'default'}
-        size={compact ? 'icon' : 'sm'}
-        className={cn(compact ? 'sidebar-icon-button text-primary' : 'flex-[1.4] whitespace-nowrap')}
-        onClick={onRefresh}
-        disabled={refreshing}
-        title={refreshing ? t('refreshing') : t('refresh')}
-        aria-label={refreshing ? t('refreshing') : t('refresh')}
-      >
-        <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
-        {!compact ? (refreshing ? t('refreshing') : t('refresh')) : null}
-      </Button>}
+      {showRefresh && (
+        <Button
+          variant={compact ? 'ghost' : 'default'}
+          size={compact ? 'icon' : 'sm'}
+          className={cn(
+            compact ? 'sidebar-icon-button text-primary' : 'flex-[1.4] whitespace-nowrap',
+          )}
+          onClick={onRefresh}
+          disabled={refreshing}
+          title={refreshing ? t('refreshing') : t('refresh')}
+          aria-label={refreshing ? t('refreshing') : t('refresh')}
+        >
+          <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+          {!compact ? (refreshing ? t('refreshing') : t('refresh')) : null}
+        </Button>
+      )}
     </div>
   );
 }

@@ -24,7 +24,9 @@ async def lifespan(app: FastAPI):
             try:
                 await asyncio.to_thread(tick)
             except Exception:
-                logging.getLogger(__name__).exception("Release monitor tick failed; retry next interval")
+                logging.getLogger(__name__).exception(
+                    "Release monitor tick failed; retry next interval"
+                )
             await asyncio.sleep(900)
 
     task = (
@@ -34,7 +36,10 @@ async def lifespan(app: FastAPI):
         else None
     )
     from app.services import evaluation_worker
-    evaluation_task = asyncio.create_task(evaluation_worker.monitor()) if evaluation_worker.enabled() else None
+
+    evaluation_task = (
+        asyncio.create_task(evaluation_worker.monitor()) if evaluation_worker.enabled() else None
+    )
     try:
         yield
     finally:
@@ -65,4 +70,5 @@ app.add_middleware(
 app.include_router(router)
 app.include_router(release_router)
 from app.api.evaluation_routes import router as evaluation_router
+
 app.include_router(evaluation_router)

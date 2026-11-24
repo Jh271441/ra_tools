@@ -4,7 +4,11 @@ export class ViewCache<T> {
   private ttl: number;
   private limit: number;
   private now: () => number;
-  constructor(ttl = 120_000, limit = 8, now = Date.now) { this.ttl = ttl; this.limit = limit; this.now = now; }
+  constructor(ttl = 120_000, limit = 8, now = Date.now) {
+    this.ttl = ttl;
+    this.limit = limit;
+    this.now = now;
+  }
 
   get(key: string): T | null {
     const value = this.values.get(key);
@@ -25,7 +29,9 @@ export class ViewCache<T> {
     return stable;
   }
 
-  clear() { this.values.clear(); }
+  clear() {
+    this.values.clear();
+  }
 }
 
 interface ViewState<T> {
@@ -36,7 +42,10 @@ interface ViewState<T> {
   error: string;
 }
 
-export interface ReadOptions { fresh?: boolean; force?: boolean }
+export interface ReadOptions {
+  fresh?: boolean;
+  force?: boolean;
+}
 
 /** Owns selection/request races as well as the write guard for cached displays. */
 export class LiveView<T> {
@@ -47,7 +56,11 @@ export class LiveView<T> {
   private cache: ViewCache<T>;
   private loader: (key: string, options: ReadOptions) => Promise<T>;
 
-  constructor(key: string, cache: ViewCache<T>, loader: (key: string, options: ReadOptions) => Promise<T>) {
+  constructor(
+    key: string,
+    cache: ViewCache<T>,
+    loader: (key: string, options: ReadOptions) => Promise<T>,
+  ) {
     this.cache = cache;
     this.loader = loader;
     this.state = { key, data: cache.get(key), verified: false, loading: false, error: '' };
@@ -56,12 +69,19 @@ export class LiveView<T> {
   getSnapshot = () => this.state;
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
-    return () => { this.listeners.delete(listener); };
+    return () => {
+      this.listeners.delete(listener);
+    };
   };
   private update(next: ViewState<T>) {
-    if (Object.keys(next).every(key => next[key as keyof ViewState<T>] === this.state[key as keyof ViewState<T>])) return;
+    if (
+      Object.keys(next).every(
+        (key) => next[key as keyof ViewState<T>] === this.state[key as keyof ViewState<T>],
+      )
+    )
+      return;
     this.state = next;
-    this.listeners.forEach(listener => listener());
+    this.listeners.forEach((listener) => listener());
   }
 
   select(key: string) {
@@ -70,7 +90,10 @@ export class LiveView<T> {
     this.update({ key, data: this.cache.get(key), verified: false, loading: false, error: '' });
   }
 
-  cancel = () => { this.generation++; this.pending = null; };
+  cancel = () => {
+    this.generation++;
+    this.pending = null;
+  };
 
   invalidate() {
     this.cancel();
@@ -91,7 +114,13 @@ export class LiveView<T> {
         this.update({ key, data, verified: true, loading: false, error: '' });
         return data;
       } catch (error) {
-        if (id === this.generation) this.update({ ...this.state, loading: false, verified: false, error: error instanceof Error ? error.message : String(error) });
+        if (id === this.generation)
+          this.update({
+            ...this.state,
+            loading: false,
+            verified: false,
+            error: error instanceof Error ? error.message : String(error),
+          });
         return null;
       } finally {
         if (id === this.generation) this.pending = null;
@@ -110,12 +139,21 @@ interface PollEnvironment {
 }
 
 /** One request at a time; resume immediately on visibility, with bounded fast polling. */
-export function pollVisible<T>(load: () => Promise<T | null>, refreshing: (value: T) => boolean, env: PollEnvironment) {
+export function pollVisible<T>(
+  load: () => Promise<T | null>,
+  refreshing: (value: T) => boolean,
+  env: PollEnvironment,
+) {
   let stopped = false;
   let running = false;
   let fastReads = 0;
   let timer: unknown;
-  const clear = () => { if (timer !== undefined) { env.clear(timer); timer = undefined; } };
+  const clear = () => {
+    if (timer !== undefined) {
+      env.clear(timer);
+      timer = undefined;
+    }
+  };
   const tick = async () => {
     if (stopped || env.hidden()) return;
     if (running) return;
@@ -125,12 +163,22 @@ export function pollVisible<T>(load: () => Promise<T | null>, refreshing: (value
     if (stopped || env.hidden()) return;
     const fast = value != null && refreshing(value) && fastReads < 3;
     fastReads = fast ? fastReads + 1 : value && !refreshing(value) ? 0 : fastReads;
-    timer = env.schedule(() => { timer = undefined; void tick(); }, fast ? 5_000 : 30_000);
+    timer = env.schedule(
+      () => {
+        timer = undefined;
+        void tick();
+      },
+      fast ? 5_000 : 30_000,
+    );
   };
   const unlisten = env.listen(() => {
     clear();
     if (!env.hidden()) void tick();
   });
   void tick();
-  return () => { stopped = true; clear(); unlisten(); };
+  return () => {
+    stopped = true;
+    clear();
+    unlisten();
+  };
 }

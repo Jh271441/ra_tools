@@ -9,7 +9,14 @@ from sqlalchemy.orm import Session
 
 from app.config import config_hash, load_versions_config
 from app.metrics import as_float, classify_result, first_present, normalize_reasons, summarize_rows
-from app.models import DashboardSnapshot, Issue, RefreshJob, Scenario, ScenarioVersionResult, Version
+from app.models import (
+    DashboardSnapshot,
+    Issue,
+    RefreshJob,
+    Scenario,
+    ScenarioVersionResult,
+    Version,
+)
 from app.services.cache import cache
 from app.services.issue_client import IssueClient
 from app.services.report_artifacts import (
@@ -19,7 +26,11 @@ from app.services.report_artifacts import (
     load_online_release_metrics,
     load_release_metrics,
 )
-from app.services.scenario_client import ScenarioClient, build_source_scenario_index, source_counts_from_index
+from app.services.scenario_client import (
+    ScenarioClient,
+    build_source_scenario_index,
+    source_counts_from_index,
+)
 from app.services.sim_result_client import DataSourceUnavailable, SimResultClient
 
 
@@ -133,14 +144,18 @@ def _refresh_dashboard(job_id: str, db: Session) -> None:
             )
             if metrics_warning:
                 refresh_warnings.append(f"{version.version_key}: {metrics_warning}")
-            used_report_artifacts = used_report_artifacts or bool(
-                source_counts and metadata.get("source_manifest")
-            ) or bool(release_metrics)
+            used_report_artifacts = (
+                used_report_artifacts
+                or bool(source_counts and metadata.get("source_manifest"))
+                or bool(release_metrics)
+            )
             metadata = {
                 **metadata,
                 "_source_gt_status": (
-                    "manifest" if metadata.get("source_manifest") and source_counts
-                    else "live" if source_counts
+                    "manifest"
+                    if metadata.get("source_manifest") and source_counts
+                    else "live"
+                    if source_counts
                     else "config_fallback"
                 ),
                 "_source_gt_live": source_counts,
@@ -205,7 +220,9 @@ def _refresh_dashboard(job_id: str, db: Session) -> None:
                     or ""
                 )
                 scenario.issue_id = issue_id
-                scenario.signature = str(raw.get("signature") or source_info.get("signature") or scenario.signature or "")
+                scenario.signature = str(
+                    raw.get("signature") or source_info.get("signature") or scenario.signature or ""
+                )
                 scenario.raw_info = {
                     "scenario_id": scenario_id,
                     "scenario_name": scenario.scenario_name,
@@ -262,7 +279,9 @@ def _refresh_dashboard(job_id: str, db: Session) -> None:
         issues = issue_client.query_issues(sorted(all_issue_ids))
         for issue_id, issue_payload in issues.items():
             issue = db.get(Issue, issue_id) or Issue(issue_id=issue_id)
-            issue.issue_topic = str(issue_payload.get("issue_topic") or issue_payload.get("title") or "")
+            issue.issue_topic = str(
+                issue_payload.get("issue_topic") or issue_payload.get("title") or ""
+            )
             issue.status = str(issue_payload.get("status") or "")
             issue.priority = str(issue_payload.get("priority") or "")
             issue.poi = str(issue_payload.get("poi") or "")
@@ -308,11 +327,15 @@ def build_snapshot(db: Session, payload: dict[str, Any] | None = None) -> dict[s
     versions = db.execute(versions_stmt.order_by(Version.sort_order)).scalars().all()
     comparison = []
     for version in versions:
-        rows = db.execute(
-            select(ScenarioVersionResult).where(
-                ScenarioVersionResult.version_key == version.version_key
+        rows = (
+            db.execute(
+                select(ScenarioVersionResult).where(
+                    ScenarioVersionResult.version_key == version.version_key
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         summary = _summary_from_live_rows(rows, version.metadata_json) if rows else None
         summary = summary or _summary_from_metadata(version.metadata_json) or summarize_rows(rows)
         online_source_gt = load_online_release_metrics(payload, version.version_key)
@@ -320,9 +343,7 @@ def build_snapshot(db: Session, payload: dict[str, Any] | None = None) -> dict[s
             # Full Trail populations are authoritative for online P/R.  The
             # release simulation manifest must not become a class-weight proxy.
             summary["source_gt"] = online_source_gt
-            same_version_cohorts = (summary.get("sim_estimate") or {}).get(
-                "same_version_cohorts"
-            )
+            same_version_cohorts = (summary.get("sim_estimate") or {}).get("same_version_cohorts")
             if same_version_cohorts:
                 summary["sim_estimate"] = {
                     **(summary.get("sim_estimate") or {}),
@@ -443,9 +464,7 @@ def _summary_from_metadata(metadata: dict[str, Any] | None) -> dict[str, Any] | 
         estimated_fn = max(source_positive - estimated_tp, 0)
 
     repro_rate = _float_value(
-        sim.get("sim_repro_rate")
-        or sim.get("repro_rate")
-        or sim.get("auto_trigger_repro_rate")
+        sim.get("sim_repro_rate") or sim.get("repro_rate") or sim.get("auto_trigger_repro_rate")
     )
     auto_reproduced = _int_value(
         sim.get("auto_reproduced")
@@ -491,7 +510,9 @@ def _summary_from_metadata(metadata: dict[str, Any] | None) -> dict[str, Any] | 
     }
 
 
-def _summary_from_live_rows(rows: list[ScenarioVersionResult], metadata: dict[str, Any] | None) -> dict[str, Any] | None:
+def _summary_from_live_rows(
+    rows: list[ScenarioVersionResult], metadata: dict[str, Any] | None
+) -> dict[str, Any] | None:
     if not rows:
         return None
     summary = summarize_rows(rows)
@@ -558,9 +579,8 @@ def _summary_from_release_metrics(
         + _int_value(positive_manual.get("not_triggered"))
     )
     if "not_triggered" not in positive_manual:
-        road_behavior_reproduced += (
-            _int_value(positive_manual.get("evaluated"))
-            - _int_value(positive_manual.get("triggered"))
+        road_behavior_reproduced += _int_value(positive_manual.get("evaluated")) - _int_value(
+            positive_manual.get("triggered")
         )
     tp = _int_value(truth.get("tp"))
     fp = _int_value(truth.get("fp"))
@@ -620,15 +640,14 @@ def _summary_from_release_metrics(
         "f1": f1,
         "specificity": specificity,
         "accuracy": accuracy,
-        "positive_auto_repro_rate": _float_value(
-            positive_auto.get("road_behavior_reproduction")
-        ) or 0.0,
-        "negative_auto_repro_rate": _float_value(
-            negative_auto.get("road_behavior_reproduction")
-        ) or 0.0,
+        "positive_auto_repro_rate": _float_value(positive_auto.get("road_behavior_reproduction"))
+        or 0.0,
+        "negative_auto_repro_rate": _float_value(negative_auto.get("road_behavior_reproduction"))
+        or 0.0,
         "positive_manual_repro_rate": _float_value(
             positive_manual.get("road_behavior_reproduction")
-        ) or 0.0,
+        )
+        or 0.0,
         "evaluated_cases": evaluated,
         "dpe_coverage": _rate(dpe_covered, completed),
         "quality_gate_passed": bool(quality.get("gate_passed_so_far", True)),
@@ -699,11 +718,7 @@ def _project_same_version_metrics(
                 "reason": f"invalid_{cohort_name}_cohort",
                 "estimation_method": "same_version_full_cohort_poststratification",
             }
-        if (
-            expected <= 0
-            or evaluated != expected
-            or not 0.0 <= trigger_rate <= 1.0
-        ):
+        if expected <= 0 or evaluated != expected or not 0.0 <= trigger_rate <= 1.0:
             return {
                 "available": False,
                 "reason": f"incomplete_{cohort_name}_cohort",
@@ -713,9 +728,7 @@ def _project_same_version_metrics(
         rates[cohort_name] = trigger_rate
 
     online_population = precision_auto_tp + precision_auto_fp + recall_manual_fn
-    population_coverage = (
-        artifact_population / online_population if online_population else 0.0
-    )
+    population_coverage = artifact_population / online_population if online_population else 0.0
     base = {
         "estimation_method": "same_version_full_cohort_poststratification",
         "artifact_population": artifact_population,
@@ -725,11 +738,7 @@ def _project_same_version_metrics(
         "maximum_population_coverage": maximum_population_coverage,
         "cohort_trigger_rates": rates,
     }
-    if not (
-        minimum_population_coverage
-        <= population_coverage
-        <= maximum_population_coverage
-    ):
+    if not (minimum_population_coverage <= population_coverage <= maximum_population_coverage):
         return {
             **base,
             "available": False,
@@ -739,39 +748,25 @@ def _project_same_version_metrics(
     positive_auto_rate = rates["positive_auto"]
     negative_auto_rate = rates["negative_auto"]
     positive_manual_rate = rates["positive_manual"]
-    precision_tp = (
-        precision_auto_tp * positive_auto_rate
-        + recall_manual_fn * positive_manual_rate
-    )
+    precision_tp = precision_auto_tp * positive_auto_rate + recall_manual_fn * positive_manual_rate
     precision_fp = precision_auto_fp * negative_auto_rate
-    recall_tp = (
-        recall_auto_tp * positive_auto_rate
-        + recall_manual_fn * positive_manual_rate
-    )
+    recall_tp = recall_auto_tp * positive_auto_rate + recall_manual_fn * positive_manual_rate
     positive_auto_not_triggered = recall_auto_tp * (1 - positive_auto_rate)
     positive_manual_not_triggered = recall_manual_fn * (1 - positive_manual_rate)
     negative_auto_not_triggered = precision_auto_fp * (1 - negative_auto_rate)
-    business_recall_fn = (
-        positive_auto_not_triggered + positive_manual_not_triggered
-    )
+    business_recall_fn = positive_auto_not_triggered + positive_manual_not_triggered
     trigger_repro_fn = business_recall_fn + negative_auto_not_triggered
 
     online_precision = _rate(precision_auto_tp, precision_auto_tp + precision_auto_fp)
     online_recall = _rate(recall_auto_tp, recall_auto_tp + recall_manual_fn)
     sim_precision = (
-        precision_tp / (precision_tp + precision_fp)
-        if precision_tp + precision_fp
-        else 0.0
+        precision_tp / (precision_tp + precision_fp) if precision_tp + precision_fp else 0.0
     )
     sim_business_recall = (
-        recall_tp / (recall_tp + business_recall_fn)
-        if recall_tp + business_recall_fn
-        else 0.0
+        recall_tp / (recall_tp + business_recall_fn) if recall_tp + business_recall_fn else 0.0
     )
     sim_all_cohort_trigger_recall = (
-        recall_tp / (recall_tp + trigger_repro_fn)
-        if recall_tp + trigger_repro_fn
-        else 0.0
+        recall_tp / (recall_tp + trigger_repro_fn) if recall_tp + trigger_repro_fn else 0.0
     )
     return {
         **base,
@@ -792,9 +787,7 @@ def _project_same_version_metrics(
         "sim_all_cohort_trigger_recall": sim_all_cohort_trigger_recall,
         "precision_gap": sim_precision - online_precision,
         "business_recall_gap": sim_business_recall - online_recall,
-        "all_cohort_trigger_recall_gap": (
-            sim_all_cohort_trigger_recall - online_recall
-        ),
+        "all_cohort_trigger_recall_gap": (sim_all_cohort_trigger_recall - online_recall),
     }
 
 

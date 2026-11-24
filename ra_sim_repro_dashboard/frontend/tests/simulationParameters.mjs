@@ -1,9 +1,19 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { test } from 'node:test';
-import { buildSimulationParameters, SIM_EXTRA_ARGS, ANIMATION_CONFIG } from '../src/lib/simulationParameters.ts';
+import {
+  buildSimulationParameters,
+  SIM_EXTRA_ARGS,
+  ANIMATION_CONFIG,
+} from '../src/lib/simulationParameters.ts';
 
-const input = { binaryId: '1810741', sourceKind: 'ids', source: '40064248:0, 40064242:0，40064248:0', animation: false, concurrency: '3000' };
+const input = {
+  binaryId: '1810741',
+  sourceKind: 'ids',
+  source: '40064248:0, 40064242:0，40064248:0',
+  animation: false,
+  concurrency: '3000',
+};
 test('blank form still exposes full baseline templates without inventing a binary or scenario', () => {
   const generated = buildSimulationParameters({ ...input, binaryId: '', source: '' });
   const preview = JSON.parse(generated.singleJobJsonPreview);
@@ -27,14 +37,26 @@ test('single-file and batch import use different root shapes with identical job 
   assert.equal(buildSimulationParameters({ ...input, binaryId: '' }).singleJobJson, '');
 });
 function split(value) {
-  const result = spawnSync('python3', ['-c', 'import sys,shlex,json;print(json.dumps(shlex.split(sys.stdin.read())))'], { input: value, encoding: 'utf8' });
+  const result = spawnSync(
+    'python3',
+    ['-c', 'import sys,shlex,json;print(json.dumps(shlex.split(sys.stdin.read())))'],
+    { input: value, encoding: 'utf8' },
+  );
   assert.equal(result.status, 0, result.stderr);
   return JSON.parse(result.stdout);
 }
 test('native Orion import uses one explicit binary and deduplicated scenarios, not a stale default label', () => {
   const generated = buildSimulationParameters(input);
   const [job] = JSON.parse(generated.jobJson);
-  assert.deepEqual(job.generator_params, { input_type: 'ids', approved_scenarios_only: false, ids: ['40064248:0', '40064242:0'], labels: [], scenario_sets: [], labels_not: [], scenario_tags: [] });
+  assert.deepEqual(job.generator_params, {
+    input_type: 'ids',
+    approved_scenarios_only: false,
+    ids: ['40064248:0', '40064242:0'],
+    labels: [],
+    scenario_sets: [],
+    labels_not: [],
+    scenario_tags: [],
+  });
   assert.equal(job.common_params.binary_id, 1810741);
   assert.equal(job.common_params.launch_mode, 'binary');
   assert.equal(job.launch_job_params.max_concurrency, 3000);
@@ -68,11 +90,19 @@ test('quoted labels stay a single argument and cannot add flags or shell substit
   const generated = buildSimulationParameters({ ...input, sourceKind: 'label', source });
   const tokens = split(generated.jobArgs);
   assert.equal(tokens[tokens.indexOf('--labels') + 1], source);
-  assert.equal(tokens.filter(t => t === '--override-enabled-modules').length, 1);
+  assert.equal(tokens.filter((t) => t === '--override-enabled-modules').length, 1);
   assert.deepEqual(JSON.parse(generated.jobJson)[0].generator_params.labels, [source]);
 });
 test('invalid identities or concurrency cannot produce a launchable Job; generic Sim Plan remains available', () => {
-  for (const patch of [{ binaryId: '' }, { binaryId: '0' }, { source: '' }, { source: '40064248 --foo' }, { concurrency: '0' }, { concurrency: '3001' }, { concurrency: '1.5' }]) {
+  for (const patch of [
+    { binaryId: '' },
+    { binaryId: '0' },
+    { source: '' },
+    { source: '40064248 --foo' },
+    { concurrency: '0' },
+    { concurrency: '3001' },
+    { concurrency: '1.5' },
+  ]) {
     const generated = buildSimulationParameters({ ...input, ...patch });
     assert.ok(generated.errors.length);
     assert.equal(generated.jobJson, '');
@@ -82,7 +112,10 @@ test('invalid identities or concurrency cannot produce a launchable Job; generic
 });
 test('baseline adds neither VLM nor experimental replay or animation unless requested', () => {
   const generated = buildSimulationParameters(input);
-  assert.doesNotMatch(generated.simPlanArgs, /vlm|sim_state_recovery_level|independent_replay|reencode-h265|--create-animation/);
+  assert.doesNotMatch(
+    generated.simPlanArgs,
+    /vlm|sim_state_recovery_level|independent_replay|reencode-h265|--create-animation/,
+  );
   assert.equal(JSON.parse(generated.jobJson)[0].sim_common_params.create_animation, false);
   const extraTokens = split(JSON.parse(generated.singleJobJson).common_params.extra_args);
   assert.equal(extraTokens[extraTokens.indexOf('--ares-animation-config') + 1], ANIMATION_CONFIG);
@@ -91,7 +124,10 @@ test('new exports use native feature history, complete warmup and fresh inferenc
   const generated = buildSimulationParameters(input);
   const single = JSON.parse(generated.singleJobJson);
   assert.equal(single.sim_common_params.use_deepnet_cache, false);
-  assert.doesNotMatch(single.sim_common_params.sim_extra_args, /old_stuck_feature_extractor_length_only_in_sim/);
+  assert.doesNotMatch(
+    single.sim_common_params.sim_extra_args,
+    /old_stuck_feature_extractor_length_only_in_sim/,
+  );
   for (const value of [generated.jobArgs, generated.simPlanArgs, single.common_params.extra_args]) {
     const tokens = split(value);
     assert.equal(tokens[tokens.indexOf('--override-warmup-ms') + 1], '15000');
@@ -99,7 +135,13 @@ test('new exports use native feature history, complete warmup and fresh inferenc
   for (const value of [generated.jobArgs, generated.simPlanArgs]) {
     const tokens = split(value);
     assert.equal(tokens[tokens.indexOf('--use-deepnet-cache') + 1], '0');
-    assert.match(tokens[tokens.indexOf('--sim-extra-args') + 1], /--sim_disable_loading_assist_topic/);
-    assert.doesNotMatch(tokens[tokens.indexOf('--sim-extra-args') + 1], /old_stuck_feature_extractor_length_only_in_sim/);
+    assert.match(
+      tokens[tokens.indexOf('--sim-extra-args') + 1],
+      /--sim_disable_loading_assist_topic/,
+    );
+    assert.doesNotMatch(
+      tokens[tokens.indexOf('--sim-extra-args') + 1],
+      /old_stuck_feature_extractor_length_only_in_sim/,
+    );
   }
 });

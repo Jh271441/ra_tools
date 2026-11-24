@@ -38,12 +38,7 @@ checks={c["key"]:c for c in r["checks"]}
 assert checks["queue"]["extra"]["pending_jobs"]==0, "Refresh queue not empty"
 assert checks["last_refresh"]["extra"].get("job_status") not in ("queued","running"), "Refresh still running"
 """
-    command = (
-        "import json\nCONFIG=json.load(open("
-        + repr(root + "/target.json")
-        + "))\n"
-        + probe
-    )
+    command = "import json\nCONFIG=json.load(open(" + repr(root + "/target.json") + "))\n" + probe
     remote("python3 -c " + q(command))
     names = remote(ctl + " status")
     programs = [
@@ -57,9 +52,7 @@ assert checks["last_refresh"]["extra"].get("job_status") not in ("queued","runni
         frozen = True
         remote(ctl + " stop " + " ".join(programs))
         dump = (
-            remote(
-                f"python3 {q(root + '/manage.py')} --config {q(root + '/target.json')} backup"
-            )
+            remote(f"python3 {q(root + '/manage.py')} --config {q(root + '/target.json')} backup")
             .strip()
             .splitlines()[-1]
         )
@@ -83,15 +76,11 @@ print(dest)
                 (bundle, "source.tar.gz"),
                 (root + "/secrets.json", "secrets.json"),
             ]:
-                subprocess.run(
-                    ["scp", "-q", host + ":" + q(path), str(temp / name)], check=True
-                )
+                subprocess.run(["scp", "-q", host + ":" + q(path), str(temp / name)], check=True)
             optional = {}
             for name in ("weekly.json", "weekly-schedule-state.json"):
                 if (
-                    remote(
-                        "test -f " + q(root + "/" + name) + " && echo yes || true"
-                    ).strip()
+                    remote("test -f " + q(root + "/" + name) + " && echo yes || true").strip()
                     == "yes"
                 ):
                     subprocess.run(
@@ -113,12 +102,7 @@ print(dest)
                             "Use source-relative manifest paths before migrating weekly configuration"
                         )
             weekly_data = None
-            if (
-                remote(
-                    "test -d " + q(root + "/weekly") + " && echo yes || true"
-                ).strip()
-                == "yes"
-            ):
+            if remote("test -d " + q(root + "/weekly") + " && echo yes || true").strip() == "yes":
                 remote(
                     "tar -czf "
                     + q(root + "/backups/weekly-data.tar.gz")

@@ -64,14 +64,20 @@ class ScenarioClient:
         return result
 
 
-def build_source_scenario_index(metadata: dict[str, Any], client: ScenarioClient) -> dict[str, dict[str, Any]]:
+def build_source_scenario_index(
+    metadata: dict[str, Any], client: ScenarioClient
+) -> dict[str, dict[str, Any]]:
     scenario_sets = metadata.get("scenario_sets") or {}
     label_specs = [
         ("positive_auto", True, scenario_sets.get("positive", {}).get("labels") or []),
         ("positive_manual", True, scenario_sets.get("positive", {}).get("manual_labels") or []),
         ("negative_auto", False, scenario_sets.get("negative", {}).get("labels") or []),
         ("negative_manual", False, scenario_sets.get("negative", {}).get("manual_labels") or []),
-        ("negative_normal_stop", False, scenario_sets.get("negative", {}).get("normal_stop_labels") or []),
+        (
+            "negative_normal_stop",
+            False,
+            scenario_sets.get("negative", {}).get("normal_stop_labels") or [],
+        ),
     ]
     index: dict[str, dict[str, Any]] = {}
     for source_group, road_triggered, labels in label_specs:
@@ -93,10 +99,14 @@ def build_source_scenario_index(metadata: dict[str, Any], client: ScenarioClient
             index[scenario_id] = {
                 **existing,
                 "scenario_id": scenario_id,
-                "scenario_name": _first(row, "name", "scenario_name") or existing.get("scenario_name", ""),
-                "issue_id": _first(row, "issue_id", "disengage_info_id") or existing.get("issue_id"),
+                "scenario_name": _first(row, "name", "scenario_name")
+                or existing.get("scenario_name", ""),
+                "issue_id": _first(row, "issue_id", "disengage_info_id")
+                or existing.get("issue_id"),
                 "signature": _first(row, "signature") or existing.get("signature", ""),
-                "road_triggered": road_triggered if "road_triggered" not in existing else existing["road_triggered"],
+                "road_triggered": road_triggered
+                if "road_triggered" not in existing
+                else existing["road_triggered"],
                 "source_groups": source_groups,
                 "source_labels": source_labels,
                 "raw_source": row,

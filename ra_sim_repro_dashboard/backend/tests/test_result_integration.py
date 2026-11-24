@@ -67,9 +67,7 @@ def fixture_data():
 
 
 def fail(export, index):
-    export["rows"][index].update(
-        task_status=4, task_outcome="Planner crashed", **{TRIGGER: None}
-    )
+    export["rows"][index].update(task_status=4, task_outcome="Planner crashed", **{TRIGGER: None})
     export["progress"].update(completed=1, failed=1)
 
 
@@ -77,9 +75,7 @@ def test_same_task_two_executions_count_population_once():
     plan, exports = fixture_data()
     r = integrate(plan, exports, 100)
     assert (
-        r["scenario_count"] == 2
-        and len(r["results"]) == 2
-        and r["subset_summary"]["eligible"] == 2
+        r["scenario_count"] == 2 and len(r["results"]) == 2 and r["subset_summary"]["eligible"] == 2
     )
     assert r["comparison"] == {"comparable": 2, "agree": 2, "conflicts": []}
     assert r["quality_gate_passed"]

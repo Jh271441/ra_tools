@@ -8,8 +8,12 @@ def test_frozen_link_requires_the_exact_issue_set():
     query = "query_attrs.$0=issue_id%7Cin%7Ccn100%252Ccn200%7Ca_s"
     assert summary.issue_ids(base + query) == {"cn100", "cn200"}
     assert summary.issue_ids(None) == set()
-    for invalid in [query.replace("cn200", "cn100"), query.replace("issue_id", "version"),
-                    query + "&query_attrs.$1=foo", query.replace("cn200", "")]:
+    for invalid in [
+        query.replace("cn200", "cn100"),
+        query.replace("issue_id", "version"),
+        query + "&query_attrs.$1=foo",
+        query.replace("cn200", ""),
+    ]:
         with pytest.raises(ValueError):
             summary.issue_ids(base + invalid)
 
