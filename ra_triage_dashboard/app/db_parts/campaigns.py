@@ -2283,19 +2283,16 @@ class DatabaseCampaignMixin:
         return "unknown"
 
     def _campaign_progress_watermark(self, conn: Any) -> tuple[Any, ...] | None:
-        try:
-            row = conn.execute(
-                """
-                SELECT
-                    (SELECT revision FROM dashboard_change_revision WHERE id = 1) AS rev,
-                    (SELECT COUNT(*) FROM combined_review_progress) AS cp_n,
-                    (SELECT COALESCE(MAX(updated_at), '') FROM combined_review_progress) AS cp_m,
-                    (SELECT COUNT(*) FROM human_assignment_roles) AS hr_n,
-                    (SELECT COUNT(*) FROM label_import_suppressed_revisions) AS sup_n
-                """
-            ).fetchone()
-        except Exception:
-            return None
+        row = conn.execute(
+            """
+            SELECT
+                (SELECT revision FROM dashboard_change_revision WHERE id = 1) AS rev,
+                (SELECT COUNT(*) FROM combined_review_progress) AS cp_n,
+                (SELECT MAX(updated_at) FROM combined_review_progress) AS cp_m,
+                (SELECT COUNT(*) FROM human_assignment_roles) AS hr_n,
+                (SELECT COUNT(*) FROM label_import_suppressed_revisions) AS sup_n
+            """
+        ).fetchone()
         if row is None:
             return None
         return (
