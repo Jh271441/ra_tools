@@ -860,8 +860,8 @@ export default function App() {
         >
           <header className="sticky top-0 z-20 border-b border-border/70 bg-background/85 backdrop-blur-xl supports-[backdrop-filter]:bg-background/70 lg:hidden">
             <div className="flex flex-col gap-2.5 px-4 py-2.5">
-              <div className="flex min-w-0 items-center justify-between gap-2">
-                <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+                <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
                   <h1 className="truncate text-base font-semibold tracking-normal">
                     {page === "overview"
                       ? t("appTitle")
@@ -873,11 +873,13 @@ export default function App() {
                             ? t("autoTriage.nav")
                             : t("systemStatus")}
                   </h1>
-                  <Badge variant="secondary" className="shrink-0">
-                    <Database className="h-3 w-3" />
-                    {basis === "auto-triage" && page !== "simulation"
-                      ? t("autoTriage.autoBasis")
-                      : releaseName(current?.version_key)}
+                  <Badge variant="secondary" className="max-w-full shrink-0 truncate">
+                    <Database className="h-3 w-3 shrink-0" />
+                    <span className="truncate">
+                      {basis === "auto-triage" && page !== "simulation"
+                        ? t("autoTriage.autoBasis")
+                        : releaseName(current?.version_key)}
+                    </span>
                   </Badge>
                   {refreshJob ? (
                     <Badge
@@ -899,7 +901,7 @@ export default function App() {
                   onToggleDark={() => setDark((value) => !value)}
                   onRefresh={handleRefresh}
                   refreshing={refreshing}
-                  className="shrink-0 flex-nowrap gap-1.5 [&>button]:flex-none [&>button]:px-2.5"
+                  className="ml-auto shrink-0 flex-nowrap gap-1.5 [&>button]:flex-none [&>button]:px-2.5"
                 />
               </div>
               <nav className="grid grid-cols-2 gap-1 rounded-lg bg-muted/80 p-1 [&>button]:min-h-10 [&>button]:min-w-0 [&>button]:whitespace-normal [&>button]:px-2 [&>button]:text-xs [&>button]:leading-tight [@media(pointer:coarse)]:[&>button]:min-h-11 sm:grid-cols-4 sm:[&>button]:min-h-9 sm:[&>button]:px-3">
