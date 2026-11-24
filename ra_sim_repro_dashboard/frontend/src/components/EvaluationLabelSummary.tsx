@@ -50,7 +50,8 @@ function Label({ value }: { value: string }) {
       <code className="min-w-0 select-text break-all text-xs">{value}</code>
       <Button
         variant="ghost"
-        className="min-h-11 w-11 shrink-0 px-0"
+        size="icon"
+        className="h-6 w-8 [@media(pointer:coarse)]:h-8 [@media(pointer:coarse)]:w-11"
         aria-label={t('evaluation.summary_copy', { label: value })}
         onClick={async () => {
           try {
@@ -197,7 +198,7 @@ export function EvaluationLabelSummary({
                     <th scope="row" className="col-span-2 px-2 font-medium">
                       {t(`autoTriage.result_${row.result}`)}
                     </th>
-                    <td className="col-span-2 min-w-0 px-2 py-1">
+                    <td className="col-span-2 min-w-0 px-2 py-0.5">
                       {row.scenario_labels_all_of.map((label) => (
                         <Label key={label} value={label} />
                       ))}
