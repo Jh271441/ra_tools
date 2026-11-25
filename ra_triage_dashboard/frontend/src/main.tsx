@@ -40,6 +40,15 @@ const RdResultsPage = React.lazy(() =>
 const BatchPredictionPage = React.lazy(() =>
   import("./pages/BatchPredictionPage").then((m) => ({ default: m.BatchPredictionPage })),
 );
+const IntentSummaryPage = React.lazy(() =>
+  import("./pages/IntentSummaryPage").then((m) => ({ default: m.IntentSummaryPage })),
+);
+const IntentExperimentsPage = React.lazy(() =>
+  import("./pages/IntentExperimentsPage").then((m) => ({ default: m.IntentExperimentsPage })),
+);
+const TrailUpdatePage = React.lazy(() =>
+  import("./pages/TrailUpdatePage").then((m) => ({ default: m.TrailUpdatePage })),
+);
 
 const OWNED_PAGES = new Set<string>([
   "status",
@@ -55,6 +64,9 @@ const OWNED_PAGES = new Set<string>([
   "trail-history",
   "rd-results",
   "prediction",
+  "intent-summary",
+  "intent-experiments",
+  "trail-update",
 ]);
 
 const queryClient = new QueryClient({
@@ -259,6 +271,66 @@ const BatchPredictionIsland: React.FC = () => {
   );
 };
 
+const IntentSummaryIsland: React.FC = () => {
+  const { activePage, lang } = useWorkbenchBridge();
+  const active = activePage === "intent-summary";
+  const { effectiveSession } = useResolvedSession(active);
+  if (!active) return null;
+  return (
+    <Suspense fallback={<div className="no-asset">{lang === "en" ? "Loading…" : "加载中…"}</div>}>
+      <IntentSummaryPage
+        active={active}
+        lang={lang}
+        username={effectiveSession?.username || ""}
+        isAdmin={Boolean(effectiveSession?.is_admin)}
+      />
+    </Suspense>
+  );
+};
+
+const IntentExperimentsIsland: React.FC = () => {
+  const { activePage, lang } = useWorkbenchBridge();
+  const active = activePage === "intent-experiments";
+  const { effectiveSession } = useResolvedSession(active);
+  if (!active) return null;
+  return (
+    <Suspense fallback={<div className="no-asset">{lang === "en" ? "Loading…" : "加载中…"}</div>}>
+      <IntentExperimentsPage
+        active={active}
+        lang={lang}
+        canManageIntent={Boolean(effectiveSession?.can_manage_intent)}
+      />
+    </Suspense>
+  );
+};
+
+const TrailUpdateIsland: React.FC = () => {
+  const { activePage, lang, selectedBaselines } = useWorkbenchBridge();
+  const active = activePage === "trail-update";
+  const { effectiveSession } = useResolvedSession(active);
+  React.useEffect(() => {
+    if (active) {
+      document.getElementById("trailAttributeUpdatePage")?.classList.remove("is-loading");
+    }
+  }, [active]);
+  if (!active) return null;
+  const canWrite = Boolean(
+    effectiveSession?.verified &&
+      (effectiveSession?.can_write || effectiveSession?.is_admin) &&
+      !effectiveSession?.read_only,
+  );
+  return (
+    <Suspense fallback={<div className="no-asset">{lang === "en" ? "Loading…" : "加载中…"}</div>}>
+      <TrailUpdatePage
+        active={active}
+        lang={lang}
+        selectedBaselines={selectedBaselines}
+        canWrite={canWrite}
+      />
+    </Suspense>
+  );
+};
+
 const mountedRoots = new Map<HTMLElement, Root>();
 
 function mountIsland(container: HTMLElement | null, element: React.ReactElement) {
@@ -287,6 +359,13 @@ function mountAllIslands() {
   mountIsland(document.getElementById("trailHistoryPage"), <TrailHistoryIsland />);
   mountIsland(document.getElementById("rdResultsPage"), <RdResultsIsland />);
   mountIsland(document.getElementById("predictionPage"), <BatchPredictionIsland />);
+  mountIsland(document.getElementById("intentSummaryPage"), <IntentSummaryIsland />);
+  mountIsland(document.getElementById("intentExperimentsPage"), <IntentExperimentsIsland />);
+  const trailUpdateContainer = document.getElementById("trailAttributeUpdatePage");
+  if (trailUpdateContainer) {
+    trailUpdateContainer.classList.remove("is-loading");
+    mountIsland(trailUpdateContainer, <TrailUpdateIsland />);
+  }
 }
 
 interface ReactWorkbenchHandle {
@@ -298,7 +377,7 @@ interface ReactWorkbenchHandle {
 }
 
 const handle: ReactWorkbenchHandle = {
-  version: "vite-react-ts-strangler-3.6",
+  version: "vite-react-ts-strangler-3.7",
   ownedPages: Array.from(OWNED_PAGES),
   ownsPage: (page: string) => OWNED_PAGES.has(page),
   refreshPage: (page: string) => {
@@ -341,6 +420,15 @@ const handle: ReactWorkbenchHandle = {
       void queryClient.invalidateQueries({ queryKey: ["prediction-batch-config"] });
       void queryClient.invalidateQueries({ queryKey: ["prediction-gateway-models"] });
       void queryClient.invalidateQueries({ queryKey: ["prediction-batch-prompts"] });
+    } else if (page === "intent-summary") {
+      void queryClient.invalidateQueries({ queryKey: ["intent-datasets"] });
+      void queryClient.invalidateQueries({ queryKey: ["intent-summary"] });
+    } else if (page === "intent-experiments") {
+      void queryClient.invalidateQueries({ queryKey: ["intent-datasets"] });
+      void queryClient.invalidateQueries({ queryKey: ["intent-experiments"] });
+    } else if (page === "trail-update") {
+      void queryClient.invalidateQueries({ queryKey: ["trail-update-preview"] });
+      void queryClient.invalidateQueries({ queryKey: ["trail-issue-history"] });
     }
     window.dispatchEvent(new Event("ra:workbench-sync"));
   },

@@ -467,20 +467,28 @@ function bindEvents() {
         return;
       }
       if (state.activePage === "intent-experiments") {
-        await loadIntentExperimentAdmin({
-          datasetId: state.intentLabeling.experimentDatasetId,
-          datasetIds: state.intentLabeling.experimentDatasetIds,
-          force: true,
-        });
+        if (window.__RA_REACT_WORKBENCH__?.ownsPage?.("intent-experiments") || window.__RA_REACT_OWNED_PAGES__?.includes?.("intent-experiments")) {
+          window.__RA_REACT_WORKBENCH__?.refreshPage?.("intent-experiments");
+        } else {
+          await loadIntentExperimentAdmin({
+            datasetId: state.intentLabeling.experimentDatasetId,
+            datasetIds: state.intentLabeling.experimentDatasetIds,
+            force: true,
+          });
+        }
         showToast(t("toast.page_refreshed"));
         return;
       }
       if (state.activePage === "intent-summary") {
-        await loadIntentSummary({
-          datasetId: state.intentLabeling.summaryDatasetId,
-          datasetIds: state.intentLabeling.summaryDatasetIds,
-          force: true,
-        });
+        if (window.__RA_REACT_WORKBENCH__?.ownsPage?.("intent-summary") || window.__RA_REACT_OWNED_PAGES__?.includes?.("intent-summary")) {
+          window.__RA_REACT_WORKBENCH__?.refreshPage?.("intent-summary");
+        } else {
+          await loadIntentSummary({
+            datasetId: state.intentLabeling.summaryDatasetId,
+            datasetIds: state.intentLabeling.summaryDatasetIds,
+            force: true,
+          });
+        }
         showToast(t("toast.page_refreshed"));
         return;
       }
@@ -1314,12 +1322,14 @@ async function bootstrap() {
         experimentId: initialRoute.intentExperimentId,
       }));
     } else if (initialRoute.page === "intent-experiments") {
-      initialPageRequests.push(loadIntentExperimentAdmin({
-        datasetId: initialRoute.intentDatasetId,
-        datasetIds: (initialRoute.intentDatasetIds || []).length
-          ? initialRoute.intentDatasetIds
-          : null,
-      }));
+      if (!(window.__RA_REACT_WORKBENCH__?.ownsPage?.("intent-experiments") || window.__RA_REACT_OWNED_PAGES__?.includes?.("intent-experiments"))) {
+        initialPageRequests.push(loadIntentExperimentAdmin({
+          datasetId: initialRoute.intentDatasetId,
+          datasetIds: (initialRoute.intentDatasetIds || []).length
+            ? initialRoute.intentDatasetIds
+            : null,
+        }));
+      }
     } else if (initialRoute.page === "intent-summary") {
       state.intentLabeling.summaryExperimentId = initialRoute.intentExperimentId || "";
       state.intentLabeling.summaryAssignees = initialRoute.intentSummaryOwners || [];
@@ -1327,10 +1337,12 @@ async function bootstrap() {
       state.intentLabeling.summaryPageSize = initialRoute.intentSummaryPageSize || 20;
       state.intentLabeling.summaryAxis = initialRoute.intentSummaryAxis || "all";
       state.intentLabeling.summaryCommentQuery = initialRoute.intentSummaryCommentQuery || "";
-      initialPageRequests.push(loadIntentSummary({
-        datasetId: initialRoute.intentDatasetId,
-        datasetIds: (initialRoute.intentDatasetIds || []).length ? initialRoute.intentDatasetIds : null,
-      }));
+      if (!(window.__RA_REACT_WORKBENCH__?.ownsPage?.("intent-summary") || window.__RA_REACT_OWNED_PAGES__?.includes?.("intent-summary"))) {
+        initialPageRequests.push(loadIntentSummary({
+          datasetId: initialRoute.intentDatasetId,
+          datasetIds: (initialRoute.intentDatasetIds || []).length ? initialRoute.intentDatasetIds : null,
+        }));
+      }
     }
     if (initialRoute.page === "analysis" && !(window.__RA_REACT_WORKBENCH__?.ownsPage?.("analysis") || window.__RA_REACT_OWNED_PAGES__?.includes?.("analysis"))) {
       initialPageRequests.push(loadReviewReasonAnalysis());

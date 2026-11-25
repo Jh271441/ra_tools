@@ -16,6 +16,9 @@ export interface WorkbenchBridgeState {
     access_role: string;
     is_admin: boolean;
     can_write: boolean;
+    can_view_intent?: boolean;
+    can_manage_intent?: boolean;
+    read_only?: boolean;
   } | null;
 }
 

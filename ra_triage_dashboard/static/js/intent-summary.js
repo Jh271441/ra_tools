@@ -76,6 +76,9 @@ function renderIntentSummaryDistributions(payload, showRouting, showLaneChange) 
 }
 
 function renderIntentSummary(payload) {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("intent-summary") || window.__RA_REACT_OWNED_PAGES__?.includes?.("intent-summary"))) {
+    return;
+  }
   const axis = payload.axis || "all";
   const labelScope = payload.label_scope || "all";
   const showRouting = labelScope !== "lane_change" && axis !== "lane_change";
@@ -230,6 +233,22 @@ async function deleteIntentSummaryLabel(button) {
 }
 
 async function loadIntentSummary({ datasetId = "", datasetIds = null, force = false } = {}) {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("intent-summary") || window.__RA_REACT_OWNED_PAGES__?.includes?.("intent-summary"))) {
+    const intent = state.intentLabeling;
+    if (Array.isArray(datasetIds) && datasetIds.length) {
+      intent.summaryDatasetIds = parseFilterList(datasetIds);
+      intent.summaryDatasetId = intent.summaryDatasetIds[0] || "";
+    } else if (datasetId) {
+      intent.summaryDatasetIds = [datasetId];
+      intent.summaryDatasetId = datasetId;
+    }
+    if (force) {
+      window.__RA_REACT_WORKBENCH__?.refreshPage?.("intent-summary");
+    } else {
+      window.__RA_REACT_WORKBENCH__?.notifySync?.();
+    }
+    return;
+  }
   const intent = state.intentLabeling;
   restoreIntentWorkspacePreferences();
   if (!intent.datasets.length) intent.datasets = (await api("/api/intent-datasets")).items || [];

@@ -14,6 +14,7 @@ export interface PaginationProps {
   ariaLabel?: string;
   labelText?: string;
   summaryText?: string;
+  showPageUnit?: boolean;
   className?: string;
   onPageChange: (nextPage: number) => void;
   onPageSizeChange: (nextSize: number) => void;
@@ -29,6 +30,7 @@ export const Pagination: React.FC<PaginationProps> = ({
   ariaLabel,
   labelText,
   summaryText,
+  showPageUnit = false,
   className,
   onPageChange,
   onPageSizeChange,
@@ -130,7 +132,9 @@ export const Pagination: React.FC<PaginationProps> = ({
               }
             }}
           />
-          {summaryText !== undefined ? <span>{bilingual(lang, "页", "page")}</span> : null}
+          {summaryText !== undefined || showPageUnit ? (
+            <span>{bilingual(lang, "页", "page")}</span>
+          ) : null}
           <button
             type="button"
             className="button button-quiet"

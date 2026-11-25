@@ -1,4 +1,7 @@
 function bindTrailAttributeUpdateEvents() {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("trail-update") || window.__RA_REACT_OWNED_PAGES__?.includes?.("trail-update"))) {
+    return;
+  }
   $("#trailUpdateStatusSummary")?.addEventListener("click", event => {
     const button = event.target.closest("[data-trail-status-filter]");
     if (!button || button.disabled) return;

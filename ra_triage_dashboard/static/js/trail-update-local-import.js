@@ -67,6 +67,9 @@ function trailLocalImportCurrent(epoch) {
     && String(state.session?.username || "") === trailLocalImport.actor && trailNonExclusionAllowed();
 }
 function refreshTrailLocalImportLanguage() {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("trail-update") || window.__RA_REACT_OWNED_PAGES__?.includes?.("trail-update"))) {
+    return;
+  }
   const button = $("#trailLocalImportOpen");
   if (button) {
     button.textContent = uiText("从 Trail 导入", "Import from Trail");

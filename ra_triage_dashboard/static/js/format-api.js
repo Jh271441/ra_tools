@@ -1011,6 +1011,10 @@ async function refreshChangedDataNow() {
     return;
   }
   if (state.activePage === "intent-experiments") {
+    if (window.__RA_REACT_WORKBENCH__?.ownsPage?.("intent-experiments") || window.__RA_REACT_OWNED_PAGES__?.includes?.("intent-experiments")) {
+      window.__RA_REACT_WORKBENCH__?.refreshPage?.("intent-experiments");
+      return;
+    }
     if (!intentAvailableDatasets().length) {
       renderIntentExperimentMembers();
       renderIntentExperiments();
@@ -1022,6 +1026,10 @@ async function refreshChangedDataNow() {
     return;
   }
   if (state.activePage === "intent-summary") {
+    if (window.__RA_REACT_WORKBENCH__?.ownsPage?.("intent-summary") || window.__RA_REACT_OWNED_PAGES__?.includes?.("intent-summary")) {
+      window.__RA_REACT_WORKBENCH__?.refreshPage?.("intent-summary");
+      return;
+    }
     await loadIntentSummary({ datasetIds: state.intentLabeling.summaryDatasetIds, force: true });
     return;
   }

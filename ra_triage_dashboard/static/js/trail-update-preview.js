@@ -271,6 +271,10 @@ function renderTrailIssueHistory(data = {}) {
 }
 
 async function loadTrailIssueHistory() {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("trail-update") || window.__RA_REACT_OWNED_PAGES__?.includes?.("trail-update"))) {
+    window.__RA_REACT_WORKBENCH__?.refreshPage?.("trail-update");
+    return null;
+  }
   const list = $("#trailUpdateIssueHistoryList");
   if (!list) return null;
   const requestSeq = ++state.trailUpdate.issueHistoryRequestSeq;
@@ -293,6 +297,10 @@ function startTrailAttributePage() {
   // Exclusion belongs to Issues in the selected datasets, independent of Runs.
   state.trailUpdate.runId = "";
   void settleInitialRequests([loadReviewers(), loadWorkAssignees()], uiText("共享数据", "Shared data"));
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("trail-update") || window.__RA_REACT_OWNED_PAGES__?.includes?.("trail-update"))) {
+    window.__RA_REACT_WORKBENCH__?.notifySync?.();
+    return;
+  }
   if (state.trailUpdate.tab !== "issue") {
     void loadTrailAttributePreview().catch(error => showToast(error.message, true));
   }
@@ -306,6 +314,9 @@ function setTrailAttributeStatus(message = "") {
 }
 
 function setTrailAttributeLoading(loading = false) {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("trail-update") || window.__RA_REACT_OWNED_PAGES__?.includes?.("trail-update"))) {
+    return;
+  }
   const active = Boolean(loading);
   state.trailUpdate.loading = active;
   const page = $("#trailAttributeUpdatePage");
@@ -482,6 +493,13 @@ function currentTrailUpdateRouteOptions(overrides = {}) {
 }
 
 function applyTrailUpdateRouteControls(filters = {}) {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("trail-update") || window.__RA_REACT_OWNED_PAGES__?.includes?.("trail-update"))) {
+    const source = filters || {};
+    if (source.tab) state.trailUpdate.tab = source.tab === "issue" ? "issue" : "review";
+    state.trailUpdate.view = source.view === "reconciliation" ? "reconciliation" : "local";
+    window.__RA_REACT_WORKBENCH__?.notifySync?.();
+    return;
+  }
   if (state.trailUpdate.filterTimer) window.clearTimeout(state.trailUpdate.filterTimer);
   state.trailUpdate.filterTimer = null;
   const source = filters || {};
@@ -761,6 +779,9 @@ function clearTrailIssuePreview(message = "") {
 }
 
 function renderTrailAttributePreview(data, { preserveRows = false } = {}) {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("trail-update") || window.__RA_REACT_OWNED_PAGES__?.includes?.("trail-update"))) {
+    return;
+  }
   const allItems = Array.isArray(data?.items) ? data.items : [];
   renderTrailUpdateFilters(data);
   const filteredItems = trailUpdateFilteredItems(data);
@@ -883,6 +904,11 @@ async function refreshTrailAttributeStatus({ runId, previewKey, requestSeq, forc
 }
 
 async function loadTrailAttributePreview(force = false, options = {}) {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("trail-update") || window.__RA_REACT_OWNED_PAGES__?.includes?.("trail-update"))) {
+    if (force) window.__RA_REACT_WORKBENCH__?.refreshPage?.("trail-update");
+    else window.__RA_REACT_WORKBENCH__?.notifySync?.();
+    return null;
+  }
   const background = Boolean(options?.background);
   const pageContext = capturePageContext();
   // Legacy Run URLs must not restrict Issue-level exclusion membership.

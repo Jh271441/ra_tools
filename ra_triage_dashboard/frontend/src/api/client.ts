@@ -30,6 +30,7 @@ export interface ApiRequestOptions {
   body?: unknown;
   headers?: Record<string, string>;
   signal?: AbortSignal;
+  cache?: RequestCache;
 }
 
 export async function apiRequest<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
@@ -61,6 +62,7 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
     body,
     credentials: "same-origin",
     signal: options.signal,
+    ...(options.cache ? { cache: options.cache } : {}),
   });
 
   const text = await response.text();

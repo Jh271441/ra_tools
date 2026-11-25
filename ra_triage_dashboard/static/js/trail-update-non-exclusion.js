@@ -129,6 +129,9 @@ function bindTrailNonExclusionEvents() {
   syncTrailNonExclusionControls();
 }
 function refreshTrailNonExclusionLanguage() {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("trail-update") || window.__RA_REACT_OWNED_PAGES__?.includes?.("trail-update"))) {
+    return;
+  }
   syncTrailNonExclusionControls();
   if (trailNonExclusion.preview && $("#trailUpdateConfirmDialog")?.open) {
     const list = $("#trailUpdateConfirmList");

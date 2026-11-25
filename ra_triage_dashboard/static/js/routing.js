@@ -262,7 +262,11 @@ function applyUiLanguage(language, { persist = true } = {}) {
     if ($("#taskAllocationDialog")?.open) renderTaskAllocationEditor();
   } catch (_) {}
   try {
-    if (state.activePage === "intent-experiments" && typeof initializeIntentExperimentSelects === "function") {
+    const intentExpReactOwned = typeof window !== "undefined" && (
+      window.__RA_REACT_WORKBENCH__?.ownsPage?.("intent-experiments") ||
+      window.__RA_REACT_OWNED_PAGES__?.includes?.("intent-experiments")
+    );
+    if (!intentExpReactOwned && state.activePage === "intent-experiments" && typeof initializeIntentExperimentSelects === "function") {
       initializeIntentExperimentSelects();
       initializeIntentExperimentEditSelect();
       renderIntentExperimentMembers();
@@ -1492,13 +1496,25 @@ function showPage(
       discussionChannel,
     }).catch((error) => showToast(error.message, true)));
   }
-  if (target === "intent-experiments" && loadPageData && typeof loadIntentExperimentAdmin === "function") {
+  const intentExpReactOwned = typeof window !== "undefined" && (
+    window.__RA_REACT_WORKBENCH__?.ownsPage?.("intent-experiments") ||
+    window.__RA_REACT_OWNED_PAGES__?.includes?.("intent-experiments")
+  );
+  const intentSummaryReactOwned = typeof window !== "undefined" && (
+    window.__RA_REACT_WORKBENCH__?.ownsPage?.("intent-summary") ||
+    window.__RA_REACT_OWNED_PAGES__?.includes?.("intent-summary")
+  );
+  const trailUpdateReactOwned = typeof window !== "undefined" && (
+    window.__RA_REACT_WORKBENCH__?.ownsPage?.("trail-update") ||
+    window.__RA_REACT_OWNED_PAGES__?.includes?.("trail-update")
+  );
+  if (target === "intent-experiments" && loadPageData && typeof loadIntentExperimentAdmin === "function" && !intentExpReactOwned) {
     pageLoads.push(() => loadIntentExperimentAdmin({
       datasetId: intentDatasetId,
       datasetIds: intentDatasetIds.length ? intentDatasetIds : null,
     }).catch((error) => showToast(error.message, true)));
   }
-  if (target === "intent-summary" && loadPageData && typeof loadIntentSummary === "function") {
+  if (target === "intent-summary" && loadPageData && typeof loadIntentSummary === "function" && !intentSummaryReactOwned) {
     pageLoads.push(() => loadIntentSummary({
       datasetId: intentDatasetId,
       datasetIds: intentDatasetIds.length ? intentDatasetIds : null,
@@ -1511,7 +1527,7 @@ function showPage(
     // presses Escape, clicks outside, or toggles the trigger.
     renderAnalysisRunFilter();
   }
-  if (target === "trail-update" && state.trailUpdate.tab !== "issue") {
+  if (target === "trail-update" && state.trailUpdate.tab !== "issue" && !trailUpdateReactOwned) {
     const trailPage = $("#trailAttributeUpdatePage");
     state.trailUpdate.runId = "";
     const needsPreview =

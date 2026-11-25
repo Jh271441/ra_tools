@@ -122,8 +122,14 @@ function renderSession() {
     if (intentLabelingNav) intentLabelingNav.hidden = !canViewIntent;
     const intentExperimentsNav = $("#intentExperimentsNavButton");
     if (intentExperimentsNav) intentExperimentsNav.hidden = !canViewIntent;
-    $("#intentExperimentForm")?.closest(".intent-experiment-create")?.classList.toggle("hidden", !state.session.can_manage_intent);
-    $("#intentExperimentsPage")?.classList.toggle("is-readonly", canViewIntent && !state.session.can_manage_intent);
+    const intentExpReactOwned = typeof window !== "undefined" && (
+      window.__RA_REACT_WORKBENCH__?.ownsPage?.("intent-experiments") ||
+      window.__RA_REACT_OWNED_PAGES__?.includes?.("intent-experiments")
+    );
+    if (!intentExpReactOwned) {
+      $("#intentExperimentForm")?.closest(".intent-experiment-create")?.classList.toggle("hidden", !state.session.can_manage_intent);
+      $("#intentExperimentsPage")?.classList.toggle("is-readonly", canViewIntent && !state.session.can_manage_intent);
+    }
     const intentSummaryNav = $("#intentSummaryNavButton");
     if (intentSummaryNav) intentSummaryNav.hidden = !canViewIntent;
     if (canViewIntent && typeof restoreSidebarNavGroups === "function") {

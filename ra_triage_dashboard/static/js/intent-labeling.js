@@ -579,97 +579,111 @@ function bindIntentLabelingEvents() {
     event.preventDefault();
     timeline.scrollLeft += event.deltaY;
   }, { passive: false });
-  $("#intentExperimentForm")?.addEventListener("submit", (event) => {
-    createIntentExperiment(event).catch((error) => showToast(error.message, true));
-  });
-  $("#intentExperimentEditForm")?.addEventListener("submit", (event) => {
-    updateIntentExperiment(event).catch((error) => showToast(error.message, true));
-  });
-  $("#intentSummaryAxis")?.addEventListener("change", (event) => {
-    state.intentLabeling.summaryAxis = event.target.value || "all";
-    state.intentLabeling.summaryPage = 1;
-    persistIntentWorkspacePreferences();
-    loadIntentSummary({ datasetIds: state.intentLabeling.summaryDatasetIds, force: true }).catch((error) => showToast(error.message, true));
-  });
-  $("#intentSummaryPageSize")?.addEventListener("change", (event) => {
-    const nextSize = Number(event.target.value);
-    state.intentLabeling.summaryPageSize = [10, 20, 50, 100].includes(nextSize) ? nextSize : 20;
-    state.intentLabeling.summaryPage = 1;
-    persistIntentWorkspacePreferences();
-    loadIntentSummary({ datasetIds: state.intentLabeling.summaryDatasetIds, force: true }).catch((error) => showToast(error.message, true));
-  });
-  $("#intentSummaryPageJumpButton")?.addEventListener("click", jumpIntentSummaryPage);
-  $("#intentSummaryPageJump")?.addEventListener("keydown", (event) => {
-    if (event.key !== "Enter") return;
-    event.preventDefault();
-    jumpIntentSummaryPage();
-  });
-  $("#intentSummaryRefresh")?.addEventListener("click", () => loadIntentSummary({ datasetIds: state.intentLabeling.summaryDatasetIds, force: true }).catch((error) => showToast(error.message, true)));
-  $("#intentExportCompact")?.addEventListener("click", () => downloadIntentExport("compact"));
-  $("#intentExportExpanded")?.addEventListener("click", () => downloadIntentExport("expanded"));
-  $("#intentSummaryReveal")?.addEventListener("click", () => {
-    state.intentLabeling.summaryReveal = !state.intentLabeling.summaryReveal;
-    loadIntentSummary({ datasetIds: state.intentLabeling.summaryDatasetIds, force: true }).catch((error) => showToast(error.message, true));
-  });
-  $("#intentSummaryPrevious")?.addEventListener("click", () => {
-    state.intentLabeling.summaryPage = Math.max(1, state.intentLabeling.summaryPage - 1);
-    loadIntentSummary({ datasetIds: state.intentLabeling.summaryDatasetIds, force: true }).catch((error) => showToast(error.message, true));
-  });
-  $("#intentSummaryNext")?.addEventListener("click", () => {
-    state.intentLabeling.summaryPage += 1;
-    loadIntentSummary({ datasetIds: state.intentLabeling.summaryDatasetIds, force: true }).catch((error) => showToast(error.message, true));
-  });
-  const submitSummaryCommentQuery = () => {
-    const value = ($("#intentSummaryCommentQuery")?.value || "").trim().slice(0, 80);
-    if (value === (state.intentLabeling.summaryCommentQuery || "")) return;
-    state.intentLabeling.summaryCommentQuery = value;
-    state.intentLabeling.summaryPage = 1;
-    loadIntentSummary({ datasetIds: state.intentLabeling.summaryDatasetIds, force: true }).catch((error) => showToast(error.message, true));
-  };
-  $("#intentSummaryCommentQuery")?.addEventListener("keydown", (event) => {
-    if (event.key !== "Enter") return;
-    event.preventDefault();
-    window.clearTimeout(state.intentLabeling.summaryCommentTimer);
-    submitSummaryCommentQuery();
-  });
-  $("#intentSummaryCommentQuery")?.addEventListener("input", () => {
-    window.clearTimeout(state.intentLabeling.summaryCommentTimer);
-    state.intentLabeling.summaryCommentTimer = window.setTimeout(submitSummaryCommentQuery, 350);
-  });
-  initializeIntentExperimentSelects();
-  $("#intentExperimentScope")?.addEventListener("change", () => {
+  const intentExpReactOwned = typeof window !== "undefined" && (
+    window.__RA_REACT_WORKBENCH__?.ownsPage?.("intent-experiments") ||
+    window.__RA_REACT_OWNED_PAGES__?.includes?.("intent-experiments")
+  );
+  const intentSummaryReactOwned = typeof window !== "undefined" && (
+    window.__RA_REACT_WORKBENCH__?.ownsPage?.("intent-summary") ||
+    window.__RA_REACT_OWNED_PAGES__?.includes?.("intent-summary")
+  );
+  if (!intentExpReactOwned) {
+    $("#intentExperimentForm")?.addEventListener("submit", (event) => {
+      createIntentExperiment(event).catch((error) => showToast(error.message, true));
+    });
+    $("#intentExperimentEditForm")?.addEventListener("submit", (event) => {
+      updateIntentExperiment(event).catch((error) => showToast(error.message, true));
+    });
+  }
+  if (!intentSummaryReactOwned) {
+    $("#intentSummaryAxis")?.addEventListener("change", (event) => {
+      state.intentLabeling.summaryAxis = event.target.value || "all";
+      state.intentLabeling.summaryPage = 1;
+      persistIntentWorkspacePreferences();
+      loadIntentSummary({ datasetIds: state.intentLabeling.summaryDatasetIds, force: true }).catch((error) => showToast(error.message, true));
+    });
+    $("#intentSummaryPageSize")?.addEventListener("change", (event) => {
+      const nextSize = Number(event.target.value);
+      state.intentLabeling.summaryPageSize = [10, 20, 50, 100].includes(nextSize) ? nextSize : 20;
+      state.intentLabeling.summaryPage = 1;
+      persistIntentWorkspacePreferences();
+      loadIntentSummary({ datasetIds: state.intentLabeling.summaryDatasetIds, force: true }).catch((error) => showToast(error.message, true));
+    });
+    $("#intentSummaryPageJumpButton")?.addEventListener("click", jumpIntentSummaryPage);
+    $("#intentSummaryPageJump")?.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      jumpIntentSummaryPage();
+    });
+    $("#intentSummaryRefresh")?.addEventListener("click", () => loadIntentSummary({ datasetIds: state.intentLabeling.summaryDatasetIds, force: true }).catch((error) => showToast(error.message, true)));
+    $("#intentExportCompact")?.addEventListener("click", () => downloadIntentExport("compact"));
+    $("#intentExportExpanded")?.addEventListener("click", () => downloadIntentExport("expanded"));
+    $("#intentSummaryReveal")?.addEventListener("click", () => {
+      state.intentLabeling.summaryReveal = !state.intentLabeling.summaryReveal;
+      loadIntentSummary({ datasetIds: state.intentLabeling.summaryDatasetIds, force: true }).catch((error) => showToast(error.message, true));
+    });
+    $("#intentSummaryPrevious")?.addEventListener("click", () => {
+      state.intentLabeling.summaryPage = Math.max(1, state.intentLabeling.summaryPage - 1);
+      loadIntentSummary({ datasetIds: state.intentLabeling.summaryDatasetIds, force: true }).catch((error) => showToast(error.message, true));
+    });
+    $("#intentSummaryNext")?.addEventListener("click", () => {
+      state.intentLabeling.summaryPage += 1;
+      loadIntentSummary({ datasetIds: state.intentLabeling.summaryDatasetIds, force: true }).catch((error) => showToast(error.message, true));
+    });
+    const submitSummaryCommentQuery = () => {
+      const value = ($("#intentSummaryCommentQuery")?.value || "").trim().slice(0, 80);
+      if (value === (state.intentLabeling.summaryCommentQuery || "")) return;
+      state.intentLabeling.summaryCommentQuery = value;
+      state.intentLabeling.summaryPage = 1;
+      loadIntentSummary({ datasetIds: state.intentLabeling.summaryDatasetIds, force: true }).catch((error) => showToast(error.message, true));
+    };
+    $("#intentSummaryCommentQuery")?.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      window.clearTimeout(state.intentLabeling.summaryCommentTimer);
+      submitSummaryCommentQuery();
+    });
+    $("#intentSummaryCommentQuery")?.addEventListener("input", () => {
+      window.clearTimeout(state.intentLabeling.summaryCommentTimer);
+      state.intentLabeling.summaryCommentTimer = window.setTimeout(submitSummaryCommentQuery, 350);
+    });
+  }
+  if (!intentExpReactOwned) {
     initializeIntentExperimentSelects();
-    updateIntentExperimentEstimate();
-    persistIntentWorkspacePreferences();
-  });
-  $("#intentExperimentMode")?.addEventListener("change", (event) => {
-    const full = event.target.value === "full";
-    const overlap = $("#intentExperimentOverlap");
-    if (overlap) {
-      overlap.disabled = full;
-      if (full) overlap.value = "1";
-    }
-    $("#intentExperimentOverlapField")?.classList.toggle("is-disabled", full);
-    const reviewers = $("#intentExperimentReviewers");
-    if (reviewers) reviewers.disabled = full;
-    $("#intentExperimentReviewersField")?.classList.toggle("is-disabled", full);
-    initializeIntentExperimentSelects();
-    updateIntentExperimentEstimate();
-    persistIntentWorkspacePreferences();
-  });
-  $("#intentExperimentAnnotationStatus")?.addEventListener("change", () => {
-    initializeIntentExperimentSelects();
-    updateIntentExperimentCaseCountLimit({ reset: true });
-    updateIntentExperimentEstimate();
-    persistIntentWorkspacePreferences();
-  });
-  $("#intentExperimentCaseCount")?.addEventListener("input", () => { updateIntentExperimentEstimate(); persistIntentWorkspacePreferences(); });
-  $("#intentExperimentOverlap")?.addEventListener("change", () => { updateIntentExperimentEstimate(); persistIntentWorkspacePreferences(); });
-  $("#intentExperimentReviewers")?.addEventListener("input", () => { updateIntentExperimentEstimate(); persistIntentWorkspacePreferences(); });
-  $("#intentExperimentName")?.addEventListener("input", (event) => {
-    event.currentTarget.dataset.manualEdited = event.currentTarget.value.trim() ? "true" : "false";
-    updateIntentExperimentNameSuggestion();
-  });
+    $("#intentExperimentScope")?.addEventListener("change", () => {
+      initializeIntentExperimentSelects();
+      updateIntentExperimentEstimate();
+      persistIntentWorkspacePreferences();
+    });
+    $("#intentExperimentMode")?.addEventListener("change", (event) => {
+      const full = event.target.value === "full";
+      const overlap = $("#intentExperimentOverlap");
+      if (overlap) {
+        overlap.disabled = full;
+        if (full) overlap.value = "1";
+      }
+      $("#intentExperimentOverlapField")?.classList.toggle("is-disabled", full);
+      const reviewers = $("#intentExperimentReviewers");
+      if (reviewers) reviewers.disabled = full;
+      $("#intentExperimentReviewersField")?.classList.toggle("is-disabled", full);
+      initializeIntentExperimentSelects();
+      updateIntentExperimentEstimate();
+      persistIntentWorkspacePreferences();
+    });
+    $("#intentExperimentAnnotationStatus")?.addEventListener("change", () => {
+      initializeIntentExperimentSelects();
+      updateIntentExperimentCaseCountLimit({ reset: true });
+      updateIntentExperimentEstimate();
+      persistIntentWorkspacePreferences();
+    });
+    $("#intentExperimentCaseCount")?.addEventListener("input", () => { updateIntentExperimentEstimate(); persistIntentWorkspacePreferences(); });
+    $("#intentExperimentOverlap")?.addEventListener("change", () => { updateIntentExperimentEstimate(); persistIntentWorkspacePreferences(); });
+    $("#intentExperimentReviewers")?.addEventListener("input", () => { updateIntentExperimentEstimate(); persistIntentWorkspacePreferences(); });
+    $("#intentExperimentName")?.addEventListener("input", (event) => {
+      event.currentTarget.dataset.manualEdited = event.currentTarget.value.trim() ? "true" : "false";
+      updateIntentExperimentNameSuggestion();
+    });
+  }
   $("#intentMyTasks")?.addEventListener("click", () => {
     const username = String(state.session.username || "").toLowerCase();
     if (!state.intentLabeling.assignees.some((item) => item.username === username)) return;
