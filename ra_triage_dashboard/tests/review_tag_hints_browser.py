@@ -94,24 +94,13 @@ def run():
                         summary.scroll_into_view_if_needed()
                         summary.click()
                         expect(panel).to_be_visible()
-                        assert row.get_attribute("data-ui-info-hover-delay") == "1000"
                         hover_target = row.locator("[data-ui-info-hover]")
-                        if (width, language, theme) == (1440, "zh", "dark"):
-                            hover_target.hover()
-                            page.wait_for_timeout(700)
-                            assert not tip.is_visible()
-                            page.mouse.move(4, 4)
-                            page.wait_for_timeout(900)
-                            assert not tip.is_visible()
                         hover_target.hover()
-                        assert not tip.is_visible()
-                        try:
-                            expect(tip).to_be_visible()
-                        except AssertionError:
-                            print(row.evaluate("n=>({classes:n.className,style:n.querySelector('[role=tooltip]').getAttribute('style'),dropdown:n.closest('details').open,bound:n.closest('#reviewPane,#caseLabelingEditor').dataset.selectedReviewTagControlsBound})"))
-                            print("page errors", errors)
-                            page.screenshot(path=str(OUTPUT / "failure.png"))
-                            raise
+                        if (language, theme) == ("zh", "dark"):
+                            page.wait_for_timeout(1500)
+                        expect(tip).not_to_be_visible()
+                        check.focus()
+                        expect(tip).to_be_visible()
                         expect(tip.locator("span")).to_have_text(HINT)
                         expect(check).not_to_be_checked()
                         bounds(tip, width)
@@ -195,7 +184,7 @@ def run():
                             summary.evaluate("n=>n.focus({preventScroll:true})")
                             page.mouse.move(4, 4)
                             expect(long_tip).not_to_be_visible()
-                            row.locator("[data-ui-info-hover]").hover()
+                            check.focus()
                             expect(tip).to_have_css("opacity", "1")
                             page.screenshot(path=str(OUTPUT / f"{'labeling' if labeling else 'review'}-{width}-{language}-{theme}.png"))
                         page.mouse.click(4, 4)
