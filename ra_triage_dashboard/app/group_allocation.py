@@ -87,9 +87,8 @@ def group_history(config, rows, evidence, *, roles=None):
         for issue, work in by_case.items():
             names = {row["assignee"] for row in work}
             for gid in ids:
-                allowed = pos_rosters[gid] or rosters[gid]
                 name = bindings.get(gid, {}).get(issue)
-                if name in names and name in allowed:
+                if name in names and name in rosters[gid]:
                     occupied[issue][gid] = name
                     names.remove(name)
             if not has_bindings and names:
@@ -528,8 +527,9 @@ def plan_groups(issue_ids, groups, rules, *, seed, old_groups=(), history=None,
             # Prefer positive-share members in each group; rank by most under-quota first.
             cand = {
                 gid: sorted(
-                    [a for a in authors if a in pos_names[gid]],
-                    key=lambda a: (active_prot_counts[gid, a] - ideal_seat[gid, a],
+                    [a for a in authors if a in pos_names[gid] or
+                     (history.get(iid, {}).get(gid) == a and a in weights[gid])],
+                    key=lambda a: (active_prot_counts[gid, a] - ideal_seat.get((gid, a), 0),
                                    history.get(iid, {}).get(gid) != a, a),
                 )
                 for gid in available
@@ -949,12 +949,14 @@ def convergence_summary(case_ids, evidence):
     )
 
 
-def group_projection(groups, placed, completed, *, case_ids=None):
+def group_projection(groups, placed, completed, *, case_ids=None, protected=()):
     all_cases = list(case_ids) if case_ids is not None else list(placed)
     group_ids = [group["group_id"] for group in groups]
     totals = Counter((gid, name) for owners in placed.values() for gid, name in owners.items() if gid in group_ids)
     done = Counter((gid, name) for iid, owners in placed.items() for gid, name in owners.items()
                    if gid in group_ids and (iid, name) in completed)
+    locked_counts = Counter(gid for iid, owners in placed.items() for gid, name in owners.items()
+                            if (iid, name) in protected)
     combinations = Counter(tuple(owners.get(gid) for gid in group_ids) for owners in placed.values())
     completed_cases = {iid for iid, _ in completed}
     by_group = {}
@@ -981,6 +983,7 @@ def group_projection(groups, placed, completed, *, case_ids=None):
             group_id=gid,
             members=by_group[gid],
             union_completed=union_covered_by_group[gid],
+            retained_slots=locked_counts[gid] + union_covered_by_group[gid],
         ) for gid in group_ids],
         combinations=[dict(owners=list(owners), count=combinations[owners])
                       for owners in sorted(combinations, key=lambda names: tuple(name or "" for name in names))],
@@ -1035,7 +1038,7 @@ def grouped_preview(groups, old_rows, new_rows, placed, evidence, *, old_placed=
     changes = [dict(issue_id=iid, before=sorted(old_by_issue[iid]), after=sorted(new_by_issue[iid]))
                for iid in sorted(placed) if set(new_by_issue[iid]) != set(old_by_issue[iid])]
     locks = evidence["coverage_locked"]
-    projection = group_projection(groups, placed, evidence["completed"], case_ids=list(placed))
+    projection = group_projection(groups, placed, evidence["completed"], case_ids=list(placed), protected=evidence["protected"])
     return dict(
         group_coverage=projection,
         convergence=convergence_summary(list(placed), evidence),
