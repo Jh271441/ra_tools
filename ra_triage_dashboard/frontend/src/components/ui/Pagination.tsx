@@ -15,6 +15,8 @@ export interface PaginationProps {
   labelText?: string;
   summaryText?: string;
   showPageUnit?: boolean;
+  disableJumpWhenSinglePage?: boolean;
+  keepControlsEnabledWhenEmpty?: boolean;
   className?: string;
   onPageChange: (nextPage: number) => void;
   onPageSizeChange: (nextSize: number) => void;
@@ -31,6 +33,8 @@ export const Pagination: React.FC<PaginationProps> = ({
   labelText,
   summaryText,
   showPageUnit = false,
+  disableJumpWhenSinglePage = false,
+  keepControlsEnabledWhenEmpty = false,
   className,
   onPageChange,
   onPageSizeChange,
@@ -122,7 +126,11 @@ export const Pagination: React.FC<PaginationProps> = ({
             max={totalPages}
             step={1}
             value={jumpInput}
-            disabled={disabledAll || (summaryText !== undefined && totalPages <= 1)}
+            disabled={
+              loading ||
+              (!keepControlsEnabledWhenEmpty && total <= 0) ||
+              ((summaryText !== undefined || disableJumpWhenSinglePage) && totalPages <= 1)
+            }
             aria-label={bilingual(lang, "输入页码", "Enter page number")}
             onChange={(e) => setJumpInput(e.target.value)}
             onKeyDown={(e) => {
@@ -138,7 +146,11 @@ export const Pagination: React.FC<PaginationProps> = ({
           <button
             type="button"
             className="button button-quiet"
-            disabled={disabledAll || (summaryText !== undefined && totalPages <= 1)}
+            disabled={
+              loading ||
+              (!keepControlsEnabledWhenEmpty && total <= 0) ||
+              ((summaryText !== undefined || disableJumpWhenSinglePage) && totalPages <= 1)
+            }
             onClick={handleJump}
           >
             {bilingual(lang, "跳转", "Go")}
@@ -152,7 +164,7 @@ export const Pagination: React.FC<PaginationProps> = ({
           id={sizeId}
           value={String(safeSize)}
           options={pageSizeOptions}
-          disabled={disabledAll}
+          disabled={keepControlsEnabledWhenEmpty ? loading : disabledAll}
           compact
           ariaLabel={bilingual(lang, "每页条数", "Items per page")}
           onChange={(nextVal) => {

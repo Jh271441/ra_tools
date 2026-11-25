@@ -75,6 +75,11 @@ interface LegacyWindow {
     };
   };
   renderIntentTopbarDatasetPicker?: (selectedIds?: string[] | null) => void;
+  syncIntentTopbarDatasets?: (
+    items: IntentDatasetItem[],
+    selectedIds: string[],
+    page: string,
+  ) => void;
   navigatePage?: (page: string, opts?: Record<string, unknown>) => void;
   loadIntentLabeling?: (opts?: Record<string, unknown>) => Promise<void>;
   showToast?: (msg: string, isError?: boolean) => void;
@@ -217,12 +222,17 @@ export const IntentExperimentsPage: React.FC<IntentExperimentsPageProps> = ({
   useEffect(() => {
     if (!active || !availableDatasets.length) return;
     const legacy = getLegacyWindow();
-    if (legacy.state?.intentLabeling) {
-      legacy.state.intentLabeling.datasets = datasetsQuery.data?.items || [];
-      legacy.state.intentLabeling.experimentDatasetIds = effectiveDatasetIds;
-      legacy.state.intentLabeling.experimentDatasetId = effectiveDatasetIds[0] || "";
+    const allItems = datasetsQuery.data?.items || [];
+    if (legacy.syncIntentTopbarDatasets) {
+      legacy.syncIntentTopbarDatasets(allItems, effectiveDatasetIds, "intent-experiments");
+    } else {
+      if (legacy.state?.intentLabeling) {
+        legacy.state.intentLabeling.datasets = allItems;
+        legacy.state.intentLabeling.experimentDatasetIds = effectiveDatasetIds;
+        legacy.state.intentLabeling.experimentDatasetId = effectiveDatasetIds[0] || "";
+      }
+      legacy.renderIntentTopbarDatasetPicker?.(effectiveDatasetIds);
     }
-    legacy.renderIntentTopbarDatasetPicker?.(effectiveDatasetIds);
 
     const params = new URLSearchParams();
     effectiveDatasetIds.forEach((id) => params.append("dataset", id));
@@ -245,6 +255,14 @@ export const IntentExperimentsPage: React.FC<IntentExperimentsPageProps> = ({
   // Listen to topbar picker changes
   useEffect(() => {
     if (!active) return;
+    const handleDatasetEvent = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ page?: string; datasetIds?: string[] }>).detail;
+      if (detail?.page === "intent-experiments" && Array.isArray(detail.datasetIds) && detail.datasetIds.length) {
+        setSelectedDatasetIds((prev) =>
+          prev.join(",") === detail.datasetIds!.join(",") ? prev : [...detail.datasetIds!],
+        );
+      }
+    };
     const handleSync = () => {
       const legacyIds = getLegacyWindow().state?.intentLabeling?.experimentDatasetIds;
       if (Array.isArray(legacyIds) && legacyIds.length) {
@@ -253,8 +271,12 @@ export const IntentExperimentsPage: React.FC<IntentExperimentsPageProps> = ({
         );
       }
     };
+    window.addEventListener("ra:intent-datasets-change", handleDatasetEvent);
     window.addEventListener("ra:workbench-sync", handleSync);
-    return () => window.removeEventListener("ra:workbench-sync", handleSync);
+    return () => {
+      window.removeEventListener("ra:intent-datasets-change", handleDatasetEvent);
+      window.removeEventListener("ra:workbench-sync", handleSync);
+    };
   }, [active]);
 
   const experimentsQuery = useQuery<IntentExperimentsResponse>({
@@ -276,6 +298,10 @@ export const IntentExperimentsPage: React.FC<IntentExperimentsPageProps> = ({
   const annotationStatusCounts = experimentsQuery.data?.annotation_status_counts || {};
   const llmNamingAvailable = Boolean(experimentsQuery.data?.name_suggestion?.llm_available);
 
+  const caseCountManualRef = useRef(false);
+  const scopeKey = `${effectiveDatasetIds.slice().sort().join(",")}|${annotationStatus}`;
+  const prevScopeKeyRef = useRef("");
+
   // Max case count limit
   const maxCaseCount = useMemo(() => {
     const counts = effectiveDatasets.map((item) =>
@@ -285,16 +311,23 @@ export const IntentExperimentsPage: React.FC<IntentExperimentsPageProps> = ({
   }, [effectiveDatasets, annotationStatusCounts, annotationStatus]);
 
   useEffect(() => {
+    if (!effectiveDatasets.length) return;
+    const scopeChanged = prevScopeKeyRef.current !== scopeKey;
+    if (scopeChanged) {
+      prevScopeKeyRef.current = scopeKey;
+      caseCountManualRef.current = false;
+    }
     const current = Number(caseCount) || 0;
-    if (current < 1 || current > maxCaseCount) {
+    if (!caseCountManualRef.current || current < 1 || current > maxCaseCount) {
       setCaseCount(String(maxCaseCount));
     }
-  }, [maxCaseCount]);
+  }, [effectiveDatasets.length, scopeKey, maxCaseCount]);
 
-  // Clamp reviewers to member count when members selected
+  // Clamp reviewers to member count (matches classic updateIntentExperimentEstimate)
   useEffect(() => {
-    if (selectedMembers.length > 0 && Number(reviewers) > selectedMembers.length) {
-      setReviewers(String(selectedMembers.length));
+    const maxAllowed = Math.max(1, selectedMembers.length);
+    if (Number(reviewers) > maxAllowed) {
+      setReviewers(String(maxAllowed));
     }
   }, [selectedMembers.length, reviewers]);
 
@@ -321,7 +354,7 @@ export const IntentExperimentsPage: React.FC<IntentExperimentsPageProps> = ({
       setAiNaming(false);
       return;
     }
-    const fingerprint = JSON.stringify({
+    const requestPayload = {
       dataset_ids: effectiveDatasets.map((d) => d.id),
       annotation_mode: mode,
       label_scope: labelScope,
@@ -331,7 +364,8 @@ export const IntentExperimentsPage: React.FC<IntentExperimentsPageProps> = ({
       overlap_reviewers: reviewersNum,
       member_count: selectedMembers.length,
       draft_name: manualNameEdited ? name.trim() : "",
-    });
+    };
+    const fingerprint = JSON.stringify(requestPayload);
     if (fingerprint === lastFingerprintRef.current) return;
     const seq = ++nameSuggestionSeqRef.current;
     setAiNaming(true);
@@ -342,7 +376,7 @@ export const IntentExperimentsPage: React.FC<IntentExperimentsPageProps> = ({
           "/api/intent-experiments/name-suggestion",
           {
             method: "POST",
-            body: fingerprint,
+            body: requestPayload,
           },
         );
         if (seq !== nameSuggestionSeqRef.current) return;
@@ -489,7 +523,7 @@ export const IntentExperimentsPage: React.FC<IntentExperimentsPageProps> = ({
         experiment?: unknown;
       }>("/api/intent-experiments", {
         method: "POST",
-        body: JSON.stringify({
+        body: {
           dataset_id: effectiveDatasetIds[0],
           dataset_ids: effectiveDatasetIds,
           name: name.trim(),
@@ -500,7 +534,7 @@ export const IntentExperimentsPage: React.FC<IntentExperimentsPageProps> = ({
           overlap_ratio: Number(overlap) || 0,
           overlap_reviewers: Number(reviewers) || 1,
           members: selectedMembers,
-        }),
+        },
       });
       getLegacyWindow().acknowledgeLocalChange?.(result);
       setName("");
@@ -538,10 +572,10 @@ export const IntentExperimentsPage: React.FC<IntentExperimentsPageProps> = ({
         `/api/intent-experiments/${encodeURIComponent(editingExp.id)}`,
         {
           method: "PATCH",
-          body: JSON.stringify({
+          body: {
             name: editName.trim(),
             label_scope: editScope,
-          }),
+          },
         },
       );
       getLegacyWindow().acknowledgeLocalChange?.(result);
@@ -784,7 +818,10 @@ export const IntentExperimentsPage: React.FC<IntentExperimentsPageProps> = ({
                         required
                         disabled={formDisabled}
                         value={caseCount}
-                        onChange={(e) => setCaseCount(e.target.value)}
+                        onChange={(e) => {
+                          caseCountManualRef.current = true;
+                          setCaseCount(e.target.value);
+                        }}
                       />
                     </label>
 

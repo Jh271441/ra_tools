@@ -273,6 +273,21 @@ function intentAvailableDatasets() {
   return (state.intentLabeling.datasets || []).filter((item) => item.available);
 }
 
+function syncIntentTopbarDatasets(items, selectedIds, page) {
+  if (Array.isArray(items) && items.length) {
+    state.intentLabeling.datasets = items;
+  }
+  const selected = parseFilterList(selectedIds);
+  if (page === "intent-experiments") {
+    state.intentLabeling.experimentDatasetIds = selected;
+    state.intentLabeling.experimentDatasetId = selected[0] || "";
+  } else if (page === "intent-summary") {
+    state.intentLabeling.summaryDatasetIds = selected;
+    state.intentLabeling.summaryDatasetId = selected[0] || "";
+  }
+  renderIntentTopbarDatasetPicker(selected);
+}
+
 function applyIntentTopbarDatasetSelection(values) {
   const selected = parseFilterList(values);
   if (!selected.length) return;
@@ -281,6 +296,7 @@ function applyIntentTopbarDatasetSelection(values) {
       state.intentLabeling.experimentDatasetIds = selected;
       state.intentLabeling.experimentDatasetId = selected[0] || "";
       renderIntentTopbarDatasetPicker(selected);
+      window.dispatchEvent(new CustomEvent("ra:intent-datasets-change", { detail: { page: "intent-experiments", datasetIds: selected } }));
       window.__RA_REACT_WORKBENCH__?.notifySync?.();
       return;
     }
@@ -300,6 +316,7 @@ function applyIntentTopbarDatasetSelection(values) {
     state.intentLabeling.summaryPage = 1;
     if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("intent-summary") || window.__RA_REACT_OWNED_PAGES__?.includes?.("intent-summary"))) {
       renderIntentTopbarDatasetPicker(selected);
+      window.dispatchEvent(new CustomEvent("ra:intent-datasets-change", { detail: { page: "intent-summary", datasetIds: selected } }));
       window.__RA_REACT_WORKBENCH__?.notifySync?.();
       return;
     }

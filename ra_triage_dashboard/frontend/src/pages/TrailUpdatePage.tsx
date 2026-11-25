@@ -944,11 +944,11 @@ export const TrailUpdatePage: React.FC<TrailUpdatePageProps> = ({
         "/api/trail-attribute-update/selection-preview",
         {
           method: "POST",
-          body: JSON.stringify({
+          body: {
             issue_ids: issueIds,
             intent: selectionIntent,
             baselines: data.baselines || [],
-          }),
+          },
         },
       );
       setConfirmExpandAll(false);
@@ -979,7 +979,7 @@ export const TrailUpdatePage: React.FC<TrailUpdatePageProps> = ({
               failed_issue_ids?: string[];
             }>("/api/trail-attribute-update/selection-commit", {
               method: "POST",
-              body: JSON.stringify({ confirm: true, payload_sha256: preview.payload_sha256 }),
+              body: { confirm: true, payload_sha256: preview.payload_sha256 },
             });
             const msg = bilingual(
               lang,
@@ -1036,7 +1036,7 @@ export const TrailUpdatePage: React.FC<TrailUpdatePageProps> = ({
         "/api/trail-attribute-update/non-exclusion-preview",
         {
           method: "POST",
-          body: JSON.stringify({ issue_ids: parsed.ids, baselines: baselinesParam }),
+          body: { issue_ids: parsed.ids, baselines: baselinesParam },
         },
       );
       if (preview.intent !== "unexclude" || !preview.write_ready || !preview.payload_sha256) {
@@ -1066,7 +1066,7 @@ export const TrailUpdatePage: React.FC<TrailUpdatePageProps> = ({
               skipped_synced_issue_ids?: string[];
             }>("/api/trail-attribute-update/non-exclusion-commit", {
               method: "POST",
-              body: JSON.stringify({ confirm: true, payload_sha256: preview.payload_sha256 }),
+              body: { confirm: true, payload_sha256: preview.payload_sha256 },
             });
             const verified =
               Number(res.readback?.verified_count || 0) +
@@ -1134,7 +1134,7 @@ export const TrailUpdatePage: React.FC<TrailUpdatePageProps> = ({
           error?: string;
         }>("/api/trail-attribute-update/local-import-candidates", {
           method: "POST",
-          body: JSON.stringify({ baselines: baselinesParam, refresh }),
+          body: { baselines: baselinesParam, refresh },
         });
         const items = Array.isArray(res.items) ? res.items : [];
         setLocalImportCandidates(items);
@@ -1185,11 +1185,9 @@ export const TrailUpdatePage: React.FC<TrailUpdatePageProps> = ({
         `/api/trail-attribute-update/local-import-${commit ? "commit" : "preview"}`,
         {
           method: "POST",
-          body: JSON.stringify(
-            commit
-              ? { preview_id: localImportPreview?.preview_id, confirm: true }
-              : { issue_ids: parsed.ids, baselines: baselinesParam },
-          ),
+          body: commit
+            ? { preview_id: localImportPreview?.preview_id, confirm: true }
+            : { issue_ids: parsed.ids, baselines: baselinesParam },
         },
       );
       if (commit) {
@@ -1240,7 +1238,7 @@ export const TrailUpdatePage: React.FC<TrailUpdatePageProps> = ({
         "/api/trail-attribute-update/issue-preview",
         {
           method: "POST",
-          body: JSON.stringify({ entries: parsedDirect.entries }),
+          body: { entries: parsedDirect.entries },
         },
       );
       setDirectPreview(res);
@@ -1300,11 +1298,11 @@ export const TrailUpdatePage: React.FC<TrailUpdatePageProps> = ({
             readback?: { verified_count?: number; checked_count?: number };
           }>("/api/trail-attribute-update/issue-commit", {
             method: "POST",
-            body: JSON.stringify({
+            body: {
               confirm: true,
               entries,
               payload_sha256: directPreview.payload_sha256,
-            }),
+            },
           });
           const ok = typeof res.trail_ok === "boolean" ? res.trail_ok : Boolean(res.ok);
           const msg = bilingual(
@@ -1359,7 +1357,7 @@ export const TrailUpdatePage: React.FC<TrailUpdatePageProps> = ({
         }
         const res = await apiRequest<ImportPreviewResponse>(
           "/api/trail-attribute-update/issue-import/json-preview",
-          { method: "POST", body: JSON.stringify(parsedBody) },
+          { method: "POST", body: parsedBody },
         );
         setIssueImportPreview(res);
         setIssueImportStatus({
@@ -2361,6 +2359,7 @@ export const TrailUpdatePage: React.FC<TrailUpdatePageProps> = ({
                     lang={lang}
                     className="case-pagination gallery-pagination trail-update-pagination"
                     showPageUnit
+                    disableJumpWhenSinglePage
                     labelText={`${safePage} / ${totalPages}`}
                     ariaLabel={bilingual(lang, "排除候选分页", "Excluded cases pagination")}
                     onPageChange={setPage}
@@ -2381,74 +2380,103 @@ export const TrailUpdatePage: React.FC<TrailUpdatePageProps> = ({
           role="tabpanel"
           aria-labelledby="trailUpdateIssueTab"
         >
-          {directPreview ? (
+          <section
+            className="trail-update-direct-results"
+            id="trailUpdateIssueResults"
+            aria-label={bilingual(lang, "Issue 屏蔽预览", "Issue shielding preview")}
+          >
             <section
-              className="trail-update-direct-results"
-              id="trailUpdateIssueResults"
-              aria-label={bilingual(lang, "Issue 屏蔽预览", "Issue shielding preview")}
+              className="trail-update-summary-grid trail-update-issue-summary-grid"
+              aria-label={bilingual(lang, "Issue 屏蔽摘要", "Issue shielding summary")}
             >
-              <section className="trail-update-summary-grid trail-update-issue-summary-grid">
-                <article className="analysis-stat-card">
-                  <span>{bilingual(lang, "可写 Issue", "Writable Issues")}</span>
-                  <strong>{(directPreview.items || []).length}</strong>
-                  <small>
-                    {bilingual(
-                      lang,
-                      `${directPreview.requested_issue_ids?.length || 0} 条请求；${
-                        (directPreview.items || []).length
-                      } 条可写`,
-                      `${directPreview.requested_issue_ids?.length || 0} requested; ${
-                        (directPreview.items || []).length
-                      } writable`,
-                    )}
-                  </small>
-                </article>
-                <article className="analysis-stat-card">
-                  <span>{bilingual(lang, "未找到", "Missing")}</span>
-                  <strong>
-                    {(directPreview.missing_issue_ids || []).length +
-                      (directPreview.invalid_issue_ids || []).length}
-                  </strong>
-                  <small>Trail view 2410</small>
-                </article>
-                <article className="analysis-stat-card trail-update-field-stat-card">
-                  <span>{bilingual(lang, "目标字段", "Target field")}</span>
-                  <strong className="trail-update-target-value">
-                    {targetSpec(directPreview).fullPath}
-                  </strong>
-                </article>
-              </section>
+              <article className="analysis-stat-card">
+                <span>{bilingual(lang, "可写 Issue", "Writable Issues")}</span>
+                <strong id="trailUpdateIssueCount">
+                  {directPreview ? (directPreview.items || []).length : "—"}
+                </strong>
+                <small id="trailUpdateIssueSummary">
+                  {directPreview
+                    ? bilingual(
+                        lang,
+                        `${directPreview.requested_issue_ids?.length || 0} 条请求；${
+                          (directPreview.items || []).length
+                        } 条可写`,
+                        `${directPreview.requested_issue_ids?.length || 0} requested; ${
+                          (directPreview.items || []).length
+                        } writable`,
+                      )
+                    : "—"}
+                </small>
+              </article>
+              <article className="analysis-stat-card">
+                <span>{bilingual(lang, "未找到", "Missing")}</span>
+                <strong id="trailUpdateIssueMissingCount">
+                  {directPreview
+                    ? (directPreview.missing_issue_ids || []).length +
+                      (directPreview.invalid_issue_ids || []).length
+                    : "—"}
+                </strong>
+                <small>Trail view 2410</small>
+              </article>
+              <article className="analysis-stat-card trail-update-field-stat-card">
+                <span>{bilingual(lang, "目标字段", "Target field")}</span>
+                <strong
+                  id="trailUpdateIssueField"
+                  className="trail-update-target-value"
+                  title={
+                    directPreview
+                      ? targetSpec(directPreview).fullPath
+                      : "ra_stuck_auto_result_info.ra_triage_dashboard.should_exclude"
+                  }
+                >
+                  {directPreview
+                    ? targetSpec(directPreview).fullPath
+                    : "ra_stuck_auto_result_info.ra_triage_dashboard.should_exclude"}
+                </strong>
+              </article>
+            </section>
 
-              <section className="page-card trail-update-table-card">
-                <div className="section-heading trail-update-results-heading">
-                  <div>
-                    <h3>{bilingual(lang, "预计改动（仅写 info）", "Expected changes (info only)")}</h3>
-                  </div>
-                  <div className="trail-update-result-actions">
-                    <button
-                      className="button button-quiet"
-                      type="button"
-                      disabled={!directPreview.draft}
-                      onClick={() => openJsonDraft("issue")}
-                    >
-                      {bilingual(lang, "预览 JSON", "Preview JSON")}
-                    </button>
-                  </div>
+            <section className="page-card trail-update-table-card">
+              <div className="section-heading trail-update-results-heading">
+                <div>
+                  <h3>{bilingual(lang, "预计改动（仅写 info）", "Expected changes (info only)")}</h3>
                 </div>
-                <div className="trail-update-table-wrap">
-                  <table className="trail-update-table trail-update-direct-table">
-                    <thead>
+                <div className="trail-update-result-actions">
+                  <button
+                    className="button button-quiet"
+                    type="button"
+                    disabled={!directPreview?.draft}
+                    onClick={() => openJsonDraft("issue")}
+                  >
+                    {bilingual(lang, "预览 JSON", "Preview JSON")}
+                  </button>
+                </div>
+              </div>
+              <div className="trail-update-table-wrap">
+                <table className="trail-update-table trail-update-direct-table">
+                  <thead>
+                    <tr>
+                      <th>Issue</th>
+                      <th>{bilingual(lang, "数据集版本", "Dataset")}</th>
+                      <th>{bilingual(lang, "当前模型 label（不改）", "Model label (unchanged)")}</th>
+                      <th>{bilingual(lang, "当前屏蔽状态", "Current shield")}</th>
+                      <th>{bilingual(lang, "预计写入 info", "Planned info write")}</th>
+                      <th>{bilingual(lang, "排除说明", "Exclusion note")}</th>
+                    </tr>
+                  </thead>
+                  <tbody id="trailUpdateIssueTableBody">
+                    {!directPreview || !(directPreview.items || []).length ? (
                       <tr>
-                        <th>Issue</th>
-                        <th>{bilingual(lang, "数据集版本", "Dataset")}</th>
-                        <th>{bilingual(lang, "当前模型 label（不改）", "Model label (unchanged)")}</th>
-                        <th>{bilingual(lang, "当前屏蔽状态", "Current shield")}</th>
-                        <th>{bilingual(lang, "预计写入 info", "Planned info write")}</th>
-                        <th>{bilingual(lang, "排除说明", "Exclusion note")}</th>
+                        <td colSpan={6} className="trail-update-empty">
+                          {bilingual(
+                            lang,
+                            "生成预览后显示 Issue。",
+                            "Issues appear after building a preview.",
+                          )}
+                        </td>
                       </tr>
-                    </thead>
-                    <tbody>
-                      {(directPreview.items || []).map((item) => {
+                    ) : (
+                      (directPreview.items || []).map((item) => {
                         const patchPath = item.target?.path || "ra_triage_dashboard.should_exclude";
                         const shortPath = patchPath.split(".").filter(Boolean).pop() || patchPath;
                         const commentPatch =
@@ -2499,13 +2527,13 @@ export const TrailUpdatePage: React.FC<TrailUpdatePageProps> = ({
                             </td>
                           </tr>
                         );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </section>
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </section>
-          ) : null}
+          </section>
 
           <section
             className="page-card trail-update-history-card"
@@ -2659,11 +2687,79 @@ export const TrailUpdatePage: React.FC<TrailUpdatePageProps> = ({
               </div>
               <div className="case-label-decision-body">
                 {(() => {
-                  const st = trailStatusMeta(reasonState(reasonDetailItem), lang);
-                  const remote = reasonDetailItem.trail_detail?.trail_comment || "";
-                  const local = String(
-                    reasonDetailItem.trail_detail?.local_comment ?? reasonDetailItem.comment ?? "",
-                  );
+                  const stateKey = reasonState(reasonDetailItem);
+                  const st = trailStatusMeta(stateKey, lang);
+                  const detail = reasonDetailItem.trail_detail || {};
+                  const src = reasonDetailItem.reason_source || {};
+                  const remote = detail.trail_comment || "";
+                  const local = String(detail.local_comment ?? reasonDetailItem.comment ?? "");
+                  const known = ![
+                    "querying",
+                    "query_failed",
+                    "not_checked",
+                    "not_found",
+                    "pending",
+                  ].includes(stateKey);
+                  const restored =
+                    src.kind === "historical_restore" || src.kind === "legacy_exclusion_note";
+                  const sourceLabel = reasonDetailItem.readonly
+                    ? bilingual(lang, "无本地排除理由", "No local exclusion reason")
+                    : src.kind === "legacy_exclusion_note"
+                      ? bilingual(lang, "迁移前排除备注", "Original exclusion note")
+                      : restored
+                        ? bilingual(lang, "历史理由恢复", "Restored historical reason")
+                        : src.kind === "trail_import"
+                          ? bilingual(lang, "Trail 导入", "Imported from Trail")
+                          : src.kind === "case_label"
+                            ? bilingual(lang, "Issue 标注", "Issue annotation")
+                            : bilingual(lang, "模型复核（旧记录）", "Model review (legacy)");
+                  const originalTime = src.original_created_at || (!restored ? src.created_at : "");
+                  const localMeta = [
+                    sourceLabel,
+                    src.author || bilingual(lang, "作者未知", "Unknown author"),
+                    originalTime
+                      ? formatCstTime(originalTime, lang)
+                      : bilingual(lang, "原始时间未知", "Original time unknown"),
+                    src.source_annotation_id
+                      ? bilingual(
+                          lang,
+                          `原 Review #${src.source_annotation_id}`,
+                          `Original Review #${src.source_annotation_id}`,
+                        )
+                      : "",
+                    src.revision_id
+                      ? bilingual(lang, `版本 #${src.revision_id}`, `Revision #${src.revision_id}`)
+                      : "",
+                    src.kind === "historical_restore" && src.created_at
+                      ? bilingual(
+                          lang,
+                          `恢复时间 ${formatCstTime(src.created_at, lang)}`,
+                          `Restored ${formatCstTime(src.created_at, lang)}`,
+                        )
+                      : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" · ");
+                  const remoteHint = known
+                    ? bilingual(lang, "Trail 未填写理由", "No reason in Trail")
+                    : bilingual(lang, "尚未确认，请刷新查询", "Unconfirmed; refresh to check");
+                  const localHint =
+                    stateKey === "excluded_no_reason"
+                      ? bilingual(lang, "两端均未填写理由，已同步", "Neither side has a reason; synced")
+                      : bilingual(
+                          lang,
+                          "本地理由待补充；保留 Trail 原文",
+                          "Local reason needed; the Trail text is preserved",
+                        );
+                  const rState = remoteState(reasonDetailItem);
+                  const markerLabel =
+                    rState === "true"
+                      ? bilingual(lang, "Trail 已排除", "Excluded in Trail")
+                      : rState === "false"
+                        ? bilingual(lang, "Trail 未排除（false）", "Not excluded in Trail (false)")
+                        : rState === "unset"
+                          ? bilingual(lang, "Trail 排除标记未设置", "Trail exclusion is unset")
+                          : bilingual(lang, "Trail 状态无法确认", "Trail state unconfirmed");
                   return (
                     <>
                       <span className={`trail-update-state-badge ${st.className}`} title={st.detail}>
@@ -2672,10 +2768,14 @@ export const TrailUpdatePage: React.FC<TrailUpdatePageProps> = ({
                       <div className="trail-reason-comparison">
                         <section>
                           <strong>{bilingual(lang, "Trail 当前理由", "Current Trail reason")}</strong>
-                          <p>
-                            {remote ||
-                              bilingual(lang, "Trail 未填写理由", "No reason in Trail")}
-                          </p>
+                          <p>{remote || remoteHint}</p>
+                          <small>
+                            {`${markerLabel} · ${bilingual(
+                              lang,
+                              "远端修改时间未知",
+                              "Remote modification time unknown",
+                            )}`}
+                          </small>
                           {remote ? (
                             <button
                               type="button"
@@ -2690,25 +2790,8 @@ export const TrailUpdatePage: React.FC<TrailUpdatePageProps> = ({
                         </section>
                         <section>
                           <strong>{bilingual(lang, "本地最新理由", "Latest local reason")}</strong>
-                          <p>
-                            {local ||
-                              bilingual(
-                                lang,
-                                "本地理由待补充；保留 Trail 原文",
-                                "Local reason needed; Trail text preserved",
-                              )}
-                          </p>
-                          <small>
-                            {[
-                              reasonDetailItem.reason_source?.author ||
-                                bilingual(lang, "作者未知", "Unknown author"),
-                              reasonDetailItem.reason_source?.created_at
-                                ? formatCstTime(reasonDetailItem.reason_source.created_at, lang)
-                                : "",
-                            ]
-                              .filter(Boolean)
-                              .join(" · ")}
-                          </small>
+                          <p>{local || localHint}</p>
+                          <small>{localMeta}</small>
                           {local ? (
                             <button
                               type="button"
@@ -2828,8 +2911,8 @@ export const TrailUpdatePage: React.FC<TrailUpdatePageProps> = ({
                   <p className="dialog-copy">
                     {bilingual(
                       lang,
-                      "采用 Trail 当前排除标记与理由，保存为我的新标注。保留历史；不修改 Trail、GT 或模型结果。",
-                      "Adopt the current Trail exclusion and reason as my new annotation. Trail, GT and model results stay unchanged.",
+                      "采用 Trail 当前排除标记与理由，保存为我的新标注。保留历史；不修改 Trail、GT 或模型结果。已有裁决或理由冲突时需先人工核对。",
+                      "Adopt the current Trail exclusion and reason as my new annotation. History is retained; Trail, GT and model results stay unchanged. Adjudications or conflicting reasons require manual review.",
                     )}
                   </p>
                 </div>

@@ -102,6 +102,11 @@ interface LegacyWindow {
     };
   };
   renderIntentTopbarDatasetPicker?: (selectedIds?: string[] | null) => void;
+  syncIntentTopbarDatasets?: (
+    items: IntentDatasetItem[],
+    selectedIds: string[],
+    page: string,
+  ) => void;
   showToast?: (msg: string, isError?: boolean) => void;
   acknowledgeLocalChange?: (payload: unknown) => void;
 }
@@ -241,32 +246,50 @@ export const IntentSummaryPage: React.FC<IntentSummaryPageProps> = ({
   useEffect(() => {
     if (!active || !availableDatasets.length) return;
     const legacy = getLegacyWindow();
-    if (legacy.state?.intentLabeling) {
-      legacy.state.intentLabeling.datasets = datasetsQuery.data?.items || [];
-      legacy.state.intentLabeling.summaryDatasetIds = effectiveDatasetIds;
-      legacy.state.intentLabeling.summaryDatasetId = effectiveDatasetIds[0] || "";
+    const allItems = datasetsQuery.data?.items || [];
+    if (legacy.syncIntentTopbarDatasets) {
+      legacy.syncIntentTopbarDatasets(allItems, effectiveDatasetIds, "intent-summary");
+    } else {
+      if (legacy.state?.intentLabeling) {
+        legacy.state.intentLabeling.datasets = allItems;
+        legacy.state.intentLabeling.summaryDatasetIds = effectiveDatasetIds;
+        legacy.state.intentLabeling.summaryDatasetId = effectiveDatasetIds[0] || "";
+      }
+      legacy.renderIntentTopbarDatasetPicker?.(effectiveDatasetIds);
     }
-    legacy.renderIntentTopbarDatasetPicker?.(effectiveDatasetIds);
   }, [active, availableDatasets, datasetsQuery.data, effectiveDatasetIds]);
 
   // Listen to topbar intent dataset changes from classic shell
   useEffect(() => {
     if (!active) return;
+    const applyNextIds = (nextIds: string[]) => {
+      setSelectedDatasetIds((prev) => {
+        if (prev.join(",") === nextIds.join(",")) return prev;
+        setExperimentId("");
+        setAssignees([]);
+        setPage(1);
+        setSelectedRowKeys(new Set());
+        return [...nextIds];
+      });
+    };
+    const handleDatasetEvent = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ page?: string; datasetIds?: string[] }>).detail;
+      if (detail?.page === "intent-summary" && Array.isArray(detail.datasetIds) && detail.datasetIds.length) {
+        applyNextIds(detail.datasetIds);
+      }
+    };
     const handleSync = () => {
       const legacyIds = getLegacyWindow().state?.intentLabeling?.summaryDatasetIds;
       if (Array.isArray(legacyIds) && legacyIds.length) {
-        setSelectedDatasetIds((prev) => {
-          if (prev.join(",") === legacyIds.join(",")) return prev;
-          setExperimentId("");
-          setAssignees([]);
-          setPage(1);
-          setSelectedRowKeys(new Set());
-          return [...legacyIds];
-        });
+        applyNextIds(legacyIds);
       }
     };
+    window.addEventListener("ra:intent-datasets-change", handleDatasetEvent);
     window.addEventListener("ra:workbench-sync", handleSync);
-    return () => window.removeEventListener("ra:workbench-sync", handleSync);
+    return () => {
+      window.removeEventListener("ra:intent-datasets-change", handleDatasetEvent);
+      window.removeEventListener("ra:workbench-sync", handleSync);
+    };
   }, [active]);
 
   // Persist URL
@@ -441,7 +464,7 @@ export const IntentSummaryPage: React.FC<IntentSummaryPageProps> = ({
       } else {
         const result = await apiRequest<{ count?: number }>("/api/intent-labels/bulk-delete", {
           method: "POST",
-          body: JSON.stringify({ items: confirmDelete.rows }),
+          body: { items: confirmDelete.rows },
         });
         getLegacyWindow().acknowledgeLocalChange?.(result);
         const deletedCount = Number(result?.count) || confirmDelete.rows.length;
@@ -1036,6 +1059,7 @@ export const IntentSummaryPage: React.FC<IntentSummaryPageProps> = ({
           loading={summaryQuery.isFetching}
           className="case-pagination gallery-pagination intent-summary-pagination"
           showPageUnit
+          keepControlsEnabledWhenEmpty
           labelText={`${currentPage} / ${pageCount}`}
           ariaLabel={bilingual(lang, "标注汇总分页", "Intent summary pagination")}
           onPageChange={(nextPage) => {
