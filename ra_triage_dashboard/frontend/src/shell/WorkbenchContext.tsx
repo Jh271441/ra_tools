@@ -66,6 +66,19 @@ export interface WorkbenchConfig {
 }
 
 export interface WorkbenchOverview {
+  issues?: number;
+  labelled?: number;
+  unlabelled?: number;
+  predictions?: number;
+  model_failures?: number;
+  reviewed_failures?: number;
+  label_state_counts?: {
+    resolved?: number;
+    pending?: number;
+    conflict?: number;
+    stale?: number;
+    [k: string]: number | undefined;
+  };
   issue_count?: number;
   failure_count?: number;
   reviewed_count?: number;
@@ -435,6 +448,7 @@ export const WorkbenchProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   // Keep global compatibility shims synced for Wave 3.1–3.5 islands
   useEffect(() => {
+    document.body.dataset.activePage = activePage;
     const win = window as unknown as Record<string, unknown>;
     win.__RA_TRIAGE_SESSION__ = session;
     win.__RA_TRIAGE_STATE__ = {

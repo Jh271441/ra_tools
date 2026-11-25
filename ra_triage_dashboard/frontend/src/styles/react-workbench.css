@@ -2252,9 +2252,9 @@ html[data-color-theme="light"] .comparison-matrix .matrix-error {
   pointer-events: auto;
 }
 
-@media (max-width: 1200px) {
-  .ra-mobile-menu-btn {
-    display: inline-flex;
+@media (min-width: 640px) {
+  .topbar .top-actions {
+    margin-left: auto;
   }
 }
 

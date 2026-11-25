@@ -449,6 +449,49 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
     setMobileMoreOpen(false);
   }, [activePage]);
 
+  // Sync html[data-sidebar-pref] + live-resize across the 1200px drawer breakpoint
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    document.documentElement.classList.add("ra-ui-ready");
+    const mq =
+      typeof window.matchMedia === "function" ? window.matchMedia("(max-width: 1200px)") : null;
+    const syncPref = () => {
+      if (mq?.matches) {
+        document.documentElement.dataset.sidebarPref = "collapsed";
+      } else {
+        document.documentElement.dataset.sidebarPref = sidebarCollapsed ? "collapsed" : "expanded";
+      }
+    };
+    syncPref();
+    if (!mq) return;
+    const onChange = (ev: MediaQueryListEvent) => {
+      setMobileDrawerOpen(false);
+      if (ev.matches) {
+        document.documentElement.dataset.sidebarPref = "collapsed";
+      } else {
+        let pref = false;
+        try {
+          pref = localStorage.getItem("ra-triage-sidebar-collapsed") === "true";
+        } catch {
+          pref = false;
+        }
+        setSidebarCollapsed(pref);
+        document.documentElement.dataset.sidebarPref = pref ? "collapsed" : "expanded";
+      }
+    };
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, [sidebarCollapsed]);
+
+  // Sync body scroll lock class with mobile.css (.mobile-sidebar-open)
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    document.documentElement.classList.toggle("mobile-sidebar-open", mobileDrawerOpen);
+    return () => {
+      document.documentElement.classList.remove("mobile-sidebar-open");
+    };
+  }, [mobileDrawerOpen]);
+
   // Close drawer on Escape
   useEffect(() => {
     if (!mobileDrawerOpen) return;
@@ -641,7 +684,7 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
   const shellClasses = [
     "app-shell",
     sidebarCollapsed ? "sidebar-collapsed" : "",
-    mobileDrawerOpen ? "mobile-sidebar-open" : "",
+    mobileDrawerOpen ? "sidebar-mobile-open" : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -840,15 +883,6 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
       <div className="app-frame">
         <header className="topbar">
           <div className="brand">
-            <button
-              type="button"
-              className="button button-quiet ra-mobile-menu-btn"
-              aria-label={bilingual(lang, "打开菜单", "Open menu")}
-              aria-expanded={mobileDrawerOpen}
-              onClick={() => setMobileDrawerOpen((v) => !v)}
-            >
-              ☰
-            </button>
             <div>
               <h1 id="pageTitle">{pageTitle(activePage, lang)}</h1>
             </div>
@@ -898,25 +932,33 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
             <div className="header-metrics" aria-label={bilingual(lang, "概览", "Overview")}>
               <div>
                 <span>{bilingual(lang, "基线", "Baseline")}</span>
-                <strong id="statIssues">{overview?.issue_count?.toLocaleString() ?? "—"}</strong>
+                <strong id="statIssues">
+                  {(overview?.issues ?? overview?.issue_count)?.toLocaleString() ?? "—"}
+                </strong>
               </div>
               <div className="metric-fail">
                 <span>{bilingual(lang, "判断失败", "Mismatches")}</span>
-                <strong id="statFailures">{overview?.failure_count?.toLocaleString() ?? "—"}</strong>
+                <strong id="statFailures">
+                  {(overview?.model_failures ?? overview?.failure_count)?.toLocaleString() ?? "—"}
+                </strong>
               </div>
               <div className="metric-reviewed">
                 <span>{bilingual(lang, "人工复核", "Human reviews")}</span>
-                <strong id="statReviewed">{overview?.reviewed_count?.toLocaleString() ?? "—"}</strong>
+                <strong id="statReviewed">
+                  {(overview?.labelled ?? overview?.reviewed_count)?.toLocaleString() ?? "—"}
+                </strong>
               </div>
               <div className="metric-shared-labels">
                 <span>{bilingual(lang, "共享标签结论", "Labels resolved")}</span>
                 <strong id="statSharedLabels">
-                  {overview?.shared_label_resolved_count?.toLocaleString() ?? "—"}
+                  {(overview?.label_state_counts?.resolved ?? overview?.shared_label_resolved_count)?.toLocaleString() ?? "—"}
                 </strong>
               </div>
               <div>
                 <span>{bilingual(lang, "模型输出", "Predictions")}</span>
-                <strong id="statPredictions">{overview?.prediction_count?.toLocaleString() ?? "—"}</strong>
+                <strong id="statPredictions">
+                  {(overview?.predictions ?? overview?.prediction_count)?.toLocaleString() ?? "—"}
+                </strong>
               </div>
             </div>
           )}

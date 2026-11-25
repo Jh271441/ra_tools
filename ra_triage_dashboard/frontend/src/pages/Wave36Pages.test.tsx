@@ -53,7 +53,13 @@ describe("Wave 3.6 Pure React AppShell & Final 8 Pages", () => {
           gt_sync: { status: "ready", baselines: [] },
         };
       } else if (url.includes("/api/overview")) {
-        body = { issue_count: 1071, failure_count: 12, reviewed_count: 7, shared_label_resolved_count: 260, prediction_count: 100 };
+        body = {
+          issues: 1071,
+          model_failures: 12,
+          labelled: 7,
+          label_state_counts: { resolved: 260 },
+          predictions: 100,
+        };
       } else if (url.includes("/api/intent-datasets")) {
         body = { items: [{ id: "intent_0206", display_name: "0206 Intent", available: true, case_count: 42 }] };
       } else if (url.includes("/api/daily-review/cases")) {
@@ -164,6 +170,11 @@ describe("Wave 3.6 Pure React AppShell & Final 8 Pages", () => {
   it("renders AppShell with bilingual toggle, theme toggle, sidebar nav, and zero native selects", async () => {
     const { container } = render(wrap(<AppShell><div>PageBody</div></AppShell>));
     await waitFor(() => expect(screen.getByText("jasperchen")).toBeInTheDocument());
+    await waitFor(() => expect(document.getElementById("statIssues")?.textContent).toBe("1,071"));
+    expect(document.getElementById("statFailures")?.textContent).toBe("12");
+    expect(document.getElementById("statReviewed")?.textContent).toBe("7");
+    expect(document.getElementById("statSharedLabels")?.textContent).toBe("260");
+    expect(document.getElementById("statPredictions")?.textContent).toBe("100");
     expect(container.querySelectorAll("select").length).toBe(0);
 
     // Toggle language ZH -> EN
