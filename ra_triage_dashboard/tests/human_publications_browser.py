@@ -127,18 +127,16 @@ def main(output_dir='/private/tmp/manual-role-acceptance'):
               clearTimeout(humanPublication.timer);state.activePage='review';document.body.dataset.activePage='review';
               document.querySelectorAll('.app-page').forEach(p=>p.classList.toggle('hidden',p.dataset.page!=='review'));
               document.querySelector('#reviewGalleryView').classList.add('hidden');document.querySelector('#reviewDetailView').classList.remove('hidden');
-              document.querySelector('#reviewPane').innerHTML='<form id="annotationForm" class="review-form">'+supplementalReviewNoticeMarkup(human)+'<div id="humanReviewStatus"></div><textarea id="fixtureDraft">draft preserved</textarea></form>';
-              renderHumanReviewStatus(human);window.updateTagSummary=window.updateEvidenceSummary=window.syncReviewTagCreatorPlacement=window.renderCombinedReviewContextStatus=()=>{};
+              document.querySelector('#reviewPane').innerHTML='<form id="annotationForm" class="review-form">'+supplementalReviewNoticeMarkup(human)+'<textarea id="fixtureDraft">draft preserved</textarea></form>';
+              window.updateTagSummary=window.updateEvidenceSummary=window.syncReviewTagCreatorPlacement=window.renderCombinedReviewContextStatus=()=>{};
             }""",human)
             page.locator('.review-task-supplemental-notice summary').click()
             if width<761:
                 box=page.locator('.review-task-supplemental-notice summary').bounding_box()
                 assert box['height']>=44 and box['width']>=44
-            expect(page.locator('.human-role-summary')).to_contain_text('RD')
             page.evaluate("state.uiLanguage='en';document.documentElement.dataset.uiLang='en';refreshReviewFormLanguage();")
             expect(page.locator('#fixtureDraft')).to_have_value('draft preserved')
             expect(page.locator('.review-task-supplemental-notice')).to_contain_text('Your annotation is advisory')
-            expect(page.locator('.human-role-summary')).to_contain_text('labels')
             assert not page.evaluate('document.documentElement.scrollWidth>innerWidth'),('review-component',width)
             page.locator('#reviewPane').screenshot(path=str(out/f'review-status-{width}.png'))
             checks.append(dict(page='review-components',width=width,language='zh→en',ok=True));page.close()

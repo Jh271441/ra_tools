@@ -45,7 +45,7 @@ function caseDecisionRevisions(data) {
 function caseLabelDecisionMarkup(data) {
   const rows = caseDecisionRevisions(data), current = rows.filter(r => !r.historical), old = rows.filter(r => r.historical);
   const history = data.decision_history || [];
-  return `${caseDecisionFlowMarkup(data)}<h3 class="case-decision-section-title">${uiText("每人的当前标注", "Current labels")}</h3><div class="case-decision-records history-dialog-content">${current.map(r => caseDecisionRecordMarkup(r,r.sourceName,"",true)).join("") || `<p>${uiText("暂无标注，请先保存个人标注。", "No labels yet. Save a personal label first.")}</p>`}</div>${old.length ? `<details class="case-decision-history"><summary>${uiText("历史标注", "Earlier labels")} · ${old.length}</summary><div class="case-decision-records history-dialog-content">${old.map(r => caseDecisionRecordMarkup(r,r.sourceName,uiText("旧版本", "Earlier revision"),true)).join("")}</div></details>` : ""}${history.length ? `<details class="case-decision-history"><summary>${uiText("裁决记录", "Decision history")} · ${history.length}</summary><div class="case-decision-records history-dialog-content">${history.map(r => caseDecisionRecordMarkup(r,uiText("Issue 裁决", "Issue decision"))).join("")}</div></details>` : ""}`;
+  return `${humanRoleSummary(data.label_state?.human_publication)}${caseDecisionFlowMarkup(data)}<h3 class="case-decision-section-title">${uiText("每人的当前标注", "Current labels")}</h3><div class="case-decision-records history-dialog-content">${current.map(r => caseDecisionRecordMarkup(r,r.sourceName,"",true)).join("") || `<p>${uiText("暂无标注，请先保存个人标注。", "No labels yet. Save a personal label first.")}</p>`}</div>${old.length ? `<details class="case-decision-history"><summary>${uiText("历史标注", "Earlier labels")} · ${old.length}</summary><div class="case-decision-records history-dialog-content">${old.map(r => caseDecisionRecordMarkup(r,r.sourceName,uiText("旧版本", "Earlier revision"),true)).join("")}</div></details>` : ""}${history.length ? `<details class="case-decision-history"><summary>${uiText("裁决记录", "Decision history")} · ${history.length}</summary><div class="case-decision-records history-dialog-content">${history.map(r => caseDecisionRecordMarkup(r,uiText("Issue 裁决", "Issue decision"))).join("")}</div></details>` : ""}`;
 }
 function renderCaseLabelDecisionDialog() {
   const c = caseLabelDecisionUi.context, dialog = $("#caseLabelDecisionDialog");
@@ -201,6 +201,11 @@ function updateCaseDecisionPreview() {
   target.textContent=uiText(`将确认：${expectedOutputDisplayText(p.expected_output) || "待补齐分类"} · ${caseExclusionText(p.is_excluded)}${changed.length ? `；已调整：${changed.join("、")}` : ""}`,`Confirm: ${expectedOutputDisplayText(p.expected_output) || "Classification missing"} · ${caseExclusionText(p.is_excluded)}${changed.length ? `; changed: ${changed.join(", ")}` : ""}`);
 }
 function refreshCaseLabelDecisionLanguage() {
+  const sharedDialog = $("#sharedLabelStateDialog");
+  if (sharedDialog?.open && sharedDialog._humanPublication) {
+    const summary = sharedDialog.querySelector(".human-role-summary");
+    if (summary) summary.outerHTML = humanRoleSummary(sharedDialog._humanPublication);
+  }
   const reviewEntry = $("#reviewSharedLabelState [data-open-shared-label-state]");
   if (reviewEntry) {
     reviewEntry.setAttribute("aria-label", uiText("标注汇总与裁决", "Label summary and decisions"));

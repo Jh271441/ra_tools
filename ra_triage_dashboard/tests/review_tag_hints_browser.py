@@ -91,8 +91,16 @@ def run():
                         summary.scroll_into_view_if_needed()
                         summary.click()
                         expect(panel).to_be_visible()
-                        # Hover reads the saved hint without selecting the label.
-                        row.locator("[data-ui-info-hover]").hover()
+                        hover_target = row.locator("[data-ui-info-hover]")
+                        if (width, language, theme) == (1440, "zh", "dark"):
+                            hover_target.hover()
+                            page.wait_for_timeout(700)
+                            assert not tip.is_visible()
+                            page.mouse.move(4, 4)
+                            page.wait_for_timeout(900)
+                            assert not tip.is_visible()
+                        hover_target.hover()
+                        assert not tip.is_visible()
                         try:
                             expect(tip).to_be_visible()
                         except AssertionError:
@@ -103,6 +111,10 @@ def run():
                         expect(tip.locator("span")).to_have_text(HINT)
                         expect(check).not_to_be_checked()
                         bounds(tip, width)
+                        anchor_box, tip_box = hover_target.bounding_box(), tip.bounding_box()
+                        assert (tip_box["y"] >= anchor_box["y"] + anchor_box["height"] or
+                                tip_box["y"] + tip_box["height"] <= anchor_box["y"]), (tip_box, anchor_box)
+                        assert tip_box["width"] < 280, tip_box
                         assert check.get_attribute("aria-describedby") == tip.get_attribute("id")
                         assert tip.evaluate("n=>n.closest('label')") is None
                         tip.click()
@@ -201,10 +213,14 @@ def run():
         added = group.locator('[data-review-tag-option="hover-dynamic"]')
         added.locator("input").focus()
         expect(added.locator('[role="tooltip"] span')).to_have_text("Newly inserted hint")
+        page.keyboard.press("Escape")
+        expect(group.locator(".review-tag-options")).not_to_be_visible()
         # Existing button-based info controls retain click/focus/Escape behavior.
         root.evaluate("""root=>root.insertAdjacentHTML('beforeend',
           '<span class="ui-info model-review-run-help" data-ui-info data-qa-shared-info><button type="button" aria-expanded="false">Info</button><span class="ui-info-tooltip model-review-run-tooltip" role="tooltip">Existing shared info</span></span>')""")
         info = root.locator("[data-qa-shared-info]")
+        info.locator("button").scroll_into_view_if_needed()
+        page.evaluate("()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))")
         info.locator("button").click()
         expect(info.locator('[role="tooltip"]')).to_be_visible()
         expect(info.locator("button")).to_have_attribute("aria-expanded", "true")

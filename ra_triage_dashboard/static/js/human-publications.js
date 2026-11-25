@@ -37,10 +37,6 @@ function humanRoleSummary(human) {
     return `<span><strong>${escapeHtml(humanLaneName(lane))}</strong> ${escapeHtml(humanStatus(result.state))}${result.label?' · '+escapeHtml(rdLabel(result.label)):''}${sync?' · '+escapeHtml(humanStatus(human.scope?.publication_armed===0?'awaiting_activation':sync.sync_state)):''}${result.objections?.length?' · '+escapeHtml(uiText(`${result.objections.length} 条任务外异议`,`${result.objections.length} advisory objections`)):''}</span>`;
   }).join('')}</div>`;
 }
-function renderHumanReviewStatus(human) {
-  const root=$('#humanReviewStatus');if(!root)return;
-  root._humanPublication=human;root.innerHTML=humanRoleSummary(human);
-}
 function hpPersist() {
   const h=humanPublication,url=new URL(pageUrl('rd-results',{baselines:state.selectedBaselineIds}),location.origin);
   Object.entries({...h.filters,lane:h.lane}).forEach(([k,v])=>url.searchParams.set(k,v));
