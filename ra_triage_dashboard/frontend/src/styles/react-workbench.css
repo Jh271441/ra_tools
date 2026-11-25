@@ -2258,9 +2258,37 @@ html[data-color-theme="light"] .comparison-matrix .matrix-error {
   }
 }
 
+/* Mobile drawer: keep full labels visible even when html[data-sidebar-pref="collapsed"] is set at <= 1200px */
+@media (max-width: 1200px) {
+  .app-shell.sidebar-mobile-open .sidebar-copy,
+  .app-shell.sidebar-mobile-open .sidebar-label {
+    display: grid !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+  }
+  .app-shell.sidebar-mobile-open .sidebar-collapse .sidebar-label {
+    display: block !important;
+  }
+  .app-shell.sidebar-mobile-open .sidebar-group-compact {
+    display: none !important;
+  }
+}
+
 @media (max-width: 640px) {
+  .topbar .top-actions .ra-desktop-action,
   .ra-desktop-action {
-    display: none;
+    display: none !important;
+  }
+  .topbar .gt-sync-control {
+    flex-wrap: wrap;
+    min-width: 0;
+    max-width: 100%;
+  }
+  .topbar .gt-sync-meta {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .ra-mobile-more-wrap {
     display: inline-block;

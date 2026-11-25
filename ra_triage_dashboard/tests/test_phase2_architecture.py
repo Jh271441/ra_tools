@@ -299,6 +299,54 @@ class Phase2ArchitectureTests(unittest.TestCase):
                     typed_ops += 1
         self.assertGreaterEqual(typed_ops, 150)
 
+    def test_phase4b_cross_repo_adapter_portability_and_archive(self) -> None:
+        from ra_triage_dashboard.app.integrations.ra_auto_triage_adapter import (
+            ensure_ra_auto_triage_on_path,
+        )
+
+        app_root = Path(__file__).resolve().parents[1] / "app"
+        adapter_rel = Path("integrations") / "ra_auto_triage_adapter.py"
+        sys_path_violations: list[str] = []
+        hardcoded_volume_violations: list[str] = []
+        allowed_volume_files = {
+            Path("settings.py"),
+            Path("cron_version_source.py"),
+            adapter_rel,
+        }
+        for py_path in sorted(app_root.rglob("*.py")):
+            rel = py_path.relative_to(app_root)
+            text = py_path.read_text(encoding="utf-8")
+            if rel != adapter_rel and ("sys.path.insert" in text or "sys.path.append" in text):
+                sys_path_violations.append(str(rel))
+            if rel not in allowed_volume_files and "/volume/home/workspace" in text:
+                hardcoded_volume_violations.append(str(rel))
+
+        self.assertEqual(
+            sys_path_violations,
+            [],
+            f"Direct sys.path mutation forbidden outside ra_auto_triage_adapter.py: {sys_path_violations}",
+        )
+        self.assertEqual(
+            hardcoded_volume_violations,
+            [],
+            f"Hardcoded /volume/home/workspace forbidden outside settings/adapter: {hardcoded_volume_violations}",
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with self.assertRaises(FileNotFoundError):
+                ensure_ra_auto_triage_on_path(root, require_vlm=True)
+            (root / "vlm").mkdir()
+            resolved = ensure_ra_auto_triage_on_path(root, require_vlm=True)
+            self.assertEqual(resolved, root.resolve())
+
+        archive_dir = Path(__file__).resolve().parents[1] / "scripts" / "archive"
+        self.assertTrue(archive_dir.is_dir(), "scripts/archive/ directory must exist")
+        self.assertTrue(
+            any(archive_dir.iterdir()),
+            "scripts/archive/ must contain archived s3-s6 milestone scripts",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

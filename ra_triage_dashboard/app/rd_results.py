@@ -56,11 +56,10 @@ def digest(value):
 
 
 def adapter(root, mode=RD_MODE):
+    from .integrations.ra_auto_triage_adapter import load_rd_trail_http
+
     target_field(mode)
-    root = str(Path(root).resolve())
-    if root not in sys.path:
-        sys.path.insert(0, root)
-    result = importlib.import_module("tools.daily_auto_triage.rd_review_sync").TrailHTTP()
+    result = load_rd_trail_http(root)
     result.client = RDTransport(result.client, mode)
     if mode == TE_MODE:
         # Reuse auth and reads, never the RD client's hard-coded update payload.

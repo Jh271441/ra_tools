@@ -14,6 +14,13 @@ import traceback
 from pathlib import Path
 from typing import Any
 
+try:
+    from .integrations.ra_auto_triage_adapter import ensure_ra_auto_triage_on_path
+except ImportError:  # Direct script execution.
+    from integrations.ra_auto_triage_adapter import (  # type: ignore[no-redef]
+        ensure_ra_auto_triage_on_path,
+    )
+
 
 RESULT_PREFIX = "__RA_TRIAGE_DASHBOARD_RESULT__"
 ISSUE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{3,128}$")
@@ -77,8 +84,7 @@ def main() -> int:
     # Must be applied before importing ra_auto_triage modules.
     os.environ["RA_TOOLS_ENABLED"] = "false"
     os.environ["BAG_CACHE_READ_ONLY"] = "true"
-    if str(ra_root) not in sys.path:
-        sys.path.insert(0, str(ra_root))
+    ensure_ra_auto_triage_on_path(ra_root, require_vlm=True)
 
     try:
         row = load_issue(issue_id)

@@ -114,12 +114,10 @@ def read_trail_gt_labels(
             complete=False,
             message="当前 baseline 没有可同步的 issue。",
         )
-    root = str(ra_root.resolve())
-    if root not in sys.path:
-        sys.path.insert(0, root)
     try:
-        importlib.invalidate_caches()
-        from utils.get_ra_issue_utils import get_self_issue  # type: ignore[import-not-found]
+        from .integrations.ra_auto_triage_adapter import load_trail_reader
+
+        get_self_issue = load_trail_reader(ra_root)
     except Exception as exc:
         return TrailGtSyncResult(
             rows=[],

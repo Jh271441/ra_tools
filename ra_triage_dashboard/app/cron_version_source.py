@@ -1,5 +1,5 @@
 """Read-only status for version incremental processing and its independent media queue."""
-import json, time
+import json, os, time
 import re
 import sqlite3
 from collections import OrderedDict, defaultdict
@@ -7,8 +7,13 @@ from contextlib import closing
 from pathlib import Path
 import threading
 
-STATE = Path(
+DEFAULT_CRON_VERSION_STATE_DIR = (
     "/volume/home/workspace/ra_auto_triage_deploy/state/version_incremental_v3"
+)
+STATE = Path(
+    os.getenv("DASHBOARD_CRON_VERSION_STATE_DIR", "").strip()
+    or os.getenv("RA_CRON_VERSION_STATE_DIR", "").strip()
+    or DEFAULT_CRON_VERSION_STATE_DIR
 )
 _DOC_CACHE_MAX = 8192
 _doc_cache_lock = threading.Lock()

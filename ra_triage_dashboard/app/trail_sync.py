@@ -202,12 +202,10 @@ def read_trail_issue_metadata(
 def _read_trail_issue_metadata(
     ra_root: Path, normalized_issue_id: str, view_id: int
 ) -> dict[str, Any]:
-    root = str(ra_root.resolve())
-    if root not in sys.path:
-        sys.path.insert(0, root)
     try:
-        importlib.invalidate_caches()
-        from utils.get_ra_issue_utils import get_self_issue  # type: ignore[import-not-found]
+        from .integrations.ra_auto_triage_adapter import load_trail_reader
+
+        get_self_issue = load_trail_reader(ra_root)
 
         frame = get_self_issue(
             [{"attr_id": "issue_id", "val": [normalized_issue_id], "operator": "like"}],
@@ -285,12 +283,10 @@ def read_trail_model_fields(
             complete=True,
             message="当前 baseline 没有可同步的 issue。",
         )
-    root = str(ra_root.resolve())
-    if root not in sys.path:
-        sys.path.insert(0, root)
     try:
-        importlib.invalidate_caches()
-        from utils.get_ra_issue_utils import get_self_issue  # type: ignore[import-not-found]
+        from .integrations.ra_auto_triage_adapter import load_trail_reader
+
+        get_self_issue = load_trail_reader(ra_root)
     except Exception as exc:
         return TrailSyncResult(
             rows=[],
@@ -427,12 +423,10 @@ def read_trail_comment_markers(
             complete=True,
             message="没有需要检查 Comment 的 Issue。",
         )
-    root = str(ra_root.resolve())
-    if root not in sys.path:
-        sys.path.insert(0, root)
     try:
-        importlib.invalidate_caches()
-        from utils.get_ra_issue_utils import get_self_issue  # type: ignore[import-not-found]
+        from .integrations.ra_auto_triage_adapter import load_trail_reader
+
+        get_self_issue = load_trail_reader(ra_root)
     except Exception as exc:
         return TrailCommentMarkerResult(
             matched_issue_ids=frozenset(),

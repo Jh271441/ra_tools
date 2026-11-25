@@ -307,15 +307,12 @@ def build_manual_exclusion_changes(
 
 
 def _trail_interface_factory(ra_root: Path) -> Callable[[], Any]:
-    root = str(Path(ra_root).expanduser().resolve())
+    from .integrations.ra_auto_triage_adapter import load_trail_interface
+
+    resolved = Path(ra_root).expanduser().resolve()
 
     def factory() -> Any:
-        if root not in sys.path:
-            sys.path.insert(0, root)
-        importlib.invalidate_caches()
-        from utils.trail_api import TrailInterface  # type: ignore[import-not-found]
-
-        return TrailInterface()
+        return load_trail_interface(resolved)
 
     return factory
 

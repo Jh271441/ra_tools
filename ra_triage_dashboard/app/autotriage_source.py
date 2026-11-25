@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -11,6 +12,15 @@ from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_ope
 MAX_AUTOTRIAGE_RESPONSE_BYTES = 32 * 1024 * 1024
 MAX_AUTOTRIAGE_RESULTS = 10_000
 BATCH_ID_RE = re.compile(r"^[1-9][0-9]{0,11}$")
+DEFAULT_AUTOTRIAGE_INTERNAL_HOSTS = ("10.190.57.183",)
+
+
+def _allowed_internal_hosts() -> frozenset[str]:
+    raw = os.getenv("DASHBOARD_AUTOTRIAGE_ALLOWED_INTERNAL_HOSTS", "").strip()
+    if not raw:
+        return frozenset(DEFAULT_AUTOTRIAGE_INTERNAL_HOSTS)
+    hosts = [h.strip().lower() for h in raw.split(",") if h.strip()]
+    return frozenset(hosts) or frozenset(DEFAULT_AUTOTRIAGE_INTERNAL_HOSTS)
 
 
 class AutoTriageSourceError(RuntimeError):
@@ -43,7 +53,7 @@ class AutoTriageSource:
             port = -1
         host = (parsed.hostname or "").lower()
         endpoint_allowed = (
-            host == "10.190.57.183"
+            host in _allowed_internal_hosts()
             and parsed.scheme == "http"
             and port == 8000
         ) or (

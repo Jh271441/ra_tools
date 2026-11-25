@@ -25,6 +25,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 try:
+    from .integrations.ra_auto_triage_adapter import ensure_ra_auto_triage_on_path
     from .worker_code_provenance import verified_export_commit
     from .prompt_catalog import (
         PROMPT_ID_RE,
@@ -33,6 +34,9 @@ try:
         normalise_input_config,
     )
 except ImportError:  # Direct script execution from run_batch_worker.sh.
+    from integrations.ra_auto_triage_adapter import (  # type: ignore[no-redef]
+        ensure_ra_auto_triage_on_path,
+    )
     from worker_code_provenance import verified_export_commit
     from prompt_catalog import (  # type: ignore[no-redef]
         PROMPT_ID_RE,
@@ -1142,8 +1146,7 @@ def main() -> int:
         os.environ[name] = ""
     os.environ["no_proxy"] = "*"
     os.environ["NO_PROXY"] = "*"
-    if str(ra_root) not in sys.path:
-        sys.path.insert(0, str(ra_root))
+    ensure_ra_auto_triage_on_path(ra_root, require_vlm=True)
 
     try:
         # Validate exported code before imports or model/Trail activity.

@@ -9,7 +9,7 @@ from pathlib import Path
 from ra_triage_dashboard.app.db import Database
 
 
-SCRIPT = Path(__file__).parents[1] / "scripts" / "build_manual_s3_smoke.py"
+SCRIPT = Path(__file__).parents[1] / "scripts" / "archive" / "build_manual_s3_smoke.py"
 SPEC = importlib.util.spec_from_file_location("build_manual_s3_smoke", SCRIPT)
 smoke = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(smoke)

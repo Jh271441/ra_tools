@@ -20,6 +20,8 @@ DASHBOARD_SSO_APP_IDS = {
     "ra-model.intra.xiaojukeji.com": "2103860",
 }
 DASHBOARD_RETURN_HOSTS = frozenset(DASHBOARD_SSO_APP_IDS)
+DEFAULT_RA_AUTO_TRIAGE_ROOT = Path("/volume/home/workspace/ra_auto_triage")
+DEFAULT_AUTOTRIAGE_API_BASE_URL = "http://10.190.57.183:8000"
 
 
 def _path(name: str, default: Path) -> Path:
@@ -203,7 +205,7 @@ class Settings:
         data_dir = _path("DASHBOARD_DATA_DIR", app_root / ".data")
         ra_root = _path(
             "RA_AUTO_TRIAGE_ROOT",
-            Path("/volume/home/workspace/ra_auto_triage"),
+            DEFAULT_RA_AUTO_TRIAGE_ROOT,
         )
         # Product BEV index resolves meta_path under ares_ra_root (not always RA
         # root). Cloud layouts use ARES_CAPTURE_RA_ROOT=<media_layouts/.../layout>
@@ -590,9 +592,9 @@ class Settings:
             or "http://auto-triage.intra.xiaojukeji.com/ra/model_triage/records",
             autotriage_api_base_url=os.getenv(
                 "DASHBOARD_AUTOTRIAGE_API_BASE_URL",
-                "http://10.190.57.183:8000",
+                DEFAULT_AUTOTRIAGE_API_BASE_URL,
             ).strip()
-            or "http://10.190.57.183:8000",
+            or DEFAULT_AUTOTRIAGE_API_BASE_URL,
             allowed_model_hosts=extra_hosts,
             job_timeout_seconds=_integer("DASHBOARD_JOB_TIMEOUT_SECONDS", 720, 32),
             trust_proxy_identity_headers=trust_proxy_headers,
