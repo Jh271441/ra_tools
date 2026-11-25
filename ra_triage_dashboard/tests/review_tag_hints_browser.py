@@ -91,6 +91,7 @@ def run():
                         summary.scroll_into_view_if_needed()
                         summary.click()
                         expect(panel).to_be_visible()
+                        assert row.get_attribute("data-ui-info-hover-delay") == "1000"
                         hover_target = row.locator("[data-ui-info-hover]")
                         if (width, language, theme) == (1440, "zh", "dark"):
                             hover_target.hover()

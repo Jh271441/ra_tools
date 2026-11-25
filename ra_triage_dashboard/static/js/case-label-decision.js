@@ -21,7 +21,7 @@ function caseDecisionRecordMarkup(vote, sourceName, kind = "", adopt = false) {
   const rationale = (full ? vote.label_rationale : vote.rationale) || "";
   const badges = `${vote.expected_output ? labelBadge(vote.expected_output, "—", expectedOutputDisplayText(vote.expected_output)) : `<span class="tag">${uiText("待补齐分类", "Classification missing")}</span>`}<span class="tag ${vote.is_excluded === true ? "exclusion-tag" : ""}">${escapeHtml(caseExclusionText(vote.is_excluded))}</span>`;
   const sourceMeta = [sourceName, `${uiText("版本", "Revision")} ${vote.id}`, kind].filter(Boolean).map(escapeHtml).join(" · ");
-  const meta = `<span>${sourceMeta}</span>${vote.tags?.length ? `<span class="tags">${vote.tags.map(tag => `<span class="tag">${escapeHtml(tagLabel(tag))}</span>`).join("")}</span>` : ""}${!rationale ? `<span class="history-record-empty">${uiText("未填写标注依据", "No label rationale")}</span>` : ""}`;
+  const meta = `<span>${sourceMeta}</span>${vote.tags?.length ? `<span class="tags">${vote.tags.map(tag => `<span class="tag">${escapeHtml(tagLabel(tag))}</span>`).join("")}</span>` : ""}`;
   const body = `${rationale ? `<p>${escapeHtml(rationale)}</p>` : ""}
     ${full ? `${vote.rationale ? `<p><strong>${uiText("裁决人补充依据", "Decision review rationale")}</strong> ${escapeHtml(vote.rationale)}</p>` : ""}${full.adopted_revision ? `<small class="history-record-meta">${escapeHtml(uiText(`采纳 ${full.adopted_revision.author} 的版本 ${full.adopted_revision_id}`, `Adopted ${full.adopted_revision.author}'s revision ${full.adopted_revision_id}`))}</small>` : ""}` : ""}
     ${vote.attachments?.length ? `<div class="case-decision-images">${caseDecisionImageMarkup(vote.attachments)}</div>` : ""}`;
@@ -35,7 +35,19 @@ function caseDecisionFlowMarkup(data) {
   const exclusionState = decision?.stale && decision.full_result ? "stale" : caseExclusionNeedsDecision(data) ? "conflict" : typeof excluded === "boolean" ? "resolved" : "pending";
   const missing = (result.sources || []).flatMap(s => (s.revision_summaries || []).filter(r => !r.expected_output).map(r => r.author));
   const labelMissing = missing.length ? uiText(`缺少分类：${[...new Set(missing)].join("、")}`, `Classification missing: ${[...new Set(missing)].join(", ")}`) : "";
-  return `<section class="case-decision-result"><div class="case-decision-fact"><p class="case-decision-fact-heading"><span>${uiText("分类", "Classification")}</span><strong>${escapeHtml(explanation.output ? expectedOutputDisplayText(explanation.output) : "—")}</strong><span>${escapeHtml(caseDecisionStateText(explanation.status))}</span></p><p class="quiet-meta">${escapeHtml(explanation.reason)}${labelMissing ? ` · ${escapeHtml(labelMissing)}` : ""}</p></div><div class="case-decision-fact"><p class="case-decision-fact-heading"><span>${uiText("是否排除", "Exclusion")}</span><strong>${escapeHtml(caseExclusionText(excluded))}</strong><span>${escapeHtml(caseDecisionStateText(exclusionState))}</span></p><p class="quiet-meta">${decision?.full_result && !decision.stale ? uiText("完整 Issue 裁决生效", "Complete Issue decision applies") : uiText("当前来源意见汇总；有分歧时暂按排除生效", "Aggregated source opinions; disagreement provisionally excludes the Issue")} · Trail: ${escapeHtml(caseExclusionTrailText(data))}</p></div>${decision ? `<p class="quiet-meta case-decision-provenance">${escapeHtml(decision.created_by)} · ${escapeHtml(formatTime(decision.created_at))}${decision.stale ? ` · ${uiText("来源已有新版本，请对照下方意见复核", "Sources have new revisions; compare the opinions below")}` : ""}</p>` : ""}</section>`;
+  const statusText = state => state === "resolved" ? "" : `<span>${escapeHtml(caseDecisionStateText(state))}</span>`;
+  const exclusionReason = decision?.full_result && !decision.stale
+    ? uiText("完整 Issue 裁决生效", "Complete Issue decision applies")
+    : uiText("来源意见有分歧时暂按排除处理", "Conflicting source opinions provisionally exclude the Issue");
+  return `<section class="case-decision-result">
+    <p class="case-decision-fact-heading"><span>${uiText("分类", "Classification")}</span><strong>${escapeHtml(explanation.output ? expectedOutputDisplayText(explanation.output) : "—")}</strong>${statusText(explanation.status)}</p>
+    <p class="case-decision-fact-heading"><span>${uiText("排除意见", "Exclusion")}</span><strong>${escapeHtml(caseExclusionText(excluded))}</strong>${statusText(exclusionState)}</p>
+    ${humanRoleSummary(result.human_publication)}
+    <details class="case-decision-history case-decision-basis"><summary>${uiText("判定依据", "Decision details")}</summary>
+      <p class="quiet-meta">${escapeHtml(explanation.reason)}${labelMissing ? ` · ${escapeHtml(labelMissing)}` : ""}</p>
+      <p class="quiet-meta">${exclusionReason} · Trail · <span data-decision-trail>${escapeHtml(caseExclusionTrailText(data))}</span></p>
+      ${decision ? `<p class="quiet-meta">${escapeHtml(decision.created_by)} · ${escapeHtml(formatTime(decision.created_at))}</p>` : ""}
+    </details></section>`;
 }
 function caseDecisionRevisions(data) {
   const heads = new Set((data.label_state?.sources || []).flatMap(s => s.source_revision_ids || []));
@@ -45,7 +57,7 @@ function caseDecisionRevisions(data) {
 function caseLabelDecisionMarkup(data) {
   const rows = caseDecisionRevisions(data), current = rows.filter(r => !r.historical), old = rows.filter(r => r.historical);
   const history = data.decision_history || [];
-  return `${humanRoleSummary(data.label_state?.human_publication)}${caseDecisionFlowMarkup(data)}<h3 class="case-decision-section-title">${uiText("每人的当前标注", "Current labels")}</h3><div class="case-decision-records history-dialog-content">${current.map(r => caseDecisionRecordMarkup(r,r.sourceName,"",true)).join("") || `<p>${uiText("暂无标注，请先保存个人标注。", "No labels yet. Save a personal label first.")}</p>`}</div>${old.length ? `<details class="case-decision-history"><summary>${uiText("历史标注", "Earlier labels")} · ${old.length}</summary><div class="case-decision-records history-dialog-content">${old.map(r => caseDecisionRecordMarkup(r,r.sourceName,uiText("旧版本", "Earlier revision"),true)).join("")}</div></details>` : ""}${history.length ? `<details class="case-decision-history"><summary>${uiText("裁决记录", "Decision history")} · ${history.length}</summary><div class="case-decision-records history-dialog-content">${history.map(r => caseDecisionRecordMarkup(r,uiText("Issue 裁决", "Issue decision"))).join("")}</div></details>` : ""}`;
+  return `${caseDecisionFlowMarkup(data)}<h3 class="case-decision-section-title">${uiText("当前标注", "Current labels")}</h3><div class="case-decision-records history-dialog-content">${current.map(r => caseDecisionRecordMarkup(r,r.sourceName,"",true)).join("") || `<p>${uiText("暂无标注", "No labels yet.")}</p>`}</div>${old.length ? `<details class="case-decision-history"><summary>${uiText("历史标注", "Earlier labels")} · ${old.length}</summary><div class="case-decision-records history-dialog-content">${old.map(r => caseDecisionRecordMarkup(r,r.sourceName,uiText("旧版本", "Earlier revision"),true)).join("")}</div></details>` : ""}${history.length ? `<details class="case-decision-history"><summary>${uiText("裁决记录", "Decision history")} · ${history.length}</summary><div class="case-decision-records history-dialog-content">${history.map(r => caseDecisionRecordMarkup(r,uiText("Issue 裁决", "Issue decision"))).join("")}</div></details>` : ""}`;
 }
 function renderCaseLabelDecisionDialog() {
   const c = caseLabelDecisionUi.context, dialog = $("#caseLabelDecisionDialog");

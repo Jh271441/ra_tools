@@ -111,6 +111,10 @@ def run():
             page.locator('#caseLabelDecisionDialog [data-adopt-decision="201"]').wait_for()
             summary = page.locator('#caseLabelDecisionDialog .human-role-summary')
             assert summary.locator('strong').count() == 3
+            assert all(text not in summary.inner_text() for text in ('待结论', 'Awaiting result', '已完成', 'Completed'))
+            basis = page.locator('#caseDecisionEvidence .case-decision-basis')
+            assert not basis.evaluate('n=>n.open')
+            assert not basis.locator('[data-decision-trail]').is_visible()
             assert ('已同步' if page.evaluate("state.uiLanguage === 'zh'") else 'Synced') in summary.inner_text()
             assert page.locator('#caseDecisionRelabel').is_enabled()
             assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
@@ -126,6 +130,12 @@ def run():
                         page.screenshot(path=str(OUTPUT / f'loading-{width}-{language}-{theme}.png'))
                     finish(page, backend)
                     assert page.evaluate('document.activeElement.id') == initial_focus
+                    dialog = page.locator('#caseLabelDecisionDialog')
+                    if (width, language, theme) in [(320, 'en', 'light'), (1440, 'zh', 'dark')]:
+                        dialog.screenshot(path=str(OUTPUT / f'summary-{width}-{language}-{theme}.png'))
+                    details = dialog.locator('.case-decision-basis')
+                    details.locator('summary').click()
+                    assert details.locator('[data-decision-trail]').is_visible()
                     page.locator('#caseLabelDecisionDialog [data-close-decision]').first.click()
                     page.wait_for_function('mediaResumes===1')
                     assert page.evaluate('document.querySelector("#annotationForm")===originalForm&&detailHeroMediaEl()===originalMedia')
