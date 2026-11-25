@@ -91,6 +91,7 @@ export interface VmItemRow {
   started_at?: string | null;
   valid_total: number;
   sample_total: number;
+  current_sample_total?: number | null;
   published_total?: number;
   membership_changed?: boolean;
   metrics?: Partial<Record<VmSchemeKey, VmSchemeMetrics | null>> | null;
@@ -368,6 +369,20 @@ export function vmVersionPage(
   };
 }
 
+export function vmSampleChange(row: VmItemRow, lang: UiLanguage): string {
+  if (
+    !Number.isInteger(row.current_sample_total) ||
+    row.current_sample_total === row.sample_total
+  ) {
+    return "";
+  }
+  return bilingual(
+    lang,
+    `当前抽样 ${row.current_sample_total}`,
+    `Current sample ${row.current_sample_total}`,
+  );
+}
+
 export function vmFreshnessSummary(
   rows: VmItemRow[],
   lang: UiLanguage,
@@ -390,7 +405,7 @@ export function vmFreshnessSummary(
   const oldest = vmTime(times[0], lang);
   const newest = vmTime(times[times.length - 1], lang);
   return {
-    label: `Trail · ${oldest}`,
+    label: `${bilingual(lang, "最早快照", "Oldest snapshot")} · ${oldest}`,
     title: bilingual(
       lang,
       `所选版本最早／最新采集完成时间：${oldest} / ${newest} CST。快照不是持续实时数据；点击更新指标重新采集。`,
@@ -1512,11 +1527,15 @@ export const VersionMetricsPage: React.FC<VersionMetricsPageProps> = ({
                     </th>
                   );
 
+                  const change = vmSampleChange(row, lang);
                   if (row.status !== "ready") {
                     return (
                       <tr key={row.family}>
                         {dateCell}
-                        <td colSpan={8} className="vm-table-empty">
+                        <td>
+                          <strong>{`—/${row.current_sample_total ?? "—"}`}</strong>
+                        </td>
+                        <td colSpan={7} className="vm-table-empty">
                           {row.status === "error"
                             ? bilingual(
                                 lang,
@@ -1540,6 +1559,7 @@ export const VersionMetricsPage: React.FC<VersionMetricsPageProps> = ({
                         <strong>
                           {row.valid_total}/{row.sample_total}
                         </strong>
+                        {change && <small>{change}</small>}
                       </td>
                       <td>{renderCoverageCell(row, "te")}</td>
                       <td>{renderCoverageCell(row, "rd")}</td>
@@ -1700,7 +1720,7 @@ export const VersionMetricsPage: React.FC<VersionMetricsPageProps> = ({
                   );
                 })}
                 <small>
-                  {`${bilingual(lang, "有效／抽样", "Valid / sample")} ${tooltipRow.valid_total}/${tooltipRow.sample_total} · ${vmTime(
+                  {`${bilingual(lang, "快照有效／抽样", "Snapshot valid / sample")} ${tooltipRow.valid_total}/${tooltipRow.sample_total} · ${vmTime(
                     tooltipRow.observed_at,
                     lang,
                   )} CST`}
@@ -1708,6 +1728,9 @@ export const VersionMetricsPage: React.FC<VersionMetricsPageProps> = ({
               </>
             ) : (
               <span>{bilingual(lang, "暂无有效快照", "No valid snapshot")}</span>
+            )}
+            {vmSampleChange(tooltipRow, lang) && (
+              <small>{vmSampleChange(tooltipRow, lang)}</small>
             )}
           </>
         )}

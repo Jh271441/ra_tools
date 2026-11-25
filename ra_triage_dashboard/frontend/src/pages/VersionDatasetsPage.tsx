@@ -1347,19 +1347,6 @@ export const VersionDatasetsPage: React.FC<VersionDatasetsPageProps> = ({ active
       className="ra-version-datasets-root"
       data-react-island="version-datasets"
     >
-      <a
-        id="versionDatasetMetricsLink"
-        className="button button-quiet"
-        hidden={!metricsFamily}
-        href={
-          metricsFamily
-            ? `${withWorkbenchBase("/version-metrics")}?families=${metricsFamily}`
-            : undefined
-        }
-      >
-        {bilingual(lang, "查看版本指标", "View version metrics")}
-      </a>
-
       <div className="version-metrics" id="versionDatasetSummary" aria-live="polite">
         {!catalogQuery.data ? null : !metricCards ? (
           bilingual(lang, "等待首次导入", "Awaiting first import")
@@ -1421,6 +1408,18 @@ export const VersionDatasetsPage: React.FC<VersionDatasetsPageProps> = ({ active
       >
         <header>
           <h2>{bilingual(lang, "版本构成", "Version composition")}</h2>
+          <a
+            id="versionDatasetMetricsLink"
+            className="text-link version-metrics-link"
+            hidden={!metricsFamily}
+            href={
+              metricsFamily
+                ? `${withWorkbenchBase("/version-metrics")}?families=${metricsFamily}`
+                : undefined
+            }
+          >
+            {bilingual(lang, "查看版本指标", "View version metrics")}
+          </a>
           <span className="muted version-counts" id="versionDatasetCounts">
             {composition && overview
               ? overview.dataset.historical

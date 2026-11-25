@@ -63,10 +63,6 @@
   min-width: 0;
 }
 
-.ra-version-datasets-root #versionDatasetMetricsLink {
-  justify-self: start;
-}
-
 /* System Status & Users overflow protection on 320px/390px phones */
 [data-react-island="system-status"] .system-status-hero {
   min-width: 0;
