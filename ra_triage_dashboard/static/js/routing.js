@@ -335,13 +335,16 @@ function comparisonStatusParam(values) {
 
 function setReviewComparisonStatus(
   comparisonStatus,
-  { hasRun = Boolean($("#modelRunFilter")?.value) } = {}
+  { hasRun = Boolean($("#modelRunFilter")?.value || state.selectedRunId) } = {}
 ) {
   let nextValues = parseComparisonStatuses(comparisonStatus);
   if (!hasRun) nextValues = [];
   const nextStatus = comparisonStatusParam(nextValues);
   state.reviewComparisonStatus = nextStatus;
   state.failureOnly = nextStatus === "mismatch";
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("review") || window.__RA_REACT_OWNED_PAGES__?.includes?.("review"))) {
+    return nextStatus;
+  }
   const root = $("#comparisonFilter");
   if (root) {
     root.classList.toggle("is-disabled", !hasRun);
@@ -358,6 +361,12 @@ function setReviewComparisonStatus(
 }
 
 function selectedReviewComparisonStatus() {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("review") || window.__RA_REACT_OWNED_PAGES__?.includes?.("review"))) {
+    if (!state.selectedRunId) return "all";
+    return comparisonStatusParam(
+      state.reviewComparisonStatus || (state.failureOnly ? "mismatch" : "all")
+    );
+  }
   const runId = $("#modelRunFilter")?.value || state.selectedRunId;
   if (!runId) return "all";
   const root = $("#comparisonFilter");
@@ -723,6 +732,42 @@ function parsePageRoute() {
 }
 
 function currentReviewRouteOptions(overrides = {}) {
+  const reviewOwned = typeof window !== "undefined" && Boolean(
+    window.__RA_REACT_WORKBENCH__?.ownsPage?.("review") ||
+    window.__RA_REACT_OWNED_PAGES__?.includes?.("review")
+  );
+  const rf = reviewOwned && state._reactReviewFilters ? state._reactReviewFilters : null;
+  if (rf) {
+    return {
+      issue: state.selectedId,
+      runId: state.selectedRunId,
+      comparisonStatus: state.reviewComparisonStatus,
+      failureOnly: state.failureOnly,
+      search: rf.search || "",
+      issueIds: [...(state.reviewIssueIds || [])],
+      gtLabel: [...(rf.gtLabel || [])],
+      modelLabel: [...(rf.modelLabel || [])],
+      annotationAuthor: [...(rf.annotationAuthor || [])],
+      reviewStatus: [...(rf.reviewStatus || [])],
+      labelStates: [...(rf.labelStates || [])],
+      gtRelations: [...(rf.gtRelations || [])],
+      issueTags: parseFilterList(state.reviewIssueTags || []),
+      targetGroup: state.reviewTargetGroup || "",
+      commentState: rf.commentState || "all",
+      workAssignee: [...(rf.workAssignee || [])],
+      workSplitId: state.reviewWorkSplitId || "",
+      taskView: state.reviewTaskView || "",
+      taskProgress: selectedCombinedTaskProgress(),
+      baselines: state.reviewTaskContext?.baseline_ids || state.selectedBaselineIds,
+      forceBaselines: Boolean(state.reviewTaskContext),
+      workflowMode: state.reviewWorkflowMode || "model_review_and_case_label",
+      exclusion: rf.exclusion || "all",
+      clusterKey: state.clusterKey,
+      casePage: state.casePage,
+      casePageSize: state.casePageSize,
+      ...overrides,
+    };
+  }
   return {
     issue: state.selectedId,
     runId: state.selectedRunId,
@@ -783,6 +828,27 @@ function persistCurrentReviewRoute(overrides = {}) {
 
 function applyReviewRouteControls(route) {
   if (!route) return;
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("review") || window.__RA_REACT_OWNED_PAGES__?.includes?.("review"))) {
+    state.reviewIssueIds = Array.isArray(route.reviewIssueIds)
+      ? [...new Set(route.reviewIssueIds.filter((value) => /^[A-Za-z0-9_-]{3,128}$/.test(String(value))))]
+      : [];
+    state.reviewWorkSplitId = route.workSplitId || "";
+    state.reviewTaskView = route.workSplitId ? (route.taskView || "") : "";
+    state.reviewTaskProgress = route.workSplitId ? (route.taskProgress || []) : [];
+    state.reviewWorkflowMode = route.workflowMode || "model_review_and_case_label";
+    state.reviewIssueTags = route.issueTags || [];
+    state.reviewTargetGroup = route.targetGroup || "";
+    state.clusterKey = route.clusterKey || "";
+    state.casePage = Math.max(1, Number(route.casePage) || 1);
+    state.casePageSize = CASE_PAGE_SIZES.includes(Number(route.casePageSize))
+      ? Number(route.casePageSize)
+      : DEFAULT_CASE_PAGE_SIZE;
+    if (route.comparisonStatus !== null && route.comparisonStatus !== undefined) {
+      state.reviewComparisonStatus = comparisonStatusParam(route.comparisonStatus);
+      state.failureOnly = state.reviewComparisonStatus === "mismatch";
+    }
+    return;
+  }
   if ($("#searchInput")) $("#searchInput").value = route.search || "";
   state.reviewIssueIds = Array.isArray(route.reviewIssueIds)
     ? [...new Set(route.reviewIssueIds.filter((value) => /^[A-Za-z0-9_-]{3,128}$/.test(String(value))))]

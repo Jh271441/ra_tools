@@ -14,11 +14,13 @@ export interface MultiSelectProps {
   options: MultiSelectOption[];
   onChange: (nextValues: string[]) => void;
   ariaLabel: string;
+  title?: string;
   lang: UiLanguage;
   placeholder?: string;
   allLabel?: string;
   disabled?: boolean;
   searchable?: boolean;
+  summaryCount?: boolean;
   showOnlyThis?: boolean;
   className?: string;
 }
@@ -34,11 +36,13 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
   options,
   onChange,
   ariaLabel,
+  title,
   lang,
   placeholder,
   allLabel,
   disabled = false,
   searchable,
+  summaryCount = false,
   showOnlyThis = true,
   className = "",
 }) => {
@@ -82,6 +86,13 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
     if (selectedOptions.length === 0) {
       return placeholder || allLabel || bilingual(lang, "全部", "All");
     }
+    if (summaryCount) {
+      return bilingual(
+        lang,
+        `已选 ${selectedOptions.length} 项`,
+        `${selectedOptions.length} selected`,
+      );
+    }
     if (selectedOptions.length <= 2) {
       return selectedOptions.map((o) => o.label).join(lang === "en" ? ", " : "、");
     }
@@ -90,7 +101,7 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
       `${selectedOptions[0].label} 等 ${selectedOptions.length} 项`,
       `${selectedOptions[0].label} +${selectedOptions.length - 1}`,
     );
-  }, [options, selectedSet, placeholder, allLabel, lang]);
+  }, [options, selectedSet, placeholder, allLabel, summaryCount, lang]);
 
   useEffect(() => {
     if (!open) {
@@ -163,6 +174,7 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
         type="button"
         className="multi-filter-trigger"
         aria-label={ariaLabel}
+        title={title}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={panelId}

@@ -1,5 +1,29 @@
 /* Independent RA Case labeling workspace; model predictions are never loaded. */
 
+function isCaseLabelingGalleryReactOwned() {
+  return typeof window !== "undefined" && Boolean(
+    window.__RA_REACT_WORKBENCH__?.ownsPage?.("labeling") ||
+    window.__RA_REACT_OWNED_PAGES__?.includes?.("labeling")
+  );
+}
+
+function syncCaseLabelingGalleryState(snapshot = {}) {
+  if (!snapshot || typeof snapshot !== "object" || !state.caseLabeling) return;
+  const keys = [
+    "taskId", "targetGroup", "issueTags", "search", "issueIds",
+    "status", "author", "assignee", "cluster", "label", "gt",
+    "gtRelations", "commentState", "exclusion", "page", "pageSize",
+    "tasks", "data", "labelers", "assignees",
+  ];
+  for (const key of keys) {
+    if (key in snapshot) {
+      state.caseLabeling[key] = Array.isArray(snapshot[key])
+        ? [...snapshot[key]]
+        : snapshot[key];
+    }
+  }
+}
+
 function caseLabelingRouteOptions(overrides = {}) {
   const labeling = state.caseLabeling || {};
   return {
@@ -88,6 +112,7 @@ function caseLabelingStateText(value) {
 }
 
 function renderCaseLabelingTaskPicker() {
+  if (isCaseLabelingGalleryReactOwned()) return;
   const root = $("#caseLabelingTaskPicker");
   if (!root) return;
   const options = [
@@ -214,6 +239,7 @@ function updateCaseLabelingMultiFilter(key, values) {
 }
 
 function renderCaseLabelingMultiPicker(selector, options, selected, key) {
+  if (isCaseLabelingGalleryReactOwned()) return;
   const root = $(selector);
   if (!root) return;
   const fingerprint = JSON.stringify(options.map((item) => [item.value, item.label]));
@@ -234,6 +260,7 @@ function renderCaseLabelingMultiPicker(selector, options, selected, key) {
 }
 
 function renderCaseLabelingStatusPicker() {
+  if (isCaseLabelingGalleryReactOwned()) return;
   renderIssueTagFilter('#caseLabelingIssueTagFilter', state.caseLabeling.issueTags || [], values => {
     state.caseLabeling.issueTags = values;
     state.caseLabeling.cluster = '';
@@ -739,6 +766,7 @@ function renderCaseLabelingInactiveState() {
 }
 
 function renderCaseLabelingList(data) {
+  if (isCaseLabelingGalleryReactOwned()) return;
   syncCaseLabelingIssueExport();
   const list = $("#caseLabelingList");
   const items = data.items || [];
@@ -798,6 +826,10 @@ function caseLabelingListParams({page = 1, pageSize = state.caseLabeling.pageSiz
 }
 
 async function loadCaseLabelingCases({ page = state.caseLabeling.page, persistRoute = true } = {}) {
+  if (isCaseLabelingGalleryReactOwned()) {
+    window.__RA_REACT_WORKBENCH__?.refreshPage?.("labeling");
+    return;
+  }
   const pageContext = capturePageContext();
   const seq = ++state.caseLabeling.requestSeq;
   if (!selectedActiveLabelingBaselineIds().length) {
@@ -1327,6 +1359,9 @@ function closeCaseLabelingDetail({ updateRoute = true } = {}) {
   $("#caseLabelingGalleryView")?.classList.remove("hidden");
   $("#caseLabelingGallery")?.classList.remove("hidden");
   if (updateRoute) persistCaseLabelingRoute({ issue: "" }, "push");
+  if (isCaseLabelingGalleryReactOwned()) {
+    window.__RA_REACT_WORKBENCH__?.refreshPage?.("labeling");
+  }
 }
 
 function caseLabelingFormPayload() {
@@ -1638,6 +1673,20 @@ async function enterCaseLabeling({ route = null } = {}) {
   }
   const pageContext = capturePageContext();
   const filters = restoreCaseLabelingRouteState(route);
+  if (isCaseLabelingGalleryReactOwned()) {
+    window.__RA_REACT_WORKBENCH__?.refreshPage?.("labeling");
+    const issue = route?.issue || filters.issue || "";
+    if (!issue) {
+      closeCaseLabelingDetail({ updateRoute: false });
+      return;
+    }
+    const openComments = Boolean(route?.openComments);
+    await selectCaseLabelingIssue(issue, { updateRoute: !openComments });
+    if (openComments && isPageContextCurrent(pageContext) && state.caseLabeling.caseData?.issue_id === issue) {
+      await openCaseLabelingDiscussion(route.commentId, route.discussionChannel);
+    }
+    return;
+  }
   await loadCaseLabelingTasks();
   if (!isPageContextCurrent(pageContext)) return;
   renderCaseLabelingStatusPicker();
@@ -1662,8 +1711,9 @@ async function enterCaseLabeling({ route = null } = {}) {
 }
 
 function bindCaseLabelingEvents() {
-  bindUiInfoPopovers($("#caseLabelingFilterForm"));
   bindCaseLabelingEditorShortcuts();
+  if (isCaseLabelingGalleryReactOwned()) return;
+  bindUiInfoPopovers($("#caseLabelingFilterForm"));
   $("#caseLabelingCreateLabelSnapshot")?.addEventListener("click", () => {
     createCaseLabelingResultSnapshot().catch((error) => showToast(error.message, true));
   });

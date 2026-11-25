@@ -871,17 +871,26 @@ async function refreshChangedDataNow() {
     ? reviewerFilterSelections()
     : undefined;
   if (state.activePage === "review") {
+    const reviewOwned = typeof window !== "undefined" && Boolean(
+      window.__RA_REACT_WORKBENCH__?.ownsPage?.("review") ||
+      window.__RA_REACT_OWNED_PAGES__?.includes?.("review")
+    );
     await Promise.all([
       loadConfig(),
       loadRuns({ preserveEmpty: !state.selectedRunId }),
       loadOverview(),
-      loadCases({ keepSelection: true, page: state.casePage }),
-      loadClusters(),
-      loadReviewers(reviewerSelections),
-      typeof loadWorkAssignees === "function"
-        ? loadWorkAssignees()
-        : Promise.resolve(),
+      ...(reviewOwned ? [] : [
+        loadCases({ keepSelection: true, page: state.casePage }),
+        loadClusters(),
+        loadReviewers(reviewerSelections),
+        typeof loadWorkAssignees === "function"
+          ? loadWorkAssignees()
+          : Promise.resolve(),
+      ]),
     ]);
+    if (reviewOwned) {
+      window.__RA_REACT_WORKBENCH__?.refreshPage?.("review");
+    }
     if (!isPageContextCurrent(pageContext)) return;
     if (state.selectedId) {
       if (
@@ -901,13 +910,22 @@ async function refreshChangedDataNow() {
     return;
   }
   if (state.activePage === "labeling") {
+    const labelingOwned = typeof window !== "undefined" && Boolean(
+      window.__RA_REACT_WORKBENCH__?.ownsPage?.("labeling") ||
+      window.__RA_REACT_OWNED_PAGES__?.includes?.("labeling")
+    );
     await Promise.all([
       loadConfig(),
-      loadCaseLabelingTasks(),
-      // A background list refresh must not clear the selected detail's URL:
-      // deferred Trail reads use that route to reject obsolete responses.
-      loadCaseLabelingCases({ page: state.caseLabeling.page, persistRoute: false }),
+      ...(labelingOwned ? [] : [
+        loadCaseLabelingTasks(),
+        // A background list refresh must not clear the selected detail's URL:
+        // deferred Trail reads use that route to reject obsolete responses.
+        loadCaseLabelingCases({ page: state.caseLabeling.page, persistRoute: false }),
+      ]),
     ]);
+    if (labelingOwned) {
+      window.__RA_REACT_WORKBENCH__?.refreshPage?.("labeling");
+    }
     if (!isPageContextCurrent(pageContext)) return;
     if (state.caseLabeling.issueId) {
       if (state.caseLabeling.dirty) {

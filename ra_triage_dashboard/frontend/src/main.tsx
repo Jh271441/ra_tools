@@ -61,6 +61,14 @@ const ReviewAssignmentsPage = React.lazy(() =>
 const LabelingNewTaskPage = React.lazy(() =>
   import("./pages/LabelingNewTaskPage").then((m) => ({ default: m.LabelingNewTaskPage })),
 );
+const ReviewGalleryIsland = React.lazy(() =>
+  import("./pages/ReviewGalleryIsland").then((m) => ({ default: m.ReviewGalleryIsland })),
+);
+const CaseLabelingGalleryIsland = React.lazy(() =>
+  import("./pages/CaseLabelingGalleryIsland").then((m) => ({
+    default: m.CaseLabelingGalleryIsland,
+  })),
+);
 
 const OWNED_PAGES = new Set<string>([
   "status",
@@ -83,6 +91,8 @@ const OWNED_PAGES = new Set<string>([
   "intent",
   "review-assignments",
   "labeling-new-task",
+  "review",
+  "labeling",
 ]);
 
 const queryClient = new QueryClient({
@@ -421,6 +431,53 @@ const LabelingNewTaskIsland: React.FC = () => {
   );
 };
 
+const ReviewGalleryIslandHost: React.FC = () => {
+  const { activePage, lang, selectedBaselines } = useWorkbenchBridge();
+  const active = activePage === "review";
+  const { effectiveSession, sessionLoading } = useResolvedSession(active);
+  if (!active) return null;
+  const canWrite = Boolean(
+    effectiveSession?.verified &&
+      (effectiveSession?.can_write || effectiveSession?.is_admin) &&
+      !effectiveSession?.read_only,
+  );
+  return (
+    <Suspense fallback={<div className="no-asset">{lang === "en" ? "Loading…" : "加载中…"}</div>}>
+      <ReviewGalleryIsland
+        active={active}
+        lang={lang}
+        selectedBaselines={selectedBaselines}
+        isAdmin={Boolean(effectiveSession?.is_admin)}
+        canWrite={canWrite}
+        identityPending={sessionLoading || Boolean(!effectiveSession?.verified)}
+      />
+    </Suspense>
+  );
+};
+
+const CaseLabelingGalleryIslandHost: React.FC = () => {
+  const { activePage, lang, selectedBaselines } = useWorkbenchBridge();
+  const active = activePage === "labeling";
+  const { effectiveSession } = useResolvedSession(active);
+  if (!active) return null;
+  const canWrite = Boolean(
+    effectiveSession?.verified &&
+      (effectiveSession?.can_write || effectiveSession?.is_admin) &&
+      !effectiveSession?.read_only,
+  );
+  return (
+    <Suspense fallback={<div className="no-asset">{lang === "en" ? "Loading…" : "加载中…"}</div>}>
+      <CaseLabelingGalleryIsland
+        active={active}
+        lang={lang}
+        selectedBaselines={selectedBaselines}
+        isAdmin={Boolean(effectiveSession?.is_admin)}
+        canWrite={canWrite}
+      />
+    </Suspense>
+  );
+};
+
 const mountedRoots = new Map<HTMLElement, Root>();
 
 function mountIsland(container: HTMLElement | null, element: React.ReactElement) {
@@ -460,6 +517,8 @@ function mountAllIslands() {
   mountIsland(document.getElementById("intentLabelingPage"), <IntentLabelingIsland />);
   mountIsland(document.getElementById("reviewAssignmentsPage"), <ReviewAssignmentsIsland />);
   mountIsland(document.getElementById("caseLabelingNewTaskPage"), <LabelingNewTaskIsland />);
+  mountIsland(document.getElementById("reviewGalleryView"), <ReviewGalleryIslandHost />);
+  mountIsland(document.getElementById("caseLabelingGalleryView"), <CaseLabelingGalleryIslandHost />);
 }
 
 interface ReactWorkbenchHandle {
@@ -471,7 +530,7 @@ interface ReactWorkbenchHandle {
 }
 
 const handle: ReactWorkbenchHandle = {
-  version: "vite-react-ts-strangler-3.9",
+  version: "vite-react-ts-strangler-4.0",
   ownedPages: Array.from(OWNED_PAGES),
   ownsPage: (page: string) => OWNED_PAGES.has(page),
   refreshPage: (page: string) => {
@@ -538,6 +597,16 @@ const handle: ReactWorkbenchHandle = {
       void queryClient.invalidateQueries({ queryKey: ["labeling-tasks-history"] });
       void queryClient.invalidateQueries({ queryKey: ["labeling-combined-tasks"] });
       void queryClient.invalidateQueries({ queryKey: ["labeling-new-task-pool"] });
+    } else if (page === "review") {
+      void queryClient.invalidateQueries({ queryKey: ["review-gallery-cases"] });
+      void queryClient.invalidateQueries({ queryKey: ["review-gallery-runs"] });
+      void queryClient.invalidateQueries({ queryKey: ["review-gallery-reviewers"] });
+      void queryClient.invalidateQueries({ queryKey: ["review-gallery-work-assignees"] });
+      void queryClient.invalidateQueries({ queryKey: ["review-gallery-task-options"] });
+      void queryClient.invalidateQueries({ queryKey: ["review-gallery-task-context"] });
+    } else if (page === "labeling") {
+      void queryClient.invalidateQueries({ queryKey: ["labeling-gallery-cases"] });
+      void queryClient.invalidateQueries({ queryKey: ["labeling-gallery-tasks"] });
     }
     window.dispatchEvent(new Event("ra:workbench-sync"));
   },

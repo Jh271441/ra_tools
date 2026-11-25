@@ -203,7 +203,12 @@ function bindEvents() {
       closeMobileSidebar();
     });
   });
-  $("#filterForm").addEventListener("submit", async (event) => {
+  const reviewOwned = typeof window !== "undefined" && Boolean(
+    window.__RA_REACT_WORKBENCH__?.ownsPage?.("review")
+    || window.__RA_REACT_OWNED_PAGES__?.includes?.("review")
+  );
+  if (!reviewOwned) {
+  $("#filterForm")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     // Filters auto-apply on change; form submit is treated as reset.
     await resetReviewFilters();
@@ -212,6 +217,7 @@ function bindEvents() {
     resetReviewFilters().catch((error) => showToast(error.message, true));
   });
   $("#searchInput")?.addEventListener("input", () => scheduleReviewFilterReload(280));
+  }
   const analysisOwned = typeof window !== "undefined" && Boolean(
     window.__RA_REACT_WORKBENCH__?.ownsPage?.("analysis")
     || window.__RA_REACT_OWNED_PAGES__?.includes?.("analysis")
@@ -372,7 +378,8 @@ function bindEvents() {
     changeAnalysisPageSize(event.target.value).catch((error) => showToast(error.message, true));
   });
   }
-  $("#modelRunFilter").addEventListener("change", async () => {
+  if (!reviewOwned) {
+  $("#modelRunFilter")?.addEventListener("change", async () => {
     const previousRunId = state.selectedRunId;
     state.selectedRunId = $("#modelRunFilter").value;
     if (state.selectedRunId !== previousRunId) {
@@ -441,9 +448,10 @@ function bindEvents() {
   casePageJump?.addEventListener("focus", () => {
     window.requestAnimationFrame(() => casePageJump.select());
   });
-  $("#casePageSize").addEventListener("change", (event) => {
+  $("#casePageSize")?.addEventListener("change", (event) => {
     changeCasePageSize(event.target.value).catch((error) => showToast(error.message, true));
   });
+  }
   $("#refreshButton").addEventListener("click", async (event) => {
     if (state.activePage === "rd-results") { await loadRdResults(); return; }
     const pageContext = capturePageContext();
@@ -560,7 +568,9 @@ function bindEvents() {
   $("#openTrailImportButton").addEventListener("click", () => {
     activateRunSourceTab("trail");
   });
-  $("#reviewUploadModelButton").addEventListener("click", () => openRunImport("model"));
+  if (!reviewOwned) {
+    $("#reviewUploadModelButton")?.addEventListener("click", () => openRunImport("model"));
+  }
   if (!(window.__RA_REACT_WORKBENCH__?.ownsPage?.("users") || window.__RA_REACT_OWNED_PAGES__?.includes?.("users"))) {
     $("#accessUserForm")?.addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -631,8 +641,9 @@ function bindEvents() {
   bindAnalysisDiscussionEnterSubmit();
   $("#analysisDiscussionDialog")?.addEventListener("close", closeAnalysisDiscussion);
   $("#analysisDiscussionForm")?.addEventListener("submit", saveAnalysisDiscussion);
+  if (!reviewOwned) {
   $("#exportFilteredIssuesButton")?.addEventListener("click", downloadFilteredReviewIssues);
-  $("#predictFilteredButton").addEventListener("click", () => {
+  $("#predictFilteredButton")?.addEventListener("click", () => {
     const limit = predictionBatchLimit();
     if (state.caseTotal > limit) {
       showToast(
@@ -653,6 +664,7 @@ function bindEvents() {
       "filtered"
     );
   });
+  }
   if (!(window.__RA_REACT_WORKBENCH__?.ownsPage?.("runs-manager") || window.__RA_REACT_OWNED_PAGES__?.includes?.("runs-manager"))) {
     $("#refreshRunsButton")?.addEventListener("click", async () => {
       try {
@@ -999,7 +1011,7 @@ function bindEvents() {
         )
       : "all";
     state.selectedRunId = nextRunId;
-    $("#modelRunFilter").value = nextRunId;
+    if ($("#modelRunFilter")) $("#modelRunFilter").value = nextRunId;
     state.reviewComparisonStatus = nextComparisonStatus;
     setReviewComparisonStatus(nextComparisonStatus, {
       hasRun: Boolean(nextRunId),
@@ -1268,12 +1280,18 @@ async function bootstrap() {
     if (independentPageResult) {
       initialPageRequests.push(independentPageResult);
     } else if (initialRoute.page === "review" && !reviewTaskContextFailed) {
-      initialPageRequests.push(
-        { name: "Issue 图库", promise: loadCases({
-          keepSelection: Boolean(initialRoute.issue),
-          page: initialRoute.casePage,
-        }) }
+      const reviewReactOwned = typeof window !== "undefined" && Boolean(
+        window.__RA_REACT_WORKBENCH__?.ownsPage?.("review") ||
+        window.__RA_REACT_OWNED_PAGES__?.includes?.("review")
       );
+      if (!reviewReactOwned) {
+        initialPageRequests.push(
+          { name: "Issue 图库", promise: loadCases({
+            keepSelection: Boolean(initialRoute.issue),
+            page: initialRoute.casePage,
+          }) }
+        );
+      }
       if (initialRoute.issue) {
         initialDetailRequest = selectCase(initialRoute.issue, {
           updateRoute: false, videoDiscovery: initialVideoDiscovery,

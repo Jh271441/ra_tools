@@ -138,8 +138,12 @@ async function loadReviewers(selections = reviewerFilterSelections()) {
       modelReviewFacets?.reviewers || []
     )
   );
+  const reviewOwned = typeof window !== "undefined" && Boolean(
+    window.__RA_REACT_WORKBENCH__?.ownsPage?.("review") ||
+    window.__RA_REACT_OWNED_PAGES__?.includes?.("review")
+  );
   const reviewSelect = $("#reviewerFilter");
-  if (reviewSelect) {
+  if (reviewSelect && !reviewOwned) {
     renderMultiFilter(reviewSelect, {
       options: reviewerOptionsWithSelected(reviewerOptions, reviewSelection),
       selected: reviewSelection,
@@ -181,6 +185,7 @@ function selectedCombinedTaskProgress() {
 }
 
 function renderReviewProgressFilter() {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("review") || window.__RA_REACT_OWNED_PAGES__?.includes?.("review"))) return;
   if (typeof renderNextPendingTaskButton === 'function') renderNextPendingTaskButton();
   const root = $('#reviewTaskProgressFilter');
   if (!root) return;
@@ -235,6 +240,7 @@ function renderTargetGroupPicker(selector, selected, onChange) {
 }
 
 function renderReviewTargetGroupPicker() {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("review") || window.__RA_REACT_OWNED_PAGES__?.includes?.("review"))) return;
   renderTargetGroupPicker('#reviewTargetGroupPicker', state.reviewTargetGroup, value => {
     state.reviewTargetGroup = value;
     scheduleReviewFilterReload(0);
@@ -242,6 +248,7 @@ function renderReviewTargetGroupPicker() {
 }
 
 function renderReviewIssueTagFilter() {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("review") || window.__RA_REACT_OWNED_PAGES__?.includes?.("review"))) return;
   renderIssueTagFilter('#reviewIssueTagFilter', selectedReviewIssueTags(), values => {
     state.reviewIssueTags = values;
     scheduleReviewFilterReload(0);
@@ -283,6 +290,7 @@ function renderIssueTagFilter(selector, selected, onChange) {
 }
 
 function renderReviewCatalogFilters() {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("review") || window.__RA_REACT_OWNED_PAGES__?.includes?.("review"))) return;
   renderReviewTargetGroupPicker();
   renderReviewIssueTagFilter();
   const onChange = () => scheduleReviewFilterReload?.(0);
@@ -539,17 +547,23 @@ async function loadRuns({
     candidate = "";
   }
   state.selectedRunId = state.modelRuns.some((run) => run.id === candidate) ? candidate : "";
-  if (picker && typeof populateUiSelect === "function") {
-    populateUiSelect(picker, runOptions, state.selectedRunId);
-    bindUiSelect(picker, { maxHeight: 360, maxWidth: 520 });
-  } else if (select) {
-    select.innerHTML = runOptions
-      .map(
-        (item) =>
-          `<option value="${escapeHtml(item.value)}">${escapeHtml(item.label)}</option>`
-      )
-      .join("");
-    select.value = state.selectedRunId;
+  const reviewOwned = typeof window !== "undefined" && Boolean(
+    window.__RA_REACT_WORKBENCH__?.ownsPage?.("review") ||
+    window.__RA_REACT_OWNED_PAGES__?.includes?.("review")
+  );
+  if (!reviewOwned) {
+    if (picker && typeof populateUiSelect === "function") {
+      populateUiSelect(picker, runOptions, state.selectedRunId);
+      bindUiSelect(picker, { maxHeight: 360, maxWidth: 520 });
+    } else if (select) {
+      select.innerHTML = runOptions
+        .map(
+          (item) =>
+            `<option value="${escapeHtml(item.value)}">${escapeHtml(item.label)}</option>`
+        )
+        .join("");
+      select.value = state.selectedRunId;
+    }
   }
   if (preferDefault && !previousRunId && state.selectedRunId) {
     // A Run is an overlay on the immutable selected GT workset. Selecting or

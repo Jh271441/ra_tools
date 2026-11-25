@@ -12,6 +12,7 @@ export interface UiSelectProps {
   options: UiSelectOption[];
   onChange: (value: string) => void;
   ariaLabel: string;
+  title?: string;
   placeholder?: string;
   disabled?: boolean;
   className?: string;
@@ -28,6 +29,7 @@ export const UiSelect: React.FC<UiSelectProps> = ({
   options,
   onChange,
   ariaLabel,
+  title,
   placeholder = "—",
   disabled = false,
   className = "",
@@ -182,6 +184,7 @@ export const UiSelect: React.FC<UiSelectProps> = ({
         className="ui-select-trigger"
         role="combobox"
         aria-label={ariaLabel}
+        title={title}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={listboxId}

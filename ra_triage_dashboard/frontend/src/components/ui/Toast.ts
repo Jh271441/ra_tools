@@ -5,3 +5,5 @@ export function showWorkbenchToast(message: string, isError = false): void {
   };
   win.showToast?.(message, isError);
 }
+
+export const showToast = showWorkbenchToast;

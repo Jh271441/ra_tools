@@ -18,6 +18,7 @@ function workAssigneeRouteSelection() {
 }
 
 function renderReviewTaskContext() {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("review") || window.__RA_REACT_OWNED_PAGES__?.includes?.("review"))) return;
   bindUiInfoPopovers($("#filterForm"));
   const task = state.reviewTaskContext;
   const errorCard = $("#reviewTaskContextError");
@@ -54,6 +55,7 @@ function renderReviewTaskContext() {
 }
 
 function renderReviewTaskLoading(splitId = state.reviewWorkSplitId) {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("review") || window.__RA_REACT_OWNED_PAGES__?.includes?.("review"))) return;
   const list = $("#issueList");
   if (!list) return;
   list.innerHTML = Array.from({ length: 8 }, (_, index) => `<article class="issue-card issue-card-skeleton" aria-label="正在加载任务范围"><div class="issue-thumbnail"></div><div class="issue-card-body"><span></span><span></span><small>正在加载任务范围 · ${escapeHtml(String(splitId || "").slice(0, 18))}${index ? "" : "…"}</small></div></article>`).join("");
@@ -258,6 +260,7 @@ async function loadReviewTaskOptions({ force = false } = {}) {
 }
 
 function renderReviewWorkSplitPicker(selected = state.reviewWorkSplitId, { load = true } = {}) {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("review") || window.__RA_REACT_OWNED_PAGES__?.includes?.("review"))) return;
   bindUiInfoPopovers($("#filterForm"));
   const root = $("#reviewTaskPicker") || $("#reviewWorkSplitPicker");
   if (!root) return;
@@ -309,6 +312,9 @@ function effectiveReviewWorkflowMode(caseData = state.selectedCase) {
 }
 
 function syncReviewWorkflowMode(caseData = state.selectedCase) {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("review") || window.__RA_REACT_OWNED_PAGES__?.includes?.("review"))) {
+    return effectiveReviewWorkflowMode(caseData);
+  }
   const select = $("#reviewWorkflowMode");
   const field = $("#reviewWorkflowModeField");
   if (!select || !field) return effectiveReviewWorkflowMode(caseData);
@@ -384,6 +390,36 @@ async function loadAnalysisWorkSplits({ force = false } = {}) {
 }
 
 function currentReviewFilterPayload() {
+  const reviewOwned = typeof window !== "undefined" && Boolean(
+    window.__RA_REACT_WORKBENCH__?.ownsPage?.("review") ||
+    window.__RA_REACT_OWNED_PAGES__?.includes?.("review")
+  );
+  const rf = reviewOwned && state._reactReviewFilters ? state._reactReviewFilters : null;
+  if (rf) {
+    return {
+      search: rf.search || "",
+      gt_label: joinFilterList(rf.gtLabel),
+      model_label: joinFilterList(rf.modelLabel),
+      annotation_author: joinFilterList(rf.annotationAuthor),
+      review_status: joinFilterList(rf.reviewStatus),
+      task_progress: joinFilterList(selectedCombinedTaskProgress()),
+      label_state: joinFilterList(rf.labelStates),
+      gt_relation: joinFilterList(rf.gtRelations),
+      issue_tags: joinFilterList(selectedReviewIssueTags()),
+      target_group: state.reviewTargetGroup || "",
+      comment_state: rf.commentState || "all",
+      exclusion: rf.exclusion || "all",
+      model_run_id: state.selectedRunId || "",
+      comparison: state.selectedRunId ? (state.reviewComparisonStatus || "all") : "all",
+      failure_only: false,
+      missing_evidence: state.clusterKey || "",
+      issue_ids: (state.reviewIssueIds || []).join(","),
+      baselines: selectedBaselineQueryValue(),
+      work_assignee: "",
+      work_split_id: state.reviewWorkSplitId || "",
+      task_view: state.reviewWorkSplitId ? (state.reviewTaskView || "") : "",
+    };
+  }
   return {
     search: $("#searchInput")?.value.trim() || "",
     gt_label: joinFilterList(getMultiFilterValues($("#gtFilter"))),
@@ -434,6 +470,7 @@ function workAssigneeOptionsWithSelected(options, selected) {
 }
 
 function renderWorkAssigneeFilter(selected = workAssigneeFilterSelection()) {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("review") || window.__RA_REACT_OWNED_PAGES__?.includes?.("review"))) return;
   const root = $("#workAssigneeFilter");
   if (!root) return;
   const items = Array.isArray(state.workAssignees) ? state.workAssignees : [];
@@ -476,6 +513,7 @@ async function loadWorkAssignees() {
 }
 
 function updateWorkSplitAdminVisibility() {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("review") || window.__RA_REACT_OWNED_PAGES__?.includes?.("review"))) return;
   const button = $("#splitFilteredButton");
   const isAdmin = Boolean(state.session?.is_admin);
   if (typeof renderReviewAssignmentPermissions === "function") renderReviewAssignmentPermissions();
