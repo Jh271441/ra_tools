@@ -56,7 +56,7 @@ describe("LabelingNewTaskPage", () => {
           ],
         };
       }
-      if (path === "/api/access/users") {
+      if (path === "/api/access-users") {
         return { items: [{ username: "alice", role: "writer" }] };
       }
       if (path.startsWith("/api/model-runs")) return { items: [] };

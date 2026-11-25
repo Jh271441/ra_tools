@@ -226,6 +226,7 @@ export const ReviewAssignmentsPage: React.FC<ReviewAssignmentsPageProps> = ({
   const previewRequestIdRef = useRef<string>("");
   const previewSerializedRef = useRef<string>("");
   const detailRef = useRef<HTMLElement | null>(null);
+  const pendingDetailScrollRef = useRef<string>("");
   const composerRef = useRef<HTMLElement | null>(null);
   const searchDebounceRef = useRef<number | null>(null);
   const restoredDraftRef = useRef(false);
@@ -337,7 +338,7 @@ export const ReviewAssignmentsPage: React.FC<ReviewAssignmentsPageProps> = ({
 
   const usersQuery = useQuery<{ items: AccessUserItem[] }>({
     queryKey: ["access-users"],
-    queryFn: ({ signal }) => apiRequest<{ items: AccessUserItem[] }>("/api/access/users", { signal }),
+    queryFn: ({ signal }) => apiRequest<{ items: AccessUserItem[] }>("/api/access-users", { signal }),
     enabled: active && isAdmin,
     staleTime: 60_000,
   });
@@ -369,9 +370,16 @@ export const ReviewAssignmentsPage: React.FC<ReviewAssignmentsPageProps> = ({
     staleTime: 5_000,
   });
 
-  // Reset inline row transfer drafts when detail payload changes
+  // Reset inline row transfer drafts when detail payload changes, and scroll once loaded
   useEffect(() => {
     setRowTransfers({});
+    if (
+      detailQueryRes.data?.split_id &&
+      pendingDetailScrollRef.current === detailQueryRes.data.split_id
+    ) {
+      pendingDetailScrollRef.current = "";
+      detailRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+    }
   }, [detailQueryRes.data]);
 
   const orderedRuns = useMemo(() => {
@@ -804,6 +812,7 @@ export const ReviewAssignmentsPage: React.FC<ReviewAssignmentsPageProps> = ({
   };
 
   const handleOpenDetail = (splitId: string) => {
+    pendingDetailScrollRef.current = splitId;
     setSelectedSplitId(splitId);
     setDetailPage(1);
     setDetailAssignee("");
@@ -817,9 +826,12 @@ export const ReviewAssignmentsPage: React.FC<ReviewAssignmentsPageProps> = ({
       query: "",
       page: 1,
     });
-    window.setTimeout(() => {
-      detailRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" });
-    }, 40);
+    if (detailQueryRes.data?.split_id === splitId) {
+      pendingDetailScrollRef.current = "";
+      window.setTimeout(() => {
+        detailRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+      }, 0);
+    }
   };
 
   const handleCloseDetail = () => {

@@ -152,7 +152,7 @@ export const LabelingNewTaskPage: React.FC<LabelingNewTaskPageProps> = ({
 
   const usersQuery = useQuery<{ items: AccessUserItem[] }>({
     queryKey: ["access-users"],
-    queryFn: ({ signal }) => apiRequest<{ items: AccessUserItem[] }>("/api/access/users", { signal }),
+    queryFn: ({ signal }) => apiRequest<{ items: AccessUserItem[] }>("/api/access-users", { signal }),
     enabled: active && isAdmin,
     staleTime: 60_000,
   });

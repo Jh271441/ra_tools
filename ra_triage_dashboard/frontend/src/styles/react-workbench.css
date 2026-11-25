@@ -1077,8 +1077,8 @@ html[data-color-theme="light"] .ra-batch-prediction-root .gateway-model-option.a
   min-height: 38px;
 }
 .ra-campaigns-root .campaign-assignment-action .ra-react-select {
-  min-width: 112px;
-  max-width: 150px;
+  min-width: 96px;
+  max-width: 118px;
 }
 .ra-campaigns-root .campaign-assignment-action .ui-select-trigger {
   height: 36px;
@@ -1158,6 +1158,15 @@ html[data-color-theme="light"] .ra-batch-prediction-root .gateway-model-option.a
   min-width: 0;
   color: var(--muted);
   font-size: 13px;
+}
+.ra-review-assignments-root .ra-assign-field .ra-react-select {
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+.ra-review-assignments-root .ra-assign-field .ui-select-trigger {
+  height: 36px;
+  min-height: 36px;
 }
 .ra-review-assignments-root .ra-detail-filter-field {
   display: grid;

@@ -67,7 +67,7 @@ describe("ReviewAssignmentsPage", () => {
       if (path.startsWith("/api/model-runs")) {
         return { items: [{ id: "run-1", name: "Run Alpha", baseline_prediction_count: 100 }] };
       }
-      if (path === "/api/access/users") {
+      if (path === "/api/access-users") {
         return { items: [{ username: "alice", role: "writer" }] };
       }
       return {};
@@ -157,7 +157,7 @@ describe("ReviewAssignmentsPage", () => {
         };
       }
       if (path.startsWith("/api/model-runs")) return { items: [] };
-      if (path === "/api/access/users") {
+      if (path === "/api/access-users") {
         return { items: [{ username: "alice", role: "writer" }, { username: "bob", role: "writer" }] };
       }
       return {};
