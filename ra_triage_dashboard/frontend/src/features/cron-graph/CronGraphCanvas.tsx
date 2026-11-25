@@ -329,6 +329,7 @@ const CronGraphInner: React.FC<CronGraphInnerProps> = ({ model, onSelect }) => {
           <Background color="var(--line)" gap={20} size={1} />
           <Controls showInteractive={false} />
           <MiniMap
+            position="top-right"
             ariaLabel={model.ui.minimap}
             style={{ width: 160, height: 100 }}
             nodeColor={(node) =>

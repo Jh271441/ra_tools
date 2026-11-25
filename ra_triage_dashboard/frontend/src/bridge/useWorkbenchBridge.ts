@@ -144,8 +144,8 @@ export function formatCstTime(
   return new Intl.DateTimeFormat(lang === "en" ? "en-GB" : "zh-CN", {
     timeZone: "Asia/Shanghai",
     year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
+    month: lang === "en" ? "2-digit" : "numeric",
+    day: lang === "en" ? "2-digit" : "numeric",
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",

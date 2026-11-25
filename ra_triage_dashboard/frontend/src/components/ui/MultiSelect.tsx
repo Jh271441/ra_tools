@@ -82,11 +82,8 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
     if (selectedOptions.length === 0) {
       return placeholder || allLabel || bilingual(lang, "全部", "All");
     }
-    if (selectedOptions.length === 1) {
-      return selectedOptions[0].label;
-    }
-    if (selectedOptions.length === options.length && allLabel) {
-      return allLabel;
+    if (selectedOptions.length <= 2) {
+      return selectedOptions.map((o) => o.label).join(lang === "en" ? ", " : "、");
     }
     return bilingual(
       lang,

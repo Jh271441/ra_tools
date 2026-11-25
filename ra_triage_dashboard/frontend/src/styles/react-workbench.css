@@ -10,14 +10,28 @@
 
 .ra-system-status-root,
 .ra-users-root,
-.ra-daily-cron-root,
-.ra-runs-manager-root,
 .ra-version-metrics-root {
   min-width: 0;
   max-width: 100%;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 14px;
+}
+
+.ra-daily-cron-root {
+  min-width: 0;
+  max-width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+}
+
+.ra-runs-manager-root {
+  min-width: 0;
+  max-width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
 }
 
 .ra-version-datasets-root {
@@ -63,6 +77,11 @@
   min-width: 0;
 }
 
+.ra-version-metrics-root .vm-field > .ra-react-select .ui-select-trigger {
+  min-height: 38px;
+  border-radius: 7px;
+}
+
 /* System Status & Users overflow protection on 320px/390px phones */
 [data-react-island="system-status"] .system-status-hero {
   min-width: 0;
@@ -84,7 +103,6 @@
 [data-react-island="system-status"] .system-status-grid {
   min-width: 0;
   max-width: 100%;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
 }
 
 [data-react-island="system-status"] .system-status-card {
@@ -127,6 +145,17 @@
 .ra-users-root .access-create-permissions .ra-field-stack > .ui-select {
   width: 100%;
   min-width: 0;
+}
+
+.ra-users-root .access-create .ra-react-select .ui-select-trigger,
+.ra-users-root .access-role-row .ra-react-select .ui-select-trigger,
+.ra-runs-manager-root .ra-runs-filter-bar .ra-react-select .ui-select-trigger {
+  min-height: 38px;
+  border-radius: 7px;
+}
+
+.ra-runs-manager-root .ra-field-stack {
+  gap: 4px;
 }
 
 .ra-users-root .access-role-row .ra-react-select-menu {
@@ -204,6 +233,22 @@
   align-items: center;
   gap: 8px;
   min-width: 0;
+}
+
+.ra-cron-scope-control > .ra-react-select {
+  width: 260px;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.ra-cron-scope-control > .ra-react-select .ui-select-trigger {
+  min-height: 38px;
+  border-radius: 7px;
+}
+
+.ra-daily-cron-root .cron-run-graph .react-flow__minimap {
+  top: 0;
+  bottom: auto;
 }
 
 .ra-cron-scope-control > span {
@@ -402,19 +447,16 @@ html[data-color-theme="light"] .ra-modal-backdrop {
   min-width: 0;
 }
 
+.ra-labeling-summary-root .review-filters .ra-analysis-field {
+  gap: 2px;
+}
+
 .ra-labeling-summary-root .review-filters .ui-select-trigger,
 .ra-labeling-summary-root .review-filters .multi-filter-trigger {
   height: 32px;
   min-height: 32px;
   width: 100%;
   min-width: 0;
-}
-
-.ra-labeling-summary-root .review-filters .filter-field-heading,
-.ra-review-analysis-root .analysis-filters .filter-field-heading,
-.ra-review-analysis-root .analysis-filters .analysis-scope-heading {
-  justify-content: flex-start !important;
-  gap: 5px;
 }
 
 html[data-color-theme="light"] .ra-labeling-summary-root .review-filters .ra-analysis-field,

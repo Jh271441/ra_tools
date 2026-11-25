@@ -1023,11 +1023,15 @@ export const ReviewAnalysisPage: React.FC<ReviewAnalysisPageProps> = ({
     if (!run) {
       return {
         state: "no-run" as const,
-        summaryText: bilingual(lang, "需选择对比模型 Run", "Select a model Run"),
+        summaryText: bilingual(
+          lang,
+          "选择 Model Run 后展示混淆统计",
+          "Select a Model Run to show confusion stats",
+        ),
         emptyText: bilingual(
           lang,
-          "选择对比模型 Run 后展示 GT × 模型预测混淆矩阵。",
-          "Select a model Run to view the GT × Model prediction confusion matrix.",
+          "尚未选择可比较的 Model Run。",
+          "No comparable Model Run selected.",
         ),
         columnLabels: [] as string[],
         rows: [] as ConfusionTableRow[],
