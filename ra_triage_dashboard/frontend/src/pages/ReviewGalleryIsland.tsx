@@ -328,7 +328,7 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
     }
   >({
     queryKey: ["review-gallery-config"],
-    queryFn: ({ signal }) => apiRequest("/api/config", { signal }),
+    queryFn: ({ signal }) => apiRequest("/api/dashboard-config", { signal }),
     enabled: active && !legacyConfig?.baselines?.length,
     staleTime: 60_000,
   });

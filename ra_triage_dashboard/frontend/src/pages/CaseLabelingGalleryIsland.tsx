@@ -226,7 +226,7 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
     DashboardConfigPayload & { case_labeling?: { active_baseline_ids?: string[] } }
   >({
     queryKey: ["labeling-gallery-config"],
-    queryFn: ({ signal }) => apiRequest("/api/config", { signal }),
+    queryFn: ({ signal }) => apiRequest("/api/dashboard-config", { signal }),
     enabled: active && !legacyConfig?.baselines?.length,
     staleTime: 60_000,
   });

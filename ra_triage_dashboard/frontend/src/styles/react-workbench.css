@@ -1225,8 +1225,13 @@ html[data-color-theme="light"] .ra-batch-prediction-root .gateway-model-option.a
 /* Wave B7: Review & Case Labeling Gallery Islands */
 .ra-review-gallery-root,
 .ra-case-labeling-gallery-root {
+  display: grid;
+  gap: 8px;
   width: 100%;
   min-width: 0;
+}
+.ra-review-gallery-root #reviewTaskContextError[hidden] {
+  display: none !important;
 }
 .ra-review-gallery-root .review-filters > .ra-gallery-field,
 .ra-case-labeling-gallery-root .review-filters > .ra-gallery-field {
@@ -1253,15 +1258,6 @@ html[data-color-theme="light"] .ra-case-labeling-gallery-root .review-filters > 
   display: block;
   width: 100%;
   min-width: 0;
-}
-.ra-review-gallery-root .review-filters .ui-select-trigger,
-.ra-review-gallery-root .review-filters .multi-filter-trigger,
-.ra-case-labeling-gallery-root .review-filters .ui-select-trigger,
-.ra-case-labeling-gallery-root .review-filters .multi-filter-trigger {
-  height: 32px;
-  min-height: 32px;
-  padding: 5px 9px;
-  font-size: 12px;
 }
 .ra-review-gallery-root #filterForm > .ra-gallery-field,
 .ra-review-gallery-root #filterForm > .review-task-filter {
