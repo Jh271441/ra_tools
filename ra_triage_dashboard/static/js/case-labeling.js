@@ -486,6 +486,10 @@ async function exportLabelingGtUpdate(filters = {}, button = null) {
 }
 
 async function enterLabelingNewTask({ route = null } = {}) {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("labeling-new-task") || window.__RA_REACT_OWNED_PAGES__?.includes?.("labeling-new-task"))) {
+    window.__RA_REACT_WORKBENCH__?.notifySync?.();
+    return;
+  }
   if (!state.session?.is_admin && !state.session?.identity_pending) {
     showToast("实验分配仅限管理员。", true);
     if (typeof showPage === "function") showPage("review", { historyMode: "replace" });
@@ -580,6 +584,7 @@ async function generateLabelingTask() {
 
 
 function bindLabelingTaskControls() {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("labeling-new-task") || window.__RA_REACT_OWNED_PAGES__?.includes?.("labeling-new-task"))) return;
   bindCreationGroupSetup("labelingTask");
   $("#labelingCombinedTaskRefresh")?.addEventListener("click", () => loadLabelingCombinedTasks());
   bindAssignmentNameInput("labeling");
@@ -1627,6 +1632,10 @@ function bindCaseLabelingEditorShortcuts() {
 }
 
 async function enterCaseLabeling({ route = null } = {}) {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("labeling") || window.__RA_REACT_OWNED_PAGES__?.includes?.("labeling"))) {
+    window.__RA_REACT_WORKBENCH__?.notifySync?.();
+    return;
+  }
   if (!canAccessCaseLabelingPreview() && !state.session?.identity_pending) {
     showToast("问题标注需要 writer 或管理员权限。", true);
     if (typeof showPage === "function") showPage("review", { historyMode: "replace" });
@@ -1658,6 +1667,7 @@ async function enterCaseLabeling({ route = null } = {}) {
 }
 
 function bindCaseLabelingEvents() {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("labeling") || window.__RA_REACT_OWNED_PAGES__?.includes?.("labeling"))) return;
   bindUiInfoPopovers($("#caseLabelingFilterForm"));
   bindCaseLabelingEditorShortcuts();
   $("#caseLabelingCreateLabelSnapshot")?.addEventListener("click", () => {

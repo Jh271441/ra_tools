@@ -450,7 +450,7 @@ function applyAnalysisComparisonSelection() {
   ) {
     state.reviewQueueStale = true;
   }
-  $("#modelRunFilter").value = state.selectedRunId;
+  if ($("#modelRunFilter")) $("#modelRunFilter").value = state.selectedRunId;
   setReviewComparisonStatus(state.reviewComparisonStatus, {
     hasRun: Boolean(state.selectedRunId),
   });

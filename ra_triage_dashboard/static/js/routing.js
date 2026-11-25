@@ -770,6 +770,7 @@ function persistCurrentReviewRoute(overrides = {}) {
 }
 
 function applyReviewRouteControls(route) {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("review") || window.__RA_REACT_OWNED_PAGES__?.includes?.("review"))) return;
   if (!route) return;
   if ($("#searchInput")) $("#searchInput").value = route.search || "";
   state.reviewIssueIds = Array.isArray(route.reviewIssueIds)
@@ -1264,6 +1265,7 @@ function pageUrl(page, options = {}) {
 }
 
 function setReviewView(issueId = "") {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("review") || window.__RA_REACT_OWNED_PAGES__?.includes?.("review"))) return;
   const gallery = $("#reviewGalleryView");
   const detail = $("#reviewDetailView");
   if (!gallery || !detail) return;
@@ -1590,10 +1592,16 @@ function showPage(
       Boolean(issue) &&
       (historyMode === "push" || Boolean(window.history.state?.openedFromGallery)),
   };
+  const reactOwnedTarget =
+    typeof window !== "undefined" &&
+    Boolean(
+      window.__RA_REACT_WORKBENCH__?.ownsPage?.(target) ||
+        window.__RA_REACT_OWNED_PAGES__?.includes?.(target)
+    );
   if (historyMode === "push") {
     history.pushState(historyState, "", pageUrl(target, routeOptions));
   }
-  if (historyMode === "replace") {
+  if (historyMode === "replace" && !(reactOwnedTarget && previousPage === target)) {
     history.replaceState(historyState, "", pageUrl(target, routeOptions));
   }
   // Loaders capture page/URL ownership only after the route is committed.

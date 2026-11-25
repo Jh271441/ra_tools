@@ -838,6 +838,10 @@ async function loadCases({
   fresh = false,
   queueIds = null,
 } = {}) {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("review") || window.__RA_REACT_OWNED_PAGES__?.includes?.("review"))) {
+    window.__RA_REACT_WORKBENCH__?.notifySync?.();
+    return;
+  }
   const pageContext = capturePageContext();
   const requestSeq = ++state.caseListRequestSeq;
   cancelCaseListLoad();

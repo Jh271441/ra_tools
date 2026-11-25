@@ -931,7 +931,7 @@ async function useModelRun(runId) {
   state.selectedId = "";
   state.casePage = 1;
   state.galleryScrollY = 0;
-  $("#modelRunFilter").value = runId;
+  if ($("#modelRunFilter")) $("#modelRunFilter").value = runId;
   setReviewComparisonStatus("mismatch", { hasRun: true });
   await applyInferredBaselinesFromRun(run, { reason: "run" });
   renderActiveRun();

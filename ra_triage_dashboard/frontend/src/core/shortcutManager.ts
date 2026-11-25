@@ -38,7 +38,7 @@ export function formatEventCombo(event: KeyboardEvent): string {
   if (event.ctrlKey) parts.push("Ctrl");
   if (event.metaKey) parts.push("Meta");
   if (event.altKey) parts.push("Alt");
-  if (event.shiftKey && event.key.length > 1) parts.push("Shift");
+  if (event.shiftKey && (event.key.length > 1 || /^[A-Za-z]$/.test(event.key))) parts.push("Shift");
   parts.push(normalizeKey(event.key));
   return parts.join("+");
 }

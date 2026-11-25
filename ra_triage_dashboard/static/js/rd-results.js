@@ -135,6 +135,7 @@ function rdPreviewProgress() {
   return rdText('正在汇总标注并核对 Trail，尚未上传…', 'Collecting labels and checking Trail; nothing uploaded yet…');
 }
 function renderRdResults() {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("rd-results") || window.__RA_REACT_OWNED_PAGES__?.includes?.("rd-results"))) return;
   if (typeof humanPublicationPageActive === 'function' && humanPublicationPageActive()) return renderHumanPublications();
   if (state.activePage !== 'rd-results') return;
   if (rdResults.previewOpen && rdResults.preview) return rdRenderPreview();
@@ -270,6 +271,10 @@ function rdPersist() {
   history.replaceState(history.state, '', url);
 }
 async function loadRdResults() {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("rd-results") || window.__RA_REACT_OWNED_PAGES__?.includes?.("rd-results"))) {
+    window.__RA_REACT_WORKBENCH__?.refreshPage?.("rd-results");
+    return;
+  }
   if (typeof humanPublicationPageActive === 'function' && humanPublicationPageActive()) return loadHumanPublications();
   if (rdResults.committing) return;
   if (rdResults.busyAction === 'refresh-te') { rdResults.busy = false; rdResults.busyAction = ''; }

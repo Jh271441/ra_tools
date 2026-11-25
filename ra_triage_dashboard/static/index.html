@@ -57,7 +57,7 @@
         const appPreload = document.createElement("link");
         appPreload.rel = "preload";
         appPreload.as = "script";
-        appPreload.href = `${activeBase}/static/app-bundle.js?v=manual-triage-881`;
+        appPreload.href = `${activeBase}/static/app-bundle.js?v=manual-triage-882`;
         document.head.appendChild(appPreload);
         // These same-origin reads are required on every route. Begin them
         // while the bundle downloads; consume once through the normal API
@@ -127,7 +127,7 @@
         stylesheetRequests.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-881`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-882`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -2706,7 +2706,7 @@
           const activeBase = window.__RA_TRIAGE_BASE__ || "";
           const jsList = Array.isArray(parsed.js) ? parsed.js : [];
           if (jsList.length) {
-            window.__RA_REACT_OWNED_PAGES__ = ["status", "users", "review-assignments", "daily-cron", "runs-manager", "version-datasets", "version-metrics", "analysis", "comparison", "run-collections"];
+            window.__RA_REACT_OWNED_PAGES__ = ["status", "users", "review-assignments", "daily-cron", "runs-manager", "version-datasets", "version-metrics", "analysis", "comparison", "run-collections", "review", "labeling", "labeling-new-task", "labeling-summary", "rd-results"];
           }
           for (const cssPath of Array.isArray(parsed.css) ? parsed.css : []) {
             const link = document.createElement("link");
@@ -2725,7 +2725,7 @@
         }
       })();
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app-bundle.js?v=manual-triage-881`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app-bundle.js?v=manual-triage-882`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

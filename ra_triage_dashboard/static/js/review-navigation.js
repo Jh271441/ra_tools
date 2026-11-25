@@ -123,6 +123,7 @@ async function selectCase(
   issueId,
   { updateRoute = true, historyMode = "push", preserveScrollY = null, videoDiscovery = null } = {}
 ) {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("review") || window.__RA_REACT_OWNED_PAGES__?.includes?.("review"))) return;
   if (!issueId || state.activePage !== "review") return;
   if (typeof isReviewDecisionEditor === "function" && isReviewDecisionEditor()) {
     if (caseLabelDecisionUi.saving) return;

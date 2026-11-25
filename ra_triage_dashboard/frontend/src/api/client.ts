@@ -44,10 +44,14 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
   };
   let body: BodyInit | undefined;
   if (options.body !== undefined) {
-    headers["Content-Type"] = "application/json";
-    body = JSON.stringify(options.body);
+    if (typeof FormData !== "undefined" && options.body instanceof FormData) {
+      body = options.body;
+    } else {
+      headers["Content-Type"] = "application/json";
+      body = JSON.stringify(options.body);
+    }
   }
-  if (method !== "GET") {
+  if (method !== "GET" && !headers["X-RA-Triage-Request"]) {
     headers["X-RA-Triage-Request"] = "browser-v1";
   }
 

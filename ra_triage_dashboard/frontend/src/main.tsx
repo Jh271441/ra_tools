@@ -37,6 +37,21 @@ const RunComparisonPage = React.lazy(() =>
 const RunCollectionsPage = React.lazy(() =>
   import("./pages/RunCollectionsPage").then((m) => ({ default: m.RunCollectionsPage })),
 );
+const ReviewPage = React.lazy(() =>
+  import("./pages/ReviewPage").then((m) => ({ default: m.ReviewPage })),
+);
+const CaseLabelingPage = React.lazy(() =>
+  import("./pages/CaseLabelingPage").then((m) => ({ default: m.CaseLabelingPage })),
+);
+const LabelingNewTaskPage = React.lazy(() =>
+  import("./pages/LabelingNewTaskPage").then((m) => ({ default: m.LabelingNewTaskPage })),
+);
+const LabelingSummaryPage = React.lazy(() =>
+  import("./pages/LabelingSummaryPage").then((m) => ({ default: m.LabelingSummaryPage })),
+);
+const RdResultsPage = React.lazy(() =>
+  import("./pages/RdResultsPage").then((m) => ({ default: m.RdResultsPage })),
+);
 
 const OWNED_PAGES = new Set<string>([
   "status",
@@ -49,6 +64,11 @@ const OWNED_PAGES = new Set<string>([
   "analysis",
   "comparison",
   "run-collections",
+  "review",
+  "labeling",
+  "labeling-new-task",
+  "labeling-summary",
+  "rd-results",
 ]);
 
 const queryClient = new QueryClient({
@@ -209,6 +229,110 @@ const RunCollectionsIsland: React.FC = () => {
   );
 };
 
+const ReviewIsland: React.FC = () => {
+  const { activePage, lang, selectedBaselines } = useWorkbenchBridge();
+  const active = activePage === "review";
+  const { effectiveSession } = useResolvedSession(active);
+  const canWrite = Boolean(
+    effectiveSession?.verified &&
+      (effectiveSession.can_write ||
+        effectiveSession.is_admin ||
+        ["writer", "admin"].includes(String(effectiveSession.access_role || ""))),
+  );
+  return (
+    <Suspense fallback={<LoadingFallback lang={lang} />}>
+      <ReviewPage
+        active={active}
+        lang={lang}
+        selectedBaselines={selectedBaselines}
+        username={effectiveSession?.username || ""}
+        canWrite={canWrite}
+        isAdmin={Boolean(effectiveSession?.is_admin && effectiveSession?.verified)}
+      />
+    </Suspense>
+  );
+};
+
+const CaseLabelingIsland: React.FC = () => {
+  const { activePage, lang, selectedBaselines } = useWorkbenchBridge();
+  const active = activePage === "labeling";
+  const { effectiveSession } = useResolvedSession(active);
+  const canWrite = Boolean(
+    effectiveSession?.verified &&
+      (effectiveSession.can_write ||
+        effectiveSession.is_admin ||
+        ["writer", "admin"].includes(String(effectiveSession.access_role || ""))),
+  );
+  return (
+    <Suspense fallback={<LoadingFallback lang={lang} />}>
+      <CaseLabelingPage
+        active={active}
+        lang={lang}
+        selectedBaselines={selectedBaselines}
+        username={effectiveSession?.username || ""}
+        canWrite={canWrite}
+        isAdmin={Boolean(effectiveSession?.is_admin && effectiveSession?.verified)}
+      />
+    </Suspense>
+  );
+};
+
+const LabelingNewTaskIsland: React.FC = () => {
+  const { activePage, lang, selectedBaselines } = useWorkbenchBridge();
+  const active = activePage === "labeling-new-task";
+  const { effectiveSession } = useResolvedSession(active);
+  return (
+    <Suspense fallback={<LoadingFallback lang={lang} />}>
+      <LabelingNewTaskPage
+        active={active}
+        lang={lang}
+        isAdmin={Boolean(effectiveSession?.is_admin && effectiveSession?.verified)}
+        selectedBaselines={selectedBaselines}
+      />
+    </Suspense>
+  );
+};
+
+const LabelingSummaryIsland: React.FC = () => {
+  const { activePage, lang, selectedBaselines } = useWorkbenchBridge();
+  const active = activePage === "labeling-summary";
+  const { effectiveSession } = useResolvedSession(active);
+  const canWrite = Boolean(
+    effectiveSession?.verified &&
+      (effectiveSession.can_write ||
+        effectiveSession.is_admin ||
+        ["writer", "admin"].includes(String(effectiveSession.access_role || ""))),
+  );
+  return (
+    <Suspense fallback={<LoadingFallback lang={lang} />}>
+      <LabelingSummaryPage
+        active={active}
+        lang={lang}
+        selectedBaselines={selectedBaselines}
+        username={effectiveSession?.username || ""}
+        canWrite={canWrite}
+        isAdmin={Boolean(effectiveSession?.is_admin && effectiveSession?.verified)}
+      />
+    </Suspense>
+  );
+};
+
+const RdResultsIsland: React.FC = () => {
+  const { activePage, lang, selectedBaselines } = useWorkbenchBridge();
+  const active = activePage === "rd-results";
+  const { effectiveSession } = useResolvedSession(active);
+  return (
+    <Suspense fallback={<LoadingFallback lang={lang} />}>
+      <RdResultsPage
+        active={active}
+        lang={lang}
+        isAdmin={Boolean(effectiveSession?.is_admin && effectiveSession?.verified)}
+        selectedBaselines={selectedBaselines}
+      />
+    </Suspense>
+  );
+};
+
 let openExternalAllocationModal: ((campaignId: string) => void) | null = null;
 
 const GlobalAllocationModalPortal: React.FC = () => {
@@ -272,6 +396,11 @@ function mountIslands(): void {
   mountSection(document.getElementById("reviewAnalysisPage"), <AnalysisIsland />);
   mountSection(document.getElementById("runComparisonPage"), <RunComparisonIsland />);
   mountSection(document.getElementById("runCollectionsPage"), <RunCollectionsIsland />);
+  mountSection(document.getElementById("reviewPage"), <ReviewIsland />);
+  mountSection(document.getElementById("caseLabelingPage"), <CaseLabelingIsland />);
+  mountSection(document.getElementById("caseLabelingNewTaskPage"), <LabelingNewTaskIsland />);
+  mountSection(document.getElementById("labelingSummaryPage"), <LabelingSummaryIsland />);
+  mountSection(document.getElementById("rdResultsPage"), <RdResultsIsland />);
 
   let modalRoot = document.getElementById("raReactModalRoot");
   if (!modalRoot) {
@@ -289,7 +418,7 @@ function mountIslands(): void {
 }
 
 const handle: ReactWorkbenchHandle = {
-  version: "vite-react-ts-3.4",
+  version: "vite-react-ts-3.5",
   ownsPage: (page: string) => OWNED_PAGES.has(page),
   refreshPage: (page: string) => {
     if (page === "status") {
@@ -317,6 +446,22 @@ const handle: ReactWorkbenchHandle = {
       void queryClient.invalidateQueries({ queryKey: ["run-collections-list"] });
       void queryClient.invalidateQueries({ queryKey: ["run-collection-detail"] });
       void queryClient.invalidateQueries({ queryKey: ["run-evaluation-detail"] });
+    } else if (page === "review") {
+      void queryClient.invalidateQueries({ queryKey: ["review-cases"] });
+      void queryClient.invalidateQueries({ queryKey: ["review-case-detail"] });
+      void queryClient.invalidateQueries({ queryKey: ["combined-review-context"] });
+    } else if (page === "labeling") {
+      void queryClient.invalidateQueries({ queryKey: ["labeling-cases"] });
+      void queryClient.invalidateQueries({ queryKey: ["labeling-case-detail"] });
+      void queryClient.invalidateQueries({ queryKey: ["labeling-tasks"] });
+    } else if (page === "labeling-new-task") {
+      void queryClient.invalidateQueries({ queryKey: ["labeling-tasks-history"] });
+      void queryClient.invalidateQueries({ queryKey: ["labeling-combined-tasks"] });
+    } else if (page === "labeling-summary") {
+      void queryClient.invalidateQueries({ queryKey: ["labeling-summary-data"] });
+    } else if (page === "rd-results") {
+      void queryClient.invalidateQueries({ queryKey: ["rd-results-list"] });
+      void queryClient.invalidateQueries({ queryKey: ["human-publications-list"] });
     }
     window.dispatchEvent(new Event("ra:workbench-sync"));
   },

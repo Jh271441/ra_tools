@@ -70,6 +70,7 @@ function activateMediaShortcutControl(control, event) {
 }
 
 function handleDetailMediaShortcut(event) {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.(state.activePage) || window.__RA_REACT_OWNED_PAGES__?.includes?.(state.activePage))) return false;
   if (event.defaultPrevented || isImeComposing(event)
       || event.ctrlKey || event.metaKey || event.altKey
       || mediaShortcutHasEditableTarget(event.target)
@@ -120,6 +121,7 @@ function handleDetailMediaShortcut(event) {
 }
 
 function handleVideoSourceShortcut(event) {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.(state.activePage) || window.__RA_REACT_OWNED_PAGES__?.includes?.(state.activePage))) return false;
   const key = String(event.key || "").toLowerCase();
   const cameraShortcut = key === "c" && event.shiftKey;
   if (key !== "v" && (key !== "o" || event.shiftKey) && !cameraShortcut) return false;

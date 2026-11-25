@@ -4,6 +4,7 @@
  */
 
 function bindReviewComposerShortcuts() {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("review") || window.__RA_REACT_OWNED_PAGES__?.includes?.("review"))) return;
   if (document.documentElement.dataset.reviewComposerShortcutsBound === "1") return;
   document.documentElement.dataset.reviewComposerShortcutsBound = "1";
   document.addEventListener("keydown", (event) => {
@@ -75,6 +76,7 @@ function openCurrentReviewDiscussion(caseData = state.selectedCase) {
 }
 
 function bindReviewDetailActionShortcuts() {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("review") || window.__RA_REACT_OWNED_PAGES__?.includes?.("review"))) return;
   if (document.documentElement.dataset.reviewDetailActionShortcutsBound === "1") return;
   document.documentElement.dataset.reviewDetailActionShortcutsBound = "1";
   document.addEventListener("keydown", (event) => {

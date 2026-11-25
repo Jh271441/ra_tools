@@ -203,15 +203,17 @@ function bindEvents() {
       closeMobileSidebar();
     });
   });
-  $("#filterForm").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    // Filters auto-apply on change; form submit is treated as reset.
-    await resetReviewFilters();
-  });
-  $("#resetReviewFiltersButton")?.addEventListener("click", () => {
-    resetReviewFilters().catch((error) => showToast(error.message, true));
-  });
-  $("#searchInput")?.addEventListener("input", () => scheduleReviewFilterReload(280));
+  if (!(window.__RA_REACT_WORKBENCH__?.ownsPage?.("review") || window.__RA_REACT_OWNED_PAGES__?.includes?.("review"))) {
+    $("#filterForm")?.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      // Filters auto-apply on change; form submit is treated as reset.
+      await resetReviewFilters();
+    });
+    $("#resetReviewFiltersButton")?.addEventListener("click", () => {
+      resetReviewFilters().catch((error) => showToast(error.message, true));
+    });
+    $("#searchInput")?.addEventListener("input", () => scheduleReviewFilterReload(280));
+  }
   if (!(window.__RA_REACT_WORKBENCH__?.ownsPage?.("analysis") || window.__RA_REACT_OWNED_PAGES__?.includes?.("analysis"))) {
     $("#reviewAnalysisFilterForm")?.addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -366,78 +368,80 @@ function bindEvents() {
       changeAnalysisPageSize(event.target.value).catch((error) => showToast(error.message, true));
     });
   }
-  $("#modelRunFilter").addEventListener("change", async () => {
-    const previousRunId = state.selectedRunId;
-    state.selectedRunId = $("#modelRunFilter").value;
-    if (state.selectedRunId !== previousRunId) {
-      state.reviewWorkSplitId = "";
-      state.availableReviewWorkSplitId = "";
-      renderReviewWorkSplitPicker?.("");
-    }
-    if (!state.selectedRunId) state.reviewComparisonStatus = "all";
-    if (state.selectedRunId && !previousRunId) {
-      // Run selection changes the prediction overlay, not the immutable
-      // baseline queue.  Keep the established failure-focused default while
-      // retaining uncovered baseline Issues for the NONE/全部 filters.
-      state.reviewComparisonStatus = "mismatch";
-      state.failureOnly = true;
-    }
-    if (state.selectedRunId) {
-      const run = (state.modelRuns || []).find(
-        (item) => String(item.id) === String(state.selectedRunId)
-      );
-      // 单集评测 Run：切换对比时自动勾选对应 GT 数据集。
-      if (run) {
-        await applyInferredBaselinesFromRun(run, { reason: "run" });
+  if (!(window.__RA_REACT_WORKBENCH__?.ownsPage?.("review") || window.__RA_REACT_OWNED_PAGES__?.includes?.("review"))) {
+    $("#modelRunFilter")?.addEventListener("change", async () => {
+      const previousRunId = state.selectedRunId;
+      state.selectedRunId = $("#modelRunFilter").value;
+      if (state.selectedRunId !== previousRunId) {
+        state.reviewWorkSplitId = "";
+        state.availableReviewWorkSplitId = "";
+        renderReviewWorkSplitPicker?.("");
       }
-    }
-    if (typeof renderReviewCatalogFilters === "function") {
-      renderReviewCatalogFilters();
-    }
-    setReviewComparisonStatus(state.reviewComparisonStatus, {
-      hasRun: Boolean(state.selectedRunId),
+      if (!state.selectedRunId) state.reviewComparisonStatus = "all";
+      if (state.selectedRunId && !previousRunId) {
+        // Run selection changes the prediction overlay, not the immutable
+        // baseline queue.  Keep the established failure-focused default while
+        // retaining uncovered baseline Issues for the NONE/全部 filters.
+        state.reviewComparisonStatus = "mismatch";
+        state.failureOnly = true;
+      }
+      if (state.selectedRunId) {
+        const run = (state.modelRuns || []).find(
+          (item) => String(item.id) === String(state.selectedRunId)
+        );
+        // 单集评测 Run：切换对比时自动勾选对应 GT 数据集。
+        if (run) {
+          await applyInferredBaselinesFromRun(run, { reason: "run" });
+        }
+      }
+      if (typeof renderReviewCatalogFilters === "function") {
+        renderReviewCatalogFilters();
+      }
+      setReviewComparisonStatus(state.reviewComparisonStatus, {
+        hasRun: Boolean(state.selectedRunId),
+      });
+      renderAnalysisRunFilter();
+      renderActiveRun();
+      renderRunManager();
+      await reloadReviewGallery();
     });
-    renderAnalysisRunFilter();
-    renderActiveRun();
-    renderRunManager();
-    await reloadReviewGallery();
-  });
-  const clearClusterButton = $("#clearClusterButton");
-  if (clearClusterButton) {
-    clearClusterButton.addEventListener("click", async () => {
-      state.clusterKey = "";
-      await reloadReviewGallery({ includeOverview: false });
+    const clearClusterButton = $("#clearClusterButton");
+    if (clearClusterButton) {
+      clearClusterButton.addEventListener("click", async () => {
+        state.clusterKey = "";
+        await reloadReviewGallery({ includeOverview: false });
+      });
+    }
+    $("#casePagePrevious")?.addEventListener("click", () => {
+      changeCasePage(-1).catch((error) => showToast(error.message, true));
+    });
+    $("#casePageNext")?.addEventListener("click", () => {
+      changeCasePage(1).catch((error) => showToast(error.message, true));
+    });
+    const casePageJump = $("#casePageJump");
+    const commitCasePageJump = () => {
+      jumpToCasePage(casePageJump?.value).catch((error) => showToast(error.message, true));
+    };
+    $("#casePageJumpButton")?.addEventListener("click", commitCasePageJump);
+    casePageJump?.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        commitCasePageJump();
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        renderCasePagination();
+        casePageJump.blur();
+      }
+    });
+    casePageJump?.addEventListener("focus", () => {
+      window.requestAnimationFrame(() => casePageJump.select());
+    });
+    $("#casePageSize")?.addEventListener("change", (event) => {
+      changeCasePageSize(event.target.value).catch((error) => showToast(error.message, true));
     });
   }
-  $("#casePagePrevious").addEventListener("click", () => {
-    changeCasePage(-1).catch((error) => showToast(error.message, true));
-  });
-  $("#casePageNext").addEventListener("click", () => {
-    changeCasePage(1).catch((error) => showToast(error.message, true));
-  });
-  const casePageJump = $("#casePageJump");
-  const commitCasePageJump = () => {
-    jumpToCasePage(casePageJump?.value).catch((error) => showToast(error.message, true));
-  };
-  $("#casePageJumpButton")?.addEventListener("click", commitCasePageJump);
-  casePageJump?.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      commitCasePageJump();
-      return;
-    }
-    if (event.key === "Escape") {
-      event.preventDefault();
-      renderCasePagination();
-      casePageJump.blur();
-    }
-  });
-  casePageJump?.addEventListener("focus", () => {
-    window.requestAnimationFrame(() => casePageJump.select());
-  });
-  $("#casePageSize").addEventListener("change", (event) => {
-    changeCasePageSize(event.target.value).catch((error) => showToast(error.message, true));
-  });
   $("#refreshButton").addEventListener("click", async (event) => {
     if (state.activePage === "rd-results") { await loadRdResults(); return; }
     const pageContext = capturePageContext();
@@ -551,7 +555,7 @@ function bindEvents() {
   $("#openTrailImportButton").addEventListener("click", () => {
     activateRunSourceTab("trail");
   });
-  $("#reviewUploadModelButton").addEventListener("click", () => openRunImport("model"));
+  $("#reviewUploadModelButton")?.addEventListener("click", () => openRunImport("model"));
   if (!(window.__RA_REACT_WORKBENCH__?.ownsPage?.("users") || window.__RA_REACT_OWNED_PAGES__?.includes?.("users"))) {
     $("#accessUserForm")?.addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -623,7 +627,7 @@ function bindEvents() {
   $("#analysisDiscussionDialog")?.addEventListener("close", closeAnalysisDiscussion);
   $("#analysisDiscussionForm")?.addEventListener("submit", saveAnalysisDiscussion);
   $("#exportFilteredIssuesButton")?.addEventListener("click", downloadFilteredReviewIssues);
-  $("#predictFilteredButton").addEventListener("click", () => {
+  $("#predictFilteredButton")?.addEventListener("click", () => {
     const limit = predictionBatchLimit();
     if (state.caseTotal > limit) {
       showToast(
@@ -889,7 +893,7 @@ function bindEvents() {
       ) {
         state.reviewQueueStale = true;
       }
-      $("#modelRunFilter").value = nextRunId;
+      if ($("#modelRunFilter")) $("#modelRunFilter").value = nextRunId;
       setReviewComparisonStatus(state.reviewComparisonStatus, {
         hasRun: Boolean(nextRunId),
       });
@@ -984,8 +988,13 @@ function bindEvents() {
           route.failureOnly ? "mismatch" : "all"
         )
       : "all";
+    if (window.__RA_REACT_WORKBENCH__?.ownsPage?.("review") || window.__RA_REACT_OWNED_PAGES__?.includes?.("review")) {
+      showPage("review", { issue: route.issue, restoreRoute: true });
+      window.__RA_REACT_WORKBENCH__?.notifySync?.();
+      return;
+    }
     state.selectedRunId = nextRunId;
-    $("#modelRunFilter").value = nextRunId;
+    if ($("#modelRunFilter")) $("#modelRunFilter").value = nextRunId;
     state.reviewComparisonStatus = nextComparisonStatus;
     setReviewComparisonStatus(nextComparisonStatus, {
       hasRun: Boolean(nextRunId),
