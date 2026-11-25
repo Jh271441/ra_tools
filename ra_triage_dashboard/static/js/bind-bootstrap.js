@@ -1306,21 +1306,25 @@ async function bootstrap() {
         initialPageRequests.push(loadLabelingSummary());
       }
     } else if (initialRoute.page === "campaigns") {
-      initialPageRequests.push(loadCampaigns({
-        campaignId: initialRoute.campaignId,
-        purpose: initialRoute.campaignPurpose,
-        lifecycle: initialRoute.campaignLifecycle,
-        query: initialRoute.campaignQuery,
-      }));
+      if (!(window.__RA_REACT_WORKBENCH__?.ownsPage?.("campaigns") || window.__RA_REACT_OWNED_PAGES__?.includes?.("campaigns"))) {
+        initialPageRequests.push(loadCampaigns({
+          campaignId: initialRoute.campaignId,
+          purpose: initialRoute.campaignPurpose,
+          lifecycle: initialRoute.campaignLifecycle,
+          query: initialRoute.campaignQuery,
+        }));
+      }
     } else if (initialRoute.page === "intent") {
-      initialPageRequests.push(loadIntentLabeling({
-        datasetId: initialRoute.intentDatasetId,
-        datasetIds: (initialRoute.intentDatasetIds || []).length ? initialRoute.intentDatasetIds : null,
-        caseId: initialRoute.intentCaseId,
-        offsetMs: initialRoute.intentOffsetMs,
-        assignees: initialRoute.intentAssignees,
-        experimentId: initialRoute.intentExperimentId,
-      }));
+      if (!(window.__RA_REACT_WORKBENCH__?.ownsPage?.("intent") || window.__RA_REACT_OWNED_PAGES__?.includes?.("intent"))) {
+        initialPageRequests.push(loadIntentLabeling({
+          datasetId: initialRoute.intentDatasetId,
+          datasetIds: (initialRoute.intentDatasetIds || []).length ? initialRoute.intentDatasetIds : null,
+          caseId: initialRoute.intentCaseId,
+          offsetMs: initialRoute.intentOffsetMs,
+          assignees: initialRoute.intentAssignees,
+          experimentId: initialRoute.intentExperimentId,
+        }));
+      }
     } else if (initialRoute.page === "intent-experiments") {
       if (!(window.__RA_REACT_WORKBENCH__?.ownsPage?.("intent-experiments") || window.__RA_REACT_OWNED_PAGES__?.includes?.("intent-experiments"))) {
         initialPageRequests.push(loadIntentExperimentAdmin({

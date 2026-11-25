@@ -1,4 +1,8 @@
 async function loadIntentLabeling({ datasetId = "", datasetIds = null, caseId = "", offsetMs = null, assignees = null, experimentId = null, historyMode = "replace", resumeIncomplete = null } = {}) {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("intent") || window.__RA_REACT_OWNED_PAGES__?.includes?.("intent"))) {
+    window.__RA_REACT_WORKBENCH__?.refreshPage?.("intent");
+    return;
+  }
   const intent = state.intentLabeling;
   restoreIntentWorkspacePreferences();
   const requestSeq = ++intent.requestSeq;
@@ -463,6 +467,9 @@ function intentShortcutIsEditable(target) {
 }
 
 function handleIntentShortcut(event) {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("intent") || window.__RA_REACT_OWNED_PAGES__?.includes?.("intent"))) {
+    return;
+  }
   if (state.activePage !== "intent" || event.isComposing) return;
   if (event.altKey || intentShortcutIsEditable(event.target)) return;
   const boundaryModifier = event.ctrlKey || event.metaKey;
@@ -546,6 +553,14 @@ function closeIntentContributorMenus() {
 }
 
 function bindIntentLabelingEvents() {
+  const intentLabelingReactOwned = typeof window !== "undefined" && (
+    window.__RA_REACT_WORKBENCH__?.ownsPage?.("intent") ||
+    window.__RA_REACT_OWNED_PAGES__?.includes?.("intent")
+  );
+  if (intentLabelingReactOwned) {
+    // All 3 intent pages (intent, intent-experiments, intent-summary) are React-owned when intent is owned.
+    return;
+  }
   $("#intentOpenComments")?.addEventListener("click", () => {
     Promise.resolve(openIntentComments()).catch((error) => showToast(error.message, true));
   });

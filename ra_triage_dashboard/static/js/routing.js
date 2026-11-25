@@ -1483,7 +1483,11 @@ function showPage(
   if (target === "labeling-summary" && loadPageData && !(typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("labeling-summary") || window.__RA_REACT_OWNED_PAGES__?.includes?.("labeling-summary")))) {
     pageLoads.push(() => loadLabelingSummary().catch((error) => showToast(error.message, true)));
   }
-  if (target === "campaigns" && loadPageData && typeof loadCampaigns === "function") {
+  const campaignsReactOwned = typeof window !== "undefined" && (
+    window.__RA_REACT_WORKBENCH__?.ownsPage?.("campaigns") ||
+    window.__RA_REACT_OWNED_PAGES__?.includes?.("campaigns")
+  );
+  if (target === "campaigns" && loadPageData && typeof loadCampaigns === "function" && !campaignsReactOwned) {
     pageLoads.push(() => loadCampaigns({
       campaignId,
       purpose: campaignPurpose,

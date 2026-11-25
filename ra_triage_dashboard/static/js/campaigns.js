@@ -192,6 +192,10 @@ async function loadCampaigns({
   commentId = 0,
   discussionChannel = "",
 } = {}) {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("campaigns") || window.__RA_REACT_OWNED_PAGES__?.includes?.("campaigns"))) {
+    window.__RA_REACT_WORKBENCH__?.refreshPage?.("campaigns");
+    return null;
+  }
   if (!document.getElementById("campaignsPage")) return null;
   if (state.session?.is_admin && !state.accessUsers?.length && typeof loadAccessUsers === "function") {
     await loadAccessUsers().catch(() => {});
@@ -663,6 +667,27 @@ async function loadCampaignGroupDetail(groupId) {
 }
 
 function bindCampaignPageEvents() {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("campaigns") || window.__RA_REACT_OWNED_PAGES__?.includes?.("campaigns"))) {
+    document.getElementById("caseLabelingCampaignsButton")?.addEventListener("click", () => {
+      const params = new URLSearchParams();
+      const filters = labelingTaskFilterPayload();
+      if (filters.task_id) params.set("task", filters.task_id);
+      if (filters.q) params.set("q", filters.q);
+      if (filters.issue_ids) params.set("issue_ids", filters.issue_ids);
+      if (filters.issue_tags) params.set("issue_tags", filters.issue_tags);
+      if (filters.gt_relation) params.set("gt_relation", filters.gt_relation);
+      if (filters.status && filters.status !== "all") params.set("status", filters.status);
+      if (filters.author) params.set("author", filters.author);
+      if (filters.assignee) params.set("assignee", filters.assignee);
+      if (filters.label && filters.label !== "all") params.set("label", filters.label);
+      if (filters.gt && filters.gt !== "all") params.set("gt", filters.gt);
+      if (filters.comment_state && filters.comment_state !== "all") params.set("comment_state", filters.comment_state);
+      if (filters.exclusion && filters.exclusion !== "all") params.set("exclusion", filters.exclusion);
+      if (filters.cluster) params.set("cluster", filters.cluster);
+      window.location.assign(`${withBase("/labeling-summary")}${params.toString() ? `?${params}` : ""}`);
+    });
+    return;
+  }
   document.getElementById("campaignCloseButton")?.addEventListener("click", () => {
     mutateCampaignLifecycle("close");
   });

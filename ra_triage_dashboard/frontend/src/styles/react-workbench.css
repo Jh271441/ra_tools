@@ -889,8 +889,8 @@ html[data-color-theme="light"] .ra-batch-prediction-root .gateway-model-option.a
 }
 .ra-intent-summary-root .intent-summary-filters .ui-select-trigger,
 .ra-intent-summary-root .intent-summary-filters .multi-filter-trigger {
-  height: 38px;
-  min-height: 38px;
+  height: 36px;
+  min-height: 36px;
   font-size: 13px;
 }
 .ra-intent-summary-root .intent-summary-pagination .ra-react-select {
@@ -1048,6 +1048,83 @@ html[data-color-theme="light"] .ra-batch-prediction-root .gateway-model-option.a
 #raTrailLocalImportDialog [hidden] {
   display: none !important;
 }
+
+/* Wave B5: Campaigns & Intent Labeling */
+.ra-campaigns-root {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  width: 100%;
+  min-width: 0;
+}
+.ra-campaigns-root .ra-camp-field {
+  min-width: 145px;
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.ra-campaigns-root .campaign-issue-filters .ra-camp-field {
+  min-width: 150px;
+}
+.ra-campaigns-root .ra-camp-field .ra-react-select {
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+.ra-campaigns-root .ra-camp-field .ui-select-trigger {
+  height: 38px;
+  min-height: 38px;
+}
+.ra-campaigns-root .campaign-assignment-action .ra-react-select {
+  min-width: 120px;
+  max-width: 150px;
+}
+.ra-campaigns-root .campaign-assignment-action .ui-select-trigger {
+  height: 32px;
+  min-height: 32px;
+  font-size: 12px;
+}
+.ra-campaigns-root .campaign-issue-pagination .ra-react-select {
+  width: auto;
+  min-width: 72px;
+}
+.ra-campaigns-root .campaign-issue-pagination .ui-select-trigger {
+  height: 38px;
+  min-height: 38px;
+}
+.ra-camp-modal-body {
+  display: grid;
+  gap: 12px;
+}
+.ra-camp-reason-field {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.ra-camp-reason-field input {
+  width: 100%;
+  min-height: 38px;
+}
+
+.ra-intent-labeling-root {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+}
+.ra-intent-labeling-root .intent-commandbar .multi-filter {
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+.ra-intent-labeling-root .intent-commandbar .multi-filter-trigger {
+  height: 36px;
+  min-height: 36px;
+  font-size: 13px;
+}
 @media (max-width: 900px) {
   .ra-run-comparison-root .run-comparison-picker-grid .ra-comparison-field {
     grid-column: 1 / -1;
@@ -1136,10 +1213,33 @@ html[data-color-theme="light"] .ra-batch-prediction-root .gateway-model-option.a
   .ra-trail-update-root .trail-reconcile-controls .ui-select-trigger,
   .ra-trail-update-root .trail-advanced-fields .ui-select-trigger,
   .ra-trail-update-root .trail-advanced-fields .multi-filter-trigger,
-  .ra-trail-update-root .ra-tu-inline-field .ui-select-trigger {
+  .ra-trail-update-root .ra-tu-inline-field .ui-select-trigger,
+  .ra-campaigns-root .ra-camp-field .ui-select-trigger,
+  .ra-intent-labeling-root .intent-commandbar .multi-filter-trigger {
     height: 44px;
     min-height: 44px;
     font-size: 16px;
+  }
+
+  .ra-campaigns-root .ra-camp-field {
+    flex: 1 1 140px;
+    min-width: 0;
+  }
+  .ra-campaigns-root .campaigns-toolbar button,
+  .ra-campaigns-root .campaigns-filters button,
+  .ra-intent-labeling-root .intent-commandbar button,
+  .ra-intent-labeling-root .intent-label-grid button,
+  .ra-intent-labeling-root .intent-restore-button {
+    min-height: 44px;
+  }
+  .ra-intent-labeling-root .intent-commandbar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ra-intent-labeling-root .intent-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ra-intent-labeling-root .intent-media-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .ra-intent-summary-root .intent-summary-filters button,

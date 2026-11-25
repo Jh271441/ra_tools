@@ -995,6 +995,10 @@ async function refreshChangedDataNow() {
     return;
   }
   if (state.activePage === "intent") {
+    if (window.__RA_REACT_WORKBENCH__?.ownsPage?.("intent") || window.__RA_REACT_OWNED_PAGES__?.includes?.("intent")) {
+      window.__RA_REACT_WORKBENCH__?.refreshPage?.("intent");
+      return;
+    }
     const intent = state.intentLabeling;
     if (!intent.datasetId) return;
     const selected = [...(intent.selectedAssignees || [])];

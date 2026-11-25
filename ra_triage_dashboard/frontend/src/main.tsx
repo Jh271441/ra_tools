@@ -49,6 +49,12 @@ const IntentExperimentsPage = React.lazy(() =>
 const TrailUpdatePage = React.lazy(() =>
   import("./pages/TrailUpdatePage").then((m) => ({ default: m.TrailUpdatePage })),
 );
+const CampaignsPage = React.lazy(() =>
+  import("./pages/CampaignsPage").then((m) => ({ default: m.CampaignsPage })),
+);
+const IntentLabelingPage = React.lazy(() =>
+  import("./pages/IntentLabelingPage").then((m) => ({ default: m.IntentLabelingPage })),
+);
 
 const OWNED_PAGES = new Set<string>([
   "status",
@@ -67,6 +73,8 @@ const OWNED_PAGES = new Set<string>([
   "intent-summary",
   "intent-experiments",
   "trail-update",
+  "campaigns",
+  "intent",
 ]);
 
 const queryClient = new QueryClient({
@@ -331,6 +339,42 @@ const TrailUpdateIsland: React.FC = () => {
   );
 };
 
+const CampaignsIsland: React.FC = () => {
+  const { activePage, lang, theme, selectedBaselines } = useWorkbenchBridge();
+  const active = activePage === "campaigns";
+  const { effectiveSession } = useResolvedSession(active);
+  if (!active) return null;
+  return (
+    <Suspense fallback={<div className="no-asset">{lang === "en" ? "Loading…" : "加载中…"}</div>}>
+      <CampaignsPage
+        active={active}
+        lang={lang}
+        theme={theme}
+        selectedBaselines={selectedBaselines}
+        isAdmin={Boolean(effectiveSession?.is_admin)}
+      />
+    </Suspense>
+  );
+};
+
+const IntentLabelingIsland: React.FC = () => {
+  const { activePage, lang } = useWorkbenchBridge();
+  const active = activePage === "intent";
+  const { effectiveSession } = useResolvedSession(active);
+  if (!active) return null;
+  return (
+    <Suspense fallback={<div className="no-asset">{lang === "en" ? "Loading…" : "加载中…"}</div>}>
+      <IntentLabelingPage
+        active={active}
+        lang={lang}
+        username={effectiveSession?.username || ""}
+        isAdmin={Boolean(effectiveSession?.is_admin)}
+        canAnnotateIntent={effectiveSession?.can_annotate_intent !== false}
+      />
+    </Suspense>
+  );
+};
+
 const mountedRoots = new Map<HTMLElement, Root>();
 
 function mountIsland(container: HTMLElement | null, element: React.ReactElement) {
@@ -366,6 +410,8 @@ function mountAllIslands() {
     trailUpdateContainer.classList.remove("is-loading");
     mountIsland(trailUpdateContainer, <TrailUpdateIsland />);
   }
+  mountIsland(document.getElementById("campaignsPage"), <CampaignsIsland />);
+  mountIsland(document.getElementById("intentLabelingPage"), <IntentLabelingIsland />);
 }
 
 interface ReactWorkbenchHandle {
@@ -377,7 +423,7 @@ interface ReactWorkbenchHandle {
 }
 
 const handle: ReactWorkbenchHandle = {
-  version: "vite-react-ts-strangler-3.7",
+  version: "vite-react-ts-strangler-3.8",
   ownedPages: Array.from(OWNED_PAGES),
   ownsPage: (page: string) => OWNED_PAGES.has(page),
   refreshPage: (page: string) => {
@@ -429,6 +475,13 @@ const handle: ReactWorkbenchHandle = {
     } else if (page === "trail-update") {
       void queryClient.invalidateQueries({ queryKey: ["trail-update-preview"] });
       void queryClient.invalidateQueries({ queryKey: ["trail-issue-history"] });
+    } else if (page === "campaigns") {
+      void queryClient.invalidateQueries({ queryKey: ["campaigns-list"] });
+      void queryClient.invalidateQueries({ queryKey: ["campaign-detail"] });
+      void queryClient.invalidateQueries({ queryKey: ["campaign-group"] });
+    } else if (page === "intent") {
+      void queryClient.invalidateQueries({ queryKey: ["intent-datasets"] });
+      void queryClient.invalidateQueries({ queryKey: ["intent-assignees"] });
     }
     window.dispatchEvent(new Event("ra:workbench-sync"));
   },

@@ -18,6 +18,7 @@ export interface WorkbenchBridgeState {
     can_write: boolean;
     can_view_intent?: boolean;
     can_manage_intent?: boolean;
+    can_annotate_intent?: boolean;
     read_only?: boolean;
   } | null;
 }

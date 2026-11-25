@@ -284,6 +284,9 @@ function syncIntentTopbarDatasets(items, selectedIds, page) {
   } else if (page === "intent-summary") {
     state.intentLabeling.summaryDatasetIds = selected;
     state.intentLabeling.summaryDatasetId = selected[0] || "";
+  } else if (page === "intent") {
+    state.intentLabeling.selectedDatasetIds = selected;
+    state.intentLabeling.datasetId = selected[0] || "";
   }
   renderIntentTopbarDatasetPicker(selected);
 }
@@ -321,6 +324,14 @@ function applyIntentTopbarDatasetSelection(values) {
       return;
     }
     loadIntentSummary({ datasetIds: selected, force: true }).catch((error) => showToast(error.message, true));
+    return;
+  }
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("intent") || window.__RA_REACT_OWNED_PAGES__?.includes?.("intent"))) {
+    state.intentLabeling.selectedDatasetIds = selected;
+    state.intentLabeling.datasetId = datasetId;
+    renderIntentTopbarDatasetPicker(selected);
+    window.dispatchEvent(new CustomEvent("ra:intent-datasets-change", { detail: { page: "intent", datasetIds: selected } }));
+    window.__RA_REACT_WORKBENCH__?.notifySync?.();
     return;
   }
   (async () => {
