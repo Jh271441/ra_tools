@@ -70,6 +70,9 @@ describe("UsersPage", () => {
 
     await waitFor(() => expect(screen.getByText("jasperchen")).toBeInTheDocument());
     expect(container.querySelector("select")).toBeNull();
+    // Each .access-role-row must have 5 direct grid children matching classic layout-shared.css:981
+    const firstRow = container.querySelector<HTMLElement>('[data-access-user="jasperchen"]');
+    expect(firstRow?.children.length).toBe(5);
     expect(screen.getByText("1 / 2 · 25")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("combobox", { name: "Filter by role" }));

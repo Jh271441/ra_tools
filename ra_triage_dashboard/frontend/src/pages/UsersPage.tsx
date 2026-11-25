@@ -542,38 +542,36 @@ export const UsersPage: React.FC<UsersPageProps> = ({
                       <small className="muted">{formatCstTime(user.updated_at, lang)}</small>
                     )}
                   </div>
-                  <div className="ra-user-controls">
-                    <UiSelect
-                      value={draft.role}
-                      options={roleOptions}
-                      ariaLabel={bilingual(
-                        lang,
-                        `${user.username} 的权限`,
-                        `Role for ${user.username}`,
-                      )}
-                      onChange={(val) => updateDraft(user, { role: val })}
-                    />
-                    <UiSelect
-                      value={draft.intent_permission}
-                      options={intentOptions}
-                      ariaLabel={bilingual(
-                        lang,
-                        `${user.username} 的标注权限`,
-                        `Annotation permission for ${user.username}`,
-                      )}
-                      onChange={(val) => updateDraft(user, { intent_permission: val })}
-                    />
-                    <UiSelect
-                      value={draft.annotation_role}
-                      options={rowAnnotationRoleOptions}
-                      ariaLabel={bilingual(
-                        lang,
-                        `${user.username} 的标注身份`,
-                        `Annotation role for ${user.username}`,
-                      )}
-                      onChange={(val) => updateDraft(user, { annotation_role: val })}
-                    />
-                  </div>
+                  <UiSelect
+                    value={draft.role}
+                    options={roleOptions}
+                    ariaLabel={bilingual(
+                      lang,
+                      `${user.username} 的权限`,
+                      `Role for ${user.username}`,
+                    )}
+                    onChange={(val) => updateDraft(user, { role: val })}
+                  />
+                  <UiSelect
+                    value={draft.intent_permission}
+                    options={intentOptions}
+                    ariaLabel={bilingual(
+                      lang,
+                      `${user.username} 的标注权限`,
+                      `Annotation permission for ${user.username}`,
+                    )}
+                    onChange={(val) => updateDraft(user, { intent_permission: val })}
+                  />
+                  <UiSelect
+                    value={draft.annotation_role}
+                    options={rowAnnotationRoleOptions}
+                    ariaLabel={bilingual(
+                      lang,
+                      `${user.username} 的标注身份`,
+                      `Annotation role for ${user.username}`,
+                    )}
+                    onChange={(val) => updateDraft(user, { annotation_role: val })}
+                  />
                   <div className="access-row-actions">
                     <button
                       type="button"
@@ -675,7 +673,7 @@ export const UsersPage: React.FC<UsersPageProps> = ({
           </p>
         )}
 
-        <div className="ra-users-filter-bar">
+        <div className="ra-users-filter-bar is-single">
           <input
             type="search"
             value={mentionSearch}
@@ -707,7 +705,7 @@ export const UsersPage: React.FC<UsersPageProps> = ({
                 m.username in mentionDrafts ? mentionDrafts[m.username] : m.enabled !== false;
               return (
                 <div
-                  className="access-row ra-user-row"
+                  className="access-row ra-mention-row"
                   key={m.username}
                   data-mention-user={m.username}
                 >

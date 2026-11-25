@@ -1,6 +1,6 @@
 {
   "src/features/cron-graph/CronGraphCanvas.tsx": {
-    "file": "assets/CronGraphCanvas-BOiNdKyE.js",
+    "file": "assets/CronGraphCanvas-Y3mYoYUK.js",
     "name": "CronGraphCanvas",
     "src": "src/features/cron-graph/CronGraphCanvas.tsx",
     "isDynamicEntry": true,
@@ -12,7 +12,7 @@
     ]
   },
   "src/main.tsx": {
-    "file": "assets/main-COHMbpUr.js",
+    "file": "assets/main-eYu-j7hx.js",
     "name": "main",
     "src": "src/main.tsx",
     "isEntry": true,
@@ -23,11 +23,11 @@
       "src/pages/VersionDatasetsPage.tsx"
     ],
     "css": [
-      "assets/main-DUzAygR5.css"
+      "assets/main-CRAC68WG.css"
     ]
   },
   "src/pages/DailyCronPage.tsx": {
-    "file": "assets/DailyCronPage-CBTiHb8n.js",
+    "file": "assets/DailyCronPage-BK1d7D2B.js",
     "name": "DailyCronPage",
     "src": "src/pages/DailyCronPage.tsx",
     "isDynamicEntry": true,
@@ -39,7 +39,7 @@
     ]
   },
   "src/pages/RunsManagerIsland.tsx": {
-    "file": "assets/RunsManagerIsland-SIsJzkiJ.js",
+    "file": "assets/RunsManagerIsland-jyYpmBdx.js",
     "name": "RunsManagerIsland",
     "src": "src/pages/RunsManagerIsland.tsx",
     "isDynamicEntry": true,
@@ -48,7 +48,7 @@
     ]
   },
   "src/pages/VersionDatasetsPage.tsx": {
-    "file": "assets/VersionDatasetsPage-CSYjZVyi.js",
+    "file": "assets/VersionDatasetsPage-CwfCchzV.js",
     "name": "VersionDatasetsPage",
     "src": "src/pages/VersionDatasetsPage.tsx",
     "isDynamicEntry": true,
@@ -57,7 +57,7 @@
     ]
   },
   "src/pages/VersionMetricsPage.tsx": {
-    "file": "assets/VersionMetricsPage-DiBjnqce.js",
+    "file": "assets/VersionMetricsPage-DvJUOC7l.js",
     "name": "VersionMetricsPage",
     "src": "src/pages/VersionMetricsPage.tsx",
     "isDynamicEntry": true,
