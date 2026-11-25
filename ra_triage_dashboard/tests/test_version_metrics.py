@@ -64,6 +64,29 @@ class VersionMetricsTests(unittest.TestCase):
         self.assertIsNone(absent["metrics"]["chain"]["macro_f1"])
         self.assertEqual(evaluate(fixture())["invalid"], {"oos": 1, "missing": 1})
 
+    def test_release_reference_uses_first_non_null_before_class_validation(self):
+        snapshot = fixture()
+        snapshot["family"] = "20261106"
+        for r in snapshot["rows"]:
+            for fact in r["references"].values():
+                fact["observed"] = True
+        rows = snapshot["rows"]
+        rows[0]["references"]["arbitrated"]["value"] = "无需协助"
+        rows[0]["references"]["te_prime"]["value"] = "误触发"
+        rows[1]["references"]["te_prime"]["value"] = "成功"
+        result = evaluate(snapshot)
+        self.assertEqual(result["reference_counts"], dict(arbitrated=1, te_prime=1, te=2, rd=1))
+        self.assertEqual(result["invalid"], {"oos": 1})
+        self.assertEqual(result["metrics"]["chain"]["correct"], 3)
+        cases = case_page(snapshot, status="all")["items"]
+        self.assertEqual([r["reference_lane"] for r in cases], ["arbitrated", "te_prime", "te", "rd", "te"])
+        self.assertEqual(evaluate(snapshot, reference="te")["valid_total"], 4)
+        rows[0]["references"]["arbitrated"] = dict(observed=False, value=None)
+        with self.assertRaisesRegex(ValueError, "Update the snapshot"):
+            evaluate(snapshot)
+        with self.assertRaisesRegex(ValueError, "Update the snapshot"):
+            case_page(snapshot)
+
     def test_exclusion_is_opt_in_and_deduplicates_with_invalid(self):
         f = fixture()
         f["rows"][3]["excluded"] = True

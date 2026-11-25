@@ -10,7 +10,7 @@ from ..support.identity import _writer_identity
 from ..auth import has_same_origin_mutation_marker
 from ..version_metric_store import VersionMetricStore
 from ..version_metric_source import source, read_only_client
-from ..version_metrics import evaluate, case_page, FIELDS, THRESHOLDS
+from ..version_metrics import evaluate, case_page, REFERENCE_MODES, THRESHOLDS, IncompleteHumanReference
 
 from fastapi import Depends
 from ..core.deps import get_container
@@ -28,7 +28,7 @@ def catalog():
 
 
 def validate_policy(reference, exclusion, threshold):
-    if reference not in FIELDS or exclusion not in ("all", "exclude") or threshold not in THRESHOLDS:
+    if reference not in REFERENCE_MODES or exclusion not in ("all", "exclude") or threshold not in THRESHOLDS:
         raise ValueError("Invalid metric policy")
 
 
@@ -47,6 +47,8 @@ def overview(families, reference, exclusion, threshold, page, page_size):
         raise ValueError("Invalid page size")
     selected, available = families_for(families)
     service = store()
+    report_ids = service._read(service.root / "report_ids.json") or {}
+    checks = (service._read(service.root / "cron-state.json") or {}).get("releases", {})
     results = []
     for family in selected:
         current = next(d for d in available if d["release_family"] == family)
@@ -57,9 +59,16 @@ def overview(families, reference, exclusion, threshold, page, page_size):
                 value.update(status="ready", membership_changed=saved.get("registry_revision") != current["revision"])
             else:
                 value = dict(family=family, status="unavailable", reason="trail_snapshot_required")
+        except IncompleteHumanReference:
+            value = dict(family=family, status="unavailable", reason="human_fields_required")
         except (ValueError, OSError, KeyError, TypeError):
             value = dict(family=family, status="error")
         value["current_sample_total"] = current["published_samples"]
+        report_id = report_ids.get(family)
+        if isinstance(report_id, str) and re.fullmatch(r"[0-9]{1,20}", report_id):
+            value["report_id"] = report_id
+        if family in checks:
+            value["last_checked_at"] = checks[family].get("checked_at")
         results.append(value)
     pages = max(1, (len(results)+page_size-1)//page_size)
     page = min(page, pages)
@@ -69,7 +78,7 @@ def overview(families, reference, exclusion, threshold, page, page_size):
 
 
 @router.get("/api/version-metrics", responses={200: {"model": VersionMetricsOverviewResponse}})
-async def metrics(families: str = Query("", max_length=1000), reference: str = "te", exclusion: str = "all",
+async def metrics(families: str = Query("", max_length=1000), reference: str = "release", exclusion: str = "all",
                   threshold: float = .9, page: int = Query(1, ge=1, le=10000), page_size: int = 20):
     try:
         return await asyncio.to_thread(overview, families, reference, exclusion, threshold, page, page_size)
@@ -91,7 +100,7 @@ def detail(family, snapshot, reference, exclusion, threshold, scheme, status, tr
 
 
 @router.get("/api/version-metrics/{family}", responses={200: {"model": VersionMetricsDetailResponse}})
-async def metric_detail(family: str, snapshot: str = Query("", max_length=64), reference: str = "te", exclusion: str = "all",
+async def metric_detail(family: str, snapshot: str = Query("", max_length=64), reference: str = "release", exclusion: str = "all",
                         threshold: float = .9, scheme: str = "chain", status: str = "errors", truth: str = "", predicted: str = "",
                         page: int = Query(1, ge=1, le=10000), page_size: int = 20):
     try:

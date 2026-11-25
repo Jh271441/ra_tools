@@ -14,18 +14,43 @@ def metric_source():
 
 class VersionMetricFrontendTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which("node"), "Node is required")
-    def test_report_pagination_reconciles_url_and_each_scheme_keeps_its_denominator(self):
+    def test_trend_connects_valid_metrics_across_gt_policies_and_breaks_at_missing_scores(self):
+        program = metric_source() + r"""
+const assert = require('node:assert/strict');
+const chart = {clientWidth: 626, querySelectorAll: () => []};
+const $ = selector => selector === '#vmChart' ? chart : null;
+const uiText = (zh, en) => en, i18nLocale = () => 'en-US', escapeHtml = String;
+const rows = ['20260102','20260109','20260116','20260123'].map((family, i) => ({
+  family, reference_lanes: i ? ['arbitrated','te_prime','te','rd'] : ['te'],
+  metrics: {chain:{accuracy:i / 4}, model:{accuracy:i === 2 ? null : i / 5}}
+}));
+versionMetrics.schemes = ['chain','model'];
+versionMetrics.data = {items:rows};
+vmChart();
+const paths = Array.from(chart.innerHTML.matchAll(/<path class="vm-series-line" d="([^"]+)"/g),
+  match => match[1].match(/[ML]/g).join(''));
+assert.deepEqual(paths, ['MLLL','MLM']);
+"""
+        result = subprocess.run(["node", "-e", program], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    @unittest.skipUnless(shutil.which("node"), "Node is required")
+    def test_report_keeps_every_version_and_each_scheme_denominator(self):
         program = metric_source() + r"""
 const assert = require('node:assert/strict');
 const uiText=(zh,en)=>en, i18nLocale=()=> 'en-US', escapeHtml=value=>String(value);
 const rows=Array.from({length:25},(_,i)=>({family:'202601'+String(i+1).padStart(2,'0')}));
-let page=vmVersionPage(rows,999,10);
-assert.equal(page.page,3);assert.equal(page.pages,3);assert.equal(page.total,25);
-assert.equal(page.items.length,5);assert.equal(page.items[0].family,'20260105');
-assert.equal(vmVersionPage(rows,1,25).pageSize,20);
-assert.equal(vmVersionPage([],9,10).page,1);
-versionMetrics.data={items:rows};versionMetrics.page=99;versionMetrics.pageSize=10;versionMetrics.thresholdFamily='20261030';
-vmReconcileReports();assert.equal(versionMetrics.page,3);assert.equal(versionMetrics.thresholdFamily,'20260125');
+versionMetrics.data={items:rows};versionMetrics.thresholdFamily='20261030';
+vmReconcileReports();assert.equal(versionMetrics.thresholdFamily,'20260125');
+const nodes=new Map(), $=selector=>{
+  if(!nodes.has(selector))nodes.set(selector,{querySelectorAll:()=>[],setAttribute:()=>{}});
+  return nodes.get(selector);
+};
+vmRenderThresholdReport=()=>{};
+vmRenderReports();
+assert.equal(($('#vmReportRows').innerHTML.match(/<tr>/g)||[]).length,25);
+assert.ok(!nodes.has('#vmPageSize'));
+assert.equal(vmReferenceCounts({reference_lanes:['arbitrated','te_prime','te','rd'],reference_counts:{arbitrated:2,te_prime:3,te:4,rd:5}}),'Adjudication 2 · TE′ 3 · TE 4 · RD 5');
 const row={metrics:{model:{accuracy:132/153,correct:132,total:153,reference_total:155},chain:{accuracy:134/155,correct:134,total:155,reference_total:155}},coverage:{te:{filled:157,total:158,observed:158}}};
 assert.ok(vmScoreCell(row,'model').includes('132/153'));
 assert.ok(vmScoreCell(row,'model').includes('86.27%'));
@@ -35,13 +60,13 @@ assert.ok(vmCoverageCell(row,'te').includes('157/158'));
 row.coverage.te.observed=0;
 assert.ok(vmCoverageCell(row,'te').includes('Unknown'));
 assert.ok(vmFreshnessSummary([]).label.includes('Not collected'));
-assert.equal(vmSampleChange({sample_total:52,current_sample_total:117}), 'Current sample 117');
-assert.equal(vmSampleChange({sample_total:117,current_sample_total:117}), '');
+assert.equal(vmSampleChange({sample_total:5,current_sample_total:8}), 'Current sample 8');
+assert.equal(vmSampleChange({sample_total:8,current_sample_total:8}), '');
 assert.equal(vmSampleChange({current_sample_total:0}), 'Current sample 0');
 const freshness=vmFreshnessSummary([{status:'ready',observed_at:'2026-11-16T03:00:00Z'},{status:'ready',observed_at:'2026-11-16T02:00:00Z'},{status:'unavailable'}]);
 assert.ok(freshness.label.includes('10:00'),'the compact badge uses the oldest selected collection');
 assert.ok(freshness.title.includes('11:00'));
-assert.ok(freshness.title.includes('not continuously live'));
+assert.ok(freshness.title.includes('scheduler checks automatically'));
 const close={metrics:Object.fromEntries(VM_SCHEMES.map((key,i)=>[key,{accuracy:.999+i*.0002}]))};
 const geometry=vmChartGeometry([close],VM_SCHEMES,320),labels=vmPointLabels(close,VM_SCHEMES,geometry.y);
 assert.equal(labels.length,5);

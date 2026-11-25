@@ -44,9 +44,11 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
 }) => {
   const [open, setOpen] = useState(false);
   const [openUpward, setOpenUpward] = useState(false);
+  const [alignRight, setAlignRight] = useState(false);
   const [query, setQuery] = useState("");
   const rootRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
   const reactId = useId();
   const panelId = id ? `${id}-panel` : `multi-select-panel-${reactId}`;
 
@@ -117,14 +119,18 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
       const spaceBelow = window.innerHeight - rect.bottom;
       const spaceAbove = rect.top;
       setOpenUpward(spaceBelow < 260 && spaceAbove > spaceBelow);
+      const panelWidth = panelRef.current?.offsetWidth || Math.max(rect.width, 240);
+      setAlignRight(rect.left + panelWidth > window.innerWidth - 12 && rect.right > panelWidth);
     };
     handlePosition();
+    const rafId = window.requestAnimationFrame(handlePosition);
     document.addEventListener("mousedown", handlePointerDown);
     document.addEventListener("touchstart", handlePointerDown, { passive: true });
     document.addEventListener("keydown", handleKeyDown, true);
     window.addEventListener("resize", handlePosition);
     window.addEventListener("scroll", handlePosition, true);
     return () => {
+      window.cancelAnimationFrame(rafId);
       document.removeEventListener("mousedown", handlePointerDown);
       document.removeEventListener("touchstart", handlePointerDown);
       document.removeEventListener("keydown", handleKeyDown, true);
@@ -176,10 +182,11 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
 
       {open && (
         <div
+          ref={panelRef}
           id={panelId}
           role="group"
           aria-label={ariaLabel}
-          className={`multi-filter-panel ra-react-multiselect-panel${openUpward ? " is-upward" : ""}`}
+          className={`multi-filter-panel ra-react-multiselect-panel${openUpward ? " is-upward" : ""}${alignRight ? " is-align-right" : ""}`}
           onMouseDown={(e) => e.stopPropagation()}
         >
           <div className="multi-filter-toolbar">

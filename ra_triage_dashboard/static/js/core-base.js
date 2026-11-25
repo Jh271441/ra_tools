@@ -672,7 +672,7 @@ function bindUiInfoPopovers(root) {
   };
   root.addEventListener('pointerover', event => {
     const help = helpOf(event.target);
-    if (!help || event.pointerType === 'touch') return;
+    if (!help || help.hasAttribute('data-ui-info-no-hover') || event.pointerType === 'touch') return;
     const focused = helpOf(document.activeElement);
     // Scrolling a keyboard-focused option can expose another row under a
     // stationary mouse. Only actual pointer movement may replace its hint.
@@ -706,7 +706,7 @@ function bindUiInfoPopovers(root) {
   }, { passive: true });
   root.addEventListener('pointerout', event => {
     const help = helpOf(event.target);
-    if (help && !help.contains(event.relatedTarget)) {
+    if (help && !help.hasAttribute('data-ui-info-no-hover') && !help.contains(event.relatedTarget)) {
       cancelUiInfoHover(help);
       closing = setTimeout(() => {
         if (!help.contains(document.activeElement)) close();

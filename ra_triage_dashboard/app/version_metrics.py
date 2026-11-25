@@ -11,6 +11,8 @@ import re
 LABELS = ("正确触发", "误触发", "无需协助")
 FIELDS = {"te": "ra_review_result_new", "rd": "ra_rd_review_result",
           "te_prime": "ra_review_result_sampling", "arbitrated": "ra_review_result_arbitrated"}
+HUMAN_PRIORITY = ("arbitrated", "te_prime", "te", "rd")
+REFERENCE_MODES = ("release", *FIELDS)
 SCHEMES = ("model", "chain", "model_human_sim", "chain_human_sim", "chain_post_human_sim")
 THRESHOLDS = (.90, .85, .80, .76, .75, .65)
 POLICY = "version-probability-sample-v1"
@@ -48,6 +50,25 @@ def normalize(value):
 
 def filled(value):
     return value is not None and value not in ("", "未填写")
+
+
+def reference_lanes(family, reference):
+    if reference == "release":
+        return HUMAN_PRIORITY if family >= "20261106" else ("te",)
+    return (reference,)
+
+
+def resolve_reference(row, lanes):
+    """Only a confirmed null observation permits trying the next human field."""
+    for lane in lanes:
+        fact = row["references"][lane]
+        if not fact["observed"] or fact["value"] is not None:
+            return lane, fact
+    return lanes[-1], fact
+
+
+class IncompleteHumanReference(ValueError):
+    """The stored receipt lacks a field needed to establish precedence."""
 
 
 def validate_snapshot(snapshot):
@@ -128,16 +149,22 @@ def prediction(row, scheme, threshold):
     return row["truth"] if low else row["label"]
 
 
-def evaluate(snapshot, *, reference="te", exclusion="all", threshold=.9):
-    if reference not in FIELDS or exclusion not in ("all", "exclude") or threshold not in THRESHOLDS:
+def evaluate(snapshot, *, reference="release", exclusion="all", threshold=.9):
+    if reference not in REFERENCE_MODES or exclusion not in ("all", "exclude") or threshold not in THRESHOLDS:
         raise ValueError("Invalid metric policy")
     validate_snapshot(snapshot)
     population = [r for r in snapshot["rows"] if r["published"]]
     sample = [r for r in population if r["sample"]]
     rows = []
     invalid = Counter()
+    lanes = reference_lanes(snapshot["family"], reference)
+    used = Counter()
     for r in sample:
-        fact = r["references"][reference]
+        lane, fact = resolve_reference(r, lanes)
+        if len(lanes) > 1 and not fact["observed"]:
+            if exclusion == "exclude" and r["excluded"]:
+                continue
+            raise IncompleteHumanReference("Update the snapshot to collect the human GT fields")
         truth = normalize(fact["value"]) if fact["observed"] else None
         if truth not in LABELS:
             value = fact["value"]
@@ -147,7 +174,8 @@ def evaluate(snapshot, *, reference="te", exclusion="all", threshold=.9):
             continue
         if exclusion == "exclude" and r["excluded"]:
             continue
-        rows.append(dict(r, truth=truth))
+        used[lane] += 1
+        rows.append(dict(r, truth=truth, truth_lane=lane))
     metrics = {}
     observed_available = any(r.get("human_label") in LABELS and r.get("routed_to_human") is True for r in rows)
     for scheme in (*SCHEMES, *(("observed_human",) if observed_available else ())):
@@ -157,7 +185,7 @@ def evaluate(snapshot, *, reference="te", exclusion="all", threshold=.9):
             for r in rows if scheme.endswith("_sim")))
         if scheme == "observed_human":
             m["human_count"] = sum(r.get("human_label") in LABELS and r.get("routed_to_human") is True for r in rows)
-            m["same_reference_count"] = sum(r.get("human_reference") == reference for r in rows if r.get("human_label") in LABELS and r.get("routed_to_human") is True)
+            m["same_reference_count"] = sum(r.get("human_reference") == r["truth_lane"] for r in rows if r.get("human_label") in LABELS and r.get("routed_to_human") is True)
         metrics[scheme] = m
     coverage = {}
     for key, field in FIELDS.items():
@@ -175,7 +203,8 @@ def evaluate(snapshot, *, reference="te", exclusion="all", threshold=.9):
     return dict(family=snapshot["family"], dataset_id="release-"+snapshot["family"]+"-odd2",
                 run_id=snapshot.get("run_id", ""), snapshot_id=snapshot["id"], observed_at=snapshot["observed_at"],
                 started_at=snapshot.get("started_at", snapshot["observed_at"]),
-                policy=POLICY, reference=reference, reference_field=FIELDS[reference], exclusion=exclusion, threshold=threshold,
+                policy=POLICY, reference=reference, reference_field=FIELDS[lanes[0]] if len(lanes) == 1 else None,
+                reference_lanes=lanes, reference_counts={key: used[key] for key in lanes}, exclusion=exclusion, threshold=threshold,
                 sample_total=len(sample), valid_total=len(rows), invalid=dict(invalid),
                 excluded=sum(r["excluded"] for r in sample), coverage=coverage, metrics=metrics,
                 class_distribution=[dict(label=l, count=sum(r["truth"] == l for r in rows)) for l in LABELS],
@@ -183,7 +212,7 @@ def evaluate(snapshot, *, reference="te", exclusion="all", threshold=.9):
                 thresholds=thresholds, changes=snapshot.get("changes", {}), provenance=snapshot.get("provenance", {}))
 
 
-def case_page(snapshot, *, reference="te", exclusion="all", threshold=.9, scheme="chain", status="errors",
+def case_page(snapshot, *, reference="release", exclusion="all", threshold=.9, scheme="chain", status="errors",
               truth="", predicted="", page=1, page_size=20):
     if scheme not in (*SCHEMES, "observed_human") or status not in ("all", "errors", "invalid"):
         raise ValueError("Invalid case filter")
@@ -192,11 +221,12 @@ def case_page(snapshot, *, reference="te", exclusion="all", threshold=.9, scheme
     if type(page) is not int or not 1 <= page <= 10000 or page_size not in (10, 20, 50, 100):
         raise ValueError("Invalid pagination")
     evaluate(snapshot, reference=reference, exclusion=exclusion, threshold=threshold)
+    lanes = reference_lanes(snapshot["family"], reference)
     selected = []
     for raw in snapshot["rows"]:
         if not raw["published"] or not raw["sample"] or exclusion == "exclude" and raw["excluded"]:
             continue
-        fact = raw["references"][reference]
+        lane, fact = resolve_reference(raw, lanes)
         label = normalize(fact["value"]) if fact["observed"] else None
         row = dict(raw, truth=label)
         output = prediction(row, scheme, threshold)
@@ -205,7 +235,7 @@ def case_page(snapshot, *, reference="te", exclusion="all", threshold=.9, scheme
             continue
         if status == "errors" and output == label or truth and truth != label or predicted and predicted != output:
             continue
-        selected.append(dict(issue_id=raw["issue_id"], reference_value=fact["value"], truth=label,
+        selected.append(dict(issue_id=raw["issue_id"], reference_value=fact["value"], reference_lane=lane if filled(fact["value"]) and fact["observed"] else None, truth=label,
                              prediction=output, confidence=raw.get("confidence"), source=raw["source"], excluded=raw["excluded"]))
     selected.sort(key=lambda r: int(r["issue_id"][2:]))
     total = len(selected)

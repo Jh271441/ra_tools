@@ -1080,9 +1080,35 @@ export const ReviewAnalysisPage: React.FC<ReviewAnalysisPageProps> = ({
     return { state: "ready" as const, summaryText, emptyText: "", columnLabels, rows };
   }, [data?.scope?.model_run, data?.confusion, lang]);
 
+  const localizeClusterLabel = useCallback(
+    (key: string, fallback: string) => {
+      if (lang !== "en") return fallback;
+      const map: Record<string, string> = {
+        evidence: "Missing evidence",
+        scene: "Scene",
+        trigger: "Trigger decision",
+        egress: "Egress",
+        environment: "Environment",
+        self_intent: "Ego intent",
+        all: "Missing evidence",
+      };
+      return map[key] || fallback;
+    },
+    [lang],
+  );
+
   const clusterPanels: AnalysisClusterPanelData[] = useMemo(() => {
     const panels = data?.cluster_panels || [];
-    if (panels.length) return panels;
+    if (panels.length) {
+      return panels.map((panel) => ({
+        ...panel,
+        label: localizeClusterLabel(panel.key, panel.label),
+        groups: (panel.groups || []).map((group) => ({
+          ...group,
+          label: localizeClusterLabel(group.key, group.label),
+        })),
+      }));
+    }
     if (!data) return [];
     return [
       {
@@ -1099,7 +1125,7 @@ export const ReviewAnalysisPage: React.FC<ReviewAnalysisPageProps> = ({
         ],
       },
     ];
-  }, [data, lang]);
+  }, [data, lang, localizeClusterLabel]);
 
   if (!active) return null;
 

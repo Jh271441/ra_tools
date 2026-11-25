@@ -576,10 +576,14 @@ function reviewTagCatalogItem(key) {
 }
 
 let reviewTagHintSequence = 0;
+function reviewTagDescription(item) {
+  return uiText(item?.description_zh, item?.description_en) || String(item?.hint || "");
+}
+
 function reviewTagOptionMarkup(item, selected = false, groupKey = "", manage = true) {
   const key = String(item?.key || "");
   const label = String(item?.label || tagLabel(key));
-  const hint = String(item?.hint || "");
+  const hint = reviewTagDescription(item);
   const hintId = `review-tag-hint-${++reviewTagHintSequence}`;
   const deleted = Boolean(item?.deleted);
   const canManage = Boolean(manage && !deleted);
@@ -598,7 +602,7 @@ function reviewTagOptionMarkup(item, selected = false, groupKey = "", manage = t
         </div>
       </div>
     </div>` : `<label class="tag-option${deleted ? " tag-option-deleted" : ""}" data-ui-info-hover>${check}</label>`;
-  return `<div class="review-tag-option-row ui-info review-tag-help" data-review-tag-option="${escapeHtml(key)}" data-review-tag-hint="${escapeHtml(hint)}" data-ui-info data-ui-info-escape="bubble" data-ui-info-align="center" data-ui-info-hover-delay="1000">
+  return `<div class="review-tag-option-row ui-info review-tag-help" data-review-tag-option="${escapeHtml(key)}" data-review-tag-hint="${escapeHtml(hint)}" data-ui-info data-ui-info-escape="bubble" data-ui-info-align="center" data-ui-info-no-hover>
     ${option}
     <div class="ui-info-tooltip model-review-run-tooltip review-tag-hint" id="${hintId}" role="tooltip">
       <strong data-review-tag-hint-label>${escapeHtml(label)}</strong>

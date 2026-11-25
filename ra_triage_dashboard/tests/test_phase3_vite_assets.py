@@ -69,6 +69,7 @@ class Phase3ViteAssetsTest(unittest.TestCase):
         self.assertTrue(assets["css"], "Vite build must produce at least one entry CSS bundle")
         vite_json = json.loads(render_vite_assets_json(STATIC_DIR))
         self.assertRegex(str(vite_json.get("bundleRev", "")), r"^[0-9a-f]{10}$")
+        self.assertRegex(str(vite_json.get("cssRev", "")), r"^[0-9a-f]{10}$")
 
         app = Starlette(routes=[Mount("/manual/static", app=dashboard_static_app(STATIC_DIR))])
 
@@ -101,7 +102,7 @@ class Phase3ViteAssetsTest(unittest.TestCase):
 
         # Classic app-bundle.js and app-bundle.css remain intact for Strangler-Fig parity.
         for classic_path in ("/manual/static/app-bundle.js", "/manual/static/app-bundle.css"):
-            status, headers = asyncio.run(fetch(classic_path, b"v=manual-triage-888"))
+            status, headers = asyncio.run(fetch(classic_path, b"v=manual-triage-892"))
             self.assertEqual(status, 200, f"Expected HTTP 200 for {classic_path}")
             self.assertIn(b"immutable", headers.get(b"cache-control", b""))
 

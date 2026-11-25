@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useRef, useState } from "react";
+import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import {
   bilingual,
   getWorkbenchBasePath,
@@ -452,11 +452,12 @@ export const UiInfoPopover: React.FC<{
   const reactId = useId();
   const panelId = id ? `${id}-panel` : `ui-info-panel-${reactId}`;
 
-  const positionTooltip = () => {
+  const positionTooltip = useCallback(() => {
     const anchor = btnRef.current;
     if (!anchor || typeof window === "undefined") return;
     const rect = anchor.getBoundingClientRect();
-    const width = Math.min(360, window.innerWidth - 24);
+    const measuredW = tipRef.current?.offsetWidth || 0;
+    const width = measuredW > 0 ? Math.min(measuredW, window.innerWidth - 24) : Math.min(360, window.innerWidth - 24);
     const estHeight = tipRef.current?.offsetHeight || 120;
     let left = rect.left;
     if (left + width > window.innerWidth - 12) {
@@ -467,11 +468,14 @@ export const UiInfoPopover: React.FC<{
       top = rect.top - estHeight - 8;
     }
     setPos({ left: Math.max(12, left), top: Math.max(12, top) });
-  };
+  }, []);
+
+  useLayoutEffect(() => {
+    if (open) positionTooltip();
+  }, [open, positionTooltip]);
 
   useEffect(() => {
     if (!open) return;
-    positionTooltip();
     const onPointerDown = (event: MouseEvent | TouchEvent) => {
       if (rootRef.current && !rootRef.current.contains(event.target as Node)) {
         setOpen(false);
@@ -495,7 +499,7 @@ export const UiInfoPopover: React.FC<{
       window.removeEventListener("resize", positionTooltip);
       window.removeEventListener("scroll", positionTooltip, true);
     };
-  }, [open]);
+  }, [open, positionTooltip]);
 
   return (
     <span
@@ -503,6 +507,7 @@ export const UiInfoPopover: React.FC<{
       id={id}
       className={`model-review-run-help ui-info${open ? " is-open" : ""}`}
       data-ui-info=""
+      onMouseEnter={positionTooltip}
     >
       <button
         ref={btnRef}
@@ -512,9 +517,11 @@ export const UiInfoPopover: React.FC<{
         aria-controls={panelId}
         aria-label={ariaLabel}
         title={ariaLabel}
+        onFocus={positionTooltip}
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
+          positionTooltip();
           setOpen((prev) => !prev);
         }}
       >
@@ -535,7 +542,7 @@ export const UiInfoPopover: React.FC<{
         id={panelId}
         role="dialog"
         aria-label={ariaLabel}
-        style={open && pos ? { left: `${pos.left}px`, top: `${pos.top}px` } : undefined}
+        style={pos ? { left: `${pos.left}px`, top: `${pos.top}px` } : undefined}
       >
         {children}
       </span>

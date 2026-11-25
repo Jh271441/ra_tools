@@ -245,6 +245,7 @@
   top: calc(100% + 4px);
   left: 0;
   min-width: max(100%, 176px);
+  max-width: min(460px, calc(100vw - 24px));
   max-height: min(280px, 50dvh);
   overflow-y: auto;
   z-index: 120;
@@ -253,6 +254,16 @@
 .ra-react-select-menu.is-upward {
   top: auto;
   bottom: calc(100% + 4px);
+}
+
+.ra-react-select-menu.is-align-right,
+.ra-react-multiselect-panel.is-align-right {
+  left: auto;
+  right: 0;
+}
+
+.ra-react-multiselect-panel {
+  max-width: min(360px, calc(100vw - 24px));
 }
 
 .ra-react-select-menu .ui-select-option {
@@ -355,6 +366,39 @@ html[data-color-theme="light"] .ra-modal-backdrop {
   font-size: 11px;
 }
 
+.ra-labeling-summary-root .ra-analysis-field > .ra-react-select,
+.ra-review-analysis-root .ra-analysis-field > .ra-react-select,
+.ra-review-analysis-root .analysis-work-split-filter > .ra-react-select,
+.ra-labeling-summary-root .ra-analysis-field > .ra-react-multiselect,
+.ra-review-analysis-root .ra-analysis-field > .ra-react-multiselect {
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+
+.ra-review-analysis-root .analysis-filters .ui-select-trigger,
+.ra-review-analysis-root .analysis-filters .multi-filter-trigger {
+  height: 34px;
+  min-height: 34px;
+  width: 100%;
+  min-width: 0;
+}
+
+.ra-labeling-summary-root .review-filters .ui-select-trigger,
+.ra-labeling-summary-root .review-filters .multi-filter-trigger {
+  height: 32px;
+  min-height: 32px;
+  width: 100%;
+  min-width: 0;
+}
+
+.ra-labeling-summary-root .filter-field-heading,
+.ra-review-analysis-root .filter-field-heading,
+.ra-review-analysis-root .analysis-scope-heading {
+  justify-content: flex-start;
+  gap: 5px;
+}
+
 html[data-color-theme="light"] .ra-labeling-summary-root .review-filters .ra-analysis-field,
 html[data-color-theme="light"] .ra-review-analysis-root .analysis-filters .ra-analysis-field {
   color: #526278;
@@ -391,6 +435,15 @@ html[data-color-theme="light"] .ra-review-analysis-root .analysis-filters .ra-an
   .ra-labeling-summary-root .review-filters .ra-analysis-field,
   .ra-review-analysis-root .analysis-filters .ra-analysis-field {
     font-size: 12px;
+  }
+
+  .ra-labeling-summary-root .review-filters .ui-select-trigger,
+  .ra-labeling-summary-root .review-filters .multi-filter-trigger,
+  .ra-review-analysis-root .analysis-filters .ui-select-trigger,
+  .ra-review-analysis-root .analysis-filters .multi-filter-trigger {
+    height: 44px;
+    min-height: 44px;
+    font-size: 16px;
   }
 
   .ra-react-select .ui-select-trigger,

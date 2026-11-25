@@ -7,7 +7,7 @@ from pathlib import Path
 import re
 from typing import Any
 
-from .static_assets import build_frontend_bundle
+from .static_assets import build_frontend_bundle, build_frontend_styles
 
 _SAFE_ASSET_RE = re.compile(r"^[A-Za-z0-9._/-]+$")
 
@@ -73,6 +73,9 @@ def render_vite_assets_json(
     if payload.get("js") and (static_path / "js").is_dir():
         bundle_bytes = build_frontend_bundle(static_path)
         payload["bundleRev"] = hashlib.sha256(bundle_bytes).hexdigest()[:10]
+    if payload.get("js") and (static_path / "index.html").is_file():
+        css_bytes = build_frontend_styles(static_path)
+        payload["cssRev"] = hashlib.sha256(css_bytes).hexdigest()[:10]
     return json.dumps(payload, separators=(",", ":"), ensure_ascii=True).replace(
         "</", "<\\/"
     )

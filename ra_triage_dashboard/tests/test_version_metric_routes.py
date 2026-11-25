@@ -31,6 +31,18 @@ def test_read_is_snapshot_only_and_validates_scope(monkeypatch, tmp_path):
     assert client.get("/api/version-metrics?page=0").status_code == 422
 
 
+def test_release_mode_requests_a_fresh_receipt_when_precedence_is_unknown(monkeypatch, tmp_path):
+    client, store = client_for(monkeypatch, tmp_path)
+    current = trail_fixture()
+    current["family"] = "20261106"
+    store.publish("20261106", current)
+    monkeypatch.setattr(routes, "catalog", lambda: [
+        dict(id="release-20261106-odd2", release_family="20261106", revision=1, published_samples=6)])
+    row = client.get("/api/version-metrics").json()["items"][0]
+    assert row["status"] == "unavailable" and row["reason"] == "human_fields_required"
+    assert client.get("/api/version-metrics?reference=te").json()["items"][0]["valid_total"] == 4
+
+
 def test_old_report_is_not_served_as_current_trail_metrics(monkeypatch, tmp_path):
     client, store = client_for(monkeypatch, tmp_path)
     report = store.publish("20261030", fixture())

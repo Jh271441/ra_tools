@@ -54,7 +54,7 @@ body[data-active-page="version-metrics"] .top-actions {margin-left:auto}
 .vm-report-heading h2 {margin:0;font-size:14px}
 .vm-report-heading>span {font-size:12px}
 .vm-table-scroll {max-height:540px;overscroll-behavior:contain}
-.vm-report-table {min-width:940px;table-layout:fixed}
+.vm-report-table {min-width:1040px;table-layout:fixed}
 .vm-report-table th,.vm-report-table td,.vm-threshold-table th,.vm-threshold-table td {text-align:center;font-size:12px;line-height:1.5}
 .vm-report-table thead th {position:sticky;top:0;z-index:1;font-size:11px}
 .vm-report-table th:first-child {width:72px}

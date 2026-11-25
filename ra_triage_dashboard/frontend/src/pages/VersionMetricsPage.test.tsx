@@ -9,7 +9,7 @@ import {
   vmFreshnessSummary,
   vmPercentageScale,
   vmPointLabels,
-  vmVersionPage,
+  vmReferenceCounts,
 } from "./VersionMetricsPage";
 
 function buildPayload(): VersionMetricsPayload {
@@ -179,17 +179,20 @@ describe("VersionMetricsPage pure chart/report helpers", () => {
     expect(scale).toEqual({ domain: [76, 100], ticks: [76, 82, 88, 94, 100] });
   });
 
-  it("paginates descending and summarizes oldest/newest CST freshness", () => {
-    const rows = Array.from({ length: 25 }, (_, i) => ({
-      family: `202601${String(i + 1).padStart(2, "0")}`,
-      status: "ready",
-      valid_total: 10,
-      sample_total: 10,
-    }));
-    const page = vmVersionPage(rows, 99, 10);
-    expect(page.page).toBe(3);
-    expect(page.pages).toBe(3);
-    expect(page.items[0].family).toBe("20260105");
+  it("formats release-specific GT lane counts and summarizes oldest/newest CST freshness", () => {
+    expect(
+      vmReferenceCounts(
+        {
+          family: "20261113",
+          status: "ready",
+          valid_total: 10,
+          sample_total: 10,
+          reference_lanes: ["arbitrated", "te_prime", "te", "rd"],
+          reference_counts: { arbitrated: 4, te_prime: 3, te: 2, rd: 1 },
+        },
+        "zh",
+      ),
+    ).toBe("复核 4 · TE′ 3 · TE 2 · RD 1");
 
     const freshness = vmFreshnessSummary(
       [

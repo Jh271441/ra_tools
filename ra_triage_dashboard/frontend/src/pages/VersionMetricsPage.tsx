@@ -3,7 +3,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "../api/client";
 import { bilingual, UiLanguage, withWorkbenchBase } from "../bridge/useWorkbenchBridge";
 import { MultiSelect, MultiSelectOption } from "../components/ui/MultiSelect";
-import { CASE_PAGE_SIZES, DEFAULT_CASE_PAGE_SIZE, Pagination } from "../components/ui/Pagination";
 import { UiSelect, UiSelectOption } from "../components/ui/UiSelect";
 
 export const VM_SCHEMES = [
@@ -35,7 +34,7 @@ export const VM_METRICS = [
 ] as const;
 export type VmMetricKey = (typeof VM_METRICS)[number];
 
-export const VM_REFERENCES = ["te", "rd", "te_prime", "arbitrated"] as const;
+export const VM_REFERENCES = ["release", "te", "rd", "te_prime", "arbitrated"] as const;
 export type VmReferenceKey = (typeof VM_REFERENCES)[number];
 
 export const VM_EXCLUSIONS = ["all", "exclude"] as const;
@@ -87,13 +86,18 @@ export interface VmThresholdRow {
 export interface VmItemRow {
   family: string;
   status: string;
+  reason?: string | null;
+  report_id?: string | null;
   observed_at?: string | null;
   started_at?: string | null;
+  last_checked_at?: string | null;
   valid_total: number;
   sample_total: number;
   current_sample_total?: number | null;
   published_total?: number;
   membership_changed?: boolean;
+  reference_lanes?: string[] | null;
+  reference_counts?: Record<string, number> | null;
   metrics?: Partial<Record<VmSchemeKey, VmSchemeMetrics | null>> | null;
   coverage?: {
     te?: VmLaneCoverage | null;
@@ -126,8 +130,6 @@ export interface VmRouteState {
   exclusion: VmExclusionKey;
   threshold: number;
   schemes: VmSchemeKey[];
-  page: number;
-  pageSize: number;
   thresholdFamily: string;
   thresholdExpanded: boolean;
 }
@@ -201,12 +203,26 @@ export function vmMetricLabel(key: VmMetricKey, lang: UiLanguage): string {
 
 export function vmReferenceLabel(reference: VmReferenceKey, lang: UiLanguage): string {
   const map: Record<VmReferenceKey, string> = {
+    release: bilingual(lang, "按版本取人工 GT", "Release-specific human GT"),
     te: bilingual(lang, "TE 原始标注", "Original TE"),
     rd: bilingual(lang, "RD 标注", "RD labels"),
     te_prime: bilingual(lang, "TE′ 人工标注", "Manual TE′"),
     arbitrated: bilingual(lang, "裁决结果", "Adjudication"),
   };
   return map[reference] || reference;
+}
+
+export function vmReferenceCounts(row: VmItemRow, lang: UiLanguage): string {
+  const names: Record<string, string> = {
+    arbitrated: bilingual(lang, "复核", "Adjudication"),
+    te_prime: "TE′",
+    te: "TE",
+    rd: "RD",
+  };
+  const counts = row.reference_counts || {};
+  return (row.reference_lanes || [])
+    .map((lane) => `${names[lane] || lane} ${counts[lane] ?? 0}`)
+    .join(" · ");
 }
 
 export function vmPct(
@@ -349,26 +365,6 @@ export function vmChartGeometry(
   };
 }
 
-export function vmVersionPage(
-  rows: VmItemRow[],
-  page = 1,
-  pageSize = DEFAULT_CASE_PAGE_SIZE,
-): { items: VmItemRow[]; total: number; page: number; pageSize: number; pages: number } {
-  const size = CASE_PAGE_SIZES.includes(pageSize as (typeof CASE_PAGE_SIZES)[number])
-    ? pageSize
-    : DEFAULT_CASE_PAGE_SIZE;
-  const ordered = [...rows].sort((a, b) => b.family.localeCompare(a.family));
-  const pages = Math.max(1, Math.ceil(ordered.length / size));
-  const current = Number.isSafeInteger(page) ? Math.max(1, Math.min(page, pages)) : 1;
-  return {
-    items: ordered.slice((current - 1) * size, current * size),
-    total: ordered.length,
-    page: current,
-    pageSize: size,
-    pages,
-  };
-}
-
 export function vmSampleChange(row: VmItemRow, lang: UiLanguage): string {
   if (
     !Number.isInteger(row.current_sample_total) ||
@@ -408,8 +404,8 @@ export function vmFreshnessSummary(
     label: `${bilingual(lang, "最早快照", "Oldest snapshot")} · ${oldest}`,
     title: bilingual(
       lang,
-      `所选版本最早／最新采集完成时间：${oldest} / ${newest} CST。快照不是持续实时数据；点击更新指标重新采集。`,
-      `Earliest / latest completed collection: ${oldest} / ${newest} CST. Snapshots are not continuously live; update metrics to collect again.`,
+      `所选版本最早／最新采集完成时间：${oldest} / ${newest} CST。版本调度会自动核对，也可手动更新。`,
+      `Earliest / latest completed collection: ${oldest} / ${newest} CST. The version scheduler checks automatically. A manual refresh is also available.`,
     ),
   };
 }
@@ -424,7 +420,7 @@ export function readVmRouteState(search: string = typeof window !== "undefined" 
   const rawRef = p.get("reference") || "";
   const reference: VmReferenceKey = (VM_REFERENCES as readonly string[]).includes(rawRef)
     ? (rawRef as VmReferenceKey)
-    : "te";
+    : "release";
   const exclusion: VmExclusionKey = p.get("exclusion") === "exclude" ? "exclude" : "all";
   const rawThreshold = Number(p.get("threshold") || 0.9);
   const threshold = (VM_THRESHOLDS as readonly number[]).includes(rawThreshold)
@@ -435,12 +431,6 @@ export function readVmRouteState(search: string = typeof window !== "undefined" 
     : p.get("expanded") === "1"
       ? [...VM_SCHEMES]
       : [...VM_DEFAULT_SCHEMES];
-  const rawPage = Number(p.get("page") || 1);
-  const page = Number.isSafeInteger(rawPage) && rawPage > 0 && rawPage <= 10000 ? rawPage : 1;
-  const rawSize = Number(p.get("page_size") || DEFAULT_CASE_PAGE_SIZE);
-  const pageSize = CASE_PAGE_SIZES.includes(rawSize as (typeof CASE_PAGE_SIZES)[number])
-    ? rawSize
-    : DEFAULT_CASE_PAGE_SIZE;
   const thresholdFamily = p.get("threshold_family") || "";
   const thresholdExpanded = p.get("threshold_open") === "1";
   return {
@@ -450,8 +440,6 @@ export function readVmRouteState(search: string = typeof window !== "undefined" 
     exclusion,
     threshold,
     schemes,
-    page,
-    pageSize,
     thresholdFamily,
     thresholdExpanded,
   };
@@ -467,8 +455,6 @@ function writeVmRouteState(next: VmRouteState, mode: "push" | "replace" = "repla
     reference: next.reference,
     exclusion: next.exclusion,
     threshold: next.threshold,
-    page: next.page,
-    page_size: next.pageSize,
     threshold_family: next.thresholdFamily,
     threshold_open: next.thresholdExpanded ? "1" : "",
   };
@@ -622,8 +608,6 @@ export const VersionMetricsPage: React.FC<VersionMetricsPageProps> = ({
         reference: routeState.reference,
         exclusion: routeState.exclusion,
         threshold: String(routeState.threshold),
-        page: String(routeState.page),
-        page_size: String(routeState.pageSize),
       });
       return apiRequest<VersionMetricsPayload>(`/api/version-metrics?${query.toString()}`, {
         signal,
@@ -633,7 +617,7 @@ export const VersionMetricsPage: React.FC<VersionMetricsPageProps> = ({
     staleTime: 10_000,
     refetchInterval: (query) => {
       if (!active) return false;
-      return query.state.data?.refresh?.status === "running" ? 5000 : false;
+      return query.state.data?.refresh?.status === "running" ? 5000 : 60000;
     },
   });
 
@@ -641,23 +625,13 @@ export const VersionMetricsPage: React.FC<VersionMetricsPageProps> = ({
   const rows = useMemo(() => data?.items || [], [data]);
   const catalog = data?.catalog?.length ? data.catalog : catalogCache;
 
-  // Reconcile families, pagination, and thresholdFamily after data arrives (classic `vmReconcileReports`)
+  // Reconcile thresholdFamily after data arrives (classic `vmReconcileReports`)
   useEffect(() => {
     if (!active || !data) return;
     if (Array.isArray(data.catalog) && data.catalog.length) {
       setCatalogCache(data.catalog);
     }
     setRouteState((prev) => {
-      const nextFamilies = !prev.families && data.selected?.length
-        ? data.selected.join(",")
-        : prev.families;
-      if (!prev.families && nextFamilies) {
-        queryClient.setQueryData(
-          ["version-metrics", nextFamilies, prev.reference, prev.exclusion, prev.threshold],
-          data,
-        );
-      }
-      const paged = vmVersionPage(data.items || [], prev.page, prev.pageSize);
       const sortedDesc = [...(data.items || [])].sort((a, b) =>
         b.family.localeCompare(a.family),
       );
@@ -668,16 +642,13 @@ export const VersionMetricsPage: React.FC<VersionMetricsPageProps> = ({
         : sortedDesc[0]?.family || "";
       const reconciled: VmRouteState = {
         ...prev,
-        families: nextFamilies,
-        page: paged.page,
-        pageSize: paged.pageSize,
         thresholdFamily: nextThresholdFamily,
       };
       writeVmRouteState(reconciled, "replace");
       if (JSON.stringify(reconciled) === JSON.stringify(prev)) return prev;
       return reconciled;
     });
-  }, [active, data, queryClient]);
+  }, [active, data]);
 
   const updateRoute = useCallback(
     (patch: Partial<VmRouteState>, options: { local?: boolean } = {}) => {
@@ -685,20 +656,11 @@ export const VersionMetricsPage: React.FC<VersionMetricsPageProps> = ({
       setTooltip(null);
       activeAnchorRef.current = null;
       setRouteState((prev) => {
-        const resetPage =
-          !("page" in patch) &&
-          (["families", "reference", "exclusion", "threshold", "metric", "pageSize"] as const).some(
-            (k) => k in patch,
-          );
         const merged: VmRouteState = {
           ...prev,
-          ...(resetPage ? { page: 1 } : {}),
           ...patch,
         };
         if (options.local && data?.items) {
-          const paged = vmVersionPage(data.items, merged.page, merged.pageSize);
-          merged.page = paged.page;
-          merged.pageSize = paged.pageSize;
           if (!data.items.some((r) => r.family === merged.thresholdFamily)) {
             merged.thresholdFamily =
               [...data.items].sort((a, b) => b.family.localeCompare(a.family))[0]?.family || "";
@@ -775,8 +737,10 @@ export const VersionMetricsPage: React.FC<VersionMetricsPageProps> = ({
     () =>
       routeState.families === "all"
         ? []
-        : routeState.families.split(",").filter(Boolean),
-    [routeState.families],
+        : routeState.families
+          ? routeState.families.split(",").filter(Boolean)
+          : data?.selected || [],
+    [routeState.families, data?.selected],
   );
 
   const metricOptions: UiSelectOption[] = useMemo(
@@ -800,10 +764,7 @@ export const VersionMetricsPage: React.FC<VersionMetricsPageProps> = ({
   );
 
   const freshness = useMemo(() => vmFreshnessSummary(rows, lang), [rows, lang]);
-  const pagedReport = useMemo(
-    () => vmVersionPage(rows, routeState.page, routeState.pageSize),
-    [rows, routeState.page, routeState.pageSize],
-  );
+  const reportRows = useMemo(() => [...rows].reverse(), [rows]);
   const sortedDescRows = useMemo(
     () => [...rows].sort((a, b) => b.family.localeCompare(a.family)),
     [rows],
@@ -919,16 +880,6 @@ export const VersionMetricsPage: React.FC<VersionMetricsPageProps> = ({
     : loading
       ? bilingual(lang, "正在读取指标…", "Loading metrics…")
       : bilingual(lang, "暂无版本数据", "No release data");
-
-  const reportPageLabel = busyReport
-    ? "— / —"
-    : bilingual(
-        lang,
-        `${pagedReport.page} / ${pagedReport.pages} · 共 ${pagedReport.total} 个版本`,
-        `${pagedReport.page} / ${pagedReport.pages} · ${pagedReport.total} ${
-          pagedReport.total === 1 ? "release" : "releases"
-        }`,
-      );
 
   const yearsSet = useMemo(() => new Set(rows.map((r) => r.family.slice(0, 4))), [rows]);
   const xTickInterval = Math.max(1, Math.ceil(rows.length / 12));
@@ -1084,13 +1035,12 @@ export const VersionMetricsPage: React.FC<VersionMetricsPageProps> = ({
               onClick={() =>
                 updateRoute({
                   metric: "accuracy",
-                  reference: "te",
+                  reference: "release",
                   exclusion: "all",
                   threshold: 0.9,
                   schemes: [...VM_DEFAULT_SCHEMES],
                   thresholdFamily: "",
                   thresholdExpanded: false,
-                  page: 1,
                 })
               }
             >
@@ -1263,6 +1213,16 @@ export const VersionMetricsPage: React.FC<VersionMetricsPageProps> = ({
             </span>
           </div>
         </div>
+
+        <p className="vm-scope-note" id="vmChartReference">
+          {routeState.reference === "release"
+            ? bilingual(
+                lang,
+                "11-06 起，GT 按复核 → TE′ → TE → RD 取值。此前版本使用 TE。",
+                "From Nov 6, GT uses the first entry in this order: adjudication → TE′ → TE → RD. Earlier releases use TE.",
+              )
+            : `GT · ${vmReferenceLabel(routeState.reference, lang)}`}
+        </p>
 
         <div
           ref={chartScrollRef}
@@ -1462,11 +1422,15 @@ export const VersionMetricsPage: React.FC<VersionMetricsPageProps> = ({
         <header className="vm-report-heading">
           <h2>{bilingual(lang, "各版本指标", "Release metrics")}</h2>
           <span id="vmTableMetric" className="muted">
-            {vmMetricLabel(routeState.metric, lang)}
+            {`${vmMetricLabel(routeState.metric, lang)} · ${bilingual(
+              lang,
+              "人工列为模拟值",
+              "Review columns are simulated",
+            )}`}
           </span>
         </header>
 
-        <div className="rd-table-wrap vm-table-scroll">
+        <div className="rd-table-wrap">
           <table
             className="rd-table vm-report-table"
             id="vmReportTable"
@@ -1479,6 +1443,7 @@ export const VersionMetricsPage: React.FC<VersionMetricsPageProps> = ({
               <tr>
                 <th scope="col">{bilingual(lang, "版本", "Release")}</th>
                 <th scope="col">{bilingual(lang, "有效／抽样", "Valid / sample")}</th>
+                <th scope="col">{bilingual(lang, "有效 GT 来源", "Valid GT sources")}</th>
                 <th scope="col">{bilingual(lang, "TE 已标", "TE filled")}</th>
                 <th scope="col">{bilingual(lang, "RD 已标", "RD filled")}</th>
                 {VM_SCHEMES.map((key) => (
@@ -1489,15 +1454,17 @@ export const VersionMetricsPage: React.FC<VersionMetricsPageProps> = ({
               </tr>
             </thead>
             <tbody id="vmReportRows">
-              {busyReport || !pagedReport.items.length ? (
+              {busyReport || !reportRows.length ? (
                 <tr>
-                  <td colSpan={9} className="vm-table-empty">
+                  <td colSpan={10} className="vm-table-empty">
                     {reportEmptyMsg}
                   </td>
                 </tr>
               ) : (
-                pagedReport.items.map((row) => {
-                  const reportId = VM_REPORT_IDS[row.family];
+                reportRows.map((row) => {
+                  const reportId = /^[0-9]{1,20}$/.test(row.report_id || "")
+                    ? String(row.report_id)
+                    : VM_REPORT_IDS[row.family];
                   const reportAria = bilingual(
                     lang,
                     `查看 ${row.family} 版本报告（新标签页）`,
@@ -1535,18 +1502,24 @@ export const VersionMetricsPage: React.FC<VersionMetricsPageProps> = ({
                         <td>
                           <strong>{`—/${row.current_sample_total ?? "—"}`}</strong>
                         </td>
-                        <td colSpan={7} className="vm-table-empty">
-                          {row.status === "error"
+                        <td colSpan={8} className="vm-table-empty">
+                          {row.reason === "human_fields_required"
                             ? bilingual(
                                 lang,
-                                "Trail 快照不可用，请更新指标",
-                                "Trail snapshot unavailable. Update metrics.",
+                                "请更新指标以补齐人工 GT 字段",
+                                "Update metrics to collect the missing human GT fields",
                               )
-                            : bilingual(
-                                lang,
-                                "暂无 Trail 快照，请更新指标",
-                                "No Trail snapshot. Update metrics.",
-                              )}
+                            : row.status === "error"
+                              ? bilingual(
+                                  lang,
+                                  "Trail 快照不可用，请更新指标",
+                                  "Trail snapshot unavailable. Update metrics.",
+                                )
+                              : bilingual(
+                                  lang,
+                                  "暂无 Trail 快照，请更新指标",
+                                  "No Trail snapshot. Update metrics.",
+                                )}
                         </td>
                       </tr>
                     );
@@ -1561,6 +1534,7 @@ export const VersionMetricsPage: React.FC<VersionMetricsPageProps> = ({
                         </strong>
                         {change && <small>{change}</small>}
                       </td>
+                      <td>{vmReferenceCounts(row, lang)}</td>
                       <td>{renderCoverageCell(row, "te")}</td>
                       <td>{renderCoverageCell(row, "rd")}</td>
                       {VM_SCHEMES.map((key) => (
@@ -1573,20 +1547,6 @@ export const VersionMetricsPage: React.FC<VersionMetricsPageProps> = ({
             </tbody>
           </table>
         </div>
-
-        <Pagination
-          page={pagedReport.page}
-          pageSize={pagedReport.pageSize}
-          total={pagedReport.total}
-          lang={lang}
-          loading={busyReport}
-          ariaLabel={bilingual(lang, "版本指标分页", "Release metric pagination")}
-          labelText={reportPageLabel}
-          onPageChange={(nextPage) => updateRoute({ page: nextPage }, { local: true })}
-          onPageSizeChange={(nextSize) =>
-            updateRoute({ pageSize: nextSize, page: 1 }, { local: true })
-          }
-        />
       </section>
 
       <details
@@ -1725,6 +1685,17 @@ export const VersionMetricsPage: React.FC<VersionMetricsPageProps> = ({
                     lang,
                   )} CST`}
                 </small>
+                {vmReferenceCounts(tooltipRow, lang) && (
+                  <small>{`GT · ${vmReferenceCounts(tooltipRow, lang)}`}</small>
+                )}
+                {tooltipRow.last_checked_at && (
+                  <small>
+                    {`${bilingual(lang, "自动核对", "Auto-checked")} · ${vmTime(
+                      tooltipRow.last_checked_at,
+                      lang,
+                    )} CST`}
+                  </small>
+                )}
               </>
             ) : (
               <span>{bilingual(lang, "暂无有效快照", "No valid snapshot")}</span>

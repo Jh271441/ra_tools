@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any, Callable, Iterable
 
+from ..review_tag_descriptions import with_review_tag_description
 from ..review_tag_shortcuts import ReviewTagShortcutStore
 
 from ..runtime import (
@@ -56,7 +57,7 @@ def _review_tag_catalog() -> tuple[dict[str, Any], ...]:
             merged[key]["builtin"] = True
         else:
             merged[key] = item
-    return tuple(merged.values())
+    return tuple(with_review_tag_description(item) for item in merged.values())
 
 
 def _catalog_with_shortcuts(
@@ -189,7 +190,7 @@ def _review_tag_payload(
     payload.setdefault("section", "scene")
     payload.setdefault("group", payload.pop("group_key", "environment"))
     payload.setdefault("hint", "")
-    return payload
+    return with_review_tag_description(payload)
 
 def _validate_review_tag_input(
     body: dict[str, Any], *, default_group: str = "environment"

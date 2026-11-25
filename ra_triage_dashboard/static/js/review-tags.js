@@ -461,7 +461,7 @@ function syncReviewTagHints(root = document) {
     const label = help.querySelector("[data-review-tag-hint-label]");
     const hint = help.querySelector("[data-review-tag-hint-text]");
     if (label && item) label.textContent = String(item.label || tagLabel(item.key));
-    const text = String(item ? item.hint || "" : help.dataset.reviewTagHint || "");
+    const text = item ? reviewTagDescription(item) : help.dataset.reviewTagHint || "";
     help.dataset.reviewTagHint = text;
     if (hint) hint.textContent = text.trim() ? text : uiText("暂无说明", "No description yet");
     const action = help.querySelector("[data-show-review-tag-hint]");
@@ -935,7 +935,11 @@ function openReviewTagEditorDialog({
   if (keyInput) keyInput.value = resolvedMode === "edit" ? String(key || "") : "";
   groupInput.value = resolvedGroup;
   labelInput.value = resolvedMode === "edit" ? String(label || "") : "";
-  if (hintInput) hintInput.value = resolvedMode === "edit" ? String(hint || "") : "";
+  if (hintInput) {
+    hintInput.value = resolvedMode === "edit" ? String(hint || "") : "";
+    const item = resolvedMode === "edit" && reviewTagCatalogItem(key);
+    hintInput.placeholder = reviewTagDescription(item) || uiText("给其他复核人看的短说明", "Short description for other reviewers");
+  }
   if (title) {
     title.textContent = resolvedMode === "edit"
       ? `编辑${resolvedLabel}标签`

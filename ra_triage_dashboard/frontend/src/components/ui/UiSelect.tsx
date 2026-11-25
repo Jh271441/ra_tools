@@ -35,6 +35,7 @@ export const UiSelect: React.FC<UiSelectProps> = ({
 }) => {
   const [open, setOpen] = useState(false);
   const [openUpward, setOpenUpward] = useState(false);
+  const [alignRight, setAlignRight] = useState(false);
   const [activeIndex, setActiveIndex] = useState<number>(-1);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
@@ -55,21 +56,35 @@ export const UiSelect: React.FC<UiSelectProps> = ({
         setOpen(false);
       }
     };
+    const handleKeyDownGlobal = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        setOpen(false);
+        triggerRef.current?.focus();
+      }
+    };
     const handleResize = () => {
       const rect = triggerRef.current?.getBoundingClientRect();
       if (!rect) return;
       const spaceBelow = window.innerHeight - rect.bottom;
       const spaceAbove = rect.top;
       setOpenUpward(spaceBelow < 220 && spaceAbove > spaceBelow);
+      const menuWidth = menuRef.current?.offsetWidth || Math.max(rect.width, 220);
+      setAlignRight(rect.left + menuWidth > window.innerWidth - 12 && rect.right > menuWidth);
     };
     handleResize();
+    const rafId = window.requestAnimationFrame(handleResize);
     document.addEventListener("mousedown", handlePointerDown);
     document.addEventListener("touchstart", handlePointerDown, { passive: true });
+    document.addEventListener("keydown", handleKeyDownGlobal, true);
     window.addEventListener("resize", handleResize);
     window.addEventListener("scroll", handleResize, true);
     return () => {
+      window.cancelAnimationFrame(rafId);
       document.removeEventListener("mousedown", handlePointerDown);
       document.removeEventListener("touchstart", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDownGlobal, true);
       window.removeEventListener("resize", handleResize);
       window.removeEventListener("scroll", handleResize, true);
     };
@@ -193,7 +208,7 @@ export const UiSelect: React.FC<UiSelectProps> = ({
           id={listboxId}
           role="listbox"
           aria-label={ariaLabel}
-          className={`ui-select-panel is-positioned ra-react-select-menu${openUpward ? " is-upward" : ""}`}
+          className={`ui-select-panel is-positioned ra-react-select-menu${openUpward ? " is-upward" : ""}${alignRight ? " is-align-right" : ""}`}
           onMouseDown={(e) => e.stopPropagation()}
         >
           {options.map((option, index) => {

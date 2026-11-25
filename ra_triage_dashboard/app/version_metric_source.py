@@ -15,22 +15,28 @@ _last_query = 0.
 
 def read_only_client(root):
     from .rd_results import adapter
-    delegate = adapter(root)
-    transport = delegate.client
+    transport = adapter(root).client
+    fields = ("issue_id", "ra_stuck_auto_result", "ra_stuck_auto_result_info", *FIELDS.values())
 
     class QueryOnly:
-        def send_request(self, url, data, timeout=None):
+        def fetch(self, ids):
             global _last_query
-            if url not in ("https://voyager.intra.xiaojukeji.com/paladin/issue/pool/query/",
-                           "http://voyager.intra.xiaojukeji.com/paladin/issue/pool/query/"):
-                raise ValueError("Metric source is query-only")
+            url = "https://voyager.intra.xiaojukeji.com/paladin/issue/pool/query_by_issue_id_list/"
+            payload = dict(source_id=1, issue_id_list=ids, select_field_list=list(fields))
             with _query_lock:
                 time.sleep(max(0., 1.-(time.monotonic()-_last_query)))
                 _last_query = time.monotonic()
-                return transport.send_request(url.replace("http://", "https://", 1), data, timeout)
+                response = transport.send_request(url, payload, 60).json()
+            rows = response.get("data")
+            if (response.get("code") != 0 or response.get("msg") != "success"
+                    or not isinstance(rows, dict) or set(rows) != set(ids)):
+                raise ValueError("Incomplete metric source")
+            for iid, row in rows.items():
+                if not isinstance(row, dict) or row.get("issue_id") != iid or not all(f in row for f in fields):
+                    raise ValueError("Incomplete metric fields")
+            return [rows[iid] for iid in ids]
 
-    delegate.client = QueryOnly()
-    return delegate
+    return QueryOnly()
 
 
 def source(db, family, client):
