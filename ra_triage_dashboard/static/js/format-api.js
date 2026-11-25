@@ -557,10 +557,14 @@ function reviewTagCatalogItem(key) {
 }
 
 let reviewTagHintSequence = 0;
+function reviewTagDescription(item) {
+  return uiText(item?.description_zh, item?.description_en) || String(item?.hint || "");
+}
+
 function reviewTagOptionMarkup(item, selected = false, groupKey = "", manage = true) {
   const key = String(item?.key || "");
   const label = String(item?.label || tagLabel(key));
-  const hint = String(item?.hint || "");
+  const hint = reviewTagDescription(item);
   const hintId = `review-tag-hint-${++reviewTagHintSequence}`;
   const deleted = Boolean(item?.deleted);
   const canManage = Boolean(manage && !deleted);

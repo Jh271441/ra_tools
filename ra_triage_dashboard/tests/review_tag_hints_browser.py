@@ -4,6 +4,7 @@ Run directly with a Python environment containing Playwright/Chromium.
 """
 import json
 import os
+import runpy
 from pathlib import Path
 
 from playwright.sync_api import expect, sync_playwright
@@ -15,9 +16,11 @@ OUTPUT = Path(os.environ.get("REVIEW_TAG_HINTS_QA_OUTPUT", "/tmp/review-tag-hint
 HINT = "等待抬杆, 没有其他通行办法"
 HTML_HINT = '<img src=x onerror="window.hintInjected=true"> & <b>Plain text</b>'
 LONG_HINT = "Long description / 很长的说明 " + "unbroken" * 150
-CATALOG = [dict(item, hint="") for item in catalog] + [
+enrich = runpy.run_path(str(ROOT.parent / "app/review_tag_descriptions.py"))["with_review_tag_description"]
+CATALOG = [enrich(dict(item, hint="")) for item in catalog] + [
     dict(key=key, label=label, hint=hint, group="false_trigger", section="interaction_decision")
     for key, label, hint in (
+        ("hover-empty", "Empty", ""),
         ("hover-gate", "园区抬杆", HINT),
         ("hover-html", "Literal markup", HTML_HINT),
         ("hover-long", "Long description", LONG_HINT),
@@ -155,7 +158,14 @@ def run():
                         expect(tip).not_to_be_visible()
                         expect(check).not_to_be_focused()
                         summary.click()
-                        empty = group.locator('[data-review-tag-option="traffic_light"]')
+                        queue = group.locator('[data-review-tag-option="queue"]')
+                        queue.locator("input").focus()
+                        queue_tip = queue.locator('[role="tooltip"]')
+                        queue_item = next(item for item in CATALOG if item["key"] == "queue")
+                        expect(queue_tip.locator("span")).to_have_text(queue_item[f"description_{language}"])
+                        expect(queue_tip).to_be_visible()
+                        bounds(queue_tip, width)
+                        empty = group.locator('[data-review-tag-option="hover-empty"]')
                         empty.locator("input").focus()
                         expect(empty.locator('[role="tooltip"] span')).to_have_text(
                             "暂无说明" if language == "zh" else "No description yet")
@@ -165,6 +175,7 @@ def run():
                         page.evaluate("lang=>applyUiLanguage(lang,{persist:false})", other)
                         expect(empty.locator('[role="tooltip"] span')).to_have_text(
                             "No description yet" if other == "en" else "暂无说明")
+                        expect(queue_tip.locator("span")).to_have_text(queue_item[f"description_{other}"])
                         assert empty.locator("input").evaluate("n=>n===originalHintInput && n.checked")
                         page.evaluate("lang=>applyUiLanguage(lang,{persist:false})", language)
                         literal = group.locator('[data-review-tag-option="hover-html"]')
