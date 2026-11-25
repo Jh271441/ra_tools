@@ -220,14 +220,13 @@ export const RunComparisonPage: React.FC<RunComparisonPageProps> = ({
       apiRequest<{ id: string; name: string }>("/api/run-comparison/save-collection", {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
           "Idempotency-Key": `pairwise-${baselineRunId}-${candidateRunId}-${Date.now()}`,
         },
-        body: JSON.stringify({
+        body: {
           baseline_run_id: baselineRunId,
           candidate_run_id: candidateRunId,
           name: `${comparisonQuery.data?.baseline_run?.name || baselineRunId.slice(0, 8)} vs ${comparisonQuery.data?.candidate_run?.name || candidateRunId.slice(0, 8)}`,
-        }),
+        },
       }),
     onSuccess: (created) => {
       setSaveNotice(

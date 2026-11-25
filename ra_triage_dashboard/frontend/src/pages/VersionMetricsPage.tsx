@@ -199,8 +199,7 @@ export const VersionMetricsPage: React.FC<VersionMetricsPageProps> = ({
     mutationFn: (selectedFamilies: string[]) =>
       apiRequest("/api/version-metrics/refresh", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-RA-Triage-Request": "1" },
-        body: JSON.stringify({ families: selectedFamilies }),
+        body: { families: selectedFamilies },
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["version-metrics"] });

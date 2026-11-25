@@ -1411,3 +1411,39 @@ html[data-color-theme="light"] .ra-alloc-bar-seg {
     min-height: 44px;
   }
 }
+
+.ra-progress-headline {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-bottom: 6px;
+}
+
+.ra-progress-headline > strong {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+html[data-color-theme="light"] .comparison-matrix th,
+html[data-color-theme="light"] .comparison-matrix td {
+  background: var(--raised);
+  color: var(--text);
+  border-color: var(--line-soft);
+}
+
+html[data-color-theme="light"] .comparison-matrix thead th {
+  background: var(--table-header-bg, var(--overlay-2));
+  color: var(--muted);
+}
+
+html[data-color-theme="light"] .comparison-matrix .matrix-correct {
+  background: var(--chip-ok-bg, #ecfdf5);
+  color: var(--chip-ok-text, #047857);
+}
+
+html[data-color-theme="light"] .comparison-matrix .matrix-error {
+  background: var(--chip-fail-bg, #fef2f2);
+  color: var(--chip-fail-text, #b91c1c);
+}

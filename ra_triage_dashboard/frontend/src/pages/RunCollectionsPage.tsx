@@ -256,14 +256,13 @@ export const RunCollectionsPage: React.FC<RunCollectionsPageProps> = ({
       apiRequest<CollectionDetail>("/api/run-collections", {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
           "Idempotency-Key": `rc-create-${Date.now()}`,
         },
-        body: JSON.stringify({
+        body: {
           name: newName.trim(),
           description: newDesc.trim(),
           members: newFirstRun ? [{ run_id: newFirstRun, role: "baseline", is_reference: true }] : [],
-        }),
+        },
       }),
     onSuccess: (created) => {
       setCreateOpen(false);
@@ -286,17 +285,16 @@ export const RunCollectionsPage: React.FC<RunCollectionsPageProps> = ({
         {
           method: "POST",
           headers: {
-            "Content-Type": "application/json",
             "Idempotency-Key": `rc-rev-${effectiveCollectionId}-${Date.now()}`,
           },
-          body: JSON.stringify({
+          body: {
             expected_revision: detail?.current_revision || 0,
             members: draftMembers.map((m) => ({
               run_id: m.run_id,
               role: m.role || "",
               is_reference: Boolean(m.is_reference),
             })),
-          }),
+          },
         },
       ),
     onSuccess: (updated) => {
@@ -319,15 +317,14 @@ export const RunCollectionsPage: React.FC<RunCollectionsPageProps> = ({
       apiRequest<EvaluationDetail>("/api/run-evaluations", {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
           "Idempotency-Key": `re-eval-${effectiveCollectionId}-${Date.now()}`,
         },
-        body: JSON.stringify({
+        body: {
           collection_id: effectiveCollectionId,
           collection_revision: effectiveRevision,
           baselines: selectedBaselines.join(","),
           reference_type: "gt",
-        }),
+        },
       }),
     onSuccess: (ev) => {
       setEvaluationId(ev.id);

@@ -49,10 +49,14 @@ describe("Wave 3.4 React 19 Page Islands", () => {
       );
     });
 
+    (window as unknown as { __RA_TRIAGE_BASE__?: string }).__RA_TRIAGE_BASE__ = "/manual";
     const { container } = wrap(<VersionDatasetsPage active lang="en" />);
     await waitFor(() => expect(screen.getByText(/cn99990001/)).toBeInTheDocument());
     expect(container.querySelectorAll("select").length).toBe(0);
     expect(screen.getByText("Version datasets")).toBeInTheDocument();
+    const img = container.querySelector("img");
+    expect(img?.getAttribute("src")).toContain("/manual/api/case-thumbnails/cn99990001");
+    delete (window as unknown as { __RA_TRIAGE_BASE__?: string }).__RA_TRIAGE_BASE__;
   });
 
   it("renders VersionMetricsPage chart, table, and MultiSelect with zero native <select>", async () => {

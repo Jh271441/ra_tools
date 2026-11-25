@@ -23,8 +23,10 @@ describe("MultiSelect", () => {
 
     const trigger = screen.getByRole("button", { name: "Versions" });
     expect(trigger).toHaveTextContent("1113");
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
 
     fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByRole("listbox")).toBeInTheDocument();
 
     fireEvent.click(screen.getByLabelText("1106"));

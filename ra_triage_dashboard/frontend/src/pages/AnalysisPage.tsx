@@ -608,7 +608,9 @@ export const AnalysisPage: React.FC<AnalysisPageProps> = ({
         </section>
       </div>
 
-      {data?.confusion?.rows && data.confusion.rows.length > 0 && (
+      {data?.confusion?.rows &&
+        data.confusion.rows.length > 0 &&
+        (data.confusion.columns || []).length > 0 && (
         <section className="page-card ra-table-card">
           <div className="ra-card-header">
             <h3>{bilingual(lang, "混淆矩阵（点击单元格下钻）", "Confusion matrix (click cell to filter)")}</h3>
@@ -653,7 +655,11 @@ export const AnalysisPage: React.FC<AnalysisPageProps> = ({
                       );
                     })}
                     <td>{row.total}</td>
-                    <td>{`${(row.accuracy * 100).toFixed(1)}%`}</td>
+                    <td>
+                      {row.total > 0 && Number.isFinite(row.accuracy)
+                        ? `${(row.accuracy * 100).toFixed(1)}%`
+                        : "—"}
+                    </td>
                   </tr>
                 ))}
               </tbody>

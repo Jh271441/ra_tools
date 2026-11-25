@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { getApiBasePath } from "../api/client";
 
 export type UiLanguage = "zh" | "en";
 export type ColorTheme = "dark" | "light";
@@ -19,19 +20,15 @@ export interface WorkbenchBridgeState {
 }
 
 export function getWorkbenchBasePath(): string {
-  if (typeof window === "undefined") return "";
-  const win = window as unknown as {
-    RA_TRIAGE_BASE_PATH?: string;
-    BASE_PATH?: string;
-  };
-  const base = String(win.RA_TRIAGE_BASE_PATH ?? win.BASE_PATH ?? "").replace(/\/+$/, "");
-  return base === "/" ? "" : base;
+  return getApiBasePath();
 }
 
 export function withWorkbenchBase(path: string): string {
   const normalized = path.startsWith("/") ? path : `/${path}`;
   const base = getWorkbenchBasePath();
-  return base ? `${base}${normalized}` : normalized;
+  if (!base) return normalized;
+  if (normalized === base || normalized.startsWith(`${base}/`)) return normalized;
+  return `${base}${normalized}`;
 }
 
 function readSelectedBaselines(): string[] {

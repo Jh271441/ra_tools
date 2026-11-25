@@ -626,7 +626,7 @@ html.ra-ui-ready .intent-workspace { transition: grid-template-columns 200ms eas
   min-width: 0; display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); align-items: end; gap: 12px 14px; padding: 2px 0;
   border: 0; background: transparent;
 }
-.intent-experiment-form label { min-width: 0; display: grid; gap: 6px; color: var(--muted); font-size: 13px; }
+.intent-experiment-form label { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; color: var(--muted); font-size: 13px; overflow: hidden; }
 .intent-experiment-form input:not([type="checkbox"]), .intent-experiment-form select, .intent-experiment-form .ui-select-trigger { width: 100%; min-width: 0; height: 36px; font-size: 13px; }
 .intent-experiment-name-field { grid-column: span 2; }
 .intent-experiment-name-control { min-width: 0; display: block; position: relative; }
