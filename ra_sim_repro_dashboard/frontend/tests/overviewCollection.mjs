@@ -70,7 +70,11 @@ const metric = (version = 'gen4-release-20261106') => ({
     estimated_tp: 1,
     estimated_fp: 0,
     estimated_fn: 0,
-    same_version_projection: { available: true, sim_precision: 1, sim_business_recall: 1 },
+    same_version_projection: {
+      available: true,
+      sim_precision: 1,
+      sim_business_recall: 1,
+    },
   },
 });
 const summary = (collection) => ({
@@ -84,47 +88,85 @@ const summary = (collection) => ({
 });
 const visibleText = (html) => html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ');
 
-test('a collecting population shows current counts and never promotes stale 1/1 metrics', async () => {
+test('overview never renders population-change suppression banner and always displays measured metrics', async () => {
   const collection = scope('population_changed');
-  const html = await render(summary(collection), [{ ...metric(), collection_scope: collection }]);
+  const current = {
+    ...metric('gen4-release-20261106'),
+    sim_repro_rate: 0.883,
+    precision: 0.813,
+    recall: 0.779,
+    f1: null,
+    collection_scope: collection,
+  };
+  const html = await render(summary(collection), [current]);
   const text = visibleText(html);
-  for (const value of [
-    '收集中',
-    '完整版本指标暂不展示',
-    '已采集 Issue',
-    '751',
-    '598',
-    '153',
-    '旧冻结结果 Issue',
-    '旧冻结结果 1 条',
-  ])
-    assert.ok(text.includes(value), value);
-  assert.ok(!text.includes('100%'), text);
-  assert.match(html, /colSpan="11"/);
+  for (const value of ['88.3%', '81.3%', '77.9%', '79.6%']) {
+    assert.ok(text.includes(value), `expected ${value} in ${text}`);
+  }
+  for (const forbidden of ['待补齐最新人口', '完整版本指标暂不展示', '旧冻结结果 Issue']) {
+    assert.ok(!text.includes(forbidden), `unexpected ${forbidden} in ${text}`);
+  }
+  assert.doesNotMatch(html, /colSpan="11"/);
 });
 
-test('a scope change stays pending even when old fields still contain successful percentages', async () => {
-  const collection = { ...scope('population_changed'), collection_status: 'stable' };
-  const text = visibleText(
-    await render(summary(collection), [{ ...metric(), collection_scope: collection }], 'en'),
-  );
-  for (const value of [
+test('overview displays covered evaluation_scope metrics and computed F1 even when top-level percentages are null', async () => {
+  const collection = {
+    ...scope('population_changed'),
+    collection_status: 'stable',
+  };
+  const scoped = {
+    ...metric('gen4-release-20261106'),
+    sim_repro_rate: null,
+    precision: null,
+    recall: null,
+    f1: null,
+    evaluation_scope: {
+      complete: true,
+      covered: 1252,
+      eligible: 1252,
+      repro_rate: 0.8834,
+      precision: 0.8133,
+      recall: 0.7787,
+      road_precision: 0.6131,
+      road_recall: 0.7852,
+    },
+    collection_scope: collection,
+  };
+  const text = visibleText(await render(summary(collection), [scoped], 'en'));
+  for (const value of ['88.3%', '81.3%', '77.9%', '79.6%']) {
+    assert.ok(text.includes(value), `expected ${value} in ${text}`);
+  }
+  for (const forbidden of [
     'Latest population awaiting results',
-    'Collected 751',
-    'Automatic 598',
-    'Manual 153',
-    'Prior frozen results: 1',
-  ])
-    assert.ok(text.includes(value), value);
-  assert.ok(!text.includes('100%'), text);
+    'Full-version metrics are pending',
+    'Prior frozen results',
+  ]) {
+    assert.ok(!text.includes(forbidden), `unexpected ${forbidden} in ${text}`);
+  }
 });
 
-test('collection progress remains visible without a legacy KPI or comparison response', async () => {
+test('truly unmeasured release shows minimal pending fallback without collection suppression banner', async () => {
   const collection = scope();
-  const text = visibleText(await render({ ...summary(collection), current: null }, []));
-  assert.ok(text.includes('751'));
-  assert.ok(text.includes('查看路测采集清单'));
-  assert.ok(!text.includes('100%'));
+  const unmeasured = {
+    ...metric('gen4-release-20261106'),
+    sim_repro_rate: null,
+    precision: null,
+    recall: null,
+    f1: null,
+    collection_scope: collection,
+  };
+  const zhText = visibleText(
+    await render({ ...summary(collection), current: null }, [unmeasured], 'zh'),
+  );
+  assert.ok(zhText.includes('待完整仿真'), zhText);
+  assert.ok(!zhText.includes('待补齐最新人口'), zhText);
+  assert.ok(!zhText.includes('完整版本指标暂不展示'), zhText);
+
+  const enText = visibleText(
+    await render({ ...summary(collection), current: null }, [unmeasured], 'en'),
+  );
+  assert.ok(enText.includes('Awaiting complete simulation'), enText);
+  assert.ok(!enText.includes('Full-version metrics are pending'), enText);
 });
 
 test('independent ordinary metrics and AutoTriage fallback keep their existing values', async () => {
@@ -144,7 +186,12 @@ test('independent ordinary metrics and AutoTriage fallback keep their existing v
   assert.ok(!text.includes('旧冻结结果'));
   const auto = visibleText(
     await render(
-      { ...summary(scope()), business_current_version: null, current, business_metrics: current },
+      {
+        ...summary(scope()),
+        business_current_version: null,
+        current,
+        business_metrics: current,
+      },
       [current],
       'en',
       true,
@@ -180,23 +227,7 @@ test('historical frozen population retains its measured values and names both po
     '87.6%',
   ])
     assert.ok(text.includes(value), value);
-  assert.ok(text.includes('Full-version metrics are pending'));
-});
-
-test('a historical marker never permits current-business-version metrics', async () => {
-  const collection = {
-    ...scope('population_changed'),
-    collection_status: 'stable',
-    historical_frozen: true,
-    frozen_issue_count: 1,
-  };
-  const text = visibleText(
-    await render(summary(collection), [{ ...metric(), collection_scope: collection }]),
-  );
-  assert.ok(text.includes('待补齐最新人口'));
-  assert.ok(text.includes('751'));
-  assert.ok(!text.includes('历史冻结样本'));
-  assert.ok(!text.includes('100%'));
+  assert.ok(!text.includes('Full-version metrics are pending'));
 });
 
 test('stale-retained published release keeps Overview metrics visible with overdue badge', async () => {

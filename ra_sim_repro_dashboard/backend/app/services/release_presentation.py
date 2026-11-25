@@ -12,6 +12,7 @@ from app.services.business_population import (
     historical_scope,
     scope_for_batch,
 )
+from app.services import ordinary_evaluation
 from app.services.ordinary_evaluation import history_kpis as ordinary_kpis
 from app.services.read_views import read_projection, read_view
 from app.services.release_inventory import inventory as collection_inventory
@@ -135,26 +136,58 @@ def render_kpi(current, metrics, source):
     }
 
 
+def _read_ordinary_kpi(db, release):
+    if not release:
+        return None, None
+    try:
+        revision = ordinary_evaluation.read(db, release)
+    except ValueError:
+        return None, None
+    if revision is None:
+        return None, None
+    return revision, ordinary_evaluation.kpi(revision)
+
+
 def context(db, value=None):
     value = status(db) if value is None else value
     current = value.get("current_version")
     metrics = value.get("metrics") or {}
     source = value.get("source_metrics") or {}
+
+    # Priority 1: Audited ordinary evaluation (shared execution) for current release.
+    ordinary_rev, ordinary_kpi = _read_ordinary_kpi(db, current)
+    if (
+        ordinary_rev is not None
+        and ordinary_kpi is not None
+        and (
+            ordinary_rev["metrics"].get("available")
+            or ordinary_rev["metrics"].get("covered", 0) > 0
+        )
+        and not value.get("acceptance_only")
+    ):
+        return {
+            "business_current_version": current,
+            "business_metrics": ordinary_kpi,
+            "business_status": (
+                "complete" if ordinary_rev["metrics"].get("available") else "pending_simulation"
+            ),
+            "business_reason": "",
+            "period": value.get("current_period"),
+            "metrics": {
+                **ordinary_rev["metrics"],
+                "job_id": ordinary_kpi["sim_estimate"].get("job_id"),
+                "generated_at": ordinary_rev.get("generated_at"),
+            },
+            "business_collection": None,
+        }
+
+    # Priority 2: Audited published batch — always surface verified Overview metrics
+    # directly; never suppress homepage KPIs when late issues arrive or polls lag.
     approved = published_batch(db, current) if current else None
     scope = scope_for_batch(db, approved) if approved else None
-    display_scope = display_retained_scope(scope, is_current=True) if scope else None
-    scope_ready = bool(
-        display_scope and (display_scope["available"] or display_scope.get("display_retained"))
-    )
-    if approved and scope_ready:
+    if approved:
         metrics = effective_publication(db, approved)
         source = metrics
-    elif display_scope:
-        metrics = {
-            "available": False,
-            "reason": display_scope["reason_code"],
-            "generated_at": display_scope.get("observed_at"),
-        }
     kpi = (
         render_kpi(current, metrics, source)
         if metrics.get("available") and not value.get("acceptance_only")
@@ -163,12 +196,8 @@ def context(db, value=None):
     return {
         "business_current_version": current,
         "business_metrics": kpi,
-        "business_status": "collecting"
-        if display_scope and not scope_ready and display_scope["collection_status"] == "collecting"
-        else "pending_simulation"
-        if display_scope and not scope_ready
-        else "published_with_exclusions"
-        if approved
+        "business_status": "published_with_exclusions"
+        if approved and kpi
         else "complete"
         if kpi
         else "pending_simulation"
@@ -177,7 +206,7 @@ def context(db, value=None):
         "business_reason": metrics.get("reason", "") if not kpi else "",
         "period": value.get("current_period"),
         "metrics": metrics,
-        "business_collection": display_scope,
+        "business_collection": None if kpi else scope,
     }
 
 
@@ -208,17 +237,11 @@ def history_kpis(db):
                 ),
                 is_current=rel == current_version,
             )
-            if (
-                scope["available"]
-                or scope.get("historical_frozen")
-                or scope.get("display_retained")
-            ):
-                metrics = effective_publication(db, approved)
-                item = render_kpi(rel, metrics, metrics)
-                if scope.get("historical_frozen") or scope.get("display_retained"):
-                    item["collection_scope"] = scope
-                return item
-            return pending_kpi(rel, scope, approved.payload.get("job_id"))
+            metrics = effective_publication(db, approved)
+            item = render_kpi(rel, metrics, metrics)
+            if scope.get("historical_frozen") or scope.get("display_retained"):
+                item["collection_scope"] = scope
+            return item
 
         published_item = read_projection(
             db,
@@ -278,12 +301,6 @@ def history_kpis(db):
                     ),
                     is_current=b.release == current_version,
                 )
-                if (
-                    not scope["available"]
-                    and not scope.get("historical_frozen")
-                    and not scope.get("display_retained")
-                ):
-                    return pending_kpi(b.release, scope, b.payload.get("job_id"))
                 metrics = {**metrics, "job_id": b.payload.get("job_id")}
                 source = summarize_population(snapshot.payload["issues"], [], {})
                 item = render_kpi(b.release, metrics, source)

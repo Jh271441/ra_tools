@@ -103,17 +103,21 @@ def test_explicit_exclusion_publishes_primary_without_changing_audit(data, monke
         "app.services.release_presentation.status",
         lambda _: {"current_version": plan["release"], "metrics": {"available": False}},
     )
-    assert context(db)["business_status"] == "pending_simulation"
-    assert context(db)["business_metrics"] is None
+    ctx = context(db)
+    assert ctx["business_status"] == "published_with_exclusions"
+    assert ctx["business_metrics"]["evaluated_cases"] == 199
+    assert ctx["business_metrics"]["precision"] == 1
+    assert ctx["business_collection"] is None
     assert publication(batch) == metrics
 
 
-def test_latest_observation_replaces_stale_population_counts_without_rewriting_publication(
+def test_latest_observation_keeps_overview_metrics_visible_without_rewriting_publication(
     data, monkeypatch
 ):
     from datetime import datetime, timezone
     from types import SimpleNamespace
     from app.services import release_workflow as workflow
+    from app.services.business_population import scope_for_batch
     from app.api import routes
 
     db, batch, plan = data
@@ -162,27 +166,102 @@ def test_latest_observation_replaces_stale_population_counts_without_rewriting_p
         "app.services.release_presentation.status",
         lambda _: {"current_version": plan["release"], "metrics": {"available": False}},
     )
-    result = context(db)
-    assert result["business_metrics"] is None and result["business_status"] == "collecting", result[
-        "business_collection"
-    ]
-    scope = result["business_collection"]
+    # Operational scope still detects the population change accurately.
+    scope = scope_for_batch(db, batch)
+    assert not scope["available"] and scope["reason_code"] == "population_changed"
     assert (
         scope["collected_issue_count"] == 201
         and scope["auto_count"] == 200
         and scope["manual_count"] == 1
+        and scope["evaluated_issue_count"] == 199
     )
-    assert scope["evaluated_issue_count"] == 199 and scope["reason_code"] == "population_changed"
+    # Overview presentation always keeps audited published metrics visible.
+    result = context(db)
+    assert result["business_status"] == "published_with_exclusions"
+    assert result["business_collection"] is None
+    assert result["business_metrics"]["evaluated_cases"] == 199
+    assert result["business_metrics"]["precision"] == 1
     row = next(item for item in history_kpis(db) if item["version_key"] == plan["release"])
-    assert row["collection_scope"] == scope
-    assert row["sim_repro_rate"] is None and row["precision"] is None and row["recall"] is None
-    assert row["sim_estimate"]["estimated_tp"] is None
+    assert row["sim_repro_rate"] is not None and row["precision"] == 1
+    assert row["sim_estimate"]["estimated_tp"] is not None
     monkeypatch.setattr(routes, "business_context", lambda _: result)
     monkeypatch.setattr(routes, "_read_dashboard_snapshot", lambda _: {"generated_at": now})
     response = routes._summary(db, SimpleNamespace(headers={"x-ra-sim-client": "release-cycle-v1"}))
-    assert response.current is None and response.business_collection == scope
-    assert response.generated_at.isoformat() == now
+    assert response.current is not None and response.current.evaluated_cases == 199
+    assert response.business_collection is None
     assert batch.payload == before and publication(batch)["eligible"] == 199
+
+
+def test_ordinary_evaluation_kpi_and_context_surface_covered_metrics_and_f1(data, monkeypatch):
+    from app.services import ordinary_evaluation
+
+    db, _, plan = data
+    release = plan["release"]
+    revision = {
+        "revision_key": "normalrevision:test-1106",
+        "context": {"release": release},
+        "source_count": 1703,
+        "generated_at": "2026-11-25T05:42:51+00:00",
+        "lineage": {"1": {"job_id": 50805791}},
+        "metrics": {
+            "available": True,
+            "covered": 1252,
+            "eligible": 1252,
+            "coverage": 1.0,
+            "road_matches": 1106,
+            "missing_results": 0,
+            "sim_repro_rate": None,
+            "precision": None,
+            "recall": None,
+            "covered_repro_rate": 0.8834,
+            "covered_precision": 0.8133,
+            "covered_recall": 0.7787,
+            "online_precision": 0.6131,
+            "online_recall": 0.7852,
+            "counts": {
+                "precision_numerator": 824,
+                "precision_denominator": 1344,
+                "recall_numerator": 824,
+                "recall_denominator": 1049,
+            },
+            "covered_source_counts": {
+                "precision_numerator": 824,
+                "precision_denominator": 1344,
+                "recall_numerator": 824,
+                "recall_denominator": 1049,
+            },
+            "sim_counts": {
+                "precision_numerator": 806,
+                "precision_denominator": 991,
+                "recall_numerator": 806,
+                "recall_denominator": 1035,
+            },
+        },
+    }
+    kpi = ordinary_evaluation.kpi(revision)
+    assert kpi["sim_repro_rate"] == pytest.approx(0.8834)
+    assert kpi["precision"] == pytest.approx(0.8133)
+    assert kpi["recall"] == pytest.approx(0.7787)
+    assert kpi["f1"] == pytest.approx(2 * 0.8133 * 0.7787 / (0.8133 + 0.7787))
+    assert kpi["sim_estimate"]["same_version_projection"]["sim_precision"] == pytest.approx(0.8133)
+    assert kpi["sim_estimate"]["same_version_projection"]["sim_business_recall"] == pytest.approx(
+        0.7787
+    )
+
+    monkeypatch.setattr(
+        ordinary_evaluation, "read", lambda _db, rel: revision if rel == release else None
+    )
+    monkeypatch.setattr(
+        "app.services.release_presentation.status",
+        lambda _: {"current_version": release, "metrics": {"available": False}},
+    )
+    ctx = context(db)
+    assert ctx["business_status"] == "complete"
+    assert ctx["business_collection"] is None
+    assert ctx["business_metrics"]["sim_repro_rate"] == pytest.approx(0.8834)
+    assert ctx["business_metrics"]["f1"] == pytest.approx(kpi["f1"])
+    assert ctx["metrics"]["job_id"] == 50805791
+    assert ctx["metrics"]["generated_at"] == "2026-11-25T05:42:51+00:00"
 
 
 @pytest.mark.parametrize(

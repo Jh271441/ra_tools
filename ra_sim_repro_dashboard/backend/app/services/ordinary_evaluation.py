@@ -158,6 +158,26 @@ def kpi(value):
     m, release = value["metrics"], value["context"]["release"]
     source, sim, paired = m["counts"], m["sim_counts"], m["covered_source_counts"]
     ratio = lambda a, b: a / b if b else None
+    sim_repro_rate = (
+        m["sim_repro_rate"]
+        if m.get("sim_repro_rate") is not None
+        else (m.get("covered_repro_rate") if m.get("available") else None)
+    )
+    precision = (
+        m["precision"]
+        if m.get("precision") is not None
+        else (m.get("covered_precision") if m.get("available") else None)
+    )
+    recall = (
+        m["recall"]
+        if m.get("recall") is not None
+        else (m.get("covered_recall") if m.get("available") else None)
+    )
+    f1 = (
+        2 * precision * recall / (precision + recall)
+        if precision is not None and recall is not None and precision + recall
+        else None
+    )
     scope = {
         "complete": m["available"],
         "covered": m["covered"],
@@ -179,11 +199,11 @@ def kpi(value):
         "road_behavior_cases": m["eligible"],
         "sim_positive_cases": sim["precision_denominator"],
         "reproduced_cases": m["road_matches"],
-        "sim_repro_rate": m["sim_repro_rate"],
-        "precision": m["precision"],
-        "recall": m["recall"],
+        "sim_repro_rate": sim_repro_rate,
+        "precision": precision,
+        "recall": recall,
         "evaluation_scope": scope,
-        "f1": None,
+        "f1": f1,
         "specificity": None,
         "accuracy": None,
         "model_repro_rate": 0,
@@ -218,8 +238,8 @@ def kpi(value):
             "same_version_projection": {
                 "available": m["available"],
                 "population_coverage": m["coverage"],
-                "sim_precision": m["precision"],
-                "sim_business_recall": m["recall"],
+                "sim_precision": precision,
+                "sim_business_recall": recall,
                 "reason": "" if m["available"] else "coverage_pending",
             },
         },

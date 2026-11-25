@@ -14,7 +14,7 @@ import {
 import { Fragment, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
 import { Activity, ArrowDownRight, ArrowUpRight, Gauge, ShieldCheck, Target } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import type { CollectionScope, KpiSummary, SummaryResponse } from '../types';
+import type { KpiSummary, SummaryResponse } from '../types';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { cn } from '../lib/utils';
@@ -106,81 +106,31 @@ function maybePct(value: unknown) {
   return numeric == null ? '-' : pct(numeric);
 }
 
-function firstNumber(...values: unknown[]) {
-  for (const value of values) {
-    const numeric = optionalNumber(value);
-    if (numeric != null) return numeric;
-  }
-  return 0;
-}
-
 function formatCount(value: number | undefined) {
   return new Intl.NumberFormat().format(Math.max(0, Math.round(value ?? 0)));
 }
 
-function collectionState(scope: CollectionScope) {
-  return scope.collection_status === 'collecting' || scope.reason_code === 'collecting'
-    ? 'collecting'
-    : scope.reason_code === 'population_changed'
-      ? 'populationChanged'
-      : 'needsReview';
+function hasMeasuredMetrics(item?: KpiSummary | null) {
+  if (!item) return false;
+  return (
+    item.sim_repro_rate != null ||
+    item.precision != null ||
+    item.recall != null ||
+    item.evaluation_scope?.repro_rate != null ||
+    item.evaluation_scope?.precision != null ||
+    item.evaluation_scope?.recall != null
+  );
 }
 
-function CollectionProgress({
-  scope,
-  version,
-  onOpen,
-}: {
-  scope: CollectionScope;
-  version?: string | null;
-  onOpen: () => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <Card role="status" className="min-w-0">
-      <CardHeader className="flex-row flex-wrap items-start justify-between gap-3 space-y-0 pb-3">
-        <div className="min-w-0 space-y-1">
-          <CardTitle className="break-words">
-            {version ? releaseName(version) : t('businessCollection.current')}
-          </CardTitle>
-          <p className="text-sm leading-5 text-muted-foreground">
-            {t(`businessCollection.${collectionState(scope)}`)} ·{' '}
-            {t('businessCollection.pendingMetrics')}
-          </p>
-        </div>
-        <button
-          className="min-h-11 rounded-md border px-3 py-2 text-sm text-primary focus:outline-none focus:ring-2 focus:ring-ring"
-          onClick={onOpen}
-        >
-          {t('businessCollection.openIssues')}
-        </button>
-      </CardHeader>
-      <CardContent>
-        <dl className="grid grid-cols-2 gap-x-4 gap-y-3 md:grid-cols-4">
-          {(
-            [
-              'collected_issue_count',
-              'auto_count',
-              'manual_count',
-              'evaluated_issue_count',
-            ] as const
-          ).map((key) => (
-            <div key={key} className="min-w-0">
-              <dt className="break-words text-xs leading-5 text-muted-foreground">
-                {t(`businessCollection.${key}`)}
-              </dt>
-              <dd className="mt-1 font-mono text-lg font-semibold">
-                {scope[key] == null ? '—' : formatCount(scope[key])}
-              </dd>
-            </div>
-          ))}
-        </dl>
-        <p className="mt-3 text-xs leading-5 text-muted-foreground">
-          {t('businessCollection.frozenNote')}
-        </p>
-      </CardContent>
-    </Card>
-  );
+function resolveF1(item?: KpiSummary | null) {
+  if (!item) return null;
+  if (item.f1 != null) return item.f1;
+  const precision = item.evaluation_scope?.precision ?? item.precision;
+  const recall = item.evaluation_scope?.recall ?? item.recall;
+  if (precision != null && recall != null && precision + recall > 0) {
+    return (2 * precision * recall) / (precision + recall);
+  }
+  return null;
 }
 
 function countScale(values: number[]) {
@@ -288,29 +238,27 @@ export function Overview({
   }
 
   const collection = !evaluationBasis ? summary.business_collection : null;
-  const collectionRetained = Boolean(
-    collection?.display_retained &&
-      collection?.stale === true &&
-      collection?.collection_completed === true,
-  );
-  const collectionPending = collection?.available === false && !collectionRetained;
   const openCollection = (version?: string | null) =>
     version && onOpenCollection ? onOpenCollection(version) : onOpenCurrent();
+  const matchedBusinessComparison = summary.business_current_version
+    ? comparison.find(
+        (item) => item.version_key === summary.business_current_version && hasMeasuredMetrics(item),
+      )
+    : null;
+  const latestMeasuredComparison = [...comparison]
+    .reverse()
+    .find((item) => hasMeasuredMetrics(item));
   const current =
+    (hasMeasuredMetrics(summary.business_metrics) ? summary.business_metrics : null) ||
+    matchedBusinessComparison ||
+    (hasMeasuredMetrics(summary.current) ? summary.current : null) ||
+    (hasMeasuredMetrics(summary.legacy_current) ? summary.legacy_current : null) ||
+    latestMeasuredComparison ||
     summary.business_metrics ||
-    (collectionPending
-      ? comparison.find((item) => item.version_key === summary.business_current_version)
-      : null) ||
     summary.current ||
     summary.legacy_current;
   if (!current)
-    return collectionPending ? (
-      <CollectionProgress
-        scope={collection}
-        version={summary.business_current_version}
-        onOpen={() => openCollection(summary.business_current_version)}
-      />
-    ) : (
+    return (
       <Card>
         <CardContent className="p-5 text-sm">
           {summary.business_current_version
@@ -326,8 +274,12 @@ export function Overview({
         </CardContent>
       </Card>
     );
-  const businessPending =
-    collectionPending || Boolean(summary.business_current_version && !summary.business_metrics);
+  const collectionRetained = Boolean(
+    collection?.display_retained &&
+      collection?.stale === true &&
+      collection?.collection_completed === true,
+  );
+  const businessPending = !hasMeasuredMetrics(current);
   const historicalFrozen = (item: KpiSummary) =>
     Boolean(
       item.collection_scope?.historical_frozen &&
@@ -339,10 +291,7 @@ export function Overview({
         item.collection_scope?.stale === true &&
         item.collection_scope?.collection_completed === true,
     );
-  const populationPending = (item: KpiSummary) =>
-    item.collection_scope?.available === false &&
-    !historicalFrozen(item) &&
-    !retainedDisplay(item);
+  const populationPending = (item: KpiSummary) => !hasMeasuredMetrics(item);
   const coveredScope = current.evaluation_scope;
   const kpis = [
     {
@@ -368,7 +317,7 @@ export function Overview({
     },
     {
       label: t(evaluationBasis ? 'evaluation.coverage' : 'f1'),
-      value: pct(evaluationBasis ? current.dpe_coverage : current.f1),
+      value: pct(evaluationBasis ? current.dpe_coverage : resolveF1(current)),
       delta: evaluationBasis ? undefined : summary.deltas.f1,
       icon: ShieldCheck,
       filters: { version: current.version_key },
@@ -465,7 +414,11 @@ export function Overview({
       .filter((v): v is number => v != null),
   );
   const trendChartRows = releaseChartRows(trend);
-  const reproControls: Array<{ key: ReproMetric; label: string; color: string }> = [
+  const reproControls: Array<{
+    key: ReproMetric;
+    label: string;
+    color: string;
+  }> = [
     { key: 'repro', label: t('simReproRate'), color: chartColors.repro },
     {
       key: 'tp',
@@ -537,17 +490,6 @@ export function Overview({
             <strong>{t('evaluation.collection_pending_update')}</strong>
           </p>
         )}
-        {!row.historicalFrozen && !row.staleRetained && row.collection?.available === false && (
-          <p className="mb-2 leading-5 text-muted-foreground">
-            {t(`businessCollection.${collectionState(row.collection)}`)}
-            <br />
-            {t('businessCollection.collectedSummary', {
-              collected: countText(row.collection.collected_issue_count ?? undefined),
-              auto: countText(row.collection.auto_count ?? undefined),
-              manual: countText(row.collection.manual_count ?? undefined),
-            })}
-          </p>
-        )}
         <table className="w-full tabular-nums">
           <thead>
             <tr className="text-muted-foreground">
@@ -597,13 +539,6 @@ export function Overview({
 
   return (
     <div className="grid gap-4">
-      {collectionPending && (
-        <CollectionProgress
-          scope={collection}
-          version={summary.business_current_version}
-          onOpen={() => openCollection(summary.business_current_version)}
-        />
-      )}
       {collectionRetained && (
         <div
           role="status"
@@ -977,7 +912,7 @@ export function Overview({
                   {aggregateRows.length ? (
                     aggregateRows.map((item) => {
                       const collection = item.collection_scope;
-                      if (collection && populationPending(item))
+                      if (populationPending(item))
                         return (
                           <tr
                             key={item.version_key}
@@ -992,39 +927,10 @@ export function Overview({
                                 {item.version_key}
                               </div>
                             </td>
-                            <td colSpan={11} className="px-4 py-3 align-middle">
-                              <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-sm">
-                                <Badge variant="warning">
-                                  {t(`businessCollection.${collectionState(collection)}`)}
-                                </Badge>
-                                <span>
-                                  {t('businessCollection.collectedSummary', {
-                                    collected:
-                                      collection.collected_issue_count == null
-                                        ? '—'
-                                        : formatCount(collection.collected_issue_count),
-                                    auto:
-                                      collection.auto_count == null
-                                        ? '—'
-                                        : formatCount(collection.auto_count),
-                                    manual:
-                                      collection.manual_count == null
-                                        ? '—'
-                                        : formatCount(collection.manual_count),
-                                  })}
-                                </span>
-                                <span>
-                                  {t('businessCollection.evaluatedSummary', {
-                                    formattedCount:
-                                      collection.evaluated_issue_count == null
-                                        ? '—'
-                                        : formatCount(collection.evaluated_issue_count),
-                                  })}
-                                </span>
-                                <span className="text-muted-foreground">
-                                  {t('businessCollection.pendingMetrics')}
-                                </span>
-                              </div>
+                            <td colSpan={11} className="px-4 py-3 text-center align-middle">
+                              <span className="text-xs text-muted-foreground">
+                                {t('businessCollection.pendingSimulation')}
+                              </span>
                             </td>
                           </tr>
                         );
@@ -1326,7 +1232,10 @@ export function Overview({
                   key={name}
                   className="metric-surface cursor-pointer rounded-md border p-4 transition hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-md hover:shadow-primary/10 focus:outline-none focus:ring-2 focus:ring-ring"
                   {...interactiveProps(() =>
-                    onOpenIssues({ version: current.version_key, rootCause: name }),
+                    onOpenIssues({
+                      version: current.version_key,
+                      rootCause: name,
+                    }),
                   )}
                 >
                   <div className="text-[12px] font-medium leading-4 text-muted-foreground">
