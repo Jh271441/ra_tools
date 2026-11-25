@@ -31,6 +31,15 @@ const RunComparisonPage = React.lazy(() =>
 const RunCollectionsPage = React.lazy(() =>
   import("./pages/RunCollectionsPage").then((m) => ({ default: m.RunCollectionsPage })),
 );
+const TrailHistoryPage = React.lazy(() =>
+  import("./pages/TrailHistoryPage").then((m) => ({ default: m.TrailHistoryPage })),
+);
+const RdResultsPage = React.lazy(() =>
+  import("./pages/RdResultsPage").then((m) => ({ default: m.RdResultsPage })),
+);
+const BatchPredictionPage = React.lazy(() =>
+  import("./pages/BatchPredictionPage").then((m) => ({ default: m.BatchPredictionPage })),
+);
 
 const OWNED_PAGES = new Set<string>([
   "status",
@@ -43,6 +52,9 @@ const OWNED_PAGES = new Set<string>([
   "analysis",
   "comparison",
   "run-collections",
+  "trail-history",
+  "rd-results",
+  "prediction",
 ]);
 
 const queryClient = new QueryClient({
@@ -203,6 +215,50 @@ const RunCollectionsIsland: React.FC = () => {
   );
 };
 
+const TrailHistoryIsland: React.FC = () => {
+  const { activePage, lang, selectedBaselines } = useWorkbenchBridge();
+  const active = activePage === "trail-history";
+  if (!active) return null;
+  return (
+    <Suspense fallback={<div className="no-asset">{lang === "en" ? "Loading…" : "加载中…"}</div>}>
+      <TrailHistoryPage active={active} lang={lang} selectedBaselines={selectedBaselines} />
+    </Suspense>
+  );
+};
+
+const RdResultsIsland: React.FC = () => {
+  const { activePage, lang, selectedBaselines } = useWorkbenchBridge();
+  const active = activePage === "rd-results";
+  const { effectiveSession } = useResolvedSession(active);
+  if (!active) return null;
+  return (
+    <Suspense fallback={<div className="no-asset">{lang === "en" ? "Loading…" : "加载中…"}</div>}>
+      <RdResultsPage
+        active={active}
+        lang={lang}
+        selectedBaselines={selectedBaselines}
+        isAdmin={Boolean(effectiveSession?.is_admin)}
+      />
+    </Suspense>
+  );
+};
+
+const BatchPredictionIsland: React.FC = () => {
+  const { activePage, lang } = useWorkbenchBridge();
+  const active = activePage === "prediction";
+  const { effectiveSession } = useResolvedSession(active);
+  if (!active) return null;
+  return (
+    <Suspense fallback={<div className="no-asset">{lang === "en" ? "Loading…" : "加载中…"}</div>}>
+      <BatchPredictionPage
+        active={active}
+        lang={lang}
+        username={effectiveSession?.username || ""}
+      />
+    </Suspense>
+  );
+};
+
 const mountedRoots = new Map<HTMLElement, Root>();
 
 function mountIsland(container: HTMLElement | null, element: React.ReactElement) {
@@ -228,6 +284,9 @@ function mountAllIslands() {
   mountIsland(document.getElementById("reviewAnalysisPage"), <ReviewAnalysisIsland />);
   mountIsland(document.getElementById("runComparisonPage"), <RunComparisonIsland />);
   mountIsland(document.getElementById("runCollectionsPage"), <RunCollectionsIsland />);
+  mountIsland(document.getElementById("trailHistoryPage"), <TrailHistoryIsland />);
+  mountIsland(document.getElementById("rdResultsPage"), <RdResultsIsland />);
+  mountIsland(document.getElementById("predictionPage"), <BatchPredictionIsland />);
 }
 
 interface ReactWorkbenchHandle {
@@ -239,7 +298,7 @@ interface ReactWorkbenchHandle {
 }
 
 const handle: ReactWorkbenchHandle = {
-  version: "vite-react-ts-strangler-3.5",
+  version: "vite-react-ts-strangler-3.6",
   ownedPages: Array.from(OWNED_PAGES),
   ownsPage: (page: string) => OWNED_PAGES.has(page),
   refreshPage: (page: string) => {
@@ -272,6 +331,16 @@ const handle: ReactWorkbenchHandle = {
       void queryClient.invalidateQueries({ queryKey: ["run-collection-detail"] });
       void queryClient.invalidateQueries({ queryKey: ["run-collection-eval-history"] });
       void queryClient.invalidateQueries({ queryKey: ["run-collection-evaluation"] });
+    } else if (page === "trail-history") {
+      void queryClient.invalidateQueries({ queryKey: ["trail-history"] });
+    } else if (page === "rd-results") {
+      void queryClient.invalidateQueries({ queryKey: ["human-publications"] });
+      void queryClient.invalidateQueries({ queryKey: ["rd-results"] });
+    } else if (page === "prediction") {
+      void queryClient.invalidateQueries({ queryKey: ["prediction-batches"] });
+      void queryClient.invalidateQueries({ queryKey: ["prediction-batch-config"] });
+      void queryClient.invalidateQueries({ queryKey: ["prediction-gateway-models"] });
+      void queryClient.invalidateQueries({ queryKey: ["prediction-batch-prompts"] });
     }
     window.dispatchEvent(new Event("ra:workbench-sync"));
   },

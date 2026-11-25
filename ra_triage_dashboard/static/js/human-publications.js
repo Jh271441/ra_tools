@@ -56,6 +56,10 @@ function hpPersist() {
   history.replaceState(history.state,'',url);
 }
 async function loadHumanPublications({poll=false}={}) {
+  if (typeof window !== 'undefined' && (window.__RA_REACT_WORKBENCH__?.ownsPage?.('rd-results') || window.__RA_REACT_OWNED_PAGES__?.includes?.('rd-results'))) {
+    if (!poll) window.__RA_REACT_WORKBENCH__?.refreshPage?.('rd-results');
+    return;
+  }
   const h=humanPublication;if(poll&&(h.busy||h.loading||h.preview||state.activePage!=='rd-results'||!humanPublicationPageActive()))return;
   const params=new URLSearchParams(location.search),scope=state.selectedBaselineIds.join(','),epoch=++h.epoch;
   if(!poll){
@@ -84,6 +88,7 @@ async function hpLoadHistory() {
   if(h.historyIssue===issue&&h.lane===lane){h.history=data;h.historyPage=data.page;}
 }
 function renderHumanPublications() {
+  if (typeof window !== 'undefined' && (window.__RA_REACT_WORKBENCH__?.ownsPage?.('rd-results') || window.__RA_REACT_OWNED_PAGES__?.includes?.('rd-results'))) return;
   if(state.activePage!=='rd-results')return;
   const h=humanPublication,d=h.data,root=$('#rdResultsPage'),disabled=h.loading||h.busy;
   const focus=document.activeElement?.id,caret=document.activeElement?.selectionStart;

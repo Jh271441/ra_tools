@@ -368,7 +368,12 @@ async function setBaselineScopes(
     await loadConfig();
     if (!isPageContextCurrent(pageContext)) return;
     if (state.activePage === "rd-results") {
-      await Promise.all([loadRdResults(), loadOverview().catch(() => {})]);
+      if (window.__RA_REACT_WORKBENCH__?.ownsPage?.("rd-results") || window.__RA_REACT_OWNED_PAGES__?.includes?.("rd-results")) {
+        window.__RA_REACT_WORKBENCH__?.refreshPage?.("rd-results");
+        await loadOverview().catch(() => {});
+      } else {
+        await Promise.all([loadRdResults(), loadOverview().catch(() => {})]);
+      }
       return;
     }
     if (state.activePage === "review-assignments") {
@@ -981,7 +986,12 @@ async function refreshChangedDataNow() {
     return;
   }
   if (state.activePage === "prediction") {
-    await Promise.all([loadPredictionBatches(), loadOverview()]);
+    if (window.__RA_REACT_WORKBENCH__?.ownsPage?.("prediction") || window.__RA_REACT_OWNED_PAGES__?.includes?.("prediction")) {
+      window.__RA_REACT_WORKBENCH__?.refreshPage?.("prediction");
+      await loadOverview().catch(() => {});
+    } else {
+      await Promise.all([loadPredictionBatches(), loadOverview()]);
+    }
     return;
   }
   if (state.activePage === "intent") {

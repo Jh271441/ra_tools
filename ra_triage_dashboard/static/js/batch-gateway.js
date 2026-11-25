@@ -117,6 +117,7 @@ function bindGatewayProviderPicker() {
 }
 
 function renderGatewayProviders() {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("prediction") || window.__RA_REACT_OWNED_PAGES__?.includes?.("prediction"))) return;
   const target = $("#gatewayProviderSelect");
   const summary = $("#gatewayProviderPickerSummary");
   const options = $("#gatewayProviderPickerOptions");

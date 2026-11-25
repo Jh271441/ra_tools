@@ -13,6 +13,8 @@ export interface PaginationProps {
   loading?: boolean;
   ariaLabel?: string;
   labelText?: string;
+  summaryText?: string;
+  className?: string;
   onPageChange: (nextPage: number) => void;
   onPageSizeChange: (nextSize: number) => void;
   onClearSelection?: () => void;
@@ -26,6 +28,8 @@ export const Pagination: React.FC<PaginationProps> = ({
   loading = false,
   ariaLabel,
   labelText,
+  summaryText,
+  className,
   onPageChange,
   onPageSizeChange,
   onClearSelection,
@@ -67,9 +71,14 @@ export const Pagination: React.FC<PaginationProps> = ({
 
   return (
     <nav
-      className="case-pagination gallery-pagination ra-react-pagination"
+      className={
+        className
+          ? `${className} ra-react-pagination`
+          : "case-pagination gallery-pagination ra-react-pagination"
+      }
       aria-label={ariaLabel || bilingual(lang, "分页导航", "Pagination")}
     >
+      {summaryText !== undefined ? <span>{summaryText}</span> : null}
       <div className="case-pagination-main">
         <button
           type="button"
@@ -83,9 +92,13 @@ export const Pagination: React.FC<PaginationProps> = ({
         <span className="ra-pagination-label" aria-live="polite">
           {labelText !== undefined
             ? labelText
-            : total > 0
-              ? `${safePage} / ${totalPages} · ${total.toLocaleString()}`
-              : bilingual(lang, "0 条结果", "0 items")}
+            : summaryText !== undefined
+              ? total > 0
+                ? `${safePage} / ${totalPages}`
+                : "— / —"
+              : total > 0
+                ? `${safePage} / ${totalPages} · ${total.toLocaleString()}`
+                : bilingual(lang, "0 条结果", "0 items")}
         </span>
 
         <button
@@ -107,7 +120,7 @@ export const Pagination: React.FC<PaginationProps> = ({
             max={totalPages}
             step={1}
             value={jumpInput}
-            disabled={disabledAll}
+            disabled={disabledAll || (summaryText !== undefined && totalPages <= 1)}
             aria-label={bilingual(lang, "输入页码", "Enter page number")}
             onChange={(e) => setJumpInput(e.target.value)}
             onKeyDown={(e) => {
@@ -117,10 +130,11 @@ export const Pagination: React.FC<PaginationProps> = ({
               }
             }}
           />
+          {summaryText !== undefined ? <span>{bilingual(lang, "页", "page")}</span> : null}
           <button
             type="button"
             className="button button-quiet"
-            disabled={disabledAll}
+            disabled={disabledAll || (summaryText !== undefined && totalPages <= 1)}
             onClick={handleJump}
           >
             {bilingual(lang, "跳转", "Go")}

@@ -3,7 +3,15 @@
  * Loaded as a classic script (shared global scope). Do not convert to
  * ES modules without auditing cross-file function/state dependencies.
  */
+function isPredictionReactOwned() {
+  return typeof window !== "undefined" && Boolean(
+    window.__RA_REACT_WORKBENCH__?.ownsPage?.("prediction") ||
+    window.__RA_REACT_OWNED_PAGES__?.includes?.("prediction")
+  );
+}
+
 async function loadGatewayModels({ refresh = false, providerId = "" } = {}) {
+  if (isPredictionReactOwned()) return;
   const requestSeq = ++state.gatewayModelRequestSeq;
   const statusTarget = $("#gatewayModelStatus");
   if (statusTarget) {
@@ -42,6 +50,7 @@ async function loadGatewayModels({ refresh = false, providerId = "" } = {}) {
 }
 
 async function loadBatchPrompts() {
+  if (isPredictionReactOwned()) return;
   const data = await api("/api/prediction-batches/prompts");
   state.batchPromptStatus = data;
   state.batchPrompts = data.items || [];
@@ -311,6 +320,10 @@ function showPredictionBatch(batch) {
 }
 
 async function loadPredictionBatches() {
+  if (isPredictionReactOwned()) {
+    window.__RA_REACT_WORKBENCH__?.refreshPage?.("prediction");
+    return;
+  }
   if (!$("#predictionBatchList")) return;
   const requestSeq = ++state.batchListRequestSeq;
   const params = new URLSearchParams({ page_size: "200" });
@@ -353,6 +366,7 @@ async function loadPredictionBatches() {
 }
 
 async function loadPredictionConfig() {
+  if (isPredictionReactOwned()) return;
   const data = await api("/api/prediction-batches/config");
   state.batchDefaultModel = {
     ...(state.batchDefaultModel || {}),

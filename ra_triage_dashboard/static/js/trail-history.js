@@ -21,7 +21,14 @@ function trailHistoryTime(value) {
   return !value || Number.isNaN(date.getTime()) ? "—" : new Intl.DateTimeFormat(state.uiLanguage === "en" ? "en-GB" : "zh-CN",
     {timeZone:"Asia/Shanghai",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}).format(date);
 }
+function isTrailHistoryReactOwned() {
+  return typeof window !== "undefined" && Boolean(
+    window.__RA_REACT_WORKBENCH__?.ownsPage?.("trail-history") ||
+    window.__RA_REACT_OWNED_PAGES__?.includes?.("trail-history")
+  );
+}
 function restoreTrailHistoryRoute() {
+  if (isTrailHistoryReactOwned()) return;
   const params = new URLSearchParams(location.search);
   const unchanged=trailHistory.data&&trailHistory.operation===(params.get("operation")||"")&&trailHistory.page===Math.max(1,Number(params.get("page"))||1)&&trailHistory.pageSize===(CASE_PAGE_SIZES.includes(Number(params.get("page_size")))?Number(params.get("page_size")):DEFAULT_CASE_PAGE_SIZE)
     &&["issue_id","actor","source","status","since","until"].every(key=>(trailHistory.filters[key]||"")===(params.get(key)||""));
@@ -50,6 +57,7 @@ function trailHistoryMeter(success,total,legacy=false) {
   return `<div class="trail-history-meter" aria-label="${label}: ${success} / ${total}"><span>${success} / ${total}</span><div class="review-assignment-progress-track" aria-hidden="true"><span style="width:${percent}%"></span></div></div>`;
 }
 function renderTrailHistoryFilters() {
+  if (isTrailHistoryReactOwned()) return;
   const host=$("#trailHistoryFilters");if(!host)return;
   host.innerHTML=`<label>Issue ID<input name="issue_id" autocomplete="off"></label><label>${uiText("操作人 LDAP","Operator LDAP")}<input name="actor" autocomplete="off"></label>
     <label>${uiText("来源","Source")}<select name="source"><option value="">${uiText("全部来源","All sources")}</option>${["exclusion_summary","exclusion_direct","model_label_normalization","model_publication","model_label_restore","rd_upload","te_correction","rollback","legacy"].map(v=>`<option value="${v}">${trailHistorySource(v)}</option>`).join("")}</select></label>
@@ -71,6 +79,7 @@ function renderTrailHistoryFilters() {
   host.querySelector('[data-action="reset"]').onclick=()=>{trailHistory.filters={};trailHistory.page=1;trailHistory.operation="";trailHistoryUrl();renderTrailHistoryFilters();void loadTrailHistory();};
 }
 function renderTrailHistory() {
+  if (isTrailHistoryReactOwned()) return;
   const host=$("#trailHistoryResults");if(!host)return;
   const data=trailHistory.data;
   const coverage=$("#trailHistoryCoverage"),coverageOpen=coverage.querySelector("details")?.open;
@@ -93,6 +102,10 @@ function renderTrailHistory() {
   host.querySelectorAll('[data-page-step]').forEach(button=>button.onclick=()=>{trailHistory.page+=Number(button.dataset.pageStep);trailHistoryUrl();void loadTrailHistory();});
 }
 async function loadTrailHistory() {
+  if (isTrailHistoryReactOwned()) {
+    window.__RA_REACT_WORKBENCH__?.refreshPage?.("trail-history");
+    return;
+  }
   if(trailHistory.busy)return;
   const context=capturePageContext(),seq=++trailHistory.seq;trailHistory.error="";
   trailHistory.data=null;
@@ -235,6 +248,7 @@ function renderTrailHistoryActions() {
   dialog.querySelector('[data-action="close"]').disabled=trailHistory.busy;
 }
 async function openTrailHistoryDetail(id,{updateUrl=true}={}) {
+  if (isTrailHistoryReactOwned()) return;
   if(trailHistory.busy)return;
   const seq=++trailHistory.detailSeq;trailHistory.operation=id;trailHistory.detail=null;trailHistory.preview=null;trailHistory.reason="";trailHistory.restoring=false;trailHistory.selected=[];
   if(updateUrl)trailHistoryUrl();const context=capturePageContext();
@@ -272,6 +286,7 @@ async function commitTrailRestore() {
   }catch(error){showToast(error.message,true);}finally{trailHistory.busy=false;renderTrailHistoryDetail();}
 }
 function refreshTrailHistoryLanguage() {
+  if (isTrailHistoryReactOwned()) return;
   if(state.activePage!=="trail-history")return;
   const focused=document.activeElement?.name||"";
   const reasonFocused=document.activeElement?.id==="trailHistoryReason";

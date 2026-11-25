@@ -1332,18 +1332,24 @@ function showPage(
   if(page==="daily-review"){window.location.replace(withBase("/daily-review")+window.location.search);return;}
   const target = PAGE_ROUTES[page] ? page : "review";
   const previousPage = state.activePage;
-  if (previousPage === "trail-history" && trailHistory.busy) return;
-  if (previousPage === "trail-history" && target !== "trail-history") $("#trailHistoryDialog")?.close();
-  if (target === "trail-history" && restoreRoute) restoreTrailHistoryRoute();
+  const trailHistoryReactOwned = typeof window !== "undefined" && Boolean(window.__RA_REACT_WORKBENCH__?.ownsPage?.("trail-history") || window.__RA_REACT_OWNED_PAGES__?.includes?.("trail-history"));
+  if (!trailHistoryReactOwned) {
+    if (previousPage === "trail-history" && trailHistory.busy) return;
+    if (previousPage === "trail-history" && target !== "trail-history") $("#trailHistoryDialog")?.close();
+    if (target === "trail-history" && restoreRoute) restoreTrailHistoryRoute();
+  }
   if (target === 'daily-cron' && restoreRoute && typeof restoreCronScope === 'function') restoreCronScope();
   if (["labeling", "review"].includes(previousPage) && typeof caseLabelDecisionUi !== "undefined" && caseLabelDecisionUi.editor) {
     if (caseLabelDecisionUi.saving) return;
     exitCaseDecisionEditor();
   }
   const pageLoads = [];
-  if (previousPage === 'rd-results' && rdResults.committing) return;
-  if (target !== "rd-results" && typeof rdResults !== "undefined") { rdResults.previewOpen = false; rdForgetPreview(); }
-  if (target === "rd-results" && loadPageData) pageLoads.push(() => loadRdResults());
+  const rdResultsReactOwned = typeof window !== "undefined" && Boolean(window.__RA_REACT_WORKBENCH__?.ownsPage?.("rd-results") || window.__RA_REACT_OWNED_PAGES__?.includes?.("rd-results"));
+  if (!rdResultsReactOwned) {
+    if (previousPage === 'rd-results' && rdResults.committing) return;
+    if (target !== "rd-results" && typeof rdResults !== "undefined") { rdResults.previewOpen = false; rdForgetPreview(); }
+    if (target === "rd-results" && loadPageData) pageLoads.push(() => loadRdResults());
+  }
   state.pageNavigationEpoch = Number(state.pageNavigationEpoch || 0) + 1;
   if (previousPage === "review" && target !== "review" && typeof cancelCaseHydration === "function") cancelCaseHydration();
   if (previousPage === "review" && target !== "review" && typeof cancelCaseListLoad === "function") cancelCaseListLoad();
@@ -1426,7 +1432,7 @@ function showPage(
       pageLoads.push(() => enterLabelingNewTask().catch((error) => showToast(error.message, true)));
     }
   }
-  if (target === "prediction") {
+  if (target === "prediction" && !(typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("prediction") || window.__RA_REACT_OWNED_PAGES__?.includes?.("prediction")))) {
     const issueIds = issues.length ? issues : issue ? [issue] : [];
     ensurePredictionBatchName();
     const issueInput = $("#predictionBatchIssues");
@@ -1542,7 +1548,7 @@ function showPage(
   if (target === "status" && loadPageData && !(window.__RA_REACT_WORKBENCH__?.ownsPage?.("status") || window.__RA_REACT_OWNED_PAGES__?.includes?.("status"))) {
     pageLoads.push(() => loadStatus().catch((error) => showToast(error.message, true)));
   }
-  if (target === "trail-history" && loadPageData) pageLoads.push(() => loadTrailHistory());
+  if (target === "trail-history" && loadPageData && !trailHistoryReactOwned) pageLoads.push(() => loadTrailHistory());
   if (target === "users" && loadPageData && !(window.__RA_REACT_WORKBENCH__?.ownsPage?.("users") || window.__RA_REACT_OWNED_PAGES__?.includes?.("users"))) {
     pageLoads.push(() => loadAccessUsers().catch((error) => showToast(error.message, true)));
     pageLoads.push(() => loadMentionUsers().catch((error) => showToast(error.message, true)));

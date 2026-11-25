@@ -760,6 +760,118 @@ html[data-color-theme="light"] #raComparisonReasonDialog [data-triage-label="无
   height: 38px;
 }
 
+/* Wave B3: Trail History, RD Results / Human Publications, Batch Prediction */
+.ra-trail-history-root,
+.ra-rd-results-root,
+.ra-batch-prediction-root {
+  display: grid;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.ra-trail-history-root .trail-history-filters .ra-th-field {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.ra-trail-history-root .trail-history-filters .ra-th-field > .ra-react-select {
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+.ra-trail-history-root .trail-history-filters .ui-select-trigger {
+  min-height: 38px;
+  height: 38px;
+}
+
+.ra-rd-results-root .rd-filters .ra-react-select {
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+.ra-rd-results-root .rd-filters .ui-select-trigger,
+.ra-rd-results-root .rd-selection-tools .ui-select-trigger {
+  min-height: 38px;
+  height: 38px;
+  font-size: 13px;
+}
+.ra-rd-results-root .rd-selection-tools .ra-react-select {
+  width: auto;
+  min-width: 140px;
+  max-width: 100%;
+}
+
+.ra-batch-prediction-root .ra-batch-field {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.ra-batch-prediction-root .gateway-card .ra-batch-field {
+  gap: 3px;
+}
+.ra-batch-prediction-root .gateway-card .ra-batch-field > span {
+  color: var(--muted);
+  font-size: 10px;
+}
+.ra-batch-prediction-root .ra-gateway-field .ra-react-select,
+.ra-batch-prediction-root .gateway-model-control .ra-react-select,
+.ra-batch-prediction-root .ra-batch-field > .ra-react-select {
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+.ra-batch-prediction-root .ra-gateway-field .ui-select-trigger,
+.ra-batch-prediction-root .gateway-model-control .ui-select-trigger {
+  height: 34px;
+  min-height: 34px;
+  padding: 5px 10px;
+  border-color: #2b3546;
+  background: #0d1119;
+  color: #eef4fa;
+  font-size: 12px;
+  font-weight: 560;
+}
+html[data-color-theme="light"] .ra-batch-prediction-root .ra-gateway-field .ui-select-trigger,
+html[data-color-theme="light"] .ra-batch-prediction-root .gateway-model-control .ui-select-trigger {
+  color: #172033;
+  border-color: #b8c5d4;
+  background: #f8fafc;
+}
+.ra-batch-prediction-root .batch-config-grid .ui-select-trigger,
+.ra-batch-prediction-root .batch-common-config .ui-select-trigger,
+.ra-batch-prediction-root .batch-history-filters .ui-select-trigger {
+  height: 38px;
+  min-height: 38px;
+}
+html[data-color-theme="light"] .ra-batch-prediction-root .batch-runtime-summary,
+html[data-color-theme="light"] .ra-batch-prediction-root .gateway-model-option,
+html[data-color-theme="light"] .ra-batch-prediction-root .gateway-model-status,
+html[data-color-theme="light"] .ra-batch-prediction-root .batch-result-item,
+html[data-color-theme="light"] .ra-batch-prediction-root .batch-history-detail {
+  background: var(--bg);
+  color: var(--text);
+}
+html[data-color-theme="light"] .ra-batch-prediction-root .batch-runtime-summary strong,
+html[data-color-theme="light"] .ra-batch-prediction-root .gateway-model-option strong,
+html[data-color-theme="light"] .ra-batch-prediction-root .batch-detail-heading strong,
+html[data-color-theme="light"] .ra-batch-prediction-root .batch-result-heading strong,
+html[data-color-theme="light"] .ra-batch-prediction-root .batch-result-item strong {
+  color: var(--text);
+}
+html[data-color-theme="light"] .ra-batch-prediction-root .gateway-model-option.active {
+  background: rgba(8, 117, 141, 0.09);
+  border-color: rgba(8, 117, 141, 0.45);
+}
+html[data-color-theme="light"] .ra-batch-prediction-root .gateway-model-option.active strong {
+  color: #075f75;
+}
+
 @media (max-width: 900px) {
   .ra-run-comparison-root .run-comparison-picker-grid .ra-comparison-field {
     grid-column: 1 / -1;
@@ -830,10 +942,39 @@ html[data-color-theme="light"] #raComparisonReasonDialog [data-triage-label="无
   .ra-run-comparison-root .run-comparison-picker-grid .ui-select-trigger,
   .ra-run-comparison-root .comparison-filter-grid .ui-select-trigger,
   .ra-run-comparison-root .comparison-input-filter .ra-comparison-input-trigger,
-  .ra-run-collections-root .ra-collection-field .ui-select-trigger {
+  .ra-run-collections-root .ra-collection-field .ui-select-trigger,
+  .ra-trail-history-root .trail-history-filters .ui-select-trigger,
+  .ra-rd-results-root .rd-filters .ui-select-trigger,
+  .ra-rd-results-root .rd-selection-tools .ui-select-trigger,
+  .ra-batch-prediction-root .ra-gateway-field .ui-select-trigger,
+  .ra-batch-prediction-root .gateway-model-control .ui-select-trigger,
+  .ra-batch-prediction-root .batch-config-grid .ui-select-trigger,
+  .ra-batch-prediction-root .batch-common-config .ui-select-trigger,
+  .ra-batch-prediction-root .batch-history-filters .ui-select-trigger {
     height: 44px;
     min-height: 44px;
     font-size: 16px;
+  }
+
+  .ra-trail-history-root .trail-history-filters {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ra-trail-history-root .trail-history-filters button,
+  .ra-trail-history-root .trail-history-toolbar button,
+  .ra-rd-results-root .rd-selection-bar button,
+  .ra-batch-prediction-root .gateway-model-control button,
+  .ra-batch-prediction-root .batch-submit-row button {
+    min-height: 44px;
+  }
+  .ra-rd-results-root.is-te-correction .rd-table {
+    min-width: 760px;
+  }
+  .ra-batch-prediction-root .gateway-card {
+    contain: none;
+    overflow: visible;
+  }
+  .ra-batch-prediction-root .batch-submit-row {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .ra-run-comparison-root .run-comparison-picker-actions button,

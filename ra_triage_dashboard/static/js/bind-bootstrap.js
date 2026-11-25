@@ -680,53 +680,56 @@ function bindEvents() {
       changeRunManagerPageSize(event.target.value);
     });
   }
-  $("#batchRequesterFilter").addEventListener("change", () => {
-    loadPredictionBatches().catch((error) => showToast(error.message, true));
-  });
-  $("#batchStatusFilter").addEventListener("change", () => {
-    loadPredictionBatches().catch((error) => showToast(error.message, true));
-  });
-  ["#batchModelFilter", "#batchPromptFilter", "#batchInputFilter"].forEach((selector) => {
-    $(selector).addEventListener("change", () => {
+  if (!(window.__RA_REACT_WORKBENCH__?.ownsPage?.("prediction") || window.__RA_REACT_OWNED_PAGES__?.includes?.("prediction"))) {
+    $("#batchRequesterFilter")?.addEventListener("change", () => {
       loadPredictionBatches().catch((error) => showToast(error.message, true));
     });
-  });
-  $("#refreshPredictionBatchesButton").addEventListener("click", () => {
-    loadPredictionBatches()
-      .then(() => showToast(t("toast.batch_refreshed")))
-      .catch((error) => showToast(error.message, true));
-  });
-  $("#refreshGatewayModelsButton").addEventListener("click", () => {
-    const button = $("#refreshGatewayModelsButton");
-    button.disabled = true;
-    loadGatewayModels({ refresh: true })
-      .then(() => showToast(t("toast.models_refreshed")))
-      .catch((error) => showToast(error.message, true))
-      .finally(() => {
-        button.disabled = false;
+    $("#batchStatusFilter")?.addEventListener("change", () => {
+      loadPredictionBatches().catch((error) => showToast(error.message, true));
+    });
+    ["#batchModelFilter", "#batchPromptFilter", "#batchInputFilter"].forEach((selector) => {
+      $(selector)?.addEventListener("change", () => {
+        loadPredictionBatches().catch((error) => showToast(error.message, true));
       });
-  });
-  $("#predictionModelSelect").addEventListener("change", () => {
-    state.selectedGatewayModelId = $("#predictionModelSelect").value;
-    renderGatewayModels();
-  });
-  $("#predictionPromptSelect").addEventListener("change", loadSelectedPromptTemplate);
-  $("#predictionPromptTemplate").addEventListener("input", updatePromptEditorSummary);
-  $("#predictionInputProfile").addEventListener("change", applyBatchInputPreset);
-  $("#predictionCameraPreset").addEventListener("change", applyCameraFramePreset);
-  $("#predictionFrameOffsets").addEventListener("input", () => {
-    syncCameraFramePreset();
-    renderBatchRuntimeSummary();
-  });
-  $("#predictionUseRaEvent").addEventListener("change", () => {
-    if (!$("#predictionUseRaEvent").checked) $("#predictionUseRaOptions").checked = false;
-    renderBatchRuntimeSummary();
-  });
-  $("#predictionUseRaOptions").addEventListener("change", () => {
-    if ($("#predictionUseRaOptions").checked) $("#predictionUseRaEvent").checked = true;
-    renderBatchRuntimeSummary();
-  });
-  $("#predictionUseBev").addEventListener("change", renderBatchRuntimeSummary);
+    });
+    $("#refreshPredictionBatchesButton")?.addEventListener("click", () => {
+      loadPredictionBatches()
+        .then(() => showToast(t("toast.batch_refreshed")))
+        .catch((error) => showToast(error.message, true));
+    });
+    $("#refreshGatewayModelsButton")?.addEventListener("click", () => {
+      const button = $("#refreshGatewayModelsButton");
+      if (!button) return;
+      button.disabled = true;
+      loadGatewayModels({ refresh: true })
+        .then(() => showToast(t("toast.models_refreshed")))
+        .catch((error) => showToast(error.message, true))
+        .finally(() => {
+          button.disabled = false;
+        });
+    });
+    $("#predictionModelSelect")?.addEventListener("change", () => {
+      state.selectedGatewayModelId = $("#predictionModelSelect").value;
+      renderGatewayModels();
+    });
+    $("#predictionPromptSelect")?.addEventListener("change", loadSelectedPromptTemplate);
+    $("#predictionPromptTemplate")?.addEventListener("input", updatePromptEditorSummary);
+    $("#predictionInputProfile")?.addEventListener("change", applyBatchInputPreset);
+    $("#predictionCameraPreset")?.addEventListener("change", applyCameraFramePreset);
+    $("#predictionFrameOffsets")?.addEventListener("input", () => {
+      syncCameraFramePreset();
+      renderBatchRuntimeSummary();
+    });
+    $("#predictionUseRaEvent")?.addEventListener("change", () => {
+      if (!$("#predictionUseRaEvent").checked) $("#predictionUseRaOptions").checked = false;
+      renderBatchRuntimeSummary();
+    });
+    $("#predictionUseRaOptions")?.addEventListener("change", () => {
+      if ($("#predictionUseRaOptions").checked) $("#predictionUseRaEvent").checked = true;
+      renderBatchRuntimeSummary();
+    });
+    $("#predictionUseBev")?.addEventListener("change", renderBatchRuntimeSummary);
+  }
   $("#languageToggleButton").addEventListener("click", () => {
     applyUiLanguage(state.uiLanguage === "en" ? "zh" : "en");
   });
@@ -761,12 +764,14 @@ function bindEvents() {
   $("#copyImportExampleButton").addEventListener("click", () => copyImportExample().catch((error) => showToast(error.message, true)));
   $("#importForm").addEventListener("submit", submitImport);
   $("#autotriageImportForm").addEventListener("submit", submitAutoTriageImport);
-  $("#predictionBatchIssues").addEventListener("input", () => {
-    state.batchDraftSource = "";
-    updatePredictionBatchCount();
-    renderPredictionSourceSummary();
-  });
-  $("#predictionBatchForm").addEventListener("submit", submitPredictionBatch);
+  if (!(window.__RA_REACT_WORKBENCH__?.ownsPage?.("prediction") || window.__RA_REACT_OWNED_PAGES__?.includes?.("prediction"))) {
+    $("#predictionBatchIssues")?.addEventListener("input", () => {
+      state.batchDraftSource = "";
+      updatePredictionBatchCount();
+      renderPredictionSourceSummary();
+    });
+    $("#predictionBatchForm")?.addEventListener("submit", submitPredictionBatch);
+  }
   $("#sourcePreviewPrevious").addEventListener("click", () => {
     if (!state.sourcePreview.runId || state.sourcePreview.page <= 1) return;
     loadSourcePreviewPage(state.sourcePreview.runId, state.sourcePreview.page - 1).catch((error) => showToast(error.message, true));
@@ -1192,7 +1197,9 @@ async function bootstrap() {
         independentPageResult = settleInitialRequests([loadStatus()], "页面");
       }
     } else if (initialRoute.page === "rd-results") {
-      independentPageResult = settleInitialRequests([loadRdResults()], "页面");
+      if (!(window.__RA_REACT_WORKBENCH__?.ownsPage?.("rd-results") || window.__RA_REACT_OWNED_PAGES__?.includes?.("rd-results"))) {
+        independentPageResult = settleInitialRequests([loadRdResults()], "页面");
+      }
     } else if (initialRoute.page === "users") {
       if (!(window.__RA_REACT_WORKBENCH__?.ownsPage?.("users") || window.__RA_REACT_OWNED_PAGES__?.includes?.("users"))) {
         independentPageResult = settleInitialRequests([loadAccessUsers(), loadMentionUsers()], "页面");
@@ -1267,9 +1274,13 @@ async function bootstrap() {
     } else if (initialRoute.page === "daily-cron") {
       initialPageRequests.push(initialCronRequest || loadDailyCron());
     } else if (initialRoute.page === "trail-history") {
-      initialPageRequests.push(loadTrailHistory());
+      if (!(window.__RA_REACT_WORKBENCH__?.ownsPage?.("trail-history") || window.__RA_REACT_OWNED_PAGES__?.includes?.("trail-history"))) {
+        initialPageRequests.push(loadTrailHistory());
+      }
     } else if (initialRoute.page === "prediction") {
-      initialPageRequests.push(loadPredictionConfig(), loadPredictionBatches());
+      if (!(window.__RA_REACT_WORKBENCH__?.ownsPage?.("prediction") || window.__RA_REACT_OWNED_PAGES__?.includes?.("prediction"))) {
+        initialPageRequests.push(loadPredictionConfig(), loadPredictionBatches());
+      }
     } else if (initialRoute.page === "comparison") {
       initialPageRequests.push(loadRunComparison({ historyMode: "" }));
     } else if (initialRoute.page === "run-collections") {

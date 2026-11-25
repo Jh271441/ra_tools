@@ -134,7 +134,14 @@ function rdPreviewProgress() {
   if (progress?.stage === 'trail') return rdText(`正在核对 Trail ${progress.checked} / ${progress.total}，完成后展示预览…`, `Checking Trail ${progress.checked} / ${progress.total}; preview will open when ready…`);
   return rdText('正在汇总标注并核对 Trail，尚未上传…', 'Collecting labels and checking Trail; nothing uploaded yet…');
 }
+function isRdResultsReactOwned() {
+  return typeof window !== 'undefined' && Boolean(
+    window.__RA_REACT_WORKBENCH__?.ownsPage?.('rd-results') ||
+    window.__RA_REACT_OWNED_PAGES__?.includes?.('rd-results')
+  );
+}
 function renderRdResults() {
+  if (isRdResultsReactOwned()) return;
   if (typeof humanPublicationPageActive === 'function' && humanPublicationPageActive()) return renderHumanPublications();
   if (state.activePage !== 'rd-results') return;
   if (rdResults.previewOpen && rdResults.preview) return rdRenderPreview();
@@ -270,6 +277,10 @@ function rdPersist() {
   history.replaceState(history.state, '', url);
 }
 async function loadRdResults() {
+  if (isRdResultsReactOwned()) {
+    window.__RA_REACT_WORKBENCH__?.refreshPage?.('rd-results');
+    return;
+  }
   if (typeof humanPublicationPageActive === 'function' && humanPublicationPageActive()) return loadHumanPublications();
   if (rdResults.committing) return;
   if (rdResults.busyAction === 'refresh-te') { rdResults.busy = false; rdResults.busyAction = ''; }
