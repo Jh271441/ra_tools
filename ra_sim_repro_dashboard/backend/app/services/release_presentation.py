@@ -136,6 +136,13 @@ def render_kpi(current, metrics, source):
     }
 
 
+def _ordinary_has_unclassified(revision) -> bool:
+    metrics = (revision or {}).get("metrics") or {}
+    if (metrics.get("unclassified") or 0) > 0:
+        return True
+    return any(row.get("baseline_label") == "" for row in (revision or {}).get("rows") or ())
+
+
 def _read_ordinary_kpi(db, release):
     if not release:
         return None, None
@@ -153,8 +160,10 @@ def context(db, value=None):
     current = value.get("current_version")
     metrics = value.get("metrics") or {}
     source = value.get("source_metrics") or {}
+    approved = published_batch(db, current) if current else None
 
     # Priority 1: Audited ordinary evaluation (shared execution) for current release.
+    # Never let a snapshot with unclassified/empty labels override a clean published batch.
     ordinary_rev, ordinary_kpi = _read_ordinary_kpi(db, current)
     if (
         ordinary_rev is not None
@@ -163,6 +172,7 @@ def context(db, value=None):
             ordinary_rev["metrics"].get("available")
             or ordinary_rev["metrics"].get("covered", 0) > 0
         )
+        and not (_ordinary_has_unclassified(ordinary_rev) and approved is not None)
         and not value.get("acceptance_only")
     ):
         return {
@@ -183,7 +193,6 @@ def context(db, value=None):
 
     # Priority 2: Audited published batch — always surface verified Overview metrics
     # directly; never suppress homepage KPIs when late issues arrive or polls lag.
-    approved = published_batch(db, current) if current else None
     scope = scope_for_batch(db, approved) if approved else None
     if approved:
         metrics = effective_publication(db, approved)
@@ -217,9 +226,14 @@ def history_kpis(db):
     collections = collection_inventory(db, config)
     by_release: dict[str, dict] = {}
 
-    # Highest priority first: ordinary_kpis overrides published_batch and raw batches.
+    # Highest priority first: ordinary_kpis overrides published_batch and raw batches,
+    # unless its revision has unclassified/empty labels and a clean published_batch exists.
     for item in ordinary_kpis(db):
-        by_release[item["version_key"]] = item
+        release = item["version_key"]
+        rev, _ = _read_ordinary_kpi(db, release)
+        if rev is not None and _ordinary_has_unclassified(rev) and published_batch(db, release):
+            continue
+        by_release[release] = item
 
     # Second priority: approved published batches (skip releases already covered above).
     for release in sorted(allowed):
