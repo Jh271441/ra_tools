@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+import uuid
 from typing import Any
 
 from fastapi.responses import JSONResponse
@@ -18,6 +19,7 @@ from .contracts import (
     MAX_REVIEW_MULTIPART_REQUEST_BYTES,
     MAX_UPLOAD_BYTES,
 )
+from .core.observability import metrics_registry
 
 logger = logging.getLogger("ra_triage_dashboard")
 
@@ -210,6 +212,8 @@ class BasePathTimingAndSecurityMiddleware:
         )
         started = time.monotonic()
         status_code = 500
+        req_headers = Headers(scope=scope)
+        request_id = (req_headers.get("x-request-id") or "").strip()[:64] or uuid.uuid4().hex[:16]
 
         async def send_with_headers(message: Message) -> None:
             nonlocal status_code
@@ -219,6 +223,7 @@ class BasePathTimingAndSecurityMiddleware:
                 headers = MutableHeaders(raw=message["headers"])
                 headers["Server-Timing"] = f"app;dur={duration_ms:.1f}"
                 headers["X-Request-Duration-Ms"] = f"{duration_ms:.1f}"
+                headers["X-Request-Id"] = request_id
                 if not is_artifact_path:
                     if "x-content-type-options" not in headers:
                         headers["X-Content-Type-Options"] = "nosniff"
@@ -226,9 +231,17 @@ class BasePathTimingAndSecurityMiddleware:
                         headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
                     if "x-frame-options" not in headers:
                         headers["X-Frame-Options"] = "SAMEORIGIN"
+                metrics_registry.record_http_request(
+                    method=method,
+                    path=path,
+                    status_code=status_code,
+                    duration_ms=duration_ms,
+                    request_id=request_id,
+                )
                 if path.startswith("/api/") and duration_ms >= 500:
                     logger.warning(
-                        "slow_request method=%s path=%s status=%s duration_ms=%.1f",
+                        "slow_request request_id=%s method=%s path=%s status=%s duration_ms=%.1f",
+                        request_id,
                         method,
                         path,
                         status_code,

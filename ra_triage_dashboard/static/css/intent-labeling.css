@@ -657,9 +657,12 @@ html.ra-ui-ready .intent-workspace { transition: grid-template-columns 200ms eas
 .intent-delete-confirm-dialog { width: min(470px, calc(100vw - 30px)); }
 .intent-delete-confirm-note { margin: 0; padding: 11px 12px; border: 1px solid rgba(248, 113, 113, .22); border-radius: 8px; color: var(--muted); background: rgba(248, 113, 113, .06); font-size: 12px; line-height: 1.55; }
 .intent-experiment-edit-dialog { width: min(560px, calc(100vw - 30px)); }
-.intent-experiment-edit-fields { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(180px, 1fr); gap: 12px; }
-.intent-experiment-edit-fields label { min-width: 0; display: grid; gap: 6px; color: var(--muted); font-size: 12px; }
-.intent-experiment-edit-fields input, .intent-experiment-edit-fields .ui-select-trigger { min-width: 0; height: 38px; }
+.intent-experiment-edit-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.intent-experiment-edit-fields > label, .intent-experiment-edit-members-field { min-width: 0; display: grid; gap: 6px; color: var(--muted); font-size: 12px; }
+.intent-experiment-edit-fields input:not([type="checkbox"]), .intent-experiment-edit-fields .ui-select-trigger, .intent-experiment-edit-fields .multi-filter-trigger { min-width: 0; width: 100%; height: 38px; }
+.intent-experiment-edit-wide { grid-column: 1 / -1; }
+.intent-experiment-edit-dialog .dialog-copy { overflow-wrap: anywhere; }
+.intent-experiment-edit-error { margin: 0; color: var(--danger); font-size: 13px; overflow-wrap: anywhere; }
 .intent-experiment-edit-note { margin: 0; padding: 10px 12px; border: 1px solid rgba(36, 211, 238, .18); border-radius: 8px; color: var(--muted); background: rgba(36, 211, 238, .05); font-size: 12px; line-height: 1.55; }
 .intent-experiment-list { min-width: 0; min-height: 0; max-height: none; overflow: visible; display: grid; align-content: start; gap: 8px; }
 .intent-experiment-empty { min-height: 0; display: grid; place-content: center; justify-items: center; gap: 7px; padding: 22px; border: 1px dashed rgba(127, 151, 170, .24); border-radius: 9px; color: var(--muted); text-align: center; }

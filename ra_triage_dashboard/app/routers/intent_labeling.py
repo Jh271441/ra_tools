@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import random
 import secrets
 import uuid
@@ -703,6 +704,7 @@ async def create_intent_experiment(request: Request) -> dict[str, Any]:
                 case_count=case_count,
                 seed=seed,
                 assignments=assignments,
+                members=members,
                 created_by=identity.username,
                 created_by_source=identity.source,
                 created_by_verified=identity.verified,
@@ -721,7 +723,7 @@ async def create_intent_experiment(request: Request) -> dict[str, Any]:
 )
 async def update_intent_experiment(experiment_id: str, request: Request) -> dict[str, Any]:
     raw = await request.body()
-    if len(raw) > 8 * 1024:
+    if len(raw) > MAX_EXPERIMENT_REQUEST_BYTES:
         raise _detail(413, "实验修改请求过大。")
     try:
         body = json.loads(raw)
@@ -729,14 +731,17 @@ async def update_intent_experiment(experiment_id: str, request: Request) -> dict
         raise _detail(400, "实验修改请求必须是 JSON。") from exc
     if not isinstance(body, dict):
         raise _detail(400, "实验修改请求必须是 JSON 对象。")
+    allocation_fields = {"members", "annotation_mode", "overlap_ratio", "overlap_reviewers"}
+    if set(body) - (allocation_fields | {"name", "label_scope", "expected_update_count"}):
+        raise _detail(400, "实验修改包含不支持的字段。")
     experiments = await asyncio.to_thread(database.list_intent_experiments)
     current = next((item for item in experiments if item["id"] == experiment_id), None)
     if current is None:
         raise _detail(404, "实验不存在。")
     if current["status"] != "active":
         raise _detail(409, "已关闭实验不能修改。")
-    name = " ".join(str(body.get("name") or "").split())
-    label_scope = str(body.get("label_scope") or "").strip().lower()
+    name = " ".join(str(body.get("name", current["name"]) or "").split())
+    label_scope = str(body.get("label_scope", current["label_scope"]) or "").strip().lower()
     if not name or len(name) > 160:
         raise _detail(400, "实验名称不能为空且不能超过 160 个字符。")
     if label_scope not in {"all", "routing", "lane_change"}:
@@ -752,6 +757,55 @@ async def update_intent_experiment(experiment_id: str, request: Request) -> dict
     )
     if conflict is not None:
         raise _detail(409, "当前数据集已经存在同名实验。")
+    expected_update_count = body.get("expected_update_count")
+    if expected_update_count is not None and (
+        type(expected_update_count) is not int or expected_update_count < 0
+    ):
+        raise _detail(400, "实验修改版本不合法。")
+    allocation = None
+    if allocation_fields.intersection(body):
+        if expected_update_count is None:
+            raise _detail(400, "修改分配需要实验版本，请刷新后重新编辑。")
+        mode = str(body.get("annotation_mode", current["annotation_mode"]) or "").strip().lower()
+        if mode not in {"blind", "full"}:
+            raise _detail(400, "实验模式仅支持交叉盲标或全量盲标。")
+        raw_members = body.get("members", current["selected_members"])
+        if not isinstance(raw_members, list) or any(not isinstance(item, str) for item in raw_members):
+            raise _detail(400, "标注成员必须是用户名数组。")
+        members = sorted({item.strip().lower() for item in raw_members if item.strip()})
+        if not members:
+            raise _detail(400, "任务分配至少选择 1 名标注成员。")
+        ratio = body.get("overlap_ratio", current["overlap_ratio"])
+        reviewers = body.get("overlap_reviewers", current["overlap_reviewers"])
+        if (
+            isinstance(ratio, bool) or not isinstance(ratio, (int, float))
+            or not 0 <= ratio <= 1 or not math.isfinite(ratio)
+        ):
+            raise _detail(400, "交叉比例必须在 0 到 1 之间。")
+        if type(reviewers) is not int or reviewers < 1:
+            raise _detail(400, "每个 Case 的标注人数必须是正整数。")
+        if mode == "full":
+            ratio, reviewers = 1.0, len(members)
+        elif reviewers > len(members):
+            raise _detail(400, "每个 Case 的标注人数不能超过所选成员数。")
+        allocation = {
+            "members": members, "annotation_mode": mode,
+            "overlap_ratio": float(ratio), "overlap_reviewers": reviewers,
+        }
+        allocation_changed = (
+            set(members) != set(current["selected_members"])
+            or any(allocation[key] != current[key] for key in (
+                "annotation_mode", "overlap_ratio", "overlap_reviewers"
+            ))
+        )
+        if allocation_changed:
+            access_users = await asyncio.to_thread(database.list_access_users)
+            eligible = {
+                item["username"] for item in access_users
+                if item["intent_permission"] in {"manage", "annotate"}
+            }
+            if set(members) - eligible:
+                raise _detail(400, "所选成员中有人已无意图标注权限，请重新选择。")
     identity = await asyncio.to_thread(_intent_identity, request, "manage")
     try:
         experiment = await asyncio.to_thread(
@@ -762,6 +816,8 @@ async def update_intent_experiment(experiment_id: str, request: Request) -> dict
             updated_by=identity.username,
             updated_by_source=identity.source,
             updated_by_verified=identity.verified,
+            allocation=allocation,
+            expected_update_count=expected_update_count,
         )
     except ValueError as exc:
         raise _detail(409, str(exc)) from exc

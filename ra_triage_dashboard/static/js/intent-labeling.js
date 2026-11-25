@@ -585,6 +585,12 @@ function bindIntentLabelingEvents() {
   $("#intentExperimentEditForm")?.addEventListener("submit", (event) => {
     updateIntentExperiment(event).catch((error) => showToast(error.message, true));
   });
+  $("#intentExperimentEditMode")?.addEventListener("change", () => {
+    updateIntentExperimentEditorControls({ modeChanged: true });
+  });
+  $("#intentExperimentEditDialog")?.addEventListener("cancel", (event) => {
+    if (state.intentLabeling.experimentEdit?.saving) event.preventDefault();
+  });
   $("#intentSummaryAxis")?.addEventListener("change", (event) => {
     state.intentLabeling.summaryAxis = event.target.value || "all";
     state.intentLabeling.summaryPage = 1;

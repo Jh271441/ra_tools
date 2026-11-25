@@ -4,6 +4,9 @@ from .shared import utc_now
 
 
 def initialize_columns(self, conn) -> None:
+    self._ensure_column(conn, "intent_experiments", "members_json", "TEXT NOT NULL DEFAULT '[]'")
+    for column in ("old_allocation_json", "new_allocation_json"):
+        self._ensure_column(conn, "intent_experiment_updates", column, "TEXT NOT NULL DEFAULT '{}'")
     self._ensure_column(conn, "review_comments", "client_request_id", "TEXT NOT NULL DEFAULT ''")
     self._ensure_column(conn, "review_comments", "request_fingerprint", "TEXT NOT NULL DEFAULT ''")
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_review_comments_client_request "

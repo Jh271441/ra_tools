@@ -139,4 +139,10 @@ export no_proxy="$NO_PROXY"
 # Intentionally no default DASHBOARD_BOOTSTRAP_MODEL_JSON: the default model
 # comparison is the read-only Trail field snapshot, not the historical 348 run.
 
-exec "$PYTHON_BIN" -m uvicorn app.main:app --app-dir "$APP_ROOT" --host "$DASHBOARD_HOST" --port "$DASHBOARD_PORT"
+DASHBOARD_UVICORN_WORKERS="${DASHBOARD_UVICORN_WORKERS:-1}"
+UVICORN_EXTRA_ARGS=()
+if [[ "$DASHBOARD_UVICORN_WORKERS" =~ ^[0-9]+$ ]] && (( DASHBOARD_UVICORN_WORKERS > 1 )); then
+  UVICORN_EXTRA_ARGS+=(--workers "$DASHBOARD_UVICORN_WORKERS")
+fi
+
+exec "$PYTHON_BIN" -m uvicorn app.main:app --app-dir "$APP_ROOT" --host "$DASHBOARD_HOST" --port "$DASHBOARD_PORT" "${UVICORN_EXTRA_ARGS[@]}"

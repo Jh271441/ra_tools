@@ -515,14 +515,105 @@ function initializeIntentExperimentSelects() {
   bindUiSelect(overlap, { maxHeight: 260, maxWidth: 240 });
 }
 
-function initializeIntentExperimentEditSelect() {
+function initializeIntentExperimentEditSelect(values = {}) {
   const scope = $("#intentExperimentEditScopePicker");
   populateUiSelect(scope, [
     { value: "all", label: intentExperimentScopeLabel("all") },
     { value: "routing", label: intentExperimentScopeLabel("routing") },
     { value: "lane_change", label: intentExperimentScopeLabel("lane_change") },
-  ], $("#intentExperimentEditScope")?.value || "all");
+  ], values.label_scope ?? ($("#intentExperimentEditScope")?.value || "all"));
   bindUiSelect(scope, { maxHeight: 220, maxWidth: 300 });
+  const mode = $("#intentExperimentEditModePicker");
+  populateUiSelect(mode, ["blind", "full"].map((value) => ({
+    value, label: intentExperimentModeLabel(value),
+  })), values.annotation_mode ?? ($("#intentExperimentEditMode")?.value || "blind"));
+  bindUiSelect(mode, { maxHeight: 220, maxWidth: 300 });
+  const ratio = String(values.overlap_ratio ?? ($("#intentExperimentEditOverlap")?.value || "0.2"));
+  const ratios = [...new Set(["0", "0.1", "0.2", "0.3", "0.5", "1", ratio])]
+    .sort((a, b) => Number(a) - Number(b));
+  const overlap = $("#intentExperimentEditOverlapPicker");
+  populateUiSelect(overlap, ratios.map((value) => ({
+    value, label: `${Number((Number(value) * 100).toFixed(2))}%`,
+  })), ratio);
+  bindUiSelect(overlap, { maxHeight: 260, maxWidth: 240 });
+}
+
+function renderIntentExperimentEditMembers(selected = null) {
+  const root = $("#intentExperimentEditMembers");
+  const edit = state.intentLabeling.experimentEdit;
+  if (!root || !edit) return;
+  const members = state.intentLabeling.experimentMembers || [];
+  const usernames = [...new Set([...members.map((item) => item.username), ...edit.originalMembers])];
+  const options = usernames.map((username) => ({
+    value: username,
+    label: members.some((item) => item.username === username) ? username
+      : `${username} · ${uiText("无标注权限", "No labeling access")}`,
+  }));
+  if (selected == null && relabelMultiFilter(root, options)) return;
+  renderMultiFilter(root, {
+    options, selected,
+    onChange: () => updateIntentExperimentEditorControls(),
+  });
+  root.querySelector(".multi-filter-trigger")?.setAttribute("aria-labelledby", "intentExperimentEditMembersLabel");
+}
+
+function updateIntentExperimentEditorControls({ modeChanged = false } = {}) {
+  const edit = state.intentLabeling.experimentEdit;
+  if (!edit) return;
+  const full = $("#intentExperimentEditMode")?.value === "full";
+  const overlap = $("#intentExperimentEditOverlap");
+  const reviewers = $("#intentExperimentEditReviewers");
+  const count = getMultiFilterValues($("#intentExperimentEditMembers")).length;
+  if (modeChanged) {
+    if (full) {
+      edit.blindOverlap = overlap.value;
+      edit.blindReviewers = reviewers.value;
+    } else {
+      overlap.value = edit.blindOverlap || "0.2";
+      reviewers.value = edit.blindReviewers || "1";
+    }
+  }
+  if (full) {
+    overlap.value = "1";
+    reviewers.value = String(Math.max(1, count));
+  } else if (count && Number(reviewers.value) > count) {
+    reviewers.value = String(count);
+  }
+  reviewers.max = String(Math.max(1, count));
+  overlap.disabled = full || edit.saving;
+  reviewers.disabled = full || edit.saving;
+  initializeIntentExperimentEditSelect();
+  $("#intentExperimentEditSubmit").disabled = edit.saving || count === 0;
+  const datasetName = state.intentLabeling.datasets.find((item) => item.id === edit.datasetId)?.display_name || edit.datasetId;
+  $("#intentExperimentEditContext").textContent = uiText(
+    `${datasetName} · ${edit.caseCount} 个 Case · 已选 ${count} 名成员`,
+    `${datasetName} · ${edit.caseCount} Cases · ${count} labelers selected`
+  );
+  $("#intentExperimentEditDialog [data-close]")?.setAttribute("aria-label", uiText("关闭", "Close"));
+  const submit = $("#intentExperimentEditSubmit");
+  submit.textContent = edit.saving
+    ? uiText("正在保存…", "Saving…") : uiText("保存修改", "Save changes");
+  const error = $("#intentExperimentEditError");
+  error.hidden = !edit.error && count > 0;
+  error.textContent = edit.error ? intentExperimentEditErrorText(edit.error)
+    : uiText("至少选择 1 名成员。", "Select at least one labeler.");
+}
+
+function intentExperimentEditErrorText(message) {
+  const translations = {
+    "实验已被其他人修改，请刷新后重新编辑。": "Someone else changed this experiment. Refresh and reopen the editor.",
+    "已关闭实验不能修改。": "This experiment is closed and cannot be edited.",
+    "当前数据集已经存在同名实验。": "An experiment with this name already exists in this dataset.",
+    "所选成员中有人已无意图标注权限，请重新选择。": "A selected labeler no longer has intent labeling access. Update the selection.",
+    "实验的 Case 分配记录不完整，无法重新分配。": "This experiment has incomplete Case assignments and cannot be reassigned.",
+    "每个 Case 的标注人数不能超过所选成员数。": "Labelers per Case cannot exceed the number of selected labelers.",
+    "每个 Case 的标注人数必须是正整数。": "Labelers per Case must be a positive integer.",
+    "交叉比例必须在 0 到 1 之间。": "The overlap ratio must be between 0 and 1.",
+    "任务分配至少选择 1 名标注成员。": "Select at least one labeler.",
+    "实验名称不能为空且不能超过 160 个字符。": "Enter an experiment name of up to 160 characters.",
+    "实验不存在。": "This experiment no longer exists.",
+  };
+  return uiText(message, translations[message] || "Could not save the experiment. Your edits are preserved; refresh if your access has changed.");
 }
 
 function setIntentExperimentFormAvailability(available) {
@@ -1019,19 +1110,22 @@ async function closeIntentExperiment(experimentId) {
 function openIntentExperimentEditor(experimentId) {
   const experiment = (state.intentLabeling.experiments || []).find((item) => item.id === experimentId);
   const dialog = $("#intentExperimentEditDialog");
-  if (!experiment || experiment.status !== "active" || !dialog) return;
+  if (!experiment || experiment.status !== "active" || !dialog || !state.session.can_manage_intent
+      || state.intentLabeling.experimentEdit?.saving) return;
+  const members = experiment.selected_members || (experiment.members || []).map((item) => item.username);
+  state.intentLabeling.experimentEdit = {
+    datasetId: experiment.dataset_id, caseCount: experiment.case_count,
+    expectedUpdateCount: experiment.update_count || 0, originalMembers: [...members],
+    blindOverlap: experiment.annotation_mode === "blind" ? String(experiment.overlap_ratio) : "0.2",
+    blindReviewers: String(experiment.overlap_reviewers || 1), saving: false, error: "",
+  };
   dialog.dataset.experimentId = experiment.id;
   const name = $("#intentExperimentEditName");
-  const scope = $("#intentExperimentEditScope");
   if (name) name.value = experiment.name || "";
-  if (scope) scope.value = experiment.label_scope || "all";
-  const datasetName = (state.intentLabeling.datasets.find((item) => item.id === experiment.dataset_id) || {}).display_name || experiment.dataset_id;
-  const context = $("#intentExperimentEditContext");
-  if (context) context.textContent = uiText(
-    `${datasetName} · ${experiment.case_count} 个 Case · ${experiment.member_count} 名成员`,
-    `${datasetName} · ${experiment.case_count} Cases · ${experiment.member_count} members`
-  );
-  initializeIntentExperimentEditSelect();
+  $("#intentExperimentEditReviewers").value = String(experiment.overlap_reviewers || 1);
+  initializeIntentExperimentEditSelect(experiment);
+  renderIntentExperimentEditMembers(members);
+  updateIntentExperimentEditorControls();
   dialog.showModal();
   window.setTimeout(() => {
     name?.focus();
@@ -1043,27 +1137,57 @@ async function updateIntentExperiment(event) {
   event?.preventDefault();
   const dialog = $("#intentExperimentEditDialog");
   const experimentId = dialog?.dataset.experimentId || "";
-  if (!experimentId) return;
-  const button = $("#intentExperimentEditSubmit");
-  if (button) button.disabled = true;
+  const edit = state.intentLabeling.experimentEdit;
+  if (!experimentId || !edit || edit.saving || !state.session.can_manage_intent) return;
+  const form = $("#intentExperimentEditForm");
+  if (!form.reportValidity()) return;
+  const members = getMultiFilterValues($("#intentExperimentEditMembers"));
+  if (!members.length) return;
+  const body = {
+    name: $("#intentExperimentEditName")?.value.trim() || "",
+    label_scope: $("#intentExperimentEditScope")?.value || "all",
+    annotation_mode: $("#intentExperimentEditMode")?.value || "blind",
+    overlap_ratio: Number($("#intentExperimentEditOverlap")?.value),
+    overlap_reviewers: Number($("#intentExperimentEditReviewers")?.value),
+    members, expected_update_count: edit.expectedUpdateCount,
+  };
+  edit.saving = true;
+  edit.error = "";
+  closeAllUiSelects();
+  closeAllMultiFilters();
+  form.querySelectorAll("input, select, button").forEach((control) => { control.disabled = true; });
+  form.setAttribute("aria-busy", "true");
+  updateIntentExperimentEditorControls();
   try {
     const result = await api(`/api/intent-experiments/${encodeURIComponent(experimentId)}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: $("#intentExperimentEditName")?.value.trim() || "",
-        label_scope: $("#intentExperimentEditScope")?.value || "all",
-      }),
+      body: JSON.stringify(body),
     });
     acknowledgeLocalChange(result);
     dialog.close();
-    state.intentLabeling.experimentsDatasetId = "";
-    await loadIntentExperiments({ force: true });
+    const intent = state.intentLabeling;
+    intent.experimentsDatasetId = "";
+    intent.assigneeDatasetId = "";
+    if (result.experiment) {
+      intent.experiments = intent.experiments.map((item) => item.id === experimentId ? result.experiment : item);
+      renderIntentExperiments();
+    }
     showToast(uiText(
-      "实验信息已更新，原任务分配保持不变。",
-      "Experiment details were updated; the original assignments are unchanged."
+      "实验配置已保存，已有标注完整保留。",
+      "Experiment settings were saved. Existing annotations are preserved."
     ), false);
+    // A refresh failure must not turn a confirmed save into an apparent failure.
+    loadIntentExperiments({ force: true }).catch(() => showToast(uiText(
+      "修改已保存，列表刷新失败，请刷新页面。",
+      "Changes were saved, but the list could not refresh. Reload the page."
+    ), true));
+  } catch (error) {
+    edit.error = error.message;
   } finally {
-    if (button) button.disabled = false;
+    edit.saving = false;
+    form.querySelectorAll("input, select, button").forEach((control) => { control.disabled = false; });
+    form.removeAttribute("aria-busy");
+    updateIntentExperimentEditorControls();
   }
 }

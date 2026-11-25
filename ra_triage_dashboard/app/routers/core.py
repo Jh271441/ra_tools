@@ -701,6 +701,41 @@ def _status_fs_probe_snapshot(*, force_refresh: bool = False) -> dict[str, Any]:
     return _status_fs_cache.get_or_load(key, _collect_status_fs_probes)
 
 
+@router.get("/metrics", include_in_schema=False)
+async def prometheus_metrics(request: Request) -> Response:
+    """Loopback-only Prometheus exposition endpoint (blocks proxy-forwarded requests)."""
+    from ..core.observability import metrics_registry
+    from ..workers.leases import WorkerLeaseManager
+
+    client_host = request.client.host if request.client else ""
+    if (
+        request.headers.get("x-forwarded-for")
+        or request.headers.get("x-real-ip")
+        or client_host not in {"127.0.0.1", "::1", "localhost", "testclient"}
+    ):
+        raise _detail(403, "Metrics endpoint is loopback-only.")
+
+    pool_stats: dict[str, Any] = {}
+    pool = getattr(database, "_pool", None)
+    if pool is not None and hasattr(pool, "get_stats"):
+        try:
+            raw_stats = pool.get_stats()
+            if isinstance(raw_stats, dict):
+                pool_stats = raw_stats
+        except Exception:
+            pool_stats = {}
+    leases = await asyncio.to_thread(WorkerLeaseManager(database).list_active_leases)
+    body = metrics_registry.render_prometheus(
+        db_pool_stats=pool_stats,
+        active_leases=len(leases),
+    )
+    return Response(
+        content=body,
+        media_type="text/plain; version=0.0.4; charset=utf-8",
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
+
+
 @router.get("/api/status", responses={200: {"model": SystemStatusResponse}})
 async def status(
     response: Response,

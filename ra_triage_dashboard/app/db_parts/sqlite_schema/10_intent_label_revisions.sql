@@ -145,6 +145,7 @@
                         CHECK(overlap_ratio >= 0 AND overlap_ratio <= 1),
                     overlap_reviewers INTEGER NOT NULL DEFAULT 2
                         CHECK(overlap_reviewers >= 1),
+                    members_json TEXT NOT NULL DEFAULT '[]',
                     case_count INTEGER NOT NULL DEFAULT 0 CHECK(case_count >= 0),
                     status TEXT NOT NULL DEFAULT 'active'
                         CHECK(status IN ('active', 'closed')),
@@ -171,6 +172,8 @@
                     new_name TEXT NOT NULL,
                     old_label_scope TEXT NOT NULL,
                     new_label_scope TEXT NOT NULL,
+                    old_allocation_json TEXT NOT NULL DEFAULT '{}',
+                    new_allocation_json TEXT NOT NULL DEFAULT '{}',
                     updated_by TEXT NOT NULL,
                     updated_by_source TEXT NOT NULL DEFAULT 'legacy',
                     updated_by_verified INTEGER NOT NULL DEFAULT 0,

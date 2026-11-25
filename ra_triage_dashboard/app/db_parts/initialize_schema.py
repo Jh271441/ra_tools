@@ -13,3 +13,4 @@ def initialize_schema(self, conn) -> None:
         conn.executescript(schema_sql("run_evaluations"))
         conn.executescript((Path(__file__).with_name("sqlite_schema") / "version_datasets.sql").read_text())
         conn.executescript((Path(__file__).with_name("sqlite_schema") / "perf_indexes.sql").read_text())
+        conn.executescript((Path(__file__).with_name("sqlite_schema") / "worker_leases.sql").read_text())

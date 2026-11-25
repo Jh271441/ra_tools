@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..intent_experiments import build_intent_experiment_assignments
 from .comment_mutations import comment_metadata
 
 from .shared import IntentAnnotationConflictError, _json, _json_load, utc_now
@@ -174,7 +175,12 @@ class DatabaseIntentMixin:
             ).fetchall()
             update_rows = conn.execute(
                 f"""
-                SELECT update_record.*
+                SELECT update_record.id, update_record.experiment_id,
+                       update_record.old_name, update_record.new_name,
+                       update_record.old_label_scope, update_record.new_label_scope,
+                       update_record.updated_by, update_record.created_at,
+                       CASE WHEN update_record.old_allocation_json <> '{{}}'
+                            THEN 1 ELSE 0 END AS allocation_changed
                 FROM intent_experiment_updates update_record
                 JOIN intent_experiments experiment
                   ON experiment.id = update_record.experiment_id
@@ -228,6 +234,7 @@ class DatabaseIntentMixin:
                     "new_name": str(item["new_name"]),
                     "old_label_scope": str(item["old_label_scope"]),
                     "new_label_scope": str(item["new_label_scope"]),
+                    "allocation_changed": bool(item["allocation_changed"]),
                     "updated_by": str(item["updated_by"]),
                     "created_at": str(item["created_at"]),
                 }
@@ -243,6 +250,8 @@ class DatabaseIntentMixin:
         result = []
         for row in rows:
             experiment_id = str(row["id"])
+            member_counts = members_by_experiment.get(experiment_id, {})
+            selected_members = _json_load(row["members_json"], []) or sorted(member_counts)
             progress = progress_by_experiment.get(
                 experiment_id, {"total": 0, "started": 0, "completed": 0}
             )
@@ -258,7 +267,10 @@ class DatabaseIntentMixin:
                     "total": sum(counts.values()),
                 }
                 for username, counts in sorted(
-                    members_by_experiment.get(experiment_id, {}).items()
+                    {
+                        username: member_counts.get(username, {"base": 0, "cross": 0, "full": 0})
+                        for username in selected_members
+                    }.items()
                 )
             ]
             result.append(
@@ -281,7 +293,8 @@ class DatabaseIntentMixin:
                     "closed_by": str(row["closed_by"] or ""),
                     "closed_at": str(row["closed_at"] or ""),
                     "assignment_count": int(row["assignment_count"] or 0),
-                    "member_count": int(row["member_count"] or 0),
+                    "member_count": len(selected_members),
+                    "selected_members": selected_members,
                     "members": member_stats,
                     "updates": updates_by_experiment.get(experiment_id, []),
                     "update_count": len(updates_by_experiment.get(experiment_id, [])),
@@ -307,6 +320,7 @@ class DatabaseIntentMixin:
         overlap_reviewers: int = 2,
         label_scope: str = "all",
         annotation_status_filter: str = "all",
+        members: list[str] | None = None,
     ) -> dict[str, Any]:
         now = utc_now()
         with self._write_lock, self.connect() as conn:
@@ -314,10 +328,10 @@ class DatabaseIntentMixin:
                 """
                 INSERT INTO intent_experiments (
                     id, dataset_id, name, annotation_mode, label_scope,
-                    annotation_status_filter, overlap_ratio, overlap_reviewers,
+                    annotation_status_filter, overlap_ratio, overlap_reviewers, members_json,
                     case_count, status, seed, created_by, created_by_source,
                     created_by_verified, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?)
                 """,
                 (
                     experiment_id,
@@ -328,6 +342,7 @@ class DatabaseIntentMixin:
                     annotation_status_filter,
                     overlap_ratio,
                     overlap_reviewers,
+                    _json(members or sorted({item["username"] for item in assignments})),
                     case_count,
                     seed,
                     created_by,
@@ -369,23 +384,100 @@ class DatabaseIntentMixin:
         updated_by: str,
         updated_by_source: str,
         updated_by_verified: bool,
+        allocation: dict[str, Any] | None = None,
+        expected_update_count: int | None = None,
     ) -> dict[str, Any] | None:
-        """Edit presentation/task scope without changing the allocation snapshot."""
+        """Atomically replace the current allocation and retain both snapshots.
+
+        Case membership, the seed, and every label revision/head stay intact.
+        Metadata-only edits never touch assignments.
+        """
 
         now = utc_now()
         with self._write_lock, self.connect() as conn:
+            if self.backend == "sqlite":
+                conn.execute("BEGIN IMMEDIATE")
+            lock = " FOR UPDATE" if self.backend == "postgresql" else ""
             current = conn.execute(
-                "SELECT * FROM intent_experiments WHERE id = ?",
+                "SELECT * FROM intent_experiments WHERE id = ?" + lock,
                 (experiment_id,),
             ).fetchone()
             if current is None:
                 return None
             if str(current["status"]) != "active":
                 raise ValueError("已关闭实验不能修改。")
+            update_count = int(conn.execute(
+                "SELECT COUNT(*) AS count FROM intent_experiment_updates WHERE experiment_id = ?",
+                (experiment_id,),
+            ).fetchone()["count"])
+            if expected_update_count is not None and expected_update_count != update_count:
+                raise ValueError("实验已被其他人修改，请刷新后重新编辑。")
             old_name = str(current["name"])
             old_label_scope = str(current["label_scope"] or "all")
             dataset_id = str(current["dataset_id"])
-            if old_name != name or old_label_scope != label_scope:
+            duplicate = conn.execute(
+                "SELECT id FROM intent_experiments WHERE dataset_id = ? "
+                "AND LOWER(name) = LOWER(?) AND id <> ?",
+                (dataset_id, name, experiment_id),
+            ).fetchone()
+            if duplicate is not None:
+                raise ValueError("当前数据集已经存在同名实验。")
+            old_allocation: dict[str, Any] = {}
+            new_allocation: dict[str, Any] = {}
+            if allocation is not None:
+                assignment_rows = conn.execute(
+                    "SELECT username, case_id, assignment_kind, ordinal, assigned_at "
+                    "FROM intent_experiment_assignments WHERE experiment_id = ? "
+                    "ORDER BY username, ordinal, case_id",
+                    (experiment_id,),
+                ).fetchall()
+                assignments = [dict(row) for row in assignment_rows]
+                old_members = _json_load(current["members_json"], []) or sorted(
+                    {item["username"] for item in assignments}
+                )
+                old_config = {
+                    "members": old_members,
+                    "annotation_mode": str(current["annotation_mode"]),
+                    "overlap_ratio": float(current["overlap_ratio"]),
+                    "overlap_reviewers": int(current["overlap_reviewers"]),
+                }
+                # Checkbox ordering is not a configuration change.
+                changed = (
+                    set(old_members) != set(allocation["members"])
+                    or any(old_config[key] != allocation[key] for key in (
+                        "annotation_mode", "overlap_ratio", "overlap_reviewers"
+                    ))
+                )
+                if changed:
+                    # Recover the original planner order. An overlap-only edit
+                    # keeps each base owner's queue instead of shuffling it again.
+                    if old_config["annotation_mode"] == "blind":
+                        ordered = sorted(
+                            (item for item in assignments if item["assignment_kind"] == "base"),
+                            key=lambda item: (item["ordinal"], old_members.index(item["username"])),
+                        )
+                    else:
+                        ordered = sorted(
+                            (item for item in assignments if item["username"] == old_members[0]),
+                            key=lambda item: item["ordinal"],
+                        )
+                    case_ids = [item["case_id"] for item in ordered]
+                    if not case_ids or len(case_ids) != int(current["case_count"]):
+                        raise ValueError("实验的 Case 分配记录不完整，无法重新分配。")
+                    if set(old_members) == set(allocation["members"]):
+                        allocation = {**allocation, "members": old_members}
+                    new_assignments = build_intent_experiment_assignments(
+                        case_ids, allocation["members"], allocation["annotation_mode"],
+                        allocation["overlap_ratio"], int(current["seed"]),
+                        allocation["overlap_reviewers"],
+                        preserve_case_order=True,
+                    )
+                    old_allocation = {**old_config, "assignments": assignments}
+                    new_allocation = {
+                        **allocation,
+                        "assignments": [{**item, "assigned_at": now} for item in new_assignments],
+                    }
+            if old_name != name or old_label_scope != label_scope or new_allocation:
                 conn.execute(
                     """
                     UPDATE intent_experiments
@@ -398,9 +490,9 @@ class DatabaseIntentMixin:
                     """
                     INSERT INTO intent_experiment_updates (
                         experiment_id, old_name, new_name,
-                        old_label_scope, new_label_scope,
+                        old_label_scope, new_label_scope, old_allocation_json, new_allocation_json,
                         updated_by, updated_by_source, updated_by_verified, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         experiment_id,
@@ -408,12 +500,38 @@ class DatabaseIntentMixin:
                         name,
                         old_label_scope,
                         label_scope,
+                        _json(old_allocation),
+                        _json(new_allocation),
                         updated_by,
                         updated_by_source,
                         bool(updated_by_verified),
                         now,
                     ),
                 )
+                if new_allocation:
+                    conn.execute(
+                        "UPDATE intent_experiments SET annotation_mode = ?, overlap_ratio = ?, "
+                        "overlap_reviewers = ?, members_json = ? WHERE id = ?",
+                        (
+                            allocation["annotation_mode"], allocation["overlap_ratio"],
+                            allocation["overlap_reviewers"], _json(allocation["members"]),
+                            experiment_id,
+                        ),
+                    )
+                    conn.execute(
+                        "DELETE FROM intent_experiment_assignments WHERE experiment_id = ?",
+                        (experiment_id,),
+                    )
+                    conn.executemany(
+                        "INSERT INTO intent_experiment_assignments "
+                        "(experiment_id, username, case_id, assignment_kind, ordinal, assigned_at) "
+                        "VALUES (?, ?, ?, ?, ?, ?)",
+                        [
+                            (experiment_id, item["username"], item["case_id"],
+                             item["assignment_kind"], item["ordinal"], now)
+                            for item in new_assignments
+                        ],
+                    )
         return next(
             item for item in self.list_intent_experiments(dataset_id)
             if item["id"] == experiment_id

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -144,10 +145,31 @@ async def _authoritative_gt_sync_loop() -> None:
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     from .human_publisher import run_human_publisher
+    from .workers.leases import WorkerLeaseManager, make_worker_owner_id, run_with_lease
+
     human_label_task: asyncio.Task[None] | None = None
     gt_sync_task: asyncio.Task[None] | None = None
     trail_sync_task: asyncio.Task[None] | None = None
     review_notification_task: asyncio.Task[None] | None = None
+    embedded_workers = os.getenv("DASHBOARD_EMBEDDED_WORKERS", "true").strip().lower() not in {
+        "0",
+        "false",
+        "no",
+    }
+    try:
+        uvicorn_workers = int(os.getenv("DASHBOARD_UVICORN_WORKERS", "1") or "1")
+    except ValueError:
+        uvicorn_workers = 1
+    use_lease_gating = (
+        uvicorn_workers > 1
+        or os.getenv("DASHBOARD_WORKER_LEASE_GATING", "").strip().lower() in {"1", "true", "yes"}
+    )
+    lease_manager = (
+        WorkerLeaseManager(database, owner_id=make_worker_owner_id("web"))
+        if embedded_workers and use_lease_gating
+        else None
+    )
+
     settings.ensure_directories()
     database.init()
     database.bootstrap_access_users(
@@ -155,7 +177,17 @@ async def lifespan(_: FastAPI):
         administrators=settings.team_default_managers,
     )
     database.bootstrap_mention_users()
-    human_label_task = asyncio.create_task(run_human_publisher(database, settings), name='human-label-publication')
+    if embedded_workers:
+        human_label_task = asyncio.create_task(
+            run_with_lease(
+                lease_manager,
+                "human-label-publication",
+                lambda: run_human_publisher(database, settings),
+            )
+            if lease_manager is not None
+            else run_human_publisher(database, settings),
+            name="human-label-publication",
+        )
     if settings.seed_examples_enabled:
         database.seed_examples(EXAMPLE_CASES)
     # Local-only seed from baseline workbooks / registry. No Trail I/O.
@@ -168,22 +200,47 @@ async def lifespan(_: FastAPI):
     intent_dataset_registry.refresh()
     bootstrap_model_result()
     # Never await remote Trail during startup — it freezes first paint.
-    if settings.trail_sync_on_start:
+    if embedded_workers and settings.trail_sync_on_start:
         trail_sync_task = asyncio.create_task(
-            _trail_sync_startup(),
+            run_with_lease(
+                lease_manager,
+                "trail-sync-startup",
+                _trail_sync_startup,
+                ttl_seconds=120.0,
+            )
+            if lease_manager is not None
+            else _trail_sync_startup(),
             name="trail-sync-startup",
         )
-    if settings.gt_sync_enabled:
+    if embedded_workers and settings.gt_sync_enabled:
         gt_sync_task = asyncio.create_task(
-            _authoritative_gt_sync_loop(),
+            run_with_lease(
+                lease_manager,
+                "authoritative-gt-sync",
+                _authoritative_gt_sync_loop,
+                ttl_seconds=120.0,
+            )
+            if lease_manager is not None
+            else _authoritative_gt_sync_loop(),
             name="authoritative-gt-sync",
         )
-    if settings.dchat_notifications_enabled:
+    if embedded_workers and settings.dchat_notifications_enabled:
         review_notification_task = asyncio.create_task(
-            review_notification_dispatcher.run(),
+            run_with_lease(
+                lease_manager,
+                "review-dchat-notifications",
+                review_notification_dispatcher.run,
+                ttl_seconds=60.0,
+            )
+            if lease_manager is not None
+            else review_notification_dispatcher.run(),
             name="review-dchat-notifications",
         )
-    batch_prediction_runner.resume_queued_predictions()
+    if embedded_workers:
+        if lease_manager is None or await asyncio.to_thread(
+            lease_manager.try_acquire_or_renew, "batch-prediction-runner", ttl_seconds=120.0
+        ):
+            batch_prediction_runner.resume_queued_predictions()
     try:
         yield
     finally:
@@ -193,6 +250,9 @@ async def lifespan(_: FastAPI):
                 with contextlib.suppress(asyncio.CancelledError):
                     await task
         await asyncio.to_thread(batch_prediction_runner.shutdown)
+        if lease_manager is not None:
+            with contextlib.suppress(Exception):
+                await asyncio.to_thread(lease_manager.release, "batch-prediction-runner")
         await asyncio.to_thread(video_playback_cache.shutdown)
         await asyncio.to_thread(video_stream_cache.shutdown)
         from .planning_constraints import shutdown as shutdown_planning_constraints
