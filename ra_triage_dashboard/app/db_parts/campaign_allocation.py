@@ -71,7 +71,7 @@ class DatabaseCampaignAllocationMixin(AllocationPreviewMixin):
             evidence = self._allocation_protection(conn, split, rows)
         groups, owners = self._group_history(current, rows, evidence)
         case_ids = [m["issue_id"] for m in evidence["members"]]
-        projection = group_projection(groups, owners, evidence["completed"], case_ids=case_ids)
+        projection = group_projection(groups, owners, evidence["completed"], case_ids=case_ids, protected=evidence["protected"])
         progress = self._allocation_progress_summary(rows, evidence, role_required=current["role_required"])
         if current.get("groups"):
             progress["active_slots"] = projection["active_slots"]

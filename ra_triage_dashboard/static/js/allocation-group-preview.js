@@ -288,8 +288,8 @@ function renderGroupedAllocationPreview(root, plan, view, { editing = false } = 
 
 function renderAllocationDiff(plan, view, activeMembers, fmt, { groups = [] } = {}) {
   const members = plan.members || [];
-  const beforeOf = (p) => p.active_before ?? p.before ?? 0;
-  const afterOf = (p) => p.active_after ?? p.total_after ?? 0;
+  const beforeOf = (p) => p.before ?? p.active_before ?? 0;
+  const afterOf = (p) => p.total_after ?? p.active_after ?? 0;
   const hasChange = (p) => Boolean(p.incoming || p.outgoing || beforeOf(p) !== afterOf(p));
   const changed = members.filter(hasChange);
   const stable = members.filter((p) => !hasChange(p));
@@ -301,10 +301,10 @@ function renderAllocationDiff(plan, view, activeMembers, fmt, { groups = [] } = 
   const row = (person) => {
     const bVal = beforeOf(person);
     const aVal = afterOf(person);
-    const doneActive = person.active_completed ?? Math.min(aVal, person.completed || 0);
+    const doneActive = Math.min(aVal, person.completed ?? person.active_completed ?? 0);
     const style = (name, value) => value ? '<i class="allocation-diff-' + name + '" style="--part:' +
       (100 * value / scale) + '%"></i>' : "";
-    const retainedPending = Math.max(0, person.retained_pending ?? aVal - (person.incoming || 0) - doneActive);
+    const retainedPending = Math.max(0, aVal - (person.incoming || 0) - doneActive);
     const net = aVal - bVal;
     const delta = net > 0 ? "+" + fmt(net) : net < 0 ? "−" + fmt(Math.abs(net))
       : [person.incoming ? "+" + fmt(person.incoming) : "", person.outgoing ? "−" + fmt(person.outgoing) : ""].filter(Boolean).join("/");
