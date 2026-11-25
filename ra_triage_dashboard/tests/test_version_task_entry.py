@@ -32,6 +32,8 @@ class VersionTaskEntryTest(unittest.TestCase):
         self.assertEqual(result['task']['issue_count'], 2)
         self.assertEqual(self.db.change_revision(), revision)
 
+    def test_browser_route_contract(self):
+        subprocess.run(['node', str(Path(__file__).with_name('version_task_entry.cjs'))], check=True)
 
     def test_queue_uses_joint_completion_not_model_status_and_keeps_history(self):
         old = self.campaigns[0]

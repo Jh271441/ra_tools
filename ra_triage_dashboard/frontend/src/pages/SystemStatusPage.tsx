@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "../api/client";
 import type { components } from "../api/schema";
@@ -117,6 +117,7 @@ export interface SystemStatusPageProps {
 
 export const SystemStatusPage: React.FC<SystemStatusPageProps> = ({ active, lang }) => {
   const queryClient = useQueryClient();
+  const [refreshing, setRefreshing] = useState(false);
 
   const statusQuery = useQuery<SystemStatusPayload>({
     queryKey: ["system-status"],
@@ -156,8 +157,23 @@ export const SystemStatusPage: React.FC<SystemStatusPageProps> = ({ active, lang
   }, [statusQuery.data]);
 
   const handleForceRefresh = async () => {
-    const fresh = await apiRequest<SystemStatusPayload>("/api/status?refresh=true");
-    queryClient.setQueryData(["system-status"], fresh);
+    setRefreshing(true);
+    const win =
+      typeof window !== "undefined"
+        ? (window as unknown as { showToast?: (msg: string, isError?: boolean) => void })
+        : null;
+    try {
+      const fresh = await apiRequest<SystemStatusPayload>("/api/status?refresh=true");
+      queryClient.setQueryData(["system-status"], fresh);
+      win?.showToast?.(bilingual(lang, "系统状态已刷新。", "System status refreshed."));
+    } catch (err) {
+      win?.showToast?.(
+        err instanceof Error ? err.message : bilingual(lang, "刷新系统状态失败。", "Failed to refresh status."),
+        true,
+      );
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const data = statusQuery.data;
@@ -168,7 +184,12 @@ export const SystemStatusPage: React.FC<SystemStatusPageProps> = ({ active, lang
   const volume = data?.volume as
     | (components["schemas"]["VolumeStatus"] & { available?: boolean })
     | undefined;
-  const baselines: BaselineItem[] = Array.isArray(data?.baselines) ? data.baselines : [];
+  const baselines: BaselineItem[] =
+    Array.isArray(data?.baselines) && data.baselines.length > 0
+      ? data.baselines
+      : data?.baseline
+        ? [data.baseline as BaselineItem]
+        : [];
   const trail = (data?.trail_sync || {}) as { status?: string; message?: string };
   const gateway = (data?.model_gateway || {}) as { configured?: boolean };
   const application = data?.application;
@@ -232,10 +253,10 @@ export const SystemStatusPage: React.FC<SystemStatusPageProps> = ({ active, lang
             className="button button-quiet"
             id="refreshSystemStatusButton"
             type="button"
-            disabled={statusQuery.isFetching}
+            disabled={refreshing || statusQuery.isFetching}
             onClick={() => void handleForceRefresh()}
           >
-            {statusQuery.isFetching
+            {refreshing || statusQuery.isFetching
               ? bilingual(lang, "刷新中…", "Refreshing…")
               : bilingual(lang, "刷新状态", "Refresh status")}
           </button>
@@ -243,7 +264,7 @@ export const SystemStatusPage: React.FC<SystemStatusPageProps> = ({ active, lang
       </div>
 
       <section
-        className={`system-status-hero${data && !healthy ? " degraded" : ""}`}
+        className={`system-status-hero${statusQuery.isError || (data && !healthy) ? " degraded" : ""}`}
         id="systemStatusHero"
         aria-live="polite"
       >

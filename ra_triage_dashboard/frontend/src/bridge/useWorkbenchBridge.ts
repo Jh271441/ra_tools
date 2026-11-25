@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { getApiBasePath } from "../api/client";
-import { useOptionalWorkbench } from "../shell/WorkbenchContext";
 
 export type UiLanguage = "zh" | "en";
 export type ColorTheme = "dark" | "light";
@@ -71,8 +70,7 @@ function readLegacySession(): WorkbenchBridgeState["session"] {
 }
 
 export function useWorkbenchBridge(): WorkbenchBridgeState {
-  const workbench = useOptionalWorkbench();
-  const [fallback, setFallback] = useState<WorkbenchBridgeState>(() => ({
+  const [state, setState] = useState<WorkbenchBridgeState>(() => ({
     lang: readLang(),
     theme: readTheme(),
     activePage: readActivePage(),
@@ -81,9 +79,8 @@ export function useWorkbenchBridge(): WorkbenchBridgeState {
   }));
 
   useEffect(() => {
-    if (workbench) return;
     const sync = () => {
-      setFallback((prev) => {
+      setState((prev) => {
         const nextLang = readLang();
         const nextTheme = readTheme();
         const nextPage = readActivePage();
@@ -110,22 +107,22 @@ export function useWorkbenchBridge(): WorkbenchBridgeState {
 
     window.addEventListener("popstate", sync);
     window.addEventListener("ra:workbench-sync", sync);
+    let observer: MutationObserver | null = null;
+    if (typeof MutationObserver !== "undefined" && typeof document !== "undefined") {
+      observer = new MutationObserver(sync);
+      observer.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ["data-ui-lang", "data-color-theme"],
+      });
+    }
     return () => {
       window.removeEventListener("popstate", sync);
       window.removeEventListener("ra:workbench-sync", sync);
+      observer?.disconnect();
     };
-  }, [workbench]);
+  }, []);
 
-  if (workbench) {
-    return {
-      lang: workbench.lang,
-      theme: workbench.theme,
-      activePage: workbench.activePage,
-      selectedBaselines: workbench.selectedBaselines,
-      session: workbench.session,
-    };
-  }
-  return fallback;
+  return state;
 }
 
 export function bilingual(lang: UiLanguage, zh: string, en: string): string {

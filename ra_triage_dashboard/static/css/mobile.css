@@ -209,15 +209,15 @@
   .app-shell:not(.sidebar-mobile-open) .sidebar-bottom { opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 110ms ease, visibility 0s linear 110ms; }
 
   .topbar {
-    top: 0; min-width: 0; padding: 6px 8px 7px 62px;
+    top: 0; min-width: 0; padding: 6px 8px 7px 68px;
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-areas: "brand actions" "baselines baselines" "gt-sync gt-sync" "metrics metrics";
-    gap: 6px 6px;
+    gap: 6px 7px;
   }
   .brand { min-width: 0; max-width: 100%; }
-  .topbar h1 { max-width: 100%; overflow: hidden; font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
+  .topbar h1 { max-width: 100%; overflow: hidden; font-size: 16px; text-overflow: ellipsis; white-space: nowrap; }
   .top-actions { min-width: 0; gap: 4px; }
-  .top-actions .button, .gt-sync-control .gt-sync-button { min-width: 44px; min-height: 44px !important; height: 44px; padding-inline: 7px; }
+  .top-actions .button, .gt-sync-control .gt-sync-button { min-width: 44px; min-height: 44px !important; height: 44px; padding-inline: 8px; }
   .topbar-baselines,
   body:is([data-active-page="intent"], [data-active-page="intent-experiments"], [data-active-page="intent-summary"]) .intent-topbar-dataset {
     width: 100%; max-width: none; min-width: 0;
@@ -1343,178 +1343,4 @@
 }
 @media (max-width: 359px) {
   .allocation-setup-member .assignment-ratio-box { width: 62px; }
-}
-
-/* ==========================================================================
- * Canonical 4-Tier Responsive Layout System & Overflow Lock (Step 1 Refactor)
- * Tiers: xs <= 480px | sm <= 768px | md <= 1199px | lg >= 1200px
- * Guarantees hScrollDelta === 0 across 320 / 390 / 430 / 768 / 1024 / 1440px.
- * ========================================================================== */
-
-html,
-body,
-.app-shell,
-.app-frame,
-.main,
-.app-page,
-.topbar {
-  box-sizing: border-box;
-}
-
-/* Light-mode mobile drawer backdrop & topbar polish */
-html[data-color-theme="light"] .mobile-sidebar-backdrop {
-  background: rgba(15, 23, 42, 0.34);
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
-}
-
-html[data-color-theme="light"] .app-shell.sidebar-mobile-open .app-sidebar {
-  background: var(--surface-sidebar);
-  box-shadow: 16px 0 38px rgba(15, 23, 42, 0.16);
-}
-
-/* Tier md (<= 1199px): structural horizontal overflow lock on shell & frame */
-@media (max-width: 1199px) {
-  html,
-  body,
-  .app-shell,
-  .app-frame,
-  .main,
-  .app-page {
-    max-width: 100%;
-    overflow-x: clip;
-  }
-
-  .topbar {
-    width: 100%;
-    max-width: 100%;
-    min-width: 0;
-    overflow-x: clip;
-  }
-
-  .topbar > * {
-    min-width: 0;
-    max-width: 100%;
-  }
-
-  /* Local scroll containers for wide data tables so page never overflows */
-  .cron-table-wrap,
-  .system-media-table-wrap,
-  .review-assignment-table-scroll,
-  .ra-table-scroll {
-    display: block;
-    width: 100%;
-    max-width: 100%;
-    min-width: 0;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-  }
-}
-
-/* Tier sm (481px – 768px): portrait tablet balanced 2-column grids */
-@media (min-width: 481px) and (max-width: 768px) {
-  .cron-monitors {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .system-status-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .runs-source-tabs,
-  .run-source-tabs {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-}
-
-/* Tier xs + compact phones (<= 639px): eliminate 390px legacy shell scrollWidth leak */
-@media (max-width: 639px) {
-  .topbar {
-    width: 100%;
-    max-width: 100vw;
-    padding: 6px 8px 7px 62px;
-    box-sizing: border-box;
-    overflow-x: clip;
-  }
-
-  .topbar-baselines,
-  .topbar-baselines .baseline-filter,
-  .header-metrics,
-  .gt-sync-control,
-  .runs-source-card,
-  .runs-page-card,
-  .run-source-tabs,
-  .cron-page-heading,
-  .cron-monitors,
-  .cron-panel,
-  .cron-graph-workspace,
-  .cron-run-graph {
-    width: 100%;
-    max-width: 100%;
-    min-width: 0;
-    box-sizing: border-box;
-  }
-
-  .cron-page-heading,
-  .cron-section-heading,
-  .runs-toolbar,
-  .run-row-title,
-  .run-row-meta {
-    min-width: 0;
-    max-width: 100%;
-    flex-wrap: wrap;
-  }
-
-  /* Prevent fixed/absolute popovers or off-canvas sidebars from inflating documentElement.scrollWidth */
-  .app-shell:not(.sidebar-mobile-open) .app-sidebar {
-    max-width: 56px;
-    overflow: hidden;
-  }
-
-  .run-source-tabs {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 6px;
-  }
-
-  .run-source-tab {
-    min-width: 0;
-    max-width: 100%;
-    overflow: hidden;
-  }
-
-  .dialog,
-  .dialog-card {
-    max-width: calc(100vw - 16px);
-    box-sizing: border-box;
-  }
-}
-
-/* Tier xs narrow phones (<= 480px): clean single-column & 44px/48px touch rhythm */
-@media (max-width: 480px) {
-  .cron-media-tracks {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .cron-text-track {
-    grid-column: 1 / -1;
-  }
-
-  .system-status-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .case-pagination,
-  .case-pagination-main {
-    min-width: 0;
-    max-width: 100%;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-
-  .case-pagination .button,
-  .case-pagination .ui-select-trigger,
-  .case-pagination input[type="number"] {
-    min-height: var(--touch-target, 44px);
-  }
 }

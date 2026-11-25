@@ -80,17 +80,73 @@ function fmtTimingText(timing: any, lang: UiLanguage, compact = false, stale = f
 }
 
 function fmtTimingRows(timing: any, lang: UiLanguage, stale = false): Array<[string, string]> {
-  if (!timing) return [];
-  const rows: Array<[string, string]> = [];
-  if (timing.started_at) {
-    rows.push([bilingual(lang, "开始 · CST", "Started · CST"), fmtTime(timing.started_at, lang)]);
+  const scopes: Record<string, [string, string]> = {
+    pipeline_registration: [
+      "注册至本次执行回执；包含恢复等待的墙钟时间",
+      "Registration to execution receipt, including recovery waits",
+    ],
+    launch_to_registration: [
+      "调度启动至冻结选集注册，包含进程准备",
+      "Scheduler launch to cohort registration, including startup",
+    ],
+    registration_to_publication: [
+      "从选集注册到开始回刷，包含采集、模型推理和等待；未单独记录纯推理耗时",
+      "Cohort registration to first publication attempt, including acquisition, model inference and waits; inference-only runtime is not recorded separately",
+    ],
+    publication_receipts: [
+      "首条回刷尝试至最后验证回执，包含重试等待",
+      "First publication attempt to final verification receipt, including retry waits",
+    ],
+    sample_hook_receipts: [
+      "首条抽样更新尝试至最后抽样验证回执",
+      "First sample-update attempt to final sample verification receipt",
+    ],
+    media_registration_to_verified: [
+      "本批注册至最后双媒体发布验证；不含注册前耗时",
+      "Cohort registration to final dual-media publication; excludes pre-registration work",
+    ],
+    media_publication_receipts: [
+      "首条至最后双媒体发布验证；并非视频处理耗时",
+      "First to final dual-media publication receipt; not video processing duration",
+    ],
+    orion_task_runtime_p50: [
+      "单任务运行耗时中位数；不等于整批墙钟耗时",
+      "Median task runtime; not the batch wall-clock duration",
+    ],
+    camera_latest_attempt: [
+      "最近采集进程启动至本轮结果回执",
+      "Latest capture process start to its final result receipt",
+    ],
+    local_recovery_receipts: [
+      "本批首次本地尝试至最后结果；并发不累加",
+      "First local attempt to final result; parallel runtimes are not summed",
+    ],
+  };
+  const rows: Array<[string, string]> = [
+    [bilingual(lang, "计时", "Timing"), fmtTimingText(timing, lang, false, stale)],
+  ];
+  if (timing?.started_at) {
+    rows.push([bilingual(lang, "开始 · CST", "Start · CST"), fmtTime(timing.started_at, lang)]);
   }
-  if (timing.finished_at) {
-    rows.push([bilingual(lang, "结束 · CST", "Finished · CST"), fmtTime(timing.finished_at, lang)]);
+  if (timing?.finished_at) {
+    rows.push([bilingual(lang, "结束 · CST", "End · CST"), fmtTime(timing.finished_at, lang)]);
   }
-  if (typeof timing.elapsed_seconds === "number" && Number.isFinite(timing.elapsed_seconds)) {
-    rows.push([bilingual(lang, "耗时", "Duration"), fmtTimingText(timing, lang, false, stale)]);
+  if (timing?.mode === "running" && timing.observed_at) {
+    rows.push([bilingual(lang, "观测于 · CST", "Observed · CST"), fmtTime(timing.observed_at, lang)]);
   }
+  if (timing?.observed != null) {
+    rows.push([
+      bilingual(lang, "时间回执覆盖", "Timed receipts"),
+      fmtFraction(timing.observed, timing.total),
+    ]);
+  }
+  const scopePair = timing?.basis ? scopes[timing.basis] : undefined;
+  rows.push([
+    bilingual(lang, "计时口径", "Timing scope"),
+    scopePair
+      ? bilingual(lang, scopePair[0], scopePair[1])
+      : bilingual(lang, "缺少有效起止回执", "No valid timing receipts"),
+  ]);
   return rows;
 }
 
@@ -283,6 +339,18 @@ function applyThirdMedia(nodes: CronGraphNode[], media: any, stale: boolean, lan
             "Failed subset: one Orion retry → Still failed: up to two local attempts → Verify / Publish",
           ),
         ],
+        [
+          bilingual(lang, "计数包含", "Counts include"),
+          bilingual(lang, "Orion 与本地恢复后的有效发布回执", "Valid publications from Orion and local recovery"),
+        ],
+        [
+          bilingual(lang, "发布条件", "Publication gate"),
+          bilingual(lang, "同 Issue / trip / 锚点 / 配方；完整时序与解码验收", "Same Issue / trip / anchor / recipe; full timing and decode validation"),
+        ],
+        [
+          bilingual(lang, "队列口径", "Queue scope"),
+          bilingual(lang, "历史 running 不作为正在录制的证据", "Historical running entries do not prove active recording"),
+        ],
       ],
     },
   });
@@ -315,6 +383,14 @@ function applyThirdMedia(nodes: CronGraphNode[], media: any, stale: boolean, lan
         [bilingual(lang, "重试次数上限", "Retry limit"), bilingual(lang, "Orion 重试1次", "One Orion retry")],
         [bilingual(lang, "原生完成 / 失败", "Native completed / failed"), fmtFraction(retry?.completed, retry?.failed)],
         [bilingual(lang, "重试证据 · CST", "Retry evidence · CST"), fmtTime(retry?.evidence_at, lang)],
+        [
+          bilingual(lang, "后续恢复", "Next recovery"),
+          bilingual(lang, "重试终态仍失败或验收不通过 → 本地兜底", "Retry ends with failure or invalid output → Local fallback"),
+        ],
+        [
+          bilingual(lang, "计数口径", "Count scope"),
+          bilingual(lang, "仅本批、同身份的第二次 Orion 尝试；原生完成不等于发布", "Same-cohort, same-identity second Orion attempt only; native completion is not publication"),
+        ],
       ],
     },
   });
@@ -349,6 +425,23 @@ function applyThirdMedia(nodes: CronGraphNode[], media: any, stale: boolean, lan
         [bilingual(lang, "已登记恢复子集", "Registered recovery subset"), fmtCount(fallback?.registered)],
         [bilingual(lang, "源异常 / 缺口", "Source errors / gaps"), fmtCount(fallback?.source_blocked)],
         [bilingual(lang, "回执时间 · CST", "Evidence time · CST"), fmtTime(fallback?.evidence_at, lang)],
+        [
+          bilingual(lang, "触发条件", "Trigger"),
+          bilingual(lang, "Orion 重试终态仍失败或验收不通过", "Orion retry ends with failure or invalid output"),
+        ],
+        [
+          bilingual(lang, "尝试预算", "Attempt budget"),
+          bilingual(lang, "本地最多2次；与原 BEV 共享全局2个名额", "At most 2 local attempts; share 2 global slots with original BEV"),
+        ],
+        [bilingual(lang, "局部布局", "Closeup layout"), "layout.json · ego30-forward4-1080p-10fps-v1"],
+        [
+          bilingual(lang, "源异常处理", "Source failure handling"),
+          bilingual(lang, "保留证据待处理；不反复盲重试", "Retain evidence for resolution; no blind retries"),
+        ],
+        [
+          bilingual(lang, "发布条件", "Publication gate"),
+          bilingual(lang, "同一局部配方、400帧、精确时序和完整解码验收", "Same closeup recipe, 400 frames, exact timing and full decode validation"),
+        ],
       ],
     },
   });
@@ -372,6 +465,14 @@ function applyThirdMedia(nodes: CronGraphNode[], media: any, stale: boolean, lan
       [
         bilingual(lang, "分别发布", "Independent publication"),
         bilingual(lang, "各项验收后即发布；不等待三项齐全", "Each verified track publishes without waiting for the others"),
+      ],
+      [
+        bilingual(lang, "Camera 清理", "Camera cleanup"),
+        bilingual(lang, "沿用原发布回执与1小时策略", "Existing publication receipt and 1h policy"),
+      ],
+      [
+        bilingual(lang, "统计口径", "Count scope"),
+        bilingual(lang, "同批目标的发布回执交集；不计原生 completed", "Intersection of publication receipts in this cohort; native completed is excluded"),
       ],
     ];
     if (!all) n.data.status = !known ? "unknown" : closeup.attention || media?.failure_count ? "warn" : "pending";
@@ -467,26 +568,70 @@ function buildPlanningTextNodes(text: any, hasError: boolean, lang: UiLanguage):
     const rows: Array<[string, string | number]> = [
       [bilingual(lang, "已完成 / 阶段目标", "Completed / Stage targets"), valid ? `${receipt.completed} / ${receipt.total}` : "—"],
       [
+        bilingual(lang, "完成依据", "Completion evidence"),
+        id === "text-input"
+          ? bilingual(
+              lang,
+              "同一 Issue / trip / 时间的持久登记或已验收结果",
+              "Durable registration or validated saved results for the same Issue / trip / time",
+            )
+          : bilingual(
+              lang,
+              "同一 Issue / trip / 时间的已验收持久回执；进程退出不清空",
+              "Validated saved receipts for the same Issue / trip / time; retained after process exit",
+            ),
+      ],
+      [
         bilingual(lang, "自动接续", "Automatic continuation"),
         pipeline.durable_queue === "ready"
-          ? bilingual(lang, "调度器先对账已有 Job 和结果，只接续未完成项", "Reconcile existing jobs and resume unfinished work")
-          : bilingual(lang, "调度回执暂不可用；已完成结果仍保留", "Scheduling evidence unavailable; saved results remain valid"),
+          ? bilingual(
+              lang,
+              "调度器先对账已有 Job 和结果，只接续未完成项；已完成窗口复用",
+              "Reconcile existing jobs and results, resume unfinished work, and reuse completed windows",
+            )
+          : bilingual(
+              lang,
+              "调度回执暂不可用；已完成的保存结果仍保留",
+              "Scheduling evidence is unavailable; completed saved results remain valid",
+            ),
       ],
     ];
     if (id === "text-export") {
       rows.push(
         [bilingual(lang, "当前运行 / 排队", "Running / Queued now"), observed ? `${runtime.running || 0} / ${runtime.queued || 0}` : "—"],
         [bilingual(lang, "Orion 全局并发上限", "Global Orion concurrency limit"), runtime.max_concurrency ?? "—"],
+        [
+          bilingual(lang, "资源监督", "Resource limits"),
+          bilingual(
+            lang,
+            "每窗口 512MiB / 4GiB / 120秒，累计600秒；与媒体独立调度",
+            "512MiB / 4GiB / 120s per window, 600s total; scheduled independently of media",
+          ),
+        ],
       );
     }
     if (id === "text-index" || id === "text-source") {
       rows.push(
         [bilingual(lang, "真实有帧 / 同批目标", "With actual frames / Same cohort"), known ? `${text.with_frames} / ${selected}` : "—"],
         [bilingual(lang, "完整 / 源缺口 / 源失败", "Complete / Source gaps / Source failures"), known ? `${text.collected} / ${text.partial_source} / ${text.failed}` : "—"],
+        [
+          bilingual(lang, "数据质量", "Data quality"),
+          bilingual(
+            lang,
+            "阶段完成表示处理和留证结束；源缺口仍保留，源失败不伪造为成功数据",
+            "Stage completion means processing and evidence are saved; source gaps and failures retain their original meaning",
+          ),
+        ],
       );
     }
     if (runtime.observed_at) {
       rows.push([bilingual(lang, "运行观测 · CST", "Runtime observed · CST"), fmtTime(runtime.observed_at, lang)]);
+    }
+    if (hasError || runtime.status === "stale") {
+      rows.push([
+        bilingual(lang, "观测状态", "Observation status"),
+        bilingual(lang, "运行观测过期；已完成回执仍有效", "Runtime observation is stale; saved completion receipts remain valid"),
+      ]);
     }
     const progress =
       phase === "not_required"
@@ -549,6 +694,7 @@ export function buildCronGraphModel(data: any, opts: BuildCronGraphOptions): Cro
             ...source,
             ...ver,
             families: [family],
+            datasets: (source.datasets || []).filter((d: any) => d.release_family === family),
             stale: Boolean(source.stale || error),
             unavailable: !ver,
             statesUnavailable: !ver || ver.states_status !== "ready",
@@ -615,6 +761,10 @@ export function buildCronGraphModel(data: any, opts: BuildCronGraphOptions): Cro
         [
           [bilingual(lang, "已完成推理", "Finished inference"), done],
           [bilingual(lang, "已回刷", "Published"), c.published || 0],
+          [
+            bilingual(lang, "依赖范围", "Dependency scope"),
+            bilingual(lang, "每个 case 完成后推进，不等待整批", "Each completed case advances independently"),
+          ],
         ],
       ),
     ];
@@ -636,7 +786,12 @@ export function buildCronGraphModel(data: any, opts: BuildCronGraphOptions): Cro
       mkNode("media-retry", bilingual(lang, "Orion 重试", "Orion retry"), bilingual(lang, "仅失败子集 · 1次", "Failed subset only · Once"), "unknown", bilingual(lang, "按单项回执判定", "Requires attempt receipts")),
       mkNode("media-local", bilingual(lang, "本地兜底", "Local fallback"), bilingual(lang, "全局2并发 · 最多2次", "Global concurrency 2 · Up to 2 attempts"), "unknown", bilingual(lang, "按单项回执判定", "Requires attempt receipts")),
       mkNode("media-verify", bilingual(lang, "双媒体验证", "Dual media verification"), `${m.verified || 0} / ${m.selected || 0}`, m.failure_count ? "warn" : mediaPending ? "running" : "success", mediaPending ? bilingual(lang, "逐条验证中", "Verifying per case") : bilingual(lang, "当前目标已验证", "Current targets verified")),
-      mkNode("media-ready", bilingual(lang, "逐条发布 / 清理", "Publish / Clean per case"), bilingual(lang, `累计验证 ${m.verified || 0} · 满1小时后清理`, `Verified so far ${m.verified || 0} · Cleanup after 1h`), mediaPending || continuing ? "running" : "unknown", mediaPending || continuing ? rolling : bilingual(lang, "清理回执未观测", "Cleanup receipt not observed")),
+      mkNode("media-ready", bilingual(lang, "逐条发布 / 清理", "Publish / Clean per case"), bilingual(lang, `累计验证 ${m.verified || 0} · 满1小时后清理`, `Verified so far ${m.verified || 0} · Cleanup after 1h`), mediaPending || continuing ? "running" : "unknown", mediaPending || continuing ? rolling : bilingual(lang, "清理回执未观测", "Cleanup receipt not observed"), [
+        [
+          bilingual(lang, "判定范围", "Scope"),
+          bilingual(lang, "已验证 case 可先发布；清理独立记录", "Verified cases publish first; cleanup has separate receipts"),
+        ],
+      ]),
     ];
     mediaNodes[6].data.progress = makeTaskProgress(m.verified || 0, m.selected || 0, lang, {
       stale: !isFresh,
@@ -839,6 +994,7 @@ export function buildCronGraphModel(data: any, opts: BuildCronGraphOptions): Cro
       empty ? "skipped" : terminal ? "success" : progressState("sample_hook"),
       [
         [bilingual(lang, "最终状态", "Final state"), cronStatusLabel(run?.health || "unknown", lang)],
+        [bilingual(lang, "当前阶段", "Current stage"), `${run?.stage || "—"} · ${fmtFraction(run?.finished, run?.total)}`],
         [bilingual(lang, "更新 · CST", "Updated · CST"), fmtTime(run?.updated_at, lang)],
       ],
     ),
@@ -852,17 +1008,239 @@ export function buildCronGraphModel(data: any, opts: BuildCronGraphOptions): Cro
     noMedia || (allMedia && media.original_orion_total === media.selected && media.original_orion_failed === 0);
 
   const mediaNodes: CronGraphNode[] = [
-    mkLegacyNode("media-source", bilingual(lang, "低置信度 / 抽样", "Low confidence / Sample"), `${day || "—"} · ${fmtCount(media?.selected)}`, media?.selected > 0 || noMedia ? "success" : runtime ? "pending" : "unknown"),
-    mkLegacyNode("media-import", bilingual(lang, "Run 导入 / 分配", "Import / Assign"), `${fmtCount(media?.imported)} / ${fmtCount(media?.assigned)}`, noMedia ? "skipped" : media?.imported === media?.selected && media?.assigned === media?.selected && media?.selected > 0 ? "success" : media ? "pending" : "unknown"),
-    mkLegacyNode("media-camera", "Camera · ±20s", fmtFraction(media?.camera_verified, media?.selected), noMedia ? "skipped" : allMedia ? "success" : mediaActive ? "running" : "unknown"),
-    mkLegacyNode("media-orion", "BEV · Orion", `${bilingual(lang, "验证", "Verified")} ${fmtCount(media?.bev_verified)}`, noMedia ? "skipped" : allMedia ? (media.original_orion_failed > 0 ? "warn" : "success") : mediaActive ? "running" : "unknown"),
-    mkLegacyNode("media-retry", bilingual(lang, "Orion 重试 ×1", "Orion retry ×1"), retryObserved ? `${fmtCount(media?.retry_completed)}` : bilingual(lang, "未观测到执行", "No execution observed"), recoveryUnneeded ? "skipped" : retryObserved ? (media.retry_state === "completed" ? "success" : media.retry_state === "partial_failed" ? "warn" : "unknown") : "unknown"),
-    mkLegacyNode("media-local", bilingual(lang, "本地兜底 · 最多2次", "Local · At most 2 tries"), media?.local_attempts ? `${media.local_attempts}` : bilingual(lang, "未观测到执行", "No execution observed"), recoveryUnneeded ? "skipped" : media?.local_attempts ? (media.local_verified > 0 ? "success" : "warn") : "unknown"),
-    mkLegacyNode("media-verify", bilingual(lang, "双媒体验证", "Verify both videos"), fmtFraction(media?.verified, media?.selected), noMedia ? "skipped" : allMedia ? "success" : media?.state === "media_failed" ? "failed" : mediaActive ? "running" : "unknown", [], media?.failure_ids || []),
-    mkLegacyNode("media-ready", bilingual(lang, "平台就绪", "Platform ready"), media ? cronStatusLabel(media.state, lang) : bilingual(lang, "等待当日回执", "Awaiting daily receipt"), noMedia ? "skipped" : allMedia && media.assigned === media.selected ? "success" : media?.state === "complete_with_gaps" ? "warn" : media?.state === "media_failed" ? "failed" : "pending"),
+    mkLegacyNode(
+      "media-source",
+      bilingual(lang, "低置信度 / 抽样", "Low confidence / Sample"),
+      `${day || "—"} · ${fmtCount(media?.selected)}`,
+      media?.selected > 0 || noMedia ? "success" : runtime ? "pending" : "unknown",
+      [
+        [bilingual(lang, "所选日期", "Selected day"), day || "—"],
+        [bilingual(lang, "目标案例", "Target cases"), fmtCount(media?.selected)],
+      ],
+    ),
+    mkLegacyNode(
+      "media-import",
+      bilingual(lang, "Run 导入 / 分配", "Import / Assign"),
+      `${fmtCount(media?.imported)} / ${fmtCount(media?.assigned)}`,
+      noMedia
+        ? "skipped"
+        : media?.imported === media?.selected && media?.assigned === media?.selected && media?.selected > 0
+          ? "success"
+          : media
+            ? "pending"
+            : "unknown",
+      [
+        [bilingual(lang, "导入", "Imported"), fmtCount(media?.imported)],
+        [bilingual(lang, "已分配", "Assigned"), fmtCount(media?.assigned)],
+        ["Run", media?.run_id || "—"],
+      ],
+    ),
+    mkLegacyNode(
+      "media-camera",
+      "Camera · ±20s",
+      fmtFraction(media?.camera_verified, media?.selected),
+      noMedia ? "skipped" : allMedia ? "success" : mediaActive ? "running" : "unknown",
+      [[bilingual(lang, "已验证", "Verified"), fmtFraction(media?.camera_verified, media?.selected)]],
+    ),
+    mkLegacyNode(
+      "media-orion",
+      "BEV · Orion",
+      `${bilingual(lang, "验证", "Verified")} ${fmtCount(media?.bev_verified)}`,
+      noMedia ? "skipped" : allMedia ? (media.original_orion_failed > 0 ? "warn" : "success") : mediaActive ? "running" : "unknown",
+      [
+        [bilingual(lang, "最终已验证", "Final verified"), fmtCount(media?.bev_verified)],
+        [bilingual(lang, "可见原始队列范围", "Observed original queue scope"), fmtFraction(media?.original_orion_total, media?.selected)],
+        [bilingual(lang, "队列完成 / 失败", "Queue completed / failed"), fmtFraction(media?.original_orion_completed, media?.original_orion_failed)],
+      ],
+    ),
+    mkLegacyNode(
+      "media-retry",
+      bilingual(lang, "Orion 重试 ×1", "Orion retry ×1"),
+      retryObserved
+        ? `${fmtCount(media?.retry_completed)} ${bilingual(lang, "完成", "completed")}`
+        : bilingual(lang, "未观测到执行", "No execution observed"),
+      recoveryUnneeded
+        ? "skipped"
+        : retryObserved
+          ? media.retry_state === "completed"
+            ? "success"
+            : media.retry_state === "partial_failed"
+              ? "warn"
+              : mediaActive
+                ? "running"
+                : "unknown"
+          : "unknown",
+      [
+        [bilingual(lang, "重试状态", "Retry state"), media?.retry_state || "—"],
+        [bilingual(lang, "完成 / 失败", "Complete / Failed"), fmtFraction(media?.retry_completed, media?.retry_failed)],
+      ],
+    ),
+    mkLegacyNode(
+      "media-local",
+      bilingual(lang, "本地兜底 · 最多2次", "Local · At most 2 tries"),
+      media?.local_attempts
+        ? `${media.local_attempts} ${bilingual(lang, "次回执", "receipts")}`
+        : bilingual(lang, "未观测到执行", "No execution observed"),
+      recoveryUnneeded ? "skipped" : media?.local_attempts ? (media.local_verified > 0 ? "success" : "warn") : "unknown",
+      [
+        [bilingual(lang, "尝试回执", "Attempt receipts"), fmtCount(media?.local_attempts)],
+        [bilingual(lang, "本地验证", "Local verified"), fmtCount(media?.local_verified)],
+      ],
+    ),
+    mkLegacyNode(
+      "media-verify",
+      bilingual(lang, "双媒体验证", "Verify both videos"),
+      fmtFraction(media?.verified, media?.selected),
+      noMedia ? "skipped" : allMedia ? "success" : media?.state === "media_failed" ? "failed" : mediaActive ? "running" : "unknown",
+      [
+        [bilingual(lang, "已验证", "Verified"), fmtFraction(media?.verified, media?.selected)],
+        [bilingual(lang, "终态失败", "Terminal failures"), fmtCount(media?.failure_count)],
+      ],
+      media?.failure_ids || [],
+    ),
+    mkLegacyNode(
+      "media-ready",
+      bilingual(lang, "平台就绪", "Platform ready"),
+      media ? cronStatusLabel(media.state, lang) : bilingual(lang, "等待当日回执", "Awaiting daily receipt"),
+      noMedia ? "skipped" : allMedia && media.assigned === media.selected ? "success" : media?.state === "complete_with_gaps" ? "warn" : media?.state === "media_failed" ? "failed" : "pending",
+      [
+        [bilingual(lang, "目标日期", "Target day"), day || "—"],
+        [bilingual(lang, "更新 · CST", "Updated · CST"), fmtTime(media?.updated_at, lang)],
+        [bilingual(lang, "主任务影响", "Main pipeline impact"), bilingual(lang, "独立判定", "Independent outcome")],
+      ],
+    ),
   ];
 
+  const attach = (
+    item: CronGraphNode,
+    done: unknown,
+    total: unknown,
+    options: { label: string; failed?: number | null; skipped?: number | null; stale?: boolean; empty?: boolean; waiting?: boolean },
+  ) => {
+    item.data.progress = makeTaskProgress(done, total, lang, options);
+    item.data.rows = [...(item.data.rows || []), ...progressRows(item.data.progress, lang)];
+    if (data?.observed_at) {
+      item.data.rows.push([bilingual(lang, "进度观测 · CST", "Progress observed · CST"), fmtTime(data.observed_at, lang)]);
+    }
+  };
+  const currentStage = (stage: string, fallbackDone: unknown, fallbackTotal: unknown): [unknown, unknown] =>
+    run?.stage === stage && run?.finished != null && run?.total != null
+      ? [run.finished, run.total]
+      : [fallbackDone, fallbackTotal];
+  const mainOptions = { stale: Boolean(mainStale), empty, waiting: false };
+  const inferredDone =
+    Number.isSafeInteger(run?.inferred) && Number.isSafeInteger(run?.skipped) ? run.inferred + run.skipped : null;
+  const [inferDone, inferTotal] = currentStage("inference", inferredDone, run?.selected);
+  attach(mainNodes[2]!, inferDone, inferTotal, {
+    ...mainOptions,
+    label: bilingual(lang, "采集 / 推理已处理（含失败和跳过）", "Acquisition / inference processed, including failures and skips"),
+    failed:
+      run?.stage === "inference" && Number.isSafeInteger(run?.succeeded) && Number.isSafeInteger(run?.finished)
+        ? run.finished - run.succeeded
+        : null,
+    skipped: run?.skipped,
+  });
+  const [pubDone, pubTotal] = currentStage("publication", run?.published, run?.inferred);
+  attach(mainNodes[3]!, pubDone, pubTotal, {
+    ...mainOptions,
+    waiting: !empty && run?.stage === "inference",
+    label: bilingual(lang, "本批回刷目标", "Publication cohort"),
+  });
+  const sample = run?.stage_timings?.["main-verify"];
+  const [sampleDone, sampleTotal] = currentStage("sample_hook", sample?.observed, sample?.total);
+  attach(mainNodes[4]!, sampleDone, sampleTotal, {
+    ...mainOptions,
+    waiting: !empty && ["inference", "publication"].includes(run?.stage),
+    label: bilingual(lang, "本批抽样验证目标", "Sample verification cohort"),
+    empty: empty || sample?.total === 0,
+  });
+  const waitingMedia = !noMedia && Boolean(media) && media.selected === 0;
+  const mediaOptions = { stale: Boolean(mediaStale), empty: noMedia, waiting: waitingMedia };
+  attach(mediaNodes[1]!, media?.assigned, media?.selected, {
+    ...mediaOptions,
+    label: bilingual(lang, "本批任务分配；导入数量单列", "Assignment cohort; imports shown separately"),
+  });
+  attach(mediaNodes[2]!, media?.camera_verified, media?.selected, {
+    ...mediaOptions,
+    label: bilingual(lang, "本批已确认完成的 Camera", "Confirmed Camera completion in this cohort"),
+  });
+  const orionDone =
+    Number.isSafeInteger(media?.original_orion_completed) && Number.isSafeInteger(media?.original_orion_failed)
+      ? media.original_orion_completed + media.original_orion_failed
+      : null;
+  attach(mediaNodes[3]!, orionDone, media?.original_orion_total, {
+    ...mediaOptions,
+    label: bilingual(lang, "原始 Orion 队列（含失败）；最终验证单列", "Original Orion queue, including failures; final validation shown separately"),
+    failed: media?.original_orion_failed,
+  });
+  const retryDone =
+    Number.isSafeInteger(media?.retry_completed) && Number.isSafeInteger(media?.retry_failed)
+      ? media.retry_completed + media.retry_failed
+      : null;
+  attach(mediaNodes[4]!, retryDone, media?.retry_total, {
+    ...mediaOptions,
+    waiting: waitingMedia,
+    label: bilingual(lang, "本轮 Orion 重试子集（含失败）", "This Orion retry subset, including failures"),
+    failed: media?.retry_failed,
+  });
+  const local = media?.stage_timings?.["media-local"];
+  if (mediaActive && local?.total > local?.observed) {
+    mediaNodes[5]!.data.status = "running";
+    mediaNodes[5]!.data.stateLabel = stateLabelOf("running", lang);
+  }
+  if (run?.selected == null && run?.started_at && ["inference", "publication", "sample_hook"].includes(run.stage)) {
+    mainNodes[1]!.data.detail = bilingual(lang, "选集已冻结", "Cohort frozen");
+    mainNodes[1]!.data.status = "success";
+    mainNodes[1]!.data.stateLabel = stateLabelOf("success", lang);
+  }
+  attach(mediaNodes[5]!, local?.observed, local?.total, {
+    ...mediaOptions,
+    label: bilingual(lang, "已发起的本地尝试；后续尝试会增加总数", "Launched local attempts; later attempts increase the total"),
+  });
+  attach(mediaNodes[6]!, media?.verified, media?.selected, {
+    ...mediaOptions,
+    label: bilingual(lang, "本批双媒体最终验证", "Final dual-media validation for this cohort"),
+  });
+  attach(mediaNodes[7]!, media?.verified, media?.selected, {
+    ...mediaOptions,
+    label: bilingual(lang, "双媒体验证覆盖；平台就绪还需完成分配", "Dual-media coverage; readiness also requires completed assignment"),
+  });
+
   applyThirdMedia(mediaNodes, media, mediaStale, lang);
+
+  for (const item of [...mainNodes, ...mediaNodes]) {
+    if (item.data.progress?.mode === "waiting" && item.data.status === "unknown") {
+      item.data.status = "pending";
+      item.data.stateLabel = stateLabelOf("pending", lang);
+    }
+    if (item.data.status === "skipped" && item.data.progress?.mode !== "count") {
+      item.data.progress = {
+        mode: item.data.progress?.mode || "empty",
+        label: item.data.progress?.label || "",
+        ...item.data.progress,
+        text: noMedia || empty ? bilingual(lang, "无待处理项", "No work items") : bilingual(lang, "无需执行", "Not required"),
+      };
+    }
+  }
+  if (terminal && run.skipped > 0) {
+    mainNodes[2]!.data.stateLabel = bilingual(lang, `跳过 ${run.skipped}`, `${run.skipped} skipped`);
+  }
+  if (allMedia && media.original_orion_failed > 0) {
+    mediaNodes[3]!.data.stateLabel = bilingual(lang, "最终已补齐", "Finally recovered");
+  }
+  if (mainStale) {
+    mainNodes.forEach((n) => {
+      if (n.data.status === "running") n.data.status = "unknown";
+      n.data.stateLabel = stateLabelOf(n.data.status, lang);
+    });
+  }
+  if (mediaStale) {
+    mediaNodes.forEach((n) => {
+      if (n.data.status === "running") n.data.status = "unknown";
+      n.data.stateLabel = stateLabelOf(n.data.status, lang);
+    });
+  }
+
   for (const n of mainNodes) {
     n.data.timing = run?.stage_timings?.[n.id];
     n.data.timingText =
@@ -871,6 +1249,14 @@ export function buildCronGraphModel(data: any, opts: BuildCronGraphOptions): Cro
         : fmtTimingText(n.data.timing, lang, true, mainStale);
     n.data.rows = [...(n.data.rows || []), ...fmtTimingRows(n.data.timing, lang, mainStale)];
   }
+  for (const n of mediaNodes) {
+    if (["media-closeup", "media-closeup-retry", "media-closeup-local", "media-verify", "media-ready"].includes(n.id)) {
+      continue;
+    }
+    n.data.timing = n.id === "media-ready" ? media?.timing : media?.stage_timings?.[n.id];
+    n.data.timingText = fmtTimingText(n.data.timing, lang, true, mediaStale);
+    n.data.rows = [...(n.data.rows || []), ...fmtTimingRows(n.data.timing, lang, mediaStale)];
+  }
   const edge = (source: string, target: string, label = "", optional = false): CronGraphEdge => ({
     id: `${source}:${target}`,
     source,
@@ -878,7 +1264,7 @@ export function buildCronGraphModel(data: any, opts: BuildCronGraphOptions): Cro
     label,
     optional,
   });
-  const mainEdges = mainNodes.slice(1).map((n, i) => edge(mainNodes[i].id, n.id));
+  const mainEdges = mainNodes.slice(1).map((n, i) => edge(mainNodes[i]!.id, n.id));
   const mediaEdges: CronGraphEdge[] = [
     ...closeupEdges(lang),
     edge("media-source", "media-import"),
@@ -909,6 +1295,12 @@ export function buildCronGraphModel(data: any, opts: BuildCronGraphOptions): Cro
           stateLabel: stateLabelOf("definition", lang),
           timingText: "",
           progress: null,
+          detail:
+            n.id === "main-infer"
+              ? bilingual(lang, "缺失 ≤5 且 ≤2% 可继续", "Continue if gaps ≤5 AND ≤2%")
+              : n.id === "media-ready"
+                ? bilingual(lang, "少量缺失单独记录", "Small gaps recorded separately")
+                : "",
         };
       }),
     );

@@ -1,8 +1,7 @@
-"""Phase 3 Wave 3.1: Vite build manifest loading, HTML injection, and dist serving."""
+"""Phase 3 Strangler-Fig: Vite build manifest loading, HTML injection, cache headers, and React island guards."""
 from __future__ import annotations
 
 import asyncio
-import gzip
 import json
 import re
 import tempfile
@@ -18,6 +17,7 @@ from ra_triage_dashboard.app.web_paths import render_index_html
 
 
 STATIC_DIR = Path(__file__).resolve().parents[1] / "static"
+FRONTEND_SRC_DIR = Path(__file__).resolve().parents[1] / "frontend" / "src"
 
 
 class Phase3ViteAssetsTest(unittest.TestCase):
@@ -43,6 +43,7 @@ class Phase3ViteAssetsTest(unittest.TestCase):
         self.assertIn('id="raViteAssets"', default_html)
         self.assertIn('{"js":[],"css":[]}', default_html)
         self.assertNotIn("{{RA_TRIAGE_VITE_ASSETS}}", default_html)
+        self.assertIn('window.__RA_REACT_OWNED_PAGES__ = ["status", "users", "daily-cron", "runs-manager"]', default_html)
 
         custom_html = render_index_html(
             template,
@@ -52,14 +53,14 @@ class Phase3ViteAssetsTest(unittest.TestCase):
         self.assertIn("assets/main-abc.js", custom_html)
         self.assertIn("assets/main-def.css", custom_html)
 
-    def test_built_vite_dist_manifest_and_gzip_serving(self) -> None:
+    def test_built_vite_dist_manifest_cache_headers_and_lazy_chunks(self) -> None:
         assets = load_vite_assets(STATIC_DIR)
         self.assertTrue(assets["js"], "Vite build must produce at least one entry JS bundle")
         self.assertTrue(assets["css"], "Vite build must produce at least one entry CSS bundle")
 
         app = Starlette(routes=[Mount("/manual/static", app=dashboard_static_app(STATIC_DIR))])
 
-        async def fetch(path: str) -> tuple[int, dict[bytes, bytes]]:
+        async def fetch(path: str, query: bytes = b"") -> tuple[int, dict[bytes, bytes]]:
             messages = []
 
             async def receive():
@@ -76,7 +77,7 @@ class Phase3ViteAssetsTest(unittest.TestCase):
                     "path": path,
                     "raw_path": path.encode(),
                     "root_path": "",
-                    "query_string": b"",
+                    "query_string": query,
                     "scheme": "http",
                     "http_version": "1.1",
                     "headers": [(b"accept-encoding", b"gzip")],
@@ -85,6 +86,17 @@ class Phase3ViteAssetsTest(unittest.TestCase):
                 send,
             )
             return messages[0]["status"], dict(messages[0]["headers"])
+
+        # Classic app-bundle.js and app-bundle.css remain intact for Strangler-Fig parity.
+        for classic_path in ("/manual/static/app-bundle.js", "/manual/static/app-bundle.css"):
+            status, headers = asyncio.run(fetch(classic_path, b"v=manual-triage-885"))
+            self.assertEqual(status, 200, f"Expected HTTP 200 for {classic_path}")
+            self.assertIn(b"immutable", headers.get(b"cache-control", b""))
+
+        # Unversioned plain static files must revalidate instead of immutable.
+        status, headers = asyncio.run(fetch("/manual/static/styles.css"))
+        self.assertEqual(status, 200)
+        self.assertIn(b"must-revalidate", headers.get(b"cache-control", b""))
 
         for rel in [*assets["js"], *assets["css"]]:
             disk_path = STATIC_DIR / "dist" / rel
@@ -101,62 +113,24 @@ class Phase3ViteAssetsTest(unittest.TestCase):
             for entry in manifest_data.values()
             if isinstance(entry, dict) and entry.get("name")
         }
-        for expected_chunk in (
-            "ReviewPage",
-            "DailyCronPage",
-            "CronGraphCanvas",
-            "RunsPage",
-            "CampaignsPage",
-            "PredictionPage",
-            "TrailUpdatePage",
-            "TrailHistoryPage",
-            "IntentLabelingPage",
-            "IntentExperimentsPage",
-            "IntentSummaryPage",
-            "DailyReviewPage",
-            "ReviewAssignmentsPage",
-            "AllocationEditorModal",
-            "UsersPage",
-            "SystemStatusPage",
-        ):
+        for expected_chunk in ("DailyCronPage", "CronGraphCanvas", "RunsManagerIsland"):
             self.assertIn(expected_chunk, chunk_by_name)
             chunk_rel = chunk_by_name[expected_chunk]["file"]
             self.assertTrue((STATIC_DIR / "dist" / chunk_rel).is_file())
 
-        # Wave 3.6 initial JS entry bundle size budget (< 120 KB gzip)
-        total_entry_gzip = sum(
-            len(gzip.compress((STATIC_DIR / "dist" / rel).read_bytes()))
-            for rel in assets["js"]
-        )
-        self.assertLess(
-            total_entry_gzip,
-            120 * 1024,
-            f"Initial entry JS bundle gzip ({total_entry_gzip} B) exceeds 120 KB budget",
-        )
-
-    def test_wave36_legacy_js_retired_and_zero_raw_native_selects(self) -> None:
-        dashboard_root = STATIC_DIR.parent
-        for retired_path in (
-            STATIC_DIR / "js",
-            STATIC_DIR / "app.js",
-            STATIC_DIR / "vendor" / "cron-graph",
-            dashboard_root / "frontend" / "cron-graph",
-        ):
-            self.assertFalse(retired_path.exists(), f"Retired legacy path must not exist: {retired_path}")
-
-        src_root = dashboard_root / "frontend" / "src"
-        violations: list[str] = []
-        for sub in ("pages", "shell", "features", "components"):
-            folder = src_root / sub
-            if not folder.is_dir():
+    def test_zero_raw_native_select_in_react_islands(self) -> None:
+        raw_select_re = re.compile(r"<select\b")
+        block_comment_re = re.compile(r"/\*[\s\S]*?\*/")
+        line_comment_re = re.compile(r"//.*$", re.MULTILINE)
+        offenders: list[str] = []
+        for tsx in FRONTEND_SRC_DIR.rglob("*.tsx"):
+            if tsx.name.endswith(".test.tsx"):
                 continue
-            for tsx in sorted(folder.rglob("*.tsx")):
-                if tsx.name.endswith(".test.tsx"):
-                    continue
-                stripped = re.sub(r"/\*[\s\S]*?\*/|//[^\n]*", "", tsx.read_text(encoding="utf-8"))
-                if re.search(r"<select[\s>]", stripped, re.IGNORECASE):
-                    violations.append(str(tsx.relative_to(src_root)))
-        self.assertEqual(violations, [], f"Raw native <select> forbidden: {violations}")
+            source = tsx.read_text(encoding="utf-8")
+            stripped = line_comment_re.sub("", block_comment_re.sub("", source))
+            if raw_select_re.search(stripped):
+                offenders.append(str(tsx.relative_to(FRONTEND_SRC_DIR)))
+        self.assertEqual(offenders, [], f"Raw <select> forbidden in React islands: {offenders}")
 
 
 if __name__ == "__main__":

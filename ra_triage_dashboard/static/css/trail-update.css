@@ -590,7 +590,7 @@ html[data-color-theme="light"] .trail-update-confirm-banner small { color: #8b5c
 html[data-color-theme="light"] .trail-update-confirm-summary > div,
 html[data-color-theme="light"] .trail-update-confirm-list { background: #f8fafc; }
 html[data-color-theme="light"] .trail-update-confirm-summary strong { color: #24364d; }
-html[data-color-theme="light"] .trail-update-confirm-item strong { color: var(--accent-text); }
+html[data-color-theme="light"] .trail-update-confirm-item strong { color: #075f75; }
 html[data-color-theme="light"] .trail-update-confirm-item code { color: #34465b; }
 
 /* Full reason text stays readable inside the existing responsive table. */
@@ -662,7 +662,7 @@ html[data-color-theme="light"] .trail-update-confirm-item code { color: #34465b;
 html[data-color-theme="light"] .trail-reconcile-table .trail-update-state-badge.is-pending { color:#805700; }
 html[data-color-theme="light"] .trail-reconcile-table .trail-update-state-badge.is-on,
 html[data-color-theme="light"] .trail-reconcile-table .trail-update-state-badge.is-synced { color:#26734e; }
-html[data-color-theme="light"] .trail-reconcile-table .trail-update-state-badge.is-querying { color:var(--accent-text); }
+html[data-color-theme="light"] .trail-reconcile-table .trail-update-state-badge.is-querying { color:#075f75; }
 html[data-color-theme="light"] .trail-reconcile-table .trail-update-state-badge.is-failed,
 html[data-color-theme="light"] .trail-reconcile-table .trail-update-state-badge.is-not-found { color:#b42318; }
 

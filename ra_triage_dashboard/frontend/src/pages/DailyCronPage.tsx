@@ -278,6 +278,81 @@ function cronTimingText(
   return `${prefix} ${cronDuration(timing.elapsed_seconds, lang)}`;
 }
 
+function cronTimingRows(
+  timing: CronTiming | null | undefined,
+  lang: UiLanguage,
+  stale = false,
+): Array<[string, string]> {
+  const scopes: Record<string, [string, string]> = {
+    pipeline_registration: [
+      "注册至本次执行回执；包含恢复等待的墙钟时间",
+      "Registration to execution receipt, including recovery waits",
+    ],
+    launch_to_registration: [
+      "调度启动至冻结选集注册，包含进程准备",
+      "Scheduler launch to cohort registration, including startup",
+    ],
+    registration_to_publication: [
+      "从选集注册到开始回刷，包含采集、模型推理和等待；未单独记录纯推理耗时",
+      "Cohort registration to first publication attempt, including acquisition, model inference and waits; inference-only runtime is not recorded separately",
+    ],
+    publication_receipts: [
+      "首条回刷尝试至最后验证回执，包含重试等待",
+      "First publication attempt to final verification receipt, including retry waits",
+    ],
+    sample_hook_receipts: [
+      "首条抽样更新尝试至最后抽样验证回执",
+      "First sample-update attempt to final sample verification receipt",
+    ],
+    media_registration_to_verified: [
+      "本批注册至最后双媒体发布验证；不含注册前耗时",
+      "Cohort registration to final dual-media publication; excludes pre-registration work",
+    ],
+    media_publication_receipts: [
+      "首条至最后双媒体发布验证；并非视频处理耗时",
+      "First to final dual-media publication receipt; not video processing duration",
+    ],
+    orion_task_runtime_p50: [
+      "单任务运行耗时中位数；不等于整批墙钟耗时",
+      "Median task runtime; not the batch wall-clock duration",
+    ],
+    camera_latest_attempt: [
+      "最近采集进程启动至本轮结果回执",
+      "Latest capture process start to its final result receipt",
+    ],
+    local_recovery_receipts: [
+      "本批首次本地尝试至最后结果；并发不累加",
+      "First local attempt to final result; parallel runtimes are not summed",
+    ],
+  };
+  const rows: Array<[string, string]> = [
+    [bilingual(lang, "计时", "Timing"), cronTimingText(timing, lang, stale)],
+  ];
+  if (timing?.started_at) {
+    rows.push([bilingual(lang, "开始 · CST", "Start · CST"), cronTime(timing.started_at, lang)]);
+  }
+  if (timing?.finished_at) {
+    rows.push([bilingual(lang, "结束 · CST", "End · CST"), cronTime(timing.finished_at, lang)]);
+  }
+  if (timing?.mode === "running" && timing.observed_at) {
+    rows.push([bilingual(lang, "观测于 · CST", "Observed · CST"), cronTime(timing.observed_at, lang)]);
+  }
+  if (timing?.observed != null) {
+    rows.push([
+      bilingual(lang, "时间回执覆盖", "Timed receipts"),
+      cronFraction(timing.observed, timing.total),
+    ]);
+  }
+  const pair = timing?.basis ? scopes[timing.basis] : undefined;
+  rows.push([
+    bilingual(lang, "计时口径", "Timing scope"),
+    pair
+      ? bilingual(lang, pair[0], pair[1])
+      : bilingual(lang, "缺少有效起止回执", "No valid timing receipts"),
+  ]);
+  return rows;
+}
+
 function cronLabel(value: string | undefined, lang: UiLanguage): string {
   const map: Record<string, [string, string]> = {
     success: ["已完成", "Complete"],
@@ -403,14 +478,43 @@ export const DailyCronPage: React.FC<DailyCronPageProps> = ({ active, lang, them
   const [jobsPageSize, setJobsPageSize] = useState(DEFAULT_CASE_PAGE_SIZE);
 
   const workspaceRef = useRef<HTMLDivElement | null>(null);
+  const detailsRef = useRef<HTMLElement | null>(null);
+  const [openRounds, setOpenRounds] = useState<Record<string, boolean>>({});
 
   const cronQuery = useQuery<DailyCronPayload>({
     queryKey: ["daily-cron"],
-    queryFn: ({ signal }) => apiRequest<DailyCronPayload>("/api/daily-cron", { signal }),
+    queryFn: ({ signal }) => {
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 8000);
+      const onOuterAbort = () => controller.abort();
+      signal?.addEventListener("abort", onOuterAbort, { once: true });
+      return apiRequest<DailyCronPayload>("/api/daily-cron", { signal: controller.signal }).finally(() => {
+        window.clearTimeout(timeout);
+        signal?.removeEventListener("abort", onOuterAbort);
+      });
+    },
     enabled: active,
     refetchInterval: active ? 30_000 : false,
     staleTime: 10_000,
   });
+
+  useEffect(() => {
+    if (!active || typeof document === "undefined") return;
+    const onVisibility = () => {
+      if (!document.hidden) {
+        void queryClient.invalidateQueries({ queryKey: ["daily-cron"] });
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [active, queryClient]);
+
+  useEffect(() => {
+    if (!selectedNodeId || typeof window === "undefined") return;
+    if (window.matchMedia?.("(max-width: 639px)").matches) {
+      detailsRef.current?.scrollIntoView({ block: "start", behavior: "auto" });
+    }
+  }, [selectedNodeId]);
 
   const data = cronQuery.data;
   const hasConnectionError = cronQuery.isError || refreshError;
@@ -994,14 +1098,20 @@ export const DailyCronPage: React.FC<DailyCronPageProps> = ({ active, lang, them
           </div>
 
           {selectedNode && (
-            <aside className="cron-node-details" id="raDailyCronNodeDetails">
+            <aside ref={detailsRef} className="cron-node-details" id="raDailyCronNodeDetails">
               <div className="cron-section-heading">
                 <strong>{selectedNode.data.label}</strong>
                 <button
                   type="button"
                   className="button button-quiet"
                   aria-label={bilingual(lang, "关闭详情", "Close details")}
-                  onClick={() => setSelectedNodeId("")}
+                  onClick={() => {
+                    const prevId = selectedNodeId;
+                    setSelectedNodeId("");
+                    if (typeof window !== "undefined" && window.matchMedia?.("(max-width: 639px)").matches) {
+                      document.querySelector<HTMLElement>(`.cron-mobile-stage-button[data-cron-node="${prevId}"]`)?.focus();
+                    }
+                  }}
                 >
                   ×
                 </button>
@@ -1148,7 +1258,11 @@ export const DailyCronPage: React.FC<DailyCronPageProps> = ({ active, lang, them
                     key={at}
                     className="cron-increment-round"
                     data-latest={String(idx === 0)}
-                    open={idx === 0}
+                    open={at in openRounds ? openRounds[at] : idx === 0}
+                    onToggle={(e) => {
+                      const isOpen = (e.currentTarget as HTMLDetailsElement).open;
+                      setOpenRounds((prev) => (prev[at] === isOpen ? prev : { ...prev, [at]: isOpen }));
+                    }}
                   >
                     <summary>
                       <span className="cron-round-time">
@@ -1412,7 +1526,22 @@ export const DailyCronPage: React.FC<DailyCronPageProps> = ({ active, lang, them
                             : "—"}
                         </dd>
                       </div>
+                      {cronTimingRows(run.timing, lang, hasConnectionError || legacyStale).map(([k, v]) => (
+                        <div key={k}>
+                          <dt>{k}</dt>
+                          <dd>{v}</dd>
+                        </div>
+                      ))}
                     </dl>
+                    {run.percent != null && (
+                      <p className="cron-note muted">
+                        {bilingual(
+                          lang,
+                          "进度条只代表当前阶段，包含失败项；全链路结果由最终回执判定。",
+                          "Progress applies to the current stage and includes failed items; the final receipt determines completion.",
+                        )}
+                      </p>
+                    )}
                     {run.evidence_error && (
                       <p className="cron-alert" data-tone="warn">
                         {bilingual(lang, "状态证据读取异常", "Run evidence could not be read")}
@@ -1576,6 +1705,17 @@ export const DailyCronPage: React.FC<DailyCronPageProps> = ({ active, lang, them
                   </small>
                 </article>
               </div>
+              <p className="cron-note muted">
+                {`${bilingual(lang, "Orion 原始 BEV 任务", "Original Orion BEV jobs")} · ${bilingual(lang, "完成", "Completed")} ${cronCount(
+                  data.sidecar.bev_pilot?.completed == null || data.sidecar.bev_backfill?.completed == null
+                    ? null
+                    : data.sidecar.bev_pilot.completed + data.sidecar.bev_backfill.completed,
+                )} · ${bilingual(lang, "失败", "Failed")} ${cronCount(
+                  data.sidecar.bev_pilot?.failed == null || data.sidecar.bev_backfill?.failed == null
+                    ? null
+                    : data.sidecar.bev_pilot.failed + data.sidecar.bev_backfill.failed,
+                )}`}
+              </p>
               <p className="cron-note muted">
                 {bilingual(
                   lang,

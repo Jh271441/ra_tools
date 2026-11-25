@@ -1,0 +1,975 @@
+
+/* ra_triage_dashboard/static/js/runs.js
+ * Model runs registry and selection
+ * Loaded as a classic script (shared global scope). Do not convert to
+ * ES modules without auditing cross-file function/state dependencies.
+ */
+function reviewerRouteSelection() {
+  const params = new URLSearchParams(window.location.search);
+  return parseFilterList(params.get("reviewer"));
+}
+
+function reviewerFilterSelection(page) {
+  const target = page === "analysis" ? "analysis" : "review";
+  const root = target === "analysis" ? $("#analysisReviewerFilter") : $("#reviewerFilter");
+  const values = parseFilterList(getMultiFilterValues(root));
+  // A refresh can rebuild the reviewer facet for a newly selected Run before
+  // its option list arrives. The route is the durable source of truth for the
+  // active page in that short gap; do not turn a valid reviewer filter into
+  // “all reviewers” merely because the facet is temporarily empty.
+  if (values.length || state.activePage !== target) return values;
+  return reviewerRouteSelection();
+}
+
+function reviewerFilterSelections() {
+  return {
+    review: reviewerFilterSelection("review"),
+    analysis: reviewerFilterSelection("analysis"),
+  };
+}
+
+function selectedReviewExclusionFilter() {
+  const values = parseFilterList(getMultiFilterValues($("#reviewExclusionFilter")));
+  if (values.length === 1 && ["included", "excluded"].includes(values[0])) {
+    return values[0];
+  }
+  return "all";
+}
+
+function persistReviewerFilterRoute(page, values) {
+  const target = page === "analysis" ? "analysis" : "review";
+  if (state.activePage !== target) return;
+  const selection = parseFilterList(
+    values === undefined ? reviewerFilterSelection(target) : values
+  );
+  const options =
+    target === "analysis"
+      ? currentAnalysisRouteOptions({ annotationAuthor: selection })
+      : currentReviewRouteOptions({ annotationAuthor: selection });
+  const nextUrl = pageUrl(target, options);
+  const currentUrl = `${window.location.pathname}${window.location.search}`;
+  if (nextUrl === currentUrl) return;
+  window.history.replaceState(
+    { ...(window.history.state || {}), page: target },
+    "",
+    nextUrl
+  );
+}
+
+function reviewerOptionsWithSelected(options, selected) {
+  const known = new Set(options.map((item) => String(item.value || "")));
+  const retained = parseFilterList(selected)
+    .filter((name) => !known.has(name))
+    .map((name) => ({
+      value: name,
+      // Keep a route-restored reviewer visible and removable even when the
+      // current Run/dataset facet has no matching latest Review yet.
+      label: `${name} · ${uiText("当前筛选", "Current filter")}`,
+    }));
+  return [...options, ...retained];
+}
+
+let reviewerFacetRequestSeq = 0;
+async function loadReviewers(selections = reviewerFilterSelections()) {
+  const requestSeq = ++reviewerFacetRequestSeq;
+  const reviewSelection = parseFilterList(selections.review);
+  const analysisSelection = parseFilterList(selections.analysis);
+  const runId = String(state.selectedRunId || "").trim();
+  const params = new URLSearchParams();
+  if (runId) params.set("model_run_id", runId);
+  appendBaselineParams(params);
+  const query = params.toString() ? `?${params.toString()}` : "";
+  const [data, modelReviewFacets] = await Promise.all([
+    api(`/api/reviewers${query}`).catch(() => ({ items: state.reviewers || [] })),
+    runId ? api(`/api/model-review-facets${query}`).catch(() => null) : Promise.resolve(null),
+  ]);
+  if (requestSeq !== reviewerFacetRequestSeq) return;
+  const mergeModelReviewReviewers = (baseItems, modelItems) => {
+    const merged = new Map(
+      (baseItems || []).map((item) => [String(item.name || "").toLowerCase(), { ...item }])
+    );
+    for (const item of modelItems || []) {
+      const name = String(item.value || "").trim();
+      const key = name.toLowerCase();
+      if (!key) continue;
+      const current = merged.get(key);
+      const modelReviewCount = Number(item.count || 0);
+      const modelVerifiedCount = Number(item.verified_count || 0);
+      const modelUnverifiedCount = Number(item.unverified_count || 0);
+      if (current) {
+        current.model_review_count = modelReviewCount;
+        current.review_count = Math.max(Number(current.review_count || 0), modelReviewCount);
+        current.verified_count = Math.max(Number(current.verified_count || 0), modelVerifiedCount);
+        current.unverified_count = Math.max(Number(current.unverified_count || 0), modelUnverifiedCount);
+        current.verified = current.verified_count > 0 && current.unverified_count === 0;
+      } else {
+        merged.set(key, {
+          name,
+          verified: modelVerifiedCount > 0 && modelUnverifiedCount === 0,
+          verified_count: modelVerifiedCount,
+          unverified_count: modelUnverifiedCount,
+          review_count: modelReviewCount,
+          model_review_count: modelReviewCount,
+        });
+      }
+    }
+    return [...merged.values()];
+  };
+  state.reviewers = mergeModelReviewReviewers(
+    data.items || [],
+    modelReviewFacets?.reviewers || []
+  );
+  const reviewerOptionsFor = (items) => (items || []).map((item) => {
+    const trust =
+      item.verified_count > 0 && item.unverified_count > 0
+        ? t("runs.mixed_identity")
+        : item.verified
+          ? " · SSO"
+          : "";
+    return {
+      value: item.name,
+      label: `${item.name} · ${t("runs.count_n", { n: item.review_count })}${trust}`,
+    };
+  });
+  const reviewerOptions = reviewerOptionsFor(state.reviewers);
+  const analysisReviewerOptions = reviewerOptionsFor(
+    mergeModelReviewReviewers(
+      Array.isArray(data.analysis_items) ? data.analysis_items : state.reviewers,
+      modelReviewFacets?.reviewers || []
+    )
+  );
+  const reviewSelect = $("#reviewerFilter");
+  if (reviewSelect) {
+    renderMultiFilter(reviewSelect, {
+      options: reviewerOptionsWithSelected(reviewerOptions, reviewSelection),
+      selected: reviewSelection,
+      onChange: (values) => {
+        // Persist selection before its async facet/case refresh. Opening a
+        // detail or pressing the top refresh button can then never serialize
+        // an in-flight empty widget as “all reviewers”.
+        persistReviewerFilterRoute("review", values);
+        scheduleReviewFilterReload?.(0);
+      },
+    });
+  }
+  const analysisReviewer = $("#analysisReviewerFilter");
+  if (analysisReviewer) {
+    renderMultiFilter(analysisReviewer, {
+      options: reviewerOptionsWithSelected(analysisReviewerOptions, analysisSelection),
+      selected: analysisSelection,
+      onChange: (values) => {
+        persistReviewerFilterRoute("analysis", values);
+        scheduleAnalysisFilterReload();
+      },
+    });
+  }
+}
+
+function isCombinedTaskProgressFilter() {
+  if (!state.reviewWorkSplitId) return false;
+  const task = state.reviewTaskContext;
+  return (task && task.id === state.reviewWorkSplitId ? task.workflow_mode : state.reviewWorkflowMode)
+    === 'model_review_and_case_label';
+}
+
+function selectedModelReviewStatuses() {
+  return getMultiFilterValues($('#reviewStatusFilter'));
+}
+
+function selectedCombinedTaskProgress() {
+  return isCombinedTaskProgressFilter() ? (state.reviewTaskProgress || []) : [];
+}
+
+function renderReviewProgressFilter() {
+  if (typeof renderNextPendingTaskButton === 'function') renderNextPendingTaskButton();
+  const root = $('#reviewTaskProgressFilter');
+  if (!root) return;
+  const combined = isCombinedTaskProgressFilter();
+  const field = $('#reviewTaskProgressField');
+  if (field) field.hidden = !combined;
+  const label = $('#reviewTaskProgressLabel');
+  if (label) {
+    label.textContent = uiText('任务状态', 'Task status');
+    label.title = uiText('按任务负责人统计：标签确认与模型复核均已提交才算完成；不代表共享标签已形成结论。', 'By assignee: complete when both label acknowledgement and model review are submitted, regardless of shared label resolution.');
+  }
+  const selected = selectedCombinedTaskProgress();
+  const options = [
+    { value: 'pending', label: uiText('待完成', 'Pending') },
+    { value: 'completed', label: uiText('已完成', 'Completed') },
+  ];
+  if (relabelMultiFilter(root, options)) {
+    setMultiFilterValues(root, selected);
+    return;
+  }
+  renderMultiFilter(root, {
+    options, selected,
+    onChange: (values) => {
+      if (isCombinedTaskProgressFilter()) {
+        state.reviewTaskProgress = values;
+      }
+      if (typeof renderNextPendingTaskButton === 'function') renderNextPendingTaskButton();
+      scheduleReviewFilterReload?.(0);
+    },
+  });
+}
+
+function selectedReviewIssueTags() {
+  return parseFilterList(state.reviewIssueTags || []);
+}
+
+function renderTargetGroupPicker(selector, selected, onChange) {
+  const root = $(selector);
+  if (!root) return;
+  const options = [
+    {value: '', label: uiText('全部', 'All')},
+    {value: 'sample', label: uiText('抽样集', 'Random sample')},
+    {value: 'low', label: uiText('低置信度（不含抽样）', 'Low confidence (excluding samples)')},
+  ];
+  // Keep unrecognized URL values visible until server validation, never widen silently.
+  if (selected && !options.some(item => item.value === selected)) options.push({value:selected, label:selected});
+  populateUiSelect(root, options, selected || '');
+  bindUiSelect(root, {onChange});
+  const trigger = root.querySelector('.ui-select-trigger');
+  trigger.title = uiText('按当前版本目标集合筛选；抽样优先于低置信度', 'Filter current version target cohorts; samples take precedence over low confidence');
+  trigger.setAttribute('aria-label', uiText('目标集合', 'Target cohort'));
+}
+
+function renderReviewTargetGroupPicker() {
+  renderTargetGroupPicker('#reviewTargetGroupPicker', state.reviewTargetGroup, value => {
+    state.reviewTargetGroup = value;
+    scheduleReviewFilterReload(0);
+  });
+}
+
+function renderReviewIssueTagFilter() {
+  renderIssueTagFilter('#reviewIssueTagFilter', selectedReviewIssueTags(), values => {
+    state.reviewIssueTags = values;
+    scheduleReviewFilterReload(0);
+  });
+}
+
+function renderIssueTagFilter(selector, selected, onChange) {
+  const root = $(selector);
+  if (!root) return;
+  const definitions = [
+    ['environment', 'tag.env'], ['self_intent', 'tag.ego_intent'],
+    ['false_trigger', 'tag.false_trigger'], ['true_trigger', 'tag.should_trigger'],
+    ['ra', 'tag.correct_trigger'], ['no_assist', 'tag.no_assist'],
+  ];
+  const catalog = state.config?.review_tag_catalog || [];
+  const groups = definitions.map(([key, label]) => ({
+    label: t(label), items: catalog.filter(item => item.group === key &&
+      ((!item.deleted && item.visible !== false) || selected.includes(item.key)))
+      .map(item => ({value: item.key, label: item.label})),
+  })).filter(group => group.items.length);
+  // Keep unknown/deferred URL keys visible; the server validates instead of
+  // silently broadening a shared link while the catalog is loading/changing.
+  const keys = new Set(groups.flatMap(group => group.items.map(item => item.value)));
+  const unknown = selected.filter(key => !keys.has(key));
+  if (unknown.length) groups.push({label: uiText('其他标签', 'Other tags'), items: unknown.map(value => ({value, label: value}))});
+  const options = groups.flatMap(group => group.items);
+  const signature = JSON.stringify(groups.map(group => group.items.map(item => item.value)));
+  if (root.dataset.groupSignature !== signature || !root.querySelector('.multi-filter-trigger') || !relabelMultiFilter(root, options)) {
+    renderMultiFilter(root, {groups, selected, searchable: true, groupNavigation: true, onChange});
+    root.dataset.groupSignature = signature;
+  }
+  setMultiFilterValues(root, selected);
+  relabelMultiFilterGroups(root, groups);
+  const search = root.querySelector('.multi-filter-search');
+  search.placeholder = uiText('搜索标签', 'Search tags');
+  search.setAttribute('aria-label', search.placeholder);
+  root.querySelector('.multi-filter-trigger').setAttribute('aria-label', uiText('Issue 标签筛选', 'Issue tag filter'));
+  root.querySelector('.multi-filter-trigger').title = uiText('同组满足任一标签，不同组同时满足', 'Match any selected tag within each group, and all selected groups');
+}
+
+function renderReviewCatalogFilters() {
+  renderReviewTargetGroupPicker();
+  renderReviewIssueTagFilter();
+  const onChange = () => scheduleReviewFilterReload?.(0);
+  renderMultiFilter($("#comparisonFilter"), {
+    options: analysisComparisonMultiOptions(),
+    selected: parseComparisonStatuses(
+      getMultiFilterValues($("#comparisonFilter")).length
+        ? getMultiFilterValues($("#comparisonFilter"))
+        : state.reviewComparisonStatus
+    ),
+    onChange: () => {
+      state.reviewComparisonStatus = selectedReviewComparisonStatus();
+      state.failureOnly = state.reviewComparisonStatus === "mismatch";
+      onChange();
+    },
+  });
+  const hasRun = Boolean($("#modelRunFilter")?.value || state.selectedRunId);
+  $("#comparisonFilter")?.classList.toggle("is-disabled", !hasRun);
+  $("#comparisonFilter")
+    ?.querySelector(".multi-filter-trigger")
+    ?.toggleAttribute("disabled", !hasRun);
+  if (!hasRun) setMultiFilterValues($("#comparisonFilter"), []);
+  renderMultiFilter($("#gtFilter"), {
+    options: GT_FILTER_VALUES.map((label) => ({ value: label, label })),
+    selected: getMultiFilterValues($("#gtFilter")),
+    onChange,
+  });
+  renderMultiFilter($("#annotationFilter"), {
+    options: LABELS.map((label) => ({ value: label, label })),
+    selected: getMultiFilterValues($("#annotationFilter")),
+    onChange,
+  });
+  renderReviewProgressFilter();
+  const modelStatusOptions = [
+    { value: 'pending', label: uiText('待开始', 'Not started') },
+    { value: 'in_progress', label: uiText('待复核', 'Needs review') },
+    { value: 'completed', label: uiText('已完成', 'Completed') },
+  ];
+  const modelStatusRoot = $('#reviewStatusFilter');
+  if (modelStatusRoot && !relabelMultiFilter(modelStatusRoot, modelStatusOptions)) {
+    renderMultiFilter(modelStatusRoot, {
+      options: modelStatusOptions, selected: selectedModelReviewStatuses(), onChange,
+    });
+  }
+  renderLabelGtFilter($("#sharedLabelStateFilter"), {
+    selected: getMultiFilterValues($("#sharedLabelStateFilter")), onChange,
+  });
+  renderMultiFilter($("#reviewDiscussionFilter"), {
+    options: [
+      { value: "with", label: uiText("有讨论", "With discussion") },
+      { value: "without", label: uiText("无讨论", "Without discussion") },
+    ],
+    selected: getMultiFilterValues($("#reviewDiscussionFilter")),
+    onChange,
+  });
+  renderMultiFilter($("#reviewExclusionFilter"), {
+    options: [
+      {
+        value: "included",
+        label: uiText("不含问题排除", "Exclude shielded cases"),
+      },
+      {
+        value: "excluded",
+        label: uiText("仅问题排除", "Only shielded cases"),
+      },
+    ],
+    selected: getMultiFilterValues($("#reviewExclusionFilter")),
+    onChange,
+  });
+}
+
+function analysisComparisonMultiOptions() {
+  return [
+    {
+      value: "mismatch",
+      label: t("comparison.mismatch"),
+    },
+    {
+      value: "match",
+      label: t("comparison.match"),
+    },
+    {
+      value: "no_gt",
+      label: t("comparison.no_gt"),
+    },
+    {
+      value: "none",
+      label: t("comparison.none"),
+    },
+  ];
+}
+
+function checkedAnalysisComparisonStatus() {
+  const runId = $("#analysisRunFilter")?.value || state.selectedRunId;
+  if (!runId) return "all";
+  const root = $("#analysisComparisonFilter");
+  if (root && !root.matches?.("select")) {
+    // Zero checked values is the user's explicit "全部结果" choice.  A state
+    // fallback here made 清除 immediately restore the previous MISMATCH value.
+    return comparisonStatusParam(getMultiFilterValues(root));
+  }
+  return comparisonStatusParam(
+    parseComparisonStatuses(
+      root?.value || state.reviewAnalysis.comparisonStatus || "all"
+    )
+  );
+}
+
+function setAnalysisComparisonStatus(
+  comparisonStatus,
+  { hasRun = Boolean($("#analysisRunFilter")?.value) } = {}
+) {
+  let nextValues = parseComparisonStatuses(comparisonStatus);
+  if (!hasRun) nextValues = [];
+  const nextStatus = comparisonStatusParam(nextValues);
+  state.reviewAnalysis.comparisonStatus = nextStatus;
+  const root = $("#analysisComparisonFilter");
+  if (root) {
+    root.classList.toggle("is-disabled", !hasRun);
+    root.querySelector(".multi-filter-trigger")?.toggleAttribute("disabled", !hasRun);
+    if (root.matches?.("select")) {
+      root.disabled = !hasRun;
+      root.value = nextStatus === "all" ? "all" : nextValues[0] || "all";
+    } else {
+      setMultiFilterValues(root, nextValues);
+      if (!hasRun) setMultiFilterValues(root, []);
+    }
+  }
+  return nextStatus;
+}
+
+function renderAnalysisComparisonFilter() {
+  const root = $("#analysisComparisonFilter");
+  if (!root || typeof renderMultiFilter !== "function") return;
+  const hasRun = Boolean($("#analysisRunFilter")?.value || state.selectedRunId);
+  renderMultiFilter(root, {
+    options: analysisComparisonMultiOptions(),
+    selected: parseComparisonStatuses(
+      getMultiFilterValues(root).length
+        ? getMultiFilterValues(root)
+        : state.reviewAnalysis.comparisonStatus
+    ),
+    onChange: () => {
+      state.reviewAnalysis.comparisonStatus = checkedAnalysisComparisonStatus();
+      if (typeof scheduleAnalysisFilterReload === "function") {
+        scheduleAnalysisFilterReload(0);
+      }
+    },
+  });
+  root.classList.toggle("is-disabled", !hasRun);
+  root.querySelector(".multi-filter-trigger")?.toggleAttribute("disabled", !hasRun);
+  if (!hasRun) setMultiFilterValues(root, []);
+}
+
+/** @deprecated use renderAnalysisComparisonFilter */
+function bindAnalysisComparisonPicker() {
+  renderAnalysisComparisonFilter();
+}
+
+function renderAnalysisRunFilter() {
+  const select = $("#analysisRunFilter");
+  const picker = $("#analysisRunPicker");
+  if (!select) return;
+  const options = [
+    { value: "", label: t("filter.no_overlay_run") },
+    ...state.modelRuns.map((run) => {
+      const tag = run.is_default ? t("runs.default_prefix") : "";
+      return {
+        value: run.id,
+        label: `${tag}${run.name} · ${t("runs.count_n", { n: run.baseline_prediction_count ?? 0 })} · ${t("runs.wrong_n", { n: run.failure_count ?? 0 })}`,
+      };
+    }),
+  ];
+  const selected = state.modelRuns.some((run) => run.id === state.selectedRunId)
+    ? state.selectedRunId
+    : "";
+  if (picker && typeof populateUiSelect === "function") {
+    populateUiSelect(picker, options, selected);
+    bindUiSelect(picker, { maxHeight: 360, maxWidth: 480 });
+  } else {
+    select.innerHTML = options
+      .map(
+        (item) =>
+          `<option value="${escapeHtml(item.value)}">${escapeHtml(item.label)}</option>`
+      )
+      .join("");
+    select.value = selected;
+  }
+  setAnalysisComparisonStatus(state.reviewAnalysis.comparisonStatus, {
+    hasRun: Boolean(select.value),
+  });
+  renderAnalysisComparisonFilter();
+}
+
+async function loadRuns({
+  preferDefault = false,
+  preserveEmpty = false,
+  clearIncompatible = false,
+} = {}) {
+  const pageContext = capturePageContext();
+  const requestedRunId = state.selectedRunId;
+  const requestedBaselines = selectedBaselineQueryValue();
+  const data = await api(withBaselineQuery("/api/model-runs"));
+  if (!isPageContextCurrent(pageContext, { matchUrl: false })
+      || requestedRunId !== state.selectedRunId
+      || requestedBaselines !== selectedBaselineQueryValue()) return;
+  if (data.aliases?.[state.selectedRunId]) {
+    state.selectedRunId = data.aliases[state.selectedRunId];
+    const aliasUrl = new URL(window.location.href);
+    if (aliasUrl.searchParams.has("run")) { aliasUrl.searchParams.set("run", state.selectedRunId); history.replaceState(history.state, "", aliasUrl.pathname + aliasUrl.search); }
+  }
+  state.modelRuns = data.items || [];
+  const select = $("#modelRunFilter");
+  const picker = $("#modelRunPicker");
+  const previousRunId = state.selectedRunId;
+  const preferredRunId =
+    data.default_model_run_id ||
+    state.config?.default_model_run_id ||
+    "";
+  let candidate = preferDefault
+    ? preferredRunId
+    : preserveEmpty
+      ? state.selectedRunId
+      : state.selectedRunId || data.default_model_run_id || state.config?.default_model_run_id || "";
+  const runOptions = [
+    { value: "", label: t("filter.no_run") },
+    ...state.modelRuns.map((run) => {
+      const tag = run.is_default ? t("runs.default_prefix") : "";
+      const inferred = Array.isArray(run.inferred_baseline_ids)
+        ? run.inferred_baseline_ids.filter(Boolean)
+        : [];
+      const setHint = inferred.length ? ` · ${inferred.join("+")}` : "";
+      return {
+        value: run.id,
+        label: `${tag}${run.name}${setHint} · ${t("runs.set_count")} ${run.baseline_prediction_count ?? 0} · ${t("runs.err_count")} ${run.failure_count ?? 0}`,
+      };
+    }),
+  ];
+  const candidateRun = state.modelRuns.find((run) => run.id === candidate);
+  // A missing team default means "no overlay". Never silently promote the
+  // newest Run, and never carry an implicit/inherited Run into a dataset where
+  // it has zero predictions. Explicit deep links still remain selectable so
+  // users can intentionally inspect the NONE partition.
+  if (
+    candidateRun &&
+    (preferDefault || clearIncompatible) &&
+    Number(candidateRun.baseline_prediction_count || 0) <= 0
+  ) {
+    candidate = "";
+  }
+  state.selectedRunId = state.modelRuns.some((run) => run.id === candidate) ? candidate : "";
+  if (picker && typeof populateUiSelect === "function") {
+    populateUiSelect(picker, runOptions, state.selectedRunId);
+    bindUiSelect(picker, { maxHeight: 360, maxWidth: 520 });
+  } else if (select) {
+    select.innerHTML = runOptions
+      .map(
+        (item) =>
+          `<option value="${escapeHtml(item.value)}">${escapeHtml(item.label)}</option>`
+      )
+      .join("");
+    select.value = state.selectedRunId;
+  }
+  if (preferDefault && !previousRunId && state.selectedRunId) {
+    // A Run is an overlay on the immutable selected GT workset. Selecting or
+    // importing it must not shrink the workset itself. Keep the established
+    // Review default focused on model failures; NONE remains available from
+    // the comparison filter and is still retained in the baseline queue.
+    state.reviewComparisonStatus = "mismatch";
+    state.reviewAnalysis.comparisonStatus = "mismatch";
+    state.failureOnly = true;
+  }
+  if (!state.selectedRunId) state.reviewComparisonStatus = "all";
+  setReviewComparisonStatus(state.reviewComparisonStatus, {
+    hasRun: Boolean(state.selectedRunId),
+  });
+  renderAnalysisRunFilter();
+  renderRunFilters();
+  renderRunSourceSummary();
+  renderActiveRun();
+  renderRunManager();
+  if (typeof window !== "undefined" && window.__RA_REACT_WORKBENCH__?.ownsPage?.("runs-manager")) {
+    window.__RA_REACT_WORKBENCH__.refreshPage("runs-manager");
+  }
+  if (typeof renderRunComparisonSelectors === "function") {
+    renderRunComparisonSelectors();
+  }
+}
+
+const RUN_SOURCE_META = Object.freeze({
+  upload: {
+    label: t("runs.kind_upload"),
+    description: "JSON / CSV / XLSX",
+    className: "source-upload",
+    countId: "runSourceCountUpload",
+  },
+  trail_snapshot: {
+    label: t("runs.kind_trail"),
+    description: t("runs.kind_trail_desc"),
+    className: "source-trail",
+    countId: "runSourceCountTrail",
+  },
+  autotriage_snapshot: {
+    label: t("runs.kind_autotriage"),
+    description: t("runs.kind_auto_desc"),
+    className: "source-autotriage",
+    countId: "runSourceCountAutotriage",
+  },
+  manual_batch: {
+    label: t("runs.kind_batch"),
+    description: t("runs.kind_batch_desc"),
+    className: "source-batch",
+  },
+});
+
+function runSourceMeta(runOrKind) {
+  const kind = typeof runOrKind === "string" ? runOrKind : runOrKind?.kind;
+  return RUN_SOURCE_META[kind] || {
+    label: kind || t("runs.kind_unknown"),
+    description: t("runs.kind_unknown_desc"),
+    className: "source-unknown",
+  };
+}
+
+function runSourceReference(run) {
+  const metadata = run?.metadata && typeof run.metadata === "object" ? run.metadata : {};
+  const recordUrl = safeUrl(metadata.record_url || metadata.records_url || "");
+  if (recordUrl) {
+    return `<a class="run-source-link" href="${escapeHtml(recordUrl)}" target="_blank" rel="noreferrer">${escapeHtml(t("runs.raw_records"))}</a>`;
+  }
+  if (run?.kind === "trail_snapshot") {
+    const viewId = metadata.view_id || metadata.trail_view_id || String(run.source_name || "").match(/\d+/)?.[0] || "2410";
+    return `<span class="run-source-ref">Trail view ${escapeHtml(viewId)}</span>`;
+  }
+  const source = run?.source_file && typeof run.source_file === "object" ? run.source_file : {};
+  const sourceName = String(source.filename || run?.source_name || "").split(/[\\/]/).pop() || t("runs.filename_missing");
+  const previewUrl = safeSameOriginAssetUrl(source.preview_url);
+  const downloadUrl = safeSameOriginAssetUrl(source.download_url);
+  const reconstructed = source.reconstructed
+    ? `<span class="run-source-reconstructed">${escapeHtml(t("runs.reconstructed"))}</span>`
+    : "";
+  const previewAction = source.preview_supported
+    ? `<button class="run-source-preview" type="button" data-preview-run="${escapeHtml(run?.id || "")}">${escapeHtml(t("runs.preview"))}</button>`
+    : previewUrl
+      ? `<a class="run-source-link" href="${escapeHtml(previewUrl)}" target="_blank" rel="noreferrer">${escapeHtml(t("runs.open"))}</a>`
+      : "";
+  const actions = source.available && (previewUrl || downloadUrl)
+    ? `<span class="run-source-actions">${previewAction}${downloadUrl ? `<a class="run-source-link" href="${escapeHtml(downloadUrl)}" download>下载</a>` : ""}</span>${reconstructed}`
+    : `<span class="run-source-unavailable">未归档</span>`;
+  return `<span class="run-source-ref" title="${escapeHtml(run?.source_name || sourceName)}">原始文件 · ${escapeHtml(sourceName)} ${actions}</span>`;
+}
+
+function renderRunSourceSummary() {
+  Object.entries(RUN_SOURCE_META).forEach(([kind, meta]) => {
+    if (!meta.countId) return;
+    const target = $(`#${meta.countId}`);
+    if (target) {
+      target.textContent = String(state.modelRuns.filter((run) => run.kind === kind).length);
+    }
+  });
+}
+
+function runOwner(run) {
+  return run.created_by || run.declared_author || "";
+}
+
+function runPeople() {
+  const values = new Set();
+  state.modelRuns.forEach((run) => {
+    const owner = runOwner(run);
+    if (owner) values.add(owner);
+  });
+  return [...values].sort((left, right) => left.localeCompare(right, "zh-CN"));
+}
+
+function runBatchName(run) {
+  const experiment = run.metadata?.experiment || {};
+  const platformBatch = run.metadata?.platform_batch || {};
+  const sourceFile = String(run.source_name || "").split(/[\\/]/).pop() || "";
+  return (
+    platformBatch.batch_name ||
+    experiment.run_id ||
+    experiment.experiment_id ||
+    sourceFile.replace(/\.(json|csv|xlsx|xlsm)$/i, "") ||
+    "未命名批次"
+  );
+}
+
+function currentRunsRouteOptions(overrides = {}) {
+  const params = new URLSearchParams(window.location.search);
+  return {
+    page: state.runPage,
+    pageSize: state.runPageSize,
+    importKind: params.has("import") || params.has("kind") ? "model" : "",
+    ...overrides,
+  };
+}
+
+function persistRunsRoute(overrides = {}) {
+  if (state.activePage !== "runs") return;
+  const nextUrl = pageUrl("runs", currentRunsRouteOptions(overrides));
+  const currentUrl = `${window.location.pathname}${window.location.search}`;
+  if (nextUrl === currentUrl) return;
+  window.history.replaceState(
+    { ...(window.history.state || {}), page: "runs" },
+    "",
+    nextUrl
+  );
+}
+
+function runManagerPageCount(total) {
+  return Math.max(1, Math.ceil(Number(total || 0) / Math.max(1, Number(state.runPageSize) || DEFAULT_CASE_PAGE_SIZE)));
+}
+
+function filteredModelRuns() {
+  const search = ($("#runSearchInput")?.value || "").trim().toLowerCase();
+  const personValue = $("#runPersonFilter")?.value || "";
+  const person = personValue === "__me__" ? state.session.username : personValue;
+  const kind = $("#runKindFilter")?.value || "";
+  return state.modelRuns.filter((run) => {
+    const personMatch = !person || runOwner(run) === person;
+    const searchText = [
+      run.name,
+      runBatchName(run),
+      run.source_name,
+      run.created_by,
+      run.declared_author,
+      run.metadata?.model_name,
+      run.metadata?.prompt_version,
+      run.metadata?.external_username,
+    ].join(" ").toLowerCase();
+    return personMatch && (!kind || run.kind === kind) && (!search || searchText.includes(search));
+  });
+}
+
+function renderRunManagerPagination(total, pageCount) {
+  const pagination = $("#runManagerPagination");
+  if (!pagination) return;
+  const hasRows = Number(total || 0) > 0;
+  pagination.hidden = !hasRows;
+  const page = Math.max(1, Math.min(Number(state.runPage) || 1, pageCount));
+  const previous = $("#runPagePrevious");
+  const next = $("#runPageNext");
+  const summary = $("#runPageSummary");
+  const jump = $("#runPageJump");
+  const size = $("#runPageSize");
+  if (previous) previous.disabled = !hasRows || page <= 1;
+  if (next) next.disabled = !hasRows || page >= pageCount;
+  if (summary) summary.textContent = hasRows ? `${page} / ${pageCount}` : "— / —";
+  if (jump) {
+    jump.max = String(pageCount);
+    jump.value = hasRows ? String(page) : "";
+    jump.disabled = !hasRows || pageCount <= 1;
+  }
+  if (size) {
+    size.value = String(state.runPageSize || DEFAULT_CASE_PAGE_SIZE);
+    size.disabled = !hasRows;
+  }
+  enhanceNativeUiSelect(size);
+}
+
+function resetRunManagerPageAndRender() {
+  state.runPage = 1;
+  persistRunsRoute({ page: 1 });
+  renderRunManager();
+}
+
+function changeRunManagerPage(delta) {
+  const filteredCount = filteredModelRuns().length;
+  const pageCount = runManagerPageCount(filteredCount);
+  const nextPage = Math.max(1, Math.min(pageCount, (Number(state.runPage) || 1) + Number(delta || 0)));
+  if (nextPage === state.runPage) return;
+  state.runPage = nextPage;
+  persistRunsRoute({ page: nextPage });
+  renderRunManager();
+}
+
+function jumpToRunManagerPage(value) {
+  const page = Number.parseInt(value, 10);
+  if (!Number.isFinite(page) || page < 1) {
+    renderRunManager();
+    return;
+  }
+  const filteredCount = filteredModelRuns().length;
+  const pageCount = runManagerPageCount(filteredCount);
+  state.runPage = Math.max(1, Math.min(pageCount, page));
+  persistRunsRoute({ page: state.runPage });
+  renderRunManager();
+}
+
+function changeRunManagerPageSize(value) {
+  const pageSize = Number.parseInt(value, 10);
+  if (!CASE_PAGE_SIZES.includes(pageSize)) return;
+  state.runPageSize = pageSize;
+  state.runPage = 1;
+  persistRunsRoute({ page: 1, pageSize });
+  renderRunManager();
+}
+
+function renderRunFilters() {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("runs-manager") || window.__RA_REACT_OWNED_PAGES__?.includes?.("runs-manager"))) return;
+  const select = $("#runPersonFilter");
+  if (!select) return;
+  const previous = select.value;
+  const mine = state.session.username;
+  const people = runPeople();
+  select.innerHTML = [
+    '<option value="">全部人员</option>',
+    mine ? `<option value="__me__">我的 · ${escapeHtml(mine)}</option>` : "",
+    ...people.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`),
+  ].join("");
+  select.value =
+    previous === "__me__" || people.includes(previous)
+      ? previous
+      : "";
+  enhanceNativeUiSelect(select);
+}
+
+function activeRun() {
+  return state.modelRuns.find((run) => run.id === state.selectedRunId);
+}
+
+function renderActiveRun(overview = null) {
+  const run = activeRun();
+  const activeName = $("#activeRunName");
+  const activeMeta = $("#activeRunMeta");
+  if (activeName) activeName.textContent = run?.name || "尚未选择模型 Run";
+  const runSelect = $("#modelRunFilter");
+  if (runSelect) {
+    runSelect.title = run
+      ? `${run.name} · ${run.baseline_prediction_count ?? 0} 条 · 错 ${run.failure_count ?? 0}`
+      : "尚未选择模型 Run";
+  }
+  if (!run) {
+    if (activeMeta) {
+      activeMeta.textContent =
+        state.config?.trail_sync?.message ||
+        "选择团队 Run、创建 Trail 只读快照，或导入 JSON / CSV / XLSX";
+    }
+    if (state.reviewTaskContext) renderReviewTaskContext();
+    return;
+  }
+  const coverage = overview?.predictions ?? run.baseline_prediction_count ?? 0;
+  const failures = overview?.model_failures ?? run.failure_count ?? 0;
+  const reviewedMismatches = overview?.reviewed_failures;
+  const sourceLabel = runSourceMeta(run).label;
+  const worksetCount = currentWorksetIssueCount();
+  if (activeMeta) {
+    activeMeta.textContent =
+      `${coverage} / ${worksetCount || "—"} 覆盖 · ${failures} 条判断失败` +
+      `${reviewedMismatches === undefined ? "" : ` · ${reviewedMismatches} 条判错已复核`}` +
+      ` · ${sourceLabel}`;
+  }
+  if (state.reviewTaskContext) renderReviewTaskContext();
+}
+
+function renderRunManager() {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("runs-manager") || window.__RA_REACT_OWNED_PAGES__?.includes?.("runs-manager"))) return;
+  const list = $("#modelRunList");
+  if (!list) return;
+  const filteredRuns = filteredModelRuns();
+  const totalCoverage = filteredRuns.reduce(
+    (sum, run) => sum + Number(run.baseline_prediction_count || 0),
+    0
+  );
+  const pageCount = runManagerPageCount(filteredRuns.length);
+  const previousPage = Number(state.runPage) || 1;
+  state.runPage = Math.max(1, Math.min(pageCount, previousPage));
+  if (state.runPage !== previousPage) persistRunsRoute({ page: state.runPage });
+  $("#runManagerSummary").textContent =
+    `${filteredRuns.length} / ${state.modelRuns.length} 个 Run · ${totalCoverage} 条预测 · 第 ${state.runPage} / ${pageCount} 页`;
+  renderRunManagerPagination(filteredRuns.length, pageCount);
+  if (!filteredRuns.length) {
+    list.innerHTML = '<div class="no-asset">当前筛选下没有 Run。</div>';
+    return;
+  }
+  const pageStart = (state.runPage - 1) * state.runPageSize;
+  const visibleRuns = filteredRuns.slice(pageStart, pageStart + state.runPageSize);
+  // Denominator must follow the topbar dataset multi-select (union), not the
+  // legacy primary-only config.baseline (always 0508 / 1071).
+  const baselineCount = currentWorksetIssueCount();
+  list.innerHTML = visibleRuns
+    .map(
+      (run) => {
+        const coverage = Number(run.baseline_prediction_count || 0);
+        const coverageLabel =
+          baselineCount && coverage >= baselineCount ? "全量覆盖" : "部分覆盖";
+        const owner = runOwner(run) || "未记录";
+        const batch = runBatchName(run);
+        const modelName = run.metadata?.model_name || run.metadata?.experiment?.model_name || "";
+        const promptVersion = run.metadata?.prompt_version || run.metadata?.experiment?.prompt_version || "";
+        const externalUser = run.metadata?.external_username || "";
+        const sourceMeta = runSourceMeta(run);
+        const ownerTitle = run.created_by
+          ? `提交人：${run.created_by}${run.declared_author && run.declared_author !== run.created_by ? `；结果包作者：${run.declared_author}` : ""}`
+          : run.declared_author
+            ? `结果包作者：${run.declared_author}`
+            : "人员信息未记录";
+        return `<article class="run-row ${run.id === state.selectedRunId ? "active" : ""}">
+        <div class="run-row-main">
+          <div class="run-row-title">
+            <strong>${escapeHtml(run.name)}</strong>
+            <span class="run-source-badge ${sourceMeta.className}" title="${escapeHtml(sourceMeta.description)}">${escapeHtml(sourceMeta.label)}</span>
+            <span class="run-coverage-badge">${coverageLabel}</span>
+          </div>
+          <div class="run-row-meta">
+            <span title="${escapeHtml(ownerTitle)}">人员 · <b class="run-meta-value">${escapeHtml(owner)}</b></span>
+            <span title="${escapeHtml(run.source_name || "")}">批次 · <b class="run-meta-value">${escapeHtml(batch)}</b></span>
+            ${modelName ? `<span>模型 · ${escapeHtml(modelName)}</span>` : ""}
+            ${promptVersion ? `<span>Prompt · ${escapeHtml(promptVersion)}</span>` : ""}
+            ${externalUser && externalUser !== owner ? `<span>平台用户 · ${escapeHtml(externalUser)}</span>` : ""}
+            <span>${runSourceReference(run)}</span>
+            <span title="相对当前数据集">${coverage} / ${baselineCount || "—"} 条</span>
+            <span class="run-failure-count">错误 ${run.failure_count ?? 0}</span>
+            <span>${formatTime(run.created_at)}</span>
+          </div>
+        </div>
+        <div class="run-row-actions">
+          <button class="button ${run.id === state.selectedRunId ? "button-primary" : "button-quiet"}" type="button" data-use-run="${escapeHtml(run.id)}">${run.id === state.selectedRunId ? "当前 Review" : "打开 Review"}</button>
+          ${run.is_default ? '<button class="button button-quiet" type="button" disabled title="先切换团队默认 Run 才能删除">默认 Run</button>' : `<button class="button button-danger" type="button" data-delete-run="${escapeHtml(run.id)}">删除</button>`}
+        </div>
+      </article>`;
+      }
+    )
+    .join("");
+  list.querySelectorAll("[data-use-run]").forEach((button) => {
+    button.addEventListener("click", () => useModelRun(button.dataset.useRun));
+  });
+  list.querySelectorAll("[data-preview-run]").forEach((button) => {
+    button.addEventListener("click", () => openSourcePreview(button.dataset.previewRun));
+  });
+  list.querySelectorAll("[data-delete-run]").forEach((button) => {
+    button.addEventListener("click", () => deleteModelRun(button.dataset.deleteRun));
+  });
+}
+
+async function useModelRun(runId) {
+  const run = state.modelRuns.find((item) => item.id === runId);
+  if (!run) return;
+  state.selectedRunId = runId;
+  // Keep the established failure-focused Review default.  Missing
+  // predictions are represented as NONE by the comparison overlay rather than
+  // dropping those Issues from the immutable baseline.
+  state.reviewComparisonStatus = "mismatch";
+  state.failureOnly = true;
+  state.selectedId = "";
+  state.casePage = 1;
+  state.galleryScrollY = 0;
+  $("#modelRunFilter").value = runId;
+  setReviewComparisonStatus("mismatch", { hasRun: true });
+  await applyInferredBaselinesFromRun(run, { reason: "run" });
+  renderActiveRun();
+  renderRunManager();
+  await Promise.all([loadCases({ keepSelection: false, page: 1 }), loadClusters(), loadOverview()]);
+  navigatePage("review");
+}
+
+async function deleteModelRun(runId) {
+  const run = state.modelRuns.find((item) => item.id === runId);
+  if (!run) return;
+  if (run.is_default) {
+    showToast("当前团队默认 Run 不能删除，请先切换默认 Run。", true);
+    return;
+  }
+  const confirmed = window.confirm(
+    `确认删除模型 Run「${run.name}」？\n\n该操作会删除该 Run 的模型输出和来源归档，不会删除任何 GT 数据集、Issue 或人工 review，且不可恢复。`
+  );
+  if (!confirmed) return;
+  const button = document.querySelector(`[data-delete-run="${CSS.escape(runId)}"]`);
+  if (button) {
+    button.disabled = true;
+    button.textContent = "删除中…";
+  }
+  try {
+    const result = await api(`/api/model-runs/${encodeURIComponent(runId)}`, { method: "DELETE" });
+    if (state.selectedRunId === runId) {
+      state.selectedRunId = "";
+      state.reviewComparisonStatus = "all";
+      state.failureOnly = false;
+    }
+    await Promise.all([loadRuns({ preserveEmpty: true }), loadOverview(), loadCases(), loadClusters()]);
+    showToast(`已删除 Run「${result.deleted?.name || run.name}」${result.source_deleted ? "及来源文件" : ""}。`);
+  } catch (error) {
+    showToast(error.message, true);
+    if (button?.isConnected) {
+      button.disabled = false;
+      button.textContent = "删除";
+    }
+  }
+}

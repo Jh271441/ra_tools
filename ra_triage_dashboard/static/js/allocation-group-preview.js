@@ -1,0 +1,348 @@
+/* The same after-state projection drives the creation and edit previews. */
+function allocationPreviewView() {
+  return { selected: new Map(), rosters: new Set(), unchanged: false };
+}
+
+function allocationMemberBadgeMap(plan, chartGroups) {
+  const map = new Map();
+  const addFromGroups = (list) => {
+    (list || []).forEach((group, index) => {
+      const badge = allocationGroupShortBadge(group.group_id, index);
+      (group.members || []).forEach((person) => {
+        if (person?.name && !map.has(person.name)) map.set(person.name, badge);
+      });
+    });
+  };
+  addFromGroups(chartGroups);
+  addFromGroups(plan?.groups);
+  if (typeof taskAllocationEditor === "object" && taskAllocationEditor?.config?.groups) {
+    addFromGroups(taskAllocationEditor.config.groups);
+  }
+  return map;
+}
+
+function renderAllocationConvergenceStrip(plan, groups, fmt) {
+  const conv = plan?.convergence;
+  if (!conv || !conv.union_completed_cases) return "";
+  const singleGroup = groups.length === 1;
+  if (!singleGroup && !conv.conflict_cases) return "";
+  if (singleGroup && !conv.overlap_completed_cases && !conv.conflict_cases) return "";
+
+  const pills = [
+    '<span class="allocation-conv-item">' + escapeHtml(uiText(
+      "并集已标 " + fmt(conv.union_completed_cases) + " / " + fmt(conv.case_count),
+      "Set-union done " + fmt(conv.union_completed_cases) + " / " + fmt(conv.case_count),
+    )) + "</span>",
+  ];
+  if (conv.consensus_cases > 0) {
+    pills.push('<span class="allocation-conv-item">' + escapeHtml(uiText(
+      "相交一致 " + fmt(conv.consensus_cases) + " 例（自动合一）",
+      fmt(conv.consensus_cases) + " agreed overlaps",
+    )) + "</span>");
+  }
+  if (conv.adjudicated_cases > 0) {
+    pills.push('<span class="allocation-conv-item">' + escapeHtml(uiText(
+      "已裁决 " + fmt(conv.adjudicated_cases) + " 例",
+      fmt(conv.adjudicated_cases) + " adjudicated",
+    )) + "</span>");
+  }
+  if (conv.conflict_cases > 0) {
+    pills.push('<span class="allocation-conv-item is-conflict">' + escapeHtml(uiText(
+      "相交冲突 " + fmt(conv.conflict_cases) + " 例待裁决",
+      fmt(conv.conflict_cases) + " overlap conflicts to adjudicate",
+    )) + "</span>");
+  }
+  if (conv.pending_cases > 0) {
+    pills.push('<span class="allocation-conv-item">' + escapeHtml(uiText(
+      "剩余待标 " + fmt(conv.pending_cases) + " 例",
+      fmt(conv.pending_cases) + " pending",
+    )) + "</span>");
+  }
+  return '<div class="allocation-convergence-bar" role="status">' + pills.join("") + "</div>";
+}
+
+function renderGroupedAllocationPreview(root, plan, view, { editing = false } = {}) {
+  const chart = plan?.group_coverage;
+  if (!root || !chart?.case_count) return false;
+  const number = new Intl.NumberFormat(i18nLocale(), { maximumFractionDigits: 2 });
+  const fmt = (value) => number.format(value);
+  const groups = chart.groups;
+  const activeSlots = chart.active_slots ?? plan.active_slots ?? plan.total_slots ??
+    groups.reduce((sum, group) => sum + group.members.reduce((total, p) => total + p.total, 0) + (group.union_completed || 0), 0);
+  const activeMembers = new Set(groups.flatMap((group) => group.members.map((person) => person.name)));
+  for (const [id, name] of view.selected) {
+    if (!groups.some((group) => group.group_id === id && group.members.some((person) => person.name === name))) view.selected.delete(id);
+  }
+  const selected = [...view.selected];
+  const intersections = groups.map(() => new Map());
+  let sharedTotal = 0;
+  if (selected.length) {
+    const criteria = selected.map(([id, name]) => [groups.findIndex((g) => g.group_id === id), name]);
+    for (const { owners, count } of chart.combinations) {
+      if (criteria.every(([index, name]) => owners[index] === name)) {
+        sharedTotal += count;
+        owners.forEach((name, index) => intersections[index].set(name, (intersections[index].get(name) || 0) + count));
+      }
+    }
+  }
+  const workloadPct = fmt(100 * activeSlots / chart.case_count) + "%";
+  const summary = uiText(
+    "<strong>" + escapeHtml(workloadPct) + "</strong> 总工作量 · " + escapeHtml(fmt(chart.case_count)) + " 个 Case · " + escapeHtml(fmt(activeSlots)) + " 份",
+    "<strong>" + escapeHtml(workloadPct) + "</strong> workload · " + escapeHtml(fmt(chart.case_count)) + " cases · " + escapeHtml(fmt(activeSlots)) + " slots",
+  );
+  const setupScope = root.closest?.(".dialog-card, .allocation-creation-layout");
+  const groupRenderData = groups.map((group, index) => {
+    const name = allocationGroupName(group.group_id, index);
+    const domCard = setupScope?.querySelector?.('[data-setup-group="' + CSS.escape(group.group_id) + '"]');
+    const domNames = domCard ? [...domCard.querySelectorAll("[data-group-member]")].map((el) => el.value).filter(Boolean) : [];
+    const configuredNames = domNames.length
+      ? domNames
+      : ((plan.groups || []).find((item) => item.group_id === group.group_id)?.members || []).map((person) => person.name);
+    const orderMap = new Map(configuredNames.map((memberName, idx) => [memberName, idx]));
+    const orderedMembers = [...group.members].sort((a, b) => (orderMap.get(a.name) ?? 999) - (orderMap.get(b.name) ?? 999));
+    const memberTotal = orderedMembers.reduce((sum, member) => sum + member.total, 0);
+    const unionDone = group.union_completed || 0;
+    const coveredTotal = memberTotal + unionDone;
+    const uncovered = Math.max(0, chart.case_count - coveredTotal);
+    const parts = [...orderedMembers];
+    if (unionDone > 0) parts.push({ name: "__union__", total: unionDone, completed: unionDone });
+    if (uncovered > 0) parts.push({ name: null, total: uncovered, completed: 0 });
+    const coverText = uiText("覆盖 ", "Cover ") + fmt(100 * coveredTotal / chart.case_count) + "%";
+    const segmentData = parts.map((person, memberIndex) => {
+      const isUnion = person.name === "__union__";
+      const isMember = person.name != null && !isUnion;
+      const showShared = isMember && selected.length > 0 && !view.selected.has(group.group_id);
+      const active = isMember && view.selected.get(group.group_id) === person.name;
+      const shared = isMember ? (intersections[index].get(person.name) || 0) : 0;
+      const label = isUnion
+        ? uiText("历史并集已标", "Prior union done")
+        : (person.name ?? uiText("未覆盖", "Uncovered"));
+      const countMarkup = showShared
+        ? '<strong>' + escapeHtml(fmt(shared)) + '</strong><small>/' + escapeHtml(fmt(person.total)) + '</small>'
+        : '<strong class="is-total">' + escapeHtml(fmt(person.total)) + '</strong>';
+      const description = label + " · " + fmt(person.total) + ((isMember || isUnion) ? " · " +
+        uiText("已完成 ", "Completed ") + fmt(person.completed) : "") +
+        (isMember && selected.length ? " · " + uiText("共同 Case ", "Shared cases ") + fmt(shared) : "");
+      const slotIndex = isMember && orderMap.has(person.name) ? orderMap.get(person.name) : memberIndex;
+      const portionPct = (100 * person.total / chart.case_count) + "%";
+      const memberColor = "var(--allocation-color-" + ((index * 2 + slotIndex) % 4) + ")";
+      const donePct = (person.total ? 100 * person.completed / person.total : 0) + "%";
+      const sharedPct = (person.total ? 100 * shared / person.total : 0) + "%";
+      const hasSeam = isMember && person.completed > 0 && person.completed < person.total;
+      const key = isUnion ? "__union__" : (person.name ?? "__uncovered__");
+      return {
+        person, isUnion, isMember, active, shared, label, countMarkup, description,
+        portionPct, memberColor, donePct, sharedPct, hasSeam, key,
+      };
+    });
+    return { group, index, name, coverText, segmentData };
+  });
+
+  const convergenceMarkup = renderAllocationConvergenceStrip(plan, groups, fmt);
+  const focusTextHtml = selected.length
+    ? '<strong>' + escapeHtml(selected.map(([, name]) => name).join(" × ")) +
+      '</strong><span>' + escapeHtml(selected.length > 1 ? uiText("共同 Case ", "Shared cases ") :
+        uiText("负责 Case ", "Assigned cases ")) + '<strong class="allocation-focus-count">' + escapeHtml(fmt(sharedTotal)) + '</strong></span>'
+    : escapeHtml(groups.length > 1
+      ? uiText("点击成员色块查看跨组共同 Case", "Click a member segment to inspect shared cases")
+      : uiText("点击成员色块查看负责的 Case", "Click a member segment to inspect assigned cases"));
+  const diffMarkup = editing ? renderAllocationDiff(plan, view, activeMembers, fmt, { groups }) : "";
+  const structKey = (editing ? "1" : "0") + "|" + (convergenceMarkup ? "1" : "0") + "|" +
+    groupRenderData.map((g) => g.group.group_id + ":" + g.segmentData.map((s) => s.key).join(",")).join(";");
+
+  let patched = false;
+  if (root.dataset?.previewStructKey === structKey) {
+    const existingRows = [...root.querySelectorAll(".allocation-group-rows > .allocation-group-row")];
+    if (existingRows.length === groupRenderData.length) {
+      const countsMatch = groupRenderData.every(
+        (g, idx) => existingRows[idx].querySelectorAll(".allocation-group-portion").length === g.segmentData.length,
+      );
+      if (countsMatch) {
+        const summaryEl = root.querySelector(".allocation-group-summary");
+        if (summaryEl) summaryEl.innerHTML = summary;
+        const convEl = root.querySelector(".allocation-convergence-bar");
+        if (convEl && convergenceMarkup) {
+          const tmp = document.createElement("div");
+          tmp.innerHTML = convergenceMarkup;
+          if (tmp.firstElementChild) convEl.innerHTML = tmp.firstElementChild.innerHTML;
+        }
+        const rowsWrap = root.querySelector(".allocation-group-rows");
+        if (rowsWrap) rowsWrap.toggleAttribute("data-plot-focused", selected.length > 0);
+        groupRenderData.forEach((g, gIdx) => {
+          const rowEl = existingRows[gIdx];
+          const coverEl = rowEl.querySelector(".allocation-group-header > span");
+          if (coverEl) coverEl.textContent = g.coverText;
+          const portionEls = rowEl.querySelectorAll(".allocation-group-portion");
+          g.segmentData.forEach((s, sIdx) => {
+            const el = portionEls[sIdx];
+            el.style.setProperty("--portion", s.portionPct);
+            el.style.setProperty("--member-color", s.memberColor);
+            el.style.setProperty("--done", s.donePct);
+            el.style.setProperty("--shared", s.sharedPct);
+            el.setAttribute("aria-label", s.description);
+            el.setAttribute("title", s.description);
+            if (s.isMember) el.setAttribute("aria-pressed", String(s.active));
+            el.toggleAttribute("data-shared", Boolean(s.shared));
+            const seamEl = el.querySelector(".allocation-group-fill > i");
+            if (seamEl) {
+              if (s.hasSeam) seamEl.setAttribute("data-seam", "true");
+              else seamEl.removeAttribute("data-seam");
+            }
+            const numEl = el.querySelector(".allocation-segment-num");
+            if (numEl) numEl.innerHTML = s.countMarkup;
+            let sharedBar = el.querySelector(".allocation-group-shared");
+            if (s.shared && !sharedBar) {
+              sharedBar = document.createElement("i");
+              sharedBar.className = "allocation-group-shared";
+              sharedBar.setAttribute("aria-hidden", "true");
+              el.appendChild(sharedBar);
+            } else if (!s.shared && sharedBar) {
+              sharedBar.remove();
+            }
+          });
+        });
+        const focusWrap = root.querySelector(".allocation-plot-focus");
+        if (focusWrap) {
+          focusWrap.innerHTML = '<span class="allocation-plot-focus-text" aria-live="polite">' + focusTextHtml + '</span>' +
+            (selected.length ? '<button type="button" class="text-button allocation-clear-btn" data-plot-clear>' +
+              escapeHtml(uiText("清除选择", "Clear")) + '</button>' : '');
+        }
+        const existingDiff = root.querySelector(".allocation-diff");
+        if (editing && existingDiff && diffMarkup) {
+          const tmp = document.createElement("div");
+          tmp.innerHTML = diffMarkup;
+          if (tmp.firstElementChild) existingDiff.innerHTML = tmp.firstElementChild.innerHTML;
+        }
+        patched = true;
+      }
+    }
+  }
+
+  if (!patched) {
+    const groupsMarkup = groupRenderData.map((g) => {
+      const segments = g.segmentData.map((s) => {
+        const controls = ' data-plot-group="' + escapeHtml(g.group.group_id) + '" data-plot-member="' + escapeHtml(s.person.name ?? "") + '"';
+        const style = "--portion:" + s.portionPct + ";--member-color:" + s.memberColor +
+          ";--done:" + s.donePct + ";--shared:" + s.sharedPct;
+        const mark = '<span class="allocation-group-fill" aria-hidden="true"><i' + (s.hasSeam ? ' data-seam="true"' : '') + '></i></span>' +
+          '<span class="allocation-group-segment-label" aria-hidden="true"><span>' + escapeHtml(s.label) +
+          '</span><span class="allocation-segment-num">' + s.countMarkup + '</span></span>' +
+          (s.shared ? '<i class="allocation-group-shared" aria-hidden="true"></i>' : '');
+        const attributes = ' class="allocation-group-portion"' + (s.shared ? ' data-shared' : '') +
+          (s.isUnion ? ' data-union-covered' : '') +
+          ' aria-label="' + escapeHtml(s.description) + '" title="' + escapeHtml(s.description) + '" style="' + style + '"';
+        return s.isMember
+          ? '<button type="button"' + attributes + controls + ' aria-pressed="' + s.active + '">' + mark + '</button>'
+          : '<span' + attributes + (!s.isUnion ? ' data-uncovered' : '') + ' role="img">' + mark + '</span>';
+      });
+      return '<div class="allocation-group-row"><div class="allocation-group-header"><strong>' +
+        escapeHtml(g.name) + '</strong><span>' + escapeHtml(g.coverText) + '</span></div>' +
+        '<div class="allocation-group-bar" role="group" aria-label="' + escapeHtml(g.name) + '">' +
+        segments.join("") + '</div></div>';
+    }).join("");
+    root.innerHTML = '<div class="allocation-group-meta"><p class="allocation-group-summary">' + summary + '</p>' +
+      '<div class="allocation-group-legend"><span><i class="allocation-legend-done"></i>' + escapeHtml(uiText("已完成", "Completed")) +
+      '</span><span><i class="allocation-legend-pending"></i>' + escapeHtml(uiText("待完成", "Pending")) +
+      '</span><span><i class="allocation-legend-shared"></i>' + escapeHtml(uiText("共同 Case", "Shared")) + '</span></div></div>' +
+      convergenceMarkup +
+      '<section class="allocation-group-plot">' +
+      '<div class="allocation-group-axis" aria-hidden="true"><span>0%</span><span>50%</span><span>100%</span></div>' +
+      '<div class="allocation-group-rows"' + (selected.length ? ' data-plot-focused' : '') + '>' + groupsMarkup + '</div>' +
+      '<div class="allocation-plot-focus"><span class="allocation-plot-focus-text" aria-live="polite">' +
+      focusTextHtml + '</span>' +
+      (selected.length ? '<button type="button" class="text-button allocation-clear-btn" data-plot-clear>' +
+        escapeHtml(uiText("清除选择", "Clear")) + '</button>' : '') +
+      '</div></section>' + diffMarkup;
+    if (root.dataset) root.dataset.previewStructKey = structKey;
+  }
+
+  root._previewState = { plan, view, options: { editing }, groups, selected };
+  root.onclick = (event) => {
+    const current = root._previewState;
+    if (!current) return;
+    const control = event.target.closest("button");
+    if (!control) return;
+    const { plotGroup, plotMember, diffMember } = control.dataset;
+    let focusSelector;
+    if (control.hasAttribute("data-plot-clear")) {
+      current.view.selected.clear();
+      focusSelector = ".allocation-group-portion[aria-pressed]";
+    } else if (control.hasAttribute("data-diff-toggle")) {
+      current.view.unchanged = !current.view.unchanged;
+      focusSelector = "[data-diff-toggle]";
+    } else if (plotMember != null || diffMember != null) {
+      const name = plotMember ?? diffMember;
+      const gid = plotGroup ?? current.selected.find(([, person]) => person === name)?.[0] ??
+        current.groups.find((g) => g.members.some((person) => person.name === name))?.group_id;
+      if (!gid) return;
+      if (current.view.selected.get(gid) === name) current.view.selected.delete(gid);
+      else current.view.selected.set(gid, name);
+      focusSelector = diffMember != null ? '[data-diff-member="' + CSS.escape(name) + '"]' :
+        '.allocation-group-portion[data-plot-group="' + CSS.escape(gid) + '"][data-plot-member="' + CSS.escape(name) + '"]';
+    } else return;
+    renderGroupedAllocationPreview(root, current.plan, current.view, current.options);
+    root.querySelector(focusSelector)?.focus({ preventScroll: true });
+  };
+  return true;
+}
+
+function renderAllocationDiff(plan, view, activeMembers, fmt, { groups = [] } = {}) {
+  const members = plan.members || [];
+  const beforeOf = (p) => p.active_before ?? p.before ?? 0;
+  const afterOf = (p) => p.active_after ?? p.total_after ?? 0;
+  const hasChange = (p) => Boolean(p.incoming || p.outgoing || beforeOf(p) !== afterOf(p));
+  const changed = members.filter(hasChange);
+  const stable = members.filter((p) => !hasChange(p));
+  const visible = view.unchanged ? [...changed, ...stable] : changed;
+  const movedSlots = members.reduce((sum, p) => sum + (p.incoming || 0), 0);
+  const scale = Math.max(1, ...members.map((p) => Math.max(beforeOf(p), afterOf(p), p.completed || 0) + (p.outgoing || 0)));
+  const selected = new Set(view.selected.values());
+  const badgeMap = allocationMemberBadgeMap(plan, groups);
+  const row = (person) => {
+    const bVal = beforeOf(person);
+    const aVal = afterOf(person);
+    const doneActive = person.active_completed ?? Math.min(aVal, person.completed || 0);
+    const style = (name, value) => value ? '<i class="allocation-diff-' + name + '" style="--part:' +
+      (100 * value / scale) + '%"></i>' : "";
+    const retainedPending = Math.max(0, person.retained_pending ?? aVal - (person.incoming || 0) - doneActive);
+    const net = aVal - bVal;
+    const delta = net > 0 ? "+" + fmt(net) : net < 0 ? "−" + fmt(Math.abs(net))
+      : [person.incoming ? "+" + fmt(person.incoming) : "", person.outgoing ? "−" + fmt(person.outgoing) : ""].filter(Boolean).join("/");
+    const sign = net > 0 || (net === 0 && person.incoming) ? "in" : net < 0 || person.outgoing ? "out" : "none";
+    const badge = badgeMap.get(person.name);
+    const extraDone = (person.completed || 0) > aVal
+      ? ' <small class="allocation-diff-kept">' + escapeHtml(uiText("已标 " + fmt(person.completed), fmt(person.completed) + " done")) + '</small>'
+      : '';
+    const comparisonHtml = '<span>' + escapeHtml(fmt(bVal)) + ' → <strong>' + escapeHtml(fmt(aVal)) + '</strong>' + extraDone + '</span>';
+    const title = '<span class="allocation-diff-person">' +
+      (badge ? '<span class="allocation-diff-badge">' + escapeHtml(badge) + '</span>' : '') +
+      '<span class="allocation-diff-name" title="' + escapeHtml(person.name) + '">' + escapeHtml(person.name) + '</span></span>';
+    const segments = '<span class="allocation-diff-track" aria-hidden="true">' +
+      style("done", doneActive) + style("pending", retainedPending) +
+      style("incoming", person.incoming) + style("outgoing", person.outgoing) + '</span>';
+    const comparisonPlain = fmt(bVal) + " → " + fmt(aVal);
+    const description = person.name + " · " + comparisonPlain + (delta ? " · " + delta : "");
+    const content = title + segments + '<span class="allocation-diff-values">' + comparisonHtml +
+      '<strong data-diff-sign="' + sign + '">' + escapeHtml(delta || "—") + '</strong></span>';
+    return activeMembers.has(person.name) ? '<button type="button" class="allocation-diff-row" data-diff-member="' +
+      escapeHtml(person.name) + '" aria-pressed="' + selected.has(person.name) + '" aria-label="' +
+      escapeHtml(description) + '">' + content + '</button>' : '<div class="allocation-diff-row">' + content + '</div>';
+  };
+  const summaryText = changed.length
+    ? uiText("涉及 " + fmt(changed.length) + " 人 · 调拨 " + fmt(movedSlots) + " 份待办",
+      fmt(changed.length) + " changed · " + fmt(movedSlots) + " pending moved")
+    : uiText("0 人变动", "No changes");
+  const headerRight = '<div class="allocation-diff-controls">' +
+    (changed.length ? '<span class="allocation-group-legend allocation-diff-legend"><span><i class="allocation-diff-incoming"></i>' +
+      escapeHtml(uiText("新转入", "Added")) + '</span><span><i class="allocation-diff-outgoing"></i>' +
+      escapeHtml(uiText("已转出", "Moved out")) + '</span></span>' : '') +
+    (stable.length ? '<button type="button" class="button button-secondary allocation-compact-btn" data-diff-toggle aria-expanded="' + view.unchanged + '">' +
+      escapeHtml((view.unchanged ? uiText("收起未变动", "Hide unchanged") : uiText("展开未变动", "Show unchanged")) +
+        " (" + fmt(stable.length) + ")") + '</button>' : '') + '</div>';
+  const bodyMarkup = !visible.length
+    ? '<p class="allocation-diff-empty">' + escapeHtml(uiText("当前配置未产生人员待办调拨。", "No pending assignments move under the current settings.")) + '</p>'
+    : '<div class="allocation-diff-list">' + visible.map(row).join("") + '</div>';
+  return '<section class="allocation-diff"><header class="allocation-diff-header"><div class="allocation-diff-title"><h3>' +
+    escapeHtml(uiText("本次变动", "Changes")) + '</h3><span>' + escapeHtml(summaryText) + '</span></div>' +
+    headerRight + '</header>' + bodyMarkup + '</section>';
+}

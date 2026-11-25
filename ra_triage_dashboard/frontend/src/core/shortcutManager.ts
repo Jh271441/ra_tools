@@ -22,6 +22,7 @@ const SCOPE_PRIORITY: Record<ShortcutScope, number> = {
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   if (target.isContentEditable) return true;
+  if (target.closest('[role="textbox"]')) return true;
   const tag = target.tagName.toUpperCase();
   return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
 }

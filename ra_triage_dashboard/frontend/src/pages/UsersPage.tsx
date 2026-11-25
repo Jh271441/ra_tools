@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "../api/client";
 import { bilingual, formatCstTime, UiLanguage } from "../bridge/useWorkbenchBridge";
+import { ModalDialog } from "../components/ui/ModalDialog";
 import { CASE_PAGE_SIZES, DEFAULT_CASE_PAGE_SIZE, Pagination } from "../components/ui/Pagination";
 import { StatusChip } from "../components/ui/StatusChip";
 import { UiSelect } from "../components/ui/UiSelect";
@@ -62,6 +63,18 @@ function notifyLegacyRevision(result: unknown) {
   }
 }
 
+function emitToast(message: string, isError = false) {
+  if (typeof window === "undefined") return;
+  const win = window as unknown as { showToast?: (msg: string, err?: boolean) => void };
+  win.showToast?.(message, isError);
+}
+
+function refreshLegacySession() {
+  if (typeof window === "undefined") return;
+  const win = window as unknown as { loadSession?: () => Promise<void> | void };
+  void win.loadSession?.();
+}
+
 export const UsersPage: React.FC<UsersPageProps> = ({
   active,
   lang,
@@ -81,12 +94,18 @@ export const UsersPage: React.FC<UsersPageProps> = ({
   const [newAnnotationRole, setNewAnnotationRole] = useState("");
 
   const [accessDrafts, setAccessDrafts] = useState<Record<string, AccessDraft>>({});
+  const [savingUser, setSavingUser] = useState<string | null>(null);
+  const [deletingUser, setDeletingUser] = useState<string | null>(null);
+  const [confirmRemoveUser, setConfirmRemoveUser] = useState<string | null>(null);
 
   const [newMentionUsername, setNewMentionUsername] = useState("");
   const [mentionSearch, setMentionSearch] = useState("");
   const [mentionPage, setMentionPage] = useState(1);
   const [mentionPageSize, setMentionPageSize] = useState<number>(DEFAULT_CASE_PAGE_SIZE);
   const [mentionDrafts, setMentionDrafts] = useState<Record<string, boolean>>({});
+  const [savingMention, setSavingMention] = useState<string | null>(null);
+  const [deletingMention, setDeletingMention] = useState<string | null>(null);
+  const [confirmRemoveMention, setConfirmRemoveMention] = useState<string | null>(null);
 
   const [feedback, setFeedback] = useState<{ text: string; isError: boolean } | null>(null);
   const [mentionFeedback, setMentionFeedback] = useState<{ text: string; isError: boolean } | null>(
@@ -134,15 +153,17 @@ export const UsersPage: React.FC<UsersPageProps> = ({
       intent_permission: string;
       annotation_role: string;
       clearForm?: boolean;
-    }) =>
-      apiRequest(`/api/access-users/${encodeURIComponent(payload.username)}`, {
+    }) => {
+      setSavingUser(payload.clearForm ? "__create__" : payload.username);
+      return apiRequest(`/api/access-users/${encodeURIComponent(payload.username)}`, {
         method: "PUT",
         body: {
           role: payload.role,
           intent_permission: payload.intent_permission,
           ...(payload.annotation_role ? { annotation_role: payload.annotation_role } : {}),
         },
-      }),
+      });
+    },
     onSuccess: (result, variables) => {
       notifyLegacyRevision(result);
       if (variables.clearForm) setNewUsername("");
@@ -151,51 +172,58 @@ export const UsersPage: React.FC<UsersPageProps> = ({
         delete next[variables.username];
         return next;
       });
-      setFeedback({
-        text: bilingual(lang, "用户权限已保存。", "User permissions saved."),
-        isError: false,
-      });
+      const msg = bilingual(lang, "用户权限已保存。", "User permissions saved.");
+      setFeedback({ text: msg, isError: false });
+      emitToast(msg, false);
       void queryClient.invalidateQueries({ queryKey: ["access-users"] });
       void queryClient.invalidateQueries({ queryKey: ["mention-users"] });
+      void queryClient.invalidateQueries({ queryKey: ["session"] });
+      refreshLegacySession();
     },
     onError: (err) => {
-      setFeedback({
-        text: err instanceof Error ? err.message : bilingual(lang, "保存失败", "Save failed"),
-        isError: true,
-      });
+      const msg = err instanceof Error ? err.message : bilingual(lang, "保存失败", "Save failed");
+      setFeedback({ text: msg, isError: true });
+      emitToast(msg, true);
     },
+    onSettled: () => setSavingUser(null),
   });
 
   const deleteUserMutation = useMutation({
-    mutationFn: (username: string) =>
-      apiRequest(`/api/access-users/${encodeURIComponent(username)}`, { method: "DELETE" }),
+    mutationFn: (username: string) => {
+      setDeletingUser(username);
+      return apiRequest(`/api/access-users/${encodeURIComponent(username)}`, { method: "DELETE" });
+    },
     onSuccess: (result, username) => {
       notifyLegacyRevision(result);
+      setConfirmRemoveUser(null);
       setAccessDrafts((prev) => {
         const next = { ...prev };
         delete next[username];
         return next;
       });
-      setFeedback({
-        text: bilingual(lang, "用户权限已移除。", "User removed."),
-        isError: false,
-      });
+      const msg = bilingual(lang, "用户权限已移除。", "User removed.");
+      setFeedback({ text: msg, isError: false });
+      emitToast(msg, false);
       void queryClient.invalidateQueries({ queryKey: ["access-users"] });
+      void queryClient.invalidateQueries({ queryKey: ["session"] });
+      refreshLegacySession();
     },
     onError: (err) => {
-      setFeedback({
-        text: err instanceof Error ? err.message : bilingual(lang, "删除失败", "Remove failed"),
-        isError: true,
-      });
+      const msg = err instanceof Error ? err.message : bilingual(lang, "删除失败", "Remove failed");
+      setFeedback({ text: msg, isError: true });
+      emitToast(msg, true);
     },
+    onSettled: () => setDeletingUser(null),
   });
 
   const saveMentionMutation = useMutation({
-    mutationFn: (payload: { username: string; enabled: boolean; clearForm?: boolean }) =>
-      apiRequest(`/api/mention-users/${encodeURIComponent(payload.username)}`, {
+    mutationFn: (payload: { username: string; enabled: boolean; clearForm?: boolean }) => {
+      setSavingMention(payload.clearForm ? "__create__" : payload.username);
+      return apiRequest(`/api/mention-users/${encodeURIComponent(payload.username)}`, {
         method: "PUT",
         body: { enabled: payload.enabled },
-      }),
+      });
+    },
     onSuccess: (result, variables) => {
       notifyLegacyRevision(result);
       if (variables.clearForm) setNewMentionUsername("");
@@ -204,42 +232,43 @@ export const UsersPage: React.FC<UsersPageProps> = ({
         delete next[variables.username];
         return next;
       });
-      setMentionFeedback({
-        text: bilingual(lang, "可 @ 人员状态已保存。", "Mention directory entry saved."),
-        isError: false,
-      });
+      const msg = bilingual(lang, "可 @ 人员状态已保存。", "Mention directory entry saved.");
+      setMentionFeedback({ text: msg, isError: false });
+      emitToast(msg, false);
       void queryClient.invalidateQueries({ queryKey: ["mention-users"] });
     },
     onError: (err) => {
-      setMentionFeedback({
-        text: err instanceof Error ? err.message : bilingual(lang, "保存失败", "Save failed"),
-        isError: true,
-      });
+      const msg = err instanceof Error ? err.message : bilingual(lang, "保存失败", "Save failed");
+      setMentionFeedback({ text: msg, isError: true });
+      emitToast(msg, true);
     },
+    onSettled: () => setSavingMention(null),
   });
 
   const deleteMentionMutation = useMutation({
-    mutationFn: (username: string) =>
-      apiRequest(`/api/mention-users/${encodeURIComponent(username)}`, { method: "DELETE" }),
+    mutationFn: (username: string) => {
+      setDeletingMention(username);
+      return apiRequest(`/api/mention-users/${encodeURIComponent(username)}`, { method: "DELETE" });
+    },
     onSuccess: (result, username) => {
       notifyLegacyRevision(result);
+      setConfirmRemoveMention(null);
       setMentionDrafts((prev) => {
         const next = { ...prev };
         delete next[username];
         return next;
       });
-      setMentionFeedback({
-        text: bilingual(lang, "可 @ 人员已移除。", "Mention user removed."),
-        isError: false,
-      });
+      const msg = bilingual(lang, "可 @ 人员已移除。", "Mention user removed.");
+      setMentionFeedback({ text: msg, isError: false });
+      emitToast(msg, false);
       void queryClient.invalidateQueries({ queryKey: ["mention-users"] });
     },
     onError: (err) => {
-      setMentionFeedback({
-        text: err instanceof Error ? err.message : bilingual(lang, "删除失败", "Remove failed"),
-        isError: true,
-      });
+      const msg = err instanceof Error ? err.message : bilingual(lang, "删除失败", "Remove failed");
+      setMentionFeedback({ text: msg, isError: true });
+      emitToast(msg, true);
     },
+    onSettled: () => setDeletingMention(null),
   });
 
   const allUsers = accessQuery.data?.items || [];
@@ -255,6 +284,14 @@ export const UsersPage: React.FC<UsersPageProps> = ({
   const totalPages = Math.max(1, Math.ceil(filteredUsers.length / pageSize));
   const clampedPage = Math.max(1, Math.min(totalPages, page));
   const visibleUsers = filteredUsers.slice((clampedPage - 1) * pageSize, clampedPage * pageSize);
+
+  useEffect(() => {
+    if (!active || !accessQuery.data) return;
+    if (clampedPage !== page) {
+      setPage(clampedPage);
+      syncUrlPagination(clampedPage, pageSize);
+    }
+  }, [active, accessQuery.data, clampedPage, page, pageSize]);
 
   const allMentions = mentionQuery.data?.items || [];
   const filteredMentions = useMemo(() => {
@@ -452,6 +489,7 @@ export const UsersPage: React.FC<UsersPageProps> = ({
             onChange={(e) => {
               setSearch(e.target.value);
               setPage(1);
+              syncUrlPagination(1, pageSize);
             }}
           />
           <UiSelect
@@ -461,6 +499,7 @@ export const UsersPage: React.FC<UsersPageProps> = ({
             onChange={(val) => {
               setRoleFilter(val);
               setPage(1);
+              syncUrlPagination(1, pageSize);
             }}
           />
         </div>
@@ -539,7 +578,7 @@ export const UsersPage: React.FC<UsersPageProps> = ({
                     <button
                       type="button"
                       className="button button-quiet"
-                      disabled={saveUserMutation.isPending}
+                      disabled={savingUser === user.username}
                       onClick={() =>
                         saveUserMutation.mutate({
                           username: user.username,
@@ -549,25 +588,15 @@ export const UsersPage: React.FC<UsersPageProps> = ({
                         })
                       }
                     >
-                      {bilingual(lang, "保存", "Save")}
+                      {savingUser === user.username
+                        ? bilingual(lang, "保存中…", "Saving…")
+                        : bilingual(lang, "保存", "Save")}
                     </button>
                     <button
                       type="button"
                       className="button button-danger"
-                      disabled={deleteUserMutation.isPending}
-                      onClick={() => {
-                        if (
-                          window.confirm(
-                            bilingual(
-                              lang,
-                              `确认移除 ${user.username} 的权限？`,
-                              `Remove access for ${user.username}?`,
-                            ),
-                          )
-                        ) {
-                          deleteUserMutation.mutate(user.username);
-                        }
-                      }}
+                      disabled={deletingUser === user.username}
+                      onClick={() => setConfirmRemoveUser(user.username)}
                     >
                       {bilingual(lang, "移除", "Remove")}
                     </button>
@@ -691,47 +720,37 @@ export const UsersPage: React.FC<UsersPageProps> = ({
                         : bilingual(lang, "已停用通知", "Notifications disabled")}
                     </small>
                   </div>
+                  <label className="access-enabled-toggle">
+                    <input
+                      type="checkbox"
+                      checked={enabledVal}
+                      onChange={(e) =>
+                        setMentionDrafts((prev) => ({
+                          ...prev,
+                          [m.username]: e.target.checked,
+                        }))
+                      }
+                    />{" "}
+                    <span>{bilingual(lang, "启用", "Enabled")}</span>
+                  </label>
                   <div className="access-row-actions">
-                    <label className="access-enabled-toggle">
-                      <input
-                        type="checkbox"
-                        checked={enabledVal}
-                        onChange={(e) =>
-                          setMentionDrafts((prev) => ({
-                            ...prev,
-                            [m.username]: e.target.checked,
-                          }))
-                        }
-                      />{" "}
-                      <span>{bilingual(lang, "启用", "Enabled")}</span>
-                    </label>
                     <button
                       type="button"
                       className="button button-quiet"
-                      disabled={saveMentionMutation.isPending}
+                      disabled={savingMention === m.username}
                       onClick={() =>
                         saveMentionMutation.mutate({ username: m.username, enabled: enabledVal })
                       }
                     >
-                      {bilingual(lang, "保存", "Save")}
+                      {savingMention === m.username
+                        ? bilingual(lang, "保存中…", "Saving…")
+                        : bilingual(lang, "保存", "Save")}
                     </button>
                     <button
                       type="button"
                       className="button button-danger"
-                      disabled={deleteMentionMutation.isPending}
-                      onClick={() => {
-                        if (
-                          window.confirm(
-                            bilingual(
-                              lang,
-                              `确认移除 @${m.username}？`,
-                              `Remove @${m.username} from mention directory?`,
-                            ),
-                          )
-                        ) {
-                          deleteMentionMutation.mutate(m.username);
-                        }
-                      }}
+                      disabled={deletingMention === m.username}
+                      onClick={() => setConfirmRemoveMention(m.username)}
                     >
                       {bilingual(lang, "移除", "Remove")}
                     </button>
@@ -756,6 +775,88 @@ export const UsersPage: React.FC<UsersPageProps> = ({
           }}
         />
       </section>
+
+      <ModalDialog
+        open={Boolean(confirmRemoveUser)}
+        title={bilingual(lang, "确认移除用户权限", "Confirm access removal")}
+        lang={lang}
+        onClose={() => {
+          if (!deletingUser) setConfirmRemoveUser(null);
+        }}
+        footer={
+          <>
+            <button
+              type="button"
+              className="button button-quiet"
+              disabled={Boolean(deletingUser)}
+              onClick={() => setConfirmRemoveUser(null)}
+            >
+              {bilingual(lang, "取消", "Cancel")}
+            </button>
+            <button
+              type="button"
+              className="button button-danger ra-primary-touch"
+              disabled={Boolean(deletingUser)}
+              onClick={() => {
+                if (confirmRemoveUser) deleteUserMutation.mutate(confirmRemoveUser);
+              }}
+            >
+              {deletingUser
+                ? bilingual(lang, "移除中…", "Removing…")
+                : bilingual(lang, "确认移除", "Remove")}
+            </button>
+          </>
+        }
+      >
+        <p className="ra-alloc-subtitle">
+          {bilingual(
+            lang,
+            `确认移除 ${confirmRemoveUser || ""} 的看板权限？移除后该用户将变为只读权限。`,
+            `Remove Dashboard access for ${confirmRemoveUser || ""}? The user will become read-only.`,
+          )}
+        </p>
+      </ModalDialog>
+
+      <ModalDialog
+        open={Boolean(confirmRemoveMention)}
+        title={bilingual(lang, "确认移除可 @ 人员", "Confirm mention removal")}
+        lang={lang}
+        onClose={() => {
+          if (!deletingMention) setConfirmRemoveMention(null);
+        }}
+        footer={
+          <>
+            <button
+              type="button"
+              className="button button-quiet"
+              disabled={Boolean(deletingMention)}
+              onClick={() => setConfirmRemoveMention(null)}
+            >
+              {bilingual(lang, "取消", "Cancel")}
+            </button>
+            <button
+              type="button"
+              className="button button-danger ra-primary-touch"
+              disabled={Boolean(deletingMention)}
+              onClick={() => {
+                if (confirmRemoveMention) deleteMentionMutation.mutate(confirmRemoveMention);
+              }}
+            >
+              {deletingMention
+                ? bilingual(lang, "移除中…", "Removing…")
+                : bilingual(lang, "确认移除", "Remove")}
+            </button>
+          </>
+        }
+      >
+        <p className="ra-alloc-subtitle">
+          {bilingual(
+            lang,
+            `确认将 @${confirmRemoveMention || ""} 从可 @ 目录中移除？`,
+            `Remove @${confirmRemoveMention || ""} from the mention directory?`,
+          )}
+        </p>
+      </ModalDialog>
     </div>
   );
 };

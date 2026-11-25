@@ -1,0 +1,711 @@
+from __future__ import annotations
+
+import subprocess
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+IME_JS = (ROOT / "static" / "js" / "text-input.js").read_text()
+
+
+def test_mention_enter_and_tab_precede_comment_submit_listener() -> None:
+    script = IME_JS + (ROOT / "static" / "js" / "review-mentions.js").read_text() + r'''
+const assert=require('node:assert/strict');
+state={mentionUsers:[],config:{},session:{}};
+window={addEventListener(){},getComputedStyle(){return {};}};
+document={activeElement:null};
+Event=class {constructor(type,options){this.type=type;this.bubbles=options?.bubbles;}};
+updateReviewMentionComposer=()=>{};
+
+function fixture(key) {
+  const listeners={capture:[],bubble:[]};
+  const option={dataset:{reviewMention:'alice'}};
+  const popover={};
+  const root={
+    hidden:false,
+    querySelectorAll(selector){return selector==='[data-review-mention]' ? [option] : [];},
+    querySelector(selector){
+      if (selector==='.review-mention-popover') return popover;
+      if (selector==='.review-mention-option.is-active') return {scrollIntoView(){}};
+      return null;
+    },
+    replaceChildren(){this.hidden=true;},
+    contains(){return false;},
+  };
+  const textarea={
+    value:'@a',selectionStart:2,selectionEnd:2,dataset:{},scrollTop:0,scrollLeft:0,
+    setAttribute(){},focus(){},dispatchEvent(){},
+    setRangeText(value,start,end){
+      this.value=this.value.slice(0,start)+value+this.value.slice(end);
+      this.selectionStart=this.selectionEnd=start+value.length;
+    },
+    addEventListener(type,listener,options){
+      if(type==='keydown') listeners[options?.capture ? 'capture' : 'bubble'].push(listener);
+    },
+  };
+  bindReviewMentionComposer(textarea,root);
+  let submitted=0;
+  textarea.addEventListener('keydown',(event)=>{if(event.key==='Enter'&&!event.defaultPrevented) submitted++;});
+  const event={
+    key,defaultPrevented:false,
+    preventDefault(){this.defaultPrevented=true;},
+    stopPropagation(){},
+  };
+  listeners.capture.forEach((listener)=>listener(event));
+  listeners.bubble.forEach((listener)=>listener(event));
+  return {textarea,event,submitted};
+}
+
+const enter=fixture('Enter');
+assert.equal(enter.textarea.value,'@alice ');
+assert.equal(enter.event.defaultPrevented,true);
+assert.equal(enter.submitted,0);
+const tab=fixture('Tab');
+assert.equal(tab.textarea.value,'@alice ');
+assert.equal(tab.event.defaultPrevented,true);
+assert.equal(tab.submitted,0);
+'''
+    subprocess.run(["node", "-e", script], check=True, capture_output=True)
+
+
+def test_review_tag_group_shortcut_toggles_open_state() -> None:
+    script = IME_JS + (ROOT / "static" / "js" / "review-tags.js").read_text() + r'''
+const assert=require('node:assert/strict');
+const summary={focus:()=>{}};
+const dropdown={open:true,querySelector:()=>summary};
+document={querySelector:()=>dropdown};
+CSS={escape:(value)=>value};
+closeAllReviewDropdowns=()=>{};
+reviewDropdownPanel=()=>({});
+resetReviewDropdownPanel=()=>{};
+prepareReviewDropdownPanelForMeasure=()=>{};
+assert.equal(openReviewTagShortcutGroup('environment'),true);
+assert.equal(dropdown.open,false);
+assert.equal(openReviewTagShortcutGroup('environment'),true);
+assert.equal(dropdown.open,true);
+'''
+    subprocess.run(["node", "-e", script], check=True, capture_output=True)
+
+
+def test_missing_evidence_shortcut_toggles_open_state() -> None:
+    script = IME_JS + (ROOT / "static" / "js" / "review-tags.js").read_text() + r'''
+const assert=require('node:assert/strict');
+const summary={focused:false,focus(){this.focused=true;}};
+const dropdown={open:false,querySelector:()=>summary};
+document={querySelector:(selector)=>selector.includes('data-missing-evidence-dropdown') ? dropdown : null};
+closeAllReviewDropdowns=()=>{};
+reviewDropdownPanel=()=>({});
+resetReviewDropdownPanel=()=>{};
+prepareReviewDropdownPanelForMeasure=()=>{};
+assert.equal(REVIEW_MISSING_EVIDENCE_SHORTCUT,'i');
+assert.equal(openReviewMissingEvidenceShortcut(),true);
+assert.equal(dropdown.open,true);
+assert.equal(summary.focused,true);
+assert.equal(openReviewMissingEvidenceShortcut(),true);
+assert.equal(dropdown.open,false);
+'''
+    subprocess.run(["node", "-e", script], check=True, capture_output=True)
+
+
+def test_missing_evidence_numeric_shortcut_toggles_option() -> None:
+    script = IME_JS + (ROOT / "static" / "js" / "review-tags.js").read_text() + r'''
+const assert=require('node:assert/strict');
+Event=class {constructor(type,options){this.type=type;this.bubbles=options?.bubbles;}};
+const reviewInput={disabled:false,checked:false,dispatchEvent(event){this.lastEvent=event;}};
+const labelingInput={disabled:false,checked:false,dispatchEvent(event){this.lastEvent=event;}};
+const reviewDropdown={querySelector:(selector)=>selector.includes('data-review-dropdown-option-shortcut="1"') ? reviewInput : null};
+const labelingDropdown={querySelector:(selector)=>selector.includes('data-review-dropdown-option-shortcut="1"') ? labelingInput : null};
+const reviewRoot={querySelector:(selector)=>selector==='.review-dropdown[open]' ? reviewDropdown : null};
+const labelingRoot={querySelector:(selector)=>selector==='.review-dropdown[open]' ? labelingDropdown : null};
+state={activePage:'review'};
+$=(selector)=>selector==='#reviewPane' ? reviewRoot : selector==='#caseLabelingEditor' ? labelingRoot : null;
+document={};
+CSS={escape:(value)=>value};
+assert.equal(toggleOpenReviewDropdownOption('1'),true);
+assert.equal(reviewInput.checked,true);
+assert.equal(reviewInput.lastEvent.type,'change');
+assert.equal(toggleOpenReviewDropdownOption('1'),true);
+assert.equal(reviewInput.checked,false);
+state.activePage='labeling';
+assert.equal(toggleOpenReviewDropdownOption('1'),true);
+assert.equal(labelingInput.checked,true);
+assert.equal(labelingInput.lastEvent.type,'change');
+assert.equal(toggleOpenReviewDropdownOption('q'),false);
+'''
+    subprocess.run(["node", "-e", script], check=True, capture_output=True)
+
+
+def test_exclude_shortcut_ignores_hidden_review_control() -> None:
+    script = IME_JS + (ROOT / "static" / "js" / "review-tags.js").read_text() + r'''
+const assert=require('node:assert/strict');
+Event=class {constructor(type,options){this.type=type;this.bubbles=options?.bubbles;}};
+const input={disabled:false,checked:false,hiddenParent:true,
+ closest(){return this.hiddenParent ? {} : null;},dispatchEvent(event){this.lastEvent=event;}};
+activeReviewChromeRoot=()=>({querySelector:()=>input});
+assert.equal(toggleReviewExcludeShortcut(),false);
+assert.equal(input.checked,false);
+input.hiddenParent=false;
+assert.equal(toggleReviewExcludeShortcut(),true);
+assert.equal(input.checked,true);
+assert.equal(input.lastEvent.type,'change');
+assert.equal(toggleReviewExcludeShortcut(),true);
+assert.equal(input.checked,false);
+input.disabled=true;
+assert.equal(toggleReviewExcludeShortcut(),false);
+'''
+    subprocess.run(["node", "-e", script], check=True, capture_output=True)
+
+
+def test_background_review_upload_keeps_preview_and_restores_it_on_failure() -> None:
+    source = (ROOT / "static" / "js" / "review-attachments.js").read_text()
+    script = source + r'''
+const assert=require('node:assert/strict');
+const target={innerHTML:'',querySelectorAll:()=>[]};
+const file={name:'evidence.png'};
+const preview={id:'preview-1',file,previewUrl:'blob:evidence'};
+const task={issueId:'cn1',files:[file],previewItems:[preview],status:'uploading',failed:false};
+state={selectedId:'cn1',pendingReviewImages:[],backgroundReviewUploads:new Map([['cn1||',task]])};
+$=(selector)=>selector==='#pendingScreenshotList' ? target : null;
+escapeHtml=(value)=>String(value);
+uiText=(zh)=>zh;
+releasePreviewUrlLater=()=>{};
+renderPendingReviewImages();
+assert.match(target.innerHTML,/正在后台保存 Review 和 1 张截图/);
+assert.match(target.innerHTML,/blob:evidence/);
+assert.match(target.innerHTML,/上传中/);
+task.failed=true;
+restoreFailedReviewUploadImages('cn1');
+assert.equal(state.backgroundReviewUploads.size,0);
+assert.equal(state.pendingReviewImages.length,1);
+assert.equal(state.pendingReviewImages[0],preview);
+assert.doesNotMatch(target.innerHTML,/正在后台保存/);
+assert.match(target.innerHTML,/data-remove-screenshot/);
+(async()=>{
+  let toast='';
+  const successPreview={id:'preview-2',file,previewUrl:'blob:success'};
+  const successTask={key:'cn2||',issueId:'cn2',payload:{model_run_id:'',work_split_id:''},files:[file],previewItems:[successPreview],queuedAt:1,failed:false,status:'queued'};
+  state={selectedId:'cn2',selectedCase:{issue_id:'cn2',annotations:[]},reviewEditRunId:'',reviewEditBaseAnnotationId:null,reviewFormDirty:true,backgroundReviewUploads:new Map([[successTask.key,successTask]]),pendingReviewImages:[],reviewUploadTail:Promise.resolve()};
+  FormData=class {append(){}};
+  api=async()=>({change_revision:2,annotation:{id:7,model_run_id:'',notification:{queued:[]}}});
+  acknowledgeLocalChange=()=>{};
+  readReviewDraft=()=>null;
+  clearReviewDraft=()=>{};
+  updateReviewHistory=()=>{};
+  refreshReviewDerivedData=()=>{};
+  refreshReviewAfterSave=async()=>{};
+  showToast=(message)=>{toast=message;};
+  enqueueBackgroundReviewUpload(successTask);
+  renderPendingReviewImages();
+  assert.match(target.innerHTML,/等待后台保存|正在后台保存/);
+  await state.reviewUploadTail;
+  assert.equal(state.backgroundReviewUploads.size,0);
+  assert.match(toast,/已保存 Review 和 1 张截图/);
+  assert.equal(target.innerHTML,'');
+})().catch((error)=>{console.error(error);process.exitCode=1;});
+'''
+    subprocess.run(["node", "-e", script], check=True, capture_output=True)
+
+
+def test_successful_review_save_advances_when_current_leaves_filter() -> None:
+    source = (ROOT / "static" / "js" / "review-submit.js").read_text()
+    start = source.index("async function reviewSaveNavigationContext")
+    end = source.index("async function saveAnnotation(", start)
+    routing = (ROOT / "static" / "js" / "routing.js").read_text()
+    guards = routing[routing.index("function capturePageContext"):routing.index("function showPage(")]
+    script = guards + source[start:end] + r'''
+const assert=require('node:assert/strict');
+window={scrollY:321,location:{pathname:'/manual/review',search:''}};
+let selected=[];let loads=0;let notices=[];
+state={activePage:'review',selectedId:'b',cases:[{issue_id:'a'},{issue_id:'b'},{issue_id:'c'}],casePage:1,casePageSize:20,caseTotal:3};
+currentReviewGalleryExportParams=()=>new URLSearchParams('task_progress=pending');
+api=async()=>({issue_ids:['a','c']});
+loadCases=async()=>{loads++;state.cases=[{issue_id:'a'},{issue_id:'c'}];state.caseTotal=2;};
+selectCase=async(id,options)=>{selected.push([id,options]);state.selectedId=id;};
+renderCaseNavigation=()=>{};clearDetail=()=>{};showPage=()=>{};
+uiIn=0;
+uiText=(zh)=>zh;showToast=(message)=>notices.push(message);
+(async()=>{
+  const context=await reviewSaveNavigationContext('b');
+  assert.equal(context.index,1);assert.equal(context.hadNext,true);
+  assert.equal(await reconcileReviewQueueAfterSave(context),true);
+  assert.equal(loads,1);assert.equal(selected[0][0],'c');
+  assert.equal(selected[0][1].historyMode,'replace');assert.equal(selected[0][1].preserveScrollY,321);
+  assert.match(notices[0],/下一个筛选结果/);
+  state.selectedId='user-chosen';loads=0;
+  assert.equal(await reconcileReviewQueueAfterSave(context),false);
+  assert.equal(loads,0);
+  state.selectedId='b';state.activePage='review';
+  api=async()=>{state.activePage='labeling';state.pageNavigationEpoch=1;window.location.pathname='/manual/case-labeling';return {issue_ids:['a','c']};};
+  const selectedBeforeDeparture=selected.length;
+  assert.equal(await reconcileReviewQueueAfterSave(context),false);
+  assert.equal(selected.length,selectedBeforeDeparture);
+  state.activePage='review';state.pageNavigationEpoch=2;window.location.pathname='/manual/review';
+  state.selectedId='b';state.reviewQueueStale=false;notices=[];
+  api=async()=>{throw new Error('queue failed');};
+  refreshReviewDerivedData=()=>{};
+  await refreshReviewAfterSave(await reviewSaveNavigationContext('b'));
+  assert.equal(state.reviewQueueStale,true);
+  assert.match(notices[0],/Review 已保存，但筛选队列刷新失败/);
+})().catch((error)=>{console.error(error);process.exitCode=1;});
+'''
+    subprocess.run(["node", "-e", script], check=True, capture_output=True)
+
+
+def test_review_save_queue_deep_links_and_scope_guards() -> None:
+    subprocess.run(["node", str(Path(__file__).with_name("review_save_queue.cjs"))],
+                   check=True, capture_output=True, text=True)
+
+
+def test_open_review_dropdown_uses_arrows_for_navigation_and_enter_for_save() -> None:
+    script = IME_JS + (ROOT / "static" / "js" / "review-tags.js").read_text() + r'''
+const assert=require('node:assert/strict');
+class MockElement {}
+Element=MockElement;
+Event=class {constructor(type,options){this.type=type;this.bubbles=options?.bubbles;}};
+const labels=[];
+const inputs=[0,1,2].map(()=>{
+  const label={scrollIntoView:()=>{}}; labels.push(label);
+  return Object.assign(new MockElement(),{
+    disabled:false,checked:false,focused:false,
+    focus(){this.focused=true;},
+    closest(selector){return selector==='label' ? label : null;},
+    matches(selector){return selector==='input[type="checkbox"]';},
+    dispatchEvent(event){this.lastEvent=event;},
+  });
+});
+const dropdown=Object.assign(new MockElement(),{open:true,querySelectorAll:()=>inputs});
+const form={requestSubmit:(button)=>{form.submittedWith=button;}};
+const saveButton={id:'reviewSaveButton'};
+state={savingAnnotation:false};
+$=(selector)=>selector==='#annotationForm' ? form : selector==='#reviewSaveButton' ? saveButton : null;
+const summary=Object.assign(new MockElement(),{
+  closest(selector){return selector.includes('.review-dropdown') ? dropdown : null;},
+  matches(){return false;},
+});
+const arrow={target:summary,key:'ArrowDown',ctrlKey:false,metaKey:false,altKey:false,preventDefault(){this.prevented=true;},stopPropagation(){this.stopped=true;}};
+assert.equal(handleReviewDropdownKeyboard(arrow),true);
+assert.equal(inputs[0].focused,true);
+inputs[0].closest=(selector)=>selector.includes('.review-dropdown') ? dropdown : selector==='label' ? labels[0] : null;
+const enter={target:inputs[0],key:'Enter',ctrlKey:false,metaKey:false,altKey:false,preventDefault(){},stopPropagation(){}};
+assert.equal(submitReviewFromDropdown(enter,inputs[0]),true);
+assert.equal(inputs[0].checked,false);
+assert.equal(form.submittedWith,saveButton);
+form.submittedWith=null;
+const summaryEnter={target:summary,key:'Enter',ctrlKey:false,metaKey:false,altKey:false,preventDefault(){},stopPropagation(){}};
+assert.equal(submitReviewFromDropdown(summaryEnter,summary),true);
+assert.equal(form.submittedWith,saveButton);
+form.submittedWith=null;
+const menuItem={closest(selector){return selector==='.review-dropdown' ? dropdown : this;}};
+assert.equal(submitReviewFromDropdown(summaryEnter,menuItem),false);
+assert.equal(form.submittedWith,null,'Enter on a menu action must activate it without saving');
+const space={target:inputs[0],key:' ',ctrlKey:false,metaKey:false,altKey:false,preventDefault(){},stopPropagation(){}};
+assert.equal(handleReviewDropdownKeyboard(space),true);
+assert.equal(inputs[0].checked,false,'Space is reserved for video; numbers select tags');
+assert.equal(inputs[0].lastEvent,undefined);
+'''
+    subprocess.run(["node", "-e", script], check=True, capture_output=True)
+
+
+def test_enter_submits_review_from_general_detail_focus() -> None:
+    script = IME_JS + (ROOT / "static" / "js" / "review-tags.js").read_text() + r'''
+const assert=require('node:assert/strict');
+const form={requestSubmit:(button)=>{form.submittedWith=button;}};
+const saveButton={id:'reviewSaveButton'};
+state={savingAnnotation:false};
+$=(selector)=>selector==='#annotationForm' ? form : selector==='#reviewSaveButton' ? saveButton : null;
+const surface={closest:()=>null};
+const enter={key:'Enter',shiftKey:false,isComposing:false,preventDefault(){this.prevented=true;},stopPropagation(){this.stopped=true;}};
+assert.equal(submitReviewFromKeyboard(enter,surface),true);
+assert.equal(enter.prevented,true);
+assert.equal(form.submittedWith,saveButton);
+const shiftEnter={key:'Enter',shiftKey:true,isComposing:false,preventDefault(){},stopPropagation(){}};
+assert.equal(submitReviewFromKeyboard(shiftEnter,surface),false);
+const button={closest:(selector)=>selector.includes('button') ? {} : null};
+assert.equal(submitReviewFromKeyboard({...enter,preventDefault(){},stopPropagation(){}},button),false);
+'''
+    subprocess.run(["node", "-e", script], check=True, capture_output=True)
+
+
+def test_arrow_focused_option_keeps_all_dropdown_shortcuts_available() -> None:
+    script = IME_JS + (ROOT / "static" / "js" / "review-tags.js").read_text() + r'''
+const assert=require('node:assert/strict');
+const tagDropdown={};
+const evidenceDropdown={};
+const tagCheckbox={
+  matches:(selector)=>selector==='input[type="checkbox"]',
+  closest:(selector)=>selector==='.review-dropdown[open]' ? tagDropdown : null,
+};
+const evidenceCheckbox={
+  matches:(selector)=>selector==='input[type="checkbox"]',
+  closest:(selector)=>selector==='.review-dropdown[open]' ? evidenceDropdown : null,
+};
+const textarea={
+  matches:()=>false,
+  closest:(selector)=>selector.includes('input, textarea') ? {} : null,
+};
+reviewShortcutHasEditableTarget=(target)=>target===tagCheckbox || target===evidenceCheckbox || target===textarea;
+assert.equal(reviewDropdownShortcutAllowed(tagCheckbox),true);
+assert.equal(reviewDropdownShortcutAllowed(evidenceCheckbox),true);
+assert.equal(reviewDropdownShortcutAllowed(textarea),false);
+assert.equal(reviewDropdownShortcutAllowed(null),true);
+'''
+    subprocess.run(["node", "-e", script], check=True, capture_output=True)
+
+
+def test_video_t0_shortcut_targets_twenty_second_player_position() -> None:
+    source = (ROOT / "static" / "js" / "bev-video.js").read_text()
+    assert 'player.querySelector("[data-video-t0]").addEventListener("click", seekToT0)' in source
+    assert "videoT0PlayerPosition(0, duration())" in source
+    assert 'listen(video, "loadedmetadata", metadataReady)' in source
+    script = source + r'''
+const assert=require('node:assert/strict');
+escapeHtml=(value)=>String(value);
+t=(key)=>key;uiText=x=>x;
+safeSameOriginAssetUrl=(url)=>String(url).split('#')[0];
+const markup=videoPlayerMarkup({url:'/api/assets/cn1/bev-video',start_offset_sec:-20,event_time_sec:0,duration_ms:40000});
+assert.match(markup,/data-start-offset-sec="-20"/);
+assert.match(markup,/data-t0-player-sec="20"/);
+assert.match(markup,/src="\/api\/assets\/cn1\/bev-video\?playback=short-gop-v1#t=20"/);
+assert.match(markup,/preload="auto"/);
+assert.doesNotMatch(markup,/data-event-time-sec/);
+assert.equal(videoT0PlayerPosition(40,39),20);
+assert.equal(videoT0PlayerPosition(0,40),20);
+assert.match(markup,/data-video-t0/);
+'''
+    subprocess.run(["node", "-e", script], check=True, capture_output=True)
+
+
+def test_ra_event_relative_time_uses_review_media_t0() -> None:
+    script = (
+        (ROOT / "static" / "js" / "format-api.js").read_text()
+        + (ROOT / "static" / "js" / "detail-trail.js").read_text()
+        + r'''
+const assert=require('node:assert/strict');
+state={raEventDialog:{t0TimestampMs:0}};
+const caseData={
+  assets:{capture:{timestamp_ms:200000}},
+  camera:{capture:{timestamp_ms:300000}},
+  external_links:{ares_timestamp_ms:400000},
+};
+assert.equal(reviewCaseT0TimestampMs(caseData),200000);
+assert.equal(reviewCaseT0TimestampMs({external_links:{ares_timestamp_ms:400000}}),400000);
+assert.equal(formatRaEventRelativeTime(200000,200000),'t0');
+assert.equal(formatRaEventRelativeTime(81895,200000),'t−118.105s');
+assert.equal(formatRaEventRelativeTime(201401,200000),'t+1.401s');
+assert.equal(formatRaEventRelativeTime(null,200000),'—');
+const navigationCase={issue_id:'cn1',assets:{capture:{trip_id:'trip1',timestamp_ms:200000}}};
+const issueUrl='https://voyager.intra.xiaojukeji.com/issue/cn1';
+const eventUrl=new URL(aresStudioUrl(navigationCase,issueUrl,201401,{beforeMs:1000,afterMs:15000}));
+assert.equal(eventUrl.searchParams.get('ds.start'),'200401');
+assert.equal(eventUrl.searchParams.get('ds.end'),'216401');
+assert.equal(eventUrl.searchParams.get('ds.issue_id'),'cn1');
+assert.equal(eventUrl.searchParams.get('ds.trip_id'),'trip1');
+const mediaUrl=new URL(aresStudioUrl(navigationCase,issueUrl));
+assert.equal(mediaUrl.searchParams.get('ds.start'),'190000');
+assert.equal(mediaUrl.searchParams.get('ds.end'),'210000');
+'''
+    )
+    # The combined modules can exceed Linux's per-argument size limit.
+    subprocess.run(["node", "-"], input=script, text=True, check=True, capture_output=True)
+
+
+def test_review_history_shortcut_toggle_closes_matching_dialog() -> None:
+    script = IME_JS + (ROOT / "static" / "js" / "review-history.js").read_text() + r'''
+const assert=require('node:assert/strict');
+const dialog={open:true,dataset:{historyKind:'review'}};
+$=(selector)=>selector==='#historyDialog' ? dialog : null;
+closeDialog=()=>{dialog.open=false;};
+assert.equal(toggleHistoryDialog('review',{}),false);
+assert.equal(dialog.open,false);
+'''
+    subprocess.run(["node", "-e", script], check=True, capture_output=True)
+
+
+def test_review_form_scopes_edit_head_to_current_stream_while_history_keeps_all() -> None:
+    script = IME_JS + (ROOT / "static" / "js" / "review-draft.js").read_text() + r'''
+const assert=require('node:assert/strict');
+const state={selectedRunId:'run-1',session:{username:'Alice'}};
+const data={review_assignment:{blind_active:true,assigned:true,mode:'blind',split_id:'split-new'},annotations:[
+  {id:7,model_run_id:'run-1',work_split_id:'split-new',author:'alice'},
+  {id:6,model_run_id:'run-1',work_split_id:'split-new',author:'bob'},
+  {id:5,model_run_id:'run-1',work_split_id:'split-old',author:'alice'},
+  {id:4,model_run_id:'run-1',work_split_id:'',author:'alice'},
+  {id:3,model_run_id:'run-0',work_split_id:'',author:'alice'},
+]};
+assert.deepEqual(reviewAnnotationsForCurrentRun(data).map((item)=>item.id),[7]);
+assert.deepEqual(reviewAnnotationsForAllRuns(data).map((item)=>item.id),[7,6,5,4,3]);
+assert.equal(reviewWorkSplitBinding(data),'split-new');
+
+const firstMultiReview={...data,annotations:data.annotations.slice(1)};
+assert.deepEqual(reviewAnnotationsForCurrentRun(firstMultiReview),[]);
+
+const blindTaskNonMember={
+  ...data,
+  review_assignment:{...data.review_assignment,assigned:false},
+};
+assert.deepEqual(reviewAnnotationsForCurrentRun(blindTaskNonMember).map((item)=>item.id),[4]);
+assert.equal(reviewWorkSplitBinding(blindTaskNonMember),'');
+
+const blindTaskWithoutSplit={
+  ...data,
+  review_assignment:{...data.review_assignment,split_id:''},
+};
+assert.deepEqual(reviewAnnotationsForCurrentRun(blindTaskWithoutSplit).map((item)=>item.id),[4]);
+assert.equal(reviewWorkSplitBinding(blindTaskWithoutSplit),'');
+
+const ordinary={review_assignment:{blind_active:false,mode:'single'},annotations:data.annotations};
+assert.deepEqual(reviewAnnotationsForCurrentRun(ordinary).map((item)=>item.id),[4]);
+assert.equal(reviewWorkSplitBinding(ordinary),'');
+'''
+    subprocess.run(["node", "-e", script], check=True, capture_output=True)
+
+
+def test_s3_model_review_status_and_reason_do_not_leak_between_run_drafts() -> None:
+    script = IME_JS + (ROOT / "static" / "js" / "review-draft.js").read_text() + r'''
+const assert=require('node:assert/strict');
+const state={selectedRunId:'run-A',session:{username:'manual_s3_probe',verified:true}};
+const detail={annotations:[
+  {id:4000000000000002,review_domain:'model_review',model_run_id:'run-B',work_split_id:'',author:'manual_s3_probe',model_review_status:'completed',note:'Run B diagnosis'},
+  {id:4000000000000001,review_domain:'model_review',model_run_id:'run-A',work_split_id:'',author:'manual_s3_probe',model_review_status:'in_progress',note:'Run A diagnosis'},
+  {id:8,review_domain:'legacy',model_run_id:'',work_split_id:'',author:'legacy',note:'historical label evidence'},
+]};
+assert.equal(currentReviewAnnotation(detail).model_run_id,'run-A');
+assert.equal(currentReviewAnnotation(detail).model_review_status,'in_progress');
+assert.equal(currentReviewAnnotation(detail).note,'Run A diagnosis');
+state.selectedRunId='run-B';
+assert.equal(currentReviewAnnotation(detail).model_run_id,'run-B');
+assert.equal(currentReviewAnnotation(detail).model_review_status,'completed');
+assert.equal(currentReviewAnnotation(detail).note,'Run B diagnosis');
+assert.equal(reviewAnnotationsForAllRuns(detail).length,3);
+'''
+    subprocess.run(["node", "-e", script], check=True, capture_output=True)
+
+
+def test_verified_reviewer_selects_only_own_s3_head_within_current_run() -> None:
+    script = IME_JS + (ROOT / "static" / "js" / "review-draft.js").read_text() + r'''
+const assert=require('node:assert/strict');
+const alice={id:4000000000000001,review_domain:'model_review',model_run_id:'run-A',work_split_id:'',author:'alice',model_review_status:'in_progress',note:'Alice A'};
+const bob={id:4000000000000002,review_domain:'model_review',model_run_id:'run-A',work_split_id:'',author:'bob',model_review_status:'completed',note:'Bob A'};
+const aliceOther={id:4000000000000003,review_domain:'model_review',model_run_id:'run-B',work_split_id:'',author:'alice',model_review_status:'completed',note:'Alice B'};
+const data={annotations:[aliceOther,bob,alice]};
+const state={selectedRunId:'run-A',session:{username:'alice',verified:true}};
+assert.equal(currentReviewAnnotation(data).note,'Alice A');
+assert.equal(currentReviewAnnotation(data).model_review_status,'in_progress');
+assert.equal(currentReviewBaseAnnotationId(bob,'run-A','alice'),null);
+assert.equal(currentReviewBaseAnnotationId(alice,'run-A','alice'),alice.id);
+state.session.username='bob';
+assert.equal(currentReviewAnnotation(data).note,'Bob A');
+state.session.username='carol';
+assert.deepEqual(currentReviewAnnotation(data),{});
+''';
+    subprocess.run(["node", "-e", script], check=True, capture_output=True)
+
+
+def test_local_review_drafts_are_isolated_by_verified_reviewer() -> None:
+    script = IME_JS + (ROOT / "static" / "js" / "review-draft.js").read_text() + r'''
+const assert=require('node:assert/strict');
+const values=new Map();
+const window={localStorage:{
+  getItem(key){return values.has(key)?values.get(key):null;},
+  setItem(key,value){values.set(key,value);},
+  removeItem(key){values.delete(key);},
+}};
+const state={selectedRunId:'run-A',session:{username:'alice',verified:true}};
+const aliceKey=reviewDraftStorageKey('cn1','run-A','','');
+window.localStorage.setItem(aliceKey,JSON.stringify({version:1,saved_at:Date.now(),author:'alice',note:'Alice private draft'}));
+assert.equal(readReviewDraft('cn1','run-A','','').note,'Alice private draft');
+const legacyAliceKey=legacyReviewDraftStorageKey('cn2','run-A','');
+window.localStorage.setItem(legacyAliceKey,JSON.stringify({version:1,saved_at:Date.now(),author:'alice',note:'Alice legacy draft'}));
+state.session.username='bob';
+assert.notEqual(reviewDraftStorageKey('cn1','run-A','',''),aliceKey);
+assert.equal(readReviewDraft('cn1','run-A','',''),null);
+assert.equal(readReviewDraft('cn2','run-A','',''),null);
+assert.equal(values.has(legacyAliceKey),true);
+state.session.username='alice';
+assert.equal(readReviewDraft('cn1','run-A','','').note,'Alice private draft');
+assert.equal(readReviewDraft('cn2','run-A','','').note,'Alice legacy draft');
+assert.equal(values.has(legacyAliceKey),false);
+''';
+    subprocess.run(["node", "-e", script], check=True, capture_output=True)
+
+
+def test_model_status_keyboard_is_scoped_and_does_not_submit() -> None:
+    script = IME_JS + (ROOT / "static" / "js" / "review-tags.js").read_text() + r'''
+const assert=require('node:assert/strict');
+state={activePage:'review',session:{}};
+let writer=true, clicks=0, changes=0;
+hasDashboardWriteRole=()=>writer;
+closeAllReviewDropdowns=()=>{};
+const trigger={disabled:false,click(){clicks++;panel.hidden=false;},focus(){}};
+const panel={hidden:true,querySelector(selector){return {disabled:false,getAttribute:()=>null,
+ click(){changes++;select.value=selector.match(/="(.+)"/)[1];panel.hidden=true;}};}};
+const root={querySelector:(s)=>s==='.ui-select-trigger'?trigger:panel};
+const select={disabled:false,value:'pending',closest:(s)=>s==='[hidden]'?null:root};
+$=()=>select;
+const target={closest:()=>null};
+function key(value,options={}) {
+ const event={key:value,preventDefault(){this.prevented=true;},stopPropagation(){},...options};
+ return {event,handled:handleModelReviewStatusShortcut(event,target)};
+}
+assert.equal(key('1').handled,false);
+assert.equal(key('r').handled,false);
+assert.equal(key('m',{}).handled,true);
+assert.equal(clicks,1);
+assert.equal(key('m',{}).handled,true);
+assert.equal(clicks,1); // Reopen shortcut keeps an open selector open.
+for (const [number,status] of [['1','in_progress'],['2','completed']]) {
+ key('m',{});
+ assert.equal(key(number).handled,true);assert.equal(select.value,status);assert.equal(panel.hidden,true);
+}
+assert.equal(changes,2);
+for (const flag of ['isComposing','repeat','ctrlKey','metaKey','altKey']) {
+ assert.equal(key('m',{[flag]:true}).handled,false);
+}
+writer=false;assert.equal(key('m',{}).handled,false);writer=true;
+state.session.read_only=true;assert.equal(key('m',{}).handled,false);state.session={};
+state.activePage='labeling';assert.equal(key('m',{}).handled,false);state.activePage='review';
+select.disabled=true;assert.equal(key('m',{}).handled,false);select.disabled=false;
+target.closest=()=>({});assert.equal(key('m',{}).handled,false);
+assert.equal(changes,2);
+'''
+    subprocess.run(["node", "-e", script], check=True, capture_output=True)
+
+
+def test_navigation_waits_for_server_permissions() -> None:
+    script = IME_JS + (ROOT / "static" / "js" / "session-config.js").read_text() + r'''
+const assert=require('node:assert/strict');
+const items=['writer','admin'].map(role=>({dataset:{sessionNav:role},setAttribute(k,v){this[k]=v;}}));
+const status={},group={};
+state={session:{identity_pending:true}};
+document={documentElement:{dataset:{}},querySelectorAll:()=>items};
+$=id=>id==='#sidebarSessionPending'?status:group;
+hasDashboardWriteRole=()=>Boolean(state.session.verified && ['writer','admin'].includes(state.session.access_role));
+renderSessionNavigation();
+assert(items.every(x=>!x.hidden&&x.inert));assert.equal(status.hidden,false);
+state.session={identity_pending:false,verified:true,access_role:'writer'};renderSessionNavigation();
+assert.equal(items[0].hidden,false);assert.equal(items[0].inert,false);assert.equal(items[1].hidden,true);
+state.session={identity_pending:false,verified:true,access_role:'admin',is_admin:true};renderSessionNavigation();
+assert(items.every(x=>!x.hidden&&!x.inert));
+state.session={identity_pending:false,verified:false,access_role:'viewer'};renderSessionNavigation();
+assert(items.every(x=>x.hidden&&x.inert));assert.equal(status.hidden,true);
+assert.equal(group.hidden,false); // Existing public exclusion route remains reachable.
+'''
+    subprocess.run(["node", "-e", script], check=True, capture_output=True)
+
+
+def test_issue_exclusion_route_preserves_drafts_and_never_submits() -> None:
+    script = "\n".join((ROOT / "static" / "js" / name).read_text() for name in
+                       ("trail-update-state.js", "trail-update-preview.js")) + r'''
+const assert=require('node:assert/strict');
+state={trailUpdate:{}};CASE_PAGE_SIZES=[10,20];DEFAULT_CASE_PAGE_SIZE=10;LABELS=[];
+document={querySelector:()=>null};
+let rows=[],invalidations=0;
+const row=(id='',comment='')=>({id:{value:id},comment:{value:comment},querySelector(s){return s.includes('entry-id')?this.id:this.comment;}});
+trailIssueEntryRows=()=>rows;
+collectTrailIssueEntries=()=>({ids:rows.map(r=>r.id.value)});
+addTrailIssueEntryRow=entry=>rows.push(row(entry.issue_id));
+setTrailUpdateTab=tab=>state.trailUpdate.tab=tab;
+clearTrailIssuePreview=()=>invalidations++;
+parseTrailIssueIds=()=>{};setTrailIssueStatus=()=>{};uiText=x=>x;
+parseFilterList=()=>[];$=()=>null;
+// Shared DOM adapter is covered by dropdown_components.cjs.
+enhanceNativeUiSelect=()=>{};
+applyTrailUpdateRouteControls({tab:'issue',exclusionIssue:'cn123'});
+assert.equal(state.trailUpdate.tab,'issue');assert.equal(rows.length,1);assert.equal(rows[0].id.value,'cn123');
+rows[0].comment.value='retain reason';
+applyTrailUpdateRouteControls({tab:'issue',exclusionIssue:'cn123'});
+assert.equal(rows.length,1);assert.equal(invalidations,1);
+applyTrailUpdateRouteControls({tab:'issue',exclusionIssue:'cn456'});
+assert.equal(rows.length,2);assert.equal(rows[0].comment.value,'retain reason');
+rows.push(row());applyTrailUpdateRouteControls({tab:'issue',exclusionIssue:'cn789'});
+assert.equal(rows.length,3);assert.equal(rows[2].id.value,'cn789');
+applyTrailUpdateRouteControls({tab:'issue',exclusionIssue:'<invalid>'});assert.equal(rows.length,3);
+applyTrailUpdateRouteControls({tab:'review',exclusionIssue:'cn999'});assert.equal(rows.length,3);
+// No api/commit function is supplied: route preparation is entirely local.
+'''
+    subprocess.run(["node", "-e", script], check=True, capture_output=True)
+
+
+
+def test_combined_exclusion_hydrates_from_case_vote_and_separate_draft() -> None:
+    script = IME_JS + (ROOT / "static" / "js" / "review-draft.js").read_text() + (ROOT / "static" / "js" / "review-combined.js").read_text() + r'''
+const assert=require('node:assert/strict');
+state={session:{}};
+const input={checked:false,disabled:true};
+$=selector=>selector==='#reviewExcludeInput'?input:null;
+updateTagSummary=()=>{};syncExpectedOutputFromTags=()=>{};
+let draft=null,writer=true;
+reviewDraftForCase=()=>draft;hasDashboardWriteRole=()=>writer;
+const context={case_revision:{is_excluded:true}};
+populateCombinedCaseExclusion(context,{});
+assert.equal(input.checked,true);
+draft={case_is_excluded:false};populateCombinedCaseExclusion(context,{});
+assert.equal(input.checked,false);
+draft={is_excluded:false};populateCombinedCaseExclusion(context,{});
+assert.equal(input.checked,true); // A legacy Run draft cannot override the Case flag.
+
+'''
+    subprocess.run(["node", "-e", script], check=True, capture_output=True)
+
+
+
+def test_delayed_trail_metadata_cannot_replace_case_exclusion() -> None:
+    script = IME_JS + (ROOT / "static" / "js" / "detail-trail.js").read_text() + r'''
+const assert=require('node:assert/strict');
+state={caseRequestSeq:1,selectedId:'cn1',selectedCase:{issue_id:'cn1'},reviewFormDirty:false};
+const input={checked:false,dataset:{caseExclusion:'true'}};
+$=()=>input;
+reviewAnnotationsForCurrentRun=()=>[];
+reviewDraftForCase=()=>null;
+renderDetailExternalLinks=()=>{};
+applyTrailDetailMetadata({dashboard_should_exclude:true},'cn1',1);
+assert.equal(state.selectedCase.trail_should_exclude,true);
+assert.equal(input.checked,false);
+input.checked=true;
+applyTrailDetailMetadata({dashboard_should_exclude:false},'cn1',1);
+assert.equal(input.checked,true);
+'''
+    subprocess.run(["node", "-e", script], check=True, capture_output=True)
+
+
+def test_status_escape_exits_open_closed_and_option_focus_without_resetting_value() -> None:
+    core = (ROOT / "static/js/core-base.js").read_text().split("function normalizeClientBasePath")[0]
+    script = core + r'''
+const assert=require('node:assert/strict');
+const body={},roots=[],capture=[];
+document={activeElement:body,documentElement:{dataset:{}},querySelectorAll:()=>roots.filter(r=>r.classList.contains('is-open')),querySelector:()=>null,addEventListener(type,fn,phase){if(type==='keydown'&&phase)capture.push(fn)}};
+window={addEventListener(){}};
+resetAnchoredPanel=()=>{};
+function fixture(escapeFocus,inDialog=false){
+ const keys={},classes=new Set();
+ const trigger={dataset:{},disabled:false,setAttribute(){},addEventListener(type,fn){keys['trigger:'+type]=fn},focus(){document.activeElement=this},blur(){if(document.activeElement===this)document.activeElement=body}};
+ const option={dataset:{uiSelectValue:'completed'},focus(){document.activeElement=this},blur(){if(document.activeElement===this)document.activeElement=body},closest(){return this}};
+ let hidden=false;
+ const panel={get hidden(){return hidden},set hidden(value){hidden=value;if(value&&document.activeElement===option)document.activeElement=body},addEventListener(type,fn){keys['panel:'+type]=fn},querySelectorAll:()=>[option]};
+ const native={value:'completed'};
+ const root={classList:{contains:v=>classes.has(v),add:v=>classes.add(v),remove:v=>classes.delete(v)},contains:n=>[trigger,panel,option,native].includes(n),querySelector(selector){return selector.includes('panel')?panel:selector.includes('trigger')?trigger:selector.startsWith('select')?native:null}};
+ const dialog={querySelector:()=>classes.has('is-open')?root:null};
+ trigger.closest=()=>inDialog?dialog:null;
+ roots.push(root);bindUiSelect(root,{escapeFocus});
+ function escape(target,open){
+  panel.hidden=!open;if(open)classes.add('is-open');target.focus();
+  const event={key:'Escape',target,preventDefault(){this.prevented=true},stopPropagation(){this.stopped=true}};
+  capture.forEach(fn=>fn(event)); // Capture dismisses/hides the panel before its key listener.
+  keys[target===trigger?'trigger:keydown':'panel:keydown'](event);
+  assert.equal(panel.hidden,true);assert.equal(native.value,'completed');
+  return event;
+ }
+ return {trigger,option,escape};
+}
+const status=fixture('blur');
+status.escape(status.trigger,true);assert.equal(document.activeElement,body);
+status.escape(status.trigger,false);assert.equal(document.activeElement,body);
+status.escape(status.option,true);assert.equal(document.activeElement,body);
+const ordinary=fixture('trigger');
+ordinary.escape(ordinary.option,true);assert.equal(document.activeElement,ordinary.trigger);
+ordinary.escape(ordinary.trigger,false);assert.equal(document.activeElement,ordinary.trigger);
+const modal=fixture('trigger',true);
+assert.equal(modal.escape(modal.trigger,true).prevented,true);
+assert.notEqual(modal.escape(modal.trigger,false).prevented,true);
+'''
+    subprocess.run(["node"], input=script, text=True, check=True, capture_output=True)

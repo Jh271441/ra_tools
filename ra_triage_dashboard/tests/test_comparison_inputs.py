@@ -112,9 +112,59 @@ def test_case_membership_and_run_reference(tmp_path):
     with pytest.raises(ValueError): db.comparison_case_inputs('cn1',[run['id'],'missing'],['scope'])
 
 
+def test_bounded_diff_and_json_order():
+    js=Path('ra_triage_dashboard/static/js/run-comparison.js').read_text()
+    script=js+'''
+const assert=require('node:assert/strict');
+assert.equal(comparisonDiffLines('中文\\n<|image_pad|>','中文\\n<|image_pad|>').every(r=>r.kind==='same'),true);
+assert.equal(comparisonDiffLines('a\\nb','a\\nc')[1].kind,'change');
+assert.equal(comparisonDiffLines('a','b')[0].kind,'change');
+assert.equal(comparisonDiffLines('','')[0].kind,'same');
+assert.equal(comparisonDiffLines('x'.repeat(200001),''),null);
+assert.equal(comparisonDiffLines('a\\n'.repeat(2000),'b\\n'.repeat(2000)),null);
+assert.equal(comparisonConfigText({b:1,a:{d:2,c:3}}),comparisonConfigText({a:{c:3,d:2},b:1}));
+assert.notEqual(comparisonConfigText([1,2]),comparisonConfigText([2,1]));
+'''
+    subprocess.run(['node','-e',script],check=True,capture_output=True)
 
 
+def test_single_run_selector_stays_actionable_without_coverage():
+    js = Path('ra_triage_dashboard/static/js/run-comparison.js').read_text()
+    script = js + '''
+const assert=require('node:assert/strict');
+const elements={
+  comparisonLoadButton:{disabled:true}, comparisonSelectionNote:{textContent:''},
+  comparisonBaselineRunPicker:{}, comparisonCandidateRunPicker:{},
+};
+globalThis.state={modelRuns:[{id:'run-a',baseline_prediction_count:0}],runComparison:{baselineRunId:'',candidateRunId:'run-a',loading:false}};
+globalThis.$=(selector)=>elements[selector.slice(1)] || null;
+globalThis.uiText=(zh)=>zh;
+globalThis.populateUiSelect=()=>{};
+globalThis.bindUiSelect=()=>{};
+renderRunComparisonSelectors();
+assert.equal(elements.comparisonLoadButton.disabled,false);
+assert.match(elements.comparisonSelectionNote.textContent,/暂无输出/);
+'''
+    subprocess.run(['node', '-e', script], check=True, capture_output=True)
 
 
+def test_comparison_media_extra_input_uses_exact_frame_offset():
+    js = Path('ra_triage_dashboard/static/js/run-comparison.js').read_text()
+    script = js + '''
+const assert=require('node:assert/strict');
+globalThis.escapeHtml=(value)=>String(value);
+const extra={candidate:{frames:[
+  {offset_ms:-5000,axes:{routing:{label:'Routing',value:'左转'},lane_change:{label:'自车变道',value:'非变道'}}},
+  {offset_ms:0,axes:{routing:{label:'Routing',value:'直行'},lane_change:{label:'自车变道',value:'变道'}}},
+]}};
+const exact=comparisonExtraInputFrameHtml(extra,0);
+assert.match(exact,/Routing/);assert.match(exact,/直行/);assert.match(exact,/自车变道/);assert.match(exact,/变道/);
+assert.doesNotMatch(exact,/左转/);
+assert.equal(comparisonExtraInputFrameHtml(extra,-1000),'');
+'''
+    subprocess.run(['node', '-e', script], check=True, capture_output=True)
 
 
+def test_nearest_trigger_frame_selection():
+    js=Path('ra_triage_dashboard/static/js/detail-media.js').read_text()
+    subprocess.run(['node','-e',js+"\nconst assert=require('node:assert/strict'); assert.equal(heroFrameIndex([{offset_ms:-9000},{offset_ms:0},{offset_ms:1000}]),1); assert.equal(heroFrameIndex([{offset_ms:-9000},{offset_ms:-5000},{offset_ms:1000}]),2); assert.equal(heroFrameIndex([{offset_sec:-2},{offset_sec:0}]),1); assert.equal(heroFrameIndex([{offset_ms:null,offset_sec:null},{offset_ms:1000}]),1); assert.ok(Number.isNaN(mediaFrameOffsetMs({offset_ms:null,offset_sec:null}))); "],check=True,capture_output=True)

@@ -15,23 +15,28 @@ from starlette.staticfiles import NotModifiedResponse, StaticFiles
 from starlette.types import Scope
 
 
+def build_frontend_bundle(directory: Path | str) -> bytes:
+    """Keep source ownership separate while shipping one classic script."""
+    modules = Path(directory) / "js"
+    names = [line.strip() for line in (modules / "MANIFEST").read_text(encoding="utf-8").splitlines()
+             if line.strip() and not line.lstrip().startswith("#")]
+    if not names or len(names) != len(set(names)):
+        raise RuntimeError("Frontend MANIFEST must contain unique modules")
+    if any(not re.fullmatch(r"[a-z][a-z0-9-]+\.js", name) for name in names):
+        raise RuntimeError("Invalid frontend module name")
+    return b"\n;\n".join((modules / name).read_bytes() for name in names)
+
+
 def build_frontend_styles(directory: Path | str) -> bytes:
     """Use the shell's existing ordered list, including its final mobile layer."""
     directory = Path(directory)
-    match = re.search(
-        r"const stylesheetPaths = \[([\s\S]*?)\];",
-        (directory / "index.html").read_text(encoding="utf-8"),
-    )
+    match = re.search(r"const stylesheetPaths = \[([\s\S]*?)\];", (directory / "index.html").read_text(encoding="utf-8"))
     if not match:
         raise RuntimeError("Missing frontend stylesheet order")
     names = json.loads("[" + re.sub(r",\s*$", "", match[1]) + "]")
-    if (
-        not names
-        or len(names) != len(set(names))
-        or any(
-            not re.fullmatch(r"(?:[a-z][a-z0-9-]*/)*[a-z][a-z0-9-]*\.css", name)
-            for name in names
-        )
+    if not names or len(names) != len(set(names)) or any(
+        not re.fullmatch(r"(?:[a-z][a-z0-9-]*/)*[a-z][a-z0-9-]*\.css", name)
+        for name in names
     ):
         raise RuntimeError("Invalid frontend stylesheet order")
     return b"\n\n".join((directory / name).read_bytes() for name in names)
@@ -42,18 +47,16 @@ class CachedStaticFiles(StaticFiles):
         super().__init__(directory=directory)
         # Build once during application construction, never on a request or
         # from runtime/user data. Both representations are immutable in memory.
-        css_body = build_frontend_styles(directory)
         self.frontend_bundles = {
-            "app-bundle.css": {
-                "identity": css_body,
-                "gzip": gzip.compress(css_body, compresslevel=5, mtime=0),
-            },
+            name: {"identity": body, "gzip": gzip.compress(body, compresslevel=5, mtime=0)}
+            for name, body in {
+                "app-bundle.js": build_frontend_bundle(directory),
+                "app-bundle.css": build_frontend_styles(directory),
+            }.items()
         }
         self.frontend_etags = {
-            name: {
-                encoding: '"' + hashlib.sha256(value).hexdigest() + '"'
-                for encoding, value in representations.items()
-            }
+            name: {encoding: '"' + hashlib.sha256(value).hexdigest() + '"'
+                   for encoding, value in representations.items()}
             for name, representations in self.frontend_bundles.items()
         }
 
@@ -76,11 +79,8 @@ class CachedStaticFiles(StaticFiles):
             # Starlette's 304 allowlist uses lowercase header names.
             return NotModifiedResponse(Headers(headers))
         headers["Content-Length"] = str(len(body))
-        return Response(
-            b"" if scope["method"] == "HEAD" else body,
-            media_type="text/css",
-            headers=headers,
-        )
+        return Response(b"" if scope["method"] == "HEAD" else body,
+                        media_type="text/css" if path.endswith(".css") else "text/javascript", headers=headers)
 
     def file_response(self, full_path, stat_result, scope: Scope, status_code: int = 200) -> Response:
         response = super().file_response(full_path, stat_result, scope, status_code=status_code)

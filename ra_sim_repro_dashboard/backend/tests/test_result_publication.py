@@ -264,6 +264,90 @@ def test_ordinary_evaluation_kpi_and_context_surface_covered_metrics_and_f1(data
     assert ctx["metrics"]["generated_at"] == "2026-11-25T05:42:51+00:00"
 
 
+def test_unclassified_ordinary_revision_falls_back_to_clean_published_batch(data, monkeypatch):
+    from app.services import ordinary_evaluation
+
+    db, batch, plan = data
+    release = plan["release"]
+    approve_publication(db, batch, plan["population_hash"], ["2"], "User authorized")
+    db.commit()
+
+    poisoned = {
+        "revision_key": "normalrevision:poisoned-unclassified",
+        "context": {"release": release},
+        "source_count": 200,
+        "generated_at": "2026-11-25T05:42:51+00:00",
+        "lineage": {"1": {"job_id": 50805791}},
+        "rows": [{"issue_id": "i1", "baseline_label": ""}],
+        "metrics": {
+            "available": True,
+            "covered": 150,
+            "eligible": 150,
+            "unclassified": 50,
+            "coverage": 1.0,
+            "road_matches": 130,
+            "missing_results": 0,
+            "sim_repro_rate": None,
+            "precision": None,
+            "recall": None,
+            "covered_repro_rate": 0.8667,
+            "covered_precision": 0.8,
+            "covered_recall": 0.75,
+            "online_precision": 0.613,
+            "online_recall": 0.79,
+            "positive_auto_repro_rate": 0.91,
+            "negative_auto_repro_rate": 0.85,
+            "positive_manual_repro_rate": 0.77,
+            "counts": {
+                "precision_numerator": 824,
+                "precision_denominator": 1344,
+                "recall_numerator": 824,
+                "recall_denominator": 1049,
+            },
+            "covered_source_counts": {
+                "precision_numerator": 824,
+                "precision_denominator": 1344,
+                "recall_numerator": 824,
+                "recall_denominator": 1049,
+            },
+            "sim_counts": {
+                "precision_numerator": 806,
+                "precision_denominator": 991,
+                "recall_numerator": 806,
+                "recall_denominator": 1035,
+            },
+        },
+    }
+    kpi = ordinary_evaluation.kpi(poisoned)
+    assert kpi["positive_auto_repro_rate"] == pytest.approx(0.91)
+    assert kpi["negative_auto_repro_rate"] == pytest.approx(0.85)
+    assert kpi["positive_manual_repro_rate"] == pytest.approx(0.77)
+
+    monkeypatch.setattr(
+        ordinary_evaluation, "read", lambda _db, rel: poisoned if rel == release else None
+    )
+    monkeypatch.setattr(
+        "app.services.release_presentation.ordinary_kpis",
+        lambda _db: [kpi],
+    )
+    monkeypatch.setattr(
+        "app.services.release_presentation.effective_config",
+        lambda _: {"periods": [{"release": release, "status": "completed"}]},
+    )
+    monkeypatch.setattr(
+        "app.services.release_presentation.status",
+        lambda _: {"current_version": release, "metrics": {"available": False}},
+    )
+    ctx = context(db)
+    assert ctx["business_status"] == "published_with_exclusions"
+    assert ctx["business_metrics"]["evaluated_cases"] == 199
+    assert ctx["business_metrics"]["sim_estimate"]["job_id"] == 100
+    rows = history_kpis(db)
+    assert len(rows) == 1
+    assert rows[0]["evaluated_cases"] == 199
+    assert rows[0]["sim_estimate"]["job_id"] == 100
+
+
 @pytest.mark.parametrize(
     "case", ["wrong_hash", "wrong_exclusions", "artifact_failure", "secondary"]
 )

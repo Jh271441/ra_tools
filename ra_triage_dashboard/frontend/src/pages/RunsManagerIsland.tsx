@@ -50,6 +50,7 @@ export interface ModelRunItem {
 
 export interface ModelRunsPayload {
   items?: ModelRunItem[];
+  aliases?: Record<string, string>;
   default_model_run_id?: string;
   baseline_issue_count?: number;
 }
@@ -64,6 +65,7 @@ interface LegacyRunsWindow {
   __RA_TRIAGE_STATE__?: {
     selectedRunId?: string;
     modelRuns?: ModelRunItem[];
+    modelRunAliases?: Record<string, string>;
     runPage?: number;
     runPageSize?: number;
   };
@@ -243,6 +245,9 @@ export const RunsManagerIsland: React.FC<RunsManagerIslandProps> = ({
     const legacyState = getLegacyWindow().__RA_TRIAGE_STATE__;
     if (legacyState && Array.isArray(runsQuery.data.items)) {
       legacyState.modelRuns = runsQuery.data.items;
+      if (runsQuery.data.aliases && typeof runsQuery.data.aliases === "object") {
+        legacyState.modelRunAliases = runsQuery.data.aliases;
+      }
     }
     const counts: Record<string, string> = {
       upload: "runSourceCountUpload",

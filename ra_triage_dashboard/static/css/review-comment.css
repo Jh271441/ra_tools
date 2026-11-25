@@ -78,7 +78,7 @@
 #reviewGalleryView .gallery-heading-meta { flex-wrap: wrap; }
 #reviewNextPendingTaskButton { max-width: 100%; white-space: normal; }
 .issue-grid {
-  display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); grid-auto-rows: 1fr; align-items: stretch; gap: 9px;
+  display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); grid-auto-rows: auto; align-items: stretch; gap: 9px;
   padding: 12px;
 }
 .issue-grid-empty { grid-column: 1 / -1; min-height: 220px; display: grid; place-items: center; }
@@ -1175,12 +1175,12 @@ html[data-color-theme="light"] .comment-thread-body h4,
 html[data-color-theme="light"] .comment-thread-body h5 { color: var(--text); }
 html[data-color-theme="light"] .comment-thread-meta strong,
 html[data-color-theme="light"] .comment-thread-body a,
-html[data-color-theme="light"] .comment-mention { color: var(--accent); }
+html[data-color-theme="light"] .comment-mention { color: #08758d; }
 html[data-color-theme="light"] .comment-thread-body code {
   color: #164e63;
   background: #e6eef5;
 }
-html[data-color-theme="light"] .comment-thread-body pre { background: var(--overlay-2); }
+html[data-color-theme="light"] .comment-thread-body pre { background: #eef3f8; }
 html[data-color-theme="light"] .comment-thread-body pre code {
   color: #26384d;
   background: transparent;
@@ -1192,14 +1192,14 @@ html[data-color-theme="light"] .review-reason-shortcuts kbd {
 }
 html[data-color-theme="light"] .row-evidence span { color: #276b74; }
 html[data-color-theme="light"] .tag-option:has(input:checked) {
-  border-color: var(--accent-border); color: var(--accent-text); background: var(--accent-soft); font-weight: 650;
+  border-color: rgba(8,117,141,.42); color: #075f75; background: rgba(8,117,141,.1); font-weight: 650;
 }
 html[data-color-theme="light"] .tag-group-selected-chip {
-  border-color: var(--accent-border); color: var(--accent-text); background: var(--accent-soft);
+  border-color: rgba(8,117,141,.28); color: #075f75; background: rgba(8,117,141,.1);
 }
 html[data-color-theme="light"] .tag-group-selected-chip:hover,
 html[data-color-theme="light"] .tag-group-selected-chip:focus-visible {
-  border-color: var(--accent-border); color: var(--accent-hover); background: var(--accent-soft-hover);
+  border-color: rgba(8,117,141,.58); color: #064f63; background: rgba(8,117,141,.16);
 }
 html[data-color-theme="light"] .tag-group-selected-chip.missing-evidence-selected-chip:hover,
 html[data-color-theme="light"] .tag-group-selected-chip.missing-evidence-selected-chip:focus-visible {
@@ -1210,13 +1210,13 @@ html[data-color-theme="light"] .tag-group-selected-chip.missing-evidence-selecte
 }
 html[data-color-theme="light"] .history-delete-button:hover:not(:disabled) { color: #9f2938; }
 html[data-color-theme="light"] .evidence-action-button { color: #53647a; border-color: rgba(82, 98, 120, .28); }
-html[data-color-theme="light"] .evidence-action-button:hover:not(:disabled) { color: var(--accent-text); border-color: var(--accent-border); background: var(--accent-soft); }
+html[data-color-theme="light"] .evidence-action-button:hover:not(:disabled) { color: #075f75; border-color: #078ba6; background: rgba(7, 139, 166, .08); }
 html[data-color-theme="light"] .evidence-action-button.evidence-action-danger:hover:not(:disabled) { color: #9f2938; border-color: rgba(159, 41, 56, .42); background: rgba(159, 41, 56, .07); }
-html[data-color-theme="light"] .evidence-tag { background: var(--accent-soft); }
+html[data-color-theme="light"] .evidence-tag { background: rgba(8, 117, 141, .08); }
 html[data-color-theme="light"] .tag-option { color: #34465b; background: #f8fafc; }
 html[data-color-theme="light"] .tag-option-check,
 html[data-color-theme="light"] .tag-option-check span { color: #34465b; background: transparent; }
-html[data-color-theme="light"] .tag-option:has(input:checked) .tag-option-check span { color: var(--accent-text); }
+html[data-color-theme="light"] .tag-option:has(input:checked) .tag-option-check span { color: #075f75; }
 html[data-color-theme="light"] .tag-option-menu-toggle { color: #53647a; }
 
 html[data-color-theme="light"] select option,
@@ -1244,7 +1244,7 @@ html[data-color-theme="light"] .run-source-badge { color: #475569; }
 html[data-color-theme="light"] .status-partial,
 html[data-color-theme="light"] .status-partially_succeeded,
 html[data-color-theme="light"] .label-无需协助 { color: #946100; }
-html[data-color-theme="light"] .label-真实卡住 { color: var(--accent); }
+html[data-color-theme="light"] .label-真实卡住 { color: #08758d; }
 html[data-color-theme="light"] .evidence-dropdown .evidence-options,
 html[data-color-theme="light"] .evidence-dropdown .tag-options { box-shadow: 0 14px 30px rgba(38, 52, 69, .16); }
 html[data-color-theme="light"] .review-exclude-toggle { background: rgba(180, 120, 15, .08); }
@@ -1256,8 +1256,8 @@ html[data-color-theme="light"] .review-mention-search-query,
 html[data-color-theme="light"] .review-mention-option { color: #172033; }
 html[data-color-theme="light"] .review-mention-search-row kbd { border-color: #c7d3df; color: #5f6e82; background: #ffffff; }
 html[data-color-theme="light"] .review-mention-option:hover,
-html[data-color-theme="light"] .review-mention-option.is-active { border-color: var(--accent-border); background: var(--accent-soft); }
-html[data-color-theme="light"] .review-mention-avatar { color: var(--accent-text); background: var(--accent-soft); }
+html[data-color-theme="light"] .review-mention-option.is-active { border-color: rgba(8, 117, 141, .25); background: rgba(8, 117, 141, .08); }
+html[data-color-theme="light"] .review-mention-avatar { color: #075d6d; background: #e6f8fb; }
 
 /* Shared Labeling projection remains visually separate from Run-bound Review. */
 .filter-shared-label-state > .ui-lang-zh,
@@ -1273,7 +1273,7 @@ html[data-color-theme="light"] .review-mention-avatar { color: var(--accent-text
 .issue-card-heading:has(.issue-card-human-summary) .issue-card-heading-main { flex-basis: 95px; align-items: baseline; }
 .issue-card-heading:has(.issue-card-human-summary) .issue-id { max-width: 100%; }
 .issue-card-heading:has(.issue-card-human-summary) .issue-card-flags { max-width: 100%; flex-wrap: wrap; margin-left: auto; align-items: baseline; }
-.issue-card-human-summary { min-width: 0; display: inline-flex; align-items: baseline; justify-content: flex-end; flex-wrap: wrap; gap: 6px; }
+.issue-card-human-summary { min-width: 0; display: inline-flex; align-items: baseline; justify-content: flex-end; flex-wrap: wrap; gap: 4px; }
 .issue-human-label { align-items: baseline; }
 .issue-human-label .label-badge { min-height: 0; font-size: 9px; line-height: 1.35; }
 .issue-card-flag-model-no-gt {

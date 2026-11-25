@@ -210,7 +210,10 @@ export const UiSelect: React.FC<UiSelectProps> = ({
                 onMouseEnter={() => setActiveIndex(index)}
                 onClick={() => commitOption(option)}
               >
-                <span>{option.label}</span>
+                <span className="ui-select-option-check" aria-hidden="true">
+                  {isSelected ? "✓" : ""}
+                </span>
+                <span className="ui-select-option-label">{option.label}</span>
               </button>
             );
           })}

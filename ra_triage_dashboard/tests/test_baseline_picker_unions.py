@@ -1,0 +1,77 @@
+"""Daily dataset choices are presentation unions, never GT/task migrations."""
+import subprocess
+import unittest
+from pathlib import Path
+
+
+class BaselinePickerUnionsTest(unittest.TestCase):
+    def test_counts_selection_and_partial_old_links_keep_real_scope_ids(self):
+        source = (Path(__file__).resolve().parents[1] / "static/js/format-api.js").read_text()
+        shared = (Path(__file__).resolve().parents[1] / "static/js/session-config.js").read_text()
+        source += '\n' + shared[shared.index('function multiFilterOptionHtml('):shared.index('function multiFilterAllValues(')]
+        script = source + r'''
+const assert=require('node:assert/strict');
+state={baselineCatalog:[],config:{},selectedBaselineIds:[]};uiText=x=>x;
+const catalog=[
+ {id:'0508',label:'0508',count:1071},
+ {id:'1009-2026-10-15',label:'1009 2026-10-15',count:30},
+ {id:'1009-2026-10-16',label:'1009 2026-10-16',count:100},
+ {id:'1009-2026-10-17',label:'1009 2026-10-17',count:75},
+ {id:'review-2026-10-18',label:'每日复核 2026-10-18',count:74},
+ {id:'review-2026-10-15-extra',label:'补齐15',count:3},
+ {id:'review-2026-10-16-extra',label:'补齐16',count:12},
+ {id:'review-2026-10-18-extra',label:'补齐18',count:16},
+];
+const original=JSON.stringify(catalog),allowed=new Set(catalog.map(x=>x.id));
+assert.deepEqual(normalizeBaselineIds("1009-2026-10-15,review-2026-10-15-extra；",{allowed}),["1009-2026-10-15","review-2026-10-15-extra"]);
+const options=baselinePickerOptions(catalog,['1009-2026-10-15','review-2026-10-15-extra']);
+assert.equal(options.length,5);
+assert.deepEqual(options.map(x=>x.label),['0508 · 1071','1009 2026-10-15 · 33','1009 2026-10-16 · 112','1009 2026-10-17 · 75','1009 2026-10-18 · 90']);
+assert.deepEqual(normalizeBaselineIds(options.filter(x=>x.selected).map(x=>x.value),{allowed}),['1009-2026-10-15','review-2026-10-15-extra']);
+const partial=baselinePickerOptions(catalog,['review-2026-10-15-extra'])[1];
+assert(partial.partial);assert(partial.label.includes('3/33'));assert.equal(partial.value,'review-2026-10-15-extra');
+assert.deepEqual(normalizeBaselineIds([partial.value],{allowed}),['review-2026-10-15-extra']);
+assert.deepEqual(normalizeBaselineIds([partial.fullValue],{allowed}),['1009-2026-10-15','review-2026-10-15-extra']);
+assert.equal(JSON.stringify(catalog),original);
+const retired={id:'fill-2026-10-17-3e2cc9cfbd',label:'信息补齐',count:2};
+assert.equal(baselinePickerOptions([...catalog,retired],[]).some(x=>x.value===retired.id),false);
+const historical=baselinePickerOptions([...catalog,retired],[retired.id]).find(x=>x.value===retired.id);
+assert(historical.selected);assert(historical.label.includes('历史'));
+
+const missing=baselinePickerOptions(catalog.filter(x=>x.id!=='review-2026-10-15-extra'),['1009-2026-10-15']);
+assert.equal(missing[1].value,'1009-2026-10-15');assert.equal(missing[1].label,'1009 2026-10-15 · 30');
+const august=[{id:'0821',count:1242},{id:'0821-review-extra',count:250},{id:'0821-trail-extra',count:513}];
+const full=baselinePickerOptions(august,august.map(x=>x.id));
+assert.equal(full.length,1);assert.equal(full[0].label,'0821 · 2005');assert.equal(full[0].partial,false);
+const old=baselinePickerOptions(august,['0821'])[0];
+assert.equal(old.value,august.map(x=>x.id).join(','));assert.equal(old.label,'0821 · 2005');assert.equal(old.partial,false);
+for(const previous of ['0821','0821,0821-review-extra','0821-review-extra','0821-trail-extra']) {
+ assert.deepEqual(normalizeBaselineIds(previous,{allowed:august.map(x=>x.id)}),august.map(x=>x.id));
+ assert.equal(baselinePickerOptions(august,previous.split(','))[0].label,'0821 · 2005');
+}
+assert.deepEqual(normalizeBaselineIds('0508,0821',{allowed:['0508',...august.map(x=>x.id)]}),['0508',...august.map(x=>x.id)]);
+assert.deepEqual(normalizeBaselineIds('0821',{allowed:['0821','0821-review-extra']}),['0821']);
+uiText=(zh,en)=>en;
+assert.equal(baselinePickerOptions(august,['0821-review-extra'])[0].label,'0821 · 2005');
+const action=multiFilterOptionHtml({value:'0821',label:'0821 · 2005'},new Set(['0821']),{onlyThis:true});
+assert(action.includes('>Only this</button>'));assert(action.includes('Select only 0821'));
+const partitions=[{id:'0821-odd2',label:'0821 · ODD2',count:1026},
+ {id:'0821-nonodd2',label:'0821 · 非ODD2',label_en:'0821 · Non-ODD2',count:979}];
+state.baselineCatalog=partitions;
+const partitionIds=partitions.map(x=>x.id);
+assert.deepEqual(normalizeBaselineIds('0821',{allowed:partitionIds}),['0821-odd2']);
+assert.deepEqual(normalizeBaselineIds('0821-nonodd2',{allowed:partitionIds}),['0821-nonodd2']);
+assert.deepEqual(normalizeBaselineIds(partitionIds,{allowed:partitionIds}),partitionIds);
+assert.equal(baselinePickerOptions(partitions,partitionIds)[1].label,'0821 · Non-ODD2 · 979');
+global.location={search:'?work_split=old312'};
+assert.deepEqual(normalizeBaselineIds('0821-review-extra',{allowed:partitionIds}),['0821-odd2']);
+state.reviewTaskContext={baseline_ids:['0821-nonodd2']};
+assert.deepEqual(normalizeBaselineIds('0821-review-extra',{allowed:partitionIds}),['0821-nonodd2']);
+state.reviewTaskContext=null;
+global.location={search:'?issue=cn1'};
+assert.deepEqual(normalizeBaselineIds('0821',{allowed:partitionIds}),['0821-odd2']);
+state.selectedBaselineIds=['0821-nonodd2'];
+assert.deepEqual(inferredBaselineIdsFromRun({inferred_baseline_ids:partitionIds,
+ baseline_coverage:[{id:'0821-nonodd2',prediction_count:10}]}),['0821-nonodd2']);
+'''
+        subprocess.run(["node", "-e", script], check=True, capture_output=True)

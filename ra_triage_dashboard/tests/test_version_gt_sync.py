@@ -12,6 +12,8 @@ from ra_triage_dashboard.app.gt_sync import TrailGtSyncResult, gt_refresh_due
 from ra_triage_dashboard.app.support import gt_sync as service
 
 
+def test_version_gt_frontend_behavior():
+    subprocess.run(['node', str(Path(__file__).with_name('version_gt_ui.cjs'))], check=True)
 
 
 @pytest.fixture

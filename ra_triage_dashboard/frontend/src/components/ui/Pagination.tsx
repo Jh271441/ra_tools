@@ -65,7 +65,7 @@ export const Pagination: React.FC<PaginationProps> = ({
 
   return (
     <nav
-      className="case-pagination ra-react-pagination"
+      className="case-pagination gallery-pagination ra-react-pagination"
       aria-label={ariaLabel || bilingual(lang, "分页导航", "Pagination")}
     >
       <div className="case-pagination-main">

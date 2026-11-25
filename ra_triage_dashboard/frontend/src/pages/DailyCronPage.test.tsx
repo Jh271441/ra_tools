@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DailyCronPage, DailyCronPayload } from "./DailyCronPage";
+import { buildCronGraphModel } from "../features/cron-graph/buildCronGraphModel";
 
 function sampleCronPayload(): DailyCronPayload {
   return {
@@ -184,5 +185,28 @@ describe("DailyCronPage", () => {
     fireEvent.change(searchInput, { target: { value: "job-12" } });
     expect(await screen.findByText("job-12")).toBeInTheDocument();
     expect(screen.queryByText("job-11")).not.toBeInTheDocument();
+  });
+
+  it("filters single-version dataset counts strictly by release_family in CronGraphModel", () => {
+    const payload = sampleCronPayload();
+    payload.incremental!.datasets = [
+      { release_family: "20261113", targets: 30, assigned: { alice: 20, bob: 10 } },
+      { release_family: "20261106", targets: 99, assigned: { alice: 50, bob: 49 } },
+    ];
+    const single = buildCronGraphModel(payload, {
+      selectedVersion: "20261113",
+      lang: "zh",
+      theme: "dark",
+    });
+    const importNodeSingle = single.lanes.flatMap((l) => l.nodes).find((n) => n.id === "media-import");
+    expect(importNodeSingle?.data.detail).toBe("30 / 30");
+
+    const all = buildCronGraphModel(payload, {
+      selectedVersion: "all",
+      lang: "zh",
+      theme: "dark",
+    });
+    const importNodeAll = all.lanes.flatMap((l) => l.nodes).find((n) => n.id === "media-import");
+    expect(importNodeAll?.data.detail).toBe("129 / 129");
   });
 });

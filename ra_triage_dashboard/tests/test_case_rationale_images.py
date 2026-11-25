@@ -46,6 +46,36 @@ class CaseRationaleImagesTest(unittest.TestCase):
             with self.assertRaises(HTTPException): asyncio.run(route._submit_case_images("cn1", object(), "{}", [], AsyncMock()))
             store.assert_not_called()
 
+    def test_pending_files_are_scoped_and_only_saved_snapshot_is_cleared(self):
+        script = (ROOT / "static/js/review-attachments.js").read_text() + r'''
+const assert = require('node:assert/strict');
+state={selectedCase:{issue_id:'cn1'},session:{username:'alice'},config:{},reviewFormDirty:false};
+reviewDraftStorageKey=(issue,run,task,actor)=>[issue,run,task,actor].join('|');
+currentReviewRunId=()=>state.run||'run1';reviewWorkSplitBinding=()=>state.task||'';reviewDraftReviewer=()=>state.session.username;
+let errors=[],revoked=[];hasDashboardWriteRole=()=>true;uiText=(zh,en)=>en;showToast=(text)=>errors.push(text);
+URL={createObjectURL:()=> 'blob:'+Math.random(),revokeObjectURL:(url)=>revoked.push(url)};
+window={setTimeout:(fn)=>fn()};crypto={randomUUID:()=>Math.random().toString()};$=()=>null;
+const file={name:'e.png',type:'image/png',size:100};
+addCaseRationaleImages([file]);const original=caseRationalePendingImages(),key=caseRationaleImageKey();
+assert.equal(original.length,1);assert.equal(state.pendingReviewImages,undefined);
+state.selectedCase={issue_id:'cn2'};assert.equal(caseRationalePendingImages().length,0);
+state.selectedCase={issue_id:'cn1'};state.run='other';assert.equal(caseRationalePendingImages().length,0);
+state.run='run1';state.reviewWorkSplitId='task';assert.equal(caseRationalePendingImages().length,0);
+state.reviewWorkSplitId='';state.session.username='bob';assert.equal(caseRationalePendingImages().length,0);
+state.session.username='alice';assert.equal(caseRationalePendingImages().length,1);
+const snapshot=[...caseRationalePendingImages()];addCaseRationaleImages([file]);
+clearSavedCaseRationaleImages(key,snapshot);assert.equal(caseRationalePendingImages().length,1);assert.equal(revoked.length,1);
+addCaseRationaleImages([{...file,type:'text/plain'},{...file,size:8388609}]);assert.equal(caseRationalePendingImages().length,1);assert.equal(errors.length,1);
+addCaseRationaleImages([file,file,file,file]);assert.equal(caseRationalePendingImages().length,4);
+let calls=[];FormData=class{constructor(){this.values=[]}append(...args){this.values.push(args)}};
+api=async(path,options)=>{calls.push({path,options});throw new Error('offline')};
+(async()=>{try{await submitCaseRationalePayload('cn1','combined-review',{},caseRationalePendingImages(),{'Idempotency-Key':'key'})}catch(_){}
+assert.equal(caseRationalePendingImages().length,4);assert.equal(calls[0].options.headers['X-RA-Triage-Request'],'labeling-v1');
+assert.equal(calls[0].options.headers['Idempotency-Key'],'key');assert.equal(calls[0].options.body.values.filter(v=>v[0]==='attachments').length,4);
+assert.ok(calls[0].path.endsWith('combined-review-with-attachments'));
+})();
+'''
+        subprocess.run(["node"], input=script, text=True, check=True, capture_output=True)
 
 
 class CaseImageUploadIntegrationTest(unittest.TestCase):
