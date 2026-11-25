@@ -2274,30 +2274,285 @@ html[data-color-theme="light"] .comparison-matrix .matrix-error {
   }
 }
 
-@media (max-width: 640px) {
-  .topbar .top-actions .ra-desktop-action,
-  .ra-desktop-action {
-    display: none !important;
+@media (max-width: 639px) {
+  /* Compact 2-row phone topbar: [menu][title][dataset][More(+Refresh on >=420px)] + full-width 5-col KPI strip */
+  .topbar {
+    display: grid !important;
+    grid-template-columns: minmax(0, auto) minmax(96px, 1fr) auto;
+    grid-template-areas:
+      "brand baselines actions"
+      "metrics metrics metrics";
+    align-items: center;
+    gap: 5px 6px;
+    padding: 5px 8px 6px !important;
   }
-  .topbar .gt-sync-control {
-    flex-wrap: wrap;
+  .topbar:not(:has(.topbar-baselines)) {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "brand actions"
+      "metrics metrics";
+  }
+  .topbar .brand {
+    grid-area: brand;
+    padding-left: 48px;
     min-width: 0;
     max-width: 100%;
+    flex: initial;
   }
-  .topbar .gt-sync-meta {
-    min-width: 0;
-    max-width: 100%;
+  .topbar h1 {
+    font-size: 15px;
+    line-height: 1.2;
+    white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .ra-mobile-more-wrap {
+  .topbar .topbar-baselines,
+  .topbar .intent-topbar-dataset {
+    grid-area: baselines;
+    min-width: 0;
+    width: 100%;
+    max-width: none;
+    margin: 0;
+  }
+  .topbar .topbar-baselines-label {
+    display: none;
+  }
+  .topbar .topbar-baselines .multi-filter-trigger,
+  .topbar .intent-topbar-dataset .multi-filter-trigger {
+    min-height: 44px;
+    height: 44px;
+    padding: 4px 22px 4px 9px;
+    font-size: 13px;
+    border-radius: 9px;
+  }
+  .topbar .top-actions {
+    grid-area: actions;
+    margin-left: 0;
+    gap: 4px;
+    flex-shrink: 0;
+    align-items: center;
+  }
+  .topbar .top-actions .ra-desktop-action,
+  .topbar .top-actions #themeToggleButton,
+  .topbar .top-actions #languageToggleButton,
+  .topbar .gt-sync-control,
+  .ra-desktop-action {
+    display: none !important;
+  }
+  .topbar .top-actions .ra-mobile-more-wrap {
     display: inline-block;
   }
+  .topbar .top-actions .ra-mobile-more-trigger,
+  .topbar .top-actions .ra-refresh-action {
+    min-height: 44px !important;
+    height: 44px;
+    min-width: 44px;
+    padding: 0 10px;
+    font-size: 13px;
+    border-radius: 9px;
+  }
+  .topbar .header-metrics {
+    grid-area: metrics;
+    order: initial;
+    width: 100%;
+    max-width: 100%;
+    margin: 0;
+    display: grid !important;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    border-radius: 9px;
+    overflow: hidden;
+  }
+  .topbar .header-metrics > div {
+    min-width: 0;
+    padding: 5px 2px;
+    gap: 2px;
+  }
+  .topbar .header-metrics span {
+    font-size: 10px;
+    line-height: 1.15;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .topbar .header-metrics strong {
+    font-size: 13px;
+    line-height: 1.2;
+  }
+
+  .ra-mobile-more-panel {
+    width: min(260px, calc(100vw - 24px));
+    padding: 8px;
+    gap: 6px;
+  }
+  .ra-mobile-more-panel > .button {
+    min-height: 44px;
+    font-size: 14px;
+    padding: 8px 12px;
+  }
+  .ra-mobile-more-gt {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 8px 4px;
+    margin-top: 2px;
+    border-top: 1px solid var(--line);
+  }
+  .ra-mobile-more-gt-meta {
+    display: grid;
+    gap: 1px;
+    font-size: 11px;
+    color: var(--muted);
+    min-width: 0;
+  }
+  .ra-mobile-more-gt-meta strong {
+    font-size: 12px;
+    color: var(--text);
+  }
+  .ra-mobile-more-gt > .button {
+    width: auto;
+    flex-shrink: 0;
+    min-height: 36px !important;
+    height: 36px;
+    padding: 0 12px;
+    font-size: 12px;
+  }
+
+  /* Compact vertical rhythm & full-bleed phone cards */
+  .main {
+    padding: 8px 8px calc(18px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+  .app-page,
+  .review-gallery-view,
+  .ra-react-page {
+    gap: 8px !important;
+  }
+  .review-commandbar {
+    padding: 6px 8px !important;
+    border-radius: 10px;
+  }
+  .mobile-filter-bar {
+    display: block !important;
+    margin: 0;
+  }
+  .ra-review-gallery-root .mobile-filter-bar .mobile-filter-toggle,
+  .ra-labeling-gallery-root .mobile-filter-bar .mobile-filter-toggle,
+  .ra-labeling-summary-root .mobile-filter-bar .mobile-filter-toggle,
+  .mobile-filter-bar .mobile-filter-toggle {
+    display: flex !important;
+    align-items: center;
+    justify-content: space-between !important;
+    width: 100%;
+    min-height: 44px;
+    padding: 0 12px;
+    border-radius: 8px;
+    font-size: 14px;
+  }
+  .mobile-filter-bar .mobile-filter-toggle > span:first-child {
+    font-weight: 600;
+    color: var(--text);
+  }
+  .mobile-filter-bar .mobile-filter-toggle > span:last-child {
+    font-size: 13px;
+    color: var(--muted);
+    font-weight: 400;
+  }
+
+  /* Gallery heading: tight 2-column full-width action grid */
+  .gallery-panel,
+  .panel-card,
+  .page-card {
+    padding: 10px !important;
+    border-radius: 12px;
+  }
+  .gallery-heading {
+    gap: 8px !important;
+    padding: 0 0 8px !important;
+  }
+  .case-labeling-heading-copy {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .ra-review-gallery-root .gallery-heading-actions,
+  .ra-labeling-gallery-root .gallery-heading-actions {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    width: 100%;
+  }
+  .ra-review-gallery-root .gallery-heading-actions > .button,
+  .ra-labeling-gallery-root .gallery-heading-actions > .button {
+    width: 100%;
+    min-height: 44px;
+    padding: 8px 10px;
+    font-size: 13px;
+    border-radius: 10px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .ra-review-gallery-root .gallery-heading-actions > :last-child:nth-child(odd),
+  .ra-labeling-gallery-root .gallery-heading-actions > :last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+    min-height: 46px;
+  }
+  .issue-grid {
+    padding: 0 !important;
+    gap: 10px !important;
+  }
+  .issue-card {
+    border-radius: 10px;
+  }
+  .issue-card-body {
+    padding: 8px 10px !important;
+    gap: 6px !important;
+  }
+
   .ra-react-page .button,
   .ra-react-page input[type="text"],
   .ra-react-page input[type="search"],
   .ra-react-page input[type="number"],
   .ra-react-page input[type="datetime-local"] {
     min-height: 44px;
+  }
+}
+
+/* On <= 419px (390px / 320px), tuck Refresh into More so Row 1 stays spacious with zero clip */
+@media (max-width: 419px) {
+  .topbar .top-actions .ra-refresh-action {
+    display: none !important;
+  }
+}
+
+/* Ultra-narrow 320px guard: zero clipping on More or Dataset trigger */
+@media (max-width: 359px) {
+  .topbar {
+    padding: 5px 6px 6px !important;
+    gap: 4px;
+  }
+  .topbar .brand {
+    padding-left: 46px;
+  }
+  .topbar h1 {
+    font-size: 13px;
+  }
+  .topbar .topbar-baselines .multi-filter-trigger,
+  .topbar .intent-topbar-dataset .multi-filter-trigger {
+    padding: 4px 18px 4px 7px;
+    font-size: 12px;
+  }
+  .topbar .top-actions .ra-mobile-more-trigger {
+    min-width: 44px;
+    padding: 0 8px;
+    font-size: 12px;
+  }
+  .topbar .header-metrics span {
+    font-size: 9px;
+  }
+  .topbar .header-metrics strong {
+    font-size: 12px;
   }
 }

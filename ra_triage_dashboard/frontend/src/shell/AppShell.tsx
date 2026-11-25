@@ -435,6 +435,7 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
   const [shortcutGuideOpen, setShortcutGuideOpen] = useState(false);
   const [gtTooltipOpen, setGtTooltipOpen] = useState(false);
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
+  const mobileMoreRef = useRef<HTMLDivElement | null>(null);
   const resizerDragRef = useRef<{ startX: number; startWidth: number } | null>(null);
 
   const routeDef = WORKBENCH_ROUTES[activePage] || WORKBENCH_ROUTES.review;
@@ -501,6 +502,25 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [mobileDrawerOpen]);
+
+  // Close mobile "More" popover on Escape or outside click
+  useEffect(() => {
+    if (!mobileMoreOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMobileMoreOpen(false);
+    };
+    const onPointerDown = (e: MouseEvent) => {
+      if (mobileMoreRef.current && !mobileMoreRef.current.contains(e.target as Node)) {
+        setMobileMoreOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    document.addEventListener("mousedown", onPointerDown);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.removeEventListener("mousedown", onPointerDown);
+    };
+  }, [mobileMoreOpen]);
 
   const toggleSidebar = useCallback(() => {
     const isNarrow =
@@ -1062,7 +1082,7 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
               {lang === "en" ? "中文" : "EN"}
             </button>
             <button
-              className="button button-quiet ra-desktop-action"
+              className="button button-quiet ra-refresh-action"
               id="refreshButton"
               type="button"
               aria-keyshortcuts="R"
@@ -1072,20 +1092,22 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
               <span>{bilingual(lang, "刷新", "Refresh")}</span>
               <kbd aria-hidden="true">R</kbd>
             </button>
-            <div className="ra-mobile-more-wrap">
+            <div className="ra-mobile-more-wrap" ref={mobileMoreRef}>
               <button
                 type="button"
                 className="button button-quiet ra-mobile-more-trigger"
                 aria-expanded={mobileMoreOpen}
+                aria-haspopup="menu"
                 onClick={() => setMobileMoreOpen((v) => !v)}
               >
                 {bilingual(lang, "更多", "More")}
               </button>
               {mobileMoreOpen && (
-                <div className="ra-mobile-more-panel">
+                <div className="ra-mobile-more-panel" role="menu">
                   <button
                     type="button"
                     className="button button-quiet"
+                    role="menuitem"
                     onClick={() => {
                       setMobileMoreOpen(false);
                       refreshActivePage();
@@ -1096,6 +1118,31 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
                   <button
                     type="button"
                     className="button button-quiet"
+                    role="menuitem"
+                    onClick={() => {
+                      setMobileMoreOpen(false);
+                      toggleTheme();
+                    }}
+                  >
+                    {theme === "light"
+                      ? bilingual(lang, "切换到深色主题", "Switch to dark theme")
+                      : bilingual(lang, "切换到浅色主题", "Switch to light theme")}
+                  </button>
+                  <button
+                    type="button"
+                    className="button button-quiet"
+                    role="menuitem"
+                    onClick={() => {
+                      setMobileMoreOpen(false);
+                      toggleLang();
+                    }}
+                  >
+                    {lang === "en" ? "切换到中文" : "Switch to English"}
+                  </button>
+                  <button
+                    type="button"
+                    className="button button-quiet"
+                    role="menuitem"
                     onClick={() => {
                       setMobileMoreOpen(false);
                       setShortcutGuideOpen(true);
@@ -1103,6 +1150,31 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
                   >
                     {bilingual(lang, "快捷键指南", "Keyboard shortcuts")}
                   </button>
+                  {!routeDef.hideDatasetPicker && !routeDef.usesIntentDatasets && (
+                    <div className="ra-mobile-more-gt">
+                      <span className="ra-mobile-more-gt-meta">
+                        <span>{bilingual(lang, "GT 更新", "GT updated")}</span>
+                        <strong>{gtSyncLatestTime}</strong>
+                      </span>
+                      <button
+                        type="button"
+                        className="button button-quiet"
+                        disabled={
+                          gtSyncState === "running" ||
+                          gtSyncRaw.enabled === false ||
+                          Boolean(session.read_only)
+                        }
+                        onClick={() => {
+                          setMobileMoreOpen(false);
+                          gtSyncMutation.mutate();
+                        }}
+                      >
+                        {gtSyncState === "running"
+                          ? bilingual(lang, "同步中…", "Syncing…")
+                          : bilingual(lang, "同步", "Sync")}
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
