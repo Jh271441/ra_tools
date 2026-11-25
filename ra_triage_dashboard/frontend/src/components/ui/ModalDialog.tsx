@@ -1,5 +1,6 @@
 import React, { useEffect, useId, useRef } from "react";
 import { bilingual, UiLanguage } from "../../bridge/useWorkbenchBridge";
+import { useFocusTrap } from "../../core/shortcutManager";
 
 export interface ModalDialogProps {
   open: boolean;
@@ -27,6 +28,7 @@ export const ModalDialog: React.FC<ModalDialogProps> = ({
   const backdropPressRef = useRef(false);
 
   onCloseRef.current = onClose;
+  useFocusTrap(open, cardRef, "modal");
 
   useEffect(() => {
     if (!open) return;
@@ -34,10 +36,10 @@ export const ModalDialog: React.FC<ModalDialogProps> = ({
     cardRef.current?.focus();
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.isComposing) return;
+      if (event.isComposing || event.keyCode === 229) return;
       if (event.key === "Escape") {
         // Let open dropdowns handle Escape first without closing the modal.
-        if (document.querySelector(".ra-react-select.is-open")) return;
+        if (document.querySelector(".ra-react-select.is-open, .ra-react-multiselect.is-open")) return;
         event.preventDefault();
         onCloseRef.current();
       }

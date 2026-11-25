@@ -17,6 +17,7 @@ function runCollectionCanWrite() {
 }
 
 function ensureRunCollectionsDedicatedPage(targetPage = state.activePage) {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("run-collections") || window.__RA_REACT_OWNED_PAGES__?.includes?.("run-collections"))) return;
   const workbench = document.getElementById("runCollectionsWorkbench");
   const host = document.getElementById("runCollectionsDedicatedHost");
   if (!workbench || !host) return;
@@ -162,6 +163,7 @@ function renderRunCollectionLabelReferenceSet(scopes = [], values = {}) {
 }
 
 function renderRunCollectionSelectors() {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("run-collections") || window.__RA_REACT_OWNED_PAGES__?.includes?.("run-collections"))) return;
   const collectionSelect = $("#runCollectionSelect");
   if (!collectionSelect) return;
   applyRunCollectionReadOnlyGating();
@@ -408,6 +410,10 @@ async function loadRunCollectionEvaluation(contextId, { page = 1, search = "", h
 }
 
 async function loadRunCollectionsWorkbench({ restoreRoute = false } = {}) {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("run-collections") || window.__RA_REACT_OWNED_PAGES__?.includes?.("run-collections"))) {
+    window.__RA_REACT_WORKBENCH__?.refreshPage?.("run-collections");
+    return;
+  }
   const select = $("#runCollectionSelect");
   if (!select) return;
   const params = new URLSearchParams(window.location.search);
@@ -541,6 +547,7 @@ async function runCollectionEvaluate() {
 }
 
 function bindRunCollectionsEvents() {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("run-collections") || window.__RA_REACT_OWNED_PAGES__?.includes?.("run-collections"))) return;
   if (window.__runCollectionsBound) return;
   window.__runCollectionsBound = true;
   $("#runCollectionRefreshButton")?.addEventListener("click", () => {

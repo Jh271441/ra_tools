@@ -5,6 +5,7 @@ import { apiRequest } from "./api/client";
 import { useWorkbenchBridge, WorkbenchBridgeState } from "./bridge/useWorkbenchBridge";
 import { SystemStatusPage } from "./pages/SystemStatusPage";
 import { UsersPage } from "./pages/UsersPage";
+import "./core/shortcutManager";
 import "./styles/react-workbench.css";
 
 const ReviewAssignmentsPage = React.lazy(() =>
@@ -21,6 +22,21 @@ const DailyCronPage = React.lazy(() =>
 const RunsManagerIsland = React.lazy(() =>
   import("./pages/RunsManagerIsland").then((m) => ({ default: m.RunsManagerIsland })),
 );
+const VersionDatasetsPage = React.lazy(() =>
+  import("./pages/VersionDatasetsPage").then((m) => ({ default: m.VersionDatasetsPage })),
+);
+const VersionMetricsPage = React.lazy(() =>
+  import("./pages/VersionMetricsPage").then((m) => ({ default: m.VersionMetricsPage })),
+);
+const AnalysisPage = React.lazy(() =>
+  import("./pages/AnalysisPage").then((m) => ({ default: m.AnalysisPage })),
+);
+const RunComparisonPage = React.lazy(() =>
+  import("./pages/RunComparisonPage").then((m) => ({ default: m.RunComparisonPage })),
+);
+const RunCollectionsPage = React.lazy(() =>
+  import("./pages/RunCollectionsPage").then((m) => ({ default: m.RunCollectionsPage })),
+);
 
 const OWNED_PAGES = new Set<string>([
   "status",
@@ -28,6 +44,11 @@ const OWNED_PAGES = new Set<string>([
   "review-assignments",
   "daily-cron",
   "runs-manager",
+  "version-datasets",
+  "version-metrics",
+  "analysis",
+  "comparison",
+  "run-collections",
 ]);
 
 const queryClient = new QueryClient({
@@ -53,6 +74,10 @@ function useResolvedSession(active: boolean) {
   return { effectiveSession, sessionLoading };
 }
 
+const LoadingFallback: React.FC<{ lang: string }> = ({ lang }) => (
+  <div className="no-asset">{lang === "en" ? "Loading…" : "加载中…"}</div>
+);
+
 const SystemStatusIsland: React.FC = () => {
   const { activePage, lang } = useWorkbenchBridge();
   return <SystemStatusPage active={activePage === "status"} lang={lang} />;
@@ -77,7 +102,7 @@ const ReviewAssignmentsIsland: React.FC = () => {
   const active = activePage === "review-assignments";
   const { effectiveSession } = useResolvedSession(active);
   return (
-    <Suspense fallback={<div className="no-asset">{lang === "en" ? "Loading…" : "加载中…"}</div>}>
+    <Suspense fallback={<LoadingFallback lang={lang} />}>
       <ReviewAssignmentsPage
         active={active}
         lang={lang}
@@ -92,7 +117,7 @@ const DailyCronIsland: React.FC = () => {
   const { activePage, lang, theme } = useWorkbenchBridge();
   const active = activePage === "daily-cron";
   return (
-    <Suspense fallback={<div className="no-asset">{lang === "en" ? "Loading…" : "加载中…"}</div>}>
+    <Suspense fallback={<LoadingFallback lang={lang} />}>
       <DailyCronPage active={active} lang={lang} theme={theme} />
     </Suspense>
   );
@@ -103,11 +128,82 @@ const RunsManagerReactIsland: React.FC = () => {
   const active = activePage === "runs";
   const { effectiveSession } = useResolvedSession(active);
   return (
-    <Suspense fallback={<div className="no-asset">{lang === "en" ? "Loading…" : "加载中…"}</div>}>
+    <Suspense fallback={<LoadingFallback lang={lang} />}>
       <RunsManagerIsland
         active={active}
         lang={lang}
         username={effectiveSession?.username || ""}
+      />
+    </Suspense>
+  );
+};
+
+const VersionDatasetsIsland: React.FC = () => {
+  const { activePage, lang } = useWorkbenchBridge();
+  return (
+    <Suspense fallback={<LoadingFallback lang={lang} />}>
+      <VersionDatasetsPage active={activePage === "version-datasets"} lang={lang} />
+    </Suspense>
+  );
+};
+
+const VersionMetricsIsland: React.FC = () => {
+  const { activePage, lang } = useWorkbenchBridge();
+  const active = activePage === "version-metrics";
+  const { effectiveSession } = useResolvedSession(active);
+  const canWrite = Boolean(
+    effectiveSession?.verified &&
+      (effectiveSession.can_write ||
+        effectiveSession.is_admin ||
+        ["writer", "admin"].includes(String(effectiveSession.access_role || ""))),
+  );
+  return (
+    <Suspense fallback={<LoadingFallback lang={lang} />}>
+      <VersionMetricsPage active={active} lang={lang} canWrite={canWrite} />
+    </Suspense>
+  );
+};
+
+const AnalysisIsland: React.FC = () => {
+  const { activePage, lang, selectedBaselines } = useWorkbenchBridge();
+  return (
+    <Suspense fallback={<LoadingFallback lang={lang} />}>
+      <AnalysisPage
+        active={activePage === "analysis"}
+        lang={lang}
+        selectedBaselines={selectedBaselines}
+      />
+    </Suspense>
+  );
+};
+
+const RunComparisonIsland: React.FC = () => {
+  const { activePage, lang, selectedBaselines } = useWorkbenchBridge();
+  const active = activePage === "comparison";
+  const { effectiveSession } = useResolvedSession(active);
+  return (
+    <Suspense fallback={<LoadingFallback lang={lang} />}>
+      <RunComparisonPage
+        active={active}
+        lang={lang}
+        selectedBaselines={selectedBaselines}
+        isAdmin={Boolean(effectiveSession?.is_admin && effectiveSession?.verified)}
+      />
+    </Suspense>
+  );
+};
+
+const RunCollectionsIsland: React.FC = () => {
+  const { activePage, lang, selectedBaselines } = useWorkbenchBridge();
+  const active = activePage === "run-collections";
+  const { effectiveSession } = useResolvedSession(active);
+  return (
+    <Suspense fallback={<LoadingFallback lang={lang} />}>
+      <RunCollectionsPage
+        active={active}
+        lang={lang}
+        isAdmin={Boolean(effectiveSession?.is_admin && effectiveSession?.verified)}
+        selectedBaselines={selectedBaselines}
       />
     </Suspense>
   );
@@ -151,71 +247,31 @@ interface ReactWorkbenchHandle {
   openTaskAllocationEditor: (campaignId: string) => boolean;
 }
 
+function mountSection(element: HTMLElement | null, node: React.ReactElement): void {
+  if (!element || element.dataset.reactMounted === "true") return;
+  element.dataset.reactMounted = "true";
+  element.replaceChildren();
+  createRoot(element).render(
+    <React.StrictMode>
+      <QueryClientProvider client={queryClient}>{node}</QueryClientProvider>
+    </React.StrictMode>,
+  );
+}
+
 function mountIslands(): void {
-  const statusSection = document.getElementById("systemStatusPage");
-  if (statusSection && statusSection.dataset.reactMounted !== "true") {
-    statusSection.dataset.reactMounted = "true";
-    statusSection.replaceChildren();
-    createRoot(statusSection).render(
-      <React.StrictMode>
-        <QueryClientProvider client={queryClient}>
-          <SystemStatusIsland />
-        </QueryClientProvider>
-      </React.StrictMode>,
-    );
-  }
-
-  const usersSection = document.getElementById("userManagementPage");
-  if (usersSection && usersSection.dataset.reactMounted !== "true") {
-    usersSection.dataset.reactMounted = "true";
-    usersSection.replaceChildren();
-    createRoot(usersSection).render(
-      <React.StrictMode>
-        <QueryClientProvider client={queryClient}>
-          <UsersIsland />
-        </QueryClientProvider>
-      </React.StrictMode>,
-    );
-  }
-
-  const assignmentsSection = document.getElementById("reviewAssignmentsPage");
-  if (assignmentsSection && assignmentsSection.dataset.reactMounted !== "true") {
-    assignmentsSection.dataset.reactMounted = "true";
-    assignmentsSection.replaceChildren();
-    createRoot(assignmentsSection).render(
-      <React.StrictMode>
-        <QueryClientProvider client={queryClient}>
-          <ReviewAssignmentsIsland />
-        </QueryClientProvider>
-      </React.StrictMode>,
-    );
-  }
-
-  const dailyCronSection = document.getElementById("dailyCronPage");
-  if (dailyCronSection && dailyCronSection.dataset.reactMounted !== "true") {
-    dailyCronSection.dataset.reactMounted = "true";
-    dailyCronSection.replaceChildren();
-    createRoot(dailyCronSection).render(
-      <React.StrictMode>
-        <QueryClientProvider client={queryClient}>
-          <DailyCronIsland />
-        </QueryClientProvider>
-      </React.StrictMode>,
-    );
-  }
-
-  const runsManagerCard = document.querySelector<HTMLElement>("#runsPage .runs-page-card");
-  if (runsManagerCard && runsManagerCard.dataset.reactMounted !== "true") {
-    runsManagerCard.dataset.reactMounted = "true";
-    runsManagerCard.replaceChildren();
-    createRoot(runsManagerCard).render(
-      <React.StrictMode>
-        <QueryClientProvider client={queryClient}>
-          <RunsManagerReactIsland />
-        </QueryClientProvider>
-      </React.StrictMode>,
-    );
-  }
+  mountSection(document.getElementById("systemStatusPage"), <SystemStatusIsland />);
+  mountSection(document.getElementById("userManagementPage"), <UsersIsland />);
+  mountSection(document.getElementById("reviewAssignmentsPage"), <ReviewAssignmentsIsland />);
+  mountSection(document.getElementById("dailyCronPage"), <DailyCronIsland />);
+  mountSection(
+    document.querySelector<HTMLElement>("#runsPage .runs-page-card"),
+    <RunsManagerReactIsland />,
+  );
+  mountSection(document.getElementById("versionDatasetsPage"), <VersionDatasetsIsland />);
+  mountSection(document.getElementById("versionMetricsPage"), <VersionMetricsIsland />);
+  mountSection(document.getElementById("reviewAnalysisPage"), <AnalysisIsland />);
+  mountSection(document.getElementById("runComparisonPage"), <RunComparisonIsland />);
+  mountSection(document.getElementById("runCollectionsPage"), <RunCollectionsIsland />);
 
   let modalRoot = document.getElementById("raReactModalRoot");
   if (!modalRoot) {
@@ -233,7 +289,7 @@ function mountIslands(): void {
 }
 
 const handle: ReactWorkbenchHandle = {
-  version: "vite-react-ts-3.3",
+  version: "vite-react-ts-3.4",
   ownsPage: (page: string) => OWNED_PAGES.has(page),
   refreshPage: (page: string) => {
     if (page === "status") {
@@ -248,6 +304,19 @@ const handle: ReactWorkbenchHandle = {
       void queryClient.invalidateQueries({ queryKey: ["daily-cron"] });
     } else if (page === "runs-manager") {
       void queryClient.invalidateQueries({ queryKey: ["model-runs"] });
+    } else if (page === "version-datasets") {
+      void queryClient.invalidateQueries({ queryKey: ["version-datasets-workbench"] });
+      void queryClient.invalidateQueries({ queryKey: ["version-datasets-catalog"] });
+    } else if (page === "version-metrics") {
+      void queryClient.invalidateQueries({ queryKey: ["version-metrics"] });
+    } else if (page === "analysis") {
+      void queryClient.invalidateQueries({ queryKey: ["review-reason-analysis"] });
+    } else if (page === "comparison") {
+      void queryClient.invalidateQueries({ queryKey: ["model-run-comparison"] });
+    } else if (page === "run-collections") {
+      void queryClient.invalidateQueries({ queryKey: ["run-collections-list"] });
+      void queryClient.invalidateQueries({ queryKey: ["run-collection-detail"] });
+      void queryClient.invalidateQueries({ queryKey: ["run-evaluation-detail"] });
     }
     window.dispatchEvent(new Event("ra:workbench-sync"));
   },

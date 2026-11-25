@@ -872,6 +872,7 @@ function persistCurrentAnalysisRoute(overrides = {}) {
 }
 
 function applyAnalysisRouteControls(route) {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("analysis") || window.__RA_REACT_OWNED_PAGES__?.includes?.("analysis"))) return;
   const filters = route?.analysisFilters || route || {};
   if ($("#analysisIssueInput")) {
     $("#analysisIssueInput").value = parseFilterList(filters.issueIds).join(", ");
@@ -1498,11 +1499,13 @@ function showPage(
     }).catch((error) => showToast(error.message, true)));
   }
   if (target === "analysis" && (previousPage !== "analysis" || restoreRoute)) {
-    // A same-page filter reload must not rebuild the Run picker and its
-    // comparison multi-filter. Rebuilding destroys the open panel after every
-    // checkbox change; keep it open for consecutive selections until the user
-    // presses Escape, clicks outside, or toggles the trigger.
-    renderAnalysisRunFilter();
+    if (!(window.__RA_REACT_WORKBENCH__?.ownsPage?.("analysis") || window.__RA_REACT_OWNED_PAGES__?.includes?.("analysis"))) {
+      // A same-page filter reload must not rebuild the Run picker and its
+      // comparison multi-filter. Rebuilding destroys the open panel after every
+      // checkbox change; keep it open for consecutive selections until the user
+      // presses Escape, clicks outside, or toggles the trigger.
+      renderAnalysisRunFilter();
+    }
   }
   if (target === "trail-update" && state.trailUpdate.tab !== "issue") {
     const trailPage = $("#trailAttributeUpdatePage");

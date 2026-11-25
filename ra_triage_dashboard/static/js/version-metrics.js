@@ -28,9 +28,10 @@ function vmRenderLegend(){
   const markup=keys.map(key=>`<button type="button" class="button button-secondary vm-scheme-button" data-vm-scheme="${key}" style="--vm-color:${VM_COLORS[key]}" aria-pressed="${versionMetrics.schemes.includes(key)}" aria-label="${escapeHtml(vmScheme(key))}" title="${escapeHtml(vmScheme(key))}"><i class="vm-swatch" aria-hidden="true"></i>${escapeHtml(vmSchemeShort(key))}</button>`).join('');
   if(legend.innerHTML!==markup){legend.innerHTML=markup;if(focused)(legend.querySelector(`[data-vm-scheme="${focused}"]`)||legend.querySelector('button'))?.focus({preventScroll:true});}
 }
-function setVersionMetricsActive(active){const s=versionMetrics;s.active=active;if(!active){s.seq++;s.controller?.abort();clearTimeout(s.timer);s.observer?.disconnect();s.observer=null;vmHideTooltip();return;}bindVersionMetrics();}
+function setVersionMetricsActive(active){if(typeof window!=="undefined"&&(window.__RA_REACT_WORKBENCH__?.ownsPage?.("version-metrics")||window.__RA_REACT_OWNED_PAGES__?.includes?.("version-metrics")))return;const s=versionMetrics;s.active=active;if(!active){s.seq++;s.controller?.abort();clearTimeout(s.timer);s.observer?.disconnect();s.observer=null;vmHideTooltip();return;}bindVersionMetrics();}
 function vmScopeKey(){const s=versionMetrics;return JSON.stringify([s.families,s.reference,s.exclusion,s.threshold]);}
 async function loadVersionMetrics({restore=true}={}){
+  if(typeof window!=="undefined"&&(window.__RA_REACT_WORKBENCH__?.ownsPage?.("version-metrics")||window.__RA_REACT_OWNED_PAGES__?.includes?.("version-metrics")))return;
   const s=versionMetrics;if(!s.active)return;if(restore)vmReadRoute();const seq=++s.seq,scope=vmScopeKey();
   s.controller?.abort();clearTimeout(s.timer);s.controller=new AbortController();s.loading=true;s.error='';vmHideTooltip();renderVersionMetrics();
   try{const query=new URLSearchParams({families:s.families,reference:s.reference,exclusion:s.exclusion,threshold:s.threshold,page:s.page,page_size:s.pageSize});const data=await api('/api/version-metrics?'+query,{signal:s.controller.signal});if(!s.active||seq!==s.seq||scope!==vmScopeKey())return;s.data=data;s.catalog=data.catalog;if(!s.families)s.families=data.selected.join(',');vmReconcileReports();vmWriteRoute();if(data.refresh?.status==='running')s.timer=setTimeout(()=>loadVersionMetrics({restore:false}),5000);
@@ -88,6 +89,7 @@ function vmShowTooltip(family,event,anchor){
   tip.style.left=Math.max(8,Math.min(tipX,window.innerWidth-box.width-8))+'px';tip.style.top=tipY+'px';
 }
 function renderVersionMetrics(){
+  if(typeof window!=="undefined"&&(window.__RA_REACT_WORKBENCH__?.ownsPage?.("version-metrics")||window.__RA_REACT_OWNED_PAGES__?.includes?.("version-metrics")))return;
   const s=versionMetrics;if(!s.active)return;const root=$('#versionMetricsPage');root.querySelectorAll('[data-vm-zh]').forEach(e=>e.textContent=uiText(e.dataset.vmZh,e.dataset.vmEn));
   $('#vmVersionPicker').setAttribute('aria-label',uiText('评测版本','Evaluation versions'));
   vmMulti($('#vmVersionPicker'),s.catalog.map(d=>({value:d.family,label:d.family.slice(4)})),s.families==='all'?[]:s.families.split(',').filter(Boolean),values=>vmChange({families:values.length?values.join(','):'all'}));

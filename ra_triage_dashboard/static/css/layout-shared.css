@@ -691,6 +691,26 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .multi-filter.is-disabled { pointer-events: none; }
 .multi-filter.is-disabled .multi-filter-trigger { color: #aebdd0; border-color: #344052; background: #0d1119; }
 .multi-filter.is-disabled .multi-filter-summary { color: #aebdd0; }
+html[data-color-theme="light"] .multi-filter.is-disabled .multi-filter-trigger {
+  color: var(--faint);
+  border-color: var(--line);
+  background: var(--overlay-2);
+  box-shadow: none;
+}
+html[data-color-theme="light"] .multi-filter.is-disabled .multi-filter-summary { color: var(--faint); }
+html[data-color-theme="light"] .brand-mark {
+  border-color: rgba(37, 99, 235, 0.24);
+  background: rgba(37, 99, 235, 0.08);
+  color: var(--accent);
+}
+html[data-color-theme="light"] .brand-mark:hover {
+  border-color: var(--accent);
+  background: rgba(37, 99, 235, 0.14);
+  color: var(--accent-hover);
+}
+html[data-color-theme="light"] .brand-mark:focus-visible {
+  outline: 2px solid rgba(37, 99, 235, 0.45);
+}
 .multi-filter-caret {
   width: 11px; height: 11px; justify-self: end; flex: 0 0 auto; margin: 0;
   background: #8b9aaf; opacity: .9;

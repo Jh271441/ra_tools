@@ -323,6 +323,7 @@ function renderAnalysisCases(data) {
 }
 
 function renderReviewReasonAnalysis(data, { animatePies = true } = {}) {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("analysis") || window.__RA_REACT_OWNED_PAGES__?.includes?.("analysis"))) return;
   const summary = data.summary || {};
   state.reviewAnalysis.page = Number(data.page || 1);
   $("#analysisReviewCount").textContent = summary.latest_reviews ?? 0;
@@ -377,6 +378,11 @@ function paintAnalysisFromCache() {
  * Used by sidebar navigation and popstate so tab switches stay snappy without blanking.
  */
 async function enterAnalysisPage({ includeOverview = false } = {}) {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("analysis") || window.__RA_REACT_OWNED_PAGES__?.includes?.("analysis"))) {
+    window.__RA_REACT_WORKBENCH__?.refreshPage?.("analysis");
+    if (includeOverview) await loadOverview();
+    return;
+  }
   if (!state.config) return;
   const painted = paintAnalysisFromCache();
   const loads = [loadReviewReasonAnalysis({ keepPainted: painted })];
@@ -385,6 +391,10 @@ async function enterAnalysisPage({ includeOverview = false } = {}) {
 }
 
 async function loadReviewReasonAnalysis({ keepPainted = false } = {}) {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("analysis") || window.__RA_REACT_OWNED_PAGES__?.includes?.("analysis"))) {
+    window.__RA_REACT_WORKBENCH__?.refreshPage?.("analysis");
+    return;
+  }
   const pageContext = capturePageContext();
   const requestSeq = ++state.reviewAnalysis.requestSeq;
   void loadAnalysisWorkSplits().catch(() => {

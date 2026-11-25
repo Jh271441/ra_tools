@@ -209,15 +209,15 @@
   .app-shell:not(.sidebar-mobile-open) .sidebar-bottom { opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 110ms ease, visibility 0s linear 110ms; }
 
   .topbar {
-    top: 0; min-width: 0; padding: 6px 8px 7px 68px;
+    top: 0; min-width: 0; padding: 6px 8px 7px 62px;
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-areas: "brand actions" "baselines baselines" "gt-sync gt-sync" "metrics metrics";
-    gap: 6px 7px;
+    gap: 6px 6px;
   }
   .brand { min-width: 0; max-width: 100%; }
-  .topbar h1 { max-width: 100%; overflow: hidden; font-size: 16px; text-overflow: ellipsis; white-space: nowrap; }
+  .topbar h1 { max-width: 100%; overflow: hidden; font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
   .top-actions { min-width: 0; gap: 4px; }
-  .top-actions .button, .gt-sync-control .gt-sync-button { min-width: 44px; min-height: 44px !important; height: 44px; padding-inline: 8px; }
+  .top-actions .button, .gt-sync-control .gt-sync-button { min-width: 44px; min-height: 44px !important; height: 44px; padding-inline: 7px; }
   .topbar-baselines,
   body:is([data-active-page="intent"], [data-active-page="intent-experiments"], [data-active-page="intent-summary"]) .intent-topbar-dataset {
     width: 100%; max-width: none; min-width: 0;

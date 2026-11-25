@@ -65,6 +65,7 @@ function clearVersionDatasetMembers({keepCharts=false}={}){
   }
 }
 function setVersionDatasetsActive(active) {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("version-datasets") || window.__RA_REACT_OWNED_PAGES__?.includes?.("version-datasets"))) return;
   const s=versionDatasetState;
   if(active&&s.active){
     const previousDataset=s.dataset;
@@ -94,6 +95,7 @@ function versionDatasetChange(patch) {
   void loadVersionDatasets({force:false});
 }
 function renderVersionDatasets({force=false}={}) {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("version-datasets") || window.__RA_REACT_OWNED_PAGES__?.includes?.("version-datasets"))) return;
   const s=versionDatasetState;if(!s.active)return;
   const metricsLink=$('#versionDatasetMetricsLink');
   if(metricsLink){const family=/^release-(20\d{6})-odd2$/.exec(s.dataset)?.[1];metricsLink.hidden=!family;if(family)metricsLink.href=withBase('/version-metrics')+'?families='+family;}
@@ -177,6 +179,7 @@ async function loadVersionDatasetBatches(){
   }catch(e){if(e.name!=='AbortError')$('#versionDatasetBatches').textContent=uiText('记录读取失败','History unavailable');}
 }
 async function loadVersionDatasets({force=true}={}){
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("version-datasets") || window.__RA_REACT_OWNED_PAGES__?.includes?.("version-datasets"))) return;
   const s=versionDatasetState;if(!s.active||document.hidden)return;
   const initialKey=versionDatasetRequestKey();
   if(s.loadingKey===initialKey&&!s.controller?.signal.aborted)return;

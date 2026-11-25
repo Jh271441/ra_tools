@@ -7,6 +7,7 @@ export interface WorkbenchBridgeState {
   lang: UiLanguage;
   theme: ColorTheme;
   activePage: string;
+  selectedBaselines: string[];
   session: {
     authenticated: boolean;
     verified: boolean;
@@ -15,6 +16,34 @@ export interface WorkbenchBridgeState {
     is_admin: boolean;
     can_write: boolean;
   } | null;
+}
+
+export function getWorkbenchBasePath(): string {
+  if (typeof window === "undefined") return "";
+  const win = window as unknown as {
+    RA_TRIAGE_BASE_PATH?: string;
+    BASE_PATH?: string;
+  };
+  const base = String(win.RA_TRIAGE_BASE_PATH ?? win.BASE_PATH ?? "").replace(/\/+$/, "");
+  return base === "/" ? "" : base;
+}
+
+export function withWorkbenchBase(path: string): string {
+  const normalized = path.startsWith("/") ? path : `/${path}`;
+  const base = getWorkbenchBasePath();
+  return base ? `${base}${normalized}` : normalized;
+}
+
+function readSelectedBaselines(): string[] {
+  if (typeof window === "undefined") return [];
+  const win = window as unknown as {
+    __RA_TRIAGE_STATE__?: { selectedBaselineIds?: string[] };
+    state?: { selectedBaselineIds?: string[] };
+  };
+  const ids = win.__RA_TRIAGE_STATE__?.selectedBaselineIds || win.state?.selectedBaselineIds;
+  if (Array.isArray(ids) && ids.length) return ids.map(String).filter(Boolean);
+  const urlParam = new URLSearchParams(window.location.search).get("baselines") || "";
+  return urlParam ? urlParam.split(",").map((s) => s.trim()).filter(Boolean) : [];
 }
 
 function readLang(): UiLanguage {
@@ -48,6 +77,7 @@ export function useWorkbenchBridge(): WorkbenchBridgeState {
     lang: readLang(),
     theme: readTheme(),
     activePage: readActivePage(),
+    selectedBaselines: readSelectedBaselines(),
     session: readLegacySession(),
   }));
 
@@ -57,16 +87,24 @@ export function useWorkbenchBridge(): WorkbenchBridgeState {
         const nextLang = readLang();
         const nextTheme = readTheme();
         const nextPage = readActivePage();
+        const nextBaselines = readSelectedBaselines();
         const nextSession = readLegacySession();
         if (
           prev.lang === nextLang &&
           prev.theme === nextTheme &&
           prev.activePage === nextPage &&
-          prev.session === nextSession
+          prev.session === nextSession &&
+          prev.selectedBaselines.join(",") === nextBaselines.join(",")
         ) {
           return prev;
         }
-        return { lang: nextLang, theme: nextTheme, activePage: nextPage, session: nextSession };
+        return {
+          lang: nextLang,
+          theme: nextTheme,
+          activePage: nextPage,
+          selectedBaselines: nextBaselines,
+          session: nextSession,
+        };
       });
     };
 

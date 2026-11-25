@@ -212,58 +212,60 @@ function bindEvents() {
     resetReviewFilters().catch((error) => showToast(error.message, true));
   });
   $("#searchInput")?.addEventListener("input", () => scheduleReviewFilterReload(280));
-  $("#reviewAnalysisFilterForm").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    state.reviewAnalysis.page = 1;
-    try {
-      await reloadReviewAnalysis();
-    } catch (error) {
-      showToast(error.message, true);
+  if (!(window.__RA_REACT_WORKBENCH__?.ownsPage?.("analysis") || window.__RA_REACT_OWNED_PAGES__?.includes?.("analysis"))) {
+    $("#reviewAnalysisFilterForm")?.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      state.reviewAnalysis.page = 1;
+      try {
+        await reloadReviewAnalysis();
+      } catch (error) {
+        showToast(error.message, true);
+      }
+    });
+    $("#analysisRunFilter")?.addEventListener("change", async () => {
+      const runId = $("#analysisRunFilter").value;
+      if (runId !== state.selectedRunId) {
+        state.reviewAnalysis.workSplitId = "";
+        state.reviewAnalysis.availableWorkSplitId = "";
+        state.reviewAnalysis.workSplitOptions = [];
+        state.reviewAnalysis.workSplitOptionsKey = "";
+        renderAnalysisWorkSplitPicker?.("");
+      }
+      const previouslyHadRun = Boolean(state.selectedRunId);
+      const nextStatus = !runId
+        ? "all"
+        : previouslyHadRun
+          ? checkedAnalysisComparisonStatus()
+          : "mismatch";
+      setAnalysisComparisonStatus(nextStatus, { hasRun: Boolean(runId) });
+      state.selectedRunId = state.modelRuns.some((run) => run.id === runId) ? runId : "";
+      const run = state.modelRuns.find((item) => item.id === state.selectedRunId);
+      if (run) {
+        await applyInferredBaselinesFromRun(run, {
+          reason: "run",
+          reloadActivePage: false,
+        });
+      }
+      scheduleAnalysisFilterReload();
+    });
+    // analysisComparisonFilter is a multi-filter; its onChange schedules reload.
+    if (typeof renderAnalysisComparisonFilter === "function") {
+      renderAnalysisComparisonFilter();
+    } else if (typeof bindAnalysisComparisonPicker === "function") {
+      bindAnalysisComparisonPicker();
     }
-  });
-  $("#analysisRunFilter").addEventListener("change", async () => {
-    const runId = $("#analysisRunFilter").value;
-    if (runId !== state.selectedRunId) {
-      state.reviewAnalysis.workSplitId = "";
-      state.reviewAnalysis.availableWorkSplitId = "";
-      state.reviewAnalysis.workSplitOptions = [];
-      state.reviewAnalysis.workSplitOptionsKey = "";
-      renderAnalysisWorkSplitPicker?.("");
-    }
-    const previouslyHadRun = Boolean(state.selectedRunId);
-    const nextStatus = !runId
-      ? "all"
-      : previouslyHadRun
-        ? checkedAnalysisComparisonStatus()
-        : "mismatch";
-    setAnalysisComparisonStatus(nextStatus, { hasRun: Boolean(runId) });
-    state.selectedRunId = state.modelRuns.some((run) => run.id === runId) ? runId : "";
-    const run = state.modelRuns.find((item) => item.id === state.selectedRunId);
-    if (run) {
-      await applyInferredBaselinesFromRun(run, {
-        reason: "run",
-        reloadActivePage: false,
-      });
-    }
-    scheduleAnalysisFilterReload();
-  });
-  // analysisComparisonFilter is a multi-filter; its onChange schedules reload.
-  if (typeof renderAnalysisComparisonFilter === "function") {
-    renderAnalysisComparisonFilter();
-  } else if (typeof bindAnalysisComparisonPicker === "function") {
-    bindAnalysisComparisonPicker();
+    $("#analysisSearchInput")?.addEventListener("input", () => {
+      scheduleAnalysisFilterReload(220);
+    });
+    $("#analysisIssueInput")?.addEventListener("input", () => {
+      scheduleAnalysisFilterReload(220);
+    });
+    $("#analysisCommentSearchInput")?.addEventListener("input", () => scheduleAnalysisFilterReload(220));
+    $("#analysisCommentStateFilter")?.addEventListener("change", () => scheduleAnalysisFilterReload(0));
   }
   if (typeof bindTrailAttributeUpdateEvents === "function") {
     bindTrailAttributeUpdateEvents();
   }
-  $("#analysisSearchInput")?.addEventListener("input", () => {
-    scheduleAnalysisFilterReload(220);
-  });
-  $("#analysisIssueInput")?.addEventListener("input", () => {
-    scheduleAnalysisFilterReload(220);
-  });
-  $("#analysisCommentSearchInput")?.addEventListener("input", () => scheduleAnalysisFilterReload(220));
-  $("#analysisCommentStateFilter")?.addEventListener("change", () => scheduleAnalysisFilterReload(0));
   document.addEventListener("click", () => closeAllMultiFilters());
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
@@ -287,81 +289,83 @@ function bindEvents() {
     true
   );
   window.addEventListener("resize", () => closeAllMultiFilters());
-  $("#resetReviewAnalysisButton").addEventListener("click", async () => {
-    $("#analysisRunFilter").value = "";
-    setAnalysisComparisonStatus("all", { hasRun: false });
-    [
-      "#analysisReviewerFilter",
-      "#analysisStatusFilter",
-      "#analysisLabelGtFilter",
-      "#analysisGtFilter",
-      "#analysisModelLabelFilter",
-      "#analysisExclusionFilter",
-      "#analysisEvidenceFilter",
-      "#analysisSceneFilter",
-      "#analysisTriggerFilter",
-      "#analysisEgressFilter",
-    ].forEach((selector) => setMultiFilterValues($(selector), []));
-    if ($("#analysisWorkAgreementFilter")) {
-      $("#analysisWorkAgreementFilter").value = "all";
-    }
-    state.reviewAnalysis.workSplitId = "";
-    state.reviewAnalysis.availableWorkSplitId = "";
-    renderAnalysisWorkSplitPicker?.("");
-    state.reviewAnalysis.workAgreement = "all";
-    renderAnalysisWorkAgreementPicker?.("all");
-    // See resetReviewFilters: clear the durable route state as well as the
-    // widget state, otherwise an analysis reset would restore reviewer=… on
-    // the next async facet refresh.
-    persistReviewerFilterRoute?.("analysis", []);
-    if ($("#analysisIssueInput")) $("#analysisIssueInput").value = "";
-    $("#analysisSearchInput").value = "";
-    if ($("#analysisCommentSearchInput")) $("#analysisCommentSearchInput").value = "";
-    if ($("#analysisCommentStateFilter")) $("#analysisCommentStateFilter").value = "all";
-    renderAnalysisCommentStatePicker?.("all");
-    state.reviewAnalysis.page = 1;
-    try {
-      await reloadReviewAnalysis();
-    } catch (error) {
-      showToast(error.message, true);
-    }
-  });
-  $("#exportReviewAnalysisCsvButton").addEventListener("click", () => downloadReviewAnalysis("csv"));
-  $("#analysisWorkAgreementFilter")?.addEventListener("change", () => {
-    state.reviewAnalysis.workAgreement = $("#analysisWorkAgreementFilter").value || "all";
-    scheduleAnalysisFilterReload(0);
-  });
-  $("#exportReviewAnalysisXlsxButton").addEventListener("click", () => downloadReviewAnalysis("xlsx"));
-  $("#exportTrailExpectedOutputButton").addEventListener("click", () => downloadReviewAnalysis("trail_xlsx"));
-  $("#analysisPagePrevious").addEventListener("click", () => {
-    changeAnalysisPage(-1).catch((error) => showToast(error.message, true));
-  });
-  $("#analysisPageNext").addEventListener("click", () => {
-    changeAnalysisPage(1).catch((error) => showToast(error.message, true));
-  });
-  const analysisPageJump = $("#analysisPageJump");
-  const commitAnalysisPageJump = () => {
-    jumpToAnalysisPage(analysisPageJump?.value).catch((error) => showToast(error.message, true));
-  };
-  $("#analysisPageJumpButton")?.addEventListener("click", commitAnalysisPageJump);
-  analysisPageJump?.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      commitAnalysisPageJump();
-      return;
-    }
-    if (event.key === "Escape") {
-      event.preventDefault();
-      analysisPageJump.value = String(state.reviewAnalysis.page);
-      analysisPageJump.blur();
-    }
-  });
-  analysisPageJump?.addEventListener("focus", () => {
-    window.requestAnimationFrame(() => analysisPageJump.select());
-  });
-  $("#analysisPageSize")?.addEventListener("change", (event) => {
-    changeAnalysisPageSize(event.target.value).catch((error) => showToast(error.message, true));
-  });
+  if (!(window.__RA_REACT_WORKBENCH__?.ownsPage?.("analysis") || window.__RA_REACT_OWNED_PAGES__?.includes?.("analysis"))) {
+    $("#resetReviewAnalysisButton")?.addEventListener("click", async () => {
+      $("#analysisRunFilter").value = "";
+      setAnalysisComparisonStatus("all", { hasRun: false });
+      [
+        "#analysisReviewerFilter",
+        "#analysisStatusFilter",
+        "#analysisLabelGtFilter",
+        "#analysisGtFilter",
+        "#analysisModelLabelFilter",
+        "#analysisExclusionFilter",
+        "#analysisEvidenceFilter",
+        "#analysisSceneFilter",
+        "#analysisTriggerFilter",
+        "#analysisEgressFilter",
+      ].forEach((selector) => setMultiFilterValues($(selector), []));
+      if ($("#analysisWorkAgreementFilter")) {
+        $("#analysisWorkAgreementFilter").value = "all";
+      }
+      state.reviewAnalysis.workSplitId = "";
+      state.reviewAnalysis.availableWorkSplitId = "";
+      renderAnalysisWorkSplitPicker?.("");
+      state.reviewAnalysis.workAgreement = "all";
+      renderAnalysisWorkAgreementPicker?.("all");
+      // See resetReviewFilters: clear the durable route state as well as the
+      // widget state, otherwise an analysis reset would restore reviewer=… on
+      // the next async facet refresh.
+      persistReviewerFilterRoute?.("analysis", []);
+      if ($("#analysisIssueInput")) $("#analysisIssueInput").value = "";
+      $("#analysisSearchInput").value = "";
+      if ($("#analysisCommentSearchInput")) $("#analysisCommentSearchInput").value = "";
+      if ($("#analysisCommentStateFilter")) $("#analysisCommentStateFilter").value = "all";
+      renderAnalysisCommentStatePicker?.("all");
+      state.reviewAnalysis.page = 1;
+      try {
+        await reloadReviewAnalysis();
+      } catch (error) {
+        showToast(error.message, true);
+      }
+    });
+    $("#exportReviewAnalysisCsvButton")?.addEventListener("click", () => downloadReviewAnalysis("csv"));
+    $("#analysisWorkAgreementFilter")?.addEventListener("change", () => {
+      state.reviewAnalysis.workAgreement = $("#analysisWorkAgreementFilter").value || "all";
+      scheduleAnalysisFilterReload(0);
+    });
+    $("#exportReviewAnalysisXlsxButton")?.addEventListener("click", () => downloadReviewAnalysis("xlsx"));
+    $("#exportTrailExpectedOutputButton")?.addEventListener("click", () => downloadReviewAnalysis("trail_xlsx"));
+    $("#analysisPagePrevious")?.addEventListener("click", () => {
+      changeAnalysisPage(-1).catch((error) => showToast(error.message, true));
+    });
+    $("#analysisPageNext")?.addEventListener("click", () => {
+      changeAnalysisPage(1).catch((error) => showToast(error.message, true));
+    });
+    const analysisPageJump = $("#analysisPageJump");
+    const commitAnalysisPageJump = () => {
+      jumpToAnalysisPage(analysisPageJump?.value).catch((error) => showToast(error.message, true));
+    };
+    $("#analysisPageJumpButton")?.addEventListener("click", commitAnalysisPageJump);
+    analysisPageJump?.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        commitAnalysisPageJump();
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        analysisPageJump.value = String(state.reviewAnalysis.page);
+        analysisPageJump.blur();
+      }
+    });
+    analysisPageJump?.addEventListener("focus", () => {
+      window.requestAnimationFrame(() => analysisPageJump.select());
+    });
+    $("#analysisPageSize")?.addEventListener("change", (event) => {
+      changeAnalysisPageSize(event.target.value).catch((error) => showToast(error.message, true));
+    });
+  }
   $("#modelRunFilter").addEventListener("change", async () => {
     const previousRunId = state.selectedRunId;
     state.selectedRunId = $("#modelRunFilter").value;
@@ -479,8 +483,22 @@ function bindEvents() {
         showToast(t("toast.page_refreshed"));
         return;
       }
-      if (state.activePage === "version-metrics") { await loadVersionMetrics(); return; }
-      if (state.activePage === "version-datasets") { await loadVersionDatasets(); return; }
+      if (state.activePage === "version-metrics") {
+        if (window.__RA_REACT_WORKBENCH__?.ownsPage?.("version-metrics")) {
+          window.__RA_REACT_WORKBENCH__.refreshPage("version-metrics");
+        } else {
+          await loadVersionMetrics();
+        }
+        return;
+      }
+      if (state.activePage === "version-datasets") {
+        if (window.__RA_REACT_WORKBENCH__?.ownsPage?.("version-datasets")) {
+          window.__RA_REACT_WORKBENCH__.refreshPage("version-datasets");
+        } else {
+          await loadVersionDatasets();
+        }
+        return;
+      }
       if (state.activePage === "daily-review") { await loadDailyReview(); return; }
       if (state.activePage === "daily-cron") {
         await loadDailyCron();
@@ -488,7 +506,9 @@ function bindEvents() {
       }
       await refreshAll();
       if (!isPageContextCurrent(pageContext)) return;
-      if (state.activePage === "analysis") {
+      if (window.__RA_REACT_WORKBENCH__?.ownsPage?.(state.activePage)) {
+        window.__RA_REACT_WORKBENCH__.refreshPage(state.activePage);
+      } else if (state.activePage === "analysis") {
         await loadReviewReasonAnalysis();
       } else if (state.selectedId) {
         await selectCase(state.selectedId, { updateRoute: false });
