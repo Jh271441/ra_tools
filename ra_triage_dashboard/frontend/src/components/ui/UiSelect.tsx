@@ -186,7 +186,8 @@ export const UiSelect: React.FC<UiSelectProps> = ({
         aria-expanded={open}
         aria-controls={listboxId}
         disabled={disabled}
-        onClick={() => {
+        onClick={(e) => {
+          e.stopPropagation();
           if (disabled) return;
           setOpen((prev) => {
             const next = !prev;
@@ -210,6 +211,7 @@ export const UiSelect: React.FC<UiSelectProps> = ({
           aria-label={ariaLabel}
           className={`ui-select-panel is-positioned ra-react-select-menu${openUpward ? " is-upward" : ""}${alignRight ? " is-align-right" : ""}`}
           onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
         >
           {options.map((option, index) => {
             const isSelected = option.value === value;

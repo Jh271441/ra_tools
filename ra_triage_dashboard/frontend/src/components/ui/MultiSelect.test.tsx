@@ -25,12 +25,22 @@ describe("MultiSelect", () => {
     expect(trigger).toHaveTextContent("1113");
     expect(trigger).toHaveAttribute("aria-expanded", "false");
 
-    fireEvent.click(trigger);
-    expect(trigger).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByRole("listbox")).toBeInTheDocument();
+    const docClickSpy = vi.fn();
+    document.addEventListener("click", docClickSpy);
+    try {
+      fireEvent.click(trigger);
+      expect(trigger).toHaveAttribute("aria-expanded", "true");
+      const panel = screen.getByRole("group", { name: "Versions" });
+      expect(panel).toHaveClass("multi-filter-panel", "is-positioned");
+      expect(screen.getByRole("listbox")).toBeInTheDocument();
+      expect(docClickSpy).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByLabelText("1106"));
-    expect(onChange).toHaveBeenCalledWith(["20261113", "20261106"]);
+      fireEvent.click(screen.getByLabelText("1106"));
+      expect(onChange).toHaveBeenCalledWith(["20261113", "20261106"]);
+      expect(docClickSpy).not.toHaveBeenCalled();
+    } finally {
+      document.removeEventListener("click", docClickSpy);
+    }
 
     fireEvent.click(screen.getByRole("button", { name: "Select all" }));
     expect(onChange).toHaveBeenCalledWith(["20261113", "20261106", "20261030"]);

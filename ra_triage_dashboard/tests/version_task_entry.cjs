@@ -45,4 +45,32 @@ for(const override of [{issue:'cn456'},{runId:'run2'},{workSplitId:''},{baseline
 }
 s.window.location.search=s.window.location.search.replace('combined_review','untrusted');
 assert.equal(new URL(s.pageUrl('review',notification),s.window.location.origin).searchParams.get('comments'),null);
+// A member's conflict badge covers the whole task, including completed reviews.
+vm.runInContext(fs.readFileSync(path.join(root,'review-assignments.js'),'utf8'),s);
+Object.assign(s, {
+  withBase: path => '/manual' + path,
+  uiText: (zh, en) => en,
+  escapeHtml: value => String(value).replaceAll('&','&amp;'),
+  versionDatasetTime: () => '',
+  taskAllocationEditAction: () => '',
+  parseIssueIdsInput: () => ({ids:[]}),
+});
+state.session = {verified:true,username:'alice'};
+state.casePage = 4;
+const batch = {
+  appendable:true, is_current:true, release_family:'20261106', role_cohort:'low',
+  model_run_id:'run-low', split_id:'campaign-version-20261106-odd2-low',
+  baseline_ids:['version-20261106'], workflow_mode:'model_review_and_case_label',
+  members:[{username:'alice'}], conflict_count:8,
+};
+const card = s.renderVersionAssignmentBatch(batch);
+const badge = card.match(/<a class="review-assignment-conflict-pill" href="([^"]+)">8 overlap conflicts<\/a>/);
+assert.ok(badge);
+const link = new URL(badge[1].replaceAll('&amp;','&'),s.window.location.origin);
+assert.equal(link.pathname,'/manual/review');
+assert.deepStrictEqual(Object.fromEntries(link.searchParams), {
+  run:batch.model_run_id, comparison:'all', label_state:'conflict',
+  work_split:batch.split_id, task_view:'targets', baselines:'version-20261106',
+});
+assert.ok(!s.renderVersionAssignmentBatch({...batch,conflict_count:0}).includes('review-assignment-conflict-pill'));
 console.log('Version task routing and API scope passed');

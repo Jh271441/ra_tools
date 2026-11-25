@@ -589,7 +589,9 @@ html[data-color-theme="light"] .allocation-convergence-bar { background: rgba(15
   display: inline-flex; align-items: center; padding: 1px 7px; border-radius: 999px;
   background: color-mix(in srgb, var(--warn) 16%, transparent);
   color: var(--warn); font-size: 11px; font-weight: 650; line-height: 1.4;
+  text-decoration: underline; text-underline-offset: 2px;
 }
+.review-assignment-conflict-pill:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
 .allocation-group-segment-label {
   display: flex; justify-content: center; align-items: center; gap: 5px; padding-inline: 5px; font-size: 12px;
 }

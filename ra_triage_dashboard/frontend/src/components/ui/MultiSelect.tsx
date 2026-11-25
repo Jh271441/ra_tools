@@ -170,7 +170,8 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
         aria-expanded={open}
         aria-controls={panelId}
         disabled={disabled}
-        onClick={() => {
+        onClick={(e) => {
+          e.stopPropagation();
           if (!disabled) setOpen((prev) => !prev);
         }}
       >
@@ -186,8 +187,9 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
           id={panelId}
           role="group"
           aria-label={ariaLabel}
-          className={`multi-filter-panel ra-react-multiselect-panel${openUpward ? " is-upward" : ""}${alignRight ? " is-align-right" : ""}`}
+          className={`multi-filter-panel is-positioned ra-react-multiselect-panel${openUpward ? " is-upward" : ""}${alignRight ? " is-align-right" : ""}`}
           onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
         >
           <div className="multi-filter-toolbar">
             <button

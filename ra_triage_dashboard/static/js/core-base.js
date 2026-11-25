@@ -192,6 +192,7 @@ function setMultiFilterValues(root, values) {
 
 function closeAllMultiFilters(except = null) {
   document.querySelectorAll(".multi-filter.is-open").forEach((root) => {
+    if (root.classList.contains("ra-react-multiselect")) return;
     if (except && root === except) return;
     root.classList.remove("is-open");
     const panel = root.querySelector(".multi-filter-panel");
@@ -210,6 +211,7 @@ function closeAllUiSelects(except = null) {
       ".ui-select.is-open, .review-status-picker.is-open, .detail-media-picker.is-open"
     )
     .forEach((root) => {
+      if (root.classList.contains("ra-react-select")) return;
       if (except && root === except) return;
       root.classList.remove("is-open");
       const panel =
