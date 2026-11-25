@@ -60,7 +60,7 @@ function allocationGroupDenom(caseCount, coverageCount, groupCompleted, quotaBas
   const target = Math.max(0, Math.min(caseCount, Math.round(Number(coverageCount) || 0)));
   if (quotaBasis === "remaining") {
     const movable = Math.max(0, target - Math.max(0, Math.round(Number(groupCompleted) || 0)));
-    return movable > 0 ? movable : target;
+    return movable;
   }
   return target;
 }
@@ -86,6 +86,7 @@ function readAllocationGroupSetup(root) {
     const rawCov = number(covInput);
     const rawRows = [...card.querySelectorAll("[data-setup-member]")].map((row) => ({
       name: row.querySelector("[data-group-member]").value,
+      savedShare: Number(row.dataset?.savedShare ?? 0),
       raw: number(row.querySelector('[data-group-field="share"]')),
     }));
     const strategy = card.querySelector("[data-group-strategy].is-active")?.dataset?.groupStrategy
@@ -119,8 +120,9 @@ function readAllocationGroupSetup(root) {
       converted = splitGroupShares(10000, selectedCounts);
     }
     let selCursor = 0;
-    const members = rawRows.map(({ name, raw }) => {
+    const members = rawRows.map(({ name, raw, savedShare }) => {
       if (!name) return { name, review_percent: 0 };
+      if (denom === 0 && raw === 0) return { name, review_percent: savedShare };
       if (converted) return { name, review_percent: converted[selCursor++] };
       if (raw == null || !Number.isInteger(raw) || raw < 0 || !(denom > 0)) return { name, review_percent: null };
       return { name, review_percent: Math.round((raw * 10000) / denom) / 100 };
@@ -501,7 +503,7 @@ function renderAllocationGroupSetup(root, draft, options) {
       const val = person.name ? apportionedCounts[countCursor++] : 0;
       return { ...person, review_percent: val };
     });
-    const suggestion = editable
+    const suggestion = editable && memberDenom > 0
       ? computeGroupEqualizeSuggestion(displayMembers, { unit: inputUnit, denom: memberDenom })
       : null;
     const dragHelp = uiText(
@@ -532,14 +534,14 @@ function renderAllocationGroupSetup(root, draft, options) {
           '<circle cx="2" cy="7" r="1.15"/><circle cx="6" cy="7" r="1.15"/>' +
           '<circle cx="2" cy="11" r="1.15"/><circle cx="6" cy="11" r="1.15"/></svg></button>'
         : '<span class="allocation-member-swatch" aria-hidden="true"></span>';
-      return '<div class="allocation-setup-member" data-setup-member data-empty="' + String(!person.name) +
+      return '<div class="allocation-setup-member" data-setup-member data-saved-share="' + (Number(members[memberIndex].review_percent) || 0) + '" data-empty="' + String(!person.name) +
         '" data-draggable="' + String(canDragRow) + '" style="' + rowStyle + '">' +
         leadingControl +
         '<select data-group-member aria-label="' +
         escapeHtml(empty) + '">' + allocationGroupOptions(names, person.name) + '</select>' +
         groupAllocationInput(person.review_percent, shareLabel, "share", {
           disabled: !person.name,
-          readOnly: singleMember,
+          readOnly: singleMember || memberDenom === 0,
           style: "--share-fill:" + pct + "%",
           unit: unitText,
           min: 0,
@@ -721,7 +723,7 @@ function renderAllocationGroupSetup(root, draft, options) {
       if (card && Number.isInteger(covVal) && covVal >= 1 && covVal <= caseCount) {
         const newDenom = allocationGroupDenom(caseCount, covVal, completedInGroup, quotaBasis);
         const oldDenom = Math.max(0, Math.round(Number(card.dataset.memberDenom || 0)));
-        if (newDenom > 0 && newDenom !== oldDenom) {
+        if (newDenom !== oldDenom) {
           card.dataset.memberDenom = String(newDenom);
           card._pinnedShares = [];
           const memberRows = [...card.querySelectorAll("[data-setup-member]")];
@@ -734,6 +736,7 @@ function renderAllocationGroupSetup(root, draft, options) {
           });
           const rescaled = apportionIntegerCounts(newDenom, weights);
           selectedInputs.forEach((el, idx) => {
+            el.readOnly = selectedInputs.length === 1 || newDenom === 0;
             el.max = String(newDenom);
             el.value = String(rescaled[idx]);
           });

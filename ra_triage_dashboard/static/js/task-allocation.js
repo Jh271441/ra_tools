@@ -313,7 +313,7 @@ async function retryTaskAllocationPreview() {
 function taskAllocationGroupCompleted(config) {
   const completed = {};
   for (const group of (config?.group_coverage?.groups || [])) {
-    completed[group.group_id] = (group.members || []).reduce((sum, person) => sum + (Number(person.completed) || 0), 0);
+    completed[group.group_id] = group.retained_slots ?? (group.members || []).reduce((sum, person) => sum + (Number(person.completed) || 0), 0);
   }
   return completed;
 }

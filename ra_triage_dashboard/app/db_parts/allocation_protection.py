@@ -148,9 +148,24 @@ class AllocationProtectionMixin:
         completed.intersection_update(pairs)
         if problems:
             raise ValueError("已有标注的任务、Run 或参考关联不明确，请先核对 / Saved evidence has ambiguous task, Run or reference links")
-        # Decisions and task-local conflicts keep the Case's remaining positions.
         adjudicated_cases = {r["issue_id"] for r in [*resolutions, *decisions]}
-        frozen_cases = set(adjudicated_cases)
+        frozen_cases = {r["issue_id"] for r in resolutions}
+        if decisions:
+            # Issue decisions can come entirely from another labeling context.
+            # Keep unknown provenance and decisions using any task evidence locked.
+            external_sources = defaultdict(set)
+            for row in conn.execute(
+                "SELECT c.issue_id,c.id FROM label_cases c JOIN campaign_issue_members m "
+                "ON m.issue_id=c.issue_id AND m.baseline_scope=c.baseline_scope "
+                "WHERE m.campaign_id=? AND COALESCE(c.task_id,'')<>?", (cid, cid),
+            ).fetchall():
+                external_sources[row["issue_id"]].add(row["id"])
+            linked_cases = {r["label_case_id"] for r in labels}
+            for decision in decisions:
+                iid = decision["issue_id"]
+                sources = set(_json_load(decision["source_case_ids_json"], []))
+                if not sources or not sources <= external_sources[iid] or sources & linked_cases:
+                    frozen_cases.add(iid)
         outputs = defaultdict(set)
         case_outputs = {}
         for pair, row in latest_labels.items():

@@ -2,6 +2,7 @@
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from itertools import product
+import json
 from threading import Event
 from unittest.mock import patch
 from uuid import uuid4
@@ -641,3 +642,37 @@ def test_paired_mode_matches_members_sequentially_and_persists(role_db):
     assert prev_orth["pairing_mode"] == "orthogonal"
     apply(db, body2, prev_orth)
     assert db.get_campaign_allocation(cid)["pairing_mode"] == "orthogonal"
+
+@pytest.mark.parametrize("basis", ["remaining", "total"])
+def test_unrelated_issue_decision_retains_evidence_and_moves_only_untouched_work(fixture, basis):
+    db = fixture.db
+    cid, ids = make_task(fixture, count=4, completed=1, purpose="model_review")
+    # Bob's pending Case has a personal decision. The other two have
+    # task-bound and unknown decision sources, respectively.
+    with db.connect() as conn:
+        for iid, task_id in zip(ids[1:], ["", cid, None]):
+            sources = []
+            if task_id is not None:
+                case_id = f"source-{iid}"
+                conn.execute("INSERT INTO label_cases(id,baseline_scope,issue_id,task_id,created_at) "
+                             "VALUES(?,'scope',?,?,CURRENT_TIMESTAMP)", (case_id, iid, task_id))
+                sources.append(case_id)
+            conn.execute("INSERT INTO issue_label_decisions(baseline_scope,issue_id,expected_output,"
+                         "source_case_ids_json,source_fingerprint,created_at) "
+                         "VALUES('scope',?,'误触发',?,'test',CURRENT_TIMESTAMP)", (iid, json.dumps(sources)))
+    evidence = snapshot(db, ["issue_label_decisions", "combined_review_progress", "model_review_revisions"])
+    current = db.get_campaign_allocation(cid)
+    assert current["movable_slots"] == 1
+    body = request(db, cid, basis=basis)
+    shares = [0, 0, 0, 0, 100] if basis == "remaining" else [25, 0, 25, 25, 25]
+    body["groups"] = [{**current["groups"][0], "members": [
+        dict(name=name, review_percent=share) for name, share in zip(("alice", "bob", "c", "d", "e"), shares)
+    ]}]
+    preview = db.preview_campaign_allocation(**body)
+    assert preview["changes"] == [dict(issue_id=ids[1], before=["bob"], after=["e"])]
+    apply(db, body, preview)
+    after = db.get_campaign_allocation(cid)
+    assert after["assignment_counts"] == {"alice": 1, "c": 1, "d": 1, "e": 1}
+    assert after["group_coverage"] == preview["group_coverage"]
+    assert after["active_assignment_counts"] == after["assignment_counts"]
+    assert snapshot(db, list(evidence)) == evidence
