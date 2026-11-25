@@ -127,26 +127,8 @@
   font-weight: 600;
 }
 
-.ra-users-filter-bar {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 150px;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 10px;
-}
-
-.ra-users-filter-bar.is-single {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.ra-users-filter-bar input[type="search"] {
-  width: 100%;
-  min-width: 0;
-}
-
 .ra-users-root .access-role-row > .ui-select,
-.ra-users-root .access-create-permissions .ra-field-stack > .ui-select,
-.ra-users-filter-bar > .ui-select {
+.ra-users-root .access-create-permissions .ra-field-stack > .ui-select {
   width: 100%;
   min-width: 0;
 }
@@ -169,18 +151,6 @@
   align-items: center;
   gap: 7px;
   white-space: nowrap;
-}
-
-.ra-users-root .ra-user-meta {
-  min-width: 0;
-  display: grid;
-  gap: 3px;
-}
-
-.ra-users-root .ra-user-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
 }
 
 .ra-inline-feedback {
@@ -381,9 +351,6 @@ html[data-color-theme="light"] .ra-modal-backdrop {
 }
 
 @media (max-width: 639px) {
-  .ra-users-filter-bar {
-    grid-template-columns: minmax(0, 1fr);
-  }
   .ra-react-select .ui-select-trigger,
   .ra-primary-touch {
     min-height: 44px;

@@ -70,15 +70,12 @@ describe("UsersPage", () => {
 
     await waitFor(() => expect(screen.getByText("jasperchen")).toBeInTheDocument());
     expect(container.querySelector("select")).toBeNull();
-    // Each .access-role-row must have 5 direct grid children matching classic layout-shared.css:981
+    // Each .access-role-row must have 5 direct grid children and compact classic 2-line .access-identity
     const firstRow = container.querySelector<HTMLElement>('[data-access-user="jasperchen"]');
     expect(firstRow?.children.length).toBe(5);
-    expect(screen.getByText("1 / 2 · 25")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("combobox", { name: "Filter by role" }));
-    fireEvent.click(screen.getByRole("option", { name: "Admin" }));
+    expect(screen.getByText("Admin · can manage users")).toBeInTheDocument();
     const accessNav = screen.getByRole("navigation", { name: "User access pagination" });
-    expect(within(accessNav).getByText("1 / 1 · 1")).toBeInTheDocument();
+    expect(within(accessNav).getByText("1 / 2 · 25")).toBeInTheDocument();
 
     fireEvent.change(screen.getByPlaceholderText("e.g. xuhaoxuan_i"), {
       target: { value: "new_reviewer" },

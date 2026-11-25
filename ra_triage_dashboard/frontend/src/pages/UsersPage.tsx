@@ -4,7 +4,6 @@ import { apiRequest } from "../api/client";
 import { bilingual, formatCstTime, UiLanguage } from "../bridge/useWorkbenchBridge";
 import { ModalDialog } from "../components/ui/ModalDialog";
 import { CASE_PAGE_SIZES, DEFAULT_CASE_PAGE_SIZE, Pagination } from "../components/ui/Pagination";
-import { StatusChip } from "../components/ui/StatusChip";
 import { UiSelect } from "../components/ui/UiSelect";
 
 export interface AccessUser {
@@ -85,8 +84,6 @@ export const UsersPage: React.FC<UsersPageProps> = ({
   const initial = useMemo(() => readInitialPagination(), []);
   const [page, setPage] = useState(initial.page);
   const [pageSize, setPageSize] = useState(initial.pageSize);
-  const [search, setSearch] = useState("");
-  const [roleFilter, setRoleFilter] = useState("all");
 
   const [newUsername, setNewUsername] = useState("");
   const [newRole, setNewRole] = useState("writer");
@@ -99,7 +96,6 @@ export const UsersPage: React.FC<UsersPageProps> = ({
   const [confirmRemoveUser, setConfirmRemoveUser] = useState<string | null>(null);
 
   const [newMentionUsername, setNewMentionUsername] = useState("");
-  const [mentionSearch, setMentionSearch] = useState("");
   const [mentionPage, setMentionPage] = useState(1);
   const [mentionPageSize, setMentionPageSize] = useState<number>(DEFAULT_CASE_PAGE_SIZE);
   const [mentionDrafts, setMentionDrafts] = useState<Record<string, boolean>>({});
@@ -272,18 +268,9 @@ export const UsersPage: React.FC<UsersPageProps> = ({
   });
 
   const allUsers = accessQuery.data?.items || [];
-  const filteredUsers = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return allUsers.filter((u) => {
-      if (roleFilter !== "all" && u.role !== roleFilter) return false;
-      if (q && !u.username.toLowerCase().includes(q)) return false;
-      return true;
-    });
-  }, [allUsers, roleFilter, search]);
-
-  const totalPages = Math.max(1, Math.ceil(filteredUsers.length / pageSize));
+  const totalPages = Math.max(1, Math.ceil(allUsers.length / pageSize));
   const clampedPage = Math.max(1, Math.min(totalPages, page));
-  const visibleUsers = filteredUsers.slice((clampedPage - 1) * pageSize, clampedPage * pageSize);
+  const visibleUsers = allUsers.slice((clampedPage - 1) * pageSize, clampedPage * pageSize);
 
   useEffect(() => {
     if (!active || !accessQuery.data) return;
@@ -294,21 +281,9 @@ export const UsersPage: React.FC<UsersPageProps> = ({
   }, [active, accessQuery.data, clampedPage, page, pageSize]);
 
   const allMentions = mentionQuery.data?.items || [];
-  const filteredMentions = useMemo(() => {
-    const q = mentionSearch.trim().toLowerCase();
-    if (!q) return allMentions;
-    return allMentions.filter(
-      (m) =>
-        m.username.toLowerCase().includes(q) ||
-        String(m.display_name || "")
-          .toLowerCase()
-          .includes(q),
-    );
-  }, [allMentions, mentionSearch]);
-
-  const mentionTotalPages = Math.max(1, Math.ceil(filteredMentions.length / mentionPageSize));
+  const mentionTotalPages = Math.max(1, Math.ceil(allMentions.length / mentionPageSize));
   const clampedMentionPage = Math.max(1, Math.min(mentionTotalPages, mentionPage));
-  const visibleMentions = filteredMentions.slice(
+  const visibleMentions = allMentions.slice(
     (clampedMentionPage - 1) * mentionPageSize,
     clampedMentionPage * mentionPageSize,
   );
@@ -317,13 +292,9 @@ export const UsersPage: React.FC<UsersPageProps> = ({
     { value: "writer", label: bilingual(lang, "可写", "Writer") },
     { value: "admin", label: bilingual(lang, "管理员", "Admin") },
   ];
-  const roleFilterOptions = [
-    { value: "all", label: bilingual(lang, "全部角色", "All roles") },
-    ...roleOptions,
-  ];
   const intentOptions = [
-    { value: "manage", label: bilingual(lang, "创建与分配", "Manage") },
-    { value: "annotate", label: bilingual(lang, "仅标注", "Annotate") },
+    { value: "manage", label: bilingual(lang, "创建与分配", "Create and assign") },
+    { value: "annotate", label: bilingual(lang, "仅标注", "Annotate only") },
     { value: "view", label: bilingual(lang, "仅查看", "View only") },
   ];
   const annotationRoleOptions = [
@@ -466,7 +437,7 @@ export const UsersPage: React.FC<UsersPageProps> = ({
           <button
             className="button button-primary ra-primary-touch"
             type="submit"
-            disabled={saveUserMutation.isPending || !newUsername.trim()}
+            disabled={saveUserMutation.isPending}
           >
             {saveUserMutation.isPending
               ? bilingual(lang, "保存中…", "Saving…")
@@ -480,34 +451,10 @@ export const UsersPage: React.FC<UsersPageProps> = ({
           </p>
         )}
 
-        <div className="ra-users-filter-bar">
-          <input
-            type="search"
-            value={search}
-            placeholder={bilingual(lang, "按用户名筛选…", "Filter by username…")}
-            aria-label={bilingual(lang, "按用户名筛选", "Filter by username")}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(1);
-              syncUrlPagination(1, pageSize);
-            }}
-          />
-          <UiSelect
-            value={roleFilter}
-            options={roleFilterOptions}
-            ariaLabel={bilingual(lang, "角色筛选", "Filter by role")}
-            onChange={(val) => {
-              setRoleFilter(val);
-              setPage(1);
-              syncUrlPagination(1, pageSize);
-            }}
-          />
-        </div>
-
         <div className="access-list" id="raAccessUserList">
           {accessQuery.isLoading ? (
             <div className="no-asset">
-              {bilingual(lang, "正在加载用户权限…", "Loading user access…")}
+              {bilingual(lang, "正在加载用户权限…", "Loading access list…")}
             </div>
           ) : accessQuery.isError ? (
             <div className="no-asset">
@@ -515,7 +462,7 @@ export const UsersPage: React.FC<UsersPageProps> = ({
             </div>
           ) : visibleUsers.length === 0 ? (
             <div className="no-asset">
-              {bilingual(lang, "暂无匹配的用户记录。", "No matching users found.")}
+              {bilingual(lang, "尚未配置可写用户。", "No writer users configured yet.")}
             </div>
           ) : (
             visibleUsers.map((user) => {
@@ -526,21 +473,16 @@ export const UsersPage: React.FC<UsersPageProps> = ({
                   key={user.username}
                   data-access-user={user.username}
                 >
-                  <div className="access-identity ra-user-meta">
+                  <div
+                    className="access-identity"
+                    title={user.updated_at ? formatCstTime(user.updated_at, lang) : undefined}
+                  >
                     <strong>{user.username}</strong>
-                    <div className="ra-user-chips">
-                      <StatusChip
-                        label={
-                          user.role === "admin"
-                            ? bilingual(lang, "管理员", "Admin")
-                            : bilingual(lang, "可写", "Writer")
-                        }
-                        tone={user.role === "admin" ? "ok" : "neutral"}
-                      />
-                    </div>
-                    {user.updated_at && (
-                      <small className="muted">{formatCstTime(user.updated_at, lang)}</small>
-                    )}
+                    <small>
+                      {user.role === "admin"
+                        ? bilingual(lang, "管理员 · 可管理用户", "Admin · can manage users")
+                        : bilingual(lang, "可写用户", "Writer")}
+                    </small>
                   </div>
                   <UiSelect
                     value={draft.role}
@@ -596,7 +538,7 @@ export const UsersPage: React.FC<UsersPageProps> = ({
                       disabled={deletingUser === user.username}
                       onClick={() => setConfirmRemoveUser(user.username)}
                     >
-                      {bilingual(lang, "移除", "Remove")}
+                      {bilingual(lang, "移除权限", "Remove")}
                     </button>
                   </div>
                 </div>
@@ -605,16 +547,18 @@ export const UsersPage: React.FC<UsersPageProps> = ({
           )}
         </div>
 
-        <Pagination
-          page={clampedPage}
-          pageSize={pageSize}
-          total={filteredUsers.length}
-          lang={lang}
-          loading={accessQuery.isFetching}
-          ariaLabel={bilingual(lang, "用户权限列表分页", "User access pagination")}
-          onPageChange={handlePageChange}
-          onPageSizeChange={handlePageSizeChange}
-        />
+        {allUsers.length > pageSize && (
+          <Pagination
+            page={clampedPage}
+            pageSize={pageSize}
+            total={allUsers.length}
+            lang={lang}
+            loading={accessQuery.isFetching}
+            ariaLabel={bilingual(lang, "用户权限列表分页", "User access pagination")}
+            onPageChange={handlePageChange}
+            onPageSizeChange={handlePageSizeChange}
+          />
+        )}
       </section>
 
       <section className="access-panel">
@@ -656,7 +600,7 @@ export const UsersPage: React.FC<UsersPageProps> = ({
           <button
             className="button button-primary ra-primary-touch"
             type="submit"
-            disabled={saveMentionMutation.isPending || !newMentionUsername.trim()}
+            disabled={saveMentionMutation.isPending}
           >
             {saveMentionMutation.isPending
               ? bilingual(lang, "保存中…", "Saving…")
@@ -673,19 +617,6 @@ export const UsersPage: React.FC<UsersPageProps> = ({
           </p>
         )}
 
-        <div className="ra-users-filter-bar is-single">
-          <input
-            type="search"
-            value={mentionSearch}
-            placeholder={bilingual(lang, "筛选可 @ 人员…", "Filter mention directory…")}
-            aria-label={bilingual(lang, "筛选可 @ 人员", "Filter mention directory")}
-            onChange={(e) => {
-              setMentionSearch(e.target.value);
-              setMentionPage(1);
-            }}
-          />
-        </div>
-
         <div className="access-list" id="raMentionUserList">
           {mentionQuery.isLoading ? (
             <div className="no-asset">
@@ -697,7 +628,7 @@ export const UsersPage: React.FC<UsersPageProps> = ({
             </div>
           ) : visibleMentions.length === 0 ? (
             <div className="no-asset">
-              {bilingual(lang, "暂无匹配的可 @ 人员。", "No matching mention users.")}
+              {bilingual(lang, "尚未配置可 @ 人员。", "No mention users configured yet.")}
             </div>
           ) : (
             visibleMentions.map((m) => {
@@ -709,9 +640,9 @@ export const UsersPage: React.FC<UsersPageProps> = ({
                   key={m.username}
                   data-mention-user={m.username}
                 >
-                  <div className="access-identity ra-user-meta">
+                  <div className="access-identity">
                     <strong>{m.display_name || m.username}</strong>
-                    <small className="muted">
+                    <small>
                       @{m.username} ·{" "}
                       {m.enabled !== false
                         ? bilingual(lang, "可被提及并接收 DChat", "Mentionable & DChat enabled")
@@ -759,19 +690,21 @@ export const UsersPage: React.FC<UsersPageProps> = ({
           )}
         </div>
 
-        <Pagination
-          page={clampedMentionPage}
-          pageSize={mentionPageSize}
-          total={filteredMentions.length}
-          lang={lang}
-          loading={mentionQuery.isFetching}
-          ariaLabel={bilingual(lang, "可 @ 人员列表分页", "Mention directory pagination")}
-          onPageChange={setMentionPage}
-          onPageSizeChange={(nextSize) => {
-            setMentionPageSize(nextSize);
-            setMentionPage(1);
-          }}
-        />
+        {allMentions.length > mentionPageSize && (
+          <Pagination
+            page={clampedMentionPage}
+            pageSize={mentionPageSize}
+            total={allMentions.length}
+            lang={lang}
+            loading={mentionQuery.isFetching}
+            ariaLabel={bilingual(lang, "可 @ 人员列表分页", "Mention directory pagination")}
+            onPageChange={setMentionPage}
+            onPageSizeChange={(nextSize) => {
+              setMentionPageSize(nextSize);
+              setMentionPage(1);
+            }}
+          />
+        )}
       </section>
 
       <ModalDialog
