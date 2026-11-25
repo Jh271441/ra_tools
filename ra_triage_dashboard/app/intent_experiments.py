@@ -12,6 +12,8 @@ def build_intent_experiment_assignments(
     overlap_ratio: float,
     seed: int,
     reviewers_per_overlap_case: int = 2,
+    *,
+    preserve_case_order: bool = False,
 ) -> list[dict[str, Any]]:
     """Build a deterministic, balanced assignment snapshot."""
 
@@ -29,5 +31,6 @@ def build_intent_experiment_assignments(
             overlap_ratio,
             seed,
             reviewers_per_overlap_case,
+            preserve_item_order=preserve_case_order,
         )
     ]

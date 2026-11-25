@@ -13,11 +13,14 @@ def build_balanced_assignments(
     overlap_ratio: float,
     seed: int,
     reviewers_per_item: int = 2,
+    *,
+    preserve_item_order: bool = False,
 ) -> list[dict[str, Any]]:
     """Build the base/cross/full allocation used by blind-review workflows."""
 
     shuffled = list(item_ids)
-    random.Random(seed).shuffle(shuffled)
+    if not preserve_item_order:
+        random.Random(seed).shuffle(shuffled)
     assignments: list[dict[str, Any]] = []
     ordinals = {member: 0 for member in members}
     if mode == "full":
