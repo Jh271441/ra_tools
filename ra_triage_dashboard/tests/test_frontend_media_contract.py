@@ -103,7 +103,7 @@ class FrontendMediaContractTest(unittest.TestCase):
         self.assertNotIn('id="workSplitDialogHint"', INDEX_HTML)
         self.assertIn('class="ui-lang-zh">实验名称</span><span class="ui-lang-en">Experiment name</span>', INDEX_HTML)
         self.assertIn("if (name) body.name = name", APP_JS)
-        self.assertIn('@router.post("/api/assignment-name-suggestion")', APP_PY_CASES_ROUTER)
+        self.assertIn('@router.post("/api/assignment-name-suggestion"', APP_PY_CASES_ROUTER)
         self.assertIn("task_name or f\"Review task", APP_PY_CASES_ROUTER)
         self.assertIn("task_name or f\"标注任务", APP_PY_LABELING_ROUTER)
         self.assertIn(".assignment-footer-row { flex-wrap: nowrap", STYLES_CSS)

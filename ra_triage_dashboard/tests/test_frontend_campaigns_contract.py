@@ -70,7 +70,7 @@ class FrontendCampaignsContractTest(unittest.TestCase):
         self.assertNotIn("context.otherCampaigns", APP_JS)
         self.assertNotIn("context.replyTo.discussion_channel", APP_JS)
         self.assertIn("list_related_campaign_comment_groups", APP_PY_COMMENTS_DB)
-        self.assertIn('@router.get("/api/campaigns/{campaign_id}/issues/{issue_id}/discussion")', APP_PY_CAMPAIGNS_ROUTER)
+        self.assertIn('@router.get("/api/campaigns/{campaign_id}/issues/{issue_id}/discussion"', APP_PY_CAMPAIGNS_ROUTER)
 
     def test_campaign_label_analysis_separates_tag_axes_and_rationale_themes(self) -> None:
         for element_id in (

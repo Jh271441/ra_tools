@@ -38,7 +38,7 @@ class IntentLabelingAccessContractTest(unittest.TestCase):
         self.assertIn('"/api/intent-experiments/{experiment_id}"', INTENT_ROUTER)
         self.assertIn('"/api/intent-experiments/{experiment_id}/close"', INTENT_ROUTER)
         self.assertIn('"/api/intent-experiments/name-suggestion"', INTENT_ROUTER)
-        self.assertIn('@router.get("/api/intent-cases")', INTENT_ROUTER)
+        self.assertIn('@router.get("/api/intent-cases"', INTENT_ROUTER)
         self.assertIn("_intent_summary_payload_multi", INTENT_ROUTER)
         self.assertIn("page_size not in {10, 20, 50, 100}", INTENT_ROUTER)
         self.assertIn('"/api/intent-datasets/{dataset_id}/cases/{case_id}/labels/{username}"', INTENT_ROUTER)

@@ -54,12 +54,14 @@ APP_PY_SNAPSHOTS_DB = (
     STATIC_DIR.parent / "app" / "db_parts" / "snapshots.py"
 ).read_text(encoding="utf-8")
 APP_PY_LABELING_ROUTER = "\n".join(p.read_text(encoding="utf-8") for p in sorted((STATIC_DIR.parent / "app" / "routers" / "labeling_api").glob("*.py")))
-APP_PY_CASES_DB = (
-    STATIC_DIR.parent / "app" / "db_parts" / "cases.py"
-).read_text(encoding="utf-8")
-APP_PY_CAMPAIGNS_DB = (
-    STATIC_DIR.parent / "app" / "db_parts" / "campaigns.py"
-).read_text(encoding="utf-8")
+APP_PY_CASES_DB = "\n".join(
+    (STATIC_DIR.parent / "app" / "db_parts" / name).read_text(encoding="utf-8")
+    for name in ("cases.py", "work_splits.py")
+)
+APP_PY_CAMPAIGNS_DB = "\n".join(
+    p.read_text(encoding="utf-8")
+    for p in sorted((STATIC_DIR.parent / "app" / "db_parts").glob("campaign*.py"))
+)
 APP_PY_CAMPAIGNS_ROUTER = (
     STATIC_DIR.parent / "app" / "routers" / "campaigns.py"
 ).read_text(encoding="utf-8")
