@@ -1246,6 +1246,13 @@ export const RdResultsPage: React.FC<RdResultsPageProps> = ({
               total={hpHistoryQuery.data?.total || 0}
               lang={lang}
               loading={hpHistoryQuery.isFetching}
+              className="case-pagination rd-pagination"
+              summaryText={
+                hpHistoryQuery.data
+                  ? `${hpHistoryQuery.data.total} ${bilingual(lang, "条结果", "results")}`
+                  : "—"
+              }
+              ariaLabel={bilingual(lang, "上传记录分页", "Publication history pagination")}
               onPageChange={(nextPage) => {
                 setHpHistoryPage(nextPage);
                 syncHpUrl({ historyPage: nextPage });

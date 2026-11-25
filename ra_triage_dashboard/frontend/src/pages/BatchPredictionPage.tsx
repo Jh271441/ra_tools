@@ -901,7 +901,7 @@ export const BatchPredictionPage: React.FC<BatchPredictionPageProps> = ({
               : catalogReady
                 ? bilingual(
                     lang,
-                    `已验证 ${validatedCount} · 实验 ${experimentalCount} · ${gatewayModels.length}`,
+                    `已验证 ${validatedCount} · 实验模型 ${experimentalCount} · ${gatewayModels.length}`,
                     `Validated ${validatedCount} · Experimental ${experimentalCount} · ${gatewayModels.length}`,
                   )
                 : modelsQuery.data?.message ||
@@ -993,10 +993,16 @@ export const BatchPredictionPage: React.FC<BatchPredictionPageProps> = ({
                 className={invalidIds.length || overLimit ? "input-warning" : ""}
               >
                 {[
-                  `${issueIds.length}`,
-                  maxIssues ? `max ${maxIssues}` : "",
+                  bilingual(lang, `${issueIds.length} 个`, `${issueIds.length} issues`),
+                  maxIssues
+                    ? bilingual(lang, `单批最多 ${maxIssues} 个`, `max ${maxIssues} per batch`)
+                    : "",
                   invalidIds.length
-                    ? bilingual(lang, `${invalidIds.length} 无效`, `${invalidIds.length} invalid`)
+                    ? bilingual(
+                        lang,
+                        `${invalidIds.length} 个格式无效`,
+                        `${invalidIds.length} invalid`,
+                      )
                     : "",
                 ]
                   .filter(Boolean)
@@ -1496,11 +1502,44 @@ export const BatchPredictionPage: React.FC<BatchPredictionPageProps> = ({
                             <span>
                               {detail.provider_id || "kylin"} · {bilingual(lang, "模型", "Model")}{" "}
                               {detail.resolved_model_id || detail.model_name || "—"}
+                              {detail.model_validation_status === "experimental"
+                                ? bilingual(lang, " · 实验", " · Experimental")
+                                : ""}
                             </span>
                             <span>
                               Prompt {detail.prompt_version || "—"}
                               {detail.prompt_mode === "custom" ? " · custom" : ""}
                             </span>
+                            {detail.input_profile ? <span>Profile {detail.input_profile}</span> : null}
+                            {Array.isArray(detail.input_config?.frame_offsets_ms) &&
+                            detail.input_config.frame_offsets_ms.length ? (
+                              <span>
+                                Camera {detail.input_config.frame_offsets_ms.length}{" "}
+                                {bilingual(lang, "帧", "frames")} ·{" "}
+                                {detail.input_config.frame_offsets_ms.join(", ")} ms
+                              </span>
+                            ) : null}
+                            {detail.input_config ? (
+                              <span>
+                                {detail.input_config.use_ra_event
+                                  ? "RA Events"
+                                  : bilingual(lang, "无 RA Events", "No RA Events")}
+                              </span>
+                            ) : null}
+                            {detail.input_config?.use_ra_options ? (
+                              <span>RA / SWAG Options</span>
+                            ) : null}
+                            {detail.input_config ? (
+                              <span>
+                                {detail.input_config.use_bev_animation
+                                  ? bilingual(
+                                      lang,
+                                      "Ares Animation · API 默认",
+                                      "Ares Animation · API default",
+                                    )
+                                  : bilingual(lang, "Ares Animation 关闭", "Ares Animation OFF")}
+                              </span>
+                            ) : null}
                             {detail.model_run_id ? <span>Model Run {detail.model_run_id}</span> : null}
                             {detail.finished_at ? (
                               <span>
@@ -1509,6 +1548,37 @@ export const BatchPredictionPage: React.FC<BatchPredictionPageProps> = ({
                               </span>
                             ) : null}
                           </div>
+                          {(() => {
+                            const sum =
+                              detail.summary && typeof detail.summary === "object"
+                                ? (detail.summary as Record<string, unknown>)
+                                : {};
+                            const outLines = [
+                              sum.ra_repo_commit
+                                ? `ra_auto_triage commit · ${String(sum.ra_repo_commit)}`
+                                : "",
+                              sum.trail_view_id
+                                ? `Trail view · ${String(sum.trail_view_id)}`
+                                : "",
+                              sum.model_run_duplicate
+                                ? bilingual(lang, "复用已有模型 Run", "Reused existing Model Run")
+                                : "",
+                              sum.bag_cache_read_only ? "Bag cache · read-only" : "",
+                              sum.trail_write_enabled === false
+                                ? bilingual(lang, "Trail 写入 · 关闭", "Trail write · OFF")
+                                : "",
+                              detail.error_text
+                                ? `${bilingual(lang, "任务错误", "Job error")} · ${detail.error_text}`
+                                : "",
+                            ].filter(Boolean);
+                            return outLines.length ? (
+                              <div className="batch-output-lines">
+                                {outLines.map((line, i) => (
+                                  <code key={i}>{line}</code>
+                                ))}
+                              </div>
+                            ) : null;
+                          })()}
                           {Array.isArray(detail.items) && detail.items.length ? (
                             <div className="batch-result-items">
                               {detail.items.map((it) => {

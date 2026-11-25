@@ -794,7 +794,8 @@ html[data-color-theme="light"] #raComparisonReasonDialog [data-triage-label="无
   min-width: 0;
 }
 .ra-rd-results-root .rd-filters .ui-select-trigger,
-.ra-rd-results-root .rd-selection-tools .ui-select-trigger {
+.ra-rd-results-root .rd-selection-tools .ui-select-trigger,
+.ra-rd-results-root .rd-pagination .ui-select-trigger {
   min-height: 38px;
   height: 38px;
   font-size: 13px;
@@ -813,11 +814,11 @@ html[data-color-theme="light"] #raComparisonReasonDialog [data-triage-label="无
   font-size: 12px;
 }
 .ra-batch-prediction-root .gateway-card .ra-batch-field {
-  gap: 3px;
+  gap: 5px;
 }
 .ra-batch-prediction-root .gateway-card .ra-batch-field > span {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 12px;
 }
 .ra-batch-prediction-root .ra-gateway-field .ra-react-select,
 .ra-batch-prediction-root .gateway-model-control .ra-react-select,
