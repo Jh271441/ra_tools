@@ -14,7 +14,11 @@ from ..support.common import _detail
 from ..support.identity import _intent_identity, _writer_identity
 from .case_comments import _public_review_comment
 
-router = APIRouter()
+from fastapi import Depends
+from ..core.deps import get_container
+from ..schemas import CommentListResponse, CommentMutationResponse
+
+router = APIRouter(dependencies=[Depends(get_container)])
 
 
 async def _comment_actor(request: Request, kind: str, dataset_id: str, case_id: str):
@@ -87,31 +91,31 @@ async def _history(request: Request, *, kind: str, issue_id: str, comment_id: in
     return {"items": items, "count": len(items)}
 
 
-@router.patch("/api/cases/{issue_id}/comments/{comment_id}")
+@router.patch("/api/cases/{issue_id}/comments/{comment_id}", responses={200: {"model": CommentMutationResponse}})
 async def edit_comment(issue_id: str, comment_id: int, request: Request):
     return await _change(request, kind="review", issue_id=issue_id, comment_id=comment_id)
 
 
-@router.delete("/api/cases/{issue_id}/comments/{comment_id}")
+@router.delete("/api/cases/{issue_id}/comments/{comment_id}", responses={200: {"model": CommentMutationResponse}})
 async def delete_comment(issue_id: str, comment_id: int, request: Request):
     return await _change(request, kind="review", issue_id=issue_id, comment_id=comment_id, delete=True)
 
 
-@router.get("/api/cases/{issue_id}/comments/{comment_id}/history")
+@router.get("/api/cases/{issue_id}/comments/{comment_id}/history", responses={200: {"model": CommentListResponse}})
 async def comment_history(issue_id: str, comment_id: int, request: Request):
     return await _history(request, kind="review", issue_id=issue_id, comment_id=comment_id)
 
 
-@router.patch("/api/intent-datasets/{dataset_id}/cases/{case_id}/comments/{comment_id}")
+@router.patch("/api/intent-datasets/{dataset_id}/cases/{case_id}/comments/{comment_id}", responses={200: {"model": CommentMutationResponse}})
 async def edit_intent_comment(dataset_id: str, case_id: str, comment_id: int, request: Request):
     return await _change(request, kind="intent", issue_id=case_id, dataset_id=dataset_id, comment_id=comment_id)
 
 
-@router.delete("/api/intent-datasets/{dataset_id}/cases/{case_id}/comments/{comment_id}")
+@router.delete("/api/intent-datasets/{dataset_id}/cases/{case_id}/comments/{comment_id}", responses={200: {"model": CommentMutationResponse}})
 async def delete_intent_comment(dataset_id: str, case_id: str, comment_id: int, request: Request):
     return await _change(request, kind="intent", issue_id=case_id, dataset_id=dataset_id, comment_id=comment_id, delete=True)
 
 
-@router.get("/api/intent-datasets/{dataset_id}/cases/{case_id}/comments/{comment_id}/history")
+@router.get("/api/intent-datasets/{dataset_id}/cases/{case_id}/comments/{comment_id}/history", responses={200: {"model": CommentListResponse}})
 async def intent_comment_history(dataset_id: str, case_id: str, comment_id: int, request: Request):
     return await _history(request, kind="intent", issue_id=case_id, dataset_id=dataset_id, comment_id=comment_id)

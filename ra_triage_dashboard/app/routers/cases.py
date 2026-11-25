@@ -88,7 +88,11 @@ from .cases_api import (
     work_splits_router,
 )
 
-router = APIRouter()
+from fastapi import Depends
+from ..core.deps import get_container
+from ..schemas import AllocationPreviewResponse, CaseDetailResponse, CaseMediaResponse, WorkAssigneesListResponse
+
+router = APIRouter(dependencies=[Depends(get_container)])
 router.include_router(naming_router)
 router.include_router(work_splits_router)
 
@@ -624,7 +628,7 @@ async def list_case_issue_ids(
         },
     }
 
-@router.get("/api/work-assignees")
+@router.get("/api/work-assignees", responses={200: {"model": WorkAssigneesListResponse}})
 async def work_assignees(
     request: Request,
     search: str = "",
@@ -702,7 +706,7 @@ async def work_assignees(
     }
 
 
-@router.post("/api/cases/work-split")
+@router.post("/api/cases/work-split", responses={200: {"model": AllocationPreviewResponse}})
 async def split_case_work(request: Request) -> dict[str, Any]:
     """Admin-only: randomly assign filtered issues and persist ownership."""
 
@@ -1027,7 +1031,7 @@ async def get_case_thumbnail(issue_id: str, kind: str = "bev") -> FileResponse:
 
 
 
-@router.get("/api/cases/{issue_id}/trail-metadata")
+@router.get("/api/cases/{issue_id}/trail-metadata", responses={200: {"model": CaseDetailResponse}})
 async def get_case_trail_metadata(issue_id: str, refresh: bool = False) -> dict[str, Any]:
     """Read a durable display snapshot, querying Trail only on a cache miss.
 
@@ -1136,7 +1140,7 @@ async def get_case_trail_metadata(issue_id: str, refresh: bool = False) -> dict[
 
 
 
-@router.get("/api/cases/{issue_id}/planning-constraints")
+@router.get("/api/cases/{issue_id}/planning-constraints", responses={200: {"model": CaseMediaResponse}})
 async def get_planning_constraints(
     issue_id: str, response: Response, offset_ms: Optional[int] = None,
     timestamp_ms: Optional[int] = None,
@@ -1172,7 +1176,7 @@ async def get_planning_constraints(
     return await asyncio.to_thread(read_window, settings.data_dir, issue_id, str(trip), int(anchor), relative)
 
 
-@router.get("/api/cases/{issue_id}/media")
+@router.get("/api/cases/{issue_id}/media", responses={200: {"model": CaseMediaResponse}})
 async def get_case_media(issue_id: str, kind: str = "all") -> dict[str, Any]:
     """Resolve deferred filesystem media for an already-loaded Issue detail.
 

@@ -35,9 +35,13 @@ from ..support.filter_parsing import _case_filter_kwargs
 from ..support.external_links import _voyager_issue_url
 from .cases import _case_issue_ids_with_status_filter
 
-router = APIRouter()
+from fastapi import Depends
+from ..core.deps import get_container
+from ..schemas import ModelReviewFacetsResponse, ModelReviewShadowComparisonResponse, ReviewReasonAnalysisResponse
 
-@router.get("/api/review-reason-analysis")
+router = APIRouter(dependencies=[Depends(get_container)])
+
+@router.get("/api/review-reason-analysis", responses={200: {"model": ReviewReasonAnalysisResponse}})
 async def review_reason_analysis(
     request: Request,
     model_run_id: str = "",
@@ -114,7 +118,7 @@ async def review_reason_analysis(
     return payload
 
 
-@router.get("/api/model-review-facets")
+@router.get("/api/model-review-facets", responses={200: {"model": ModelReviewFacetsResponse}})
 async def model_review_facets(
     request: Request, model_run_id: str, baselines: str = ""
 ) -> dict[str, Any]:
@@ -129,7 +133,7 @@ async def model_review_facets(
     return result
 
 
-@router.get("/api/model-review-shadow-comparison")
+@router.get("/api/model-review-shadow-comparison", responses={200: {"model": ModelReviewShadowComparisonResponse}})
 async def model_review_shadow_comparison(
     request: Request, model_run_id: str, baselines: str = ""
 ) -> dict[str, Any]:

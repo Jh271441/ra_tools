@@ -12,10 +12,14 @@ import asyncio
 from ...runtime import database
 from .common import _labeling_actor, _labeling_payload, _public_label_case, _require_active_labeling_issue, _require_labeling_writer
 
-router = APIRouter()
+from fastapi import Depends
+from ...core.deps import get_container
+from ...schemas import GenericMutationResponse
+
+router = APIRouter(dependencies=[Depends(get_container)])
 
 
-@router.get("/api/labeling/issues/{issue_id}/decisions")
+@router.get("/api/labeling/issues/{issue_id}/decisions", responses={200: {"model": GenericMutationResponse}})
 async def list_issue_label_decisions(issue_id: str, request: Request) -> dict[str, Any]:
     await _require_labeling_writer(request)
     issue = await _require_active_labeling_issue(issue_id)
@@ -26,7 +30,7 @@ async def list_issue_label_decisions(issue_id: str, request: Request) -> dict[st
     )
     return {"items": items, "count": len(items)}
 
-@router.post("/api/labeling/issues/{issue_id}/decisions")
+@router.post("/api/labeling/issues/{issue_id}/decisions", responses={200: {"model": GenericMutationResponse}})
 async def adjudicate_issue_label(issue_id: str, request: Request) -> dict[str, Any]:
     try:
         body = await request.json()
@@ -35,7 +39,7 @@ async def adjudicate_issue_label(issue_id: str, request: Request) -> dict[str, A
     return await _save_issue_decision(issue_id, request, body)
 
 
-@router.post("/api/labeling/issues/{issue_id}/decisions-with-attachments")
+@router.post("/api/labeling/issues/{issue_id}/decisions-with-attachments", responses={200: {"model": GenericMutationResponse}})
 async def adjudicate_issue_with_attachments(
     issue_id: str, request: Request, payload: str = Form(...),
     attachments: Optional[List[UploadFile]] = File(None),
@@ -119,7 +123,7 @@ async def _save_issue_decision(issue_id, request, body, uploads=()):
         "change_revision": await asyncio.to_thread(database.change_revision),
     }
 
-@router.post("/api/labeling/label-cases/{label_case_id}/adjudications")
+@router.post("/api/labeling/label-cases/{label_case_id}/adjudications", responses={200: {"model": GenericMutationResponse}})
 async def adjudicate_label_case(label_case_id: str, request: Request) -> dict[str, Any]:
     try:
         body = await request.json()

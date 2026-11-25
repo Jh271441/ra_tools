@@ -13,7 +13,11 @@ from ..support.baselines import resolve_request_baseline_scopes, restrict_versio
 from ..support.identity import _admin_identity
 from .campaigns import _require_known_assignees
 
-router = APIRouter()
+from fastapi import Depends
+from ..core.deps import get_container
+from ..schemas import GenericMutationResponse, RunCollectionDetailResponse, RunCollectionListResponse, RunEvaluationDetailResponse, RunEvaluationListResponse
+
+router = APIRouter(dependencies=[Depends(get_container)])
 
 
 async def _body(request: Request) -> dict[str, Any]:
@@ -92,13 +96,13 @@ def _raise_database_error(exc: ValueError) -> None:
     raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@router.get("/api/run-collections")
+@router.get("/api/run-collections", responses={200: {"model": RunCollectionListResponse}})
 async def list_run_collections() -> dict[str, Any]:
     items = await asyncio.to_thread(database.list_run_collections)
     return {"items": items, "total": len(items)}
 
 
-@router.get("/api/run-collections/{collection_id}")
+@router.get("/api/run-collections/{collection_id}", responses={200: {"model": RunCollectionDetailResponse}})
 async def get_run_collection(collection_id: str) -> dict[str, Any]:
     item = await asyncio.to_thread(database.get_run_collection, collection_id)
     if item is None:
@@ -106,7 +110,7 @@ async def get_run_collection(collection_id: str) -> dict[str, Any]:
     return item
 
 
-@router.post("/api/run-collections")
+@router.post("/api/run-collections", responses={200: {"model": RunCollectionListResponse}})
 async def create_run_collection(request: Request) -> dict[str, Any]:
     actor, actor_source, actor_verified = await _actor(request)
     body = await _body(request)
@@ -126,7 +130,7 @@ async def create_run_collection(request: Request) -> dict[str, Any]:
         _raise_database_error(exc)
 
 
-@router.patch("/api/run-collections/{collection_id}")
+@router.patch("/api/run-collections/{collection_id}", responses={200: {"model": RunCollectionDetailResponse}})
 async def rename_run_collection(collection_id: str, request: Request) -> dict[str, Any]:
     actor, actor_source, actor_verified = await _actor(request)
     body = await _body(request)
@@ -148,7 +152,7 @@ async def rename_run_collection(collection_id: str, request: Request) -> dict[st
         raise HTTPException(status_code=400, detail="expected_revision 必须为正整数。") from exc
 
 
-@router.post("/api/run-collections/{collection_id}/revisions")
+@router.post("/api/run-collections/{collection_id}/revisions", responses={200: {"model": RunCollectionDetailResponse}})
 async def create_run_collection_revision(collection_id: str, request: Request) -> dict[str, Any]:
     actor, actor_source, actor_verified = await _actor(request)
     body = await _body(request)
@@ -171,7 +175,7 @@ async def create_run_collection_revision(collection_id: str, request: Request) -
         raise HTTPException(status_code=400, detail="expected_revision 必须为正整数。") from exc
 
 
-@router.post("/api/run-comparison/save-collection")
+@router.post("/api/run-comparison/save-collection", responses={200: {"model": RunCollectionDetailResponse}})
 async def save_pairwise_as_collection(request: Request) -> dict[str, Any]:
     actor, actor_source, actor_verified = await _actor(request)
     body = await _body(request)
@@ -198,7 +202,7 @@ async def save_pairwise_as_collection(request: Request) -> dict[str, Any]:
         _raise_database_error(exc)
 
 
-@router.post("/api/run-evaluations")
+@router.post("/api/run-evaluations", responses={200: {"model": RunEvaluationListResponse}})
 async def create_run_evaluation(request: Request) -> dict[str, Any]:
     actor, actor_source, actor_verified = await _actor(request)
     body = await _body(request)
@@ -245,7 +249,7 @@ async def create_run_evaluation(request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="collection_revision 必须为整数。") from exc
 
 
-@router.get("/api/run-evaluations")
+@router.get("/api/run-evaluations", responses={200: {"model": RunEvaluationListResponse}})
 async def list_run_evaluations(collection_id: str = "", limit: int = 100) -> dict[str, Any]:
     items = await asyncio.to_thread(
         database.list_run_evaluations, collection_id=collection_id, limit=limit
@@ -253,7 +257,7 @@ async def list_run_evaluations(collection_id: str = "", limit: int = 100) -> dic
     return {"items": items, "total": len(items)}
 
 
-@router.get("/api/run-evaluations/{context_id}")
+@router.get("/api/run-evaluations/{context_id}", responses={200: {"model": RunEvaluationDetailResponse}})
 async def get_run_evaluation(
     context_id: str,
     page: int = 1,
@@ -287,7 +291,7 @@ async def export_run_evaluation(context_id: str) -> JSONResponse:
     )
 
 
-@router.post("/api/run-evaluations/{context_id}/labeling-campaign")
+@router.post("/api/run-evaluations/{context_id}/labeling-campaign", responses={200: {"model": GenericMutationResponse}})
 async def create_evaluation_labeling_campaign(context_id: str, request: Request) -> dict[str, Any]:
     identity = await asyncio.to_thread(_admin_identity, request)
     body = await _body(request)
@@ -324,7 +328,7 @@ async def create_evaluation_labeling_campaign(context_id: str, request: Request)
     return {"campaign": campaign, "evaluation_id": context_id}
 
 
-@router.post("/api/run-evaluations/{context_id}/model-review-group")
+@router.post("/api/run-evaluations/{context_id}/model-review-group", responses={200: {"model": GenericMutationResponse}})
 async def create_evaluation_model_review_group(context_id: str, request: Request) -> dict[str, Any]:
     identity = await asyncio.to_thread(_admin_identity, request)
     body = await _body(request)

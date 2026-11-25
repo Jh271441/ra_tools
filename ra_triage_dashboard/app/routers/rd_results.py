@@ -19,7 +19,11 @@ from ..label_publication_inputs import filter_issue_rows, parse_te_xlsx, MAX_QUE
 from ..contracts import MAX_UPLOAD_BYTES
 from ..upload_limits import read_upload_limited, UploadLimitExceeded
 
-router = APIRouter()
+from fastapi import Depends
+from ..core.deps import get_container
+from ..schemas import GenericMutationResponse, RdResultsResponse
+
+router = APIRouter(dependencies=[Depends(get_container)])
 PublicationMode = Literal['rd', 'te-correction']
 
 
@@ -178,7 +182,7 @@ def filtered_rows(request, baselines, q, status, mode=service.RD_MODE, metadata=
     return [r for r in rows if status == 'all' or r['group'] == status], counts
 
 
-@router.get('/api/rd-results')
+@router.get('/api/rd-results', responses={200: {"model": RdResultsResponse}})
 async def summary(request: Request, baselines: str = '', q: str = '', status: str = 'all', page: int = 1, page_size: int = 20, mode: PublicationMode = 'rd'):
     await asyncio.to_thread(_writer_identity, request)
     if page_size not in {10, 20, 50, 100}:
@@ -194,7 +198,7 @@ async def summary(request: Request, baselines: str = '', q: str = '', status: st
     return await run(load)
 
 
-@router.post('/api/rd-results/te-refresh')
+@router.post('/api/rd-results/te-refresh', responses={200: {"model": GenericMutationResponse}})
 async def refresh_te(request: Request, body: TERefresh):
     await asyncio.to_thread(_writer_identity, request)
     if not has_same_origin_mutation_marker(request):
@@ -208,7 +212,7 @@ async def refresh_te(request: Request, body: TERefresh):
     return JSONResponse(await run(start), status_code=202)
 
 
-@router.get('/api/rd-results/te-refresh')
+@router.get('/api/rd-results/te-refresh', responses={200: {"model": GenericMutationResponse}})
 async def te_refresh_status(request: Request, baselines: str = ''):
     await asyncio.to_thread(_writer_identity, request)
     def load():
@@ -218,7 +222,7 @@ async def te_refresh_status(request: Request, baselines: str = ''):
     return await run(load)
 
 
-@router.post('/api/rd-results/preview-scope')
+@router.post('/api/rd-results/preview-scope', responses={200: {"model": RdResultsResponse}})
 async def preview_scope(request: Request, body: ScopeSelection, background: bool = False):
     actor = await asyncio.to_thread(_admin_identity, request)
     if not has_same_origin_mutation_marker(request):
@@ -244,7 +248,7 @@ async def preview_scope(request: Request, body: ScopeSelection, background: bool
     return await run(lambda: store().preview(actor.username, rows, remote, body.overwrite, body.baselines, scope=scope, mode=body.mode))
 
 
-@router.post('/api/rd-results/status')
+@router.post('/api/rd-results/status', responses={200: {"model": RdResultsResponse}})
 async def remote_status(request: Request, body: Selection):
     await asyncio.to_thread(_writer_identity, request)
     def load():
@@ -254,7 +258,7 @@ async def remote_status(request: Request, body: Selection):
     return await run(load)
 
 
-@router.post('/api/rd-results/preview')
+@router.post('/api/rd-results/preview', responses={200: {"model": RdResultsResponse}})
 async def preview(request: Request, body: Selection, background: bool = False):
     actor = await asyncio.to_thread(_admin_identity, request)
     if not has_same_origin_mutation_marker(request):
@@ -272,7 +276,7 @@ async def preview(request: Request, body: Selection, background: bool = False):
     return await run(lambda: store().preview(actor.username, rows, remote, body.overwrite, body.baselines, mode=body.mode))
 
 
-@router.post('/api/rd-results/te-excel-preview')
+@router.post('/api/rd-results/te-excel-preview', responses={200: {"model": RdResultsResponse}})
 async def excel_preview(request: Request, file: UploadFile = File(...), baselines: str = Form(...),
                         overwrite: str = Form('false'), background: bool = False):
     actor = await asyncio.to_thread(_admin_identity, request)
@@ -311,7 +315,7 @@ async def excel_preview(request: Request, file: UploadFile = File(...), baseline
     return await run(lambda: store().preview(actor.username, selected_rows, remote, False, baselines, scope=scope, mode=service.TE_MODE))
 
 
-@router.post('/api/rd-results/commit')
+@router.post('/api/rd-results/commit', responses={200: {"model": GenericMutationResponse}})
 async def commit(request: Request, body: Commit, background: bool = False):
     actor = await asyncio.to_thread(_admin_identity, request)
     if not has_same_origin_mutation_marker(request) or not body.confirmed:
@@ -330,7 +334,7 @@ async def commit(request: Request, body: Commit, background: bool = False):
     return JSONResponse(result, status_code=202) if background else result
 
 
-@router.get('/api/rd-results/operations/{operation_id}')
+@router.get('/api/rd-results/operations/{operation_id}', responses={200: {"model": GenericMutationResponse}})
 async def operation(request: Request, operation_id: str, progress_only: bool = False):
     await asyncio.to_thread(_admin_identity, request)
     def load():
@@ -341,7 +345,7 @@ async def operation(request: Request, operation_id: str, progress_only: bool = F
     return await run(load)
 
 
-@router.get('/api/rd-results/operations')
+@router.get('/api/rd-results/operations', responses={200: {"model": RdResultsResponse}})
 async def operations(request: Request, mode: PublicationMode = 'rd'):
     await asyncio.to_thread(_admin_identity, request)
     def load():

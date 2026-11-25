@@ -25,9 +25,13 @@ from ..import_parsing import normalize_issue_row, normalize_model_row, parse_sou
 from ..runtime import database
 from ..upload_limits import UploadLimitExceeded, read_upload_limited
 
-router = APIRouter()
+from fastapi import Depends
+from ..core.deps import get_container
+from ..schemas import GenericMutationResponse, ImportContractResponse
 
-@router.post("/api/trail-model-sync")
+router = APIRouter(dependencies=[Depends(get_container)])
+
+@router.post("/api/trail-model-sync", responses={200: {"model": GenericMutationResponse}})
 async def trail_model_sync(request: Request) -> dict[str, Any]:
     try:
         body = await request.json()
@@ -50,7 +54,7 @@ async def trail_model_sync(request: Request) -> dict[str, Any]:
 
 
 
-@router.get("/api/import-contract")
+@router.get("/api/import-contract", responses={200: {"model": ImportContractResponse}})
 async def import_contract() -> dict[str, Any]:
     return {
         "formats": [".json", ".csv", ".xlsx", ".xlsm"],
@@ -110,7 +114,7 @@ async def _read_upload(upload: UploadFile) -> tuple[bytes, str, str]:
 
 
 
-@router.post("/api/import/issues")
+@router.post("/api/import/issues", responses={200: {"model": GenericMutationResponse}})
 async def import_issues(
     file: UploadFile = File(...),
     source: str = Form("manual_upload"),
@@ -139,7 +143,7 @@ async def import_issues(
         "metadata": metadata,
         **outcome,
     }
-@router.post("/api/import/model-results")
+@router.post("/api/import/model-results", responses={200: {"model": GenericMutationResponse}})
 async def import_model_results(
     request: Request,
     file: UploadFile = File(...),
@@ -200,7 +204,7 @@ async def import_model_results(
 
 
 
-@router.get("/api/import/autotriage/{batch_id}")
+@router.get("/api/import/autotriage/{batch_id}", responses={200: {"model": GenericMutationResponse}})
 async def preview_autotriage_import(batch_id: str) -> dict[str, Any]:
     try:
         normalized_batch_id = normalise_batch_id(batch_id)
@@ -221,7 +225,7 @@ async def preview_autotriage_import(batch_id: str) -> dict[str, Any]:
         "default_changed": False,
         "read_only": True,
     }
-@router.post("/api/import/autotriage")
+@router.post("/api/import/autotriage", responses={200: {"model": GenericMutationResponse}})
 async def import_autotriage_results(
     request: Request,
 ) -> dict[str, Any]:

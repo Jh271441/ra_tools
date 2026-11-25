@@ -24,10 +24,14 @@ from ...runtime import baseline_registry
 
 from .common import _labeling_issue_tag_groups
 
-router = APIRouter()
+from fastapi import Depends
+from ...core.deps import get_container
+from ...schemas import WorkSplitListResponse
+
+router = APIRouter(dependencies=[Depends(get_container)])
 
 
-@router.get("/api/labeling/combined-tasks")
+@router.get("/api/labeling/combined-tasks", responses={200: {"model": WorkSplitListResponse}})
 async def list_combined_labeling_tasks(request: Request, baselines: str = "") -> dict[str, Any]:
     await _require_labeling_writer(request)
     scopes = await _active_labeling_scopes(resolve_request_baseline_scopes(baselines, request=request))
@@ -44,7 +48,7 @@ async def list_combined_labeling_tasks(request: Request, baselines: str = "") ->
     return {"items": items, "baseline_scopes": scopes}
 
 
-@router.get("/api/labeling/tasks")
+@router.get("/api/labeling/tasks", responses={200: {"model": WorkSplitListResponse}})
 async def list_labeling_tasks(request: Request, baselines: str = "", include_combined: bool = False, lifecycle: str = "current") -> dict[str, Any]:
     await _require_labeling_writer(request)
     scopes = resolve_request_baseline_scopes(baselines, request=request)
@@ -81,7 +85,7 @@ async def list_labeling_tasks(request: Request, baselines: str = "", include_com
         tasks = [item for item in tasks if item["member_count"]]
     return {"items": tasks, "baseline_scopes": scopes}
 
-@router.post("/api/labeling/tasks")
+@router.post("/api/labeling/tasks", responses={200: {"model": WorkSplitListResponse}})
 async def create_labeling_task(request: Request) -> dict[str, Any]:
     identity = await asyncio.to_thread(_admin_identity, request)
     try:

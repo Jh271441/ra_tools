@@ -20,7 +20,10 @@ from .labeling_api.snapshots import router as snapshots_router
 from .labeling_api.exports import create_gt_export_preview, get_gt_export_preview, reconcile_gt_export_preview, export_gt_candidates
 from .labeling_api.exports import router as exports_router
 
-router = APIRouter()
+from fastapi import Depends
+from ..core.deps import get_container
+
+router = APIRouter(dependencies=[Depends(get_container)])
 router.routes.append(next(route for route in tasks_router.routes if route.endpoint is list_combined_labeling_tasks))
 router.routes.append(next(route for route in tasks_router.routes if route.endpoint is list_labeling_tasks))
 router.routes.append(next(route for route in tasks_router.routes if route.endpoint is create_labeling_task))

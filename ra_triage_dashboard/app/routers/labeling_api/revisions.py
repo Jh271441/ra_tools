@@ -21,10 +21,14 @@ from ...runtime import settings, review_notification_dispatcher
 from ...support.label_mentions import prepare_label_mentions
 from .common import _labeling_actor, _labeling_payload, _public_label_revision, _require_active_labeling_issue, _require_labeling_writer
 
-router = APIRouter()
+from fastapi import Depends
+from ...core.deps import get_container
+from ...schemas import ReviewSubmissionResponse
+
+router = APIRouter(dependencies=[Depends(get_container)])
 
 
-@router.post("/api/labeling/cases/{issue_id}/revisions")
+@router.post("/api/labeling/cases/{issue_id}/revisions", responses={200: {"model": ReviewSubmissionResponse}})
 async def create_label_revision(issue_id: str, request: Request) -> dict[str, Any]:
     await _require_active_labeling_issue(issue_id)
     try:
@@ -72,7 +76,7 @@ async def create_label_revision(issue_id: str, request: Request) -> dict[str, An
         "change_revision": await asyncio.to_thread(database.change_revision),
     }
 
-@router.post("/api/labeling/cases/{issue_id}/revisions-with-attachments")
+@router.post("/api/labeling/cases/{issue_id}/revisions-with-attachments", responses={200: {"model": ReviewSubmissionResponse}})
 async def create_label_revision_with_attachments(
     issue_id: str,
     request: Request,

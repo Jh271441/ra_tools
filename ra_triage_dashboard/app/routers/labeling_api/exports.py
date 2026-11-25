@@ -21,10 +21,14 @@ from .common import _active_labeling_scopes, _labeling_actor, _labeling_filter_v
 
 from .common import _labeling_issue_tag_groups
 
-router = APIRouter()
+from fastapi import Depends
+from ...core.deps import get_container
+from ...schemas import GenericMutationResponse
+
+router = APIRouter(dependencies=[Depends(get_container)])
 
 
-@router.post("/api/labeling/gt-export-previews")
+@router.post("/api/labeling/gt-export-previews", responses={200: {"model": GenericMutationResponse}})
 async def create_gt_export_preview(request: Request) -> dict[str, Any]:
     actor, actor_source, actor_verified = await asyncio.to_thread(
         _labeling_actor, request
@@ -134,13 +138,13 @@ async def create_gt_export_preview(request: Request) -> dict[str, Any]:
         "change_revision": await asyncio.to_thread(database.change_revision),
     }
 
-@router.get("/api/labeling/gt-export-previews/{batch_id}")
+@router.get("/api/labeling/gt-export-previews/{batch_id}", responses={200: {"model": GenericMutationResponse}})
 async def get_gt_export_preview(batch_id: str, request: Request) -> dict[str, Any]:
     await _require_labeling_admin(request)
     batch = await _require_active_gt_export_batch(batch_id)
     return {"preview": batch}
 
-@router.post("/api/labeling/gt-export-previews/{batch_id}/reconcile")
+@router.post("/api/labeling/gt-export-previews/{batch_id}/reconcile", responses={200: {"model": GenericMutationResponse}})
 async def reconcile_gt_export_preview(batch_id: str, request: Request) -> dict[str, Any]:
     await _require_labeling_admin(request)
     await _require_active_gt_export_batch(batch_id)
@@ -152,7 +156,7 @@ async def reconcile_gt_export_preview(batch_id: str, request: Request) -> dict[s
         "change_revision": await asyncio.to_thread(database.change_revision),
     }
 
-@router.get("/api/labeling/gt-exports/{batch_id}")
+@router.get("/api/labeling/gt-exports/{batch_id}", responses={200: {"model": GenericMutationResponse}})
 async def export_gt_candidates(batch_id: str, request: Request) -> Response:
     await asyncio.to_thread(_labeling_actor, request)
     await _require_active_gt_export_batch(batch_id)

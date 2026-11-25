@@ -21,9 +21,13 @@ from ..support.common import (
 from ..support.identity import _action_actor
 from ..runtime import REVIEW_TAG_MANAGED_GROUPS, database, settings
 
-router = APIRouter()
+from fastapi import Depends
+from ..core.deps import get_container
+from ..schemas import GenericMutationResponse
 
-@router.post("/api/review-tags")
+router = APIRouter(dependencies=[Depends(get_container)])
+
+@router.post("/api/review-tags", responses={200: {"model": GenericMutationResponse}})
 async def create_review_tag(request: Request) -> dict[str, Any]:
     try:
         body = await request.json()
@@ -62,7 +66,7 @@ async def create_review_tag(request: Request) -> dict[str, Any]:
 
 
 
-@router.put("/api/review-tags/{key:path}")
+@router.put("/api/review-tags/{key:path}", responses={200: {"model": GenericMutationResponse}})
 async def update_review_tag(key: str, request: Request) -> dict[str, Any]:
     normalized_key = _as_text(key).strip()
     if not normalized_key or len(normalized_key) > 160:
@@ -145,7 +149,7 @@ async def update_review_tag(key: str, request: Request) -> dict[str, Any]:
 
 
 
-@router.delete("/api/review-tags/{key:path}")
+@router.delete("/api/review-tags/{key:path}", responses={200: {"model": GenericMutationResponse}})
 async def delete_review_tag(key: str, request: Request) -> dict[str, Any]:
     normalized_key = _as_text(key).strip()
     if not normalized_key or len(normalized_key) > 160:
@@ -184,7 +188,7 @@ async def delete_review_tag(key: str, request: Request) -> dict[str, Any]:
 
 
 
-@router.post("/api/missing-evidence")
+@router.post("/api/missing-evidence", responses={200: {"model": GenericMutationResponse}})
 async def create_missing_evidence(request: Request) -> dict[str, Any]:
     try:
         body = await request.json()
@@ -228,7 +232,7 @@ async def create_missing_evidence(request: Request) -> dict[str, Any]:
 
 
 
-@router.put("/api/missing-evidence/{key:path}")
+@router.put("/api/missing-evidence/{key:path}", responses={200: {"model": GenericMutationResponse}})
 async def update_missing_evidence(key: str, request: Request) -> dict[str, Any]:
     normalized_key = _as_text(key).strip()
     if not normalized_key or len(normalized_key) > 160:
@@ -284,7 +288,7 @@ async def update_missing_evidence(key: str, request: Request) -> dict[str, Any]:
 
 
 
-@router.delete("/api/missing-evidence/{key:path}")
+@router.delete("/api/missing-evidence/{key:path}", responses={200: {"model": GenericMutationResponse}})
 async def delete_missing_evidence(key: str, request: Request) -> dict[str, Any]:
     normalized_key = _as_text(key).strip()
     if not normalized_key or len(normalized_key) > 160:

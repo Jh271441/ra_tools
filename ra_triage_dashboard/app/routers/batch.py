@@ -30,9 +30,13 @@ from ..runtime import (
     settings,
 )
 
-router = APIRouter()
+from fastapi import Depends
+from ..core.deps import get_container
+from ..schemas import BatchConfigResponse, BatchDetailResponse, BatchListResponse
 
-@router.get("/api/prediction-batches/models")
+router = APIRouter(dependencies=[Depends(get_container)])
+
+@router.get("/api/prediction-batches/models", responses={200: {"model": BatchConfigResponse}})
 async def batch_prediction_models(
     refresh: bool = False,
     provider_id: str = "kylin",
@@ -49,13 +53,13 @@ async def batch_prediction_models(
 
 
 
-@router.get("/api/prediction-batches/providers")
+@router.get("/api/prediction-batches/providers", responses={200: {"model": BatchConfigResponse}})
 async def batch_prediction_providers() -> dict[str, Any]:
     return model_catalog.provider_catalog()
 
 
 
-@router.get("/api/prediction-batches/prompts")
+@router.get("/api/prediction-batches/prompts", responses={200: {"model": BatchConfigResponse}})
 async def batch_prediction_prompts() -> dict[str, Any]:
     try:
         return await asyncio.to_thread(
@@ -67,7 +71,7 @@ async def batch_prediction_prompts() -> dict[str, Any]:
 
 
 
-@router.get("/api/prediction-batches/config")
+@router.get("/api/prediction-batches/config", responses={200: {"model": BatchConfigResponse}})
 async def batch_prediction_config() -> dict[str, Any]:
     latest = (
         await asyncio.to_thread(database.list_batch_prediction_jobs, page_size=1)
@@ -122,7 +126,7 @@ async def batch_prediction_config() -> dict[str, Any]:
 
 
 
-@router.post("/api/prediction-batches", status_code=202)
+@router.post("/api/prediction-batches", status_code=202, responses={200: {"model": BatchListResponse}})
 async def create_batch_prediction(request: Request) -> dict[str, Any]:
     if not settings.batch_prediction_enabled:
         raise _detail(503, "当前部署未启用 Batch 预测。")
@@ -325,7 +329,7 @@ async def create_batch_prediction(request: Request) -> dict[str, Any]:
 
 
 
-@router.get("/api/prediction-batches")
+@router.get("/api/prediction-batches", responses={200: {"model": BatchListResponse}})
 async def list_batch_predictions(
     requested_by: str = "",
     status: str = "",
@@ -354,7 +358,7 @@ async def list_batch_predictions(
 
 
 
-@router.get("/api/prediction-batches/{job_id}")
+@router.get("/api/prediction-batches/{job_id}", responses={200: {"model": BatchDetailResponse}})
 async def get_batch_prediction(job_id: str) -> dict[str, Any]:
     job = await asyncio.to_thread(database.get_batch_prediction_job, job_id)
     if job is None:

@@ -10,10 +10,14 @@ from ...runtime import database
 from ...support.baselines import resolve_request_baseline_scopes, restrict_version_issue_ids
 from .common import _active_labeling_scopes, _labeling_snapshot_actor, _require_labeling_admin, _snapshot_allow_partial
 
-router = APIRouter()
+from fastapi import Depends
+from ...core.deps import get_container
+from ...schemas import CaseDetailResponse, CaseLabelingQueueResponse
+
+router = APIRouter(dependencies=[Depends(get_container)])
 
 
-@router.get("/api/labeling/gt-candidates")
+@router.get("/api/labeling/gt-candidates", responses={200: {"model": CaseLabelingQueueResponse}})
 async def get_gt_candidates(request: Request, baselines: str = "") -> dict[str, Any]:
     await _require_labeling_admin(request)
     scopes = resolve_request_baseline_scopes(baselines, request=request)
@@ -30,7 +34,7 @@ async def get_gt_candidates(request: Request, baselines: str = "") -> dict[str, 
         "baseline_scopes": scopes,
     }
 
-@router.get("/api/labeling/gt-snapshots")
+@router.get("/api/labeling/gt-snapshots", responses={200: {"model": CaseLabelingQueueResponse}})
 async def list_gt_snapshots(request: Request, baselines: str = "") -> dict[str, Any]:
     """Return active immutable GT reference metadata only."""
 
@@ -41,7 +45,7 @@ async def list_gt_snapshots(request: Request, baselines: str = "") -> dict[str, 
         "baseline_scopes": scopes,
     }
 
-@router.get("/api/labeling/gt-snapshots/{snapshot_id}")
+@router.get("/api/labeling/gt-snapshots/{snapshot_id}", responses={200: {"model": CaseDetailResponse}})
 async def get_gt_snapshot(
     snapshot_id: str,
     request: Request,
@@ -61,7 +65,7 @@ async def get_gt_snapshot(
         raise _detail(404, "GT snapshot 不存在。")
     return {"snapshot": snapshot}
 
-@router.post("/api/labeling/label-result-snapshots")
+@router.post("/api/labeling/label-result-snapshots", responses={200: {"model": CaseLabelingQueueResponse}})
 async def create_label_result_snapshot(request: Request) -> dict[str, Any]:
     actor, actor_source, actor_verified = await asyncio.to_thread(
         _labeling_snapshot_actor, request
@@ -102,7 +106,7 @@ async def create_label_result_snapshot(request: Request) -> dict[str, Any]:
         "change_revision": await asyncio.to_thread(database.change_revision),
     }
 
-@router.get("/api/labeling/label-result-snapshots/{snapshot_id}")
+@router.get("/api/labeling/label-result-snapshots/{snapshot_id}", responses={200: {"model": CaseDetailResponse}})
 async def get_label_result_snapshot(
     snapshot_id: str,
     request: Request,

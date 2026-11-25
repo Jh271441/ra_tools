@@ -19,10 +19,14 @@ from .comments import _public_label_comment
 
 from .common import _labeling_issue_tag_groups
 
-router = APIRouter()
+from fastapi import Depends
+from ...core.deps import get_container
+from ...schemas import CaseDetailResponse, CaseLabelingQueueResponse, LabelingSummaryResponse, ReviewClustersResponse
+
+router = APIRouter(dependencies=[Depends(get_container)])
 
 
-@router.get("/api/labeling/cases")
+@router.get("/api/labeling/cases", responses={200: {"model": CaseLabelingQueueResponse}})
 async def list_labeling_cases(
     request: Request,
     baselines: str = "",
@@ -135,7 +139,7 @@ async def list_labeling_cases(
     }
     return result
 
-@router.get("/api/labeling/summary")
+@router.get("/api/labeling/summary", responses={200: {"model": LabelingSummaryResponse}})
 async def labeling_summary(
     request: Request,
     baselines: str = "",
@@ -239,7 +243,7 @@ async def labeling_summary(
         "assignees": assignees,
     }
 
-@router.get("/api/labeling/clusters")
+@router.get("/api/labeling/clusters", responses={200: {"model": ReviewClustersResponse}})
 async def list_labeling_clusters(
     request: Request,
     baselines: str = "",
@@ -333,7 +337,7 @@ async def list_labeling_clusters(
         },
     }
 
-@router.get("/api/labeling/cases/{issue_id}")
+@router.get("/api/labeling/cases/{issue_id}", responses={200: {"model": CaseDetailResponse}})
 async def get_labeling_case(
     issue_id: str,
     request: Request,

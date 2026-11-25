@@ -23,7 +23,11 @@ from ..publication_audit import PUBLICATION_SOURCES, reconcile_publication_histo
 from ..support.baselines import resolve_request_baseline_scopes, restrict_version_issue_ids
 from .. import model_field_audit as model_audit
 
-router = APIRouter()
+from fastapi import Depends
+from ..core.deps import get_container
+from ..schemas import GenericMutationResponse, TrailHistoryListResponse, TrailUpdatePreviewResponse
+
+router = APIRouter(dependencies=[Depends(get_container)])
 _previews = {}
 _TTL = 600
 SOURCES = {"exclusion_summary", "exclusion_direct", "rollback", "legacy", *PUBLICATION_SOURCES, *model_audit.SOURCES}
@@ -53,7 +57,7 @@ def _timestamp(value):
         raise _detail(422, "时间必须包含时区 / Timestamp must include timezone")
 
 
-@router.get("/api/trail-history")
+@router.get("/api/trail-history", responses={200: {"model": TrailHistoryListResponse}})
 async def history(request: Request, issue_id: str = Query("", max_length=128),
                   actor: str = Query("", max_length=128), source: str = "", status: str = "",
                   since: str = "", until: str = "", page: int = Query(1, ge=1),
@@ -82,7 +86,7 @@ async def history(request: Request, issue_id: str = Query("", max_length=128),
     return result
 
 
-@router.get("/api/trail-history/{operation_id}")
+@router.get("/api/trail-history/{operation_id}", responses={200: {"model": TrailHistoryListResponse}})
 async def detail(operation_id: str):
     if operation_id.startswith('publication-') and getattr(settings, 'data_dir', None):
         await asyncio.to_thread(reconcile_publication_history, database, settings.data_dir)
@@ -133,7 +137,7 @@ async def _body(request):
     return body
 
 
-@router.post("/api/trail-history/{operation_id}/verify")
+@router.post("/api/trail-history/{operation_id}/verify", responses={200: {"model": GenericMutationResponse}})
 async def verify(operation_id: str, request: Request):
     identity = await _admin(request)
     operation = await detail(operation_id)
@@ -164,7 +168,7 @@ async def verify(operation_id: str, request: Request):
     return {**await detail(operation_id), "current_conflicts": [issue for issue, value in observed.items() if value == "conflict"], "observed_at": datetime.now(timezone.utc).isoformat()}
 
 
-@router.post("/api/trail-history/{operation_id}/restore-preview")
+@router.post("/api/trail-history/{operation_id}/restore-preview", responses={200: {"model": TrailUpdatePreviewResponse}})
 async def restore_preview(operation_id: str, request: Request):
     identity = await _admin(request)
     body = await _body(request)
@@ -221,7 +225,7 @@ async def _exact_readback(changes, stats, *, result_field, info_field):
         "mismatched_issue_ids": mismatched, "verified_count": len(changes)-len(mismatched)}
 
 
-@router.post("/api/trail-history/{operation_id}/restore-commit")
+@router.post("/api/trail-history/{operation_id}/restore-commit", responses={200: {"model": GenericMutationResponse}})
 async def restore_commit(operation_id: str, request: Request):
     identity = await _admin(request)
     body = await _body(request)

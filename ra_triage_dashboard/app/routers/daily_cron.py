@@ -11,7 +11,10 @@ from ..cron_source import cron_snapshot
 from ..runtime import settings
 from ..schemas import DailyCronResponse
 
-router = APIRouter()
+from fastapi import Depends
+from ..core.deps import get_container
+
+router = APIRouter(dependencies=[Depends(get_container)])
 
 
 @router.get("/api/daily-cron", responses={200: {"model": DailyCronResponse}})

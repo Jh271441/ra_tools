@@ -10,7 +10,11 @@ from ..support.baselines import resolve_request_baseline_scopes
 from ..support.identity import _admin_identity
 from ..db_parts.legacy_cutover import S6_POLICY_VERSION
 
-router = APIRouter()
+from fastapi import Depends
+from ..core.deps import get_container
+from ..schemas import CaseDetailResponse, GenericMutationResponse
+
+router = APIRouter(dependencies=[Depends(get_container)])
 
 
 async def _json_body(request: Request) -> dict[str, Any]:
@@ -33,7 +37,7 @@ def _scopes(value: Any, request: Request) -> list[str]:
     return resolve_request_baseline_scopes("", request=request)
 
 
-@router.get("/api/legacy-cutover/status")
+@router.get("/api/legacy-cutover/status", responses={200: {"model": GenericMutationResponse}})
 async def legacy_cutover_status(request: Request, baselines: str = "") -> dict[str, Any]:
     scopes = resolve_request_baseline_scopes(baselines, request=request)
     policies = await asyncio.to_thread(database.legacy_read_policies, scopes)
@@ -42,13 +46,13 @@ async def legacy_cutover_status(request: Request, baselines: str = "") -> dict[s
     return {"policy_version": S6_POLICY_VERSION, "policies": policies, "labeling_scopes": states, "receipts": receipts}
 
 
-@router.get("/api/legacy-cutover/inventory")
+@router.get("/api/legacy-cutover/inventory", responses={200: {"model": GenericMutationResponse}})
 async def legacy_cutover_inventory(request: Request, baselines: str = "") -> dict[str, Any]:
     scopes = resolve_request_baseline_scopes(baselines, request=request)
     return await asyncio.to_thread(database.legacy_scope_inventory, scopes)
 
 
-@router.post("/api/legacy-cutover/classify")
+@router.post("/api/legacy-cutover/classify", responses={200: {"model": GenericMutationResponse}})
 async def classify_legacy_cutover(request: Request) -> dict[str, Any]:
     identity = await _admin(request)
     body = await _json_body(request)
@@ -66,7 +70,7 @@ async def classify_legacy_cutover(request: Request) -> dict[str, Any]:
     )
 
 
-@router.post("/api/legacy-cutover/policy")
+@router.post("/api/legacy-cutover/policy", responses={200: {"model": GenericMutationResponse}})
 async def update_legacy_policy(request: Request) -> dict[str, Any]:
     identity = await _admin(request)
     if not identity.verified:
@@ -86,19 +90,19 @@ async def update_legacy_policy(request: Request) -> dict[str, Any]:
     )
 
 
-@router.get("/api/legacy-cutover/shadow")
+@router.get("/api/legacy-cutover/shadow", responses={200: {"model": GenericMutationResponse}})
 async def legacy_shadow(request: Request, baselines: str = "", component: str = "") -> dict[str, Any]:
     scopes = resolve_request_baseline_scopes(baselines, request=request)
     return await asyncio.to_thread(database.legacy_shadow_compare, scopes=scopes, component=component)
 
 
-@router.get("/api/legacy-cutover/exclusion")
+@router.get("/api/legacy-cutover/exclusion", responses={200: {"model": GenericMutationResponse}})
 async def legacy_exclusion(request: Request, baselines: str = "") -> dict[str, Any]:
     scopes = resolve_request_baseline_scopes(baselines, request=request)
     return {"items": await asyncio.to_thread(database.legacy_exclusion_projection, scopes=scopes, policy_version=S6_POLICY_VERSION)}
 
 
-@router.get("/api/legacy/{kind}/{value}")
+@router.get("/api/legacy/{kind}/{value}", responses={200: {"model": GenericMutationResponse}})
 async def resolve_legacy(kind: str, value: str) -> dict[str, Any]:
     item = await asyncio.to_thread(database.resolve_legacy_evidence, kind=kind, value=value)
     if item is None:
@@ -106,7 +110,7 @@ async def resolve_legacy(kind: str, value: str) -> dict[str, Any]:
     return item
 
 
-@router.get("/api/issues/{issue_id}/canonical-projection")
+@router.get("/api/issues/{issue_id}/canonical-projection", responses={200: {"model": CaseDetailResponse}})
 async def canonical_projection(
     issue_id: str,
     model_run_id: str = "",

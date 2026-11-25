@@ -23,7 +23,11 @@ from ..support.attachments import (
 from ..support.common import _as_text, _detail
 from ..support.identity import _action_actor, _writer_identity
 
-router = APIRouter()
+from fastapi import Depends
+from ..core.deps import get_container
+from ..schemas import CommentListResponse, CommentMutationResponse
+
+router = APIRouter(dependencies=[Depends(get_container)])
 
 _COMMENT_ATTACHMENT_TOKEN_RE = re.compile(r"^[A-Za-z0-9-]{1,80}$")
 
@@ -45,7 +49,7 @@ def _public_review_comment(comment: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-@router.get("/api/cases/{issue_id}/comments")
+@router.get("/api/cases/{issue_id}/comments", responses={200: {"model": CommentListResponse}})
 async def list_review_comments(
     issue_id: str, model_run_id: str = ""
 ) -> dict[str, Any]:
@@ -164,7 +168,7 @@ async def create_case_discussion(issue_id: str, request: Request) -> dict[str, A
             "notification": {"mentions": mentions, "queued": queued}}
 
 
-@router.post("/api/cases/{issue_id}/comments")
+@router.post("/api/cases/{issue_id}/comments", responses={200: {"model": CommentListResponse}})
 async def create_review_comment(issue_id: str, request: Request) -> dict[str, Any]:
     try:
         body = await request.json()
@@ -180,7 +184,7 @@ async def create_review_comment(issue_id: str, request: Request) -> dict[str, An
     return await _create_review_comment_record(issue_id, request, body)
 
 
-@router.post("/api/cases/{issue_id}/comments-with-attachments")
+@router.post("/api/cases/{issue_id}/comments-with-attachments", responses={200: {"model": CommentMutationResponse}})
 async def create_review_comment_with_attachments(
     issue_id: str,
     request: Request,

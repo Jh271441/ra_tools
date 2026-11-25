@@ -16,7 +16,10 @@ from .selection import _body, _owned_fields
 from .preview import _field_names
 from .commit import commit_guard
 
-router = APIRouter()
+from fastapi import Depends
+from ...core.deps import get_container
+
+router = APIRouter(dependencies=[Depends(get_container)])
 _previews = {}
 
 

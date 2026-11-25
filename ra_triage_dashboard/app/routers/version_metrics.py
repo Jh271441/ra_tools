@@ -12,7 +12,11 @@ from ..version_metric_store import VersionMetricStore
 from ..version_metric_source import source, read_only_client
 from ..version_metrics import evaluate, case_page, FIELDS, THRESHOLDS
 
-router = APIRouter()
+from fastapi import Depends
+from ..core.deps import get_container
+from ..schemas import GenericMutationResponse, VersionMetricsDetailResponse, VersionMetricsOverviewResponse
+
+router = APIRouter(dependencies=[Depends(get_container)])
 
 
 def store():
@@ -63,7 +67,7 @@ def overview(families, reference, exclusion, threshold, page, page_size):
                 total=len(results), page=page, pages=pages, page_size=page_size), refresh=service.job())
 
 
-@router.get("/api/version-metrics")
+@router.get("/api/version-metrics", responses={200: {"model": VersionMetricsOverviewResponse}})
 async def metrics(families: str = Query("", max_length=1000), reference: str = "te", exclusion: str = "all",
                   threshold: float = .9, page: int = Query(1, ge=1, le=10000), page_size: int = 20):
     try:
@@ -85,7 +89,7 @@ def detail(family, snapshot, reference, exclusion, threshold, scheme, status, tr
                     threshold=threshold, scheme=scheme, status=status, truth=truth, predicted=predicted, page=page, page_size=page_size))
 
 
-@router.get("/api/version-metrics/{family}")
+@router.get("/api/version-metrics/{family}", responses={200: {"model": VersionMetricsDetailResponse}})
 async def metric_detail(family: str, snapshot: str = Query("", max_length=64), reference: str = "te", exclusion: str = "all",
                         threshold: float = .9, scheme: str = "chain", status: str = "errors", truth: str = "", predicted: str = "",
                         page: int = Query(1, ge=1, le=10000), page_size: int = 20):
@@ -106,7 +110,7 @@ class Refresh(BaseModel):
         extra = "forbid"
 
 
-@router.post("/api/version-metrics/refresh", status_code=202)
+@router.post("/api/version-metrics/refresh", status_code=202, responses={200: {"model": GenericMutationResponse}})
 async def refresh(request: Request, body: Refresh):
     await asyncio.to_thread(_writer_identity, request)
     if not has_same_origin_mutation_marker(request):

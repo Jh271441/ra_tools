@@ -25,7 +25,11 @@ from ...support.common import _as_text, _detail
 from ...support.identity import _admin_identity
 from ...work_split import normalize_overlap_ratio
 
-router = APIRouter()
+from fastapi import Depends
+from ...core.deps import get_container
+from ...schemas import AssignmentNameSuggestionResponse
+
+router = APIRouter(dependencies=[Depends(get_container)])
 
 
 def _cases_attr(name: str, default: Any) -> Any:
@@ -37,7 +41,7 @@ def _cases_attr(name: str, default: Any) -> Any:
     return default
 
 
-@router.post("/api/assignment-name-suggestion")
+@router.post("/api/assignment-name-suggestion", responses={200: {"model": AssignmentNameSuggestionResponse}})
 async def suggest_assignment_name(
     request: Request,
     db: Any = Depends(get_db),

@@ -24,7 +24,11 @@ from ..support.common import _as_text, _detail
 from ..support.identity import _admin_identity
 from .case_comments import _public_review_comment
 
-router = APIRouter()
+from fastapi import Depends
+from ..core.deps import get_container
+from ..schemas import AllocationPreviewResponse, CampaignListResponse, CommentListResponse, GenericMutationResponse, LabelingSummaryResponse
+
+router = APIRouter(dependencies=[Depends(get_container)])
 
 
 def _json_body(raw: bytes, *, maximum: int = 2 * 1024 * 1024) -> dict[str, Any]:
@@ -130,7 +134,7 @@ async def list_campaigns(
     return result
 
 
-@router.get("/api/campaigns/{campaign_id}")
+@router.get("/api/campaigns/{campaign_id}", responses={200: {"model": CampaignListResponse}})
 async def get_campaign(
     campaign_id: str,
     page: int = 1,
@@ -156,7 +160,7 @@ async def get_campaign(
     return result
 
 
-@router.get("/api/campaigns/{campaign_id}/analysis")
+@router.get("/api/campaigns/{campaign_id}/analysis", responses={200: {"model": LabelingSummaryResponse}})
 async def campaign_analysis(
     campaign_id: str,
     page: int = 1,
@@ -301,7 +305,7 @@ async def create_campaign(request: Request) -> dict[str, Any]:
     return {"campaign": result, "change_revision": await asyncio.to_thread(database.change_revision)}
 
 
-@router.post("/api/review-task-groups")
+@router.post("/api/review-task-groups", responses={200: {"model": CampaignListResponse}})
 async def create_campaign_group(request: Request) -> dict[str, Any]:
     actor, source, verified = _campaign_admin(request)
     body = _json_body(await request.body())
@@ -330,7 +334,7 @@ async def create_campaign_group(request: Request) -> dict[str, Any]:
     return {"group": result, "change_revision": await asyncio.to_thread(database.change_revision)}
 
 
-@router.get("/api/review-task-groups/{group_id}")
+@router.get("/api/review-task-groups/{group_id}", responses={200: {"model": CampaignListResponse}})
 async def get_campaign_group(group_id: str) -> dict[str, Any]:
     result = await asyncio.to_thread(database.get_campaign_group, group_id)
     if result is None:
@@ -338,7 +342,7 @@ async def get_campaign_group(group_id: str) -> dict[str, Any]:
     return result
 
 
-@router.patch("/api/campaigns/{campaign_id}/issues/{issue_id}/assignments")
+@router.patch("/api/campaigns/{campaign_id}/issues/{issue_id}/assignments", responses={200: {"model": GenericMutationResponse}})
 async def update_campaign_assignment(
     campaign_id: str, issue_id: str, request: Request
 ) -> dict[str, Any]:
@@ -432,7 +436,7 @@ async def preview_campaign_allocation(campaign_id: str, request: Request) -> dic
         raise _detail(400, str(exc)) from exc
 
 
-@router.post("/api/campaigns/{campaign_id}/allocation/assignees/{assignee}/removal-preview")
+@router.post("/api/campaigns/{campaign_id}/allocation/assignees/{assignee}/removal-preview", responses={200: {"model": AllocationPreviewResponse}})
 async def preview_campaign_member_removal(campaign_id: str, assignee: str, request: Request) -> dict[str, Any]:
     _campaign_admin(request)
     body = _json_body(await request.body(), maximum=16 * 1024)
@@ -447,7 +451,7 @@ async def preview_campaign_member_removal(campaign_id: str, assignee: str, reque
         raise _detail(400, str(exc)) from exc
 
 
-@router.delete("/api/campaigns/{campaign_id}/allocation/assignees/{assignee}")
+@router.delete("/api/campaigns/{campaign_id}/allocation/assignees/{assignee}", responses={200: {"model": GenericMutationResponse}})
 async def delete_campaign_allocation_member(campaign_id: str, assignee: str, request: Request) -> dict[str, Any]:
     actor, source, verified = _campaign_admin(request)
     body = _json_body(await request.body(), maximum=16 * 1024)
@@ -474,7 +478,7 @@ async def delete_campaign_allocation(campaign_id: str, request: Request) -> dict
     return await _transition_campaign(campaign_id, request, action="cancel")
 
 
-@router.post("/api/campaigns/{campaign_id}/close")
+@router.post("/api/campaigns/{campaign_id}/close", responses={200: {"model": GenericMutationResponse}})
 async def close_campaign(campaign_id: str, request: Request) -> dict[str, Any]:
     actor, source, verified = _campaign_admin(request)
     body = _json_body(await request.body(), maximum=16 * 1024)
@@ -499,7 +503,7 @@ async def close_campaign(campaign_id: str, request: Request) -> dict[str, Any]:
     return result
 
 
-@router.post("/api/campaigns/{campaign_id}/reopen")
+@router.post("/api/campaigns/{campaign_id}/reopen", responses={200: {"model": GenericMutationResponse}})
 async def reopen_campaign(campaign_id: str, request: Request) -> dict[str, Any]:
     actor, source, verified = _campaign_admin(request)
     body = _json_body(await request.body(), maximum=16 * 1024)
@@ -551,22 +555,22 @@ async def _transition_campaign(
     return result
 
 
-@router.post("/api/campaigns/{campaign_id}/activate")
+@router.post("/api/campaigns/{campaign_id}/activate", responses={200: {"model": GenericMutationResponse}})
 async def activate_campaign(campaign_id: str, request: Request) -> dict[str, Any]:
     return await _transition_campaign(campaign_id, request, action="activate")
 
 
-@router.post("/api/campaigns/{campaign_id}/cancel")
+@router.post("/api/campaigns/{campaign_id}/cancel", responses={200: {"model": GenericMutationResponse}})
 async def cancel_campaign(campaign_id: str, request: Request) -> dict[str, Any]:
     return await _transition_campaign(campaign_id, request, action="cancel")
 
 
-@router.post("/api/campaigns/{campaign_id}/supersede")
+@router.post("/api/campaigns/{campaign_id}/supersede", responses={200: {"model": GenericMutationResponse}})
 async def supersede_campaign(campaign_id: str, request: Request) -> dict[str, Any]:
     return await _transition_campaign(campaign_id, request, action="supersede")
 
 
-@router.get("/api/campaigns/{campaign_id}/issues/{issue_id}/comments")
+@router.get("/api/campaigns/{campaign_id}/issues/{issue_id}/comments", responses={200: {"model": CommentListResponse}})
 async def list_campaign_comments(campaign_id: str, issue_id: str) -> dict[str, Any]:
     if not await _campaign_issue_exists(campaign_id, issue_id):
         raise _detail(404, "该问题不属于所选任务。")
@@ -585,7 +589,7 @@ async def list_campaign_comments(campaign_id: str, issue_id: str) -> dict[str, A
     return {"comments": [_public_review_comment(item) for item in comments], "count": count}
 
 
-@router.get("/api/campaigns/{campaign_id}/issues/{issue_id}/discussion")
+@router.get("/api/campaigns/{campaign_id}/issues/{issue_id}/discussion", responses={200: {"model": CommentListResponse}})
 async def get_campaign_discussion(campaign_id: str, issue_id: str) -> dict[str, Any]:
     if not await _campaign_issue_exists(campaign_id, issue_id):
         raise _detail(404, "该问题不属于所选任务。")
@@ -637,7 +641,7 @@ async def get_campaign_discussion(campaign_id: str, issue_id: str) -> dict[str, 
     }
 
 
-@router.post("/api/campaigns/{campaign_id}/issues/{issue_id}/comments")
+@router.post("/api/campaigns/{campaign_id}/issues/{issue_id}/comments", responses={200: {"model": CommentListResponse}})
 async def create_campaign_comment(
     campaign_id: str, issue_id: str, request: Request
 ) -> dict[str, Any]:

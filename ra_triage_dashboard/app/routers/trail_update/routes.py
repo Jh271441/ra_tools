@@ -62,9 +62,13 @@ from .preview import (
 )
 
 
-router = APIRouter()
+from fastapi import Depends
+from ...core.deps import get_container
+from ...schemas import GenericMutationResponse, TrailUpdatePreviewResponse
 
-@router.get("/api/trail-attribute-update/preview")
+router = APIRouter(dependencies=[Depends(get_container)])
+
+@router.get("/api/trail-attribute-update/preview", responses={200: {"model": TrailUpdatePreviewResponse}})
 async def trail_attribute_update_preview(
     request: Request,
     model_run_id: str = "",
@@ -303,7 +307,7 @@ async def trail_issue_exclusion_preview(request: Request) -> dict[str, Any]:
     )
     return payload
 
-@router.post("/api/trail-attribute-update/commit")
+@router.post("/api/trail-attribute-update/commit", responses={200: {"model": GenericMutationResponse}})
 async def trail_attribute_update_commit(request: Request) -> dict[str, Any]:
     """Compatibility URL; a selection-preview digest is now required."""
     from .selection import selection_commit

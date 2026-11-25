@@ -67,7 +67,11 @@ from ..system_status import backup_status, overall_status, volume_status
 from ..timed_cache import TimedSingleFlightCache
 from ..web_paths import with_base_path
 
-router = APIRouter()
+from fastapi import Depends
+from ..core.deps import get_container
+from ..schemas import AccessUsersResponse, GenericMutationResponse, GtSyncStatusResponse, MentionUsersResponse, OverviewResponse
+
+router = APIRouter(dependencies=[Depends(get_container)])
 _status_fs_cache: TimedSingleFlightCache[tuple[str, str], dict[str, Any]] = TimedSingleFlightCache(
     ttl_seconds=10.0,
     max_entries=4,
@@ -357,7 +361,7 @@ async def health() -> dict[str, Any]:
         "change_revision": await asyncio.to_thread(database.change_revision),
         "storage": database.storage_label,
     }
-@router.get("/api/overview")
+@router.get("/api/overview", responses={200: {"model": OverviewResponse}})
 async def overview(
     request: Request,
     model_run_id: str = "",
@@ -410,7 +414,7 @@ async def change_revision(
     return payload
 
 
-@router.get("/api/gt-sync-status")
+@router.get("/api/gt-sync-status", responses={200: {"model": GtSyncStatusResponse}})
 async def authoritative_gt_sync_status(
     response: Response,
     baselines: str = "",
@@ -426,7 +430,7 @@ async def authoritative_gt_sync_status(
     return await asyncio.to_thread(gt_sync_status, baseline_ids)
 
 
-@router.post("/api/gt-sync", status_code=202)
+@router.post("/api/gt-sync", status_code=202, responses={200: {"model": GtSyncStatusResponse}})
 async def refresh_authoritative_gt(
     request: Request,
     background_tasks: BackgroundTasks,
@@ -553,14 +557,14 @@ async def session(request: Request, response: Response) -> dict[str, object]:
 
 
 
-@router.get("/api/access-users")
+@router.get("/api/access-users", responses={200: {"model": AccessUsersResponse}})
 async def list_access_users(request: Request) -> dict[str, Any]:
     await asyncio.to_thread(_admin_identity, request)
     return {"items": await asyncio.to_thread(database.list_access_users)}
 
 
 
-@router.put("/api/access-users/{username}")
+@router.put("/api/access-users/{username}", responses={200: {"model": GenericMutationResponse}})
 async def set_access_user(
     username: str, request: Request
 ) -> dict[str, Any]:
@@ -591,7 +595,7 @@ async def set_access_user(
 
 
 
-@router.delete("/api/access-users/{username}")
+@router.delete("/api/access-users/{username}", responses={200: {"model": GenericMutationResponse}})
 async def delete_access_user(username: str, request: Request) -> dict[str, Any]:
     await asyncio.to_thread(_admin_identity, request)
     normalized = normalise_username(username)
@@ -610,7 +614,7 @@ async def delete_access_user(username: str, request: Request) -> dict[str, Any]:
     }
 
 
-@router.get("/api/mention-users")
+@router.get("/api/mention-users", responses={200: {"model": MentionUsersResponse}})
 async def list_mention_users(request: Request) -> dict[str, Any]:
     identity = await asyncio.to_thread(request_identity, request, settings)
     if not identity.verified or not identity.username:
@@ -631,7 +635,7 @@ async def list_mention_users(request: Request) -> dict[str, Any]:
     return {"items": items}
 
 
-@router.put("/api/mention-users/{username}")
+@router.put("/api/mention-users/{username}", responses={200: {"model": GenericMutationResponse}})
 async def set_mention_user(username: str, request: Request) -> dict[str, Any]:
     identity = await asyncio.to_thread(_admin_identity, request)
     normalized = normalize_mention_username(username)
@@ -659,7 +663,7 @@ async def set_mention_user(username: str, request: Request) -> dict[str, Any]:
     }
 
 
-@router.delete("/api/mention-users/{username}")
+@router.delete("/api/mention-users/{username}", responses={200: {"model": GenericMutationResponse}})
 async def delete_mention_user(username: str, request: Request) -> dict[str, Any]:
     await asyncio.to_thread(_admin_identity, request)
     normalized = normalize_mention_username(username)

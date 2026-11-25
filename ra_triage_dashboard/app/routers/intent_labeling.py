@@ -59,6 +59,8 @@ async def _require_intent_admin(request: Request) -> None:
     await asyncio.to_thread(_admin_identity, request)
 
 
+from ..schemas import CommentListResponse, GenericMutationResponse, IntentCaseDetailResponse, IntentDatasetListResponse, IntentQueueResponse, IntentSummaryResponse, WorkAssigneesListResponse
+
 router = APIRouter(dependencies=[Depends(_require_intent_viewer)])
 MAX_LABEL_REQUEST_BYTES = 512 * 1024
 MAX_EXPERIMENT_REQUEST_BYTES = 64 * 1024
@@ -246,7 +248,7 @@ def _intent_summary_payload_multi(dataset_ids: tuple[str, ...], identity: Any,
     return report
 
 
-@router.get("/api/intent-summary")
+@router.get("/api/intent-summary", responses={200: {"model": IntentSummaryResponse}})
 async def intent_summary(request: Request, dataset_id: list[str] = Query(default=[]), experiment_id: str = "",
                          assignee: list[str] = Query(default=[]), reveal_answers: bool = False,
                          axis: str = "all", page: int = 1, page_size: int = 20,
@@ -333,7 +335,7 @@ def _dataset_payloads(username: str = "") -> list[dict[str, Any]]:
     return result
 
 
-@router.get("/api/intent-datasets")
+@router.get("/api/intent-datasets", responses={200: {"model": IntentDatasetListResponse}})
 async def list_intent_datasets(request: Request) -> dict[str, Any]:
     identity = await asyncio.to_thread(_intent_identity, request)
     return {
@@ -341,7 +343,7 @@ async def list_intent_datasets(request: Request) -> dict[str, Any]:
     }
 
 
-@router.get("/api/intent-assignees")
+@router.get("/api/intent-assignees", responses={200: {"model": WorkAssigneesListResponse}})
 async def list_intent_assignees(
     dataset_id: list[str] = Query(default=[]), experiment_id: str = ""
 ) -> dict[str, Any]:
@@ -1111,7 +1113,7 @@ def _intent_resume_item(scoped: list[dict[str, Any]]) -> dict[str, Any] | None:
     return incomplete[0]
 
 
-@router.get("/api/intent-cases")
+@router.get("/api/intent-cases", responses={200: {"model": IntentQueueResponse}})
 async def list_multi_dataset_intent_cases(
     request: Request,
     dataset_id: list[str] = Query(default=[]),
@@ -1143,7 +1145,7 @@ async def list_multi_dataset_intent_cases(
     )
 
 
-@router.get("/api/intent-datasets/{dataset_id}/cases")
+@router.get("/api/intent-datasets/{dataset_id}/cases", responses={200: {"model": IntentQueueResponse}})
 async def list_intent_cases(
     request: Request,
     dataset_id: str,
@@ -1285,7 +1287,7 @@ def _case_payload(
     }
 
 
-@router.get("/api/intent-datasets/{dataset_id}/cases/{case_id}")
+@router.get("/api/intent-datasets/{dataset_id}/cases/{case_id}", responses={200: {"model": IntentCaseDetailResponse}})
 async def get_intent_case(
     request: Request,
     dataset_id: str,
@@ -1308,7 +1310,7 @@ async def get_intent_case(
     )
 
 
-@router.get("/api/intent-datasets/{dataset_id}/cases/{case_id}/timeline")
+@router.get("/api/intent-datasets/{dataset_id}/cases/{case_id}/timeline", responses={200: {"model": IntentCaseDetailResponse}})
 async def get_intent_timeline(
     request: Request, dataset_id: str, case_id: str
 ) -> dict[str, Any]:
@@ -1319,7 +1321,7 @@ async def get_intent_timeline(
     return {"items": payload["timepoints"], "count": len(payload["timepoints"])}
 
 
-@router.get("/api/intent-datasets/{dataset_id}/cases/{case_id}/comments")
+@router.get("/api/intent-datasets/{dataset_id}/cases/{case_id}/comments", responses={200: {"model": CommentListResponse}})
 async def list_intent_comments(
     request: Request, dataset_id: str, case_id: str
 ) -> dict[str, Any]:
@@ -1335,7 +1337,7 @@ async def list_intent_comments(
     return {"comments": comments, "count": len(comments)}
 
 
-@router.post("/api/intent-datasets/{dataset_id}/cases/{case_id}/comments", dependencies=[Depends(_require_intent_writer)])
+@router.post("/api/intent-datasets/{dataset_id}/cases/{case_id}/comments", dependencies=[Depends(_require_intent_writer)], responses={200: {"model": CommentListResponse}})
 async def post_intent_comment(
     request: Request, dataset_id: str, case_id: str
 ) -> dict[str, Any]:
@@ -1624,7 +1626,7 @@ async def export_intent_labels(
     )
 
 
-@router.put("/api/intent-datasets/{dataset_id}/cases/{case_id}/labels", dependencies=[Depends(_require_intent_writer)])
+@router.put("/api/intent-datasets/{dataset_id}/cases/{case_id}/labels", dependencies=[Depends(_require_intent_writer)], responses={200: {"model": GenericMutationResponse}})
 async def put_intent_labels(
     dataset_id: str, case_id: str, request: Request
 ) -> dict[str, Any]:

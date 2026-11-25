@@ -10,7 +10,11 @@ from ..runtime import database, settings
 from ..schemas import VersionDatasetListResponse, VersionWorkbenchResponse
 from ..support.identity import _admin_identity
 
-router = APIRouter()
+from fastapi import Depends
+from ..core.deps import get_container
+from ..schemas import GenericMutationResponse, VersionDatasetListResponse, VersionWorkbenchResponse
+
+router = APIRouter(dependencies=[Depends(get_container)])
 
 
 @router.get("/api/version-datasets", responses={200: {"model": VersionDatasetListResponse}})
@@ -27,7 +31,7 @@ async def datasets(
     return {"items": result}
 
 
-@router.get("/api/version-datasets/{dataset_id}/items")
+@router.get("/api/version-datasets/{dataset_id}/items", responses={200: {"model": VersionWorkbenchResponse}})
 async def items(
     dataset_id: str,
     page: int = 1,
@@ -66,14 +70,14 @@ async def gallery(request: Request, dataset_id: str, page: int = Query(1,ge=1,le
     return JSONResponse(result,headers={'Cache-Control':'no-store'})
 
 
-@router.get("/api/version-datasets/{dataset_id}/batches")
+@router.get("/api/version-datasets/{dataset_id}/batches", responses={200: {"model": VersionDatasetListResponse}})
 async def batches(dataset_id: str):
     return {
         "items": await asyncio.to_thread(database.version_dataset_batches, dataset_id)
     }
 
 
-@router.post("/api/version-datasets/ingest")
+@router.post("/api/version-datasets/ingest", responses={200: {"model": GenericMutationResponse}})
 async def ingest(request: Request):
     actor = await asyncio.to_thread(_admin_identity, request)
     raw = await request.body()

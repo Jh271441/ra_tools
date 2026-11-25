@@ -4,6 +4,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from .repositories import (
+    CampaignRepository,
+    CaseRepository,
+    DbSessionFactory,
+    WorkSplitRepository,
+)
+
 
 @dataclass
 class AppContainer:
@@ -26,6 +33,22 @@ class AppContainer:
     video_playback_cache: Any
     video_stream_cache: Any
     runtime_state: dict[str, Any]
+
+    @property
+    def session_factory(self) -> DbSessionFactory:
+        return DbSessionFactory(self.database)
+
+    @property
+    def cases_repo(self) -> CaseRepository:
+        return CaseRepository(self.session_factory)
+
+    @property
+    def campaigns_repo(self) -> CampaignRepository:
+        return CampaignRepository(self.session_factory)
+
+    @property
+    def work_splits_repo(self) -> WorkSplitRepository:
+        return WorkSplitRepository(self.session_factory)
 
     @classmethod
     def from_runtime(cls) -> AppContainer:

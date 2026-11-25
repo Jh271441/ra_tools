@@ -8,9 +8,13 @@ from fastapi import APIRouter, Request
 from ..support.common import _detail
 from ..runtime import database
 
-router = APIRouter()
+from fastapi import Depends
+from ..core.deps import get_container
+from ..schemas import BatchDetailResponse, BatchListResponse
 
-@router.post("/api/inference/jobs")
+router = APIRouter(dependencies=[Depends(get_container)])
+
+@router.post("/api/inference/jobs", responses={200: {"model": BatchListResponse}})
 async def create_inference_job(request: Request) -> dict[str, Any]:
     raise _detail(
         410,
@@ -20,7 +24,7 @@ async def create_inference_job(request: Request) -> dict[str, Any]:
 
 
 
-@router.get("/api/inference/jobs")
+@router.get("/api/inference/jobs", responses={200: {"model": BatchListResponse}})
 async def list_inference_jobs(
     requested_by: str = "",
     status: str = "",
@@ -35,7 +39,7 @@ async def list_inference_jobs(
 
 
 
-@router.get("/api/inference/jobs/{job_id}")
+@router.get("/api/inference/jobs/{job_id}", responses={200: {"model": BatchDetailResponse}})
 async def get_inference_job(job_id: str) -> dict[str, Any]:
     job = await asyncio.to_thread(database.get_job, job_id)
     if job is None:

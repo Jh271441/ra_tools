@@ -23,7 +23,11 @@ from ...runtime import settings
 from .common import _labeling_actor, _require_active_labeling_issue, _require_labeling_writer
 from .common import _COMMENT_ATTACHMENT_TOKEN_RE
 
-router = APIRouter()
+from fastapi import Depends
+from ...core.deps import get_container
+from ...schemas import CommentListResponse, CommentMutationResponse
+
+router = APIRouter(dependencies=[Depends(get_container)])
 
 
 def _public_label_comment(comment: dict[str, Any]) -> dict[str, Any]:
@@ -195,7 +199,7 @@ async def _create_label_comment_record(
         "change_revision": await asyncio.to_thread(database.change_revision),
     }
 
-@router.get("/api/labeling/cases/{issue_id}/comments")
+@router.get("/api/labeling/cases/{issue_id}/comments", responses={200: {"model": CommentListResponse}})
 async def list_labeling_comments(
     issue_id: str, request: Request, task_id: str = "", channel: str = "both"
 ) -> dict[str, Any]:
@@ -224,7 +228,7 @@ async def list_labeling_comments(
         "task": task,
     }
 
-@router.post("/api/labeling/cases/{issue_id}/comments")
+@router.post("/api/labeling/cases/{issue_id}/comments", responses={200: {"model": CommentListResponse}})
 async def create_labeling_comment(issue_id: str, request: Request) -> dict[str, Any]:
     try:
         body = await request.json()
@@ -234,7 +238,7 @@ async def create_labeling_comment(issue_id: str, request: Request) -> dict[str, 
         raise _detail(400, "评论请求必须是 JSON 对象。")
     return await _create_label_comment_record(issue_id, request, body)
 
-@router.post("/api/labeling/cases/{issue_id}/comments-with-attachments")
+@router.post("/api/labeling/cases/{issue_id}/comments-with-attachments", responses={200: {"model": CommentMutationResponse}})
 async def create_labeling_comment_with_attachments(
     issue_id: str,
     request: Request,

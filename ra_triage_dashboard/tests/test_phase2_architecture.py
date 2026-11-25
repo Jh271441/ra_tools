@@ -254,6 +254,51 @@ class Phase2ArchitectureTests(unittest.TestCase):
         self.assertEqual(CampaignAllocationResponse(campaign_id="c1").campaign_id, "c1")
         self.assertEqual(VersionWorkbenchResponse(dataset_id="d1").dataset_id, "d1")
 
+    def test_phase2b_repositories_openapi_coverage_and_decomposed_db_modules(self) -> None:
+        from ra_triage_dashboard.app.core.repositories import (
+            CampaignRepository,
+            CaseRepository,
+            DbSessionFactory,
+            WorkSplitRepository,
+        )
+
+        container = main_app.state.container
+        self.assertIsInstance(container.session_factory, DbSessionFactory)
+        self.assertIsInstance(container.cases_repo, CaseRepository)
+        self.assertIsInstance(container.campaigns_repo, CampaignRepository)
+        self.assertIsInstance(container.work_splits_repo, WorkSplitRepository)
+
+        # Verify decomposed db_parts modules stay below 1,500 lines each
+        db_parts = Path(__file__).resolve().parents[1] / "app" / "db_parts"
+        for name in (
+            "campaign_common.py",
+            "campaign_lifecycle.py",
+            "campaign_legacy.py",
+            "campaign_progress.py",
+            "campaigns.py",
+            "cases.py",
+            "work_splits.py",
+        ):
+            line_count = len((db_parts / name).read_text(encoding="utf-8").splitlines())
+            self.assertLess(line_count, 1500, f"{name} exceeded 1500 lines ({line_count})")
+
+        # Verify expanded OpenAPI typed coverage (>= 150 typed API ops, >= 90 schemas)
+        spec = build_openapi_schema()
+        schemas = spec.get("components", {}).get("schemas", {})
+        self.assertGreaterEqual(len(schemas), 90)
+        typed_ops = 0
+        for path, methods in spec.get("paths", {}).items():
+            if not path.startswith("/api/"):
+                continue
+            for method, op in methods.items():
+                if method.lower() not in ("get", "post", "put", "patch", "delete"):
+                    continue
+                r200 = (op.get("responses") or {}).get("200", {})
+                content = (r200.get("content") or {}).get("application/json", {})
+                if "$ref" in (content.get("schema") or {}):
+                    typed_ops += 1
+        self.assertGreaterEqual(typed_ops, 150)
+
 
 if __name__ == "__main__":
     unittest.main()

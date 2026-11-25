@@ -46,6 +46,22 @@ def get_db(request: Request) -> Any:
     return get_container(request).database
 
 
+def get_session_factory(request: Request) -> Any:
+    return get_container(request).session_factory
+
+
+def get_case_repo(request: Request) -> Any:
+    return get_container(request).cases_repo
+
+
+def get_campaign_repo(request: Request) -> Any:
+    return get_container(request).campaigns_repo
+
+
+def get_work_split_repo(request: Request) -> Any:
+    return get_container(request).work_splits_repo
+
+
 def get_media_registry(request: Request) -> Any:
     return get_container(request).media_registry
 

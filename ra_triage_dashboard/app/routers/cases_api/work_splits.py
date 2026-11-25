@@ -24,7 +24,11 @@ from ...support.baselines import (
 from ...support.common import _as_text, _detail
 from ...support.identity import _admin_identity, _writer_identity
 
-router = APIRouter()
+from fastapi import Depends
+from ...core.deps import get_container
+from ...schemas import GenericMutationResponse, ReviewersListResponse, WorkSplitListResponse
+
+router = APIRouter(dependencies=[Depends(get_container)])
 
 
 def _cases_attr(name: str, default: Any) -> Any:
@@ -98,7 +102,7 @@ async def list_case_work_splits(
     }
 
 
-@router.get("/api/review-work-splits")
+@router.get("/api/review-work-splits", responses={200: {"model": WorkSplitListResponse}})
 async def review_work_split_options(
     request: Request,
     model_run_id: str = "",
@@ -205,7 +209,7 @@ async def review_work_split_options(
     return {"items": items}
 
 
-@router.get("/api/cases/work-splits/{split_id}")
+@router.get("/api/cases/work-splits/{split_id}", responses={200: {"model": WorkSplitListResponse}})
 async def get_case_work_split(
     split_id: str,
     request: Request,
@@ -259,7 +263,7 @@ async def get_case_work_split(
     return result
 
 
-@router.patch("/api/cases/work-splits/{split_id}/assignments/{issue_id}")
+@router.patch("/api/cases/work-splits/{split_id}/assignments/{issue_id}", responses={200: {"model": GenericMutationResponse}})
 async def reassign_case_work_item(
     split_id: str,
     issue_id: str,
@@ -314,7 +318,7 @@ async def reassign_case_work_item(
     }
 
 
-@router.get("/api/reviewers")
+@router.get("/api/reviewers", responses={200: {"model": ReviewersListResponse}})
 async def reviewers(
     request: Request,
     model_run_id: str = "",

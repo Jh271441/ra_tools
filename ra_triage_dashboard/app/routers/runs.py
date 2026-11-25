@@ -32,10 +32,14 @@ from ..import_parsing import parse_source_bytes
 from ..runtime import database, settings
 from ..dataset_partitions import load_partitions
 
-router = APIRouter()
+from fastapi import Depends
+from ..core.deps import get_container
+from ..schemas import ComparisonCaseInputsResponse, GenericMutationResponse, ModelRunComparisonResponse, ModelRunListResponse, ReviewClustersResponse
+
+router = APIRouter(dependencies=[Depends(get_container)])
 
 
-@router.get("/api/model-run-comparison")
+@router.get("/api/model-run-comparison", responses={200: {"model": ModelRunComparisonResponse}})
 async def compare_model_runs(
     request: Request,
     baseline_run_id: str = "",
@@ -78,7 +82,7 @@ async def compare_model_runs(
     )
     return payload
 
-@router.get("/api/model-run-comparison/cases/{issue_id}/inputs")
+@router.get("/api/model-run-comparison/cases/{issue_id}/inputs", responses={200: {"model": ComparisonCaseInputsResponse}})
 async def comparison_case_inputs(request: Request, issue_id: str, baseline_run_id: str = "",
                                  candidate_run_id: str = "", baselines: str = "") -> dict[str, Any]:
     scopes = resolve_request_baseline_scopes(baselines, request=request)
@@ -92,7 +96,7 @@ async def comparison_case_inputs(request: Request, issue_id: str, baseline_run_i
         raise _detail(404, str(exc))
 
 
-@router.get("/api/model-runs")
+@router.get("/api/model-runs", responses={200: {"model": ModelRunListResponse}})
 async def model_runs(request: Request, baselines: str = "") -> dict[str, Any]:
     scopes = resolve_request_baseline_scopes(baselines, request=request)
     items = await asyncio.to_thread(
@@ -154,7 +158,7 @@ async def model_runs(request: Request, baselines: str = "") -> dict[str, Any]:
         ),
     }
 
-@router.get("/api/model-runs/{run_id}/source-preview")
+@router.get("/api/model-runs/{run_id}/source-preview", responses={200: {"model": GenericMutationResponse}})
 async def preview_model_run_source(
     run_id: str,
     page: int = 1,
@@ -277,7 +281,7 @@ async def get_model_run_source(run_id: str, download: bool = False) -> Response:
 
 
 
-@router.delete("/api/model-runs/{run_id}")
+@router.delete("/api/model-runs/{run_id}", responses={200: {"model": GenericMutationResponse}})
 async def delete_model_run(run_id: str) -> dict[str, Any]:
     run = await asyncio.to_thread(database.get_model_run, run_id)
     if run is None:
@@ -310,7 +314,7 @@ async def delete_model_run(run_id: str) -> dict[str, Any]:
 
 
 
-@router.post("/api/model-runs/{run_id}/default")
+@router.post("/api/model-runs/{run_id}/default", responses={200: {"model": GenericMutationResponse}})
 async def set_default_model_run(run_id: str, request: Request) -> dict[str, Any]:
     if not await asyncio.to_thread(_can_manage_team_default, request):
         raise _detail(
@@ -325,7 +329,7 @@ async def set_default_model_run(run_id: str, request: Request) -> dict[str, Any]
 
 
 
-@router.get("/api/review-clusters")
+@router.get("/api/review-clusters", responses={200: {"model": ReviewClustersResponse}})
 async def review_clusters(
     request: Request,
     model_run_id: str = "",

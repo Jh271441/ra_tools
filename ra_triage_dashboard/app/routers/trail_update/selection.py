@@ -20,7 +20,10 @@ from ...trail_writer import attach_trail_operation_id, build_trail_changes, writ
 from .commit import commit_guard, _readback_changes
 from .preview import _build_preview, _field_names, _capability_for_info_write, _preview_capability_cache
 
-router = APIRouter()
+from fastapi import Depends
+from ...core.deps import get_container
+
+router = APIRouter(dependencies=[Depends(get_container)])
 _SELECTION_TTL = 600
 _selection_previews: dict[str, dict[str, Any]] = {}
 

@@ -10,9 +10,13 @@ from ..support.identity import _writer_identity
 from ..comment_submission import validate_comment_request_id
 from .case_comments import _public_review_comment, _create_review_comment_record, _create_comment_with_attachments
 
-router = APIRouter()
+from fastapi import Depends
+from ..core.deps import get_container
+from ..schemas import CommentListResponse, CommentMutationResponse
 
-@router.get("/api/cases/{issue_id}/discussion-submissions/{request_id}")
+router = APIRouter(dependencies=[Depends(get_container)])
+
+@router.get("/api/cases/{issue_id}/discussion-submissions/{request_id}", responses={200: {"model": CommentMutationResponse}})
 async def get_issue_discussion_submission(issue_id: str, request_id: str, request: Request):
     identity = await asyncio.to_thread(_writer_identity, request)
     try:
@@ -26,7 +30,7 @@ async def get_issue_discussion_submission(issue_id: str, request_id: str, reques
     return JSONResponse({"comment": _public_review_comment(comment), "idempotent_replay": True},
         headers={"Cache-Control": "private, no-store"})
 
-@router.get("/api/cases/{issue_id}/discussion")
+@router.get("/api/cases/{issue_id}/discussion", responses={200: {"model": CommentListResponse}})
 async def list_issue_discussion(issue_id: str):
     if await asyncio.to_thread(database.get_issue, issue_id) is None:
         raise _detail(404, "Issue 不存在。 / Issue not found.")
@@ -34,7 +38,7 @@ async def list_issue_discussion(issue_id: str):
     count = await asyncio.to_thread(database.issue_discussion_count, issue_id)
     return {"comments": [_public_review_comment(item) for item in comments], "count": count}
 
-@router.post("/api/cases/{issue_id}/discussion")
+@router.post("/api/cases/{issue_id}/discussion", responses={200: {"model": CommentListResponse}})
 async def post_issue_discussion(issue_id: str, request: Request):
     try:
         body = await request.json()
@@ -44,7 +48,7 @@ async def post_issue_discussion(issue_id: str, request: Request):
         raise _detail(400, "评论请求必须是 JSON 对象。 / Provide a JSON object.")
     return await _create_review_comment_record(issue_id, request, body, issue_discussion=True)
 
-@router.post("/api/cases/{issue_id}/discussion-with-attachments")
+@router.post("/api/cases/{issue_id}/discussion-with-attachments", responses={200: {"model": CommentMutationResponse}})
 async def post_issue_discussion_with_attachments(issue_id: str, request: Request,
         payload: str = Form(...), attachments: Optional[List[UploadFile]] = File(None)):
     return await _create_comment_with_attachments(issue_id, request, payload, attachments, issue_discussion=True)

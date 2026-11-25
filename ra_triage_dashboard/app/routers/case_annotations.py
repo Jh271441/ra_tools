@@ -20,7 +20,11 @@ from ..support.catalogs import _normalise_review_excluded, _normalise_missing_ev
 from ..support.identity import _action_actor, _writer_identity
 from ..review_workflow import resolve_expected_output
 
-router = APIRouter()
+from fastapi import Depends
+from ..core.deps import get_container
+from ..schemas import CaseDetailResponse, ReviewSubmissionResponse
+
+router = APIRouter(dependencies=[Depends(get_container)])
 
 
 def _optional_int(value: Any, field: str) -> int | None:
@@ -32,7 +36,7 @@ def _optional_int(value: Any, field: str) -> int | None:
         raise _detail(400, f"{field} 不合法。") from exc
 
 
-@router.get("/api/cases/{issue_id}/combined-review-context")
+@router.get("/api/cases/{issue_id}/combined-review-context", responses={200: {"model": CaseDetailResponse}})
 async def combined_review_context(
     issue_id: str, request: Request, campaign_id: str = "", model_run_id: str = ""
 ) -> dict[str, Any]:
@@ -52,7 +56,7 @@ async def combined_review_context(
     return {"context": context}
 
 
-@router.post("/api/cases/{issue_id}/combined-review")
+@router.post("/api/cases/{issue_id}/combined-review", responses={200: {"model": ReviewSubmissionResponse}})
 async def submit_combined_review(issue_id: str, request: Request) -> dict[str, Any]:
     try:
         body = await request.json()
@@ -121,7 +125,7 @@ async def _submit_combined_review(issue_id: str, request: Request, body: dict[st
     return {"combined_review": result, "change_revision": await asyncio.to_thread(database.change_revision)}
 
 
-@router.post("/api/cases/{issue_id}/case-label-from-review")
+@router.post("/api/cases/{issue_id}/case-label-from-review", responses={200: {"model": ReviewSubmissionResponse}})
 async def submit_case_label_from_review(issue_id: str, request: Request) -> dict[str, Any]:
     try:
         body = await request.json()
@@ -200,13 +204,13 @@ async def _submit_case_images(issue_id: str, request: Request, payload: str, upl
     return result
 
 
-@router.post("/api/cases/{issue_id}/combined-review-with-attachments")
+@router.post("/api/cases/{issue_id}/combined-review-with-attachments", responses={200: {"model": ReviewSubmissionResponse}})
 async def submit_combined_review_with_attachments(issue_id: str, request: Request,
         payload: str = Form(...), attachments: Optional[List[UploadFile]] = File(None)) -> dict[str, Any]:
     return await _submit_case_images(issue_id, request, payload, attachments or [], _submit_combined_review)
 
 
-@router.post("/api/cases/{issue_id}/case-label-from-review-with-attachments")
+@router.post("/api/cases/{issue_id}/case-label-from-review-with-attachments", responses={200: {"model": ReviewSubmissionResponse}})
 async def submit_case_label_with_attachments(issue_id: str, request: Request,
         payload: str = Form(...), attachments: Optional[List[UploadFile]] = File(None)) -> dict[str, Any]:
     return await _submit_case_images(issue_id, request, payload, attachments or [], _submit_case_label_from_review)
@@ -233,7 +237,7 @@ async def _require_unmigrated_issue(
     return issue
 
 
-@router.post("/api/cases/{issue_id}/annotations")
+@router.post("/api/cases/{issue_id}/annotations", responses={200: {"model": ReviewSubmissionResponse}})
 async def create_annotation(issue_id: str, request: Request) -> dict[str, Any]:
     try:
         body = await request.json()
@@ -262,7 +266,7 @@ async def create_annotation(issue_id: str, request: Request) -> dict[str, Any]:
     }
 
 
-@router.post("/api/cases/{issue_id}/annotations-with-attachments")
+@router.post("/api/cases/{issue_id}/annotations-with-attachments", responses={200: {"model": ReviewSubmissionResponse}})
 async def create_annotation_with_attachments(
     issue_id: str,
     request: Request,
@@ -308,7 +312,7 @@ async def create_annotation_with_attachments(
     }
 
 
-@router.get("/api/cases/{issue_id}/model-reviews")
+@router.get("/api/cases/{issue_id}/model-reviews", responses={200: {"model": ReviewSubmissionResponse}})
 async def list_model_reviews(issue_id: str, model_run_id: str = "") -> dict[str, Any]:
     if await asyncio.to_thread(database.get_issue, issue_id) is None:
         raise _detail(404, "Issue 不存在。")
