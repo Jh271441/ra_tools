@@ -264,7 +264,7 @@ html[data-color-theme="light"] .detail-context-row .history-inline-button:hover,
 html[data-color-theme="light"] .detail-context-row .detail-media-select:hover:not(:disabled),
 html[data-color-theme="light"] .tag-option:hover,
 html[data-color-theme="light"] .run-source-preview:hover,
-html[data-color-theme="light"] .ra-event-trail-link:hover { color: #075f75; }
+html[data-color-theme="light"] .ra-event-trail-link:hover { color: var(--accent-text); }
 html[data-color-theme="light"] .detail-action-button,
 html[data-color-theme="light"] .detail-media-command .detail-media-expand,
 html[data-color-theme="light"] .history-inline-button,
@@ -282,15 +282,15 @@ html[data-color-theme="light"] .media-mode:hover:not(:disabled),
 html[data-color-theme="light"] .media-control:hover:not(:disabled),
 html[data-color-theme="light"] .media-nav:hover:not(:disabled),
 html[data-color-theme="light"] .detail-actions .history-inline-button:hover {
-  color: #075f75;
-  border-color: #078ba6;
-  background: rgba(8, 117, 141, .08);
+  color: var(--accent-text);
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
 }
 html[data-color-theme="light"] .media-mode.active,
 html[data-color-theme="light"] .media-control.active {
-  color: #075f75;
-  border-color: rgba(8, 117, 141, .55);
-  background: rgba(8, 117, 141, .1);
+  color: var(--accent-text);
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
 }
 html[data-color-theme="light"] .media-dialog {
   background: #ffffff;

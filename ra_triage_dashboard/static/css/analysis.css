@@ -439,7 +439,7 @@ html[data-color-theme="light"] .issue-id,
 html[data-color-theme="light"] .analysis-issue-link,
 html[data-color-theme="light"] .detail-id,
 html[data-color-theme="light"] .review-issue,
-html[data-color-theme="light"] .ra-event-trail-link { color: #075f75; }
+html[data-color-theme="light"] .ra-event-trail-link { color: var(--accent-text); }
 html[data-color-theme="light"] .analysis-bar-track { background: #d8e1eb; }
 html[data-color-theme="light"] .analysis-chip.evidence-chip { color: #9a4a0a; }
 html[data-color-theme="light"] .debug-only-badge,
@@ -457,7 +457,7 @@ html[data-color-theme="light"] .analysis-chip.tag-chip[data-tag-group="false_tri
 }
 html[data-color-theme="light"] .tag-group-selected-chip[data-tag-group="true_trigger"],
 html[data-color-theme="light"] .analysis-chip.tag-chip[data-tag-group="true_trigger"] {
-  border-color: rgba(4,120,87,.25); color: #087a58; background: rgba(52,211,153,.12);
+  border-color: rgba(4,120,87,.25); color: var(--ok); background: rgba(52,211,153,.12);
 }
 html[data-color-theme="light"] .tag-group-selected-chip[data-tag-group="ra"],
 html[data-color-theme="light"] .analysis-chip.tag-chip[data-tag-group="ra"] {
@@ -471,7 +471,7 @@ html[data-color-theme="light"] .status-queued,
 html[data-color-theme="light"] .status-running,
 html[data-color-theme="light"] .run-source-preview,
 html[data-color-theme="light"] .evidence-tag,
-html[data-color-theme="light"] .analysis-chip.theme-chip { color: #08758d; }
+html[data-color-theme="light"] .analysis-chip.theme-chip { color: var(--accent); }
 
 /* Analysis multi-filter + pie charts (light) — match review filter / card tokens */
 html[data-color-theme="light"] .analysis-filters label { color: #526278; }
@@ -502,10 +502,10 @@ html[data-color-theme="light"] .analysis-review-status-legend-item.status-comple
 html[data-color-theme="light"] .analysis-review-status-segment.status-blocked_by_label,
 html[data-color-theme="light"] .analysis-review-status-legend-item.status-blocked_by_label { --status-color: #dc4655; }
 html[data-color-theme="light"] .analysis-review-status-legend-item.is-hover {
-  background: rgba(8,117,141,.1); box-shadow: inset 0 0 0 1px rgba(8,117,141,.18);
+  background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent-soft-hover);
 }
 html[data-color-theme="light"] .analysis-confusion-table.has-hover th.is-related {
-  color: #075f75; background: rgba(8,117,141,.1); box-shadow: inset 0 0 0 1px rgba(8,117,141,.16);
+  color: var(--accent-text); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent-soft-hover);
 }
 html[data-color-theme="light"] .analysis-confusion-table.has-hover td.is-hover {
   box-shadow: inset 0 0 0 1px rgba(15,23,42,.62), 0 3px 10px rgba(15,23,42,.14);
@@ -530,8 +530,8 @@ html[data-color-theme="light"] .analysis-pie-group:has(.is-hover) .analysis-pie-
   opacity: .38;
 }
 html[data-color-theme="light"] .analysis-pie-legend-row.is-hover {
-  background: rgba(8, 117, 141, .14);
-  box-shadow: inset 0 0 0 1px rgba(8, 117, 141, .36);
+  background: var(--accent-soft-hover);
+  box-shadow: inset 0 0 0 1px var(--accent-border);
 }
 html[data-color-theme="light"] .analysis-pie-legend-line strong { color: #172033; }
 html[data-color-theme="light"] .analysis-pie-legend-line small { color: #5f6e82; }
@@ -540,13 +540,13 @@ html[data-color-theme="light"] .analysis-pie-swatch {
 }
 /* Dark tooltip on light UI for higher contrast against white cards. */
 html[data-color-theme="light"] .analysis-pie-tooltip {
-  border-color: rgba(8, 117, 141, .45); background: #0f172a; color: #f8fafc;
-  box-shadow: 0 14px 32px rgba(15, 23, 42, .28), 0 0 0 1px rgba(8, 117, 141, .12);
+  border-color: var(--accent-border); background: #0f172a; color: #f8fafc;
+  box-shadow: 0 14px 32px rgba(15, 23, 42, .28), 0 0 0 1px var(--accent-soft);
 }
 html[data-color-theme="light"] .analysis-pie-tooltip strong { color: #f8fafc; }
 html[data-color-theme="light"] .analysis-pie-tooltip span { color: #5eead4; }
 html[data-color-theme="light"] .analysis-pie-tooltip small { color: #94a3b8; }
-html[data-color-theme="light"] .analysis-stat-card > strong { color: var(--analysis-stat-value-color, #08758d); }
+html[data-color-theme="light"] .analysis-stat-card > strong { color: var(--analysis-stat-value-color, var(--accent)); }
 
 /* Shared GT card: same heading baseline and scope line as review status. */
 .analysis-decision-grid.analysis-has-gt { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1.1fr); grid-template-areas: "confusion status gt"; }

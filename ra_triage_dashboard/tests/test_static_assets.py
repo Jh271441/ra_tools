@@ -65,6 +65,30 @@ class StaticCompressionTest(unittest.TestCase):
         status, _, _ = self.request("/manual/static/not-found.js")
         self.assertEqual(status, 404)
 
+    def test_unversioned_static_file_revalidates_instead_of_immutable(self):
+        static = Path(__file__).resolve().parents[1] / "static"
+        app = Starlette(routes=[Mount("/manual/static", app=dashboard_static_app(static))])
+
+        async def fetch_unversioned():
+            messages = []
+            async def receive():
+                return {"type": "http.request", "body": b"", "more_body": False}
+            async def send(msg):
+                messages.append(msg)
+            await app({
+                "type": "http", "asgi": {"version": "3.0", "spec_version": "2.4"},
+                "method": "GET", "path": "/manual/static/app.js", "raw_path": b"/manual/static/app.js",
+                "root_path": "", "query_string": b"", "scheme": "http", "http_version": "1.1",
+                "headers": [(b"accept-encoding", b"gzip")],
+            }, receive, send)
+            return messages[0]["status"], dict(messages[0]["headers"])
+
+        status, headers = asyncio.run(fetch_unversioned())
+        self.assertEqual(status, 200)
+        cache_control = headers.get(b"cache-control", b"")
+        self.assertNotIn(b"immutable", cache_control)
+        self.assertIn(b"must-revalidate", cache_control)
+
     def test_bundle_preserves_manifest_order_compression_and_cache(self):
         static = Path(__file__).resolve().parents[1] / "static"
         names = [line.strip() for line in (static / "js/MANIFEST").read_text().splitlines()

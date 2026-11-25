@@ -763,7 +763,7 @@ html[data-color-theme="light"] .media-decision-summary,
 html[data-color-theme="light"] .current-run-output,
 html[data-color-theme="light"] .bev-video-controls {
   background: #ffffff;
-  border-color: #c5d0de;
+  border-color: var(--line);
 }
 html[data-color-theme="light"] .comparison-summary > .comparison-side-label,
 html[data-color-theme="light"] .media-decision-summary > .comparison-side-label {
@@ -775,7 +775,7 @@ html[data-color-theme="light"] .status-completed,
 html[data-color-theme="light"] .label-正确触发,
 html[data-color-theme="light"] .comparison-chip.comparison-match,
 html[data-color-theme="light"] .analysis-comparison-badge.comparison-match,
-html[data-color-theme="light"] .analysis-confusion-table .confusion-match { color: #087a58; }
+html[data-color-theme="light"] .analysis-confusion-table .confusion-match { color: var(--ok); }
 html[data-color-theme="light"] .status-failed,
 html[data-color-theme="light"] .label-误触发,
 html[data-color-theme="light"] .mismatch-chip,

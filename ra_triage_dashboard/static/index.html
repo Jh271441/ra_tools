@@ -40,7 +40,7 @@
     </script>
     <style>
       html { background: #0b0e14; color-scheme: dark; }
-      html[data-color-theme="light"] { background: #eef3f8; color-scheme: light; }
+      html[data-color-theme="light"] { background: #f6f8fb; color-scheme: light; }
       html.ra-styles-loading body { visibility: hidden; }
     </style>
     <script>
@@ -57,7 +57,7 @@
         const appPreload = document.createElement("link");
         appPreload.rel = "preload";
         appPreload.as = "script";
-        appPreload.href = `${activeBase}/static/app-bundle.js?v=manual-triage-877`;
+        appPreload.href = `${activeBase}/static/app-bundle.js?v=manual-triage-878`;
         document.head.appendChild(appPreload);
         // These same-origin reads are required on every route. Begin them
         // while the bundle downloads; consume once through the normal API
@@ -127,7 +127,7 @@
         stylesheetRequests.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-877`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-878`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -2720,7 +2720,7 @@
         }
       })();
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app-bundle.js?v=manual-triage-877`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app-bundle.js?v=manual-triage-878`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>
