@@ -475,7 +475,7 @@ let dashboardSelectObserver = null;
 let dashboardSelectLabelId = 0;
 
 function enhanceNativeUiSelect(select, { maxWidth = 520 } = {}) {
-  if (!select || select.multiple) return null;
+  if (!select || select.tagName !== "SELECT" || select.multiple) return null;
   let root = select.closest(".ui-select");
   if (!root?.classList.contains("dashboard-native-ui-select")
       && select.matches(".ui-select-native, .gateway-model-native-select")) return root;

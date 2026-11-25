@@ -43,6 +43,7 @@
       html[data-color-theme="light"] { background: #eef3f8; color-scheme: light; }
       html.ra-styles-loading body { visibility: hidden; }
     </style>
+    <script id="raViteAssets" type="application/json">{{RA_TRIAGE_VITE_ASSETS}}</script>
     <script>
       (() => {
         const loadingClass = "ra-styles-loading";
@@ -53,11 +54,24 @@
           window.location.pathname.startsWith(`${configuredBase}/`)
         ) ? configuredBase : "";
         window.__RA_TRIAGE_BASE__ = activeBase;
+        let bundleRev = "";
+        try {
+          const viteEl = document.getElementById("raViteAssets");
+          const viteParsed = viteEl ? JSON.parse(viteEl.textContent || "{}") : {};
+          if (typeof viteParsed.bundleRev === "string" && viteParsed.bundleRev) {
+            bundleRev = `&rev=${encodeURIComponent(viteParsed.bundleRev)}`;
+          } else if (Array.isArray(viteParsed.js) && viteParsed.js.length) {
+            bundleRev = `&rev=${encodeURIComponent(String(viteParsed.js[0]).replace(/^assets\//, ""))}`;
+          }
+        } catch (_error) {
+          bundleRev = "";
+        }
+        window.__RA_BUNDLE_REV__ = bundleRev;
         // Start the critical script with the shell, without a loader round trip.
         const appPreload = document.createElement("link");
         appPreload.rel = "preload";
         appPreload.as = "script";
-        appPreload.href = `${activeBase}/static/app-bundle.js?v=manual-triage-887`;
+        appPreload.href = `${activeBase}/static/app-bundle.js?v=manual-triage-887${bundleRev}`;
         document.head.appendChild(appPreload);
         // These same-origin reads are required on every route. Begin them
         // while the bundle downloads; consume once through the normal API
@@ -2689,7 +2703,6 @@
     </dialog>
 
     <div class="toast hidden" id="toast"></div>
-    <script id="raViteAssets" type="application/json">{{RA_TRIAGE_VITE_ASSETS}}</script>
     <script>
       document.querySelectorAll("[data-app-path]").forEach((link) => {
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
@@ -2733,7 +2746,7 @@
         }
       })();
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app-bundle.js?v=manual-triage-887`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app-bundle.js?v=manual-triage-887${window.__RA_BUNDLE_REV__ || ""}`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

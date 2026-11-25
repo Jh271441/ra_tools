@@ -58,6 +58,8 @@ class Phase3ViteAssetsTest(unittest.TestCase):
         assets = load_vite_assets(STATIC_DIR)
         self.assertTrue(assets["js"], "Vite build must produce at least one entry JS bundle")
         self.assertTrue(assets["css"], "Vite build must produce at least one entry CSS bundle")
+        vite_json = json.loads(render_vite_assets_json(STATIC_DIR))
+        self.assertRegex(str(vite_json.get("bundleRev", "")), r"^[0-9a-f]{10}$")
 
         app = Starlette(routes=[Mount("/manual/static", app=dashboard_static_app(STATIC_DIR))])
 
