@@ -1751,8 +1751,8 @@ export const ReviewAnalysisPage: React.FC<ReviewAnalysisPageProps> = ({
               ? bilingual(lang, "正在加载最新 Review…", "Loading latest reviews…")
               : bilingual(
                   lang,
-                  `共 ${data?.total || 0} 条 · 当前页 ${items.length} 条`,
-                  `${data?.total || 0} total · ${items.length} on this page`,
+                  `${data?.total || 0} 条最新 Review · 当前显示 ${items.length} 条`,
+                  `${data?.total || 0} latest reviews · showing ${items.length}`,
                 )}
           </small>
         </div>
@@ -1783,7 +1783,7 @@ export const ReviewAnalysisPage: React.FC<ReviewAnalysisPageProps> = ({
               const sceneLabel =
                 item.title ||
                 item.scenario ||
-                bilingual(lang, "未提供场景描述", "No scene description");
+                bilingual(lang, "未填写场景", "Scene not set");
               const rawComp = String(item.comparison_status || "").toLowerCase();
               const validComp = ["mismatch", "match", "no_gt", "none"].includes(rawComp)
                 ? rawComp
@@ -1917,7 +1917,12 @@ export const ReviewAnalysisPage: React.FC<ReviewAnalysisPageProps> = ({
 
                   <div className="analysis-case-reason">
                     <strong className={annotation.note ? undefined : "reason-empty"}>
-                      {annotation.note || bilingual(lang, "未填写人工原因", "No review reason")}
+                      {annotation.note ||
+                        bilingual(
+                          lang,
+                          "未填写“模型为什么判错”",
+                          "“Why was the model wrong?” not filled",
+                        )}
                     </strong>
                     {prediction.reason && (
                       <p>
@@ -1929,10 +1934,22 @@ export const ReviewAnalysisPage: React.FC<ReviewAnalysisPageProps> = ({
                       </p>
                     )}
                     {multiDist && (
-                      <p>{`${bilingual(lang, "多人结论", "Multi-review")}: ${multiDist}`}</p>
+                      <p>
+                        {bilingual(
+                          lang,
+                          `多人结论：${multiDist}`,
+                          `Multi-review: ${multiDist}`,
+                        )}
+                      </p>
                     )}
                     {multiLines && (
-                      <p>{`${bilingual(lang, "复核人", "Reviewers")}: ${multiLines}`}</p>
+                      <p>
+                        {bilingual(
+                          lang,
+                          `复核人：${multiLines}`,
+                          `Reviewers: ${multiLines}`,
+                        )}
+                      </p>
                     )}
                     <div className="analysis-chip-list">
                       {tags.map((key) => {

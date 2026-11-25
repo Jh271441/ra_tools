@@ -323,6 +323,7 @@ async function setBaselineScopes(
   state.casePage = 1;
   state.clusterKey = "";
   state.reviewIssueIds = [];
+  state.reviewQueueStale = true;
   state.reviewAnalysis.data = null;
   state.caseListRequestSeq += 1;
   state.caseRequestSeq += 1;
@@ -366,16 +367,21 @@ async function setBaselineScopes(
   try {
     await loadConfig();
     if (!isPageContextCurrent(pageContext)) return;
-    if (state.activePage === "rd-results") { await loadRdResults(); return; }
+    if (state.activePage === "rd-results") {
+      await Promise.all([loadRdResults(), loadOverview().catch(() => {})]);
+      return;
+    }
     if (state.activePage === "review-assignments") {
+      void loadOverview().catch(() => {});
       if (typeof refreshWorkSplitCreatorForDataset === "function") await refreshWorkSplitCreatorForDataset();
       return;
     }
     if (state.activePage === "labeling-summary") {
-      await loadLabelingSummary();
+      await Promise.all([loadLabelingSummary(), loadOverview().catch(() => {})]);
       return;
     }
     if (state.activePage === "labeling-new-task") {
+      void loadOverview().catch(() => {});
       await Promise.all([loadCaseLabelingTasks(), loadLabelingCombinedTasks(),
         loadCaseLabelingCases({ page: 1, persistRoute: false })]);
       if (isPageContextCurrent(pageContext)) queueCreationGroupPreview("labelingTask");
@@ -383,6 +389,7 @@ async function setBaselineScopes(
     }
     if (state.activePage === "labeling") {
       state.selectedRunId = "";
+      void loadOverview().catch(() => {});
       await enterCaseLabeling({ route: parsePageRoute() });
       return;
     }

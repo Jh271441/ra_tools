@@ -141,6 +141,18 @@
   grid-template-columns: minmax(180px, 1fr) auto auto;
 }
 
+.ra-users-root .access-enabled-toggle {
+  white-space: nowrap;
+  flex-shrink: 0;
+  justify-self: end;
+}
+
+.ra-users-root .access-enabled-toggle input[type="checkbox"] {
+  width: auto;
+  flex: 0 0 auto;
+  margin: 0;
+}
+
 .ra-users-root .access-row-actions {
   display: flex;
   flex-wrap: nowrap;

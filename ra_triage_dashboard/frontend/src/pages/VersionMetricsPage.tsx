@@ -1430,7 +1430,7 @@ export const VersionMetricsPage: React.FC<VersionMetricsPageProps> = ({
           </span>
         </header>
 
-        <div className="rd-table-wrap">
+        <div className="rd-table-wrap vm-table-scroll">
           <table
             className="rd-table vm-report-table"
             id="vmReportTable"

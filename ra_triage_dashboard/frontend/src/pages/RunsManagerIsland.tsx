@@ -219,13 +219,14 @@ export const RunsManagerIsland: React.FC<RunsManagerIslandProps> = ({
       setBaselinesKey(readBaselinesQuery());
       setSelectedRunId(getLegacyWindow().__RA_TRIAGE_STATE__?.selectedRunId || "");
     };
+    if (active) syncExternal();
     window.addEventListener("ra:workbench-sync", syncExternal);
     window.addEventListener("popstate", syncExternal);
     return () => {
       window.removeEventListener("ra:workbench-sync", syncExternal);
       window.removeEventListener("popstate", syncExternal);
     };
-  }, []);
+  }, [active]);
 
   const runsQuery = useQuery<ModelRunsPayload>({
     queryKey: ["model-runs", baselinesKey],
@@ -479,7 +480,7 @@ export const RunsManagerIsland: React.FC<RunsManagerIslandProps> = ({
             </span>
             {source.reconstructed && (
               <span className="run-source-reconstructed">
-                {bilingual(lang, "重构建", "Reconstructed")}
+                {bilingual(lang, "Run 重建", "Run rebuilt")}
               </span>
             )}
           </>
@@ -575,8 +576,8 @@ export const RunsManagerIsland: React.FC<RunsManagerIslandProps> = ({
               )
             : bilingual(
                 lang,
-                `${filteredRuns.length.toLocaleString()} / ${items.length.toLocaleString()} 个 Run · ${totalCoverage.toLocaleString()} 条预测 · 第 ${safePage} / ${pageCount} 页`,
-                `${filteredRuns.length.toLocaleString()} / ${items.length.toLocaleString()} runs · ${totalCoverage.toLocaleString()} predictions · Page ${safePage} / ${pageCount}`,
+                `${filteredRuns.length} / ${items.length} 个 Run · ${totalCoverage} 条预测 · 第 ${safePage} / ${pageCount} 页`,
+                `${filteredRuns.length} / ${items.length} runs · ${totalCoverage} predictions · Page ${safePage} / ${pageCount}`,
               )}
       </div>
 
@@ -671,8 +672,8 @@ export const RunsManagerIsland: React.FC<RunsManagerIslandProps> = ({
                     )}
                     <span>{renderSourceRef(run)}</span>
                     <span title={bilingual(lang, "相对当前数据集", "Relative to active dataset")}>
-                      {coverage.toLocaleString()} /{" "}
-                      {baselineCount ? baselineCount.toLocaleString() : "—"}{" "}
+                      {coverage} /{" "}
+                      {baselineCount || "—"}{" "}
                       {bilingual(lang, "条", "cases")}
                     </span>
                     <span className="run-failure-count">

@@ -795,5 +795,6 @@ async function loadOverview() {
   const data = await api(`/api/overview${query}`);
   if (requestSeq !== overviewRequestSeq || runId !== state.selectedRunId
       || baselines !== selectedBaselineQueryValue()) return;
+  state.overviewScopeKey = `${baselines}|${runId || ""}`;
   renderOverview(data);
 }

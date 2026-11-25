@@ -1659,13 +1659,16 @@ function navigatePage(page, options = {}) {
   if (enteringReviewHome) {
     const list = $("#issueList");
     const hasCards = Boolean(list?.querySelector("article[data-issue-id], .issue-grid-empty"));
+    const expectedOverviewScope = `${typeof selectedBaselineQueryValue === "function" ? selectedBaselineQueryValue() : ""}|${state.selectedRunId || ""}`;
+    const overviewStale = Boolean(state.overviewScopeKey) && state.overviewScopeKey !== expectedOverviewScope;
     const needsReload =
       state.reviewQueueStale ||
       !Array.isArray(state.cases) ||
       !state.cases.length ||
-      !hasCards;
+      !hasCards ||
+      overviewStale;
     if (needsReload) {
-      reloadReviewGallery({ includeOverview: false, historyMode: "" }).catch((error) =>
+      reloadReviewGallery({ includeOverview: overviewStale, historyMode: "" }).catch((error) =>
         showToast(error.message, true)
       );
     } else {
