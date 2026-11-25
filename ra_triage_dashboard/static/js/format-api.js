@@ -420,9 +420,27 @@ async function setBaselineScopes(
     } else if (state.activePage === "trail-update") {
       await loadTrailAttributePreview(true);
     } else if (state.activePage === "comparison") {
-      state.runComparison.page = 1;
-      renderRunComparisonSelectors({ repairCoverage: true });
-      await loadRunComparison();
+      if (
+        typeof window !== "undefined" &&
+        (window.__RA_REACT_WORKBENCH__?.ownsPage?.("comparison") ||
+          window.__RA_REACT_OWNED_PAGES__?.includes?.("comparison"))
+      ) {
+        window.__RA_REACT_WORKBENCH__?.refreshPage?.("comparison");
+      } else {
+        state.runComparison.page = 1;
+        renderRunComparisonSelectors({ repairCoverage: true });
+        await loadRunComparison();
+      }
+    } else if (state.activePage === "run-collections") {
+      if (
+        typeof window !== "undefined" &&
+        (window.__RA_REACT_WORKBENCH__?.ownsPage?.("run-collections") ||
+          window.__RA_REACT_OWNED_PAGES__?.includes?.("run-collections"))
+      ) {
+        window.__RA_REACT_WORKBENCH__?.refreshPage?.("run-collections");
+      } else if (typeof loadRunCollectionsWorkbench === "function") {
+        await loadRunCollectionsWorkbench();
+      }
     }
   } catch (error) {
     showToast(error.message || String(error), true);
@@ -909,7 +927,31 @@ async function refreshChangedDataNow() {
       loadRuns({ preserveEmpty: true }),
       loadOverview(),
     ]);
-    if (state.session.is_admin) await loadRunComparison();
+    if (
+      typeof window !== "undefined" &&
+      (window.__RA_REACT_WORKBENCH__?.ownsPage?.("comparison") ||
+        window.__RA_REACT_OWNED_PAGES__?.includes?.("comparison"))
+    ) {
+      window.__RA_REACT_WORKBENCH__?.refreshPage?.("comparison");
+    } else if (state.session.is_admin) {
+      await loadRunComparison();
+    }
+    return;
+  }
+  if (state.activePage === "run-collections") {
+    await Promise.all([
+      loadRuns({ preserveEmpty: true }),
+      loadOverview(),
+    ]);
+    if (
+      typeof window !== "undefined" &&
+      (window.__RA_REACT_WORKBENCH__?.ownsPage?.("run-collections") ||
+        window.__RA_REACT_OWNED_PAGES__?.includes?.("run-collections"))
+    ) {
+      window.__RA_REACT_WORKBENCH__?.refreshPage?.("run-collections");
+    } else if (typeof loadRunCollectionsWorkbench === "function") {
+      await loadRunCollectionsWorkbench();
+    }
     return;
   }
   if (state.activePage === "review-assignments") {

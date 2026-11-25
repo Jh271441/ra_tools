@@ -25,6 +25,12 @@ const LabelingSummaryPage = React.lazy(() =>
 const ReviewAnalysisPage = React.lazy(() =>
   import("./pages/ReviewAnalysisPage").then((m) => ({ default: m.ReviewAnalysisPage })),
 );
+const RunComparisonPage = React.lazy(() =>
+  import("./pages/RunComparisonPage").then((m) => ({ default: m.RunComparisonPage })),
+);
+const RunCollectionsPage = React.lazy(() =>
+  import("./pages/RunCollectionsPage").then((m) => ({ default: m.RunCollectionsPage })),
+);
 
 const OWNED_PAGES = new Set<string>([
   "status",
@@ -35,6 +41,8 @@ const OWNED_PAGES = new Set<string>([
   "version-datasets",
   "labeling-summary",
   "analysis",
+  "comparison",
+  "run-collections",
 ]);
 
 const queryClient = new QueryClient({
@@ -166,6 +174,35 @@ const ReviewAnalysisIsland: React.FC = () => {
   );
 };
 
+const RunComparisonIsland: React.FC = () => {
+  const { activePage, lang, selectedBaselines } = useWorkbenchBridge();
+  const active = activePage === "comparison";
+  if (!active) return null;
+  return (
+    <Suspense fallback={<div className="no-asset">{lang === "en" ? "Loading…" : "加载中…"}</div>}>
+      <RunComparisonPage active={active} lang={lang} selectedBaselines={selectedBaselines} />
+    </Suspense>
+  );
+};
+
+const RunCollectionsIsland: React.FC = () => {
+  const { activePage, lang, selectedBaselines } = useWorkbenchBridge();
+  const active = activePage === "run-collections";
+  const { effectiveSession } = useResolvedSession(active);
+  if (!active) return null;
+  const canWrite = Boolean(effectiveSession?.is_admin && effectiveSession?.verified);
+  return (
+    <Suspense fallback={<div className="no-asset">{lang === "en" ? "Loading…" : "加载中…"}</div>}>
+      <RunCollectionsPage
+        active={active}
+        lang={lang}
+        selectedBaselines={selectedBaselines}
+        canWrite={canWrite}
+      />
+    </Suspense>
+  );
+};
+
 const mountedRoots = new Map<HTMLElement, Root>();
 
 function mountIsland(container: HTMLElement | null, element: React.ReactElement) {
@@ -189,6 +226,8 @@ function mountAllIslands() {
   mountIsland(document.getElementById("versionDatasetsPage"), <VersionDatasetsIsland />);
   mountIsland(document.getElementById("labelingSummaryPage"), <LabelingSummaryIsland />);
   mountIsland(document.getElementById("reviewAnalysisPage"), <ReviewAnalysisIsland />);
+  mountIsland(document.getElementById("runComparisonPage"), <RunComparisonIsland />);
+  mountIsland(document.getElementById("runCollectionsPage"), <RunCollectionsIsland />);
 }
 
 interface ReactWorkbenchHandle {
@@ -200,7 +239,7 @@ interface ReactWorkbenchHandle {
 }
 
 const handle: ReactWorkbenchHandle = {
-  version: "vite-react-ts-strangler-3.4",
+  version: "vite-react-ts-strangler-3.5",
   ownedPages: Array.from(OWNED_PAGES),
   ownsPage: (page: string) => OWNED_PAGES.has(page),
   refreshPage: (page: string) => {
@@ -225,6 +264,14 @@ const handle: ReactWorkbenchHandle = {
       void queryClient.invalidateQueries({ queryKey: ["analysis-model-runs"] });
       void queryClient.invalidateQueries({ queryKey: ["analysis-reviewers"] });
       void queryClient.invalidateQueries({ queryKey: ["analysis-work-splits"] });
+    } else if (page === "comparison") {
+      void queryClient.invalidateQueries({ queryKey: ["comparison-model-runs"] });
+      void queryClient.invalidateQueries({ queryKey: ["model-run-comparison"] });
+    } else if (page === "run-collections") {
+      void queryClient.invalidateQueries({ queryKey: ["run-collections-list"] });
+      void queryClient.invalidateQueries({ queryKey: ["run-collection-detail"] });
+      void queryClient.invalidateQueries({ queryKey: ["run-collection-eval-history"] });
+      void queryClient.invalidateQueries({ queryKey: ["run-collection-evaluation"] });
     }
     window.dispatchEvent(new Event("ra:workbench-sync"));
   },

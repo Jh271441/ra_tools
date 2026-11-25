@@ -2,6 +2,16 @@
 
 const RUN_TRANSITIONS = ["ALL", "P2F", "F2P", "F2F", "P2P"];
 
+function isComparisonReactOwned() {
+  return (
+    typeof window !== "undefined" &&
+    Boolean(
+      window.__RA_REACT_WORKBENCH__?.ownsPage?.("comparison") ||
+        window.__RA_REACT_OWNED_PAGES__?.includes?.("comparison")
+    )
+  );
+}
+
 function comparisonRunOptionLabel(run) {
   const name = String(run?.name || run?.source_name || run?.id || "未命名 Run");
   const coverage = Math.max(0, Number(run?.baseline_prediction_count || 0));
@@ -75,6 +85,7 @@ function normalizeComparisonRunSelection({ repairCoverage = false } = {}) {
 }
 
 function renderRunComparisonSelectors({ repairCoverage = false } = {}) {
+  if (isComparisonReactOwned()) return;
   normalizeComparisonRunSelection({ repairCoverage });
   const runOptions = (disabledId = "") => [
     { value: "", label: uiText("不选择（单 Run 查看）", "Not selected (single Run)") },
@@ -169,6 +180,7 @@ function runComparisonRouteOptions(overrides = {}) {
 }
 
 function applyRunComparisonRoute(filters = {}) {
+  if (isComparisonReactOwned()) return;
   state.runComparison.baselineRunId = String(filters.baselineRunId || "");
   state.runComparison.candidateRunId = String(filters.candidateRunId || "");
   state.runComparison.transition = RUN_TRANSITIONS.includes(String(filters.transition || "").toUpperCase())
@@ -585,6 +597,7 @@ function renderRunComparisonCases(payload) {
 }
 
 function renderRunComparison(payload = state.runComparison.data) {
+  if (isComparisonReactOwned()) return;
   const hasPayload = Boolean(payload?.summary);
   $("#comparisonEmptyState")?.classList.toggle("hidden", hasPayload);
   $("#comparisonResults")?.classList.toggle("hidden", !hasPayload);
@@ -627,6 +640,10 @@ function renderRunComparison(payload = state.runComparison.data) {
 }
 
 async function loadRunComparison({ historyMode = "replace" } = {}) {
+  if (isComparisonReactOwned()) {
+    window.__RA_REACT_WORKBENCH__?.refreshPage?.("comparison");
+    return;
+  }
   const baselineRunId = String(state.runComparison.baselineRunId || "");
   const candidateRunId = String(state.runComparison.candidateRunId || "");
   if ((!baselineRunId && !candidateRunId) || (baselineRunId && baselineRunId === candidateRunId)) {
@@ -687,6 +704,7 @@ async function jumpToRunComparisonPage(rawPage) {
 }
 
 function bindRunComparisonEvents() {
+  if (isComparisonReactOwned()) return;
   $('#comparisonCaseCamera')?.addEventListener('click', () => openComparisonMedia($('#comparisonReasonDialog').dataset.issueId, 'camera').catch(error => showToast(error.message,true)));
 
   $('#comparisonCaseBev')?.addEventListener('click', () => openComparisonMedia($('#comparisonReasonDialog').dataset.issueId, 'bev').catch(error => showToast(error.message,true)));

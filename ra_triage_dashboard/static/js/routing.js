@@ -1358,7 +1358,7 @@ function showPage(
   if (target === "version-metrics" && loadPageData && !(window.__RA_REACT_WORKBENCH__?.ownsPage?.("version-metrics") || window.__RA_REACT_OWNED_PAGES__?.includes?.("version-metrics"))) pageLoads.push(() => loadVersionMetrics());
   if (typeof setDailyCronActive === "function") setDailyCronActive(target === "daily-cron");
   if (typeof setDailyReviewActive === "function") setDailyReviewActive(target === "daily-review");
-  if (typeof ensureRunCollectionsDedicatedPage === "function") {
+  if (typeof ensureRunCollectionsDedicatedPage === "function" && !(window.__RA_REACT_WORKBENCH__?.ownsPage?.("run-collections") || window.__RA_REACT_OWNED_PAGES__?.includes?.("run-collections"))) {
     ensureRunCollectionsDedicatedPage(target);
   }
   document.querySelectorAll("[data-page]").forEach((section) => {
@@ -1379,14 +1379,14 @@ function showPage(
     if (importKind) setImportKind(importKind);
     else activateRunSourceTab(runSourceTab || "upload");
   }
-  if (target === "comparison") {
+  if (target === "comparison" && !(window.__RA_REACT_WORKBENCH__?.ownsPage?.("comparison") || window.__RA_REACT_OWNED_PAGES__?.includes?.("comparison"))) {
     renderRunComparisonSelectors?.();
     renderRunComparison?.();
     if (loadPageData) {
       pageLoads.push(() => loadRunComparison({ historyMode: historyMode || "replace" }).catch((error) => showToast(error.message, true)));
     }
   }
-  if (target === "run-collections") {
+  if (target === "run-collections" && !(window.__RA_REACT_WORKBENCH__?.ownsPage?.("run-collections") || window.__RA_REACT_OWNED_PAGES__?.includes?.("run-collections"))) {
     renderRunCollectionSelectors?.();
     if (loadPageData && typeof loadRunCollectionsWorkbench === "function") {
       pageLoads.push(() => loadRunCollectionsWorkbench({ restoreRoute }).catch((error) => showToast(error.message, true)));
@@ -1590,7 +1590,7 @@ function showPage(
   };
   const targetOwnedByReact =
     typeof window !== "undefined"
-    && ["labeling-summary", "analysis"].includes(target)
+    && ["labeling-summary", "analysis", "comparison", "run-collections"].includes(target)
     && Boolean(
       window.__RA_REACT_WORKBENCH__?.ownsPage?.(target)
       || window.__RA_REACT_OWNED_PAGES__?.includes?.(target)

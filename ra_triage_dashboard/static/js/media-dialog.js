@@ -663,14 +663,23 @@ async function navigateComparisonMediaCase(delta) {
     if (!next) {
       const page = Number(payload.page) + delta;
       if (page < 1 || page > Number(payload.page_count)) { showToast(delta < 0 ? '已经是第一个 Case' : '已经是最后一个 Case'); return; }
-      state.runComparison.page = page;
-      await loadRunComparison({historyMode:'replace'});
-      const rows = state.runComparison.data.items;
+      let rows = [];
+      if (window.__RA_COMPARISON_BRIDGE__?.stepPageForMedia) {
+        rows = await window.__RA_COMPARISON_BRIDGE__.stepPageForMedia(page);
+      } else {
+        state.runComparison.page = page;
+        await loadRunComparison({historyMode:'replace'});
+        rows = state.runComparison.data?.items || [];
+      }
       next = delta > 0 ? rows[0] : rows[rows.length - 1];
     }
     if (!next) return;
     const kind = state.media.kind;
-    if ($('#comparisonReasonDialog').open) openComparisonReasonDialog(next.issue_id);
+    if (window.__RA_COMPARISON_BRIDGE__?.isCaseDialogOpen?.()) {
+      window.__RA_COMPARISON_BRIDGE__.openCaseDialog(next.issue_id, true);
+    } else if ($('#comparisonReasonDialog')?.open) {
+      openComparisonReasonDialog(next.issue_id);
+    }
     if (kind === 'video') {
       const seq = ++state.media.requestSeq;
       const data = await api(`/api/cases/${encodeURIComponent(next.issue_id)}/media`);

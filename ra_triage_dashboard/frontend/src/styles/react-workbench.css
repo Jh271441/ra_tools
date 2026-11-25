@@ -134,11 +134,16 @@
   min-width: 0;
 }
 
-.ra-users-root .ra-field-stack > span,
-.ra-runs-manager-root .ra-field-stack > span {
+.ra-users-root .ra-field-stack > span {
   color: var(--muted);
   font-size: 11px;
   font-weight: 600;
+}
+
+.ra-runs-manager-root .ra-field-stack > span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
 }
 
 .ra-users-root .access-role-row > .ui-select,
@@ -152,10 +157,6 @@
 .ra-runs-manager-root .ra-runs-filter-bar .ra-react-select .ui-select-trigger {
   min-height: 38px;
   border-radius: 7px;
-}
-
-.ra-runs-manager-root .ra-field-stack {
-  gap: 4px;
 }
 
 .ra-users-root .access-role-row .ra-react-select-menu {
@@ -439,22 +440,12 @@ html[data-color-theme="light"] .ra-modal-backdrop {
   min-width: 0;
 }
 
+.ra-labeling-summary-root .review-filters .ui-select-trigger,
+.ra-labeling-summary-root .review-filters .multi-filter-trigger,
 .ra-review-analysis-root .analysis-filters .ui-select-trigger,
 .ra-review-analysis-root .analysis-filters .multi-filter-trigger {
   height: 34px;
   min-height: 34px;
-  width: 100%;
-  min-width: 0;
-}
-
-.ra-labeling-summary-root .review-filters .ra-analysis-field {
-  gap: 2px;
-}
-
-.ra-labeling-summary-root .review-filters .ui-select-trigger,
-.ra-labeling-summary-root .review-filters .multi-filter-trigger {
-  height: 32px;
-  min-height: 32px;
   width: 100%;
   min-width: 0;
 }
@@ -474,6 +465,253 @@ html[data-color-theme="light"] .ra-review-analysis-root .analysis-filters .ra-an
   min-height: 112px;
   resize: vertical;
   font-family: "SFMono-Regular", Consolas, monospace;
+}
+
+/* Wave B2: Run Comparison & Multi-Run Evaluation 1:1 island layout & dialog parity */
+.ra-run-comparison-root {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  min-width: 0;
+}
+
+.ra-run-comparison-root .ra-comparison-field {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.ra-run-comparison-root .ra-comparison-field > span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 560;
+}
+
+.ra-run-comparison-root .ra-comparison-field > .ra-react-select {
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+
+.ra-run-comparison-root .run-comparison-picker-grid .ui-select-trigger {
+  height: 34px;
+  min-height: 34px;
+  padding: 5px 9px;
+  font-size: 12px;
+}
+
+.ra-run-comparison-root .ra-comparison-filter-field {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.ra-run-comparison-root .ra-comparison-filter-field > .ra-react-select {
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+
+.ra-run-comparison-root .comparison-filter-grid .ui-select-trigger,
+.ra-run-comparison-root .comparison-input-filter .ra-comparison-input-trigger {
+  height: 32px;
+  min-height: 32px;
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
+.ra-run-comparison-root .comparison-input-filter .ra-comparison-input-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ra-run-comparison-root .comparison-input-filter .ra-comparison-input-trigger b {
+  min-width: 17px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--bg);
+  font-size: 9px;
+}
+
+.ra-run-comparison-root .comparison-input-filter-panel fieldset > .ra-react-select {
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+
+.ra-run-comparison-root .comparison-input-filter-panel .ui-select-trigger {
+  height: 32px;
+  min-height: 32px;
+  font-size: 11px;
+}
+
+/* Native top-layer <dialog> parity with classic #comparisonReasonDialog */
+#raComparisonReasonDialog {
+  width: min(1200px, 96vw);
+  max-height: 92vh;
+}
+#raComparisonReasonDialog .dialog-card {
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  gap: 0;
+}
+#raComparisonReasonDialog .dialog-card > * {
+  flex-shrink: 0;
+}
+#raComparisonReasonDialog .dialog-heading {
+  position: relative;
+  top: auto;
+  z-index: auto;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  background: transparent;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+#raComparisonReasonDialog .dialog-heading > div:first-child {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  flex-shrink: 0;
+}
+#raComparisonReasonTitle {
+  white-space: nowrap;
+}
+#raComparisonReasonContext {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 12px;
+  margin: 0;
+  white-space: nowrap;
+}
+#raComparisonReasonDialog .dialog-heading .comparison-case-tabs {
+  margin-left: auto;
+  position: relative;
+  z-index: 2;
+  gap: 3px;
+  padding: 4px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+#raComparisonReasonDialog .comparison-case-tabs button {
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: 5px;
+  padding: 7px 14px;
+  color: var(--muted);
+  font-size: 12px;
+}
+#raComparisonReasonDialog .comparison-case-tabs button[aria-selected="true"] {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 25%, transparent);
+}
+#raComparisonReasonDialog .comparison-case-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding-top: 16px;
+  padding-right: 6px;
+  scrollbar-color: var(--line) transparent;
+}
+#raComparisonReasonDialog .comparison-reason-grid {
+  overflow: visible;
+}
+#raComparisonReasonDialog .dialog-actions {
+  padding-top: 12px;
+}
+#raComparisonReasonDialog [data-triage-label="误触发"] { color: #fca5a5; }
+#raComparisonReasonDialog [data-triage-label="正确触发"] { color: #6ee7b7; }
+#raComparisonReasonDialog [data-triage-label="无需协助"] { color: #fcd34d; }
+html[data-color-theme="light"] #raComparisonReasonDialog [data-triage-label="误触发"] { color: #b91c1c; }
+html[data-color-theme="light"] #raComparisonReasonDialog [data-triage-label="正确触发"] { color: #047857; }
+html[data-color-theme="light"] #raComparisonReasonDialog [data-triage-label="无需协助"] { color: #a16207; }
+#raComparisonCaseInputs {
+  padding: 8px 0;
+  width: 100%;
+  min-width: 0;
+}
+#raComparisonCaseInputs .comparison-diff-body {
+  max-height: 56vh;
+}
+#raComparisonCaseInputs > section > h3 {
+  padding: 8px 0 12px;
+}
+#raComparisonCaseInputs > section > details {
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+#raComparisonCaseInputs pre {
+  max-height: 24rem;
+  overflow: auto;
+  margin: 6px 0 0;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--bg);
+  font: 11px/1.55 "SFMono-Regular", Consolas, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Wave B2: Run Collections / Multi-run Evaluation */
+.ra-run-collections-root .ra-collection-field {
+  display: grid;
+  gap: 5px;
+  min-width: 150px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.ra-run-collections-root .ra-collection-add-run-field {
+  min-width: 220px;
+}
+.ra-run-collections-root .run-collection-evaluation-controls > .ra-collection-field {
+  flex: 1 1 180px;
+}
+.ra-run-collections-root .ra-collection-field > .ra-react-select {
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+.ra-run-collections-root .ra-collection-field .ui-select-trigger {
+  min-height: 34px;
+  height: 34px;
+}
+
+@media (max-width: 900px) {
+  .ra-run-comparison-root .run-comparison-picker-grid .ra-comparison-field {
+    grid-column: 1 / -1;
+  }
+  #raComparisonReasonDialog .dialog-heading { gap: 8px; }
+  #raComparisonReasonDialog .dialog-heading > div:first-child { gap: 8px; flex-shrink: 1; }
+  #raComparisonReasonTitle { font-size: 14px; }
+}
+
+@media (max-width: 760px) {
+  .ra-run-collections-root .run-collection-toolbar > .ra-collection-field,
+  .ra-run-collections-root .run-collection-evaluation-controls > .ra-collection-field {
+    min-width: 0;
+  }
+}
+
+@media (max-width: 640px) {
+  #raComparisonReasonDialog .dialog-heading { flex-wrap: wrap; gap: 10px; }
+  #raComparisonReasonDialog .dialog-heading > div:first-child { flex-wrap: wrap; }
+  #raComparisonReasonDialog .dialog-heading .comparison-case-tabs { order: 3; margin: 0; width: 100%; }
+  #raComparisonReasonDialog .comparison-case-tabs button { flex: 1; }
+  #raComparisonCaseInputs { padding: 6px; }
 }
 
 @media (max-width: 768px) {
@@ -500,10 +738,23 @@ html[data-color-theme="light"] .ra-review-analysis-root .analysis-filters .ra-an
   .ra-labeling-summary-root .review-filters .ui-select-trigger,
   .ra-labeling-summary-root .review-filters .multi-filter-trigger,
   .ra-review-analysis-root .analysis-filters .ui-select-trigger,
-  .ra-review-analysis-root .analysis-filters .multi-filter-trigger {
+  .ra-review-analysis-root .analysis-filters .multi-filter-trigger,
+  .ra-run-comparison-root .run-comparison-picker-grid .ui-select-trigger,
+  .ra-run-comparison-root .comparison-filter-grid .ui-select-trigger,
+  .ra-run-comparison-root .comparison-input-filter .ra-comparison-input-trigger,
+  .ra-run-collections-root .ra-collection-field .ui-select-trigger {
     height: 44px;
     min-height: 44px;
     font-size: 16px;
+  }
+
+  .ra-run-comparison-root .run-comparison-picker-actions button,
+  .ra-run-comparison-root .comparison-filter-grid input,
+  .ra-run-comparison-root .comparison-filter-grid button,
+  .ra-run-collections-root .run-collection-toolbar button,
+  .ra-run-collections-root .run-collection-actions button,
+  .ra-run-collections-root .run-collection-evaluation-controls button {
+    min-height: 44px;
   }
 
   .ra-react-select .ui-select-trigger,
