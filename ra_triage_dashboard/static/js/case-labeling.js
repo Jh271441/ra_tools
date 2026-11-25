@@ -239,7 +239,7 @@ function updateCaseLabelingMultiFilter(key, values) {
 }
 
 function renderCaseLabelingMultiPicker(selector, options, selected, key) {
-  if (isCaseLabelingGalleryReactOwned()) return;
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("labeling") || window.__RA_REACT_OWNED_PAGES__?.includes?.("labeling"))) return;
   const root = $(selector);
   if (!root) return;
   const fingerprint = JSON.stringify(options.map((item) => [item.value, item.label]));
