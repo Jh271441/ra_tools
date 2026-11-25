@@ -97,7 +97,7 @@ class FrontendReviewContractTest(unittest.TestCase):
         self.assertIn("baselines", APP_JS)
         self.assertIn("/static/app-bundle.js", APP_ENTRY_JS)
         self.assertIn("script.async = false", APP_ENTRY_JS)
-        self.assertIn("app-bundle.js?v=manual-triage-874", INDEX_HTML)
+        self.assertIn("app-bundle.js?v=manual-triage-885", INDEX_HTML)
         self.assertIn('work-split.js', (JS_DIR / 'MANIFEST').read_text().splitlines())
         self.assertIn('review-assignments.js', (JS_DIR / 'MANIFEST').read_text().splitlines())
         # Product logic must live in domain modules, not the entry loader.
@@ -138,7 +138,7 @@ class FrontendReviewContractTest(unittest.TestCase):
         card_start = APP_JS.index("function issueCard(item, options = {})")
         card_end = APP_JS.index("\nfunction caseGallerySignature", card_start)
         card_body = APP_JS[card_start:card_end]
-        self.assertIn("grid-auto-rows: 1fr; align-items: stretch;", STYLES_CSS)
+        self.assertIn("grid-auto-rows: auto; align-items: stretch;", STYLES_CSS)
         self.assertIn(".issue-card-heading { min-width: 0; min-height: 19px;", STYLES_CSS)
         self.assertNotIn('class="issue-title"', card_body)
         self.assertNotIn("rawTitle", card_body)
