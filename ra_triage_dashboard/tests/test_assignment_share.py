@@ -21,7 +21,7 @@ uiText = (zh,en) => zh;
 
 class AssignmentShareTest(unittest.TestCase):
     def run_js(self, body):
-        result = subprocess.run(['node','-e',SOURCE+SETUP+body],capture_output=True,text=True)
+        result = subprocess.run(['node'],input=SOURCE+SETUP+body,capture_output=True,text=True)
         self.assertEqual(result.returncode,0,result.stderr)
 
     def test_detail_link_roundtrips_filters_and_shared_router(self):
