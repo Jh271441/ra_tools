@@ -22,7 +22,7 @@
 .comment-thread-actions .analysis-discussion-link { font-size: 10px; }
 
 .analysis-page { width: min(1480px, 100%); gap: 6px; }
-.analysis-filter-card { display: grid; gap: 7px; padding: 8px 10px; }
+.analysis-filter-card { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 7px; padding: 8px 10px; }
 .analysis-scope-heading { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-width: 0; }
 .analysis-scope-heading > .ui-info { flex: 0 0 auto; }
 .analysis-scope-heading .ui-info-button { width: 1em; height: 1em; }
@@ -267,10 +267,10 @@
   min-height: 42px; display: grid; place-items: center; padding: 9px; border: 1px dashed var(--line);
   border-radius: 7px; color: var(--faint); background: rgba(255,255,255,.01); font-size: 12px; text-align: center;
 }
-.analysis-confusion-card, .analysis-case-card { display: grid; gap: 6px; padding: 10px; }
+.analysis-confusion-card, .analysis-case-card { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; padding: 10px; overflow: hidden; }
 .analysis-confusion-heading { align-items: center; }
 .analysis-confusion-heading small { overflow: hidden; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
-.analysis-confusion-wrap { min-width: 0; overflow-x: auto; }
+.analysis-confusion-wrap { width: 100%; max-width: 100%; min-width: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .analysis-confusion-table { width: 100%; min-width: 610px; border-collapse: separate; border-spacing: 4px; font-size: 11px; table-layout: fixed; }
 .analysis-confusion-table th, .analysis-confusion-table td {
   padding: 6px; border-radius: 5px; color: var(--muted); background: #0d121a; text-align: center;
@@ -551,8 +551,16 @@ html[data-color-theme="light"] .analysis-stat-card > strong { color: var(--analy
 /* Shared GT card: same heading baseline and scope line as review status. */
 .analysis-decision-grid.analysis-has-gt { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1.1fr); grid-template-areas: "confusion status gt"; }
 .analysis-has-gt .analysis-confusion-table { min-width: 0; }
-.analysis-gt-card-mount { grid-area: gt; min-width: 0; display: grid; grid-template-areas: "gt"; }
-.analysis-gt-card { grid-area: gt; min-width: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 8px; padding: 10px 12px; }
+.analysis-has-gt .analysis-confusion-table th,
+.analysis-has-gt .analysis-confusion-table td { padding: 6px 4px; }
+.analysis-gt-card-mount { grid-area: gt; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-areas: "gt"; }
+.analysis-gt-card { grid-area: gt; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); gap: 8px; padding: 10px 12px; }
+@media (max-width: 1360px) and (min-width: 1025px) {
+  .analysis-decision-grid.analysis-has-gt {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas: "confusion confusion" "status gt";
+  }
+}
 .analysis-gt-card .analysis-review-status-heading { margin: 0; }
 .analysis-gt-title { position: relative; min-width: 0; padding-right: 32px; }
 .analysis-gt-title h3 { margin: 0; }

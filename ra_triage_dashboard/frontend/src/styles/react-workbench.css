@@ -392,9 +392,9 @@ html[data-color-theme="light"] .ra-modal-backdrop {
   min-width: 0;
 }
 
-.ra-labeling-summary-root .filter-field-heading,
-.ra-review-analysis-root .filter-field-heading,
-.ra-review-analysis-root .analysis-scope-heading {
+.ra-labeling-summary-root .review-filters .filter-field-heading,
+.ra-review-analysis-root .analysis-filters .filter-field-heading,
+.ra-review-analysis-root .analysis-filters .analysis-scope-heading {
   justify-content: flex-start;
   gap: 5px;
 }
