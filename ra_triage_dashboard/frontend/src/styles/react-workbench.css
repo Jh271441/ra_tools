@@ -441,11 +441,18 @@ html[data-color-theme="light"] .ra-modal-backdrop {
 }
 
 .ra-labeling-summary-root .review-filters .ui-select-trigger,
-.ra-labeling-summary-root .review-filters .multi-filter-trigger,
 .ra-review-analysis-root .analysis-filters .ui-select-trigger,
 .ra-review-analysis-root .analysis-filters .multi-filter-trigger {
   height: 34px;
   min-height: 34px;
+  width: 100%;
+  min-width: 0;
+}
+
+.ra-labeling-summary-root .review-filters .multi-filter-trigger {
+  height: 32px;
+  min-height: 32px;
+  padding: 5px 9px;
   width: 100%;
   min-width: 0;
 }
@@ -515,12 +522,70 @@ html[data-color-theme="light"] .ra-review-analysis-root .analysis-filters .ra-an
   min-width: 0;
 }
 
-.ra-run-comparison-root .comparison-filter-grid .ui-select-trigger,
+.ra-run-comparison-root .comparison-filter-grid .ui-select-trigger {
+  height: 38px;
+  min-height: 38px;
+  padding: 5px 10px;
+  font-size: 12px;
+}
+
 .ra-run-comparison-root .comparison-input-filter .ra-comparison-input-trigger {
   height: 32px;
   min-height: 32px;
   padding: 4px 8px;
   font-size: 11px;
+}
+
+html[data-color-theme="light"] .ra-run-comparison-root .comparison-metric strong {
+  color: #0f172a;
+}
+html[data-color-theme="light"] .ra-run-comparison-root .comparison-metric.is-positive strong {
+  color: #047857;
+}
+html[data-color-theme="light"] .ra-run-comparison-root .comparison-metric.is-negative strong {
+  color: #b91c1c;
+}
+html[data-color-theme="light"] .ra-run-comparison-root .comparison-matrix th,
+html[data-color-theme="light"] .ra-run-comparison-root .comparison-matrix td {
+  background: #f1f5f9;
+  color: #334155;
+}
+html[data-color-theme="light"] .ra-run-comparison-root .comparison-matrix thead th,
+html[data-color-theme="light"] .ra-run-comparison-root .comparison-matrix tbody th {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+html[data-color-theme="light"] .ra-run-comparison-root .comparison-matrix .matrix-correct {
+  background: rgba(16, 185, 129, 0.14);
+  color: #047857;
+}
+html[data-color-theme="light"] .ra-run-comparison-root .comparison-matrix .matrix-error {
+  background: rgba(239, 68, 68, 0.12);
+  color: #b91c1c;
+}
+html[data-color-theme="light"] .ra-run-comparison-root .comparison-case-table thead th {
+  background: #f1f5f9;
+  color: #334155;
+}
+html[data-color-theme="light"] .ra-run-comparison-root .comparison-issue-link {
+  color: #0369a1;
+}
+html[data-color-theme="light"] .ra-run-comparison-root .comparison-snapshot pre {
+  background: #f8fafc;
+  color: #0f172a;
+}
+html[data-color-theme="light"] .ra-run-comparison-root .comparison-extra-chip {
+  background: rgba(14, 116, 144, 0.12);
+  color: #0e7490;
+}
+html[data-color-theme="light"] .ra-run-comparison-root .comparison-scene-tag {
+  color: #1d4ed8;
+}
+html[data-color-theme="light"] .ra-run-comparison-root .comparison-scene-tag[data-tag-section="trigger_judgment"] {
+  color: #be123c;
+}
+html[data-color-theme="light"] .ra-run-comparison-root .comparison-scene-tag[data-tag-section="interaction_decision"] {
+  color: #b45309;
 }
 
 .ra-run-comparison-root .comparison-input-filter .ra-comparison-input-trigger {
@@ -667,6 +732,11 @@ html[data-color-theme="light"] #raComparisonReasonDialog [data-triage-label="无
 }
 
 /* Wave B2: Run Collections / Multi-run Evaluation */
+.ra-run-collections-root,
+.ra-run-collections-root .run-collection-workbench {
+  min-width: 0;
+  max-width: 100%;
+}
 .ra-run-collections-root .ra-collection-field {
   display: grid;
   gap: 5px;
@@ -686,8 +756,8 @@ html[data-color-theme="light"] #raComparisonReasonDialog [data-triage-label="无
   min-width: 0;
 }
 .ra-run-collections-root .ra-collection-field .ui-select-trigger {
-  min-height: 34px;
-  height: 34px;
+  min-height: 38px;
+  height: 38px;
 }
 
 @media (max-width: 900px) {
@@ -701,8 +771,26 @@ html[data-color-theme="light"] #raComparisonReasonDialog [data-triage-label="无
 
 @media (max-width: 760px) {
   .ra-run-collections-root .run-collection-toolbar > .ra-collection-field,
-  .ra-run-collections-root .run-collection-evaluation-controls > .ra-collection-field {
+  .ra-run-collections-root .run-collection-evaluation-controls > .ra-collection-field,
+  .ra-run-collections-root .ra-collection-add-run-field,
+  .ra-run-collections-root .run-collection-member-tools > *,
+  .ra-run-collections-root .run-collection-integrations > label,
+  .ra-run-collections-root .run-collection-create-row > label {
     min-width: 0;
+    max-width: 100%;
+  }
+  .ra-run-collections-root .run-collection-member-tools {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+  }
+  .ra-run-collections-root .run-collection-member-tools #runCollectionMemberHash {
+    margin-left: 0;
+    overflow-wrap: anywhere;
+  }
+  .ra-run-collections-root .run-collection-integrations {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

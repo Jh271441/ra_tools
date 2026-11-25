@@ -315,7 +315,7 @@ describe("RunComparisonPage", () => {
     const row = container.querySelector<HTMLTableRowElement>('tr[data-issue-id="cn-case-1"]')!;
     fireEvent.click(row);
 
-    const dialog = container.querySelector<HTMLDialogElement>("#raComparisonReasonDialog")!;
+    const dialog = document.querySelector<HTMLDialogElement>("#raComparisonReasonDialog")!;
     expect(dialog.open).toBe(true);
     expect(screen.getByText("cn-case-1 · Case 对比")).toBeInTheDocument();
     expect(await screen.findByText("Prompt 对比")).toBeInTheDocument();
@@ -325,7 +325,7 @@ describe("RunComparisonPage", () => {
     // Switch to Input config tab
     fireEvent.click(screen.getByRole("tab", { name: "输入配置" }));
     expect(screen.getByText(/逐 Case 配置/)).toBeInTheDocument();
-    expect(container.querySelector("#raComparisonCaseEvidence")).toBeNull();
+    expect(document.querySelector("#raComparisonCaseEvidence")).toBeNull();
 
     // ArrowDown steps to second case
     fireEvent.keyDown(document, { key: "ArrowDown" });

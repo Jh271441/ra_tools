@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "../api/client";
 import {
@@ -313,8 +314,10 @@ function normalizeRunIds(
 
 function modelLabelMatchesGt(modelLabel: string, gtLabel: string): boolean {
   if (!modelLabel || !gtLabel) return false;
-  if (modelLabel === gtLabel) return true;
-  return gtLabel === "正确触发" && modelLabel === "真实卡住";
+  if (modelLabel === "真实卡住") {
+    return gtLabel === "正确触发" || gtLabel === "无需协助";
+  }
+  return modelLabel === gtLabel;
 }
 
 function percentage(value: number | null | undefined): string {
@@ -2214,22 +2217,23 @@ export const RunComparisonPage: React.FC<RunComparisonPageProps> = ({
         </div>
       )}
 
-      {/* Native top-layer <dialog> matching classic #comparisonReasonDialog 1:1 */}
-      <dialog
-        ref={dialogRef}
-        id="raComparisonReasonDialog"
-        className={`dialog comparison-reason-dialog ra-comparison-reason-dialog${
-          single ? " is-single-run" : ""
-        }`}
-        aria-labelledby="raComparisonReasonTitle"
-        aria-keyshortcuts="ArrowUp ArrowDown"
-        onClose={() => setDialogIssueId("")}
-        onClick={(e) => {
-          if (e.target === e.currentTarget) {
-            setDialogIssueId("");
-          }
-        }}
-      >
+      {/* Native top-layer <dialog> portaled to document.body to match classic #comparisonReasonDialog 1:1 */}
+      {createPortal(
+        <dialog
+          ref={dialogRef}
+          id="raComparisonReasonDialog"
+          className={`dialog comparison-reason-dialog ra-comparison-reason-dialog${
+            single ? " is-single-run" : ""
+          }`}
+          aria-labelledby="raComparisonReasonTitle"
+          aria-keyshortcuts="ArrowUp ArrowDown"
+          onClose={() => setDialogIssueId("")}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setDialogIssueId("");
+            }
+          }}
+        >
         {dialogIssueId && activeDialogItem ? (
           <div className="dialog-card">
             <div className="dialog-heading">
@@ -2588,7 +2592,9 @@ export const RunComparisonPage: React.FC<RunComparisonPageProps> = ({
             </div>
           </div>
         ) : null}
-      </dialog>
+      </dialog>,
+        document.body,
+      )}
     </div>
   );
 };

@@ -1164,7 +1164,7 @@ export const RunCollectionsPage: React.FC<RunCollectionsPageProps> = ({
               placeholder={
                 referenceType === "label_result"
                   ? "label-result-…"
-                  : bilingual(lang, "按数据集自动选择 GT 快照", "GT snapshot is selected by scope")
+                  : bilingual(lang, "标注版本 ID", "Label snapshot ID")
               }
               value={referenceId}
               onChange={(e) => setReferenceId(e.target.value)}
