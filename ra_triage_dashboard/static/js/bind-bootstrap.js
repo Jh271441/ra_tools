@@ -1,0 +1,1376 @@
+/* ra_triage_dashboard/static/js/bind-bootstrap.js
+ * Event binding and bootstrap
+ * Loaded as a classic script (shared global scope). Do not convert to
+ * ES modules without auditing cross-file function/state dependencies.
+ */
+let reviewSearchTimer = null;
+
+function shortcutGuidePage() {
+  return ["review", "intent", "labeling"].includes(state.activePage) ? state.activePage : "";
+}
+
+function shortcutGuideKeyToken(event) {
+  if (["Shift", "Control", "Meta", "Alt"].includes(event.key)) return "";
+  const codeTokens = {
+    ArrowLeft: "arrowleft",
+    ArrowRight: "arrowright",
+    ArrowUp: "arrowup",
+    ArrowDown: "arrowdown",
+    Space: "space",
+    Backslash: "backslash",
+    BracketLeft: "bracketleft",
+    BracketRight: "bracketright",
+    Minus: "minus",
+    Equal: event.key === "+" ? "plus" : "equal",
+  };
+  let token = codeTokens[event.code] || "";
+  if (!token && /^Key[A-Z]$/.test(event.code)) token = event.code.slice(3).toLowerCase();
+  if (!token && /^Digit[0-9]$/.test(event.code)) token = event.code.slice(5);
+  if (!token) return "";
+  if (token === "plus") return token;
+  const modifiers = [];
+  if (event.ctrlKey || event.metaKey) modifiers.push("mod");
+  if (event.shiftKey) modifiers.push("shift");
+  return [...modifiers, token].join("+");
+}
+
+function resetShortcutGuideSearch() {
+  const dialog = $("#shortcutGuideDialog");
+  dialog?.querySelectorAll(".shortcut-guide-row").forEach((row) => { row.hidden = false; });
+  const stateText = $("#shortcutGuideSearchState");
+  if (stateText) stateText.textContent = "直接按下任意按键筛选快捷键";
+  if ($("#shortcutGuideSearchClear")) $("#shortcutGuideSearchClear").hidden = true;
+  if ($("#shortcutGuideEmpty")) $("#shortcutGuideEmpty").hidden = true;
+  if (dialog) delete dialog.dataset.shortcutSearch;
+}
+
+function filterShortcutGuide(token, displayKey) {
+  const dialog = $("#shortcutGuideDialog");
+  const panel = dialog?.querySelector("[data-shortcut-guide-page]:not([hidden])");
+  if (!dialog || !panel || !token) return;
+  let matches = 0;
+  panel.querySelectorAll(".shortcut-guide-row").forEach((row) => {
+    const tokens = new Set(String(row.dataset.shortcutSearch || "").split(/\s+/).filter(Boolean));
+    const visible = tokens.has(token);
+    row.hidden = !visible;
+    if (visible) matches += 1;
+  });
+  dialog.dataset.shortcutSearch = token;
+  $("#shortcutGuideSearchState").textContent = `按键 ${displayKey} · ${matches} 个匹配`;
+  $("#shortcutGuideSearchClear").hidden = false;
+  $("#shortcutGuideEmpty").hidden = matches > 0;
+  panel.scrollTop = 0;
+}
+
+function openShortcutGuide() {
+  const page = shortcutGuidePage();
+  const dialog = $("#shortcutGuideDialog");
+  if (!page || !dialog || (document.querySelector("dialog[open]") && !dialog.open)) return;
+  syncReviewDropdownShortcutGuide();
+  dialog.querySelectorAll("[data-shortcut-guide-page]").forEach((panel) => {
+    panel.hidden = panel.dataset.shortcutGuidePage !== page;
+  });
+  $("#shortcutGuideSubtitle").textContent = page === "intent"
+    ? "意图标注页 · 当前焦点位于输入控件时快捷键暂停"
+    : page === "labeling"
+      ? "问题标注页 · 数字键操作当前展开的标签组"
+      : "判错复核页 · 媒体快捷键在 Issue 详情中可用";
+  resetShortcutGuideSearch();
+  if (!dialog.open) dialog.showModal();
+}
+
+function bindShortcutGuide() {
+  const dialog = $("#shortcutGuideDialog");
+  $("#shortcutHelpButton")?.addEventListener("click", openShortcutGuide);
+  document.querySelectorAll("[data-open-shortcut-guide]").forEach((button) => {
+    button.addEventListener("click", openShortcutGuide);
+  });
+  $("#shortcutGuideSearchClear")?.addEventListener("click", resetShortcutGuideSearch);
+  dialog?.addEventListener("keydown", (event) => {
+    if (isImeComposing(event) || event.repeat || ["Tab", "Enter", "Escape"].includes(event.key)) return;
+    if (event.key === " " && event.target instanceof Element && event.target.closest("button")) return;
+    if (String(event.key || "").toLowerCase() === "h" && !event.ctrlKey && !event.metaKey && !event.altKey) return;
+    const token = shortcutGuideKeyToken(event);
+    if (!token) return;
+    event.preventDefault();
+    event.stopPropagation();
+    filterShortcutGuide(token, event.key === " " ? "Space" : event.key);
+  });
+  dialog?.addEventListener("cancel", (event) => {
+    if (!dialog.dataset.shortcutSearch) return;
+    event.preventDefault();
+    resetShortcutGuideSearch();
+  });
+  dialog?.addEventListener("close", () => {
+    resetShortcutGuideSearch();
+    window.requestAnimationFrame(() => {
+      const active = document.activeElement;
+      if (active?.matches?.("#shortcutHelpButton, [data-open-shortcut-guide]")) active.blur();
+    });
+  });
+  document.addEventListener("keydown", (event) => {
+    if (String(event.key || "").toLowerCase() !== "h" || isImeComposing(event) || event.repeat) return;
+    if (event.ctrlKey || event.metaKey || event.altKey) return;
+    if (dialog?.open) {
+      event.preventDefault();
+      event.stopPropagation();
+      dialog.close();
+      return;
+    }
+    if (!shortcutGuidePage() || document.querySelector("dialog[open]")) return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (target?.closest("input, textarea, select, [contenteditable='true'], [role='textbox']")) return;
+    event.preventDefault();
+    event.stopPropagation();
+    openShortcutGuide();
+  }, true);
+}
+
+function bindGlobalRefreshShortcut() {
+  document.addEventListener("keydown", (event) => {
+    if (event.code !== "KeyR" || isImeComposing(event) || event.repeat) return;
+    if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+    if (document.querySelector("dialog[open]")) return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (target?.closest("input, textarea, select, [contenteditable='true'], [role='textbox']")) return;
+    const refreshButton = $("#refreshButton");
+    if (!refreshButton || refreshButton.disabled) return;
+    event.preventDefault();
+    event.stopPropagation();
+    refreshButton.click();
+  }, true);
+}
+
+function bindGlobalSidebarShortcut() {
+  document.addEventListener("keydown", (event) => {
+    if (event.code !== "Backslash" || isImeComposing(event) || event.repeat) return;
+    if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+    if (document.querySelector("dialog[open]")) return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (target?.closest("input, textarea, select, [contenteditable='true'], [role='textbox']")) return;
+    event.preventDefault();
+    event.stopPropagation();
+    toggleSidebar();
+  }, true);
+}
+
+function scheduleReviewFilterReload(delay = 0) {
+  if (state.activePage !== "review") return;
+  if (reviewSearchTimer) window.clearTimeout(reviewSearchTimer);
+  // Serialize the current controls before waiting for the debounced API
+  // request. A browser refresh during that gap must reopen the exact same
+  // filtered Gallery instead of restoring the previous URL state.
+  state.reviewIssueIds = [];
+  if (typeof updateIssueQueryButton === "function") updateIssueQueryButton();
+  state.casePage = 1;
+  persistCurrentReviewRoute({ issue: "", issueIds: [], casePage: 1 });
+  const pageContext = capturePageContext();
+  reviewSearchTimer = window.setTimeout(() => {
+    reviewSearchTimer = null;
+    if (!isPageContextCurrent(pageContext)) return;
+    reloadReviewGallery({ includeOverview: false, historyMode: "replace" }).catch(
+      (error) => showToast(error.message, true)
+    );
+  }, Math.max(0, Number(delay) || 0));
+}
+
+function bindEvents() {
+  enhanceDashboardSelects();
+  observeDashboardSelects();
+  bindLayoutResizers();
+  bindShortcutGuide();
+  bindGlobalRefreshShortcut();
+  bindGlobalSidebarShortcut();
+  if (typeof bindIntentLabelingEvents === "function") bindIntentLabelingEvents();
+  if (typeof bindCaseLabelingEvents === "function") bindCaseLabelingEvents();
+  bindWorkSplitControls();
+  bindTaskAllocationEditor();
+  if (typeof bindLabelingTaskControls === "function") bindLabelingTaskControls();
+  if (typeof bindReviewAssignmentsPage === "function") bindReviewAssignmentsPage();
+  if (typeof bindRunComparisonEvents === "function") bindRunComparisonEvents();
+  if (typeof bindRunCollectionsEvents === "function") bindRunCollectionsEvents();
+  if (typeof bindIssueQueryControls === "function") bindIssueQueryControls();
+  document.querySelectorAll("[data-page-target]").forEach((element) => {
+    element.addEventListener("click", (event) => {
+      if (
+        element.tagName === "A" &&
+        (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0)
+      ) {
+        return;
+      }
+      event.preventDefault();
+      navigatePage(element.dataset.pageTarget);
+      closeMobileSidebar();
+    });
+  });
+  $("#filterForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    // Filters auto-apply on change; form submit is treated as reset.
+    await resetReviewFilters();
+  });
+  $("#resetReviewFiltersButton")?.addEventListener("click", () => {
+    resetReviewFilters().catch((error) => showToast(error.message, true));
+  });
+  $("#searchInput")?.addEventListener("input", () => scheduleReviewFilterReload(280));
+  $("#reviewAnalysisFilterForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    state.reviewAnalysis.page = 1;
+    try {
+      await reloadReviewAnalysis();
+    } catch (error) {
+      showToast(error.message, true);
+    }
+  });
+  $("#analysisRunFilter").addEventListener("change", async () => {
+    const runId = $("#analysisRunFilter").value;
+    if (runId !== state.selectedRunId) {
+      state.reviewAnalysis.workSplitId = "";
+      state.reviewAnalysis.availableWorkSplitId = "";
+      state.reviewAnalysis.workSplitOptions = [];
+      state.reviewAnalysis.workSplitOptionsKey = "";
+      renderAnalysisWorkSplitPicker?.("");
+    }
+    const previouslyHadRun = Boolean(state.selectedRunId);
+    const nextStatus = !runId
+      ? "all"
+      : previouslyHadRun
+        ? checkedAnalysisComparisonStatus()
+        : "mismatch";
+    setAnalysisComparisonStatus(nextStatus, { hasRun: Boolean(runId) });
+    state.selectedRunId = state.modelRuns.some((run) => run.id === runId) ? runId : "";
+    const run = state.modelRuns.find((item) => item.id === state.selectedRunId);
+    if (run) {
+      await applyInferredBaselinesFromRun(run, {
+        reason: "run",
+        reloadActivePage: false,
+      });
+    }
+    scheduleAnalysisFilterReload();
+  });
+  // analysisComparisonFilter is a multi-filter; its onChange schedules reload.
+  if (typeof renderAnalysisComparisonFilter === "function") {
+    renderAnalysisComparisonFilter();
+  } else if (typeof bindAnalysisComparisonPicker === "function") {
+    bindAnalysisComparisonPicker();
+  }
+  if (typeof bindTrailAttributeUpdateEvents === "function") {
+    bindTrailAttributeUpdateEvents();
+  }
+  $("#analysisSearchInput")?.addEventListener("input", () => {
+    scheduleAnalysisFilterReload(220);
+  });
+  $("#analysisIssueInput")?.addEventListener("input", () => {
+    scheduleAnalysisFilterReload(220);
+  });
+  $("#analysisCommentSearchInput")?.addEventListener("input", () => scheduleAnalysisFilterReload(220));
+  $("#analysisCommentStateFilter")?.addEventListener("change", () => scheduleAnalysisFilterReload(0));
+  document.addEventListener("click", () => closeAllMultiFilters());
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      closeAllMultiFilters();
+      hideAnalysisPieTooltip?.();
+    }
+  });
+  document.addEventListener(
+    "scroll",
+    (event) => {
+      if (!document.querySelector(".multi-filter.is-open")) return;
+      const target = event.target;
+      if (
+        target instanceof Element &&
+        target.closest(".multi-filter-panel.is-fixed-dropdown")
+      ) {
+        return;
+      }
+      closeAllMultiFilters();
+    },
+    true
+  );
+  window.addEventListener("resize", () => closeAllMultiFilters());
+  $("#resetReviewAnalysisButton").addEventListener("click", async () => {
+    $("#analysisRunFilter").value = "";
+    setAnalysisComparisonStatus("all", { hasRun: false });
+    [
+      "#analysisReviewerFilter",
+      "#analysisStatusFilter",
+      "#analysisLabelGtFilter",
+      "#analysisGtFilter",
+      "#analysisModelLabelFilter",
+      "#analysisExclusionFilter",
+      "#analysisEvidenceFilter",
+      "#analysisSceneFilter",
+      "#analysisTriggerFilter",
+      "#analysisEgressFilter",
+    ].forEach((selector) => setMultiFilterValues($(selector), []));
+    if ($("#analysisWorkAgreementFilter")) {
+      $("#analysisWorkAgreementFilter").value = "all";
+    }
+    state.reviewAnalysis.workSplitId = "";
+    state.reviewAnalysis.availableWorkSplitId = "";
+    renderAnalysisWorkSplitPicker?.("");
+    state.reviewAnalysis.workAgreement = "all";
+    renderAnalysisWorkAgreementPicker?.("all");
+    // See resetReviewFilters: clear the durable route state as well as the
+    // widget state, otherwise an analysis reset would restore reviewer=… on
+    // the next async facet refresh.
+    persistReviewerFilterRoute?.("analysis", []);
+    if ($("#analysisIssueInput")) $("#analysisIssueInput").value = "";
+    $("#analysisSearchInput").value = "";
+    if ($("#analysisCommentSearchInput")) $("#analysisCommentSearchInput").value = "";
+    if ($("#analysisCommentStateFilter")) $("#analysisCommentStateFilter").value = "all";
+    renderAnalysisCommentStatePicker?.("all");
+    state.reviewAnalysis.page = 1;
+    try {
+      await reloadReviewAnalysis();
+    } catch (error) {
+      showToast(error.message, true);
+    }
+  });
+  $("#exportReviewAnalysisCsvButton").addEventListener("click", () => downloadReviewAnalysis("csv"));
+  $("#analysisWorkAgreementFilter")?.addEventListener("change", () => {
+    state.reviewAnalysis.workAgreement = $("#analysisWorkAgreementFilter").value || "all";
+    scheduleAnalysisFilterReload(0);
+  });
+  $("#exportReviewAnalysisXlsxButton").addEventListener("click", () => downloadReviewAnalysis("xlsx"));
+  $("#exportTrailExpectedOutputButton").addEventListener("click", () => downloadReviewAnalysis("trail_xlsx"));
+  $("#analysisPagePrevious").addEventListener("click", () => {
+    changeAnalysisPage(-1).catch((error) => showToast(error.message, true));
+  });
+  $("#analysisPageNext").addEventListener("click", () => {
+    changeAnalysisPage(1).catch((error) => showToast(error.message, true));
+  });
+  const analysisPageJump = $("#analysisPageJump");
+  const commitAnalysisPageJump = () => {
+    jumpToAnalysisPage(analysisPageJump?.value).catch((error) => showToast(error.message, true));
+  };
+  $("#analysisPageJumpButton")?.addEventListener("click", commitAnalysisPageJump);
+  analysisPageJump?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      commitAnalysisPageJump();
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      analysisPageJump.value = String(state.reviewAnalysis.page);
+      analysisPageJump.blur();
+    }
+  });
+  analysisPageJump?.addEventListener("focus", () => {
+    window.requestAnimationFrame(() => analysisPageJump.select());
+  });
+  $("#analysisPageSize")?.addEventListener("change", (event) => {
+    changeAnalysisPageSize(event.target.value).catch((error) => showToast(error.message, true));
+  });
+  $("#modelRunFilter").addEventListener("change", async () => {
+    const previousRunId = state.selectedRunId;
+    state.selectedRunId = $("#modelRunFilter").value;
+    if (state.selectedRunId !== previousRunId) {
+      state.reviewWorkSplitId = "";
+      state.availableReviewWorkSplitId = "";
+      renderReviewWorkSplitPicker?.("");
+    }
+    if (!state.selectedRunId) state.reviewComparisonStatus = "all";
+    if (state.selectedRunId && !previousRunId) {
+      // Run selection changes the prediction overlay, not the immutable
+      // baseline queue.  Keep the established failure-focused default while
+      // retaining uncovered baseline Issues for the NONE/全部 filters.
+      state.reviewComparisonStatus = "mismatch";
+      state.failureOnly = true;
+    }
+    if (state.selectedRunId) {
+      const run = (state.modelRuns || []).find(
+        (item) => String(item.id) === String(state.selectedRunId)
+      );
+      // 单集评测 Run：切换对比时自动勾选对应 GT 数据集。
+      if (run) {
+        await applyInferredBaselinesFromRun(run, { reason: "run" });
+      }
+    }
+    if (typeof renderReviewCatalogFilters === "function") {
+      renderReviewCatalogFilters();
+    }
+    setReviewComparisonStatus(state.reviewComparisonStatus, {
+      hasRun: Boolean(state.selectedRunId),
+    });
+    renderAnalysisRunFilter();
+    renderActiveRun();
+    renderRunManager();
+    await reloadReviewGallery();
+  });
+  const clearClusterButton = $("#clearClusterButton");
+  if (clearClusterButton) {
+    clearClusterButton.addEventListener("click", async () => {
+      state.clusterKey = "";
+      await reloadReviewGallery({ includeOverview: false });
+    });
+  }
+  $("#casePagePrevious").addEventListener("click", () => {
+    changeCasePage(-1).catch((error) => showToast(error.message, true));
+  });
+  $("#casePageNext").addEventListener("click", () => {
+    changeCasePage(1).catch((error) => showToast(error.message, true));
+  });
+  const casePageJump = $("#casePageJump");
+  const commitCasePageJump = () => {
+    jumpToCasePage(casePageJump?.value).catch((error) => showToast(error.message, true));
+  };
+  $("#casePageJumpButton")?.addEventListener("click", commitCasePageJump);
+  casePageJump?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      commitCasePageJump();
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      renderCasePagination();
+      casePageJump.blur();
+    }
+  });
+  casePageJump?.addEventListener("focus", () => {
+    window.requestAnimationFrame(() => casePageJump.select());
+  });
+  $("#casePageSize").addEventListener("change", (event) => {
+    changeCasePageSize(event.target.value).catch((error) => showToast(error.message, true));
+  });
+  $("#refreshButton").addEventListener("click", async (event) => {
+    if (state.activePage === "rd-results") { await loadRdResults(); return; }
+    const pageContext = capturePageContext();
+    try {
+      if (state.activePage === "trail-history") {
+        if (!trailHistory.busy) await loadTrailHistory();
+        return;
+      }
+      if (event.shiftKey && ["intent", "intent-experiments", "intent-summary"].includes(state.activePage)) {
+        resetIntentWorkspacePreferences(state.activePage);
+      }
+      if (state.activePage === "intent") {
+        await intentFlushSave();
+        await loadIntentLabeling({
+          datasetId: state.intentLabeling.datasetId,
+          datasetIds: state.intentLabeling.selectedDatasetIds,
+          caseId: event.shiftKey ? "" : state.intentLabeling.caseId,
+          offsetMs: event.shiftKey ? null : intentActiveTimepoint()?.offset_ms,
+        });
+        showToast(t("toast.page_refreshed"));
+        return;
+      }
+      if (state.activePage === "intent-experiments") {
+        await loadIntentExperimentAdmin({
+          datasetId: state.intentLabeling.experimentDatasetId,
+          datasetIds: state.intentLabeling.experimentDatasetIds,
+          force: true,
+        });
+        showToast(t("toast.page_refreshed"));
+        return;
+      }
+      if (state.activePage === "intent-summary") {
+        await loadIntentSummary({
+          datasetId: state.intentLabeling.summaryDatasetId,
+          datasetIds: state.intentLabeling.summaryDatasetIds,
+          force: true,
+        });
+        showToast(t("toast.page_refreshed"));
+        return;
+      }
+      if (state.activePage === "labeling") {
+        await enterCaseLabeling({ route: parsePageRoute() });
+        showToast(t("toast.page_refreshed"));
+        return;
+      }
+      if (state.activePage === "version-metrics") { await loadVersionMetrics(); return; }
+      if (state.activePage === "version-datasets") { await loadVersionDatasets(); return; }
+      if (state.activePage === "daily-review") { await loadDailyReview(); return; }
+      if (state.activePage === "daily-cron") {
+        await loadDailyCron();
+        return;
+      }
+      await refreshAll();
+      if (!isPageContextCurrent(pageContext)) return;
+      if (state.activePage === "analysis") {
+        await loadReviewReasonAnalysis();
+      } else if (state.selectedId) {
+        await selectCase(state.selectedId, { updateRoute: false });
+      }
+      showToast(t("toast.page_refreshed"));
+    } catch (error) {
+      showToast(error.message, true);
+    }
+  });
+  if (typeof bindCronGraphEvents === "function") bindCronGraphEvents();
+  $("#dailyCronRefresh")?.addEventListener("click", () => loadDailyCron());
+  $("#dailyCronSearch")?.addEventListener("input", () => renderDailyCronJobs());
+  $("#gtSyncButton")?.addEventListener("click", () => {
+    refreshAuthoritativeGt().catch((error) => showToast(error.message, true));
+  });
+  $("#refreshSystemStatusButton").addEventListener("click", async () => {
+    const button = $("#refreshSystemStatusButton");
+    button.disabled = true;
+    try {
+      await loadStatus();
+      showToast(t("toast.status_refreshed"));
+    } catch (error) {
+      showToast(error.message, true);
+    } finally {
+      button.disabled = false;
+    }
+  });
+  $("#checkTrailButton").addEventListener("click", () => syncTrail("preview"));
+  $("#syncTrailButton").addEventListener("click", () => syncTrail("create"));
+  $("#runManagerImportButton").addEventListener("click", () => {
+    $("#importResult").classList.add("hidden");
+    $("#importResult").textContent = "";
+    activateRunSourceTab("upload");
+  });
+  $("#openAutoTriageImportButton").addEventListener("click", openAutoTriageImport);
+  $("#openTrailImportButton").addEventListener("click", () => {
+    activateRunSourceTab("trail");
+  });
+  $("#reviewUploadModelButton").addEventListener("click", () => openRunImport("model"));
+  $("#accessUserForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const input = $("#accessUserName");
+    const username = String(input.value || "").trim().toLowerCase();
+    if (!username) return showToast(t("toast.enter_username"), true);
+    const submit = event.submitter || event.currentTarget.querySelector("button[type='submit']");
+    submit.disabled = true;
+    try {
+      await saveAccessUser(username, $("#accessUserRole").value, $("#accessIntentPermission").value, $("#accessAnnotationRole").value);
+      input.value = "";
+      showToast(t("toast.access_saved"));
+    } catch (error) {
+      showToast(error.message, true);
+    } finally {
+      submit.disabled = false;
+    }
+  });
+  $("#accessUserList").addEventListener("click", async (event) => {
+    const row = event.target.closest("[data-access-user]");
+    if (!row) return;
+    const username = row.dataset.accessUser;
+    if (event.target.closest("[data-save-access-user]")) {
+      try {
+        await saveAccessUser(username, row.querySelector("[data-access-role]").value, row.querySelector("[data-intent-permission]").value, row.querySelector("[data-annotation-role]").value);
+        showToast(t("toast.access_updated"));
+      } catch (error) { showToast(error.message, true); }
+    }
+    if (event.target.closest("[data-remove-access-user]")) {
+      if (!window.confirm(t("access.confirm_remove", { user: username }))) return;
+      try {
+        const result = await api(`/api/access-users/${encodeURIComponent(username)}`, { method: "DELETE" });
+        acknowledgeLocalChange(result);
+        await loadAccessUsers();
+        showToast(t("toast.access_removed"));
+      } catch (error) { showToast(error.message, true); }
+    }
+  });
+  $("#mentionUserForm")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const input = $("#mentionUserName");
+    const username = String(input?.value || "").trim().toLowerCase();
+    if (!username) return showToast("请输入 LDAP 用户名。", true);
+    try {
+      await saveMentionUser(username, true);
+      input.value = "";
+      showToast("可 @ 人员已保存。");
+    } catch (error) { showToast(error.message, true); }
+  });
+  $("#mentionUserList")?.addEventListener("click", async (event) => {
+    const row = event.target.closest("[data-mention-user]");
+    if (!row) return;
+    const username = row.dataset.mentionUser;
+    try {
+      if (event.target.closest("[data-save-mention-user]")) {
+        await saveMentionUser(username, row.querySelector("[data-mention-enabled]").checked);
+        showToast("@ 人员状态已更新。");
+      } else if (event.target.closest("[data-remove-mention-user]")) {
+        const result = await api(`/api/mention-users/${encodeURIComponent(username)}`, { method: "DELETE" });
+        acknowledgeLocalChange(result);
+        await loadMentionUsers();
+        showToast("@ 人员已移除。");
+      }
+    } catch (error) { showToast(error.message, true); }
+  });
+  bindAnalysisDiscussionEditor();
+  bindAnalysisDiscussionEnterSubmit();
+  $("#analysisDiscussionDialog")?.addEventListener("close", closeAnalysisDiscussion);
+  $("#analysisDiscussionForm")?.addEventListener("submit", saveAnalysisDiscussion);
+  $("#exportFilteredIssuesButton")?.addEventListener("click", downloadFilteredReviewIssues);
+  $("#predictFilteredButton").addEventListener("click", () => {
+    const limit = predictionBatchLimit();
+    if (state.caseTotal > limit) {
+      showToast(
+        `当前筛选有 ${state.caseTotal} 个 Issue；单批最多 ${limit} 个，请继续收窄筛选。`,
+        true
+      );
+      return;
+    }
+    if (state.cases.length !== state.caseTotal) {
+      showToast(
+        `当前仅加载 ${state.cases.length} / ${state.caseTotal} 个筛选结果，不能创建不完整 Batch。`,
+        true
+      );
+      return;
+    }
+    openBatchDraft(
+      state.cases.map((item) => item.issue_id),
+      "filtered"
+    );
+  });
+  $("#refreshRunsButton").addEventListener("click", async () => {
+    try {
+      await loadRuns();
+      await loadOverview();
+      showToast(t("toast.runs_refreshed"));
+    } catch (error) {
+      showToast(error.message, true);
+    }
+  });
+  $("#runPersonFilter").addEventListener("change", resetRunManagerPageAndRender);
+  $("#runKindFilter").addEventListener("change", resetRunManagerPageAndRender);
+  $("#runSearchInput").addEventListener("input", resetRunManagerPageAndRender);
+  $("#runPagePrevious")?.addEventListener("click", () => changeRunManagerPage(-1));
+  $("#runPageNext")?.addEventListener("click", () => changeRunManagerPage(1));
+  const runPageJump = $("#runPageJump");
+  const commitRunPageJump = () => jumpToRunManagerPage(runPageJump?.value);
+  $("#runPageJumpButton")?.addEventListener("click", commitRunPageJump);
+  runPageJump?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      commitRunPageJump();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      renderRunManager();
+      runPageJump.blur();
+    }
+  });
+  runPageJump?.addEventListener("focus", () => {
+    window.requestAnimationFrame(() => runPageJump.select());
+  });
+  $("#runPageSize")?.addEventListener("change", (event) => {
+    changeRunManagerPageSize(event.target.value);
+  });
+  $("#batchRequesterFilter").addEventListener("change", () => {
+    loadPredictionBatches().catch((error) => showToast(error.message, true));
+  });
+  $("#batchStatusFilter").addEventListener("change", () => {
+    loadPredictionBatches().catch((error) => showToast(error.message, true));
+  });
+  ["#batchModelFilter", "#batchPromptFilter", "#batchInputFilter"].forEach((selector) => {
+    $(selector).addEventListener("change", () => {
+      loadPredictionBatches().catch((error) => showToast(error.message, true));
+    });
+  });
+  $("#refreshPredictionBatchesButton").addEventListener("click", () => {
+    loadPredictionBatches()
+      .then(() => showToast(t("toast.batch_refreshed")))
+      .catch((error) => showToast(error.message, true));
+  });
+  $("#refreshGatewayModelsButton").addEventListener("click", () => {
+    const button = $("#refreshGatewayModelsButton");
+    button.disabled = true;
+    loadGatewayModels({ refresh: true })
+      .then(() => showToast(t("toast.models_refreshed")))
+      .catch((error) => showToast(error.message, true))
+      .finally(() => {
+        button.disabled = false;
+      });
+  });
+  $("#predictionModelSelect").addEventListener("change", () => {
+    state.selectedGatewayModelId = $("#predictionModelSelect").value;
+    renderGatewayModels();
+  });
+  $("#predictionPromptSelect").addEventListener("change", loadSelectedPromptTemplate);
+  $("#predictionPromptTemplate").addEventListener("input", updatePromptEditorSummary);
+  $("#predictionInputProfile").addEventListener("change", applyBatchInputPreset);
+  $("#predictionCameraPreset").addEventListener("change", applyCameraFramePreset);
+  $("#predictionFrameOffsets").addEventListener("input", () => {
+    syncCameraFramePreset();
+    renderBatchRuntimeSummary();
+  });
+  $("#predictionUseRaEvent").addEventListener("change", () => {
+    if (!$("#predictionUseRaEvent").checked) $("#predictionUseRaOptions").checked = false;
+    renderBatchRuntimeSummary();
+  });
+  $("#predictionUseRaOptions").addEventListener("change", () => {
+    if ($("#predictionUseRaOptions").checked) $("#predictionUseRaEvent").checked = true;
+    renderBatchRuntimeSummary();
+  });
+  $("#predictionUseBev").addEventListener("change", renderBatchRuntimeSummary);
+  $("#languageToggleButton").addEventListener("click", () => {
+    applyUiLanguage(state.uiLanguage === "en" ? "zh" : "en");
+  });
+  $("#themeToggleButton").addEventListener("click", () => {
+    applyColorTheme(state.colorTheme === "light" ? "dark" : "light");
+  });
+  bindSidebarNavigation();
+  document.querySelectorAll("[data-close]").forEach((button) => button.addEventListener("click", () => closeDialog(button.dataset.close)));
+  $("#mediaDialog").addEventListener("close", cleanupMediaDialog);
+  $("#raEventSearchInput").addEventListener("input", (event) => {
+    renderRaEventRows(
+      state.raEventDialog.events,
+      event.target.value,
+      state.raEventDialog.t0TimestampMs
+    );
+  });
+  $("#raEventSearchButton").addEventListener("click", () => $("#raEventSearchInput")?.focus());
+  $("#raEventRefreshButton").addEventListener("click", refreshRaEventMetadata);
+  bindRaEventTimestampCopy();
+  bindRaEventDialogFocus();
+  $("#raEventDialog").addEventListener("close", () => {
+    state.raEventDialog = { issueId: "", caseData: null, events: [], trailUrl: "", t0TimestampMs: NaN };
+  });
+  $("#importFile").addEventListener("change", () => {
+    const filename = $("#importFileName");
+    if (filename) filename.textContent = $("#importFile").files[0]?.name || t("filter.no_file");
+  });
+  $("#openImportExamplesButton").addEventListener("click", openImportExamples);
+  document.querySelectorAll("[data-import-example-format]").forEach((tab) => {
+    tab.addEventListener("click", () => renderImportExample(tab.dataset.importExampleFormat));
+  });
+  $("#copyImportExampleButton").addEventListener("click", () => copyImportExample().catch((error) => showToast(error.message, true)));
+  $("#importForm").addEventListener("submit", submitImport);
+  $("#autotriageImportForm").addEventListener("submit", submitAutoTriageImport);
+  $("#predictionBatchIssues").addEventListener("input", () => {
+    state.batchDraftSource = "";
+    updatePredictionBatchCount();
+    renderPredictionSourceSummary();
+  });
+  $("#predictionBatchForm").addEventListener("submit", submitPredictionBatch);
+  $("#sourcePreviewPrevious").addEventListener("click", () => {
+    if (!state.sourcePreview.runId || state.sourcePreview.page <= 1) return;
+    loadSourcePreviewPage(state.sourcePreview.runId, state.sourcePreview.page - 1).catch((error) => showToast(error.message, true));
+  });
+  $("#sourcePreviewNext").addEventListener("click", () => {
+    if (!state.sourcePreview.runId || state.sourcePreview.page >= state.sourcePreview.pageCount) return;
+    loadSourcePreviewPage(state.sourcePreview.runId, state.sourcePreview.page + 1).catch((error) => showToast(error.message, true));
+  });
+  $("#mediaPrevButton").addEventListener("click", () => moveMedia(-1));
+  $("#mediaNextButton").addEventListener("click", () => moveMedia(1));
+  $("#mediaZoomOutButton").addEventListener("click", () => setMediaZoom(state.media.zoom - MEDIA_ZOOM_STEP));
+  $("#mediaZoomResetButton").addEventListener("click", () => setMediaZoom(1, { resetScroll: true }));
+  $("#mediaZoomInButton").addEventListener("click", () => setMediaZoom(state.media.zoom + MEDIA_ZOOM_STEP));
+  $("#mediaOriginalSizeButton").addEventListener("click", showMediaAtOriginalSize);
+  $("#mediaFullscreenButton").addEventListener("click", () => toggleMediaFullscreen());
+  $("#mediaPreviewImage").addEventListener("load", () => {
+    setMediaZoom(state.media.zoom);
+  });
+  bindMediaPanViewport($("#mediaViewport"));
+  document.addEventListener("fullscreenchange", () => {
+    updateMediaViewControls();
+    window.requestAnimationFrame(() => updateMediaPanState());
+  });
+  document.addEventListener("keydown", (event) => {
+    if (!$("#mediaDialog").open) {
+      if (handleVideoSourceShortcut(event)) return;
+      if (isImeComposing(event)) return;
+      const target = event.target instanceof Element ? event.target : null;
+      const interactiveTarget = target?.closest("input, textarea, select, [contenteditable='true'], [role='textbox']");
+      const comparisonCaseActive = state.activePage === "comparison" && Boolean($("#comparisonReasonDialog")?.open);
+      if (
+        comparisonCaseActive &&
+        !interactiveTarget &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey &&
+        ["ArrowUp", "ArrowDown"].includes(event.key)
+      ) {
+        event.preventDefault();
+        navigateComparisonCaseDialog(event.key === "ArrowUp" ? -1 : 1).catch((error) => showToast(error.message, true));
+        return;
+      }
+      handleDetailMediaShortcut(event);
+      return;
+    }
+    if (handleVideoSourceShortcut(event)) return;
+    if (!state.media.snapshot?.intentPreview && !event.target?.closest?.("input, textarea, select, [contenteditable=true], [role=textbox]") && !event.ctrlKey && !event.metaKey && !event.altKey && ["ArrowUp", "ArrowDown"].includes(event.key)) {
+      event.preventDefault();
+      navigateComparisonMediaCase(event.key === 'ArrowUp' ? -1 : 1).catch(error => showToast(error.message,true));
+      return;
+    }
+    const intentPreview = Boolean(state.media.snapshot?.intentPreview);
+    if (intentPreview) {
+      if (event.key === "ArrowLeft") { event.preventDefault(); moveMedia(-1); }
+      if (event.key === "ArrowRight") { event.preventDefault(); moveMedia(1); }
+      if (event.key === " " && !event.repeat) { event.preventDefault(); cycleIntentMediaKind(); }
+      if (event.key.toLowerCase() === "b") switchMediaKind("bev");
+      if (event.key.toLowerCase() === "c") switchMediaKind("camera");
+    } else {
+      if (["ArrowLeft", "["].includes(event.key)) { event.preventDefault(); moveMedia(-1); }
+      if (["ArrowRight", "]"].includes(event.key)) { event.preventDefault(); moveMedia(1); }
+      if (event.key.toLowerCase() === "b") switchMediaKind("bev");
+      if (event.key.toLowerCase() === "c") switchMediaKind("camera");
+      if (event.key === " " && state.media.kind === "video") {
+        event.preventDefault();
+        if (!event.repeat) $("#mediaVideoStage")?.querySelector("[data-video-play]")?.click();
+      }
+    }
+    if (["+", "="].includes(event.key)) { event.preventDefault(); setMediaZoom(state.media.zoom + MEDIA_ZOOM_STEP); }
+    if (["-", "_"].includes(event.key)) { event.preventDefault(); setMediaZoom(state.media.zoom - MEDIA_ZOOM_STEP); }
+    if (event.key === "0") {
+      event.preventDefault();
+      if (state.media.kind === "video") {
+        $("#mediaVideoStage")?.querySelector("[data-video-t0]")?.click();
+      } else {
+        setMediaZoom(1, { resetScroll: true });
+      }
+    }
+    if (event.key.toLowerCase() === "f") { event.preventDefault(); toggleMediaFullscreen(); }
+  });
+  window.addEventListener("popstate", async () => {
+    const route = parsePageRoute();
+    if (route.page === "labeling-summary") restoreLabelSummaryRoute({ force: true });
+    if (route.page === "comparison") {
+      applyRunComparisonRoute(route.comparisonFilters);
+      showPage("comparison", { restoreRoute: true, loadPageData: false });
+      try {
+        await loadRunComparison({ historyMode: "" });
+      } catch (error) {
+        showToast(error.message, true);
+      }
+      return;
+    }
+    if (route.page === "run-collections") {
+      showPage("run-collections", { restoreRoute: true, loadPageData: true });
+      return;
+    }
+    if (route.page === "analysis") {
+      const previousRunId = state.selectedRunId;
+      const previousFailureOnly = state.failureOnly;
+      const previousComparisonStatus = state.reviewAnalysis.comparisonStatus;
+      const nextRunId =
+        route.runId && state.modelRuns.some((run) => run.id === route.runId)
+          ? route.runId
+          : "";
+      const nextComparisonStatus = nextRunId
+        ? normalizedAnalysisComparisonStatus(
+            route.analysisFilters.comparisonStatus,
+            state.config?.default_failure_only ? "mismatch" : "all"
+          )
+        : "all";
+      state.selectedRunId = nextRunId;
+      state.reviewAnalysis.comparisonStatus = nextComparisonStatus;
+      state.failureOnly = Boolean(
+        nextRunId && nextComparisonStatus === "mismatch"
+      );
+      if (
+        previousRunId !== state.selectedRunId ||
+        previousFailureOnly !== state.failureOnly ||
+        previousComparisonStatus !== state.reviewAnalysis.comparisonStatus
+      ) {
+        state.reviewQueueStale = true;
+      }
+      $("#modelRunFilter").value = nextRunId;
+      setReviewComparisonStatus(state.reviewComparisonStatus, {
+        hasRun: Boolean(nextRunId),
+      });
+      renderAnalysisRunFilter();
+      applyAnalysisRouteControls(route);
+      showPage("analysis", { restoreRoute: true });
+      renderActiveRun();
+      renderRunManager();
+      try {
+        await enterAnalysisPage({ includeOverview: true });
+      } catch (error) {
+        showToast(error.message, true);
+      }
+      return;
+    }
+    if (route.page === "trail-update") {
+      const nextRunId = "";
+      state.trailUpdate.runId = nextRunId;
+      if (typeof applyTrailUpdateRouteControls === "function") {
+        applyTrailUpdateRouteControls(route.trailUpdateFilters);
+      }
+      showPage("trail-update", {
+        runId: nextRunId,
+        restoreRoute: true,
+        loadPageData: false,
+      });
+      if (typeof trailAttributePreviewNeedsLoad !== "function" || trailAttributePreviewNeedsLoad(nextRunId)) {
+        try {
+          await loadTrailAttributePreview();
+        } catch (error) {
+          showToast(error.message, true);
+        }
+      }
+      return;
+    }
+    if (route.page !== "review") {
+      if (route.page === "intent-summary") {
+        state.intentLabeling.summaryExperimentId = route.intentExperimentId || "";
+        state.intentLabeling.summaryAssignees = route.intentSummaryOwners || [];
+        state.intentLabeling.summaryPage = route.intentSummaryPage || 1;
+        state.intentLabeling.summaryPageSize = route.intentSummaryPageSize || 20;
+        state.intentLabeling.summaryAxis = route.intentSummaryAxis || "all";
+        state.intentLabeling.summaryCommentQuery = route.intentSummaryCommentQuery || "";
+      }
+      showPage(route.page, {
+        issues: route.issues,
+        source: route.source,
+        importKind: route.importKind,
+        runId: route.runId,
+        restoreRoute: true,
+        intentDatasetId: route.intentDatasetId,
+        intentDatasetIds: route.intentDatasetIds,
+        intentAssignees: route.intentAssignees,
+        intentExperimentId: route.intentExperimentId,
+        intentCaseId: route.intentCaseId,
+        intentOffsetMs: route.intentOffsetMs,
+        reviewAssignmentSplitId: route.reviewAssignmentSplitId,
+        discussionChannel: route.discussionChannel,
+        campaignId: route.campaignId,
+        campaignPurpose: route.campaignPurpose,
+        campaignLifecycle: route.campaignLifecycle,
+        campaignQuery: route.campaignQuery,
+      });
+      if (
+        route.page === "intent"
+        && route.openComments
+        && route.intentCaseId
+      ) {
+        (async () => {
+          if (state.intentLabeling.caseId !== route.intentCaseId) {
+            await loadIntentLabeling({
+              datasetId: route.intentDatasetId,
+              caseId: route.intentCaseId,
+              offsetMs: route.intentOffsetMs,
+              assignees: route.intentAssignees,
+              experimentId: route.intentExperimentId,
+              historyMode: "",
+            });
+          }
+          await openIntentComments({ focusCommentId: route.commentId || 0 });
+        })().catch((error) => showToast(error.message, true));
+      }
+      return;
+    }
+    const nextRunId =
+      route.runId && state.modelRuns.some((run) => run.id === route.runId)
+        ? route.runId
+        : "";
+    const nextComparisonStatus = nextRunId
+      ? normalizedReviewComparisonStatus(
+          route.comparisonStatus,
+          route.failureOnly ? "mismatch" : "all"
+        )
+      : "all";
+    state.selectedRunId = nextRunId;
+    $("#modelRunFilter").value = nextRunId;
+    state.reviewComparisonStatus = nextComparisonStatus;
+    setReviewComparisonStatus(nextComparisonStatus, {
+      hasRun: Boolean(nextRunId),
+    });
+    applyReviewRouteControls(route);
+    renderAnalysisRunFilter();
+    renderActiveRun();
+    renderRunManager();
+    if (!route.issue) {
+      if (state.selectedId) clearPendingReviewImages();
+      clearDetail({ showGallery: true });
+    }
+    showPage("review", {
+      issue: route.issue,
+      restoreRoute: true,
+    });
+    const pageContext = capturePageContext();
+    try {
+      await Promise.all([
+        loadCases({ keepSelection: true, page: route.casePage }),
+        loadClusters(),
+        loadOverview(),
+        loadWorkAssignees(),
+      ]);
+      if (!isPageContextCurrent(pageContext)) return;
+      if (route.issue) {
+        if (route.issue !== state.selectedId || !state.selectedCase) {
+          await selectCase(route.issue, { updateRoute: false });
+        } else {
+          setReviewView(route.issue);
+          renderCaseNavigation();
+        }
+        if (route.openComments) {
+          if (!isPageContextCurrent(pageContext)) return;
+          await openReviewRouteDiscussion(route);
+        }
+      }
+    } catch (error) {
+      showToast(error.message, true);
+    }
+  });
+}
+
+async function bootstrap() {
+  const initialRoute = parsePageRoute();
+  applyColorTheme(
+    localStorage.getItem("ra-triage-color-theme") || document.documentElement.dataset.colorTheme,
+    { persist: false }
+  );
+  applyUiLanguage(localStorage.getItem("ra-triage-ui-language") || "zh", { persist: false });
+  const savedSidebarState = localStorage.getItem("ra-triage-sidebar-collapsed");
+  state.sidebarCollapsed = savedSidebarState === "true";
+  applySidebarState();
+  markUiReady();
+  bindMobileFilterDrawers();
+  bindMobileWorkbench();
+  if (initialRoute.page === "review") applyReviewRouteControls(initialRoute);
+  if (initialRoute.page === "trail-update") state.trailUpdate.runCatalogLoading = true;
+  bindEvents();
+  updateImportFields();
+  showPage(initialRoute.page, {
+    historyMode: initialRoute.legacyRoute ? "replace" : "",
+    issue: initialRoute.issue,
+    issues: initialRoute.issues,
+    source: initialRoute.source,
+    runId: initialRoute.runId,
+    importKind: initialRoute.importKind,
+    restoreRoute: true,
+    loadPageData: false,
+    intentDatasetId: initialRoute.intentDatasetId,
+    intentDatasetIds: initialRoute.intentDatasetIds,
+    intentCaseId: initialRoute.intentCaseId,
+    intentOffsetMs: initialRoute.intentOffsetMs,
+    intentAssignees: initialRoute.intentAssignees,
+    intentExperimentId: initialRoute.intentExperimentId,
+    reviewAssignmentSplitId: initialRoute.reviewAssignmentSplitId,
+    discussionChannel: initialRoute.discussionChannel,
+    campaignId: initialRoute.campaignId,
+    campaignPurpose: initialRoute.campaignPurpose,
+    campaignLifecycle: initialRoute.campaignLifecycle,
+    campaignQuery: initialRoute.campaignQuery,
+  });
+  if (initialRoute.page === "trail-update" && state.trailUpdate.tab !== "issue") setTrailAttributeLoading(true);
+  let bootstrapContext = capturePageContext();
+  // Cron is a read-only, dataset-independent monitor. Start its first snapshot
+  // before configuration/Run metadata, which may be slow for a large union.
+  // Keep shared initialization for later navigation, but off Cron's paint path.
+  const initialCronRequest = initialRoute.page === "daily-cron" ? loadDailyCron() : null;
+  const sessionRequest = resolveSessionInBackground();
+  // A deep-linked video's descriptor is independent of config, task and Run
+  // catalogs. Overlap that GET; only selectCase may mount the native player.
+  const initialVideoDiscovery = initialRoute.page === "review" && /^cn\d+$/.test(initialRoute.issue || "")
+    ? requestCaseVideoDiscovery(initialRoute.issue) : null;
+  try {
+    await settleInitialRequests([loadConfig()], "基础配置");
+    if (!isPageContextCurrent(bootstrapContext, { matchUrl: false })) return;
+    if (!isPageContextCurrent(bootstrapContext)) {
+      Object.assign(initialRoute, parsePageRoute());
+      bootstrapContext = capturePageContext();
+    }
+    let reviewTaskContextFailed = false;
+    if (initialRoute.page === "review" && initialRoute.workSplitId) {
+      await sessionRequest;
+      if (!isPageContextCurrent(bootstrapContext)) return;
+      try {
+        const task = await loadReviewTaskContext(initialRoute.workSplitId, { route: initialRoute });
+        if (!task) return;
+        bootstrapContext = capturePageContext();
+      } catch (error) {
+        reviewTaskContextFailed = true;
+        showToast(`任务范围加载失败：${error.message}`, true);
+      }
+    }
+    const intentAccessPages = ["users", "intent", "intent-experiments", "intent-summary"];
+    if (
+      intentAccessPages.includes(initialRoute.page)
+      || initialRoute.page === "review-assignments"
+      || initialRoute.page === "labeling"
+      || initialRoute.page === "labeling-summary"
+      || initialRoute.page === "rd-results"
+      || initialRoute.page === "labeling-new-task"
+    ) {
+      await sessionRequest;
+    }
+    if (!isPageContextCurrent(bootstrapContext, { matchUrl: false })) return;
+    if (initialRoute.page === "users" && !state.session.is_admin) {
+      initialRoute.page = "review";
+      showToast(t("toast.admin_only"), true);
+    }
+    if (initialRoute.page === "review-assignments" && !hasDashboardWriteRole()) {
+      initialRoute.page = "review";
+      showToast("查看任务分配需要 writer 或管理员权限。", true);
+    }
+    if (["labeling", "labeling-summary", "rd-results"].includes(initialRoute.page) && !hasDashboardWriteRole()) {
+      initialRoute.page = "review";
+      showToast("问题标注需要 writer 或管理员权限。", true);
+    }
+    if (initialRoute.page === "labeling-new-task" && !state.session.is_admin) {
+      initialRoute.page = "review";
+      showToast("实验分配仅限管理员。", true);
+    }
+    if (initialRoute.page === "intent-experiments" && !state.session.can_view_intent) {
+      initialRoute.page = "review";
+      showToast("当前账号没有实验查看权限。", true);
+    }
+    if (["intent", "intent-summary"].includes(initialRoute.page) && !state.session.can_view_intent) {
+      initialRoute.page = "review";
+      showToast("意图标注仅对已授权标注人开放。", true);
+    }
+    if (initialRoute.page !== state.activePage) {
+      showPage(initialRoute.page, { historyMode: "replace" });
+      bootstrapContext = capturePageContext();
+    }
+    const defaultFailureOnly = Boolean(state.config?.default_failure_only);
+    if (initialRoute.page === "runs" && initialRoute.runsFilters) {
+      state.runPage = Math.max(1, Number(initialRoute.runsFilters.page) || 1);
+      state.runPageSize = CASE_PAGE_SIZES.includes(Number(initialRoute.runsFilters.pageSize))
+        ? Number(initialRoute.runsFilters.pageSize)
+        : DEFAULT_CASE_PAGE_SIZE;
+    }
+    // An implicit team default is selected only after the Run API confirms it
+    // has coverage in the active dataset. Explicit route selections are kept.
+    state.selectedRunId =
+      initialRoute.runId === "none" ? "" : initialRoute.runId || "";
+    state.trailUpdate.runId = "";
+    if (initialRoute.page === "trail-update" && typeof applyTrailUpdateRouteControls === "function") {
+      applyTrailUpdateRouteControls(initialRoute.trailUpdateFilters);
+    }
+    if (initialRoute.page === "trail-update") {
+      // Local candidates and remote status have their own first-paint path.
+      // Run registry, overview and reviewer facets must not hold them back or
+      // replay the original route after the user has started filtering.
+      startTrailAttributePage();
+      return;
+    }
+    if (initialRoute.page === "analysis") {
+      state.reviewAnalysis.comparisonStatus = state.selectedRunId
+        ? normalizedAnalysisComparisonStatus(
+            initialRoute.analysisFilters.comparisonStatus,
+            defaultFailureOnly ? "mismatch" : "all"
+          )
+        : "all";
+      state.failureOnly =
+        state.reviewAnalysis.comparisonStatus === "mismatch";
+    } else {
+      state.reviewComparisonStatus = state.selectedRunId
+          ? normalizedReviewComparisonStatus(
+            initialRoute.comparisonStatus,
+            "mismatch"
+          )
+        : "all";
+      state.failureOnly = state.reviewComparisonStatus === "mismatch";
+    }
+    // These pages do not consume the Run catalog. Start their visible payload
+    // now; keep catalog initialization for later SPA navigation in parallel.
+    let independentPageResult = null;
+    if (initialRoute.page === "version-metrics") {
+      independentPageResult = settleInitialRequests([loadVersionMetrics()], "页面");
+    } else if (initialRoute.page === "status") {
+      independentPageResult = settleInitialRequests([loadStatus()], "页面");
+    } else if (initialRoute.page === "rd-results") {
+      independentPageResult = settleInitialRequests([loadRdResults()], "页面");
+    } else if (initialRoute.page === "users") {
+      independentPageResult = settleInitialRequests([loadAccessUsers(), loadMentionUsers()], "页面");
+    } else if (initialRoute.page === "review-assignments") {
+      independentPageResult = settleInitialRequests([loadReviewAssignments({
+        splitId: initialRoute.reviewAssignmentSplitId,
+      })], "页面");
+    }
+    // Only Run-dependent views need the catalog before their first payload.
+    // Other routes render their own data while the shared catalog initializes
+    // for later navigation; finish it before the final bootstrap route commit.
+    let initialRunsRequest = Promise.resolve();
+    if (!["labeling", "labeling-new-task", "labeling-summary"].includes(initialRoute.page)) {
+      initialRunsRequest = settleInitialRequests(
+        [
+          loadRuns({
+            preferDefault: !initialRoute.runId,
+            preserveEmpty: initialRoute.runId === "none",
+          }),
+        ],
+        "模型 Run"
+      );
+      if (["review", "analysis", "runs", "comparison", "run-collections"].includes(initialRoute.page)) {
+        await initialRunsRequest;
+      }
+    } else {
+      state.selectedRunId = "";
+    }
+    if (!isPageContextCurrent(bootstrapContext, { matchUrl: false })) return;
+    if (!isPageContextCurrent(bootstrapContext)) {
+      Object.assign(initialRoute, parsePageRoute());
+      bootstrapContext = capturePageContext();
+    }
+    if (["comparison", "run-collections"].includes(initialRoute.page)) {
+      applyRunComparisonRoute(initialRoute.comparisonFilters);
+    }
+    const sharedDataPromise = ["review", "analysis"].includes(initialRoute.page)
+      ? settleInitialRequests(
+          [loadReviewers(), loadWorkAssignees()],
+          "共享数据"
+        )
+      : Promise.resolve();
+    setReviewComparisonStatus(state.reviewComparisonStatus, {
+      hasRun: Boolean(state.selectedRunId),
+    });
+    if (initialRoute.page === "review") applyReviewRouteControls(initialRoute);
+    if (initialRoute.page === "analysis") applyAnalysisRouteControls(initialRoute);
+    // Review home: paint cases first; cluster chips are secondary chrome.
+    const initialPageRequests = ["labeling", "labeling-new-task", "labeling-summary"].includes(initialRoute.page)
+      ? []
+      : [{ name: "概览", promise: initialRunsRequest.then(() => {
+          if (isPageContextCurrent(bootstrapContext, { matchUrl: false })) return loadOverview();
+        }) }];
+    let initialDetailRequest = null;
+    if (independentPageResult) {
+      initialPageRequests.push(independentPageResult);
+    } else if (initialRoute.page === "review" && !reviewTaskContextFailed) {
+      initialPageRequests.push(
+        { name: "Issue 图库", promise: loadCases({
+          keepSelection: Boolean(initialRoute.issue),
+          page: initialRoute.casePage,
+        }) }
+      );
+      if (initialRoute.issue) {
+        initialDetailRequest = selectCase(initialRoute.issue, {
+          updateRoute: false, videoDiscovery: initialVideoDiscovery,
+        });
+      }
+    } else if (initialRoute.page === "daily-review") {
+      initialPageRequests.push(loadDailyReview());
+    } else if (initialRoute.page === "daily-cron") {
+      initialPageRequests.push(initialCronRequest || loadDailyCron());
+    } else if (initialRoute.page === "trail-history") {
+      initialPageRequests.push(loadTrailHistory());
+    } else if (initialRoute.page === "prediction") {
+      initialPageRequests.push(loadPredictionConfig(), loadPredictionBatches());
+    } else if (initialRoute.page === "comparison") {
+      initialPageRequests.push(loadRunComparison({ historyMode: "" }));
+    } else if (initialRoute.page === "run-collections") {
+      initialPageRequests.push(loadRunCollectionsWorkbench({ restoreRoute: true }));
+    } else if (initialRoute.page === "labeling") {
+      initialPageRequests.push(enterCaseLabeling({ route: initialRoute }));
+    } else if (initialRoute.page === "labeling-new-task") {
+      initialPageRequests.push(enterLabelingNewTask({ route: initialRoute }));
+    } else if (initialRoute.page === "review-assignments") {
+      initialPageRequests.push(loadReviewAssignments({
+        splitId: initialRoute.reviewAssignmentSplitId,
+      }));
+    } else if (initialRoute.page === "labeling-summary") {
+      initialPageRequests.push(loadLabelingSummary());
+    } else if (initialRoute.page === "campaigns") {
+      initialPageRequests.push(loadCampaigns({
+        campaignId: initialRoute.campaignId,
+        purpose: initialRoute.campaignPurpose,
+        lifecycle: initialRoute.campaignLifecycle,
+        query: initialRoute.campaignQuery,
+      }));
+    } else if (initialRoute.page === "intent") {
+      initialPageRequests.push(loadIntentLabeling({
+        datasetId: initialRoute.intentDatasetId,
+        datasetIds: (initialRoute.intentDatasetIds || []).length ? initialRoute.intentDatasetIds : null,
+        caseId: initialRoute.intentCaseId,
+        offsetMs: initialRoute.intentOffsetMs,
+        assignees: initialRoute.intentAssignees,
+        experimentId: initialRoute.intentExperimentId,
+      }));
+    } else if (initialRoute.page === "intent-experiments") {
+      initialPageRequests.push(loadIntentExperimentAdmin({
+        datasetId: initialRoute.intentDatasetId,
+        datasetIds: (initialRoute.intentDatasetIds || []).length
+          ? initialRoute.intentDatasetIds
+          : null,
+      }));
+    } else if (initialRoute.page === "intent-summary") {
+      state.intentLabeling.summaryExperimentId = initialRoute.intentExperimentId || "";
+      state.intentLabeling.summaryAssignees = initialRoute.intentSummaryOwners || [];
+      state.intentLabeling.summaryPage = initialRoute.intentSummaryPage || 1;
+      state.intentLabeling.summaryPageSize = initialRoute.intentSummaryPageSize || 20;
+      state.intentLabeling.summaryAxis = initialRoute.intentSummaryAxis || "all";
+      state.intentLabeling.summaryCommentQuery = initialRoute.intentSummaryCommentQuery || "";
+      initialPageRequests.push(loadIntentSummary({
+        datasetId: initialRoute.intentDatasetId,
+        datasetIds: (initialRoute.intentDatasetIds || []).length ? initialRoute.intentDatasetIds : null,
+      }));
+    }
+    if (initialRoute.page === "analysis") {
+      initialPageRequests.push(loadReviewReasonAnalysis());
+    }
+    const initialPageResults = settleInitialRequests(
+      initialPageRequests,
+      initialRoute.page === "review" ? "首页" : "页面"
+    );
+    // Wait only for the first review-critical payloads; shared Run metadata can
+    // finish in the background without holding the case gallery blank.
+    if (initialRoute.page === "review" && !reviewTaskContextFailed) {
+      await Promise.all([sharedDataPromise, initialPageResults]);
+    } else {
+      await sharedDataPromise;
+      await initialPageResults;
+    }
+    if (!isPageContextCurrent(bootstrapContext)) return;
+    setReviewComparisonStatus(state.reviewComparisonStatus, {
+      hasRun: Boolean(state.selectedRunId),
+    });
+    if (initialDetailRequest) {
+      await settleInitialRequests([initialDetailRequest], "问题详情");
+      if (!isPageContextCurrent(bootstrapContext)) return;
+    }
+    if (initialRoute.page !== "labeling" && initialRoute.openComments && initialRoute.issue) {
+      await sessionRequest;
+      if (!isPageContextCurrent(bootstrapContext)) return;
+      await openReviewRouteDiscussion(initialRoute);
+    }
+    if (!isPageContextCurrent(bootstrapContext)) return;
+    showPage(initialRoute.page, {
+      historyMode: "replace",
+      issue: initialRoute.issue,
+      issues: initialRoute.issues,
+      source: initialRoute.source,
+      runId: initialRoute.runId,
+      importKind: initialRoute.importKind,
+      restoreRoute: true,
+      loadPageData: false,
+      intentDatasetId: initialRoute.intentDatasetId,
+      intentDatasetIds: initialRoute.intentDatasetIds,
+      intentCaseId: initialRoute.intentCaseId,
+      intentOffsetMs: initialRoute.intentOffsetMs,
+      intentAssignees: initialRoute.intentAssignees,
+      intentExperimentId: initialRoute.intentExperimentId,
+      reviewAssignmentSplitId: initialRoute.reviewAssignmentSplitId,
+      discussionChannel: initialRoute.discussionChannel,
+      campaignId: initialRoute.campaignId,
+      campaignPurpose: initialRoute.campaignPurpose,
+      campaignLifecycle: initialRoute.campaignLifecycle,
+      campaignQuery: initialRoute.campaignQuery,
+    });
+    if (
+      initialRoute.page === "intent"
+      && initialRoute.openComments
+      && initialRoute.intentCaseId
+      && state.intentLabeling.caseId === initialRoute.intentCaseId
+    ) {
+      await openIntentComments({ focusCommentId: initialRoute.commentId || 0 });
+    }
+    if (initialRoute.page === "review") {
+      // The final route commit invalidates the initial detail request's epoch.
+      // Resume only its still-pending context; keep drafts and real navigation guards.
+      if (state.selectedCase && state.combinedReviewLoad?.status === "loading"
+          && state.combinedReviewLoad.key === combinedReviewContextKey(state.selectedCase)) {
+        void loadCombinedReviewContext(state.selectedCase).catch((error) => showToast(error.message, true));
+      }
+      // Defer cluster strip so it does not compete with gallery thumbs.
+      const clusterContext = capturePageContext();
+      window.setTimeout(() => {
+        if (!isPageContextCurrent(clusterContext)) return;
+        void loadClusters().catch(() => {});
+      }, 250);
+    }
+  } catch (error) {
+    showToast(`启动失败：${error.message}`, true);
+  } finally {
+    // An obsolete/denied route must not leave speculative metadata reads alive.
+    // A mounted detail owns the controller until its media hydration completes.
+    if (initialVideoDiscovery && state.caseMediaController !== initialVideoDiscovery.controller) {
+      initialVideoDiscovery.controller.abort();
+    }
+    startChangePolling();
+  }
+}
+
+if (document.readyState === "loading") {
+  window.addEventListener("DOMContentLoaded", bootstrap, { once: true });
+} else {
+  bootstrap();
+}

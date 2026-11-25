@@ -1,50 +1,60 @@
 /* Global design tokens shared by all dashboard component stylesheets. */
 :root {
   color-scheme: dark;
-  --bg: #0b0e14; --surface-sidebar: #0e131d; --raised: #11151f; --overlay: #161b26; --overlay-2: #1a2130;
-  --line: #232a38; --line-soft: #1b2230; --line-strong: #323d52;
-  --text: #edf2fb; --muted: #8a94a6; --faint: #657084;
-  --accent: #24d3ef; --accent-hover: #67e8f9; --accent-text: #67e8f9;
-  --accent-soft: rgba(36, 211, 239, 0.12); --accent-soft-hover: rgba(36, 211, 239, 0.2);
-  --accent-border: rgba(36, 211, 239, 0.4); --accent-ring: 0 0 0 3px rgba(36, 211, 239, 0.22);
+  --bg: #0b0e14;
+  --raised: #11151f;
+  --overlay: #161b26;
+  --overlay-2: #1a2130;
+  --line: #232a38;
+  --line-soft: #1b2230;
+  --text: #edf2fb;
+  --muted: #8a94a6;
+  --faint: #657084;
+  --accent: #24d3ef;
+  --accent-soft: rgba(36, 211, 239, 0.12);
   /* Quantitative series share the workspace accent, without alert semantics. */
   --chart-primary: color-mix(in srgb, var(--accent) 65%, var(--muted));
-  --chart-blue: #73a5da; --chart-teal: #59baa9; --chart-rose: #d28ba8; --chart-indigo: #9298cc; --chart-slate: #91a2b8;
-  --ok: #34d399; --ok-bg: rgba(52, 211, 153, 0.14); --ok-border: rgba(52, 211, 153, 0.34);
-  --fail: #f87171; --fail-bg: rgba(248, 113, 113, 0.14); --fail-border: rgba(248, 113, 113, 0.34);
-  --warn: #fbbf24; --warn-bg: rgba(251, 191, 36, 0.14); --warn-border: rgba(251, 191, 36, 0.34);
-  --chip-neutral-bg: rgba(148, 163, 184, 0.14); --chip-neutral-border: rgba(148, 163, 184, 0.28); --chip-neutral-text: #cbd5e1;
-  --input-bg: #0d1119; --input-border: #2b3546; --input-hover-bg: #101722; --input-hover-border: #46546a;
-  --shadow-card: none; --shadow-card-hover: 0 6px 20px rgba(0, 0, 0, 0.28); --shadow-overlay: 0 18px 42px rgba(0, 0, 0, 0.52);
-  --media-stage-border: #232a38; --radius: 10px;
-  --scrollbar-thumb: #526176; --scrollbar-thumb-hover: #7a8ba2;
-  --touch-target: 44px; --touch-primary: 48px;
+  --chart-blue: #73a5da;
+  --chart-teal: #59baa9;
+  --chart-rose: #d28ba8;
+  --chart-indigo: #9298cc;
+  --chart-slate: #91a2b8;
+  --ok: #34d399;
+  --fail: #f87171;
+  --warn: #fbbf24;
+  --radius: 10px;
+  --scrollbar-thumb: #526176;
+  --scrollbar-thumb-hover: #7a8ba2;
   /* Round stroke chevron-down; used via mask so color follows currentColor */
   --ui-chevron-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none'%3E%3Cpath d='M5.5 7.75 10 12.25l4.5-4.5' stroke='%23000' stroke-width='1.85' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   font-family: Inter, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
 }
 
-/* Light workspace (Scheme A: Crisp Alabaster + Cobalt Blue #2563eb).
-   Media canvases intentionally remain dark because Ares/Camera pixels and
-   their overlays are authored for a black stage. */
+/* Optional light workspace. Media canvases intentionally remain dark because
+   Ares/Camera pixels and their overlays are authored for a black stage. */
 html[data-color-theme="light"] {
   color-scheme: light;
-  --bg: #f6f8fb; --surface-sidebar: #fbfcfe; --raised: #ffffff; --overlay: #ffffff; --overlay-2: #f1f4f9;
-  --line: #e2e8f0; --line-soft: #edf2f7; --line-strong: #cbd5e1;
-  --text: #0f172a; --muted: #475569; --faint: #64748b;
-  --accent: #2563eb; --accent-hover: #1d4ed8; --accent-text: #1d4ed8;
-  --accent-soft: rgba(37, 99, 235, 0.09); --accent-soft-hover: rgba(37, 99, 235, 0.14);
-  --accent-border: rgba(37, 99, 235, 0.34); --accent-ring: 0 0 0 3px rgba(37, 99, 235, 0.16);
+  /* Cleaner light chrome: white surfaces, solid text, less muddy gray fill. */
+  --bg: #eef2f7;
+  --raised: #ffffff;
+  --overlay: #ffffff;
+  --overlay-2: #f3f6fa;
+  --line: #c5d0de;
+  --line-soft: #dbe3ee;
+  --text: #0f172a;
+  --muted: #475569;
+  --faint: #64748b;
+  --accent: #08758d;
+  --accent-soft: rgba(8, 117, 141, .1);
   --chart-primary: color-mix(in srgb, var(--accent) 65%, var(--muted));
-  --chart-blue: #3b82f6; --chart-teal: #0d9488; --chart-rose: #e11d48; --chart-indigo: #6366f1; --chart-slate: #64748b;
-  --ok: #047857; --ok-bg: #ecfdf5; --ok-border: #a7f3d0;
-  --fail: #b91c1c; --fail-bg: #fef2f2; --fail-border: #fecaca;
-  --warn: #b45309; --warn-bg: #fffbeb; --warn-border: #fde68a;
-  --chip-neutral-bg: #f1f5f9; --chip-neutral-border: #e2e8f0; --chip-neutral-text: #334155;
-  --input-bg: #ffffff; --input-border: #d5dee9; --input-hover-bg: #f8fafc; --input-hover-border: #94a3b8;
-  --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.05), 0 1px 1px rgba(15, 23, 42, 0.03);
-  --shadow-card-hover: 0 6px 18px -4px rgba(15, 23, 42, 0.09), 0 2px 6px -1px rgba(15, 23, 42, 0.04);
-  --shadow-overlay: 0 14px 34px -6px rgba(15, 23, 42, 0.14), 0 4px 12px -2px rgba(15, 23, 42, 0.06);
-  --media-stage-border: #d5dee9;
-  --scrollbar-thumb: #cbd5e1; --scrollbar-thumb-hover: #94a3b8;
+  --chart-blue: #3c72ac;
+  --chart-teal: #287e72;
+  --chart-rose: #ad557a;
+  --chart-indigo: #626c9f;
+  --chart-slate: #677d96;
+  --ok: #087a58;
+  --fail: #c23f4d;
+  --warn: #9a6500;
+  --scrollbar-thumb: #a0aec0;
+  --scrollbar-thumb-hover: #6b7b92;
 }

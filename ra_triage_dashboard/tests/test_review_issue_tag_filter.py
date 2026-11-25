@@ -118,3 +118,5 @@ class ReviewIssueTagFilterTest(unittest.TestCase):
         self.assertEqual(captured["ids"], ["cn2"])
         self.assertEqual(captured["export_ids"], ["cn2"])
 
+    def test_frontend_roundtrip(self):
+        subprocess.run(["node", str(Path(__file__).with_name("review_issue_tag_filter.cjs"))], check=True)

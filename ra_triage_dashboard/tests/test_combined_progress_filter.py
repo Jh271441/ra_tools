@@ -95,4 +95,8 @@ class CombinedProgressFilterTest(unittest.TestCase):
                 self.assertEqual(result["issue_ids"], ["cn1"])
                 self.assertEqual(queue.call_args.kwargs["filters"]["issue_ids"], ("cn1",))
 
+    def test_frontend_behavior(self):
+        subprocess.run(["node", str(Path(__file__).with_name("combined_progress_filter.cjs"))], check=True)
 
+    def test_next_pending_task_navigation(self):
+        subprocess.run(["node", str(Path(__file__).with_name("next_pending_task.cjs"))], check=True)

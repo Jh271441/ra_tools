@@ -1,0 +1,1322 @@
+/* ra_triage_dashboard/static/js/core-base.js
+ * Constants, base path, page routes, shared state, $
+ * Loaded as a classic script (shared global scope). Do not convert to
+ * ES modules without auditing cross-file function/state dependencies.
+ */
+const LABELS = ["误触发", "正确触发", "无需协助"];
+// Raw Trail observations are filter/display values, never model/annotation labels.
+const GT_RAW_VALUES = ["out_of_scope", "未接起"];
+const GT_FILTER_VALUES = [...LABELS, ...GT_RAW_VALUES];
+function gtDisplayLabel(item) {
+  return item?.gt_label || (GT_RAW_VALUES.includes(item?.gt_raw_label) ? item.gt_raw_label : "");
+}
+const STAGE1_TRUE_STUCK_LABEL = "真实卡住";
+const MODEL_LABELS = [...LABELS, STAGE1_TRUE_STUCK_LABEL];
+function modelLabelMatchesGt(modelLabel, gtLabel) {
+  if (!MODEL_LABELS.includes(modelLabel) || !LABELS.includes(gtLabel)) return false;
+  if (modelLabel === STAGE1_TRUE_STUCK_LABEL) {
+    return gtLabel === "正确触发" || gtLabel === "无需协助";
+  }
+  return modelLabel === gtLabel;
+}
+const CASE_PAGE_SIZES = [10, 20, 50, 100];
+const DEFAULT_CASE_PAGE_SIZE = 20;
+const ANALYSIS_COMPARISON_STATUSES = ["all", "mismatch", "match", "no_gt", "none"];
+/** Locale-aware comparison option meta (GT taxonomy stays Chinese elsewhere). */
+function comparisonStatusMeta(status) {
+  const key = String(status || "all");
+  const table = {
+    all: { label: () => t("common.all"), description: () => t("comparison.desc_all") },
+    mismatch: { label: () => "MISMATCH", description: () => t("comparison.desc_mismatch") },
+    match: { label: () => "MATCH", description: () => t("comparison.desc_match") },
+    no_gt: { label: () => "NO GT", description: () => t("comparison.desc_no_gt") },
+    none: { label: () => "NONE", description: () => t("comparison.desc_none") },
+  };
+  const entry = table[key] || table.all;
+  return { label: entry.label(), description: entry.description() };
+}
+const ANALYSIS_COMPARISON_META = new Proxy(
+  {},
+  {
+    get(_target, prop) {
+      if (["all", "mismatch", "match", "no_gt", "none"].includes(prop)) {
+        return comparisonStatusMeta(prop);
+      }
+      return undefined;
+    },
+  }
+);
+const REVIEW_COMPARISON_STATUSES = ANALYSIS_COMPARISON_STATUSES;
+const REVIEW_COMPARISON_META = ANALYSIS_COMPARISON_META;
+const API_GET_TIMEOUT_MS = 6000;
+const API_GET_MAX_ATTEMPTS = 3;
+const API_GET_RETRYABLE_STATUSES = new Set([408, 429, 502, 503, 504]);
+
+function hasDashboardWriteRole() {
+  return Boolean(
+    state.session?.verified
+    && ["writer", "admin"].includes(String(state.session?.access_role || ""))
+  );
+}
+
+function parseFilterList(value) {
+  if (Array.isArray(value)) {
+    return [
+      ...new Set(
+        value
+          .map((item) => String(item || "").trim())
+          .filter(Boolean)
+      ),
+    ];
+  }
+  return String(value || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function joinFilterList(values) {
+  return parseFilterList(values).join(",");
+}
+
+function getMultiFilterValues(root) {
+  if (!root) return [];
+  if (root.matches?.("select")) {
+    if (root.multiple) {
+      return [...root.selectedOptions].map((option) => option.value).filter(Boolean);
+    }
+    return root.value ? [root.value] : [];
+  }
+  return [...root.querySelectorAll('input[type="checkbox"][data-multi-value]:checked')].map(
+    (input) => input.value
+  );
+}
+
+function updateMultiFilterSummary(root) {
+  if (!root || root.matches?.("select")) return;
+  root.querySelectorAll('[data-multi-only]').forEach((button) => {
+    button.textContent = uiText("仅此项", "Only this");
+    button.title = uiText("只选这一项", "Only this");
+    const label = button.closest('.multi-filter-option-row')?.querySelector('input[data-multi-value]')?.dataset.label || "";
+    button.setAttribute('aria-label', uiText(`只选 ${label}`, `Select only ${label}`));
+  });
+  const summary = root.querySelector(".multi-filter-summary");
+  if (!summary) return;
+  const values = getMultiFilterValues(root);
+  const placeholder =
+    typeof t === "function" && root.dataset.i18nPlaceholder
+      ? t(root.dataset.i18nPlaceholder)
+      : typeof uiText === "function"
+        ? uiText(
+            root.dataset.placeholder || "全部",
+            root.dataset.placeholderEn || root.dataset.placeholder || "All"
+          )
+        : root.dataset.placeholder || "全部";
+  if (!values.length) {
+    summary.textContent = placeholder;
+    summary.removeAttribute("title");
+    summary.classList.remove("has-value");
+    return;
+  }
+  const labels = values.map((value) => {
+    const input = root.querySelector(
+      `input[data-multi-value="${CSS.escape(value)}"]`
+    );
+    return input?.dataset.label || value;
+  });
+  const en = typeof state !== "undefined" && state.uiLanguage === "en";
+  if (root.dataset.summaryCount === "true") {
+    summary.textContent = uiText(`已选 ${values.length} 项`, `${values.length} selected`);
+    summary.title = labels.join(en ? ", " : "、");
+  } else if (labels.length <= 2) {
+    summary.textContent = labels.join(en ? ", " : "、");
+  } else if (typeof t === "function") {
+    summary.textContent = en
+      ? `${labels[0]} ${t("multi.plus_n", { n: labels.length - 1 })}`
+      : `${labels[0]} ${t("multi.and_n", { n: labels.length })}`;
+  } else {
+    summary.textContent = en
+      ? `${labels[0]} +${labels.length - 1}`
+      : `${labels[0]} 等 ${labels.length} 项`;
+  }
+  summary.classList.add("has-value");
+}
+
+function relabelMultiFilter(root, options) {
+  const inputs = [...root.querySelectorAll('input[type="checkbox"][data-multi-value]')];
+  // Relabel in place only when membership/order is unchanged, preserving an
+  // open menu's focus, selection and event bindings during locale changes.
+  if (inputs.length !== options.length || inputs.some((input, index) => input.value !== String(options[index].value ?? options[index].key ?? ""))) return false;
+  inputs.forEach((input, index) => {
+    const label = String(options[index].label ?? input.value);
+    input.dataset.label = label;
+    input.nextElementSibling.textContent = label;
+  });
+  updateMultiFilterSummary(root);
+  return true;
+}
+
+function relabelMultiFilterGroups(root, groups) {
+  root.querySelectorAll('.multi-filter-group-label').forEach((heading, index) => {
+    heading.textContent = groups[index].label;
+  });
+  const navigation = root.querySelector('.multi-filter-group-nav');
+  if (!navigation) return;
+  navigation.setAttribute('aria-label', uiText('标签分组', 'Tag groups'));
+  navigation.querySelectorAll('[data-multi-group-jump]').forEach((button) => {
+    const label = groups[Number(button.dataset.multiGroupJump)].label;
+    button.textContent = label;
+    button.setAttribute('aria-label', uiText(`跳转到${label}`, `Go to ${label}`));
+    button.title = button.getAttribute('aria-label');
+  });
+}
+
+function setMultiFilterValues(root, values) {
+  if (!root) return;
+  const selected = new Set(parseFilterList(values));
+  if (root.matches?.("select")) {
+    if (root.multiple) {
+      [...root.options].forEach((option) => {
+        option.selected = selected.has(option.value);
+      });
+    } else {
+      root.value = [...selected][0] || "";
+    }
+    return;
+  }
+  root.querySelectorAll('input[type="checkbox"][data-multi-value]').forEach((input) => {
+    input.checked = selected.has(input.value);
+  });
+  updateMultiFilterSummary(root);
+}
+
+function closeAllMultiFilters(except = null) {
+  document.querySelectorAll(".multi-filter.is-open").forEach((root) => {
+    if (except && root === except) return;
+    root.classList.remove("is-open");
+    const panel = root.querySelector(".multi-filter-panel");
+    if (panel) {
+      panel.hidden = true;
+      resetAnchoredPanel(panel);
+    }
+    root.querySelector(".multi-filter-trigger")?.setAttribute("aria-expanded", "false");
+  });
+}
+
+/** Close custom single-selects (ui-select / review-status / media kind). */
+function closeAllUiSelects(except = null) {
+  document
+    .querySelectorAll(
+      ".ui-select.is-open, .review-status-picker.is-open, .detail-media-picker.is-open"
+    )
+    .forEach((root) => {
+      if (except && root === except) return;
+      root.classList.remove("is-open");
+      const panel =
+        root.querySelector(".ui-select-panel") ||
+        root.querySelector(".review-status-picker-panel") ||
+        root.querySelector(".detail-media-picker-panel");
+      const trigger =
+        root.querySelector(".ui-select-trigger") ||
+        root.querySelector(".review-status-picker-trigger") ||
+        root.querySelector(".detail-media-picker-trigger");
+      if (panel) {
+        panel.hidden = true;
+        resetAnchoredPanel(panel);
+      }
+      trigger?.setAttribute("aria-expanded", "false");
+    });
+}
+
+/**
+ * Fill a custom single-select shell.
+ * options: [{ value, label, disabled? }]
+ * nativeSelect: optional <select> kept for existing .value / change listeners.
+ */
+function populateUiSelect(root, options, selectedValue = "", { preserveNative = false } = {}) {
+  if (!root) return;
+  const panel =
+    root.querySelector(".ui-select-panel") ||
+    root.querySelector(".review-status-picker-panel") ||
+    root.querySelector(".detail-media-picker-panel");
+  const summary =
+    root.querySelector(".ui-select-summary") ||
+    root.querySelector("#reviewStatusPickerSummary") ||
+    root.querySelector(".detail-media-picker-summary");
+  const native =
+    root.querySelector("select.ui-select-native") ||
+    root.querySelector("select.gateway-model-native-select") ||
+    root.querySelector("select");
+  const list = Array.isArray(options) ? options : [];
+  const values = new Set(list.map((item) => String(item.value)));
+  let selected = String(selectedValue ?? "");
+  if (selected && !values.has(selected)) selected = "";
+  if (!preserveNative && !selected && list.length) {
+    const firstEnabled = list.find((item) => !item.disabled);
+    selected = firstEnabled ? String(firstEnabled.value) : String(list[0].value);
+  }
+  if (native && !preserveNative) {
+    native.innerHTML = list
+      .map((item) => {
+        const value = String(item.value);
+        const disabled = item.disabled ? " disabled" : "";
+        const sel = value === selected ? " selected" : "";
+        return `<option value="${escapeHtml(value)}"${disabled}${sel}>${escapeHtml(item.label)}</option>`;
+      })
+      .join("");
+    native.value = selected;
+  }
+  if (panel) {
+    panel.innerHTML = list.length
+      ? list
+          .map((item) => {
+            const value = String(item.value);
+            const active = value === selected;
+            const disabled = Boolean(item.disabled);
+            return `<button class="ui-select-option${active ? " is-active" : ""}${disabled ? " is-disabled" : ""}" type="button" role="option" data-ui-select-value="${escapeHtml(value)}" aria-selected="${active ? "true" : "false"}" ${disabled ? "disabled aria-disabled=\"true\"" : ""} title="${escapeHtml(item.label)}">
+              <span class="ui-select-option-check" aria-hidden="true">${active ? "✓" : ""}</span>
+              <span class="ui-select-option-label">${escapeHtml(item.label)}</span>
+            </button>`;
+          })
+          .join("")
+      : `<div class="multi-filter-empty">${escapeHtml(typeof t === "function" ? t("multi.empty") : "暂无选项")}</div>`;
+  }
+  if (summary) {
+    const active = list.find((item) => String(item.value) === selected);
+    summary.textContent =
+      active?.label ||
+      (!preserveNative && list[0]?.label) ||
+      (typeof t === "function" ? t("multi.pick") : "请选择");
+  }
+  root.classList.toggle("is-disabled", Boolean(native?.disabled));
+  const trigger =
+    root.querySelector(".ui-select-trigger") ||
+    root.querySelector(".review-status-picker-trigger") ||
+    root.querySelector(".detail-media-picker-trigger");
+  if (trigger) trigger.disabled = Boolean(native?.disabled);
+}
+
+function bindUiSelect(root, { onChange, maxHeight = 320, maxWidth = 420, escapeFocus = "trigger" } = {}) {
+  if (!root) return;
+  const trigger =
+    root.querySelector(".ui-select-trigger") ||
+    root.querySelector(".review-status-picker-trigger") ||
+    root.querySelector(".detail-media-picker-trigger");
+  const panel =
+    root.querySelector(".ui-select-panel") ||
+    root.querySelector(".review-status-picker-panel") ||
+    root.querySelector(".detail-media-picker-panel");
+  if (!trigger || !panel) return;
+
+  // Replace node re-renders drop listeners; only skip when same element already bound.
+  if (trigger.dataset.uiSelectBound === "1") return;
+  trigger.dataset.uiSelectBound = "1";
+
+  trigger.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (trigger.disabled || root.classList.contains("is-disabled")) return;
+    const willOpen = panel.hidden;
+    closeAllUiSelects();
+    closeAllMultiFilters();
+    if (typeof closeGatewayModelPicker === "function") closeGatewayModelPicker();
+    if (typeof closeGatewayProviderPicker === "function") closeGatewayProviderPicker();
+    if (!willOpen) return;
+    root.classList.add("is-open");
+    trigger.setAttribute("aria-expanded", "true");
+    const width = trigger.getBoundingClientRect().width;
+    openAnchoredPanel(panel, trigger, {
+      maxHeight,
+      minWidth: Math.max(width, 160),
+      matchAnchorWidth: true,
+      maxWidth: Math.max(width, maxWidth),
+    });
+  });
+
+  panel.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const option = event.target.closest("[data-ui-select-value]");
+    if (!option || option.disabled || option.getAttribute("aria-disabled") === "true") return;
+    const value = String(option.dataset.uiSelectValue || "");
+    const native =
+      root.querySelector("select.ui-select-native") ||
+      root.querySelector("select.gateway-model-native-select") ||
+      root.querySelector("select");
+    if (native?.disabled || native?.hidden) return;
+    const label =
+      option.querySelector(".ui-select-option-label")?.textContent?.trim() ||
+      option.textContent.trim();
+    if (native) {
+      native.value = value;
+      // Keep option list in sync for callers that re-read options later.
+      [...native.options].forEach((opt) => {
+        opt.selected = opt.value === value;
+      });
+    }
+    panel.querySelectorAll("[data-ui-select-value]").forEach((opt) => {
+      const active = opt === option;
+      opt.classList.toggle("is-active", active);
+      opt.setAttribute("aria-selected", active ? "true" : "false");
+      const check = opt.querySelector(".ui-select-option-check");
+      if (check) check.textContent = active ? "✓" : "";
+    });
+    const summary =
+      root.querySelector(".ui-select-summary") ||
+      root.querySelector("#reviewStatusPickerSummary") ||
+      root.querySelector(".detail-media-picker-summary");
+    if (summary) summary.textContent = label;
+    closeAllUiSelects();
+    if (native) {
+      native.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+    onChange?.(value, label);
+  });
+
+  trigger.addEventListener("keydown", (event) => {
+    if (!["Enter", " ", "ArrowDown", "ArrowUp", "Escape"].includes(event.key)) return;
+    event.stopPropagation();
+    if (event.key === "Escape") {
+      closeAllUiSelects();
+      if (escapeFocus === "blur" || root.closest?.("#reviewPane, #detailPane, #caseLabelingDetail, #mediaDialog")) {
+        event.preventDefault();
+        trigger.blur();
+      }
+      return;
+    }
+    event.preventDefault();
+    if (panel.hidden) trigger.click();
+    const options = [...panel.querySelectorAll("[data-ui-select-value]:not([disabled])")];
+    if (!options.length) return;
+    const active = panel.querySelector("[data-ui-select-value].is-active");
+    const index = Math.max(0, options.indexOf(active));
+    const target = event.key === "ArrowUp"
+      ? options[(index - 1 + options.length) % options.length]
+      : options[event.key === "ArrowDown" ? (index + 1) % options.length : index];
+    target?.focus();
+  });
+  panel.addEventListener("keydown", (event) => {
+    if (["Enter", " ", "ArrowDown", "ArrowUp", "Escape"].includes(event.key)) event.stopPropagation();
+    const options = [...panel.querySelectorAll("[data-ui-select-value]:not([disabled])")];
+    const current = event.target.closest?.("[data-ui-select-value]");
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeAllUiSelects();
+      // Review shortcuts must leave the control; ordinary pickers restore the trigger.
+      if (escapeFocus === "blur" || root.closest?.("#reviewPane, #detailPane, #caseLabelingDetail, #mediaDialog")) {
+        const active = document.activeElement;
+        if (root.contains(active)) active?.blur();
+      } else trigger.focus();
+      return;
+    }
+    if (!["ArrowDown", "ArrowUp"].includes(event.key) || !current || !options.length) return;
+    event.preventDefault();
+    const index = Math.max(0, options.indexOf(current));
+    options[(index + (event.key === "ArrowDown" ? 1 : -1) + options.length) % options.length]?.focus();
+  });
+
+  if (document.documentElement.dataset.uiSelectDismissBound === "1") return;
+  document.documentElement.dataset.uiSelectDismissBound = "1";
+  document.addEventListener(
+    "click",
+    (event) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (
+        target?.closest(
+          ".ui-select, .review-status-picker, .detail-media-picker, .ui-select-panel, .review-status-picker-panel, .detail-media-picker-panel"
+        )
+      ) {
+        return;
+      }
+      closeAllUiSelects();
+    },
+    true
+  );
+  document.addEventListener(
+    "keydown",
+    (event) => {
+      if (event.key === "Escape") {
+        // A picker consumes the first Escape; a second Escape can close its dialog.
+        if (event.target?.closest?.("dialog")?.querySelector?.(".ui-select.is-open")) event.preventDefault();
+        closeAllUiSelects();
+      }
+    },
+    true
+  );
+  document.addEventListener(
+    "scroll",
+    (event) => {
+      if (
+        !document.querySelector(
+          ".ui-select.is-open, .review-status-picker.is-open, .detail-media-picker.is-open"
+        )
+      ) {
+        return;
+      }
+      const target = event.target;
+      if (
+        target instanceof Element &&
+        target.closest(
+          ".ui-select-panel, .review-status-picker-panel, .detail-media-picker-panel"
+        )
+      ) {
+        return;
+      }
+      closeAllUiSelects();
+    },
+    true
+  );
+  window.addEventListener("resize", () => closeAllUiSelects());
+}
+
+// Generic enhancement covers static controls and dynamically inserted dialog rows.
+// Explicit custom pickers retain their own renderer/binding.
+const dashboardSelectSnapshots = new WeakMap();
+let dashboardSelectObserver = null;
+let dashboardSelectLabelId = 0;
+
+function enhanceNativeUiSelect(select, { maxWidth = 520 } = {}) {
+  if (!select || select.multiple) return null;
+  let root = select.closest(".ui-select");
+  if (!root?.classList.contains("dashboard-native-ui-select")
+      && select.matches(".ui-select-native, .gateway-model-native-select")) return root;
+
+  if (!root || !root.classList.contains("dashboard-native-ui-select")) {
+    root = document.createElement("div");
+    root.className = "ui-select dashboard-native-ui-select";
+    select.before(root);
+    root.innerHTML = `<button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="ui-select-summary"></span><span class="ui-select-caret" aria-hidden="true"></span></button><div class="ui-select-panel" role="listbox" hidden></div>`;
+    root.append(select);
+    select.classList.add("ui-select-native");
+    select.setAttribute("aria-hidden", "true");
+    select.tabIndex = -1;
+  }
+  if (select.id === "modelReviewStatusInput") {
+    select.title = uiText("M 打开；1 待复核 / 2 已完成；Enter 保存", "M opens; 1 Needs review / 2 Completed; Enter saves");
+  }
+  const translated = {
+    workSplitWorkflowMode: {
+      model_review_only: ["独立判错复核任务（仅判错复核）", "Independent model review (Review only)"],
+      model_review_and_case_label: ["联合复核任务（判错复核 + 问题标注）", "Combined review (Model review + Case label)"],
+    },
+    workSplitComparison: {
+      all: ["全部 Case", "All cases"],
+      mismatch: ["仅模型判错 (MISMATCH)", "Model mismatch only"],
+      match: ["仅模型判对 (MATCH)", "Model match only"],
+    },
+    reviewWorkflowMode: {
+      model_review_only: ["仅判错复核", "Model review only"],
+      model_review_and_case_label: ["判错复核 + 问题标注", "Model review + Case label"],
+    },
+    campaignsSource: {
+      all: ["全部来源", "All sources"], campaign: ["标注实验", "Labeling campaigns"],
+      legacy_model_review: ["历史判错复核", "Historical reviews"],
+    },
+    modelReviewStatusInput: {
+      pending: ["待开始", "Not started"], in_progress: ["待复核", "Needs review"], completed: ["已完成", "Completed"],
+    },
+    runCollectionReferenceType: {
+      gt: ["GT 版本（创建时冻结）", "GT snapshot (frozen on create)"],
+      label_result: ["标注版本", "Label snapshot"],
+    },
+  };
+  const options = [...select.options].map((option) => ({
+    value: option.value,
+    label: translated[select.id]?.[option.value]?.[state.uiLanguage === "en" ? 1 : 0]
+      || option.textContent?.trim() || option.value,
+    disabled: option.disabled,
+  }));
+  const labels = [...(select.labels || [])].map((label) => {
+    if (!label.id) label.id = `dashboard-select-label-${++dashboardSelectLabelId}`;
+    return label.id;
+  });
+  const labelledBy = select.getAttribute("aria-labelledby") || labels.join(" ");
+  const ariaLabel = select.getAttribute("aria-label") || "";
+  const snapshot = JSON.stringify([options, select.value, select.disabled, select.hidden,
+    labelledBy, ariaLabel, select.title]);
+  if (dashboardSelectSnapshots.get(select) === snapshot) return root;
+  dashboardSelectSnapshots.set(select, snapshot);
+  // Do not rewrite native options: preserve empty values, option metadata, and
+  // programmatic selection; also avoid observer feedback and losing open focus.
+  populateUiSelect(root, options, select.value, { preserveNative: true });
+  root.hidden = select.hidden;
+  if ((select.disabled || select.hidden) && root.classList.contains("is-open")) closeAllUiSelects();
+  const trigger = root.querySelector(".ui-select-trigger");
+  if (trigger) {
+    trigger.title = select.title || "";
+    for (const [name, value] of [["aria-label", ariaLabel], ["aria-labelledby", labelledBy]]) {
+      if (value) trigger.setAttribute(name, value);
+      else trigger.removeAttribute(name);
+    }
+    if (select.id === "modelReviewStatusInput") {
+      root.classList.add("model-review-status-picker");
+      trigger.setAttribute("aria-keyshortcuts", "M");
+      if (!trigger.querySelector(".model-review-status-shortcut")) {
+        trigger.querySelector(".ui-select-caret")?.insertAdjacentHTML("beforebegin",
+          '<kbd class="review-control-shortcut model-review-status-shortcut" aria-hidden="true">M</kbd>');
+      }
+      root.querySelectorAll("[data-ui-select-value]").forEach((option) => {
+        const shortcut = { in_progress: "1", completed: "2" }[option.dataset.uiSelectValue];
+        if (shortcut) option.insertAdjacentHTML("beforeend",
+          `<kbd class="review-control-shortcut model-review-status-option-shortcut" aria-hidden="true">${shortcut}</kbd>`);
+      });
+    }
+  }
+  bindUiSelect(root, {
+    maxHeight: 320, maxWidth,
+    escapeFocus: select.id === "modelReviewStatusInput" ? "blur" : "trigger",
+  });
+  if (select.dataset.dashboardSelectBound !== "1") {
+    select.dataset.dashboardSelectBound = "1";
+    select.addEventListener("change", () => enhanceNativeUiSelect(select, { maxWidth }));
+  }
+  return root;
+}
+
+function enhanceDashboardSelects(root = document) {
+  if (!root) return;
+  if (root.matches?.("select")) enhanceNativeUiSelect(root);
+  root.querySelectorAll("select").forEach((select) => enhanceNativeUiSelect(select));
+}
+
+function observeDashboardSelects() {
+  if (dashboardSelectObserver) return;
+  dashboardSelectObserver = new MutationObserver((records) => {
+    const selects = new Set();
+    for (const record of records) {
+      const element = record.target.nodeType === 1 ? record.target : record.target.parentElement;
+      const select = element?.closest("select");
+      if (select) selects.add(select);
+      for (const node of record.addedNodes || []) {
+        if (node.nodeType !== 1) continue;
+        if (node.matches("select")) selects.add(node);
+        node.querySelectorAll("select").forEach((item) => selects.add(item));
+      }
+    }
+    // Ignore unrelated DOM updates (including video time ticks and Gallery media).
+    selects.forEach((select) => {
+      if (select.isConnected) enhanceNativeUiSelect(select);
+    });
+  });
+  dashboardSelectObserver.observe(document.body, {
+    subtree: true, childList: true, characterData: true, attributes: true,
+    attributeFilter: ["disabled", "hidden", "selected", "label", "aria-label", "aria-labelledby"],
+  });
+  document.addEventListener("reset", (event) => {
+    // Form reset updates values after the reset event has been dispatched.
+    queueMicrotask(() => enhanceDashboardSelects(event.target));
+  });
+}
+
+// Shared info help, also used by the version metric/source controls.
+const uiInfoSelector = '[data-ui-info],[data-version-info],#versionTEInfo';
+const uiInfoBindings = new WeakSet();
+function uiInfoTrigger(help) {
+  return help.querySelector('[data-ui-info-trigger]') || help.querySelector('button');
+}
+
+function closeUiInfoPopovers(root = document) {
+  root.querySelectorAll(uiInfoSelector).forEach((help) => {
+    help.classList.remove('is-open');
+    help.classList.add('is-dismissed');
+    delete help.dataset.uiInfoPinned;
+    const trigger = uiInfoTrigger(help);
+    if (trigger?.matches('button')) trigger.setAttribute('aria-expanded', 'false');
+  });
+}
+
+function showUiInfoPopover(help, root = document, { pinned = false } = {}) {
+  const trigger = uiInfoTrigger(help);
+  const tip = help.querySelector('.ui-info-tooltip,.version-te-info-tooltip');
+  if (!trigger || !tip) return;
+  if (!help.classList.contains('is-open')) closeUiInfoPopovers(root);
+  help.classList.remove('is-dismissed');
+  help.classList.add('is-open');
+  if (pinned) help.dataset.uiInfoPinned = '1';
+  if (trigger.matches('button')) trigger.setAttribute('aria-expanded', 'true');
+  const viewport = anchoredViewportBounds();
+  tip.style.maxWidth = `${Math.max(0, viewport.width - 24)}px`;
+  tip.style.maxHeight = `${Math.max(0, viewport.height - 24)}px`;
+  const anchor = help.querySelector('[data-ui-info-hover]') || trigger;
+  const side = help.dataset.uiInfoPlacement === 'side';
+  const rect = (side ? help : anchor).getBoundingClientRect();
+  if (side && (rect.right + tip.offsetWidth + 20 <= viewport.right
+      || rect.left - tip.offsetWidth - 20 >= viewport.left)) {
+    tip.style.left = `${rect.right + tip.offsetWidth + 20 <= viewport.right
+      ? rect.right + 8 : rect.left - tip.offsetWidth - 8}px`;
+    tip.style.top = `${Math.max(viewport.top + 12, Math.min(rect.top, viewport.bottom - tip.offsetHeight - 12))}px`;
+    return;
+  }
+  const preferredLeft = help.dataset.uiInfoAlign === 'end' ? rect.right - tip.offsetWidth : rect.left;
+  tip.style.left = `${Math.max(viewport.left + 12, Math.min(preferredLeft, viewport.right - tip.offsetWidth - 12))}px`;
+  tip.style.top = `${Math.max(viewport.top + 12, Math.min(rect.bottom + tip.offsetHeight + 8 <= viewport.bottom ? rect.bottom + 6 : rect.top - tip.offsetHeight - 6, viewport.bottom - tip.offsetHeight - 12))}px`;
+}
+
+function bindUiInfoPopovers(root) {
+  if (!root || uiInfoBindings.has(root)) return;
+  uiInfoBindings.add(root);
+  let closing;
+  let pointerX = null, pointerY = null;
+  const helpOf = target => target?.closest?.(uiInfoSelector);
+  const close = () => { clearTimeout(closing); closeUiInfoPopovers(root); };
+  const show = help => {
+    clearTimeout(closing);
+    showUiInfoPopover(help, root);
+  };
+  root.addEventListener('pointerover', event => {
+    const help = helpOf(event.target);
+    if (!help || event.pointerType === 'touch') return;
+    const focused = helpOf(document.activeElement);
+    // Scrolling a keyboard-focused option can expose another row under a
+    // stationary mouse. Only actual pointer movement may replace its hint.
+    if (event.clientX === pointerX && event.clientY === pointerY
+        && focused?.querySelector('[data-ui-info-trigger]') && focused.classList.contains('is-open')) return;
+    const pinned = root.querySelector('[data-ui-info-pinned].is-open');
+    // Explicitly opening a description keeps that text until focus moves or
+    // the user clicks elsewhere, including when a closing menu exposes a row.
+    if (pinned && pinned !== help) return;
+    const hover = help.querySelector('[data-ui-info-hover]') || help;
+    if (hover.contains(event.target) || event.target.closest('.ui-info-tooltip,.version-te-info-tooltip')) show(help);
+    else close();
+  });
+  root.addEventListener('pointermove', event => {
+    pointerX = event.clientX;
+    pointerY = event.clientY;
+  }, { passive: true });
+  root.addEventListener('pointerout', event => {
+    const help = helpOf(event.target);
+    if (help && !help.contains(event.relatedTarget)) closing = setTimeout(() => {
+      if (!help.contains(document.activeElement)) close();
+    }, 180);
+  });
+  root.addEventListener('focusin', event => {
+    const help = helpOf(event.target);
+    if (!help) return;
+    // A tag's adjacent action menu must not open a tooltip over its actions.
+    if (!help.querySelector('[data-ui-info-trigger]') || uiInfoTrigger(help).contains(event.target)
+        || event.target.closest('.ui-info-tooltip,.version-te-info-tooltip')) show(help);
+    else close();
+  });
+  root.addEventListener('focusout', event => {
+    const help = helpOf(event.target);
+    if (help && !help.contains(event.relatedTarget)) close();
+  });
+  root.addEventListener('click', event => {
+    const help = helpOf(event.target);
+    if (help && uiInfoTrigger(help)?.contains(event.target)) show(help);
+  });
+  document.addEventListener('pointerdown', event => {
+    const pinned = root.querySelector('[data-ui-info-pinned].is-open');
+    if (!helpOf(event.target) || (pinned && !pinned.contains(event.target))) close();
+  });
+  document.addEventListener('keydown', event => {
+    if (event.key !== 'Escape' || event.defaultPrevented || isImeComposing(event)
+        || event.repeat || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+    const help = [...root.querySelectorAll(uiInfoSelector)].find(item => item.classList.contains('is-open'));
+    if (!help) return;
+    // Review owns Escape for its dropdown and focus release. Hints must not
+    // consume that key or leave a focused checkbox behind.
+    if (help.dataset.uiInfoEscape !== 'bubble') {
+      event.preventDefault();
+      uiInfoTrigger(help)?.focus({ preventScroll: true });
+    }
+    close();
+  });
+  window.addEventListener('resize', close);
+  window.addEventListener('scroll', event => {
+    if (helpOf(event.target)) return;
+    const help = [...root.querySelectorAll(uiInfoSelector)].find(item =>
+      item.classList.contains('is-open') && item.querySelector('[data-ui-info-trigger]') &&
+      (item.contains(document.activeElement) || item.querySelector('[data-ui-info-hover]')?.matches(':hover')));
+    if (help && event.target.contains?.(help)) {
+      const rect = (help.querySelector('[data-ui-info-hover]') || uiInfoTrigger(help)).getBoundingClientRect();
+      const bounds = event.target.getBoundingClientRect?.() || anchoredViewportBounds();
+      if (rect.bottom > bounds.top && rect.top < bounds.bottom && rect.right > bounds.left && rect.left < bounds.right) {
+        show(help);
+        return;
+      }
+    }
+    close();
+  }, {capture: true, passive: true});
+  window.visualViewport?.addEventListener('resize', close);
+  window.visualViewport?.addEventListener('scroll', close);
+}
+
+/* Track only open panels; visualViewport reflects the on-screen keyboard. */
+const anchoredPanelContexts = new Map();
+let anchoredViewportBound = false;
+function anchoredViewportBounds() {
+  const viewport = window.visualViewport;
+  const left = viewport?.offsetLeft || 0;
+  const top = viewport?.offsetTop || 0;
+  const width = viewport?.width || window.innerWidth;
+  const height = viewport?.height || window.innerHeight;
+  return { left, top, width, height, right: left + width, bottom: top + height };
+}
+
+/** Park a dropdown panel off-screen before first paint (no absolute-down flash). */
+function prepareAnchoredPanel(panel) {
+  if (!panel) return;
+  panel.classList.add("is-fixed-dropdown", "is-measuring");
+  panel.classList.remove("is-positioned", "is-drop-up", "is-drop-down");
+  panel.style.position = "fixed";
+  panel.style.right = "auto";
+  panel.style.bottom = "auto";
+  panel.style.top = "0px";
+  panel.style.left = "-10000px";
+  panel.style.visibility = "hidden";
+  panel.style.opacity = "0";
+  panel.style.pointerEvents = "none";
+  panel.style.maxHeight = "";
+  panel.style.zIndex = "80";
+}
+
+function resetAnchoredPanel(panel) {
+  if (!panel) return;
+  anchoredPanelContexts.delete(panel);
+  panel.classList.remove(
+    "is-fixed-dropdown",
+    "is-positioned",
+    "is-measuring",
+    "is-drop-up",
+    "is-drop-down"
+  );
+  panel.style.position = "";
+  panel.style.top = "";
+  panel.style.left = "";
+  panel.style.right = "";
+  panel.style.bottom = "";
+  panel.style.width = "";
+  panel.style.minWidth = "";
+  panel.style.maxWidth = "";
+  panel.style.maxHeight = "";
+  panel.style.visibility = "";
+  panel.style.opacity = "";
+  panel.style.pointerEvents = "";
+  panel.style.zIndex = "";
+}
+
+/**
+ * Place panel near anchor. Prefers opening downward; flips up only when below
+ * cannot fit the content and above has more free space.
+ * Width is always explicit px (never % of viewport when position:fixed).
+ */
+function positionAnchoredPanel(panel, anchor, options = {}) {
+  if (!panel || !anchor) return { openUp: false };
+  const gap = Number(options.gap ?? 4);
+  const margin = Number(options.margin ?? 8);
+  const maxHeightCap = Number(options.maxHeight ?? 360);
+  const minWidth = Number(options.minWidth ?? 0);
+  const matchAnchorWidth = options.matchAnchorWidth !== false;
+  const maxWidthCap = Number(options.maxWidth ?? 0);
+
+  prepareAnchoredPanel(panel);
+  const rect = anchor.getBoundingClientRect();
+  const viewport = anchoredViewportBounds();
+  const vh = viewport.height;
+  const vw = viewport.width;
+  // Pixel width only — CSS min-width:100% on fixed panels resolves to viewport.
+  let width = Math.max(
+    matchAnchorWidth ? rect.width : 0,
+    minWidth,
+    120
+  );
+  const widthCeiling = maxWidthCap > 0
+    ? Math.min(maxWidthCap, vw - margin * 2)
+    : vw - margin * 2;
+  width = Math.min(width, Math.max(120, widthCeiling));
+  const widthPx = `${Math.round(width)}px`;
+  panel.style.width = widthPx;
+  panel.style.minWidth = widthPx;
+  panel.style.maxWidth = widthPx;
+  panel.style.left = "0px";
+  panel.style.top = "0px";
+
+  const naturalH = panel.scrollHeight || panel.getBoundingClientRect().height || 200;
+  const spaceBelow = viewport.bottom - rect.bottom - gap - margin;
+  const spaceAbove = rect.top - viewport.top - gap - margin;
+  // Prefer down; flip only when below is too short and above is better.
+  const openUp =
+    spaceBelow < Math.min(naturalH, 160) && spaceAbove > spaceBelow;
+  const available = Math.max(100, Math.floor(openUp ? spaceAbove : spaceBelow));
+  const maxH = Math.min(available, maxHeightCap, Math.floor(vh * 0.55));
+  panel.style.maxHeight = `${maxH}px`;
+
+  const height = Math.min(panel.scrollHeight || naturalH, maxH);
+  let top = openUp ? rect.top - height - gap : rect.bottom + gap;
+  top = Math.max(viewport.top + margin, Math.min(top, viewport.bottom - height - margin));
+  let left = rect.left;
+  left = Math.max(viewport.left + margin, Math.min(left, viewport.right - width - margin));
+
+  // backdrop-filter makes the sticky topbar a containing block for fixed
+  // descendants. Convert viewport coordinates back into that local space so
+  // the dataset panel stays under its trigger instead of shifting by the
+  // sidebar/app-frame offset.
+  const fixedRoot = panel.closest(".topbar");
+  const fixedOrigin = fixedRoot?.getBoundingClientRect();
+  panel.style.top = `${Math.round(top - (fixedOrigin?.top || 0))}px`;
+  panel.style.left = `${Math.round(left - (fixedOrigin?.left || 0))}px`;
+  panel.classList.remove("is-measuring");
+  panel.classList.add("is-fixed-dropdown", "is-positioned");
+  panel.classList.add(openUp ? "is-drop-up" : "is-drop-down");
+  panel.style.visibility = "";
+  panel.style.opacity = "";
+  panel.style.pointerEvents = "";
+  return { openUp };
+}
+
+function openAnchoredPanel(panel, anchor, options = {}) {
+  if (!panel || !anchor) return;
+  panel.hidden = false;
+  prepareAnchoredPanel(panel);
+  positionAnchoredPanel(panel, anchor, options);
+  anchoredPanelContexts.set(panel, { anchor, options });
+  if (!anchoredViewportBound && window.visualViewport) {
+    anchoredViewportBound = true;
+    const reposition = () => {
+      anchoredPanelContexts.forEach((context, openPanel) => {
+        if (!openPanel.isConnected || openPanel.hidden || !context.anchor.isConnected) {
+          anchoredPanelContexts.delete(openPanel);
+          return;
+        }
+        positionAnchoredPanel(openPanel, context.anchor, context.options);
+      });
+    };
+    window.visualViewport.addEventListener("resize", reposition);
+    window.visualViewport.addEventListener("scroll", reposition);
+  }
+}
+
+function normalizeClientBasePath(value) {
+  const raw = String(value ?? "");
+  if (!raw || raw === "/") return "";
+  const normalized = raw.endsWith("/") ? raw.slice(0, -1) : raw;
+  if (
+    normalized.includes("..") ||
+    !/^\/(?:[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*)$/.test(normalized)
+  ) {
+    throw new Error("RA Triage base path 配置非法。");
+  }
+  return normalized;
+}
+
+const CONFIGURED_BASE_PATH = normalizeClientBasePath(
+  document.querySelector('meta[name="ra-triage-base"]')?.content || ""
+);
+const BASE_PATH = normalizeClientBasePath(
+  window.__RA_TRIAGE_BASE__ ?? CONFIGURED_BASE_PATH
+);
+
+function removeBasePath(path, basePath) {
+  if (!basePath) return path;
+  if (path === basePath) return "/";
+  if (path.startsWith(`${basePath}/`)) return path.slice(basePath.length);
+  if (path.startsWith(`${basePath}?`) || path.startsWith(`${basePath}#`)) {
+    return `/${path.slice(basePath.length)}`;
+  }
+  return path;
+}
+
+function withBase(path) {
+  const value = String(path || "");
+  if (/^https?:\/\//i.test(value) || value.startsWith("//")) return value;
+  if (!value.startsWith("/")) return value;
+  if (
+    BASE_PATH &&
+    (value === BASE_PATH ||
+      value.startsWith(`${BASE_PATH}/`) ||
+      value.startsWith(`${BASE_PATH}?`) ||
+      value.startsWith(`${BASE_PATH}#`))
+  ) {
+    return value;
+  }
+  const logicalPath = removeBasePath(value, CONFIGURED_BASE_PATH);
+  if (!BASE_PATH) return logicalPath;
+  return `${BASE_PATH}${logicalPath}`;
+}
+
+function stripBasePath(pathname) {
+  const value = String(pathname || "");
+  return removeBasePath(
+    removeBasePath(value, BASE_PATH),
+    CONFIGURED_BASE_PATH
+  );
+}
+
+const PAGE_ROUTES = {
+  "version-metrics": {path:"/version-metrics",titleZh:"版本指标",titleEn:"Version metrics"},
+  "trail-history": { path: "/trail-update-history", titleZh: "Trail 更新记录", titleEn: "Trail update history" },
+  "labeling-summary": { path: "/labeling-summary", titleZh: "标注汇总", titleEn: "Labeling summary" },
+  "rd-results": { path: "/rd-results", titleZh: "标注上传", titleEn: "Label upload" },
+  labeling: {
+    path: "/case-labeling",
+    titleZh: "问题标注",
+    titleEn: "Issue labeling",
+  },
+  "labeling-new-task": {
+    path: "/case-labeling/new-task",
+    titleZh: "标注任务",
+    titleEn: "Labeling tasks",
+  },
+  review: {
+    path: "/review",
+    titleZh: "判错复核",
+    titleEn: "Manual Triage Review",
+  },
+  "review-assignments": {
+    path: "/review-assignments",
+    titleZh: "任务分配",
+    titleEn: "Review Assignments",
+  },
+  campaigns: {
+    path: "/campaigns",
+    titleZh: "任务与标注汇总",
+    titleEn: "Campaigns and Label Analysis",
+  },
+  intent: {
+    path: "/intent-labeling",
+    titleZh: "意图标注",
+    titleEn: "Intent Labeling",
+  },
+  "intent-experiments": {
+    path: "/intent-experiments",
+    titleZh: "实验分配",
+    titleEn: "Experiment Assignment",
+  },
+  "intent-summary": {
+    path: "/intent-summary",
+    titleZh: "标注汇总",
+    titleEn: "Labeling Summary",
+  },
+  analysis: {
+    path: "/review-analysis",
+    titleZh: "原因聚类",
+    titleEn: "Review Reason Clusters",
+  },
+  "trail-update": {
+    path: "/trail-attribute-update",
+    titleZh: "问题排除",
+    titleEn: "Issue Exclusion",
+  },
+  runs: {
+    path: "/runs",
+    titleZh: "模型结果",
+    titleEn: "Model Runs",
+  },
+  comparison: {
+    path: "/run-comparison",
+    titleZh: "Run 对比",
+    titleEn: "Run Comparison",
+  },
+  "run-collections": {
+    path: "/multi-run-evaluation",
+    titleZh: "多 Run 评测",
+    titleEn: "Multi-run evaluation",
+  },
+  prediction: {
+    path: "/batch-prediction",
+    titleZh: "批次预测",
+    titleEn: "Batch Model Inference",
+  },
+  "daily-review": { path: "/daily-review", titleZh: "标注进度", titleEn: "TE progress" },
+  "version-datasets": { path: "/version-datasets", titleZh: "版本数据", titleEn: "Version datasets" },
+  "daily-cron": { path: "/daily-cron", titleZh: "每日任务", titleEn: "Daily tasks" },
+  status: {
+    path: "/system-status",
+    titleZh: "系统状态",
+    titleEn: "System Status",
+  },
+  users: {
+    path: "/users",
+    titleZh: "用户管理",
+    titleEn: "User Access",
+  },
+};
+
+const state = {
+  config: null,
+  gtSync: null,
+  cases: [],
+  caseTotal: 0,
+  casePage: 1,
+  casePageSize: DEFAULT_CASE_PAGE_SIZE,
+  reviewIssueIds: [],
+  workAssignees: [],
+  workAssigneeRequestSeq: 0,
+  caseRequestSeq: 0,
+  caseListRequestSeq: 0,
+  caseDetailPrefetch: new Map(),
+  caseMediaController: null,
+  trailMetadataController: null,
+  trailMetadataTimer: null,
+  reviewReloadSeq: 0,
+  galleryScrollY: 0,
+  selectedId: "",
+  selectedCase: null,
+  modelRuns: [],
+  runPage: 1,
+  runPageSize: DEFAULT_CASE_PAGE_SIZE,
+  reviewers: [],
+  predictionBatches: [],
+  predictionBatchTotal: 0,
+  predictionBatchDetails: {},
+  expandedPredictionBatchId: "",
+  predictionRequesters: [],
+  batchListRequestSeq: 0,
+  batchDefaultModel: null,
+  gatewayModels: [],
+  gatewayModelStatus: null,
+  gatewayModelRequestSeq: 0,
+  selectedGatewayModelId: "",
+  selectedGatewayProviderId: "",
+  batchPrompts: [],
+  batchPromptStatus: null,
+  batchFacets: {
+    models: [],
+    prompts: [],
+    input_profiles: [],
+  },
+  batchDraftSource: "",
+  batchDefaultName: "",
+  selectedRunId: "",
+  runComparison: {
+    baselineRunId: "",
+    candidateRunId: "",
+    transition: "ALL",
+    gtLabel: "ALL",
+    baselineLabel: "ALL",
+    candidateLabel: "ALL",
+    labelChange: "ALL",
+    inputFilter: { version: 1, run: "candidate", relation: "all", conditions: [] },
+    search: "",
+    page: 1,
+    pageSize: 10,
+    requestSeq: 0,
+    data: null,
+    loading: false,
+  },
+  intentLabeling: {
+    datasets: [],
+    assignees: [],
+    assignmentExperiments: [],
+    selectedExperimentId: "",
+    selectedAssignees: [],
+    assigneeDatasetId: "",
+    assigneeSelectionDatasetId: "",
+    datasetId: "",
+    selectedDatasetIds: [],
+    caseId: "",
+    caseData: null,
+    activeTimepointId: "",
+    selectedTimepointIds: [],
+    selectionAnchorId: "",
+    revisionId: null,
+    aggregate: { routing: "", laneChange: "" },
+    overrides: {},
+    undoStack: [],
+    dirty: false,
+    editVersion: 0,
+    saving: false,
+    savePromise: null,
+    saveTimer: null,
+    autoAdvanceOnSave: false,
+    autoAdvanceTimepointId: "",
+    requestSeq: 0,
+    mediaSeq: 0,
+    mediaZoom: {
+      camera: { scale: 1, x: 0, y: 0, source: "" },
+      bev: { scale: 1, x: 0, y: 0, source: "" },
+    },
+    thumbnailObserver: null,
+    experiments: [],
+    experimentMembers: [],
+    experimentsDatasetId: "",
+    experimentDatasetId: "",
+    experimentDatasetIds: [],
+    experimentDraftMembers: [],
+    preferenceOwner: "",
+    experimentNameSuggestionAvailable: false,
+    experimentNameSuggestionTimer: null,
+    experimentNameSuggestionSeq: 0,
+    experimentNameSuggestionFingerprint: "",
+    postingComment: false,
+    adminRevealAnswers: false,
+    summaryDatasetId: "",
+    summaryDatasetIds: [],
+    summaryExperimentId: "",
+    summaryAssignees: [],
+    summaryReveal: false,
+    summaryPayload: null,
+    summaryPage: 1,
+    summaryPageSize: 20,
+    summaryAxis: "all",
+    summaryCommentQuery: "",
+    summaryCommentTimer: null,
+  },
+  // Short baseline ids from registry (e.g. ["0508"] or ["0508","0626"]).
+  selectedBaselineIds: ["0508"],
+  baselineCatalog: [],
+  reviewComparisonStatus: "all",
+  failureOnly: false,
+  clusterKey: "",
+  reviewQueueStale: false,
+  reviewWorkSplitId: "",
+  reviewTaskView: "",
+  reviewTargetGroup: "",
+  reviewTaskProgress: [],
+  reviewTaskContext: null,
+  reviewTaskContextLoading: false,
+  reviewTaskContextError: null,
+  reviewLegacyNoRunTask: false,
+  reviewWorkflowMode: "model_review_and_case_label",
+  combinedReviewContext: null,
+  availableReviewWorkSplitId: "",
+  reviewAnalysis: {
+    page: 1,
+    pageSize: DEFAULT_CASE_PAGE_SIZE,
+    requestSeq: 0,
+    filterTimer: null,
+    data: null,
+    comparisonStatus: "mismatch",
+    workAgreement: "all",
+    workSplitId: "",
+    availableWorkSplitId: "",
+    workSplitOptions: [],
+    workSplitOptionsKey: "",
+  },
+  reviewAssignments: {
+    lifecycle: "current",
+    assignedToMe: false,
+    metrics: null,
+    loadedKey: "",
+    splits: [],
+    selectedSplitId: "",
+    detail: null,
+    page: 1,
+    pageSize: 50,
+    assignee: "",
+    status: "all",
+    query: "",
+    requestSeq: 0,
+    detailRequestSeq: 0,
+    loading: false,
+    detailLoading: false,
+  },
+  caseLabeling: {
+    issueTags: [],
+    targetGroup: "",
+    tasks: [],
+    taskId: "",
+    search: "",
+    issueIds: [],
+    status: [],
+    author: [],
+    assignee: [],
+    exclusion: [],
+    label: [],
+    gt: [],
+    gtRelations: [],
+    commentState: [],
+    labelers: [],
+    assignees: [],
+    cluster: "",
+    clusters: [],
+    page: 1,
+    pageSize: DEFAULT_CASE_PAGE_SIZE,
+    requestSeq: 0,
+    detailSeq: 0,
+    data: null,
+    issueId: "",
+    caseData: null,
+    dirty: false,
+    pendingImages: [],
+  },
+  analysisDiscussion: null,
+  trailUpdate: {
+    runId: "",
+    tab: "review",
+    // The Review-exclusion payload is intentionally fetched once and then
+    // filtered/paginated locally.  That keeps the controlled Trail status
+    // probe asynchronous and avoids reloading the full candidate set for
+    // every query change.
+    filters: {
+      search: "",
+      gtLabel: [],
+      modelLabel: [],
+      reviewer: [],
+      reviewStatus: [],
+      trailStatus: [],
+    },
+    page: 1,
+    pageSize: DEFAULT_CASE_PAGE_SIZE,
+    filterTimer: null,
+    requestSeq: 0,
+    data: null,
+    previewKey: "",
+    previewLoadedAt: 0,
+    loading: false,
+    directRequestSeq: 0,
+    directData: null,
+    issueHistory: null,
+    issueHistoryRequestSeq: 0,
+    progress: null,
+  },
+  selectedAnnotationLabel: "",
+  pollingBatchId: "",
+  pollTimer: null,
+  sessionRetryTimer: null,
+  changeRevision: null,
+  changePollEpoch: 0,
+  changePollTimer: null,
+  changePollInFlight: false,
+  refreshChangedDataPromise: null,
+  refreshChangedDataKey: "",
+  reviewFormDirty: false,
+  deferredDetailRefresh: false,
+  reviewEditRunId: "",
+  reviewEditBaseAnnotationId: null,
+  media: {
+    kind: "bev",
+    index: 0,
+    zoom: 1,
+    drag: null,
+    snapshot: null,
+    requestSeq: 0,
+    imageRequestSeq: 0,
+  },
+  detailMedia: {
+    issueId: "",
+    kind: "",
+    indexes: { bev: 0, camera: 0 },
+    loadSeq: 0,
+  },
+  raEventDialog: { issueId: "", caseData: null, events: [], trailUrl: "", t0TimestampMs: NaN },
+  sourcePreview: { runId: "", page: 1, pageSize: 100, pageCount: 1 },
+  session: {
+    username: "",
+    source: "anonymous",
+    identity_pending: true,
+    authenticated: false,
+    verified: false,
+    is_admin: false,
+    access_role: "viewer",
+    can_manage_team_default: false,
+    can_write: true,
+    read_only: false,
+  },
+  sidebarCollapsed: false,
+  mobileSidebarOpen: false,
+  colorTheme: "dark",
+  uiLanguage: "zh",
+  activePage: "review",
+  pageNavigationEpoch: 0,
+  systemStatus: null,
+  accessUsers: [],
+  mentionUsers: [],
+  trailInspection: null,
+  pendingReviewImages: [],
+  backgroundReviewUploads: new Map(),
+  reviewUploadTail: Promise.resolve(),
+  savingAnnotation: false,
+};
+
+const $ = (selector) => document.querySelector(selector);

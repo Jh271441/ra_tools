@@ -1,0 +1,351 @@
+/* ra_triage_dashboard/static/js/review-draft.js
+ * Review draft storage and annotation helpers
+ * Loaded as a classic script (shared global scope). Do not convert to
+ * ES modules without auditing cross-file function/state dependencies.
+ */
+const REVIEW_DRAFT_FIELDS = [
+  "model_review_status",
+  "label",
+  "expected_output",
+  "is_excluded",
+  "case_is_excluded",
+  "case_rationale",
+  "tags",
+  "missing_evidence",
+  "note",
+  "author",
+];
+
+function currentReviewRunId(caseData) {
+  const selected = String(state.selectedRunId || "").trim();
+  if (selected) return selected;
+  // An empty selection means the legacy/unbound Review stream.  Do not
+  // silently attach those records to whichever prediction happens to be
+  // first in the case payload.
+  return "";
+}
+
+// Modern Campaigns require an explicit task route; legacy blind splits retain
+// their existing binding. Unassigned reviewers use the ordinary Review stream.
+function reviewWorkSplitBinding(caseData) {
+  const assignment = caseData?.review_assignment;
+  if (!assignment?.assigned) return "";
+  if (assignment.purpose === "model_review" &&
+      String(state.reviewWorkSplitId || "").trim() !== String(assignment.split_id || "").trim()) return "";
+  if (assignment?.mode !== "blind" && assignment?.purpose !== "model_review") return "";
+  return String(assignment.split_id || "").trim();
+}
+
+// Combined submissions must use the explicit navigation scope. Never infer a
+// campaign from the latest assignment when browsing outside a task.
+function combinedReviewCampaignBinding(caseData) {
+  const campaignId = String(state.reviewWorkSplitId || "").trim();
+  if (!campaignId) return "";
+  const assignment = caseData?.review_assignment;
+  if (typeof assignment?.assigned !== "boolean" ||
+      String(assignment.split_id || "") !== campaignId ||
+      assignment.purpose !== "model_review" ||
+      assignment.workflow_mode !== "model_review_and_case_label" ||
+      String(assignment.model_run_id || "") !== currentReviewRunId(caseData)) {
+    throw new Error("联合复核任务上下文异常或 Issue 未分配给当前账号，请从任务入口重新打开。");
+  }
+  // A known non-assignee may add a clearly identified supplemental vote in
+  // their ordinary stream. Missing/mismatched task data still fails above.
+  return assignment.assigned ? campaignId : "";
+}
+
+function reviewAnnotationsForCurrentRun(caseData) {
+  const runId = currentReviewRunId(caseData);
+  const annotations = caseData?.annotations || [];
+  let bound = annotations.filter(
+    (annotation) => String(annotation.model_run_id || "").trim() === runId
+  );
+  const workSplitId = reviewWorkSplitBinding(caseData);
+  const verifiedReviewer = state.session?.verified
+    ? String(state.session?.username || "").trim().toLowerCase()
+    : "";
+  if (verifiedReviewer) {
+    bound = bound.filter(
+      (annotation) => String(annotation.author || "").trim().toLowerCase() === verifiedReviewer
+    );
+  }
+  if (workSplitId) {
+    const currentUser = verifiedReviewer || String(state.session?.username || "").trim().toLowerCase();
+    bound = bound.filter(
+      (annotation) =>
+        String(annotation.work_split_id || "").trim() === workSplitId &&
+        String(annotation.author || "").trim().toLowerCase() === currentUser
+    );
+  } else {
+    // Single-review assignments and unassigned Issues share the ordinary
+    // stream. Historical blind-split versions stay visible in History, but
+    // must never become the edit head for this stream.
+    bound = bound.filter(
+      (annotation) => !String(annotation.work_split_id || "").trim()
+    );
+  }
+  // A selected Run is an explicit Review namespace.  Do not fall back to a
+  // legacy unbound annotation when that Run has not been reviewed yet; doing
+  // so makes another person's/Run's Review look like it belongs here.
+  if (runId) return bound;
+  // With no selected Run, preserve the legacy/unbound editing stream.
+  return bound;
+}
+
+// The edit form is scoped to the selected Run, while the Issue-level history
+// is a complete append-only audit trail across every model Run.
+function reviewAnnotationsForAllRuns(caseData) {
+  return [...(caseData?.annotations || [])].sort(
+    (left, right) => Number(right?.id || 0) - Number(left?.id || 0)
+  );
+}
+
+function currentReviewSourceSuggestion(caseData) {
+  const suggestion = caseData?.issue_tag_suggestion;
+  const annotation = suggestion?.annotation;
+  if (!suggestion || !annotation || !Array.isArray(annotation.tags)) return null;
+  // A historical source is only an unsaved form default. A Review in the
+  // selected Run always wins and remains the sole persisted/auditable record.
+  if (reviewAnnotationsForCurrentRun(caseData).length) return null;
+  return suggestion;
+}
+
+function currentReviewAnnotation(caseData) {
+  return (
+    reviewAnnotationsForCurrentRun(caseData)[0] ||
+    currentReviewSourceSuggestion(caseData)?.annotation ||
+    {}
+  );
+}
+
+// The detail form must remain bound to the selected Run. There is one safe
+// exception when choosing its initial Tag state: Gallery/analysis can display
+// legacy and prior-Run Review evidence when this Run has no own Review. If the
+// form starts empty and is saved, the new bound version would otherwise hide
+// that historical environment/self-intent evidence from the current Run.
+//
+// We only use this for the initial checkbox values.  It never changes the
+// legacy record and a user can still deliberately clear a Tag before saving.
+function inheritedHistoricalTagsForCurrentRun(caseData) {
+  if (String(caseData?.legacy_read_policy?.policy || "legacy") === "canonical") return [];
+  const runId = currentReviewRunId(caseData);
+  if (!runId || reviewAnnotationsForCurrentRun(caseData).length) return [];
+  const history = reviewAnnotationsForAllRuns(caseData);
+  const legacy = history.find(
+    (annotation) => !String(annotation?.model_run_id || "").trim()
+  );
+  const priorRun = history.find(
+    (annotation) => String(annotation?.model_run_id || "").trim() !== runId
+  );
+  const source = legacy || priorRun;
+  return Array.isArray(source?.tags) ? source.tags : [];
+}
+
+function initialReviewTagsForCurrentRun(caseData, annotation, draft) {
+  // Preserve explicit tag edits (including clears). A draft of another field
+  // must still inherit the same historical tags as the initial clean form.
+  if (reviewDraftHasField(draft, "tags") || reviewAnnotationsForCurrentRun(caseData).length) {
+    return Array.isArray(annotation?.tags) ? annotation.tags : [];
+  }
+  const inherited = inheritedHistoricalTagsForCurrentRun(caseData);
+  if (inherited.length) return inherited;
+  return Array.isArray(annotation?.tags) ? annotation.tags : [];
+}
+
+const REVIEW_DRAFT_STORAGE_PREFIX = "ra-triage-review-draft:v2:";
+const REVIEW_DRAFT_LEGACY_STORAGE_PREFIX = "ra-triage-review-draft:v1:";
+const REVIEW_DRAFT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+function reviewDraftReviewer(caseData, reviewerOverride = "") {
+  const verifiedReviewer = state.session?.verified ? state.session?.username : "";
+  const form = typeof $ === "function" ? $("#annotationForm") : null;
+  const formReviewer = caseData?.issue_id && form?.dataset?.issueId === String(caseData.issue_id)
+    ? $("#annotationAuthor")?.value
+    : "";
+  const reviewer = String(
+    reviewerOverride || verifiedReviewer || formReviewer || state.session?.username || currentReviewAnnotation(caseData)?.author || ""
+  ).trim().toLowerCase();
+  return reviewer || "anonymous";
+}
+
+function reviewDraftStorageKey(issueId, runId = "", workSplitId = "", reviewer = "") {
+  const base = `${REVIEW_DRAFT_STORAGE_PREFIX}${encodeURIComponent(String(issueId || ""))}:${encodeURIComponent(String(runId || "legacy"))}:${encodeURIComponent(String(workSplitId || "ordinary"))}`;
+  return `${base}:${encodeURIComponent(reviewDraftReviewer(null, reviewer))}`;
+}
+
+function legacyReviewDraftStorageKey(issueId, runId = "", workSplitId = "") {
+  const base = `${REVIEW_DRAFT_LEGACY_STORAGE_PREFIX}${encodeURIComponent(String(issueId || ""))}:${encodeURIComponent(String(runId || "legacy"))}`;
+  return workSplitId ? `${base}:${encodeURIComponent(String(workSplitId))}` : base;
+}
+
+function reviewDraftMatchesReviewer(draft, reviewer) {
+  const expected = String(reviewer || "").trim().toLowerCase();
+  const actual = String(draft?.author || "").trim().toLowerCase();
+  return expected === "anonymous" ? !actual : actual === expected;
+}
+
+function readReviewDraft(issueId, runId = "", workSplitId = "", reviewer = "") {
+  if (!issueId || typeof window === "undefined" || !window.localStorage) return null;
+  const actor = reviewDraftReviewer(null, reviewer);
+  const key = reviewDraftStorageKey(issueId, runId, workSplitId, actor);
+  const legacyKey = legacyReviewDraftStorageKey(issueId, runId, workSplitId);
+  try {
+    let sourceKey = key;
+    let raw = window.localStorage.getItem(key);
+    if (!raw) {
+      sourceKey = legacyKey;
+      raw = window.localStorage.getItem(legacyKey);
+    }
+    if (!raw) return null;
+    const draft = JSON.parse(raw);
+    if (sourceKey === legacyKey && !reviewDraftMatchesReviewer(draft, actor)) return null;
+    const savedAt = Number(draft?.saved_at || 0);
+    if (draft?.version !== 1 || !savedAt || Date.now() - savedAt > REVIEW_DRAFT_MAX_AGE_MS) {
+      window.localStorage.removeItem(sourceKey);
+      return null;
+    }
+    if (sourceKey === legacyKey) {
+      window.localStorage.setItem(key, raw);
+      window.localStorage.removeItem(legacyKey);
+    }
+    return draft;
+  } catch {
+    return null;
+  }
+}
+
+function clearReviewDraft(issueId, runId = "", workSplitId = "", reviewer = "") {
+  if (!issueId || typeof window === "undefined" || !window.localStorage) return;
+  try {
+    window.localStorage.removeItem(reviewDraftStorageKey(issueId, runId, workSplitId, reviewer));
+    const legacyKey = legacyReviewDraftStorageKey(issueId, runId, workSplitId);
+    const legacyRaw = window.localStorage.getItem(legacyKey);
+    if (legacyRaw && reviewDraftMatchesReviewer(JSON.parse(legacyRaw), reviewDraftReviewer(null, reviewer))) {
+      window.localStorage.removeItem(legacyKey);
+    }
+  } catch {
+    // Storage can be unavailable in private browsing; the Review itself still works.
+  }
+}
+
+function annotationTimestamp(annotation) {
+  const value = annotation?.updated_at || annotation?.created_at || "";
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function reviewDraftForCase(caseData) {
+  const runId = currentReviewRunId(caseData);
+  const workSplitId = reviewWorkSplitBinding(caseData);
+  const reviewer = reviewDraftReviewer(caseData);
+  const draft = readReviewDraft(caseData?.issue_id, runId, workSplitId, reviewer);
+  if (!draft) return null;
+  const serverAnnotation = reviewAnnotationsForCurrentRun(caseData)[0];
+  const pendingUpload = [...(state.backgroundCaseUploads?.values() || [])].some((task) =>
+    task.draftScope[0] === caseData.issue_id && task.draftScope[1] === runId
+    && task.draftScope[2] === workSplitId && task.draftScope[3] === reviewer);
+  if (!pendingUpload && serverAnnotation && Number(draft.saved_at) <= annotationTimestamp(serverAnnotation)) {
+    clearReviewDraft(caseData.issue_id, runId, workSplitId, reviewer);
+    return null;
+  }
+  return draft;
+}
+
+function applyReviewDraft(annotation, draft) {
+  if (!draft) return annotation || {};
+  const next = { ...(annotation || {}), _review_draft: true };
+  reviewDraftEditedFields(draft).forEach((field) => {
+    if (Object.prototype.hasOwnProperty.call(draft, field)) next[field] = draft[field];
+  });
+  return next;
+}
+
+function reviewDraftEditedFields(draft) {
+  if (!draft) return [];
+  // Older full snapshots do not identify edits. Preserve their explicit clears.
+  return Array.isArray(draft.edited_fields)
+    ? draft.edited_fields.filter((field) => REVIEW_DRAFT_FIELDS.includes(field))
+    : REVIEW_DRAFT_FIELDS;
+}
+
+function reviewDraftHasField(draft, field) {
+  return reviewDraftEditedFields(draft).includes(field)
+    && Object.prototype.hasOwnProperty.call(draft, field);
+}
+
+function markReviewDraftField(form, target) {
+  if (!form?._reviewDraftFields) return;
+  const fields = target?.name === "reviewTags" ? ["tags", "expected_output"]
+    : target?.name === "missingEvidence" ? ["missing_evidence"]
+    : ({
+      modelReviewStatusInput: ["model_review_status"], expectedOutputInput: ["expected_output"],
+      reviewExcludeInput: ["case_is_excluded", "is_excluded"], combinedCaseRationale: ["case_rationale"],
+      annotationNote: ["note"], annotationAuthor: ["author"],
+    })[target?.id] || [];
+  fields.forEach((field) => form._reviewDraftFields.add(field));
+}
+
+function persistReviewDraft(caseData) {
+  const form = $("#annotationForm");
+  if (!caseData?.issue_id || !form || typeof window === "undefined") return;
+  const runId = state.reviewEditRunId || currentReviewRunId(caseData);
+  const draft = {
+    version: 1,
+    issue_id: caseData.issue_id,
+    model_run_id: runId,
+    model_review_status: $("#modelReviewStatusInput")?.value || "",
+    saved_at: Date.now(),
+    expected_output: $("#expectedOutputInput")?.value || "",
+    is_excluded: Boolean($("#reviewExcludeInput")?.checked),
+    // Keep the Case flag separate from a Run Review's legacy exclusion value.
+    case_is_excluded: $("#reviewExcludeInput")?.disabled
+      ? reviewDraftForCase(caseData)?.case_is_excluded
+      : Boolean($("#reviewExcludeInput")?.checked),
+    tags: [...form.querySelectorAll('input[name="reviewTags"]:checked')].map((input) => input.value),
+    missing_evidence: [...form.querySelectorAll('input[name="missingEvidence"]:checked')].map((input) => input.value),
+    note: $("#annotationNote")?.value || "",
+    case_rationale: $("#combinedCaseRationale")?.value || "",
+    author: $("#annotationAuthor")?.value || "",
+  };
+  if (form._reviewDraftFields) draft.edited_fields = [...form._reviewDraftFields];
+  try {
+    const workSplitId = reviewWorkSplitBinding(caseData);
+    const reviewer = reviewDraftReviewer(
+      caseData,
+      state.session?.verified ? state.session?.username : draft.author
+    );
+    window.localStorage.setItem(reviewDraftStorageKey(caseData.issue_id, runId, workSplitId, reviewer), JSON.stringify(draft));
+  } catch {
+    // Draft persistence is best effort and must never block Review input.
+  }
+  return draft;
+}
+
+function bindReviewDraftLifecycle() {
+  if (typeof window === "undefined" || window.__raTriageReviewDraftBound) return;
+  window.__raTriageReviewDraftBound = true;
+  window.addEventListener("beforeunload", (event) => {
+    if (state.reviewFormDirty && state.selectedCase) persistReviewDraft(state.selectedCase);
+    if (state.backgroundCaseUploads?.size || (typeof caseLabelDecisionUi !== "undefined" && (caseLabelDecisionUi.saving || caseLabelDecisionUi.editor || caseLabelDecisionUi.drafts.size))) {
+      event.preventDefault();
+      event.returnValue = "";
+    }
+  });
+}
+
+function currentReviewBaseAnnotationId(annotation, runId, reviewerOverride = "") {
+  if (!annotation?.id) return null;
+  const annotationRunId = String(annotation.model_run_id || "").trim();
+  if (annotationRunId !== String(runId || "").trim()) return null;
+  const reviewer = String(
+    state.session?.verified ? state.session?.username : reviewerOverride || annotation.author || ""
+  ).trim().toLowerCase();
+  if (reviewer && String(annotation.author || "").trim().toLowerCase() !== reviewer) return null;
+  return annotation.id;
+}
+
+function reviewRunLabel(runId) {
+  const normalized = String(runId || "").trim();
+  if (!normalized) return "未绑定 Model Run";
+  const run = (state.modelRuns || []).find((item) => String(item.id) === normalized);
+  return run?.name || normalized;
+}

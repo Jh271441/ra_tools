@@ -128,3 +128,46 @@ class DailyCronSourceTest(unittest.TestCase):
             cron_source._fetch("http://external.example/")
 
 
+class DailyCronFrontendTest(unittest.TestCase):
+    def test_route_lifecycle_stale_response_and_missing_counts(self):
+        js = Path(__file__).resolve().parents[1] / "static/js/daily-cron.js"
+        script = r'''
+const fs = require("fs"), vm = require("vm"), assert = require("assert");
+const nodes = new Map();
+const window = { setTimeout, clearTimeout, setInterval: () => 1, clearInterval: () => {}, RACronGraph: { render: () => {} } };
+let request;
+const context = vm.createContext({
+  window, document: { hidden: false, addEventListener: () => {} }, AbortController, Date,
+  enhanceNativeUiSelect: () => null,
+  state: { uiLanguage: "zh" },
+  $: (selector) => { if (!nodes.has(selector)) nodes.set(selector, { disabled: false, dataset: {}, textContent: "", setAttribute() {}, hasAttribute: () => false, querySelectorAll: () => [], querySelector: () => null, insertAdjacentHTML(_position, html) { this.innerHTML += html; } }); return nodes.get(selector); },
+  uiText: (zh) => zh, escapeHtml: (value) => String(value).replaceAll("<", "&lt;").replaceAll('"', "&quot;"),
+  api: () => new Promise((resolve, reject) => { request = { resolve, reject }; }),
+});
+vm.runInContext(fs.readFileSync(process.argv[1], "utf8"), context);
+vm.runInContext(fs.readFileSync(process.argv[2], "utf8"), context);
+vm.runInContext(fs.readFileSync(process.argv[3], "utf8"), context);
+assert.equal(vm.runInContext("cronFraction(null, 10)", context), "— / 10");
+assert.equal(vm.runInContext("cronTime(null)", context), "—");
+assert.equal(vm.runInContext('cronLatestRun({overview:{daily:{runs:[{id:"smoke"},{id:"daily-2026-10-18"}]}}}).id', context), "daily-2026-10-18");
+vm.runInContext('dailyCronState.data = {overview:{jobs:[{name:"<img>",schedule:"* * * * *",evidence:"unknown"}]}}; renderDailyCronJobs()', context);
+assert(nodes.get("#dailyCronJobs").innerHTML.includes("&lt;img>"));
+vm.runInContext("dailyCronState.data = null; setDailyCronActive(true); loadDailyCron()", context);
+const old = request;
+vm.runInContext("setDailyCronActive(false); setDailyCronActive(true); loadDailyCron()", context);
+const current = request;
+assert.notEqual(old, current);
+old.reject(Error("old request cancelled"));
+setImmediate(() => {
+  assert.equal(vm.runInContext("dailyCronState.error", context), false);
+  assert.equal(nodes.get("#dailyCronRefresh").disabled, true);
+  current.resolve({ sources: {overview:"unavailable"}, observed_at:1 });
+  setImmediate(() => {
+    assert.equal(vm.runInContext("dailyCronState.data.observed_at", context), 1);
+    assert.equal(nodes.get("#dailyCronRefresh").disabled, false);
+    vm.runInContext("setDailyCronActive(false)", context);
+  });
+});
+'''
+        result = subprocess.run(["node", "-e", script, str(js), str(js.with_name("daily-cron-graph.js")), str(js.with_name("daily-cron-text.js"))], capture_output=True, text=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stderr)

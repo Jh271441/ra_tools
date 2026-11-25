@@ -234,27 +234,27 @@ html[data-color-theme="light"] .gateway-model-picker-panel {
   border-color: #b8c5d4; background: #ffffff; box-shadow: 0 12px 28px rgba(38, 52, 69, .16);
 }
 html[data-color-theme="light"] .gateway-provider-option { color: #172033; }
-html[data-color-theme="light"] .gateway-provider-option:hover { background: var(--overlay-2); }
+html[data-color-theme="light"] .gateway-provider-option:hover { background: #eef3f8; }
 html[data-color-theme="light"] .gateway-provider-option.is-active {
-  color: var(--accent-text); background: var(--accent-soft);
+  color: #075f75; background: rgba(8,117,141,.1);
 }
 html[data-color-theme="light"] .gateway-provider-option.is-active:hover {
-  background: var(--accent-soft-hover);
+  background: rgba(8,117,141,.16);
 }
 
 html[data-color-theme="light"] .run-source-ref,
 html[data-color-theme="light"] .bev-video-progress-row span,
 html[data-color-theme="light"] .batch-output-lines code { color: #53647a; }
-html[data-color-theme="light"] .gateway-model-option.active em { color: var(--accent); }
+html[data-color-theme="light"] .gateway-model-option.active em { color: #08758d; }
 html[data-color-theme="light"] .gateway-model-status.ok,
-html[data-color-theme="light"] .batch-success-count { color: var(--ok); }
+html[data-color-theme="light"] .batch-success-count { color: #087a58; }
 html[data-color-theme="light"] .gateway-model-status.warn { color: #946100; }
 html[data-color-theme="light"] .batch-source-context,
 html[data-color-theme="light"] .actor-summary { color: #49677a; }
 html[data-color-theme="light"] .batch-result-item small,
 html[data-color-theme="light"] .publish-failed { color: #a52c3d; }
 html[data-color-theme="light"] .publish-published,
-html[data-color-theme="light"] .publish-succeeded { color: var(--ok); }
+html[data-color-theme="light"] .publish-succeeded { color: #087a58; }
 html[data-color-theme="light"] .publish-publishing,
-html[data-color-theme="light"] .publish-running { color: var(--accent); }
+html[data-color-theme="light"] .publish-running { color: #08758d; }
 html[data-color-theme="light"] .publish-partial { color: #805700; }

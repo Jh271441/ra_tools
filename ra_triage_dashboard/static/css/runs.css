@@ -249,7 +249,7 @@
 .run-import-copy p { color: var(--muted); font-size: 11px; line-height: 1.6; }
 html[data-color-theme="light"] .run-source-link,
 html[data-color-theme="light"] .run-source-preview,
-html[data-color-theme="light"] .text-link { color: var(--accent); }
+html[data-color-theme="light"] .text-link { color: #08758d; }
 html[data-color-theme="light"] .source-trail .run-source-icon { color: #526278; }
 html[data-color-theme="light"] code,
 html[data-color-theme="light"] .source-preview-json,
