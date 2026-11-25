@@ -83,7 +83,7 @@ class RDTransport:
         from urllib.parse import urlsplit
         target = urlsplit(url)
         if target.hostname != 'voyager.intra.xiaojukeji.com' or target.path not in {
-            '/paladin/issue/pool/query/', '/paladin/issue/pool/multi_update/',
+            '/paladin/issue/pool/query/', '/paladin/issue/pool/query_by_issue_id_list/', '/paladin/issue/pool/multi_update/',
         }:
             raise RuntimeError('Unexpected Trail endpoint')
         if target.path.endswith('/multi_update/'):

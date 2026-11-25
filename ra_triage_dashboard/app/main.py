@@ -144,9 +144,11 @@ async def _authoritative_gt_sync_loop() -> None:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    from .version_metric_cron import run_metric_cron
     from .human_publisher import run_human_publisher
     from .workers.leases import WorkerLeaseManager, make_worker_owner_id, run_with_lease
 
+    metric_task = None
     human_label_task: asyncio.Task[None] | None = None
     gt_sync_task: asyncio.Task[None] | None = None
     trail_sync_task: asyncio.Task[None] | None = None
@@ -178,6 +180,11 @@ async def lifespan(_: FastAPI):
     )
     database.bootstrap_mention_users()
     if embedded_workers:
+        metric_task = asyncio.create_task(
+            run_with_lease(lease_manager, "version-metric-cron", lambda: run_metric_cron(database, settings))
+            if lease_manager is not None else run_metric_cron(database, settings),
+            name="version-metric-cron",
+        )
         human_label_task = asyncio.create_task(
             run_with_lease(
                 lease_manager,
@@ -244,7 +251,7 @@ async def lifespan(_: FastAPI):
     try:
         yield
     finally:
-        for task in (human_label_task, review_notification_task, gt_sync_task, trail_sync_task):
+        for task in (metric_task, human_label_task, review_notification_task, gt_sync_task, trail_sync_task):
             if task is not None:
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):

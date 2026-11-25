@@ -1238,10 +1238,7 @@
   .vm-report-panel,.vm-threshold-panel {padding:12px;}
   .vm-report-link {min-height:44px;}
   .vm-threshold-panel>summary {min-height:44px;line-height:1.6;}
-  .version-metrics-page .case-pagination {flex-wrap:wrap;gap:10px;padding:12px 0;}
-  .version-metrics-page .case-pagination-main {min-width:0;flex-wrap:wrap;}
-  .version-metrics-page .case-pagination .button,.version-metrics-page .page-jump-control input {min-height:44px;height:44px;}
-  .version-metrics-page .case-page-size .ui-select-trigger,.vm-threshold-controls .ui-select-trigger {min-height:44px;}
+  .vm-threshold-controls .ui-select-trigger {min-height:44px;}
   .vm-toolbar .ui-select-trigger,.vm-toolbar .multi-filter-trigger,.vm-scope-filters .ui-select-trigger {min-height:44px;}
 }
 

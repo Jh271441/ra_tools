@@ -120,7 +120,7 @@ class VersionMetricStore:
                 lock.close()
         return state
 
-    def refresh(self, families, factory):
+    def refresh(self, families, factory, *, synchronous=False):
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
         lock = open(self.root / "refresh.lock", "a")
         try:
@@ -131,6 +131,8 @@ class VersionMetricStore:
         initial = dict(status="running", families=families, completed=0, total=len(families), started_at=now(), error="")
         try:
             self._save(self.root / "refresh.json", initial)
+            if synchronous:
+                return self._refresh(families, factory, initial, lock, scheduled=True)
             thread = threading.Thread(target=self._refresh, args=(families, factory, initial, lock), daemon=True,
                                       name="version-metric-refresh")
             thread.start()
@@ -139,14 +141,17 @@ class VersionMetricStore:
             raise
         return initial
 
-    def _refresh(self, families, factory, initial, lock):
+    def _refresh(self, families, factory, initial, lock, scheduled=False):
         state = dict(initial)
         try:
             for family in families:
                 collected = factory(family)
                 if not is_trail_snapshot(collected):
                     raise ValueError("A complete Trail snapshot is required")
-                self.publish(family, collected)
+                previous = self.latest_trail(family) if scheduled else None
+                if not previous or any(previous.get(k) != collected.get(k)
+                                       for k in ("registry_revision", "run_id", "provenance")):
+                    self.publish(family, collected)
                 state["completed"] += 1
                 self._save(self.root / "refresh.json", state)
             state.update(status="ready", finished_at=now())
@@ -156,3 +161,4 @@ class VersionMetricStore:
         finally:
             self._save(self.root / "refresh.json", state)
             lock.close()
+        return state

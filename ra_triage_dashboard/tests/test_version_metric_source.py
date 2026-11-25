@@ -68,20 +68,27 @@ def test_membership_change_during_read_rejects_receipt(monkeypatch):
         module.source(db, "20261030", client)
 
 
-def test_query_wrapper_rejects_writes_and_spaces_reads(monkeypatch):
+def test_query_wrapper_projects_every_lane_and_spaces_reads(monkeypatch):
     calls = []
-    delegate = SimpleNamespace(client=SimpleNamespace(send_request=lambda *args: calls.append(args)))
+    row = dict(issue_id="cn1", ra_stuck_auto_result="成功", ra_stuck_auto_result_info={},
+               **dict.fromkeys(module.FIELDS.values()))
+
+    def send(url, body, timeout):
+        calls.append((url, body))
+        return SimpleNamespace(json=lambda: {"code": 0, "msg": "success", "data": {"cn1": row}})
+
+    delegate = SimpleNamespace(client=SimpleNamespace(send_request=send))
     monkeypatch.setattr(rd_results, "adapter", lambda root: delegate)
     clock = [20.]
     monkeypatch.setattr(module, "_last_query", 0.)
     monkeypatch.setattr(module.time, "monotonic", lambda: clock[0])
     monkeypatch.setattr(module.time, "sleep", lambda seconds: clock.__setitem__(0, clock[0]+seconds))
-    client = module.read_only_client("unused").client
-    query = "http://voyager.intra.xiaojukeji.com/paladin/issue/pool/query/"
-    client.send_request(query, {})
-    client.send_request(query, {})
+    client = module.read_only_client("unused")
+    assert client.fetch(["cn1"]) == [row]
+    assert client.fetch(["cn1"]) == [row]
     assert clock[0] == 21.
-    assert all(args[0].startswith("https://") for args in calls)
-    with pytest.raises(ValueError, match="query-only"):
-        client.send_request(query.replace("query", "multi_update"), {})
-    assert len(calls) == 2
+    assert all(url.endswith("/query_by_issue_id_list/") and set(body["select_field_list"]) == set(row)
+               for url, body in calls)
+    del row["ra_review_result_arbitrated"]
+    with pytest.raises(ValueError, match="Incomplete metric fields"):
+        client.fetch(["cn1"])

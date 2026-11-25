@@ -1,23 +1,20 @@
 /* Report tables consume the exact summaries used by the cross-version chart. */
 const VM_REPORT_IDS={20261009:'2210331546058',20261016:'2210331433301',20261023:'2210462491274',20261030:'2210502394530'};
-function vmReportLink(family){
-  const id=VM_REPORT_IDS[family];if(!id)return '';
+function vmReportLink(family, reportId){
+  const id=/^[0-9]{1,20}$/.test(reportId||'')?reportId:VM_REPORT_IDS[family];if(!id)return '';
   const label=uiText(`查看 ${family} 版本报告（新标签页）`,`Open ${family} release report (new tab)`);
   return `<a class="text-link vm-report-link" href="https://cooper.didichuxing.com/didocs/${id}" target="_blank" rel="noopener noreferrer" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}">${uiText('报告','Report')}</a>`;
 }
-function vmVersionPage(rows,page=1,pageSize=DEFAULT_CASE_PAGE_SIZE){
-  const size=CASE_PAGE_SIZES.includes(pageSize)?pageSize:DEFAULT_CASE_PAGE_SIZE;
-  const ordered=[...rows].sort((a,b)=>b.family.localeCompare(a.family)),pages=Math.max(1,Math.ceil(ordered.length/size));
-  const current=Number.isSafeInteger(page)?Math.max(1,Math.min(page,pages)):1;
-  return {items:ordered.slice((current-1)*size,current*size),total:ordered.length,page:current,pageSize:size,pages};
-}
 function vmReconcileReports(){
   const s=versionMetrics;if(!Array.isArray(s.data?.items))return;
-  const page=vmVersionPage(s.data.items,s.page,s.pageSize);s.page=page.page;s.pageSize=page.pageSize;
   if(!s.data.items.some(row=>row.family===s.thresholdFamily))s.thresholdFamily=[...s.data.items].sort((a,b)=>b.family.localeCompare(a.family))[0]?.family||'';
 }
 function vmFamilyLabel(family){return family.slice(4,6)+'-'+family.slice(6);}
-function vmReferenceLabel(){return ({te:uiText('TE 原始标注','Original TE'),rd:uiText('RD 标注','RD labels'),te_prime:uiText('TE′ 人工标注','Manual TE′'),arbitrated:uiText('裁决结果','Adjudication')})[versionMetrics.reference];}
+function vmReferenceLabel(reference=versionMetrics.reference){return ({release:uiText('按版本取人工 GT','Release-specific human GT'),te:uiText('TE 原始标注','Original TE'),rd:uiText('RD 标注','RD labels'),te_prime:uiText('TE′ 人工标注','Manual TE′'),arbitrated:uiText('裁决结果','Adjudication')})[reference];}
+function vmReferenceCounts(row){
+  const names={arbitrated:uiText('复核','Adjudication'),te_prime:'TE′',te:'TE',rd:'RD'};
+  return (row.reference_lanes||[]).map(lane=>names[lane]+' '+row.reference_counts[lane]).join(' · ');
+}
 function vmCountRate(count,total){
   if(!total)return '<span>—</span>';
   return `<strong>${count}/${total}</strong><small>${vmPct(count/total)}</small>`;
@@ -47,29 +44,28 @@ function vmFreshnessSummary(rows){
   const times=rows.filter(row=>row.status==='ready').map(row=>new Date(row.observed_at)).filter(date=>Number.isFinite(date.getTime())).sort((a,b)=>a-b);
   if(!times.length)return {label:uiText('Trail · 待采集','Trail · Not collected'),title:uiText('点击更新指标，读取新的 Trail 快照','Update metrics to collect a new Trail snapshot')};
   const oldest=vmTime(times[0]),newest=vmTime(times[times.length-1]);
-  return {label:uiText('最早快照','Oldest snapshot')+' · '+oldest,title:uiText(`所选版本最早／最新采集完成时间：${oldest} / ${newest} CST。快照不是持续实时数据；点击更新指标重新采集。`,`Earliest / latest completed collection: ${oldest} / ${newest} CST. Snapshots are not continuously live; update metrics to collect again.`)};
+  return {label:uiText('最早快照','Oldest snapshot')+' · '+oldest,title:uiText(`所选版本最早／最新采集完成时间：${oldest} / ${newest} CST。版本调度会自动核对，也可手动更新。`,`Earliest / latest completed collection: ${oldest} / ${newest} CST. The version scheduler checks automatically. A manual refresh is also available.`)};
 }
 function vmRenderReports(){
   const s=versionMetrics,root=$('#versionMetricsPage');vmReconcileReports();
   root.querySelectorAll('[data-vm-aria-zh]').forEach(el=>el.setAttribute('aria-label',uiText(el.dataset.vmAriaZh,el.dataset.vmAriaEn)));
   $('#vmReferenceNote').textContent=uiText('评测参考：','Reference: ')+vmReferenceLabel()+' · '+uiText(s.exclusion==='exclude'?'剔除人工排除项':'全部三分类有效',s.exclusion==='exclude'?'Manual exclusions removed':'All valid samples');
+  $('#vmChartReference').textContent=s.reference==='release'
+    ?uiText('11-06 起，GT 按复核 → TE′ → TE → RD 取值。此前版本使用 TE。','From Nov 6, GT uses the first entry in this order: adjudication → TE′ → TE → RD. Earlier releases use TE.')
+    :'GT · '+vmReferenceLabel();
   $('#vmSchemeDefinitions').innerHTML=VM_SCHEMES.map(key=>escapeHtml(vmSchemeShort(key)+' → '+vmScheme(key))).join('<br>');
   const freshness=vmFreshnessSummary(s.data?.items||[]);$('#vmDataFreshness').textContent=freshness.label;$('#vmDataFreshness').title=freshness.title;
   $('#vmSnapshotInfo').innerHTML=(s.data?.items||[]).filter(row=>row.status==='ready').map(row=>escapeHtml(row.family+' · '+uiText('采集','Collected')+' '+vmTime(row.started_at||row.observed_at)+' – '+vmTime(row.observed_at)+' CST')).join('<br>')||uiText('暂无 Trail 快照','No Trail snapshots');
-  const page=vmVersionPage(s.data?.items||[],s.page,s.pageSize),busy=s.loading||Boolean(s.error),disabled=busy||!page.total;
-  $('#vmTableMetric').textContent=vmMetric(s.metric);$('#vmReportTable').setAttribute('aria-label',uiText('各版本五方案指标','Five-scheme release metrics')+' · '+vmMetric(s.metric));
-  $('#vmReportHead').innerHTML=`<tr><th scope="col">${uiText('版本','Release')}</th><th scope="col">${uiText('有效／抽样','Valid / sample')}</th><th scope="col">${uiText('TE 已标','TE filled')}</th><th scope="col">${uiText('RD 已标','RD filled')}</th>`+VM_SCHEMES.map(key=>`<th scope="col" title="${escapeHtml(vmScheme(key))}">${escapeHtml(vmSchemeShort(key))}</th>`).join('')+'</tr>';
+  const rows=[...(s.data?.items||[])].reverse(),busy=s.loading||Boolean(s.error);
+  $('#vmTableMetric').textContent=vmMetric(s.metric)+' · '+uiText('人工列为模拟值','Review columns are simulated');$('#vmReportTable').setAttribute('aria-label',uiText('各版本五方案指标','Five-scheme release metrics')+' · '+vmMetric(s.metric));
+  $('#vmReportHead').innerHTML=`<tr><th scope="col">${uiText('版本','Release')}</th><th scope="col">${uiText('有效／抽样','Valid / sample')}</th><th scope="col">${uiText('有效 GT 来源','Valid GT sources')}</th><th scope="col">${uiText('TE 已标','TE filled')}</th><th scope="col">${uiText('RD 已标','RD filled')}</th>`+VM_SCHEMES.map(key=>`<th scope="col" title="${escapeHtml(vmScheme(key))}">${escapeHtml(vmSchemeShort(key))}</th>`).join('')+'</tr>';
   const empty=s.error?uiText('指标读取失败，请重试','Metrics unavailable. Please retry.'):s.loading?uiText('正在读取指标…','Loading metrics…'):uiText('暂无版本数据','No release data');
-  $('#vmReportRows').innerHTML=busy||!page.items.length?vmReportEmpty(empty,9):page.items.map(row=>{
+  $('#vmReportRows').innerHTML=busy||!rows.length?vmReportEmpty(empty,10):rows.map(row=>{
     const change=vmSampleChange(row);
-    const date=`<th scope="row" title="${escapeHtml('release-'+row.family+' · '+vmTime(row.observed_at)+' CST')}"><strong>${vmFamilyLabel(row.family)}</strong>${vmReportLink(row.family)}${row.membership_changed?`<small>${uiText('版本已变化','Membership changed')}</small>`:''}</th>`;
-    if(row.status!=='ready')return `<tr>${date}<td><strong>—/${row.current_sample_total ?? '—'}</strong></td><td colspan="7" class="vm-table-empty">${row.status==='error'?uiText('Trail 快照不可用，请更新指标','Trail snapshot unavailable. Update metrics.'):uiText('暂无 Trail 快照，请更新指标','No Trail snapshot. Update metrics.')}</td></tr>`;
-    return `<tr>${date}<td><strong>${row.valid_total}/${row.sample_total}</strong>${change?`<small>${escapeHtml(change)}</small>`:''}</td><td>${vmCoverageCell(row,'te')}</td><td>${vmCoverageCell(row,'rd')}</td>`+VM_SCHEMES.map(key=>`<td>${vmScoreCell(row,key)}</td>`).join('')+'</tr>';
+    const date=`<th scope="row" title="${escapeHtml('release-'+row.family+' · '+vmTime(row.observed_at)+' CST')}"><strong>${vmFamilyLabel(row.family)}</strong>${vmReportLink(row.family,row.report_id)}${row.membership_changed?`<small>${uiText('版本已变化','Membership changed')}</small>`:''}</th>`;
+    if(row.status!=='ready')return `<tr>${date}<td><strong>—/${row.current_sample_total ?? '—'}</strong></td><td colspan="8" class="vm-table-empty">${row.reason==='human_fields_required'?uiText('请更新指标以补齐人工 GT 字段','Update metrics to collect the missing human GT fields'):row.status==='error'?uiText('Trail 快照不可用，请更新指标','Trail snapshot unavailable. Update metrics.'):uiText('暂无 Trail 快照，请更新指标','No Trail snapshot. Update metrics.')}</td></tr>`;
+    return `<tr>${date}<td><strong>${row.valid_total}/${row.sample_total}</strong>${change?`<small>${escapeHtml(change)}</small>`:''}</td><td>${escapeHtml(vmReferenceCounts(row))}</td><td>${vmCoverageCell(row,'te')}</td><td>${vmCoverageCell(row,'rd')}</td>`+VM_SCHEMES.map(key=>`<td>${vmScoreCell(row,key)}</td>`).join('')+'</tr>';
   }).join('');
-  $('#vmPageLabel').textContent=busy?'— / —':uiText(`${page.page} / ${page.pages} · 共 ${page.total} 个版本`,`${page.page} / ${page.pages} · ${page.total} ${page.total===1?'release':'releases'}`);
-  $('#vmPagePrevious').disabled=disabled||page.page===1;$('#vmPageNext').disabled=disabled||page.page===page.pages;
-  const jump=$('#vmPageJump');jump.value=String(page.page);jump.max=String(page.pages);jump.disabled=$('#vmPageJumpButton').disabled=disabled;
-  $('#vmPageSize').disabled=disabled;vmSelect('vmPageSize',CASE_PAGE_SIZES.map(size=>[size,String(size)]),s.pageSize);
   vmRenderThresholdReport();
 }
 function vmRenderThresholdReport(){
@@ -82,18 +78,7 @@ function vmRenderThresholdReport(){
   const error=s.error?uiText('指标读取失败，请重试','Metrics unavailable. Please retry.'):s.loading?uiText('正在读取指标…','Loading metrics…'):uiText('当前版本暂无有效快照','No valid snapshot for this release');
   $('#vmThresholdRows').innerHTML=!available||s.loading||s.error?vmReportEmpty(error,5):(row.thresholds||[]).map(t=>`<tr${t.threshold===s.threshold?' class="is-selected" aria-current="true"':''}><th scope="row">${t.threshold.toFixed(2)}</th><td>${vmCountRate(t.full_low,t.full_total)}</td><td>${t.reduction}</td><td>${vmCountRate(t.human_count,t.total)}</td><td><strong>${vmPct(t.accuracy)}</strong><small>${t.correct}/${t.total}</small></td></tr>`).join('');
 }
-function vmJumpReportPage(){
-  const input=$('#vmPageJump'),value=Number(input.value);if(input.disabled)return;
-  if(!input.value.trim()||!Number.isSafeInteger(value)){input.setCustomValidity(uiText('请输入整数页码','Enter a whole page number'));input.reportValidity();return;}
-  input.setCustomValidity('');const page=vmVersionPage(versionMetrics.data?.items||[],value,versionMetrics.pageSize);vmChange({page:page.page},{local:true});
-}
 function vmBindReports(){
-  $('#vmPagePrevious').addEventListener('click',()=>vmChange({page:versionMetrics.page-1},{local:true}));
-  $('#vmPageNext').addEventListener('click',()=>vmChange({page:versionMetrics.page+1},{local:true}));
-  $('#vmPageJumpButton').addEventListener('click',vmJumpReportPage);
-  $('#vmPageJump').addEventListener('input',event=>event.target.setCustomValidity(''));
-  $('#vmPageJump').addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();vmJumpReportPage();}});
-  $('#vmPageSize').addEventListener('change',event=>{const size=Number(event.target.value);if(CASE_PAGE_SIZES.includes(size))vmChange({pageSize:size,page:1},{local:true});});
   $('#vmThresholdFamily').addEventListener('change',event=>vmChange({thresholdFamily:event.target.value},{local:true}));
   $('#vmThresholdAnalysis').addEventListener('toggle',event=>{if(versionMetrics.active&&event.target.open!==versionMetrics.thresholdExpanded)vmChange({thresholdExpanded:event.target.open},{local:true});});
 }
