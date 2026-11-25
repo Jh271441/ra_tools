@@ -486,6 +486,7 @@ function renderReviewAssignmentPermissions() {
 }
 
 function renderReviewAssignmentPage() {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("review-assignments") || window.__RA_REACT_OWNED_PAGES__?.includes?.("review-assignments"))) return;
   if (!$("#reviewAssignmentsPage")) return;
   renderReviewAssignmentPermissions();
   renderReviewAssignmentListFilters();
@@ -590,6 +591,10 @@ async function loadReviewAssignmentDetail(
 }
 
 async function loadReviewAssignments({ force = false, splitId = "", reloadDetail = true } = {}) {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("review-assignments") || window.__RA_REACT_OWNED_PAGES__?.includes?.("review-assignments"))) {
+    window.__RA_REACT_WORKBENCH__?.refreshPage?.("review-assignments");
+    return;
+  }
   const store = state.reviewAssignments;
   const route = new URLSearchParams(window.location.search);
   store.lifecycle = ["versions", "manual", "current", "history", "all"].includes(route.get("lifecycle")) ? route.get("lifecycle") : "current";
@@ -689,7 +694,7 @@ function bindReviewAssignmentsPage() {
   // Combined-task cards also appear in the labeling assignment workspace.
   document.addEventListener("click", (event) => {
     const button = event.target.closest("[data-share-review-assignment]");
-    if (button) copyReviewAssignmentLink(button.dataset.shareReviewAssignment, { taskOnly: true }).catch((error) => showToast(error.message, true));
+    if (button && !button.closest("[data-react-island]")) copyReviewAssignmentLink(button.dataset.shareReviewAssignment, { taskOnly: true }).catch((error) => showToast(error.message, true));
   });
   $("#reviewAssignmentsShare")?.addEventListener("click", () => {
     copyReviewAssignmentLink().catch((error) => showToast(error.message, true));

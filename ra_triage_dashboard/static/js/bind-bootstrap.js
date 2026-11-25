@@ -1213,9 +1213,11 @@ async function bootstrap() {
         independentPageResult = settleInitialRequests([loadAccessUsers(), loadMentionUsers()], "页面");
       }
     } else if (initialRoute.page === "review-assignments") {
-      independentPageResult = settleInitialRequests([loadReviewAssignments({
-        splitId: initialRoute.reviewAssignmentSplitId,
-      })], "页面");
+      if (!(window.__RA_REACT_WORKBENCH__?.ownsPage?.("review-assignments") || window.__RA_REACT_OWNED_PAGES__?.includes?.("review-assignments"))) {
+        independentPageResult = settleInitialRequests([loadReviewAssignments({
+          splitId: initialRoute.reviewAssignmentSplitId,
+        })], "页面");
+      }
     }
     // Only Run-dependent views need the catalog before their first payload.
     // Other routes render their own data while the shared catalog initializes
@@ -1296,11 +1298,15 @@ async function bootstrap() {
     } else if (initialRoute.page === "labeling") {
       initialPageRequests.push(enterCaseLabeling({ route: initialRoute }));
     } else if (initialRoute.page === "labeling-new-task") {
-      initialPageRequests.push(enterLabelingNewTask({ route: initialRoute }));
+      if (!(window.__RA_REACT_WORKBENCH__?.ownsPage?.("labeling-new-task") || window.__RA_REACT_OWNED_PAGES__?.includes?.("labeling-new-task"))) {
+        initialPageRequests.push(enterLabelingNewTask({ route: initialRoute }));
+      }
     } else if (initialRoute.page === "review-assignments") {
-      initialPageRequests.push(loadReviewAssignments({
-        splitId: initialRoute.reviewAssignmentSplitId,
-      }));
+      if (!(window.__RA_REACT_WORKBENCH__?.ownsPage?.("review-assignments") || window.__RA_REACT_OWNED_PAGES__?.includes?.("review-assignments"))) {
+        initialPageRequests.push(loadReviewAssignments({
+          splitId: initialRoute.reviewAssignmentSplitId,
+        }));
+      }
     } else if (initialRoute.page === "labeling-summary") {
       if (!(window.__RA_REACT_WORKBENCH__?.ownsPage?.("labeling-summary") || window.__RA_REACT_OWNED_PAGES__?.includes?.("labeling-summary"))) {
         initialPageRequests.push(loadLabelingSummary());

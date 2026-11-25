@@ -1073,8 +1073,8 @@ html[data-color-theme="light"] .ra-batch-prediction-root .gateway-model-option.a
   min-width: 0;
 }
 .ra-campaigns-root .ra-camp-field .ui-select-trigger {
-  height: 36px;
-  min-height: 36px;
+  height: 38px;
+  min-height: 38px;
 }
 .ra-campaigns-root .campaign-assignment-action .ra-react-select {
   min-width: 112px;
@@ -1132,6 +1132,85 @@ html[data-color-theme="light"] .ra-batch-prediction-root .gateway-model-option.a
   height: 36px;
   min-height: 36px;
   font-size: 13px;
+}
+
+/* Wave B6: Review Assignments & Labeling New Task */
+.ra-review-assignments-root {
+  display: grid;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+}
+.ra-review-assignments-root .ra-assign-scope-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.ra-review-assignments-root .ra-assign-scope-filter > span {
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.ra-review-assignments-root .ra-assign-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.ra-review-assignments-root .ra-detail-filter-field {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 10px;
+}
+.ra-review-assignments-root .ra-detail-filter-field .ra-react-select {
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+.ra-review-assignments-root .ra-detail-filter-field .ui-select-trigger {
+  height: 34px;
+  min-height: 34px;
+}
+.ra-review-assignments-root .review-assignment-person-picker {
+  min-width: 140px;
+  max-width: 240px;
+}
+.ra-review-assignments-root .review-assignment-person-picker .ui-select-trigger {
+  height: 32px;
+  min-height: 32px;
+  font-size: 12px;
+}
+.ra-labeling-new-task-root {
+  width: 100%;
+  min-width: 0;
+}
+.ra-alloc-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.allocation-setup-member .ra-react-select,
+.allocation-rule-slot .ra-react-select {
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+#raTaskAllocationDialog .allocation-basis-inline .ra-react-select {
+  min-width: 184px;
+  width: auto;
+}
+#raTaskAllocationDialog .allocation-basis-inline .ui-select-trigger {
+  min-height: 30px;
+  height: 30px;
+  padding: 3px 9px;
+  font-size: 12px;
+  border-radius: 7px;
 }
 @media (max-width: 900px) {
   .ra-run-comparison-root .run-comparison-picker-grid .ra-comparison-field {
@@ -1223,10 +1302,29 @@ html[data-color-theme="light"] .ra-batch-prediction-root .gateway-model-option.a
   .ra-trail-update-root .trail-advanced-fields .multi-filter-trigger,
   .ra-trail-update-root .ra-tu-inline-field .ui-select-trigger,
   .ra-campaigns-root .ra-camp-field .ui-select-trigger,
-  .ra-intent-labeling-root .intent-commandbar .multi-filter-trigger {
+  .ra-intent-labeling-root .intent-commandbar .multi-filter-trigger,
+  .ra-review-assignments-root .ra-assign-scope-filter .ui-select-trigger,
+  .ra-review-assignments-root .ra-detail-filter-field .ui-select-trigger,
+  .ra-review-assignments-root .ra-assign-field .ui-select-trigger {
     height: 44px;
     min-height: 44px;
     font-size: 16px;
+  }
+
+  .ra-review-assignments-root .review-assignment-list-filters {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .ra-review-assignments-root .review-assignment-list-filters > .button,
+  .ra-review-assignments-root .review-assignment-batch-actions .button,
+  .ra-labeling-new-task-root .review-assignment-batch-actions .button {
+    min-height: 44px;
+  }
+  .ra-review-assignments-root .review-assignment-detail-filters {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ra-review-assignments-root .review-assignment-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .ra-campaigns-root .ra-camp-field {

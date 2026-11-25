@@ -1,48 +1,56 @@
 {
-  "_AnalysisCharts-dtyIKbGi.js": {
-    "file": "assets/AnalysisCharts-dtyIKbGi.js",
+  "_AnalysisCharts-sWlB0qlc.js": {
+    "file": "assets/AnalysisCharts-sWlB0qlc.js",
     "name": "AnalysisCharts",
     "imports": [
       "src/main.tsx"
     ]
   },
-  "_MultiSelect-Dk0B688T.js": {
-    "file": "assets/MultiSelect-Dk0B688T.js",
+  "_MultiSelect-CWkGr1mF.js": {
+    "file": "assets/MultiSelect-CWkGr1mF.js",
     "name": "MultiSelect",
     "imports": [
       "src/main.tsx"
     ]
   },
-  "_analysisHelpers-D8VMrt4X.js": {
-    "file": "assets/analysisHelpers-D8VMrt4X.js",
+  "_analysisHelpers-BlMMRO-Y.js": {
+    "file": "assets/analysisHelpers-BlMMRO-Y.js",
     "name": "analysisHelpers",
     "imports": [
       "src/main.tsx",
-      "_AnalysisCharts-dtyIKbGi.js"
+      "_AnalysisCharts-sWlB0qlc.js"
     ]
   },
-  "_index-BhbXw8zr.js": {
-    "file": "assets/index-BhbXw8zr.js",
+  "_index-Bnkb8BUL.js": {
+    "file": "assets/index-Bnkb8BUL.js",
     "name": "index",
     "imports": [
       "src/main.tsx"
     ]
   },
+  "_useAssignmentNaming-7-qFfLUb.js": {
+    "file": "assets/useAssignmentNaming-7-qFfLUb.js",
+    "name": "useAssignmentNaming",
+    "imports": [
+      "src/main.tsx",
+      "_index-Bnkb8BUL.js"
+    ]
+  },
   "src/features/cron-graph/CronGraphCanvas.tsx": {
-    "file": "assets/CronGraphCanvas-Ckjw72q-.js",
+    "file": "assets/CronGraphCanvas-DPFbBpSW.js",
     "name": "CronGraphCanvas",
     "src": "src/features/cron-graph/CronGraphCanvas.tsx",
     "isDynamicEntry": true,
     "imports": [
       "src/main.tsx",
-      "_index-BhbXw8zr.js"
+      "_index-Bnkb8BUL.js"
     ],
     "css": [
       "assets/CronGraphCanvas-BnuhLJ6X.css"
     ]
   },
   "src/main.tsx": {
-    "file": "assets/main-BmV7k-bg.js",
+    "file": "assets/main-Bjx8osxq.js",
     "name": "main",
     "src": "src/main.tsx",
     "isEntry": true,
@@ -62,14 +70,16 @@
       "src/pages/IntentExperimentsPage.tsx",
       "src/pages/TrailUpdatePage.tsx",
       "src/pages/CampaignsPage.tsx",
-      "src/pages/IntentLabelingPage.tsx"
+      "src/pages/IntentLabelingPage.tsx",
+      "src/pages/ReviewAssignmentsPage.tsx",
+      "src/pages/LabelingNewTaskPage.tsx"
     ],
     "css": [
-      "assets/main-D0FgPQPA.css"
+      "assets/main-DXDNz6vx.css"
     ]
   },
   "src/pages/BatchPredictionPage.tsx": {
-    "file": "assets/BatchPredictionPage-DFA0YlaN.js",
+    "file": "assets/BatchPredictionPage-u9czSXTq.js",
     "name": "BatchPredictionPage",
     "src": "src/pages/BatchPredictionPage.tsx",
     "isDynamicEntry": true,
@@ -78,17 +88,17 @@
     ]
   },
   "src/pages/CampaignsPage.tsx": {
-    "file": "assets/CampaignsPage-BvnH0M8r.js",
+    "file": "assets/CampaignsPage-MNO0lbzv.js",
     "name": "CampaignsPage",
     "src": "src/pages/CampaignsPage.tsx",
     "isDynamicEntry": true,
     "imports": [
       "src/main.tsx",
-      "_AnalysisCharts-dtyIKbGi.js"
+      "_AnalysisCharts-sWlB0qlc.js"
     ]
   },
   "src/pages/DailyCronPage.tsx": {
-    "file": "assets/DailyCronPage-Bjjj5Hva.js",
+    "file": "assets/DailyCronPage-D7dfYJll.js",
     "name": "DailyCronPage",
     "src": "src/pages/DailyCronPage.tsx",
     "isDynamicEntry": true,
@@ -100,51 +110,62 @@
     ]
   },
   "src/pages/IntentExperimentsPage.tsx": {
-    "file": "assets/IntentExperimentsPage-D9XGeifn.js",
+    "file": "assets/IntentExperimentsPage-n8qR3GDG.js",
     "name": "IntentExperimentsPage",
     "src": "src/pages/IntentExperimentsPage.tsx",
     "isDynamicEntry": true,
     "imports": [
       "src/main.tsx",
-      "_index-BhbXw8zr.js",
-      "_MultiSelect-Dk0B688T.js"
+      "_index-Bnkb8BUL.js",
+      "_MultiSelect-CWkGr1mF.js"
     ]
   },
   "src/pages/IntentLabelingPage.tsx": {
-    "file": "assets/IntentLabelingPage-C5g5rJOD.js",
+    "file": "assets/IntentLabelingPage-CLiBjNOm.js",
     "name": "IntentLabelingPage",
     "src": "src/pages/IntentLabelingPage.tsx",
     "isDynamicEntry": true,
     "imports": [
       "src/main.tsx",
-      "_MultiSelect-Dk0B688T.js"
+      "_MultiSelect-CWkGr1mF.js"
     ]
   },
   "src/pages/IntentSummaryPage.tsx": {
-    "file": "assets/IntentSummaryPage-xMwgAI5y.js",
+    "file": "assets/IntentSummaryPage-CFEm_HIv.js",
     "name": "IntentSummaryPage",
     "src": "src/pages/IntentSummaryPage.tsx",
     "isDynamicEntry": true,
     "imports": [
       "src/main.tsx",
-      "_index-BhbXw8zr.js",
-      "_MultiSelect-Dk0B688T.js"
+      "_index-Bnkb8BUL.js",
+      "_MultiSelect-CWkGr1mF.js"
+    ]
+  },
+  "src/pages/LabelingNewTaskPage.tsx": {
+    "file": "assets/LabelingNewTaskPage-C6wyOf3u.js",
+    "name": "LabelingNewTaskPage",
+    "src": "src/pages/LabelingNewTaskPage.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.tsx",
+      "_useAssignmentNaming-7-qFfLUb.js",
+      "_index-Bnkb8BUL.js"
     ]
   },
   "src/pages/LabelingSummaryPage.tsx": {
-    "file": "assets/LabelingSummaryPage-6g2o8ZAy.js",
+    "file": "assets/LabelingSummaryPage-7Fu9oZh4.js",
     "name": "LabelingSummaryPage",
     "src": "src/pages/LabelingSummaryPage.tsx",
     "isDynamicEntry": true,
     "imports": [
       "src/main.tsx",
-      "_AnalysisCharts-dtyIKbGi.js",
-      "_MultiSelect-Dk0B688T.js",
-      "_analysisHelpers-D8VMrt4X.js"
+      "_AnalysisCharts-sWlB0qlc.js",
+      "_MultiSelect-CWkGr1mF.js",
+      "_analysisHelpers-BlMMRO-Y.js"
     ]
   },
   "src/pages/RdResultsPage.tsx": {
-    "file": "assets/RdResultsPage-BjVg6sin.js",
+    "file": "assets/RdResultsPage-C-e6PcEG.js",
     "name": "RdResultsPage",
     "src": "src/pages/RdResultsPage.tsx",
     "isDynamicEntry": true,
@@ -153,19 +174,30 @@
     ]
   },
   "src/pages/ReviewAnalysisPage.tsx": {
-    "file": "assets/ReviewAnalysisPage-B063CVLH.js",
+    "file": "assets/ReviewAnalysisPage-CXu2QRn2.js",
     "name": "ReviewAnalysisPage",
     "src": "src/pages/ReviewAnalysisPage.tsx",
     "isDynamicEntry": true,
     "imports": [
       "src/main.tsx",
-      "_AnalysisCharts-dtyIKbGi.js",
-      "_MultiSelect-Dk0B688T.js",
-      "_analysisHelpers-D8VMrt4X.js"
+      "_AnalysisCharts-sWlB0qlc.js",
+      "_MultiSelect-CWkGr1mF.js",
+      "_analysisHelpers-BlMMRO-Y.js"
+    ]
+  },
+  "src/pages/ReviewAssignmentsPage.tsx": {
+    "file": "assets/ReviewAssignmentsPage-DH3FFYaD.js",
+    "name": "ReviewAssignmentsPage",
+    "src": "src/pages/ReviewAssignmentsPage.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.tsx",
+      "_useAssignmentNaming-7-qFfLUb.js",
+      "_index-Bnkb8BUL.js"
     ]
   },
   "src/pages/RunCollectionsPage.tsx": {
-    "file": "assets/RunCollectionsPage-DgSR7fHh.js",
+    "file": "assets/RunCollectionsPage-aAwyfCqQ.js",
     "name": "RunCollectionsPage",
     "src": "src/pages/RunCollectionsPage.tsx",
     "isDynamicEntry": true,
@@ -174,17 +206,17 @@
     ]
   },
   "src/pages/RunComparisonPage.tsx": {
-    "file": "assets/RunComparisonPage-DLSd_7I4.js",
+    "file": "assets/RunComparisonPage-BUWvI9WI.js",
     "name": "RunComparisonPage",
     "src": "src/pages/RunComparisonPage.tsx",
     "isDynamicEntry": true,
     "imports": [
       "src/main.tsx",
-      "_index-BhbXw8zr.js"
+      "_index-Bnkb8BUL.js"
     ]
   },
   "src/pages/RunsManagerIsland.tsx": {
-    "file": "assets/RunsManagerIsland-DCRvbJjo.js",
+    "file": "assets/RunsManagerIsland-DdXarNEr.js",
     "name": "RunsManagerIsland",
     "src": "src/pages/RunsManagerIsland.tsx",
     "isDynamicEntry": true,
@@ -193,28 +225,28 @@
     ]
   },
   "src/pages/TrailHistoryPage.tsx": {
-    "file": "assets/TrailHistoryPage-cUNrSt_m.js",
+    "file": "assets/TrailHistoryPage-DgGKFUbM.js",
     "name": "TrailHistoryPage",
     "src": "src/pages/TrailHistoryPage.tsx",
     "isDynamicEntry": true,
     "imports": [
       "src/main.tsx",
-      "_index-BhbXw8zr.js"
+      "_index-Bnkb8BUL.js"
     ]
   },
   "src/pages/TrailUpdatePage.tsx": {
-    "file": "assets/TrailUpdatePage-CBqiNj7F.js",
+    "file": "assets/TrailUpdatePage-Crx1oTGP.js",
     "name": "TrailUpdatePage",
     "src": "src/pages/TrailUpdatePage.tsx",
     "isDynamicEntry": true,
     "imports": [
       "src/main.tsx",
-      "_index-BhbXw8zr.js",
-      "_MultiSelect-Dk0B688T.js"
+      "_index-Bnkb8BUL.js",
+      "_MultiSelect-CWkGr1mF.js"
     ]
   },
   "src/pages/VersionDatasetsPage.tsx": {
-    "file": "assets/VersionDatasetsPage-Bsb27G7F.js",
+    "file": "assets/VersionDatasetsPage-Bc4HdLJ3.js",
     "name": "VersionDatasetsPage",
     "src": "src/pages/VersionDatasetsPage.tsx",
     "isDynamicEntry": true,
@@ -223,13 +255,13 @@
     ]
   },
   "src/pages/VersionMetricsPage.tsx": {
-    "file": "assets/VersionMetricsPage-CKVeoSQZ.js",
+    "file": "assets/VersionMetricsPage-B-ydVVfj.js",
     "name": "VersionMetricsPage",
     "src": "src/pages/VersionMetricsPage.tsx",
     "isDynamicEntry": true,
     "imports": [
       "src/main.tsx",
-      "_MultiSelect-Dk0B688T.js"
+      "_MultiSelect-CWkGr1mF.js"
     ]
   }
 }

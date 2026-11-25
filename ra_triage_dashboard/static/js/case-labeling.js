@@ -486,6 +486,10 @@ async function exportLabelingGtUpdate(filters = {}, button = null) {
 }
 
 async function enterLabelingNewTask({ route = null } = {}) {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("labeling-new-task") || window.__RA_REACT_OWNED_PAGES__?.includes?.("labeling-new-task"))) {
+    window.__RA_REACT_WORKBENCH__?.refreshPage?.("labeling-new-task");
+    return;
+  }
   if (!state.session?.is_admin && !state.session?.identity_pending) {
     showToast("实验分配仅限管理员。", true);
     if (typeof showPage === "function") showPage("review", { historyMode: "replace" });

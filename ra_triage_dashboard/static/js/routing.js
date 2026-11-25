@@ -237,7 +237,11 @@ function applyUiLanguage(language, { persist = true } = {}) {
     if (typeof renderRunManager === "function" && state.modelRuns?.length) renderRunManager();
   } catch (_) {}
   try {
-    if ($("#workSplitPanel") && !$("#workSplitPanel").hidden) {
+    const reviewAssignmentsReactOwned = typeof window !== "undefined" && (
+      window.__RA_REACT_WORKBENCH__?.ownsPage?.("review-assignments") ||
+      window.__RA_REACT_OWNED_PAGES__?.includes?.("review-assignments")
+    );
+    if (!reviewAssignmentsReactOwned && $("#workSplitPanel") && !$("#workSplitPanel").hidden) {
       enhanceNativeUiSelect($("#workSplitWorkflowMode"));
       enhanceNativeUiSelect($("#workSplitComparison"));
       if (typeof renderWorkSplitScopeCount === "function") renderWorkSplitScopeCount(workSplitTotal(), workSplitFilters());
@@ -247,7 +251,11 @@ function applyUiLanguage(language, { persist = true } = {}) {
     }
   } catch (_) {}
   try {
-    if (state.activePage === "labeling-new-task" && $("#labelingTaskGroupSetup")?.childElementCount) {
+    const labelingNewTaskReactOwned = typeof window !== "undefined" && (
+      window.__RA_REACT_WORKBENCH__?.ownsPage?.("labeling-new-task") ||
+      window.__RA_REACT_OWNED_PAGES__?.includes?.("labeling-new-task")
+    );
+    if (!labelingNewTaskReactOwned && state.activePage === "labeling-new-task" && $("#labelingTaskGroupSetup")?.childElementCount) {
       displayCreationGroupSetup("labelingTask");
       renderAssignmentNameStatus("labeling");
       renderCreationAllocationPreview("labelingTask");
@@ -1432,7 +1440,11 @@ function showPage(
       showToast(uiText("实验分配仅限管理员。", "Experiment assignment requires admin access."), true);
       return showPage("review", { historyMode: historyMode || "replace" });
     }
-    if (loadPageData && typeof enterLabelingNewTask === "function") {
+    const labelingNewTaskOwned = typeof window !== "undefined" && (
+      window.__RA_REACT_WORKBENCH__?.ownsPage?.("labeling-new-task") ||
+      window.__RA_REACT_OWNED_PAGES__?.includes?.("labeling-new-task")
+    );
+    if (loadPageData && typeof enterLabelingNewTask === "function" && !labelingNewTaskOwned) {
       pageLoads.push(() => enterLabelingNewTask().catch((error) => showToast(error.message, true)));
     }
   }
@@ -1466,7 +1478,11 @@ function showPage(
       experimentId: intentExperimentId,
     }).catch((error) => showToast(error.message, true)));
   }
-  if (target === "review-assignments" && loadPageData && typeof loadReviewAssignments === "function") {
+  const reviewAssignmentsOwned = typeof window !== "undefined" && (
+    window.__RA_REACT_WORKBENCH__?.ownsPage?.("review-assignments") ||
+    window.__RA_REACT_OWNED_PAGES__?.includes?.("review-assignments")
+  );
+  if (target === "review-assignments" && loadPageData && typeof loadReviewAssignments === "function" && !reviewAssignmentsOwned) {
     if (!reviewAssignmentSplitId) {
       state.reviewAssignments.selectedSplitId = "";
       state.reviewAssignments.detail = null;

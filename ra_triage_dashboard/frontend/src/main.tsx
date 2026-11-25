@@ -55,6 +55,12 @@ const CampaignsPage = React.lazy(() =>
 const IntentLabelingPage = React.lazy(() =>
   import("./pages/IntentLabelingPage").then((m) => ({ default: m.IntentLabelingPage })),
 );
+const ReviewAssignmentsPage = React.lazy(() =>
+  import("./pages/ReviewAssignmentsPage").then((m) => ({ default: m.ReviewAssignmentsPage })),
+);
+const LabelingNewTaskPage = React.lazy(() =>
+  import("./pages/LabelingNewTaskPage").then((m) => ({ default: m.LabelingNewTaskPage })),
+);
 
 const OWNED_PAGES = new Set<string>([
   "status",
@@ -75,6 +81,8 @@ const OWNED_PAGES = new Set<string>([
   "trail-update",
   "campaigns",
   "intent",
+  "review-assignments",
+  "labeling-new-task",
 ]);
 
 const queryClient = new QueryClient({
@@ -375,6 +383,44 @@ const IntentLabelingIsland: React.FC = () => {
   );
 };
 
+const ReviewAssignmentsIsland: React.FC = () => {
+  const { activePage, lang, selectedBaselines } = useWorkbenchBridge();
+  const active = activePage === "review-assignments";
+  const { effectiveSession } = useResolvedSession(active);
+  if (!active) return null;
+  return (
+    <Suspense fallback={<div className="no-asset">{lang === "en" ? "Loading…" : "加载中…"}</div>}>
+      <ReviewAssignmentsPage
+        active={active}
+        lang={lang}
+        selectedBaselines={selectedBaselines}
+        isAdmin={Boolean(effectiveSession?.is_admin)}
+        username={effectiveSession?.username || ""}
+        verified={Boolean(effectiveSession?.verified)}
+      />
+    </Suspense>
+  );
+};
+
+const LabelingNewTaskIsland: React.FC = () => {
+  const { activePage, lang, selectedBaselines } = useWorkbenchBridge();
+  const active = activePage === "labeling-new-task";
+  const { effectiveSession } = useResolvedSession(active);
+  if (!active) return null;
+  return (
+    <Suspense fallback={<div className="no-asset">{lang === "en" ? "Loading…" : "加载中…"}</div>}>
+      <LabelingNewTaskPage
+        active={active}
+        lang={lang}
+        selectedBaselines={selectedBaselines}
+        isAdmin={Boolean(effectiveSession?.is_admin)}
+        username={effectiveSession?.username || ""}
+        verified={Boolean(effectiveSession?.verified)}
+      />
+    </Suspense>
+  );
+};
+
 const mountedRoots = new Map<HTMLElement, Root>();
 
 function mountIsland(container: HTMLElement | null, element: React.ReactElement) {
@@ -412,6 +458,8 @@ function mountAllIslands() {
   }
   mountIsland(document.getElementById("campaignsPage"), <CampaignsIsland />);
   mountIsland(document.getElementById("intentLabelingPage"), <IntentLabelingIsland />);
+  mountIsland(document.getElementById("reviewAssignmentsPage"), <ReviewAssignmentsIsland />);
+  mountIsland(document.getElementById("caseLabelingNewTaskPage"), <LabelingNewTaskIsland />);
 }
 
 interface ReactWorkbenchHandle {
@@ -423,7 +471,7 @@ interface ReactWorkbenchHandle {
 }
 
 const handle: ReactWorkbenchHandle = {
-  version: "vite-react-ts-strangler-3.8",
+  version: "vite-react-ts-strangler-3.9",
   ownedPages: Array.from(OWNED_PAGES),
   ownsPage: (page: string) => OWNED_PAGES.has(page),
   refreshPage: (page: string) => {
@@ -482,6 +530,14 @@ const handle: ReactWorkbenchHandle = {
     } else if (page === "intent") {
       void queryClient.invalidateQueries({ queryKey: ["intent-datasets"] });
       void queryClient.invalidateQueries({ queryKey: ["intent-assignees"] });
+    } else if (page === "review-assignments") {
+      void queryClient.invalidateQueries({ queryKey: ["review-assignments-list"] });
+      void queryClient.invalidateQueries({ queryKey: ["review-assignment-detail"] });
+      void queryClient.invalidateQueries({ queryKey: ["review-assignments-runs"] });
+    } else if (page === "labeling-new-task") {
+      void queryClient.invalidateQueries({ queryKey: ["labeling-tasks-history"] });
+      void queryClient.invalidateQueries({ queryKey: ["labeling-combined-tasks"] });
+      void queryClient.invalidateQueries({ queryKey: ["labeling-new-task-pool"] });
     }
     window.dispatchEvent(new Event("ra:workbench-sync"));
   },
