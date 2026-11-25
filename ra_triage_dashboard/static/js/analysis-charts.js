@@ -247,6 +247,7 @@ function bindAnalysisPieHover(root) {
 }
 
 function renderAnalysisClusterPanels(data, { animatePies = true } = {}) {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("analysis") || window.__RA_REACT_OWNED_PAGES__?.includes?.("analysis"))) return;
   const target = $("#analysisClusterPanels");
   if (!target) return;
   hideAnalysisPieTooltip();
@@ -314,6 +315,7 @@ function analysisGtChartMarkup(data, { prefix = "labelSummary" } = {}) {
 }
 
 function renderAnalysisGtStatus(data) {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("analysis") || window.__RA_REACT_OWNED_PAGES__?.includes?.("analysis"))) return;
   const target = $("#analysisGtCardMount");
   if (!target) return;
   target.innerHTML = analysisGtChartMarkup(data, { prefix: "analysis" });
@@ -322,6 +324,7 @@ function renderAnalysisGtStatus(data) {
 }
 
 function renderAnalysisReviewStatus(data) {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("analysis") || window.__RA_REACT_OWNED_PAGES__?.includes?.("analysis"))) return;
   const target = $("#analysisReviewStatusChart");
   const summaryTarget = $("#analysisReviewStatusSummary");
   if (!target) return;
@@ -450,6 +453,7 @@ function clearAnalysisPieEnterAnimations(root) {
 }
 
 function renderAnalysisConfusion(data) {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("analysis") || window.__RA_REACT_OWNED_PAGES__?.includes?.("analysis"))) return;
   const target = $("#analysisConfusionMatrix");
   const summary = $("#analysisConfusionSummary");
   if (!target || !summary) return;

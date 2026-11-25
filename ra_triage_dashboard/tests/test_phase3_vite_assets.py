@@ -43,7 +43,16 @@ class Phase3ViteAssetsTest(unittest.TestCase):
         self.assertIn('id="raViteAssets"', default_html)
         self.assertIn('{"js":[],"css":[]}', default_html)
         self.assertNotIn("{{RA_TRIAGE_VITE_ASSETS}}", default_html)
-        for owned in ("status", "users", "daily-cron", "runs-manager", "version-metrics", "version-datasets"):
+        for owned in (
+            "status",
+            "users",
+            "daily-cron",
+            "runs-manager",
+            "version-metrics",
+            "version-datasets",
+            "labeling-summary",
+            "analysis",
+        ):
             self.assertIn(f'"{owned}"', default_html)
 
         custom_html = render_index_html(
@@ -122,6 +131,8 @@ class Phase3ViteAssetsTest(unittest.TestCase):
             "RunsManagerIsland",
             "VersionMetricsPage",
             "VersionDatasetsPage",
+            "LabelingSummaryPage",
+            "ReviewAnalysisPage",
         ):
             self.assertIn(expected_chunk, chunk_by_name)
             chunk_rel = chunk_by_name[expected_chunk]["file"]

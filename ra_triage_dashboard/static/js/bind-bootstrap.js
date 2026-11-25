@@ -212,7 +212,12 @@ function bindEvents() {
     resetReviewFilters().catch((error) => showToast(error.message, true));
   });
   $("#searchInput")?.addEventListener("input", () => scheduleReviewFilterReload(280));
-  $("#reviewAnalysisFilterForm").addEventListener("submit", async (event) => {
+  const analysisOwned = typeof window !== "undefined" && Boolean(
+    window.__RA_REACT_WORKBENCH__?.ownsPage?.("analysis")
+    || window.__RA_REACT_OWNED_PAGES__?.includes?.("analysis")
+  );
+  if (!analysisOwned) {
+  $("#reviewAnalysisFilterForm")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     state.reviewAnalysis.page = 1;
     try {
@@ -221,7 +226,7 @@ function bindEvents() {
       showToast(error.message, true);
     }
   });
-  $("#analysisRunFilter").addEventListener("change", async () => {
+  $("#analysisRunFilter")?.addEventListener("change", async () => {
     const runId = $("#analysisRunFilter").value;
     if (runId !== state.selectedRunId) {
       state.reviewAnalysis.workSplitId = "";
@@ -253,9 +258,11 @@ function bindEvents() {
   } else if (typeof bindAnalysisComparisonPicker === "function") {
     bindAnalysisComparisonPicker();
   }
+  }
   if (typeof bindTrailAttributeUpdateEvents === "function") {
     bindTrailAttributeUpdateEvents();
   }
+  if (!analysisOwned) {
   $("#analysisSearchInput")?.addEventListener("input", () => {
     scheduleAnalysisFilterReload(220);
   });
@@ -264,6 +271,7 @@ function bindEvents() {
   });
   $("#analysisCommentSearchInput")?.addEventListener("input", () => scheduleAnalysisFilterReload(220));
   $("#analysisCommentStateFilter")?.addEventListener("change", () => scheduleAnalysisFilterReload(0));
+  }
   document.addEventListener("click", () => closeAllMultiFilters());
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
@@ -287,7 +295,8 @@ function bindEvents() {
     true
   );
   window.addEventListener("resize", () => closeAllMultiFilters());
-  $("#resetReviewAnalysisButton").addEventListener("click", async () => {
+  if (!analysisOwned) {
+  $("#resetReviewAnalysisButton")?.addEventListener("click", async () => {
     $("#analysisRunFilter").value = "";
     setAnalysisComparisonStatus("all", { hasRun: false });
     [
@@ -326,17 +335,17 @@ function bindEvents() {
       showToast(error.message, true);
     }
   });
-  $("#exportReviewAnalysisCsvButton").addEventListener("click", () => downloadReviewAnalysis("csv"));
+  $("#exportReviewAnalysisCsvButton")?.addEventListener("click", () => downloadReviewAnalysis("csv"));
   $("#analysisWorkAgreementFilter")?.addEventListener("change", () => {
     state.reviewAnalysis.workAgreement = $("#analysisWorkAgreementFilter").value || "all";
     scheduleAnalysisFilterReload(0);
   });
-  $("#exportReviewAnalysisXlsxButton").addEventListener("click", () => downloadReviewAnalysis("xlsx"));
-  $("#exportTrailExpectedOutputButton").addEventListener("click", () => downloadReviewAnalysis("trail_xlsx"));
-  $("#analysisPagePrevious").addEventListener("click", () => {
+  $("#exportReviewAnalysisXlsxButton")?.addEventListener("click", () => downloadReviewAnalysis("xlsx"));
+  $("#exportTrailExpectedOutputButton")?.addEventListener("click", () => downloadReviewAnalysis("trail_xlsx"));
+  $("#analysisPagePrevious")?.addEventListener("click", () => {
     changeAnalysisPage(-1).catch((error) => showToast(error.message, true));
   });
-  $("#analysisPageNext").addEventListener("click", () => {
+  $("#analysisPageNext")?.addEventListener("click", () => {
     changeAnalysisPage(1).catch((error) => showToast(error.message, true));
   });
   const analysisPageJump = $("#analysisPageJump");
@@ -362,6 +371,7 @@ function bindEvents() {
   $("#analysisPageSize")?.addEventListener("change", (event) => {
     changeAnalysisPageSize(event.target.value).catch((error) => showToast(error.message, true));
   });
+  }
   $("#modelRunFilter").addEventListener("change", async () => {
     const previousRunId = state.selectedRunId;
     state.selectedRunId = $("#modelRunFilter").value;
@@ -484,6 +494,17 @@ function bindEvents() {
       if (state.activePage === "daily-review") { await loadDailyReview(); return; }
       if (state.activePage === "daily-cron") {
         await loadDailyCron();
+        return;
+      }
+      if (state.activePage === "labeling-summary" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("labeling-summary") || window.__RA_REACT_OWNED_PAGES__?.includes?.("labeling-summary"))) {
+        window.__RA_REACT_WORKBENCH__?.refreshPage?.("labeling-summary");
+        showToast(t("toast.page_refreshed"));
+        return;
+      }
+      if (state.activePage === "analysis" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("analysis") || window.__RA_REACT_OWNED_PAGES__?.includes?.("analysis"))) {
+        await loadOverview();
+        window.__RA_REACT_WORKBENCH__?.refreshPage?.("analysis");
+        showToast(t("toast.page_refreshed"));
         return;
       }
       await refreshAll();
@@ -1262,7 +1283,9 @@ async function bootstrap() {
         splitId: initialRoute.reviewAssignmentSplitId,
       }));
     } else if (initialRoute.page === "labeling-summary") {
-      initialPageRequests.push(loadLabelingSummary());
+      if (!(window.__RA_REACT_WORKBENCH__?.ownsPage?.("labeling-summary") || window.__RA_REACT_OWNED_PAGES__?.includes?.("labeling-summary"))) {
+        initialPageRequests.push(loadLabelingSummary());
+      }
     } else if (initialRoute.page === "campaigns") {
       initialPageRequests.push(loadCampaigns({
         campaignId: initialRoute.campaignId,
@@ -1298,7 +1321,7 @@ async function bootstrap() {
         datasetIds: (initialRoute.intentDatasetIds || []).length ? initialRoute.intentDatasetIds : null,
       }));
     }
-    if (initialRoute.page === "analysis") {
+    if (initialRoute.page === "analysis" && !(window.__RA_REACT_WORKBENCH__?.ownsPage?.("analysis") || window.__RA_REACT_OWNED_PAGES__?.includes?.("analysis"))) {
       initialPageRequests.push(loadReviewReasonAnalysis());
     }
     const initialPageResults = settleInitialRequests(

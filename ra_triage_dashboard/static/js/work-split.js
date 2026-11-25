@@ -331,6 +331,7 @@ function syncReviewWorkflowMode(caseData = state.selectedCase) {
 }
 
 function renderAnalysisWorkSplitPicker(selected = state.reviewAnalysis.workSplitId) {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("analysis") || window.__RA_REACT_OWNED_PAGES__?.includes?.("analysis"))) return;
   bindUiInfoPopovers($("#reviewAnalysisPage"));
   const root = $("#analysisWorkSplitPicker");
   if (!root) return;
@@ -360,6 +361,7 @@ function renderAnalysisWorkSplitPicker(selected = state.reviewAnalysis.workSplit
 
 let analysisWorkSplitsRequestSeq = 0;
 async function loadAnalysisWorkSplits({ force = false } = {}) {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("analysis") || window.__RA_REACT_OWNED_PAGES__?.includes?.("analysis"))) return [];
   const requestSeq = ++analysisWorkSplitsRequestSeq;
   const runId = state.selectedRunId || $("#analysisRunFilter")?.value || "";
   const baselines = selectedBaselineQueryValue();

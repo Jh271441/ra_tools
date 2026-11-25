@@ -331,7 +331,23 @@ async function setBaselineScopes(
     clearDetail({ showGallery: state.activePage === "review" });
   }
   renderBaselinePicker();
-  if (!skipHistory && typeof pageUrl === "function") {
+  const activeReactOwned =
+    typeof window !== "undefined"
+    && ["labeling-summary", "analysis"].includes(state.activePage)
+    && Boolean(
+      window.__RA_REACT_WORKBENCH__?.ownsPage?.(state.activePage)
+      || window.__RA_REACT_OWNED_PAGES__?.includes?.(state.activePage)
+    );
+  if (!skipHistory && activeReactOwned) {
+    const parsedUrl = new URL(window.location.href);
+    if (next.length) parsedUrl.searchParams.set("baselines", next.join(","));
+    else parsedUrl.searchParams.delete("baselines");
+    window.history.replaceState(
+      window.history.state || {},
+      "",
+      `${parsedUrl.pathname}${parsedUrl.search}`,
+    );
+  } else if (!skipHistory && typeof pageUrl === "function") {
     const routeOptions = state.activePage === "campaigns"
       && typeof campaignRouteOptions === "function"
       ? campaignRouteOptions()
@@ -342,6 +358,9 @@ async function setBaselineScopes(
       baselines: next,
     });
     window.history.replaceState(window.history.state || {}, "", nextUrl);
+  }
+  if (typeof window !== "undefined" && window.__RA_REACT_WORKBENCH__?.notifySync) {
+    window.__RA_REACT_WORKBENCH__.notifySync();
   }
   const pageContext = capturePageContext();
   try {

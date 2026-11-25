@@ -872,6 +872,7 @@ function persistCurrentAnalysisRoute(overrides = {}) {
 }
 
 function applyAnalysisRouteControls(route) {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("analysis") || window.__RA_REACT_OWNED_PAGES__?.includes?.("analysis"))) return;
   const filters = route?.analysisFilters || route || {};
   if ($("#analysisIssueInput")) {
     $("#analysisIssueInput").value = parseFilterList(filters.issueIds).join(", ");
@@ -1469,7 +1470,7 @@ function showPage(
   if (["labeling-summary", "rd-results"].includes(target) && !state.session.identity_pending && !hasDashboardWriteRole()) {
     return showPage("review", { historyMode: "replace" });
   }
-  if (target === "labeling-summary" && loadPageData) {
+  if (target === "labeling-summary" && loadPageData && !(typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("labeling-summary") || window.__RA_REACT_OWNED_PAGES__?.includes?.("labeling-summary")))) {
     pageLoads.push(() => loadLabelingSummary().catch((error) => showToast(error.message, true)));
   }
   if (target === "campaigns" && loadPageData && typeof loadCampaigns === "function") {
@@ -1587,11 +1588,27 @@ function showPage(
       Boolean(issue) &&
       (historyMode === "push" || Boolean(window.history.state?.openedFromGallery)),
   };
+  const targetOwnedByReact =
+    typeof window !== "undefined"
+    && ["labeling-summary", "analysis"].includes(target)
+    && Boolean(
+      window.__RA_REACT_WORKBENCH__?.ownsPage?.(target)
+      || window.__RA_REACT_OWNED_PAGES__?.includes?.(target)
+    );
   if (historyMode === "push") {
-    history.pushState(historyState, "", pageUrl(target, routeOptions));
+    if (targetOwnedByReact) {
+      const nextUrl = new URL(withBase((PAGE_ROUTES[target] || PAGE_ROUTES.review).path), window.location.origin);
+      const baselineVal = typeof selectedBaselineQueryValue === "function" ? selectedBaselineQueryValue() : "";
+      if (baselineVal) nextUrl.searchParams.set("baselines", baselineVal);
+      history.pushState(historyState, "", `${nextUrl.pathname}${nextUrl.search}`);
+    } else {
+      history.pushState(historyState, "", pageUrl(target, routeOptions));
+    }
   }
   if (historyMode === "replace") {
-    history.replaceState(historyState, "", pageUrl(target, routeOptions));
+    if (!targetOwnedByReact) {
+      history.replaceState(historyState, "", pageUrl(target, routeOptions));
+    }
   }
   // Loaders capture page/URL ownership only after the route is committed.
   // Starting them above pushState would make a valid new-page read look stale.

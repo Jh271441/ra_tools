@@ -331,6 +331,47 @@ html[data-color-theme="light"] .ra-modal-backdrop {
   line-height: 1.55;
 }
 
+/* Wave B1: Labeling Summary & Review Analysis 1:1 island layout & field wrappers */
+.ra-labeling-summary-root {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  min-width: 0;
+}
+
+.ra-review-analysis-root {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+  min-width: 0;
+}
+
+.ra-labeling-summary-root .review-filters .ra-analysis-field,
+.ra-review-analysis-root .analysis-filters .ra-analysis-field {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  color: var(--faint);
+  font-size: 11px;
+}
+
+html[data-color-theme="light"] .ra-labeling-summary-root .review-filters .ra-analysis-field,
+html[data-color-theme="light"] .ra-review-analysis-root .analysis-filters .ra-analysis-field {
+  color: #526278;
+}
+
+.ra-issue-query-body {
+  display: grid;
+  gap: 10px;
+}
+
+.ra-issue-query-body .analysis-issue-input {
+  height: auto;
+  min-height: 112px;
+  resize: vertical;
+  font-family: "SFMono-Regular", Consolas, monospace;
+}
+
 @media (max-width: 768px) {
   .ra-users-root .ra-mention-form,
   .ra-users-root .ra-mention-row {
@@ -347,6 +388,11 @@ html[data-color-theme="light"] .ra-modal-backdrop {
 }
 
 @media (max-width: 639px) {
+  .ra-labeling-summary-root .review-filters .ra-analysis-field,
+  .ra-review-analysis-root .analysis-filters .ra-analysis-field {
+    font-size: 12px;
+  }
+
   .ra-react-select .ui-select-trigger,
   .ra-primary-touch {
     min-height: 44px;

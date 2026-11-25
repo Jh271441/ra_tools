@@ -153,7 +153,7 @@ async function loadReviewers(selections = reviewerFilterSelections()) {
     });
   }
   const analysisReviewer = $("#analysisReviewerFilter");
-  if (analysisReviewer) {
+  if (analysisReviewer && !(typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("analysis") || window.__RA_REACT_OWNED_PAGES__?.includes?.("analysis")))) {
     renderMultiFilter(analysisReviewer, {
       options: reviewerOptionsWithSelected(analysisReviewerOptions, analysisSelection),
       selected: analysisSelection,
@@ -399,6 +399,9 @@ function setAnalysisComparisonStatus(
   if (!hasRun) nextValues = [];
   const nextStatus = comparisonStatusParam(nextValues);
   state.reviewAnalysis.comparisonStatus = nextStatus;
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("analysis") || window.__RA_REACT_OWNED_PAGES__?.includes?.("analysis"))) {
+    return nextStatus;
+  }
   const root = $("#analysisComparisonFilter");
   if (root) {
     root.classList.toggle("is-disabled", !hasRun);
@@ -415,6 +418,7 @@ function setAnalysisComparisonStatus(
 }
 
 function renderAnalysisComparisonFilter() {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("analysis") || window.__RA_REACT_OWNED_PAGES__?.includes?.("analysis"))) return;
   const root = $("#analysisComparisonFilter");
   if (!root || typeof renderMultiFilter !== "function") return;
   const hasRun = Boolean($("#analysisRunFilter")?.value || state.selectedRunId);
@@ -443,6 +447,7 @@ function bindAnalysisComparisonPicker() {
 }
 
 function renderAnalysisRunFilter() {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("analysis") || window.__RA_REACT_OWNED_PAGES__?.includes?.("analysis"))) return;
   const select = $("#analysisRunFilter");
   const picker = $("#analysisRunPicker");
   if (!select) return;

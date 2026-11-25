@@ -93,7 +93,7 @@ function getMultiFilterValues(root) {
 }
 
 function updateMultiFilterSummary(root) {
-  if (!root || root.matches?.("select")) return;
+  if (!root || root.matches?.("select") || root.classList?.contains("ra-react-multiselect")) return;
   root.querySelectorAll('[data-multi-only]').forEach((button) => {
     button.textContent = uiText("仅此项", "Only this");
     button.title = uiText("只选这一项", "Only this");

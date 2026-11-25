@@ -1,6 +1,20 @@
 {
+  "_MultiSelect-DWGgrhyo.js": {
+    "file": "assets/MultiSelect-DWGgrhyo.js",
+    "name": "MultiSelect",
+    "imports": [
+      "src/main.tsx"
+    ]
+  },
+  "_analysisHelpers-CqJOCY5d.js": {
+    "file": "assets/analysisHelpers-CqJOCY5d.js",
+    "name": "analysisHelpers",
+    "imports": [
+      "src/main.tsx"
+    ]
+  },
   "src/features/cron-graph/CronGraphCanvas.tsx": {
-    "file": "assets/CronGraphCanvas-CV9PQFbr.js",
+    "file": "assets/CronGraphCanvas-t8sxQQgM.js",
     "name": "CronGraphCanvas",
     "src": "src/features/cron-graph/CronGraphCanvas.tsx",
     "isDynamicEntry": true,
@@ -12,7 +26,7 @@
     ]
   },
   "src/main.tsx": {
-    "file": "assets/main-kK_Lu6sH.js",
+    "file": "assets/main-C2ntOGUT.js",
     "name": "main",
     "src": "src/main.tsx",
     "isEntry": true,
@@ -20,14 +34,16 @@
       "src/pages/DailyCronPage.tsx",
       "src/pages/RunsManagerIsland.tsx",
       "src/pages/VersionMetricsPage.tsx",
-      "src/pages/VersionDatasetsPage.tsx"
+      "src/pages/VersionDatasetsPage.tsx",
+      "src/pages/LabelingSummaryPage.tsx",
+      "src/pages/ReviewAnalysisPage.tsx"
     ],
     "css": [
-      "assets/main-9cnnQ7Rw.css"
+      "assets/main-CZ4-UAvj.css"
     ]
   },
   "src/pages/DailyCronPage.tsx": {
-    "file": "assets/DailyCronPage-Cjq-bFVR.js",
+    "file": "assets/DailyCronPage-CgCkJ-gs.js",
     "name": "DailyCronPage",
     "src": "src/pages/DailyCronPage.tsx",
     "isDynamicEntry": true,
@@ -38,8 +54,30 @@
       "src/features/cron-graph/CronGraphCanvas.tsx"
     ]
   },
+  "src/pages/LabelingSummaryPage.tsx": {
+    "file": "assets/LabelingSummaryPage-Chy0aGfF.js",
+    "name": "LabelingSummaryPage",
+    "src": "src/pages/LabelingSummaryPage.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.tsx",
+      "_analysisHelpers-CqJOCY5d.js",
+      "_MultiSelect-DWGgrhyo.js"
+    ]
+  },
+  "src/pages/ReviewAnalysisPage.tsx": {
+    "file": "assets/ReviewAnalysisPage-CYr6Vbmz.js",
+    "name": "ReviewAnalysisPage",
+    "src": "src/pages/ReviewAnalysisPage.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.tsx",
+      "_analysisHelpers-CqJOCY5d.js",
+      "_MultiSelect-DWGgrhyo.js"
+    ]
+  },
   "src/pages/RunsManagerIsland.tsx": {
-    "file": "assets/RunsManagerIsland-BzRdgFxe.js",
+    "file": "assets/RunsManagerIsland-Cbr42st1.js",
     "name": "RunsManagerIsland",
     "src": "src/pages/RunsManagerIsland.tsx",
     "isDynamicEntry": true,
@@ -48,7 +86,7 @@
     ]
   },
   "src/pages/VersionDatasetsPage.tsx": {
-    "file": "assets/VersionDatasetsPage-q4Dic73Y.js",
+    "file": "assets/VersionDatasetsPage-CkkDgmFr.js",
     "name": "VersionDatasetsPage",
     "src": "src/pages/VersionDatasetsPage.tsx",
     "isDynamicEntry": true,
@@ -57,12 +95,13 @@
     ]
   },
   "src/pages/VersionMetricsPage.tsx": {
-    "file": "assets/VersionMetricsPage-CiL9KTbt.js",
+    "file": "assets/VersionMetricsPage-C3-VemTQ.js",
     "name": "VersionMetricsPage",
     "src": "src/pages/VersionMetricsPage.tsx",
     "isDynamicEntry": true,
     "imports": [
-      "src/main.tsx"
+      "src/main.tsx",
+      "_MultiSelect-DWGgrhyo.js"
     ]
   }
 }

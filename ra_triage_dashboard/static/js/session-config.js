@@ -447,6 +447,7 @@ function renderLabelGtFilter(root, { selected = [], onChange = null, labeling = 
 }
 
 function renderAnalysisCatalogFilters() {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("analysis") || window.__RA_REACT_OWNED_PAGES__?.includes?.("analysis"))) return;
   const onChange = () => scheduleAnalysisFilterReload();
   renderAnalysisWorkAgreementPicker(state.reviewAnalysis.workAgreement || "all");
   renderAnalysisCommentStatePicker();

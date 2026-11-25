@@ -19,6 +19,12 @@ const VersionMetricsPage = React.lazy(() =>
 const VersionDatasetsPage = React.lazy(() =>
   import("./pages/VersionDatasetsPage").then((m) => ({ default: m.VersionDatasetsPage })),
 );
+const LabelingSummaryPage = React.lazy(() =>
+  import("./pages/LabelingSummaryPage").then((m) => ({ default: m.LabelingSummaryPage })),
+);
+const ReviewAnalysisPage = React.lazy(() =>
+  import("./pages/ReviewAnalysisPage").then((m) => ({ default: m.ReviewAnalysisPage })),
+);
 
 const OWNED_PAGES = new Set<string>([
   "status",
@@ -27,6 +33,8 @@ const OWNED_PAGES = new Set<string>([
   "runs-manager",
   "version-metrics",
   "version-datasets",
+  "labeling-summary",
+  "analysis",
 ]);
 
 const queryClient = new QueryClient({
@@ -124,6 +132,40 @@ const VersionDatasetsIsland: React.FC = () => {
   );
 };
 
+const LabelingSummaryIsland: React.FC = () => {
+  const { activePage, lang, theme, selectedBaselines } = useWorkbenchBridge();
+  const active = activePage === "labeling-summary";
+  const { effectiveSession } = useResolvedSession(active);
+  if (!active) return null;
+  return (
+    <Suspense fallback={<div className="no-asset">{lang === "en" ? "Loading…" : "加载中…"}</div>}>
+      <LabelingSummaryPage
+        active={active}
+        lang={lang}
+        theme={theme}
+        selectedBaselines={selectedBaselines}
+        isAdmin={Boolean(effectiveSession?.is_admin)}
+      />
+    </Suspense>
+  );
+};
+
+const ReviewAnalysisIsland: React.FC = () => {
+  const { activePage, lang, theme, selectedBaselines } = useWorkbenchBridge();
+  const active = activePage === "analysis";
+  if (!active) return null;
+  return (
+    <Suspense fallback={<div className="no-asset">{lang === "en" ? "Loading…" : "加载中…"}</div>}>
+      <ReviewAnalysisPage
+        active={active}
+        lang={lang}
+        theme={theme}
+        selectedBaselines={selectedBaselines}
+      />
+    </Suspense>
+  );
+};
+
 const mountedRoots = new Map<HTMLElement, Root>();
 
 function mountIsland(container: HTMLElement | null, element: React.ReactElement) {
@@ -145,6 +187,8 @@ function mountAllIslands() {
   mountIsland(runsCard, <RunsManagerIslandHost />);
   mountIsland(document.getElementById("versionMetricsPage"), <VersionMetricsIsland />);
   mountIsland(document.getElementById("versionDatasetsPage"), <VersionDatasetsIsland />);
+  mountIsland(document.getElementById("labelingSummaryPage"), <LabelingSummaryIsland />);
+  mountIsland(document.getElementById("reviewAnalysisPage"), <ReviewAnalysisIsland />);
 }
 
 interface ReactWorkbenchHandle {
@@ -156,7 +200,7 @@ interface ReactWorkbenchHandle {
 }
 
 const handle: ReactWorkbenchHandle = {
-  version: "vite-react-ts-strangler-3.3",
+  version: "vite-react-ts-strangler-3.4",
   ownedPages: Array.from(OWNED_PAGES),
   ownsPage: (page: string) => OWNED_PAGES.has(page),
   refreshPage: (page: string) => {
@@ -173,6 +217,14 @@ const handle: ReactWorkbenchHandle = {
       void queryClient.invalidateQueries({ queryKey: ["version-metrics"] });
     } else if (page === "version-datasets") {
       void queryClient.invalidateQueries({ queryKey: ["version-datasets"] });
+    } else if (page === "labeling-summary") {
+      void queryClient.invalidateQueries({ queryKey: ["labeling-summary"] });
+      void queryClient.invalidateQueries({ queryKey: ["labeling-summary-tasks"] });
+    } else if (page === "analysis") {
+      void queryClient.invalidateQueries({ queryKey: ["review-reason-analysis"] });
+      void queryClient.invalidateQueries({ queryKey: ["analysis-model-runs"] });
+      void queryClient.invalidateQueries({ queryKey: ["analysis-reviewers"] });
+      void queryClient.invalidateQueries({ queryKey: ["analysis-work-splits"] });
     }
     window.dispatchEvent(new Event("ra:workbench-sync"));
   },
