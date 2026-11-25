@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "../api/client";
 import {
@@ -9,6 +9,11 @@ import {
 import { ModalDialog } from "../components/ui/ModalDialog";
 import { DEFAULT_CASE_PAGE_SIZE, Pagination } from "../components/ui/Pagination";
 import { UiSelect, UiSelectOption } from "../components/ui/UiSelect";
+import { buildCronGraphModel } from "../features/cron-graph/buildCronGraphModel";
+
+const CronGraphCanvas = React.lazy(() =>
+  import("../features/cron-graph/CronGraphCanvas").then((m) => ({ default: m.CronGraphCanvas })),
+);
 
 export interface CronTiming {
   mode?: string;
@@ -178,58 +183,6 @@ export interface DailyCronPayload {
   } | null;
   incremental?: CronIncrementalData | null;
   history?: Array<{ at: number; observations?: number; severity?: number }>;
-}
-
-interface CronGraphNodeProgress {
-  mode: string;
-  text: string;
-  percentText?: string;
-  label?: string;
-  stale?: boolean;
-  done?: number;
-  total?: number;
-  completePercent?: number;
-  failurePercent?: number;
-}
-
-interface CronGraphNode {
-  id: string;
-  data: {
-    label: string;
-    detail?: string;
-    status: string;
-    stateLabel: string;
-    progress?: CronGraphNodeProgress | null;
-    rows?: Array<[string, string | number]>;
-    issues?: string[];
-  };
-}
-
-interface CronGraphModel {
-  lanes: Array<{ id: string; label: string; nodes: CronGraphNode[] }>;
-  edges: Array<{ id: string; source: string; target: string; label?: string; optional?: boolean }>;
-  selectedNode?: string;
-  definition?: boolean;
-  active?: boolean;
-  theme?: string;
-}
-
-interface LegacyCronGraphBridge {
-  ensureLibrary: () => Promise<{
-    render: (el: HTMLElement, model: CronGraphModel, onSelect?: (id: string) => void) => void;
-    unmount?: (el: HTMLElement) => void;
-  }>;
-  buildModel: (
-    data: DailyCronPayload,
-    opts: {
-      selectedVersion?: string;
-      selectedDay?: string;
-      selectedNode?: string;
-      error?: boolean;
-      active?: boolean;
-      definitionLane?: string;
-    },
-  ) => CronGraphModel;
 }
 
 export interface DailyCronPageProps {
@@ -448,12 +401,8 @@ export const DailyCronPage: React.FC<DailyCronPageProps> = ({ active, lang, them
   const [jobSearch, setJobSearch] = useState("");
   const [jobsPage, setJobsPage] = useState(1);
   const [jobsPageSize, setJobsPageSize] = useState(DEFAULT_CASE_PAGE_SIZE);
-  const [graphError, setGraphError] = useState(false);
-  const [activeGraphModel, setActiveGraphModel] = useState<CronGraphModel | null>(null);
 
   const workspaceRef = useRef<HTMLDivElement | null>(null);
-  const graphHostRef = useRef<HTMLDivElement | null>(null);
-  const helpGraphHostRef = useRef<HTMLDivElement | null>(null);
 
   const cronQuery = useQuery<DailyCronPayload>({
     queryKey: ["daily-cron"],
@@ -598,72 +547,32 @@ export const DailyCronPage: React.FC<DailyCronPageProps> = ({ active, lang, them
     return opts;
   }, [incrementalEnabled, families, effectiveVersion, dailyRuns, lang]);
 
-  // Mount & update live RACronGraph via legacy bridge whenever state changes.
-  useEffect(() => {
-    if (!active || !data || !graphHostRef.current) return;
-    const bridge = (window as unknown as { __RA_CRON_GRAPH_BRIDGE__?: LegacyCronGraphBridge })
-      .__RA_CRON_GRAPH_BRIDGE__;
-    if (!bridge) return;
-    let cancelled = false;
-    const host = graphHostRef.current;
+  // Pure React graph model built directly (no legacy vendor/cron-graph bridge)
+  const activeGraphModel = useMemo(() => {
+    if (!data) return null;
+    return buildCronGraphModel(data, {
+      selectedVersion: effectiveVersion,
+      selectedDay,
+      selectedNode: selectedNodeId,
+      error: hasConnectionError,
+      active,
+      lang,
+      theme,
+    });
+  }, [data, effectiveVersion, selectedDay, selectedNodeId, hasConnectionError, active, lang, theme]);
 
-    void bridge
-      .ensureLibrary()
-      .then((graph) => {
-        if (cancelled || !host.isConnected) return;
-        const model = bridge.buildModel(data, {
-          selectedVersion: effectiveVersion,
-          selectedDay,
-          selectedNode: selectedNodeId,
-          error: hasConnectionError,
-          active,
-        });
-        setActiveGraphModel(model);
-        setGraphError(false);
-        graph.render(host, model, (nodeId) => {
-          setSelectedNodeId(nodeId);
-        });
-      })
-      .catch(() => {
-        if (!cancelled) setGraphError(true);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [active, data, effectiveVersion, selectedDay, selectedNodeId, hasConnectionError, lang, theme]);
-
-  // Mount definition graph inside Help ModalDialog when open.
-  useEffect(() => {
-    if (!helpLane || !data || !helpGraphHostRef.current) return;
-    const bridge = (window as unknown as { __RA_CRON_GRAPH_BRIDGE__?: LegacyCronGraphBridge })
-      .__RA_CRON_GRAPH_BRIDGE__;
-    if (!bridge) return;
-    let cancelled = false;
-    const host = helpGraphHostRef.current;
-
-    void bridge
-      .ensureLibrary()
-      .then((graph) => {
-        if (cancelled || !host.isConnected) return;
-        const model = bridge.buildModel(data, {
-          selectedVersion: effectiveVersion,
-          selectedDay,
-          selectedNode: "",
-          error: false,
-          active: true,
-          definitionLane: helpLane,
-        });
-        graph.render(host, model);
-      })
-      .catch(() => {
-        // Non-blocking fallback text still shown.
-      });
-
-    return () => {
-      cancelled = true;
-      (window as unknown as { RACronGraph?: { unmount?: (el: HTMLElement) => void } }).RACronGraph?.unmount?.(host);
-    };
+  const helpGraphModel = useMemo(() => {
+    if (!helpLane || !data) return null;
+    return buildCronGraphModel(data, {
+      selectedVersion: effectiveVersion,
+      selectedDay,
+      selectedNode: "",
+      error: false,
+      active: true,
+      definitionLane: helpLane,
+      lang,
+      theme,
+    });
   }, [helpLane, data, effectiveVersion, selectedDay, lang, theme]);
 
   const selectedNode = useMemo(() => {
@@ -1059,7 +968,6 @@ export const DailyCronPage: React.FC<DailyCronPageProps> = ({ active, lang, them
           id="raDailyCronGraphWorkspace"
         >
           <div
-            ref={graphHostRef}
             className="cron-run-graph"
             id="raDailyCronGraph"
             aria-label={bilingual(
@@ -1068,9 +976,19 @@ export const DailyCronPage: React.FC<DailyCronPageProps> = ({ active, lang, them
               "Live graph of two independent pipelines",
             )}
           >
-            {graphError && (
+            {activeGraphModel ? (
+              <Suspense
+                fallback={
+                  <p className="cron-note muted">
+                    {bilingual(lang, "正在加载运行图…", "Loading run graph…")}
+                  </p>
+                }
+              >
+                <CronGraphCanvas model={activeGraphModel} onSelect={setSelectedNodeId} />
+              </Suspense>
+            ) : (
               <p className="cron-note muted">
-                {bilingual(lang, "运行图加载失败，刷新重试。", "Graph unavailable; refresh to retry.")}
+                {bilingual(lang, "正在加载运行图…", "Loading run graph…")}
               </p>
             )}
           </div>
@@ -1753,7 +1671,19 @@ export const DailyCronPage: React.FC<DailyCronPageProps> = ({ active, lang, them
         lang={lang}
         onClose={() => setHelpLane("")}
       >
-        <div ref={helpGraphHostRef} className="cron-help-graph" />
+        <div className="cron-help-graph">
+          {helpGraphModel && (
+            <Suspense
+              fallback={
+                <p className="cron-note muted">
+                  {bilingual(lang, "正在加载流程图…", "Loading definition graph…")}
+                </p>
+              }
+            >
+              <CronGraphCanvas model={helpGraphModel} />
+            </Suspense>
+          )}
+        </div>
         <p className="cron-note muted">
           {helpLane === "main"
             ? data?.incremental?.enabled

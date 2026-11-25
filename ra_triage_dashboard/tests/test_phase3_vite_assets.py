@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import asyncio
+import gzip
 import json
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -100,14 +102,61 @@ class Phase3ViteAssetsTest(unittest.TestCase):
             if isinstance(entry, dict) and entry.get("name")
         }
         for expected_chunk in (
+            "ReviewPage",
+            "DailyCronPage",
+            "CronGraphCanvas",
+            "RunsPage",
+            "CampaignsPage",
+            "PredictionPage",
+            "TrailUpdatePage",
+            "TrailHistoryPage",
+            "IntentLabelingPage",
+            "IntentExperimentsPage",
+            "IntentSummaryPage",
+            "DailyReviewPage",
             "ReviewAssignmentsPage",
             "AllocationEditorModal",
-            "DailyCronPage",
-            "RunsManagerIsland",
+            "UsersPage",
+            "SystemStatusPage",
         ):
             self.assertIn(expected_chunk, chunk_by_name)
             chunk_rel = chunk_by_name[expected_chunk]["file"]
             self.assertTrue((STATIC_DIR / "dist" / chunk_rel).is_file())
+
+        # Wave 3.6 initial JS entry bundle size budget (< 120 KB gzip)
+        total_entry_gzip = sum(
+            len(gzip.compress((STATIC_DIR / "dist" / rel).read_bytes()))
+            for rel in assets["js"]
+        )
+        self.assertLess(
+            total_entry_gzip,
+            120 * 1024,
+            f"Initial entry JS bundle gzip ({total_entry_gzip} B) exceeds 120 KB budget",
+        )
+
+    def test_wave36_legacy_js_retired_and_zero_raw_native_selects(self) -> None:
+        dashboard_root = STATIC_DIR.parent
+        for retired_path in (
+            STATIC_DIR / "js",
+            STATIC_DIR / "app.js",
+            STATIC_DIR / "vendor" / "cron-graph",
+            dashboard_root / "frontend" / "cron-graph",
+        ):
+            self.assertFalse(retired_path.exists(), f"Retired legacy path must not exist: {retired_path}")
+
+        src_root = dashboard_root / "frontend" / "src"
+        violations: list[str] = []
+        for sub in ("pages", "shell", "features", "components"):
+            folder = src_root / sub
+            if not folder.is_dir():
+                continue
+            for tsx in sorted(folder.rglob("*.tsx")):
+                if tsx.name.endswith(".test.tsx"):
+                    continue
+                stripped = re.sub(r"/\*[\s\S]*?\*/|//[^\n]*", "", tsx.read_text(encoding="utf-8"))
+                if re.search(r"<select[\s>]", stripped, re.IGNORECASE):
+                    violations.append(str(tsx.relative_to(src_root)))
+        self.assertEqual(violations, [], f"Raw native <select> forbidden: {violations}")
 
 
 if __name__ == "__main__":

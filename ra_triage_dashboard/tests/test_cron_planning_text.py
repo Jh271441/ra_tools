@@ -123,38 +123,6 @@ class TextPipelineTest(unittest.TestCase):
             self.assertEqual(result['stages']['text-index']['completed'], 0)
             self.assertEqual(result['stages']['text-source']['completed'], 0)
 
-    def test_actual_graph_keeps_completed_stages_green_and_running_yellow(self):
-        static = Path(__file__).resolve().parents[1]/'static/js'
-        script = r'''
-const fs=require('fs'),vm=require('vm'),assert=require('assert/strict');
-const ctx=vm.createContext({window:{},document:{addEventListener(){}},state:{colorTheme:'dark'},uiText:(zh,en)=>zh,$:()=>null,Date,assert});
-for(const f of process.argv.slice(1))vm.runInContext(fs.readFileSync(f,'utf8'),ctx);
-vm.runInContext(`
-const v={stale:true,states:{published:67},media:{selected:67,verified:67},datasets:[],
-planning_text:{status:'ready',selected:67,with_frames:67,collected:15,partial_source:52,failed:0,pending:0,unknown:0}};
-const task=id=>buildIncrementalCronGraph(v).lanes.flatMap(l=>l.nodes).find(n=>n.id===id).data;
-for(const id of ['text-input','text-export','text-verify','text-index','text-source'])assert.equal(task(id).status,'success');
-assert.equal(task('text-index').progress.done,67);
-dailyCronState.error=true;
-assert.equal(task('text-index').status,'success');
-assert.equal(task('text-index').progress.stale,true);
-dailyCronState.error=false;
-v.planning_text={status:'ready',selected:2,with_frames:1,collected:1,partial_source:0,failed:0,pending:1,unknown:0,
-pipeline:{status:'ready',runtime:{status:'ready',running:1,queued:0},stages:{
-'text-input':{state:'complete',total:2,completed:2,running:0,blocked:0},
-'text-export':{state:'running',total:2,completed:1,running:1,blocked:0}}}};
-assert.equal(task('text-export').status,'running');
-v.planning_text.pipeline.runtime.status='stale';
-assert.equal(task('text-export').status,'unknown');
-assert.equal(task('text-input').status,'success');
-const edges=buildIncrementalCronGraph(v).edges;
-assert.ok(edges.some(e=>e.source==='media-source'&&e.target==='text-input'));
-assert.ok(!edges.some(e=>e.source.startsWith('text-')&&e.target.startsWith('media-')));
-assert.ok(!edges.some(e=>['media-orion','media-closeup'].includes(e.source)&&e.target==='text-input'));
-`,ctx);
-'''
-        result = subprocess.run(['node', '-e', script, str(static/'daily-cron.js'), str(static/'daily-cron-text.js'), str(static/'daily-cron-graph.js')], capture_output=True, text=True, timeout=15)
-        self.assertEqual(result.returncode, 0, result.stderr)
 
 
 if __name__ == '__main__':

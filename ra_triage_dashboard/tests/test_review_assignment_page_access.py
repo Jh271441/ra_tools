@@ -66,7 +66,8 @@ class ReviewAssignmentPageAccessTest(unittest.TestCase):
         for _ in range(2):
             response = self.request("GET", url)
             self.assertEqual(response.status_code, 200)
-            self.assertIn('id="reviewAssignmentsPage"', response.text)
+            self.assertIn('id="raWorkbenchRoot"', response.text)
+            self.assertIn('id="raViteAssets"', response.text)
             self.assertEqual(response.headers["cache-control"], "no-store, max-age=0")
             self.assertNotIn("location", response.headers)
 

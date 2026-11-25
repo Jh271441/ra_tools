@@ -190,66 +190,7 @@ class CombinedReviewLinkageTest(unittest.TestCase):
         )["total"], 2)
 
 
-def test_browser_binding_cache_and_stale_context():
-    root = Path(__file__).resolve().parents[1] / "static/js"
-    script = "global.document={getElementById(){return null}};global.DEFAULT_CASE_PAGE_SIZE=20;\n" + (root / "review-draft.js").read_text() + (root / "review-combined.js").read_text() + (root / "review-navigation.js").read_text() + (root / "labeling-summary.js").read_text() + (root / "review-assignments.js").read_text() + r"""
-const assert = require('node:assert/strict');
-capturePageContext=()=>({});isPageContextCurrent=()=>true;$=()=>null;
-state = {activePage:"review", selectedRunId:'run1', reviewWorkSplitId:'campaign1', caseDetailPrefetch:new Map(), selectedId:'current'};
-const assigned = {issue_id:'cn1', review_assignment:{assigned:true, purpose:'model_review', split_id:'campaign1',
-  workflow_mode:'model_review_and_case_label', model_run_id:'run1', mode:'single'}};
-assert.equal(combinedReviewCampaignBinding(assigned), 'campaign1');
-assert.equal(reviewWorkSplitBinding(assigned), 'campaign1');
-state.selectedBaselineIds=['scope'];
-labelSummaryFilters.taskId='campaign1';
-labelSummaryTasks=[{id:'campaign1', workflow_mode:'model_review_and_case_label', selection_source_run_id:'run1'}];
-pageUrl=(page,options)=>({page,options});
-const link=labelSummaryCaseUrl({issue:'cn1'});
-assert.equal(link.page,'review');
-assert.equal(link.options.workSplitId,'campaign1');
-assert.equal(link.options.runId,'run1');
-assert.equal(link.options.issue,'cn1');
-assert.throws(()=>combinedReviewCampaignBinding({issue_id:'cn1'}), /上下文/);
-assert.equal(combinedReviewCampaignBinding({...assigned, review_assignment:{...assigned.review_assignment, assigned:false}}), '');
-assert.throws(()=>combinedReviewCampaignBinding({...assigned, review_assignment:{...assigned.review_assignment, assigned:false, model_run_id:'wrong'}}), /上下文/);
-state.reviewWorkSplitId='';
-assert.equal(combinedReviewCampaignBinding(assigned), '');
-assert.equal(reviewWorkSplitBinding(assigned), '');
-state.reviewWorkSplitId='campaign1';
-let calls=[];
-api=async path => {calls.push(path);return {path}};
-(async()=>{
- prefetchCaseCore('cn2');
- state.reviewWorkSplitId='campaign2';
- const other=await loadCaseCore('cn2');
- assert.match(other.path,/work_split_id=campaign2/);
- state.selectedRunId='run2';
- const run=await loadCaseCore('cn2');
- assert.match(run.path,/model_run_id=run2/);
- state.selectedRunId='run1';state.reviewWorkSplitId='campaign1';state.selectedCase=assigned;
- let resolve;api=()=>new Promise(r=>resolve=r);
- let populated=false;populateCombinedCaseLabel=()=>{populated=true};
- const pending=loadCombinedReviewContext(assigned);
- state.reviewWorkSplitId='campaign2';
- resolve({context:{}});await pending;
- assert.equal(populated,false);
-})().catch(error=>{console.error(error);process.exitCode=1});
-"""
-    result = subprocess.run(["node"], input=script, capture_output=True, text=True)
-    assert result.returncode == 0, result.stderr
 
 
-def test_combined_context_loading_error_retry_and_draft_preservation():
-    result = subprocess.run(
-        ["node", str(Path(__file__).with_name("combined_review_context_ui.cjs"))],
-        cwd=Path(__file__).resolve().parents[2], capture_output=True, text=True,
-    )
-    assert result.returncode == 0, result.stdout + result.stderr
 
 
-def test_combined_review_saved_field_hydration_and_save_races():
-    result = subprocess.run(
-        ["node", str(Path(__file__).with_name("combined_review_hydration.cjs"))],
-        cwd=Path(__file__).resolve().parents[2], capture_output=True, text=True,
-    )
-    assert result.returncode == 0, result.stdout + result.stderr

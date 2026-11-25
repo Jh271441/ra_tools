@@ -93,27 +93,3 @@ class CronTimingTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             read_receipt(self.root, link)
 
-    def test_duration_text_and_stale_running_view(self):
-        js = Path(__file__).resolve().parents[1] / "static/js/daily-cron.js"
-        script = r'''
-const fs=require('fs'), vm=require('vm'), assert=require('assert');
-let language='zh';const ctx=vm.createContext({window:{},document:{addEventListener(){}},uiText:(zh,en)=>language==='zh'?zh:en});
-vm.runInContext(fs.readFileSync(process.argv[1],'utf8'),ctx);
-assert.equal(vm.runInContext('cronDuration(null)',ctx),'—');
-assert.equal(vm.runInContext('cronDuration(-1)',ctx),'—');
-assert.equal(vm.runInContext('cronDuration(0)',ctx),'0秒');
-assert.equal(vm.runInContext('cronDuration(0.1)',ctx),'<1秒');
-assert.equal(vm.runInContext('cronDuration(155)',ctx),'2分钟35秒');
-assert.equal(vm.runInContext('cronDuration(6137.5)',ctx),'1小时42分钟17秒');
-assert.equal(vm.runInContext('cronDuration(6137.5,{compact:true})',ctx),'1小时42分钟');
-assert.equal(vm.runInContext('cronDuration(3600,{compact:true})',ctx),'1小时');
-assert.equal(vm.runInContext('cronDuration(90061,{compact:true})',ctx),'1天1小时');
-assert.equal(vm.runInContext('cronTimingText({mode:"finished",kind:"span",elapsed_seconds:6040.3,basis:"registration_to_publication"},{compact:true})',ctx),'阶段用时 1小时40分钟');
-assert.equal(vm.runInContext('cronTimingText({mode:"running",elapsed_seconds:30},{stale:true})',ctx),'上次已运行 30秒');
-assert.equal(vm.runInContext('cronTimingText({mode:"observed",kind:"span",elapsed_seconds:12})',ctx),'已观测跨度 12秒');
-assert.equal(vm.runInContext('cronTimingText({mode:"finished",kind:"p50",elapsed_seconds:12})',ctx),'任务 P50 12秒');
-language='en';assert.equal(vm.runInContext('cronDuration(155)',ctx),'2m 35s');
-assert.equal(vm.runInContext('cronTimingText({mode:"running",elapsed_seconds:155})',ctx),'Elapsed 2m 35s');
-'''
-        result = subprocess.run(["node", "-e", script, str(js)], capture_output=True, text=True, timeout=15)
-        self.assertEqual(result.returncode, 0, result.stderr)

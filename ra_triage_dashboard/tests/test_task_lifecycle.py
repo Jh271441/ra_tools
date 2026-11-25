@@ -127,6 +127,3 @@ class TaskLifecycleTest(unittest.TestCase):
                         asyncio.run(call())
                     self.assertEqual(denied.exception.status_code, 403)
 
-    def test_history_cards_metrics_and_filter_cache_in_browser_logic(self):
-        result = subprocess.run(["node", str(Path(__file__).with_name("task_lifecycle_ui.cjs"))], cwd=Path(__file__).resolve().parents[2], capture_output=True, text=True)
-        self.assertEqual(result.returncode, 0, result.stdout+result.stderr)

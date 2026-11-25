@@ -134,11 +134,6 @@ class ModelReviewRevocationTest(unittest.TestCase):
         self.assertFalse(self.context(campaign)["progress"]["model_review_submitted"])
         self.assertEqual(self.context(campaign)["case_revision_id"], first["case_revision_id"])
 
-    def test_history_ui_permissions_and_navigation_race(self):
-        import subprocess
-        from pathlib import Path
-        script = Path(__file__).with_name("model_review_revocation_ui.cjs")
-        subprocess.run(["node", str(script)], cwd=Path(__file__).resolve().parents[2], check=True)
 
     def test_review_entry_lists_own_tasks_across_baseline_and_run_filters(self):
         campaign = self.campaign(0)

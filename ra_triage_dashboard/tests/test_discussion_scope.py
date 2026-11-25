@@ -196,7 +196,3 @@ class DiscussionScopeTest(unittest.TestCase):
                 asyncio.run(core.case_labeling_page(request(query)))
             self.assertEqual(error.exception.status_code, 403)
 
-    def test_actual_frontend_discussion_behavior(self):
-        root=Path(__file__).resolve().parents[2]
-        result=subprocess.run(['node',str(Path(__file__).with_name('discussion_scope.cjs'))],cwd=root,capture_output=True,text=True)
-        self.assertEqual(result.returncode,0,result.stdout+result.stderr)

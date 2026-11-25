@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { getApiBasePath } from "../api/client";
+import { useOptionalWorkbench } from "../shell/WorkbenchContext";
 
 export type UiLanguage = "zh" | "en";
 export type ColorTheme = "dark" | "light";
@@ -70,7 +71,8 @@ function readLegacySession(): WorkbenchBridgeState["session"] {
 }
 
 export function useWorkbenchBridge(): WorkbenchBridgeState {
-  const [bridge, setBridge] = useState<WorkbenchBridgeState>(() => ({
+  const workbench = useOptionalWorkbench();
+  const [fallback, setFallback] = useState<WorkbenchBridgeState>(() => ({
     lang: readLang(),
     theme: readTheme(),
     activePage: readActivePage(),
@@ -79,8 +81,9 @@ export function useWorkbenchBridge(): WorkbenchBridgeState {
   }));
 
   useEffect(() => {
+    if (workbench) return;
     const sync = () => {
-      setBridge((prev) => {
+      setFallback((prev) => {
         const nextLang = readLang();
         const nextTheme = readTheme();
         const nextPage = readActivePage();
@@ -105,30 +108,24 @@ export function useWorkbenchBridge(): WorkbenchBridgeState {
       });
     };
 
-    const htmlObserver = new MutationObserver(sync);
-    htmlObserver.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ["data-ui-lang", "data-color-theme"],
-    });
-
-    const pageNodes = Array.from(document.querySelectorAll<HTMLElement>(".app-page[data-page]"));
-    const pageObserver = new MutationObserver(sync);
-    for (const node of pageNodes) {
-      pageObserver.observe(node, { attributes: true, attributeFilter: ["class"] });
-    }
-
     window.addEventListener("popstate", sync);
     window.addEventListener("ra:workbench-sync", sync);
-
     return () => {
-      htmlObserver.disconnect();
-      pageObserver.disconnect();
       window.removeEventListener("popstate", sync);
       window.removeEventListener("ra:workbench-sync", sync);
     };
-  }, []);
+  }, [workbench]);
 
-  return bridge;
+  if (workbench) {
+    return {
+      lang: workbench.lang,
+      theme: workbench.theme,
+      activePage: workbench.activePage,
+      selectedBaselines: workbench.selectedBaselines,
+      session: workbench.session,
+    };
+  }
+  return fallback;
 }
 
 export function bilingual(lang: UiLanguage, zh: string, en: string): string {

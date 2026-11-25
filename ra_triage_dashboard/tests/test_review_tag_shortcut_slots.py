@@ -75,6 +75,3 @@ class ReviewTagShortcutSlotsTest(unittest.TestCase):
                 bindings(ReviewTagShortcutStore(path), "tags", items(2))
             self.assertEqual(json.loads(path.read_text()), broken)
 
-    def test_keyboard_normalization_and_scope(self):
-        subprocess.run(["node", str(Path(__file__).with_name("extended_tag_shortcuts.cjs"))],
-                       check=True, capture_output=True, text=True)

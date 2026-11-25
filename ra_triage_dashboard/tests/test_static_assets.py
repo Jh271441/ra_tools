@@ -38,17 +38,20 @@ class StaticCompressionTest(unittest.TestCase):
             return messages[0]["status"], dict(messages[0]["headers"]), b"".join(m.get("body", b"") for m in messages)
         return asyncio.run(run())
 
-    def test_graph_compression_identity_and_conditional_cache(self):
-        path = "/manual/static/vendor/cron-graph/graph.js"
+    def test_vite_entry_compression_identity_and_conditional_cache(self):
+        static = Path(__file__).resolve().parents[1] / "static"
+        manifest = json.loads((static / "dist/.vite/manifest.json").read_text(encoding="utf-8"))
+        entry_rel = next(v["file"] for v in manifest.values() if isinstance(v, dict) and v.get("isEntry"))
+        path = f"/manual/static/dist/{entry_rel}"
         status, headers, compressed = self.request(path)
-        original = (Path(__file__).resolve().parents[1] / "static/vendor/cron-graph/graph.js").read_bytes()
+        original = (static / "dist" / entry_rel).read_bytes()
         self.assertEqual(status, 200)
         self.assertEqual(headers[b"content-encoding"], b"gzip")
         self.assertIn(b"Accept-Encoding", headers[b"vary"])
         self.assertIn(b"immutable", headers[b"cache-control"])
         self.assertIn(b"javascript", headers[b"content-type"])
         self.assertEqual(gzip.decompress(compressed), original)
-        self.assertLess(len(compressed), len(original) * .35)
+        self.assertLess(len(compressed), len(original) * .4)
         status, identity_headers, body = self.request(path, "identity")
         self.assertEqual(status, 200)
         self.assertNotIn(b"content-encoding", identity_headers)
@@ -64,6 +67,10 @@ class StaticCompressionTest(unittest.TestCase):
         self.assertEqual(body, b"private-json" * 1000)
         status, _, _ = self.request("/manual/static/not-found.js")
         self.assertEqual(status, 404)
+        # Wave 3.6 retired legacy JS bundle & vendor cron-graph bundle
+        for retired in ("/manual/static/app-bundle.js", "/manual/static/vendor/cron-graph/graph.js", "/manual/static/app.js"):
+            status, _, _ = self.request(retired)
+            self.assertEqual(status, 404, f"Expected retired asset 404 for {retired}")
 
     def test_unversioned_static_file_revalidates_instead_of_immutable(self):
         static = Path(__file__).resolve().parents[1] / "static"
@@ -77,7 +84,7 @@ class StaticCompressionTest(unittest.TestCase):
                 messages.append(msg)
             await app({
                 "type": "http", "asgi": {"version": "3.0", "spec_version": "2.4"},
-                "method": "GET", "path": "/manual/static/app.js", "raw_path": b"/manual/static/app.js",
+                "method": "GET", "path": "/manual/static/css/base.css", "raw_path": b"/manual/static/css/base.css",
                 "root_path": "", "query_string": b"", "scheme": "http", "http_version": "1.1",
                 "headers": [(b"accept-encoding", b"gzip")],
             }, receive, send)
@@ -88,45 +95,6 @@ class StaticCompressionTest(unittest.TestCase):
         cache_control = headers.get(b"cache-control", b"")
         self.assertNotIn(b"immutable", cache_control)
         self.assertIn(b"must-revalidate", cache_control)
-
-    def test_bundle_preserves_manifest_order_compression_and_cache(self):
-        static = Path(__file__).resolve().parents[1] / "static"
-        names = [line.strip() for line in (static / "js/MANIFEST").read_text().splitlines()
-                 if line.strip() and not line.lstrip().startswith("#")]
-        expected = b"\n;\n".join((static / "js" / name).read_bytes() for name in names)
-        route = "/manual/static/app-bundle.js"
-        status, headers, body = self.request(route)
-        self.assertEqual(status, 200)
-        self.assertEqual(headers[b"content-encoding"], b"gzip")
-        self.assertEqual(headers[b"vary"], b"Accept-Encoding")
-        self.assertIn(b"immutable", headers[b"cache-control"])
-        self.assertEqual(gzip.decompress(body), expected)
-        self.assertLess(len(body), len(expected) * .3)
-        status, cached_headers, body = self.request(route, extra_headers=[(b"if-none-match", headers[b"etag"])])
-        self.assertEqual((status, body), (304, b""))
-        for key in (b"etag", b"cache-control", b"vary"):
-            self.assertEqual(cached_headers[key], headers[key])
-        status, head_headers, body = self.request(route, method="HEAD")
-        self.assertEqual((status, body), (200, b""))
-        self.assertEqual(head_headers[b"content-length"], headers[b"content-length"])
-        status, identity_headers, body = self.request(route, encoding="identity")
-        self.assertEqual(status, 200)
-        self.assertNotIn(b"content-encoding", identity_headers)
-        self.assertNotEqual(identity_headers[b"etag"], headers[b"etag"])
-        self.assertEqual(body, expected)
-        if shutil.which("node"):
-            result = subprocess.run(["node", "-e", "new (require('node:vm').Script)(JSON.parse(require('node:fs').readFileSync(0,'utf8')));"],
-                                    input=json.dumps(body.decode()), capture_output=True, text=True)
-            self.assertEqual(result.returncode, 0, result.stderr)
-
-    def test_bundle_rejects_duplicate_or_unsafe_manifest_entries(self):
-        with tempfile.TemporaryDirectory() as directory:
-            modules = Path(directory) / "js"
-            modules.mkdir()
-            for manifest in ("../secret.js\n", "core.js\ncore.js\n", ""):
-                (modules / "MANIFEST").write_text(manifest)
-                with self.assertRaises(RuntimeError):
-                    dashboard_static_app(directory)
 
     def test_style_bundle_preserves_cascade_mobile_layer_and_conditional_cache(self):
         static = Path(__file__).resolve().parents[1] / "static"

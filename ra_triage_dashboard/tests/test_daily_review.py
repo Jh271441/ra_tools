@@ -45,9 +45,6 @@ class DailyReviewTest(unittest.TestCase):
  def test_symlink(self):
   p=self.folder/'snapshots/1009-2026-10-19.json';p.symlink_to('/etc/passwd')
   with self.assertRaises(ValueError):project(self.root)
- def test_actual_javascript_scope_ownership(self):
-  app=Path(__file__).resolve().parents[1]
-  subprocess.run(['node',str(app/'tests/daily_review_ui.cjs'),str(app/'static/js/daily-review.js')],check=True,capture_output=True,text=True)
  def test_daily_chart_keeps_daily_denominators_and_bounds_reads(self):
   for day in range(1,17):
    date=f'2026-10-{day:02d}'
