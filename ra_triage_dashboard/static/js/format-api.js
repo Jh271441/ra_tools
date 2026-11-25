@@ -579,7 +579,7 @@ function reviewTagOptionMarkup(item, selected = false, groupKey = "", manage = t
         </div>
       </div>
     </div>` : `<label class="tag-option${deleted ? " tag-option-deleted" : ""}" data-ui-info-hover>${check}</label>`;
-  return `<div class="review-tag-option-row ui-info review-tag-help" data-review-tag-option="${escapeHtml(key)}" data-review-tag-hint="${escapeHtml(hint)}" data-ui-info data-ui-info-escape="bubble" data-ui-info-placement="side">
+  return `<div class="review-tag-option-row ui-info review-tag-help" data-review-tag-option="${escapeHtml(key)}" data-review-tag-hint="${escapeHtml(hint)}" data-ui-info data-ui-info-escape="bubble" data-ui-info-align="center" data-ui-info-hover-delay="1500">
     ${option}
     <div class="ui-info-tooltip model-review-run-tooltip review-tag-hint" id="${hintId}" role="tooltip">
       <strong data-review-tag-hint-label>${escapeHtml(label)}</strong>

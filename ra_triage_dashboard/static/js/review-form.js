@@ -10,8 +10,6 @@ function refreshReviewFormLanguage() {
   if (!root?.querySelector("#annotationForm")) return;
   applyDomI18n(root);
   applyI18nPlaceholders(root);
-  const humanRoot=root.querySelector('#humanReviewStatus');
-  if(humanRoot)renderHumanReviewStatus(humanRoot._humanPublication);
   root.querySelector('.review-task-supplemental-notice summary')?.setAttribute('aria-label',uiText('查看补充复核说明','About supplemental review'));
   root.querySelectorAll("[data-tag-dropdown-group]").forEach(dropdown => {
     const label = dropdown.querySelector(".tag-group-label")?.textContent || "";
@@ -419,7 +417,6 @@ function renderReview(caseData) {
   $("#reviewPane").innerHTML = `
     <form class="review-form" id="annotationForm" data-issue-id="${escapeHtml(caseData.issue_id)}">
       ${taskSupplementalNotice}
-      <div id="humanReviewStatus"></div>
       <section class="review-section issue-tag-section combined-case-label-card" ${combinedMode ? "" : "hidden"}>
         <div class="review-section-heading"><div><h2><span class="ui-lang-zh">Issue 标签</span><span class="ui-lang-en">Issue tags</span> <small class="combined-mode-badge" title="${escapeHtml(uiText("联合复核", "Combined review"))}"><span class="ui-lang-zh">联合</span><span class="ui-lang-en">Combined</span></small></h2>${sourceSuggestionMarkup}</div><div class="review-case-heading-meta review-heading-actions">${sharedLabelSummary}<button class="history-inline-button" id="issueLabelCommentsButton" type="button" aria-keyshortcuts="D" title="${escapeHtml(uiText("问题讨论（D）；支持图片与 @", "Issue discussion (D); images and @mentions"))}"><span class="ui-lang-zh">讨论</span><span class="ui-lang-en">Discuss</span><kbd class="review-control-shortcut" aria-hidden="true">D</kbd></button><span class="evidence-summary-count" id="tagSummaryCount" hidden aria-hidden="true">${escapeHtml(t("detail.selected_n", { n: chosenTags.size }))}</span></div></div>
         <div class="review-tag-groups-shell">${issueTagGroups}${customTagOptions ? `<div class="review-tag-legacy"><span class="ui-lang-zh">历史标签</span><span class="ui-lang-en">Legacy tags</span><div class="review-tag-options">${customTagOptions}</div></div>` : ""}</div>
@@ -540,7 +537,6 @@ function renderReview(caseData) {
       <button class="button button-primary full-width review-save-button" id="reviewSaveButton" type="submit" aria-keyshortcuts="Enter" title="输入原因时按 Enter 保存；Shift+Enter 换行" ${runBoundModelReview ? "" : "disabled"}><span class="ui-lang-zh">保存新的模型复核版本</span><span class="ui-lang-en">Save model review version</span><kbd class="review-save-shortcut" aria-hidden="true">Enter</kbd></button>
       ${combinedMode ? '<div class="combined-review-context-status" id="combinedReviewContextStatus" role="status" aria-live="polite" hidden></div>' : ""}
     </form>`;
-  renderHumanReviewStatus(sharedLabelState.human_publication);
   if (!runBoundModelReview) {
     $("#annotationForm")?.querySelectorAll(
       "#missingEvidenceOptions input, #reviewScreenshotInput, #reviewScreenshotBrowse, #annotationAuthor, [data-open-missing-evidence-creator]"

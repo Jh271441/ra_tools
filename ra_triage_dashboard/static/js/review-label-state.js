@@ -228,9 +228,11 @@ function openSharedLabelStateDialog(item) {
     <span><span class="ui-lang-zh">解析方式</span><span class="ui-lang-en">Method</span> · ${escapeHtml(sharedLabelStateMethodText(labelState.method))}</span>
     <small><span class="ui-lang-zh">任务 ${taskIds.length} · 版本 ${revisionIds.length}</span><span class="ui-lang-en">${taskIds.length} task(s) · ${revisionIds.length} revision(s)</span></small>
   </div>`;
-  body.innerHTML = sourceItems.length
+  dialog._humanPublication = labelState.human_publication;
+  const sourcesMarkup = sourceItems.length
     ? sourceItems.map((source) => sharedLabelStateSourceMarkup(source, issueId, sourceContexts[source.label_case_id] || {})).join("")
     : `<div class="shared-label-empty"><span class="ui-lang-zh">当前范围没有共享标签来源记录。</span><span class="ui-lang-en">No shared label sources exist for this Issue in the current baseline.</span></div>`;
+  body.innerHTML = humanRoleSummary(dialog._humanPublication) + sourcesMarkup;
   if (!dialog.dataset.sharedLabelBound) {
     dialog.dataset.sharedLabelBound = "true";
     dialog.addEventListener("click", (event) => {

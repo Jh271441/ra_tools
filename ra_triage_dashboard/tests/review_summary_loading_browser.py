@@ -16,6 +16,10 @@ assert count == 1
 setup = setup.replace('  state.selectedCase = fixtureData;', '''
   fixtureData.label_state.sources=[{label_case_id:'labels',source_revision_ids:[201],revision_summaries:[revision]}];
   fixtureData.label_cases=[{id:'labels',revisions:[revision],resolution:{state:'resolved',heads:[revision]}}];
+  fixtureData.label_state.human_publication={
+    lanes:{rd:{state:'pending'},te:{state:'resolved',label:'正确触发'},arbitrated:{state:'none'}},
+    sync:{rd:{sync_state:'not_ready'},te:{sync_state:'synced'},arbitrated:{sync_state:'not_ready'}}
+  };
   fixtureData.exclusion_summary={is_excluded:false};
   fixtureData.assets={frames:[{offset_ms:0,url:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j3ioAAAAASUVORK5CYII='}]};
   state.caseLabeling={issueId:'',pendingImages:[],caseData:null};
@@ -64,6 +68,7 @@ def run():
             page.evaluate(setup, {'catalog': fixture['catalog']})
             page.wait_for_function("state.combinedReviewLoad?.status==='ready'")
             page.evaluate('([lang,theme])=>{applyUiLanguage(lang,{persist:false});applyColorTheme(theme,{persist:false});}', [language, theme])
+            assert page.locator('#annotationForm .human-role-summary').count() == 0
             page.locator('#annotationNote').fill('Keep model draft / 保留模型草稿')
             page.locator('#combinedCaseRationale').fill('Keep Case draft / 保留问题草稿')
             page.evaluate('''()=>{
@@ -104,6 +109,9 @@ def run():
             data = page.evaluate('fixtureData')
             backend['held'].pop().fulfill(json=copy.deepcopy(data))
             page.locator('#caseLabelDecisionDialog [data-adopt-decision="201"]').wait_for()
+            summary = page.locator('#caseLabelDecisionDialog .human-role-summary')
+            assert summary.locator('strong').count() == 3
+            assert ('已同步' if page.evaluate("state.uiLanguage === 'zh'") else 'Synced') in summary.inner_text()
             assert page.locator('#caseDecisionRelabel').is_enabled()
             assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
 
@@ -128,6 +136,23 @@ def run():
                     page.close()
 
         if not os.environ.get('REVIEW_SUMMARY_SINGLE'):
+            page, backend = scenario(320, 'en', 'light')
+            page.evaluate("state.session.access_role='viewer'; bindReviewDetailActionShortcuts(); document.activeElement.blur()")
+            page.keyboard.press('l')
+            summary = page.locator('#sharedLabelStateDialog[open] .human-role-summary')
+            summary.wait_for()
+            assert 'Synced' in summary.inner_text()
+            page.evaluate("applyUiLanguage('zh',{persist:false})")
+            assert '已同步' in summary.inner_text()
+            page.keyboard.press('l')
+            page.wait_for_function('!document.querySelector("#sharedLabelStateDialog").open')
+            page.evaluate('delete fixtureData.label_state.human_publication')
+            page.keyboard.press('l')
+            page.locator('#sharedLabelStateDialog[open]').wait_for()
+            assert summary.count() == 0
+            results.append({'scenario': 'read-only L shortcut, locale change and legacy Issue', 'passed': True})
+            page.close()
+
             page, backend = scenario(320, 'en', 'light')
             backend['failure'] = True
             page.locator('#reviewSharedLabelState [data-open-shared-label-state]').click()

@@ -610,12 +610,18 @@ function observeDashboardSelects() {
 // Shared info help, also used by the version metric/source controls.
 const uiInfoSelector = '[data-ui-info],[data-version-info],#versionTEInfo';
 const uiInfoBindings = new WeakSet();
+const uiInfoHoverTimers = new WeakMap();
+function cancelUiInfoHover(help) {
+  clearTimeout(uiInfoHoverTimers.get(help));
+  uiInfoHoverTimers.delete(help);
+}
 function uiInfoTrigger(help) {
   return help.querySelector('[data-ui-info-trigger]') || help.querySelector('button');
 }
 
 function closeUiInfoPopovers(root = document) {
   root.querySelectorAll(uiInfoSelector).forEach((help) => {
+    cancelUiInfoHover(help);
     help.classList.remove('is-open');
     help.classList.add('is-dismissed');
     delete help.dataset.uiInfoPinned;
@@ -646,7 +652,9 @@ function showUiInfoPopover(help, root = document, { pinned = false } = {}) {
     tip.style.top = `${Math.max(viewport.top + 12, Math.min(rect.top, viewport.bottom - tip.offsetHeight - 12))}px`;
     return;
   }
-  const preferredLeft = help.dataset.uiInfoAlign === 'end' ? rect.right - tip.offsetWidth : rect.left;
+  let preferredLeft = rect.left;
+  if (help.dataset.uiInfoAlign === 'end') preferredLeft = rect.right - tip.offsetWidth;
+  if (help.dataset.uiInfoAlign === 'center') preferredLeft = rect.left + (rect.width - tip.offsetWidth) / 2;
   tip.style.left = `${Math.max(viewport.left + 12, Math.min(preferredLeft, viewport.right - tip.offsetWidth - 12))}px`;
   tip.style.top = `${Math.max(viewport.top + 12, Math.min(rect.bottom + tip.offsetHeight + 8 <= viewport.bottom ? rect.bottom + 6 : rect.top - tip.offsetHeight - 6, viewport.bottom - tip.offsetHeight - 12))}px`;
 }
@@ -675,8 +683,22 @@ function bindUiInfoPopovers(root) {
     // the user clicks elsewhere, including when a closing menu exposes a row.
     if (pinned && pinned !== help) return;
     const hover = help.querySelector('[data-ui-info-hover]') || help;
-    if (hover.contains(event.target) || event.target.closest('.ui-info-tooltip,.version-te-info-tooltip')) show(help);
-    else close();
+    if (!hover.contains(event.target) && !event.target.closest('.ui-info-tooltip,.version-te-info-tooltip')) {
+      close();
+      return;
+    }
+    clearTimeout(closing);
+    const delay = Number(help.dataset.uiInfoHoverDelay);
+    if (!delay || help.classList.contains('is-open')) {
+      show(help);
+      return;
+    }
+    if (uiInfoHoverTimers.has(help)) return;
+    if (root.querySelector('.is-open[data-ui-info]')) closeUiInfoPopovers(root);
+    uiInfoHoverTimers.set(help, setTimeout(() => {
+      uiInfoHoverTimers.delete(help);
+      if (help.isConnected && hover.matches(':hover') && hover.getClientRects().length) show(help);
+    }, delay));
   });
   root.addEventListener('pointermove', event => {
     pointerX = event.clientX;
@@ -684,9 +706,12 @@ function bindUiInfoPopovers(root) {
   }, { passive: true });
   root.addEventListener('pointerout', event => {
     const help = helpOf(event.target);
-    if (help && !help.contains(event.relatedTarget)) closing = setTimeout(() => {
-      if (!help.contains(document.activeElement)) close();
-    }, 180);
+    if (help && !help.contains(event.relatedTarget)) {
+      cancelUiInfoHover(help);
+      closing = setTimeout(() => {
+        if (!help.contains(document.activeElement)) close();
+      }, 180);
+    }
   });
   root.addEventListener('focusin', event => {
     const help = helpOf(event.target);
@@ -724,6 +749,8 @@ function bindUiInfoPopovers(root) {
   window.addEventListener('resize', close);
   window.addEventListener('scroll', event => {
     if (helpOf(event.target)) return;
+    const hovered = root.querySelector('[data-ui-info-hover]:hover');
+    if (hovered && event.target.contains?.(hovered) && uiInfoHoverTimers.has(helpOf(hovered))) return;
     const help = [...root.querySelectorAll(uiInfoSelector)].find(item =>
       item.classList.contains('is-open') && item.querySelector('[data-ui-info-trigger]') &&
       (item.contains(document.activeElement) || item.querySelector('[data-ui-info-hover]')?.matches(':hover')));

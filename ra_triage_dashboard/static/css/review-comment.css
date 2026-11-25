@@ -663,7 +663,15 @@ html[data-color-theme="light"] .detail-queue-index-input {
 }
 .review-tag-option-row.ui-info { line-height: inherit; }
 .review-tag-help.is-open > .review-tag-hint { opacity: 1; visibility: visible; transform: none; }
-.review-tag-hint > [data-review-tag-hint-text] { display: block; white-space: pre-wrap; }
+.review-tag-help > .review-tag-hint {
+  width: max-content; padding: 8px 12px; border-radius: 10px;
+  background: var(--raised); box-shadow: 0 4px 14px rgba(0,0,0,.16);
+}
+.review-tag-hint > strong, .review-tag-hint > [data-review-tag-hint-text] { max-inline-size: 32ch; }
+.review-tag-hint > strong { margin: 0; font-size: 12px; line-height: 1.4; }
+.review-tag-hint > [data-review-tag-hint-text] {
+  display: block; margin-top: 3px; color: var(--muted); white-space: pre-wrap;
+}
 .review-tag-dropdown .review-tag-options .tag-option-with-menu {
   display: flex; align-items: center; gap: 4px; width: 100%; min-width: 0;
   box-sizing: border-box; padding: 4px 5px 4px 7px;
