@@ -35,7 +35,7 @@ html[data-color-theme="light"] {
   --accent: #2563eb; --accent-hover: #1d4ed8; --accent-text: #1d4ed8;
   --accent-soft: rgba(37, 99, 235, 0.09); --accent-soft-hover: rgba(37, 99, 235, 0.14);
   --accent-border: rgba(37, 99, 235, 0.34); --accent-ring: 0 0 0 3px rgba(37, 99, 235, 0.16);
-  --chart-primary: #2563eb;
+  --chart-primary: color-mix(in srgb, var(--accent) 65%, var(--muted));
   --chart-blue: #3b82f6; --chart-teal: #0d9488; --chart-rose: #e11d48; --chart-indigo: #6366f1; --chart-slate: #64748b;
   --ok: #047857; --ok-bg: #ecfdf5; --ok-border: #a7f3d0;
   --fail: #b91c1c; --fail-bg: #fef2f2; --fail-border: #fecaca;
