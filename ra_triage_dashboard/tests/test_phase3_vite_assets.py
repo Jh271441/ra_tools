@@ -43,7 +43,8 @@ class Phase3ViteAssetsTest(unittest.TestCase):
         self.assertIn('id="raViteAssets"', default_html)
         self.assertIn('{"js":[],"css":[]}', default_html)
         self.assertNotIn("{{RA_TRIAGE_VITE_ASSETS}}", default_html)
-        self.assertIn('window.__RA_REACT_OWNED_PAGES__ = ["status", "users", "daily-cron", "runs-manager"]', default_html)
+        for owned in ("status", "users", "daily-cron", "runs-manager", "version-metrics", "version-datasets"):
+            self.assertIn(f'"{owned}"', default_html)
 
         custom_html = render_index_html(
             template,
@@ -113,7 +114,13 @@ class Phase3ViteAssetsTest(unittest.TestCase):
             for entry in manifest_data.values()
             if isinstance(entry, dict) and entry.get("name")
         }
-        for expected_chunk in ("DailyCronPage", "CronGraphCanvas", "RunsManagerIsland"):
+        for expected_chunk in (
+            "DailyCronPage",
+            "CronGraphCanvas",
+            "RunsManagerIsland",
+            "VersionMetricsPage",
+            "VersionDatasetsPage",
+        ):
             self.assertIn(expected_chunk, chunk_by_name)
             chunk_rel = chunk_by_name[expected_chunk]["file"]
             self.assertTrue((STATIC_DIR / "dist" / chunk_rel).is_file())

@@ -1163,7 +1163,9 @@ async function bootstrap() {
     // now; keep catalog initialization for later SPA navigation in parallel.
     let independentPageResult = null;
     if (initialRoute.page === "version-metrics") {
-      independentPageResult = settleInitialRequests([loadVersionMetrics()], "页面");
+      if (!(window.__RA_REACT_WORKBENCH__?.ownsPage?.("version-metrics") || window.__RA_REACT_OWNED_PAGES__?.includes?.("version-metrics"))) {
+        independentPageResult = settleInitialRequests([loadVersionMetrics()], "页面");
+      }
     } else if (initialRoute.page === "status") {
       if (!(window.__RA_REACT_WORKBENCH__?.ownsPage?.("status") || window.__RA_REACT_OWNED_PAGES__?.includes?.("status"))) {
         independentPageResult = settleInitialRequests([loadStatus()], "页面");

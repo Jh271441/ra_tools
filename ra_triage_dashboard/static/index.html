@@ -2701,7 +2701,14 @@
           const activeBase = window.__RA_TRIAGE_BASE__ || "";
           const jsList = Array.isArray(parsed.js) ? parsed.js : [];
           if (jsList.length) {
-            window.__RA_REACT_OWNED_PAGES__ = ["status", "users", "daily-cron", "runs-manager"];
+            window.__RA_REACT_OWNED_PAGES__ = [
+              "status",
+              "users",
+              "daily-cron",
+              "runs-manager",
+              "version-metrics",
+              "version-datasets",
+            ];
           }
           const appStyleLink = document.head.querySelector('link[rel="stylesheet"][href*="app-bundle.css"]');
           for (const cssPath of Array.isArray(parsed.css) ? parsed.css : []) {

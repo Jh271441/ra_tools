@@ -13,8 +13,21 @@ const DailyCronPage = React.lazy(() =>
 const RunsManagerIsland = React.lazy(() =>
   import("./pages/RunsManagerIsland").then((m) => ({ default: m.RunsManagerIsland })),
 );
+const VersionMetricsPage = React.lazy(() =>
+  import("./pages/VersionMetricsPage").then((m) => ({ default: m.VersionMetricsPage })),
+);
+const VersionDatasetsPage = React.lazy(() =>
+  import("./pages/VersionDatasetsPage").then((m) => ({ default: m.VersionDatasetsPage })),
+);
 
-const OWNED_PAGES = new Set<string>(["status", "users", "daily-cron", "runs-manager"]);
+const OWNED_PAGES = new Set<string>([
+  "status",
+  "users",
+  "daily-cron",
+  "runs-manager",
+  "version-metrics",
+  "version-datasets",
+]);
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -85,6 +98,32 @@ const RunsManagerIslandHost: React.FC = () => {
   );
 };
 
+const VersionMetricsIsland: React.FC = () => {
+  const { activePage, lang } = useWorkbenchBridge();
+  const active = activePage === "version-metrics";
+  const { effectiveSession } = useResolvedSession(active);
+  if (!active) return null;
+  const canWrite = Boolean(
+    effectiveSession?.verified && (effectiveSession?.can_write || effectiveSession?.is_admin),
+  );
+  return (
+    <Suspense fallback={<div className="no-asset">{lang === "en" ? "Loading…" : "加载中…"}</div>}>
+      <VersionMetricsPage active={active} lang={lang} canWrite={canWrite} />
+    </Suspense>
+  );
+};
+
+const VersionDatasetsIsland: React.FC = () => {
+  const { activePage, lang } = useWorkbenchBridge();
+  const active = activePage === "version-datasets";
+  if (!active) return null;
+  return (
+    <Suspense fallback={<div className="no-asset">{lang === "en" ? "Loading…" : "加载中…"}</div>}>
+      <VersionDatasetsPage active={active} lang={lang} />
+    </Suspense>
+  );
+};
+
 const mountedRoots = new Map<HTMLElement, Root>();
 
 function mountIsland(container: HTMLElement | null, element: React.ReactElement) {
@@ -104,6 +143,8 @@ function mountAllIslands() {
   mountIsland(document.getElementById("dailyCronPage"), <DailyCronIsland />);
   const runsCard = document.querySelector<HTMLElement>("#runsPage .runs-page-card");
   mountIsland(runsCard, <RunsManagerIslandHost />);
+  mountIsland(document.getElementById("versionMetricsPage"), <VersionMetricsIsland />);
+  mountIsland(document.getElementById("versionDatasetsPage"), <VersionDatasetsIsland />);
 }
 
 interface ReactWorkbenchHandle {
@@ -128,6 +169,10 @@ const handle: ReactWorkbenchHandle = {
       void queryClient.invalidateQueries({ queryKey: ["daily-cron"] });
     } else if (page === "runs-manager" || page === "runs") {
       void queryClient.invalidateQueries({ queryKey: ["model-runs"] });
+    } else if (page === "version-metrics") {
+      void queryClient.invalidateQueries({ queryKey: ["version-metrics"] });
+    } else if (page === "version-datasets") {
+      void queryClient.invalidateQueries({ queryKey: ["version-datasets"] });
     }
     window.dispatchEvent(new Event("ra:workbench-sync"));
   },

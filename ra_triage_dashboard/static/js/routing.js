@@ -1354,7 +1354,7 @@ function showPage(
   document.body.dataset.activePage = target;
   if (typeof setVersionDatasetsActive === "function") setVersionDatasetsActive(target === "version-datasets");
   if (typeof setVersionMetricsActive === "function") setVersionMetricsActive(target === "version-metrics");
-  if (target === "version-metrics" && loadPageData) pageLoads.push(() => loadVersionMetrics());
+  if (target === "version-metrics" && loadPageData && !(window.__RA_REACT_WORKBENCH__?.ownsPage?.("version-metrics") || window.__RA_REACT_OWNED_PAGES__?.includes?.("version-metrics"))) pageLoads.push(() => loadVersionMetrics());
   if (typeof setDailyCronActive === "function") setDailyCronActive(target === "daily-cron");
   if (typeof setDailyReviewActive === "function") setDailyReviewActive(target === "daily-review");
   if (typeof ensureRunCollectionsDedicatedPage === "function") {

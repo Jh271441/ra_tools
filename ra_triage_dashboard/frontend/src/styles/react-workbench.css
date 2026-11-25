@@ -11,12 +11,60 @@
 .ra-system-status-root,
 .ra-users-root,
 .ra-daily-cron-root,
-.ra-runs-manager-root {
+.ra-runs-manager-root,
+.ra-version-metrics-root {
   min-width: 0;
   max-width: 100%;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 14px;
+}
+
+.ra-version-datasets-root {
+  min-width: 0;
+  max-width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+
+/* Version Metrics React field wrappers (mirroring classic .vm-* > label without nesting <label>) */
+.ra-version-metrics-root .vm-toolbar > .vm-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 160px;
+  flex: 1 1 170px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.ra-version-metrics-root .vm-scope-filters > .vm-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.ra-version-metrics-root .vm-threshold-controls > .vm-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 160px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.ra-version-metrics-root .vm-field > .ui-select,
+.ra-version-metrics-root .vm-field > .multi-filter {
+  width: 100%;
+  min-width: 0;
+}
+
+.ra-version-datasets-root #versionDatasetMetricsLink {
+  justify-self: start;
 }
 
 /* System Status & Users overflow protection on 320px/390px phones */
@@ -302,6 +350,10 @@ html[data-color-theme="light"] .ra-modal-backdrop {
 @media (max-width: 768px) {
   .ra-users-root .ra-user-controls {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ra-version-metrics-root .vm-toolbar > .vm-field {
+    min-width: 0;
   }
 }
 

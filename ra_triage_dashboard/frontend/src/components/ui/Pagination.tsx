@@ -12,6 +12,7 @@ export interface PaginationProps {
   lang: UiLanguage;
   loading?: boolean;
   ariaLabel?: string;
+  labelText?: string;
   onPageChange: (nextPage: number) => void;
   onPageSizeChange: (nextSize: number) => void;
   onClearSelection?: () => void;
@@ -24,6 +25,7 @@ export const Pagination: React.FC<PaginationProps> = ({
   lang,
   loading = false,
   ariaLabel,
+  labelText,
   onPageChange,
   onPageSizeChange,
   onClearSelection,
@@ -79,9 +81,11 @@ export const Pagination: React.FC<PaginationProps> = ({
         </button>
 
         <span className="ra-pagination-label" aria-live="polite">
-          {total > 0
-            ? `${safePage} / ${totalPages} · ${total.toLocaleString()}`
-            : bilingual(lang, "0 条结果", "0 items")}
+          {labelText !== undefined
+            ? labelText
+            : total > 0
+              ? `${safePage} / ${totalPages} · ${total.toLocaleString()}`
+              : bilingual(lang, "0 条结果", "0 items")}
         </span>
 
         <button
