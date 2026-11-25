@@ -44,6 +44,14 @@ def validate_config(c):
     return c
 
 
+def resolve_config_path(root, src, filename):
+    """Prefer persistent deployment config under root/private/config over ephemeral release files."""
+    private_path = Path(root) / "private/config" / filename
+    if private_path.is_file():
+        return str(private_path)
+    return str(Path(src) / "ra_sim_repro_dashboard/config" / filename)
+
+
 def load(path):
     return validate_config(json.loads(Path(path).read_text()))
 
@@ -60,7 +68,7 @@ def prepare(c):
         raise RuntimeError("Build frontend with npm ci && npm run build -- --base=/sim/ first")
     if not (root / "venv/bin/python").exists():
         raise RuntimeError("Create root/venv and install backend/requirements.txt first")
-    for name in ("", "logs", "pgsocket", "redis", "backups", "weekly", "private"):
+    for name in ("", "logs", "pgsocket", "redis", "backups", "weekly", "private", "private/config"):
         p = root / name
         p.mkdir(parents=True, exist_ok=True)
         p.chmod(0o700)
@@ -86,11 +94,14 @@ def prepare(c):
     env.setdefault(
         "AUTO_TRIAGE_SHUYI_STORAGE_STATE", str(root / "private/shuyi_storage_state.json")
     )
+    versions_config = resolve_config_path(root, src, "versions.yaml")
+    cycles_config = resolve_config_path(root, src, "release-cycles.default")
     env.update(
         SIM_SOURCE_ROOT=str(src),
         DATABASE_URL=f"postgresql+psycopg2:///ra_sim?host={root}/pgsocket",
         REDIS_URL=f"unix://{root}/redis/redis.sock",
-        VERSIONS_CONFIG=str(src / "ra_sim_repro_dashboard/config/versions.yaml"),
+        VERSIONS_CONFIG=versions_config,
+        RELEASE_CYCLES_CONFIG=cycles_config,
         DISABLE_MOCK_DATA="1",
         MOCK_DATA_DIR=str(root / "disabled_mock"),
         REPORT_DIR=str(src / "reports"),

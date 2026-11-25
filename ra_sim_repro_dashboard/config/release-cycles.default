@@ -39,14 +39,22 @@
     },
     {
       "release": "gen4-release-20260918",
-      "status": "running",
-      "basis": "inferred",
-      "verified": false,
+      "status": "completed",
+      "basis": "observed",
+      "verified": true,
+      "cycle_end": "2026-10-08",
       "case_start": "2026-09-24T00:00:00+08:00",
-      "evidence": "用户确认 0918 为最新 release；尚无结束周期证据",
+      "case_end_exclusive": "2026-10-09T00:00:00+08:00",
+      "evidence": "2026-10-15 Trail完整分周查询：0918最后记录2026-10-08T14:38:36.115+08:00；0924首记录同日15:22:35.049+08:00；0918始于9/24，10/9后无0918记录",
+      "scenario_creation_label": "ra_repro_full_20261008_20260918",
+      "scenario_query_labels": [
+        "ra_repro_full_20261008_20260918"
+      ],
       "binary_id": 1810741,
+      "binary_commit": "8d5f1f62e84856e45a31f7e9db75fc414b6c13fa",
       "target_road_version": "1.gen4-release-20260918.578",
-      "binary_commit": "8d5f1f62e84856e45a31f7e9db75fc414b6c13fa"
+      "binary_evidence": "2026-10-15 Orion BinaryAccessor matched observed .578, unique valid Gen4/all binary",
+      "template_job_id": 45142569
     }
   ],
   "simulation": {
@@ -54,8 +62,13 @@
     "driver_revision": "orion-release-v1",
     "recovery_mode": "baseline",
     "max_concurrency": 1000,
-    "priorities_by_release": {"gen4-release-20260904": "HIGH"},
+    "priorities_by_release": {
+      "gen4-release-20260904": "HIGH"
+    },
     "template_job_id": 45142569
   },
-  "discover_cycles": true
+  "discover_cycles": true,
+  "release_monitor": {
+    "enabled": true
+  }
 }

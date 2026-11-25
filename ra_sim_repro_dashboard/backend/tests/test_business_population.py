@@ -11,7 +11,11 @@ from sqlalchemy.orm import Session
 from app.database import Base
 from app.models import ReleaseIssueSnapshot, ReleaseSimulationBatch, ReleaseWorkflowState
 from app.services import release_workflow as workflow
-from app.services.business_population import scope_for_batch, historical_scope
+from app.services.business_population import (
+    display_retained_scope,
+    historical_scope,
+    scope_for_batch,
+)
 
 
 class BusinessPopulationTest(unittest.TestCase):
@@ -210,6 +214,30 @@ class BusinessPopulationTest(unittest.TestCase):
         self.assertTrue(result["collection_completed"])
         self.assertTrue(result["stale"])
         self.assertEqual(result["reason_code"], "collecting")
+
+    def test_display_retained_scope_keeps_completed_published_metrics_when_poll_is_stale(self):
+        # Completed same-population release whose observer poll went stale (current or historical).
+        self.observe(stale=True, completed=True)
+        stale_same = scope_for_batch(self.db, self.batch)
+        self.assertFalse(stale_same["available"])
+        retained_current = display_retained_scope(stale_same, is_current=True)
+        self.assertTrue(retained_current["display_retained"])
+        self.assertTrue(retained_current["stale"])
+
+        # Closed historical release with population drift whose observer later went stale.
+        self.observe([{**self.rows[0], "issue_id": "late"}, self.rows[1]], stale=True, completed=True)
+        stale_changed = scope_for_batch(self.db, self.batch)
+        retained_hist = display_retained_scope(stale_changed, is_current=False)
+        self.assertTrue(retained_hist["display_retained"])
+        self.assertTrue(retained_hist["historical_frozen"])
+        # Current business version with changed population must NOT be promoted.
+        self.assertNotIn("display_retained", display_retained_scope(stale_changed, is_current=True))
+
+        # Genuinely still-collecting release (not completed) must NEVER be retained.
+        self.observe(stale=True, completed=False)
+        incomplete = scope_for_batch(self.db, self.batch)
+        self.assertNotIn("display_retained", display_retained_scope(incomplete, is_current=False))
+        self.assertNotIn("display_retained", display_retained_scope(incomplete, is_current=True))
 
     def test_duplicate_observation_identity_fails_closed(self):
         self.observe(self.rows + [self.rows[0]])

@@ -50,6 +50,25 @@ class ConfigTests(unittest.TestCase):
             ["api", "release-worker", "label-worker", "evaluation-worker", "web"],
         )
 
+    def test_resolve_config_path_prefers_persistent_private_config(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d) / "root"
+            src = Path(d) / "release"
+            (src / "ra_sim_repro_dashboard/config").mkdir(parents=True)
+            fallback = src / "ra_sim_repro_dashboard/config/release-cycles.default"
+            fallback.write_text("{}")
+            self.assertEqual(
+                m.resolve_config_path(root, src, "release-cycles.default"),
+                str(fallback),
+            )
+            (root / "private/config").mkdir(parents=True)
+            persistent = root / "private/config/release-cycles.default"
+            persistent.write_text('{"release_monitor": {"enabled": true}}')
+            self.assertEqual(
+                m.resolve_config_path(root, src, "release-cycles.default"),
+                str(persistent),
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

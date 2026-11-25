@@ -7,7 +7,11 @@ from sqlalchemy import select
 from app.domain.cycle import resolve_current
 from app.domain.metrics import summarize_population
 from app.models import ReleaseIssueSnapshot, ReleaseSimulationBatch
-from app.services.business_population import historical_scope, scope_for_batch
+from app.services.business_population import (
+    display_retained_scope,
+    historical_scope,
+    scope_for_batch,
+)
 from app.services.ordinary_evaluation import history_kpis as ordinary_kpis
 from app.services.read_views import read_projection, read_view
 from app.services.release_inventory import inventory as collection_inventory
@@ -138,14 +142,18 @@ def context(db, value=None):
     source = value.get("source_metrics") or {}
     approved = published_batch(db, current) if current else None
     scope = scope_for_batch(db, approved) if approved else None
-    if approved and scope["available"]:
+    display_scope = display_retained_scope(scope, is_current=True) if scope else None
+    scope_ready = bool(
+        display_scope and (display_scope["available"] or display_scope.get("display_retained"))
+    )
+    if approved and scope_ready:
         metrics = effective_publication(db, approved)
         source = metrics
-    elif scope:
+    elif display_scope:
         metrics = {
             "available": False,
-            "reason": scope["reason_code"],
-            "generated_at": scope.get("observed_at"),
+            "reason": display_scope["reason_code"],
+            "generated_at": display_scope.get("observed_at"),
         }
     kpi = (
         render_kpi(current, metrics, source)
@@ -156,9 +164,9 @@ def context(db, value=None):
         "business_current_version": current,
         "business_metrics": kpi,
         "business_status": "collecting"
-        if scope and not scope["available"] and scope["collection_status"] == "collecting"
+        if display_scope and not scope_ready and display_scope["collection_status"] == "collecting"
         else "pending_simulation"
-        if scope and not scope["available"]
+        if display_scope and not scope_ready
         else "published_with_exclusions"
         if approved
         else "complete"
@@ -169,7 +177,7 @@ def context(db, value=None):
         "business_reason": metrics.get("reason", "") if not kpi else "",
         "period": value.get("current_period"),
         "metrics": metrics,
-        "business_collection": scope,
+        "business_collection": display_scope,
     }
 
 
@@ -193,14 +201,21 @@ def history_kpis(db):
             approved = published_batch(db, rel)
             if not approved:
                 return None
-            scope = historical_scope(
-                scope_for_batch(db, approved, collections=collections),
+            scope = display_retained_scope(
+                historical_scope(
+                    scope_for_batch(db, approved, collections=collections),
+                    is_current=rel == current_version,
+                ),
                 is_current=rel == current_version,
             )
-            if scope["available"] or scope.get("historical_frozen"):
+            if (
+                scope["available"]
+                or scope.get("historical_frozen")
+                or scope.get("display_retained")
+            ):
                 metrics = effective_publication(db, approved)
                 item = render_kpi(rel, metrics, metrics)
-                if scope.get("historical_frozen"):
+                if scope.get("historical_frozen") or scope.get("display_retained"):
                     item["collection_scope"] = scope
                 return item
             return pending_kpi(rel, scope, approved.payload.get("job_id"))
@@ -256,16 +271,23 @@ def history_kpis(db):
                 metrics = b.payload.get("summary") or {}
                 if not metrics.get("available"):
                     return None
-                scope = historical_scope(
-                    scope_for_batch(db, b, collections=collections),
+                scope = display_retained_scope(
+                    historical_scope(
+                        scope_for_batch(db, b, collections=collections),
+                        is_current=b.release == current_version,
+                    ),
                     is_current=b.release == current_version,
                 )
-                if not scope["available"] and not scope.get("historical_frozen"):
+                if (
+                    not scope["available"]
+                    and not scope.get("historical_frozen")
+                    and not scope.get("display_retained")
+                ):
                     return pending_kpi(b.release, scope, b.payload.get("job_id"))
                 metrics = {**metrics, "job_id": b.payload.get("job_id")}
                 source = summarize_population(snapshot.payload["issues"], [], {})
                 item = render_kpi(b.release, metrics, source)
-                if scope.get("historical_frozen"):
+                if scope.get("historical_frozen") or scope.get("display_retained"):
                     item["collection_scope"] = scope
                 return item
 

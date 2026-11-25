@@ -198,3 +198,52 @@ test('a historical marker never permits current-business-version metrics', async
   assert.ok(!text.includes('历史冻结样本'));
   assert.ok(!text.includes('100%'));
 });
+
+test('stale-retained published release keeps Overview metrics visible with overdue badge', async () => {
+  const retained = {
+    ...scope('collecting'),
+    stale: true,
+    collection_completed: true,
+    display_retained: true,
+    frozen_issue_count: 1625,
+    collected_issue_count: 1703,
+  };
+  const current = {
+    ...metric('gen4-release-20261106'),
+    precision: 0.814,
+    collection_scope: retained,
+  };
+  const zhText = visibleText(
+    await render(
+      {
+        ...summary(retained),
+        business_current_version: current.version_key,
+        business_metrics: current,
+        business_collection: retained,
+      },
+      [current],
+      'zh',
+    ),
+  );
+  assert.ok(zhText.includes('81.4%'), zhText);
+  assert.ok(zhText.includes('采集待更新'), zhText);
+  assert.ok(zhText.includes('后台采集更新延迟'), zhText);
+  assert.ok(!zhText.includes('完整版本指标暂不展示'), zhText);
+
+  const enText = visibleText(
+    await render(
+      {
+        ...summary(retained),
+        business_current_version: current.version_key,
+        business_metrics: current,
+        business_collection: retained,
+      },
+      [current],
+      'en',
+    ),
+  );
+  assert.ok(enText.includes('81.4%'), enText);
+  assert.ok(enText.includes('Collection update overdue'), enText);
+  assert.ok(enText.includes('Background collection update is delayed'), enText);
+  assert.ok(!enText.includes('Full-version metrics are pending'), enText);
+});

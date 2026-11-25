@@ -1,131 +1,145 @@
-current_version: "gen4-release-20260814"
+current_version: gen4-release-20260828
 online_metrics:
-  result_metrics: "ra_online_metrics_20260831.json"
+  result_metrics: ra_online_metrics_completed_20260928.json
 binary_backtest:
   include_current: true
   window_size: 4
-  supported_window_sizes: [2, 3, 4]
-  result_metrics: "ra_binary_backtest_20260831_metrics.json"
+  supported_window_sizes:
+  - 2
+  - 3
+  - 4
+  result_metrics: ra_binary_backtest_20260831_metrics.json
 compare_versions:
-  - "gen4-release-20260605"
-  - "gen4-release-20260612"
-  - "gen4-release-20260618"
-  - "gen4-release-20260626"
-  - "gen4-release-20260710"
-  - "gen4-release-20260717"
-  - "gen4-release-20260724"
-  - "gen4-release-20260731"
-  - "gen4-release-20260807"
-  - "gen4-release-20260814"
-
+- gen4-release-20260605
+- gen4-release-20260612
+- gen4-release-20260618
+- gen4-release-20260626
+- gen4-release-20260710
+- gen4-release-20260717
+- gen4-release-20260724
+- gen4-release-20260731
+- gen4-release-20260807
+- gen4-release-20260814
+- gen4-release-20260821
+- gen4-release-20260828
 versions:
-  "gen4-release-20260605":
-    label: "release20260605"
-    release_date: "2026-06-05"
-    platform_gen: "GEN4_PT"
-    binary: "gen4-release-20260605"
+  gen4-release-20260605:
+    label: release20260605
+    release_date: '2026-06-05'
+    platform_gen: GEN4_PT
+    binary: gen4-release-20260605
     binary_id: 1679675
-    sim_plan: "full-release-openloop"
+    sim_plan: full-release-openloop
     sim_job_id: 45191823
-    source_manifest: "ra_repro_full_20260829_manifest.csv"
-    result_metrics: "ra_repro_full_20260829_metrics.json"
-  "gen4-release-20260612":
-    label: "release20260612"
-    release_date: "2026-06-12"
-    platform_gen: "GEN4_PT"
-    binary: "gen4-release-20260612"
+    source_manifest: ra_repro_full_20260829_manifest.csv
+    result_metrics: ra_repro_full_20260829_metrics.json
+  gen4-release-20260612:
+    label: release20260612
+    release_date: '2026-06-12'
+    platform_gen: GEN4_PT
+    binary: gen4-release-20260612
     binary_id: 1693635
-    sim_plan: "full-release-openloop"
+    sim_plan: full-release-openloop
     sim_job_id: 45192003
-    source_manifest: "ra_repro_full_20260829_manifest.csv"
-    result_metrics: "ra_repro_full_20260829_metrics.json"
-  "gen4-release-20260618":
-    label: "release20260618"
-    release_date: "2026-06-18"
-    platform_gen: "GEN4_PT"
-    binary: "gen4-release-20260618"
+    source_manifest: ra_repro_full_20260829_manifest.csv
+    result_metrics: ra_repro_full_20260829_metrics.json
+  gen4-release-20260618:
+    label: release20260618
+    release_date: '2026-06-18'
+    platform_gen: GEN4_PT
+    binary: gen4-release-20260618
     binary_id: 1698875
-    sim_plan: "full-release-openloop"
+    sim_plan: full-release-openloop
     sim_job_id: 45192287
-    source_manifest: "ra_repro_full_20260829_manifest.csv"
-    result_metrics: "ra_repro_full_20260829_metrics.json"
-  "gen4-release-20260626":
-    label: "release20260626"
-    release_date: "2026-06-26"
-    platform_gen: "GEN4_PT"
-    binary: "gen4-release-20260626"
+    source_manifest: ra_repro_full_20260829_manifest.csv
+    result_metrics: ra_repro_full_20260829_metrics.json
+  gen4-release-20260626:
+    label: release20260626
+    release_date: '2026-06-26'
+    platform_gen: GEN4_PT
+    binary: gen4-release-20260626
     binary_id: 1714319
-    sim_plan: "full-release-openloop"
+    sim_plan: full-release-openloop
     sim_job_id: 45192695
-    source_manifest: "ra_repro_full_20260829_manifest.csv"
-    result_metrics: "ra_repro_full_20260829_metrics.json"
-  "gen4-release-20260710":
-    label: "release20260710"
-    release_date: "2026-07-10"
-    platform_gen: "GEN4_PT"
-    binary: "gen4-release-20260710"
+    source_manifest: ra_repro_full_20260829_manifest.csv
+    result_metrics: ra_repro_full_20260829_metrics.json
+  gen4-release-20260710:
+    label: release20260710
+    release_date: '2026-07-10'
+    platform_gen: GEN4_PT
+    binary: gen4-release-20260710
     binary_id: 1724971
-    sim_plan: "full-release-openloop"
+    sim_plan: full-release-openloop
     sim_job_id: 45192959
-    source_manifest: "ra_repro_full_20260829_manifest.csv"
-    result_metrics: "ra_repro_full_20260829_metrics.json"
-  "gen4-release-20260717":
-    label: "release20260717"
-    release_date: "2026-07-17"
-    platform_gen: "GEN4_PT"
-    binary: "gen4-release-20260717"
+    source_manifest: ra_repro_full_20260829_manifest.csv
+    result_metrics: ra_repro_full_20260829_metrics.json
+  gen4-release-20260717:
+    label: release20260717
+    release_date: '2026-07-17'
+    platform_gen: GEN4_PT
+    binary: gen4-release-20260717
     binary_id: 1734857
-    sim_plan: "full-release-openloop"
+    sim_plan: full-release-openloop
     sim_job_id: 45193117
-    source_manifest: "ra_repro_full_20260829_manifest.csv"
-    result_metrics: "ra_repro_full_20260829_metrics.json"
-  "gen4-release-20260724":
-    label: "release20260724"
-    release_date: "2026-07-24"
-    platform_gen: "GEN4_PT"
-    binary: "gen4-release-20260724"
+    source_manifest: ra_repro_full_20260829_manifest.csv
+    result_metrics: ra_repro_full_20260829_metrics.json
+  gen4-release-20260724:
+    label: release20260724
+    release_date: '2026-07-24'
+    platform_gen: GEN4_PT
+    binary: gen4-release-20260724
     binary_id: 1743401
-    sim_plan: "full-release-openloop"
+    sim_plan: full-release-openloop
     sim_job_id: 45193257
-    source_manifest: "ra_repro_full_20260829_manifest.csv"
-    result_metrics: "ra_repro_full_20260829_metrics.json"
-  "gen4-release-20260731":
-    label: "release20260731"
-    release_date: "2026-07-31"
-    platform_gen: "GEN4_PT"
-    binary: "gen4-release-20260731"
+    source_manifest: ra_repro_full_20260829_manifest.csv
+    result_metrics: ra_repro_full_20260829_metrics.json
+  gen4-release-20260731:
+    label: release20260731
+    release_date: '2026-07-31'
+    platform_gen: GEN4_PT
+    binary: gen4-release-20260731
     binary_id: 1751621
-    sim_plan: "full-release-openloop"
+    sim_plan: full-release-openloop
     sim_job_id: 45193409
-    source_manifest: "ra_repro_full_20260829_manifest.csv"
-    result_metrics: "ra_repro_full_20260829_metrics.json"
-  "gen4-release-20260807":
-    label: "release20260807"
-    release_date: "2026-08-07"
-    platform_gen: "GEN4_PT"
-    binary: "gen4-release-20260807"
+    source_manifest: ra_repro_full_20260829_manifest.csv
+    result_metrics: ra_repro_full_20260829_metrics.json
+  gen4-release-20260807:
+    label: release20260807
+    release_date: '2026-08-07'
+    platform_gen: GEN4_PT
+    binary: gen4-release-20260807
     binary_id: 1762169
-    sim_plan: "full-release-openloop"
+    sim_plan: full-release-openloop
     sim_job_id: 45193549
-    source_manifest: "ra_repro_full_20260829_manifest.csv"
-    result_metrics: "ra_repro_full_20260829_metrics.json"
-  "gen4-release-20260814":
-    label: "release20260814"
-    release_date: "2026-08-14"
-    platform_gen: "GEN4_PT"
-    binary: "gen4-release-20260814"
+    source_manifest: ra_repro_full_20260829_manifest.csv
+    result_metrics: ra_repro_full_20260829_metrics.json
+  gen4-release-20260814:
+    label: release20260814
+    release_date: '2026-08-14'
+    platform_gen: GEN4_PT
+    binary: gen4-release-20260814
     binary_id: 1769573
-    sim_plan: "full-release-openloop"
+    sim_plan: full-release-openloop
     sim_job_id: 45193633
-    source_manifest: "ra_repro_full_20260829_manifest.csv"
-    result_metrics: "ra_repro_full_20260829_metrics.json"
-  "gen4-release-20260821":
-    label: "release20260821"
-    release_date: "2026-08-21"
-    platform_gen: "GEN4_PT"
-    binary: "gen4-release-20260821"
+    source_manifest: ra_repro_full_20260829_manifest.csv
+    result_metrics: ra_repro_full_20260829_metrics.json
+  gen4-release-20260821:
+    label: release20260821
+    release_date: '2026-08-21'
+    platform_gen: GEN4_PT
+    binary: gen4-release-20260821
     binary_id: 1775147
-    sim_plan: "full-release-openloop"
-    sim_job_id: 45193683
-    source_manifest: "ra_repro_full_20260829_manifest.csv"
-    result_metrics: "ra_repro_full_20260829_metrics.json"
+    sim_plan: full-release-openloop
+    sim_job_id: 46269449
+    source_manifest: ra_repro_completed_20260928_20260821_manifest.csv
+    result_metrics: ra_repro_completed_20260928_metrics.json
+  gen4-release-20260828:
+    label: release20260828
+    release_date: '2026-08-28'
+    platform_gen: GEN4_PT
+    binary: gen4-release-20260828
+    binary_id: 1784003
+    sim_plan: full-release-openloop
+    sim_job_id: 46268691
+    source_manifest: ra_repro_completed_20260928_20260828_manifest.csv
+    result_metrics: ra_repro_completed_20260928_metrics.json

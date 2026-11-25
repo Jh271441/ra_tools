@@ -268,6 +268,11 @@ export function PrComparison({
                       row.version_key !== businessVersion
                         ? source.collection_scope
                         : null;
+                    const staleRetained = Boolean(
+                      source?.collection_scope?.display_retained &&
+                        source?.collection_scope?.stale === true &&
+                        source?.collection_scope?.collection_completed === true,
+                    );
                     const count = (value?: number | null) =>
                       value == null ? '—' : new Intl.NumberFormat().format(value);
                     return (
@@ -281,6 +286,11 @@ export function PrComparison({
                               frozen: count(frozen.frozen_issue_count),
                               collected: count(frozen.collected_issue_count),
                             })}
+                          </p>
+                        )}
+                        {staleRetained && (
+                          <p className="mb-2 leading-5 text-amber-600 dark:text-amber-400">
+                            <strong>{t('evaluation.collection_pending_update')}</strong>
                           </p>
                         )}
                         {series.map((item) => (

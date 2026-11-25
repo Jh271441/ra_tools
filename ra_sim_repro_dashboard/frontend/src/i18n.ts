@@ -29,6 +29,7 @@ void i18n.use(initReactI18next).init({
           historicalDiagnosis: '历史已完成版本的诊断分布',
           historicalFrozen: '历史冻结样本',
           frozenPopulationCounts: '冻结人口 {{frozen}} 条 · 当前采集 {{collected}} 条',
+          staleRetainedNotice: '后台采集更新延迟，当前保留展示最近一次已核验的发布指标。',
         },
         reproduction: {
           policy: '准召统计整窗；人工样本按人工前行为评估复现，边界 100 ms。',
@@ -784,6 +785,8 @@ void i18n.use(initReactI18next).init({
           historicalFrozen: 'Historical frozen population',
           frozenPopulationCounts:
             'Frozen population {{frozen}} · Currently collected {{collected}}',
+          staleRetainedNotice:
+            'Background collection update is delayed; retaining the latest verified published metrics.',
         },
         reproduction: {
           policy:

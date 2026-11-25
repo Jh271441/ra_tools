@@ -152,6 +152,28 @@ def historical_scope(scope, *, is_current):
     return scope
 
 
+def display_retained_scope(scope, *, is_current):
+    """Keep audited Overview metrics visible when only background polling is delayed.
+
+    Strictly for read-only Overview presentation: operational submission and
+    automation paths continue using `scope_for_batch` directly.
+    """
+    if (
+        scope.get("available")
+        or scope.get("historical_frozen")
+        or not scope.get("stale")
+        or scope.get("collection_completed") is not True
+        or scope.get("frozen_issue_count") is None
+    ):
+        return scope
+    reason = scope.get("reason_code")
+    if reason == "collecting":
+        return {**scope, "display_retained": True}
+    if not is_current and reason == "population_changed":
+        return {**scope, "historical_frozen": True, "display_retained": True}
+    return scope
+
+
 def _scope_for_batch(db, batch, *, collections=None):
     payload = batch.payload if isinstance(batch.payload, dict) else {}
     release = batch.release

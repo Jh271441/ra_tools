@@ -288,7 +288,12 @@ export function Overview({
   }
 
   const collection = !evaluationBasis ? summary.business_collection : null;
-  const collectionPending = collection?.available === false;
+  const collectionRetained = Boolean(
+    collection?.display_retained &&
+      collection?.stale === true &&
+      collection?.collection_completed === true,
+  );
+  const collectionPending = collection?.available === false && !collectionRetained;
   const openCollection = (version?: string | null) =>
     version && onOpenCollection ? onOpenCollection(version) : onOpenCurrent();
   const current =
@@ -328,8 +333,16 @@ export function Overview({
       item.collection_scope?.historical_frozen &&
         item.version_key !== summary.business_current_version,
     );
+  const retainedDisplay = (item: KpiSummary) =>
+    Boolean(
+      item.collection_scope?.display_retained &&
+        item.collection_scope?.stale === true &&
+        item.collection_scope?.collection_completed === true,
+    );
   const populationPending = (item: KpiSummary) =>
-    item.collection_scope?.available === false && !historicalFrozen(item);
+    item.collection_scope?.available === false &&
+    !historicalFrozen(item) &&
+    !retainedDisplay(item);
   const coveredScope = current.evaluation_scope;
   const kpis = [
     {
@@ -372,6 +385,7 @@ export function Overview({
       version: releaseName(item.version_key),
       collection: item.collection_scope,
       historicalFrozen: historicalFrozen(item),
+      staleRetained: retainedDisplay(item),
       precision:
         pending || item.precision == null ? undefined : Math.round(item.precision * 1000) / 10,
       recall: pending || item.recall == null ? undefined : Math.round(item.recall * 1000) / 10,
@@ -518,7 +532,12 @@ export function Overview({
             })}
           </p>
         )}
-        {!row.historicalFrozen && row.collection?.available === false && (
+        {row.staleRetained && (
+          <p className="mb-2 leading-5 text-amber-600 dark:text-amber-400">
+            <strong>{t('evaluation.collection_pending_update')}</strong>
+          </p>
+        )}
+        {!row.historicalFrozen && !row.staleRetained && row.collection?.available === false && (
           <p className="mb-2 leading-5 text-muted-foreground">
             {t(`businessCollection.${collectionState(row.collection)}`)}
             <br />
@@ -584,6 +603,17 @@ export function Overview({
           version={summary.business_current_version}
           onOpen={() => openCollection(summary.business_current_version)}
         />
+      )}
+      {collectionRetained && (
+        <div
+          role="status"
+          className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg border border-amber-500/35 bg-amber-500/[0.08] px-4 py-2.5 text-xs text-foreground"
+        >
+          <Badge variant="warning">{t('evaluation.collection_pending_update')}</Badge>
+          <span className="text-muted-foreground">
+            {t('businessCollection.staleRetainedNotice')}
+          </span>
+        </div>
       )}
       {evaluationBasis && (
         <p
@@ -1039,6 +1069,13 @@ export function Overview({
                                         : formatCount(collection.collected_issue_count),
                                   })}
                                 </p>
+                              </div>
+                            )}
+                            {retainedDisplay(item) && (
+                              <div className="mt-1.5">
+                                <Badge variant="warning" className="max-w-full whitespace-normal">
+                                  {t('evaluation.collection_pending_update')}
+                                </Badge>
                               </div>
                             )}
                           </td>
