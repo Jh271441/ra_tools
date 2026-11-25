@@ -14,6 +14,27 @@ def metric_source():
 
 class VersionMetricFrontendTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which("node"), "Node is required")
+    def test_trend_connects_valid_metrics_across_gt_policies_and_breaks_at_missing_scores(self):
+        program = metric_source() + r"""
+const assert = require('node:assert/strict');
+const chart = {clientWidth: 626, querySelectorAll: () => []};
+const $ = selector => selector === '#vmChart' ? chart : null;
+const uiText = (zh, en) => en, i18nLocale = () => 'en-US', escapeHtml = String;
+const rows = ['20260102','20260109','20260116','20260123'].map((family, i) => ({
+  family, reference_lanes: i ? ['arbitrated','te_prime','te','rd'] : ['te'],
+  metrics: {chain:{accuracy:i / 4}, model:{accuracy:i === 2 ? null : i / 5}}
+}));
+versionMetrics.schemes = ['chain','model'];
+versionMetrics.data = {items:rows};
+vmChart();
+const paths = Array.from(chart.innerHTML.matchAll(/<path class="vm-series-line" d="([^"]+)"/g),
+  match => match[1].match(/[ML]/g).join(''));
+assert.deepEqual(paths, ['MLLL','MLM']);
+"""
+        result = subprocess.run(["node", "-e", program], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    @unittest.skipUnless(shutil.which("node"), "Node is required")
     def test_report_keeps_every_version_and_each_scheme_denominator(self):
         program = metric_source() + r"""
 const assert = require('node:assert/strict');
