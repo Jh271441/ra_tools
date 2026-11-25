@@ -1978,6 +1978,14 @@ html[data-color-theme="light"] .comparison-matrix .matrix-error {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
   }
+  .ra-review-gallery-root .ra-summary-toolbar-actions,
+  .ra-labeling-gallery-root .ra-summary-toolbar-actions {
+    display: none;
+  }
+  .ra-review-gallery-root .ra-summary-toolbar-actions.is-mobile-open,
+  .ra-labeling-gallery-root .ra-summary-toolbar-actions.is-mobile-open {
+    display: flex;
+  }
   .ra-tag-group-pair {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -1994,5 +2002,8 @@ html[data-color-theme="light"] .comparison-matrix .matrix-error {
   .ra-review-gallery-root .button,
   .ra-media-stage-shell .button {
     min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
 }

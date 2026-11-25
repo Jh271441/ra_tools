@@ -260,7 +260,7 @@ describe("Wave 3.5 shared components and 5 core workbench islands", () => {
   });
 
   it("renders ReviewPage gallery with thumbnails and zero native selects", async () => {
-    mockFetch({
+    const fetchSpy = mockFetch({
       "/api/dashboard-config": { review_tag_catalog: [], missing_evidence_catalog: [] },
       "/api/model-runs": { items: [{ id: "run-1", name: "Run V1" }] },
       "/api/cases/work-splits": { items: [] },
@@ -293,6 +293,8 @@ describe("Wave 3.5 shared components and 5 core workbench islands", () => {
       />,
     );
     await waitFor(() => expect(screen.getByText("cn37631883")).toBeTruthy());
+    const casesCall = fetchSpy.mock.calls.find(([u]) => String(u).includes("/api/cases?"));
+    expect(String(casesCall?.[0] || "")).toContain("include_thumbnail=true");
     const img = container.querySelector("img") as HTMLImageElement | null;
     expect(img?.getAttribute("src")).toBe("/manual/api/case-thumbnails/cn37631883");
     expect(container.querySelectorAll("select").length).toBe(0);

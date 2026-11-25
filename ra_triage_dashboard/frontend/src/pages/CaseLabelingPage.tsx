@@ -1542,7 +1542,7 @@ export const CaseLabelingPage: React.FC<CaseLabelingPageProps> = ({
             </div>
           </div>
 
-          <div className="ra-summary-toolbar-actions">
+          <div className={`ra-summary-toolbar-actions${filtersOpenMobile ? " is-mobile-open" : ""}`}>
             <button type="button" className="button button-quiet" onClick={resetFilters}>
               {bilingual(lang, "重置", "Reset")}
             </button>

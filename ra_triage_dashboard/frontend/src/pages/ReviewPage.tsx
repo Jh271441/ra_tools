@@ -397,6 +397,7 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
       comment_state: commentStates.length === 1 ? commentStates[0] : "all",
       exclusion: exclusions.length === 1 ? exclusions[0] : "all",
       target_group: targetGroup,
+      include_thumbnail: "true",
       page: String(page),
       page_size: String(pageSize),
     });
@@ -1742,7 +1743,7 @@ export const ReviewPage: React.FC<ReviewPageProps> = ({
           </div>
         </div>
 
-        <div className="ra-summary-toolbar-actions">
+        <div className={`ra-summary-toolbar-actions${filtersOpenMobile ? " is-mobile-open" : ""}`}>
           <button type="button" className="button button-quiet" onClick={resetFilters}>
             {bilingual(lang, "重置", "Reset")}
           </button>
