@@ -65,7 +65,9 @@ body[data-active-page="version-datasets"] .top-actions {margin-left:auto}
 .version-te-info.is-open .version-te-info-tooltip {opacity:1;visibility:visible;transform:none}
 .version-te-info.is-dismissed .version-te-info-tooltip {opacity:0;visibility:hidden}
 .version-composition {display:grid;gap:8px;min-width:0;padding:2px 0}
-.version-composition header {display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px 16px}
+.version-composition header {display:flex;align-items:center;justify-content:flex-start;flex-wrap:wrap;gap:6px 16px}
+.version-composition .version-metrics-link {display:inline-flex;align-items:center;min-height:32px;font-size:12px;}
+.version-composition .version-counts {margin-inline-start:auto;}
 .version-composition h2 {font-size:13px;margin:0;color:var(--text)}
 .version-counts {margin:0;font-size:12px;line-height:1.5}
 .version-composition-bar {display:flex;height:8px;overflow:hidden;border-radius:4px;background:var(--line)}

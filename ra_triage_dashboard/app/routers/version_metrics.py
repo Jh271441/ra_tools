@@ -49,16 +49,17 @@ def overview(families, reference, exclusion, threshold, page, page_size):
     service = store()
     results = []
     for family in selected:
+        current = next(d for d in available if d["release_family"] == family)
         try:
             saved = service.latest_trail(family)
             if saved:
                 value = evaluate(saved, reference=reference, exclusion=exclusion, threshold=threshold)
-                current = next(d for d in available if d["release_family"] == family)
                 value.update(status="ready", membership_changed=saved.get("registry_revision") != current["revision"])
             else:
                 value = dict(family=family, status="unavailable", reason="trail_snapshot_required")
         except (ValueError, OSError, KeyError, TypeError):
             value = dict(family=family, status="error")
+        value["current_sample_total"] = current["published_samples"]
         results.append(value)
     pages = max(1, (len(results)+page_size-1)//page_size)
     page = min(page, pages)

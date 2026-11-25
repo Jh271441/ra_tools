@@ -57,7 +57,7 @@
         const appPreload = document.createElement("link");
         appPreload.rel = "preload";
         appPreload.as = "script";
-        appPreload.href = `${activeBase}/static/app-bundle.js?v=manual-triage-887`;
+        appPreload.href = `${activeBase}/static/app-bundle.js?v=manual-triage-888`;
         document.head.appendChild(appPreload);
         // These same-origin reads are required on every route. Begin them
         // while the bundle downloads; consume once through the normal API
@@ -127,7 +127,7 @@
         stylesheetRequests.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-887`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-888`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -1939,9 +1939,8 @@
             <div id="vmTooltip" class="analysis-pie-tooltip" role="tooltip" hidden></div>
           </section>
           <section class="app-page tool-page version-datasets-page hidden" id="versionDatasetsPage" data-page="version-datasets">
-            <a id="versionDatasetMetricsLink" class="button button-quiet" hidden><span class="ui-lang-zh">查看版本指标</span><span class="ui-lang-en">View version metrics</span></a>
             <div class="version-metrics" id="versionDatasetSummary" aria-live="polite"></div>
-            <section class="version-composition" data-label-zh="版本构成" data-label-en="Version composition" aria-label="版本构成"><header><h2><span class="ui-lang-zh">版本构成</span><span class="ui-lang-en">Version composition</span></h2><span class="muted version-counts" id="versionDatasetCounts"></span></header><div class="version-composition-bar" id="versionCompositionBar" role="img"></div><div class="version-composition-legend" id="versionCompositionLegend"></div></section>
+            <section class="version-composition" data-label-zh="版本构成" data-label-en="Version composition" aria-label="版本构成"><header><h2><span class="ui-lang-zh">版本构成</span><span class="ui-lang-en">Version composition</span></h2><a id="versionDatasetMetricsLink" class="text-link version-metrics-link" hidden><span class="ui-lang-zh">查看版本指标</span><span class="ui-lang-en">View version metrics</span></a><span class="muted version-counts" id="versionDatasetCounts"></span></header><div class="version-composition-bar" id="versionCompositionBar" role="img"></div><div class="version-composition-legend" id="versionCompositionLegend"></div></section>
             <section class="review-commandbar version-filter-panel" data-label-zh="版本数据筛选" data-label-en="Version dataset filters" aria-label="版本数据筛选">
               <div class="version-toolbar">
                 <label class="version-filter-field"><span><span class="ui-lang-zh">数据集</span><span class="ui-lang-en">Dataset</span></span><select id="versionDatasetPicker" data-label-zh="数据集" data-label-en="Dataset" aria-label="数据集"></select></label>
@@ -2694,7 +2693,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app-bundle.js?v=manual-triage-887`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app-bundle.js?v=manual-triage-888`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

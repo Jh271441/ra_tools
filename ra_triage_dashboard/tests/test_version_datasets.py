@@ -42,6 +42,15 @@ class VersionDatasetsTests(unittest.TestCase):
         )
         self.assertEqual(len(self.db.version_dataset_batches(first["dataset_id"])), 2)
 
+    def test_metric_sample_count_only_includes_published_random_samples(self):
+        self.ingest([
+            dict(self.packet("cn1"), state="published", is_sample=True, is_target=True),
+            dict(self.packet("cn2"), state="published", is_low=True, is_target=True),
+            dict(self.packet("cn3"), state="waiting_metadata", is_sample=True),
+        ])
+        counts = self.db.list_version_datasets()[0]
+        self.assertEqual((counts["targets"], counts["samples"], counts["published_samples"]), (2, 2, 1))
+
     def test_reused_key_different_source_and_cross_version_are_rejected(self):
         self.ingest([self.packet()])
         with self.assertRaises(ValueError):

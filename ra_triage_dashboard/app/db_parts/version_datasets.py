@@ -294,6 +294,7 @@ class DatabaseVersionDatasetsMixin(VersionCampaignsMixin, VersionRunConsolidatio
                 for row in conn.execute(
                     "SELECT dataset_id, COUNT(*) AS total, SUM(is_target) AS targets, "
                     "SUM(is_sample) AS samples, "
+                    "SUM(CASE WHEN state='published' THEN is_sample ELSE 0 END) AS published_samples, "
                     "SUM(CASE WHEN is_target=1 THEN is_sample ELSE 0 END) AS sampled_targets, "
                     "SUM(CASE WHEN is_target=1 THEN is_low ELSE 0 END) AS low, "
                     "SUM(CASE WHEN is_target=1 AND is_sample=1 AND is_low=1 THEN 1 ELSE 0 END) AS both_sample_low "
@@ -324,7 +325,7 @@ class DatabaseVersionDatasetsMixin(VersionCampaignsMixin, VersionRunConsolidatio
                 item.update(
                     {
                         k: int(counts.get(k) or 0)
-                        for k in ("total", "targets", "samples", "sampled_targets", "low")
+                        for k in ("total", "targets", "samples", "published_samples", "sampled_targets", "low")
                     }
                 )
                 item["low_only"] = item["low"] - int(counts.get("both_sample_low") or 0)

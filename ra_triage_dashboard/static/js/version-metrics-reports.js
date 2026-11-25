@@ -32,6 +32,10 @@ function vmScoreCell(row,key){
   const coverage=uiText(`模型输出覆盖 ${m.total}/${m.reference_total}`,`Output coverage ${m.total}/${m.reference_total}`);
   return `<strong title="${escapeHtml(coverage)}">${vmPct(value)}</strong><small>${escapeHtml(counts)}</small>`;
 }
+function vmSampleChange(row){
+  if(!Number.isInteger(row.current_sample_total) || row.current_sample_total===row.sample_total)return '';
+  return uiText(`当前抽样 ${row.current_sample_total}`,`Current sample ${row.current_sample_total}`);
+}
 function vmCoverageCell(row,lane){
   const coverage=row.coverage?.[lane];if(!coverage)return '<span>—</span>';
   const known=uiText(`已观测 ${coverage.observed}/${coverage.total}；已标包含 OOS 和未接起`,`Observed ${coverage.observed}/${coverage.total}; filled includes OOS and unanswered`);
@@ -43,7 +47,7 @@ function vmFreshnessSummary(rows){
   const times=rows.filter(row=>row.status==='ready').map(row=>new Date(row.observed_at)).filter(date=>Number.isFinite(date.getTime())).sort((a,b)=>a-b);
   if(!times.length)return {label:uiText('Trail · 待采集','Trail · Not collected'),title:uiText('点击更新指标，读取新的 Trail 快照','Update metrics to collect a new Trail snapshot')};
   const oldest=vmTime(times[0]),newest=vmTime(times[times.length-1]);
-  return {label:'Trail · '+oldest,title:uiText(`所选版本最早／最新采集完成时间：${oldest} / ${newest} CST。快照不是持续实时数据；点击更新指标重新采集。`,`Earliest / latest completed collection: ${oldest} / ${newest} CST. Snapshots are not continuously live; update metrics to collect again.`)};
+  return {label:uiText('最早快照','Oldest snapshot')+' · '+oldest,title:uiText(`所选版本最早／最新采集完成时间：${oldest} / ${newest} CST。快照不是持续实时数据；点击更新指标重新采集。`,`Earliest / latest completed collection: ${oldest} / ${newest} CST. Snapshots are not continuously live; update metrics to collect again.`)};
 }
 function vmRenderReports(){
   const s=versionMetrics,root=$('#versionMetricsPage');vmReconcileReports();
@@ -57,9 +61,10 @@ function vmRenderReports(){
   $('#vmReportHead').innerHTML=`<tr><th scope="col">${uiText('版本','Release')}</th><th scope="col">${uiText('有效／抽样','Valid / sample')}</th><th scope="col">${uiText('TE 已标','TE filled')}</th><th scope="col">${uiText('RD 已标','RD filled')}</th>`+VM_SCHEMES.map(key=>`<th scope="col" title="${escapeHtml(vmScheme(key))}">${escapeHtml(vmSchemeShort(key))}</th>`).join('')+'</tr>';
   const empty=s.error?uiText('指标读取失败，请重试','Metrics unavailable. Please retry.'):s.loading?uiText('正在读取指标…','Loading metrics…'):uiText('暂无版本数据','No release data');
   $('#vmReportRows').innerHTML=busy||!page.items.length?vmReportEmpty(empty,9):page.items.map(row=>{
+    const change=vmSampleChange(row);
     const date=`<th scope="row" title="${escapeHtml('release-'+row.family+' · '+vmTime(row.observed_at)+' CST')}"><strong>${vmFamilyLabel(row.family)}</strong>${vmReportLink(row.family)}${row.membership_changed?`<small>${uiText('版本已变化','Membership changed')}</small>`:''}</th>`;
-    if(row.status!=='ready')return `<tr>${date}<td colspan="8" class="vm-table-empty">${row.status==='error'?uiText('Trail 快照不可用，请更新指标','Trail snapshot unavailable. Update metrics.'):uiText('暂无 Trail 快照，请更新指标','No Trail snapshot. Update metrics.')}</td></tr>`;
-    return `<tr>${date}<td><strong>${row.valid_total}/${row.sample_total}</strong></td><td>${vmCoverageCell(row,'te')}</td><td>${vmCoverageCell(row,'rd')}</td>`+VM_SCHEMES.map(key=>`<td>${vmScoreCell(row,key)}</td>`).join('')+'</tr>';
+    if(row.status!=='ready')return `<tr>${date}<td><strong>—/${row.current_sample_total ?? '—'}</strong></td><td colspan="7" class="vm-table-empty">${row.status==='error'?uiText('Trail 快照不可用，请更新指标','Trail snapshot unavailable. Update metrics.'):uiText('暂无 Trail 快照，请更新指标','No Trail snapshot. Update metrics.')}</td></tr>`;
+    return `<tr>${date}<td><strong>${row.valid_total}/${row.sample_total}</strong>${change?`<small>${escapeHtml(change)}</small>`:''}</td><td>${vmCoverageCell(row,'te')}</td><td>${vmCoverageCell(row,'rd')}</td>`+VM_SCHEMES.map(key=>`<td>${vmScoreCell(row,key)}</td>`).join('')+'</tr>';
   }).join('');
   $('#vmPageLabel').textContent=busy?'— / —':uiText(`${page.page} / ${page.pages} · 共 ${page.total} 个版本`,`${page.page} / ${page.pages} · ${page.total} ${page.total===1?'release':'releases'}`);
   $('#vmPagePrevious').disabled=disabled||page.page===1;$('#vmPageNext').disabled=disabled||page.page===page.pages;
