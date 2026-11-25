@@ -89,7 +89,7 @@ class Phase3ViteAssetsTest(unittest.TestCase):
 
         # Classic app-bundle.js and app-bundle.css remain intact for Strangler-Fig parity.
         for classic_path in ("/manual/static/app-bundle.js", "/manual/static/app-bundle.css"):
-            status, headers = asyncio.run(fetch(classic_path, b"v=manual-triage-886"))
+            status, headers = asyncio.run(fetch(classic_path, b"v=manual-triage-887"))
             self.assertEqual(status, 200, f"Expected HTTP 200 for {classic_path}")
             self.assertIn(b"immutable", headers.get(b"cache-control", b""))
 

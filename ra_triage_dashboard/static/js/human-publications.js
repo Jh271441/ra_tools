@@ -31,11 +31,23 @@ function hpMetricsMarkup(data, disabled) {
   ]});
 }
 function humanRoleSummary(human) {
-  if (!human)return '';
-  return `<div class="human-role-summary" role="status">${['rd','te','arbitrated'].map(lane=>{
-    const result=human.lanes[lane],sync=human.sync[lane];
-    return `<span><strong>${escapeHtml(humanLaneName(lane))}</strong> ${escapeHtml(humanStatus(result.state))}${result.label?' · '+escapeHtml(rdLabel(result.label)):''}${sync?' · '+escapeHtml(humanStatus(human.scope?.publication_armed===0?'awaiting_activation':sync.sync_state)):''}${result.objections?.length?' · '+escapeHtml(uiText(`${result.objections.length} 条任务外异议`,`${result.objections.length} advisory objections`)):''}</span>`;
-  }).join('')}</div>`;
+  if (!human) return '';
+  const names = {rd: 'RD', te: 'TE′', arbitrated: uiText('裁决', 'Decision')};
+  const lanes = ['rd', 'te', 'arbitrated'].map(lane => {
+    const result = human.lanes[lane];
+    const parts = [];
+    if (result.state !== 'resolved' || !result.label) parts.push(humanStatus(result.state));
+    if (result.label) parts.push(rdLabel(result.label));
+    const sync = human.sync[lane];
+    if (sync) {
+      const status = human.scope?.publication_armed === 0 ? 'awaiting_activation' : sync.sync_state;
+      if (status !== 'not_ready' || result.state === 'resolved') parts.push(humanStatus(status));
+    }
+    const count = result.objections?.length || 0;
+    if (count) parts.push(uiText(`${count} 条异议`, `${count} ${count === 1 ? 'objection' : 'objections'}`));
+    return `<span><strong>${names[lane]}</strong> ${parts.map(escapeHtml).join(' · ')}</span>`;
+  });
+  return `<div class="human-role-summary" role="status">${lanes.join('')}</div>`;
 }
 function hpPersist() {
   const h=humanPublication,url=new URL(pageUrl('rd-results',{baselines:state.selectedBaselineIds}),location.origin);

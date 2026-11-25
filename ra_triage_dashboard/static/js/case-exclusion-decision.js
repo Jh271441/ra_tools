@@ -32,8 +32,8 @@ function refreshCaseExclusionSummary() {
   if (!isPageContextCurrent(c.pageContext) || c.caseData.issue_id !== data.issue_id || c.baselines !== selectedBaselineQueryValue()) { $("#caseLabelDecisionDialog").close(); return; }
   // Deferred Trail metadata can update facts without replacing the editor or draft.
   Object.assign(c.caseData, {trail_metadata_status:data.trail_metadata_status, dashboard_should_exclude:data.dashboard_should_exclude});
-  const evidence = $("#caseDecisionEvidence");
-  if (evidence) renderCaseLabelDecisionDialog();
+  const trail = $("#caseDecisionEvidence [data-decision-trail]");
+  if (trail) trail.textContent = caseExclusionTrailText(c.caseData);
 }
 function refreshCaseExclusionLanguage() {
   if ($("#caseDecisionInfoDialog")?.open) showCaseDecisionInfo();
