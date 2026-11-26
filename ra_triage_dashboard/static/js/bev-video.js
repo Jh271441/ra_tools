@@ -636,10 +636,12 @@ function bindBevVideoPlayers(root) {
     };
     const jump = (direction) => {
       const step = Math.max(0.01, Number(stepSelect.value || 1));
-      const currentTime = timelinePosition();
+      // Capture steps are in milliseconds. A floating-point subtraction just
+      // below a frame boundary can make a paused decoder show the prior frame.
+      const targetMs = Math.round((timelinePosition() + direction * step) * 1000);
       const target = Math.min(
         Math.max(0, duration()),
-        Math.max(0, currentTime + direction * step)
+        Math.max(0, targetMs / 1000)
       );
       // Discrete jumps must not wait for the slider's trailing debounce;
       // repeated arrow keys otherwise postpone every decode until release.

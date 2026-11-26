@@ -338,6 +338,10 @@ function playerFixture({readyState=4,context=null,initialTime=0,durationSec=40,.
   assert.equal(native.video.currentTime,21+i,'each repeated key can decode before key release');
  }
  native.player.fire('keydown',{key:'ArrowLeft'});native.flush(0);assert.equal(native.video.currentTime,24);
+ native.elements.step.value='0.1';
+ native.video.currentTime=28.2;
+ native.player.fire('keydown',{key:'ArrowLeft'});native.flush(0);
+ assert.equal(native.video.currentTime,28.1,'A backward frame step lands on the requested millisecond');
  const nativeSeeks=native.video.seeks.length;native.flush(75);assert.equal(native.video.seeks.length,nativeSeeks);
  native.ctx.releaseBevVideoPlayer(native.root);
  // Rapid source changes before metadata arrives must retain playing intent.
