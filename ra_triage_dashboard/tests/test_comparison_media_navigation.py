@@ -1,23 +1,67 @@
 import subprocess
 from pathlib import Path
 
+import pytest
 
-def test_comparison_media_case_navigation_and_page_boundaries():
-    script=Path('ra_triage_dashboard/static/js/media-dialog.js').read_text()+'''
-const assert=require('node:assert/strict');
-const state={activePage:'comparison',media:{snapshot:{referenceMedia:true,issueId:'a'},kind:'camera'},runComparison:{data:{page:1,page_count:2,items:[{issue_id:'a'},{issue_id:'b'}]}}};
-const $=()=>({open:false});
-let opened=[];let notices=[];
-showToast=(x)=>notices.push(x);
-openComparisonMedia=async(id,kind)=>{opened.push([id,kind]);state.media.snapshot.issueId=id;};
-loadRunComparison=async()=>{state.runComparison.data={page:2,page_count:2,items:[{issue_id:'c'}]};};
-(async()=>{
- await navigateComparisonMediaCase(1);assert.deepEqual(opened[0],['b','camera']);
- await navigateComparisonMediaCase(1);assert.deepEqual(opened[1],['c','camera']);assert.equal(state.runComparison.page,2);
- await navigateComparisonMediaCase(1);assert.equal(opened.length,2);assert.ok(notices.length);
+
+@pytest.mark.parametrize("use_react_bridge", (False, True), ids=("classic", "react"))
+def test_comparison_media_case_navigation_and_page_boundaries(use_react_bridge):
+    script = Path('ra_triage_dashboard/static/js/media-dialog.js').read_text() + '''
+const assert = require('node:assert/strict');
+const useReactBridge = process.argv[1] === 'react';
+const state = {
+  activePage: 'comparison',
+  media: {snapshot: {referenceMedia: true, issueId: 'a'}, kind: 'camera'},
+  runComparison: {},
+};
+const $ = () => ({open: false});
+const opened = [], notices = [], classicLoads = [], bridgeLoads = [], dialogChanges = [];
+const pages = {1: ['a', 'b'], 2: ['c']};
+function loadComparisonPage(page) {
+  const items = pages[page].map(issue_id => ({issue_id}));
+  state.runComparison = {page, data: {page, page_count: 2, items}};
+  return items;
+}
+loadComparisonPage(1);
+showToast = message => notices.push(message);
+openComparisonMedia = async (id, kind) => {
+  opened.push([id, kind]);
+  state.media.snapshot.issueId = id;
+};
+loadRunComparison = async ({historyMode}) => {
+  assert.equal(historyMode, 'replace');
+  const page = state.runComparison.page;
+  classicLoads.push(page);
+  loadComparisonPage(page);
+};
+const window = useReactBridge ? {
+  __RA_COMPARISON_BRIDGE__: {
+    stepPageForMedia: async page => {
+      bridgeLoads.push(page);
+      return loadComparisonPage(page);
+    },
+    isCaseDialogOpen: () => true,
+    openCaseDialog: (id, preserveTab) => dialogChanges.push([id, preserveTab]),
+  },
+} : {};
+(async () => {
+  await navigateComparisonMediaCase(1);
+  await navigateComparisonMediaCase(1);
+  assert.equal(state.runComparison.page, 2);
+  await navigateComparisonMediaCase(1);
+  assert.equal(opened.length, 2);
+  assert.equal(notices.length, 1);
+  await navigateComparisonMediaCase(-1);
+  assert.equal(state.runComparison.page, 1);
+  assert.deepEqual(opened, [['b', 'camera'], ['c', 'camera'], ['b', 'camera']]);
+  assert.deepEqual(classicLoads, useReactBridge ? [] : [2, 1]);
+  assert.deepEqual(bridgeLoads, useReactBridge ? [2, 1] : []);
+  assert.deepEqual(dialogChanges, useReactBridge ? [['b', true], ['c', true], ['b', true]] : []);
 })();
 '''
-    subprocess.run(['node','-e',script],check=True,capture_output=True)
+    mode = "react" if use_react_bridge else "classic"
+    result = subprocess.run(['node', '-e', script, mode], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
 
 
 def test_comparison_case_dialog_shortcuts_queue_and_cross_pages():
