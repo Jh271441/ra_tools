@@ -17,6 +17,8 @@ from .assignment_rules import (
     MODEL_SUBMISSION_SQL,
     legacy_batch_source,
     assignment_snapshot_members,
+    completed_group_assignments,
+    grouped_assignment_progress,
     pending_assignment_issue_ids,
 )
 from .model_reviews import MODEL_REVIEW_STATUSES, MODEL_REVIEW_PUBLIC_ID_OFFSET
@@ -233,19 +235,7 @@ class DatabaseWorkSplitsMixin:
                 """,
                 split_ids,
             ).fetchall()
-            completed_group_slots = defaultdict(set)
-            if grouped_split_ids:
-                grouped_marks = ", ".join("?" for _ in grouped_split_ids)
-                for slot in conn.execute(
-                    f"""
-                    SELECT assignment.split_id, assignment.issue_id, assignment.assignee
-                    FROM review_work_assignments assignment
-                    JOIN issue_work_splits split ON split.id = assignment.split_id
-                    WHERE assignment.split_id IN ({grouped_marks}) AND ({ASSIGNMENT_SUBMITTED_SQL})
-                    """,
-                    grouped_split_ids,
-                ).fetchall():
-                    completed_group_slots[slot["split_id"]].add((slot["issue_id"], slot["assignee"]))
+            completed_group_slots = completed_group_assignments(conn, grouped_split_ids)
             change_rows = conn.execute(
                 f"""
                 SELECT split_id, COUNT(*) AS change_count
@@ -376,38 +366,9 @@ class DatabaseWorkSplitsMixin:
             completed_count = sum(item["completed_count"] for item in members)
             filter_snapshot = filters_by_split[split_id]
             alloc_groups = ((filter_snapshot.get("task_allocation") or {}).get("groups") or []) if isinstance(filter_snapshot, dict) else []
-            if alloc_groups:
-                active_slots = [
-                    (issue_id, owner) for grp in alloc_groups
-                    for issue_id, owner in (grp.get("assignments") or {}).items() if owner
-                ]
-                active_by_person = Counter(owner for _, owner in active_slots)
-                if active_by_person:
-                    submitted = completed_group_slots[split_id]
-                    active_completed = Counter(owner for issue_id, owner in active_slots if (issue_id, owner) in submitted)
-                    norm_members = []
-                    for item in members:
-                        uname = item["username"]
-                        act = active_by_person.get(uname, 0)
-                        comp = item["completed_count"]
-                        if act == 0 and comp == 0:
-                            continue
-                        done = active_completed[uname]
-                        norm_members.append({
-                            **item,
-                            "assigned_count": act,
-                            "pending_count": act - done,
-                            "extra_completed_count": max(0, comp - done),
-                            "completion_ratio": round(done / act, 4) if act else 0.0,
-                        })
-                    members = norm_members
-                    assignment_count = total_count if len(alloc_groups) == 1 else sum(active_by_person.values())
-                    completed_count = min(
-                        assignment_count,
-                        sum(active_completed.values()) + (
-                            max(0, total_count - sum(active_by_person.values())) if len(alloc_groups) == 1 else 0
-                        ),
-                    )
+            grouped = grouped_assignment_progress(alloc_groups, members, completed_group_slots.get(split_id, ()), total_count)
+            if grouped is not None:
+                members, assignment_count, completed_count = grouped
             result.append(
                 {
                     "split_id": split_id,

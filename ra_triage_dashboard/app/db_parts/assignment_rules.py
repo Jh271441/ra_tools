@@ -5,6 +5,7 @@ No caller-provided identifiers or data are interpolated here. Completion means
 an eligible current model head, or both explicit combined-workflow markers;
 it does not mean the shared label is resolved.
 """
+from collections import Counter, defaultdict
 from typing import Any, Mapping, Sequence
 
 from .shared import _json_load
@@ -51,6 +52,52 @@ ASSIGNMENT_SUBMITTED_SQL = f"""
     ))
 )
 """
+
+
+def completed_group_assignments(conn, campaign_ids: Sequence[str]) -> dict[str, set[tuple[str, str]]]:
+    """Read completed reviewer slots for comparison with current group bindings."""
+    completed: dict[str, set[tuple[str, str]]] = defaultdict(set)
+    if campaign_ids:
+        marks = ", ".join("?" for _ in campaign_ids)
+        rows = conn.execute(f"""
+            SELECT assignment.split_id, assignment.issue_id, assignment.assignee
+            FROM review_work_assignments assignment
+            JOIN issue_work_splits split ON split.id = assignment.split_id
+            WHERE assignment.split_id IN ({marks}) AND ({ASSIGNMENT_SUBMITTED_SQL})
+        """, campaign_ids).fetchall()
+        for row in rows:
+            completed[row["split_id"]].add((row["issue_id"], row["assignee"]))
+    return completed
+
+
+def grouped_assignment_progress(groups, members, submitted, total_count):
+    """Keep current progress and retained historical overlap on separate denominators."""
+    active_slots = [
+        (issue_id, owner) for group in groups
+        for issue_id, owner in (group.get("assignments") or {}).items() if owner
+    ]
+    if not active_slots:
+        return None
+    assigned = Counter(owner for _, owner in active_slots)
+    completed = Counter(owner for issue_id, owner in active_slots if (issue_id, owner) in submitted)
+    normalized = []
+    for member in members:
+        owner = member["username"]
+        active_count = assigned[owner]
+        active_completed = completed[owner]
+        submitted_count = member["completed_count"]
+        if not active_count and not submitted_count:
+            continue
+        normalized.append({
+            **member,
+            "assigned_count": active_count,
+            "pending_count": active_count - active_completed,
+            "extra_completed_count": max(0, submitted_count - active_completed),
+            "completion_ratio": round(active_completed / active_count, 4) if active_count else 0.0,
+        })
+    assigned_count = total_count if len(groups) == 1 else len(active_slots)
+    carried = max(0, total_count - len(active_slots)) if len(groups) == 1 else 0
+    return normalized, assigned_count, min(assigned_count, sum(completed.values()) + carried)
 
 
 def pending_assignment_issue_ids(conn, campaign_ids: Sequence[str]) -> dict[str, list[str]]:
