@@ -56,9 +56,12 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         let bundleRev = "";
         let cssRev = "";
+        let moduleFiles = [];
         try {
           const viteEl = document.getElementById("raViteAssets");
           const viteParsed = viteEl ? JSON.parse(viteEl.textContent || "{}") : {};
+          const pagePath = window.location.pathname.slice(activeBase.length).replace(/\/$/, "");
+          moduleFiles = viteParsed.preloadByRoute?.[pagePath] || viteParsed.js || [];
           if (typeof viteParsed.bundleRev === "string" && viteParsed.bundleRev) {
             bundleRev = `&rev=${encodeURIComponent(viteParsed.bundleRev)}`;
           } else if (Array.isArray(viteParsed.js) && viteParsed.js.length) {
@@ -76,7 +79,7 @@
         const appPreload = document.createElement("link");
         appPreload.rel = "preload";
         appPreload.as = "script";
-        appPreload.href = `${activeBase}/static/app-bundle.js?v=manual-triage-915` + bundleRev;
+        appPreload.href = `${activeBase}/static/app-bundle.js?v=manual-triage-916` + bundleRev;
         document.head.appendChild(appPreload);
         // These same-origin reads are required on every route. Begin them
         // while the bundle downloads; consume once through the normal API
@@ -146,11 +149,17 @@
         stylesheetRequests.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-915` + cssRev;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-916` + cssRev;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
         });
+        for (const file of moduleFiles) {
+          const hint = document.createElement("link");
+          hint.rel = "modulepreload";
+          hint.href = `${activeBase}/static/dist/${file}`;
+          document.head.appendChild(hint);
+        }
         window.setTimeout(revealShell, 5000);
       })();
     </script>
@@ -2711,7 +2720,7 @@
         }
       })();
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app-bundle.js?v=manual-triage-915` + (window.__RA_BUNDLE_REV__ || "");
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app-bundle.js?v=manual-triage-916` + (window.__RA_BUNDLE_REV__ || "");
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

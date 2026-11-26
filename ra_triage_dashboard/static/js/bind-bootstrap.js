@@ -1185,6 +1185,12 @@ async function bootstrap() {
     // has coverage in the active dataset. Explicit route selections are kept.
     state.selectedRunId =
       initialRoute.runId === "none" ? "" : initialRoute.runId || "";
+    // Task context may override the URL's Run and split. Speculate only once
+    // that scope is known; loadCaseCore consumes only the matching final key.
+    if (initialRoute.page === "review" && !reviewTaskContextFailed
+        && initialRoute.runId && /^cn\d+$/.test(initialRoute.issue || "")) {
+      prefetchCaseCore(initialRoute.issue);
+    }
     state.trailUpdate.runId = "";
     if (initialRoute.page === "trail-update" && typeof applyTrailUpdateRouteControls === "function") {
       applyTrailUpdateRouteControls(initialRoute.trailUpdateFilters);
@@ -1248,6 +1254,7 @@ async function bootstrap() {
       initialRunsRequest = settleInitialRequests(
         [
           loadRuns({
+            bootstrapPage: initialRoute.page,
             preferDefault: !initialRoute.runId,
             preserveEmpty: initialRoute.runId === "none",
           }),

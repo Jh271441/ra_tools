@@ -58,9 +58,7 @@ function readTheme(): ColorTheme {
 }
 
 function readActivePage(): string {
-  if (typeof document === "undefined") return "review";
-  const visible = document.querySelector<HTMLElement>(".app-page[data-page]:not(.hidden)");
-  return visible?.dataset.page || "review";
+  return typeof document === "undefined" ? "" : document.body?.dataset.activePage || "";
 }
 
 function readLegacySession(): WorkbenchBridgeState["session"] {
@@ -111,6 +109,7 @@ export function useWorkbenchBridge(): WorkbenchBridgeState {
 
     window.addEventListener("popstate", sync);
     window.addEventListener("ra:workbench-sync", sync);
+    sync();
     let observer: MutationObserver | null = null;
     if (typeof MutationObserver !== "undefined" && typeof document !== "undefined") {
       observer = new MutationObserver(sync);

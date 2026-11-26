@@ -37,6 +37,24 @@ class Phase3ViteAssetsTest(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 load_vite_assets(tmp)
 
+    def test_cold_route_preloads_follow_only_static_imports(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp) / "dist" / ".vite"
+            folder.mkdir(parents=True)
+            manifest = {
+                "src/main.tsx": {"file": "main.js", "isEntry": True},
+                "src/pages/ReviewGalleryIsland.tsx": {
+                    "file": "review.js", "imports": ["src/main.tsx", "shared"],
+                    "dynamicImports": ["dialog"],
+                },
+                "shared": {"file": "shared.js", "imports": ["src/main.tsx"]},
+                "dialog": {"file": "dialog.js"},
+            }
+            (folder / "manifest.json").write_text(json.dumps(manifest))
+            hints = load_vite_assets(tmp)["preloadByRoute"]
+            self.assertEqual(hints["/review"], ["main.js", "review.js", "shared.js"])
+            self.assertEqual(hints["/version-metrics"], ["main.js"])
+
     def test_render_index_html_injects_vite_assets_and_preserves_two_arg_contract(self) -> None:
         template = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
         default_html = render_index_html(template, "/manual")

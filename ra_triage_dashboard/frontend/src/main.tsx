@@ -1,6 +1,6 @@
 import React, { Suspense } from "react";
 import { createRoot, Root } from "react-dom/client";
-import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, isCancelledError, useQuery } from "@tanstack/react-query";
 import { apiRequest } from "./api/client";
 import { useWorkbenchBridge, WorkbenchBridgeState } from "./bridge/useWorkbenchBridge";
 import { SystemStatusPage } from "./pages/SystemStatusPage";
@@ -498,7 +498,23 @@ function mountAllIslands() {
   mountIsland(document.getElementById("caseLabelingGalleryView"), <CaseLabelingGalleryIslandHost />);
 }
 
+type CatalogPage = "review" | "review-assignments";
+
+function readInitialRuns(page: CatalogPage, baselines: string, read: () => Promise<unknown>) {
+  // Use the mounted page's own cache key, even if Classic wins the load race.
+  const key = page === "review" ? "review-gallery-runs" : "review-assignments-runs";
+  return queryClient.fetchQuery({
+    queryKey: [key, baselines], queryFn: read, staleTime: 15_000, retry: false,
+  }).catch((error: unknown) => {
+    // A React observer may cancel its fetch during navigation. Classic owns
+    // its own route checks and must still be able to finish its bootstrap.
+    if (isCancelledError(error)) return read();
+    throw error;
+  });
+}
+
 interface ReactWorkbenchHandle {
+  readInitialRuns: typeof readInitialRuns;
   version: string;
   ownedPages: string[];
   ownsPage: (page: string) => boolean;
@@ -507,6 +523,7 @@ interface ReactWorkbenchHandle {
 }
 
 const handle: ReactWorkbenchHandle = {
+  readInitialRuns,
   version: "vite-react-ts-strangler-4.2",
   ownedPages: Array.from(OWNED_PAGES),
   ownsPage: (page: string) => OWNED_PAGES.has(page),
@@ -596,6 +613,16 @@ const handle: ReactWorkbenchHandle = {
 
 (window as unknown as { __RA_REACT_WORKBENCH__?: ReactWorkbenchHandle }).__RA_REACT_WORKBENCH__ =
   handle;
+
+const startupWindow = window as Window & {
+  __RA_INITIAL_RUN_CATALOG__?: { page: CatalogPage; baselines: string; promise: Promise<unknown> };
+};
+const earlyRuns = startupWindow.__RA_INITIAL_RUN_CATALOG__;
+if (earlyRuns) {
+  delete startupWindow.__RA_INITIAL_RUN_CATALOG__;
+  // Classic already reports its request errors. A later React mount can retry.
+  void readInitialRuns(earlyRuns.page, earlyRuns.baselines, () => earlyRuns.promise).catch(() => {});
+}
 
 function installVitePreloadErrorGuard() {
   if (typeof window === "undefined") return;

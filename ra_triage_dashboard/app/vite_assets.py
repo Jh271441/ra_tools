@@ -23,7 +23,7 @@ def load_vite_assets(
     static_dir: Path | str,
     *,
     entry: str = "src/main.tsx",
-) -> dict[str, list[str]]:
+) -> dict[str, Any]:
     """Return ordered JS entry + CSS asset paths relative to /static/dist/."""
     dist_dir = Path(static_dir) / "dist"
     manifest_path = dist_dir / ".vite" / "manifest.json"
@@ -59,7 +59,30 @@ def load_vite_assets(
                 collect_css(imported)
 
     collect_css(record)
-    return {"js": js_files, "css": css_files}
+    # The shell can start the current island while the entry bundle downloads.
+    # Only follow static imports. Other pages and on-demand dialogs stay lazy.
+    page_chunks = {
+        "/review": "ReviewGalleryIsland",
+        "/review-assignments": "ReviewAssignmentsPage",
+        "/version-metrics": "VersionMetricsPage",
+    }
+    preload_by_route = {}
+    for route, name in page_chunks.items():
+        files = dict.fromkeys(js_files)
+        def visit(key: str) -> None:
+            item = raw.get(key)
+            if not isinstance(item, dict) or not item.get("file"):
+                return
+            path = _safe_dist_path(str(item["file"]))
+            if path in files:
+                return
+            files[path] = None
+            for dep in item.get("imports") or []:
+                visit(dep)
+
+        visit(f"src/pages/{name}.tsx")
+        preload_by_route[route] = list(files)
+    return {"js": js_files, "css": css_files, "preloadByRoute": preload_by_route}
 
 
 def render_vite_assets_json(

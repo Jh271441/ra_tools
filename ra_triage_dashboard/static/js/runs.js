@@ -490,15 +490,32 @@ function renderAnalysisRunFilter() {
   renderAnalysisComparisonFilter();
 }
 
+function readInitialRunCatalog(page, baselines, path) {
+  const read = () => api(path);
+  if (!["review", "review-assignments"].includes(page)
+      || !window.__RA_REACT_OWNED_PAGES__?.includes(page)) return read();
+  const bridge = window.__RA_REACT_WORKBENCH__;
+  if (bridge?.readInitialRuns) return bridge.readInitialRuns(page, baselines, read);
+  // Classic arrived before the module entry. The entry registers this same
+  // promise with its QueryClient before mounting either gallery.
+  const promise = read();
+  window.__RA_INITIAL_RUN_CATALOG__ = { page, baselines, promise };
+  return promise;
+}
+
 async function loadRuns({
   preferDefault = false,
   preserveEmpty = false,
   clearIncompatible = false,
+  bootstrapPage = "",
 } = {}) {
   const pageContext = capturePageContext();
   const requestedRunId = state.selectedRunId;
   const requestedBaselines = selectedBaselineQueryValue();
-  const data = await api(withBaselineQuery("/api/model-runs"));
+  const path = withBaselineQuery("/api/model-runs");
+  const data = bootstrapPage
+    ? normalizeApiPayloadUrls(await readInitialRunCatalog(bootstrapPage, requestedBaselines, path))
+    : await api(path);
   if (!isPageContextCurrent(pageContext, { matchUrl: false })
       || requestedRunId !== state.selectedRunId
       || requestedBaselines !== selectedBaselineQueryValue()) return;
