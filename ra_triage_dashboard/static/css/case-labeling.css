@@ -1,6 +1,7 @@
 .case-labeling-page { display: grid; gap: 8px; }
-#caseLabelingDetail .detail-title-row { justify-content: space-between; }
-#caseLabelingDetail .detail-title-group { min-width: 0; }
+#caseLabelingDetail .detail-title-row { justify-content: space-between; flex-wrap: wrap; }
+#caseLabelingDetail .detail-title,
+#caseLabelingDetail .detail-external-links { flex-wrap: wrap; }
 #caseLabelingDetail .detail-navigation { margin-left: auto; justify-content: flex-end; }
 #caseLabelingDetail .case-detail-pager { margin-left: auto; }
 .case-labeling-output-hint { display: block; margin-top: 4px; color: var(--fail); font-size: 11px; line-height: 1.4; }

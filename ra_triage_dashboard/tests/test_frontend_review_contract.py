@@ -97,7 +97,7 @@ class FrontendReviewContractTest(unittest.TestCase):
         self.assertIn("baselines", APP_JS)
         self.assertIn("/static/app-bundle.js", APP_ENTRY_JS)
         self.assertIn("script.async = false", APP_ENTRY_JS)
-        self.assertIn("app-bundle.js?v=manual-triage-907", INDEX_HTML)
+        self.assertIn("app-bundle.js?v=manual-triage-909", INDEX_HTML)
         self.assertIn('work-split.js', (JS_DIR / 'MANIFEST').read_text().splitlines())
         self.assertIn('review-assignments.js', (JS_DIR / 'MANIFEST').read_text().splitlines())
         # Product logic must live in domain modules, not the entry loader.
@@ -460,7 +460,7 @@ class FrontendReviewContractTest(unittest.TestCase):
         self.assertIn(".detail-context-row { min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 6px", STYLES_CSS)
         self.assertIn("flex: 1 1 auto; flex-wrap: wrap; gap: 5px", STYLES_CSS)
         self.assertIn(".detail-context-actions { width: 100%; flex-basis: 100%; justify-content: flex-start; }", STYLES_CSS)
-        self.assertIn("min-width: 132px; max-width: 148px", STYLES_CSS)
+        self.assertIn("min-width: 132px; max-width: 100%", STYLES_CSS)
         self.assertIn(".review-reason textarea { min-height: 54px; height: 54px;", STYLES_CSS)
         self.assertIn(".review-section { display: grid; gap: 7px; padding: 0; border: 0", STYLES_CSS)
         self.assertIn('data-open-review-tag-creator', APP_JS)
