@@ -16,8 +16,7 @@ function playerFixture({readyState=4,context=null,initialTime=0,durationSec=40,.
  const player=new El();player.dataset={durationSec:String(durationSec),t0PlayerSec:String(durationSec/2),startOffsetSec:String(-durationSec/2)};
  player.querySelector=s=>s==='video'?video:elements[s.replace('[data-video-','').replace(']','')];
  const root={querySelectorAll:s=>s==='video'?[video]:[player]};
- Object.defineProperty(video,'src',{get:()=>video.getAttribute('src'),set:url=>video.setAttribute('src',url)});
- const ctx=context||{console,URL,Event,Number,AbortController,fetch:async()=>({status:200,blob:async()=>new Blob(['fixture'],{type:'video/mp4'})}),enhanceDashboardSelects(){},t:x=>x,uiText:x=>x,showToast(){},safeSameOriginAssetUrl:x=>String(x||'').split('#')[0]};
+ const ctx=context||{console,URL,Event,Number,enhanceDashboardSelects(){},t:x=>x,uiText:x=>x,showToast(){},safeSameOriginAssetUrl:x=>String(x||'').split('#')[0]};
  ctx.document||={createElement:()=>({getContext:()=>({drawImage(){}}),setAttribute(){},remove(){}})};
  video.after=()=>{};
  ctx.window={setTimeout:(f,ms)=>{timers.set(++next,{f,ms});return next;},clearTimeout:id=>timers.delete(id),requestAnimationFrame:f=>f()};
@@ -214,7 +213,7 @@ function playerFixture({readyState=4,context=null,initialTime=0,durationSec=40,.
  p.ctx.escapeHtml=String;
  const markup=p.ctx.videoPlayerMarkup(descriptor);
  assert(!markup.includes('data-video-playback-state'),'playback feedback stays in the existing button, with no status slot');
- assert(p.ctx.videoPlayerMarkup({...descriptor,duration_ms:40000}).includes('data-video-source="/bev.mp4?playback=short-gop-v1#t=20"'),'initial resource selection advertises t0 before metadata');
+ assert(p.ctx.videoPlayerMarkup({...descriptor,duration_ms:40000}).includes('src="/bev.mp4?playback=short-gop-v1#t=20"'),'initial resource selection advertises t0 before metadata');
  assert.equal(p.ctx.videoPlaybackSourceUrl('/bev.mp4?version=2#t=1',23.45678),'/bev.mp4?version=2&playback=short-gop-v1#t=23.457');
  assert.equal(p.ctx.videoPlaybackSourceUrl('/bev.mp4',0),'/bev.mp4?playback=short-gop-v1#t=0');
  assert.equal(p.ctx.videoCanonicalAssetUrl('/bev.mp4?version=2&playback=short-gop-v1#t=20'),'/bev.mp4?version=2');
@@ -245,7 +244,7 @@ function playerFixture({readyState=4,context=null,initialTime=0,durationSec=40,.
  assert.equal(v.seeks.length,1,'drag coalesces network seeks');p.flush(75);assert.equal(v.seeks.at(-1),9.9);assert.equal(v.seeks.length,2);
  e.seek.value='32';e.seek.fire('input');e.track.value='/camera.mp4';e.track.selectedOptions=[{dataset:{poster:'/camera.jpg'}}];e.track.fire('change');
  assert.equal(v.attrs.poster,'/camera.jpg');p.flush(75);assert.equal(v.seeks.length,2,'source switch cancels queued old seek');
- assert.equal(v.dataset.videoSource,'/camera.mp4?playback=short-gop-v1#t=9.9');v.readyState=1;v.fire('loadedmetadata');assert.equal(v.seeks.length,2);assert.equal(v.seeks.at(-1),9.9);
+ assert.equal(v.src,'/camera.mp4?playback=short-gop-v1#t=9.9');v.readyState=1;v.fire('loadedmetadata');assert.equal(v.seeks.length,2);assert.equal(v.seeks.at(-1),9.9);
  v.readyState=4;v.fire('loadeddata');assert.equal(p.player.dataset.loadState,'ready');
  e.rate.value='1.5';e.rate.fire('change');
  e.track.value='/api/assets/cn1/bev-closeup-video';e.track.selectedOptions=[{dataset:{poster:'/closeup-t0.jpg'}}];e.track.fire('change');
@@ -266,7 +265,7 @@ function playerFixture({readyState=4,context=null,initialTime=0,durationSec=40,.
  assert.equal(interrupted.elements.play.getAttribute('aria-pressed'),'false','A terminal error cannot still advertise Pause');
  assert.equal(interrupted.elements.seek.value,'22.6','A media error retains the last known playback position');
  interrupted.elements.retry.fire('click');
- assert.match(interrupted.video.dataset.videoSource,/#t=22\.6$/,'Retry resumes at the failed position after metadata was lost');
+ assert.match(interrupted.video.src,/#t=22\.6$/,'Retry resumes at the failed position after metadata was lost');
  assert.equal(interrupted.video.paused,true,'Retry does not revive the failed Play request');
  interrupted.video.readyState=4;interrupted.video.fire('loadedmetadata');interrupted.video.fire('loadeddata');
  interrupted.video.fire('error');
@@ -274,7 +273,7 @@ function playerFixture({readyState=4,context=null,initialTime=0,durationSec=40,.
  interrupted.video.currentTime=26.3;interrupted.video.fire('timeupdate');
  interrupted.video.error={code:2};interrupted.video.readyState=0;interrupted.video.currentTime=0;interrupted.video.fire('error');
  interrupted.elements.play.fire('click');
- assert.match(interrupted.video.dataset.videoSource,/#t=26\.3$/,'Explicit Play after failure reloads the same position');
+ assert.match(interrupted.video.src,/#t=26\.3$/,'Explicit Play after failure reloads the same position');
  assert.equal(interrupted.elements.play.getAttribute('aria-pressed'),'true');
  interrupted.ctx.releaseBevVideoPlayer(interrupted.root);
  const buffered=playerFixture();buffered.video.fire('loadeddata');buffered.video.fire('stalled');assert.equal(buffered.player.dataset.loadState,'ready','buffered paused video must not show slow-load warning');
@@ -324,7 +323,7 @@ function playerFixture({readyState=4,context=null,initialTime=0,durationSec=40,.
  fv._setBevVideoTrack('/end.mp4');fv.readyState=4;fv.fire('loadedmetadata');fv.fire('seeked');present(39.9);
  assert(fv.currentTime<40&&fv.currentTime>39.9,'a paused source at the exclusive end must seek inside its final frame');
  assert.equal(cover,null,'seeking to duration must reveal the last frame, not await a nonexistent40s frame');
- fv._setBevVideoTrack('/replay.mp4');await new Promise(setImmediate);fv.readyState=4;fv.fire('loadedmetadata');
+ fv._setBevVideoTrack('/replay.mp4');fv.readyState=4;fv.fire('loadedmetadata');
  fv.ended=true;proof.elements.play.fire('click');fv.currentTime=0;present(0);
  assert.equal(cover,null,'Play at the end may confirm the native restart at0');fv.ended=false;
  fv._setBevVideoTrack('/three.mp4');proof.ctx.releaseBevVideoPlayer(proof.root);assert.equal(frames.size,0);assert.equal(cover,null);
@@ -338,16 +337,12 @@ function playerFixture({readyState=4,context=null,initialTime=0,durationSec=40,.
   assert.equal(native.video.currentTime,21+i,'each repeated key can decode before key release');
  }
  native.player.fire('keydown',{key:'ArrowLeft'});native.flush(0);assert.equal(native.video.currentTime,24);
- native.elements.step.value='0.1';
- native.video.currentTime=28.2;
- native.player.fire('keydown',{key:'ArrowLeft'});native.flush(0);
- assert.equal(native.video.currentTime,28.1,'A backward frame step lands on the requested millisecond');
  const nativeSeeks=native.video.seeks.length;native.flush(75);assert.equal(native.video.seeks.length,nativeSeeks);
  native.ctx.releaseBevVideoPlayer(native.root);
  // Rapid source changes before metadata arrives must retain playing intent.
  const rapid=playerFixture();rapid.elements.rate.value='1.5';rapid.video.currentTime=23;rapid.elements.play.fire('click');
  rapid.video._setBevVideoTrack('/closeup.mp4');rapid.video._setBevVideoTrack('/original.mp4');
- assert.equal(rapid.video.paused,true,'native playback waits for the selected clip');await new Promise(setImmediate);rapid.video.readyState=1;rapid.video.fire('loadedmetadata');
+ assert.equal(rapid.video.paused,false,'loading retains the early native play request');rapid.video.readyState=1;rapid.video.fire('loadedmetadata');
  assert.equal(rapid.video.paused,false,'playback resumes after both pending source changes');
  assert.equal(rapid.video.currentTime,23);assert.equal(rapid.video.playbackRate,1.5);rapid.ctx.releaseBevVideoPlayer(rapid.root);
  // Space acknowledges/cancels the latest intent while metadata is blocked.
@@ -366,17 +361,17 @@ function playerFixture({readyState=4,context=null,initialTime=0,durationSec=40,.
  pv.fire('seeked');assert.equal(pendingPlay.player.dataset.playbackState,'playing','a buffered seek can resume without another playing event');
  pv.fire('playing');
  pv._setBevVideoTrack('/source-one.mp4');pv._setBevVideoTrack('/source-two.mp4');
- assert.equal(pv.dataset.videoSource,'/source-two.mp4?playback=short-gop-v1#t=20','rapid source switches keep the native start hint');
+ assert.equal(pv.src,'/source-two.mp4?playback=short-gop-v1#t=20','rapid source switches keep the native start hint');
  assert.equal(pendingPlay.player.dataset.playbackState,'waiting');
- assert.equal(pv.plays,2,'unavailable sources do not start native playback');await new Promise(setImmediate);
- pv.readyState=4;pv.fire('loadedmetadata');assert.equal(pv.plays,3,'only the final downloaded clip starts playback');
+ assert.equal(pv.plays,4,'each new source submits asynchronous playback without waiting for metadata');
+ pv.readyState=4;pv.fire('loadedmetadata');assert.equal(pv.plays,4,'metadata must not start a duplicate play attempt');
  pv._setBevVideoTrack('/source-three.mp4');pendingPlay.player.fire('keydown',{key:' '});
- pv.readyState=4;pv.fire('loadedmetadata');assert.equal(pv.plays,3,'Space cancels source-resume intent, not native paused');assert(pv.paused);
+ pv.readyState=4;pv.fire('loadedmetadata');assert.equal(pv.plays,5,'Space cancels source-resume intent, not native paused');assert(pv.paused);
  pv._setBevVideoTrack('/source-four.mp4');assert.equal(pendingPlay.player.dataset.playbackState,'paused');
  pendingPlay.player.fire('keydown',{key:' '});
  pendingPlay.ctx.pauseBevVideoPlayers(pendingPlay.root);pv.readyState=4;pv.fire('loadedmetadata');
- assert.equal(pv.plays,3,'hiding a loading player cancels its pending startup');assert(pv.paused);
- pendingPlay.ctx.resumeBevVideoPlayers(pendingPlay.root);assert.equal(pv.plays,3,'returning to a hidden video requires another explicit Play');assert(pv.paused);
+ assert.equal(pv.plays,6,'hiding a loading player cancels its pending startup');assert(pv.paused);
+ pendingPlay.ctx.resumeBevVideoPlayers(pendingPlay.root);assert.equal(pv.plays,6,'returning to a hidden video requires another explicit Play');assert(pv.paused);
  pendingPlay.ctx.releaseBevVideoPlayer(pendingPlay.root);
  const nextCase=playerFixture({context:pendingPlay.ctx,readyState:0});
  assert.equal(nextCase.player.dataset.playbackState,'paused');assert.equal(nextCase.video.plays,0,'a new Case in the same page never inherits earlier Play');nextCase.video.readyState=4;nextCase.video.fire('loadedmetadata');

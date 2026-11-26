@@ -133,7 +133,7 @@ const server=http.createServer((req,res)=>{
    assert.ok(Math.abs(state.time-target)<.001);
    assert.equal(state.frame,target===40?39.9:Math.floor((target+.000001)*10)/10);
    if(target===40)assert.ok(state.time<40,'source replacement must request a displayable final frame');
-   assert.equal(state.source.startsWith('blob:'),true);
+   assert.equal(state.source.startsWith('blob:'),mode!=='pending');
    const requests=logs.slice(start),manifest=indexes.find(x=>x.name===to).manifest;
    const at=manifest.segments.findIndex(s=>Math.min(target,39.99999)<s.end);
    if(mode!=='pending'){
@@ -195,7 +195,7 @@ const server=http.createServer((req,res)=>{
    await page.evaluate(()=>{document.querySelector('[data-video-play]').click();document.querySelector('[data-video-play]').click();});await ready(page);
    const state=await page.evaluate(()=>({paused:v.paused,time:v.currentTime,source:v.src,playback:document.querySelector('[data-bev-video-player]').dataset.playbackState}));
    assert.equal(state.paused,true);assert.equal(state.time,20);assert.equal(state.playback,'paused');
-   assert.equal(state.source.startsWith('blob:'),true);
+   assert.equal(state.source.startsWith('blob:'),mode==='delay');
    assert.equal(logs.slice(start).filter(x=>x.kind==='manifest').length,mode==='unsupported'?0:1);
    results.push({scenario:'cancel-and-recovery',mode,state,requests:logs.slice(start)});await page.close();
   }

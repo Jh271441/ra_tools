@@ -1,4 +1,5 @@
-// Whole-clip playback under an interrupted network using the actual player.
+// Native Range streaming with the actual player. Uses a local 40s H264 fixture;
+// valid filler NAL units enlarge it without changing frames or keyframe spacing.
 const fs = require('node:fs'), path = require('node:path'), http = require('node:http');
 const assert = require('node:assert/strict');
 const {chromium} = require('playwright');
@@ -7,11 +8,36 @@ if (!clip) throw Error('Set PLAYBACK_TEST_CLIP to the local 40s/400-frame H264 f
 const output = process.env.PLAYBACK_QA_OUTPUT || '/tmp/video-t0-streaming-qa';
 fs.mkdirSync(output, {recursive: true});
 
-// Use the exact 40-second MP4 supplied to this test. Withhold the end
-// of the first transfer until the test explicitly releases it.
-const media = fs.readFileSync(clip);
-let releaseTail = false;
-let failNextDownload = false;
+function streamingFixture(source) {
+  const stsz = source.indexOf(Buffer.from('stsz')) - 4;
+  const stco = source.indexOf(Buffer.from('stco')) - 4;
+  const mdat = source.indexOf(Buffer.from('mdat')) - 4;
+  const avcc = source.indexOf(Buffer.from('avcC')) - 4;
+  assert.ok([stsz, stco, mdat, avcc].every(n => n >= 0));
+  assert.equal((source[avcc + 12] & 3) + 1, 4, 'AVC samples use four-byte NAL lengths');
+  assert.equal(source.readUInt32BE(stsz + 12), 0, 'explicit sample sizes');
+  const count = source.readUInt32BE(stsz + 16);
+  assert.equal(count, 400);
+  assert.equal(source.readUInt32BE(stco + 12), 1, 'single contiguous video chunk');
+  const start = source.readUInt32BE(stco + 16);
+  assert.equal(start, mdat + 8);
+  assert.ok(stsz < mdat, 'faststart metadata precedes media data');
+  const header = Buffer.from(source.subarray(0, start));
+  const filler = Buffer.alloc(16388, 255);
+  filler.writeUInt32BE(16384, 0); filler[4] = 12; filler[filler.length - 1] = 128;
+  const frames = []; let at = start;
+  for (let i = 0; i < count; i++) {
+    const size = source.readUInt32BE(stsz + 20 + i * 4);
+    frames.push(source.subarray(at, at + size), filler); at += size;
+    header.writeUInt32BE(size + filler.length, stsz + 20 + i * 4);
+  }
+  assert.equal(at, source.length);
+  const result = Buffer.concat([header, ...frames]);
+  result.writeUInt32BE(result.length - mdat, mdat);
+  return result;
+}
+
+const media = streamingFixture(fs.readFileSync(clip));
 const requests = [];
 const playerJs = fs.readFileSync(path.resolve(__dirname, '../static/js/bev-video.js'), 'utf8');
 const server = http.createServer((req, res) => {
@@ -19,11 +45,6 @@ const server = http.createServer((req, res) => {
   if (!url.pathname.endsWith('.mp4')) {
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     return res.end('<!doctype html><body><div id="player"></div></body>');
-  }
-  if (failNextDownload) {
-    failNextDownload = false;
-    res.writeHead(206, {'Content-Type': 'video/mp4', 'Content-Range': `bytes 0-15/${media.length}`});
-    return res.end(media.subarray(0, 16));
   }
   const match = req.headers.range?.match(/^bytes=(\d+)-(\d*)$/);
   const start = match ? Number(match[1]) : 0;
@@ -34,15 +55,16 @@ const server = http.createServer((req, res) => {
     'Cache-Control': 'no-store', 'Content-Length': end - start + 1,
     ...match ? {'Content-Range': `bytes ${start}-${end}/${media.length}`} : {}});
   let at = start;
+  // 16KiB/50ms = 320KiB/s. The last 30% is withheld entirely, so waiting for
+  // the full resource to finish cannot pass this test.
+  const tailGate = Math.floor(media.length * .7);
   const timer = setInterval(() => {
-    const limit = releaseTail ? media.length : Math.floor(media.length * .7);
-    if (res.destroyed || at >= limit) return;
-    const next = Math.min(end + 1, at + 65536, limit);
-    res.write(media.subarray(at, next));
-    receipt.bytesSent += next - at;
-    at = next;
+    if (res.destroyed || at >= tailGate) return;
+    const next = Math.min(end + 1, at + 16384, tailGate);
+    const bytes = media.subarray(at, next); at = next; receipt.bytesSent += bytes.length;
+    res.write(bytes);
     if (at > end) {receipt.complete = true; res.end();}
-  }, 2);
+  }, 50);
   res.once('close', () => clearInterval(timer));
 });
 
@@ -84,49 +106,32 @@ const server = http.createServer((req, res) => {
     });
     assert.equal(await page.locator('video').evaluate(v => v.paused), true, 'preloading does not start playback');
     await page.locator('[data-bev-video-player]').press('Space');
-    for (let i = 0; i < 200 && (requests[0]?.bytesSent || 0) < Math.floor(media.length * .7); i++) {
-      await new Promise(resolve => setTimeout(resolve, 25));
-    }
-    assert.equal(requests[0]?.bytesSent, Math.floor(media.length * .7));
-    assert.equal(await page.locator('video').getAttribute('src'), null);
-    assert.equal(await page.locator('[data-video-play]').getAttribute('aria-pressed'), 'true');
+    assert.equal(await page.locator('video').getAttribute('src'), '/api/initial.mp4?playback=short-gop-v1#t=20');
     assert.equal(await page.locator('video').evaluate(v => v.readyState), 0);
-    releaseTail = true;
-    const waitPlaying = () => page.waitForFunction(() => !video.paused && !video.seeking && video.currentTime > 20.2);
+    assert.equal(await page.locator('video').evaluate(v => v.paused), false, 'play is submitted before metadata');
+    const waitPlaying = () => page.waitForFunction(() => !video.paused && !video.seeking && video.currentTime > 20.2
+      && document.querySelector('[data-bev-video-player]').dataset.playbackState === 'playing');
     await waitPlaying();
-    assert.ok(requests[0].complete);
-    await page.locator('[data-bev-video-player]').press('Space');
-    await page.context().setOffline(true);
-    for (const target of [37, 2, 35, 4]) {
-      await page.evaluate(t => {
-        window.presented = null;
-        function frame(_, metadata) {
-          if (Math.abs(metadata.mediaTime - t) < .11) window.presented = metadata.mediaTime;
-          else video.requestVideoFrameCallback(frame);
-        }
-        video.requestVideoFrameCallback(frame);
-        const seek = document.querySelector('[data-video-seek]');
-        seek.value = t;
-        seek.dispatchEvent(new Event('change'));
-      }, target);
-      await page.waitForFunction(() => presented !== null && !video.seeking);
-    }
-    await page.locator('[data-bev-video-player]').press('ArrowLeft');
-    await page.waitForFunction(() => video.currentTime === 3 && !video.seeking);
-    await page.locator('[data-bev-video-player]').press('ArrowRight');
-    await page.waitForFunction(() => video.currentTime === 4 && !video.seeking);
-    await page.locator('[data-bev-video-player]').press('Space');
-    await page.waitForFunction(() => !video.paused && video.currentTime > 4.3);
-    assert.equal(requests.length, 1);
-    results.push({name: 'offline-seek-and-play', requests: structuredClone(requests)});
-    await page.context().setOffline(false);
+    const initial = await page.evaluate(() => ({events, time: video.currentTime,
+      buffered: Array.from({length: video.buffered.length}, (_, i) => [video.buffered.start(i), video.buffered.end(i)])}));
+    const initialRequests = requests.filter(r => r.url === '/api/initial.mp4');
+    assert.ok(initialRequests.some(r => r.start > media.length * .4), 'a Range request jumps to the t0 keyframe region');
+    assert.ok(initialRequests.every(r => !r.complete), 'no full response finished before playback');
+    assert.ok(initialRequests.reduce((sum, r) => sum + r.bytesSent, 0) < media.length / 2);
+    assert.ok(initial.buffered.some(([start, end]) => start <= 20 && end > 20.2 && end < 39), 'only a local playable window is required');
+    assert.ok(initial.events.filter(e => e.name === 'playing').every(e => e.time >= 19.99), 'never play the clip beginning before t0');
+    const bufferedEnd = Math.max(...initial.buffered.map(r => r[1]));
+    await page.waitForFunction(end => video.buffered.length && video.buffered.end(video.buffered.length - 1) > end + .2, bufferedEnd);
+    assert.equal(await page.locator('video').evaluate(v => v.paused), false, 'later media buffers while playback continues');
+    results.push({name: 'progressive-t0', ...initial, requests: structuredClone(initialRequests)});
+
     const position = await page.evaluate(() => {
       video.playbackRate = 1.5; document.querySelector('[data-video-rate]').value = '1.5';
       const position = video.currentTime;
       video._setBevVideoTrack('/api/source-next.mp4'); return position;
     });
-    assert.match(await page.locator('video').getAttribute('data-video-source'), /source-next\.mp4\?playback=short-gop-v1#t=\d/);
-    await page.waitForFunction(() => !video.paused && !video.seeking && video.readyState >= 2);
+    assert.match(await page.locator('video').getAttribute('src'), /source-next\.mp4\?playback=short-gop-v1#t=2\d/);
+    await waitPlaying();
     assert.ok(await page.locator('video').evaluate((v, p) => v.currentTime >= p - .02, position));
     assert.equal(await page.locator('video').evaluate(v => v.playbackRate), 1.5);
     results.push({name: 'retained-source-position', position, time: await page.locator('video').evaluate(v => v.currentTime)});
@@ -141,18 +146,10 @@ const server = http.createServer((req, res) => {
     assert.equal(await page.locator('video').evaluate(v => v.paused), true, 'late t0 data cannot reverse Pause');
     assert.deepEqual(await page.evaluate(() => events.filter(e => e.name === 'playing')), []);
     results.push({name: 'cancel-before-t0-ready'});
-    failNextDownload = true;
-    await page.evaluate(() => mountPlayer('partial'));
-    const retry = page.locator('[data-video-retry]');
-    await retry.waitFor({state: 'visible'});
-    assert.equal(await page.locator('video').getAttribute('src'), null);
-    await retry.click();
-    await page.waitForFunction(() => video.readyState >= 2 && !video.seeking && video.currentTime === 20);
-    assert.equal(await page.locator('video').evaluate(v => v.paused), true);
-    results.push({name: 'partial-response-rejected-and-retried'});
     assert.deepEqual(errors, []);
     const result = {browser: browser.version(), fixtureBytes: media.length,
-      results, errors};
+      fixture: '40s H264 with valid filler NAL units; original frames/keyframes unchanged',
+      bytesPerSecond: 327680, withheldTailFraction: .3, results, errors};
     fs.writeFileSync(path.join(output, 'results.json'), JSON.stringify(result, null, 2));
     console.log(JSON.stringify(result));
   } catch (error) {

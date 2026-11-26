@@ -85,7 +85,7 @@ const server=http.createServer((req,res)=>{
 
  try{
   let page=await makePage();await ready(page);
-  assert.equal(await page.evaluate(()=>v.paused&&v.currentTime===20&&v.src.startsWith('blob:')&&v.preload==='auto'),true);
+  assert.equal(await page.evaluate(()=>v.paused&&v.currentTime===20&&!v.src.startsWith('blob:')&&v.preload==='auto'),true);
   assert.equal(logs.some(x=>x.kind!=='native'||x.name==='closeup'),false);
   console.log('initial native state',await page.evaluate(()=>({duration:v.duration,network:v.networkState,buffered:Array.from({length:v.buffered.length},(_,i)=>[v.buffered.start(i),v.buffered.end(i)])})));
   const initial=await page.evaluate(()=>Array.from({length:v.buffered.length},(_,i)=>[v.buffered.start(i),v.buffered.end(i)]));
@@ -110,7 +110,7 @@ const server=http.createServer((req,res)=>{
    await page.evaluate(target=>v.currentTime=target,target);await ready(page);
    await page.evaluate(to=>v._setBevVideoTrack(`/api/assets/cn99999/${to}.mp4?mode=ready`),to);await ready(page);
    assert.ok(Math.abs(await page.evaluate(()=>v.currentTime)-target)<.001);
-   assert.equal(await page.evaluate(()=>v.paused&&v.src.startsWith('blob:')),true);
+   assert.equal(await page.evaluate(()=>v.paused&&!v.src.startsWith('blob:')),true);
    await page.evaluate(to=>{const native=document.createElement('video');native.muted=true;native.src=`/native/${to}.mp4`;document.querySelector('#reference').append(native);window.reference=native;watch(native);},to);
    await page.waitForFunction(()=>reference.readyState>=1);
    const pixels=await page.evaluate(async target=>({native:await frameHash(reference,target),stream:await frameHash(v,target)}),target);

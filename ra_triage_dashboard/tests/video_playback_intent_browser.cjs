@@ -122,8 +122,8 @@ const server = http.createServer((req, res) => {
         assert.equal(await player.getAttribute('data-playback-state'), 'waiting');
         assert.equal(await player.locator('[data-video-play]').innerText(), lang === 'zh' ? '暂停' : 'Pause');
         assert.equal(await player.locator('video').evaluate(v => v.readyState), 0, 'feedback precedes metadata');
-        assert.equal(await player.locator('video').getAttribute('data-video-source'), `/api/${id}.mp4?playback=short-gop-v1#t=20`);
-        assert.equal(await player.locator('video').evaluate(v => v.paused), true, 'Play intent is queued until the download completes');
+        assert.equal(await player.locator('video').getAttribute('src'), `/api/${id}.mp4?playback=short-gop-v1#t=20`);
+        assert.equal(await player.locator('video').evaluate(v => v.paused), false, 'native asynchronous playback is already requested');
         assert.equal(await player.locator('[data-video-playback-state]').count(), 0, 'no extra visible status or spacer');
         assert.ok(await player.locator('[data-video-play]').evaluate(button => button.nextElementSibling.matches('[data-video-jump="-1"]')));
         const pendingGeometry = await player.locator('.bev-video-controls').boundingBox();

@@ -1,16 +1,3 @@
-## Complete clip before interactive playback (2026-11-27)
-
-Review and Case Labeling download the selected MP4 through the existing
-fingerprinted playback endpoint. The player attaches a browser-local Blob URL
-once the full response arrives. Initial Play/Pause and seek input retain the
-latest intent while the download is pending. Switching source or disposing the
-player cancels its outstanding download and releases the old object URL.
-
-To verify, run `tests/video_t0_streaming_browser.cjs` with `PLAYBACK_TEST_CLIP`
-set to a 40-second MP4. The test withholds the final bytes, then disconnects the
-network after readiness and checks both ends of the timeline, arrow controls,
-playback, and recovery after a partial response.
-
 ## Native Range representation identity (2026-11-12)
 
 The adaptive `playback=short-gop-v1` endpoint previously returned original MP4
