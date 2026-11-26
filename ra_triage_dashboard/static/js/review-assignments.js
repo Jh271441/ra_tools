@@ -228,14 +228,15 @@ function renderReviewAssignmentMetrics(items) {
 
 function reviewAssignmentMemberMarkup(member) {
   const assigned = Number(member.assigned_count || 0);
-  const completed = Number(member.completed_count || 0);
-  const pending = Number(member.pending_count || 0);
+  const submitted = Number(member.completed_count || 0);
   const extra = Number(member.extra_completed_count || 0);
-  const percent = assigned === 0 && completed > 0 ? 100 : reviewAssignmentPercent(member.completion_ratio);
-  const note = assigned === 0 && completed > 0
-    ? uiText(`0 条待处理 · 历史已标 ${completed}`, `0 pending · ${completed} prior completed`)
+  const pending = Math.min(assigned, Math.max(0, member.pending_count ?? assigned - (submitted - extra)));
+  const completed = assigned - pending;
+  const percent = reviewAssignmentPercent(assigned ? completed / assigned : 0);
+  const note = assigned === 0 && submitted > 0
+    ? uiText(`0 条待处理 · 历史已标 ${submitted}`, `0 pending · ${submitted} prior completed`)
     : extra > 0
-      ? uiText(`${pending} 条待处理 · 含相交 ${extra} 条`, `${pending} pending · +${extra} overlap`)
+      ? uiText(`${pending} 条待处理 · 另有相交提交 ${extra} 条`, `${pending} pending · +${extra} overlap`)
       : uiText(`${pending} 条待处理`, `${pending} pending`);
   return `<div class="review-assignment-member">
     <div class="review-assignment-member-heading"><strong>${escapeHtml(member.username || "—")}</strong><span>${completed} / ${assigned}</span></div>

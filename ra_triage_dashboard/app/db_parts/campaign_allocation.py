@@ -65,10 +65,10 @@ class DatabaseCampaignAllocationMixin(AllocationPreviewMixin):
         ), split, filters, assignments
 
     def get_campaign_allocation(self, campaign_id):
-        campaign_id = self.resolve_version_campaign(str(campaign_id))
         with self.connect() as conn:
+            campaign_id = self._resolve_version_campaign(conn, str(campaign_id))
             current, split, _, rows = self._task_allocation(conn, campaign_id)
-            evidence = self._allocation_protection(conn, split, rows)
+            evidence = self._allocation_protection(conn, split, rows, include_snapshot=False)
         groups, owners = self._group_history(current, rows, evidence)
         case_ids = [m["issue_id"] for m in evidence["members"]]
         projection = group_projection(groups, owners, evidence["completed"], case_ids=case_ids, protected=evidence["protected"])

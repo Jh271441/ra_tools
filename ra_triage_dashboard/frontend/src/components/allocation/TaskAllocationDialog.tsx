@@ -89,7 +89,7 @@ const TaskAllocationSession: React.FC<TaskAllocationDialogProps & { campaignId: 
 
   const [config, setConfig] = useState<AllocationConfig | null>(null);
   const [draft, setDraft] = useState<AllocationDraft | null>(null);
-  const [loadingConfig, setLoadingConfig] = useState(false);
+  const [loadingConfig, setLoadingConfig] = useState(true);
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState<BilingualMessage | null>(null);
 
@@ -111,6 +111,7 @@ const TaskAllocationSession: React.FC<TaskAllocationDialogProps & { campaignId: 
   const liveAbortRef = useRef<AbortController | null>(null);
   const idempotencyRef = useRef<{ serialized: string; key: string } | null>(null);
   const loadSeqRef = useRef(0);
+  const loadAbortRef = useRef<AbortController | null>(null);
 
   const cancelLivePreview = useCallback(() => {
     if (liveTimerRef.current) {
@@ -124,9 +125,12 @@ const TaskAllocationSession: React.FC<TaskAllocationDialogProps & { campaignId: 
   const loadAllocationConfig = useCallback(
     async (targetId: string, preserveDraft?: AllocationDraft | null) => {
       const seq = ++loadSeqRef.current;
+      loadAbortRef.current?.abort();
+      const controller = new AbortController();
+      loadAbortRef.current = controller;
+      const timeout = window.setTimeout(() => controller.abort(), 20000);
       cancelLivePreview();
       setLoadingConfig(true);
-      setFormError(null);
       setPreview(null);
       setDisplayPreview(null);
       setPreviewPending(false);
@@ -136,6 +140,7 @@ const TaskAllocationSession: React.FC<TaskAllocationDialogProps & { campaignId: 
       try {
         const cfg = await apiRequest<AllocationConfig>(
           `/api/campaigns/${encodeURIComponent(targetId)}/allocation`,
+          { signal: controller.signal },
         );
         if (seq !== loadSeqRef.current) return;
         const startingDraft = buildDraftFromConfig(cfg);
@@ -143,12 +148,10 @@ const TaskAllocationSession: React.FC<TaskAllocationDialogProps & { campaignId: 
         setConfig(cfg);
         setDraft(preserveDraft || startingDraft);
         setRemovalBasis(cfg.quota_basis === "total" ? "total" : "remaining");
-        if (!cfg.editable) {
-          setFormError({
-            zh: "此任务已结束，无法修改分配。",
-            en: "This task is no longer active.",
-          });
-        }
+        setFormError(cfg.editable ? null : {
+          zh: "此任务已结束，无法修改分配。",
+          en: "This task is no longer active.",
+        });
       } catch (error) {
         if (seq !== loadSeqRef.current) return;
         setConfig(null);
@@ -160,7 +163,11 @@ const TaskAllocationSession: React.FC<TaskAllocationDialogProps & { campaignId: 
           ),
         );
       } finally {
-        if (seq === loadSeqRef.current) setLoadingConfig(false);
+        window.clearTimeout(timeout);
+        if (seq === loadSeqRef.current) {
+          loadAbortRef.current = null;
+          setLoadingConfig(false);
+        }
       }
     },
     [cancelLivePreview],
@@ -168,17 +175,21 @@ const TaskAllocationSession: React.FC<TaskAllocationDialogProps & { campaignId: 
 
   useEffect(() => {
     setRemoveAssignee("");
-    const el = dialogRef.current;
-    if (el && !el.open) {
-      if (typeof el.showModal === "function") el.showModal();
-      else el.setAttribute("open", "");
-    }
     void loadAllocationConfig(campaignId);
     return () => {
       loadSeqRef.current += 1;
+      loadAbortRef.current?.abort();
       cancelLivePreview();
     };
   }, [campaignId, loadAllocationConfig, cancelLivePreview]);
+
+  useEffect(() => {
+    const el = dialogRef.current;
+    if (!loadingConfig && el && !el.open) {
+      if (typeof el.showModal === "function") el.showModal();
+      else el.setAttribute("open", "");
+    }
+  }, [loadingConfig]);
 
   const executePreviewFetch = useCallback(
     async (targetId: string, bodyObj: ReturnType<typeof buildRequestBody>, serialized: string) => {
@@ -526,6 +537,8 @@ const TaskAllocationSession: React.FC<TaskAllocationDialogProps & { campaignId: 
   const currentUnit = draft?.inputUnit === "count" && caseCount > 0 ? "count" : "percent";
   const removedMember = config?.progress_members?.find((p) => p.name === removeAssignee);
 
+  if (loadingConfig && !config && !formError) return null;
+
   return createPortal(
     <dialog
       ref={dialogRef}
@@ -625,9 +638,7 @@ const TaskAllocationSession: React.FC<TaskAllocationDialogProps & { campaignId: 
                 </>
               )}
             </>
-          ) : (
-            <p className="dialog-copy">{bilingual(lang, "正在加载分配…", "Loading allocation…")}</p>
-          )}
+          ) : null}
 
           {removalPreview && (
             <section
@@ -660,7 +671,7 @@ const TaskAllocationSession: React.FC<TaskAllocationDialogProps & { campaignId: 
               <button
                 type="button"
                 className="button button-quiet"
-                disabled={busy}
+                disabled={busy || loadingConfig}
                 onClick={() => void loadAllocationConfig(campaignId)}
               >
                 {bilingual(lang, "重新核对分配", "Reload allocation")}
@@ -674,7 +685,7 @@ const TaskAllocationSession: React.FC<TaskAllocationDialogProps & { campaignId: 
             <button
               type="submit"
               className="button button-primary"
-              disabled={busy || !config?.editable}
+              disabled={busy || loadingConfig || !config?.editable}
             >
               {busy
                 ? bilingual(lang, "正在处理…", "Working…")
@@ -716,41 +727,6 @@ const TaskAllocationSession: React.FC<TaskAllocationDialogProps & { campaignId: 
 
           {config && draft ? (
             <div className="task-allocation-body">
-              <div className="allocation-review-status">
-                <div>
-                  {config.coverage && (
-                    <p className="dialog-copy">
-                      {bilingual(lang, "当前交叉覆盖", "Current cross-review coverage")}{" "}
-                      <strong>{crossCoverage(config.coverage)}</strong>
-                      {preview?.coverage_after && <> {"→"} <strong>{crossCoverage(preview.coverage_after)}</strong></>}
-                    </p>
-                  )}
-                  <p className="dialog-copy">
-                    {pendingCount
-                      ? bilingual(lang,
-                          `待办 ${numFmt.format(pendingCount)} 份 · 可转派 ${numFmt.format(config.movable_slots || 0)} 份 · 受保护 ${numFmt.format(config.saved_pending_slots || 0)} 份`,
-                          `${numFmt.format(pendingCount)} pending · ${numFmt.format(config.movable_slots || 0)} transferable · ${numFmt.format(config.saved_pending_slots || 0)} protected`)
-                      : bilingual(lang, "已全部完成", "All assignments completed")}
-                  </p>
-                </div>
-                <div className="review-assignment-batch-actions">
-                  {task?.workflow_mode === "model_review_and_case_label" && pendingCount > 0 && (
-                    <a className="button button-quiet" href={pendingReviewHref(task)} onClick={handleClose}>
-                      {bilingual(lang, "查看全部剩余 Issue", "View all pending cases")}
-                    </a>
-                  )}
-                  {canTakeOver && (pendingCount > 0 || takeOver) && (
-                    <button className="button button-secondary" type="button" disabled={busy} onClick={toggleTakeOver}>
-                      {takeOver
-                        ? bilingual(lang, "返回分配设置", "Back to allocation settings")
-                        : bilingual(lang, "将可转派待办分给我", "Assign movable work to me")}
-                    </button>
-                  )}
-                </div>
-              </div>
-              {takeOver && preview && (
-                <AllocationTakeoverDetails preview={preview} task={task} lang={lang} onNavigate={handleClose} />
-              )}
               <div className="task-allocation-settings" hidden={takeOver}>
                 <div className="allocation-basis-bar">
                   <div className="allocation-section-heading">
@@ -864,14 +840,48 @@ const TaskAllocationSession: React.FC<TaskAllocationDialogProps & { campaignId: 
                   />
                 </div>
               </section>
+              <details className="assignment-preview-groups">
+                <summary>{bilingual(lang, "待办与交叉覆盖", "Pending work and cross-review coverage")}</summary>
+                <div className="allocation-review-status">
+                  <div>
+                    {config.coverage && (
+                      <p className="dialog-copy">
+                        {bilingual(lang, "当前交叉覆盖", "Current cross-review coverage")}{" "}
+                        <strong>{crossCoverage(config.coverage)}</strong>
+                        {preview?.coverage_after && crossCoverage(preview.coverage_after) !== crossCoverage(config.coverage) && (
+                          <> {"→"} <strong>{crossCoverage(preview.coverage_after)}</strong></>
+                        )}
+                      </p>
+                    )}
+                    <p className="dialog-copy">
+                      {pendingCount
+                        ? bilingual(lang,
+                            `待办 ${numFmt.format(pendingCount)} 份 · 可转派 ${numFmt.format(config.movable_slots || 0)} 份 · 受保护 ${numFmt.format(config.saved_pending_slots || 0)} 份`,
+                            `${numFmt.format(pendingCount)} pending · ${numFmt.format(config.movable_slots || 0)} transferable · ${numFmt.format(config.saved_pending_slots || 0)} protected`)
+                        : bilingual(lang, "已全部完成", "All assignments completed")}
+                    </p>
+                  </div>
+                  <div className="review-assignment-batch-actions">
+                    {task?.workflow_mode === "model_review_and_case_label" && pendingCount > 0 && (
+                      <a className="button button-quiet" href={pendingReviewHref(task)} onClick={handleClose}>
+                        {bilingual(lang, "查看全部剩余 Issue", "View all pending cases")}
+                      </a>
+                    )}
+                    {canTakeOver && (pendingCount > 0 || takeOver) && (
+                      <button className="button button-secondary" type="button" disabled={busy} onClick={toggleTakeOver}>
+                        {takeOver
+                          ? bilingual(lang, "返回分配设置", "Back to allocation settings")
+                          : bilingual(lang, "将可转派待办分给我", "Assign movable work to me")}
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {takeOver && preview && (
+                  <AllocationTakeoverDetails preview={preview} task={task} lang={lang} onNavigate={handleClose} />
+                )}
+              </details>
             </div>
-          ) : (
-            <p className="dialog-copy">
-              {loadingConfig
-                ? bilingual(lang, "正在加载分配…", "Loading allocation…")
-                : bilingual(lang, "未能加载分配配置。", "Could not load allocation.")}
-            </p>
-          )}
+          ) : null}
 
           {config && (
             <div className="allocation-live-status">
@@ -933,7 +943,7 @@ const TaskAllocationSession: React.FC<TaskAllocationDialogProps & { campaignId: 
                 className="button button-secondary"
                 type="button"
                 hidden={Boolean(config) || !formError}
-                disabled={busy}
+                disabled={busy || loadingConfig}
                 onClick={() => void loadAllocationConfig(campaignId)}
               >
                 {bilingual(lang, "重新加载分配", "Reload allocation")}

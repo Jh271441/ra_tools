@@ -39,7 +39,7 @@ class AllocationProtectionMixin:
             return
         self._lock_task_work(conn)
 
-    def _allocation_protection(self, conn, split, assignments):
+    def _allocation_protection(self, conn, split, assignments, *, include_snapshot=True):
         cid = split["id"]
         members = [dict(r) for r in conn.execute(
             "SELECT * FROM campaign_issue_members WHERE campaign_id=? ORDER BY ordinal,issue_id", (cid,),
@@ -56,24 +56,35 @@ class AllocationProtectionMixin:
             "SELECT * FROM model_review_revisions WHERE campaign_id=? OR work_split_id=? ORDER BY id", (cid, cid),
         ).fetchall()]
         heads = [dict(r) for r in conn.execute(
-            "SELECT h.* FROM model_review_heads h JOIN model_review_revisions r ON r.id=h.revision_id "
-            "WHERE h.campaign_id=? OR r.work_split_id=? ORDER BY h.issue_id,h.reviewer", (cid, cid),
+            """SELECT * FROM model_review_heads WHERE campaign_id=?
+               UNION ALL
+               SELECT h.* FROM model_review_revisions r JOIN model_review_heads h ON h.revision_id=r.id
+               WHERE r.work_split_id=? AND h.campaign_id<>?
+               ORDER BY issue_id,reviewer""", (cid, cid, cid),
         ).fetchall()]
         progress = [dict(r) for r in conn.execute(
             "SELECT * FROM combined_review_progress WHERE campaign_id=? ORDER BY issue_id,reviewer", (cid,),
         ).fetchall()]
         labels = [dict(r) for r in conn.execute(
-            """SELECT r.*,c.issue_id,c.task_id,c.source_run_id,c.baseline_scope,
+            """WITH task_revisions AS (
+                 SELECT r.id FROM label_cases c JOIN label_revisions r ON r.label_case_id=c.id
+                 WHERE c.task_id=?
+                 UNION
+                 SELECT case_label_revision_id FROM combined_review_progress
+                 WHERE campaign_id=? AND case_label_revision_id IS NOT NULL
+                 UNION
+                 SELECT r.id FROM human_label_scopes hs
+                 JOIN label_cases c ON c.issue_id=hs.issue_id AND c.baseline_scope=hs.baseline_scope
+                 JOIN label_revisions r ON r.label_case_id=c.id
+                 WHERE hs.campaign_id=?
+               )
+               SELECT r.*,c.issue_id,c.task_id,c.source_run_id,c.baseline_scope,
                       s.revision_id AS suppressed,v.role AS captured_role
-               FROM label_revisions r JOIN label_cases c ON c.id=r.label_case_id
+               FROM task_revisions t JOIN label_revisions r ON r.id=t.id
+               JOIN label_cases c ON c.id=r.label_case_id
                LEFT JOIN label_import_suppressed_revisions s ON s.revision_id=r.id
                LEFT JOIN human_vote_roles v ON v.revision_id=r.id
-               WHERE c.task_id=? OR r.id IN (
-                 SELECT case_label_revision_id FROM combined_review_progress WHERE campaign_id=?
-               ) OR EXISTS (
-                 SELECT 1 FROM human_label_scopes hs
-                 WHERE hs.campaign_id=? AND hs.issue_id=c.issue_id AND hs.baseline_scope=c.baseline_scope
-               ) ORDER BY r.id""", (cid, cid, cid),
+               ORDER BY r.id""", (cid, cid, cid),
         ).fetchall()]
         resolutions = [dict(r) for r in conn.execute(
             "SELECT r.*,c.issue_id FROM label_resolutions r JOIN label_cases c ON c.id=r.label_case_id "
@@ -150,15 +161,23 @@ class AllocationProtectionMixin:
             raise ValueError("已有标注的任务、Run 或参考关联不明确，请先核对 / Saved evidence has ambiguous task, Run or reference links")
         adjudicated_cases = {r["issue_id"] for r in [*resolutions, *decisions]}
         frozen_cases = {r["issue_id"] for r in resolutions}
-        source_task = _json_load(split["filter_json"], {}).get("source_legacy_split_id")
-        if source_task and split["workflow_mode"] == "model_review_and_case_label":
+        filters = _json_load(split["filter_json"], {})
+        sources = {
+            (source["legacy_split_id"], source["run_id"])
+            for source in filters.get("merged_review_sources", [])
+            if source.get("legacy_split_id") and source.get("run_id")
+        }
+        if filters.get("source_legacy_split_id"):
+            sources.add((filters["source_legacy_split_id"], run))
+        if sources and split["workflow_mode"] == "model_review_and_case_label":
             # A migrated joint task still points at revisions from its original labeling task.
-            original = conn.execute("""
+            predicates = " OR ".join("(lc.task_id=? AND lc.source_run_id=?)" for _ in sources)
+            original = conn.execute(f"""
                 SELECT DISTINCT lc.issue_id,lc.baseline_scope FROM label_resolutions r
                 JOIN label_cases lc ON lc.id=r.label_case_id
                 JOIN campaign_issue_members m ON m.issue_id=lc.issue_id AND m.baseline_scope=lc.baseline_scope
-                WHERE m.campaign_id=? AND lc.task_id=? AND lc.source_run_id=?
-            """, (cid, source_task, run)).fetchall()
+                WHERE m.campaign_id=? AND ({predicates})
+            """, (cid, *(value for source in sorted(sources) for value in source))).fetchall()
             by_scope = defaultdict(set)
             for r in original:
                 by_scope[r["baseline_scope"]].add(r["issue_id"])
@@ -193,21 +212,24 @@ class AllocationProtectionMixin:
                 case_outputs[pair] = row["expected_output"]
         frozen_cases.update(i for i, values in outputs.items() if len(values) > 1)
         protected.update(pair for pair in pairs if pair[0] in frozen_cases)
-        security = [dict(r) for r in conn.execute(
-            "SELECT a.username,a.role,h.role AS human_role FROM access_users a "
-            "LEFT JOIN human_user_roles h ON h.username=a.username ORDER BY a.username",
-        ).fetchall()]
-        dataset_id = _json_load(split["filter_json"], {}).get("version_dataset_id")
-        dataset = conn.execute("SELECT * FROM version_datasets WHERE id=?", (dataset_id,)).fetchone() if dataset_id else None
-        targets = [dict(r) for r in conn.execute(
-            "SELECT issue_id,is_target,updated_at FROM version_dataset_items WHERE dataset_id=? ORDER BY issue_id",
-            (dataset_id,),
-        ).fetchall()] if dataset_id else []
-        snapshot = _fingerprint(dict(
-            split=split, members=members, assignments=assignments, models=models, heads=heads,
-            progress=progress, labels=labels, resolutions=resolutions, decisions=decisions,
-            captured=captured, security=security, dataset=dict(dataset) if dataset else None, targets=targets,
-        ))
+        snapshot = None
+        if include_snapshot:
+            # Preview and save fingerprint the evidence; opening the dialog only needs current progress.
+            security = [dict(r) for r in conn.execute(
+                "SELECT a.username,a.role,h.role AS human_role FROM access_users a "
+                "LEFT JOIN human_user_roles h ON h.username=a.username ORDER BY a.username",
+            ).fetchall()]
+            dataset_id = filters.get("version_dataset_id")
+            dataset = conn.execute("SELECT * FROM version_datasets WHERE id=?", (dataset_id,)).fetchone() if dataset_id else None
+            targets = [dict(r) for r in conn.execute(
+                "SELECT issue_id,is_target,updated_at FROM version_dataset_items WHERE dataset_id=? ORDER BY issue_id",
+                (dataset_id,),
+            ).fetchall()] if dataset_id else []
+            snapshot = _fingerprint(dict(
+                split=split, members=members, assignments=assignments, models=models, heads=heads,
+                progress=progress, labels=labels, resolutions=resolutions, decisions=decisions,
+                captured=captured, security=security, dataset=dict(dataset) if dataset else None, targets=targets,
+            ))
         return dict(protected=protected, completed=completed, forbidden=history - pairs,
                     model_submitted={(r["issue_id"], r["reviewer"].lower()) for r in progress if r["model_review_submitted"]},
                     coverage_locked={iid for iid, _ in history} | frozen_cases, frozen_cases=frozen_cases,

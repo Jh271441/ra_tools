@@ -402,6 +402,12 @@ html[data-color-theme="light"] .page-jump-control input {
   box-shadow: none;
   transition: border-color 160ms ease-out, background 160ms ease-out, color 160ms ease-out;
 }
+a.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
 .button:hover:not(:disabled) { border-color: #67e8f9; }
 .button-primary {
   color: #062128; border-color: var(--accent); background: var(--accent); box-shadow: none;
