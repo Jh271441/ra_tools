@@ -252,6 +252,7 @@ describe("VersionMetricsPage component", () => {
     expect(container.querySelector("#vmWorkloadTitle")?.textContent).toBe("低置信标注量");
     expect(container.querySelector(".vm-workload-heading")).not.toBeNull();
     expect(container.querySelector("#vmWorkloadBaseline")?.textContent).toBe("conf = 0.90 标注量合计 330");
+    expect(container.querySelector("#vmWorkloadThreshold")?.textContent).toBe("conf < 0.90");
     expect(container.querySelector("#vmWorkloadReleasePicker")).toHaveAttribute("hidden");
     expect(container.querySelector("#vmWorkloadSampleHead")).toHaveAttribute("hidden");
     expect(container.querySelector("#vmWorkloadRows")?.textContent).toContain("20261030");

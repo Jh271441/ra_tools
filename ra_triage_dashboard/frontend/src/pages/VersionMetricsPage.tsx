@@ -1129,6 +1129,7 @@ export const VersionMetricsPage: React.FC<VersionMetricsPageProps> = ({
               </label>
               <UiSelect
                 id="vmThreshold"
+                className="dashboard-native-ui-select"
                 value={routeState.threshold.toFixed(2)}
                 options={thresholdOptions}
                 ariaLabel={bilingual(lang, "人工模拟 conf 阈值", "Simulated review conf threshold")}
@@ -1515,6 +1516,7 @@ export const VersionMetricsPage: React.FC<VersionMetricsPageProps> = ({
                 <div id="vmWorkloadReleasePicker" hidden={!byThreshold}>
                   <UiSelect
                     id="vmThresholdFamily"
+                    className="dashboard-native-ui-select"
                     value={activeThresholdFamily}
                     options={thresholdFamilyOptions}
                     disabled={busyReport || !sortedDescRows.length}
@@ -1524,13 +1526,7 @@ export const VersionMetricsPage: React.FC<VersionMetricsPageProps> = ({
                 </div>
                 <div className="vm-workload-summary muted">
                   <strong id="vmWorkloadBaseline">{workloadBaselineText}</strong>
-                  <span id="vmWorkloadThreshold">
-                    {bilingual(
-                      lang,
-                      `人工模拟 conf < ${routeState.threshold.toFixed(2)}`,
-                      `Simulated review conf < ${routeState.threshold.toFixed(2)}`,
-                    )}
-                  </span>
+                  <span id="vmWorkloadThreshold">{`conf < ${routeState.threshold.toFixed(2)}`}</span>
                 </div>
               </header>
 
@@ -1747,7 +1743,7 @@ export const VersionMetricsPage: React.FC<VersionMetricsPageProps> = ({
       >
         {tooltipRow && (
           <>
-            <strong>{`release-${tooltipRow.family}`}</strong>
+            <strong>{`release-${tooltipRow.family} · conf < ${routeState.threshold.toFixed(2)}`}</strong>
             {tooltipRow.status === "ready" ? (
               <>
                 {routeState.schemes.map((key) => {
