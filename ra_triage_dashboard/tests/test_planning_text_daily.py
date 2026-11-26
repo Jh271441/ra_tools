@@ -86,6 +86,15 @@ class PlanningTextTest(unittest.TestCase):
         self.assertIsNone(read_daily_window(self.data, 'cn1234', 351)['matched_frame'])
         self.assertIsNone(read_daily_window(self.data, 'cn1234', 0, trip_id='other'))
 
+    def test_large_daily_index_keeps_bounded_reads(self):
+        self.publish()
+        path = index_path(self.data)
+        with path.open('r+b') as handle:
+            handle.truncate(3 * 1024**3)
+        self.assertEqual(read_daily_window(self.data, 'cn1234', 0)['status'], 'ready')
+        with patch.object(planning_text_daily, 'MAX_DAILY_INDEX_BYTES', path.stat().st_size - 1):
+            self.assertEqual(read_daily_window(self.data, 'cn1234', 0)['reason'], 'index_unavailable')
+
     def test_native_nanoseconds_are_lossless_and_equal_ms_selects_latest(self):
         rows = [observation(-1, ns=1), observation(-1, ns=999999)]
         rows[1]['frame']['raw'] = 'second exact raw'

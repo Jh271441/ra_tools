@@ -14,6 +14,7 @@ from .planning_text_artifact import identity, load_artifact
 
 APPLICATION_ID = 0x50434459  # PCDY; independent of the immutable historical index.
 INDEX_VERSION = 1
+MAX_DAILY_INDEX_BYTES = 16 * 1024**3
 
 
 def index_path(data_dir):
@@ -159,7 +160,7 @@ def import_artifact(data_dir, folder, expected, owner):
 def _reader(data_dir):
     path = index_path(data_dir)
     path.resolve().relative_to(Path(data_dir).resolve())
-    if path.is_symlink() or not path.is_file() or path.stat().st_size > 2 * 1024**3:
+    if path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_DAILY_INDEX_BYTES:
         raise ValueError("invalid_daily_planning_index")
     db = sqlite3.connect(path.absolute().as_uri() + "?mode=ro", uri=True, timeout=.1)
     try:
