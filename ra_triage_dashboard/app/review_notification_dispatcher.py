@@ -65,7 +65,12 @@ class ReviewNotificationDispatcher:
             while True:
                 self._wake_pending = False
                 self._wake.clear()
-                handled = await asyncio.to_thread(self._dispatch_one)
+                dispatch_task = asyncio.create_task(asyncio.to_thread(self._dispatch_one))
+                try:
+                    handled = await asyncio.shield(dispatch_task)
+                except asyncio.CancelledError:
+                    await dispatch_task
+                    raise
                 if handled:
                     # DChat documents a common BotUser limit of 5 QPS.
                     await asyncio.sleep(0.21)

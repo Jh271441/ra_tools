@@ -365,6 +365,85 @@ async function run() {
   assert.equal(uiCtx.readCaseLabelDraft("cn200", "task-1", "submission"), null);
   assert.equal(renderedAfterDiscard, 1);
 
+  // 5. Conditional delete (P1-4): Tab A's earlier save response must NOT delete
+  // a newer draft written by Tab B for the same issue/scope.
+  const tabADraft = context.writeCaseLabelDraft(
+    "cn300",
+    "task-1",
+    "submission",
+    { expected_output: "误触发", tags: ["a"], evidence_gaps: [], rationale: "Tab A 旧内容", is_excluded: false },
+    { expectedPreviousId: 10 },
+  );
+  assert.ok(tabADraft.draft_token);
+  const tabBDraft = context.writeCaseLabelDraft(
+    "cn300",
+    "task-1",
+    "submission",
+    { expected_output: "正确触发", tags: ["b"], evidence_gaps: [], rationale: "Tab B 新内容", is_excluded: false },
+    { expectedPreviousId: 10 },
+  );
+  assert.notEqual(tabBDraft.draft_token, tabADraft.draft_token);
+  assert.equal(
+    context.clearCaseLabelDraftIfMatch("cn300", "task-1", "submission", {
+      draftToken: tabADraft.draft_token,
+      idempotencyKey: tabADraft.idempotency_key,
+      signature: tabADraft.signature,
+    }),
+    false,
+  );
+  const survivingB = context.readCaseLabelDraft("cn300", "task-1", "submission");
+  assert.equal(survivingB.rationale, "Tab B 新内容");
+  assert.equal(survivingB.draft_token, tabBDraft.draft_token);
+  assert.equal(
+    context.clearCaseLabelDraftIfMatch("cn300", "task-1", "submission", {
+      draftToken: tabBDraft.draft_token,
+      idempotencyKey: tabBDraft.idempotency_key,
+      signature: tabBDraft.signature,
+    }),
+    true,
+  );
+  assert.equal(context.readCaseLabelDraft("cn300", "task-1", "submission"), null);
+
+  // 6. Quota-full localStorage fallback (P2-7): marks persisted=false and keeps
+  // the exact same Idempotency-Key across same-page manual retries.
+  const origSetItem = localStorage.setItem;
+  localStorage.setItem = () => {
+    const err = new Error("QuotaExceededError");
+    err.name = "QuotaExceededError";
+    throw err;
+  };
+  try {
+    const q1 = context.writeCaseLabelDraft(
+      "cn301",
+      "task-1",
+      "submission",
+      { expected_output: "误触发", tags: ["q"], evidence_gaps: [], rationale: "配额满重试", is_excluded: false },
+      { expectedPreviousId: 11 },
+    );
+    assert.equal(q1.persisted, false);
+    assert.equal(localStorage.getItem(context.caseLabelDraftStorageKey("cn301", "task-1", "submission")), null);
+    const q2 = context.writeCaseLabelDraft(
+      "cn301",
+      "task-1",
+      "submission",
+      { expected_output: "误触发", tags: ["q"], evidence_gaps: [], rationale: "配额满重试", is_excluded: false },
+      { expectedPreviousId: 11 },
+    );
+    assert.equal(q2.persisted, false);
+    assert.equal(q2.idempotency_key, q1.idempotency_key);
+    assert.equal(context.readCaseLabelDraft("cn301", "task-1", "submission").idempotency_key, q1.idempotency_key);
+    assert.equal(
+      context.clearCaseLabelDraftIfMatch("cn301", "task-1", "submission", {
+        draftToken: q2.draft_token,
+        idempotencyKey: q2.idempotency_key,
+      }),
+      true,
+    );
+    assert.equal(context.readCaseLabelDraft("cn301", "task-1", "submission"), null);
+  } finally {
+    localStorage.setItem = origSetItem;
+  }
+
   console.log("case_labeling_draft_and_retry.cjs: PASS");
 }
 

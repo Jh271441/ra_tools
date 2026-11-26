@@ -10,6 +10,7 @@ import { ModalDialog } from "../components/ui/ModalDialog";
 import { MultiSelect, MultiSelectOption } from "../components/ui/MultiSelect";
 import {
   clearIntentDraft,
+  clearIntentDraftIfMatch,
   intentDraftSignature,
   readIntentDraft,
   writeIntentDraft,
@@ -278,10 +279,12 @@ export const IntentLabelingPage: React.FC<IntentLabelingPageProps> = ({
   const [openMenuUser, setOpenMenuUser] = useState<string | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
+  const [discardingDraft, setDiscardingDraft] = useState(false);
   const [draftNotice, setDraftNotice] = useState<{
     kind: "restored" | "save_failed";
     message: string;
     remoteChanged: boolean;
+    storagePersisted?: boolean;
   } | null>(null);
   const serverLabelsRef = useRef<{
     revision_id: number | null;
@@ -494,6 +497,9 @@ export const IntentLabelingPage: React.FC<IntentLabelingPageProps> = ({
         forceNewIdempotencyKey: explicitOverwrite,
       });
       const idemKey = persistedDraft?.idempotency_key || "";
+      const submittedDraftToken = persistedDraft?.draft_token || "";
+      const submittedSignature = persistedDraft?.signature || "";
+      const storagePersisted = persistedDraft?.persisted !== false;
       dirtyRef.current = false;
       let saveFailed = false;
       setTopbarSaveState(bilingual(lang, "正在保存…", "Saving…"), "saving");
@@ -543,7 +549,11 @@ export const IntentLabelingPage: React.FC<IntentLabelingPageProps> = ({
             overrides: nextOverrides,
           };
           if (editVersionRef.current === savedEditVersion) {
-            clearIntentDraft(cur.activeDatasetId, cur.caseData!.case_id, cur.username || "");
+            clearIntentDraftIfMatch(cur.activeDatasetId, cur.caseData!.case_id, cur.username || "", {
+              draftToken: submittedDraftToken,
+              idempotencyKey: idemKey,
+              signature: submittedSignature,
+            });
             setDraftNotice(null);
             setOverrides(nextOverrides);
             setTopbarSaveState(bilingual(lang, "已自动保存", "Auto-saved"), "saved");
@@ -594,9 +604,16 @@ export const IntentLabelingPage: React.FC<IntentLabelingPageProps> = ({
         })
         .catch((err) => {
           saveFailed = true;
-          const message =
+          const baseMessage =
             (err as Error)?.message ||
             bilingual(lang, "保存失败，本地草稿已保留。", "Save failed. Local draft preserved.");
+          const message = storagePersisted
+            ? baseMessage
+            : bilingual(
+                lang,
+                `${baseMessage} 浏览器本地存储空间已满，当前修改仅暂存在本页内存中（刷新或关闭页面将会丢失），请勿刷新并直接点击重试。`,
+                `${baseMessage} Browser storage is full; changes are kept in memory on this page only (reloading will lose them). Keep this tab open and click Retry.`,
+              );
           const isConflict = err instanceof ApiError && err.status === 409;
           if (isConflict) {
             conflictBlockedRef.current = true;
@@ -608,11 +625,14 @@ export const IntentLabelingPage: React.FC<IntentLabelingPageProps> = ({
             kind: "save_failed",
             message,
             remoteChanged: isConflict,
+            storagePersisted,
           });
           setTopbarSaveState(
             isConflict
               ? bilingual(lang, "远端版本冲突（需确认）", "Server conflict (review required)")
-              : bilingual(lang, "保存失败（草稿已保留）", "Save failed (draft kept)"),
+              : storagePersisted
+                ? bilingual(lang, "保存失败（草稿已保留）", "Save failed (draft kept)")
+                : bilingual(lang, "保存失败（仅内存暂存）", "Save failed (memory only)"),
             "error",
           );
           getLegacyWindow().showToast?.(message, true);
@@ -1746,7 +1766,9 @@ export const IntentLabelingPage: React.FC<IntentLabelingPageProps> = ({
           <div className="ra-draft-recovery-copy">
             <strong>
               {draftNotice.kind === "save_failed"
-                ? bilingual(lang, "保存未完成 · 草稿已保留", "Save incomplete · Draft preserved")
+                ? draftNotice.storagePersisted === false
+                  ? bilingual(lang, "保存未完成 · 仅当前页内存暂存", "Save incomplete · Kept in memory only")
+                  : bilingual(lang, "保存未完成 · 草稿已保留", "Save incomplete · Draft preserved")
                 : bilingual(lang, "已恢复本地草稿", "Local draft restored")}
             </strong>
             <span>{draftNotice.message}</span>
@@ -1757,6 +1779,7 @@ export const IntentLabelingPage: React.FC<IntentLabelingPageProps> = ({
                 type="button"
                 className="button button-primary"
                 id="intentDraftReloadButton"
+                disabled={discardingDraft}
                 onClick={() => {
                   if (activeDatasetId && caseData?.case_id) {
                     void loadCase({ datasetId: activeDatasetId, caseId: caseData.case_id });
@@ -1770,6 +1793,7 @@ export const IntentLabelingPage: React.FC<IntentLabelingPageProps> = ({
                 type="button"
                 className="button button-primary"
                 id="intentDraftRetryButton"
+                disabled={discardingDraft}
                 onClick={() => {
                   dirtyRef.current = true;
                   void flushSave({ allowConflictOverwrite: Boolean(draftNotice.remoteChanged) });
@@ -1786,9 +1810,78 @@ export const IntentLabelingPage: React.FC<IntentLabelingPageProps> = ({
               type="button"
               className="button button-quiet"
               id="intentDraftDiscardButton"
-              onClick={() => {
-                if (activeDatasetId && caseData?.case_id) {
-                  clearIntentDraft(activeDatasetId, caseData.case_id, username || "");
+              disabled={discardingDraft}
+              onClick={async () => {
+                const dsId = activeDatasetId;
+                const cId = caseData?.case_id || "";
+                const actor = username || "";
+                if (draftNotice.remoteChanged && dsId && cId) {
+                  // Fetch the latest server revision FIRST before replacing UI
+                  // and clearing the local draft so 409 conflicts never fall
+                  // back to stale pre-conflict values.
+                  setDiscardingDraft(true);
+                  try {
+                    const detailParams = new URLSearchParams();
+                    validAssignees.forEach((u) => detailParams.append("assignee", u));
+                    if (validExperimentId) detailParams.set("experiment_id", validExperimentId);
+                    if (adminReveal) detailParams.set("reveal_answers", "true");
+                    const fresh = await apiRequest<IntentCaseDetailResponse>(
+                      `/api/intent-datasets/${encodeURIComponent(dsId)}/cases/${encodeURIComponent(
+                        cId,
+                      )}${detailParams.toString() ? `?${detailParams.toString()}` : ""}`,
+                      { cache: "no-store" },
+                    );
+                    if (stateRef.current.activeDatasetId !== dsId || stateRef.current.caseData?.case_id !== cId) {
+                      return;
+                    }
+                    fresh.ordinal = caseData?.ordinal;
+                    fresh.case_count = caseData?.case_count;
+                    fresh.previous_case = caseData?.previous_case ?? null;
+                    fresh.next_case = caseData?.next_case ?? null;
+                    const freshRevId = fresh.labels?.revision_id ?? null;
+                    const freshRouting = fresh.labels?.routing_default || "";
+                    const freshLaneChange = fresh.labels?.lane_change_default || "";
+                    const freshOv: Record<string, IntentOverride> = {};
+                    for (const ov of fresh.labels?.overrides || []) {
+                      freshOv[ov.timepoint_id] = { ...ov };
+                    }
+                    serverLabelsRef.current = {
+                      revision_id: freshRevId,
+                      routing_default: freshRouting,
+                      lane_change_default: freshLaneChange,
+                      overrides: freshOv,
+                    };
+                    clearIntentDraft(dsId, cId, actor);
+                    conflictBlockedRef.current = false;
+                    draftBaseRevisionRef.current = freshRevId;
+                    setCaseData(fresh);
+                    setAggregate({ routing: freshRouting, laneChange: freshLaneChange });
+                    setOverrides(freshOv);
+                    setRevisionId(freshRevId);
+                    dirtyRef.current = false;
+                    setDraftNotice(null);
+                    setTopbarSaveState(
+                      freshRevId
+                        ? bilingual(lang, "已采用远端最新版本", "Loaded latest server version")
+                        : bilingual(lang, "尚未标注", "Not labeled yet"),
+                      freshRevId ? "saved" : "",
+                    );
+                  } catch (err) {
+                    const msg =
+                      (err as Error)?.message ||
+                      bilingual(
+                        lang,
+                        "加载远端最新版本失败，本地草稿已保留，请重试。",
+                        "Failed to load latest server revision. Local draft preserved; please retry.",
+                      );
+                    getLegacyWindow().showToast?.(msg, true);
+                  } finally {
+                    setDiscardingDraft(false);
+                  }
+                  return;
+                }
+                if (dsId && cId) {
+                  clearIntentDraft(dsId, cId, actor);
                 }
                 const server = serverLabelsRef.current;
                 conflictBlockedRef.current = false;

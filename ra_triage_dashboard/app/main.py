@@ -249,6 +249,7 @@ async def lifespan(_: FastAPI):
             else review_notification_dispatcher.run(),
             name="review-dchat-notifications",
         )
+    batch_drain_event = asyncio.Event()
     if embedded_workers:
         if lease_manager is None:
             batch_prediction_runner.resume_queued_work()
@@ -259,12 +260,25 @@ async def lifespan(_: FastAPI):
                     exclude_job_ids=batch_prediction_runner.active_job_ids(),
                 )
                 batch_prediction_runner.set_lease_held(True)
+                gracefully_drained = False
                 try:
-                    while True:
+                    while not batch_drain_event.is_set():
                         await asyncio.to_thread(batch_prediction_runner.resume_queued_work)
-                        await asyncio.sleep(5.0)
+                        try:
+                            await asyncio.wait_for(batch_drain_event.wait(), timeout=5.0)
+                        except asyncio.TimeoutError:
+                            pass
+                    # Graceful shutdown: stop claiming new queued jobs while
+                    # keeping the DB lease renewed until any active job finishes.
+                    await asyncio.to_thread(batch_prediction_runner.begin_graceful_drain)
+                    while await asyncio.to_thread(batch_prediction_runner.has_active_work):
+                        await asyncio.sleep(0.2)
+                    gracefully_drained = True
                 finally:
-                    await asyncio.to_thread(batch_prediction_runner.revoke_lease)
+                    if gracefully_drained:
+                        batch_prediction_runner.set_lease_held(False)
+                    else:
+                        await asyncio.to_thread(batch_prediction_runner.revoke_lease)
 
             batch_runner_task = asyncio.create_task(
                 run_with_lease(
@@ -273,24 +287,37 @@ async def lifespan(_: FastAPI):
                     _batch_prediction_leader,
                     ttl_seconds=60.0,
                     retry_seconds=5.0,
+                    stop_event=batch_drain_event,
                 ),
                 name="batch-prediction-runner",
             )
     try:
         yield
     finally:
+        batch_drain_event.set()
+        await asyncio.to_thread(batch_prediction_runner.begin_graceful_drain)
         for task in (
             metric_task,
             human_label_task,
             review_notification_task,
             gt_sync_task,
             trail_sync_task,
-            batch_runner_task,
         ):
             if task is not None:
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await task
+        if batch_runner_task is not None:
+            try:
+                await batch_runner_task
+            except BaseException:
+                batch_runner_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await batch_runner_task
+                raise
+        else:
+            while await asyncio.to_thread(batch_prediction_runner.has_active_work):
+                await asyncio.sleep(0.2)
         await asyncio.to_thread(batch_prediction_runner.shutdown)
         if lease_manager is not None:
             with contextlib.suppress(Exception):

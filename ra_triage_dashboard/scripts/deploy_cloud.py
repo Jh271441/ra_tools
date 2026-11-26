@@ -52,7 +52,7 @@ REVIEWED_ADDITIVE_MIGRATIONS = {
     "ra_triage_dashboard/migrations/postgres/061_human_label_publication.sql":
         "646f328dd24db468f33e2221d5e7de993a4945d40de01e1260c2fef70e4460bd",
     "ra_triage_dashboard/migrations/postgres/065_labeling_idempotency_keys.sql":
-        "9451a3fd80e008ab72a537ef1c5098bddc0d443501c2337aa29c80983554d86d",
+        "89986b4212ba8073264b69ce2f0fe9c7a26d119237749a4abb8cef9992e84bfa",
 }
 RECORD_SCHEMA_VERSION = 2
 RELEASE_ID_PATTERN = re.compile(r"[0-9]{8}T[0-9]{6}Z-[0-9a-f]{12}(?:-[0-9]{2})?")
@@ -136,7 +136,10 @@ with psycopg.connect(settings.database_url, autocommit=False) as guard, \\
                 line = sys.stdin.readline()
                 if not line or line.strip() == "release":
                     break
+        # Prove the lock-holding DB backend remained intact right up to release.
+        guard.execute("SELECT 1").fetchone()
     guard.rollback()
+    print(json.dumps({"released": True}), flush=True)
 """
 
 MIGRATION_APPLY_CODE = """
@@ -159,6 +162,10 @@ print(json.dumps({"count": len(versions), "versions": versions}))
 
 class DeployError(RuntimeError):
     pass
+
+
+class FenceLostError(DeployError):
+    """Raised when the legacy Batch PostgreSQL write fence dropped before release."""
 
 def require(condition, message):
     if not condition:
@@ -461,6 +468,38 @@ def switch_nginx_upstream(state, target_port, *, reload_running=True):
         raise
 
 
+MAINTENANCE_MODE_LEVEL = {False: 0, "batch": 1, "all": 2}
+
+
+def normalize_maintenance_mode(mode):
+    if mode is True or mode == "all":
+        return "all"
+    if mode == "batch":
+        return "batch"
+    if mode is False or mode in ("", "off", None):
+        return False
+    raise DeployError(f"Unsupported maintenance write guard mode: {mode}")
+
+
+def read_nginx_maintenance_writes(state):
+    """Return the currently configured Nginx maintenance write guard mode."""
+    maint_path = nginx_dir(state) / "maintenance_writes.conf"
+    if not maint_path.is_file():
+        return False
+    text = maint_path.read_text(encoding="utf-8")
+    if "# Maintenance write guard enabled (all)" in text:
+        return "all"
+    if "# Maintenance write guard enabled (batch)" in text:
+        return "batch"
+    if "# Maintenance write guard disabled" in text:
+        return False
+    if "api/prediction-batches" in text:
+        return "batch"
+    if "return 503" in text:
+        return "all"
+    return False
+
+
 def set_nginx_maintenance_writes(state, enabled, *, retry_after=15, reload_running=True):
     maint_path = nginx_dir(state) / "maintenance_writes.conf"
     previous = maint_path.read_text(encoding="utf-8") if maint_path.is_file() else None
@@ -700,7 +739,7 @@ def gray_env(env, candidate, data, sha, port=8786):
     return result
 
 def supports_deferred_batch_recovery(app_dir):
-    """Return True only when app_dir defers Batch interruption recovery behind a renewed lease."""
+    """Return True only when app_dir supports lease-gated recovery AND graceful Batch drain."""
     main_py = Path(app_dir) / "app/main.py"
     try:
         text = main_py.read_text(encoding="utf-8")
@@ -709,6 +748,7 @@ def supports_deferred_batch_recovery(app_dir):
     return (
         "recover_interrupted_jobs=not defer_batch_recovery" in text
         and "_batch_prediction_leader" in text
+        and "begin_graceful_drain" in text
     )
 
 
@@ -753,6 +793,8 @@ def legacy_batch_write_fence(env, *, app_dir=None, timeout=60):
         stderr=subprocess.PIPE,
         text=True,
     )
+    fence_acquired = False
+    yield_failed = False
     try:
         ready, _, _ = select.select([proc.stdout], [], [], timeout)
         require(bool(ready), "Timed out acquiring legacy Batch write fence")
@@ -769,15 +811,33 @@ def legacy_batch_write_fence(env, *, app_dir=None, timeout=60):
             running == 0,
             "Cannot bootstrap Nginx while a legacy Batch prediction or publish job is queued or running; wait for it to finish",
         )
-        yield (lambda: proc.poll() is None)
-    finally:
+        fence_acquired = True
         try:
+            yield (lambda: proc.poll() is None)
+        except BaseException:
+            yield_failed = True
+            raise
+    finally:
+        fence_lost_reason = ""
+        try:
+            if fence_acquired and proc.poll() is not None:
+                fence_lost_reason = (
+                    f"Legacy Batch write fence exited prematurely with code {proc.returncode}"
+                )
             if proc.stdin and not proc.stdin.closed:
                 with contextlib.suppress(BrokenPipeError, OSError):
                     proc.stdin.write("release\n")
                     proc.stdin.flush()
                 with contextlib.suppress(OSError):
                     proc.stdin.close()
+            released_ack = False
+            if fence_acquired and not fence_lost_reason and proc.stdout and not proc.stdout.closed:
+                ready_rel, _, _ = select.select([proc.stdout], [], [], 10)
+                if ready_rel:
+                    rel_line = proc.stdout.readline().strip()
+                    if rel_line:
+                        with contextlib.suppress(ValueError):
+                            released_ack = json.loads(rel_line).get("released") is True
             if proc.poll() is None:
                 try:
                     proc.wait(timeout=10)
@@ -788,6 +848,11 @@ def legacy_batch_write_fence(env, *, app_dir=None, timeout=60):
                     except subprocess.TimeoutExpired:
                         proc.kill()
                         proc.wait(timeout=5)
+            if fence_acquired and not fence_lost_reason:
+                if proc.returncode != 0 or not released_ack:
+                    fence_lost_reason = (
+                        f"Legacy Batch write fence did not release cleanly (rc={proc.returncode}, ack={released_ack})"
+                    )
         finally:
             if proc.stdout and not proc.stdout.closed:
                 with contextlib.suppress(OSError):
@@ -795,6 +860,8 @@ def legacy_batch_write_fence(env, *, app_dir=None, timeout=60):
             if proc.stderr and not proc.stderr.closed:
                 with contextlib.suppress(OSError):
                     proc.stderr.close()
+        if fence_lost_reason and not yield_failed:
+            raise FenceLostError(fence_lost_reason)
 
 
 def read_applied_postgres_migrations(env, *, app_dir=None):
@@ -1402,8 +1469,28 @@ def promote_bluegreen_release(
     switched = False
     committed = False
     old_slot_stop_attempted = False
-    maint_enabled = False
-    batch_freeze_enabled = False
+    initial_maint_mode = normalize_maintenance_mode(read_nginx_maintenance_writes(STATE))
+    current_maint_mode = initial_maint_mode
+    batch_freeze_needed = False
+
+    def apply_maint_mode(desired_mode, *, allow_loosen=False, drain_previous=False):
+        nonlocal current_maint_mode
+        target_mode = normalize_maintenance_mode(desired_mode)
+        if not allow_loosen and MAINTENANCE_MODE_LEVEL[target_mode] <= MAINTENANCE_MODE_LEVEL[current_maint_mode]:
+            return False
+        if allow_loosen:
+            # Never loosen below the operator's pre-deploy maintenance level.
+            if MAINTENANCE_MODE_LEVEL[target_mode] < MAINTENANCE_MODE_LEVEL[initial_maint_mode]:
+                target_mode = initial_maint_mode
+        if target_mode == current_maint_mode:
+            return False
+        pre_workers = nginx_worker_pids(STATE) if drain_previous else None
+        arg = True if target_mode == "all" else target_mode
+        set_nginx_maintenance_writes(STATE, arg)
+        current_maint_mode = target_mode
+        if drain_previous:
+            wait_nginx_workers_drained(pre_workers)
+        return True
 
     def mark_old_slot_stopping():
         nonlocal old_slot_stop_attempted
@@ -1419,10 +1506,7 @@ def promote_bluegreen_release(
         )
         if migrations:
             if pending_migrations and requested_mode == "schema":
-                pre_maint_workers = nginx_worker_pids(STATE)
-                set_nginx_maintenance_writes(STATE, True)
-                maint_enabled = True
-                wait_nginx_workers_drained(pre_maint_workers)
+                apply_maint_mode("all", allow_loosen=False, drain_previous=True)
             backup, migration_count = apply_additive_migrations(
                 candidate,
                 env,
@@ -1438,20 +1522,12 @@ def promote_bluegreen_release(
             save(folder / "result.json", result)
         old_app = Path(active_slot.get("app") or (REPO / "ra_triage_dashboard"))
         if not supports_deferred_batch_recovery(old_app):
-            # Transitional upgrade from a pre-lease-renewal slot: block new Batch
-            # submissions/pushes at Nginx FIRST, drain pre-freeze workers so no
-            # in-flight Batch POST can still reach old_app, then verify zero
-            # active/queued Batch jobs and keep Batch frozen until old_slot exits.
-            # When schema-migration maintenance mode is already enabled, its
-            # pre-reload workers were already drained above; never wait on the
-            # currently active maintenance workers without a reload.
-            if not maint_enabled:
-                pre_freeze_workers = nginx_worker_pids(STATE)
-                set_nginx_maintenance_writes(STATE, "batch")
-                batch_freeze_enabled = True
-                wait_nginx_workers_drained(pre_freeze_workers)
-            else:
-                batch_freeze_enabled = True
+            # Transitional upgrade from a pre-lease/non-draining slot: tighten
+            # Nginx to at least "batch" freeze (preserving manual "all" mode),
+            # drain pre-freeze workers if tightened, then verify zero active or
+            # queued Batch jobs and keep freeze active until old_slot exits.
+            batch_freeze_needed = True
+            apply_maint_mode("batch", allow_loosen=False, drain_previous=True)
             running_batch = read_running_batch_jobs(env, app_dir=old_app)
             require(
                 running_batch == 0,
@@ -1481,9 +1557,7 @@ def promote_bluegreen_release(
         pre_reload_workers = nginx_worker_pids(STATE)
         switch_nginx_upstream(STATE, target_port)
         switched = True
-        if maint_enabled:
-            set_nginx_maintenance_writes(STATE, "batch" if batch_freeze_enabled else False)
-            maint_enabled = False
+        apply_maint_mode("batch" if batch_freeze_needed else initial_maint_mode, allow_loosen=True)
         after = smoke(PUBLIC_PORT, target, "postgresql")
         require(
             policy(after) == expected_policy,
@@ -1511,9 +1585,7 @@ def promote_bluegreen_release(
         # pointing 8785 back at a draining or stopped old slot.
         committed = True
         stop_production(pid, session=old_session, on_signal=mark_old_slot_stopping)
-        if batch_freeze_enabled:
-            set_nginx_maintenance_writes(STATE, False)
-            batch_freeze_enabled = False
+        apply_maint_mode(initial_maint_mode, allow_loosen=True)
         if not isolated_ref:
             run("git", "merge", "--ff-only", target)
         result.update(
@@ -1568,8 +1640,7 @@ def promote_bluegreen_release(
                 if replacement_pid is not None:
                     stop_production(replacement_pid, session=target_session)
                 result["rollback_status"] = "unchanged"
-            if maint_enabled or batch_freeze_enabled:
-                set_nginx_maintenance_writes(STATE, False)
+            apply_maint_mode(initial_maint_mode, allow_loosen=True)
         except Exception as rollback_error:
             result["rollback_status"] = type(rollback_error).__name__
         save(folder / "result.json", result)
@@ -1644,23 +1715,70 @@ def bootstrap_nginx():
                 stop_production(legacy_pid, session=SESSION, on_signal=mark_legacy_stopping)
                 legacy_stopped = True
             else:
-                with legacy_batch_write_fence(env, app_dir=live_cwd) as fence_alive:
-                    require(
-                        fence_alive(),
-                        "Legacy Batch write fence exited before stopping legacy service",
-                    )
-                    try:
-                        stop_production(
-                            legacy_pid,
-                            session=SESSION,
-                            on_signal=mark_legacy_stopping,
+                fence_lost_during_stop = False
+                try:
+                    with legacy_batch_write_fence(env, app_dir=live_cwd) as fence_alive:
+                        require(
+                            fence_alive(),
+                            "Legacy Batch write fence exited before stopping legacy service",
                         )
-                        legacy_stopped = True
-                    except BaseException:
-                        if legacy_stop_attempted:
-                            wait_production_stopped(legacy_pid, session=SESSION)
+                        try:
+                            stop_production(
+                                legacy_pid,
+                                session=SESSION,
+                                on_signal=mark_legacy_stopping,
+                            )
                             legacy_stopped = True
-                        raise
+                        except BaseException:
+                            if legacy_stop_attempted:
+                                wait_production_stopped(legacy_pid, session=SESSION)
+                                legacy_stopped = True
+                            if not fence_alive():
+                                fence_lost_during_stop = True
+                            raise
+                        if not fence_alive():
+                            fence_lost_during_stop = True
+                            raise FenceLostError(
+                                "Legacy Batch write fence exited before legacy process finished draining"
+                            )
+                except FenceLostError as fence_err:
+                    fence_lost_during_stop = True
+                    post_stop_batch = read_running_batch_jobs(env, app_dir=live_cwd)
+                    audit = {
+                        "status": "failed",
+                        "reason": "legacy_batch_write_fence_lost",
+                        "error": str(fence_err),
+                        "post_stop_running_batch": post_stop_batch,
+                        "recovery_action": (
+                            "rollback_legacy" if post_stop_batch == 0 else "hold_for_manual_inspection"
+                        ),
+                    }
+                    save(record_dir / "bootstrap_failure.json", audit)
+                    if post_stop_batch > 0:
+                        legacy_stop_attempted = False
+                        raise FenceLostError(
+                            f"Legacy Batch write fence was lost during shutdown and {post_stop_batch} "
+                            f"Batch job(s) are queued/running; refusing automatic bootstrap/restart. "
+                            f"Inspect {record_dir / 'bootstrap_failure.json'}"
+                        ) from fence_err
+                    raise
+                except BaseException:
+                    if fence_lost_during_stop and legacy_stopped:
+                        post_stop_batch = read_running_batch_jobs(env, app_dir=live_cwd)
+                        save(
+                            record_dir / "bootstrap_failure.json",
+                            {
+                                "status": "failed",
+                                "reason": "legacy_batch_write_fence_lost_after_stop_error",
+                                "post_stop_running_batch": post_stop_batch,
+                                "recovery_action": (
+                                    "rollback_legacy" if post_stop_batch == 0 else "hold_for_manual_inspection"
+                                ),
+                            },
+                        )
+                        if post_stop_batch > 0:
+                            legacy_stop_attempted = False
+                    raise
                 start_production(
                     record_dir,
                     live_cwd,

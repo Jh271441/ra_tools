@@ -41,13 +41,44 @@ review_notification_dispatcher = _services.review_notification_dispatcher
 issue_tag_sources = _services.issue_tag_sources
 artifact_store = _services.artifact_store
 
+class _LoopScopedSemaphore:
+    """Lazily bind one asyncio.Semaphore per running event loop (Python 3.9 safe)."""
+
+    def __init__(self, value: int) -> None:
+        self._value = value
+        self._by_loop: dict[int, asyncio.Semaphore] = {}
+
+    def _current(self) -> asyncio.Semaphore:
+        loop = asyncio.get_running_loop()
+        key = id(loop)
+        sem = self._by_loop.get(key)
+        if sem is None:
+            if len(self._by_loop) > 16:
+                self._by_loop.clear()
+            sem = asyncio.Semaphore(self._value)
+            self._by_loop[key] = sem
+        return sem
+
+    async def __aenter__(self) -> bool:
+        return await self._current().__aenter__()
+
+    async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> Any:
+        return await self._current().__aexit__(exc_type, exc, tb)
+
+    async def acquire(self) -> bool:
+        return await self._current().acquire()
+
+    def release(self) -> None:
+        self._current().release()
+
+
 trail_sync_lock = threading.Lock()
 gt_sync_lock = threading.Lock()
-review_image_semaphore = asyncio.Semaphore(2)
+review_image_semaphore = _LoopScopedSemaphore(2)
 # Gallery pages request many thumbs; allow more parallel JPEG encodes once the
 # source path is resolved. Cache hits never take this semaphore.
-thumbnail_image_semaphore = asyncio.Semaphore(8)
-trail_detail_semaphore = asyncio.Semaphore(2)
+thumbnail_image_semaphore = _LoopScopedSemaphore(8)
+trail_detail_semaphore = _LoopScopedSemaphore(2)
 APP_STARTED_AT = datetime.now(timezone.utc)
 APP_STARTED_MONOTONIC = time.monotonic()
 INDEX_HTML = render_index_html(

@@ -15,6 +15,8 @@ export interface IntentLabelDraft {
   overrides: Record<string, IntentOverrideDraft>;
   expected_revision_id: number | null;
   idempotency_key: string;
+  draft_token?: string;
+  persisted?: boolean;
   signature: string;
   saved_at: number;
 }
@@ -22,6 +24,7 @@ export interface IntentLabelDraft {
 export const INTENT_DRAFT_STORAGE_PREFIX = "ra-triage-intent-draft:v1:";
 export const INTENT_DRAFT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const INTENT_DRAFT_MAX_ENTRIES = 60;
+const memoryIntentDrafts = new Map<string, IntentLabelDraft>();
 
 export function createIntentIdempotencyKey(): string {
   try {
@@ -32,6 +35,17 @@ export function createIntentIdempotencyKey(): string {
     /* fallback below */
   }
   return `intent-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
+export function createIntentDraftToken(): string {
+  try {
+    if (typeof globalThis.crypto?.randomUUID === "function") {
+      return `draft-${globalThis.crypto.randomUUID()}`;
+    }
+  } catch {
+    /* fallback below */
+  }
+  return `draft-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
 }
 
 export function intentDraftKey(datasetId: string, caseId: string, author: string): string {
@@ -96,15 +110,14 @@ function getStorage(): Storage | null {
   }
 }
 
-export function readIntentDraft(
+function readStoredIntentDraftFromStorage(
+  storage: Storage,
+  key: string,
   datasetId: string,
   caseId: string,
   author: string,
-  nowMs: number = Date.now(),
+  nowMs: number,
 ): IntentLabelDraft | null {
-  const storage = getStorage();
-  const key = intentDraftKey(datasetId, caseId, author);
-  if (!storage || !key) return null;
   let raw: string | null = null;
   try {
     raw = storage.getItem(key);
@@ -139,6 +152,8 @@ export function readIntentDraft(
       expected_revision_id:
         typeof parsed.expected_revision_id === "number" ? parsed.expected_revision_id : null,
       idempotency_key: parsed.idempotency_key.trim(),
+      draft_token: typeof parsed.draft_token === "string" ? parsed.draft_token : undefined,
+      persisted: true,
       signature:
         typeof parsed.signature === "string" && parsed.signature
           ? parsed.signature
@@ -153,6 +168,30 @@ export function readIntentDraft(
     }
     return null;
   }
+}
+
+export function readIntentDraft(
+  datasetId: string,
+  caseId: string,
+  author: string,
+  nowMs: number = Date.now(),
+): IntentLabelDraft | null {
+  const key = intentDraftKey(datasetId, caseId, author);
+  if (!key) return null;
+  const storage = getStorage();
+  if (storage) {
+    const fromStorage = readStoredIntentDraftFromStorage(storage, key, datasetId, caseId, author, nowMs);
+    if (fromStorage) return fromStorage;
+  }
+  const fromMemory = memoryIntentDrafts.get(key);
+  if (fromMemory) {
+    if (nowMs - fromMemory.saved_at > INTENT_DRAFT_MAX_AGE_MS) {
+      memoryIntentDrafts.delete(key);
+      return null;
+    }
+    return { ...fromMemory };
+  }
+  return null;
 }
 
 function pruneOldIntentDrafts(storage: Storage, keepKey: string, nowMs: number): void {
@@ -219,31 +258,95 @@ export function writeIntentDraft(
     overrides,
     expected_revision_id: params.expectedRevisionId,
     idempotency_key: idempotencyKey,
+    draft_token: createIntentDraftToken(),
+    persisted: false,
     signature,
     saved_at: nowMs,
   };
 
   const storage = getStorage();
+  let persisted = false;
   if (storage) {
+    const serialized = JSON.stringify({ ...draft, persisted: true });
     try {
-      storage.setItem(key, JSON.stringify(draft));
+      storage.setItem(key, serialized);
+      persisted = true;
       pruneOldIntentDrafts(storage, key, nowMs);
     } catch {
       try {
         pruneOldIntentDrafts(storage, key, nowMs);
-        storage.setItem(key, JSON.stringify(draft));
+        storage.setItem(key, serialized);
+        persisted = true;
       } catch {
-        /* ignore quota errors; in-memory state still works */
+        persisted = false;
       }
     }
   }
+  draft.persisted = persisted;
+  memoryIntentDrafts.set(key, { ...draft });
   return draft;
 }
 
-export function clearIntentDraft(datasetId: string, caseId: string, author: string): void {
-  const storage = getStorage();
+function intentDraftMatchesExpected(
+  stored: IntentLabelDraft | null,
+  expected: { draftToken?: string; idempotencyKey?: string; signature?: string },
+): boolean {
+  if (!stored) return false;
+  if (expected.draftToken && stored.draft_token) {
+    return stored.draft_token === expected.draftToken;
+  }
+  if (expected.idempotencyKey && stored.idempotency_key !== expected.idempotencyKey) {
+    return false;
+  }
+  if (expected.signature !== undefined && stored.signature !== expected.signature) {
+    return false;
+  }
+  return Boolean(expected.draftToken || expected.idempotencyKey || expected.signature !== undefined);
+}
+
+export function clearIntentDraftIfMatch(
+  datasetId: string,
+  caseId: string,
+  author: string,
+  expected: { draftToken?: string; idempotencyKey?: string; signature?: string },
+): boolean {
   const key = intentDraftKey(datasetId, caseId, author);
-  if (!storage || !key) return;
+  if (!key) return false;
+  const storage = getStorage();
+  let clearedStorage = false;
+  let hadStorageEntry = false;
+  if (storage) {
+    const fromStorage = readStoredIntentDraftFromStorage(storage, key, datasetId, caseId, author, Date.now());
+    if (fromStorage) {
+      hadStorageEntry = true;
+      if (intentDraftMatchesExpected(fromStorage, expected)) {
+        try {
+          storage.removeItem(key);
+          clearedStorage = true;
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+  }
+  const mem = memoryIntentDrafts.get(key) || null;
+  let clearedMemory = false;
+  if (mem && intentDraftMatchesExpected(mem, expected)) {
+    memoryIntentDrafts.delete(key);
+    clearedMemory = true;
+  }
+  if (hadStorageEntry) {
+    return clearedStorage;
+  }
+  return clearedMemory;
+}
+
+export function clearIntentDraft(datasetId: string, caseId: string, author: string): void {
+  const key = intentDraftKey(datasetId, caseId, author);
+  if (!key) return;
+  memoryIntentDrafts.delete(key);
+  const storage = getStorage();
+  if (!storage) return;
   try {
     storage.removeItem(key);
   } catch {

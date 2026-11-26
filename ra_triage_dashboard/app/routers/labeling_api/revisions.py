@@ -107,10 +107,9 @@ async def create_label_revision_with_attachments(
         raise _detail(400, "expected_previous_revision_id 不合法。") from exc
     records: list[dict[str, Any]] = []
     recipients = await prepare_label_mentions(database, settings, normalized["rationale"], actor, actor_verified)
-    paths: list[Path] = []
-    try:
-        records, paths = await _store_review_attachments(attachments or [])
-        revision = await asyncio.to_thread(
+    records, paths = await _store_review_attachments(attachments or [])
+    async def commit():
+        return await asyncio.to_thread(
             database.create_label_revision,
             issue_id=issue_id,
             author=actor,
@@ -125,6 +124,20 @@ async def create_label_revision_with_attachments(
             idempotency_key=idempotency_key,
             **normalized,
         )
+    # Cancellation must not remove images while the database worker may commit a
+    # brand-new revision, yet must still clean up duplicates on replay or error.
+    worker = asyncio.create_task(commit())
+    try:
+        revision = await asyncio.shield(worker)
+    except asyncio.CancelledError:
+        def _cleanup_on_done(task: asyncio.Task[dict[str, Any]]) -> None:
+            if task.cancelled() or task.exception() is not None or (
+                isinstance(task.result(), dict) and task.result().get("_idempotency_replayed")
+            ):
+                for path in paths:
+                    path.unlink(missing_ok=True)
+        worker.add_done_callback(_cleanup_on_done)
+        raise
     except LabelAnnotationConflictError as exc:
         for path in paths:
             await asyncio.to_thread(path.unlink, missing_ok=True)

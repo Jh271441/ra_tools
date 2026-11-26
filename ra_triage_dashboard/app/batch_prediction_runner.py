@@ -54,6 +54,7 @@ class BatchPredictionRunner:
         self._active_process: subprocess.Popen[bytes] | None = None
         self._active_thread: threading.Thread | None = None
         self._running_threads: set[threading.Thread] = set()
+        self._draining = False
         self._shutting_down = False
         self._lease_gated = False
         self._lease_held = True
@@ -78,6 +79,22 @@ class BatchPredictionRunner:
                 self._lease_held = False
             self._lease_epoch += 1
         self.stop_active()
+
+    def begin_graceful_drain(self) -> bool:
+        """Stop claiming new Batch work while letting any active job finish."""
+        with self._lock:
+            self._draining = True
+            return bool(
+                self._active_operation
+                or any(t.is_alive() for t in self._running_threads)
+            )
+
+    def has_active_work(self) -> bool:
+        with self._lock:
+            return bool(
+                self._active_operation
+                or any(t.is_alive() for t in self._running_threads)
+            )
 
     def active_job_ids(self) -> set[str]:
         with self._lock:
@@ -107,7 +124,7 @@ class BatchPredictionRunner:
     def resume_queued_predictions(self) -> bool:
         """Start the oldest durable queued prediction job when the runner is idle."""
         with self._lock:
-            if self._shutting_down or (self._lease_gated and not self._lease_held):
+            if self._shutting_down or self._draining or (self._lease_gated and not self._lease_held):
                 return False
         job = self.database.next_queued_batch_prediction_job()
         return bool(job and self.launch_prediction(job))
@@ -117,7 +134,7 @@ class BatchPredictionRunner:
         if not bool(getattr(self.settings, "autotriage_push_enabled", False)):
             return False
         with self._lock:
-            if self._shutting_down or (self._lease_gated and not self._lease_held):
+            if self._shutting_down or self._draining or (self._lease_gated and not self._lease_held):
                 return False
         getter = getattr(self.database, "next_queued_batch_publish_job", None)
         if not callable(getter):
@@ -164,7 +181,7 @@ class BatchPredictionRunner:
         accept_if_unleased: bool = False,
     ) -> bool:
         with self._lock:
-            if self._shutting_down:
+            if self._shutting_down or self._draining:
                 return False
             if self._lease_gated and not self._lease_held:
                 return accept_if_busy or accept_if_unleased
@@ -206,9 +223,13 @@ class BatchPredictionRunner:
                         self._active_job_id = ""
                         self._active_process = None
                         self._active_thread = None
-                    should_resume = not self._shutting_down and (
-                        not self._lease_gated
-                        or (self._lease_held and self._lease_epoch == lease_epoch)
+                    should_resume = (
+                        not self._shutting_down
+                        and not self._draining
+                        and (
+                            not self._lease_gated
+                            or (self._lease_held and self._lease_epoch == lease_epoch)
+                        )
                     )
                 if should_resume:
                     self.resume_queued_work()
@@ -248,6 +269,7 @@ class BatchPredictionRunner:
     def shutdown(self) -> None:
         """Stop an active worker tree before the web process exits."""
         with self._lock:
+            self._draining = True
             self._shutting_down = True
             self._lease_held = False
             self._lease_epoch += 1

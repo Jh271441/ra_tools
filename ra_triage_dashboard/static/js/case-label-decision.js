@@ -227,13 +227,13 @@ function rememberCaseLabelDecisionDraft({ forceNewIdempotencyKey = false } = {})
     });
   }
 }
-function exitCaseDecisionEditor({discard = false} = {}) {
+function exitCaseDecisionEditor({discard = false, clearStoredDraft = true} = {}) {
   const c = caseLabelDecisionUi.editor;
   if (!c || caseLabelDecisionUi.saving) return;
   if (discard) {
     c.images.forEach(i=>releasePreviewUrlLater(i.previewUrl));
     caseLabelDecisionUi.drafts.delete(c.key);
-    if (typeof clearCaseLabelDraft === "function") clearCaseLabelDraft(c.data.issue_id, "", "decision");
+    if (clearStoredDraft && typeof clearCaseLabelDraft === "function") clearCaseLabelDraft(c.data.issue_id, "", "decision");
   }
   else rememberCaseLabelDecisionDraft();
   caseLabelDecisionUi.editor = null;
@@ -395,16 +395,35 @@ async function adjudicateIssueLabel(event) {
         })
       : null;
     const idemKey = persistedDraft?.idempotency_key || "";
+    const storagePersisted = persistedDraft ? persistedDraft.persisted !== false : false;
+    c._lastDraftPersisted = storagePersisted;
     let body=JSON.stringify(payload),suffix="",headers=idemKey ? {"Idempotency-Key":idemKey} : {};
     if(c.images.length){body=new FormData();body.append("payload",JSON.stringify(payload));c.images.forEach(i=>body.append("attachments",i.file,i.file.name));suffix="-with-attachments";headers={"X-RA-Triage-Request":"labeling-v1",...(idemKey ? {"Idempotency-Key":idemKey} : {})};}
     const saved=await api(`/api/labeling/issues/${encodeURIComponent(c.data.issue_id)}/decisions${suffix}`,{method:"POST",body,headers});
     committed=true;acknowledgeLocalChange(saved);caseLabelDecisionUi.drafts.delete(c.key);
-    if (typeof clearCaseLabelDraft === "function") clearCaseLabelDraft(c.data.issue_id, "", "decision");
+    if (typeof clearCaseLabelDraftIfMatch === "function") {
+      clearCaseLabelDraftIfMatch(c.data.issue_id, "", "decision", {
+        draftToken: persistedDraft?.draft_token || "",
+        idempotencyKey: idemKey,
+        signature: persistedDraft?.signature || "",
+      });
+    } else if (typeof clearCaseLabelDraft === "function") {
+      clearCaseLabelDraft(c.data.issue_id, "", "decision");
+    }
     caseLabelDecisionUi.saving=false;
-    if(caseLabelDecisionUi.editor===c)exitCaseDecisionEditor({discard:true});
+    if(caseLabelDecisionUi.editor===c)exitCaseDecisionEditor({discard:true,clearStoredDraft:false});
     showToast(uiText("完整裁决已保存。","Complete decision saved."));
     await refreshCaseDecisionResult({caseData:c.data,pageContext:c.pageContext,baselines:c.baselines,actor:c.actor,navigationContext});
-  }catch(e){if(!committed && caseLabelDecisionUi.editor===c){c.error=e.message;error.textContent=caseExclusionErrorMessage(e);}}
+  }catch(e){
+    if(!committed && caseLabelDecisionUi.editor===c){
+      const baseText = caseExclusionErrorMessage(e);
+      const memWarn = c._lastDraftPersisted === false
+        ? uiText("（浏览器存储已满，草稿仅暂存在本页内存中，刷新将丢失，请勿刷新并直接重试。）", " (Browser storage is full; draft is in memory on this page only and will be lost on reload. Do not reload; retry directly.)")
+        : "";
+      c.error=e.message;
+      error.textContent=`${baseText}${memWarn}`;
+    }
+  }
   finally{caseLabelDecisionUi.saving=false;formNode.querySelectorAll("[data-decision-was-disabled]").forEach(n=>{n.disabled=n.dataset.decisionWasDisabled==="true";delete n.dataset.decisionWasDisabled;});enhanceDashboardSelects(formNode);}
 }
 async function refreshCaseDecisionResult(c) {

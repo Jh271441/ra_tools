@@ -6,6 +6,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import patch, MagicMock
 from contextlib import ExitStack, contextmanager
@@ -684,6 +685,8 @@ COMMIT;
         already_applied_migration=False,
         old_supports_deferred=True,
         running_batch_jobs=0,
+        initial_maintenance_writes=False,
+        out_meta=None,
     ):
         with tempfile.TemporaryDirectory() as temp, ExitStack() as stack:
             base = Path(temp)
@@ -696,6 +699,11 @@ COMMIT;
             target = "a" * 40
             old = "b" * 40
             d.ensure_nginx_layout(state, 18791)
+            if initial_maintenance_writes:
+                (d.nginx_dir(state) / "maintenance_writes.conf").write_text(
+                    d.render_maintenance_writes_conf(initial_maintenance_writes),
+                    encoding="utf-8",
+                )
             d.save(state / "active_slot.json", {
                 "slot": "blue",
                 "port": 18791,
@@ -793,6 +801,10 @@ COMMIT;
             stack.enter_context(patch.object(d, "switch_nginx_upstream", side_effect=fake_switch))
             def fake_maint(st, enabled, **kw):
                 events.append(("maintenance_writes", enabled))
+                (d.nginx_dir(st) / "maintenance_writes.conf").write_text(
+                    d.render_maintenance_writes_conf(enabled),
+                    encoding="utf-8",
+                )
                 worker_gen[0] += 1
             stack.enter_context(patch.object(d, "set_nginx_maintenance_writes", side_effect=fake_maint))
             stack.enter_context(patch.object(d, "cleanup", return_value=[]))
@@ -817,6 +829,8 @@ COMMIT;
             record_path = next((state / "releases").glob("*/result.json"))
             record = json.loads(record_path.read_text())
             slot_after = json.loads((state / "active_slot.json").read_text())
+            if out_meta is not None:
+                out_meta["final_maint_mode"] = d.read_nginx_maintenance_writes(state)
             return events, record, slot_after, record_path.parent
 
     def test_bluegreen_promote_starts_standby_slot_switches_nginx_then_drains_old_slot(self):
@@ -980,6 +994,9 @@ COMMIT;
         running_batch_jobs=0,
         fail_legacy_stop=False,
         fence_drops_early=False,
+        fence_lost_mid_drain=False,
+        post_stop_running_batch=0,
+        out_meta=None,
     ):
         with tempfile.TemporaryDirectory() as temp, ExitStack() as stack:
             base = Path(temp)
@@ -1005,6 +1022,10 @@ COMMIT;
             stack.enter_context(patch.object(d, "validate_nginx_config"))
             stack.enter_context(patch.object(d, "supports_deferred_batch_recovery", return_value=supports_deferred))
             events = []
+            def fake_audit_batch(check_env, *, app_dir=None):
+                events.append(("audit_running_batch", post_stop_running_batch))
+                return post_stop_running_batch
+            stack.enter_context(patch.object(d, "read_running_batch_jobs", side_effect=fake_audit_batch))
             @contextmanager
             def fake_fence(fence_env, *, app_dir=None, timeout=60):
                 events.append(("fence_enter", running_batch_jobs))
@@ -1012,6 +1033,8 @@ COMMIT;
                     if running_batch_jobs > 0:
                         raise d.DeployError("Cannot bootstrap Nginx while a legacy Batch prediction or publish job is queued or running; wait for it to finish")
                     yield (lambda: not fence_drops_early)
+                    if fence_lost_mid_drain:
+                        raise d.FenceLostError("Legacy Batch write fence exited prematurely (rc=7)")
                 finally:
                     events.append(("fence_exit",))
             stack.enter_context(patch.object(d, "legacy_batch_write_fence", side_effect=fake_fence))
@@ -1044,13 +1067,17 @@ COMMIT;
 
             should_fail = (
                 fail_legacy_stop
-                or (not (supports_deferred and legacy_lease_gating) and (running_batch_jobs > 0 or fence_drops_early))
+                or (not (supports_deferred and legacy_lease_gating) and (running_batch_jobs > 0 or fence_drops_early or fence_lost_mid_drain))
             )
             if should_fail:
                 with self.assertRaises(d.DeployError):
                     d.bootstrap_nginx()
             else:
                 d.bootstrap_nginx()
+            if out_meta is not None:
+                out_meta["active_slot_exists"] = (state / "active_slot.json").exists()
+                failure_files = list(state.rglob("bootstrap_failure.json"))
+                out_meta["failure_receipt"] = json.loads(failure_files[0].read_text()) if failure_files else None
             return events, old_sha
 
     def test_bootstrap_nginx_recovers_legacy_when_stop_fails_after_sigterm(self):
@@ -1119,10 +1146,21 @@ COMMIT;
             "print(json.dumps({'locked': True, 'running': 0}), flush=True)\n"
             "line = sys.stdin.readline().strip()\n"
             "assert line == 'release', f'unexpected command: {line!r}'\n"
+            "print(json.dumps({'released': True}), flush=True)\n"
         )
         fake_busy_code = (
             "import json\n"
             "print(json.dumps({'locked': True, 'running': 1}), flush=True)\n"
+        )
+        fake_crash_mid_hold_code = (
+            "import json, sys\n"
+            "print(json.dumps({'locked': True, 'running': 0}), flush=True)\n"
+            "sys.exit(7)\n"
+        )
+        fake_no_ack_code = (
+            "import json, sys\n"
+            "print(json.dumps({'locked': True, 'running': 0}), flush=True)\n"
+            "sys.stdin.readline()\n"
         )
         with tempfile.TemporaryDirectory() as temp:
             with patch.object(d, "PYTHON", Path(sys.executable)), patch.object(
@@ -1136,6 +1174,102 @@ COMMIT;
                 with self.assertRaisesRegex(d.DeployError, "queued or running"):
                     with d.legacy_batch_write_fence({}, app_dir=Path(temp)):
                         pass
+            with patch.object(d, "PYTHON", Path(sys.executable)), patch.object(
+                d, "LEGACY_BATCH_FENCE_CODE", fake_crash_mid_hold_code
+            ):
+                with self.assertRaises(d.FenceLostError):
+                    with d.legacy_batch_write_fence({}, app_dir=Path(temp)):
+                        time.sleep(0.15)
+            with patch.object(d, "PYTHON", Path(sys.executable)), patch.object(
+                d, "LEGACY_BATCH_FENCE_CODE", fake_no_ack_code
+            ):
+                with self.assertRaises(d.FenceLostError):
+                    with d.legacy_batch_write_fence({}, app_dir=Path(temp)):
+                        pass
+
+    def test_bootstrap_nginx_mid_drain_fence_loss_audits_db_writes_failure_receipt_and_never_starts_blue(self):
+        # Case 1: Fence lost mid-drain, DB audit finds 0 running Batch jobs ->
+        # records explicit bootstrap_failure.json, never starts blue, safely rolls back legacy.
+        meta_clean = {}
+        events_clean, old_sha = self._simulate_bootstrap_nginx(
+            supports_deferred=False,
+            running_batch_jobs=0,
+            fence_lost_mid_drain=True,
+            post_stop_running_batch=0,
+            out_meta=meta_clean,
+        )
+        self.assertFalse(meta_clean["active_slot_exists"])
+        self.assertIsNotNone(meta_clean["failure_receipt"])
+        self.assertEqual(meta_clean["failure_receipt"]["status"], "failed")
+        self.assertEqual(meta_clean["failure_receipt"]["reason"], "legacy_batch_write_fence_lost")
+        self.assertEqual(meta_clean["failure_receipt"]["post_stop_running_batch"], 0)
+        self.assertEqual(meta_clean["failure_receipt"]["recovery_action"], "rollback_legacy")
+        self.assertNotIn(("start", "ra_triage_dashboard_blue", 18791, "bootstrap-blue"), events_clean)
+        self.assertIn(("audit_running_batch", 0), events_clean)
+        self.assertIn(("start", d.SESSION, None, "bootstrap-rollback"), events_clean)
+        self.assertIn(("smoke", 8785, old_sha), events_clean)
+
+        # Case 2: Fence lost mid-drain AND DB audit sees a Batch job slipped in ->
+        # refuses both blue AND automatic legacy restart (old legacy would mark it failed).
+        meta_dirty = {}
+        events_dirty, _ = self._simulate_bootstrap_nginx(
+            supports_deferred=False,
+            running_batch_jobs=0,
+            fence_lost_mid_drain=True,
+            post_stop_running_batch=1,
+            out_meta=meta_dirty,
+        )
+        self.assertFalse(meta_dirty["active_slot_exists"])
+        self.assertIsNotNone(meta_dirty["failure_receipt"])
+        self.assertEqual(meta_dirty["failure_receipt"]["status"], "failed")
+        self.assertEqual(meta_dirty["failure_receipt"]["reason"], "legacy_batch_write_fence_lost")
+        self.assertEqual(meta_dirty["failure_receipt"]["post_stop_running_batch"], 1)
+        self.assertEqual(meta_dirty["failure_receipt"]["recovery_action"], "hold_for_manual_inspection")
+        self.assertFalse(any(e[0] == "start" for e in events_dirty))
+
+    def test_bluegreen_preserves_operator_manual_maintenance_writes_on_success_and_rollback(self):
+        # 1) Manual full write-maintenance ("all") must NEVER be downgraded to "batch"
+        # or cleared to False on either success or rollback.
+        for fail_smoke in (False, True):
+            meta = {}
+            events, record, _, _ = self.simulate_bluegreen_release(
+                schema_migration=True,
+                old_supports_deferred=False,
+                running_batch_jobs=0,
+                fail_candidate_smoke=fail_smoke,
+                initial_maintenance_writes=True,
+                out_meta=meta,
+            )
+            self.assertEqual(record["status"], "failed" if fail_smoke else "success")
+            self.assertNotIn(("maintenance_writes", "batch"), events)
+            self.assertNotIn(("maintenance_writes", False), events)
+            self.assertEqual(meta["final_maint_mode"], "all")
+
+        # 2) Pre-existing "batch" freeze tightens to "all" for schema migration,
+        # then restores to "batch" (never loosening to False).
+        meta_batch = {}
+        events_batch, record_batch, _, _ = self.simulate_bluegreen_release(
+            schema_migration=True,
+            old_supports_deferred=True,
+            initial_maintenance_writes="batch",
+            out_meta=meta_batch,
+        )
+        self.assertEqual(record_batch["status"], "success")
+        self.assertIn(("maintenance_writes", True), events_batch)
+        self.assertIn(("maintenance_writes", "batch"), events_batch)
+        self.assertNotIn(("maintenance_writes", False), events_batch)
+        self.assertEqual(meta_batch["final_maint_mode"], "batch")
+
+    def test_supports_deferred_batch_recovery_requires_graceful_drain_support(self):
+        self.assertTrue(d.supports_deferred_batch_recovery(Path(__file__).parents[1]))
+        with tempfile.TemporaryDirectory() as temp:
+            app_dir = Path(temp)
+            (app_dir / "app").mkdir(parents=True)
+            (app_dir / "app/main.py").write_text(
+                "recover_interrupted_jobs=not defer_batch_recovery\n_batch_prediction_leader\n",
+                encoding="utf-8",
+            )
+            self.assertFalse(d.supports_deferred_batch_recovery(app_dir))
 
     def test_migration_apply_code_runs_migrations_only_and_backup_scripts_use_snapshot(self):
         self.assertIn("apply_postgres_migrations()", d.MIGRATION_APPLY_CODE)

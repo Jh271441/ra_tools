@@ -191,10 +191,14 @@ async def run_with_lease(
     *,
     ttl_seconds: float = 90.0,
     retry_seconds: float = 15.0,
+    renew_interval: float | None = None,
+    stop_event: asyncio.Event | None = None,
 ) -> None:
     """Keep a long-running coroutine active strictly while holding its DB lease."""
-    renew_interval = max(5.0, ttl_seconds / 3.0)
+    effective_renew = max(0.01, float(renew_interval)) if renew_interval is not None else max(5.0, ttl_seconds / 3.0)
     while True:
+        if stop_event is not None and stop_event.is_set():
+            return
         acquired = False
         try:
             acquired = await asyncio.to_thread(
@@ -206,6 +210,12 @@ async def run_with_lease(
             logger.exception("worker_lease_acquire_error lease=%s", lease_key)
 
         if not acquired:
+            if stop_event is not None:
+                try:
+                    await asyncio.wait_for(stop_event.wait(), timeout=retry_seconds)
+                    return
+                except asyncio.TimeoutError:
+                    continue
             await asyncio.sleep(retry_seconds)
             continue
 
@@ -214,8 +224,8 @@ async def run_with_lease(
         should_release = False
         try:
             while not inner_task.done():
-                await asyncio.sleep(renew_interval)
-                if inner_task.done():
+                done_set, _ = await asyncio.wait({inner_task}, timeout=effective_renew)
+                if inner_task in done_set or inner_task.done():
                     break
                 still_held = False
                 try:
@@ -244,7 +254,7 @@ async def run_with_lease(
                     logger.error("worker_task_failed lease=%s error=%r", lease_key, exc)
                     should_release = True
                 else:
-                    # One-shot startup tasks (like trail-sync-startup) exit cleanly.
+                    # One-shot startup tasks or gracefully drained leaders exit cleanly.
                     should_release = True
                     return
         except BaseException:
@@ -262,4 +272,12 @@ async def run_with_lease(
             if should_release:
                 with contextlib.suppress(Exception):
                     await asyncio.to_thread(lease_manager.release, lease_key)
+        if stop_event is not None and stop_event.is_set():
+            return
+        if stop_event is not None:
+            try:
+                await asyncio.wait_for(stop_event.wait(), timeout=retry_seconds)
+                return
+            except asyncio.TimeoutError:
+                continue
         await asyncio.sleep(retry_seconds)

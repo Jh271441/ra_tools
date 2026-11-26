@@ -6,6 +6,7 @@
 const CASE_LABEL_DRAFT_STORAGE_PREFIX = "ra-triage-case-label-draft:v1:";
 const CASE_LABEL_DRAFT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const CASE_LABEL_DRAFT_MAX_ENTRIES = 80;
+const caseLabelMemoryDrafts = new Map();
 
 function createCaseLabelIdempotencyKey(mode = "submission") {
   const prefix = mode === "decision" ? "case-decision" : "case-label";
@@ -17,6 +18,17 @@ function createCaseLabelIdempotencyKey(mode = "submission") {
     /* ignore */
   }
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
+function createCaseLabelDraftToken() {
+  try {
+    if (typeof globalThis.crypto?.randomUUID === "function") {
+      return `draft-${globalThis.crypto.randomUUID()}`;
+    }
+  } catch {
+    /* ignore */
+  }
+  return `draft-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
 }
 
 function caseLabelDraftActor() {
@@ -153,10 +165,7 @@ function pruneCaseLabelDrafts(storage, keepKey = "", nowMs = Date.now()) {
   }
 }
 
-function readCaseLabelDraft(issueId, taskId = "", mode = "submission", author = "", nowMs = Date.now()) {
-  const storage = caseLabelDraftStorage();
-  const key = caseLabelDraftStorageKey(issueId, taskId, mode, author);
-  if (!storage || !key) return null;
+function readStoredCaseLabelDraftFromStorage(storage, key, issueId, taskId, mode, author, nowMs) {
   let raw = null;
   try {
     raw = storage.getItem(key);
@@ -178,7 +187,7 @@ function readCaseLabelDraft(issueId, taskId = "", mode = "submission", author = 
       return null;
     }
     const kind = mode === "decision" ? "decision" : "submission";
-    const normalized = {
+    return {
       version: 1,
       mode: kind,
       issue_id: String(parsed.issue_id || issueId),
@@ -197,10 +206,11 @@ function readCaseLabelDraft(issueId, taskId = "", mode = "submission", author = 
       expected_previous_id: parsed.expected_previous_id ?? null,
       expected_source_fingerprint: String(parsed.expected_source_fingerprint || ""),
       idempotency_key: parsed.idempotency_key.trim(),
+      draft_token: typeof parsed.draft_token === "string" ? parsed.draft_token : undefined,
+      persisted: true,
       signature: String(parsed.signature || "") || caseLabelDraftSignature(parsed, kind),
       saved_at: savedAt,
     };
-    return normalized;
   } catch {
     try {
       storage.removeItem(key);
@@ -209,6 +219,25 @@ function readCaseLabelDraft(issueId, taskId = "", mode = "submission", author = 
     }
     return null;
   }
+}
+
+function readCaseLabelDraft(issueId, taskId = "", mode = "submission", author = "", nowMs = Date.now()) {
+  const key = caseLabelDraftStorageKey(issueId, taskId, mode, author);
+  if (!key) return null;
+  const storage = caseLabelDraftStorage();
+  if (storage) {
+    const fromStorage = readStoredCaseLabelDraftFromStorage(storage, key, issueId, taskId, mode, author, nowMs);
+    if (fromStorage) return fromStorage;
+  }
+  const fromMemory = caseLabelMemoryDrafts.get(key);
+  if (fromMemory) {
+    if (nowMs - fromMemory.saved_at > CASE_LABEL_DRAFT_MAX_AGE_MS) {
+      caseLabelMemoryDrafts.delete(key);
+      return null;
+    }
+    return { ...fromMemory };
+  }
+  return null;
 }
 
 function writeCaseLabelDraft(issueId, taskId = "", mode = "submission", fields = {}, options = {}) {
@@ -246,30 +275,83 @@ function writeCaseLabelDraft(issueId, taskId = "", mode = "submission", fields =
     expected_previous_id: options.expectedPreviousId ?? fields.expected_previous_id ?? null,
     expected_source_fingerprint: String(options.expectedSourceFingerprint ?? fields.expected_source_fingerprint ?? ""),
     idempotency_key: idempotencyKey,
+    draft_token: createCaseLabelDraftToken(),
+    persisted: false,
     signature,
     saved_at: nowMs,
   };
   const storage = caseLabelDraftStorage();
+  let persisted = false;
   if (storage) {
+    const serialized = JSON.stringify({ ...draft, persisted: true });
     try {
-      storage.setItem(key, JSON.stringify(draft));
+      storage.setItem(key, serialized);
+      persisted = true;
       pruneCaseLabelDrafts(storage, key, nowMs);
     } catch {
       try {
         pruneCaseLabelDrafts(storage, key, nowMs);
-        storage.setItem(key, JSON.stringify(draft));
+        storage.setItem(key, serialized);
+        persisted = true;
       } catch {
-        /* ignore quota errors */
+        persisted = false;
       }
     }
   }
+  draft.persisted = persisted;
+  caseLabelMemoryDrafts.set(key, { ...draft });
   return draft;
 }
 
-function clearCaseLabelDraft(issueId, taskId = "", mode = "submission", author = "") {
-  const storage = caseLabelDraftStorage();
+function caseLabelDraftMatchesExpected(stored, expected = {}) {
+  if (!stored) return false;
+  if (expected.draftToken && stored.draft_token) {
+    return stored.draft_token === expected.draftToken;
+  }
+  if (expected.idempotencyKey && stored.idempotency_key !== expected.idempotencyKey) {
+    return false;
+  }
+  if (expected.signature !== undefined && stored.signature !== expected.signature) {
+    return false;
+  }
+  return Boolean(expected.draftToken || expected.idempotencyKey || expected.signature !== undefined);
+}
+
+function clearCaseLabelDraftIfMatch(issueId, taskId = "", mode = "submission", expected = {}, author = "") {
   const key = caseLabelDraftStorageKey(issueId, taskId, mode, author);
-  if (!storage || !key) return;
+  if (!key) return false;
+  const storage = caseLabelDraftStorage();
+  let clearedStorage = false;
+  let hadStorageEntry = false;
+  if (storage) {
+    const fromStorage = readStoredCaseLabelDraftFromStorage(storage, key, issueId, taskId, mode, author, Date.now());
+    if (fromStorage) {
+      hadStorageEntry = true;
+      if (caseLabelDraftMatchesExpected(fromStorage, expected)) {
+        try {
+          storage.removeItem(key);
+          clearedStorage = true;
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+  }
+  const mem = caseLabelMemoryDrafts.get(key) || null;
+  let clearedMemory = false;
+  if (mem && caseLabelDraftMatchesExpected(mem, expected)) {
+    caseLabelMemoryDrafts.delete(key);
+    clearedMemory = true;
+  }
+  return hadStorageEntry ? clearedStorage : clearedMemory;
+}
+
+function clearCaseLabelDraft(issueId, taskId = "", mode = "submission", author = "") {
+  const key = caseLabelDraftStorageKey(issueId, taskId, mode, author);
+  if (!key) return;
+  caseLabelMemoryDrafts.delete(key);
+  const storage = caseLabelDraftStorage();
+  if (!storage) return;
   try {
     storage.removeItem(key);
   } catch {

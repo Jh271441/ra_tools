@@ -1227,6 +1227,7 @@ function refreshCaseLabelingDraftBanner(caseData, { decision = null } = {}) {
 function caseLabelingDraftBannerMarkup(info) {
   if (!info) return "";
   const isFailure = info.kind === "save_failed";
+  const storagePersisted = info.storagePersisted !== false;
   const decisionSourceChanged = Boolean(info.decisionSourceChanged);
   const missingAttachments = Array.isArray(info.missingAttachments) ? info.missingAttachments : [];
   const hasMissingAttachments = missingAttachments.length > 0;
@@ -1236,12 +1237,29 @@ function caseLabelingDraftBannerMarkup(info) {
     : hasMissingAttachments
       ? uiText("草稿待上传截图需补齐", "Draft screenshots must be re-attached")
       : isFailure
-        ? uiText("保存未完成 · 草稿已保留", "Save incomplete · Draft preserved")
+        ? (!storagePersisted
+            ? uiText("保存未完成 · 仅当前页内存暂存", "Save incomplete · Kept in memory only")
+            : uiText("保存未完成 · 草稿已保留", "Save incomplete · Draft preserved"))
         : uiText("已恢复本地草稿", "Local draft restored");
   const parts = [];
   if (info.message) parts.push(info.message);
   else if (isFailure) {
-    parts.push(uiText("保存失败，本地草稿已保留。", "Save failed. Local draft preserved."));
+    parts.push(
+      !storagePersisted
+        ? uiText(
+            "保存失败：浏览器本地存储已满，当前修改仅暂存在本页内存中（刷新或关闭页面将丢失），请勿刷新并直接重试。",
+            "Save failed: browser storage is full. Your changes are kept in memory on this page only (reloading will lose them). Do not reload; click Retry."
+          )
+        : uiText("保存失败，本地草稿已保留。", "Save failed. Local draft preserved.")
+    );
+  }
+  if (isFailure && !storagePersisted && info.message) {
+    parts.push(
+      uiText(
+        "浏览器本地存储已满，当前修改仅暂存在本页内存中（刷新页面将丢失），请勿刷新并直接重试。",
+        "Browser storage is full; changes are kept in memory on this page only (reloading will lose them). Do not reload; click Retry."
+      )
+    );
   }
   if (decisionSourceChanged) {
     parts.push(uiText(
@@ -1872,6 +1890,9 @@ async function saveCaseLabelingRevision(event) {
       )
     : null;
   const idempotencyKey = savedDraft?.idempotency_key || "";
+  const submittedDraftToken = savedDraft?.draft_token || "";
+  const submittedSignature = savedDraft?.signature || "";
+  const storagePersisted = savedDraft ? savedDraft.persisted !== false : false;
   button.disabled = true;
   try {
     let result;
@@ -1895,18 +1916,64 @@ async function saveCaseLabelingRevision(event) {
       });
     }
     acknowledgeLocalChange(result);
-    if (typeof clearCaseLabelDraft === "function") {
+    if (typeof clearCaseLabelDraftIfMatch === "function") {
+      clearCaseLabelDraftIfMatch(caseData.issue_id, payload.task_id, "submission", {
+        draftToken: submittedDraftToken,
+        idempotencyKey,
+        signature: submittedSignature,
+      });
+    } else if (typeof clearCaseLabelDraft === "function") {
       clearCaseLabelDraft(caseData.issue_id, payload.task_id, "submission");
     }
-    state.caseLabeling.missingDraftAttachments = [];
-    state.caseLabeling.draftNotice = null;
-    state.caseLabeling.dirty = false;
-    clearPendingCaseLabelingImages();
-    showToast(uiText("标注已保存。", "Label saved."));
-    await Promise.all([
-      selectCaseLabelingIssue(caseData.issue_id, { updateRoute: false }),
-      loadCaseLabelingCases({ page: state.caseLabeling.page }),
-    ]);
+    const stillOnSameIssue = state.caseLabeling.caseData?.issue_id === caseData.issue_id && !caseLabelDecisionUi?.editor;
+    let sameTabEditedDuringSave = false;
+    if (stillOnSameIssue && $("#caseLabelingForm") && typeof caseLabelDraftSignature === "function") {
+      const livePayload = caseLabelingFormPayload();
+      const livePending = typeof normalizeCaseLabelPendingAttachments === "function"
+        ? normalizeCaseLabelPendingAttachments(state.caseLabeling.pendingImages)
+        : [];
+      const liveSignature = caseLabelDraftSignature(
+        { ...livePayload, pending_attachments: livePending },
+        "submission"
+      );
+      sameTabEditedDuringSave = Boolean(
+        submittedSignature && liveSignature && liveSignature !== submittedSignature
+      );
+    }
+    if (sameTabEditedDuringSave) {
+      const livePayload = caseLabelingFormPayload();
+      const livePending = typeof normalizeCaseLabelPendingAttachments === "function"
+        ? normalizeCaseLabelPendingAttachments(state.caseLabeling.pendingImages)
+        : [];
+      const nextBaseRevId = result?.revision?.id || revision?.id || null;
+      if (typeof writeCaseLabelDraft === "function") {
+        writeCaseLabelDraft(
+          caseData.issue_id,
+          livePayload.task_id,
+          "submission",
+          { ...livePayload, pending_attachments: livePending },
+          { expectedPreviousId: nextBaseRevId, pendingAttachments: livePending }
+        );
+      }
+      state.caseLabeling.dirty = true;
+      showToast(
+        uiText(
+          "前一次标注已保存，你继续修改的内容已保留为本地草稿。",
+          "Previous label saved; your newer edits are preserved as a local draft."
+        )
+      );
+      await loadCaseLabelingCases({ page: state.caseLabeling.page });
+    } else {
+      state.caseLabeling.missingDraftAttachments = [];
+      state.caseLabeling.draftNotice = null;
+      state.caseLabeling.dirty = false;
+      clearPendingCaseLabelingImages();
+      showToast(uiText("标注已保存。", "Label saved."));
+      await Promise.all([
+        selectCaseLabelingIssue(caseData.issue_id, { updateRoute: false }),
+        loadCaseLabelingCases({ page: state.caseLabeling.page }),
+      ]);
+    }
   } catch (error) {
     state.caseLabeling.dirty = true;
     const notice = {
@@ -1914,6 +1981,7 @@ async function saveCaseLabelingRevision(event) {
       remoteChanged: error?.status === 409,
       decisionSourceChanged: false,
       missingAttachments: state.caseLabeling.missingDraftAttachments || [],
+      storagePersisted,
       message: error?.message || "",
     };
     state.caseLabeling.draftNotice = notice;
@@ -1922,7 +1990,13 @@ async function saveCaseLabelingRevision(event) {
       host.innerHTML = caseLabelingDraftBannerMarkup(notice);
       bindCaseLabelingDraftBanner(caseData);
     }
-    showToast(notice.message || uiText("保存失败，本地草稿已保留。", "Save failed. Local draft preserved."), true);
+    const toastMessage = !storagePersisted
+      ? uiText(
+          `${notice.message ? `${notice.message} ` : ""}浏览器存储已满，修改仅暂存在本页内存中（刷新将丢失），请勿刷新并重试。`,
+          `${notice.message ? `${notice.message} ` : ""}Browser storage is full; edits are kept in memory on this page only (reloading will lose them). Keep this tab open and retry.`
+        )
+      : (notice.message || uiText("保存失败，本地草稿已保留。", "Save failed. Local draft preserved."));
+    showToast(toastMessage, true);
   } finally {
     button.disabled = caseLabelingSubmitBlocked(null);
   }

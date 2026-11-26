@@ -404,4 +404,360 @@ describe("IntentLabelingPage", () => {
       expect(document.getElementById("intentDraftRecoveryBanner")).not.toBeInTheDocument();
     });
   });
+
+  it("fetches latest server revision before discarding a 409-conflicted draft, and keeps draft if reload fails", async () => {
+    let caseGetCount = 0;
+    let failNextCaseGet = false;
+    let currentServerCase = CASE_PAYLOAD;
+
+    fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = String(init?.method || "GET").toUpperCase();
+      if (method === "PUT" && url.includes("/labels")) {
+        // Server moved to rev 11 (right_turn) on another session -> return 409 Conflict.
+        currentServerCase = {
+          ...CASE_PAYLOAD,
+          labels: {
+            revision_id: 11,
+            routing_default: "right_turn",
+            lane_change_default: "no_lane_change",
+            overrides: [],
+          },
+        };
+        return Promise.resolve(
+          new Response(JSON.stringify({ detail: "远端版本已更新，请刷新对照" }), {
+            status: 409,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      if (url.includes("/api/intent-datasets/0206-1335-v1/cases/")) {
+        caseGetCount += 1;
+        if (failNextCaseGet) {
+          failNextCaseGet = false;
+          return Promise.resolve(
+            new Response(JSON.stringify({ detail: "upstream timeout" }), {
+              status: 500,
+              headers: { "Content-Type": "application/json" },
+            }),
+          );
+        }
+        return Promise.resolve(
+          new Response(JSON.stringify(currentServerCase), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      if (url.includes("/api/intent-datasets")) {
+        return Promise.resolve(
+          new Response(JSON.stringify(DATASETS_PAYLOAD), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      if (url.includes("/api/intent-assignees")) {
+        return Promise.resolve(
+          new Response(JSON.stringify(ASSIGNEES_PAYLOAD), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      if (url.includes("/api/intent-cases")) {
+        return Promise.resolve(
+          new Response(JSON.stringify(QUEUE_PAYLOAD), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    });
+
+    renderWithQuery(
+      <IntentLabelingPage
+        active
+        lang="zh"
+        username="jasperchen"
+        isAdmin={false}
+        canAnnotateIntent
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("cn28896325")).toBeInTheDocument();
+    });
+    expect(caseGetCount).toBe(1);
+
+    // Edit aggregate routing to 左转 and let auto-save hit 409 Conflict.
+    const aggRouting = document.getElementById("intentAggregateRouting")!;
+    const leftTurnBtn = Array.from(aggRouting.querySelectorAll("button")).find((b) =>
+      b.textContent?.includes("左转"),
+    )!;
+    fireEvent.click(leftTurnBtn);
+
+    await waitFor(
+      () => {
+        expect(document.getElementById("intentDraftRecoveryBanner")).toBeInTheDocument();
+        expect(document.getElementById("intentDraftDiscardButton")).toBeInTheDocument();
+      },
+      { timeout: 2500 },
+    );
+    expect(readIntentDraft("0206-1335-v1", "cn28896325_0", "jasperchen")?.routing_default).toBe("left_turn");
+
+    // 1) If reload GET fails, clicking Discard MUST preserve the local draft!
+    failNextCaseGet = true;
+    fireEvent.click(document.getElementById("intentDraftDiscardButton")!);
+    await waitFor(() => {
+      expect(caseGetCount).toBe(2);
+    });
+    expect(readIntentDraft("0206-1335-v1", "cn28896325_0", "jasperchen")?.routing_default).toBe("left_turn");
+    expect(document.getElementById("intentDraftRecoveryBanner")).toBeInTheDocument();
+
+    // 2) When reload GET succeeds with rev 11 (right_turn), Discard adopts right_turn and clears draft.
+    fireEvent.click(document.getElementById("intentDraftDiscardButton")!);
+    await waitFor(() => {
+      expect(caseGetCount).toBe(3);
+      expect(document.getElementById("intentDraftRecoveryBanner")).not.toBeInTheDocument();
+    });
+    expect(readIntentDraft("0206-1335-v1", "cn28896325_0", "jasperchen")).toBeNull();
+    const rightTurnBtn = Array.from(
+      document.getElementById("intentAggregateRouting")!.querySelectorAll("button"),
+    ).find((b) => b.textContent?.includes("右转"))!;
+    expect(rightTurnBtn).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("shows memory-only warning and reuses Idempotency-Key on manual retry when localStorage quota is full", async () => {
+    const putKeys: Array<string | null> = [];
+    fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = String(init?.method || "GET").toUpperCase();
+      if (method === "PUT" && url.includes("/labels")) {
+        putKeys.push(new Headers(init?.headers).get("Idempotency-Key"));
+        if (putKeys.length === 1) {
+          return Promise.resolve(
+            new Response(JSON.stringify({ detail: "系统维护中", maintenance: true, retry_after: 60 }), {
+              status: 503,
+              headers: { "Content-Type": "application/json", "Retry-After": "60" },
+            }),
+          );
+        }
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              labels: {
+                revision_id: 11,
+                routing_default: "left_turn",
+                lane_change_default: "no_lane_change",
+                overrides: [],
+              },
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      }
+      if (url.includes("/api/intent-datasets/0206-1335-v1/cases/")) {
+        return Promise.resolve(
+          new Response(JSON.stringify(CASE_PAYLOAD), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      if (url.includes("/api/intent-datasets")) {
+        return Promise.resolve(
+          new Response(JSON.stringify(DATASETS_PAYLOAD), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      if (url.includes("/api/intent-assignees")) {
+        return Promise.resolve(
+          new Response(JSON.stringify(ASSIGNEES_PAYLOAD), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      if (url.includes("/api/intent-cases")) {
+        return Promise.resolve(
+          new Response(JSON.stringify(QUEUE_PAYLOAD), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    });
+
+    const setItemSpy = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("QuotaExceededError", "QuotaExceededError");
+    });
+    try {
+      renderWithQuery(
+        <IntentLabelingPage
+          active
+          lang="zh"
+          username="jasperchen"
+          isAdmin={false}
+          canAnnotateIntent
+        />,
+      );
+      await waitFor(() => {
+        expect(screen.getByDisplayValue("cn28896325")).toBeInTheDocument();
+      });
+
+      const aggRouting = document.getElementById("intentAggregateRouting")!;
+      const leftTurnBtn = Array.from(aggRouting.querySelectorAll("button")).find((b) =>
+        b.textContent?.includes("左转"),
+      )!;
+      fireEvent.click(leftTurnBtn);
+
+      await waitFor(
+        () => {
+          expect(putKeys.length).toBe(1);
+          expect(document.getElementById("intentDraftRecoveryBanner")?.textContent).toContain("仅当前页内存暂存");
+        },
+        { timeout: 2500 },
+      );
+
+      fireEvent.click(document.getElementById("intentDraftRetryButton")!);
+      await waitFor(() => {
+        expect(putKeys.length).toBe(2);
+        expect(document.getElementById("intentDraftRecoveryBanner")).not.toBeInTheDocument();
+      });
+      expect(putKeys[0]).toBeTruthy();
+      expect(putKeys[1]).toBe(putKeys[0]);
+    } finally {
+      setItemSpy.mockRestore();
+    }
+  });
+
+  it("delayed save response from Tab A does not delete a newer draft written by Tab B", async () => {
+    let resolvePut!: (res: Response) => void;
+    let putStarted = false;
+    fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = String(init?.method || "GET").toUpperCase();
+      if (method === "PUT" && url.includes("/labels")) {
+        putStarted = true;
+        return new Promise<Response>((resolve) => {
+          resolvePut = resolve;
+        });
+      }
+      if (url.includes("/api/intent-datasets/0206-1335-v1/cases/")) {
+        return Promise.resolve(
+          new Response(JSON.stringify(CASE_PAYLOAD), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      if (url.includes("/api/intent-datasets")) {
+        return Promise.resolve(
+          new Response(JSON.stringify(DATASETS_PAYLOAD), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      if (url.includes("/api/intent-assignees")) {
+        return Promise.resolve(
+          new Response(JSON.stringify(ASSIGNEES_PAYLOAD), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      if (url.includes("/api/intent-cases")) {
+        return Promise.resolve(
+          new Response(JSON.stringify(QUEUE_PAYLOAD), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    });
+
+    renderWithQuery(
+      <IntentLabelingPage
+        active
+        lang="zh"
+        username="jasperchen"
+        isAdmin={false}
+        canAnnotateIntent
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("cn28896325")).toBeInTheDocument();
+    });
+
+    // Tab A edits to 左转 and triggers auto-save (PUT stays in flight).
+    const aggRouting = document.getElementById("intentAggregateRouting")!;
+    const leftTurnBtn = Array.from(aggRouting.querySelectorAll("button")).find((b) =>
+      b.textContent?.includes("左转"),
+    )!;
+    fireEvent.click(leftTurnBtn);
+
+    await waitFor(
+      () => {
+        expect(putStarted).toBe(true);
+      },
+      { timeout: 2500 },
+    );
+
+    // While Tab A's PUT is in flight, Tab B writes a newer draft (right_turn) to shared localStorage.
+    const tabB = writeIntentDraft({
+      datasetId: "0206-1335-v1",
+      caseId: "cn28896325_0",
+      author: "jasperchen",
+      routingDefault: "right_turn",
+      laneChangeDefault: "lane_change",
+      overrides: {},
+      expectedRevisionId: 10,
+    });
+    expect(tabB?.draft_token).toBeTruthy();
+
+    // Now Tab A's delayed PUT resolves with 200 OK.
+    resolvePut(
+      new Response(
+        JSON.stringify({
+          labels: {
+            revision_id: 11,
+            routing_default: "left_turn",
+            lane_change_default: "no_lane_change",
+            overrides: [],
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    await waitFor(() => {
+      expect(document.getElementById("intentTopbarSaveState")?.textContent || "").not.toContain("保存中");
+    });
+    // Tab B's newer draft MUST survive intact!
+    const afterSave = readIntentDraft("0206-1335-v1", "cn28896325_0", "jasperchen");
+    expect(afterSave?.routing_default).toBe("right_turn");
+    expect(afterSave?.draft_token).toBe(tabB?.draft_token);
+  });
 });

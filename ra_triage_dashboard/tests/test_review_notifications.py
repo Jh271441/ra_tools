@@ -251,6 +251,104 @@ class ReviewNotificationTest(unittest.TestCase):
         self.assertTrue(payload["markdown"])
         self.assertEqual(result.message_unique_id, "m1")
 
+    def test_cancellation_during_inflight_dchat_send_waits_before_lease_handoff_no_duplicate(self) -> None:
+        import asyncio
+        import contextlib
+        import threading
+        from ra_triage_dashboard.app.review_notification_dispatcher import ReviewNotificationDispatcher
+        from ra_triage_dashboard.app.workers.leases import WorkerLeaseManager, run_with_lease
+
+        with tempfile.TemporaryDirectory() as directory:
+            database = Database(Path(directory) / "triage.sqlite3")
+            database.init()
+            database.upsert_issues([{"issue_id": "cn1", "gt_label": "误触发"}], source="test", replace_gt=True)
+            database.create_annotation(
+                issue_id="cn1",
+                label="误触发",
+                review_status="reviewed",
+                tags=[],
+                missing_evidence=[],
+                note="@bob 请确认",
+                author="alice",
+                author_verified=True,
+                mentions=["bob"],
+                notification_recipients=["bob"],
+            )
+            settings = SimpleNamespace(
+                dchat_delivery_mode="loopback",
+                dchat_poll_seconds=0.05,
+                dchat_max_attempts=5,
+                kylin_sso_return_url="https://example.test/manual",
+            )
+            dispatcher_a = ReviewNotificationDispatcher(settings, database)
+            dispatcher_b = ReviewNotificationDispatcher(settings, database)
+            leases_a = WorkerLeaseManager(database, owner_id="slot-a")
+            leases_b = WorkerLeaseManager(database, owner_id="slot-b")
+
+            send_started = threading.Event()
+            release_send = threading.Event()
+            sent_calls: list[tuple[str, str]] = []
+
+            def paused_send(self_client, recipient: str, text: str):
+                sent_calls.append((recipient, text))
+                send_started.set()
+                assert release_send.wait(timeout=5)
+                return SimpleNamespace(trace_id="trace-1", message_unique_id="msg-1")
+
+            async def _scenario() -> None:
+                with patch.object(DChatLoopbackClient, "send_to_username", paused_send):
+                    task_a = asyncio.create_task(
+                        run_with_lease(
+                            leases_a,
+                            "review-dchat-notifications",
+                            dispatcher_a.run,
+                            ttl_seconds=10.0,
+                            retry_seconds=0.03,
+                            renew_interval=0.2,
+                        )
+                    )
+                    for _ in range(100):
+                        if send_started.is_set():
+                            break
+                        await asyncio.sleep(0.02)
+                    self.assertTrue(send_started.is_set())
+
+                    task_b = asyncio.create_task(
+                        run_with_lease(
+                            leases_b,
+                            "review-dchat-notifications",
+                            dispatcher_b.run,
+                            ttl_seconds=10.0,
+                            retry_seconds=0.03,
+                            renew_interval=0.2,
+                        )
+                    )
+
+                    # Cancel slot A mid-DChat send (simulating slot shutdown).
+                    task_a.cancel()
+                    await asyncio.sleep(0.15)
+                    # Slot A must still be waiting for the in-flight send + DB commit
+                    # before releasing its lease, so slot B cannot reclaim and re-send.
+                    self.assertFalse(task_a.done())
+                    self.assertEqual(len(sent_calls), 1)
+
+                    release_send.set()
+                    with self.assertRaises(asyncio.CancelledError):
+                        await asyncio.wait_for(task_a, timeout=3.0)
+
+                    # Give slot B multiple polling intervals after taking over the lease.
+                    await asyncio.sleep(0.25)
+                    task_b.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await asyncio.wait_for(task_b, timeout=3.0)
+
+            asyncio.run(_scenario())
+            self.assertEqual(len(sent_calls), 1)
+            status = database.review_notification_status()
+            self.assertEqual(status["sent"], 1)
+            self.assertEqual(status["pending"], 0)
+            self.assertEqual(status["sending"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -36,19 +36,43 @@ async def run_standalone_worker() -> None:
     batch_prediction_runner.set_lease_gating(True, held=False)
     lease_manager = WorkerLeaseManager(database, owner_id=make_worker_owner_id("standalone"))
 
+    stop_event = asyncio.Event()
+
     async def _batch_prediction_leader() -> None:
         await asyncio.to_thread(
             database.recover_interrupted_jobs,
             exclude_job_ids=batch_prediction_runner.active_job_ids(),
         )
         batch_prediction_runner.set_lease_held(True)
+        gracefully_drained = False
         try:
-            while True:
+            while not stop_event.is_set():
                 await asyncio.to_thread(batch_prediction_runner.resume_queued_work)
-                await asyncio.sleep(5.0)
+                try:
+                    await asyncio.wait_for(stop_event.wait(), timeout=5.0)
+                except asyncio.TimeoutError:
+                    pass
+            await asyncio.to_thread(batch_prediction_runner.begin_graceful_drain)
+            while await asyncio.to_thread(batch_prediction_runner.has_active_work):
+                await asyncio.sleep(0.2)
+            gracefully_drained = True
         finally:
-            await asyncio.to_thread(batch_prediction_runner.revoke_lease)
+            if gracefully_drained:
+                batch_prediction_runner.set_lease_held(False)
+            else:
+                await asyncio.to_thread(batch_prediction_runner.revoke_lease)
 
+    batch_task = asyncio.create_task(
+        run_with_lease(
+            lease_manager,
+            "batch-prediction-runner",
+            _batch_prediction_leader,
+            ttl_seconds=60.0,
+            retry_seconds=5.0,
+            stop_event=stop_event,
+        ),
+        name="batch-prediction-runner",
+    )
     tasks: list[asyncio.Task[None]] = [
         asyncio.create_task(
             run_with_lease(
@@ -57,16 +81,6 @@ async def run_standalone_worker() -> None:
                 lambda: run_human_publisher(database, settings),
             ),
             name="human-label-publication",
-        ),
-        asyncio.create_task(
-            run_with_lease(
-                lease_manager,
-                "batch-prediction-runner",
-                _batch_prediction_leader,
-                ttl_seconds=60.0,
-                retry_seconds=5.0,
-            ),
-            name="batch-prediction-runner",
         ),
     ]
     if settings.trail_sync_on_start:
@@ -106,7 +120,6 @@ async def run_standalone_worker() -> None:
             )
         )
 
-    stop_event = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         with contextlib.suppress(NotImplementedError):
@@ -115,11 +128,20 @@ async def run_standalone_worker() -> None:
     try:
         await stop_event.wait()
     finally:
+        stop_event.set()
+        await asyncio.to_thread(batch_prediction_runner.begin_graceful_drain)
         for task in tasks:
             task.cancel()
         for task in tasks:
             with contextlib.suppress(asyncio.CancelledError):
                 await task
+        try:
+            await batch_task
+        except BaseException:
+            batch_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await batch_task
+            raise
         await asyncio.to_thread(batch_prediction_runner.shutdown)
         await asyncio.to_thread(lease_manager.release, "batch-prediction-runner")
         await asyncio.to_thread(database.close)

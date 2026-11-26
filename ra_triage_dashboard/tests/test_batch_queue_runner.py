@@ -243,7 +243,14 @@ class BatchQueueRunnerTest(unittest.TestCase):
 
             with patch("ra_triage_dashboard.app.workers.leases.asyncio.sleep", side_effect=_fast_sleep):
                 task = asyncio.create_task(
-                    run_with_lease(manager, "batch-prediction-runner", _leader, ttl_seconds=15.0, retry_seconds=0.01)
+                    run_with_lease(
+                        manager,
+                        "batch-prediction-runner",
+                        _leader,
+                        ttl_seconds=15.0,
+                        retry_seconds=0.01,
+                        renew_interval=0.01,
+                    )
                 )
                 await asyncio.wait_for(second_leader_started.wait(), timeout=2.0)
                 task.cancel()
@@ -580,6 +587,170 @@ class BatchQueueRunnerTest(unittest.TestCase):
                 ).fetchall()
             plan_text = " ".join(str(row["detail"]) for row in plan_rows)
             self.assertIn("idx_batch_prediction_jobs_publish_queue", plan_text)
+
+    def test_graceful_drain_completes_active_batch_while_holding_lease_then_new_slot_takes_queued(self) -> None:
+        import asyncio
+        from ra_triage_dashboard.app.db import Database
+        from ra_triage_dashboard.app.workers.leases import WorkerLeaseManager, run_with_lease
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            db = Database(root / "triage.sqlite3")
+            db.init()
+            db.upsert_issues([{"issue_id": "cn1"}], baseline_scope="scope", source="test", replace_gt=False)
+
+            def create_job(name: str) -> dict:
+                return db.create_batch_prediction_job(
+                    name=name,
+                    issue_ids=["cn1"],
+                    requested_by="alice",
+                    requested_by_source="sso",
+                    requested_by_verified=True,
+                    provider_id="kylin",
+                    requested_model_id="m1",
+                    resolved_model_id="m1",
+                    model_source="ra_model_gateway",
+                    catalog_sha256="a" * 64,
+                    model_validation_status="ok",
+                    prompt_version="v1",
+                    prompt_template="prompt",
+                    prompt_template_sha256="b" * 64,
+                    prompt_mode="default",
+                    input_profile="p1",
+                    input_config={},
+                )
+
+            job1 = create_job("long-running-before-cutover")
+            job2 = create_job("queued-for-new-slot")
+            settings = SimpleNamespace(
+                ra_auto_triage_root=root / "ra-source",
+                batch_bag_cache_dir=root / "dashboard-data" / "batch-bags",
+                autotriage_push_enabled=True,
+            )
+
+            blue_runner = BatchPredictionRunner(settings, db)
+            green_runner = BatchPredictionRunner(settings, db)
+            blue_runner.set_lease_gating(True, held=False)
+            green_runner.set_lease_gating(True, held=False)
+
+            job1_started = threading.Event()
+            release_job1 = threading.Event()
+            job2_done = threading.Event()
+            executed: list[tuple[str, str]] = []
+
+            def make_predict(slot_name: str):
+                def _predict(job_id: str) -> None:
+                    executed.append((slot_name, job_id))
+                    if job_id == job1["id"]:
+                        job1_started.set()
+                        assert release_job1.wait(timeout=5)
+                    db.update_batch_prediction_job(
+                        job_id, status="succeeded", completed_count=1, success_count=1
+                    )
+                    if job_id == job2["id"]:
+                        job2_done.set()
+                return _predict
+
+            blue_runner._predict = make_predict("blue")
+            green_runner._predict = make_predict("green")
+
+            blue_leases = WorkerLeaseManager(db, owner_id="slot-blue")
+            green_leases = WorkerLeaseManager(db, owner_id="slot-green")
+
+            def make_leader(runner: BatchPredictionRunner, drain_event: asyncio.Event):
+                async def _leader() -> None:
+                    await asyncio.to_thread(
+                        db.recover_interrupted_jobs,
+                        exclude_job_ids=runner.active_job_ids(),
+                    )
+                    runner.set_lease_held(True)
+                    gracefully_drained = False
+                    try:
+                        while not drain_event.is_set():
+                            await asyncio.to_thread(runner.resume_queued_work)
+                            try:
+                                await asyncio.wait_for(drain_event.wait(), timeout=0.05)
+                            except asyncio.TimeoutError:
+                                pass
+                        await asyncio.to_thread(runner.begin_graceful_drain)
+                        while await asyncio.to_thread(runner.has_active_work):
+                            await asyncio.sleep(0.02)
+                        gracefully_drained = True
+                    finally:
+                        if gracefully_drained:
+                            runner.set_lease_held(False)
+                        else:
+                            await asyncio.to_thread(runner.revoke_lease)
+                return _leader
+
+            async def _scenario() -> None:
+                blue_drain = asyncio.Event()
+                green_drain = asyncio.Event()
+                blue_task = asyncio.create_task(
+                    run_with_lease(
+                        blue_leases,
+                        "batch-prediction-runner",
+                        make_leader(blue_runner, blue_drain),
+                        ttl_seconds=1.5,
+                        retry_seconds=0.05,
+                        renew_interval=0.1,
+                        stop_event=blue_drain,
+                    )
+                )
+                # Wait until blue has claimed and started job1.
+                for _ in range(100):
+                    if job1_started.is_set():
+                        break
+                    await asyncio.sleep(0.02)
+                self.assertTrue(job1_started.is_set())
+
+                # Start standby green slot while blue is running job1.
+                green_task = asyncio.create_task(
+                    run_with_lease(
+                        green_leases,
+                        "batch-prediction-runner",
+                        make_leader(green_runner, green_drain),
+                        ttl_seconds=1.5,
+                        retry_seconds=0.05,
+                        renew_interval=0.1,
+                        stop_event=green_drain,
+                    )
+                )
+
+                # Simulate blue-green cutover SIGTERM on blue while job1 is still running.
+                blue_drain.set()
+                await asyncio.to_thread(blue_runner.begin_graceful_drain)
+
+                # Hold job1 open across multiple lease renewal cycles (> 0.35s) to prove
+                # blue keeps renewing the lease, green never preempts or fails job1,
+                # and job2 stays queued until blue finishes.
+                await asyncio.sleep(0.35)
+                self.assertFalse(blue_task.done())
+                self.assertEqual(db.get_batch_prediction_job(job1["id"])["status"], "running")
+                self.assertEqual(db.get_batch_prediction_job(job2["id"])["status"], "queued")
+
+                # Let job1 complete; blue must NOT claim job2 and must hand off lease to green.
+                release_job1.set()
+                await asyncio.wait_for(blue_task, timeout=3.0)
+                self.assertEqual(db.get_batch_prediction_job(job1["id"])["status"], "succeeded")
+
+                # Green acquires the released lease and completes job2.
+                for _ in range(150):
+                    if job2_done.is_set():
+                        break
+                    await asyncio.sleep(0.02)
+                self.assertTrue(job2_done.is_set())
+
+                green_drain.set()
+                await asyncio.to_thread(green_runner.begin_graceful_drain)
+                await asyncio.wait_for(green_task, timeout=3.0)
+
+            asyncio.run(_scenario())
+            self.assertEqual(executed, [("blue", job1["id"]), ("green", job2["id"])])
+            self.assertEqual(db.get_batch_prediction_job(job1["id"])["status"], "succeeded")
+            self.assertEqual(db.get_batch_prediction_job(job2["id"])["status"], "succeeded")
+            blue_runner.shutdown()
+            green_runner.shutdown()
 
 
 if __name__ == "__main__":

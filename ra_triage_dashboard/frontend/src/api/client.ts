@@ -183,6 +183,7 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
       throw options.signal.reason || Object.assign(new Error("Request cancelled"), { name: "AbortError" });
     }
     let response: Response;
+    let text: string;
     try {
       response = await fetch(url, {
         method,
@@ -192,6 +193,7 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
         signal: options.signal,
         ...(options.cache ? { cache: options.cache } : {}),
       });
+      text = await response.text();
     } catch (err) {
       if (options.signal?.aborted || (err as { name?: string })?.name === "AbortError") {
         throw err;
@@ -215,7 +217,6 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
 
     const contentType = response.headers?.get("content-type") || "";
     const retryAfter = parseRetryAfterSeconds(response.headers?.get("retry-after"));
-    const text = await response.text();
     const htmlBody = looksLikeHtml(contentType, text);
 
     if (response.redirected && htmlBody) {

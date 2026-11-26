@@ -1253,6 +1253,158 @@ class CaseLabelingTest(unittest.TestCase):
             self.assertEqual(dec_replay["decision"]["id"], dec1["decision"]["id"])
             self.assertTrue(dec_replay.get("_idempotency_replayed"))
 
+    def test_revision_with_attachments_cancellation_cleans_replay_temp_but_keeps_new_commit(self) -> None:
+        import asyncio
+        import io
+        import json
+        import threading
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from PIL import Image
+        from starlette.datastructures import Headers, UploadFile
+        from starlette.requests import Request
+        from ra_triage_dashboard.app.routers.labeling_api import revisions as rev_router
+
+        buf = io.BytesIO()
+        Image.new("RGB", (2, 2), (255, 0, 0)).save(buf, format="PNG")
+        png_bytes = buf.getvalue()
+
+        def list_pngs(root: Path) -> list[str]:
+            return sorted(str(p.relative_to(root)) for p in root.rglob("*.png"))
+
+        def make_upload(name: str = "shot.png") -> UploadFile:
+            return UploadFile(
+                file=io.BytesIO(png_bytes),
+                filename=name,
+                headers=Headers({"content-type": "image/png"}),
+            )
+
+        def make_req(idem_key: str) -> Request:
+            return Request(
+                {
+                    "type": "http",
+                    "method": "POST",
+                    "path": "/api/labeling/cases/cn1/revisions-with-attachments",
+                    "headers": [(b"idempotency-key", idem_key.encode("ascii"))],
+                }
+            )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            database = self.make_db(tmp)
+            database.set_labeling_scope_state(
+                baseline_scope="scope",
+                status="active",
+                policy_version="test-v1",
+                source_inventory_sha256="a" * 64,
+                updated_by="test",
+            )
+            att_dir = Path(tmp) / "attachments"
+            att_dir.mkdir()
+            fake_settings = SimpleNamespace(
+                review_attachments_dir=att_dir,
+                dchat_notifications_enabled=False,
+            )
+            payload_json = json.dumps(
+                {
+                    "expected_output": "误触发",
+                    "tags": [],
+                    "evidence_gaps": [],
+                    "rationale": "截图依据",
+                    "is_excluded": False,
+                }
+            )
+
+            async def _scenario() -> None:
+                with patch.object(rev_router, "database", database), patch.object(
+                    rev_router, "settings", fake_settings
+                ), patch.object(
+                    rev_router, "_require_active_labeling_issue", new=lambda _iid: asyncio.sleep(0)
+                ), patch.object(
+                    rev_router, "_labeling_actor", return_value=("alice", "sso", True)
+                ), patch.object(
+                    rev_router, "prepare_label_mentions", new=lambda *_a, **_kw: asyncio.sleep(0, result=[])
+                ), patch("ra_triage_dashboard.app.support.attachments.settings", fake_settings), patch(
+                    "ra_triage_dashboard.app.support.attachments.database", database
+                ), patch(
+                    "ra_triage_dashboard.app.support.catalogs.database", database
+                ):
+                    # 1. Cancel a brand-new commit while DB thread is in flight -> committed file MUST survive.
+                    orig_create = database.create_label_revision
+                    entered_new = threading.Event()
+                    release_new = threading.Event()
+
+                    def paused_new(*args, **kwargs):
+                        entered_new.set()
+                        assert release_new.wait(timeout=5)
+                        return orig_create(*args, **kwargs)
+
+                    with patch.object(database, "create_label_revision", side_effect=paused_new):
+                        new_task = asyncio.create_task(
+                            rev_router.create_label_revision_with_attachments(
+                                "cn1",
+                                make_req("cancel-new-key-1"),
+                                payload=payload_json,
+                                attachments=[make_upload("first.png")],
+                            )
+                        )
+                        for _ in range(100):
+                            if entered_new.is_set() or new_task.done():
+                                break
+                            await asyncio.sleep(0.01)
+                        if new_task.done():
+                            new_task.result()
+                        self.assertTrue(entered_new.is_set())
+                        new_task.cancel()
+                        with self.assertRaises(asyncio.CancelledError):
+                            await new_task
+                        release_new.set()
+                        await asyncio.sleep(0.15)
+
+                    committed_files = list_pngs(att_dir)
+                    self.assertEqual(len(committed_files), 1)
+
+                    # 2. Cancel an idempotent replay with the same key while DB thread is in flight ->
+                    # duplicate temp file MUST be cleaned up, while original committed file survives.
+                    entered_replay = threading.Event()
+                    release_replay = threading.Event()
+
+                    def paused_replay(*args, **kwargs):
+                        entered_replay.set()
+                        assert release_replay.wait(timeout=5)
+                        return orig_create(*args, **kwargs)
+
+                    with patch.object(database, "create_label_revision", side_effect=paused_replay):
+                        replay_task = asyncio.create_task(
+                            rev_router.create_label_revision_with_attachments(
+                                "cn1",
+                                make_req("cancel-new-key-1"),
+                                payload=payload_json,
+                                attachments=[make_upload("dup.png")],
+                            )
+                        )
+                        for _ in range(100):
+                            if entered_replay.is_set() or replay_task.done():
+                                break
+                            await asyncio.sleep(0.01)
+                        if replay_task.done():
+                            replay_task.result()
+                        self.assertTrue(entered_replay.is_set())
+                        # Temp upload is on disk alongside the original committed attachment.
+                        self.assertEqual(len(list_pngs(att_dir)), 2)
+                        replay_task.cancel()
+                        with self.assertRaises(asyncio.CancelledError):
+                            await replay_task
+                        release_replay.set()
+                        for _ in range(100):
+                            if len(list_pngs(att_dir)) == 1:
+                                break
+                            await asyncio.sleep(0.02)
+
+                    remaining_files = list_pngs(att_dir)
+                    self.assertEqual(remaining_files, committed_files)
+
+            asyncio.run(_scenario())
+
 
 if __name__ == "__main__":
     unittest.main()

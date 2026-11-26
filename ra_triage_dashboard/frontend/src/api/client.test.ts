@@ -196,4 +196,65 @@ describe("apiRequest resilience and retry semantics", () => {
       vi.useRealTimers();
     }
   });
+
+  it("retries idempotent PUT when response.text() fails mid-stream after headers arrive", async () => {
+    const sentKeys: Array<string | null> = [];
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation((_input, init) => {
+      sentKeys.push(new Headers(init?.headers).get("Idempotency-Key"));
+      if (sentKeys.length === 1) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers({ "content-type": "application/json" }),
+          text: () => Promise.reject(new TypeError("network body stream interrupted")),
+        } as unknown as Response);
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ saved: true }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await apiRequest<{ saved: boolean }>("/api/intent-datasets/ds/cases/c1/labels", {
+      method: "PUT",
+      headers: { "Idempotency-Key": "intent-stream-key-1" },
+      body: { routing_default: "straight" },
+      retryBaseDelayMs: 1,
+    });
+    expect(res.saved).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(sentKeys).toEqual(["intent-stream-key-1", "intent-stream-key-1"]);
+  });
+
+  it("never retries when AbortSignal cancels an in-flight response.text() read", async () => {
+    const controller = new AbortController();
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        headers: new Headers({ "content-type": "application/json" }),
+        text: () => {
+          controller.abort();
+          const abortErr = new Error("The user aborted a request.");
+          abortErr.name = "AbortError";
+          return Promise.reject(abortErr);
+        },
+      } as unknown as Response),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      apiRequest("/api/intent-datasets/ds/cases/c1/labels", {
+        method: "PUT",
+        headers: { "Idempotency-Key": "intent-abort-key-1" },
+        body: { routing_default: "straight" },
+        signal: controller.signal,
+        retryBaseDelayMs: 1,
+      }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });
