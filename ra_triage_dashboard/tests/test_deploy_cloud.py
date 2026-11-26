@@ -4,10 +4,11 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch, MagicMock
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 
 spec = importlib.util.spec_from_file_location("deploy_cloud", Path(__file__).parents[1] / "scripts/deploy_cloud.py")
 d = importlib.util.module_from_spec(spec)
@@ -774,18 +775,25 @@ COMMIT;
                 if on_signal is not None:
                     on_signal()
             stack.enter_context(patch.object(d, "stop_production", side_effect=fake_stop))
+            worker_gen = [777]
             def fake_workers(st=None):
                 events.append(("snapshot_nginx_workers",))
-                return [777]
+                return list(worker_gen)
             stack.enter_context(patch.object(d, "nginx_worker_pids", side_effect=fake_workers))
             def fake_drain(pids, **kw):
+                self.assertTrue(
+                    set(pids).isdisjoint(worker_gen),
+                    f"Attempted to drain live Nginx workers {pids} while active workers are {worker_gen}",
+                )
                 events.append(("drain_nginx_workers", list(pids)))
             stack.enter_context(patch.object(d, "wait_nginx_workers_drained", side_effect=fake_drain))
             def fake_switch(st, port, **kw):
                 events.append(("switch_nginx", port))
+                worker_gen[0] += 1
             stack.enter_context(patch.object(d, "switch_nginx_upstream", side_effect=fake_switch))
             def fake_maint(st, enabled, **kw):
                 events.append(("maintenance_writes", enabled))
+                worker_gen[0] += 1
             stack.enter_context(patch.object(d, "set_nginx_maintenance_writes", side_effect=fake_maint))
             stack.enter_context(patch.object(d, "cleanup", return_value=[]))
             def fake_smoke(port, sha, storage):
@@ -854,7 +862,7 @@ COMMIT;
             events.index(("smoke", 18791, "b" * 40, "postgresql")),
             events.index(("switch_nginx", 18791)),
             events.index(("smoke", 8785, "b" * 40, "postgresql")),
-            events.index(("drain_nginx_workers", [777])),
+            events.index(("drain_nginx_workers", [778])),
             events.index(("stop", "ra_triage_dashboard_green", 22)),
         ]
         self.assertEqual(rollback_order, sorted(rollback_order))
@@ -935,8 +943,34 @@ COMMIT;
         self.assertEqual(record["status"], "success")
         self.assertIn(("maintenance_writes", True), events)
         self.assertIn(("maintenance_writes", False), events)
-        self.assertLess(events.index(("maintenance_writes", True)), events.index(("switch_nginx", 18792)))
+        self.assertLess(events.index(("maintenance_writes", True)), events.index(("drain_nginx_workers", [777])))
+        self.assertLess(events.index(("drain_nginx_workers", [777])), events.index(("switch_nginx", 18792)))
         self.assertLess(events.index(("switch_nginx", 18792)), events.index(("maintenance_writes", False)))
+
+    def test_bluegreen_schema_migration_with_old_slot_drains_pre_maintenance_workers_only(self):
+        events, record, slot_after, _ = self.simulate_bluegreen_release(
+            schema_migration=True,
+            old_supports_deferred=False,
+            running_batch_jobs=0,
+        )
+        self.assertEqual(record["status"], "success")
+        self.assertEqual(slot_after["slot"], "green")
+        # Must snapshot gen-777 before maintenance_writes=True (reloading to 778),
+        # drain ONLY 777 (never wait on live 778 without a reload), then keep
+        # maintenance/batch freeze active through old-slot shutdown.
+        order = [
+            events.index(("snapshot_nginx_workers",)),
+            events.index(("maintenance_writes", True)),
+            events.index(("drain_nginx_workers", [777])),
+            events.index(("check_running_batch", 0)),
+            events.index(("start", "ra_triage_dashboard_green", 18792, True, "candidate")),
+            events.index(("switch_nginx", 18792)),
+            events.index(("maintenance_writes", "batch")),
+            events.index(("drain_nginx_workers", [778])),
+            events.index(("stop", "ra_triage_dashboard_blue", 11)),
+            events.index(("maintenance_writes", False)),
+        ]
+        self.assertEqual(order, sorted(order))
 
     def _simulate_bootstrap_nginx(
         self,
@@ -945,6 +979,7 @@ COMMIT;
         legacy_lease_gating=False,
         running_batch_jobs=0,
         fail_legacy_stop=False,
+        fence_drops_early=False,
     ):
         with tempfile.TemporaryDirectory() as temp, ExitStack() as stack:
             base = Path(temp)
@@ -969,10 +1004,19 @@ COMMIT;
             stack.enter_context(patch.object(d.subprocess, "run", return_value=subprocess.CompletedProcess([], 1)))
             stack.enter_context(patch.object(d, "validate_nginx_config"))
             stack.enter_context(patch.object(d, "supports_deferred_batch_recovery", return_value=supports_deferred))
-            stack.enter_context(patch.object(d, "read_running_batch_jobs", return_value=running_batch_jobs))
+            events = []
+            @contextmanager
+            def fake_fence(fence_env, *, app_dir=None, timeout=60):
+                events.append(("fence_enter", running_batch_jobs))
+                try:
+                    if running_batch_jobs > 0:
+                        raise d.DeployError("Cannot bootstrap Nginx while a legacy Batch prediction or publish job is queued or running; wait for it to finish")
+                    yield (lambda: not fence_drops_early)
+                finally:
+                    events.append(("fence_exit",))
+            stack.enter_context(patch.object(d, "legacy_batch_write_fence", side_effect=fake_fence))
             stack.enter_context(patch.object(d, "git_pane_pid", return_value=202))
             stack.enter_context(patch.object(d.Path, "resolve", return_value=live_cwd))
-            events = []
             def fake_start(record_dir, app, start_env, sha, name, **kw):
                 events.append(("start", kw.get("session", d.SESSION), kw.get("port"), name))
             stack.enter_context(patch.object(d, "start_production", side_effect=fake_start))
@@ -998,7 +1042,11 @@ COMMIT;
                 return health
             stack.enter_context(patch.object(d, "smoke", side_effect=fake_smoke))
 
-            if fail_legacy_stop or (not (supports_deferred and legacy_lease_gating) and running_batch_jobs > 0):
+            should_fail = (
+                fail_legacy_stop
+                or (not (supports_deferred and legacy_lease_gating) and (running_batch_jobs > 0 or fence_drops_early))
+            )
+            if should_fail:
                 with self.assertRaises(d.DeployError):
                     d.bootstrap_nginx()
             else:
@@ -1011,6 +1059,11 @@ COMMIT;
         self.assertIn(("wait_stopped", d.SESSION, 101), events)
         self.assertIn(("start", d.SESSION, None, "bootstrap-rollback"), events)
         self.assertIn(("smoke", 8785, old_sha), events)
+        # Write fence must be released before rollback restarts legacy.
+        self.assertLess(
+            events.index(("fence_exit",)),
+            events.index(("start", d.SESSION, None, "bootstrap-rollback")),
+        )
         self.assertLess(
             events.index(("wait_stopped", d.SESSION, 101)),
             events.index(("start", d.SESSION, None, "bootstrap-rollback")),
@@ -1022,22 +1075,64 @@ COMMIT;
             supports_deferred=False,
             running_batch_jobs=1,
         )
-        self.assertEqual(blocked_events, [])
+        self.assertEqual(blocked_events, [("fence_enter", 1), ("fence_exit",)])
 
-        # With no running Batch job, old-SHA bootstrap stops legacy BEFORE starting blue
-        # so two unleased/old-SHA processes never overlap on the shared database.
+        # Early fence drop aborts cleanly before sending SIGTERM to legacy.
+        dropped_events, _ = self._simulate_bootstrap_nginx(
+            supports_deferred=False,
+            running_batch_jobs=0,
+            fence_drops_early=True,
+        )
+        self.assertEqual(dropped_events, [("fence_enter", 0), ("fence_exit",)])
+
+        # With no running Batch job, old-SHA bootstrap holds the write fence
+        # across count==0 and legacy shutdown, releases it only after legacy exits,
+        # and then boots blue so no new Batch job can slip in before SIGTERM.
         events, old_sha = self._simulate_bootstrap_nginx(
             supports_deferred=False,
             running_batch_jobs=0,
         )
         order = [
+            events.index(("fence_enter", 0)),
             events.index(("stop", d.SESSION, 101)),
+            events.index(("fence_exit",)),
             events.index(("start", "ra_triage_dashboard_blue", 18791, "bootstrap-blue")),
             events.index(("smoke", 18791, old_sha)),
             events.index(("start_nginx",)),
             events.index(("smoke", 8785, old_sha)),
         ]
         self.assertEqual(order, sorted(order))
+
+    def test_legacy_batch_write_fence_protocol_blocks_counts_and_releases_cleanly(self):
+        # Verify the SQL fence locks batch_prediction_jobs exclusively, checks
+        # queued/running/publish_running, and cancels blocked writers.
+        self.assertIn("LOCK TABLE batch_prediction_jobs IN EXCLUSIVE MODE", d.LEGACY_BATCH_FENCE_CODE)
+        self.assertIn("status IN ('queued', 'running') OR publish_status = 'running'", d.LEGACY_BATCH_FENCE_CODE)
+        self.assertIn("pg_cancel_backend", d.LEGACY_BATCH_FENCE_CODE)
+
+        # Exercise the real subprocess lifecycle of legacy_batch_write_fence().
+        fake_ok_code = (
+            "import json, sys\n"
+            "print(json.dumps({'locked': True, 'running': 0}), flush=True)\n"
+            "line = sys.stdin.readline().strip()\n"
+            "assert line == 'release', f'unexpected command: {line!r}'\n"
+        )
+        fake_busy_code = (
+            "import json\n"
+            "print(json.dumps({'locked': True, 'running': 1}), flush=True)\n"
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            with patch.object(d, "PYTHON", Path(sys.executable)), patch.object(
+                d, "LEGACY_BATCH_FENCE_CODE", fake_ok_code
+            ):
+                with d.legacy_batch_write_fence({}, app_dir=Path(temp)) as fence_alive:
+                    self.assertTrue(fence_alive())
+            with patch.object(d, "PYTHON", Path(sys.executable)), patch.object(
+                d, "LEGACY_BATCH_FENCE_CODE", fake_busy_code
+            ):
+                with self.assertRaisesRegex(d.DeployError, "queued or running"):
+                    with d.legacy_batch_write_fence({}, app_dir=Path(temp)):
+                        pass
 
     def test_migration_apply_code_runs_migrations_only_and_backup_scripts_use_snapshot(self):
         self.assertIn("apply_postgres_migrations()", d.MIGRATION_APPLY_CODE)

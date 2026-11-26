@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import re
+import select
 import shlex
 import shutil
 import signal
@@ -81,6 +82,57 @@ with psycopg.connect(settings.database_url) as connection:
         "WHERE status IN ('queued', 'running') OR publish_status = 'running'"
     ).fetchone()
 print(json.dumps({"running": int(row[0] if row else 0)}))
+"""
+
+LEGACY_BATCH_FENCE_CODE = """
+import json
+import select
+import sys
+import psycopg
+from app.settings import Settings
+
+settings = Settings.from_env()
+with psycopg.connect(settings.database_url, autocommit=False) as guard, \\
+     psycopg.connect(settings.database_url, autocommit=True) as monitor:
+    guard.execute("SET LOCAL lock_timeout = '30s'")
+    guard.execute("SET LOCAL idle_in_transaction_session_timeout = '180s'")
+    guard.execute("LOCK TABLE batch_prediction_jobs IN EXCLUSIVE MODE")
+    holder_pid = int(guard.execute("SELECT pg_backend_pid()").fetchone()[0])
+    row = guard.execute(
+        "SELECT COUNT(*) FROM batch_prediction_jobs "
+        "WHERE status IN ('queued', 'running') OR publish_status = 'running'"
+    ).fetchone()
+    running = int(row[0] if row else 0)
+    print(json.dumps({"locked": True, "running": running}), flush=True)
+    if running == 0:
+        while True:
+            waiters = monitor.execute(
+                "SELECT blocked.pid "
+                "FROM pg_locks blocked "
+                "JOIN pg_locks holder "
+                "  ON holder.locktype = 'relation' "
+                " AND blocked.locktype = 'relation' "
+                " AND holder.database = blocked.database "
+                " AND holder.relation = blocked.relation "
+                " AND holder.relation = 'batch_prediction_jobs'::regclass "
+                " AND holder.pid = %s "
+                " AND holder.granted "
+                "JOIN pg_stat_activity act "
+                "  ON act.pid = blocked.pid "
+                " AND act.datname = current_database() "
+                " AND act.usename = current_user "
+                "WHERE NOT blocked.granted "
+                "  AND blocked.pid <> %s",
+                (holder_pid, holder_pid),
+            ).fetchall()
+            for waiter in waiters:
+                monitor.execute("SELECT pg_cancel_backend(%s)", (int(waiter[0]),))
+            ready, _, _ = select.select([sys.stdin], [], [], 0.05)
+            if ready:
+                line = sys.stdin.readline()
+                if not line or line.strip() == "release":
+                    break
+    guard.rollback()
 """
 
 MIGRATION_APPLY_CODE = """
@@ -675,6 +727,70 @@ def read_running_batch_jobs(env, *, app_dir=None):
     count = payload.get("running")
     require(isinstance(count, int) and count >= 0, "Running Batch job count is malformed")
     return count
+
+
+@contextlib.contextmanager
+def legacy_batch_write_fence(env, *, app_dir=None, timeout=60):
+    """Pause legacy Batch submissions/pushes in PostgreSQL, drain in-flight
+    writers, verify zero queued/running Batch jobs, and hold the write fence
+    until the legacy process exits.
+
+    Holds LOCK TABLE batch_prediction_jobs IN EXCLUSIVE MODE in a helper
+    process so SELECTs and all non-Batch tables stay live while any new Batch
+    INSERT/UPDATE racing with legacy shutdown is blocked and canceled before
+    creating a job or launching a worker subprocess.
+    """
+    proc = subprocess.Popen(
+        [str(PYTHON), "-u", "-c", LEGACY_BATCH_FENCE_CODE],
+        cwd=app_dir or (REPO / "ra_triage_dashboard"),
+        env=dict(env),
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        ready, _, _ = select.select([proc.stdout], [], [], timeout)
+        require(bool(ready), "Timed out acquiring legacy Batch write fence")
+        line = proc.stdout.readline().strip()
+        require(bool(line), "Legacy Batch write fence returned no status")
+        try:
+            payload = json.loads(line)
+        except ValueError as exc:
+            raise DeployError("Legacy Batch write fence output is unreadable") from exc
+        require(payload.get("locked") is True, "Legacy Batch write fence failed to acquire lock")
+        running = payload.get("running")
+        require(isinstance(running, int) and running >= 0, "Legacy Batch write fence count is malformed")
+        require(
+            running == 0,
+            "Cannot bootstrap Nginx while a legacy Batch prediction or publish job is queued or running; wait for it to finish",
+        )
+        yield (lambda: proc.poll() is None)
+    finally:
+        try:
+            if proc.stdin and not proc.stdin.closed:
+                with contextlib.suppress(BrokenPipeError, OSError):
+                    proc.stdin.write("release\n")
+                    proc.stdin.flush()
+                with contextlib.suppress(OSError):
+                    proc.stdin.close()
+            if proc.poll() is None:
+                try:
+                    proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                        proc.wait(timeout=5)
+        finally:
+            if proc.stdout and not proc.stdout.closed:
+                with contextlib.suppress(OSError):
+                    proc.stdout.close()
+            if proc.stderr and not proc.stderr.closed:
+                with contextlib.suppress(OSError):
+                    proc.stderr.close()
 
 
 def read_applied_postgres_migrations(env, *, app_dir=None):
@@ -1299,8 +1415,10 @@ def promote_bluegreen_release(
         )
         if migrations:
             if pending_migrations and requested_mode == "schema":
+                pre_maint_workers = nginx_worker_pids(STATE)
                 set_nginx_maintenance_writes(STATE, True)
                 maint_enabled = True
+                wait_nginx_workers_drained(pre_maint_workers)
             backup, migration_count = apply_additive_migrations(
                 candidate,
                 env,
@@ -1320,11 +1438,16 @@ def promote_bluegreen_release(
             # submissions/pushes at Nginx FIRST, drain pre-freeze workers so no
             # in-flight Batch POST can still reach old_app, then verify zero
             # active/queued Batch jobs and keep Batch frozen until old_slot exits.
-            pre_freeze_workers = nginx_worker_pids(STATE)
+            # When schema-migration maintenance mode is already enabled, its
+            # pre-reload workers were already drained above; never wait on the
+            # currently active maintenance workers without a reload.
             if not maint_enabled:
+                pre_freeze_workers = nginx_worker_pids(STATE)
                 set_nginx_maintenance_writes(STATE, "batch")
-            batch_freeze_enabled = True
-            wait_nginx_workers_drained(pre_freeze_workers)
+                batch_freeze_enabled = True
+                wait_nginx_workers_drained(pre_freeze_workers)
+            else:
+                batch_freeze_enabled = True
             running_batch = read_running_batch_jobs(env, app_dir=old_app)
             require(
                 running_batch == 0,
@@ -1515,12 +1638,16 @@ def bootstrap_nginx():
                 require(policy(blue_health) == expected_policy, "Blue slot policy differs from legacy live service")
                 stop_production(legacy_pid, session=SESSION, on_signal=mark_legacy_stopping)
             else:
-                running_batch = read_running_batch_jobs(env, app_dir=live_cwd)
-                require(
-                    running_batch == 0,
-                    "Cannot bootstrap Nginx while a legacy Batch prediction or publish job is running; wait for it to finish",
-                )
-                stop_production(legacy_pid, session=SESSION, on_signal=mark_legacy_stopping)
+                with legacy_batch_write_fence(env, app_dir=live_cwd) as fence_alive:
+                    require(
+                        fence_alive(),
+                        "Legacy Batch write fence exited before stopping legacy service",
+                    )
+                    stop_production(
+                        legacy_pid,
+                        session=SESSION,
+                        on_signal=mark_legacy_stopping,
+                    )
                 start_production(
                     record_dir,
                     live_cwd,
