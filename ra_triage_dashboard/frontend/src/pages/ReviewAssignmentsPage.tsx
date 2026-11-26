@@ -1598,8 +1598,10 @@ export const ReviewAssignmentsPage: React.FC<ReviewAssignmentsPageProps> = ({
                       isAdmin={isAdmin}
                       username={username}
                       verified={verified}
+                      runNameLookup={runNameLookup}
                       onOpenDetail={handleOpenDetail}
                       onEditAllocation={setEditCampaignId}
+                      onShareLink={(sid) => void copyShareUrl(sid, true)}
                     />
                   ) : (
                     <BatchCard

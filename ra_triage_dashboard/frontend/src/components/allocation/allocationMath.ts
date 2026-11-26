@@ -776,17 +776,17 @@ export function reviewAssignmentFilterLabel(item: Partial<WorkSplitItem>, lang: 
       ["0821-odd2", "ODD2"],
       ["0821-nonodd2", bilingual(lang, "非 ODD2", "Non-ODD2")],
     ];
-    const labels = partitions.map(([id, name]) => {
+    const labels = partitions.flatMap(([id, name]) => {
       const n = counts[id];
-      return bilingual(lang, `${name} ${n} 例`, `${name} ${n} ${n === 1 ? "case" : "cases"}`);
+      return Number.isFinite(n) ? [bilingual(lang, `${name} ${n} 例`, `${name} ${n} ${n === 1 ? "case" : "cases"}`)] : [];
     });
     const others = (item.baseline_ids || []).filter(
-      (id) => !Object.prototype.hasOwnProperty.call(counts, id),
+      (id) => !labels.length || !partitions.some(([partition]) => partition === id),
     );
-    values.push(
-      `${bilingual(lang, "数据集", "Datasets")}: ${[...others, `0821 · ${labels.join(" / ")}`].join(" · ")}`,
-    );
-  } else if (filter.baselines) {
+    const datasets = labels.length ? [...others, `0821 · ${labels.join(" / ")}`] : others;
+    if (datasets.length) values.push(`${bilingual(lang, "数据集", "Datasets")}: ${datasets.join(" · ")}`);
+  }
+  if (!values.length && filter.baselines) {
     values.push(`${bilingual(lang, "数据集", "Datasets")}: ${String(filter.baselines)}`);
   }
   if (filter.comparison_status && filter.comparison_status !== "all") {

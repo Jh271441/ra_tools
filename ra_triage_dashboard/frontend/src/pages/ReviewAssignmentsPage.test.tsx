@@ -206,7 +206,7 @@ describe("ReviewAssignmentsPage", () => {
     expect(mockApi.mock.calls.filter(([path]) => path.endsWith("/allocation/preview"))).toHaveLength(1);
   });
 
-  it("shows historical partitions in the usual assignment-card format without pending-count buttons", async () => {
+  it("uses ordinary task actions for both historical partitions and routes them to the selected batch", async () => {
     const historical = (id: string, baseline: string, odd: string | null, cases: number) => ({
       split_id: `campaign-${id}`, model_run_id: `run-${id}`, campaign_name: id,
       source_created_at: "2026-09-09T13:18:07+08:00",
@@ -218,7 +218,8 @@ describe("ReviewAssignmentsPage", () => {
     mockApi.mockImplementation(async (path) => path.startsWith("/api/cases/work-splits?")
       ? { items: [
           { split_id: "campaign-ordinary", campaign_name: "0508", is_current: true,
-            workflow_mode: "model_review_and_case_label", pending_issue_ids: ["cn12345678"] },
+            workflow_mode: "model_review_and_case_label", pending_issue_ids: ["cn12345678"],
+            filter_snapshot: { baselines: "0508" } },
           { ...historical("odd2", "0821-odd2", "ODD2", 110), completed_count: 217,
             pending_issue_ids: ["cn35722425", "cn35743259", "cn35690387"],
             members: [
@@ -249,17 +250,35 @@ describe("ReviewAssignmentsPage", () => {
     expect(grid.getByText("111 / 112")).toBeInTheDocument();
     expect(grid.getByText("1 条待处理")).toBeInTheDocument();
     expect(within(odd2).getByText("221 / 224 · 99%")).toBeInTheDocument();
-    fireEvent.click(within(odd2).getByRole("button", { name: "查看批次" }));
-    const target = within(odd2).getAllByRole("link", { name: "开始联合复核" })[0];
-    const params = new URL(target.getAttribute("href")!, window.location.origin).searchParams;
-    expect(params.get("work_split")).toBe("campaign-odd2");
-    expect(params.get("task_progress")).toBe("pending");
-    expect(screen.queryByRole("link", { name: /查看剩余/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /查看剩余/ })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "ODD 未填写 · 2 例" }));
     const nonOdd2 = container.querySelector<HTMLElement>('[data-review-assignment-batch="0821-nonodd2"]')!;
-    expect(within(nonOdd2).getByText(/2 例 · ODD 未填写/)).toBeInTheDocument();
-    expect(within(nonOdd2).queryByText(/88 例/)).not.toBeInTheDocument();
+    const ordinary = container.querySelector<HTMLElement>('[data-review-assignment-batch="campaign-ordinary"]')!;
+    const footerLabels = (card: HTMLElement) =>
+      Array.from(card.querySelectorAll("footer .review-assignment-batch-actions > *"), (control) => control.textContent);
+    expect(footerLabels(ordinary)).toEqual(["查看原筛选", "开始联合复核", "去原因聚类", "修改分配", "查看任务明细", "复制链接"]);
+    expect(footerLabels(odd2)).toEqual(footerLabels(ordinary));
+    expect(footerLabels(nonOdd2)).toEqual(footerLabels(ordinary));
+    expect(within(odd2).getByText("数据集: 0821 · ODD2 112 例")).toBeInTheDocument();
+    expect(within(nonOdd2).getByText("数据集: 0821 · 非 ODD2 90 例")).toBeInTheDocument();
+    expect(within(nonOdd2).getByText(/ODD 未填写 2 例/)).toBeInTheDocument();
+
+    fireEvent.click(within(odd2).getByRole("button", { name: "开始联合复核" }));
+    const reviewPicker = within(screen.getByRole("dialog", { name: /开始联合复核/ }));
+    const targets = reviewPicker.getAllByRole("link", { name: "开始联合复核" });
+    expect(targets.map((target) => {
+      const params = new URL(target.getAttribute("href")!, window.location.origin).searchParams;
+      return [params.get("work_split"), params.get("run"), params.get("task_progress")];
+    })).toEqual([
+      ["campaign-odd2", "run-odd2", "pending"],
+      ["campaign-odd2-second", "run-odd2-second", "pending"],
+    ]);
+    fireEvent.click(reviewPicker.getByRole("button", { name: "关闭" }));
+    fireEvent.click(within(nonOdd2).getByRole("button", { name: "查看任务明细" }));
+    const detailPicker = within(screen.getByRole("dialog", { name: /查看任务明细/ }));
+    const missingRow = detailPicker.getAllByRole("listitem").find((row) => row.textContent?.includes("ODD 未填写"))!;
+    fireEvent.click(within(missingRow).getByRole("button", { name: "查看任务明细" }));
+    await waitFor(() => expect(mockApi.mock.calls.some(([path]) =>
+      path.startsWith("/api/cases/work-splits/campaign-unknown?"),
+    )).toBe(true));
   });
 
   it("preserves comparison=none (and non-standard gallery comparison filters) across recount and preview without expanding to all", async () => {
