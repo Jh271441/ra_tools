@@ -19,6 +19,7 @@ from ...support.baselines import (
     resolve_request_baseline_ids,
     resolve_request_baseline_scopes,
     restrict_version_issue_ids,
+    task_baseline_coverage,
     task_baseline_ids,
 )
 from ...support.common import _as_text, _detail
@@ -88,11 +89,11 @@ async def list_case_work_splits(
             parents, items, version_only=version_only, manual_only=manual_only
         )
     for item in items:
-        item["baseline_ids"] = await asyncio.to_thread(
-            task_baseline_ids,
+        item.update(await asyncio.to_thread(
+            task_baseline_coverage,
             item.get("baseline_scopes") or item.get("baseline_ids") or [],
             item["split_id"],
-        )
+        ))
     return {
         "items": items,
         "metrics": task_list_metrics(items, assignee),

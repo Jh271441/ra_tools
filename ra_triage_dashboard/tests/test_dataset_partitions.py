@@ -58,6 +58,19 @@ class DatasetPartitionsTest(unittest.TestCase):
                 baselines.resolve_request_baseline_scopes(raw)
             self.assertEqual(caught.exception.status_code, 503)
 
+    def test_task_card_counts_cases_once_across_reviewers(self):
+        issues = [self.ids[0], self.ids[1], self.ids[-1]]
+        task = self.db.apply_work_split(
+            assignments=[{"name": person, "issue_ids": issues} for person in ("alice", "bob")],
+            created_by="admin", reviewers_per_issue=2, model_run_id=self.run["id"],
+        )
+        self.assertEqual(baselines.task_baseline_coverage(SOURCE_SCOPES, task["split_id"]), {
+            "baseline_ids": list(PARTITION_IDS),
+            "partition_case_counts": {"0821-odd2": 2, "0821-nonodd2": 1},
+        })
+        self.assertEqual(baselines.task_baseline_coverage(["0508"], task["split_id"]),
+                         {"baseline_ids": ["0508"]})
+
     def test_csv_list_query_mixed_and_empty_intersections(self):
         for raw in [PARTITION_IDS[0], [PARTITION_IDS[0]]]:
             self.assertEqual(set(baselines.resolve_request_baseline_scopes(raw)), set(SOURCE_SCOPES))

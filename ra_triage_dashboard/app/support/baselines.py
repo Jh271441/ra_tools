@@ -428,6 +428,10 @@ def media_for_issue(issue_id: str, baseline_scope: str = "") -> Any:
 
 
 def task_baseline_ids(scopes, task_id):
+    return task_baseline_coverage(scopes, task_id)["baseline_ids"]
+
+
+def task_baseline_coverage(scopes, task_id):
     """Map exact frozen task members to visible partitions without moving history."""
     # Unregistered version source scopes require their public dataset selector.
     # Ordinary registered scopes keep the existing lookup-free path.
@@ -435,11 +439,11 @@ def task_baseline_ids(scopes, task_id):
         from ..version_review_tasks import version_task_baseline_ids
         version_ids = version_task_baseline_ids(database, database.resolve_version_campaign(task_id))
         if version_ids:
-            return version_ids
+            return {"baseline_ids": version_ids}
     ids = [baseline_registry.scope_to_id(scope) or scope for scope in scopes]
     partitions = load_partitions(settings.data_dir)
     if not partitions or not set(ids).intersection(SOURCE_IDS):
-        return ids
+        return {"baseline_ids": ids}
     with database.connect() as conn:
         rows = conn.execute(
             "SELECT issue_id FROM review_work_assignments WHERE split_id=? "
@@ -447,9 +451,13 @@ def task_baseline_ids(scopes, task_id):
             (task_id, task_id),
         ).fetchall()
     members = {row['issue_id'] for row in rows}
-    return [key for key in ids if key not in SOURCE_IDS] + [
-        key for key in PARTITION_IDS if not members or members.intersection(partitions[key])
-    ]
+    counts = {key: len(members.intersection(partitions[key])) for key in PARTITION_IDS}
+    coverage = {"baseline_ids": [key for key in ids if key not in SOURCE_IDS] + [
+        key for key in PARTITION_IDS if not members or counts[key]
+    ]}
+    if members:
+        coverage["partition_case_counts"] = counts
+    return coverage
 
 
 def issue_dataset_id(issue_id, source_id):

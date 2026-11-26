@@ -95,7 +95,18 @@ function reviewAssignmentFilterLabel(item) {
     ? item.filter_snapshot
     : {};
   const values = [];
-  if (filter.baselines) values.push(`${uiText("数据集", "Datasets")}: ${filter.baselines}`);
+  const counts = item?.partition_case_counts;
+  if (counts) {
+    const partitions = [["0821-odd2", "ODD2"], ["0821-nonodd2", uiText("非 ODD2", "Non-ODD2")]];
+    const labels = partitions.map(([id, name]) => {
+      const n = counts[id];
+      return uiText(`${name} ${n} 例`, `${name} ${n} ${n === 1 ? "case" : "cases"}`);
+    });
+    const others = (item.baseline_ids || []).filter(id => !Object.hasOwn(counts, id));
+    values.push(`${uiText("数据集", "Datasets")}: ${[...others, "0821 · " + labels.join(" / ")].join(" · ")}`);
+  } else if (filter.baselines) {
+    values.push(`${uiText("数据集", "Datasets")}: ${filter.baselines}`);
+  }
   if (filter.comparison_status && filter.comparison_status !== "all") {
     values.push(`${uiText("模型结果", "Model")}: ${filter.comparison_status}`);
   }
