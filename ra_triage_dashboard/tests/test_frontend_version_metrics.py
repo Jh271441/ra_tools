@@ -56,6 +56,9 @@ const workloadRow = {family:'20260102',status:'ready',thresholds:[
 ]};
 versionMetrics.threshold=.75;
 vmRenderWorkload([workloadRow], '');
+assert.equal($('#vmWorkloadBaseline').textContent, 'conf = 0.90 reviews 40');
+vmRenderWorkload([workloadRow, {...workloadRow, family:'20260109'}], '');
+assert.equal($('#vmWorkloadBaseline').textContent, 'conf = 0.90 total reviews 80');
 const workload = $('#vmWorkloadRows').innerHTML;
 for (const text of ['12 / 200', '>28<', '70.0%', '80.00%', '8/10']) assert.ok(workload.includes(text),text);
 versionMetrics.threshold=.90;
@@ -64,6 +67,7 @@ assert.ok($('#vmWorkloadRows').innerHTML.includes('40 / 200'));
 assert.ok($('#vmWorkloadRows').innerHTML.includes('0.0%'));
 vmRenderWorkload([{family:'20260102',status:'unavailable'}], '');
 assert.ok($('#vmWorkloadRows').innerHTML.includes('No threshold data'));
+assert.ok($('#vmWorkloadBaseline').textContent.endsWith('—'));
 vmRenderWorkload([], 'Loading');
 assert.ok($('#vmWorkloadRows').innerHTML.includes('Loading'));
 vmSelect=()=>{};

@@ -57,6 +57,12 @@ function vmWorkloadRow(label, point, byThreshold) {
 }
 function vmRenderWorkload(rows, empty) {
   const s = versionMetrics, byThreshold = s.thresholdExpanded;
+  const scope = byThreshold ? rows.filter(row => row.family === s.thresholdFamily) : rows;
+  const counts = scope.map(row => row.status === 'ready' ? row.thresholds?.find(t => t.threshold === .90)?.full_low : null);
+  const complete = counts.length > 0 && counts.every(Number.isInteger);
+  const total = complete ? counts.reduce((sum, count) => sum + count, 0).toLocaleString(i18nLocale()) : '—';
+  const label = scope.length > 1 ? uiText('标注量合计', 'total reviews') : uiText('标注量', 'reviews');
+  $('#vmWorkloadBaseline').textContent = `conf = 0.90 ${label} ${total}`;
   $('#vmWorkloadThreshold').textContent = vmThresholdText();
   $('#vmWorkloadDimension').textContent = byThreshold ? 'conf' : uiText('版本','Release');
   $('#vmWorkloadReleasePicker').hidden = !byThreshold;
@@ -74,9 +80,6 @@ function vmRenderWorkload(rows, empty) {
   const row = rows.find(item => item.family === s.thresholdFamily);
   $('#vmThresholdFamily').disabled = !rows.length;
   vmSelect('vmThresholdFamily', rows.map(row => [row.family, row.family]), s.thresholdFamily);
-  $('#vmThresholdScope').textContent = row?.status === 'ready' ? uiText(
-    `已发布 ${row.published_total} · 有效抽样 ${row.valid_total}`,
-    `Published ${row.published_total} · Valid samples ${row.valid_total}`) : '';
   const points = row?.status === 'ready' ? row.thresholds : [];
   body.innerHTML = points?.map(t => vmWorkloadRow(t.threshold.toFixed(2), t, true)).join('')
     || vmReportEmpty(rows.length ? uiText('当前版本暂无阈值数据','No threshold data for this release') : empty, 5);
