@@ -523,8 +523,17 @@ function bindEvents() {
         showToast(t("toast.page_refreshed"));
         return;
       }
+      if (state.activePage === "prediction" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("prediction") || window.__RA_REACT_OWNED_PAGES__?.includes?.("prediction"))) {
+        await loadOverview().catch(() => {});
+        window.__RA_REACT_WORKBENCH__?.refreshPage?.("prediction");
+        showToast(t("toast.page_refreshed"));
+        return;
+      }
       await refreshAll();
       if (!isPageContextCurrent(pageContext)) return;
+      if (window.__RA_REACT_WORKBENCH__?.ownsPage?.(state.activePage)) {
+        window.__RA_REACT_WORKBENCH__.refreshPage?.(state.activePage);
+      }
       if (state.activePage === "analysis") {
         await loadReviewReasonAnalysis();
       } else if (state.selectedId) {
