@@ -194,6 +194,31 @@ function buildIssueTagOptions(
   return options;
 }
 
+function buildTaskScopeKey(
+  baselines: string,
+  f: LabelingFilterState,
+  liveSearch: string,
+): string {
+  const trimmedSearch = liveSearch.trim();
+  return JSON.stringify({
+    baselines,
+    taskId: f.taskId || "",
+    q: trimmedSearch,
+    issueIds: trimmedSearch ? [] : f.issueIds,
+    targetGroup: f.targetGroup || "",
+    issueTags: f.issueTags,
+    status: f.status,
+    author: f.author,
+    assignee: f.assignee,
+    cluster: f.cluster || "",
+    exclusion: f.exclusion,
+    label: f.label,
+    gt: f.gt,
+    gtRelations: f.gtRelations,
+    commentState: f.commentState,
+  });
+}
+
 export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps> = ({
   active,
   lang,
@@ -218,6 +243,19 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
   const taskCheckAbortRef = useRef<AbortController | null>(null);
   const taskCheckSeqRef = useRef<number>(0);
 
+  const baselinesQuery = useMemo(
+    () => (selectedBaselines.length ? selectedBaselines.join(",") : "0508"),
+    [selectedBaselines],
+  );
+
+  const currentTaskScopeKey = useMemo(
+    () => buildTaskScopeKey(baselinesQuery, filters, searchDraft),
+    [baselinesQuery, filters, searchDraft],
+  );
+  const currentTaskScopeKeyRef = useRef<string>(currentTaskScopeKey);
+  currentTaskScopeKeyRef.current = currentTaskScopeKey;
+  const prevTaskScopeKeyRef = useRef<string>(currentTaskScopeKey);
+
   // Cancel any pending task-scope recount when leaving the gallery or unmounting
   useEffect(() => {
     if (!active) {
@@ -233,10 +271,18 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
     };
   }, [active]);
 
-  const baselinesQuery = useMemo(
-    () => (selectedBaselines.length ? selectedBaselines.join(",") : "0508"),
-    [selectedBaselines],
-  );
+  // Cancel any pending task-scope recount if the user edits search, filters, or dataset in-place
+  useEffect(() => {
+    if (prevTaskScopeKeyRef.current !== currentTaskScopeKey) {
+      prevTaskScopeKeyRef.current = currentTaskScopeKey;
+      if (taskCheckAbortRef.current) {
+        taskCheckSeqRef.current += 1;
+        taskCheckAbortRef.current.abort();
+        taskCheckAbortRef.current = null;
+        setCheckingTaskScope(false);
+      }
+    }
+  }, [currentTaskScopeKey]);
 
   // Read config via legacy state or /api/config fallback
   const legacyConfig = readLegacyConfig() as
@@ -740,7 +786,7 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
     const searchChanged = activeSearch !== filters.search;
     const win = window as unknown as LegacyLabelingBridgeWindow;
 
-    if (searchChanged || casesQuery.isFetching) {
+    if (searchChanged || casesQuery.isFetching || casesQuery.isPlaceholderData) {
       const nextFilters: LabelingFilterState = searchChanged
         ? {
             ...filters,
@@ -749,6 +795,7 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
             page: 1,
           }
         : filters;
+      const requestedScopeKey = buildTaskScopeKey(baselinesQuery, nextFilters, activeSearch);
       const countParams = new URLSearchParams({
         baselines: baselinesQuery,
         task_id: nextFilters.taskId || "",
@@ -787,6 +834,7 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
           !activeRef.current ||
           taskCheckSeqRef.current !== seq ||
           controller.signal.aborted ||
+          currentTaskScopeKeyRef.current !== requestedScopeKey ||
           (activeLegacyPage && activeLegacyPage !== "labeling")
         ) {
           return;
@@ -812,6 +860,7 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
           !activeRef.current ||
           taskCheckSeqRef.current !== seq ||
           controller.signal.aborted ||
+          currentTaskScopeKeyRef.current !== requestedScopeKey ||
           (err instanceof DOMException && err.name === "AbortError")
         ) {
           return;

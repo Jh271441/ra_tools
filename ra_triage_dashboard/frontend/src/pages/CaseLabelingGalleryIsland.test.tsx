@@ -644,4 +644,188 @@ describe("CaseLabelingGalleryIsland", () => {
     await new Promise((r) => window.setTimeout(r, 40));
     expect(showPage).not.toHaveBeenCalled();
   });
+
+  it("aborts and discards delayed task recount when user stays on the gallery and edits search to a 0-result filter", async () => {
+    const showPage = vi.fn();
+    const syncState = vi.fn();
+    (window as unknown as Record<string, unknown>).showPage = showPage;
+    (window as unknown as Record<string, unknown>).syncCaseLabelingGalleryState = syncState;
+    window.history.replaceState({}, "", "/manual-s6/case-labeling?baselines=0508&q=cn35635511");
+
+    let resolveDelayedRecount: ((resp: Response) => void) | null = null;
+    let capturedSignal: AbortSignal | undefined;
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes("/api/labeling/tasks")) {
+          return new Response(JSON.stringify({ items: [] }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        if (url.includes("/api/labeling/cases")) {
+          const params = new URLSearchParams(url.split("?")[1] || "");
+          const q = params.get("q") || "";
+          if (q === "cn35635511" || q === "no_match_xyz") {
+            return new Response(
+              JSON.stringify({ total: 0, page: 1, pages: 1, page_size: 20, items: [] }),
+              { status: 200, headers: { "Content-Type": "application/json" } },
+            );
+          }
+          if (params.get("page_size") === "1") {
+            capturedSignal = init?.signal ?? undefined;
+            return await new Promise<Response>((resolve) => {
+              resolveDelayedRecount = resolve;
+            });
+          }
+          return new Response(
+            JSON.stringify({ total: 1071, page: 1, pages: 54, page_size: 20, items: [] }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          );
+        }
+        return new Response(JSON.stringify({}), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }),
+    );
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { container } = render(
+      <QueryClientProvider client={client}>
+        <CaseLabelingGalleryIsland
+          active
+          lang="zh"
+          selectedBaselines={["0508"]}
+          isAdmin
+          canWrite
+        />
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => {
+      expect(container.querySelector("#caseLabelingCount")?.textContent).toBe("0");
+    });
+
+    // Clear search and click "标注任务" to kick off recount for q=""
+    const searchInput = container.querySelector<HTMLInputElement>("#caseLabelingSearch")!;
+    fireEvent.change(searchInput, { target: { value: "" } });
+    fireEvent.click(container.querySelector<HTMLButtonElement>("#caseLabelingCreateTask")!);
+
+    await waitFor(() => {
+      expect(resolveDelayedRecount).not.toBeNull();
+    });
+
+    // User stays on the SAME page and types a new 0-result query BEFORE recount resolves
+    fireEvent.change(searchInput, { target: { value: "no_match_xyz" } });
+
+    await waitFor(() => {
+      expect(capturedSignal?.aborted).toBe(true);
+    });
+    // Gallery & URL update to 0-result search
+    await waitFor(() => {
+      expect(new URLSearchParams(window.location.search).get("q")).toBe("no_match_xyz");
+      expect(container.querySelector("#caseLabelingCount")?.textContent).toBe("0");
+    });
+
+    // Stale 1071 recount finally resolves -> MUST NOT open labeling-new-task!
+    resolveDelayedRecount!(
+      new Response(JSON.stringify({ total: 1071, page: 1, pages: 54, page_size: 1, items: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    await new Promise((r) => window.setTimeout(r, 40));
+    expect(showPage).not.toHaveBeenCalled();
+  });
+
+  it("aborts and discards delayed task recount when dataset changes in-place", async () => {
+    const showPage = vi.fn();
+    (window as unknown as Record<string, unknown>).showPage = showPage;
+    window.history.replaceState({}, "", "/manual-s6/case-labeling?baselines=0508&q=cn35635511");
+
+    let resolveDelayedRecount: ((resp: Response) => void) | null = null;
+    let capturedSignal: AbortSignal | undefined;
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes("/api/labeling/tasks")) {
+          return new Response(JSON.stringify({ items: [] }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        if (url.includes("/api/labeling/cases")) {
+          const params = new URLSearchParams(url.split("?")[1] || "");
+          if (params.get("page_size") === "1") {
+            capturedSignal = init?.signal ?? undefined;
+            return await new Promise<Response>((resolve) => {
+              resolveDelayedRecount = resolve;
+            });
+          }
+          return new Response(
+            JSON.stringify({ total: 0, page: 1, pages: 1, page_size: 20, items: [] }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          );
+        }
+        return new Response(JSON.stringify({}), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }),
+    );
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { container, rerender } = render(
+      <QueryClientProvider client={client}>
+        <CaseLabelingGalleryIsland
+          active
+          lang="zh"
+          selectedBaselines={["0508"]}
+          isAdmin
+          canWrite
+        />
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => {
+      expect(container.querySelector("#caseLabelingCount")?.textContent).toBe("0");
+    });
+
+    fireEvent.change(container.querySelector<HTMLInputElement>("#caseLabelingSearch")!, {
+      target: { value: "" },
+    });
+    fireEvent.click(container.querySelector<HTMLButtonElement>("#caseLabelingCreateTask")!);
+
+    await waitFor(() => {
+      expect(resolveDelayedRecount).not.toBeNull();
+    });
+
+    // Topbar dataset changes in-place while still active on gallery
+    rerender(
+      <QueryClientProvider client={client}>
+        <CaseLabelingGalleryIsland
+          active
+          lang="zh"
+          selectedBaselines={["0821-odd2"]}
+          isAdmin
+          canWrite
+        />
+      </QueryClientProvider>,
+    );
+
+    expect(capturedSignal?.aborted).toBe(true);
+    resolveDelayedRecount!(
+      new Response(JSON.stringify({ total: 1071, page: 1, pages: 54, page_size: 1, items: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    await new Promise((r) => window.setTimeout(r, 40));
+    expect(showPage).not.toHaveBeenCalled();
+  });
 });

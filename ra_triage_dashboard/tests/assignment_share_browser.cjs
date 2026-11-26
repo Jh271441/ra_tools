@@ -26,7 +26,8 @@ async function init(page,lang,theme){
   state.modelRuns=[{id:'run1009',name:'1009'}];
   const member={username:'liangxianghui',assigned_count:20,completed_count:0,pending_count:20,completion_ratio:0};
   const base={model_run_id:'run1009',workflow_mode:'model_review_and_case_label',is_current:true,lifecycle:'active',total_count:20,assignment_count:20,completed_count:0,pending_count:20,members:[member],created_at:'2026-10-30T04:17:24Z',baseline_ids:['version-20261009'],filter_snapshot:{},page:3,page_count:5,changes:[],items:[{issue_id:'cn37071761',assignee:'liangxianghui',submitted:false,assignment_kind:'base'}]};
-  window.tasks=[{...base,split_id:'campaign-905dd0d5a4144f589ea72b6c69b101ef',campaign_name:'1009 TE/RD 差异联合复核 / Combined disagreement review'},
+  window.tasks=[{...base,split_id:'campaign-905dd0d5a4144f589ea72b6c69b101ef',campaign_name:'0821 TE/RD 差异联合复核 / Combined disagreement review',
+    baseline_ids:['0821-odd2','0821-nonodd2'],partition_case_counts:{'0821-odd2':11,'0821-nonodd2':9}},
    {...base,split_id:'campaign-version',appendable:true,release_family:'20261009',updated_at:'2026-10-30T04:17:24Z'},
    {...base,split_id:'campaign-history',campaign_name:'历史任务 / Historical task',is_current:false,lifecycle:'superseded'}];
   window.taskRequests=[];
@@ -58,6 +59,8 @@ async function init(page,lang,theme){
    await init(page,lang,theme);
    assert.equal(await page.evaluate(()=>state.reviewAssignments.page),3,'shared page must survive list loading');
    await page.evaluate(lang=>{applyUiLanguage(lang==='zh'?'en':'zh');applyUiLanguage(lang)},lang);
+   const card=page.locator(`[data-review-assignment-batch="${task}"]`);
+   assert.ok((await card.innerText()).includes(lang==='zh'?'ODD2 11 例 / 非 ODD2 9 例':'ODD2 11 cases / Non-ODD2 9 cases'));
    assert.equal(await page.evaluate(()=>state.reviewAssignments.assignee),'liangxianghui','language preserves detail filter');
    const expected=lang==='zh'?'复制链接':'Copy link';
    assert.equal(await page.locator('#reviewAssignmentDetailShare').innerText(),expected);

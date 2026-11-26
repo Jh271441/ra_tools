@@ -19,6 +19,7 @@ for (const name of ['task-allocation.js','review-assignments.js','labeling-combi
   vm.runInContext(fs.readFileSync(path.join(__dirname,'../static/js',name),'utf8'),context);
 const item = {split_id:'campaign-a',campaign_name:'0821 very long task <name>',model_run_id:'run-a',
   workflow_mode:'model_review_and_case_label',is_current:true,lifecycle:'active',baseline_ids:['0821'],
+  partition_case_counts:{'0821-odd2':11,'0821-nonodd2':1},
   assignment_count:12,completed_count:3,completion_ratio:.25,total_count:12,
   members:[{username:'alice',assigned_count:12,completed_count:3,pending_count:9,completion_ratio:.25}]};
 const version = {...item,split_id:'campaign-v',appendable:true,release_family:'20261009',baseline_ids:['version-20261009']};
@@ -31,6 +32,7 @@ const version = {...item,split_id:'campaign-v',appendable:true,release_family:'2
   assert.equal(html,expected);
   assert.ok(html.includes('3 / 12 · 25%'));
   assert.ok(html.includes('9 条待处理'));
+  assert.ok(html.includes('0821 · ODD2 11 例 / 非 ODD2 1 例'));
   assert.ok(!html.includes('data-open-review-assignment='));
   assert.ok(html.includes('0821 very long task &lt;name>'));
   assert.equal(count.textContent,'2');
@@ -41,6 +43,7 @@ const version = {...item,split_id:'campaign-v',appendable:true,release_family:'2
   assert.equal(writes,unchanged); assert.ok(status.textContent.includes('失败'));
   context.state.uiLanguage='en'; context.renderLabelingCombinedTasks();
   assert.ok(html.includes('Start combined review')); assert.ok(html.includes('View task detail'));
+  assert.ok(html.includes('0821 · ODD2 11 cases / Non-ODD2 1 case'));
   assert.ok(html.includes('Combined review progress')); assert.ok(html.includes('9 pending'));
   // Exercise both real list entrypoints: appendable version cards bypass the
   // ordinary task renderer and must not fall back to the pre-1106 combined name.

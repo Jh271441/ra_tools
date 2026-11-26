@@ -226,4 +226,24 @@ describe("LabelingSummaryPage 1:1 parity", () => {
       expect(new URLSearchParams(window.location.search).get("target_group")).toBeNull();
     });
   });
+
+  it("hides target_group selector on non-version datasets like 0821-odd2 when no target_group is active to keep the 2-row filter bar aligned", async () => {
+    window.history.replaceState({}, "", "/manual-s6/labeling-summary?baselines=0821-odd2");
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { container } = render(
+      <QueryClientProvider client={qc}>
+        <LabelingSummaryPage
+          active
+          lang="zh"
+          theme="dark"
+          selectedBaselines={["0821-odd2"]}
+          isAdmin
+        />
+      </QueryClientProvider>,
+    );
+    await waitFor(() => {
+      expect(screen.getByText("cn998877")).toBeInTheDocument();
+    });
+    expect(container.querySelector("#labelSummaryTargetGroupPicker")).toBeNull();
+  });
 });

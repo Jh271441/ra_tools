@@ -162,6 +162,7 @@ export interface WorkSplitItem {
   baseline_ids?: string[];
   baseline_scopes?: string[];
   baselines?: string[];
+  partition_case_counts?: Record<string, number> | null;
   created_at?: string;
   source_created_at?: string;
   created_by?: string;
@@ -728,7 +729,25 @@ export function reviewAssignmentFilterLabel(item: Partial<WorkSplitItem>, lang: 
       ? (item.filter_snapshot as Record<string, unknown>)
       : {};
   const values: string[] = [];
-  if (filter.baselines) values.push(`${bilingual(lang, "数据集", "Datasets")}: ${String(filter.baselines)}`);
+  const counts = item?.partition_case_counts;
+  if (counts) {
+    const partitions: Array<[string, string]> = [
+      ["0821-odd2", "ODD2"],
+      ["0821-nonodd2", bilingual(lang, "非 ODD2", "Non-ODD2")],
+    ];
+    const labels = partitions.map(([id, name]) => {
+      const n = counts[id];
+      return bilingual(lang, `${name} ${n} 例`, `${name} ${n} ${n === 1 ? "case" : "cases"}`);
+    });
+    const others = (item.baseline_ids || []).filter(
+      (id) => !Object.prototype.hasOwnProperty.call(counts, id),
+    );
+    values.push(
+      `${bilingual(lang, "数据集", "Datasets")}: ${[...others, `0821 · ${labels.join(" / ")}`].join(" · ")}`,
+    );
+  } else if (filter.baselines) {
+    values.push(`${bilingual(lang, "数据集", "Datasets")}: ${String(filter.baselines)}`);
+  }
   if (filter.comparison_status && filter.comparison_status !== "all") {
     values.push(`${bilingual(lang, "模型结果", "Model")}: ${String(filter.comparison_status)}`);
   }

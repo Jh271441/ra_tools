@@ -503,6 +503,19 @@ export const LabelingSummaryPage: React.FC<LabelingSummaryPageProps> = ({
     [lang],
   );
 
+  const showTargetGroupFilter = useMemo(() => {
+    if (route.targetGroup) return true;
+    const selected = selectedBaselines.length ? selectedBaselines : ["0508"];
+    const catalog =
+      (config as { baselines?: Array<{ id?: string; loader?: string }> } | undefined)?.baselines ||
+      [];
+    return selected.some((id) => {
+      if (id.startsWith("version-")) return true;
+      const item = catalog.find((b) => String(b.id || "") === id);
+      return item?.loader === "version_projection";
+    });
+  }, [config, selectedBaselines, route.targetGroup]);
+
   const targetGroupOptions: UiSelectOption[] = useMemo(() => {
     const base: UiSelectOption[] = [
       { value: "", label: bilingual(lang, "全部", "All") },
@@ -1034,23 +1047,25 @@ export const LabelingSummaryPage: React.FC<LabelingSummaryPageProps> = ({
             />
           </div>
 
-          <div className="ra-analysis-field filter-target-group">
-            <span>{bilingual(lang, "目标集合", "Target cohort")}</span>
-            <UiSelect
-              id="labelSummaryTargetGroupPicker"
-              value={route.targetGroup}
-              options={targetGroupOptions}
-              ariaLabel={bilingual(lang, "目标集合", "Target cohort")}
-              title={bilingual(
-                lang,
-                "按当前版本目标集合筛选；抽样优先于低置信度",
-                "Filter current version target cohorts; samples take precedence over low confidence",
-              )}
-              onChange={(val) =>
-                setRoute((prev) => ({ ...prev, targetGroup: val, cluster: "", page: 1 }))
-              }
-            />
-          </div>
+          {showTargetGroupFilter && (
+            <div className="ra-analysis-field filter-target-group">
+              <span>{bilingual(lang, "目标集合", "Target cohort")}</span>
+              <UiSelect
+                id="labelSummaryTargetGroupPicker"
+                value={route.targetGroup}
+                options={targetGroupOptions}
+                ariaLabel={bilingual(lang, "目标集合", "Target cohort")}
+                title={bilingual(
+                  lang,
+                  "按当前版本目标集合筛选；抽样优先于低置信度",
+                  "Filter current version target cohorts; samples take precedence over low confidence",
+                )}
+                onChange={(val) =>
+                  setRoute((prev) => ({ ...prev, targetGroup: val, cluster: "", page: 1 }))
+                }
+              />
+            </div>
+          )}
 
           <div className="labeling-summary-actions">
             <button

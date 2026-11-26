@@ -157,6 +157,7 @@ class FrontendRunsContractTest(unittest.TestCase):
 
     def test_run_collection_dedicated_route_and_read_only_contract(self) -> None:
         import asyncio
+        from starlette.requests import Request
         from ra_triage_dashboard.app.routers import core as core_router
         from ra_triage_dashboard.app.routers import run_collections as run_collections_router
 
@@ -167,9 +168,31 @@ class FrontendRunsContractTest(unittest.TestCase):
         self.assertIn('pathname === "/run-collections"', APP_JS)
         self.assertNotIn('id="runCollectionPairwiseDetails"', INDEX_HTML)
 
-        redirect = asyncio.run(core_router.legacy_run_collections())
-        self.assertEqual(redirect.status_code, 307)
-        self.assertEqual(redirect.headers.get("location"), "run-comparison")
+        def _make_req(qs: str = "") -> Request:
+            return Request(
+                {
+                    "type": "http",
+                    "method": "GET",
+                    "path": "/run-collections",
+                    "query_string": qs.encode("utf-8"),
+                    "headers": [],
+                }
+            )
+
+        bare_redirect = asyncio.run(core_router.legacy_run_collections(_make_req()))
+        self.assertEqual(bare_redirect.status_code, 307)
+        self.assertEqual(bare_redirect.headers.get("location"), "run-comparison")
+
+        bookmark_redirect = asyncio.run(
+            core_router.legacy_run_collections(
+                _make_req("baselines=0821-odd2&baseline_run=run-a&candidate_run=run-b&collection=old-col")
+            )
+        )
+        self.assertEqual(bookmark_redirect.status_code, 307)
+        self.assertEqual(
+            bookmark_redirect.headers.get("location"),
+            "run-comparison?baselines=0821-odd2&baseline_run=run-a&candidate_run=run-b",
+        )
 
         core_paths = {
             getattr(route, "path", None): getattr(route, "endpoint", None)

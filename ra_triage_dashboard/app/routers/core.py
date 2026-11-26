@@ -293,11 +293,18 @@ async def run_comparison_page() -> HTMLResponse:
 
 @router.get("/run-collections", include_in_schema=False)
 @router.get("/multi-run-evaluation", include_in_schema=False)
-async def legacy_run_collections() -> RedirectResponse:
+async def legacy_run_collections(request: Request) -> RedirectResponse:
     # Multi-run evaluation UI is retired; keep /api/run-collections* and
-    # /api/run-evaluations* APIs intact while landing old bookmarks on Run comparison.
+    # /api/run-evaluations* APIs intact while landing old bookmarks on Run comparison
+    # and preserving compatible dataset / run query parameters.
+    preserved = [
+        (key, value)
+        for key, value in request.query_params.multi_items()
+        if key in {"baselines", "baseline_run", "candidate_run", "baseline", "new"} and value
+    ]
+    target = f"run-comparison?{urlencode(preserved)}" if preserved else "run-comparison"
     return RedirectResponse(
-        url="run-comparison",
+        url=target,
         status_code=307,
     )
 

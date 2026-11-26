@@ -56,7 +56,7 @@ function buildPayload(): VersionMetricsPayload {
             threshold: 0.9,
             full_low: 180,
             full_total: 1600,
-            reduction: "0%",
+            reduction: 0,
             human_count: 18,
             total: 155,
             accuracy: 150 / 155,
@@ -66,7 +66,7 @@ function buildPayload(): VersionMetricsPayload {
             threshold: 0.85,
             full_low: 140,
             full_total: 1600,
-            reduction: "-22.2%",
+            reduction: 40,
             human_count: 14,
             total: 155,
             accuracy: 148 / 155,
@@ -241,12 +241,24 @@ describe("VersionMetricsPage component", () => {
     expect(screen.getByText("未知")).toBeInTheDocument();
     expect(screen.getByText("132/153")).toBeInTheDocument();
 
-    // f2457b85 parity: confidence threshold picker lives on the trend chart header and exposes 0.70
+    // f2457b85 + 2308f518 parity: confidence threshold picker lives on the trend chart header and exposes 0.70,
+    // and unified review-volume table switches cleanly between By release and By threshold
     const chartThreshold = container.querySelector(".vm-chart-threshold #vmThreshold");
     expect(chartThreshold).not.toBeNull();
     fireEvent.click(chartThreshold!);
     expect(screen.getByRole("option", { name: "0.70" })).toBeInTheDocument();
     fireEvent.click(chartThreshold!);
+
+    expect(container.querySelector("#vmWorkloadTitle")?.textContent).toBe("低置信标注量");
+    expect(container.querySelector("#vmWorkloadReleasePicker")).toHaveAttribute("hidden");
+    expect(container.querySelector("#vmWorkloadSampleHead")).toHaveAttribute("hidden");
+    expect(container.querySelector("#vmWorkloadRows")?.textContent).toContain("20261030");
+    fireEvent.click(container.querySelector('input[name="vmWorkloadMode"][value="threshold"]')!);
+    expect(container.querySelector("#vmWorkloadReleasePicker")).not.toHaveAttribute("hidden");
+    expect(container.querySelector("#vmWorkloadSampleHead")).not.toHaveAttribute("hidden");
+    expect(container.querySelector("#vmWorkloadDimension")?.textContent).toBe("conf");
+    expect(container.querySelector("#vmWorkloadRows")?.textContent).toContain("0.90");
+    fireEvent.click(container.querySelector('input[name="vmWorkloadMode"][value="release"]')!);
 
     // Toggling both default schemes off writes schemes=none without refetching
     const callCountBefore = fetchMock.mock.calls.length;

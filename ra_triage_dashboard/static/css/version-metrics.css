@@ -50,24 +50,24 @@ body[data-active-page="version-metrics"] .top-actions {margin-left:auto}
 #vmTooltip>span {display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-weight:400;color:var(--text)}
 #vmTooltip>span>b {margin-left:auto;font-variant-numeric:tabular-nums;font-weight:500}
 #vmTooltip small {color:var(--muted);font-variant-numeric:tabular-nums}
-.vm-report-panel,.vm-threshold-panel {min-width:0;padding:16px}
+.vm-report-panel {min-width:0;padding:16px}
 .vm-report-heading {display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px}
 .vm-report-heading h2 {margin:0;font-size:14px}
 .vm-report-heading>span {font-size:12px}
-.vm-table-scroll {max-height:540px;overscroll-behavior:contain}
 .vm-report-table {min-width:1040px;table-layout:fixed}
-.vm-report-table th,.vm-report-table td,.vm-threshold-table th,.vm-threshold-table td {text-align:center;font-size:12px;line-height:1.5}
+.vm-report-table th,.vm-report-table td {text-align:center;font-size:12px;line-height:1.5}
 .vm-report-table thead th {position:sticky;top:0;z-index:1;font-size:11px}
 .vm-report-table th:first-child {width:96px}
 .vm-report-link {display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:24px;font-size:11px}
-.vm-report-table strong,.vm-threshold-table strong {display:block;font-weight:500;font-variant-numeric:tabular-nums}
-.vm-report-table small,.vm-threshold-table small {display:block;margin-top:3px;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+.vm-report-table strong {display:block;font-weight:500;font-variant-numeric:tabular-nums}
+.vm-report-table small {display:block;margin-top:3px;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
 .vm-table-empty {padding:24px 12px!important;color:var(--muted)}
 .vm-cell-stack {display:block}
-.vm-threshold-panel>summary {cursor:pointer;font-size:14px;font-weight:600;min-height:30px}
 .vm-threshold-controls {display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;margin:14px 0}
 .vm-threshold-controls>label {display:flex;flex-direction:column;gap:6px;min-width:160px;color:var(--muted);font-size:12px}
 .vm-threshold-controls>span,.vm-threshold-note {font-size:12px;line-height:1.5;color:var(--muted)}
 .vm-threshold-note {margin:12px 0 0}
-.vm-threshold-table {min-width:640px}
-.vm-threshold-table .is-selected {background:var(--accent-soft)}
+.vm-workload-table th,.vm-workload-table td {text-align:center;font-variant-numeric:tabular-nums}
+.vm-workload-table strong {display:block;font-weight:500}
+.vm-workload-table small {display:block;color:var(--muted)}
+.vm-workload-mode {margin-bottom:10px;max-width:100%}

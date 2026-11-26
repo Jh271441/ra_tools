@@ -99,6 +99,8 @@ describe("ReviewAssignmentsPage", () => {
               completion_ratio: 0.4,
               created_by: "ux-smoke-admin",
               created_at: "2026-11-25T08:00:00Z",
+              baseline_ids: ["0821-odd2", "0821-nonodd2"],
+              partition_case_counts: { "0821-odd2": 12, "0821-nonodd2": 3 },
               members: [{ username: "alice", assigned_count: 10, completed_count: 4, pending_count: 6, completion_ratio: 0.4 }],
             },
           ],
@@ -164,6 +166,7 @@ describe("ReviewAssignmentsPage", () => {
     });
 
     renderPage();
+    expect(await screen.findByText(/0821 · ODD2 12 例 \/ 非 ODD2 3 例/)).toBeInTheDocument();
     const detailBtn = await screen.findByRole("button", { name: "查看任务明细" });
     fireEvent.click(detailBtn);
     expect(await screen.findByText("cn100001")).toBeInTheDocument();

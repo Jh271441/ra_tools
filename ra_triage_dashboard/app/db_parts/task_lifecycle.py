@@ -11,15 +11,20 @@ def normalize_task_lifecycle(value: str = "current") -> str:
         raise ValueError("任务生命周期筛选不合法。")
     return mode
 
-def task_lifecycle_where(value: str = "current") -> tuple[str, list[Any]]:
+def task_lifecycle_where(value: str = "current", *, include_archived: bool = False) -> tuple[str, list[Any]]:
     mode = normalize_task_lifecycle(value)
     column = "COALESCE(split.lifecycle, 'active')"
+    visible = (
+        "1 = 1" if include_archived else
+        "NOT EXISTS (SELECT 1 FROM campaign_migration_map archive "
+        "WHERE archive.campaign_id = split.id AND archive.mapping_status = 'archived_assignment')"
+    )
     if mode == "all":
-        return "1 = 1", []
+        return visible, []
     if mode in {"current", "history"}:
         operator = "NOT IN" if mode == "current" else "IN"
-        return f"{column} {operator} (?, ?)", list(TERMINAL_TASK_LIFECYCLES)
-    return f"{column} = ?", [mode]
+        return f"{visible} AND {column} {operator} (?, ?)", list(TERMINAL_TASK_LIFECYCLES)
+    return f"{visible} AND {column} = ?", [mode]
 
 def task_reviewable(row: Any) -> bool:
     return str(row["lifecycle"] or "active") == "active" and not bool(row["legacy_read_only"])

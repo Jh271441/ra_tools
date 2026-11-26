@@ -1251,9 +1251,11 @@
   .vm-legend {gap:6px;}
   .vm-scheme-button {min-height:44px;padding:7px 9px;font-size:12px;}
   .vm-info-button {width:44px;min-height:44px;}
-  .vm-report-panel,.vm-threshold-panel {padding:12px;}
+  .vm-report-panel {padding:12px;}
+  .vm-workload-table th,.vm-workload-table td {padding:8px 4px;font-size:12px;}
+  .vm-workload-table th[scope="row"] {white-space:nowrap;}
   .vm-report-link {min-height:44px;}
-  .vm-threshold-panel>summary {min-height:44px;line-height:1.6;}
+  .vm-workload-mode label {min-height:44px;box-sizing:border-box;}
   .vm-threshold-controls .ui-select-trigger {min-height:44px;}
   .vm-toolbar .ui-select-trigger,.vm-toolbar .multi-filter-trigger,.vm-scope-filters .ui-select-trigger,.vm-chart-threshold .ui-select-trigger {min-height:44px;}
 }

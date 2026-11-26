@@ -36,6 +36,7 @@ class WorkSplitItem(DashboardBaseModel):
     overlap_ratio: float = 0.0
     members: List[WorkSplitMember] = Field(default_factory=list)
     baseline_ids: List[str] = Field(default_factory=list)
+    partition_case_counts: Optional[Dict[str, int]] = None
     kind: Optional[str] = None
     dataset_id: Optional[str] = None
     release_family: Optional[str] = None

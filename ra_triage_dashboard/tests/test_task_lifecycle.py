@@ -57,6 +57,24 @@ class TaskLifecycleTest(unittest.TestCase):
         self.assertEqual({x["id"] for x in self.db.list_labeling_tasks(["scope"], lifecycle="history")}, {old["id"], cancelled["id"]})
         with self.assertRaises(ValueError): self.db.list_review_work_splits(lifecycle="garbage")
 
+    def test_archived_task_visible_by_id_only(self):
+        active, old, cancelled, _ = self.fixture()
+        with self.db.connect() as conn:
+            conn.execute(
+                """INSERT INTO campaign_migration_map
+                   (source_table, source_id, campaign_id, mapping_status, mapping_evidence_json,
+                    source_inventory_sha256, policy_version, created_at)
+                   VALUES ('issue_work_splits', ?, ?, 'archived_assignment', '[]', ?, 'archive', ?)""",
+                (old["id"], old["id"], "a" * 64, old["created_at"]),
+            )
+        for lifecycle in ("current", "history", "all", "superseded"):
+            self.assertNotIn(old["id"], {r["split_id"] for r in self.db.list_review_work_splits(lifecycle=lifecycle)})
+            self.assertNotIn(old["id"], {r["id"] for r in self.db.list_campaigns(lifecycle=lifecycle)["items"]})
+            self.assertNotIn(old["id"], {r["id"] for r in self.db.list_labeling_tasks(lifecycle=lifecycle)})
+        self.assertEqual(self.db.list_campaigns(lifecycle="all")["total"], 2)
+        self.assertEqual(self.db.get_review_work_split(old["id"])["completed_count"], 1)
+        self.assertEqual(self.db.get_campaign(old["id"])["lifecycle_audit"][0]["action"], "superseded")
+
     def test_historical_detail_progress_reviews_and_audit_are_preserved(self):
         active, old, cancelled, saved = self.fixture()
         detail = self.db.get_review_work_split(old["id"])
