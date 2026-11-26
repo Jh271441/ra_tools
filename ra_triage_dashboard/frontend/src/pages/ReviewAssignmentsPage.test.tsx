@@ -91,6 +91,8 @@ describe("ReviewAssignmentsPage", () => {
   });
 
   it("opens inline detail card and allocation editor dialog on click", async () => {
+    let releaseAllocationLoad!: () => void;
+    const allocationGate = new Promise<void>((resolve) => { releaseAllocationLoad = resolve; });
     mockApi.mockImplementation(async (path: string) => {
       if (path.startsWith("/api/cases/work-splits?")) {
         return {
@@ -138,6 +140,7 @@ describe("ReviewAssignmentsPage", () => {
         };
       }
       if (path === "/api/campaigns/split-manual-1/allocation") {
+        await allocationGate;
         return {
           campaign_id: "split-manual-1",
           name: "Manual Split A",
@@ -189,6 +192,9 @@ describe("ReviewAssignmentsPage", () => {
 
     const editBtn = screen.getByRole("button", { name: "修改分配" });
     fireEvent.click(editBtn);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByText("正在加载分配…")).not.toBeInTheDocument();
+    releaseAllocationLoad();
     expect(await screen.findByText("修改任务分配")).toBeInTheDocument();
     expect(await screen.findByText("当前分配 · 0 人变动")).toBeInTheDocument();
     expect(screen.getByDisplayValue("60")).toBeInTheDocument();

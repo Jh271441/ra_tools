@@ -396,7 +396,7 @@ function renderTaskAllocationEditor(draft) {
           <span class="allocation-preview-pending" id="taskAllocationLivePending" aria-live="polite" hidden><i class="allocation-preview-spinner" aria-hidden="true"></i><span>${escapeHtml(uiText("更新中…", "Updating…"))}</span></span>
         </div>
         <div id="taskAllocationLiveContent" class="allocation-live-content"></div>
-      </section></div>` : `<p class="dialog-copy">${escapeHtml(uiText("正在加载分配…", "Loading allocation…"))}</p>`}
+      </section></div>` : ""}
     ${config ? `<div class="allocation-live-status">
       <p id="taskAllocationLiveStatus" class="dialog-copy" role="status"></p>
       <button class="button button-secondary" type="button" id="taskAllocationRetryPreview" data-allocation-retry-preview hidden>
@@ -467,7 +467,7 @@ function renderTaskAllocationRemoval(draft = taskAllocationDraft()) {
           <select id="taskAllocationBasis">
             <option value="remaining" ${draft.quota_basis !== "total" ? "selected" : ""}>${escapeHtml(uiText("按剩余量分配", "Distribute remaining work"))}</option>
             <option value="total" ${draft.quota_basis === "total" ? "selected" : ""}>${escapeHtml(uiText("按全量均衡", "Balance total workload"))}</option>
-          </select></label></div>`}` : `<p class="dialog-copy">${escapeHtml(uiText("正在加载分配…", "Loading allocation…"))}</p>`}
+          </select></label></div>`}` : ""}
     ${editor.preview ? renderTaskAllocationPreview(editor.preview) : ""}
     <p class="task-allocation-error" role="alert">${escapeHtml(errorText)}</p>
     <footer class="dialog-actions">
@@ -550,7 +550,9 @@ async function openTaskAllocationEditor(campaignId, opener = null, removal = "")
         return;
       }
       if (event.target.closest("[data-allocation-close]")) dialog.close();
-      if (event.target.closest("[data-allocation-reload]")) {
+      const reload = event.target.closest("[data-allocation-reload]");
+      if (reload) {
+        reload.disabled = true;
         const removedMember = taskAllocationEditor.removeAssignee;
         openTaskAllocationEditor(dialog.dataset.campaignId, null, taskAllocationEditor.removal);
         taskAllocationEditor.removeAssignee = removedMember;
@@ -589,21 +591,25 @@ async function openTaskAllocationEditor(campaignId, opener = null, removal = "")
   Object.assign(taskAllocationEditor, { config: null, busy: false, error: null, removal, removeAssignee: "", plot: allocationPreviewView() });
   if (opener) taskAllocationEditor.opener = opener;
   const sequence = ++taskAllocationEditor.sequence;
+  const page = state.activePage;
   dialog.dataset.campaignId = campaignId;
-  if (!dialog.open) dialog.showModal();
-  renderTaskAllocationEditor();
+  let config = null;
+  let loadError = null;
   try {
-    const config = await api(`/api/campaigns/${encodeURIComponent(campaignId)}/allocation`);
-    if (sequence !== taskAllocationEditor.sequence || !dialog.open) return;
-    taskAllocationEditor.config = config;
-    if (!config.editable) taskAllocationEditor.error = apiResponseError("此任务已结束，无法修改分配。", "This task is no longer active.");
-    renderTaskAllocationEditor(config);
+    config = await api(`/api/campaigns/${encodeURIComponent(campaignId)}/allocation`);
   } catch (error) {
-    if (sequence !== taskAllocationEditor.sequence) return;
-    taskAllocationEditor.error = error.messages ? error
+    loadError = error.messages ? error
       : apiResponseError("加载分配失败，请重试。", "Loading the allocation failed. Please retry.");
-    renderTaskAllocationEditor();
   }
+  if (sequence !== taskAllocationEditor.sequence || page !== state.activePage) return;
+  taskAllocationEditor.config = config;
+  taskAllocationEditor.error = config && !config.editable
+    ? apiResponseError("此任务已结束，无法修改分配。", "This task is no longer active.")
+    : loadError;
+  const opening = !dialog.open;
+  if (opening) dialog.showModal();
+  renderTaskAllocationEditor(config);
+  if (opening) $("#taskAllocationTitle")?.focus({ preventScroll: true });
 }
 
 async function saveTaskAllocation() {

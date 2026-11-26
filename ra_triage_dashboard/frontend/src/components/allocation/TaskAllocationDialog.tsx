@@ -89,7 +89,7 @@ const TaskAllocationSession: React.FC<TaskAllocationDialogProps & { campaignId: 
 
   const [config, setConfig] = useState<AllocationConfig | null>(null);
   const [draft, setDraft] = useState<AllocationDraft | null>(null);
-  const [loadingConfig, setLoadingConfig] = useState(false);
+  const [loadingConfig, setLoadingConfig] = useState(true);
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState<BilingualMessage | null>(null);
 
@@ -111,6 +111,7 @@ const TaskAllocationSession: React.FC<TaskAllocationDialogProps & { campaignId: 
   const liveAbortRef = useRef<AbortController | null>(null);
   const idempotencyRef = useRef<{ serialized: string; key: string } | null>(null);
   const loadSeqRef = useRef(0);
+  const loadAbortRef = useRef<AbortController | null>(null);
 
   const cancelLivePreview = useCallback(() => {
     if (liveTimerRef.current) {
@@ -124,9 +125,12 @@ const TaskAllocationSession: React.FC<TaskAllocationDialogProps & { campaignId: 
   const loadAllocationConfig = useCallback(
     async (targetId: string, preserveDraft?: AllocationDraft | null) => {
       const seq = ++loadSeqRef.current;
+      loadAbortRef.current?.abort();
+      const controller = new AbortController();
+      loadAbortRef.current = controller;
+      const timeout = window.setTimeout(() => controller.abort(), 20000);
       cancelLivePreview();
       setLoadingConfig(true);
-      setFormError(null);
       setPreview(null);
       setDisplayPreview(null);
       setPreviewPending(false);
@@ -136,6 +140,7 @@ const TaskAllocationSession: React.FC<TaskAllocationDialogProps & { campaignId: 
       try {
         const cfg = await apiRequest<AllocationConfig>(
           `/api/campaigns/${encodeURIComponent(targetId)}/allocation`,
+          { signal: controller.signal },
         );
         if (seq !== loadSeqRef.current) return;
         const startingDraft = buildDraftFromConfig(cfg);
@@ -143,12 +148,10 @@ const TaskAllocationSession: React.FC<TaskAllocationDialogProps & { campaignId: 
         setConfig(cfg);
         setDraft(preserveDraft || startingDraft);
         setRemovalBasis(cfg.quota_basis === "total" ? "total" : "remaining");
-        if (!cfg.editable) {
-          setFormError({
-            zh: "此任务已结束，无法修改分配。",
-            en: "This task is no longer active.",
-          });
-        }
+        setFormError(cfg.editable ? null : {
+          zh: "此任务已结束，无法修改分配。",
+          en: "This task is no longer active.",
+        });
       } catch (error) {
         if (seq !== loadSeqRef.current) return;
         setConfig(null);
@@ -160,7 +163,11 @@ const TaskAllocationSession: React.FC<TaskAllocationDialogProps & { campaignId: 
           ),
         );
       } finally {
-        if (seq === loadSeqRef.current) setLoadingConfig(false);
+        window.clearTimeout(timeout);
+        if (seq === loadSeqRef.current) {
+          loadAbortRef.current = null;
+          setLoadingConfig(false);
+        }
       }
     },
     [cancelLivePreview],
@@ -168,17 +175,21 @@ const TaskAllocationSession: React.FC<TaskAllocationDialogProps & { campaignId: 
 
   useEffect(() => {
     setRemoveAssignee("");
-    const el = dialogRef.current;
-    if (el && !el.open) {
-      if (typeof el.showModal === "function") el.showModal();
-      else el.setAttribute("open", "");
-    }
     void loadAllocationConfig(campaignId);
     return () => {
       loadSeqRef.current += 1;
+      loadAbortRef.current?.abort();
       cancelLivePreview();
     };
   }, [campaignId, loadAllocationConfig, cancelLivePreview]);
+
+  useEffect(() => {
+    const el = dialogRef.current;
+    if (!loadingConfig && el && !el.open) {
+      if (typeof el.showModal === "function") el.showModal();
+      else el.setAttribute("open", "");
+    }
+  }, [loadingConfig]);
 
   const executePreviewFetch = useCallback(
     async (targetId: string, bodyObj: ReturnType<typeof buildRequestBody>, serialized: string) => {
@@ -526,6 +537,8 @@ const TaskAllocationSession: React.FC<TaskAllocationDialogProps & { campaignId: 
   const currentUnit = draft?.inputUnit === "count" && caseCount > 0 ? "count" : "percent";
   const removedMember = config?.progress_members?.find((p) => p.name === removeAssignee);
 
+  if (loadingConfig && !config && !formError) return null;
+
   return createPortal(
     <dialog
       ref={dialogRef}
@@ -625,9 +638,7 @@ const TaskAllocationSession: React.FC<TaskAllocationDialogProps & { campaignId: 
                 </>
               )}
             </>
-          ) : (
-            <p className="dialog-copy">{bilingual(lang, "正在加载分配…", "Loading allocation…")}</p>
-          )}
+          ) : null}
 
           {removalPreview && (
             <section
@@ -660,7 +671,7 @@ const TaskAllocationSession: React.FC<TaskAllocationDialogProps & { campaignId: 
               <button
                 type="button"
                 className="button button-quiet"
-                disabled={busy}
+                disabled={busy || loadingConfig}
                 onClick={() => void loadAllocationConfig(campaignId)}
               >
                 {bilingual(lang, "重新核对分配", "Reload allocation")}
@@ -674,7 +685,7 @@ const TaskAllocationSession: React.FC<TaskAllocationDialogProps & { campaignId: 
             <button
               type="submit"
               className="button button-primary"
-              disabled={busy || !config?.editable}
+              disabled={busy || loadingConfig || !config?.editable}
             >
               {busy
                 ? bilingual(lang, "正在处理…", "Working…")
@@ -870,13 +881,7 @@ const TaskAllocationSession: React.FC<TaskAllocationDialogProps & { campaignId: 
                 )}
               </details>
             </div>
-          ) : (
-            <p className="dialog-copy">
-              {loadingConfig
-                ? bilingual(lang, "正在加载分配…", "Loading allocation…")
-                : bilingual(lang, "未能加载分配配置。", "Could not load allocation.")}
-            </p>
-          )}
+          ) : null}
 
           {config && (
             <div className="allocation-live-status">
@@ -938,7 +943,7 @@ const TaskAllocationSession: React.FC<TaskAllocationDialogProps & { campaignId: 
                 className="button button-secondary"
                 type="button"
                 hidden={Boolean(config) || !formError}
-                disabled={busy}
+                disabled={busy || loadingConfig}
                 onClick={() => void loadAllocationConfig(campaignId)}
               >
                 {bilingual(lang, "重新加载分配", "Reload allocation")}
