@@ -29,6 +29,8 @@ NGINX_BIN = Path("/usr/sbin/nginx")
 PUBLIC_PORT = 8785
 BLUEGREEN_SLOTS = {"blue": 18791, "green": 18792}
 DEFAULT_GRAY_PORT = 19786
+DEFAULT_TEST_WORKERS = 24
+MAX_TEST_WORKERS = 64
 PREFIXES = ("DASHBOARD_", "ARES_", "CAMERA_", "RA_AUTO_TRIAGE_")
 BASE_KEYS = {"PATH", "HOME", "LANG", "LC_ALL", "TZ", "NO_PROXY", "no_proxy"}
 OFF = ("DASHBOARD_SYNC_TRAIL_ON_START", "DASHBOARD_BATCH_PREDICTION_ENABLED",
@@ -726,6 +728,54 @@ def configured_gray_port():
             "Choose an unprivileged gray port other than production/blue-green ports")
     return port
 
+
+def configured_test_workers():
+    raw = os.environ.get("RA_DASHBOARD_DEPLOY_TEST_WORKERS")
+    if raw is None or not raw.strip():
+        return min(DEFAULT_TEST_WORKERS, max(1, os.cpu_count() or 1))
+    value = raw.strip()
+    require(
+        value.isascii() and value.isdecimal() and len(value) <= 3,
+        f"RA_DASHBOARD_DEPLOY_TEST_WORKERS must be an integer between 1 and {MAX_TEST_WORKERS}",
+    )
+    workers = int(value)
+    require(
+        1 <= workers <= MAX_TEST_WORKERS,
+        f"RA_DASHBOARD_DEPLOY_TEST_WORKERS must be between 1 and {MAX_TEST_WORKERS}",
+    )
+    return workers
+
+
+def pytest_xdist_available(test_env):
+    if not os.access(PYTHON, os.X_OK):
+        return False
+    try:
+        probe = subprocess.run(
+            [
+                str(PYTHON),
+                "-c",
+                "import importlib.util, sys; sys.exit(0 if importlib.util.find_spec('xdist') else 1)",
+            ],
+            env=test_env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=15,
+        )
+        return probe.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def build_cloud_test_command(test_env):
+    workers = configured_test_workers()
+    if workers > 1 and pytest_xdist_available(test_env):
+        return (
+            [PYTHON, "-m", "pytest", "ra_triage_dashboard/tests", "-n", str(workers), "--dist", "load", "-q"],
+            workers,
+            "xdist",
+        )
+    return ([PYTHON, "-m", "pytest", "ra_triage_dashboard/tests", "-q"], 1, "serial")
+
 def gray_env(env, candidate, data, sha, port=8786):
     result = rebase_env(env, REPO, candidate)
     result.update({key: "false" for key in OFF})
@@ -1337,9 +1387,17 @@ def prepare_release(
             test_env = dict(isolated_env, DASHBOARD_BASE_PATH="")
             if test_dependencies := os.environ.get("RA_DASHBOARD_DEPLOY_TEST_PYTHONPATH"):
                 test_env["PYTHONPATH"] = test_dependencies
-            print("Running complete cloud test suite", flush=True)
+            test_cmd, test_workers, test_mode = build_cloud_test_command(test_env)
+            result.update(test_mode=test_mode, test_workers=test_workers)
+            save(folder / "result.json", result)
+            print(
+                f"Running complete cloud test suite ({test_mode}, workers={test_workers})",
+                flush=True,
+            )
             with (folder / "tests.log").open("w") as log:
-                run(PYTHON, "-m", "pytest", "ra_triage_dashboard/tests", "-q", cwd=candidate, env=test_env, stdout=log, stderr=subprocess.STDOUT, timeout=600)
+                log.write(f"# test_mode={test_mode} test_workers={test_workers}\n")
+                log.flush()
+                run(*test_cmd, cwd=candidate, env=test_env, stdout=log, stderr=subprocess.STDOUT, timeout=600)
             with (folder / "gray.log").open("w") as log:
                 gray = subprocess.Popen([str(PYTHON), "-m", "uvicorn", "app.main:app", "--app-dir", str(candidate / "ra_triage_dashboard"), "--host", "127.0.0.1", "--port", str(gray_port)], cwd=candidate, env=isolated_env, stdout=log, stderr=subprocess.STDOUT)
             smoke(gray_port, sha, "sqlite")

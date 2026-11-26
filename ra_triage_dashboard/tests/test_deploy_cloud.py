@@ -492,6 +492,114 @@ COMMIT;
         self.assertEqual(stops,[]); self.assertEqual(starts,[])
         self.assertEqual(record["status"],"failed")
 
+    def test_build_cloud_test_command_defaults_to_24_xdist_workers_and_falls_back_to_serial(self):
+        with patch.dict(d.os.environ, {}, clear=False):
+            d.os.environ.pop("RA_DASHBOARD_DEPLOY_TEST_WORKERS", None)
+            with patch.object(d.os, "cpu_count", return_value=256), patch.object(
+                d, "pytest_xdist_available", return_value=True
+            ) as probe:
+                cmd, workers, mode = d.build_cloud_test_command({})
+                self.assertEqual(workers, 24)
+                self.assertEqual(mode, "xdist")
+                self.assertEqual(
+                    cmd[1:],
+                    ["-m", "pytest", "ra_triage_dashboard/tests", "-n", "24", "--dist", "load", "-q"],
+                )
+                probe.assert_called_once()
+
+            # Missing xdist falls back cleanly to serial execution.
+            with patch.object(d.os, "cpu_count", return_value=256), patch.object(
+                d, "pytest_xdist_available", return_value=False
+            ):
+                cmd, workers, mode = d.build_cloud_test_command({})
+                self.assertEqual(workers, 1)
+                self.assertEqual(mode, "serial")
+                self.assertEqual(cmd[1:], ["-m", "pytest", "ra_triage_dashboard/tests", "-q"])
+
+            # Explicit RA_DASHBOARD_DEPLOY_TEST_WORKERS=1 forces serial without probing xdist.
+            with patch.dict(d.os.environ, {"RA_DASHBOARD_DEPLOY_TEST_WORKERS": "1"}), patch.object(
+                d, "pytest_xdist_available", return_value=True
+            ) as probe:
+                cmd, workers, mode = d.build_cloud_test_command({})
+                self.assertEqual(workers, 1)
+                self.assertEqual(mode, "serial")
+                self.assertEqual(cmd[1:], ["-m", "pytest", "ra_triage_dashboard/tests", "-q"])
+                probe.assert_not_called()
+
+            # Invalid worker counts fail closed.
+            for bad in ("0", "-2", "abc", "99"):
+                with self.subTest(bad=bad), patch.dict(
+                    d.os.environ, {"RA_DASHBOARD_DEPLOY_TEST_WORKERS": bad}
+                ):
+                    with self.assertRaises(d.DeployError):
+                        d.configured_test_workers()
+
+    def test_parallel_test_failure_blocks_deploy_without_starting_gray_or_stopping_production(self):
+        with tempfile.TemporaryDirectory() as temp, ExitStack() as stack:
+            base = Path(temp)
+            repo = base / "repo"
+            repo.mkdir()
+            python = base / "python"
+            python.touch()
+            env = {"DASHBOARD_DATABASE_URL_FILE": "/db", "DASHBOARD_DATA_DIR": str(base / "data")}
+            target = "a" * 40
+            old = "b" * 40
+            stack.enter_context(patch.dict(d.os.environ, {}, clear=False))
+            d.os.environ.pop("RA_DASHBOARD_DEPLOY_TEST_WORKERS", None)
+            stack.enter_context(patch.object(d, "REPO", repo))
+            stack.enter_context(patch.object(d, "STATE", base / "state"))
+            stack.enter_context(patch.object(d, "PYTHON", python))
+            stack.enter_context(patch.object(d.sys, "platform", "linux"))
+            stack.enter_context(patch.object(d.os, "cpu_count", return_value=256))
+            stack.enter_context(patch.object(d, "pytest_xdist_available", return_value=True))
+            def fake_git(*args, **kwargs):
+                if args[0] == "branch":
+                    return "master"
+                if args[0] == "rev-parse" and args[1].startswith("origin/"):
+                    return target
+                if args[0] == "rev-parse" and args[1] == "HEAD":
+                    return old if kwargs.get("cwd") and Path(kwargs["cwd"]).name == "rollback" else old
+                return ""
+            stack.enter_context(patch.object(d, "git", side_effect=fake_git))
+            stack.enter_context(patch.object(d, "read_live", return_value=(11, env)))
+            stack.enter_context(
+                patch.object(
+                    d,
+                    "get_json",
+                    return_value={"ok": True, "build_commit": old, "storage": "postgresql", "trail_rd_write_enabled": False},
+                )
+            )
+            stack.enter_context(patch.object(d.socket, "socket"))
+            pytest_cmds = []
+            def fake_run(*args, **kwargs):
+                if args[:4] == ("git", "worktree", "add", "--detach"):
+                    Path(args[4]).mkdir(parents=True)
+                    return MagicMock()
+                if "pytest" in args:
+                    pytest_cmds.append(list(args))
+                    raise subprocess.CalledProcessError(1, list(args))
+                return MagicMock()
+            stack.enter_context(patch.object(d, "run", side_effect=fake_run))
+            gray_popen = stack.enter_context(patch.object(d.subprocess, "Popen"))
+            stop_prod = stack.enter_context(patch.object(d, "stop_production"))
+            start_prod = stack.enter_context(patch.object(d, "start_production"))
+            with self.assertRaises(subprocess.CalledProcessError):
+                d.deploy(target)
+            self.assertEqual(len(pytest_cmds), 1)
+            self.assertEqual(
+                pytest_cmds[0][1:],
+                ["-m", "pytest", "ra_triage_dashboard/tests", "-n", "24", "--dist", "load", "-q"],
+            )
+            gray_popen.assert_not_called()
+            stop_prod.assert_not_called()
+            start_prod.assert_not_called()
+            release_dir = next((base / "state/releases").glob("*"))
+            record = json.loads((release_dir / "result.json").read_text())
+            self.assertEqual(record["status"], "failed")
+            self.assertEqual(record["test_mode"], "xdist")
+            self.assertEqual(record["test_workers"], 24)
+            self.assertIn("test_mode=xdist test_workers=24", (release_dir / "tests.log").read_text())
+
     def test_live_rollback_requires_exact_healthy_private_recovery_receipt(self):
         with tempfile.TemporaryDirectory() as temp, patch.object(d,'STATE',Path(temp)), patch.object(d,'validate_prepared_worktree') as validate:
             folder=Path(temp)/'releases'/'20261030T012606Z-aaaaaaaaaaaa'
