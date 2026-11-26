@@ -23,7 +23,7 @@ function videoCanonicalAssetUrl(url) {
 }
 
 function videoElementAssetUrl(video) {
-  // MediaSource uses a blob URL; source identity remains the scoped asset URL.
+  // The decoder may use a local Blob or MediaSource URL. Keep the scoped asset identity.
   return video?.dataset?.videoSource || video?.getAttribute("src") || "";
 }
 
@@ -31,8 +31,7 @@ function videoPlaybackSourceUrl(url, startSec = null) {
   const canonical = videoCanonicalAssetUrl(url);
   const source = canonical ? `${canonical}${canonical.includes("?") ? "&" : "?"}playback=short-gop-v1` : "";
   const position = Number(startSec);
-  // A start-only media fragment lets the native loader request the nearest
-  // keyframe before our metadata handler runs. It never limits the clip end.
+  // Keep the requested position on the source descriptor through metadata loading.
   return source && startSec !== null && Number.isFinite(position) && position >= 0
     ? `${source}#t=${Math.round(position * 1000) / 1000}` : source;
 }
@@ -254,8 +253,7 @@ function videoPlayerMarkup(video, { zoomable = true, compact = false, issueId = 
   const posterUrl = String(video?.poster_url || "").trim();
   const posterAttribute = posterUrl ? ` poster="${escapeHtml(posterUrl)}"` : "";
   const sourceUrl = videoPlaybackSourceUrl(video.url, durationSec > 0 ? t0PlayerSec : null);
-  const segmented = typeof videoSegmentManifestUrl === "function" && videoSegmentManifestUrl(sourceUrl);
-  const videoMarkup = `<video data-video-source="${escapeHtml(sourceUrl)}"${segmented ? "" : ` src="${escapeHtml(sourceUrl)}"`}${posterAttribute} preload="auto" muted playsinline draggable="false" aria-label="${escapeHtml(uiText("复核视频", "Review video"))}"></video>`;
+  const videoMarkup = `<video data-video-source="${escapeHtml(sourceUrl)}"${posterAttribute} preload="auto" muted playsinline draggable="false" aria-label="${escapeHtml(uiText("复核视频", "Review video"))}"></video>`;
   const mediaMarkup = zoomable
     ? `<div class="media-viewport media-video-viewport" data-video-viewport><div class="media-canvas media-video-canvas" data-video-canvas>${videoMarkup}</div></div>`
     : `<div class="hero-media-button hero-media-video">${videoMarkup}</div>`;
@@ -325,6 +323,8 @@ function bindBevVideoPlayers(root) {
     const frameStepSec = Number.isFinite(configuredFrameStep) && configuredFrameStep > 0 ? configuredFrameStep : 0.1;
     let disposed = false;
     let segmentLoader = null;
+    let clipDownload = null;
+    let clipObjectUrl = "";
     let sourceGeneration = 0;
     let pendingStart = configuredT0PlayerSec > 0 ? configuredT0PlayerSec : null;
     let pendingBackwardSeek = null;
@@ -648,7 +648,7 @@ function bindBevVideoPlayers(root) {
     const startPlayback = () => {
       if (disposed || suspended || video.error || !wantsPlayback || pendingBackwardSeek !== null || playPending
         || !video.paused || !video.getAttribute("src")
-        || (metadataGeneration !== sourceGeneration && !sourceHasStartHint)
+        || (metadataGeneration !== sourceGeneration && (clipObjectUrl || !sourceHasStartHint))
         || !player.isConnected || player.closest?.('dialog:not([open]), [hidden], .hidden')) return;
       if (rebufferTarget !== null) {
         const target = rebufferTarget;
@@ -688,7 +688,7 @@ function bindBevVideoPlayers(root) {
       rebufferTarget = null;
       resetPlaybackFrames();
       wantsPlayback = !wantsPlayback;
-      if (wantsPlayback && video.error) {
+      if (wantsPlayback && (video.error || player.dataset.loadState === "error")) {
         loadSource(videoElementAssetUrl(video), video.getAttribute("poster") || "");
         return;
       }
@@ -730,7 +730,39 @@ function bindBevVideoPlayers(root) {
         button.querySelector("[data-video-jump-label]").textContent = `${sign}${step}s`;
       });
     });
+    const releaseClip = () => {
+      clipDownload?.abort();
+      clipDownload = null;
+      if (clipObjectUrl) URL.revokeObjectURL(clipObjectUrl);
+      clipObjectUrl = "";
+    };
+    const downloadClip = async (source) => {
+      const controller = new AbortController();
+      clipDownload = controller;
+      try {
+        // Native preload may stop once t0 is playable. Give the decoder the
+        // complete selected file so a later seek never needs another Range.
+        const response = await fetch(source, { mode: "same-origin", signal: controller.signal });
+        if (response.status !== 200) throw new Error("Incomplete video response");
+        const clip = await response.blob();
+        if (clipDownload !== controller) return;
+        if (!clip.size || !clip.type.toLowerCase().startsWith("video/")) throw new Error("Invalid video response");
+        clipObjectUrl = URL.createObjectURL(clip);
+        video.src = clipObjectUrl;
+      } catch {
+        if (clipDownload !== controller) return;
+        controller.abort();
+        if (loadTimer !== null) window.clearTimeout(loadTimer);
+        loadTimer = null;
+        wantsPlayback = false;
+        setStatus("error");
+        update();
+      } finally {
+        if (clipDownload === controller) clipDownload = null;
+      }
+    };
     const attachSource = (url, nativeOnly = false) => {
+      releaseClip();
       segmentLoader?.dispose();
       segmentLoader = null;
       const source = videoPlaybackSourceUrl(url, sourceHasStartHint ? pendingStart : null);
@@ -756,9 +788,9 @@ function bindBevVideoPlayers(root) {
           },
         });
       }
-      if (segmentLoader) video.removeAttribute("src");
-      else video.src = source;
+      video.removeAttribute("src");
       video.load();
+      if (!segmentLoader && source) void downloadClip(source);
     };
     const loadSource = (url, poster = "", nativeOnly = false) => {
       pendingStart = rebufferTarget ?? pendingBackwardSeek ?? pendingStart
@@ -948,6 +980,7 @@ function bindBevVideoPlayers(root) {
     video._disposeBevPlayer = () => {
       if (disposed) return;
       disposed = true;
+      releaseClip();
       segmentLoader?.dispose();
       segmentLoader = null;
       heldFrame?.remove();
