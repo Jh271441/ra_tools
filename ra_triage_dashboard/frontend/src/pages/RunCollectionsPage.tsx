@@ -975,7 +975,6 @@ export const RunCollectionsPage: React.FC<RunCollectionsPageProps> = ({
                   className="button button-quiet"
                   id="runCollectionAddRunButton"
                   type="button"
-                  disabled={!addRunId}
                   onClick={handleAddMember}
                 >
                   {bilingual(lang, "添加", "Add")}

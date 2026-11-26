@@ -346,4 +346,205 @@ describe("CaseLabelingGalleryIsland", () => {
     const lastSynced = syncState.mock.calls.at(-1)?.[0] as { data?: { total?: number } } | undefined;
     expect(lastSynced?.data?.total).toBe(0);
   });
+
+  it("clears a 0-result search and immediately clicks #caseLabelingCreateTask before debounce, fetching live count and navigating", async () => {
+    const showPage = vi.fn();
+    const syncState = vi.fn();
+    (window as unknown as Record<string, unknown>).showPage = showPage;
+    (window as unknown as Record<string, unknown>).syncCaseLabelingGalleryState = syncState;
+    window.history.replaceState({}, "", "/manual-s6/case-labeling?baselines=0508&q=cn35635511");
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes("/api/labeling/tasks")) {
+          return new Response(JSON.stringify({ items: [] }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        if (url.includes("/api/labeling/cases")) {
+          const params = new URLSearchParams(url.split("?")[1] || "");
+          const q = params.get("q") || "";
+          if (q === "cn35635511") {
+            return new Response(
+              JSON.stringify({ total: 0, page: 1, pages: 1, page_size: 20, items: [] }),
+              { status: 200, headers: { "Content-Type": "application/json" } },
+            );
+          }
+          return new Response(
+            JSON.stringify({
+              total: 1071,
+              page: 1,
+              pages: 54,
+              page_size: 20,
+              items: [{ issue_id: "cn37760285", gt_label: "误触发" }],
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          );
+        }
+        return new Response(JSON.stringify({}), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }),
+    );
+
+    const { container } = renderWithQuery(
+      <CaseLabelingGalleryIsland
+        active
+        lang="zh"
+        selectedBaselines={["0508"]}
+        isAdmin
+        canWrite
+      />,
+    );
+
+    await waitFor(() => {
+      expect(container.querySelector("#caseLabelingCount")?.textContent).toBe("0");
+    });
+
+    const searchInput = container.querySelector<HTMLInputElement>("#caseLabelingSearch");
+    expect(searchInput?.value).toBe("cn35635511");
+
+    // Clear 0-result search and IMMEDIATELY click "标注任务" before 250ms debounce
+    fireEvent.change(searchInput!, { target: { value: "" } });
+    const createBtn = container.querySelector<HTMLButtonElement>("#caseLabelingCreateTask");
+    expect(createBtn).not.toBeDisabled();
+    fireEvent.click(createBtn!);
+
+    await waitFor(() => {
+      expect(showPage).toHaveBeenCalledWith("labeling-new-task", { historyMode: "push" });
+    });
+    expect(new URLSearchParams(window.location.search).get("q")).toBeNull();
+    const lastSynced = syncState.mock.calls.at(-1)?.[0] as
+      | { search?: string; data?: { total?: number } }
+      | undefined;
+    expect(lastSynced?.search).toBe("");
+    expect(lastSynced?.data?.total).toBe(1071);
+  });
+
+  it("pauses #caseLabelingCreateTask immediately on first 503 during retry:1 window, recovers on retry success, and stays blocked on final failure", async () => {
+    const showPage = vi.fn();
+    const syncState = vi.fn();
+    (window as unknown as Record<string, unknown>).showPage = showPage;
+    (window as unknown as Record<string, unknown>).syncCaseLabelingGalleryState = syncState;
+
+    let mode: "initial" | "fail_then_recover" | "always_fail" = "initial";
+    let failCountInPhase = 0;
+    let releaseRetry: (() => void) | null = null;
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes("/api/labeling/tasks")) {
+          return new Response(JSON.stringify({ items: [] }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        if (url.includes("/api/labeling/cases")) {
+          if (mode === "initial") {
+            return new Response(
+              JSON.stringify({
+                total: 10,
+                page: 1,
+                pages: 1,
+                page_size: 20,
+                items: [{ issue_id: "cn37760285", gt_label: "误触发" }],
+              }),
+              { status: 200, headers: { "Content-Type": "application/json" } },
+            );
+          }
+          if (mode === "fail_then_recover") {
+            failCountInPhase += 1;
+            if (failCountInPhase === 1) {
+              return new Response(JSON.stringify({ detail: "首次 503" }), {
+                status: 503,
+                headers: { "Content-Type": "application/json" },
+              });
+            }
+            await new Promise<void>((resolve) => {
+              releaseRetry = resolve;
+            });
+            return new Response(
+              JSON.stringify({
+                total: 12,
+                page: 1,
+                pages: 1,
+                page_size: 20,
+                items: [{ issue_id: "cn37760285", gt_label: "误触发" }],
+              }),
+              { status: 200, headers: { "Content-Type": "application/json" } },
+            );
+          }
+          return new Response(JSON.stringify({ detail: "持续 503" }), {
+            status: 503,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        return new Response(JSON.stringify({}), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }),
+    );
+
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: 1, retryDelay: 20 } },
+    });
+    const { container } = render(
+      <QueryClientProvider client={client}>
+        <CaseLabelingGalleryIsland
+          active
+          lang="zh"
+          selectedBaselines={["0508"]}
+          isAdmin
+          canWrite
+        />
+      </QueryClientProvider>,
+    );
+
+    // 1. Initial load succeeds with 10
+    await waitFor(() => {
+      expect(container.querySelector("#caseLabelingCount")?.textContent).toBe("10");
+    });
+    const createBtn = container.querySelector<HTMLButtonElement>("#caseLabelingCreateTask");
+    expect(createBtn).not.toBeDisabled();
+
+    // 2. Refresh receives FIRST 503 while retry #1 is still in flight -> must pause immediately!
+    mode = "fail_then_recover";
+    failCountInPhase = 0;
+    void client.invalidateQueries({ queryKey: ["labeling-gallery-cases"] });
+
+    await waitFor(() => {
+      expect(createBtn).toBeDisabled();
+    });
+    expect(container.querySelector("#caseLabelingCount")?.textContent).toBe("—");
+    fireEvent.click(createBtn!);
+    expect(showPage).not.toHaveBeenCalled();
+
+    // 3. Release retry #1 -> succeeds with 12 -> button & count recover!
+    await waitFor(() => {
+      expect(releaseRetry).not.toBeNull();
+    });
+    releaseRetry!();
+    await waitFor(() => {
+      expect(container.querySelector("#caseLabelingCount")?.textContent).toBe("12");
+      expect(createBtn).not.toBeDisabled();
+    });
+
+    // 4. Refresh fails BOTH attempts -> final alert error state, button remains disabled
+    mode = "always_fail";
+    void client.invalidateQueries({ queryKey: ["labeling-gallery-cases"] });
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toBeInTheDocument();
+    });
+    expect(createBtn).toBeDisabled();
+    expect(container.querySelector("#caseLabelingCount")?.textContent).toBe("—");
+    fireEvent.click(createBtn!);
+    expect(showPage).not.toHaveBeenCalled();
+  });
 });

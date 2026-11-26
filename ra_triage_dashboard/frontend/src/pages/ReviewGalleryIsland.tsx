@@ -692,8 +692,15 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
     placeholderData: (prev) => prev,
   });
 
+  const casesRefreshFailed = casesQuery.isError || casesQuery.failureCount > 0;
+  const casesFailureError = casesQuery.isError
+    ? casesQuery.error
+    : casesQuery.failureCount > 0
+      ? casesQuery.failureReason
+      : null;
+
   const casesData: ReviewCasesResponse =
-    casesQuery.isError || !casesQuery.data
+    casesRefreshFailed || !casesQuery.data
       ? {
           items: [],
           total: 0,
@@ -701,7 +708,7 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
           page_size: filters.pageSize,
         }
       : casesQuery.data;
-  const totalCount = casesQuery.isError ? 0 : Number(casesData.total || 0);
+  const totalCount = casesRefreshFailed ? 0 : Number(casesData.total || 0);
   const totalPages = Math.max(1, Math.ceil(totalCount / filters.pageSize));
 
   // Persist URL when user updates gallery filters
@@ -1133,7 +1140,7 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
   };
 
   const handleExportSelection = () => {
-    if (casesQuery.isError || !totalCount) return;
+    if (casesRefreshFailed || !totalCount) return;
     const p = new URLSearchParams({ format: "xlsx", gallery_scope: "true" });
     Object.entries(buildFilterPayload(true)).forEach(([k, v]) => {
       if (v && v !== "all") p.set(k, v);
@@ -1151,10 +1158,10 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
       showToast(bilingual(lang, "仅管理员可创建复核任务。", "Admin access is required."), true);
       return;
     }
-    if (casesQuery.isError) {
+    if (casesRefreshFailed) {
       showToast(
-        casesQuery.error instanceof Error
-          ? casesQuery.error.message
+        casesFailureError instanceof Error
+          ? casesFailureError.message
           : bilingual(lang, "读取 Issue 列表失败，请重试。", "Failed to load Issues. Please retry."),
         true,
       );
@@ -1206,7 +1213,7 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
     totalCount === 0 || effectiveConfig?.batch_prediction?.enabled === false;
 
   const handlePredictSelection = () => {
-    if (casesQuery.isError || !totalCount) return;
+    if (casesRefreshFailed || !totalCount) return;
     if (totalCount > predictionBatchLimit) {
       showToast(
         bilingual(
@@ -1332,6 +1339,9 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
     if (casesQuery.isError) {
       return bilingual(lang, "Issue 列表读取失败", "Failed to load Issues");
     }
+    if (casesRefreshFailed) {
+      return bilingual(lang, "列表刷新失败，正在重试…", "Refresh failed, retrying…");
+    }
     if (!readyToLoadCases || (casesQuery.isLoading && !casesQuery.data)) {
       return bilingual(lang, "正在加载 Issue…", "Loading Issues…");
     }
@@ -1352,6 +1362,7 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
     taskContextQuery.isLoading,
     taskContextError,
     casesQuery.isError,
+    casesRefreshFailed,
     readyToLoadCases,
     casesQuery.isLoading,
     casesQuery.data,
@@ -1400,6 +1411,13 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
         </div>
       );
     }
+    if (casesRefreshFailed) {
+      return (
+        <div className="no-asset issue-grid-empty" role="status">
+          {bilingual(lang, "Issue 列表刷新失败，正在自动重试…", "Failed to refresh Issues, retrying…")}
+        </div>
+      );
+    }
     if (!readyToLoadCases || casesQuery.isLoading) {
       return (
         <div className="no-asset issue-grid-empty">
@@ -1426,6 +1444,7 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
     taskContextQuery.isLoading,
     taskContextError,
     casesQuery.isError,
+    casesRefreshFailed,
     casesErrorMessage,
     casesQuery.refetch,
     readyToLoadCases,
@@ -1960,7 +1979,7 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
                 type="button"
                 disabled={
                   totalCount === 0 ||
-                  casesQuery.isError ||
+                  casesRefreshFailed ||
                   Boolean(taskContextError) ||
                   taskContextQuery.isLoading
                 }
@@ -1975,7 +1994,7 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
                 }
                 onClick={handleExportSelection}
               >
-                {totalCount > 0 && !casesQuery.isError
+                {totalCount > 0 && !casesRefreshFailed
                   ? bilingual(lang, `导出当前筛选 · ${totalCount}`, `Export selection · ${totalCount}`)
                   : bilingual(lang, "导出当前筛选", "Export selection")}
               </button>
@@ -1986,7 +2005,7 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
                   type="button"
                   disabled={
                     totalCount === 0 ||
-                    casesQuery.isError ||
+                    casesRefreshFailed ||
                     !effectiveRunId ||
                     Boolean(taskContextError) ||
                     taskContextQuery.isLoading
@@ -1998,7 +2017,7 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
                           "请先选择 Model Run；若只做 Case 标签，请前往 问题标注 > 实验分配。",
                           "Select a Model Run first. For Case labels only, use Case labeling > Experiment assignment.",
                         )
-                      : totalCount > 0 && !casesQuery.isError
+                      : totalCount > 0 && !casesRefreshFailed
                         ? bilingual(
                             lang,
                             `管理员：把当前 ${totalCount} 个筛选 Issue 写入任务负责人；可指定数量，剩余均分。`,
@@ -2008,7 +2027,7 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
                   }
                   onClick={handleCreateAllocation}
                 >
-                  {totalCount > 0 && !casesQuery.isError
+                  {totalCount > 0 && !casesRefreshFailed
                     ? bilingual(lang, `新建分配 · ${totalCount}`, `New allocation · ${totalCount}`)
                     : bilingual(lang, "新建分配", "New allocation")}
                 </button>
@@ -2019,7 +2038,7 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
                 type="button"
                 disabled={
                   predictionDisabled ||
-                  casesQuery.isError ||
+                  casesRefreshFailed ||
                   Boolean(taskContextError) ||
                   taskContextQuery.isLoading
                 }
@@ -2038,7 +2057,7 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
                 }
                 onClick={handlePredictSelection}
               >
-                {totalCount > 0 && !casesQuery.isError
+                {totalCount > 0 && !casesRefreshFailed
                   ? bilingual(
                       lang,
                       `预测当前筛选 · ${totalCount}`,
@@ -2053,7 +2072,7 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
                 id="reviewNextPendingTaskButton"
                 type="button"
                 hidden={!showNextPendingBtn}
-                disabled={pendingJumpBusy || casesQuery.isError}
+                disabled={pendingJumpBusy || casesRefreshFailed}
                 title={bilingual(
                   lang,
                   "保留筛选和每页条数，首次定位首个待完成任务；再次点击继续向后查找",
@@ -2068,7 +2087,7 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
               <span id="galleryResultSummary">{gallerySummaryText}</span>
               <span className="count-pill" id="caseCount">
                 {!readyToLoadCases ||
-                casesQuery.isError ||
+                casesRefreshFailed ||
                 (casesQuery.isLoading && !casesQuery.data)
                   ? "—"
                   : String(totalCount)}
@@ -2082,7 +2101,7 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
           workspace="review"
           items={
             taskContextError ||
-            casesQuery.isError ||
+            casesRefreshFailed ||
             (filters.workSplitId && taskContextQuery.isLoading)
               ? []
               : casesData.items || []
@@ -2099,14 +2118,14 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
         <Pagination
           page={filters.page}
           pageSize={filters.pageSize}
-          total={casesQuery.isError ? 0 : totalCount}
+          total={casesRefreshFailed ? 0 : totalCount}
           lang={lang}
           loading={casesQuery.isFetching}
           showPageUnit
           disableJumpWhenSinglePage
           labelText={
             readyToLoadCases &&
-            !casesQuery.isError &&
+            !casesRefreshFailed &&
             (!casesQuery.isLoading || casesQuery.data)
               ? `${filters.page} / ${totalPages}`
               : "— / —"

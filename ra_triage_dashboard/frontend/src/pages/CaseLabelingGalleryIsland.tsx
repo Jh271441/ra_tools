@@ -210,6 +210,7 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
   const [exportingIssues, setExportingIssues] = useState(false);
   const [exportingGt, setExportingGt] = useState(false);
   const [savingSnapshot, setSavingSnapshot] = useState(false);
+  const [checkingTaskScope, setCheckingTaskScope] = useState(false);
   const prevBaselinesKeyRef = useRef<string>(selectedBaselines.join(","));
   const wasActiveRef = useRef<boolean>(false);
 
@@ -413,6 +414,13 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
     placeholderData: (prev) => prev,
   });
 
+  const casesRefreshFailed = casesQuery.isError || casesQuery.failureCount > 0;
+  const casesFailureError = casesQuery.isError
+    ? casesQuery.error
+    : casesQuery.failureCount > 0
+      ? casesQuery.failureReason
+      : null;
+
   const data: LabelingCasesResponse = useMemo(() => {
     if (isInactiveScope) {
       return {
@@ -424,7 +432,7 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
         inactive: true,
       };
     }
-    if (casesQuery.isError) {
+    if (casesRefreshFailed) {
       return {
         items: [],
         total: 0,
@@ -444,7 +452,7 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
         page_size: filters.pageSize,
       }
     );
-  }, [isInactiveScope, casesQuery.isError, casesQuery.data, filters.page, filters.pageSize]);
+  }, [isInactiveScope, casesRefreshFailed, casesQuery.data, filters.page, filters.pageSize]);
 
   // Sync bridge state so classic #caseLabelingDetail has queue, tasks, filters, and export payload
   useEffect(() => {
@@ -593,7 +601,7 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
   };
 
   const handleExportIssues = async () => {
-    if (exportingIssues || isInactiveScope || casesQuery.isError || !Number(data.total || 0)) return;
+    if (exportingIssues || isInactiveScope || casesRefreshFailed || !Number(data.total || 0)) return;
     setExportingIssues(true);
     try {
       const activeSearch = searchDraft.trim();
@@ -643,7 +651,7 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
   };
 
   const handleExportGt = async (event: React.MouseEvent<HTMLButtonElement>) => {
-    if (casesQuery.isError || isInactiveScope) return;
+    if (casesRefreshFailed || isInactiveScope) return;
     const win = window as unknown as LegacyLabelingBridgeWindow;
     if (typeof win.exportLabelingGtUpdate !== "function") return;
     setExportingGt(true);
@@ -676,7 +684,7 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
   };
 
   const handleSaveSnapshot = async () => {
-    if (casesQuery.isError || isInactiveScope) return;
+    if (casesRefreshFailed || isInactiveScope) return;
     const win = window as unknown as LegacyLabelingBridgeWindow;
     if (typeof win.createCaseLabelingResultSnapshot !== "function") return;
     setSavingSnapshot(true);
@@ -689,42 +697,99 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
     }
   };
 
-  const handleCreateTask = () => {
+  const handleCreateTask = async () => {
+    if (checkingTaskScope) return;
     if (!isAdmin) {
       showToast(bilingual(lang, "仅管理员可创建任务分配。", "Admin access is required."), true);
       return;
     }
-    if (casesQuery.isError) {
+    if (casesRefreshFailed) {
       showToast(
-        casesQuery.error instanceof Error
-          ? casesQuery.error.message
+        casesFailureError instanceof Error
+          ? casesFailureError.message
           : bilingual(lang, "读取 Case 列表失败，请重试。", "Failed to load Cases. Please retry."),
         true,
       );
       return;
     }
-    if (isInactiveScope || casesQuery.isLoading || !Number(data.total || 0)) {
+    if (isInactiveScope) {
       showToast(bilingual(lang, "当前筛选没有可分配的 Issue。", "No Issues match the current filters."), true);
       return;
     }
     const activeSearch = searchDraft.trim();
     const activeIssueIds = activeSearch ? [] : filters.issueIds;
+    const searchChanged = activeSearch !== filters.search;
     const win = window as unknown as LegacyLabelingBridgeWindow;
-    if (activeSearch !== filters.search) {
-      const nextFilters: LabelingFilterState = {
-        ...filters,
-        search: activeSearch,
-        issueIds: activeIssueIds,
-        page: 1,
-      };
-      persistRoute(nextFilters, true);
-      win.syncCaseLabelingGalleryState?.({
-        ...nextFilters,
-        tasks,
-        data,
-        labelers: data.labelers || [],
-        assignees: data.assignees || [],
+
+    if (searchChanged || casesQuery.isFetching) {
+      const nextFilters: LabelingFilterState = searchChanged
+        ? {
+            ...filters,
+            search: activeSearch,
+            issueIds: activeIssueIds,
+            page: 1,
+          }
+        : filters;
+      const countParams = new URLSearchParams({
+        baselines: baselinesQuery,
+        task_id: nextFilters.taskId || "",
+        q: nextFilters.search || "",
+        issue_ids: nextFilters.issueIds.join(","),
+        target_group: nextFilters.targetGroup || "",
+        issue_tags: joinFilterList(nextFilters.issueTags),
+        status: joinFilterList(nextFilters.status),
+        author: joinFilterList(nextFilters.author),
+        assignee: joinFilterList(nextFilters.assignee),
+        cluster: nextFilters.cluster || "",
+        exclusion: joinFilterList(nextFilters.exclusion),
+        label: joinFilterList(nextFilters.label),
+        gt: joinFilterList(nextFilters.gt),
+        gt_relation: joinFilterList(nextFilters.gtRelations),
+        comment_state: joinFilterList(nextFilters.commentState),
+        page: "1",
+        page_size: "1",
       });
+      setCheckingTaskScope(true);
+      try {
+        if (searchChanged) {
+          setFilters(nextFilters);
+          persistRoute(nextFilters, true);
+        }
+        const fresh = await apiRequest<LabelingCasesResponse>(
+          `/api/labeling/cases?${countParams.toString()}`,
+        );
+        const freshTotal = Number(fresh.total || 0);
+        if (!freshTotal) {
+          showToast(
+            bilingual(lang, "当前筛选没有可分配的 Issue。", "No Issues match the current filters."),
+            true,
+          );
+          return;
+        }
+        win.syncCaseLabelingGalleryState?.({
+          ...nextFilters,
+          tasks,
+          data: { ...data, total: freshTotal },
+          labelers: fresh.labelers || data.labelers || [],
+          assignees: fresh.assignees || data.assignees || [],
+        });
+        win.showPage?.("labeling-new-task", { historyMode: "push" });
+      } catch (err) {
+        showToast(
+          err instanceof Error
+            ? err.message
+            : bilingual(lang, "读取 Case 列表失败，请重试。", "Failed to load Cases. Please retry."),
+          true,
+        );
+      } finally {
+        setCheckingTaskScope(false);
+      }
+      return;
+    }
+
+    if (casesQuery.isLoading || !Number(data.total || 0)) {
+      showToast(bilingual(lang, "当前筛选没有可分配的 Issue。", "No Issues match the current filters."), true);
+      return;
     }
     win.showPage?.("labeling-new-task", { historyMode: "push" });
   };
@@ -828,6 +893,10 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
       >
         {bilingual(lang, "重试", "Retry")}
       </button>
+    </div>
+  ) : casesRefreshFailed ? (
+    <div className="no-asset issue-grid-empty" role="status">
+      {bilingual(lang, "Case 列表刷新失败，正在自动重试…", "Failed to refresh Cases, retrying…")}
     </div>
   ) : casesQuery.isLoading ? (
     <div className="no-asset issue-grid-empty">
@@ -1120,7 +1189,7 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
             <span className="count-pill" id="caseLabelingCount">
               {isInactiveScope
                 ? "0"
-                : casesQuery.isLoading || casesQuery.isError
+                : casesQuery.isLoading || casesRefreshFailed
                   ? "—"
                   : String(data.total || 0)}
             </span>
@@ -1130,7 +1199,7 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
               className="button button-quiet"
               id="caseLabelingExportIssues"
               type="button"
-              disabled={exportingIssues || isInactiveScope || casesQuery.isError || !Number(data.total || 0)}
+              disabled={exportingIssues || isInactiveScope || casesRefreshFailed || !Number(data.total || 0)}
               title={bilingual(
                 lang,
                 "导出当前筛选下的全部 Issue ID（CSV）",
@@ -1146,7 +1215,7 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
               className="button button-quiet"
               id="caseLabelingExportGt"
               type="button"
-              disabled={exportingGt || isInactiveScope || casesQuery.isError || !isAdmin}
+              disabled={exportingGt || isInactiveScope || casesRefreshFailed || !isAdmin}
               onClick={(e) => void handleExportGt(e)}
             >
               {bilingual(lang, "导出 GT 更新", "Export GT updates")}
@@ -1194,7 +1263,7 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
                 className="button button-quiet"
                 id="caseLabelingCreateLabelSnapshot"
                 type="button"
-                disabled={savingSnapshot || isInactiveScope || casesQuery.isError}
+                disabled={savingSnapshot || isInactiveScope || casesRefreshFailed}
                 onClick={() => void handleSaveSnapshot()}
               >
                 {bilingual(lang, "保存 Label 快照", "Save Label snapshot")}
@@ -1204,8 +1273,8 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
               className="button button-primary"
               id="caseLabelingCreateTask"
               type="button"
-              disabled={isInactiveScope || casesQuery.isError || casesQuery.isLoading}
-              onClick={handleCreateTask}
+              disabled={isInactiveScope || casesRefreshFailed || casesQuery.isLoading || checkingTaskScope}
+              onClick={() => void handleCreateTask()}
             >
               {bilingual(lang, "标注任务", "Labeling task")}
             </button>
@@ -1249,7 +1318,7 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
         <IssueCardGrid
           id="caseLabelingList"
           workspace="labeling"
-          items={casesQuery.isError ? [] : data.items || []}
+          items={casesRefreshFailed ? [] : data.items || []}
           lang={lang}
           config={effectiveConfig}
           selectedIssueId={activeIssueId}
@@ -1261,13 +1330,13 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
           <Pagination
             page={data.page || filters.page}
             pageSize={filters.pageSize}
-            total={casesQuery.isError ? 0 : data.total || 0}
+            total={casesRefreshFailed ? 0 : data.total || 0}
             lang={lang}
             loading={casesQuery.isFetching}
             showPageUnit
             disableJumpWhenSinglePage
             labelText={
-              !casesQuery.isError && data.total > 0
+              !casesRefreshFailed && data.total > 0
                 ? `${data.page || filters.page} / ${Math.max(1, data.pages || Math.ceil(data.total / filters.pageSize))}`
                 : "— / —"
             }

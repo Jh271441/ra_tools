@@ -995,7 +995,9 @@ export const DailyCronPage: React.FC<DailyCronPageProps> = ({ active, lang, them
           <span className="muted" id="raDailyCronMainNote">
             {mainNote}
           </span>
-          {mainTiming && <span className="cron-monitor-timing">{mainTiming}</span>}
+          <span className="cron-monitor-timing" id="raDailyCronMainTiming">
+            {mainTiming}
+          </span>
         </article>
 
         <article className="cron-monitor" data-monitor="media">
@@ -1016,6 +1018,7 @@ export const DailyCronPage: React.FC<DailyCronPageProps> = ({ active, lang, them
           <span className="muted" id="raDailyCronMediaNote">
             {mediaNote}
           </span>
+          <span className="cron-monitor-timing" id="raDailyCronMediaTiming" />
           <div className="cron-media-tracks" id="raDailyCronMediaTracks">
             <div>
               <span>Camera</span>
