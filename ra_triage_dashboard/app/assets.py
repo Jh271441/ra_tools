@@ -488,13 +488,11 @@ class VideoIndex:
     def __init__(self, video_root: Path, base_path: str = ""):
         self.video_root = video_root.resolve()
         self.base_path = base_path
-        self._lock = threading.RLock()
-        self._assets: dict[str, dict[str, Path]] = {}
         self._coverage = TimedSingleFlightCache[str, frozenset[str]](ttl_seconds=30, max_entries=1)
         # Captures may appear shortly after a job completes, so keep negative
         # entries short-lived while still avoiding a glob of every shard for
         # each click on a no-video Issue.
-        self._descriptors = TimedSingleFlightCache[str, Optional[dict[str, Any]]](
+        self._descriptors = TimedSingleFlightCache[str, Optional[tuple[dict[str, Any], dict[str, Path]]]](
             ttl_seconds=15,
             max_entries=4_000,
         )
@@ -526,6 +524,10 @@ class VideoIndex:
         return frozenset(issues)
 
     def get_video(self, issue_id: str) -> dict[str, Any] | None:
+        selected = self._selected_video(issue_id)
+        return selected[0] if selected else None
+
+    def _selected_video(self, issue_id: str) -> tuple[dict[str, Any], dict[str, Path]] | None:
         if not self._issue_id.fullmatch(issue_id) or not self.video_root.is_dir():
             return None
         return self._descriptors.get_or_load(
@@ -533,7 +535,7 @@ class VideoIndex:
             lambda: self._load_video(issue_id),
         )
 
-    def _load_video(self, issue_id: str) -> dict[str, Any] | None:
+    def _load_video(self, issue_id: str) -> tuple[dict[str, Any], dict[str, Path]] | None:
         """Resolve one video after a cache miss on a worker thread."""
 
         # Support both shard layout and flat aggregate layout:
@@ -554,7 +556,7 @@ class VideoIndex:
             if path.is_file() and self._within_root(path)
         }
         ordered = sorted(
-            meta_paths, key=lambda path: path.stat().st_mtime_ns, reverse=True
+            meta_paths, key=lambda path: (path.stat().st_mtime_ns, str(path)), reverse=True
         )
         for meta_path in ordered:
             video = self._video_from_meta(issue_id, meta_path)
@@ -563,20 +565,15 @@ class VideoIndex:
         return None
 
     def get_asset_path(self, issue_id: str, asset_id: str) -> Path | None:
-        with self._lock:
-            path = self._assets.get(issue_id, {}).get(asset_id)
-        if path and path.is_file() and self._within_root(path):
-            return path
-        self.get_video(issue_id)
-        with self._lock:
-            path = self._assets.get(issue_id, {}).get(asset_id)
+        selected = self._selected_video(issue_id)
+        path = selected[1].get(asset_id) if selected else None
         if path and path.is_file() and self._within_root(path):
             return path
         return None
 
     def _video_from_meta(
         self, issue_id: str, meta_path: Path, meta: dict[str, Any] | None = None
-    ) -> dict[str, Any] | None:
+    ) -> tuple[dict[str, Any], dict[str, Path]] | None:
         if meta is None:
             try:
                 meta = json.loads(meta_path.read_text(encoding="utf-8"))
@@ -612,8 +609,7 @@ class VideoIndex:
                 {},
             )
             asset_id = f"bev-video-{variant_index}"
-            with self._lock:
-                self._assets[issue_id] = {asset_id: path}
+            paths = {asset_id: path}
             start_offset_sec = _number_or_none(
                 variant.get("video_start_offset_sec")
             )
@@ -666,13 +662,12 @@ class VideoIndex:
                 )
                 if same_axis and camera_path and camera_path.is_file() and camera_path.suffix.lower() == ".mp4":
                     camera_id = "camera-video"
-                    with self._lock:
-                        self._assets[issue_id][camera_id] = camera_path
+                    paths[camera_id] = camera_path
                     descriptor["tracks"] = [
                         {"label": "BEV 视频", "url": descriptor["url"]},
                         {"label": "Camera102 视频", "url": with_base_path(self.base_path, f"/api/assets/{quote(issue_id)}/{camera_id}")},
                     ]
-            return descriptor
+            return descriptor, paths
         return None
 
     def _resolve_asset(self, base: Path, relative_path: str) -> Path | None:

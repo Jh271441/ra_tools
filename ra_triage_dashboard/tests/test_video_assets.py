@@ -1,4 +1,5 @@
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -59,6 +60,21 @@ class VideoIndexTest(unittest.TestCase):
         meta_path = capture / "meta.json"
         meta_path.write_text(json.dumps(metadata), encoding="utf-8")
         return meta_path, video
+
+    def test_coverage_scan_cannot_replace_selected_video_with_previous_capture(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            old_meta, _ = self._write_capture(root, layout="flat")
+            new_meta, current = self._write_capture(root, layout="issues")
+            os.utime(old_meta, (10, 10))
+            os.utime(new_meta, (20, 20))
+            index = VideoIndex(root)
+            issue = "cn31842459"
+            self.assertEqual(index.get_asset_path(issue, "bev-video-0"), current.resolve())
+            # A coverage scan that started before publication can finish later.
+            with patch.object(Path, "glob", return_value=[old_meta]):
+                self.assertEqual(index.indexed_issue_ids(), {issue})
+            self.assertEqual(index.get_asset_path(issue, "bev-video-0"), current.resolve())
 
     def test_camera_track_requires_same_axis_and_root_confined_path(self):
         with tempfile.TemporaryDirectory() as directory:
