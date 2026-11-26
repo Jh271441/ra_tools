@@ -209,6 +209,7 @@ class AllocationProtectionMixin:
             captured=captured, security=security, dataset=dict(dataset) if dataset else None, targets=targets,
         ))
         return dict(protected=protected, completed=completed, forbidden=history - pairs,
+                    model_submitted={(r["issue_id"], r["reviewer"].lower()) for r in progress if r["model_review_submitted"]},
                     coverage_locked={iid for iid, _ in history} | frozen_cases, frozen_cases=frozen_cases,
                     adjudicated_cases=adjudicated_cases, case_outputs=case_outputs,
                     captured_roles=role_map, snapshot=snapshot, members=members,

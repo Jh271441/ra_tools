@@ -407,6 +407,7 @@ async def update_campaign_allocation(campaign_id: str, request: Request) -> dict
             cross_groups=body.get("cross_groups"),
             groups=body.get("groups"),
             pairing_mode=body.get("pairing_mode"),
+            takeover_pending=body.get("takeover_pending") is True,
         )
     except (CampaignConflictError, CampaignReadOnlyError) as exc:
         raise _detail(409, str(exc)) from exc
@@ -418,7 +419,7 @@ async def update_campaign_allocation(campaign_id: str, request: Request) -> dict
 
 @router.post("/api/campaigns/{campaign_id}/allocation/preview", responses={200: {"model": AllocationPreviewResponse}})
 async def preview_campaign_allocation(campaign_id: str, request: Request) -> dict[str, Any]:
-    _campaign_admin(request)
+    actor, _, _ = _campaign_admin(request)
     body = _json_body(await request.body())
     try:
         return await asyncio.to_thread(
@@ -429,6 +430,7 @@ async def preview_campaign_allocation(campaign_id: str, request: Request) -> dic
             cross_groups=body.get("cross_groups"),
             groups=body.get("groups"),
             pairing_mode=body.get("pairing_mode"),
+            takeover_by=actor if body.get("takeover_pending") is True else None,
         )
     except (CampaignConflictError, CampaignReadOnlyError) as exc:
         raise _detail(409, str(exc)) from exc

@@ -955,15 +955,16 @@ def group_projection(groups, placed, completed, *, case_ids=None, protected=()):
     totals = Counter((gid, name) for owners in placed.values() for gid, name in owners.items() if gid in group_ids)
     done = Counter((gid, name) for iid, owners in placed.items() for gid, name in owners.items()
                    if gid in group_ids and (iid, name) in completed)
-    locked_counts = Counter(gid for iid, owners in placed.items() for gid, name in owners.items()
-                            if (iid, name) in protected)
+    locked = Counter((gid, name) for iid, owners in placed.items() for gid, name in owners.items()
+                     if (iid, name) in protected)
     combinations = Counter(tuple(owners.get(gid) for gid in group_ids) for owners in placed.values())
     completed_cases = {iid for iid, _ in completed}
     by_group = {}
     union_covered_by_group = {}
     for group in groups:
         gid = group["group_id"]
-        members = [dict(name=name, total=totals[gid, name], completed=done[gid, name])
+        members = [dict(name=name, total=totals[gid, name], completed=done[gid, name],
+                        movable=totals[gid, name] - locked[gid, name])
                    for (g_key, name) in sorted(totals) if g_key == gid]
         by_group[gid] = members
         if len(groups) == 1:
@@ -983,7 +984,7 @@ def group_projection(groups, placed, completed, *, case_ids=None, protected=()):
             group_id=gid,
             members=by_group[gid],
             union_completed=union_covered_by_group[gid],
-            retained_slots=locked_counts[gid] + union_covered_by_group[gid],
+            retained_slots=sum(member["total"] - member["movable"] for member in by_group[gid]) + union_covered_by_group[gid],
         ) for gid in group_ids],
         combinations=[dict(owners=list(owners), count=combinations[owners])
                       for owners in sorted(combinations, key=lambda names: tuple(name or "" for name in names))],
@@ -1052,7 +1053,7 @@ def grouped_preview(groups, old_rows, new_rows, placed, evidence, *, old_placed=
         moved_slots=sum(incoming.values()),
         completed_slots=sum(done.values()),
         saved_pending_slots=sum(locked.values()) - sum(done.values()),
-        movable_slots=max(0, projection["active_slots"] - projection["active_completed_slots"] - (sum(locked.values()) - sum(done.values()))),
+        movable_slots=sum(m["movable"] for g in projection["groups"] for m in g["members"]),
         coverage_before=coverage_summary(Counter(iid for iid, _ in before), locks),
         coverage_after=coverage_summary(Counter(iid for iid, _ in after), locks),
     )

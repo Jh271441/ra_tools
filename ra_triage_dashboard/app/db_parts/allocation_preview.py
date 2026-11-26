@@ -39,12 +39,70 @@ class AllocationPreviewMixin(AllocationProtectionMixin):
         )
         return current, split, filters, old_rows, evidence, all_roles
 
+    def _take_over_pending(self, current, rows, evidence, recipient):
+        if current["purpose"] != "model_review" or current["role_required"]:
+            raise ValueError("此入口适用于普通复核任务 / This action is for review tasks without role-based assignment")
+        eligible = {u["username"]: u for u in current["eligible_members"]}
+        if recipient not in eligible:
+            raise ValueError("当前账号没有接手资格 / Your account is not an eligible reviewer")
+        groups, history = self._group_history(current, rows, evidence)
+        placed = {m["issue_id"]: dict(history.get(m["issue_id"], {})) for m in evidence["members"]}
+        rules = group_rules(current["cross_groups"], history)
+        pinned = {(iid, m["name"]) for rule in rules for iid in rule.get("issue_ids", [])
+                  for m in rule["members"]}
+        occupied = {r["issue_id"] for r in rows if r["assignee"] == recipient}
+        by_group = {g["group_id"]: g for g in groups}
+        memberships = {gid: {m["name"] for m in g["members"]} for gid, g in by_group.items()}
+        projected = []
+        remaining = []
+        for row in rows:
+            iid, owner = row["issue_id"], row["assignee"]
+            pair = (iid, owner)
+            projected.append(row)
+            if pair in evidence["completed"]:
+                continue
+            gid = next((g for g, user in history.get(iid, {}).items() if user == owner), None)
+            if pair in evidence["model_submitted"]:
+                reason = "label_pending"
+            elif iid in evidence["adjudicated_cases"] and iid in evidence["frozen_cases"]:
+                reason = "adjudicated"
+            elif pair in evidence["protected"]:
+                reason = "saved"
+            elif owner == recipient:
+                reason = "mine"
+            elif iid in occupied or (iid, recipient) in evidence["forbidden"]:
+                reason = "other_slot"
+            elif gid is None or pair in pinned or (len(placed[iid]) > 1 and current["pairing_mode"] == "paired"):
+                reason = "pairing"
+            else:
+                reason = "transfer"
+                projected[-1] = {**row, "assignee": recipient}
+                placed[iid][gid] = recipient
+                occupied.add(iid)
+                if recipient not in memberships[gid]:
+                    group = by_group[gid]
+                    group["members"] = [*group["members"], dict(name=recipient, review_percent=0)]
+                    memberships[gid].add(recipient)
+            remaining.append(dict(issue_id=iid, owner=owner, reason=reason))
+        # Preserve configured coverage and future weights. This action changes
+        # the current binding only, with at most one seat per person per Issue.
+        config = grouped_config(groups, placed, rules, current["quota_basis"], pairing_mode=current["pairing_mode"])
+        preview = grouped_preview(groups, rows, projected, placed, evidence, old_placed=history)
+        preview["remaining_assignments"] = remaining
+        return config, projected, preview
+
     def _compute_task_reallocation(
         self, current, split, filters, old_rows, evidence,
         assignees, reviewers_per_issue, overlap_ratio, expected_revision,
         quota_basis, issued_at, cross_groups=None, groups=None,
-        pairing_mode=None, *, all_roles=None,
+        pairing_mode=None, *, all_roles=None, takeover_by=None,
     ):
+        if takeover_by:
+            config, new_rows, preview = self._take_over_pending(current, old_rows, evidence, takeover_by)
+            preview.update(expected_revision=expected_revision, expires_at=issued_at + 600,
+                           preview_token=str(issued_at) + ":" + _fingerprint(
+                               [evidence["snapshot"], takeover_by, config, new_rows, issued_at]))
+            return current, split, filters, old_rows, config, new_rows, preview
         if groups is not None:
             groups = normalize_groups(groups, {u["username"] for u in current["eligible_members"]})
             mode = normalize_pairing_mode(current.get("pairing_mode") if pairing_mode is None else pairing_mode)
@@ -174,7 +232,7 @@ class AllocationPreviewMixin(AllocationProtectionMixin):
 
     def _prepare_task_reallocation(self, conn, campaign_id, assignees, reviewers_per_issue,
                                    overlap_ratio, expected_revision, quota_basis, issued_at, cross_groups=None,
-                                   groups=None, pairing_mode=None):
+                                   groups=None, pairing_mode=None, takeover_by=None):
         current, split, filters, old_rows, evidence, all_roles = self._load_reallocation_snapshot(
             conn, campaign_id, expected_revision=expected_revision, quota_basis=quota_basis,
         )
@@ -182,12 +240,12 @@ class AllocationPreviewMixin(AllocationProtectionMixin):
             current, split, filters, old_rows, evidence,
             assignees, reviewers_per_issue, overlap_ratio, expected_revision,
             quota_basis, issued_at, cross_groups, groups, pairing_mode,
-            all_roles=all_roles,
+            all_roles=all_roles, takeover_by=takeover_by,
         )
 
     def preview_campaign_allocation(self, *, campaign_id, assignees, reviewers_per_issue,
                                     overlap_ratio, expected_revision, quota_basis="remaining", cross_groups=None,
-                                    groups=None, pairing_mode=None):
+                                    groups=None, pairing_mode=None, takeover_by=None):
         """Compute a snapshot-bound preview without holding global write locks.
 
         Optimistic validation in ``update_campaign_allocation`` re-verifies
@@ -203,5 +261,5 @@ class AllocationPreviewMixin(AllocationProtectionMixin):
             current, split, filters, old_rows, evidence,
             assignees, reviewers_per_issue, overlap_ratio, expected_revision,
             quota_basis, int(time.time()), cross_groups, groups, pairing_mode,
-            all_roles=all_roles,
+            all_roles=all_roles, takeover_by=takeover_by,
         )[-1]

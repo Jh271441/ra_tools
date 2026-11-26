@@ -42,6 +42,7 @@ export interface GroupCoverageMember {
   name: string;
   total: number;
   completed: number;
+  movable?: number;
 }
 
 export interface GroupCoverageGroup {
@@ -107,16 +108,24 @@ export interface AllocationPreviewPlan {
   members?: AllocationPlanMember[];
   cross_groups?: Array<{ members: Array<{ name?: string } | string>; issue_ids: string[] }>;
   changes?: Array<{ issue_id: string; before: string[]; after: string[] }>;
+  remaining_assignments?: Array<{
+    issue_id: string;
+    owner: string;
+    reason: "transfer" | "mine" | "label_pending" | "adjudicated" | "saved" | "other_slot" | "pairing";
+  }>;
 }
 
 export interface AllocationConfig extends AllocationPreviewPlan {
   campaign_id: string;
   name?: string;
+  purpose?: string;
+  role_required?: boolean;
   editable: boolean;
   appendable?: boolean;
   expected_revision?: number;
   member_count?: number;
   movable_slots?: number;
+  coverage?: { cross_cases: number; case_count: number };
   quota_basis?: "remaining" | "total";
   pairing_mode?: "orthogonal" | "paired" | "custom";
   group_rules?: CrossGroupRule[];
@@ -158,6 +167,7 @@ export interface WorkSplitItem {
   completion_ratio?: number;
   conflict_count?: number;
   conflict_issue_ids?: string[] | null;
+  pending_issue_ids?: string[] | null;
   source_split_id?: string | null;
   change_count?: number;
   assigned_to_me?: boolean;
@@ -337,6 +347,28 @@ export function splitGroupShares(total: number, weights: number[]): number[] {
       p.units += 1;
     });
   return portions.map((p) => p.units / 100);
+}
+
+export function currentAllocationGroups(config: AllocationConfig, basis: "total" | "remaining"): AllocationGroup[] {
+  const projection = config.group_coverage;
+  return (config.groups || []).map((group) => {
+    const actual = projection?.groups.find((item) => item.group_id === group.group_id);
+    const totals = new Map(actual?.members.map((member) => [member.name, member]));
+    const assigned = group.members.map((member) => totals.get(member.name)?.total || 0);
+    const movable = group.members.map((member) => totals.get(member.name)?.movable || 0);
+    const covered = assigned.reduce((sum, count) => sum + count, actual?.union_completed || 0);
+    const weights = basis === "remaining" && movable.some(Boolean) ? movable : assigned;
+    const actualShares = weights.some(Boolean) ? splitGroupShares(10000, weights) : undefined;
+    return {
+      group_id: group.group_id,
+      coverage_strategy: group.coverage_strategy === "fill" ? "fill" : "overlap",
+      coverage_percent: coveragePercentFromCount(projection?.case_count || 0, covered) ?? group.coverage_percent ?? 100,
+      members: group.members.map((member, i) => ({
+        name: member.name,
+        review_percent: actualShares?.[i] ?? member.review_percent ?? 0,
+      })),
+    };
+  });
 }
 
 export function completeGroupShares(members: AllocationMember[], even = false): AllocationMember[] {
@@ -868,12 +900,30 @@ export function reviewAssignmentBatchHref(
   const path = page === "analysis" ? "/review-analysis" : "/review";
   const params = new URLSearchParams();
   if (opts.runId) params.set("run", String(opts.runId));
+  params.set("comparison", "all");
   if (opts.workSplitId) params.set("work_split", String(opts.workSplitId));
   if (opts.issue) params.set("issue", String(opts.issue));
+  for (const [key, option] of [
+    ["issue_ids", opts.issueIds], ["work_assignee", opts.workAssignee],
+    ["label_state", opts.labelStates], ["task_progress", opts.taskProgress],
+  ] as const) {
+    const values = normalizeFilterStrList(option);
+    if (values.length) params.set(key, values.join(","));
+  }
+  if (opts.taskView) params.set("task_view", String(opts.taskView));
+  if (opts.workflowMode === "model_review_only") params.set("workflow", "model_only");
   const bs = normalizeFilterStrList(baselines);
   if (bs.length) params.set("baselines", bs.join(","));
   const qs = params.toString();
   return `${withWorkbenchBase(path)}${qs ? `?${qs}` : ""}`;
+}
+
+export function pendingReviewHref(item: WorkSplitItem): string {
+  return reviewAssignmentBatchHref(item, "review", "", false, {
+    issueIds: item.pending_issue_ids || [],
+    workAssignee: [],
+    taskProgress: ["pending"],
+  });
 }
 
 export function reviewAssignmentSourceHref(filter: Record<string, unknown> = {}): string {

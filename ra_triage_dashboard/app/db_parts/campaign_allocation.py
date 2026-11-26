@@ -76,9 +76,7 @@ class DatabaseCampaignAllocationMixin(AllocationPreviewMixin):
         if current.get("groups"):
             progress["active_slots"] = projection["active_slots"]
             progress["active_completed_slots"] = projection["active_completed_slots"]
-            progress["movable_slots"] = max(
-                0, projection["active_slots"] - projection["active_completed_slots"] - progress["saved_pending_slots"]
-            )
+            progress["movable_slots"] = sum(m["movable"] for g in projection["groups"] for m in g["members"])
         return {
             **current,
             **progress,
@@ -300,7 +298,7 @@ class DatabaseCampaignAllocationMixin(AllocationPreviewMixin):
         quota_basis: str = "remaining", preview_token: str = "", remove_assignee: str | None = None,
         cross_groups: list[dict[str, Any]] | None = None,
         groups: list[dict[str, Any]] | None = None,
-        pairing_mode: str | None = None,
+        pairing_mode: str | None = None, takeover_pending: bool = False,
     ):
         campaign_id = self.resolve_version_campaign(str(campaign_id))
         if type(expected_revision) is not int or expected_revision < 1 or not actor or not idempotency_key or len(idempotency_key) > 160:
@@ -318,6 +316,10 @@ class DatabaseCampaignAllocationMixin(AllocationPreviewMixin):
             request_config["groups"] = groups
         if pairing_mode is not None:
             request_config["pairing_mode"] = pairing_mode
+        if takeover_pending:
+            if not preview_token:
+                raise CampaignConflictError("请先预览接手范围 / Preview the transfer first")
+            request_config["takeover_by"] = actor
         fingerprint = _fingerprint(request_config)
         with self._write_lock, self.connect() as conn:
             self._lock_task_work(conn)
@@ -355,7 +357,8 @@ class DatabaseCampaignAllocationMixin(AllocationPreviewMixin):
             try:
                 current, split, filters, old_rows, config, new_rows, preview = self._prepare_task_reallocation(
                     conn, campaign_id, assignees, reviewers_per_issue, overlap_ratio,
-                    expected_revision, quota_basis, issued_at, cross_groups, groups, pairing_mode)
+                    expected_revision, quota_basis, issued_at, cross_groups, groups, pairing_mode,
+                    takeover_by=actor if takeover_pending else None)
             except CoverageConstraintError as exc:
                 if preview_token:
                     raise CampaignConflictError("预览已失效，请保留输入并重新预览 / Preview is stale; keep your inputs and preview again") from exc
@@ -366,6 +369,8 @@ class DatabaseCampaignAllocationMixin(AllocationPreviewMixin):
                 raise CampaignConflictError("已有保存的任务需要先预览调整 / Preview changes before updating a task with saved work")
             if remove_assignee is not None:
                 preview["removed_assignee"] = remove_assignee
+            if takeover_pending and not preview["moved_slots"]:
+                return dict(changed=False, replayed=False, allocation=current, preview=preview)
             old_config = {key: current.get(key) for key in config}
             if config == old_config and not preview["changed_cases"]:
                 return dict(changed=False, replayed=False, allocation=current, preview=preview)

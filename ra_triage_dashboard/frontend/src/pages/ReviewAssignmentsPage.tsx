@@ -5,6 +5,12 @@ import { bilingual, UiLanguage, withWorkbenchBase } from "../bridge/useWorkbench
 import { AllocationGroupSetup } from "../components/allocation/AllocationGroupSetup";
 import { AllocationLivePreview } from "../components/allocation/AllocationLivePreview";
 import { BatchCard } from "../components/allocation/BatchCard";
+import {
+  Historical0821Card,
+  Historical0821Partition,
+  historical0821Partition,
+  historical0821Title,
+} from "../components/allocation/Historical0821Card";
 import { TaskAllocationDialog } from "../components/allocation/TaskAllocationDialog";
 import { useAssignmentNaming } from "../components/allocation/useAssignmentNaming";
 import {
@@ -28,7 +34,7 @@ import {
   reviewAssignmentSourceHref,
   roleVersionTaskName,
 } from "../components/allocation/allocationMath";
-import { CASE_PAGE_SIZES, Pagination } from "../components/ui/Pagination";
+import { CASE_PAGE_SIZES, DEFAULT_CASE_PAGE_SIZE, Pagination } from "../components/ui/Pagination";
 import { showWorkbenchToast } from "../components/ui/Toast";
 import { UiSelect, UiSelectOption } from "../components/ui/UiSelect";
 
@@ -102,7 +108,7 @@ function readInitialRoute() {
   const rawSize = Number(params.get("page_size"));
   const pageSize = CASE_PAGE_SIZES.includes(rawSize as (typeof CASE_PAGE_SIZES)[number])
     ? rawSize
-    : 50;
+    : DEFAULT_CASE_PAGE_SIZE;
   return { lifecycle, assignedToMe, batchSearch, splitId, assignee, status, query, page, pageSize };
 }
 
@@ -153,7 +159,7 @@ function buildAssignmentsUrl(opts: {
       }
       if (opts.query) url.searchParams.set("q", opts.query);
       if ((opts.page || 1) > 1) url.searchParams.set("page", String(opts.page));
-      if ([10, 20, 100].includes(Number(opts.pageSize))) {
+      if (CASE_PAGE_SIZES.includes(Number(opts.pageSize) as (typeof CASE_PAGE_SIZES)[number])) {
         url.searchParams.set("page_size", String(opts.pageSize));
       }
     }
@@ -941,7 +947,19 @@ export const ReviewAssignmentsPage: React.FC<ReviewAssignmentsPageProps> = ({
 
   const splits = splitsQuery.data?.items || [];
   const metrics = splitsQuery.data?.metrics || {};
-  const activeCount = splits.filter((s) => s.is_current).length;
+  const boardEntries: Array<WorkSplitItem | { partition: Historical0821Partition; batches: WorkSplitItem[] }> =
+    splits.filter((item) => !historical0821Partition(item));
+  const firstHistoryIndex = splits.findIndex((item) => historical0821Partition(item));
+  if (firstHistoryIndex !== -1) {
+    const groups = (["0821-odd2", "0821-nonodd2"] as const).flatMap((partition) => {
+      const batches = splits.filter((item) => historical0821Partition(item) === partition);
+      return batches.length ? [{ partition, batches }] : [];
+    });
+    boardEntries.splice(firstHistoryIndex, 0, ...groups);
+  }
+  const activeCount = boardEntries.filter((entry) =>
+    "batches" in entry ? entry.batches.some((batch) => batch.is_current) : entry.is_current,
+  ).length;
   const totalAssignments =
     metrics.assignment_count ??
     splits.reduce((sum, s) => sum + Number(s.assignment_count || 0), 0);
@@ -1072,7 +1090,7 @@ export const ReviewAssignmentsPage: React.FC<ReviewAssignmentsPageProps> = ({
       >
         <article className="review-assignment-metric">
           <small>{bilingual(lang, "任务", "Tasks")}</small>
-          <strong>{splits.length}</strong>
+          <strong>{boardEntries.length}</strong>
           <span>
             {bilingual(lang, `${activeCount} 个当前任务`, `${activeCount} current tasks`)}
           </span>
@@ -1406,35 +1424,40 @@ export const ReviewAssignmentsPage: React.FC<ReviewAssignmentsPageProps> = ({
       <section className="page-card review-assignment-list-card assignment-history">
         {(() => {
           const batchSearchTerms = batchSearch.trim().toLowerCase().split(/\s+/).filter(Boolean);
-          const filteredSplits = batchSearchTerms.length
-            ? splits.filter((item) => {
-                const cohort =
-                  item.role_cohort === "sampling"
-                    ? "抽样集 sampling"
-                    : item.role_cohort === "low"
-                      ? "低置信集 low confidence"
-                      : "";
-                const fields = [
-                  item.release_family,
-                  item.campaign_name,
-                  roleVersionTaskName(item, lang, runNameLookup),
-                  runNameLookup(item.model_run_id),
-                  item.split_id,
-                  ...(item.baseline_ids || []),
-                  item.appendable && !item.role_cohort ? "版本联合复核 version combined review" : "",
-                  cohort,
-                ];
-                const haystack = fields.filter(Boolean).join(" ").toLowerCase();
-                return batchSearchTerms.every((term) => haystack.includes(term));
-              })
-            : splits;
-          const listStatusText = !splits.length
+          const matches = (item: WorkSplitItem, partition?: Historical0821Partition) => {
+            const cohort =
+              item.role_cohort === "sampling"
+                ? "抽样集 sampling"
+                : item.role_cohort === "low"
+                  ? "低置信集 low confidence"
+                  : "";
+            const fields = [
+              item.release_family,
+              item.campaign_name,
+              roleVersionTaskName(item, lang, runNameLookup),
+              runNameLookup(item.model_run_id),
+              item.split_id,
+              item.source_split_id,
+              ...(item.baseline_ids || []),
+              ...(partition ? [historical0821Title(partition, "zh"), historical0821Title(partition, "en")] : []),
+              item.appendable && !item.role_cohort ? "版本联合复核 version combined review" : "",
+              cohort,
+            ];
+            const haystack = fields.filter(Boolean).join(" ").toLowerCase();
+            return batchSearchTerms.every((term) => haystack.includes(term));
+          };
+          const filteredSplits = boardEntries.filter((entry) =>
+            "batches" in entry
+              ? entry.batches.some((batch) => matches(batch, entry.partition))
+              : matches(entry),
+          );
+          const listStatusText = !boardEntries.length
             ? ""
             : batchSearchTerms.length
               ? bilingual(
                   lang,
-                  `匹配 ${filteredSplits.length} / ${splits.length} 个任务`,
-                  `${filteredSplits.length} of ${splits.length} tasks`,
+                  `匹配 ${filteredSplits.length} / ${boardEntries.length} 个任务`,
+                  `${filteredSplits.length} of ${boardEntries.length} tasks`,
                 )
               : bilingual(
                   lang,
@@ -1565,7 +1588,18 @@ export const ReviewAssignmentsPage: React.FC<ReviewAssignmentsPageProps> = ({
                     )}
                   </div>
                 ) : (
-                  filteredSplits.map((item) => (
+                  filteredSplits.map((item) => "batches" in item ? (
+                    <Historical0821Card
+                      key={item.partition}
+                      partition={item.partition}
+                      batches={item.batches}
+                      matchedBatches={item.batches.filter((batch) => matches(batch, item.partition))}
+                      lang={lang}
+                      isAdmin={isAdmin}
+                      onOpenDetail={handleOpenDetail}
+                      onEditAllocation={setEditCampaignId}
+                    />
+                  ) : (
                     <BatchCard
                       key={item.split_id}
                       item={item}
@@ -1910,6 +1944,7 @@ export const ReviewAssignmentsPage: React.FC<ReviewAssignmentsPageProps> = ({
       <TaskAllocationDialog
         campaignId={editCampaignId}
         lang={lang}
+        task={splits.find((item) => item.split_id === editCampaignId)}
         onClose={() => setEditCampaignId(null)}
         onSaved={() => {
           void queryClient.invalidateQueries({ queryKey: ["review-assignments-list"] });

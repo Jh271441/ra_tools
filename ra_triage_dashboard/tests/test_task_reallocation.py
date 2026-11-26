@@ -676,3 +676,36 @@ def test_unrelated_issue_decision_retains_evidence_and_moves_only_untouched_work
     assert after["group_coverage"] == preview["group_coverage"]
     assert after["active_assignment_counts"] == after["assignment_counts"]
     assert snapshot(db, list(evidence)) == evidence
+
+
+def test_takeover_moves_only_untouched_slots_and_keeps_saved_evidence(fixture):
+    db = fixture.db
+    cid, ids = make_task(fixture, count=4, completed=1, purpose="model_review")
+    task = db.get_campaign(cid)["campaign"]
+    db.create_model_review(issue_id=ids[2], model_run_id=task["evaluation_run_id"],
+                           campaign_id=cid, work_split_id=cid, reviewer="c",
+                           status="in_progress", reason="Draft", missing_evidence=[])
+    with db.connect() as conn:
+        conn.execute(
+            "INSERT INTO issue_label_decisions(baseline_scope,issue_id,expected_output,"
+            "source_fingerprint,created_at) VALUES('scope',?,'误触发','test',CURRENT_TIMESTAMP)",
+            (ids[3],),
+        )
+    tables = ["issue_label_decisions", "label_revisions", "combined_review_progress", "model_review_revisions"]
+    before = snapshot(db, tables)
+    body = dict(campaign_id=cid, assignees=None, reviewers_per_issue=None, overlap_ratio=None,
+                expected_revision=db.get_campaign_allocation(cid)["expected_revision"])
+    preview = db.preview_campaign_allocation(**body, takeover_by="alice")
+    assert preview["remaining_assignments"] == [
+        dict(issue_id=ids[1], owner="bob", reason="transfer"),
+        dict(issue_id=ids[2], owner="c", reason="saved"),
+        dict(issue_id=ids[3], owner="d", reason="adjudicated"),
+    ]
+    assert preview["moved_slots"] == 1
+    options = dict(**body, preview_token=preview["preview_token"], idempotency_key="transfer", takeover_pending=True)
+    with pytest.raises(CampaignConflictError):
+        db.update_campaign_allocation(**options, actor="bob")
+    assert db.update_campaign_allocation(**options, actor="alice")["changed"]
+    assert db.update_campaign_allocation(**options, actor="alice")["replayed"]
+    assert db.get_campaign_allocation(cid)["assignment_counts"] == {"alice": 2, "c": 1, "d": 1}
+    assert snapshot(db, tables) == before

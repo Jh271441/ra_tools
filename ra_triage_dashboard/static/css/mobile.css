@@ -1352,6 +1352,13 @@
   .allocation-diff-row { padding-inline: 2px; }
   .allocation-diff-values { font-size: 11px; }
   .task-allocation-body > .task-allocation-settings { overflow: visible; padding-inline-end: 0; }
+  .ra-historical-batch-row .button,
+  .allocation-review-status .button,
+  .ra-allocation-issue-link { min-height: 44px; }
+  #raTaskAllocationDialog.is-allocation-edit .dialog-header > .icon-button {
+    min-width: 44px; min-height: 44px;
+  }
+  #raTaskAllocationDialog.is-allocation-edit #taskAllocationSave { min-height: 48px; }
   .is-allocation-edit #taskAllocationPreview {
     overflow: visible; margin-top: 0; padding: 0;
   }

@@ -826,6 +826,28 @@ html[data-color-theme="light"] #taskAllocationGroupSetup .allocation-setup-rule 
 .task-allocation-body > .task-allocation-settings {
   flex: 0 0 auto; overflow: visible; padding-inline-end: 0;
 }
+.allocation-review-status,
+.ra-historical-batch-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.allocation-review-status .dialog-copy { margin: 0; }
+.ra-historical-batches {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.ra-historical-batch-row {
+  padding: 8px 0;
+  border-top: 1px solid var(--line-soft);
+}
+.ra-historical-batch-row small { color: var(--muted); }
+.ra-allocation-issue-link { display: inline-flex; align-items: center; }
 .task-allocation-dialog.is-allocation-edit .allocation-live-status {
   padding-top: 8px; border-top: 1px solid var(--line-soft); font-size: 12px;
 }

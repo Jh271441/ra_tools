@@ -193,6 +193,18 @@ class DatabaseWorkSplitsMixin:
                 row["id"] for row in split_rows if row["workflow_mode"] == "model_review_and_case_label"
                 and task_reviewable(row) and legacy_batch_source(row, sources_by_id)
             ])
+            historical_pending = defaultdict(list)
+            if historical_conflicts:
+                marks = ",".join("?" for _ in historical_conflicts)
+                pending = conn.execute(f"""
+                    SELECT DISTINCT assignment.split_id, assignment.issue_id
+                    FROM review_work_assignments assignment JOIN issue_work_splits split
+                      ON split.id=assignment.split_id
+                    WHERE split.id IN ({marks}) AND NOT ({ASSIGNMENT_SUBMITTED_SQL})
+                    ORDER BY assignment.split_id, assignment.issue_id
+                """, tuple(historical_conflicts)).fetchall()
+                for pending_row in pending:
+                    historical_pending[pending_row["split_id"]].append(pending_row["issue_id"])
             split_ids = [str(row["id"]) for row in split_rows]
             placeholders = ", ".join("?" for _ in split_ids)
             scope_rows = conn.execute(
@@ -379,6 +391,7 @@ class DatabaseWorkSplitsMixin:
                     "split_id": split_id,
                     "created_by": str(row["created_by"] or ""),
                     **({"conflict_count": len(historical_conflicts[split_id]),
+                        "pending_issue_ids": historical_pending[split_id],
                         "conflict_issue_ids": historical_conflicts[split_id]} if split_id in historical_conflicts else {}),
                     "created_at": str(row["created_at"] or ""),
                     "campaign_name": str(row["campaign_name"] or ""),

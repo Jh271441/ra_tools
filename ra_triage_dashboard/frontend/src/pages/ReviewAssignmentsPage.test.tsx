@@ -1,6 +1,6 @@
 import React from "react";
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ReviewAssignmentsPage } from "./ReviewAssignmentsPage";
 
@@ -145,14 +145,18 @@ describe("ReviewAssignmentsPage", () => {
           expected_revision: 1,
           member_count: 10,
           movable_slots: 6,
-          quota_basis: "remaining",
+          quota_basis: "total",
+          total_slots: 10,
+          completed_slots: 4,
+          coverage: { cross_cases: 0, case_count: 10 },
           eligible_members: [{ username: "alice", role: "writer" }, { username: "bob", role: "writer" }],
-          groups: [{ group_id: "group-1", coverage_percent: 100, coverage_strategy: "overlap", members: [{ name: "alice", review_percent: 100 }] }],
+          groups: [{ group_id: "group-1", coverage_percent: 100, coverage_strategy: "overlap",
+            members: [{ name: "alice", review_percent: 50 }, { name: "bob", review_percent: 50 }] }],
           group_coverage: {
             case_count: 10,
             active_slots: 10,
-            groups: [{ group_id: "group-1", members: [{ name: "alice", total: 10, completed: 4 }] }],
-            combinations: [{ owners: ["alice"], count: 10 }],
+            groups: [{ group_id: "group-1", members: [{ name: "alice", total: 6, completed: 4 }, { name: "bob", total: 4, completed: 0 }] }],
+            combinations: [{ owners: ["alice"], count: 6 }, { owners: ["bob"], count: 4 }],
           },
         };
       }
@@ -184,9 +188,51 @@ describe("ReviewAssignmentsPage", () => {
     const editBtn = screen.getByRole("button", { name: "修改分配" });
     fireEvent.click(editBtn);
     expect(await screen.findByText("修改任务分配")).toBeInTheDocument();
-    await waitFor(() => {
-      expect(screen.getByText("本次变动")).toBeInTheDocument();
+    expect(await screen.findByText("当前分配 · 0 人变动")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("60")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("40")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /^条$/ }));
+    expect(screen.getByDisplayValue("6")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("4")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "应用调整" })).toBeDisabled();
+    expect(mockApi.mock.calls.some(([path]) => path.endsWith("/allocation/preview"))).toBe(false);
+  });
+
+  it("groups historical 0821 batches and opens the exact pending queue for all owners", async () => {
+    const historical = (id: string, baseline: string, odd: string | null, cases: number) => ({
+      split_id: `campaign-${id}`, model_run_id: `run-${id}`, campaign_name: id,
+      source_created_at: "2026-09-09T13:18:07+08:00",
+      is_current: true, lifecycle: "active", workflow_mode: "model_review_and_case_label",
+      baseline_ids: [baseline], total_count: cases, assignment_count: cases * 2,
+      completed_count: cases * 2, pending_issue_ids: [], conflict_issue_ids: [],
+      filter_snapshot: { partition_parent_campaign_id: "parent", partition_field: "trip_odd", partition_value: odd },
     });
+    mockApi.mockImplementation(async (path) => path.startsWith("/api/cases/work-splits?")
+      ? { items: [
+          { split_id: "campaign-ordinary", campaign_name: "Ordinary", is_current: true },
+          { ...historical("odd2", "0821-odd2", "ODD2", 110), completed_count: 217,
+            pending_issue_ids: ["cn35722425", "cn35743259", "cn35690387"] },
+          historical("odd3", "0821-nonodd2", "ODD3", 88),
+          historical("unknown", "0821-nonodd2", null, 2),
+        ] }
+      : { items: [] });
+
+    const { container } = renderPage();
+    await screen.findByText("0821 历史 · ODD2 联合复核");
+    expect(Array.from(container.querySelectorAll("[data-review-assignment-batch]"))
+      .map((item) => item.getAttribute("data-review-assignment-batch")))
+      .toEqual(["campaign-ordinary", "0821-odd2", "0821-nonodd2"]);
+    fireEvent.click(screen.getByRole("button", { name: "查看剩余 3 个 Issue" }));
+    const target = screen.getByRole("link", { name: "查看剩余 3 个 Issue" });
+    const params = new URL(target.getAttribute("href")!, window.location.origin).searchParams;
+    expect(params.get("work_split")).toBe("campaign-odd2");
+    expect(params.get("task_progress")).toBe("pending");
+    expect(params.get("issue_ids")).toBe("cn35722425,cn35743259,cn35690387");
+    expect(params.has("work_assignee")).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "ODD 未填写 · 2 例" }));
+    const nonOdd2 = container.querySelector<HTMLElement>('[data-review-assignment-batch="0821-nonodd2"]')!;
+    expect(within(nonOdd2).getByText(/2 例 · ODD 未填写/)).toBeInTheDocument();
+    expect(within(nonOdd2).queryByText(/88 例/)).not.toBeInTheDocument();
   });
 
   it("preserves comparison=none (and non-standard gallery comparison filters) across recount and preview without expanding to all", async () => {

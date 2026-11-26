@@ -6,6 +6,7 @@ import {
   campaignsHistoryHref,
   formatClassicTime,
   formatVersionDatasetTime,
+  pendingReviewHref,
   reviewAssignmentBatchHref,
   reviewAssignmentCanReview,
   reviewAssignmentFilterLabel,
@@ -116,6 +117,7 @@ export const BatchCard: React.FC<BatchCardProps> = ({
       );
     }
     const combined = item.workflow_mode === "model_review_and_case_label";
+    const pending = item.pending_issue_ids?.length || 0;
     return (
       <>
         <a
@@ -126,6 +128,12 @@ export const BatchCard: React.FC<BatchCardProps> = ({
             ? bilingual(lang, "开始联合复核", "Start combined review")
             : bilingual(lang, "去判错复核", "Open Review")}
         </a>
+        {combined && pending > 0 && (
+          <a className="button button-quiet" href={pendingReviewHref(item)}>
+            {bilingual(lang, `查看剩余 ${pending} 个 Issue`,
+              `View ${pending} pending ${pending === 1 ? "case" : "cases"}`)}
+          </a>
+        )}
         <a
           className="button button-quiet"
           href={reviewAssignmentBatchHref(item, "analysis", username, verified)}
