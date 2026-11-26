@@ -369,7 +369,6 @@ body[data-active-page="trail-update"] .gt-sync-control { margin-left:auto; }
 
 @container (max-width: 899px) {
   .issue-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .review-detail-workspace { grid-template-columns: minmax(0, 1fr); }
   .review-filters { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .filter-model-run, .filter-search { grid-column: span 2; }
   .review-cluster-strip { grid-template-columns: minmax(0, 1fr); }
