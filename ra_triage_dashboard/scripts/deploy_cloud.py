@@ -95,7 +95,7 @@ settings = Settings.from_env()
 with psycopg.connect(settings.database_url, autocommit=False) as guard, \\
      psycopg.connect(settings.database_url, autocommit=True) as monitor:
     guard.execute("SET LOCAL lock_timeout = '30s'")
-    guard.execute("SET LOCAL idle_in_transaction_session_timeout = '180s'")
+    guard.execute("SET LOCAL idle_in_transaction_session_timeout = '0'")
     guard.execute("LOCK TABLE batch_prediction_jobs IN EXCLUSIVE MODE")
     holder_pid = int(guard.execute("SELECT pg_backend_pid()").fetchone()[0])
     row = guard.execute(
@@ -106,6 +106,10 @@ with psycopg.connect(settings.database_url, autocommit=False) as guard, \\
     print(json.dumps({"locked": True, "running": running}), flush=True)
     if running == 0:
         while True:
+            # Keep guard's transaction active so idle-in-transaction limits
+            # cannot drop the table lock, and exit immediately if the lock
+            # backend is ever terminated externally.
+            guard.execute("SELECT 1").fetchone()
             waiters = monitor.execute(
                 "SELECT blocked.pid "
                 "FROM pg_locks blocked "
@@ -1602,6 +1606,7 @@ def bootstrap_nginx():
         record_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
         blue_pid = None
         legacy_stop_attempted = False
+        legacy_stopped = False
 
         def mark_legacy_stopping():
             nonlocal legacy_stop_attempted
@@ -1637,17 +1642,25 @@ def bootstrap_nginx():
                 blue_health = smoke(blue_port, old_sha, "postgresql")
                 require(policy(blue_health) == expected_policy, "Blue slot policy differs from legacy live service")
                 stop_production(legacy_pid, session=SESSION, on_signal=mark_legacy_stopping)
+                legacy_stopped = True
             else:
                 with legacy_batch_write_fence(env, app_dir=live_cwd) as fence_alive:
                     require(
                         fence_alive(),
                         "Legacy Batch write fence exited before stopping legacy service",
                     )
-                    stop_production(
-                        legacy_pid,
-                        session=SESSION,
-                        on_signal=mark_legacy_stopping,
-                    )
+                    try:
+                        stop_production(
+                            legacy_pid,
+                            session=SESSION,
+                            on_signal=mark_legacy_stopping,
+                        )
+                        legacy_stopped = True
+                    except BaseException:
+                        if legacy_stop_attempted:
+                            wait_production_stopped(legacy_pid, session=SESSION)
+                            legacy_stopped = True
+                        raise
                 start_production(
                     record_dir,
                     live_cwd,
@@ -1686,7 +1699,8 @@ def bootstrap_nginx():
                     if blue_pid is not None:
                         with contextlib.suppress(Exception):
                             stop_production(blue_pid, session=blue_session)
-                    wait_production_stopped(legacy_pid, session=SESSION)
+                    if not legacy_stopped:
+                        wait_production_stopped(legacy_pid, session=SESSION)
                     start_production(record_dir, live_cwd, env, old_sha, "bootstrap-rollback", session=SESSION)
                     smoke(PUBLIC_PORT, old_sha, "postgresql")
                 except Exception as rollback_error:

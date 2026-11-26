@@ -1056,18 +1056,18 @@ COMMIT;
     def test_bootstrap_nginx_recovers_legacy_when_stop_fails_after_sigterm(self):
         events, old_sha = self._simulate_bootstrap_nginx(fail_legacy_stop=True)
         self.assertIn(("stop_nginx",), events)
-        self.assertIn(("wait_stopped", d.SESSION, 101), events)
-        self.assertIn(("start", d.SESSION, None, "bootstrap-rollback"), events)
-        self.assertIn(("smoke", 8785, old_sha), events)
-        # Write fence must be released before rollback restarts legacy.
-        self.assertLess(
+        # Abnormal drain after SIGTERM must finish BEFORE releasing the Batch
+        # write fence, and the fence must release BEFORE rollback restarts legacy.
+        order = [
+            events.index(("fence_enter", 0)),
+            events.index(("stop", d.SESSION, 101)),
+            events.index(("wait_stopped", d.SESSION, 101)),
             events.index(("fence_exit",)),
             events.index(("start", d.SESSION, None, "bootstrap-rollback")),
-        )
-        self.assertLess(
-            events.index(("wait_stopped", d.SESSION, 101)),
-            events.index(("start", d.SESSION, None, "bootstrap-rollback")),
-        )
+            events.index(("smoke", 8785, old_sha)),
+        ]
+        self.assertEqual(order, sorted(order))
+        self.assertEqual(events.count(("wait_stopped", d.SESSION, 101)), 1)
 
     def test_bootstrap_nginx_old_sha_stops_legacy_before_starting_blue_and_blocks_running_batch(self):
         # Running Batch job on old legacy blocks bootstrap without touching legacy or blue.
@@ -1104,9 +1104,12 @@ COMMIT;
         self.assertEqual(order, sorted(order))
 
     def test_legacy_batch_write_fence_protocol_blocks_counts_and_releases_cleanly(self):
-        # Verify the SQL fence locks batch_prediction_jobs exclusively, checks
+        # Verify the SQL fence locks batch_prediction_jobs exclusively, disables
+        # idle-in-transaction timeout, keeps guard active with SELECT 1, checks
         # queued/running/publish_running, and cancels blocked writers.
         self.assertIn("LOCK TABLE batch_prediction_jobs IN EXCLUSIVE MODE", d.LEGACY_BATCH_FENCE_CODE)
+        self.assertIn("SET LOCAL idle_in_transaction_session_timeout = '0'", d.LEGACY_BATCH_FENCE_CODE)
+        self.assertIn('guard.execute("SELECT 1").fetchone()', d.LEGACY_BATCH_FENCE_CODE)
         self.assertIn("status IN ('queued', 'running') OR publish_status = 'running'", d.LEGACY_BATCH_FENCE_CODE)
         self.assertIn("pg_cancel_backend", d.LEGACY_BATCH_FENCE_CODE)
 
