@@ -1213,6 +1213,7 @@ const state = {
     workSplitOptionsKey: "",
   },
   reviewAssignments: {
+    batchSearch: "",
     lifecycle: "current",
     assignedToMe: false,
     metrics: null,

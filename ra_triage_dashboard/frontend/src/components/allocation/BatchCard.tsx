@@ -136,6 +136,30 @@ export const BatchCard: React.FC<BatchCardProps> = ({
     );
   };
 
+  const renderConflictBadge = (target: WorkSplitItem) => {
+    const conflicts = Number(target.conflict_count || 0);
+    if (!conflicts) {
+      return Array.isArray(target.conflict_issue_ids) ? (
+        <small>{bilingual(lang, "无待裁决冲突", "No pending conflicts")}</small>
+      ) : null;
+    }
+    const href = reviewAssignmentBatchHref(target, "review", username, verified, {
+      issueIds: target.conflict_issue_ids || [],
+      labelStates: ["conflict"],
+      workAssignee: [],
+      taskProgress: [],
+    });
+    return (
+      <a className="review-assignment-conflict-pill" href={href}>
+        {bilingual(
+          lang,
+          `${conflicts} 条相交冲突待裁决`,
+          `${conflicts} overlap conflict${conflicts === 1 ? "" : "s"}`,
+        )}
+      </a>
+    );
+  };
+
   if (item.appendable) {
     const percent = reviewAssignmentPercent(item.completion_ratio);
     const active = reviewAssignmentCanReview(item);
@@ -160,15 +184,6 @@ export const BatchCard: React.FC<BatchCardProps> = ({
             "低置信＋抽样 · 单人负责 · 无交叉",
             "Low confidence + sample · Single owner · No overlap",
           );
-    const conflicts = Number(item.conflict_count || 0);
-    const conflictHref =
-      conflicts > 0
-        ? reviewAssignmentBatchHref(item, "review", username, verified, {
-            labelStates: ["conflict"],
-            workAssignee: [],
-            taskProgress: [],
-          })
-        : "";
     return (
       <article className="review-assignment-batch" data-review-assignment-batch={item.split_id}>
         <header className="review-assignment-batch-header">
@@ -187,15 +202,7 @@ export const BatchCard: React.FC<BatchCardProps> = ({
           <div className="review-assignment-progress-heading">
             <span className="review-assignment-progress-label">
               {bilingual(lang, "联合复核进度", "Combined review progress")}
-              {conflicts > 0 && (
-                <a className="review-assignment-conflict-pill" href={conflictHref}>
-                  {bilingual(
-                    lang,
-                    `${conflicts} 条相交冲突待裁决`,
-                    `${conflicts} overlap conflict${conflicts === 1 ? "" : "s"}`,
-                  )}
-                </a>
-              )}
+              {renderConflictBadge(item)}
             </span>
             <strong>{`${item.completed_count || 0} / ${item.assignment_count || 0} · ${percent}%`}</strong>
           </div>
@@ -272,7 +279,10 @@ export const BatchCard: React.FC<BatchCardProps> = ({
       </header>
       <div className="review-assignment-progress">
         <div className="review-assignment-progress-heading">
-          <span>{bilingual(lang, "整体进度", "Overall progress")}</span>
+          <span className="review-assignment-progress-label">
+            {bilingual(lang, "整体进度", "Overall progress")}
+            {renderConflictBadge(normalized)}
+          </span>
           <strong>{`${normalized.completed_count || 0} / ${normalized.assignment_count || 0} · ${percent}%`}</strong>
         </div>
         <div className="review-assignment-progress-track">

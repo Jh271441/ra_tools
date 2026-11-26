@@ -43,6 +43,7 @@ class WorkSplitItem(DashboardBaseModel):
     role_cohort: Optional[str] = None
     allocation_group_count: Optional[int] = None
     conflict_count: Optional[int] = None
+    conflict_issue_ids: Optional[List[str]] = None
 
 
 class WorkSplitMetrics(DashboardBaseModel):

@@ -78,6 +78,16 @@ describe("ReviewAssignmentsPage", () => {
     expect(screen.getByText("3 条相交冲突待裁决")).toBeInTheDocument();
     expect(screen.getByText("自动 · 持续追加")).toBeInTheDocument();
     expect(container.querySelectorAll("select").length).toBe(0);
+
+    // 638bfdef parity: batch search filters cards and syncs batch_search to URL
+    const batchSearchInput = container.querySelector<HTMLInputElement>("#reviewAssignmentBatchSearch");
+    expect(batchSearchInput).not.toBeNull();
+    fireEvent.change(batchSearchInput!, { target: { value: "nonexistent-batch" } });
+    expect(screen.getByText(/未找到匹配的批次/)).toBeInTheDocument();
+    expect(new URLSearchParams(window.location.search).get("batch_search")).toBe("nonexistent-batch");
+    fireEvent.change(batchSearchInput!, { target: { value: "1113" } });
+    expect(screen.getByText(/1113 · 抽样集/)).toBeInTheDocument();
+    expect(container.querySelector("#reviewAssignmentListStatus")?.textContent).toBe("匹配 1 / 1 个任务");
   });
 
   it("opens inline detail card and allocation editor dialog on click", async () => {

@@ -157,6 +157,8 @@ export interface WorkSplitItem {
   pending_count?: number;
   completion_ratio?: number;
   conflict_count?: number;
+  conflict_issue_ids?: string[] | null;
+  source_split_id?: string | null;
   change_count?: number;
   assigned_to_me?: boolean;
   baseline_ids?: string[];
@@ -702,6 +704,13 @@ export function reviewAssignmentModeLabel(item: Partial<WorkSplitItem>, lang: Ui
       groups === 1
         ? bilingual(lang, "单组分配", "Single review group")
         : bilingual(lang, `${groups} 个分配组`, `${groups} allocation groups`);
+    if (groups > 1 && item.source_split_id) {
+      const percent = reviewAssignmentPercent(item.overlap_ratio);
+      return (
+        label +
+        bilingual(lang, ` · 交叉覆盖 ${percent}%`, ` · ${percent}% cross-review coverage`)
+      );
+    }
     return item.role_cohort === "low"
       ? bilingual(lang, "不含抽样 · ", "Excludes sampling · ") + label
       : label;
@@ -779,6 +788,7 @@ export function reviewAssignmentBatchHref(
   verified: boolean,
   overrides: {
     issue?: string;
+    issueIds?: string[];
     runId?: string;
     workAssignee?: string[];
     workSplitId?: string;
@@ -806,7 +816,7 @@ export function reviewAssignmentBatchHref(
     runId: overrides.runId ?? item?.model_run_id ?? "",
     comparisonStatus: "all",
     search: "",
-    issueIds: [],
+    issueIds: overrides.issueIds ?? [],
     gtLabel: [],
     modelLabel: [],
     annotationAuthor: [],

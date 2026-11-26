@@ -91,6 +91,7 @@ function readInitialRoute() {
     ? (rawLifecycle as LifecycleScope)
     : "current";
   const assignedToMe = params.get("assigned_to_me") === "true";
+  const batchSearch = String(params.get("batch_search") || "").slice(0, 128);
   const splitId = String(params.get("split") || "").trim();
   const assignee = String(params.get("assignee") || "").trim();
   const rawStatus = params.get("status") || "all";
@@ -102,12 +103,13 @@ function readInitialRoute() {
   const pageSize = CASE_PAGE_SIZES.includes(rawSize as (typeof CASE_PAGE_SIZES)[number])
     ? rawSize
     : 50;
-  return { lifecycle, assignedToMe, splitId, assignee, status, query, page, pageSize };
+  return { lifecycle, assignedToMe, batchSearch, splitId, assignee, status, query, page, pageSize };
 }
 
 function buildAssignmentsUrl(opts: {
   lifecycle: LifecycleScope;
   assignedToMe: boolean;
+  batchSearch?: string;
   splitId?: string;
   assignee?: string;
   status?: string;
@@ -123,6 +125,7 @@ function buildAssignmentsUrl(opts: {
   } else {
     if (opts.lifecycle) url.searchParams.set("lifecycle", opts.lifecycle);
     if (opts.assignedToMe) url.searchParams.set("assigned_to_me", "true");
+    if (opts.batchSearch?.trim()) url.searchParams.set("batch_search", opts.batchSearch.trim());
   }
   if (opts.splitId) {
     url.searchParams.set("split", opts.splitId);
@@ -201,6 +204,7 @@ export const ReviewAssignmentsPage: React.FC<ReviewAssignmentsPageProps> = ({
 
   const [lifecycle, setLifecycle] = useState<LifecycleScope>(initial.lifecycle);
   const [assignedToMe, setAssignedToMe] = useState<boolean>(initial.assignedToMe);
+  const [batchSearch, setBatchSearch] = useState<string>(initial.batchSearch);
   const [selectedSplitId, setSelectedSplitId] = useState<string>(initial.splitId);
   const [detailAssignee, setDetailAssignee] = useState<string>(initial.assignee);
   const [detailStatus, setDetailStatus] = useState<string>(initial.status);
@@ -260,6 +264,7 @@ export const ReviewAssignmentsPage: React.FC<ReviewAssignmentsPageProps> = ({
     const next = readInitialRoute();
     setLifecycle(next.lifecycle);
     setAssignedToMe(next.assignedToMe);
+    setBatchSearch(next.batchSearch);
     setSelectedSplitId(next.splitId);
     setDetailAssignee(next.assignee);
     setDetailStatus(next.status);
@@ -275,6 +280,7 @@ export const ReviewAssignmentsPage: React.FC<ReviewAssignmentsPageProps> = ({
       const next = readInitialRoute();
       setLifecycle(next.lifecycle);
       setAssignedToMe(next.assignedToMe);
+      setBatchSearch(next.batchSearch);
       setSelectedSplitId(next.splitId);
       setDetailAssignee(next.assignee);
       setDetailStatus(next.status);
@@ -291,6 +297,7 @@ export const ReviewAssignmentsPage: React.FC<ReviewAssignmentsPageProps> = ({
     (overrides?: {
       lifecycle?: LifecycleScope;
       assignedToMe?: boolean;
+      batchSearch?: string;
       splitId?: string;
       assignee?: string;
       status?: string;
@@ -301,6 +308,7 @@ export const ReviewAssignmentsPage: React.FC<ReviewAssignmentsPageProps> = ({
       const url = buildAssignmentsUrl({
         lifecycle: overrides?.lifecycle ?? lifecycle,
         assignedToMe: overrides?.assignedToMe ?? assignedToMe,
+        batchSearch: overrides?.batchSearch !== undefined ? overrides.batchSearch : batchSearch,
         splitId: overrides?.splitId !== undefined ? overrides.splitId : selectedSplitId,
         assignee: overrides?.assignee !== undefined ? overrides.assignee : detailAssignee,
         status: overrides?.status !== undefined ? overrides.status : detailStatus,
@@ -313,6 +321,7 @@ export const ReviewAssignmentsPage: React.FC<ReviewAssignmentsPageProps> = ({
     [
       lifecycle,
       assignedToMe,
+      batchSearch,
       selectedSplitId,
       detailAssignee,
       detailStatus,
@@ -1375,117 +1384,186 @@ export const ReviewAssignmentsPage: React.FC<ReviewAssignmentsPageProps> = ({
       </section>
 
       <section className="page-card review-assignment-list-card assignment-history">
-        <header className="review-assignment-section-heading">
-          <div>
-            <h2>{bilingual(lang, "分配批次", "Allocation batches")}</h2>
-          </div>
-          <div className="review-assignment-list-filters">
-            <div className="ra-assign-scope-filter">
-              <span>{bilingual(lang, "任务范围", "Task scope")}</span>
-              <UiSelect
-                id="reviewAssignmentLifecycleFilter"
-                className="dashboard-native-ui-select"
-                value={lifecycle}
-                options={lifecycleOptions}
-                ariaLabel={bilingual(lang, "任务范围", "Task scope")}
-                onChange={(val) => {
-                  const nextScope = (VALID_LIFECYCLES as readonly string[]).includes(val)
-                    ? (val as LifecycleScope)
-                    : "current";
-                  setLifecycle(nextScope);
-                  setSelectedSplitId("");
-                  pushRoute({ lifecycle: nextScope, splitId: "" });
-                }}
-              />
-            </div>
-            <button
-              className={`button ${assignedToMe ? "button-primary" : "button-quiet"}`}
-              id="reviewAssignmentMyTasks"
-              type="button"
-              aria-pressed={assignedToMe}
-              title={
-                assignedToMe
-                  ? bilingual(lang, "当前仅显示我的任务，点击查看全部成员", "Showing my tasks; click for all members")
-                  : bilingual(lang, "仅查看分配给当前账号的任务", "Show tasks assigned to the current account")
-              }
-              onClick={() => {
-                const nextMine = !assignedToMe;
-                setAssignedToMe(nextMine);
-                setSelectedSplitId("");
-                pushRoute({ assignedToMe: nextMine, splitId: "" });
-              }}
-            >
-              {bilingual(lang, "我的任务", "My tasks")}
-            </button>
-            <small id="reviewAssignmentListStatus" aria-live="polite">
-              {splits.length
-                ? bilingual(lang, `${splits.length} 个任务`, `${splits.length} tasks`)
-                : ""}
-            </small>
-          </div>
-        </header>
+        {(() => {
+          const batchSearchTerms = batchSearch.trim().toLowerCase().split(/\s+/).filter(Boolean);
+          const filteredSplits = batchSearchTerms.length
+            ? splits.filter((item) => {
+                const cohort =
+                  item.role_cohort === "sampling"
+                    ? "抽样集 sampling"
+                    : item.role_cohort === "low"
+                      ? "低置信集 low confidence"
+                      : "";
+                const fields = [
+                  item.release_family,
+                  item.campaign_name,
+                  roleVersionTaskName(item, lang, runNameLookup),
+                  runNameLookup(item.model_run_id),
+                  item.split_id,
+                  ...(item.baseline_ids || []),
+                  item.appendable && !item.role_cohort ? "版本联合复核 version combined review" : "",
+                  cohort,
+                ];
+                const haystack = fields.filter(Boolean).join(" ").toLowerCase();
+                return batchSearchTerms.every((term) => haystack.includes(term));
+              })
+            : splits;
+          const listStatusText = !splits.length
+            ? ""
+            : batchSearchTerms.length
+              ? bilingual(
+                  lang,
+                  `匹配 ${filteredSplits.length} / ${splits.length} 个任务`,
+                  `${filteredSplits.length} of ${splits.length} tasks`,
+                )
+              : bilingual(
+                  lang,
+                  `${filteredSplits.length} 个任务`,
+                  `${filteredSplits.length} ${filteredSplits.length === 1 ? "task" : "tasks"}`,
+                );
+          return (
+            <>
+              <header className="review-assignment-section-heading">
+                <div>
+                  <h2>{bilingual(lang, "分配批次", "Allocation batches")}</h2>
+                </div>
+                <label className="review-assignment-batch-search">
+                  <span>{bilingual(lang, "搜索", "Search")}</span>
+                  <input
+                    id="reviewAssignmentBatchSearch"
+                    type="search"
+                    autoComplete="off"
+                    maxLength={128}
+                    value={batchSearch}
+                    placeholder={bilingual(
+                      lang,
+                      "版本或任务名称，如 1106",
+                      "Version or task name, e.g. 1106",
+                    )}
+                    aria-controls="reviewAssignmentList"
+                    onChange={(e) => {
+                      const nextValue = e.target.value;
+                      setBatchSearch(nextValue);
+                      pushRoute({ batchSearch: nextValue });
+                    }}
+                  />
+                </label>
+                <div className="review-assignment-list-filters">
+                  <div className="ra-assign-scope-filter">
+                    <span>{bilingual(lang, "任务范围", "Task scope")}</span>
+                    <UiSelect
+                      id="reviewAssignmentLifecycleFilter"
+                      className="dashboard-native-ui-select"
+                      value={lifecycle}
+                      options={lifecycleOptions}
+                      ariaLabel={bilingual(lang, "任务范围", "Task scope")}
+                      onChange={(val) => {
+                        const nextScope = (VALID_LIFECYCLES as readonly string[]).includes(val)
+                          ? (val as LifecycleScope)
+                          : "current";
+                        setLifecycle(nextScope);
+                        setSelectedSplitId("");
+                        pushRoute({ lifecycle: nextScope, splitId: "" });
+                      }}
+                    />
+                  </div>
+                  <button
+                    className={`button ${assignedToMe ? "button-primary" : "button-quiet"}`}
+                    id="reviewAssignmentMyTasks"
+                    type="button"
+                    aria-pressed={assignedToMe}
+                    title={
+                      assignedToMe
+                        ? bilingual(lang, "当前仅显示我的任务，点击查看全部成员", "Showing my tasks; click for all members")
+                        : bilingual(lang, "仅查看分配给当前账号的任务", "Show tasks assigned to the current account")
+                    }
+                    onClick={() => {
+                      const nextMine = !assignedToMe;
+                      setAssignedToMe(nextMine);
+                      setSelectedSplitId("");
+                      pushRoute({ assignedToMe: nextMine, splitId: "" });
+                    }}
+                  >
+                    {bilingual(lang, "我的任务", "My tasks")}
+                  </button>
+                  <small id="reviewAssignmentListStatus" aria-live="polite">
+                    {listStatusText}
+                  </small>
+                </div>
+              </header>
 
-        <div className="review-assignment-list" id="reviewAssignmentList">
-          {splitsQuery.isLoading && !splits.length ? (
-            <div className="review-assignment-empty">
-              {bilingual(lang, "正在加载任务分配。", "Loading assignments.")}
-            </div>
-          ) : !splits.length ? (
-            lifecycle === "history" ? (
-              <div className="review-assignment-empty">
-                {bilingual(lang, "暂无已替代或已取消的历史任务。", "No superseded or cancelled tasks.")}
+              <div className="review-assignment-list" id="reviewAssignmentList">
+                {splitsQuery.isLoading && !splits.length ? (
+                  <div className="review-assignment-empty">
+                    {bilingual(lang, "正在加载任务分配。", "Loading assignments.")}
+                  </div>
+                ) : !splits.length ? (
+                  lifecycle === "history" ? (
+                    <div className="review-assignment-empty">
+                      {bilingual(lang, "暂无已替代或已取消的历史任务。", "No superseded or cancelled tasks.")}
+                    </div>
+                  ) : lifecycle === "manual" ? (
+                    <div className="review-assignment-empty">
+                      <strong>{bilingual(lang, "暂无进行中的手动任务", "No active manual tasks")}</strong>
+                      <span>
+                        {bilingual(
+                          lang,
+                          "点击上方“+ 新建分配”或从图库筛选后创建任务。",
+                          'Click "+ New allocation" above or filter cases in the gallery.',
+                        )}
+                      </span>
+                    </div>
+                  ) : lifecycle === "versions" ? (
+                    <div className="review-assignment-empty">
+                      <strong>{bilingual(lang, "暂无进行中的自动任务", "No active auto tasks")}</strong>
+                      <span>
+                        {bilingual(
+                          lang,
+                          "可切换至“手动任务”或“全部任务”查看其他分配。",
+                          'Switch to "Manual tasks" or "All tasks" to view other allocations.',
+                        )}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="review-assignment-empty">
+                      <strong>{bilingual(lang, "暂无进行中的任务分配", "No active assignments yet")}</strong>
+                      <span>
+                        {bilingual(
+                          lang,
+                          "点击上方“+ 新建分配”或从图库筛选后创建任务。",
+                          'Click "+ New allocation" above or filter cases in the gallery.',
+                        )}
+                      </span>
+                    </div>
+                  )
+                ) : !filteredSplits.length ? (
+                  <div className="review-assignment-empty">
+                    {bilingual(
+                      lang,
+                      "未找到匹配的批次，请更换关键词或调整任务范围。",
+                      "No matching batches. Try another search or change the task scope.",
+                    )}
+                  </div>
+                ) : (
+                  filteredSplits.map((item) => (
+                    <BatchCard
+                      key={item.split_id}
+                      item={item}
+                      lang={lang}
+                      isAdmin={isAdmin}
+                      username={username}
+                      verified={verified}
+                      runNameLookup={runNameLookup}
+                      onOpenDetail={handleOpenDetail}
+                      onEditAllocation={(cid) => setEditCampaignId(cid)}
+                      onShareLink={(sid) => void copyShareUrl(sid, true)}
+                    />
+                  ))
+                )}
               </div>
-            ) : lifecycle === "manual" ? (
-              <div className="review-assignment-empty">
-                <strong>{bilingual(lang, "暂无进行中的手动任务", "No active manual tasks")}</strong>
-                <span>
-                  {bilingual(
-                    lang,
-                    "点击上方“+ 新建分配”或从图库筛选后创建任务。",
-                    'Click "+ New allocation" above or filter cases in the gallery.',
-                  )}
-                </span>
-              </div>
-            ) : lifecycle === "versions" ? (
-              <div className="review-assignment-empty">
-                <strong>{bilingual(lang, "暂无进行中的自动任务", "No active auto tasks")}</strong>
-                <span>
-                  {bilingual(
-                    lang,
-                    "可切换至“手动任务”或“全部任务”查看其他分配。",
-                    'Switch to "Manual tasks" or "All tasks" to view other allocations.',
-                  )}
-                </span>
-              </div>
-            ) : (
-              <div className="review-assignment-empty">
-                <strong>{bilingual(lang, "暂无进行中的任务分配", "No active assignments yet")}</strong>
-                <span>
-                  {bilingual(
-                    lang,
-                    "点击上方“+ 新建分配”或从图库筛选后创建任务。",
-                    'Click "+ New allocation" above or filter cases in the gallery.',
-                  )}
-                </span>
-              </div>
-            )
-          ) : (
-            splits.map((item) => (
-              <BatchCard
-                key={item.split_id}
-                item={item}
-                lang={lang}
-                isAdmin={isAdmin}
-                username={username}
-                verified={verified}
-                runNameLookup={runNameLookup}
-                onOpenDetail={handleOpenDetail}
-                onEditAllocation={(cid) => setEditCampaignId(cid)}
-                onShareLink={(sid) => void copyShareUrl(sid, true)}
-              />
-            ))
-          )}
-        </div>
+            </>
+          );
+        })()}
       </section>
 
       <section

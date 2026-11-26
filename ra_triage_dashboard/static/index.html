@@ -76,7 +76,7 @@
         const appPreload = document.createElement("link");
         appPreload.rel = "preload";
         appPreload.as = "script";
-        appPreload.href = `${activeBase}/static/app-bundle.js?v=manual-triage-898` + bundleRev;
+        appPreload.href = `${activeBase}/static/app-bundle.js?v=manual-triage-899` + bundleRev;
         document.head.appendChild(appPreload);
         // These same-origin reads are required on every route. Begin them
         // while the bundle downloads; consume once through the normal API
@@ -146,7 +146,7 @@
         stylesheetRequests.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-898` + cssRev;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-899` + cssRev;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -748,6 +748,11 @@
             <section class="page-card review-assignment-list-card assignment-history">
               <header class="review-assignment-section-heading">
                 <div><h2><span class="ui-lang-zh">分配批次</span><span class="ui-lang-en">Allocation batches</span></h2></div>
+                <label class="review-assignment-batch-search">
+                  <span><span class="ui-lang-zh">搜索</span><span class="ui-lang-en">Search</span></span>
+                  <input id="reviewAssignmentBatchSearch" type="search" autocomplete="off" maxlength="128"
+                    placeholder="版本或任务名称，如 1106" data-placeholder-zh="版本或任务名称，如 1106" data-placeholder-en="Version or task name, e.g. 1106" aria-controls="reviewAssignmentList" />
+                </label>
                 <div class="review-assignment-list-filters">
                   <label><span class="ui-lang-zh">任务范围</span><span class="ui-lang-en">Task scope</span><select id="reviewAssignmentLifecycleFilter"><option value="versions">版本任务</option><option value="current">当前任务</option><option value="history">历史任务</option><option value="all">全部任务</option></select></label>
                   <button class="button button-quiet" id="reviewAssignmentMyTasks" type="button" aria-pressed="false"><span class="ui-lang-zh">我的任务</span><span class="ui-lang-en">My tasks</span></button>
@@ -2706,7 +2711,7 @@
         }
       })();
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app-bundle.js?v=manual-triage-898` + (window.__RA_BUNDLE_REV__ || "");
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app-bundle.js?v=manual-triage-899` + (window.__RA_BUNDLE_REV__ || "");
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>
