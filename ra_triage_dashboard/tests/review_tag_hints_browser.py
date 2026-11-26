@@ -35,6 +35,15 @@ def bounds(locator, width, height=1000):
     assert box["y"] + box["height"] <= height + 1, box
 
 
+def open_description(row):
+    button = row.locator("[data-tag-menu-toggle]")
+    button.scroll_into_view_if_needed()
+    button.evaluate("()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))")
+    button.click()
+    row.locator("[data-show-review-tag-hint]").click()
+    expect(row.locator('[role="tooltip"]')).to_be_visible()
+
+
 def run():
     OUTPUT.mkdir(parents=True, exist_ok=True)
     bootstrap = (ROOT / "js/bind-bootstrap.js").read_text()
@@ -43,7 +52,7 @@ def run():
     results, errors = [], []
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
-        page = browser.new_page(viewport={"width": 1440, "height": 1000})
+        page = browser.new_page(has_touch=True, viewport={"width": 1440, "height": 1000})
         page.set_default_timeout(6000)
         page.on("pageerror", lambda error: errors.append(str(error)))
         page.route("http://tag-hints.test/**", lambda route: route.fulfill(
@@ -95,23 +104,23 @@ def run():
                         summary.click()
                         expect(panel).to_be_visible()
                         hover_target = row.locator("[data-ui-info-hover]")
-                        hover_target.hover()
+                        # A normal click focuses the checkbox. Neither selecting nor
+                        # hovering the next row may open any tag description.
+                        queue = group.locator('[data-review-tag-option="queue"]')
+                        if width == 390:
+                            queue.locator("label").tap()
+                        else:
+                            queue.locator("label").click()
+                        expect(queue.locator("input")).to_be_checked()
+                        yielding = group.locator('[data-review-tag-option="yielding"]')
+                        yielding.locator("label").hover()
                         if (language, theme) == ("zh", "dark"):
                             page.wait_for_timeout(1500)
-                        expect(tip).not_to_be_visible()
+                        expect(group.locator('[role="tooltip"]:visible')).to_have_count(0)
+                        queue.locator("input").click()
+                        expect(queue.locator("input")).not_to_be_checked()
                         check.focus()
-                        expect(tip).to_be_visible()
-                        expect(tip.locator("span")).to_have_text(HINT)
-                        expect(check).not_to_be_checked()
-                        bounds(tip, width)
-                        anchor_box, tip_box = hover_target.bounding_box(), tip.bounding_box()
-                        assert (tip_box["y"] >= anchor_box["y"] + anchor_box["height"] or
-                                tip_box["y"] + tip_box["height"] <= anchor_box["y"]), (tip_box, anchor_box)
-                        assert tip_box["width"] < 280, tip_box
-                        assert check.get_attribute("aria-describedby") == tip.get_attribute("id")
-                        assert tip.evaluate("n=>n.closest('label')") is None
-                        tip.click()
-                        expect(check).not_to_be_checked()
+                        expect(tip).not_to_be_visible()
                         # The existing action menu stays unobstructed and provides
                         # an explicit touch entry that only moves focus.
                         row.locator("[data-tag-menu-toggle]").scroll_into_view_if_needed()
@@ -131,6 +140,18 @@ def run():
                         expect(check).to_be_focused()
                         expect(check).not_to_be_checked()
                         expect(tip).to_be_visible()
+                        expect(tip.locator("span")).to_have_text(HINT)
+                        expect(check).not_to_be_checked()
+                        bounds(tip, width)
+                        anchor_box, tip_box = hover_target.bounding_box(), tip.bounding_box()
+                        assert (tip_box["y"] >= anchor_box["y"] + anchor_box["height"] or
+                                tip_box["y"] + tip_box["height"] <= anchor_box["y"]), (tip_box, anchor_box)
+                        assert tip_box["width"] < 280, tip_box
+                        assert check.get_attribute("aria-describedby") == tip.get_attribute("id")
+                        assert tip.evaluate("n=>n.closest('label')") is None
+                        expect(check).not_to_be_checked()
+                        tip.click()
+                        check.focus()
                         assert page.evaluate("writes.length") == 0
                         page.keyboard.press("Space")
                         page.keyboard.press("ArrowLeft")
@@ -152,7 +173,8 @@ def run():
                         queue_tip = queue.locator('[role="tooltip"]')
                         queue_item = next(item for item in CATALOG if item["key"] == "queue")
                         expect(queue_tip.locator("span")).to_have_text(queue_item[f"description_{language}"])
-                        expect(queue_tip).to_be_visible()
+                        expect(queue_tip).not_to_be_visible()
+                        open_description(queue)
                         bounds(queue_tip, width)
                         empty = group.locator('[data-review-tag-option="hover-empty"]')
                         empty.locator("input").focus()
@@ -176,7 +198,8 @@ def run():
                         page.keyboard.press("ArrowDown")
                         expect(long_row.locator("input")).to_be_focused()
                         long_tip = long_row.locator('[role="tooltip"]')
-                        expect(long_tip).to_be_visible()
+                        expect(long_tip).not_to_be_visible()
+                        open_description(long_row)
                         bounds(long_tip, width)
                         assert long_tip.evaluate("n=>n.scrollWidth<=n.clientWidth+1")
                         assert page.evaluate("document.documentElement.scrollWidth<=innerWidth")
@@ -184,7 +207,7 @@ def run():
                             summary.evaluate("n=>n.focus({preventScroll:true})")
                             page.mouse.move(4, 4)
                             expect(long_tip).not_to_be_visible()
-                            check.focus()
+                            open_description(row)
                             expect(tip).to_have_css("opacity", "1")
                             page.screenshot(path=str(OUTPUT / f"{'labeling' if labeling else 'review'}-{width}-{language}-{theme}.png"))
                         page.mouse.click(4, 4)

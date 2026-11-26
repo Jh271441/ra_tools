@@ -627,6 +627,7 @@ function closeUiInfoPopovers(root = document) {
     help.classList.remove('is-open');
     help.classList.add('is-dismissed');
     delete help.dataset.uiInfoPinned;
+    if (help.hasAttribute('data-ui-info-explicit')) help.querySelector('.ui-info-tooltip').hidden = true;
     const trigger = uiInfoTrigger(help);
     if (trigger?.matches('button')) trigger.setAttribute('aria-expanded', 'false');
   });
@@ -636,10 +637,14 @@ function showUiInfoPopover(help, root = document, { pinned = false } = {}) {
   const trigger = uiInfoTrigger(help);
   const tip = help.querySelector('.ui-info-tooltip,.version-te-info-tooltip');
   if (!trigger || !tip) return;
+  // Tag selection and keyboard navigation also focus the checkbox. Only
+  // the description action may open its popover; an open one may reposition.
+  if (help.hasAttribute('data-ui-info-explicit') && !pinned && !help.dataset.uiInfoPinned) return;
   if (!help.classList.contains('is-open')) closeUiInfoPopovers(root);
   help.classList.remove('is-dismissed');
   help.classList.add('is-open');
   if (pinned) help.dataset.uiInfoPinned = '1';
+  if (help.hasAttribute('data-ui-info-explicit')) tip.hidden = false;
   if (trigger.matches('button')) trigger.setAttribute('aria-expanded', 'true');
   const viewport = anchoredViewportBounds();
   tip.style.maxWidth = `${Math.max(0, viewport.width - 24)}px`;
@@ -674,7 +679,7 @@ function bindUiInfoPopovers(root) {
   };
   root.addEventListener('pointerover', event => {
     const help = helpOf(event.target);
-    if (!help || help.hasAttribute('data-ui-info-no-hover') || event.pointerType === 'touch') return;
+    if (!help || help.hasAttribute('data-ui-info-explicit') || event.pointerType === 'touch') return;
     const focused = helpOf(document.activeElement);
     // Scrolling a keyboard-focused option can expose another row under a
     // stationary mouse. Only actual pointer movement may replace its hint.
@@ -708,7 +713,7 @@ function bindUiInfoPopovers(root) {
   }, { passive: true });
   root.addEventListener('pointerout', event => {
     const help = helpOf(event.target);
-    if (help && !help.hasAttribute('data-ui-info-no-hover') && !help.contains(event.relatedTarget)) {
+    if (help && !help.hasAttribute('data-ui-info-explicit') && !help.contains(event.relatedTarget)) {
       cancelUiInfoHover(help);
       closing = setTimeout(() => {
         if (!help.contains(document.activeElement)) close();
@@ -733,7 +738,8 @@ function bindUiInfoPopovers(root) {
   });
   document.addEventListener('pointerdown', event => {
     const pinned = root.querySelector('[data-ui-info-pinned].is-open');
-    if (!helpOf(event.target) || (pinned && !pinned.contains(event.target))) close();
+    if (!helpOf(event.target) || (pinned && !pinned.contains(event.target))
+        || (pinned?.hasAttribute('data-ui-info-explicit') && !event.target.closest('.ui-info-tooltip'))) close();
   });
   document.addEventListener('keydown', event => {
     if (event.key !== 'Escape' || event.defaultPrevented || isImeComposing(event)
